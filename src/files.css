@@ -1,0 +1,306 @@
+.file-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+.file-toolbar .icon-button {
+  min-width: 25px;
+  padding: 4px;
+}
+.file-panel .panel-title {
+  gap: 6px;
+}
+.file-context-menu {
+  width: 190px;
+}
+.file-panel .panel-error .quiet {
+  min-height: 24px;
+  font-size: 11px;
+  padding: 3px 7px;
+  color: var(--error);
+  margin-left: 4px;
+}
+.download-dialog {
+  width: 430px;
+}
+.download-source {
+  overflow-wrap: anywhere;
+  margin-bottom: 18px;
+  font: 12px/1.7 var(--mono);
+  color: var(--muted);
+}
+.download-dialog label {
+  display: grid;
+  gap: 7px;
+  font-size: 12px;
+}
+.download-hint {
+  margin-top: 12px;
+  font-size: 12px;
+}
+.download-dialog .dialog-actions {
+  margin-top: 20px;
+}
+.downloads-panel {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--line);
+  background: var(--material);
+  backdrop-filter: blur(22px);
+}
+.downloads-toggle {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  width: 100%;
+  justify-content: flex-start;
+  gap: 9px;
+  min-height: 37px;
+  padding: 6px 20px;
+  font-size: 12px;
+}
+.downloads-toggle span {
+  color: var(--muted);
+  margin-right: auto;
+}
+.download-task-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 9px;
+  padding: 0 16px 12px;
+  max-height: min(34vh, 300px);
+  overflow: auto;
+}
+.download-task {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+  min-width: 0;
+}
+.download-task-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+.download-task-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.download-task-state {
+  flex: none;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+}
+.download-task.completed .download-task-state {
+  color: var(--green);
+}
+.download-task.failed .download-task-state {
+  color: var(--error);
+}
+.download-task-title .icon-button {
+  min-height: 24px;
+  min-width: 24px;
+  padding: 4px;
+}
+.download-task-path {
+  font-size: 11px;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  margin-top: 3px;
+}
+.download-task-detail {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 5px;
+}
+.download-task progress {
+  display: block;
+  width: 100%;
+  height: 5px;
+  margin-top: 8px;
+  accent-color: var(--blue);
+}
+.download-task .error {
+  overflow-wrap: anywhere;
+  margin-top: 5px;
+}
+.remote-editor-app {
+  --editor-keyword: #7046ab;
+  --editor-string: #337846;
+  --editor-number: #986719;
+  --editor-property: #285ba6;
+  --editor-type: #965c19;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--canvas);
+  overflow: hidden;
+}
+.remote-editor-header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--material);
+}
+.remote-editor-title {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex: 1;
+  min-width: 0;
+}
+.remote-editor-title > svg {
+  flex: none;
+  color: var(--blue);
+}
+.remote-editor-title > div {
+  min-width: 0;
+}
+.remote-editor-title h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.remote-editor-title p {
+  font: 11px/1.6 var(--mono);
+  color: var(--muted);
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  margin-top: 4px;
+}
+.editor-dirty {
+  font-size: 9px;
+  display: inline-block;
+  margin-left: 8px;
+  vertical-align: middle;
+  color: var(--blue);
+}
+.remote-editor-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.remote-editor-tools button {
+  font-size: 12px;
+}
+.editor-shortcut {
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: auto;
+}
+.remote-code-editor {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.remote-code-editor .cm-editor {
+  outline: 0;
+}
+.remote-code-editor .cm-search input {
+  width: auto;
+  min-height: 25px;
+  padding: 3px 5px;
+  font-size: 12px;
+}
+.remote-code-editor .cm-search button {
+  min-height: 25px;
+  font: inherit;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.remote-code-editor .cm-search input[type="checkbox"] {
+  width: auto;
+  min-height: initial;
+}
+.remote-code-editor .cm-tooltip {
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--line);
+}
+.remote-editor-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 16px;
+  font-size: 11px;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+  min-height: 30px;
+}
+.editor-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  background: var(--error-bg);
+  color: var(--error);
+  padding: 10px 18px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.editor-language {
+  width: auto;
+  max-width: 220px;
+  min-height: 26px;
+  padding: 2px 24px 2px 8px;
+  font-size: 11px;
+  margin-left: auto;
+}
+.container-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.file-confirm-dialog {
+  width: 510px;
+}
+.file-confirm-dialog > h2 {
+  font-size: 20px;
+  margin-bottom: 12px;
+}
+.file-confirm-dialog > p {
+  font-size: 13px;
+  line-height: 1.7;
+  margin-bottom: 20px;
+  color: var(--muted);
+}
+@media (prefers-color-scheme: dark) {
+  .remote-editor-app {
+    --editor-keyword: #d6a9f2;
+    --editor-string: #97c797;
+    --editor-number: #d7ae7d;
+    --editor-property: #94bdf1;
+    --editor-type: #dfc38b;
+  }
+}
+@media (max-width: 600px) {
+  .remote-editor-header {
+    padding: 12px;
+  }
+  .editor-shortcut {
+    display: none;
+  }
+  .remote-editor-status {
+    padding: 6px 10px;
+    font-size: 10px;
+  }
+  .download-task-list {
+    padding: 0 10px 10px;
+  }
+}

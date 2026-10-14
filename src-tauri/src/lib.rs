@@ -1,0 +1,553 @@
+mod db;
+mod docker;
+mod files;
+mod logs;
+mod model;
+mod moves;
+mod ssh;
+
+use model::{AppError, AppResult, Server};
+use serde::Serialize;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{Arc, Mutex},
+};
+use tauri::{
+    ipc::Channel, Manager, State as TauriState, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+};
+
+pub struct State {
+    moves: moves::MoveState,
+    files: files::FileState,
+    logs: logs::LogState,
+    database: Mutex<db::Database>,
+    terminals: Mutex<HashMap<String, ssh::TerminalHandle>>,
+    pending_windows: Mutex<HashMap<String, PendingContainer>>,
+    container_windows: Mutex<HashMap<String, String>>,
+    closed_windows: Mutex<HashSet<String>>,
+    window_generations: Mutex<HashMap<String, u64>>,
+}
+#[derive(Clone)]
+struct PendingContainer {
+    spec: ssh::ConnectionSpec,
+    target: docker::ContainerTarget,
+}
+impl State {
+    fn owner(&self, label: &str) -> ssh::WindowOwner {
+        ssh::WindowOwner {
+            label: label.into(),
+            generation: *self
+                .window_generations
+                .lock()
+                .unwrap()
+                .get(label)
+                .unwrap_or(&0),
+        }
+    }
+    fn spec(&self, id: &str, window: &str) -> AppResult<ssh::ConnectionSpec> {
+        let terminals = self.terminals.lock().unwrap();
+        let terminal = terminals
+            .get(id)
+            .ok_or_else(|| AppError::new("disconnected", "SSH 会话已经结束"))?;
+        if terminal.window != window {
+            return Err(AppError::new("permission", "此窗口无权访问该会话"));
+        }
+        Ok(terminal.spec.clone())
+    }
+}
+async fn blocking<T: Send + 'static>(
+    task: impl FnOnce() -> AppResult<T> + Send + 'static,
+) -> AppResult<T> {
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|e| AppError::new("internal", e))?
+}
+fn main_only(window: &WebviewWindow) -> AppResult<()> {
+    if window.label() == "main" {
+        Ok(())
+    } else {
+        Err(AppError::new("permission", "仅主窗口可执行此操作"))
+    }
+}
+
+#[tauri::command]
+fn list_servers(window: WebviewWindow, state: TauriState<Arc<State>>) -> AppResult<Vec<Server>> {
+    main_only(&window)?;
+    state.database.lock().unwrap().list()
+}
+#[tauri::command]
+fn reset_incompatible_database(
+    window: WebviewWindow,
+    state: TauriState<Arc<State>>,
+) -> AppResult<String> {
+    main_only(&window)?;
+    if !state.terminals.lock().unwrap().is_empty()
+        || state.logs.active_count() > 0
+        || state.files.unsaved_count() > 0
+    {
+        return Err(AppError::new(
+            "busy",
+            "请先关闭活动会话并保存远程文件，再重建数据库",
+        ));
+    }
+    Ok(state
+        .database
+        .lock()
+        .unwrap()
+        .reset_incompatible()?
+        .to_string_lossy()
+        .into_owned())
+}
+#[tauri::command]
+fn save_server(
+    window: WebviewWindow,
+    state: TauriState<Arc<State>>,
+    server: Server,
+) -> AppResult<Server> {
+    main_only(&window)?;
+    state.database.lock().unwrap().save(server)
+}
+#[tauri::command]
+fn delete_server(
+    window: WebviewWindow,
+    state: TauriState<Arc<State>>,
+    id: String,
+) -> AppResult<()> {
+    main_only(&window)?;
+    state.database.lock().unwrap().delete(&id)
+}
+#[tauri::command]
+fn save_server_password(
+    window: WebviewWindow,
+    state: TauriState<Arc<State>>,
+    id: String,
+    password: String,
+) -> AppResult<Server> {
+    moves::workspace_only(&window)?;
+    state.database.lock().unwrap().save_password(&id, &password)
+}
+#[tauri::command]
+fn session_count(window: WebviewWindow, state: TauriState<Arc<State>>) -> AppResult<usize> {
+    main_only(&window)?;
+    Ok(state
+        .terminals
+        .lock()
+        .unwrap()
+        .values()
+        .filter(|t| !t.stream.lock().unwrap().closed)
+        .count())
+}
+#[tauri::command]
+fn quit_app(
+    window: WebviewWindow,
+    app: tauri::AppHandle,
+    state: TauriState<Arc<State>>,
+    discard_unsaved: Option<bool>,
+) -> AppResult<()> {
+    main_only(&window)?;
+    if !discard_unsaved.unwrap_or(false) && state.files.unsaved_count() > 0 {
+        return Err(AppError::new(
+            "unsaved",
+            "仍有未保存的远程文件，请保存或确认放弃修改后退出",
+        ));
+    }
+    for terminal in state.terminals.lock().unwrap().values() {
+        let _ = terminal.sender.send(ssh::Input::Close);
+    }
+    app.exit(0);
+    Ok(())
+}
+
+#[tauri::command]
+async fn connect_terminal(
+    window: WebviewWindow,
+    state: TauriState<'_, Arc<State>>,
+    server_id: String,
+    credentials: ssh::Credentials,
+    trust_fingerprint: Option<String>,
+    output: Channel<ssh::TerminalEvent>,
+) -> AppResult<String> {
+    moves::workspace_only(&window)?;
+    let state = state.inner().clone();
+    let owner = state.owner(window.label());
+    blocking(move || {
+        let (server, known) = {
+            let database = state.database.lock().unwrap();
+            let server = database.get(&server_id)?;
+            let key = database.fingerprint(&server.host, server.port)?;
+            (server, key)
+        };
+        let expected = trust_fingerprint.as_deref().or(known.as_deref());
+        let (session, fingerprint) = ssh::establish(&server, &credentials, expected)?;
+        if trust_fingerprint.is_some() {
+            state
+                .database
+                .lock()
+                .unwrap()
+                .trust(&server.host, server.port, &fingerprint)?;
+        }
+        let spec = ssh::ConnectionSpec {
+            server,
+            credentials,
+            fingerprint,
+        };
+        let id = uuid::Uuid::new_v4().to_string();
+        ssh::start_terminal(session, spec, owner, id.clone(), output, None, state)?;
+        Ok(id)
+    })
+    .await
+}
+#[tauri::command]
+fn terminal_input(
+    window: WebviewWindow,
+    state: TauriState<Arc<State>>,
+    session_id: String,
+    data: String,
+) -> AppResult<()> {
+    state.spec(&session_id, window.label())?;
+    if data.len() > 1024 * 1024 {
+        return Err(AppError::new("limit", "单次输入超过 1 MB"));
+    }
+    state
+        .terminals
+        .lock()
+        .unwrap()
+        .get(&session_id)
+        .ok_or_else(|| AppError::new("disconnected", "会话已结束"))?
+        .sender
+        .send(ssh::Input::Data(data.into_bytes()))
+        .map_err(|e| AppError::new("disconnected", e))
+}
+#[tauri::command]
+fn terminal_resize(
+    window: WebviewWindow,
+    state: TauriState<Arc<State>>,
+    session_id: String,
+    cols: u32,
+    rows: u32,
+) -> AppResult<()> {
+    state.spec(&session_id, window.label())?;
+    let terminals = state.terminals.lock().unwrap();
+    if let Some(terminal) = terminals.get(&session_id) {
+        let _ = terminal
+            .sender
+            .send(ssh::Input::Resize(cols.clamp(2, 1000), rows.clamp(2, 1000)));
+    }
+    Ok(())
+}
+#[tauri::command]
+fn terminal_close(
+    window: WebviewWindow,
+    state: TauriState<Arc<State>>,
+    session_id: String,
+) -> AppResult<()> {
+    state.spec(&session_id, window.label())?;
+    if let Some(terminal) = state.terminals.lock().unwrap().get(&session_id) {
+        let _ = terminal.sender.send(ssh::Input::Close);
+    }
+    Ok(())
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FileEntry {
+    name: String,
+    path: String,
+    is_dir: bool,
+    size: u64,
+    modified: u64,
+}
+#[derive(Serialize)]
+struct Directory {
+    path: String,
+    entries: Vec<FileEntry>,
+}
+#[tauri::command]
+async fn list_directory(
+    window: WebviewWindow,
+    state: TauriState<'_, Arc<State>>,
+    session_id: String,
+    path: Option<String>,
+) -> AppResult<Directory> {
+    moves::workspace_only(&window)?;
+    let spec = state.spec(&session_id, window.label())?;
+    blocking(move || {
+        let session = ssh::establish_spec(&spec)?;
+        let sftp = session.sftp()?;
+        let path = path.unwrap_or_else(|| ".".into());
+        let canonical = sftp.realpath(std::path::Path::new(&path))?;
+        let path = canonical.to_string_lossy().to_string();
+        let mut entries: Vec<_> = sftp
+            .readdir(&canonical)?
+            .into_iter()
+            .filter_map(|(entry_path, stat)| {
+                let name = entry_path.file_name()?.to_string_lossy().to_string();
+                if name == "." || name == ".." {
+                    return None;
+                }
+                // Remote paths use POSIX separators on every desktop platform.
+                let remote_path = format!("{}/{}", path.trim_end_matches('/'), name);
+                Some(FileEntry {
+                    name,
+                    path: remote_path,
+                    is_dir: stat.is_dir(),
+                    size: stat.size.unwrap_or(0),
+                    modified: stat.mtime.unwrap_or(0),
+                })
+            })
+            .collect();
+        entries.sort_by(|a, b| {
+            b.is_dir
+                .cmp(&a.is_dir)
+                .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        });
+        Ok(Directory { path, entries })
+    })
+    .await
+}
+#[tauri::command]
+async fn detect_docker(
+    window: WebviewWindow,
+    state: TauriState<'_, Arc<State>>,
+    session_id: String,
+) -> AppResult<docker::DockerStatus> {
+    moves::workspace_only(&window)?;
+    let spec = state.spec(&session_id, window.label())?;
+    blocking(move || docker::detect(&spec)).await
+}
+#[tauri::command]
+async fn docker_images(
+    window: WebviewWindow,
+    state: TauriState<'_, Arc<State>>,
+    session_id: String,
+    endpoint: String,
+) -> AppResult<Vec<docker::Image>> {
+    moves::workspace_only(&window)?;
+    let spec = state.spec(&session_id, window.label())?;
+    blocking(move || docker::images(&spec, &endpoint)).await
+}
+#[tauri::command]
+async fn docker_containers(
+    window: WebviewWindow,
+    state: TauriState<'_, Arc<State>>,
+    session_id: String,
+    endpoint: String,
+) -> AppResult<Vec<docker::Container>> {
+    moves::workspace_only(&window)?;
+    let spec = state.spec(&session_id, window.label())?;
+    blocking(move || docker::containers(&spec, &endpoint)).await
+}
+
+#[tauri::command]
+async fn open_container(
+    window: WebviewWindow,
+    app: tauri::AppHandle,
+    state: TauriState<'_, Arc<State>>,
+    session_id: String,
+    target: docker::ContainerTarget,
+) -> AppResult<()> {
+    moves::workspace_only(&window)?;
+    let spec = state.spec(&session_id, window.label())?;
+    let key = format!("{}|{}|{}", spec.server.id, target.endpoint, target.id);
+    let (label, create) = {
+        let mut windows = state.container_windows.lock().unwrap();
+        if let Some(label) = windows.get(&key) {
+            (label.clone(), false)
+        } else {
+            let label = format!("container-{}", uuid::Uuid::new_v4());
+            windows.insert(key.clone(), label.clone());
+            (label, true)
+        }
+    };
+    // Native window operations may wait for the UI thread; never hold a state lock here.
+    if !create {
+        if let Some(existing) = app.get_webview_window(&label) {
+            existing
+                .set_focus()
+                .map_err(|e| AppError::new("window", e))?;
+        }
+        return Ok(());
+    }
+    let title = format!("{} / {}", spec.server.name, target.name);
+    state
+        .pending_windows
+        .lock()
+        .unwrap()
+        .insert(label.clone(), PendingContainer { spec, target });
+    let result = WebviewWindowBuilder::new(
+        &app,
+        &label,
+        WebviewUrl::App("index.html?container=1".into()),
+    )
+    .title(title)
+    .inner_size(880.0, 580.0)
+    .min_inner_size(480.0, 320.0)
+    .build();
+    match result {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            state.pending_windows.lock().unwrap().remove(&label);
+            state.container_windows.lock().unwrap().remove(&key);
+            Err(AppError::new("window", e))
+        }
+    }
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ContainerInfo {
+    server_name: String,
+    container_name: String,
+}
+#[tauri::command]
+fn container_info(
+    window: WebviewWindow,
+    state: TauriState<Arc<State>>,
+) -> AppResult<ContainerInfo> {
+    let pending = state.pending_windows.lock().unwrap();
+    let target = pending
+        .get(window.label())
+        .ok_or_else(|| AppError::new("window", "容器窗口配置已失效"))?;
+    Ok(ContainerInfo {
+        server_name: target.spec.server.name.clone(),
+        container_name: target.target.name.clone(),
+    })
+}
+#[tauri::command]
+async fn connect_container(
+    window: WebviewWindow,
+    state: TauriState<'_, Arc<State>>,
+    output: Channel<ssh::TerminalEvent>,
+) -> AppResult<String> {
+    let state = state.inner().clone();
+    let label = window.label().to_string();
+    let owner = state.owner(&label);
+    let pending = state
+        .pending_windows
+        .lock()
+        .unwrap()
+        .get(&label)
+        .cloned()
+        .ok_or_else(|| AppError::new("window", "容器窗口配置已失效"))?;
+    blocking(move || {
+        let command = docker::terminal_command(&pending.spec, &pending.target)?;
+        let session = ssh::establish_spec(&pending.spec)?;
+        let id = uuid::Uuid::new_v4().to_string();
+        ssh::start_terminal(
+            session,
+            pending.spec,
+            owner,
+            id.clone(),
+            output,
+            Some(command),
+            state,
+        )?;
+        Ok(id)
+    })
+    .await
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .setup(|app| {
+            let dir = app.path().app_data_dir()?;
+            std::fs::create_dir_all(&dir)?;
+            let database = db::Database::open(&dir.join("servers.db"))
+                .map_err(|e| std::io::Error::other(e.message))?;
+            app.manage(Arc::new(State {
+                moves: moves::MoveState::default(),
+                files: files::FileState::default(),
+                logs: logs::LogState::default(),
+                database: Mutex::new(database),
+                terminals: Mutex::new(HashMap::new()),
+                pending_windows: Mutex::new(HashMap::new()),
+                container_windows: Mutex::new(HashMap::new()),
+                closed_windows: Mutex::new(HashSet::new()),
+                window_generations: Mutex::new(HashMap::new()),
+            }));
+            Ok(())
+        })
+        .on_page_load(|webview, payload| {
+            if payload.event() == tauri::webview::PageLoadEvent::Started {
+                if let Some(state) = webview.try_state::<Arc<State>>() {
+                    state.logs.stop(webview.label(), false);
+                    let mut generations = state.window_generations.lock().unwrap();
+                    *generations.entry(webview.label().into()).or_default() += 1;
+                    for terminal in state.terminals.lock().unwrap().values() {
+                        if terminal.window == webview.label() {
+                            let _ = terminal.sender.send(ssh::Input::Close);
+                        }
+                    }
+                }
+            }
+        })
+        .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                let state = window.state::<Arc<State>>();
+                state.logs.stop(window.label(), true);
+                moves::window_closed(window.app_handle(), &state, window.label());
+                state
+                    .closed_windows
+                    .lock()
+                    .unwrap()
+                    .insert(window.label().into());
+                for terminal in state.terminals.lock().unwrap().values() {
+                    if terminal.window == window.label() {
+                        let _ = terminal.sender.send(ssh::Input::Close);
+                    }
+                }
+                state.pending_windows.lock().unwrap().remove(window.label());
+                state
+                    .container_windows
+                    .lock()
+                    .unwrap()
+                    .retain(|_, label| label != window.label());
+            }
+        })
+        .invoke_handler(tauri::generate_handler![
+            logs::open_container_logs,
+            logs::logs_info,
+            logs::logs_start,
+            logs::logs_stop,
+            logs::logs_ack,
+            logs::log_session_count,
+            list_servers,
+            reset_incompatible_database,
+            save_server,
+            delete_server,
+            save_server_password,
+            session_count,
+            quit_app,
+            connect_terminal,
+            terminal_input,
+            terminal_resize,
+            terminal_close,
+            list_directory,
+            detect_docker,
+            docker_images,
+            docker_containers,
+            open_container,
+            container_info,
+            connect_container,
+            moves::terminal_freeze,
+            moves::terminal_attach,
+            moves::terminal_resume,
+            moves::move_workspace,
+            moves::take_workspace,
+            moves::workspace_ready,
+            moves::cancel_workspace_move,
+            moves::begin_tab_drag,
+            moves::drop_tab,
+            moves::finish_tab_drag,
+            files::open_editor,
+            files::editor_load,
+            files::editor_save,
+            files::editor_set_dirty,
+            files::unsaved_editor_count,
+            files::list_downloads,
+            files::start_download,
+            files::cancel_download,
+            files::retry_download
+        ])
+        .run(tauri::generate_context!())
+        .expect("无法启动桌面应用");
+}
