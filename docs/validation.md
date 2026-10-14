@@ -135,3 +135,18 @@ Windows 本机构建与交互已执行。macOS、Linux 的构建检查已配置�
 - 实际截图检查 1440×950 深浅色及 860×580 小窗口，保存按钮保持可见，长名称和指纹可换行，无弹窗横向溢出；同时以减少动态效果和高对比度配置运行。WebKit 下统一了 select 高度，表单使用实色背景，避免背景文字透出干扰阅读。
 - 前端规则测试 61 项通过；既有数据库弹窗 Chromium/WebKit 回归 8 项通过；TypeScript/Vite 及包含内置前端的 macOS 调试 `.app` 构建通过。
 - 界面测试使用浏览器中的 IPC 模拟，不等同于原生 Tauri 窗口端到端测试。截图位于 `.qa/jump-design-editor-{light,dark,small}.png`、`.qa/jump-design-fingerprint-{light,dark}.png` 与 `.qa/jump-design-login-light.png`。
+
+## 文件创建、上传与服务器直传
+
+2026-10-15，macOS arm64。使用隔离的 A/B Paramiko SSH/SFTP 服务，A 的任务进程调用系统 OpenSSH 10.3p1 的 scp/ssh，真实完成 SSH 握手、认证及文件传输。测试目录、主机密钥和客户端密钥全部临时创建；未连接用户服务器、未自动重建用户数据库。
+
+- 前端 63 项单元测试通过，新增多选/目录失效状态随窗口迁移保留、迟到目录回复不覆盖传输刷新状态的回归。
+- Rust 51 项常规测试通过，17 项默认 ignored；其中 11 项本次新增传输场景和 5 项既有跳板场景均另行显式执行通过。百万日志压力测试未重跑。
+- 11 项传输联调覆盖空文件/目录排他创建、递归上传、隐藏/空目录、跳过链接、A → B 实际字节校验、源/目标中文和空格/引号/反斜线/换行路径、改名与覆盖合并、A 无法直连、目标认证及指纹不符、传输中取消与重试、控制通道中断、文件提交成功但确认丢失、精确目标回执落盘/重开、复用已完成文件和分配目录名称、清理失败停止新增写入并在清理后继续，以及跨越实际 30 秒租约的空闲控制心跳。断开连接的故障场景出现 fixture 的 connection-reset 日志属于预期。
+- 直传测试检查源端 SFTP 读取日志，确认应用未读取用户源文件内容；scp 在 A 侧进程直接连接 B。目标临时文件在完成后发布，故障不先删除旧文件；结果未知时不自动重试提交。
+- Python supervisor 5 项进程协议测试通过：取消、stdin EOF、SSH HUP、心跳过期停止子进程，以及大量 stderr 不阻塞控制且只保留有界错误。测试将租约缩短为 3 秒；另有上述 32 秒真实控制器心跳用例验证生产租约。
+- Chromium/WebKit 新增交互回归共 18 项通过，覆盖新建与错误保留、原生拖入事件的目录命中/冻结目标、普通文件拒收、远端复制确认、鼠标/键盘多选、拖动结束后恢复点击、未知/中断任务禁止直接重试、Tab 拖动 begin/drop/finish 事件，以及传输中退出的应用内确认。原有连接界面 14 项、数据库界面 8 项通过，共 40 项浏览器交互检查。
+- 使用 apple-design skill 复核深浅主题、来源/目标层次、拖动预览/目录高亮、弹窗内边距与固定操作栏；检查 1440×950 和 860×580 截图。截图为 `.qa/transfer-drop-light.png`、`.qa/transfer-upload-dark.png`、`.qa/transfer-server-small-dark.png`。
+- TypeScript/Vite 生产构建、Clippy all-targets `-D warnings`、Rust 格式和 diff 空白检查通过。内嵌前端资源的 macOS 调试应用构建成功：`src-tauri/target/debug/bundle/macos/SSH Workspace.app`。
+
+覆盖限制：浏览器中的 IPC/拖放事件模拟不等于原生 Tauri 端到端操作。当前环境 `AXIsProcessTrusted` 与 `CGPreflightPostEventAccess` 均为 false，未自动执行 Finder 拖入、系统文件选择器和两个真实应用窗口间的拖动；Windows/Linux 原生窗口、Wayland 指针能力也未实测。SSH/SFTP 服务端是 Paramiko fixture，scp/ssh 为系统 OpenSSH，不把它表述为生产 OpenSSH 服务端验证。仍需对应平台完成这些原生交互验收。

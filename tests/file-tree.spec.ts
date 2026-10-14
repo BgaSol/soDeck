@@ -128,6 +128,8 @@ async function fixture(label: string): Promise<Fixture> {
       privateKey: "",
       passwordChange: { type: "set", value: "fixture-password" },
       jumpServerId: null,
+      directHost: null,
+      directPort: 22,
     },
   });
   const cleanup = async () => {

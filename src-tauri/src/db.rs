@@ -9,6 +9,7 @@ const SCHEMA: &str = "
     id TEXT PRIMARY KEY, name TEXT NOT NULL, host TEXT NOT NULL, port INTEGER NOT NULL CHECK(port BETWEEN 1 AND 65535),
     username TEXT NOT NULL, auth_type TEXT NOT NULL, private_key TEXT NOT NULL, password TEXT NOT NULL,
     jump_server_id TEXT REFERENCES servers(id) ON DELETE RESTRICT CHECK(jump_server_id IS NULL OR jump_server_id != id),
+    direct_host TEXT, direct_port INTEGER NOT NULL DEFAULT 22 CHECK(direct_port BETWEEN 1 AND 65535),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
   CREATE TABLE IF NOT EXISTS tags (id INTEGER PRIMARY KEY, name TEXT NOT NULL, normalized_name TEXT NOT NULL UNIQUE);
   CREATE TABLE IF NOT EXISTS server_tags (server_id TEXT REFERENCES servers(id) ON DELETE CASCADE,
@@ -47,6 +48,8 @@ impl Database {
                     "private_key",
                     "password",
                     "jump_server_id",
+                    "direct_host",
+                    "direct_port",
                     "created_at",
                     "updated_at",
                 ][..],
@@ -125,7 +128,7 @@ impl Database {
     }
     pub fn list(&self) -> AppResult<Vec<ServerConfig>> {
         self.validate_schema()?;
-        let mut statement = self.connection.prepare("SELECT id,name,host,port,username,auth_type,private_key,password,jump_server_id FROM servers ORDER BY name COLLATE NOCASE,host,port,id")?;
+        let mut statement = self.connection.prepare("SELECT id,name,host,port,username,auth_type,private_key,password,jump_server_id,direct_host,direct_port FROM servers ORDER BY name COLLATE NOCASE,host,port,id")?;
         let servers = statement
             .query_map([], |row| {
                 Ok(ServerConfig {
@@ -138,6 +141,8 @@ impl Database {
                     private_key: row.get(6)?,
                     password: row.get(7)?,
                     jump_server_id: row.get(8)?,
+                    direct_host: row.get(9)?,
+                    direct_port: row.get(10)?,
                     tags: Vec::new(),
                 })
             })?
@@ -159,6 +164,16 @@ impl Database {
         server.name = server.name.trim().into();
         server.host = server.host.trim().into();
         server.username = server.username.trim().into();
+        server.direct_host = server
+            .direct_host
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty());
+        if server.direct_port == 0 {
+            return Err(AppError::new("validation", "直连端口范围为 1–65535"));
+        }
+        if let Some(host) = &server.direct_host {
+            crate::remote_path::validate_host(host)?;
+        }
         if server.name.is_empty()
             || server.host.is_empty()
             || server.port == 0
@@ -178,9 +193,9 @@ impl Database {
         }
         self.validate_jump(&server.id, server.jump_server_id.as_deref())?;
         let transaction = self.connection.transaction()?;
-        transaction.execute("INSERT INTO servers(id,name,host,port,username,auth_type,private_key,password,jump_server_id) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)
-          ON CONFLICT(id) DO UPDATE SET name=excluded.name,host=excluded.host,port=excluded.port,username=excluded.username,auth_type=excluded.auth_type,private_key=excluded.private_key,password=excluded.password,jump_server_id=excluded.jump_server_id,updated_at=CURRENT_TIMESTAMP",
-          params![server.id,server.name,server.host,server.port,server.username,server.auth_type,server.private_key,server.password,server.jump_server_id])?;
+        transaction.execute("INSERT INTO servers(id,name,host,port,username,auth_type,private_key,password,jump_server_id,direct_host,direct_port) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)
+          ON CONFLICT(id) DO UPDATE SET name=excluded.name,host=excluded.host,port=excluded.port,username=excluded.username,auth_type=excluded.auth_type,private_key=excluded.private_key,password=excluded.password,jump_server_id=excluded.jump_server_id,direct_host=excluded.direct_host,direct_port=excluded.direct_port,updated_at=CURRENT_TIMESTAMP",
+          params![server.id,server.name,server.host,server.port,server.username,server.auth_type,server.private_key,server.password,server.jump_server_id,server.direct_host,server.direct_port])?;
         transaction.execute("DELETE FROM server_tags WHERE server_id=?", [&server.id])?;
         let mut canonical = Vec::new();
         for tag in &server.tags {
@@ -236,6 +251,8 @@ impl Database {
                 private_key: view.private_key,
                 password,
                 jump_server_id: view.jump_server_id,
+                direct_host: view.direct_host,
+                direct_port: view.direct_port,
             })?
             .view())
     }
@@ -338,7 +355,12 @@ mod tests {
         let mut db = Database::open(&path).unwrap();
         assert_eq!(
             db.missing_columns().unwrap(),
-            vec!["servers.jump_server_id", "host_keys.scope"]
+            vec![
+                "servers.jump_server_id",
+                "servers.direct_host",
+                "servers.direct_port",
+                "host_keys.scope"
+            ]
         );
         assert_eq!(db.list().err().unwrap().kind, "databaseSchema");
         let backup_path = db.reset_incompatible().unwrap();
@@ -469,6 +491,8 @@ mod tests {
             private_key: String::new(),
             password: String::new(),
             jump_server_id: None,
+            direct_host: None,
+            direct_port: 22,
         }
     }
     #[test]
@@ -490,6 +514,28 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM server_tags", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn direct_endpoint_is_independent_validated_and_persistent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("servers.db");
+        let mut db = Database::open(&path).unwrap();
+        let mut value = server();
+        value.direct_host = Some(" 2001:db8::7 ".into());
+        value.direct_port = 2201;
+        let saved = db.save_config(value).unwrap();
+        drop(db);
+        let mut db = Database::open(&path).unwrap();
+        let mut loaded = db.get(&saved.id).unwrap();
+        assert_eq!(loaded.direct_host.as_deref(), Some("2001:db8::7"));
+        assert_eq!(loaded.direct_port, 2201);
+        assert_eq!(loaded.host, "127.0.0.1");
+        loaded.direct_host = Some("ssh://bad/path".into());
+        assert!(db.save_config(loaded).is_err());
+        let mut loaded = db.get(&saved.id).unwrap();
+        loaded.direct_host = Some("  ".into());
+        assert!(db.save_config(loaded).unwrap().direct_host.is_none());
     }
     #[test]
     fn invalid_update_does_not_destroy_saved_data() {

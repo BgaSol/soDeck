@@ -5,10 +5,73 @@ use crate::{
     model::{AppError, AppResult},
     moves, State,
 };
+use serde::Deserialize;
 use serde::Serialize;
 use ssh2::Sftp;
 use std::{collections::HashSet, path::Path, sync::Arc};
 use tauri::{State as TauriState, WebviewWindow};
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EntryKind {
+    File,
+    Directory,
+}
+
+#[tauri::command]
+pub async fn create_remote_entry(
+    window: WebviewWindow,
+    app: tauri::AppHandle,
+    state: TauriState<'_, Arc<State>>,
+    session_id: String,
+    parent_path: String,
+    name: String,
+    kind: EntryKind,
+) -> AppResult<String> {
+    moves::workspace_only(&window)?;
+    let spec = state.spec(&session_id, window.label())?;
+    let path = crate::remote_path::join(&parent_path, &name)?;
+    let identity = spec.identity().to_owned();
+    let operation = crate::transfers::register_file_operation(state.inner().clone(), spec.clone())?;
+    let result = blocking(move || {
+        let connection = connection::connect_verified(&spec, &operation.cancel)?;
+        let sftp = connection.session().sftp()?;
+        operation.cancel.check()?;
+        create_entry(&sftp, &parent_path, &name, kind)?;
+        Ok(path)
+    })
+    .await?;
+    crate::transfers::directory_changed(&app, &identity, crate::remote_path::parent(&result));
+    Ok(result)
+}
+
+pub(crate) fn create_entry(
+    sftp: &Sftp,
+    parent: &str,
+    name: &str,
+    kind: EntryKind,
+) -> AppResult<()> {
+    let path = crate::remote_path::join(parent, name)?;
+    if !sftp.stat(Path::new(parent))?.is_dir() {
+        return Err(AppError::new("fileType", "创建位置不是目录"));
+    }
+    if crate::remote_write::metadata(sftp, &path)?.is_some() {
+        return Err(AppError::new("conflict", "同名项目已存在，请使用其他名称"));
+    }
+    match kind {
+        EntryKind::Directory => sftp.mkdir(Path::new(&path), 0o755)?,
+        EntryKind::File => {
+            let mut file = sftp.open_mode(
+                Path::new(&path),
+                ssh2::OpenFlags::WRITE | ssh2::OpenFlags::CREATE | ssh2::OpenFlags::EXCLUSIVE,
+                0o644,
+                ssh2::OpenType::File,
+            )?;
+            file.close()?;
+        }
+    }
+    Ok(())
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

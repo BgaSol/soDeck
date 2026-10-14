@@ -11,12 +11,15 @@ export interface CachedDirectory {
   directory?: Directory;
   error?: string;
   loading: boolean;
+  stale?: boolean;
 }
 export interface RemoteFileTreeSnapshot {
   sessionId: string | null;
   directories: Record<string, Omit<CachedDirectory, "loading">>;
   expanded: string[];
   selected: string;
+  selection?: string[];
+  selectionAnchor?: string;
   currentPath: string;
   homePath: string;
   terminalCwd?: TerminalDirectory;
@@ -153,6 +156,8 @@ export class RemoteFileTree {
       ),
       expanded: saved?.expanded ?? ["/"],
       selected: saved?.selected ?? "",
+      selection: saved?.selection ?? (saved?.selected ? [saved.selected] : []),
+      selectionAnchor: saved?.selectionAnchor ?? saved?.selected ?? "",
       currentPath: saved?.currentPath ?? "/",
       homePath: saved?.terminalCwd?.home || saved?.homePath || "",
       terminalCwd: saved?.terminalCwd,
@@ -227,6 +232,15 @@ export class RemoteFileTree {
       directories,
       expanded: this.state.expanded.filter((item) => !gone(item)),
       selected,
+      selection: (this.state.selection ?? []).filter(
+        (p) =>
+          !gone(p) &&
+          !(
+            remoteParent(p) === path &&
+            p !== "/" &&
+            !directory.entries.some((e) => e.path === p)
+          ),
+      ),
       currentPath,
       ...(cancel ? { revealing: false, revealTarget: undefined } : {}),
     });
@@ -257,15 +271,31 @@ export class RemoteFileTree {
       terminalCwd,
       scrollTop,
       revealTarget,
+      selection: [...(this.state.selection ?? [])],
+      selectionAnchor: this.state.selectionAnchor,
       directories: Object.fromEntries(
         Object.entries(this.state.directories).map(
-          ([path, { directory, error }]) => [path, { directory, error }],
+          ([path, { directory, error, stale }]) => [
+            path,
+            { directory, error, stale },
+          ],
         ),
       ),
     };
   }
 
+  invalidateRemotePath(path: string, active: boolean) {
+    for (const [key, node] of Object.entries(this.state.directories)) {
+      if (key !== path && node.directory?.resolvedPath !== path) continue;
+      this.nextVersion(key);
+      this.updateNode(key, { stale: true });
+      if (active && this.state.expanded.includes(key)) void this.refresh(key);
+    }
+  }
   activate() {
+    for (const path of this.state.expanded) {
+      if (this.state.directories[path]?.stale) void this.refresh(path);
+    }
     if (!this.sessionId) return;
     if (!this.initialized) {
       this.initialized = true;
@@ -312,12 +342,33 @@ export class RemoteFileTree {
     }
   }
 
-  select(path: string, isDirectory = false) {
+  select(
+    path: string,
+    isDirectory = false,
+    mode: "single" | "toggle" | "range" = "single",
+  ) {
     const cancel = this.state.revealing || !!this.state.revealTarget;
     if (cancel) this.navigation++;
+    let selection = [path];
+    if (mode === "toggle") {
+      const selected = new Set(this.state.selection ?? []);
+      if (selected.has(path)) selected.delete(path);
+      else selected.add(path);
+      selection = [...selected];
+    } else if (mode === "range") {
+      const paths = visibleFileRows(this.state).map((row) => row.file.path);
+      const from = paths.indexOf(
+        this.state.selectionAnchor || this.state.selected,
+      );
+      const to = paths.indexOf(path);
+      if (from >= 0 && to >= 0)
+        selection = paths.slice(Math.min(from, to), Math.max(from, to) + 1);
+    }
     this.update({
       selected: path,
-      ...(isDirectory ? { currentPath: path } : {}),
+      selection,
+      selectionAnchor: mode === "range" ? this.state.selectionAnchor : path,
+      ...(isDirectory && mode === "single" ? { currentPath: path } : {}),
       ...(cancel ? { revealing: false, revealTarget: undefined } : {}),
     });
   }
@@ -351,9 +402,14 @@ export class RemoteFileTree {
     const existing = this.pending.get(path);
     if (existing) {
       await existing;
-      if (!force || !this.state.directories[path]?.directory) return;
+      if (!force && !this.state.directories[path]?.stale) return;
     }
-    if (!force && this.state.directories[path]?.directory) return;
+    if (
+      !force &&
+      this.state.directories[path]?.directory &&
+      !this.state.directories[path]?.stale
+    )
+      return;
     const version = this.nextVersion(path);
     this.updateNode(path, { loading: true, error: undefined });
     const request = this.api
@@ -512,6 +568,8 @@ export class RemoteFileTree {
           ...new Set([...this.state.expanded, ...remotePathChain(result.path)]),
         ],
         selected: result.path,
+        selection: [result.path],
+        selectionAnchor: result.path,
         currentPath: result.path,
         revealVersion: this.state.revealVersion + 1,
         revealTarget: undefined,

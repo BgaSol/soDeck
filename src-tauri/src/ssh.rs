@@ -17,6 +17,22 @@ pub struct Credentials {
     pub passphrase: String,
 }
 
+pub fn public_key(session: &Session) -> AppResult<String> {
+    let key = session
+        .host_key()
+        .ok_or_else(|| AppError::new("ssh", "服务器没有提供主机密钥"))?
+        .0;
+    let length = key
+        .get(..4)
+        .map(|s| u32::from_be_bytes(s.try_into().unwrap()) as usize)
+        .ok_or_else(|| AppError::new("ssh", "主机公钥格式无效"))?;
+    let algorithm = key
+        .get(4..4 + length)
+        .and_then(|s| std::str::from_utf8(s).ok())
+        .ok_or_else(|| AppError::new("ssh", "主机公钥算法无效"))?;
+    Ok(format!("{} {}", algorithm, STANDARD.encode(key)))
+}
+
 pub fn fingerprint(session: &Session) -> AppResult<String> {
     let key = session
         .host_key()

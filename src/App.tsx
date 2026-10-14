@@ -30,8 +30,10 @@ import { FilePanel } from "./FilePanel";
 import { DockerPanel } from "./DockerPanel";
 import { WorkspaceTabs } from "./WorkspaceTabs";
 import { DetachedApp } from "./DetachedApp";
-import { DownloadPanel } from "./DownloadPanel";
-import { fileApi, isDownloadActive } from "./fileApi";
+import { TransferPanel } from "./TransferPanel";
+import { DesktopDragPreview } from "./DesktopDragPreview";
+import { transferApi, transferActive } from "./transferApi";
+import { QuitDialog } from "./QuitDialog";
 import { useWorkspaceMoves } from "./useWorkspaceMoves";
 import { SessionWorkspace } from "./SessionWorkspace";
 import { addressOf, emptyServer, errorOf, filterServers } from "./types";
@@ -120,6 +122,11 @@ export function App() {
   const [databaseNotice, setDatabaseNotice] = useState("");
   const [deleting, setDeleting] = useState<Server | null>(null);
   const [logArchives, setLogArchives] = useState(false);
+  const [quitRequest, setQuitRequest] = useState<{
+    details: string;
+    discardUnsaved: boolean;
+  } | null>(null);
+  const closing = useRef(false);
   async function resetDatabase() {
     // Keep backup errors in the dialog so the user can retry. Once reset has
     // succeeded, retain its backup path even if refreshing the list fails.
@@ -163,31 +170,31 @@ export function App() {
     void getCurrentWindow()
       .onCloseRequested(async (event) => {
         event.preventDefault();
+        if (closing.current) return;
+        closing.current = true;
         const count = await invoke<number>("session_count").catch(() => 0);
         const logs = await invoke<number>("log_session_count").catch(() => 0);
         const dirty = await invoke<number>("unsaved_editor_count").catch(
           () => 0,
         );
-        const downloads = await fileApi.downloads().catch(() => []);
-        const activeDownloads = downloads.filter(isDownloadActive).length;
+        const transfers = await transferApi.list().catch(() => []);
+        const activeTransfers = transfers.filter(transferActive).length;
+        const unknown = transfers.filter((t) => t.status === "unknown").length;
         const details = [
           count ? `仍有 ${count} 个活动终端` : "",
           logs ? `${logs} 个日志窗口正在接收` : "",
           dirty ? `${dirty} 个文件有未保存修改` : "",
-          activeDownloads ? `${activeDownloads} 个下载尚未完成` : "",
+          activeTransfers ? `${activeTransfers} 个传输尚未完成` : "",
+          unknown ? `${unknown} 个传输结果待核对` : "",
         ]
           .filter(Boolean)
           .join("，");
-        if (
-          !details ||
-          window.confirm(
-            details +
-              "。退出应用将关闭连接、取消下载并放弃未保存修改，是否退出？",
-          )
-        )
-          void invoke("quit_app", { discardUnsaved: dirty > 0 }).catch((e) =>
-            setError(errorOf(e)),
-          );
+        if (details) setQuitRequest({ details, discardUnsaved: dirty > 0 });
+        else
+          void invoke("quit_app", { discardUnsaved: false }).catch((error) => {
+            closing.current = false;
+            setError(errorOf(error));
+          });
       })
       .then((unlisten) => {
         if (disposed) unlisten();
@@ -567,7 +574,8 @@ export function App() {
           </footer>
         </aside>
       </div>
-      <DownloadPanel />
+      <TransferPanel />
+      <DesktopDragPreview />
       {logArchives && <LogArchives onClose={() => setLogArchives(false)} />}
       {menu && (
         <div
@@ -628,6 +636,21 @@ export function App() {
           blocked={workspaces.tabs.some((tab) => tab.server.id === deleting.id)}
           onDelete={remove}
           onClose={() => setDeleting(null)}
+        />
+      )}
+      {quitRequest && (
+        <QuitDialog
+          details={quitRequest.details}
+          onClose={() => {
+            closing.current = false;
+            setQuitRequest(null);
+          }}
+          onQuit={async () => {
+            await invoke("quit_app", {
+              discardUnsaved: quitRequest.discardUnsaved,
+            });
+            setQuitRequest(null);
+          }}
         />
       )}
     </div>

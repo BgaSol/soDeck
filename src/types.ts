@@ -9,6 +9,8 @@ export interface Server {
   privateKey: string;
   hasSavedPassword: boolean;
   jumpServerId: string | null;
+  directHost: string | null;
+  directPort: number;
 }
 export interface Credentials {
   password: string;
@@ -114,6 +116,8 @@ export const emptyServer = (): Server => ({
   privateKey: "",
   hasSavedPassword: false,
   jumpServerId: null,
+  directHost: null,
+  directPort: 22,
 });
 export function errorOf(error: unknown): AppError {
   if (error && typeof error === "object" && "message" in error)

@@ -17,7 +17,21 @@ import {
   Pencil,
   RefreshCw,
   X,
+  Plus,
+  Upload,
+  FilePlus2,
+  FolderPlus,
 } from "lucide-react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { desktop } from "./api";
+import { transferApi } from "./transferApi";
+import { FileOperationDialog } from "./FileOperationDialog";
+import type { FileOperation } from "./FileOperationDialog";
+import {
+  useDesktopDrag,
+  useNativeDragStart,
+  fileDropTarget,
+} from "./nativeDrag";
 import { fileApi, notifyDownloadStarted } from "./fileApi";
 import type { DownloadConflict } from "./fileApi";
 import { errorOf, formatSize } from "./types";
@@ -54,6 +68,14 @@ export function FilePanel({
     terminalCwd,
   );
   const { selected } = state;
+  const selection = state.selection ?? (selected ? [selected] : []);
+  const panel = useRef<HTMLElement>(null);
+  const [operation, setOperation] = useState<FileOperation | null>(null);
+  const [dropPath, setDropPath] = useState<string | null>(null);
+  const [dropKind, setDropKind] = useState("remoteFiles");
+  const hover = useRef<{ path: string; since: number } | null>(null);
+  const sessionRef = useRef(sessionId);
+  sessionRef.current = sessionId;
   const [path, setPath] = useState(state.currentPath);
   const [focusedPath, setFocusedPath] = useState(selected || "/");
   const list = useRef<HTMLDivElement>(null);
@@ -90,6 +112,8 @@ export function FilePanel({
     setMenu(null);
     setDownload(null);
     setFocusedPath("/");
+    setOperation(null);
+    setDropPath(null);
   }, [sessionId]);
   useEffect(() => {
     report.current?.(model.snapshot());
@@ -124,14 +148,104 @@ export function FilePanel({
     }
   }, [rows, focusedPath, selected]);
 
+  const dragStart = useNativeDragStart((e) => setError(errorOf(e).message));
+  useDesktopDrag((event) => {
+    if (
+      !active ||
+      !sessionId ||
+      !panel.current ||
+      event.kind === "workspaceTab"
+    )
+      return;
+    if (event.phase === "leave") {
+      setDropPath(null);
+      hover.current = null;
+      return;
+    }
+    const target = fileDropTarget(panel.current, event.x, event.y);
+    setDropKind(event.kind);
+    setDropPath(target);
+    if (target && event.phase === "over") {
+      if (hover.current?.path !== target)
+        hover.current = { path: target, since: Date.now() };
+      else if (Date.now() - hover.current.since > 650 && !expanded.has(target))
+        void model.expand(target);
+      if (list.current) {
+        const bounds = list.current.getBoundingClientRect();
+        if (event.y < bounds.top + 30) list.current.scrollTop -= 12;
+        if (event.y > bounds.bottom - 30) list.current.scrollTop += 12;
+      }
+    }
+    if (event.phase === "drop") {
+      setDropPath(null);
+      hover.current = null;
+      if (!target || operation || busy) return;
+      const owner = sessionId;
+      void transferApi
+        .claimDrop(event.token, owner, target)
+        .then((draft) => {
+          if (sessionRef.current === owner)
+            setOperation({
+              kind: event.kind === "localFiles" ? "upload" : "direct",
+              draft,
+            });
+        })
+        .catch((e) => setError(errorOf(e).message));
+    }
+  });
+  useEffect(() => {
+    if (!desktop || !sessionId) return;
+    let live = true;
+    let off: (() => void) | undefined;
+    void getCurrentWindow()
+      .listen<{ sessionId: string; path: string }>(
+        "remote-directory-changed",
+        ({ payload }) => {
+          if (payload.sessionId === sessionId)
+            model.invalidateRemotePath(payload.path, active);
+        },
+      )
+      .then((cleanup) => {
+        if (live) off = cleanup;
+        else cleanup();
+      });
+    return () => {
+      live = false;
+      off?.();
+    };
+  }, [sessionId, model, active]);
+  async function pickUpload(target: string) {
+    if (!sessionId || busy) return;
+    const owner = sessionId;
+    setMenu(null);
+    setError("");
+    setBusy(true);
+    try {
+      const draft = await transferApi.pickFiles(owner, target);
+      if (draft && sessionRef.current === owner)
+        setOperation({ kind: "upload", draft });
+    } catch (e) {
+      setError(errorOf(e).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  function create(kind: "file" | "directory", path: string) {
+    if (!sessionId) return;
+    setMenu(null);
+    setOperation({ kind, sessionId, path });
+  }
   function focusRow(next: string) {
     setFocusedPath(next);
     rowElements.current.get(next)?.focus({ preventScroll: true });
     rowElements.current.get(next)?.scrollIntoView({ block: "nearest" });
   }
-  function choose(file: FileEntry) {
-    model.select(file.path, file.isDir);
-    if (file.isDir) {
+  function choose(
+    file: FileEntry,
+    mode: "single" | "toggle" | "range" = "single",
+  ) {
+    model.select(file.path, file.isDir, mode);
+    if (file.isDir && mode === "single") {
       if (expanded.has(file.path)) model.collapse(file.path);
       else void model.expand(file.path);
     }
@@ -205,7 +319,12 @@ export function FilePanel({
   const refreshLoading = state.directories[refreshPath]?.loading ?? false;
   const currentDirectory = state.directories[state.currentPath]?.directory;
   return (
-    <section className="file-panel" aria-label="远程文件" data-session-id={sessionId ?? undefined}>
+    <section
+      ref={panel}
+      className="file-panel"
+      aria-label="远程文件"
+      data-session-id={sessionId ?? undefined}
+    >
       <header className="panel-head">
         <div className="panel-title">
           <h2>
@@ -213,12 +332,59 @@ export function FilePanel({
             远程文件
           </h2>
           <div className="file-toolbar">
+            <details className="file-new-menu">
+              <summary
+                className="icon-button"
+                aria-label="新建"
+                title="新建文件或文件夹"
+                onClick={(e) => {
+                  if (!sessionId || busy) e.preventDefault();
+                }}
+              >
+                <Plus size={15} />
+              </summary>
+              <div role="menu" aria-label="新建项目">
+                <button
+                  role="menuitem"
+                  onClick={(e) => {
+                    e.currentTarget.closest("details")?.removeAttribute("open");
+                    create("directory", state.currentPath);
+                  }}
+                >
+                  <FolderPlus size={15} />
+                  新建文件夹
+                </button>
+                <button
+                  role="menuitem"
+                  onClick={(e) => {
+                    e.currentTarget.closest("details")?.removeAttribute("open");
+                    create("file", state.currentPath);
+                  }}
+                >
+                  <FilePlus2 size={15} />
+                  新建文件
+                </button>
+              </div>
+            </details>
+            <button
+              className="icon-button"
+              aria-label="上传文件"
+              title="选择本地文件上传"
+              disabled={!sessionId || busy}
+              onClick={() => void pickUpload(state.currentPath)}
+            >
+              <Upload size={15} />
+            </button>
             <button
               className="icon-button"
               aria-label="编辑选中文件"
               title="编辑文本文件（UTF-8，最大 1 MB）"
               disabled={
-                !sessionId || !selectedFile || selectedFile.isDir || busy
+                !sessionId ||
+                !selectedFile ||
+                selectedFile.isDir ||
+                selection.length !== 1 ||
+                busy
               }
               onClick={() => selectedFile && void edit(selectedFile)}
             >
@@ -228,7 +394,9 @@ export function FilePanel({
               className="icon-button"
               aria-label="下载选中项目"
               title="下载文件或文件夹"
-              disabled={!sessionId || !selectedFile || busy}
+              disabled={
+                !sessionId || !selectedFile || selection.length !== 1 || busy
+              }
               onClick={() => selectedFile && setDownload(selectedFile)}
             >
               <Download size={15} />
@@ -277,8 +445,11 @@ export function FilePanel({
       <div
         className="file-list remote-file-tree"
         ref={list}
+        data-drop-directory={sessionId ? state.currentPath : undefined}
+        data-drop-active={dropPath === state.currentPath || undefined}
         role={sessionId ? "tree" : undefined}
         aria-label={sessionId ? "远程文件树" : undefined}
+        aria-multiselectable={sessionId ? true : undefined}
         onScroll={(event) => {
           if (active && restoredScroll.current)
             model.setScrollTop(event.currentTarget.scrollTop);
@@ -303,7 +474,8 @@ export function FilePanel({
                   }}
                   className={
                     "file-row file-tree-row" +
-                    (selected === file.path ? " selected" : "") +
+                    (selection.includes(file.path) ? " selected" : "") +
+                    (dropPath === file.path ? " drop-target" : "") +
                     (state.terminalCwd?.path === file.path
                       ? " terminal-directory"
                       : "")
@@ -311,23 +483,46 @@ export function FilePanel({
                   style={{ paddingLeft: 5 + depth * 15 }}
                   role="treeitem"
                   data-path={file.path}
+                  data-drop-directory={file.isDir ? file.path : undefined}
                   aria-label={file.name}
                   aria-level={depth + 1}
                   aria-posinset={position}
                   aria-setsize={siblings}
-                  aria-selected={selected === file.path}
+                  aria-selected={selection.includes(file.path)}
                   aria-expanded={file.isDir ? isExpanded : undefined}
                   aria-busy={node?.loading || undefined}
                   tabIndex={focusedPath === file.path ? 0 : -1}
                   onFocus={() => setFocusedPath(file.path)}
-                  onClick={() => choose(file)}
+                  onPointerDown={(event) => {
+                    if (!sessionId || file.path === "/") return;
+                    dragStart.down(event, () => {
+                      if (!selection.includes(file.path))
+                        model.select(file.path, file.isDir);
+                      return transferApi.beginDrag(
+                        sessionId,
+                        selection.includes(file.path) ? selection : [file.path],
+                      );
+                    });
+                  }}
+                  onClick={(event) => {
+                    if (!dragStart.suppressClick())
+                      choose(
+                        file,
+                        event.shiftKey
+                          ? "range"
+                          : event.metaKey || event.ctrlKey
+                            ? "toggle"
+                            : "single",
+                      );
+                  }}
                   onDoubleClick={() => {
-                    if (!file.isDir) void edit(file);
+                    if (!dragStart.suppressClick() && !file.isDir)
+                      void edit(file);
                   }}
                   onKeyDown={(event) => {
                     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                       event.preventDefault();
-                      focusRow(
+                      const next =
                         rows[
                           Math.min(
                             rows.length - 1,
@@ -336,8 +531,10 @@ export function FilePanel({
                               index + (event.key === "ArrowDown" ? 1 : -1),
                             ),
                           )
-                        ].file.path,
-                      );
+                        ].file;
+                      focusRow(next.path);
+                      if (event.shiftKey)
+                        model.select(next.path, next.isDir, "range");
                     } else if (event.key === "Home" || event.key === "End") {
                       event.preventDefault();
                       focusRow(
@@ -357,7 +554,15 @@ export function FilePanel({
                     } else if (event.key === " " || event.key === "Enter") {
                       event.preventDefault();
                       if (event.key === "Enter" && !file.isDir) void edit(file);
-                      else choose(file);
+                      else
+                        choose(
+                          file,
+                          event.shiftKey
+                            ? "range"
+                            : event.metaKey || event.ctrlKey
+                              ? "toggle"
+                              : "single",
+                        );
                     } else if (
                       event.key === "ContextMenu" ||
                       (event.key === "F10" && event.shiftKey)
@@ -368,7 +573,7 @@ export function FilePanel({
                       setMenu({
                         file,
                         x: Math.min(rect.x + 20, window.innerWidth - 195),
-                        y: Math.min(rect.bottom, window.innerHeight - 105),
+                        y: Math.min(rect.bottom, window.innerHeight - 240),
                       });
                     } else if (
                       event.key.length === 1 &&
@@ -393,11 +598,12 @@ export function FilePanel({
                   }}
                   onContextMenu={(event) => {
                     event.preventDefault();
-                    model.select(file.path, file.isDir);
+                    if (!selection.includes(file.path))
+                      model.select(file.path, file.isDir);
                     setMenu({
                       file,
                       x: Math.min(event.clientX, window.innerWidth - 195),
-                      y: Math.min(event.clientY, window.innerHeight - 105),
+                      y: Math.min(event.clientY, window.innerHeight - 240),
                     });
                   }}
                 >
@@ -464,6 +670,12 @@ export function FilePanel({
           })
         )}
       </div>
+      {dropPath && (
+        <div className="file-drop-hint" role="status">
+          {dropKind === "localFiles" ? "上传到" : "复制到"} {serverName} ·{" "}
+          {dropPath}
+        </div>
+      )}
       {(error || state.error) && (
         <p className="panel-error" role="alert">
           {error || state.error}
@@ -482,14 +694,16 @@ export function FilePanel({
         {loading
           ? "正在读取目录…"
           : busy
-            ? "正在打开…"
-            : selected
-              ? selected === "/"
-                ? "/"
-                : selected.split("/").pop()
-              : currentDirectory
-                ? currentDirectory.entries.length + " 个项目 · 双击编辑文件"
-                : "SFTP"}
+            ? "正在处理…"
+            : selection.length > 1
+              ? `${selection.length} 个项目已选中`
+              : selected
+                ? selected === "/"
+                  ? "/"
+                  : selected.split("/").pop()
+                : currentDirectory
+                  ? currentDirectory.entries.length + " 个项目 · 双击编辑文件"
+                  : "SFTP"}
       </footer>
       {menu && (
         <div
@@ -498,6 +712,34 @@ export function FilePanel({
           aria-label="文件操作"
           style={{ left: Math.max(5, menu.x), top: Math.max(5, menu.y) }}
         >
+          {menu.file.isDir && (
+            <>
+              <button
+                role="menuitem"
+                disabled={busy}
+                onClick={() => create("directory", menu.file.path)}
+              >
+                <FolderPlus size={14} />
+                新建文件夹
+              </button>
+              <button
+                role="menuitem"
+                disabled={busy}
+                onClick={() => create("file", menu.file.path)}
+              >
+                <FilePlus2 size={14} />
+                新建文件
+              </button>
+              <button
+                role="menuitem"
+                disabled={busy}
+                onClick={() => void pickUpload(menu.file.path)}
+              >
+                <Upload size={14} />
+                上传文件到此处
+              </button>
+            </>
+          )}
           {!menu.file.isDir && (
             <button
               role="menuitem"
@@ -529,6 +771,22 @@ export function FilePanel({
             下载{menu.file.isDir ? "文件夹" : "文件"}
           </button>
         </div>
+      )}
+      {operation && (
+        <FileOperationDialog
+          operation={operation}
+          onClose={() => setOperation(null)}
+          onCreated={(path, directory) => {
+            const owner = sessionId;
+            void model.refresh(remoteParent(path)).then(() => {
+              if (sessionRef.current === owner) {
+                void model.expand(remoteParent(path));
+                model.select(path, directory);
+                setFocusedPath(path);
+              }
+            });
+          }}
+        />
       )}
       <dialog
         ref={downloadDialog}

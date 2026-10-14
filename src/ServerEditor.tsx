@@ -91,6 +91,14 @@ export function ServerEditor({
       setError("请填写名称、地址及 1–65535 的端口。");
       return;
     }
+    if (
+      !Number.isInteger(saved.directPort) ||
+      saved.directPort < 1 ||
+      saved.directPort > 65535
+    ) {
+      setError("直连端口范围为 1–65535。");
+      return;
+    }
     if (saved.authType === "key" && !saved.privateKey.trim()) {
       setError("请选择私钥认证所使用的本地文件路径。");
       return;
@@ -407,6 +415,47 @@ export function ServerEditor({
                 <small className="muted">密钥口令在连接时输入。</small>
               </label>
             )}
+          </fieldset>
+          <fieldset
+            className="server-form-section"
+            disabled={busy || confirmDiscard}
+          >
+            <legend>服务器间传输</legend>
+            <p className="muted">供其他服务器直接连接此服务器时使用。</p>
+            <div className="form-columns">
+              <label>
+                真实地址
+                <input
+                  aria-label="真实地址"
+                  value={draft.directHost ?? ""}
+                  onChange={(e) => update("directHost", e.target.value || null)}
+                  placeholder="IP 或域名，可稍后填写"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </label>
+              <label>
+                直连端口
+                <input
+                  aria-label="直连端口"
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={draft.directPort}
+                  onChange={(e) => update("directPort", Number(e.target.value))}
+                />
+              </label>
+            </div>
+            <button
+              type="button"
+              className="quiet"
+              onClick={() => {
+                update("directHost", draft.host || null);
+                update("directPort", draft.port);
+              }}
+            >
+              使用当前连接地址
+            </button>
           </fieldset>
           <fieldset
             className="server-form-section server-tags-section"

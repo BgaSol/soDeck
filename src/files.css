@@ -351,3 +351,224 @@
     padding: 0 10px 10px;
   }
 }
+
+/* File actions remain anchored to their directory; drag feedback is immediate. */
+.file-panel {
+  position: relative;
+}
+.file-toolbar {
+  gap: 2px;
+}
+.file-new-menu {
+  position: relative;
+}
+.file-new-menu summary {
+  list-style: none;
+  cursor: pointer;
+}
+.file-new-menu summary::-webkit-details-marker {
+  display: none;
+}
+.file-new-menu > div {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 170px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 8px 30px #0002;
+}
+.file-new-menu [role="menuitem"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 8px 10px;
+  text-align: left;
+}
+.file-new-menu [role="menuitem"]:hover {
+  background: var(--hover);
+}
+.file-row.drop-target {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+  background: color-mix(in srgb, var(--blue) 14%, transparent);
+}
+.file-list[data-drop-active="true"] {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--blue) 60%, transparent);
+}
+.file-drop-hint {
+  position: absolute;
+  bottom: 30px;
+  left: 8px;
+  right: 8px;
+  z-index: 8;
+  padding: 8px 11px;
+  border-radius: 9px;
+  background: var(--blue);
+  color: white;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  box-shadow: 0 3px 14px #0002;
+}
+.native-drag-preview {
+  position: fixed;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 210px;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: 0 5px 18px #0002;
+  pointer-events: none;
+  font-size: 12px;
+  font-weight: 500;
+}
+.native-drag-preview span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.native-drag-preview svg {
+  flex-shrink: 0;
+  color: var(--blue);
+}
+.file-operation-dialog {
+  width: min(450px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+}
+.file-operation-dialog .dialog-head h2 {
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.file-operation-dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: calc(100vh - 34px);
+}
+.file-operation-dialog .dialog-head {
+  flex: none;
+  margin: 0;
+  padding: 18px 22px 4px;
+}
+.file-operation-dialog .dialog-actions {
+  flex: none;
+  margin: 0;
+  padding: 14px 22px;
+}
+.file-operation-fields {
+  min-height: 0;
+  display: grid;
+  gap: 16px;
+  padding: 18px 22px;
+  max-height: 60vh;
+  overflow: auto;
+}
+.file-operation-fields label {
+  display: grid;
+  gap: 7px;
+  font-size: 13px;
+}
+.file-operation-fields input,
+.file-operation-fields select {
+  width: 100%;
+  min-height: 34px;
+}
+.file-operation-fields select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 7px 30px 7px 10px;
+  background-color: var(--field);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4.5 3 3 3-3' fill='none' stroke='%238a8a94' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-position: right 10px center;
+  background-repeat: no-repeat;
+}
+.file-operation-fields p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.operation-destination {
+  display: grid;
+  gap: 5px;
+}
+.operation-destination > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.operation-destination strong {
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.operation-warning {
+  color: var(--warning, #a66b16);
+}
+.transfer-route {
+  display: flex;
+  align-items: start;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.transfer-route > span:not([aria-hidden]) {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  max-height: 4.5em;
+  overflow: hidden;
+}
+.transfer-counts {
+  color: var(--muted);
+  font-size: 11px;
+}
+.transfer-panel progress {
+  width: 100%;
+  height: 5px;
+  accent-color: var(--blue);
+}
+.transfer-panel .download-task {
+  display: grid;
+  gap: 7px;
+}
+.transfer-panel .unknown .download-task-state,
+.transfer-panel .partialFailed .download-task-state {
+  color: var(--warning, #a66b16);
+}
+.transfer-panel details {
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.transfer-panel details p {
+  margin: 6px 0;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .file-new-menu > div,
+  .file-operation-dialog {
+    backdrop-filter: none;
+  }
+}
+@media (prefers-contrast: more) {
+  .file-row.drop-target {
+    outline-width: 3px;
+  }
+}

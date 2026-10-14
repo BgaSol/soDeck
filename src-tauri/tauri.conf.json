@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "dragDropEnabled": false,
+        "dragDropEnabled": true,
         "title": "SSH Workspace",
         "width": 1360,
         "height": 860,

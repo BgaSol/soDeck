@@ -13,6 +13,8 @@ pub struct ServerConfig {
     pub private_key: String,
     pub password: String,
     pub jump_server_id: Option<String>,
+    pub direct_host: Option<String>,
+    pub direct_port: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,6 +32,8 @@ pub struct ServerView {
     #[serde(default)]
     pub has_saved_password: bool,
     pub jump_server_id: Option<String>,
+    pub direct_host: Option<String>,
+    pub direct_port: u16,
 }
 impl ServerConfig {
     pub fn view(&self) -> ServerView {
@@ -44,6 +48,8 @@ impl ServerConfig {
             private_key: self.private_key.clone(),
             has_saved_password: !self.password.is_empty(),
             jump_server_id: self.jump_server_id.clone(),
+            direct_host: self.direct_host.clone(),
+            direct_port: self.direct_port,
         }
     }
 }

@@ -251,7 +251,6 @@ pub async fn move_workspace(
         .title(title)
         .inner_size(1080.0, 760.0)
         .min_inner_size(650.0, 480.0)
-        .disable_drag_drop_handler()
         .build()
         .map(|_| ())
     };
@@ -561,7 +560,7 @@ pub fn finish_tab_drag(
         if drag.source != window.label() {
             return Err(AppError::new("permission", "无权结束拖拽"));
         }
-        if cancelled || drag.claimed || drag.source != "main" {
+        if cancelled || drag.claimed {
             drags.remove(&token);
             return Ok(());
         }
@@ -589,7 +588,7 @@ pub fn finish_tab_drag(
         let Some(drag) = drags.remove(&token) else {
             return;
         };
-        if !drag.claimed && outside {
+        if !drag.claimed && outside && drag.source == "main" {
             let _ = app.emit_to(
                 &drag.source,
                 "tab-drop",

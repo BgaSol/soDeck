@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { desktop } from "./api";
+import { useDesktopDrag, useNativeDragStart } from "./nativeDrag";
+import { errorOf } from "./types";
 import { invoke } from "@tauri-apps/api/core";
 import { Plus, X } from "lucide-react";
 import type { WorkspaceTab } from "./workspaces";
@@ -37,6 +41,68 @@ export function WorkspaceTabs({
     cancelled: boolean;
   } | null>(null);
   const strip = useRef<HTMLDivElement>(null);
+  const [dragError, setDragError] = useState("");
+  const native = useNativeDragStart((e) => setDragError(errorOf(e).message));
+  useDesktopDrag((event) => {
+    if (event.kind !== "workspaceTab") return;
+    if (event.phase === "leave") {
+      setOver(undefined);
+      return;
+    }
+    const bounds = strip.current?.getBoundingClientRect();
+    if (
+      !bounds ||
+      event.x < bounds.left ||
+      event.x > bounds.right ||
+      event.y < bounds.top ||
+      event.y > bounds.bottom
+    ) {
+      setOver(undefined);
+      return;
+    }
+    const beforeId = beforeAt(event.x);
+    setOver(beforeId);
+    if (strip.current && event.x < bounds.left + 30)
+      strip.current.scrollLeft -= 16;
+    if (strip.current && event.x > bounds.right - 30)
+      strip.current.scrollLeft += 16;
+    if (event.phase === "drop") {
+      setOver(undefined);
+      void invoke("drop_tab", { token: event.token, beforeId }).catch((e) =>
+        setDragError(errorOf(e).message),
+      );
+    }
+  });
+  useEffect(() => {
+    if (!desktop) return;
+    let live = true;
+    const cleanups: (() => void)[] = [];
+    void Promise.all([
+      getCurrentWindow().listen<{
+        token: string;
+        kind: string;
+        cancelled: boolean;
+      }>("desktop-drag-ended", ({ payload }) => {
+        if (payload.kind !== "workspaceTab") return;
+        drag.current = null;
+        void invoke("finish_tab_drag", {
+          token: payload.token,
+          cancelled: payload.cancelled,
+        }).catch((e) => setDragError(errorOf(e).message));
+      }),
+      getCurrentWindow().listen<{ message: string }>(
+        "desktop-drag-error",
+        ({ payload }) => setDragError(payload.message),
+      ),
+    ]).then((values) => {
+      if (live) cleanups.push(...values);
+      else values.forEach((off) => off());
+    });
+    return () => {
+      live = false;
+      cleanups.forEach((off) => off());
+    };
+  }, []);
   useEffect(() => {
     strip.current
       ?.querySelector('[aria-selected="true"]')
@@ -70,6 +136,11 @@ export function WorkspaceTabs({
   }
   return (
     <>
+      {dragError && (
+        <p className="panel-error" role="alert">
+          {dragError}
+        </p>
+      )}
       <div
         className={`session-tabs${over !== undefined ? " receiving-tab" : ""}`}
       >
@@ -118,8 +189,23 @@ export function WorkspaceTabs({
                 aria-label={`${tabTitle(tab)}，${tab.state}`}
                 title={`${tab.server.username}@${tab.server.host} · 拖动标签可排序或移到独立窗口`}
                 disabled={moving.has(tab.id)}
-                draggable={!moving.has(tab.id)}
-                onClick={() => onSelect(tab.id)}
+                draggable={!desktop && !moving.has(tab.id)}
+                onPointerDown={(event) => {
+                  if (moving.has(tab.id)) return;
+                  native.down(event, () => {
+                    setDragError("");
+                    const token = crypto.randomUUID();
+                    const ready = invoke("begin_workspace_drag", {
+                      token,
+                      tabId: tab.id,
+                    });
+                    drag.current = { token, ready, cancelled: false };
+                    return ready;
+                  });
+                }}
+                onClick={() => {
+                  if (!native.suppressClick()) onSelect(tab.id);
+                }}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setMenu({

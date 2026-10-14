@@ -53,7 +53,7 @@ async function setup(page: Page) {
             rebuilt = true;
             return backup;
           }
-          if (command === "list_downloads") return [];
+          if (command === "list_transfers") return [];
           if (command === "plugin:event|listen") return serial++;
           return null;
         },

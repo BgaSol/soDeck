@@ -3,7 +3,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { TerminalSquare } from "lucide-react";
 import { SessionWorkspace } from "./SessionWorkspace";
 import { WorkspaceTabs } from "./WorkspaceTabs";
-import { DownloadPanel } from "./DownloadPanel";
+import { TransferPanel } from "./TransferPanel";
+import { DesktopDragPreview } from "./DesktopDragPreview";
 import { useWorkspaceMoves } from "./useWorkspaceMoves";
 import { emptyWorkspaces, reorderWorkspace } from "./workspaces";
 import type { WorkspaceTab } from "./workspaces";
@@ -76,7 +77,8 @@ export function DetachedApp() {
           ))}
         </div>
       </div>
-      <DownloadPanel />
+      <TransferPanel />
+      <DesktopDragPreview />
     </div>
   );
 }

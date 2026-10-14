@@ -1,5 +1,6 @@
 mod connection;
 mod db;
+mod desktop_drag;
 mod docker;
 mod files;
 mod log_ingest;
@@ -8,11 +9,14 @@ mod logs;
 mod model;
 mod moves;
 mod remote_fs;
+mod remote_path;
+mod remote_write;
 mod shell_integration;
 mod ssh;
 mod ssh_transport;
 mod terminal;
 mod terminal_cwd;
+mod transfers;
 
 use model::{AppError, AppResult, SaveServerRequest, ServerView};
 use serde::Serialize;
@@ -30,6 +34,8 @@ use tauri::{
 pub struct State {
     moves: moves::MoveState,
     files: files::FileState,
+    transfers: transfers::TransferState,
+    drags: desktop_drag::DragState,
     logs: logs::LogState,
     database: Mutex<db::Database>,
     configuration: Mutex<()>,
@@ -83,10 +89,10 @@ impl State {
                 "请先关闭此服务器的会话标签页、独立会话、容器终端和日志窗口，再删除配置。",
             ));
         }
-        if self.files.has_server_activity(id) {
+        if self.files.has_server_activity(id) || self.transfers.has_server_activity(id) {
             return Err(AppError::new(
                 "busy",
-                "请先保存并关闭此服务器的文件编辑窗口，等待下载完成或取消下载，再删除配置。",
+                "请先保存并关闭此服务器的文件编辑窗口，等待传输完成或取消传输，再删除配置。",
             ));
         }
         self.database.lock().unwrap().delete(id)
@@ -161,6 +167,7 @@ fn reset_incompatible_database(
     if !state.terminals.lock().unwrap().is_empty()
         || state.logs.active_count() > 0
         || state.files.has_activity()
+        || state.transfers.has_activity()
         || !state.pending_windows.lock().unwrap().is_empty()
     {
         return Err(AppError::new(
@@ -226,12 +233,12 @@ async fn quit_app(
         for terminal in state.terminals.lock().unwrap().values() {
             let _ = terminal.sender.send(terminal::Input::Close);
         }
-        state.files.cancel_all();
+        state.transfers.cancel_all();
     }
     let shutdown_state = state.inner().clone();
     let result = blocking(move || {
         shutdown_state.logs.shutdown()?;
-        shutdown_state.files.wait_downloads()?;
+        shutdown_state.transfers.wait_downloads()?;
         connection::wait_closed(&shutdown_state)
     })
     .await;
@@ -422,6 +429,9 @@ pub fn run() {
             app.manage(Arc::new(State {
                 moves: moves::MoveState::default(),
                 files: files::FileState::default(),
+                transfers: transfers::TransferState::open(dir.join("transfer-receipts"))
+                    .map_err(|e| std::io::Error::other(e.message))?,
+                drags: desktop_drag::DragState::default(),
                 logs: logs::LogState::default(),
                 database: Mutex::new(database),
                 configuration: Mutex::new(()),
@@ -446,6 +456,11 @@ pub fn run() {
                         }
                     }
                 }
+            }
+        })
+        .on_webview_event(|webview, event| {
+            if let tauri::WebviewEvent::DragDrop(event) = event {
+                desktop_drag::native_drop(webview, event);
             }
         })
         .on_window_event(|window, event| {
@@ -516,10 +531,21 @@ pub fn run() {
             files::editor_save,
             files::editor_set_dirty,
             files::unsaved_editor_count,
-            files::list_downloads,
-            files::start_download,
-            files::cancel_download,
-            files::retry_download
+            transfers::download::list_downloads,
+            transfers::download::start_download,
+            transfers::download::cancel_download,
+            transfers::download::retry_download,
+            transfers::list_transfers,
+            transfers::cancel_transfer,
+            transfers::retry_transfer,
+            transfers::reconcile_transfer,
+            remote_fs::create_remote_entry,
+            desktop_drag::begin_file_drag,
+            desktop_drag::begin_workspace_drag,
+            desktop_drag::cancel_native_drag,
+            desktop_drag::claim_file_drop,
+            desktop_drag::pick_upload_files,
+            desktop_drag::start_transfer
         ])
         .run(tauri::generate_context!())
         .expect("无法启动桌面应用");

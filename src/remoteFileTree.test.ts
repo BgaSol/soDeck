@@ -544,3 +544,75 @@ describe("remote file tree", () => {
     expect(model.getState().directories["/a"].directory).toBeDefined();
   });
 });
+
+it("retains multi-selection and stale canonical directories when a tab moves", async () => {
+  const entries = ["one", "two"].map((name) => ({
+    name,
+    path: `/home/ops/${name}`,
+    isDir: false,
+    isSymlink: false,
+    size: 1,
+    modified: 1,
+  }));
+  const api = {
+    directoryChain: vi.fn(async () => ({
+      homePath: "/home/ops",
+      path: "/home/ops",
+      directories: [
+        { path: "/", directory: directory("/", ["/home"]) },
+        { path: "/home", directory: directory("/home", ["/home/ops"]) },
+        {
+          path: "/home/ops",
+          directory: { path: "/home/ops", resolvedPath: "/srv/ops", entries },
+        },
+      ],
+    })),
+    directory: vi.fn(async (_: string, path = "/") => ({
+      path,
+      resolvedPath: "/srv/ops",
+      entries,
+    })),
+  };
+  const tree = new RemoteFileTree("session", api);
+  await tree.revealPath("/home/ops");
+  tree.select("/home/ops/one");
+  tree.select("/home/ops/two", false, "toggle");
+  tree.invalidateRemotePath("/srv/ops", false);
+  const saved = tree.snapshot();
+  expect(saved.directories["/home/ops"].stale).toBe(true);
+  const moved = new RemoteFileTree("session", api, saved);
+  moved.activate();
+  await tick();
+  expect(api.directory).toHaveBeenCalledTimes(1);
+  expect(api.directory).toHaveBeenCalledWith("session", "/home/ops");
+  expect(moved.getState().selection).toEqual([
+    "/home/ops/one",
+    "/home/ops/two",
+  ]);
+  expect(moved.getState().directories["/home/ops"].stale).toBeFalsy();
+});
+
+it("does not let an older directory reply erase a later file-change invalidation", async () => {
+  const pending = deferred<Directory>();
+  const api = {
+    directoryChain: vi.fn(async () =>
+      batch("/home/ops", ["/", "/home", "/home/ops"]),
+    ),
+    directory: vi
+      .fn()
+      .mockReturnValueOnce(pending.promise)
+      .mockResolvedValue(directory("/home/ops", ["/home/ops/new"])),
+  };
+  const tree = new RemoteFileTree("session", api);
+  await tree.revealPath("/home/ops");
+  const old = tree.refresh("/home/ops");
+  tree.invalidateRemotePath("/home/ops", false);
+  pending.resolve(directory("/home/ops"));
+  await old;
+  expect(tree.getState().directories["/home/ops"].stale).toBe(true);
+  tree.activate();
+  await tick();
+  expect(
+    tree.getState().directories["/home/ops"].directory?.entries[0].path,
+  ).toBe("/home/ops/new");
+});

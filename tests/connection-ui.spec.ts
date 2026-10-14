@@ -24,6 +24,8 @@ async function setup(page: Page, delayed = false) {
           privateKey: "",
           hasSavedPassword: true,
           jumpServerId: null,
+          directHost: null,
+          directPort: 22,
         },
         {
           id: "b",
@@ -36,6 +38,8 @@ async function setup(page: Page, delayed = false) {
           privateKey: "",
           hasSavedPassword: false,
           jumpServerId: "a",
+          directHost: null,
+          directPort: 22,
         },
       ];
       const emit = (id: string, event: any) =>
@@ -135,7 +139,7 @@ async function setup(page: Page, delayed = false) {
             };
           if (command === "detect_docker")
             return { state: "missing", message: "fixture", endpoint: "" };
-          if (command === "list_downloads") return [];
+          if (command === "list_transfers") return [];
           if (
             command === "session_count" ||
             command === "log_session_count" ||

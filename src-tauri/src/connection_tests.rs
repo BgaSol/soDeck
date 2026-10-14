@@ -21,15 +21,19 @@ fn server(id: &str) -> ServerConfig {
         private_key: String::new(),
         password: "fixture-password".into(),
         jump_server_id: None,
+        direct_host: None,
+        direct_port: 22,
     }
 }
-fn state() -> Arc<State> {
+pub(crate) fn state() -> Arc<State> {
     Arc::new(State {
         database: Mutex::new(crate::db::Database::open(Path::new(":memory:")).unwrap()),
         configuration: Mutex::new(()),
         stopping: std::sync::atomic::AtomicBool::new(false),
         moves: Default::default(),
         files: Default::default(),
+        transfers: Default::default(),
+        drags: Default::default(),
         logs: Default::default(),
         terminals: Mutex::new(HashMap::new()),
         pending_windows: Mutex::new(HashMap::new()),
@@ -70,6 +74,7 @@ fn route_validation_identity_and_secret_free_view() {
     let mut hops = vec![VerifiedHop {
         server: server("a"),
         fingerprint: "key-a".into(),
+        public_key: "ssh-ed25519 AAAA".into(),
         credentials: Credentials::default(),
     }];
     let original = route_identity(&hops);
@@ -494,6 +499,7 @@ fn jump_real_ssh_sftp_docker_terminal_and_failure_paths() {
                 server: h.server.clone(),
                 credentials: h.credentials.clone(),
                 fingerprint: h.fingerprint.clone(),
+                public_key: h.public_key.clone(),
             })
             .collect(),
     };
@@ -583,7 +589,7 @@ fn jump_background_downloads_and_log_archive() {
     let state = state();
     // The verification connection is gone; background jobs must own their paths.
     drop(connection);
-    crate::files::tests::exercise_jump_downloads(
+    crate::transfers::download::tests::exercise_jump_downloads(
         state,
         context.clone(),
         &fixtures.root.path().join("b"),
@@ -794,4 +800,18 @@ fn jump_agent_authentication() {
         .status()
         .unwrap()
         .success());
+}
+
+// Integration-only construction uses a fixture's key once, then every worker
+// connection follows the same pinned-key path as production.
+pub(crate) fn transfer_context(id: &str, port: u16) -> SharedContext {
+    let mut server = server(id);
+    server.port = port;
+    connect(
+        &ConnectionPlan::new(vec![server]).unwrap(),
+        &mut AutoProvider::default(),
+        &Cancellation::default(),
+    )
+    .unwrap()
+    .1
 }

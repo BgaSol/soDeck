@@ -44,6 +44,7 @@ struct VerifiedHop {
     server: ServerConfig,
     credentials: Credentials,
     fingerprint: String,
+    public_key: String,
 }
 pub struct ConnectionContext {
     hops: Vec<VerifiedHop>,
@@ -52,6 +53,9 @@ pub struct ConnectionContext {
 impl ConnectionContext {
     pub fn target(&self) -> &ServerConfig {
         &self.hops.last().expect("validated nonempty route").server
+    }
+    pub fn target_public_key(&self) -> &str {
+        &self.hops.last().expect("nonempty route").public_key
     }
     pub fn identity(&self) -> &str {
         &self.identity
@@ -544,6 +548,7 @@ fn connect(
             server: saved,
             credentials,
             fingerprint,
+            public_key: ssh::public_key(current.session())?,
         });
         connection = Some(current);
     }
@@ -564,7 +569,9 @@ pub fn connect_verified(
     cancel: &Cancellation,
 ) -> AppResult<SshConnection> {
     let plan = ConnectionPlan::new(context.hops.iter().map(|h| h.server.clone()).collect())?;
-    Ok(connect(&plan, &mut VerifiedProvider(context), cancel)?.0)
+    let connection = connect(&plan, &mut VerifiedProvider(context), cancel)?.0;
+    connection.session().set_timeout(12_000);
+    Ok(connection)
 }
 
 type RegisteredConnection = (
@@ -770,4 +777,4 @@ pub fn open_container(
 
 #[cfg(test)]
 #[path = "connection_tests.rs"]
-mod tests;
+pub(crate) mod tests;

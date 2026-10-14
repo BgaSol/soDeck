@@ -477,6 +477,8 @@ async function fixture(label: string): Promise<Fixture> {
       privateKey: "",
       passwordChange: { type: "set", value: "fixture-password" },
       jumpServerId: null,
+      directHost: null,
+      directPort: 22,
     },
   });
   await main.reload();
@@ -635,6 +637,8 @@ test("server deletion supports cancellation, editor entry and filtered neighbour
             privateKey: "",
             passwordChange: { type: "set", value: "fixture-password" },
             jumpServerId: null,
+            directHost: null,
+            directPort: 22,
           },
         }),
       );
