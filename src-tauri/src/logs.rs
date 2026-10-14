@@ -1,3 +1,5 @@
+use crate::connection::{self, SharedContext};
+use crate::ssh_transport::Cancellation;
 use crate::{
     log_store::{self, Source},
     model::{AppError, AppResult},
@@ -8,10 +10,7 @@ use std::{
     collections::HashMap,
     io::Read,
     path::PathBuf,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Condvar, Mutex,
-    },
+    sync::{Arc, Condvar, Mutex},
     time::{Duration, Instant},
 };
 use tauri::{
@@ -24,7 +23,7 @@ pub struct LogState {
     workers: Mutex<Vec<Run>>,
 }
 struct LogWindow {
-    spec: Option<ssh::ConnectionSpec>,
+    spec: Option<SharedContext>,
     target: Option<crate::docker::ContainerTarget>,
     source: Source,
     run: Option<Run>,
@@ -33,7 +32,7 @@ struct LogWindow {
 struct Run {
     id: String,
     source_id: String,
-    cancel: Arc<AtomicBool>,
+    cancel: Cancellation,
     done: Arc<(Mutex<bool>, Condvar)>,
 }
 impl Run {
@@ -41,7 +40,7 @@ impl Run {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             source_id,
-            cancel: Arc::new(AtomicBool::new(false)),
+            cancel: Cancellation::default(),
             done: Arc::new((Mutex::new(false), Condvar::new())),
         }
     }
@@ -67,7 +66,7 @@ impl LogState {
             .lock()
             .unwrap()
             .values()
-            .any(|w| w.spec.as_ref().is_some_and(|s| s.server.id == id))
+            .any(|w| w.spec.as_ref().is_some_and(|s| s.uses_server(id)))
     }
     pub fn active_count(&self) -> usize {
         self.workers
@@ -80,7 +79,7 @@ impl LogState {
     pub fn stop(&self, label: &str, remove: bool) {
         let mut windows = self.windows.lock().unwrap();
         if let Some(run) = windows.get(label).and_then(|w| w.run.as_ref()) {
-            run.cancel.store(true, Ordering::Relaxed);
+            run.cancel.cancel();
         }
         if remove {
             windows.remove(label);
@@ -89,7 +88,7 @@ impl LogState {
     pub fn shutdown(&self) -> AppResult<()> {
         let workers = self.workers.lock().unwrap().clone();
         for run in &workers {
-            run.cancel.store(true, Ordering::Relaxed);
+            run.cancel.cancel();
         }
         for run in &workers {
             run.wait()?;
@@ -163,11 +162,16 @@ fn open_window(
     app: &tauri::AppHandle,
     state: &Arc<State>,
     source: Source,
-    spec: Option<ssh::ConnectionSpec>,
+    spec: Option<SharedContext>,
     target: Option<crate::docker::ContainerTarget>,
 ) -> AppResult<()> {
     let title = format!("{} / {} / 日志", source.server_name, source.container_name);
     let (label, create) = {
+        let _gate = state.configuration.lock().unwrap();
+        state.ensure_running()?;
+        if let Some(spec) = &spec {
+            state.check_context(spec)?;
+        }
         let mut windows = state.logs.windows.lock().unwrap();
         if let Some((label, w)) = windows
             .iter_mut()
@@ -376,6 +380,8 @@ pub fn logs_start(
     state: TauriState<Arc<State>>,
     output: Channel<LogEvent>,
 ) -> AppResult<String> {
+    let gate = state.configuration.lock().unwrap();
+    state.ensure_running()?;
     let archive_root = root(&app)?;
     let run = Run::new(state.logs.source(window.label())?.source_id);
     // Register in the same order as replacing the window's run. Otherwise two
@@ -392,7 +398,7 @@ pub fn logs_start(
         let target = w.target.clone().unwrap();
         let old = w.run.replace(run.clone());
         if let Some(old) = &old {
-            old.cancel.store(true, Ordering::Relaxed);
+            old.cancel.cancel();
         }
         (spec, target, w.source.clone(), old)
     };
@@ -404,12 +410,13 @@ pub fn logs_start(
             .cloned()
             .collect::<Vec<_>>();
         for prior in &previous {
-            prior.cancel.store(true, Ordering::Relaxed);
+            prior.cancel.cancel();
         }
         workers.push(run.clone());
         previous
     };
     drop(workers);
+    drop(gate);
     let id = run.id.clone();
     let label = window.label().to_owned();
     let state = state.inner().clone();
@@ -421,7 +428,7 @@ pub fn logs_start(
             for prior in previous {
                 prior.wait()?;
             }
-            if run.cancel.load(Ordering::Relaxed) {
+            if run.cancel.is_cancelled() {
                 Ok(())
             } else {
                 collect_logs(&spec, &target, &source, &archive_root, &run, &output)
@@ -449,7 +456,7 @@ pub async fn logs_stop(window: WebviewWindow, state: TauriState<'_, Arc<State>>)
         .get(window.label())
         .and_then(|w| w.run.clone());
     if let Some(run) = run {
-        run.cancel.store(true, Ordering::Relaxed);
+        run.cancel.cancel();
         crate::blocking(move || run.wait()).await?;
     }
     Ok(())
@@ -477,7 +484,7 @@ fn command(
 }
 fn wait_cancel(run: &Run, duration: Duration) {
     let until = Instant::now() + duration;
-    while !run.cancel.load(Ordering::Relaxed) && Instant::now() < until {
+    while !run.cancel.is_cancelled() && Instant::now() < until {
         std::thread::sleep(Duration::from_millis(50));
     }
 }
@@ -485,19 +492,12 @@ fn retry_delay(attempt: u32) -> Duration {
     Duration::from_secs((1u64 << attempt.min(5)).min(30))
 }
 fn retryable(error: &AppError) -> bool {
-    let message = error.message.to_ascii_lowercase();
-    if message.contains("authentication")
-        || message.contains("publickey")
-        || message.contains("private key")
-        || message.contains("host key")
-    {
-        return false;
-    }
     matches!(error.kind.as_str(), "network" | "ssh" | "timeout")
         || (error.kind == "io" && !error.message.starts_with("日志保存失败"))
 }
+
 fn collect_logs(
-    spec: &ssh::ConnectionSpec,
+    spec: &SharedContext,
     target: &crate::docker::ContainerTarget,
     source: &Source,
     archive_root: &std::path::Path,
@@ -505,12 +505,12 @@ fn collect_logs(
     output: &Channel<LogEvent>,
 ) -> AppResult<()> {
     let mut attempt = 0;
-    while !run.cancel.load(Ordering::Relaxed) {
+    while !run.cancel.is_cancelled() {
         let history = !crate::log_ingest::history_complete(archive_root, &source.source_id)?;
         match read_logs(spec, target, source, archive_root, history, run, output) {
             Ok(following) => {
                 attempt = 0;
-                if run.cancel.load(Ordering::Relaxed) {
+                if run.cancel.is_cancelled() {
                     break;
                 }
                 if history {
@@ -542,7 +542,7 @@ fn collect_logs(
     Ok(())
 }
 fn read_logs(
-    spec: &ssh::ConnectionSpec,
+    spec: &SharedContext,
     target: &crate::docker::ContainerTarget,
     source: &Source,
     archive_root: &std::path::Path,
@@ -550,11 +550,12 @@ fn read_logs(
     run: &Run,
     output: &Channel<LogEvent>,
 ) -> AppResult<bool> {
-    let session = ssh::establish_spec(spec)?;
-    if run.cancel.load(Ordering::Relaxed) {
+    let connection = connection::connect_verified(spec, &run.cancel)?;
+    let session = connection.session();
+    if run.cancel.is_cancelled() {
         return Ok(false);
     }
-    let inspect=ssh::exec(&session,&format!("env -u DOCKER_CONTEXT -u DOCKER_HOST docker --host {} inspect --type container --format '{{{{json .}}}}' {}",ssh::quote(&target.endpoint),ssh::quote(&target.id)))?;
+    let inspect=ssh::exec(session,&format!("env -u DOCKER_CONTEXT -u DOCKER_HOST docker --host {} inspect --type container --format '{{{{json .}}}}' {}",ssh::quote(&target.endpoint),ssh::quote(&target.id)))?;
     if inspect.code != 0 {
         return Err(AppError::new("docker", inspect.stderr.trim()));
     }
@@ -564,7 +565,7 @@ fn read_logs(
         .as_bool()
         .ok_or_else(|| AppError::new("docker", "无法确认容器状态"))?;
     let tty = metadata["Config"]["Tty"].as_bool().unwrap_or(false);
-    if run.cancel.load(Ordering::Relaxed) {
+    if run.cancel.is_cancelled() {
         return Ok(false);
     }
     let mut saved_source = source.clone();
@@ -576,18 +577,7 @@ fn read_logs(
         history,
     )
     .map_err(|e| AppError::new("logs", format!("日志保存失败：{}", e.message)))?;
-    let mut channel = session.channel_session()?;
-    channel.exec(&command(
-        target,
-        following && !history,
-        store.since.as_deref(),
-    )?)?;
-    session.set_blocking(false);
-    let _ = output.send(LogEvent::Ready {
-        following,
-        tty,
-        history,
-    });
+    let mut opened_channel = None;
     let mut chunks = Vec::new();
     let mut count = 0;
     let mut stderr_tail = Vec::new();
@@ -596,8 +586,25 @@ fn read_logs(
     let mut keepalive = Instant::now();
     let mut write_failed = false;
     let result = (|| {
+        // Once the archive run exists, setup failures and early cancellation
+        // must take the same flush/finish path as a running log stream.
+        run.cancel.check()?;
+        let mut channel = session.channel_session()?;
+        channel.exec(&command(
+            target,
+            following && !history,
+            store.since.as_deref(),
+        )?)?;
+        session.set_blocking(false);
+        opened_channel = Some(channel);
+        let channel = opened_channel.as_mut().unwrap();
+        let _ = output.send(LogEvent::Ready {
+            following,
+            tty,
+            history,
+        });
         loop {
-            if run.cancel.load(Ordering::Relaxed) {
+            if run.cancel.is_cancelled() {
                 break;
             }
             let mut received = false;
@@ -655,7 +662,7 @@ fn read_logs(
                     match channel.wait_close() {
                         Ok(()) => break,
                         Err(e) if e.code() == ssh2::ErrorCode::Session(-37) => {
-                            if run.cancel.load(Ordering::Relaxed) {
+                            if run.cancel.is_cancelled() {
                                 break;
                             }
                             if started.elapsed() > Duration::from_secs(5) {
@@ -669,7 +676,7 @@ fn read_logs(
                         Err(e) => return Err(e.into()),
                     }
                 }
-                if !run.cancel.load(Ordering::Relaxed) && channel.exit_status()? != 0 {
+                if !run.cancel.is_cancelled() && channel.exit_status()? != 0 {
                     return Err(AppError::new(
                         "docker",
                         String::from_utf8_lossy(&stderr_tail).trim(),
@@ -698,7 +705,7 @@ fn read_logs(
             let _ = output.send(LogEvent::Saved { last_seq: seq });
         }
         store
-            .finish(if run.cancel.load(Ordering::Relaxed) {
+            .finish(if run.cancel.is_cancelled() {
                 "用户停止采集"
             } else if result.is_err() {
                 "连接中断；下次补采的覆盖无法确认"
@@ -706,7 +713,7 @@ fn read_logs(
                 "日志读取已结束"
             })
             .map_err(|e| AppError::new("logs", format!("日志保存失败：{}", e.message)))?;
-        if history && result.is_ok() && !run.cancel.load(Ordering::Relaxed) {
+        if history && result.is_ok() && !run.cancel.is_cancelled() {
             store
                 .mark_history_complete()
                 .map_err(|e| AppError::new("logs", format!("日志保存失败：{}", e.message)))?;
@@ -715,13 +722,99 @@ fn read_logs(
             last_seq: log_store::stats(archive_root, &source.source_id)?.last_seq,
         });
     }
-    let _ = channel.close();
+    if let Some(channel) = &mut opened_channel {
+        let _ = channel.close();
+    }
     let _ = session.disconnect(None, "Log collection ended", None);
-    result.map(|()| following)
+    if run.cancel.is_cancelled() {
+        Ok(following)
+    } else {
+        result.map(|()| following)
+    }
 }
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+    pub(crate) fn exercise_jump_archive(context: &SharedContext, root: &std::path::Path) {
+        let target = crate::docker::ContainerTarget {
+            id: "a".repeat(64),
+            name: "fixture".into(),
+            endpoint: "unix:///var/run/docker.sock".into(),
+        };
+        let source = Source::new(context, &target);
+        let run = Run::new(source.source_id.clone());
+        let output = Channel::new(|_| Ok(()));
+        let archive_root = root.join("archives");
+        read_logs(
+            context,
+            &target,
+            &source,
+            &archive_root,
+            true,
+            &run,
+            &output,
+        )
+        .unwrap();
+        assert!(crate::log_ingest::history_complete(&archive_root, &source.source_id).unwrap());
+        let rows = log_store::query(
+            &archive_root,
+            &source.source_id,
+            &log_store::Query {
+                limit: 100,
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .rows;
+        assert!(rows
+            .iter()
+            .any(|r| r.raw.contains("fixture history stdout")));
+        assert!(rows
+            .iter()
+            .any(|r| r.raw.contains("fixture history stderr")));
+        let worker_context = context.clone();
+        let worker_run = run.clone();
+        let worker_source = source.clone();
+        let worker_root = archive_root.clone();
+        let worker = std::thread::spawn(move || {
+            let result = read_logs(
+                &worker_context,
+                &target,
+                &worker_source,
+                &worker_root,
+                false,
+                &worker_run,
+                &output,
+            );
+            worker_run.finish();
+            result
+        });
+        let deadline = Instant::now() + Duration::from_secs(12);
+        while log_store::stats(&archive_root, &source.source_id)
+            .unwrap()
+            .runs
+            < 2
+        {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        run.cancel.cancel();
+        run.wait().unwrap();
+        let result = worker.join().unwrap();
+        assert!(
+            result.is_ok()
+                || result.is_err_and(|e| matches!(
+                    e.kind.as_str(),
+                    "cancelled" | "network" | "io" | "ssh"
+                ))
+        );
+        let stats = log_store::stats(&archive_root, &source.source_id).unwrap();
+        assert_eq!(
+            stats.interrupted_runs, 0,
+            "stopping flushes and finishes the archive run"
+        );
+        assert!(stats.records >= rows.len() as i64);
+    }
     #[test]
     fn log_command_quotes_and_resumes_without_tail_truncation() {
         let target = crate::docker::ContainerTarget {
@@ -744,7 +837,10 @@ mod tests {
             vec![1, 2, 4, 8, 16, 30, 30, 30]
         );
         assert!(retryable(&AppError::new("network", "connection reset")));
-        assert!(!retryable(&AppError::new("ssh", "Authentication failed")));
+        assert!(!retryable(&AppError::from(ssh2::Error::new(
+            ssh2::ErrorCode::Session(-18),
+            "Authentication failed"
+        ))));
         assert!(!retryable(&AppError::new("hostKey", "changed")));
         assert!(!retryable(&AppError::new(
             "logs",

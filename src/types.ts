@@ -7,7 +7,8 @@ export interface Server {
   tags: string[];
   authType: "agent" | "password" | "key";
   privateKey: string;
-  password: string;
+  hasSavedPassword: boolean;
+  jumpServerId: string | null;
 }
 export interface Credentials {
   password: string;
@@ -18,6 +19,8 @@ export interface AppError {
   message: string;
   fingerprint?: string;
   previous?: string;
+  hop?: number;
+  stage?: string;
 }
 export interface FileEntry {
   name: string;
@@ -54,15 +57,50 @@ export interface Container {
   state: string;
   status: string;
 }
+export type PasswordChange =
+  { type: "keep" } | { type: "set"; value: string } | { type: "clear" };
+export interface SaveServerRequest extends Server {
+  passwordChange: PasswordChange;
+}
+export interface HopView {
+  index: number;
+  role: "jump" | "target";
+  server: Server;
+}
+export interface ConnectionView {
+  target: Server;
+  hops: HopView[];
+  identity: string;
+}
+export interface AuthChallenge {
+  id: string;
+  hop: HopView;
+  message: string | null;
+}
+export interface HostKeyChallenge {
+  id: string;
+  hop: HopView;
+  fingerprint: string;
+  previous: string | null;
+}
+export type ConnectionAnswer =
+  { type: "trust"; accept: boolean } | ({ type: "credentials" } & Credentials);
 export type TerminalEvent =
+  | { type: "progress"; hop: HopView; stage: string }
+  | { type: "authRequired"; challenge: AuthChallenge }
+  | { type: "hostKeyRequired"; challenge: HostKeyChallenge }
+  | { type: "ready"; connection: ConnectionView }
   | { type: "data"; data: string }
-  | { type: "closed"; message: string }
+  | {
+      type: "closed";
+      message: string;
+      reason: "failed" | "cancelled" | "ended";
+      error: AppError | null;
+    }
   | { type: "frozen"; token: string }
   | { type: "cwd"; path: string; home: string | null; sequence: number };
 export interface ConnectionRequest {
-  server: Server;
-  credentials: Credentials;
-  trustFingerprint?: string;
+  serverId: string;
   attempt: number;
 }
 export const emptyServer = (): Server => ({
@@ -74,14 +112,9 @@ export const emptyServer = (): Server => ({
   tags: [],
   authType: "agent",
   privateKey: "",
-  password: "",
+  hasSavedPassword: false,
+  jumpServerId: null,
 });
-export function automaticCredentials(server: Server): Credentials | undefined {
-  if (server.authType === "agent") return { password: "", passphrase: "" };
-  if (server.authType === "password" && server.password)
-    return { password: server.password, passphrase: "" };
-  return undefined;
-}
 export function errorOf(error: unknown): AppError {
   if (error && typeof error === "object" && "message" in error)
     return error as AppError;

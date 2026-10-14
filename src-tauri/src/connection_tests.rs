@@ -1,0 +1,797 @@
+use super::*;
+use base64::Engine;
+use std::{
+    collections::{HashMap, HashSet},
+    io::{Read, Write},
+    net::{TcpListener, TcpStream},
+    path::{Path, PathBuf},
+    process::{Child, Command, Stdio},
+    thread,
+};
+
+fn server(id: &str) -> ServerConfig {
+    ServerConfig {
+        id: id.into(),
+        name: id.into(),
+        host: "127.0.0.1".into(),
+        port: 22,
+        username: "ops".into(),
+        tags: vec![],
+        auth_type: "password".into(),
+        private_key: String::new(),
+        password: "fixture-password".into(),
+        jump_server_id: None,
+    }
+}
+fn state() -> Arc<State> {
+    Arc::new(State {
+        database: Mutex::new(crate::db::Database::open(Path::new(":memory:")).unwrap()),
+        configuration: Mutex::new(()),
+        stopping: std::sync::atomic::AtomicBool::new(false),
+        moves: Default::default(),
+        files: Default::default(),
+        logs: Default::default(),
+        terminals: Mutex::new(HashMap::new()),
+        pending_windows: Mutex::new(HashMap::new()),
+        container_windows: Mutex::new(HashMap::new()),
+        closed_windows: Mutex::new(HashSet::new()),
+        window_generations: Mutex::new(HashMap::new()),
+    })
+}
+fn collector() -> (Channel<ConnectionEvent>, Arc<Mutex<Vec<serde_json::Value>>>) {
+    let values = Arc::new(Mutex::new(Vec::new()));
+    let received = values.clone();
+    (
+        Channel::new(move |body| {
+            if let tauri::ipc::InvokeResponseBody::Json(json) = body {
+                received.lock().unwrap().push(serde_json::from_str(&json)?);
+            }
+            Ok(())
+        }),
+        values,
+    )
+}
+fn wait_for(mut check: impl FnMut() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(12);
+    while !check() {
+        assert!(Instant::now() < deadline, "condition timed out");
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn route_validation_identity_and_secret_free_view() {
+    assert!(ConnectionPlan::new(vec![]).is_err());
+    assert!(ConnectionPlan::new(vec![server("a"), server("b"), server("c")]).is_err());
+    assert!(ConnectionPlan::new(vec![server("a"), server("b")]).is_err());
+    let mut b = server("b");
+    b.jump_server_id = Some("a".into());
+    assert!(ConnectionPlan::new(vec![server("a"), b.clone()]).is_ok());
+    let mut hops = vec![VerifiedHop {
+        server: server("a"),
+        fingerprint: "key-a".into(),
+        credentials: Credentials::default(),
+    }];
+    let original = route_identity(&hops);
+    hops[0].server.name = "renamed".into();
+    hops[0].server.password = "other-secret".into();
+    assert_eq!(original, route_identity(&hops));
+    hops[0].server.host = "another-network".into();
+    assert_ne!(original, route_identity(&hops));
+    let context = ConnectionContext {
+        identity: original,
+        hops,
+    };
+    let view = serde_json::to_string(&context.view()).unwrap();
+    assert!(!view.contains("other-secret"));
+    assert!(!view.contains("credentials"));
+    assert!(context.uses_server("a"));
+    assert!(!context.uses_server("b"));
+}
+
+#[test]
+fn challenge_replies_are_typed_bound_and_single_use() {
+    let interaction = Interaction::default();
+    let (sender, receiver) = mpsc::sync_channel(1);
+    *interaction.pending.lock().unwrap() = Some(PendingChallenge {
+        id: "current".into(),
+        kind: ChallengeKind::Trust,
+        sender,
+    });
+    assert!(interaction
+        .answer("stale", ConnectionAnswer::Trust { accept: true })
+        .is_err());
+    assert!(interaction
+        .answer(
+            "current",
+            ConnectionAnswer::Credentials {
+                password: "x".into(),
+                passphrase: String::new()
+            }
+        )
+        .is_err());
+    interaction
+        .answer("current", ConnectionAnswer::Trust { accept: true })
+        .unwrap();
+    assert!(matches!(
+        receiver.recv().unwrap(),
+        ConnectionAnswer::Trust { accept: true }
+    ));
+    assert!(interaction
+        .answer("current", ConnectionAnswer::Trust { accept: true })
+        .is_err());
+}
+
+#[test]
+fn cancelled_or_expired_owner_never_registers_ready_terminal() {
+    let state = state();
+    state
+        .window_generations
+        .lock()
+        .unwrap()
+        .insert("main".into(), 1);
+    let plan = Arc::new(ConnectionPlan::new(vec![server("a")]).unwrap());
+    let (output, _) = collector();
+    assert!(register(
+        &state,
+        WindowOwner {
+            label: "main".into(),
+            generation: 0
+        },
+        plan.clone(),
+        output
+    )
+    .is_err());
+    let (output, events) = collector();
+    let (id, _, cancel, _, _) = register(
+        &state,
+        WindowOwner {
+            label: "main".into(),
+            generation: 1,
+        },
+        plan,
+        output,
+    )
+    .unwrap();
+    cancel.cancel();
+    finish(
+        &state,
+        &id,
+        &cancel,
+        Err(AppError::new("network", "late failure")),
+    );
+    finish(&state, &id, &cancel, Ok(()));
+    assert_eq!(events.lock().unwrap().len(), 1);
+    assert_eq!(events.lock().unwrap()[0]["reason"], "cancelled");
+    assert!(state.terminals.lock().unwrap().is_empty());
+    state
+        .stopping
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let (output, _) = collector();
+    assert!(register(
+        &state,
+        WindowOwner {
+            label: "main".into(),
+            generation: 1
+        },
+        Arc::new(ConnectionPlan::new(vec![server("a")]).unwrap()),
+        output
+    )
+    .is_err());
+}
+
+#[test]
+fn cancellation_interrupts_a_stalled_ssh_handshake() {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let mut target = server("stalled");
+    target.port = listener.local_addr().unwrap().port();
+    let cancel = Cancellation::default();
+    let worker_cancel = cancel.clone();
+    let worker = thread::spawn(move || {
+        connect(
+            &ConnectionPlan::new(vec![target]).unwrap(),
+            &mut AutoProvider::default(),
+            &worker_cancel,
+        )
+        .err()
+        .unwrap()
+    });
+    let (_socket, _) = listener.accept().unwrap();
+    let start = Instant::now();
+    cancel.cancel();
+    assert_eq!(worker.join().unwrap().kind, "cancelled");
+    assert!(start.elapsed() < Duration::from_secs(2));
+}
+
+struct Fixtures {
+    root: tempfile::TempDir,
+    children: Vec<Child>,
+    a: ServerConfig,
+    b: ServerConfig,
+    key: PathBuf,
+    passphrase: String,
+}
+impl Fixtures {
+    fn new(encrypted: bool) -> Self {
+        let root = tempfile::tempdir().unwrap();
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let python = std::env::var_os("SSH_TEST_PYTHON")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| repo.join(".qa/venv/bin/python"));
+        let key = root.path().join("client-key");
+        let public = root.path().join("client-key.pub");
+        let passphrase = if encrypted { "test-key-passphrase" } else { "" }.to_string();
+        let status = Command::new(&python).arg("-c").arg("import paramiko,sys; k=paramiko.RSAKey.generate(2048); k.write_private_key_file(sys.argv[1],password=sys.argv[3] or None); open(sys.argv[2],'w').write(k.get_name()+' '+k.get_base64())")
+            .args([key.as_os_str(), public.as_os_str(), std::ffi::OsStr::new(&passphrase)]).status().expect("install tests/requirements.txt into .qa/venv or set SSH_TEST_PYTHON");
+        assert!(status.success());
+        let ports: Vec<_> = (0..2)
+            .map(|_| {
+                let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+                listener.local_addr().unwrap().port()
+            })
+            .collect();
+        let mut result = Self {
+            root,
+            children: Vec::new(),
+            a: server("a"),
+            b: server("b"),
+            key,
+            passphrase,
+        };
+        result.a.port = ports[0];
+        result.a.username = "jump-user".into();
+        result.a.password = "jump-password".into();
+        result.b.port = ports[1];
+        result.b.username = "target-user".into();
+        result.b.password = "target-password".into();
+        for (name, script, config) in [
+            ("b", "ssh_fixture.py", &result.b),
+            ("a", "jump_fixture.py", &result.a),
+        ] {
+            let directory = result.root.path().join(name);
+            std::fs::create_dir_all(&directory).unwrap();
+            let log = std::fs::File::create(directory.join("process.log")).unwrap();
+            let mut child = Command::new(&python)
+                .arg(repo.join("tests").join(script))
+                .env("SSH_WORKSPACE_FIXTURE_DIR", &directory)
+                .env("SSH_WORKSPACE_FIXTURE_PORT", config.port.to_string())
+                .env("SSH_WORKSPACE_FIXTURE_USER", &config.username)
+                .env("SSH_WORKSPACE_FIXTURE_PASSWORD", &config.password)
+                .env("SSH_WORKSPACE_JUMP_TARGET_PORT", result.b.port.to_string())
+                .env("SSH_WORKSPACE_FIXTURE_PUBLIC_KEY", &public)
+                .stdout(Stdio::from(log.try_clone().unwrap()))
+                .stderr(Stdio::from(log))
+                .spawn()
+                .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                if TcpStream::connect(("127.0.0.1", config.port)).is_ok() {
+                    break;
+                }
+                assert!(
+                    child.try_wait().unwrap().is_none(),
+                    "fixture exited: {}",
+                    std::fs::read_to_string(directory.join("process.log")).unwrap()
+                );
+                assert!(Instant::now() < deadline, "fixture startup timed out");
+                thread::sleep(Duration::from_millis(20));
+            }
+            result.children.push(child);
+        }
+        result
+    }
+    fn plan(&self) -> ConnectionPlan {
+        let mut b = self.b.clone();
+        b.host = "target.internal.invalid".into();
+        b.port = 22;
+        b.jump_server_id = Some("a".into());
+        ConnectionPlan::new(vec![self.a.clone(), b]).unwrap()
+    }
+    fn events(&self, name: &str) -> Vec<serde_json::Value> {
+        std::fs::read_to_string(self.root.path().join(name).join("ssh-events.jsonl"))
+            .unwrap_or_default()
+            .lines()
+            .filter_map(|line| serde_json::from_str(line).ok())
+            .collect()
+    }
+}
+impl Drop for Fixtures {
+    fn drop(&mut self) {
+        for child in &mut self.children {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+#[derive(Default)]
+struct AutoProvider {
+    keys: Vec<String>,
+    passphrase: String,
+}
+impl AuthProvider for AutoProvider {
+    fn progress(&mut self, _: &HopView, _: &str) {}
+    fn verify(
+        &mut self,
+        _: &HopView,
+        _: &str,
+        fingerprint: &str,
+        _: &ssh2::Session,
+        _: &Cancellation,
+    ) -> AppResult<()> {
+        self.keys.push(fingerprint.into());
+        Ok(())
+    }
+    fn credentials(
+        &mut self,
+        _: &HopView,
+        server: &ServerConfig,
+        _: Option<&AppError>,
+        _: &ssh2::Session,
+        _: &Cancellation,
+    ) -> AppResult<Credentials> {
+        Ok(Credentials {
+            password: server.password.clone(),
+            passphrase: self.passphrase.clone(),
+        })
+    }
+    fn authenticated(&mut self, _: &ServerConfig, _: &Credentials) -> AppResult<()> {
+        Ok(())
+    }
+}
+
+#[test]
+#[ignore = "real SSH fixtures; requires Python paramiko; run explicitly"]
+fn jump_real_ssh_sftp_docker_terminal_and_failure_paths() {
+    let fixtures = Fixtures::new(true);
+    let (direct, direct_context) = connect(
+        &ConnectionPlan::new(vec![fixtures.b.clone()]).unwrap(),
+        &mut AutoProvider::default(),
+        &Cancellation::default(),
+    )
+    .unwrap();
+    assert_eq!(direct_context.hops.len(), 1);
+    assert!(direct
+        .session()
+        .sftp()
+        .unwrap()
+        .stat(Path::new("/readme.txt"))
+        .is_ok());
+    drop(direct);
+    let plan = fixtures.plan();
+    let cancel = Cancellation::default();
+    let mut provider = AutoProvider::default();
+    let (connection, context) = connect(&plan, &mut provider, &cancel).unwrap();
+    assert_eq!(provider.keys.len(), 2);
+    assert_ne!(provider.keys[0], provider.keys[1]);
+    assert_eq!(context.target().host, "target.internal.invalid");
+    assert!(context.uses_server("a") && context.uses_server("b"));
+    let sftp = connection.session().sftp().unwrap();
+    assert_eq!(sftp.realpath(Path::new(".")).unwrap(), Path::new("/"));
+    // Exercise both bridge directions beyond the SSH channel window, then compare every byte.
+    let bytes: Vec<u8> = (0..(5 * 1024 * 1024)).map(|i| (i % 251) as u8).collect();
+    let mut file = sftp.create(Path::new("/roundtrip.bin")).unwrap();
+    file.write_all(&bytes).unwrap();
+    file.close().unwrap();
+    let mut returned = Vec::new();
+    sftp.open(Path::new("/roundtrip.bin"))
+        .unwrap()
+        .read_to_end(&mut returned)
+        .unwrap();
+    assert_eq!(returned, bytes);
+    drop(sftp);
+    let docker = crate::docker::detect(&context).unwrap();
+    assert_eq!(docker.state, "running");
+    assert_eq!(
+        crate::docker::images(&context, &docker.endpoint)
+            .unwrap()
+            .len(),
+        1
+    );
+    let containers = crate::docker::containers(&context, &docker.endpoint).unwrap();
+    let target = crate::docker::ContainerTarget {
+        id: containers[0].id.clone(),
+        name: containers[0].name.clone(),
+        endpoint: docker.endpoint,
+    };
+    let command = crate::docker::terminal_command_on(connection.session(), &target).unwrap();
+    assert!(command.ends_with("/bin/sh"));
+    let logs = ssh::exec(
+        connection.session(),
+        &format!("docker logs --tail all --timestamps {}", target.id),
+    )
+    .unwrap();
+    assert!(logs.stdout.contains("fixture history stdout"));
+    assert!(logs.stderr.contains("fixture history stderr"));
+
+    // A real terminal worker uses the same path, emits CWD, and survives output subscription transfer.
+    let state = state();
+    let (output, events) = collector();
+    let (id, receiver, terminal_cancel, _, _) = register(
+        &state,
+        WindowOwner {
+            label: "main".into(),
+            generation: 0,
+        },
+        Arc::new(fixtures.plan()),
+        output,
+    )
+    .unwrap();
+    let terminal_connection = connect_verified(&context, &terminal_cancel).unwrap();
+    let worker_state = state.clone();
+    let worker_context = context.clone();
+    let worker_id = id.clone();
+    let worker_cancel = terminal_cancel.clone();
+    let worker = thread::spawn(move || {
+        let result = terminal::run(
+            terminal_connection,
+            worker_context,
+            &worker_id,
+            None,
+            &worker_state,
+            receiver,
+            &worker_cancel,
+        );
+        finish(&worker_state, &worker_id, &worker_cancel, result);
+    });
+    wait_for(|| events.lock().unwrap().iter().any(|e| e["type"] == "ready"));
+    state.terminals.lock().unwrap()[&id]
+        .sender
+        .send(Input::Data(b"cd /projects\r".to_vec()))
+        .unwrap();
+    wait_for(|| {
+        events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| e["type"] == "cwd" && e["path"] == "/projects")
+    });
+    let (destination, destination_events) = collector();
+    {
+        let handles = state.terminals.lock().unwrap();
+        let mut stream = handles[&id].stream.lock().unwrap();
+        stream.freeze("transfer".into()).unwrap();
+        stream.attach(destination).unwrap();
+        stream.commit().unwrap();
+    }
+    assert!(destination_events
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|e| e["type"] == "ready"));
+    state.terminals.lock().unwrap()[&id]
+        .sender
+        .send(Input::Data(b"echo moved-marker\r".to_vec()))
+        .unwrap();
+    wait_for(|| {
+        destination_events.lock().unwrap().iter().any(|e| {
+            e["type"] == "data"
+                && base64::engine::general_purpose::STANDARD
+                    .decode(e["data"].as_str().unwrap())
+                    .is_ok_and(|b| String::from_utf8_lossy(&b).contains("moved-marker"))
+        })
+    });
+    state.terminals.lock().unwrap()[&id]
+        .sender
+        .send(Input::Close)
+        .unwrap();
+    worker.join().unwrap();
+    assert!(state.terminals.lock().unwrap().is_empty());
+    // The independently owned SFTP/exec connection remains valid after closing the terminal.
+    assert!(connection
+        .session()
+        .sftp()
+        .unwrap()
+        .stat(Path::new("/roundtrip.bin"))
+        .is_ok());
+    drop(connection);
+
+    let mut wrong_key = ConnectionContext {
+        identity: context.identity.clone(),
+        hops: context
+            .hops
+            .iter()
+            .map(|h| VerifiedHop {
+                server: h.server.clone(),
+                credentials: h.credentials.clone(),
+                fingerprint: h.fingerprint.clone(),
+            })
+            .collect(),
+    };
+    wrong_key.hops[1].fingerprint = "wrong-key".into();
+    let error = connect_verified(&wrong_key, &Cancellation::default())
+        .err()
+        .unwrap();
+    assert_eq!(error.kind, "hostKey");
+    assert_eq!(error.hop, Some(1));
+    wrong_key.hops[1]
+        .fingerprint
+        .clone_from(&context.hops[1].fingerprint);
+    wrong_key.hops[0].fingerprint = "changed-jump-key".into();
+    let error = connect_verified(&wrong_key, &Cancellation::default())
+        .err()
+        .unwrap();
+    assert_eq!((error.kind.as_str(), error.hop), ("hostKey", Some(0)));
+    let mut wrong_password = fixtures.plan();
+    wrong_password.hops[0].password = "wrong".into();
+    let error = connect(
+        &wrong_password,
+        &mut AutoProvider::default(),
+        &Cancellation::default(),
+    )
+    .err()
+    .unwrap();
+    assert_eq!(error.kind, "authentication");
+    assert_eq!(error.hop, Some(0));
+    let mut wrong_target_password = fixtures.plan();
+    wrong_target_password.hops[1].password = "wrong-target-password".into();
+    let error = connect(
+        &wrong_target_password,
+        &mut AutoProvider::default(),
+        &Cancellation::default(),
+    )
+    .err()
+    .unwrap();
+    assert_eq!(
+        (error.kind.as_str(), error.hop),
+        ("authentication", Some(1))
+    );
+    std::fs::write(fixtures.root.path().join("a/deny-forward"), "deny").unwrap();
+    assert_eq!(
+        connect_verified(&context, &Cancellation::default())
+            .err()
+            .unwrap()
+            .kind,
+        "forwarding"
+    );
+    std::fs::remove_file(fixtures.root.path().join("a/deny-forward")).unwrap();
+    // Local DNS cannot resolve B: this attempted direct route fails before authentication.
+    let mut direct_b = plan.hops[1].clone();
+    direct_b.jump_server_id = None;
+    assert!(connect(
+        &ConnectionPlan::new(vec![direct_b]).unwrap(),
+        &mut AutoProvider::default(),
+        &Cancellation::default()
+    )
+    .is_err());
+    assert!(fixtures
+        .events("a")
+        .iter()
+        .any(|e| e["event"] == "forward-request"
+            && e["host"] == "target.internal.invalid"
+            && e["port"] == 22));
+    assert!(fixtures
+        .events("b")
+        .iter()
+        .any(|e| e["event"] == "authentication" && e["username"] == "target-user"));
+    wait_for(|| {
+        let events = fixtures.events("a");
+        events.iter().filter(|e| e["event"] == "jump-open").count()
+            == events.iter().filter(|e| e["event"] == "jump-close").count()
+    });
+}
+
+#[test]
+#[ignore = "real SSH fixtures; requires Python paramiko; run explicitly"]
+fn jump_background_downloads_and_log_archive() {
+    let fixtures = Fixtures::new(false);
+    let (connection, context) = connect(
+        &fixtures.plan(),
+        &mut AutoProvider::default(),
+        &Cancellation::default(),
+    )
+    .unwrap();
+    let state = state();
+    // The verification connection is gone; background jobs must own their paths.
+    drop(connection);
+    crate::files::tests::exercise_jump_downloads(
+        state,
+        context.clone(),
+        &fixtures.root.path().join("b"),
+    );
+    crate::logs::tests::exercise_jump_archive(&context, fixtures.root.path());
+    wait_for(|| {
+        let events = fixtures.events("a");
+        events.iter().filter(|e| e["event"] == "jump-open").count()
+            == events.iter().filter(|e| e["event"] == "jump-close").count()
+    });
+}
+
+#[test]
+#[ignore = "real SSH fixtures; requires Python paramiko; run explicitly"]
+fn jump_private_keys_cancellation_and_jump_disconnect() {
+    let fixtures = Fixtures::new(true);
+    let mut plan = fixtures.plan();
+    for hop in &mut plan.hops {
+        hop.auth_type = "key".into();
+        hop.private_key = fixtures.key.to_string_lossy().into_owned();
+    }
+    let cancel = Cancellation::default();
+    let (connection, context) = connect(
+        &plan,
+        &mut AutoProvider {
+            passphrase: fixtures.passphrase.clone(),
+            ..Default::default()
+        },
+        &cancel,
+    )
+    .unwrap();
+    let began = Instant::now();
+    cancel.cancel();
+    drop(connection);
+    assert!(began.elapsed() < Duration::from_secs(2));
+    assert_eq!(
+        connect_verified(&context, &cancel).err().unwrap().kind,
+        "cancelled"
+    );
+    let active = connect_verified(&context, &Cancellation::default()).unwrap();
+    std::fs::write(fixtures.root.path().join("a/disconnect"), "disconnect").unwrap();
+    wait_for(|| active.transport_error().is_some());
+    assert!(active.session().sftp().is_err());
+    drop(active);
+}
+
+#[test]
+#[ignore = "real SSH fixtures; requires Python paramiko; run explicitly"]
+fn jump_interactive_prompts_and_cancel_at_second_host() {
+    let fixtures = Fixtures::new(false);
+    let state = state();
+    let mut plan = fixtures.plan();
+    for hop in &mut plan.hops {
+        hop.password.clear();
+        state
+            .database
+            .lock()
+            .unwrap()
+            .save(crate::model::SaveServerRequest {
+                server: hop.view(),
+                password_change: crate::model::PasswordChange::Clear,
+            })
+            .unwrap();
+    }
+    let plan = Arc::new(plan);
+    let (output, events) = collector();
+    let (id, _, cancel, stream, interaction) = register(
+        &state,
+        WindowOwner {
+            label: "main".into(),
+            generation: 0,
+        },
+        plan.clone(),
+        output,
+    )
+    .unwrap();
+    let worker_state = state.clone();
+    let worker_id = id.clone();
+    let worker_cancel = cancel.clone();
+    let responder = interaction.clone();
+    let worker = thread::spawn(move || {
+        let result = connect(
+            &plan,
+            &mut InteractiveProvider {
+                state: &worker_state,
+                stream,
+                interaction,
+            },
+            &worker_cancel,
+        );
+        finish(
+            &worker_state,
+            &worker_id,
+            &worker_cancel,
+            result.map(|_| ()),
+        );
+    });
+    let mut handled = HashSet::new();
+    let mut stages = Vec::new();
+    loop {
+        let challenge = {
+            events
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|e| {
+                    e["challenge"]["id"]
+                        .as_str()
+                        .is_some_and(|id| !handled.contains(id))
+                })
+                .cloned()
+        };
+        if let Some(event) = challenge {
+            let challenge = &event["challenge"];
+            let challenge_id = challenge["id"].as_str().unwrap().to_string();
+            handled.insert(challenge_id.clone());
+            let hop = challenge["hop"]["index"].as_u64().unwrap();
+            stages.push((event["type"].as_str().unwrap().to_owned(), hop));
+            if hop == 1 {
+                // Cancelling while B's fingerprint is displayed closes B's
+                // transport bridge and A, without sending credentials to B.
+                cancel.cancel();
+                break;
+            }
+            let answer = if event["type"] == "hostKeyRequired" {
+                ConnectionAnswer::Trust { accept: true }
+            } else {
+                ConnectionAnswer::Credentials {
+                    password: "jump-password".into(),
+                    passphrase: String::new(),
+                }
+            };
+            responder.answer(&challenge_id, answer).unwrap();
+        } else {
+            assert!(
+                !worker.is_finished(),
+                "connection ended before prompts: {:?}",
+                events.lock().unwrap()
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+    let began = Instant::now();
+    worker.join().unwrap();
+    assert!(began.elapsed() < Duration::from_secs(2));
+    assert_eq!(
+        stages,
+        vec![
+            ("hostKeyRequired".into(), 0),
+            ("authRequired".into(), 0),
+            ("hostKeyRequired".into(), 1)
+        ]
+    );
+    assert!(!events.lock().unwrap().iter().any(|e| e["type"] == "ready"));
+    assert!(!fixtures
+        .events("b")
+        .iter()
+        .any(|e| e["event"] == "authentication"));
+    assert_eq!(
+        state.database.lock().unwrap().get("a").unwrap().password,
+        "jump-password"
+    );
+    assert!(state
+        .database
+        .lock()
+        .unwrap()
+        .get("b")
+        .unwrap()
+        .password
+        .is_empty());
+    assert!(state.terminals.lock().unwrap().is_empty());
+}
+
+#[test]
+#[ignore = "run under an isolated ssh-agent with SSH_WORKSPACE_TEST_AGENT=1"]
+fn jump_agent_authentication() {
+    assert_eq!(
+        std::env::var("SSH_WORKSPACE_TEST_AGENT").as_deref(),
+        Ok("1"),
+        "use an isolated test ssh-agent"
+    );
+    let fixtures = Fixtures::new(false);
+    assert!(Command::new("ssh-add")
+        .arg(&fixtures.key)
+        .status()
+        .unwrap()
+        .success());
+    let mut plan = fixtures.plan();
+    for hop in &mut plan.hops {
+        hop.auth_type = "agent".into();
+    }
+    let (connection, context) = connect(
+        &plan,
+        &mut AutoProvider::default(),
+        &Cancellation::default(),
+    )
+    .unwrap();
+    assert!(connection
+        .session()
+        .sftp()
+        .unwrap()
+        .stat(Path::new("/readme.txt"))
+        .is_ok());
+    assert_eq!(context.hops.len(), 2);
+    assert!(Command::new("ssh-add")
+        .arg("-d")
+        .arg(&fixtures.key)
+        .status()
+        .unwrap()
+        .success());
+}

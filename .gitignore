@@ -1,15 +1,76 @@
+# Dependencies and build output
 node_modules/
 dist/
 src-tauri/target/
 *.tsbuildinfo
-*.db
-*.db-shm
-*.db-wal
-.env*
-!.env.example
-.qa/
+
+# Tauri generated files
 src-tauri/gen/
 src-tauri/icons/android/
 src-tauri/icons/ios/
 src-tauri/icons/Square*Logo.png
 src-tauri/icons/StoreLogo.png
+
+# Test output and coverage
+.qa/
+test-results/
+playwright-report/
+playwright/.cache/
+coverage/
+.nyc_output/
+
+# Python test fixtures
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Local databases and environment variables
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+.env*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS metadata
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+# VS Code / Cursor: keep shareable project configuration
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/launch.json
+.history/
+
+# JetBrains IDEs
+.idea/
+*.iml
+
+# Visual Studio local state
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Sublime Text local workspace (keep .sublime-project files)
+*.sublime-workspace
+
+# Vim / Neovim and Emacs temporary files
+*.swp
+*.swo
+*.swn
+*.un~
+\#*\#
+.\#*
+*~

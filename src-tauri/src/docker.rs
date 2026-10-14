@@ -1,6 +1,8 @@
+use crate::connection::{self, SharedContext};
+use crate::ssh_transport::Cancellation;
 use crate::{
     model::{AppError, AppResult},
-    ssh::{self, ConnectionSpec},
+    ssh,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -35,9 +37,10 @@ pub struct ContainerTarget {
     pub name: String,
     pub endpoint: String,
 }
-pub fn detect(spec: &ConnectionSpec) -> AppResult<DockerStatus> {
-    let session = ssh::establish_spec(spec)?;
-    let found = ssh::exec(&session, "command -v docker >/dev/null 2>&1")?;
+pub fn detect(spec: &SharedContext) -> AppResult<DockerStatus> {
+    let connection = connection::connect_verified(spec, &Cancellation::default())?;
+    let session = connection.session();
+    let found = ssh::exec(session, "command -v docker >/dev/null 2>&1")?;
     if found.code != 0 {
         return Ok(DockerStatus {
             state: "missing".into(),
@@ -45,7 +48,7 @@ pub fn detect(spec: &ConnectionSpec) -> AppResult<DockerStatus> {
             endpoint: String::new(),
         });
     }
-    let endpoint=ssh::exec(&session,"if [ -n \"$DOCKER_HOST\" ] && [ -z \"$DOCKER_CONTEXT\" ]; then printf '%s' \"$DOCKER_HOST\"; else docker context inspect --format '{{.Endpoints.docker.Host}}'; fi")?;
+    let endpoint=ssh::exec(session,"if [ -n \"$DOCKER_HOST\" ] && [ -z \"$DOCKER_CONTEXT\" ]; then printf '%s' \"$DOCKER_HOST\"; else docker context inspect --format '{{.Endpoints.docker.Host}}'; fi")?;
     if endpoint.code != 0 || endpoint.stdout.trim().is_empty() {
         return Ok(DockerStatus {
             state: "error".into(),
@@ -54,7 +57,7 @@ pub fn detect(spec: &ConnectionSpec) -> AppResult<DockerStatus> {
         });
     }
     let endpoint = endpoint.stdout.trim().to_string();
-    let result = ssh::exec(&session, "docker info --format '{{json .ServerVersion}}'")?;
+    let result = ssh::exec(session, "docker info --format '{{json .ServerVersion}}'")?;
     if result.code == 0 {
         Ok(DockerStatus {
             state: "running".into(),
@@ -98,10 +101,11 @@ fn json_lines(output: &str) -> AppResult<Vec<Value>> {
         })
         .collect()
 }
-pub fn images(spec: &ConnectionSpec, endpoint: &str) -> AppResult<Vec<Image>> {
-    let session = ssh::establish_spec(spec)?;
+pub fn images(spec: &SharedContext, endpoint: &str) -> AppResult<Vec<Image>> {
+    let connection = connection::connect_verified(spec, &Cancellation::default())?;
+    let session = connection.session();
     let result = ssh::exec(
-        &session,
+        session,
         &format!(
             "{} image ls --no-trunc --format '{{{{json .}}}}'",
             docker(endpoint)
@@ -128,10 +132,11 @@ pub fn images(spec: &ConnectionSpec, endpoint: &str) -> AppResult<Vec<Image>> {
         })
         .collect())
 }
-pub fn containers(spec: &ConnectionSpec, endpoint: &str) -> AppResult<Vec<Container>> {
-    let session = ssh::establish_spec(spec)?;
+pub fn containers(spec: &SharedContext, endpoint: &str) -> AppResult<Vec<Container>> {
+    let connection = connection::connect_verified(spec, &Cancellation::default())?;
+    let session = connection.session();
     let result = ssh::exec(
-        &session,
+        session,
         &format!(
             "{} ps -a --no-trunc --format '{{{{json .}}}}'",
             docker(endpoint)
@@ -157,15 +162,14 @@ pub fn containers(spec: &ConnectionSpec, endpoint: &str) -> AppResult<Vec<Contai
     });
     Ok(values)
 }
-pub fn terminal_command(spec: &ConnectionSpec, target: &ContainerTarget) -> AppResult<String> {
+pub fn terminal_command_on(session: &ssh2::Session, target: &ContainerTarget) -> AppResult<String> {
     if target.id.len() != 64 || !target.id.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(AppError::new("validation", "无效的容器 ID"));
     }
-    let session = ssh::establish_spec(spec)?;
     let prefix = docker(&target.endpoint);
     let id = ssh::quote(&target.id);
     let result = ssh::exec(
-        &session,
+        session,
         &format!("{prefix} inspect --type container --format '{{{{json .State}}}}' {id}"),
     )?;
     if result.code != 0 {
@@ -177,7 +181,7 @@ pub fn terminal_command(spec: &ConnectionSpec, target: &ContainerTarget) -> AppR
         return Err(AppError::new("docker", "容器当前不处于可进入的运行状态"));
     }
     for shell in ["/bin/bash", "/bin/sh"] {
-        let result = ssh::exec(&session, &format!("{prefix} exec {id} {shell} -c 'exit 0'"))?;
+        let result = ssh::exec(session, &format!("{prefix} exec {id} {shell} -c 'exit 0'"))?;
         if result.code == 0 {
             return Ok(format!("{prefix} exec -it {id} {shell}"));
         }

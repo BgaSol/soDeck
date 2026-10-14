@@ -126,7 +126,8 @@ async function fixture(label: string): Promise<Fixture> {
       tags: ["QA"],
       authType: "password",
       privateKey: "",
-      password: "fixture-password",
+      passwordChange: { type: "set", value: "fixture-password" },
+      jumpServerId: null,
     },
   });
   const cleanup = async () => {

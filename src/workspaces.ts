@@ -1,5 +1,4 @@
 import type { Server } from "./types";
-import { automaticCredentials } from "./types";
 
 export interface WorkspaceTab {
   id: string;
@@ -48,7 +47,7 @@ export function openWorkspace(
           .filter((tab) => tab.server.id === server.id)
           .map((tab) => tab.number),
       ) + 1,
-    state: automaticCredentials(server) ? "连接中" : "未连接",
+    state: "连接中",
   };
   return { tabs: [...current.tabs, tab], activeId: tab.id };
 }

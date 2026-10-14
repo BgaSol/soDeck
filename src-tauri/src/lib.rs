@@ -1,3 +1,4 @@
+mod connection;
 mod db;
 mod docker;
 mod files;
@@ -9,13 +10,18 @@ mod moves;
 mod remote_fs;
 mod shell_integration;
 mod ssh;
+mod ssh_transport;
+mod terminal;
 mod terminal_cwd;
 
-use model::{AppError, AppResult, Server};
+use model::{AppError, AppResult, SaveServerRequest, ServerView};
 use serde::Serialize;
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
 };
 use tauri::{
     ipc::Channel, Manager, State as TauriState, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
@@ -26,7 +32,9 @@ pub struct State {
     files: files::FileState,
     logs: logs::LogState,
     database: Mutex<db::Database>,
-    terminals: Mutex<HashMap<String, ssh::TerminalHandle>>,
+    configuration: Mutex<()>,
+    stopping: AtomicBool,
+    terminals: Mutex<HashMap<String, connection::ConnectionHandle>>,
     pending_windows: Mutex<HashMap<String, PendingContainer>>,
     container_windows: Mutex<HashMap<String, String>>,
     closed_windows: Mutex<HashSet<String>>,
@@ -34,24 +42,40 @@ pub struct State {
 }
 #[derive(Clone)]
 struct PendingContainer {
-    spec: ssh::ConnectionSpec,
+    spec: connection::SharedContext,
     target: docker::ContainerTarget,
 }
 impl State {
+    fn check_context(&self, context: &connection::ConnectionContext) -> AppResult<()> {
+        self.ensure_running()?;
+        let database = self.database.lock().unwrap();
+        for id in context.server_ids() {
+            database.get(id)?;
+        }
+        Ok(())
+    }
+    fn ensure_running(&self) -> AppResult<()> {
+        if self.stopping.load(Ordering::SeqCst) {
+            Err(AppError::new("cancelled", "应用正在退出"))
+        } else {
+            Ok(())
+        }
+    }
     fn delete_server(&self, id: &str) -> AppResult<()> {
+        let _gate = self.configuration.lock().unwrap();
         if self.moves.has_server(id)
             || self
                 .terminals
                 .lock()
                 .unwrap()
                 .values()
-                .any(|terminal| terminal.spec.server.id == id)
+                .any(|terminal| terminal.uses_server(id))
             || self
                 .pending_windows
                 .lock()
                 .unwrap()
                 .values()
-                .any(|window| window.spec.server.id == id)
+                .any(|window| window.spec.uses_server(id))
             || self.logs.has_server(id)
         {
             return Err(AppError::new(
@@ -67,8 +91,8 @@ impl State {
         }
         self.database.lock().unwrap().delete(id)
     }
-    fn owner(&self, label: &str) -> ssh::WindowOwner {
-        ssh::WindowOwner {
+    fn owner(&self, label: &str) -> connection::WindowOwner {
+        connection::WindowOwner {
             label: label.into(),
             generation: *self
                 .window_generations
@@ -78,7 +102,8 @@ impl State {
                 .unwrap_or(&0),
         }
     }
-    fn spec(&self, id: &str, window: &str) -> AppResult<ssh::ConnectionSpec> {
+    fn spec(&self, id: &str, window: &str) -> AppResult<connection::SharedContext> {
+        self.ensure_running()?;
         let terminals = self.terminals.lock().unwrap();
         let terminal = terminals
             .get(id)
@@ -86,7 +111,13 @@ impl State {
         if terminal.window != window {
             return Err(AppError::new("permission", "此窗口无权访问该会话"));
         }
-        Ok(terminal.spec.clone())
+        if terminal.sender.cancel.is_cancelled() || terminal.stream.lock().unwrap().closed {
+            return Err(AppError::new("disconnected", "SSH 会话已经结束"));
+        }
+        terminal
+            .spec
+            .clone()
+            .ok_or_else(|| AppError::new("connecting", "SSH 连接尚未完成"))
     }
 }
 async fn blocking<T: Send + 'static>(
@@ -105,9 +136,19 @@ fn main_only(window: &WebviewWindow) -> AppResult<()> {
 }
 
 #[tauri::command]
-fn list_servers(window: WebviewWindow, state: TauriState<Arc<State>>) -> AppResult<Vec<Server>> {
+fn list_servers(
+    window: WebviewWindow,
+    state: TauriState<Arc<State>>,
+) -> AppResult<Vec<ServerView>> {
     main_only(&window)?;
-    state.database.lock().unwrap().list()
+    Ok(state
+        .database
+        .lock()
+        .unwrap()
+        .list()?
+        .into_iter()
+        .map(|s| s.view())
+        .collect())
 }
 #[tauri::command]
 fn reset_incompatible_database(
@@ -115,9 +156,12 @@ fn reset_incompatible_database(
     state: TauriState<Arc<State>>,
 ) -> AppResult<String> {
     main_only(&window)?;
+    let _gate = state.configuration.lock().unwrap();
+    state.ensure_running()?;
     if !state.terminals.lock().unwrap().is_empty()
         || state.logs.active_count() > 0
-        || state.files.unsaved_count() > 0
+        || state.files.has_activity()
+        || !state.pending_windows.lock().unwrap().is_empty()
     {
         return Err(AppError::new(
             "busy",
@@ -136,9 +180,10 @@ fn reset_incompatible_database(
 fn save_server(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
-    server: Server,
-) -> AppResult<Server> {
+    server: SaveServerRequest,
+) -> AppResult<ServerView> {
     main_only(&window)?;
+    let _gate = state.configuration.lock().unwrap();
     state.database.lock().unwrap().save(server)
 }
 #[tauri::command]
@@ -149,16 +194,6 @@ fn delete_server(
 ) -> AppResult<()> {
     main_only(&window)?;
     state.delete_server(&id)
-}
-#[tauri::command]
-fn save_server_password(
-    window: WebviewWindow,
-    state: TauriState<Arc<State>>,
-    id: String,
-    password: String,
-) -> AppResult<Server> {
-    moves::workspace_only(&window)?;
-    state.database.lock().unwrap().save_password(&id, &password)
 }
 #[tauri::command]
 fn session_count(window: WebviewWindow, state: TauriState<Arc<State>>) -> AppResult<usize> {
@@ -185,54 +220,29 @@ async fn quit_app(
             "仍有未保存的远程文件，请保存或确认放弃修改后退出",
         ));
     }
-    for terminal in state.terminals.lock().unwrap().values() {
-        let _ = terminal.sender.send(ssh::Input::Close);
+    {
+        let _gate = state.configuration.lock().unwrap();
+        state.stopping.store(true, Ordering::SeqCst);
+        for terminal in state.terminals.lock().unwrap().values() {
+            let _ = terminal.sender.send(terminal::Input::Close);
+        }
+        state.files.cancel_all();
     }
     let shutdown_state = state.inner().clone();
-    blocking(move || shutdown_state.logs.shutdown()).await?;
+    let result = blocking(move || {
+        shutdown_state.logs.shutdown()?;
+        shutdown_state.files.wait_downloads()?;
+        connection::wait_closed(&shutdown_state)
+    })
+    .await;
+    if let Err(error) = result {
+        state.stopping.store(false, Ordering::SeqCst);
+        return Err(error);
+    }
     app.exit(0);
     Ok(())
 }
 
-#[tauri::command]
-async fn connect_terminal(
-    window: WebviewWindow,
-    state: TauriState<'_, Arc<State>>,
-    server_id: String,
-    credentials: ssh::Credentials,
-    trust_fingerprint: Option<String>,
-    output: Channel<ssh::TerminalEvent>,
-) -> AppResult<String> {
-    moves::workspace_only(&window)?;
-    let state = state.inner().clone();
-    let owner = state.owner(window.label());
-    blocking(move || {
-        let (server, known) = {
-            let database = state.database.lock().unwrap();
-            let server = database.get(&server_id)?;
-            let key = database.fingerprint(&server.host, server.port)?;
-            (server, key)
-        };
-        let expected = trust_fingerprint.as_deref().or(known.as_deref());
-        let (session, fingerprint) = ssh::establish(&server, &credentials, expected)?;
-        if trust_fingerprint.is_some() {
-            state
-                .database
-                .lock()
-                .unwrap()
-                .trust(&server.host, server.port, &fingerprint)?;
-        }
-        let spec = ssh::ConnectionSpec {
-            server,
-            credentials,
-            fingerprint,
-        };
-        let id = uuid::Uuid::new_v4().to_string();
-        ssh::start_terminal(session, spec, owner, id.clone(), output, None, state)?;
-        Ok(id)
-    })
-    .await
-}
 #[tauri::command]
 fn terminal_input(
     window: WebviewWindow,
@@ -251,7 +261,7 @@ fn terminal_input(
         .get(&session_id)
         .ok_or_else(|| AppError::new("disconnected", "会话已结束"))?
         .sender
-        .send(ssh::Input::Data(data.into_bytes()))
+        .send(terminal::Input::Data(data.into_bytes()))
         .map_err(|e| AppError::new("disconnected", e))
 }
 #[tauri::command]
@@ -265,21 +275,10 @@ fn terminal_resize(
     state.spec(&session_id, window.label())?;
     let terminals = state.terminals.lock().unwrap();
     if let Some(terminal) = terminals.get(&session_id) {
-        let _ = terminal
-            .sender
-            .send(ssh::Input::Resize(cols.clamp(2, 1000), rows.clamp(2, 1000)));
-    }
-    Ok(())
-}
-#[tauri::command]
-fn terminal_close(
-    window: WebviewWindow,
-    state: TauriState<Arc<State>>,
-    session_id: String,
-) -> AppResult<()> {
-    state.spec(&session_id, window.label())?;
-    if let Some(terminal) = state.terminals.lock().unwrap().get(&session_id) {
-        let _ = terminal.sender.send(ssh::Input::Close);
+        let _ = terminal.sender.send(terminal::Input::Resize(
+            cols.clamp(2, 1000),
+            rows.clamp(2, 1000),
+        ));
     }
     Ok(())
 }
@@ -325,8 +324,9 @@ async fn open_container(
     target: docker::ContainerTarget,
 ) -> AppResult<()> {
     moves::workspace_only(&window)?;
+    let gate = state.configuration.lock().unwrap();
     let spec = state.spec(&session_id, window.label())?;
-    let key = format!("{}|{}|{}", spec.server.id, target.endpoint, target.id);
+    let key = format!("{}|{}|{}", spec.identity(), target.endpoint, target.id);
     let (label, create) = {
         let mut windows = state.container_windows.lock().unwrap();
         if let Some(label) = windows.get(&key) {
@@ -339,6 +339,7 @@ async fn open_container(
     };
     // Native window operations may wait for the UI thread; never hold a state lock here.
     if !create {
+        drop(gate);
         if let Some(existing) = app.get_webview_window(&label) {
             existing
                 .set_focus()
@@ -346,12 +347,13 @@ async fn open_container(
         }
         return Ok(());
     }
-    let title = format!("{} / {}", spec.server.name, target.name);
+    let title = format!("{} / {}", spec.target().name, target.name);
     state
         .pending_windows
         .lock()
         .unwrap()
         .insert(label.clone(), PendingContainer { spec, target });
+    drop(gate);
     let result = WebviewWindowBuilder::new(
         &app,
         &label,
@@ -386,7 +388,7 @@ fn container_info(
         .get(window.label())
         .ok_or_else(|| AppError::new("window", "容器窗口配置已失效"))?;
     Ok(ContainerInfo {
-        server_name: target.spec.server.name.clone(),
+        server_name: target.spec.target().name.clone(),
         container_name: target.target.name.clone(),
     })
 }
@@ -394,7 +396,7 @@ fn container_info(
 async fn connect_container(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    output: Channel<ssh::TerminalEvent>,
+    output: Channel<connection::ConnectionEvent>,
 ) -> AppResult<String> {
     let state = state.inner().clone();
     let label = window.label().to_string();
@@ -406,22 +408,7 @@ async fn connect_container(
         .get(&label)
         .cloned()
         .ok_or_else(|| AppError::new("window", "容器窗口配置已失效"))?;
-    blocking(move || {
-        let command = docker::terminal_command(&pending.spec, &pending.target)?;
-        let session = ssh::establish_spec(&pending.spec)?;
-        let id = uuid::Uuid::new_v4().to_string();
-        ssh::start_terminal(
-            session,
-            pending.spec,
-            owner,
-            id.clone(),
-            output,
-            Some(command),
-            state,
-        )?;
-        Ok(id)
-    })
-    .await
+    connection::open_container(state, owner, pending.spec, pending.target, output)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -437,6 +424,8 @@ pub fn run() {
                 files: files::FileState::default(),
                 logs: logs::LogState::default(),
                 database: Mutex::new(database),
+                configuration: Mutex::new(()),
+                stopping: AtomicBool::new(false),
                 terminals: Mutex::new(HashMap::new()),
                 pending_windows: Mutex::new(HashMap::new()),
                 container_windows: Mutex::new(HashMap::new()),
@@ -453,7 +442,7 @@ pub fn run() {
                     *generations.entry(webview.label().into()).or_default() += 1;
                     for terminal in state.terminals.lock().unwrap().values() {
                         if terminal.window == webview.label() {
-                            let _ = terminal.sender.send(ssh::Input::Close);
+                            let _ = terminal.sender.send(terminal::Input::Close);
                         }
                     }
                 }
@@ -471,7 +460,7 @@ pub fn run() {
                     .insert(window.label().into());
                 for terminal in state.terminals.lock().unwrap().values() {
                     if terminal.window == window.label() {
-                        let _ = terminal.sender.send(ssh::Input::Close);
+                        let _ = terminal.sender.send(terminal::Input::Close);
                     }
                 }
                 state.pending_windows.lock().unwrap().remove(window.label());
@@ -497,13 +486,13 @@ pub fn run() {
             reset_incompatible_database,
             save_server,
             delete_server,
-            save_server_password,
             session_count,
             quit_app,
-            connect_terminal,
+            connection::open_connection,
+            connection::answer_connection,
+            connection::close_connection,
             terminal_input,
             terminal_resize,
-            terminal_close,
             remote_fs::list_directory,
             remote_fs::list_directory_chain,
             detect_docker,

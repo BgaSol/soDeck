@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Plug, TerminalSquare, Unplug, X } from "lucide-react";
+import { Plug, Route, TerminalSquare, Unplug, X } from "lucide-react";
 import { TerminalPane } from "./TerminalPane";
 import type {
   TerminalController,
@@ -18,9 +18,9 @@ import type { DockerPanelSnapshot } from "./DockerPanel";
 import { FilePanel } from "./FilePanel";
 import { DockerPanel } from "./DockerPanel";
 import { FingerprintDialog, LoginDialog } from "./ConnectionDialogs";
-import { api } from "./api";
-import { addressOf, automaticCredentials } from "./types";
-import type { AppError, ConnectionRequest, Credentials, Server } from "./types";
+import { useConnection } from "./useConnection";
+import { addressOf } from "./types";
+import type { AppError } from "./types";
 import type { WorkspaceTab } from "./workspaces";
 
 export interface WorkspaceSnapshot {
@@ -41,32 +41,22 @@ export function SessionWorkspace({
   controllerRef,
   initial,
   onReady,
-  latestServer,
   onChange,
-  onServerSaved,
+  onConfigurationChanged,
 }: {
   tab: WorkspaceTab;
   controllerRef?: Ref<WorkspaceController>;
   initial?: WorkspaceSnapshot;
   onReady?: () => void;
   active: boolean;
-  latestServer?: Server;
   onChange: (
     id: string,
     patch: Partial<Pick<WorkspaceTab, "server" | "state">>,
   ) => void;
-  onServerSaved: (server: Server) => void;
+  onConfigurationChanged?: () => void;
 }) {
-  const [request, setRequest] = useState<ConnectionRequest | undefined>(() => {
-    if (initial) return undefined;
-    const credentials = automaticCredentials(tab.server);
-    return credentials
-      ? { server: tab.server, credentials, attempt: 0 }
-      : undefined;
-  });
-  const [login, setLogin] = useState<Server | null>(() =>
-    initial || automaticCredentials(tab.server) ? null : tab.server,
-  );
+  const connection = useConnection(tab.server.id, !!initial);
+  const { request, prompt } = connection;
   const [sessionId, setSessionId] = useState<string | null>(
       initial?.terminal.sessionId || null,
     ),
@@ -94,7 +84,7 @@ export function SessionWorkspace({
     controllerRef,
     () => ({
       prepareMove: async () => {
-        if (tab.state === "连接中" || login || error?.kind === "hostKey")
+        if (tab.state === "连接中" || !!prompt)
           throw new Error("请完成连接或关闭认证提示后再移动会话");
         if (!terminalController.current) throw new Error("终端尚未准备好");
         const terminal = await terminalController.current.prepareMove();
@@ -111,7 +101,7 @@ export function SessionWorkspace({
         await terminalController.current?.cancelMove();
       },
     }),
-    [tab, login, error, resourceWidth, fileRatio],
+    [tab, prompt, resourceWidth, fileRatio],
   );
   const resourcePane = useRef<HTMLElement>(null);
   const page = useRef<HTMLElement>(null);
@@ -163,40 +153,15 @@ export function SessionWorkspace({
     observer.observe(resourcePane.current!.querySelector(".file-panel")!);
     return () => observer.disconnect();
   }, []);
-  function begin(server: Server, credentials: Credentials) {
-    setRestoredTerminal(undefined);
-    setLogin(null);
-    setError(null);
-    onChange(tab.id, { server: structuredClone(server), state: "连接中" });
-    setRequest({
-      server: structuredClone(server),
-      credentials,
-      attempt: Date.now(),
-    });
-  }
   function reconnect() {
-    if (!latestServer) {
-      setError({
-        kind: "notFound",
-        message: "服务器配置已删除，请重新添加服务器后建立连接。",
-      });
-      return;
-    }
-    if (!latestServer.username) {
-      setError({
-        kind: "validation",
-        message: "请先在右侧编辑服务器并填写 SSH 用户名。",
-      });
-      return;
-    }
-    const credentials = automaticCredentials(latestServer);
-    if (credentials && error?.kind !== "authentication")
-      begin(latestServer, credentials);
-    else setLogin(structuredClone(latestServer));
+    setRestoredTerminal(undefined);
+    setError(null);
+    onChange(tab.id, { state: "连接中" });
+    connection.reconnect();
   }
   function disconnect() {
     setRestoredTerminal(undefined);
-    setRequest(undefined);
+    connection.disconnect();
     setSessionId(null);
     setError(null);
     onChange(tab.id, { state: "已断开" });
@@ -350,10 +315,10 @@ export function SessionWorkspace({
           >
             {tab.state}
           </span>
-          {sessionId ? (
+          {sessionId || tab.state === "连接中" ? (
             <button className="quiet" onClick={disconnect}>
               <Unplug size={14} />
-              断开
+              {sessionId ? "断开" : "取消连接"}
             </button>
           ) : (
             <button
@@ -366,10 +331,19 @@ export function SessionWorkspace({
             </button>
           )}
         </header>
-        <div className="terminal-address">
-          {tab.server.username}@{addressOf(tab.server)}
+        <div className="terminal-address session-address">
+          <span>
+            {tab.server.username}@{addressOf(tab.server)}
+          </span>
+          {connection.view && connection.view.hops.length > 1 && (
+            <span className="connection-route" aria-label="当前连接路径">
+              <Route size={13} aria-hidden="true" />
+              本机 →{" "}
+              {connection.view.hops.map((hop) => hop.server.name).join(" → ")}
+            </span>
+          )}
         </div>
-        {error && error.kind !== "hostKey" && (
+        {error && (
           <div className="connection-error" role="alert">
             <span>{error.message}</span>
             <button
@@ -381,7 +355,7 @@ export function SessionWorkspace({
             </button>
           </div>
         )}
-        {error?.kind === "hostKey" && !active && (
+        {prompt && !active && (
           <span className="sr-only">等待核对服务器指纹</span>
         )}
         <div className="terminal-host">
@@ -395,47 +369,49 @@ export function SessionWorkspace({
             onCwdChange={setTerminalCwd}
             onState={(state) => onChange(tab.id, { state })}
             onError={setError}
+            onConnectionId={connection.setId}
+            onConnectionEvent={(event) => {
+              connection.receive(event);
+              if (event.type === "ready") {
+                onChange(tab.id, { server: event.connection.target });
+                onConfigurationChanged?.();
+              }
+            }}
           />
         </div>
         <footer className="workspace-status">
-          <span>{sessionId ? "SSH 会话已建立" : "SSH"}</span>
+          <span role="status" aria-live="polite">
+            {connection.progress || (sessionId ? "SSH 会话已建立" : "SSH")}
+          </span>
           <span>UTF-8</span>
         </footer>
       </main>
-      {active && login && (
+      {active && prompt?.type === "authRequired" && (
         <LoginDialog
-          server={login}
-          onSubmit={async (credentials) => {
-            if (login.authType === "password") {
-              const saved = await api.savePassword(
-                login.id,
-                credentials.password,
-              );
-              onServerSaved(saved);
-              begin(saved, credentials);
-            } else begin(login, credentials);
-          }}
-          onClose={() => setLogin(null)}
+          key={prompt.challenge.id}
+          challenge={prompt.challenge}
+          disabled={!connection.connectionId}
+          onSubmit={(credentials) =>
+            connection.answer(prompt.challenge.id, {
+              type: "credentials",
+              ...credentials,
+            })
+          }
+          onClose={disconnect}
         />
       )}
-      {active && error?.kind === "hostKey" && (
+      {active && prompt?.type === "hostKeyRequired" && (
         <FingerprintDialog
-          error={error}
-          onClose={() => {
-            setError(null);
-            setRequest(undefined);
-            onChange(tab.id, { state: "未连接" });
-          }}
-          onTrust={() => {
-            if (request) {
-              setRequest({
-                ...request,
-                trustFingerprint: error.fingerprint,
-                attempt: Date.now(),
-              });
-              setError(null);
-            }
-          }}
+          key={prompt.challenge.id}
+          challenge={prompt.challenge}
+          disabled={!connection.connectionId}
+          onTrust={() =>
+            connection.answer(prompt.challenge.id, {
+              type: "trust",
+              accept: true,
+            })
+          }
+          onClose={disconnect}
         />
       )}
     </section>

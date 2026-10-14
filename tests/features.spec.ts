@@ -475,7 +475,8 @@ async function fixture(label: string): Promise<Fixture> {
       tags: ["QA"],
       authType: "password",
       privateKey: "",
-      password: "fixture-password",
+      passwordChange: { type: "set", value: "fixture-password" },
+      jumpServerId: null,
     },
   });
   await main.reload();
@@ -632,7 +633,8 @@ test("server deletion supports cancellation, editor entry and filtered neighbour
             tags: [prefix],
             authType: "password",
             privateKey: "",
-            password: "fixture-password",
+            passwordChange: { type: "set", value: "fixture-password" },
+            jumpServerId: null,
           },
         }),
       );

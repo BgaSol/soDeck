@@ -24,6 +24,7 @@ import { api, desktop } from "./api";
 import { TerminalPane } from "./TerminalPane";
 import { ServerEditor } from "./ServerEditor";
 import { ServerDeleteDialog } from "./ServerDeleteDialog";
+import { DatabaseResetDialog } from "./DatabaseResetDialog";
 import { LogArchives } from "./LogArchives";
 import { FilePanel } from "./FilePanel";
 import { DockerPanel } from "./DockerPanel";
@@ -40,7 +41,7 @@ import {
   openWorkspace,
   reorderWorkspace,
 } from "./workspaces";
-import type { AppError, Server } from "./types";
+import type { AppError, Server, SaveServerRequest } from "./types";
 import type { WorkspaceTab } from "./workspaces";
 const FileEditorApp = lazy(() =>
   import("./FileEditorApp").then(({ FileEditorApp }) => ({
@@ -113,30 +114,25 @@ export function App() {
   const [workspaces, setWorkspaces] = useState(emptyWorkspaces),
     [error, setError] = useState<AppError | null>(null),
     [loading, setLoading] = useState(true);
-  const [databaseReset, setDatabaseReset] = useState(false);
+  const [databaseResetDetails, setDatabaseResetDetails] = useState<
+    string | null
+  >(null);
   const [databaseNotice, setDatabaseNotice] = useState("");
   const [deleting, setDeleting] = useState<Server | null>(null);
   const [logArchives, setLogArchives] = useState(false);
   async function resetDatabase() {
-    if (
-      databaseReset ||
-      !window.confirm(
-        "将先备份当前旧数据库，再重建空数据库。服务器配置、标签和已确认的主机指纹将清空，旧数据保留在备份中。是否继续？",
-      )
-    )
-      return;
-    setDatabaseReset(true);
+    // Keep backup errors in the dialog so the user can retry. Once reset has
+    // succeeded, retain its backup path even if refreshing the list fails.
+    const backup = await api.resetIncompatibleDatabase();
+    setDatabaseNotice(`数据库已重新创建。旧数据备份：${backup}`);
+    setDatabaseResetDetails(null);
+    setError(null);
     try {
-      const backup = await api.resetIncompatibleDatabase();
       const values = await api.listServers();
       setServers(values);
       setSelectedId(values[0]?.id || "");
-      setError(null);
-      setDatabaseNotice(`数据库已重新创建。旧数据备份：${backup}`);
     } catch (error) {
       setError(errorOf(error));
-    } finally {
-      setDatabaseReset(false);
     }
   }
   const [menu, setMenu] = useState<{
@@ -229,10 +225,11 @@ export function App() {
     },
     [],
   );
-  const updateSavedServer = useCallback((saved: Server) => {
-    setServers((current) =>
-      current.map((server) => (server.id === saved.id ? saved : server)),
-    );
+  const refreshConfigurations = useCallback(() => {
+    void api
+      .listServers()
+      .then(setServers)
+      .catch((error) => setError(errorOf(error)));
   }, []);
   function open(server: Server, forceNew = false) {
     setMenu(null);
@@ -245,7 +242,7 @@ export function App() {
     setError(null);
     setWorkspaces((current) => openWorkspace(current, server, forceNew));
   }
-  async function save(server: Server) {
+  async function save(server: SaveServerRequest) {
     const saved = await api.saveServer(server);
     setServers((values) => [
       ...values.filter((server) => server.id !== saved.id),
@@ -337,11 +334,8 @@ export function App() {
             <div className="connection-error" role="alert">
               <span style={{ whiteSpace: "pre-wrap" }}>{error.message}</span>
               {error.kind === "databaseSchema" && (
-                <button
-                  disabled={databaseReset}
-                  onClick={() => void resetDatabase()}
-                >
-                  {databaseReset ? "正在备份并重建…" : "备份旧库并重建"}
+                <button onClick={() => setDatabaseResetDetails(error.message)}>
+                  备份旧库并重建
                 </button>
               )}
               <button
@@ -375,9 +369,6 @@ export function App() {
                 <SessionWorkspace
                   tab={tab}
                   active={workspaces.activeId === tab.id}
-                  latestServer={servers.find(
-                    (server) => server.id === tab.server.id,
-                  )}
                   initial={moves.snapshots.current.get(tab.id)}
                   onReady={() => moves.ready(tab.id)}
                   controllerRef={(value) => {
@@ -385,7 +376,7 @@ export function App() {
                     else moves.handles.current.delete(tab.id);
                   }}
                   onChange={updateTab}
-                  onServerSaved={updateSavedServer}
+                  onConfigurationChanged={refreshConfigurations}
                 />
                 {moves.moving.has(tab.id) && (
                   <div className="session-moving">
@@ -444,7 +435,10 @@ export function App() {
         </div>
         <aside className="server-panel" aria-label="服务器列表">
           <div className="server-tools">
-            <button disabled={!desktop} onClick={() => setLogArchives(true)}><ScrollText size={15} />本地日志</button>
+            <button disabled={!desktop} onClick={() => setLogArchives(true)}>
+              <ScrollText size={15} />
+              本地日志
+            </button>
             <div className="panel-title">
               <h2>
                 服务器<span className="inventory-count">{servers.length}</span>
@@ -614,10 +608,18 @@ export function App() {
       {editor && (
         <ServerEditor
           initial={editor}
+          servers={servers}
           tags={tags}
           onSave={save}
           onDelete={editor.id ? requestDelete : undefined}
           onClose={() => setEditor(null)}
+        />
+      )}
+      {databaseResetDetails !== null && (
+        <DatabaseResetDialog
+          details={databaseResetDetails}
+          onReset={resetDatabase}
+          onClose={() => setDatabaseResetDetails(null)}
         />
       )}
       {deleting && (

@@ -37,6 +37,8 @@ interface Props {
   onError: (error: AppError) => void;
   onState: (state: string) => void;
   onCwdChange?: (cwd: TerminalCwd | null) => void;
+  onConnectionId?: (id: string | null) => void;
+  onConnectionEvent?: (event: TerminalEvent) => void;
 }
 export function TerminalPane({
   request,
@@ -49,13 +51,29 @@ export function TerminalPane({
   onError,
   onState,
   onCwdChange,
+  onConnectionId,
+  onConnectionEvent,
 }: Props) {
   const element = useRef<HTMLDivElement>(null),
     terminal = useRef<Terminal | null>(null),
     fit = useRef<FitAddon | null>(null),
     session = useRef<string | null>(null);
-  const callbacks = useRef({ onSession, onError, onState, onCwdChange });
-  callbacks.current = { onSession, onError, onState, onCwdChange };
+  const callbacks = useRef({
+    onSession,
+    onError,
+    onState,
+    onCwdChange,
+    onConnectionId,
+    onConnectionEvent,
+  });
+  callbacks.current = {
+    onSession,
+    onError,
+    onState,
+    onCwdChange,
+    onConnectionId,
+    onConnectionEvent,
+  };
   const latestCwd = useRef(initial?.cwd);
   const isActive = useRef(active);
   isActive.current = active;
@@ -214,6 +232,7 @@ export function TerminalPane({
     latestCwd.current = initial?.cwd;
     let cancelled = false,
       closed = false,
+      ready = !!initial,
       opened: string | null = null;
     setEnded(false);
     if (!initial) {
@@ -225,10 +244,36 @@ export function TerminalPane({
       terminal.current?.writeln(
         "\r\n\x1b[38;2;142;160;183m正在建立安全连接…\x1b[0m",
       );
+    function markReady() {
+      if (!ready || !opened || closed || cancelled) return;
+      session.current = opened;
+      callbacks.current.onSession(opened);
+      if (opened && latestCwd.current)
+        callbacks.current.onCwdChange?.({
+          sessionId: opened,
+          ...latestCwd.current,
+        });
+      if (opened) callbacks.current.onState("已连接");
+      if (isActive.current) {
+        fit.current?.fit();
+        terminal.current?.focus();
+      }
+      if (opened)
+        void invoke("terminal_resize", {
+          sessionId: opened,
+          cols: terminal.current?.cols || 100,
+          rows: terminal.current?.rows || 30,
+        }).catch(() => {});
+      readyCallback.current?.();
+    }
     const output = new Channel<TerminalEvent>();
     output.onmessage = (event) => {
       if (cancelled) return;
-      if (event.type === "frozen") {
+      callbacks.current.onConnectionEvent?.(event);
+      if (event.type === "ready") {
+        ready = true;
+        markReady();
+      } else if (event.type === "frozen") {
         terminal.current?.write("", () => {
           if (frozen.current?.token === event.token) {
             frozen.current.resolve();
@@ -256,7 +301,11 @@ export function TerminalPane({
         session.current = null;
         callbacks.current.onSession(null);
         callbacks.current.onCwdChange?.(null);
-        callbacks.current.onState("已断开");
+        callbacks.current.onConnectionId?.(null);
+        callbacks.current.onState(
+          event.reason === "failed" ? "连接失败" : "已断开",
+        );
+        if (event.error) callbacks.current.onError(event.error);
         setEnded(true);
         terminal.current?.writeln(
           `\r\n\x1b[38;2;142;160;183m${event.message}\x1b[0m`,
@@ -287,11 +336,9 @@ export function TerminalPane({
         })
       : container
         ? invoke<string>("connect_container", { output })
-        : invoke<string>("connect_terminal", {
-            serverId: request!.server.id,
-            credentials: request!.credentials,
-            trustFingerprint: request!.trustFingerprint || null,
-            output,
+        : invoke<string>("open_connection", {
+            serverId: request!.serverId,
+            events: output,
           });
     void task
       .then((id) => {
@@ -302,31 +349,18 @@ export function TerminalPane({
         }
         if (cancelled || closed) {
           if (id && !transferring.current)
-            void invoke("terminal_close", { sessionId: id }).catch(() => {});
+            void invoke("close_connection", { connectionId: id }).catch(
+              () => {},
+            );
           return;
         }
-        session.current = id;
-        callbacks.current.onSession(id);
-        if (id && latestCwd.current)
-          callbacks.current.onCwdChange?.({
-            sessionId: id,
-            ...latestCwd.current,
-          });
-        if (id) callbacks.current.onState("已连接");
-        if (isActive.current) {
-          fit.current?.fit();
-          terminal.current?.focus();
-        }
-        if (id)
-          void invoke("terminal_resize", {
-            sessionId: id,
-            cols: terminal.current?.cols || 100,
-            rows: terminal.current?.rows || 30,
-          }).catch(() => {});
-        readyCallback.current?.();
+        callbacks.current.onConnectionId?.(id);
+        markReady();
+        if (initial && !id) readyCallback.current?.();
       })
       .catch((error) => {
         if (!cancelled) {
+          callbacks.current.onConnectionId?.(null);
           callbacks.current.onState("连接失败");
           callbacks.current.onError(errorOf(error));
           setEnded(true);
@@ -336,8 +370,11 @@ export function TerminalPane({
       cancelled = true;
       session.current = null;
       callbacks.current.onSession(null);
+      callbacks.current.onConnectionId?.(null);
       if (opened && !transferring.current)
-        void invoke("terminal_close", { sessionId: opened }).catch(() => {});
+        void invoke("close_connection", { connectionId: opened }).catch(
+          () => {},
+        );
     };
   }, [request, container, initial]);
   return (

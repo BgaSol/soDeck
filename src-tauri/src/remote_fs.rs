@@ -1,7 +1,9 @@
+use crate::connection;
+use crate::ssh_transport::Cancellation;
 use crate::{
     blocking,
     model::{AppError, AppResult},
-    moves, ssh, State,
+    moves, State,
 };
 use serde::Serialize;
 use ssh2::Sftp;
@@ -154,7 +156,8 @@ pub async fn list_directory(
     moves::workspace_only(&window)?;
     let spec = state.spec(&session_id, window.label())?;
     blocking(move || {
-        let session = ssh::establish_spec(&spec)?;
+        let connection = connection::connect_verified(&spec, &Cancellation::default())?;
+        let session = connection.session();
         let sftp = session.sftp()?;
         let home = sftp
             .realpath(Path::new("."))?
@@ -181,7 +184,8 @@ pub async fn list_directory_chain(
         return Err(AppError::new("path", "缓存目录数量过多"));
     }
     blocking(move || {
-        let session = ssh::establish_spec(&spec)?;
+        let connection = connection::connect_verified(&spec, &Cancellation::default())?;
+        let session = connection.session();
         let sftp = session.sftp()?;
         let home_path = sftp
             .realpath(Path::new("."))?

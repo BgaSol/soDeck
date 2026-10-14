@@ -55,25 +55,21 @@ pub struct Source {
     pub tty: bool,
 }
 impl Source {
-    pub fn new(spec: &crate::ssh::ConnectionSpec, target: &crate::docker::ContainerTarget) -> Self {
-        let identity = serde_json::to_vec(&(
-            &spec.server.host,
-            spec.server.port,
-            &spec.server.username,
-            &spec.fingerprint,
-            &target.endpoint,
-            &target.id,
-        ))
-        .unwrap();
+    pub fn new(
+        spec: &crate::connection::SharedContext,
+        target: &crate::docker::ContainerTarget,
+    ) -> Self {
+        let identity =
+            serde_json::to_vec(&(spec.identity(), &target.endpoint, &target.id)).unwrap();
         Self {
             source_id: format!("{:x}", Sha256::digest(identity)),
-            server_id: spec.server.id.clone(),
-            server_name: spec.server.name.clone(),
+            server_id: spec.target().id.clone(),
+            server_name: spec.target().name.clone(),
             container_name: target.name.clone(),
             container_id: target.id.clone(),
             endpoint: target.endpoint.clone(),
-            host: spec.server.host.clone(),
-            port: spec.server.port,
+            host: spec.target().host.clone(),
+            port: spec.target().port,
             tty: false,
         }
     }

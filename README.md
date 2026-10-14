@@ -5,6 +5,7 @@
 ## 已实现
 
 - 右侧平铺服务器列表：新增、编辑、删除，名称/地址搜索，多标签与标签筛选。
+- 单层跳板连接：本机 → A → B，A/B 分别认证及核对指纹；终端、文件、Docker 和日志统一使用该路径。
 - 中间 SSH 交互终端：密码、私钥文件或 SSH Agent 认证，主机指纹确认，窗口尺寸同步。SSH 密码可直接保存到本机 SQLite，后续连接自动使用。
 - 多 SSH 会话 Tab：每页独立保存终端、文件目录、Docker 状态；切换时后台连接继续运行，同一服务器可以同时建立多个连接。
 - 会话标签可拖动排序；拖出主窗口成为独立窗口，也可拖回主窗口标签栏。移动时保留原 SSH 连接、终端输出和滚动位置、文件目录、Docker 树及面板尺寸。右键菜单提供相同的移动入口。
@@ -56,11 +57,17 @@ npm run tauri -- build
 | macOS   | `~/Library/Application Support/com.sshworkspace.desktop/servers.db`    |
 | Linux   | `${XDG_DATA_HOME:-~/.local/share}/com.sshworkspace.desktop/servers.db` |
 
-数据库保存服务器配置、标签、SSH 密码和已确认的服务器主机指纹。SSH 密码直接以明文存入本地 SQLite，编辑服务器时可修改或清空；私钥口令只保留在当前连接所需的内存中，私钥文件本身不会复制进数据库。
+数据库保存服务器配置、标签、SSH 密码和已确认的服务器主机指纹。SSH 密码直接以明文存入本地 SQLite，编辑服务器时可替换或明确清空；已保存密码不会返回到前端或回填输入框；私钥口令只保留在当前连接所需的内存中，私钥文件本身不会复制进数据库。
 
 程序不升级或迁移旧数据库。若打开了缺少当前必需字段的旧库，会显示实际数据库路径，并提供“备份旧库并重建”。确认后由正在运行的程序先将旧库完整备份到同一目录的 `servers.backup-*.db`，再创建空的当前结构；备份失败不会清空旧数据，结构正常的数据库拒绝重建。请以实际双击启动的程序为准验证，开发工具与桌面启动可能访问不同的文件系统视图，路径文字相同不代表是同一个文件。
 
-密码认证的服务器已保存密码时，新建会话和重新连接直接使用该密码。未保存密码时，在连接弹窗输入并自动保存；清空密码后恢复为连接时输入。密码认证失败后，点击“重新连接”可以更正并保存密码。首次连接或主机指纹变化仍需核对指纹。
+重建使用应用内确认弹窗，显示实际数据库路径；取消或按 Esc 不执行重建。处理期间禁止重复提交和关闭弹窗，失败可查看原因并重试，成功后显示备份路径。该流程不依赖 WebView 的 `window.confirm()`。前端回归使用 `npx playwright install chromium webkit` 后运行 `npm run test:database`，以模拟 IPC 检查 Chromium/WebKit 交互；真实 SQLite 备份由 `cargo test --manifest-path src-tauri/Cargo.toml db::tests` 验证。
+
+密码认证的服务器已保存密码时，新建会话和重新连接直接使用该密码。未保存密码时，在连接弹窗输入，认证成功后自动保存；清空密码后恢复为连接时输入。密码认证失败后会在当前连接中再次提示，允许更正两次。首次连接或主机指纹变化先核对指纹，再发送认证信息。
+
+配置跳板时，先保存可直接连接的服务器 A，再编辑目标服务器 B，将“连接方式”设为“通过跳板机”并选择 A。B 的地址使用 A 所在网络能访问的 IP 或域名；本机无需解析该地址。A 必须允许 SSH `direct-tcpip` 转发并能访问 B 的 SSH 端口。不依赖已打开的 A 终端，也不需要在 A 上安装客户端或复制 B 的私钥。
+
+当前只支持单层跳板。不能选择自身、引用另一条跳板路径，或把已被引用的 A 改成跳板连接；删除 A 前须先解除 B 等配置对它的引用。A/B 各自支持密码、私钥及 SSH Agent，指纹按直连/跳板网络分别保存。每项业务独立建立自己的转发连接，关闭主终端不会中断下载、文件编辑、容器终端或日志；退出应用会取消连接与下载并等待收尾、刷新日志存档。
 
 单击服务器只改变右侧选中项。双击或点击右侧“连接”打开该服务器的会话，已有会话时切换到已有 Tab。右键“新建连接”或 Tab 栏的加号可为选中的服务器再建一个独立会话，标题以 `服务器 · 2` 等编号区分。
 
@@ -78,11 +85,11 @@ npm run tauri -- build
 
 新增、修改服务器配置不会关闭已有会话；会话显示建立连接时的配置，手动重新连接使用最新保存的配置。会话列表与终端输出是运行时数据，不写入数据库。
 
-首次连接或主机指纹变化会提示核对；后续 SFTP、Docker 和容器连接均校验该次连接确认的指纹。容器窗口绑定服务器配置、Docker 引擎地址及完整容器 ID。退出整个应用会关闭所有连接。
+首次连接或主机指纹变化会提示核对；后续 SFTP、Docker 和容器连接均校验该次连接确认的指纹。文件编辑窗口、容器窗口和日志存档以已验证的连接路径区分目标；容器还绑定 Docker 引擎地址及完整容器 ID。退出整个应用会关闭所有连接。
 
 远程 Docker 功能面向具有 POSIX shell 和 Docker CLI 的服务器，使用当前 SSH 用户权限；支持 Unix socket/DOCKER_HOST，保留当前上下文解析到的引擎地址。需要上下文专用 TLS 证书或 SSH transport 的 Docker context 尚未完整支持。检测失败、权限不足、没有可用 shell 等情况会显示错误，不会自动 sudo 或修改远端服务。容器进入优先 `/bin/bash`，明确不存在时尝试 `/bin/sh`。
 
-本版本暂不提供上传、跳板机、批量执行和凭据保险库。SSH Agent 是否可用取决于系统和 libssh2 支持的代理接口，可使用密码或私钥文件连接。
+本版本暂不提供上传、多层跳板、批量执行和凭据保险库。SSH Agent 是否可用取决于系统和 libssh2 支持的代理接口，可使用密码或私钥文件连接。
 
 ## 语法高亮与容器日志
 
@@ -124,3 +131,16 @@ cargo run --manifest-path src-tauri/Cargo.toml
 详细功能约定见 [docs/feature-design.md](docs/feature-design.md)。
 
 文件树回归单独使用 `npm run test:tree`（配置 `playwright.file-tree.config.ts`），默认连接 CDP 9225 和 SSH 22225。在测试服务的 PowerShell 中设置 `SSH_WORKSPACE_FIXTURE_PORT=22225`、`SSH_WORKSPACE_FIXTURE_HOME=/home/ops`、`SSH_WORKSPACE_FIXTURE_DIR=.qa/tree-fixture`，再启动 `python tests/ssh_fixture.py`。在另一个 PowerShell 中使用上面的桌面 QA 启动流程，将 CDP 改为 9225、WebView2 目录改为 `.qa/tree-webview`、应用标识改为 `com.sshworkspace.treeqa`，下载目录使用 `.qa/tree-download-test`（先创建）。该套件覆盖根到主目录懒加载、缓存、实际终端目录协议、软链接、权限错误、会话隔离、窗口迁移、编辑和下载。可用 `SSH_WORKSPACE_QA_CDP_URL` 等环境变量覆盖测试默认值。
+
+## 跳板连接回归
+
+先运行 `npx playwright install chromium webkit`，再运行 `npm run test:connection`。套件在 Chromium/WebKit 中模拟 IPC，检查逐跳认证提示、连接 ID 返回前取消、认证等待期间取消、键盘切换、配置选择、密码保留/替换/清空，以及应用内放弃修改确认；同时检查深浅色和小窗口布局。真实传输测试使用独立的 A/B SSH 测试服务，各自有独立账号和主机密钥，B 的测试域名只能由 A 解析转发；Docker 命令由测试服务模拟。
+
+```sh
+# 先按 tests/requirements.txt 准备 .qa/venv；也可设置 SSH_TEST_PYTHON
+cargo test --manifest-path src-tauri/Cargo.toml --lib
+# SSH Agent 测试只使用这里创建的临时代理，不修改用户原有 Agent
+ssh-agent sh -c 'SSH_WORKSPACE_TEST_AGENT=1 cargo test --manifest-path src-tauri/Cargo.toml --lib connection::tests::jump_ -- --ignored --nocapture'
+```
+
+原生 Windows 窗口与跨窗口拖动仍使用既有 `test:desktop`、`test:tree` 套件；浏览器中的 IPC 模拟不能替代这些平台回归。

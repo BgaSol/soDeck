@@ -1,6 +1,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type {
   Server,
+  SaveServerRequest,
   Directory,
   DirectoryBatch,
   DockerStatus,
@@ -12,9 +13,8 @@ export const api = {
   listServers: () => invoke<Server[]>("list_servers"),
   resetIncompatibleDatabase: () =>
     invoke<string>("reset_incompatible_database"),
-  saveServer: (server: Server) => invoke<Server>("save_server", { server }),
-  savePassword: (id: string, password: string) =>
-    invoke<Server>("save_server_password", { id, password }),
+  saveServer: (server: SaveServerRequest) =>
+    invoke<Server>("save_server", { server }),
   deleteServer: (id: string) => invoke<void>("delete_server", { id }),
   directory: (sessionId: string, path?: string) =>
     invoke<Directory>("list_directory", { sessionId, path: path || null }),

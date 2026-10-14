@@ -103,3 +103,35 @@ Windows 本机构建与交互已执行。macOS、Linux 的构建检查已配置�
 - 显式百万条压力测试通过，真实 SQLite 档案完成持久化、分页和全历史中文搜索；本次 debug 测试约 324 秒，不作为生产性能基准。
 - 生产版加载内置 `http://tauri.localhost/` 资源，重启后测试存档共 24040 条保持不变，离线 Worker 搜索高亮正常，12006 条存档实际渲染 26 行 DOM。截图 `.qa/log-ingest-release.png`。
 - 旧存档已有重复不自动清理；新采集参与去重。远端轮转删除的内容无法补回，无有效 Docker 时间戳的诊断内容不做去重。
+
+## 单层 SSH 跳板连接验证
+
+2026-10-15，macOS arm64，本机独立 A/B Paramiko 测试服务。A/B 使用不同账号和主机密钥，B 的逻辑域名 `target.internal.invalid:22` 仅由 A 转发到测试目标；SSH 握手、认证、转发、PTY、SFTP 和 SQLite 为真实执行，Docker 命令响应由 fixture 模拟。未连接用户的远端服务器，未重建用户数据库。
+
+- Rust 常规测试 47 项通过；5 项需 fixture/Agent 的跳板测试另行显式执行并全部通过。原有百万日志压力测试本轮未重跑。
+- 真实传输覆盖直连回归、A/B 分别认证、5 MiB 双向 SFTP 字节校验、Docker 查询及容器 shell 回退、终端目录同步、输出冻结与迁移回放、关闭终端后独立连接继续使用、A/B 指纹变化、A/B 密码错误、禁止转发、A 断线与握手/第二跳确认期间取消。测试确认跳板打开和关闭计数最终一致。
+- 密码、加密私钥和临时 SSH Agent 的双跳认证通过。补测发现并修复了非阻塞 Agent 辅助对象在 EAGAIN 重试间释放导致的崩溃；当前显式保持 Agent 与密钥列表直到认证结束。测试代理独立创建并自动退出，不使用或清理用户原有 Agent。
+- 后台下载实测包含多任务排队、传输中取消、临时文件清理、重试及 8 MiB 文件字节比对；日志实测包含历史存档、stdout/stderr、持续采集和停止收尾。并发回归发现并修复了存档已登记、远端通道未打开时取消留下未结束 run 的问题。
+- Chromium IPC 模拟交互 4 项通过：下一跳提示早于回复确认返回、连接 ID 返回前取消并忽略迟到 Ready、已保存密码保留/替换/明确清空、跳板候选筛选与配置保存。它们验证前端时序，不代表原生 Tauri IPC 或跨窗口拖动实测。
+- 前端 61 项规则测试、TypeScript/Vite 生产构建、Rust 格式检查及 Clippy all-targets `-D warnings` 通过。macOS 调试 `.app` 构建通过，包含内置前端资源。
+- 数据库测试覆盖跳板双向约束、被引用时禁止删除、网络 scope 指纹隔离、不返回密码的 DTO、显式密码操作，以及旧跳板结构缺失时仅经明确备份重建恢复；不执行旧数据迁移。
+
+本轮没有运行 Windows WebView2/Linux 原生桌面测试，也没有对真实 OpenSSH 服务或真实 Docker 引擎实测。既有 Windows 桌面用例已更新密码接口和认证重试预期，仅验证可发现/解析；Windows 回环 socket 配对实现仍需该平台运行验证。详细命令见 README 的“跳板连接回归”。
+
+## macOS 数据库重建确认修复
+
+2026-10-15，macOS arm64。将“备份旧库并重建”的浏览器 `window.confirm()` 替换为应用内模态确认框；项目当前 Wry 的 macOS delegate 未实现 JavaScript confirm 回调，WKWebView 对这种情况默认按取消处理。确认框展示实际数据库路径、清空范围及备份失败保护，失败保留弹窗供重试。
+
+- `npm run test:database`：Chromium/WebKit 共 8 项通过，模拟 Tauri IPC 并让 `window.confirm()` 抛错，覆盖取消/Esc 不调用重建、执行中禁止取消与重复提交、失败重试、成功展示备份路径，以及刷新列表失败仍保留备份路径。
+- `cargo test --manifest-path src-tauri/Cargo.toml db::tests`：10 项真实 SQLite 测试通过，包括旧库备份内容、备份失败不修改原库、重建后重新打开及正常结构拒绝重建。
+- 前端 61 项测试及 TypeScript/Vite 生产构建通过。前端交互测试使用浏览器 WebKit，不等同于原生 Tauri 窗口端到端测试；本轮未重建用户实际数据库。
+- `npm run tauri -- build --debug --bundles app` 成功，更新了包含内置页面的 `src-tauri/target/debug/bundle/macos/SSH Workspace.app`，需退出已运行的旧进程后重新打开。
+
+## 跳板连接界面设计复核
+
+2026-10-15，使用已安装的 apple-design skill 整理配置、认证与连接状态界面。配置采用分组表单、直连/跳板分段选择和路径预览；操作栏固定，保存失败原因不随内容滚走；密码保存/清空/替换有明确状态。认证弹窗标明服务器角色与跳点，指纹变化显示新旧记录，等待 IPC 回复仍能取消。放弃未保存配置改用窗口内确认，不依赖系统 confirm。
+
+- `npm run test:connection`：Chromium/WebKit 共 14 项通过，包含原有连接时序、密码操作，以及键盘方向键切换、跳板选择恢复、初始焦点、Esc、认证回复等待期间取消、无系统确认框时继续编辑/放弃修改。
+- 实际截图检查 1440×950 深浅色及 860×580 小窗口，保存按钮保持可见，长名称和指纹可换行，无弹窗横向溢出；同时以减少动态效果和高对比度配置运行。WebKit 下统一了 select 高度，表单使用实色背景，避免背景文字透出干扰阅读。
+- 前端规则测试 61 项通过；既有数据库弹窗 Chromium/WebKit 回归 8 项通过；TypeScript/Vite 及包含内置前端的 macOS 调试 `.app` 构建通过。
+- 界面测试使用浏览器中的 IPC 模拟，不等同于原生 Tauri 窗口端到端测试。截图位于 `.qa/jump-design-editor-{light,dark,small}.png`、`.qa/jump-design-fingerprint-{light,dark}.png` 与 `.qa/jump-design-login-light.png`。

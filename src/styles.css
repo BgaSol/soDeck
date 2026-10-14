@@ -963,7 +963,8 @@ button.delete-confirm {
   border-color: var(--error);
   color: #fff;
 }
-.server-delete-dialog {
+.server-delete-dialog,
+.database-reset-dialog {
   width: 420px;
 }
 .server-delete-target {
@@ -976,10 +977,16 @@ button.delete-confirm {
   color: var(--muted);
   font: 12px var(--mono);
 }
-.server-delete-dialog p {
+.server-delete-dialog p,
+.database-reset-dialog p {
   font-size: 13px;
   line-height: 1.7;
   margin-bottom: 16px;
+}
+.database-reset-details {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--muted);
 }
 .sr-only {
   position: absolute;
@@ -1127,6 +1134,383 @@ dialog .form-columns.equal {
   border-radius: 8px;
   padding: 11px;
   overflow-wrap: anywhere;
+}
+/* Server setup: one scrolling form, stable actions and grouped controls. */
+.editor-dialog,
+.connection-dialog {
+  background: var(--surface);
+  -webkit-backdrop-filter: blur(28px) saturate(140%);
+}
+.editor-dialog::backdrop,
+.connection-dialog::backdrop {
+  -webkit-backdrop-filter: blur(3px);
+}
+.editor-dialog {
+  width: 36rem;
+  padding: 0;
+  overflow: hidden;
+}
+.editor-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.editor-dialog > .dialog-head {
+  flex: none;
+  margin: 0;
+  padding: 1.3rem 1.7rem 1.1rem;
+}
+.editor-subtitle {
+  font-size: 0.86rem;
+  margin-top: 0.4rem;
+}
+.editor-dialog select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4.5 3 3 3-3' fill='none' stroke='%238a8a94' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-position: right 0.7rem center;
+  background-repeat: no-repeat;
+}
+.editor-dialog > form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 0;
+}
+.editor-fields {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.1rem 1.7rem 1.1rem;
+  display: grid;
+  gap: 1.1rem;
+  scrollbar-gutter: stable;
+  scroll-padding-block: 0.5rem;
+}
+.server-form-section {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+.server-form-section + .server-form-section {
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line);
+}
+.server-form-section legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.server-form-section legend + * {
+  clear: both;
+}
+.server-form-section legend .muted {
+  margin-left: 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+.editor-dialog .dialog-actions {
+  flex: none;
+  margin: 0;
+  padding: 1rem 1.7rem;
+  background: var(--surface);
+}
+.field-help {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.connection-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  min-width: 0;
+  margin: 0;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--tag);
+}
+.connection-choice label {
+  position: relative;
+  min-width: 0;
+  cursor: pointer;
+}
+.connection-choice input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  opacity: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.connection-choice span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.4rem;
+  padding: 0.45rem;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  font-weight: 500;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+.connection-choice input:checked + span {
+  background: var(--surface);
+  border-color: var(--line);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+.connection-choice input:focus-visible + span {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+.connection-choice label:active span {
+  background: var(--hover);
+  transition: none;
+}
+.connection-choice input:disabled + span {
+  opacity: 0.55;
+  cursor: default;
+}
+.jump-settings {
+  display: grid;
+  gap: 0.5rem;
+}
+.route-preview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0.9rem 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--field);
+}
+.route-preview li {
+  min-width: 0;
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.3rem 0.4rem;
+  padding: 0 1rem;
+}
+.route-preview li > svg:not(.route-arrow) {
+  color: var(--muted);
+  margin-bottom: 0.15rem;
+  flex-shrink: 0;
+}
+.route-preview strong {
+  font-size: 0.85rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.route-preview small {
+  grid-column: 2;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.route-arrow {
+  position: absolute;
+  left: -7px;
+  top: 0.7rem;
+  color: var(--muted);
+}
+.route-placeholder strong {
+  color: var(--muted);
+  font-weight: 400;
+}
+.password-field {
+  display: grid;
+  gap: 0.5rem;
+}
+.password-field-heading,
+.password-field-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.password-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--green);
+  font-size: 0.78rem;
+}
+.password-state.pending {
+  color: var(--muted);
+}
+.password-field-footer .password-action {
+  color: var(--blue);
+  font-size: 0.8rem;
+  padding: 4px 6px;
+  margin-right: -6px;
+}
+.server-tags-section .edit-tags:empty {
+  display: none;
+}
+.connection-dialog {
+  width: 32rem;
+  padding: 1.6rem;
+}
+.connection-dialog .dialog-head {
+  margin-bottom: 1.25rem;
+}
+.connection-dialog .dialog-head h2 {
+  font-size: 1.25rem;
+}
+.connection-dialog-content,
+.connection-dialog form {
+  display: grid;
+  gap: 1.1rem;
+}
+.connection-hop {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1rem;
+}
+.connection-hop-icon {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  flex: none;
+}
+.connection-hop-details {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  flex: 1;
+}
+.connection-hop-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.connection-hop-details strong {
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.connection-hop-address {
+  font: 0.78rem/1.6 var(--mono);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.connection-hop-user {
+  white-space: nowrap;
+}
+.editor-save-error {
+  flex: none;
+  margin: 0;
+  padding: 0.8rem 1.7rem;
+  background: var(--error-bg);
+}
+.editor-discard-actions {
+  flex-wrap: wrap;
+}
+.editor-discard-actions p {
+  flex: 1 0 100%;
+  font-size: 0.9rem;
+}
+.editor-discard-actions .discard-changes {
+  color: var(--error);
+}
+.connection-hop-step {
+  color: var(--muted);
+  font-size: 0.72rem;
+  align-self: flex-start;
+  flex: none;
+  padding-top: 0.1rem;
+}
+.connection-explanation {
+  font-size: 0.9rem;
+  line-height: 1.65;
+}
+.connection-feedback {
+  padding: 0.8rem 0.9rem;
+  border-radius: 9px;
+  background: var(--error-bg);
+  overflow-wrap: anywhere;
+}
+.fingerprint-list {
+  display: grid;
+  gap: 0.9rem;
+  margin: 0;
+}
+.fingerprint-list dt {
+  font-size: 0.8rem;
+  font-weight: 500;
+  margin-bottom: 0.4rem;
+}
+.fingerprint-list dd {
+  margin: 0;
+}
+.fingerprint-list code {
+  font-size: 0.8rem;
+  line-height: 1.8;
+  user-select: text;
+}
+.fingerprint-previous {
+  color: var(--muted);
+}
+.connection-dialog > .dialog-actions {
+  margin-top: 1.25rem;
+}
+.session-address {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 1.1rem;
+}
+.connection-route {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font:
+    0.78rem/1.5 -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+.connection-route svg {
+  flex-shrink: 0;
+}
+@media (max-width: 480px) {
+  .editor-dialog > .dialog-head,
+  .editor-dialog .dialog-actions {
+    padding: 1.1rem;
+  }
+  .editor-fields {
+    padding: 0.1rem 1.1rem 1.1rem;
+  }
+  .connection-dialog {
+    padding: 1.25rem;
+  }
+  .connection-hop {
+    gap: 0.65rem;
+    padding: 0.85rem;
+  }
+  .connection-hop-step {
+    font-size: 0.7rem;
+  }
 }
 .container-app {
   height: 100dvh;
@@ -1323,8 +1707,13 @@ dialog .form-columns.equal {
   .container-topbar,
   dialog,
   dialog::backdrop,
+  .editor-dialog,
+  .connection-dialog,
+  .editor-dialog::backdrop,
+  .connection-dialog::backdrop,
   .server-context-menu {
     backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 }
 @media (prefers-contrast: more) {

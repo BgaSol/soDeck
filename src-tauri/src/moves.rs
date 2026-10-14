@@ -1,6 +1,7 @@
 use crate::{
+    connection,
     model::{AppError, AppResult},
-    ssh, State,
+    terminal, State,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -64,15 +65,18 @@ pub fn workspace_only(window: &WebviewWindow) -> AppResult<()> {
 }
 
 fn owned_terminal<'a>(
-    terminals: &'a HashMap<String, ssh::TerminalHandle>,
+    terminals: &'a HashMap<String, connection::ConnectionHandle>,
     id: &str,
     owner: &str,
-) -> AppResult<&'a ssh::TerminalHandle> {
+) -> AppResult<&'a connection::ConnectionHandle> {
     let terminal = terminals
         .get(id)
         .ok_or_else(|| AppError::new("disconnected", "SSH 会话已经结束"))?;
     if terminal.window != owner {
         return Err(AppError::new("permission", "此窗口无权访问该会话"));
+    }
+    if terminal.spec.is_none() {
+        return Err(AppError::new("connecting", "连接中无法移动会话"));
     }
     Ok(terminal)
 }
@@ -126,7 +130,7 @@ pub fn terminal_attach(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
     session_id: String,
-    output: Channel<ssh::TerminalEvent>,
+    output: Channel<connection::ConnectionEvent>,
 ) -> AppResult<()> {
     let pending = state.moves.pending.lock().unwrap();
     if !pending.values().any(|entry| {
@@ -405,7 +409,7 @@ fn rollback(app: &tauri::AppHandle, state: &State, id: &str, message: &str, sour
                 let mut stream = terminal.stream.lock().unwrap();
                 if source_gone {
                     stream.abandon();
-                    let _ = terminal.sender.send(ssh::Input::Close);
+                    let _ = terminal.sender.send(terminal::Input::Close);
                 } else {
                     stream.rollback();
                 }
@@ -463,7 +467,7 @@ pub fn window_unavailable(app: &tauri::AppHandle, state: &State, label: &str, re
         }
         let mut stream = terminal.stream.lock().unwrap();
         stream.abandon();
-        let _ = terminal.sender.send(ssh::Input::Close);
+        let _ = terminal.sender.send(terminal::Input::Close);
         !stream.closed
     });
 }

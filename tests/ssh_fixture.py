@@ -492,10 +492,21 @@ class Server(paramiko.ServerInterface):
         if username == "ops-delay" and (QA / "auth-delay").exists():
             time.sleep(2)
             log("delayed-auth-finished", username=username)
-        return paramiko.AUTH_SUCCESSFUL if username in ("ops", "ops-delay") and password == "fixture-password" else paramiko.AUTH_FAILED
+        allowed = (os.environ.get("SSH_WORKSPACE_FIXTURE_USER", "ops"), "ops-delay")
+        expected = os.environ.get("SSH_WORKSPACE_FIXTURE_PASSWORD", "fixture-password")
+        log("authentication", username=username, method="password", accepted=username in allowed and password == expected)
+        return paramiko.AUTH_SUCCESSFUL if username in allowed and password == expected else paramiko.AUTH_FAILED
+
+    def check_auth_publickey(self, username, key):
+        self.username = username
+        key_file = os.environ.get("SSH_WORKSPACE_FIXTURE_PUBLIC_KEY")
+        expected = Path(key_file).read_text().split()[1] if key_file else ""
+        accepted = username == os.environ.get("SSH_WORKSPACE_FIXTURE_USER", "ops") and key.get_base64() == expected
+        log("authentication", username=username, method="publickey", accepted=accepted)
+        return paramiko.AUTH_SUCCESSFUL if accepted else paramiko.AUTH_FAILED
 
     def get_allowed_auths(self, username):
-        return "password"
+        return "password,publickey"
 
     def check_channel_request(self, kind, chanid):
         return paramiko.OPEN_SUCCEEDED if kind == "session" else paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED

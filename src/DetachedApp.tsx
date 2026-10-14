@@ -7,7 +7,7 @@ import { DownloadPanel } from "./DownloadPanel";
 import { useWorkspaceMoves } from "./useWorkspaceMoves";
 import { emptyWorkspaces, reorderWorkspace } from "./workspaces";
 import type { WorkspaceTab } from "./workspaces";
-import type { AppError, Server } from "./types";
+import type { AppError } from "./types";
 
 export function DetachedApp() {
   const [workspaces, setWorkspaces] = useState(emptyWorkspaces);
@@ -18,16 +18,6 @@ export function DetachedApp() {
       setWorkspaces((current) => ({
         ...current,
         tabs: current.tabs.map((t) => (t.id === id ? { ...t, ...patch } : t)),
-      })),
-    [],
-  );
-  const saved = useCallback(
-    (server: Server) =>
-      setWorkspaces((current) => ({
-        ...current,
-        tabs: current.tabs.map((t) =>
-          t.server.id === server.id ? { ...t, server } : t,
-        ),
       })),
     [],
   );
@@ -68,7 +58,6 @@ export function DetachedApp() {
               <SessionWorkspace
                 tab={tab}
                 active={workspaces.activeId === tab.id}
-                latestServer={tab.server}
                 initial={moves.snapshots.current.get(tab.id)}
                 onReady={() => moves.ready(tab.id)}
                 controllerRef={(value) => {
@@ -76,7 +65,6 @@ export function DetachedApp() {
                   else moves.handles.current.delete(tab.id);
                 }}
                 onChange={update}
-                onServerSaved={saved}
               />
               {moves.moving.has(tab.id) && (
                 <div className="session-moving">

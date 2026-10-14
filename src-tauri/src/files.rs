@@ -1,7 +1,9 @@
+use crate::connection::{self, SharedContext};
+use crate::ssh_transport::Cancellation;
 use crate::{
     blocking,
     model::{AppError, AppResult},
-    ssh, State,
+    State,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -15,7 +17,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc, Condvar, Mutex,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tauri::{Manager, State as TauriState, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
@@ -31,7 +33,7 @@ pub struct FileState {
 
 #[derive(Clone)]
 struct EditorHandle {
-    spec: ssh::ConnectionSpec,
+    spec: SharedContext,
     path: String,
     gate: Arc<Mutex<()>>,
     dirty: Arc<AtomicBool>,
@@ -102,7 +104,7 @@ fn revision(bytes: &[u8]) -> String {
 
 fn document(editor: &EditorHandle, bytes: &[u8]) -> AppResult<EditorDocument> {
     Ok(EditorDocument {
-        server_name: editor.spec.server.name.clone(),
+        server_name: editor.spec.target().name.clone(),
         path: editor.path.clone(),
         text: validate_text(bytes)?.to_owned(),
         version: revision(bytes),
@@ -142,7 +144,8 @@ pub async fn open_editor(
 ) -> AppResult<String> {
     let spec = state.spec(&session_id, window.label())?;
     let editor = blocking(move || {
-        let session = ssh::establish_spec(&spec)?;
+        let connection = connection::connect_verified(&spec, &Cancellation::default())?;
+        let session = connection.session();
         let sftp = session.sftp()?;
         let canonical = sftp
             .realpath(remote_path(&path)?)?
@@ -158,9 +161,11 @@ pub async fn open_editor(
     })
     .await?;
     let (label, create) = {
+        let _gate = state.configuration.lock().unwrap();
+        state.check_context(&editor.spec)?;
         let mut editors = state.files.editors.lock().unwrap();
         if let Some((label, _)) = editors.iter().find(|(_, item)| {
-            item.spec.server.id == editor.spec.server.id && item.path == editor.path
+            item.spec.identity() == editor.spec.identity() && item.path == editor.path
         }) {
             (label.clone(), false)
         } else {
@@ -180,7 +185,7 @@ pub async fn open_editor(
     }
     let result =
         WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("index.html?editor=1".into()))
-            .title(format!("{} — {}", editor.path, editor.spec.server.name))
+            .title(format!("{} — {}", editor.path, editor.spec.target().name))
             .inner_size(960.0, 720.0)
             .min_inner_size(560.0, 360.0)
             .build();
@@ -214,14 +219,52 @@ fn editor_for(state: &State, window: &WebviewWindow) -> AppResult<EditorHandle> 
 }
 
 impl FileState {
+    pub fn has_activity(&self) -> bool {
+        !self.editors.lock().unwrap().is_empty()
+            || self.downloads.lock().unwrap().iter().any(|item| {
+                matches!(
+                    item.task.lock().unwrap().status.as_str(),
+                    "queued" | "scanning" | "running"
+                )
+            })
+    }
+    pub fn cancel_all(&self) {
+        for item in self.downloads.lock().unwrap().iter() {
+            item.cancel.cancel();
+        }
+        self.download_slot.notify_all();
+    }
+    pub fn wait_downloads(&self) -> AppResult<()> {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            let pending = self.downloads.lock().unwrap().iter().any(|item| {
+                matches!(
+                    item.task.lock().unwrap().status.as_str(),
+                    "queued" | "scanning" | "running"
+                )
+            });
+            let active = self.active_downloads.lock().unwrap();
+            if !pending && *active == 0 {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                return Err(AppError::new("busy", "下载任务尚未结束，请稍后再次退出"));
+            }
+            drop(
+                self.download_slot
+                    .wait_timeout(active, Duration::from_millis(100))
+                    .unwrap(),
+            );
+        }
+    }
     pub fn has_server_activity(&self, id: &str) -> bool {
         self.editors
             .lock()
             .unwrap()
             .values()
-            .any(|editor| editor.spec.server.id == id)
+            .any(|editor| editor.spec.uses_server(id))
             || self.downloads.lock().unwrap().iter().any(|item| {
-                item.spec.server.id == id
+                item.spec.uses_server(id)
                     && matches!(
                         item.task.lock().unwrap().status.as_str(),
                         "queued" | "scanning" | "running"
@@ -267,7 +310,8 @@ pub async fn editor_load(
     let editor = editor_for(&state, &window)?;
     blocking(move || {
         let _gate = editor.gate.lock().unwrap();
-        let session = ssh::establish_spec(&editor.spec)?;
+        let connection = connection::connect_verified(&editor.spec, &Cancellation::default())?;
+        let session = connection.session();
         let (bytes, _) = text_bytes(&session.sftp()?, &editor.path)?;
         document(&editor, &bytes)
     })
@@ -286,7 +330,8 @@ pub async fn editor_save(
     validate_text(text.as_bytes())?;
     blocking(move || {
         let _gate = editor.gate.lock().unwrap();
-        let session = ssh::establish_spec(&editor.spec)?;
+        let connection = connection::connect_verified(&editor.spec, &Cancellation::default())?;
+        let session = connection.session();
         let sftp = session.sftp()?;
         let (before, stat) = text_bytes(&sftp, &editor.path)?;
         if !force && revision(&before) != version {
@@ -323,7 +368,7 @@ pub async fn editor_save(
                     "保存期间远端文件发生变化，请重试",
                 ));
             }
-            atomic_remote_replace(&session, &sftp, &temp, &editor.path)?;
+            atomic_remote_replace(session, &sftp, &temp, &editor.path)?;
             Ok(())
         })();
         if result.is_err() {
@@ -461,9 +506,9 @@ pub struct DownloadTask {
 
 #[derive(Clone)]
 struct DownloadHandle {
-    spec: ssh::ConnectionSpec,
+    spec: SharedContext,
     task: Arc<Mutex<DownloadTask>>,
-    cancel: Arc<AtomicBool>,
+    cancel: Cancellation,
     destination: PathBuf,
 }
 
@@ -540,15 +585,17 @@ pub async fn start_download(
     let Some(destination) = destination else {
         return Ok(None);
     };
+    let _gate = state.configuration.lock().unwrap();
+    state.check_context(&spec)?;
     reject_links(&destination)?;
     let id = uuid::Uuid::new_v4().to_string();
     let item = DownloadHandle {
         spec: spec.clone(),
         destination: destination.clone(),
-        cancel: Arc::new(AtomicBool::new(false)),
+        cancel: Cancellation::default(),
         task: Arc::new(Mutex::new(DownloadTask {
             id: id.clone(),
-            server_name: spec.server.name,
+            server_name: spec.target().name.clone(),
             remote_path: path,
             local_path: destination.to_string_lossy().to_string(),
             is_dir,
@@ -575,7 +622,8 @@ pub fn cancel_download(
 ) -> AppResult<()> {
     download_window(&window)?;
     let item = find_download(&state, &id)?;
-    item.cancel.store(true, Ordering::Relaxed);
+    let _task = item.task.lock().unwrap();
+    item.cancel.cancel();
     state.files.download_slot.notify_all();
     Ok(())
 }
@@ -587,12 +635,16 @@ pub fn retry_download(
     id: String,
 ) -> AppResult<()> {
     download_window(&window)?;
+    let _gate = state.configuration.lock().unwrap();
+    state.ensure_running()?;
     let item = find_download(&state, &id)?;
+    state.check_context(&item.spec)?;
     {
         let mut task = item.task.lock().unwrap();
         if task.status != "failed" && task.status != "cancelled" {
             return Err(AppError::new("download", "只有失败或已取消的任务可以重试"));
         }
+        item.cancel.reset()?;
         task.status = "queued".into();
         task.bytes_done = 0;
         task.bytes_total = 0;
@@ -601,7 +653,6 @@ pub fn retry_download(
         task.skipped = 0;
         task.error = None;
     }
-    item.cancel.store(false, Ordering::Relaxed);
     launch_download(state.inner().clone(), item);
     Ok(())
 }
@@ -619,7 +670,7 @@ fn find_download(state: &State, id: &str) -> AppResult<DownloadHandle> {
 }
 
 fn check_cancel(item: &DownloadHandle) -> AppResult<()> {
-    if item.cancel.load(Ordering::Relaxed) {
+    if item.cancel.is_cancelled() {
         Err(AppError::new("cancelled", "下载已取消"))
     } else {
         Ok(())
@@ -629,7 +680,7 @@ fn check_cancel(item: &DownloadHandle) -> AppResult<()> {
 fn launch_download(state: Arc<State>, item: DownloadHandle) {
     std::thread::spawn(move || {
         let mut active = state.files.active_downloads.lock().unwrap();
-        while *active >= 3 && !item.cancel.load(Ordering::Relaxed) {
+        while *active >= 3 && !item.cancel.is_cancelled() {
             active = state
                 .files
                 .download_slot
@@ -645,7 +696,7 @@ fn launch_download(state: Arc<State>, item: DownloadHandle) {
             match result {
                 Ok(()) => task.status = "completed".into(),
                 Err(error) => {
-                    task.status = if error.kind == "cancelled" {
+                    task.status = if item.cancel.is_cancelled() || error.kind == "cancelled" {
                         "cancelled"
                     } else {
                         "failed"
@@ -719,7 +770,8 @@ fn scan_directory(
 fn run_download(item: &DownloadHandle) -> AppResult<()> {
     check_cancel(item)?;
     item.task.lock().unwrap().status = "scanning".into();
-    let session = ssh::establish_spec(&item.spec)?;
+    let connection = connection::connect_verified(&item.spec, &item.cancel)?;
+    let session = connection.session();
     let sftp = session.sftp()?;
     let task = item.task.lock().unwrap().clone();
     let stat = sftp.lstat(remote_path(&task.remote_path)?)?;
@@ -961,8 +1013,84 @@ fn download_file(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    pub(crate) fn exercise_jump_downloads(
+        state: Arc<State>,
+        context: SharedContext,
+        fixture: &Path,
+    ) {
+        let output = tempfile::tempdir().unwrap();
+        let destination = fs::canonicalize(output.path()).unwrap();
+        let make = |name: &str, remote: &str| DownloadHandle {
+            spec: context.clone(),
+            destination: destination.join(name),
+            cancel: Cancellation::default(),
+            task: Arc::new(Mutex::new(DownloadTask {
+                id: name.into(),
+                server_name: "target".into(),
+                remote_path: remote.into(),
+                local_path: destination.join(name).display().to_string(),
+                is_dir: false,
+                conflict: ConflictPolicy::Overwrite,
+                status: "queued".into(),
+                bytes_done: 0,
+                bytes_total: 0,
+                files_done: 0,
+                files_total: 0,
+                skipped: 0,
+                error: None,
+            })),
+        };
+        let item = make("readme.txt", "/readme.txt");
+        state.files.downloads.lock().unwrap().push(item.clone());
+        launch_download(state.clone(), item.clone());
+        state.files.wait_downloads().unwrap();
+        assert_eq!(item.task.lock().unwrap().status, "completed");
+        assert_eq!(
+            fs::read(&item.destination).unwrap(),
+            fs::read(fixture.join("remote/readme.txt")).unwrap()
+        );
+
+        fs::write(fixture.join("sftp-read-delay"), "0.05").unwrap();
+        let items: Vec<_> = (0..5)
+            .map(|i| make(&format!("slow-{i}.bin"), "/download/slow.bin"))
+            .collect();
+        for item in &items {
+            state.files.downloads.lock().unwrap().push(item.clone());
+            launch_download(state.clone(), item.clone());
+        }
+        let deadline = Instant::now() + Duration::from_secs(12);
+        while !items.iter().any(|i| i.task.lock().unwrap().bytes_done > 0) {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let start = Instant::now();
+        state.files.cancel_all();
+        state.files.wait_downloads().unwrap();
+        assert!(start.elapsed() < Duration::from_secs(3));
+        for item in &items {
+            assert_eq!(item.task.lock().unwrap().status, "cancelled");
+            assert!(!item.destination.exists());
+        }
+        assert_eq!(
+            fs::read_dir(&destination).unwrap().count(),
+            1,
+            "cancelled downloads leave no .part files"
+        );
+        fs::remove_file(fixture.join("sftp-read-delay")).unwrap();
+        let retry = items[0].clone();
+        retry.cancel.reset().unwrap();
+        retry.task.lock().unwrap().status = "queued".into();
+        launch_download(state.clone(), retry.clone());
+        state.files.wait_downloads().unwrap();
+        assert_eq!(retry.task.lock().unwrap().status, "completed");
+        assert_eq!(
+            fs::read(retry.destination).unwrap(),
+            fs::read(fixture.join("remote/download/slow.bin")).unwrap()
+        );
+    }
 
     #[test]
     fn text_validation_and_encoding_preserve_bom_and_crlf() {

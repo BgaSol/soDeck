@@ -119,8 +119,8 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
     expect(
       (await ipc<any[]>(main, "list_servers")).find(
         (server) => server.id === first.id,
-      ).password,
-    ).toBe("fixture-password");
+      ).hasSavedPassword,
+    ).toBe(true);
     await expect(main.locator(".terminal-surface")).toContainText(
       "Fixture host ready",
     );
@@ -130,10 +130,14 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
     await expect(main.locator(".terminal-surface")).toContainText(
       /main-marker\s*ops@host/,
     );
-    await expect(main.locator('.file-row[data-path="/projects"]')).toBeVisible();
+    await expect(
+      main.locator('.file-row[data-path="/projects"]'),
+    ).toBeVisible();
     await main.locator('.file-row[data-path="/projects"]').click();
     await expect(main.getByLabel("远程目录路径")).toHaveValue("/projects");
-    await expect(main.locator('.file-row[data-path="/projects/hello.txt"]')).toBeVisible();
+    await expect(
+      main.locator('.file-row[data-path="/projects/hello.txt"]'),
+    ).toBeVisible();
     await main.getByRole("button", { name: "上一级目录" }).click();
     await expect(main.getByLabel("远程目录路径")).toHaveValue("/");
     await expect(main.locator(".docker-root")).toContainText("运行中");
@@ -399,9 +403,7 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
     await expect(
       active().getByText("nginx:alpine", { exact: true }),
     ).toBeVisible();
-    await active()
-      .locator('.file-row[data-path="/readme.txt"]')
-      .click();
+    await active().locator('.file-row[data-path="/readme.txt"]').click();
     await expect(active().locator(".file-row.selected")).toContainText(
       "readme.txt",
     );
@@ -447,9 +449,7 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
     ).toBeEnabled();
     // A directory result arriving after a switch belongs to A, not the active B page.
     await writeFile(".qa/sftp-delay", "1");
-    await active()
-      .locator('.file-row[data-path="/projects"]')
-      .click();
+    await active().locator('.file-row[data-path="/projects"]').click();
     await main
       .getByRole("tab", { name: `${nameB}，已连接`, exact: true })
       .click();
@@ -618,7 +618,7 @@ test("failed, pending and remotely closed tabs do not affect other connections",
     await main.reload();
     await main.locator(".server-row").filter({ hasText: name }).dblclick();
     await authenticate(main);
-    // Wrong credentials fail only the duplicate; the original is still available.
+    // Wrong credentials prompt only the duplicate; the original stays connected.
     await main.getByRole("button", { name: "编辑", exact: true }).click();
     await main
       .getByRole("dialog")
@@ -629,27 +629,19 @@ test("failed, pending and remotely closed tabs do not affect other connections",
       .getByRole("button", { name: "保存", exact: true })
       .click();
     await main.getByRole("button", { name: "新建连接", exact: true }).click();
+    // Invalid stored credentials prompt again in the same connection attempt.
     await expect(
-      main.getByRole("tab", { name: `${name} · 2，连接失败`, exact: true }),
+      main.getByRole("dialog").getByLabel("密码", { exact: true }),
     ).toBeVisible();
-    await expect.poll(() => ipc<number>(main, "session_count")).toBe(1);
-    await main
-      .getByRole("tab", { name: `${name}，已连接`, exact: true })
-      .click();
-    await expect(active().locator(".connection-state")).toHaveText("已连接");
-    // Failed stored credentials can be corrected without disturbing the original SSH.
-    await main
-      .getByRole("tab", { name: `${name} · 2，连接失败`, exact: true })
-      .click();
-    await active()
-      .getByRole("button", { name: "重新连接", exact: true })
-      .click();
+    await expect(
+      main.getByRole("tab", { name: `${name}，已连接`, exact: true }),
+    ).toBeVisible();
     await authenticate(main);
     expect(
       (await ipc<any[]>(main, "list_servers")).find(
         (value) => value.id === server.id,
-      ).password,
-    ).toBe("fixture-password");
+      ).hasSavedPassword,
+    ).toBe(true);
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(2);
     await main
       .getByRole("button", { name: `关闭 ${name} · 2 会话`, exact: true })
@@ -755,7 +747,7 @@ test("saved passwords survive reload, connect automatically and can be cleared",
   async function storedPassword() {
     return (await ipc<any[]>(main, "list_servers")).find(
       (server) => server.id === serverId,
-    ).password;
+    ).hasSavedPassword;
   }
   async function waitForAutoConnection() {
     await expect(async () => {
@@ -788,8 +780,10 @@ test("saved passwords survive reload, connect automatically and can be cleared",
     await main.reload();
     await main.locator(".server-row").filter({ hasText: name }).click();
     await main.getByRole("button", { name: "编辑", exact: true }).click();
-    await expect(editor.getByLabel("密码", { exact: true })).toHaveValue(
-      "fixture-password",
+    await expect(editor.getByLabel("密码", { exact: true })).toHaveValue("");
+    await expect(editor.getByLabel("密码", { exact: true })).toHaveAttribute(
+      "placeholder",
+      /已保存/,
     );
     await editor.getByRole("button", { name: "取消", exact: true }).click();
     await main.locator(".server-row").filter({ hasText: name }).dblclick();
@@ -806,9 +800,9 @@ test("saved passwords survive reload, connect automatically and can be cleared",
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(2);
     // Clearing the configuration must not disconnect either already established SSH.
     await main.getByRole("button", { name: "编辑", exact: true }).click();
-    await editor.getByLabel("密码", { exact: true }).fill("");
+    await editor.getByRole("button", { name: "清空已保存密码" }).click();
     await editor.getByRole("button", { name: "保存", exact: true }).click();
-    expect(await storedPassword()).toBe("");
+    expect(await storedPassword()).toBe(false);
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(2);
     await active().getByRole("button", { name: "断开", exact: true }).click();
     await active()
@@ -818,7 +812,7 @@ test("saved passwords survive reload, connect automatically and can be cleared",
       main.getByRole("dialog").getByLabel("密码", { exact: true }),
     ).toHaveValue("");
     await authenticate(main);
-    expect(await storedPassword()).toBe("fixture-password");
+    expect(await storedPassword()).toBe(true);
     await main.reload();
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(0);
     await main.locator(".server-row").filter({ hasText: name }).dblclick();
