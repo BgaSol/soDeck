@@ -372,6 +372,7 @@ button.quiet:hover {
 }
 .server-footer button {
   font-size: 12px;
+  padding-inline: 9px;
 }
 .workspaces {
   display: flex;
@@ -472,10 +473,9 @@ button.quiet:hover {
 .session-page {
   height: 100%;
   display: grid;
-  grid-template-columns: min(
-      var(--resource-width, 320px),
-      calc(100vw - 568px)
-    ) 10px minmax(280px, 1fr);
+  grid-template-columns:
+    min(var(--resource-width, 320px), calc(100vw - 568px))
+    10px minmax(280px, 1fr);
   min-height: 0;
   min-width: 0;
 }
@@ -957,6 +957,30 @@ button.quiet:hover {
   background: var(--blue);
   color: #fff;
 }
+.server-context-menu button.danger:hover,
+button.delete-confirm {
+  background: var(--error);
+  border-color: var(--error);
+  color: #fff;
+}
+.server-delete-dialog {
+  width: 420px;
+}
+.server-delete-target {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 16px;
+  overflow-wrap: anywhere;
+}
+.server-delete-target span {
+  color: var(--muted);
+  font: 12px var(--mono);
+}
+.server-delete-dialog p {
+  font-size: 13px;
+  line-height: 1.7;
+  margin-bottom: 16px;
+}
 .sr-only {
   position: absolute;
   width: 1px;
@@ -1191,10 +1215,9 @@ dialog .form-columns.equal {
     padding: 0 12px 12px;
   }
   .session-page {
-    grid-template-columns: min(
-        var(--resource-width, 320px),
-        calc(100vw - 502px)
-      ) 10px minmax(250px, 1fr);
+    grid-template-columns:
+      min(var(--resource-width, 320px), calc(100vw - 502px))
+      10px minmax(250px, 1fr);
   }
   .server-tools {
     padding: 18px 12px 13px;

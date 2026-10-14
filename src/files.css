@@ -10,6 +10,53 @@
 .file-panel .panel-title {
   gap: 6px;
 }
+.file-tree-row {
+  min-height: 32px;
+  gap: 6px;
+  align-items: center;
+}
+.file-tree-row:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+.file-tree-chevron {
+  display: flex;
+  align-items: center;
+  flex: 0 0 13px;
+  color: var(--muted);
+}
+.file-link-mark {
+  flex: none;
+  color: var(--muted);
+}
+.file-cwd-mark {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--blue);
+}
+.file-tree-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px 7px;
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.file-tree-status > span {
+  min-width: 0;
+}
+.file-tree-error {
+  color: var(--error);
+}
+.file-tree-status .quiet {
+  flex: none;
+  min-height: 24px;
+  padding: 2px 5px;
+  font-size: 11px;
+}
 .file-context-menu {
   width: 190px;
 }

@@ -14,6 +14,13 @@ export interface TerminalSnapshot {
   cols: number;
   rows: number;
   viewportY: number;
+  cwd?: { path: string; home: string | null; sequence: number };
+}
+export interface TerminalCwd {
+  sessionId: string;
+  path: string;
+  home: string | null;
+  sequence: number;
 }
 export interface TerminalController {
   prepareMove: () => Promise<TerminalSnapshot>;
@@ -29,6 +36,7 @@ interface Props {
   onSession: (id: string | null) => void;
   onError: (error: AppError) => void;
   onState: (state: string) => void;
+  onCwdChange?: (cwd: TerminalCwd | null) => void;
 }
 export function TerminalPane({
   request,
@@ -40,13 +48,15 @@ export function TerminalPane({
   onSession,
   onError,
   onState,
+  onCwdChange,
 }: Props) {
   const element = useRef<HTMLDivElement>(null),
     terminal = useRef<Terminal | null>(null),
     fit = useRef<FitAddon | null>(null),
     session = useRef<string | null>(null);
-  const callbacks = useRef({ onSession, onError, onState });
-  callbacks.current = { onSession, onError, onState };
+  const callbacks = useRef({ onSession, onError, onState, onCwdChange });
+  callbacks.current = { onSession, onError, onState, onCwdChange };
+  const latestCwd = useRef(initial?.cwd);
   const isActive = useRef(active);
   isActive.current = active;
   const serializer = useRef<SerializeAddon | null>(null);
@@ -96,6 +106,7 @@ export function TerminalPane({
             cols: term?.cols || 100,
             rows: term?.rows || 30,
             viewportY: term?.buffer.active.viewportY || 0,
+            cwd: latestCwd.current,
           };
         } catch (e) {
           transferring.current = false;
@@ -200,12 +211,14 @@ export function TerminalPane({
       return;
     }
     hadRequest.current = true;
+    latestCwd.current = initial?.cwd;
     let cancelled = false,
       closed = false,
       opened: string | null = null;
     setEnded(false);
     if (!initial) {
       callbacks.current.onSession(null);
+      callbacks.current.onCwdChange?.(null);
       callbacks.current.onState("连接中");
     }
     if (!initial)
@@ -225,10 +238,24 @@ export function TerminalPane({
       } else if (event.type === "data") {
         const bytes = Uint8Array.from(atob(event.data), (c) => c.charCodeAt(0));
         terminal.current?.write(bytes);
-      } else {
+      } else if (event.type === "cwd") {
+        if (!latestCwd.current || event.sequence > latestCwd.current.sequence) {
+          latestCwd.current = {
+            path: event.path,
+            home: event.home,
+            sequence: event.sequence,
+          };
+          if (opened)
+            callbacks.current.onCwdChange?.({
+              sessionId: opened,
+              ...latestCwd.current,
+            });
+        }
+      } else if (event.type === "closed") {
         closed = true;
         session.current = null;
         callbacks.current.onSession(null);
+        callbacks.current.onCwdChange?.(null);
         callbacks.current.onState("已断开");
         setEnded(true);
         terminal.current?.writeln(
@@ -280,6 +307,11 @@ export function TerminalPane({
         }
         session.current = id;
         callbacks.current.onSession(id);
+        if (id && latestCwd.current)
+          callbacks.current.onCwdChange?.({
+            sessionId: id,
+            ...latestCwd.current,
+          });
         if (id) callbacks.current.onState("已连接");
         if (isActive.current) {
           fit.current?.fit();

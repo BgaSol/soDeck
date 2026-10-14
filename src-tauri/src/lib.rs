@@ -1,10 +1,15 @@
 mod db;
 mod docker;
 mod files;
+mod log_ingest;
+mod log_store;
 mod logs;
 mod model;
 mod moves;
+mod remote_fs;
+mod shell_integration;
 mod ssh;
+mod terminal_cwd;
 
 use model::{AppError, AppResult, Server};
 use serde::Serialize;
@@ -33,6 +38,35 @@ struct PendingContainer {
     target: docker::ContainerTarget,
 }
 impl State {
+    fn delete_server(&self, id: &str) -> AppResult<()> {
+        if self.moves.has_server(id)
+            || self
+                .terminals
+                .lock()
+                .unwrap()
+                .values()
+                .any(|terminal| terminal.spec.server.id == id)
+            || self
+                .pending_windows
+                .lock()
+                .unwrap()
+                .values()
+                .any(|window| window.spec.server.id == id)
+            || self.logs.has_server(id)
+        {
+            return Err(AppError::new(
+                "busy",
+                "请先关闭此服务器的会话标签页、独立会话、容器终端和日志窗口，再删除配置。",
+            ));
+        }
+        if self.files.has_server_activity(id) {
+            return Err(AppError::new(
+                "busy",
+                "请先保存并关闭此服务器的文件编辑窗口，等待下载完成或取消下载，再删除配置。",
+            ));
+        }
+        self.database.lock().unwrap().delete(id)
+    }
     fn owner(&self, label: &str) -> ssh::WindowOwner {
         ssh::WindowOwner {
             label: label.into(),
@@ -114,7 +148,7 @@ fn delete_server(
     id: String,
 ) -> AppResult<()> {
     main_only(&window)?;
-    state.database.lock().unwrap().delete(&id)
+    state.delete_server(&id)
 }
 #[tauri::command]
 fn save_server_password(
@@ -138,10 +172,10 @@ fn session_count(window: WebviewWindow, state: TauriState<Arc<State>>) -> AppRes
         .count())
 }
 #[tauri::command]
-fn quit_app(
+async fn quit_app(
     window: WebviewWindow,
     app: tauri::AppHandle,
-    state: TauriState<Arc<State>>,
+    state: TauriState<'_, Arc<State>>,
     discard_unsaved: Option<bool>,
 ) -> AppResult<()> {
     main_only(&window)?;
@@ -154,6 +188,8 @@ fn quit_app(
     for terminal in state.terminals.lock().unwrap().values() {
         let _ = terminal.sender.send(ssh::Input::Close);
     }
+    let shutdown_state = state.inner().clone();
+    blocking(move || shutdown_state.logs.shutdown()).await?;
     app.exit(0);
     Ok(())
 }
@@ -246,63 +282,6 @@ fn terminal_close(
         let _ = terminal.sender.send(ssh::Input::Close);
     }
     Ok(())
-}
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct FileEntry {
-    name: String,
-    path: String,
-    is_dir: bool,
-    size: u64,
-    modified: u64,
-}
-#[derive(Serialize)]
-struct Directory {
-    path: String,
-    entries: Vec<FileEntry>,
-}
-#[tauri::command]
-async fn list_directory(
-    window: WebviewWindow,
-    state: TauriState<'_, Arc<State>>,
-    session_id: String,
-    path: Option<String>,
-) -> AppResult<Directory> {
-    moves::workspace_only(&window)?;
-    let spec = state.spec(&session_id, window.label())?;
-    blocking(move || {
-        let session = ssh::establish_spec(&spec)?;
-        let sftp = session.sftp()?;
-        let path = path.unwrap_or_else(|| ".".into());
-        let canonical = sftp.realpath(std::path::Path::new(&path))?;
-        let path = canonical.to_string_lossy().to_string();
-        let mut entries: Vec<_> = sftp
-            .readdir(&canonical)?
-            .into_iter()
-            .filter_map(|(entry_path, stat)| {
-                let name = entry_path.file_name()?.to_string_lossy().to_string();
-                if name == "." || name == ".." {
-                    return None;
-                }
-                // Remote paths use POSIX separators on every desktop platform.
-                let remote_path = format!("{}/{}", path.trim_end_matches('/'), name);
-                Some(FileEntry {
-                    name,
-                    path: remote_path,
-                    is_dir: stat.is_dir(),
-                    size: stat.size.unwrap_or(0),
-                    modified: stat.mtime.unwrap_or(0),
-                })
-            })
-            .collect();
-        entries.sort_by(|a, b| {
-            b.is_dir
-                .cmp(&a.is_dir)
-                .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-        });
-        Ok(Directory { path, entries })
-    })
-    .await
 }
 #[tauri::command]
 async fn detect_docker(
@@ -508,7 +487,11 @@ pub fn run() {
             logs::logs_info,
             logs::logs_start,
             logs::logs_stop,
-            logs::logs_ack,
+            logs::logs_page,
+            logs::logs_export,
+            logs::logs_copy_range,
+            logs::list_log_archives,
+            logs::open_log_archive,
             logs::log_session_count,
             list_servers,
             reset_incompatible_database,
@@ -521,7 +504,8 @@ pub fn run() {
             terminal_input,
             terminal_resize,
             terminal_close,
-            list_directory,
+            remote_fs::list_directory,
+            remote_fs::list_directory_chain,
             detect_docker,
             docker_images,
             docker_containers,

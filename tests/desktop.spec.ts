@@ -130,10 +130,10 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
     await expect(main.locator(".terminal-surface")).toContainText(
       /main-marker\s*ops@host/,
     );
-    await expect(main.getByRole("button", { name: /projects/ })).toBeVisible();
-    await main.getByRole("button", { name: /projects/ }).click();
+    await expect(main.locator('.file-row[data-path="/projects"]')).toBeVisible();
+    await main.locator('.file-row[data-path="/projects"]').click();
     await expect(main.getByLabel("远程目录路径")).toHaveValue("/projects");
-    await expect(main.getByRole("button", { name: /hello.txt/ })).toBeVisible();
+    await expect(main.locator('.file-row[data-path="/projects/hello.txt"]')).toBeVisible();
     await main.getByRole("button", { name: "上一级目录" }).click();
     await expect(main.getByLabel("远程目录路径")).toHaveValue("/");
     await expect(main.locator(".docker-root")).toContainText("运行中");
@@ -212,7 +212,11 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
       .getByRole("dialog")
       .getByRole("button", { name: "删除", exact: true })
       .click();
-    await expect(main.getByRole("dialog")).not.toBeVisible();
+    await main
+      .getByRole("dialog", { name: "删除服务器配置？" })
+      .getByRole("button", { name: "确认删除" })
+      .click();
+    await expect(main.getByRole("dialog")).toHaveCount(0);
     expect(
       (await ipc<any[]>(main, "list_servers")).some(
         (server) => server.id === second.id,
@@ -226,6 +230,8 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
   } finally {
     if (container && !container.isClosed())
       await closeContainer(container).catch(() => {});
+    await main.reload();
+    await expect.poll(() => ipc<number>(main, "session_count")).toBe(0);
     for (const id of created) await ipc(main, "delete_server", { id });
     await unlink(".qa/docker-mode").catch(() => {});
     await main.reload();
@@ -312,6 +318,8 @@ test("Docker failures and stopped/shell-less containers preserve the host termin
   } finally {
     if (container && !container.isClosed())
       await closeContainer(container).catch(() => {});
+    await main.reload();
+    await expect.poll(() => ipc<number>(main, "session_count")).toBe(0);
     await ipc(main, "delete_server", { id: server.id });
     await unlink(".qa/docker-mode").catch(() => {});
     await main.reload();
@@ -392,7 +400,7 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
       active().getByText("nginx:alpine", { exact: true }),
     ).toBeVisible();
     await active()
-      .getByRole("button", { name: /readme.txt/ })
+      .locator('.file-row[data-path="/readme.txt"]')
       .click();
     await expect(active().locator(".file-row.selected")).toContainText(
       "readme.txt",
@@ -440,7 +448,7 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
     // A directory result arriving after a switch belongs to A, not the active B page.
     await writeFile(".qa/sftp-delay", "1");
     await active()
-      .getByRole("button", { name: /projects/ })
+      .locator('.file-row[data-path="/projects"]')
       .click();
     await main
       .getByRole("tab", { name: `${nameB}，已连接`, exact: true })
@@ -477,7 +485,7 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
       .click();
     await expect(active().getByLabel("远程目录路径")).toHaveValue("/projects");
     await expect(
-      active().getByRole("button", { name: /hello.txt/ }),
+      active().locator('.file-row[data-path="/projects/hello.txt"]'),
     ).toBeVisible();
     await unlink(".qa/sftp-delay");
     // A deliberate duplicate is a third independent connection to the same host.
@@ -568,6 +576,8 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
       await closeContainer(container).catch(() => {});
     await unlink(".qa/sftp-delay").catch(() => {});
     await unlink(".qa/docker-mode").catch(() => {});
+    await main.reload();
+    await expect.poll(() => ipc<number>(main, "session_count")).toBe(0);
     await ipc(main, "delete_server", { id: serverA.id });
     await ipc(main, "delete_server", { id: serverB.id });
     await main.reload();
@@ -720,6 +730,8 @@ test("failed, pending and remotely closed tabs do not affect other connections",
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(0);
   } finally {
     await unlink(".qa/auth-delay").catch(() => {});
+    await main.reload();
+    await expect.poll(() => ipc<number>(main, "session_count")).toBe(0);
     await ipc(main, "delete_server", { id: server.id });
     await ipc(main, "delete_server", { id: pendingServer.id });
     await main.reload();
@@ -815,6 +827,8 @@ test("saved passwords survive reload, connect automatically and can be cleared",
       "Fixture host ready",
     );
   } finally {
+    await main.reload();
+    await expect.poll(() => ipc<number>(main, "session_count")).toBe(0);
     if (serverId) await ipc(main, "delete_server", { id: serverId });
     await main.reload();
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(0);

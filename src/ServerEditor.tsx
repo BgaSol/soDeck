@@ -6,7 +6,7 @@ interface Props {
   initial: Server;
   tags: string[];
   onSave: (server: Server) => Promise<void>;
-  onDelete?: (server: Server) => Promise<void>;
+  onDelete?: (server: Server) => void;
   onClose: () => void;
 }
 export function ServerEditor({
@@ -235,19 +235,7 @@ export function ServerEditor({
               type="button"
               className="danger quiet push-right"
               disabled={busy}
-              onClick={async () => {
-                if (
-                  !window.confirm(`删除 ${initial.name}（${initial.host}）？`)
-                )
-                  return;
-                setBusy(true);
-                try {
-                  await onDelete(initial);
-                } catch (error) {
-                  setError(errorOf(error).message);
-                  setBusy(false);
-                }
-              }}
+              onClick={() => onDelete(initial)}
             >
               删除
             </button>

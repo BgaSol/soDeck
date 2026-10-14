@@ -17,10 +17,14 @@ import {
   Plug,
   X,
   LockKeyhole,
+  Trash2,
+  ScrollText,
 } from "lucide-react";
 import { api, desktop } from "./api";
 import { TerminalPane } from "./TerminalPane";
 import { ServerEditor } from "./ServerEditor";
+import { ServerDeleteDialog } from "./ServerDeleteDialog";
+import { LogArchives } from "./LogArchives";
 import { FilePanel } from "./FilePanel";
 import { DockerPanel } from "./DockerPanel";
 import { WorkspaceTabs } from "./WorkspaceTabs";
@@ -111,6 +115,8 @@ export function App() {
     [loading, setLoading] = useState(true);
   const [databaseReset, setDatabaseReset] = useState(false);
   const [databaseNotice, setDatabaseNotice] = useState("");
+  const [deleting, setDeleting] = useState<Server | null>(null);
+  const [logArchives, setLogArchives] = useState(false);
   async function resetDatabase() {
     if (
       databaseReset ||
@@ -252,17 +258,32 @@ export function App() {
     setError(null);
   }
   async function remove(server: Server) {
+    if (workspaces.tabs.some((tab) => tab.server.id === server.id))
+      throw {
+        kind: "busy",
+        message: "请先关闭此服务器的所有会话标签页，再删除配置。",
+      };
     await api.deleteServer(server.id);
+    const remaining = servers.filter((value) => value.id !== server.id);
+    const remainingTag = remaining.some((value) => value.tags.includes(tag))
+      ? tag
+      : "";
+    const candidates = filterServers(remaining, query, remainingTag);
+    const index = visible.findIndex((value) => value.id === server.id);
     setServers((values) => values.filter((value) => value.id !== server.id));
     if (selectedId === server.id)
-      setSelectedId(servers.find((value) => value.id !== server.id)?.id || "");
-    if (
-      !servers.some(
-        (value) => value.id !== server.id && value.tags.includes(tag),
-      )
-    )
-      setTag("");
+      setSelectedId(
+        candidates[Math.max(0, Math.min(index, candidates.length - 1))]?.id ||
+          "",
+      );
+    setTag(remainingTag);
     setEditor(null);
+    setDeleting(null);
+    setError(null);
+  }
+  function requestDelete(server: Server) {
+    setMenu(null);
+    setDeleting(server);
   }
   return (
     <div className="app-shell">
@@ -423,6 +444,7 @@ export function App() {
         </div>
         <aside className="server-panel" aria-label="服务器列表">
           <div className="server-tools">
+            <button disabled={!desktop} onClick={() => setLogArchives(true)}><ScrollText size={15} />本地日志</button>
             <div className="panel-title">
               <h2>
                 服务器<span className="inventory-count">{servers.length}</span>
@@ -470,7 +492,7 @@ export function App() {
                   setMenu({
                     server,
                     x: Math.min(event.clientX, window.innerWidth - 190),
-                    y: Math.min(event.clientY, window.innerHeight - 145),
+                    y: Math.min(event.clientY, window.innerHeight - 180),
                   });
                 }}
               >
@@ -539,11 +561,20 @@ export function App() {
                 <Pencil size={13} />
                 编辑
               </button>
+              <button
+                className="quiet danger"
+                disabled={!selected || !desktop}
+                onClick={() => requestDelete(selected!)}
+              >
+                <Trash2 size={13} />
+                删除
+              </button>
             </div>
           </footer>
         </aside>
       </div>
       <DownloadPanel />
+      {logArchives && <LogArchives onClose={() => setLogArchives(false)} />}
       {menu && (
         <div
           className="server-context-menu"
@@ -570,6 +601,14 @@ export function App() {
             <Pencil size={14} />
             编辑
           </button>
+          <button
+            role="menuitem"
+            className="danger"
+            onClick={() => requestDelete(menu.server)}
+          >
+            <Trash2 size={14} />
+            删除服务器
+          </button>
         </div>
       )}
       {editor && (
@@ -577,8 +616,16 @@ export function App() {
           initial={editor}
           tags={tags}
           onSave={save}
-          onDelete={editor.id ? remove : undefined}
+          onDelete={editor.id ? requestDelete : undefined}
           onClose={() => setEditor(null)}
+        />
+      )}
+      {deleting && (
+        <ServerDeleteDialog
+          server={deleting}
+          blocked={workspaces.tabs.some((tab) => tab.server.id === deleting.id)}
+          onDelete={remove}
+          onClose={() => setDeleting(null)}
         />
       )}
     </div>

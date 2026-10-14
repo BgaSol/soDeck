@@ -18,8 +18,13 @@ async function ipc<T>(
   args: object = {},
 ): Promise<T> {
   return page.evaluate(
-    ({ command, args }) =>
-      (window as any).__TAURI_INTERNALS__.invoke(command, args),
+    async ({ command, args }) => {
+      try {
+        return await (window as any).__TAURI_INTERNALS__.invoke(command, args);
+      } catch (error) {
+        throw new Error(JSON.stringify(error));
+      }
+    },
     { command, args },
   );
 }
@@ -103,12 +108,17 @@ async function openLogs(f: Fixture, id = "a".repeat(64), name = "web-fixture") {
     target: { id, name, endpoint: "unix:///var/run/docker.sock" },
   });
   const page = await opened;
-  await expect(page.locator(".cm-editor")).toBeVisible();
+  await expect(page.locator(".log-virtual-list")).toBeVisible();
   return page;
 }
 
 async function logEvents() {
-  return (await readFile(".qa/ssh-events.jsonl", "utf8"))
+  return (
+    await readFile(
+      join(process.env.SSH_WORKSPACE_FIXTURE_DIR || ".qa", "ssh-events.jsonl"),
+      "utf8",
+    )
+  )
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line));
@@ -199,194 +209,249 @@ test("language highlighting detects Java, JSON and shebang; manual changes prese
   }
 });
 
-test("container logs stream independently, reuse windows, reload, search, and survive closing the main tab", async () => {
-  await unlink(".qa/logs-mode").catch(() => {});
-  await unlink(".qa/logs-disconnect").catch(() => {});
+test("container logs persist, highlight, search, virtualize and remain readable offline after closing the main tab", async () => {
+  const qa = process.env.SSH_WORKSPACE_FIXTURE_DIR || ".qa";
+  await unlink(join(qa, "logs-mode")).catch(() => {});
+  await unlink(join(qa, "logs-disconnect")).catch(() => {});
+  await unlink(join(qa, "logs-freeze")).catch(() => {});
   const f = await fixture("logs");
-  let logs: Page | undefined, stopped: Page | undefined;
-  const openedBefore = (await logEvents()).filter(
-    (e) => e.event === "logs-open",
-  ).length;
-  const closedBefore = (await logEvents()).filter(
-    (e) => e.event === "logs-close",
-  ).length;
+  let logs: Page | undefined, archive: Page | undefined;
   try {
-    const tree = f.main
-      .getByRole("tabpanel")
-      .getByRole("button", { name: /^容器/ });
-    await expect(tree).toBeVisible();
-    if ((await tree.getAttribute("aria-expanded")) !== "true")
-      await tree.click();
-    const opened = f.context.waitForEvent("page");
-    await f.main
-      .getByRole("button", { name: "查看 web-fixture 容器日志", exact: true })
-      .click();
-    logs = await opened;
-    await expect(logs.getByRole("status")).toHaveText("实时接收中");
-    await expect(logs.locator(".cm-content")).toContainText("中文日志 green");
-    await expect(logs.locator(".cm-content")).toContainText("[stderr]");
-    await expect(logs.locator(".cm-content")).toContainText("live-");
+    logs = await openLogs(f);
+    await expect(logs.locator(".log-status")).toHaveText("实时采集中");
+    await expect(logs.locator(".log-viewer")).toContainText(
+      "fixture history stdout",
+    );
+    await expect
+      .poll(() => logs!.locator(".log-level-error").count())
+      .toBeGreaterThan(0);
+    await expect
+      .poll(() => logs!.locator(".log-token-key").count())
+      .toBeGreaterThan(0);
+    await expect
+      .poll(() => logs!.locator(".log-ansi-green").count())
+      .toBeGreaterThan(0);
+    const info = await ipc<any>(logs, "logs_info");
     const pages = f.context.pages().length;
-    await f.main
-      .getByRole("button", { name: "查看 web-fixture 容器日志", exact: true })
-      .click();
+    await ipc(f.main, "open_container_logs", {
+      sessionId: f.sessionId,
+      target: {
+        id: "a".repeat(64),
+        name: "web-fixture",
+        endpoint: "unix:///var/run/docker.sock",
+      },
+    });
     expect(f.context.pages().length).toBe(pages);
     await terminal(f.main, "echo usable-during-logs");
     await expect(
       f.main.getByRole("tabpanel").locator(".terminal-surface"),
     ).toContainText(/usable-during-logs\s*ops@host/);
     await logs.getByLabel("时间戳", { exact: true }).uncheck();
-    await expect(logs.locator(".cm-content")).not.toContainText("2026-10-14T");
+    await expect(logs.locator(".log-row-body").first()).not.toContainText(
+      "2026-10-14T",
+    );
     await logs.getByLabel("自动换行", { exact: true }).check();
-    await expect(logs.locator(".cm-content")).toHaveClass(/cm-lineWrapping/);
+    await expect(logs.locator(".log-viewer")).toHaveClass(/log-wrap/);
     await logs.getByRole("button", { name: "查找", exact: true }).click();
-    await logs
-      .locator(".cm-search input[name=search]")
-      .pressSequentially("history");
+    await logs.getByLabel("搜索全部本地日志").fill("中文错误");
     await expect
-      .poll(() => logs!.locator(".cm-searchMatch").count())
+      .poll(() => logs!.locator(".log-search-match").count())
       .toBeGreaterThan(0);
-    await logs.locator(".cm-search button[name=close]").click();
-    await logs.getByLabel("历史日志行数").selectOption("100");
-    await logs.getByRole("button", { name: "重新加载", exact: true }).click();
-    await expect
-      .poll(
-        async () =>
-          (await logEvents()).filter((e) => e.event === "logs-open").at(-1)
-            ?.tail,
-      )
-      .toBe(100);
-    await expect(logs.getByRole("status")).toHaveText("实时接收中");
-    await logs.getByRole("button", { name: "跳到最新", exact: true }).click();
-    await logs.locator(".cm-content").hover();
+    await expect(
+      logs.getByLabel("自动滚动", { exact: true }),
+    ).not.toBeChecked();
+    await logs
+      .getByRole("button", { name: "上下文", exact: true })
+      .first()
+      .click();
+    await expect(logs.locator(".log-search-filters")).toContainText("的上下文");
+    await expect(logs.locator(".log-viewer")).toContainText(
+      "fixture history stdout",
+    );
+    await logs.getByRole("button", { name: /跳到最新/ }).click();
+    await expect(logs.getByLabel("自动滚动", { exact: true })).toBeChecked();
+    await expect(logs.getByLabel("显示日志行数")).toHaveCount(0);
+    for (const name of ["刷新视图", "恢复采集", "补取全部历史", "停止采集"])
+      await expect(logs.getByRole("button", { name, exact: true })).toHaveCount(
+        0,
+      );
+    const openedBefore = (await logEvents()).filter(
+      (e) => e.event === "logs-open",
+    ).length;
+    await logs.getByLabel("高亮", { exact: true }).uncheck();
+    await logs.getByLabel("高亮", { exact: true }).check();
+    expect(
+      (await logEvents()).filter((e) => e.event === "logs-open").length,
+    ).toBe(openedBefore);
+    await logs.locator(".log-virtual-list").hover();
     await logs.mouse.wheel(0, -200);
     await expect(
       logs.getByLabel("自动滚动", { exact: true }),
     ).not.toBeChecked();
-    const stats = await logs.locator(".log-footer > span").innerText();
-    await expect(logs.locator(".log-footer > span")).not.toHaveText(stats);
-    await logs.getByRole("button", { name: "跳到最新", exact: true }).click();
-    await expect(logs.getByLabel("自动滚动", { exact: true })).toBeChecked();
+    await logs.getByRole("button", { name: /跳到最新/ }).click();
     await logs.emulateMedia({ colorScheme: "light" });
     await logs.screenshot({ path: ".qa/container-logs-light.png" });
     await logs.emulateMedia({ colorScheme: "dark" });
     await logs.screenshot({ path: ".qa/container-logs-dark.png" });
-    const stoppedOpened = f.context.waitForEvent("page");
     await f.main
-      .getByRole("button", {
-        name: "查看 stopped-fixture 容器日志",
-        exact: true,
-      })
-      .click();
-    stopped = await stoppedOpened;
-    await expect(stopped.getByRole("status")).toHaveText("日志读取已结束");
-    await expect(stopped.locator(".cm-content")).toContainText(
-      "fixture history stdout",
-    );
-    expect(
-      (await logEvents()).filter((e) => e.event === "logs-open").at(-1)
-        .following,
-    ).toBe(false);
-    await closeWindow(stopped);
-    stopped = undefined;
-    await f.main
-      .getByRole("button", { name: `关闭 ${f.name} 会话`, exact: true })
+      .getByRole("button", { name: "关闭 " + f.name + " 会话", exact: true })
       .click();
     await expect.poll(() => ipc<number>(f.main, "session_count")).toBe(0);
     await expect.poll(() => ipc<number>(f.main, "log_session_count")).toBe(1);
-    await expect(logs.getByRole("status")).toHaveText("实时接收中");
-    const still = await logs.locator(".log-footer > span").innerText();
-    await expect(logs.locator(".log-footer > span")).not.toHaveText(still);
+    await expect(logs.locator(".log-status")).toHaveText("实时采集中");
     await closeWindow(logs);
     logs = undefined;
     await expect.poll(() => ipc<number>(f.main, "log_session_count")).toBe(0);
-    await expect
-      .poll(async () => {
-        const events = await logEvents();
-        return (
-          events.filter((e) => e.event === "logs-open").length -
-          openedBefore -
-          (events.filter((e) => e.event === "logs-close").length - closedBefore)
-        );
-      })
-      .toBe(0);
+    const saved = (await ipc<any[]>(f.main, "list_log_archives")).find(
+      (a) => a.sourceId === info.sourceId,
+    );
+    expect(saved.records).toBeGreaterThan(5);
+    await f.main.getByRole("button", { name: "本地日志", exact: true }).click();
+    await expect(
+      f.main.getByRole("dialog", { name: "本地日志存档" }),
+    ).toBeVisible();
+    await f.main
+      .getByRole("button", { name: "关闭日志存档", exact: true })
+      .click();
+    const opened = f.context.waitForEvent("page");
+    await ipc(f.main, "open_log_archive", { sourceId: info.sourceId });
+    archive = await opened;
+    await expect(archive.locator(".log-status")).toHaveText("本地存档");
+    expect((await ipc<any>(archive, "logs_info")).stats.records).toBe(
+      saved.records,
+    );
+    await archive.getByRole("button", { name: "查找", exact: true }).click();
+    await archive.getByLabel("搜索全部本地日志").fill("中文");
+    await expect(archive.locator(".log-viewer")).toContainText("中文错误");
+    await expect.poll(() => ipc<number>(f.main, "log_session_count")).toBe(0);
+    const copied = await ipc<string>(archive, "logs_copy_range", {
+      from: 1,
+      to: 1,
+    });
+    expect(copied).toContain("fixture history stdout");
   } finally {
-    for (const p of [logs, stopped])
-      if (p && !p.isClosed()) await closeWindow(p);
+    for (const page of [logs, archive])
+      if (page && !page.isClosed()) await closeWindow(page);
     await f.cleanup();
   }
 });
 
-test("container logs retain content after disconnect, retry, bound output, and show Docker errors and empty history", async () => {
-  await unlink(".qa/logs-mode").catch(() => {});
-  await unlink(".qa/logs-disconnect").catch(() => {});
+test("container logs automatically sync all history, deduplicate reopen/reconnect and resume a stopped container", async () => {
+  const qa = process.env.SSH_WORKSPACE_FIXTURE_DIR || ".qa";
+  for (const name of ["logs-disconnect", "docker-mode"])
+    await unlink(join(qa, name)).catch(() => {});
+  await writeFile(join(qa, "logs-mode"), "burst");
+  await writeFile(join(qa, "logs-freeze"), "1");
+  const containerId = Date.now().toString(16).padStart(64, "d");
+  const emptyId = Date.now().toString(16).padStart(64, "e");
   const f = await fixture("logs-lifecycle");
   let logs: Page | undefined;
   try {
-    logs = await openLogs(f);
-    await expect(logs.locator(".cm-content")).toContainText("live-");
-    await writeFile(".qa/logs-disconnect", "1");
-    await expect(logs.getByRole("status")).toHaveText("读取已中断");
-    await expect(logs.locator(".cm-content")).toContainText(
-      "fixture history stdout",
-    );
-    await unlink(".qa/logs-disconnect");
-    await logs.getByRole("button", { name: "重新连接", exact: true }).click();
-    await expect(logs.getByRole("status")).toHaveText("实时接收中");
-    await writeFile(".qa/logs-mode", "burst");
-    await logs.getByRole("button", { name: "重新加载", exact: true }).click();
-    await expect(logs.locator(".log-footer > span")).toContainText(
-      "已保留 10000 行",
-    );
-    await expect(logs.locator(".log-footer > span")).toContainText(
-      "已移除最旧内容",
-    );
-    await expect(logs.locator(".cm-content")).toContainText("burst-11999");
-    await expect(logs.getByLabel("自动滚动", { exact: true })).toBeChecked();
-    await logs.setViewportSize({ width: 650, height: 400 });
-    await logs.screenshot({ path: ".qa/container-logs-small.png" });
+    logs = await openLogs(f, containerId, "burst-fixture");
+    await expect(logs.locator(".log-status")).toHaveText("实时采集中", {
+      timeout: 60000,
+    });
     await expect
-      .poll(() =>
-        logs!.locator(".cm-scroller").evaluate((node) => node.scrollLeft),
-      )
-      .toBe(0);
-    await writeFile(".qa/logs-mode", "unsupported");
-    await logs.getByRole("button", { name: "重新加载", exact: true }).click();
+      .poll(async () => (await ipc<any>(logs!, "logs_info")).stats.records, {
+        timeout: 60000,
+      })
+      .toBe(12005);
+    expect(await logs.locator(".log-row").count()).toBeLessThan(150);
+    await logs.getByRole("button", { name: "查找", exact: true }).click();
+    await logs.getByLabel("搜索全部本地日志").fill("burst-0 ");
+    await expect(logs.locator(".log-viewer")).toContainText("burst-0 ");
+    await expect
+      .poll(() => logs!.locator(".log-search-match").count())
+      .toBeGreaterThan(0);
+    await logs.getByRole("button", { name: /跳到最新/ }).click();
+    const source = (await ipc<any>(logs, "logs_info")).sourceId;
+    await closeWindow(logs);
+    logs = undefined;
+    await expect.poll(() => ipc<number>(f.main, "log_session_count")).toBe(0);
+    logs = await openLogs(f, containerId, "burst-fixture");
+    await expect(logs.locator(".log-status")).toHaveText("实时采集中");
+    await expect
+      .poll(async () => (await ipc<any>(logs!, "logs_info")).stats.records)
+      .toBe(12005);
+    const last = await ipc<any>(logs, "logs_page", {
+      query: { keyword: "burst-11999 ", limit: 100 },
+    });
+    expect(last.rows).toHaveLength(1);
+    expect((await ipc<any>(logs, "logs_info")).sourceId).toBe(source);
+    await writeFile(join(qa, "logs-disconnect"), "1");
+    await expect(logs.locator(".log-status")).toContainText("秒后重试");
+    await unlink(join(qa, "logs-disconnect"));
+    await expect(logs.locator(".log-status")).toHaveText("实时采集中", {
+      timeout: 30000,
+    });
+    await expect
+      .poll(async () => (await ipc<any>(logs!, "logs_info")).stats.records)
+      .toBe(12005);
+    await writeFile(join(qa, "logs-mode"), "unsupported");
+    await writeFile(join(qa, "logs-disconnect"), "1");
+    await expect(logs.locator(".log-status")).toContainText("秒后重试");
+    await unlink(join(qa, "logs-disconnect"));
     await expect(logs.getByRole("alert")).toContainText(
       "logging driver does not support",
+      { timeout: 30000 },
     );
-    await expect(logs.getByRole("status")).toHaveText("读取已中断");
+    await expect(
+      logs.getByRole("button", { name: "重试", exact: true }),
+    ).toBeVisible();
+    await writeFile(join(qa, "logs-mode"), "burst");
+    await logs.getByRole("button", { name: "重试", exact: true }).click();
+    await expect(logs.locator(".log-status")).toHaveText("实时采集中", {
+      timeout: 30000,
+    });
+    // Only a Docker diagnostic (without a Docker timestamp) may be added.
+    expect(
+      (await ipc<any>(logs, "logs_info")).stats.records,
+    ).toBeLessThanOrEqual(12006);
     await closeWindow(logs);
     logs = undefined;
-    await writeFile(".qa/logs-mode", "empty");
-    logs = await openLogs(f, "b".repeat(64), "stopped-fixture");
+    await writeFile(join(qa, "logs-mode"), "empty");
+    await writeFile(join(qa, "docker-mode"), "stopped");
+    logs = await openLogs(f, emptyId, "empty-fixture");
+    await expect(logs.locator(".log-status")).toHaveText("等待容器运行");
     await expect(logs.getByText("容器暂无日志", { exact: true })).toBeVisible();
-    await closeWindow(logs);
-    logs = undefined;
-    await unlink(".qa/logs-mode");
-    await writeFile(".qa/docker-mode", "tty");
-    logs = await openLogs(f);
-    await expect(logs.locator(".log-footer > span")).toContainText(
-      "容器 TTY 输出已合并",
-    );
-    await expect(logs.locator(".cm-content")).toContainText(
-      "fixture history stderr",
-    );
-    await expect(logs.locator(".cm-content")).not.toContainText("[stderr]");
+    await writeFile(join(qa, "docker-mode"), "running");
+    await writeFile(join(qa, "logs-mode"), "normal");
+    await unlink(join(qa, "logs-freeze"));
+    await expect(logs.locator(".log-status")).toHaveText("实时采集中", {
+      timeout: 20000,
+    });
+    await expect
+      .poll(async () => (await ipc<any>(logs!, "logs_info")).stats.records)
+      .toBeGreaterThan(5);
+    await logs.setViewportSize({ width: 650, height: 400 });
+    await logs.screenshot({ path: ".qa/container-logs-small.png" });
   } finally {
     if (logs && !logs.isClosed()) await closeWindow(logs);
-    await unlink(".qa/logs-mode").catch(() => {});
-    await unlink(".qa/logs-disconnect").catch(() => {});
-    await unlink(".qa/docker-mode").catch(() => {});
+    for (const name of [
+      "logs-mode",
+      "logs-disconnect",
+      "docker-mode",
+      "logs-freeze",
+    ])
+      await unlink(join(qa, name)).catch(() => {});
     await f.cleanup();
   }
 });
 
 async function fixture(label: string): Promise<Fixture> {
-  const browser = await chromium.connectOverCDP("http://127.0.0.1:9223");
+  const browser = await chromium.connectOverCDP(
+    process.env.SSH_WORKSPACE_QA_CDP_URL || "http://127.0.0.1:9223",
+  );
   const context = browser.contexts()[0];
   const main = context.pages().find((page) => {
-    if (!page.url().startsWith("http://127.0.0.1:1420")) return false;
+    if (
+      !page
+        .url()
+        .startsWith(
+          process.env.SSH_WORKSPACE_QA_APP_URL || "http://127.0.0.1:1420",
+        )
+    )
+      return false;
     const params = new URL(page.url()).searchParams;
     return (
       !params.has("container") &&
@@ -405,7 +470,7 @@ async function fixture(label: string): Promise<Fixture> {
       id: "",
       name,
       host: "127.0.0.1",
-      port: 22222,
+      port: Number(process.env.SSH_WORKSPACE_FIXTURE_PORT || 22222),
       username: "ops",
       tags: ["QA"],
       authType: "password",
@@ -430,6 +495,15 @@ async function fixture(label: string): Promise<Fixture> {
       (window as any).__qaFileSession = sessionId;
       return original(sessionId, path);
     };
+    const originalChain = api.directoryChain;
+    api.directoryChain = (
+      sessionId: string,
+      path?: string,
+      knownPaths?: string[],
+    ) => {
+      (window as any).__qaFileSession = sessionId;
+      return originalChain(sessionId, path, knownPaths);
+    };
   });
   await main.locator(".server-row").filter({ hasText: name }).dblclick();
   await authenticate(main);
@@ -447,13 +521,188 @@ async function fixture(label: string): Promise<Fixture> {
     serverId: server.id,
     sessionId,
     async cleanup() {
-      await ipc(main, "delete_server", { id: server.id });
       await main.reload();
       await expect.poll(() => ipc<number>(main, "session_count")).toBe(0);
+      await ipc(main, "delete_server", { id: server.id });
+      await main.reload();
       await browser.close();
     },
   };
 }
+
+test("server deletion blocks tabs and independent windows, then removes the saved configuration", async () => {
+  const f = await fixture("deletion");
+  const children: Page[] = [];
+  const confirmation = () =>
+    f.main.getByRole("dialog", { name: "删除服务器配置？" });
+  try {
+    await f.main
+      .locator(".server-footer")
+      .getByRole("button", { name: "删除", exact: true })
+      .click();
+    await expect(confirmation()).toContainText(f.name);
+    await expect(
+      confirmation().getByRole("button", { name: "确认删除" }),
+    ).toBeDisabled();
+    await confirmation()
+      .getByRole("button", { name: "取消", exact: true })
+      .click();
+    const editorOpened = f.context.waitForEvent("page");
+    const [editor] = await Promise.all([
+      editorOpened,
+      ipc(f.main, "open_editor", {
+        sessionId: f.sessionId,
+        path: "/editing/config.yaml",
+      }),
+    ]);
+    children.push(editor);
+    await expect(editor.locator(".cm-editor")).toBeVisible();
+    const logs = await openLogs(f);
+    children.push(logs);
+    await ipc(logs, "logs_stop");
+    await f.main.getByRole("tab").click({ button: "right" });
+    const detachedOpened = f.context.waitForEvent("page");
+    await f.main
+      .getByRole("menuitem", { name: "移到独立窗口", exact: true })
+      .click();
+    const detached = await detachedOpened;
+    children.push(detached);
+    await expect(f.main.getByRole("tab")).toHaveCount(0);
+    await detached.getByRole("button", { name: "断开", exact: true }).click();
+    await expect.poll(() => ipc<number>(f.main, "session_count")).toBe(0);
+    await f.main
+      .locator(".server-row")
+      .filter({ hasText: f.name })
+      .click({ button: "right" });
+    await f.main.getByRole("menuitem", { name: "删除服务器" }).click();
+    await confirmation().getByRole("button", { name: "确认删除" }).click();
+    await expect(confirmation().getByRole("alert")).toContainText("独立会话");
+    expect(
+      (await ipc<any[]>(f.main, "list_servers")).some(
+        (s) => s.id === f.serverId,
+      ),
+    ).toBe(true);
+    await closeWindow(detached);
+    await confirmation().getByRole("button", { name: "确认删除" }).click();
+    await expect(confirmation().getByRole("alert")).toContainText("日志窗口");
+    await closeWindow(logs);
+    await confirmation().getByRole("button", { name: "确认删除" }).click();
+    await expect(confirmation().getByRole("alert")).toContainText(
+      "文件编辑窗口",
+    );
+    await closeWindow(editor);
+    await confirmation().getByRole("button", { name: "确认删除" }).click();
+    await expect(confirmation()).not.toBeVisible();
+    expect(
+      (await ipc<any[]>(f.main, "list_servers")).some(
+        (s) => s.id === f.serverId,
+      ),
+    ).toBe(false);
+    await f.main.reload();
+    await expect(
+      f.main.locator(".server-row").filter({ hasText: f.name }),
+    ).toHaveCount(0);
+  } finally {
+    for (const child of children)
+      if (!child.isClosed()) await closeWindow(child).catch(() => {});
+    await f.cleanup();
+  }
+});
+
+test("server deletion supports cancellation, editor entry and filtered neighbour selection", async () => {
+  const browser = await chromium.connectOverCDP("http://127.0.0.1:9223");
+  const main = browser
+    .contexts()[0]
+    .pages()
+    .find((p) => p.url() === "http://127.0.0.1:1420/")!;
+  const prefix = `QA delete ${Date.now()}`;
+  const created: any[] = [];
+  const confirmation = () =>
+    main.getByRole("dialog", { name: "删除服务器配置？" });
+  try {
+    for (const suffix of ["A", "B", "C"])
+      created.push(
+        await ipc(main, "save_server", {
+          server: {
+            id: "",
+            name: `${prefix} ${suffix}`,
+            host: "127.0.0.1",
+            port: 22222,
+            username: "ops",
+            tags: [prefix],
+            authType: "password",
+            privateKey: "",
+            password: "fixture-password",
+          },
+        }),
+      );
+    await main.reload();
+    await main.getByLabel("按标签筛选").selectOption(prefix);
+    await main
+      .locator(".server-row")
+      .filter({ hasText: `${prefix} B` })
+      .click();
+    await main
+      .locator(".server-footer")
+      .getByRole("button", { name: "删除", exact: true })
+      .click();
+    await expect(confirmation()).toContainText("127.0.0.1:22222");
+    await main.screenshot({ path: ".qa/server-delete-confirmation.png" });
+    await confirmation()
+      .getByRole("button", { name: "取消", exact: true })
+      .click();
+    expect(
+      (await ipc<any[]>(main, "list_servers")).some(
+        (s) => s.id === created[1].id,
+      ),
+    ).toBe(true);
+    await main
+      .locator(".server-footer")
+      .getByRole("button", { name: "删除", exact: true })
+      .click();
+    await confirmation().getByRole("button", { name: "确认删除" }).click();
+    await expect(main.locator(".server-row.selected")).toContainText(
+      `${prefix} C`,
+    );
+    await main
+      .locator(".server-footer")
+      .getByRole("button", { name: "编辑", exact: true })
+      .click();
+    await main
+      .getByRole("dialog")
+      .getByRole("button", { name: "删除", exact: true })
+      .click();
+    await confirmation()
+      .getByRole("button", { name: "取消", exact: true })
+      .click();
+    await expect(main.getByRole("dialog")).toContainText("编辑服务器");
+    await main
+      .getByRole("dialog")
+      .getByRole("button", { name: "删除", exact: true })
+      .click();
+    await confirmation().getByRole("button", { name: "确认删除" }).click();
+    await expect(main.getByRole("dialog")).toHaveCount(0);
+    await expect(main.locator(".server-row.selected")).toContainText(
+      `${prefix} A`,
+    );
+    await main.locator(".server-row.selected").click({ button: "right" });
+    await main.getByRole("menuitem", { name: "删除服务器" }).click();
+    await confirmation().getByRole("button", { name: "确认删除" }).click();
+    await expect(main.getByLabel("按标签筛选")).toHaveValue("");
+    expect(
+      (await ipc<any[]>(main, "list_servers")).some((s) =>
+        created.some((c) => c.id === s.id),
+      ),
+    ).toBe(false);
+  } finally {
+    await main.reload();
+    await expect.poll(() => ipc<number>(main, "session_count")).toBe(0);
+    for (const server of created)
+      await ipc(main, "delete_server", { id: server.id });
+    await main.reload();
+    await browser.close();
+  }
+});
 
 test("remote text editor saves through SFTP, detects conflicts, and keeps the SSH terminal usable", async () => {
   const remotePath = resolve(".qa/remote/editing/config.yaml");
@@ -466,7 +715,7 @@ test("remote text editor saves through SFTP, detects conflicts, and keeps the SS
     const opened = f.context.waitForEvent("page");
     await f.main
       .getByRole("tabpanel")
-      .getByRole("button", { name: /config.yaml/ })
+      .locator('.file-row[data-path="/editing/config.yaml"]')
       .dblclick();
     editor = await opened;
     await expect(editor.locator(".cm-editor")).toBeVisible();
@@ -478,7 +727,7 @@ test("remote text editor saves through SFTP, detects conflicts, and keeps the SS
     const count = f.context.pages().length;
     await f.main
       .getByRole("tabpanel")
-      .getByRole("button", { name: /config.yaml/ })
+      .locator('.file-row[data-path="/editing/config.yaml"]')
       .dblclick();
     expect(f.context.pages()).toHaveLength(count);
 
@@ -570,7 +819,7 @@ test("SFTP downloads preserve directories, report progress, cancel, retry, and r
     );
     await f.main
       .getByRole("tabpanel")
-      .getByRole("button", { name: /readme.txt/ })
+      .locator('.file-row[data-path="/readme.txt"]')
       .click({ button: "right" });
     await f.main
       .getByRole("menuitem", { name: "下载文件", exact: true })

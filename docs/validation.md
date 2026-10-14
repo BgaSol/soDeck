@@ -54,3 +54,39 @@ Windows 本机构建与交互已执行。macOS、Linux 的构建检查已配置�
 - 本轮没有修改 Rust、正式数据库或 SSH 会话管理逻辑，也没有重新执行完整桌面回归；Docker 测试服务在手动检查中出现过密钥交换失败，因此不将本轮 Docker 协议检查标记为通过。
 
 截图位于 `.qa/layout-empty.png`、`.qa/layout-connected.png`、`.qa/layout-small.png` 和 `.qa/layout-dark.png`。本轮未在 macOS 或 Linux 上实际运行。
+
+## 本地日志存档、搜索与高亮验证
+
+2026-10-14，Windows 本机，独立的 `com.sshworkspace.logsqa` 数据目录、WebView2 配置目录、CDP 9224 和 SSH 测试服务 22223。Docker 响应来自测试服务，实际执行了 Tauri IPC、SQLite、SSH 传输及原生独立日志窗口；没有连接真实 Docker 服务器。
+
+- TypeScript/Vite 生产构建通过；前端 45 项测试、Rust 19 项常规测试、`cargo fmt --check` 和 Clippy 严格检查通过。百万存档压力测试单独显式执行通过；常规测试中的真实 SSH ignored 场景未在本轮重跑。
+- 三项真实桌面回归通过：日志等级、JSON、异常位置和 ANSI 颜色；搜索命中及上下文；时间戳与换行；查看行数及刷新视图不重启 SSH；关闭主 Tab 后继续采集、关闭日志窗口后停止；离线存档仍可搜索和复制；12000 条突发输出全部保存；断线重连、驱动错误和空历史；服务器删除时的活动窗口约束。
+- 持久化 1000000 条真实 SQLite 记录，重新打开存档后数量完整；可分页读取最新记录，并从最早的记录中搜索中文长、短关键词。桌面端查看百万条存档时实际渲染 26 行日志 DOM，前端缓存有行数及字节双重上限。
+- 原始字节导出覆盖跨包 UTF-8、ANSI、未换行内容及分片；超长行跨片段关键词、大小写及时间筛选均有回归。桌面 IPC 的范围导出与原文复制内容相同。
+- 退出并重启测试应用后已保存数量保持一致；内嵌资源的 release 客户端从 `http://tauri.localhost/` 加载，百万存档分页、中文搜索及 Worker 搜索高亮通过。正式标识的 Windows 独立可执行文件已重新构建。
+
+截图为 `.qa/container-logs-light.png`、`.qa/container-logs-dark.png`、`.qa/container-logs-small.png` 和 `.qa/log-million-search.png`。本轮未在 macOS、Linux 或真实 Docker 日志驱动上实测。
+
+## 远程文件树与终端目录同步验证
+
+2026-10-14，Windows 本机，独立的 `com.sshworkspace.treeqa` 数据目录、WebView2 配置目录、CDP 9225 和 SSH/SFTP 测试服务 22225（HOME `/home/ops`）。最终桌面回归使用内嵌页面的 Tauri 调试程序，没有依赖 Vite 热更新；测试观察真实目录请求、树节点和终端输出，不替换 IPC 响应。
+
+- 前端 61 项测试通过，其中 16 项覆盖文件树缓存、路径链懒加载、请求去重、连续定位竞态、手动收起/选择优先、权限祖先、软链接、父缓存过期、刷新删除子树、HOME 和迁移恢复。TypeScript/Vite 生产构建通过。
+- Rust 37 项常规测试通过，2 项既有显式协议/压力场景仍标记 ignored；Clippy `-D warnings` 通过。新增目录协议覆盖任意 SSH 分包、UTF-8/特殊路径、BEL/ST、外来消息、异常帧上限、迁移回放和缓冲背压。
+- 真实 Git Bash 实测原登录 profile、scalar/array `PROMPT_COMMAND`、退出状态、别名、中文/空格/百分号/分号路径、失败 `cd`；临时启动配置写入失败时回退正常登录配置并清理文件。
+- `npm run test:tree` 最终 6 项真实桌面回归全部通过，主窗口和子窗口无前端运行时错误：根到 HOME 的读取范围和缓存；软链接逻辑路径、可穿过但不可列出的祖先；`cd ..`/`~`/`-`/绝对/相对/中文路径及失败/迟到结果；双会话及拆出/移回原连接；树中双击编辑、文件/目录下载的实际字节；未知 shell/探测失败回退普通 SSH shell，以及重新连接恢复跟随。
+- 正式标识的 Windows release 可执行文件重新构建成功，输出为 `src-tauri/target/release/ssh-workspace.exe`。桌面回归运行的是对应源码的内嵌调试构建；本轮未在 macOS、Linux、真实 OpenSSH 服务器、zsh 或 fish 环境实测。
+
+自动跟随在 shell 提示符返回时同步，组合命令需等待整条命令结束。Bash 临时 rc 集成的 `login_shell` 标志及 `.bash_logout` 与原生登录 shell 有差异；嵌套 SSH、切换账号及容器目录暂不映射到宿主 SFTP。截图位于 `.qa/file-tree-lazy.png`、`.qa/file-tree-terminal-follow.png`、`.qa/file-tree-migration.png`、`.qa/tree-connected.png`、`.qa/tree-permissions.png` 和 `.qa/tree-editor-and-download.png`。
+
+
+## Docker 日志自动接续和去重验证
+
+2026-10-14，独立 `com.sshworkspace.logsingestqa` 数据目录、本机 SSH 测试服务 22224、冻结的前端副本 1421。Docker 响应来自 fixture；没有连接真实 Docker 服务器。
+
+- 日志存储回归覆盖跨采集次数匹配、纳秒时间戳差异、不同内容和输出流、原始 ANSI/无效 UTF-8 字节、缺少时间戳的保守保存、拆包、未换行尾部、超长行、跨分片续写、异常退出的暂存恢复、v2 存档索引迁移和历史同步完成标记。
+- 前端 60 项测试通过；Rust 全部 37 项常规测试通过，2 项默认忽略。Clippy all-targets `-D warnings`、日志模块格式检查和生产构建通过。
+- 两项原生桌面回归通过：工具栏简化、高亮/查找/上下文/自动滚动、关闭主 Tab 后继续保存、关闭日志窗口后停止、离线读取；首次全量保存 12005 条，关闭重开及断线自动重连后仍为 12005 条，驱动错误可重试，停止容器启动后自动接续。
+- 显式百万条压力测试通过，真实 SQLite 档案完成持久化、分页和全历史中文搜索；本次 debug 测试约 324 秒，不作为生产性能基准。
+- 生产版加载内置 `http://tauri.localhost/` 资源，重启后测试存档共 24040 条保持不变，离线 Worker 搜索高亮正常，12006 条存档实际渲染 26 行 DOM。截图 `.qa/log-ingest-release.png`。
+- 旧存档已有重复不自动清理；新采集参与去重。远端轮转删除的内容无法补回，无有效 Docker 时间戳的诊断内容不做去重。

@@ -2,6 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import type {
   Server,
   Directory,
+  DirectoryBatch,
   DockerStatus,
   DockerImage,
   Container,
@@ -17,6 +18,16 @@ export const api = {
   deleteServer: (id: string) => invoke<void>("delete_server", { id }),
   directory: (sessionId: string, path?: string) =>
     invoke<Directory>("list_directory", { sessionId, path: path || null }),
+  directoryChain: (
+    sessionId: string,
+    path?: string,
+    knownPaths: string[] = [],
+  ) =>
+    invoke<DirectoryBatch>("list_directory_chain", {
+      sessionId,
+      path: path || null,
+      knownPaths,
+    }),
   docker: (sessionId: string) =>
     invoke<DockerStatus>("detect_docker", { sessionId }),
   images: (sessionId: string, endpoint: string) =>

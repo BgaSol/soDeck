@@ -3470,6 +3470,7 @@ name = "ssh-workspace"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "chrono",
  "openssl",
  "rfd",
  "rusqlite",

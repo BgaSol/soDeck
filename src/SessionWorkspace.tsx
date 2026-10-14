@@ -7,7 +7,11 @@ import {
 } from "react";
 import { Plug, TerminalSquare, Unplug, X } from "lucide-react";
 import { TerminalPane } from "./TerminalPane";
-import type { TerminalController, TerminalSnapshot } from "./TerminalPane";
+import type {
+  TerminalController,
+  TerminalSnapshot,
+  TerminalCwd,
+} from "./TerminalPane";
 import type { Ref } from "react";
 import type { FilePanelSnapshot } from "./FilePanel";
 import type { DockerPanelSnapshot } from "./DockerPanel";
@@ -67,6 +71,11 @@ export function SessionWorkspace({
       initial?.terminal.sessionId || null,
     ),
     [error, setError] = useState<AppError | null>(null);
+  const [terminalCwd, setTerminalCwd] = useState<TerminalCwd | null>(() =>
+    initial?.terminal.sessionId && initial.terminal.cwd
+      ? { sessionId: initial.terminal.sessionId, ...initial.terminal.cwd }
+      : null,
+  );
   const [resourceWidth, setResourceWidth] = useState(
       initial?.resourceWidth || 320,
     ),
@@ -245,6 +254,7 @@ export function SessionWorkspace({
           active={active}
           initialState={initial?.files}
           onStateChange={captureFiles}
+          terminalCwd={terminalCwd ?? undefined}
         />
         <div
           className="horizontal-resizer"
@@ -382,6 +392,7 @@ export function SessionWorkspace({
             request={request}
             active={active}
             onSession={setSessionId}
+            onCwdChange={setTerminalCwd}
             onState={(state) => onChange(tab.id, { state })}
             onError={setError}
           />

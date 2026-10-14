@@ -23,12 +23,19 @@ export interface FileEntry {
   name: string;
   path: string;
   isDir: boolean;
+  isSymlink?: boolean;
   size: number;
   modified: number;
 }
 export interface Directory {
   path: string;
+  resolvedPath?: string;
   entries: FileEntry[];
+}
+export interface DirectoryBatch {
+  homePath: string;
+  path: string;
+  directories: Array<{ path: string; directory?: Directory; error?: string }>;
 }
 export interface DockerStatus {
   state: string;
@@ -48,7 +55,10 @@ export interface Container {
   status: string;
 }
 export type TerminalEvent =
-  { type: "data"; data: string } | { type: "closed"; message: string } | {type: "frozen"; token:string};
+  | { type: "data"; data: string }
+  | { type: "closed"; message: string }
+  | { type: "frozen"; token: string }
+  | { type: "cwd"; path: string; home: string | null; sequence: number };
 export interface ConnectionRequest {
   server: Server;
   credentials: Credentials;

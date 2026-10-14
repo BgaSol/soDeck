@@ -15,6 +15,7 @@ import errno
 import itertools
 import os
 import posixpath
+import re
 import shlex
 import socket
 import stat
@@ -22,12 +23,24 @@ import struct
 import threading
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 import paramiko
 
-QA = Path(__file__).resolve().parents[1] / ".qa"
-QA.mkdir(exist_ok=True)
+QA = Path(os.environ.get("SSH_WORKSPACE_FIXTURE_DIR", str(Path(__file__).resolve().parents[1] / ".qa")))
+QA.mkdir(parents=True, exist_ok=True)
 ROOT = QA / "remote"
+FIXTURE_HOME = posixpath.normpath(os.environ.get("SSH_WORKSPACE_FIXTURE_HOME", "/"))
+if FIXTURE_HOME != "/":
+    (ROOT / FIXTURE_HOME.lstrip("/") / "projects").mkdir(parents=True, exist_ok=True)
+    (ROOT / FIXTURE_HOME.lstrip("/") / "projects" / "home-note.txt").write_text("home project fixture\n", encoding="utf-8")
+(ROOT / "var" / "log").mkdir(parents=True, exist_ok=True)
+(ROOT / "var" / "log" / "app.log").write_text("tree fixture\n", encoding="utf-8")
+(ROOT / "empty").mkdir(parents=True, exist_ok=True)
+(ROOT / "中文 空格" / "子目录").mkdir(parents=True, exist_ok=True)
+(ROOT / "中文 空格" / "子目录" / "中文.txt").write_text("目录同步测试\n", encoding="utf-8")
+(ROOT / "traverse-only" / "leaf").mkdir(parents=True, exist_ok=True)
+(ROOT / "traverse-only" / "leaf" / "visible.txt").write_text("accessible child fixture\n", encoding="utf-8")
 (ROOT / "projects").mkdir(parents=True, exist_ok=True)
 (ROOT / "readme.txt").write_text("SSH Workspace SFTP fixture\n", encoding="utf-8")
 (ROOT / "projects" / "hello.txt").write_text("hello\n", encoding="utf-8")
@@ -42,7 +55,32 @@ ROOT = QA / "remote"
 (ROOT / "download" / "nested" / "中文.txt").write_text("递归下载测试\n", encoding="utf-8")
 (ROOT / "download" / "slow.bin").write_bytes(bytes(range(256)) * 32768)
 # Synthetic links work on Windows without Developer Mode or administrator rights.
-LINKS = {"/download/loop-link": "/download", "/download/file-link": "/download/readme.txt"}
+LINKS = {"/download/loop-link": "/download", "/download/file-link": "/download/readme.txt", "/tree-link": "/var"}
+
+
+def normalize_remote_path(path):
+    if not path.startswith("/"):
+        path = posixpath.join(FIXTURE_HOME, path)
+    return posixpath.normpath("/" + path.lstrip("/"))
+
+
+def resolve_remote_path(path):
+    path = normalize_remote_path(path)
+    for _ in range(32):
+        parts = path.lstrip("/").split("/")
+        for count in range(1, len(parts) + 1):
+            prefix = "/" + "/".join(parts[:count])
+            if prefix in LINKS:
+                path = posixpath.normpath(posixpath.join(LINKS[prefix], *parts[count:]))
+                break
+        else:
+            return path
+    raise OSError(errno.ELOOP, "too many symbolic links")
+
+
+def resolve_remote_parent(path):
+    path = normalize_remote_path(path)
+    return posixpath.join(resolve_remote_path(posixpath.dirname(path)), posixpath.basename(path))
 KEY = QA / "ssh-host-key"
 if not KEY.exists():
     paramiko.RSAKey.generate(2048).write_private_key_file(str(KEY))
@@ -107,19 +145,21 @@ class FileHandle(paramiko.SFTPHandle):
 
 class Files(paramiko.SFTPServerInterface):
     def local(self, path, follow=True):
-        normalized = self.canonicalize(path)
-        if follow:
-            normalized = LINKS.get(normalized, normalized)
+        normalized = resolve_remote_path(path) if follow else resolve_remote_parent(path)
         local = (ROOT / normalized.lstrip("/")).resolve()
         if not local.is_relative_to(ROOT.resolve()):
             raise PermissionError(errno.EACCES, "outside fixture")
         return local
 
     def canonicalize(self, path):
-        return posixpath.normpath("/" + path.lstrip("/"))
+        return resolve_remote_path(path)
 
     def list_folder(self, path):
         try:
+            log("sftp-list-start", path=path)
+            if self.canonicalize(path) == "/traverse-only":
+                log("sftp-list-error", path=path, reason="permission denied")
+                return paramiko.SFTP_PERMISSION_DENIED
             delay_file = QA / "sftp-delay"
             if delay_file.exists() and path == "/projects":
                 time.sleep(2)
@@ -146,7 +186,7 @@ class Files(paramiko.SFTPServerInterface):
 
     def lstat(self, path):
         try:
-            path = self.canonicalize(path)
+            path = resolve_remote_parent(path)
             if path in LINKS:
                 attributes = paramiko.SFTPAttributes()
                 attributes.st_mode = stat.S_IFLNK | 0o777
@@ -159,7 +199,7 @@ class Files(paramiko.SFTPServerInterface):
             return paramiko.SFTPServer.convert_errno(error.errno)
 
     def readlink(self, path):
-        return LINKS.get(self.canonicalize(path), paramiko.SFTP_NO_SUCH_FILE)
+        return LINKS.get(resolve_remote_parent(path), paramiko.SFTP_NO_SUCH_FILE)
 
     def open(self, path, flags, attributes):
         try:
@@ -232,10 +272,26 @@ class FixtureSFTPServer(paramiko.SFTPServer):
         return version
 
 
-def terminal(channel, target):
+def terminal(channel, target, token=None):
     log("terminal-open", target=target, channel=channel.get_id())
+    cwd, previous_cwd = FIXTURE_HOME, FIXTURE_HOME
+
+    def report_directory():
+        if token:
+            frame = f"\x1b]777;ssh-workspace;{token};{quote(cwd, safe='/')};{quote(FIXTURE_HOME, safe='/')}\x07".encode()
+            # Split the OSC prefix and Unicode payload across packets, as SSH may do.
+            channel.sendall(frame[:3])
+            channel.sendall(frame[3:])
+            log("terminal-cwd", target=target, path=cwd, home=FIXTURE_HOME)
+
+    def prompt():
+        report_directory()
+        display = "~" if cwd == FIXTURE_HOME else cwd
+        channel.sendall(f"ops@{target}:{display}$ ".encode())
+
     try:
-        channel.sendall(f"\r\nFixture {target} ready\r\nops@{target}:~$ ".encode())
+        channel.sendall(f"\r\nFixture {target} ready\r\n".encode())
+        prompt()
         pending = bytearray()
         while not channel.closed:
             data = channel.recv(4096)
@@ -253,13 +309,35 @@ def terminal(channel, target):
                         marker = command[6:]
                         def delayed_output(message=marker):
                             try:
-                                channel.sendall(f"\r\n{message}\r\nops@{target}:~$ ".encode())
+                                channel.sendall(f"\r\n{message}\r\n".encode())
+                                prompt()
                             except (EOFError, OSError):
                                 pass
                         threading.Timer(0.8, delayed_output).start()
                         continue
-                    response = command[5:] if command.startswith("echo ") else f"{target}: {command}"
-                    channel.sendall(f"\r\n{response}\r\nops@{target}:~$ ".encode())
+                    try:
+                        args = shlex.split(command)
+                    except ValueError:
+                        args = []
+                    if args and args[0] == "cd":
+                        destination = args[1] if len(args) == 2 else "~" if len(args) == 1 else None
+                        if destination == "-":
+                            destination = previous_cwd
+                        elif destination == "~" or (destination or "").startswith("~/"):
+                            destination = posixpath.join(FIXTURE_HOME, destination[2:] if destination != "~" else "")
+                        if destination is not None:
+                            destination = posixpath.normpath(posixpath.join(cwd, destination))
+                        if destination and Files.local(Files.__new__(Files), destination).is_dir():
+                            previous_cwd, cwd = cwd, destination
+                            response = cwd if args[-1:] == ["-"] else ""
+                        else:
+                            response = f"cd: {args[1] if len(args) > 1 else ''}: No such file or directory"
+                    elif command == "pwd":
+                        response = cwd
+                    else:
+                        response = command[5:] if command.startswith("echo ") else f"{target}: {command}"
+                    channel.sendall(f"\r\n{response}\r\n".encode())
+                    prompt()
                 elif char in (8, 127):
                     if pending:
                         pending.pop()
@@ -280,11 +358,13 @@ def terminal(channel, target):
 def container_logs(channel, command):
     args = shlex.split(command)
     container = args[-1]
-    tail = int(args[args.index("--tail") + 1])
+    tail_arg = args[args.index("--tail") + 1]
+    tail = "all" if tail_arg == "all" else int(tail_arg)
     following = "--follow" in args
     mode_file = QA / "logs-mode"
     mode = mode_file.read_text().strip() if mode_file.exists() else "normal"
-    log("logs-open", container=container, following=following, tail=tail)
+    log("logs-open", container=container, following=following, tail=tail,
+        since=args[args.index("--since") + 1] if "--since" in args else None)
     timestamp = "2026-10-14T09:00:00.000000000Z "
     try:
         if mode == "unsupported":
@@ -294,6 +374,8 @@ def container_logs(channel, command):
         if mode != "empty":
             channel.sendall((timestamp + "fixture history stdout\n").encode())
             channel.sendall_stderr((timestamp + "fixture history stderr\n").encode())
+            channel.sendall((timestamp + '[ERROR] 中文错误 IOException at app/Main.java:42\n').encode())
+            channel.sendall((timestamp + '{"level":"INFO","message":"structured fixture","count":12,"ok":true}\n').encode())
             data = (timestamp + "中文日志 \x1b[32mgreen\x1b[0m\n").encode()
             # Force a Unicode code point and an ANSI sequence across writes.
             cut = len(timestamp) + 1
@@ -309,7 +391,7 @@ def container_logs(channel, command):
                 if (QA / "logs-disconnect").exists():
                     channel.get_transport().close()
                     return
-                if mode != "empty":
+                if mode != "empty" and not (QA / "logs-freeze").exists():
                     channel.sendall((timestamp + f"live-{tick}\n").encode())
                 tick += 1
         else:
@@ -326,6 +408,37 @@ def container_logs(channel, command):
 
 def execute(channel, command):
     log("exec", command=command)
+    if "__SSH_WORKSPACE_PROBE__" in command:
+        try:
+            probe = shlex.split(command)[-1]
+        except ValueError:
+            probe = command
+        match = re.search(r"__ssh_workspace_probe_token=['\"]?([0-9a-fA-F-]+)", probe)
+        mode_file = QA / "shell-probe-mode"
+        mode = mode_file.read_text().strip() if mode_file.exists() else "bash"
+        try:
+            if mode == "fail" or not match:
+                channel.sendall_stderr(b"fixture shell probe unavailable\n")
+                channel.send_exit_status(1)
+            else:
+                shell = "/bin/csh" if mode == "unsupported" else mode if mode.startswith("/") else "/bin/" + mode
+                channel.sendall(f"fixture login banner\n__SSH_WORKSPACE_SHELL__{match.group(1)};{shell}\n".encode())
+                channel.send_exit_status(0)
+            channel.shutdown_write()
+            channel.close()
+        except (EOFError, OSError):
+            pass
+        return
+    if "__SSH_WORKSPACE_BOOTSTRAP__" in command:
+        # The launcher quotes the entire `sh -c` script. Decode that outer
+        # quoting first so embedded token assignments remain ordinary shell text.
+        try:
+            bootstrap = shlex.split(command)[-1]
+        except ValueError:
+            bootstrap = command
+        match = re.search(r"__ssh_workspace_token=['\"]?([0-9a-fA-F-]+)", bootstrap)
+        terminal(channel, "host", match.group(1) if match else None)
+        return
     mode_file = QA / "docker-mode"
     mode = mode_file.read_text().strip() if mode_file.exists() else "running"
     code, output, error = 0, "", ""
@@ -437,9 +550,10 @@ def accept(client):
 
 if __name__ == "__main__":
     listener = socket.socket()
-    listener.bind(("127.0.0.1", 22222))
+    port = int(os.environ.get("SSH_WORKSPACE_FIXTURE_PORT", "22222"))
+    listener.bind(("127.0.0.1", port))
     listener.listen(128)
-    print("SSH/SFTP fixture ready on 127.0.0.1:22222", flush=True)
+    print(f"SSH/SFTP fixture ready on 127.0.0.1:{port}", flush=True)
     try:
         while True:
             client, _ = listener.accept()

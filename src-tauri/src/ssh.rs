@@ -1,5 +1,7 @@
 use crate::{
     model::{AppError, AppResult, Server},
+    shell_integration,
+    terminal_cwd::{CwdParser, ParsedOutput},
     State,
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -32,9 +34,20 @@ pub struct ConnectionSpec {
 #[derive(Serialize, Clone)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum TerminalEvent {
-    Data { data: String },
-    Closed { message: String },
-    Frozen { token: String },
+    Data {
+        data: String,
+    },
+    Cwd {
+        path: String,
+        home: Option<String>,
+        sequence: u64,
+    },
+    Closed {
+        message: String,
+    },
+    Frozen {
+        token: String,
+    },
 }
 pub enum Input {
     Data(Vec<u8>),
@@ -59,6 +72,7 @@ pub struct TerminalStream {
     replay_bytes: usize,
     replay_cursor: usize,
     frozen_token: Option<String>,
+    last_cwd: Option<TerminalEvent>,
     pub closed: bool,
 }
 impl TerminalStream {
@@ -72,17 +86,19 @@ impl TerminalStream {
             replay_bytes: 0,
             replay_cursor: 0,
             frozen_token: None,
+            last_cwd: None,
             closed: false,
         }
     }
     pub fn send(&mut self, event: TerminalEvent) {
+        if matches!(event, TerminalEvent::Cwd { .. }) {
+            self.last_cwd = Some(event.clone());
+        }
         if matches!(event, TerminalEvent::Closed { .. }) {
             self.closed = true;
         }
         if self.is_frozen() {
-            if let TerminalEvent::Data { data } = &event {
-                self.replay_bytes += data.len();
-            }
+            self.replay_bytes += event_size(&event);
             self.replay.push(event);
             self.flush_replay();
             return;
@@ -93,9 +109,7 @@ impl TerminalStream {
             }
             self.output = None;
         }
-        if let TerminalEvent::Data { data } = &event {
-            self.pending_bytes += data.len();
-        }
+        self.pending_bytes += event_size(&event);
         self.pending.push_back(event);
     }
     pub fn freeze(&mut self, token: String) -> AppResult<()> {
@@ -124,6 +138,14 @@ impl TerminalStream {
         }
         self.output = Some(output);
         self.replay_cursor = 0;
+        // A destination may attach after the last prompt, with no later Cwd in
+        // replay. Re-send the latest state; sequence numbers let it ignore older
+        // replayed reports and any duplicate from the frontend snapshot.
+        if let Some(cwd) = self.last_cwd.clone() {
+            if self.output.as_ref().unwrap().send(cwd).is_err() {
+                self.output = None;
+            }
+        }
         self.flush_replay();
         self.ready_to_commit()
     }
@@ -136,13 +158,7 @@ impl TerminalStream {
         // The source received none of the output produced after the freeze.
         // Replay it all, including events that reached the failed target.
         let replay = std::mem::take(&mut self.replay);
-        self.pending_bytes += replay
-            .iter()
-            .map(|event| match event {
-                TerminalEvent::Data { data } => data.len(),
-                _ => 0,
-            })
-            .sum::<usize>();
+        self.pending_bytes += replay.iter().map(event_size).sum::<usize>();
         self.pending.extend(replay);
         self.replay.clear();
         self.replay_bytes = 0;
@@ -196,9 +212,7 @@ impl TerminalStream {
         while let Some(event) = self.pending.pop_front() {
             if let Some(output) = &self.output {
                 if output.send(event.clone()).is_ok() {
-                    if let TerminalEvent::Data { data } = &event {
-                        self.pending_bytes -= data.len();
-                    }
+                    self.pending_bytes -= event_size(&event);
                     continue;
                 }
             }
@@ -210,6 +224,16 @@ impl TerminalStream {
     fn backpressured(&self) -> bool {
         self.replay_bytes >= 4 * 1024 * 1024
             || (self.output.is_none() && self.pending_bytes >= 4 * 1024 * 1024)
+    }
+}
+fn event_size(event: &TerminalEvent) -> usize {
+    match event {
+        TerminalEvent::Data { data } => data.len(),
+        TerminalEvent::Cwd { path, home, .. } => {
+            path.len() + home.as_ref().map_or(0, String::len) + 32
+        }
+        TerminalEvent::Closed { message } => message.len() + 16,
+        TerminalEvent::Frozen { token } => token.len() + 16,
     }
 }
 pub struct WindowOwner {
@@ -299,14 +323,48 @@ pub fn start_terminal(
     command: Option<String>,
     state: std::sync::Arc<State>,
 ) -> AppResult<()> {
+    let integration = if command.is_none() {
+        let token = uuid::Uuid::new_v4().to_string();
+        let blocking = session.is_blocking();
+        // Probe through a separate exec channel on this same SSH connection.
+        // Banners are tolerated, but unknown shells and failed/rejected probes
+        // use the server's genuine login-shell request without guessed flags.
+        let probe = exec(&session, &shell_integration::probe_command(&token));
+        session.set_blocking(blocking);
+        probe
+            .ok()
+            .filter(|result| result.code == 0)
+            .and_then(|result| {
+                shell_integration::supported_shell(&result.stdout, &token)
+                    .map(|shell| (token, shell))
+            })
+    } else {
+        None
+    };
     let mut channel = session.channel_session()?;
     channel.handle_extended_data(ssh2::ExtendedData::Merge)?;
     channel.request_pty("xterm-256color", None, Some((100, 30, 0, 0)))?;
-    if let Some(command) = command {
+    let cwd_token = if let Some(command) = command {
         channel.exec(&command)?;
+        None
+    } else if let Some((token, shell)) = integration {
+        match channel.exec(&shell_integration::launch_command(&token, &shell)) {
+            Ok(()) => Some(token),
+            Err(_) => {
+                // Restricted SSH endpoints can allow shell but reject exec.
+                // Preserve their ordinary terminal even without integration.
+                let _ = channel.close();
+                channel = session.channel_session()?;
+                channel.handle_extended_data(ssh2::ExtendedData::Merge)?;
+                channel.request_pty("xterm-256color", None, Some((100, 30, 0, 0)))?;
+                channel.shell()?;
+                None
+            }
+        }
     } else {
         channel.shell()?;
-    }
+        None
+    };
     session.set_blocking(false);
     let (sender, receiver) = mpsc::channel();
     let generations = state.window_generations.lock().unwrap();
@@ -329,6 +387,7 @@ pub fn start_terminal(
     drop(closed_windows);
     drop(generations);
     std::thread::spawn(move || {
+        let mut cwd_parser = cwd_token.as_deref().map(CwdParser::new);
         let mut buffer = [0u8; 16384];
         let mut queued = std::collections::VecDeque::<u8>::new();
         let mut last_keepalive = Instant::now();
@@ -369,9 +428,24 @@ pub fn start_terminal(
             }
             match channel.read(&mut buffer) {
                 Ok(count) if count > 0 => {
-                    stream.lock().unwrap().send(TerminalEvent::Data {
-                        data: STANDARD.encode(&buffer[..count]),
-                    });
+                    let events = if let Some(parser) = &mut cwd_parser {
+                        parser.push(&buffer[..count])
+                    } else {
+                        vec![ParsedOutput::Data(buffer[..count].to_vec())]
+                    };
+                    let mut stream = stream.lock().unwrap();
+                    for event in events {
+                        match event {
+                            ParsedOutput::Data(data) => stream.send(TerminalEvent::Data {
+                                data: STANDARD.encode(data),
+                            }),
+                            ParsedOutput::Cwd(cwd) => stream.send(TerminalEvent::Cwd {
+                                path: cwd.path,
+                                home: cwd.home,
+                                sequence: cwd.sequence,
+                            }),
+                        }
+                    }
                 }
                 Ok(_) if channel.eof() => return Ok(()),
                 Ok(_) => {}
@@ -390,6 +464,11 @@ pub fn start_terminal(
         })();
         let _ = channel.close();
         let _ = session.disconnect(None, "Terminal closed", None);
+        if let Some(data) = cwd_parser.as_mut().and_then(CwdParser::finish) {
+            stream.lock().unwrap().send(TerminalEvent::Data {
+                data: STANDARD.encode(data),
+            });
+        }
         stream.lock().unwrap().send(TerminalEvent::Closed {
             message: result.err().unwrap_or_else(|| "会话已结束".into()),
         });
@@ -513,6 +592,53 @@ mod stream_tests {
         assert_eq!(source[2]["data"], "second");
         let target = target_messages.lock().unwrap();
         assert_eq!(target.len(), 2);
+    }
+
+    #[test]
+    fn cwd_survives_transfer_without_new_prompt_and_replays_changes() {
+        let (source, source_messages) = collector();
+        let (target, target_messages) = collector();
+        let mut stream = TerminalStream::new(source);
+        stream.send(TerminalEvent::Cwd {
+            path: "/home/ops".into(),
+            home: Some("/home/ops".into()),
+            sequence: 1,
+        });
+        stream.freeze("move-cwd".into()).unwrap();
+        stream.send(TerminalEvent::Cwd {
+            path: "/var/log".into(),
+            home: Some("/home/ops".into()),
+            sequence: 2,
+        });
+        stream.attach(target).unwrap();
+        stream.rollback();
+        assert_eq!(source_messages.lock().unwrap()[2]["path"], "/var/log");
+        assert_eq!(target_messages.lock().unwrap()[0]["path"], "/var/log");
+        assert_eq!(target_messages.lock().unwrap()[1]["sequence"], 2);
+
+        let (next, next_messages) = collector();
+        stream.freeze("move-cwd-2".into()).unwrap();
+        stream.attach(next).unwrap();
+        stream.commit().unwrap();
+        assert_eq!(next_messages.lock().unwrap()[0]["path"], "/var/log");
+    }
+
+    #[test]
+    fn cwd_events_contribute_to_transfer_backpressure() {
+        let (source, _) = collector();
+        let mut stream = TerminalStream::new(source);
+        stream.freeze("move-cwd".into()).unwrap();
+        for sequence in 0..512 {
+            stream.send(TerminalEvent::Cwd {
+                path: format!("/{}", "x".repeat(8192)),
+                home: None,
+                sequence,
+            });
+        }
+        assert!(stream.backpressured());
+        stream.rollback();
+        assert_eq!(stream.pending_bytes, 0);
+        assert_eq!(stream.replay_bytes, 0);
     }
 }
 

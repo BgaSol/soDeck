@@ -10,7 +10,8 @@
     "tauri": "tauri",
     "desktop": "tauri dev",
     "test": "vitest run",
-    "test:desktop": "playwright test"
+    "test:desktop": "playwright test",
+    "test:tree": "playwright test --config playwright.file-tree.config.ts"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",
@@ -40,7 +41,8 @@
     "codemirror": "^6.0.2",
     "lucide-react": "^0.468.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "react-virtuoso": "^4.18.19"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.0",

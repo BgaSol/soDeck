@@ -1,6 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Fragment,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowUp,
+  ChevronDown,
+  ChevronRight,
+  Link,
   Download,
   Folder,
   FileText,
@@ -8,19 +18,19 @@ import {
   RefreshCw,
   X,
 } from "lucide-react";
-import { api } from "./api";
 import { fileApi, notifyDownloadStarted } from "./fileApi";
 import type { DownloadConflict } from "./fileApi";
 import { errorOf, formatSize } from "./types";
-import type { Directory, FileEntry } from "./types";
+import type { FileEntry } from "./types";
+import { remoteParent, visibleFileRows } from "./remoteFileTree";
+import type {
+  RemoteFileTreeSnapshot,
+  TerminalDirectory,
+} from "./remoteFileTree";
+import { useRemoteFileTree } from "./useRemoteFileTree";
 import "./files.css";
 
-export interface FilePanelSnapshot {
-  sessionId: string | null;
-  directory: Directory | null;
-  path: string;
-  selected: string;
-}
+export type FilePanelSnapshot = RemoteFileTreeSnapshot;
 
 export function FilePanel({
   sessionId,
@@ -28,22 +38,32 @@ export function FilePanel({
   active = true,
   initialState,
   onStateChange,
+  terminalCwd,
 }: {
   sessionId: string | null;
   serverName: string;
   active?: boolean;
   initialState?: FilePanelSnapshot;
   onStateChange?: (state: FilePanelSnapshot) => void;
+  terminalCwd?: TerminalDirectory;
 }) {
-  const snapshot =
-    initialState?.sessionId === sessionId ? initialState : undefined;
-  const [directory, setDirectory] = useState<Directory | null>(
-    snapshot?.directory ?? null,
+  const { model, state } = useRemoteFileTree(
+    sessionId,
+    active,
+    initialState,
+    terminalCwd,
   );
-  const [path, setPath] = useState(snapshot?.path ?? "");
-  const [selected, setSelected] = useState(snapshot?.selected ?? "");
+  const { selected } = state;
+  const [path, setPath] = useState(state.currentPath);
+  const [focusedPath, setFocusedPath] = useState(selected || "/");
+  const list = useRef<HTMLDivElement>(null);
+  const rowElements = useRef(new Map<string, HTMLButtonElement>());
+  const rows = useMemo(() => visibleFileRows(state), [state]);
+  const expanded = useMemo(() => new Set(state.expanded), [state.expanded]);
+  const loading =
+    state.revealing ||
+    Object.values(state.directories).some((node) => node.loading);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [menu, setMenu] = useState<{
     file: FileEntry;
@@ -53,61 +73,69 @@ export function FilePanel({
   const [download, setDownload] = useState<FileEntry | null>(null);
   const [conflict, setConflict] = useState<DownloadConflict>("rename");
   const downloadDialog = useRef<HTMLDialogElement>(null);
-  const generation = useRef(0);
   const previousSession = useRef(sessionId);
-  const initialized = useRef(!!snapshot?.directory);
+  const scrollOwner = useRef(model);
+  const restoredScroll = useRef(false);
+  const lastReveal = useRef(0);
   const report = useRef(onStateChange);
   report.current = onStateChange;
 
-  const load = useCallback(
-    async (next?: string) => {
-      if (!sessionId) return;
-      const token = ++generation.current;
-      setLoading(true);
-      setError("");
-      try {
-        const result = await api.directory(sessionId, next);
-        if (token !== generation.current) return;
-        setDirectory(result);
-        setPath(result.path);
-        setSelected("");
-      } catch (error) {
-        if (token === generation.current) setError(errorOf(error).message);
-      } finally {
-        if (token === generation.current) setLoading(false);
-      }
-    },
-    [sessionId],
-  );
-
   useEffect(() => {
-    if (previousSession.current !== sessionId) {
-      generation.current++;
-      previousSession.current = sessionId;
-      setDirectory(null);
-      setPath("");
-      setSelected("");
-      setError("");
-      setLoading(false);
-      setMenu(null);
-      setDownload(null);
-      initialized.current = false;
-    }
-    if (sessionId && active && !initialized.current) {
-      initialized.current = true;
-      void load();
-    }
-  }, [sessionId, active, load]);
-
-  useEffect(
-    () => () => {
-      generation.current++;
-    },
-    [],
-  );
+    setPath(state.currentPath);
+  }, [state.currentPath, state.revealVersion]);
   useEffect(() => {
-    report.current?.({ sessionId, directory, path, selected });
-  }, [sessionId, directory, path, selected]);
+    if (previousSession.current === sessionId) return;
+    previousSession.current = sessionId;
+    setError("");
+    setMenu(null);
+    setDownload(null);
+    setFocusedPath("/");
+  }, [sessionId]);
+  useEffect(() => {
+    report.current?.(model.snapshot());
+  }, [model, state]);
+  useLayoutEffect(() => {
+    if (scrollOwner.current !== model) {
+      scrollOwner.current = model;
+      restoredScroll.current = false;
+      lastReveal.current = 0;
+    }
+    if (!active) {
+      restoredScroll.current = false;
+      return;
+    }
+    if (!list.current) return;
+    if (!restoredScroll.current) {
+      list.current.scrollTop = state.scrollTop;
+      restoredScroll.current = true;
+    }
+    if (state.revealVersion !== lastReveal.current) {
+      lastReveal.current = state.revealVersion;
+      rowElements.current
+        .get(state.selected)
+        ?.scrollIntoView({ block: "nearest" });
+    }
+  }, [model, active, state.revealVersion, state.scrollTop, state.selected]);
+  useEffect(() => {
+    if (!rows.some((row) => row.file.path === focusedPath)) {
+      setFocusedPath(
+        rows.some((row) => row.file.path === selected) ? selected : "/",
+      );
+    }
+  }, [rows, focusedPath, selected]);
+
+  function focusRow(next: string) {
+    setFocusedPath(next);
+    rowElements.current.get(next)?.focus({ preventScroll: true });
+    rowElements.current.get(next)?.scrollIntoView({ block: "nearest" });
+  }
+  function choose(file: FileEntry) {
+    model.select(file.path, file.isDir);
+    if (file.isDir) {
+      if (expanded.has(file.path)) model.collapse(file.path);
+      else void model.expand(file.path);
+    }
+  }
   useEffect(() => {
     if (!menu) return;
     const dismiss = () => setMenu(null);
@@ -166,11 +194,18 @@ export function FilePanel({
     }
   }
 
-  const selectedFile = directory?.entries.find(
-    (file) => file.path === selected,
-  );
+  const selectedFile =
+    rows.find((row) => row.file.path === selected)?.file ??
+    Object.values(state.directories)
+      .flatMap((node) => node.directory?.entries ?? [])
+      .find((file) => file.path === selected);
+  const refreshPath = selectedFile?.isDir
+    ? selectedFile.path
+    : state.currentPath;
+  const refreshLoading = state.directories[refreshPath]?.loading ?? false;
+  const currentDirectory = state.directories[state.currentPath]?.directory;
   return (
-    <section className="file-panel" aria-label="远程文件">
+    <section className="file-panel" aria-label="远程文件" data-session-id={sessionId ?? undefined}>
       <header className="panel-head">
         <div className="panel-title">
           <h2>
@@ -201,10 +236,13 @@ export function FilePanel({
             <button
               className="icon-button"
               aria-label="刷新目录"
-              disabled={!sessionId || loading}
-              onClick={() => void load(directory?.path)}
+              disabled={!sessionId || refreshLoading}
+              onClick={() => void model.refresh(refreshPath)}
             >
-              <RefreshCw size={15} className={loading ? "spinning" : ""} />
+              <RefreshCw
+                size={15}
+                className={refreshLoading ? "spinning" : ""}
+              />
             </button>
           </div>
         </div>
@@ -213,11 +251,9 @@ export function FilePanel({
           <button
             className="icon-button"
             aria-label="上一级目录"
-            disabled={!sessionId || loading || directory?.path === "/"}
+            disabled={!sessionId || state.currentPath === "/"}
             onClick={() =>
-              void load(
-                directory?.path.split("/").slice(0, -1).join("/") || "/",
-              )
+              void model.revealPath(remoteParent(state.currentPath))
             }
           >
             <ArrowUp size={16} />
@@ -226,10 +262,10 @@ export function FilePanel({
             aria-label="远程目录路径"
             value={path}
             onChange={(event) => setPath(event.target.value)}
-            disabled={!sessionId || loading}
+            disabled={!sessionId}
             placeholder="远程目录"
             onKeyDown={(event) => {
-              if (event.key === "Enter") void load(path);
+              if (event.key === "Enter") void model.revealPath(path);
             }}
           />
         </div>
@@ -238,7 +274,16 @@ export function FilePanel({
         <span>名称</span>
         <span>大小</span>
       </div>
-      <div className="file-list">
+      <div
+        className="file-list remote-file-tree"
+        ref={list}
+        role={sessionId ? "tree" : undefined}
+        aria-label={sessionId ? "远程文件树" : undefined}
+        onScroll={(event) => {
+          if (active && restoredScroll.current)
+            model.setScrollTop(event.currentTarget.scrollTop);
+        }}
+      >
         {!sessionId ? (
           <div className="panel-empty">
             <Folder size={28} aria-hidden="true" />
@@ -246,70 +291,182 @@ export function FilePanel({
             <p>目录与文件将显示在这里</p>
           </div>
         ) : (
-          directory?.entries.map((file) => (
-            <button
-              className={
-                "file-row" + (selected === file.path ? " selected" : "")
-              }
-              key={file.path}
-              aria-pressed={selected === file.path}
-              onClick={() => {
-                if (file.isDir) void load(file.path);
-                else setSelected(file.path);
-              }}
-              onDoubleClick={() => {
-                if (!file.isDir) void edit(file);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  if (file.isDir) void load(file.path);
-                  else void edit(file);
-                }
-                if (
-                  event.key === "ContextMenu" ||
-                  (event.key === "F10" && event.shiftKey)
-                ) {
-                  event.preventDefault();
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  setSelected(file.path);
-                  setMenu({
-                    file,
-                    x: Math.min(rect.x + 20, window.innerWidth - 195),
-                    y: Math.min(rect.bottom, window.innerHeight - 105),
-                  });
-                }
-              }}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                setSelected(file.path);
-                setMenu({
-                  file,
-                  x: Math.min(event.clientX, window.innerWidth - 195),
-                  y: Math.min(event.clientY, window.innerHeight - 105),
-                });
-              }}
-              disabled={loading}
-            >
-              <span className="file-icon">
-                {file.isDir ? <Folder size={16} /> : <FileText size={16} />}
-              </span>
-              <span className="file-name" title={file.name}>
-                {file.name}
-              </span>
-              <span className="file-size">
-                {file.isDir ? "—" : formatSize(file.size)}
-              </span>
-            </button>
-          ))
-        )}
-        {sessionId && directory?.entries.length === 0 && (
-          <div className="panel-empty">目录为空</div>
+          rows.map(({ file, depth, parent, position, siblings }, index) => {
+            const node = state.directories[file.path];
+            const isExpanded = file.isDir && expanded.has(file.path);
+            return (
+              <Fragment key={file.path}>
+                <button
+                  ref={(element) => {
+                    if (element) rowElements.current.set(file.path, element);
+                    else rowElements.current.delete(file.path);
+                  }}
+                  className={
+                    "file-row file-tree-row" +
+                    (selected === file.path ? " selected" : "") +
+                    (state.terminalCwd?.path === file.path
+                      ? " terminal-directory"
+                      : "")
+                  }
+                  style={{ paddingLeft: 5 + depth * 15 }}
+                  role="treeitem"
+                  data-path={file.path}
+                  aria-label={file.name}
+                  aria-level={depth + 1}
+                  aria-posinset={position}
+                  aria-setsize={siblings}
+                  aria-selected={selected === file.path}
+                  aria-expanded={file.isDir ? isExpanded : undefined}
+                  aria-busy={node?.loading || undefined}
+                  tabIndex={focusedPath === file.path ? 0 : -1}
+                  onFocus={() => setFocusedPath(file.path)}
+                  onClick={() => choose(file)}
+                  onDoubleClick={() => {
+                    if (!file.isDir) void edit(file);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                      event.preventDefault();
+                      focusRow(
+                        rows[
+                          Math.min(
+                            rows.length - 1,
+                            Math.max(
+                              0,
+                              index + (event.key === "ArrowDown" ? 1 : -1),
+                            ),
+                          )
+                        ].file.path,
+                      );
+                    } else if (event.key === "Home" || event.key === "End") {
+                      event.preventDefault();
+                      focusRow(
+                        rows[event.key === "Home" ? 0 : rows.length - 1].file
+                          .path,
+                      );
+                    } else if (event.key === "ArrowRight") {
+                      event.preventDefault();
+                      if (!file.isDir) return;
+                      if (!isExpanded) void model.expand(file.path);
+                      else if (rows[index + 1]?.parent === file.path)
+                        focusRow(rows[index + 1].file.path);
+                    } else if (event.key === "ArrowLeft") {
+                      event.preventDefault();
+                      if (isExpanded) model.collapse(file.path);
+                      else if (parent) focusRow(parent);
+                    } else if (event.key === " " || event.key === "Enter") {
+                      event.preventDefault();
+                      if (event.key === "Enter" && !file.isDir) void edit(file);
+                      else choose(file);
+                    } else if (
+                      event.key === "ContextMenu" ||
+                      (event.key === "F10" && event.shiftKey)
+                    ) {
+                      event.preventDefault();
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      model.select(file.path, file.isDir);
+                      setMenu({
+                        file,
+                        x: Math.min(rect.x + 20, window.innerWidth - 195),
+                        y: Math.min(rect.bottom, window.innerHeight - 105),
+                      });
+                    } else if (
+                      event.key.length === 1 &&
+                      !event.ctrlKey &&
+                      !event.metaKey &&
+                      !event.altKey
+                    ) {
+                      const ordered = [
+                        ...rows.slice(index + 1),
+                        ...rows.slice(0, index + 1),
+                      ];
+                      const match = ordered.find((row) =>
+                        row.file.name
+                          .toLocaleLowerCase()
+                          .startsWith(event.key.toLocaleLowerCase()),
+                      );
+                      if (match) {
+                        event.preventDefault();
+                        focusRow(match.file.path);
+                      }
+                    }
+                  }}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    model.select(file.path, file.isDir);
+                    setMenu({
+                      file,
+                      x: Math.min(event.clientX, window.innerWidth - 195),
+                      y: Math.min(event.clientY, window.innerHeight - 105),
+                    });
+                  }}
+                >
+                  <span className="file-tree-chevron" aria-hidden="true">
+                    {file.isDir &&
+                      (node?.loading ? (
+                        <RefreshCw size={12} className="spinning" />
+                      ) : isExpanded ? (
+                        <ChevronDown size={13} />
+                      ) : (
+                        <ChevronRight size={13} />
+                      ))}
+                  </span>
+                  <span className="file-icon" aria-hidden="true">
+                    {file.isDir ? <Folder size={16} /> : <FileText size={16} />}
+                  </span>
+                  <span className="file-name" title={file.path}>
+                    {file.name}
+                  </span>
+                  {file.isSymlink && (
+                    <Link
+                      size={11}
+                      className="file-link-mark"
+                      aria-label="符号链接"
+                    />
+                  )}
+                  {state.terminalCwd?.path === file.path && (
+                    <span
+                      className="file-cwd-mark"
+                      title="终端当前目录"
+                      aria-label="终端当前目录"
+                    />
+                  )}
+                  <span className="file-size">
+                    {file.isDir ? "—" : formatSize(file.size)}
+                  </span>
+                </button>
+                {isExpanded && node?.error && (
+                  <div
+                    className="file-tree-status file-tree-error"
+                    style={{ paddingLeft: 26 + depth * 15 }}
+                  >
+                    <span>{node.error}</span>
+                    <button
+                      className="quiet"
+                      onClick={() => void model.refresh(file.path)}
+                    >
+                      重试
+                    </button>
+                  </div>
+                )}
+                {isExpanded &&
+                  !node?.error &&
+                  node?.directory?.entries.length === 0 && (
+                    <div
+                      className="file-tree-status"
+                      style={{ paddingLeft: 26 + depth * 15 }}
+                    >
+                      目录为空
+                    </div>
+                  )}
+              </Fragment>
+            );
+          })
         )}
       </div>
-      {error && (
+      {(error || state.error) && (
         <p className="panel-error" role="alert">
-          {error}
+          {error || state.error}
           {selectedFile && (
             <button
               className="quiet"
@@ -327,9 +484,11 @@ export function FilePanel({
           : busy
             ? "正在打开…"
             : selected
-              ? selected.split("/").pop()
-              : directory
-                ? directory.entries.length + " 个项目 · 双击编辑文件"
+              ? selected === "/"
+                ? "/"
+                : selected.split("/").pop()
+              : currentDirectory
+                ? currentDirectory.entries.length + " 个项目 · 双击编辑文件"
                 : "SFTP"}
       </footer>
       {menu && (
@@ -350,7 +509,13 @@ export function FilePanel({
             </button>
           )}
           {menu.file.isDir && (
-            <button role="menuitem" onClick={() => void load(menu.file.path)}>
+            <button
+              role="menuitem"
+              onClick={() => {
+                model.select(menu.file.path, true);
+                void model.expand(menu.file.path);
+              }}
+            >
               <Folder size={14} />
               打开文件夹
             </button>

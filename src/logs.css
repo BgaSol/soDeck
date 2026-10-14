@@ -87,6 +87,263 @@
   min-height: 0;
   display: flex;
 }
+.log-virtual-list {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  font: 12px/1.65 var(--mono);
+}
+.log-row {
+  display: flex;
+  gap: 8px;
+  padding: 3px 12px;
+  min-height: 27px;
+  border-left: 3px solid transparent;
+}
+.log-row-body {
+  flex: 1;
+  min-width: 0;
+  white-space: pre;
+  overflow: visible;
+}
+.log-wrap .log-row-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.log-seq {
+  border: 0;
+  background: transparent;
+  padding: 0 3px;
+  min-height: 20px;
+  width: 70px;
+  flex-shrink: 0;
+  align-self: flex-start;
+  justify-content: flex-end;
+  color: var(--muted);
+  font: 10px/1.8 var(--mono);
+  user-select: none;
+}
+.log-row.log-level-error {
+  border-left-color: var(--error);
+  background: color-mix(in srgb, var(--error) 5%, transparent);
+}
+.log-row.log-level-warn {
+  border-left-color: #b07512;
+  background: color-mix(in srgb, #b07512 5%, transparent);
+}
+.log-level-label {
+  font: 9px/1.5 var(--mono);
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  padding: 1px 3px;
+  margin-right: 8px;
+}
+.log-level-label.log-level-error,
+.log-token-exception {
+  color: var(--error);
+}
+.log-level-label.log-level-warn {
+  color: #946209;
+}
+.log-level-label.log-level-info {
+  color: var(--muted);
+}
+.log-level-label.log-level-debug,
+.log-token-timestamp,
+.log-fragment {
+  color: var(--muted);
+}
+.log-level-label.log-level-debug {
+  opacity: 0.75;
+}
+.log-stream {
+  color: var(--error);
+  font-weight: 600;
+}
+.log-fragment {
+  font-size: 10px;
+}
+.log-token-key {
+  color: #1b5fa3;
+}
+.log-token-string {
+  color: #287047;
+}
+.log-token-number {
+  color: #985326;
+}
+.log-token-literal {
+  color: #8154a3;
+}
+.log-search-match {
+  background: #f1cd5b80;
+  color: var(--text) !important;
+  outline: 1px solid #a77a15;
+  border-radius: 2px;
+}
+.log-ansi-red {
+  color: var(--error);
+}
+.log-ansi-green {
+  color: var(--green);
+}
+.log-ansi-blue {
+  color: var(--blue);
+}
+.log-ansi-yellow {
+  color: #946209;
+}
+.log-ansi-magenta {
+  color: #8154a3;
+}
+.log-ansi-cyan {
+  color: #19747d;
+}
+.log-ansi-black,
+.log-ansi-white {
+  color: var(--text);
+}
+.log-context {
+  flex-shrink: 0;
+  align-self: flex-start;
+  min-height: 20px;
+  padding: 0 5px;
+  font-size: 10px;
+}
+.log-page-control {
+  padding: 8px 14px;
+  text-align: center;
+}
+.log-search {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--canvas);
+  display: grid;
+  gap: 8px;
+}
+.log-search-main,
+.log-search-filters,
+.log-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.log-search-main > input {
+  flex: 1;
+  width: auto;
+  min-width: 160px;
+}
+.log-search-main > select {
+  width: auto;
+}
+.log-search label,
+.log-range label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+}
+.log-search input[type="checkbox"] {
+  width: auto;
+  min-height: initial;
+}
+.log-search-filters input {
+  width: 185px;
+  font-size: 11px;
+  min-height: 28px;
+  padding: 3px 6px;
+}
+.log-search-filters > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.log-search button,
+.log-range button {
+  min-height: 27px;
+  font-size: 11px;
+}
+.log-range {
+  border-top: 1px solid var(--line);
+  padding: 5px 14px;
+}
+.log-range input {
+  width: 105px;
+  min-height: 27px;
+  padding: 3px 6px;
+  font-size: 11px;
+}
+.log-notice {
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.log-archives {
+  width: min(680px, calc(100vw - 40px));
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 20px 70px #0003;
+}
+.log-archives header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.log-archives h2 {
+  flex: 1;
+}
+.log-archives > p {
+  font-size: 12px;
+  color: var(--muted);
+}
+.log-archive-list {
+  overflow: auto;
+  min-height: 80px;
+  display: grid;
+  gap: 6px;
+}
+.log-archive-list > button {
+  justify-content: space-between;
+  padding: 12px;
+  text-align: left;
+}
+.log-archive-list span {
+  display: grid;
+  gap: 4px;
+}
+.log-archive-list small {
+  color: var(--muted);
+}
+@media (prefers-color-scheme: dark) {
+  .log-token-key {
+    color: #82b6ec;
+  }
+  .log-token-string {
+    color: #91c8a3;
+  }
+  .log-token-number {
+    color: #d9aa79;
+  }
+  .log-token-literal,
+  .log-ansi-magenta {
+    color: #bd9ad8;
+  }
+  .log-level-label.log-level-warn,
+  .log-ansi-yellow {
+    color: #dbb666;
+  }
+  .log-ansi-cyan {
+    color: #78bbc2;
+  }
+}
 .log-empty {
   position: absolute;
   inset: 40px 20px auto;

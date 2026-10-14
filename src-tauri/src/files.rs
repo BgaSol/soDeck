@@ -214,6 +214,20 @@ fn editor_for(state: &State, window: &WebviewWindow) -> AppResult<EditorHandle> 
 }
 
 impl FileState {
+    pub fn has_server_activity(&self, id: &str) -> bool {
+        self.editors
+            .lock()
+            .unwrap()
+            .values()
+            .any(|editor| editor.spec.server.id == id)
+            || self.downloads.lock().unwrap().iter().any(|item| {
+                item.spec.server.id == id
+                    && matches!(
+                        item.task.lock().unwrap().status.as_str(),
+                        "queued" | "scanning" | "running"
+                    )
+            })
+    }
     pub fn unsaved_count(&self) -> usize {
         self.editors
             .lock()

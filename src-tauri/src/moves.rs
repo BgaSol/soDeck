@@ -20,6 +20,22 @@ use tauri::{
 pub struct MoveState {
     pending: Mutex<HashMap<String, Transfer>>,
     drags: Mutex<HashMap<String, Drag>>,
+    detached_servers: Mutex<HashMap<String, String>>,
+}
+impl MoveState {
+    pub fn has_server(&self, id: &str) -> bool {
+        self.pending
+            .lock()
+            .unwrap()
+            .values()
+            .any(|entry| entry.payload["tab"]["server"]["id"].as_str() == Some(id))
+            || self
+                .detached_servers
+                .lock()
+                .unwrap()
+                .values()
+                .any(|server| server == id)
+    }
 }
 #[derive(Clone)]
 struct Transfer {
@@ -321,6 +337,16 @@ pub fn workspace_ready(
         }
         let from = entry.from.clone();
         let tab_id = entry.payload["tab"]["id"].clone();
+        if entry.to.starts_with("workspace-") {
+            if let Some(server_id) = entry.payload["tab"]["server"]["id"].as_str() {
+                state
+                    .moves
+                    .detached_servers
+                    .lock()
+                    .unwrap()
+                    .insert(entry.to.clone(), server_id.into());
+            }
+        }
         let session_id = entry.session_id.clone();
         let mut terminals = state.terminals.lock().unwrap();
         let mut closed = false;
@@ -444,6 +470,7 @@ pub fn window_unavailable(app: &tauri::AppHandle, state: &State, label: &str, re
 
 pub fn window_closed(app: &tauri::AppHandle, state: &State, label: &str) {
     window_unavailable(app, state, label, false);
+    state.moves.detached_servers.lock().unwrap().remove(label);
 }
 
 #[tauri::command]
