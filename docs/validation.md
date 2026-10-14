@@ -1,5 +1,18 @@
 # 首版本机验证记录
 
+## macOS 首次本机验证（2026-10-15）
+
+环境：Apple Silicon arm64，macOS 27.0.1，Node.js 24.22.0，Rust 1.99.0，Xcode Command Line Tools。
+
+- `npm ci`、前端 61 项测试、TypeScript/Vite 生产构建通过。
+- Rust 常规测试 38 项通过，2 项默认忽略；其中 SSH/SFTP loopback 测试另外显式运行并通过，百万条日志压力测试未执行。`cargo fmt --check` 通过。
+- 修正下载相关测试的临时目录准备：先解析 macOS `/var` 临时目录路径中的系统符号链接，再验证同名处理、空目录及链接拦截；链接拦截测试同时确认普通路径能通过，避免因系统路径而误判通过。此次未修改下载功能实现。
+- `npm run tauri -- build --debug --bundles app` 成功生成原生 arm64 调试应用，输出到 `src-tauri/target/debug/bundle/macos/SSH Workspace.app`；通过 `open` 启动并确认应用进程运行。应用内嵌前端资源，无需 Vite 服务。
+- 协议测试使用 `tests/ssh_fixture.py`，SSH/SFTP 为真实本地传输，Docker 为模拟响应。未验证真实远程服务器、release 构建或分发签名/公证。
+- 既有 Playwright 桌面用例依赖 Windows WebView2/CDP，本轮未在 Mac 执行。原生窗口中的交互、文件选择器及完整多窗口流程仍需手动测试，不能将启动成功视为完整桌面回归通过。
+
+本机联调服务可用 `.qa/venv/bin/python tests/ssh_fixture.py` 启动，连接地址 `127.0.0.1:22222`，用户名 `ops`，密码 `fixture-password`。下文保留 Windows 历次验证记录。
+
 验证日期：2026-10-14。环境：Windows x64，Node.js 24，Rust 1.99，MSVC 2022，WebView2 154。
 
 ## 已通过

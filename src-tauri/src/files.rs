@@ -992,7 +992,9 @@ mod tests {
     #[test]
     fn conflict_policies_preserve_existing_files_and_empty_directories() {
         let root = tempfile::tempdir().unwrap();
-        let path = root.path().join("a.txt");
+        // macOS temp paths may start with /var, a symlink to /private/var.
+        let directory = fs::canonicalize(root.path()).unwrap();
+        let path = directory.join("a.txt");
         fs::write(&path, "old").unwrap();
         assert!(resolve_destination(&path, false, ConflictPolicy::Skip)
             .unwrap()
@@ -1001,11 +1003,11 @@ mod tests {
             resolve_destination(&path, false, ConflictPolicy::Rename)
                 .unwrap()
                 .unwrap(),
-            root.path().join("a (1).txt")
+            directory.join("a (1).txt")
         );
         assert!(resolve_destination(&path, true, ConflictPolicy::Overwrite).is_err());
         assert_eq!(fs::read_to_string(&path).unwrap(), "old");
-        let empty = root.path().join("a/b/empty");
+        let empty = directory.join("a/b/empty");
         safe_create_directory(&empty).unwrap();
         assert!(empty.is_dir());
     }
@@ -1045,7 +1047,9 @@ mod tests {
     #[test]
     fn reject_existing_symlinks_in_destination_ancestors() {
         let root = tempfile::tempdir().unwrap();
-        std::os::unix::fs::symlink(root.path(), root.path().join("link")).unwrap();
-        assert!(reject_links(&root.path().join("link/file")).is_err());
+        let directory = fs::canonicalize(root.path()).unwrap();
+        assert!(reject_links(&directory.join("file")).is_ok());
+        std::os::unix::fs::symlink(&directory, directory.join("link")).unwrap();
+        assert!(reject_links(&directory.join("link/file")).is_err());
     }
 }
