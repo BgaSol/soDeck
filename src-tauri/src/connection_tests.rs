@@ -815,3 +815,17 @@ pub(crate) fn transfer_context(id: &str, port: u16) -> SharedContext {
     .unwrap()
     .1
 }
+
+// No network connection: only for testing immutable draft identity snapshots.
+pub(crate) fn mock_context(server: ServerConfig) -> SharedContext {
+    let hops = vec![VerifiedHop {
+        server,
+        credentials: Credentials::default(),
+        fingerprint: "fixture".into(),
+        public_key: "ssh-ed25519 fixture".into(),
+    }];
+    Arc::new(ConnectionContext {
+        identity: route_identity(&hops),
+        hops,
+    })
+}

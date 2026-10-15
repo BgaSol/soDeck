@@ -593,7 +593,7 @@ pub(crate) mod tests {
         let item = make("readme.txt", "/readme.txt");
         state.transfers.downloads.lock().unwrap().push(item.clone());
         launch_download(state.clone(), item.clone());
-        state.transfers.wait_downloads().unwrap();
+        state.transfers.wait_transfers().unwrap();
         assert_eq!(item.task.lock().unwrap().status, "completed");
         assert_eq!(
             fs::read(&item.destination).unwrap(),
@@ -615,7 +615,7 @@ pub(crate) mod tests {
         }
         let start = Instant::now();
         state.transfers.cancel_all();
-        state.transfers.wait_downloads().unwrap();
+        state.transfers.wait_transfers().unwrap();
         assert!(start.elapsed() < Duration::from_secs(3));
         for item in &items {
             assert_eq!(item.task.lock().unwrap().status, "cancelled");
@@ -631,7 +631,7 @@ pub(crate) mod tests {
         retry.cancel.reset().unwrap();
         retry.task.lock().unwrap().status = "queued".into();
         launch_download(state.clone(), retry.clone());
-        state.transfers.wait_downloads().unwrap();
+        state.transfers.wait_transfers().unwrap();
         assert_eq!(retry.task.lock().unwrap().status, "completed");
         assert_eq!(
             fs::read(retry.destination).unwrap(),

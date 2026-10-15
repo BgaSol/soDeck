@@ -80,6 +80,7 @@ async function setup(page: Page) {
       calls,
       tasks,
       entries,
+      missingEndpoint: false,
       events,
       emit: (name: string, payload: any) =>
         events
@@ -165,6 +166,42 @@ async function setup(page: Page) {
             count: 1,
             targetName: "Server A",
             targetPath: args.parentPath,
+            directEndpoint: w.__TEST__.missingEndpoint
+              ? null
+              : { host: "10.0.0.2", port: 2222, username: "ops" },
+            endpointRequired:
+              command === "claim_file_drop" && w.__TEST__.missingEndpoint,
+          };
+        if (command === "set_transfer_endpoint")
+          return {
+            id: "updated-draft",
+            sourceName: "Source",
+            sourcePaths: ["/data/report"],
+            count: 1,
+            targetName: "Server B",
+            targetPath: "/home/ops/folder",
+            directEndpoint: {
+              host: args.host,
+              port: args.port,
+              username: "ops",
+            },
+            endpointRequired: false,
+          };
+        if (command === "list_copy_targets")
+          return [
+            { token: "target-b", serverName: "Server B", path: "/srv/inbox" },
+            { token: "target-c", serverName: "Server C", path: "/backups" },
+          ];
+        if (command === "prepare_server_copy")
+          return {
+            id: "copy-draft",
+            sourceName: "Server A",
+            sourcePaths: args.paths,
+            count: args.paths.length,
+            targetName: "Server B",
+            targetPath: "/srv/inbox",
+            directEndpoint: { host: "10.0.0.2", port: 22, username: "ops" },
+            endpointRequired: false,
           };
         if (command === "start_transfer") {
           tasks.push({
@@ -261,6 +298,93 @@ test("create folder and file, retain validation errors and refresh only the targ
   await expect(
     page.locator(".file-row[data-path='/home/ops/notes.txt']"),
   ).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("missing direct endpoint is saved and reviewed before starting the replacement draft", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await page.evaluate(() => {
+    (window as any).__TEST__.missingEndpoint = true;
+  });
+  await emitDrop(
+    page,
+    ".file-row[data-path='/home/ops/folder']",
+    "remoteFiles",
+  );
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("本次直连真实地址").fill("10.20.30.40");
+  await dialog.getByLabel("本次直连端口").fill("2200");
+  await dialog.getByRole("button", { name: "保存地址并确认" }).click();
+  await expect(dialog).toContainText("ops@10.20.30.40:2200");
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__TEST__.calls.filter(
+          (c: any) => c.command === "start_transfer",
+        ).length,
+    ),
+  ).toBe(0);
+  await page.screenshot({ path: ".qa/direct-endpoint-confirm.png" });
+  await dialog.getByRole("button", { name: "开始传输", exact: true }).click();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__TEST__.calls.find(
+          (c: any) => c.command === "start_transfer",
+        ).args.draftId,
+    ),
+  ).toBe("updated-draft");
+  expect(errors).toEqual([]);
+});
+
+test("keyboard copy chooses a connected directory and shows byte progress before commit", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await page.locator(".file-row[data-path='/home/ops/one.txt']").click();
+  const copy = page.getByRole("button", {
+    name: "复制到另一台服务器",
+    exact: true,
+  });
+  await copy.focus();
+  await copy.press("Enter");
+  let dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("radio", { name: /Server B/ })).toBeChecked();
+  await page.screenshot({ path: ".qa/direct-copy-target.png" });
+  await dialog.getByRole("button", { name: "下一步" }).click();
+  dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("/srv/inbox");
+  await expect(dialog).toContainText("ops@10.0.0.2:22");
+  await dialog.getByRole("button", { name: "开始传输", exact: true }).click();
+  await page.evaluate(() => {
+    const qa = (window as any).__TEST__;
+    Object.assign(qa.tasks[0], {
+      status: "running",
+      bytesDone: 1024 * 1024,
+      bytesTotal: 2 * 1024 * 1024,
+      filesDone: 0,
+      filesTotal: 1,
+      currentBytes: 1024 * 1024,
+      committedBytes: 0,
+      currentFile: "/data/large.bin",
+    });
+    qa.emit("transfer-updated", {});
+  });
+  const panel = page.getByRole("region", { name: "传输任务" });
+  await expect(panel.getByLabel("传输进度")).toHaveAttribute("value", "0.5");
+  await expect(panel).toContainText("已提交 0 B");
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+  await page.screenshot({ path: ".qa/direct-progress-dark.png" });
+  await page.evaluate(() => {
+    const qa = (window as any).__TEST__;
+    qa.tasks[0].status = "committing";
+    qa.tasks[0].bytesDone = qa.tasks[0].bytesTotal;
+    qa.emit("transfer-updated", {});
+  });
+  await expect(panel.getByLabel("传输进度")).toHaveAttribute("value", "0.99");
+  await expect(panel).toContainText("提交文件");
   expect(errors).toEqual([]);
 });
 

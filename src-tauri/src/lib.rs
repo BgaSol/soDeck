@@ -230,15 +230,15 @@ async fn quit_app(
     {
         let _gate = state.configuration.lock().unwrap();
         state.stopping.store(true, Ordering::SeqCst);
-        for terminal in state.terminals.lock().unwrap().values() {
-            let _ = terminal.sender.send(terminal::Input::Close);
-        }
         state.transfers.cancel_all();
     }
     let shutdown_state = state.inner().clone();
     let result = blocking(move || {
+        shutdown_state.transfers.wait_transfers()?;
         shutdown_state.logs.shutdown()?;
-        shutdown_state.transfers.wait_downloads()?;
+        for terminal in shutdown_state.terminals.lock().unwrap().values() {
+            let _ = terminal.sender.send(terminal::Input::Close);
+        }
         connection::wait_closed(&shutdown_state)
     })
     .await;
@@ -545,7 +545,12 @@ pub fn run() {
             desktop_drag::cancel_native_drag,
             desktop_drag::claim_file_drop,
             desktop_drag::pick_upload_files,
-            desktop_drag::start_transfer
+            desktop_drag::start_transfer,
+            desktop_drag::set_transfer_endpoint,
+            desktop_drag::targets::register_file_view,
+            desktop_drag::targets::unregister_file_view,
+            desktop_drag::targets::list_copy_targets,
+            desktop_drag::targets::prepare_server_copy
         ])
         .run(tauri::generate_context!())
         .expect("无法启动桌面应用");

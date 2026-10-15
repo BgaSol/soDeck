@@ -22,9 +22,20 @@ export function FileOperationDialog({
   const [policy, setPolicy] = useState<ConflictPolicy>("rename");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [draft, setDraft] = useState(
+    "draft" in operation ? operation.draft : null,
+  );
+  const [host, setHost] = useState(draft?.directEndpoint?.host ?? "");
+  const [port, setPort] = useState(String(draft?.directEndpoint?.port ?? 22));
+  const [editingEndpoint, setEditingEndpoint] = useState(
+    draft?.endpointRequired ?? false,
+  );
   const creating = operation.kind === "file" || operation.kind === "directory";
-  const destination =
-    "draft" in operation ? operation.draft.targetPath : operation.path;
+  const destination = draft
+    ? draft.targetPath
+    : "path" in operation
+      ? operation.path
+      : "";
   const title =
     operation.kind === "file"
       ? "新建文件"
@@ -61,8 +72,30 @@ export function FileOperationDialog({
           operation.kind,
         );
         onCreated(path, operation.kind === "directory");
-      } else {
-        await transferApi.start(operation.draft.id, policy);
+      } else if (draft) {
+        if (editingEndpoint) {
+          const directPort = Number(port);
+          if (
+            !host.trim() ||
+            !Number.isInteger(directPort) ||
+            directPort < 1 ||
+            directPort > 65535
+          ) {
+            setError("请填写真实地址，以及 1–65535 之间的端口。");
+            setBusy(false);
+            return;
+          }
+          const updated = await transferApi.setEndpoint(
+            draft.id,
+            host.trim(),
+            directPort,
+          );
+          setDraft(updated);
+          setEditingEndpoint(false);
+          setBusy(false);
+          return;
+        }
+        await transferApi.start(draft.id, policy);
         notifyTransferStarted();
       }
       onClose();
@@ -111,22 +144,19 @@ export function FileOperationDialog({
           </button>
         </header>
         <div className="file-operation-fields">
-          {"draft" in operation && (
+          {draft && (
             <div className="operation-destination">
               <span>
-                来源 · {operation.draft.sourceName} · {operation.draft.count}{" "}
-                个项目
+                来源 · {draft.sourceName} · {draft.count} 个项目
               </span>
-              {operation.draft.sourcePaths.map((path) => (
+              {draft.sourcePaths.map((path) => (
                 <strong key={path} title={path}>
                   {path}
                 </strong>
               ))}
-              {operation.draft.count > operation.draft.sourcePaths.length && (
+              {draft.count > draft.sourcePaths.length && (
                 <span>
-                  另有{" "}
-                  {operation.draft.count - operation.draft.sourcePaths.length}{" "}
-                  个项目
+                  另有 {draft.count - draft.sourcePaths.length} 个项目
                 </span>
               )}
             </div>
@@ -134,10 +164,90 @@ export function FileOperationDialog({
           <div className="operation-destination">
             <span>
               目标目录
-              {"draft" in operation ? ` · ${operation.draft.targetName}` : ""}
+              {draft ? ` · ${draft.targetName}` : ""}
             </span>
             <strong title={destination}>{destination}</strong>
           </div>
+          {operation.kind === "direct" && draft && (
+            <section className="direct-endpoint" aria-label="本次直连目标">
+              <div className="direct-endpoint-heading">
+                <strong>本次直连目标</strong>
+                {!editingEndpoint && (
+                  <button
+                    type="button"
+                    className="quiet"
+                    disabled={busy}
+                    onClick={() => setEditingEndpoint(true)}
+                  >
+                    修改地址
+                  </button>
+                )}
+              </div>
+              {editingEndpoint ? (
+                <>
+                  <p className="muted">
+                    填写源服务器能够访问的目标地址，保存后确认本次连接。
+                  </p>
+                  <div className="direct-endpoint-inputs">
+                    <label>
+                      真实地址
+                      <input
+                        aria-label="本次直连真实地址"
+                        value={host}
+                        disabled={busy}
+                        onChange={(e) => setHost(e.target.value)}
+                        autoComplete="off"
+                        spellCheck={false}
+                        placeholder="例如 10.0.0.20"
+                      />
+                    </label>
+                    <label>
+                      端口
+                      <input
+                        aria-label="本次直连端口"
+                        value={port}
+                        type="number"
+                        min={1}
+                        max={65535}
+                        disabled={busy}
+                        onChange={(e) => setPort(e.target.value)}
+                      />
+                    </label>
+                  </div>
+                  {draft.directEndpoint && (
+                    <button
+                      type="button"
+                      className="quiet"
+                      disabled={busy}
+                      onClick={() => {
+                        setEditingEndpoint(false);
+                        setHost(draft.directEndpoint!.host);
+                        setPort(String(draft.directEndpoint!.port));
+                        setError("");
+                      }}
+                    >
+                      保留当前地址
+                    </button>
+                  )}
+                </>
+              ) : (
+                draft.directEndpoint && (
+                  <>
+                    <code>
+                      {draft.directEndpoint.username}@
+                      {draft.directEndpoint.host.includes(":")
+                        ? `[${draft.directEndpoint.host}]`
+                        : draft.directEndpoint.host}
+                      :{draft.directEndpoint.port}
+                    </code>
+                    <p className="muted">
+                      本次任务使用此地址和当前会话已验证的主机身份。
+                    </p>
+                  </>
+                )
+              )}
+            </section>
+          )}
           {creating ? (
             <label>
               名称
@@ -200,9 +310,11 @@ export function FileOperationDialog({
               ? "正在处理…"
               : creating
                 ? "创建"
-                : policy === "overwrite"
-                  ? "确认覆盖并开始"
-                  : "开始传输"}
+                : editingEndpoint
+                  ? "保存地址并确认"
+                  : policy === "overwrite"
+                    ? "确认覆盖并开始"
+                    : "开始传输"}
           </button>
         </footer>
       </form>

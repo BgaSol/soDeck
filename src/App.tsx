@@ -238,6 +238,21 @@ export function App() {
       .then(setServers)
       .catch((error) => setError(errorOf(error)));
   }, []);
+  useEffect(() => {
+    if (!desktop) return;
+    let live = true;
+    let off: (() => void) | undefined;
+    void getCurrentWindow()
+      .listen("server-configurations-changed", refreshConfigurations)
+      .then((cleanup) => {
+        if (live) off = cleanup;
+        else cleanup();
+      });
+    return () => {
+      live = false;
+      off?.();
+    };
+  }, [refreshConfigurations]);
   function open(server: Server, forceNew = false) {
     setMenu(null);
     if (!desktop) return;

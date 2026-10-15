@@ -13,6 +13,64 @@ use std::{
     },
 };
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TransferStatus {
+    Queued,
+    Checking,
+    Scanning,
+    Running,
+    Committing,
+    Cancelling,
+    Completed,
+    Failed,
+    PartialFailed,
+    Cancelled,
+    Unknown,
+    Interrupted,
+}
+impl TransferStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Checking => "checking",
+            Self::Scanning => "scanning",
+            Self::Running => "running",
+            Self::Committing => "committing",
+            Self::Cancelling => "cancelling",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::PartialFailed => "partialFailed",
+            Self::Cancelled => "cancelled",
+            Self::Unknown => "unknown",
+            Self::Interrupted => "interrupted",
+        }
+    }
+}
+impl From<&str> for TransferStatus {
+    fn from(value: &str) -> Self {
+        match value {
+            "queued" => Self::Queued,
+            "checking" => Self::Checking,
+            "scanning" => Self::Scanning,
+            "running" => Self::Running,
+            "committing" => Self::Committing,
+            "cancelling" => Self::Cancelling,
+            "completed" => Self::Completed,
+            "failed" => Self::Failed,
+            "partialFailed" => Self::PartialFailed,
+            "cancelled" => Self::Cancelled,
+            "interrupted" => Self::Interrupted,
+            _ => Self::Unknown,
+        }
+    }
+}
+impl PartialEq<&str> for TransferStatus {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskView {
@@ -24,9 +82,17 @@ pub struct TaskView {
     pub target_name: String,
     pub target_path: String,
     pub conflict: ConflictPolicy,
-    pub status: String,
+    pub status: TransferStatus,
     pub bytes_done: u64,
     pub bytes_total: u64,
+    #[serde(default)]
+    pub current_file: Option<String>,
+    #[serde(default)]
+    pub current_bytes: u64,
+    #[serde(default)]
+    pub committed_bytes: u64,
+    #[serde(default)]
+    pub waiting_reason: Option<String>,
     pub files_done: u64,
     pub files_total: u64,
     pub skipped: u64,
@@ -37,7 +103,7 @@ pub struct TaskView {
 }
 impl TaskView {
     pub fn active(&self) -> bool {
-        active(&self.status)
+        active(self.status.as_str())
     }
 }
 pub fn active(status: &str) -> bool {
@@ -54,7 +120,7 @@ pub enum Source {
         paths: Vec<String>,
     },
 }
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DirectEndpoint {
     pub host: String,
     pub port: u16,
@@ -64,17 +130,53 @@ pub struct DirectEndpoint {
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RemoteJobReceipt {
+    pub root: String,
+    /// Persisted BEFORE dispatching an exec request, including uncertain sends.
+    pub launched: bool,
+}
+
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectReceipt {
+    pub source: RemoteJobReceipt,
+    pub target: RemoteJobReceipt,
+    pub attempt: Option<String>,
+    pub attempt_finished: bool,
+    pub stopped: bool,
+}
+
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Receipt {
+    pub format_version: u32,
     pub source_server_id: String,
     pub target_server_id: String,
     pub source_identity: String,
     pub target_identity: String,
-    pub remote_root: String,
+    #[serde(default)]
+    pub target_write_key: String,
+    pub direct: Option<DirectReceipt>,
     pub stage_dirs: Vec<String>,
     pub view: Option<TaskView>,
-    pub pending_commit: Option<String>,
-    #[serde(default)]
-    pub remote_stopped: bool,
+    pub pending_commit: Option<PendingCommit>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingCommit {
+    pub destination: String,
+    pub stage_path: Option<String>,
+    pub expected_size: Option<u64>,
+    pub run_id: String,
+}
+
+impl Receipt {
+    pub fn has_remote_resources(&self) -> bool {
+        self.direct
+            .as_ref()
+            .is_some_and(|d| !d.source.root.is_empty() || !d.target.root.is_empty())
+    }
 }
 #[derive(Clone)]
 pub struct WriteHandle {
@@ -89,6 +191,15 @@ pub struct WriteHandle {
     pub receipt: Arc<Mutex<Receipt>>,
 }
 impl WriteHandle {
+    pub fn write_key(&self) -> String {
+        // Deliberately conservative for aliases/cloned keys: serializing two
+        // unrelated hosts is preferable to simultaneous writes to one host.
+        format!(
+            "{}|{}",
+            self.target.target_public_key(),
+            self.target.target().username
+        )
+    }
     pub fn check(&self) -> AppResult<()> {
         if self.stop.load(Ordering::SeqCst) {
             Err(AppError::new("cancelled", "传输已取消"))

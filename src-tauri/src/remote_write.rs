@@ -82,6 +82,11 @@ pub fn atomic_remote_replace(
         let status = u32::from_be_bytes(response[5..9].try_into().unwrap());
         if status == 0 {
             Ok(())
+        } else if matches!(status, 6 | 7) {
+            Err(uncertain_commit(AppError::new(
+                "sftp",
+                "服务器报告提交连接中断",
+            )))
         } else {
             Err(AppError::new(
                 "save",
@@ -150,10 +155,16 @@ pub struct Stage {
     pub path: String,
 }
 impl Stage {
-    pub fn create(sftp: &Sftp, parent: &str) -> AppResult<Self> {
+    pub fn create(
+        sftp: &Sftp,
+        parent: &str,
+        before_create: impl FnOnce(&str) -> AppResult<()>,
+    ) -> AppResult<Self> {
         safe_ancestors(sftp, parent)?;
         let directory =
             crate::remote_path::join(parent, &format!(".ssh-workspace-{}", uuid::Uuid::new_v4()))?;
+        // Save the exact cleanup intent before a potentially ambiguous mkdir.
+        before_create(&directory)?;
         sftp.mkdir(Path::new(&directory), 0o700)?;
         Ok(Self {
             path: format!("{directory}/content"),
@@ -169,12 +180,17 @@ impl Stage {
     }
 }
 
+pub struct DirectoryDestination {
+    pub path: String,
+    pub created: bool,
+}
+
 pub fn directory_destination(
     sftp: &Sftp,
     requested: &str,
     policy: crate::transfers::download::ConflictPolicy,
     mut before_commit: impl FnMut(&str) -> AppResult<()>,
-) -> AppResult<Option<String>> {
+) -> AppResult<Option<DirectoryDestination>> {
     use crate::transfers::download::ConflictPolicy;
     let parent = crate::remote_path::parent(requested);
     safe_ancestors(sftp, parent)?;
@@ -191,7 +207,12 @@ pub fn directory_destination(
             match policy {
                 ConflictPolicy::Skip => return Ok(None),
                 ConflictPolicy::Rename => continue,
-                ConflictPolicy::Overwrite if stat.is_dir() => return Ok(Some(path)),
+                ConflictPolicy::Overwrite if stat.is_dir() => {
+                    return Ok(Some(DirectoryDestination {
+                        path,
+                        created: false,
+                    }))
+                }
                 ConflictPolicy::Overwrite => {
                     return Err(AppError::new(
                         "conflict",
@@ -202,7 +223,12 @@ pub fn directory_destination(
         }
         before_commit(&path)?;
         match sftp.mkdir(Path::new(&path), 0o755) {
-            Ok(()) => return Ok(Some(path)),
+            Ok(()) => {
+                return Ok(Some(DirectoryDestination {
+                    path,
+                    created: true,
+                }))
+            }
             Err(e) if !definitive_sftp_error(&e) => return Err(uncertain_commit(e.into())),
             Err(e) => {
                 let existing = metadata(sftp, &path)?;
@@ -210,7 +236,10 @@ pub fn directory_destination(
                     ConflictPolicy::Skip if existing.is_some() => return Ok(None),
                     ConflictPolicy::Rename if existing.is_some() => continue,
                     ConflictPolicy::Overwrite if existing.is_some_and(|s| s.is_dir()) => {
-                        return Ok(Some(path))
+                        return Ok(Some(DirectoryDestination {
+                            path,
+                            created: false,
+                        }))
                     }
                     _ => return Err(e.into()),
                 }

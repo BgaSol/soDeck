@@ -504,6 +504,83 @@
   font-size: 12px;
   line-height: 1.6;
 }
+
+.direct-endpoint {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.direct-endpoint-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.direct-endpoint-heading .quiet {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.direct-endpoint code {
+  overflow-wrap: anywhere;
+  font-size: 0.86rem;
+}
+.direct-endpoint-inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 100px;
+  gap: 12px;
+}
+.copy-target-list {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+.file-operation-fields .copy-target-list label {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 12px;
+  cursor: pointer;
+}
+.copy-target-list label.selected {
+  border-color: var(--blue);
+  background: var(--selected);
+}
+.file-operation-fields .copy-target-list input {
+  width: auto;
+  flex: 0 0 auto;
+}
+.copy-target-list label > span {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+.copy-target-list label > span > span {
+  font-size: 0.82rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.copy-target-empty {
+  padding: 12px;
+  border-radius: 9px;
+  background: var(--surface);
+  line-height: 1.6;
+}
+.transfer-detail {
+  margin: 5px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
 .operation-destination {
   display: grid;
   gap: 5px;

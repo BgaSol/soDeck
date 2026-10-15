@@ -1,11 +1,13 @@
 //! Native file drops are granted in Rust. Internal drags carry only a short-lived
 //! capability and use native pointer state, so enabling OS drops cannot disable
 //! HTML5 tab drops on Windows: the internal path does not depend on HTML5 DnD.
+pub(crate) mod targets;
+
 use crate::{
     connection::SharedContext,
     model::{AppError, AppResult},
     moves,
-    transfers::{self, ConflictPolicy, Source},
+    transfers::{self, ConflictPolicy, DirectEndpoint, Source},
     State,
 };
 use serde::Serialize;
@@ -24,6 +26,7 @@ pub struct DragState {
     grants: Mutex<HashMap<String, Grant>>,
     drafts: Mutex<HashMap<String, Draft>>,
     active: Mutex<Option<(String, Arc<AtomicBool>)>>,
+    targets: targets::TargetState,
 }
 #[derive(Clone)]
 struct Grant {
@@ -38,6 +41,7 @@ struct Draft {
     source: Source,
     target: SharedContext,
     path: String,
+    endpoint: Option<DirectEndpoint>,
     owner: String,
     generation: u64,
     expires: Instant,
@@ -52,7 +56,17 @@ pub struct DraftPreview {
     count: usize,
     target_name: String,
     target_path: String,
+    direct_endpoint: Option<EndpointPreview>,
+    endpoint_required: bool,
 }
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EndpointPreview {
+    host: String,
+    port: u16,
+    username: String,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DragEvent {
@@ -401,9 +415,50 @@ fn draft(
     target: SharedContext,
     path: String,
 ) -> AppResult<DraftPreview> {
+    create_draft(state, window.label(), source, target, path)
+}
+
+fn create_draft(
+    state: &State,
+    owner: &str,
+    source: Source,
+    target: SharedContext,
+    path: String,
+) -> AppResult<DraftPreview> {
     crate::remote_path::absolute(&path)?;
     let id = uuid::Uuid::new_v4().to_string();
-    let (source_name, source_paths, count) = match &source {
+    let remote = matches!(source, Source::Remote { .. });
+    let endpoint = if remote {
+        let config = state.database.lock().unwrap().get(&target.target().id)?;
+        config.direct_host.map(|host| DirectEndpoint {
+            host,
+            port: config.direct_port,
+            username: target.target().username.clone(),
+            public_key: target.target_public_key().into(),
+        })
+    } else {
+        None
+    };
+    let mut drafts = state.drags.drafts.lock().unwrap();
+    drafts.retain(|_, d| d.expires > Instant::now());
+    drafts.insert(
+        id.clone(),
+        Draft {
+            source,
+            target,
+            path,
+            endpoint,
+            owner: owner.into(),
+            generation: state.owner(owner).generation,
+            expires: Instant::now() + Duration::from_secs(300),
+            started: None,
+        },
+    );
+    Ok(preview(&id, drafts.get(&id).unwrap()))
+}
+
+fn preview(id: &str, draft: &Draft) -> DraftPreview {
+    let (source_name, source_paths, count) = match &draft.source {
         Source::Local(paths) => (
             "本机".to_owned(),
             paths
@@ -419,29 +474,21 @@ fn draft(
             paths.len(),
         ),
     };
-    let preview = DraftPreview {
-        id: id.clone(),
+    DraftPreview {
+        id: id.into(),
         source_name,
         source_paths,
         count,
-        target_name: target.target().name.clone(),
-        target_path: path.clone(),
-    };
-    let mut drafts = state.drags.drafts.lock().unwrap();
-    drafts.retain(|_, d| d.expires > Instant::now());
-    drafts.insert(
-        id.clone(),
-        Draft {
-            source,
-            target,
-            path,
-            owner: window.label().into(),
-            generation: state.owner(window.label()).generation,
-            expires: Instant::now() + Duration::from_secs(300),
-            started: None,
-        },
-    );
-    Ok(preview)
+        target_name: draft.target.target().name.clone(),
+        target_path: draft.path.clone(),
+        direct_endpoint: draft.endpoint.as_ref().map(|e| EndpointPreview {
+            host: e.host.clone(),
+            port: e.port,
+            username: e.username.clone(),
+        }),
+        endpoint_required: matches!(draft.source, Source::Remote { .. })
+            && draft.endpoint.is_none(),
+    }
 }
 #[tauri::command]
 pub fn claim_file_drop(
@@ -525,14 +572,168 @@ pub fn start_transfer(
         draft.target.clone(),
         draft.path.clone(),
         conflict,
+        draft.endpoint.clone(),
     )?;
     draft.started = Some(id.clone());
     Ok(id)
 }
 
+#[tauri::command]
+pub fn set_transfer_endpoint(
+    window: WebviewWindow,
+    state: TauriState<Arc<State>>,
+    draft_id: String,
+    host: String,
+    port: u16,
+) -> AppResult<DraftPreview> {
+    moves::workspace_only(&window)?;
+    let result = update_endpoint(&state, window.label(), &draft_id, host, port)?;
+    let _ = window.emit_to("main", "server-configurations-changed", ());
+    Ok(result)
+}
+fn update_endpoint(
+    state: &State,
+    owner: &str,
+    draft_id: &str,
+    host: String,
+    port: u16,
+) -> AppResult<DraftPreview> {
+    let host = host.trim().to_owned();
+    crate::remote_path::validate_host(&host)?;
+    if port == 0 {
+        return Err(AppError::new("validation", "端口必须为 1–65535"));
+    }
+    // Hold the draft transaction through saving and replacing the snapshot.
+    // start_transfer uses the same lock: it cannot start the old draft halfway
+    // through an address change or create a second task from the new draft.
+    let mut drafts = state.drags.drafts.lock().unwrap();
+    let value = drafts
+        .get(draft_id)
+        .ok_or_else(|| AppError::new("transfer", "复制准备已过期"))?;
+    if value.owner != owner
+        || value.generation != state.owner(owner).generation
+        || value.expires < Instant::now()
+        || value.started.is_some()
+        || !matches!(value.source, Source::Remote { .. })
+    {
+        return Err(AppError::new("permission", "此复制准备不可修改"));
+    }
+    let mut existing = value.clone();
+    {
+        let _gate = state.configuration.lock().unwrap();
+        state.check_context(&existing.target)?;
+        state.database.lock().unwrap().update_direct_endpoint(
+            &existing.target.target().id,
+            host.clone(),
+            port,
+        )?;
+    }
+    existing.endpoint = Some(DirectEndpoint {
+        host,
+        port,
+        username: existing.target.target().username.clone(),
+        public_key: existing.target.target_public_key().into(),
+    });
+    existing.expires = Instant::now() + Duration::from_secs(300);
+    let id = uuid::Uuid::new_v4().to_string();
+    let result = preview(&id, &existing);
+    drafts.remove(draft_id);
+    drafts.insert(id, existing);
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn endpoint_snapshot_is_frozen_and_edits_replace_only_unstarted_owned_drafts() {
+        use crate::model::{PasswordChange, SaveServerRequest, ServerConfig};
+        let state = crate::connection::tests::state();
+        let config = ServerConfig {
+            id: String::new(),
+            name: "B".into(),
+            host: "entry.example".into(),
+            port: 2222,
+            username: "ops".into(),
+            tags: vec!["keep".into()],
+            auth_type: "password".into(),
+            private_key: String::new(),
+            password: "keep-secret".into(),
+            jump_server_id: None,
+            direct_host: Some("10.0.0.2".into()),
+            direct_port: 22,
+        };
+        let saved = state
+            .database
+            .lock()
+            .unwrap()
+            .save(SaveServerRequest {
+                server: config.view(),
+                password_change: PasswordChange::Set {
+                    value: config.password.clone(),
+                },
+            })
+            .unwrap();
+        let context = crate::connection::tests::mock_context(
+            state.database.lock().unwrap().get(&saved.id).unwrap(),
+        );
+        let draft = create_draft(
+            &state,
+            "main",
+            Source::Remote {
+                context: context.clone(),
+                paths: vec!["/source".into()],
+            },
+            context,
+            "/target".into(),
+        )
+        .unwrap();
+        state
+            .database
+            .lock()
+            .unwrap()
+            .update_direct_endpoint(&saved.id, "10.0.0.99".into(), 2200)
+            .unwrap();
+        assert_eq!(
+            state.drags.drafts.lock().unwrap()[&draft.id]
+                .endpoint
+                .as_ref()
+                .unwrap()
+                .host,
+            "10.0.0.2"
+        );
+        assert!(
+            update_endpoint(&state, "workspace-other", &draft.id, "10.0.0.3".into(), 22).is_err()
+        );
+        let updated = update_endpoint(&state, "main", &draft.id, "10.0.0.3".into(), 2223).unwrap();
+        assert!(!state.drags.drafts.lock().unwrap().contains_key(&draft.id));
+        assert_eq!(updated.direct_endpoint.unwrap().port, 2223);
+        let stored = state.database.lock().unwrap().get(&saved.id).unwrap();
+        assert_eq!(stored.host, "entry.example");
+        assert_eq!(stored.port, 2222);
+        assert_eq!(stored.tags, ["keep"]);
+        assert_eq!(stored.password, "keep-secret");
+        state
+            .drags
+            .drafts
+            .lock()
+            .unwrap()
+            .get_mut(&updated.id)
+            .unwrap()
+            .started = Some("task".into());
+        assert!(update_endpoint(&state, "main", &updated.id, "10.0.0.4".into(), 22).is_err());
+        assert_eq!(
+            state
+                .database
+                .lock()
+                .unwrap()
+                .get(&saved.id)
+                .unwrap()
+                .direct_host
+                .as_deref(),
+            Some("10.0.0.3")
+        );
+    }
     #[test]
     fn native_grants_are_window_bound_one_use_and_expire() {
         let state = crate::connection::tests::state();

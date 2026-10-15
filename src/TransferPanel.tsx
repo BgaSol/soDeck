@@ -125,11 +125,12 @@ export function TransferPanel() {
                 : task.kind === "upload"
                   ? ArrowUpFromLine
                   : ArrowRightLeft;
-            const total =
-              task.kind === "direct" ? task.filesTotal : task.bytesTotal;
-            const done =
-              task.kind === "direct" ? task.filesDone : task.bytesDone;
-            const fraction = total ? Math.min(1, done / total) : 0;
+            const total = task.bytesTotal;
+            const done = task.bytesDone;
+            // Receiving all bytes is not yet a successful commit.
+            const fraction = total
+              ? Math.min(working ? 0.99 : 1, done / total)
+              : 0;
             return (
               <article
                 className={`download-task ${task.status}`}
@@ -146,7 +147,9 @@ export function TransferPanel() {
                         : "服务器直传"}
                   </strong>
                   <span className="download-task-state">
-                    {labels[task.status]}
+                    {task.status === "completed" && task.warnings.length
+                      ? "已完成，有处理说明"
+                      : labels[task.status]}
                   </span>
                   {working ? (
                     <button
@@ -198,11 +201,24 @@ export function TransferPanel() {
                   />
                 )}
                 <div className="transfer-counts">
-                  {task.filesDone} / {task.filesTotal || "—"} 个文件 ·{" "}
+                  已完成 {task.filesDone} / {task.filesTotal || "—"} 个文件 ·{" "}
                   {formatSize(task.bytesDone)}
                   {task.bytesTotal ? ` / ${formatSize(task.bytesTotal)}` : ""}
                   {task.skipped > 0 ? ` · 跳过 ${task.skipped} 项` : ""}
                 </div>
+                {task.waitingReason && (
+                  <p className="transfer-detail" role="status">
+                    {task.waitingReason}
+                  </p>
+                )}
+                {task.currentFile && working && (
+                  <p className="transfer-detail" title={task.currentFile}>
+                    {task.currentFile} · 已接收{" "}
+                    {formatSize(task.currentBytes ?? 0)}
+                    {task.kind === "direct" &&
+                      ` · 已提交 ${formatSize(task.committedBytes ?? 0)}`}
+                  </p>
+                )}
                 {task.error && <p className="panel-error">{task.error}</p>}
                 {task.warnings.length > 0 && (
                   <details>

@@ -1,24 +1,27 @@
 mod direct;
 pub mod download;
 mod model;
+mod pipeline;
 mod planner;
+mod recovery;
+use recovery::{cleanup, verify_stopped};
 mod upload;
 use crate::{
-    connection::{self, SharedContext},
+    connection::SharedContext,
     model::{AppError, AppResult},
-    moves, remote_path, remote_write,
+    moves, remote_path,
     ssh_transport::Cancellation,
     State,
 };
 pub use download::ConflictPolicy;
-use model::{DirectEndpoint, Receipt, WriteHandle};
+pub(crate) use model::DirectEndpoint;
+use model::{Receipt, WriteHandle};
 pub use model::{Source, TaskView};
 pub use planner::normalize_selection;
 use std::{
     collections::HashMap,
     fs,
-    io::Read,
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Condvar, Mutex, Weak,
@@ -50,10 +53,25 @@ impl TransferState {
             {
                 continue;
             }
-            if let Ok(mut receipt) = serde_json::from_slice::<Receipt>(&fs::read(entry.path())?) {
+            let bytes = fs::read(entry.path())?;
+            let mut value: serde_json::Value = match serde_json::from_slice(&bytes) {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+            if !value.is_object() {
+                continue;
+            }
+            if value.get("formatVersion").and_then(|v| v.as_u64()) != Some(2) {
+                value["formatVersion"] = 0.into();
+                value["pendingCommit"] = serde_json::Value::Null;
+                value["direct"] = serde_json::Value::Null;
+            }
+            if let Ok(mut receipt) = serde_json::from_value::<Receipt>(value) {
                 if let Some(view) = receipt.view.as_mut() {
                     view.status = "unknown".into();
-                    view.error = Some("上次运行未完成清理。请连接相关服务器后核对状态。".into());
+                    view.error = Some(if receipt.format_version == 2 {
+                        "上次运行未完成清理。请连接相关服务器后核对状态。"
+                    } else { "旧格式任务记录已保留。请人工检查远端遗留任务；不会自动重试或删除远端文件。" }.into());
                     recovered.push(receipt);
                 }
             }
@@ -72,6 +90,33 @@ impl TransferState {
         let lane = Arc::new(Mutex::new(()));
         lanes.insert(identity.into(), Arc::downgrade(&lane));
         lane
+    }
+    fn requires_reconciliation(&self, item: &WriteHandle) -> bool {
+        let key = item.write_key();
+        let id = item.task.lock().unwrap().id.clone();
+        let matches =
+            |r: &Receipt| r.target_write_key == key || r.target_identity == item.target.identity();
+        let live = self
+            .writes
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|w| !Arc::ptr_eq(&w.task, &item.task))
+            .any(|w| {
+                let t = w.task.lock().unwrap();
+                let r = w.receipt.lock().unwrap();
+                matches(&r)
+                    && (t.status == "unknown"
+                        || r.has_remote_resources()
+                        || !r.stage_dirs.is_empty()
+                        || r.pending_commit.is_some())
+            });
+        live || self
+            .recovered
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|r| r.view.as_ref().is_none_or(|v| v.id != id) && matches(r))
     }
     fn persist(&self, item: &WriteHandle) -> AppResult<()> {
         let mut view = item.task.lock().unwrap().clone();
@@ -110,7 +155,7 @@ impl TransferState {
                 let receipt = w.receipt.lock().unwrap();
                 t.active()
                     || t.status == "unknown"
-                    || !receipt.remote_root.is_empty()
+                    || receipt.has_remote_resources()
                     || !receipt.stage_dirs.is_empty()
             })
             || !self.recovered.lock().unwrap().is_empty()
@@ -128,7 +173,7 @@ impl TransferState {
                     let receipt = w.receipt.lock().unwrap();
                     t.active()
                         || t.status == "unknown"
-                        || !receipt.remote_root.is_empty()
+                        || receipt.has_remote_resources()
                         || !receipt.stage_dirs.is_empty()
                 }
             })
@@ -159,7 +204,7 @@ impl TransferState {
         }
         self.slot.notify_all();
     }
-    pub fn wait_downloads(&self) -> AppResult<()> {
+    pub fn wait_transfers(&self) -> AppResult<()> {
         let deadline = Instant::now() + Duration::from_secs(15);
         loop {
             let pending = self
@@ -189,7 +234,7 @@ impl TransferState {
             );
         }
         // An unavailable source must not trap the user in the application.
-        // The remote lease still stops scp, and durable receipts require
+        // The remote leases stop the owned processes, and durable receipts require
         // reconciliation after reopening rather than silently retrying.
         for item in self.writes.lock().unwrap().iter() {
             if item.task.lock().unwrap().status == "unknown" {
@@ -272,6 +317,7 @@ pub fn start_write(
     target: SharedContext,
     destination: String,
     conflict: ConflictPolicy,
+    endpoint_snapshot: Option<DirectEndpoint>,
 ) -> AppResult<String> {
     remote_path::absolute(&destination)?;
     let _gate = state.configuration.lock().unwrap();
@@ -303,21 +349,20 @@ pub fn start_write(
                     "服务器间传输请选择另一台服务器",
                 ));
             }
-            let config = state.database.lock().unwrap().get(&target.target().id)?;
-            let host = config.direct_host.ok_or_else(|| {
+            let endpoint = endpoint_snapshot.ok_or_else(|| {
                 AppError::new("validation", "请先为目标服务器填写真实地址和直连端口")
             })?;
-            remote_path::validate_host(&host)?;
+            remote_path::validate_host(&endpoint.host)?;
+            if endpoint.username != target.target().username
+                || endpoint.public_key != target.target_public_key()
+            {
+                return Err(AppError::new("validation", "直连目标与已验证会话不一致"));
+            }
             (
                 "direct",
                 context.target().name.clone(),
                 paths.iter().take(4).cloned().collect::<Vec<_>>().join("\n"),
-                Some(DirectEndpoint {
-                    host,
-                    port: config.direct_port,
-                    username: target.target().username.clone(),
-                    public_key: target.target_public_key().into(),
-                }),
+                Some(endpoint),
             )
         }
     };
@@ -334,6 +379,10 @@ pub fn start_write(
         status: "queued".into(),
         bytes_done: 0,
         bytes_total: 0,
+        current_file: None,
+        current_bytes: 0,
+        committed_bytes: 0,
+        waiting_reason: None,
         files_done: 0,
         files_total: 0,
         skipped: 0,
@@ -342,8 +391,14 @@ pub fn start_write(
         cleanup_pending: false,
     };
     let mut receipt = Receipt {
+        format_version: 2,
         target_server_id: target.target().id.clone(),
         target_identity: target.identity().into(),
+        target_write_key: format!(
+            "{}|{}",
+            target.target_public_key(),
+            target.target().username
+        ),
         ..Receipt::default()
     };
     if let Source::Remote { context, .. } = &source {
@@ -370,20 +425,39 @@ pub fn start_write(
 fn launch_write(app: tauri::AppHandle, state: Arc<State>, item: WriteHandle) {
     std::thread::spawn(move || {
         let _lifecycle = item.lifecycle.lock().unwrap();
-        let mut active = state.transfers.active.lock().unwrap();
-        while *active >= 3 && !item.stop.load(Ordering::SeqCst) {
-            active = state
-                .transfers
-                .slot
-                .wait_timeout(active, Duration::from_millis(200))
-                .unwrap()
-                .0;
-        }
-        *active += 1;
-        drop(active);
-        let result = upload::run(&state, Some(&app), &item);
+        let result = loop {
+            while state.transfers.requires_reconciliation(&item)
+                && !item.stop.load(Ordering::SeqCst)
+            {
+                let mut task = item.task.lock().unwrap();
+                task.status = "queued".into();
+                task.waiting_reason = Some("等待目标上的任务结束或完成状态核对".into());
+                drop(task);
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            item.task.lock().unwrap().waiting_reason = None;
+            let mut active = state.transfers.active.lock().unwrap();
+            while *active >= 3 && !item.stop.load(Ordering::SeqCst) {
+                active = state
+                    .transfers
+                    .slot
+                    .wait_timeout(active, Duration::from_millis(200))
+                    .unwrap()
+                    .0;
+            }
+            *active += 1;
+            drop(active);
+            let result = pipeline::run(&state, Some(&app), &item);
+            if result.as_ref().is_err_and(|e| e.kind == "quarantined") {
+                // A previous writer may have become uncertain while this task
+                // waited for the lane. Return its global slot before waiting.
+                *state.transfers.active.lock().unwrap() -= 1;
+                state.transfers.slot.notify_all();
+                continue;
+            }
+            break result;
+        };
         if !result.as_ref().is_err_and(|e| e.kind == "unknown") {
-            item.receipt.lock().unwrap().remote_stopped = true;
             if let Err(e) = cleanup(&item) {
                 item.warn(format!("临时资源仍需清理：{}", e.message));
             }
@@ -410,7 +484,7 @@ fn launch_write(app: tauri::AppHandle, state: Arc<State>, item: WriteHandle) {
         let receipt = item.receipt.lock().unwrap().clone();
         let view = item.task.lock().unwrap().clone();
         if view.status != "unknown"
-            && receipt.remote_root.is_empty()
+            && !receipt.has_remote_resources()
             && receipt.stage_dirs.is_empty()
         {
             state.transfers.remove_receipt(&view.id);
@@ -446,9 +520,13 @@ pub fn list_transfers(
                 target_name: "本机".into(),
                 target_path: t.local_path.clone(),
                 conflict: t.conflict,
-                status: t.status.clone(),
+                status: t.status.as_str().into(),
                 bytes_done: t.bytes_done,
                 bytes_total: t.bytes_total,
+                current_file: None,
+                current_bytes: 0,
+                committed_bytes: t.bytes_done,
+                waiting_reason: None,
                 files_done: t.files_done,
                 files_total: t.files_total,
                 skipped: t.skipped,
@@ -461,7 +539,7 @@ pub fn list_transfers(
     tasks.extend(state.transfers.writes.lock().unwrap().iter().map(|w| {
         let mut view = w.task.lock().unwrap().clone();
         let receipt = w.receipt.lock().unwrap();
-        view.cleanup_pending = !receipt.remote_root.is_empty() || !receipt.stage_dirs.is_empty();
+        view.cleanup_pending = receipt.has_remote_resources() || !receipt.stage_dirs.is_empty();
         view
     }));
     tasks.extend(
@@ -524,7 +602,7 @@ pub fn retry_transfer(
                 return Err(AppError::new("busy", "请先确认上一次任务已结束"));
             }
             let receipt = item.receipt.lock().unwrap();
-            if !receipt.remote_root.is_empty()
+            if receipt.has_remote_resources()
                 || !receipt.stage_dirs.is_empty()
                 || receipt.pending_commit.is_some()
             {
@@ -535,6 +613,9 @@ pub fn retry_transfer(
             task.run_id = uuid::Uuid::new_v4().to_string();
             task.status = "queued".into();
             task.error = None;
+            task.current_file = None;
+            task.current_bytes = 0;
+            task.bytes_done = task.committed_bytes;
         }
         drop(_gate);
         launch_write(app, state.inner().clone(), item);
@@ -544,97 +625,6 @@ pub fn retry_transfer(
     }
 }
 
-fn valid_task_directory(path: &str, prefix: &str) -> AppResult<()> {
-    let name = remote_path::name(path)?;
-    if name
-        .strip_prefix(prefix)
-        .is_none_or(|id| uuid::Uuid::parse_str(id).is_err())
-    {
-        return Err(AppError::new("path", "任务临时目录标识无效，拒绝清理"));
-    }
-    Ok(())
-}
-pub(super) fn cleanup(item: &WriteHandle) -> AppResult<()> {
-    let receipt = item.receipt.lock().unwrap().clone();
-    if !receipt.stage_dirs.is_empty() {
-        let connection = connection::connect_verified(&item.target, &Cancellation::default())?;
-        let sftp = connection.session().sftp()?;
-        for directory in receipt.stage_dirs {
-            valid_task_directory(&directory, ".ssh-workspace-")?;
-            remote_write::safe_ancestors(&sftp, &directory)?;
-            if remote_write::metadata(&sftp, &directory)?.is_some() {
-                remote_write::Stage {
-                    path: format!("{directory}/content"),
-                    directory: directory.clone(),
-                }
-                .cleanup(&sftp)?;
-            }
-            item.receipt
-                .lock()
-                .unwrap()
-                .stage_dirs
-                .retain(|d| d != &directory);
-        }
-    }
-    if !receipt.remote_root.is_empty() {
-        let Source::Remote { context, .. } = &item.source else {
-            return Ok(());
-        };
-        valid_task_directory(&receipt.remote_root, ".ssh-workspace-task-")?;
-        let connection = connection::connect_verified(context, &Cancellation::default())?;
-        let sftp = connection.session().sftp()?;
-        remote_write::safe_ancestors(&sftp, &receipt.remote_root)?;
-        for name in [
-            "runner.py",
-            "config.json",
-            "known_hosts",
-            "state.json",
-            "state.next",
-            "stderr",
-            "probe",
-        ] {
-            let path = remote_path::join(&receipt.remote_root, name)?;
-            if remote_write::metadata(&sftp, &path)?.is_some() {
-                sftp.unlink(Path::new(&path))?;
-            }
-        }
-        if remote_write::metadata(&sftp, &receipt.remote_root)?.is_some() {
-            sftp.rmdir(Path::new(&receipt.remote_root))?;
-        }
-        item.receipt.lock().unwrap().remote_root.clear();
-    }
-    Ok(())
-}
-fn verify_stopped(item: &WriteHandle) -> AppResult<()> {
-    let receipt = item.receipt.lock().unwrap().clone();
-    let root = receipt.remote_root;
-    if root.is_empty() || receipt.remote_stopped {
-        return Ok(());
-    }
-    let Source::Remote { context, .. } = &item.source else {
-        return Ok(());
-    };
-    let connection = connection::connect_verified(context, &Cancellation::default())?;
-    let sftp = connection.session().sftp()?;
-    let mut bytes = Vec::new();
-    sftp.open(Path::new(&format!("{root}/state.json")))?
-        .take(262145)
-        .read_to_end(&mut bytes)?;
-    let status: serde_json::Value =
-        serde_json::from_slice(&bytes).map_err(|_| AppError::new("unknown", "远端任务记录无效"))?;
-    if status["runId"].as_str() != Some(item.task.lock().unwrap().run_id.as_str())
-        || !matches!(
-            status["status"].as_str(),
-            Some("finished" | "failed" | "cancelled")
-        )
-    {
-        return Err(AppError::new(
-            "unknown",
-            "源服务器尚未确认停止；控制连接丢失后最多等待 30 秒再核对",
-        ));
-    }
-    Ok(())
-}
 #[tauri::command]
 pub async fn reconcile_transfer(
     window: WebviewWindow,
@@ -700,21 +690,25 @@ pub async fn reconcile_transfer(
     };
     let state = state.inner().clone();
     crate::blocking(move || {
+        let reconciliation = state.transfers.write_lane(&format!("reconcile:{id}"));
+        let _reconciling = reconciliation.try_lock().map_err(|_| AppError::new("busy", "此任务正在核对中"))?;
         let _lifecycle = item.lifecycle.try_lock().map_err(|_| AppError::new("busy", "任务仍在运行或核对中"))?;
         if item.task.lock().unwrap().active() {
             return Err(AppError::new("busy", "任务仍在运行"));
         }
+        if item.receipt.lock().unwrap().format_version != 2 {
+            return Err(AppError::new("unsupported", "旧格式回执需人工核对远端状态，应用不会据此执行清理"));
+        }
         verify_stopped(&item)?;
-        item.receipt.lock().unwrap().remote_stopped = true;
         state.transfers.persist(&item)?;
         let pending_commit = item.receipt.lock().unwrap().pending_commit.clone();
         cleanup(&item)?;
         item.receipt.lock().unwrap().pending_commit = None;
         {
             let mut task = item.task.lock().unwrap();
-            if let Some(path) = pending_commit {
+            if let Some(commit) = pending_commit {
                 task.status = "interrupted".into();
-                task.error = Some(format!("已确认远端停止。提交结果未获确认，请检查目标项目 {path}。为避免重复写入，此任务不自动重试；确认后可重新选择需要的项目。"));
+                task.error = Some(format!("已确认远端停止。提交结果未获确认，请检查目标项目 {}。为避免重复写入，此任务不自动重试；确认后可重新选择需要的项目。", commit.destination));
             } else if task.status == "unknown" {
                 task.status = if recovered { "interrupted" } else { "cancelled" }.into();
                 task.error = Some("已确认远端停止并清理未提交内容。已完成文件保留。".into());

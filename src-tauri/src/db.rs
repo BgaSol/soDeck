@@ -159,6 +159,14 @@ impl Database {
             .find(|s| s.id == id)
             .ok_or_else(|| AppError::new("notFound", "服务器不存在"))
     }
+    pub fn update_direct_endpoint(&mut self, id: &str, host: String, port: u16) -> AppResult<()> {
+        let mut server = self.get(id)?;
+        server.direct_host = Some(host);
+        server.direct_port = port;
+        self.save_config(server)?;
+        Ok(())
+    }
+
     fn save_config(&mut self, mut server: ServerConfig) -> AppResult<ServerConfig> {
         self.validate_schema()?;
         server.name = server.name.trim().into();

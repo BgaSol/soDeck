@@ -15,6 +15,8 @@ pub struct Entry {
     pub directory: bool,
     pub size: u64,
     pub modified: Option<u64>,
+    pub mode: Option<u32>,
+    pub created_directory: bool,
     pub target: Option<String>,
     pub outcome: String,
 }
@@ -54,6 +56,8 @@ fn local(item: &WriteHandle, plan: &mut Plan, path: &Path, parts: Vec<String>) -
                 .ok()
                 .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
                 .map(|d| d.as_secs()),
+            mode: local_mode(&stat),
+            created_directory: false,
             target: None,
             outcome: "pending".into(),
         },
@@ -89,6 +93,18 @@ fn remote(
     parts: Vec<String>,
 ) -> AppResult<()> {
     item.check()?;
+    // Copying the user's home must not enumerate the live control directory
+    // that this transfer just deployed there (its heartbeat keeps changing).
+    if item
+        .receipt
+        .lock()
+        .unwrap()
+        .direct
+        .as_ref()
+        .is_some_and(|d| d.source.root == path)
+    {
+        return Ok(());
+    }
     check_scan_limit(plan, parts.len())?;
     let stat = sftp.lstat(Path::new(path))?;
     if !(stat.is_file() || stat.is_dir()) {
@@ -107,6 +123,8 @@ fn remote(
                 0
             },
             modified: stat.mtime,
+            mode: stat.perm.map(|p| p & 0o777),
+            created_directory: false,
             target: None,
             outcome: "pending".into(),
         },
@@ -226,6 +244,16 @@ pub fn scan(item: &WriteHandle) -> AppResult<Plan> {
     }
     Ok(plan)
 }
+#[cfg(unix)]
+fn local_mode(stat: &fs::Metadata) -> Option<u32> {
+    use std::os::unix::fs::PermissionsExt;
+    Some(stat.permissions().mode() & 0o777)
+}
+#[cfg(not(unix))]
+fn local_mode(_: &fs::Metadata) -> Option<u32> {
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

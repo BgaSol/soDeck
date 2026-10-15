@@ -1,4 +1,6 @@
 use super::*;
+use crate::connection;
+use std::path::Path;
 use std::{
     net::TcpListener,
     process::{Child, Command, Stdio},
@@ -58,6 +60,7 @@ impl Fixture {
     }
     fn item(&self, source: Source, policy: ConflictPolicy) -> WriteHandle {
         let mut receipt = Receipt {
+            format_version: 2,
             target_server_id: "b".into(),
             target_identity: self.b.identity().into(),
             ..Receipt::default()
@@ -91,6 +94,10 @@ impl Fixture {
                 status: "queued".into(),
                 bytes_done: 0,
                 bytes_total: 0,
+                current_file: None,
+                current_bytes: 0,
+                committed_bytes: 0,
+                waiting_reason: None,
                 files_done: 0,
                 files_total: 0,
                 skipped: 0,
@@ -130,13 +137,18 @@ impl Fixture {
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
+        #[cfg(unix)]
+        unsafe {
+            libc::kill(self.child.id() as i32, libc::SIGTERM);
+        }
+        #[cfg(not(unix))]
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
 }
 
 #[test]
-#[ignore = "real SSH endpoints and native OpenSSH scp; requires Python paramiko"]
+#[ignore = "real SSH endpoints and native OpenSSH ssh; requires Python paramiko"]
 fn direct_copy_content_conflicts_and_no_client_payload() {
     let fixture = Fixture::new();
     let state = crate::connection::tests::state();
@@ -148,6 +160,8 @@ fn direct_copy_content_conflicts_and_no_client_payload() {
         "a'b.txt",
         "a\\b.txt",
         "line\nbreak.txt",
+        "trailing\n",
+        "-leading",
         "$(not-a-command)",
     ] {
         fs::write(dir.join(name), format!("contents:{name}")).unwrap();
@@ -155,7 +169,7 @@ fn direct_copy_content_conflicts_and_no_client_payload() {
     #[cfg(unix)]
     std::os::unix::fs::symlink(&dir, dir.join("link")).unwrap();
     let item = fixture.remote("reports", ConflictPolicy::Rename);
-    upload::run(&state, None, &item).unwrap();
+    pipeline::run(&state, None, &item).unwrap();
     assert!(fixture.path("b/reports/nested/empty").is_dir());
     for name in [
         ".hidden",
@@ -163,6 +177,8 @@ fn direct_copy_content_conflicts_and_no_client_payload() {
         "a'b.txt",
         "a\\b.txt",
         "line\nbreak.txt",
+        "trailing\n",
+        "-leading",
         "$(not-a-command)",
     ] {
         assert_eq!(
@@ -172,7 +188,7 @@ fn direct_copy_content_conflicts_and_no_client_payload() {
     }
     assert!(!fixture.path("b/reports/link").exists());
     assert_eq!(item.task.lock().unwrap().skipped, 1);
-    upload::run(
+    pipeline::run(
         &state,
         None,
         &fixture.remote("reports", ConflictPolicy::Rename),
@@ -181,7 +197,7 @@ fn direct_copy_content_conflicts_and_no_client_payload() {
     assert!(fixture.path("b/reports (1)/nested/empty").is_dir());
     fs::write(fixture.path("b/reports/extra"), b"preserve").unwrap();
     fs::write(dir.join(".hidden"), b"updated").unwrap();
-    upload::run(
+    pipeline::run(
         &state,
         None,
         &fixture.remote("reports", ConflictPolicy::Overwrite),
@@ -209,7 +225,7 @@ fn direct_copy_content_conflicts_and_no_client_payload() {
 }
 
 #[test]
-#[ignore = "real SSH endpoints and native OpenSSH scp; requires Python paramiko"]
+#[ignore = "real SSH endpoints and native OpenSSH ssh; requires Python paramiko"]
 fn direct_failures_do_not_relay_or_replace_existing_files() {
     let fixture = Fixture::new();
     let state = crate::connection::tests::state();
@@ -217,7 +233,7 @@ fn direct_failures_do_not_relay_or_replace_existing_files() {
     fs::write(fixture.path("b/file"), b"original").unwrap();
     fs::write(fixture.path("deny-direct"), b"deny").unwrap();
     let item = fixture.remote("file", ConflictPolicy::Overwrite);
-    assert!(upload::run(&state, None, &item)
+    assert!(pipeline::run(&state, None, &item)
         .unwrap_err()
         .message
         .contains("A cannot reach B"));
@@ -225,20 +241,20 @@ fn direct_failures_do_not_relay_or_replace_existing_files() {
     fs::remove_file(fixture.path("deny-direct")).unwrap();
     let mut item = fixture.remote("file", ConflictPolicy::Overwrite);
     item.endpoint.as_mut().unwrap().public_key = fixture.a.target_public_key().into();
-    assert!(upload::run(&state, None, &item)
+    assert!(pipeline::run(&state, None, &item)
         .unwrap_err()
         .message
         .to_lowercase()
         .contains("host key"));
     let mut item = fixture.remote("file", ConflictPolicy::Overwrite);
     item.endpoint.as_mut().unwrap().username = "not-authorized".into();
-    assert!(upload::run(&state, None, &item).is_err());
+    assert!(pipeline::run(&state, None, &item).is_err());
     assert_eq!(fs::read(fixture.path("b/file")).unwrap(), b"original");
     fixture.no_temporary_files();
 }
 
 #[test]
-#[ignore = "real SSH endpoints and native OpenSSH scp; requires Python paramiko"]
+#[ignore = "real SSH endpoints and native OpenSSH ssh; requires Python paramiko"]
 fn direct_cancel_stops_remote_writer_before_cleanup_and_retry() {
     let fixture = Fixture::new();
     let state = crate::connection::tests::state();
@@ -247,7 +263,7 @@ fn direct_cancel_stops_remote_writer_before_cleanup_and_retry() {
     let item = fixture.remote("large.bin", ConflictPolicy::Rename);
     let worker_item = item.clone();
     let worker_state = state.clone();
-    let worker = thread::spawn(move || upload::run(&worker_state, None, &worker_item));
+    let worker = thread::spawn(move || pipeline::run(&worker_state, None, &worker_item));
     let started = Instant::now();
     while !fs::read_to_string(fixture.path("events.jsonl"))
         .unwrap_or_default()
@@ -265,7 +281,7 @@ fn direct_cancel_stops_remote_writer_before_cleanup_and_retry() {
     item.stop.store(false, Ordering::SeqCst);
     item.cancel.reset().unwrap();
     item.task.lock().unwrap().run_id = uuid::Uuid::new_v4().to_string();
-    upload::run(&state, None, &item).unwrap();
+    pipeline::run(&state, None, &item).unwrap();
     assert_eq!(
         fs::read(fixture.path("b/large.bin")).unwrap(),
         fs::read(fixture.path("a/large.bin")).unwrap()
@@ -284,7 +300,7 @@ fn upload_preserves_empty_directories_and_conflicts() {
     #[cfg(unix)]
     std::os::unix::fs::symlink(local.join("file"), local.join("link")).unwrap();
     let item = fixture.item(Source::Local(vec![local.clone()]), ConflictPolicy::Rename);
-    upload::run(&state, None, &item).unwrap();
+    pipeline::run(&state, None, &item).unwrap();
     assert_eq!(
         fs::read(fixture.path("b/local/file")).unwrap(),
         b"binary\0\xff"
@@ -292,7 +308,7 @@ fn upload_preserves_empty_directories_and_conflicts() {
     assert!(fixture.path("b/local/empty").is_dir());
     assert!(!fixture.path("b/local/link").exists());
     fs::write(local.join("file"), b"other").unwrap();
-    upload::run(
+    pipeline::run(
         &state,
         None,
         &fixture.item(Source::Local(vec![local]), ConflictPolicy::Skip),
@@ -306,7 +322,7 @@ fn upload_preserves_empty_directories_and_conflicts() {
 }
 
 #[test]
-#[ignore = "real SSH endpoints and native OpenSSH scp; requires Python paramiko"]
+#[ignore = "real SSH endpoints and native OpenSSH ssh; requires Python paramiko"]
 fn lost_control_stops_remote_writer_and_requires_reconciliation() {
     let fixture = Fixture::new();
     let state = crate::connection::tests::state();
@@ -315,7 +331,7 @@ fn lost_control_stops_remote_writer_and_requires_reconciliation() {
     let item = fixture.remote("large.bin", ConflictPolicy::Rename);
     let worker_item = item.clone();
     let worker_state = state.clone();
-    let worker = thread::spawn(move || upload::run(&worker_state, None, &worker_item));
+    let worker = thread::spawn(move || pipeline::run(&worker_state, None, &worker_item));
     let started = Instant::now();
     while !fs::read_to_string(fixture.path("events.jsonl"))
         .unwrap_or_default()
@@ -326,7 +342,7 @@ fn lost_control_stops_remote_writer_and_requires_reconciliation() {
     }
     item.cancel.cancel();
     assert_eq!(worker.join().unwrap().unwrap_err().kind, "unknown");
-    assert!(!item.receipt.lock().unwrap().remote_root.is_empty());
+    assert!(item.receipt.lock().unwrap().has_remote_resources());
     let started = Instant::now();
     while verify_stopped(&item).is_err() {
         assert!(started.elapsed() < Duration::from_secs(35));
@@ -338,7 +354,7 @@ fn lost_control_stops_remote_writer_and_requires_reconciliation() {
 }
 
 #[test]
-#[ignore = "real SSH endpoints and native OpenSSH scp; requires Python paramiko"]
+#[ignore = "real SSH endpoints and native OpenSSH ssh; requires Python paramiko"]
 fn lost_publish_ack_records_exact_destination_without_retrying_commit() {
     let fixture = Fixture::new();
     let state = crate::connection::tests::state();
@@ -349,10 +365,15 @@ fn lost_publish_ack_records_exact_destination_without_retrying_commit() {
     fs::write(fixture.path("b/file"), b"old content").unwrap();
     fs::write(fixture.path("drop-commit-ack"), b"").unwrap();
     let item = fixture.remote("file", ConflictPolicy::Overwrite);
-    let error = upload::run(&state, None, &item).unwrap_err();
+    let error = pipeline::run(&state, None, &item).unwrap_err();
     assert_eq!(error.kind, "unknown", "{}", error.message);
     assert_eq!(
-        item.receipt.lock().unwrap().pending_commit.as_deref(),
+        item.receipt
+            .lock()
+            .unwrap()
+            .pending_commit
+            .as_ref()
+            .map(|c| c.destination.as_str()),
         Some(fixture.path("b/file").to_str().unwrap())
     );
     assert_eq!(fs::read(fixture.path("b/file")).unwrap(), b"new content");
@@ -374,7 +395,7 @@ fn lost_publish_ack_records_exact_destination_without_retrying_commit() {
 }
 
 #[test]
-#[ignore = "real SSH endpoints and native OpenSSH scp; requires Python paramiko"]
+#[ignore = "real SSH endpoints and native OpenSSH ssh; requires Python paramiko"]
 fn retry_reuses_completed_files_and_directory_names() {
     let fixture = Fixture::new();
     let state = crate::connection::tests::state();
@@ -384,12 +405,12 @@ fn retry_reuses_completed_files_and_directory_names() {
     fs::write(fixture.path("a/reports/second"), b"second").unwrap();
     fs::write(fixture.path("deny-after-first"), b"").unwrap();
     let item = fixture.remote("reports", ConflictPolicy::Rename);
-    assert!(upload::run(&state, None, &item).is_err());
+    assert!(pipeline::run(&state, None, &item).is_err());
     assert_eq!(item.task.lock().unwrap().files_done, 1);
     fs::remove_file(fixture.path("deny-after-first")).unwrap();
     fs::remove_file(fixture.path("deny-direct")).unwrap();
     item.task.lock().unwrap().run_id = uuid::Uuid::new_v4().to_string();
-    upload::run(&state, None, &item).unwrap();
+    pipeline::run(&state, None, &item).unwrap();
     assert_eq!(
         fs::read(fixture.path("b/reports (1)/first")).unwrap(),
         b"first"
@@ -434,7 +455,7 @@ fn create_remote_entries_never_truncates_an_existing_file() {
 }
 
 #[test]
-#[ignore = "real SSH endpoints and native OpenSSH scp; requires Python paramiko"]
+#[ignore = "real SSH endpoints and native OpenSSH ssh; requires Python paramiko"]
 fn direct_target_path_preserves_spaces_quotes_backslashes_and_newlines() {
     let fixture = Fixture::new();
     let state = crate::connection::tests::state();
@@ -443,7 +464,7 @@ fn direct_target_path_preserves_spaces_quotes_backslashes_and_newlines() {
     fs::write(fixture.path("a/file"), b"exact bytes").unwrap();
     let item = fixture.remote("file", ConflictPolicy::Rename);
     item.task.lock().unwrap().target_path = target.display().to_string();
-    upload::run(&state, None, &item).unwrap();
+    pipeline::run(&state, None, &item).unwrap();
     assert_eq!(fs::read(target.join("file")).unwrap(), b"exact bytes");
     fixture.no_temporary_files();
 }
@@ -476,7 +497,7 @@ fn cleanup_failure_stops_new_writes_and_retry_preserves_committed_files() {
     fs::write(fixture.path("deny-cleanup"), b"").unwrap();
     let item = fixture.item(Source::Local(vec![local]), ConflictPolicy::Rename);
     assert_eq!(
-        upload::run(&state, None, &item).unwrap_err().kind,
+        pipeline::run(&state, None, &item).unwrap_err().kind,
         "cleanup"
     );
     assert_eq!(item.task.lock().unwrap().files_done, 1);
@@ -484,9 +505,242 @@ fn cleanup_failure_stops_new_writes_and_retry_preserves_committed_files() {
     assert!(!fixture.path("b/local/second").exists());
     fs::remove_file(fixture.path("deny-cleanup")).unwrap();
     cleanup(&item).unwrap();
-    upload::run(&state, None, &item).unwrap();
+    pipeline::run(&state, None, &item).unwrap();
     assert_eq!(fs::read(fixture.path("b/local/first")).unwrap(), b"first");
     assert_eq!(fs::read(fixture.path("b/local/second")).unwrap(), b"second");
     assert!(!fixture.path("b/local/first (1)").exists());
+    fixture.no_temporary_files();
+}
+
+#[test]
+#[ignore = "real SSH endpoints and native OpenSSH ssh; requires Python paramiko"]
+fn direct_byte_progress_precedes_commit_and_disk_full_preserves_original() {
+    let fixture = Fixture::new();
+    let state = crate::connection::tests::state();
+    let content: Vec<u8> = (0..2 * 1024 * 1024).map(|n| (n % 256) as u8).collect();
+    fs::write(fixture.path("a/file"), &content).unwrap();
+    fs::write(fixture.path("b/file"), b"original").unwrap();
+    fs::write(fixture.path("delay-write"), "0.04").unwrap();
+    let item = fixture.remote("file", ConflictPolicy::Overwrite);
+    let runner = item.clone();
+    let shared = state.clone();
+    let worker = thread::spawn(move || pipeline::run(&shared, None, &runner));
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let view = item.task.lock().unwrap().clone();
+        if view.current_bytes > 0 {
+            assert_eq!(view.files_done, 0);
+            assert_eq!(view.committed_bytes, 0);
+            assert!(view.current_bytes < content.len() as u64);
+            assert_eq!(view.bytes_done, view.current_bytes);
+            break;
+        }
+        assert!(Instant::now() < deadline, "byte progress was never visible");
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(fs::read(fixture.path("b/file")).unwrap(), b"original");
+    fs::write(fixture.path("disk-full"), b"").unwrap();
+    assert!(worker.join().unwrap().is_err());
+    assert_eq!(fs::read(fixture.path("b/file")).unwrap(), b"original");
+    assert_eq!(item.task.lock().unwrap().files_done, 0);
+    fixture.no_temporary_files();
+}
+
+#[cfg(unix)]
+#[test]
+#[ignore = "real SSH endpoints and native OpenSSH ssh; requires Python paramiko"]
+fn direct_preserves_modes_and_times_without_changing_merged_directories() {
+    use std::os::unix::fs::PermissionsExt;
+    let fixture = Fixture::new();
+    let state = crate::connection::tests::state();
+    fs::create_dir_all(fixture.path("a/folder/empty")).unwrap();
+    fs::write(fixture.path("a/folder/executable"), b"binary\0\xff").unwrap();
+    fs::set_permissions(fixture.path("a/folder"), fs::Permissions::from_mode(0o700)).unwrap();
+    fs::set_permissions(
+        fixture.path("a/folder/empty"),
+        fs::Permissions::from_mode(0o500),
+    )
+    .unwrap();
+    fs::set_permissions(
+        fixture.path("a/folder/executable"),
+        fs::Permissions::from_mode(0o751),
+    )
+    .unwrap();
+    let timestamp = std::time::UNIX_EPOCH + Duration::from_secs(1_600_000_000);
+    fs::File::open(fixture.path("a/folder/executable"))
+        .unwrap()
+        .set_times(fs::FileTimes::new().set_modified(timestamp))
+        .unwrap();
+    fs::create_dir(fixture.path("b/folder")).unwrap();
+    fs::set_permissions(fixture.path("b/folder"), fs::Permissions::from_mode(0o750)).unwrap();
+    pipeline::run(
+        &state,
+        None,
+        &fixture.remote("folder", ConflictPolicy::Overwrite),
+    )
+    .unwrap();
+    assert_eq!(
+        fs::metadata(fixture.path("b/folder"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o750
+    );
+    assert_eq!(
+        fs::metadata(fixture.path("b/folder/empty"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o500
+    );
+    let file = fs::metadata(fixture.path("b/folder/executable")).unwrap();
+    assert_eq!(file.permissions().mode() & 0o777, 0o751);
+    assert_eq!(file.modified().unwrap(), timestamp);
+    assert_eq!(
+        fs::read(fixture.path("b/folder/executable")).unwrap(),
+        b"binary\0\xff"
+    );
+    fixture.no_temporary_files();
+    // Allow the test harness to remove the read-only empty directories.
+    for side in ["a", "b"] {
+        fs::set_permissions(
+            fixture.path(&format!("{side}/folder/empty")),
+            fs::Permissions::from_mode(0o700),
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+#[ignore = "requires isolated SSH fixture"]
+fn pending_receipts_quarantine_other_writes_to_the_same_target() {
+    let state = crate::connection::tests::state();
+    let fixture = Fixture::new();
+    let target = fixture.b.clone();
+    let item = WriteHandle {
+        lifecycle: Arc::new(Mutex::new(())),
+        source: Source::Local(vec![]),
+        target: target.clone(),
+        endpoint: None,
+        task: Arc::new(Mutex::new(TaskView {
+            id: "new-task".into(),
+            run_id: "run".into(),
+            kind: "upload".into(),
+            source_name: "local".into(),
+            source_path: String::new(),
+            target_name: "B".into(),
+            target_path: "/target".into(),
+            conflict: ConflictPolicy::Rename,
+            status: "queued".into(),
+            bytes_done: 0,
+            bytes_total: 0,
+            current_file: None,
+            current_bytes: 0,
+            committed_bytes: 0,
+            waiting_reason: None,
+            files_done: 0,
+            files_total: 0,
+            skipped: 0,
+            error: None,
+            warnings: vec![],
+            cleanup_pending: false,
+        })),
+        cancel: Cancellation::default(),
+        stop: Arc::new(AtomicBool::new(false)),
+        plan: Arc::new(Mutex::new(None)),
+        receipt: Arc::new(Mutex::new(Receipt::default())),
+    };
+    assert!(!state.transfers.requires_reconciliation(&item));
+    state.transfers.recovered.lock().unwrap().push(Receipt {
+        target_write_key: item.write_key(),
+        ..Receipt::default()
+    });
+    assert!(state.transfers.requires_reconciliation(&item));
+    state.transfers.recovered.lock().unwrap().clear();
+    assert!(!state.transfers.requires_reconciliation(&item));
+}
+
+#[test]
+#[ignore = "real SSH endpoints and native OpenSSH ssh; requires Python paramiko"]
+fn copying_source_home_excludes_its_live_control_directory() {
+    let fixture = Fixture::new();
+    let state = crate::connection::tests::state();
+    fs::write(fixture.path("a/.hidden"), b"preserve hidden user files").unwrap();
+    let item = fixture.item(
+        Source::Remote {
+            context: fixture.a.clone(),
+            paths: vec![fixture.path("a").display().to_string()],
+        },
+        ConflictPolicy::Rename,
+    );
+    pipeline::run(&state, None, &item).unwrap();
+    assert_eq!(
+        fs::read(fixture.path("b/a/.hidden")).unwrap(),
+        b"preserve hidden user files"
+    );
+    assert_eq!(fs::read_dir(fixture.path("b/a")).unwrap().count(), 1);
+    fixture.no_temporary_files();
+}
+
+#[test]
+#[ignore = "real SSH endpoints and native OpenSSH ssh; requires Python paramiko"]
+fn direct_diagnostic_flood_is_drained_and_bounded() {
+    let fixture = Fixture::new();
+    let state = crate::connection::tests::state();
+    fs::write(fixture.path("a/file"), b"content").unwrap();
+    fs::write(fixture.path("b/file"), b"original").unwrap();
+    fs::write(fixture.path("stderr-flood"), b"").unwrap();
+    let started = Instant::now();
+    let error = pipeline::run(
+        &state,
+        None,
+        &fixture.remote("file", ConflictPolicy::Overwrite),
+    )
+    .unwrap_err();
+    assert!(started.elapsed() < Duration::from_secs(30));
+    assert!(
+        error.message.contains("receiver failed"),
+        "{}",
+        error.message
+    );
+    assert!(error.message.len() < 17000);
+    assert_eq!(fs::read(fixture.path("b/file")).unwrap(), b"original");
+    fixture.no_temporary_files();
+}
+
+#[test]
+fn malformed_receipts_are_preserved_without_panicking() {
+    let dir = tempfile::tempdir().unwrap();
+    for (name, value) in [
+        ("string.json", "\"broken\""),
+        ("array.json", "[]"),
+        ("invalid.json", "{"),
+    ] {
+        fs::write(dir.path().join(name), value).unwrap();
+    }
+    let recovered = TransferState::open(dir.path().into()).unwrap();
+    assert!(recovered.recovered.lock().unwrap().is_empty());
+    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 3);
+}
+
+#[test]
+#[ignore = "real SSH endpoints and native OpenSSH ssh; requires Python paramiko"]
+fn server_reported_commit_connection_loss_remains_unknown() {
+    let fixture = Fixture::new();
+    let state = crate::connection::tests::state();
+    fs::write(fixture.path("a/file"), b"new").unwrap();
+    fs::write(fixture.path("b/file"), b"old").unwrap();
+    fs::write(fixture.path("commit-connection-lost"), b"").unwrap();
+    let item = fixture.remote("file", ConflictPolicy::Overwrite);
+    assert_eq!(
+        pipeline::run(&state, None, &item).unwrap_err().kind,
+        "unknown"
+    );
+    assert!(item.receipt.lock().unwrap().pending_commit.is_some());
+    assert_eq!(fs::read(fixture.path("b/file")).unwrap(), b"new");
+    verify_stopped(&item).unwrap();
+    cleanup(&item).unwrap();
     fixture.no_temporary_files();
 }

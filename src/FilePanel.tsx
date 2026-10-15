@@ -21,11 +21,13 @@ import {
   Upload,
   FilePlus2,
   FolderPlus,
+  ArrowRightLeft,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { desktop } from "./api";
 import { transferApi } from "./transferApi";
 import { FileOperationDialog } from "./FileOperationDialog";
+import { CopyTargetDialog } from "./CopyTargetDialog";
 import type { FileOperation } from "./FileOperationDialog";
 import {
   useDesktopDrag,
@@ -71,6 +73,12 @@ export function FilePanel({
   const selection = state.selection ?? (selected ? [selected] : []);
   const panel = useRef<HTMLElement>(null);
   const [operation, setOperation] = useState<FileOperation | null>(null);
+  const [copyPaths, setCopyPaths] = useState<string[] | null>(null);
+  const viewRegistration = useRef<{ id: string; update: () => void } | null>(
+    null,
+  );
+  const currentPath = useRef(state.currentPath);
+  currentPath.current = state.currentPath;
   const [dropPath, setDropPath] = useState<string | null>(null);
   const [dropKind, setDropKind] = useState("remoteFiles");
   const hover = useRef<{ path: string; since: number } | null>(null);
@@ -79,6 +87,7 @@ export function FilePanel({
   const [path, setPath] = useState(state.currentPath);
   const [focusedPath, setFocusedPath] = useState(selected || "/");
   const list = useRef<HTMLDivElement>(null);
+  const contextMenu = useRef<HTMLDivElement>(null);
   const rowElements = useRef(new Map<string, HTMLButtonElement>());
   const rows = useMemo(() => visibleFileRows(state), [state]);
   const expanded = useMemo(() => new Set(state.expanded), [state.expanded]);
@@ -113,8 +122,30 @@ export function FilePanel({
     setDownload(null);
     setFocusedPath("/");
     setOperation(null);
+    setCopyPaths(null);
     setDropPath(null);
   }, [sessionId]);
+  useEffect(() => {
+    if (!desktop || !sessionId) return;
+    const id = crypto.randomUUID();
+    let revision = 0;
+    const update = () => {
+      void transferApi
+        .registerView(sessionId, id, currentPath.current, ++revision)
+        .catch(() => {});
+    };
+    viewRegistration.current = { id, update };
+    update();
+    const timer = window.setInterval(update, 15000);
+    return () => {
+      clearInterval(timer);
+      if (viewRegistration.current?.id === id) viewRegistration.current = null;
+      void transferApi.unregisterView(id).catch(() => {});
+    };
+  }, [sessionId]);
+  useEffect(() => {
+    viewRegistration.current?.update();
+  }, [state.currentPath]);
   useEffect(() => {
     report.current?.(model.snapshot());
   }, [model, state]);
@@ -235,6 +266,15 @@ export function FilePanel({
     setMenu(null);
     setOperation({ kind, sessionId, path });
   }
+  function copyToServer(file?: FileEntry) {
+    if (!sessionId || busy) return;
+    const paths =
+      file && !selection.includes(file.path) ? [file.path] : selection;
+    const selectedPaths = paths.filter((path) => path !== "/");
+    if (!selectedPaths.length) return;
+    setMenu(null);
+    setCopyPaths(selectedPaths);
+  }
   function focusRow(next: string) {
     setFocusedPath(next);
     rowElements.current.get(next)?.focus({ preventScroll: true });
@@ -252,9 +292,37 @@ export function FilePanel({
   }
   useEffect(() => {
     if (!menu) return;
+    contextMenu.current
+      ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
+      ?.focus();
     const dismiss = () => setMenu(null);
     const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape") dismiss();
+      if (event.key === "Escape") {
+        dismiss();
+        rowElements.current.get(menu.file.path)?.focus();
+      }
+      if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+        const buttons = Array.from(
+          contextMenu.current?.querySelectorAll<HTMLButtonElement>(
+            "button:not(:disabled)",
+          ) ?? [],
+        );
+        if (!buttons.length) return;
+        event.preventDefault();
+        const current = buttons.indexOf(
+          document.activeElement as HTMLButtonElement,
+        );
+        const next =
+          event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? buttons.length - 1
+              : (current +
+                  (event.key === "ArrowDown" ? 1 : -1) +
+                  buttons.length) %
+                buttons.length;
+        buttons[next]?.focus();
+      }
     };
     window.addEventListener("click", dismiss);
     window.addEventListener("blur", dismiss);
@@ -389,6 +457,17 @@ export function FilePanel({
               onClick={() => selectedFile && void edit(selectedFile)}
             >
               <Pencil size={15} />
+            </button>
+            <button
+              className="icon-button"
+              aria-label="复制到另一台服务器"
+              title="复制到另一台服务器…"
+              disabled={
+                !sessionId || busy || !selection.some((path) => path !== "/")
+              }
+              onClick={() => copyToServer()}
+            >
+              <ArrowRightLeft size={15} />
             </button>
             <button
               className="icon-button"
@@ -708,6 +787,7 @@ export function FilePanel({
       {menu && (
         <div
           className="server-context-menu file-context-menu"
+          ref={contextMenu}
           role="menu"
           aria-label="文件操作"
           style={{ left: Math.max(5, menu.x), top: Math.max(5, menu.y) }}
@@ -770,7 +850,26 @@ export function FilePanel({
             <Download size={14} />
             下载{menu.file.isDir ? "文件夹" : "文件"}
           </button>
+          <button
+            role="menuitem"
+            disabled={busy || menu.file.path === "/"}
+            onClick={() => copyToServer(menu.file)}
+          >
+            <ArrowRightLeft size={14} />
+            复制到另一台服务器…
+          </button>
         </div>
+      )}
+      {copyPaths && sessionId && (
+        <CopyTargetDialog
+          sessionId={sessionId}
+          paths={copyPaths}
+          onClose={() => setCopyPaths(null)}
+          onPrepared={(draft) => {
+            setCopyPaths(null);
+            setOperation({ kind: "direct", draft });
+          }}
+        />
       )}
       {operation && (
         <FileOperationDialog
