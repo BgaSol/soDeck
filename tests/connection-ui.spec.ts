@@ -223,7 +223,9 @@ async function setup(
 }
 async function connect(page: Page) {
   await page.locator(".server-row").filter({ hasText: "Target B" }).dblclick();
-  await expect(page.getByRole("dialog", { name: /^服务器 \d/ })).toHaveCount(0);
+  await expect(
+    page.getByRole("dialog", { name: "服务器", exact: true }),
+  ).toHaveCount(0);
   let dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("跳板服务器：Jump A");
   await page.screenshot({ path: ".qa/jump-design-fingerprint-light.png" });
@@ -666,8 +668,11 @@ test("empty inventory can add, edit and delete inside the picker", async ({
   await expect(picker).toContainText("还没有服务器");
   await expect(
     picker.getByRole("button", { name: "连接", exact: true }),
-  ).toBeDisabled();
-  await picker.getByRole("button", { name: "新增", exact: true }).click();
+  ).toHaveCount(0);
+  await expect(
+    picker.getByRole("button", { name: "添加服务器", exact: true }),
+  ).toBeFocused();
+  await picker.getByRole("button", { name: "添加服务器", exact: true }).click();
   const editor = page.getByRole("dialog", { name: "新增服务器" });
   await editor.getByLabel(/^名称/).fill("New server");
   await editor.getByLabel("地址", { exact: true }).fill("fixture.internal");

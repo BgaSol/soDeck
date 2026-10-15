@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
+  ChevronDown,
   Pencil,
   Plug,
   Plus,
@@ -9,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import { addressOf, filterServers, type Server } from "./types";
+import "./server-picker.css";
 
 export function ServerPickerDialog({
   servers,
@@ -51,6 +53,7 @@ export function ServerPickerDialog({
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const search = useRef<HTMLInputElement>(null);
+  const addButton = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<{
     server: Server;
@@ -60,6 +63,7 @@ export function ServerPickerDialog({
   const visible = filterServers(servers, query, tag);
   const selected = visible.find((s) => s.id === selectedId);
   const tags = [...new Set(servers.flatMap((s) => s.tags))].sort();
+  const empty = !loading && !servers.length && !error;
   useLayoutEffect(() => {
     const element = dialog.current!;
     if (suspended) {
@@ -67,9 +71,9 @@ export function ServerPickerDialog({
       setMenu(null);
     } else {
       if (!element.open) element.showModal();
-      search.current?.focus();
+      (search.current || addButton.current)?.focus();
     }
-  }, [suspended]);
+  }, [suspended, empty]);
   useEffect(() => {
     if (!visible.some((s) => s.id === selectedId))
       onSelect(visible[0]?.id || "");
@@ -100,46 +104,49 @@ export function ServerPickerDialog({
         } else onClose();
       }}
     >
-      <header className="dialog-head">
-        <h2 id="server-picker-title">
-          服务器 <span className="inventory-count">{servers.length}</span>
-        </h2>
+      <header className="server-picker-head">
         <button
-          className="icon-button"
+          className="icon-button server-picker-close"
           aria-label="关闭服务器窗口"
           onClick={onClose}
         >
-          <X size={18} />
+          <X size={14} />
         </button>
+        <h2 id="server-picker-title">服务器</h2>
       </header>
-      <div className="server-picker-filters">
-        <label className="search-box">
-          <Search size={16} />
-          <input
-            ref={search}
-            aria-label="搜索服务器"
-            placeholder="搜索名称或地址"
-            value={query}
-            disabled={busy}
-            onChange={(event) => onQuery(event.target.value)}
-          />
-        </label>
-        <select
-          aria-label="按标签筛选"
-          value={tag}
-          disabled={busy}
-          onChange={(event) => onTag(event.target.value)}
-        >
-          <option value="">全部标签</option>
-          {tags.map((t) => (
-            <option key={t}>{t}</option>
-          ))}
-        </select>
-        <button className="primary" disabled={busy || loading} onClick={onNew}>
-          <Plus size={15} />
-          新增
-        </button>
-      </div>
+      {!empty && (
+        <div className="server-picker-filters">
+          <label className="search-box">
+            <Search size={16} />
+            <input
+              ref={search}
+              aria-label="搜索服务器"
+              placeholder="搜索名称或地址"
+              value={query}
+              disabled={busy}
+              onChange={(event) => onQuery(event.target.value)}
+            />
+          </label>
+          <div className="server-picker-tag">
+            <select
+              aria-label="按标签筛选"
+              value={tag}
+              disabled={busy}
+              onChange={(event) => onTag(event.target.value)}
+            >
+              <option value="">全部标签</option>
+              {tags.map((t) => (
+                <option key={t}>{t}</option>
+              ))}
+            </select>
+            <ChevronDown size={13} aria-hidden="true" />
+          </div>
+          <button disabled={busy || loading} onClick={onNew}>
+            <Plus size={15} />
+            新增
+          </button>
+        </div>
+      )}
       <div className="server-list" aria-label="服务器列表" aria-busy={loading}>
         {visible.map((server) => (
           <button
@@ -191,19 +198,41 @@ export function ServerPickerDialog({
           </button>
         ))}
         {!visible.length && (
-          <div className="panel-empty">
-            <ServerIcon size={26} aria-hidden="true" />
+          <div className="server-picker-empty">
+            <span className="server-picker-empty-symbol" aria-hidden="true">
+              {!empty && (query || tag) ? (
+                <Search size={28} />
+              ) : (
+                <ServerIcon size={32} />
+              )}
+            </span>
             <strong>
               {loading
                 ? "正在读取服务器…"
-                : servers.length
-                  ? "没有匹配的服务器"
-                  : "还没有服务器"}
+                : error && !servers.length
+                  ? "无法读取服务器"
+                  : servers.length
+                    ? "没有匹配的服务器"
+                    : "还没有服务器"}
             </strong>
-            {!loading && !servers.length && (
-              <p>添加服务器，开始你的第一个会话。</p>
+            {empty && (
+              <>
+                <p>添加服务器，开始你的第一个会话。</p>
+                <button
+                  ref={addButton}
+                  className="primary"
+                  disabled={busy}
+                  onClick={onNew}
+                >
+                  <Plus size={15} />
+                  添加服务器
+                </button>
+              </>
             )}
-            {(query || tag) && (
+            {!loading && !!servers.length && !visible.length && (
+              <p>试试其他名称、地址或标签。</p>
+            )}
+            {!empty && (query || tag) && (
               <button
                 onClick={() => {
                   onQuery("");
@@ -224,38 +253,45 @@ export function ServerPickerDialog({
           )}
         </div>
       )}
-      <footer className="server-footer">
-        <span>
-          {visible.length} / {servers.length} 台服务器
-        </span>
-        <div className="server-actions">
-          <button
-            className="quiet"
-            disabled={busy || !selected}
-            onClick={() => onEdit(selected!)}
-          >
-            <Pencil size={14} />
-            编辑
-          </button>
-          <button
-            className="quiet danger"
-            disabled={busy || !selected}
-            onClick={() => onDelete(selected!)}
-          >
-            <Trash2 size={14} />
-            删除
-          </button>
-          <button onClick={onClose}>{busy ? "取消连接" : "取消"}</button>
-          <button
-            className="primary"
-            disabled={busy || !selected || loading}
-            onClick={() => onConnect(selected!)}
-          >
-            <Plug size={14} />
-            {busy ? "连接中…" : "连接"}
-          </button>
-        </div>
-      </footer>
+      {!empty && (
+        <footer className="server-footer">
+          <div className="server-actions">
+            <button
+              className="quiet"
+              disabled={busy || !selected}
+              onClick={() => onEdit(selected!)}
+            >
+              <Pencil size={14} />
+              编辑
+            </button>
+            <button
+              className="quiet danger"
+              disabled={busy || !selected}
+              onClick={() => onDelete(selected!)}
+            >
+              <Trash2 size={14} />
+              删除
+            </button>
+          </div>
+          <span className="server-picker-count">
+            {query || tag
+              ? `${visible.length} / ${servers.length}`
+              : servers.length}{" "}
+            台服务器
+          </span>
+          <div className="server-picker-confirm">
+            <button onClick={onClose}>{busy ? "取消连接" : "取消"}</button>
+            <button
+              className="primary"
+              disabled={busy || !selected || loading}
+              onClick={() => onConnect(selected!)}
+            >
+              <Plug size={14} />
+              {busy ? "连接中…" : "连接"}
+            </button>
+          </div>
+        </footer>
+      )}
       {menu && (
         <div
           className="server-context-menu"

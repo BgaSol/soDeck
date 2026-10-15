@@ -204,142 +204,6 @@ button.brand-button:hover {
 .panel-title h2 > svg {
   color: var(--muted);
 }
-.server-picker-filters .primary {
-  min-height: 29px;
-  padding: 4px 8px;
-  font-size: 12px;
-}
-.inventory-count {
-  color: var(--muted);
-  font-weight: 500;
-  font-size: 11px;
-  background: var(--tag);
-  border-radius: 5px;
-  min-width: 21px;
-  padding: 0 5px;
-  text-align: center;
-}
-.search-box {
-  display: flex;
-  align-items: center;
-  padding-left: 10px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  color: var(--muted);
-}
-.search-box > svg {
-  flex-shrink: 0;
-}
-.search-box:focus-within {
-  outline: 2px solid var(--blue);
-  outline-offset: 1px;
-}
-.search-box input {
-  border: 0;
-  background: transparent;
-  outline: none;
-  font-size: 12px;
-}
-.server-picker-filters select {
-  background: var(--surface);
-  border-color: var(--line);
-  min-height: 33px;
-  font-size: 12px;
-}
-.server-list {
-  overflow: auto;
-  flex: 1;
-  padding: 0 9px 12px;
-  scrollbar-width: thin;
-}
-.server-row {
-  width: 100%;
-  text-align: left;
-  justify-content: flex-start;
-  align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 5px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: transparent;
-  padding: 11px 8px;
-  white-space: normal;
-}
-.server-row.selected {
-  background: var(--selected);
-  color: var(--selected-text);
-}
-.server-symbol {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  margin-top: 1px;
-  width: 32px;
-  height: 32px;
-  background: var(--surface);
-  color: var(--muted);
-  border: 1px solid var(--line);
-  border-radius: 9px;
-}
-.selected .server-symbol {
-  color: var(--blue);
-  border-color: transparent;
-}
-.server-row-body {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-.server-name {
-  font-size: 13px;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-.server-address {
-  font: 11px/1.5 var(--mono);
-  color: var(--muted);
-  overflow-wrap: anywhere;
-}
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 2px;
-}
-.chip {
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--tag);
-  color: var(--muted);
-  overflow-wrap: anywhere;
-}
-.selected .chip {
-  background: var(--surface);
-  color: var(--selected-text);
-}
-.server-footer {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 10px;
-  border-top: 1px solid var(--line);
-  padding: 12px 16px 15px;
-  color: var(--muted);
-  font-size: 11px;
-}
-.server-actions {
-  display: flex;
-  gap: 8px;
-}
-.server-actions .primary {
-  flex: 1;
-}
-.server-footer button {
-  font-size: 12px;
-  padding-inline: 9px;
-}
 .workspaces {
   display: flex;
   flex-direction: column;
@@ -970,30 +834,6 @@ button.brand-button:hover {
   padding: 2px 4px 7px;
   overflow-wrap: anywhere;
 }
-.server-context-menu {
-  position: fixed;
-  z-index: 20;
-  display: grid;
-  padding: 5px;
-  width: 180px;
-  border: 1px solid var(--strong-line);
-  border-radius: 11px;
-  background: var(--sheet);
-  backdrop-filter: blur(24px) saturate(140%);
-  box-shadow: 0 10px 32px rgba(20, 20, 35, 0.16);
-  transform-origin: top left;
-}
-.server-context-menu button {
-  justify-content: flex-start;
-  border: 0;
-  background: transparent;
-  font-size: 12px;
-}
-.server-context-menu button:hover {
-  background: var(--blue);
-  color: #fff;
-}
-.server-context-menu button.danger:hover,
 button.delete-confirm {
   background: var(--error);
   border-color: var(--error);
@@ -1644,14 +1484,6 @@ dialog .form-columns.equal {
   .workspaces {
     padding: 8px 12px 12px;
   }
-  .server-row {
-    gap: 8px;
-    padding: 10px 6px;
-  }
-  .server-symbol {
-    width: 28px;
-    height: 28px;
-  }
 }
 @media (max-width: 760px) {
   .workspaces {
@@ -1711,9 +1543,6 @@ dialog .form-columns.equal {
     --material: var(--surface);
     --sheet: var(--surface);
   }
-  .server-row.selected {
-    border-color: var(--blue);
-  }
 }
 @media (prefers-contrast: more) and (prefers-color-scheme: dark) {
   :root {
@@ -1723,81 +1552,9 @@ dialog .form-columns.equal {
   }
 }
 
-/* Global tools and the on-demand server picker. */
+/* Global tools. */
 .tab-scroll {
   flex: 0 1 auto;
-}
-.server-picker-dialog {
-  width: 640px;
-  max-height: calc(100dvh - 40px);
-  padding: 0;
-  overflow: hidden;
-}
-.server-picker-dialog[open] {
-  display: flex;
-  flex-direction: column;
-}
-.server-picker-dialog .dialog-head {
-  padding: 18px 20px;
-  margin: 0;
-  flex-shrink: 0;
-}
-.server-picker-filters {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 20px 14px;
-  flex-shrink: 0;
-}
-.server-picker-filters .search-box {
-  flex: 1;
-  min-width: 0;
-}
-.server-picker-filters select {
-  width: 135px;
-}
-.server-picker-dialog .server-list {
-  padding: 0 14px 14px;
-  min-height: 100px;
-  max-height: 45dvh;
-  overflow: auto;
-}
-.server-picker-dialog .server-row {
-  width: 100%;
-}
-.server-picker-dialog .server-row-body {
-  flex: 1;
-}
-.server-connected {
-  font-size: 11px;
-  color: var(--green);
-  flex-shrink: 0;
-}
-.server-picker-dialog .server-footer {
-  flex-shrink: 0;
-  padding: 14px 20px;
-}
-.server-picker-dialog .server-actions {
-  justify-content: flex-end;
-  flex-wrap: wrap;
-}
-.server-picker-dialog .server-actions .primary {
-  flex: 0;
-  min-width: 84px;
-}
-.server-picker-dialog .server-actions .quiet:nth-child(2) {
-  margin-right: auto;
-}
-.server-picker-status {
-  padding: 12px 20px;
-  color: var(--muted);
-  overflow-wrap: anywhere;
-  overflow: auto;
-  max-height: 100px;
-}
-.server-picker-status[role="alert"] {
-  color: var(--error);
-  background: var(--error-bg);
 }
 .session-page > .docker-panel {
   container-type: inline-size;
@@ -1820,18 +1577,7 @@ dialog .form-columns.equal {
   }
 }
 @media (max-width: 520px) {
-  .server-picker-filters {
-    flex-wrap: wrap;
-  }
-  .server-picker-filters .search-box {
-    flex-basis: 100%;
-  }
   .app-brand > span {
     display: none;
   }
-}
-
-.server-picker-dialog .server-context-menu {
-  position: absolute;
-  z-index: 2;
 }

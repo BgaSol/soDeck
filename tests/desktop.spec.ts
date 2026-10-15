@@ -80,7 +80,7 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
   try {
     await unlink(".qa/docker-mode").catch(() => {});
     await showServers(main);
-    await main.getByRole("button", { name: "新增", exact: true }).click();
+    await main.getByRole("button", { name: /^(新增|添加服务器)$/ }).click();
     let dialog = main.getByRole("dialog");
     await dialog.getByLabel(/^名称/).fill(name);
     await dialog.getByLabel("地址", { exact: true }).fill("127.0.0.1");
@@ -194,7 +194,7 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
     );
     // Server-list selection and CRUD must leave the active workspace connected.
     await showServers(main);
-    await main.getByRole("button", { name: "新增", exact: true }).click();
+    await main.getByRole("button", { name: /^(新增|添加服务器)$/ }).click();
     dialog = main.getByRole("dialog");
     await dialog.getByLabel(/^名称/).fill(other);
     await dialog.getByLabel("地址", { exact: true }).fill("192.0.2.1");
@@ -780,7 +780,7 @@ test("saved passwords survive reload, connect automatically and can be cleared",
   try {
     await main.reload();
     await showServers(main);
-    await main.getByRole("button", { name: "新增", exact: true }).click();
+    await main.getByRole("button", { name: /^(新增|添加服务器)$/ }).click();
     const editor = main.getByRole("dialog");
     await editor.getByLabel(/^名称/).fill(name);
     await editor.getByLabel("地址", { exact: true }).fill("127.0.0.1");
