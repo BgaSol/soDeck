@@ -1,0 +1,208 @@
+.window-titlebar {
+  --chrome-bg: var(--material);
+  --chrome-text: var(--text);
+  --chrome-muted: var(--muted);
+  --chrome-hover: var(--hover);
+  height: 48px;
+  min-height: 48px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 0 0 16px;
+  background: var(--chrome-bg);
+  color: var(--chrome-text);
+  user-select: none;
+}
+.window-titlebar-terminal {
+  --chrome-bg: #1c2029;
+  --chrome-text: #dce3ef;
+  --chrome-muted: #9ca8bb;
+  --chrome-hover: rgba(255, 255, 255, 0.09);
+}
+.window-titlebar-tabs {
+  gap: 8px;
+  padding-left: 12px;
+}
+.window-tabs-slot {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.window-titlebar-tabs .window-drag-region {
+  flex: 1 0 72px;
+  position: relative;
+}
+.window-drag-region[data-tab-drop] {
+  background: var(--selected);
+  outline: 1px dashed var(--blue);
+  outline-offset: -5px;
+  border-radius: 8px;
+}
+.tab-drop-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--selected-text);
+}
+.brand-button.brand-icon-only {
+  width: 36px;
+  height: 36px;
+  padding: 6px;
+  margin: 0;
+}
+.window-titlebar-tabs .window-actions > button {
+  width: 32px;
+  min-width: 32px;
+  padding: 6px;
+}
+.window-titlebar[data-chrome="overlay"][data-fullscreen="false"] {
+  padding-left: 88px;
+}
+.window-titlebar:not([data-chrome="custom"]) {
+  padding-right: 16px;
+}
+.window-leading {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.window-leading > svg {
+  color: var(--chrome-muted);
+}
+.window-drag-region {
+  flex: 1;
+  min-width: 72px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+}
+.window-drag-region > * {
+  pointer-events: none;
+}
+.window-titlebar .window-drag-region h1 {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: inherit;
+}
+.window-titlebar .window-drag-region p {
+  margin: 0;
+  font-size: 10px;
+  line-height: 15px;
+  color: var(--chrome-muted);
+}
+.window-drag-region h1,
+.window-drag-region p {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.window-titlebar[data-focused="false"] .window-drag-region,
+.window-titlebar[data-focused="false"] .window-leading {
+  opacity: 0.65;
+}
+.window-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.window-actions > button {
+  font-size: 12px;
+}
+.window-action-label {
+  white-space: nowrap;
+}
+.window-controls {
+  align-self: stretch;
+  display: flex;
+  flex-shrink: 0;
+  gap: 0;
+}
+.window-controls > button {
+  width: 46px;
+  min-width: 46px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--chrome-text);
+  cursor: default;
+  box-shadow: none;
+}
+.window-controls > button:hover {
+  background: var(--chrome-hover);
+}
+.window-controls > button:active {
+  background: var(--chrome-hover);
+  box-shadow: inset 0 0 0 100px rgba(127, 127, 127, 0.15);
+}
+.window-controls > .window-close:hover,
+.window-controls > .window-close:active {
+  background: #c42b1c;
+  color: white;
+}
+.window-controls > button:focus-visible {
+  outline-offset: -4px;
+}
+.brand-button.brand-compact {
+  gap: 7px;
+}
+.brand-compact .app-brand strong {
+  font-size: 13px;
+}
+.window-loading {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+.window-loading > p {
+  margin: auto;
+}
+.workspace-summary {
+  display: flex;
+  justify-content: space-between;
+  flex-shrink: 0;
+  gap: 12px;
+  padding: 3px 18px;
+  font-size: 10px;
+  color: var(--muted);
+}
+@media (max-width: 900px) {
+  .window-action-label {
+    display: none;
+  }
+}
+@media (max-width: 600px) {
+  .window-titlebar {
+    gap: 8px;
+    padding-left: 10px;
+  }
+  .window-actions {
+    gap: 4px;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .window-titlebar:not(.window-titlebar-terminal) {
+    --chrome-bg: var(--canvas);
+  }
+}
+@media (prefers-contrast: more) {
+  .window-titlebar {
+    border-bottom: 1px solid currentColor;
+  }
+  .window-titlebar[data-focused="false"] .window-drag-region,
+  .window-titlebar[data-focused="false"] .window-leading {
+    opacity: 1;
+  }
+}

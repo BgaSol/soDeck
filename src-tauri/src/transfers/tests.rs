@@ -142,6 +142,7 @@ fn view(root: &str, conflict: ConflictPolicy) -> TaskView {
     TaskView {
         id: uuid::Uuid::new_v4().to_string(),
         run_id: uuid::Uuid::new_v4().to_string(),
+        presentation: model::TaskPresentation::default(),
         kind: "direct".into(),
         source_name: "A".into(),
         source_path: String::new(),
@@ -166,6 +167,91 @@ fn view(root: &str, conflict: ConflictPolicy) -> TaskView {
         temporary_paths: vec![],
         can_resume: false,
     }
+}
+
+#[test]
+fn task_metadata_mixed_tasks_follow_attempt_order() {
+    let mut older = view("/older", ConflictPolicy::Rename);
+    older.presentation = model::TaskPresentation::new(1, vec!["/old".into()]);
+    older.status = "running".into();
+    let mut newer = view("/newer", ConflictPolicy::Rename);
+    newer.kind = "download".into();
+    newer.presentation = model::TaskPresentation::new(2, vec!["/new".into()]);
+    newer.presentation.last_started_at = Some(1);
+    newer.status = "completed".into();
+    let newer_id = newer.id.clone();
+    let mut tasks = vec![older, newer];
+    model::sort_tasks(&mut tasks);
+    assert_eq!(tasks[0].id, newer_id);
+    let task = &mut tasks[1];
+    task.presentation.restart(
+        3,
+        task.run_id.clone(),
+        task.status.clone(),
+        Some("previous failure".into()),
+    );
+    let retried_id = task.id.clone();
+    model::sort_tasks(&mut tasks);
+    assert_eq!(tasks[0].id, retried_id);
+    assert_eq!(
+        tasks[0]
+            .presentation
+            .last_attempt
+            .as_ref()
+            .unwrap()
+            .error
+            .as_deref(),
+        Some("previous failure")
+    );
+}
+
+#[test]
+fn task_metadata_survives_storage_and_seeds_next_order() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = task_store::TaskStore::open(&directory.path().join("tasks-v3.sqlite")).unwrap();
+    let mut task = view("/data", ConflictPolicy::Rename);
+    task.status = "completed".into();
+    task.presentation = model::TaskPresentation::new(40, vec!["/a\nb".into()]);
+    task.presentation.restart(
+        41,
+        "previous-run".into(),
+        "failed".into(),
+        Some("断开连接".into()),
+    );
+    let created = task.presentation.created_at;
+    let receipt = Receipt {
+        view: Some(task),
+        ..Receipt::default()
+    };
+    store.save(&receipt).unwrap();
+    let state = TransferState::open(directory.path().to_path_buf()).unwrap();
+    assert_eq!(state.next_order(), 42);
+    let saved = state.recovered.lock().unwrap()[0].view.clone().unwrap();
+    assert_eq!(saved.presentation.created_at, created);
+    assert_eq!(saved.presentation.source_paths, vec!["/a\nb"]);
+    assert_eq!(
+        saved.presentation.last_attempt.unwrap().run_id,
+        "previous-run"
+    );
+}
+
+#[test]
+fn task_metadata_old_receipts_have_no_invented_timestamp() {
+    let mut value = serde_json::to_value(view("/old", ConflictPolicy::Rename)).unwrap();
+    for key in [
+        "createdAt",
+        "lastStartedAt",
+        "sortOrder",
+        "sourcePaths",
+        "lastAttempt",
+    ] {
+        value.as_object_mut().unwrap().remove(key);
+    }
+    let restored: TaskView = serde_json::from_value(value).unwrap();
+    assert_eq!(restored.presentation.sort_order, 0);
+    assert_eq!(restored.presentation.created_at, None);
+    assert_eq!(restored.presentation.last_started_at, None);
+    assert!(restored.presentation.last_attempt.is_none());
 }
 
 impl Fixture {

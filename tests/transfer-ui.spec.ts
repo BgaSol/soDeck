@@ -104,6 +104,7 @@ async function setup(page: Page) {
       unregisterCallback: (id: number) => callbacks.delete(id),
       invoke: async (command: string, args: any = {}) => {
         calls.push({ command, args: JSON.parse(JSON.stringify(args)) });
+        if (command === "window_chrome") return "custom";
         if (command === "plugin:event|listen") {
           const id = serial++;
           if (!events.has(args.event)) events.set(args.event, new Map());
@@ -148,7 +149,19 @@ async function setup(page: Page) {
             endpointRequired: false,
           };
         if (command === "list_servers") return structuredClone(servers);
-        if (command === "list_transfers") return structuredClone(tasks);
+        if (command === "list_transfers") {
+          if (w.__TEST__.failList) throw { message: "任务列表暂时不可用" };
+          if (w.__TEST__.holdNextList) {
+            w.__TEST__.holdNextList = false;
+            const snapshot = structuredClone(tasks);
+            await new Promise<void>((resolve) => {
+              w.__TEST__.releaseList = resolve;
+            });
+            delete w.__TEST__.releaseList;
+            return snapshot;
+          }
+          return structuredClone(tasks);
+        }
         if (command === "save_server") return args.server;
         if (command === "open_connection") {
           const id = "session-a";
@@ -264,7 +277,28 @@ async function setup(page: Page) {
           return "task-1";
         }
         if (command === "cancel_transfer") {
-          tasks[0].status = "cancelling";
+          tasks.find((t) => t.id === args.id).status = "cancelling";
+          return;
+        }
+        if (command === "retry_transfer") {
+          const task = tasks.find((t) => t.id === args.id);
+          task.lastAttempt = {
+            runId: task.runId,
+            startedAt: task.lastStartedAt ?? null,
+            status: task.status,
+            error: task.error,
+          };
+          task.runId = "retry-" + serial++;
+          task.sortOrder =
+            Math.max(0, ...tasks.map((t) => t.sortOrder ?? 0)) + 1;
+          task.lastStartedAt = Date.now();
+          task.status = "queued";
+          task.error = null;
+          w.__TEST__.emit("transfer-updated", {});
+          return;
+        }
+        if (command === "cleanup_transfer") {
+          tasks.find((t) => t.id === args.id).cleanupPending = false;
           return;
         }
         if (command === "detect_docker")
@@ -530,7 +564,9 @@ test("keyboard copy chooses a connected directory and shows byte progress before
     qa.emit("transfer-updated", {});
   });
   const panel = page.getByRole("region", { name: "传输任务" });
+  await page.getByRole("button", { name: "查看传输任务" }).click();
   await expect(panel.getByLabel("传输进度")).toHaveAttribute("value", "0.5");
+  await panel.getByRole("button", { name: "详情", exact: true }).click();
   await expect(panel).toContainText("已提交 0 B");
   await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
   await page.screenshot({ path: ".qa/direct-progress-dark.png" });
@@ -540,7 +576,7 @@ test("keyboard copy chooses a connected directory and shows byte progress before
     qa.tasks[0].bytesDone = qa.tasks[0].bytesTotal;
     qa.emit("transfer-updated", {});
   });
-  await expect(panel.getByLabel("传输进度")).toHaveAttribute("value", "0.99");
+  await expect(panel.getByLabel("传输进度")).not.toHaveAttribute("value");
   await expect(panel).toContainText("提交文件");
   expect(errors).toEqual([]);
 });
@@ -559,6 +595,7 @@ test("native folder drop has a visible target and frozen destination", async ({
   await dialog.getByLabel("传输同名处理").selectOption("overwrite");
   await expect(dialog).toContainText("将替换目标中的同名文件");
   await dialog.getByRole("button", { name: "确认覆盖并开始" }).click();
+  await page.getByRole("button", { name: "查看传输任务" }).click();
   await expect(page.getByRole("region", { name: "传输任务" })).toContainText(
     "检查连接与权限",
   );
@@ -694,6 +731,7 @@ test("uncertain commits require reconciliation; interrupted execution can retry 
     qa.tasks[0].error = "完成确认丢失";
     qa.emit("transfer-updated", {});
   });
+  await page.getByRole("button", { name: "查看传输任务" }).click();
   await expect(
     page.getByRole("button", { name: "核对状态", exact: true }),
   ).toBeVisible();
@@ -762,9 +800,14 @@ test("direct authentication and digest options are explicit; cleanup remains ind
     });
     qa.emit("transfer-updated", {});
   });
+  await page.getByRole("button", { name: "查看传输任务" }).click();
   await expect(page.getByRole("region", { name: "传输任务" })).toContainText(
     "已完成",
   );
+  await page
+    .getByRole("region", { name: "传输任务" })
+    .getByRole("button", { name: "详情", exact: true })
+    .click();
   await page.getByRole("button", { name: "清理临时资源" }).click();
   expect(
     await page.evaluate(() =>
@@ -888,4 +931,324 @@ test("quitting includes uploads and direct transfers without native confirm", as
       ),
     )
     .toBe(1);
+});
+
+async function seedTransferTasks(
+  page: Page,
+  patches: Record<string, unknown>[],
+) {
+  await page.evaluate((patches) => {
+    const qa = (window as any).__TEST__;
+    qa.tasks.splice(
+      0,
+      qa.tasks.length,
+      ...patches.map((patch, i) => ({
+        id: `task-${i}`,
+        runId: `run-${i}`,
+        sortOrder: i + 1,
+        createdAt: Date.now() - i * 60000,
+        lastStartedAt: Date.now() - i * 60000,
+        kind: "upload",
+        sourceName: "本机",
+        sourcePath: `/releases/release-${i}.tar.gz`,
+        sourcePaths: [`/releases/release-${i}.tar.gz`],
+        targetName: "production",
+        targetPath: "/opt/releases",
+        conflict: "rename",
+        status: "completed",
+        bytesDone: 100,
+        bytesTotal: 200,
+        filesDone: 1,
+        filesTotal: 1,
+        skipped: 0,
+        error: null,
+        warnings: [],
+        ...patch,
+      })),
+    );
+    qa.emit("transfer-updated", {});
+  }, patches);
+  await expect(
+    page.getByRole("button", { name: "查看传输任务" }),
+  ).toBeVisible();
+}
+
+test("transfer popover stays collapsed on new tasks, sorts all types and preserves workspace size", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await seedTransferTasks(page, [
+    { id: "old", sortOrder: 1, kind: "direct" },
+    { id: "active", sortOrder: 2, status: "running" },
+    {
+      id: "new",
+      sortOrder: 3,
+      kind: "download",
+      status: "failed",
+      error: "连接中断",
+    },
+  ]);
+  const trigger = page.getByRole("button", { name: "查看传输任务" });
+  const panel = page.getByRole("region", { name: "传输任务" });
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByLabel("总传输进度")).toHaveAttribute("value", "0.5");
+  const terminal = page.locator(".terminal-host").first();
+  const before = await terminal.boundingBox();
+  await trigger.click();
+  await expect(panel).toBeVisible();
+  await expect(panel.locator("[data-task-id]")).toHaveCount(3);
+  expect(
+    await panel
+      .locator("[data-task-id]")
+      .evaluateAll((rows) =>
+        rows.map((row) => row.getAttribute("data-task-id")),
+      ),
+  ).toEqual(["new", "active", "old"]);
+  expect(await terminal.boundingBox()).toEqual(before);
+  await page.keyboard.press("Escape");
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await trigger.click();
+  const file = page.locator(".file-row[data-path='/home/ops/one.txt']");
+  await file.click();
+  await expect(file).toHaveAttribute("aria-selected", "true");
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await page.evaluate(() => {
+    const qa = (window as any).__TEST__;
+    qa.tasks.push({
+      ...qa.tasks[0],
+      id: "latest",
+      runId: "new-run",
+      sortOrder: 4,
+      status: "queued",
+    });
+    window.dispatchEvent(new Event("workspace-transfer-started"));
+  });
+  await expect(trigger).toContainText("2 项进行中");
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await trigger.click();
+  await expect(panel.locator("[data-task-id]").first()).toHaveAttribute(
+    "data-task-id",
+    "latest",
+  );
+  await expect(panel.getByRole("progressbar").first()).not.toHaveAttribute(
+    "value",
+  );
+  await page.screenshot({
+    path: ".qa/transfer-popover-light.png",
+    animations: "disabled",
+  });
+  expect(errors).toEqual([]);
+});
+
+test("retry modal owns Escape and moves only the retried task to the top", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await seedTransferTasks(page, [
+    { id: "failed", sortOrder: 1, status: "failed", error: "连接中断" },
+    { id: "done", sortOrder: 2 },
+  ]);
+  await page.getByRole("button", { name: "查看传输任务" }).click();
+  const panel = page.getByRole("region", { name: "传输任务" });
+  const retry = panel.locator('[data-task-id="failed"]').getByLabel("重试传输");
+  await retry.click();
+  const dialog = page.getByRole("dialog", { name: "重试未完成项目" });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(panel).toBeVisible();
+  await retry.click();
+  await dialog.getByRole("button", { name: "重试传输", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(panel.locator("[data-task-id]").first()).toHaveAttribute(
+    "data-task-id",
+    "failed",
+  );
+  await panel
+    .locator('[data-task-id="failed"]')
+    .getByRole("button", { name: "详情", exact: true })
+    .click();
+  await expect(panel).toContainText("上次执行：失败 · 连接中断");
+  await page.evaluate(() => {
+    const qa = (window as any).__TEST__;
+    qa.tasks.find((task: any) => task.id === "failed").status = "completed";
+    qa.emit("transfer-updated", {});
+  });
+  await expect(page.getByLabel("总传输进度")).toHaveCount(0);
+  await expect(panel).toBeVisible();
+  await expect(panel.locator("[data-task-id]")).toHaveCount(2);
+  expect(errors).toEqual([]);
+});
+
+test("new tasks preserve the history scroll anchor and details across collapse", async ({
+  page,
+}) => {
+  await setup(page);
+  await seedTransferTasks(
+    page,
+    Array.from({ length: 18 }, (_, i) => ({
+      id: `history-${i}`,
+      sortOrder: i + 1,
+    })),
+  );
+  const trigger = page.getByRole("button", { name: "查看传输任务" });
+  await trigger.click();
+  const list = page.locator(".transfer-task-list");
+  await list.evaluate((el) => {
+    el.scrollTop = 400;
+    el.dispatchEvent(new Event("scroll"));
+  });
+  const anchor = await list.evaluate((el) => {
+    const top = el.getBoundingClientRect().top;
+    const row = [...el.querySelectorAll<HTMLElement>("[data-task-id]")].find(
+      (row) => row.getBoundingClientRect().bottom > top + 1,
+    )!;
+    return {
+      id: row.dataset.taskId,
+      offset: row.getBoundingClientRect().top - top,
+    };
+  });
+  await page.evaluate(() => {
+    const qa = (window as any).__TEST__;
+    qa.tasks.push({
+      ...qa.tasks[0],
+      id: "incoming",
+      runId: "incoming",
+      sortOrder: 19,
+    });
+    qa.emit("transfer-updated", {});
+  });
+  await expect(
+    page.getByRole("button", { name: /有 1 项新任务/ }),
+  ).toBeVisible();
+  const after = await list.evaluate((el, id) => {
+    const row = [...el.querySelectorAll<HTMLElement>("[data-task-id]")].find(
+      (row) => row.dataset.taskId === id,
+    )!;
+    return row.getBoundingClientRect().top - el.getBoundingClientRect().top;
+  }, anchor.id);
+  expect(Math.abs(after - anchor.offset)).toBeLessThan(2);
+  await page.getByRole("button", { name: /有 1 项新任务/ }).click();
+  await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBe(0);
+  const newest = page.locator('[data-task-id="incoming"]');
+  await newest.getByRole("button", { name: "详情", exact: true }).click();
+  await trigger.click();
+  await trigger.click();
+  await expect(
+    newest.getByRole("button", { name: "收起详情" }),
+  ).toHaveAttribute("aria-expanded", "true");
+});
+
+test("popover fits a narrow dark window and preserves rows when refresh fails", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 380, height: 580 });
+  await seedTransferTasks(page, [
+    {
+      id: "large",
+      status: "running",
+      sourcePaths: ["/data/很长的中文目录/very-long-release-name.tar.gz"],
+      bytesDone: 124 * 1024 * 1024,
+      bytesTotal: 200 * 1024 * 1024,
+    },
+    {
+      id: "failed",
+      status: "failed",
+      error: "连接已经断开，请检查目标服务器。",
+    },
+    { id: "done", kind: "direct" },
+  ]);
+  const trigger = page.getByRole("button", { name: "查看传输任务" });
+  await trigger.click();
+  const panel = page.getByRole("region", { name: "传输任务" });
+  const box = (await panel.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(380);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThan((await trigger.boundingBox())!.y);
+  expect(await panel.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
+    true,
+  );
+  await page.screenshot({
+    path: ".qa/transfer-popover-narrow-dark.png",
+    animations: "disabled",
+  });
+  await page.evaluate(() => {
+    const qa = (window as any).__TEST__;
+    qa.failList = true;
+    qa.emit("transfer-updated", {});
+  });
+  await expect(panel.getByRole("alert")).toContainText("任务刷新失败");
+  await expect(panel.locator("[data-task-id]")).toHaveCount(3);
+  await page.evaluate(() => {
+    const qa = (window as any).__TEST__;
+    qa.failList = false;
+    qa.emit("transfer-updated", {});
+  });
+  await expect(panel.getByRole("alert")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("detached window shares task behavior and keeps its bottom entry inside the viewport", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await page.goto("/?workspace=");
+  await expect(page.locator(".detached-app")).toBeVisible();
+  await page.setViewportSize({ width: 720, height: 580 });
+  await seedTransferTasks(page, [{ id: "detached", status: "running" }]);
+  const trigger = page.getByRole("button", { name: "查看传输任务" });
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  const workspaces = page.locator(".detached-app .workspaces");
+  const before = await workspaces.boundingBox();
+  await trigger.click();
+  await expect(page.getByRole("region", { name: "传输任务" })).toBeVisible();
+  expect(await workspaces.boundingBox()).toEqual(before);
+  const box = (await trigger.boundingBox())!;
+  expect(box.y + box.height).toBeLessThanOrEqual(580);
+  await page.getByLabel("取消传输").click();
+  await expect(page.getByRole("region", { name: "传输任务" })).toContainText(
+    "正在停止",
+  );
+  expect(errors).toEqual([]);
+});
+
+test("an update received during a list request is fetched after that request finishes", async ({
+  page,
+}) => {
+  await setup(page);
+  await seedTransferTasks(page, [{ id: "existing", status: "running" }]);
+  await page.evaluate(() => {
+    const qa = (window as any).__TEST__;
+    qa.holdNextList = true;
+    qa.emit("transfer-updated", {});
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() => typeof (window as any).__TEST__.releaseList),
+    )
+    .toBe("function");
+  await page.evaluate(() => {
+    const qa = (window as any).__TEST__;
+    qa.tasks.push({
+      ...qa.tasks[0],
+      id: "arriving",
+      runId: "arriving",
+      sortOrder: 2,
+      status: "queued",
+    });
+    qa.emit("transfer-updated", {});
+    qa.releaseList();
+  });
+  const trigger = page.getByRole("button", { name: "查看传输任务" });
+  await expect(trigger).toContainText("2 项进行中");
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await trigger.click();
+  await expect(page.locator(".transfer-task-row").first()).toHaveAttribute(
+    "data-task-id",
+    "arriving",
+  );
 });

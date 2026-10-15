@@ -1,3 +1,4 @@
+import { WindowTitlebar } from "./WindowTitlebar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import {
@@ -652,10 +653,11 @@ export function TerminalHistoryView({
 export function TerminalHistoryApp() {
   return (
     <main className="terminal-history-app">
-      <header>
-        <h1>终端历史</h1>
-        <p>查找服务器和 Docker 容器终端中已保存的内容</p>
-      </header>
+      <WindowTitlebar
+        title="终端历史"
+        subtitle="查找服务器和 Docker 容器终端中已保存的内容"
+        tone="terminal"
+      />
       <TerminalHistoryView global />
     </main>
   );

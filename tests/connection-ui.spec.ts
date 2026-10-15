@@ -6,7 +6,12 @@ import type { WorkspaceSnapshot } from "../src/SessionWorkspace";
 async function setup(
   page: Page,
   delayed = false,
-  options: { empty?: boolean; snapshot?: WorkspaceSnapshot } = {},
+  options: {
+    empty?: boolean;
+    snapshot?: WorkspaceSnapshot;
+    autoConnect?: boolean;
+    chrome?: string;
+  } = {},
 ) {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -16,6 +21,13 @@ async function setup(
       let serial = 1;
       const calls: any[] = [];
       const callbacks = new Map<number, Function>();
+      const listeners = new Map<number, { event: string; handler: number }>();
+      const emitWindow = async (event: string, payload: unknown) => {
+        for (const [id, listener] of listeners) {
+          if (listener.event === event)
+            await callbacks.get(listener.handler)?.({ id, event, payload });
+        }
+      };
       const channels = new Map<string, any>();
       const servers = [
         {
@@ -69,6 +81,7 @@ async function setup(
         calls,
         servers,
         emit,
+        emitWindow,
         ids: () => Array.from(channels.keys()),
       };
       w.isTauri = true;
@@ -85,6 +98,13 @@ async function setup(
         unregisterCallback: (id: number) => callbacks.delete(id),
         invoke: async (command: string, args: any = {}) => {
           calls.push({ command, args: JSON.parse(JSON.stringify(args)) });
+          if (command === "window_chrome") return options.chrome ?? "custom";
+          if (
+            command === "plugin:window|is_maximized" ||
+            command === "plugin:window|is_fullscreen"
+          )
+            return false;
+          if (command === "plugin:window|is_focused") return true;
           if (command === "list_servers") return structuredClone(servers);
           if (command === "take_workspace")
             return { payload: options.snapshot, beforeId: null };
@@ -115,7 +135,17 @@ async function setup(
             const id = `connection-${serial++}`;
             channels.set(id, args.events);
             // Exercise events arriving before open_connection returns its ID.
-            prompt(id, 0);
+            if (options.autoConnect) {
+              emit(id, {
+                type: "ready",
+                connection: {
+                  target: servers[1],
+                  hops: [hop(0), hop(1)],
+                  identity: "route",
+                },
+              });
+              emit(id, { type: "data", data: btoa("connected to B\r\n") });
+            } else prompt(id, 0);
             if (delayed) await new Promise((r) => setTimeout(r, 700));
             return id;
           }
@@ -167,7 +197,13 @@ async function setup(
             command === "unsaved_editor_count"
           )
             return 0;
-          if (command === "plugin:event|listen") return serial++;
+          if (command === "plugin:event|listen") {
+            const id = serial++;
+            listeners.set(id, { event: args.event, handler: args.handler });
+            return id;
+          }
+          if (command === "plugin:event|unlisten")
+            return listeners.delete(args.eventId);
           return null;
         },
       };
@@ -501,7 +537,7 @@ test("server picker filters hidden selections, supports Escape, and preserves th
   await expect(page.locator(".server-panel")).toHaveCount(0);
   await expect(
     page
-      .locator(".app-header")
+      .locator(".window-titlebar")
       .getByRole("button", { name: "本地日志", exact: true }),
   ).toHaveCount(1);
   await picker.getByLabel("搜索服务器").fill("no-such-server");
@@ -786,5 +822,254 @@ test("pending connection starts once and cancellation disposes a late connection
       ),
     )
     .toBe(true);
+  expect(errors).toEqual([]);
+});
+
+async function createTitlebarTabs(
+  page: Page,
+  count: number,
+  chrome = "custom",
+) {
+  const errors = await setup(page, false, { autoConnect: true, chrome });
+  for (let i = 0; i < count; i++) {
+    if (i)
+      await page.getByRole("button", { name: "新建连接", exact: true }).click();
+    await page
+      .locator(".server-row")
+      .filter({ hasText: "Target B" })
+      .dblclick();
+    await expect(page.getByRole("tab")).toHaveCount(i + 1);
+    await expect(
+      page.getByRole("tabpanel").locator(".connection-state"),
+    ).toHaveText("已连接");
+  }
+  return errors;
+}
+async function activeTabVisible(page: Page) {
+  await expect
+    .poll(() =>
+      page.locator('.tab-select[aria-selected="true"]').evaluate((el) => {
+        const tab = el.closest(".session-tab")!.getBoundingClientRect();
+        const strip = el.closest(".tab-scroll")!.getBoundingClientRect();
+        return tab.left >= strip.left - 1 && tab.right <= strip.right + 1;
+      }),
+    )
+    .toBe(true);
+}
+
+test("titlebar tabs overflow without consuming the window drag region and remain keyboard accessible", async ({
+  page,
+}) => {
+  test.setTimeout(60000);
+  await page.setViewportSize({ width: 860, height: 580 });
+  const errors = await createTitlebarTabs(page, 20);
+  await expect(page.locator(".window-titlebar .session-tabs")).toHaveCount(1);
+  await expect(page.locator(".workspaces .session-tabs")).toHaveCount(0);
+  await expect(page.locator(".window-titlebar")).toHaveCSS("height", "48px");
+  expect(
+    await page
+      .locator(".window-drag-region")
+      .evaluate((el) => el.getBoundingClientRect().width),
+  ).toBeGreaterThanOrEqual(72);
+  await expect(
+    page.getByRole("button", { name: "全部会话", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "关闭窗口", exact: true }),
+  ).toBeInViewport();
+  await activeTabVisible(page);
+  const oldLeft = await page
+    .locator(".tab-scroll")
+    .evaluate((el) => el.scrollLeft);
+  await page.locator(".tab-scroll").hover();
+  await page.mouse.wheel(0, -400);
+  await expect
+    .poll(() => page.locator(".tab-scroll").evaluate((el) => el.scrollLeft))
+    .toBeLessThan(oldLeft - 100);
+  // Opening a menu must not snap a manually scrolled strip back to the active tab.
+  const manualLeft = await page
+    .locator(".tab-scroll")
+    .evaluate((el) => el.scrollLeft);
+  await page.getByRole("button", { name: "全部会话", exact: true }).click();
+  await expect(page.getByRole("menuitemradio")).toHaveCount(20);
+  expect(
+    await page.locator(".tab-scroll").evaluate((el) => el.scrollLeft),
+  ).toBeCloseTo(manualLeft, 0);
+  await page.getByRole("menu", { name: "全部会话" }).press("Home");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("tab").first()).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await activeTabVisible(page);
+  await page.getByRole("tab").first().press("End");
+  await expect(page.getByRole("tab").last()).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await activeTabVisible(page);
+  await page.getByRole("tab").last().press("Delete");
+  await expect(page.getByRole("tab")).toHaveCount(19);
+  await activeTabVisible(page);
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.screenshot({
+      path: `.qa/titlebar-tabs-many-${colorScheme}.png`,
+    });
+  }
+  await page.setViewportSize({ width: 1360, height: 860 });
+  await activeTabVisible(page);
+  expect(errors).toEqual([]);
+});
+
+test("titlebar tabs menus reorder without clipping and sparse tabs stay next to the new button", async ({
+  page,
+}) => {
+  const errors = await createTitlebarTabs(page, 5);
+  await page.getByRole("tab").last().click({ button: "right" });
+  const menu = page.getByRole("menu", { name: "会话操作" });
+  await expect(menu).toBeVisible();
+  expect(await menu.evaluate((el) => el.parentElement === document.body)).toBe(
+    true,
+  );
+  await page.getByRole("menuitem", { name: "向左移动", exact: true }).click();
+  await expect(page.getByRole("tab").nth(3)).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  const selectedId = await page
+    .locator('[role="tab"][aria-selected="true"]')
+    .getAttribute("id");
+  await page
+    .locator('[role="tab"][aria-selected="true"]')
+    .press("Alt+ArrowLeft");
+  expect(await page.getByRole("tab").nth(2).getAttribute("id")).toBe(
+    selectedId,
+  );
+  await page
+    .locator('[role="tab"][aria-selected="true"]')
+    .click({ button: "right" });
+  await page.keyboard.press("Escape");
+  await expect(
+    page.locator('[role="tab"][aria-selected="true"]'),
+  ).toBeFocused();
+  await page
+    .locator('[role="tab"][aria-selected="true"]')
+    .click({ button: "right" });
+  await page.getByRole("button", { name: "终端历史", exact: true }).click();
+  await expect(menu).toHaveCount(0);
+  while ((await page.getByRole("tab").count()) > 1) {
+    await page.getByRole("tab").last().press("Delete");
+  }
+  await expect(
+    page.getByRole("button", { name: "全部会话", exact: true }),
+  ).toHaveCount(0);
+  const distance = await page.evaluate(
+    () =>
+      document.querySelector(".new-session")!.getBoundingClientRect().left -
+      document.querySelector(".session-tab")!.getBoundingClientRect().right,
+  );
+  expect(distance).toBeGreaterThanOrEqual(0);
+  expect(distance).toBeLessThan(12);
+  await page.getByRole("tab").press("Delete");
+  await expect(page.getByRole("tab")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "新建连接", exact: true }),
+  ).toBeEnabled();
+  expect(errors).toEqual([]);
+});
+
+test("titlebar tab drop targets use live geometry, auto-scroll, and exclude window buttons", async ({
+  page,
+}) => {
+  const errors = await createTitlebarTabs(page, 5);
+  await page.setViewportSize({ width: 860, height: 580 });
+  await expect(
+    page.getByRole("button", { name: "全部会话", exact: true }),
+  ).toBeVisible();
+  await activeTabVisible(page);
+  const emit = (phase: string, x: number, y: number, token = "drop-test") =>
+    page.evaluate(
+      ({ phase, x, y, token }) =>
+        (window as any).__TEST__.emitWindow("desktop-drag", {
+          phase,
+          x,
+          y,
+          token,
+          kind: "workspaceTab",
+        }),
+      { phase, x, y, token },
+    );
+  const bounds = await page.locator(".tab-scroll").boundingBox();
+  const before = await page
+    .locator(".tab-scroll")
+    .evaluate((el) => el.scrollLeft);
+  await emit("over", bounds!.x + 2, bounds!.y + 16);
+  await expect
+    .poll(() => page.locator(".tab-scroll").evaluate((el) => el.scrollLeft))
+    .toBeLessThan(before - 50);
+  await emit("leave", 0, 0);
+  // A single hover event keeps edge scrolling until the drag leaves or ends.
+  const first = await page.locator(".session-tab").first().boundingBox();
+  await emit(
+    "drop",
+    Math.max(bounds!.x + 5, first!.x + 5),
+    bounds!.y + 16,
+    "insert",
+  );
+  const blank = await page.locator(".window-drag-region").boundingBox();
+  await emit("over", blank!.x + 10, blank!.y + 20);
+  await expect(page.locator(".window-drag-region")).toHaveAttribute(
+    "data-tab-drop",
+    "true",
+  );
+  await emit("drop", blank!.x + 10, blank!.y + 20, "append");
+  await expect(page.locator(".window-drag-region")).not.toHaveAttribute(
+    "data-tab-drop",
+  );
+  const button = await page
+    .getByRole("button", { name: "关闭窗口", exact: true })
+    .boundingBox();
+  await emit("drop", button!.x + 10, button!.y + 20, "ignored");
+  const drops = await page.evaluate(() =>
+    (window as any).__TEST__.calls.filter((c: any) => c.command === "drop_tab"),
+  );
+  expect(drops).toHaveLength(2);
+  expect(drops[0].args.beforeId).toBeTruthy();
+  expect(drops[1].args).toEqual({ token: "append", beforeId: null });
+  expect(errors).toEqual([]);
+});
+
+test("titlebar tabs accept empty-window drops and reserve macOS controls", async ({
+  page,
+}) => {
+  const errors = await setup(page, false, { empty: true, chrome: "overlay" });
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".window-titlebar")).toHaveCSS(
+    "padding-left",
+    "88px",
+  );
+  const blank = await page.locator(".window-drag-region").boundingBox();
+  await page.evaluate(
+    ({ x, y }) =>
+      (window as any).__TEST__.emitWindow("desktop-drag", {
+        kind: "workspaceTab",
+        phase: "drop",
+        token: "empty-target",
+        x,
+        y,
+      }),
+    { x: blank!.x + 20, y: blank!.y + 20 },
+  );
+  const calls = await page.evaluate(() => (window as any).__TEST__.calls);
+  expect(calls.find((c: any) => c.command === "drop_tab").args).toEqual({
+    token: "empty-target",
+    beforeId: null,
+  });
+  expect(
+    await page
+      .locator(".new-session")
+      .evaluate((el) => el.getBoundingClientRect().left),
+  ).toBeGreaterThan(88);
   expect(errors).toEqual([]);
 });

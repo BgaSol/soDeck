@@ -395,11 +395,11 @@ pub async fn open_terminal_history_window(
         window.set_focus().map_err(|e| AppError::new("window", e))?;
         return Ok(());
     }
-    WebviewWindowBuilder::new(
+    crate::window_chrome::configure(WebviewWindowBuilder::new(
         &app,
         "terminal-history",
         WebviewUrl::App("index.html?terminal-history=1".into()),
-    )
+    ))
     .title(crate::brand::window_title(&app, "终端历史"))
     .inner_size(1100.0, 760.0)
     .min_inner_size(640.0, 420.0)

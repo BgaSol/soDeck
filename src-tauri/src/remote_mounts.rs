@@ -1,0 +1,563 @@
+//! Optional Linux mount metadata. Queries never use the interactive PTY.
+use crate::{
+    blocking, connection,
+    model::{AppError, AppResult},
+    ssh,
+    ssh_transport::Cancellation,
+    State,
+};
+use serde::Serialize;
+use sha2::{Digest, Sha256};
+use ssh2::Session;
+use std::{
+    collections::{HashMap, HashSet},
+    io::Read,
+    path::Path,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
+use tauri::{State as TauriState, WebviewWindow};
+
+const LIMIT: usize = 2 * 1024 * 1024;
+const QUERY_TIMEOUT: Duration = Duration::from_secs(6);
+static QUERIES: AtomicUsize = AtomicUsize::new(0);
+struct QuerySlot;
+impl QuerySlot {
+    fn acquire(check: &impl Fn() -> AppResult<()>) -> AppResult<Self> {
+        let deadline = Instant::now() + QUERY_TIMEOUT;
+        loop {
+            check()?;
+            let current = QUERIES.load(Ordering::SeqCst);
+            if current < 2
+                && QUERIES
+                    .compare_exchange(current, current + 1, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok()
+            {
+                return Ok(Self);
+            }
+            if Instant::now() >= deadline {
+                return Err(AppError::new("busy", "挂载查询正在进行，请稍后重试"));
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+}
+impl Drop for QuerySlot {
+    fn drop(&mut self) {
+        QUERIES.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteMount {
+    key: String,
+    target: String,
+    source: String,
+    fs_root: String,
+    fs_type: String,
+    read_only: bool,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MountTable {
+    version: String,
+    status: &'static str,
+    mounts: Vec<RemoteMount>,
+    message: Option<String>,
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MountUsage {
+    mount_key: String,
+    status: &'static str,
+    total_bytes: Option<String>,
+    used_bytes: Option<String>,
+    available_bytes: Option<String>,
+    used_percent: Option<u32>,
+    updated_at: Option<u64>,
+    error: Option<String>,
+}
+impl MountUsage {
+    fn unavailable(key: &str, status: &'static str, message: &str) -> Self {
+        Self {
+            mount_key: key.into(),
+            status,
+            total_bytes: None,
+            used_bytes: None,
+            available_bytes: None,
+            used_percent: None,
+            updated_at: None,
+            error: Some(message.into()),
+        }
+    }
+}
+
+fn unescape(value: &str) -> AppResult<String> {
+    let bytes = value.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' {
+            let escaped = match bytes.get(i + 1..i + 4) {
+                Some(b"040") => b' ',
+                Some(b"011") => b'\t',
+                Some(b"012") => b'\n',
+                Some(b"134") => b'\\',
+                _ => return Err(AppError::new("mountFormat", "挂载路径转义无效")),
+            };
+            output.push(escaped);
+            i += 4;
+        } else {
+            output.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(output).map_err(|_| AppError::new("mountFormat", "挂载路径不是有效的 UTF-8"))
+}
+fn parse_table(text: &str) -> AppResult<MountTable> {
+    let mut mounts = Vec::new();
+    let mut counts = HashMap::new();
+    for line in text.lines() {
+        let (left, right) = line
+            .split_once(" - ")
+            .ok_or_else(|| AppError::new("mountFormat", "挂载表格式无效"))?;
+        let fields: Vec<_> = left.split(' ').collect();
+        let extra: Vec<_> = right.split(' ').collect();
+        if fields.len() < 6
+            || extra.len() < 3
+            || fields[0].parse::<u64>().is_err()
+            || fields[1].parse::<u64>().is_err()
+        {
+            return Err(AppError::new("mountFormat", "挂载表字段无效"));
+        }
+        let target = unescape(fields[4])?;
+        if !target.starts_with('/') || target.contains('\0') {
+            return Err(AppError::new("mountFormat", "挂载位置无效"));
+        }
+        *counts.entry(target.clone()).or_insert(0) += 1;
+        mounts.push(RemoteMount {
+            key: fields[0].into(),
+            target,
+            source: unescape(extra[1])?,
+            fs_root: unescape(fields[3])?,
+            fs_type: extra[0].into(),
+            read_only: fields[5]
+                .split(',')
+                .chain(extra[2].split(','))
+                .any(|v| v == "ro"),
+        });
+    }
+    if mounts.is_empty() {
+        return Err(AppError::new("mountFormat", "挂载表为空"));
+    }
+    // mountinfo ordering does not reliably identify the top of stacked mounts.
+    // Do not attribute a hidden filesystem's capacity to the visible directory.
+    let stacked = counts.values().any(|n| *n > 1);
+    mounts.retain(|m| counts[&m.target] == 1);
+    Ok(MountTable {
+        version: format!("{:x}", Sha256::digest(text.as_bytes())),
+        status: "ready",
+        mounts,
+        message: stacked.then(|| "部分路径存在叠加挂载，暂不展示其容量".into()),
+    })
+}
+fn usage(key: &str, output: &str) -> AppResult<MountUsage> {
+    let fields = output
+        .split_whitespace()
+        .map(str::parse::<u64>)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| AppError::new("mountFormat", "文件系统容量格式无效"))?;
+    let [size, blocks, free, available] = fields.as_slice() else {
+        return Err(AppError::new("mountFormat", "文件系统容量字段无效"));
+    };
+    if *size == 0 || free > blocks || available > free {
+        return Err(AppError::new("mountFormat", "文件系统容量数值无效"));
+    }
+    if *blocks == 0 {
+        return Ok(MountUsage::unavailable(
+            key,
+            "unsupported",
+            "此文件系统不提供常规容量",
+        ));
+    }
+    let used = u128::from(blocks - free);
+    let denominator = used + u128::from(*available);
+    let bytes = |n: u128| (n * u128::from(*size)).to_string();
+    Ok(MountUsage {
+        mount_key: key.into(),
+        status: "ready",
+        total_bytes: Some(bytes(u128::from(*blocks))),
+        used_bytes: Some(bytes(used)),
+        available_bytes: Some(bytes(u128::from(*available))),
+        used_percent: (denominator != 0).then(|| ((used * 100).div_ceil(denominator)) as u32),
+        updated_at: Some(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+        ),
+        error: None,
+    })
+}
+fn has_capacity(fs: &str) -> bool {
+    !matches!(
+        fs,
+        "proc"
+            | "sysfs"
+            | "cgroup"
+            | "cgroup2"
+            | "devpts"
+            | "securityfs"
+            | "debugfs"
+            | "tracefs"
+            | "configfs"
+            | "pstore"
+            | "mqueue"
+            | "hugetlbfs"
+            | "autofs"
+            | "fusectl"
+            | "binfmt_misc"
+            | "rpc_pipefs"
+    )
+}
+
+fn deadline_check(deadline: Instant, check: &impl Fn() -> AppResult<()>) -> AppResult<()> {
+    check()?;
+    if Instant::now() >= deadline {
+        return Err(AppError::new("timeout", "挂载查询超时"));
+    }
+    Ok(())
+}
+fn retry<T>(
+    deadline: Instant,
+    check: &impl Fn() -> AppResult<()>,
+    mut call: impl FnMut() -> Result<T, ssh2::Error>,
+) -> AppResult<T> {
+    loop {
+        deadline_check(deadline, check)?;
+        match call() {
+            Ok(result) => return Ok(result),
+            Err(e) if e.code() == ssh2::ErrorCode::Session(-37) => {
+                std::thread::sleep(Duration::from_millis(10))
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+}
+fn exec(
+    session: &Session,
+    command: &str,
+    check: &impl Fn() -> AppResult<()>,
+) -> AppResult<ssh::ExecResult> {
+    session.set_blocking(false);
+    let result = (|| {
+        let deadline = Instant::now() + QUERY_TIMEOUT;
+        let mut channel = retry(deadline, check, || session.channel_session())?;
+        retry(deadline, check, || channel.exec(command))?;
+        let mut output = [Vec::new(), Vec::new()];
+        let mut buffer = [0; 8192];
+        loop {
+            deadline_check(deadline, check)?;
+            let mut received = false;
+            for (i, bytes) in output.iter_mut().enumerate() {
+                match channel.stream(i as i32).read(&mut buffer) {
+                    Ok(n) => {
+                        received |= n > 0;
+                        bytes.extend_from_slice(&buffer[..n]);
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => (),
+                    Err(e) => return Err(e.into()),
+                }
+                if bytes.len() > LIMIT {
+                    return Err(AppError::new("limit", "挂载查询输出过大"));
+                }
+            }
+            if channel.eof() && !received {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        retry(deadline, check, || channel.wait_close())?;
+        Ok(ssh::ExecResult {
+            code: channel.exit_status()?,
+            stdout: String::from_utf8(output[0].clone())
+                .map_err(|_| AppError::new("mountFormat", "挂载查询输出编码无效"))?,
+            stderr: String::from_utf8_lossy(&output[1]).into_owned(),
+        })
+    })();
+    session.set_blocking(true);
+    result
+}
+fn sftp_mountinfo(session: &Session, check: &impl Fn() -> AppResult<()>) -> AppResult<String> {
+    session.set_blocking(false);
+    let result = (|| {
+        let deadline = Instant::now() + QUERY_TIMEOUT;
+        let sftp = retry(deadline, check, || session.sftp())?;
+        let mut file = retry(deadline, check, || {
+            sftp.open(Path::new("/proc/self/mountinfo"))
+        })?;
+        let mut bytes = Vec::new();
+        let mut buffer = [0; 8192];
+        loop {
+            deadline_check(deadline, check)?;
+            match file.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(n) => bytes.extend_from_slice(&buffer[..n]),
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(10))
+                }
+                Err(e) => return Err(e.into()),
+            }
+            if bytes.len() > LIMIT {
+                return Err(AppError::new("limit", "挂载表过大"));
+            }
+        }
+        String::from_utf8(bytes).map_err(|_| AppError::new("mountFormat", "挂载表编码无效"))
+    })();
+    session.set_blocking(true);
+    result
+}
+fn verified_table(session: &Session, check: &impl Fn() -> AppResult<()>) -> AppResult<MountTable> {
+    let output = exec(
+        session,
+        "test \"$(uname -s)\" = Linux && cat /proc/self/mountinfo",
+        check,
+    )?;
+    if output.code != 0 {
+        return Err(AppError::new(
+            "unsupported",
+            "挂载信息需要 Linux 远端及可读取的 /proc/self/mountinfo",
+        ));
+    }
+    let sftp = sftp_mountinfo(session, check).map_err(|e| {
+        if matches!(
+            e.kind.as_str(),
+            "timeout" | "disconnected" | "permission" | "cancelled"
+        ) {
+            e
+        } else {
+            AppError::new("unsupported", "无法确认 SFTP 与命令执行的挂载视图一致")
+        }
+    })?;
+    if output.stdout != sftp {
+        return Err(AppError::new(
+            "mountChanged",
+            "挂载表正在变化或 SFTP 与命令执行的路径视图不同",
+        ));
+    }
+    parse_table(&sftp)
+}
+
+#[tauri::command]
+pub async fn list_remote_mounts(
+    window: WebviewWindow,
+    state: TauriState<'_, Arc<State>>,
+    session_id: String,
+) -> AppResult<MountTable> {
+    crate::moves::workspace_only(&window)?;
+    let spec = state.spec(&session_id, window.label())?;
+    let owner = window.label().to_owned();
+    let state = state.inner().clone();
+    blocking(move || {
+        let check = || state.spec(&session_id, &owner).map(|_| ());
+        let _slot = QuerySlot::acquire(&check)?;
+        check()?;
+        let connection = connection::connect_verified(&spec, &Cancellation::default())?;
+        match verified_table(connection.session(), &check) {
+            Err(e) if e.kind == "unsupported" => Ok(MountTable {
+                version: String::new(),
+                status: "unsupported",
+                mounts: vec![],
+                message: Some(e.message),
+            }),
+            result => result,
+        }
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn get_remote_mount_usage(
+    window: WebviewWindow,
+    state: TauriState<'_, Arc<State>>,
+    session_id: String,
+    mount_table_version: String,
+    mount_keys: Vec<String>,
+) -> AppResult<Vec<MountUsage>> {
+    crate::moves::workspace_only(&window)?;
+    let spec = state.spec(&session_id, window.label())?;
+    if mount_keys.is_empty() || mount_keys.len() > 16 {
+        return Err(AppError::new("validation", "每次查询需要 1 至 16 个挂载点"));
+    }
+    let owner = window.label().to_owned();
+    let state = state.inner().clone();
+    blocking(move || {
+        let check = || state.spec(&session_id, &owner).map(|_| ());
+        let _slot = QuerySlot::acquire(&check)?;
+        check()?;
+        let connection = connection::connect_verified(&spec, &Cancellation::default())?;
+        let session = connection.session();
+        let table = verified_table(session, &check)?;
+        if table.version != mount_table_version {
+            return Err(AppError::new("mountChanged", "挂载关系已变化，请刷新"));
+        }
+        let keys: HashSet<_> = mount_keys.into_iter().collect();
+        if keys
+            .iter()
+            .any(|key| !table.mounts.iter().any(|m| &m.key == key))
+        {
+            return Err(AppError::new("mountChanged", "挂载点已失效，请刷新"));
+        }
+        let mut results = Vec::new();
+        for mount in table.mounts.iter().filter(|m| keys.contains(&m.key)) {
+            check()?;
+            if !has_capacity(&mount.fs_type) {
+                results.push(MountUsage::unavailable(
+                    &mount.key,
+                    "unsupported",
+                    "此文件系统不提供常规容量",
+                ));
+                continue;
+            }
+            // Only numeric output is parsed. Paths are quoted as one shell argument.
+            let result = exec(
+                session,
+                &format!(
+                    "LC_ALL=C stat -f -c '%S %b %f %a' -- {}",
+                    ssh::quote(&mount.target)
+                ),
+                &check,
+            )
+            .and_then(|output| {
+                if output.code == 0 {
+                    usage(&mount.key, &output.stdout)
+                } else {
+                    Err(AppError::new(
+                        "mountUsage",
+                        "无法读取容量，远端需要支持 stat -f -c 且当前用户能够访问挂载点",
+                    ))
+                }
+            });
+            results.push(result.unwrap_or_else(|e| {
+                MountUsage::unavailable(&mount.key, "unavailable", &e.message)
+            }));
+        }
+        // A mount may have been replaced while stat was in flight.
+        let after = exec(session, "cat /proc/self/mountinfo", &check)?;
+        if after.code != 0 || parse_table(&after.stdout)?.version != table.version {
+            return Err(AppError::new(
+                "mountChanged",
+                "查询期间挂载关系已变化，请刷新",
+            ));
+        }
+        check()?;
+        Ok(results)
+    })
+    .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    const TABLE: &str = "20 1 8:1 / / rw,relatime - ext4 /dev/sda1 rw\n21 20 8:2 / /data rw - xfs /dev/sdb1 rw\n22 20 8:2 /projects /srv/projects ro - xfs /dev/sdb1 rw\n23 21 0:9 / /data/archive rw - nfs4 nas:/archive rw\n";
+    #[test]
+    fn parses_nested_bind_and_read_only_mounts() {
+        let table = parse_table(TABLE).unwrap();
+        assert_eq!(table.mounts.len(), 4);
+        assert_eq!(table.mounts[2].fs_root, "/projects");
+        assert!(table.mounts[2].read_only);
+        assert_eq!(table.mounts[3].target, "/data/archive");
+        assert_ne!(
+            table.version,
+            parse_table(&TABLE.replace("/dev/sdb1", "/dev/sdc1"))
+                .unwrap()
+                .version
+        );
+    }
+    #[test]
+    fn decodes_paths_without_double_decoding() {
+        let table = parse_table(
+            "1 0 8:1 /中文 /my\\040disk\\011tab\\012line\\134040 rw - ext4 /dev/test rw\n",
+        )
+        .unwrap();
+        assert_eq!(table.mounts[0].target, "/my disk\ttab\nline\\040");
+        assert_eq!(table.mounts[0].fs_root, "/中文");
+        assert!(unescape("/bad\\999").is_err());
+    }
+    #[test]
+    fn never_guesses_topmost_stacked_mount() {
+        let table = parse_table(&format!(
+            "{TABLE}24 20 8:3 / /data rw - ext4 /dev/sdc1 rw\n"
+        ))
+        .unwrap();
+        assert!(!table.mounts.iter().any(|m| m.target == "/data"));
+        assert!(table.message.is_some());
+    }
+    #[test]
+    fn capacity_uses_available_blocks_and_keeps_large_integers() {
+        let value = usage("1", "4096 100 40 30\n").unwrap();
+        assert_eq!(value.used_percent, Some(67));
+        assert_eq!(value.total_bytes.as_deref(), Some("409600"));
+        assert_eq!(value.available_bytes.as_deref(), Some("122880"));
+        assert_eq!(
+            usage("1", "4096 9007199254740993 0 0")
+                .unwrap()
+                .total_bytes
+                .unwrap(),
+            "36893488147419107328"
+        );
+        assert_eq!(usage("1", "4096 0 0 0").unwrap().status, "unsupported");
+        assert!(usage("1", "4096 10 11 0").is_err());
+        assert!(usage("1", "4096 10 5 6").is_err());
+        assert!(usage("1", "injected stdout").is_err());
+        assert!(!has_capacity("autofs"));
+        assert!(has_capacity("tmpfs"));
+    }
+
+    #[test]
+    #[ignore = "requires the isolated OpenSSH mount fixture"]
+    fn real_ssh_mount_table_and_capacity() {
+        let host = std::env::var("MOUNT_TEST_HOST").expect("MOUNT_TEST_HOST");
+        let socket = std::net::TcpStream::connect((host.as_str(), 22)).unwrap();
+        let mut session = Session::new().unwrap();
+        session.set_tcp_stream(socket);
+        session.set_timeout(6000);
+        session.handshake().unwrap();
+        session
+            .userauth_password("ops", "fixture-password")
+            .unwrap();
+        let table = verified_table(&session, &|| Ok(())).unwrap();
+        let memory = table
+            .mounts
+            .iter()
+            .find(|m| m.target == "/mnt/mount-check")
+            .unwrap();
+        assert_eq!(memory.fs_type, "tmpfs");
+        let readonly = table
+            .mounts
+            .iter()
+            .find(|m| m.target == "/mnt/mount-ro")
+            .unwrap();
+        assert!(readonly.read_only);
+        assert!(table.mounts.iter().any(|m| m.target == "/"));
+        let response = exec(
+            &session,
+            "LC_ALL=C stat -f -c '%S %b %f %a' -- /mnt/mount-check",
+            &|| Ok(()),
+        )
+        .unwrap();
+        assert_eq!(response.code, 0);
+        let capacity = usage(&memory.key, &response.stdout).unwrap();
+        assert_eq!(capacity.status, "ready");
+        assert_eq!(capacity.total_bytes.as_deref(), Some("33554432"));
+        let second = verified_table(&session, &|| Ok(())).unwrap();
+        assert_eq!(table.version, second.version);
+        assert!(exec(&session, "sleep 9", &|| Ok(())).is_err());
+        // Timing out a separate exec channel does not prevent subsequent SFTP queries.
+        assert!(verified_table(&session, &|| Ok(())).is_ok());
+    }
+}

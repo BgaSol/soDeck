@@ -243,11 +243,11 @@ pub async fn move_workspace(
         let title = payload["tab"]["server"]["name"]
             .as_str()
             .unwrap_or("SSH 会话");
-        WebviewWindowBuilder::new(
+        crate::window_chrome::configure(WebviewWindowBuilder::new(
             &app,
             &to,
             WebviewUrl::App(format!("index.html?workspace={id}").into()),
-        )
+        ))
         .title(crate::brand::window_title(&app, title))
         .inner_size(1080.0, 760.0)
         .min_inner_size(650.0, 480.0)

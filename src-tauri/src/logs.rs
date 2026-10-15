@@ -209,12 +209,15 @@ fn open_window(
         }
         return Ok(());
     }
-    if let Err(e) =
-        WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html?logs=1".into()))
-            .title(title)
-            .inner_size(1100.0, 720.0)
-            .min_inner_size(650.0, 400.0)
-            .build()
+    if let Err(e) = crate::window_chrome::configure(WebviewWindowBuilder::new(
+        app,
+        &label,
+        WebviewUrl::App("index.html?logs=1".into()),
+    ))
+    .title(title)
+    .inner_size(1100.0, 720.0)
+    .min_inner_size(650.0, 400.0)
+    .build()
     {
         state.logs.stop(&label, true);
         return Err(AppError::new("window", e));
@@ -250,11 +253,11 @@ pub async fn open_log_archives_window(
             .map_err(|e| AppError::new("window", e))?;
         return Ok(());
     }
-    WebviewWindowBuilder::new(
+    crate::window_chrome::configure(WebviewWindowBuilder::new(
         &app,
         ARCHIVES_WINDOW,
         WebviewUrl::App("index.html?archives=1".into()),
-    )
+    ))
     .title(crate::brand::window_title(&app, "本地日志"))
     .inner_size(1040.0, 720.0)
     .min_inner_size(720.0, 460.0)

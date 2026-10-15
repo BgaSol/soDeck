@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { AppBrand } from "./AppBrand";
 import { windowTitle } from "./brand";
 import { desktop } from "./api";
 import { SessionWorkspace } from "./SessionWorkspace";
-import { WorkspaceTabs } from "./WorkspaceTabs";
+import { WorkspaceTitlebar } from "./WorkspaceTitlebar";
 import { TransferPanel } from "./TransferPanel";
 import { DesktopDragPreview } from "./DesktopDragPreview";
 import { useWorkspaceMoves } from "./useWorkspaceMoves";
 import { emptyWorkspaces, reorderWorkspace } from "./workspaces";
 import type { WorkspaceTab } from "./workspaces";
 import type { AppError } from "./types";
+import { errorOf } from "./types";
 
 export function DetachedApp() {
   const [workspaces, setWorkspaces] = useState(emptyWorkspaces);
@@ -35,25 +35,20 @@ export function DetachedApp() {
   );
   return (
     <div className="app-shell detached-app">
-      <header className="app-header">
-        <AppBrand />
-        <span className="header-divider" />
-        <strong>SSH 会话</strong>
-        <span className="header-summary">拖动顶部会话标签可移回主窗口</span>
-      </header>
+      <WorkspaceTitlebar
+        tabs={workspaces.tabs}
+        activeId={workspaces.activeId}
+        detached
+        moving={moves.moving}
+        onSelect={(id) => setWorkspaces((c) => ({ ...c, activeId: id }))}
+        onClose={() => void getCurrentWindow().close()}
+        onMove={(...args) => void moves.move(...args)}
+        onReorder={(id, before) =>
+          setWorkspaces((c) => reorderWorkspace(c, id, before))
+        }
+        onError={(error) => setError(errorOf(error))}
+      />
       <div className="workspaces">
-        <WorkspaceTabs
-          tabs={workspaces.tabs}
-          activeId={workspaces.activeId}
-          detached
-          moving={moves.moving}
-          onSelect={(id) => setWorkspaces((c) => ({ ...c, activeId: id }))}
-          onClose={() => void getCurrentWindow().close()}
-          onMove={(...args) => void moves.move(...args)}
-          onReorder={(id, before) =>
-            setWorkspaces((c) => reorderWorkspace(c, id, before))
-          }
-        />
         {error && (
           <div className="connection-error" role="alert">
             {error.message}

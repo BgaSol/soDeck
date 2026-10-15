@@ -67,6 +67,9 @@ impl TaskStore {
                 );
             }
             if let Some(view) = receipt.view.as_mut() {
+                if view.presentation.source_paths.is_empty() {
+                    view.presentation.source_paths = receipt.source_paths.clone();
+                }
                 view.items = receipt
                     .plan
                     .entries

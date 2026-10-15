@@ -220,19 +220,22 @@ pub async fn open_editor(
         }
         return Ok(label);
     }
-    let result =
-        WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("index.html?editor=1".into()))
-            .title(crate::brand::window_title(
-                &app,
-                &format!(
-                    "{} · {}",
-                    editor.path.rsplit('/').next().unwrap_or(&editor.path),
-                    editor.spec.target().name,
-                ),
-            ))
-            .inner_size(960.0, 720.0)
-            .min_inner_size(560.0, 360.0)
-            .build();
+    let result = crate::window_chrome::configure(WebviewWindowBuilder::new(
+        &app,
+        &label,
+        WebviewUrl::App("index.html?editor=1".into()),
+    ))
+    .title(crate::brand::window_title(
+        &app,
+        &format!(
+            "{} · {}",
+            editor.path.rsplit('/').next().unwrap_or(&editor.path),
+            editor.spec.target().name,
+        ),
+    ))
+    .inner_size(960.0, 720.0)
+    .min_inner_size(560.0, 360.0)
+    .build();
     match result {
         Ok(editor_window) => {
             let state = state.inner().clone();

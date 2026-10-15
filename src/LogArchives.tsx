@@ -1,3 +1,4 @@
+import { WindowTitlebar } from "./WindowTitlebar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
@@ -147,21 +148,18 @@ export function LogArchives() {
 
   return (
     <main className="archive-app" aria-label="本地日志存档">
-      <header className="archive-header">
-        <div className="archive-heading">
-          <span className="archive-mark">
-            <ScrollText size={24} />
+      <WindowTitlebar
+        leading={<ScrollText size={20} />}
+        title="本地日志"
+        subtitle="已保存在这台电脑上的容器日志，离线也能随时查看。"
+        actions={
+          <span className="archive-local">
+            <HardDrive size={14} />
+            本机存档
           </span>
-          <div>
-            <h1>本地日志</h1>
-            <p>已保存在这台电脑上的容器日志，离线也能随时查看。</p>
-          </div>
-        </div>
-        <span className="archive-local">
-          <HardDrive size={14} />
-          本机存档
-        </span>
-      </header>
+        }
+        onError={(error) => setOpenError(errorOf(error).message)}
+      />
 
       <section className="archive-content" aria-label="日志存档列表">
         <div className="archive-toolbar">

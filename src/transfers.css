@@ -1,0 +1,336 @@
+.transfer-statusbar {
+  flex: 0 0 30px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 9px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+.transfer-statusbar.embedded {
+  flex: initial;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.workspace-summary-end {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 0;
+}
+.workspace-summary:has(.transfer-statusbar) {
+  align-items: center;
+  min-height: 30px;
+  padding-block: 0;
+}
+.transfer-status-trigger {
+  min-height: 26px;
+  max-width: 100%;
+  padding: 3px 7px;
+  gap: 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.transfer-status-trigger[aria-expanded="true"] {
+  background: var(--hover);
+}
+.transfer-history-count {
+  color: var(--muted);
+}
+.transfer-status-alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--error);
+}
+.transfer-status-trigger progress {
+  width: 88px;
+  height: 4px;
+  flex-shrink: 1;
+  min-width: 35px;
+}
+.transfer-popover {
+  position: fixed;
+  z-index: 40;
+  width: min(420px, calc(100vw - 16px));
+  display: flex;
+  flex-direction: column;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--strong-line);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 18%);
+  overflow: hidden;
+  font-size: 12px;
+  animation: transfer-popover-in 150ms ease-out;
+  transform-origin: bottom right;
+}
+.transfer-popover[hidden] {
+  display: none;
+}
+.transfer-popover-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.transfer-popover-head strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+.transfer-popover-head > span {
+  color: var(--muted);
+  flex: 1;
+}
+.transfer-close {
+  padding: 3px;
+  min-width: 26px;
+  min-height: 26px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+}
+.transfer-task-list {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  overflow-anchor: none;
+}
+.transfer-task-row {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.transfer-task-row:last-child {
+  border-bottom: 0;
+}
+.transfer-task-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.transfer-task-heading > svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.transfer-task-heading strong {
+  font-size: 12px;
+  font-weight: 500;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.transfer-task-heading time {
+  color: var(--muted);
+  font-size: 11px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.transfer-task-route {
+  margin: 5px 0 9px 23px;
+  color: var(--muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.transfer-task-row > progress {
+  display: block;
+  width: calc(100% - 23px);
+  height: 3px;
+  margin-left: 23px;
+}
+.transfer-status-trigger progress,
+.transfer-task-row > progress {
+  border: 0;
+  border-radius: 3px;
+  overflow: hidden;
+  appearance: none;
+  background: var(--hover);
+  accent-color: var(--blue);
+}
+.transfer-status-trigger progress::-webkit-progress-bar,
+.transfer-task-row > progress::-webkit-progress-bar {
+  background: var(--hover);
+  border-radius: 3px;
+}
+.transfer-status-trigger progress::-webkit-progress-value,
+.transfer-task-row > progress::-webkit-progress-value {
+  background: var(--blue);
+  border-radius: 3px;
+  transition: width 160ms ease-out;
+}
+.transfer-status-trigger progress:indeterminate,
+.transfer-task-row > progress:indeterminate,
+.transfer-status-trigger progress:indeterminate::-webkit-progress-bar,
+.transfer-task-row > progress:indeterminate::-webkit-progress-bar {
+  background: linear-gradient(var(--blue), var(--blue)) left / 35% 100%
+    no-repeat var(--hover);
+  animation: transfer-progress 1.3s ease-in-out infinite alternate;
+}
+.transfer-task-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 7px 0 0 23px;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.transfer-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.transfer-state.attention {
+  color: var(--error);
+}
+.transfer-task-row[data-status="completed"] .transfer-state {
+  color: var(--green);
+}
+.transfer-row-actions {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+.transfer-row-actions button,
+.transfer-cleanup button {
+  min-height: 24px;
+  padding: 2px 5px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--blue);
+  font-size: 11px;
+}
+.transfer-row-actions button:hover,
+.transfer-cleanup button:hover {
+  background: var(--hover);
+}
+.transfer-task-details {
+  margin: 9px 0 0 23px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.transfer-task-details summary {
+  cursor: pointer;
+}
+.transfer-task-details details p {
+  margin-top: 5px;
+}
+.transfer-cleanup {
+  display: grid;
+  justify-items: start;
+  gap: 3px;
+}
+.transfer-error-summary,
+.transfer-waiting,
+.transfer-action-error {
+  margin: 4px 0 0 23px;
+  overflow-wrap: anywhere;
+}
+.transfer-error-summary {
+  color: var(--error);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.transfer-waiting {
+  color: var(--muted);
+}
+.transfer-action-error,
+.transfer-fetch-error {
+  color: var(--error);
+}
+.transfer-task-details .transfer-action-error {
+  margin: 0;
+}
+.transfer-fetch-error {
+  padding: 10px 14px;
+  overflow-wrap: anywhere;
+}
+.transfer-new {
+  flex-shrink: 0;
+  min-height: 28px;
+  border: 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--blue);
+  font-size: 12px;
+}
+@keyframes transfer-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes transfer-progress {
+  from {
+    background-position: left;
+  }
+  to {
+    background-position: right;
+  }
+}
+@media (max-width: 480px) {
+  .workspace-summary-end:has(.transfer-statusbar) > span,
+  .workspace-summary:has(.transfer-statusbar) > span {
+    display: none;
+  }
+  .workspace-summary-end {
+    margin-left: auto;
+  }
+  .transfer-status-trigger {
+    gap: 6px;
+  }
+  .transfer-status-trigger progress {
+    width: 55px;
+  }
+  .transfer-task-row {
+    padding: 11px 12px;
+  }
+  .transfer-task-route,
+  .transfer-task-meta,
+  .transfer-task-details,
+  .transfer-error-summary,
+  .transfer-waiting,
+  .transfer-action-error {
+    margin-left: 0;
+  }
+  .transfer-task-row > progress {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .transfer-popover,
+  .transfer-status-trigger progress:indeterminate,
+  .transfer-task-row > progress:indeterminate,
+  .transfer-status-trigger progress:indeterminate::-webkit-progress-bar,
+  .transfer-task-row > progress:indeterminate::-webkit-progress-bar {
+    animation: none;
+  }
+  .transfer-status-trigger progress::-webkit-progress-value,
+  .transfer-task-row > progress::-webkit-progress-value {
+    transition: none;
+  }
+}

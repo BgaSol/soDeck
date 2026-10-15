@@ -1,3 +1,4 @@
+import { WindowTitlebar } from "./WindowTitlebar";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { basicSetup } from "codemirror";
@@ -370,34 +371,36 @@ export function FileEditorApp() {
 
   return (
     <div className="remote-editor-app">
-      <header className="remote-editor-header">
-        <div className="remote-editor-title">
-          <FileText size={19} />
-          <div>
-            <h1>
-              {document?.path.split("/").pop() || "远程文件编辑"}
-              {dirty && (
-                <span className="editor-dirty" aria-label="未保存">
-                  ●
-                </span>
-              )}
-            </h1>
-            <p>
-              {document
-                ? document.serverName + " · " + document.path
-                : "正在读取远程文件…"}
-            </p>
-          </div>
-        </div>
-        <button
-          className="primary"
-          disabled={!document || busy || !dirty}
-          onClick={() => void save()}
-        >
-          <Save size={15} />
-          {busy ? "正在处理…" : "保存"}
-        </button>
-      </header>
+      <WindowTitlebar
+        leading={<FileText size={19} />}
+        title={
+          (dirty ? "● " : "") +
+          (document?.path.split("/").pop() || "远程文件编辑")
+        }
+        subtitle={
+          document
+            ? document.serverName + " · " + document.path
+            : "正在读取远程文件…"
+        }
+        onError={(error) => setError(errorOf(error).message)}
+        actions={
+          <>
+            {dirty && (
+              <span className="editor-dirty" aria-label="未保存">
+                ●
+              </span>
+            )}
+            <button
+              className="primary"
+              disabled={!document || busy || !dirty}
+              onClick={() => void save()}
+            >
+              <Save size={15} />
+              {busy ? "正在处理…" : "保存"}
+            </button>
+          </>
+        }
+      />
       <div className="remote-editor-tools">
         <button
           className="quiet"

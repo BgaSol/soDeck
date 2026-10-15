@@ -33,6 +33,16 @@ export interface CopyTarget {
 export interface TransferTask {
   id: string;
   runId: string;
+  createdAt?: number | null;
+  lastStartedAt?: number | null;
+  sortOrder?: number;
+  sourcePaths?: string[];
+  lastAttempt?: {
+    runId: string;
+    startedAt: number | null;
+    status: TransferTask["status"];
+    error: string | null;
+  } | null;
   kind: "download" | WriteKind;
   sourceName: string;
   sourcePath: string;

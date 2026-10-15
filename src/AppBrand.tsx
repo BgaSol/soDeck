@@ -65,24 +65,32 @@ function AboutDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-export function AppBrand() {
+export function AppBrand({
+  compact = false,
+  iconOnly = false,
+}: {
+  compact?: boolean;
+  iconOnly?: boolean;
+}) {
   const [aboutOpen, setAboutOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   return (
     <>
       <button
         ref={trigger}
-        className="brand-button"
+        className={`brand-button${compact || iconOnly ? " brand-compact" : ""}${iconOnly ? " brand-icon-only" : ""}`}
         aria-label={`关于 ${APP_NAME}`}
         aria-haspopup="dialog"
         title={`关于 ${APP_NAME}`}
         onClick={() => setAboutOpen(true)}
       >
-        <BrandIcon />
-        <span className="app-brand">
-          <strong>{APP_NAME}</strong>
-          <span>{APP_DESCRIPTION}</span>
-        </span>
+        <BrandIcon size={compact || iconOnly ? 24 : 34} />
+        {!iconOnly && (
+          <span className="app-brand">
+            <strong>{APP_NAME}</strong>
+            {!compact && <span>{APP_DESCRIPTION}</span>}
+          </span>
+        )}
       </button>
       {aboutOpen && (
         <AboutDialog

@@ -1,15 +1,33 @@
-import { useEffect, useRef, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import { desktop } from "./api";
-import { useDesktopDrag, useNativeDragStart } from "./nativeDrag";
-import { errorOf } from "./types";
-import { invoke } from "@tauri-apps/api/core";
-import { Plus, X } from "lucide-react";
+import {
+  Plus,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  PanelTop,
+} from "lucide-react";
 import type { WorkspaceTab } from "./workspaces";
 import { tabTitle } from "./workspaces";
+import { useTabStrip } from "./useTabStrip";
+import { useWorkspaceTabDrag } from "./useWorkspaceTabDrag";
+import { WorkspaceTabMenu, type TabMenuItem } from "./WorkspaceTabMenu";
 import "./workspace-windows.css";
 
-const dragType = "application/x-ssh-workspace-tab";
+export interface WorkspaceTabsProps {
+  tabs: WorkspaceTab[];
+  activeId: string;
+  detached?: boolean;
+  moving: Set<string>;
+  onSelect: (id: string) => void;
+  onClose: (id: string) => void;
+  onMove: (id: string, target: string | null, beforeId?: string | null) => void;
+  onReorder: (id: string, beforeId: string | null) => void;
+  onNew?: () => void;
+  onError: (error: unknown) => void;
+}
+
 export function WorkspaceTabs({
   tabs,
   activeId,
@@ -20,285 +38,279 @@ export function WorkspaceTabs({
   onMove,
   onReorder,
   onNew,
-}: {
-  tabs: WorkspaceTab[];
-  activeId: string;
-  detached?: boolean;
-  moving: Set<string>;
-  onSelect: (id: string) => void;
-  onClose: (id: string) => void;
-  onMove: (id: string, target: string | null, beforeId?: string | null) => void;
-  onReorder: (id: string, beforeId: string | null) => void;
-  onNew?: () => void;
+  onError,
+  appendDropRef,
+  onAppendDropChange,
+}: WorkspaceTabsProps & {
+  appendDropRef?: RefObject<HTMLDivElement | null>;
+  onAppendDropChange?: (active: boolean) => void;
 }) {
-  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(
-    null,
-  );
-  const [over, setOver] = useState<string | null | undefined>(undefined);
-  const drag = useRef<{
-    token: string;
-    ready: Promise<unknown>;
-    cancelled: boolean;
-  } | null>(null);
-  const strip = useRef<HTMLDivElement>(null);
-  const [dragError, setDragError] = useState("");
-  const native = useNativeDragStart((e) => setDragError(errorOf(e).message));
-  useDesktopDrag((event) => {
-    if (event.kind !== "workspaceTab") return;
-    if (event.phase === "leave") {
-      setOver(undefined);
-      return;
-    }
-    const bounds = strip.current?.getBoundingClientRect();
-    if (
-      !bounds ||
-      event.x < bounds.left ||
-      event.x > bounds.right ||
-      event.y < bounds.top ||
-      event.y > bounds.bottom
-    ) {
-      setOver(undefined);
-      return;
-    }
-    const beforeId = beforeAt(event.x);
-    setOver(beforeId);
-    if (strip.current && event.x < bounds.left + 30)
-      strip.current.scrollLeft -= 16;
-    if (strip.current && event.x > bounds.right - 30)
-      strip.current.scrollLeft += 16;
-    if (event.phase === "drop") {
-      setOver(undefined);
-      void invoke("drop_tab", { token: event.token, beforeId }).catch((e) =>
-        setDragError(errorOf(e).message),
-      );
-    }
+  const layoutKey = JSON.stringify(tabs.map((tab) => [tab.id, tabTitle(tab)]));
+  const scroll = useTabStrip(activeId, layoutKey);
+  const drag = useWorkspaceTabDrag({
+    strip: scroll.strip,
+    appendDropRef,
+    onAppendDropChange,
+    onError,
   });
-  useEffect(() => {
-    if (!desktop) return;
-    let live = true;
-    const cleanups: (() => void)[] = [];
-    void Promise.all([
-      getCurrentWindow().listen<{
-        token: string;
-        kind: string;
-        cancelled: boolean;
-      }>("desktop-drag-ended", ({ payload }) => {
-        if (payload.kind !== "workspaceTab") return;
-        drag.current = null;
-        void invoke("finish_tab_drag", {
-          token: payload.token,
-          cancelled: payload.cancelled,
-        }).catch((e) => setDragError(errorOf(e).message));
-      }),
-      getCurrentWindow().listen<{ message: string }>(
-        "desktop-drag-error",
-        ({ payload }) => setDragError(payload.message),
-      ),
-    ]).then((values) => {
-      if (live) cleanups.push(...values);
-      else values.forEach((off) => off());
+  const [menu, setMenu] = useState<{
+    tabId?: string;
+    anchor: HTMLElement;
+    x: number;
+    y: number;
+  } | null>(null);
+  const menuId = useId();
+  const currentId = useRef(activeId);
+  currentId.current = activeId;
+  function focusTab(id: string) {
+    requestAnimationFrame(() => {
+      const tab =
+        document.getElementById(`tab-${id}`) ??
+        document.getElementById(`tab-${currentId.current}`);
+      tab?.focus({ preventScroll: true });
+      scroll.revealTab(tab?.id.slice(4) ?? currentId.current);
+      if (!tab) scroll.action.current?.focus();
     });
-    return () => {
-      live = false;
-      cleanups.forEach((off) => off());
-    };
-  }, []);
-  useEffect(() => {
-    strip.current
-      ?.querySelector('[aria-selected="true"]')
-      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [activeId]);
-  useEffect(() => {
-    const clear = () => setMenu(null);
-    const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        clear();
-        if (drag.current) drag.current.cancelled = true;
-      }
-    };
-    window.addEventListener("click", clear);
-    window.addEventListener("keydown", key);
-    return () => {
-      window.removeEventListener("click", clear);
-      window.removeEventListener("keydown", key);
-    };
-  }, []);
-  function beforeAt(x: number) {
-    const items = Array.from(
-      strip.current?.querySelectorAll<HTMLElement>(".session-tab") || [],
-    );
-    return (
-      items.find((el) => {
-        const r = el.getBoundingClientRect();
-        return x < r.x + r.width / 2;
-      })?.dataset.tabId || null
-    );
   }
+  function closeMenu(restoreFocus: boolean) {
+    const anchor = menu?.anchor;
+    setMenu(null);
+    if (restoreFocus)
+      requestAnimationFrame(() => {
+        if (anchor?.isConnected) anchor.focus({ preventScroll: true });
+        else focusTab(currentId.current);
+      });
+  }
+  useEffect(() => {
+    if (menu?.tabId && !tabs.some((tab) => tab.id === menu.tabId))
+      setMenu(null);
+    if (menu && !menu.tabId && !scroll.overflowing) setMenu(null);
+  }, [tabs, menu, scroll.overflowing]);
+  function select(id: string) {
+    onSelect(id);
+    focusTab(id);
+  }
+  const selected = menu?.tabId
+    ? tabs.find((tab) => tab.id === menu.tabId)
+    : undefined;
+  const menuItems: TabMenuItem[] = selected
+    ? [
+        {
+          id: "move",
+          label: detached ? "移回主窗口" : "移到独立窗口",
+          disabled: moving.has(selected.id),
+          run: () => onMove(selected.id, detached ? "main" : null),
+        },
+        ...(!detached
+          ? [
+              {
+                id: "left",
+                label: "向左移动",
+                disabled:
+                  moving.has(selected.id) || tabs[0]?.id === selected.id,
+                run: () => {
+                  const i = tabs.findIndex((t) => t.id === selected.id);
+                  onReorder(selected.id, tabs[i - 1]?.id ?? null);
+                  focusTab(selected.id);
+                },
+              },
+              {
+                id: "right",
+                label: "向右移动",
+                disabled:
+                  moving.has(selected.id) || tabs.at(-1)?.id === selected.id,
+                run: () => {
+                  const i = tabs.findIndex((t) => t.id === selected.id);
+                  onReorder(selected.id, tabs[i + 2]?.id ?? null);
+                  focusTab(selected.id);
+                },
+              },
+            ]
+          : []),
+        {
+          id: "close",
+          label: "关闭会话",
+          disabled: moving.has(selected.id),
+          run: () => {
+            onClose(selected.id);
+            focusTab(currentId.current);
+          },
+        },
+      ]
+    : tabs.map((tab) => ({
+        id: tab.id,
+        label: tabTitle(tab),
+        detail: tab.state,
+        selected: tab.id === activeId,
+        disabled: moving.has(tab.id),
+        run: () => select(tab.id),
+      }));
   return (
     <>
-      {dragError && (
-        <p className="panel-error" role="alert">
-          {dragError}
-        </p>
-      )}
       <div
-        className={`session-tabs${over !== undefined ? " receiving-tab" : ""}`}
+        ref={scroll.root}
+        className={`session-tabs${drag.over !== undefined ? " receiving-tab" : ""}`}
       >
+        {scroll.overflowing && (
+          <button
+            className="icon-button tab-scroll-button"
+            aria-label="向左滚动会话"
+            title="向左滚动会话"
+            disabled={!scroll.canScrollLeft}
+            onClick={() => scroll.scrollByPage(-1)}
+          >
+            <ChevronLeft size={15} />
+          </button>
+        )}
         <div
+          ref={scroll.strip}
           className="tab-scroll"
           role="tablist"
           aria-label="SSH 会话"
-          ref={strip}
-          onDragOver={(e) => {
-            if (!e.dataTransfer.types.includes(dragType)) return;
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "move";
-            setOver(beforeAt(e.clientX));
-            if (strip.current) {
-              const r = strip.current.getBoundingClientRect();
-              if (e.clientX < r.left + 30) strip.current.scrollLeft -= 16;
-              if (e.clientX > r.right - 30) strip.current.scrollLeft += 16;
-            }
-          }}
-          onDragLeave={(e) => {
-            if (!e.currentTarget.contains(e.relatedTarget as Node))
-              setOver(undefined);
-          }}
-          onDrop={(e) => {
-            const token = e.dataTransfer.getData(dragType);
-            if (!token) return;
-            e.preventDefault();
-            const beforeId = beforeAt(e.clientX);
-            setOver(undefined);
-            void invoke("drop_tab", { token, beforeId });
-          }}
+          {...drag.htmlHandlers}
         >
-          {tabs.map((tab, index) => (
-            <div
-              className={`session-tab${activeId === tab.id ? " active" : ""}${over === tab.id ? " insert-before" : ""}${moving.has(tab.id) ? " moving" : ""}`}
-              key={tab.id}
-              data-tab-id={tab.id}
-            >
-              <button
-                className="tab-select"
-                role="tab"
-                id={`tab-${tab.id}`}
-                aria-controls={`panel-${tab.id}`}
-                aria-selected={activeId === tab.id}
-                tabIndex={activeId === tab.id ? 0 : -1}
-                aria-label={`${tabTitle(tab)}，${tab.state}`}
-                title={`${tab.server.username}@${tab.server.host} · 拖动标签可排序或移到独立窗口`}
-                disabled={moving.has(tab.id)}
-                draggable={!desktop && !moving.has(tab.id)}
-                onPointerDown={(event) => {
-                  if (moving.has(tab.id)) return;
-                  native.down(event, () => {
-                    setDragError("");
-                    const token = crypto.randomUUID();
-                    const ready = invoke("begin_workspace_drag", {
-                      token,
+          <div
+            ref={scroll.track}
+            className={`tab-track${drag.over === null ? " insert-at-end" : ""}`}
+          >
+            {tabs.map((tab, index) => (
+              <div
+                key={tab.id}
+                data-tab-id={tab.id}
+                className={`session-tab${activeId === tab.id ? " active" : ""}${drag.over === tab.id ? " insert-before" : ""}${moving.has(tab.id) ? " moving" : ""}`}
+              >
+                <button
+                  className="tab-select"
+                  role="tab"
+                  id={`tab-${tab.id}`}
+                  aria-controls={`panel-${tab.id}`}
+                  aria-selected={activeId === tab.id}
+                  tabIndex={activeId === tab.id ? 0 : -1}
+                  aria-label={`${tabTitle(tab)}，${tab.state}`}
+                  title={`${tabTitle(tab)} · ${tab.server.username}@${tab.server.host}:${tab.server.port} · ${tab.state} · 拖动标签可排序或移到独立窗口`}
+                  disabled={moving.has(tab.id)}
+                  draggable={!desktop && !moving.has(tab.id)}
+                  onPointerDown={(event) => {
+                    if (!moving.has(tab.id))
+                      drag.native.down(event, () => drag.beginNative(tab.id));
+                  }}
+                  onClick={() => {
+                    if (!drag.native.suppressClick()) onSelect(tab.id);
+                  }}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    const bounds = event.currentTarget.getBoundingClientRect();
+                    setMenu({
                       tabId: tab.id,
+                      anchor: event.currentTarget,
+                      x: event.clientX || bounds.left,
+                      y: event.clientY || bounds.bottom,
                     });
-                    drag.current = { token, ready, cancelled: false };
-                    return ready;
-                  });
-                }}
-                onClick={() => {
-                  if (!native.suppressClick()) onSelect(tab.id);
-                }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setMenu({
-                    id: tab.id,
-                    x: Math.min(e.clientX, innerWidth - 190),
-                    y: Math.min(e.clientY, innerHeight - 180),
-                  });
-                }}
-                onDragStart={(e) => {
-                  const token = crypto.randomUUID();
-                  e.dataTransfer.effectAllowed = "move";
-                  e.dataTransfer.setData(dragType, token);
-                  e.dataTransfer.setData("text/plain", tabTitle(tab));
-                  drag.current = {
-                    token,
-                    ready: invoke("begin_tab_drag", { token, tabId: tab.id }),
-                    cancelled: false,
-                  };
-                }}
-                onDragEnd={() => {
-                  setOver(undefined);
-                  const d = drag.current;
-                  drag.current = null;
-                  if (d)
-                    void d.ready
-                      .then(() => new Promise((r) => setTimeout(r, 80)))
-                      .then(() =>
-                        invoke("finish_tab_drag", {
-                          token: d.token,
-                          cancelled: d.cancelled,
-                        }),
-                      );
-                }}
-                onKeyDown={(e) => {
-                  let next = index;
-                  if (
-                    e.altKey &&
-                    (e.key === "ArrowLeft" || e.key === "ArrowRight")
-                  ) {
-                    e.preventDefault();
-                    const to = e.key === "ArrowLeft" ? index - 1 : index + 2;
-                    if (to >= 0) onReorder(tab.id, tabs[to]?.id || null);
-                    return;
+                  }}
+                  onDragStart={(event) =>
+                    drag.beginHtml(event, tab.id, tabTitle(tab))
                   }
-                  if (e.key === "ArrowRight") next = (index + 1) % tabs.length;
-                  else if (e.key === "ArrowLeft")
-                    next = (index - 1 + tabs.length) % tabs.length;
-                  else if (e.key === "Home") next = 0;
-                  else if (e.key === "End") next = tabs.length - 1;
-                  else if (e.key === "Delete") {
-                    e.preventDefault();
+                  onDragEnd={drag.endHtml}
+                  onKeyDown={(event) => {
+                    let next = index;
+                    if (
+                      event.altKey &&
+                      (event.key === "ArrowLeft" || event.key === "ArrowRight")
+                    ) {
+                      event.preventDefault();
+                      const to =
+                        event.key === "ArrowLeft" ? index - 1 : index + 2;
+                      if (to >= 0) onReorder(tab.id, tabs[to]?.id ?? null);
+                      return;
+                    }
+                    if (event.key === "ArrowRight")
+                      next = (index + 1) % tabs.length;
+                    else if (event.key === "ArrowLeft")
+                      next = (index - 1 + tabs.length) % tabs.length;
+                    else if (event.key === "Home") next = 0;
+                    else if (event.key === "End") next = tabs.length - 1;
+                    else if (event.key === "Delete") {
+                      event.preventDefault();
+                      onClose(tab.id);
+                      focusTab(currentId.current);
+                      return;
+                    } else return;
+                    event.preventDefault();
+                    select(tabs[next].id);
+                  }}
+                >
+                  <span
+                    className={`tab-state ${tab.state === "已连接" ? "connected" : tab.state === "连接中" ? "connecting" : tab.state === "连接失败" ? "failed" : ""}`}
+                    aria-hidden="true"
+                  />
+                  <span className="tab-name">{tabTitle(tab)}</span>
+                  <span className="sr-only">{tab.state}</span>
+                </button>
+                <button
+                  className="tab-close"
+                  aria-label={`关闭 ${tabTitle(tab)} 会话`}
+                  title="关闭会话"
+                  disabled={moving.has(tab.id)}
+                  onClick={() => {
                     onClose(tab.id);
-                    return;
-                  } else return;
-                  e.preventDefault();
-                  onSelect(tabs[next].id);
-                  document.getElementById(`tab-${tabs[next].id}`)?.focus();
-                }}
-              >
-                <span
-                  className={`tab-state ${tab.state === "已连接" ? "connected" : tab.state === "连接中" ? "connecting" : tab.state === "连接失败" ? "failed" : ""}`}
-                  aria-hidden="true"
-                />
-                <span className="tab-name">{tabTitle(tab)}</span>
-                <span className="sr-only">{tab.state}</span>
-              </button>
-              <button
-                className="tab-close"
-                aria-label={`关闭 ${tabTitle(tab)} 会话`}
-                disabled={moving.has(tab.id)}
-                onClick={() => onClose(tab.id)}
-              >
-                <X size={13} />
-              </button>
-            </div>
-          ))}
-          {!tabs.length && (
-            <span className="tabs-placeholder">
-              {over !== undefined ? "松开以放入会话" : "SSH 会话"}
-            </span>
-          )}
-          {over === null && <span className="tab-end-marker" />}
+                    focusTab(currentId.current);
+                  }}
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
+        {scroll.overflowing && (
+          <>
+            <button
+              className="icon-button tab-scroll-button"
+              aria-label="向右滚动会话"
+              title="向右滚动会话"
+              disabled={!scroll.canScrollRight}
+              onClick={() => scroll.scrollByPage(1)}
+            >
+              <ChevronRight size={15} />
+            </button>
+            <button
+              className="icon-button tab-list-button"
+              aria-label="全部会话"
+              title="全部会话"
+              aria-haspopup="menu"
+              aria-expanded={!!menu && !menu.tabId}
+              aria-controls={menu && !menu.tabId ? menuId : undefined}
+              onClick={(event) => {
+                if (menu && !menu.tabId) {
+                  closeMenu(true);
+                  return;
+                }
+                const bounds = event.currentTarget.getBoundingClientRect();
+                setMenu({
+                  anchor: event.currentTarget,
+                  x: bounds.right - 280,
+                  y: bounds.bottom + 6,
+                });
+              }}
+            >
+              <ChevronDown size={15} />
+            </button>
+          </>
+        )}
         {detached ? (
           <button
-            className="quiet"
+            ref={scroll.action}
+            className="icon-button tab-return"
+            aria-label="移回主窗口"
+            title="移回主窗口"
             disabled={!tabs.length || moving.size > 0}
             onClick={() => onMove(tabs[0].id, "main")}
           >
-            移回主窗口
+            <PanelTop size={16} />
           </button>
         ) : (
           <button
+            ref={scroll.action}
             className="icon-button new-session"
             aria-label="新建连接"
             title="选择服务器并新建连接"
@@ -310,50 +322,15 @@ export function WorkspaceTabs({
         )}
       </div>
       {menu && (
-        <div
-          className="server-context-menu"
-          role="menu"
-          style={{ left: menu.x, top: menu.y }}
-        >
-          <button
-            role="menuitem"
-            disabled={moving.has(menu.id)}
-            onClick={() => onMove(menu.id, detached ? "main" : null)}
-          >
-            {detached ? "移回主窗口" : "移到独立窗口"}
-          </button>
-          {!detached && (
-            <>
-              <button
-                role="menuitem"
-                disabled={tabs[0]?.id === menu.id}
-                onClick={() => {
-                  const i = tabs.findIndex((t) => t.id === menu.id);
-                  onReorder(menu.id, tabs[i - 1]?.id || null);
-                }}
-              >
-                向左移动
-              </button>
-              <button
-                role="menuitem"
-                disabled={tabs.at(-1)?.id === menu.id}
-                onClick={() => {
-                  const i = tabs.findIndex((t) => t.id === menu.id);
-                  onReorder(menu.id, tabs[i + 2]?.id || null);
-                }}
-              >
-                向右移动
-              </button>
-            </>
-          )}
-          <button
-            role="menuitem"
-            disabled={moving.has(menu.id)}
-            onClick={() => onClose(menu.id)}
-          >
-            关闭会话
-          </button>
-        </div>
+        <WorkspaceTabMenu
+          id={menuId}
+          title={menu.tabId ? "会话操作" : "全部会话"}
+          anchor={menu.anchor}
+          x={menu.x}
+          y={menu.y}
+          items={menuItems}
+          onClose={closeMenu}
+        />
       )}
     </>
   );

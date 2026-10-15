@@ -24,6 +24,11 @@ import {
   Copy,
   Scissors,
   ClipboardPaste,
+  HardDrive,
+  Network,
+  MemoryStick,
+  ClipboardCopy,
+  Info,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { desktop } from "./api";
@@ -47,9 +52,20 @@ import type {
   TerminalDirectory,
 } from "./remoteFileTree";
 import { useRemoteFileTree } from "./useRemoteFileTree";
+import { useRemoteMounts } from "./useRemoteMounts";
+import {
+  mountForFile,
+  mountKind,
+  mountSource,
+  usageSeverity,
+} from "./remoteMounts";
+import type { MountSnapshot, RemoteMount } from "./remoteMounts";
+import { MountDetailsPopover } from "./MountDetailsPopover";
 import "./files.css";
 
-export type FilePanelSnapshot = RemoteFileTreeSnapshot;
+export interface FilePanelSnapshot extends RemoteFileTreeSnapshot {
+  mounts?: MountSnapshot;
+}
 
 export function FilePanel({
   sessionId,
@@ -92,8 +108,34 @@ export function FilePanel({
   const [focusedPath, setFocusedPath] = useState(selected || "/");
   const list = useRef<HTMLDivElement>(null);
   const contextMenu = useRef<HTMLDivElement>(null);
-  const rowElements = useRef(new Map<string, HTMLButtonElement>());
+  const rowElements = useRef(new Map<string, HTMLDivElement>());
   const rows = useMemo(() => visibleFileRows(state), [state]);
+  const mountPaths = useMemo(
+    () =>
+      rows
+        .filter(({ file }) => file.isDir && !file.isSymlink)
+        .map(({ file }) => file.path),
+    [rows],
+  );
+  const mounts = useRemoteMounts(
+    sessionId,
+    active,
+    mountPaths,
+    initialState?.mounts,
+  );
+  const [mountDetail, setMountDetail] = useState<{
+    key: string;
+    path: string;
+    anchor: HTMLElement;
+  } | null>(null);
+  const detailMount = mounts.state.table?.mounts.find(
+    (mount) =>
+      mount.key === mountDetail?.key && mount.target === mountDetail.path,
+  );
+  const [pathNotice, setPathNotice] = useState<{
+    message: string;
+    error?: boolean;
+  } | null>(null);
   const expanded = useMemo(() => new Set(state.expanded), [state.expanded]);
   const loading =
     state.revealing ||
@@ -129,6 +171,8 @@ export function FilePanel({
     setOperation(null);
     setCopyPaths(null);
     setDropPath(null);
+    setMountDetail(null);
+    setPathNotice(null);
   }, [sessionId]);
   useEffect(() => {
     if (!desktop || !sessionId) return;
@@ -152,8 +196,20 @@ export function FilePanel({
     viewRegistration.current?.update();
   }, [state.currentPath]);
   useEffect(() => {
-    report.current?.(model.snapshot());
-  }, [model, state]);
+    report.current?.({ ...model.snapshot(), mounts: mounts.model.snapshot() });
+  }, [model, state, mounts.model, mounts.state]);
+  useEffect(() => {
+    if (
+      !active ||
+      (mountDetail && (!detailMount || !mountPaths.includes(mountDetail.path)))
+    )
+      setMountDetail(null);
+  }, [active, detailMount, mountDetail, mountPaths]);
+  useEffect(() => {
+    if (!pathNotice || pathNotice.error) return;
+    const timer = window.setTimeout(() => setPathNotice(null), 2500);
+    return () => clearTimeout(timer);
+  }, [pathNotice]);
   useLayoutEffect(() => {
     if (scrollOwner.current !== model) {
       scrollOwner.current = model;
@@ -313,6 +369,27 @@ export function FilePanel({
       setError(errorOf(e).message);
     }
   }
+  async function copyAbsolutePath(path: string) {
+    const owner = sessionId;
+    setMenu(null);
+    setPathNotice(null);
+    try {
+      await navigator.clipboard.writeText(path);
+      if (sessionRef.current === owner)
+        setPathNotice({ message: "已复制绝对路径" });
+    } catch {
+      if (sessionRef.current === owner)
+        setPathNotice({
+          message: "复制绝对路径失败，请检查系统剪贴板权限后重试",
+          error: true,
+        });
+    }
+  }
+  function showMount(mount: RemoteMount) {
+    const anchor = rowElements.current.get(mount.target);
+    setMenu(null);
+    if (anchor) setMountDetail({ key: mount.key, path: mount.target, anchor });
+  }
   async function paste(target: string) {
     if (!sessionId || busy || operation) return;
     const owner = sessionId;
@@ -359,6 +436,7 @@ export function FilePanel({
     file: FileEntry,
     mode: "single" | "toggle" | "range" = "single",
   ) {
+    setMountDetail(null);
     model.select(file.path, file.isDir, mode);
     if (file.isDir && mode === "single") {
       if (expanded.has(file.path)) model.collapse(file.path);
@@ -589,7 +667,10 @@ export function FilePanel({
               className="icon-button"
               aria-label="刷新目录"
               disabled={!sessionId || refreshLoading}
-              onClick={() => void model.refresh(refreshPath)}
+              onClick={() => {
+                void model.refresh(refreshPath);
+                void mounts.model.refresh(true);
+              }}
             >
               <RefreshCw
                 size={15}
@@ -624,7 +705,7 @@ export function FilePanel({
       </header>
       <div className="file-columns">
         <span>名称</span>
-        <span>大小</span>
+        <span>大小 / 使用率</span>
       </div>
       <div
         className="file-list remote-file-tree"
@@ -642,6 +723,7 @@ export function FilePanel({
           )
             return;
           event.preventDefault();
+          setMountDetail(null);
           setMenu({
             blank: true,
             file: {
@@ -706,15 +788,29 @@ export function FilePanel({
           rows.map(({ file, depth, parent, position, siblings }, index) => {
             const node = state.directories[file.path];
             const isExpanded = file.isDir && expanded.has(file.path);
+            const mount = mountForFile(file, mounts.state.table?.mounts ?? []);
+            const capacity = mount ? mounts.state.usage[mount.key] : undefined;
+            const percent = capacity?.value?.usedPercent;
+            const mountLabel =
+              capacity?.value?.status === "unsupported"
+                ? "—"
+                : percent != null
+                  ? `${percent}%`
+                  : capacity?.loading
+                    ? "读取中"
+                    : "暂不可用";
             return (
               <Fragment key={file.path}>
-                <button
+                <div
                   ref={(element) => {
                     if (element) rowElements.current.set(file.path, element);
                     else rowElements.current.delete(file.path);
                   }}
                   className={
                     "file-row file-tree-row" +
+                    (mount
+                      ? ` file-mount-row mount-${usageSeverity(percent)}`
+                      : "") +
                     (selection.includes(file.path) ? " selected" : "") +
                     (clipboard?.intent === "move" &&
                     clipboard.sameServer &&
@@ -742,6 +838,12 @@ export function FilePanel({
                   tabIndex={focusedPath === file.path ? 0 : -1}
                   onFocus={() => setFocusedPath(file.path)}
                   onPointerDown={(event) => {
+                    if (
+                      (event.target as HTMLElement).closest(
+                        "[data-mount-detail]",
+                      )
+                    )
+                      return;
                     if (!sessionId || file.path === "/") return;
                     dragStart.down(event, () => {
                       if (!selection.includes(file.path))
@@ -753,6 +855,12 @@ export function FilePanel({
                     });
                   }}
                   onClick={(event) => {
+                    if (
+                      (event.target as HTMLElement).closest(
+                        "[data-mount-detail]",
+                      )
+                    )
+                      return;
                     if (!dragStart.suppressClick())
                       choose(
                         file,
@@ -768,6 +876,7 @@ export function FilePanel({
                       void edit(file);
                   }}
                   onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget) return;
                     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                       event.preventDefault();
                       const next =
@@ -846,6 +955,7 @@ export function FilePanel({
                   }}
                   onContextMenu={(event) => {
                     event.preventDefault();
+                    setMountDetail(null);
                     if (!selection.includes(file.path))
                       model.select(file.path, file.isDir);
                     setMenu({
@@ -866,10 +976,37 @@ export function FilePanel({
                       ))}
                   </span>
                   <span className="file-icon" aria-hidden="true">
-                    {file.isDir ? <Folder size={16} /> : <FileText size={16} />}
+                    {mount ? (
+                      mountKind(mount) === "network" ? (
+                        <Network size={16} />
+                      ) : mountKind(mount) === "memory" ? (
+                        <MemoryStick size={16} />
+                      ) : (
+                        <HardDrive size={16} />
+                      )
+                    ) : file.isDir ? (
+                      <Folder size={16} />
+                    ) : (
+                      <FileText size={16} />
+                    )}
                   </span>
-                  <span className="file-name" title={file.path}>
-                    {file.name}
+                  <span className="file-name-group">
+                    <span className="file-name" title={file.path}>
+                      {file.name}
+                    </span>
+                    {mount && (
+                      <button
+                        type="button"
+                        className="mount-source"
+                        data-mount-detail
+                        aria-label={`查看 ${file.path} 挂载详情`}
+                        title={mountSource(mount)}
+                        onClick={() => showMount(mount)}
+                      >
+                        {mountSource(mount)}
+                        {mountKind(mount) === "memory" ? " · 内存" : ""}
+                      </button>
+                    )}
                   </span>
                   {file.isSymlink && (
                     <Link
@@ -885,10 +1022,32 @@ export function FilePanel({
                       aria-label="终端当前目录"
                     />
                   )}
-                  <span className="file-size">
-                    {file.isDir ? "—" : formatSize(file.size)}
-                  </span>
-                </button>
+                  {mount ? (
+                    <button
+                      type="button"
+                      className={`mount-usage${capacity?.stale ? " stale" : ""}`}
+                      data-mount-detail
+                      aria-label={`${file.path} ${mountLabel}${capacity?.stale ? "，上次数据" : ""}，查看挂载详情`}
+                      aria-haspopup="dialog"
+                      aria-expanded={mountDetail?.key === mount.key}
+                      onClick={() => showMount(mount)}
+                    >
+                      <span>
+                        {mountLabel}
+                        {capacity?.stale && capacity.value ? " · 旧" : ""}
+                      </span>
+                      {percent != null && (
+                        <span className="mount-meter" aria-hidden="true">
+                          <span style={{ width: `${percent}%` }} />
+                        </span>
+                      )}
+                    </button>
+                  ) : (
+                    <span className="file-size">
+                      {file.isDir ? "—" : formatSize(file.size)}
+                    </span>
+                  )}
+                </div>
                 {isExpanded && node?.error && (
                   <div
                     className="file-tree-status file-tree-error"
@@ -942,6 +1101,30 @@ export function FilePanel({
           )}
         </p>
       )}
+      {pathNotice && (
+        <p
+          className={`file-path-notice${pathNotice.error ? " failed" : ""}`}
+          role={pathNotice.error ? "alert" : "status"}
+        >
+          {pathNotice.message}
+        </p>
+      )}
+      {(mounts.state.error || mounts.state.table?.message) && (
+        <div className="mount-panel-notice" role="status">
+          <span>
+            {mounts.state.error
+              ? `挂载信息暂不可用：${mounts.state.error}`
+              : mounts.state.table?.message}
+          </span>
+          <button
+            className="quiet"
+            disabled={mounts.state.loading}
+            onClick={() => void mounts.model.refresh(true)}
+          >
+            重试
+          </button>
+        </div>
+      )}
       <footer className="panel-footer">
         {loading
           ? "正在读取目录…"
@@ -965,6 +1148,25 @@ export function FilePanel({
           aria-label="文件操作"
           style={{ left: Math.max(5, menu.x), top: Math.max(5, menu.y) }}
         >
+          <button
+            role="menuitem"
+            onClick={() => void copyAbsolutePath(menu.file.path)}
+          >
+            <ClipboardCopy size={14} />
+            {menu.blank ? "复制当前目录绝对路径" : "复制绝对路径"}
+          </button>
+          {(() => {
+            const mount = mountForFile(
+              menu.file,
+              mounts.state.table?.mounts ?? [],
+            );
+            return mount ? (
+              <button role="menuitem" onClick={() => showMount(mount)}>
+                <Info size={14} />
+                查看挂载详情
+              </button>
+            ) : null;
+          })()}
           {!menu.blank && (
             <>
               <button
@@ -1066,6 +1268,15 @@ export function FilePanel({
             </>
           )}
         </div>
+      )}
+      {mountDetail && detailMount && (
+        <MountDetailsPopover
+          mount={detailMount}
+          usage={mounts.state.usage[detailMount.key]}
+          anchor={mountDetail.anchor}
+          onClose={() => setMountDetail(null)}
+          onRefresh={() => void mounts.model.refresh(true)}
+        />
       )}
       {copyPaths && sessionId && (
         <CopyTargetDialog

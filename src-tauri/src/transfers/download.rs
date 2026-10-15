@@ -33,6 +33,8 @@ pub enum ConflictPolicy {
 pub struct DownloadTask {
     pub(super) id: String,
     pub(super) run_id: String,
+    #[serde(flatten)]
+    pub(super) presentation: super::model::TaskPresentation,
     pub(super) server_name: String,
     pub(super) remote_path: String,
     pub(super) local_path: String,
@@ -139,6 +141,10 @@ pub async fn start_download(
         task: Arc::new(Mutex::new(DownloadTask {
             id: id.clone(),
             run_id: uuid::Uuid::new_v4().to_string(),
+            presentation: super::model::TaskPresentation::new(
+                state.transfers.next_order(),
+                vec![path.clone()],
+            ),
             server_name: spec.target().name.clone(),
             remote_path: path,
             local_path: destination.to_string_lossy().to_string(),
@@ -166,8 +172,11 @@ pub fn cancel_download(
 ) -> AppResult<()> {
     download_window(&window)?;
     let item = find_download(&state, &id)?;
-    let _task = item.task.lock().unwrap();
-    item.cancel.cancel();
+    let mut task = item.task.lock().unwrap();
+    if super::model::active(&task.status) {
+        task.status = "cancelling".into();
+        item.cancel.cancel();
+    }
     state.transfers.slot.notify_all();
     Ok(())
 }
@@ -189,6 +198,13 @@ pub fn retry_download(
             return Err(AppError::new("download", "只有失败或已取消的任务可以重试"));
         }
         item.cancel.reset()?;
+        let previous = task.clone();
+        task.presentation.restart(
+            state.transfers.next_order(),
+            previous.run_id,
+            previous.status.as_str().into(),
+            previous.error,
+        );
         task.run_id = uuid::Uuid::new_v4().to_string();
         task.status = "queued".into();
         task.bytes_done = 0;
@@ -576,6 +592,7 @@ pub(crate) mod tests {
             task: Arc::new(Mutex::new(DownloadTask {
                 id: name.into(),
                 run_id: uuid::Uuid::new_v4().to_string(),
+                presentation: super::super::model::TaskPresentation::default(),
                 server_name: "target".into(),
                 remote_path: remote.into(),
                 local_path: destination.join(name).display().to_string(),

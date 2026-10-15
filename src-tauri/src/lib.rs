@@ -10,6 +10,7 @@ mod logs;
 mod model;
 mod moves;
 mod remote_fs;
+mod remote_mounts;
 mod remote_path;
 mod remote_write;
 mod shell_integration;
@@ -19,6 +20,7 @@ mod terminal;
 mod terminal_cwd;
 mod terminal_history;
 mod transfers;
+mod window_chrome;
 
 use model::{AppError, AppResult, SaveServerRequest, ServerView};
 use serde::Serialize;
@@ -385,11 +387,11 @@ async fn open_container(
         .unwrap()
         .insert(label.clone(), PendingContainer { spec, target });
     drop(gate);
-    let result = WebviewWindowBuilder::new(
+    let result = crate::window_chrome::configure(WebviewWindowBuilder::new(
         &app,
         &label,
         WebviewUrl::App("index.html?container=1".into()),
-    )
+    ))
     .title(title)
     .inner_size(880.0, 580.0)
     .min_inner_size(480.0, 320.0)
@@ -513,6 +515,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            window_chrome::window_chrome,
             logs::open_container_logs,
             logs::logs_info,
             logs::logs_start,
@@ -547,6 +550,8 @@ pub fn run() {
             terminal_history::commands::open_terminal_history_window,
             remote_fs::list_directory,
             remote_fs::list_directory_chain,
+            remote_mounts::list_remote_mounts,
+            remote_mounts::get_remote_mount_usage,
             detect_docker,
             docker_images,
             docker_containers,

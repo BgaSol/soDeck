@@ -21,6 +21,170 @@
   gap: 6px;
   align-items: center;
 }
+.file-name-group {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.file-name-group .file-name {
+  display: block;
+}
+.file-tree-row {
+  color: var(--text);
+  cursor: default;
+}
+.file-mount-row {
+  min-height: 48px;
+}
+.file-mount-row .file-icon {
+  color: var(--blue);
+}
+.file-tree-row .mount-source,
+.file-tree-row .mount-usage {
+  display: block;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  min-height: 0;
+  border-radius: 4px;
+  color: inherit;
+}
+.file-tree-row .mount-source {
+  display: block;
+  max-width: 100%;
+  padding: 2px 0 0;
+  text-align: left;
+  font: 11px/1.5 var(--mono);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.file-tree-row.selected .mount-source {
+  color: inherit;
+}
+.file-tree-row .mount-usage {
+  flex: none;
+  width: 65px;
+  padding: 4px;
+  font: 11px/1.5 var(--mono);
+  text-align: right;
+}
+.mount-usage.stale {
+  color: var(--muted);
+}
+.mount-meter {
+  display: block;
+  height: 3px;
+  background: var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 5px;
+}
+.mount-meter > span {
+  display: block;
+  height: 100%;
+  background: var(--blue);
+}
+.mount-warning {
+  --mount-warning: light-dark(#906008, #f0bd67);
+}
+.mount-critical {
+  --mount-warning: var(--error);
+}
+.mount-warning .mount-meter > span,
+.mount-critical .mount-meter > span {
+  background: var(--mount-warning);
+}
+.mount-warning .mount-usage,
+.mount-critical .mount-usage,
+.mount-warning-text {
+  color: var(--mount-warning);
+}
+.mount-popover {
+  position: fixed;
+  z-index: 250;
+  width: min(340px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 8px 28px #0003;
+  padding: 15px;
+  font-size: 12px;
+}
+.mount-popover-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 13px;
+}
+.mount-popover-head strong {
+  flex: 1;
+  font-weight: 600;
+}
+.mount-popover dl {
+  display: grid;
+  grid-template-columns: 65px minmax(0, 1fr);
+  gap: 8px 12px;
+}
+.mount-popover dt {
+  color: var(--muted);
+}
+.mount-popover dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.mount-capacity {
+  border-top: 1px solid var(--line);
+  margin-top: 14px;
+  padding-top: 12px;
+}
+.mount-capacity-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 7px 0;
+  font-variant-numeric: tabular-nums;
+}
+.mount-update,
+.mount-unavailable,
+.mount-query-error {
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 10px;
+  overflow-wrap: anywhere;
+}
+.mount-popover .mount-refresh {
+  margin-top: 10px;
+}
+.file-path-notice,
+.mount-panel-notice {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.file-path-notice.failed {
+  color: var(--error);
+}
+.mount-panel-notice {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border-top: 1px solid var(--line);
+}
+.mount-panel-notice > span {
+  min-width: 0;
+}
+.mount-panel-notice > button {
+  flex: none;
+}
 .file-tree-row:focus-visible {
   outline: 2px solid var(--blue);
   outline-offset: -2px;
@@ -93,94 +257,6 @@
 }
 .download-dialog .dialog-actions {
   margin-top: 20px;
-}
-.downloads-panel {
-  flex: 0 0 auto;
-  border-top: 1px solid var(--line);
-  background: var(--material);
-  backdrop-filter: blur(22px);
-}
-.downloads-toggle {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  width: 100%;
-  justify-content: flex-start;
-  gap: 9px;
-  min-height: 37px;
-  padding: 6px 20px;
-  font-size: 12px;
-}
-.downloads-toggle span {
-  color: var(--muted);
-  margin-right: auto;
-}
-.download-task-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
-  gap: 9px;
-  padding: 0 16px 12px;
-  max-height: min(34vh, 300px);
-  overflow: auto;
-}
-.download-task {
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  background: var(--surface);
-  min-width: 0;
-}
-.download-task-title {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12px;
-}
-.download-task-title strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.download-task-state {
-  flex: none;
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--muted);
-}
-.download-task.completed .download-task-state {
-  color: var(--green);
-}
-.download-task.failed .download-task-state {
-  color: var(--error);
-}
-.download-task-title .icon-button {
-  min-height: 24px;
-  min-width: 24px;
-  padding: 4px;
-}
-.download-task-path {
-  font-size: 11px;
-  color: var(--muted);
-  text-overflow: ellipsis;
-  overflow: hidden;
-  white-space: nowrap;
-  margin-top: 3px;
-}
-.download-task-detail {
-  font-size: 11px;
-  color: var(--muted);
-  margin-top: 5px;
-}
-.download-task progress {
-  display: block;
-  width: 100%;
-  height: 5px;
-  margin-top: 8px;
-  accent-color: var(--blue);
-}
-.download-task .error {
-  overflow-wrap: anywhere;
-  margin-top: 5px;
 }
 .remote-editor-app {
   --editor-keyword: #7046ab;
@@ -352,9 +428,6 @@
   .remote-editor-status {
     padding: 6px 10px;
     font-size: 10px;
-  }
-  .download-task-list {
-    padding: 0 10px 10px;
   }
 }
 
@@ -545,13 +618,6 @@
   background: var(--surface);
   line-height: 1.6;
 }
-.transfer-detail {
-  margin: 5px 0 0;
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--muted);
-  overflow-wrap: anywhere;
-}
 .operation-destination {
   display: grid;
   gap: 5px;
@@ -566,41 +632,6 @@
   overflow-wrap: anywhere;
 }
 .operation-warning {
-  color: var(--warning, #a66b16);
-}
-.transfer-route {
-  display: flex;
-  align-items: start;
-  gap: 7px;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.5;
-}
-.transfer-route > span:not([aria-hidden]) {
-  flex: 1;
-  min-width: 0;
-  white-space: pre-line;
-  overflow-wrap: anywhere;
-  max-height: 4.5em;
-  overflow: hidden;
-}
-.transfer-counts {
-  color: var(--muted);
-  font-size: 11px;
-}
-.transfer-panel progress {
-  width: 100%;
-  height: 5px;
-  accent-color: var(--blue);
-}
-.transfer-panel .download-task {
-  display: grid;
-  gap: 7px;
-}
-.transfer-panel .unknown .download-task-state,
-.transfer-panel .needsAttention .download-task-state,
-.transfer-panel .interrupted .download-task-state,
-.transfer-panel .partialFailed .download-task-state {
   color: var(--warning, #a66b16);
 }
 .transfer-auth-fields {
@@ -629,14 +660,6 @@
 .file-operation-fields input[type="checkbox"] {
   width: auto;
   margin-top: 3px;
-}
-.transfer-panel details {
-  font-size: 11px;
-  color: var(--muted);
-  overflow-wrap: anywhere;
-}
-.transfer-panel details p {
-  margin: 6px 0;
 }
 @media (prefers-reduced-transparency: reduce) {
   .file-operation-dialog {

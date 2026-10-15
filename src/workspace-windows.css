@@ -1,6 +1,102 @@
 .session-tab {
   position: relative;
 }
+.window-tabs-slot .session-tabs {
+  min-height: 34px;
+  height: 34px;
+  min-width: 0;
+  gap: 6px;
+}
+.window-tabs-slot .tab-scroll {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.window-tabs-slot .tab-scroll::-webkit-scrollbar {
+  display: none;
+}
+.tab-track {
+  position: relative;
+  display: flex;
+  gap: 6px;
+  width: max-content;
+  height: 34px;
+}
+.window-tabs-slot .session-tab {
+  min-width: 120px;
+  max-width: 220px;
+  height: 34px;
+  border-radius: 7px;
+}
+.window-tabs-slot .tab-select {
+  flex: 1;
+  min-height: 30px;
+  padding: 5px 6px 5px 10px;
+  gap: 6px;
+}
+.window-tabs-slot .tab-close {
+  flex: none;
+  margin-right: 3px;
+}
+.tab-scroll-button,
+.tab-list-button,
+.tab-return,
+.window-tabs-slot .new-session {
+  flex: none;
+  width: 28px;
+  min-width: 28px;
+  height: 30px;
+  min-height: 30px;
+  padding: 4px;
+}
+.window-tabs-slot .new-session {
+  background: transparent;
+  border-color: transparent;
+}
+.window-tabs-slot .new-session:hover {
+  background: var(--hover);
+}
+.tab-track.insert-at-end:not(:empty)::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  background: var(--blue);
+  border-radius: 2px;
+  pointer-events: none;
+}
+.workspace-tab-menu {
+  width: 280px;
+  max-width: calc(100vw - 16px);
+  max-height: min(420px, calc(100dvh - 16px));
+  overflow-y: auto;
+}
+.workspace-tab-menu > button {
+  min-width: 0;
+  min-height: 32px;
+  flex-shrink: 0;
+}
+.workspace-tab-menu > button[aria-checked="true"] {
+  background: var(--selected);
+  color: var(--selected-text);
+}
+.tab-menu-name {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab-menu-detail {
+  font-size: 10px;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
 .tab-select[draggable="true"] {
   cursor: grab;
 }
@@ -60,10 +156,4 @@
   gap: 16px;
   height: 100vh;
   text-align: center;
-}
-.detached-app .app-header {
-  min-height: 54px;
-}
-.detached-app .header-summary {
-  display: block;
 }

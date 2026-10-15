@@ -29,7 +29,7 @@ use std::{
     collections::HashMap,
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Condvar, Mutex,
     },
     time::{Duration, Instant},
@@ -38,6 +38,7 @@ use tauri::{Emitter, Manager, State as TauriState, WebviewWindow};
 
 #[derive(Default)]
 pub struct TransferState {
+    next_order: AtomicU64,
     downloads: Mutex<Vec<download::DownloadHandle>>,
     writes: Mutex<Vec<WriteHandle>>,
     active: Mutex<usize>,
@@ -53,11 +54,21 @@ impl TransferState {
         std::fs::create_dir_all(&path)?;
         let store = task_store::TaskStore::open(&path.join("tasks-v3.sqlite"))?;
         let recovered = store.load()?;
+        let last_order = recovered
+            .iter()
+            .filter_map(|r| r.view.as_ref())
+            .map(|v| v.presentation.sort_order)
+            .max()
+            .unwrap_or(0);
         Ok(Self {
+            next_order: AtomicU64::new(last_order),
             store: Mutex::new(Some(store)),
             recovered: Mutex::new(recovered),
             ..Self::default()
         })
+    }
+    fn next_order(&self) -> u64 {
+        self.next_order.fetch_add(1, Ordering::SeqCst) + 1
     }
     fn conflicting_commit(&self, item: &WriteHandle, path: &str) -> Option<String> {
         let key = item.write_key();
@@ -359,6 +370,16 @@ pub fn start_write(
     let task = TaskView {
         id: id.clone(),
         run_id: uuid::Uuid::new_v4().to_string(),
+        presentation: model::TaskPresentation::new(
+            state.transfers.next_order(),
+            match &source {
+                Source::Local(paths) => paths
+                    .iter()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect(),
+                Source::Remote { paths, .. } => paths.clone(),
+            },
+        ),
         kind: kind.into(),
         source_name,
         source_path,
@@ -512,6 +533,7 @@ pub fn list_transfers(
             TaskView {
                 id: t.id.clone(),
                 run_id: t.run_id.clone(),
+                presentation: t.presentation.clone(),
                 kind: "download".into(),
                 source_name: t.server_name.clone(),
                 source_path: t.remote_path.clone(),
@@ -567,8 +589,8 @@ pub fn list_transfers(
             .iter()
             .filter_map(|r| r.view.clone()),
     );
-    tasks.reverse();
     tasks.extend(state.transfers.history.lock().unwrap().iter().cloned());
+    model::sort_tasks(&mut tasks);
     Ok(tasks)
 }
 #[tauri::command]
@@ -756,12 +778,26 @@ pub fn retry_transfer(
         state.drags.clipboard.reserve_retry(id)?;
     }
     item.stop.store(false, Ordering::SeqCst);
-    {
+    let previous = {
         let mut t = item.task.lock().unwrap();
+        let previous = t.clone();
+        t.presentation.restart(
+            state.transfers.next_order(),
+            previous.run_id.clone(),
+            previous.status.clone(),
+            previous.error.clone(),
+        );
         t.run_id = uuid::Uuid::new_v4().to_string();
         t.status = "queued".into();
         t.error = None;
         t.waiting_reason = None;
+        previous
+    };
+    if let Err(error) = state.transfers.persist(&item) {
+        *item.task.lock().unwrap() = previous;
+        *item.auth.lock().unwrap() = None;
+        state.drags.clipboard.finish(&app, &item);
+        return Err(error);
     }
     drop(_life);
     launch_write(app, state.inner().clone(), item);

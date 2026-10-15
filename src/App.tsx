@@ -1,5 +1,6 @@
 import {
   lazy,
+  Component,
   Suspense,
   useCallback,
   useEffect,
@@ -8,9 +9,11 @@ import {
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { TerminalSquare, X, LockKeyhole, ScrollText } from "lucide-react";
+import { TerminalSquare, X, ScrollText } from "lucide-react";
+import { WindowTitlebar, WindowLoading } from "./WindowTitlebar";
+import type { ReactNode } from "react";
 import { api, desktop } from "./api";
-import { AppBrand, BrandIcon } from "./AppBrand";
+import { BrandIcon } from "./AppBrand";
 import { APP_TAGLINE } from "./brand";
 import { TerminalPane } from "./TerminalPane";
 import { ServerEditor } from "./ServerEditor";
@@ -20,7 +23,7 @@ import { logApi } from "./logApi";
 import { terminalHistoryApi } from "./terminalHistoryApi";
 import { FilePanel } from "./FilePanel";
 import { DockerPanel } from "./DockerPanel";
-import { WorkspaceTabs } from "./WorkspaceTabs";
+import { WorkspaceTitlebar } from "./WorkspaceTitlebar";
 import { DetachedApp } from "./DetachedApp";
 import { TransferPanel } from "./TransferPanel";
 import { DesktopDragPreview } from "./DesktopDragPreview";
@@ -72,23 +75,26 @@ function ContainerApp() {
   }, []);
   return (
     <div className="container-app">
-      <header className="container-topbar">
-        <TerminalSquare size={18} />
-        <strong>
-          {info ? `${info.serverName} / ${info.containerName}` : "容器终端"}
-        </strong>
-        <span className="push-right muted">{state}</span>
-        {state !== "已连接" && state !== "连接中" && (
-          <button
-            onClick={() => {
-              setError(null);
-              setAttempt((a) => a + 1);
-            }}
-          >
-            重新进入
-          </button>
-        )}
-      </header>
+      <WindowTitlebar
+        leading={<TerminalSquare size={18} />}
+        title={info ? `${info.serverName} / ${info.containerName}` : "容器终端"}
+        onError={(error) => setError(errorOf(error))}
+        actions={
+          <>
+            <span className="muted">{state}</span>
+            {state !== "已连接" && state !== "连接中" && (
+              <button
+                onClick={() => {
+                  setError(null);
+                  setAttempt((a) => a + 1);
+                }}
+              >
+                重新进入
+              </button>
+            )}
+          </>
+        }
+      />
       {error && (
         <div className="connection-error" role="alert">
           {error.message}
@@ -409,46 +415,59 @@ export function App() {
   }
   return (
     <div className="app-shell">
-      <header className="app-header">
-        <AppBrand />
-        <span className="header-divider" />
-        <span className="header-summary">
-          {workspaces.tabs.length
-            ? `${workspaces.tabs.length} 个会话 · ${workspaces.tabs.filter((tab) => tab.state === "已连接").length} 已连接`
-            : "随时连接，专注工作"}
-        </span>
-        <span className="local-label">
-          <LockKeyhole size={12} />
-          本地工作空间
-        </span>
-        <div className="header-actions">
-          <button
-            disabled={!desktop}
-            onClick={() =>
-              void terminalHistoryApi.open().catch((e) => setError(errorOf(e)))
-            }
-          >
-            <TerminalSquare size={15} />
-            终端历史
-          </button>
-          <button
-            disabled={!desktop || openingArchives}
-            onClick={async () => {
-              setOpeningArchives(true);
-              try {
-                await logApi.openArchives();
-              } catch (e) {
-                setError(errorOf(e));
-              } finally {
-                setOpeningArchives(false);
+      <WorkspaceTitlebar
+        tabs={workspaces.tabs}
+        activeId={workspaces.activeId}
+        moving={moves.moving}
+        onSelect={(id) =>
+          setWorkspaces((current) => ({ ...current, activeId: id }))
+        }
+        onClose={(id) => {
+          if (!moves.moving.has(id))
+            setWorkspaces((current) => closeWorkspace(current, id));
+        }}
+        onMove={(...args) => void moves.move(...args)}
+        onReorder={(id, beforeId) =>
+          setWorkspaces((current) => reorderWorkspace(current, id, beforeId))
+        }
+        onNew={desktop ? () => setPickerOpen(true) : undefined}
+        onError={(error) => setError(errorOf(error))}
+        actions={
+          <>
+            <button
+              className="quiet"
+              aria-label="终端历史"
+              title="终端历史"
+              disabled={!desktop}
+              onClick={() =>
+                void terminalHistoryApi
+                  .open()
+                  .catch((e) => setError(errorOf(e)))
               }
-            }}
-          >
-            <ScrollText size={15} />
-            本地日志
-          </button>
-        </div>
-      </header>
+            >
+              <TerminalSquare size={15} />
+            </button>
+            <button
+              className="quiet"
+              aria-label="本地日志"
+              title="本地日志"
+              disabled={!desktop || openingArchives}
+              onClick={async () => {
+                setOpeningArchives(true);
+                try {
+                  await logApi.openArchives();
+                } catch (e) {
+                  setError(errorOf(e));
+                } finally {
+                  setOpeningArchives(false);
+                }
+              }}
+            >
+              <ScrollText size={15} />
+            </button>
+          </>
+        }
+      />
       {!desktop && (
         <div className="browser-notice">
           请使用桌面客户端运行，服务器数据保存在本地 SQLite 文件中。
@@ -457,25 +476,6 @@ export function App() {
       )}
       <div className="workspace">
         <div className="workspaces">
-          <WorkspaceTabs
-            tabs={workspaces.tabs}
-            activeId={workspaces.activeId}
-            moving={moves.moving}
-            onSelect={(id) =>
-              setWorkspaces((current) => ({ ...current, activeId: id }))
-            }
-            onClose={(id) => {
-              if (!moves.moving.has(id))
-                setWorkspaces((current) => closeWorkspace(current, id));
-            }}
-            onMove={(...args) => void moves.move(...args)}
-            onReorder={(id, beforeId) =>
-              setWorkspaces((current) =>
-                reorderWorkspace(current, id, beforeId),
-              )
-            }
-            onNew={desktop ? () => setPickerOpen(true) : undefined}
-          />
           {error && (
             <div className="connection-error" role="alert">
               <span style={{ whiteSpace: "pre-wrap" }}>{error.message}</span>
@@ -565,7 +565,17 @@ export function App() {
           </div>
         </div>
       </div>
-      <TransferPanel />
+      <footer className="workspace-summary">
+        <span>
+          {workspaces.tabs.length} 个会话 ·{" "}
+          {workspaces.tabs.filter((tab) => tab.state === "已连接").length}{" "}
+          已连接
+        </span>
+        <div className="workspace-summary-end">
+          <span>本地工作空间</span>
+          <TransferPanel embedded />
+        </div>
+      </footer>
       <DesktopDragPreview />
       {pickerOpen && (
         <ServerPickerDialog
@@ -648,40 +658,50 @@ export function App() {
     </div>
   );
 }
+class WindowErrorBoundary extends Component<
+  { children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    if (this.state.failed)
+      return (
+        <div className="window-loading">
+          <WindowTitlebar title="SoDeck" />
+          <p role="alert">窗口内容加载失败，请关闭窗口后重试。</p>
+        </div>
+      );
+    return this.props.children;
+  }
+}
+
 export function Root() {
   const params = new URLSearchParams(location.search);
-  if (params.has("terminal-history"))
-    return (
-      <Suspense fallback={<div role="status">正在打开终端历史…</div>}>
-        <TerminalHistoryApp />
-      </Suspense>
-    );
-  if (params.has("archives"))
-    return (
-      <Suspense fallback={<div role="status">正在打开本地日志…</div>}>
-        <LogArchives />
-      </Suspense>
-    );
-  if (params.has("logs"))
-    return (
-      <Suspense
-        fallback={<div className="remote-editor-app">正在打开容器日志…</div>}
-      >
-        <ContainerLogsApp />
-      </Suspense>
-    );
-  if (params.has("editor"))
-    return (
-      <Suspense
-        fallback={<div className="remote-editor-app">正在打开远程编辑器…</div>}
-      >
-        <FileEditorApp />
-      </Suspense>
-    );
-  if (params.has("workspace")) return <DetachedApp />;
-  return new URLSearchParams(location.search).has("container") ? (
-    <ContainerApp />
-  ) : (
-    <App />
+  let title = "SoDeck";
+  let content: ReactNode;
+  if (params.has("terminal-history")) {
+    title = "终端历史";
+    content = <TerminalHistoryApp />;
+  } else if (params.has("archives")) {
+    title = "本地日志";
+    content = <LogArchives />;
+  } else if (params.has("logs")) {
+    title = "容器日志";
+    content = <ContainerLogsApp />;
+  } else if (params.has("editor")) {
+    title = "远程文件编辑";
+    content = <FileEditorApp />;
+  } else if (params.has("workspace")) {
+    content = <DetachedApp />;
+  } else {
+    content = params.has("container") ? <ContainerApp /> : <App />;
+  }
+  return (
+    <WindowErrorBoundary>
+      <Suspense fallback={<WindowLoading title={title} />}>{content}</Suspense>
+    </WindowErrorBoundary>
   );
 }

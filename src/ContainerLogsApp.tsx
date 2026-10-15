@@ -1,3 +1,4 @@
+import { WindowTitlebar } from "./WindowTitlebar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
@@ -430,24 +431,25 @@ export function ContainerLogsApp() {
     Number(rangeFrom) >= 1 && Number(rangeTo) >= Number(rangeFrom);
   return (
     <div className="container-logs-app remote-editor-app">
-      <header className="remote-editor-header">
-        <ScrollText size={20} />
-        <div className="log-title">
-          <h1>
-            {info
-              ? `${info.serverName} / ${info.containerName} / 日志`
-              : "容器日志"}
-          </h1>
-          <p title={info?.directory}>
-            {info
-              ? `${info.host}:${info.port} · ${info.containerId.slice(0, 12)} · 本地永久保存`
-              : "正在读取本地存档…"}
-          </p>
-        </div>
-        <span className="log-status" role="status">
-          {status}
-        </span>
-      </header>
+      <WindowTitlebar
+        leading={<ScrollText size={20} />}
+        title={
+          info
+            ? `${info.serverName} / ${info.containerName} / 日志`
+            : "容器日志"
+        }
+        subtitle={
+          info
+            ? `${info.host}:${info.port} · ${info.containerId.slice(0, 12)} · 本地永久保存`
+            : "正在读取本地存档…"
+        }
+        actions={
+          <span className="log-status" role="status">
+            {status}
+          </span>
+        }
+        onError={(error) => setError(errorOf(error).message)}
+      />
       <div className="log-tools">
         <button
           onClick={() => {

@@ -117,6 +117,8 @@ impl PartialEq<&str> for TransferStatus {
 pub struct TaskView {
     pub id: String,
     pub run_id: String,
+    #[serde(flatten)]
+    pub presentation: TaskPresentation,
     pub kind: String,
     pub source_name: String,
     pub source_path: String,
@@ -149,6 +151,71 @@ pub struct TaskView {
     pub temporary_paths: Vec<String>,
     #[serde(default)]
     pub can_resume: bool,
+}
+
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct TaskPresentation {
+    pub created_at: Option<u64>,
+    pub last_started_at: Option<u64>,
+    pub sort_order: u64,
+    pub source_paths: Vec<String>,
+    pub last_attempt: Option<AttemptSummary>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttemptSummary {
+    pub run_id: String,
+    pub started_at: Option<u64>,
+    pub status: TransferStatus,
+    pub error: Option<String>,
+}
+
+impl TaskPresentation {
+    pub fn new(sort_order: u64, source_paths: Vec<String>) -> Self {
+        let now = Self::now();
+        Self {
+            created_at: now,
+            last_started_at: now,
+            sort_order,
+            source_paths,
+            last_attempt: None,
+        }
+    }
+
+    pub fn restart(
+        &mut self,
+        sort_order: u64,
+        run_id: String,
+        status: TransferStatus,
+        error: Option<String>,
+    ) {
+        self.last_attempt = Some(AttemptSummary {
+            run_id,
+            started_at: self.last_started_at,
+            status,
+            error,
+        });
+        self.sort_order = sort_order;
+        self.last_started_at = Self::now();
+    }
+
+    fn now() -> Option<u64> {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .map(|duration| duration.as_millis() as u64)
+    }
+}
+
+pub(super) fn sort_tasks(tasks: &mut [TaskView]) {
+    tasks.sort_by(|a, b| {
+        b.presentation
+            .sort_order
+            .cmp(&a.presentation.sort_order)
+            .then_with(|| a.id.cmp(&b.id))
+    });
 }
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

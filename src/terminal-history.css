@@ -407,7 +407,7 @@
   background: #171b23;
   color: #dce3ef;
 }
-.terminal-history-app > header {
+.terminal-history-app > header:not(.window-titlebar) {
   padding: 18px 22px 12px;
   border-bottom: 1px solid #303745;
 }

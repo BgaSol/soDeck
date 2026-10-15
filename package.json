@@ -17,7 +17,8 @@
     "test:terminal-history": "playwright test --config playwright.terminal-history.config.ts",
     "test:transfers": "playwright test --config playwright.transfers.config.ts",
     "test:desktop": "playwright test",
-    "test:tree": "playwright test --config playwright.file-tree.config.ts"
+    "test:tree": "playwright test --config playwright.file-tree.config.ts",
+    "test:mounts": "playwright test --config playwright.mounts.config.ts"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",
