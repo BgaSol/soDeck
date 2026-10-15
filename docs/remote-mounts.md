@@ -8,6 +8,7 @@
 - 两个接口校验窗口对会话的所有权，沿用已验证的 SSH 路由、用户和主机密钥，建立独立查询连接，不接触交互终端。
 - 挂载表取自 `/proc/self/mountinfo`，通过 exec 与 SFTP 分别读取并核对。无法确认两者的路径视图一致时不关联容量；不推测 chroot 的路径映射。
 - 解析 mount ID、挂载位置、设备来源、文件系统内部根路径、类型和只读状态。路径按照 mountinfo 的八进制转义解码，不能使用桌面操作系统的路径分隔符处理远端路径。
+- `/proc/self/mountinfo` 属于 procfs 的顺序生成文件，未到文件末尾也可能返回短数据块。SFTP 读取使用 4 KiB 缓冲，将 libssh2 的四倍预读限制在单个 READ 数据包内，避免后续预读偏移跳过数据或提前返回 EOF。挂载表仍完整读取并与 exec 结果核对，不通过删除校验掩盖截断。
 - 绑定挂载和文件系统子卷以 `设备[文件系统内部路径]` 表达，不能仅凭内部路径认定为绑定挂载。相同路径出现叠加挂载时不猜测可见的最上层，暂不显示该路径的挂载摘要，并说明原因。
 - 对准确匹配的目录才显示挂载摘要。普通后代不继承摘要，符号链接不标为挂载点。
 - 容量通过 `LC_ALL=C stat -f -c '%S %b %f %a' -- <安全引用的路径>` 查询，只解析四个数字。总量为块数乘基本块大小；已用为总块数减空闲块数；可用使用用户可用块数。使用率为向上取整的 `已用 / (已用 + 可用)`，与常见 `df` 口径一致。保留空间可能使已用加可用小于总量。
@@ -47,6 +48,8 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib remote_mounts::tests
 docker build -t ssh-workspace-rsync-fixture tests/rsync
 docker build -t ssh-workspace-rsync-runner -f tests/rsync/Runner.Dockerfile tests/rsync
 python3 tests/mounts/environment.py
+# 更长的挂载表（超过单个 SFTP READ 数据包）
+python3 tests/mounts/environment.py --mount-count 256
 ```
 
-Windows 可在 WSL 中执行最后一条命令。脚本创建独立测试网络、SSH 容器、32 MiB tmpfs 和只读卷，运行包括 ignored 联调测试在内的挂载测试，最后移除本次资源。仓库以只读方式挂载并复制到容器临时目录构建，Cargo 缓存卷保留。联调覆盖真实 exec/SFTP 挂载视图、容量、只读挂载和查询超时后的恢复；不依赖用户保存的服务器或凭据。
+Windows 可在 WSL 中执行 Python 命令。脚本创建独立测试网络、SSH 容器、32 MiB tmpfs、只读卷和默认 48 个长路径挂载点，运行包括 ignored 联调测试在内的挂载测试，最后移除本次资源。仓库以只读方式挂载并复制到容器临时目录构建，Cargo 缓存卷保留。联调逐字节核对较长挂载表的 exec/SFTP 读取结果，并覆盖容量、只读挂载和查询超时后的恢复；不依赖用户保存的服务器或凭据。

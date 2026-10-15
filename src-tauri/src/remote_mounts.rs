@@ -301,7 +301,12 @@ fn sftp_mountinfo(session: &Session, check: &impl Fn() -> AppResult<()>) -> AppR
             sftp.open(Path::new("/proc/self/mountinfo"))
         })?;
         let mut bytes = Vec::new();
-        let mut buffer = [0; 8192];
+        // libssh2 requests up to 4 * buffer.len() bytes ahead, splitting them
+        // into 30,000-byte SFTP READ packets. /proc seq_file reads may return a
+        // short page even before EOF. Multiple queued offsets then skip data
+        // (or return EOF early). Keep read-ahead below one packet so the next
+        // offset is based on bytes actually received, including short reads.
+        let mut buffer = [0; 4096];
         loop {
             deadline_check(deadline, check)?;
             match file.read(&mut buffer) {
@@ -530,7 +535,31 @@ mod tests {
         session
             .userauth_password("ops", "fixture-password")
             .unwrap();
+        let raw = exec(&session, "cat /proc/self/mountinfo", &|| Ok(())).unwrap();
+        assert!(
+            raw.stdout.len() > 8192,
+            "fixture must exercise multi-page procfs reads"
+        );
+        let via_sftp = sftp_mountinfo(&session, &|| Ok(())).unwrap();
+        assert!(
+            raw.stdout == via_sftp,
+            "mountinfo differs: exec={} bytes, SFTP={} bytes",
+            raw.stdout.len(),
+            via_sftp.len()
+        );
         let table = verified_table(&session, &|| Ok(())).unwrap();
+        let expected_mounts = std::env::var("MOUNT_TEST_MOUNT_COUNT")
+            .unwrap_or_else(|_| "48".into())
+            .parse::<usize>()
+            .unwrap();
+        assert_eq!(
+            table
+                .mounts
+                .iter()
+                .filter(|m| m.target.starts_with("/mnt/check-many/"))
+                .count(),
+            expected_mounts
+        );
         let memory = table
             .mounts
             .iter()
