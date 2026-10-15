@@ -2,6 +2,6 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop",
   "description": "Main workspace and independent container terminals",
-  "windows": ["main", "container-*", "workspace-*", "editor-*", "logs-*"],
+  "windows": ["main", "container-*", "workspace-*", "editor-*", "logs-*", "terminal-history"],
   "permissions": ["core:default", "core:window:allow-close", "core:window:allow-destroy", "core:window:allow-set-title"]
 }

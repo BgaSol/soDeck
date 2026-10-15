@@ -1,3 +1,4 @@
+mod brand;
 mod connection;
 mod db;
 mod desktop_drag;
@@ -16,6 +17,7 @@ mod ssh;
 mod ssh_transport;
 mod terminal;
 mod terminal_cwd;
+mod terminal_history;
 mod transfers;
 
 use model::{AppError, AppResult, SaveServerRequest, ServerView};
@@ -37,6 +39,7 @@ pub struct State {
     transfers: transfers::TransferState,
     drags: desktop_drag::DragState,
     logs: logs::LogState,
+    history: terminal_history::HistoryState,
     database: Mutex<db::Database>,
     configuration: Mutex<()>,
     stopping: AtomicBool,
@@ -239,7 +242,8 @@ async fn quit_app(
         for terminal in shutdown_state.terminals.lock().unwrap().values() {
             let _ = terminal.sender.send(terminal::Input::Close);
         }
-        connection::wait_closed(&shutdown_state)
+        connection::wait_closed(&shutdown_state)?;
+        shutdown_state.history.shutdown()
     })
     .await;
     if let Err(error) = result {
@@ -288,6 +292,23 @@ fn terminal_resize(
         ));
     }
     Ok(())
+}
+
+#[tauri::command]
+fn terminal_clear_display(
+    window: WebviewWindow,
+    state: TauriState<Arc<State>>,
+    session_id: String,
+) -> AppResult<()> {
+    state.spec(&session_id, window.label())?;
+    let terminals = state.terminals.lock().unwrap();
+    let terminal = terminals
+        .get(&session_id)
+        .ok_or_else(|| AppError::new("disconnected", "会话已结束"))?;
+    terminal
+        .sender
+        .send(terminal::Input::ClearDisplay)
+        .map_err(|e| AppError::new("disconnected", e))
 }
 #[tauri::command]
 async fn detect_docker(
@@ -354,7 +375,10 @@ async fn open_container(
         }
         return Ok(());
     }
-    let title = format!("{} / {}", spec.target().name, target.name);
+    let title = brand::window_title(
+        &app,
+        &format!("{} 终端 · {}", target.name, spec.target().name),
+    );
     state
         .pending_windows
         .lock()
@@ -433,6 +457,7 @@ pub fn run() {
                     .map_err(|e| std::io::Error::other(e.message))?,
                 drags: desktop_drag::DragState::default(),
                 logs: logs::LogState::default(),
+                history: terminal_history::HistoryState::open(dir.join("terminal-history")),
                 database: Mutex::new(database),
                 configuration: Mutex::new(()),
                 stopping: AtomicBool::new(false),
@@ -448,6 +473,7 @@ pub fn run() {
             if payload.event() == tauri::webview::PageLoadEvent::Started {
                 if let Some(state) = webview.try_state::<Arc<State>>() {
                     state.logs.stop(webview.label(), false);
+                    state.history.cancel_window(webview.label());
                     let mut generations = state.window_generations.lock().unwrap();
                     *generations.entry(webview.label().into()).or_default() += 1;
                     for terminal in state.terminals.lock().unwrap().values() {
@@ -466,6 +492,7 @@ pub fn run() {
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 let state = window.state::<Arc<State>>();
                 state.logs.stop(window.label(), true);
+                state.history.cancel_window(window.label());
                 moves::window_closed(window.app_handle(), &state, window.label());
                 state
                     .closed_windows
@@ -508,6 +535,16 @@ pub fn run() {
             connection::close_connection,
             terminal_input,
             terminal_resize,
+            terminal_clear_display,
+            terminal_history::commands::terminal_history_sessions,
+            terminal_history::commands::terminal_history_status,
+            terminal_history::commands::terminal_history_page,
+            terminal_history::commands::terminal_history_search,
+            terminal_history::commands::terminal_history_cancel,
+            terminal_history::commands::terminal_history_replay,
+            terminal_history::commands::terminal_history_copy,
+            terminal_history::commands::terminal_history_export,
+            terminal_history::commands::open_terminal_history_window,
             remote_fs::list_directory,
             remote_fs::list_directory_chain,
             detect_docker,
@@ -542,6 +579,10 @@ pub fn run() {
             transfers::cleanup_transfer,
             remote_fs::create_remote_entry,
             desktop_drag::begin_file_drag,
+            desktop_drag::clipboard::set_remote_clipboard,
+            desktop_drag::clipboard::get_remote_clipboard,
+            desktop_drag::clipboard::clear_remote_clipboard,
+            desktop_drag::clipboard::prepare_remote_paste,
             desktop_drag::begin_workspace_drag,
             desktop_drag::cancel_native_drag,
             desktop_drag::claim_file_drop,

@@ -34,11 +34,12 @@ export function openWorkspace(
   current: Workspaces,
   server: Server,
   forceNew = false,
+  newId?: string,
 ): Workspaces {
   const existing = current.tabs.find((tab) => tab.server.id === server.id);
   if (existing && !forceNew) return { ...current, activeId: existing.id };
   const tab: WorkspaceTab = {
-    id: crypto.randomUUID(),
+    id: newId ?? crypto.randomUUID(),
     server: structuredClone(server),
     number:
       Math.max(

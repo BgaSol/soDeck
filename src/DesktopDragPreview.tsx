@@ -12,7 +12,8 @@ export function DesktopDragPreview() {
     ),
   );
   if (!drag) return null;
-  const Icon = drag.kind === "remoteFiles" ? Copy : Move;
+  const Icon =
+    drag.kind === "remoteFiles" && drag.intent !== "move" ? Copy : Move;
   return createPortal(
     <div
       className="native-drag-preview"
@@ -23,7 +24,14 @@ export function DesktopDragPreview() {
       }}
     >
       <Icon size={14} />
-      <span>{drag.label}</span>
+      <span>
+        {drag.kind === "remoteFiles"
+          ? drag.intent === "move"
+            ? "移动 · "
+            : "复制 · "
+          : ""}
+        {drag.label}
+      </span>
     </div>,
     document.body,
   );

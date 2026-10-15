@@ -168,6 +168,435 @@ fn view(root: &str, conflict: ConflictPolicy) -> TaskView {
     }
 }
 
+impl Fixture {
+    fn internal(
+        &self,
+        relative: &str,
+        destination: &str,
+        intent: Intent,
+        policy: ConflictPolicy,
+    ) -> WriteHandle {
+        let item = self.item(
+            Source::Remote {
+                context: self.b.clone(),
+                paths: vec![self.path(relative)],
+            },
+            policy,
+        );
+        item.task.lock().unwrap().target_path = destination.into();
+        item.task.lock().unwrap().kind = if intent == Intent::Move {
+            "serverMove"
+        } else {
+            "serverCopy"
+        }
+        .into();
+        {
+            let mut r = item.receipt.lock().unwrap();
+            r.intent = intent;
+            r.source_identity = self.b.identity().into();
+            r.source_server_id = "b".into();
+            r.source_paths = vec![self.path(relative)];
+        }
+        *item.auth.lock().unwrap() = None;
+        item
+    }
+}
+#[test]
+#[ignore = "isolated OpenSSH fixture"]
+fn rsync_internal_copy_move_and_duplicate() {
+    let f = Fixture::new();
+    f.mkdir(&f.b, "source");
+    f.mkdir(&f.b, "source/empty");
+    f.mkdir(&f.b, "dest");
+    f.put(&f.b, "source/.hidden", b"hello");
+    f.put(&f.b, "source/quote'\n文件", b"content");
+    f.exec(
+        &f.b,
+        &format!("ln -s -- . {}", crate::ssh::quote(&f.path("source/link"))),
+    );
+    let copy = f.internal(
+        "source",
+        &f.path("dest"),
+        Intent::Copy,
+        ConflictPolicy::Rename,
+    );
+    f.run(&copy);
+    assert_eq!(f.read("dest/source/.hidden"), b"hello");
+    assert!(f.exists("dest/source/empty"));
+    assert!(!f.exists("dest/source/link"));
+    assert!(f.exists("source/.hidden"));
+    let selected_link = f.internal(
+        "source/link",
+        &f.path("dest"),
+        Intent::Copy,
+        ConflictPolicy::Rename,
+    );
+    f.run(&selected_link);
+    assert!(selected_link
+        .plan
+        .lock()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .entries
+        .is_empty());
+    assert!(!f.exists("dest/link"));
+    let duplicate = f.internal("source", &f.root, Intent::Copy, ConflictPolicy::Rename);
+    f.run(&duplicate);
+    let p = duplicate.plan.lock().unwrap().clone().unwrap();
+    assert_ne!(
+        p.entries[0].target.as_deref(),
+        Some(f.path("source").as_str())
+    );
+    let before = f.exec(
+        &f.b,
+        &format!(
+            "stat -c %i -- {}",
+            crate::ssh::quote(&f.path("source/.hidden"))
+        ),
+    );
+    let moved = f.internal(
+        "source/.hidden",
+        &f.path("dest"),
+        Intent::Move,
+        ConflictPolicy::Rename,
+    );
+    f.run(&moved);
+    assert!(!f.exists("source/.hidden"));
+    let after = f.exec(
+        &f.b,
+        &format!(
+            "stat -c %i -- {}",
+            crate::ssh::quote(&f.path("dest/.hidden"))
+        ),
+    );
+    assert_eq!(before, after, "same-filesystem move must preserve inode");
+    let descendant = f.internal(
+        "source",
+        &f.path("source/empty"),
+        Intent::Copy,
+        ConflictPolicy::Rename,
+    );
+    assert_eq!(
+        pipeline::run(&connection::tests::state(), None, &descendant)
+            .unwrap_err()
+            .kind,
+        "path"
+    );
+}
+#[test]
+#[ignore = "isolated OpenSSH fixture"]
+fn rsync_internal_move_cross_mount_and_partial_merge() {
+    let f = Fixture::new();
+    f.mkdir(&f.b, "source");
+    f.mkdir(&f.b, "dest");
+    f.mkdir(&f.b, "dest/source");
+    f.put(&f.b, "source/keep", b"original");
+    f.put(&f.b, "source/move", b"move");
+    f.put(&f.b, "dest/source/keep", b"existing");
+    let item = f.internal(
+        "source",
+        &f.path("dest"),
+        Intent::Move,
+        ConflictPolicy::Skip,
+    );
+    let state = connection::tests::state();
+    assert_eq!(
+        pipeline::run(&state, None, &item).unwrap_err().kind,
+        "sourceRetained"
+    );
+    assert!(f.exists("source/keep"));
+    assert!(!f.exists("source/move"));
+    assert_eq!(f.read("dest/source/keep"), b"existing");
+    assert_eq!(f.read("dest/source/move"), b"move");
+    let mounted = format!("/home/ops/mounted/{}", uuid::Uuid::new_v4());
+    f.exec(&f.b, &format!("mkdir -- {}", crate::ssh::quote(&mounted)));
+    let cross = f.internal(
+        "source/keep",
+        &mounted,
+        Intent::Move,
+        ConflictPolicy::Rename,
+    );
+    f.run(&cross);
+    assert!(!f.exists("source/keep"));
+    assert_eq!(
+        f.exec(
+            &f.b,
+            &format!("cat -- {}", crate::ssh::quote(&format!("{mounted}/keep")))
+        ),
+        "original"
+    );
+    let plan = cross.plan.lock().unwrap();
+    assert!(plan
+        .as_ref()
+        .unwrap()
+        .entries
+        .iter()
+        .all(|e| e.outcome == "completed" && e.staged.as_deref() != Some(e.source.as_str())));
+}
+
+#[test]
+#[ignore = "isolated OpenSSH fixture"]
+fn rsync_internal_removal_is_durable_and_retry_does_not_recopy() {
+    let f = Fixture::new();
+    f.mkdir(&f.b, "protected");
+    f.put(&f.b, "protected/file", b"original");
+    let mounted = format!("/home/ops/mounted/{}", uuid::Uuid::new_v4());
+    f.exec(
+        &f.b,
+        &format!(
+            "mkdir -- {}; chmod 555 -- {}",
+            crate::ssh::quote(&mounted),
+            crate::ssh::quote(&f.path("protected"))
+        ),
+    );
+    let item = f.internal(
+        "protected/file",
+        &mounted,
+        Intent::Move,
+        ConflictPolicy::Rename,
+    );
+    let state = connection::tests::state();
+    let dir = tempfile::tempdir().unwrap();
+    *state.transfers.store.lock().unwrap() =
+        Some(task_store::TaskStore::open(&dir.path().join("tasks-v3.sqlite")).unwrap());
+    assert_eq!(
+        pipeline::run(&state, None, &item).unwrap_err().kind,
+        "sourceRetained"
+    );
+    let loaded = task_store::TaskStore::open(&dir.path().join("tasks-v3.sqlite"))
+        .unwrap()
+        .load()
+        .unwrap()
+        .remove(0);
+    assert_eq!(loaded.plan.entries[0].outcome, "copied");
+    assert!(loaded.plan.entries[0].removal_pending);
+    assert!(f.exists("protected/file"));
+    let inode = f.exec(
+        &f.b,
+        &format!(
+            "stat -c %i -- {}",
+            crate::ssh::quote(&format!("{mounted}/file"))
+        ),
+    );
+    *item.plan.lock().unwrap() = Some(loaded.plan.clone());
+    *item.receipt.lock().unwrap() = loaded;
+    cleanup(&item).unwrap(); // Temporary cleanup must never remove the source.
+    assert!(f.exists("protected/file"));
+    f.exec(
+        &f.b,
+        &format!("chmod 755 -- {}", crate::ssh::quote(&f.path("protected"))),
+    );
+    pipeline::run(&state, None, &item).unwrap();
+    assert!(!f.exists("protected/file"));
+    assert_eq!(
+        inode,
+        f.exec(
+            &f.b,
+            &format!(
+                "stat -c %i -- {}",
+                crate::ssh::quote(&format!("{mounted}/file"))
+            )
+        )
+    );
+    assert_eq!(
+        item.plan.lock().unwrap().as_ref().unwrap().entries[0].outcome,
+        "completed"
+    );
+}
+
+#[test]
+#[ignore = "isolated OpenSSH fixture"]
+fn rsync_internal_changed_source_is_retained_after_target_commit() {
+    let f = Fixture::new();
+    f.mkdir(&f.b, "protected");
+    f.put(&f.b, "protected/file", b"original");
+    let mounted = format!("/home/ops/mounted/{}", uuid::Uuid::new_v4());
+    f.exec(
+        &f.b,
+        &format!(
+            "mkdir -- {}; chmod 555 -- {}",
+            crate::ssh::quote(&mounted),
+            crate::ssh::quote(&f.path("protected"))
+        ),
+    );
+    let item = f.internal(
+        "protected/file",
+        &mounted,
+        Intent::Move,
+        ConflictPolicy::Rename,
+    );
+    let state = connection::tests::state();
+    assert!(pipeline::run(&state, None, &item).is_err());
+    f.exec(
+        &f.b,
+        &format!("chmod 755 -- {}", crate::ssh::quote(&f.path("protected"))),
+    );
+    f.put(&f.b, "protected/file", b"changed!");
+    assert_eq!(
+        pipeline::run(&state, None, &item).unwrap_err().kind,
+        "sourceRetained"
+    );
+    assert_eq!(f.read("protected/file"), b"changed!");
+    assert_eq!(
+        f.exec(
+            &f.b,
+            &format!("cat -- {}", crate::ssh::quote(&format!("{mounted}/file")))
+        ),
+        "original"
+    );
+    cleanup(&item).unwrap();
+}
+
+#[test]
+#[ignore = "isolated OpenSSH fixture"]
+fn rsync_internal_directory_rename_recovers_lost_reply() {
+    let f = Fixture::new();
+    f.mkdir(&f.b, "tree");
+    f.mkdir(&f.b, "tree/empty");
+    f.mkdir(&f.b, "dest");
+    f.put(&f.b, "tree/file", b"data");
+    let before = f.exec(
+        &f.b,
+        &format!("stat -c %i -- {}", crate::ssh::quote(&f.path("tree"))),
+    );
+    let item = f.internal(
+        "tree",
+        &f.path("dest"),
+        Intent::Move,
+        ConflictPolicy::Rename,
+    );
+    let state = connection::tests::state();
+    pipeline::run(&state, None, &item).unwrap();
+    assert!(!f.exists("tree"));
+    assert!(item.receipt.lock().unwrap().attempts.is_empty());
+    assert_eq!(
+        before,
+        f.exec(
+            &f.b,
+            &format!("stat -c %i -- {}", crate::ssh::quote(&f.path("dest/tree")))
+        )
+    );
+    // Simulate the durable pre-rename journal surviving but the response/save being lost.
+    for entry in &mut item.plan.lock().unwrap().as_mut().unwrap().entries {
+        entry.outcome = "pending".into();
+    }
+    item.receipt.lock().unwrap().pending_commit = Some(model::PendingCommit {
+        rename_directory: true,
+        destination: f.path("dest/tree"),
+        stage_path: Some(f.path("tree")),
+        expected_size: None,
+        run_id: item.task.lock().unwrap().run_id.clone(),
+        entry: 0,
+        digest: None,
+        directory: true,
+    });
+    recovery::reconcile(&state, &item).unwrap();
+    assert!(item
+        .plan
+        .lock()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .entries
+        .iter()
+        .all(|e| e.outcome == "completed"));
+    assert!(item.receipt.lock().unwrap().pending_commit.is_none());
+}
+
+#[test]
+#[ignore = "isolated OpenSSH fixture"]
+fn rsync_internal_cancel_keeps_source_and_reuses_only_stopped_staging() {
+    let f = Fixture::new();
+    f.mkdir(&f.b, "dest");
+    f.exec(
+        &f.b,
+        &format!(
+            "dd if=/dev/zero of={} bs=1M count=32 status=none",
+            crate::ssh::quote(&f.path("large"))
+        ),
+    );
+    let item = f.internal(
+        "large",
+        &f.path("dest"),
+        Intent::Copy,
+        ConflictPolicy::Rename,
+    );
+    item.receipt.lock().unwrap().verify_sha256 = false;
+    let state = connection::tests::state();
+    let worker_item = item.clone();
+    let worker_state = state.clone();
+    let worker = std::thread::spawn(move || pipeline::run(&worker_state, None, &worker_item));
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !item
+        .receipt
+        .lock()
+        .unwrap()
+        .attempts
+        .iter()
+        .any(|a| a.dispatched)
+    {
+        assert!(!worker.is_finished());
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    item.request_cancel();
+    assert!(worker.join().unwrap().is_err());
+    assert!(f.exists("large"));
+    assert!(!f.exists("dest/large"));
+    item.stop.store(false, Ordering::SeqCst);
+    item.cancel.reset().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let mut a = item
+            .receipt
+            .lock()
+            .unwrap()
+            .attempts
+            .last()
+            .unwrap()
+            .clone();
+        same_server::refresh(&item, &mut a).unwrap();
+        let stopped = a.source_finished && a.receiver_finished;
+        *item.receipt.lock().unwrap().attempts.last_mut().unwrap() = a;
+        if stopped {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let root = item
+        .receipt
+        .lock()
+        .unwrap()
+        .attempts
+        .last()
+        .unwrap()
+        .target_root
+        .clone();
+    pipeline::run(&state, None, &item).unwrap();
+    assert_eq!(
+        item.receipt
+            .lock()
+            .unwrap()
+            .attempts
+            .last()
+            .unwrap()
+            .target_root,
+        root
+    );
+    assert!(f.exists("large"));
+    assert_eq!(
+        f.exec(
+            &f.b,
+            &format!("stat -c %s -- {}", crate::ssh::quote(&f.path("dest/large")))
+        )
+        .trim(),
+        "33554432"
+    );
+    cleanup(&item).unwrap();
+}
+
 #[test]
 #[ignore = "isolated OpenSSH/rsync containers"]
 fn rsync_password_and_special_paths() {
@@ -418,6 +847,7 @@ fn rsync_pending_commit_blocks_only_its_path_and_digest_reconciles() {
     plan.entries[0].outcome = "pending".into();
     state.transfers.save_plan(&item, &plan).unwrap();
     item.receipt.lock().unwrap().pending_commit = Some(model::PendingCommit {
+        rename_directory: false,
         destination: e.target.unwrap(),
         stage_path: e.staged,
         expected_size: Some(e.size),
@@ -459,39 +889,89 @@ fn rsync_skip_type_conflict_skips_entire_subtree() {
 #[test]
 #[ignore = "isolated OpenSSH/rsync containers"]
 fn rsync_rejects_target_changes_during_transfer() {
-    let f=Fixture::new();let state=connection::tests::state();
-    f.put(&f.a,"file",&vec![99u8;1024*1024]);f.put(&f.b,"file",b"original");
-    f.mode(&f.a,"slow");let item=f.remote("file",ConflictPolicy::Overwrite);
-    let copy=item.clone();let shared=state.clone();let worker=std::thread::spawn(move||pipeline::run(&shared,None,&copy));
-    let deadline=Instant::now()+Duration::from_secs(30);
-    while item.task.lock().unwrap().bytes_done==0 {assert!(Instant::now()<deadline);assert!(!worker.is_finished());std::thread::sleep(Duration::from_millis(30));}
-    f.put(&f.b,"file",b"external modification");let result=worker.join().unwrap();f.mode(&f.a,"");
-    assert_eq!(result.unwrap_err().kind,"conflict");assert_eq!(f.read("file"),b"external modification");cleanup(&item).unwrap();
+    let f = Fixture::new();
+    let state = connection::tests::state();
+    f.put(&f.a, "file", &vec![99u8; 1024 * 1024]);
+    f.put(&f.b, "file", b"original");
+    f.mode(&f.a, "slow");
+    let item = f.remote("file", ConflictPolicy::Overwrite);
+    let copy = item.clone();
+    let shared = state.clone();
+    let worker = std::thread::spawn(move || pipeline::run(&shared, None, &copy));
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while item.task.lock().unwrap().bytes_done == 0 {
+        assert!(Instant::now() < deadline);
+        assert!(!worker.is_finished());
+        std::thread::sleep(Duration::from_millis(30));
+    }
+    f.put(&f.b, "file", b"external modification");
+    let result = worker.join().unwrap();
+    f.mode(&f.a, "");
+    assert_eq!(result.unwrap_err().kind, "conflict");
+    assert_eq!(f.read("file"), b"external modification");
+    cleanup(&item).unwrap();
 }
 
 #[test]
 #[ignore = "isolated OpenSSH/rsync containers"]
 fn rsync_merge_mount_stages_on_destination_filesystem() {
-    let f=Fixture::new();f.mkdir(&f.a,"mounted");
-    let name=uuid::Uuid::new_v4().to_string();f.put(&f.a,&format!("mounted/{name}"),b"mount data");
-    let item=f.remote("mounted",ConflictPolicy::Overwrite);item.task.lock().unwrap().target_path="/home/ops".into();
-    let state=connection::tests::state();pipeline::run(&state,None,&item).unwrap();
-    assert!(item.receipt.lock().unwrap().attempts[0].target_root.starts_with("/home/ops/mounted/"));
-    assert_eq!(f.exec(&f.b,&format!("cat /home/ops/mounted/{name}")),"mount data");cleanup(&item).unwrap();
+    let f = Fixture::new();
+    f.mkdir(&f.a, "mounted");
+    let name = uuid::Uuid::new_v4().to_string();
+    f.put(&f.a, &format!("mounted/{name}"), b"mount data");
+    let item = f.remote("mounted", ConflictPolicy::Overwrite);
+    item.task.lock().unwrap().target_path = "/home/ops".into();
+    let state = connection::tests::state();
+    pipeline::run(&state, None, &item).unwrap();
+    assert!(item.receipt.lock().unwrap().attempts[0]
+        .target_root
+        .starts_with("/home/ops/mounted/"));
+    assert_eq!(
+        f.exec(&f.b, &format!("cat /home/ops/mounted/{name}")),
+        "mount data"
+    );
+    cleanup(&item).unwrap();
 }
 
 #[test]
 #[ignore = "isolated OpenSSH/rsync containers"]
 fn rsync_store_restart_retains_completed_items_and_cleanup_independently() {
-    let f=Fixture::new();let state=connection::tests::state();let dir=tempfile::tempdir().unwrap();
-    *state.transfers.store.lock().unwrap()=Some(task_store::TaskStore::open(&dir.path().join("tasks-v3.sqlite")).unwrap());
-    f.put(&f.a,"file",b"persisted");let item=f.remote("file",ConflictPolicy::Rename);
-    pipeline::run(&state,None,&item).unwrap();item.task.lock().unwrap().status="completed".into();state.transfers.persist(&item).unwrap();
-    let recovered=TransferState::open(dir.path().into()).unwrap();let rows=recovered.recovered.lock().unwrap();
-    assert_eq!(rows.len(),1);assert_eq!(rows[0].view.as_ref().unwrap().status,"completed");assert!(rows[0].view.as_ref().unwrap().cleanup_pending);
-    assert_eq!(rows[0].plan.entries[0].outcome,"completed");assert!(!serde_json::to_string(&rows[0]).unwrap().contains("fixture-password"));drop(rows);
-    let id=item.task.lock().unwrap().id.clone();let prior=item.receipt.lock().unwrap().attempts.len();
-    pipeline::run(&state,None,&item).unwrap();assert_eq!(item.receipt.lock().unwrap().attempts.len(),prior);assert!(!f.exists("file (1)"));
-    cleanup(&item).unwrap();state.transfers.persist(&item).unwrap();
-    let saved=state.transfers.store.lock().unwrap().as_ref().unwrap().load().unwrap();assert_eq!(saved[0].view.as_ref().unwrap().id,id);assert!(!saved[0].has_remote_resources());
+    let f = Fixture::new();
+    let state = connection::tests::state();
+    let dir = tempfile::tempdir().unwrap();
+    *state.transfers.store.lock().unwrap() =
+        Some(task_store::TaskStore::open(&dir.path().join("tasks-v3.sqlite")).unwrap());
+    f.put(&f.a, "file", b"persisted");
+    let item = f.remote("file", ConflictPolicy::Rename);
+    pipeline::run(&state, None, &item).unwrap();
+    item.task.lock().unwrap().status = "completed".into();
+    state.transfers.persist(&item).unwrap();
+    let recovered = TransferState::open(dir.path().into()).unwrap();
+    let rows = recovered.recovered.lock().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].view.as_ref().unwrap().status, "completed");
+    assert!(rows[0].view.as_ref().unwrap().cleanup_pending);
+    assert_eq!(rows[0].plan.entries[0].outcome, "completed");
+    assert!(!serde_json::to_string(&rows[0])
+        .unwrap()
+        .contains("fixture-password"));
+    drop(rows);
+    let id = item.task.lock().unwrap().id.clone();
+    let prior = item.receipt.lock().unwrap().attempts.len();
+    pipeline::run(&state, None, &item).unwrap();
+    assert_eq!(item.receipt.lock().unwrap().attempts.len(), prior);
+    assert!(!f.exists("file (1)"));
+    cleanup(&item).unwrap();
+    state.transfers.persist(&item).unwrap();
+    let saved = state
+        .transfers
+        .store
+        .lock()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .load()
+        .unwrap();
+    assert_eq!(saved[0].view.as_ref().unwrap().id, id);
+    assert!(!saved[0].has_remote_resources());
 }

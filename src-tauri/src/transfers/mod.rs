@@ -2,10 +2,11 @@ mod direct;
 pub mod download;
 mod model;
 mod pipeline;
-mod planner;
+pub(crate) mod planner;
 mod recovery;
 use recovery::cleanup;
-mod scheduler;
+mod same_server;
+pub(crate) mod scheduler;
 mod task_store;
 mod upload;
 mod verify;
@@ -19,7 +20,9 @@ use crate::{
 pub use download::ConflictPolicy;
 pub(crate) use model::AuthInput;
 pub(crate) use model::DirectEndpoint;
-use model::{Receipt, WriteHandle};
+use model::Receipt;
+pub(crate) use model::WriteHandle;
+pub(crate) use model::{operation_kind, Intent};
 pub use model::{Source, TaskView};
 pub use planner::normalize_selection;
 use std::{
@@ -40,7 +43,7 @@ pub struct TransferState {
     active: Mutex<usize>,
     slot: Condvar,
     store: Mutex<Option<task_store::TaskStore>>,
-    paths: scheduler::PathLocks,
+    pub(crate) paths: scheduler::PathLocks,
     recovered: Mutex<Vec<Receipt>>,
     history: Mutex<Vec<TaskView>>,
     operations: Mutex<HashMap<String, (SharedContext, Cancellation)>>,
@@ -59,15 +62,40 @@ impl TransferState {
     fn conflicting_commit(&self, item: &WriteHandle, path: &str) -> Option<String> {
         let key = item.write_key();
         let id = item.task.lock().unwrap().id.clone();
+        self.pending_path(&key, path, Some(&id))
+    }
+    pub(crate) fn pending_path(
+        &self,
+        key: &str,
+        path: &str,
+        exclude: Option<&str>,
+    ) -> Option<String> {
         let conflict = |r: &Receipt| {
-            r.target_write_key == key
-                && r.view.as_ref().is_none_or(|v| v.id != id)
-                && r.pending_commit
-                    .as_ref()
-                    .is_some_and(|c| scheduler::overlaps(&c.destination, path))
+            r.view
+                .as_ref()
+                .is_none_or(|v| Some(v.id.as_str()) != exclude)
+                && ((r.target_write_key == key
+                    && (r.pending_commit.as_ref().is_some_and(|c| {
+                        scheduler::overlaps(&c.destination, path)
+                            || (r.intent == Intent::Move
+                                && c.stage_path.as_ref().is_some_and(|p| {
+                                    r.source_paths
+                                        .iter()
+                                        .any(|root| p == root || p.starts_with(&format!("{root}/")))
+                                        && scheduler::overlaps(p, path)
+                                }))
+                    }) || r.attempts.iter().any(|a| {
+                        !a.target_root.is_empty() && scheduler::overlaps(&a.target_root, path)
+                    })))
+                    || (r.source_write_key == key
+                        && r.attempts.iter().any(|a| {
+                            a.source_root
+                                .as_ref()
+                                .is_some_and(|p| scheduler::overlaps(p, path))
+                        })))
         };
         for w in self.writes.lock().unwrap().iter() {
-            if Arc::ptr_eq(&w.task, &item.task) {
+            if Some(w.task.lock().unwrap().id.as_str()) == exclude {
                 continue;
             }
             let r = w.receipt.lock().unwrap();
@@ -98,6 +126,7 @@ impl TransferState {
             store.plan(&id, plan)?;
         }
         *item.plan.lock().unwrap() = Some(plan.clone());
+        item.receipt.lock().unwrap().skipped_paths = plan.skipped.clone();
         Ok(())
     }
     fn save_entry(
@@ -276,10 +305,13 @@ pub fn start_write(
     endpoint_snapshot: Option<DirectEndpoint>,
     auth_input: Option<model::AuthInput>,
     verify_sha256: bool,
+    intent: Intent,
+    clipboard_id: Option<String>,
 ) -> AppResult<String> {
     remote_path::absolute(&destination)?;
     let _gate = state.configuration.lock().unwrap();
     state.check_context(&target)?;
+    let operation = operation_kind(&source, &target, intent)?;
     let (kind, source_name, source_path, endpoint) = match &source {
         Source::Local(paths) => {
             if paths.is_empty() {
@@ -300,27 +332,26 @@ pub fn start_write(
         Source::Remote { context, paths } => {
             state.check_context(context)?;
             planner::normalize_selection(paths)?;
-            if context.target().id == target.target().id || context.identity() == target.identity()
-            {
-                return Err(AppError::new(
-                    "validation",
-                    "服务器间传输请选择另一台服务器",
-                ));
-            }
-            let endpoint = endpoint_snapshot.ok_or_else(|| {
-                AppError::new("validation", "请先为目标服务器填写真实地址和直连端口")
-            })?;
-            remote_path::validate_host(&endpoint.host)?;
-            if endpoint.username != target.target().username
-                || endpoint.public_key != target.target_public_key()
-            {
-                return Err(AppError::new("validation", "直连目标与已验证会话不一致"));
+            let endpoint = if operation == "direct" {
+                Some(endpoint_snapshot.ok_or_else(|| {
+                    AppError::new("validation", "请先为目标服务器填写真实地址和直连端口")
+                })?)
+            } else {
+                None
+            };
+            if let Some(endpoint) = &endpoint {
+                remote_path::validate_host(&endpoint.host)?;
+                if endpoint.username != target.target().username
+                    || endpoint.public_key != target.target_public_key()
+                {
+                    return Err(AppError::new("validation", "直连目标与已验证会话不一致"));
+                }
             }
             (
-                "direct",
+                operation,
                 context.target().name.clone(),
                 paths.iter().take(4).cloned().collect::<Vec<_>>().join("\n"),
-                Some(endpoint),
+                endpoint,
             )
         }
     };
@@ -355,12 +386,14 @@ pub fn start_write(
             .map(|e| format!("{}@{}:{}", e.username, e.host, e.port)),
     };
     let mut receipt = Receipt {
+        intent,
+        clipboard_id,
         format_version: 3,
         target_server_id: target.target().id.clone(),
         target_identity: target.identity().into(),
         target_write_key: target.target_public_key().into(),
         endpoint: endpoint.clone(),
-        verify_sha256,
+        verify_sha256: verify_sha256 || intent == Intent::Move,
         source_paths: match &source {
             Source::Local(p) => p.iter().map(|p| p.to_string_lossy().into_owned()).collect(),
             Source::Remote { paths, .. } => paths.clone(),
@@ -370,8 +403,9 @@ pub fn start_write(
     if let Source::Remote { context, .. } = &source {
         receipt.source_server_id = context.target().id.clone();
         receipt.source_identity = context.identity().into();
+        receipt.source_write_key = context.target_public_key().into();
     }
-    let auth = if matches!(source, Source::Remote { .. }) {
+    let auth = if operation == "direct" {
         Some(resolve_auth(&state, &target, auth_input.as_ref())?)
     } else {
         None
@@ -436,6 +470,8 @@ fn launch_write(app: tauri::AppHandle, state: Arc<State>, item: WriteHandle) {
                         "interrupted"
                     } else if item.stop.load(Ordering::SeqCst) || e.kind == "cancelled" {
                         "cancelled"
+                    } else if e.kind == "sourceRetained" {
+                        "sourceRetained"
                     } else if task.files_done > 0 {
                         "partialFailed"
                     } else {
@@ -448,6 +484,7 @@ fn launch_write(app: tauri::AppHandle, state: Arc<State>, item: WriteHandle) {
         }
         item.task.lock().unwrap().waiting_reason = None;
         *item.auth.lock().unwrap() = None;
+        state.drags.clipboard.finish(&app, &item);
         if let Err(e) = state.transfers.persist(&item) {
             item.warn(format!("任务保存失败：{}", e.message));
         }
@@ -691,7 +728,9 @@ pub fn retry_transfer(
     state.check_context(&item.target)?;
     if let Source::Remote { context, .. } = &item.source {
         state.check_context(context)?;
-        *item.auth.lock().unwrap() = Some(resolve_auth(&state, &item.target, auth.as_ref())?);
+        if !item.same_server() {
+            *item.auth.lock().unwrap() = Some(resolve_auth(&state, &item.target, auth.as_ref())?);
+        }
     }
     if resume.unwrap_or(false) {
         let r = item.receipt.lock().unwrap();
@@ -713,6 +752,9 @@ pub fn retry_transfer(
         }
     }
     item.cancel.reset()?;
+    if let Some(id) = item.receipt.lock().unwrap().clipboard_id.as_deref() {
+        state.drags.clipboard.reserve_retry(id)?;
+    }
     item.stop.store(false, Ordering::SeqCst);
     {
         let mut t = item.task.lock().unwrap();
@@ -728,6 +770,7 @@ pub fn retry_transfer(
 #[tauri::command]
 pub async fn reconcile_transfer(
     window: WebviewWindow,
+    app: tauri::AppHandle,
     state: TauriState<'_, Arc<State>>,
     id: String,
 ) -> AppResult<()> {
@@ -742,7 +785,23 @@ pub async fn reconcile_transfer(
         if item.task.lock().unwrap().active() {
             return Err(AppError::new("busy", "任务仍在运行"));
         }
-        recovery::reconcile(&state, &item)
+        recovery::reconcile(&state, &item)?;
+        state.drags.clipboard.finish(&app, &item);
+        state.transfers.persist(&item)?;
+        directory_changed(
+            &app,
+            item.target.identity(),
+            &item.task.lock().unwrap().target_path,
+        );
+        if item.moving() {
+            if let Source::Remote { context, paths } = &item.source {
+                for p in paths {
+                    directory_changed(&app, context.identity(), remote_path::parent(p));
+                }
+            }
+        }
+        let _ = app.emit("transfer-updated", item.task.lock().unwrap().clone());
+        Ok(())
     })
     .await
 }

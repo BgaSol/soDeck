@@ -60,6 +60,9 @@ def relay(channel, peer):
 
 def serve(client):
     transport = paramiko.Transport(client)
+    # Match the target fixture: neither lightweight server has a DH moduli file.
+    options = transport.get_security_options()
+    options.kex = tuple(algorithm for algorithm in options.kex if "group-exchange" not in algorithm)
     transport.add_server_key(fixture.HOST_KEY)
     server = JumpServer()
     fixture.log("jump-open")

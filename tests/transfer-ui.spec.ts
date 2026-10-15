@@ -114,6 +114,39 @@ async function setup(page: Page) {
           events.get(args.event)?.delete(args.eventId);
           return;
         }
+        if (command === "get_remote_clipboard")
+          return structuredClone(w.__TEST__.clipboard || null);
+        if (command === "set_remote_clipboard") {
+          w.__TEST__.clipboard = {
+            id: "clipboard-" + serial++,
+            paths: args.paths,
+            intent: args.intent,
+            sameServer: true,
+            reserved: false,
+          };
+          w.__TEST__.emit("remote-clipboard-changed", null);
+          return;
+        }
+        if (command === "clear_remote_clipboard") {
+          w.__TEST__.clipboard = null;
+          w.__TEST__.emit("remote-clipboard-changed", null);
+          return;
+        }
+        if (command === "prepare_remote_paste")
+          return {
+            id: "paste-draft",
+            kind:
+              w.__TEST__.clipboard.intent === "move"
+                ? "serverMove"
+                : "serverCopy",
+            sourceName: "Server A",
+            sourcePaths: w.__TEST__.clipboard.paths,
+            count: w.__TEST__.clipboard.paths.length,
+            targetName: "Server A",
+            targetPath: args.parentPath,
+            directEndpoint: null,
+            endpointRequired: false,
+          };
         if (command === "list_servers") return structuredClone(servers);
         if (command === "list_transfers") return structuredClone(tasks);
         if (command === "save_server") return args.server;
@@ -161,6 +194,10 @@ async function setup(page: Page) {
         if (command === "pick_upload_files" || command === "claim_file_drop")
           return {
             id: command === "pick_upload_files" ? "upload-draft" : "drop-draft",
+            kind:
+              command === "pick_upload_files"
+                ? "upload"
+                : w.__TEST__.dropKind || "direct",
             sourceName: "Source",
             sourcePaths: ["/data/report"],
             count: 1,
@@ -175,6 +212,7 @@ async function setup(page: Page) {
         if (command === "set_transfer_endpoint")
           return {
             id: "updated-draft",
+            kind: "direct",
             sourceName: "Source",
             sourcePaths: ["/data/report"],
             count: 1,
@@ -195,6 +233,7 @@ async function setup(page: Page) {
         if (command === "prepare_server_copy")
           return {
             id: "copy-draft",
+            kind: "direct",
             sourceName: "Server A",
             sourcePaths: args.paths,
             count: args.paths.length,
@@ -243,6 +282,7 @@ async function setup(page: Page) {
     };
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "新建连接", exact: true }).click();
   await page.locator(".server-row").filter({ hasText: "Server A" }).dblclick();
   await expect(
     page.locator(".file-row[data-path='/home/ops/one.txt']"),
@@ -255,6 +295,7 @@ async function emitDrop(
   kind = "localFiles",
   phase = "drop",
 ) {
+  await page.locator(selector).scrollIntoViewIfNeeded();
   const box = await page.locator(selector).boundingBox();
   expect(box).toBeTruthy();
   await page.evaluate(
@@ -276,8 +317,7 @@ test("create folder and file, retain validation errors and refresh only the targ
   page,
 }) => {
   const errors = await setup(page);
-  await page.getByLabel("新建", { exact: true }).click();
-  await page.getByRole("menuitem", { name: "新建文件夹", exact: true }).click();
+  await page.getByRole("button", { name: "新建文件夹", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("/home/ops");
   await dialog.getByLabel("新项目名称").fill("exists");
@@ -289,15 +329,132 @@ test("create folder and file, retain validation errors and refresh only the targ
   await expect(
     page.locator(".file-row[data-path='/home/ops/新目录']"),
   ).toBeVisible();
-  await page
-    .locator(".file-row[data-path='/home/ops']")
-    .click({ button: "right" });
-  await page.getByRole("menuitem", { name: "新建文件", exact: true }).click();
+  await page.locator(".file-row[data-path='/home/ops']").click();
+  await page.getByRole("button", { name: "新建文件", exact: true }).click();
   await dialog.getByLabel("新项目名称").fill("notes.txt");
   await dialog.getByRole("button", { name: "创建", exact: true }).click();
   await expect(
     page.locator(".file-row[data-path='/home/ops/notes.txt']"),
   ).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("same-server drop uses backend classification without direct credentials", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  for (const kind of ["serverCopy", "serverMove"]) {
+    await page.evaluate((kind) => {
+      (window as any).__TEST__.dropKind = kind;
+    }, kind);
+    await emitDrop(
+      page,
+      ".file-row[data-path='/home/ops/folder']",
+      "remoteFiles",
+    );
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("heading")).toHaveText(
+      kind === "serverMove" ? "服务器内移动" : "服务器内复制",
+    );
+    await expect(dialog.getByLabel("本次直连真实地址")).toHaveCount(0);
+    await expect(dialog.locator("input[type=password]")).toHaveCount(0);
+    if (kind === "serverMove")
+      await page.screenshot({ path: ".qa/same-server-move.png" });
+    await dialog.getByRole("button", { name: "开始传输", exact: true }).click();
+  }
+  expect(
+    await page.evaluate(() =>
+      (window as any).__TEST__.calls
+        .filter((c: any) => c.command === "start_transfer")
+        .every((c: any) => !c.args.auth),
+    ),
+  ).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("remote clipboard shortcuts are scoped and cut markers clear with Escape", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  const file = page.locator(".file-row[data-path='/home/ops/one.txt']");
+  await file.click();
+  await file.press("Control+x");
+  await expect(file).toHaveClass(/cut-pending/);
+  const folder = page.locator(".file-row[data-path='/home/ops/folder']");
+  await folder.click();
+  await folder.press("Control+v");
+  await expect(page.getByRole("dialog")).toContainText("服务器内移动");
+  await expect(page.getByRole("dialog")).toContainText("/home/ops/folder");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "取消", exact: true })
+    .click();
+  await file.focus();
+  await file.press("Escape");
+  await expect(file).not.toHaveClass(/cut-pending/);
+  const input = page.getByLabel("远程目录路径");
+  await input.focus();
+  await input.press("Control+c");
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__TEST__.calls.filter(
+          (c: any) => c.command === "set_remote_clipboard",
+        ).length,
+    ),
+  ).toBe(1);
+  expect(errors).toEqual([]);
+});
+
+test("blank-area paste and clipboard events support other windows and reservations", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await page.evaluate(() => {
+    const qa = (window as any).__TEST__;
+    qa.clipboard = {
+      id: "from-other-window",
+      paths: ["/srv/shared"],
+      intent: "copy",
+      sameServer: true,
+      reserved: false,
+    };
+    qa.emit("remote-clipboard-changed", null);
+  });
+  await expect(page.getByLabel("粘贴项目", { exact: true })).toBeEnabled();
+  const tree = page.getByRole("tree", { name: "远程文件树" });
+  await tree.dispatchEvent("contextmenu", { clientX: 100, clientY: 400 });
+  await expect(
+    page.getByRole("menuitem", { name: "粘贴到此处", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("menuitem", { name: "粘贴到此处", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("服务器内复制");
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__TEST__.calls.find(
+          (c: any) => c.command === "prepare_remote_paste",
+        ).args.parentPath,
+    ),
+  ).toBe("/home/ops");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "取消", exact: true })
+    .click();
+  await page.evaluate(() => {
+    const q = (window as any).__TEST__;
+    q.clipboard.intent = "move";
+    q.clipboard.reserved = true;
+    q.emit("remote-clipboard-changed", null);
+  });
+  await expect(page.getByLabel("粘贴项目", { exact: true })).toBeDisabled();
+  await page.evaluate(() => {
+    const q = (window as any).__TEST__;
+    q.clipboard.reserved = false;
+    q.clipboard.sameServer = false;
+    q.emit("remote-clipboard-changed", null);
+  });
+  await expect(page.getByLabel("粘贴项目", { exact: true })).toBeDisabled();
   expect(errors).toEqual([]);
 });
 
@@ -468,6 +625,7 @@ test("upload picker and new configuration fit dark small windows", async ({
     .getByRole("dialog")
     .getByRole("button", { name: "取消", exact: true })
     .click();
+  await page.getByRole("button", { name: "新建连接", exact: true }).click();
   await page.locator(".server-row").click();
   await page.getByRole("button", { name: "编辑", exact: true }).click();
   const dialog = page.getByRole("dialog");
@@ -549,29 +707,72 @@ test("uncertain commits require reconciliation; interrupted execution can retry 
     "已中断，请检查目标",
   );
   await expect(page.getByLabel("重试传输")).toHaveCount(0);
-  await page.getByRole("button", {name:"重试未完成项",exact:true}).click();
-  const retry=page.getByRole("dialog",{name:"重试未完成项目"});
+  await page.getByRole("button", { name: "重试未完成项", exact: true }).click();
+  const retry = page.getByRole("dialog", { name: "重试未完成项目" });
   await expect(retry).toBeVisible();
   await expect(retry.getByLabel("复用已确认停止的临时数据")).toBeDisabled();
   await retry.getByLabel("直传认证方式").selectOption("password");
   await retry.getByLabel("直传本次密码").fill("test-only-password");
-  await retry.getByRole("button",{name:"重试传输",exact:true}).click();
-  expect(await page.evaluate(()=>(window as any).__TEST__.calls.find((c:any)=>c.command==="retry_transfer").args)).toEqual({id:"task-1",auth:{mode:"password",password:"test-only-password"},resume:false});
+  await retry.getByRole("button", { name: "重试传输", exact: true }).click();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__TEST__.calls.find(
+          (c: any) => c.command === "retry_transfer",
+        ).args,
+    ),
+  ).toEqual({
+    id: "task-1",
+    auth: { mode: "password", password: "test-only-password" },
+    resume: false,
+  });
 });
 
-test("direct authentication and digest options are explicit; cleanup remains independent", async ({page})=>{
+test("direct authentication and digest options are explicit; cleanup remains independent", async ({
+  page,
+}) => {
   await setup(page);
-  await emitDrop(page,".file-row[data-path='/home/ops/folder']","remoteFiles");
-  const dialog=page.getByRole("dialog");
+  await emitDrop(
+    page,
+    ".file-row[data-path='/home/ops/folder']",
+    "remoteFiles",
+  );
+  const dialog = page.getByRole("dialog");
   await dialog.getByLabel("直传认证方式").selectOption("key");
   await dialog.getByLabel("源服务器私钥路径").fill("/home/ops/.ssh/direct-key");
   await dialog.getByLabel(/逐文件 SHA-256/).check();
-  await dialog.getByRole("button",{name:"开始传输",exact:true}).click();
-  expect(await page.evaluate(()=>(window as any).__TEST__.calls.find((c:any)=>c.command==="start_transfer").args)).toMatchObject({auth:{mode:"key",keyPath:"/home/ops/.ssh/direct-key"},verifySha256:true});
-  await page.evaluate(()=>{const qa=(window as any).__TEST__;Object.assign(qa.tasks[0],{status:"completed",cleanupPending:true,temporaryPaths:["B · /data/.ssh-workspace-transfer-fixture"]});qa.emit("transfer-updated",{});});
-  await expect(page.getByRole("region",{name:"传输任务"})).toContainText("已完成");
-  await page.getByRole("button",{name:"清理临时资源"}).click();
-  expect(await page.evaluate(()=>(window as any).__TEST__.calls.some((c:any)=>c.command==="cleanup_transfer"))).toBe(true);
+  await dialog.getByRole("button", { name: "开始传输", exact: true }).click();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__TEST__.calls.find(
+          (c: any) => c.command === "start_transfer",
+        ).args,
+    ),
+  ).toMatchObject({
+    auth: { mode: "key", keyPath: "/home/ops/.ssh/direct-key" },
+    verifySha256: true,
+  });
+  await page.evaluate(() => {
+    const qa = (window as any).__TEST__;
+    Object.assign(qa.tasks[0], {
+      status: "completed",
+      cleanupPending: true,
+      temporaryPaths: ["B · /data/.ssh-workspace-transfer-fixture"],
+    });
+    qa.emit("transfer-updated", {});
+  });
+  await expect(page.getByRole("region", { name: "传输任务" })).toContainText(
+    "已完成",
+  );
+  await page.getByRole("button", { name: "清理临时资源" }).click();
+  expect(
+    await page.evaluate(() =>
+      (window as any).__TEST__.calls.some(
+        (c: any) => c.command === "cleanup_transfer",
+      ),
+    ),
+  ).toBe(true);
 });
 
 test("native tab drag preserves begin, drop and finish IPC", async ({

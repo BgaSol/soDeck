@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { errorOf } from "./types";
+import { APP_NAME } from "./brand";
 
 export function QuitDialog({
   details,
@@ -41,7 +42,7 @@ export function QuitDialog({
       }}
     >
       <header className="dialog-head">
-        <h2 id="quit-title">退出 SSH Workspace？</h2>
+        <h2 id="quit-title">退出 {APP_NAME}？</h2>
         <button
           className="icon-button"
           aria-label="取消退出"

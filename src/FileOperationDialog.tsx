@@ -4,11 +4,11 @@ import { errorOf } from "./types";
 import { transferApi, notifyTransferStarted } from "./transferApi";
 import type { TransferAuth } from "./transferApi";
 import { TransferAuthFields } from "./TransferAuthFields";
-import type { ConflictPolicy, TransferDraft } from "./transferApi";
+import type { ConflictPolicy, TransferDraft, WriteKind } from "./transferApi";
 
 export type FileOperation =
   | { kind: "file" | "directory"; sessionId: string; path: string }
-  | { kind: "upload" | "direct"; draft: TransferDraft };
+  | { kind: WriteKind; draft: TransferDraft };
 export function FileOperationDialog({
   operation,
   onClose,
@@ -52,7 +52,11 @@ export function FileOperationDialog({
         ? "新建文件夹"
         : operation.kind === "upload"
           ? "上传到服务器"
-          : "复制到服务器";
+          : operation.kind === "serverMove"
+            ? "服务器内移动"
+            : operation.kind === "serverCopy"
+              ? "服务器内复制"
+              : "复制到服务器";
   useEffect(() => {
     ref.current?.showModal();
     input.current?.focus();
@@ -271,7 +275,7 @@ export function FileOperationDialog({
               saved={draft?.savedPasswordAvailable ?? false}
             />
           )}
-          {!creating && (
+          {!creating && operation.kind !== "serverMove" && (
             <label>
               <input
                 type="checkbox"
@@ -315,6 +319,14 @@ export function FileOperationDialog({
               <p className="muted">
                 文件夹保留层级、隐藏文件和空目录。符号链接与特殊文件将跳过并显示在结果中。
               </p>
+              {operation.kind === "serverCopy" && (
+                <p className="muted">在当前服务器内复制，来源保留。</p>
+              )}
+              {operation.kind === "serverMove" && (
+                <p className="muted">
+                  在当前服务器内移动。跨文件系统时先复制并校验，再删除已完成的来源；跳过或失败的项目保留。
+                </p>
+              )}
               {policy === "overwrite" && (
                 <p className="operation-warning">
                   开始后将替换目标中的同名文件；目录中的其他内容保留。

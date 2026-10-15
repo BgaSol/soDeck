@@ -13,6 +13,38 @@ use std::{
     },
 };
 
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Intent {
+    #[default]
+    Copy,
+    Move,
+}
+pub fn operation_kind(
+    source: &Source,
+    target: &SharedContext,
+    intent: Intent,
+) -> AppResult<&'static str> {
+    match source {
+        Source::Local(_) if intent == Intent::Copy => Ok("upload"),
+        Source::Remote { context, .. } if context.identity() == target.identity() => {
+            Ok(if intent == Intent::Move {
+                "serverMove"
+            } else {
+                "serverCopy"
+            })
+        }
+        Source::Remote { context, .. } if context.target().id == target.target().id => Err(
+            AppError::new("changed", "同一服务器的连接身份已变化，请重新连接"),
+        ),
+        Source::Remote { .. } if intent == Intent::Copy => Ok("direct"),
+        _ => Err(AppError::new(
+            "validation",
+            "剪切和 Shift 拖拽仅支持同一服务器内移动；跨服务器请使用复制",
+        )),
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum TransferStatus {
@@ -26,6 +58,7 @@ pub enum TransferStatus {
     Completed,
     Failed,
     PartialFailed,
+    SourceRetained,
     Cancelled,
     Unknown,
     Interrupted,
@@ -44,6 +77,7 @@ impl TransferStatus {
             Self::Completed => "completed",
             Self::Failed => "failed",
             Self::PartialFailed => "partialFailed",
+            Self::SourceRetained => "sourceRetained",
             Self::Cancelled => "cancelled",
             Self::Unknown => "unknown",
             Self::Interrupted => "interrupted",
@@ -64,6 +98,7 @@ impl From<&str> for TransferStatus {
             "completed" => Self::Completed,
             "failed" => Self::Failed,
             "partialFailed" => Self::PartialFailed,
+            "sourceRetained" => Self::SourceRetained,
             "cancelled" => Self::Cancelled,
             "interrupted" => Self::Interrupted,
             "needsAttention" => Self::NeedsAttention,
@@ -179,6 +214,12 @@ pub struct Attempt {
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Receipt {
+    #[serde(default)]
+    pub intent: Intent,
+    #[serde(default)]
+    pub clipboard_id: Option<String>,
+    #[serde(default)]
+    pub skipped_paths: Vec<String>,
     pub format_version: u32,
     pub source_server_id: String,
     pub target_server_id: String,
@@ -186,6 +227,8 @@ pub struct Receipt {
     pub target_identity: String,
     #[serde(default)]
     pub target_write_key: String,
+    #[serde(default)]
+    pub source_write_key: String,
     pub attempts: Vec<Attempt>,
     pub source_paths: Vec<String>,
     pub endpoint: Option<DirectEndpoint>,
@@ -201,6 +244,8 @@ pub struct Receipt {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingCommit {
+    #[serde(default)]
+    pub rename_directory: bool,
     pub destination: String,
     pub stage_path: Option<String>,
     pub expected_size: Option<u64>,
@@ -253,6 +298,12 @@ pub struct WriteHandle {
     pub auth: Arc<Mutex<Option<DirectAuth>>>,
 }
 impl WriteHandle {
+    pub fn same_server(&self) -> bool {
+        matches!(&self.source, Source::Remote { context, .. } if context.identity() == self.target.identity())
+    }
+    pub fn moving(&self) -> bool {
+        self.receipt.lock().unwrap().intent == Intent::Move
+    }
     pub fn write_key(&self) -> String {
         // Deliberately conservative for aliases/cloned keys: serializing two
         // unrelated hosts is preferable to simultaneous writes to one host.

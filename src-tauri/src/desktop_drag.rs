@@ -1,13 +1,14 @@
 //! Native file drops are granted in Rust. Internal drags carry only a short-lived
 //! capability and use native pointer state, so enabling OS drops cannot disable
 //! HTML5 tab drops on Windows: the internal path does not depend on HTML5 DnD.
+pub(crate) mod clipboard;
 pub(crate) mod targets;
 
 use crate::{
     connection::SharedContext,
     model::{AppError, AppResult},
     moves,
-    transfers::{self, ConflictPolicy, DirectEndpoint, Source},
+    transfers::{self, ConflictPolicy, DirectEndpoint, Intent, Source},
     State,
 };
 use serde::Serialize;
@@ -23,6 +24,7 @@ use tauri::{Emitter, Manager, State as TauriState, WebviewWindow};
 
 #[derive(Default)]
 pub struct DragState {
+    pub clipboard: clipboard::ClipboardState,
     grants: Mutex<HashMap<String, Grant>>,
     drafts: Mutex<HashMap<String, Draft>>,
     active: Mutex<Option<(String, Arc<AtomicBool>)>>,
@@ -30,6 +32,7 @@ pub struct DragState {
 }
 #[derive(Clone)]
 struct Grant {
+    intent: Intent,
     source: Source,
     owner: String,
     generation: u64,
@@ -38,6 +41,9 @@ struct Grant {
 }
 #[derive(Clone)]
 struct Draft {
+    kind: String,
+    intent: Intent,
+    clipboard_id: Option<String>,
     source: Source,
     target: SharedContext,
     path: String,
@@ -50,6 +56,7 @@ struct Draft {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DraftPreview {
+    kind: String,
     id: String,
     source_name: String,
     source_paths: Vec<String>,
@@ -71,6 +78,7 @@ pub struct EndpointPreview {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DragEvent {
+    intent: Intent,
     phase: String,
     kind: String,
     token: String,
@@ -90,6 +98,7 @@ fn grant(state: &State, window: &str, source: Source, ready: bool) -> String {
     grants.insert(
         id.clone(),
         Grant {
+            intent: Intent::Copy,
             source,
             owner: window.into(),
             generation: owner.generation,
@@ -108,6 +117,7 @@ pub fn native_drop(window: &tauri::Window, event: &tauri::DragDropEvent) {
     let app = window.app_handle();
     let scale = window.scale_factor().unwrap_or(1.0);
     let mut payload = DragEvent {
+        intent: Intent::Copy,
         phase: "leave".into(),
         kind: "localFiles".into(),
         token: String::new(),
@@ -142,7 +152,7 @@ pub fn native_drop(window: &tauri::Window, event: &tauri::DragDropEvent) {
 }
 
 #[cfg(target_os = "macos")]
-fn pointer_buttons(_: &tauri::AppHandle) -> AppResult<(bool, bool)> {
+fn pointer_buttons(_: &tauri::AppHandle) -> AppResult<(bool, bool, bool)> {
     #[link(name = "ApplicationServices", kind = "framework")]
     extern "C" {
         fn CGEventSourceButtonState(state_id: i32, button: u32) -> bool;
@@ -150,18 +160,30 @@ fn pointer_buttons(_: &tauri::AppHandle) -> AppResult<(bool, bool)> {
     }
     // Only queried while an explicit user drag is active; no event tap, logging,
     // global keyboard hook or accessibility permission is installed.
-    Ok(unsafe { (CGEventSourceButtonState(0, 0), CGEventSourceKeyState(0, 53)) })
+    Ok(unsafe {
+        (
+            CGEventSourceButtonState(0, 0),
+            CGEventSourceKeyState(0, 53),
+            CGEventSourceKeyState(0, 56) || CGEventSourceKeyState(0, 60),
+        )
+    })
 }
 #[cfg(target_os = "windows")]
-fn pointer_buttons(_: &tauri::AppHandle) -> AppResult<(bool, bool)> {
+fn pointer_buttons(_: &tauri::AppHandle) -> AppResult<(bool, bool, bool)> {
     #[link(name = "user32")]
     extern "system" {
         fn GetAsyncKeyState(key: i32) -> i16;
     }
-    Ok(unsafe { (GetAsyncKeyState(1) < 0, GetAsyncKeyState(27) < 0) })
+    Ok(unsafe {
+        (
+            GetAsyncKeyState(1) < 0,
+            GetAsyncKeyState(27) < 0,
+            GetAsyncKeyState(16) < 0,
+        )
+    })
 }
 #[cfg(target_os = "linux")]
-fn pointer_buttons(app: &tauri::AppHandle) -> AppResult<(bool, bool)> {
+fn pointer_buttons(app: &tauri::AppHandle) -> AppResult<(bool, bool, bool)> {
     #[link(name = "gdk-3")]
     extern "C" {
         fn gdk_display_get_default() -> *mut std::ffi::c_void;
@@ -194,7 +216,7 @@ fn pointer_buttons(app: &tauri::AppHandle) -> AppResult<(bool, bool)> {
                 } else {
                     let mut mask = 0;
                     gdk_device_get_state(pointer, root, std::ptr::null_mut(), &mut mask);
-                    Some((mask & (1 << 8) != 0, false))
+                    Some((mask & (1 << 8) != 0, false, mask & 1 != 0))
                 }
             }
         };
@@ -231,7 +253,7 @@ fn begin_pointer_drag(
         let started = Instant::now();
         loop {
             let native = pointer_buttons(&app);
-            let (pressed, escape) = match native {
+            let (pressed, escape, shift) = match native {
                 Ok(value) => value,
                 Err(e) => {
                     let _ = app.emit_to(&source_window, "desktop-drag-error", &e);
@@ -282,6 +304,7 @@ fn begin_pointer_drag(
                         &app,
                         previous,
                         &DragEvent {
+                            intent: if shift { Intent::Move } else { Intent::Copy },
                             phase: "leave".into(),
                             kind: kind.clone(),
                             token: token.clone(),
@@ -297,12 +320,14 @@ fn begin_pointer_drag(
                 if !pressed && kind == "remoteFiles" {
                     if let Some(grant) = state.drags.grants.lock().unwrap().get_mut(&token) {
                         grant.allowed_window = Some(window.clone());
+                        grant.intent = if shift { Intent::Move } else { Intent::Copy };
                     }
                 }
                 emit(
                     &app,
                     window,
                     &DragEvent {
+                        intent: if shift { Intent::Move } else { Intent::Copy },
                         phase: if pressed { "over" } else { "drop" }.into(),
                         kind: kind.clone(),
                         token: token.clone(),
@@ -324,6 +349,7 @@ fn begin_pointer_drag(
                 &app,
                 &previous,
                 &DragEvent {
+                    intent: Intent::Copy,
                     phase: "leave".into(),
                     kind: kind.clone(),
                     token: token.clone(),
@@ -423,10 +449,46 @@ fn create_draft(
     target: SharedContext,
     path: String,
 ) -> AppResult<DraftPreview> {
+    create_operation_draft(
+        state,
+        owner,
+        source,
+        target,
+        path,
+        Intent::Copy,
+        None,
+        false,
+    )
+}
+fn create_operation_draft(
+    state: &State,
+    owner: &str,
+    source: Source,
+    target: SharedContext,
+    path: String,
+    intent: Intent,
+    clipboard_id: Option<String>,
+    dragging: bool,
+) -> AppResult<DraftPreview> {
     crate::remote_path::absolute(&path)?;
     let id = uuid::Uuid::new_v4().to_string();
-    let remote = matches!(source, Source::Remote { .. });
-    let endpoint = if remote {
+    let kind = transfers::operation_kind(&source, &target, intent)?;
+    if kind == "serverCopy" || kind == "serverMove" {
+        if let Source::Remote { paths, .. } = &source {
+            for p in paths {
+                if path == *p || path.starts_with(&format!("{p}/")) {
+                    return Err(AppError::new(
+                        "path",
+                        "不能将目录复制或移动到自身及其子目录",
+                    ));
+                }
+                if (dragging || intent == Intent::Move) && crate::remote_path::parent(p) == path {
+                    return Err(AppError::new("noChange", "项目已经在该目录中"));
+                }
+            }
+        }
+    }
+    let endpoint = if kind == "direct" {
         let config = state.database.lock().unwrap().get(&target.target().id)?;
         config.direct_host.map(|host| DirectEndpoint {
             host,
@@ -442,6 +504,9 @@ fn create_draft(
     drafts.insert(
         id.clone(),
         Draft {
+            kind: kind.into(),
+            intent,
+            clipboard_id,
             source,
             target,
             path,
@@ -473,6 +538,7 @@ fn preview(id: &str, draft: &Draft) -> DraftPreview {
         ),
     };
     DraftPreview {
+        kind: draft.kind.clone(),
         id: id.into(),
         source_name,
         source_paths,
@@ -484,8 +550,7 @@ fn preview(id: &str, draft: &Draft) -> DraftPreview {
             port: e.port,
             username: e.username.clone(),
         }),
-        endpoint_required: matches!(draft.source, Source::Remote { .. })
-            && draft.endpoint.is_none(),
+        endpoint_required: draft.kind == "direct" && draft.endpoint.is_none(),
         saved_password_available: !draft.target.target().password.is_empty(),
     }
 }
@@ -500,7 +565,16 @@ pub fn claim_file_drop(
     moves::workspace_only(&window)?;
     let target = state.spec(&session_id, window.label())?;
     let grant = claim_grant(&state, &token, window.label())?;
-    draft(&state, &window, grant.source, target, parent_path)
+    create_operation_draft(
+        &state,
+        window.label(),
+        grant.source,
+        target,
+        parent_path,
+        grant.intent,
+        None,
+        true,
+    )
 }
 fn claim_grant(state: &State, token: &str, window: &str) -> AppResult<Grant> {
     let mut grants = state.drags.grants.lock().unwrap();
@@ -566,7 +640,10 @@ pub fn start_transfer(
     if let Some(id) = &draft.started {
         return Ok(id.clone());
     }
-    let id = transfers::start_write(
+    if let Some(id) = &draft.clipboard_id {
+        state.drags.clipboard.reserve(id)?;
+    }
+    let result = transfers::start_write(
         app,
         state.inner().clone(),
         draft.source.clone(),
@@ -576,7 +653,19 @@ pub fn start_transfer(
         draft.endpoint.clone(),
         auth,
         verify_sha256.unwrap_or(false),
-    )?;
+        draft.intent,
+        draft.clipboard_id.clone(),
+    );
+    let id = match result {
+        Ok(id) => id,
+        Err(e) => {
+            if let Some(id) = &draft.clipboard_id {
+                state.drags.clipboard.release(id);
+            }
+            return Err(e);
+        }
+    };
+    let _ = window.app_handle().emit("remote-clipboard-changed", ());
     draft.started = Some(id.clone());
     Ok(id)
 }
@@ -617,7 +706,7 @@ fn update_endpoint(
         || value.generation != state.owner(owner).generation
         || value.expires < Instant::now()
         || value.started.is_some()
-        || !matches!(value.source, Source::Remote { .. })
+        || value.kind != "direct"
     {
         return Err(AppError::new("permission", "此复制准备不可修改"));
     }
@@ -648,6 +737,75 @@ fn update_endpoint(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn same_server_drafts_do_not_require_direct_address_and_reject_cross_server_moves() {
+        let state = crate::connection::tests::state();
+        let config = crate::model::ServerConfig {
+            id: "a".into(),
+            name: "A".into(),
+            host: "entry-a".into(),
+            port: 22,
+            username: "ops".into(),
+            tags: vec![],
+            auth_type: "password".into(),
+            private_key: String::new(),
+            password: String::new(),
+            jump_server_id: None,
+            direct_host: None,
+            direct_port: 22,
+        };
+        let a = crate::connection::tests::mock_context(config.clone());
+        let source = Source::Remote {
+            context: a.clone(),
+            paths: vec!["/src/file".into()],
+        };
+        for (intent, kind) in [(Intent::Copy, "serverCopy"), (Intent::Move, "serverMove")] {
+            let d = create_operation_draft(
+                &state,
+                "main",
+                source.clone(),
+                a.clone(),
+                "/dest".into(),
+                intent,
+                None,
+                true,
+            )
+            .unwrap();
+            assert_eq!(d.kind, kind);
+            assert!(!d.endpoint_required);
+            assert!(d.direct_endpoint.is_none());
+        }
+        assert!(create_operation_draft(
+            &state,
+            "main",
+            source.clone(),
+            a.clone(),
+            "/src".into(),
+            Intent::Copy,
+            None,
+            true
+        )
+        .is_err());
+        assert!(create_operation_draft(
+            &state,
+            "main",
+            source.clone(),
+            a.clone(),
+            "/src".into(),
+            Intent::Copy,
+            None,
+            false
+        )
+        .is_ok());
+        let mut b = config;
+        b.id = "b".into();
+        assert!(transfers::operation_kind(
+            &source,
+            &crate::connection::tests::mock_context(b),
+            Intent::Move
+        )
+        .is_err());
+    }
     #[test]
     fn endpoint_snapshot_is_frozen_and_edits_replace_only_unstarted_owned_drafts() {
         use crate::model::{PasswordChange, SaveServerRequest, ServerConfig};
@@ -680,11 +838,15 @@ mod tests {
         let context = crate::connection::tests::mock_context(
             state.database.lock().unwrap().get(&saved.id).unwrap(),
         );
+        let mut source_config = state.database.lock().unwrap().get(&saved.id).unwrap();
+        source_config.id = "source-a".into();
+        source_config.host = "source.example".into();
+        let source_context = crate::connection::tests::mock_context(source_config);
         let draft = create_draft(
             &state,
             "main",
             Source::Remote {
-                context: context.clone(),
+                context: source_context,
                 paths: vec!["/source".into()],
             },
             context,

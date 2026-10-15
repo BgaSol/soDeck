@@ -8,24 +8,16 @@ import {
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import {
-  Plus,
-  Search,
-  Server as ServerIcon,
-  Pencil,
-  TerminalSquare,
-  Plug,
-  X,
-  LockKeyhole,
-  Trash2,
-  ScrollText,
-} from "lucide-react";
+import { TerminalSquare, X, LockKeyhole, ScrollText } from "lucide-react";
 import { api, desktop } from "./api";
+import { AppBrand, BrandIcon } from "./AppBrand";
+import { APP_TAGLINE } from "./brand";
 import { TerminalPane } from "./TerminalPane";
 import { ServerEditor } from "./ServerEditor";
 import { ServerDeleteDialog } from "./ServerDeleteDialog";
 import { DatabaseResetDialog } from "./DatabaseResetDialog";
 import { logApi } from "./logApi";
+import { terminalHistoryApi } from "./terminalHistoryApi";
 import { FilePanel } from "./FilePanel";
 import { DockerPanel } from "./DockerPanel";
 import { WorkspaceTabs } from "./WorkspaceTabs";
@@ -36,7 +28,9 @@ import { transferApi, transferActive } from "./transferApi";
 import { QuitDialog } from "./QuitDialog";
 import { useWorkspaceMoves } from "./useWorkspaceMoves";
 import { SessionWorkspace } from "./SessionWorkspace";
-import { addressOf, emptyServer, errorOf, filterServers } from "./types";
+import { ServerPickerDialog } from "./ServerPickerDialog";
+import { WorkspaceLayout } from "./WorkspaceLayout";
+import { emptyServer, errorOf, filterServers } from "./types";
 import {
   closeWorkspace,
   emptyWorkspaces,
@@ -57,6 +51,11 @@ const ContainerLogsApp = lazy(() =>
 );
 const LogArchives = lazy(() =>
   import("./LogArchives").then(({ LogArchives }) => ({ default: LogArchives })),
+);
+const TerminalHistoryApp = lazy(() =>
+  import("./TerminalHistoryView").then(({ TerminalHistoryApp }) => ({
+    default: TerminalHistoryApp,
+  })),
 );
 function ContainerApp() {
   const [info, setInfo] = useState<{
@@ -145,14 +144,41 @@ export function App() {
       setError(errorOf(error));
     }
   }
-  const [menu, setMenu] = useState<{
-    server: Server;
-    x: number;
-    y: number;
-  } | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [promptTab, setPromptTab] = useState<string | null>(null);
+  type PendingConnection = {
+    tabId: string;
+    serverId: string;
+    returnId: string;
+    attempt: number;
+    busy: boolean;
+    error?: string;
+  };
+  const [pending, setPendingState] = useState<PendingConnection | null>(null);
+  const pendingRef = useRef<PendingConnection | null>(null);
+  const setPending = useCallback((value: PendingConnection | null) => {
+    pendingRef.current = value;
+    setPendingState(value);
+  }, []);
+  const pickerWasOpen = useRef(false);
+  const focusTerminal = useRef(false);
+  useEffect(() => {
+    if (pickerOpen) {
+      pickerWasOpen.current = true;
+      return;
+    }
+    if (!pickerWasOpen.current) return;
+    pickerWasOpen.current = false;
+    const frame = requestAnimationFrame(() => {
+      const selector = focusTerminal.current
+        ? ".workspace-page-wrap:not([hidden]) .xterm-helper-textarea"
+        : ".new-session";
+      document.querySelector<HTMLElement>(selector)?.focus();
+      focusTerminal.current = false;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [pickerOpen]);
   const moves = useWorkspaceMoves(setWorkspaces, setError);
-  const selected = servers.find((server) => server.id === selectedId);
   const tags = [...new Set(servers.flatMap((server) => server.tags))].sort(),
     visible = filterServers(servers, query, tag);
   useEffect(() => {
@@ -182,7 +208,9 @@ export function App() {
         );
         const transfers = await transferApi.list().catch(() => []);
         const activeTransfers = transfers.filter(transferActive).length;
-        const unknown = transfers.filter((t) => ["unknown", "needsAttention", "interrupted"].includes(t.status)).length;
+        const unknown = transfers.filter((t) =>
+          ["unknown", "needsAttention", "interrupted"].includes(t.status),
+        ).length;
         const details = [
           count ? `仍有 ${count} 个活动终端` : "",
           logs ? `${logs} 个日志窗口正在接收` : "",
@@ -208,22 +236,6 @@ export function App() {
       cleanup?.();
     };
   }, []);
-  useEffect(() => {
-    if (!menu) return;
-    menuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
-    const outside = (event: PointerEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) setMenu(null);
-    };
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMenu(null);
-    };
-    document.addEventListener("pointerdown", outside);
-    document.addEventListener("keydown", escape);
-    return () => {
-      document.removeEventListener("pointerdown", outside);
-      document.removeEventListener("keydown", escape);
-    };
-  }, [menu]);
   const updateTab = useCallback(
     (id: string, patch: Partial<Pick<WorkspaceTab, "server" | "state">>) => {
       setWorkspaces((current) => ({
@@ -256,16 +268,104 @@ export function App() {
       off?.();
     };
   }, [refreshConfigurations]);
-  function open(server: Server, forceNew = false) {
-    setMenu(null);
-    if (!desktop) return;
+  function discardPending() {
+    const current = pendingRef.current;
+    setPending(null);
+    setPromptTab(null);
+    if (current)
+      setWorkspaces((state) => {
+        const next = closeWorkspace(state, current.tabId);
+        return {
+          ...next,
+          activeId: next.tabs.some((t) => t.id === current.returnId)
+            ? current.returnId
+            : next.activeId,
+        };
+      });
+  }
+  function closePicker() {
+    discardPending();
+    setPickerOpen(false);
+  }
+  const receiveStatus = useCallback(
+    (id: string, attempt: number, state: string, failure?: AppError) => {
+      const current = pendingRef.current;
+      if (!current || current.tabId !== id || current.attempt !== attempt)
+        return;
+      if (state === "已连接") {
+        focusTerminal.current = true;
+        setPending(null);
+        setPromptTab(null);
+        setPickerOpen(false);
+      } else if (state === "连接失败" || (state === "error" && !current.busy)) {
+        setPending({
+          ...current,
+          busy: false,
+          error: failure?.message || current.error || "连接失败，请重试。",
+        });
+      } else if (state === "已断开") {
+        setPending(null);
+        setPromptTab(null);
+        setPickerOpen(false);
+        setWorkspaces((value) => {
+          const next = closeWorkspace(value, id);
+          return {
+            ...next,
+            activeId: next.tabs.some((t) => t.id === current.returnId)
+              ? current.returnId
+              : next.activeId,
+          };
+        });
+      }
+    },
+    [setPending],
+  );
+  const receivePrompt = useCallback((id: string, visible: boolean) => {
+    setPromptTab((current) => (visible ? id : current === id ? null : current));
+  }, []);
+  function open(server: Server) {
+    if (!desktop || pendingRef.current?.busy) return;
     if (!server.username) {
       setError({ kind: "validation", message: "请先填写 SSH 用户名。" });
+      discardPending();
       setEditor(structuredClone(server));
       return;
     }
     setError(null);
-    setWorkspaces((current) => openWorkspace(current, server, forceNew));
+    const previous = pendingRef.current;
+    if (
+      previous?.serverId === server.id &&
+      moves.handles.current.has(previous.tabId)
+    ) {
+      setPending({
+        ...previous,
+        attempt: previous.attempt + 1,
+        busy: true,
+        error: undefined,
+      });
+      moves.handles.current.get(previous.tabId)!.reconnect();
+      return;
+    }
+    const tabId = crypto.randomUUID();
+    setPending({
+      tabId,
+      serverId: server.id,
+      returnId: previous?.returnId ?? workspaces.activeId,
+      attempt: 0,
+      busy: true,
+    });
+    setWorkspaces((current) =>
+      openWorkspace(
+        previous ? closeWorkspace(current, previous.tabId) : current,
+        server,
+        true,
+        tabId,
+      ),
+    );
+  }
+  function editServer(server: Server) {
+    discardPending();
+    setEditor(structuredClone(server));
   }
   async function save(server: SaveServerRequest) {
     const saved = await api.saveServer(server);
@@ -304,19 +404,13 @@ export function App() {
     setError(null);
   }
   function requestDelete(server: Server) {
-    setMenu(null);
+    discardPending();
     setDeleting(server);
   }
   return (
     <div className="app-shell">
       <header className="app-header">
-        <span className="app-mark" aria-hidden="true">
-          <TerminalSquare size={20} />
-        </span>
-        <div className="app-brand">
-          <strong>SSH Workspace</strong>
-          <span>服务器工作空间</span>
-        </div>
+        <AppBrand />
         <span className="header-divider" />
         <span className="header-summary">
           {workspaces.tabs.length
@@ -327,6 +421,33 @@ export function App() {
           <LockKeyhole size={12} />
           本地工作空间
         </span>
+        <div className="header-actions">
+          <button
+            disabled={!desktop}
+            onClick={() =>
+              void terminalHistoryApi.open().catch((e) => setError(errorOf(e)))
+            }
+          >
+            <TerminalSquare size={15} />
+            终端历史
+          </button>
+          <button
+            disabled={!desktop || openingArchives}
+            onClick={async () => {
+              setOpeningArchives(true);
+              try {
+                await logApi.openArchives();
+              } catch (e) {
+                setError(errorOf(e));
+              } finally {
+                setOpeningArchives(false);
+              }
+            }}
+          >
+            <ScrollText size={15} />
+            本地日志
+          </button>
+        </div>
       </header>
       {!desktop && (
         <div className="browser-notice">
@@ -353,7 +474,7 @@ export function App() {
                 reorderWorkspace(current, id, beforeId),
               )
             }
-            onNew={selected && desktop ? () => open(selected, true) : undefined}
+            onNew={desktop ? () => setPickerOpen(true) : undefined}
           />
           {error && (
             <div className="connection-error" role="alert">
@@ -402,6 +523,8 @@ export function App() {
                   }}
                   onChange={updateTab}
                   onConfigurationChanged={refreshConfigurations}
+                  onConnectionStatus={receiveStatus}
+                  onPromptChange={receivePrompt}
                 />
                 {moves.moving.has(tab.id) && (
                   <div className="session-moving">
@@ -414,233 +537,73 @@ export function App() {
               </div>
             ))}
             {!workspaces.tabs.length && (
-              <div className="session-page empty-session">
-                <aside
-                  className="resource-panel"
-                  style={{ gridTemplateRows: "1fr 10px 1fr" }}
-                >
-                  <FilePanel sessionId={null} serverName="" />
-                  <div className="horizontal-resizer" />
+              <WorkspaceLayout
+                files={<FilePanel sessionId={null} serverName="" />}
+                services={
                   <DockerPanel sessionId={null} serverName="" active={false} />
-                </aside>
-                <div className="vertical-resizer" />
-                <main className="terminal-panel">
-                  <div className="session-welcome">
-                    <span className="welcome-symbol" aria-hidden="true">
-                      <TerminalSquare size={38} />
-                    </span>
-                    <span className="welcome-caption">
-                      你的远程工作，从这里开始
-                    </span>
-                    <h2>打开一个 SSH 连接</h2>
-                    <p>双击右侧服务器，或选择服务器后点击“连接”。</p>
-                    <p>每个会话都有独立的终端、文件目录和 Docker 面板。</p>
-                    {desktop && (
-                      <button
-                        className="primary welcome-action"
-                        title={selected?.name}
-                        onClick={() =>
-                          selected ? open(selected) : setEditor(emptyServer())
-                        }
-                      >
-                        {selected ? <Plug size={15} /> : <Plus size={15} />}
-                        {selected ? "打开所选服务器" : "添加第一台服务器"}
-                      </button>
-                    )}
-                    <div className="welcome-features" aria-hidden="true">
-                      <span>SSH 终端</span>
-                      <span>SFTP 文件</span>
-                      <span>Docker 服务</span>
+                }
+                terminal={
+                  <main className="terminal-panel">
+                    <div className="session-welcome">
+                      <span className="welcome-symbol" aria-hidden="true">
+                        <BrandIcon size={76} />
+                      </span>
+                      <span className="welcome-caption">{APP_TAGLINE}</span>
+                      <h2>打开一个 SSH 连接</h2>
+                      <p>点击上方标签栏右侧的“＋”，选择服务器并连接。</p>
+                      <p>每个会话都有独立的终端、文件目录和 Docker 面板。</p>
+                      <div className="welcome-features" aria-hidden="true">
+                        <span>SSH 终端</span>
+                        <span>SFTP 文件</span>
+                        <span>Docker 服务</span>
+                      </div>
                     </div>
-                  </div>
-                </main>
-              </div>
+                  </main>
+                }
+              />
             )}
           </div>
         </div>
-        <aside className="server-panel" aria-label="服务器列表">
-          <div className="server-tools">
-            <button
-              disabled={!desktop || openingArchives}
-              onClick={async () => {
-                setOpeningArchives(true);
-                try {
-                  await logApi.openArchives();
-                } catch (e) {
-                  setError(errorOf(e));
-                } finally {
-                  setOpeningArchives(false);
-                }
-              }}
-            >
-              <ScrollText size={15} />
-              本地日志
-            </button>
-            <div className="panel-title">
-              <h2>
-                服务器<span className="inventory-count">{servers.length}</span>
-              </h2>
-              <button
-                className="primary"
-                disabled={!desktop}
-                onClick={() => setEditor(emptyServer())}
-              >
-                <Plus size={15} />
-                新增
-              </button>
-            </div>
-            <label className="search-box">
-              <Search size={16} />
-              <input
-                aria-label="搜索服务器"
-                placeholder="搜索名称或地址"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </label>
-            <select
-              aria-label="按标签筛选"
-              value={tag}
-              onChange={(event) => setTag(event.target.value)}
-            >
-              <option value="">全部标签</option>
-              {tags.map((value) => (
-                <option key={value}>{value}</option>
-              ))}
-            </select>
-          </div>
-          <div className="server-list">
-            {visible.map((server) => (
-              <button
-                className={`server-row${selectedId === server.id ? " selected" : ""}`}
-                aria-pressed={selectedId === server.id}
-                key={server.id}
-                onClick={() => setSelectedId(server.id)}
-                onDoubleClick={() => open(server)}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  setSelectedId(server.id);
-                  setMenu({
-                    server,
-                    x: Math.min(event.clientX, window.innerWidth - 190),
-                    y: Math.min(event.clientY, window.innerHeight - 180),
-                  });
-                }}
-              >
-                <span className="server-symbol" aria-hidden="true">
-                  <ServerIcon size={17} />
-                </span>
-                <span className="server-row-body">
-                  <span className="server-name">{server.name}</span>
-                  <span className="server-address">{addressOf(server)}</span>
-                  {server.tags.length > 0 && (
-                    <span className="chips">
-                      {server.tags.map((value) => (
-                        <span className="chip" key={value}>
-                          {value}
-                        </span>
-                      ))}
-                    </span>
-                  )}
-                </span>
-              </button>
-            ))}
-            {!visible.length && (
-              <div className="panel-empty">
-                <ServerIcon size={26} aria-hidden="true" />
-                <strong>
-                  {loading
-                    ? "正在读取服务器…"
-                    : servers.length
-                      ? "没有匹配的服务器"
-                      : "还没有服务器"}
-                </strong>
-                {!loading && !servers.length && (
-                  <p>添加服务器，开始你的第一个会话。</p>
-                )}
-                {(query || tag) && (
-                  <button
-                    onClick={() => {
-                      setQuery("");
-                      setTag("");
-                    }}
-                  >
-                    清除筛选
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-          <footer className="server-footer">
-            <span>
-              {visible.length} / {servers.length} 台服务器
-            </span>
-            <div className="server-actions">
-              <button
-                className="primary"
-                disabled={!selected || !desktop}
-                onClick={() => open(selected!)}
-              >
-                <Plug size={13} />
-                连接
-              </button>
-              <button
-                className="quiet"
-                disabled={!selected}
-                onClick={() => setEditor(structuredClone(selected!))}
-              >
-                <Pencil size={13} />
-                编辑
-              </button>
-              <button
-                className="quiet danger"
-                disabled={!selected || !desktop}
-                onClick={() => requestDelete(selected!)}
-              >
-                <Trash2 size={13} />
-                删除
-              </button>
-            </div>
-          </footer>
-        </aside>
       </div>
       <TransferPanel />
       <DesktopDragPreview />
-      {menu && (
-        <div
-          className="server-context-menu"
-          role="menu"
-          aria-label={`${menu.server.name} 操作`}
-          ref={menuRef}
-          style={{ left: menu.x, top: menu.y }}
-        >
-          <button role="menuitem" onClick={() => open(menu.server)}>
-            <Plug size={14} />
-            打开连接
-          </button>
-          <button role="menuitem" onClick={() => open(menu.server, true)}>
-            <Plus size={14} />
-            新建连接
-          </button>
-          <button
-            role="menuitem"
-            onClick={() => {
-              setEditor(structuredClone(menu.server));
-              setMenu(null);
-            }}
-          >
-            <Pencil size={14} />
-            编辑
-          </button>
-          <button
-            role="menuitem"
-            className="danger"
-            onClick={() => requestDelete(menu.server)}
-          >
-            <Trash2 size={14} />
-            删除服务器
-          </button>
-        </div>
+      {pickerOpen && (
+        <ServerPickerDialog
+          servers={servers}
+          selectedId={selectedId}
+          query={query}
+          tag={tag}
+          loading={loading}
+          busy={!!pending?.busy}
+          suspended={
+            !!editor ||
+            !!deleting ||
+            !!promptTab ||
+            databaseResetDetails !== null ||
+            !!quitRequest
+          }
+          error={pending?.error || error?.message}
+          connectedIds={
+            new Set(
+              workspaces.tabs
+                .filter((t) => t.state === "已连接")
+                .map((t) => t.server.id),
+            )
+          }
+          onSelect={setSelectedId}
+          onQuery={setQuery}
+          onTag={setTag}
+          onConnect={open}
+          onEdit={editServer}
+          onDelete={requestDelete}
+          onNew={() => editServer(emptyServer())}
+          onClose={closePicker}
+          onResetDatabase={
+            error?.kind === "databaseSchema"
+              ? () => setDatabaseResetDetails(error.message)
+              : undefined
+          }
+        />
       )}
       {editor && (
         <ServerEditor
@@ -687,6 +650,12 @@ export function App() {
 }
 export function Root() {
   const params = new URLSearchParams(location.search);
+  if (params.has("terminal-history"))
+    return (
+      <Suspense fallback={<div role="status">正在打开终端历史…</div>}>
+        <TerminalHistoryApp />
+      </Suspense>
+    );
   if (params.has("archives"))
     return (
       <Suspense fallback={<div role="status">正在打开本地日志…</div>}>

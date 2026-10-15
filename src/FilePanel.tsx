@@ -17,15 +17,18 @@ import {
   Pencil,
   RefreshCw,
   X,
-  Plus,
   Upload,
   FilePlus2,
   FolderPlus,
   ArrowRightLeft,
+  Copy,
+  Scissors,
+  ClipboardPaste,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { desktop } from "./api";
 import { transferApi } from "./transferApi";
+import type { RemoteClipboard } from "./transferApi";
 import { FileOperationDialog } from "./FileOperationDialog";
 import { CopyTargetDialog } from "./CopyTargetDialog";
 import type { FileOperation } from "./FileOperationDialog";
@@ -73,6 +76,7 @@ export function FilePanel({
   const selection = state.selection ?? (selected ? [selected] : []);
   const panel = useRef<HTMLElement>(null);
   const [operation, setOperation] = useState<FileOperation | null>(null);
+  const [clipboard, setClipboard] = useState<RemoteClipboard | null>(null);
   const [copyPaths, setCopyPaths] = useState<string[] | null>(null);
   const viewRegistration = useRef<{ id: string; update: () => void } | null>(
     null,
@@ -98,6 +102,7 @@ export function FilePanel({
   const [busy, setBusy] = useState(false);
   const [menu, setMenu] = useState<{
     file: FileEntry;
+    blank?: boolean;
     x: number;
     y: number;
   } | null>(null);
@@ -194,7 +199,7 @@ export function FilePanel({
       return;
     }
     const target = fileDropTarget(panel.current, event.x, event.y);
-    setDropKind(event.kind);
+    setDropKind(event.intent === "move" ? "move" : event.kind);
     setDropPath(target);
     if (target && event.phase === "over") {
       if (hover.current?.path !== target)
@@ -217,7 +222,7 @@ export function FilePanel({
         .then((draft) => {
           if (sessionRef.current === owner)
             setOperation({
-              kind: event.kind === "localFiles" ? "upload" : "direct",
+              kind: draft.kind,
               draft,
             });
         })
@@ -261,6 +266,76 @@ export function FilePanel({
       setBusy(false);
     }
   }
+  useEffect(() => {
+    if (!desktop || !sessionId) {
+      setClipboard(null);
+      return;
+    }
+    let live = true;
+    let off: (() => void) | undefined;
+    let revision = 0;
+    const refresh = async () => {
+      const current = ++revision;
+      try {
+        const value = await transferApi.clipboard(sessionId);
+        if (live && current === revision) setClipboard(value);
+      } catch {
+        if (live && current === revision) setClipboard(null);
+      }
+    };
+    void getCurrentWindow()
+      .listen("remote-clipboard-changed", () => void refresh())
+      .then((cleanup) => {
+        if (live) {
+          off = cleanup;
+          void refresh();
+        } else cleanup();
+      });
+    return () => {
+      live = false;
+      off?.();
+    };
+  }, [sessionId]);
+  async function clipboardCopy(intent: "copy" | "move", file?: FileEntry) {
+    if (!sessionId || busy || operation) return;
+    const owner = sessionId;
+    const paths = (
+      file && !selection.includes(file.path) ? [file.path] : selection
+    ).filter((p) => p !== "/");
+    if (!paths.length) return;
+    setMenu(null);
+    setError("");
+    try {
+      await transferApi.copy(owner, paths, intent);
+      const value = await transferApi.clipboard(owner);
+      if (sessionRef.current === owner) setClipboard(value);
+    } catch (e) {
+      setError(errorOf(e).message);
+    }
+  }
+  async function paste(target: string) {
+    if (!sessionId || busy || operation) return;
+    const owner = sessionId;
+    setMenu(null);
+    setError("");
+    setBusy(true);
+    try {
+      const draft = await transferApi.paste(owner, target);
+      if (sessionRef.current === owner)
+        setOperation({ kind: draft.kind, draft });
+    } catch (e) {
+      setError(errorOf(e).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const pasteAllowed =
+    !!clipboard &&
+    !clipboard.reserved &&
+    (clipboard.intent === "copy" || clipboard.sameServer);
+  const pasteTarget =
+    rows.find((row) => row.file.path === selected && row.file.isDir)?.file
+      .path ?? state.currentPath;
   function create(kind: "file" | "directory", path: string) {
     if (!sessionId) return;
     setMenu(null);
@@ -290,6 +365,25 @@ export function FilePanel({
       else void model.expand(file.path);
     }
   }
+  useLayoutEffect(() => {
+    if (!menu || !contextMenu.current) return;
+    const bounds = contextMenu.current.getBoundingClientRect();
+    const x = Math.max(
+      5,
+      Math.min(
+        Number.isFinite(menu.x) ? menu.x : 5,
+        window.innerWidth - Math.ceil(bounds.width) - 5,
+      ),
+    );
+    const y = Math.max(
+      5,
+      Math.min(
+        Number.isFinite(menu.y) ? menu.y : 5,
+        window.innerHeight - Math.ceil(bounds.height) - 5,
+      ),
+    );
+    if (x !== menu.x || y !== menu.y) setMenu({ ...menu, x, y });
+  }, [menu]);
   useEffect(() => {
     if (!menu) return;
     contextMenu.current
@@ -400,40 +494,24 @@ export function FilePanel({
             远程文件
           </h2>
           <div className="file-toolbar">
-            <details className="file-new-menu">
-              <summary
-                className="icon-button"
-                aria-label="新建"
-                title="新建文件或文件夹"
-                onClick={(e) => {
-                  if (!sessionId || busy) e.preventDefault();
-                }}
-              >
-                <Plus size={15} />
-              </summary>
-              <div role="menu" aria-label="新建项目">
-                <button
-                  role="menuitem"
-                  onClick={(e) => {
-                    e.currentTarget.closest("details")?.removeAttribute("open");
-                    create("directory", state.currentPath);
-                  }}
-                >
-                  <FolderPlus size={15} />
-                  新建文件夹
-                </button>
-                <button
-                  role="menuitem"
-                  onClick={(e) => {
-                    e.currentTarget.closest("details")?.removeAttribute("open");
-                    create("file", state.currentPath);
-                  }}
-                >
-                  <FilePlus2 size={15} />
-                  新建文件
-                </button>
-              </div>
-            </details>
+            <button
+              className="icon-button"
+              aria-label="新建文件"
+              title="新建文件"
+              disabled={!sessionId || busy}
+              onClick={() => create("file", state.currentPath)}
+            >
+              <FilePlus2 size={15} />
+            </button>
+            <button
+              className="icon-button"
+              aria-label="新建文件夹"
+              title="新建文件夹"
+              disabled={!sessionId || busy}
+              onClick={() => create("directory", state.currentPath)}
+            >
+              <FolderPlus size={15} />
+            </button>
             <button
               className="icon-button"
               aria-label="上传文件"
@@ -468,6 +546,33 @@ export function FilePanel({
               onClick={() => copyToServer()}
             >
               <ArrowRightLeft size={15} />
+            </button>
+            <button
+              className="icon-button"
+              aria-label="复制选中项目"
+              title="复制（Ctrl/Cmd+C）"
+              disabled={!sessionId || busy || !selection.some((p) => p !== "/")}
+              onClick={() => void clipboardCopy("copy")}
+            >
+              <Copy size={15} />
+            </button>
+            <button
+              className="icon-button"
+              aria-label="剪切选中项目"
+              title="剪切（Ctrl/Cmd+X）"
+              disabled={!sessionId || busy || !selection.some((p) => p !== "/")}
+              onClick={() => void clipboardCopy("move")}
+            >
+              <Scissors size={15} />
+            </button>
+            <button
+              className="icon-button"
+              aria-label="粘贴项目"
+              title="粘贴到选中目录（Ctrl/Cmd+V）"
+              disabled={!sessionId || busy || !pasteAllowed}
+              onClick={() => void paste(pasteTarget)}
+            >
+              <ClipboardPaste size={15} />
             </button>
             <button
               className="icon-button"
@@ -529,6 +634,63 @@ export function FilePanel({
         role={sessionId ? "tree" : undefined}
         aria-label={sessionId ? "远程文件树" : undefined}
         aria-multiselectable={sessionId ? true : undefined}
+        tabIndex={0}
+        onContextMenu={(event) => {
+          if (
+            !sessionId ||
+            (event.target as HTMLElement).closest("[role=treeitem]")
+          )
+            return;
+          event.preventDefault();
+          setMenu({
+            blank: true,
+            file: {
+              name: state.currentPath,
+              path: state.currentPath,
+              isDir: true,
+              size: 0,
+              modified: 0,
+            },
+            x: Math.min(event.clientX, window.innerWidth - 210),
+            y: Math.min(event.clientY, window.innerHeight - 310),
+          });
+        }}
+        onKeyDown={(event) => {
+          if (
+            !active ||
+            operation ||
+            busy ||
+            (event.target as HTMLElement).closest(
+              "input,textarea,[contenteditable=true]",
+            )
+          )
+            return;
+          const key = event.key.toLowerCase();
+          if (
+            (event.ctrlKey || event.metaKey) &&
+            !event.altKey &&
+            ["c", "x", "v"].includes(key)
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (key === "v")
+              void paste(
+                event.target === event.currentTarget
+                  ? state.currentPath
+                  : pasteTarget,
+              );
+            else void clipboardCopy(key === "x" ? "move" : "copy");
+          } else if (event.key === "Escape" && clipboard?.intent === "move") {
+            event.preventDefault();
+            void transferApi
+              .clearClipboard(clipboard.id)
+              .then(() => (sessionId ? transferApi.clipboard(sessionId) : null))
+              .then((value) => {
+                if (sessionRef.current === sessionId) setClipboard(value);
+              })
+              .catch((e) => setError(errorOf(e).message));
+          }
+        }}
         onScroll={(event) => {
           if (active && restoredScroll.current)
             model.setScrollTop(event.currentTarget.scrollTop);
@@ -554,6 +716,13 @@ export function FilePanel({
                   className={
                     "file-row file-tree-row" +
                     (selection.includes(file.path) ? " selected" : "") +
+                    (clipboard?.intent === "move" &&
+                    clipboard.sameServer &&
+                    clipboard.paths.some(
+                      (p) => file.path === p || file.path.startsWith(p + "/"),
+                    )
+                      ? " cut-pending"
+                      : "") +
                     (dropPath === file.path ? " drop-target" : "") +
                     (state.terminalCwd?.path === file.path
                       ? " terminal-directory"
@@ -751,8 +920,12 @@ export function FilePanel({
       </div>
       {dropPath && (
         <div className="file-drop-hint" role="status">
-          {dropKind === "localFiles" ? "上传到" : "复制到"} {serverName} ·{" "}
-          {dropPath}
+          {dropKind === "localFiles"
+            ? "上传到"
+            : dropKind === "move"
+              ? "移动到"
+              : "复制到"}{" "}
+          {serverName} · {dropPath}
         </div>
       )}
       {(error || state.error) && (
@@ -792,6 +965,36 @@ export function FilePanel({
           aria-label="文件操作"
           style={{ left: Math.max(5, menu.x), top: Math.max(5, menu.y) }}
         >
+          {!menu.blank && (
+            <>
+              <button
+                role="menuitem"
+                disabled={busy || menu.file.path === "/"}
+                onClick={() => void clipboardCopy("copy", menu.file)}
+              >
+                <Copy size={14} />
+                复制
+              </button>
+              <button
+                role="menuitem"
+                disabled={busy || menu.file.path === "/"}
+                onClick={() => void clipboardCopy("move", menu.file)}
+              >
+                <Scissors size={14} />
+                剪切
+              </button>
+            </>
+          )}
+          {menu.file.isDir && (
+            <button
+              role="menuitem"
+              disabled={busy || !pasteAllowed}
+              onClick={() => void paste(menu.file.path)}
+            >
+              <ClipboardPaste size={14} />
+              粘贴到此处
+            </button>
+          )}
           {menu.file.isDir && (
             <>
               <button
@@ -830,7 +1033,7 @@ export function FilePanel({
               编辑文本文件
             </button>
           )}
-          {menu.file.isDir && (
+          {!menu.blank && menu.file.isDir && (
             <button
               role="menuitem"
               onClick={() => {
@@ -842,22 +1045,26 @@ export function FilePanel({
               打开文件夹
             </button>
           )}
-          <button
-            role="menuitem"
-            disabled={busy}
-            onClick={() => setDownload(menu.file)}
-          >
-            <Download size={14} />
-            下载{menu.file.isDir ? "文件夹" : "文件"}
-          </button>
-          <button
-            role="menuitem"
-            disabled={busy || menu.file.path === "/"}
-            onClick={() => copyToServer(menu.file)}
-          >
-            <ArrowRightLeft size={14} />
-            复制到另一台服务器…
-          </button>
+          {!menu.blank && (
+            <>
+              <button
+                role="menuitem"
+                disabled={busy}
+                onClick={() => setDownload(menu.file)}
+              >
+                <Download size={14} />
+                下载{menu.file.isDir ? "文件夹" : "文件"}
+              </button>
+              <button
+                role="menuitem"
+                disabled={busy || menu.file.path === "/"}
+                onClick={() => copyToServer(menu.file)}
+              >
+                <ArrowRightLeft size={14} />
+                复制到另一台服务器…
+              </button>
+            </>
+          )}
         </div>
       )}
       {copyPaths && sessionId && (
@@ -867,7 +1074,7 @@ export function FilePanel({
           onClose={() => setCopyPaths(null)}
           onPrepared={(draft) => {
             setCopyPaths(null);
-            setOperation({ kind: "direct", draft });
+            setOperation({ kind: draft.kind, draft });
           }}
         />
       )}

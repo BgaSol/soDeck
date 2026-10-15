@@ -136,7 +136,7 @@ Windows 本机构建与交互已执行。macOS、Linux 的构建检查已配置�
 - 前端规则测试 61 项通过；既有数据库弹窗 Chromium/WebKit 回归 8 项通过；TypeScript/Vite 及包含内置前端的 macOS 调试 `.app` 构建通过。
 - 界面测试使用浏览器中的 IPC 模拟，不等同于原生 Tauri 窗口端到端测试。截图位于 `.qa/jump-design-editor-{light,dark,small}.png`、`.qa/jump-design-fingerprint-{light,dark}.png` 与 `.qa/jump-design-login-light.png`。
 
-## 文件创建、上传与服务器直传
+## 文件创建、上传与服务器直传（旧执行器历史记录）
 
 2026-10-15，macOS arm64。本次将 Python/scp 执行器替换为 POSIX shell + SSH 字节流。使用隔离的 A/B Paramiko SSH/SFTP 服务，由 A 上的系统 OpenSSH 客户端直连 B；主机密钥、客户端密钥、配置和数据均在临时目录。未连接用户服务器、未重建用户数据库。
 
@@ -152,3 +152,41 @@ TypeScript/Vite 构建、Clippy all-targets `-D warnings`、Rust/Prettier 格式
 运行命令见 README 的“上传与服务器直传”。故障测试中的 fixture connection-reset 日志为预期断开，不代表测试失败。
 
 覆盖限制：未自动执行 Finder 拖入、系统文件选择器和两个真实 Tauri 窗口之间的手动拖动；Windows/Linux 原生窗口、Wayland 指针能力未实测。SSH/SFTP 服务端是 Paramiko fixture，客户端为本机系统 OpenSSH，未宣称已验证所有旧版本 OpenSSH 或生产 sshd。POSIX 环境和独立进程组能力由运行时检查，不能保证的环境明确拒绝传输。强杀后无法取得停止证明的任务保留 unknown，需要人工核对；不凭旧 PID 执行清理或杀进程。
+
+
+## 同服务器复制、移动与应用剪贴板（2026-10-15）
+
+本轮采用当前 rsync/SFTP 执行器，在 Windows 开发环境编译，真实传输测试由 WSL Docker 内的生产 Rust 代码连接隔离 Ubuntu/OpenSSH 服务器执行。未连接业务服务器、未使用业务凭据。以下是当前执行器的验证记录，前节 shell/supervisor 验证仅为历史记录。
+
+- `cargo check --tests --manifest-path src-tauri/Cargo.toml` 通过。
+- Linux `cargo test --lib`：66 项通过，24 项需专用环境的用例默认忽略；其中 17 项文件传输测试随后显式执行并全部通过。常规测试包含操作分类、剪切预留和版本保护、原子批量路径读写锁、相反方向移动、编辑器打开／移动互斥。
+- `cargo test --lib rsync_ -- --ignored --test-threads=1`：17 项真实 SSH 用例通过。包含原有上传、密码／密钥直传、取消与复用、特殊路径、覆盖冲突、目标变化、跨挂载暂存、SQLite 恢复；新增服务器内复制、原目录副本、隐藏文件／空目录／链接跳过、同盘文件和目录移动保留 inode、跨盘移动、部分合并、来源变化保留、来源删除失败持久化、恢复时不重复复制、目录改名回复丢失核对、服务器内复制取消后保留来源和安全重试。
+- `npm test`：63 项通过；TypeScript/Vite 生产构建通过。
+- `npm run test:transfers -- --project=chromium`：15 项通过，涵盖后端类型驱动同服务器确认、无直传认证、Ctrl+C/X/V 作用域、剪切淡显与 Esc、空白区域粘贴、跨窗口剪贴板事件、运行预留，以及既有上传／直传回归。检查 `.qa/same-server-move.png` 与传输界面截图，窄文件面板工具栏换行且标题保持完整，菜单位置按实际尺寸限制。
+
+边界：浏览器测试使用 Tauri IPC 和拖放事件模拟；没有实际操作 Windows 资源管理器或两个原生 Tauri 窗口完成端到端拖放。Windows 本地 Rust 测试可执行文件受应用控制限制，因此使用 Linux 容器运行测试；Windows 代码通过编译检查。本轮未打包或安装应用。
+
+并发路径协调覆盖应用内部操作；外部 shell／其他客户端不受该锁约束。移动在扫描、提交和删除前复核来源身份与内容，检测到变化会保留来源，但普通 SSH/SFTP 无法为任意外部并发修改提供跨多个系统调用的文件系统事务。
+
+
+## 三栏工作区与服务器选择窗口（2026-10-15）
+
+本轮在 Windows 上实现左文件 / 中终端 / 右服务，服务器清单改为 Tab 栏“＋”打开的模态窗口，本地日志和终端历史入口移到主页面右上角。保留此前工作区中的终端历史、文件传输等改动。
+
+- `npm run build` 通过，`npm test` 的 65 项单元测试通过。
+- `playwright.connection.config.ts` 的 26 项 Chromium/WebKit 测试通过：逐跳指纹与密码认证、取消和迟到结果、配置增删改、空清单、筛选隐藏选中项、失败重试复用 Tab、重复点击只启动一次、左右栏键盘调整、Tab 切换、650 / 860 / 1440 宽度检查。
+- 会话移动的 IPC 模拟覆盖快照包含左右宽度、恢复原终端文本并调用 `terminal_attach` 而非 `open_connection`，以及旧 `resourceWidth/fileRatio` 快照兼容。
+- 30 项传输界面、5 项本地日志、8 项数据库、8 项终端历史回归通过；合计 77 项浏览器界面测试。以上浏览器回归使用模拟 Tauri IPC，没有连接用户的远程服务器。
+- 已更新原生桌面和文件树集成测试的新入口与分隔线操作，测试发现检查通过；本轮未执行需要原生 Tauri + SSH fixture 的集成套件，也未重新打包桌面可执行文件。
+- 已检查 `.qa/workspace-layout-650.png` 和 `.qa/workspace-server-picker.png`；完整三栏截图另见 `.qa/workspace-layout-1440.png`、`.qa/workspace-layout-860.png`。
+
+## SoDeck 品牌统一（2026-10-15）
+
+主界面、欢迎页、退出确认与窗口标题统一使用 SoDeck。主窗口和独立会话窗口的左上角提供“关于 SoDeck”，显示同一份产品版本。S 形图标在界面、浏览器、桌面和安装包中共用源 SVG；技术包名及 Windows 可执行文件改为 `sodeck`。
+
+- 保留 `com.sshworkspace.desktop` 和应用数据目录，以及内部通信标记、历史导出格式、传输临时文件前缀。本轮未修改或迁移用户数据库。
+- TypeScript/Vite 生产构建、65 项前端单元测试、`cargo check --tests` 通过。
+- 26 项 Chromium/WebKit 连接界面回归通过；补充浏览器检查覆盖品牌显示、关于窗口的打开/关闭/Esc/焦点恢复、深浅主题、650 × 480 布局，以及编辑器窗口标题保留未保存标记。浏览器检查使用模拟 Tauri IPC。
+- 已查看 `.qa/sodeck-home-chromium.png`、`.qa/sodeck-about-dark-chromium.png` 和 `.qa/sodeck-home-small-webkit.png`。
+- Windows release 与 NSIS 安装包构建成功：`src-tauri/target/release/sodeck.exe`、`src-tauri/target/release/bundle/nsis/SoDeck_0.1.0_x64-setup.exe`。可执行文件的 ProductName / FileDescription 均为 SoDeck，ProductVersion 为 0.1.0。
+- 本轮改动文件的 Prettier、Rust 格式检查及 `git diff --check` 通过。未执行安装/卸载流程、真实 SSH 连接或 macOS/Linux 原生界面验证。此前验证记录中的 SSH Workspace 名称为当时实际产物，保留作为历史记录。

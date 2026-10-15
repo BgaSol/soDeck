@@ -1,6 +1,8 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { TerminalSquare } from "lucide-react";
+import { AppBrand } from "./AppBrand";
+import { windowTitle } from "./brand";
+import { desktop } from "./api";
 import { SessionWorkspace } from "./SessionWorkspace";
 import { WorkspaceTabs } from "./WorkspaceTabs";
 import { TransferPanel } from "./TransferPanel";
@@ -14,6 +16,15 @@ export function DetachedApp() {
   const [workspaces, setWorkspaces] = useState(emptyWorkspaces);
   const [error, setError] = useState<AppError | null>(null);
   const moves = useWorkspaceMoves(setWorkspaces, setError, true);
+  const activeServerName = workspaces.tabs.find(
+    (tab) => tab.id === workspaces.activeId,
+  )?.server.name;
+  useEffect(() => {
+    if (!desktop || !activeServerName) return;
+    void getCurrentWindow()
+      .setTitle(windowTitle(activeServerName))
+      .catch(() => {});
+  }, [activeServerName]);
   const update = useCallback(
     (id: string, patch: Partial<Pick<WorkspaceTab, "server" | "state">>) =>
       setWorkspaces((current) => ({
@@ -25,9 +36,8 @@ export function DetachedApp() {
   return (
     <div className="app-shell detached-app">
       <header className="app-header">
-        <span className="app-mark">
-          <TerminalSquare size={20} />
-        </span>
+        <AppBrand />
+        <span className="header-divider" />
         <strong>SSH 会话</strong>
         <span className="header-summary">拖动顶部会话标签可移回主窗口</span>
       </header>

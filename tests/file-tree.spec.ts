@@ -1,3 +1,4 @@
+import { showServers, connectSelectedServer } from "./server-picker";
 import {
   chromium,
   expect,
@@ -147,6 +148,7 @@ async function fixture(label: string): Promise<Fixture> {
   };
   try {
     await main.reload();
+    await showServers(main);
     await main.locator(".server-row").filter({ hasText: name }).dblclick();
     await authenticate(main);
     const sessionId = await active(main)
@@ -200,10 +202,12 @@ test("remote tree loads only root-to-home, and expanding cached or empty folders
       );
     }
     await expect(node(f.main, `${home}/projects/home-note.txt`)).toHaveCount(0);
-    const split = active(f.main).locator(".horizontal-resizer");
+    const split = active(f.main).getByRole("separator", {
+      name: "调整文件区域宽度",
+    });
     await split.focus();
     for (let step = 0; step < 10; step++)
-      await f.main.keyboard.press("ArrowDown");
+      await f.main.keyboard.press("ArrowRight");
     await active(f.main)
       .getByRole("tree", { name: "远程文件树" })
       .evaluate((tree) => {
@@ -211,7 +215,7 @@ test("remote tree loads only root-to-home, and expanding cached or empty folders
       });
     await f.main.screenshot({ path: ".qa/tree-connected.png" });
     for (let step = 0; step < 10; step++)
-      await f.main.keyboard.press("ArrowUp");
+      await f.main.keyboard.press("ArrowLeft");
     const varBefore = await listCount("/var"),
       logBefore = await listCount("/var/log");
     await node(f.main, "/var").click();
@@ -382,7 +386,7 @@ test("tree expansion and cwd remain per-session through detached window transfer
     await expect(node(f.main, "/var/log")).toBeVisible();
     await command(f.main, "cd '/中文 空格/子目录'");
     await atDirectory(f.main, "/中文 空格/子目录");
-    await f.main.getByRole("button", { name: "新建连接", exact: true }).click();
+    await connectSelectedServer(f.main);
     await authenticate(f.main);
     await expect(f.main.getByRole("tab")).toHaveCount(2);
     await expect(node(f.main, "/var")).toHaveAttribute(

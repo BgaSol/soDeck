@@ -1,3 +1,4 @@
+import { showServers, connectSelectedServer } from "./server-picker";
 import {
   chromium,
   expect,
@@ -527,6 +528,7 @@ async function fixture(label: string): Promise<Fixture> {
       return originalChain(sessionId, path, knownPaths);
     };
   });
+  await showServers(main);
   await main.locator(".server-row").filter({ hasText: name }).dblclick();
   await authenticate(main);
   await expect
@@ -558,6 +560,7 @@ test("server deletion blocks tabs and independent windows, then removes the save
   const confirmation = () =>
     f.main.getByRole("dialog", { name: "删除服务器配置？" });
   try {
+    await showServers(f.main);
     await f.main
       .locator(".server-footer")
       .getByRole("button", { name: "删除", exact: true })
@@ -569,6 +572,7 @@ test("server deletion blocks tabs and independent windows, then removes the save
     await confirmation()
       .getByRole("button", { name: "取消", exact: true })
       .click();
+    await f.main.getByRole("button", { name: "关闭服务器窗口" }).click();
     const editorOpened = f.context.waitForEvent("page");
     const [editor] = await Promise.all([
       editorOpened,
@@ -592,6 +596,7 @@ test("server deletion blocks tabs and independent windows, then removes the save
     await expect(f.main.getByRole("tab")).toHaveCount(0);
     await detached.getByRole("button", { name: "断开", exact: true }).click();
     await expect.poll(() => ipc<number>(f.main, "session_count")).toBe(0);
+    await showServers(f.main);
     await f.main
       .locator(".server-row")
       .filter({ hasText: f.name })
@@ -621,6 +626,7 @@ test("server deletion blocks tabs and independent windows, then removes the save
       ),
     ).toBe(false);
     await f.main.reload();
+    await showServers(f.main);
     await expect(
       f.main.locator(".server-row").filter({ hasText: f.name }),
     ).toHaveCount(0);
@@ -662,7 +668,9 @@ test("server deletion supports cancellation, editor entry and filtered neighbour
         }),
       );
     await main.reload();
+    await showServers(main);
     await main.getByLabel("按标签筛选").selectOption(prefix);
+    await showServers(main);
     await main
       .locator(".server-row")
       .filter({ hasText: `${prefix} B` })
@@ -706,10 +714,11 @@ test("server deletion supports cancellation, editor entry and filtered neighbour
       .getByRole("button", { name: "删除", exact: true })
       .click();
     await confirmation().getByRole("button", { name: "确认删除" }).click();
-    await expect(main.getByRole("dialog")).toHaveCount(0);
+    await expect(main.getByRole("dialog", { name: /^服务器/ })).toBeVisible();
     await expect(main.locator(".server-row.selected")).toContainText(
       `${prefix} A`,
     );
+    await showServers(main);
     await main.locator(".server-row.selected").click({ button: "right" });
     await main.getByRole("menuitem", { name: "删除服务器" }).click();
     await confirmation().getByRole("button", { name: "确认删除" }).click();
@@ -1037,7 +1046,7 @@ test("tabs reorder, detach and rejoin without replacing their SSH connection or 
       /before-detach\s*ops@host/,
     );
     const separator = active(f.main).getByRole("separator", {
-      name: /文件和服务区域宽度|左侧宽度/,
+      name: "调整文件区域宽度",
     });
     const startingWidth = Number(await separator.getAttribute("aria-valuenow"));
     await separator.focus();
@@ -1047,16 +1056,20 @@ test("tabs reorder, detach and rejoin without replacing their SSH connection or 
       .poll(async () => Number(await separator.getAttribute("aria-valuenow")))
       .toBe(startingWidth + 20);
     const resourceWidth = Number(await separator.getAttribute("aria-valuenow"));
-    const split = active(f.main).locator(".horizontal-resizer");
-    const startingRatio = Number(await split.getAttribute("aria-valuenow"));
+    const split = active(f.main).getByRole("separator", {
+      name: "调整服务区域宽度",
+    });
+    const startingServiceWidth = Number(
+      await split.getAttribute("aria-valuenow"),
+    );
     await split.focus();
-    await f.main.keyboard.press("ArrowDown");
+    await f.main.keyboard.press("ArrowLeft");
     await expect
       .poll(async () => Number(await split.getAttribute("aria-valuenow")))
-      .toBeGreaterThan(startingRatio);
-    const fileRatio = Number(await split.getAttribute("aria-valuenow"));
+      .toBeGreaterThan(startingServiceWidth);
+    const serviceWidth = Number(await split.getAttribute("aria-valuenow"));
 
-    await f.main.getByRole("button", { name: "新建连接", exact: true }).click();
+    await connectSelectedServer(f.main);
     await authenticate(f.main);
     await expect(f.main.getByRole("tab")).toHaveCount(2);
     await expect.poll(() => ipc<number>(f.main, "session_count")).toBe(2);
@@ -1109,17 +1122,17 @@ test("tabs reorder, detach and rejoin without replacing their SSH connection or 
     expect(
       Number(
         await active(detached)
-          .getByRole("separator", { name: /文件和服务区域宽度|左侧宽度/ })
+          .getByRole("separator", { name: "调整文件区域宽度" })
           .getAttribute("aria-valuenow"),
       ),
     ).toBeCloseTo(resourceWidth, 0);
     expect(
       Number(
         await active(detached)
-          .locator(".horizontal-resizer")
+          .getByRole("separator", { name: "调整服务区域宽度" })
           .getAttribute("aria-valuenow"),
       ),
-    ).toBeCloseTo(fileRatio, 0);
+    ).toBeCloseTo(serviceWidth, 0);
 
     await terminal(f.main, "echo main-remains-usable");
     await expect(active(f.main).locator(".terminal-surface")).toContainText(

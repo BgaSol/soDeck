@@ -1,6 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
 export type ConflictPolicy = "rename" | "skip" | "overwrite";
+export type WriteKind = "upload" | "direct" | "serverCopy" | "serverMove";
+export interface RemoteClipboard {
+  id: string;
+  paths: string[];
+  intent: "copy" | "move";
+  sameServer: boolean;
+  reserved: boolean;
+}
 export interface TransferDraft {
+  kind: WriteKind;
   id: string;
   sourceName: string;
   sourcePaths: string[];
@@ -24,7 +33,7 @@ export interface CopyTarget {
 export interface TransferTask {
   id: string;
   runId: string;
-  kind: "download" | "upload" | "direct";
+  kind: "download" | WriteKind;
   sourceName: string;
   sourcePath: string;
   targetName: string;
@@ -41,6 +50,7 @@ export interface TransferTask {
     | "completed"
     | "failed"
     | "partialFailed"
+    | "sourceRetained"
     | "cancelled"
     | "unknown"
     | "interrupted"
@@ -68,6 +78,14 @@ export interface TransferTask {
   warnings: string[];
 }
 export const transferApi = {
+  clipboard: (sessionId: string) =>
+    invoke<RemoteClipboard | null>("get_remote_clipboard", { sessionId }),
+  copy: (sessionId: string, paths: string[], intent: "copy" | "move") =>
+    invoke<void>("set_remote_clipboard", { sessionId, paths, intent }),
+  clearClipboard: (id: string) =>
+    invoke<void>("clear_remote_clipboard", { id }),
+  paste: (sessionId: string, parentPath: string) =>
+    invoke<TransferDraft>("prepare_remote_paste", { sessionId, parentPath }),
   create: (
     sessionId: string,
     parentPath: string,

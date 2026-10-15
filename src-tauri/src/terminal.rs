@@ -17,6 +17,7 @@ use tauri::ipc::Channel;
 pub enum Input {
     Data(Vec<u8>),
     Resize(u32, u32),
+    ClearDisplay,
     Close,
 }
 pub struct InputSender {
@@ -227,6 +228,7 @@ pub fn run(
     state: &State,
     receiver: mpsc::Receiver<Input>,
     cancel: &Cancellation,
+    history_origin: Option<(String, crate::terminal_history::model::Source)>,
 ) -> AppResult<()> {
     cancel.check()?;
     let session = connection.session();
@@ -275,6 +277,26 @@ pub fn run(
     };
     session.set_blocking(false);
 
+    use crate::terminal_history::model::EventKind;
+    let binding = history_origin
+        .as_ref()
+        .map(|(workspace, source)| TerminalEvent::History {
+            session_id: id.into(),
+            source_id: source.id.clone(),
+            workspace_id: workspace.clone(),
+        });
+    let mut recorder =
+        history_origin
+            .filter(|_| state.history.root.is_some())
+            .map(|(workspace, source)| {
+                let mut recorder = state.history.start(id, &workspace, source);
+                recorder.push(EventKind::Start {
+                    cols: 100,
+                    rows: 30,
+                });
+                recorder
+            });
+
     let stream = {
         let mut connections = state.terminals.lock().unwrap();
         cancel.check()?;
@@ -286,6 +308,9 @@ pub fn run(
         stream.lock().unwrap().send(TerminalEvent::Ready {
             connection: context.view(),
         });
+        if let Some(binding) = binding {
+            stream.lock().unwrap().send(binding);
+        }
         stream
     };
     let mut cwd_parser = cwd_token.as_deref().map(CwdParser::new);
@@ -295,6 +320,7 @@ pub fn run(
     let mut pending_size = None;
     let mut pending_write = Vec::<u8>::new();
     let mut write_offset = 0;
+    let mut history_checkpoint = Instant::now();
     let result: Result<(), String> = (|| loop {
         if cancel.is_cancelled() {
             return Ok(());
@@ -311,11 +337,25 @@ pub fn run(
                     queued.extend(data);
                 }
                 Input::Resize(cols, rows) => pending_size = Some((cols, rows)),
+                Input::ClearDisplay => {
+                    if let Some(recorder) = &mut recorder {
+                        recorder.push(EventKind::Clear);
+                    }
+                    stream.lock().unwrap().send(TerminalEvent::DisplayCleared);
+                }
             }
         }
         if let Some((cols, rows)) = pending_size {
             match channel.request_pty_size(cols, rows, None, None) {
-                Ok(()) => pending_size = None,
+                Ok(()) => {
+                    pending_size = None;
+                    if let Some(recorder) = &mut recorder {
+                        recorder.push(EventKind::Resize {
+                            cols: cols as u16,
+                            rows: rows as u16,
+                        });
+                    }
+                }
                 Err(e) if e.code() == ssh2::ErrorCode::Session(-37) => {}
                 Err(e) => return Err(e.to_string()),
             }
@@ -346,6 +386,12 @@ pub fn run(
             std::thread::sleep(Duration::from_millis(8));
             continue;
         }
+        if history_checkpoint.elapsed() >= Duration::from_millis(250) {
+            if let Some(recorder) = &mut recorder {
+                recorder.checkpoint();
+            }
+            history_checkpoint = Instant::now();
+        }
         match channel.read(&mut buffer) {
             Ok(count) if count > 0 => {
                 let events = if let Some(parser) = &mut cwd_parser {
@@ -356,14 +402,28 @@ pub fn run(
                 let mut stream = stream.lock().unwrap();
                 for event in events {
                     match event {
-                        ParsedOutput::Data(data) => stream.send(TerminalEvent::Data {
-                            data: STANDARD.encode(data),
-                        }),
-                        ParsedOutput::Cwd(cwd) => stream.send(TerminalEvent::Cwd {
-                            path: cwd.path,
-                            home: cwd.home,
-                            sequence: cwd.sequence,
-                        }),
+                        ParsedOutput::Data(data) => {
+                            if let Some(recorder) = &mut recorder {
+                                recorder.push(EventKind::Output {
+                                    bytes: data.clone(),
+                                });
+                            }
+                            stream.send(TerminalEvent::Data {
+                                data: STANDARD.encode(data),
+                            });
+                        }
+                        ParsedOutput::Cwd(cwd) => {
+                            if let Some(recorder) = &mut recorder {
+                                recorder.push(EventKind::Cwd {
+                                    path: cwd.path.clone(),
+                                });
+                            }
+                            stream.send(TerminalEvent::Cwd {
+                                path: cwd.path,
+                                home: cwd.home,
+                                sequence: cwd.sequence,
+                            });
+                        }
                     }
                 }
             }
@@ -377,8 +437,24 @@ pub fn run(
     let _ = channel.close();
     let _ = session.disconnect(None, "Terminal closed", None);
     if let Some(data) = cwd_parser.as_mut().and_then(CwdParser::finish) {
+        if let Some(recorder) = &mut recorder {
+            recorder.push(EventKind::Output {
+                bytes: data.clone(),
+            });
+        }
         stream.lock().unwrap().send(TerminalEvent::Data {
             data: STANDARD.encode(data),
+        });
+    }
+    if let Some(recorder) = &mut recorder {
+        recorder.finish(if cancel.is_cancelled() {
+            "主动关闭"
+        } else {
+            result
+                .as_ref()
+                .err()
+                .map(String::as_str)
+                .unwrap_or("连接已结束")
         });
     }
 

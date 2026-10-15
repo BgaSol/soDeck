@@ -267,134 +267,149 @@ impl Executor {
         timeout: Option<Duration>,
         progress: bool,
     ) -> AppResult<(i32, String, String)> {
-        let session = self.source.session();
-        session.set_blocking(false);
-        let result = (|| {
-            let mut channel =
-                crate::ssh_transport::retry(&item.cancel, Duration::from_secs(15), || {
-                    session.channel_session()
-                })?;
-            crate::ssh_transport::retry(&item.cancel, Duration::from_secs(15), || {
-                channel.exec(&format!("exec 3<&0; printf 'SSH_WORKSPACE_PROCESS %s %s\\n' \"$$\" \"$(awk '{{print $22}}' /proc/$$/stat)\" >&2; {command}"))
-            })?;
-            if let DirectAuth::Password(password) = &self.auth {
-                let secret = format!("{password}\n");
-                let mut offset = 0;
-                let deadline = Instant::now() + Duration::from_secs(15);
-                while offset < secret.len() {
-                    item.check()?;
-                    match channel.write(&secret.as_bytes()[offset..]) {
-                        Ok(0) => return Err(AppError::new("authentication", "密码通道已关闭")),
-                        Ok(n) => offset += n,
-                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                            if Instant::now() > deadline {
-                                return Err(AppError::new("timeout", "密码通道超时"));
-                            }
-                            std::thread::sleep(Duration::from_millis(20));
-                        }
-                        Err(e) => return Err(e.into()),
-                    }
-                }
-            }
-            crate::ssh_transport::retry(&item.cancel, Duration::from_secs(3), || {
-                channel.send_eof()
-            })?;
-            let started = Instant::now();
-            let base_bytes = item.task.lock().unwrap().bytes_done;
-            let mut stopping = None;
-            let mut output = [Vec::new(), Vec::new()];
-            let mut process = None;
-            let mut progress_bytes = vec![];
-            loop {
-                if stopping.is_none()
-                    && (item.stop.load(std::sync::atomic::Ordering::SeqCst)
-                        || item.cancel.is_cancelled())
-                {
-                    stopping = Some(Instant::now());
-                    if let Some((pid, birth)) = process {
-                        // Only the live channel's process may be signalled. No
-                        // persisted PID is ever used after reconnect/restart.
-                        let stop = format!("test \"$(awk '{{print $22}}' /proc/{pid}/stat 2>/dev/null)\" = {birth} && test \"$(ps -o pgid= -p {pid} | tr -d ' ')\" = {pid} && kill -TERM -{pid}");
-                        let _ = capabilities::exec_checked(
-                            &self.source,
-                            &item.cancel,
-                            &stop,
-                            Duration::from_secs(2),
-                            || item.cancel.check(),
-                        );
-                        session.set_blocking(false);
-                    }
-                }
-                if stopping.is_some_and(|t| t.elapsed() > Duration::from_secs(5)) {
-                    let _ = channel.close();
-                    return Err(AppError::new(
-                        "interrupted",
-                        "已请求取消；远端退出尚未确认。旧数据仅在临时目录，可使用新目录重试",
-                    ));
-                }
-                if timeout.is_some_and(|t| started.elapsed() > t) {
-                    let _ = channel.close();
-                    return Err(AppError::new("timeout", "A → B 连接或认证检查超时"));
-                }
-                let mut buffer = [0u8; 8192];
-                for stream in 0..2 {
-                    match channel.stream(stream as i32).read(&mut buffer) {
-                        Ok(n) => {
-                            output[stream].extend_from_slice(
-                                &buffer[..n.min(32768usize.saturating_sub(output[stream].len()))],
-                            );
-                            if progress && stream == 0 {
-                                progress_bytes.extend_from_slice(&buffer[..n]);
-                                update_progress(item, &mut progress_bytes, base_bytes);
-                            }
-                        }
-                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => (),
-                        Err(e) => return Err(AppError::new("interrupted", e)),
-                    }
-                }
-                if process.is_none() {
-                    process = String::from_utf8_lossy(&output[1])
-                        .split_inclusive('\n')
-                        .filter(|s| s.ends_with('\n'))
-                        .find_map(|line| {
-                            let fields = line
-                                .strip_prefix("SSH_WORKSPACE_PROCESS ")?
-                                .split_whitespace()
-                                .collect::<Vec<_>>();
-                            if fields.len() != 2 {
-                                return None;
-                            }
-                            Some((
-                                fields[0].parse::<u32>().ok()?,
-                                fields[1].parse::<u64>().ok()?,
-                            ))
-                        });
-                }
-                if channel.eof() {
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(20));
-            }
-            crate::ssh_transport::retry(&item.cancel, Duration::from_secs(3), || {
-                channel.wait_close()
-            })?;
-            let text = |bytes: &[u8]| {
-                let s = String::from_utf8_lossy(bytes)
-                    .lines()
-                    .filter(|s| !s.starts_with("SSH_WORKSPACE_PROCESS "))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                if let DirectAuth::Password(p) = &self.auth {
-                    s.replace(p, "[已隐藏]")
-                } else {
-                    s
-                }
-            };
-            Ok((channel.exit_status()?, text(&output[0]), text(&output[1])))
-        })();
-        session.set_blocking(true);
-        result
+        execute_remote(
+            &self.source,
+            Some(&self.auth),
+            item,
+            command,
+            timeout,
+            progress,
+        )
     }
+}
+pub(super) fn execute_remote(
+    connection: &crate::ssh_transport::SshConnection,
+    auth: Option<&DirectAuth>,
+    item: &WriteHandle,
+    command: &str,
+    timeout: Option<Duration>,
+    progress: bool,
+) -> AppResult<(i32, String, String)> {
+    let session = connection.session();
+    session.set_blocking(false);
+    let result = (|| {
+        let mut channel =
+            crate::ssh_transport::retry(&item.cancel, Duration::from_secs(15), || {
+                session.channel_session()
+            })?;
+        crate::ssh_transport::retry(&item.cancel, Duration::from_secs(15), || {
+            channel.exec(&format!("exec 3<&0; printf 'SSH_WORKSPACE_PROCESS %s %s\\n' \"$$\" \"$(awk '{{print $22}}' /proc/$$/stat)\" >&2; {command}"))
+        })?;
+        if let Some(DirectAuth::Password(password)) = auth {
+            let secret = format!("{password}\n");
+            let mut offset = 0;
+            let deadline = Instant::now() + Duration::from_secs(15);
+            while offset < secret.len() {
+                item.check()?;
+                match channel.write(&secret.as_bytes()[offset..]) {
+                    Ok(0) => return Err(AppError::new("authentication", "密码通道已关闭")),
+                    Ok(n) => offset += n,
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        if Instant::now() > deadline {
+                            return Err(AppError::new("timeout", "密码通道超时"));
+                        }
+                        std::thread::sleep(Duration::from_millis(20));
+                    }
+                    Err(e) => return Err(e.into()),
+                }
+            }
+        }
+        crate::ssh_transport::retry(&item.cancel, Duration::from_secs(3), || channel.send_eof())?;
+        let started = Instant::now();
+        let base_bytes = item.task.lock().unwrap().bytes_done;
+        let mut stopping = None;
+        let mut output = [Vec::new(), Vec::new()];
+        let mut process = None;
+        let mut progress_bytes = vec![];
+        loop {
+            if stopping.is_none()
+                && (item.stop.load(std::sync::atomic::Ordering::SeqCst)
+                    || item.cancel.is_cancelled())
+            {
+                stopping = Some(Instant::now());
+                if let Some((pid, birth)) = process {
+                    // Only the live channel's process may be signalled. No
+                    // persisted PID is ever used after reconnect/restart.
+                    let stop = format!("test \"$(awk '{{print $22}}' /proc/{pid}/stat 2>/dev/null)\" = {birth} && test \"$(ps -o pgid= -p {pid} | tr -d ' ')\" = {pid} && kill -TERM -{pid}");
+                    let _ = capabilities::exec_checked(
+                        connection,
+                        &item.cancel,
+                        &stop,
+                        Duration::from_secs(2),
+                        || item.cancel.check(),
+                    );
+                    session.set_blocking(false);
+                }
+            }
+            if stopping.is_some_and(|t| t.elapsed() > Duration::from_secs(5)) {
+                let _ = channel.close();
+                return Err(AppError::new(
+                    "interrupted",
+                    "已请求取消；远端退出尚未确认。旧数据仅在临时目录，可使用新目录重试",
+                ));
+            }
+            if timeout.is_some_and(|t| started.elapsed() > t) {
+                let _ = channel.close();
+                return Err(AppError::new("timeout", "A → B 连接或认证检查超时"));
+            }
+            let mut buffer = [0u8; 8192];
+            for stream in 0..2 {
+                match channel.stream(stream as i32).read(&mut buffer) {
+                    Ok(n) => {
+                        output[stream].extend_from_slice(
+                            &buffer[..n.min(32768usize.saturating_sub(output[stream].len()))],
+                        );
+                        if progress && stream == 0 {
+                            progress_bytes.extend_from_slice(&buffer[..n]);
+                            update_progress(item, &mut progress_bytes, base_bytes);
+                        }
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => (),
+                    Err(e) => return Err(AppError::new("interrupted", e)),
+                }
+            }
+            if process.is_none() {
+                process = String::from_utf8_lossy(&output[1])
+                    .split_inclusive('\n')
+                    .filter(|s| s.ends_with('\n'))
+                    .find_map(|line| {
+                        let fields = line
+                            .strip_prefix("SSH_WORKSPACE_PROCESS ")?
+                            .split_whitespace()
+                            .collect::<Vec<_>>();
+                        if fields.len() != 2 {
+                            return None;
+                        }
+                        Some((
+                            fields[0].parse::<u32>().ok()?,
+                            fields[1].parse::<u64>().ok()?,
+                        ))
+                    });
+            }
+            if channel.eof() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        crate::ssh_transport::retry(&item.cancel, Duration::from_secs(3), || {
+            channel.wait_close()
+        })?;
+        let text = |bytes: &[u8]| {
+            let s = String::from_utf8_lossy(bytes)
+                .lines()
+                .filter(|s| !s.starts_with("SSH_WORKSPACE_PROCESS "))
+                .collect::<Vec<_>>()
+                .join("\n");
+            if let Some(DirectAuth::Password(p)) = auth {
+                s.replace(p, "[已隐藏]")
+            } else {
+                s
+            }
+        };
+        Ok((channel.exit_status()?, text(&output[0]), text(&output[1])))
+    })();
+    session.set_blocking(true);
+    result
 }
 fn update_progress(item: &WriteHandle, buffer: &mut Vec<u8>, base: u64) {
     while let Some(end) = buffer.iter().position(|b| *b == b'\r' || *b == b'\n') {
@@ -416,6 +431,9 @@ fn update_progress(item: &WriteHandle, buffer: &mut Vec<u8>, base: u64) {
     }
 }
 pub fn refresh_attempt(item: &WriteHandle, attempt: &mut Attempt) -> AppResult<()> {
+    if item.same_server() {
+        return super::same_server::refresh(item, attempt);
+    }
     if attempt.source_finished && attempt.receiver_finished {
         return Ok(());
     }

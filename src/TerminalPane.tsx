@@ -7,6 +7,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { errorOf } from "./types";
 import type { AppError, ConnectionRequest, TerminalEvent } from "./types";
+import type { HistoryBinding, HistoryPosition } from "./terminalHistoryApi";
 
 export interface TerminalSnapshot {
   sessionId: string | null;
@@ -15,6 +16,9 @@ export interface TerminalSnapshot {
   rows: number;
   viewportY: number;
   cwd?: { path: string; home: string | null; sequence: number };
+  historyBinding?: HistoryBinding;
+  historyMode?: "live" | "history";
+  historyPosition?: HistoryPosition;
 }
 export interface TerminalCwd {
   sessionId: string;
@@ -25,14 +29,19 @@ export interface TerminalCwd {
 export interface TerminalController {
   prepareMove: () => Promise<TerminalSnapshot>;
   cancelMove: () => Promise<void>;
+  clearDisplay: () => Promise<void>;
 }
-interface Props {
+export interface TerminalPaneProps {
   controllerRef?: Ref<TerminalController>;
   initial?: TerminalSnapshot;
   onReady?: () => void;
   request?: ConnectionRequest;
   container?: boolean;
   active?: boolean;
+  interactive?: boolean;
+  workspaceId?: string;
+  onAlternate?: (alternate: boolean) => void;
+  onCleared?: () => void;
   onSession: (id: string | null) => void;
   onError: (error: AppError) => void;
   onState: (state: string) => void;
@@ -40,20 +49,24 @@ interface Props {
   onConnectionId?: (id: string | null) => void;
   onConnectionEvent?: (event: TerminalEvent) => void;
 }
-export function TerminalPane({
+export function LiveTerminalPane({
   request,
   controllerRef,
   initial,
   onReady,
   container = false,
   active = true,
+  interactive = true,
+  workspaceId,
+  onAlternate,
+  onCleared,
   onSession,
   onError,
   onState,
   onCwdChange,
   onConnectionId,
   onConnectionEvent,
-}: Props) {
+}: TerminalPaneProps) {
   const element = useRef<HTMLDivElement>(null),
     terminal = useRef<Terminal | null>(null),
     fit = useRef<FitAddon | null>(null),
@@ -77,6 +90,12 @@ export function TerminalPane({
   const latestCwd = useRef(initial?.cwd);
   const isActive = useRef(active);
   isActive.current = active;
+  const isInteractive = useRef(interactive);
+  isInteractive.current = interactive;
+  const alternateCallback = useRef(onAlternate);
+  alternateCallback.current = onAlternate;
+  const clearedCallback = useRef(onCleared);
+  clearedCallback.current = onCleared;
   const serializer = useRef<SerializeAddon | null>(null);
   const transferring = useRef(false);
   const frozen = useRef<{
@@ -140,6 +159,13 @@ export function TerminalPane({
             () => {},
           );
       },
+      clearDisplay: async () => {
+        if (transferring.current || !session.current)
+          throw new Error("终端当前不能清理显示");
+        if (terminal.current?.buffer.active.type === "alternate")
+          throw new Error("请先退出屏幕交互程序");
+        await invoke("terminal_clear_display", { sessionId: session.current });
+      },
     }),
     [],
   );
@@ -151,6 +177,7 @@ export function TerminalPane({
       fontFamily:
         '"Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace',
       fontSize: 14,
+      lineHeight: 1.2,
       scrollback: 5000,
       cursorBlink: !motionPreference.matches,
       allowProposedApi: false,
@@ -167,6 +194,14 @@ export function TerminalPane({
         magenta: "#c6a5ea",
         cyan: "#87c9d6",
         white: "#d9e3f0",
+        brightBlack: "#8c95a3",
+        brightRed: "#ff929b",
+        brightGreen: "#a3d6ad",
+        brightYellow: "#efd28f",
+        brightBlue: "#a4c2f4",
+        brightMagenta: "#d4b5ed",
+        brightCyan: "#9cd8de",
+        brightWhite: "#f0f2f6",
       },
     });
     const addon = new FitAddon();
@@ -200,17 +235,25 @@ export function TerminalPane({
           data,
         }).catch((error) => callbacks.current.onError(errorOf(error)));
     });
+    const parsed = term.onWriteParsed(() =>
+      alternateCallback.current?.(term.buffer.active.type === "alternate"),
+    );
     if (!container && !initial)
       term.writeln("\x1b[38;2;142;160;183m建立连接，开始终端会话。\x1b[0m");
     return () => {
       observer.disconnect();
       motionPreference.removeEventListener("change", updateMotion);
       input.dispose();
+      parsed.dispose();
       term.dispose();
       terminal.current = null;
       fit.current = null;
     };
   }, []);
+  useEffect(() => {
+    if (interactive && active) terminal.current?.focus();
+    else terminal.current?.blur();
+  }, [interactive, active]);
   useEffect(() => {
     if (!active) return;
     const frame = requestAnimationFrame(() => {
@@ -256,7 +299,7 @@ export function TerminalPane({
       if (opened) callbacks.current.onState("已连接");
       if (isActive.current) {
         fit.current?.fit();
-        terminal.current?.focus();
+        if (isInteractive.current) terminal.current?.focus();
       }
       if (opened)
         void invoke("terminal_resize", {
@@ -267,6 +310,45 @@ export function TerminalPane({
       readyCallback.current?.();
     }
     const output = new Channel<TerminalEvent>();
+    // Preserve stream order across a local clear and a migration barrier. Ordinary writes
+    // still use xterm's batching; only barrier operations hold later writes briefly.
+    const actions: Array<(done: () => void) => boolean> = [];
+    let waiting = false;
+    function drain() {
+      while (!waiting && actions.length && !cancelled) {
+        const action = actions.shift()!;
+        waiting = true;
+        if (
+          !action(() => {
+            waiting = false;
+            drain();
+          })
+        )
+          waiting = false;
+      }
+    }
+    function write(data: string | Uint8Array) {
+      actions.push(() => {
+        terminal.current?.write(data);
+        return false;
+      });
+      drain();
+    }
+    function barrier(action: () => void) {
+      actions.push((done) => {
+        const term = terminal.current;
+        if (!term) {
+          if (!cancelled) action();
+          return false;
+        }
+        term.write("", () => {
+          if (!cancelled) action();
+          done();
+        });
+        return true;
+      });
+      drain();
+    }
     output.onmessage = (event) => {
       if (cancelled) return;
       callbacks.current.onConnectionEvent?.(event);
@@ -274,7 +356,7 @@ export function TerminalPane({
         ready = true;
         markReady();
       } else if (event.type === "frozen") {
-        terminal.current?.write("", () => {
+        barrier(() => {
           if (frozen.current?.token === event.token) {
             frozen.current.resolve();
             frozen.current = null;
@@ -282,7 +364,19 @@ export function TerminalPane({
         });
       } else if (event.type === "data") {
         const bytes = Uint8Array.from(atob(event.data), (c) => c.charCodeAt(0));
-        terminal.current?.write(bytes);
+        write(bytes);
+      } else if (event.type === "displayCleared") {
+        barrier(() => {
+          if (terminal.current?.buffer.active.type === "alternate") {
+            callbacks.current.onError({
+              kind: "terminal",
+              message: "已进入屏幕交互程序，本次清理显示已跳过",
+            });
+            return;
+          }
+          terminal.current?.clear();
+          clearedCallback.current?.();
+        });
       } else if (event.type === "cwd") {
         if (!latestCwd.current || event.sequence > latestCwd.current.sequence) {
           latestCwd.current = {
@@ -307,9 +401,7 @@ export function TerminalPane({
         );
         if (event.error) callbacks.current.onError(event.error);
         setEnded(true);
-        terminal.current?.writeln(
-          `\r\n\x1b[38;2;142;160;183m${event.message}\x1b[0m`,
-        );
+        write(`\r\n\x1b[38;2;142;160;183m${event.message}\x1b[0m\r\n`);
       }
     };
     const restore = initial
@@ -338,6 +430,7 @@ export function TerminalPane({
         ? invoke<string>("connect_container", { output })
         : invoke<string>("open_connection", {
             serverId: request!.serverId,
+            workspaceId: workspaceId ?? null,
             events: output,
           });
     void task
@@ -384,3 +477,4 @@ export function TerminalPane({
     />
   );
 }
+export { TerminalWorkspace as TerminalPane } from "./TerminalWorkspace";

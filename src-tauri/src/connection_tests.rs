@@ -35,6 +35,7 @@ pub(crate) fn state() -> Arc<State> {
         transfers: Default::default(),
         drags: Default::default(),
         logs: Default::default(),
+        history: Default::default(),
         terminals: Mutex::new(HashMap::new()),
         pending_windows: Mutex::new(HashMap::new()),
         container_windows: Mutex::new(HashMap::new()),
@@ -408,8 +409,11 @@ fn jump_real_ssh_sftp_docker_terminal_and_failure_paths() {
     assert!(logs.stdout.contains("fixture history stdout"));
     assert!(logs.stderr.contains("fixture history stderr"));
 
-    // A real terminal worker uses the same path, emits CWD, and survives output subscription transfer.
-    let state = state();
+    // A real terminal worker uses the same path, emits CWD, and archives independently of view transfer.
+    let history_dir = tempfile::tempdir().unwrap();
+    let mut state = state();
+    Arc::get_mut(&mut state).unwrap().history =
+        crate::terminal_history::HistoryState::open(history_dir.path().into());
     let (output, events) = collector();
     let (id, receiver, terminal_cancel, _, _) = register(
         &state,
@@ -426,6 +430,7 @@ fn jump_real_ssh_sftp_docker_terminal_and_failure_paths() {
     let worker_context = context.clone();
     let worker_id = id.clone();
     let worker_cancel = terminal_cancel.clone();
+    let history_source = crate::terminal_history::model::Source::new(&context, None);
     let worker = thread::spawn(move || {
         let result = terminal::run(
             terminal_connection,
@@ -435,6 +440,7 @@ fn jump_real_ssh_sftp_docker_terminal_and_failure_paths() {
             &worker_state,
             receiver,
             &worker_cancel,
+            Some(("test-workspace".into(), history_source)),
         );
         finish(&worker_state, &worker_id, &worker_cancel, result);
     });
@@ -481,6 +487,73 @@ fn jump_real_ssh_sftp_docker_terminal_and_failure_paths() {
         .unwrap();
     worker.join().unwrap();
     assert!(state.terminals.lock().unwrap().is_empty());
+    state.history.shutdown().unwrap();
+    let archived =
+        crate::terminal_history::store::read_events(history_dir.path(), &id, 0, 10000).unwrap();
+    let archived_bytes = archived
+        .iter()
+        .flat_map(|e| match &e.kind {
+            crate::terminal_history::model::EventKind::Output { bytes } => bytes.clone(),
+            _ => vec![],
+        })
+        .collect::<Vec<_>>();
+    let delivered = events
+        .lock()
+        .unwrap()
+        .iter()
+        .chain(destination_events.lock().unwrap().iter())
+        .filter(|e| e["type"] == "data")
+        .flat_map(|e| {
+            base64::engine::general_purpose::STANDARD
+                .decode(e["data"].as_str().unwrap())
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        archived_bytes, delivered,
+        "migration must neither omit nor duplicate archived PTY bytes"
+    );
+    assert_eq!(state.history.status(&id).unwrap().state, "closed");
+
+    // Container exec uses an independently identified archive through the same terminal loop.
+    let (container_output, container_events) = collector();
+    let container_id = open_container(
+        state.clone(),
+        WindowOwner {
+            label: "container-test".into(),
+            generation: 0,
+        },
+        context.clone(),
+        target.clone(),
+        container_output,
+    )
+    .unwrap();
+    wait_for(|| {
+        container_events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| e["type"] == "data")
+    });
+    state.terminals.lock().unwrap()[&container_id]
+        .sender
+        .send(Input::Close)
+        .unwrap();
+    wait_for(|| !state.terminals.lock().unwrap().contains_key(&container_id));
+    state.history.shutdown().unwrap();
+    assert_eq!(
+        state
+            .history
+            .status(&container_id)
+            .unwrap()
+            .source
+            .container_id,
+        Some(target.id.clone())
+    );
+    assert_ne!(
+        state.history.status(&container_id).unwrap().source.id,
+        state.history.status(&id).unwrap().source.id
+    );
     // The independently owned SFTP/exec connection remains valid after closing the terminal.
     assert!(connection
         .session()

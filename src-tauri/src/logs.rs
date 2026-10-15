@@ -166,7 +166,10 @@ fn open_window(
     spec: Option<SharedContext>,
     target: Option<crate::docker::ContainerTarget>,
 ) -> AppResult<()> {
-    let title = format!("{} / {} / 日志", source.server_name, source.container_name);
+    let title = crate::brand::window_title(
+        app,
+        &format!("{} 日志 · {}", source.container_name, source.server_name),
+    );
     let (label, create) = {
         let _gate = state.configuration.lock().unwrap();
         state.ensure_running()?;
@@ -252,7 +255,7 @@ pub async fn open_log_archives_window(
         ARCHIVES_WINDOW,
         WebviewUrl::App("index.html?archives=1".into()),
     )
-    .title("本地日志 · SSH Workspace")
+    .title(crate::brand::window_title(&app, "本地日志"))
     .inner_size(1040.0, 720.0)
     .min_inner_size(720.0, 460.0)
     .center()

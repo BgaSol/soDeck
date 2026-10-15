@@ -94,6 +94,13 @@ export type TerminalEvent =
   | { type: "ready"; connection: ConnectionView }
   | { type: "data"; data: string }
   | {
+      type: "history";
+      sessionId: string;
+      sourceId: string;
+      workspaceId: string;
+    }
+  | { type: "displayCleared" }
+  | {
       type: "closed";
       message: string;
       reason: "failed" | "cancelled" | "ended";

@@ -1,11 +1,18 @@
 import {
   useCallback,
-  useEffect,
+  useLayoutEffect,
   useImperativeHandle,
   useRef,
   useState,
 } from "react";
-import { Plug, Route, TerminalSquare, Unplug, X } from "lucide-react";
+import {
+  LockKeyhole,
+  Plug,
+  Route,
+  TerminalSquare,
+  Unplug,
+  X,
+} from "lucide-react";
 import { TerminalPane } from "./TerminalPane";
 import type {
   TerminalController,
@@ -18,6 +25,8 @@ import type { DockerPanelSnapshot } from "./DockerPanel";
 import { FilePanel } from "./FilePanel";
 import { DockerPanel } from "./DockerPanel";
 import { FingerprintDialog, LoginDialog } from "./ConnectionDialogs";
+import { WorkspaceLayout } from "./WorkspaceLayout";
+import type { WorkspaceLayoutSize } from "./workspaceSizing";
 import { useConnection } from "./useConnection";
 import { addressOf } from "./types";
 import type { AppError } from "./types";
@@ -28,12 +37,14 @@ export interface WorkspaceSnapshot {
   terminal: TerminalSnapshot;
   files?: FilePanelSnapshot;
   docker?: DockerPanelSnapshot;
-  resourceWidth: number;
-  fileRatio: number;
+  layout?: WorkspaceLayoutSize;
+  resourceWidth?: number; // Read legacy snapshots from the former stacked layout.
+  fileRatio?: number;
 }
 export interface WorkspaceController {
   prepareMove: () => Promise<WorkspaceSnapshot>;
   cancelMove: () => Promise<void>;
+  reconnect: () => void;
 }
 export function SessionWorkspace({
   tab,
@@ -43,6 +54,8 @@ export function SessionWorkspace({
   onReady,
   onChange,
   onConfigurationChanged,
+  onConnectionStatus,
+  onPromptChange,
 }: {
   tab: WorkspaceTab;
   controllerRef?: Ref<WorkspaceController>;
@@ -54,6 +67,13 @@ export function SessionWorkspace({
     patch: Partial<Pick<WorkspaceTab, "server" | "state">>,
   ) => void;
   onConfigurationChanged?: () => void;
+  onConnectionStatus?: (
+    id: string,
+    attempt: number,
+    state: string,
+    error?: AppError,
+  ) => void;
+  onPromptChange?: (id: string, visible: boolean) => void;
 }) {
   const connection = useConnection(tab.server.id, !!initial);
   const { request, prompt } = connection;
@@ -66,10 +86,19 @@ export function SessionWorkspace({
       ? { sessionId: initial.terminal.sessionId, ...initial.terminal.cwd }
       : null,
   );
-  const [resourceWidth, setResourceWidth] = useState(
-      initial?.resourceWidth || 320,
-    ),
-    [fileRatio, setFileRatio] = useState(initial?.fileRatio || 49);
+  const [layout, setLayout] = useState<WorkspaceLayoutSize | undefined>(
+    initial?.layout ??
+      (initial?.resourceWidth
+        ? { fileWidth: initial.resourceWidth, serviceWidth: 320 }
+        : undefined),
+  );
+  useLayoutEffect(() => {
+    onPromptChange?.(tab.id, active && !!prompt);
+    return () => onPromptChange?.(tab.id, false);
+  }, [tab.id, active, !!prompt, onPromptChange]);
+  function reportState(state: string, failure?: AppError) {
+    onConnectionStatus?.(tab.id, request?.attempt ?? 0, state, failure);
+  }
   const terminalController = useRef<TerminalController>(null);
   const [restoredTerminal, setRestoredTerminal] = useState(initial?.terminal);
   const filesSnapshot = useRef(initial?.files);
@@ -93,66 +122,16 @@ export function SessionWorkspace({
           terminal,
           files: filesSnapshot.current,
           docker: dockerSnapshot.current,
-          resourceWidth,
-          fileRatio,
+          layout,
         };
       },
+      reconnect,
       cancelMove: async () => {
         await terminalController.current?.cancelMove();
       },
     }),
-    [tab, prompt, resourceWidth, fileRatio],
+    [tab, prompt, layout, reconnect],
   );
-  const resourcePane = useRef<HTMLElement>(null);
-  const page = useRef<HTMLElement>(null);
-  const widthDrag = useRef<{ x: number; width: number } | null>(null);
-  const splitDrag = useRef<{ y: number; ratio: number; height: number } | null>(
-    null,
-  );
-  const [paneMetrics, setPaneMetrics] = useState({
-    width: 320,
-    ratio: 49,
-    maxWidth: 520,
-    minRatio: 28,
-    maxRatio: 72,
-  });
-  useEffect(() => {
-    const measure = () => {
-      if (!resourcePane.current?.clientWidth || !page.current) return;
-      const height = resourcePane.current.clientHeight - 10;
-      if (height <= 0) return;
-      const fileHeight =
-        resourcePane.current
-          .querySelector<HTMLElement>(".file-panel")
-          ?.getBoundingClientRect().height || 0;
-      const next = {
-        width: resourcePane.current.clientWidth,
-        ratio: Math.round((fileHeight / height) * 100),
-        maxWidth: Math.min(
-          520,
-          page.current.clientWidth -
-            (window.innerWidth <= 1000 ? 250 : 280) -
-            10,
-        ),
-        minRatio: Math.round(Math.max(28, (190 / height) * 100)),
-        maxRatio: Math.round(Math.min(72, ((height - 150) / height) * 100)),
-      };
-      setPaneMetrics((current) =>
-        Object.keys(next).every(
-          (key) =>
-            next[key as keyof typeof next] ===
-            current[key as keyof typeof next],
-        )
-          ? current
-          : next,
-      );
-    };
-    const observer = new ResizeObserver(measure);
-    observer.observe(page.current!);
-    observer.observe(resourcePane.current!);
-    observer.observe(resourcePane.current!.querySelector(".file-panel")!);
-    return () => observer.disconnect();
-  }, []);
   function reconnect() {
     setRestoredTerminal(undefined);
     setError(null);
@@ -165,227 +144,155 @@ export function SessionWorkspace({
     setSessionId(null);
     setError(null);
     onChange(tab.id, { state: "已断开" });
-  }
-  function changeWidth(width: number) {
-    const terminalMinimum = window.innerWidth <= 1000 ? 250 : 280;
-    const maximum = Math.min(
-      520,
-      (page.current?.clientWidth || 850) - terminalMinimum - 10,
-    );
-    setResourceWidth(Math.min(maximum, Math.max(260, width)));
-  }
-  function splitMetrics() {
-    const height = Math.max(
-      1,
-      (resourcePane.current?.clientHeight || 600) - 10,
-    );
-    const fileHeight =
-      resourcePane.current?.querySelector<HTMLElement>(
-        ".file-panel",
-      )?.clientHeight;
-    return {
-      height,
-      ratio: fileHeight ? ((fileHeight + 2) / height) * 100 : fileRatio,
-    };
-  }
-  function changeSplit(ratio: number) {
-    const { height } = splitMetrics();
-    const minimum = Math.max(28, (190 / height) * 100);
-    const maximum = Math.min(72, ((height - 150) / height) * 100);
-    setFileRatio(Math.min(maximum, Math.max(minimum, ratio)));
+    reportState("已断开");
   }
   return (
-    <section
-      className="session-page"
-      ref={page}
-      role="tabpanel"
-      id={`panel-${tab.id}`}
-      aria-labelledby={`tab-${tab.id}`}
-      hidden={!active}
-      style={
-        { "--resource-width": `${resourceWidth}px` } as React.CSSProperties
-      }
-    >
-      <aside
-        className="resource-panel"
-        ref={resourcePane}
-        style={{
-          gridTemplateRows: `minmax(190px,${fileRatio}fr) 10px minmax(150px,${100 - fileRatio}fr)`,
-        }}
-      >
-        <FilePanel
-          sessionId={sessionId}
-          serverName={tab.server.name}
-          active={active}
-          initialState={initial?.files}
-          onStateChange={captureFiles}
-          terminalCwd={terminalCwd ?? undefined}
-        />
-        <div
-          className="horizontal-resizer"
-          onPointerDown={(event) => {
-            if (event.button !== 0) return;
-            event.currentTarget.setPointerCapture(event.pointerId);
-            splitDrag.current = { y: event.clientY, ...splitMetrics() };
-          }}
-          onPointerMove={(event) => {
-            const drag = splitDrag.current;
-            if (drag)
-              changeSplit(
-                drag.ratio + ((event.clientY - drag.y) / drag.height) * 100,
-              );
-          }}
-          onPointerUp={(event) => {
-            splitDrag.current = null;
-            if (event.currentTarget.hasPointerCapture(event.pointerId))
-              event.currentTarget.releasePointerCapture(event.pointerId);
-          }}
-          onLostPointerCapture={() => {
-            splitDrag.current = null;
-          }}
-          onKeyDown={(event) => {
-            if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
-            event.preventDefault();
-            changeSplit(
-              splitMetrics().ratio + (event.key === "ArrowDown" ? 2 : -2),
-            );
-          }}
-          role="separator"
-          tabIndex={0}
-          aria-valuemin={paneMetrics.minRatio}
-          aria-valuemax={paneMetrics.maxRatio}
-          aria-valuenow={paneMetrics.ratio}
-          aria-orientation="horizontal"
-          aria-label="调整文件和服务区域"
-        />
-        <DockerPanel
-          sessionId={sessionId}
-          serverName={tab.server.name}
-          active={active}
-          initialState={initial?.docker}
-          onStateChange={captureDocker}
-        />
-      </aside>
-      <div
-        className="vertical-resizer"
-        onPointerDown={(event) => {
-          if (event.button !== 0) return;
-          event.currentTarget.setPointerCapture(event.pointerId);
-          widthDrag.current = {
-            x: event.clientX,
-            width: resourcePane.current?.clientWidth || resourceWidth,
-          };
-        }}
-        onPointerMove={(event) => {
-          if (widthDrag.current)
-            changeWidth(
-              widthDrag.current.width + event.clientX - widthDrag.current.x,
-            );
-        }}
-        onPointerUp={(event) => {
-          widthDrag.current = null;
-          if (event.currentTarget.hasPointerCapture(event.pointerId))
-            event.currentTarget.releasePointerCapture(event.pointerId);
-        }}
-        onLostPointerCapture={() => {
-          widthDrag.current = null;
-        }}
-        onKeyDown={(event) => {
-          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-          event.preventDefault();
-          changeWidth(
-            (resourcePane.current?.clientWidth || resourceWidth) +
-              (event.key === "ArrowRight" ? 10 : -10),
-          );
-        }}
-        role="separator"
-        tabIndex={0}
-        aria-valuemin={260}
-        aria-valuemax={paneMetrics.maxWidth}
-        aria-valuenow={paneMetrics.width}
-        aria-orientation="vertical"
-        aria-label="调整文件和服务区域宽度"
-      />
-      <main className="terminal-panel">
-        <header className="terminal-toolbar">
-          <TerminalSquare size={16} />
-          <strong>{tab.server.name}</strong>
-          <span
-            className={`connection-state ${sessionId ? "running" : tab.state === "连接失败" ? "failed" : ""}`}
-          >
-            {tab.state}
-          </span>
-          {sessionId || tab.state === "连接中" ? (
-            <button className="quiet" onClick={disconnect}>
-              <Unplug size={14} />
-              {sessionId ? "断开" : "取消连接"}
-            </button>
-          ) : (
-            <button
-              className="primary"
-              disabled={tab.state === "连接中"}
-              onClick={reconnect}
-            >
-              <Plug size={14} />
-              {tab.state === "未连接" ? "连接" : "重新连接"}
-            </button>
-          )}
-        </header>
-        <div className="terminal-address session-address">
-          <span>
-            {tab.server.username}@{addressOf(tab.server)}
-          </span>
-          {connection.view && connection.view.hops.length > 1 && (
-            <span className="connection-route" aria-label="当前连接路径">
-              <Route size={13} aria-hidden="true" />
-              本机 →{" "}
-              {connection.view.hops.map((hop) => hop.server.name).join(" → ")}
-            </span>
-          )}
-        </div>
-        {error && (
-          <div className="connection-error" role="alert">
-            <span>{error.message}</span>
-            <button
-              className="icon-button"
-              onClick={() => setError(null)}
-              aria-label="关闭错误提示"
-            >
-              <X size={14} />
-            </button>
-          </div>
-        )}
-        {prompt && !active && (
-          <span className="sr-only">等待核对服务器指纹</span>
-        )}
-        <div className="terminal-host">
-          <TerminalPane
-            controllerRef={terminalController}
-            initial={restoredTerminal}
-            onReady={onReady}
-            request={request}
+    <>
+      <WorkspaceLayout
+        id={`panel-${tab.id}`}
+        labelledBy={`tab-${tab.id}`}
+        active={active}
+        value={layout}
+        onChange={setLayout}
+        files={
+          <FilePanel
+            sessionId={sessionId}
+            serverName={tab.server.name}
             active={active}
-            onSession={setSessionId}
-            onCwdChange={setTerminalCwd}
-            onState={(state) => onChange(tab.id, { state })}
-            onError={setError}
-            onConnectionId={connection.setId}
-            onConnectionEvent={(event) => {
-              connection.receive(event);
-              if (event.type === "ready") {
-                onChange(tab.id, { server: event.connection.target });
-                onConfigurationChanged?.();
-              }
-            }}
+            initialState={initial?.files}
+            onStateChange={captureFiles}
+            terminalCwd={terminalCwd ?? undefined}
           />
-        </div>
-        <footer className="workspace-status">
-          <span role="status" aria-live="polite">
-            {connection.progress || (sessionId ? "SSH 会话已建立" : "SSH")}
-          </span>
-          <span>UTF-8</span>
-        </footer>
-      </main>
+        }
+        services={
+          <DockerPanel
+            sessionId={sessionId}
+            serverName={tab.server.name}
+            active={active}
+            initialState={initial?.docker}
+            onStateChange={captureDocker}
+          />
+        }
+        terminal={
+          <main className="terminal-panel">
+            <header className="terminal-toolbar">
+              <span className="terminal-symbol" aria-hidden="true">
+                <TerminalSquare size={18} />
+              </span>
+              <div className="terminal-identity">
+                <strong title={tab.server.name}>{tab.server.name}</strong>
+                <span
+                  className="terminal-address"
+                  title={`${tab.server.username}@${addressOf(tab.server)}`}
+                >
+                  {tab.server.username}@{addressOf(tab.server)}
+                </span>
+              </div>
+              <span
+                className={`connection-state ${sessionId ? "running" : tab.state === "连接失败" ? "failed" : tab.state === "连接中" ? "connecting" : ""}`}
+                role="status"
+                title={tab.state}
+                aria-label={tab.state}
+              >
+                <span className="connection-state-dot" aria-hidden="true" />
+                <span className="connection-state-label">{tab.state}</span>
+              </span>
+              {sessionId || tab.state === "连接中" ? (
+                <button
+                  className="quiet terminal-connection-action"
+                  onClick={disconnect}
+                  aria-label={sessionId ? "断开" : "取消连接"}
+                  title={sessionId ? "断开连接" : "取消连接"}
+                >
+                  <Unplug size={15} aria-hidden="true" />
+                  <span>{sessionId ? "断开" : "取消连接"}</span>
+                </button>
+              ) : (
+                <button
+                  className="primary"
+                  disabled={tab.state === "连接中"}
+                  onClick={reconnect}
+                >
+                  <Plug size={14} aria-hidden="true" />
+                  {tab.state === "未连接" ? "连接" : "重新连接"}
+                </button>
+              )}
+            </header>
+            {error && (
+              <div className="connection-error" role="alert">
+                <span>{error.message}</span>
+                <button
+                  className="icon-button"
+                  onClick={() => setError(null)}
+                  aria-label="关闭错误提示"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+            {prompt && !active && (
+              <span className="sr-only">等待核对服务器指纹</span>
+            )}
+            <div className="terminal-host">
+              <TerminalPane
+                workspaceId={tab.id}
+                controllerRef={terminalController}
+                initial={restoredTerminal}
+                onReady={onReady}
+                request={request}
+                active={active}
+                onSession={setSessionId}
+                onCwdChange={setTerminalCwd}
+                onState={(state) => {
+                  onChange(tab.id, { state });
+                  reportState(state);
+                }}
+                onError={(failure) => {
+                  setError(failure);
+                  reportState("error", failure);
+                }}
+                onConnectionId={connection.setId}
+                onConnectionEvent={(event) => {
+                  connection.receive(event);
+                  if (event.type === "ready") {
+                    onChange(tab.id, { server: event.connection.target });
+                    onConfigurationChanged?.();
+                  }
+                }}
+              />
+            </div>
+            <footer className="workspace-status">
+              <span
+                className="terminal-session-status"
+                role="status"
+                aria-live="polite"
+              >
+                <LockKeyhole size={11} aria-hidden="true" />
+                <span title={connection.progress || undefined}>
+                  {connection.progress ||
+                    (sessionId ? "SSH 会话已建立" : "SSH")}
+                </span>
+              </span>
+              {connection.view && connection.view.hops.length > 1 && (
+                <span
+                  className="connection-route"
+                  aria-label="当前连接路径"
+                  title={`本机 → ${connection.view.hops.map((hop) => hop.server.name).join(" → ")}`}
+                >
+                  <Route size={12} aria-hidden="true" />
+                  <span>
+                    本机 →{" "}
+                    {connection.view.hops
+                      .map((hop) => hop.server.name)
+                      .join(" → ")}
+                  </span>
+                </span>
+              )}
+              <span className="terminal-encoding">UTF-8</span>
+            </footer>
+          </main>
+        }
+      />
       {active && prompt?.type === "authRequired" && (
         <LoginDialog
           key={prompt.challenge.id}
@@ -414,6 +321,6 @@ export function SessionWorkspace({
           onClose={disconnect}
         />
       )}
-    </section>
+    </>
   );
 }

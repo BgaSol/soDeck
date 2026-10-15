@@ -301,7 +301,7 @@ export function WorkspaceTabs({
           <button
             className="icon-button new-session"
             aria-label="新建连接"
-            title="新建连接"
+            title="选择服务器并新建连接"
             disabled={!onNew}
             onClick={onNew}
           >

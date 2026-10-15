@@ -248,7 +248,7 @@ pub async fn move_workspace(
             &to,
             WebviewUrl::App(format!("index.html?workspace={id}").into()),
         )
-        .title(title)
+        .title(crate::brand::window_title(&app, title))
         .inner_size(1080.0, 760.0)
         .min_inner_size(650.0, 480.0)
         .build()

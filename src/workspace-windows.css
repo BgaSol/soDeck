@@ -54,12 +54,6 @@
 .detached-app .workspaces {
   flex: 1;
 }
-.detached-app .session-page {
-  grid-template-columns: min(
-      var(--resource-width, 320px),
-      calc(100vw - 312px)
-    ) 10px minmax(250px, 1fr);
-}
 .detached-loading {
   display: grid;
   place-content: center;

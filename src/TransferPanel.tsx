@@ -28,6 +28,7 @@ const labels: Record<TransferTask["status"], string> = {
   completed: "已完成",
   failed: "失败",
   partialFailed: "部分完成",
+  sourceRetained: "已复制，来源未删除",
   cancelled: "已取消",
   unknown: "状态待确认",
   interrupted: "已中断，请检查目标",
@@ -190,7 +191,11 @@ export function TransferPanel() {
                       ? "下载"
                       : task.kind === "upload"
                         ? "上传"
-                        : "服务器直传"}
+                        : task.kind === "serverCopy"
+                          ? "服务器内复制"
+                          : task.kind === "serverMove"
+                            ? "服务器内移动"
+                            : "服务器直传"}
                   </strong>
                   <span className="download-task-state">
                     {task.status === "completed" && task.warnings.length
@@ -219,9 +224,12 @@ export function TransferPanel() {
                       <CircleHelp size={14} />
                       核对状态
                     </button>
-                  ) : ["failed", "partialFailed", "cancelled"].includes(
-                      task.status,
-                    ) ? (
+                  ) : [
+                      "failed",
+                      "partialFailed",
+                      "sourceRetained",
+                      "cancelled",
+                    ].includes(task.status) ? (
                     <button
                       className="icon-button"
                       aria-label="重试传输"
@@ -390,7 +398,9 @@ export function TransferPanel() {
               </>
             )}
             <p className="muted">
-              默认使用新临时目录。已提交项目保留；旧执行未确认退出时不可复用或清理。
+              {retrying?.kind === "serverMove"
+                ? "只继续未完成步骤。已经提交的文件不重复复制；删除来源前会再次校验，来源或目标变化时保留来源。"
+                : "默认使用新临时目录。已提交项目保留；旧执行未确认退出时不可复用或清理。"}
             </p>
             {error && (
               <p role="alert" className="panel-error">

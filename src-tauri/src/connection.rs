@@ -171,6 +171,15 @@ pub enum ConnectionEvent {
         home: Option<String>,
         sequence: u64,
     },
+    History {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        #[serde(rename = "sourceId")]
+        source_id: String,
+        #[serde(rename = "workspaceId")]
+        workspace_id: String,
+    },
+    DisplayCleared,
     Frozen {
         token: String,
     },
@@ -673,6 +682,7 @@ pub fn open_connection(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
     server_id: String,
+    workspace_id: Option<String>,
     events: Channel<ConnectionEvent>,
 ) -> AppResult<String> {
     crate::moves::workspace_only(&window)?;
@@ -700,8 +710,16 @@ pub fn open_connection(
                 },
                 &cancel,
             )?;
+            let source = crate::terminal_history::model::Source::new(&context, None);
             terminal::run(
-                connection, context, &worker_id, None, &state, receiver, &cancel,
+                connection,
+                context,
+                &worker_id,
+                None,
+                &state,
+                receiver,
+                &cancel,
+                Some((workspace_id.unwrap_or_else(|| worker_id.clone()), source)),
             )
         })();
         finish(&state, &worker_id, &cancel, result);
@@ -749,6 +767,7 @@ pub fn open_container(
     target: crate::docker::ContainerTarget,
     output: Channel<ConnectionEvent>,
 ) -> AppResult<String> {
+    let workspace_id = owner.label.clone();
     let gate = state.configuration.lock().unwrap();
     let plan = Arc::new(ConnectionPlan::new(
         context.hops.iter().map(|h| h.server.clone()).collect(),
@@ -760,6 +779,7 @@ pub fn open_container(
         let result = (|| {
             let connection = connect_verified(&context, &cancel)?;
             let command = crate::docker::terminal_command_on(connection.session(), &target)?;
+            let source = crate::terminal_history::model::Source::new(&context, Some(&target));
             terminal::run(
                 connection,
                 context,
@@ -768,6 +788,7 @@ pub fn open_container(
                 &state,
                 receiver,
                 &cancel,
+                Some((workspace_id, source)),
             )
         })();
         finish(&state, &worker_id, &cancel, result);

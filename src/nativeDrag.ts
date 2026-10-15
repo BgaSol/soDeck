@@ -5,6 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { desktop } from "./api";
 
 export interface DesktopDragEvent {
+  intent?: "copy" | "move";
   phase: "over" | "drop" | "leave";
   kind: "localFiles" | "remoteFiles" | "workspaceTab";
   token: string;

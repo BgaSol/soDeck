@@ -1,5 +1,6 @@
 .file-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 1px;
 }
@@ -9,6 +10,11 @@
 }
 .file-panel .panel-title {
   gap: 6px;
+  flex-wrap: wrap;
+}
+.file-panel .panel-title h2 {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .file-tree-row {
   min-height: 32px;
@@ -359,41 +365,6 @@
 .file-toolbar {
   gap: 2px;
 }
-.file-new-menu {
-  position: relative;
-}
-.file-new-menu summary {
-  list-style: none;
-  cursor: pointer;
-}
-.file-new-menu summary::-webkit-details-marker {
-  display: none;
-}
-.file-new-menu > div {
-  position: absolute;
-  z-index: 30;
-  top: calc(100% + 6px);
-  left: 0;
-  min-width: 170px;
-  padding: 5px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-  box-shadow: 0 8px 30px #0002;
-}
-.file-new-menu [role="menuitem"] {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  border: 0;
-  background: transparent;
-  padding: 8px 10px;
-  text-align: left;
-}
-.file-new-menu [role="menuitem"]:hover {
-  background: var(--hover);
-}
 .file-row.drop-target {
   outline: 2px solid var(--blue);
   outline-offset: -2px;
@@ -668,7 +639,6 @@
   margin: 6px 0;
 }
 @media (prefers-reduced-transparency: reduce) {
-  .file-new-menu > div,
   .file-operation-dialog {
     backdrop-filter: none;
   }
@@ -677,4 +647,11 @@
   .file-row.drop-target {
     outline-width: 3px;
   }
+}
+.file-row.cut-pending {
+  opacity: 0.48;
+}
+.file-context-menu {
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
 }

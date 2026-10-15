@@ -33,7 +33,23 @@ pub async fn create_remote_entry(
     let path = crate::remote_path::join(&parent_path, &name)?;
     let identity = spec.identity().to_owned();
     let operation = crate::transfers::register_file_operation(state.inner().clone(), spec.clone())?;
+    let state = state.inner().clone();
     let result = blocking(move || {
+        let _path = state.transfers.paths.acquire(
+            spec.target_public_key(),
+            &path,
+            &format!("create-{}", uuid::Uuid::new_v4()),
+            |_| operation.cancel.check(),
+        )?;
+        if let Some(task) = state
+            .transfers
+            .pending_path(spec.target_public_key(), &path, None)
+        {
+            return Err(AppError::new(
+                "conflictPending",
+                format!("目录涉及待核对任务 {task}"),
+            ));
+        }
         let connection = connection::connect_verified(&spec, &operation.cancel)?;
         let sftp = connection.session().sftp()?;
         operation.cancel.check()?;
@@ -52,6 +68,7 @@ pub(crate) fn create_entry(
     kind: EntryKind,
 ) -> AppResult<()> {
     let path = crate::remote_path::join(parent, name)?;
+    crate::remote_write::safe_ancestors(sftp, parent)?;
     if !sftp.stat(Path::new(parent))?.is_dir() {
         return Err(AppError::new("fileType", "创建位置不是目录"));
     }

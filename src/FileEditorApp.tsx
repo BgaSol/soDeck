@@ -16,6 +16,7 @@ import {
 } from "./editorLanguages";
 import { FileText, RefreshCw, Save, Search, Undo2, Redo2 } from "lucide-react";
 import { desktop } from "./api";
+import { windowTitle } from "./brand";
 import { fileApi } from "./fileApi";
 import type { EditorDocument } from "./fileApi";
 import { errorOf, formatSize } from "./types";
@@ -347,10 +348,10 @@ export function FileEditorApp() {
     if (!desktop || !document) return;
     void getCurrentWindow()
       .setTitle(
-        (dirty ? "● " : "") +
-          document.path.split("/").pop() +
-          " — " +
+        windowTitle(
+          (dirty ? "● " : "") + document.path.split("/").pop(),
           document.serverName,
+        ),
       )
       .catch(() => {});
   }, [dirty, document]);

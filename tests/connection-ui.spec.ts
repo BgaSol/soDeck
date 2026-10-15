@@ -1,12 +1,17 @@
 // Browser interaction tests with explicit IPC simulation. Real SSH forwarding
 // and backend state are tested separately in connection_tests.rs.
 import { test, expect, type Page } from "@playwright/test";
+import type { WorkspaceSnapshot } from "../src/SessionWorkspace";
 
-async function setup(page: Page, delayed = false) {
+async function setup(
+  page: Page,
+  delayed = false,
+  options: { empty?: boolean; snapshot?: WorkspaceSnapshot } = {},
+) {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.addInitScript(
-    ({ delayed }) => {
+    ({ delayed, options }) => {
       const w = window as any;
       let serial = 1;
       const calls: any[] = [];
@@ -42,6 +47,7 @@ async function setup(page: Page, delayed = false) {
           directPort: 22,
         },
       ];
+      if (options.empty) servers.splice(0);
       const emit = (id: string, event: any) =>
         channels.get(id)?.onmessage(event);
       const hop = (index: number) => ({
@@ -80,6 +86,18 @@ async function setup(page: Page, delayed = false) {
         invoke: async (command: string, args: any = {}) => {
           calls.push({ command, args: JSON.parse(JSON.stringify(args)) });
           if (command === "list_servers") return structuredClone(servers);
+          if (command === "take_workspace")
+            return { payload: options.snapshot, beforeId: null };
+          if (command === "terminal_freeze") {
+            emit(args.sessionId, { type: "frozen", token: args.token });
+            return;
+          }
+          if (command === "move_workspace") return "fixture-transfer";
+          if (command === "delete_server") {
+            const index = servers.findIndex((s) => s.id === args.id);
+            if (index >= 0) servers.splice(index, 1);
+            return;
+          }
           if (command === "save_server") {
             const { passwordChange, ...server } = args.server;
             server.hasSavedPassword =
@@ -87,7 +105,10 @@ async function setup(page: Page, delayed = false) {
               (passwordChange.type === "keep" && server.hasSavedPassword);
             const i = servers.findIndex((s) => s.id === server.id);
             if (i >= 0) servers[i] = server;
-            else servers.push({ ...server, id: `new-${serial++}` });
+            else {
+              server.id = `new-${serial++}`;
+              servers.push(server);
+            }
             return structuredClone(server);
           }
           if (command === "open_connection") {
@@ -152,16 +173,21 @@ async function setup(page: Page, delayed = false) {
       };
       w.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
     },
-    { delayed },
+    { delayed, options },
   );
-  await page.goto("/");
-  await expect(
-    page.locator(".server-row").filter({ hasText: "Target B" }),
-  ).toBeVisible();
+  await page.goto(options.snapshot ? "/?workspace=fixture-transfer" : "/");
+  if (options.snapshot) return errors;
+  await expect(page.getByRole("dialog", { name: /^服务器/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "新建连接", exact: true }).click();
+  if (!options.empty)
+    await expect(
+      page.locator(".server-row").filter({ hasText: "Target B" }),
+    ).toBeVisible();
   return errors;
 }
 async function connect(page: Page) {
   await page.locator(".server-row").filter({ hasText: "Target B" }).dblclick();
+  await expect(page.getByRole("dialog", { name: /^服务器 \d/ })).toHaveCount(0);
   let dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("跳板服务器：Jump A");
   await page.screenshot({ path: ".qa/jump-design-fingerprint-light.png" });
@@ -173,7 +199,9 @@ async function connect(page: Page) {
   await page.screenshot({ path: ".qa/jump-design-login-light.png" });
   await dialog.getByLabel("密码", { exact: true }).fill("target-password");
   await dialog.getByRole("button", { name: "连接", exact: true }).click();
-  await expect(page.locator(".connection-state")).toHaveText("已连接");
+  await expect(
+    page.getByRole("tabpanel").locator(".connection-state"),
+  ).toHaveText("已连接");
 }
 
 test("per-hop prompts survive replies delivering the next prompt before IPC acknowledgement", async ({
@@ -207,7 +235,7 @@ test("closing while open is pending cancels its eventual ID and ignores late Rea
     .getByRole("dialog")
     .getByRole("button", { name: "取消", exact: true })
     .click();
-  await expect(page.locator(".connection-state")).toHaveText("已断开");
+  await expect(page.getByRole("tab")).toHaveCount(0);
   await expect
     .poll(() =>
       page.evaluate(() =>
@@ -224,7 +252,7 @@ test("closing while open is pending cancels its eventual ID and ignores late Rea
       connection: { target: t.servers[1], hops: [], identity: "late" },
     });
   });
-  await expect(page.locator(".connection-state")).toHaveText("已断开");
+  await expect(page.getByRole("tab")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -418,7 +446,7 @@ test("authentication can be cancelled while its reply is still pending", async (
   ).toBeEnabled();
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
-  await expect(page.locator(".connection-state")).toHaveText("已断开");
+  await expect(page.getByRole("tab")).toHaveCount(0);
   expect(
     await page.evaluate(() =>
       (window as any).__TEST__.calls.some(
@@ -462,5 +490,301 @@ test("unsaved settings can be kept or discarded without native confirmation dial
       ),
     ),
   ).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+test("server picker filters hidden selections, supports Escape, and preserves the active session", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  const picker = page.getByRole("dialog", { name: /^服务器/ });
+  await expect(page.locator(".server-panel")).toHaveCount(0);
+  await expect(
+    page
+      .locator(".app-header")
+      .getByRole("button", { name: "本地日志", exact: true }),
+  ).toHaveCount(1);
+  await picker.getByLabel("搜索服务器").fill("no-such-server");
+  await expect(
+    picker.getByRole("button", { name: "连接", exact: true }),
+  ).toBeDisabled();
+  await picker.getByLabel("搜索服务器").fill("target.internal");
+  await expect(picker.locator(".server-row.selected")).toContainText(
+    "Target B",
+  );
+  await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("button", { name: "新建连接", exact: true }),
+  ).toBeFocused();
+  await page.getByRole("button", { name: "新建连接", exact: true }).click();
+  await connect(page);
+  const original = await page.getByRole("tab").getAttribute("id");
+  await page.getByRole("button", { name: "新建连接", exact: true }).click();
+  await picker.getByLabel("搜索服务器").fill("");
+  await picker.locator(".server-row").filter({ hasText: "Jump A" }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("tab")).toHaveAttribute("id", original!);
+  await expect(
+    page.getByRole("tabpanel").locator(".connection-state"),
+  ).toHaveText("已连接");
+  expect(errors).toEqual([]);
+});
+
+test("failed connection retries in the same tab", async ({ page }) => {
+  const errors = await setup(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    const original = w.__TAURI_INTERNALS__.invoke;
+    let first = true;
+    w.__TAURI_INTERNALS__.invoke = async (command: string, args: any) => {
+      if (command === "open_connection" && first) {
+        first = false;
+        throw { kind: "ssh", message: "fixture connection refused" };
+      }
+      return original(command, args);
+    };
+  });
+  await page.locator(".server-row").filter({ hasText: "Target B" }).dblclick();
+  const picker = page.getByRole("dialog", { name: /^服务器/ });
+  await expect(picker.getByRole("alert")).toContainText(
+    "fixture connection refused",
+  );
+  const id = await page.locator(".session-tab").getAttribute("data-tab-id");
+  await connect(page);
+  await expect(page.locator(".session-tab")).toHaveCount(1);
+  await expect(page.locator(".session-tab")).toHaveAttribute(
+    "data-tab-id",
+    id!,
+  );
+  expect(errors).toEqual([]);
+});
+
+test("three columns resize independently, survive tab switches, and fit narrow windows", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await connect(page);
+  const first = await page.getByRole("tab").getAttribute("id");
+  const left = page.getByRole("separator", { name: "调整文件区域宽度" });
+  const right = page.getByRole("separator", { name: "调整服务区域宽度" });
+  const startLeft = Number(await left.getAttribute("aria-valuenow"));
+  const startRight = Number(await right.getAttribute("aria-valuenow"));
+  await left.press("ArrowRight");
+  await right.press("ArrowLeft");
+  await expect(left).toHaveAttribute("aria-valuenow", String(startLeft + 10));
+  await expect(right).toHaveAttribute("aria-valuenow", String(startRight + 10));
+  await page.getByRole("button", { name: "新建连接", exact: true }).click();
+  await connect(page);
+  await expect(page.getByRole("tab")).toHaveCount(2);
+  await page.locator(`[id="${first}"]`).click();
+  await expect(left).toHaveAttribute("aria-valuenow", String(startLeft + 10));
+  await expect(right).toHaveAttribute("aria-valuenow", String(startRight + 10));
+  for (const [width, height] of [
+    [1440, 950],
+    [860, 580],
+    [650, 480],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await expect
+      .poll(async () =>
+        page.getByRole("tabpanel").evaluate((el) => {
+          const file = el.querySelector(".file-panel")!.getBoundingClientRect();
+          const terminal = el
+            .querySelector(".terminal-panel")!
+            .getBoundingClientRect();
+          const service = el
+            .querySelector(".docker-panel")!
+            .getBoundingClientRect();
+          return (
+            file.right < terminal.left &&
+            terminal.right < service.left &&
+            Math.abs(file.top - service.top) < 1 &&
+            service.right <= el.getBoundingClientRect().right + 1 &&
+            el.scrollWidth <= el.clientWidth
+          );
+        }),
+      )
+      .toBe(true);
+    await page.screenshot({ path: `.qa/workspace-layout-${width}.png` });
+  }
+  await page.setViewportSize({ width: 1440, height: 950 });
+  await expect(left).toHaveAttribute("aria-valuenow", String(startLeft + 10));
+  await expect(right).toHaveAttribute("aria-valuenow", String(startRight + 10));
+  await page.getByRole("button", { name: "新建连接", exact: true }).click();
+  await page.screenshot({ path: ".qa/workspace-server-picker.png" });
+  await page.locator(".server-row").filter({ hasText: "Target B" }).dblclick();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("tab")).toHaveCount(2);
+  await expect(page.locator(`[id="${first}"]`)).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  expect(errors).toEqual([]);
+});
+
+test("empty inventory can add, edit and delete inside the picker", async ({
+  page,
+}) => {
+  const errors = await setup(page, false, { empty: true });
+  const picker = page.getByRole("dialog", { name: /^服务器/ });
+  await expect(picker).toContainText("还没有服务器");
+  await expect(
+    picker.getByRole("button", { name: "连接", exact: true }),
+  ).toBeDisabled();
+  await picker.getByRole("button", { name: "新增", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "新增服务器" });
+  await editor.getByLabel(/^名称/).fill("New server");
+  await editor.getByLabel("地址", { exact: true }).fill("fixture.internal");
+  await editor.getByLabel("用户名", { exact: true }).fill("ops");
+  await editor.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(picker.locator(".server-row.selected")).toContainText(
+    "New server",
+  );
+  await picker.locator(".server-row").click({ button: "right" });
+  await picker.getByRole("menuitem", { name: "编辑", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "编辑服务器" })
+    .getByRole("button", { name: "取消", exact: true })
+    .click();
+  await picker.getByRole("button", { name: "删除", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "删除服务器配置？" })
+    .getByRole("button", { name: "确认删除" })
+    .click();
+  await expect(picker).toContainText("还没有服务器");
+  await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("button", { name: "新建连接", exact: true }),
+  ).toBeEnabled();
+  expect(errors).toEqual([]);
+});
+
+test("moving a workspace carries both widths and restores the same terminal without reconnecting", async ({
+  page,
+  context,
+}) => {
+  const errors = await setup(page);
+  await connect(page);
+  const left = page.getByRole("separator", { name: "调整文件区域宽度" });
+  const right = page.getByRole("separator", { name: "调整服务区域宽度" });
+  await left.press("ArrowRight");
+  await right.press("ArrowLeft");
+  const expectedWidths = [
+    Number(await left.getAttribute("aria-valuenow")),
+    Number(await right.getAttribute("aria-valuenow")),
+  ];
+  await page.getByRole("tab").click({ button: "right" });
+  await page
+    .getByRole("menuitem", { name: "移到独立窗口", exact: true })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).__TEST__.calls.filter(
+            (c: any) => c.command === "move_workspace",
+          ).length,
+      ),
+    )
+    .toBe(1);
+  const snapshot: WorkspaceSnapshot = await page.evaluate(
+    () =>
+      (window as any).__TEST__.calls.find(
+        (c: any) => c.command === "move_workspace",
+      ).args.payload,
+  );
+  expect(snapshot.layout).toBeTruthy();
+  expect(Math.round(snapshot.layout!.fileWidth)).toBe(expectedWidths[0]);
+  expect(Math.round(snapshot.layout!.serviceWidth)).toBe(expectedWidths[1]);
+  expect(snapshot.terminal.content).toContain("connected to B");
+  const detached = await context.newPage();
+  const detachedErrors = await setup(detached, false, { snapshot });
+  await expect(
+    detached.getByRole("tabpanel").locator(".connection-state"),
+  ).toHaveText("已连接");
+  await expect(
+    detached.getByRole("separator", { name: "调整文件区域宽度" }),
+  ).toHaveAttribute("aria-valuenow", String(expectedWidths[0]));
+  await expect(
+    detached.getByRole("separator", { name: "调整服务区域宽度" }),
+  ).toHaveAttribute("aria-valuenow", String(expectedWidths[1]));
+  await expect(detached.locator(".terminal-surface")).toContainText(
+    "connected to B",
+  );
+  const calls = await detached.evaluate(() => (window as any).__TEST__.calls);
+  expect(
+    calls.filter((c: any) => c.command === "open_connection"),
+  ).toHaveLength(0);
+  expect(
+    calls.filter((c: any) => c.command === "terminal_attach"),
+  ).toHaveLength(1);
+  await detached.setViewportSize({ width: 650, height: 480 });
+  await expect(
+    detached.getByRole("separator", { name: "调整服务区域宽度" }),
+  ).toBeInViewport();
+  await detached.close();
+  const legacy = await context.newPage();
+  const legacyErrors = await setup(legacy, false, {
+    snapshot: {
+      ...snapshot,
+      layout: undefined,
+      resourceWidth: 300,
+      fileRatio: 60,
+    },
+  });
+  await expect(
+    legacy.getByRole("separator", { name: "调整文件区域宽度" }),
+  ).toHaveAttribute("aria-valuenow", "300");
+  await expect(
+    legacy.getByRole("separator", { name: "调整服务区域宽度" }),
+  ).toHaveAttribute("aria-valuenow", "320");
+  await legacy.close();
+  expect([...errors, ...detachedErrors, ...legacyErrors]).toEqual([]);
+});
+
+test("pending connection starts once and cancellation disposes a late connection ID", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    const original = w.__TAURI_INTERNALS__.invoke;
+    w.__TAURI_INTERNALS__.invoke = (command: string, args: any) => {
+      if (command === "open_connection") {
+        w.__TEST__.calls.push({ command, args: { serverId: args.serverId } });
+        return new Promise((resolve) => {
+          w.__TEST__.finishPending = () => resolve("late-id");
+        });
+      }
+      return original(command, args);
+    };
+  });
+  const picker = page.getByRole("dialog", { name: /^服务器/ });
+  await picker.getByRole("button", { name: "连接", exact: true }).dblclick();
+  await expect(
+    picker.getByRole("button", { name: "连接中…", exact: true }),
+  ).toBeDisabled();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__TEST__.calls.filter(
+          (c: any) => c.command === "open_connection",
+        ).length,
+    ),
+  ).toBe(1);
+  await picker.getByRole("button", { name: "取消连接", exact: true }).click();
+  await expect(page.getByRole("tab")).toHaveCount(0);
+  await page.evaluate(() => (window as any).__TEST__.finishPending());
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).__TEST__.calls.some(
+          (c: any) =>
+            c.command === "close_connection" &&
+            c.args.connectionId === "late-id",
+        ),
+      ),
+    )
+    .toBe(true);
   expect(errors).toEqual([]);
 });

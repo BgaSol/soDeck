@@ -57,6 +57,7 @@ impl TaskStore {
             let (id, value) = value?;
             let mut receipt: Receipt =
                 serde_json::from_str(&value).map_err(|e| AppError::new("taskStore", e))?;
+            receipt.plan.skipped = receipt.skipped_paths.clone();
             let mut entries = self
                 .0
                 .prepare("SELECT entry FROM entries WHERE task=?1 ORDER BY position")?;
@@ -89,15 +90,28 @@ impl TaskStore {
                     .plan
                     .entries
                     .iter()
-                    .filter(|e| e.outcome == "completed")
+                    .filter(|e| e.committed())
                     .map(|e| e.size)
                     .sum();
                 if receipt.pending_commit.is_some() {
                     view.status = "needsAttention".into();
                     view.error = Some("上次提交结果未确认，请核对具体目标文件".into());
                 } else if view.active() {
-                    view.status = "interrupted".into();
-                    view.error = Some("上次执行中断；可核对结果或使用新临时目录重试".into());
+                    let copied = receipt.plan.entries.iter().any(|e| e.outcome == "copied");
+                    view.status = if copied {
+                        "sourceRetained"
+                    } else {
+                        "interrupted"
+                    }
+                    .into();
+                    view.error = Some(
+                        if copied {
+                            "目标已提交，来源删除步骤尚未完成；重试只继续剩余步骤"
+                        } else {
+                            "上次执行中断；可核对结果或使用新临时目录重试"
+                        }
+                        .into(),
+                    );
                 }
                 view.waiting_reason = None;
                 view.cleanup_pending = receipt

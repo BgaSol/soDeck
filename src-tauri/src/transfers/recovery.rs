@@ -24,16 +24,22 @@ fn remove_tree(sftp: &ssh2::Sftp, path: &str, depth: usize) -> AppResult<()> {
         return Ok(());
     };
     if stat.is_dir() {
-        for (p, _) in sftp.readdir(Path::new(path))? {
+        let mut dir = sftp.opendir(Path::new(path))?;
+        loop {
+            let p = match dir.readdir() {
+                Ok((p, _)) => p,
+                Err(e) if e.code() == ssh2::ErrorCode::Session(-16) => break,
+                Err(e) => return Err(e.into()),
+            };
             let name = p
-                .file_name()
-                .and_then(|s| s.to_str())
+                .to_str()
                 .ok_or_else(|| AppError::new("path", "临时文件名不是 UTF-8"))?;
             if name == "." || name == ".." {
                 continue;
             }
             remove_tree(sftp, &remote_path::join(path, name)?, depth + 1)?;
         }
+        drop(dir);
         sftp.rmdir(Path::new(path))?;
     } else {
         sftp.unlink(Path::new(path))?;
@@ -120,8 +126,20 @@ pub fn reconcile(state: &State, item: &WriteHandle) -> AppResult<()> {
             .is_some_and(|e| {
                 e.outcome == "completed" && e.target.as_deref() == Some(&commit.destination)
             });
-        let completed = if recorded
-            || (commit.directory && destination.as_ref().is_some_and(|s| s.is_dir()))
+        let completed = if commit.rename_directory {
+            let plan = item.plan.lock().unwrap();
+            let entry = plan
+                .as_ref()
+                .and_then(|p| p.entries.get(commit.entry))
+                .ok_or_else(|| AppError::new("unknown", "缺少目录移动记录"))?;
+            super::same_server::directory_rename_completed(
+                &c,
+                &s,
+                &entry.source,
+                &commit.destination,
+                entry.source_stamp.as_deref().unwrap_or(""),
+            )?
+        } else if recorded || (commit.directory && destination.as_ref().is_some_and(|s| s.is_dir()))
         {
             true
         } else if let (Some(digest), Some(stat)) = (&commit.digest, &destination) {
@@ -164,12 +182,36 @@ pub fn reconcile(state: &State, item: &WriteHandle) -> AppResult<()> {
             }
         }
         if let Some(entry) = plan.entries.get_mut(commit.entry) {
-            entry.outcome = if completed { "completed" } else { "pending" }.into();
+            entry.outcome = if completed {
+                if item.moving() {
+                    "copied"
+                } else {
+                    "completed"
+                }
+            } else {
+                "pending"
+            }
+            .into();
+            if completed
+                && item.moving()
+                && commit.stage_path.as_deref() == Some(entry.source.as_str())
+            {
+                entry.removal_pending = true;
+            }
             entry.target = Some(commit.destination.clone());
             if commit.directory {
                 entry.created_directory = false;
             }
             entry.error = None;
+        }
+        if commit.rename_directory && completed {
+            let root = plan.entries[commit.entry].source.clone();
+            for entry in &mut plan.entries {
+                if entry.source == root || entry.source.starts_with(&format!("{root}/")) {
+                    entry.outcome = "completed".into();
+                    entry.error = None;
+                }
+            }
         }
         state.transfers.save_plan(item, &plan)?;
         item.receipt.lock().unwrap().pending_commit = None;
@@ -193,7 +235,7 @@ pub fn reconcile(state: &State, item: &WriteHandle) -> AppResult<()> {
             t.committed_bytes = plan
                 .entries
                 .iter()
-                .filter(|e| e.outcome == "completed")
+                .filter(|e| e.committed())
                 .map(|e| e.size)
                 .sum();
             t.skipped = plan
@@ -212,9 +254,19 @@ pub fn reconcile(state: &State, item: &WriteHandle) -> AppResult<()> {
             }
         }
         if t.status != "completed" {
-            t.status = "interrupted".into();
+            let retained = plan
+                .as_ref()
+                .is_some_and(|p| p.entries.iter().any(|e| e.outcome == "copied"));
+            t.status = if retained {
+                "sourceRetained"
+            } else {
+                "interrupted"
+            }
+            .into();
             t.error = Some(
-                if stopped {
+                if retained {
+                    "部分目标已提交；来源尚未删除，重试只继续未完成步骤"
+                } else if stopped {
                     "执行已停止，可重试未完成项或清理临时数据"
                 } else {
                     "远端执行尚未确认退出；可使用新目录重新执行，旧目录暂不清理"

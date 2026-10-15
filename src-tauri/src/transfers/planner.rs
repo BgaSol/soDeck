@@ -26,6 +26,10 @@ impl From<&ssh2::FileStat> for Version {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Entry {
+    #[serde(default)]
+    pub source_stamp: Option<String>,
+    #[serde(default)]
+    pub removal_pending: bool,
     pub source: String,
     pub parts: Vec<String>,
     pub directory: bool,
@@ -49,6 +53,11 @@ pub struct Plan {
     pub entries: Vec<Entry>,
     pub skipped: Vec<String>,
 }
+impl Entry {
+    pub fn committed(&self) -> bool {
+        self.outcome == "completed" || self.outcome == "copied"
+    }
+}
 fn push(plan: &mut Plan, entry: Entry) -> AppResult<()> {
     if plan.entries.len() + plan.skipped.len() >= 100_000 || entry.parts.len() > 128 {
         return Err(AppError::new("limit", "目录层级或项目数量过多，请分批传输"));
@@ -71,6 +80,8 @@ fn local(item: &WriteHandle, plan: &mut Plan, path: &Path, parts: Vec<String>) -
     push(
         plan,
         Entry {
+            source_stamp: None,
+            removal_pending: false,
             source,
             parts: parts.clone(),
             directory: stat.is_dir(),
@@ -130,6 +141,8 @@ fn remote(
     push(
         plan,
         Entry {
+            source_stamp: None,
+            removal_pending: false,
             source: path.to_owned(),
             parts: parts.clone(),
             directory: stat.is_dir(),

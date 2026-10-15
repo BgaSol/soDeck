@@ -16,10 +16,10 @@ use std::{
 pub fn run(state: &State, app: Option<&tauri::AppHandle>, item: &WriteHandle) -> AppResult<()> {
     item.check()?;
     item.task.lock().unwrap().status = "checking".into();
+    let requested = item.task.lock().unwrap().target_path.clone();
     let target = connection::connect_verified(&item.target, &item.cancel)?;
     target.session().set_timeout(15000);
     let sftp = target.session().sftp()?;
-    let requested = item.task.lock().unwrap().target_path.clone();
     let root = sftp
         .realpath(Path::new(&requested))?
         .to_str()
@@ -27,6 +27,13 @@ pub fn run(state: &State, app: Option<&tauri::AppHandle>, item: &WriteHandle) ->
         .to_owned();
     if !sftp.stat(Path::new(&root))?.is_dir() {
         return Err(AppError::new("fileType", "目标不是目录"));
+    }
+    remote_write::safe_ancestors(&sftp, &requested)?;
+    if root != requested {
+        return Err(AppError::new("path", "目标路径已变化，请刷新目录后重试"));
+    }
+    if item.same_server() {
+        super::same_server::validate(item, &sftp, &root)?;
     }
     item.task.lock().unwrap().target_path = root.clone();
     item.task.lock().unwrap().status = "scanning".into();
@@ -36,6 +43,55 @@ pub fn run(state: &State, app: Option<&tauri::AppHandle>, item: &WriteHandle) ->
         _ => planner::scan(item)?,
     };
     plan_targets(item, &sftp, &root, &mut plan)?;
+    let task_id = item.task.lock().unwrap().id.clone();
+    let mut claims: Vec<_> = plan
+        .entries
+        .iter()
+        .filter(|e| e.parts.len() == 1)
+        .filter_map(|e| e.target.as_ref())
+        .map(|p| super::scheduler::Claim {
+            key: item.write_key(),
+            path: p.clone(),
+            write: true,
+        })
+        .collect();
+    let source_claim_start = claims.len();
+    if let Source::Remote { context, paths } = &item.source {
+        claims.extend(paths.iter().map(|p| super::scheduler::Claim {
+            key: context.target_public_key().into(),
+            path: p.clone(),
+            write: item.moving(),
+        }));
+    }
+    let _paths = state
+        .transfers
+        .paths
+        .acquire_many(&claims, &task_id, |conflict| {
+            item.check()?;
+            item.task.lock().unwrap().waiting_reason =
+                conflict.map(|(path, task)| format!("等待任务 {task} 释放路径：{path}"));
+            Ok(())
+        })?;
+    for claim in claims.iter().skip(source_claim_start) {
+        if let Some(task) = state
+            .transfers
+            .pending_path(&claim.key, &claim.path, Some(&task_id))
+        {
+            return Err(AppError::new(
+                "conflictPending",
+                format!("来源涉及待核对任务 {task}，请先核对结果"),
+            ));
+        }
+    }
+    let _editors = if item.moving() {
+        let Source::Remote { context, paths } = &item.source else {
+            unreachable!()
+        };
+        Some(state.files.begin_move(context.identity(), paths)?)
+    } else {
+        None
+    };
+    remote_write::safe_ancestors(&sftp, &root)?;
     {
         let mut t = item.task.lock().unwrap();
         t.files_total = plan.entries.iter().filter(|e| !e.directory).count() as u64;
@@ -43,7 +99,7 @@ pub fn run(state: &State, app: Option<&tauri::AppHandle>, item: &WriteHandle) ->
         t.committed_bytes = plan
             .entries
             .iter()
-            .filter(|e| e.outcome == "completed")
+            .filter(|e| e.committed())
             .map(|e| e.size)
             .sum();
         t.bytes_done = t.committed_bytes;
@@ -70,8 +126,11 @@ pub fn run(state: &State, app: Option<&tauri::AppHandle>, item: &WriteHandle) ->
     if plan
         .entries
         .iter()
-        .all(|e| e.outcome == "completed" || e.outcome == "skipped")
+        .all(|e| e.committed() || e.outcome == "skipped")
     {
+        if item.moving() {
+            super::same_server::finish_move(state, app, item, &target, &mut plan)?;
+        }
         return Ok(());
     }
     let source_check = super::verify::SourceCheck::new(item)?;
@@ -83,19 +142,43 @@ pub fn run(state: &State, app: Option<&tauri::AppHandle>, item: &WriteHandle) ->
     for entry in plan
         .entries
         .iter_mut()
-        .filter(|e| e.outcome != "completed" && e.outcome != "skipped")
+        .filter(|e| !e.committed() && e.outcome != "skipped")
     {
         source_check.unchanged(entry)?;
+        if item.moving() {
+            let now = super::same_server::stamp(&target, item, &entry.source)?;
+            if entry.source_stamp.as_ref().is_some_and(|old| old != &now) {
+                return Err(AppError::new("changed", "来源身份或内容已变化，请重新选择"));
+            }
+            entry.source_stamp = Some(now);
+        }
         if strong && !entry.directory {
             entry.digest = Some(source_check.digest(entry)?);
         }
+        if item.moving()
+            && !entry.directory
+            && super::same_server::same_filesystem(
+                &target,
+                item,
+                &sftp,
+                &entry.source,
+                entry.target.as_deref().unwrap(),
+            )?
+        {
+            entry.staged = Some(entry.source.clone());
+        }
     }
     state.transfers.save_plan(item, &plan)?;
+    if item.moving() {
+        super::same_server::move_directories(state, app, item, &target, &mut plan)?;
+    }
     let groups = staging_groups(state, item, &sftp, &mut plan)?;
     item.task.lock().unwrap().status = "running".into();
     let mut transferred = item.task.lock().unwrap().committed_bytes;
     for (index, entries) in groups {
-        if matches!(item.source, Source::Remote { .. }) {
+        if item.same_server() {
+            super::same_server::transfer(state, item, &target, &mut plan, index, &entries)?;
+        } else if matches!(item.source, Source::Remote { .. }) {
             let mut executor = super::direct::Executor::prepare(state, item, index)?;
             executor.transfer(state, item, &mut plan, index, &entries)?;
         } else {
@@ -130,7 +213,7 @@ pub fn run(state: &State, app: Option<&tauri::AppHandle>, item: &WriteHandle) ->
         .entries
         .iter_mut()
         .enumerate()
-        .filter(|(_, e)| !e.directory && e.outcome != "completed" && e.outcome != "skipped")
+        .filter(|(_, e)| !e.directory && !e.committed() && e.outcome != "skipped")
     {
         let result = (|| {
             item.check()?;
@@ -158,7 +241,9 @@ pub fn run(state: &State, app: Option<&tauri::AppHandle>, item: &WriteHandle) ->
                 }
                 entry.digest = Some(source);
             }
-            attributes(item, &sftp, staged, entry);
+            if staged != entry.source {
+                attributes(item, &sftp, staged, entry);
+            }
             Ok(())
         })();
         if let Err(e) = result {
@@ -177,9 +262,10 @@ pub fn run(state: &State, app: Option<&tauri::AppHandle>, item: &WriteHandle) ->
     }
     item.task.lock().unwrap().status = "committing".into();
     let policy = item.task.lock().unwrap().conflict;
+    let extra_guards = std::cell::RefCell::new(Vec::new());
     for i in 0..plan.entries.len() {
         item.check()?;
-        if plan.entries[i].outcome == "completed" || plan.entries[i].outcome == "skipped" {
+        if plan.entries[i].committed() || plan.entries[i].outcome == "skipped" {
             continue;
         }
         let mut entry = plan.entries[i].clone();
@@ -191,12 +277,21 @@ pub fn run(state: &State, app: Option<&tauri::AppHandle>, item: &WriteHandle) ->
                 .paths
                 .acquire(&item.write_key(), &requested, &task_id, |conflict| {
                     item.check()?;
-                    item.task.lock().unwrap().waiting_reason =
-                        conflict.map(|(p, t)| format!("等待任务 {t} 提交目标路径：{p}"));
+                    if let Some((p, t)) = conflict {
+                        return Err(AppError::new(
+                            "busy",
+                            format!("改名后的目标路径 {p} 正由任务 {t} 使用，请重试"),
+                        ));
+                    }
                     Ok(())
                 })?;
-        let merge_only = entry.directory && policy != ConflictPolicy::Rename && remote_write::metadata(&sftp, &requested)?.is_some_and(|s|s.is_dir());
-        if let Some(task) = (!merge_only).then(|| state.transfers.conflicting_commit(item, &requested)).flatten() {
+        let merge_only = entry.directory
+            && policy != ConflictPolicy::Rename
+            && remote_write::metadata(&sftp, &requested)?.is_some_and(|s| s.is_dir());
+        if let Some(task) = (!merge_only)
+            .then(|| state.transfers.conflicting_commit(item, &requested))
+            .flatten()
+        {
             return Err(AppError::new(
                 "conflictPending",
                 format!(
@@ -205,9 +300,18 @@ pub fn run(state: &State, app: Option<&tauri::AppHandle>, item: &WriteHandle) ->
             ));
         }
         item.task.lock().unwrap().waiting_reason = None;
-        let extra_guards = std::cell::RefCell::new(Vec::new());
         let before = |path: &str| {
             item.check()?;
+            if item.same_server() {
+                source_check.unchanged(&entry)?;
+            }
+            if item.moving()
+                && entry.staged.as_deref() == Some(entry.source.as_str())
+                && entry.source_stamp.as_ref()
+                    != Some(&super::same_server::stamp(&target, item, &entry.source)?)
+            {
+                return Err(AppError::new("changed", "来源在移动前变化，请重新选择"));
+            }
             if path != requested {
                 extra_guards
                     .borrow_mut()
@@ -215,7 +319,16 @@ pub fn run(state: &State, app: Option<&tauri::AppHandle>, item: &WriteHandle) ->
                         &item.write_key(),
                         path,
                         &task_id,
-                        |_| item.check(),
+                        |conflict| {
+                            item.check()?;
+                            if conflict.is_some() {
+                                return Err(AppError::new(
+                                    "busy",
+                                    "自动改名目标正被其他任务使用，请重试",
+                                ));
+                            }
+                            Ok(())
+                        },
                     )?);
             }
             if let Some(task) = state.transfers.conflicting_commit(item, path) {
@@ -236,6 +349,7 @@ pub fn run(state: &State, app: Option<&tauri::AppHandle>, item: &WriteHandle) ->
                 }
             }
             item.receipt.lock().unwrap().pending_commit = Some(PendingCommit {
+                rename_directory: false,
                 destination: path.into(),
                 stage_path: entry.staged.clone(),
                 expected_size: (!entry.directory).then_some(entry.size),
@@ -295,7 +409,14 @@ pub fn run(state: &State, app: Option<&tauri::AppHandle>, item: &WriteHandle) ->
                     }
                 }
                 entry.outcome = if destination.is_some() {
-                    "completed"
+                    if item.moving()
+                        && (entry.directory
+                            || entry.staged.as_deref() != Some(entry.source.as_str()))
+                    {
+                        "copied"
+                    } else {
+                        "completed"
+                    }
                 } else {
                     "skipped"
                 }
@@ -311,8 +432,10 @@ pub fn run(state: &State, app: Option<&tauri::AppHandle>, item: &WriteHandle) ->
                 item.receipt.lock().unwrap().pending_commit = None;
                 {
                     let mut t = item.task.lock().unwrap();
-                    if !entry.directory && entry.outcome == "completed" {
-                        t.files_done += 1;
+                    if !entry.directory && entry.committed() {
+                        if entry.outcome == "completed" {
+                            t.files_done += 1;
+                        }
                         t.committed_bytes += entry.size;
                     }
                     if entry.outcome == "skipped" {
@@ -333,6 +456,13 @@ pub fn run(state: &State, app: Option<&tauri::AppHandle>, item: &WriteHandle) ->
         }
         if let Some(app) = app {
             super::directory_changed(app, item.target.identity(), remote_path::parent(&requested));
+            if item.moving() {
+                super::directory_changed(
+                    app,
+                    item.target.identity(),
+                    remote_path::parent(&entry.source),
+                );
+            }
         }
     }
     for entry in plan
@@ -351,11 +481,14 @@ pub fn run(state: &State, app: Option<&tauri::AppHandle>, item: &WriteHandle) ->
         t.committed_bytes = plan
             .entries
             .iter()
-            .filter(|e| e.outcome == "completed")
+            .filter(|e| e.committed())
             .map(|e| e.size)
             .sum();
         t.current_file = None;
         t.current_bytes = 0;
+    }
+    if item.moving() {
+        super::same_server::finish_move(state, app, item, &target, &mut plan)?;
     }
     Ok(())
 }
@@ -387,7 +520,7 @@ fn plan_targets(
         }
         let parent = dirs.get(source_parent).map(String::as_str).unwrap_or(root);
         let requested = remote_path::join(parent, entry.parts.last().unwrap())?;
-        if entry.outcome != "completed" && entry.outcome != "skipped" && entry.target.is_none() {
+        if !entry.committed() && entry.outcome != "skipped" && entry.target.is_none() {
             let target = if policy == ConflictPolicy::Rename {
                 let mut suffix = 0;
                 loop {
@@ -486,12 +619,12 @@ fn staging_groups(
 ) -> AppResult<Vec<(usize, Vec<usize>)>> {
     let mut groups = HashMap::<String, (String, Vec<usize>)>::new();
     let mut parents = HashMap::<String, (String, String)>::new();
-    for (i, e) in plan
-        .entries
-        .iter()
-        .enumerate()
-        .filter(|(_, e)| !e.directory && e.outcome != "completed" && e.outcome != "skipped")
-    {
+    for (i, e) in plan.entries.iter().enumerate().filter(|(_, e)| {
+        !e.directory
+            && !e.committed()
+            && e.outcome != "skipped"
+            && e.staged.as_deref() != Some(e.source.as_str())
+    }) {
         item.check()?;
         let parent = remote_path::parent(e.target.as_ref().unwrap()).to_owned();
         let (key, existing) = if let Some(cached) = parents.get(&parent) {
@@ -557,7 +690,14 @@ fn staging_groups(
             let old = item.receipt.lock().unwrap().attempts[index]
                 .target_root
                 .clone();
-            for name in ["probe", "receiver.exit", "receiver.exit.next"] {
+            for name in [
+                "probe",
+                "receiver.exit",
+                "receiver.exit.next",
+                "copy.sh",
+                "copy.exit",
+                "copy.exit.next",
+            ] {
                 let p = format!("{old}/{name}");
                 if remote_write::metadata(sftp, &p)?.is_some() {
                     sftp.unlink(Path::new(&p))?;

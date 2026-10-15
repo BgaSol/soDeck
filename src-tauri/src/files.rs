@@ -24,6 +24,34 @@ const TEXT_LIMIT: usize = 1024 * 1024;
 #[derive(Default)]
 pub struct FileState {
     editors: Mutex<HashMap<String, EditorHandle>>,
+    movement: Mutex<Vec<(String, String, Vec<String>)>>,
+    opening: Mutex<Vec<(String, String, String)>>,
+}
+pub struct MoveGuard<'a> {
+    files: &'a FileState,
+    id: String,
+}
+impl Drop for MoveGuard<'_> {
+    fn drop(&mut self) {
+        self.files
+            .movement
+            .lock()
+            .unwrap()
+            .retain(|(id, _, _)| id != &self.id);
+    }
+}
+struct OpenGuard<'a> {
+    files: &'a FileState,
+    id: String,
+}
+impl Drop for OpenGuard<'_> {
+    fn drop(&mut self) {
+        self.files
+            .opening
+            .lock()
+            .unwrap()
+            .retain(|(id, _, _)| id != &self.id);
+    }
 }
 
 #[derive(Clone)]
@@ -138,10 +166,12 @@ pub async fn open_editor(
     path: String,
 ) -> AppResult<String> {
     let spec = state.spec(&session_id, window.label())?;
+    let _opening = state.files.begin_open(spec.identity(), &path)?;
     let editor = blocking(move || {
         let connection = connection::connect_verified(&spec, &Cancellation::default())?;
         let session = connection.session();
         let sftp = session.sftp()?;
+        crate::remote_write::safe_ancestors(&sftp, &path)?;
         let canonical = sftp
             .realpath(remote_path(&path)?)?
             .to_string_lossy()
@@ -158,6 +188,18 @@ pub async fn open_editor(
     let (label, create) = {
         let _gate = state.configuration.lock().unwrap();
         state.check_context(&editor.spec)?;
+        let moving = state.files.movement.lock().unwrap();
+        if moving.iter().any(|(_, identity, paths)| {
+            identity == editor.spec.identity()
+                && paths
+                    .iter()
+                    .any(|p| crate::transfers::scheduler::overlaps(p, &editor.path))
+        }) {
+            return Err(AppError::new(
+                "busy",
+                "该文件或其父目录正在移动，请等待任务结束再打开",
+            ));
+        }
         let mut editors = state.files.editors.lock().unwrap();
         if let Some((label, _)) = editors.iter().find(|(_, item)| {
             item.spec.identity() == editor.spec.identity() && item.path == editor.path
@@ -180,7 +222,14 @@ pub async fn open_editor(
     }
     let result =
         WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("index.html?editor=1".into()))
-            .title(format!("{} — {}", editor.path, editor.spec.target().name))
+            .title(crate::brand::window_title(
+                &app,
+                &format!(
+                    "{} · {}",
+                    editor.path.rsplit('/').next().unwrap_or(&editor.path),
+                    editor.spec.target().name,
+                ),
+            ))
             .inner_size(960.0, 720.0)
             .min_inner_size(560.0, 360.0)
             .build();
@@ -214,6 +263,53 @@ fn editor_for(state: &State, window: &WebviewWindow) -> AppResult<EditorHandle> 
 }
 
 impl FileState {
+    fn begin_open(&self, identity: &str, path: &str) -> AppResult<OpenGuard<'_>> {
+        crate::remote_path::absolute(path)?;
+        let moving = self.movement.lock().unwrap();
+        if moving.iter().any(|(_, host, paths)| {
+            host == identity
+                && paths
+                    .iter()
+                    .any(|p| crate::transfers::scheduler::overlaps(p, path))
+        }) {
+            return Err(AppError::new("busy", "文件正在移动，请稍后打开"));
+        }
+        let id = uuid::Uuid::new_v4().to_string();
+        self.opening
+            .lock()
+            .unwrap()
+            .push((id.clone(), identity.into(), path.into()));
+        Ok(OpenGuard { files: self, id })
+    }
+    pub fn begin_move(&self, identity: &str, paths: &[String]) -> AppResult<MoveGuard<'_>> {
+        let mut moving = self.movement.lock().unwrap();
+        if self.opening.lock().unwrap().iter().any(|(_, host, path)| {
+            host == identity
+                && paths
+                    .iter()
+                    .any(|p| crate::transfers::scheduler::overlaps(p, path))
+        }) {
+            return Err(AppError::new(
+                "editorOpen",
+                "正在打开编辑文件，请关闭编辑器后再移动",
+            ));
+        }
+        let editors = self.editors.lock().unwrap();
+        if let Some(editor) = editors.values().find(|e| {
+            e.spec.identity() == identity
+                && paths
+                    .iter()
+                    .any(|p| crate::transfers::scheduler::overlaps(p, &e.path))
+        }) {
+            return Err(AppError::new(
+                "editorOpen",
+                format!("请先关闭正在编辑的文件，再移动：{}", editor.path),
+            ));
+        }
+        let id = uuid::Uuid::new_v4().to_string();
+        moving.push((id.clone(), identity.into(), paths.to_vec()));
+        Ok(MoveGuard { files: self, id })
+    }
     pub fn has_activity(&self) -> bool {
         !self.editors.lock().unwrap().is_empty()
     }
@@ -281,8 +377,25 @@ pub async fn editor_save(
 ) -> AppResult<EditorDocument> {
     let editor = editor_for(&state, &window)?;
     validate_text(text.as_bytes())?;
+    let state = state.inner().clone();
     blocking(move || {
         let _gate = editor.gate.lock().unwrap();
+        let _path = state.transfers.paths.acquire(
+            editor.spec.target_public_key(),
+            &editor.path,
+            &format!("editor-{}", uuid::Uuid::new_v4()),
+            |_| Ok(()),
+        )?;
+        if let Some(task) =
+            state
+                .transfers
+                .pending_path(editor.spec.target_public_key(), &editor.path, None)
+        {
+            return Err(AppError::new(
+                "conflictPending",
+                format!("文件涉及待核对任务 {task}，请先核对结果"),
+            ));
+        }
         let connection = connection::connect_verified(&editor.spec, &Cancellation::default())?;
         let session = connection.session();
         let sftp = session.sftp()?;
@@ -336,6 +449,19 @@ pub async fn editor_save(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn move_and_open_editor_reservations_exclude_each_other() {
+        let files = FileState::default();
+        let open = files.begin_open("host", "/a/file").unwrap();
+        assert!(files.begin_move("host", &["/a".into()]).is_err());
+        assert!(files.begin_move("other-host", &["/a".into()]).is_ok());
+        drop(open);
+        let moving = files.begin_move("host", &["/a".into()]).unwrap();
+        assert!(files.begin_open("host", "/a/file").is_err());
+        assert!(files.begin_open("host", "/ab/file").is_ok());
+        drop(moving);
+        assert!(files.begin_open("host", "/a/file").is_ok());
+    }
     #[test]
     fn text_validation_and_encoding_preserve_bom_and_crlf() {
         assert!(validate_text(b"a\0b").is_err());
