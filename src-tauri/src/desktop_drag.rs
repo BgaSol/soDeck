@@ -58,6 +58,7 @@ pub struct DraftPreview {
     target_path: String,
     direct_endpoint: Option<EndpointPreview>,
     endpoint_required: bool,
+    saved_password_available: bool,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -485,6 +486,7 @@ fn preview(id: &str, draft: &Draft) -> DraftPreview {
         }),
         endpoint_required: matches!(draft.source, Source::Remote { .. })
             && draft.endpoint.is_none(),
+        saved_password_available: !draft.target.target().password.is_empty(),
     }
 }
 #[tauri::command]
@@ -547,6 +549,8 @@ pub fn start_transfer(
     state: TauriState<Arc<State>>,
     draft_id: String,
     conflict: ConflictPolicy,
+    auth: Option<transfers::AuthInput>,
+    verify_sha256: Option<bool>,
 ) -> AppResult<String> {
     moves::workspace_only(&window)?;
     let mut drafts = state.drags.drafts.lock().unwrap();
@@ -570,6 +574,8 @@ pub fn start_transfer(
         draft.path.clone(),
         conflict,
         draft.endpoint.clone(),
+        auth,
+        verify_sha256.unwrap_or(false),
     )?;
     draft.started = Some(id.clone());
     Ok(id)

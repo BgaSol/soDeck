@@ -24,4 +24,14 @@ jobs:
       - run: npm test
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Real OpenSSH and rsync transfer tests
+        if: runner.os == 'Linux'
+        run: |
+          docker build -t ssh-workspace-rsync-fixture tests/rsync
+          python3 tests/rsync/environment.py
+          cargo test --manifest-path src-tauri/Cargo.toml --lib rsync_ -- --ignored --test-threads=1
+      - name: Remove transfer test servers
+        if: always() && runner.os == 'Linux'
+        run: |
+          if [ -f .qa/rsync-environment.json ]; then python3 tests/rsync/environment.py stop; fi
       - run: npm run tauri -- build --no-bundle

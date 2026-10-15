@@ -1,436 +1,601 @@
 use super::{
-    direct::Controller,
-    download::ConflictPolicy,
-    model::{PendingCommit, Source, WriteHandle},
-    planner::{self, Entry},
+    model::{Attempt, PendingCommit, Source, WriteHandle},
+    planner::{self, Entry, Plan},
+    ConflictPolicy,
 };
 use crate::{
     connection,
     model::{AppError, AppResult},
-    remote_path,
-    remote_write::{self, Stage},
-    State,
+    remote_path, remote_write, State,
 };
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
 
 pub fn run(state: &State, app: Option<&tauri::AppHandle>, item: &WriteHandle) -> AppResult<()> {
     item.check()?;
     item.task.lock().unwrap().status = "checking".into();
     let target = connection::connect_verified(&item.target, &item.cancel)?;
+    target.session().set_timeout(15000);
     let sftp = target.session().sftp()?;
     let requested = item.task.lock().unwrap().target_path.clone();
     let root = sftp
         .realpath(Path::new(&requested))?
         .to_str()
-        .ok_or_else(|| AppError::new("path", "目标目录不是 UTF-8"))?
+        .ok_or_else(|| AppError::new("path", "目标不是 UTF-8"))?
         .to_owned();
     if !sftp.stat(Path::new(&root))?.is_dir() {
         return Err(AppError::new("fileType", "目标不是目录"));
     }
     item.task.lock().unwrap().target_path = root.clone();
-    // Hold the target's write lane across planning and commit. Other target
-    // servers are independent, and registry locks are never held over I/O.
-    let lane = state.transfers.write_lane(&item.write_key());
-    let _writer = loop {
-        item.check()?;
-        match lane.try_lock() {
-            Ok(writer) => break writer,
-            Err(std::sync::TryLockError::WouldBlock) => {
-                std::thread::sleep(std::time::Duration::from_millis(50))
-            }
-            Err(std::sync::TryLockError::Poisoned(error)) => {
-                return Err(AppError::new("internal", error))
-            }
-        }
+    item.task.lock().unwrap().status = "scanning".into();
+    let previous = item.plan.lock().unwrap().clone();
+    let mut plan = match previous {
+        Some(p) if !p.entries.is_empty() => p,
+        _ => planner::scan(item)?,
     };
-    if state.transfers.requires_reconciliation(item) {
+    plan_targets(item, &sftp, &root, &mut plan)?;
+    {
+        let mut t = item.task.lock().unwrap();
+        t.files_total = plan.entries.iter().filter(|e| !e.directory).count() as u64;
+        t.bytes_total = plan.entries.iter().map(|e| e.size).sum();
+        t.committed_bytes = plan
+            .entries
+            .iter()
+            .filter(|e| e.outcome == "completed")
+            .map(|e| e.size)
+            .sum();
+        t.bytes_done = t.committed_bytes;
+        t.files_done = plan
+            .entries
+            .iter()
+            .filter(|e| !e.directory && e.outcome == "completed")
+            .count() as u64;
+        t.skipped = plan.skipped.len() as u64
+            + plan
+                .entries
+                .iter()
+                .filter(|e| e.outcome == "skipped")
+                .count() as u64;
+        t.warnings = plan
+            .skipped
+            .iter()
+            .take(100)
+            .map(|p| format!("跳过链接或特殊文件：{p}"))
+            .collect();
+    }
+    state.transfers.save_plan(item, &plan)?;
+    state.transfers.persist(item)?;
+    if plan
+        .entries
+        .iter()
+        .all(|e| e.outcome == "completed" || e.outcome == "skipped")
+    {
+        return Ok(());
+    }
+    let source_check = super::verify::SourceCheck::new(item)?;
+    let strong = item.receipt.lock().unwrap().verify_sha256;
+    if strong {
+        source_check.check_hash_tool()?;
+        super::verify::check_hash_tool(&target, &item.cancel)?;
+    }
+    for entry in plan
+        .entries
+        .iter_mut()
+        .filter(|e| e.outcome != "completed" && e.outcome != "skipped")
+    {
+        source_check.unchanged(entry)?;
+        if strong && !entry.directory {
+            entry.digest = Some(source_check.digest(entry)?);
+        }
+    }
+    state.transfers.save_plan(item, &plan)?;
+    let groups = staging_groups(state, item, &sftp, &mut plan)?;
+    item.task.lock().unwrap().status = "running".into();
+    let mut transferred = item.task.lock().unwrap().committed_bytes;
+    for (index, entries) in groups {
+        if matches!(item.source, Source::Remote { .. }) {
+            let mut executor = super::direct::Executor::prepare(state, item, index)?;
+            executor.transfer(state, item, &mut plan, index, &entries)?;
+        } else {
+            for i in entries {
+                item.check()?;
+                let entry = &mut plan.entries[i];
+                let path = entry.staged.clone().unwrap();
+                entry.error = None;
+                {
+                    let mut t = item.task.lock().unwrap();
+                    t.current_file = Some(entry.source.clone());
+                    t.bytes_done = transferred;
+                }
+                if let Err(e) = super::upload::upload_file(item, &sftp, entry, &path) {
+                    entry.error = Some(e.message.clone());
+                    state.transfers.save_entry(item, i, entry)?;
+                    return Err(e);
+                }
+                transferred += entry.size;
+                state.transfers.save_entry(item, i, entry)?;
+            }
+            let mut r = item.receipt.lock().unwrap();
+            r.attempts[index].source_finished = true;
+            r.attempts[index].receiver_finished = true;
+            r.attempts[index].successful = true;
+        }
+        state.transfers.persist(item)?;
+    }
+    item.task.lock().unwrap().status = "verifying".into();
+    let mut invalid = false;
+    for (i, entry) in plan
+        .entries
+        .iter_mut()
+        .enumerate()
+        .filter(|(_, e)| !e.directory && e.outcome != "completed" && e.outcome != "skipped")
+    {
+        let result = (|| {
+            item.check()?;
+            source_check.unchanged(entry)?;
+            let staged = entry
+                .staged
+                .as_deref()
+                .ok_or_else(|| AppError::new("verification", "缺少暂存文件"))?;
+            if !remote_write::metadata(&sftp, staged)?
+                .is_some_and(|m| m.is_file() && m.size == Some(entry.size))
+            {
+                return Err(AppError::new(
+                    "verification",
+                    "暂存文件类型或大小与计划不一致",
+                ));
+            }
+            if strong {
+                let source = source_check.digest(entry)?;
+                let received =
+                    super::verify::remote_digest_checked(&target, staged, &item.cancel, || {
+                        item.check()
+                    })?;
+                if source != received || entry.digest.as_ref() != Some(&source) {
+                    return Err(AppError::new("verification", "SHA-256 不一致"));
+                }
+                entry.digest = Some(source);
+            }
+            attributes(item, &sftp, staged, entry);
+            Ok(())
+        })();
+        if let Err(e) = result {
+            item.check()?;
+            entry.error = Some(e.message.clone());
+            invalid = true;
+        }
+        state.transfers.save_entry(item, i, entry)?;
+    }
+    state.transfers.persist(item)?;
+    if invalid {
         return Err(AppError::new(
-            "quarantined",
-            "目标已有待核对任务，请先完成核对再重试",
+            "verification",
+            "部分源文件发生变化或校验失败，本次内容尚未提交。请查看项目详情",
         ));
     }
-    let mut controller = if matches!(item.source, Source::Remote { .. }) {
-        Some(Controller::start(state, item)?)
-    } else {
-        None
-    };
-    let result = (|| {
-        if let Some(controller) = controller.as_mut() {
-            let stage = create_stage(state, item, &sftp, &root)?;
-            let probe = Entry {
-                source: controller.probe_source(),
-                parts: vec![],
-                directory: false,
-                size: 0,
-                modified: None,
-                mode: None,
-                created_directory: false,
-                target: None,
-                outcome: "pending".into(),
-            };
-            controller.copy(item, usize::MAX, &probe, &stage.path)?;
-            stage.cleanup(&sftp)?;
-            item.receipt
-                .lock()
-                .unwrap()
-                .stage_dirs
-                .retain(|p| p != &stage.directory);
+    item.task.lock().unwrap().status = "committing".into();
+    let policy = item.task.lock().unwrap().conflict;
+    for i in 0..plan.entries.len() {
+        item.check()?;
+        if plan.entries[i].outcome == "completed" || plan.entries[i].outcome == "skipped" {
+            continue;
         }
-        item.task.lock().unwrap().status = "scanning".into();
-        let saved = item.plan.lock().unwrap().take();
-        let mut plan = match saved {
-            Some(plan) => plan,
-            None => planner::scan(item)?,
-        };
-        {
-            let mut task = item.task.lock().unwrap();
-            task.files_total = plan.entries.iter().filter(|e| !e.directory).count() as u64;
-            task.bytes_total = plan.entries.iter().map(|e| e.size).sum();
-            task.files_done = plan
-                .entries
-                .iter()
-                .filter(|e| !e.directory && e.outcome == "completed")
-                .count() as u64;
-            task.bytes_done = plan
-                .entries
-                .iter()
-                .filter(|e| e.outcome == "completed")
-                .map(|e| e.size)
-                .sum();
-            task.committed_bytes = task.bytes_done;
-            task.current_file = None;
-            task.current_bytes = 0;
-            task.skipped = plan.skipped.len() as u64
-                + plan
-                    .entries
-                    .iter()
-                    .filter(|e| e.outcome == "skipped")
-                    .count() as u64;
-            task.status = "running".into();
-            task.warnings = plan
-                .skipped
-                .iter()
-                .take(100)
-                .map(|p| format!("跳过符号链接或特殊文件：{p}"))
-                .collect();
-        }
-        let policy = item.task.lock().unwrap().conflict;
-        let mut directories: HashMap<Vec<String>, Option<String>> = HashMap::new();
-        directories.insert(vec![], Some(root.clone()));
-        let mut completed_bytes = item.task.lock().unwrap().bytes_done;
-        let transfer_result = (|| {
-            for index in 0..plan.entries.len() {
-                item.check()?;
-                let entry = plan.entries[index].clone();
-                let parent_parts = &entry.parts[..entry.parts.len() - 1];
-                let parent = directories.get(parent_parts).cloned().flatten();
-                if parent.is_none() {
-                    if entry.outcome != "skipped" {
-                        plan.entries[index].outcome = "skipped".into();
-                        item.task.lock().unwrap().skipped += 1;
-                    }
-                    if entry.directory {
-                        directories.insert(entry.parts.clone(), None);
-                    }
-                    continue;
-                }
-                let requested = entry.target.clone().unwrap_or(remote_path::join(
-                    parent.as_ref().unwrap(),
-                    entry.parts.last().unwrap(),
-                )?);
-                if entry.directory {
-                    let destination = if entry.outcome == "completed" {
-                        if !remote_write::metadata(&sftp, &requested)?.is_some_and(|s| s.is_dir()) {
-                            return Err(AppError::new(
-                                "changed",
-                                format!("重试时目标目录已变化：{requested}"),
-                            ));
-                        }
-                        Some(requested)
-                    } else if entry.outcome == "skipped" {
-                        None
-                    } else {
-                        let result = remote_write::directory_destination(
-                            &sftp,
-                            &requested,
-                            policy,
-                            |path| record_commit(state, item, path, None, None),
-                        );
-                        if !result.as_ref().is_err_and(|e| e.kind == "unknown") {
-                            item.receipt.lock().unwrap().pending_commit = None;
-                        }
-                        let result = result?;
-                        plan.entries[index].created_directory =
-                            result.as_ref().is_some_and(|d| d.created);
-                        result.map(|d| d.path)
-                    };
-                    plan.entries[index].outcome = if destination.is_some() {
-                        "completed"
-                    } else {
-                        "skipped"
-                    }
-                    .into();
-                    plan.entries[index].target = destination.clone();
-                    if destination.is_none() && entry.outcome != "skipped" {
-                        item.task.lock().unwrap().skipped += 1;
-                    }
-                    directories.insert(entry.parts.clone(), destination);
-                    state.transfers.persist(item)?;
-                    continue;
-                }
-                if entry.outcome == "completed" {
-                    if !remote_write::metadata(&sftp, &requested)?
-                        .is_some_and(|s| s.is_file() && s.size == Some(entry.size))
-                    {
-                        return Err(AppError::new(
-                            "changed",
-                            format!("已完成的目标文件发生变化：{requested}"),
-                        ));
-                    }
-                    continue;
-                }
-                if entry.outcome == "skipped" {
-                    continue;
-                }
-                if policy == ConflictPolicy::Skip
-                    && remote_write::metadata(&sftp, &requested)?.is_some()
-                {
-                    plan.entries[index].outcome = "skipped".into();
-                    let mut task = item.task.lock().unwrap();
-                    task.skipped += 1;
-                    continue;
-                }
-                plan.entries[index].target = Some(requested.clone());
-                let stage = create_stage(state, item, &sftp, remote_path::parent(&requested))?;
-                item.task.lock().unwrap().status = "running".into();
-                {
-                    let mut task = item.task.lock().unwrap();
-                    task.bytes_done = completed_bytes;
-                    task.committed_bytes = completed_bytes;
-                    task.current_bytes = 0;
-                    task.current_file = Some(entry.source.clone());
-                }
-                let result = (|| {
-                    if let Some(controller) = controller.as_mut() {
-                        controller.copy(item, index, &entry, &stage.path)?;
-                    } else {
-                        super::upload::upload_file(item, &sftp, &entry, &stage.path)?;
-                    }
+        let mut entry = plan.entries[i].clone();
+        let requested = entry.target.clone().unwrap();
+        let task_id = item.task.lock().unwrap().id.clone();
+        let _guard =
+            state
+                .transfers
+                .paths
+                .acquire(&item.write_key(), &requested, &task_id, |conflict| {
                     item.check()?;
-                    let verified = VerifiedStage::verify(&sftp, &stage, entry.size)?;
-                    apply_attributes(item, &sftp, &stage.path, &entry);
-                    item.task.lock().unwrap().status = "committing".into();
-                    let destination =
-                        verified.publish(target.session(), &sftp, &requested, policy, |path| {
-                            record_commit(state, item, path, Some(&stage.path), Some(entry.size))
-                        });
-                    if !destination.as_ref().is_err_and(|e| e.kind == "unknown") {
-                        item.receipt.lock().unwrap().pending_commit = None;
-                    }
-                    let destination = destination?;
-                    plan.entries[index].outcome = if destination.is_some() {
-                        "completed"
-                    } else {
-                        "skipped"
-                    }
-                    .into();
-                    plan.entries[index].target = destination;
-                    {
-                        let mut task = item.task.lock().unwrap();
-                        if destination_is_completed(&plan.entries[index]) {
-                            task.files_done += 1;
-                        }
-                        task.bytes_done = completed_bytes
-                            + if plan.entries[index].outcome == "completed" {
-                                entry.size
-                            } else {
-                                0
-                            };
-                        if plan.entries[index].outcome == "skipped" {
-                            task.skipped += 1;
-                        }
-                        completed_bytes = task.bytes_done;
-                        task.committed_bytes = completed_bytes;
-                        task.current_bytes = 0;
-                        task.current_file = None;
-                    }
+                    item.task.lock().unwrap().waiting_reason =
+                        conflict.map(|(p, t)| format!("等待任务 {t} 提交目标路径：{p}"));
                     Ok(())
-                })();
-                if result
+                })?;
+        let merge_only = entry.directory && policy != ConflictPolicy::Rename && remote_write::metadata(&sftp, &requested)?.is_some_and(|s|s.is_dir());
+        if let Some(task) = (!merge_only).then(|| state.transfers.conflicting_commit(item, &requested)).flatten() {
+            return Err(AppError::new(
+                "conflictPending",
+                format!(
+                    "目标 {requested} 的提交结果需核对（任务 {task}），可改名或更换目录创建任务"
+                ),
+            ));
+        }
+        item.task.lock().unwrap().waiting_reason = None;
+        let extra_guards = std::cell::RefCell::new(Vec::new());
+        let before = |path: &str| {
+            item.check()?;
+            if path != requested {
+                extra_guards
+                    .borrow_mut()
+                    .push(state.transfers.paths.acquire(
+                        &item.write_key(),
+                        path,
+                        &task_id,
+                        |_| item.check(),
+                    )?);
+            }
+            if let Some(task) = state.transfers.conflicting_commit(item, path) {
+                return Err(AppError::new(
+                    "conflictPending",
+                    format!("目标 {path} 的提交结果需核对（任务 {task}）"),
+                ));
+            }
+            if policy == ConflictPolicy::Overwrite && !entry.directory {
+                let now = remote_write::metadata(&sftp, path)?
                     .as_ref()
-                    .is_err_and(|e: &AppError| e.kind == "unknown")
-                {
-                    return result;
+                    .map(planner::Version::from);
+                if now != entry.target_version {
+                    return Err(AppError::new(
+                        "conflict",
+                        format!("目标自扫描后已变化，保留原文件；请重新创建任务确认覆盖：{path}"),
+                    ));
                 }
-                match stage.cleanup(&sftp) {
-                    Ok(()) => item
-                        .receipt
-                        .lock()
-                        .unwrap()
-                        .stage_dirs
-                        .retain(|p| p != &stage.directory),
-                    Err(e) => {
-                        item.warn(format!(
-                            "临时文件清理待完成：{}（{}）",
-                            stage.directory, e.message
-                        ));
-                        state.transfers.persist(item)?;
-                        result?;
-                        return Err(AppError::new(
-                            "cleanup",
-                            "临时资源清理失败，任务已暂停写入；请先核对并清理后重试",
-                        ));
+            }
+            item.receipt.lock().unwrap().pending_commit = Some(PendingCommit {
+                destination: path.into(),
+                stage_path: entry.staged.clone(),
+                expected_size: (!entry.directory).then_some(entry.size),
+                run_id: item.task.lock().unwrap().run_id.clone(),
+                entry: i,
+                digest: entry.digest.clone(),
+                directory: entry.directory,
+            });
+            state.transfers.persist(item)
+        };
+        let mut created = false;
+        let result = if entry.directory {
+            remote_write::directory_destination(&sftp, &requested, policy, before).map(|d| {
+                d.map(|d| {
+                    created = d.created;
+                    d.path
+                })
+            })
+        } else {
+            remote_write::publish(
+                target.session(),
+                &sftp,
+                entry.staged.as_ref().unwrap(),
+                &requested,
+                policy,
+                before,
+            )
+        };
+        match result {
+            Ok(destination) => {
+                let mut rebased = false;
+                if entry.directory {
+                    entry.created_directory = created;
+                    if let Some(new) = &destination {
+                        if new != &requested {
+                            for child in plan.entries.iter_mut().skip(i + 1) {
+                                if let Some(p) = &child.target {
+                                    if let Some(suffix) = p.strip_prefix(&format!("{requested}/")) {
+                                        child.target = Some(format!("{new}/{suffix}"));
+                                        rebased = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if destination.is_none() {
+                        for child in plan.entries.iter_mut().skip(i + 1) {
+                            if child
+                                .target
+                                .as_ref()
+                                .is_some_and(|p| p.starts_with(&format!("{requested}/")))
+                            {
+                                child.outcome = "skipped".into();
+                                rebased = true;
+                            }
+                        }
+                    }
+                }
+                entry.outcome = if destination.is_some() {
+                    "completed"
+                } else {
+                    "skipped"
+                }
+                .into();
+                entry.target = destination;
+                entry.error = None;
+                plan.entries[i] = entry.clone();
+                if rebased {
+                    state.transfers.save_plan(item, &plan)?;
+                } else {
+                    state.transfers.save_entry(item, i, &entry)?;
+                }
+                item.receipt.lock().unwrap().pending_commit = None;
+                {
+                    let mut t = item.task.lock().unwrap();
+                    if !entry.directory && entry.outcome == "completed" {
+                        t.files_done += 1;
+                        t.committed_bytes += entry.size;
+                    }
+                    if entry.outcome == "skipped" {
+                        t.skipped += 1;
                     }
                 }
                 state.transfers.persist(item)?;
-                result?;
-                if let Some(app) = app {
-                    super::directory_changed(
-                        app,
-                        item.target.identity(),
-                        remote_path::parent(&requested),
-                    );
-                }
             }
-            // Finalize newly created directories deepest first; applying a
-            // read-only mode before children would break the remaining copy.
-            for entry in plan
-                .entries
-                .iter()
-                .rev()
-                .filter(|e| e.directory && e.created_directory && e.outcome == "completed")
-            {
-                if let Some(path) = &entry.target {
-                    apply_attributes(item, &sftp, path, entry);
+            Err(e) => {
+                entry.error = Some(e.message.clone());
+                state.transfers.save_entry(item, i, &entry)?;
+                if e.kind != "unknown" {
+                    item.receipt.lock().unwrap().pending_commit = None;
                 }
+                state.transfers.persist(item)?;
+                return Err(e);
             }
-            Ok(())
-        })();
-        *item.plan.lock().unwrap() = Some(plan);
-        transfer_result
-    })();
-    let mut result = result;
-    if let Some(controller) = controller.as_mut() {
-        let stopping = if result.is_ok() {
-            controller.finish(item)
-        } else {
-            controller.stop(item)
+        }
+        if let Some(app) = app {
+            super::directory_changed(app, item.target.identity(), remote_path::parent(&requested));
+        }
+    }
+    for entry in plan
+        .entries
+        .iter()
+        .rev()
+        .filter(|e| e.directory && e.created_directory)
+    {
+        if let Some(path) = &entry.target {
+            attributes(item, &sftp, path, entry);
+        }
+    }
+    {
+        let mut t = item.task.lock().unwrap();
+        t.bytes_done = t.bytes_total;
+        t.committed_bytes = plan
+            .entries
+            .iter()
+            .filter(|e| e.outcome == "completed")
+            .map(|e| e.size)
+            .sum();
+        t.current_file = None;
+        t.current_bytes = 0;
+    }
+    Ok(())
+}
+fn plan_targets(
+    item: &WriteHandle,
+    sftp: &ssh2::Sftp,
+    root: &str,
+    plan: &mut Plan,
+) -> AppResult<()> {
+    let policy = item.task.lock().unwrap().conflict;
+    let mut dirs = HashMap::<String, String>::new();
+    let mut skipped_dirs = HashSet::new();
+    let mut reserved = HashSet::new();
+    for entry in &mut plan.entries {
+        item.check()?;
+        let source_parent = match &item.source {
+            Source::Local(_) => Path::new(&entry.source)
+                .parent()
+                .and_then(|p| p.to_str())
+                .unwrap_or(""),
+            Source::Remote { .. } => remote_path::parent(&entry.source),
         };
-        if let Err(error) = stopping {
-            if error.kind == "unknown" || result.is_ok() {
-                result = Err(error);
+        if skipped_dirs.contains(source_parent) {
+            entry.outcome = "skipped".into();
+            if entry.directory {
+                skipped_dirs.insert(entry.source.clone());
+            }
+            continue;
+        }
+        let parent = dirs.get(source_parent).map(String::as_str).unwrap_or(root);
+        let requested = remote_path::join(parent, entry.parts.last().unwrap())?;
+        if entry.outcome != "completed" && entry.outcome != "skipped" && entry.target.is_none() {
+            let target = if policy == ConflictPolicy::Rename {
+                let mut suffix = 0;
+                loop {
+                    let p = if suffix == 0 {
+                        requested.clone()
+                    } else {
+                        remote_path::join(
+                            parent,
+                            &remote_path::renamed(
+                                entry.parts.last().unwrap(),
+                                entry.directory,
+                                suffix,
+                            ),
+                        )?
+                    };
+                    if !reserved.contains(&p) && remote_write::metadata(sftp, &p)?.is_none() {
+                        break p;
+                    }
+                    suffix += 1;
+                    if suffix > 100_000 {
+                        return Err(AppError::new("conflict", "无法分配名称"));
+                    }
+                }
+            } else {
+                requested
+            };
+            let stat = remote_write::metadata(sftp, &target)?;
+            if reserved.contains(&target) {
+                if policy == ConflictPolicy::Skip {
+                    entry.outcome = "skipped".into();
+                } else {
+                    return Err(AppError::new(
+                        "conflict",
+                        format!("多个来源映射到同一目标，请使用自动改名：{target}"),
+                    ));
+                }
+            }
+            entry.target_version = stat.as_ref().map(planner::Version::from);
+            if policy == ConflictPolicy::Skip
+                && stat
+                    .as_ref()
+                    .is_some_and(|m| !(entry.directory && m.is_dir()))
+            {
+                entry.outcome = "skipped".into();
+                if entry.directory {
+                    skipped_dirs.insert(entry.source.clone());
+                }
+            }
+            if policy == ConflictPolicy::Overwrite
+                && stat.as_ref().is_some_and(|m| {
+                    if entry.directory {
+                        !m.is_dir()
+                    } else {
+                        !m.is_file()
+                    }
+                })
+            {
+                return Err(AppError::new("conflict", format!("目标类型冲突：{target}")));
+            }
+            entry.created_directory = entry.directory && stat.is_none();
+            entry.target = Some(target);
+            entry.error = None;
+        }
+        if let Some(target) = &entry.target {
+            reserved.insert(target.clone());
+            if entry.directory {
+                dirs.insert(entry.source.clone(), target.clone());
             }
         }
-        if controller.confirmed_stopped() {
-            if let Err(error) = state.transfers.persist(item) {
-                item.warn(format!("停止确认保存失败：{}", error.message));
-            }
-        }
     }
-    drop(controller);
-    // Do not clean files while the source may still have them open.
-    if !result.as_ref().is_err_and(|e| e.kind == "unknown") {
-        if let Err(e) = super::cleanup(item) {
-            item.warn(format!("临时资源清理失败：{}", e.message));
-        }
-    }
-    if let Some(app) = app {
-        super::directory_changed(app, item.target.identity(), &root);
-    }
-    result
+    Ok(())
 }
-
-fn apply_attributes(item: &WriteHandle, sftp: &ssh2::Sftp, path: &str, entry: &Entry) {
-    let result = (|| {
-        let before = sftp.lstat(Path::new(path))?;
-        if before.file_type().is_symlink() {
-            return Err(AppError::new("changed", "目标路径变为符号链接"));
-        }
-        sftp.setstat(
-            Path::new(path),
-            ssh2::FileStat {
-                size: None,
-                uid: None,
-                gid: None,
-                perm: entry.mode.map(|m| m & 0o777),
-                atime: entry.modified.map(|_| before.atime.unwrap_or(0)),
-                mtime: entry.modified,
-            },
-        )?;
-        Ok::<_, AppError>(())
-    })();
-    if let Err(e) = result {
-        item.warn(format!(
-            "内容已复制，但属性未完整保留：{path}（{}）",
-            e.message
-        ));
+fn attributes(item: &WriteHandle, sftp: &ssh2::Sftp, path: &str, entry: &Entry) {
+    if let Err(e) = sftp.setstat(
+        Path::new(path),
+        ssh2::FileStat {
+            size: None,
+            uid: None,
+            gid: None,
+            perm: entry.mode.map(|m| m & 0o777),
+            atime: entry.modified,
+            mtime: entry.modified,
+        },
+    ) {
+        item.warn(format!("内容已接收，部分属性未保存：{path}（{e}）"));
     }
 }
 
-fn destination_is_completed(entry: &Entry) -> bool {
-    entry.outcome == "completed"
-}
-
-// Only a validated, fully received stage can enter the publication path.
-struct VerifiedStage<'a> {
-    stage: &'a Stage,
-}
-impl<'a> VerifiedStage<'a> {
-    fn verify(sftp: &ssh2::Sftp, stage: &'a Stage, expected_size: u64) -> AppResult<Self> {
-        remote_write::safe_ancestors(sftp, &stage.path)?;
-        if !remote_write::metadata(sftp, &stage.path)?
-            .is_some_and(|s| s.is_file() && s.size == Some(expected_size))
-        {
-            return Err(AppError::new("changed", "临时文件大小或类型不符合传输计划"));
-        }
-        Ok(Self { stage })
-    }
-    fn publish(
-        &self,
-        session: &ssh2::Session,
-        sftp: &ssh2::Sftp,
-        requested: &str,
-        policy: ConflictPolicy,
-        before_commit: impl FnMut(&str) -> AppResult<()>,
-    ) -> AppResult<Option<String>> {
-        remote_write::publish(
-            session,
-            sftp,
-            &self.stage.path,
-            requested,
-            policy,
-            before_commit,
-        )
-    }
-}
-fn create_stage(
+// Place a separate private root on each destination filesystem. This also
+// handles directory merges that traverse mount points; final rename stays local.
+fn staging_groups(
     state: &State,
     item: &WriteHandle,
     sftp: &ssh2::Sftp,
-    parent: &str,
-) -> AppResult<Stage> {
-    Stage::create(sftp, parent, |directory| {
-        item.receipt
-            .lock()
-            .unwrap()
-            .stage_dirs
-            .push(directory.into());
-        state.transfers.persist(item)
-    })
-}
-fn record_commit(
-    state: &State,
-    item: &WriteHandle,
-    destination: &str,
-    stage_path: Option<&str>,
-    expected_size: Option<u64>,
-) -> AppResult<()> {
-    let run_id = item.task.lock().unwrap().run_id.clone();
-    item.receipt.lock().unwrap().pending_commit = Some(PendingCommit {
-        destination: destination.into(),
-        stage_path: stage_path.map(str::to_owned),
-        expected_size,
-        run_id,
-    });
-    state.transfers.persist(item)
+    plan: &mut Plan,
+) -> AppResult<Vec<(usize, Vec<usize>)>> {
+    let mut groups = HashMap::<String, (String, Vec<usize>)>::new();
+    let mut parents = HashMap::<String, (String, String)>::new();
+    for (i, e) in plan
+        .entries
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| !e.directory && e.outcome != "completed" && e.outcome != "skipped")
+    {
+        item.check()?;
+        let parent = remote_path::parent(e.target.as_ref().unwrap()).to_owned();
+        let (key, existing) = if let Some(cached) = parents.get(&parent) {
+            cached.clone()
+        } else {
+            let mut existing = parent.clone();
+            loop {
+                match remote_write::metadata(sftp, &existing)? {
+                    Some(stat) if stat.is_dir() => break,
+                    Some(_) => {
+                        return Err(AppError::new(
+                            "conflict",
+                            format!("目标父路径不是目录：{existing}"),
+                        ))
+                    }
+                    None => existing = remote_path::parent(&existing).into(),
+                }
+            }
+            remote_write::safe_ancestors(sftp, &existing)?;
+            // If the server lacks statvfs, grouping by existing parent is safe.
+            let key = sftp
+                .opendir(Path::new(&existing))
+                .and_then(|mut f| f.statvfs())
+                .ok()
+                .filter(|v| v.f_fsid != 0)
+                .map(|v| format!("fs:{}", v.f_fsid))
+                .unwrap_or_else(|| existing.clone());
+            parents.insert(parent, (key.clone(), existing.clone()));
+            (key, existing)
+        };
+        let group = groups.entry(key).or_insert_with(|| (existing, vec![]));
+        group.1.push(i);
+    }
+    let mut groups = groups.into_values().collect::<Vec<_>>();
+    groups.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut result = vec![];
+    for (parent, entries) in groups {
+        if let Ok(vfs) = sftp
+            .opendir(Path::new(&parent))
+            .and_then(|mut f| f.statvfs())
+        {
+            let required: u64 = entries.iter().map(|&i| plan.entries[i].size).sum();
+            if vfs.f_bavail.saturating_mul(vfs.f_frsize) < required {
+                return Err(AppError::new(
+                    "space",
+                    format!("目标可用空间不足以暂存本次内容：{parent}"),
+                ));
+            }
+        }
+        let reusable = if matches!(item.source, Source::Remote { .. }) {
+            plan.entries[entries[0]].staged.as_ref().and_then(|p| {
+                item.receipt.lock().unwrap().attempts.iter().position(|a| {
+                    a.source_finished
+                        && a.receiver_finished
+                        && !a.target_root.is_empty()
+                        && p.starts_with(&format!("{}/", a.target_root))
+                })
+            })
+        } else {
+            None
+        };
+        let target_root = if let Some(index) = reusable {
+            let old = item.receipt.lock().unwrap().attempts[index]
+                .target_root
+                .clone();
+            for name in ["probe", "receiver.exit", "receiver.exit.next"] {
+                let p = format!("{old}/{name}");
+                if remote_write::metadata(sftp, &p)?.is_some() {
+                    sftp.unlink(Path::new(&p))?;
+                }
+            }
+            item.receipt.lock().unwrap().attempts[index]
+                .target_root
+                .clear();
+            old
+        } else {
+            remote_path::join(
+                &parent,
+                &format!(".ssh-workspace-transfer-{}", uuid::Uuid::new_v4()),
+            )?
+        };
+        let index = {
+            let mut r = item.receipt.lock().unwrap();
+            r.attempts.push(Attempt {
+                id: uuid::Uuid::new_v4().to_string(),
+                target_root: target_root.clone(),
+                ..Attempt::default()
+            });
+            r.attempts.len() - 1
+        };
+        state.transfers.persist(item)?;
+        if reusable.is_none() {
+            sftp.mkdir(Path::new(&target_root), 0o700)?;
+            sftp.mkdir(Path::new(&format!("{target_root}/data")), 0o700)?;
+        }
+        for &i in &entries {
+            let name = match &item.source {
+                Source::Local(_) => i.to_string(),
+                Source::Remote { .. } => plan.entries[i].source.trim_start_matches('/').into(),
+            };
+            plan.entries[i].staged = Some(format!("{target_root}/data/{name}"));
+        }
+        result.push((index, entries));
+    }
+    state.transfers.save_plan(item, plan)?;
+    Ok(result)
 }

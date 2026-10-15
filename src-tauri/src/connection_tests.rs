@@ -806,7 +806,12 @@ fn jump_agent_authentication() {
 // connection follows the same pinned-key path as production.
 pub(crate) fn transfer_context(id: &str, port: u16) -> SharedContext {
     let mut server = server(id);
-    server.port = port;
+    if std::env::var_os("SSH_RSYNC_CONTAINER").is_some() {
+        server.host = format!("rsync-{id}");
+        server.port = 22;
+    } else {
+        server.port = port;
+    }
     connect(
         &ConnectionPlan::new(vec![server]).unwrap(),
         &mut AutoProvider::default(),

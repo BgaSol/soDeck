@@ -8,6 +8,22 @@ use serde::{Deserialize, Serialize};
 use ssh2::Sftp;
 use std::{collections::HashSet, fs, path::Path, time::UNIX_EPOCH};
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Version {
+    pub size: Option<u64>,
+    pub mtime: Option<u64>,
+    pub mode: Option<u32>,
+}
+impl From<&ssh2::FileStat> for Version {
+    fn from(s: &ssh2::FileStat) -> Self {
+        Self {
+            size: s.size,
+            mtime: s.mtime,
+            mode: s.perm,
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Entry {
     pub source: String,
@@ -19,6 +35,14 @@ pub struct Entry {
     pub created_directory: bool,
     pub target: Option<String>,
     pub outcome: String,
+    #[serde(default)]
+    pub staged: Option<String>,
+    #[serde(default)]
+    pub digest: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+    #[serde(default)]
+    pub target_version: Option<Version>,
 }
 #[derive(Clone, Default, Serialize, Deserialize)]
 pub struct Plan {
@@ -60,6 +84,10 @@ fn local(item: &WriteHandle, plan: &mut Plan, path: &Path, parts: Vec<String>) -
             created_directory: false,
             target: None,
             outcome: "pending".into(),
+            staged: None,
+            digest: None,
+            error: None,
+            target_version: None,
         },
     )?;
     if stat.is_dir() {
@@ -93,18 +121,6 @@ fn remote(
     parts: Vec<String>,
 ) -> AppResult<()> {
     item.check()?;
-    // Copying the user's home must not enumerate the live control directory
-    // that this transfer just deployed there (its heartbeat keeps changing).
-    if item
-        .receipt
-        .lock()
-        .unwrap()
-        .direct
-        .as_ref()
-        .is_some_and(|d| d.source.root == path)
-    {
-        return Ok(());
-    }
     check_scan_limit(plan, parts.len())?;
     let stat = sftp.lstat(Path::new(path))?;
     if !(stat.is_file() || stat.is_dir()) {
@@ -127,6 +143,10 @@ fn remote(
             created_directory: false,
             target: None,
             outcome: "pending".into(),
+            staged: None,
+            digest: None,
+            error: None,
+            target_version: None,
         },
     )?;
     if stat.is_dir() {

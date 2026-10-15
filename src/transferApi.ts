@@ -9,6 +9,12 @@ export interface TransferDraft {
   targetPath: string;
   directEndpoint: { host: string; port: number; username: string } | null;
   endpointRequired: boolean;
+  savedPasswordAvailable?: boolean;
+}
+export interface TransferAuth {
+  mode: "savedPassword" | "password" | "key";
+  password?: string;
+  keyPath?: string;
 }
 export interface CopyTarget {
   token: string;
@@ -29,6 +35,7 @@ export interface TransferTask {
     | "checking"
     | "scanning"
     | "running"
+    | "verifying"
     | "committing"
     | "cancelling"
     | "completed"
@@ -36,7 +43,17 @@ export interface TransferTask {
     | "partialFailed"
     | "cancelled"
     | "unknown"
-    | "interrupted";
+    | "interrupted"
+    | "needsAttention";
+  directAddress?: string | null;
+  temporaryPaths?: string[];
+  canResume?: boolean;
+  items?: {
+    source: string;
+    target: string | null;
+    status: string;
+    error: string | null;
+  }[];
   cleanupPending?: boolean;
   bytesDone: number;
   bytesTotal: number;
@@ -72,8 +89,13 @@ export const transferApi = {
     invoke<string>("begin_file_drag", { sessionId, paths }),
   claimDrop: (token: string, sessionId: string, parentPath: string) =>
     invoke<TransferDraft>("claim_file_drop", { token, sessionId, parentPath }),
-  start: (draftId: string, conflict: ConflictPolicy) =>
-    invoke<string>("start_transfer", { draftId, conflict }),
+  start: (
+    draftId: string,
+    conflict: ConflictPolicy,
+    auth?: TransferAuth,
+    verifySha256 = false,
+  ) =>
+    invoke<string>("start_transfer", { draftId, conflict, auth, verifySha256 }),
   setEndpoint: (draftId: string, host: string, port: number) =>
     invoke<TransferDraft>("set_transfer_endpoint", { draftId, host, port }),
   registerView: (
@@ -95,8 +117,10 @@ export const transferApi = {
     }),
   list: () => invoke<TransferTask[]>("list_transfers"),
   cancel: (id: string) => invoke<void>("cancel_transfer", { id }),
-  retry: (id: string) => invoke<void>("retry_transfer", { id }),
+  retry: (id: string, auth?: TransferAuth, resume = false) =>
+    invoke<void>("retry_transfer", { id, auth, resume }),
   reconcile: (id: string) => invoke<void>("reconcile_transfer", { id }),
+  cleanup: (id: string) => invoke<void>("cleanup_transfer", { id }),
 };
 export function notifyTransferStarted() {
   window.dispatchEvent(new Event("workspace-transfer-started"));
@@ -107,6 +131,7 @@ export function transferActive(task: TransferTask) {
     "checking",
     "scanning",
     "running",
+    "verifying",
     "committing",
     "cancelling",
   ].includes(task.status);

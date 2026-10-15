@@ -150,36 +150,6 @@ pub fn safe_ancestors(sftp: &Sftp, path: &str) -> AppResult<()> {
     Ok(())
 }
 
-pub struct Stage {
-    pub directory: String,
-    pub path: String,
-}
-impl Stage {
-    pub fn create(
-        sftp: &Sftp,
-        parent: &str,
-        before_create: impl FnOnce(&str) -> AppResult<()>,
-    ) -> AppResult<Self> {
-        safe_ancestors(sftp, parent)?;
-        let directory =
-            crate::remote_path::join(parent, &format!(".ssh-workspace-{}", uuid::Uuid::new_v4()))?;
-        // Save the exact cleanup intent before a potentially ambiguous mkdir.
-        before_create(&directory)?;
-        sftp.mkdir(Path::new(&directory), 0o700)?;
-        Ok(Self {
-            path: format!("{directory}/content"),
-            directory,
-        })
-    }
-    pub fn cleanup(&self, sftp: &Sftp) -> AppResult<()> {
-        if metadata(sftp, &self.path)?.is_some() {
-            sftp.unlink(Path::new(&self.path))?;
-        }
-        sftp.rmdir(Path::new(&self.directory))?;
-        Ok(())
-    }
-}
-
 pub struct DirectoryDestination {
     pub path: String,
     pub created: bool,
@@ -205,6 +175,12 @@ pub fn directory_destination(
         };
         if let Some(stat) = metadata(sftp, &path)? {
             match policy {
+                ConflictPolicy::Skip if stat.is_dir() => {
+                    return Ok(Some(DirectoryDestination {
+                        path,
+                        created: false,
+                    }))
+                }
                 ConflictPolicy::Skip => return Ok(None),
                 ConflictPolicy::Rename => continue,
                 ConflictPolicy::Overwrite if stat.is_dir() => {
@@ -233,6 +209,12 @@ pub fn directory_destination(
             Err(e) => {
                 let existing = metadata(sftp, &path)?;
                 match policy {
+                    ConflictPolicy::Skip if existing.as_ref().is_some_and(|s| s.is_dir()) => {
+                        return Ok(Some(DirectoryDestination {
+                            path,
+                            created: false,
+                        }))
+                    }
                     ConflictPolicy::Skip if existing.is_some() => return Ok(None),
                     ConflictPolicy::Rename if existing.is_some() => continue,
                     ConflictPolicy::Overwrite if existing.is_some_and(|s| s.is_dir()) => {

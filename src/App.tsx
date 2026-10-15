@@ -25,7 +25,7 @@ import { TerminalPane } from "./TerminalPane";
 import { ServerEditor } from "./ServerEditor";
 import { ServerDeleteDialog } from "./ServerDeleteDialog";
 import { DatabaseResetDialog } from "./DatabaseResetDialog";
-import { LogArchives } from "./LogArchives";
+import { logApi } from "./logApi";
 import { FilePanel } from "./FilePanel";
 import { DockerPanel } from "./DockerPanel";
 import { WorkspaceTabs } from "./WorkspaceTabs";
@@ -54,6 +54,9 @@ const ContainerLogsApp = lazy(() =>
   import("./ContainerLogsApp").then(({ ContainerLogsApp }) => ({
     default: ContainerLogsApp,
   })),
+);
+const LogArchives = lazy(() =>
+  import("./LogArchives").then(({ LogArchives }) => ({ default: LogArchives })),
 );
 function ContainerApp() {
   const [info, setInfo] = useState<{
@@ -121,7 +124,7 @@ export function App() {
   >(null);
   const [databaseNotice, setDatabaseNotice] = useState("");
   const [deleting, setDeleting] = useState<Server | null>(null);
-  const [logArchives, setLogArchives] = useState(false);
+  const [openingArchives, setOpeningArchives] = useState(false);
   const [quitRequest, setQuitRequest] = useState<{
     details: string;
     discardUnsaved: boolean;
@@ -179,7 +182,7 @@ export function App() {
         );
         const transfers = await transferApi.list().catch(() => []);
         const activeTransfers = transfers.filter(transferActive).length;
-        const unknown = transfers.filter((t) => t.status === "unknown").length;
+        const unknown = transfers.filter((t) => ["unknown", "needsAttention", "interrupted"].includes(t.status)).length;
         const details = [
           count ? `仍有 ${count} 个活动终端` : "",
           logs ? `${logs} 个日志窗口正在接收` : "",
@@ -457,7 +460,19 @@ export function App() {
         </div>
         <aside className="server-panel" aria-label="服务器列表">
           <div className="server-tools">
-            <button disabled={!desktop} onClick={() => setLogArchives(true)}>
+            <button
+              disabled={!desktop || openingArchives}
+              onClick={async () => {
+                setOpeningArchives(true);
+                try {
+                  await logApi.openArchives();
+                } catch (e) {
+                  setError(errorOf(e));
+                } finally {
+                  setOpeningArchives(false);
+                }
+              }}
+            >
               <ScrollText size={15} />
               本地日志
             </button>
@@ -591,7 +606,6 @@ export function App() {
       </div>
       <TransferPanel />
       <DesktopDragPreview />
-      {logArchives && <LogArchives onClose={() => setLogArchives(false)} />}
       {menu && (
         <div
           className="server-context-menu"
@@ -673,6 +687,12 @@ export function App() {
 }
 export function Root() {
   const params = new URLSearchParams(location.search);
+  if (params.has("archives"))
+    return (
+      <Suspense fallback={<div role="status">正在打开本地日志…</div>}>
+        <LogArchives />
+      </Suspense>
+    );
   if (params.has("logs"))
     return (
       <Suspense

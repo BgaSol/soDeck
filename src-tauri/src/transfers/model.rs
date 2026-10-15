@@ -20,6 +20,7 @@ pub enum TransferStatus {
     Checking,
     Scanning,
     Running,
+    Verifying,
     Committing,
     Cancelling,
     Completed,
@@ -28,6 +29,7 @@ pub enum TransferStatus {
     Cancelled,
     Unknown,
     Interrupted,
+    NeedsAttention,
 }
 impl TransferStatus {
     pub fn as_str(&self) -> &'static str {
@@ -36,6 +38,7 @@ impl TransferStatus {
             Self::Checking => "checking",
             Self::Scanning => "scanning",
             Self::Running => "running",
+            Self::Verifying => "verifying",
             Self::Committing => "committing",
             Self::Cancelling => "cancelling",
             Self::Completed => "completed",
@@ -44,6 +47,7 @@ impl TransferStatus {
             Self::Cancelled => "cancelled",
             Self::Unknown => "unknown",
             Self::Interrupted => "interrupted",
+            Self::NeedsAttention => "needsAttention",
         }
     }
 }
@@ -54,6 +58,7 @@ impl From<&str> for TransferStatus {
             "checking" => Self::Checking,
             "scanning" => Self::Scanning,
             "running" => Self::Running,
+            "verifying" => Self::Verifying,
             "committing" => Self::Committing,
             "cancelling" => Self::Cancelling,
             "completed" => Self::Completed,
@@ -61,6 +66,7 @@ impl From<&str> for TransferStatus {
             "partialFailed" => Self::PartialFailed,
             "cancelled" => Self::Cancelled,
             "interrupted" => Self::Interrupted,
+            "needsAttention" => Self::NeedsAttention,
             _ => Self::Unknown,
         }
     }
@@ -100,6 +106,22 @@ pub struct TaskView {
     pub warnings: Vec<String>,
     #[serde(default)]
     pub cleanup_pending: bool,
+    #[serde(default)]
+    pub items: Vec<ItemView>,
+    #[serde(default)]
+    pub direct_address: Option<String>,
+    #[serde(default)]
+    pub temporary_paths: Vec<String>,
+    #[serde(default)]
+    pub can_resume: bool,
+}
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemView {
+    pub source: String,
+    pub target: Option<String>,
+    pub status: String,
+    pub error: Option<String>,
 }
 impl TaskView {
     pub fn active(&self) -> bool {
@@ -109,7 +131,7 @@ impl TaskView {
 pub fn active(status: &str) -> bool {
     matches!(
         status,
-        "queued" | "checking" | "scanning" | "running" | "committing" | "cancelling"
+        "queued" | "checking" | "scanning" | "running" | "verifying" | "committing" | "cancelling"
     )
 }
 #[derive(Clone)]
@@ -128,22 +150,30 @@ pub struct DirectEndpoint {
     pub public_key: String,
 }
 
-#[derive(Clone, Default, Serialize, Deserialize)]
+// Secrets never implement Serialize and are never included in a task receipt.
+#[derive(Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RemoteJobReceipt {
-    pub root: String,
-    /// Persisted BEFORE dispatching an exec request, including uncertain sends.
-    pub launched: bool,
+pub struct AuthInput {
+    pub mode: String,
+    pub password: Option<String>,
+    pub key_path: Option<String>,
+}
+#[derive(Clone)]
+pub enum DirectAuth {
+    Password(String),
+    Key(String),
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DirectReceipt {
-    pub source: RemoteJobReceipt,
-    pub target: RemoteJobReceipt,
-    pub attempt: Option<String>,
-    pub attempt_finished: bool,
-    pub stopped: bool,
+pub struct Attempt {
+    pub id: String,
+    pub target_root: String,
+    pub source_root: Option<String>,
+    pub dispatched: bool,
+    pub source_finished: bool,
+    pub receiver_finished: bool,
+    pub successful: bool,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
@@ -156,8 +186,14 @@ pub struct Receipt {
     pub target_identity: String,
     #[serde(default)]
     pub target_write_key: String,
-    pub direct: Option<DirectReceipt>,
-    pub stage_dirs: Vec<String>,
+    pub attempts: Vec<Attempt>,
+    pub source_paths: Vec<String>,
+    pub endpoint: Option<DirectEndpoint>,
+    pub auth_mode: String,
+    pub key_path: Option<String>,
+    pub verify_sha256: bool,
+    #[serde(skip)]
+    pub plan: Plan,
     pub view: Option<TaskView>,
     pub pending_commit: Option<PendingCommit>,
 }
@@ -169,13 +205,38 @@ pub struct PendingCommit {
     pub stage_path: Option<String>,
     pub expected_size: Option<u64>,
     pub run_id: String,
+    pub entry: usize,
+    pub digest: Option<String>,
+    pub directory: bool,
 }
 
 impl Receipt {
+    pub fn update_resources(&self, view: &mut TaskView) {
+        view.cleanup_pending = self.has_remote_resources();
+        view.temporary_paths = self
+            .attempts
+            .iter()
+            .flat_map(|a| {
+                let mut paths = vec![];
+                if !a.target_root.is_empty() {
+                    paths.push(format!("B · {}", a.target_root));
+                }
+                if let Some(p) = &a.source_root {
+                    paths.push(format!("A · {p}"));
+                }
+                paths
+            })
+            .collect();
+        view.can_resume = self.pending_commit.is_none()
+            && self
+                .attempts
+                .iter()
+                .any(|a| a.source_finished && a.receiver_finished && !a.target_root.is_empty());
+    }
     pub fn has_remote_resources(&self) -> bool {
-        self.direct
-            .as_ref()
-            .is_some_and(|d| !d.source.root.is_empty() || !d.target.root.is_empty())
+        self.attempts
+            .iter()
+            .any(|a| !a.target_root.is_empty() || a.source_root.is_some())
     }
 }
 #[derive(Clone)]
@@ -189,16 +250,13 @@ pub struct WriteHandle {
     pub stop: Arc<AtomicBool>,
     pub plan: Arc<Mutex<Option<Plan>>>,
     pub receipt: Arc<Mutex<Receipt>>,
+    pub auth: Arc<Mutex<Option<DirectAuth>>>,
 }
 impl WriteHandle {
     pub fn write_key(&self) -> String {
         // Deliberately conservative for aliases/cloned keys: serializing two
         // unrelated hosts is preferable to simultaneous writes to one host.
-        format!(
-            "{}|{}",
-            self.target.target_public_key(),
-            self.target.target().username
-        )
+        self.target.target_public_key().to_owned()
     }
     pub fn check(&self) -> AppResult<()> {
         if self.stop.load(Ordering::SeqCst) {
@@ -213,8 +271,8 @@ impl WriteHandle {
     }
     pub fn request_cancel(&self) {
         self.stop.store(true, Ordering::SeqCst);
-        // Direct execution needs the controller alive until the remote process
-        // group acknowledges stopping. Upload sockets can be interrupted now.
+        // Keep the direct exec channel alive long enough to request termination.
+        // Upload sockets can be interrupted immediately.
         if matches!(self.source, Source::Local(_)) {
             self.cancel.cancel();
         }

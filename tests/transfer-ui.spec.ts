@@ -521,7 +521,7 @@ test("keyboard range selection and native drag completion restore normal clicks"
   await expect(two).toHaveAttribute("aria-selected", "false");
 });
 
-test("unknown transfers require reconciliation and interrupted commits cannot retry", async ({
+test("uncertain commits require reconciliation; interrupted execution can retry with fresh staging", async ({
   page,
 }) => {
   await setup(page);
@@ -549,6 +549,29 @@ test("unknown transfers require reconciliation and interrupted commits cannot re
     "已中断，请检查目标",
   );
   await expect(page.getByLabel("重试传输")).toHaveCount(0);
+  await page.getByRole("button", {name:"重试未完成项",exact:true}).click();
+  const retry=page.getByRole("dialog",{name:"重试未完成项目"});
+  await expect(retry).toBeVisible();
+  await expect(retry.getByLabel("复用已确认停止的临时数据")).toBeDisabled();
+  await retry.getByLabel("直传认证方式").selectOption("password");
+  await retry.getByLabel("直传本次密码").fill("test-only-password");
+  await retry.getByRole("button",{name:"重试传输",exact:true}).click();
+  expect(await page.evaluate(()=>(window as any).__TEST__.calls.find((c:any)=>c.command==="retry_transfer").args)).toEqual({id:"task-1",auth:{mode:"password",password:"test-only-password"},resume:false});
+});
+
+test("direct authentication and digest options are explicit; cleanup remains independent", async ({page})=>{
+  await setup(page);
+  await emitDrop(page,".file-row[data-path='/home/ops/folder']","remoteFiles");
+  const dialog=page.getByRole("dialog");
+  await dialog.getByLabel("直传认证方式").selectOption("key");
+  await dialog.getByLabel("源服务器私钥路径").fill("/home/ops/.ssh/direct-key");
+  await dialog.getByLabel(/逐文件 SHA-256/).check();
+  await dialog.getByRole("button",{name:"开始传输",exact:true}).click();
+  expect(await page.evaluate(()=>(window as any).__TEST__.calls.find((c:any)=>c.command==="start_transfer").args)).toMatchObject({auth:{mode:"key",keyPath:"/home/ops/.ssh/direct-key"},verifySha256:true});
+  await page.evaluate(()=>{const qa=(window as any).__TEST__;Object.assign(qa.tasks[0],{status:"completed",cleanupPending:true,temporaryPaths:["B · /data/.ssh-workspace-transfer-fixture"]});qa.emit("transfer-updated",{});});
+  await expect(page.getByRole("region",{name:"传输任务"})).toContainText("已完成");
+  await page.getByRole("button",{name:"清理临时资源"}).click();
+  expect(await page.evaluate(()=>(window as any).__TEST__.calls.some((c:any)=>c.command==="cleanup_transfer"))).toBe(true);
 });
 
 test("native tab drag preserves begin, drop and finish IPC", async ({

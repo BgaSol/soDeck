@@ -57,6 +57,7 @@ export const logApi = {
   info: () => invoke<LogInfo>("logs_info"),
   page: (query: LogQuery) => invoke<LogPage>("logs_page", { query }),
   archives: () => invoke<LogArchive[]>("list_log_archives"),
+  openArchives: () => invoke<void>("open_log_archives_window"),
   open: (sourceId: string) => invoke<void>("open_log_archive", { sourceId }),
   export: (from?: number, to?: number) =>
     invoke<string | null>("logs_export", {

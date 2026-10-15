@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { X, FilePlus2, FolderPlus, Upload, ArrowRightLeft } from "lucide-react";
 import { errorOf } from "./types";
 import { transferApi, notifyTransferStarted } from "./transferApi";
+import type { TransferAuth } from "./transferApi";
+import { TransferAuthFields } from "./TransferAuthFields";
 import type { ConflictPolicy, TransferDraft } from "./transferApi";
 
 export type FileOperation =
@@ -22,6 +24,13 @@ export function FileOperationDialog({
   const [policy, setPolicy] = useState<ConflictPolicy>("rename");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [auth, setAuth] = useState<TransferAuth>({
+    mode:
+      "draft" in operation && operation.draft.savedPasswordAvailable
+        ? "savedPassword"
+        : "password",
+  });
+  const [verifySha256, setVerifySha256] = useState(false);
   const [draft, setDraft] = useState(
     "draft" in operation ? operation.draft : null,
   );
@@ -95,7 +104,13 @@ export function FileOperationDialog({
           setBusy(false);
           return;
         }
-        await transferApi.start(draft.id, policy);
+        await transferApi.start(
+          draft.id,
+          policy,
+          operation.kind === "direct" ? auth : undefined,
+          verifySha256,
+        );
+        setAuth({ mode: "password" });
         notifyTransferStarted();
       }
       onClose();
@@ -248,6 +263,24 @@ export function FileOperationDialog({
               )}
             </section>
           )}
+          {operation.kind === "direct" && (
+            <TransferAuthFields
+              value={auth}
+              onChange={setAuth}
+              disabled={busy}
+              saved={draft?.savedPasswordAvailable ?? false}
+            />
+          )}
+          {!creating && (
+            <label>
+              <input
+                type="checkbox"
+                checked={verifySha256}
+                onChange={(e) => setVerifySha256(e.target.checked)}
+              />
+              逐文件 SHA-256 复核（额外读取，远端需有 sha256sum）
+            </label>
+          )}
           {creating ? (
             <label>
               名称
@@ -275,7 +308,7 @@ export function FileOperationDialog({
                   onChange={(e) => setPolicy(e.target.value as ConflictPolicy)}
                 >
                   <option value="rename">保留两份，自动重命名</option>
-                  <option value="skip">跳过同名项目</option>
+                  <option value="skip">跳过同名文件，合并目录</option>
                   <option value="overwrite">覆盖文件，合并目录</option>
                 </select>
               </label>
@@ -290,7 +323,7 @@ export function FileOperationDialog({
               {operation.kind === "direct" && (
                 <p className="muted">
                   源服务器直接连接目标服务器。源文件保留，无法直连时任务报错。
-                  源服务器需已配置目标账号的免交互 SSH 认证。
+                  按上方所选方式完成密码或密钥认证。
                 </p>
               )}
             </>

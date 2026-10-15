@@ -47,6 +47,7 @@ pub(super) fn upload_file(
     )?;
     let mut buffer = [0u8; 65536];
     let mut written = 0;
+    let starting_bytes = item.task.lock().unwrap().bytes_done;
     loop {
         item.check()?;
         let count = input.read(&mut buffer)?;
@@ -63,7 +64,7 @@ pub(super) fn upload_file(
         output.write_all(&buffer[..count])?;
         let mut task = item.task.lock().unwrap();
         task.current_bytes = written;
-        task.bytes_done = task.committed_bytes + written;
+        task.bytes_done = starting_bytes + written;
     }
     output.close()?;
     let after = input.metadata()?;

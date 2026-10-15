@@ -4,8 +4,11 @@ mod model;
 mod pipeline;
 mod planner;
 mod recovery;
-use recovery::{cleanup, verify_stopped};
+use recovery::cleanup;
+mod scheduler;
+mod task_store;
 mod upload;
+mod verify;
 use crate::{
     connection::SharedContext,
     model::{AppError, AppResult},
@@ -14,17 +17,17 @@ use crate::{
     State,
 };
 pub use download::ConflictPolicy;
+pub(crate) use model::AuthInput;
 pub(crate) use model::DirectEndpoint;
 use model::{Receipt, WriteHandle};
 pub use model::{Source, TaskView};
 pub use planner::normalize_selection;
 use std::{
     collections::HashMap,
-    fs,
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Condvar, Mutex, Weak,
+        Arc, Condvar, Mutex,
     },
     time::{Duration, Instant},
 };
@@ -36,113 +39,81 @@ pub struct TransferState {
     writes: Mutex<Vec<WriteHandle>>,
     active: Mutex<usize>,
     slot: Condvar,
-    lanes: Mutex<HashMap<String, Weak<Mutex<()>>>>,
-    receipts_path: Mutex<Option<PathBuf>>,
+    store: Mutex<Option<task_store::TaskStore>>,
+    paths: scheduler::PathLocks,
     recovered: Mutex<Vec<Receipt>>,
     history: Mutex<Vec<TaskView>>,
     operations: Mutex<HashMap<String, (SharedContext, Cancellation)>>,
 }
 impl TransferState {
     pub fn open(path: PathBuf) -> AppResult<Self> {
-        fs::create_dir_all(&path)?;
-        let mut recovered = Vec::new();
-        for entry in fs::read_dir(&path)? {
-            let entry = entry?;
-            if entry.path().extension().is_none_or(|e| e != "json")
-                || entry.metadata()?.len() > 2 * 1024 * 1024
-            {
-                continue;
-            }
-            let bytes = fs::read(entry.path())?;
-            let mut value: serde_json::Value = match serde_json::from_slice(&bytes) {
-                Ok(value) => value,
-                Err(_) => continue,
-            };
-            if !value.is_object() {
-                continue;
-            }
-            if value.get("formatVersion").and_then(|v| v.as_u64()) != Some(2) {
-                value["formatVersion"] = 0.into();
-                value["pendingCommit"] = serde_json::Value::Null;
-                value["direct"] = serde_json::Value::Null;
-            }
-            if let Ok(mut receipt) = serde_json::from_value::<Receipt>(value) {
-                if let Some(view) = receipt.view.as_mut() {
-                    view.status = "unknown".into();
-                    view.error = Some(if receipt.format_version == 2 {
-                        "上次运行未完成清理。请连接相关服务器后核对状态。"
-                    } else { "旧格式任务记录已保留。请人工检查远端遗留任务；不会自动重试或删除远端文件。" }.into());
-                    recovered.push(receipt);
-                }
-            }
-        }
+        std::fs::create_dir_all(&path)?;
+        let store = task_store::TaskStore::open(&path.join("tasks-v3.sqlite"))?;
+        let recovered = store.load()?;
         Ok(Self {
-            receipts_path: Mutex::new(Some(path)),
+            store: Mutex::new(Some(store)),
             recovered: Mutex::new(recovered),
             ..Self::default()
         })
     }
-    fn write_lane(&self, identity: &str) -> Arc<Mutex<()>> {
-        let mut lanes = self.lanes.lock().unwrap();
-        if let Some(lane) = lanes.get(identity).and_then(Weak::upgrade) {
-            return lane;
-        }
-        let lane = Arc::new(Mutex::new(()));
-        lanes.insert(identity.into(), Arc::downgrade(&lane));
-        lane
-    }
-    fn requires_reconciliation(&self, item: &WriteHandle) -> bool {
+    fn conflicting_commit(&self, item: &WriteHandle, path: &str) -> Option<String> {
         let key = item.write_key();
         let id = item.task.lock().unwrap().id.clone();
-        let matches =
-            |r: &Receipt| r.target_write_key == key || r.target_identity == item.target.identity();
-        let live = self
-            .writes
+        let conflict = |r: &Receipt| {
+            r.target_write_key == key
+                && r.view.as_ref().is_none_or(|v| v.id != id)
+                && r.pending_commit
+                    .as_ref()
+                    .is_some_and(|c| scheduler::overlaps(&c.destination, path))
+        };
+        for w in self.writes.lock().unwrap().iter() {
+            if Arc::ptr_eq(&w.task, &item.task) {
+                continue;
+            }
+            let r = w.receipt.lock().unwrap();
+            if conflict(&r) {
+                return Some(w.task.lock().unwrap().id.clone());
+            }
+        }
+        self.recovered
             .lock()
             .unwrap()
             .iter()
-            .filter(|w| !Arc::ptr_eq(&w.task, &item.task))
-            .any(|w| {
-                let t = w.task.lock().unwrap();
-                let r = w.receipt.lock().unwrap();
-                matches(&r)
-                    && (t.status == "unknown"
-                        || r.has_remote_resources()
-                        || !r.stage_dirs.is_empty()
-                        || r.pending_commit.is_some())
-            });
-        live || self
-            .recovered
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|r| r.view.as_ref().is_none_or(|v| v.id != id) && matches(r))
+            .find(|r| conflict(r))
+            .and_then(|r| r.view.as_ref().map(|v| v.id.clone()))
     }
     fn persist(&self, item: &WriteHandle) -> AppResult<()> {
+        let mut r = item.receipt.lock().unwrap().clone();
         let mut view = item.task.lock().unwrap().clone();
-        // Receipts carry cleanup metadata, not an unbounded per-item log.
-        view.warnings = view
-            .warnings
-            .iter()
-            .take(20)
-            .map(|w| w.chars().take(1024).collect())
-            .collect();
-        let mut receipt = item.receipt.lock().unwrap().clone();
-        receipt.view = Some(view.clone());
-        if let Some(root) = self.receipts_path.lock().unwrap().as_ref() {
-            let mut output = tempfile::NamedTempFile::new_in(root)?;
-            serde_json::to_writer(&mut output, &receipt).map_err(|e| AppError::new("io", e))?;
-            output.as_file().sync_all()?;
-            output
-                .persist(root.join(format!("{}.json", view.id)))
-                .map_err(|e| AppError::from(e.error))?;
+        r.update_resources(&mut view);
+        r.view = Some(view);
+        if let Some(store) = self.store.lock().unwrap().as_ref() {
+            store.save(&r)?;
         }
         Ok(())
     }
-    fn remove_receipt(&self, id: &str) {
-        if let Some(root) = self.receipts_path.lock().unwrap().as_ref() {
-            let _ = fs::remove_file(root.join(format!("{id}.json")));
+    fn save_plan(&self, item: &WriteHandle, plan: &planner::Plan) -> AppResult<()> {
+        let id = item.task.lock().unwrap().id.clone();
+        if let Some(store) = self.store.lock().unwrap().as_mut() {
+            store.plan(&id, plan)?;
         }
+        *item.plan.lock().unwrap() = Some(plan.clone());
+        Ok(())
+    }
+    fn save_entry(
+        &self,
+        item: &WriteHandle,
+        index: usize,
+        entry: &planner::Entry,
+    ) -> AppResult<()> {
+        let id = item.task.lock().unwrap().id.clone();
+        if let Some(store) = self.store.lock().unwrap().as_ref() {
+            store.entry(&id, index, entry)?;
+        }
+        if let Some(plan) = item.plan.lock().unwrap().as_mut() {
+            plan.entries[index] = entry.clone();
+        }
+        Ok(())
     }
     pub fn has_activity(&self) -> bool {
         self.downloads
@@ -150,15 +121,12 @@ impl TransferState {
             .unwrap()
             .iter()
             .any(|d| model::active(&d.task.lock().unwrap().status))
-            || self.writes.lock().unwrap().iter().any(|w| {
-                let t = w.task.lock().unwrap();
-                let receipt = w.receipt.lock().unwrap();
-                t.active()
-                    || t.status == "unknown"
-                    || receipt.has_remote_resources()
-                    || !receipt.stage_dirs.is_empty()
-            })
-            || !self.recovered.lock().unwrap().is_empty()
+            || self
+                .writes
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|w| w.task.lock().unwrap().active())
             || !self.operations.lock().unwrap().is_empty()
     }
     pub fn has_server_activity(&self, id: &str) -> bool {
@@ -167,28 +135,18 @@ impl TransferState {
             .unwrap()
             .iter()
             .any(|d| d.spec.uses_server(id) && model::active(&d.task.lock().unwrap().status))
-            || self.writes.lock().unwrap().iter().any(|w| {
-                w.uses_server(id) && {
-                    let t = w.task.lock().unwrap();
-                    let receipt = w.receipt.lock().unwrap();
-                    t.active()
-                        || t.status == "unknown"
-                        || receipt.has_remote_resources()
-                        || !receipt.stage_dirs.is_empty()
-                }
-            })
             || self
-                .recovered
+                .writes
                 .lock()
                 .unwrap()
                 .iter()
-                .any(|r| r.source_server_id == id || r.target_server_id == id)
+                .any(|w| w.uses_server(id) && w.task.lock().unwrap().active())
             || self
                 .operations
                 .lock()
                 .unwrap()
                 .values()
-                .any(|(context, _)| context.uses_server(id))
+                .any(|(c, _)| c.uses_server(id))
     }
     pub fn cancel_all(&self) {
         for (_, cancel) in self.operations.lock().unwrap().values() {
@@ -234,12 +192,10 @@ impl TransferState {
             );
         }
         // An unavailable source must not trap the user in the application.
-        // The remote leases stop the owned processes, and durable receipts require
-        // reconciliation after reopening rather than silently retrying.
+        // Unconfirmed executions can only write isolated staging directories.
+        // Durable receipts require reconciliation instead of automatic commit.
         for item in self.writes.lock().unwrap().iter() {
-            if item.task.lock().unwrap().status == "unknown" {
-                self.persist(item)?;
-            }
+            self.persist(item)?;
         }
         Ok(())
     }
@@ -318,6 +274,8 @@ pub fn start_write(
     destination: String,
     conflict: ConflictPolicy,
     endpoint_snapshot: Option<DirectEndpoint>,
+    auth_input: Option<model::AuthInput>,
+    verify_sha256: bool,
 ) -> AppResult<String> {
     remote_path::absolute(&destination)?;
     let _gate = state.configuration.lock().unwrap();
@@ -389,21 +347,43 @@ pub fn start_write(
         error: None,
         warnings: Vec::new(),
         cleanup_pending: false,
+        items: vec![],
+        temporary_paths: vec![],
+        can_resume: false,
+        direct_address: endpoint
+            .as_ref()
+            .map(|e| format!("{}@{}:{}", e.username, e.host, e.port)),
     };
     let mut receipt = Receipt {
-        format_version: 2,
+        format_version: 3,
         target_server_id: target.target().id.clone(),
         target_identity: target.identity().into(),
-        target_write_key: format!(
-            "{}|{}",
-            target.target_public_key(),
-            target.target().username
-        ),
+        target_write_key: target.target_public_key().into(),
+        endpoint: endpoint.clone(),
+        verify_sha256,
+        source_paths: match &source {
+            Source::Local(p) => p.iter().map(|p| p.to_string_lossy().into_owned()).collect(),
+            Source::Remote { paths, .. } => paths.clone(),
+        },
         ..Receipt::default()
     };
     if let Source::Remote { context, .. } = &source {
         receipt.source_server_id = context.target().id.clone();
         receipt.source_identity = context.identity().into();
+    }
+    let auth = if matches!(source, Source::Remote { .. }) {
+        Some(resolve_auth(&state, &target, auth_input.as_ref())?)
+    } else {
+        None
+    };
+    if let Some(a) = &auth {
+        match a {
+            model::DirectAuth::Password(_) => receipt.auth_mode = "password".into(),
+            model::DirectAuth::Key(p) => {
+                receipt.auth_mode = "key".into();
+                receipt.key_path = Some(p.clone());
+            }
+        }
     }
     let item = WriteHandle {
         lifecycle: Arc::new(Mutex::new(())),
@@ -415,6 +395,7 @@ pub fn start_write(
         stop: Arc::new(AtomicBool::new(false)),
         plan: Arc::new(Mutex::new(None)),
         receipt: Arc::new(Mutex::new(receipt)),
+        auth: Arc::new(Mutex::new(auth)),
     };
     state.transfers.persist(&item)?;
     state.transfers.writes.lock().unwrap().push(item.clone());
@@ -425,39 +406,21 @@ pub fn start_write(
 fn launch_write(app: tauri::AppHandle, state: Arc<State>, item: WriteHandle) {
     std::thread::spawn(move || {
         let _lifecycle = item.lifecycle.lock().unwrap();
-        let result = loop {
-            while state.transfers.requires_reconciliation(&item)
-                && !item.stop.load(Ordering::SeqCst)
-            {
-                let mut task = item.task.lock().unwrap();
-                task.status = "queued".into();
-                task.waiting_reason = Some("等待目标上的任务结束或完成状态核对".into());
-                drop(task);
-                std::thread::sleep(Duration::from_millis(200));
-            }
-            item.task.lock().unwrap().waiting_reason = None;
-            let mut active = state.transfers.active.lock().unwrap();
-            while *active >= 3 && !item.stop.load(Ordering::SeqCst) {
-                active = state
-                    .transfers
-                    .slot
-                    .wait_timeout(active, Duration::from_millis(200))
-                    .unwrap()
-                    .0;
-            }
-            *active += 1;
-            drop(active);
-            let result = pipeline::run(&state, Some(&app), &item);
-            if result.as_ref().is_err_and(|e| e.kind == "quarantined") {
-                // A previous writer may have become uncertain while this task
-                // waited for the lane. Return its global slot before waiting.
-                *state.transfers.active.lock().unwrap() -= 1;
-                state.transfers.slot.notify_all();
-                continue;
-            }
-            break result;
-        };
-        if !result.as_ref().is_err_and(|e| e.kind == "unknown") {
+        let mut active = state.transfers.active.lock().unwrap();
+        while *active >= 3 && !item.stop.load(Ordering::SeqCst) {
+            item.task.lock().unwrap().waiting_reason = Some("等待传输名额（最多 3 项）".into());
+            active = state
+                .transfers
+                .slot
+                .wait_timeout(active, Duration::from_millis(100))
+                .unwrap()
+                .0;
+        }
+        *active += 1;
+        drop(active);
+        item.task.lock().unwrap().waiting_reason = None;
+        let result = pipeline::run(&state, Some(&app), &item);
+        if result.is_ok() {
             if let Err(e) = cleanup(&item) {
                 item.warn(format!("临时资源仍需清理：{}", e.message));
             }
@@ -467,8 +430,10 @@ fn launch_write(app: tauri::AppHandle, state: Arc<State>, item: WriteHandle) {
             match result {
                 Ok(()) => task.status = "completed".into(),
                 Err(e) => {
-                    task.status = if e.kind == "unknown" {
-                        "unknown"
+                    task.status = if e.kind == "unknown" || e.kind == "conflictPending" {
+                        "needsAttention"
+                    } else if e.kind == "interrupted" {
+                        "interrupted"
                     } else if item.stop.load(Ordering::SeqCst) || e.kind == "cancelled" {
                         "cancelled"
                     } else if task.files_done > 0 {
@@ -481,16 +446,12 @@ fn launch_write(app: tauri::AppHandle, state: Arc<State>, item: WriteHandle) {
                 }
             }
         }
-        let receipt = item.receipt.lock().unwrap().clone();
-        let view = item.task.lock().unwrap().clone();
-        if view.status != "unknown"
-            && !receipt.has_remote_resources()
-            && receipt.stage_dirs.is_empty()
-        {
-            state.transfers.remove_receipt(&view.id);
-        } else if let Err(e) = state.transfers.persist(&item) {
-            item.warn(format!("任务回执保存失败：{}", e.message));
+        item.task.lock().unwrap().waiting_reason = None;
+        *item.auth.lock().unwrap() = None;
+        if let Err(e) = state.transfers.persist(&item) {
+            item.warn(format!("任务保存失败：{}", e.message));
         }
+        let view = item.task.lock().unwrap().clone();
         let _ = app.emit("transfer-updated", &view);
         *state.transfers.active.lock().unwrap() -= 1;
         state.transfers.slot.notify_all();
@@ -533,13 +494,31 @@ pub fn list_transfers(
                 error: t.error.clone(),
                 warnings: Vec::new(),
                 cleanup_pending: false,
+                items: vec![],
+                direct_address: None,
+                temporary_paths: vec![],
+                can_resume: false,
             }
         })
         .collect();
     tasks.extend(state.transfers.writes.lock().unwrap().iter().map(|w| {
         let mut view = w.task.lock().unwrap().clone();
         let receipt = w.receipt.lock().unwrap();
-        view.cleanup_pending = receipt.has_remote_resources() || !receipt.stage_dirs.is_empty();
+        receipt.update_resources(&mut view);
+        if let Some(plan) = w.plan.lock().unwrap().as_ref() {
+            view.items = plan
+                .entries
+                .iter()
+                .filter(|e| e.error.is_some())
+                .take(200)
+                .map(|e| model::ItemView {
+                    source: e.source.clone(),
+                    target: e.target.clone(),
+                    status: e.outcome.clone(),
+                    error: e.error.clone(),
+                })
+                .collect();
+        }
         view
     }));
     tasks.extend(
@@ -574,57 +553,178 @@ pub fn cancel_transfer(
         download::cancel_download(window, state, id)
     }
 }
+
+fn resolve_auth(
+    state: &State,
+    target: &SharedContext,
+    input: Option<&model::AuthInput>,
+) -> AppResult<model::DirectAuth> {
+    let input = input.ok_or_else(|| AppError::new("authentication", "请选择密码或 A 上的私钥"))?;
+    match input.mode.as_str() {
+        "savedPassword" => {
+            let config = state.database.lock().unwrap().get(&target.target().id)?;
+            if config.host != target.target().host
+                || config.port != target.target().port
+                || config.username != target.target().username
+                || config.jump_server_id != target.target().jump_server_id
+            {
+                return Err(AppError::new(
+                    "changed",
+                    "服务器连接配置已变化，请重新连接并创建任务",
+                ));
+            }
+            let p = config.password;
+            if p.is_empty() {
+                Err(AppError::new(
+                    "authentication",
+                    "目标没有可用密码，请输入本次密码",
+                ))
+            } else {
+                Ok(model::DirectAuth::Password(p))
+            }
+        }
+        "password" => Ok(model::DirectAuth::Password(
+            input
+                .password
+                .clone()
+                .filter(|p| !p.is_empty())
+                .ok_or_else(|| AppError::new("authentication", "请输入密码"))?,
+        )),
+        "key" => {
+            let p = input
+                .key_path
+                .clone()
+                .ok_or_else(|| AppError::new("authentication", "请输入 A 上的私钥绝对路径"))?;
+            remote_path::absolute(&p)?;
+            Ok(model::DirectAuth::Key(p))
+        }
+        _ => Err(AppError::new("authentication", "不支持的直传认证方式")),
+    }
+}
+fn recover_handle(state: &State, id: &str) -> AppResult<WriteHandle> {
+    if let Ok(item) = find_write(state, id) {
+        return Ok(item);
+    }
+    let r = state
+        .transfers
+        .recovered
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|r| r.view.as_ref().is_some_and(|v| v.id == id))
+        .cloned()
+        .ok_or_else(|| AppError::new("notFound", "任务不存在"))?;
+    let context = |identity: &str| -> AppResult<SharedContext> {
+        state
+            .terminals
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|t| !t.sender.cancel.is_cancelled())
+            .filter_map(|t| t.spec.clone())
+            .find(|s| s.identity() == identity)
+            .ok_or_else(|| AppError::new("disconnected", "请先重新连接任务涉及的服务器"))
+    };
+    let target = context(&r.target_identity)?;
+    let source = if r.source_identity.is_empty() {
+        Source::Local(r.source_paths.iter().map(PathBuf::from).collect())
+    } else {
+        Source::Remote {
+            context: context(&r.source_identity)?,
+            paths: r.source_paths.clone(),
+        }
+    };
+    let item = WriteHandle {
+        lifecycle: Arc::new(Mutex::new(())),
+        source,
+        target,
+        endpoint: r.endpoint.clone(),
+        task: Arc::new(Mutex::new(r.view.clone().unwrap())),
+        cancel: Cancellation::default(),
+        stop: Arc::new(AtomicBool::new(false)),
+        plan: Arc::new(Mutex::new(Some(r.plan.clone()))),
+        receipt: Arc::new(Mutex::new(r)),
+        auth: Arc::new(Mutex::new(None)),
+    };
+    let mut writes = state.transfers.writes.lock().unwrap();
+    if let Some(existing) = writes.iter().find(|w| w.task.lock().unwrap().id == id) {
+        return Ok(existing.clone());
+    }
+    writes.push(item.clone());
+    state
+        .transfers
+        .recovered
+        .lock()
+        .unwrap()
+        .retain(|r| r.view.as_ref().is_none_or(|v| v.id != id));
+    Ok(item)
+}
 #[tauri::command]
 pub fn retry_transfer(
     window: WebviewWindow,
     app: tauri::AppHandle,
     state: TauriState<Arc<State>>,
     id: String,
+    auth: Option<model::AuthInput>,
+    resume: Option<bool>,
 ) -> AppResult<()> {
     moves::workspace_only(&window)?;
-    if let Ok(item) = find_write(&state, &id) {
-        let _gate = state.configuration.lock().unwrap();
-        let lifecycle = item.lifecycle.clone();
-        let _lifecycle = lifecycle
-            .try_lock()
-            .map_err(|_| AppError::new("busy", "上次任务仍在收尾，请稍后重试"))?;
-        state.ensure_running()?;
-        state.check_context(&item.target)?;
-        if let Source::Remote { context, .. } = &item.source {
-            state.check_context(context)?;
-        }
-        {
-            let mut task = item.task.lock().unwrap();
-            if !matches!(
-                task.status.as_str(),
-                "failed" | "partialFailed" | "cancelled"
-            ) {
-                return Err(AppError::new("busy", "请先确认上一次任务已结束"));
-            }
-            let receipt = item.receipt.lock().unwrap();
-            if receipt.has_remote_resources()
-                || !receipt.stage_dirs.is_empty()
-                || receipt.pending_commit.is_some()
-            {
-                return Err(AppError::new("busy", "请先核对并清理上次任务的临时资源"));
-            }
-            item.cancel.reset()?;
-            item.stop.store(false, Ordering::SeqCst);
-            task.run_id = uuid::Uuid::new_v4().to_string();
-            task.status = "queued".into();
-            task.error = None;
-            task.current_file = None;
-            task.current_bytes = 0;
-            task.bytes_done = task.committed_bytes;
-        }
-        drop(_gate);
-        launch_write(app, state.inner().clone(), item);
-        Ok(())
-    } else {
-        download::retry_download(window, state, id)
+    let item = match recover_handle(&state, &id) {
+        Ok(item) => item,
+        Err(e) if e.kind == "notFound" => return download::retry_download(window, state, id),
+        Err(e) => return Err(e),
+    };
+    let _life = item
+        .lifecycle
+        .try_lock()
+        .map_err(|_| AppError::new("busy", "任务仍在运行"))?;
+    if item.task.lock().unwrap().active() {
+        return Err(AppError::new("busy", "任务仍在运行"));
     }
+    if item.receipt.lock().unwrap().pending_commit.is_some() {
+        return Err(AppError::new(
+            "conflictPending",
+            "请先核对本任务的待确认目标文件",
+        ));
+    }
+    state.ensure_running()?;
+    state.check_context(&item.target)?;
+    if let Source::Remote { context, .. } = &item.source {
+        state.check_context(context)?;
+        *item.auth.lock().unwrap() = Some(resolve_auth(&state, &item.target, auth.as_ref())?);
+    }
+    if resume.unwrap_or(false) {
+        let r = item.receipt.lock().unwrap();
+        let a = r
+            .attempts
+            .last()
+            .ok_or_else(|| AppError::new("resume", "没有可复用数据"))?;
+        if !a.source_finished || !a.receiver_finished {
+            return Err(AppError::new(
+                "resume",
+                "旧执行未确认结束，请先核对；也可以使用新目录重试",
+            ));
+        }
+    } else if let Some(plan) = item.plan.lock().unwrap().as_mut() {
+        for e in &mut plan.entries {
+            if e.outcome != "completed" && e.outcome != "skipped" {
+                e.staged = None;
+            }
+        }
+    }
+    item.cancel.reset()?;
+    item.stop.store(false, Ordering::SeqCst);
+    {
+        let mut t = item.task.lock().unwrap();
+        t.run_id = uuid::Uuid::new_v4().to_string();
+        t.status = "queued".into();
+        t.error = None;
+        t.waiting_reason = None;
+    }
+    drop(_life);
+    launch_write(app, state.inner().clone(), item);
+    Ok(())
 }
-
 #[tauri::command]
 pub async fn reconcile_transfer(
     window: WebviewWindow,
@@ -632,101 +732,42 @@ pub async fn reconcile_transfer(
     id: String,
 ) -> AppResult<()> {
     moves::workspace_only(&window)?;
-    let recovered = find_write(&state, &id).is_err();
-    let item = match find_write(&state, &id) {
-        Ok(item) => {
-            if item.task.lock().unwrap().active() {
-                return Err(AppError::new("busy", "任务仍在运行"));
-            }
-            item
-        }
-        Err(_) => {
-            let receipt = state
-                .transfers
-                .recovered
-                .lock()
-                .unwrap()
-                .iter()
-                .find(|r| r.view.as_ref().is_some_and(|v| v.id == id))
-                .cloned()
-                .ok_or_else(|| AppError::new("notFound", "任务回执不存在"))?;
-            let find_context = |identity: &str| -> AppResult<SharedContext> {
-                state
-                    .terminals
-                    .lock()
-                    .unwrap()
-                    .values()
-                    .filter(|t| !t.sender.cancel.is_cancelled())
-                    .filter_map(|t| t.spec.clone())
-                    .find(|s| s.identity() == identity)
-                    .ok_or_else(|| {
-                        AppError::new(
-                            "disconnected",
-                            "请先重新连接任务涉及的服务器（账号、路径和主机指纹需保持一致）",
-                        )
-                    })
-            };
-            let target = find_context(&receipt.target_identity)?;
-            let source = if receipt.source_identity.is_empty() {
-                Source::Local(Vec::new())
-            } else {
-                Source::Remote {
-                    context: find_context(&receipt.source_identity)?,
-                    paths: vec![],
-                }
-            };
-            WriteHandle {
-                lifecycle: Arc::new(Mutex::new(())),
-                source,
-                target,
-                endpoint: None,
-                task: Arc::new(Mutex::new(receipt.view.clone().unwrap())),
-                cancel: Cancellation::default(),
-                stop: Arc::new(AtomicBool::new(false)),
-                plan: Arc::new(Mutex::new(None)),
-                receipt: Arc::new(Mutex::new(receipt)),
-            }
-        }
-    };
+    let item = recover_handle(&state, &id)?;
     let state = state.inner().clone();
     crate::blocking(move || {
-        let reconciliation = state.transfers.write_lane(&format!("reconcile:{id}"));
-        let _reconciling = reconciliation.try_lock().map_err(|_| AppError::new("busy", "此任务正在核对中"))?;
-        let _lifecycle = item.lifecycle.try_lock().map_err(|_| AppError::new("busy", "任务仍在运行或核对中"))?;
+        let _life = item
+            .lifecycle
+            .try_lock()
+            .map_err(|_| AppError::new("busy", "任务仍在运行"))?;
         if item.task.lock().unwrap().active() {
             return Err(AppError::new("busy", "任务仍在运行"));
         }
-        if item.receipt.lock().unwrap().format_version != 2 {
-            return Err(AppError::new("unsupported", "旧格式回执需人工核对远端状态，应用不会据此执行清理"));
-        }
-        verify_stopped(&item)?;
-        state.transfers.persist(&item)?;
-        let pending_commit = item.receipt.lock().unwrap().pending_commit.clone();
-        cleanup(&item)?;
-        item.receipt.lock().unwrap().pending_commit = None;
-        {
-            let mut task = item.task.lock().unwrap();
-            if let Some(commit) = pending_commit {
-                task.status = "interrupted".into();
-                task.error = Some(format!("已确认远端停止。提交结果未获确认，请检查目标项目 {}。为避免重复写入，此任务不自动重试；确认后可重新选择需要的项目。", commit.destination));
-            } else if task.status == "unknown" {
-                task.status = if recovered { "interrupted" } else { "cancelled" }.into();
-                task.error = Some("已确认远端停止并清理未提交内容。已完成文件保留。".into());
-            }
-            task.cleanup_pending = false;
-            if recovered { state.transfers.history.lock().unwrap().push(task.clone()); }
-        }
-        state.transfers.remove_receipt(&id);
-        state
-            .transfers
-            .recovered
-            .lock()
-            .unwrap()
-            .retain(|r| r.view.as_ref().is_none_or(|v| v.id != id));
-        Ok(())
+        recovery::reconcile(&state, &item)
     })
     .await
 }
-
+#[tauri::command]
+pub async fn cleanup_transfer(
+    window: WebviewWindow,
+    state: TauriState<'_, Arc<State>>,
+    id: String,
+) -> AppResult<()> {
+    moves::workspace_only(&window)?;
+    let item = recover_handle(&state, &id)?;
+    let state = state.inner().clone();
+    crate::blocking(move || {
+        let _life = item
+            .lifecycle
+            .try_lock()
+            .map_err(|_| AppError::new("busy", "任务仍在运行"))?;
+        if item.task.lock().unwrap().active() {
+            return Err(AppError::new("busy", "任务仍在运行"));
+        }
+        let result = cleanup(&item);
+        state.transfers.persist(&item)?;
+        result
+    })
+    .await
+}
 #[cfg(test)]
 mod tests;

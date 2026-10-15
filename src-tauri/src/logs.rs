@@ -19,6 +19,7 @@ use tauri::{
 
 #[derive(Default)]
 pub struct LogState {
+    archive_window: Mutex<()>,
     windows: Mutex<HashMap<String, LogWindow>>,
     workers: Mutex<Vec<Run>>,
 }
@@ -217,6 +218,49 @@ fn open_window(
     }
     Ok(())
 }
+const ARCHIVES_WINDOW: &str = "logs-archives";
+
+fn archive_access(window: &WebviewWindow) -> AppResult<()> {
+    if window.label() == ARCHIVES_WINDOW {
+        Ok(())
+    } else {
+        crate::moves::workspace_only(window)
+    }
+}
+
+#[tauri::command]
+pub async fn open_log_archives_window(
+    window: WebviewWindow,
+    app: tauri::AppHandle,
+    state: TauriState<'_, Arc<State>>,
+) -> AppResult<()> {
+    crate::moves::workspace_only(&window)?;
+    // Serialize creation so repeated clicks reuse a single library window.
+    let _gate = state.logs.archive_window.lock().unwrap();
+    state.ensure_running()?;
+    if let Some(existing) = app.get_webview_window(ARCHIVES_WINDOW) {
+        existing
+            .unminimize()
+            .map_err(|e| AppError::new("window", e))?;
+        existing
+            .set_focus()
+            .map_err(|e| AppError::new("window", e))?;
+        return Ok(());
+    }
+    WebviewWindowBuilder::new(
+        &app,
+        ARCHIVES_WINDOW,
+        WebviewUrl::App("index.html?archives=1".into()),
+    )
+    .title("本地日志 · SSH Workspace")
+    .inner_size(1040.0, 720.0)
+    .min_inner_size(720.0, 460.0)
+    .center()
+    .build()
+    .map_err(|e| AppError::new("window", e))?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn open_log_archive(
     window: WebviewWindow,
@@ -224,7 +268,7 @@ pub async fn open_log_archive(
     state: TauriState<'_, Arc<State>>,
     source_id: String,
 ) -> AppResult<()> {
-    crate::moves::workspace_only(&window)?;
+    archive_access(&window)?;
     let archive_root = root(&app)?;
     let registered = state.inner().clone();
     let source = crate::blocking(move || {
@@ -246,7 +290,7 @@ pub async fn list_log_archives(
     window: WebviewWindow,
     app: tauri::AppHandle,
 ) -> AppResult<Vec<log_store::Archive>> {
-    crate::moves::workspace_only(&window)?;
+    archive_access(&window)?;
     let archive_root = root(&app)?;
     crate::blocking(move || log_store::archives(&archive_root)).await
 }

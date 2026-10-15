@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:connection": "playwright test --config playwright.connection.config.ts",
     "test:database": "playwright test --config playwright.database.config.ts",
+    "test:logs": "playwright test --config playwright.logs.config.ts",
     "test:transfers": "playwright test --config playwright.transfers.config.ts",
     "test:desktop": "playwright test",
     "test:tree": "playwright test --config playwright.file-tree.config.ts"

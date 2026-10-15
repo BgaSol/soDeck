@@ -1,387 +1,447 @@
-mod capabilities;
+pub(super) mod capabilities;
 mod command;
-mod protocol;
-pub(super) mod remote_job;
-
-use super::model::{Source, WriteHandle};
+use super::{
+    model::{Attempt, DirectAuth, Source, WriteHandle},
+    planner::Plan,
+};
 use crate::{
     connection,
     model::{AppError, AppResult},
-    remote_write,
-    ssh_transport::{self, SshConnection},
+    remote_path, remote_write, ssh,
+    ssh_transport::{Cancellation, SshConnection},
 };
-use remote_job::{write_new, Lease};
+use ssh2::{OpenFlags, OpenType, Sftp};
 use std::{
-    io::Read,
+    io::{Read, Write},
     path::Path,
     time::{Duration, Instant},
 };
 
-pub struct Controller<'a> {
-    state: &'a crate::State,
-    source_meta: SshConnection,
-    target_meta: SshConnection,
-    source_exec: SshConnection,
-    source_root: String,
-    target_root: String,
-    arguments: Vec<String>,
-    leases: Vec<Lease>,
-    stopped: bool,
+pub fn write_new(sftp: &Sftp, path: &str, bytes: &[u8]) -> AppResult<()> {
+    let mut file = sftp.open_mode(
+        Path::new(path),
+        OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::EXCLUSIVE,
+        0o600,
+        OpenType::File,
+    )?;
+    file.write_all(bytes)?;
+    file.close()?;
+    Ok(())
 }
-impl<'a> Controller<'a> {
-    pub fn start(state: &'a crate::State, item: &WriteHandle) -> AppResult<Self> {
+// One-shot exit receipts, written after the tool exits. No remote supervisor,
+// lease, saved PID or final-file commit is involved.
+fn recorded(command: &str, root: &str, name: &str) -> String {
+    format!(
+        "trap ':' TERM INT HUP; {command}; code=$?; printf '%s\\n' \"$code\" > {} && mv {} {}; exit \"$code\"",
+        ssh::quote(&format!("{root}/{name}.next")),
+        ssh::quote(&format!("{root}/{name}.next")),
+        ssh::quote(&format!("{root}/{name}"))
+    )
+}
+pub fn exit_code(sftp: &Sftp, root: &str, name: &str) -> AppResult<Option<i32>> {
+    let path = format!("{root}/{name}");
+    if remote_write::metadata(sftp, &path)?.is_none() {
+        return Ok(None);
+    }
+    let mut bytes = vec![];
+    sftp.open(Path::new(&path))?
+        .take(16)
+        .read_to_end(&mut bytes)?;
+    let code = std::str::from_utf8(&bytes)
+        .ok()
+        .and_then(|s| s.trim().parse::<i32>().ok())
+        .filter(|c| (0..=255).contains(c))
+        .ok_or_else(|| AppError::new("interrupted", "远端退出记录无效"))?;
+    Ok(Some(code))
+}
+pub struct Executor {
+    source: SshConnection,
+    _target: SshConnection,
+    source_sftp: Sftp,
+    target_sftp: Sftp,
+    root: String,
+    ssh: String,
+    auth: DirectAuth,
+}
+impl Executor {
+    pub fn prepare(state: &crate::State, item: &WriteHandle, index: usize) -> AppResult<Self> {
         let Source::Remote { context, .. } = &item.source else {
             unreachable!()
         };
-        item.check()?;
-        let source_meta = connection::connect_verified(context, &item.cancel)?;
-        let target_meta = connection::connect_verified(&item.target, &item.cancel)?;
-        let source_exec = connection::connect_verified(context, &item.cancel)?;
-        for connection in [&source_meta, &target_meta, &source_exec] {
-            connection.session().set_timeout(3000);
-        }
-        let mut result = Self {
-            state,
-            source_meta,
-            target_meta,
-            source_exec,
-            source_root: String::new(),
-            target_root: String::new(),
-            arguments: vec![],
-            leases: vec![],
-            stopped: false,
-        };
-        let prepared = (|| {
-            let optional = capabilities::check(&result.source_meta, item, true)?;
-            capabilities::check(&result.target_meta, item, false)?;
-            result.source_root =
-                remote_job::deploy(state, item, &result.source_meta.session().sftp()?, true)?;
-            result.target_root =
-                remote_job::deploy(state, item, &result.target_meta.session().sftp()?, false)?;
-            let endpoint = item
-                .endpoint
-                .as_ref()
-                .ok_or_else(|| AppError::new("validation", "缺少直连目标快照"))?;
-            let known_hosts = format!("{}/known_hosts", result.source_root);
-            write_new(
-                &result.source_meta.session().sftp()?,
-                &known_hosts,
-                format!("ssh-workspace-target {}\n", endpoint.public_key).as_bytes(),
-            )?;
-            result.arguments = command::ssh_arguments(endpoint, &known_hosts, &optional)?;
-            for (source, root, context) in [
-                (true, &result.source_root, context),
-                (false, &result.target_root, &item.target),
-            ] {
-                {
-                    let mut receipt = item.receipt.lock().unwrap();
-                    let direct = receipt.direct.as_mut().unwrap();
-                    if source {
-                        direct.source.launched = true;
-                    } else {
-                        direct.target.launched = true;
-                    }
-                }
-                state.transfers.persist(item)?;
-                result.leases.push(Lease::start(
-                    context,
-                    &item.cancel,
-                    root.clone(),
-                    item.task.lock().unwrap().run_id.clone(),
-                )?);
-            }
-            let run = item.task.lock().unwrap().run_id.clone();
-            let deadline = Instant::now() + Duration::from_secs(10);
-            loop {
-                item.check()?;
-                result.check_leases()?;
-                let a = remote_job::state(
-                    &result.source_meta.session().sftp()?,
-                    &result.source_root,
-                    &run,
-                    None,
-                )?;
-                let b = remote_job::state(
-                    &result.target_meta.session().sftp()?,
-                    &result.target_root,
-                    &run,
-                    None,
-                )?;
-                if a.is_some_and(|s| s.phase == "ready") && b.is_some_and(|s| s.phase == "ready") {
-                    break;
-                }
-                if Instant::now() > deadline {
-                    return Err(AppError::new("command", "两端任务监督启动超时"));
-                }
-                std::thread::sleep(Duration::from_millis(50));
-            }
-            Ok(())
-        })();
-        if let Err(error) = prepared {
-            result.stop(item)?;
-            super::recovery::cleanup(item)?;
-            return Err(error);
-        }
-        Ok(result)
-    }
-    pub fn probe_source(&self) -> String {
-        format!("{}/probe", self.source_root)
-    }
-    fn check_leases(&self) -> AppResult<()> {
-        for (index, lease) in self.leases.iter().enumerate() {
-            if let Some(error) = lease.error.lock().unwrap().as_ref() {
-                return Err(AppError::new(
-                    "unknown",
-                    format!(
-                        "{} 的任务心跳中断：{}",
-                        if index == 0 { "A" } else { "B" },
-                        error.message
-                    ),
-                ));
-            }
-        }
-        Ok(())
-    }
-    pub fn copy(
-        &mut self,
-        item: &WriteHandle,
-        id: usize,
-        entry: &super::planner::Entry,
-        destination: &str,
-    ) -> AppResult<()> {
-        let result = self.copy_inner(item, id, entry, destination);
-        if result.is_err() && !self.stopped {
-            self.stop(item)?;
-        }
-        result
-    }
-    fn copy_inner(
-        &mut self,
-        item: &WriteHandle,
-        id: usize,
-        entry: &super::planner::Entry,
-        destination: &str,
-    ) -> AppResult<()> {
-        item.check()?;
-        self.check_leases()?;
-        let source_sftp = self.source_meta.session().sftp()?;
-        let target_sftp = self.target_meta.session().sftp()?;
-        let before = source_sftp.lstat(Path::new(&entry.source))?;
-        if !before.is_file()
-            || before.size != Some(entry.size)
-            || (entry.modified.is_some() && before.mtime != entry.modified)
-        {
-            return Err(AppError::new(
-                "changed",
-                "源文件的类型、大小或修改时间已变化，请重新创建任务",
-            ));
-        }
-        let attempt = uuid::Uuid::new_v4().to_string();
-        let run = item.task.lock().unwrap().run_id.clone();
-        {
-            let mut receipt = item.receipt.lock().unwrap();
-            let direct = receipt.direct.as_mut().unwrap();
-            direct.attempt = Some(attempt.clone());
-            direct.attempt_finished = false;
-        }
-        self.state.transfers.persist(item)?;
-        let source_job = format!("{}/job-{attempt}", self.source_root);
-        let target_job = format!("{}/job-{attempt}", self.target_root);
-        source_sftp.mkdir(Path::new(&source_job), 0o700)?;
-        target_sftp.mkdir(Path::new(&target_job), 0o700)?;
-        let receiver = format!(
-            "exec {}\n",
-            command::shell_call(
-                "sh",
-                &[&format!("{}/receiver.sh", self.target_root), destination]
-            )
-        );
-        write_new(
-            &target_sftp,
-            &format!("{target_job}/command.sh"),
-            receiver.as_bytes(),
+        let source = connection::connect_verified(context, &item.cancel)?;
+        let target = connection::connect_verified(&item.target, &item.cancel)?;
+        let auth = item
+            .auth
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or_else(|| AppError::new("authentication", "请选择直传认证方式"))?;
+        capabilities::check(
+            &source,
+            &item.cancel,
+            true,
+            matches!(auth, DirectAuth::Password(_)),
         )?;
-        let remote_command = format!(
-            "exec {}",
-            command::shell_call(
-                "sh",
-                &[
-                    &format!("{}/supervisor.sh", self.target_root),
-                    "run",
-                    &self.target_root,
-                    &run,
-                    &attempt
-                ]
-            )
-        );
-        let mut args = vec![
-            format!("{}/sender.sh", self.source_root),
-            entry.source.clone(),
-            "ssh".into(),
-        ];
-        args.extend(self.arguments.iter().cloned());
-        args.push(remote_command);
-        let sender = format!(
-            "exec {}\n",
-            command::shell_call("sh", &args.iter().map(String::as_str).collect::<Vec<_>>())
-        );
+        capabilities::check(&target, &item.cancel, false, false)?;
+        let source_sftp = source.session().sftp()?;
+        let target_sftp = target.session().sftp()?;
+        let home = source_sftp
+            .realpath(Path::new("."))?
+            .to_str()
+            .ok_or_else(|| AppError::new("path", "源主目录不是 UTF-8"))?
+            .to_owned();
+        let root = remote_path::join(
+            &home,
+            &format!(".ssh-workspace-transfer-{}", uuid::Uuid::new_v4()),
+        )?;
+        item.receipt.lock().unwrap().attempts[index].source_root = Some(root.clone());
+        state.transfers.persist(item)?;
+        source_sftp.mkdir(Path::new(&root), 0o700)?;
+        let endpoint = item
+            .endpoint
+            .as_ref()
+            .ok_or_else(|| AppError::new("validation", "缺少真实地址"))?;
         write_new(
             &source_sftp,
-            &format!("{source_job}/command.sh"),
-            sender.as_bytes(),
+            &format!("{root}/known_hosts"),
+            format!("ssh-workspace-target {}\n", endpoint.public_key).as_bytes(),
         )?;
-        let session = self.source_exec.session();
-        session.set_blocking(false);
-        let mut channel = ssh_transport::retry(&item.cancel, Duration::from_secs(12), || {
-            session.channel_session()
-        })?;
-        let command = format!(
-            "exec {}",
-            command::shell_call(
-                "sh",
-                &[
-                    &format!("{}/supervisor.sh", self.source_root),
-                    "run",
-                    &self.source_root,
-                    &run,
-                    &attempt
-                ]
-            )
+        let ssh = command::ssh_command(endpoint, &format!("{root}/known_hosts"), &auth)?;
+        Ok(Self {
+            source,
+            _target: target,
+            source_sftp,
+            target_sftp,
+            root,
+            ssh,
+            auth,
+        })
+    }
+    pub fn transfer(
+        &mut self,
+        state: &crate::State,
+        item: &WriteHandle,
+        plan: &mut Plan,
+        index: usize,
+        entries: &[usize],
+    ) -> AppResult<()> {
+        let target_root = item.receipt.lock().unwrap().attempts[index]
+            .target_root
+            .clone();
+        let endpoint = item.endpoint.as_ref().unwrap();
+        let nonce = uuid::Uuid::new_v4().to_string();
+        write_new(
+            &self.target_sftp,
+            &format!("{target_root}/probe"),
+            nonce.as_bytes(),
+        )?;
+        let probe = format!(
+            "{} {} {}",
+            self.ssh,
+            ssh::quote(&endpoint.host),
+            ssh::quote(&format!(
+                "cat {}",
+                ssh::quote(&format!("{target_root}/probe"))
+            ))
         );
-        // A dispatched request is uncertain until its task-specific receipts
-        // say otherwise. Never infer safety solely from channel.exit_status().
-        let dispatched = ssh_transport::retry(&item.cancel, Duration::from_secs(12), || {
-            channel.exec(&command)
-        });
-        if let Err(e) = dispatched {
-            return Err(AppError::new("unknown", e.message));
-        }
-        let mut diagnostic = Vec::new();
-        let mut buffer = [0u8; 8192];
-        let mut next_poll = Instant::now();
-        let received = loop {
-            if item.stop.load(std::sync::atomic::Ordering::SeqCst) {
-                self.stop(item)?;
-                break Err(AppError::new("cancelled", "传输已取消，两端进程已停止"));
-            }
-            if item.cancel.is_cancelled() {
-                break Err(AppError::new(
-                    "unknown",
-                    "控制连接中断，需要核对两端任务状态",
-                ));
-            }
-            self.check_leases()?;
-            for stream in [0, 1] {
-                match channel.stream(stream).read(&mut buffer) {
-                    Ok(n) if stream == 1 => diagnostic.extend_from_slice(
-                        &buffer[..n.min(16384usize.saturating_sub(diagnostic.len()))],
-                    ),
-                    Ok(_) => {}
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-                    Err(e) => return Err(AppError::new("unknown", e)),
-                }
-            }
-            if Instant::now() >= next_poll {
-                next_poll = Instant::now() + Duration::from_millis(400);
-                let a = remote_job::state(&source_sftp, &self.source_root, &run, Some(&attempt))?;
-                let b = remote_job::state(&target_sftp, &self.target_root, &run, Some(&attempt))?;
-                if let Some(stat) =
-                    remote_write::metadata(&target_sftp, destination)?.filter(|_| id != usize::MAX)
-                {
-                    let mut task = item.task.lock().unwrap();
-                    task.current_file = Some(entry.source.clone());
-                    task.current_bytes = stat.size.unwrap_or(0).min(entry.size);
-                    task.bytes_done = task.committed_bytes + task.current_bytes;
-                }
-                if a.as_ref().is_some_and(|s| s.stopped()) {
-                    if a.as_ref().is_some_and(|s| s.phase == "done" && s.code == 0)
-                        && b.as_ref().is_some_and(|s| s.phase == "done" && s.code == 0)
-                    {
-                        break Ok(());
-                    }
-                    // Seal both admissions before accepting a failed/absent B
-                    // receipt, including an SSH handshake that failed on A.
-                    self.stop(item)?;
-                    let message = String::from_utf8_lossy(&diagnostic);
-                    break Err(AppError::new(
-                        "directTransfer",
-                        format!(
-                            "A → B 直传失败：{}",
-                            if message.trim().is_empty() {
-                                "远端发送或接收进程未成功完成"
-                            } else {
-                                message.trim()
-                            }
-                        ),
-                    ));
-                }
-            }
-            if channel.eof()
-                && !remote_job::state(&source_sftp, &self.source_root, &run, Some(&attempt))?
-                    .is_some_and(|s| s.stopped())
-            {
-                break Err(AppError::new(
-                    "unknown",
-                    "源端连接结束但没有本次任务的停止记录",
-                ));
-            }
-            std::thread::sleep(Duration::from_millis(20));
-        };
-        let _ = channel.close();
-        received?;
-        let after = source_sftp.lstat(Path::new(&entry.source))?;
-        if !after.is_file() || after.size != before.size || after.mtime != before.mtime {
+        let (code, out, err) = self.execute(
+            item,
+            &self.auth_command(&probe),
+            Some(Duration::from_secs(20)),
+            false,
+        )?;
+        if code != 0 || out != nonce {
             return Err(AppError::new(
-                "changed",
-                "传输期间源文件发生变化，未提交目标文件",
+                "environment",
+                format!("A → B 认证、真实地址或目录检查失败：{}", err.trim()),
             ));
         }
-        // The one-use admission directories and terminal receipts prove these
-        // two writers cannot start again, even though the task remains open.
-        // Persist that proof before deleting either terminal record: a lost
-        // SFTP reply halfway through deletion must remain recoverable.
-        item.receipt
-            .lock()
-            .unwrap()
-            .direct
-            .as_mut()
-            .unwrap()
-            .attempt_finished = true;
-        self.state.transfers.persist(item)?;
-        remote_job::remove_job(&source_sftp, &self.source_root, &attempt)?;
-        remote_job::remove_job(&target_sftp, &self.target_root, &attempt)?;
-        item.receipt
-            .lock()
-            .unwrap()
-            .direct
-            .as_mut()
-            .unwrap()
-            .attempt = None;
-        self.state.transfers.persist(item)?;
-        Ok(())
-    }
-    pub fn finish(&mut self, item: &WriteHandle) -> AppResult<()> {
-        self.stop(item)
-    }
-    pub fn confirmed_stopped(&self) -> bool {
-        self.stopped
-    }
-    pub fn stop(&mut self, item: &WriteHandle) -> AppResult<()> {
-        if self.stopped {
-            return Ok(());
+        let mut manifest = vec![];
+        for &i in entries {
+            let entry = &mut plan.entries[i];
+            manifest.extend_from_slice(entry.source.trim_start_matches('/').as_bytes());
+            manifest.push(0);
+            entry.staged = Some(format!(
+                "{target_root}/data/{}",
+                entry.source.trim_start_matches('/')
+            ));
         }
-        let _proof = remote_job::stop_and_verify(item)?;
-        self.state.transfers.persist(item).map_err(|e| {
-            AppError::new(
-                "unknown",
-                format!(
-                    "已停止远端进程，但停止记录未能保存，暂不清理：{}",
-                    e.message
-                ),
-            )
-        })?;
-        self.stopped = true;
-        self.leases.clear();
+        write_new(
+            &self.source_sftp,
+            &format!("{}/manifest", self.root),
+            &manifest,
+        )?;
+        let receiver = recorded("rsync \"$@\"", &target_root, "receiver.exit");
+        let receiver = command::shell_call("sh", &["-c", &receiver, "rsync-receiver"]);
+        let host = if endpoint.host.contains(':') {
+            format!("[{}]", endpoint.host)
+        } else {
+            endpoint.host.clone()
+        };
+        let destination = format!("{host}:{target_root}/data/");
+        let command = command::shell_call(
+            "rsync",
+            &[
+                "--relative",
+                "--dirs",
+                "--no-recursive",
+                "--no-links",
+                "--no-devices",
+                "--no-specials",
+                "--protect-args",
+                "--from0",
+                "--partial-dir=.rsync-partial",
+                "--checksum",
+                "--info=progress2",
+                "--outbuf=L",
+                "--timeout=60",
+                &format!("--files-from={}/manifest", self.root),
+                &format!("--rsync-path={receiver}"),
+                "-e",
+                &self.ssh,
+                "--",
+                "/",
+                &destination,
+            ],
+        );
+        state.transfers.save_plan(item, plan)?;
+        item.receipt.lock().unwrap().attempts[index].dispatched = true;
+        state.transfers.persist(item)?;
+        let wrapped = recorded(&self.auth_command(&command), &self.root, "source.exit");
+        let result = self.execute(item, &wrapped, None, true);
+        let a = exit_code(&self.source_sftp, &self.root, "source.exit")
+            .ok()
+            .flatten();
+        let b = exit_code(&self.target_sftp, &target_root, "receiver.exit")
+            .ok()
+            .flatten();
+        {
+            let mut r = item.receipt.lock().unwrap();
+            let attempt = &mut r.attempts[index];
+            attempt.source_finished = a.is_some();
+            attempt.receiver_finished = b.is_some();
+            attempt.successful =
+                a == Some(0) && b == Some(0) && result.as_ref().is_ok_and(|r| r.0 == 0);
+        }
+        state.transfers.persist(item)?;
+        if item.stop.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(AppError::new(
+                if a.is_some() && b.is_some() {
+                    "cancelled"
+                } else {
+                    "interrupted"
+                },
+                if a.is_some() && b.is_some() {
+                    "传输已停止，暂存内容未提交"
+                } else {
+                    "已请求取消；远端退出尚未确认，暂存内容未提交"
+                },
+            ));
+        }
+        let (code, _, err) = result?;
+        if code != 0 {
+            return Err(AppError::new(
+                "directTransfer",
+                format!("rsync 直传失败（退出码 {code}）：{}", err.trim()),
+            ));
+        }
+        if a != Some(0) || b != Some(0) {
+            return Err(AppError::new(
+                "interrupted",
+                "rsync 退出记录不完整，临时内容尚未提交",
+            ));
+        }
         Ok(())
     }
+    fn auth_command(&self, command: &str) -> String {
+        if matches!(self.auth, DirectAuth::Password(_)) {
+            format!("sshpass -d 3 {command} < /dev/null")
+        } else {
+            format!("{command} < /dev/null")
+        }
+    }
+    fn execute(
+        &self,
+        item: &WriteHandle,
+        command: &str,
+        timeout: Option<Duration>,
+        progress: bool,
+    ) -> AppResult<(i32, String, String)> {
+        let session = self.source.session();
+        session.set_blocking(false);
+        let result = (|| {
+            let mut channel =
+                crate::ssh_transport::retry(&item.cancel, Duration::from_secs(15), || {
+                    session.channel_session()
+                })?;
+            crate::ssh_transport::retry(&item.cancel, Duration::from_secs(15), || {
+                channel.exec(&format!("exec 3<&0; printf 'SSH_WORKSPACE_PROCESS %s %s\\n' \"$$\" \"$(awk '{{print $22}}' /proc/$$/stat)\" >&2; {command}"))
+            })?;
+            if let DirectAuth::Password(password) = &self.auth {
+                let secret = format!("{password}\n");
+                let mut offset = 0;
+                let deadline = Instant::now() + Duration::from_secs(15);
+                while offset < secret.len() {
+                    item.check()?;
+                    match channel.write(&secret.as_bytes()[offset..]) {
+                        Ok(0) => return Err(AppError::new("authentication", "密码通道已关闭")),
+                        Ok(n) => offset += n,
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                            if Instant::now() > deadline {
+                                return Err(AppError::new("timeout", "密码通道超时"));
+                            }
+                            std::thread::sleep(Duration::from_millis(20));
+                        }
+                        Err(e) => return Err(e.into()),
+                    }
+                }
+            }
+            crate::ssh_transport::retry(&item.cancel, Duration::from_secs(3), || {
+                channel.send_eof()
+            })?;
+            let started = Instant::now();
+            let base_bytes = item.task.lock().unwrap().bytes_done;
+            let mut stopping = None;
+            let mut output = [Vec::new(), Vec::new()];
+            let mut process = None;
+            let mut progress_bytes = vec![];
+            loop {
+                if stopping.is_none()
+                    && (item.stop.load(std::sync::atomic::Ordering::SeqCst)
+                        || item.cancel.is_cancelled())
+                {
+                    stopping = Some(Instant::now());
+                    if let Some((pid, birth)) = process {
+                        // Only the live channel's process may be signalled. No
+                        // persisted PID is ever used after reconnect/restart.
+                        let stop = format!("test \"$(awk '{{print $22}}' /proc/{pid}/stat 2>/dev/null)\" = {birth} && test \"$(ps -o pgid= -p {pid} | tr -d ' ')\" = {pid} && kill -TERM -{pid}");
+                        let _ = capabilities::exec_checked(
+                            &self.source,
+                            &item.cancel,
+                            &stop,
+                            Duration::from_secs(2),
+                            || item.cancel.check(),
+                        );
+                        session.set_blocking(false);
+                    }
+                }
+                if stopping.is_some_and(|t| t.elapsed() > Duration::from_secs(5)) {
+                    let _ = channel.close();
+                    return Err(AppError::new(
+                        "interrupted",
+                        "已请求取消；远端退出尚未确认。旧数据仅在临时目录，可使用新目录重试",
+                    ));
+                }
+                if timeout.is_some_and(|t| started.elapsed() > t) {
+                    let _ = channel.close();
+                    return Err(AppError::new("timeout", "A → B 连接或认证检查超时"));
+                }
+                let mut buffer = [0u8; 8192];
+                for stream in 0..2 {
+                    match channel.stream(stream as i32).read(&mut buffer) {
+                        Ok(n) => {
+                            output[stream].extend_from_slice(
+                                &buffer[..n.min(32768usize.saturating_sub(output[stream].len()))],
+                            );
+                            if progress && stream == 0 {
+                                progress_bytes.extend_from_slice(&buffer[..n]);
+                                update_progress(item, &mut progress_bytes, base_bytes);
+                            }
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => (),
+                        Err(e) => return Err(AppError::new("interrupted", e)),
+                    }
+                }
+                if process.is_none() {
+                    process = String::from_utf8_lossy(&output[1])
+                        .split_inclusive('\n')
+                        .filter(|s| s.ends_with('\n'))
+                        .find_map(|line| {
+                            let fields = line
+                                .strip_prefix("SSH_WORKSPACE_PROCESS ")?
+                                .split_whitespace()
+                                .collect::<Vec<_>>();
+                            if fields.len() != 2 {
+                                return None;
+                            }
+                            Some((
+                                fields[0].parse::<u32>().ok()?,
+                                fields[1].parse::<u64>().ok()?,
+                            ))
+                        });
+                }
+                if channel.eof() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            crate::ssh_transport::retry(&item.cancel, Duration::from_secs(3), || {
+                channel.wait_close()
+            })?;
+            let text = |bytes: &[u8]| {
+                let s = String::from_utf8_lossy(bytes)
+                    .lines()
+                    .filter(|s| !s.starts_with("SSH_WORKSPACE_PROCESS "))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if let DirectAuth::Password(p) = &self.auth {
+                    s.replace(p, "[已隐藏]")
+                } else {
+                    s
+                }
+            };
+            Ok((channel.exit_status()?, text(&output[0]), text(&output[1])))
+        })();
+        session.set_blocking(true);
+        result
+    }
+}
+fn update_progress(item: &WriteHandle, buffer: &mut Vec<u8>, base: u64) {
+    while let Some(end) = buffer.iter().position(|b| *b == b'\r' || *b == b'\n') {
+        let line = String::from_utf8_lossy(&buffer[..end]);
+        let mut fields = line.split_whitespace();
+        if let (Some(bytes), Some(percent)) = (fields.next(), fields.next()) {
+            if percent.ends_with('%') {
+                if let Ok(bytes) = bytes.replace(',', "").parse::<u64>() {
+                    let mut t = item.task.lock().unwrap();
+                    t.bytes_done = (base + bytes).min(t.bytes_total);
+                    t.current_bytes = bytes;
+                }
+            }
+        }
+        buffer.drain(..=end);
+    }
+    if buffer.len() > 16384 {
+        buffer.clear();
+    }
+}
+pub fn refresh_attempt(item: &WriteHandle, attempt: &mut Attempt) -> AppResult<()> {
+    if attempt.source_finished && attempt.receiver_finished {
+        return Ok(());
+    }
+    if !attempt.dispatched {
+        attempt.source_finished = true;
+        attempt.receiver_finished = true;
+        return Ok(());
+    }
+    let Source::Remote { context, .. } = &item.source else {
+        attempt.source_finished = true;
+        attempt.receiver_finished = true;
+        return Ok(());
+    };
+    let source = connection::connect_verified(context, &Cancellation::default())?;
+    let target = connection::connect_verified(&item.target, &Cancellation::default())?;
+    let a = match &attempt.source_root {
+        Some(root) => exit_code(&source.session().sftp()?, root, "source.exit")?,
+        None => None,
+    };
+    let b = exit_code(
+        &target.session().sftp()?,
+        &attempt.target_root,
+        "receiver.exit",
+    )?;
+    attempt.source_finished |= a.is_some();
+    attempt.receiver_finished |= b.is_some();
+    attempt.successful |= a == Some(0) && b == Some(0);
+    Ok(())
 }

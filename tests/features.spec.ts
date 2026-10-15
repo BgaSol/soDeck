@@ -215,7 +215,9 @@ test("container logs persist, highlight, search, virtualize and remain readable 
   await unlink(join(qa, "logs-disconnect")).catch(() => {});
   await unlink(join(qa, "logs-freeze")).catch(() => {});
   const f = await fixture("logs");
-  let logs: Page | undefined, archive: Page | undefined;
+  let logs: Page | undefined,
+    archive: Page | undefined,
+    library: Page | undefined;
   try {
     logs = await openLogs(f);
     await expect(logs.locator(".log-status")).toHaveText("实时采集中");
@@ -306,16 +308,32 @@ test("container logs persist, highlight, search, virtualize and remain readable 
       (a) => a.sourceId === info.sourceId,
     );
     expect(saved.records).toBeGreaterThan(5);
+    const libraryOpened = f.context.waitForEvent("page");
     await f.main.getByRole("button", { name: "本地日志", exact: true }).click();
+    library = await libraryOpened;
+    await expect(
+      library.getByRole("heading", { name: "本地日志", exact: true }),
+    ).toBeVisible();
     await expect(
       f.main.getByRole("dialog", { name: "本地日志存档" }),
-    ).toBeVisible();
-    await f.main
-      .getByRole("button", { name: "关闭日志存档", exact: true })
-      .click();
+    ).toHaveCount(0);
+    await ipc(f.main, "open_log_archives_window");
+    expect(
+      f.context
+        .pages()
+        .filter((p) => new URL(p.url()).searchParams.has("archives")),
+    ).toHaveLength(1);
+    await library.getByLabel("筛选日志存档").fill(info.containerId);
     const opened = f.context.waitForEvent("page");
-    await ipc(f.main, "open_log_archive", { sourceId: info.sourceId });
+    await library
+      .getByRole("button", {
+        name: `打开 ${info.serverName} / ${info.containerName} 日志存档`,
+        exact: true,
+      })
+      .click();
     archive = await opened;
+    await closeWindow(library);
+    library = undefined;
     await expect(archive.locator(".log-status")).toHaveText("本地存档");
     expect((await ipc<any>(archive, "logs_info")).stats.records).toBe(
       saved.records,
@@ -330,7 +348,7 @@ test("container logs persist, highlight, search, virtualize and remain readable 
     });
     expect(copied).toContain("fixture history stdout");
   } finally {
-    for (const page of [logs, archive])
+    for (const page of [logs, archive, library])
       if (page && !page.isClosed()) await closeWindow(page);
     await f.cleanup();
   }
@@ -457,6 +475,7 @@ async function fixture(label: string): Promise<Fixture> {
       !params.has("container") &&
       !params.has("editor") &&
       !params.has("logs") &&
+      !params.has("archives") &&
       !params.has("workspace")
     );
   })!;

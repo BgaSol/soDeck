@@ -627,8 +627,37 @@
   gap: 7px;
 }
 .transfer-panel .unknown .download-task-state,
+.transfer-panel .needsAttention .download-task-state,
+.transfer-panel .interrupted .download-task-state,
 .transfer-panel .partialFailed .download-task-state {
   color: var(--warning, #a66b16);
+}
+.transfer-auth-fields {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 12px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.transfer-auth-fields legend {
+  padding: 0 5px;
+  font-size: 12px;
+}
+.transfer-auth-fields p {
+  margin: 0;
+}
+.file-operation-fields label:has(> input[type="checkbox"]) {
+  display: flex;
+  flex-direction: row;
+  align-items: start;
+  gap: 8px;
+  line-height: 1.5;
+}
+.file-operation-fields input[type="checkbox"] {
+  width: auto;
+  margin-top: 3px;
 }
 .transfer-panel details {
   font-size: 11px;
