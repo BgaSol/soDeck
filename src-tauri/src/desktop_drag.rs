@@ -98,16 +98,13 @@ fn grant(state: &State, window: &str, source: Source, ready: bool) -> String {
     );
     id
 }
-pub fn native_drop(webview: &tauri::Webview, event: &tauri::DragDropEvent) {
-    let label = webview.label();
+pub fn native_drop(window: &tauri::Window, event: &tauri::DragDropEvent) {
+    let label = window.label();
     if label != "main" && !label.starts_with("workspace-") {
         return;
     }
-    let state = webview.state::<Arc<State>>();
-    let app = webview.app_handle();
-    let Some(window) = app.get_webview_window(label) else {
-        return;
-    };
+    let state = window.state::<Arc<State>>();
+    let app = window.app_handle();
     let scale = window.scale_factor().unwrap_or(1.0);
     let mut payload = DragEvent {
         phase: "leave".into(),

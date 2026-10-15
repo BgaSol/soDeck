@@ -458,12 +458,11 @@ pub fn run() {
                 }
             }
         })
-        .on_webview_event(|webview, event| {
-            if let tauri::WebviewEvent::DragDrop(event) = event {
-                desktop_drag::native_drop(webview, event);
-            }
-        })
         .on_window_event(|window, event| {
+            // WebviewWindow content routes native drops through WindowEvent.
+            if let tauri::WindowEvent::DragDrop(event) = event {
+                desktop_drag::native_drop(window, event);
+            }
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 let state = window.state::<Arc<State>>();
                 state.logs.stop(window.label(), true);
