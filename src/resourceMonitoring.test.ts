@@ -88,6 +88,65 @@ function fixture() {
   };
 }
 describe("resource subscriptions", () => {
+  it("retains disconnected window readings and rejects late events from a previous connection", async () => {
+    const { store, send } = fixture();
+    await store.start();
+    send({ type: "connection", generation: "g", connected: true });
+    const metrics = emptyMetrics();
+    metrics.cpu.value = { percent: 42, cores: {}, load: null };
+    send({
+      type: "metrics",
+      generation: "g",
+      revision: 12,
+      metrics,
+      point: point(12),
+    });
+    send({ type: "connection", generation: "g", connected: false });
+    expect(store.getState().metrics.cpu.value?.percent).toBe(42);
+    expect(store.getState().connected).toBe(false);
+    send({ type: "connection", generation: "new", connected: true });
+    send({ type: "connection", generation: "g", connected: false });
+    send({
+      type: "metrics",
+      generation: "g",
+      revision: 13,
+      metrics,
+      point: point(13),
+    });
+    expect(store.getState().connected).toBe(true);
+    expect(store.getState().points).toEqual([]);
+    send({
+      type: "metrics",
+      generation: "new",
+      revision: 1,
+      metrics,
+      point: point(1),
+    });
+    expect(store.getState().points).toHaveLength(1);
+    store.stop();
+  });
+
+  it("loads communication history without cancelling a different resource range", async () => {
+    const { store, api } = fixture();
+    await store.start();
+    const resource = deferred<{
+      generation: string;
+      points: HistoryPoint[];
+      truncated: boolean;
+    }>();
+    vi.mocked(api.history).mockImplementationOnce(() => resource.promise);
+    const pending = store.loadHistory(60);
+    await store.loadTrafficHistory(5);
+    resource.resolve({
+      generation: "g",
+      points: [point(1), point(2)],
+      truncated: false,
+    });
+    await pending;
+    expect(store.getState().points).toHaveLength(2);
+    expect(store.getState().historyLoading).toBe(false);
+    store.stop();
+  });
   it("shares Docker demand and keeps Docker and traffic updates independent of failed metrics", async () => {
     const { store, api, send } = fixture();
     store.setDockerInterest("overview", {

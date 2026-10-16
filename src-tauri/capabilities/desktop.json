@@ -4,6 +4,7 @@
   "description": "Main workspace and independent container terminals",
   "windows": [
     "main",
+    "monitor-*",
     "container-*",
     "workspace-*",
     "editor-*",

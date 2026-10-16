@@ -256,10 +256,10 @@ test("per-hop prompts survive replies delivering the next prompt before IPC ackn
   const errors = await setup(page);
   await connect(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.locator(".session-information summary").click();
-  await expect(page.locator(".session-information-content")).toContainText(
-    "Jump A → Target B",
-  );
+  await page.getByRole("button", { name: "会话连接详情", exact: true }).click();
+  await expect(
+    page.getByRole("dialog", { name: "会话连接详情", exact: true }),
+  ).toContainText("Jump A → Target B");
   await expect(page.locator(".terminal-surface")).toContainText(
     "connected to B",
   );
@@ -768,7 +768,7 @@ test("moving a workspace carries both widths and restores the same terminal with
     Number(await left.getAttribute("aria-valuenow")),
     Number(await right.getAttribute("aria-valuenow")),
   ];
-  await page.getByRole("tab", { name: "总览", exact: true }).click();
+  await page.getByRole("tab", { name: "监控", exact: true }).click();
   await page.getByRole("button", { name: "15 分钟", exact: true }).click();
   await page
     .getByRole("tablist", { name: "SSH 会话", exact: true })
@@ -799,7 +799,6 @@ test("moving a workspace carries both widths and restores the same terminal with
     minutes: 15,
     networkInterface: "",
     pinnedMounts: ["/"],
-    collapsed: ["traffic"],
   });
   expect(Math.round(snapshot.layout!.fileWidth)).toBe(expectedWidths[0]);
   expect(Math.round(snapshot.layout!.serviceWidth)).toBe(expectedWidths[1]);
@@ -807,7 +806,7 @@ test("moving a workspace carries both widths and restores the same terminal with
   const detached = await context.newPage();
   const detachedErrors = await setup(detached, false, { snapshot });
   await expect(
-    detached.getByRole("tab", { name: "总览", exact: true }),
+    detached.getByRole("tab", { name: "监控", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
   await expect(
     detached.getByRole("button", { name: "15 分钟", exact: true }),
@@ -840,7 +839,7 @@ test("moving a workspace carries both widths and restores the same terminal with
   await expect(detached.locator(".terminal-surface")).toBeVisible();
   await detached
     .getByRole("navigation", { name: "工作区域" })
-    .getByRole("button", { name: "检查器" })
+    .getByRole("button", { name: "监控与 Docker" })
     .click();
   await expect(
     detached.getByRole("button", { name: "15 分钟", exact: true }),
@@ -1241,7 +1240,7 @@ test("titlebar tabs accept empty-window drops and reserve macOS controls", async
   expect(errors).toEqual([]);
 });
 
-test("session-only inspector preferences survive focused window migration without copying monitor data", async ({
+test("sidebar and communication preferences survive window migration without copying monitor data", async ({
   page,
   context,
 }) => {
@@ -1255,7 +1254,13 @@ test("session-only inspector preferences survive focused window migration withou
   await page
     .getByRole("combobox", { name: "Docker 排序" })
     .selectOption("attention");
-  await page.getByRole("button", { name: "展开检查器" }).click();
+  await page.getByRole("button", { name: "会话连接详情", exact: true }).click();
+  await page.getByRole("button", { name: "通信详情", exact: true }).click();
+  await page
+    .getByRole("group", { name: "通信时间范围" })
+    .getByRole("button", { name: "15 分钟" })
+    .click();
+  await page.keyboard.press("Escape");
   await page
     .getByRole("tablist", { name: "SSH 会话", exact: true })
     .getByRole("tab")
@@ -1279,7 +1284,11 @@ test("session-only inspector preferences survive focused window migration withou
         (c: any) => c.command === "move_workspace",
       ).args.payload,
   );
-  expect(snapshot.view).toEqual({ expanded: true, pane: "services" });
+  expect(snapshot.view).toEqual({ pane: "terminal" });
+  expect(snapshot.connectionPreferences).toEqual({
+    minutes: 15,
+    scope: "total",
+  });
   expect(snapshot.docker).toMatchObject({
     page: "containers",
     queries: { containers: "api-service" },
@@ -1295,15 +1304,22 @@ test("session-only inspector preferences survive focused window migration withou
   await detached.setViewportSize({ width: 650, height: 480 });
   await expect(detached.locator(".responsive-workspace")).toHaveAttribute(
     "data-layout",
-    "focus",
+    "single",
   );
+  await detached
+    .getByRole("navigation", { name: "工作区域" })
+    .getByRole("button", { name: "监控与 Docker" })
+    .click();
   await expect(detached.getByRole("textbox", { name: "搜索容器" })).toHaveValue(
     "api-service",
   );
   await expect(
     detached.getByRole("combobox", { name: "容器状态筛选" }),
   ).toHaveValue("running");
-  await detached.getByRole("button", { name: "返回终端", exact: true }).click();
+  await detached
+    .getByRole("navigation", { name: "工作区域" })
+    .getByRole("button", { name: "终端", exact: true })
+    .click();
   await expect(detached.locator(".terminal-surface")).toContainText(
     "connected to B",
   );
@@ -1319,7 +1335,7 @@ test("session-only inspector preferences survive focused window migration withou
   const freshErrors = await setup(fresh);
   await connect(fresh);
   await expect(
-    fresh.getByRole("tab", { name: "总览", exact: true }),
+    fresh.getByRole("tab", { name: "监控", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
   await expect(
     fresh.getByRole("button", { name: "5 分钟", exact: true }),

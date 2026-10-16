@@ -1,6 +1,9 @@
 import { expect, type Page } from "@playwright/test";
 
-export async function setup(page: Page) {
+export async function setup(
+  page: Page,
+  mode: "workspace" | "monitor" = "workspace",
+) {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.addInitScript(() => {
@@ -336,8 +339,21 @@ export async function setup(page: Page) {
             nextCursor: null,
           };
         if (command === "plugin:event|listen") return serial++;
-        if (command === "subscribe_monitor") {
+        if (command === "monitor_window_info")
+          return {
+            serverName: "Mount fixture",
+            preferences: {
+              minutes: 5,
+              networkInterface: "",
+              selectedMetric: "cpu",
+            },
+          };
+        if (
+          command === "subscribe_monitor" ||
+          command === "subscribe_monitor_window"
+        ) {
           monitor = args.events;
+          w.__MOUNTS__.monitor = monitor;
           interest = args.interest;
           monitor.onmessage({
             type: "snapshot",
@@ -461,7 +477,13 @@ export async function setup(page: Page) {
       },
     };
   });
-  await page.goto("/");
+  await page.goto(mode === "monitor" ? "/?monitor=1" : "/");
+  if (mode === "monitor") {
+    await expect(
+      page.getByRole("region", { name: "服务器资源监控", exact: true }),
+    ).toContainText("23.4%");
+    return errors;
+  }
   await page.getByRole("button", { name: "新建连接", exact: true }).click();
   await page
     .locator(".server-row")

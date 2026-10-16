@@ -39,7 +39,7 @@ describe("workspace sizing", () => {
     expect(fitWorkspaceLayout(1440, preferred)).toMatchObject(preferred);
     expect(preferred).toEqual({ fileWidth: 520, serviceWidth: 480 });
   });
-  it("selects one narrow pane and isolates focus mode at every width", () => {
+  it("selects narrow panes and ignores legacy focus mode", () => {
     expect(workspaceVisibility("single", defaultWorkspaceView)).toEqual({
       files: false,
       terminal: true,
@@ -48,10 +48,17 @@ describe("workspace sizing", () => {
     expect(
       workspaceVisibility("two", { expanded: false, pane: "files" }),
     ).toEqual({ files: true, terminal: true, services: false });
-    for (const mode of ["single", "two", "three"] as const)
-      expect(
-        workspaceVisibility(mode, { expanded: true, pane: "files" }),
-      ).toEqual({ files: false, terminal: false, services: true });
+    expect(
+      normalizeWorkspaceView({ expanded: true, pane: "services" }),
+    ).toEqual({ pane: "services" });
+    expect(
+      workspaceVisibility("three", { expanded: true, pane: "services" }),
+    ).toEqual({ files: true, terminal: true, services: true });
+    expect(workspaceVisibility("two", { pane: "services" })).toEqual({
+      files: false,
+      terminal: true,
+      services: true,
+    });
     expect(normalizeWorkspaceView()).toEqual(defaultWorkspaceView);
   });
 });

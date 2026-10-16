@@ -41,6 +41,11 @@ import {
 } from "./workspaces";
 import type { AppError, Server, SaveServerRequest } from "./types";
 import type { WorkspaceTab } from "./workspaces";
+const MonitorWindowApp = lazy(() =>
+  import("./MonitorWindowApp").then(({ MonitorWindowApp }) => ({
+    default: MonitorWindowApp,
+  })),
+);
 const FileEditorApp = lazy(() =>
   import("./FileEditorApp").then(({ FileEditorApp }) => ({
     default: FileEditorApp,
@@ -212,8 +217,9 @@ export function App() {
           () => 0,
         );
         let summary;
-        try { summary = (await fileTaskApi.list("all", null, 1)).summary; }
-        catch (e) {
+        try {
+          summary = (await fileTaskApi.list("all", null, 1)).summary;
+        } catch (e) {
           closing.current = false;
           setError(errorOf(e));
           return;
@@ -542,8 +548,12 @@ export function App() {
                 files={<FilePanel sessionId={null} serverName="" />}
                 services={
                   <aside className="resource-service-panel" aria-label="服务器">
-                    <div className="resource-panel-head"><strong>服务器</strong></div>
-                    <p className="resource-empty">连接后查看资源、Docker 状态和本客户端通信量。</p>
+                    <div className="resource-panel-head">
+                      <strong>服务器</strong>
+                    </div>
+                    <p className="resource-empty">
+                      连接后查看资源、Docker 状态和本客户端通信量。
+                    </p>
                   </aside>
                 }
                 terminal={
@@ -686,7 +696,10 @@ export function Root() {
   const params = new URLSearchParams(location.search);
   let title = "SoDeck";
   let content: ReactNode;
-  if (params.has("terminal-history")) {
+  if (params.has("monitor")) {
+    title = "服务器监控";
+    content = <MonitorWindowApp />;
+  } else if (params.has("terminal-history")) {
     title = "终端历史";
     content = <TerminalHistoryApp />;
   } else if (params.has("archives")) {

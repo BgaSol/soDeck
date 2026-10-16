@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { LockKeyhole, Plug, TerminalSquare, Unplug, X } from "lucide-react";
+import { Plug, TerminalSquare, Unplug, X } from "lucide-react";
 import { TerminalPane } from "./TerminalPane";
 import type {
   TerminalController,
@@ -17,15 +17,20 @@ import type { FilePanelSnapshot } from "./FilePanel";
 import type { DockerPanelSnapshot } from "./DockerPanel";
 import { FilePanel } from "./FilePanel";
 import { DockerPanel } from "./DockerPanel";
+import {
+  SessionConnectionDetails,
+  type ConnectionPreferences,
+} from "./SessionConnectionDetails";
+import { monitorWindowApi } from "./monitorWindowApi";
 import { MonitorProvider } from "./MonitorProvider";
 import {
   ResourcePanel,
   ResourceStatusBar,
-  ServicePanel,
   normalizeResourcePreferences,
   type ResourcePreferences,
 } from "./ResourcePanel";
 import { FingerprintDialog, LoginDialog } from "./ConnectionDialogs";
+import { ServicePanel } from "./ServicePanel";
 import { WorkspaceLayout } from "./WorkspaceLayout";
 import {
   normalizeWorkspaceView,
@@ -48,6 +53,7 @@ export interface WorkspaceSnapshot {
   layout?: WorkspaceLayoutSize;
   resources?: ResourcePreferences;
   view?: WorkspaceViewState;
+  connectionPreferences?: ConnectionPreferences;
   resourceWidth?: number; // Read legacy snapshots from the former stacked layout.
   fileRatio?: number;
 }
@@ -94,41 +100,28 @@ export function SessionWorkspace({
     terminal: true,
     services: true,
   });
-  const returnFocus = useRef<HTMLElement | null>(null);
-  const returnView = useRef<WorkspaceViewState>(
-    view.expanded ? { expanded: false, pane: "terminal" } : view,
-  );
+  const [connectionPreferences, setConnectionPreferences] =
+    useState<ConnectionPreferences>(
+      initial?.connectionPreferences ?? {
+        minutes: 5,
+        scope: initial?.resources?.trafficScope ?? "total",
+      },
+    );
   const [revealRequest, setRevealRequest] = useState<{
     path: string;
     sequence: number;
   }>();
-  const workspaceElement = useRef<HTMLDivElement>(null);
-  function expand(trigger?: HTMLElement) {
-    if (!view.expanded) returnView.current = view;
-    returnFocus.current =
-      trigger ??
-      (document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null);
-    setView((v) => ({ ...v, expanded: true, pane: "services" }));
-  }
-  function collapse() {
-    setView({ ...returnView.current, expanded: false });
-    requestAnimationFrame(() => {
-      const target = returnFocus.current;
-      if (target?.isConnected && target.getClientRects().length) target.focus();
-      else
-        workspaceElement.current
-          ?.querySelector<HTMLElement>(".terminal-surface textarea")
-          ?.focus();
-    });
-  }
-  function openMetric(metric: ResourceMetric, trigger: HTMLButtonElement) {
-    setResources((p) => ({ ...p, tab: "monitor", selectedMetric: metric }));
-    expand(trigger);
+  function openMetric(metric: ResourceMetric) {
+    setResources((p) => ({
+      ...p,
+      tab: "monitor",
+      selectedMetric: metric,
+      detailOpen: true,
+    }));
+    setView({ pane: "services" });
   }
   function revealMount(path: string) {
-    setView({ expanded: false, pane: "files" });
+    setView({ pane: "files" });
     setRevealRequest((p) => ({ path, sequence: (p?.sequence ?? 0) + 1 }));
   }
   const connection = useConnection(tab.server.id, !!initial);
@@ -180,6 +173,7 @@ export function SessionWorkspace({
           docker: dockerSnapshot.current,
           layout,
           resources,
+          connectionPreferences,
           view,
         };
       },
@@ -188,7 +182,7 @@ export function SessionWorkspace({
         await terminalController.current?.cancelMove();
       },
     }),
-    [tab, prompt, layout, resources, view, reconnect],
+    [tab, prompt, layout, resources, connectionPreferences, view, reconnect],
   );
   function reconnect() {
     setRestoredTerminal(undefined);
@@ -206,11 +200,7 @@ export function SessionWorkspace({
   }
   return (
     <MonitorProvider sessionId={sessionId} active={active}>
-      <div
-        className="session-workspace-host"
-        ref={workspaceElement}
-        hidden={!active}
-      >
+      <div className="session-workspace-host" hidden={!active}>
         <WorkspaceLayout
           id={`panel-${tab.id}`}
           labelledBy={`tab-${tab.id}`}
@@ -235,17 +225,17 @@ export function SessionWorkspace({
             <ServicePanel
               preferences={resources}
               onChange={setResources}
-              expanded={view.expanded}
-              onToggleExpanded={view.expanded ? collapse : expand}
               monitor={
                 <ResourcePanel
                   serverName={tab.server.name}
                   active={
                     active && visible.services && resources.tab === "monitor"
                   }
-                  expanded={view.expanded}
                   onOpenMetric={openMetric}
                   onRevealMount={revealMount}
+                  onOpenWindow={() =>
+                    monitorWindowApi.open(sessionId!, resources)
+                  }
                   preferences={resources}
                   onChange={setResources}
                 />
@@ -257,7 +247,6 @@ export function SessionWorkspace({
                   active={
                     active && visible.services && resources.tab === "docker"
                   }
-                  expanded={view.expanded}
                   initialState={initial?.docker}
                   onStateChange={captureDocker}
                 />
@@ -354,27 +343,21 @@ export function SessionWorkspace({
                 />
               </div>
               <footer className="workspace-status session-statusbar">
-                <details className="session-information">
-                  <summary aria-label="会话连接详情">
-                    <LockKeyhole size={12} />
-                    <span>{sessionId ? "已连接" : tab.state}</span>
-                  </summary>
-                  <div className="session-information-content">
-                    <p role="status">
-                      {connection.progress ||
-                        (sessionId ? "SSH 会话已建立" : tab.state)}
-                    </p>
-                    {connection.view && (
-                      <p>
-                        本机 →{" "}
-                        {connection.view.hops
-                          .map((hop) => hop.server.name)
-                          .join(" → ")}
-                      </p>
-                    )}
-                    <p>编码 · UTF-8</p>
-                  </div>
-                </details>
+                <SessionConnectionDetails
+                  active={active && visible.terminal}
+                  status={sessionId ? "已连接" : tab.state}
+                  progress={
+                    connection.progress ||
+                    (sessionId ? "SSH 会话已建立" : tab.state)
+                  }
+                  route={
+                    connection.view
+                      ? `本机 → ${connection.view.hops.map((hop) => hop.server.name).join(" → ")}`
+                      : ""
+                  }
+                  preferences={connectionPreferences}
+                  onChange={setConnectionPreferences}
+                />
                 <ResourceStatusBar
                   networkInterface={resources.networkInterface}
                   active={active && visible.terminal}

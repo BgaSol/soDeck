@@ -134,7 +134,7 @@ export function WorkspaceLayout({
       id={id}
       aria-labelledby={labelledBy}
       hidden={!active}
-      data-layout={view.expanded ? "focus" : mode}
+      data-layout={mode}
       data-pane={view.pane}
       style={
         {
@@ -146,20 +146,20 @@ export function WorkspaceLayout({
       <nav
         className="workspace-pane-switcher"
         aria-label="工作区域"
-        hidden={!onViewChange || mode === "three" || view.expanded}
+        hidden={!onViewChange || mode === "three"}
       >
         {(
           [
             ["files", "文件", Folder],
             ["terminal", "终端", TerminalSquare],
-            ["services", "检查器", PanelRight],
+            ["services", "监控与 Docker", PanelRight],
           ] as const
         ).map(([pane, label, Icon]) => (
           <button
             type="button"
             key={pane}
             aria-pressed={view.pane === pane}
-            onClick={() => onViewChange?.({ expanded: false, pane })}
+            onClick={() => onViewChange?.({ pane })}
           >
             <Icon size={14} />
             {label}
@@ -174,10 +174,7 @@ export function WorkspaceLayout({
         >
           {files}
         </div>
-        {separator(
-          "fileWidth",
-          !view.expanded && mode !== "single" && visible.files,
-        )}
+        {separator("fileWidth", mode !== "single" && visible.files)}
         <div
           className="workspace-slot workspace-terminal"
           hidden={!visible.terminal}
@@ -185,10 +182,7 @@ export function WorkspaceLayout({
         >
           {terminal}
         </div>
-        {separator(
-          "serviceWidth",
-          !view.expanded && mode !== "single" && visible.services,
-        )}
+        {separator("serviceWidth", mode !== "single" && visible.services)}
         <div
           className="workspace-slot workspace-services"
           hidden={!visible.services}

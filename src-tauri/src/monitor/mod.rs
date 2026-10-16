@@ -1,4 +1,6 @@
 mod commands;
+mod windows;
+pub use windows::*;
 mod docker;
 mod history;
 mod linux;
@@ -36,6 +38,7 @@ pub(crate) fn now() -> u64 {
 #[derive(Clone)]
 struct Subscriber {
     session: String,
+    identity: Option<String>,
     window: String,
     window_generation: u64,
     output: Channel<MonitorEvent>,
@@ -141,7 +144,16 @@ impl Entry {
                 remove.push(id);
                 continue;
             }
-            match state.spec(&sub.session, &sub.window) {
+            let access = if sub.identity.is_some() {
+                if subscriber_valid(state, &sub) {
+                    Ok(())
+                } else {
+                    Err(AppError::new("disconnected", "监控窗口已结束"))
+                }
+            } else {
+                state.spec(&sub.session, &sub.window).map(|_| ())
+            };
+            match access {
                 // Keep the old subscriber dormant while a workspace is in transit.
                 // A failed move can restore its ownership without remounting React.
                 Err(error) if error.kind == "permission" => continue,
@@ -204,13 +216,24 @@ impl Entry {
 }
 fn subscriber_valid(state: &State, sub: &Subscriber) -> bool {
     state.owner(&sub.window).generation == sub.window_generation
-        && state.spec(&sub.session, &sub.window).is_ok()
+        && match &sub.identity {
+            Some(identity) => state
+                .monitor
+                .windows
+                .lock()
+                .unwrap()
+                .get(&sub.window)
+                .is_some_and(|binding| &binding.identity == identity),
+            None => state.spec(&sub.session, &sub.window).is_ok(),
+        }
 }
 
 #[derive(Default)]
 pub struct MonitorManager {
     entries: Mutex<HashMap<String, Arc<Entry>>>,
     jobs: Arc<AtomicUsize>,
+    windows: Mutex<HashMap<String, windows::WindowBinding>>,
+    observers: Mutex<HashMap<String, Subscriber>>,
 }
 struct Job(Arc<AtomicUsize>);
 impl Drop for Job {
@@ -236,6 +259,7 @@ impl MonitorManager {
         output: Channel<MonitorEvent>,
         interest: Interest,
     ) -> AppResult<String> {
+        let identity = spec.identity().to_owned();
         let owner = state.owner(&window);
         let mut entries = self.entries.lock().unwrap();
         // Revalidate under the registry lock so a concurrently closing session cannot leave an orphan worker.
@@ -274,6 +298,7 @@ impl MonitorManager {
                 id.clone(),
                 Subscriber {
                     session,
+                    identity: None,
                     window,
                     window_generation: owner.generation,
                     output: output.clone(),
@@ -282,6 +307,7 @@ impl MonitorManager {
             );
             entry.snapshot(&c)
         };
+        self.attach_observers(state, &identity, &entry);
         drop(entries);
         // Initial snapshots and incrementals carry independent revisions for each data family.
         let _ = output.send(event);
@@ -322,13 +348,24 @@ impl MonitorManager {
             c.subscribers.retain(|_, s| s.session != session);
             let retain = !c.members.is_empty();
             if !retain {
+                for sub in c.subscribers.values().filter(|sub| sub.identity.is_some()) {
+                    let _ = sub.output.send(MonitorEvent::Connection {
+                        generation: entry.generation.clone(),
+                        connected: false,
+                    });
+                }
                 entry.cancel.cancel();
             }
             retain
         });
     }
     pub fn stop_window(&self, window: &str) {
-        for entry in self.entries.lock().unwrap().values() {
+        let entries = self.entries.lock().unwrap();
+        self.observers
+            .lock()
+            .unwrap()
+            .retain(|_, s| s.window != window);
+        for entry in entries.values() {
             entry
                 .core
                 .lock()

@@ -20,7 +20,7 @@ import {
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { api } from "./api";
 import { useMonitor, useDockerInterest } from "./MonitorProvider";
-import { dockerStatusNames } from "./DockerSummaryCard";
+import { dockerStatusNames } from "./dockerPresentation";
 import { metricMessage } from "./resourcePresentation";
 import {
   containerStateNames,
@@ -41,14 +41,12 @@ export function DockerPanel({
   sessionId,
   serverName,
   active = true,
-  expanded = false,
   initialState,
   onStateChange,
 }: {
   sessionId: string | null;
   serverName: string;
   active?: boolean;
-  expanded?: boolean;
   initialState?: DockerPanelSnapshot;
   onStateChange?: (snapshot: DockerPanelSnapshot) => void;
 }) {
@@ -57,19 +55,14 @@ export function DockerPanel({
   const [view, setView] = useState(() => normalizeDockerSnapshot(initialState));
   const [actions, setActions] = useState<Record<string, ActionState>>({});
   const [sortRevision, setSortRevision] = useState(0);
-  const [wide, setWide] = useState(false);
   const root = useRef<HTMLElement>(null),
     list = useRef<VirtuosoHandle>(null),
     scroller = useRef<HTMLElement | null>(null);
   const savedScroll = useRef(view.scrollTop),
     savedSelection = useRef<Container | DockerImage | null>(null);
   const pendingFocus = useRef<string | null>(null);
-  const expandedScroll = useRef(initialState?.expandedScrollTop);
   const restoringScroll = useRef(false);
-  const currentScroll = () =>
-    expanded
-      ? (expandedScroll.current ?? savedScroll.current)
-      : savedScroll.current;
+  const currentScroll = () => savedScroll.current;
   const revealSelection = useRef<string | null>(null);
   const id = useId();
   const status = docker.engine.value;
@@ -111,7 +104,6 @@ export function DockerPanel({
       savedSelection.current = null;
       setView((v) => ({ ...v, selection: null, detailOpen: false }));
       savedScroll.current = { containers: 0, images: 0 };
-      expandedScroll.current = undefined;
       pendingFocus.current = null;
       revealSelection.current = null;
     }
@@ -120,14 +112,6 @@ export function DockerPanel({
   useEffect(() => {
     setActions({});
   }, [token]);
-  useEffect(() => {
-    if (!root.current) return;
-    const observer = new ResizeObserver(([entry]) => {
-      if (entry.contentRect.width > 0) setWide(entry.contentRect.width >= 900);
-    });
-    observer.observe(root.current);
-    return () => observer.disconnect();
-  }, []);
   useDockerInterest({
     summary: active,
     containers: active && view.page === "containers",
@@ -137,7 +121,6 @@ export function DockerPanel({
     onStateChange?.({
       ...view,
       scrollTop: savedScroll.current,
-      expandedScrollTop: expandedScroll.current,
     });
   }, [view, onStateChange]);
   const order = useRef<{
@@ -211,7 +194,21 @@ export function DockerPanel({
     docker.containers.status === "ready" &&
     !!current &&
     "state" in current;
-  const narrowDetails = expanded && !wide && !!selection && view.detailOpen;
+  const detailBack = useRef<HTMLButtonElement>(null);
+  const showDetails = !!selection && view.detailOpen;
+  useEffect(() => {
+    if (active && showDetails) detailBack.current?.focus();
+  }, [active, showDetails]);
+  function backToList() {
+    setView((v) => ({ ...v, detailOpen: false }));
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() =>
+        root.current
+          ?.querySelector<HTMLElement>('[aria-selected="true"]')
+          ?.focus({ preventScroll: true }),
+      ),
+    );
+  }
   const metric = view.page === "containers" ? docker.containers : docker.images;
   const hasFilter =
     !!query || (view.page === "containers" && view.filter !== "all");
@@ -243,6 +240,7 @@ export function DockerPanel({
     }
   }
   function choose(item: Container | DockerImage) {
+    rememberScroll();
     savedSelection.current = item;
     revealSelection.current = dockerKey(item);
     setView((v) => ({
@@ -269,9 +267,7 @@ export function DockerPanel({
   );
   useLayoutEffect(() => {
     restoringScroll.current = true;
-    if (!active || narrowDetails) return;
-    if (expanded && !expandedScroll.current)
-      expandedScroll.current = { ...savedScroll.current };
+    if (!active || showDetails) return;
     const top = currentScroll()[view.page];
     let frame = requestAnimationFrame(() => {
       list.current?.scrollTo({ top, behavior: "auto" });
@@ -280,9 +276,9 @@ export function DockerPanel({
       });
     });
     return () => cancelAnimationFrame(frame);
-  }, [active, view.page, expanded, narrowDetails]);
+  }, [active, view.page, showDetails]);
   useEffect(() => {
-    if (!active || narrowDetails || !scroller.current) return;
+    if (!active || showDetails || !scroller.current) return;
     let frame = 0;
     const reveal = () => {
       const index = filtered.findIndex(
@@ -312,8 +308,7 @@ export function DockerPanel({
         ...currentScroll(),
         [view.page]: scroller.current.scrollTop,
       };
-      if (expanded) expandedScroll.current = next;
-      else savedScroll.current = next;
+      savedScroll.current = next;
       revealSelection.current = null;
     };
     const observer = new ResizeObserver(() => {
@@ -325,32 +320,25 @@ export function DockerPanel({
       observer.disconnect();
       cancelAnimationFrame(frame);
     };
-  }, [active, narrowDetails, selection, filtered, expanded, id]);
+  }, [active, showDetails, selection, filtered, id]);
   function rememberScroll() {
-    if (
-      !active ||
-      narrowDetails ||
-      !scroller.current ||
-      restoringScroll.current
-    )
+    if (!active || showDetails || !scroller.current || restoringScroll.current)
       return;
     const next = {
       ...currentScroll(),
       [view.page]: scroller.current.scrollTop,
     };
-    if (expanded) expandedScroll.current = next;
-    else savedScroll.current = next;
+    savedScroll.current = next;
     onStateChange?.({
       ...view,
       scrollTop: savedScroll.current,
-      expandedScrollTop: expandedScroll.current,
     });
   }
   const summary = docker.summary.value;
   return (
     <section
       ref={root}
-      className={`docker-panel docker-inspector${expanded ? " is-expanded" : ""}${wide ? " is-wide" : ""}${narrowDetails ? " showing-detail" : ""}`}
+      className={`docker-panel docker-inspector${showDetails ? " showing-detail" : ""}`}
       aria-label="Docker 引擎与对象"
     >
       <header className="docker-heading">
@@ -378,11 +366,19 @@ export function DockerPanel({
         <div className="docker-endpoint" title={endpoint}>
           {endpoint || serverName || "等待引擎信息"}
         </div>
+        {summary && (
+          <div className="docker-summary-inline">
+            {summary.total} 个容器 · {summary.byState.running ?? 0} 运行 ·{" "}
+            {summary.byState.exited ?? 0} 停止
+            {(summary.byState.restarting ?? 0) > 0 &&
+              ` · ${summary.byState.restarting} 重启中`}
+          </div>
+        )}
         <div className="resource-help">
           {metricMessage(metric, state.connected)}
         </div>
       </header>
-      <div className="docker-controls" hidden={narrowDetails}>
+      <div className="docker-controls" hidden={showDetails}>
         <div
           className="docker-segments"
           role="group"
@@ -479,7 +475,7 @@ export function DockerPanel({
         </p>
       )}
       <div className="docker-content">
-        <div className="docker-list-pane" hidden={narrowDetails}>
+        <div className="docker-list-pane" hidden={showDetails}>
           <div
             className="docker-list"
             role="listbox"
@@ -627,12 +623,13 @@ export function DockerPanel({
         <section
           className={`docker-detail${selection ? " has-selection" : ""}`}
           aria-label="Docker 对象详情"
-          hidden={expanded && !wide && !narrowDetails}
+          hidden={!showDetails}
         >
-          {narrowDetails && (
+          {showDetails && (
             <button
+              ref={detailBack}
               className="resource-link docker-back"
-              onClick={() => setView((v) => ({ ...v, detailOpen: false }))}
+              onClick={backToList}
             >
               <ArrowLeft size={14} />
               返回列表

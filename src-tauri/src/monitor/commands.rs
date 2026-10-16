@@ -1,7 +1,7 @@
 use super::*;
 use tauri::{State as TauriState, WebviewWindow};
 
-fn validate(interest: &Interest) -> AppResult<()> {
+pub(super) fn validate(interest: &Interest) -> AppResult<()> {
     if interest.mount_paths.len() > 4096
         || interest
             .mount_paths
@@ -40,6 +40,29 @@ pub fn update_monitor_interest(
     interest: Interest,
 ) -> AppResult<()> {
     validate(&interest)?;
+    let entries = state.monitor.entries.lock().unwrap();
+    {
+        let mut observers = state.monitor.observers.lock().unwrap();
+        if let Some(sub) = observers.get_mut(&subscription_id) {
+            if sub.window != window.label() || !subscriber_valid(&state, sub) {
+                return Err(AppError::new("permission", "此窗口无权访问该监控订阅"));
+            }
+            sub.interest = interest.clone();
+            for entry in entries.values() {
+                if let Some(active) = entry
+                    .core
+                    .lock()
+                    .unwrap()
+                    .subscribers
+                    .get_mut(&subscription_id)
+                {
+                    active.interest = interest.clone();
+                }
+            }
+            return Ok(());
+        }
+    }
+    drop(entries);
     let entry = state
         .monitor
         .owned(&state, &subscription_id, window.label())?;
@@ -118,7 +141,14 @@ pub fn unsubscribe_monitor(
     subscription_id: String,
 ) -> AppResult<()> {
     // Unsubscribe remains idempotent after ownership moves or the session closes.
-    for entry in state.monitor.entries.lock().unwrap().values() {
+    let entries = state.monitor.entries.lock().unwrap();
+    state
+        .monitor
+        .observers
+        .lock()
+        .unwrap()
+        .retain(|id, sub| id != &subscription_id || sub.window != window.label());
+    for entry in entries.values() {
         let mut c = entry.core.lock().unwrap();
         if c.subscribers
             .get(&subscription_id)

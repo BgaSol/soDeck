@@ -7,11 +7,12 @@ export interface ResourcePreferences {
   tab: "monitor" | "docker";
   minutes: 5 | 15 | 60;
   networkInterface: string;
-  collapsed?: string[];
+  collapsed?: string[]; // Legacy snapshots only.
   selectedMetric?: ResourceMetric;
+  detailOpen?: boolean;
   pinnedMounts?: string[];
-  trafficScope?: "total" | "monitoring";
-  scrollTop?: { compact: number; expanded: number };
+  trafficScope?: "total" | "monitoring"; // Read once into connection preferences.
+  scrollTop?: { compact: number; expanded?: number };
   mounts?: {
     all: boolean;
     query: string;
@@ -24,21 +25,25 @@ export const defaultResourcePreferences: ResourcePreferences = {
   tab: "monitor",
   minutes: 5,
   networkInterface: "",
-  collapsed: ["traffic"],
   selectedMetric: "cpu",
   pinnedMounts: ["/"],
-  trafficScope: "total",
 };
 export function normalizeResourcePreferences(
   value?: Partial<ResourcePreferences>,
 ): ResourcePreferences {
+  const {
+    collapsed: _collapsed,
+    trafficScope: _traffic,
+    ...current
+  } = value ?? {};
   return {
     ...defaultResourcePreferences,
-    ...value,
+    ...current,
     tab: value?.tab === "docker" ? "docker" : "monitor",
     minutes: value?.minutes === 15 || value?.minutes === 60 ? value.minutes : 5,
     networkInterface:
       typeof value?.networkInterface === "string" ? value.networkInterface : "",
+    detailOpen: value?.detailOpen === true,
     selectedMetric:
       value?.selectedMetric === "memory" || value?.selectedMetric === "network"
         ? value.selectedMetric
@@ -50,10 +55,6 @@ export function normalizeResourcePreferences(
         ) ?? ["/"],
       ),
     ].slice(0, 3),
-    trafficScope: value?.trafficScope === "monitoring" ? "monitoring" : "total",
-    collapsed: value?.collapsed?.filter((k) => typeof k === "string") ?? [
-      "traffic",
-    ],
   };
 }
 export function sampleTime(at: number | null | undefined) {

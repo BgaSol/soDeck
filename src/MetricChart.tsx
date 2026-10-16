@@ -122,10 +122,14 @@ export function MetricChart<T extends ChartPoint>({
   return (
     <div className={`metric-chart${compact ? " metric-sparkline" : ""}`}>
       {!compact && (
-        <div className="metric-chart-scale">
+        <div className="metric-chart-scale" aria-label={`${label}纵轴刻度`}>
           <span>{format(max)}</span>
-          <span>{hasData ? "" : "尚无采样"}</span>
+          <span>{format(max / 2)}</span>
+          <span>{format(0)}</span>
         </div>
+      )}
+      {!compact && !hasData && (
+        <span className="metric-chart-empty">尚无采样</span>
       )}
       <svg
         viewBox="0 0 300 88"
@@ -214,17 +218,17 @@ export function MetricChart<T extends ChartPoint>({
               }
         }
       >
-        {!compact &&
-          [4, 42, 80].map((y) => (
-            <line
-              key={y}
-              x1="0"
-              x2="300"
-              y1={y}
-              y2={y}
-              className="metric-grid"
-            />
-          ))}
+        {[4, 42, 80].map((y) => (
+          <line
+            key={y}
+            x1="0"
+            x2="300"
+            y1={y}
+            y2={y}
+            className="metric-grid"
+            aria-hidden="true"
+          />
+        ))}
         {lines.map((line, i) => (
           <path
             key={line.label}

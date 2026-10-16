@@ -529,7 +529,7 @@ pub fn run() {
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 let state = window.state::<Arc<State>>();
                 state.deletes.discard_window_drafts(window.label());
-                state.monitor.stop_window(window.label());
+                state.monitor.close_monitor_window(window.label());
                 state.logs.stop(window.label(), true);
                 state.history.cancel_window(window.label());
                 moves::window_closed(window.app_handle(), &state, window.label());
@@ -587,6 +587,9 @@ pub fn run() {
             terminal_history::commands::open_terminal_history_window,
             remote_fs::list_directory,
             remote_fs::list_directory_chain,
+            monitor::open_monitor_window,
+            monitor::monitor_window_info,
+            monitor::subscribe_monitor_window,
             monitor::subscribe_monitor,
             monitor::update_monitor_interest,
             monitor::get_monitor_history,

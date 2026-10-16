@@ -34,16 +34,20 @@ describe("session presentation state", () => {
       tab: "docker",
       minutes: 15,
       pinnedMounts: ["/"],
-      collapsed: ["traffic"],
     });
     const customized = {
       ...preferences,
       pinnedMounts: ["/", "/data"],
-      trafficScope: "monitoring" as const,
     };
     expect(
       normalizeResourcePreferences(JSON.parse(JSON.stringify(customized))),
     ).toEqual(customized);
+    expect(
+      normalizeResourcePreferences({
+        collapsed: ["traffic"],
+        trafficScope: "monitoring",
+      }),
+    ).not.toHaveProperty("trafficScope");
     expect(normalizeResourcePreferences().minutes).toBe(5);
     expect(
       normalizeDockerSnapshot(

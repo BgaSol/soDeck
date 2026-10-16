@@ -1,26 +1,15 @@
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
-import {
-  Activity,
   ArrowDown,
   ArrowLeft,
   ArrowUp,
-  Boxes,
   Cpu,
-  Maximize2,
+  ExternalLink,
   MemoryStick,
   RefreshCw,
 } from "lucide-react";
 import { useMonitor } from "./MonitorProvider";
-import { ClientTrafficCard } from "./ClientTrafficCard";
-import { DockerSummaryCard } from "./DockerSummaryCard";
+import { ResourceMetricDetails } from "./ResourceMetricDetails";
 import { MountOverview } from "./MountOverview";
 import {
   MetricChart,
@@ -36,6 +25,7 @@ import {
   selectInterface,
   type HistoryPoint,
 } from "./resourceMonitoring";
+import { errorOf } from "./types";
 import { formatMountBytes } from "./remoteMounts";
 import {
   hasOldValue,
@@ -117,101 +107,24 @@ export function ResourceStatusBar({
     </div>
   );
 }
-export function ServicePanel({
-  preferences,
-  onChange,
-  monitor,
-  docker,
-  expanded = false,
-  onToggleExpanded,
-}: {
-  preferences: ResourcePreferences;
-  onChange: (next: ResourcePreferences) => void;
-  monitor: ReactNode;
-  docker: ReactNode;
-  expanded?: boolean;
-  onToggleExpanded?: (trigger: HTMLButtonElement) => void;
-}) {
-  const id = useId();
-  const tabs = ["monitor", "docker"] as const;
-  return (
-    <aside
-      className={`resource-service-panel${expanded ? " is-expanded" : ""}`}
-      aria-label="服务器监控与服务"
-    >
-      <div className="inspector-navigation">
-        <div className="resource-tabs" role="tablist" aria-label="服务器侧栏">
-          {tabs.map((tab, index) => (
-            <button
-              key={tab}
-              type="button"
-              role="tab"
-              id={`${id}-${tab}`}
-              aria-controls={`${id}-${tab}-panel`}
-              aria-selected={preferences.tab === tab}
-              tabIndex={preferences.tab === tab ? 0 : -1}
-              onClick={() => onChange({ ...preferences, tab })}
-              onKeyDown={(e) => {
-                if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key))
-                  return;
-                e.preventDefault();
-                const target =
-                  e.key === "Home" ? 0 : e.key === "End" ? 1 : 1 - index;
-                onChange({ ...preferences, tab: tabs[target] });
-                document.getElementById(`${id}-${tabs[target]}`)?.focus();
-              }}
-            >
-              {tab === "monitor" ? <Activity size={14} /> : <Boxes size={14} />}{" "}
-              {tab === "monitor" ? "总览" : "Docker"}
-            </button>
-          ))}
-        </div>
-        {onToggleExpanded && (
-          <button
-            className="inspector-expand quiet"
-            onClick={(e) => onToggleExpanded(e.currentTarget)}
-            aria-label={expanded ? "返回终端" : "展开检查器"}
-          >
-            {expanded ? <ArrowLeft size={14} /> : <Maximize2 size={14} />}
-            <span>{expanded ? "返回终端" : "展开"}</span>
-          </button>
-        )}
-      </div>
-      <div
-        role="tabpanel"
-        id={`${id}-monitor-panel`}
-        aria-labelledby={`${id}-monitor`}
-        hidden={preferences.tab !== "monitor"}
-      >
-        {monitor}
-      </div>
-      <div
-        role="tabpanel"
-        id={`${id}-docker-panel`}
-        aria-labelledby={`${id}-docker`}
-        hidden={preferences.tab !== "docker"}
-      >
-        {docker}
-      </div>
-    </aside>
-  );
-}
 export function ResourcePanel({
   serverName,
   active,
   preferences,
   onChange,
-  expanded = false,
+  standalone = false,
   onOpenMetric,
   onRevealMount,
+  onOpenWindow,
 }: {
   serverName: string;
   active: boolean;
   preferences: ResourcePreferences;
   onChange: (next: ResourcePreferences) => void;
-  expanded?: boolean;
+  standalone?: boolean;
   onOpenMetric: (metric: ResourceMetric, trigger: HTMLButtonElement) => void;
-  onRevealMount: (path: string) => void;
+  onRevealMount?: (path: string) => void;
+  onOpenWindow?: () => Promise<void>;
 }) {
   const { store, state } = useMonitor();
   const now = useClock(active);
@@ -227,12 +140,19 @@ export function ResourcePanel({
   const lastInterface = useRef(netName);
   const { minutes } = preferences;
   const selectedMetric = preferences.selectedMetric ?? "cpu";
+  const detail = standalone || !!preferences.detailOpen;
+  const [windowError, setWindowError] = useState("");
+  const [opening, setOpening] = useState(false);
+  const back = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (active && detail && !standalone) back.current?.focus();
+  }, [active, detail, standalone, selectedMetric]);
   useEffect(() => {
     if (active) void store.loadHistory(minutes);
   }, [store, active, minutes]);
   useEffect(() => {
     setCursor(liveChartCursor);
-  }, [minutes, netName, store, active, expanded]);
+  }, [minutes, netName, store, active, standalone, state.connected]);
   useEffect(() => {
     if (
       lastInterface.current &&
@@ -246,9 +166,10 @@ export function ResourcePanel({
   }, [netName, preferences.networkInterface]);
   useLayoutEffect(() => {
     if (active && scroll.current)
-      scroll.current.scrollTop =
-        preferences.scrollTop?.[expanded ? "expanded" : "compact"] ?? 0;
-  }, [active, expanded]);
+      scroll.current.scrollTop = detail
+        ? 0
+        : (preferences.scrollTop?.compact ?? 0);
+  }, [active, detail, selectedMetric]);
   const lines = useMemo<Record<ResourceMetric, ChartLine<HistoryPoint>[]>>(
     () => ({
       cpu: [
@@ -281,25 +202,51 @@ export function ResourcePanel({
     [netName],
   );
   const choose = (metric: ResourceMetric, trigger: HTMLButtonElement) =>
-    expanded
+    standalone
       ? onChange({ ...preferences, selectedMetric: metric })
       : onOpenMetric(metric, trigger);
   const reading = chartSampleAt(state.points, cursor.at);
   const memoryValue = memory.value;
   return (
     <section
-      className={`resource-panel${expanded ? " resource-expanded" : ""}`}
+      className={`resource-panel${standalone ? " resource-window-panel" : detail ? " resource-detail-panel" : ""}`}
       aria-label="服务器资源监控"
     >
+      {!standalone && detail && (
+        <button
+          ref={back}
+          className="resource-link monitor-back"
+          onClick={() => {
+            onChange({ ...preferences, detailOpen: false });
+            requestAnimationFrame(() =>
+              scroll.current
+                ?.querySelector<HTMLButtonElement>(
+                  `[data-resource="${selectedMetric}"] button`,
+                )
+                ?.focus(),
+            );
+          }}
+        >
+          <ArrowLeft size={14} />
+          返回监控
+        </button>
+      )}
       <header className="resource-panel-head">
         <div>
           <strong>
-            {expanded ? `${serverName} · 服务器总览` : serverName}
+            {detail && !standalone
+              ? { cpu: "CPU", memory: "内存", network: "服务器网络" }[
+                  selectedMetric
+                ]
+              : serverName}
           </strong>
           <span>
             {!state.connected
               ? "已断开 · 保留最后采样"
-              : metricMessage(cpu, true)}
+              : metricMessage(
+                  detail ? state.metrics[selectedMetric] : cpu,
+                  true,
+                )}
           </span>
         </div>
         <button
@@ -311,6 +258,31 @@ export function ResourcePanel({
           <RefreshCw size={14} />
         </button>
       </header>
+      {onOpenWindow && (
+        <button
+          className="resource-link monitor-open-window"
+          disabled={opening || !state.connected}
+          onClick={async () => {
+            setOpening(true);
+            setWindowError("");
+            try {
+              await onOpenWindow();
+            } catch (error) {
+              setWindowError(errorOf(error).message);
+            } finally {
+              setOpening(false);
+            }
+          }}
+        >
+          <ExternalLink size={13} />
+          {opening ? "正在打开…" : "在独立窗口打开"}
+        </button>
+      )}
+      {windowError && (
+        <p className="resource-error" role="alert">
+          {windowError}
+        </p>
+      )}
       <div className="resource-range" role="group" aria-label="监控时间范围">
         {([5, 15, 60] as const).map((value) => (
           <button
@@ -333,12 +305,11 @@ export function ResourcePanel({
         className="resource-scroll"
         ref={scroll}
         onScroll={(e) =>
+          !detail &&
           onChange({
             ...preferences,
             scrollTop: {
-              compact: preferences.scrollTop?.compact ?? 0,
-              expanded: preferences.scrollTop?.expanded ?? 0,
-              [expanded ? "expanded" : "compact"]: e.currentTarget.scrollTop,
+              compact: e.currentTarget.scrollTop,
             },
           })
         }
@@ -349,70 +320,81 @@ export function ResourcePanel({
           </p>
         )}
         <div className="resource-metrics">
-          {(["cpu", "memory", "network"] as const).map((key) => {
-            const metric = state.metrics[key];
-            const label =
-              key === "cpu" ? "CPU" : key === "memory" ? "内存" : "服务器网络";
-            const note =
-              key === "cpu"
-                ? `整机 · ${Object.keys(cpu.value?.cores ?? {}).length || "—"} 核`
-                : key === "memory"
-                  ? `${formatMountBytes(memoryValue?.usedBytes)} / ${formatMountBytes(memoryValue?.totalBytes)}`
-                  : preferences.networkInterface
-                    ? `${netName}${net ? "" : " · 暂不可用"}`
-                    : `自动 · ${netName || "等待网卡"}`;
-            return (
-              <section
-                className={`resource-metric${selectedMetric === key ? " is-selected" : ""}`}
-                key={key}
-                data-resource={key}
-                aria-label={`${label}资源`}
-              >
-                <div className="resource-metric-main">
-                  <button
-                    className="resource-metric-title"
-                    onClick={(e) => choose(key, e.currentTarget)}
-                    aria-label={`查看${label}详情`}
-                    aria-pressed={expanded ? selectedMetric === key : undefined}
-                  >
-                    <strong>{label}</strong>
-                    <span>{note}</span>
-                  </button>
-                  <div className="resource-value">
-                    {key === "cpu" ? (
-                      percent(cpu.value?.percent)
-                    ) : key === "memory" ? (
-                      percent(memoryValue?.usedPercent)
-                    ) : (
-                      <span className="network-rates">
-                        <span>↓ {rate(net?.rxPerSecond)}</span>
-                        <span>↑ {rate(net?.txPerSecond)}</span>
-                      </span>
-                    )}
+          {(["cpu", "memory", "network"] as const)
+            .filter((key) => !detail || standalone || key === selectedMetric)
+            .map((key) => {
+              const metric = state.metrics[key];
+              const label =
+                key === "cpu"
+                  ? "CPU"
+                  : key === "memory"
+                    ? "内存"
+                    : "服务器网络";
+              const note =
+                key === "cpu"
+                  ? `整机 · ${Object.keys(cpu.value?.cores ?? {}).length || "—"} 核`
+                  : key === "memory"
+                    ? `${formatMountBytes(memoryValue?.usedBytes)} / ${formatMountBytes(memoryValue?.totalBytes)}`
+                    : preferences.networkInterface
+                      ? `${netName}${net ? "" : " · 暂不可用"}`
+                      : `自动 · ${netName || "等待网卡"}`;
+              return (
+                <section
+                  className={`resource-metric${selectedMetric === key ? " is-selected" : ""}`}
+                  key={key}
+                  data-resource={key}
+                  aria-label={`${label}资源`}
+                >
+                  <div className="resource-metric-main">
+                    <button
+                      className="resource-metric-title"
+                      onClick={(e) => choose(key, e.currentTarget)}
+                      aria-label={`查看${label}详情`}
+                      aria-pressed={
+                        standalone ? selectedMetric === key : undefined
+                      }
+                    >
+                      <strong>{label}</strong>
+                      <span>{note}</span>
+                    </button>
+                    <div className="resource-value">
+                      {key === "cpu" ? (
+                        percent(cpu.value?.percent)
+                      ) : key === "memory" ? (
+                        percent(memoryValue?.usedPercent)
+                      ) : (
+                        <span className="network-rates">
+                          <span>↓ {rate(net?.rxPerSecond)}</span>
+                          <span>↑ {rate(net?.txPerSecond)}</span>
+                        </span>
+                      )}
+                    </div>
+                    <MetricChart
+                      label={label}
+                      points={state.points}
+                      lines={lines[key]}
+                      minutes={minutes}
+                      now={now}
+                      maximum={key === "network" ? undefined : 100}
+                      format={key === "network" ? rate : percent}
+                      compact={!detail}
+                      cursor={cursor}
+                      onCursorChange={setCursor}
+                    />
                   </div>
-                  <MetricChart
-                    label={label}
-                    points={state.points}
-                    lines={lines[key]}
-                    minutes={minutes}
-                    now={now}
-                    maximum={key === "network" ? undefined : 100}
-                    format={key === "network" ? rate : percent}
-                    compact={!expanded}
-                    cursor={cursor}
-                    onCursorChange={setCursor}
-                  />
-                </div>
-                {(expanded ||
-                  metric.status !== "ready" ||
-                  !state.connected) && (
-                  <ResourceStatus metric={metric} connected={state.connected} />
-                )}
-              </section>
-            );
-          })}
+                  {(detail ||
+                    metric.status !== "ready" ||
+                    !state.connected) && (
+                    <ResourceStatus
+                      metric={metric}
+                      connected={state.connected}
+                    />
+                  )}
+                </section>
+              );
+            })}
         </div>
-        {expanded && (
+        {detail && (
           <div className="resource-reading">
             <span>
               {cursor.at === null
@@ -431,7 +413,7 @@ export function ResourcePanel({
             )}
           </div>
         )}
-        {state.historyLoading && expanded && (
+        {state.historyLoading && detail && (
           <p className="resource-notice">正在读取已有历史…</p>
         )}
         {state.historyError && (
@@ -441,159 +423,24 @@ export function ResourcePanel({
           <p className="resource-notice">历史已按内存上限裁剪。</p>
         )}
         <div className="resource-lower">
-          {expanded && (
-            <section className="resource-detail" aria-label="指标详情">
-              {selectedMetric === "cpu" && (
-                <>
-                  <h3>最新核心采样</h3>
-                  <div className="cpu-core-grid">
-                    {Object.entries(cpu.value?.cores ?? {}).map(
-                      ([name, value]) => (
-                        <div key={name}>
-                          <span>
-                            <span>{name}</span>
-                            <strong>{percent(value)}</strong>
-                          </span>
-                          {value != null && (
-                            <span className="resource-meter">
-                              <span
-                                style={{
-                                  width: `${Math.max(0, Math.min(100, value))}%`,
-                                }}
-                              />
-                            </span>
-                          )}
-                        </div>
-                      ),
-                    )}
-                  </div>
-                  <dl className="resource-facts">
-                    <dt>Load · 1 / 5 / 15 分钟</dt>
-                    <dd>
-                      {cpu.value?.load?.map((n) => n.toFixed(2)).join(" / ") ??
-                        "—"}
-                    </dd>
-                  </dl>
-                  <p className="resource-help">
-                    核心仅展示最新采样，趋势为整机占用；Load 不是百分比。
-                  </p>
-                </>
-              )}
-              {selectedMetric === "memory" && (
-                <>
-                  <h3>内存详情 · 最新采样</h3>
-                  <dl className="resource-facts">
-                    <dt>已使用</dt>
-                    <dd>{formatMountBytes(memoryValue?.usedBytes)}</dd>
-                    <dt>可用内存</dt>
-                    <dd>{formatMountBytes(memoryValue?.availableBytes)}</dd>
-                    <dt>缓存</dt>
-                    <dd>{formatMountBytes(memoryValue?.cachedBytes)}</dd>
-                    <dt>Swap</dt>
-                    <dd>
-                      {memoryValue?.swapTotalBytes === "0"
-                        ? "未配置"
-                        : `${formatMountBytes(memoryValue?.swapUsedBytes)} / ${formatMountBytes(memoryValue?.swapTotalBytes)}`}
-                    </dd>
-                  </dl>
-                  <p className="resource-help">
-                    占用根据 MemAvailable 计算，缓存不与其他项直接相加。
-                  </p>
-                </>
-              )}
-              {selectedMetric === "network" && (
-                <>
-                  <h3>服务器网络 · 最新采样</h3>
-                  <label className="resource-network-picker">
-                    监控网卡
-                    <select
-                      aria-label="监控网卡"
-                      value={preferences.networkInterface}
-                      onChange={(e) =>
-                        onChange({
-                          ...preferences,
-                          networkInterface: e.target.value,
-                        })
-                      }
-                    >
-                      <option value="">
-                        自动 ·{" "}
-                        {selectInterface(network.value ?? [], "")?.name ??
-                          "等待网卡"}
-                      </option>
-                      {preferences.networkInterface &&
-                        !network.value?.some(
-                          (n) => n.name === preferences.networkInterface,
-                        ) && (
-                          <option value={preferences.networkInterface}>
-                            {preferences.networkInterface} · 暂不可用
-                          </option>
-                        )}
-                      {(network.value ?? []).map((n) => (
-                        <option key={n.name} value={n.name}>
-                          {n.name}
-                          {n.isDefault ? " · 默认路由" : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {!net && preferences.networkInterface && (
-                    <p className="resource-notice">
-                      {preferences.networkInterface} 暂不可用；保留原有选择。
-                    </p>
-                  )}
-                  {interfaceNotice && (
-                    <p className="resource-notice" role="status">
-                      {interfaceNotice}
-                    </p>
-                  )}
-                  <p className="resource-help">
-                    <span className="chart-legend-primary">
-                      实线：服务器接收
-                    </span>{" "}
-                    ·{" "}
-                    <span className="chart-legend-secondary">
-                      虚线：服务器发送
-                    </span>
-                  </p>
-                  <dl className="resource-facts">
-                    <dt>累计接收 / 发送</dt>
-                    <dd>
-                      {formatMountBytes(net?.rxBytes)} /{" "}
-                      {formatMountBytes(net?.txBytes)}
-                    </dd>
-                    <dt>接收错误 / 丢弃</dt>
-                    <dd>
-                      {net?.rxErrors ?? "—"} / {net?.rxDropped ?? "—"}
-                    </dd>
-                    <dt>发送错误 / 丢弃</dt>
-                    <dd>
-                      {net?.txErrors ?? "—"} / {net?.txDropped ?? "—"}
-                    </dd>
-                  </dl>
-                </>
-              )}
-            </section>
-          )}
-          <div className="resource-storage">
-            <DockerSummaryCard
-              active={active}
-              onOpen={() => onChange({ ...preferences, tab: "docker" })}
-            />
-            <MountOverview
-              active={active}
+          {detail && (
+            <ResourceMetricDetails
               preferences={preferences}
               onChange={onChange}
-              onReveal={onRevealMount}
+              interfaceNotice={interfaceNotice}
             />
-          </div>
+          )}
+          {!detail && onRevealMount && (
+            <div className="resource-storage">
+              <MountOverview
+                active={active}
+                preferences={preferences}
+                onChange={onChange}
+                onReveal={onRevealMount}
+              />
+            </div>
+          )}
         </div>
-        <ClientTrafficCard
-          minutes={minutes}
-          now={now}
-          preferences={preferences}
-          onChange={onChange}
-        />
       </div>
     </section>
   );

@@ -28,6 +28,7 @@
   --green-bg: #e8f3eb;
   --chart-primary: #2266b5;
   --chart-secondary: #906325;
+  --chart-grid: rgba(31, 31, 41, 0.2);
   --warning: #855b17;
   --warning-bg: #faf1dd;
   --selection-border: #bdd0ed;
@@ -81,6 +82,7 @@
     --green-bg: #293e34;
     --chart-primary: #86baff;
     --chart-secondary: #e5bc77;
+    --chart-grid: rgba(255, 255, 255, 0.22);
     --warning: #efc47a;
     --warning-bg: #3a3326;
     --selection-border: #4c668a;
@@ -95,6 +97,7 @@
     --material: var(--surface);
     --sheet: var(--surface);
     --selection-border: var(--strong-line);
+    --chart-grid: var(--strong-line);
   }
 }
 @media (prefers-contrast: more) and (prefers-color-scheme: dark) {

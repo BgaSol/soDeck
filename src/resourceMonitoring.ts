@@ -77,6 +77,7 @@ export interface MountUpdate {
   error: string;
 }
 export type MonitorEvent =
+  | { type: "connection"; generation: string; connected: boolean }
   | {
       type: "snapshot";
       generation: string;
@@ -146,6 +147,8 @@ export interface MonitorState {
   traffic: ClientTrafficSample | null;
   trafficPoints: TrafficPoint[];
   trafficHistoryTruncated: boolean;
+  trafficHistoryLoading: boolean;
+  trafficHistoryError: string;
   metrics: Metrics;
   mounts: MountState;
   points: HistoryPoint[];
@@ -234,6 +237,10 @@ export class MonitorStore {
   private visible = false;
   private running = false;
   private minutes = 5;
+  private historyRequest = 0;
+  private trafficMinutes = 5;
+  private trafficHistoryRequest = 0;
+  private connectionManaged = false;
   private interestVersion = 0;
   private updatingEpoch: number | null = null;
   constructor(
@@ -245,6 +252,8 @@ export class MonitorStore {
       traffic: null,
       trafficPoints: [],
       trafficHistoryTruncated: false,
+      trafficHistoryLoading: false,
+      trafficHistoryError: "",
       metrics: emptyMetrics(),
       mounts: { sessionId, usage: {}, fetchedAt: 0, loading: false, error: "" },
       points: [],
@@ -375,7 +384,8 @@ export class MonitorStore {
       }
       this.subscription = id;
       await this.sendInterest();
-      if (epoch === this.epoch) void this.loadHistory(this.minutes);
+      if (epoch === this.epoch && this.state.connected)
+        void this.loadHistory(this.minutes);
     } catch (e) {
       if (epoch === this.epoch) {
         this.running = false;
@@ -392,6 +402,7 @@ export class MonitorStore {
     this.update({
       connected: false,
       historyLoading: false,
+      trafficHistoryLoading: false,
       mounts: {
         ...this.state.mounts,
         loading: false,
@@ -405,6 +416,41 @@ export class MonitorStore {
     });
   }
   receive(event: MonitorEvent) {
+    if (event.type === "connection") {
+      this.connectionManaged = true;
+      if (
+        !event.connected &&
+        this.generation &&
+        event.generation !== this.generation
+      )
+        return;
+      this.historyRequest++;
+      this.trafficHistoryRequest++;
+      if (event.connected) {
+        this.generation = event.generation;
+        this.metricsRevision =
+          this.mountsRevision =
+          this.dockerRevision =
+          this.trafficRevision =
+            -1;
+        this.update({
+          connected: true,
+          points: [],
+          error: "",
+          historyError: "",
+          trafficHistoryError: "",
+        });
+        void this.loadHistory(this.minutes);
+      } else {
+        this.update({
+          connected: false,
+          historyLoading: false,
+          trafficHistoryLoading: false,
+        });
+      }
+      return;
+    }
+    if (this.connectionManaged && !this.state.connected) return;
     if (!this.generation) this.generation = event.generation;
     if (event.generation !== this.generation) return;
     const patch: Partial<MonitorState> = {};
@@ -483,15 +529,22 @@ export class MonitorStore {
   }
   async loadHistory(minutes: number) {
     this.minutes = minutes;
-    if (!this.subscription) return;
+    if (!this.subscription || !this.state.connected) return;
     const epoch = this.epoch;
+    const request = ++this.historyRequest;
     this.update({ historyLoading: true, historyError: "" });
     try {
       const result = await this.api.history(this.subscription, minutes);
-      if (epoch === this.epoch && !this.generation)
+      if (
+        epoch === this.epoch &&
+        request === this.historyRequest &&
+        !this.generation
+      )
         this.generation = result.generation;
       if (
         epoch !== this.epoch ||
+        request !== this.historyRequest ||
+        !this.state.connected ||
         minutes !== this.minutes ||
         result.generation !== this.generation
       )
@@ -515,11 +568,67 @@ export class MonitorStore {
         }
       }
     } catch (e) {
-      if (epoch === this.epoch && minutes === this.minutes)
+      if (
+        epoch === this.epoch &&
+        request === this.historyRequest &&
+        minutes === this.minutes &&
+        this.state.connected
+      )
         this.update({ historyError: errorOf(e).message });
     } finally {
-      if (epoch === this.epoch && minutes === this.minutes)
+      if (
+        epoch === this.epoch &&
+        request === this.historyRequest &&
+        minutes === this.minutes
+      )
         this.update({ historyLoading: false });
+    }
+  }
+  async loadTrafficHistory(minutes: number) {
+    this.trafficMinutes = minutes;
+    if (!this.subscription || !this.state.connected) return;
+    const epoch = this.epoch;
+    const generation = this.generation;
+    const request = ++this.trafficHistoryRequest;
+    this.update({ trafficHistoryLoading: true, trafficHistoryError: "" });
+    try {
+      const result = await this.api.history(this.subscription, minutes);
+      if (
+        epoch !== this.epoch ||
+        generation !== this.generation ||
+        request !== this.trafficHistoryRequest ||
+        !this.state.connected ||
+        result.generation !== this.generation ||
+        !result.traffic
+      )
+        return;
+      if (!this.trafficEpoch) this.trafficEpoch = result.traffic.epoch;
+      if (result.traffic.epoch !== this.trafficEpoch) return;
+      const current =
+        this.trafficPointsEpoch === result.traffic.epoch
+          ? this.state.trafficPoints
+          : [];
+      this.trafficPointsEpoch = result.traffic.epoch;
+      this.update({
+        trafficPoints: mergeTrafficHistory(current, result.traffic.points),
+        trafficHistoryTruncated: result.traffic.truncated,
+      });
+    } catch (error) {
+      if (
+        epoch === this.epoch &&
+        generation === this.generation &&
+        request === this.trafficHistoryRequest &&
+        this.state.connected
+      )
+        this.update({ trafficHistoryError: errorOf(error).message });
+    } finally {
+      if (
+        epoch === this.epoch &&
+        generation === this.generation &&
+        request === this.trafficHistoryRequest &&
+        minutes === this.trafficMinutes
+      )
+        this.update({ trafficHistoryLoading: false });
     }
   }
   refresh = async (scope: "all" | "metrics" | "mounts" | "docker" = "all") => {

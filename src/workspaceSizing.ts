@@ -4,11 +4,10 @@ export interface WorkspaceLayoutSize {
 }
 export type WorkspacePane = "files" | "terminal" | "services";
 export interface WorkspaceViewState {
-  expanded: boolean;
+  expanded?: boolean; // Legacy snapshots only.
   pane: WorkspacePane;
 }
 export const defaultWorkspaceView: WorkspaceViewState = {
-  expanded: false,
   pane: "terminal",
 };
 export const defaultWorkspaceSize: WorkspaceLayoutSize = {
@@ -19,7 +18,6 @@ export function normalizeWorkspaceView(
   value?: Partial<WorkspaceViewState>,
 ): WorkspaceViewState {
   return {
-    expanded: value?.expanded === true,
     pane:
       value?.pane === "files" || value?.pane === "services"
         ? value.pane
@@ -69,7 +67,6 @@ export function workspaceVisibility(
   mode: ReturnType<typeof fitWorkspaceLayout>["mode"],
   view: WorkspaceViewState,
 ) {
-  if (view.expanded) return { files: false, terminal: false, services: true };
   if (mode === "three") return { files: true, terminal: true, services: true };
   if (mode === "two")
     return {

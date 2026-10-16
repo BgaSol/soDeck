@@ -17,7 +17,7 @@ export interface DockerPanelSnapshot {
   sort?: DockerSort;
   selection?: DockerSelection | null;
   scrollTop?: { containers: number; images: number };
-  expandedScrollTop?: { containers: number; images: number };
+  expandedScrollTop?: { containers: number; images: number }; // Legacy snapshots only.
   detailOpen?: boolean;
   // Only read these fields from older window snapshots, never write live data.
   rootOpen?: boolean;
@@ -108,4 +108,14 @@ export const containerStateNames: Record<string, string> = {
   created: "已创建",
   dead: "已结束",
   removing: "删除中",
+};
+
+export const dockerStatusNames: Record<string, string> = {
+  running: "可访问",
+  missing: "未找到 Docker 命令",
+  permission: "权限不足",
+  unreachable: "服务不可达",
+  error: "检测失败",
+  disconnected: "未连接",
+  detecting: "检测中",
 };

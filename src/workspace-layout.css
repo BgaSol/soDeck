@@ -36,8 +36,7 @@
 .responsive-workspace[data-layout="two"][data-pane="files"] .workspace-columns {
   grid-template-columns: var(--file-width) 10px minmax(0, 1fr);
 }
-.responsive-workspace[data-layout="single"] .workspace-columns,
-.responsive-workspace[data-layout="focus"] .workspace-columns {
+.responsive-workspace[data-layout="single"] .workspace-columns {
   grid-template-columns: minmax(0, 1fr);
 }
 .workspace-pane-switcher {
@@ -68,9 +67,6 @@
 .workspace-services .resource-service-panel {
   border-left: 1px solid var(--line);
 }
-.responsive-workspace[data-layout="focus"] .resource-service-panel {
-  border-left: 0;
-}
 .workspace-status.session-statusbar {
   position: relative;
   min-height: 32px;
@@ -85,39 +81,6 @@
   background: transparent;
   gap: 2px;
   flex: 1;
-}
-.session-statusbar .session-information {
-  flex-shrink: 0;
-}
-.session-information summary {
-  list-style: none;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  cursor: pointer;
-  padding: 3px;
-  min-height: 24px;
-}
-.session-information[open] > .session-information-content {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 8px;
-  z-index: 5;
-  max-width: calc(100% - 16px);
-  width: 320px;
-  padding: 12px;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--strong-line);
-  border-radius: 10px;
-  box-shadow: var(--shadow-popover);
-  overflow-wrap: anywhere;
-}
-.session-information-content p {
-  margin: 4px 0;
-}
-.session-information:not([open]) > .session-information-content {
-  display: none;
 }
 @container terminal-card (max-width:480px) {
   .session-statusbar .resource-network-summary {

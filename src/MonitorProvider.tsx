@@ -16,7 +16,7 @@ import {
 } from "./resourceMonitoring";
 import type { DockerInterest } from "./serverMonitoring";
 
-const api: MonitorApi = {
+export const monitorApi: MonitorApi = {
   subscribe: (sessionId, interest, receive) =>
     invoke("subscribe_monitor", {
       sessionId,
@@ -45,7 +45,7 @@ export function MonitorProvider({
 }) {
   const saved = useRef<MonitorStore | null>(null);
   if (!saved.current || (sessionId && saved.current.sessionId !== sessionId))
-    saved.current = new MonitorStore(sessionId ?? "", api);
+    saved.current = new MonitorStore(sessionId ?? "", monitorApi);
   const store = saved.current;
   useEffect(() => {
     const visible = () => store.setVisible(active && !document.hidden);

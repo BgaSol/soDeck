@@ -151,6 +151,10 @@ pub struct HistoryPoint {
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum MonitorEvent {
+    Connection {
+        generation: String,
+        connected: bool,
+    },
     Snapshot {
         generation: String,
         #[serde(rename = "metricsRevision")]
