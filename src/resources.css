@@ -18,6 +18,48 @@
 .docker-inspector [hidden] {
   display: none;
 }
+.server-idle {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  padding: 2rem 1.5rem;
+  overflow: auto;
+}
+.server-idle-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  margin: auto;
+  text-align: center;
+}
+.server-idle-symbol {
+  width: 2.5rem;
+  height: 2.5rem;
+  margin-bottom: 1.143rem;
+  color: var(--muted);
+  stroke-width: 1.35;
+}
+.server-idle h2 {
+  font-size: var(--font-heading);
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+.server-idle p {
+  max-width: 18em;
+  margin-top: 0.5rem;
+  color: var(--muted);
+  font-size: var(--font-secondary);
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+.server-idle-action {
+  margin-top: 1.143rem;
+  padding-inline: 1rem;
+  color: var(--accent-text);
+  font-size: var(--font-secondary);
+}
 .inspector-navigation {
   display: flex;
   align-items: center;
@@ -1091,7 +1133,8 @@
 }
 .session-information-trigger {
   gap: 0.35rem;
-  padding: 0.25rem;
+  padding: 0.286rem 0.429rem;
+  min-height: 1.714rem;
   font-size: var(--font-caption);
   flex-shrink: 0;
 }
@@ -1120,6 +1163,7 @@
   gap: 0.5rem;
 }
 .connection-detail-content {
+  min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
   padding: 0 1rem 1rem;
@@ -1139,14 +1183,6 @@
   margin: 0;
   border: 0;
   background: transparent;
-}
-.connection-traffic-summary {
-  margin-top: 1rem;
-  padding-top: 0.5rem;
-  border-top: 1px solid var(--line);
-}
-.connection-route {
-  color: var(--muted);
 }
 .monitor-back:active,
 .monitor-open-window:active,

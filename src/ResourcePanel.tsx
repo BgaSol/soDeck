@@ -70,6 +70,7 @@ export function ResourceStatusBar({
       aria-label="服务器资源摘要"
       hidden={!active}
     >
+      <span className="resource-summary-label">服务器</span>
       <button
         onClick={(e) => onOpen("cpu", e.currentTarget)}
         className={hasOldValue(cpu, state.connected) ? "is-stale" : ""}

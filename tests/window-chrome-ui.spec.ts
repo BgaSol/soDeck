@@ -68,7 +68,11 @@ async function setup(
         if (command === "list_servers" || command === "list_transfers")
           return [];
         if (command === "list_file_tasks")
-          return { tasks: [], summary: { total: 0, active: 0, attention: 0, completed: 0 }, nextCursor: null };
+          return {
+            tasks: [],
+            summary: { total: 0, active: 0, attention: 0, completed: 0 },
+            nextCursor: null,
+          };
         if (command === "session_count") return 1;
         if (
           command === "log_session_count" ||
@@ -212,4 +216,88 @@ test("browser preview has no desktop controls or draggable regions", async ({
   );
   await expect(page.getByRole("group", { name: "窗口控制" })).toHaveCount(0);
   await expect(page.locator("[data-tauri-drag-region]")).toHaveCount(0);
+});
+
+test("manual themes override system appearance and survive reload", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await setup(page);
+  const root = page.locator("html");
+  const day = page.getByRole("button", { name: "白天主题", exact: true });
+  const night = page.getByRole("button", { name: "黑夜主题", exact: true });
+  await expect(day).toHaveAttribute("aria-pressed", "true");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(night).toHaveAttribute("aria-pressed", "true");
+  await expect(root).toHaveCSS("background-color", "rgb(32, 33, 35)");
+
+  await day.focus();
+  await page.keyboard.press("Space");
+  await expect(day).toHaveAttribute("aria-pressed", "true");
+  await expect(night).toHaveAttribute("aria-pressed", "false");
+  await expect(root).toHaveCSS("color-scheme", "light");
+  await expect(root).toHaveCSS("background-color", "rgb(247, 247, 248)");
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(day).toHaveAttribute("aria-pressed", "true");
+  await page.reload();
+  await expect(day).toHaveAttribute("aria-pressed", "true");
+  await expect(root).toHaveCSS("background-color", "rgb(247, 247, 248)");
+
+  await night.click();
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.reload();
+  await expect(night).toHaveAttribute("aria-pressed", "true");
+  await expect(root).toHaveCSS("color-scheme", "dark");
+  await expect(root).toHaveCSS("background-color", "rgb(32, 33, 35)");
+  await page.emulateMedia({ contrast: "more" });
+  await expect(root).toHaveCSS("--muted", "#c6c6ce");
+});
+
+test("theme changes synchronize existing and newly opened windows without resetting edits", async ({
+  page,
+  context,
+}) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await setup(page);
+  const editor = await context.newPage();
+  const later = await context.newPage();
+  try {
+    await editor.emulateMedia({ colorScheme: "light" });
+    await setup(editor, { editor: true });
+    await editor.locator(".cm-content").fill("unsaved theme check\n");
+    await page.getByRole("button", { name: "黑夜主题", exact: true }).click();
+    await expect(
+      editor.getByRole("button", { name: "黑夜主题", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(editor.locator(".remote-editor-app")).toHaveCSS(
+      "--editor-keyword",
+      "#d6a9f2",
+    );
+    await expect(editor.locator(".cm-content")).toContainText(
+      "unsaved theme check",
+    );
+    await expect(editor.getByLabel("未保存", { exact: true })).toBeVisible();
+
+    await setup(later, { editor: true });
+    await expect(
+      later.getByRole("button", { name: "黑夜主题", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await editor.getByRole("button", { name: "白天主题", exact: true }).click();
+    for (const other of [page, later]) {
+      await expect(
+        other.getByRole("button", { name: "白天主题", exact: true }),
+      ).toHaveAttribute("aria-pressed", "true");
+      await expect(other.locator("html")).toHaveCSS(
+        "background-color",
+        "rgb(247, 247, 248)",
+      );
+    }
+    await expect(editor.locator(".cm-content")).toContainText(
+      "unsaved theme check",
+    );
+  } finally {
+    await editor.close();
+    await later.close();
+  }
 });

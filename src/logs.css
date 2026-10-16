@@ -281,27 +281,25 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-@media (prefers-color-scheme: dark) {
-  .log-token-key {
-    color: #82b6ec;
-  }
-  .log-token-string {
-    color: #91c8a3;
-  }
-  .log-token-number {
-    color: #d9aa79;
-  }
-  .log-token-literal,
-  .log-ansi-magenta {
-    color: #bd9ad8;
-  }
-  .log-level-label.log-level-warn,
-  .log-ansi-yellow {
-    color: #dbb666;
-  }
-  .log-ansi-cyan {
-    color: #78bbc2;
-  }
+:root[data-theme="dark"] .log-token-key {
+  color: #82b6ec;
+}
+:root[data-theme="dark"] .log-token-string {
+  color: #91c8a3;
+}
+:root[data-theme="dark"] .log-token-number {
+  color: #d9aa79;
+}
+:root[data-theme="dark"] .log-token-literal,
+:root[data-theme="dark"] .log-ansi-magenta {
+  color: #bd9ad8;
+}
+:root[data-theme="dark"] .log-level-label.log-level-warn,
+:root[data-theme="dark"] .log-ansi-yellow {
+  color: #dbb666;
+}
+:root[data-theme="dark"] .log-ansi-cyan {
+  color: #78bbc2;
 }
 .log-empty {
   position: absolute;

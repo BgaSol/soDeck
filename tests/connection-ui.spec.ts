@@ -256,9 +256,8 @@ test("per-hop prompts survive replies delivering the next prompt before IPC ackn
   const errors = await setup(page);
   await connect(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.getByRole("button", { name: "会话连接详情", exact: true }).click();
   await expect(
-    page.getByRole("dialog", { name: "会话连接详情", exact: true }),
+    page.getByRole("group", { name: "会话连接摘要", exact: true }),
   ).toContainText("Jump A → Target B");
   await expect(page.locator(".terminal-surface")).toContainText(
     "connected to B",
@@ -1254,7 +1253,6 @@ test("sidebar and communication preferences survive window migration without cop
   await page
     .getByRole("combobox", { name: "Docker 排序" })
     .selectOption("attention");
-  await page.getByRole("button", { name: "会话连接详情", exact: true }).click();
   await page.getByRole("button", { name: "通信详情", exact: true }).click();
   await page
     .getByRole("group", { name: "通信时间范围" })

@@ -169,11 +169,24 @@ test("communication has an independent range and a bounded keyboard-accessible p
 }) => {
   const errors = await setup(page);
   await overview(page).getByRole("button", { name: "1 小时" }).click();
-  await page.getByRole("button", { name: "会话连接详情", exact: true }).click();
-  await expect(
-    page.getByRole("dialog", { name: "会话连接详情" }),
-  ).toContainText("累计发送 / 接收");
+  const summary = page.getByRole("group", { name: "本机通信摘要" });
+  await expect(summary).toContainText("20.0 KiB/s");
+  await expect(summary).toContainText("累计");
+  await expect(page.getByRole("group", { name: "会话连接摘要" })).toContainText(
+    "UTF-8",
+  );
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const terminal = page.locator(".terminal-surface");
+  const before = await terminal.boundingBox();
   await page.getByRole("button", { name: "通信详情", exact: true }).click();
+  expect(await terminal.boundingBox()).toEqual(before);
+  await expect(
+    page.getByRole("img", { name: /SoDeck 通信趋势/ }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "返回连接详情" })).toHaveCount(
+    0,
+  );
+  await page.screenshot({ path: ".qa/communication-direct-light.png" });
   await page
     .getByRole("group", { name: "通信时间范围" })
     .getByRole("button", { name: "15 分钟" })
@@ -183,7 +196,7 @@ test("communication has an independent range and a bounded keyboard-accessible p
   ).toHaveAttribute("aria-pressed", "true");
   await page.setViewportSize({ width: 650, height: 480 });
   await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
-  const popover = page.getByRole("dialog", { name: "会话连接详情" });
+  const popover = page.getByRole("dialog", { name: "通信详情" });
   await expect(page.locator(".responsive-workspace")).toHaveAttribute(
     "data-layout",
     "single",
@@ -205,17 +218,60 @@ test("communication has an independent range and a bounded keyboard-accessible p
   expect(box!.y).toBeGreaterThanOrEqual(0);
   expect(box!.x + box!.width).toBeLessThanOrEqual(650);
   expect(box!.y + box!.height).toBeLessThanOrEqual(480);
+  const footer = await page.locator(".session-statusbar").boundingBox();
+  expect(box!.y + box!.height).toBeLessThan(footer!.y);
+  expect(
+    await page
+      .locator(".session-statusbar")
+      .evaluate((el) => el.scrollWidth <= el.clientWidth),
+  ).toBe(true);
   await page.screenshot({ path: ".qa/connection-traffic-narrow-dark.png" });
   await page.keyboard.press("Escape");
   await expect(popover).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "会话连接详情", exact: true }),
+    page.getByRole("button", { name: "通信详情", exact: true }),
   ).toBeFocused();
-  await page.getByRole("button", { name: "会话连接详情", exact: true }).click();
+  await page.getByRole("button", { name: "通信详情", exact: true }).click();
+  await expect(
+    page
+      .getByRole("group", { name: "通信时间范围" })
+      .getByRole("button", { name: "15 分钟" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "关闭通信详情" }).click();
+  await expect(
+    page.getByRole("button", { name: "通信详情", exact: true }),
+  ).toBeFocused();
+  await page.getByRole("button", { name: "通信详情", exact: true }).click();
+  await page.getByRole("button", { name: "通信详情", exact: true }).click();
+  await expect(popover).toHaveCount(0);
+  await page.getByRole("button", { name: "通信详情", exact: true }).click();
   await page
     .locator(".terminal-surface")
-    .click({ position: { x: 600, y: 15 } });
+    .click({ position: { x: 20, y: 15 } });
   await expect(popover).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as any).__MOUNTS__.monitor.onmessage({
+      type: "connection",
+      generation: "monitor-generation",
+      connected: false,
+    });
+  });
+  await expect(summary).toContainText("最后数据");
+  await expect(summary).toContainText("20.0 KiB/s");
+  await page.getByRole("button", { name: "通信详情", exact: true }).click();
+  await expect(popover).toContainText("已断开 · 最后数据");
+  await page.getByRole("button", { name: "关闭通信详情" }).click();
+  await page.setViewportSize({ width: 440, height: 540 });
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "17px";
+  });
+  await expect(summary).toBeVisible();
+  expect(
+    await page
+      .locator(".session-statusbar")
+      .evaluate((el) => el.scrollWidth <= el.clientWidth),
+  ).toBe(true);
+  await page.screenshot({ path: ".qa/connection-summary-narrow-dark.png" });
   expect(errors).toEqual([]);
 });
 test("communication retains its scope and does not depend on resource or Docker success", async ({
@@ -226,7 +282,6 @@ test("communication retains its scope and does not depend on resource or Docker 
     name: "SoDeck 通信",
     exact: true,
   });
-  await page.getByRole("button", { name: "会话连接详情", exact: true }).click();
   await page.getByRole("button", { name: "通信详情", exact: true }).click();
   await expect(traffic).toContainText("20.0 KiB/s");
   await traffic.getByRole("button", { name: "其中：监控查询" }).click();
@@ -267,11 +322,10 @@ test("communication retains its scope and does not depend on resource or Docker 
   await expect(traffic).toContainText("2.0 KiB/s");
   await page.keyboard.press("Escape");
   await expect(
-    page.getByRole("button", { name: "会话连接详情", exact: true }),
+    page.getByRole("button", { name: "通信详情", exact: true }),
   ).toBeFocused();
   await page.getByRole("tab", { name: "Docker", exact: true }).click();
   await page.getByRole("tab", { name: "监控", exact: true }).click();
-  await page.getByRole("button", { name: "会话连接详情", exact: true }).click();
   await page.getByRole("button", { name: "通信详情", exact: true }).click();
   await expect(
     traffic.getByRole("button", { name: "其中：监控查询" }),

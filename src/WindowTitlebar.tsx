@@ -1,6 +1,7 @@
 import { useState, type ReactNode, type Ref } from "react";
 import { Minus, Square, Copy, X } from "lucide-react";
 import { useDesktopWindow } from "./useDesktopWindow";
+import { ThemeSwitcher } from "./ThemeSwitcher";
 import { errorOf } from "./types";
 import "./window-chrome.css";
 
@@ -93,7 +94,10 @@ export function WindowTitlebar({
             </>
           )}
         </div>
-        {actions && <div className="window-actions">{actions}</div>}
+        <div className="window-actions">
+          {actions}
+          <ThemeSwitcher />
+        </div>
         {window.chrome === "custom" && (
           <WindowControls maximized={window.maximized} run={window.run} />
         )}

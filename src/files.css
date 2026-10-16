@@ -410,14 +410,12 @@
   margin-bottom: 20px;
   color: var(--muted);
 }
-@media (prefers-color-scheme: dark) {
-  .remote-editor-app {
-    --editor-keyword: #d6a9f2;
-    --editor-string: #97c797;
-    --editor-number: #d7ae7d;
-    --editor-property: #94bdf1;
-    --editor-type: #dfc38b;
-  }
+:root[data-theme="dark"] .remote-editor-app {
+  --editor-keyword: #d6a9f2;
+  --editor-string: #97c797;
+  --editor-number: #d7ae7d;
+  --editor-property: #94bdf1;
+  --editor-type: #dfc38b;
 }
 @media (max-width: 600px) {
   .remote-editor-header {

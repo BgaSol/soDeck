@@ -1446,11 +1446,9 @@ dialog .form-columns.equal {
     transform: rotate(360deg);
   }
 }
-@media (prefers-color-scheme: dark) {
-  .browser-notice {
-    background: #3b331f;
-    color: #e1c78b;
-  }
+:root[data-theme="dark"] .browser-notice {
+  background: #3b331f;
+  color: #e1c78b;
 }
 @media (max-width: 760px) {
   .session-welcome {

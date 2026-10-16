@@ -67,24 +67,121 @@
 .workspace-services .resource-service-panel {
   border-left: 1px solid var(--line);
 }
-.workspace-status.session-statusbar {
+.terminal-panel > .workspace-status.session-statusbar {
   position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
   min-height: 32px;
-  padding: 3px 10px;
-  gap: 5px;
-  justify-content: flex-start;
+  padding: 0.429rem 0.857rem;
+  gap: 0.286rem 0.857rem;
+  align-items: center;
+}
+.session-connection-summary {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.571rem;
+  min-width: 0;
+}
+.session-connection-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.286rem;
+  flex-shrink: 0;
+  color: var(--terminal-text);
+}
+.session-connection-route {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  border-radius: 3px;
+}
+.connection-route-prefix {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.connection-route-target {
+  flex: 0 0 auto;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.session-connection-progress {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-connection-encoding {
+  flex-shrink: 0;
+  font-family: var(--mono);
+}
+.connection-traffic-summary {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.571rem;
+  min-width: 0;
+}
+.connection-traffic-values {
+  display: flex;
+  flex: 1;
+  min-width: 0;
   flex-wrap: wrap;
+  gap: 0.286rem 1rem;
+  font-variant-numeric: tabular-nums;
+}
+.connection-traffic-pair {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.286rem 0.571rem;
+}
+.connection-traffic-pair > span {
+  white-space: nowrap;
+}
+.connection-traffic-pair > span:not(:first-child) {
+  color: var(--terminal-text);
+}
+.connection-traffic-values.is-stale .connection-traffic-pair > span {
+  color: var(--terminal-muted);
+}
+.connection-traffic-stale {
+  color: var(--terminal-text);
 }
 .session-statusbar .resource-statusbar {
+  grid-column: 2;
+  grid-row: 1;
   padding: 0;
   border: 0;
   background: transparent;
   gap: 2px;
-  flex: 1;
+  flex: none;
+  flex-wrap: nowrap;
+  padding-inline-start: 0.571rem;
+  border-inline-start: 1px solid rgb(255 255 255 / 12%);
 }
-@container terminal-card (max-width:480px) {
+@container terminal-card (max-width: 760px) {
   .session-statusbar .resource-network-summary {
     display: none;
+  }
+}
+@container terminal-card (max-width:480px) {
+  .terminal-panel > .workspace-status.session-statusbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .session-statusbar .resource-statusbar {
+    grid-column: 1;
+    grid-row: 3;
+    padding-inline-start: 0;
+    border-inline-start: 0;
+    flex-wrap: wrap;
   }
 }
 @media (prefers-reduced-motion: no-preference) {

@@ -58,36 +58,34 @@
   color: var(--text);
   background: var(--canvas);
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --canvas: #202123;
-    --surface: #242527;
-    --sidebar: #292a2c;
-    --material: rgba(32, 33, 35, 0.94);
-    --sheet: rgba(43, 44, 51, 0.96);
-    --text: #ededef;
-    --muted: #aaaab0;
-    --line: rgba(255, 255, 255, 0.09);
-    --strong-line: rgba(255, 255, 255, 0.18);
-    --hover: rgba(255, 255, 255, 0.055);
-    --selected: #293f60;
-    --selected-text: #d1e3ff;
-    --blue: #0874e2;
-    --accent-text: #79b8ff;
-    --tag: rgba(255, 255, 255, 0.065);
-    --error: #ffacb3;
-    --error-bg: #422b32;
-    --green: #87cfa4;
-    --green-bg: #293e34;
-    --chart-primary: #86baff;
-    --chart-secondary: #e5bc77;
-    --chart-grid: rgba(255, 255, 255, 0.22);
-    --warning: #efc47a;
-    --warning-bg: #3a3326;
-    --selection-border: #4c668a;
-    --field: #202123;
-  }
+:root:where([data-theme="dark"]) {
+  color-scheme: dark;
+  --canvas: #202123;
+  --surface: #242527;
+  --sidebar: #292a2c;
+  --material: rgba(32, 33, 35, 0.94);
+  --sheet: rgba(43, 44, 51, 0.96);
+  --text: #ededef;
+  --muted: #aaaab0;
+  --line: rgba(255, 255, 255, 0.09);
+  --strong-line: rgba(255, 255, 255, 0.18);
+  --hover: rgba(255, 255, 255, 0.055);
+  --selected: #293f60;
+  --selected-text: #d1e3ff;
+  --blue: #0874e2;
+  --accent-text: #79b8ff;
+  --tag: rgba(255, 255, 255, 0.065);
+  --error: #ffacb3;
+  --error-bg: #422b32;
+  --green: #87cfa4;
+  --green-bg: #293e34;
+  --chart-primary: #86baff;
+  --chart-secondary: #e5bc77;
+  --chart-grid: rgba(255, 255, 255, 0.22);
+  --warning: #efc47a;
+  --warning-bg: #3a3326;
+  --selection-border: #4c668a;
+  --field: #202123;
 }
 @media (prefers-contrast: more) {
   :root {
@@ -100,8 +98,8 @@
     --chart-grid: var(--strong-line);
   }
 }
-@media (prefers-contrast: more) and (prefers-color-scheme: dark) {
-  :root {
+@media (prefers-contrast: more) {
+  :root:where([data-theme="dark"]) {
     --muted: #c6c6ce;
     --line: #70707c;
     --strong-line: #9999a5;

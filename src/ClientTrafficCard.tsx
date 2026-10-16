@@ -87,7 +87,7 @@ export function ClientTrafficCard({
           <span>
             {!traffic
               ? "正在建立通信统计"
-              : `${traffic.activeConnections} 条目标连接 · ${traffic.status === "unavailable" ? "上次数据" : "更新于"} ${new Date(traffic.sampledAt).toLocaleTimeString()}`}
+              : `${traffic.activeConnections} 条目标连接 · ${!state.connected ? "已断开 · 最后数据" : traffic.status === "unavailable" ? "最后数据" : "更新于"} ${new Date(traffic.sampledAt).toLocaleTimeString()}`}
           </span>
         </div>
         <details>

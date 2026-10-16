@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, ChevronRight, LockKeyhole, X } from "lucide-react";
+import { ChevronDown, ChevronUp, LockKeyhole, X } from "lucide-react";
 import { useMonitor } from "./MonitorProvider";
 import { ClientTrafficCard } from "./ClientTrafficCard";
 import { rate } from "./resourceMonitoring";
@@ -27,15 +27,13 @@ export function SessionConnectionDetails({
   onChange: (value: ConnectionPreferences) => void;
 }) {
   const { store, state } = useMonitor();
+  const id = useId();
   const [open, setOpen] = useState(false);
-  const [detail, setDetail] = useState(false);
   const [now, setNow] = useState(Date.now);
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const close = useRef<HTMLButtonElement>(null);
-  const detailsTrigger = useRef<HTMLButtonElement>(null);
-  const back = useRef<HTMLButtonElement>(null);
-  const [position, setPosition] = useState({ left: 8, bottom: 40 });
+  const [position, setPosition] = useState({ left: 8, bottom: 40, width: 420 });
   const dismiss = (restore = true) => {
     setOpen(false);
     if (restore) trigger.current?.focus();
@@ -50,23 +48,23 @@ export function SessionConnectionDetails({
     return () => clearInterval(timer);
   }, [open, active]);
   useEffect(() => {
-    if (open && detail && active)
-      void store.loadTrafficHistory(preferences.minutes);
-  }, [open, detail, active, store, preferences.minutes, state.connected]);
+    if (open && active) void store.loadTrafficHistory(preferences.minutes);
+  }, [open, active, store, preferences.minutes, state.connected]);
   useLayoutEffect(() => {
     if (!open) return;
     const place = () => {
       if (!trigger.current || !panel.current) return;
       const rect = trigger.current.getBoundingClientRect();
+      const footer = trigger.current.closest("footer")!.getBoundingClientRect();
+      const width = Math.min(420, footer.width - 16, window.innerWidth - 16);
       setPosition({
         left: Math.max(
           8,
-          Math.min(
-            rect.left,
-            window.innerWidth - panel.current.offsetWidth - 8,
-          ),
+          footer.left + 8,
+          Math.min(rect.right - width, window.innerWidth - width - 8),
         ),
-        bottom: Math.max(8, window.innerHeight - rect.top + 8),
+        bottom: Math.max(8, window.innerHeight - footer.top + 8),
+        width,
       });
     };
     place();
@@ -75,8 +73,8 @@ export function SessionConnectionDetails({
     observer.observe(panel.current!);
     // The footer moves when the workspace switches from columns to one pane,
     // even when the trigger and popover keep the same size.
-    if (trigger.current?.parentElement)
-      observer.observe(trigger.current.parentElement);
+    const footer = trigger.current?.closest("footer");
+    if (footer) observer.observe(footer);
     const outside = (event: PointerEvent) => {
       if (
         !panel.current?.contains(event.target as Node) &&
@@ -102,126 +100,142 @@ export function SessionConnectionDetails({
     };
   }, [open]);
   const traffic = state.traffic?.total;
+  const stale =
+    !!traffic && (!state.connected || state.traffic?.status === "unavailable");
+  const routeParts = route.split(" → ");
+  const destination = routeParts.pop();
   return (
     <>
-      <button
-        ref={trigger}
-        className="session-information-trigger quiet"
-        aria-label="会话连接详情"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => {
-          setOpen((v) => !v);
-          setDetail(false);
-        }}
+      <div
+        className="session-connection-summary"
+        role="group"
+        aria-label="会话连接摘要"
       >
-        <LockKeyhole size={12} />
-        <span>{status}</span>
-      </button>
+        <span className="session-connection-state" title={progress}>
+          <LockKeyhole size={12} aria-hidden="true" />
+          <span>{status}</span>
+        </span>
+        {status === "已连接" && route ? (
+          <span
+            className="session-connection-route"
+            tabIndex={0}
+            title={route}
+            aria-label={`连接路径：${route}`}
+          >
+            {routeParts.length > 0 && (
+              <span className="connection-route-prefix">
+                {routeParts.join(" → ")}
+              </span>
+            )}
+            <span className="connection-route-target">
+              {routeParts.length > 0 ? " → " : ""}
+              {destination}
+            </span>
+          </span>
+        ) : (
+          <span className="session-connection-progress" role="status">
+            {progress}
+          </span>
+        )}
+        <span className="session-connection-encoding" title="终端编码：UTF-8">
+          UTF-8
+        </span>
+      </div>
+      <div
+        className="connection-traffic-summary"
+        role="group"
+        aria-label="本机通信摘要"
+      >
+        <div className={`connection-traffic-values${stale ? " is-stale" : ""}`}>
+          <span className="connection-traffic-pair">
+            <span>
+              本机通信
+              {stale && (
+                <span className="connection-traffic-stale"> · 最后数据</span>
+              )}
+            </span>
+            <span aria-label={`本机发送 ${rate(traffic?.sentPerSecond)}`}>
+              ↑ {rate(traffic?.sentPerSecond)}
+            </span>
+            <span aria-label={`本机接收 ${rate(traffic?.receivedPerSecond)}`}>
+              ↓ {rate(traffic?.receivedPerSecond)}
+            </span>
+          </span>
+          <span className="connection-traffic-pair">
+            <span>累计</span>
+            <span
+              aria-label={`累计发送 ${formatMountBytes(traffic?.sentBytes)}`}
+            >
+              ↑ {formatMountBytes(traffic?.sentBytes)}
+            </span>
+            <span
+              aria-label={`累计接收 ${formatMountBytes(traffic?.receivedBytes)}`}
+            >
+              ↓ {formatMountBytes(traffic?.receivedBytes)}
+            </span>
+          </span>
+        </div>
+        <button
+          ref={trigger}
+          className="session-information-trigger quiet"
+          aria-label="通信详情"
+          aria-haspopup="dialog"
+          aria-controls={open ? id : undefined}
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+        >
+          通信详情
+          {open ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
+        </button>
+      </div>
       {open &&
         active &&
         createPortal(
           <div
             ref={panel}
+            id={id}
             className="session-connection-popover"
             role="dialog"
-            aria-label="会话连接详情"
+            aria-label="通信详情"
             style={{
               ...position,
-              left: `min(${position.left}px, max(8px, calc(100vw - 428px)))`,
               maxHeight: `calc(100vh - ${position.bottom + 8}px)`,
             }}
           >
             <header>
-              {detail ? (
-                <button
-                  ref={back}
-                  className="resource-link"
-                  onClick={() => {
-                    setDetail(false);
-                    requestAnimationFrame(() =>
-                      detailsTrigger.current?.focus(),
-                    );
-                  }}
-                >
-                  <ArrowLeft size={14} />
-                  返回连接详情
-                </button>
-              ) : (
-                <strong>会话连接详情</strong>
-              )}
+              <strong>通信详情</strong>
               <button
                 ref={close}
                 className="icon-button"
-                aria-label="关闭连接详情"
+                aria-label="关闭通信详情"
                 onClick={() => dismiss()}
               >
                 <X size={15} />
               </button>
             </header>
             <div className="connection-detail-content">
-              {detail ? (
-                <>
-                  <h3>SoDeck 通信</h3>
-                  <p className="resource-help">
-                    本客户端与 SSH 目标之间的通信估算
-                  </p>
-                  <div
-                    className="resource-range"
-                    role="group"
-                    aria-label="通信时间范围"
+              <p className="resource-help">本客户端与 SSH 目标之间的通信估算</p>
+              <div
+                className="resource-range"
+                role="group"
+                aria-label="通信时间范围"
+              >
+                {([5, 15, 60] as const).map((minutes) => (
+                  <button
+                    key={minutes}
+                    aria-pressed={preferences.minutes === minutes}
+                    onClick={() => onChange({ ...preferences, minutes })}
                   >
-                    {([5, 15, 60] as const).map((minutes) => (
-                      <button
-                        key={minutes}
-                        aria-pressed={preferences.minutes === minutes}
-                        onClick={() => onChange({ ...preferences, minutes })}
-                      >
-                        {minutes === 60 ? "1 小时" : `${minutes} 分钟`}
-                      </button>
-                    ))}
-                  </div>
-                  <ClientTrafficCard
-                    minutes={preferences.minutes}
-                    now={now}
-                    scope={preferences.scope}
-                    onScopeChange={(scope) =>
-                      onChange({ ...preferences, scope })
-                    }
-                  />
-                </>
-              ) : (
-                <>
-                  <p role="status">{progress}</p>
-                  {route && <p className="connection-route">{route}</p>}
-                  <p className="resource-help">编码 · UTF-8</p>
-                  <div className="connection-traffic-summary">
-                    <h3>SoDeck 通信</h3>
-                    <dl className="resource-facts">
-                      <dt>本机发送</dt>
-                      <dd>{rate(traffic?.sentPerSecond)}</dd>
-                      <dt>本机接收</dt>
-                      <dd>{rate(traffic?.receivedPerSecond)}</dd>
-                      <dt>累计发送 / 接收</dt>
-                      <dd>
-                        {formatMountBytes(traffic?.sentBytes)} /{" "}
-                        {formatMountBytes(traffic?.receivedBytes)}
-                      </dd>
-                    </dl>
-                    <button
-                      ref={detailsTrigger}
-                      className="resource-link"
-                      onClick={() => {
-                        setDetail(true);
-                        requestAnimationFrame(() => back.current?.focus());
-                      }}
-                    >
-                      通信详情
-                      <ChevronRight size={14} />
-                    </button>
-                  </div>
-                </>
-              )}
+                    {minutes === 60 ? "1 小时" : `${minutes} 分钟`}
+                  </button>
+                ))}
+              </div>
+              <ClientTrafficCard
+                minutes={preferences.minutes}
+                now={now}
+                scope={preferences.scope}
+                onScopeChange={(scope) => onChange({ ...preferences, scope })}
+              />
             </div>
           </div>,
           document.body,

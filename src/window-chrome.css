@@ -125,6 +125,33 @@
 .window-action-label {
   white-space: nowrap;
 }
+.theme-switcher {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--tag);
+}
+.theme-switcher button {
+  width: 2rem;
+  min-height: 1.857rem;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+}
+.theme-switcher button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 10%);
+}
+.theme-switcher button:focus-visible {
+  outline-offset: -2px;
+}
 .window-controls {
   align-self: stretch;
   display: flex;

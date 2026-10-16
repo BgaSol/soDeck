@@ -1,12 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
-import { terminalHistoryApi, type HistoryRow } from "./terminalHistoryApi";
+import { ArrowLeft, LockKeyhole } from "lucide-react";
+import {
+  terminalHistoryApi,
+  type HistoryRow,
+  type HistorySession,
+} from "./terminalHistoryApi";
 import { errorOf } from "./types";
 export function TerminalReplayView({
   row,
+  session,
   onClose,
 }: {
   row: HistoryRow;
+  session?: HistorySession;
   onClose: () => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -14,6 +21,7 @@ export function TerminalReplayView({
   const [playAll, setPlayAll] = useState(false);
   useEffect(() => {
     let cancelled = false;
+    setStatus("正在恢复历史屏幕…");
     const term = new Terminal({
       disableStdin: true,
       cursorBlink: false,
@@ -57,13 +65,13 @@ export function TerminalReplayView({
             else if (event.kind === "gap")
               term.writeln(`\r\n[记录缺口：${event.data}]\r\n`);
           }
-          setStatus(`只读回放 · 已读取事件 ${page.after}`);
+          setStatus("正在恢复历史屏幕…");
           if (!page.hasMore || page.after === after) break;
           after = page.after;
         }
         if (!cancelled)
           setStatus(
-            playAll ? "只读回放 · 已到保存末尾" : "只读回放 · 已定位到历史记录",
+            playAll ? "已显示保存末尾的屏幕" : "已恢复选中记录时的屏幕",
           );
       } catch (e) {
         if (!cancelled) setStatus(errorOf(e).message);
@@ -75,19 +83,49 @@ export function TerminalReplayView({
     };
   }, [row, playAll]);
   return (
-    <div className="terminal-replay" role="dialog" aria-label="历史屏幕回放">
+    <section
+      className="terminal-replay"
+      aria-label="历史屏幕"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.stopPropagation();
+          onClose();
+        }
+      }}
+    >
       <header>
-        <span role="status">{status}</span>
-        <button onClick={() => setPlayAll(!playAll)}>
-          {playAll ? "定位命中位置" : "读取到会话末尾"}
+        <button autoFocus className="history-replay-back" onClick={onClose}>
+          <ArrowLeft size={15} aria-hidden="true" />
+          返回记录
         </button>
-        <button autoFocus onClick={onClose}>
-          关闭回放
-        </button>
+        <div>
+          <span className="history-replay-source">
+            {session
+              ? `${session.source.serverName}${session.source.containerName ? ` / ${session.source.containerName}` : ""}`
+              : "历史屏幕"}
+          </span>
+          <LockKeyhole size={14} aria-hidden="true" />
+          只读
+        </div>
       </header>
       <div className="terminal-replay-scroll">
         <div ref={host} />
       </div>
-    </div>
+      <footer className="history-replay-footer">
+        <div>
+          {playAll ? (
+            <span>会话已保存末尾</span>
+          ) : (
+            <time dateTime={new Date(row.time).toISOString()}>
+              {new Date(row.time).toLocaleString()}
+            </time>
+          )}
+          <p role="status">{status}</p>
+        </div>
+        <button onClick={() => setPlayAll(!playAll)}>
+          {playAll ? "回到选中位置" : "查看保存末尾"}
+        </button>
+      </footer>
+    </section>
   );
 }

@@ -9,7 +9,12 @@ import {
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { TerminalSquare, X, ScrollText } from "lucide-react";
+import {
+  Server as ServerIcon,
+  TerminalSquare,
+  X,
+  ScrollText,
+} from "lucide-react";
 import { WindowTitlebar, WindowLoading } from "./WindowTitlebar";
 import type { ReactNode } from "react";
 import { api, desktop } from "./api";
@@ -171,6 +176,7 @@ export function App() {
     setPendingState(value);
   }, []);
   const pickerWasOpen = useRef(false);
+  const pickerTrigger = useRef<HTMLButtonElement | null>(null);
   const focusTerminal = useRef(false);
   useEffect(() => {
     if (pickerOpen) {
@@ -183,7 +189,12 @@ export function App() {
       const selector = focusTerminal.current
         ? ".workspace-page-wrap:not([hidden]) .xterm-helper-textarea"
         : ".new-session";
-      document.querySelector<HTMLElement>(selector)?.focus();
+      const target =
+        !focusTerminal.current && pickerTrigger.current?.isConnected
+          ? pickerTrigger.current
+          : document.querySelector<HTMLElement>(selector);
+      target?.focus();
+      pickerTrigger.current = null;
       focusTerminal.current = false;
     });
     return () => cancelAnimationFrame(frame);
@@ -551,9 +562,27 @@ export function App() {
                     <div className="resource-panel-head">
                       <strong>服务器</strong>
                     </div>
-                    <p className="resource-empty">
-                      连接后查看资源、Docker 状态和本客户端通信量。
-                    </p>
+                    <div className="server-idle">
+                      <div className="server-idle-content">
+                        <ServerIcon
+                          className="server-idle-symbol"
+                          aria-hidden="true"
+                        />
+                        <h2>尚未连接</h2>
+                        <p>连接服务器，查看资源与运行状态。</p>
+                        <button
+                          type="button"
+                          className="server-idle-action"
+                          disabled={!desktop}
+                          onClick={(event) => {
+                            pickerTrigger.current = event.currentTarget;
+                            setPickerOpen(true);
+                          }}
+                        >
+                          选择服务器
+                        </button>
+                      </div>
+                    </div>
                   </aside>
                 }
                 terminal={
