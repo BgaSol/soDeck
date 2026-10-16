@@ -33,6 +33,8 @@ import { FileTaskPanel } from "./FileTaskPanel";
 import { DesktopDragPreview } from "./DesktopDragPreview";
 import { fileTaskApi } from "./fileTaskApi";
 import { QuitDialog } from "./QuitDialog";
+import { PortForwardButton } from "./PortForwardButton";
+import { forwardApi } from "./portForwardApi";
 import { useWorkspaceMoves } from "./useWorkspaceMoves";
 import { SessionWorkspace } from "./SessionWorkspace";
 import { ServerPickerDialog } from "./ServerPickerDialog";
@@ -67,6 +69,11 @@ const LogArchives = lazy(() =>
 const TerminalHistoryApp = lazy(() =>
   import("./TerminalHistoryView").then(({ TerminalHistoryApp }) => ({
     default: TerminalHistoryApp,
+  })),
+);
+const PortForwardApp = lazy(() =>
+  import("./PortForwardApp").then(({ PortForwardApp }) => ({
+    default: PortForwardApp,
   })),
 );
 function ContainerApp() {
@@ -228,8 +235,10 @@ export function App() {
           () => 0,
         );
         let summary;
+        let forwards;
         try {
           summary = (await fileTaskApi.list("all", null, 1)).summary;
+          forwards = await forwardApi.summary();
         } catch (e) {
           closing.current = false;
           setError(errorOf(e));
@@ -241,6 +250,9 @@ export function App() {
           dirty ? `${dirty} 个文件有未保存修改` : "",
           summary.active ? `${summary.active} 个文件任务尚未完成` : "",
           summary.attention ? `${summary.attention} 个文件任务需要处理` : "",
+          forwards.active
+            ? `${forwards.active} 条端口转发仍在运行（${forwards.connections} 条业务连接）`
+            : "",
         ]
           .filter(Boolean)
           .join("，");
@@ -452,6 +464,7 @@ export function App() {
         onError={(error) => setError(errorOf(error))}
         actions={
           <>
+            <PortForwardButton summary onError={(e) => setError(errorOf(e))} />
             <button
               className="quiet"
               aria-label="终端历史"
@@ -728,6 +741,9 @@ export function Root() {
   if (params.has("monitor")) {
     title = "服务器监控";
     content = <MonitorWindowApp />;
+  } else if (params.has("port-forwarding")) {
+    title = "端口转发";
+    content = <PortForwardApp />;
   } else if (params.has("terminal-history")) {
     title = "终端历史";
     content = <TerminalHistoryApp />;

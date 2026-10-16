@@ -16,6 +16,7 @@ use tauri::{ipc::Channel, State as TauriState, WebviewWindow};
 
 pub type SharedContext = Arc<ConnectionContext>;
 
+#[derive(Clone)]
 pub struct ConnectionPlan {
     hops: Vec<ServerConfig>,
 }
@@ -39,6 +40,9 @@ impl ConnectionPlan {
     pub fn uses_server(&self, id: &str) -> bool {
         self.hops.iter().any(|h| h.id == id)
     }
+    pub fn server_ids(&self) -> Vec<String> {
+        self.hops.iter().map(|h| h.id.clone()).collect()
+    }
 }
 #[derive(Clone)]
 struct VerifiedHop {
@@ -53,6 +57,25 @@ pub struct ConnectionContext {
     pub(crate) traffic: Arc<crate::traffic::TrafficManager>,
 }
 impl ConnectionContext {
+    pub fn plan(&self) -> ConnectionPlan {
+        ConnectionPlan {
+            hops: self.hops.iter().map(|h| h.server.clone()).collect(),
+        }
+    }
+    pub fn matches_plan(&self, plan: &ConnectionPlan) -> bool {
+        self.hops.len() == plan.hops.len()
+            && self.hops.iter().zip(&plan.hops).all(|(h, s)| {
+                let a = &h.server;
+                a.id == s.id
+                    && a.host == s.host
+                    && a.port == s.port
+                    && a.username == s.username
+                    && a.auth_type == s.auth_type
+                    && a.private_key == s.private_key
+                    && a.password == s.password
+                    && a.jump_server_id == s.jump_server_id
+            })
+    }
     pub fn target(&self) -> &ServerConfig {
         &self.hops.last().expect("validated nonempty route").server
     }
@@ -204,6 +227,17 @@ pub enum ConnectionAnswer {
         passphrase: String,
     },
 }
+/// Connection/authentication events need no terminal or PTY.
+pub trait ConnectEventSink: Send + Sync {
+    fn send(&self, event: ConnectionEvent) -> AppResult<()>;
+}
+struct TerminalConnectSink(Arc<Mutex<TerminalStream>>);
+impl ConnectEventSink for TerminalConnectSink {
+    fn send(&self, event: ConnectionEvent) -> AppResult<()> {
+        self.0.lock().unwrap().send(event);
+        Ok(())
+    }
+}
 #[derive(Clone, Copy, PartialEq)]
 enum ChallengeKind {
     Trust,
@@ -219,7 +253,7 @@ pub struct Interaction {
     pending: Mutex<Option<PendingChallenge>>,
 }
 impl Interaction {
-    fn answer(&self, id: &str, answer: ConnectionAnswer) -> AppResult<()> {
+    pub fn answer(&self, id: &str, answer: ConnectionAnswer) -> AppResult<()> {
         let mut pending = self.pending.lock().unwrap();
         let challenge = pending
             .as_ref()
@@ -242,7 +276,7 @@ impl Interaction {
         id: String,
         kind: ChallengeKind,
         event: ConnectionEvent,
-        stream: &Mutex<TerminalStream>,
+        events: &dyn ConnectEventSink,
         session: &ssh2::Session,
         cancel: &Cancellation,
     ) -> AppResult<ConnectionAnswer> {
@@ -252,7 +286,10 @@ impl Interaction {
             kind,
             sender,
         });
-        stream.lock().unwrap().send(event);
+        if let Err(error) = events.send(event) {
+            self.pending.lock().unwrap().take();
+            return Err(error);
+        }
         let started = Instant::now();
         let mut keepalive = Instant::now();
         let result = (|| loop {
@@ -302,6 +339,7 @@ impl ConnectionHandle {
         self.plan.uses_server(id)
     }
 }
+#[derive(Clone)]
 pub struct WindowOwner {
     pub label: String,
     pub generation: u64,
@@ -332,15 +370,16 @@ trait AuthProvider {
 }
 struct InteractiveProvider<'a> {
     state: &'a State,
-    stream: Arc<Mutex<TerminalStream>>,
+    events: Arc<dyn ConnectEventSink>,
     interaction: Arc<Interaction>,
+    pinned: Option<SharedContext>,
 }
 impl AuthProvider for InteractiveProvider<'_> {
     fn interactive(&self) -> bool {
         true
     }
     fn progress(&mut self, hop: &HopView, stage: &str) {
-        self.stream.lock().unwrap().send(ConnectionEvent::Progress {
+        let _ = self.events.send(ConnectionEvent::Progress {
             hop: hop.clone(),
             stage: stage.into(),
         });
@@ -353,11 +392,15 @@ impl AuthProvider for InteractiveProvider<'_> {
         session: &ssh2::Session,
         cancel: &Cancellation,
     ) -> AppResult<()> {
-        let previous = self.state.database.lock().unwrap().fingerprint(
-            scope,
-            &hop.server.host,
-            hop.server.port,
-        )?;
+        let previous = if let Some(context) = &self.pinned {
+            Some(context.hops[hop.index].fingerprint.clone())
+        } else {
+            self.state.database.lock().unwrap().fingerprint(
+                scope,
+                &hop.server.host,
+                hop.server.port,
+            )?
+        };
         if previous.as_deref() == Some(fingerprint) {
             return Ok(());
         }
@@ -374,7 +417,7 @@ impl AuthProvider for InteractiveProvider<'_> {
             id,
             ChallengeKind::Trust,
             event,
-            &self.stream,
+            &*self.events,
             session,
             cancel,
         )? {
@@ -421,7 +464,7 @@ impl AuthProvider for InteractiveProvider<'_> {
             id,
             ChallengeKind::Credentials,
             event,
-            &self.stream,
+            &*self.events,
             session,
             cancel,
         )? {
@@ -533,10 +576,14 @@ fn connect_metered(
         if index + 1 == plan.hops.len() {
             let mut identity_hops = verified.clone();
             identity_hops.push(VerifiedHop {
-                server: server.clone(), credentials: Credentials::default(),
-                fingerprint: fingerprint.clone(), public_key: String::new(),
+                server: server.clone(),
+                credentials: Credentials::default(),
+                fingerprint: fingerprint.clone(),
+                public_key: String::new(),
             });
-            traffic.account(&route_identity(&identity_hops)).attach(current.traffic(), purpose);
+            traffic
+                .account(&route_identity(&identity_hops))
+                .attach(current.traffic(), purpose);
         }
         let mut failure = None;
         let mut attempt = 0;
@@ -592,9 +639,39 @@ pub fn connect_verified(
     purpose: crate::traffic::TrafficPurpose,
 ) -> AppResult<SshConnection> {
     let plan = ConnectionPlan::new(context.hops.iter().map(|h| h.server.clone()).collect())?;
-    let connection = connect_metered(&plan, &mut VerifiedProvider(context), cancel, &context.traffic, purpose)?.0;
+    let connection = connect_metered(
+        &plan,
+        &mut VerifiedProvider(context),
+        cancel,
+        &context.traffic,
+        purpose,
+    )?
+    .0;
     connection.session().set_timeout(12_000);
     Ok(connection)
+}
+
+pub fn connect_interactive(
+    state: &State,
+    plan: &ConnectionPlan,
+    events: Arc<dyn ConnectEventSink>,
+    interaction: Arc<Interaction>,
+    pinned: Option<SharedContext>,
+    cancel: &Cancellation,
+    purpose: crate::traffic::TrafficPurpose,
+) -> AppResult<(SshConnection, SharedContext)> {
+    connect_metered(
+        plan,
+        &mut InteractiveProvider {
+            state,
+            events,
+            interaction,
+            pinned,
+        },
+        cancel,
+        &state.traffic,
+        purpose,
+    )
 }
 
 type RegisteredConnection = (
@@ -721,8 +798,9 @@ pub fn open_connection(
                 &plan,
                 &mut InteractiveProvider {
                     state: &state,
-                    stream,
+                    events: Arc::new(TerminalConnectSink(stream)),
                     interaction,
+                    pinned: None,
                 },
                 &cancel,
                 &state.traffic,
@@ -795,7 +873,11 @@ pub fn open_container(
     let worker_id = id.clone();
     std::thread::spawn(move || {
         let result = (|| {
-            let connection = connect_verified(&context, &cancel, crate::traffic::TrafficPurpose::ContainerTerminal)?;
+            let connection = connect_verified(
+                &context,
+                &cancel,
+                crate::traffic::TrafficPurpose::ContainerTerminal,
+            )?;
             let command = crate::docker::terminal_command_on(connection.session(), &target)?;
             let source = crate::terminal_history::model::Source::new(&context, Some(&target));
             terminal::run(

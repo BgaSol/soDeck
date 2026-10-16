@@ -10,6 +10,7 @@ mod log_ingest;
 mod log_store;
 mod logs;
 mod model;
+mod port_forwarding;
 mod monitor;
 mod moves;
 mod remote_delete;
@@ -41,6 +42,7 @@ use tauri::{
 };
 
 pub struct State {
+    port_forwarding: Arc<port_forwarding::PortForwardManager>,
     traffic: Arc<traffic::TrafficManager>,
     moves: moves::MoveState,
     files: files::FileState,
@@ -91,6 +93,9 @@ impl State {
     }
     fn delete_server(&self, id: &str) -> AppResult<()> {
         let _gate = self.configuration.lock().unwrap();
+        if self.port_forwarding.has_server(id)? {
+            return Err(AppError::new("busy", "请先修改或删除引用此服务器的端口转发规则，并停止相关转发"));
+        }
         if self.moves.has_server(id)
             || self
                 .terminals
@@ -187,6 +192,7 @@ fn reset_incompatible_database(
     let _gate = state.configuration.lock().unwrap();
     state.ensure_running()?;
     if !state.terminals.lock().unwrap().is_empty()
+        || state.port_forwarding.summary().active > 0
         || state.logs.active_count() > 0
         || state.files.has_activity()
         || state.transfers.has_activity()
@@ -213,6 +219,7 @@ fn save_server(
 ) -> AppResult<ServerView> {
     main_only(&window)?;
     let _gate = state.configuration.lock().unwrap();
+    state.port_forwarding.intents.lock().unwrap().clear();
     state.database.lock().unwrap().save(server)
 }
 #[tauri::command]
@@ -254,9 +261,11 @@ async fn quit_app(
         state.stopping.store(true, Ordering::SeqCst);
     }
     state.deletes.stop_all();
+    state.port_forwarding.stop_all();
     state.transfers.stop_transfers();
     let shutdown_state = state.inner().clone();
     let result = blocking(move || {
+        shutdown_state.port_forwarding.shutdown()?;
         shutdown_state.transfers.interrupt_operations_after_grace();
         shutdown_state.monitor.shutdown()?;
         shutdown_state.transfers.wait_transfers()?;
@@ -468,6 +477,7 @@ async fn connect_container(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
@@ -483,6 +493,7 @@ pub fn run() {
             transfers.restore_downloads(&file_tasks).map_err(|e| std::io::Error::other(e.message))?;
             transfers.observe_order(deletes.snapshot().iter().map(|t| t.sort_order).max().unwrap_or(0));
             app.manage(Arc::new(State {
+                port_forwarding: Arc::new(port_forwarding::PortForwardManager::open(&dir.join("port-forwards.sqlite"))),
                 traffic: traffic::TrafficManager::new(),
                 moves: moves::MoveState::default(),
                 monitor: monitor::MonitorManager::default(),
@@ -507,6 +518,8 @@ pub fn run() {
         .on_page_load(|webview, payload| {
             if payload.event() == tauri::webview::PageLoadEvent::Started {
                 if let Some(state) = webview.try_state::<Arc<State>>() {
+                    let _gate = state.configuration.lock().unwrap();
+                    state.port_forwarding.window_closed(&state.owner(webview.label()));
                     state.deletes.discard_window_drafts(webview.label());
                     state.monitor.stop_window(webview.label());
                     state.logs.stop(webview.label(), false);
@@ -528,6 +541,8 @@ pub fn run() {
             }
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 let state = window.state::<Arc<State>>();
+                let _gate = state.configuration.lock().unwrap();
+                state.port_forwarding.window_closed(&state.owner(window.label()));
                 state.deletes.discard_window_drafts(window.label());
                 state.monitor.close_monitor_window(window.label());
                 state.logs.stop(window.label(), true);
@@ -552,6 +567,21 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            port_forwarding::commands::open_port_forward_window,
+            port_forwarding::commands::port_forward_bootstrap,
+            port_forwarding::commands::subscribe_port_forwards,
+            port_forwarding::commands::ack_port_forward_frame,
+            port_forwarding::commands::unsubscribe_port_forwards,
+            port_forwarding::commands::port_forward_summary,
+            port_forwarding::commands::save_port_forward,
+            port_forwarding::commands::start_port_forward,
+            port_forwarding::commands::stop_port_forward,
+            port_forwarding::commands::apply_port_forward,
+            port_forwarding::commands::delete_port_forward,
+            port_forwarding::commands::resume_port_forward,
+            port_forwarding::commands::answer_port_forward,
+            port_forwarding::commands::test_port_forward,
+            port_forwarding::commands::open_port_forward_web,
             window_chrome::window_chrome,
             logs::open_container_logs,
             logs::logs_info,

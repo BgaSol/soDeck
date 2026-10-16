@@ -9,7 +9,8 @@
     "workspace-*",
     "editor-*",
     "logs-*",
-    "terminal-history"
+    "terminal-history",
+    "port-forwarding"
   ],
   "permissions": [
     "core:default",

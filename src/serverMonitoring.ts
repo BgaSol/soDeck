@@ -55,6 +55,7 @@ export interface ClientTrafficSample {
   terminalAndLogs: TrafficValues;
   files: TrafficValues;
   other: TrafficValues;
+  portForwarding?: TrafficValues;
 }
 export interface TrafficPoint {
   sequence: number;

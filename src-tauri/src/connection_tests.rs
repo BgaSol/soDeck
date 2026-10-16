@@ -27,6 +27,7 @@ fn server(id: &str) -> ServerConfig {
 }
 pub(crate) fn state() -> Arc<State> {
     Arc::new(State {
+        port_forwarding: Arc::new(crate::port_forwarding::PortForwardManager::default()),
         traffic: crate::traffic::TrafficManager::new(),
         database: Mutex::new(crate::db::Database::open(Path::new(":memory:")).unwrap()),
         configuration: Mutex::new(()),
@@ -754,8 +755,9 @@ fn jump_interactive_prompts_and_cancel_at_second_host() {
             &plan,
             &mut InteractiveProvider {
                 state: &worker_state,
-                stream,
+                events: Arc::new(TerminalConnectSink(stream)),
                 interaction,
+                pinned: None,
             },
             &worker_cancel,
         );

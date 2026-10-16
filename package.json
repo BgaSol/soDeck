@@ -12,6 +12,7 @@
     "desktop": "tauri dev",
     "test": "vitest run",
     "test:connection": "playwright test --config playwright.connection.config.ts",
+    "test:port-forwarding": "playwright test --config playwright.port-forwarding.config.ts",
     "test:database": "playwright test --config playwright.database.config.ts",
     "test:logs": "playwright test --config playwright.logs.config.ts",
     "test:terminal-history": "playwright test --config playwright.terminal-history.config.ts",

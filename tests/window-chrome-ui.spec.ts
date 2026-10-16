@@ -74,6 +74,8 @@ async function setup(
             nextCursor: null,
           };
         if (command === "session_count") return 1;
+        if (command === "port_forward_summary")
+          return { ready: 1, active: 1, connections: 2, attention: 0 };
         if (
           command === "log_session_count" ||
           command === "unsaved_editor_count"
@@ -113,6 +115,9 @@ test("window controls track native state changes and keep close confirmation", a
   await page.getByRole("button", { name: "最小化窗口", exact: true }).click();
   await page.getByRole("button", { name: "关闭窗口", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("活动终端");
+  await expect(page.getByRole("dialog")).toContainText(
+    "1 条端口转发仍在运行（2 条业务连接）",
+  );
   const calls = await page.evaluate(
     () => (window as any).__CHROME_TEST__.calls,
   );

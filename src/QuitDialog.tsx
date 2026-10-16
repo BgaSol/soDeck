@@ -45,7 +45,7 @@ export function QuitDialog({
       </header>
       <p>{details}。</p>
       <p className="muted">
-        退出将关闭连接、停止文件任务，并按确认内容处理未保存修改。已经删除的内容无法恢复。任务记录会保留，下次启动后可查看、核对；删除任务不会自动继续。
+        退出将关闭连接、停止端口转发和文件任务，并按确认内容处理未保存修改。已经删除的内容无法恢复。任务记录会保留，下次启动后可查看、核对；删除任务和端口转发不会自动继续。
       </p>
       {error && (
         <p className="panel-error" role="alert">

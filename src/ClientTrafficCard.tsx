@@ -22,6 +22,7 @@ export function ClientTrafficCard({
     ["监控查询", traffic?.monitoring],
     ["终端与日志", traffic?.terminalAndLogs],
     ["文件操作", traffic?.files],
+    ["端口转发", traffic?.portForwarding],
     ["其他／共享", traffic?.other],
   ];
   return (

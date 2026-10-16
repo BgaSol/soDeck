@@ -1,13 +1,15 @@
 //! Socket ownership and bounded, cancellable SSH direct-tcpip forwarding.
+pub mod forwarding;
 mod meter;
+mod resolver;
 use crate::model::{AppError, AppResult};
-use ssh2::{Channel, Session};
+use ssh2::Session;
 use std::{
     io::{Read, Write},
-    net::{Shutdown, TcpStream, ToSocketAddrs},
+    net::{Shutdown, TcpStream},
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc, Arc, Mutex, Weak,
+        Arc, Mutex, Weak,
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -19,6 +21,19 @@ pub enum Socket {
     Local(std::os::unix::net::UnixStream),
 }
 impl Socket {
+    fn check_alive(&self) -> AppResult<()> {
+        let socket = socket2::SockRef::from(self);
+        if let Some(error) = socket.take_error()? {
+            return Err(AppError::new("network", error));
+        }
+        let mut byte = [std::mem::MaybeUninit::uninit(); 1];
+        match socket.peek(&mut byte) {
+            Ok(0) => Err(AppError::new("network", "SSH 传输连接已关闭")),
+            Ok(_) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(()),
+            Err(e) => Err(AppError::new("network", e)),
+        }
+    }
     pub fn try_clone(&self) -> std::io::Result<Self> {
         match self {
             Self::Tcp(s) => s.try_clone().map(Self::Tcp),
@@ -42,6 +57,23 @@ impl Socket {
             Self::Tcp(s) => s.set_nonblocking(true),
             #[cfg(unix)]
             Self::Local(s) => s.set_nonblocking(true),
+        }
+    }
+}
+#[cfg(unix)]
+impl std::os::fd::AsFd for Socket {
+    fn as_fd(&self) -> std::os::fd::BorrowedFd<'_> {
+        match self {
+            Self::Tcp(s) => s.as_fd(),
+            Self::Local(s) => s.as_fd(),
+        }
+    }
+}
+#[cfg(windows)]
+impl std::os::windows::io::AsSocket for Socket {
+    fn as_socket(&self) -> std::os::windows::io::BorrowedSocket<'_> {
+        match self {
+            Self::Tcp(s) => s.as_socket(),
         }
     }
 }
@@ -161,32 +193,24 @@ pub fn retry<T>(
 }
 
 pub fn tcp(host: &str, port: u16, cancel: &Cancellation) -> AppResult<Arc<Socket>> {
-    // The system resolver is blocking. Keep it off the connection worker so
-    // cancellation does not wait for DNS; late results have no socket side effects.
-    let (send, recv) = mpsc::channel();
-    let host = host.to_owned();
-    thread::spawn(move || {
-        let result = (host.as_str(), port)
-            .to_socket_addrs()
-            .map(|a| a.take(8).collect::<Vec<_>>());
-        let _ = send.send(result);
-    });
-    let start = Instant::now();
-    let addresses = loop {
-        cancel.check()?;
-        match recv.recv_timeout(Duration::from_millis(50)) {
-            Ok(result) => break result.map_err(|e| AppError::new("network", e))?,
-            Err(mpsc::RecvTimeoutError::Timeout) if start.elapsed() < Duration::from_secs(12) => {}
-            _ => return Err(AppError::new("network", "服务器地址解析失败或超时")),
-        }
-    };
+    let addresses = resolver::resolve(host, port, cancel)?;
+    let deadline = Instant::now() + Duration::from_secs(12);
     for address in addresses {
         let start = Instant::now();
         loop {
             cancel.check()?;
+            if Instant::now() >= deadline {
+                break;
+            }
             match TcpStream::connect_timeout(&address, Duration::from_millis(300)) {
                 Ok(stream) => {
                     stream.set_nodelay(true)?;
+                    let keepalive = socket2::TcpKeepalive::new()
+                        .with_time(Duration::from_secs(30))
+                        .with_interval(Duration::from_secs(10));
+                    #[cfg(any(target_os = "linux", target_os = "macos"))]
+                    let keepalive = keepalive.with_retries(3);
+                    let _ = socket2::SockRef::from(&stream).set_tcp_keepalive(&keepalive);
                     let socket = Arc::new(Socket::Tcp(stream));
                     socket.nonblocking()?;
                     cancel.register(&socket)?;
@@ -312,41 +336,80 @@ pub fn forward(
     port: u16,
     cancel: &Cancellation,
 ) -> AppResult<SshConnection> {
-    parent.session().set_blocking(false);
-    let channel = retry(cancel, Duration::from_secs(12), || {
-        parent.session().channel_direct_tcpip(host, port, None)
-    })
-    .map_err(|e| {
-        if e.kind == "ssh" {
-            AppError::new(
-                "forwarding",
-                format!("跳板无法转发到 {host}:{port}：{}", e.message),
-            )
-        } else {
-            e
-        }
-    })?;
+    use forwarding::{ForwardCore, Target, Update};
     let (client, bridge) = socket_pair()?;
     let client = Arc::new(client);
     client.nonblocking()?;
     bridge.nonblocking()?;
     cancel.register(&client)?;
     let wake = bridge.try_clone()?;
+    let mut core = ForwardCore::new(parent);
+    core.enqueue(
+        1,
+        Some(bridge),
+        Target {
+            host: host.into(),
+            port,
+        },
+        ("127.0.0.1".into(), 0),
+    )?;
+    let poller = polling::Poller::new()?;
+    // Complete the first channel open here so failures retain the original
+    // connection stage (jump forwarding, before the target SSH handshake).
+    loop {
+        cancel.check()?;
+        let progress = core.drive()?;
+        let mut opened = false;
+        for update in core.updates.drain(..) {
+            match update {
+                Update::Opened(1) => opened = true,
+                Update::Failed(1, e) => {
+                    return Err(AppError::new(
+                        "forwarding",
+                        format!("跳板无法转发到 {host}:{port}：{}", e.message),
+                    ))
+                }
+                _ => {}
+            }
+        }
+        if opened {
+            break;
+        }
+        if !progress {
+            core.wait(&poller, None, Duration::from_millis(100))?;
+        }
+    }
     let stop = Arc::new(AtomicBool::new(false));
     let error = Arc::new(Mutex::new(None));
     let worker_stop = stop.clone();
     let worker_error = error.clone();
     let worker_cancel = cancel.clone();
-    let worker = thread::spawn(move || {
-        let mut bridge = bridge;
-        if let Err(e) = pump(&parent, channel, &mut bridge, &worker_stop, &worker_cancel) {
-            if !worker_stop.load(Ordering::SeqCst) && !worker_cancel.is_cancelled() {
-                *worker_error.lock().unwrap() =
-                    Some(AppError::new("network", format!("跳板转发中断：{e}")));
+    let worker = thread::Builder::new()
+        .name("ssh-jump".into())
+        .spawn(move || {
+            let result: AppResult<()> = (|| {
+                while !worker_stop.load(Ordering::SeqCst) && !worker_cancel.is_cancelled() {
+                    let progress = core.drive()?;
+                    core.updates.clear();
+                    if core.len() == 0 {
+                        break;
+                    }
+                    if !progress {
+                        core.wait(&poller, None, Duration::from_millis(100))?;
+                    }
+                }
+                Ok(())
+            })();
+            if let Err(e) = result {
+                if !worker_stop.load(Ordering::SeqCst) && !worker_cancel.is_cancelled() {
+                    *worker_error.lock().unwrap() = Some(AppError::new(
+                        "network",
+                        format!("跳板转发中断：{}", e.message),
+                    ));
+                }
             }
-        }
-        bridge.shutdown(Shutdown::Both);
-    });
+            // core owns and releases bridge, channel and parent together.
+        })?;
     SshConnection::new(
         client,
         Some(TunnelGuard {
@@ -357,112 +420,6 @@ pub fn forward(
         }),
     )
 }
-
-fn pump(
-    parent: &SshConnection,
-    mut channel: Channel,
-    socket: &mut Socket,
-    stop: &AtomicBool,
-    cancel: &Cancellation,
-) -> std::io::Result<()> {
-    // A pending SSH write retains exactly the same allocation, offset and length
-    // on EAGAIN. Never append new bytes to it until that write succeeds.
-    let mut outgoing = [0u8; 32768];
-    let mut incoming = [0u8; 32768];
-    let (mut out_pos, mut out_len, mut in_pos, mut in_len) = (0, 0, 0, 0);
-    let (mut local_eof, mut remote_eof, mut sent_eof, mut sent_shutdown) =
-        (false, false, false, false);
-    let mut keepalive = Instant::now();
-    while !stop.load(Ordering::SeqCst) && !cancel.is_cancelled() {
-        let mut progress = false;
-        if out_pos == out_len && !local_eof {
-            match socket.read(&mut outgoing) {
-                Ok(0) => local_eof = true,
-                Ok(n) => {
-                    out_pos = 0;
-                    out_len = n;
-                    progress = true;
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-                Err(e) => return Err(e),
-            }
-        }
-        if out_pos < out_len {
-            match channel.write(&outgoing[out_pos..out_len]) {
-                Ok(0) => {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::WriteZero,
-                        "跳板通道已关闭",
-                    ))
-                }
-                Ok(n) => {
-                    out_pos += n;
-                    progress = true;
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-                Err(e) => return Err(e),
-            }
-        }
-        if local_eof && out_pos == out_len && !sent_eof {
-            match channel.send_eof() {
-                Ok(()) => {
-                    sent_eof = true;
-                    progress = true;
-                }
-                Err(e) if e.code() == ssh2::ErrorCode::Session(-37) => {}
-                Err(e) => return Err(e.into()),
-            }
-        }
-        if in_pos == in_len && !remote_eof {
-            match channel.read(&mut incoming) {
-                Ok(0) => remote_eof = channel.eof(),
-                Ok(n) => {
-                    in_pos = 0;
-                    in_len = n;
-                    progress = true;
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-                Err(e) => return Err(e),
-            }
-        }
-        if in_pos < in_len {
-            match socket.write(&incoming[in_pos..in_len]) {
-                Ok(0) => {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::WriteZero,
-                        "本地转发已关闭",
-                    ))
-                }
-                Ok(n) => {
-                    in_pos += n;
-                    progress = true;
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-                Err(e) => return Err(e),
-            }
-        }
-        if remote_eof && in_pos == in_len && !sent_shutdown {
-            socket.shutdown(Shutdown::Write);
-            sent_shutdown = true;
-        }
-        if sent_eof && sent_shutdown {
-            break;
-        }
-        if keepalive.elapsed() >= Duration::from_secs(20) {
-            match parent.session().keepalive_send() {
-                Ok(_) => keepalive = Instant::now(),
-                Err(e) if e.code() == ssh2::ErrorCode::Session(-37) => {}
-                Err(e) => return Err(e.into()),
-            }
-        }
-        if !progress {
-            thread::sleep(Duration::from_millis(4));
-        }
-    }
-    let _ = channel.close();
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

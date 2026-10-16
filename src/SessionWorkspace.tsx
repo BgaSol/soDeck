@@ -44,6 +44,8 @@ import { useConnection } from "./useConnection";
 import { addressOf } from "./types";
 import type { AppError } from "./types";
 import type { WorkspaceTab } from "./workspaces";
+import { PortForwardButton } from "./PortForwardButton";
+import { errorOf } from "./types";
 
 export interface WorkspaceSnapshot {
   tab: WorkspaceTab;
@@ -277,6 +279,10 @@ export function SessionWorkspace({
                   <span className="connection-state-dot" aria-hidden="true" />
                   <span className="connection-state-label">{tab.state}</span>
                 </span>
+                <PortForwardButton
+                  serverId={tab.server.id}
+                  onError={(e) => setError(errorOf(e))}
+                />
                 {sessionId || tab.state === "连接中" ? (
                   <button
                     className="quiet terminal-connection-action"

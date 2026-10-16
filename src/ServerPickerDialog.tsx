@@ -11,6 +11,8 @@ import {
 import { addressOf, filterServers, type Server } from "./types";
 import { DialogHeader } from "./DialogHeader";
 import "./server-picker.css";
+import { forwardApi } from "./portForwardApi";
+import { Network } from "lucide-react";
 
 export function ServerPickerDialog({
   servers,
@@ -252,6 +254,19 @@ export function ServerPickerDialog({
       {!empty && (
         <footer className="server-footer">
           <div className="server-actions">
+            <button
+              className="quiet"
+              disabled={busy || !selected}
+              onClick={() => {
+                void forwardApi
+                  .open(selected?.id)
+                  .then(onClose)
+                  .catch((e) => window.alert(String(e?.message || e)));
+              }}
+            >
+              <Network size={14} />
+              配置端口转发
+            </button>
             <button
               className="quiet"
               disabled={busy || !selected}

@@ -9,8 +9,11 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+const BUCKETS: usize = 5;
+
 #[derive(Clone, Copy, Debug)]
 pub enum TrafficPurpose {
+    PortForward,
     ResourceMonitor,
     MountMonitor,
     DockerMonitor,
@@ -29,6 +32,7 @@ impl TrafficPurpose {
             Self::Terminal | Self::ContainerTerminal | Self::Logs => 1,
             Self::Files | Self::Transfer => 2,
             Self::Shared => 3,
+            Self::PortForward => 4,
         }
     }
 }
@@ -116,6 +120,7 @@ pub struct Sample {
     pub terminal_and_logs: Values,
     pub files: Values,
     pub other: Values,
+    pub port_forwarding: Values,
 }
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -141,7 +146,7 @@ struct Active {
 }
 struct Core {
     active: Vec<Active>,
-    totals: [[u64; 2]; 4],
+    totals: [[u64; 2]; BUCKETS],
     last: Instant,
     sample: Sample,
     history: VecDeque<Point>,
@@ -157,7 +162,7 @@ impl TrafficAccount {
         Self {
             core: Mutex::new(Core {
                 active: Vec::new(),
-                totals: [[0; 2]; 4],
+                totals: [[0; 2]; BUCKETS],
                 last: Instant::now(),
                 sample: Sample {
                     epoch: uuid::Uuid::new_v4().to_string(),
@@ -171,7 +176,8 @@ impl TrafficAccount {
                     monitoring: zero.clone(),
                     terminal_and_logs: zero.clone(),
                     files: zero.clone(),
-                    other: zero,
+                    other: zero.clone(),
+                    port_forwarding: zero,
                 },
                 history: VecDeque::new(),
                 truncated: false,
@@ -195,15 +201,15 @@ impl TrafficAccount {
             previous,
         });
         // Handshake bytes enter cumulative totals, never a later interval's rate.
-        Self::update_values(&mut c, [[0; 2]; 4], None);
+        Self::update_values(&mut c, [[0; 2]; BUCKETS], None);
         c.sample.active_connections = c.active.len();
         c.sample.revision += 1;
         c.sample.status = "collecting";
     }
-    fn update_values(c: &mut Core, delta: [[u64; 2]; 4], elapsed: Option<f64>) {
+    fn update_values(c: &mut Core, delta: [[u64; 2]; BUCKETS], elapsed: Option<f64>) {
         let mut total = [0u64; 2];
         let mut change = [0u64; 2];
-        for b in 0..4 {
+        for b in 0..BUCKETS {
             for i in 0..2 {
                 total[i] = total[i].saturating_add(c.totals[b][i]);
                 change[i] = change[i].saturating_add(delta[b][i]);
@@ -214,6 +220,7 @@ impl TrafficAccount {
         c.sample.terminal_and_logs = Values::new(c.totals[1], delta[1], elapsed);
         c.sample.files = Values::new(c.totals[2], delta[2], elapsed);
         c.sample.other = Values::new(c.totals[3], delta[3], elapsed);
+        c.sample.port_forwarding = Values::new(c.totals[4], delta[4], elapsed);
     }
     fn sample_at(&self, instant: Instant, at: u64) {
         let mut c = self.core.lock().unwrap();
@@ -221,7 +228,7 @@ impl TrafficAccount {
         if elapsed < 0.001 {
             return;
         }
-        let mut delta = [[0u64; 2]; 4];
+        let mut delta = [[0u64; 2]; BUCKETS];
         let mut active = std::mem::take(&mut c.active);
         active.retain_mut(|a| {
             let closed = a.counter.closed.load(Ordering::Acquire);
@@ -338,6 +345,23 @@ impl TrafficManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn forwarding_has_its_own_bucket_and_enters_total_once() {
+        let account = TrafficAccount::new();
+        let counter = Arc::new(ConnectionTraffic::default());
+        account.attach(counter.clone(), TrafficPurpose::PortForward);
+        counter.record(true, 1024);
+        counter.record(false, 2048);
+        counter.close();
+        let start = account.core.lock().unwrap().last;
+        account.sample_at(start + Duration::from_secs(2), now());
+        let sample = account.snapshot();
+        assert_eq!(sample.port_forwarding.sent_bytes, "1024");
+        assert_eq!(sample.total.received_bytes, "2048");
+        assert_eq!(sample.other.sent_bytes, "0");
+        assert_eq!(sample.terminal_and_logs.received_bytes, "0");
+        assert_eq!(sample.active_connections, 0);
+    }
     #[test]
     fn counts_successes_once_and_preserves_closed_connections() {
         let a = TrafficAccount::new();
