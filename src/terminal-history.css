@@ -5,20 +5,21 @@
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  background: #14171e;
-  color: #dce3ef;
+  background: var(--terminal);
+  color: var(--terminal-text);
 }
 .terminal-history-toolbar {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 42px;
+  min-height: 2.7rem;
   padding: 5px 12px;
-  background: #191c23;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
-  font-size: 12px;
+  background: var(--surface);
+  color: var(--text);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--font-secondary);
   flex-wrap: nowrap;
-  height: 42px;
+  height: 2.7rem;
   flex-shrink: 0;
   white-space: nowrap;
   box-sizing: border-box;
@@ -34,23 +35,23 @@
   gap: 6px;
   padding: 4px 7px;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   background: transparent;
-  color: #aab2c0;
-  font-size: 11px;
+  color: var(--muted);
+  font-size: var(--font-caption);
   line-height: 20px;
 }
 .terminal-history-toolbar .terminal-tool:hover:not(:disabled) {
-  color: #eef1f6;
-  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+  background: var(--hover);
 }
 .terminal-history-toolbar .terminal-tool:active:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--tag);
   box-shadow: none;
 }
 .terminal-history-toolbar .terminal-tool[aria-pressed="true"] {
-  background: rgba(145, 180, 255, 0.13);
-  color: #b6cdff;
+  background: var(--selected);
+  color: var(--accent-text);
 }
 .terminal-tool > svg {
   flex-shrink: 0;
@@ -59,7 +60,7 @@
   width: 1px;
   height: 14px;
   margin: 0 5px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--line);
 }
 .terminal-history-feedback {
   display: flex;
@@ -68,14 +69,14 @@
   gap: 12px;
   min-width: 0;
   margin-left: auto;
-  font-size: 10px;
+  font-size: var(--font-caption);
 }
 .terminal-history-toolbar .history-record-state {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  color: #98a3b3;
+  color: var(--muted);
   max-width: 240px;
 }
 .history-record-state > span:last-child {
@@ -90,19 +91,19 @@
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #87b59b;
+  background: var(--green);
 }
 .terminal-history-toolbar .history-cleared,
 .history-new-output {
-  color: #b6cdff;
-  font-size: 10px;
+  color: var(--accent-text);
+  font-size: var(--font-caption);
 }
 .history-new-output {
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .terminal-history-toolbar .history-record-state.history-warning {
-  color: #efbd8d;
+  color: var(--error);
 }
 @container terminal-workspace (max-width: 620px) {
   .terminal-tool-label {
@@ -146,7 +147,7 @@
   }
   .terminal-history-toolbar .terminal-tool,
   .terminal-history-toolbar .history-record-state {
-    color: #eef1f6;
+    color: var(--text);
   }
   .terminal-history-toolbar .terminal-tool {
     border-color: #7e8795;
@@ -178,30 +179,31 @@
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  background: #171b23;
-  color: #dce3ef;
-  font-size: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--font-secondary);
 }
 .history-controls,
 .history-search,
 .history-status,
 .history-pagination {
+  background: var(--canvas);
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
   padding: 8px 12px;
-  border-bottom: 1px solid #303745;
+  border-bottom: 1px solid var(--line);
 }
 .terminal-history-view button,
 .terminal-replay button {
-  color: #c6d5ee;
-  background: #242d3b;
-  border: 1px solid #3b485d;
-  border-radius: 5px;
+  color: var(--text);
+  background-color: var(--field);
+  border: 1px solid var(--strong-line);
+  border-radius: var(--radius-control);
   padding: 4px 8px;
-  font-size: 12px;
-  cursor: pointer;
+  font-size: var(--font-secondary);
+  cursor: default;
 }
 .terminal-history-view button:disabled,
 .terminal-history-toolbar button:disabled {
@@ -213,18 +215,25 @@
 .terminal-history-view input:focus-visible,
 .terminal-history-view select:focus-visible,
 .terminal-history-view summary:focus-visible {
-  outline: 2px solid #91b4ff;
+  outline: 2px solid var(--blue);
   outline-offset: 2px;
 }
 .terminal-history-view input,
 .terminal-history-view select {
-  color: #dce3ef;
-  background: #1e2530;
-  border: 1px solid #3b485d;
-  border-radius: 5px;
+  min-height: var(--control-height);
+  color: var(--text);
+  background-color: var(--field);
+  border: 1px solid var(--strong-line);
+  border-radius: var(--radius-control);
   padding: 5px 7px;
-  font-size: 12px;
+  font-size: var(--font-secondary);
   min-width: 0;
+}
+.terminal-history-view select {
+  padding-right: 2rem;
+}
+.terminal-history-view button:hover:not(:disabled) {
+  background: var(--hover);
 }
 .history-controls > label {
   flex: 1;
@@ -254,16 +263,17 @@
 .history-search input[type="checkbox"] {
   width: 14px;
   height: 14px;
+  min-height: 0;
   padding: 0;
   margin: 0;
   flex: none;
-  accent-color: #91b4ff;
+  accent-color: var(--blue);
 }
 .history-search input[type="datetime-local"] {
   width: auto;
 }
 .history-time-filter summary {
-  cursor: pointer;
+  cursor: default;
 }
 .history-time-filter[open] {
   flex-basis: 100%;
@@ -272,7 +282,7 @@
   margin: 6px 10px 0 0;
 }
 .history-status {
-  color: #a6b4ca;
+  color: var(--muted);
   min-height: 32px;
 }
 .history-status > span:first-child {
@@ -288,17 +298,14 @@
   gap: 9px;
   min-height: 29px;
   padding: 5px 10px;
-  border-bottom: 1px solid #222a36;
-  font:
-    12px/1.55 "Cascadia Code",
-    Consolas,
-    monospace;
+  border-bottom: 1px solid var(--line);
+  font: var(--font-secondary)/1.65 var(--mono);
 }
 .terminal-history-row > time {
-  color: #798ba4;
+  color: var(--muted);
   width: 70px;
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--font-caption);
   padding-top: 2px;
 }
 .terminal-history-row .history-row-number {
@@ -308,7 +315,7 @@
   text-align: right;
   border-color: transparent;
   background: transparent;
-  color: #758ba9;
+  color: var(--muted);
 }
 .history-row-content {
   flex: 1;
@@ -321,8 +328,8 @@
   font: inherit;
 }
 .history-row-content summary {
-  color: #a2b2c9;
-  cursor: pointer;
+  color: var(--muted);
+  cursor: default;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -335,57 +342,58 @@
   flex-shrink: 0;
 }
 .history-row-actions button {
-  font-size: 11px;
+  font-size: var(--font-caption);
   padding: 2px 5px;
 }
 .history-marker {
-  background: #243247;
-  color: #b9cde9;
-  border-top: 1px solid #3b506b;
+  background: var(--tag);
+  color: var(--text);
+  border-top: 1px solid var(--line);
   margin-top: 10px;
 }
 .history-selected {
-  background: #253d59;
+  background: var(--selected);
 }
 .history-pagination {
-  border-top: 1px solid #303745;
+  border-top: 1px solid var(--line);
   border-bottom: 0;
-  color: #92a4bd;
-  font-size: 11px;
+  color: var(--muted);
+  font-size: var(--font-caption);
 }
 .history-error {
   padding: 8px 12px;
-  color: #f2b6a7;
-  background: #38252b;
+  color: var(--error);
+  background: var(--error-bg);
   display: flex;
   align-items: center;
   gap: 12px;
 }
 .history-empty {
   padding: 35px 18px;
-  color: #98a9bf;
+  color: var(--muted);
   text-align: center;
 }
 .history-hit-source {
   padding: 9px 12px 4px;
-  color: #91b4ff;
-  font-size: 12px;
+  color: var(--accent-text);
+  font-size: var(--font-secondary);
 }
 .terminal-replay {
   position: absolute;
   inset: 0;
   z-index: 4;
-  background: #14171e;
+  background: var(--terminal);
   display: flex;
   flex-direction: column;
-  border: 1px solid #466283;
+  border: 1px solid var(--strong-line);
 }
 .terminal-replay > header {
   padding: 10px;
   display: flex;
   align-items: center;
   gap: 10px;
-  background: #202a39;
+  background: var(--canvas);
+  color: var(--text);
 }
 .terminal-replay > header > span {
   flex: 1;
@@ -404,21 +412,21 @@
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #171b23;
-  color: #dce3ef;
+  background: var(--surface);
+  color: var(--text);
 }
 .terminal-history-app > header:not(.window-titlebar) {
   padding: 18px 22px 12px;
-  border-bottom: 1px solid #303745;
+  border-bottom: 1px solid var(--line);
 }
 .terminal-history-app h1 {
   font-size: 20px;
   margin: 0;
 }
 .terminal-history-app p {
-  color: #9aaec9;
+  color: var(--muted);
   margin: 5px 0 0;
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 .terminal-history-app > .terminal-history-view {
   flex: 1;

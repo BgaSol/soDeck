@@ -93,7 +93,7 @@
   text-overflow: ellipsis;
 }
 .tab-menu-detail {
-  font-size: 10px;
+  font-size: var(--font-caption);
   flex-shrink: 0;
   opacity: 0.8;
 }

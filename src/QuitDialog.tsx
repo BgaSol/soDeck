@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
 import { errorOf } from "./types";
 import { APP_NAME } from "./brand";
 
@@ -43,18 +42,10 @@ export function QuitDialog({
     >
       <header className="dialog-head">
         <h2 id="quit-title">退出 {APP_NAME}？</h2>
-        <button
-          className="icon-button"
-          aria-label="取消退出"
-          disabled={busy}
-          onClick={onClose}
-        >
-          <X size={17} />
-        </button>
       </header>
       <p>{details}。</p>
       <p className="muted">
-        退出将关闭连接、停止传输并放弃未保存修改。结果未确认的任务保留记录，下次启动后可核对。
+        退出将关闭连接、停止文件任务，并按确认内容处理未保存修改。已经删除的内容无法恢复。任务记录会保留，下次启动后可查看、核对；删除任务不会自动继续。
       </p>
       {error && (
         <p className="panel-error" role="alert">

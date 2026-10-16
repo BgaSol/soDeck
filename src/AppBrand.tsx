@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { DialogHeader } from "./DialogHeader";
 import { APP_DESCRIPTION, APP_ICON, APP_NAME, APP_VERSION } from "./brand";
 
 export function BrandIcon({ size = 34 }: { size?: number }) {
@@ -37,16 +37,12 @@ function AboutDialog({ onClose }: { onClose: () => void }) {
         close();
       }}
     >
-      <header className="dialog-head">
-        <h2 id="about-title">关于 {APP_NAME}</h2>
-        <button
-          className="icon-button"
-          aria-label="关闭关于窗口"
-          onClick={close}
-        >
-          <X size={17} />
-        </button>
-      </header>
+      <DialogHeader
+        id="about-title"
+        title={`关于 ${APP_NAME}`}
+        closeLabel="关闭关于窗口"
+        onClose={close}
+      />
       <div className="about-identity">
         <BrandIcon size={80} />
         <strong>{APP_NAME}</strong>

@@ -29,11 +29,14 @@ import {
   MemoryStick,
   ClipboardCopy,
   Info,
+  Trash2,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { desktop } from "./api";
 import { transferApi } from "./transferApi";
 import type { RemoteClipboard } from "./transferApi";
+import { DeleteFilesDialog } from "./DeleteFilesDialog";
+import type { DeletePreview } from "./fileApi";
 import { FileOperationDialog } from "./FileOperationDialog";
 import { CopyTargetDialog } from "./CopyTargetDialog";
 import type { FileOperation } from "./FileOperationDialog";
@@ -74,6 +77,7 @@ export function FilePanel({
   initialState,
   onStateChange,
   terminalCwd,
+  revealRequest,
 }: {
   sessionId: string | null;
   serverName: string;
@@ -81,6 +85,7 @@ export function FilePanel({
   initialState?: FilePanelSnapshot;
   onStateChange?: (state: FilePanelSnapshot) => void;
   terminalCwd?: TerminalDirectory;
+  revealRequest?: { path: string; sequence: number };
 }) {
   const { model, state } = useRemoteFileTree(
     sessionId,
@@ -88,10 +93,24 @@ export function FilePanel({
     initialState,
     terminalCwd,
   );
+  const appliedReveal = useRef(0);
+  useEffect(() => {
+    if (
+      !active ||
+      !sessionId ||
+      !revealRequest ||
+      appliedReveal.current === revealRequest.sequence
+    )
+      return;
+    appliedReveal.current = revealRequest.sequence;
+    void model.revealPath(revealRequest.path);
+  }, [active, sessionId, revealRequest, model]);
   const { selected } = state;
   const selection = state.selection ?? (selected ? [selected] : []);
   const panel = useRef<HTMLElement>(null);
   const [operation, setOperation] = useState<FileOperation | null>(null);
+  const [deleteDraft, setDeleteDraft] = useState<DeletePreview | null>(null);
+  const preparingDelete = useRef(false);
   const [clipboard, setClipboard] = useState<RemoteClipboard | null>(null);
   const [copyPaths, setCopyPaths] = useState<string[] | null>(null);
   const viewRegistration = useRef<{ id: string; update: () => void } | null>(
@@ -141,7 +160,8 @@ export function FilePanel({
     state.revealing ||
     Object.values(state.directories).some((node) => node.loading);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [working, setBusy] = useState(false);
+  const busy = working || !!deleteDraft;
   const [menu, setMenu] = useState<{
     file: FileEntry;
     blank?: boolean;
@@ -157,6 +177,29 @@ export function FilePanel({
   const lastReveal = useRef(0);
   const report = useRef(onStateChange);
   report.current = onStateChange;
+
+  useEffect(() => {
+    let previous = model.getState().currentPath;
+    let existed = !!model.getState().directories[previous];
+    return model.subscribe(() => {
+      const next = model.getState();
+      if (
+        existed &&
+        previous !== next.currentPath &&
+        previous !== "/" &&
+        !next.directories[previous] &&
+        previous.startsWith(
+          next.currentPath === "/" ? "/" : next.currentPath + "/",
+        )
+      ) {
+        setPathNotice({
+          message: `原目录已不存在，已返回 ${next.currentPath}`,
+        });
+      }
+      previous = next.currentPath;
+      existed = !!next.directories[previous];
+    });
+  }, [model]);
 
   useEffect(() => {
     setPath(state.currentPath);
@@ -196,8 +239,8 @@ export function FilePanel({
     viewRegistration.current?.update();
   }, [state.currentPath]);
   useEffect(() => {
-    report.current?.({ ...model.snapshot(), mounts: mounts.model.snapshot() });
-  }, [model, state, mounts.model, mounts.state]);
+    report.current?.(model.snapshot());
+  }, [model, state]);
   useEffect(() => {
     if (
       !active ||
@@ -418,6 +461,41 @@ export function FilePanel({
     setMenu(null);
     setOperation({ kind, sessionId, path });
   }
+  const deletePaths = (file?: FileEntry) =>
+    file && !selection.includes(file.path) ? [file.path] : selection;
+  const canDelete = (paths: string[]) =>
+    !!sessionId &&
+    !busy &&
+    !operation &&
+    !download &&
+    !copyPaths &&
+    paths.length > 0 &&
+    paths.every(
+      (path) =>
+        path !== "/" &&
+        !mounts.state.table?.mounts.some((mount) => mount.target === path),
+    );
+  async function requestDelete(file?: FileEntry) {
+    const paths = [...deletePaths(file)];
+    if (!sessionId || preparingDelete.current || !canDelete(paths)) return;
+    const owner = sessionId;
+    preparingDelete.current = true;
+    setMenu(null);
+    setMountDetail(null);
+    setError("");
+    setBusy(true);
+    try {
+      const draft = await fileApi.prepareDelete(owner, paths);
+      if (sessionRef.current === owner) {
+        setDeleteDraft(draft);
+      }
+    } catch (e) {
+      if (sessionRef.current === owner) setError(errorOf(e).message);
+    } finally {
+      preparingDelete.current = false;
+      setBusy(false);
+    }
+  }
   function copyToServer(file?: FileEntry) {
     if (!sessionId || busy) return;
     const paths =
@@ -498,10 +576,12 @@ export function FilePanel({
     };
     window.addEventListener("click", dismiss);
     window.addEventListener("blur", dismiss);
+    window.addEventListener("resize", dismiss);
     window.addEventListener("keydown", key);
     return () => {
       window.removeEventListener("click", dismiss);
       window.removeEventListener("blur", dismiss);
+      window.removeEventListener("resize", dismiss);
       window.removeEventListener("keydown", key);
     };
   }, [menu]);
@@ -664,6 +744,15 @@ export function FilePanel({
               <Download size={15} />
             </button>
             <button
+              className="icon-button danger"
+              aria-label="删除选中项目"
+              title="永久删除选中项目…"
+              disabled={!canDelete(selection)}
+              onClick={() => void requestDelete()}
+            >
+              <Trash2 size={15} />
+            </button>
+            <button
               className="icon-button"
               aria-label="刷新目录"
               disabled={!sessionId || refreshLoading}
@@ -733,8 +822,8 @@ export function FilePanel({
               size: 0,
               modified: 0,
             },
-            x: Math.min(event.clientX, window.innerWidth - 210),
-            y: Math.min(event.clientY, window.innerHeight - 310),
+            x: event.clientX,
+            y: event.clientY,
           });
         }}
         onKeyDown={(event) => {
@@ -762,6 +851,17 @@ export function FilePanel({
                   : pasteTarget,
               );
             else void clipboardCopy(key === "x" ? "move" : "copy");
+          } else if (
+            !event.repeat &&
+            !event.altKey &&
+            !event.shiftKey &&
+            (/Mac/i.test(navigator.platform)
+              ? event.key === "Backspace" && event.metaKey && !event.ctrlKey
+              : event.key === "Delete" && !event.metaKey && !event.ctrlKey)
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            void requestDelete();
           } else if (event.key === "Escape" && clipboard?.intent === "move") {
             event.preventDefault();
             void transferApi
@@ -926,11 +1026,12 @@ export function FilePanel({
                     ) {
                       event.preventDefault();
                       const rect = event.currentTarget.getBoundingClientRect();
-                      model.select(file.path, file.isDir);
+                      if (!selection.includes(file.path))
+                        model.select(file.path, file.isDir);
                       setMenu({
                         file,
-                        x: Math.min(rect.x + 20, window.innerWidth - 195),
-                        y: Math.min(rect.bottom, window.innerHeight - 240),
+                        x: rect.x + 20,
+                        y: rect.bottom,
                       });
                     } else if (
                       event.key.length === 1 &&
@@ -960,8 +1061,8 @@ export function FilePanel({
                       model.select(file.path, file.isDir);
                     setMenu({
                       file,
-                      x: Math.min(event.clientX, window.innerWidth - 195),
-                      y: Math.min(event.clientY, window.innerHeight - 240),
+                      x: event.clientX,
+                      y: event.clientY,
                     });
                   }}
                 >
@@ -1028,13 +1129,18 @@ export function FilePanel({
                       className={`mount-usage${capacity?.stale ? " stale" : ""}`}
                       data-mount-detail
                       aria-label={`${file.path} ${mountLabel}${capacity?.stale ? "，上次数据" : ""}，查看挂载详情`}
+                      title={
+                        capacity?.value?.updatedAt
+                          ? `${capacity.stale ? "上次采样" : "更新于"} ${new Date(capacity.value.updatedAt).toLocaleTimeString()}`
+                          : "尚无容量采样"
+                      }
                       aria-haspopup="dialog"
                       aria-expanded={mountDetail?.key === mount.key}
                       onClick={() => showMount(mount)}
                     >
                       <span>
                         {mountLabel}
-                        {capacity?.stale && capacity.value ? " · 旧" : ""}
+                        {capacity?.stale && capacity.value ? " · 上次" : ""}
                       </span>
                       {percent != null && (
                         <span className="mount-meter" aria-hidden="true">
@@ -1142,7 +1248,7 @@ export function FilePanel({
       </footer>
       {menu && (
         <div
-          className="server-context-menu file-context-menu"
+          className="context-menu file-context-menu"
           ref={contextMenu}
           role="menu"
           aria-label="文件操作"
@@ -1267,7 +1373,33 @@ export function FilePanel({
               </button>
             </>
           )}
+          {!menu.blank && (
+            <button
+              role="menuitem"
+              className="danger file-delete-menu-item"
+              disabled={!canDelete(deletePaths(menu.file))}
+              onClick={() => void requestDelete(menu.file)}
+            >
+              <Trash2 size={14} />
+              {deletePaths(menu.file).length > 1
+                ? `删除选中的 ${deletePaths(menu.file).length} 项…`
+                : "删除…"}
+            </button>
+          )}
         </div>
+      )}
+      {deleteDraft && (
+        <DeleteFilesDialog
+          draft={deleteDraft}
+          onClose={() => {
+            setDeleteDraft(null);
+            rowElements.current.get(model.getState().selected)?.focus();
+          }}
+          onStarted={() => {
+            setDeleteDraft(null);
+            rowElements.current.get(model.getState().selected)?.focus();
+          }}
+        />
       )}
       {mountDetail && detailMount && (
         <MountDetailsPopover

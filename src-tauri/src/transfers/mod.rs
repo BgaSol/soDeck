@@ -40,6 +40,7 @@ use tauri::{Emitter, Manager, State as TauriState, WebviewWindow};
 pub struct TransferState {
     next_order: AtomicU64,
     downloads: Mutex<Vec<download::DownloadHandle>>,
+    recovered_downloads: Mutex<Vec<download::DownloadReceipt>>,
     writes: Mutex<Vec<WriteHandle>>,
     active: Mutex<usize>,
     slot: Condvar,
@@ -50,6 +51,63 @@ pub struct TransferState {
     operations: Mutex<HashMap<String, (SharedContext, Cancellation)>>,
 }
 impl TransferState {
+    pub(crate) fn deletion_conflict(
+        &self,
+        key: &str,
+        paths: &[String],
+    ) -> Option<(String, String)> {
+        for download in self.downloads.lock().unwrap().iter() {
+            let task = download.task.lock().unwrap();
+            if download.spec.target_public_key() == key
+                && model::active(&task.status)
+                && paths
+                    .iter()
+                    .any(|p| scheduler::overlaps(p, &task.remote_path))
+            {
+                return Some((task.id.clone(), task.remote_path.clone()));
+            }
+        }
+        for write in self.writes.lock().unwrap().iter() {
+            let task = write.task.lock().unwrap().clone();
+            if !task.active() {
+                continue;
+            }
+            if let Source::Remote {
+                context,
+                paths: sources,
+            } = &write.source
+            {
+                if context.target_public_key() == key {
+                    if let Some(path) = sources
+                        .iter()
+                        .find(|source| paths.iter().any(|p| scheduler::overlaps(p, source)))
+                    {
+                        return Some((task.id.clone(), path.clone()));
+                    }
+                }
+            }
+            if write.write_key() == key {
+                // Before a plan exists, protect the destination while the task discovers its outputs.
+                let plan = write.plan.lock().unwrap();
+                let destinations: Vec<_> = plan
+                    .as_ref()
+                    .map(|p| {
+                        p.entries
+                            .iter()
+                            .filter_map(|e| e.target.as_deref())
+                            .collect()
+                    })
+                    .unwrap_or_else(|| vec![task.target_path.as_str()]);
+                if let Some(path) = destinations
+                    .iter()
+                    .find(|target| paths.iter().any(|p| scheduler::overlaps(p, target)))
+                {
+                    return Some((task.id.clone(), (*path).into()));
+                }
+            }
+        }
+        None
+    }
     pub fn open(path: PathBuf) -> AppResult<Self> {
         std::fs::create_dir_all(&path)?;
         let store = task_store::TaskStore::open(&path.join("tasks-v3.sqlite"))?;
@@ -67,8 +125,47 @@ impl TransferState {
             ..Self::default()
         })
     }
-    fn next_order(&self) -> u64 {
+    pub(crate) fn next_order(&self) -> u64 {
         self.next_order.fetch_add(1, Ordering::SeqCst) + 1
+    }
+    pub(crate) fn observe_order(&self, order: u64) {
+        self.next_order.fetch_max(order, Ordering::SeqCst);
+    }
+    pub(crate) fn restore_downloads(
+        &self,
+        history: &crate::file_tasks::FileTaskState,
+    ) -> AppResult<()> {
+        let store = history.store.lock().unwrap();
+        let mut records = store.load::<download::DownloadReceipt>("download")?;
+        for record in &mut records {
+            self.observe_order(record.task.presentation.sort_order);
+            if model::active(&record.task.status) {
+                record.task.status = "interrupted".into();
+                record.task.error =
+                    Some("上次下载中断；已保存的文件保留，重试将重新检查来源和本地目标".into());
+                store.save("download", &record.task.id, record)?;
+            }
+        }
+        *self.recovered_downloads.lock().unwrap() = records;
+        Ok(())
+    }
+    pub(crate) fn task_busy(&self, id: &str) -> bool {
+        self.writes
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|w| w.task.lock().unwrap().id == id)
+            .is_some_and(|w| w.lifecycle.try_lock().is_err())
+    }
+    pub(crate) fn has_pending_task(&self, id: &str) -> bool {
+        self.writes.lock().unwrap().iter().any(|w| {
+            w.task.lock().unwrap().id == id && w.receipt.lock().unwrap().pending_commit.is_some()
+        }) || self
+            .recovered
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|r| r.view.as_ref().is_some_and(|v| v.id == id) && r.pending_commit.is_some())
     }
     fn conflicting_commit(&self, item: &WriteHandle, path: &str) -> Option<String> {
         let key = item.write_key();
@@ -192,6 +289,16 @@ impl TransferState {
         for (_, cancel) in self.operations.lock().unwrap().values() {
             cancel.cancel();
         }
+        self.stop_transfers();
+    }
+    pub fn interrupt_operations_after_grace(&self) {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline && !self.operations.lock().unwrap().is_empty() {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        self.cancel_all();
+    }
+    pub fn stop_transfers(&self) {
         for item in self.downloads.lock().unwrap().iter() {
             item.cancel.cancel();
         }
@@ -223,7 +330,7 @@ impl TransferState {
                 break;
             }
             if Instant::now() >= deadline {
-                return Err(AppError::new("busy", "传输进程仍在停止，请稍后重试退出"));
+                return Err(AppError::new("busy", "文件任务仍在停止，请稍后重试退出"));
             }
             drop(
                 self.slot
@@ -503,6 +610,7 @@ fn launch_write(app: tauri::AppHandle, state: Arc<State>, item: WriteHandle) {
                 }
             }
         }
+        item.task.lock().unwrap().presentation.finished_at = Some(crate::file_tasks::now());
         item.task.lock().unwrap().waiting_reason = None;
         *item.auth.lock().unwrap() = None;
         state.drags.clipboard.finish(&app, &item);
@@ -511,6 +619,7 @@ fn launch_write(app: tauri::AppHandle, state: Arc<State>, item: WriteHandle) {
         }
         let view = item.task.lock().unwrap().clone();
         let _ = app.emit("transfer-updated", &view);
+        state.file_tasks.emit(&view.id);
         *state.transfers.active.lock().unwrap() -= 1;
         state.transfers.slot.notify_all();
     });
@@ -522,43 +631,16 @@ pub fn list_transfers(
     state: TauriState<Arc<State>>,
 ) -> AppResult<Vec<TaskView>> {
     moves::workspace_only(&window)?;
+    Ok(snapshot(&state))
+}
+pub(crate) fn snapshot(state: &State) -> Vec<TaskView> {
     let mut tasks: Vec<_> = state
         .transfers
         .downloads
         .lock()
         .unwrap()
         .iter()
-        .map(|d| {
-            let t = d.task.lock().unwrap();
-            TaskView {
-                id: t.id.clone(),
-                run_id: t.run_id.clone(),
-                presentation: t.presentation.clone(),
-                kind: "download".into(),
-                source_name: t.server_name.clone(),
-                source_path: t.remote_path.clone(),
-                target_name: "本机".into(),
-                target_path: t.local_path.clone(),
-                conflict: t.conflict,
-                status: t.status.as_str().into(),
-                bytes_done: t.bytes_done,
-                bytes_total: t.bytes_total,
-                current_file: None,
-                current_bytes: 0,
-                committed_bytes: t.bytes_done,
-                waiting_reason: None,
-                files_done: t.files_done,
-                files_total: t.files_total,
-                skipped: t.skipped,
-                error: t.error.clone(),
-                warnings: Vec::new(),
-                cleanup_pending: false,
-                items: vec![],
-                direct_address: None,
-                temporary_paths: vec![],
-                can_resume: false,
-            }
-        })
+        .map(|d| download::view(&d.task.lock().unwrap()))
         .collect();
     tasks.extend(state.transfers.writes.lock().unwrap().iter().map(|w| {
         let mut view = w.task.lock().unwrap().clone();
@@ -590,8 +672,17 @@ pub fn list_transfers(
             .filter_map(|r| r.view.clone()),
     );
     tasks.extend(state.transfers.history.lock().unwrap().iter().cloned());
+    tasks.extend(
+        state
+            .transfers
+            .recovered_downloads
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|r| download::view(&r.task)),
+    );
     model::sort_tasks(&mut tasks);
-    Ok(tasks)
+    tasks
 }
 #[tauri::command]
 pub fn cancel_transfer(
@@ -728,9 +819,13 @@ pub fn retry_transfer(
     resume: Option<bool>,
 ) -> AppResult<()> {
     moves::workspace_only(&window)?;
+    let action = state.file_tasks.actions.lock().unwrap();
     let item = match recover_handle(&state, &id) {
         Ok(item) => item,
-        Err(e) if e.kind == "notFound" => return download::retry_download(window, state, id),
+        Err(e) if e.kind == "notFound" => {
+            drop(action);
+            return download::retry_download(window, state, id);
+        }
         Err(e) => return Err(e),
     };
     let _life = item
@@ -773,6 +868,12 @@ pub fn retry_transfer(
             }
         }
     }
+    state
+        .file_tasks
+        .store
+        .lock()
+        .unwrap()
+        .restore_visibility(&id)?;
     item.cancel.reset()?;
     if let Some(id) = item.receipt.lock().unwrap().clipboard_id.as_deref() {
         state.drags.clipboard.reserve_retry(id)?;
@@ -814,6 +915,7 @@ pub async fn reconcile_transfer(
     let item = recover_handle(&state, &id)?;
     let state = state.inner().clone();
     crate::blocking(move || {
+        let action = state.file_tasks.actions.lock().unwrap();
         let _life = item
             .lifecycle
             .try_lock()
@@ -821,6 +923,7 @@ pub async fn reconcile_transfer(
         if item.task.lock().unwrap().active() {
             return Err(AppError::new("busy", "任务仍在运行"));
         }
+        drop(action);
         recovery::reconcile(&state, &item)?;
         state.drags.clipboard.finish(&app, &item);
         state.transfers.persist(&item)?;
@@ -851,6 +954,7 @@ pub async fn cleanup_transfer(
     let item = recover_handle(&state, &id)?;
     let state = state.inner().clone();
     crate::blocking(move || {
+        let action = state.file_tasks.actions.lock().unwrap();
         let _life = item
             .lifecycle
             .try_lock()
@@ -858,8 +962,10 @@ pub async fn cleanup_transfer(
         if item.task.lock().unwrap().active() {
             return Err(AppError::new("busy", "任务仍在运行"));
         }
+        drop(action);
         let result = cleanup(&item);
         state.transfers.persist(&item)?;
+        state.file_tasks.emit(&id);
         result
     })
     .await

@@ -1,0 +1,47 @@
+/* Shared by file actions, workspace tabs and the server picker. */
+.context-menu {
+  position: fixed;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  min-width: 12.85rem;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0.35rem;
+  border: 1px solid var(--strong-line);
+  border-radius: var(--radius-popover);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-popover);
+}
+.context-menu button {
+  flex: none;
+  justify-content: flex-start;
+  min-height: var(--control-compact);
+  padding: 0.35rem 0.6rem;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  font-size: var(--font-secondary);
+  text-align: left;
+}
+.context-menu button:hover:not(:disabled),
+.context-menu button:focus-visible {
+  background: var(--blue);
+  color: #fff;
+}
+.context-menu button:focus-visible {
+  outline-offset: -2px;
+}
+.context-menu button.danger:hover:not(:disabled),
+.context-menu button.danger:focus-visible {
+  background: var(--danger-fill);
+  color: #fff;
+}
+.server-picker-dialog .context-menu {
+  position: absolute;
+  z-index: 2;
+  width: 180px;
+}

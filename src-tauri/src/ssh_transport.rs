@@ -1,4 +1,5 @@
 //! Socket ownership and bounded, cancellable SSH direct-tcpip forwarding.
+mod meter;
 use crate::model::{AppError, AppResult};
 use ssh2::{Channel, Session};
 use std::{
@@ -248,21 +249,28 @@ pub struct SshConnection {
     session: Session,
     socket: Arc<Socket>,
     tunnel: Option<TunnelGuard>,
+    traffic: Arc<crate::traffic::ConnectionTraffic>,
 }
 impl SshConnection {
     pub fn new(socket: Arc<Socket>, tunnel: Option<TunnelGuard>) -> AppResult<Self> {
         let mut session = Session::new()?;
-        session.set_tcp_stream(socket.try_clone()?);
+        let traffic = Arc::new(crate::traffic::ConnectionTraffic::default());
+        let stream = meter::MeteredSocket::install(&session, socket.try_clone()?, traffic.clone());
+        session.set_tcp_stream(stream);
         session.set_timeout(12000);
         session.set_blocking(false);
         Ok(Self {
             session,
             socket,
             tunnel,
+            traffic,
         })
     }
     pub fn session(&self) -> &Session {
         &self.session
+    }
+    pub fn traffic(&self) -> Arc<crate::traffic::ConnectionTraffic> {
+        self.traffic.clone()
     }
     pub fn handshake(&mut self, cancel: &Cancellation) -> AppResult<()> {
         retry(cancel, Duration::from_secs(12), || self.session.handshake())

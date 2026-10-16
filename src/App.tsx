@@ -22,12 +22,11 @@ import { DatabaseResetDialog } from "./DatabaseResetDialog";
 import { logApi } from "./logApi";
 import { terminalHistoryApi } from "./terminalHistoryApi";
 import { FilePanel } from "./FilePanel";
-import { DockerPanel } from "./DockerPanel";
 import { WorkspaceTitlebar } from "./WorkspaceTitlebar";
 import { DetachedApp } from "./DetachedApp";
-import { TransferPanel } from "./TransferPanel";
+import { FileTaskPanel } from "./FileTaskPanel";
 import { DesktopDragPreview } from "./DesktopDragPreview";
-import { transferApi, transferActive } from "./transferApi";
+import { fileTaskApi } from "./fileTaskApi";
 import { QuitDialog } from "./QuitDialog";
 import { useWorkspaceMoves } from "./useWorkspaceMoves";
 import { SessionWorkspace } from "./SessionWorkspace";
@@ -212,17 +211,19 @@ export function App() {
         const dirty = await invoke<number>("unsaved_editor_count").catch(
           () => 0,
         );
-        const transfers = await transferApi.list().catch(() => []);
-        const activeTransfers = transfers.filter(transferActive).length;
-        const unknown = transfers.filter((t) =>
-          ["unknown", "needsAttention", "interrupted"].includes(t.status),
-        ).length;
+        let summary;
+        try { summary = (await fileTaskApi.list("all", null, 1)).summary; }
+        catch (e) {
+          closing.current = false;
+          setError(errorOf(e));
+          return;
+        }
         const details = [
           count ? `仍有 ${count} 个活动终端` : "",
           logs ? `${logs} 个日志窗口正在接收` : "",
           dirty ? `${dirty} 个文件有未保存修改` : "",
-          activeTransfers ? `${activeTransfers} 个传输尚未完成` : "",
-          unknown ? `${unknown} 个传输结果待核对` : "",
+          summary.active ? `${summary.active} 个文件任务尚未完成` : "",
+          summary.attention ? `${summary.attention} 个文件任务需要处理` : "",
         ]
           .filter(Boolean)
           .join("，");
@@ -540,7 +541,10 @@ export function App() {
               <WorkspaceLayout
                 files={<FilePanel sessionId={null} serverName="" />}
                 services={
-                  <DockerPanel sessionId={null} serverName="" active={false} />
+                  <aside className="resource-service-panel" aria-label="服务器">
+                    <div className="resource-panel-head"><strong>服务器</strong></div>
+                    <p className="resource-empty">连接后查看资源、Docker 状态和本客户端通信量。</p>
+                  </aside>
                 }
                 terminal={
                   <main className="terminal-panel">
@@ -551,7 +555,7 @@ export function App() {
                       <span className="welcome-caption">{APP_TAGLINE}</span>
                       <h2>打开一个 SSH 连接</h2>
                       <p>点击上方标签栏右侧的“＋”，选择服务器并连接。</p>
-                      <p>每个会话都有独立的终端、文件目录和 Docker 面板。</p>
+                      <p>在会话中使用终端、文件目录和服务器总览。</p>
                       <div className="welcome-features" aria-hidden="true">
                         <span>SSH 终端</span>
                         <span>SFTP 文件</span>
@@ -573,7 +577,7 @@ export function App() {
         </span>
         <div className="workspace-summary-end">
           <span>本地工作空间</span>
-          <TransferPanel embedded />
+          <FileTaskPanel embedded />
         </div>
       </footer>
       <DesktopDragPreview />

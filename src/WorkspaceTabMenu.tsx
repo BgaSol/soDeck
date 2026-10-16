@@ -63,7 +63,7 @@ export function WorkspaceTabMenu({
     <div
       ref={menu}
       id={id}
-      className="server-context-menu workspace-tab-menu"
+      className="context-menu workspace-tab-menu"
       role="menu"
       aria-label={title}
       style={position}

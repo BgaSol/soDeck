@@ -7,9 +7,9 @@ import {
   Search,
   Server as ServerIcon,
   Trash2,
-  X,
 } from "lucide-react";
 import { addressOf, filterServers, type Server } from "./types";
+import { DialogHeader } from "./DialogHeader";
 import "./server-picker.css";
 
 export function ServerPickerDialog({
@@ -104,16 +104,12 @@ export function ServerPickerDialog({
         } else onClose();
       }}
     >
-      <header className="server-picker-head">
-        <button
-          className="icon-button server-picker-close"
-          aria-label="关闭服务器窗口"
-          onClick={onClose}
-        >
-          <X size={14} />
-        </button>
-        <h2 id="server-picker-title">服务器</h2>
-      </header>
+      <DialogHeader
+        id="server-picker-title"
+        title="服务器"
+        closeLabel="关闭服务器窗口"
+        onClose={onClose}
+      />
       {!empty && (
         <div className="server-picker-filters">
           <label className="search-box">
@@ -294,7 +290,7 @@ export function ServerPickerDialog({
       )}
       {menu && (
         <div
-          className="server-context-menu"
+          className="context-menu"
           role="menu"
           aria-label={`${menu.server.name} 操作`}
           ref={menuRef}

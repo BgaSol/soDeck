@@ -40,6 +40,7 @@ impl ConnectionPlan {
         self.hops.iter().any(|h| h.id == id)
     }
 }
+#[derive(Clone)]
 struct VerifiedHop {
     server: ServerConfig,
     credentials: Credentials,
@@ -49,6 +50,7 @@ struct VerifiedHop {
 pub struct ConnectionContext {
     hops: Vec<VerifiedHop>,
     identity: String,
+    pub(crate) traffic: Arc<crate::traffic::TrafficManager>,
 }
 impl ConnectionContext {
     pub fn target(&self) -> &ServerConfig {
@@ -487,10 +489,12 @@ impl AuthProvider for VerifiedProvider<'_> {
     }
 }
 
-fn connect(
+fn connect_metered(
     plan: &ConnectionPlan,
     provider: &mut impl AuthProvider,
     cancel: &Cancellation,
+    traffic: &Arc<crate::traffic::TrafficManager>,
+    purpose: crate::traffic::TrafficPurpose,
 ) -> AppResult<(SshConnection, SharedContext)> {
     let mut connection = None;
     let mut verified = Vec::new();
@@ -526,6 +530,14 @@ fn connect(
                 cancel,
             )
             .map_err(|e| e.at(server, index, "核对指纹"))?;
+        if index + 1 == plan.hops.len() {
+            let mut identity_hops = verified.clone();
+            identity_hops.push(VerifiedHop {
+                server: server.clone(), credentials: Credentials::default(),
+                fingerprint: fingerprint.clone(), public_key: String::new(),
+            });
+            traffic.account(&route_identity(&identity_hops)).attach(current.traffic(), purpose);
+        }
         let mut failure = None;
         let mut attempt = 0;
         let credentials = loop {
@@ -569,6 +581,7 @@ fn connect(
         Arc::new(ConnectionContext {
             hops: verified,
             identity,
+            traffic: traffic.clone(),
         }),
     ))
 }
@@ -576,9 +589,10 @@ fn connect(
 pub fn connect_verified(
     context: &ConnectionContext,
     cancel: &Cancellation,
+    purpose: crate::traffic::TrafficPurpose,
 ) -> AppResult<SshConnection> {
     let plan = ConnectionPlan::new(context.hops.iter().map(|h| h.server.clone()).collect())?;
-    let connection = connect(&plan, &mut VerifiedProvider(context), cancel)?.0;
+    let connection = connect_metered(&plan, &mut VerifiedProvider(context), cancel, &context.traffic, purpose)?.0;
     connection.session().set_timeout(12_000);
     Ok(connection)
 }
@@ -656,6 +670,8 @@ fn finish(state: &State, id: &str, cancel: &Cancellation, result: AppResult<()>)
             connections.remove(id);
         }
     }
+    drop(connections);
+    state.monitor.close_session(id);
 }
 
 pub fn wait_closed(state: &State) -> AppResult<()> {
@@ -701,7 +717,7 @@ pub fn open_connection(
     let worker_id = id.clone();
     std::thread::spawn(move || {
         let result = (|| {
-            let (connection, context) = connect(
+            let (connection, context) = connect_metered(
                 &plan,
                 &mut InteractiveProvider {
                     state: &state,
@@ -709,6 +725,8 @@ pub fn open_connection(
                     interaction,
                 },
                 &cancel,
+                &state.traffic,
+                crate::traffic::TrafficPurpose::Terminal,
             )?;
             let source = crate::terminal_history::model::Source::new(&context, None);
             terminal::run(
@@ -777,7 +795,7 @@ pub fn open_container(
     let worker_id = id.clone();
     std::thread::spawn(move || {
         let result = (|| {
-            let connection = connect_verified(&context, &cancel)?;
+            let connection = connect_verified(&context, &cancel, crate::traffic::TrafficPurpose::ContainerTerminal)?;
             let command = crate::docker::terminal_command_on(connection.session(), &target)?;
             let source = crate::terminal_history::model::Source::new(&context, Some(&target));
             terminal::run(

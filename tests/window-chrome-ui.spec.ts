@@ -67,6 +67,8 @@ async function setup(
           return emit("tauri://close-requested", null);
         if (command === "list_servers" || command === "list_transfers")
           return [];
+        if (command === "list_file_tasks")
+          return { tasks: [], summary: { total: 0, active: 0, attention: 0, completed: 0 }, nextCursor: null };
         if (command === "session_count") return 1;
         if (
           command === "log_session_count" ||

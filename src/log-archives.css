@@ -6,44 +6,9 @@
   background: var(--canvas);
   overflow: hidden;
 }
-.archive-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 28px 30px 24px;
-  flex-shrink: 0;
-}
-.archive-heading {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-  min-width: 0;
-}
-.archive-mark {
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  flex-shrink: 0;
-  border: 1px solid color-mix(in srgb, var(--blue) 14%, transparent);
-  border-radius: 14px;
-  background: var(--selected);
-  color: var(--blue);
-}
-.archive-heading h1 {
-  margin: 0 0 4px;
-  font-size: 23px;
-  font-weight: 650;
-  line-height: 1.3;
-  letter-spacing: -0.025em;
-}
-.archive-heading p,
 .archive-local {
-  font-size: 12px;
+  font-size: var(--font-secondary);
   color: var(--muted);
-}
-.archive-local {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -54,7 +19,7 @@
   flex: 1;
   flex-direction: column;
   min-height: 0;
-  padding: 0 30px 20px;
+  padding: 1rem 1.25rem 1.25rem;
 }
 .archive-toolbar {
   display: flex;
@@ -67,11 +32,11 @@
   flex: 1;
   align-items: center;
   min-width: 0;
-  height: 38px;
+  height: var(--field-height);
   padding: 0 6px 0 12px;
   gap: 8px;
   border: 1px solid var(--strong-line);
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   background: var(--surface);
   color: var(--muted);
 }
@@ -90,18 +55,18 @@
   border-radius: 0;
   outline: none;
   background: transparent;
-  font-size: 13px;
+  font-size: var(--font-body);
 }
 .archive-toolbar select {
   width: 148px;
-  height: 38px;
-  font-size: 12px;
-  background: var(--surface);
+  height: var(--field-height);
+  font-size: var(--font-secondary);
+  background-color: var(--surface);
 }
 .archive-refresh {
-  height: 38px;
+  height: var(--field-height);
   padding: 0 13px;
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 .archive-list-caption {
   display: flex;
@@ -115,20 +80,20 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--font-body);
 }
 .archive-list-caption h2 span {
   padding: 1px 7px;
   border-radius: 6px;
   background: var(--tag);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 .archive-list-caption > span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 .archive-list-panel {
   display: flex;
@@ -137,9 +102,8 @@
   overflow: auto;
   scrollbar-gutter: stable;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-popover);
   background: var(--surface);
-  box-shadow: 0 2px 5px #00000003;
 }
 .archive-table {
   width: 100%;
@@ -161,7 +125,7 @@
   border-bottom: 1px solid var(--line);
   background: var(--surface);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 .archive-list {
   list-style: none;
@@ -178,7 +142,7 @@
   border-radius: 0;
   background: transparent;
   text-align: left;
-  font-size: 13px;
+  font-size: var(--font-body);
 }
 .archive-row:hover {
   background: color-mix(in srgb, var(--selected) 55%, var(--surface));
@@ -199,13 +163,13 @@
   width: 36px;
   height: 36px;
   flex-shrink: 0;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   background: var(--canvas);
   color: var(--muted);
 }
 .archive-row:hover .archive-container-icon {
   background: var(--selected);
-  color: var(--blue);
+  color: var(--accent-text);
 }
 .archive-cell {
   display: flex;
@@ -220,7 +184,7 @@
 }
 .archive-cell small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 .archive-mono {
   font-family: var(--mono);
@@ -230,14 +194,14 @@
   font-variant-numeric: tabular-nums;
 }
 .archive-date {
-  font-size: 12px;
+  font-size: var(--font-secondary);
   font-variant-numeric: tabular-nums;
 }
 .archive-open-icon {
   color: var(--muted);
 }
 .archive-row:hover .archive-open-icon {
-  color: var(--blue);
+  color: var(--accent-text);
 }
 .archive-empty {
   display: flex;
@@ -261,18 +225,18 @@
   color: var(--muted);
 }
 .archive-empty h2 {
-  font-size: 16px;
+  font-size: var(--font-title);
 }
 .archive-empty p {
   max-width: 355px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-secondary);
   line-height: 1.8;
   overflow-wrap: anywhere;
 }
 .archive-empty button {
   margin-top: 5px;
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 .archive-error {
   display: flex;
@@ -286,7 +250,7 @@
   border-radius: 8px;
   background: var(--error-bg);
   color: var(--error);
-  font-size: 12px;
+  font-size: var(--font-secondary);
   overflow-wrap: anywhere;
 }
 .archive-error svg {
@@ -303,7 +267,7 @@
   padding: 8px 30px;
   border-top: 1px solid var(--line);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
   font-variant-numeric: tabular-nums;
 }
 .archive-footer > span:first-child {
@@ -320,11 +284,8 @@
   }
 }
 @media (max-width: 800px) {
-  .archive-header {
-    padding: 22px 20px;
-  }
   .archive-content {
-    padding: 0 20px 16px;
+    padding: 1rem;
   }
   .archive-local {
     display: none;
@@ -346,7 +307,7 @@
   }
   .archive-row {
     min-height: 72px;
-    font-size: 12px;
+    font-size: var(--font-secondary);
   }
   .archive-footer {
     padding-inline: 20px;

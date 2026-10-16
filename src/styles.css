@@ -1,40 +1,6 @@
-:root {
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI",
-    "PingFang SC", "Microsoft YaHei", sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
-  font-optical-sizing: auto;
-  font-synthesis: none;
-  color-scheme: light;
-  --canvas: #f5f5f7;
-  --surface: #fff;
-  --sidebar: #eeeff2;
-  --material: rgba(246, 247, 249, 0.84);
-  --sheet: rgba(255, 255, 255, 0.94);
-  --text: #232329;
-  --muted: #6d6d77;
-  --line: rgba(31, 31, 41, 0.1);
-  --strong-line: rgba(31, 31, 41, 0.19);
-  --hover: rgba(60, 60, 75, 0.065);
-  --selected: #e5edfc;
-  --selected-text: #174d9a;
-  --blue: #0065d7;
-  --tag: rgba(52, 52, 65, 0.065);
-  --error: #b42332;
-  --error-bg: #fff0f1;
-  --green: #227343;
-  --green-bg: #e8f3eb;
-  --field: #fafafb;
-  --terminal: #14171e;
-  --terminal-text: #dce3ef;
-  --terminal-muted: #9ca8bb;
-  --radius: 14px;
-  --mono:
-    "SFMono-Regular", "Cascadia Code", Consolas, "Liberation Mono", monospace;
-  color: var(--text);
-  background: var(--canvas);
-}
+@import "./theme.css";
+@import "./menus.css";
+
 * {
   box-sizing: border-box;
 }
@@ -47,24 +13,25 @@ select {
   font: inherit;
 }
 button {
-  cursor: pointer;
+  cursor: default;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 32px;
-  padding: 6px 11px;
+  min-height: var(--control-height);
+  padding: 0.35rem 0.8rem;
+  font-size: var(--font-body);
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   white-space: nowrap;
   touch-action: manipulation;
   transition:
     background-color 120ms ease,
     border-color 120ms ease;
 }
-button:hover {
+button:hover:not(:disabled) {
   background: var(--hover);
 }
 button:active:not(:disabled) {
@@ -79,15 +46,31 @@ input,
 select {
   width: 100%;
   min-width: 0;
-  min-height: 36px;
+  min-height: var(--field-height);
   border: 1px solid var(--strong-line);
-  border-radius: 8px;
-  padding: 7px 10px;
+  border-radius: var(--radius-control);
+  padding: 0.4rem 0.7rem;
+  font-size: var(--font-body);
   color: var(--text);
   background: var(--field);
 }
 input::placeholder {
   color: var(--muted);
+}
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4.5 3 3 3-3' fill='none' stroke='%2385858d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-position: right 0.7rem center;
+  background-repeat: no-repeat;
+}
+input[type="checkbox"],
+input[type="radio"] {
+  width: 1rem;
+  min-height: 0;
+  height: 1rem;
+  accent-color: var(--blue);
 }
 :focus-visible {
   outline: 2px solid var(--blue);
@@ -98,7 +81,7 @@ p {
   margin: 0;
 }
 h2 {
-  font-size: 14px;
+  font-size: var(--font-heading);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -106,7 +89,7 @@ strong {
   font-weight: 600;
 }
 small {
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 svg {
   stroke-width: 1.7;
@@ -117,14 +100,20 @@ button.primary {
   color: #fff;
   box-shadow: 0 1px 2px rgba(0, 55, 120, 0.14);
 }
-button.primary:hover {
+button.primary:hover:not(:disabled) {
   filter: brightness(0.96);
+}
+button.primary:disabled {
+  opacity: 1;
+  color: var(--muted);
+  background: var(--tag);
+  box-shadow: none;
 }
 button.quiet {
   background: transparent;
   border-color: transparent;
 }
-button.quiet:hover {
+button.quiet:hover:not(:disabled) {
   background: var(--hover);
 }
 .muted {
@@ -176,12 +165,12 @@ button.brand-button:hover {
   gap: 1px;
 }
 .app-brand strong {
-  font-size: 14px;
+  font-size: var(--font-heading);
   letter-spacing: -0.02em;
 }
 .app-brand > span {
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--font-caption);
   letter-spacing: 0.04em;
 }
 .workspace {
@@ -209,8 +198,8 @@ button.brand-button:hover {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  padding: 8px 16px 8px;
-  background: var(--material);
+  padding: 0;
+  background: var(--sidebar);
 }
 .session-tabs {
   display: flex;
@@ -247,7 +236,7 @@ button.brand-button:hover {
   background: transparent;
   gap: 8px;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--font-secondary);
   padding: 8px 9px 8px 11px;
   color: var(--muted);
 }
@@ -288,7 +277,7 @@ button.brand-button:hover {
 .tabs-placeholder {
   color: var(--muted);
   padding: 8px 2px;
-  font-size: 11px;
+  font-size: var(--font-caption);
   letter-spacing: 0.04em;
 }
 .new-session {
@@ -321,29 +310,25 @@ button.brand-button:hover {
   flex-direction: column;
   background: var(--terminal);
   background-clip: padding-box;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border: 0;
+  border-radius: 0;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 .terminal-toolbar {
-  min-height: 64px;
+  min-height: 3.7rem;
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  gap: 12px;
-  padding: 10px 16px;
-  background: color-mix(in srgb, var(--surface) 85%, var(--material));
-  backdrop-filter: blur(20px) saturate(120%);
+  gap: 0.7rem;
+  padding: 0.5rem 1rem;
+  background: var(--surface);
   border-bottom: 1px solid var(--line);
 }
 .terminal-symbol {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
-  background: var(--tag);
+  width: 1.5rem;
+  height: 1.5rem;
   color: var(--muted);
   flex-shrink: 0;
 }
@@ -359,19 +344,19 @@ button.brand-button:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: var(--font-body);
   line-height: 1.4;
   letter-spacing: -0.01em;
 }
 .terminal-toolbar button {
-  font-size: 12px;
+  font-size: var(--font-secondary);
   flex-shrink: 0;
 }
 .connection-state {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--font-caption);
   color: var(--muted);
   flex-shrink: 0;
   white-space: nowrap;
@@ -395,7 +380,7 @@ button.brand-button:hover {
   color: var(--error);
 }
 .terminal-address {
-  font: 11px/1.5 var(--mono);
+  font: var(--font-caption)/1.5 var(--mono);
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -429,7 +414,7 @@ button.brand-button:hover {
   padding: 7px 14px;
   background: var(--surface);
   border-top: 1px solid var(--line);
-  font-size: 10px;
+  font-size: var(--font-caption);
   color: var(--muted);
   display: flex;
   justify-content: space-between;
@@ -463,12 +448,12 @@ button.brand-button:hover {
 .workspace-status .connection-route {
   flex: 1;
   min-width: 0;
-  font-size: 10px;
+  font-size: var(--font-caption);
 }
 .terminal-encoding {
   margin-left: auto;
   flex-shrink: 0;
-  font: 10px/1.5 var(--mono);
+  font: var(--font-caption)/1.5 var(--mono);
 }
 @container terminal-card (max-width: 480px) {
   .terminal-toolbar {
@@ -504,7 +489,7 @@ button.brand-button:hover {
   padding: 9px 13px;
   background: var(--error-bg);
   color: var(--error);
-  font-size: 12px;
+  font-size: var(--font-secondary);
   overflow-wrap: anywhere;
 }
 .workspaces > .connection-error {
@@ -525,7 +510,7 @@ button.brand-button:hover {
   padding: 30px 20px;
   text-align: center;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 .welcome-symbol {
   display: grid;
@@ -535,7 +520,7 @@ button.brand-button:hover {
   margin-bottom: 15px;
 }
 .welcome-caption {
-  font-size: 12px;
+  font-size: var(--font-secondary);
   letter-spacing: 0.02em;
 }
 .session-welcome h2 {
@@ -552,7 +537,7 @@ button.brand-button:hover {
 .welcome-action {
   margin-top: 18px;
   padding: 8px 15px;
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 .welcome-features {
   display: flex;
@@ -560,7 +545,7 @@ button.brand-button:hover {
   justify-content: center;
   gap: 18px;
   margin-top: 25px;
-  font-size: 10px;
+  font-size: var(--font-caption);
   color: var(--muted);
 }
 .welcome-features span + span::before {
@@ -574,6 +559,12 @@ button.brand-button:hover {
   place-items: center;
   touch-action: none;
   user-select: none;
+  background: var(--sidebar);
+  border-right: 1px solid var(--line);
+}
+.terminal-panel + .vertical-resizer {
+  border-right: 0;
+  border-left: 1px solid var(--line);
 }
 .vertical-resizer {
   cursor: col-resize;
@@ -608,23 +599,23 @@ button.brand-button:hover {
   flex-direction: column;
   min-height: 0;
   min-width: 0;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  background: var(--sidebar);
+  border: 0;
+  border-radius: 0;
   overflow: hidden;
 }
 .panel-head {
-  padding: 11px 12px 10px;
+  padding: 0.85rem 0.85rem 0.7rem;
   display: grid;
   gap: 7px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 0;
 }
 .panel-head h2 {
-  font-size: 13px;
+  font-size: var(--font-body);
 }
 .panel-server {
   color: var(--muted);
-  font: 10px/1.5 var(--mono);
+  font: var(--font-caption)/1.5 var(--mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -635,7 +626,7 @@ button.brand-button:hover {
   gap: 4px;
 }
 .path-row input {
-  font: 11px/1.5 var(--mono);
+  font: var(--font-caption)/1.5 var(--mono);
   min-height: 32px;
   padding: 6px 8px;
   border-color: var(--line);
@@ -643,7 +634,7 @@ button.brand-button:hover {
 .file-columns {
   display: flex;
   justify-content: space-between;
-  font-size: 10px;
+  font-size: var(--font-caption);
   padding: 9px 14px 7px;
   color: var(--muted);
 }
@@ -672,17 +663,17 @@ button.brand-button:hover {
   flex-shrink: 0;
 }
 .file-row:has(.lucide-folder) .file-icon {
-  color: var(--blue);
+  color: var(--accent-text);
 }
 .file-name {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 .file-size {
-  font: 10px/1.5 var(--mono);
+  font: var(--font-caption)/1.5 var(--mono);
   color: var(--muted);
   white-space: nowrap;
 }
@@ -693,7 +684,7 @@ button.brand-button:hover {
 .panel-footer {
   padding: 7px 12px;
   border-top: 1px solid var(--line);
-  font-size: 10px;
+  font-size: var(--font-caption);
   color: var(--muted);
   overflow: hidden;
   white-space: nowrap;
@@ -701,7 +692,7 @@ button.brand-button:hover {
   flex-shrink: 0;
 }
 .panel-error {
-  font-size: 12px;
+  font-size: var(--font-secondary);
   padding: 8px 12px;
   color: var(--error);
   overflow-wrap: anywhere;
@@ -713,19 +704,19 @@ button.brand-button:hover {
   text-align: center;
   padding: 30px 12px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 .panel-empty > svg {
   opacity: 0.65;
   margin-bottom: 3px;
 }
 .panel-empty strong {
-  font-size: 12px;
+  font-size: var(--font-secondary);
   color: var(--muted);
   font-weight: 500;
 }
 .panel-empty button {
-  font-size: 12px;
+  font-size: var(--font-secondary);
   margin-top: 4px;
 }
 .service-head {
@@ -747,7 +738,7 @@ button.brand-button:hover {
   text-align: left;
   padding: 7px 5px;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--font-secondary);
   min-height: 31px;
 }
 .tree-toggle > svg {
@@ -764,7 +755,7 @@ button.brand-button:hover {
 .tree-count {
   margin-left: auto;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--font-caption);
   border-radius: 5px;
   background: var(--tag);
   padding: 1px 5px;
@@ -789,7 +780,7 @@ button.brand-button:hover {
   align-items: center;
   gap: 7px;
   padding: 8px 0;
-  font-size: 11px;
+  font-size: var(--font-caption);
   overflow-wrap: anywhere;
 }
 .image-item svg {
@@ -811,32 +802,32 @@ button.brand-button:hover {
   gap: 3px;
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--font-secondary);
   overflow-wrap: anywhere;
 }
 .container-info small {
-  font-size: 10px;
+  font-size: var(--font-caption);
 }
 .container-button {
-  font-size: 10px;
+  font-size: var(--font-caption);
   padding: 5px 7px;
   min-height: 28px;
 }
 .tree-message {
-  font-size: 11px;
+  font-size: var(--font-caption);
   padding: 8px 4px;
   color: var(--muted);
   overflow-wrap: anywhere;
 }
 .docker-endpoint {
-  font: 10px/1.5 var(--mono);
+  font: var(--font-caption)/1.5 var(--mono);
   color: var(--muted);
   padding: 2px 4px 7px;
   overflow-wrap: anywhere;
 }
 button.delete-confirm {
-  background: var(--error);
-  border-color: var(--error);
+  background: var(--danger-fill);
+  border-color: transparent;
   color: #fff;
 }
 .server-delete-dialog,
@@ -851,11 +842,11 @@ button.delete-confirm {
 }
 .server-delete-target span {
   color: var(--muted);
-  font: 12px var(--mono);
+  font: var(--font-secondary) var(--mono);
 }
 .server-delete-dialog p,
 .database-reset-dialog p {
-  font-size: 13px;
+  font-size: var(--font-body);
   line-height: 1.7;
   margin-bottom: 16px;
 }
@@ -876,19 +867,19 @@ button.delete-confirm {
 }
 dialog {
   color: var(--text);
-  background: var(--sheet);
-  backdrop-filter: blur(28px) saturate(140%);
+  background: var(--surface);
   border: 1px solid var(--strong-line);
-  border-radius: 20px;
-  box-shadow: 0 24px 80px rgba(15, 15, 30, 0.22);
-  padding: 25px;
+  border-radius: var(--radius-dialog);
+  box-shadow: var(--shadow-dialog);
+  padding: 1.5rem;
   max-width: calc(100vw - 28px);
   max-height: calc(100dvh - 28px);
   overflow: auto;
 }
 dialog::backdrop {
-  background: rgba(20, 22, 30, 0.28);
-  backdrop-filter: blur(3px);
+  background: rgb(12 14 20 / 22%);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
 }
 .editor-dialog {
   width: 480px;
@@ -914,7 +905,7 @@ dialog::backdrop {
 .about-identity p,
 .about-version {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 .about-version {
   padding: 4px 10px;
@@ -924,7 +915,7 @@ dialog::backdrop {
 .about-description {
   margin: 22px 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--font-body);
   line-height: 1.7;
   text-align: center;
 }
@@ -932,12 +923,13 @@ dialog::backdrop {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  margin-bottom: 22px;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
 }
 .dialog-head h2 {
-  font-size: 20px;
-  letter-spacing: -0.025em;
+  font-size: var(--font-title);
+  line-height: 1.4;
+  letter-spacing: -0.015em;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -946,9 +938,37 @@ dialog::backdrop {
   color: var(--muted);
   background: var(--tag);
   border-radius: 50%;
+  width: var(--control-compact);
+  min-width: var(--control-compact);
+  min-height: var(--control-compact);
+  height: var(--control-compact);
+  padding: 0.35rem;
+}
+.dialog-head-dismissible {
+  display: grid;
+  grid-template-columns: var(--control-compact) minmax(0, 1fr) var(
+      --control-compact
+    );
+  align-items: start;
+}
+.dialog-head-dismissible::after {
+  content: "";
+}
+.dialog-head-dismissible h2 {
+  justify-content: center;
+  min-height: var(--control-compact);
+  text-align: center;
+  font-size: var(--font-heading);
+}
+.dialog-subtitle {
+  color: var(--muted);
+  text-align: center;
+  font-size: var(--font-secondary);
+  line-height: 1.6;
+  margin-top: 0.25rem;
 }
 .eyebrow {
-  font-size: 10px;
+  font-size: var(--font-caption);
   letter-spacing: 0.06em;
   color: var(--muted);
   display: block;
@@ -961,7 +981,7 @@ dialog form {
 dialog label {
   display: grid;
   gap: 7px;
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 .field-label {
   display: flex;
@@ -969,7 +989,7 @@ dialog label {
   gap: 7px;
 }
 .field-label small {
-  font-size: 10px;
+  font-size: var(--font-caption);
 }
 dialog .form-columns {
   display: grid;
@@ -993,7 +1013,7 @@ dialog .form-columns.equal {
   background: var(--tag);
   overflow-wrap: anywhere;
   max-width: 100%;
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 .edit-chip button {
   border: 0;
@@ -1009,7 +1029,8 @@ dialog .form-columns.equal {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 0.6rem;
+  flex-wrap: wrap;
   margin-top: 3px;
   padding-top: 18px;
   border-top: 1px solid var(--line);
@@ -1025,18 +1046,18 @@ dialog .form-columns.equal {
 }
 .error {
   color: var(--error);
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 .login-dialog > p {
   margin-bottom: 16px;
-  font-size: 13px;
+  font-size: var(--font-body);
 }
 .login-dialog > label {
   margin: 14px 0;
 }
 .login-dialog code {
   display: block;
-  font: 11px/1.6 var(--mono);
+  font: var(--font-caption)/1.6 var(--mono);
   background: var(--field);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1044,15 +1065,6 @@ dialog .form-columns.equal {
   overflow-wrap: anywhere;
 }
 /* Server setup: one scrolling form, stable actions and grouped controls. */
-.editor-dialog,
-.connection-dialog {
-  background: var(--surface);
-  -webkit-backdrop-filter: blur(28px) saturate(140%);
-}
-.editor-dialog::backdrop,
-.connection-dialog::backdrop {
-  -webkit-backdrop-filter: blur(3px);
-}
 .editor-dialog {
   width: 36rem;
   padding: 0;
@@ -1065,19 +1077,7 @@ dialog .form-columns.equal {
 .editor-dialog > .dialog-head {
   flex: none;
   margin: 0;
-  padding: 1.3rem 1.7rem 1.1rem;
-}
-.editor-subtitle {
-  font-size: 0.86rem;
-  margin-top: 0.4rem;
-}
-.editor-dialog select {
-  appearance: none;
-  -webkit-appearance: none;
-  padding-right: 2rem;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4.5 3 3 3-3' fill='none' stroke='%238a8a94' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-position: right 0.7rem center;
-  background-repeat: no-repeat;
+  padding: 1rem 1.25rem;
 }
 .editor-dialog > form {
   display: flex;
@@ -1088,7 +1088,7 @@ dialog .form-columns.equal {
 .editor-fields {
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 0.1rem 1.7rem 1.1rem;
+  padding: 0.1rem 1.5rem 1.1rem;
   display: grid;
   gap: 1.1rem;
   scrollbar-gutter: stable;
@@ -1110,7 +1110,7 @@ dialog .form-columns.equal {
   float: left;
   width: 100%;
   padding: 0;
-  font-size: 0.9rem;
+  font-size: var(--font-body);
   font-weight: 600;
   line-height: 1.4;
 }
@@ -1119,18 +1119,18 @@ dialog .form-columns.equal {
 }
 .server-form-section legend .muted {
   margin-left: 0.35rem;
-  font-size: 0.8rem;
+  font-size: var(--font-caption);
   font-weight: 400;
 }
 .editor-dialog .dialog-actions {
   flex: none;
   margin: 0;
-  padding: 1rem 1.7rem;
+  padding: 0.9rem 1.5rem;
   background: var(--surface);
 }
 .field-help {
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: var(--font-secondary);
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
@@ -1221,7 +1221,7 @@ dialog .form-columns.equal {
   flex-shrink: 0;
 }
 .route-preview strong {
-  font-size: 0.85rem;
+  font-size: var(--font-secondary);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -1229,7 +1229,7 @@ dialog .form-columns.equal {
 }
 .route-preview small {
   grid-column: 2;
-  font-size: 0.75rem;
+  font-size: var(--font-caption);
   color: var(--muted);
 }
 .route-arrow {
@@ -1259,14 +1259,14 @@ dialog .form-columns.equal {
   align-items: center;
   gap: 4px;
   color: var(--green);
-  font-size: 0.78rem;
+  font-size: var(--font-caption);
 }
 .password-state.pending {
   color: var(--muted);
 }
 .password-field-footer .password-action {
-  color: var(--blue);
-  font-size: 0.8rem;
+  color: var(--accent-text);
+  font-size: var(--font-caption);
   padding: 4px 6px;
   margin-right: -6px;
 }
@@ -1279,9 +1279,6 @@ dialog .form-columns.equal {
 }
 .connection-dialog .dialog-head {
   margin-bottom: 1.25rem;
-}
-.connection-dialog .dialog-head h2 {
-  font-size: 1.25rem;
 }
 .connection-dialog-content,
 .connection-dialog form {
@@ -1310,7 +1307,7 @@ dialog .form-columns.equal {
   flex: 1;
 }
 .connection-hop-label {
-  font-size: 0.75rem;
+  font-size: var(--font-caption);
   color: var(--muted);
 }
 .connection-hop-details strong {
@@ -1318,7 +1315,7 @@ dialog .form-columns.equal {
   overflow-wrap: anywhere;
 }
 .connection-hop-address {
-  font: 0.78rem/1.6 var(--mono);
+  font: var(--font-caption)/1.6 var(--mono);
   color: var(--muted);
   overflow-wrap: anywhere;
 }
@@ -1336,20 +1333,20 @@ dialog .form-columns.equal {
 }
 .editor-discard-actions p {
   flex: 1 0 100%;
-  font-size: 0.9rem;
+  font-size: var(--font-body);
 }
 .editor-discard-actions .discard-changes {
   color: var(--error);
 }
 .connection-hop-step {
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: var(--font-caption);
   align-self: flex-start;
   flex: none;
   padding-top: 0.1rem;
 }
 .connection-explanation {
-  font-size: 0.9rem;
+  font-size: var(--font-body);
   line-height: 1.65;
 }
 .connection-feedback {
@@ -1364,7 +1361,7 @@ dialog .form-columns.equal {
   margin: 0;
 }
 .fingerprint-list dt {
-  font-size: 0.8rem;
+  font-size: var(--font-caption);
   font-weight: 500;
   margin-bottom: 0.4rem;
 }
@@ -1372,7 +1369,7 @@ dialog .form-columns.equal {
   margin: 0;
 }
 .fingerprint-list code {
-  font-size: 0.8rem;
+  font-size: var(--font-caption);
   line-height: 1.8;
   user-select: text;
 }
@@ -1411,7 +1408,7 @@ dialog .form-columns.equal {
     padding: 0.85rem;
   }
   .connection-hop-step {
-    font-size: 0.7rem;
+    font-size: var(--font-caption);
   }
 }
 .container-app {
@@ -1424,14 +1421,11 @@ dialog .form-columns.equal {
   flex: 1;
   min-height: 0;
   background: var(--terminal);
-  margin: 12px 12px 0;
-  border-radius: 12px 12px 0 0;
+  margin: 0;
   overflow: hidden;
 }
 .container-app .workspace-status {
-  margin: 0 12px 12px;
-  border-radius: 0 0 12px 12px;
-  border: 1px solid var(--line);
+  margin: 0;
 }
 .browser-notice {
   display: flex;
@@ -1439,7 +1433,7 @@ dialog .form-columns.equal {
   padding: 8px 20px;
   background: #fff4d5;
   color: #735a20;
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 .browser-notice code {
   margin-left: auto;
@@ -1453,42 +1447,12 @@ dialog .form-columns.equal {
   }
 }
 @media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --canvas: #1b1c20;
-    --surface: #25262c;
-    --sidebar: #202127;
-    --material: rgba(36, 37, 43, 0.88);
-    --sheet: rgba(43, 44, 51, 0.96);
-    --text: #ededef;
-    --muted: #a0a0ac;
-    --line: rgba(255, 255, 255, 0.09);
-    --strong-line: rgba(255, 255, 255, 0.18);
-    --hover: rgba(255, 255, 255, 0.055);
-    --selected: #293f60;
-    --selected-text: #d1e3ff;
-    --blue: #0a6ddd;
-    --tag: rgba(255, 255, 255, 0.065);
-    --error: #ffacb3;
-    --error-bg: #422b32;
-    --green: #87cfa4;
-    --green-bg: #293e34;
-    --field: #202127;
-  }
   .browser-notice {
     background: #3b331f;
     color: #e1c78b;
   }
 }
-@media (max-width: 1000px) {
-  .workspaces {
-    padding: 8px 12px 12px;
-  }
-}
 @media (max-width: 760px) {
-  .workspaces {
-    padding: 8px 8px 8px;
-  }
   .session-welcome {
     padding: 16px;
   }
@@ -1520,7 +1484,7 @@ dialog .form-columns.equal {
 @media (prefers-reduced-transparency: reduce) {
   .terminal-toolbar,
   dialog,
-  .server-context-menu {
+  .context-menu {
     background: var(--surface);
   }
   .terminal-toolbar,
@@ -1530,28 +1494,11 @@ dialog .form-columns.equal {
   .connection-dialog,
   .editor-dialog::backdrop,
   .connection-dialog::backdrop,
-  .server-context-menu {
+  .context-menu {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
 }
-@media (prefers-contrast: more) {
-  :root {
-    --muted: #4b4b55;
-    --line: #8a8a94;
-    --strong-line: #686873;
-    --material: var(--surface);
-    --sheet: var(--surface);
-  }
-}
-@media (prefers-contrast: more) and (prefers-color-scheme: dark) {
-  :root {
-    --muted: #c6c6ce;
-    --line: #70707c;
-    --strong-line: #9999a5;
-  }
-}
-
 /* Global tools. */
 .tab-scroll {
   flex: 0 1 auto;

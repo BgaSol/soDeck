@@ -1,5 +1,6 @@
+import { DialogHeader } from "./DialogHeader";
 import { useEffect, useRef, useState } from "react";
-import { ArrowRightLeft, RefreshCw, X } from "lucide-react";
+import { ArrowRightLeft, RefreshCw } from "lucide-react";
 import { transferApi } from "./transferApi";
 import type { CopyTarget, TransferDraft } from "./transferApi";
 import { errorOf } from "./types";
@@ -74,21 +75,18 @@ export function CopyTargetDialog({
           void prepare();
         }}
       >
-        <header className="dialog-head">
-          <h2 id="copy-target-title">
-            <ArrowRightLeft size={18} />
-            复制到另一台服务器
-          </h2>
-          <button
-            type="button"
-            className="icon-button"
-            aria-label="关闭目标选择"
-            disabled={busy}
-            onClick={onClose}
-          >
-            <X size={17} />
-          </button>
-        </header>
+        <DialogHeader
+          id="copy-target-title"
+          title={
+            <>
+              <ArrowRightLeft size={16} aria-hidden="true" />
+              复制到另一台服务器
+            </>
+          }
+          closeLabel="关闭目标选择"
+          onClose={onClose}
+          disabled={busy}
+        />
         <div className="file-operation-fields">
           <p className="muted">
             选择目标会话中已打开的目录。下一步确认连接地址和同名处理方式。

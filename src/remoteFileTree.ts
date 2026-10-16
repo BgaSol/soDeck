@@ -232,6 +232,16 @@ export class RemoteFileTree {
       directories,
       expanded: this.state.expanded.filter((item) => !gone(item)),
       selected,
+      selectionAnchor:
+        this.state.selectionAnchor &&
+        (gone(this.state.selectionAnchor) ||
+          (remoteParent(this.state.selectionAnchor) === path &&
+            this.state.selectionAnchor !== "/" &&
+            !directory.entries.some(
+              (entry) => entry.path === this.state.selectionAnchor,
+            )))
+          ? selected
+          : this.state.selectionAnchor,
       selection: (this.state.selection ?? []).filter(
         (p) =>
           !gone(p) &&
@@ -289,12 +299,24 @@ export class RemoteFileTree {
       if (key !== path && node.directory?.resolvedPath !== path) continue;
       this.nextVersion(key);
       this.updateNode(key, { stale: true });
-      if (active && this.state.expanded.includes(key)) void this.refresh(key);
+      if (
+        active &&
+        (this.state.expanded.includes(key) ||
+          key === this.state.currentPath ||
+          this.state.currentPath.startsWith(key + "/"))
+      )
+        void this.refresh(key);
     }
   }
   activate() {
-    for (const path of this.state.expanded) {
-      if (this.state.directories[path]?.stale) void this.refresh(path);
+    for (const [path, node] of Object.entries(this.state.directories)) {
+      if (
+        node.stale &&
+        (this.state.expanded.includes(path) ||
+          path === this.state.currentPath ||
+          this.state.currentPath.startsWith(path + "/"))
+      )
+        void this.refresh(path);
     }
     if (!this.sessionId) return;
     if (!this.initialized) {
@@ -395,6 +417,13 @@ export class RemoteFileTree {
   }
   async refresh(path = this.state.currentPath) {
     await this.loadDirectory(path, true);
+  }
+  async refreshAffectedDirectories(paths: string[]) {
+    for (const path of [...new Set(paths)].sort(
+      (a, b) => a.length - b.length,
+    )) {
+      if (this.state.directories[path]) await this.refresh(path);
+    }
   }
 
   private async loadDirectory(path: string, force = false): Promise<void> {

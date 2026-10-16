@@ -1,6 +1,61 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export type DownloadConflict = "rename" | "overwrite" | "skip";
+export interface DeleteEntry {
+  path: string;
+  kind: "file" | "directory" | "symlink" | "missing";
+  status:
+    "pending" | "deleted" | "missing" | "partial" | "failed" | "notExecuted";
+  deletedCount: number;
+  missingCount: number;
+  failures: {
+    path: string;
+    message: string;
+    uncertain: boolean;
+    currentState: "missing" | "exists" | null;
+  }[];
+}
+export interface DeletePreview {
+  id: string;
+  serverName: string;
+  entries: DeleteEntry[];
+  parentTaskId?: string | null;
+}
+export interface DeleteTask {
+  id: string;
+  sessionId: string;
+  serverName: string;
+  status:
+    | "checking"
+    | "scanning"
+    | "running"
+    | "cancelling"
+    | "completed"
+    | "partialFailed"
+    | "failed"
+    | "cancelled"
+    | "unknown"
+    | "interrupted";
+  revision: number;
+  createdAt: number;
+  lastStartedAt: number;
+  finishedAt: number | null;
+  sortOrder: number;
+  entryCount: number;
+  parentTaskId: string | null;
+  lastCheckedAt: number | null;
+  currentPath: string | null;
+  deletedCount: number;
+  missingCount: number;
+  entries: DeleteEntry[];
+  affectedDirectories: string[];
+  error: string | null;
+}
+export function isDeleteActive(task: DeleteTask) {
+  return ["checking", "scanning", "running", "cancelling"].includes(
+    task.status,
+  );
+}
 export interface EditorDocument {
   serverName: string;
   path: string;
@@ -25,6 +80,17 @@ export interface DownloadTask {
   error: string | null;
 }
 export const fileApi = {
+  prepareDelete: (sessionId: string, paths: string[]) =>
+    invoke<DeletePreview>("prepare_remote_delete", { sessionId, paths }),
+  prepareDeleteRetry: (taskId: string) =>
+    invoke<DeletePreview>("prepare_delete_retry", { taskId }),
+  startDelete: (draftId: string) =>
+    invoke<DeleteTask>("start_remote_delete", { draftId }),
+  deletes: () => invoke<DeleteTask[]>("list_remote_deletes"),
+  cancelDelete: (taskId: string) =>
+    invoke<void>("cancel_remote_delete", { taskId }),
+  reconcileDelete: (taskId: string) =>
+    invoke<DeleteTask>("reconcile_remote_delete", { taskId }),
   openEditor: (sessionId: string, path: string) =>
     invoke<string>("open_editor", { sessionId, path }),
   loadEditor: () => invoke<EditorDocument>("editor_load"),

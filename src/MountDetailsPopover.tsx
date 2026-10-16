@@ -15,12 +15,14 @@ export function MountDetailsPopover({
   anchor,
   onClose,
   onRefresh,
+  onReveal,
 }: {
   mount: RemoteMount;
   usage?: CachedMountUsage;
   anchor: HTMLElement;
   onClose: () => void;
   onRefresh: () => void;
+  onReveal?: () => void;
 }) {
   const dialog = useRef<HTMLDivElement>(null);
   const close = useRef<HTMLButtonElement>(null);
@@ -172,6 +174,11 @@ export function MountDetailsPopover({
         {usage?.loading && value ? " · 更新中…" : ""}
       </div>
       {usage?.error && <p className="mount-query-error">{usage.error}</p>}
+      {onReveal && (
+        <button className="quiet mount-reveal" onClick={onReveal}>
+          在远程文件中定位
+        </button>
+      )}
       <button
         className="quiet mount-refresh"
         disabled={usage?.loading}

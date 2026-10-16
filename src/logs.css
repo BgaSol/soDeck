@@ -20,21 +20,22 @@
 }
 .log-title p {
   color: var(--muted);
-  font: 11px/1.6 var(--mono);
+  font: var(--font-caption)/1.6 var(--mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .log-status {
-  font-size: 12px;
+  font-size: var(--font-secondary);
   color: var(--muted);
 }
 .log-tools {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
-  padding: 8px 14px;
+  gap: 0.6rem;
+  padding: 0.5rem 1rem;
+  background: var(--canvas);
   border-bottom: 1px solid var(--line);
 }
 .log-tools label,
@@ -42,19 +43,19 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 12px;
+  font-size: var(--font-secondary);
   white-space: nowrap;
 }
 .log-tools select {
   width: auto;
-  min-height: 28px;
+  min-height: var(--control-height);
   padding: 3px 24px 3px 8px;
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 .log-tools button,
 .log-footer button {
-  font-size: 12px;
-  min-height: 28px;
+  font-size: var(--font-secondary);
+  min-height: var(--control-height);
 }
 .log-tools input[type="checkbox"],
 .log-footer input[type="checkbox"] {
@@ -72,7 +73,7 @@
 }
 .log-footer > span {
   margin-right: auto;
-  font-size: 11px;
+  font-size: var(--font-caption);
   color: var(--muted);
 }
 .log-content .cm-line {
@@ -91,7 +92,7 @@
   flex: 1;
   min-width: 0;
   height: 100%;
-  font: 12px/1.65 var(--mono);
+  font: var(--font-secondary)/1.65 var(--mono);
 }
 .log-row {
   display: flex;
@@ -120,7 +121,7 @@
   align-self: flex-start;
   justify-content: flex-end;
   color: var(--muted);
-  font: 10px/1.8 var(--mono);
+  font: var(--font-caption)/1.8 var(--mono);
   user-select: none;
 }
 .log-row.log-level-error {
@@ -132,7 +133,7 @@
   background: color-mix(in srgb, #b07512 5%, transparent);
 }
 .log-level-label {
-  font: 9px/1.5 var(--mono);
+  font: var(--font-caption)/1.5 var(--mono);
   border: 1px solid currentColor;
   border-radius: 3px;
   padding: 1px 3px;
@@ -161,7 +162,7 @@
   font-weight: 600;
 }
 .log-fragment {
-  font-size: 10px;
+  font-size: var(--font-caption);
 }
 .log-token-key {
   color: #1b5fa3;
@@ -188,7 +189,7 @@
   color: var(--green);
 }
 .log-ansi-blue {
-  color: var(--blue);
+  color: var(--accent-text);
 }
 .log-ansi-yellow {
   color: #946209;
@@ -208,7 +209,7 @@
   align-self: flex-start;
   min-height: 20px;
   padding: 0 5px;
-  font-size: 10px;
+  font-size: var(--font-caption);
 }
 .log-page-control {
   padding: 8px 14px;
@@ -242,7 +243,7 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 .log-search input[type="checkbox"] {
   width: auto;
@@ -250,18 +251,18 @@
 }
 .log-search-filters input {
   width: 185px;
-  font-size: 11px;
+  font-size: var(--font-caption);
   min-height: 28px;
   padding: 3px 6px;
 }
 .log-search-filters > span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 .log-search button,
 .log-range button {
   min-height: 27px;
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 .log-range {
   border-top: 1px solid var(--line);
@@ -271,11 +272,11 @@
   width: 105px;
   min-height: 27px;
   padding: 3px 6px;
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 .log-notice {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -307,6 +308,6 @@
   inset: 40px 20px auto;
   text-align: center;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--font-body);
   pointer-events: none;
 }

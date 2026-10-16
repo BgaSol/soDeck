@@ -50,9 +50,17 @@ async function authenticate(main: Page) {
     const trust = main.getByRole("button", { name: "确认指纹并连接" });
     if (await trust.isVisible()) await trust.click();
     await expect(
-      main.getByRole("tabpanel").locator(".connection-state"),
+      main.locator(".session-page[role=tabpanel]:visible").locator(".connection-state"),
     ).toHaveText("已连接", { timeout: 1000 });
   }).toPass({ timeout: 20000 });
+  await selectContainer(main);
+}
+
+async function selectContainer(main: Page, name = "web-fixture") {
+  const panel = main.locator(".session-page[role=tabpanel]:visible");
+  await panel.getByRole("tab", { name: "Docker", exact: true }).click();
+  await panel.getByRole("group", { name: "Docker 对象类型" }).getByRole("button", { name: /^容器/ }).click();
+  await panel.getByRole("listbox", { name: "容器列表" }).getByRole("option").filter({ hasText: name }).click();
 }
 
 test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows", async () => {
@@ -144,19 +152,18 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
     ).toBeVisible();
     await main.getByRole("button", { name: "上一级目录" }).click();
     await expect(main.getByLabel("远程目录路径")).toHaveValue("/");
-    await expect(main.locator(".docker-root")).toContainText("运行中");
+    await expect(main.locator(".docker-engine-title")).toContainText("可访问");
     await main.getByRole("button", { name: /^镜像/ }).click();
-    await expect(main.getByText("nginx:alpine", { exact: true })).toBeVisible();
-    await expect(
-      main.getByRole("button", { name: "进入 stopped-fixture 容器终端" }),
-    ).toHaveCount(0);
-    await expect(
-      main.getByRole("button", { name: "进入 paused-fixture 容器终端" }),
-    ).toHaveCount(0);
+    await expect(main.getByRole("listbox", { name: "镜像列表" }).getByText("nginx:alpine", { exact: true })).toBeVisible();
+    await selectContainer(main, "stopped-fixture");
+    await expect(main.getByRole("button", { name: "进入 stopped-fixture 终端" })).toBeDisabled();
+    await selectContainer(main, "paused-fixture");
+    await expect(main.getByRole("button", { name: "进入 paused-fixture 终端" })).toBeDisabled();
+    await selectContainer(main);
     await main.screenshot({ path: ".qa/desktop-connected.png" });
     const pageOpened = context.waitForEvent("page");
     await main
-      .getByRole("button", { name: "进入 web-fixture 容器终端" })
+      .getByRole("button", { name: "进入 web-fixture 终端" })
       .click();
     container = await pageOpened;
     await expect(container.locator(".terminal-surface")).toContainText(
@@ -176,7 +183,7 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
     ).toBe("permission");
     const pageCount = context.pages().length;
     await main
-      .getByRole("button", { name: "进入 web-fixture 容器终端" })
+      .getByRole("button", { name: "进入 web-fixture 终端" })
       .click();
     expect(context.pages()).toHaveLength(pageCount);
     expect(await ipc<number>(main, "session_count")).toBe(2);
@@ -186,7 +193,7 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
     await expect(main.locator(".connection-state")).toHaveText("已连接");
     const reopened = context.waitForEvent("page");
     await main
-      .getByRole("button", { name: "进入 web-fixture 容器终端" })
+      .getByRole("button", { name: "进入 web-fixture 终端" })
       .click();
     container = await reopened;
     await expect(container.locator(".terminal-surface")).toContainText(
@@ -283,27 +290,27 @@ test("Docker failures and stopped/shell-less containers preserve the host termin
     await authenticate(main);
     await expect(main.locator(".connection-state")).toHaveText("已连接");
     await expect(
-      main.getByRole("button", { name: "进入 web-fixture 容器终端" }),
+      main.getByRole("button", { name: "进入 web-fixture 终端" }),
     ).toBeEnabled();
     for (const [mode, status] of [
-      ["missing", "未找到命令"],
+      ["missing", "未找到 Docker 命令"],
       ["permission", "权限不足"],
       ["unreachable", "服务不可达"],
       ["timeout", "检测失败"],
     ]) {
       await writeFile(".qa/docker-mode", mode);
       await main.getByRole("button", { name: "刷新 Docker 状态" }).click();
-      await expect(main.locator(".docker-root")).toContainText(status, {
+      await expect(main.locator(".docker-engine-title")).toContainText(status, {
         timeout: mode === "timeout" ? 30000 : 18000,
       });
       await expect(main.locator(".connection-state")).toHaveText("已连接");
       if (
         await main
-          .getByRole("button", { name: "进入 web-fixture 容器终端" })
+          .getByRole("button", { name: "进入 web-fixture 终端" })
           .count()
       ) {
         await expect(
-          main.getByRole("button", { name: "进入 web-fixture 容器终端" }),
+          main.getByRole("button", { name: "进入 web-fixture 终端" }),
         ).toBeDisabled();
       }
     }
@@ -313,12 +320,14 @@ test("Docker failures and stopped/shell-less containers preserve the host termin
     ]) {
       await writeFile(".qa/docker-mode", mode);
       await main.getByRole("button", { name: "刷新 Docker 状态" }).click();
+      await expect(main.locator(".docker-engine-title")).toContainText("可访问");
+      await selectContainer(main);
       await expect(
-        main.getByRole("button", { name: "进入 web-fixture 容器终端" }),
+        main.getByRole("button", { name: "进入 web-fixture 终端" }),
       ).toBeEnabled();
       const opened = context.waitForEvent("page");
       await main
-        .getByRole("button", { name: "进入 web-fixture 容器终端" })
+        .getByRole("button", { name: "进入 web-fixture 终端" })
         .click();
       container = await opened;
       await expect(container.getByRole("alert")).toContainText(error);
@@ -370,7 +379,7 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
   const errors: string[] = [];
   main.on("pageerror", (error) => errors.push(error.message));
   let container: Page | undefined;
-  const active = () => main.getByRole("tabpanel");
+  const active = () => main.locator(".session-page[role=tabpanel]:visible");
   async function type(command: string) {
     await active().locator(".terminal-surface textarea").focus();
     await main.keyboard.type(command);
@@ -379,30 +388,24 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
   try {
     await unlink(".qa/docker-mode").catch(() => {});
     await main.reload();
-    // Observe the real Docker API calls; every query still reaches Rust and SSH.
+    // Observe shared backend updates; queries still execute through real SSH.
     await main.evaluate(async () => {
-      const modulePath =
-        performance
-          .getEntriesByType("resource")
-          .map((entry) => entry.name)
-          .find((url) => new URL(url).pathname === "/src/api.ts") ||
-        "/src/api.ts";
-      const { api } = await import(modulePath);
-      const original = api.docker;
+      const modulePath = performance.getEntriesByType("resource").map(entry => entry.name)
+        .find(url => new URL(url).pathname === "/src/resourceMonitoring.ts") || "/src/resourceMonitoring.ts";
+      const { MonitorStore } = await import(modulePath);
+      const original = MonitorStore.prototype.receive;
       (window as any).__qaQueries = [];
-      api.docker = (sessionId: string) => {
-        (window as any).__qaQueries.push({
-          command: "detect_docker",
-          sessionId,
-        });
-        return original(sessionId);
+      MonitorStore.prototype.receive = function(event: any) {
+        if (event.type === "docker" && !event.docker.refreshing)
+          (window as any).__qaQueries.push({ command: "docker_sample", sessionId: this.sessionId });
+        return original.call(this, event);
       };
     });
     await showServers(main);
     await main.locator(".server-row").filter({ hasText: nameA }).dblclick();
     await authenticate(main);
     await expect(
-      active().getByRole("button", { name: "进入 web-fixture 容器终端" }),
+      active().getByRole("button", { name: "进入 web-fixture 终端" }),
     ).toBeEnabled();
     await type("echo marker-A");
     await expect(active().locator(".terminal-surface")).toContainText(
@@ -410,7 +413,7 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
     );
     await active().getByRole("button", { name: /^镜像/ }).click();
     await expect(
-      active().getByText("nginx:alpine", { exact: true }),
+      active().getByRole("listbox", { name: "镜像列表" }).getByText("nginx:alpine", { exact: true }),
     ).toBeVisible();
     await active().locator('.file-row[data-path="/readme.txt"]').click();
     await expect(active().locator(".file-row.selected")).toContainText(
@@ -427,12 +430,12 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
     await showServers(main);
     await main.locator(".server-row").filter({ hasText: nameB }).dblclick();
     await authenticate(main);
-    await expect(main.getByRole("tab")).toHaveCount(2);
+    await expect(main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(2);
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(2);
     await expect(active().getByLabel("远程目录路径")).toHaveValue("/");
     await expect(
       active().getByRole("button", { name: /^镜像/ }),
-    ).toHaveAttribute("aria-expanded", "false");
+    ).toHaveAttribute("aria-pressed", "false");
     await expect(active().locator(".terminal-surface")).not.toContainText(
       "marker-A",
     );
@@ -454,7 +457,7 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
     );
     await expect(
       active().getByRole("button", { name: /^镜像/ }),
-    ).toHaveAttribute("aria-expanded", "true");
+    ).toHaveAttribute("aria-pressed", "true");
     await expect(
       active().getByRole("button", { name: "刷新 Docker 状态" }),
     ).toBeEnabled();
@@ -480,7 +483,7 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
         (id) =>
           (window as any).__qaQueries.filter(
             (item: any) =>
-              item.command === "detect_docker" && item.sessionId === id,
+              item.command === "docker_sample" && item.sessionId === id,
           ).length,
         id,
       );
@@ -507,7 +510,7 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
       .click({ button: "right" });
     await main.getByRole("menuitem", { name: "新建连接", exact: true }).click();
     await authenticate(main);
-    await expect(main.getByRole("tab")).toHaveCount(3);
+    await expect(main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(3);
     await expect(
       main.getByRole("tab", { name: `${nameA} · 2，已连接`, exact: true }),
     ).toHaveAttribute("aria-selected", "true");
@@ -523,18 +526,18 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
     await main
       .getByRole("tab", { name: `${nameA}，已连接`, exact: true })
       .click();
-    await expect(main.getByRole("tab")).toHaveCount(3);
+    await expect(main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(3);
     await expect(active().getByLabel("远程目录路径")).toHaveValue("/projects");
     await expect(active().locator(".terminal-surface")).not.toContainText(
       "duplicate-marker",
     );
     await main.screenshot({ path: ".qa/multiple-ssh-tabs.png" });
     await expect(
-      active().getByRole("button", { name: "进入 web-fixture 容器终端" }),
+      active().getByRole("button", { name: "进入 web-fixture 终端" }),
     ).toBeEnabled();
     const opened = context.waitForEvent("page");
     await active()
-      .getByRole("button", { name: "进入 web-fixture 容器终端" })
+      .getByRole("button", { name: "进入 web-fixture 终端" })
       .click();
     container = await opened;
     await expect(container.locator(".terminal-surface")).toContainText(
@@ -553,7 +556,7 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
       .getByRole("button", { name: `关闭 ${nameA} 会话`, exact: true })
       .click();
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(2);
-    await expect(main.getByRole("tab")).toHaveCount(1);
+    await expect(main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(1);
     expect((await ipc<any>(container, "container_info")).serverName).toBe(
       nameA,
     );
@@ -581,7 +584,7 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
       .getByRole("button", { name: `关闭 ${nameA} · 2 会话`, exact: true })
       .click();
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(1);
-    await expect(main.getByRole("tab")).toHaveCount(0);
+    await expect(main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(0);
     await closeContainer(container);
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(0);
     expect(errors).toEqual([]);
@@ -626,7 +629,7 @@ test("failed, pending and remotely closed tabs do not affect other connections",
   const pendingServer = await ipc<any>(main, "save_server", {
     server: { ...server, id: "", name: pendingName, username: "ops-delay" },
   });
-  const active = () => main.getByRole("tabpanel");
+  const active = () => main.locator(".session-page[role=tabpanel]:visible");
   try {
     await unlink(".qa/docker-mode").catch(() => {});
     await main.reload();
@@ -705,7 +708,7 @@ test("failed, pending and remotely closed tabs do not affect other connections",
       .toBeGreaterThan(closedBefore);
     await unlink(".qa/auth-delay");
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(1);
-    await expect(main.getByRole("tab")).toHaveCount(1);
+    await expect(main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(1);
     // Remote exit keeps the output and tab, and reconnecting does not add a new tab.
     await active().locator(".terminal-surface textarea").focus();
     await main.keyboard.type("echo retained-before-exit");
@@ -726,7 +729,7 @@ test("failed, pending and remotely closed tabs do not affect other connections",
       .getByRole("button", { name: "重新连接", exact: true })
       .click();
     await authenticate(main);
-    await expect(main.getByRole("tab")).toHaveCount(1);
+    await expect(main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(1);
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(1);
     await expect(active().locator(".terminal-surface")).toContainText(
       "retained-before-exit",
@@ -736,7 +739,7 @@ test("failed, pending and remotely closed tabs do not affect other connections",
       .getByRole("tab", { name: `${name}，已连接`, exact: true })
       .focus();
     await main.keyboard.press("Delete");
-    await expect(main.getByRole("tab")).toHaveCount(0);
+    await expect(main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(0);
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(0);
   } finally {
     await unlink(".qa/auth-delay").catch(() => {});
@@ -761,7 +764,7 @@ test("saved passwords survive reload, connect automatically and can be cleared",
     )!;
   const name = `QA password ${Date.now()}`;
   let serverId = "";
-  const active = () => main.getByRole("tabpanel");
+  const active = () => main.locator(".session-page[role=tabpanel]:visible");
   async function storedPassword() {
     return (await ipc<any[]>(main, "list_servers")).find(
       (server) => server.id === serverId,

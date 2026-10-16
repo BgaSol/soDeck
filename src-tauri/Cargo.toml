@@ -9,6 +9,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+cc = "1"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
@@ -19,6 +20,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.38", features = ["bundled", "hooks"] }
 ssh2 = "0.9"
+libssh2-sys = "0.3.3"
 uuid = { version = "1", features = ["v4"] }
 sha2 = "0.10"
 base64 = "0.22"

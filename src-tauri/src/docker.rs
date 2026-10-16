@@ -7,21 +7,21 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Serialize, Clone)]
+#[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DockerStatus {
     pub state: String,
     pub message: String,
     pub endpoint: String,
 }
-#[derive(Serialize)]
+#[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Image {
     pub id: String,
     pub name: String,
     pub size: String,
 }
-#[derive(Serialize)]
+#[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Container {
     pub id: String,
@@ -38,9 +38,18 @@ pub struct ContainerTarget {
     pub endpoint: String,
 }
 pub fn detect(spec: &SharedContext) -> AppResult<DockerStatus> {
-    let connection = connection::connect_verified(spec, &Cancellation::default())?;
-    let session = connection.session();
-    let found = ssh::exec(session, "command -v docker >/dev/null 2>&1")?;
+    let connection = connection::connect_verified(
+        spec,
+        &Cancellation::default(),
+        crate::traffic::TrafficPurpose::DockerMonitor,
+    )?;
+    detect_on(connection.session(), &|| Ok(()))
+}
+pub(crate) fn detect_on(
+    session: &ssh2::Session,
+    check: &impl Fn() -> AppResult<()>,
+) -> AppResult<DockerStatus> {
+    let found = query(session, "command -v docker >/dev/null 2>&1", check)?;
     if found.code != 0 {
         return Ok(DockerStatus {
             state: "missing".into(),
@@ -48,7 +57,7 @@ pub fn detect(spec: &SharedContext) -> AppResult<DockerStatus> {
             endpoint: String::new(),
         });
     }
-    let endpoint=ssh::exec(session,"if [ -n \"$DOCKER_HOST\" ] && [ -z \"$DOCKER_CONTEXT\" ]; then printf '%s' \"$DOCKER_HOST\"; else docker context inspect --format '{{.Endpoints.docker.Host}}'; fi")?;
+    let endpoint=query(session,"if [ -n \"$DOCKER_HOST\" ] && [ -z \"$DOCKER_CONTEXT\" ]; then printf '%s' \"$DOCKER_HOST\"; else docker context inspect --format '{{.Endpoints.docker.Host}}'; fi", check)?;
     if endpoint.code != 0 || endpoint.stdout.trim().is_empty() {
         return Ok(DockerStatus {
             state: "error".into(),
@@ -57,7 +66,14 @@ pub fn detect(spec: &SharedContext) -> AppResult<DockerStatus> {
         });
     }
     let endpoint = endpoint.stdout.trim().to_string();
-    let result = ssh::exec(session, "docker info --format '{{json .ServerVersion}}'")?;
+    let result = query(
+        session,
+        &format!(
+            "{} info --format '{{{{json .ServerVersion}}}}'",
+            docker(&endpoint)
+        ),
+        check,
+    )?;
     if result.code == 0 {
         Ok(DockerStatus {
             state: "running".into(),
@@ -78,7 +94,7 @@ pub fn detect(spec: &SharedContext) -> AppResult<DockerStatus> {
         })
     }
 }
-fn docker(endpoint: &str) -> String {
+pub(crate) fn docker(endpoint: &str) -> String {
     format!(
         "env -u DOCKER_CONTEXT -u DOCKER_HOST docker --host {}",
         ssh::quote(endpoint)
@@ -102,14 +118,25 @@ fn json_lines(output: &str) -> AppResult<Vec<Value>> {
         .collect()
 }
 pub fn images(spec: &SharedContext, endpoint: &str) -> AppResult<Vec<Image>> {
-    let connection = connection::connect_verified(spec, &Cancellation::default())?;
-    let session = connection.session();
-    let result = ssh::exec(
+    let connection = connection::connect_verified(
+        spec,
+        &Cancellation::default(),
+        crate::traffic::TrafficPurpose::DockerMonitor,
+    )?;
+    images_on(connection.session(), endpoint, &|| Ok(()))
+}
+pub(crate) fn images_on(
+    session: &ssh2::Session,
+    endpoint: &str,
+    check: &impl Fn() -> AppResult<()>,
+) -> AppResult<Vec<Image>> {
+    let result = query(
         session,
         &format!(
             "{} image ls --no-trunc --format '{{{{json .}}}}'",
             docker(endpoint)
         ),
+        check,
     )?;
     if result.code != 0 {
         return Err(AppError::new("docker", result.stderr));
@@ -133,14 +160,25 @@ pub fn images(spec: &SharedContext, endpoint: &str) -> AppResult<Vec<Image>> {
         .collect())
 }
 pub fn containers(spec: &SharedContext, endpoint: &str) -> AppResult<Vec<Container>> {
-    let connection = connection::connect_verified(spec, &Cancellation::default())?;
-    let session = connection.session();
-    let result = ssh::exec(
+    let connection = connection::connect_verified(
+        spec,
+        &Cancellation::default(),
+        crate::traffic::TrafficPurpose::DockerMonitor,
+    )?;
+    containers_on(connection.session(), endpoint, &|| Ok(()))
+}
+pub(crate) fn containers_on(
+    session: &ssh2::Session,
+    endpoint: &str,
+    check: &impl Fn() -> AppResult<()>,
+) -> AppResult<Vec<Container>> {
+    let result = query(
         session,
         &format!(
             "{} ps -a --no-trunc --format '{{{{json .}}}}'",
             docker(endpoint)
         ),
+        check,
     )?;
     if result.code != 0 {
         return Err(AppError::new("docker", result.stderr));
@@ -162,6 +200,44 @@ pub fn containers(spec: &SharedContext, endpoint: &str) -> AppResult<Vec<Contain
     });
     Ok(values)
 }
+fn query(
+    session: &ssh2::Session,
+    command: &str,
+    check: &impl Fn() -> AppResult<()>,
+) -> AppResult<ssh::ExecResult> {
+    crate::remote_read::exec(session, command, check)
+}
+pub(crate) fn unhealthy_on(
+    session: &ssh2::Session,
+    endpoint: &str,
+    check: &impl Fn() -> AppResult<()>,
+) -> AppResult<Vec<String>> {
+    let result = query(
+        session,
+        &format!(
+            "{} ps -a --no-trunc --filter health=unhealthy --format '{{{{.ID}}}}'",
+            docker(endpoint)
+        ),
+        check,
+    )?;
+    if result.code != 0 {
+        return Err(AppError::new("docker", result.stderr));
+    }
+    let ids: Vec<String> = result
+        .stdout
+        .lines()
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.trim().to_owned())
+        .collect();
+    if ids
+        .iter()
+        .any(|s| s.len() != 64 || !s.bytes().all(|b| b.is_ascii_hexdigit()))
+    {
+        return Err(AppError::new("docker", "Docker 健康状态返回格式无效"));
+    }
+    Ok(ids)
+}
+
 pub fn terminal_command_on(session: &ssh2::Session, target: &ContainerTarget) -> AppResult<String> {
     if target.id.len() != 64 || !target.id.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(AppError::new("validation", "无效的容器 ID"));

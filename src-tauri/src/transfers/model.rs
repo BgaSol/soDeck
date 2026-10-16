@@ -158,6 +158,7 @@ pub struct TaskView {
 pub struct TaskPresentation {
     pub created_at: Option<u64>,
     pub last_started_at: Option<u64>,
+    pub finished_at: Option<u64>,
     pub sort_order: u64,
     pub source_paths: Vec<String>,
     pub last_attempt: Option<AttemptSummary>,
@@ -178,6 +179,7 @@ impl TaskPresentation {
         Self {
             created_at: now,
             last_started_at: now,
+            finished_at: None,
             sort_order,
             source_paths,
             last_attempt: None,
@@ -199,6 +201,7 @@ impl TaskPresentation {
         });
         self.sort_order = sort_order;
         self.last_started_at = Self::now();
+        self.finished_at = None;
     }
 
     fn now() -> Option<u64> {

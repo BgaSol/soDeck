@@ -12,6 +12,9 @@
   padding: 0 0 0 16px;
   background: var(--chrome-bg);
   color: var(--chrome-text);
+  border-bottom: 1px solid var(--line);
+  -webkit-backdrop-filter: blur(20px) saturate(120%);
+  backdrop-filter: blur(20px) saturate(120%);
   user-select: none;
 }
 .window-titlebar-terminal {
@@ -47,7 +50,7 @@
   padding: 0 6px;
   overflow: hidden;
   white-space: nowrap;
-  font-size: 10px;
+  font-size: var(--font-caption);
   color: var(--selected-text);
 }
 .brand-button.brand-icon-only {
@@ -89,14 +92,14 @@
 }
 .window-titlebar .window-drag-region h1 {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--font-body);
   line-height: 18px;
   font-weight: 600;
   color: inherit;
 }
 .window-titlebar .window-drag-region p {
   margin: 0;
-  font-size: 10px;
+  font-size: var(--font-caption);
   line-height: 15px;
   color: var(--chrome-muted);
 }
@@ -117,7 +120,7 @@
   flex-shrink: 0;
 }
 .window-actions > button {
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 .window-action-label {
   white-space: nowrap;
@@ -159,7 +162,7 @@
   gap: 7px;
 }
 .brand-compact .app-brand strong {
-  font-size: 13px;
+  font-size: var(--font-body);
 }
 .window-loading {
   height: 100dvh;
@@ -174,9 +177,11 @@
   justify-content: space-between;
   flex-shrink: 0;
   gap: 12px;
-  padding: 3px 18px;
-  font-size: 10px;
+  padding: 3px 12px;
+  font-size: var(--font-caption);
   color: var(--muted);
+  background: var(--canvas);
+  border-top: 1px solid var(--line);
 }
 @media (max-width: 900px) {
   .window-action-label {
@@ -193,6 +198,10 @@
   }
 }
 @media (prefers-reduced-transparency: reduce) {
+  .window-titlebar {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
   .window-titlebar:not(.window-titlebar-terminal) {
     --chrome-bg: var(--canvas);
   }

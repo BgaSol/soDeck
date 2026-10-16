@@ -600,7 +600,7 @@ fn read_logs(
     run: &Run,
     output: &Channel<LogEvent>,
 ) -> AppResult<bool> {
-    let connection = connection::connect_verified(spec, &run.cancel)?;
+    let connection = connection::connect_verified(spec, &run.cancel, crate::traffic::TrafficPurpose::Logs)?;
     let session = connection.session();
     if run.cancel.is_cancelled() {
         return Ok(false);

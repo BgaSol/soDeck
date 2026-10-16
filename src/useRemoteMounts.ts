@@ -1,67 +1,39 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { desktop } from "./api";
-import { MOUNT_REFRESH_MS, RemoteMounts } from "./remoteMounts";
-import type {
-  MountSnapshot,
-  MountTable,
-  RemoteMountApi,
-  RemoteMountUsage,
-} from "./remoteMounts";
+import { useContext, useMemo, useSyncExternalStore } from "react";
+import { MonitorContext, useMonitorPaths } from "./MonitorProvider";
+import type { MountSnapshot, MountState } from "./remoteMounts";
 
-const api: RemoteMountApi = {
-  list: (sessionId) => invoke<MountTable>("list_remote_mounts", { sessionId }),
-  usage: (sessionId, mountTableVersion, mountKeys) =>
-    invoke<RemoteMountUsage[]>("get_remote_mount_usage", {
-      sessionId,
-      mountTableVersion,
-      mountKeys,
-    }),
+const emptyState: MountState = {
+  sessionId: "",
+  usage: {},
+  fetchedAt: 0,
+  loading: false,
+  error: "",
 };
+const emptySubscribe = () => () => {};
+const getEmptyState = () => emptyState;
+
+// The empty workspace has no provider; connected workspaces use the shared backend cache.
 export function useRemoteMounts(
   sessionId: string | null,
   active: boolean,
   paths: string[],
-  initial?: MountSnapshot,
+  _initial?: MountSnapshot,
 ) {
-  const saved = useRef(initial);
-  const model = useMemo(
-    () => new RemoteMounts(sessionId ?? "", api, saved.current),
-    [sessionId],
+  const store = useContext(MonitorContext);
+  useMonitorPaths(store, paths, active && !!sessionId);
+  const state = useSyncExternalStore(
+    store?.subscribeMounts ?? emptySubscribe,
+    store?.getMounts ?? getEmptyState,
   );
-  const state = useSyncExternalStore(model.subscribe, model.getState);
-  const [visible, setVisible] = useState(!document.hidden);
-  useEffect(() => {
-    const update = () => setVisible(!document.hidden);
-    document.addEventListener("visibilitychange", update);
-    return () => document.removeEventListener("visibilitychange", update);
-  }, []);
-  useEffect(() => {
-    model.setVisible(paths);
-  }, [model, paths]);
-  useEffect(() => {
-    const enabled = desktop && !!sessionId && active && visible;
-    model.setActive(enabled);
-    if (!enabled) return;
-    let stopped = false;
-    let timer: number | undefined;
-    const poll = async () => {
-      await model.refresh();
-      if (!stopped)
-        timer = window.setTimeout(() => void poll(), MOUNT_REFRESH_MS);
-    };
-    void poll();
-    return () => {
-      stopped = true;
-      clearTimeout(timer);
-      model.setActive(false);
-    };
-  }, [model, sessionId, active, visible]);
+  const model = useMemo(
+    () =>
+      store
+        ? {
+            refresh: (_force = false) => store.refresh("mounts"),
+            snapshot: () => store.getMounts(),
+          }
+        : { refresh: async (_force = false) => {}, snapshot: getEmptyState },
+    [store],
+  );
   return { model, state };
 }

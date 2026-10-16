@@ -11,15 +11,33 @@ import {
   type TransferAuth,
 } from "./transferApi";
 import { TransferAuthFields } from "./TransferAuthFields";
-import { TransferPopover, type TransferAction } from "./TransferPopover";
-import { summarizeTransfers } from "./transferPresentation";
-import { useTransferTasks } from "./useTransferTasks";
+import { FileTaskPopover } from "./FileTaskPopover";
+import { fileTaskApi, type FileTask, type FileTaskAction } from "./fileTaskApi";
+import { fileTaskProgress } from "./fileTaskPresentation";
+import { useFileTasks } from "./useFileTasks";
+import { DeleteFilesDialog } from "./DeleteFilesDialog";
+import { fileApi, type DeletePreview } from "./fileApi";
 import { errorOf } from "./types";
 import "./files.css";
 import "./transfers.css";
 
-export function TransferPanel({ embedded = false }: { embedded?: boolean }) {
-  const { tasks, rates, error, completion, refresh } = useTransferTasks();
+export function FileTaskPanel({ embedded = false }: { embedded?: boolean }) {
+  const {
+    tasks,
+    summary,
+    rates,
+    error,
+    completion,
+    refresh,
+    filter,
+    setFilter,
+    hasMore,
+    loading,
+    loadMore,
+  } = useFileTasks();
+  const [deleteDraft, setDeleteDraft] = useState<DeletePreview | null>(null);
+  const [clearing, setClearing] = useState(false);
+  const [clearError, setClearError] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState<Record<string, string>>({});
   const pending = useRef(new Set<string>());
@@ -39,31 +57,53 @@ export function TransferPanel({ embedded = false }: { embedded?: boolean }) {
     else retryDialog.current?.close();
   }, [retrying]);
 
-  async function action(task: TransferTask, type: TransferAction | "retry") {
-    if (pending.current.has(task.id)) return;
-    pending.current.add(task.id);
-    setBusy((current) => ({ ...current, [task.id]: type }));
-    setErrors((current) => ({ ...current, [task.id]: "" }));
+  async function perform(id: string, type: string, run: () => Promise<void>) {
+    if (pending.current.has(id)) return;
+    pending.current.add(id);
+    setBusy((current) => ({ ...current, [id]: type }));
+    setErrors((current) => ({ ...current, [id]: "" }));
     try {
-      if (type === "retry") {
-        await transferApi.retry(
-          task.id,
-          task.kind === "direct" ? retryAuth : undefined,
-          resume,
-        );
-        setRetrying(null);
-        setRetryAuth({ mode: "savedPassword" });
-      } else await transferApi[type](task.id);
+      await run();
       await refresh();
     } catch (e) {
-      setErrors((current) => ({ ...current, [task.id]: errorOf(e).message }));
+      setErrors((current) => ({ ...current, [id]: errorOf(e).message }));
     } finally {
-      pending.current.delete(task.id);
+      pending.current.delete(id);
       setBusy((current) => {
         const next = { ...current };
-        delete next[task.id];
+        delete next[id];
         return next;
       });
+    }
+  }
+  function action(item: FileTask, type: FileTaskAction) {
+    void perform(item.task.id, type, async () => {
+      if (type === "cleanup") await transferApi.cleanup(item.task.id);
+      else await fileTaskApi[type](item.task.id);
+    });
+  }
+  function retry(item: FileTask) {
+    if (item.category === "delete") {
+      void perform(item.task.id, "retry", async () =>
+        setDeleteDraft(await fileApi.prepareDeleteRetry(item.task.id)),
+      );
+    } else {
+      setErrors((current) => ({ ...current, [item.task.id]: "" }));
+      setResume(false);
+      setRetrying(item.task);
+    }
+  }
+  async function clearCompleted() {
+    if (clearing) return;
+    setClearing(true);
+    setClearError("");
+    try {
+      await fileTaskApi.clearCompleted();
+      await refresh();
+    } catch (e) {
+      setClearError(errorOf(e).message);
+    } finally {
+      setClearing(false);
     }
   }
 
@@ -72,35 +112,31 @@ export function TransferPanel({ embedded = false }: { embedded?: boolean }) {
     if (restoreFocus) anchor.current?.focus({ preventScroll: true });
   }
 
-  if (!tasks.length && !error) return null;
-  const summary = summarizeTransfers(tasks);
+  const progress = fileTaskProgress(tasks, summary.active);
+  const label = summary.active
+    ? `文件任务 · ${summary.active} 项进行中`
+    : "文件任务";
   return (
     <>
       <div
         className={`transfer-statusbar${embedded ? " embedded" : ""}`}
-        aria-label="传输状态栏"
+        aria-label="文件任务状态栏"
       >
         <button
           ref={anchor}
           type="button"
           className="transfer-status-trigger"
-          aria-label="查看传输任务"
+          aria-label="查看文件任务"
           aria-expanded={expanded}
-          aria-controls="transfer-task-popover"
+          aria-controls="file-task-popover"
           onClick={() => setExpanded(!expanded)}
         >
           <ArrowRightLeft size={14} aria-hidden="true" />
-          <span>
-            {summary.active ? summary.label : completion || summary.label}
-          </span>
+          <span>{completion || label}</span>
           {summary.active > 0 ? (
-            <progress
-              max={1}
-              value={summary.progress}
-              aria-label="总传输进度"
-            />
+            <progress max={1} value={progress} aria-label="文件任务进度" />
           ) : (
-            <span className="transfer-history-count">{tasks.length}</span>
+            <span className="transfer-history-count">{summary.total}</span>
           )}
           {(summary.attention > 0 || error) && (
             <span
@@ -124,23 +160,37 @@ export function TransferPanel({ embedded = false }: { embedded?: boolean }) {
           {completion}
         </span>
       </div>
-      <TransferPopover
+      <FileTaskPopover
         open={expanded}
-        suspended={!!retrying}
+        suspended={!!retrying || !!deleteDraft}
         anchor={anchor}
         tasks={tasks}
+        summary={summary}
+        filter={filter}
+        onFilter={setFilter}
+        hasMore={hasMore}
+        loading={loading}
+        onLoadMore={loadMore}
+        onClearCompleted={() => void clearCompleted()}
+        clearing={clearing}
         rates={rates}
         busy={busy}
         errors={errors}
-        error={error}
+        error={error || clearError}
         onClose={close}
-        onAction={(task, type) => void action(task, type)}
-        onRetry={(task) => {
-          setErrors((current) => ({ ...current, [task.id]: "" }));
-          setResume(false);
-          setRetrying(task);
-        }}
+        onAction={action}
+        onRetry={retry}
       />
+      {deleteDraft && (
+        <DeleteFilesDialog
+          draft={deleteDraft}
+          onClose={() => setDeleteDraft(null)}
+          onStarted={() => {
+            setDeleteDraft(null);
+            void refresh();
+          }}
+        />
+      )}
       <dialog
         ref={retryDialog}
         className="file-operation-dialog"
@@ -156,7 +206,16 @@ export function TransferPanel({ embedded = false }: { embedded?: boolean }) {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (retrying) void action(retrying, "retry");
+            if (retrying)
+              void perform(retrying.id, "retry", async () => {
+                await transferApi.retry(
+                  retrying.id,
+                  retrying.kind === "direct" ? retryAuth : undefined,
+                  resume,
+                );
+                setRetrying(null);
+                setRetryAuth({ mode: "savedPassword" });
+              });
           }}
         >
           <header className="dialog-head">

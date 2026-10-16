@@ -191,6 +191,12 @@ async function setup(
           if (command === "detect_docker")
             return { state: "missing", message: "fixture", endpoint: "" };
           if (command === "list_transfers") return [];
+          if (command === "list_file_tasks")
+            return {
+              tasks: [],
+              summary: { total: 0, active: 0, attention: 0, completed: 0 },
+              nextCursor: null,
+            };
           if (
             command === "session_count" ||
             command === "log_session_count" ||
@@ -238,7 +244,9 @@ async function connect(page: Page) {
   await dialog.getByLabel("密码", { exact: true }).fill("target-password");
   await dialog.getByRole("button", { name: "连接", exact: true }).click();
   await expect(
-    page.getByRole("tabpanel").locator(".connection-state"),
+    page
+      .locator(".session-page[role=tabpanel]:visible")
+      .locator(".connection-state"),
   ).toHaveText("已连接");
 }
 
@@ -248,7 +256,8 @@ test("per-hop prompts survive replies delivering the next prompt before IPC ackn
   const errors = await setup(page);
   await connect(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.locator(".connection-route")).toContainText(
+  await page.locator(".session-information summary").click();
+  await expect(page.locator(".session-information-content")).toContainText(
     "Jump A → Target B",
   );
   await expect(page.locator(".terminal-surface")).toContainText(
@@ -273,7 +282,11 @@ test("closing while open is pending cancels its eventual ID and ignores late Rea
     .getByRole("dialog")
     .getByRole("button", { name: "取消", exact: true })
     .click();
-  await expect(page.getByRole("tab")).toHaveCount(0);
+  await expect(
+    page
+      .getByRole("tablist", { name: "SSH 会话", exact: true })
+      .getByRole("tab"),
+  ).toHaveCount(0);
   await expect
     .poll(() =>
       page.evaluate(() =>
@@ -290,7 +303,11 @@ test("closing while open is pending cancels its eventual ID and ignores late Rea
       connection: { target: t.servers[1], hops: [], identity: "late" },
     });
   });
-  await expect(page.getByRole("tab")).toHaveCount(0);
+  await expect(
+    page
+      .getByRole("tablist", { name: "SSH 会话", exact: true })
+      .getByRole("tab"),
+  ).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -484,7 +501,11 @@ test("authentication can be cancelled while its reply is still pending", async (
   ).toBeEnabled();
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByRole("tab")).toHaveCount(0);
+  await expect(
+    page
+      .getByRole("tablist", { name: "SSH 会话", exact: true })
+      .getByRole("tab"),
+  ).toHaveCount(0);
   expect(
     await page.evaluate(() =>
       (window as any).__TEST__.calls.some(
@@ -556,14 +577,23 @@ test("server picker filters hidden selections, supports Escape, and preserves th
   ).toBeFocused();
   await page.getByRole("button", { name: "新建连接", exact: true }).click();
   await connect(page);
-  const original = await page.getByRole("tab").getAttribute("id");
+  const original = await page
+    .getByRole("tablist", { name: "SSH 会话", exact: true })
+    .getByRole("tab")
+    .getAttribute("id");
   await page.getByRole("button", { name: "新建连接", exact: true }).click();
   await picker.getByLabel("搜索服务器").fill("");
   await picker.locator(".server-row").filter({ hasText: "Jump A" }).click();
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("tab")).toHaveAttribute("id", original!);
   await expect(
-    page.getByRole("tabpanel").locator(".connection-state"),
+    page
+      .getByRole("tablist", { name: "SSH 会话", exact: true })
+      .getByRole("tab"),
+  ).toHaveAttribute("id", original!);
+  await expect(
+    page
+      .locator(".session-page[role=tabpanel]:visible")
+      .locator(".connection-state"),
   ).toHaveText("已连接");
   expect(errors).toEqual([]);
 });
@@ -602,7 +632,10 @@ test("three columns resize independently, survive tab switches, and fit narrow w
 }) => {
   const errors = await setup(page);
   await connect(page);
-  const first = await page.getByRole("tab").getAttribute("id");
+  const first = await page
+    .getByRole("tablist", { name: "SSH 会话", exact: true })
+    .getByRole("tab")
+    .getAttribute("id");
   const left = page.getByRole("separator", { name: "调整文件区域宽度" });
   const right = page.getByRole("separator", { name: "调整服务区域宽度" });
   const startLeft = Number(await left.getAttribute("aria-valuenow"));
@@ -611,10 +644,21 @@ test("three columns resize independently, survive tab switches, and fit narrow w
   await right.press("ArrowLeft");
   await expect(left).toHaveAttribute("aria-valuenow", String(startLeft + 10));
   await expect(right).toHaveAttribute("aria-valuenow", String(startRight + 10));
+  await page.getByRole("button", { name: "15 分钟", exact: true }).click();
   await page.getByRole("button", { name: "新建连接", exact: true }).click();
   await connect(page);
-  await expect(page.getByRole("tab")).toHaveCount(2);
+  await expect(
+    page.getByRole("button", { name: "5 分钟", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page
+      .getByRole("tablist", { name: "SSH 会话", exact: true })
+      .getByRole("tab"),
+  ).toHaveCount(2);
   await page.locator(`[id="${first}"]`).click();
+  await expect(
+    page.getByRole("button", { name: "15 分钟", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
   await expect(left).toHaveAttribute("aria-valuenow", String(startLeft + 10));
   await expect(right).toHaveAttribute("aria-valuenow", String(startRight + 10));
   for (const [width, height] of [
@@ -625,20 +669,26 @@ test("three columns resize independently, survive tab switches, and fit narrow w
     await page.setViewportSize({ width, height });
     await expect
       .poll(async () =>
-        page.getByRole("tabpanel").evaluate((el) => {
+        page.locator(".session-page[role=tabpanel]:visible").evaluate((el) => {
           const file = el.querySelector(".file-panel")!.getBoundingClientRect();
           const terminal = el
             .querySelector(".terminal-panel")!
             .getBoundingClientRect();
           const service = el
-            .querySelector(".docker-panel")!
+            .querySelector(".resource-service-panel")!
             .getBoundingClientRect();
           return (
-            file.right < terminal.left &&
-            terminal.right < service.left &&
-            Math.abs(file.top - service.top) < 1 &&
-            service.right <= el.getBoundingClientRect().right + 1 &&
-            el.scrollWidth <= el.clientWidth
+            (el.getAttribute("data-layout") === "three"
+              ? file.right < terminal.left &&
+                terminal.right < service.left &&
+                Math.abs(file.top - service.top) < 1
+              : el.getAttribute("data-layout") === "two"
+                ? file.width === 0 &&
+                  terminal.width >= 320 &&
+                  terminal.right < service.left
+                : file.width === 0 &&
+                  service.width === 0 &&
+                  terminal.width > 0) && el.scrollWidth <= el.clientWidth
           );
         }),
       )
@@ -652,7 +702,11 @@ test("three columns resize independently, survive tab switches, and fit narrow w
   await page.screenshot({ path: ".qa/workspace-server-picker.png" });
   await page.locator(".server-row").filter({ hasText: "Target B" }).dblclick();
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("tab")).toHaveCount(2);
+  await expect(
+    page
+      .getByRole("tablist", { name: "SSH 会话", exact: true })
+      .getByRole("tab"),
+  ).toHaveCount(2);
   await expect(page.locator(`[id="${first}"]`)).toHaveAttribute(
     "aria-selected",
     "true",
@@ -714,7 +768,12 @@ test("moving a workspace carries both widths and restores the same terminal with
     Number(await left.getAttribute("aria-valuenow")),
     Number(await right.getAttribute("aria-valuenow")),
   ];
-  await page.getByRole("tab").click({ button: "right" });
+  await page.getByRole("tab", { name: "总览", exact: true }).click();
+  await page.getByRole("button", { name: "15 分钟", exact: true }).click();
+  await page
+    .getByRole("tablist", { name: "SSH 会话", exact: true })
+    .getByRole("tab")
+    .click({ button: "right" });
   await page
     .getByRole("menuitem", { name: "移到独立窗口", exact: true })
     .click();
@@ -735,13 +794,28 @@ test("moving a workspace carries both widths and restores the same terminal with
       ).args.payload,
   );
   expect(snapshot.layout).toBeTruthy();
+  expect(snapshot.resources).toMatchObject({
+    tab: "monitor",
+    minutes: 15,
+    networkInterface: "",
+    pinnedMounts: ["/"],
+    collapsed: ["traffic"],
+  });
   expect(Math.round(snapshot.layout!.fileWidth)).toBe(expectedWidths[0]);
   expect(Math.round(snapshot.layout!.serviceWidth)).toBe(expectedWidths[1]);
   expect(snapshot.terminal.content).toContain("connected to B");
   const detached = await context.newPage();
   const detachedErrors = await setup(detached, false, { snapshot });
   await expect(
-    detached.getByRole("tabpanel").locator(".connection-state"),
+    detached.getByRole("tab", { name: "总览", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(
+    detached.getByRole("button", { name: "15 分钟", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    detached
+      .locator(".session-page[role=tabpanel]:visible")
+      .locator(".connection-state"),
   ).toHaveText("已连接");
   await expect(
     detached.getByRole("separator", { name: "调整文件区域宽度" }),
@@ -761,8 +835,23 @@ test("moving a workspace carries both widths and restores the same terminal with
   ).toHaveLength(1);
   await detached.setViewportSize({ width: 650, height: 480 });
   await expect(
-    detached.getByRole("separator", { name: "调整服务区域宽度" }),
+    detached.getByRole("navigation", { name: "工作区域" }),
   ).toBeInViewport();
+  await expect(detached.locator(".terminal-surface")).toBeVisible();
+  await detached
+    .getByRole("navigation", { name: "工作区域" })
+    .getByRole("button", { name: "检查器" })
+    .click();
+  await expect(
+    detached.getByRole("button", { name: "15 分钟", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await detached
+    .getByRole("navigation", { name: "工作区域" })
+    .getByRole("button", { name: "终端", exact: true })
+    .click();
+  await expect(detached.locator(".terminal-surface")).toContainText(
+    "connected to B",
+  );
   await detached.close();
   const legacy = await context.newPage();
   const legacyErrors = await setup(legacy, false, {
@@ -814,7 +903,11 @@ test("pending connection starts once and cancellation disposes a late connection
     ),
   ).toBe(1);
   await picker.getByRole("button", { name: "取消连接", exact: true }).click();
-  await expect(page.getByRole("tab")).toHaveCount(0);
+  await expect(
+    page
+      .getByRole("tablist", { name: "SSH 会话", exact: true })
+      .getByRole("tab"),
+  ).toHaveCount(0);
   await page.evaluate(() => (window as any).__TEST__.finishPending());
   await expect
     .poll(() =>
@@ -843,9 +936,15 @@ async function createTitlebarTabs(
       .locator(".server-row")
       .filter({ hasText: "Target B" })
       .dblclick();
-    await expect(page.getByRole("tab")).toHaveCount(i + 1);
     await expect(
-      page.getByRole("tabpanel").locator(".connection-state"),
+      page
+        .getByRole("tablist", { name: "SSH 会话", exact: true })
+        .getByRole("tab"),
+    ).toHaveCount(i + 1);
+    await expect(
+      page
+        .locator(".session-page[role=tabpanel]:visible")
+        .locator(".connection-state"),
     ).toHaveText("已连接");
   }
   return errors;
@@ -902,19 +1001,35 @@ test("titlebar tabs overflow without consuming the window drag region and remain
   ).toBeCloseTo(manualLeft, 0);
   await page.getByRole("menu", { name: "全部会话" }).press("Home");
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("tab").first()).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  await expect(
+    page
+      .getByRole("tablist", { name: "SSH 会话", exact: true })
+      .getByRole("tab")
+      .first(),
+  ).toHaveAttribute("aria-selected", "true");
   await activeTabVisible(page);
-  await page.getByRole("tab").first().press("End");
-  await expect(page.getByRole("tab").last()).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  await page
+    .getByRole("tablist", { name: "SSH 会话", exact: true })
+    .getByRole("tab")
+    .first()
+    .press("End");
+  await expect(
+    page
+      .getByRole("tablist", { name: "SSH 会话", exact: true })
+      .getByRole("tab")
+      .last(),
+  ).toHaveAttribute("aria-selected", "true");
   await activeTabVisible(page);
-  await page.getByRole("tab").last().press("Delete");
-  await expect(page.getByRole("tab")).toHaveCount(19);
+  await page
+    .getByRole("tablist", { name: "SSH 会话", exact: true })
+    .getByRole("tab")
+    .last()
+    .press("Delete");
+  await expect(
+    page
+      .getByRole("tablist", { name: "SSH 会话", exact: true })
+      .getByRole("tab"),
+  ).toHaveCount(19);
   await activeTabVisible(page);
   for (const colorScheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme });
@@ -931,40 +1046,80 @@ test("titlebar tabs menus reorder without clipping and sparse tabs stay next to 
   page,
 }) => {
   const errors = await createTitlebarTabs(page, 5);
-  await page.getByRole("tab").last().click({ button: "right" });
+  const workspaceBeforeMenu = await page.locator(".workspaces").boundingBox();
+  const tabBounds = await page
+    .getByRole("tablist", { name: "SSH 会话", exact: true })
+    .getByRole("tab")
+    .last()
+    .boundingBox();
+  await page
+    .getByRole("tablist", { name: "SSH 会话", exact: true })
+    .getByRole("tab")
+    .last()
+    .click({ button: "right" });
   const menu = page.getByRole("menu", { name: "会话操作" });
   await expect(menu).toBeVisible();
+  const menuBounds = (await menu.boundingBox())!;
+  // A visible portal can still regress into normal document flow. It must
+  // stay beside the clicked tab without shifting or covering the whole app.
+  expect(menuBounds.y).toBeGreaterThanOrEqual(tabBounds!.y);
+  expect(menuBounds.y).toBeLessThanOrEqual(tabBounds!.y + tabBounds!.height);
+  expect(menuBounds.x).toBeGreaterThanOrEqual(8);
+  expect(menuBounds.x + menuBounds.width).toBeLessThanOrEqual(
+    page.viewportSize()!.width - 7,
+  );
+  expect(menuBounds.y + menuBounds.height).toBeLessThanOrEqual(
+    page.viewportSize()!.height - 7,
+  );
+  expect(await page.locator(".workspaces").boundingBox()).toEqual(
+    workspaceBeforeMenu,
+  );
   expect(await menu.evaluate((el) => el.parentElement === document.body)).toBe(
     true,
   );
   await page.getByRole("menuitem", { name: "向左移动", exact: true }).click();
-  await expect(page.getByRole("tab").nth(3)).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  await expect(
+    page
+      .getByRole("tablist", { name: "SSH 会话", exact: true })
+      .getByRole("tab")
+      .nth(3),
+  ).toHaveAttribute("aria-selected", "true");
   const selectedId = await page
-    .locator('[role="tab"][aria-selected="true"]')
+    .locator('.tab-select[role="tab"][aria-selected="true"]')
     .getAttribute("id");
   await page
-    .locator('[role="tab"][aria-selected="true"]')
+    .locator('.tab-select[role="tab"][aria-selected="true"]')
     .press("Alt+ArrowLeft");
-  expect(await page.getByRole("tab").nth(2).getAttribute("id")).toBe(
-    selectedId,
-  );
+  expect(
+    await page
+      .getByRole("tablist", { name: "SSH 会话", exact: true })
+      .getByRole("tab")
+      .nth(2)
+      .getAttribute("id"),
+  ).toBe(selectedId);
   await page
-    .locator('[role="tab"][aria-selected="true"]')
+    .locator('.tab-select[role="tab"][aria-selected="true"]')
     .click({ button: "right" });
   await page.keyboard.press("Escape");
   await expect(
-    page.locator('[role="tab"][aria-selected="true"]'),
+    page.locator('.tab-select[role="tab"][aria-selected="true"]'),
   ).toBeFocused();
   await page
-    .locator('[role="tab"][aria-selected="true"]')
+    .locator('.tab-select[role="tab"][aria-selected="true"]')
     .click({ button: "right" });
   await page.getByRole("button", { name: "终端历史", exact: true }).click();
   await expect(menu).toHaveCount(0);
-  while ((await page.getByRole("tab").count()) > 1) {
-    await page.getByRole("tab").last().press("Delete");
+  while (
+    (await page
+      .getByRole("tablist", { name: "SSH 会话", exact: true })
+      .getByRole("tab")
+      .count()) > 1
+  ) {
+    await page
+      .getByRole("tablist", { name: "SSH 会话", exact: true })
+      .getByRole("tab")
+      .last()
+      .press("Delete");
   }
   await expect(
     page.getByRole("button", { name: "全部会话", exact: true }),
@@ -976,8 +1131,15 @@ test("titlebar tabs menus reorder without clipping and sparse tabs stay next to 
   );
   expect(distance).toBeGreaterThanOrEqual(0);
   expect(distance).toBeLessThan(12);
-  await page.getByRole("tab").press("Delete");
-  await expect(page.getByRole("tab")).toHaveCount(0);
+  await page
+    .getByRole("tablist", { name: "SSH 会话", exact: true })
+    .getByRole("tab")
+    .press("Delete");
+  await expect(
+    page
+      .getByRole("tablist", { name: "SSH 会话", exact: true })
+      .getByRole("tab"),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "新建连接", exact: true }),
   ).toBeEnabled();
@@ -1077,4 +1239,98 @@ test("titlebar tabs accept empty-window drops and reserve macOS controls", async
       .evaluate((el) => el.getBoundingClientRect().left),
   ).toBeGreaterThan(88);
   expect(errors).toEqual([]);
+});
+
+test("session-only inspector preferences survive focused window migration without copying monitor data", async ({
+  page,
+  context,
+}) => {
+  const errors = await setup(page);
+  await connect(page);
+  await page.getByRole("tab", { name: "Docker", exact: true }).click();
+  await page.getByRole("textbox", { name: "搜索容器" }).fill("api-service");
+  await page
+    .getByRole("combobox", { name: "容器状态筛选" })
+    .selectOption("running");
+  await page
+    .getByRole("combobox", { name: "Docker 排序" })
+    .selectOption("attention");
+  await page.getByRole("button", { name: "展开检查器" }).click();
+  await page
+    .getByRole("tablist", { name: "SSH 会话", exact: true })
+    .getByRole("tab")
+    .click({ button: "right" });
+  await page
+    .getByRole("menuitem", { name: "移到独立窗口", exact: true })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).__TEST__.calls.filter(
+            (c: any) => c.command === "move_workspace",
+          ).length,
+      ),
+    )
+    .toBe(1);
+  const snapshot: WorkspaceSnapshot = await page.evaluate(
+    () =>
+      (window as any).__TEST__.calls.find(
+        (c: any) => c.command === "move_workspace",
+      ).args.payload,
+  );
+  expect(snapshot.view).toEqual({ expanded: true, pane: "services" });
+  expect(snapshot.docker).toMatchObject({
+    page: "containers",
+    queries: { containers: "api-service" },
+    filter: "running",
+    sort: "attention",
+  });
+  expect(snapshot.docker).not.toHaveProperty("containers");
+  expect(snapshot.docker).not.toHaveProperty("images");
+  expect(snapshot.docker).not.toHaveProperty("status");
+  expect(snapshot.resources).not.toHaveProperty("cursor");
+  const detached = await context.newPage();
+  const detachedErrors = await setup(detached, false, { snapshot });
+  await detached.setViewportSize({ width: 650, height: 480 });
+  await expect(detached.locator(".responsive-workspace")).toHaveAttribute(
+    "data-layout",
+    "focus",
+  );
+  await expect(detached.getByRole("textbox", { name: "搜索容器" })).toHaveValue(
+    "api-service",
+  );
+  await expect(
+    detached.getByRole("combobox", { name: "容器状态筛选" }),
+  ).toHaveValue("running");
+  await detached.getByRole("button", { name: "返回终端", exact: true }).click();
+  await expect(detached.locator(".terminal-surface")).toContainText(
+    "connected to B",
+  );
+  expect(
+    await detached.evaluate(() =>
+      (window as any).__TEST__.calls.filter(
+        (c: any) => c.command === "open_connection",
+      ),
+    ),
+  ).toHaveLength(0);
+  await detached.close();
+  const fresh = await context.newPage();
+  const freshErrors = await setup(fresh);
+  await connect(fresh);
+  await expect(
+    fresh.getByRole("tab", { name: "总览", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(
+    fresh.getByRole("button", { name: "5 分钟", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await fresh.getByRole("tab", { name: "Docker", exact: true }).click();
+  await expect(fresh.getByRole("textbox", { name: "搜索容器" })).toHaveValue(
+    "",
+  );
+  await expect(
+    fresh.getByRole("combobox", { name: "容器状态筛选" }),
+  ).toHaveValue("all");
+  await fresh.close();
+  expect([...errors, ...detachedErrors, ...freshErrors]).toEqual([]);
 });

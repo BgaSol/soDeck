@@ -5,14 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  LockKeyhole,
-  Plug,
-  Route,
-  TerminalSquare,
-  Unplug,
-  X,
-} from "lucide-react";
+import { LockKeyhole, Plug, TerminalSquare, Unplug, X } from "lucide-react";
 import { TerminalPane } from "./TerminalPane";
 import type {
   TerminalController,
@@ -24,9 +17,24 @@ import type { FilePanelSnapshot } from "./FilePanel";
 import type { DockerPanelSnapshot } from "./DockerPanel";
 import { FilePanel } from "./FilePanel";
 import { DockerPanel } from "./DockerPanel";
+import { MonitorProvider } from "./MonitorProvider";
+import {
+  ResourcePanel,
+  ResourceStatusBar,
+  ServicePanel,
+  normalizeResourcePreferences,
+  type ResourcePreferences,
+} from "./ResourcePanel";
 import { FingerprintDialog, LoginDialog } from "./ConnectionDialogs";
 import { WorkspaceLayout } from "./WorkspaceLayout";
-import type { WorkspaceLayoutSize } from "./workspaceSizing";
+import {
+  normalizeWorkspaceView,
+  type WorkspaceLayoutSize,
+  type WorkspaceViewState,
+  type WorkspaceVisibility,
+} from "./workspaceSizing";
+import type { ResourceMetric } from "./resourcePresentation";
+import "./workspace-layout.css";
 import { useConnection } from "./useConnection";
 import { addressOf } from "./types";
 import type { AppError } from "./types";
@@ -38,6 +46,8 @@ export interface WorkspaceSnapshot {
   files?: FilePanelSnapshot;
   docker?: DockerPanelSnapshot;
   layout?: WorkspaceLayoutSize;
+  resources?: ResourcePreferences;
+  view?: WorkspaceViewState;
   resourceWidth?: number; // Read legacy snapshots from the former stacked layout.
   fileRatio?: number;
 }
@@ -75,6 +85,52 @@ export function SessionWorkspace({
   ) => void;
   onPromptChange?: (id: string, visible: boolean) => void;
 }) {
+  const [resources, setResources] = useState<ResourcePreferences>(() =>
+    normalizeResourcePreferences(initial?.resources),
+  );
+  const [view, setView] = useState(() => normalizeWorkspaceView(initial?.view));
+  const [visible, setVisible] = useState<WorkspaceVisibility>({
+    files: true,
+    terminal: true,
+    services: true,
+  });
+  const returnFocus = useRef<HTMLElement | null>(null);
+  const returnView = useRef<WorkspaceViewState>(
+    view.expanded ? { expanded: false, pane: "terminal" } : view,
+  );
+  const [revealRequest, setRevealRequest] = useState<{
+    path: string;
+    sequence: number;
+  }>();
+  const workspaceElement = useRef<HTMLDivElement>(null);
+  function expand(trigger?: HTMLElement) {
+    if (!view.expanded) returnView.current = view;
+    returnFocus.current =
+      trigger ??
+      (document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null);
+    setView((v) => ({ ...v, expanded: true, pane: "services" }));
+  }
+  function collapse() {
+    setView({ ...returnView.current, expanded: false });
+    requestAnimationFrame(() => {
+      const target = returnFocus.current;
+      if (target?.isConnected && target.getClientRects().length) target.focus();
+      else
+        workspaceElement.current
+          ?.querySelector<HTMLElement>(".terminal-surface textarea")
+          ?.focus();
+    });
+  }
+  function openMetric(metric: ResourceMetric, trigger: HTMLButtonElement) {
+    setResources((p) => ({ ...p, tab: "monitor", selectedMetric: metric }));
+    expand(trigger);
+  }
+  function revealMount(path: string) {
+    setView({ expanded: false, pane: "files" });
+    setRevealRequest((p) => ({ path, sequence: (p?.sequence ?? 0) + 1 }));
+  }
   const connection = useConnection(tab.server.id, !!initial);
   const { request, prompt } = connection;
   const [sessionId, setSessionId] = useState<string | null>(
@@ -123,6 +179,8 @@ export function SessionWorkspace({
           files: filesSnapshot.current,
           docker: dockerSnapshot.current,
           layout,
+          resources,
+          view,
         };
       },
       reconnect,
@@ -130,7 +188,7 @@ export function SessionWorkspace({
         await terminalController.current?.cancelMove();
       },
     }),
-    [tab, prompt, layout, reconnect],
+    [tab, prompt, layout, resources, view, reconnect],
   );
   function reconnect() {
     setRestoredTerminal(undefined);
@@ -147,152 +205,186 @@ export function SessionWorkspace({
     reportState("已断开");
   }
   return (
-    <>
-      <WorkspaceLayout
-        id={`panel-${tab.id}`}
-        labelledBy={`tab-${tab.id}`}
-        active={active}
-        value={layout}
-        onChange={setLayout}
-        files={
-          <FilePanel
-            sessionId={sessionId}
-            serverName={tab.server.name}
-            active={active}
-            initialState={initial?.files}
-            onStateChange={captureFiles}
-            terminalCwd={terminalCwd ?? undefined}
-          />
-        }
-        services={
-          <DockerPanel
-            sessionId={sessionId}
-            serverName={tab.server.name}
-            active={active}
-            initialState={initial?.docker}
-            onStateChange={captureDocker}
-          />
-        }
-        terminal={
-          <main className="terminal-panel">
-            <header className="terminal-toolbar">
-              <span className="terminal-symbol" aria-hidden="true">
-                <TerminalSquare size={18} />
-              </span>
-              <div className="terminal-identity">
-                <strong title={tab.server.name}>{tab.server.name}</strong>
-                <span
-                  className="terminal-address"
-                  title={`${tab.server.username}@${addressOf(tab.server)}`}
-                >
-                  {tab.server.username}@{addressOf(tab.server)}
-                </span>
-              </div>
-              <span
-                className={`connection-state ${sessionId ? "running" : tab.state === "连接失败" ? "failed" : tab.state === "连接中" ? "connecting" : ""}`}
-                role="status"
-                title={tab.state}
-                aria-label={tab.state}
-              >
-                <span className="connection-state-dot" aria-hidden="true" />
-                <span className="connection-state-label">{tab.state}</span>
-              </span>
-              {sessionId || tab.state === "连接中" ? (
-                <button
-                  className="quiet terminal-connection-action"
-                  onClick={disconnect}
-                  aria-label={sessionId ? "断开" : "取消连接"}
-                  title={sessionId ? "断开连接" : "取消连接"}
-                >
-                  <Unplug size={15} aria-hidden="true" />
-                  <span>{sessionId ? "断开" : "取消连接"}</span>
-                </button>
-              ) : (
-                <button
-                  className="primary"
-                  disabled={tab.state === "连接中"}
-                  onClick={reconnect}
-                >
-                  <Plug size={14} aria-hidden="true" />
-                  {tab.state === "未连接" ? "连接" : "重新连接"}
-                </button>
-              )}
-            </header>
-            {error && (
-              <div className="connection-error" role="alert">
-                <span>{error.message}</span>
-                <button
-                  className="icon-button"
-                  onClick={() => setError(null)}
-                  aria-label="关闭错误提示"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            )}
-            {prompt && !active && (
-              <span className="sr-only">等待核对服务器指纹</span>
-            )}
-            <div className="terminal-host">
-              <TerminalPane
-                workspaceId={tab.id}
-                controllerRef={terminalController}
-                initial={restoredTerminal}
-                onReady={onReady}
-                request={request}
-                active={active}
-                onSession={setSessionId}
-                onCwdChange={setTerminalCwd}
-                onState={(state) => {
-                  onChange(tab.id, { state });
-                  reportState(state);
-                }}
-                onError={(failure) => {
-                  setError(failure);
-                  reportState("error", failure);
-                }}
-                onConnectionId={connection.setId}
-                onConnectionEvent={(event) => {
-                  connection.receive(event);
-                  if (event.type === "ready") {
-                    onChange(tab.id, { server: event.connection.target });
-                    onConfigurationChanged?.();
+    <MonitorProvider sessionId={sessionId} active={active}>
+      <div
+        className="session-workspace-host"
+        ref={workspaceElement}
+        hidden={!active}
+      >
+        <WorkspaceLayout
+          id={`panel-${tab.id}`}
+          labelledBy={`tab-${tab.id}`}
+          active={active}
+          value={layout}
+          onChange={setLayout}
+          view={view}
+          onViewChange={setView}
+          onVisibilityChange={setVisible}
+          files={
+            <FilePanel
+              sessionId={sessionId}
+              serverName={tab.server.name}
+              active={active && visible.files}
+              revealRequest={revealRequest}
+              initialState={initial?.files}
+              onStateChange={captureFiles}
+              terminalCwd={terminalCwd ?? undefined}
+            />
+          }
+          services={
+            <ServicePanel
+              preferences={resources}
+              onChange={setResources}
+              expanded={view.expanded}
+              onToggleExpanded={view.expanded ? collapse : expand}
+              monitor={
+                <ResourcePanel
+                  serverName={tab.server.name}
+                  active={
+                    active && visible.services && resources.tab === "monitor"
                   }
-                }}
-              />
-            </div>
-            <footer className="workspace-status">
-              <span
-                className="terminal-session-status"
-                role="status"
-                aria-live="polite"
-              >
-                <LockKeyhole size={11} aria-hidden="true" />
-                <span title={connection.progress || undefined}>
-                  {connection.progress ||
-                    (sessionId ? "SSH 会话已建立" : "SSH")}
+                  expanded={view.expanded}
+                  onOpenMetric={openMetric}
+                  onRevealMount={revealMount}
+                  preferences={resources}
+                  onChange={setResources}
+                />
+              }
+              docker={
+                <DockerPanel
+                  sessionId={sessionId}
+                  serverName={tab.server.name}
+                  active={
+                    active && visible.services && resources.tab === "docker"
+                  }
+                  expanded={view.expanded}
+                  initialState={initial?.docker}
+                  onStateChange={captureDocker}
+                />
+              }
+            />
+          }
+          terminal={
+            <main className="terminal-panel">
+              <header className="terminal-toolbar">
+                <span className="terminal-symbol" aria-hidden="true">
+                  <TerminalSquare size={18} />
                 </span>
-              </span>
-              {connection.view && connection.view.hops.length > 1 && (
-                <span
-                  className="connection-route"
-                  aria-label="当前连接路径"
-                  title={`本机 → ${connection.view.hops.map((hop) => hop.server.name).join(" → ")}`}
-                >
-                  <Route size={12} aria-hidden="true" />
-                  <span>
-                    本机 →{" "}
-                    {connection.view.hops
-                      .map((hop) => hop.server.name)
-                      .join(" → ")}
+                <div className="terminal-identity">
+                  <strong title={tab.server.name}>{tab.server.name}</strong>
+                  <span
+                    className="terminal-address"
+                    title={`${tab.server.username}@${addressOf(tab.server)}`}
+                  >
+                    {tab.server.username}@{addressOf(tab.server)}
                   </span>
+                </div>
+                <span
+                  className={`connection-state ${sessionId ? "running" : tab.state === "连接失败" ? "failed" : tab.state === "连接中" ? "connecting" : ""}`}
+                  role="status"
+                  title={tab.state}
+                  aria-label={tab.state}
+                >
+                  <span className="connection-state-dot" aria-hidden="true" />
+                  <span className="connection-state-label">{tab.state}</span>
                 </span>
+                {sessionId || tab.state === "连接中" ? (
+                  <button
+                    className="quiet terminal-connection-action"
+                    onClick={disconnect}
+                    aria-label={sessionId ? "断开" : "取消连接"}
+                    title={sessionId ? "断开连接" : "取消连接"}
+                  >
+                    <Unplug size={15} aria-hidden="true" />
+                    <span>{sessionId ? "断开" : "取消连接"}</span>
+                  </button>
+                ) : (
+                  <button
+                    className="primary"
+                    disabled={tab.state === "连接中"}
+                    onClick={reconnect}
+                  >
+                    <Plug size={14} aria-hidden="true" />
+                    {tab.state === "未连接" ? "连接" : "重新连接"}
+                  </button>
+                )}
+              </header>
+              {error && (
+                <div className="connection-error" role="alert">
+                  <span>{error.message}</span>
+                  <button
+                    className="icon-button"
+                    onClick={() => setError(null)}
+                    aria-label="关闭错误提示"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
               )}
-              <span className="terminal-encoding">UTF-8</span>
-            </footer>
-          </main>
-        }
-      />
+              {prompt && !active && (
+                <span className="sr-only">等待核对服务器指纹</span>
+              )}
+              <div className="terminal-host">
+                <TerminalPane
+                  workspaceId={tab.id}
+                  controllerRef={terminalController}
+                  initial={restoredTerminal}
+                  onReady={onReady}
+                  request={request}
+                  active={active && visible.terminal}
+                  interactive={visible.terminal}
+                  onSession={setSessionId}
+                  onCwdChange={setTerminalCwd}
+                  onState={(state) => {
+                    onChange(tab.id, { state });
+                    reportState(state);
+                  }}
+                  onError={(failure) => {
+                    setError(failure);
+                    reportState("error", failure);
+                  }}
+                  onConnectionId={connection.setId}
+                  onConnectionEvent={(event) => {
+                    connection.receive(event);
+                    if (event.type === "ready") {
+                      onChange(tab.id, { server: event.connection.target });
+                      onConfigurationChanged?.();
+                    }
+                  }}
+                />
+              </div>
+              <footer className="workspace-status session-statusbar">
+                <details className="session-information">
+                  <summary aria-label="会话连接详情">
+                    <LockKeyhole size={12} />
+                    <span>{sessionId ? "已连接" : tab.state}</span>
+                  </summary>
+                  <div className="session-information-content">
+                    <p role="status">
+                      {connection.progress ||
+                        (sessionId ? "SSH 会话已建立" : tab.state)}
+                    </p>
+                    {connection.view && (
+                      <p>
+                        本机 →{" "}
+                        {connection.view.hops
+                          .map((hop) => hop.server.name)
+                          .join(" → ")}
+                      </p>
+                    )}
+                    <p>编码 · UTF-8</p>
+                  </div>
+                </details>
+                <ResourceStatusBar
+                  networkInterface={resources.networkInterface}
+                  active={active && visible.terminal}
+                  onOpen={openMetric}
+                />
+              </footer>
+            </main>
+          }
+        />
+      </div>
       {active && prompt?.type === "authRequired" && (
         <LoginDialog
           key={prompt.challenge.id}
@@ -321,6 +413,6 @@ export function SessionWorkspace({
           onClose={disconnect}
         />
       )}
-    </>
+    </MonitorProvider>
   );
 }

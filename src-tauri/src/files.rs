@@ -24,17 +24,17 @@ const TEXT_LIMIT: usize = 1024 * 1024;
 #[derive(Default)]
 pub struct FileState {
     editors: Mutex<HashMap<String, EditorHandle>>,
-    movement: Mutex<Vec<(String, String, Vec<String>)>>,
+    mutations: Mutex<Vec<(String, String, Vec<String>)>>,
     opening: Mutex<Vec<(String, String, String)>>,
 }
-pub struct MoveGuard<'a> {
+pub struct MutationGuard<'a> {
     files: &'a FileState,
     id: String,
 }
-impl Drop for MoveGuard<'_> {
+impl Drop for MutationGuard<'_> {
     fn drop(&mut self) {
         self.files
-            .movement
+            .mutations
             .lock()
             .unwrap()
             .retain(|(id, _, _)| id != &self.id);
@@ -166,9 +166,9 @@ pub async fn open_editor(
     path: String,
 ) -> AppResult<String> {
     let spec = state.spec(&session_id, window.label())?;
-    let _opening = state.files.begin_open(spec.identity(), &path)?;
+    let _opening = state.files.begin_open(spec.target_public_key(), &path)?;
     let editor = blocking(move || {
-        let connection = connection::connect_verified(&spec, &Cancellation::default())?;
+        let connection = connection::connect_verified(&spec, &Cancellation::default(), crate::traffic::TrafficPurpose::Files)?;
         let session = connection.session();
         let sftp = session.sftp()?;
         crate::remote_write::safe_ancestors(&sftp, &path)?;
@@ -188,16 +188,16 @@ pub async fn open_editor(
     let (label, create) = {
         let _gate = state.configuration.lock().unwrap();
         state.check_context(&editor.spec)?;
-        let moving = state.files.movement.lock().unwrap();
+        let moving = state.files.mutations.lock().unwrap();
         if moving.iter().any(|(_, identity, paths)| {
-            identity == editor.spec.identity()
+            identity == editor.spec.target_public_key()
                 && paths
                     .iter()
                     .any(|p| crate::transfers::scheduler::overlaps(p, &editor.path))
         }) {
             return Err(AppError::new(
                 "busy",
-                "该文件或其父目录正在移动，请等待任务结束再打开",
+                "该文件或其父目录正在移动或删除，请等待操作结束再打开",
             ));
         }
         let mut editors = state.files.editors.lock().unwrap();
@@ -268,14 +268,14 @@ fn editor_for(state: &State, window: &WebviewWindow) -> AppResult<EditorHandle> 
 impl FileState {
     fn begin_open(&self, identity: &str, path: &str) -> AppResult<OpenGuard<'_>> {
         crate::remote_path::absolute(path)?;
-        let moving = self.movement.lock().unwrap();
+        let moving = self.mutations.lock().unwrap();
         if moving.iter().any(|(_, host, paths)| {
             host == identity
                 && paths
                     .iter()
                     .any(|p| crate::transfers::scheduler::overlaps(p, path))
         }) {
-            return Err(AppError::new("busy", "文件正在移动，请稍后打开"));
+            return Err(AppError::new("busy", "文件正在移动或删除，请稍后打开"));
         }
         let id = uuid::Uuid::new_v4().to_string();
         self.opening
@@ -284,8 +284,16 @@ impl FileState {
             .push((id.clone(), identity.into(), path.into()));
         Ok(OpenGuard { files: self, id })
     }
-    pub fn begin_move(&self, identity: &str, paths: &[String]) -> AppResult<MoveGuard<'_>> {
-        let mut moving = self.movement.lock().unwrap();
+    pub fn begin_move(&self, identity: &str, paths: &[String]) -> AppResult<MutationGuard<'_>> {
+        self.begin_mutation(identity, paths, "移动")
+    }
+    pub fn begin_mutation(
+        &self,
+        identity: &str,
+        paths: &[String],
+        action: &str,
+    ) -> AppResult<MutationGuard<'_>> {
+        let mut moving = self.mutations.lock().unwrap();
         if self.opening.lock().unwrap().iter().any(|(_, host, path)| {
             host == identity
                 && paths
@@ -294,24 +302,24 @@ impl FileState {
         }) {
             return Err(AppError::new(
                 "editorOpen",
-                "正在打开编辑文件，请关闭编辑器后再移动",
+                format!("正在打开编辑文件，请关闭编辑器后再{action}"),
             ));
         }
         let editors = self.editors.lock().unwrap();
         if let Some(editor) = editors.values().find(|e| {
-            e.spec.identity() == identity
+            e.spec.target_public_key() == identity
                 && paths
                     .iter()
                     .any(|p| crate::transfers::scheduler::overlaps(p, &e.path))
         }) {
             return Err(AppError::new(
                 "editorOpen",
-                format!("请先关闭正在编辑的文件，再移动：{}", editor.path),
+                format!("请先关闭正在编辑的文件，再{action}：{}", editor.path),
             ));
         }
         let id = uuid::Uuid::new_v4().to_string();
         moving.push((id.clone(), identity.into(), paths.to_vec()));
-        Ok(MoveGuard { files: self, id })
+        Ok(MutationGuard { files: self, id })
     }
     pub fn has_activity(&self) -> bool {
         !self.editors.lock().unwrap().is_empty()
@@ -362,7 +370,7 @@ pub async fn editor_load(
     let editor = editor_for(&state, &window)?;
     blocking(move || {
         let _gate = editor.gate.lock().unwrap();
-        let connection = connection::connect_verified(&editor.spec, &Cancellation::default())?;
+        let connection = connection::connect_verified(&editor.spec, &Cancellation::default(), crate::traffic::TrafficPurpose::Files)?;
         let session = connection.session();
         let (bytes, _) = text_bytes(&session.sftp()?, &editor.path)?;
         document(&editor, &bytes)
@@ -399,7 +407,7 @@ pub async fn editor_save(
                 format!("文件涉及待核对任务 {task}，请先核对结果"),
             ));
         }
-        let connection = connection::connect_verified(&editor.spec, &Cancellation::default())?;
+        let connection = connection::connect_verified(&editor.spec, &Cancellation::default(), crate::traffic::TrafficPurpose::Files)?;
         let session = connection.session();
         let sftp = session.sftp()?;
         let (before, stat) = text_bytes(&sftp, &editor.path)?;
@@ -464,6 +472,12 @@ mod tests {
         assert!(files.begin_open("host", "/ab/file").is_ok());
         drop(moving);
         assert!(files.begin_open("host", "/a/file").is_ok());
+        let deleting = files
+            .begin_mutation("host", &["/a".into()], "删除")
+            .unwrap();
+        assert!(files.begin_open("host", "/a/child").is_err());
+        drop(deleting);
+        assert!(files.begin_open("host", "/a/child").is_ok());
     }
     #[test]
     fn text_validation_and_encoding_preserve_bom_and_crlf() {

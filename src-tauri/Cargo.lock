@@ -3416,8 +3416,10 @@ name = "sodeck"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "cc",
  "chrono",
  "libc",
+ "libssh2-sys",
  "openssl",
  "rfd",
  "rusqlite",

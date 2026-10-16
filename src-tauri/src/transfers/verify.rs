@@ -25,7 +25,7 @@ impl<'a> SourceCheck<'a> {
         let connection = match &item.source {
             Source::Local(_) => None,
             Source::Remote { context, .. } => {
-                Some(connection::connect_verified(context, &item.cancel)?)
+                Some(connection::connect_verified(context, &item.cancel, crate::traffic::TrafficPurpose::Transfer)?)
             }
         };
         let sftp = connection

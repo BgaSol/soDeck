@@ -54,32 +54,32 @@ impl Drop for QuerySlot {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteMount {
-    key: String,
-    target: String,
-    source: String,
-    fs_root: String,
-    fs_type: String,
-    read_only: bool,
+    pub(crate) key: String,
+    pub(crate) target: String,
+    pub(crate) source: String,
+    pub(crate) fs_root: String,
+    pub(crate) fs_type: String,
+    pub(crate) read_only: bool,
 }
-#[derive(Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MountTable {
-    version: String,
-    status: &'static str,
-    mounts: Vec<RemoteMount>,
-    message: Option<String>,
+    pub(crate) version: String,
+    pub(crate) status: &'static str,
+    pub(crate) mounts: Vec<RemoteMount>,
+    pub(crate) message: Option<String>,
 }
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MountUsage {
-    mount_key: String,
-    status: &'static str,
-    total_bytes: Option<String>,
-    used_bytes: Option<String>,
-    available_bytes: Option<String>,
-    used_percent: Option<u32>,
-    updated_at: Option<u64>,
-    error: Option<String>,
+    pub(crate) mount_key: String,
+    pub(crate) status: &'static str,
+    pub(crate) total_bytes: Option<String>,
+    pub(crate) used_bytes: Option<String>,
+    pub(crate) available_bytes: Option<String>,
+    pub(crate) used_percent: Option<u32>,
+    pub(crate) updated_at: Option<u64>,
+    pub(crate) error: Option<String>,
 }
 impl MountUsage {
     fn unavailable(key: &str, status: &'static str, message: &str) -> Self {
@@ -119,6 +119,9 @@ fn unescape(value: &str) -> AppResult<String> {
     String::from_utf8(output).map_err(|_| AppError::new("mountFormat", "挂载路径不是有效的 UTF-8"))
 }
 fn parse_table(text: &str) -> AppResult<MountTable> {
+    parse_mounts(text, true)
+}
+fn parse_mounts(text: &str, for_display: bool) -> AppResult<MountTable> {
     let mut mounts = Vec::new();
     let mut counts = HashMap::new();
     for line in text.lines() {
@@ -157,7 +160,9 @@ fn parse_table(text: &str) -> AppResult<MountTable> {
     // mountinfo ordering does not reliably identify the top of stacked mounts.
     // Do not attribute a hidden filesystem's capacity to the visible directory.
     let stacked = counts.values().any(|n| *n > 1);
-    mounts.retain(|m| counts[&m.target] == 1);
+    if for_display {
+        mounts.retain(|m| counts[&m.target] == 1);
+    }
     Ok(MountTable {
         version: format!("{:x}", Sha256::digest(text.as_bytes())),
         status: "ready",
@@ -203,7 +208,7 @@ fn usage(key: &str, output: &str) -> AppResult<MountUsage> {
         error: None,
     })
 }
-fn has_capacity(fs: &str) -> bool {
+pub(crate) fn has_capacity(fs: &str) -> bool {
     !matches!(
         fs,
         "proc"
@@ -327,6 +332,13 @@ fn sftp_mountinfo(session: &Session, check: &impl Fn() -> AppResult<()>) -> AppR
     result
 }
 fn verified_table(session: &Session, check: &impl Fn() -> AppResult<()>) -> AppResult<MountTable> {
+    verified_mounts(session, check, true)
+}
+fn verified_mounts(
+    session: &Session,
+    check: &impl Fn() -> AppResult<()>,
+    for_display: bool,
+) -> AppResult<MountTable> {
     let output = exec(
         session,
         "test \"$(uname -s)\" = Linux && cat /proc/self/mountinfo",
@@ -354,7 +366,11 @@ fn verified_table(session: &Session, check: &impl Fn() -> AppResult<()>) -> AppR
             "挂载表正在变化或 SFTP 与命令执行的路径视图不同",
         ));
     }
-    parse_table(&sftp)
+    if for_display {
+        parse_table(&sftp)
+    } else {
+        parse_mounts(&sftp, false)
+    }
 }
 
 #[tauri::command]
@@ -369,18 +385,7 @@ pub async fn list_remote_mounts(
     let state = state.inner().clone();
     blocking(move || {
         let check = || state.spec(&session_id, &owner).map(|_| ());
-        let _slot = QuerySlot::acquire(&check)?;
-        check()?;
-        let connection = connection::connect_verified(&spec, &Cancellation::default())?;
-        match verified_table(connection.session(), &check) {
-            Err(e) if e.kind == "unsupported" => Ok(MountTable {
-                version: String::new(),
-                status: "unsupported",
-                mounts: vec![],
-                message: Some(e.message),
-            }),
-            result => result,
-        }
+        query_table(&spec, &Cancellation::default(), &check)
     })
     .await
 }
@@ -402,65 +407,13 @@ pub async fn get_remote_mount_usage(
     let state = state.inner().clone();
     blocking(move || {
         let check = || state.spec(&session_id, &owner).map(|_| ());
-        let _slot = QuerySlot::acquire(&check)?;
-        check()?;
-        let connection = connection::connect_verified(&spec, &Cancellation::default())?;
-        let session = connection.session();
-        let table = verified_table(session, &check)?;
-        if table.version != mount_table_version {
-            return Err(AppError::new("mountChanged", "挂载关系已变化，请刷新"));
-        }
-        let keys: HashSet<_> = mount_keys.into_iter().collect();
-        if keys
-            .iter()
-            .any(|key| !table.mounts.iter().any(|m| &m.key == key))
-        {
-            return Err(AppError::new("mountChanged", "挂载点已失效，请刷新"));
-        }
-        let mut results = Vec::new();
-        for mount in table.mounts.iter().filter(|m| keys.contains(&m.key)) {
-            check()?;
-            if !has_capacity(&mount.fs_type) {
-                results.push(MountUsage::unavailable(
-                    &mount.key,
-                    "unsupported",
-                    "此文件系统不提供常规容量",
-                ));
-                continue;
-            }
-            // Only numeric output is parsed. Paths are quoted as one shell argument.
-            let result = exec(
-                session,
-                &format!(
-                    "LC_ALL=C stat -f -c '%S %b %f %a' -- {}",
-                    ssh::quote(&mount.target)
-                ),
-                &check,
-            )
-            .and_then(|output| {
-                if output.code == 0 {
-                    usage(&mount.key, &output.stdout)
-                } else {
-                    Err(AppError::new(
-                        "mountUsage",
-                        "无法读取容量，远端需要支持 stat -f -c 且当前用户能够访问挂载点",
-                    ))
-                }
-            });
-            results.push(result.unwrap_or_else(|e| {
-                MountUsage::unavailable(&mount.key, "unavailable", &e.message)
-            }));
-        }
-        // A mount may have been replaced while stat was in flight.
-        let after = exec(session, "cat /proc/self/mountinfo", &check)?;
-        if after.code != 0 || parse_table(&after.stdout)?.version != table.version {
-            return Err(AppError::new(
-                "mountChanged",
-                "查询期间挂载关系已变化，请刷新",
-            ));
-        }
-        check()?;
-        Ok(results)
+        query_usage(
+            &spec,
+            &mount_table_version,
+            mount_keys,
+            &Cancellation::default(),
+            &check,
+        )
     })
     .await
 }
@@ -501,6 +454,19 @@ mod tests {
         .unwrap();
         assert!(!table.mounts.iter().any(|m| m.target == "/data"));
         assert!(table.message.is_some());
+        let complete = parse_mounts(
+            &format!("{TABLE}24 20 8:3 / /data rw - ext4 /dev/sdc1 rw\n"),
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            complete
+                .mounts
+                .iter()
+                .filter(|m| m.target == "/data")
+                .count(),
+            2
+        );
     }
     #[test]
     fn capacity_uses_available_blocks_and_keeps_large_integers() {
@@ -589,4 +555,104 @@ mod tests {
         // Timing out a separate exec channel does not prevent subsequent SFTP queries.
         assert!(verified_table(&session, &|| Ok(())).is_ok());
     }
+}
+
+// Deletion must retain every boundary, including stacked and bind mounts hidden in the UI.
+pub(crate) fn deletion_boundaries(
+    session: &Session,
+    check: &impl Fn() -> AppResult<()>,
+) -> AppResult<(String, Vec<String>)> {
+    let table = verified_mounts(session, check, false)?;
+    Ok((
+        table.version,
+        table.mounts.into_iter().map(|m| m.target).collect(),
+    ))
+}
+
+pub(crate) fn query_table(
+    spec: &connection::SharedContext,
+    cancel: &Cancellation,
+    check: &impl Fn() -> AppResult<()>,
+) -> AppResult<MountTable> {
+    let _slot = QuerySlot::acquire(check)?;
+    check()?;
+    let connection = connection::connect_verified(spec, cancel, crate::traffic::TrafficPurpose::MountMonitor)?;
+    match verified_table(connection.session(), check) {
+        Err(e) if e.kind == "unsupported" => Ok(MountTable {
+            version: String::new(),
+            status: "unsupported",
+            mounts: vec![],
+            message: Some(e.message),
+        }),
+        result => result,
+    }
+}
+
+pub(crate) fn query_usage(
+    spec: &connection::SharedContext,
+    mount_table_version: &str,
+    mount_keys: Vec<String>,
+    cancel: &Cancellation,
+    check: &impl Fn() -> AppResult<()>,
+) -> AppResult<Vec<MountUsage>> {
+    let _slot = QuerySlot::acquire(check)?;
+    check()?;
+    let connection = connection::connect_verified(spec, cancel, crate::traffic::TrafficPurpose::MountMonitor)?;
+    let session = connection.session();
+    let table = verified_table(session, check)?;
+    if table.version != mount_table_version {
+        return Err(AppError::new("mountChanged", "挂载关系已变化，请刷新"));
+    }
+    let keys: HashSet<_> = mount_keys.into_iter().collect();
+    if keys
+        .iter()
+        .any(|key| !table.mounts.iter().any(|m| &m.key == key))
+    {
+        return Err(AppError::new("mountChanged", "挂载点已失效，请刷新"));
+    }
+    let mut results = Vec::new();
+    for mount in table.mounts.iter().filter(|m| keys.contains(&m.key)) {
+        check()?;
+        if !has_capacity(&mount.fs_type) {
+            results.push(MountUsage::unavailable(
+                &mount.key,
+                "unsupported",
+                "此文件系统不提供常规容量",
+            ));
+            continue;
+        }
+        // Only numeric output is parsed. Paths are quoted as one shell argument.
+        let result = exec(
+            session,
+            &format!(
+                "LC_ALL=C stat -f -c '%S %b %f %a' -- {}",
+                ssh::quote(&mount.target)
+            ),
+            &check,
+        )
+        .and_then(|output| {
+            if output.code == 0 {
+                usage(&mount.key, &output.stdout)
+            } else {
+                Err(AppError::new(
+                    "mountUsage",
+                    "无法读取容量，远端需要支持 stat -f -c 且当前用户能够访问挂载点",
+                ))
+            }
+        });
+        results
+            .push(result.unwrap_or_else(|e| {
+                MountUsage::unavailable(&mount.key, "unavailable", &e.message)
+            }));
+    }
+    // A mount may have been replaced while stat was in flight.
+    let after = exec(session, "cat /proc/self/mountinfo", &check)?;
+    if after.code != 0 || parse_table(&after.stdout)?.version != table.version {
+        return Err(AppError::new(
+            "mountChanged",
+            "查询期间挂载关系已变化，请刷新",
+        ));
+    }
+    check()?;
+    Ok(results)
 }

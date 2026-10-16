@@ -27,15 +27,19 @@ fn server(id: &str) -> ServerConfig {
 }
 pub(crate) fn state() -> Arc<State> {
     Arc::new(State {
+        traffic: crate::traffic::TrafficManager::new(),
         database: Mutex::new(crate::db::Database::open(Path::new(":memory:")).unwrap()),
         configuration: Mutex::new(()),
         stopping: std::sync::atomic::AtomicBool::new(false),
         moves: Default::default(),
         files: Default::default(),
+        deletes: Default::default(),
+        file_tasks: Default::default(),
         transfers: Default::default(),
         drags: Default::default(),
         logs: Default::default(),
         history: Default::default(),
+        monitor: Default::default(),
         terminals: Mutex::new(HashMap::new()),
         pending_windows: Mutex::new(HashMap::new()),
         container_windows: Mutex::new(HashMap::new()),
@@ -85,6 +89,7 @@ fn route_validation_identity_and_secret_free_view() {
     hops[0].server.host = "another-network".into();
     assert_ne!(original, route_identity(&hops));
     let context = ConnectionContext {
+        traffic: crate::traffic::TrafficManager::new(),
         identity: original,
         hops,
     };
@@ -425,7 +430,7 @@ fn jump_real_ssh_sftp_docker_terminal_and_failure_paths() {
         output,
     )
     .unwrap();
-    let terminal_connection = connect_verified(&context, &terminal_cancel).unwrap();
+    let terminal_connection = connect_verified(&context, &terminal_cancel, crate::traffic::TrafficPurpose::Shared).unwrap();
     let worker_state = state.clone();
     let worker_context = context.clone();
     let worker_id = id.clone();
@@ -564,6 +569,7 @@ fn jump_real_ssh_sftp_docker_terminal_and_failure_paths() {
     drop(connection);
 
     let mut wrong_key = ConnectionContext {
+        traffic: crate::traffic::TrafficManager::new(),
         identity: context.identity.clone(),
         hops: context
             .hops
@@ -577,7 +583,7 @@ fn jump_real_ssh_sftp_docker_terminal_and_failure_paths() {
             .collect(),
     };
     wrong_key.hops[1].fingerprint = "wrong-key".into();
-    let error = connect_verified(&wrong_key, &Cancellation::default())
+    let error = connect_verified(&wrong_key, &Cancellation::default(), crate::traffic::TrafficPurpose::Shared)
         .err()
         .unwrap();
     assert_eq!(error.kind, "hostKey");
@@ -586,7 +592,7 @@ fn jump_real_ssh_sftp_docker_terminal_and_failure_paths() {
         .fingerprint
         .clone_from(&context.hops[1].fingerprint);
     wrong_key.hops[0].fingerprint = "changed-jump-key".into();
-    let error = connect_verified(&wrong_key, &Cancellation::default())
+    let error = connect_verified(&wrong_key, &Cancellation::default(), crate::traffic::TrafficPurpose::Shared)
         .err()
         .unwrap();
     assert_eq!((error.kind.as_str(), error.hop), ("hostKey", Some(0)));
@@ -616,7 +622,7 @@ fn jump_real_ssh_sftp_docker_terminal_and_failure_paths() {
     );
     std::fs::write(fixtures.root.path().join("a/deny-forward"), "deny").unwrap();
     assert_eq!(
-        connect_verified(&context, &Cancellation::default())
+        connect_verified(&context, &Cancellation::default(), crate::traffic::TrafficPurpose::Shared)
             .err()
             .unwrap()
             .kind,
@@ -699,10 +705,10 @@ fn jump_private_keys_cancellation_and_jump_disconnect() {
     drop(connection);
     assert!(began.elapsed() < Duration::from_secs(2));
     assert_eq!(
-        connect_verified(&context, &cancel).err().unwrap().kind,
+        connect_verified(&context, &cancel, crate::traffic::TrafficPurpose::Shared).err().unwrap().kind,
         "cancelled"
     );
-    let active = connect_verified(&context, &Cancellation::default()).unwrap();
+    let active = connect_verified(&context, &Cancellation::default(), crate::traffic::TrafficPurpose::Shared).unwrap();
     std::fs::write(fixtures.root.path().join("a/disconnect"), "disconnect").unwrap();
     wait_for(|| active.transport_error().is_some());
     assert!(active.session().sftp().is_err());
@@ -903,7 +909,103 @@ pub(crate) fn mock_context(server: ServerConfig) -> SharedContext {
         public_key: "ssh-ed25519 fixture".into(),
     }];
     Arc::new(ConnectionContext {
+        traffic: crate::traffic::TrafficManager::new(),
         identity: route_identity(&hops),
         hops,
     })
+}
+
+#[test]
+#[ignore = "real SSH jump fixture; requires Python paramiko; run explicitly"]
+fn jump_resource_monitor_shares_samples_and_isolates_slow_mounts() {
+    let fixtures = Fixtures::new(false);
+    let (connection, context) = connect(&fixtures.plan(), &mut AutoProvider::default(), &Cancellation::default()).unwrap();
+    drop(connection);
+    let root = fixtures.root.path().join("b");
+    std::fs::create_dir_all(root.join("remote/proc/self")).unwrap();
+    std::fs::write(root.join("remote/proc/self/mountinfo"), "20 1 8:1 / / rw - ext4 /dev/a rw\n21 20 0:9 / /slow rw - nfs nas:/slow rw\n").unwrap();
+    std::fs::write(root.join("monitor-slow-mount"), "slow").unwrap();
+    let state = state();
+    let mut sessions = Vec::new();
+    for window in ["main", "workspace-test"] {
+        let (id, _, _, _, _) = register(&state, state.owner(window), Arc::new(fixtures.plan()), Channel::new(|_| Ok(()))).unwrap();
+        state.terminals.lock().unwrap().get_mut(&id).unwrap().spec = Some(context.clone());
+        sessions.push(id);
+    }
+    crate::monitor::tests::exercise(state, context, &sessions[0], &sessions[1], &root);
+}
+
+#[test]
+#[ignore = "real SSH/SFTP fixture; requires Python paramiko; run explicitly"]
+fn jump_remote_delete_protocol_and_failures() {
+    let fixtures = Fixtures::new(false);
+    let (connection, context) = connect(
+        &fixtures.plan(),
+        &mut AutoProvider::default(),
+        &Cancellation::default(),
+    )
+    .unwrap();
+    drop(connection);
+    crate::remote_delete::tests::exercise_protocol(context, &fixtures.root.path().join("b"));
+}
+
+fn connect(plan: &ConnectionPlan, provider: &mut impl AuthProvider, cancel: &Cancellation) -> AppResult<(SshConnection, SharedContext)> {
+    connect_metered(plan, provider, cancel, &crate::traffic::TrafficManager::new(), crate::traffic::TrafficPurpose::Terminal)
+}
+
+#[test]
+#[ignore = "real SSH/SFTP byte accounting; requires Python paramiko"]
+fn ssh_traffic_matches_server_bytes_for_direct_and_jump_connections() {
+    for jump in [false, true] {
+        let fixtures = Fixtures::new(false);
+        let plan = if jump { fixtures.plan() } else { ConnectionPlan::new(vec![fixtures.b.clone()]).unwrap() };
+        let manager = crate::traffic::TrafficManager::new();
+        let (connection, context) = connect_metered(&plan, &mut AutoProvider::default(), &Cancellation::default(), &manager, crate::traffic::TrafficPurpose::Files).unwrap();
+        let account = manager.account(context.identity());
+        let sftp = connection.session().sftp().unwrap();
+        let bytes: Vec<u8> = (0..(1024 * 1024)).map(|i| (i % 251) as u8).collect();
+        let mut file = sftp.create(Path::new("/meter.bin")).unwrap();
+        file.write_all(&bytes).unwrap();
+        file.close().unwrap(); drop(file);
+        let mut actual = Vec::new();
+        let mut file = sftp.open(Path::new("/meter.bin")).unwrap();
+        file.read_to_end(&mut actual).unwrap();
+        file.close().unwrap(); drop(file);
+        assert_eq!(actual, bytes);
+        drop(sftp);
+        assert_eq!(ssh::exec(connection.session(), "command -v docker >/dev/null 2>&1").unwrap().code, 0);
+        connection.session().disconnect(None, "meter test complete", None).unwrap();
+        let root = fixtures.root.path().join("b");
+        let events = || -> Vec<serde_json::Value> {
+            std::fs::read_to_string(root.join("ssh-events.jsonl")).unwrap_or_default().lines().filter_map(|line| serde_json::from_str(line).ok()).collect()
+        };
+        wait_for(|| events().iter().any(|e| e["event"] == "connection-close" && e["username"] == "target-user"));
+        drop(connection);
+        std::thread::sleep(Duration::from_millis(5));
+        manager.flush();
+        let sample = account.snapshot();
+        let closed = events().into_iter().find(|e| e["event"] == "connection-close" && e["username"] == "target-user").unwrap();
+        assert_eq!(sample.total.sent_bytes.parse::<u64>().unwrap(), closed["received_bytes"].as_u64().unwrap(), "target server receive bytes, jump={jump}");
+        assert_eq!(sample.total.received_bytes.parse::<u64>().unwrap(), closed["sent_bytes"].as_u64().unwrap(), "target server send bytes, jump={jump}");
+        assert_eq!(sample.total.sent_bytes, sample.files.sent_bytes);
+        assert_eq!(sample.monitoring.sent_bytes, "0");
+        assert_eq!(sample.active_connections, 0);
+        assert!(sample.total.sent_bytes.parse::<u64>().unwrap() > bytes.len() as u64);
+    }
+}
+
+#[test]
+#[ignore = "real SSH Docker/traffic sharing; requires Python paramiko"]
+fn jump_docker_monitor_and_background_traffic_are_shared() {
+    let fixtures = Fixtures::new(false);
+    let (connection, context) = connect(&fixtures.plan(), &mut AutoProvider::default(), &Cancellation::default()).unwrap();
+    drop(connection);
+    let state = state();
+    let mut sessions = Vec::new();
+    for window in ["main", "workspace-test"] {
+        let (id, _, _, _, _) = register(&state, state.owner(window), Arc::new(fixtures.plan()), Channel::new(|_| Ok(()))).unwrap();
+        state.terminals.lock().unwrap().get_mut(&id).unwrap().spec = Some(context.clone());
+        sessions.push(id);
+    }
+    crate::monitor::tests::exercise_docker(state, context, &sessions[0], &sessions[1], &fixtures.root.path().join("b"));
 }

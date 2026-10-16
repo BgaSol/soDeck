@@ -1,17 +1,22 @@
+mod traffic;
 mod brand;
 mod connection;
 mod db;
 mod desktop_drag;
 mod docker;
 mod files;
+mod file_tasks;
 mod log_ingest;
 mod log_store;
 mod logs;
 mod model;
+mod monitor;
 mod moves;
+mod remote_delete;
 mod remote_fs;
 mod remote_mounts;
 mod remote_path;
+mod remote_read;
 mod remote_write;
 mod shell_integration;
 mod ssh;
@@ -36,12 +41,16 @@ use tauri::{
 };
 
 pub struct State {
+    traffic: Arc<traffic::TrafficManager>,
     moves: moves::MoveState,
     files: files::FileState,
+    file_tasks: file_tasks::FileTaskState,
+    deletes: remote_delete::DeleteState,
     transfers: transfers::TransferState,
     drags: desktop_drag::DragState,
     logs: logs::LogState,
     history: terminal_history::HistoryState,
+    monitor: monitor::MonitorManager,
     database: Mutex<db::Database>,
     configuration: Mutex<()>,
     stopping: AtomicBool,
@@ -57,6 +66,14 @@ struct PendingContainer {
     target: docker::ContainerTarget,
 }
 impl State {
+    fn connected_context(&self, identity: &str) -> AppResult<connection::SharedContext> {
+        self.ensure_running()?;
+        self.terminals.lock().unwrap().values()
+            .filter(|t| !t.sender.cancel.is_cancelled())
+            .filter_map(|t| t.spec.clone())
+            .find(|c| c.identity() == identity)
+            .ok_or_else(|| AppError::new("disconnected", "请先重新连接任务涉及的服务器；连接身份必须与原任务一致"))
+    }
     fn check_context(&self, context: &connection::ConnectionContext) -> AppResult<()> {
         self.ensure_running()?;
         let database = self.database.lock().unwrap();
@@ -235,16 +252,20 @@ async fn quit_app(
     {
         let _gate = state.configuration.lock().unwrap();
         state.stopping.store(true, Ordering::SeqCst);
-        state.transfers.cancel_all();
     }
+    state.deletes.stop_all();
+    state.transfers.stop_transfers();
     let shutdown_state = state.inner().clone();
     let result = blocking(move || {
+        shutdown_state.transfers.interrupt_operations_after_grace();
+        shutdown_state.monitor.shutdown()?;
         shutdown_state.transfers.wait_transfers()?;
         shutdown_state.logs.shutdown()?;
         for terminal in shutdown_state.terminals.lock().unwrap().values() {
             let _ = terminal.sender.send(terminal::Input::Close);
         }
         connection::wait_closed(&shutdown_state)?;
+        shutdown_state.traffic.flush();
         shutdown_state.history.shutdown()
     })
     .await;
@@ -452,11 +473,23 @@ pub fn run() {
             std::fs::create_dir_all(&dir)?;
             let database = db::Database::open(&dir.join("servers.db"))
                 .map_err(|e| std::io::Error::other(e.message))?;
+            let file_tasks = file_tasks::FileTaskState::open(&dir.join("file-tasks.sqlite"))
+                .map_err(|e| std::io::Error::other(e.message))?;
+            file_tasks.attach(app.handle().clone());
+            let deletes = remote_delete::DeleteState::restore(&mut file_tasks.store.lock().unwrap())
+                .map_err(|e| std::io::Error::other(e.message))?;
+            let transfers = transfers::TransferState::open(dir.join("transfer-receipts"))
+                .map_err(|e| std::io::Error::other(e.message))?;
+            transfers.restore_downloads(&file_tasks).map_err(|e| std::io::Error::other(e.message))?;
+            transfers.observe_order(deletes.snapshot().iter().map(|t| t.sort_order).max().unwrap_or(0));
             app.manage(Arc::new(State {
+                traffic: traffic::TrafficManager::new(),
                 moves: moves::MoveState::default(),
+                monitor: monitor::MonitorManager::default(),
                 files: files::FileState::default(),
-                transfers: transfers::TransferState::open(dir.join("transfer-receipts"))
-                    .map_err(|e| std::io::Error::other(e.message))?,
+                deletes,
+                transfers,
+                file_tasks,
                 drags: desktop_drag::DragState::default(),
                 logs: logs::LogState::default(),
                 history: terminal_history::HistoryState::open(dir.join("terminal-history")),
@@ -474,6 +507,8 @@ pub fn run() {
         .on_page_load(|webview, payload| {
             if payload.event() == tauri::webview::PageLoadEvent::Started {
                 if let Some(state) = webview.try_state::<Arc<State>>() {
+                    state.deletes.discard_window_drafts(webview.label());
+                    state.monitor.stop_window(webview.label());
                     state.logs.stop(webview.label(), false);
                     state.history.cancel_window(webview.label());
                     let mut generations = state.window_generations.lock().unwrap();
@@ -493,6 +528,8 @@ pub fn run() {
             }
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 let state = window.state::<Arc<State>>();
+                state.deletes.discard_window_drafts(window.label());
+                state.monitor.stop_window(window.label());
                 state.logs.stop(window.label(), true);
                 state.history.cancel_window(window.label());
                 moves::window_closed(window.app_handle(), &state, window.label());
@@ -550,6 +587,11 @@ pub fn run() {
             terminal_history::commands::open_terminal_history_window,
             remote_fs::list_directory,
             remote_fs::list_directory_chain,
+            monitor::subscribe_monitor,
+            monitor::update_monitor_interest,
+            monitor::get_monitor_history,
+            monitor::refresh_monitor,
+            monitor::unsubscribe_monitor,
             remote_mounts::list_remote_mounts,
             remote_mounts::get_remote_mount_usage,
             detect_docker,
@@ -583,6 +625,18 @@ pub fn run() {
             transfers::reconcile_transfer,
             transfers::cleanup_transfer,
             remote_fs::create_remote_entry,
+            remote_delete::prepare_remote_delete,
+            remote_delete::start_remote_delete,
+            remote_delete::list_remote_deletes,
+            remote_delete::prepare_delete_retry,
+            file_tasks::list_file_tasks,
+            file_tasks::get_file_task,
+            file_tasks::cancel_file_task,
+            file_tasks::reconcile_file_task,
+            file_tasks::dismiss_file_task,
+            file_tasks::clear_completed_file_tasks,
+            remote_delete::cancel_remote_delete,
+            remote_delete::reconcile_remote_delete,
             desktop_drag::begin_file_drag,
             desktop_drag::clipboard::set_remote_clipboard,
             desktop_drag::clipboard::get_remote_clipboard,

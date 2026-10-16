@@ -35,6 +35,7 @@ export interface TransferTask {
   runId: string;
   createdAt?: number | null;
   lastStartedAt?: number | null;
+  finishedAt?: number | null;
   sortOrder?: number;
   sourcePaths?: string[];
   lastAttempt?: {

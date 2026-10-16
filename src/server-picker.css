@@ -3,19 +3,6 @@
   max-height: calc(100dvh - 2.5rem);
   padding: 0;
   overflow: hidden;
-  border-radius: 1.15rem;
-  background: var(--surface);
-  -webkit-backdrop-filter: blur(28px) saturate(140%);
-  backdrop-filter: blur(28px) saturate(140%);
-  box-shadow:
-    0 24px 72px rgb(0 0 0 / 24%),
-    0 2px 8px rgb(0 0 0 / 8%);
-}
-
-.server-picker-dialog::backdrop {
-  background: rgb(12 14 20 / 22%);
-  -webkit-backdrop-filter: blur(2px);
-  backdrop-filter: blur(2px);
 }
 
 .server-picker-dialog[open] {
@@ -23,32 +10,10 @@
   flex-direction: column;
 }
 
-.server-picker-head {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.server-picker-dialog > .dialog-head {
   flex: none;
-  min-height: 3.8rem;
-  padding: 1rem 3.5rem;
-}
-
-.server-picker-head h2 {
-  font-size: 1rem;
-  font-weight: 600;
-  line-height: 1.3;
-  letter-spacing: -0.01em;
-}
-
-.server-picker-head .server-picker-close {
-  position: absolute;
-  left: 1rem;
-  min-width: 1.85rem;
-  min-height: 1.85rem;
-  padding: 0.35rem;
-  border-radius: 50%;
-  color: var(--muted);
-  background: var(--tag);
+  margin: 0;
+  padding: 1rem 1.25rem;
 }
 
 .server-picker-filters {
@@ -63,7 +28,7 @@
 .server-picker-dialog button,
 .server-picker-filters input,
 .server-picker-filters select {
-  font-size: 0.9rem;
+  font-size: var(--font-body);
   line-height: 1.4;
 }
 
@@ -171,7 +136,7 @@
 }
 
 .selected .server-symbol {
-  color: var(--blue);
+  color: var(--accent-text);
 }
 
 .server-row-body {
@@ -182,13 +147,13 @@
 }
 
 .server-name {
-  font-size: 0.95rem;
+  font-size: var(--font-body);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
 
 .server-address {
-  font: 0.8rem/1.5 var(--mono);
+  font: var(--font-caption)/1.5 var(--mono);
   color: var(--muted);
   overflow-wrap: anywhere;
 }
@@ -201,7 +166,7 @@
 }
 
 .chip {
-  font-size: 0.75rem;
+  font-size: var(--font-caption);
   line-height: 1.5;
   padding: 0.05rem 0.45rem;
   border-radius: 0.3rem;
@@ -214,7 +179,7 @@
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.8rem;
+  font-size: var(--font-caption);
   color: var(--green);
   flex: none;
 }
@@ -257,7 +222,7 @@
 
 .server-picker-empty p {
   margin-top: 0.4rem;
-  font-size: 0.9rem;
+  font-size: var(--font-body);
   line-height: 1.6;
 }
 
@@ -299,19 +264,12 @@
 .server-picker-count {
   margin-right: auto;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: var(--font-caption);
   font-variant-numeric: tabular-nums;
 }
 
 .server-picker-confirm button {
   min-width: 4.5rem;
-}
-
-.server-picker-dialog button.primary:disabled {
-  opacity: 1;
-  color: var(--muted);
-  background: var(--tag);
-  box-shadow: none;
 }
 
 .server-picker-status {
@@ -321,7 +279,7 @@
   gap: 0.65rem;
   padding: 0.85rem 1.25rem;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: var(--font-secondary);
   overflow-wrap: anywhere;
   overflow: auto;
   max-height: 7rem;
@@ -330,34 +288,6 @@
 .server-picker-status[role="alert"] {
   color: var(--error);
   background: var(--error-bg);
-}
-
-.server-picker-dialog .server-context-menu {
-  position: absolute;
-  z-index: 2;
-  display: grid;
-  padding: 5px;
-  width: 180px;
-  border: 1px solid var(--strong-line);
-  border-radius: 11px;
-  background: var(--surface);
-  box-shadow: 0 10px 32px rgb(0 0 0 / 20%);
-}
-
-.server-context-menu button {
-  justify-content: flex-start;
-  border: 0;
-  background: transparent;
-}
-
-.server-context-menu button:hover {
-  background: var(--blue);
-  color: #fff;
-}
-
-.server-context-menu button.danger:hover {
-  background: var(--error);
-  color: var(--surface);
 }
 
 @media (max-width: 520px) {

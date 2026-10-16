@@ -28,7 +28,7 @@ pub enum ConflictPolicy {
     Rename,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadTask {
     pub(super) id: String,
@@ -47,6 +47,59 @@ pub struct DownloadTask {
     pub(super) files_total: u64,
     pub(super) skipped: u64,
     pub(super) error: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub(crate) struct DownloadReceipt {
+    pub(super) identity: String,
+    pub(super) destination: PathBuf,
+    pub(super) task: DownloadTask,
+}
+fn persist(state: &State, item: &DownloadHandle) -> AppResult<()> {
+    let task = item.task.lock().unwrap().clone();
+    let receipt = DownloadReceipt {
+        identity: item.spec.identity().into(),
+        destination: item.destination.clone(),
+        task,
+    };
+    state
+        .file_tasks
+        .store
+        .lock()
+        .unwrap()
+        .save("download", &receipt.task.id, &receipt)?;
+    state.file_tasks.emit(&receipt.task.id);
+    Ok(())
+}
+pub(super) fn view(t: &DownloadTask) -> super::TaskView {
+    super::TaskView {
+        id: t.id.clone(),
+        run_id: t.run_id.clone(),
+        presentation: t.presentation.clone(),
+        kind: "download".into(),
+        source_name: t.server_name.clone(),
+        source_path: t.remote_path.clone(),
+        target_name: "本机".into(),
+        target_path: t.local_path.clone(),
+        conflict: t.conflict,
+        status: t.status.as_str().into(),
+        bytes_done: t.bytes_done,
+        bytes_total: t.bytes_total,
+        current_file: None,
+        current_bytes: 0,
+        committed_bytes: t.bytes_done,
+        waiting_reason: None,
+        files_done: t.files_done,
+        files_total: t.files_total,
+        skipped: t.skipped,
+        error: t.error.clone(),
+        warnings: vec![],
+        cleanup_pending: false,
+        items: vec![],
+        direct_address: None,
+        temporary_paths: vec![],
+        can_resume: false,
+    }
 }
 
 #[derive(Clone)]
@@ -159,6 +212,7 @@ pub async fn start_download(
             error: None,
         })),
     };
+    persist(&state, &item)?;
     state.transfers.downloads.lock().unwrap().push(item.clone());
     launch_download(state.inner().clone(), item);
     Ok(Some(id))
@@ -188,13 +242,23 @@ pub fn retry_download(
     id: String,
 ) -> AppResult<()> {
     download_window(&window)?;
+    let _action = state.file_tasks.actions.lock().unwrap();
     let _gate = state.configuration.lock().unwrap();
     state.ensure_running()?;
     let item = find_download(&state, &id)?;
     state.check_context(&item.spec)?;
+    reject_links(&item.destination)?;
+    remote_path(&item.task.lock().unwrap().remote_path)?;
+    state
+        .file_tasks
+        .store
+        .lock()
+        .unwrap()
+        .restore_visibility(&id)?;
+    let previous = item.task.lock().unwrap().clone();
     {
         let mut task = item.task.lock().unwrap();
-        if task.status != "failed" && task.status != "cancelled" {
+        if !matches!(task.status.as_str(), "failed" | "cancelled" | "interrupted") {
             return Err(AppError::new("download", "只有失败或已取消的任务可以重试"));
         }
         item.cancel.reset()?;
@@ -214,12 +278,16 @@ pub fn retry_download(
         task.skipped = 0;
         task.error = None;
     }
+    if let Err(e) = persist(&state, &item) {
+        *item.task.lock().unwrap() = previous;
+        return Err(e);
+    }
     launch_download(state.inner().clone(), item);
     Ok(())
 }
 
 fn find_download(state: &State, id: &str) -> AppResult<DownloadHandle> {
-    state
+    if let Some(item) = state
         .transfers
         .downloads
         .lock()
@@ -227,7 +295,37 @@ fn find_download(state: &State, id: &str) -> AppResult<DownloadHandle> {
         .iter()
         .find(|item| item.task.lock().unwrap().id == id)
         .cloned()
-        .ok_or_else(|| AppError::new("download", "下载任务不存在"))
+    {
+        return Ok(item);
+    }
+    let receipt = state
+        .transfers
+        .recovered_downloads
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|r| r.task.id == id)
+        .cloned()
+        .ok_or_else(|| AppError::new("download", "下载任务不存在"))?;
+    let spec = state.connected_context(&receipt.identity)?;
+    let item = DownloadHandle {
+        spec,
+        task: Arc::new(Mutex::new(receipt.task)),
+        cancel: Cancellation::default(),
+        destination: receipt.destination,
+    };
+    let mut downloads = state.transfers.downloads.lock().unwrap();
+    if let Some(existing) = downloads.iter().find(|d| d.task.lock().unwrap().id == id) {
+        return Ok(existing.clone());
+    }
+    downloads.push(item.clone());
+    state
+        .transfers
+        .recovered_downloads
+        .lock()
+        .unwrap()
+        .retain(|r| r.task.id != id);
+    Ok(item)
 }
 
 fn check_cancel(item: &DownloadHandle) -> AppResult<()> {
@@ -251,7 +349,7 @@ pub(super) fn launch_download(state: Arc<State>, item: DownloadHandle) {
         }
         *active += 1;
         drop(active);
-        let result = run_download(&item);
+        let result = run_download(&state, &item);
         {
             let mut task = item.task.lock().unwrap();
             match result {
@@ -266,6 +364,12 @@ pub(super) fn launch_download(state: Arc<State>, item: DownloadHandle) {
                     task.error = Some(error.message);
                 }
             }
+        }
+        item.task.lock().unwrap().presentation.finished_at = Some(crate::file_tasks::now());
+        if let Err(e) = persist(&state, &item) {
+            let mut task = item.task.lock().unwrap();
+            task.status = "failed".into();
+            task.error = Some(format!("下载结果保存失败：{}", e.message));
         }
         *state.transfers.active.lock().unwrap() -= 1;
         state.transfers.slot.notify_one();
@@ -328,13 +432,39 @@ fn scan_directory(
     Ok(())
 }
 
-fn run_download(item: &DownloadHandle) -> AppResult<()> {
+fn run_download(state: &State, item: &DownloadHandle) -> AppResult<()> {
     check_cancel(item)?;
     item.task.lock().unwrap().status = "scanning".into();
-    let connection = connection::connect_verified(&item.spec, &item.cancel)?;
+    persist(state, item)?;
+    let connection = connection::connect_verified(&item.spec, &item.cancel, crate::traffic::TrafficPurpose::Transfer)?;
     let session = connection.session();
     let sftp = session.sftp()?;
     let task = item.task.lock().unwrap().clone();
+    let resolved = sftp.realpath(remote_path(&task.remote_path)?)?;
+    let resolved = resolved
+        .to_str()
+        .ok_or_else(|| AppError::new("path", "远端路径不是 UTF-8"))?;
+    let claims = [task.remote_path.as_str(), resolved].map(|path| super::scheduler::Claim {
+        key: item.spec.target_public_key().into(),
+        path: path.into(),
+        write: false,
+    });
+    let _paths = state
+        .transfers
+        .paths
+        .acquire_many(&claims, &task.id, |conflict| {
+            check_cancel(item)?;
+            if let Some((path, task)) = conflict {
+                return Err(AppError::new(
+                    "busy",
+                    format!("任务 {task} 正在修改 {path}，请等待结束后重新下载"),
+                ));
+            }
+            Ok(())
+        })?;
+    if sftp.realpath(remote_path(&task.remote_path)?)?.to_str() != Some(resolved) {
+        return Err(AppError::new("changed", "下载来源路径已变化，请重新选择"));
+    }
     let stat = sftp.lstat(remote_path(&task.remote_path)?)?;
     let mut plan = DownloadPlan::default();
     if task.is_dir && stat.is_dir() {
@@ -368,6 +498,7 @@ fn run_download(item: &DownloadHandle) -> AppResult<()> {
         task.skipped = plan.skipped;
         task.local_path = destination.to_string_lossy().to_string();
     }
+    persist(state, item)?;
     for directory in plan.directories {
         check_cancel(item)?;
         safe_create_directory(&destination.join(directory))?;
@@ -391,6 +522,7 @@ fn run_download(item: &DownloadHandle) -> AppResult<()> {
         }
         download_file(&sftp, item, &file, &target)?;
         item.task.lock().unwrap().files_done += 1;
+        persist(state, item)?;
     }
     Ok(())
 }
@@ -714,5 +846,59 @@ pub(crate) mod tests {
         assert!(reject_links(&directory.join("file")).is_ok());
         std::os::unix::fs::symlink(&directory, directory.join("link")).unwrap();
         assert!(reject_links(&directory.join("link/file")).is_err());
+    }
+    #[test]
+    fn download_history_recovers_without_credentials_or_automatic_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tasks.sqlite");
+        let task: DownloadTask = serde_json::from_value(serde_json::json!({
+            "id":"download", "runId":"attempt", "sortOrder":42,
+            "serverName":"server", "remotePath":"/data/file", "localPath":"/local/file",
+            "isDir":false, "conflict":"rename", "status":"running",
+            "bytesDone":64,"bytesTotal":128,"filesDone":0,"filesTotal":1,"skipped":0,"error":null
+        }))
+        .unwrap();
+        let receipt = DownloadReceipt {
+            identity: "verified-route".into(),
+            destination: dir.path().join("file"),
+            task,
+        };
+        {
+            let history = crate::file_tasks::FileTaskState::open(&path).unwrap();
+            history
+                .store
+                .lock()
+                .unwrap()
+                .save("download", "download", &receipt)
+                .unwrap();
+        }
+        let history = crate::file_tasks::FileTaskState::open(&path).unwrap();
+        let transfers = super::super::TransferState::default();
+        transfers.restore_downloads(&history).unwrap();
+        assert!(transfers.downloads.lock().unwrap().is_empty());
+        let saved = transfers.recovered_downloads.lock().unwrap();
+        assert_eq!(saved[0].task.status, "interrupted");
+        assert_eq!(saved[0].task.bytes_done, 64);
+        let json = serde_json::to_string(&saved[0]).unwrap();
+        assert!(!json.contains("password") && !json.contains("credentials"));
+        assert!(transfers.next_order() > 42);
+        assert!(!dir.path().join("file").exists());
+        drop(saved);
+        let mut state = crate::connection::tests::state();
+        Arc::get_mut(&mut state).unwrap().file_tasks = history;
+        Arc::get_mut(&mut state).unwrap().transfers = transfers;
+        assert_eq!(crate::file_tasks::snapshot(&state).unwrap().len(), 1);
+        let receipts = state
+            .file_tasks
+            .store
+            .lock()
+            .unwrap()
+            .load::<DownloadReceipt>("download")
+            .unwrap();
+        assert_eq!(
+            receipts.len(),
+            1,
+            "listing tasks cannot replace download recovery metadata"
+        );
     }
 }

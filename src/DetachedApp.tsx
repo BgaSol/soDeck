@@ -4,7 +4,7 @@ import { windowTitle } from "./brand";
 import { desktop } from "./api";
 import { SessionWorkspace } from "./SessionWorkspace";
 import { WorkspaceTitlebar } from "./WorkspaceTitlebar";
-import { TransferPanel } from "./TransferPanel";
+import { FileTaskPanel } from "./FileTaskPanel";
 import { DesktopDragPreview } from "./DesktopDragPreview";
 import { useWorkspaceMoves } from "./useWorkspaceMoves";
 import { emptyWorkspaces, reorderWorkspace } from "./workspaces";
@@ -82,7 +82,7 @@ export function DetachedApp() {
           ))}
         </div>
       </div>
-      <TransferPanel />
+      <FileTaskPanel />
       <DesktopDragPreview />
     </div>
   );

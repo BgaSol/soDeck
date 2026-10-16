@@ -1,5 +1,6 @@
+import { DialogHeader } from "./DialogHeader";
 import { useEffect, useId, useRef, useState } from "react";
-import { KeyRound, Server, ShieldCheck, ShieldAlert, X } from "lucide-react";
+import { KeyRound, Server, ShieldCheck, ShieldAlert } from "lucide-react";
 import { addressOf, errorOf } from "./types";
 import type {
   Credentials,
@@ -69,15 +70,17 @@ export function LoginDialog({
         onClose();
       }}
     >
-      <header className="dialog-head">
-        <h2 id={titleId}>
-          <KeyRound size={20} aria-hidden="true" />
-          {server.authType === "key" ? "私钥认证" : "密码认证"}
-        </h2>
-        <button className="icon-button" onClick={onClose} aria-label="取消连接">
-          <X size={16} />
-        </button>
-      </header>
+      <DialogHeader
+        id={titleId}
+        title={
+          <>
+            <KeyRound size={16} aria-hidden="true" />
+            {server.authType === "key" ? "私钥认证" : "密码认证"}
+          </>
+        }
+        closeLabel="取消连接"
+        onClose={onClose}
+      />
       <form
         onSubmit={async (event) => {
           event.preventDefault();
@@ -169,15 +172,17 @@ export function FingerprintDialog({
         onClose();
       }}
     >
-      <header className="dialog-head">
-        <h2 id={titleId}>
-          <Icon size={20} aria-hidden="true" />
-          {challenge.previous ? "服务器指纹已变化" : "核对服务器指纹"}
-        </h2>
-        <button className="icon-button" onClick={onClose} aria-label="取消连接">
-          <X size={16} />
-        </button>
-      </header>
+      <DialogHeader
+        id={titleId}
+        title={
+          <>
+            <Icon size={16} aria-hidden="true" />
+            {challenge.previous ? "服务器指纹已变化" : "核对服务器指纹"}
+          </>
+        }
+        closeLabel="取消连接"
+        onClose={onClose}
+      />
       <div className="connection-dialog-content">
         <HopSummary hop={challenge.hop} />
         <p

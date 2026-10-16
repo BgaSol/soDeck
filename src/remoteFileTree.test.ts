@@ -32,6 +32,69 @@ const batch = (
 });
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
+it("deletion refreshes parents first, prunes collapsed current subtrees and resets range anchor", async () => {
+  const api = {
+    directory: vi.fn(async (_session: string, path?: string) =>
+      directory(path ?? "/"),
+    ),
+    directoryChain: vi.fn(async () => batch("/", ["/"])),
+  };
+  const model = new RemoteFileTree("session", api, {
+    sessionId: "session",
+    directories: {
+      "/": { directory: directory("/", ["/a"]) },
+      "/a": { directory: directory("/a", ["/a/b"]) },
+      "/a/b": { directory: directory("/a/b", ["/a/b/file"]) },
+    },
+    expanded: ["/"],
+    selected: "/a/b/file",
+    selection: ["/a/b/file"],
+    selectionAnchor: "/a/b/file",
+    currentPath: "/a/b",
+    homePath: "/",
+    scrollTop: 0,
+  });
+  await model.refreshAffectedDirectories(["/a/b", "/a", "/"]);
+  expect(api.directory.mock.calls.map((call) => call[1])).toEqual(["/"]);
+  expect(model.getState().currentPath).toBe("/");
+  expect(model.getState().selected).toBe("/");
+  expect(model.getState().selectionAnchor).toBe("/");
+  expect(model.getState().selection).toEqual([]);
+});
+
+it.each([true, false])(
+  "a deletion event refreshes a collapsed parent of the current directory (active=%s)",
+  async (active) => {
+    const api = {
+      directory: vi.fn(async (_: string, path?: string) =>
+        directory(path ?? "/"),
+      ),
+      directoryChain: vi.fn(async () => batch("/", ["/"])),
+    };
+    const model = new RemoteFileTree("session", api, {
+      sessionId: "session",
+      directories: {
+        "/": { directory: directory("/", ["/a"]) },
+        "/a": { directory: directory("/a", ["/a/b"]) },
+        "/a/b": { directory: directory("/a/b") },
+      },
+      expanded: ["/"],
+      selected: "/a/b",
+      currentPath: "/a/b",
+      homePath: "/",
+      scrollTop: 0,
+    });
+    model.invalidateRemotePath("/a", active);
+    if (!active) {
+      expect(api.directory).not.toHaveBeenCalled();
+      model.activate();
+    }
+    await tick();
+    expect(api.directory).toHaveBeenCalledWith("session", "/a");
+    expect(model.getState().currentPath).toBe("/a");
+  },
+);
+
 describe("remote file tree", () => {
   it("loads only the home path, lazily loads a branch once, and keeps it cached after collapse", async () => {
     const api = {

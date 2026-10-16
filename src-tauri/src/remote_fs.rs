@@ -50,7 +50,7 @@ pub async fn create_remote_entry(
                 format!("目录涉及待核对任务 {task}"),
             ));
         }
-        let connection = connection::connect_verified(&spec, &operation.cancel)?;
+        let connection = connection::connect_verified(&spec, &operation.cancel, crate::traffic::TrafficPurpose::Files)?;
         let sftp = connection.session().sftp()?;
         operation.cancel.check()?;
         create_entry(&sftp, &parent_path, &name, kind)?;
@@ -236,7 +236,7 @@ pub async fn list_directory(
     moves::workspace_only(&window)?;
     let spec = state.spec(&session_id, window.label())?;
     blocking(move || {
-        let connection = connection::connect_verified(&spec, &Cancellation::default())?;
+        let connection = connection::connect_verified(&spec, &Cancellation::default(), crate::traffic::TrafficPurpose::Files)?;
         let session = connection.session();
         let sftp = session.sftp()?;
         let home = sftp
@@ -264,7 +264,7 @@ pub async fn list_directory_chain(
         return Err(AppError::new("path", "缓存目录数量过多"));
     }
     blocking(move || {
-        let connection = connection::connect_verified(&spec, &Cancellation::default())?;
+        let connection = connection::connect_verified(&spec, &Cancellation::default(), crate::traffic::TrafficPurpose::Files)?;
         let session = connection.session();
         let sftp = session.sftp()?;
         let home_path = sftp

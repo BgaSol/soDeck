@@ -1,5 +1,6 @@
+import { DialogHeader } from "./DialogHeader";
 import { useEffect, useRef, useState } from "react";
-import { X, FilePlus2, FolderPlus, Upload, ArrowRightLeft } from "lucide-react";
+import { FilePlus2, FolderPlus, Upload, ArrowRightLeft } from "lucide-react";
 import { errorOf } from "./types";
 import { transferApi, notifyTransferStarted } from "./transferApi";
 import type { TransferAuth } from "./transferApi";
@@ -147,21 +148,18 @@ export function FileOperationDialog({
           void submit();
         }}
       >
-        <header className="dialog-head">
-          <h2 id="file-operation-title">
-            <Icon size={18} />
-            {title}
-          </h2>
-          <button
-            type="button"
-            className="icon-button"
-            aria-label="关闭文件操作"
-            disabled={busy}
-            onClick={onClose}
-          >
-            <X size={17} />
-          </button>
-        </header>
+        <DialogHeader
+          id="file-operation-title"
+          title={
+            <>
+              <Icon size={16} aria-hidden="true" />
+              {title}
+            </>
+          }
+          closeLabel="关闭文件操作"
+          onClose={onClose}
+          disabled={busy}
+        />
         <div className="file-operation-fields">
           {draft && (
             <div className="operation-destination">

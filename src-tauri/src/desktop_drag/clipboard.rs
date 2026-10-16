@@ -21,6 +21,37 @@ pub struct ClipboardView {
     same_server: bool,
 }
 impl ClipboardState {
+    pub fn remove_deleted(&self, app: &tauri::AppHandle, identity: &str, paths: &[String]) {
+        if self.remove_deleted_paths(identity, paths) {
+            Self::changed(app);
+        }
+    }
+    pub(crate) fn remove_deleted_paths(&self, identity: &str, paths: &[String]) -> bool {
+        let mut value = self.0.lock().unwrap();
+        let Some(c) = value.as_mut().filter(|c| c.context.identity() == identity) else {
+            return false;
+        };
+        if !c.paths.iter().any(|p| {
+            paths
+                .iter()
+                .any(|deleted| transfers::scheduler::overlaps(p, deleted))
+        }) {
+            return false;
+        }
+        c.paths.retain(|p| {
+            !paths
+                .iter()
+                .any(|deleted| p == deleted || p.starts_with(&format!("{deleted}/")))
+        });
+        // Even deleting a child changes the contents of an already-prepared directory paste.
+        c.id = uuid::Uuid::new_v4().to_string();
+        // A task holding the previous version must not leave the new clipboard reserved forever.
+        c.reserved = false;
+        if c.paths.is_empty() {
+            *value = None;
+        }
+        true
+    }
     fn changed(app: &tauri::AppHandle) {
         let _ = app.emit("remote-clipboard-changed", ());
     }
@@ -262,5 +293,21 @@ mod tests {
         c.0.lock().unwrap().as_mut().unwrap().intent = Intent::Copy;
         assert!(c.finish_version(&next, Some(&plan)).is_none());
         assert!(c.0.lock().unwrap().is_some());
+        let identity =
+            c.0.lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .context
+                .identity()
+                .to_owned();
+        assert!(!c.remove_deleted_paths("unrelated-host", &["/b".into()]));
+        assert!(!c.remove_deleted_paths(&identity, &["/unrelated".into()]));
+        assert!(c.remove_deleted_paths(&identity, &["/b/child".into()]));
+        assert!(!c.0.lock().unwrap().as_ref().unwrap().reserved);
+        assert_eq!(c.0.lock().unwrap().as_ref().unwrap().paths, vec!["/b"]);
+        assert!(c.reserve(&next).is_err());
+        assert!(c.remove_deleted_paths(&identity, &["/b".into()]));
+        assert!(c.0.lock().unwrap().is_none());
     }
 }

@@ -1,3 +1,4 @@
+import { DialogHeader } from "./DialogHeader";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
@@ -126,24 +127,14 @@ export function ServerEditor({
         else close();
       }}
     >
-      <header className="dialog-head">
-        <div>
-          <h2 id="server-editor-title">
-            {initial.id ? "编辑服务器" : "新增服务器"}
-          </h2>
-          <p className="muted editor-subtitle">
-            设置服务器地址、连接路径与认证方式。
-          </p>
-        </div>
-        <button
-          className="icon-button"
-          onClick={close}
-          aria-label="关闭配置窗口"
-          disabled={busy}
-        >
-          <X size={18} />
-        </button>
-      </header>
+      <DialogHeader
+        id="server-editor-title"
+        title={initial.id ? "编辑服务器" : "新增服务器"}
+        subtitle="设置服务器地址、连接路径与认证方式。"
+        closeLabel="关闭配置窗口"
+        onClose={close}
+        disabled={busy}
+      />
       <form
         onSubmit={(event) => {
           event.preventDefault();

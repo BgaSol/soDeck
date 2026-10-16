@@ -17,7 +17,7 @@ pub fn run(state: &State, app: Option<&tauri::AppHandle>, item: &WriteHandle) ->
     item.check()?;
     item.task.lock().unwrap().status = "checking".into();
     let requested = item.task.lock().unwrap().target_path.clone();
-    let target = connection::connect_verified(&item.target, &item.cancel)?;
+    let target = connection::connect_verified(&item.target, &item.cancel, crate::traffic::TrafficPurpose::Transfer)?;
     target.session().set_timeout(15000);
     let sftp = target.session().sftp()?;
     let root = sftp
@@ -87,7 +87,7 @@ pub fn run(state: &State, app: Option<&tauri::AppHandle>, item: &WriteHandle) ->
         let Source::Remote { context, paths } = &item.source else {
             unreachable!()
         };
-        Some(state.files.begin_move(context.identity(), paths)?)
+        Some(state.files.begin_move(context.target_public_key(), paths)?)
     } else {
         None
     };

@@ -55,6 +55,7 @@ if FIXTURE_HOME != "/":
 (ROOT / "download" / "nested" / "中文.txt").write_text("递归下载测试\n", encoding="utf-8")
 (ROOT / "download" / "slow.bin").write_bytes(bytes(range(256)) * 32768)
 # Synthetic links work on Windows without Developer Mode or administrator rights.
+LINK_MTIME = int(time.time())
 LINKS = {"/download/loop-link": "/download", "/download/file-link": "/download/readme.txt", "/tree-link": "/var"}
 
 
@@ -144,9 +145,14 @@ class FileHandle(paramiko.SFTPHandle):
 
 
 class Files(paramiko.SFTPServerInterface):
+    def __init__(self, server, *args, **kwargs):
+        super().__init__(server, *args, **kwargs)
+        self.server = server
+
     def local(self, path, follow=True):
         normalized = resolve_remote_path(path) if follow else resolve_remote_parent(path)
-        local = (ROOT / normalized.lstrip("/")).resolve()
+        requested = ROOT / normalized.lstrip("/")
+        local = requested.resolve() if follow else requested.parent.resolve() / requested.name
         if not local.is_relative_to(ROOT.resolve()):
             raise PermissionError(errno.EACCES, "outside fixture")
         return local
@@ -191,7 +197,7 @@ class Files(paramiko.SFTPServerInterface):
                 attributes = paramiko.SFTPAttributes()
                 attributes.st_mode = stat.S_IFLNK | 0o777
                 attributes.st_size = len(LINKS[path])
-                attributes.st_mtime = attributes.st_atime = int(time.time())
+                attributes.st_mtime = attributes.st_atime = LINK_MTIME
                 attributes.st_uid = attributes.st_gid = 1000
                 return attributes
             return paramiko.SFTPAttributes.from_stat(self.local(path, follow=False).lstat())
@@ -241,7 +247,29 @@ class Files(paramiko.SFTPServerInterface):
 
     def remove(self, path):
         try:
-            self.local(path).unlink()
+            denied = QA / "sftp-delete-deny"
+            if denied.exists() and path == denied.read_text():
+                return paramiko.SFTP_PERMISSION_DENIED
+            delay = QA / "sftp-delete-delay"
+            if delay.exists():
+                time.sleep(float(delay.read_text()))
+            normalized = resolve_remote_parent(path)
+            if normalized in LINKS:
+                del LINKS[normalized]
+            else:
+                self.local(path, follow=False).unlink()
+            log("sftp-remove", path=path)
+            lost = QA / "sftp-delete-lost-reply"
+            if lost.exists() and path == lost.read_text():
+                self.server.transport.close()
+            return paramiko.SFTP_OK
+        except OSError as error:
+            return paramiko.SFTPServer.convert_errno(error.errno)
+
+    def rmdir(self, path):
+        try:
+            self.local(path, follow=False).rmdir()
+            log("sftp-rmdir", path=path)
             return paramiko.SFTP_OK
         except OSError as error:
             return paramiko.SFTPServer.convert_errno(error.errno)
@@ -442,11 +470,43 @@ def execute(channel, command):
     mode_file = QA / "docker-mode"
     mode = mode_file.read_text().strip() if mode_file.exists() else "running"
     code, output, error = 0, "", ""
-    if "command -v docker" in command:
+    if "__SODECK_METRICS_V1__clock" in command:
+        log("monitor-sample", transport=id(channel.get_transport()))
+        monitor_mode = (QA / "monitor-mode").read_text().strip() if (QA / "monitor-mode").exists() else "ready"
+        if monitor_mode == "unsupported":
+            code = 42
+        elif monitor_mode == "fail":
+            code, error = 1, "fixture metrics unavailable"
+        else:
+            tick = int(time.monotonic() * 100)
+            sections = {
+                "clock": f"{tick / 100} 0",
+                "boot": "fixture-boot-" + monitor_mode,
+                "cpu": f"cpu {tick} 0 {tick // 3} {tick * 6} 0 0 0 0\ncpu0 {tick} 0 {tick // 3} {tick * 6} 0 0 0 0",
+                "load": "0.10 0.20 0.30 1/20 1",
+                "memory": "MemTotal: 16384 kB\nMemAvailable: 8192 kB\nCached: 2048 kB\nSwapTotal: 1024 kB\nSwapFree: 1024 kB",
+                "network": f"eth0: {tick * 1024} 1 0 0 0 0 0 0 {tick * 512} 1 0 0 0 0 0 0",
+                "route": "eth0 00000000 0 0003 0 0 10 00000000",
+                "route6": "",
+                "interfaces": "eth0 2 0",
+                "end": "",
+            }
+            output = "".join(f"\n__SODECK_METRICS_V1__{name}\n{value}\n" for name, value in sections.items())
+    elif "stat -f -c" in command:
+        if shlex.split(command)[-1] == "/slow" and (QA / "monitor-slow-mount").exists():
+            time.sleep(10)
+        output = "4096 1000 400 300\n"
+    elif "cat /proc/self/mountinfo" in command:
+        mountinfo = ROOT / "proc/self/mountinfo"
+        if mountinfo.exists():
+            output = mountinfo.read_text()
+        else:
+            code, error = 1, "fixture mountinfo unavailable"
+    elif "command -v docker" in command:
         code = 1 if mode == "missing" else 0
     elif "context inspect" in command:
-        output = "unix:///var/run/docker.sock\n"
-    elif "docker info" in command:
+        output = (QA / "docker-endpoint").read_text() if (QA / "docker-endpoint").exists() else "unix:///var/run/docker.sock\n"
+    elif "docker info" in command or (" --host " in command and " info --format " in command):
         if mode in ("permission", "unreachable"):
             code, error = 1, "permission denied" if mode == "permission" else "Cannot connect to the Docker daemon"
         elif mode == "timeout":
@@ -454,7 +514,13 @@ def execute(channel, command):
         else:
             output = '"27.5.1"\n'
     elif " image ls " in command:
-        output = json.dumps({"ID": "sha256:" + "d" * 64, "Repository": "nginx", "Tag": "alpine", "Size": "50MB"}) + "\n"
+        delay_file = QA / "docker-images-delay"
+        if delay_file.exists():
+            time.sleep(float(delay_file.read_text()))
+        repository = "engine-two" if "/engine-two.sock" in command else "nginx"
+        output = json.dumps({"ID": "sha256:" + "d" * 64, "Repository": repository, "Tag": "alpine", "Size": "50MB"}) + "\n"
+    elif "--filter health=unhealthy" in command:
+        output = CID + "\n" if mode == "unhealthy" else ""
     elif " ps -a " in command:
         output = "\n".join(json.dumps({"ID": cid, "Names": name, "Image": "nginx:alpine", "State": state, "Status": state}) for cid, name, state in [
             (CID, "web-fixture", "running"), ("b" * 64, "stopped-fixture", "exited"), ("c" * 64, "paused-fixture", "paused")]) + "\n"
@@ -529,7 +595,25 @@ class Server(paramiko.ServerInterface):
         return True
 
 
+class CountingSocket:
+    """Independent transport-side byte totals used by SSH metering integration tests."""
+    def __init__(self, socket):
+        self.socket = socket
+        self.sent = self.received = 0
+    def __getattr__(self, name):
+        return getattr(self.socket, name)
+    def recv(self, size, *args):
+        data = self.socket.recv(size, *args)
+        self.received += len(data)
+        return data
+    def send(self, data, *args):
+        count = self.socket.send(data, *args)
+        self.sent += count
+        return count
+
+
 def accept(client):
+    client = CountingSocket(client)
     connection_id = next(CONNECTION_IDS)
     accepted_at = time.monotonic()
     log("connection-open", connection_id=connection_id, peer=client.getpeername())
@@ -544,6 +628,7 @@ def accept(client):
     transport.set_subsystem_handler("sftp", FixtureSFTPServer, Files)
     channels = []
     server = Server()
+    server.transport = transport
     try:
         transport.start_server(server=server)
         log("handshake-complete", connection_id=connection_id, elapsed=time.monotonic() - accepted_at)
@@ -556,7 +641,7 @@ def accept(client):
         log("connection-error", connection_id=connection_id, username=server.username, error=str(error))
     finally:
         transport.close()
-        log("connection-close", connection_id=connection_id, username=server.username)
+        log("connection-close", connection_id=connection_id, username=server.username, sent_bytes=client.sent, received_bytes=client.received)
 
 
 if __name__ == "__main__":

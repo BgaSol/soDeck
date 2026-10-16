@@ -190,3 +190,21 @@ TypeScript/Vite 构建、Clippy all-targets `-D warnings`、Rust/Prettier 格式
 - 已查看 `.qa/sodeck-home-chromium.png`、`.qa/sodeck-about-dark-chromium.png` 和 `.qa/sodeck-home-small-webkit.png`。
 - Windows release 与 NSIS 安装包构建成功：`src-tauri/target/release/sodeck.exe`、`src-tauri/target/release/bundle/nsis/SoDeck_0.1.0_x64-setup.exe`。可执行文件的 ProductName / FileDescription 均为 SoDeck，ProductVersion 为 0.1.0。
 - 本轮改动文件的 Prettier、Rust 格式检查及 `git diff --check` 通过。未执行安装/卸载流程、真实 SSH 连接或 macOS/Linux 原生界面验证。此前验证记录中的 SSH Workspace 名称为当时实际产物，保留作为历史记录。
+
+## 2026-10-16：监控与 Docker 界面实施
+
+本轮使用当前工作区前端和共享监控存储实现紧凑总览、专注视图、容器／镜像列表与详情、挂载关注和定位、折叠通信统计，以及 1200px／760px 响应式布局。沿用既有 Logo、Rust 采集、IPC、SSH 连接与采样周期；没有新增依赖或持久化配置。偏好随当前会话及窗口迁移，关闭后恢复默认。
+
+验证结果：
+
+- `npm test`：11 个测试文件、93 项通过，包含快照兼容、独立视图状态、布局宽度、实际采样游标、缺失区间、Docker 稳定排序与挂载分类。
+- `npm run test:resources`：Chromium／WebKit 共 32 项通过。覆盖 0／5／200 容器、键盘列表、健康未知、选中对象被筛选或移除、引擎换代与迟到回包、并行操作和局部失败、长列表位置恢复、30 个挂载的分组分页、容量缓存复用及重挂载、文件定位失败、通信独立于资源失败、深浅色、放大文字和减少动态效果。
+- 连接与标题栏回归共 48 项通过（完整原有用例运行后，对更新后的连接详情断言、会话偏好隔离和新增迁移用例分别复测）。终端在连续展开／返回和 1440×900、1280×800、860×580、650×480 切换中保持同一实例；专注视图期间收到的输出返回后仍可见，没有新增连接或零尺寸终端请求。
+- `npm run test:terminal-history`：Chromium／WebKit 共 8 项通过；`npm run test:logs`：5 项通过。
+- `cargo test --manifest-path src-tauri/Cargo.toml --lib`：101 项通过、29 项原有集成测试忽略，0 失败。
+- TypeScript／Vite 构建、变更文件的 Prettier 检查和 `git diff --check` 通过。Vite 保留现有主包超过 500 kB 的体积提示。
+- `npm run tauri -- build --debug --bundles app` 成功生成 `src-tauri/target/debug/bundle/macos/SoDeck.app`。已启动原生 macOS 窗口，核对系统标题栏、Logo、字体和深色外观。
+
+界面截图来自正式 React 组件，监控和 Docker 数值使用本地 IPC 测试数据；模拟数据只在 `tests/` 与被忽略的 `.qa/` 中。截图：`.qa/monitor-ui-overview-light.png`、`.qa/monitor-ui-focus-light.png`、`.qa/monitor-ui-focus-dark.png`、`.qa/monitor-ui-docker-light.png`、`.qa/monitor-ui-docker-dark.png`、`.qa/monitor-ui-docker-650.png`、`.qa/monitor-ui-docker-list-650.png`、`.qa/monitor-ui-overview-650.png`。原生窗口截图为 `.qa/sodeck-native-window.png`。
+
+验证边界：本轮原生窗口复核覆盖启动与外观，未连接用户保存的服务器。依赖 Windows WebView2 CDP、真实 SSH/SFTP fixture 的 `test:desktop` 和 `test:tree` 已更新相关 Docker 选择器并通过用例发现检查，但未执行这两组原生端到端测试；真实服务器上的跨窗口拖放、Docker 日志和终端窗口仍需对应环境联调。已执行的文件树回归来自单元测试与 Chromium／WebKit 挂载交互测试。

@@ -69,14 +69,14 @@ async function authenticate(page: Page) {
     const trust = page.getByRole("button", { name: "确认指纹并连接" });
     if (await trust.isVisible()) await trust.click();
     await expect(
-      page.getByRole("tabpanel").locator(".connection-state"),
+      page.locator(".session-page[role=tabpanel]:visible").locator(".connection-state"),
     ).toHaveText("已连接", { timeout: 1000 });
   }).toPass({ timeout: 20000 });
 }
 
 async function terminal(page: Page, command: string) {
   await page
-    .getByRole("tabpanel")
+    .locator(".session-page[role=tabpanel]:visible")
     .locator(".terminal-surface textarea")
     .focus();
   await page.keyboard.type(command);
@@ -84,7 +84,7 @@ async function terminal(page: Page, command: string) {
 }
 
 async function goTo(page: Page, path: string) {
-  const input = page.getByRole("tabpanel").getByLabel("远程目录路径");
+  const input = page.locator(".session-page[role=tabpanel]:visible").getByLabel("远程目录路径");
   await expect(input).toBeEnabled();
   await input.fill(path);
   await input.press("Enter");
@@ -247,7 +247,7 @@ test("container logs persist, highlight, search, virtualize and remain readable 
     expect(f.context.pages().length).toBe(pages);
     await terminal(f.main, "echo usable-during-logs");
     await expect(
-      f.main.getByRole("tabpanel").locator(".terminal-surface"),
+      f.main.locator(".session-page[role=tabpanel]:visible").locator(".terminal-surface"),
     ).toContainText(/usable-during-logs\s*ops@host/);
     await logs.getByLabel("时间戳", { exact: true }).uncheck();
     await expect(logs.locator(".log-row-body").first()).not.toContainText(
@@ -586,14 +586,14 @@ test("server deletion blocks tabs and independent windows, then removes the save
     const logs = await openLogs(f);
     children.push(logs);
     await ipc(logs, "logs_stop");
-    await f.main.getByRole("tab").click({ button: "right" });
+    await f.main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab").click({ button: "right" });
     const detachedOpened = f.context.waitForEvent("page");
     await f.main
       .getByRole("menuitem", { name: "移到独立窗口", exact: true })
       .click();
     const detached = await detachedOpened;
     children.push(detached);
-    await expect(f.main.getByRole("tab")).toHaveCount(0);
+    await expect(f.main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(0);
     await detached.getByRole("button", { name: "断开", exact: true }).click();
     await expect.poll(() => ipc<number>(f.main, "session_count")).toBe(0);
     await showServers(f.main);
@@ -748,7 +748,7 @@ test("remote text editor saves through SFTP, detects conflicts, and keeps the SS
     await goTo(f.main, "/editing");
     const opened = f.context.waitForEvent("page");
     await f.main
-      .getByRole("tabpanel")
+      .locator(".session-page[role=tabpanel]:visible")
       .locator('.file-row[data-path="/editing/config.yaml"]')
       .dblclick();
     editor = await opened;
@@ -760,14 +760,14 @@ test("remote text editor saves through SFTP, detects conflicts, and keeps the SS
     expect(first.serverName).toBe(f.name);
     const count = f.context.pages().length;
     await f.main
-      .getByRole("tabpanel")
+      .locator(".session-page[role=tabpanel]:visible")
       .locator('.file-row[data-path="/editing/config.yaml"]')
       .dblclick();
     expect(f.context.pages()).toHaveLength(count);
 
     await terminal(f.main, "echo editor-independent");
     await expect(
-      f.main.getByRole("tabpanel").locator(".terminal-surface"),
+      f.main.locator(".session-page[role=tabpanel]:visible").locator(".terminal-surface"),
     ).toContainText(/editor-independent\s*ops@host/);
     const content = editor.locator(".cm-content");
     await content.click();
@@ -821,7 +821,7 @@ test("remote text editor saves through SFTP, detects conflicts, and keeps the SS
       expect(f.context.pages()).toHaveLength(before);
     }
     await expect(
-      f.main.getByRole("tabpanel").locator(".connection-state"),
+      f.main.locator(".session-page[role=tabpanel]:visible").locator(".connection-state"),
     ).toHaveText("已连接");
   } finally {
     if (editor && !editor.isClosed()) await closeWindow(editor).catch(() => {});
@@ -852,7 +852,7 @@ test("SFTP downloads preserve directories, report progress, cancel, retry, and r
       ),
     );
     await f.main
-      .getByRole("tabpanel")
+      .locator(".session-page[role=tabpanel]:visible")
       .locator('.file-row[data-path="/readme.txt"]')
       .click({ button: "right" });
     await f.main
@@ -967,7 +967,7 @@ test("SFTP downloads preserve directories, report progress, cancel, retry, and r
     expect((await downloadTask(f.main, slowId)).status).toBe("running");
     await terminal(f.main, "echo during-download");
     await expect(
-      f.main.getByRole("tabpanel").locator(".terminal-surface"),
+      f.main.locator(".session-page[role=tabpanel]:visible").locator(".terminal-surface"),
     ).toContainText(/during-download\s*ops@host/);
     await f.main
       .locator(`[data-task-id="${slowId}"]`)
@@ -1010,7 +1010,7 @@ test("SFTP downloads preserve directories, report progress, cancel, retry, and r
       })
       .toBe("completed");
     await expect(
-      f.main.getByRole("tabpanel").locator(".connection-state"),
+      f.main.locator(".session-page[role=tabpanel]:visible").locator(".connection-state"),
     ).toHaveText("已连接");
   } finally {
     await unlink(".qa/sftp-read-delay").catch(() => {});
@@ -1024,7 +1024,7 @@ test("SFTP downloads preserve directories, report progress, cancel, retry, and r
 test("tabs reorder, detach and rejoin without replacing their SSH connection or workspace state", async () => {
   const f = await fixture("movable tab");
   let detached: Page | undefined;
-  const active = (page: Page) => page.getByRole("tabpanel");
+  const active = (page: Page) => page.locator(".session-page[role=tabpanel]:visible");
   const title = `${f.name}，已连接`;
   const duplicateTitle = `${f.name} · 2，已连接`;
   const terminalOpens = async () =>
@@ -1037,6 +1037,7 @@ test("tabs reorder, detach and rejoin without replacing their SSH connection or 
       ).length;
   try {
     await goTo(f.main, "/projects");
+    await active(f.main).getByRole("tab", { name: "Docker", exact: true }).click();
     await active(f.main).getByRole("button", { name: /^镜像/ }).click();
     await expect(
       active(f.main).getByText("nginx:alpine", { exact: true }),
@@ -1071,7 +1072,7 @@ test("tabs reorder, detach and rejoin without replacing their SSH connection or 
 
     await connectSelectedServer(f.main);
     await authenticate(f.main);
-    await expect(f.main.getByRole("tab")).toHaveCount(2);
+    await expect(f.main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(2);
     await expect.poll(() => ipc<number>(f.main, "session_count")).toBe(2);
     const connectionsBefore = await terminalOpens();
     const firstTab = f.main.getByRole("tab", { name: title, exact: true });
@@ -1087,7 +1088,7 @@ test("tabs reorder, detach and rejoin without replacing their SSH connection or 
         y: secondBounds!.height / 2,
       },
     });
-    await expect(f.main.getByRole("tab").first()).toHaveAttribute(
+    await expect(f.main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab").first()).toHaveAttribute(
       "aria-label",
       duplicateTitle,
     );
@@ -1101,7 +1102,7 @@ test("tabs reorder, detach and rejoin without replacing their SSH connection or 
       detached.getByRole("tab", { name: title, exact: true }),
     ).toBeVisible();
     expect(detached.url()).toContain("workspace=");
-    await expect(f.main.getByRole("tab")).toHaveCount(1);
+    await expect(f.main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(1);
     await expect(active(detached).locator(".connection-state")).toHaveText(
       "已连接",
     );
@@ -1113,7 +1114,7 @@ test("tabs reorder, detach and rejoin without replacing their SSH connection or 
     );
     await expect(
       active(detached).getByRole("button", { name: /^镜像/ }),
-    ).toHaveAttribute("aria-expanded", "true");
+    ).toHaveAttribute("aria-pressed", "true");
     await expect(
       active(detached).getByText("nginx:alpine", { exact: true }),
     ).toBeVisible();
@@ -1152,7 +1153,7 @@ test("tabs reorder, detach and rejoin without replacing their SSH connection or 
     await detached
       .getByRole("menuitem", { name: "移回主窗口", exact: true })
       .click();
-    await expect(f.main.getByRole("tab")).toHaveCount(2);
+    await expect(f.main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(2);
     await expect.poll(() => detached!.isClosed()).toBe(true);
     await f.main.getByRole("tab", { name: title, exact: true }).click();
     await expect(active(f.main).locator(".terminal-surface")).toContainText(
@@ -1169,7 +1170,7 @@ test("tabs reorder, detach and rejoin without replacing their SSH connection or 
     );
     await expect(
       active(f.main).getByRole("button", { name: /^镜像/ }),
-    ).toHaveAttribute("aria-expanded", "true");
+    ).toHaveAttribute("aria-pressed", "true");
     expect(await terminalOpens()).toBe(connectionsBefore);
     await expect.poll(() => ipc<number>(f.main, "session_count")).toBe(2);
     await f.main.screenshot({ path: ".qa/movable-tabs-rejoined.png" });

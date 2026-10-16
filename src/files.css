@@ -5,7 +5,8 @@
   gap: 1px;
 }
 .file-toolbar .icon-button {
-  min-width: 25px;
+  min-width: var(--control-compact);
+  min-height: var(--control-compact);
   padding: 4px;
 }
 .file-panel .panel-title {
@@ -38,7 +39,7 @@
   min-height: 48px;
 }
 .file-mount-row .file-icon {
-  color: var(--blue);
+  color: var(--accent-text);
 }
 .file-tree-row .mount-source,
 .file-tree-row .mount-usage {
@@ -55,7 +56,7 @@
   max-width: 100%;
   padding: 2px 0 0;
   text-align: left;
-  font: 11px/1.5 var(--mono);
+  font: var(--font-caption)/1.5 var(--mono);
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -68,7 +69,7 @@
   flex: none;
   width: 65px;
   padding: 4px;
-  font: 11px/1.5 var(--mono);
+  font: var(--font-caption)/1.5 var(--mono);
   text-align: right;
 }
 .mount-usage.stale {
@@ -109,12 +110,12 @@
   max-height: calc(100dvh - 16px);
   overflow-y: auto;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-popover);
   background: var(--surface);
   color: var(--text);
-  box-shadow: 0 8px 28px #0003;
+  box-shadow: var(--shadow-popover);
   padding: 15px;
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 .mount-popover-head {
   display: flex;
@@ -156,7 +157,7 @@
 .mount-unavailable,
 .mount-query-error {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
   margin-top: 10px;
   overflow-wrap: anywhere;
 }
@@ -166,7 +167,7 @@
 .file-path-notice,
 .mount-panel-notice {
   padding: 6px 12px;
-  font-size: 11px;
+  font-size: var(--font-caption);
   color: var(--muted);
   overflow-wrap: anywhere;
 }
@@ -211,7 +212,7 @@
   align-items: center;
   gap: 5px;
   padding: 3px 7px 7px;
-  font-size: 11px;
+  font-size: var(--font-caption);
   color: var(--muted);
   overflow-wrap: anywhere;
 }
@@ -225,14 +226,14 @@
   flex: none;
   min-height: 24px;
   padding: 2px 5px;
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 .file-context-menu {
   width: 190px;
 }
 .file-panel .panel-error .quiet {
   min-height: 24px;
-  font-size: 11px;
+  font-size: var(--font-caption);
   padding: 3px 7px;
   color: var(--error);
   margin-left: 4px;
@@ -243,17 +244,17 @@
 .download-source {
   overflow-wrap: anywhere;
   margin-bottom: 18px;
-  font: 12px/1.7 var(--mono);
+  font: var(--font-secondary)/1.7 var(--mono);
   color: var(--muted);
 }
 .download-dialog label {
   display: grid;
   gap: 7px;
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 .download-hint {
   margin-top: 12px;
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 .download-dialog .dialog-actions {
   margin-top: 20px;
@@ -287,7 +288,7 @@
 }
 .remote-editor-title > svg {
   flex: none;
-  color: var(--blue);
+  color: var(--accent-text);
 }
 .remote-editor-title > div {
   min-width: 0;
@@ -301,7 +302,7 @@
   white-space: nowrap;
 }
 .remote-editor-title p {
-  font: 11px/1.6 var(--mono);
+  font: var(--font-caption)/1.6 var(--mono);
   color: var(--muted);
   text-overflow: ellipsis;
   overflow: hidden;
@@ -309,24 +310,24 @@
   margin-top: 4px;
 }
 .editor-dirty {
-  font-size: 9px;
+  font-size: var(--font-caption);
   display: inline-block;
   margin-left: 8px;
   vertical-align: middle;
-  color: var(--blue);
+  color: var(--accent-text);
 }
 .remote-editor-tools {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 5px 14px;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
   border-bottom: 1px solid var(--line);
 }
 .remote-editor-tools button {
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 .editor-shortcut {
-  font-size: 11px;
+  font-size: var(--font-caption);
   color: var(--muted);
   margin-left: auto;
 }
@@ -342,7 +343,7 @@
   width: auto;
   min-height: 25px;
   padding: 3px 5px;
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 .remote-code-editor .cm-search button {
   min-height: 25px;
@@ -367,7 +368,7 @@
   justify-content: space-between;
   gap: 16px;
   padding: 6px 16px;
-  font-size: 11px;
+  font-size: var(--font-caption);
   color: var(--muted);
   border-top: 1px solid var(--line);
   min-height: 30px;
@@ -380,15 +381,15 @@
   background: var(--error-bg);
   color: var(--error);
   padding: 10px 18px;
-  font-size: 12px;
+  font-size: var(--font-secondary);
   overflow-wrap: anywhere;
 }
 .editor-language {
   width: auto;
   max-width: 220px;
-  min-height: 26px;
+  min-height: var(--control-height);
   padding: 2px 24px 2px 8px;
-  font-size: 11px;
+  font-size: var(--font-caption);
   margin-left: auto;
 }
 .container-actions {
@@ -400,11 +401,11 @@
   width: 510px;
 }
 .file-confirm-dialog > h2 {
-  font-size: 20px;
+  font-size: var(--font-title);
   margin-bottom: 12px;
 }
 .file-confirm-dialog > p {
-  font-size: 13px;
+  font-size: var(--font-body);
   line-height: 1.7;
   margin-bottom: 20px;
   color: var(--muted);
@@ -427,7 +428,7 @@
   }
   .remote-editor-status {
     padding: 6px 10px;
-    font-size: 10px;
+    font-size: var(--font-caption);
   }
 }
 
@@ -456,7 +457,7 @@
   border-radius: 9px;
   background: var(--blue);
   color: white;
-  font-size: 12px;
+  font-size: var(--font-secondary);
   overflow-wrap: anywhere;
   pointer-events: none;
   box-shadow: 0 3px 14px #0002;
@@ -474,7 +475,7 @@
   background: var(--surface);
   box-shadow: 0 5px 18px #0002;
   pointer-events: none;
-  font-size: 12px;
+  font-size: var(--font-secondary);
   font-weight: 500;
 }
 .native-drag-preview span {
@@ -484,18 +485,18 @@
 }
 .native-drag-preview svg {
   flex-shrink: 0;
-  color: var(--blue);
+  color: var(--accent-text);
 }
 .file-operation-dialog {
   width: min(450px, calc(100vw - 32px));
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius-dialog);
   background: var(--surface);
   color: var(--text);
 }
 .file-operation-dialog .dialog-head h2 {
-  font-size: 18px;
+  font-size: var(--font-heading);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -509,12 +510,12 @@
 .file-operation-dialog .dialog-head {
   flex: none;
   margin: 0;
-  padding: 18px 22px 4px;
+  padding: 1rem 1.25rem 0.5rem;
 }
 .file-operation-dialog .dialog-actions {
   flex: none;
   margin: 0;
-  padding: 14px 22px;
+  padding: 0.9rem 1.5rem;
 }
 .file-operation-fields {
   min-height: 0;
@@ -527,25 +528,16 @@
 .file-operation-fields label {
   display: grid;
   gap: 7px;
-  font-size: 13px;
+  font-size: var(--font-body);
 }
-.file-operation-fields input,
+.file-operation-fields input:not([type="checkbox"]):not([type="radio"]),
 .file-operation-fields select {
   width: 100%;
-  min-height: 34px;
-}
-.file-operation-fields select {
-  appearance: none;
-  -webkit-appearance: none;
-  padding: 7px 30px 7px 10px;
-  background-color: var(--field);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4.5 3 3 3-3' fill='none' stroke='%238a8a94' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-position: right 10px center;
-  background-repeat: no-repeat;
+  min-height: var(--field-height);
 }
 .file-operation-fields p {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-secondary);
   line-height: 1.6;
 }
 
@@ -570,7 +562,7 @@
 }
 .direct-endpoint code {
   overflow-wrap: anywhere;
-  font-size: 0.86rem;
+  font-size: var(--font-secondary);
 }
 .direct-endpoint-inputs {
   display: grid;
@@ -608,7 +600,7 @@
   gap: 4px;
 }
 .copy-target-list label > span > span {
-  font-size: 0.82rem;
+  font-size: var(--font-secondary);
   color: var(--muted);
   overflow-wrap: anywhere;
 }
@@ -624,10 +616,10 @@
 }
 .operation-destination > span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 .operation-destination strong {
-  font-size: 13px;
+  font-size: var(--font-body);
   font-weight: 500;
   overflow-wrap: anywhere;
 }
@@ -645,7 +637,7 @@
 }
 .transfer-auth-fields legend {
   padding: 0 5px;
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 .transfer-auth-fields p {
   margin: 0;
@@ -677,4 +669,88 @@
 .file-context-menu {
   max-height: calc(100vh - 16px);
   overflow-y: auto;
+}
+.delete-files-dialog {
+  width: min(620px, calc(100vw - 32px));
+  max-height: calc(100dvh - 40px);
+  padding: 0;
+}
+.delete-files-body {
+  padding: 0 20px 12px;
+  overflow: auto;
+  max-height: calc(100dvh - 210px);
+}
+.delete-entry-list {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0;
+}
+.delete-entry-list > li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.delete-entry-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.delete-entry-path,
+.delete-current-path {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.delete-entry-heading > .delete-entry-path {
+  flex: 1;
+  min-width: 140px;
+}
+.delete-entry-heading > .muted {
+  font-size: 12px;
+}
+.delete-failures {
+  padding-left: 18px;
+  margin-top: 8px;
+  color: var(--error);
+  font-size: 12px;
+}
+.delete-failures li {
+  margin: 5px 0;
+}
+.file-delete-menu-item {
+  margin-top: 5px;
+  border-top: 1px solid var(--line) !important;
+}
+
+.delete-files-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.delete-files-dialog .dialog-head {
+  flex: none;
+  margin: 0;
+  padding: 16px 20px 12px;
+}
+.delete-files-dialog .dialog-actions {
+  flex: none;
+  margin: 0;
+  padding: 14px 20px;
+}
+.delete-files-dialog button {
+  appearance: none;
+  -webkit-appearance: none;
+}
+.delete-files-dialog .delete-confirm {
+  background: var(--danger-fill);
+  color: #fff;
+  border-color: transparent;
+}
+.delete-files-dialog .delete-confirm:hover:not(:disabled) {
+  background: var(--danger-fill);
+  filter: brightness(0.95);
+}
+.delete-files-body {
+  min-height: 0;
+  font-size: var(--font-body);
+  font-weight: 400;
 }

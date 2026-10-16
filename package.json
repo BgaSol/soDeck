@@ -18,6 +18,7 @@
     "test:transfers": "playwright test --config playwright.transfers.config.ts",
     "test:desktop": "playwright test",
     "test:tree": "playwright test --config playwright.file-tree.config.ts",
+    "test:resources": "playwright test --config playwright.resources.config.ts",
     "test:mounts": "playwright test --config playwright.mounts.config.ts"
   },
   "dependencies": {

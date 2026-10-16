@@ -148,6 +148,308 @@ async function setup(page: Page) {
             directEndpoint: null,
             endpointRequired: false,
           };
+        if (command === "list_remote_mounts")
+          return {
+            version: "fixture",
+            status: "unsupported",
+            mounts: [],
+            message: null,
+          };
+        if (command === "cancel_file_task") {
+          return w.__TAURI_INTERNALS__.invoke(
+            w.__TEST__.deleteTask?.id === args.id
+              ? "cancel_remote_delete"
+              : "cancel_transfer",
+            { id: args.id, taskId: args.id },
+          );
+        }
+        if (command === "reconcile_file_task") {
+          return w.__TAURI_INTERNALS__.invoke(
+            w.__TEST__.deleteTask?.id === args.id
+              ? "reconcile_remote_delete"
+              : "reconcile_transfer",
+            { id: args.id, taskId: args.id },
+          );
+        }
+        if (
+          command === "dismiss_file_task" ||
+          command === "clear_completed_file_tasks"
+        ) {
+          w.__TEST__.dismissed ??= [];
+          const all = await w.__TAURI_INTERNALS__.invoke("list_file_tasks", {
+            limit: 1000,
+          });
+          for (const item of all.tasks) {
+            if (
+              item.actions.dismiss &&
+              (command === "clear_completed_file_tasks"
+                ? item.task.status === "completed"
+                : item.task.id === args.id)
+            )
+              w.__TEST__.dismissed.push(item.task.id);
+          }
+          w.__TEST__.emit("file-task-updated", {});
+          return;
+        }
+        if (command === "prepare_delete_retry") {
+          const old = w.__TEST__.deleteTask;
+          const draft = await w.__TAURI_INTERNALS__.invoke(
+            "prepare_remote_delete",
+            {
+              paths: old.entries
+                .filter((e: any) => !["deleted", "missing"].includes(e.status))
+                .map((e: any) => e.path),
+            },
+          );
+          draft.parentTaskId = old.id;
+          w.__TEST__.deleteDraft = draft;
+          return draft;
+        }
+        if (command === "get_file_task") {
+          const list = await w.__TAURI_INTERNALS__.invoke("list_file_tasks", {
+            limit: 1000,
+          });
+          const item = list.tasks.find((i: any) => i.task.id === args.id);
+          const rows = (item.task.entries ?? []).flatMap((e: any) => [
+            {
+              ...e,
+              root: true,
+              error: null,
+              uncertain: false,
+              currentState: null,
+            },
+            ...e.failures.map((f: any) => ({
+              ...f,
+              root: false,
+              status: "failed",
+              error: f.message,
+              deletedCount: 0,
+              missingCount: 0,
+            })),
+          ]);
+          const offset = args.offset ?? 0,
+            end = Math.min(rows.length, offset + (args.limit ?? 100));
+          return {
+            task: item,
+            items: rows.slice(offset, end),
+            total: rows.length,
+            nextOffset: end < rows.length ? end : null,
+          };
+        }
+        if (command === "list_file_tasks") {
+          const transfers =
+            await w.__TAURI_INTERNALS__.invoke("list_transfers");
+          const deletion = w.__TEST__.deleteTask;
+          const active = (t: any) =>
+            [
+              "queued",
+              "checking",
+              "scanning",
+              "running",
+              "verifying",
+              "committing",
+              "cancelling",
+            ].includes(t.status);
+          const attention = (t: any) =>
+            [
+              "unknown",
+              "needsAttention",
+              "interrupted",
+              "failed",
+              "partialFailed",
+              "sourceRetained",
+            ].includes(t.status);
+          let all = [
+            ...transfers.map((task: any) => ({ category: "transfer", task })),
+            ...(w.__TEST__.deleteHistory ?? []).map((task: any) => ({
+              category: "delete",
+              task,
+            })),
+            ...(deletion
+              ? [
+                  {
+                    category: "delete",
+                    task: {
+                      entries: [],
+                      entryCount: 0,
+                      createdAt: Date.now(),
+                      lastStartedAt: Date.now(),
+                      ...deletion,
+                    },
+                  },
+                ]
+              : []),
+          ]
+            .filter((i) => !(w.__TEST__.dismissed ?? []).includes(i.task.id))
+            .sort((a, b) => (b.task.sortOrder ?? 0) - (a.task.sortOrder ?? 0));
+          all = all.map((i) => ({
+            ...i,
+            actions: {
+              stop: active(i.task) && i.task.status !== "cancelling",
+              retry:
+                !active(i.task) &&
+                [
+                  "failed",
+                  "partialFailed",
+                  "sourceRetained",
+                  "cancelled",
+                  "interrupted",
+                ].includes(i.task.status),
+              reconcile:
+                !active(i.task) &&
+                ["unknown", "needsAttention", "interrupted"].includes(
+                  i.task.status,
+                ),
+              cleanup: !active(i.task) && !!i.task.cleanupPending,
+              dismiss:
+                !active(i.task) &&
+                !["unknown", "needsAttention"].includes(i.task.status) &&
+                !i.task.cleanupPending,
+            },
+          }));
+          const summary = {
+            total: all.length,
+            active: all.filter((i) => active(i.task)).length,
+            attention: all.filter((i) => attention(i.task)).length,
+            completed: all.filter(
+              (i) => i.task.status === "completed" && i.actions.dismiss,
+            ).length,
+          };
+          if (args.filter === "active") all = all.filter((i) => active(i.task));
+          if (args.filter === "attention")
+            all = all.filter((i) => attention(i.task));
+          const start = args.cursor
+            ? all.findIndex((i) => i.task.id === args.cursor) + 1
+            : 0;
+          const end = Math.min(all.length, start + (args.limit ?? 50));
+          return {
+            tasks: all.slice(start, end),
+            summary,
+            nextCursor: end < all.length ? all[end - 1].task.id : null,
+          };
+        }
+        if (command === "prepare_remote_delete") {
+          if (w.__TEST__.deletePrepareError)
+            throw { message: w.__TEST__.deletePrepareError };
+          const paths = [...new Set(args.paths as string[])]
+            .sort()
+            .filter(
+              (path, _, all) =>
+                !all.some(
+                  (parent) => parent !== path && path.startsWith(parent + "/"),
+                ),
+            );
+          const draft = {
+            id: "delete-draft-" + serial++,
+            serverName: "Server A",
+            entries: paths.map((path) => ({
+              path,
+              kind: entries.find((e) => e.path === path)?.isDir
+                ? "directory"
+                : "file",
+              status: "pending",
+              deletedCount: 0,
+              missingCount: 0,
+              failures: [],
+            })),
+          };
+          w.__TEST__.deleteDraft = draft;
+          if (w.__TEST__.deleteTask)
+            (w.__TEST__.deleteHistory ??= []).push(w.__TEST__.deleteTask);
+          w.__TEST__.deleteTask = null;
+          return structuredClone(draft);
+        }
+        if (command === "list_remote_deletes")
+          return w.__TEST__.deleteTask
+            ? [structuredClone(w.__TEST__.deleteTask)]
+            : [];
+        if (command === "start_remote_delete") {
+          if (w.__TEST__.deleteTask)
+            return structuredClone(w.__TEST__.deleteTask);
+          const task = {
+            id: "delete-task-" + serial++,
+            sessionId: "session-a",
+            serverName: "Server A",
+            status: "running",
+            revision: 1,
+            createdAt: Date.now(),
+            lastStartedAt: Date.now(),
+            finishedAt: null,
+            sortOrder: serial,
+            entryCount: w.__TEST__.deleteDraft.entries.length,
+            parentTaskId: w.__TEST__.deleteDraft.parentTaskId ?? null,
+            lastCheckedAt: null,
+            currentPath: w.__TEST__.deleteDraft.entries[0].path,
+            deletedCount: 0,
+            missingCount: 0,
+            entries: structuredClone(w.__TEST__.deleteDraft.entries),
+            affectedDirectories: [],
+            error: null,
+          };
+          w.__TEST__.deleteTask = task;
+          if (!w.__TEST__.holdDelete)
+            setTimeout(() => {
+              const mode = w.__TEST__.deleteMode;
+              for (const [index, item] of task.entries.entries()) {
+                if (mode === "unknown" || (mode === "partial" && index === 1)) {
+                  item.status = "failed";
+                  item.failures = [
+                    {
+                      path: item.path,
+                      message: mode === "unknown" ? "连接中断" : "权限不足",
+                      uncertain: mode === "unknown",
+                      currentState: null,
+                    },
+                  ];
+                } else {
+                  item.status = "deleted";
+                  item.deletedCount = 1;
+                  task.deletedCount++;
+                  const index = entries.findIndex((e) => e.path === item.path);
+                  if (index >= 0) entries.splice(index, 1);
+                }
+              }
+              task.status =
+                mode === "unknown"
+                  ? "unknown"
+                  : mode === "partial"
+                    ? "partialFailed"
+                    : "completed";
+              task.currentPath = null;
+              task.revision++;
+              task.affectedDirectories = ["/home/ops"];
+              w.__TEST__.emit("file-task-updated", { taskId: task.id });
+              w.__TEST__.emit("remote-directory-changed", {
+                sessionId: "session-a",
+                path: "/home/ops",
+              });
+            }, 80);
+          return structuredClone(task);
+        }
+        if (command === "cancel_remote_delete") {
+          const task = w.__TEST__.deleteTask;
+          if (!task) return;
+          task.status = "cancelling";
+          task.revision++;
+          setTimeout(() => {
+            task.status = "cancelled";
+            task.revision++;
+            task.currentPath = null;
+            task.entries.forEach((e: any) => (e.status = "notExecuted"));
+            w.__TEST__.emit("file-task-updated", { taskId: task.id });
+          }, 80);
+          return;
+        }
+        if (command === "reconcile_remote_delete") {
+          const task = w.__TEST__.deleteTask;
+          task.entries.forEach((e: any) =>
+            e.failures.forEach((f: any) => (f.currentState = "exists")),
+          );
+          task.status = "failed";
+          task.lastCheckedAt = Date.now();
+          task.revision++;
+          return structuredClone(task);
+        }
         if (command === "list_servers") return structuredClone(servers);
         if (command === "list_transfers") {
           if (w.__TEST__.failList) throw { message: "任务列表暂时不可用" };
@@ -347,6 +649,210 @@ async function emitDrop(
   );
 }
 
+test("delete confirmation defaults to cancel and rejects root selection", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await page.locator('.file-row[data-path="/"]').click({ button: "right" });
+  await expect(
+    page.getByRole("menuitem", { name: "删除…", exact: true }),
+  ).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await page.locator('.file-row[data-path="/home/ops/one.txt"]').click();
+  await page.getByRole("button", { name: "删除选中项目" }).click();
+  const dialog = page.getByRole("dialog", { name: "永久删除 1 个项目？" });
+  await expect(dialog).toContainText("Server A");
+  await expect(dialog).toContainText("/home/ops/one.txt");
+  await expect(
+    dialog.getByRole("button", { name: "取消", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      (window as any).__TEST__.calls.filter(
+        (c: any) => c.command === "start_remote_delete",
+      ),
+    ),
+  ).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("delete keeps right-click multiselection, submits once and refreshes removed rows", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await page.locator('.file-row[data-path="/home/ops/one.txt"]').click();
+  await page
+    .locator('.file-row[data-path="/home/ops/two.txt"]')
+    .click({ modifiers: ["ControlOrMeta"] });
+  await page
+    .locator('.file-row[data-path="/home/ops/one.txt"]')
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "删除选中的 2 项…" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("heading")).toHaveText("永久删除 2 个项目？");
+  await dialog
+    .getByRole("button", { name: "永久删除", exact: true })
+    .evaluate((button: HTMLButtonElement) => {
+      button.click();
+      button.click();
+    });
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole("button", { name: "查看文件任务" }).click();
+  const panel = page.getByRole("region", { name: "文件任务" });
+  await expect(panel).toContainText("删除完成");
+  await expect(panel).toContainText("已删除 2 个");
+  await page.keyboard.press("Escape");
+  await expect(
+    page.locator('.file-row[data-path="/home/ops/one.txt"]'),
+  ).toHaveCount(0);
+  await expect(
+    page.locator('.file-row[data-path="/home/ops/two.txt"]'),
+  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "查看删除结果" })).toHaveCount(
+    0,
+  );
+  await page.getByRole("button", { name: "查看文件任务" }).click();
+  await expect(panel).toContainText("删除完成");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__TEST__.calls.filter(
+          (c: any) => c.command === "start_remote_delete",
+        ).length,
+    ),
+  ).toBe(1);
+  expect(errors).toEqual([]);
+});
+
+test("delete shortcut is scoped to file tree and right-click outside selection deletes only its target", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  const shortcut = await page.evaluate(() =>
+    /Mac/i.test(navigator.platform) ? "Meta+Backspace" : "Delete",
+  );
+  await page.locator('.file-row[data-path="/home/ops/one.txt"]').click();
+  await page.getByLabel("远程目录路径").press(shortcut);
+  await page.locator(".terminal-surface textarea").press(shortcut);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__TEST__.calls.filter(
+          (c: any) => c.command === "prepare_remote_delete",
+        ).length,
+    ),
+  ).toBe(0);
+  await page
+    .locator('.file-row[data-path="/home/ops/one.txt"]')
+    .press(shortcut);
+  await expect(page.getByRole("dialog")).toContainText("/home/ops/one.txt");
+  await page.keyboard.press("Escape");
+  await page
+    .locator('.file-row[data-path="/home/ops/two.txt"]')
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "删除…", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("/home/ops/two.txt");
+  await expect(page.getByRole("dialog")).not.toContainText("/home/ops/one.txt");
+  expect(errors).toEqual([]);
+});
+
+test("delete reports partial results and read-only reconciliation never repeats deletion", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await page.evaluate(() => ((window as any).__TEST__.deleteMode = "partial"));
+  await page.locator('.file-row[data-path="/home/ops/one.txt"]').click();
+  await page
+    .locator('.file-row[data-path="/home/ops/two.txt"]')
+    .click({ modifiers: ["ControlOrMeta"] });
+  await page.getByRole("button", { name: "删除选中项目" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "永久删除", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole("button", { name: "查看文件任务" }).click();
+  const panel = page.getByRole("region", { name: "文件任务" });
+  await expect(panel).toContainText("部分项目未删除");
+  await panel.getByRole("button", { name: "详情", exact: true }).click();
+  await expect(panel).toContainText("权限不足");
+  await page.keyboard.press("Escape");
+  await expect(
+    page.locator('.file-row[data-path="/home/ops/one.txt"]'),
+  ).toHaveCount(0);
+  await expect(
+    page.locator('.file-row[data-path="/home/ops/two.txt"]'),
+  ).toBeVisible();
+  await page.evaluate(() => ((window as any).__TEST__.deleteMode = "unknown"));
+  await page.locator('.file-row[data-path="/home/ops/two.txt"]').click();
+  await page.getByRole("button", { name: "删除选中项目" }).click();
+  await dialog.getByRole("button", { name: "永久删除", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole("button", { name: "查看文件任务" }).click();
+  await expect(panel).toContainText("删除结果待核对");
+  const latest = panel.locator("[data-task-id]").first();
+  await latest.getByRole("button", { name: "详情", exact: true }).click();
+  await latest.getByRole("button", { name: "核对结果" }).click();
+  await expect(latest).toContainText("可能是同名新项目，未继续删除");
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__TEST__.calls.filter(
+          (c: any) => c.command === "start_remote_delete",
+        ).length,
+    ),
+  ).toBe(2);
+  expect(errors).toEqual([]);
+});
+
+test("delete remains stoppable and fits a narrow dark window", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await page.evaluate(() => ((window as any).__TEST__.holdDelete = true));
+  await page.locator('.file-row[data-path="/home/ops/one.txt"]').click();
+  await page.getByRole("button", { name: "删除选中项目" }).click();
+  await page.setViewportSize({ width: 430, height: 640 });
+  await page.emulateMedia({ colorScheme: "dark" });
+  const dialog = page.getByRole("dialog");
+  await page.screenshot({
+    path: ".qa/file-delete-confirm-dark.png",
+    animations: "disabled",
+  });
+  const box = await dialog.boundingBox();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(430);
+  await dialog.getByRole("button", { name: "永久删除", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole("button", { name: "查看文件任务" }).click();
+  const panel = page.getByRole("region", { name: "文件任务" });
+  await expect(
+    panel.getByRole("button", { name: "停止删除", exact: true }),
+  ).toBeEnabled();
+  await page.keyboard.press("Escape");
+  await expect(panel).not.toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__TEST__.calls.filter(
+          (c: any) => c.command === "cancel_remote_delete",
+        ).length,
+    ),
+  ).toBe(0);
+  await page.getByRole("button", { name: "查看文件任务" }).click();
+  await panel.getByRole("button", { name: "停止删除", exact: true }).click();
+  await expect(panel).toContainText("已停止删除");
+  await panel.getByRole("button", { name: "详情", exact: true }).click();
+  await expect(panel).toContainText("未执行");
+  await page.screenshot({
+    path: ".qa/file-tasks-delete-dark.png",
+    animations: "disabled",
+  });
+  expect(errors).toEqual([]);
+});
+
 test("create folder and file, retain validation errors and refresh only the target", async ({
   page,
 }) => {
@@ -457,10 +963,25 @@ test("blank-area paste and clipboard events support other windows and reservatio
   });
   await expect(page.getByLabel("粘贴项目", { exact: true })).toBeEnabled();
   const tree = page.getByRole("tree", { name: "远程文件树" });
-  await tree.dispatchEvent("contextmenu", { clientX: 100, clientY: 400 });
+  const treeBeforeMenu = await tree.boundingBox();
+  const pointer = {
+    x: treeBeforeMenu!.x + 60,
+    y: treeBeforeMenu!.y + treeBeforeMenu!.height - 16,
+  };
+  await page.mouse.click(pointer.x, pointer.y, { button: "right" });
   await expect(
     page.getByRole("menuitem", { name: "粘贴到此处", exact: true }),
   ).toBeVisible();
+  const menuBounds = (await page
+    .getByRole("menu", { name: "文件操作" })
+    .boundingBox())!;
+  expect(menuBounds.x).toBeCloseTo(pointer.x, 0);
+  expect(menuBounds.y).toBeLessThanOrEqual(pointer.y);
+  expect(menuBounds.y + menuBounds.height).toBeGreaterThanOrEqual(pointer.y);
+  expect(menuBounds.y + menuBounds.height).toBeLessThanOrEqual(
+    page.viewportSize()!.height - 4,
+  );
+  expect(await tree.boundingBox()).toEqual(treeBeforeMenu);
   await page.getByRole("menuitem", { name: "粘贴到此处", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("服务器内复制");
   expect(
@@ -563,8 +1084,8 @@ test("keyboard copy chooses a connected directory and shows byte progress before
     });
     qa.emit("transfer-updated", {});
   });
-  const panel = page.getByRole("region", { name: "传输任务" });
-  await page.getByRole("button", { name: "查看传输任务" }).click();
+  const panel = page.getByRole("region", { name: "文件任务" });
+  await page.getByRole("button", { name: "查看文件任务" }).click();
   await expect(panel.getByLabel("传输进度")).toHaveAttribute("value", "0.5");
   await panel.getByRole("button", { name: "详情", exact: true }).click();
   await expect(panel).toContainText("已提交 0 B");
@@ -595,8 +1116,8 @@ test("native folder drop has a visible target and frozen destination", async ({
   await dialog.getByLabel("传输同名处理").selectOption("overwrite");
   await expect(dialog).toContainText("将替换目标中的同名文件");
   await dialog.getByRole("button", { name: "确认覆盖并开始" }).click();
-  await page.getByRole("button", { name: "查看传输任务" }).click();
-  await expect(page.getByRole("region", { name: "传输任务" })).toContainText(
+  await page.getByRole("button", { name: "查看文件任务" }).click();
+  await expect(page.getByRole("region", { name: "文件任务" })).toContainText(
     "检查连接与权限",
   );
   const calls = await page.evaluate(() => (window as any).__TEST__.calls);
@@ -604,7 +1125,7 @@ test("native folder drop has a visible target and frozen destination", async ({
     calls.find((c: any) => c.command === "claim_file_drop").args.parentPath,
   ).toBe("/home/ops/folder");
   await page.getByLabel("取消传输").click();
-  await expect(page.getByRole("region", { name: "传输任务" })).toContainText(
+  await expect(page.getByRole("region", { name: "文件任务" })).toContainText(
     "正在停止",
   );
   expect(errors).toEqual([]);
@@ -731,7 +1252,7 @@ test("uncertain commits require reconciliation; interrupted execution can retry 
     qa.tasks[0].error = "完成确认丢失";
     qa.emit("transfer-updated", {});
   });
-  await page.getByRole("button", { name: "查看传输任务" }).click();
+  await page.getByRole("button", { name: "查看文件任务" }).click();
   await expect(
     page.getByRole("button", { name: "核对状态", exact: true }),
   ).toBeVisible();
@@ -741,7 +1262,7 @@ test("uncertain commits require reconciliation; interrupted execution can retry 
     qa.tasks[0].status = "interrupted";
     qa.emit("transfer-updated", {});
   });
-  await expect(page.getByRole("region", { name: "传输任务" })).toContainText(
+  await expect(page.getByRole("region", { name: "文件任务" })).toContainText(
     "已中断，请检查目标",
   );
   await expect(page.getByLabel("重试传输")).toHaveCount(0);
@@ -800,12 +1321,12 @@ test("direct authentication and digest options are explicit; cleanup remains ind
     });
     qa.emit("transfer-updated", {});
   });
-  await page.getByRole("button", { name: "查看传输任务" }).click();
-  await expect(page.getByRole("region", { name: "传输任务" })).toContainText(
+  await page.getByRole("button", { name: "查看文件任务" }).click();
+  await expect(page.getByRole("region", { name: "文件任务" })).toContainText(
     "已完成",
   );
   await page
-    .getByRole("region", { name: "传输任务" })
+    .getByRole("region", { name: "文件任务" })
     .getByRole("button", { name: "详情", exact: true })
     .click();
   await page.getByRole("button", { name: "清理临时资源" }).click();
@@ -907,7 +1428,7 @@ test("quitting includes uploads and direct transfers without native confirm", as
     (window as any).__TEST__.emit("tauri://close-requested", {}),
   );
   const dialog = page.getByRole("dialog");
-  await expect(dialog).toContainText("1 个传输尚未完成");
+  await expect(dialog).toContainText("1 个文件任务尚未完成");
   await dialog.getByRole("button", { name: "继续使用" }).click();
   expect(
     await page.evaluate(
@@ -917,9 +1438,16 @@ test("quitting includes uploads and direct transfers without native confirm", as
         ).length,
     ),
   ).toBe(0);
+  await page.evaluate(() => {
+    (window as any).__TEST__.deleteTask = {
+      id: "background-delete",
+      status: "running",
+    };
+  });
   await page.evaluate(() =>
     (window as any).__TEST__.emit("tauri://close-requested", {}),
   );
+  await expect(dialog).toContainText("2 个文件任务尚未完成");
   await dialog.getByRole("button", { name: "确认退出" }).click();
   await expect
     .poll(() =>
@@ -969,7 +1497,7 @@ async function seedTransferTasks(
     qa.emit("transfer-updated", {});
   }, patches);
   await expect(
-    page.getByRole("button", { name: "查看传输任务" }),
+    page.getByRole("button", { name: "查看文件任务" }),
   ).toBeVisible();
 }
 
@@ -988,10 +1516,10 @@ test("transfer popover stays collapsed on new tasks, sorts all types and preserv
       error: "连接中断",
     },
   ]);
-  const trigger = page.getByRole("button", { name: "查看传输任务" });
-  const panel = page.getByRole("region", { name: "传输任务" });
+  const trigger = page.getByRole("button", { name: "查看文件任务" });
+  const panel = page.getByRole("region", { name: "文件任务" });
   await expect(trigger).toHaveAttribute("aria-expanded", "false");
-  await expect(page.getByLabel("总传输进度")).toHaveAttribute("value", "0.5");
+  await expect(page.getByLabel("文件任务进度")).toHaveAttribute("value", "0.5");
   const terminal = page.locator(".terminal-host").first();
   const before = await terminal.boundingBox();
   await trigger.click();
@@ -1049,8 +1577,8 @@ test("retry modal owns Escape and moves only the retried task to the top", async
     { id: "failed", sortOrder: 1, status: "failed", error: "连接中断" },
     { id: "done", sortOrder: 2 },
   ]);
-  await page.getByRole("button", { name: "查看传输任务" }).click();
-  const panel = page.getByRole("region", { name: "传输任务" });
+  await page.getByRole("button", { name: "查看文件任务" }).click();
+  const panel = page.getByRole("region", { name: "文件任务" });
   const retry = panel.locator('[data-task-id="failed"]').getByLabel("重试传输");
   await retry.click();
   const dialog = page.getByRole("dialog", { name: "重试未完成项目" });
@@ -1075,7 +1603,7 @@ test("retry modal owns Escape and moves only the retried task to the top", async
     qa.tasks.find((task: any) => task.id === "failed").status = "completed";
     qa.emit("transfer-updated", {});
   });
-  await expect(page.getByLabel("总传输进度")).toHaveCount(0);
+  await expect(page.getByLabel("文件任务进度")).toHaveCount(0);
   await expect(panel).toBeVisible();
   await expect(panel.locator("[data-task-id]")).toHaveCount(2);
   expect(errors).toEqual([]);
@@ -1092,7 +1620,7 @@ test("new tasks preserve the history scroll anchor and details across collapse",
       sortOrder: i + 1,
     })),
   );
-  const trigger = page.getByRole("button", { name: "查看传输任务" });
+  const trigger = page.getByRole("button", { name: "查看文件任务" });
   await trigger.click();
   const list = page.locator(".transfer-task-list");
   await list.evaluate((el) => {
@@ -1161,9 +1689,9 @@ test("popover fits a narrow dark window and preserves rows when refresh fails", 
     },
     { id: "done", kind: "direct" },
   ]);
-  const trigger = page.getByRole("button", { name: "查看传输任务" });
+  const trigger = page.getByRole("button", { name: "查看文件任务" });
   await trigger.click();
-  const panel = page.getByRole("region", { name: "传输任务" });
+  const panel = page.getByRole("region", { name: "文件任务" });
   const box = (await panel.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(380);
@@ -1200,17 +1728,17 @@ test("detached window shares task behavior and keeps its bottom entry inside the
   await expect(page.locator(".detached-app")).toBeVisible();
   await page.setViewportSize({ width: 720, height: 580 });
   await seedTransferTasks(page, [{ id: "detached", status: "running" }]);
-  const trigger = page.getByRole("button", { name: "查看传输任务" });
+  const trigger = page.getByRole("button", { name: "查看文件任务" });
   await expect(trigger).toHaveAttribute("aria-expanded", "false");
   const workspaces = page.locator(".detached-app .workspaces");
   const before = await workspaces.boundingBox();
   await trigger.click();
-  await expect(page.getByRole("region", { name: "传输任务" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "文件任务" })).toBeVisible();
   expect(await workspaces.boundingBox()).toEqual(before);
   const box = (await trigger.boundingBox())!;
   expect(box.y + box.height).toBeLessThanOrEqual(580);
   await page.getByLabel("取消传输").click();
-  await expect(page.getByRole("region", { name: "传输任务" })).toContainText(
+  await expect(page.getByRole("region", { name: "文件任务" })).toContainText(
     "正在停止",
   );
   expect(errors).toEqual([]);
@@ -1243,7 +1771,7 @@ test("an update received during a list request is fetched after that request fin
     qa.emit("transfer-updated", {});
     qa.releaseList();
   });
-  const trigger = page.getByRole("button", { name: "查看传输任务" });
+  const trigger = page.getByRole("button", { name: "查看文件任务" });
   await expect(trigger).toContainText("2 项进行中");
   await expect(trigger).toHaveAttribute("aria-expanded", "false");
   await trigger.click();
@@ -1251,4 +1779,129 @@ test("an update received during a list request is fetched after that request fin
     "data-task-id",
     "arriving",
   );
+});
+
+test("file tasks keep an empty entry, filter mixed operations and remove only finished records", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  const trigger = page.getByRole("button", { name: "查看文件任务" });
+  await trigger.click();
+  const panel = page.getByRole("region", { name: "文件任务" });
+  await expect(panel).toContainText("暂无文件任务");
+  await page.keyboard.press("Escape");
+  await seedTransferTasks(page, [
+    { id: "done", sortOrder: 1, status: "completed" },
+    { id: "upload", sortOrder: 2, status: "running" },
+  ]);
+  await page.evaluate(() => {
+    (window as any).__TEST__.holdDelete = true;
+  });
+  await page.locator('.file-row[data-path="/home/ops/folder"]').click();
+  await page.getByRole("button", { name: "删除选中项目" }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "永久删除", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByLabel("文件任务进度")).not.toHaveAttribute("value");
+  await trigger.click();
+  await expect(panel.locator("[data-task-id]")).toHaveCount(3);
+  await panel.getByRole("button", { name: "进行中", exact: true }).click();
+  await expect(panel.locator("[data-task-id]")).toHaveCount(2);
+  await panel.getByRole("button", { name: "全部", exact: true }).click();
+  await panel.getByRole("button", { name: "清除已完成记录" }).click();
+  await expect(panel.locator("[data-task-id]")).toHaveCount(2);
+  await expect(panel.locator('[data-task-id="done"]')).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: "停止删除" })).toBeEnabled();
+  await expect(panel.getByLabel("取消传输")).toBeEnabled();
+  await panel.getByRole("button", { name: "需处理", exact: true }).click();
+  await expect(panel).toContainText("没有符合条件的任务");
+  expect(errors).toEqual([]);
+});
+
+test("delete retry prepares a new confirmation and preserves the original result", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await page.evaluate(() => {
+    (window as any).__TEST__.deleteMode = "partial";
+  });
+  await page.locator('.file-row[data-path="/home/ops/one.txt"]').click();
+  await page
+    .locator('.file-row[data-path="/home/ops/two.txt"]')
+    .click({ modifiers: ["ControlOrMeta"] });
+  await page.getByRole("button", { name: "删除选中项目" }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "永久删除", exact: true })
+    .click();
+  await page.getByRole("button", { name: "查看文件任务" }).click();
+  const panel = page.getByRole("region", { name: "文件任务" });
+  await expect(panel).toContainText("部分项目未删除");
+  await panel.getByRole("button", { name: "重新发起删除" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("/home/ops/two.txt");
+  await expect(dialog).not.toContainText("/home/ops/one.txt");
+  await expect(dialog).toContainText("后来新增的内容");
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__TEST__.calls.filter(
+          (c: any) => c.command === "start_remote_delete",
+        ).length,
+    ),
+  ).toBe(1);
+  await page.evaluate(() => {
+    (window as any).__TEST__.deleteMode = "success";
+  });
+  await dialog.getByRole("button", { name: "永久删除", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(panel.locator("[data-task-id]")).toHaveCount(2);
+  await expect(panel.locator("[data-task-id]").first()).toContainText(
+    "删除完成",
+  );
+  await expect(panel.locator("[data-task-id]").last()).toContainText(
+    "部分项目未删除",
+  );
+  expect(errors).toEqual([]);
+});
+
+test("large task history loads additional pages and quitting fails closed on task query error", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await seedTransferTasks(
+    page,
+    Array.from({ length: 65 }, (_, i) => ({
+      id: `page-${i}`,
+      sortOrder: i + 1,
+    })),
+  );
+  await page.getByRole("button", { name: "查看文件任务" }).click();
+  const panel = page.getByRole("region", { name: "文件任务" });
+  await expect(panel.locator("[data-task-id]")).toHaveCount(50);
+  await panel.getByRole("button", { name: "加载更多任务" }).click();
+  await expect(panel.locator("[data-task-id]")).toHaveCount(65);
+  const ids = await panel
+    .locator("[data-task-id]")
+    .evaluateAll((rows) => rows.map((r) => r.getAttribute("data-task-id")));
+  expect(new Set(ids).size).toBe(65);
+  await page.evaluate(() => {
+    const qa = (window as any).__TEST__;
+    qa.failList = true;
+    qa.emit("tauri://close-requested", {});
+  });
+  await expect(page.locator(".connection-error")).toContainText(
+    "任务列表暂时不可用",
+  );
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__TEST__.calls.filter(
+          (c: any) => c.command === "quit_app",
+        ).length,
+    ),
+  ).toBe(0);
+  expect(errors).toEqual([]);
 });

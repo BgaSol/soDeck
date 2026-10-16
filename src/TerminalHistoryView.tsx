@@ -656,7 +656,6 @@ export function TerminalHistoryApp() {
       <WindowTitlebar
         title="终端历史"
         subtitle="查找服务器和 Docker 容器终端中已保存的内容"
-        tone="terminal"
       />
       <TerminalHistoryView global />
     </main>

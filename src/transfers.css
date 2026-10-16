@@ -32,9 +32,9 @@
   padding: 3px 7px;
   gap: 8px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: transparent;
-  font-size: 12px;
+  font-size: var(--font-secondary);
   font-variant-numeric: tabular-nums;
 }
 .transfer-status-trigger[aria-expanded="true"] {
@@ -64,12 +64,10 @@
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--strong-line);
-  border-radius: 8px;
-  box-shadow: 0 8px 28px rgb(0 0 0 / 18%);
+  border-radius: var(--radius-popover);
+  box-shadow: var(--shadow-popover);
   overflow: hidden;
-  font-size: 12px;
-  animation: transfer-popover-in 150ms ease-out;
-  transform-origin: bottom right;
+  font-size: var(--font-secondary);
 }
 .transfer-popover[hidden] {
   display: none;
@@ -77,13 +75,13 @@
 .transfer-popover-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: 0.7rem;
+  padding: 0.6rem 0.85rem;
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
 }
 .transfer-popover-head strong {
-  font-size: 13px;
+  font-size: var(--font-body);
   font-weight: 500;
 }
 .transfer-popover-head > span {
@@ -92,10 +90,10 @@
 }
 .transfer-close {
   padding: 3px;
-  min-width: 26px;
-  min-height: 26px;
+  min-width: var(--control-compact);
+  min-height: var(--control-compact);
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: transparent;
 }
 .transfer-task-list {
@@ -122,7 +120,7 @@
   color: var(--muted);
 }
 .transfer-task-heading strong {
-  font-size: 12px;
+  font-size: var(--font-secondary);
   font-weight: 500;
   flex: 1;
   overflow: hidden;
@@ -131,7 +129,7 @@
 }
 .transfer-task-heading time {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }
@@ -183,7 +181,7 @@
   gap: 4px;
   margin: 7px 0 0 23px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
   font-variant-numeric: tabular-nums;
 }
 .transfer-state {
@@ -204,16 +202,16 @@
 }
 .transfer-row-actions button,
 .transfer-cleanup button {
-  min-height: 24px;
+  min-height: var(--control-compact);
   padding: 2px 5px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: transparent;
-  color: var(--blue);
-  font-size: 11px;
+  color: var(--accent-text);
+  font-size: var(--font-caption);
 }
-.transfer-row-actions button:hover,
-.transfer-cleanup button:hover {
+.transfer-row-actions button:hover:not(:disabled),
+.transfer-cleanup button:hover:not(:disabled) {
   background: var(--hover);
 }
 .transfer-task-details {
@@ -270,18 +268,8 @@
   border: 0;
   border-radius: 0;
   border-bottom: 1px solid var(--line);
-  color: var(--blue);
-  font-size: 12px;
-}
-@keyframes transfer-popover-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  color: var(--accent-text);
+  font-size: var(--font-secondary);
 }
 @keyframes transfer-progress {
   from {
@@ -322,7 +310,6 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .transfer-popover,
   .transfer-status-trigger progress:indeterminate,
   .transfer-task-row > progress:indeterminate,
   .transfer-status-trigger progress:indeterminate::-webkit-progress-bar,
@@ -334,3 +321,29 @@
     transition: none;
   }
 }
+
+.file-task-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.file-task-filters button {
+  font-size: var(--font-caption);
+  padding: 4px 7px;
+  border: 0;
+  background: transparent;
+}
+.file-task-filters button[aria-pressed="true"] {
+  background: var(--hover);
+  color: var(--blue);
+}
+.file-task-clear { margin-left: auto; }
+.file-task-empty { padding: 18px 14px; color: var(--muted); text-align: center; }
+.delete-task-count { margin: 6px 0 4px 23px; color: var(--muted); font-size: var(--font-caption); }
+.delete-task-row > .delete-current-path { margin: 4px 0 4px 23px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.delete-task-results { padding-left: 16px; margin-block: 8px; }
+.delete-task-results li { overflow-wrap: anywhere; white-space: pre-wrap; margin-block: 7px; }
