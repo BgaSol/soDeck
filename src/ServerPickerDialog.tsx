@@ -57,6 +57,7 @@ export function ServerPickerDialog({
   const search = useRef<HTMLInputElement>(null);
   const addButton = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [forwardError, setForwardError] = useState("");
   const [menu, setMenu] = useState<{
     server: Server;
     x: number;
@@ -243,9 +244,12 @@ export function ServerPickerDialog({
           </div>
         )}
       </div>
-      {(busy || error) && (
-        <div className="server-picker-status" role={error ? "alert" : "status"}>
-          {error || "正在建立连接，请完成指纹确认或登录认证…"}
+      {(busy || error || forwardError) && (
+        <div
+          className="server-picker-status"
+          role={error || forwardError ? "alert" : "status"}
+        >
+          {forwardError || error || "正在建立连接，请完成指纹确认或登录认证…"}
           {onResetDatabase && (
             <button onClick={onResetDatabase}>备份旧库并重建</button>
           )}
@@ -258,14 +262,15 @@ export function ServerPickerDialog({
               className="quiet"
               disabled={busy || !selected}
               onClick={() => {
+                setForwardError("");
                 void forwardApi
                   .open(selected?.id)
                   .then(onClose)
-                  .catch((e) => window.alert(String(e?.message || e)));
+                  .catch((e) => setForwardError(String(e?.message || e)));
               }}
             >
               <Network size={14} />
-              配置端口转发
+              端口转发
             </button>
             <button
               className="quiet"

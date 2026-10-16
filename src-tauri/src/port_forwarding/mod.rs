@@ -89,7 +89,7 @@ pub struct PortForwardManager {
     pub runs: Mutex<HashMap<String, Arc<Run>>>,
     pub total_connections: AtomicUsize,
     pub intents: Mutex<HashMap<String, String>>,
-    pub selected_server: Mutex<Option<String>>,
+    pub open_request: Mutex<Option<OpenRequest>>,
     observers: Mutex<HashMap<String, Arc<observe::Observer>>>,
     pub window_pending: AtomicBool,
 }
@@ -105,7 +105,7 @@ impl PortForwardManager {
             runs: Mutex::new(HashMap::new()),
             total_connections: AtomicUsize::new(0),
             intents: Mutex::new(HashMap::new()),
-            selected_server: Mutex::new(None),
+            open_request: Mutex::new(None),
             observers: Mutex::new(HashMap::new()),
             window_pending: AtomicBool::new(false),
         }

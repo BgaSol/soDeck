@@ -48,7 +48,10 @@ pub async fn open_port_forward_window(
     if let Some(id) = &server_id {
         state.database.lock().unwrap().get(id)?;
     }
-    *state.port_forwarding.selected_server.lock().unwrap() = server_id;
+    *state.port_forwarding.open_request.lock().unwrap() = Some(OpenRequest {
+        id: uuid::Uuid::new_v4().to_string(),
+        server_id,
+    });
     if let Some(existing) = window.app_handle().get_webview_window("port-forwarding") {
         existing
             .unminimize()

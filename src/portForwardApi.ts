@@ -47,7 +47,12 @@ export interface ForwardRuntime {
   retryAt: number | null;
   error: AppError | null;
   prompt: ForwardPrompt | null;
-  targetResult: ForwardNote | null;
+  targetResult: {
+    at: number;
+    success: boolean;
+    source: "probe" | "connection";
+    message: string;
+  } | null;
   probeId: string | null;
   notes: ForwardNote[];
 }
@@ -63,12 +68,16 @@ export interface ForwardSummary {
   connections: number;
   attention: number;
 }
+export interface ForwardOpenRequest {
+  id: string;
+  serverId: string | null;
+}
 export interface ForwardFrame {
   subscriptionId: string;
   revision: number;
   rules: ForwardView[];
   servers: Server[];
-  selectedServer: string | null;
+  openRequest: ForwardOpenRequest | null;
   error: AppError | null;
 }
 export const forwardApi = {
@@ -164,8 +173,8 @@ export function emptyForward(serverId = ""): ForwardRule {
       serverId,
       listenAddress: "127.0.0.1",
       listenPort: null,
-      targetHost: "",
-      targetPort: 3306,
+      targetHost: "127.0.0.1",
+      targetPort: 0,
       autoReconnect: true,
     },
   };

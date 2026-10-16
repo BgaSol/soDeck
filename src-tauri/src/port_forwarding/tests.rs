@@ -148,6 +148,30 @@ fn forward_worker_lifecycle_reconnect_pinned_identity_and_configuration_snapshot
     until(|| run.view.lock().unwrap().phase == "ready");
     let address = run.view.lock().unwrap().actual_address.clone().unwrap();
     echo(&address);
+    {
+        let view = run.view.lock().unwrap();
+        let result = view.target_result.as_ref().unwrap();
+        assert!(result.success);
+        assert_eq!(result.source, TargetSource::Connection);
+    }
+    run.control(Control::Probe("success-probe".into())).unwrap();
+    until(|| {
+        run.view
+            .lock()
+            .unwrap()
+            .target_result
+            .as_ref()
+            .is_some_and(|r| r.source == TargetSource::Probe)
+    });
+    assert!(
+        run.view
+            .lock()
+            .unwrap()
+            .target_result
+            .as_ref()
+            .unwrap()
+            .success
+    );
     assert!(
         state.terminals.lock().unwrap().is_empty(),
         "forward-only account needs no terminal"
@@ -177,6 +201,10 @@ fn forward_worker_lifecycle_reconnect_pinned_identity_and_configuration_snapshot
         "local port remains reserved"
     );
     until(|| run.view.lock().unwrap().phase == "ready");
+    assert!(
+        run.view.lock().unwrap().target_result.is_none(),
+        "a new SSH connection invalidates previous target results"
+    );
     echo(&address);
     // A changed key pauses retries and retains the same local port.
     fixture.restart(true);
@@ -345,10 +373,37 @@ fn forward_observer_requires_ack_and_expires_with_its_window_generation() {
     };
     assert!(state.port_forwarding.ack(&id, 1, &wrong).is_err());
     assert!(state.port_forwarding.ack(&id, 2, &owner).is_err());
+    assert!(frames.lock().unwrap()[0]["openRequest"].is_null());
+    *state.port_forwarding.open_request.lock().unwrap() = Some(OpenRequest {
+        id: "server-entry".into(),
+        server_id: Some("server".into()),
+    });
     state.port_forwarding.ack(&id, 1, &owner).unwrap();
     until(|| frames.lock().unwrap().len() == 2);
+    assert_eq!(
+        frames.lock().unwrap()[1]["openRequest"]["serverId"],
+        "server"
+    );
+    state.port_forwarding.ack(&id, 2, &owner).unwrap();
+    until(|| frames.lock().unwrap().len() == 3);
+    assert_eq!(
+        frames.lock().unwrap()[2]["openRequest"]["id"],
+        "server-entry",
+        "request survives replay until superseded"
+    );
+    *state.port_forwarding.open_request.lock().unwrap() = Some(OpenRequest {
+        id: "global-entry".into(),
+        server_id: None,
+    });
+    state.port_forwarding.ack(&id, 3, &owner).unwrap();
+    until(|| frames.lock().unwrap().len() == 4);
+    assert_eq!(
+        frames.lock().unwrap()[3]["openRequest"]["id"],
+        "global-entry"
+    );
+    assert!(frames.lock().unwrap()[3]["openRequest"]["serverId"].is_null());
     state.port_forwarding.window_closed(&owner);
-    assert!(state.port_forwarding.ack(&id, 2, &owner).is_err());
+    assert!(state.port_forwarding.ack(&id, 4, &owner).is_err());
 }
 
 #[test]
@@ -485,6 +540,27 @@ fn forward_openssh_restricted_accounts() {
         "ready",
         "target denial must not stop SSH route"
     );
+    assert!(
+        !denied
+            .view
+            .lock()
+            .unwrap()
+            .target_result
+            .as_ref()
+            .unwrap()
+            .success
+    );
+    assert_eq!(
+        denied
+            .view
+            .lock()
+            .unwrap()
+            .target_result
+            .as_ref()
+            .unwrap()
+            .source,
+        TargetSource::Probe
+    );
     let result = denied
         .view
         .lock()
@@ -501,4 +577,51 @@ fn forward_openssh_restricted_accounts() {
         "{result}"
     );
     echo(&address);
+}
+
+#[test]
+#[ignore = "isolated real SSH; requires Python paramiko"]
+fn forward_cancelled_probe_does_not_publish_late_target_failure() {
+    let fixture = Fixture::new();
+    let state = crate::connection::tests::state();
+    let _stop = Stop(state.clone());
+    let mut denied = configure(&state, fixture.port);
+    denied.settings.target_host = "denied.invalid".into();
+    let denied = state
+        .port_forwarding
+        .with_store(|s| s.save(denied))
+        .unwrap();
+    let run = start(&state, &denied);
+    trust(&run);
+    until(|| run.view.lock().unwrap().phase == "ready");
+    let pause = fixture.dir.path().join("pause-forward");
+    std::fs::write(&pause, "pause").unwrap();
+    run.control(Control::Probe("cancel-me".into())).unwrap();
+    until(|| fixture.dir.path().join("forward-waiting").exists());
+    run.control(Control::CancelProbe("cancel-me".into()))
+        .unwrap();
+    until(|| run.view.lock().unwrap().probe_id.is_none());
+    std::fs::remove_file(pause).unwrap();
+    until(|| fixture.dir.path().join("forward-replied").exists());
+    // A following probe must be the first published result, even if the old
+    // abandoned open is rejected while this new probe waits in the queue.
+    run.control(Control::Probe("real-probe".into())).unwrap();
+    until(|| run.view.lock().unwrap().target_result.is_some());
+    until(|| run.view.lock().unwrap().probe_id.is_none());
+    let view = run.view.lock().unwrap();
+    assert_eq!(view.phase, "ready");
+    assert!(!view.target_result.as_ref().unwrap().success);
+    assert_eq!(
+        view.target_result.as_ref().unwrap().source,
+        TargetSource::Probe
+    );
+    assert_eq!(
+        view.notes
+            .iter()
+            .filter(|n| n.message.starts_with("目标 denied.invalid:"))
+            .map(|n| n.count)
+            .sum::<u32>(),
+        1,
+        "cancelled probe must not publish a late failure or event"
+    );
 }

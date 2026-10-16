@@ -1526,3 +1526,30 @@ dialog .form-columns.equal {
     display: none;
   }
 }
+
+.forward-entry {
+  position: relative;
+}
+.forward-entry > svg {
+  flex-shrink: 0;
+}
+.forward-entry-icon {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 6px;
+  flex-shrink: 0;
+}
+.forward-entry-indicator {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--green);
+  pointer-events: none;
+}
+.forward-entry-indicator[data-state="attention"] {
+  background: var(--warning);
+}

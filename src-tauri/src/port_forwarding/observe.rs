@@ -11,7 +11,7 @@ pub struct Frame {
     pub revision: u64,
     pub rules: Vec<RuleView>,
     pub servers: Vec<ServerView>,
-    pub selected_server: Option<String>,
+    pub open_request: Option<OpenRequest>,
     pub error: Option<AppError>,
 }
 pub struct Observer {
@@ -90,12 +90,7 @@ impl PortForwardManager {
                         rules: result
                             .unwrap_or_else(|_| state.port_forwarding.emergency_snapshot()),
                         servers: servers.unwrap_or_default(),
-                        selected_server: state
-                            .port_forwarding
-                            .selected_server
-                            .lock()
-                            .unwrap()
-                            .take(),
+                        open_request: state.port_forwarding.open_request.lock().unwrap().clone(),
                         error,
                     };
                     observer.revision.store(revision + 1, Ordering::SeqCst);

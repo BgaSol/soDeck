@@ -464,7 +464,11 @@ export function App() {
         onError={(error) => setError(errorOf(error))}
         actions={
           <>
-            <PortForwardButton summary onError={(e) => setError(errorOf(e))} />
+            <PortForwardButton
+              iconOnly
+              summary
+              onError={(e) => setError(errorOf(e))}
+            />
             <button
               className="quiet"
               aria-label="终端历史"

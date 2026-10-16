@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   forwardApi,
   type ForwardFrame,
+  type ForwardOpenRequest,
   type ForwardView,
 } from "./portForwardApi";
 import { errorOf, type Server } from "./types";
@@ -13,9 +14,10 @@ export function usePortForwards() {
   const [generation, setGeneration] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [loaded, setLoaded] = useState(false);
-  const [selectedServer, setSelectedServer] = useState<string | null>(null);
-  const selection = useRef(0);
-  const [selectionVersion, setSelectionVersion] = useState(0);
+  const [openRequest, setOpenRequest] = useState<ForwardOpenRequest | null>(
+    null,
+  );
+  const lastRequest = useRef("");
   useEffect(() => {
     let disposed = false,
       subscription = "",
@@ -51,9 +53,12 @@ export function usePortForwards() {
           setServers(frame.servers);
           setError(frame.error?.message || "");
           setLoaded(true);
-          if (frame.selectedServer) {
-            setSelectedServer(frame.selectedServer);
-            setSelectionVersion(++selection.current);
+          if (
+            frame.openRequest &&
+            frame.openRequest.id !== lastRequest.current
+          ) {
+            lastRequest.current = frame.openRequest.id;
+            setOpenRequest(frame.openRequest);
           }
           void forwardApi
             .ack(currentGeneration, frame.subscriptionId, frame.revision)
@@ -96,7 +101,6 @@ export function usePortForwards() {
     generation,
     error,
     loaded,
-    selectedServer,
-    selectionVersion,
+    openRequest,
   };
 }

@@ -330,6 +330,12 @@ fn serve(
                                 Err(e) => {
                                     let mut view = run.view.lock().unwrap();
                                     view.probe_id = None;
+                                    view.target_result = Some(TargetResult {
+                                        at: now(),
+                                        success: false,
+                                        source: TargetSource::Probe,
+                                        message: e.message.clone(),
+                                    });
                                     view.note(e.message);
                                 }
                             }
@@ -342,7 +348,9 @@ fn serve(
                         if let Some(core) = &mut core {
                             core.cancel(id);
                         }
-                        run.view.lock().unwrap().probe_id = None;
+                        let mut view = run.view.lock().unwrap();
+                        view.probe_id = None;
+                        view.note("已取消目标连接测试");
                     }
                 }
                 _ => {}
@@ -370,6 +378,7 @@ fn serve(
                     view.connection = Some(context.view());
                     view.phase("ready");
                     view.error = None;
+                    view.target_result = None;
                     view.retry_at = None;
                     view.note("SSH 路径已就绪，可以连接本地端口");
                     *run.context.lock().unwrap() = Some(context);
@@ -430,10 +439,19 @@ fn serve(
                         received = received.saturating_add(r);
                     }
                     Update::Opened(id) => {
-                        view.target_result = Some(Note {
+                        let is_probe = probe.as_ref().is_some_and(|(_, p)| *p == id);
+                        if !is_probe && !clients.ids.contains(&id) {
+                            continue;
+                        }
+                        view.target_result = Some(TargetResult {
                             at: now(),
                             message: format!("目标 {}:{} TCP 连接成功", target.host, target.port),
-                            count: 1,
+                            success: true,
+                            source: if is_probe {
+                                TargetSource::Probe
+                            } else {
+                                TargetSource::Connection
+                            },
                         });
                         if probe.as_ref().is_some_and(|(_, p)| *p == id) {
                             probe = None;
@@ -441,15 +459,25 @@ fn serve(
                         }
                     }
                     Update::Failed(id, e) => {
+                        let is_probe = probe.as_ref().is_some_and(|(_, p)| *p == id);
+                        // Cancelled probes are no longer registered. Ignore late open failures.
+                        if !is_probe && !clients.ids.contains(&id) {
+                            continue;
+                        }
                         clients.remove(id);
                         view.note(format!(
                             "目标 {}:{}：{}",
                             target.host, target.port, e.message
                         ));
-                        view.target_result = Some(Note {
+                        view.target_result = Some(TargetResult {
                             at: now(),
                             message: e.message,
-                            count: 1,
+                            success: false,
+                            source: if is_probe {
+                                TargetSource::Probe
+                            } else {
+                                TargetSource::Connection
+                            },
                         });
                         if probe.as_ref().is_some_and(|(_, p)| *p == id) {
                             probe = None;

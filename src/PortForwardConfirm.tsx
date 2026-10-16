@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DialogHeader } from "./DialogHeader";
 
+export interface ForwardConfirmation {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  danger?: boolean;
+}
+
 function ConfirmDialog({
-  message,
+  request,
   finish,
 }: {
-  message: string;
+  request: ForwardConfirmation;
   finish: (answer: boolean) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -24,17 +31,20 @@ function ConfirmDialog({
     >
       <DialogHeader
         id="forward-confirm-title"
-        title="确认操作"
+        title={request.title}
         closeLabel="取消操作"
         onClose={() => finish(false)}
       />
-      <p>{message}</p>
+      <p>{request.message}</p>
       <footer className="dialog-actions">
         <button autoFocus onClick={() => finish(false)}>
           取消
         </button>
-        <button className="primary" onClick={() => finish(true)}>
-          确认
+        <button
+          className={request.danger ? "primary forward-danger" : "primary"}
+          onClick={() => finish(true)}
+        >
+          {request.confirmLabel}
         </button>
       </footer>
     </dialog>
@@ -42,19 +52,19 @@ function ConfirmDialog({
 }
 
 export function useForwardConfirm() {
-  const [message, setMessage] = useState("");
+  const [request, setRequest] = useState<ForwardConfirmation | null>(null);
   const pending = useRef<((value: boolean) => void) | null>(null);
-  const confirm = useCallback((message: string) => {
+  const confirm = useCallback((request: ForwardConfirmation) => {
     if (pending.current) return Promise.resolve(false);
     return new Promise<boolean>((resolve) => {
       pending.current = resolve;
-      setMessage(message);
+      setRequest(request);
     });
   }, []);
   function finish(value: boolean) {
     const resolve = pending.current;
     pending.current = null;
-    setMessage("");
+    setRequest(null);
     resolve?.(value);
   }
   useEffect(
@@ -66,8 +76,8 @@ export function useForwardConfirm() {
   );
   return {
     confirm,
-    dialog: message ? (
-      <ConfirmDialog message={message} finish={finish} />
+    dialog: request ? (
+      <ConfirmDialog request={request} finish={finish} />
     ) : null,
   };
 }

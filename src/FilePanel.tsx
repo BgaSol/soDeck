@@ -29,6 +29,7 @@ import {
   MemoryStick,
   ClipboardCopy,
   Info,
+  Plus,
   Trash2,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -165,6 +166,8 @@ export function FilePanel({
   const [menu, setMenu] = useState<{
     file: FileEntry;
     blank?: boolean;
+    create?: boolean;
+    anchor?: HTMLButtonElement;
     x: number;
     y: number;
   } | null>(null);
@@ -546,10 +549,19 @@ export function FilePanel({
       ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
       ?.focus();
     const dismiss = () => setMenu(null);
+    const outside = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !contextMenu.current?.contains(event.target) &&
+        !menu.anchor?.contains(event.target)
+      )
+        dismiss();
+    };
     const key = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         dismiss();
-        rowElements.current.get(menu.file.path)?.focus();
+        if (menu.anchor?.isConnected) menu.anchor.focus();
+        else rowElements.current.get(menu.file.path)?.focus();
       }
       if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
         const buttons = Array.from(
@@ -574,12 +586,12 @@ export function FilePanel({
         buttons[next]?.focus();
       }
     };
-    window.addEventListener("click", dismiss);
+    document.addEventListener("pointerdown", outside, true);
     window.addEventListener("blur", dismiss);
     window.addEventListener("resize", dismiss);
     window.addEventListener("keydown", key);
     return () => {
-      window.removeEventListener("click", dismiss);
+      document.removeEventListener("pointerdown", outside, true);
       window.removeEventListener("blur", dismiss);
       window.removeEventListener("resize", dismiss);
       window.removeEventListener("keydown", key);
@@ -654,21 +666,33 @@ export function FilePanel({
           <div className="file-toolbar">
             <button
               className="icon-button"
-              aria-label="新建文件"
-              title="新建文件"
+              aria-label="新建"
+              title="新建文件或文件夹"
+              aria-haspopup="menu"
+              aria-expanded={menu?.create || undefined}
               disabled={!sessionId || busy}
-              onClick={() => create("file", state.currentPath)}
+              onClick={(event) => {
+                if (menu?.create) {
+                  setMenu(null);
+                  return;
+                }
+                const bounds = event.currentTarget.getBoundingClientRect();
+                setMenu({
+                  create: true,
+                  anchor: event.currentTarget,
+                  file: {
+                    name: state.currentPath,
+                    path: state.currentPath,
+                    isDir: true,
+                    size: 0,
+                    modified: 0,
+                  },
+                  x: bounds.right - 190,
+                  y: bounds.bottom + 5,
+                });
+              }}
             >
-              <FilePlus2 size={15} />
-            </button>
-            <button
-              className="icon-button"
-              aria-label="新建文件夹"
-              title="新建文件夹"
-              disabled={!sessionId || busy}
-              onClick={() => create("directory", state.currentPath)}
-            >
-              <FolderPlus size={15} />
+              <Plus size={16} />
             </button>
             <button
               className="icon-button"
@@ -678,79 +702,6 @@ export function FilePanel({
               onClick={() => void pickUpload(state.currentPath)}
             >
               <Upload size={15} />
-            </button>
-            <button
-              className="icon-button"
-              aria-label="编辑选中文件"
-              title="编辑文本文件（UTF-8，最大 1 MB）"
-              disabled={
-                !sessionId ||
-                !selectedFile ||
-                selectedFile.isDir ||
-                selection.length !== 1 ||
-                busy
-              }
-              onClick={() => selectedFile && void edit(selectedFile)}
-            >
-              <Pencil size={15} />
-            </button>
-            <button
-              className="icon-button"
-              aria-label="复制到另一台服务器"
-              title="复制到另一台服务器…"
-              disabled={
-                !sessionId || busy || !selection.some((path) => path !== "/")
-              }
-              onClick={() => copyToServer()}
-            >
-              <ArrowRightLeft size={15} />
-            </button>
-            <button
-              className="icon-button"
-              aria-label="复制选中项目"
-              title="复制（Ctrl/Cmd+C）"
-              disabled={!sessionId || busy || !selection.some((p) => p !== "/")}
-              onClick={() => void clipboardCopy("copy")}
-            >
-              <Copy size={15} />
-            </button>
-            <button
-              className="icon-button"
-              aria-label="剪切选中项目"
-              title="剪切（Ctrl/Cmd+X）"
-              disabled={!sessionId || busy || !selection.some((p) => p !== "/")}
-              onClick={() => void clipboardCopy("move")}
-            >
-              <Scissors size={15} />
-            </button>
-            <button
-              className="icon-button"
-              aria-label="粘贴项目"
-              title="粘贴到选中目录（Ctrl/Cmd+V）"
-              disabled={!sessionId || busy || !pasteAllowed}
-              onClick={() => void paste(pasteTarget)}
-            >
-              <ClipboardPaste size={15} />
-            </button>
-            <button
-              className="icon-button"
-              aria-label="下载选中项目"
-              title="下载文件或文件夹"
-              disabled={
-                !sessionId || !selectedFile || selection.length !== 1 || busy
-              }
-              onClick={() => selectedFile && setDownload(selectedFile)}
-            >
-              <Download size={15} />
-            </button>
-            <button
-              className="icon-button danger"
-              aria-label="删除选中项目"
-              title="永久删除选中项目…"
-              disabled={!canDelete(selection)}
-              onClick={() => void requestDelete()}
-            >
-              <Trash2 size={15} />
             </button>
             <button
               className="icon-button"
@@ -1251,59 +1202,10 @@ export function FilePanel({
           className="context-menu file-context-menu"
           ref={contextMenu}
           role="menu"
-          aria-label="文件操作"
+          aria-label={menu.create ? "新建" : "文件操作"}
           style={{ left: Math.max(5, menu.x), top: Math.max(5, menu.y) }}
         >
-          <button
-            role="menuitem"
-            onClick={() => void copyAbsolutePath(menu.file.path)}
-          >
-            <ClipboardCopy size={14} />
-            {menu.blank ? "复制当前目录绝对路径" : "复制绝对路径"}
-          </button>
-          {(() => {
-            const mount = mountForFile(
-              menu.file,
-              mounts.state.table?.mounts ?? [],
-            );
-            return mount ? (
-              <button role="menuitem" onClick={() => showMount(mount)}>
-                <Info size={14} />
-                查看挂载详情
-              </button>
-            ) : null;
-          })()}
-          {!menu.blank && (
-            <>
-              <button
-                role="menuitem"
-                disabled={busy || menu.file.path === "/"}
-                onClick={() => void clipboardCopy("copy", menu.file)}
-              >
-                <Copy size={14} />
-                复制
-              </button>
-              <button
-                role="menuitem"
-                disabled={busy || menu.file.path === "/"}
-                onClick={() => void clipboardCopy("move", menu.file)}
-              >
-                <Scissors size={14} />
-                剪切
-              </button>
-            </>
-          )}
-          {menu.file.isDir && (
-            <button
-              role="menuitem"
-              disabled={busy || !pasteAllowed}
-              onClick={() => void paste(menu.file.path)}
-            >
-              <ClipboardPaste size={14} />
-              粘贴到此处
-            </button>
-          )}
-          {menu.file.isDir && (
+          {menu.create ? (
             <>
               <button
                 role="menuitem"
@@ -1321,70 +1223,142 @@ export function FilePanel({
                 <FilePlus2 size={14} />
                 新建文件
               </button>
-              <button
-                role="menuitem"
-                disabled={busy}
-                onClick={() => void pickUpload(menu.file.path)}
-              >
-                <Upload size={14} />
-                上传文件到此处
-              </button>
             </>
-          )}
-          {!menu.file.isDir && (
-            <button
-              role="menuitem"
-              disabled={busy}
-              onClick={() => void edit(menu.file)}
-            >
-              <Pencil size={14} />
-              编辑文本文件
-            </button>
-          )}
-          {!menu.blank && menu.file.isDir && (
-            <button
-              role="menuitem"
-              onClick={() => {
-                model.select(menu.file.path, true);
-                void model.expand(menu.file.path);
-              }}
-            >
-              <Folder size={14} />
-              打开文件夹
-            </button>
-          )}
-          {!menu.blank && (
+          ) : (
             <>
               <button
                 role="menuitem"
-                disabled={busy}
-                onClick={() => setDownload(menu.file)}
+                onClick={() => void copyAbsolutePath(menu.file.path)}
               >
-                <Download size={14} />
-                下载{menu.file.isDir ? "文件夹" : "文件"}
+                <ClipboardCopy size={14} />
+                {menu.blank ? "复制当前目录绝对路径" : "复制绝对路径"}
               </button>
-              <button
-                role="menuitem"
-                disabled={busy || menu.file.path === "/"}
-                onClick={() => copyToServer(menu.file)}
-              >
-                <ArrowRightLeft size={14} />
-                复制到另一台服务器…
-              </button>
+              {(() => {
+                const mount = mountForFile(
+                  menu.file,
+                  mounts.state.table?.mounts ?? [],
+                );
+                return mount ? (
+                  <button role="menuitem" onClick={() => showMount(mount)}>
+                    <Info size={14} />
+                    查看挂载详情
+                  </button>
+                ) : null;
+              })()}
+              {!menu.blank && (
+                <>
+                  <button
+                    role="menuitem"
+                    disabled={busy || menu.file.path === "/"}
+                    onClick={() => void clipboardCopy("copy", menu.file)}
+                  >
+                    <Copy size={14} />
+                    复制
+                  </button>
+                  <button
+                    role="menuitem"
+                    disabled={busy || menu.file.path === "/"}
+                    onClick={() => void clipboardCopy("move", menu.file)}
+                  >
+                    <Scissors size={14} />
+                    剪切
+                  </button>
+                </>
+              )}
+              {menu.file.isDir && (
+                <button
+                  role="menuitem"
+                  disabled={busy || !pasteAllowed}
+                  onClick={() => void paste(menu.file.path)}
+                >
+                  <ClipboardPaste size={14} />
+                  粘贴到此处
+                </button>
+              )}
+              {menu.file.isDir && (
+                <>
+                  <button
+                    role="menuitem"
+                    disabled={busy}
+                    onClick={() => create("directory", menu.file.path)}
+                  >
+                    <FolderPlus size={14} />
+                    新建文件夹
+                  </button>
+                  <button
+                    role="menuitem"
+                    disabled={busy}
+                    onClick={() => create("file", menu.file.path)}
+                  >
+                    <FilePlus2 size={14} />
+                    新建文件
+                  </button>
+                  <button
+                    role="menuitem"
+                    disabled={busy}
+                    onClick={() => void pickUpload(menu.file.path)}
+                  >
+                    <Upload size={14} />
+                    上传文件到此处
+                  </button>
+                </>
+              )}
+              {!menu.file.isDir && (
+                <button
+                  role="menuitem"
+                  disabled={busy}
+                  onClick={() => void edit(menu.file)}
+                >
+                  <Pencil size={14} />
+                  编辑文本文件
+                </button>
+              )}
+              {!menu.blank && menu.file.isDir && (
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    model.select(menu.file.path, true);
+                    void model.expand(menu.file.path);
+                  }}
+                >
+                  <Folder size={14} />
+                  打开文件夹
+                </button>
+              )}
+              {!menu.blank && (
+                <>
+                  <button
+                    role="menuitem"
+                    disabled={busy}
+                    onClick={() => setDownload(menu.file)}
+                  >
+                    <Download size={14} />
+                    下载{menu.file.isDir ? "文件夹" : "文件"}
+                  </button>
+                  <button
+                    role="menuitem"
+                    disabled={busy || menu.file.path === "/"}
+                    onClick={() => copyToServer(menu.file)}
+                  >
+                    <ArrowRightLeft size={14} />
+                    复制到另一台服务器…
+                  </button>
+                </>
+              )}
+              {!menu.blank && (
+                <button
+                  role="menuitem"
+                  className="danger file-delete-menu-item"
+                  disabled={!canDelete(deletePaths(menu.file))}
+                  onClick={() => void requestDelete(menu.file)}
+                >
+                  <Trash2 size={14} />
+                  {deletePaths(menu.file).length > 1
+                    ? `删除选中的 ${deletePaths(menu.file).length} 项…`
+                    : "删除…"}
+                </button>
+              )}
             </>
-          )}
-          {!menu.blank && (
-            <button
-              role="menuitem"
-              className="danger file-delete-menu-item"
-              disabled={!canDelete(deletePaths(menu.file))}
-              onClick={() => void requestDelete(menu.file)}
-            >
-              <Trash2 size={14} />
-              {deletePaths(menu.file).length > 1
-                ? `删除选中的 ${deletePaths(menu.file).length} 项…`
-                : "删除…"}
-            </button>
           )}
         </div>
       )}

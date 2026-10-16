@@ -35,7 +35,8 @@ async function ipc<T>(
   );
 }
 
-const active = (page: Page) => page.locator(".session-page[role=tabpanel]:visible");
+const active = (page: Page) =>
+  page.locator(".session-page[role=tabpanel]:visible");
 const node = (page: Page, path: string) =>
   active(page).locator(`[role="treeitem"][data-path=${JSON.stringify(path)}]`);
 
@@ -388,7 +389,11 @@ test("tree expansion and cwd remain per-session through detached window transfer
     await atDirectory(f.main, "/中文 空格/子目录");
     await connectSelectedServer(f.main);
     await authenticate(f.main);
-    await expect(f.main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(2);
+    await expect(
+      f.main
+        .getByRole("tablist", { name: "SSH 会话", exact: true })
+        .getByRole("tab"),
+    ).toHaveCount(2);
     await expect(node(f.main, "/var")).toHaveAttribute(
       "aria-expanded",
       "false",
@@ -440,7 +445,11 @@ test("tree expansion and cwd remain per-session through detached window transfer
       .getByRole("menuitem", { name: "移回主窗口", exact: true })
       .click();
     await expect.poll(() => detached!.isClosed()).toBe(true);
-    await expect(f.main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(2);
+    await expect(
+      f.main
+        .getByRole("tablist", { name: "SSH 会话", exact: true })
+        .getByRole("tab"),
+    ).toHaveCount(2);
     await f.main.getByRole("tab", { name: title, exact: true }).click();
     await atDirectory(f.main, "/var/log");
     await expect(node(f.main, `${home}/projects`)).toHaveAttribute(
@@ -500,9 +509,9 @@ test("tree files still open the remote editor and download actual file and direc
         ),
       );
       if (isDir) {
-        await node(f.main, path).click();
-        await active(f.main)
-          .getByRole("button", { name: "下载选中项目", exact: true })
+        await node(f.main, path).click({ button: "right" });
+        await f.main
+          .getByRole("menuitem", { name: "下载文件夹", exact: true })
           .click();
       } else {
         await node(f.main, path).click({ button: "right" });
@@ -611,7 +620,11 @@ test("unsupported or failed shell probes fall back to a usable shell, and reconn
         .getByRole("button", { name: "重新连接", exact: true })
         .click();
       await authenticate(f.main);
-      await expect(f.main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(1);
+      await expect(
+        f.main
+          .getByRole("tablist", { name: "SSH 会话", exact: true })
+          .getByRole("tab"),
+      ).toHaveCount(1);
       await command(f.main, "cd projects");
       await atDirectory(f.main, `${home}/projects`);
       await expect(

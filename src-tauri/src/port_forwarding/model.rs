@@ -71,6 +71,26 @@ impl Rule {
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct OpenRequest {
+    pub id: String,
+    pub server_id: Option<String>,
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetResult {
+    pub at: u64,
+    pub success: bool,
+    pub source: TargetSource,
+    pub message: String,
+}
+#[derive(Clone, PartialEq, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TargetSource {
+    Probe,
+    Connection,
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Note {
     pub at: u64,
     pub message: String,
@@ -100,7 +120,7 @@ pub struct Runtime {
     pub retry_at: Option<u64>,
     pub error: Option<AppError>,
     pub prompt: Option<Prompt>,
-    pub target_result: Option<Note>,
+    pub target_result: Option<TargetResult>,
     pub probe_id: Option<String>,
     pub notes: Vec<Note>,
 }

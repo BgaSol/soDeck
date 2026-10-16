@@ -6,8 +6,8 @@
 
 ## 功能与入口
 
-- 主窗口标题栏“端口转发”显示已启动数量及需处理标记。
-- 服务器选择窗口“配置端口转发”和会话工具栏可预选服务器。
+- 主窗口标题栏“端口转发”采用 32px 图标入口，以小圆点提示运行／需处理状态；名称与具体数量位于悬停提示和辅助阅读描述中。
+- 服务器选择窗口和会话工具栏的“端口转发”筛选该服务器的已有规则，新建时预选服务器。
 - 独立管理窗口提供新增、搜索、编辑、启动、取消、停止、删除、停止并应用、重新认证、目标连接测试、地址/主机/端口复制和 HTTP(S) 打开。
 - 支持 IPv4/IPv6 回环、固定/自动端口、直连或单层跳板，以及最终 SSH 服务器解析目标域名。
 - 关闭已就绪规则的管理窗口后继续运行；关闭首次启动中的窗口会取消启动。
@@ -87,3 +87,31 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib connection::tests:: -- --i
 Windows 可用 `tests/port-forwarding/run-windows.ps1` 将上述测试参数传给带 Common Controls manifest 的测试 EXE；仍遵守本机应用控制策略。
 
 OpenSSH 容器：先按 `tests/rsync/README.md` 构建 `ssh-workspace-rsync-fixture` 与 `ssh-workspace-rsync-runner` 两个镜像，再从 Linux/WSL 执行 `python3 tests/port-forwarding/environment.py`。脚本创建专用网络和临时 A/B 容器，不映射宿主端口，结束时清理容器和网络。
+
+
+## 2026-10-17 界面与操作调整
+
+已落实确认后的界面方案，复用系统字体、主题变量、统一标题栏、居中弹窗标题和现有路径节点样式。侧栏使用淡蓝选中态；详情保留访问地址、路径和流量，诊断默认折叠。编辑／删除及复制主机／端口收入锚定菜单，支持键盘导航和恢复焦点。复制反馈留在按钮原位。
+
+新建采用分组表单与高级折叠，目标地址默认 127.0.0.1，目标端口不预填；固定端口跟随建议直到手动编辑，切换自动分配保留固定草稿。运行中编辑默认下次生效，可选择保存后重新启动；中断确认在写入前完成，保存与启动失败分别反馈。状态流不覆盖草稿，服务器入口不再自动弹出新建。
+
+后端仅扩展窗口导航请求和目标连接结果的状态表达，保留原有转发内核及认证、运行快照、后台生命周期。新增取消探测迟到失败过滤与重连后目标结果失效处理。
+
+本次在 macOS 工作区执行的验证（与上文初版记录分开）：
+
+| 检查 | 结果 |
+| --- | --- |
+| `npm run build` | TypeScript 与 Vite 构建通过；原有主包大小提示仍在 |
+| `npm test` | 98 项通过，包括端口草稿、主机校验与运行／保存配置切换 |
+| `npm run test:port-forwarding` | Chromium/WebKit 共 24 项通过；补充复制菜单状态变化和运行／保存路径对照后，相关 4 项再次通过 |
+| `npm run test:connection` | Chromium/WebKit 共 52 项通过 |
+| Rust 转发专项 | 7 项通过，含真实 SSH 生命周期、重连、取消探测迟到结果、并发半关闭、IPv6、窗口代次与 ACK 背压；独立 OpenSSH 容器项未在本次重跑 |
+| 视觉检查 | 检查实际组件截图的 1100×760、800×560、浅色／深色、长名称、IPv6 与高级表单；最小窗口正文可滚动，底部操作可见 |
+
+截图由 `tests/port-forwarding-ui.spec.ts` 输出到 `.qa/forwarding-actual-{chromium,webkit}-*.png`，使用模拟 IPC 数据；不能代替原生窗口手工验收。本次 Rust 代码在 macOS 完成编译及隔离 SSH 测试，未执行原生桌面窗口、系统浏览器或系统剪贴板的手工端到端验收。
+
+真实 SSH 专项复现（使用安装了 tests/requirements.txt 的 Python）：
+
+```sh
+SSH_TEST_PYTHON=/path/to/python cargo test --manifest-path src-tauri/Cargo.toml --lib forward_ -- --include-ignored --skip forward_openssh_ --test-threads=1
+```

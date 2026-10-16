@@ -3,6 +3,7 @@ import os
 import socket
 import threading
 import sys
+import time
 from pathlib import Path
 import paramiko
 
@@ -44,6 +45,11 @@ class Server(paramiko.ServerInterface):
     def get_allowed_auths(self, username):
         return "password"
     def check_channel_direct_tcpip_request(self, channel_id, origin, destination):
+        if (root / "pause-forward").exists():
+            (root / "forward-waiting").write_text(str(channel_id))
+            while (root / "pause-forward").exists():
+                time.sleep(0.01)
+            (root / "forward-replied").write_text(str(channel_id))
         if destination != ("echo.internal.invalid", 7):
             return paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
         self.peers[channel_id] = socket.create_connection(target.getsockname())

@@ -538,3 +538,11 @@ G3：Windows/Unix readiness 与 stream pair。验证注册撤销、唤醒、重�
 | 5 | 通信统计、退出/引用整合、三平台验收 | 需求 A01–A16 有记录，未验证项明确列出而非视为通过 |
 
 用户已授权在新目录和独立分支实施。当前代码及验证进度以 [实施与验证记录](port-forwarding-implementation.md) 为准，未完成的原生验收不视为通过。
+
+
+## 2026-10-17 界面状态协议补充
+
+- 状态帧使用 `openRequest: { id, serverId: string | null } | null`。空请求没有导航含义；请求中的空 serverId 表示全局入口。后端保留最后请求用于订阅重放，前端按 id 去重；编辑表单打开时延迟处理导航，不覆盖草稿。
+- `targetResult` 使用 `{ at, success, source: "probe" | "connection", message }`，事件列表继续使用 Note。目标连接失败不改变 ready 状态；取消的探测不发布迟到结果，新的 SSH 连接清除旧目标结果。
+- 编辑器提交显式 `save/start/restart` 意图。确认中断后先保存，重新启动使用返回 revision 与旧 runId 调用既有 apply 命令；保存成功但 apply 失败保留配置，单独提示并提供重试。后端配置锁、版本校验及应用意图规则保持原有行为。
+- `portForwardPresentation.ts` 集中选择运行快照或已保存配置，供列表、搜索、服务器筛选、详情路径和复制使用。`portForwardDraft.ts` 保存端口字符串及固定／自动选择，提交校验通过后才转换数字。

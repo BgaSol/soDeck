@@ -658,8 +658,10 @@ test("delete confirmation defaults to cancel and rejects root selection", async 
     page.getByRole("menuitem", { name: "删除…", exact: true }),
   ).toBeDisabled();
   await page.keyboard.press("Escape");
-  await page.locator('.file-row[data-path="/home/ops/one.txt"]').click();
-  await page.getByRole("button", { name: "删除选中项目" }).click();
+  await page
+    .locator('.file-row[data-path="/home/ops/one.txt"]')
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "删除…", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "永久删除 1 个项目？" });
   await expect(dialog).toContainText("Server A");
   await expect(dialog).toContainText("/home/ops/one.txt");
@@ -769,7 +771,10 @@ test("delete reports partial results and read-only reconciliation never repeats 
   await page
     .locator('.file-row[data-path="/home/ops/two.txt"]')
     .click({ modifiers: ["ControlOrMeta"] });
-  await page.getByRole("button", { name: "删除选中项目" }).click();
+  await page
+    .locator('.file-row[data-path="/home/ops/one.txt"]')
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "删除选中的 2 项…" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "永久删除", exact: true }).click();
   await expect(dialog).toHaveCount(0);
@@ -786,8 +791,10 @@ test("delete reports partial results and read-only reconciliation never repeats 
     page.locator('.file-row[data-path="/home/ops/two.txt"]'),
   ).toBeVisible();
   await page.evaluate(() => ((window as any).__TEST__.deleteMode = "unknown"));
-  await page.locator('.file-row[data-path="/home/ops/two.txt"]').click();
-  await page.getByRole("button", { name: "删除选中项目" }).click();
+  await page
+    .locator('.file-row[data-path="/home/ops/two.txt"]')
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "删除…", exact: true }).click();
   await dialog.getByRole("button", { name: "永久删除", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await page.getByRole("button", { name: "查看文件任务" }).click();
@@ -812,11 +819,15 @@ test("delete remains stoppable and fits a narrow dark window", async ({
 }) => {
   const errors = await setup(page);
   await page.evaluate(() => ((window as any).__TEST__.holdDelete = true));
-  await page.locator('.file-row[data-path="/home/ops/one.txt"]').click();
-  await page.getByRole("button", { name: "删除选中项目" }).click();
   await page.setViewportSize({ width: 430, height: 640 });
   await page.emulateMedia({ colorScheme: "dark" });
+  await page.getByRole("button", { name: "文件", exact: true }).click();
+  await page
+    .locator('.file-row[data-path="/home/ops/one.txt"]')
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "删除…", exact: true }).click();
   const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
   await page.screenshot({
     path: ".qa/file-delete-confirm-dark.png",
     animations: "disabled",
@@ -857,7 +868,23 @@ test("create folder and file, retain validation errors and refresh only the targ
   page,
 }) => {
   const errors = await setup(page);
-  await page.getByRole("button", { name: "新建文件夹", exact: true }).click();
+  const create = page.getByRole("button", { name: "新建", exact: true });
+  await create.click();
+  const createMenu = page.getByRole("menu", { name: "新建" });
+  await expect(
+    createMenu.getByRole("menuitem", { name: "新建文件夹", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(
+    createMenu.getByRole("menuitem", { name: "新建文件", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(create).toBeFocused();
+  await create.click();
+  await page
+    .getByRole("menu", { name: "新建" })
+    .getByRole("menuitem", { name: "新建文件夹", exact: true })
+    .click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("/home/ops");
   await dialog.getByLabel("新项目名称").fill("exists");
@@ -870,7 +897,11 @@ test("create folder and file, retain validation errors and refresh only the targ
     page.locator(".file-row[data-path='/home/ops/新目录']"),
   ).toBeVisible();
   await page.locator(".file-row[data-path='/home/ops']").click();
-  await page.getByRole("button", { name: "新建文件", exact: true }).click();
+  await create.click();
+  await page
+    .getByRole("menu", { name: "新建" })
+    .getByRole("menuitem", { name: "新建文件", exact: true })
+    .click();
   await dialog.getByLabel("新项目名称").fill("notes.txt");
   await dialog.getByRole("button", { name: "创建", exact: true }).click();
   await expect(
@@ -961,7 +992,6 @@ test("blank-area paste and clipboard events support other windows and reservatio
     };
     qa.emit("remote-clipboard-changed", null);
   });
-  await expect(page.getByLabel("粘贴项目", { exact: true })).toBeEnabled();
   const tree = page.getByRole("tree", { name: "远程文件树" });
   const treeBeforeMenu = await tree.boundingBox();
   const pointer = {
@@ -1002,14 +1032,21 @@ test("blank-area paste and clipboard events support other windows and reservatio
     q.clipboard.reserved = true;
     q.emit("remote-clipboard-changed", null);
   });
-  await expect(page.getByLabel("粘贴项目", { exact: true })).toBeDisabled();
+  await page.mouse.click(pointer.x, pointer.y, { button: "right" });
+  await expect(
+    page.getByRole("menuitem", { name: "粘贴到此处", exact: true }),
+  ).toBeDisabled();
+  await page.keyboard.press("Escape");
   await page.evaluate(() => {
     const q = (window as any).__TEST__;
     q.clipboard.reserved = false;
     q.clipboard.sameServer = false;
     q.emit("remote-clipboard-changed", null);
   });
-  await expect(page.getByLabel("粘贴项目", { exact: true })).toBeDisabled();
+  await page.mouse.click(pointer.x, pointer.y, { button: "right" });
+  await expect(
+    page.getByRole("menuitem", { name: "粘贴到此处", exact: true }),
+  ).toBeDisabled();
   expect(errors).toEqual([]);
 });
 
@@ -1055,9 +1092,11 @@ test("keyboard copy chooses a connected directory and shows byte progress before
   page,
 }) => {
   const errors = await setup(page);
-  await page.locator(".file-row[data-path='/home/ops/one.txt']").click();
-  const copy = page.getByRole("button", {
-    name: "复制到另一台服务器",
+  await page
+    .locator(".file-row[data-path='/home/ops/one.txt']")
+    .click({ button: "right" });
+  const copy = page.getByRole("menuitem", {
+    name: "复制到另一台服务器…",
     exact: true,
   });
   await copy.focus();
@@ -1155,7 +1194,7 @@ test("regular file is not a drop target; remote drops open direct-copy confirmat
   ).toBe(0);
 });
 
-test("multiselection survives directory refresh and controls editor availability", async ({
+test("multiselection survives directory refresh and the toolbar stays concise", async ({
   page,
 }) => {
   await setup(page);
@@ -1165,7 +1204,11 @@ test("multiselection survives directory refresh and controls editor availability
   await two.click({ modifiers: ["ControlOrMeta"] });
   await expect(one).toHaveAttribute("aria-selected", "true");
   await expect(two).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByLabel("编辑选中文件")).toBeDisabled();
+  await expect(page.locator(".file-toolbar > button")).toHaveCount(3);
+  await expect(
+    page.getByRole("button", { name: "新建", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByLabel("上传文件", { exact: true })).toBeVisible();
   await page.getByLabel("刷新目录").click();
   await expect(one).toHaveAttribute("aria-selected", "true");
   await expect(two).toHaveAttribute("aria-selected", "true");
@@ -1797,8 +1840,10 @@ test("file tasks keep an empty entry, filter mixed operations and remove only fi
   await page.evaluate(() => {
     (window as any).__TEST__.holdDelete = true;
   });
-  await page.locator('.file-row[data-path="/home/ops/folder"]').click();
-  await page.getByRole("button", { name: "删除选中项目" }).click();
+  await page
+    .locator('.file-row[data-path="/home/ops/folder"]')
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "删除…", exact: true }).click();
   await page
     .getByRole("dialog")
     .getByRole("button", { name: "永久删除", exact: true })
@@ -1831,7 +1876,10 @@ test("delete retry prepares a new confirmation and preserves the original result
   await page
     .locator('.file-row[data-path="/home/ops/two.txt"]')
     .click({ modifiers: ["ControlOrMeta"] });
-  await page.getByRole("button", { name: "删除选中项目" }).click();
+  await page
+    .locator('.file-row[data-path="/home/ops/one.txt"]')
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "删除选中的 2 项…" }).click();
   await page
     .getByRole("dialog")
     .getByRole("button", { name: "永久删除", exact: true })
