@@ -1,9 +1,11 @@
 mod traffic;
 mod brand;
+mod browser_behavior;
 mod connection;
 mod db;
 mod desktop_drag;
 mod docker;
+mod netbird;
 mod files;
 mod file_tasks;
 mod log_ingest;
@@ -22,6 +24,7 @@ mod remote_write;
 mod shell_integration;
 mod ssh;
 mod ssh_transport;
+mod system_settings;
 mod terminal;
 mod terminal_cwd;
 mod terminal_history;
@@ -53,6 +56,8 @@ pub struct State {
     logs: logs::LogState,
     history: terminal_history::HistoryState,
     monitor: monitor::MonitorManager,
+    docker: docker::DockerManager,
+    netbird: netbird::NetBirdManager,
     database: Mutex<db::Database>,
     configuration: Mutex<()>,
     stopping: AtomicBool,
@@ -93,6 +98,21 @@ impl State {
     }
     fn delete_server(&self, id: &str) -> AppResult<()> {
         let _gate = self.configuration.lock().unwrap();
+        if self.docker.has_associations(id)? {
+            return Err(AppError::new(
+                "busy",
+                "请先解除此服务器的 Compose 项目关联，再删除配置；解除关联不会停止远端项目",
+            ));
+        }
+        if self.netbird.has_server(id) {
+            return Err(AppError::new("busy", "请等待此服务器的 NetBird 操作完成后再删除配置"));
+        }
+        if self.docker.has_server(id) {
+            return Err(AppError::new(
+                "busy",
+                "请先等待此服务器的 Docker 操作完成，再删除配置",
+            ));
+        }
         if self.port_forwarding.has_server(id)? {
             return Err(AppError::new("busy", "请先修改或删除引用此服务器的端口转发规则，并停止相关转发"));
         }
@@ -122,7 +142,10 @@ impl State {
                 "请先保存并关闭此服务器的文件编辑窗口，等待传输完成或取消传输，再删除配置。",
             ));
         }
-        self.database.lock().unwrap().delete(id)
+        self.database.lock().unwrap().delete(id)?;
+        // Orphaned feature preferences must not block deletion of a server.
+        let _ = self.netbird.forget_server(id);
+        Ok(())
     }
     fn owner(&self, label: &str) -> connection::WindowOwner {
         connection::WindowOwner {
@@ -193,6 +216,8 @@ fn reset_incompatible_database(
     state.ensure_running()?;
     if !state.terminals.lock().unwrap().is_empty()
         || state.port_forwarding.summary().active > 0
+        || state.docker.summary().active > 0
+        || state.netbird.active()
         || state.logs.active_count() > 0
         || state.files.has_activity()
         || state.transfers.has_activity()
@@ -265,6 +290,8 @@ async fn quit_app(
     state.transfers.stop_transfers();
     let shutdown_state = state.inner().clone();
     let result = blocking(move || {
+        shutdown_state.netbird.shutdown()?;
+        shutdown_state.docker.shutdown()?;
         shutdown_state.port_forwarding.shutdown()?;
         shutdown_state.transfers.interrupt_operations_after_grace();
         shutdown_state.monitor.shutdown()?;
@@ -417,11 +444,14 @@ async fn open_container(
         .unwrap()
         .insert(label.clone(), PendingContainer { spec, target });
     drop(gate);
-    let result = crate::window_chrome::configure(WebviewWindowBuilder::new(
+    let result = crate::window_chrome::configure(
         &app,
-        &label,
-        WebviewUrl::App("index.html?container=1".into()),
-    ))
+        WebviewWindowBuilder::new(
+            &app,
+            &label,
+            WebviewUrl::App("index.html?container=1".into()),
+        ),
+    )
     .title(title)
     .inner_size(880.0, 580.0)
     .min_inner_size(480.0, 320.0)
@@ -476,9 +506,31 @@ async fn connect_container(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let mut context = tauri::generate_context!();
+    let startup_windows = context
+        .config()
+        .app
+        .windows
+        .iter()
+        .filter(|window| window.create)
+        .cloned()
+        .collect::<Vec<_>>();
+    // Settings and the browser policy must exist before any webview is created.
+    for window in &mut context.config_mut().app.windows {
+        window.create = false;
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .setup(|app| {
+        .setup(move |app| {
+            let settings = Arc::new(system_settings::SystemSettings::load(
+                app.path().app_config_dir()?.join("settings.json"),
+            ));
+            let developer_mode = settings.developer_mode();
+            app.manage(settings);
+            app.handle()
+                .plugin(browser_behavior::plugin(developer_mode))?;
+            app.handle()
+                .plugin(browser_behavior::shortcut_guard(developer_mode))?;
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             let database = db::Database::open(&dir.join("servers.db"))
@@ -497,6 +549,8 @@ pub fn run() {
                 traffic: traffic::TrafficManager::new(),
                 moves: moves::MoveState::default(),
                 monitor: monitor::MonitorManager::default(),
+                docker: docker::DockerManager::open(&dir.join("docker-management.sqlite")),
+                netbird: netbird::NetBirdManager::open(&dir.join("netbird.sqlite")),
                 files: files::FileState::default(),
                 deletes,
                 transfers,
@@ -513,6 +567,11 @@ pub fn run() {
                 closed_windows: Mutex::new(HashSet::new()),
                 window_generations: Mutex::new(HashMap::new()),
             }));
+            for config in &startup_windows {
+                WebviewWindowBuilder::from_config(app, config)?
+                    .devtools(developer_mode)
+                    .build()?;
+            }
             Ok(())
         })
         .on_page_load(|webview, payload| {
@@ -520,6 +579,8 @@ pub fn run() {
                 if let Some(state) = webview.try_state::<Arc<State>>() {
                     let _gate = state.configuration.lock().unwrap();
                     state.port_forwarding.window_closed(&state.owner(webview.label()));
+                    state.docker.window_closed(webview.label());
+                    state.netbird.window_closed(webview.label());
                     state.deletes.discard_window_drafts(webview.label());
                     state.monitor.stop_window(webview.label());
                     state.logs.stop(webview.label(), false);
@@ -543,6 +604,8 @@ pub fn run() {
                 let state = window.state::<Arc<State>>();
                 let _gate = state.configuration.lock().unwrap();
                 state.port_forwarding.window_closed(&state.owner(window.label()));
+                state.docker.window_closed(window.label());
+                state.netbird.window_closed(window.label());
                 state.deletes.discard_window_drafts(window.label());
                 state.monitor.close_monitor_window(window.label());
                 state.logs.stop(window.label(), true);
@@ -567,6 +630,23 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            netbird::commands::subscribe_netbird,
+            netbird::commands::update_netbird_interest,
+            netbird::commands::ack_netbird_frame,
+            netbird::commands::unsubscribe_netbird,
+            netbird::commands::refresh_netbird,
+            netbird::commands::get_netbird_raw_status,
+            netbird::commands::get_netbird_logs,
+            netbird::commands::probe_netbird_peer,
+            netbird::commands::prepare_netbird_operation,
+            netbird::commands::submit_netbird_operation,
+            netbird::commands::reconcile_netbird_operation,
+            netbird::commands::acknowledge_netbird_operation,
+            netbird::commands::set_netbird_cli_path,
+
+            system_settings::get_system_settings,
+            system_settings::set_developer_mode,
+            system_settings::open_window_devtools,
             port_forwarding::commands::open_port_forward_window,
             port_forwarding::commands::port_forward_bootstrap,
             port_forwarding::commands::subscribe_port_forwards,
@@ -627,6 +707,26 @@ pub fn run() {
             monitor::unsubscribe_monitor,
             remote_mounts::list_remote_mounts,
             remote_mounts::get_remote_mount_usage,
+            docker::commands::subscribe_docker_management,
+            docker::commands::update_docker_management_interest,
+            docker::commands::ack_docker_management,
+            docker::commands::unsubscribe_docker_management,
+            docker::commands::refresh_docker_management,
+            docker::commands::list_docker_operations,
+            docker::commands::prepare_docker_operation,
+            docker::commands::submit_docker_operation,
+            docker::commands::reconcile_docker_operation,
+            docker::commands::acknowledge_docker_operation,
+            docker::commands::docker_operation_summary,
+            docker::commands::get_docker_container_diagnostics,
+            docker::commands::get_docker_image_detail,
+            docker::commands::get_docker_resources,
+            docker::commands::prepare_docker_transfer,
+            docker::commands::prepare_docker_create,
+            docker::commands::get_docker_compose_projects,
+            docker::commands::save_docker_compose_association,
+            docker::commands::remove_docker_compose_association,
+            docker::commands::get_docker_host_link,
             detect_docker,
             docker_images,
             docker_containers,
@@ -686,6 +786,6 @@ pub fn run() {
             desktop_drag::targets::list_copy_targets,
             desktop_drag::targets::prepare_server_copy
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("无法启动桌面应用");
 }

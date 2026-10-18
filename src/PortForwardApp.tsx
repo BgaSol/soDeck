@@ -64,6 +64,13 @@ export function PortForwardApp() {
     setQuery("");
     const rememberedId = remembered.current.get(request.serverId);
     if (rememberedId) setSelected(rememberedId);
+    if (request.seed && request.serverId) {
+      const draft = emptyForward(request.serverId);
+      draft.name = request.seed.name;
+      draft.settings.targetHost = request.seed.targetHost;
+      draft.settings.targetPort = request.seed.targetPort;
+      setEditor(draft);
+    }
   }, [data.openRequest, editor]);
   useEffect(() => {
     let disposed = false,

@@ -749,6 +749,7 @@ fn finish(state: &State, id: &str, cancel: &Cancellation, result: AppResult<()>)
     }
     drop(connections);
     state.monitor.close_session(id);
+    state.netbird.close_session(id);
 }
 
 pub fn wait_closed(state: &State) -> AppResult<()> {

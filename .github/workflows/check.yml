@@ -35,3 +35,30 @@ jobs:
         run: |
           if [ -f .qa/rsync-environment.json ]; then python3 tests/rsync/environment.py stop; fi
       - run: npm run tauri -- build --no-bundle
+
+  docker-engine:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - name: Linux system libraries
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev pkg-config
+      - run: npm ci && npm run build
+      - name: Docker CLI inspect template compatibility (no daemon required)
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib docker_inspect_templates_with_real_cli -- --ignored --nocapture
+      - name: Start isolated nested Docker Engine
+        run: |
+          docker build -t sodeck-docker-engine-fixture tests/docker-engine
+          python3 tests/docker-engine/environment.py
+      - name: Real Engine management contract
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib docker_engine_management_contract -- --ignored --nocapture --test-threads=1
+      - name: Remove only the recorded test Engine
+        if: always()
+        run: python3 tests/docker-engine/environment.py stop

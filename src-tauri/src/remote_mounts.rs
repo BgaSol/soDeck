@@ -67,7 +67,21 @@ pub struct MountTable {
     pub(crate) version: String,
     pub(crate) status: &'static str,
     pub(crate) mounts: Vec<RemoteMount>,
+    pub(crate) issues: Vec<MountIssue>,
     pub(crate) message: Option<String>,
+}
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MountIssue {
+    pub(crate) kind: &'static str,
+    pub(crate) target: String,
+    pub(crate) layers: usize,
+}
+#[derive(Clone, Debug)]
+struct ParsedMount {
+    id: u64,
+    parent_id: u64,
+    mount: RemoteMount,
 }
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -121,53 +135,149 @@ fn unescape(value: &str) -> AppResult<String> {
 fn parse_table(text: &str) -> AppResult<MountTable> {
     parse_mounts(text, true)
 }
+fn visible_mounts(parsed: &[ParsedMount]) -> (Vec<RemoteMount>, Vec<MountIssue>) {
+    let mut groups: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (index, parsed_mount) in parsed.iter().enumerate() {
+        groups
+            .entry(parsed_mount.mount.target.as_str())
+            .or_default()
+            .push(index);
+    }
+
+    let mut selected = HashSet::new();
+    let mut issues = Vec::new();
+    let mut handled = HashSet::new();
+    for parsed_mount in parsed {
+        let target = parsed_mount.mount.target.as_str();
+        if !handled.insert(target) {
+            continue;
+        }
+        let indices = &groups[target];
+        if indices.len() == 1 {
+            selected.insert(indices[0]);
+            continue;
+        }
+
+        let mut by_id = HashMap::new();
+        let mut child_by_parent = HashMap::new();
+        let mut valid = true;
+        for &index in indices {
+            if by_id.insert(parsed[index].id, index).is_some() {
+                valid = false;
+            }
+        }
+        for &index in indices {
+            let parent_id = parsed[index].parent_id;
+            if by_id.contains_key(&parent_id) && child_by_parent.insert(parent_id, index).is_some()
+            {
+                valid = false;
+            }
+        }
+        let tops: Vec<_> = indices
+            .iter()
+            .copied()
+            .filter(|index| !child_by_parent.contains_key(&parsed[*index].id))
+            .collect();
+        if tops.len() != 1 {
+            valid = false;
+        }
+        if valid {
+            let top = tops[0];
+            let mut current = top;
+            let mut visited = HashSet::new();
+            loop {
+                if !visited.insert(parsed[current].id) {
+                    valid = false;
+                    break;
+                }
+                let parent_id = parsed[current].parent_id;
+                let Some(parent) = by_id.get(&parent_id) else {
+                    break;
+                };
+                current = *parent;
+            }
+            if visited.len() != indices.len() {
+                valid = false;
+            }
+            if valid {
+                selected.insert(top);
+            }
+        }
+        if !valid {
+            issues.push(MountIssue {
+                kind: "ambiguousStack",
+                target: target.into(),
+                layers: indices.len(),
+            });
+        }
+    }
+
+    (
+        parsed
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| selected.contains(index))
+            .map(|(_, parsed_mount)| parsed_mount.mount.clone())
+            .collect(),
+        issues,
+    )
+}
 fn parse_mounts(text: &str, for_display: bool) -> AppResult<MountTable> {
-    let mut mounts = Vec::new();
-    let mut counts = HashMap::new();
+    let mut parsed = Vec::new();
     for line in text.lines() {
         let (left, right) = line
             .split_once(" - ")
             .ok_or_else(|| AppError::new("mountFormat", "挂载表格式无效"))?;
         let fields: Vec<_> = left.split(' ').collect();
         let extra: Vec<_> = right.split(' ').collect();
-        if fields.len() < 6
-            || extra.len() < 3
-            || fields[0].parse::<u64>().is_err()
-            || fields[1].parse::<u64>().is_err()
-        {
+        if fields.len() < 6 || extra.len() < 3 {
             return Err(AppError::new("mountFormat", "挂载表字段无效"));
         }
+        let id = fields[0]
+            .parse::<u64>()
+            .map_err(|_| AppError::new("mountFormat", "挂载表字段无效"))?;
+        let parent_id = fields[1]
+            .parse::<u64>()
+            .map_err(|_| AppError::new("mountFormat", "挂载表字段无效"))?;
         let target = unescape(fields[4])?;
         if !target.starts_with('/') || target.contains('\0') {
             return Err(AppError::new("mountFormat", "挂载位置无效"));
         }
-        *counts.entry(target.clone()).or_insert(0) += 1;
-        mounts.push(RemoteMount {
-            key: fields[0].into(),
-            target,
-            source: unescape(extra[1])?,
-            fs_root: unescape(fields[3])?,
-            fs_type: extra[0].into(),
-            read_only: fields[5]
-                .split(',')
-                .chain(extra[2].split(','))
-                .any(|v| v == "ro"),
+        parsed.push(ParsedMount {
+            id,
+            parent_id,
+            mount: RemoteMount {
+                key: fields[0].into(),
+                target,
+                source: unescape(extra[1])?,
+                fs_root: unescape(fields[3])?,
+                fs_type: extra[0].into(),
+                read_only: fields[5]
+                    .split(',')
+                    .chain(extra[2].split(','))
+                    .any(|v| v == "ro"),
+            },
         });
     }
-    if mounts.is_empty() {
+    if parsed.is_empty() {
         return Err(AppError::new("mountFormat", "挂载表为空"));
     }
-    // mountinfo ordering does not reliably identify the top of stacked mounts.
-    // Do not attribute a hidden filesystem's capacity to the visible directory.
-    let stacked = counts.values().any(|n| *n > 1);
-    if for_display {
-        mounts.retain(|m| counts[&m.target] == 1);
-    }
+    // Stacked mounts form a parent chain at the same target. Select the only
+    // topmost node when the complete chain can be proven; never rely on line order.
+    let (mounts, issues) = if for_display {
+        visible_mounts(&parsed)
+    } else {
+        (
+            parsed.into_iter().map(|parsed| parsed.mount).collect(),
+            Vec::new(),
+        )
+    };
     Ok(MountTable {
         version: format!("{:x}", Sha256::digest(text.as_bytes())),
         status: "ready",
         mounts,
-        message: stacked.then(|| "部分路径存在叠加挂载，暂不展示其容量".into()),
+        issues,
+        message: None,
     })
 }
 fn usage(key: &str, output: &str) -> AppResult<MountUsage> {
@@ -447,13 +557,39 @@ mod tests {
         assert!(unescape("/bad\\999").is_err());
     }
     #[test]
-    fn never_guesses_topmost_stacked_mount() {
+    fn selects_topmost_stacked_mount_from_parent_chain() {
+        let table = parse_table(&format!(
+            "{TABLE}24 21 8:3 / /data rw - ext4 /dev/sdc1 rw\n"
+        ))
+        .unwrap();
+        let data = table.mounts.iter().find(|m| m.target == "/data").unwrap();
+        assert_eq!(data.key, "24");
+        assert_eq!(data.source, "/dev/sdc1");
+        assert!(table.issues.is_empty());
+    }
+    #[test]
+    fn resolves_systemd_automount_stack_independent_of_line_order() {
+        let lower = "38 26 0:33 / /proc/sys/fs/binfmt_misc rw - autofs systemd-1 rw\n";
+        let upper = "108 38 0:37 / /proc/sys/fs/binfmt_misc rw - binfmt_misc binfmt_misc rw\n";
+        for text in [format!("{lower}{upper}"), format!("{upper}{lower}")] {
+            let table = parse_table(&text).unwrap();
+            assert_eq!(table.mounts.len(), 1);
+            assert_eq!(table.mounts[0].key, "108");
+            assert_eq!(table.mounts[0].fs_type, "binfmt_misc");
+            assert!(table.issues.is_empty());
+        }
+    }
+    #[test]
+    fn reports_ambiguous_stacked_mount_without_guessing() {
         let table = parse_table(&format!(
             "{TABLE}24 20 8:3 / /data rw - ext4 /dev/sdc1 rw\n"
         ))
         .unwrap();
         assert!(!table.mounts.iter().any(|m| m.target == "/data"));
-        assert!(table.message.is_some());
+        assert_eq!(table.issues.len(), 1);
+        assert_eq!(table.issues[0].kind, "ambiguousStack");
+        assert_eq!(table.issues[0].target, "/data");
+        assert_eq!(table.issues[0].layers, 2);
         let complete = parse_mounts(
             &format!("{TABLE}24 20 8:3 / /data rw - ext4 /dev/sdc1 rw\n"),
             false,
@@ -576,12 +712,14 @@ pub(crate) fn query_table(
 ) -> AppResult<MountTable> {
     let _slot = QuerySlot::acquire(check)?;
     check()?;
-    let connection = connection::connect_verified(spec, cancel, crate::traffic::TrafficPurpose::MountMonitor)?;
+    let connection =
+        connection::connect_verified(spec, cancel, crate::traffic::TrafficPurpose::MountMonitor)?;
     match verified_table(connection.session(), check) {
         Err(e) if e.kind == "unsupported" => Ok(MountTable {
             version: String::new(),
             status: "unsupported",
             mounts: vec![],
+            issues: vec![],
             message: Some(e.message),
         }),
         result => result,
@@ -597,7 +735,8 @@ pub(crate) fn query_usage(
 ) -> AppResult<Vec<MountUsage>> {
     let _slot = QuerySlot::acquire(check)?;
     check()?;
-    let connection = connection::connect_verified(spec, cancel, crate::traffic::TrafficPurpose::MountMonitor)?;
+    let connection =
+        connection::connect_verified(spec, cancel, crate::traffic::TrafficPurpose::MountMonitor)?;
     let session = connection.session();
     let table = verified_table(session, check)?;
     if table.version != mount_table_version {

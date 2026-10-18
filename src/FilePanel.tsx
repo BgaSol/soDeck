@@ -58,6 +58,7 @@ import type {
 import { useRemoteFileTree } from "./useRemoteFileTree";
 import { useRemoteMounts } from "./useRemoteMounts";
 import {
+  formatMountBytes,
   mountForFile,
   mountKind,
   mountSource,
@@ -143,6 +144,21 @@ export function FilePanel({
     mountPaths,
     initialState?.mounts,
   );
+  const visibleMountIssues = useMemo(() => {
+    const visible = new Set(mountPaths);
+    return (mounts.state.table?.issues ?? []).filter(
+      (issue) =>
+        issue.kind === "ambiguousStack" && visible.has(issue.target),
+    );
+  }, [mountPaths, mounts.state.table?.issues]);
+  const mountNotice =
+    mounts.state.table?.status === "unsupported"
+      ? mounts.state.table.message
+      : visibleMountIssues.length === 1
+        ? `无法确认 ${visibleMountIssues[0].target} 当前可见的挂载层，暂不展示该路径容量`
+        : visibleMountIssues.length > 1
+          ? `当前目录中有 ${visibleMountIssues.length} 个挂载点层级无法确认，暂不展示容量`
+          : null;
   const [mountDetail, setMountDetail] = useState<{
     key: string;
     path: string;
@@ -841,15 +857,30 @@ export function FilePanel({
             const isExpanded = file.isDir && expanded.has(file.path);
             const mount = mountForFile(file, mounts.state.table?.mounts ?? []);
             const capacity = mount ? mounts.state.usage[mount.key] : undefined;
-            const percent = capacity?.value?.usedPercent;
+            const value = capacity?.value;
+            const percent = value?.usedPercent;
             const mountLabel =
-              capacity?.value?.status === "unsupported"
+              value?.status === "unsupported"
                 ? "—"
                 : percent != null
                   ? `${percent}%`
                   : capacity?.loading
                     ? "读取中"
                     : "暂不可用";
+            const mountTotal =
+              value?.status === "ready"
+                ? formatMountBytes(value.totalBytes)
+                : null;
+            const mountAccessibleLabel =
+              value?.status === "ready"
+                ? `${file.path}，总容量 ${mountTotal}，已用 ${formatMountBytes(value.usedBytes)}，可用 ${formatMountBytes(value.availableBytes)}，${percent == null ? "使用率不可用" : `使用率 ${percent}%`}${capacity?.stale ? "，上次数据" : ""}，查看挂载详情`
+                : `${file.path}，${mountLabel}${capacity?.stale ? "，上次数据" : ""}，查看挂载详情`;
+            const mountTitle =
+              value?.status === "ready"
+                ? `总计 ${mountTotal} · 已用 ${formatMountBytes(value.usedBytes)} · 可用 ${formatMountBytes(value.availableBytes)}${value.updatedAt ? `\n${capacity?.stale ? "上次采样" : "更新于"} ${new Date(value.updatedAt).toLocaleTimeString()}` : ""}`
+                : value?.updatedAt
+                  ? `${capacity?.stale ? "上次采样" : "更新于"} ${new Date(value.updatedAt).toLocaleTimeString()}`
+                  : "尚无容量采样";
             return (
               <Fragment key={file.path}>
                 <div
@@ -1079,23 +1110,30 @@ export function FilePanel({
                       type="button"
                       className={`mount-usage${capacity?.stale ? " stale" : ""}`}
                       data-mount-detail
-                      aria-label={`${file.path} ${mountLabel}${capacity?.stale ? "，上次数据" : ""}，查看挂载详情`}
-                      title={
-                        capacity?.value?.updatedAt
-                          ? `${capacity.stale ? "上次采样" : "更新于"} ${new Date(capacity.value.updatedAt).toLocaleTimeString()}`
-                          : "尚无容量采样"
-                      }
+                      aria-label={mountAccessibleLabel}
+                      title={mountTitle}
                       aria-haspopup="dialog"
                       aria-expanded={mountDetail?.key === mount.key}
                       onClick={() => showMount(mount)}
                     >
-                      <span>
-                        {mountLabel}
-                        {capacity?.stale && capacity.value ? " · 上次" : ""}
-                      </span>
-                      {percent != null && (
-                        <span className="mount-meter" aria-hidden="true">
-                          <span style={{ width: `${percent}%` }} />
+                      {value?.status === "ready" ? (
+                        <>
+                          <span className="mount-capacity-total">
+                            {mountTotal}
+                          </span>
+                          <span className="mount-capacity-percent">
+                            {mountLabel}
+                            {capacity?.stale ? " · 上次" : ""}
+                          </span>
+                          {percent != null && (
+                            <span className="mount-meter" aria-hidden="true">
+                              <span style={{ width: `${percent}%` }} />
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="mount-capacity-status">
+                          {mountLabel}
                         </span>
                       )}
                     </button>
@@ -1166,12 +1204,12 @@ export function FilePanel({
           {pathNotice.message}
         </p>
       )}
-      {(mounts.state.error || mounts.state.table?.message) && (
+      {(mounts.state.error || mountNotice) && (
         <div className="mount-panel-notice" role="status">
           <span>
             {mounts.state.error
               ? `挂载信息暂不可用：${mounts.state.error}`
-              : mounts.state.table?.message}
+              : mountNotice}
           </span>
           <button
             className="quiet"

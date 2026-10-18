@@ -1,0 +1,11 @@
+{
+  "cliVersion": "0.73.0", "daemonVersion": "0.73.0", "daemonStatus": "Connected", "profileName": "default",
+  "publicKey": "fixture-local-key", "fqdn": "linux.example.netbird", "netbirdIp": "100.80.0.1/16", "netbirdIpv6": "fd00::1/64",
+  "management": {"url":"https://management.example.invalid", "connected":true}, "signal":{"url":"https://signal.example.invalid", "connected":true},
+  "relays":{"total":1,"available":1,"details":[{"uri":"rels://relay.example.invalid","available":true}]}, "dnsServers":[],
+  "peers":{"total":3,"connected":2,"details":[
+    {"publicKey":"peer-a","fqdn":"db-prod","netbirdIp":"100.80.0.2/16","status":"Connected","connectionType":"P2P","latency":18000000,"lastWireguardHandshake":"2026-10-18T02:00:00Z","transferReceived":9007199254740993,"transferSent":0,"networks":["192.168.20.0/24"]},
+    {"publicKey":"peer-b","fqdn":"web-relay","netbirdIp":"100.80.0.3/16","status":"Connected","connectionType":"Relayed","latency":32000000},
+    {"publicKey":"peer-c","fqdn":"idle-node","netbirdIpv6":"fd00::4/64","status":"Idle","connectionType":"","latency":0,"lastWireguardHandshake":"0001-01-01T00:00:00Z"}
+  ]}
+}

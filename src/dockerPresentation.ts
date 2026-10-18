@@ -1,7 +1,8 @@
 import type { Container, DockerImage, DockerStatus } from "./types";
 
 export type DockerPage = "containers" | "images";
-export type DockerFilter = "all" | "running" | "stopped" | "other";
+export type DockerFilter =
+  "all" | "running" | "stopped" | "attention" | "other";
 export type DockerSort = "name" | "attention";
 export interface DockerSelection {
   kind: DockerPage;
@@ -11,6 +12,7 @@ export interface DockerSelection {
   endpoint?: string;
 }
 export interface DockerPanelSnapshot {
+  section?: "objects" | "projects" | "resources";
   page?: DockerPage;
   queries?: { containers: string; images: string };
   filter?: DockerFilter;
@@ -19,6 +21,7 @@ export interface DockerPanelSnapshot {
   scrollTop?: { containers: number; images: number };
   expandedScrollTop?: { containers: number; images: number }; // Legacy snapshots only.
   detailOpen?: boolean;
+  detailGroups?: Record<string, { ports: boolean; storage: boolean }>;
   // Only read these fields from older window snapshots, never write live data.
   rootOpen?: boolean;
   imagesOpen?: boolean;
@@ -34,12 +37,18 @@ export function normalizeDockerSnapshot(snapshot?: DockerPanelSnapshot) {
       ? "images"
       : "containers";
   return {
+    section:
+      snapshot?.section === "projects" || snapshot?.section === "resources"
+        ? snapshot.section
+        : ("objects" as const),
     page,
     queries: {
       containers: snapshot?.queries?.containers ?? "",
       images: snapshot?.queries?.images ?? "",
     },
-    filter: (["running", "stopped", "other"].includes(snapshot?.filter ?? "")
+    filter: (["running", "stopped", "attention", "other"].includes(
+      snapshot?.filter ?? "",
+    )
       ? snapshot!.filter
       : "all") as DockerFilter,
     sort:
@@ -52,6 +61,14 @@ export function normalizeDockerSnapshot(snapshot?: DockerPanelSnapshot) {
       images: Math.max(0, snapshot?.scrollTop?.images ?? 0),
     },
     detailOpen: snapshot?.detailOpen ?? false,
+    detailGroups: Object.fromEntries(
+      Object.entries(snapshot?.detailGroups ?? {})
+        .slice(-30)
+        .map(([key, value]) => [
+          key,
+          { ports: value?.ports !== false, storage: value?.storage === true },
+        ]),
+    ),
   };
 }
 export function dockerKey(item: Container | DockerImage) {
@@ -61,6 +78,7 @@ export function dockerMatches(
   item: Container | DockerImage,
   query: string,
   filter: DockerFilter = "all",
+  unhealthyIds: string[] = [],
 ) {
   const term = query.trim().toLocaleLowerCase();
   if (
@@ -71,10 +89,15 @@ export function dockerMatches(
   )
     return false;
   if (!("state" in item) || filter === "all") return true;
+  if (filter === "attention")
+    return (
+      unhealthyIds.includes(item.id) ||
+      ["dead", "restarting"].includes(item.state)
+    );
   return filter === "running"
     ? item.state === "running"
     : filter === "stopped"
-      ? item.state === "exited"
+      ? ["exited", "created"].includes(item.state)
       : item.state !== "running" && item.state !== "exited";
 }
 export function orderDockerItems<T extends Container | DockerImage>(

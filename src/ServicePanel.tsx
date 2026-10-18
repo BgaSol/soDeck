@@ -1,5 +1,5 @@
 import { useId, type ReactNode } from "react";
-import { Activity, Boxes } from "lucide-react";
+import { Activity, Boxes, Network } from "lucide-react";
 import type { ResourcePreferences } from "./resourcePresentation";
 
 export function ServicePanel({
@@ -7,14 +7,16 @@ export function ServicePanel({
   onChange,
   monitor,
   docker,
+  netbird,
 }: {
   preferences: ResourcePreferences;
   onChange: (next: ResourcePreferences) => void;
   monitor: ReactNode;
   docker: ReactNode;
+  netbird: ReactNode;
 }) {
   const id = useId();
-  const tabs = ["monitor", "docker"] as const;
+  const tabs = ["monitor", "docker", "netbird"] as const;
   return (
     <aside className="resource-service-panel" aria-label="服务器监控与服务">
       <div className="inspector-navigation">
@@ -34,13 +36,30 @@ export function ServicePanel({
                   return;
                 e.preventDefault();
                 const target =
-                  e.key === "Home" ? 0 : e.key === "End" ? 1 : 1 - index;
+                  e.key === "Home"
+                    ? 0
+                    : e.key === "End"
+                      ? tabs.length - 1
+                      : (index +
+                          (e.key === "ArrowRight" ? 1 : -1) +
+                          tabs.length) %
+                        tabs.length;
                 onChange({ ...preferences, tab: tabs[target] });
                 document.getElementById(`${id}-${tabs[target]}`)?.focus();
               }}
             >
-              {tab === "monitor" ? <Activity size={14} /> : <Boxes size={14} />}{" "}
-              {tab === "monitor" ? "监控" : "Docker"}
+              {tab === "monitor" ? (
+                <Activity size={14} />
+              ) : tab === "docker" ? (
+                <Boxes size={14} />
+              ) : (
+                <Network size={14} />
+              )}{" "}
+              {tab === "monitor"
+                ? "监控"
+                : tab === "docker"
+                  ? "Docker"
+                  : "NetBird"}
             </button>
           ))}
         </div>
@@ -60,6 +79,14 @@ export function ServicePanel({
         hidden={preferences.tab !== "docker"}
       >
         {docker}
+      </div>
+      <div
+        role="tabpanel"
+        id={`${id}-netbird-panel`}
+        aria-labelledby={`${id}-netbird`}
+        hidden={preferences.tab !== "netbird"}
+      >
+        {netbird}
       </div>
     </aside>
   );

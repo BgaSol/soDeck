@@ -236,9 +236,11 @@ export function App() {
         );
         let summary;
         let forwards;
+        let docker;
         try {
           summary = (await fileTaskApi.list("all", null, 1)).summary;
           forwards = await forwardApi.summary();
+          docker = await dockerApi.summary();
         } catch (e) {
           closing.current = false;
           setError(errorOf(e));
@@ -248,7 +250,11 @@ export function App() {
           count ? `仍有 ${count} 个活动终端` : "",
           logs ? `${logs} 个日志窗口正在接收` : "",
           dirty ? `${dirty} 个文件有未保存修改` : "",
-          summary.active ? `${summary.active} 个文件任务尚未完成` : "",
+          docker?.active ? `${docker.active} 个 Docker 操作尚未完成` : "",
+          docker?.attention
+            ? `${docker.attention} 个 Docker 操作结果待确认`
+            : "",
+          summary.active ? `${summary.active} 个文件任务尚未完成（含 Docker 传输）` : "",
           summary.attention ? `${summary.attention} 个文件任务需要处理` : "",
           forwards.active
             ? `${forwards.active} 条端口转发仍在运行（${forwards.connections} 条业务连接）`
@@ -771,3 +777,4 @@ export function Root() {
     </WindowErrorBoundary>
   );
 }
+import { dockerApi } from "./dockerApi";

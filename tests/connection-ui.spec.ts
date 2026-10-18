@@ -838,7 +838,7 @@ test("moving a workspace carries both widths and restores the same terminal with
   await expect(detached.locator(".terminal-surface")).toBeVisible();
   await detached
     .getByRole("navigation", { name: "工作区域" })
-    .getByRole("button", { name: "监控与 Docker" })
+    .getByRole("button", { name: "监控与服务" })
     .click();
   await expect(
     detached.getByRole("button", { name: "15 分钟", exact: true }),
@@ -1306,7 +1306,7 @@ test("sidebar and communication preferences survive window migration without cop
   );
   await detached
     .getByRole("navigation", { name: "工作区域" })
-    .getByRole("button", { name: "监控与 Docker" })
+    .getByRole("button", { name: "监控与服务" })
     .click();
   await expect(detached.getByRole("textbox", { name: "搜索容器" })).toHaveValue(
     "api-service",

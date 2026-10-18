@@ -1,9 +1,15 @@
 //! Keep dynamically created windows consistent with the platform main-window config.
 use tauri::{Manager, Runtime, WebviewWindowBuilder};
 
-pub fn configure<R: Runtime, M: Manager<R>>(
-    builder: WebviewWindowBuilder<'_, R, M>,
-) -> WebviewWindowBuilder<'_, R, M> {
+pub fn configure<'a, R: Runtime, M: Manager<R>>(
+    manager: &M,
+    builder: WebviewWindowBuilder<'a, R, M>,
+) -> WebviewWindowBuilder<'a, R, M> {
+    let builder = builder.devtools(
+        manager
+            .state::<std::sync::Arc<crate::system_settings::SystemSettings>>()
+            .developer_mode(),
+    );
     #[cfg(target_os = "windows")]
     let builder = builder.decorations(false).shadow(true);
     #[cfg(target_os = "macos")]

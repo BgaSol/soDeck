@@ -11,6 +11,7 @@ import {
   ArrowLeft,
   Boxes,
   Layers,
+  MoreHorizontal,
   RefreshCw,
   ScrollText,
   Search,
@@ -19,6 +20,20 @@ import {
 } from "lucide-react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { api } from "./api";
+import {
+  useDockerManagement,
+  useDockerDetail,
+} from "./DockerManagementProvider";
+import { ResourceManagement } from "./docker/ResourceManagement";
+import { useDockerActions } from "./docker/useDockerActions";
+import { DockerConfirmDialog } from "./docker/DockerConfirmDialog";
+import { ComposeManagement } from "./docker/ComposeManagement";
+import { ImageManagement, ImagePullButton } from "./docker/ImageManagement";
+import { ContainerManagement } from "./docker/ContainerManagement";
+import { DockerOperations } from "./docker/DockerOperations";
+import { operationActive, type ContainerAction } from "./dockerApi";
+import { PortForwardMenu } from "./PortForwardMenu";
+import "./docker/docker.css";
 import { useMonitor, useDockerInterest } from "./MonitorProvider";
 import { dockerStatusNames } from "./dockerPresentation";
 import { metricMessage } from "./resourcePresentation";
@@ -40,28 +55,37 @@ type ActionState = { busy: boolean; error: string };
 export function DockerPanel({
   sessionId,
   serverName,
+  serverId,
+  onRevealPath,
   active = true,
   initialState,
   onStateChange,
 }: {
   sessionId: string | null;
   serverName: string;
+  serverId?: string;
+  onRevealPath?: (path: string) => void;
   active?: boolean;
   initialState?: DockerPanelSnapshot;
   onStateChange?: (snapshot: DockerPanelSnapshot) => void;
 }) {
   const { store, state } = useMonitor();
   const docker = state.docker;
+  const management = useDockerManagement();
   const [view, setView] = useState(() => normalizeDockerSnapshot(initialState));
   const [actions, setActions] = useState<Record<string, ActionState>>({});
   const [sortRevision, setSortRevision] = useState(0);
+  const [requestedAction, setRequestedAction] =
+    useState<ContainerAction | null>(null);
   const root = useRef<HTMLElement>(null),
     list = useRef<VirtuosoHandle>(null),
     scroller = useRef<HTMLElement | null>(null);
   const savedScroll = useRef(view.scrollTop),
     savedSelection = useRef<Container | DockerImage | null>(null);
   const pendingFocus = useRef<string | null>(null);
+  const keyboardFocusFrame = useRef(0);
   const restoringScroll = useRef(false);
+  const scrollRestoreVersion = useRef(0);
   const currentScroll = () => savedScroll.current;
   const revealSelection = useRef<string | null>(null);
   const id = useId();
@@ -72,6 +96,16 @@ export function DockerPanel({
       : (status?.state ?? "detecting");
   const endpoint = status?.endpoint ?? "";
   const token = `${docker.engineGeneration}\0${sessionId ?? ""}\0${endpoint}`;
+  const [bulk, setBulk] = useState(false),
+    [checked, setChecked] = useState(new Set<string>());
+  const bulkActions = useDockerActions(
+    `${token}/${active}/${view.section}`,
+    !!sessionId && active,
+  );
+  useEffect(() => {
+    setBulk(false);
+    setChecked(new Set());
+  }, [token, view.page, view.section]);
   const currentToken = useRef(token);
   currentToken.current = token;
   const alive = useRef(true);
@@ -79,6 +113,7 @@ export function DockerPanel({
     alive.current = true;
     return () => {
       alive.current = false;
+      cancelAnimationFrame(keyboardFocusFrame.current);
     };
   }, []);
   const previousEngine = useRef({
@@ -111,11 +146,13 @@ export function DockerPanel({
   }, [docker.engineGeneration, endpoint]);
   useEffect(() => {
     setActions({});
+    setRequestedAction(null);
   }, [token]);
   useDockerInterest({
     summary: active,
-    containers: active && view.page === "containers",
-    images: active && view.page === "images",
+    containers:
+      active && view.section === "objects" && view.page === "containers",
+    images: active && view.section === "objects" && view.page === "images",
   });
   useEffect(() => {
     onStateChange?.({
@@ -155,9 +192,10 @@ export function DockerPanel({
           item,
           query,
           view.page === "containers" ? view.filter : "all",
+          docker.summary.value?.unhealthyIds,
         ),
       ),
-    [items, query, view.page, view.filter],
+    [items, query, view.page, view.filter, docker.summary.value?.unhealthyIds],
   );
   const selection = view.selection;
   const selectedKey = selection
@@ -195,7 +233,12 @@ export function DockerPanel({
     !!current &&
     "state" in current;
   const detailBack = useRef<HTMLButtonElement>(null);
-  const showDetails = !!selection && view.detailOpen;
+  const showDetails =
+    view.section === "objects" && !!selection && view.detailOpen;
+  useDockerDetail(
+    selection?.kind === "containers" ? selection.id : null,
+    active && showDetails,
+  );
   useEffect(() => {
     if (active && showDetails) detailBack.current?.focus();
   }, [active, showDetails]);
@@ -204,7 +247,7 @@ export function DockerPanel({
     requestAnimationFrame(() =>
       requestAnimationFrame(() =>
         root.current
-          ?.querySelector<HTMLElement>('[aria-selected="true"]')
+          ?.querySelector<HTMLElement>('[aria-current="true"]')
           ?.focus({ preventScroll: true }),
       ),
     );
@@ -257,7 +300,7 @@ export function DockerPanel({
   }
   function switchPage(page: DockerPage) {
     rememberScroll();
-    setView((v) => ({ ...v, page, detailOpen: false }));
+    setView((v) => ({ ...v, section: "objects", page, detailOpen: false }));
   }
   const receiveScroller = useCallback(
     (element: HTMLElement | Window | null) => {
@@ -267,9 +310,13 @@ export function DockerPanel({
   );
   useLayoutEffect(() => {
     restoringScroll.current = true;
+    pendingFocus.current = null;
+    cancelAnimationFrame(keyboardFocusFrame.current);
     if (!active || showDetails) return;
+    const version = ++scrollRestoreVersion.current;
     const top = currentScroll()[view.page];
     let frame = requestAnimationFrame(() => {
+      if (scrollRestoreVersion.current !== version) return;
       list.current?.scrollTo({ top, behavior: "auto" });
       frame = requestAnimationFrame(() => {
         restoringScroll.current = false;
@@ -334,6 +381,56 @@ export function DockerPanel({
       scrollTop: savedScroll.current,
     });
   }
+  function focusRow(index: number) {
+    ++scrollRestoreVersion.current;
+    restoringScroll.current = false;
+    cancelAnimationFrame(keyboardFocusFrame.current);
+    const key = dockerKey(filtered[index]);
+    pendingFocus.current = key;
+    let remaining = 120;
+    const reveal = () => {
+      if (
+        !alive.current ||
+        pendingFocus.current !== key ||
+        currentToken.current !== token
+      )
+        return;
+      const element = document.getElementById(`${id}-row-${index}`);
+      const viewport = scroller.current?.getBoundingClientRect();
+      const row = element?.getBoundingClientRect();
+      if (
+        element &&
+        row &&
+        viewport &&
+        row.height > 0 &&
+        row.top >= viewport.top - 1 &&
+        row.bottom <= viewport.bottom + 1
+      ) {
+        element.focus({ preventScroll: true });
+        pendingFocus.current = null;
+        rememberScroll();
+        return;
+      }
+      // Variable row measurements can settle after the first scroll, especially
+      // in WebKit. Keep the intent until the requested row is actually visible.
+      if (element && row && viewport && scroller.current) {
+        if (row.bottom > viewport.bottom)
+          scroller.current.scrollTop += row.bottom - viewport.bottom;
+        else if (row.top < viewport.top)
+          scroller.current.scrollTop -= viewport.top - row.top;
+      } else {
+        list.current?.scrollToIndex({
+          index,
+          align: "start",
+          behavior: "auto",
+        });
+      }
+      if (--remaining > 0)
+        keyboardFocusFrame.current = requestAnimationFrame(reveal);
+      else pendingFocus.current = null;
+    };
+    reveal();
+  }
   const summary = docker.summary.value;
   return (
     <section
@@ -355,6 +452,7 @@ export function DockerPanel({
             onClick={() => {
               setSortRevision((v) => v + 1);
               void store.refresh("docker");
+              void management.store.refresh().catch(() => {});
             }}
           >
             <RefreshCw
@@ -362,6 +460,22 @@ export function DockerPanel({
               className={docker.refreshing ? "spinning" : ""}
             />
           </button>
+          <PortForwardMenu
+            label="Docker 更多功能"
+            items={[
+              {
+                label: "空间与资源",
+                run: () =>
+                  setView((v) => ({
+                    ...v,
+                    section: "resources",
+                    detailOpen: false,
+                  })),
+              },
+            ]}
+          >
+            <MoreHorizontal size={15} />
+          </PortForwardMenu>
         </div>
         <div className="docker-endpoint" title={endpoint}>
           {endpoint || serverName || "等待引擎信息"}
@@ -378,7 +492,10 @@ export function DockerPanel({
           {metricMessage(metric, state.connected)}
         </div>
       </header>
-      <div className="docker-controls" hidden={showDetails}>
+      <div
+        className="docker-controls"
+        hidden={showDetails || view.section === "resources"}
+      >
         <div
           className="docker-segments"
           role="group"
@@ -387,7 +504,7 @@ export function DockerPanel({
           {(["containers", "images"] as const).map((page) => (
             <button
               key={page}
-              aria-pressed={view.page === page}
+              aria-pressed={view.section === "objects" && view.page === page}
               onClick={() => switchPage(page)}
             >
               {page === "containers" ? "容器" : "镜像"}
@@ -397,8 +514,16 @@ export function DockerPanel({
               </span>
             </button>
           ))}
+          <button
+            aria-pressed={view.section === "projects"}
+            onClick={() =>
+              setView((v) => ({ ...v, section: "projects", detailOpen: false }))
+            }
+          >
+            项目
+          </button>
         </div>
-        <label className="docker-search">
+        <label className="docker-search" hidden={view.section !== "objects"}>
           <Search size={14} />
           <input
             aria-label={view.page === "containers" ? "搜索容器" : "搜索镜像"}
@@ -430,7 +555,17 @@ export function DockerPanel({
             </button>
           )}
         </label>
-        <div className="docker-filters">
+        <div className="docker-filters" hidden={view.section !== "objects"}>
+          {view.page === "images" && (
+            <ImagePullButton
+              enabled={
+                active &&
+                !!sessionId &&
+                !!management.state.engine &&
+                metric.status === "ready"
+              }
+            />
+          )}
           {view.page === "containers" && (
             <select
               aria-label="容器状态筛选"
@@ -444,6 +579,7 @@ export function DockerPanel({
             >
               <option value="all">全部状态</option>
               <option value="running">运行中</option>
+              <option value="attention">需要关注</option>
               <option value="stopped">已停止</option>
               <option value="other">其他状态</option>
             </select>
@@ -463,9 +599,71 @@ export function DockerPanel({
               <option value="attention">按名称排序</option>
             )}
           </select>
+          {view.page === "containers" && (
+            <button
+              className="resource-link"
+              onClick={() => {
+                setBulk((v) => !v);
+                setChecked(new Set());
+              }}
+            >
+              {bulk ? "取消选择" : "批量"}
+            </button>
+          )}
           <span>{filtered.length} 项</span>
         </div>
       </div>
+      {bulk && view.section === "objects" && !showDetails && (
+        <div className="docker-bulk-toolbar">
+          <span>已选 {checked.size} 项</span>
+          {(["start", "stop", "restart", "removeContainer"] as const).map(
+            (action) => (
+              <button
+                key={action}
+                disabled={
+                  !checked.size ||
+                  bulkActions.busy ||
+                  bulkActions.locked ||
+                  !connected
+                }
+                onClick={() =>
+                  void bulkActions
+                    .act("selection", {
+                      type: "batch",
+                      entries: [...checked].map((targetId) => ({
+                        targetId,
+                        action,
+                      })),
+                    })
+                    .catch(() => {})
+                }
+              >
+                {
+                  {
+                    start: "启动",
+                    stop: "停止",
+                    restart: "重启",
+                    removeContainer: "删除…",
+                  }[action]
+                }
+              </button>
+            ),
+          )}
+        </div>
+      )}
+      {bulkActions.error && (
+        <p className="resource-error" role="alert">
+          {bulkActions.error}
+        </p>
+      )}
+      {bulkActions.uncertain && (
+        <button
+          disabled={bulkActions.busy}
+          onClick={() => void bulkActions.retry().catch(() => {})}
+        >
+          核对提交结果
+        </button>
+      )}
       {(docker.engine.error ||
         (engineState !== "running" && status?.message) ||
         metric.error) && (
@@ -474,11 +672,56 @@ export function DockerPanel({
           {metric.value && " · 保留上次列表，连接恢复后可操作。"}
         </p>
       )}
-      <div className="docker-content">
+      {view.section === "resources" && (
+        <ResourceManagement
+          key={token}
+          active={active}
+          enabled={connected}
+          onBack={() => setView((v) => ({ ...v, section: "objects" }))}
+          onContainer={(id, name) =>
+            setView((v) => ({
+              ...v,
+              section: "objects",
+              page: "containers",
+              detailOpen: true,
+              selection: {
+                kind: "containers",
+                id,
+                name,
+                engineGeneration: docker.engineGeneration,
+                endpoint,
+              },
+            }))
+          }
+        />
+      )}
+      {view.section === "projects" && (
+        <ComposeManagement
+          key={token}
+          active={active}
+          enabled={connected}
+          onContainer={(id, name) =>
+            setView((v) => ({
+              ...v,
+              section: "objects",
+              page: "containers",
+              detailOpen: true,
+              selection: {
+                kind: "containers",
+                id,
+                name,
+                engineGeneration: docker.engineGeneration,
+                endpoint,
+              },
+            }))
+          }
+        />
+      )}
+      <div className="docker-content" hidden={view.section !== "objects"}>
         <div className="docker-list-pane" hidden={showDetails}>
           <div
             className="docker-list"
-            role="listbox"
+            role="list"
             aria-label={view.page === "containers" ? "容器列表" : "镜像列表"}
             onScrollCapture={rememberScroll}
           >
@@ -495,90 +738,166 @@ export function DockerPanel({
                 itemContent={(index, item) => {
                   const key = dockerKey(item),
                     isContainer = "state" in item;
+                  const operation = management.state.operations.find(
+                    (task) =>
+                      task.engine.endpoint === endpoint &&
+                      task.targetId === item.id &&
+                      (operationActive(task) || task.phase === "unknown"),
+                  );
+                  const unhealthy =
+                    docker.summary.value?.unhealthyIds?.includes(item.id);
                   return (
-                    <button
-                      ref={(element) => {
-                        if (element && pendingFocus.current === key) {
-                          element.focus();
-                          pendingFocus.current = null;
-                        }
-                      }}
-                      id={`${id}-row-${index}`}
-                      type="button"
-                      role="option"
-                      aria-selected={
-                        selectedKey === key && selection?.kind === view.page
-                      }
-                      tabIndex={
-                        selectedKey === key ||
-                        (!filtered.some(
-                          (row) => dockerKey(row) === selectedKey,
-                        ) &&
-                          index === 0)
-                          ? 0
-                          : -1
-                      }
-                      className="docker-object-row"
-                      onClick={() => choose(item)}
-                      onKeyDown={(e) => {
-                        if (
-                          !["ArrowDown", "ArrowUp", "Home", "End"].includes(
-                            e.key,
-                          )
-                        )
-                          return;
-                        e.preventDefault();
-                        const next =
-                          e.key === "Home"
-                            ? 0
-                            : e.key === "End"
-                              ? filtered.length - 1
-                              : Math.max(
-                                  0,
-                                  Math.min(
-                                    filtered.length - 1,
-                                    index + (e.key === "ArrowDown" ? 1 : -1),
-                                  ),
-                                );
-                        pendingFocus.current = dockerKey(filtered[next]);
-                        list.current?.scrollIntoView({
-                          index: next,
-                          done: () =>
-                            requestAnimationFrame(() => {
-                              const target = document.getElementById(
-                                `${id}-row-${next}`,
-                              );
-                              if (target) {
-                                target.focus();
-                                pendingFocus.current = null;
-                              }
-                            }),
-                        });
-                      }}
-                      title={`${item.name}\n${item.id}`}
-                    >
-                      {isContainer ? (
-                        <span
-                          className={`docker-dot state-${item.state}`}
-                          aria-hidden="true"
+                    <div role="listitem" className="docker-list-item">
+                      {bulk && isContainer && (
+                        <input
+                          type="checkbox"
+                          className="docker-bulk-checkbox"
+                          aria-label={`选择 ${item.name}`}
+                          checked={checked.has(item.id)}
+                          onChange={() =>
+                            setChecked((v) => {
+                              const next = new Set(v);
+                              if (next.has(item.id)) next.delete(item.id);
+                              else next.add(item.id);
+                              return next;
+                            })
+                          }
                         />
-                      ) : (
-                        <Layers size={15} />
                       )}
-                      <span className="docker-object-text">
-                        <strong>{item.name || item.id.slice(0, 12)}</strong>
-                        <span>
-                          {isContainer ? item.image : item.id.slice(0, 12)}
-                        </span>
-                      </span>
-                      <span
-                        className={`docker-object-state ${isContainer ? `state-${item.state}` : ""}`}
+                      <button
+                        id={`${id}-row-${index}`}
+                        type="button"
+                        aria-current={
+                          selectedKey === key && selection?.kind === view.page
+                        }
+                        tabIndex={
+                          selectedKey === key ||
+                          (!filtered.some(
+                            (row) => dockerKey(row) === selectedKey,
+                          ) &&
+                            index === 0)
+                            ? 0
+                            : -1
+                        }
+                        className="docker-object-row"
+                        onClick={() => choose(item)}
+                        onKeyDown={(e) => {
+                          if (e.shiftKey && e.key === "F10") {
+                            e.preventDefault();
+                            e.currentTarget.parentElement
+                              ?.querySelector<HTMLButtonElement>(
+                                '[aria-haspopup="menu"]',
+                              )
+                              ?.click();
+                            return;
+                          }
+                          if (
+                            !["ArrowDown", "ArrowUp", "Home", "End"].includes(
+                              e.key,
+                            )
+                          )
+                            return;
+                          e.preventDefault();
+                          const next =
+                            e.key === "Home"
+                              ? 0
+                              : e.key === "End"
+                                ? filtered.length - 1
+                                : Math.max(
+                                    0,
+                                    Math.min(
+                                      filtered.length - 1,
+                                      index + (e.key === "ArrowDown" ? 1 : -1),
+                                    ),
+                                  );
+                          focusRow(next);
+                        }}
+                        title={`${item.name}\n${item.id}`}
                       >
-                        {isContainer
-                          ? (containerStateNames[item.state] ?? item.state)
-                          : item.size}
-                      </span>
-                    </button>
+                        {isContainer ? (
+                          <span
+                            className={`docker-dot state-${item.state}`}
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <Layers size={15} />
+                        )}
+                        <span className="docker-object-text">
+                          <strong>{item.name || item.id.slice(0, 12)}</strong>
+                          <span>
+                            {isContainer ? item.image : item.id.slice(0, 12)}
+                          </span>
+                        </span>
+                        <span
+                          className={`docker-object-state ${isContainer ? `state-${item.state}` : ""}`}
+                        >
+                          {isContainer
+                            ? operation
+                              ? operation.phase === "unknown"
+                                ? "待确认"
+                                : "操作中"
+                              : unhealthy
+                                ? "不健康"
+                                : (containerStateNames[item.state] ??
+                                  item.state)
+                            : item.size}
+                        </span>
+                      </button>
+                      {isContainer && (
+                        <PortForwardMenu
+                          label={`${item.name} 列表操作`}
+                          disabled={!connected || !!operation}
+                          items={[
+                            { label: "查看详情", run: () => choose(item) },
+                            ...(["created", "exited"].includes(item.state)
+                              ? [
+                                  {
+                                    label: "启动",
+                                    run: () => {
+                                      choose(item);
+                                      setRequestedAction("start");
+                                    },
+                                  },
+                                ]
+                              : []),
+                            ...(item.state === "running"
+                              ? [
+                                  {
+                                    label: "停止",
+                                    run: () => {
+                                      choose(item);
+                                      setRequestedAction("stop");
+                                    },
+                                  },
+                                  {
+                                    label: "重启",
+                                    run: () => {
+                                      choose(item);
+                                      setRequestedAction("restart");
+                                    },
+                                  },
+                                ]
+                              : []),
+                            ...(["created", "exited", "dead"].includes(
+                              item.state,
+                            )
+                              ? [
+                                  {
+                                    label: "删除容器…",
+                                    danger: true,
+                                    run: () => {
+                                      choose(item);
+                                      setRequestedAction("remove");
+                                    },
+                                  },
+                                ]
+                              : []),
+                          ]}
+                        >
+                          <MoreHorizontal size={15} />
+                        </PortForwardMenu>
+                      )}
+                    </div>
                   );
                 }}
               />
@@ -671,82 +990,137 @@ export function DockerPanel({
               <div className="resource-help">
                 {metricMessage(selectedMetric, state.connected)}
               </div>
-              <dl className="docker-facts">
-                <dt>ID</dt>
-                <dd className="docker-id">{selection.id}</dd>
-                {selected && "state" in selected ? (
-                  <>
-                    <dt>镜像</dt>
-                    <dd>{selected.image}</dd>
-                    <dt>状态</dt>
-                    <dd>
-                      {containerStateNames[selected.state] ?? selected.state} ·{" "}
-                      {selected.status}
-                    </dd>
-                  </>
-                ) : (
-                  selected && (
-                    <>
-                      <dt>大小</dt>
-                      <dd>{selected.size}</dd>
-                    </>
-                  )
-                )}
-              </dl>
-              {selection.kind === "containers" && (
-                <div className="docker-actions">
-                  {(["logs", "terminal"] as const).map((operation) => {
-                    const result =
-                        actions[operationKey(selection.id, operation)],
-                      allowed =
-                        canAct &&
-                        (operation === "logs" ||
-                          (current &&
-                            "state" in current &&
-                            current.state === "running"));
-                    return (
-                      <div key={operation}>
-                        <button
-                          disabled={!allowed || result?.busy}
-                          onClick={() =>
-                            current &&
-                            "state" in current &&
-                            void act(current, operation)
-                          }
-                          aria-label={
-                            operation === "logs"
-                              ? `查看 ${selection.name} 日志`
-                              : `进入 ${selection.name} 终端`
-                          }
-                          title={
-                            operation === "terminal" &&
-                            current &&
-                            "state" in current &&
-                            current.state !== "running"
-                              ? "仅运行中的容器可打开终端"
-                              : "在独立窗口打开"
-                          }
-                        >
-                          {operation === "logs" ? (
-                            <ScrollText size={14} />
-                          ) : (
-                            <TerminalSquare size={14} />
-                          )}{" "}
-                          {result?.busy
-                            ? "正在打开…"
-                            : operation === "logs"
-                              ? "日志"
-                              : "终端"}
-                        </button>
-                        {result?.error && (
-                          <p className="resource-error" role="alert">
-                            {result.error}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+              {selection.kind === "containers" ? (
+                <ContainerManagement
+                  key={`${token}/${selection.id}`}
+                  groups={view.detailGroups[`${endpoint}/${selection.id}`]}
+                  onGroupsChange={(groups) =>
+                    setView((v) => ({
+                      ...v,
+                      detailGroups: Object.fromEntries(
+                        [
+                          ...Object.entries(v.detailGroups).filter(
+                            ([key]) => key !== `${endpoint}/${selection.id}`,
+                          ),
+                          [`${endpoint}/${selection.id}`, groups],
+                        ].slice(-30),
+                      ),
+                    }))
+                  }
+                  serverId={serverId}
+                  onRevealPath={onRevealPath}
+                  containerId={selection.id}
+                  name={selection.name}
+                  engineGeneration={docker.engineGeneration}
+                  endpoint={endpoint}
+                  enabled={canAct}
+                  active={active && showDetails}
+                  requestedAction={requestedAction}
+                  onActionConsumed={() => setRequestedAction(null)}
+                  fallback={
+                    <dl className="docker-facts">
+                      <dt>ID</dt>
+                      <dd className="docker-id">{selection.id}</dd>
+                      {selected && "state" in selected ? (
+                        <>
+                          <dt>镜像</dt>
+                          <dd>{selected.image}</dd>
+                          <dt>状态</dt>
+                          <dd>
+                            {containerStateNames[selected.state] ??
+                              selected.state}{" "}
+                            · {selected.status}
+                          </dd>
+                        </>
+                      ) : (
+                        selected && (
+                          <>
+                            <dt>大小</dt>
+                            <dd>{selected.size}</dd>
+                          </>
+                        )
+                      )}
+                    </dl>
+                  }
+                >
+                  <div className="docker-actions">
+                    {(["logs", "terminal"] as const).map((operation) => {
+                      const result =
+                          actions[operationKey(selection.id, operation)],
+                        allowed =
+                          canAct &&
+                          (operation === "logs" ||
+                            (current &&
+                              "state" in current &&
+                              current.state === "running"));
+                      return (
+                        <div key={operation}>
+                          <button
+                            disabled={!allowed || result?.busy}
+                            onClick={() =>
+                              current &&
+                              "state" in current &&
+                              void act(current, operation)
+                            }
+                            aria-label={
+                              operation === "logs"
+                                ? `查看 ${selection.name} 日志`
+                                : `进入 ${selection.name} 终端`
+                            }
+                            title={
+                              operation === "terminal" &&
+                              current &&
+                              "state" in current &&
+                              current.state !== "running"
+                                ? "仅运行中的容器可打开终端"
+                                : "在独立窗口打开"
+                            }
+                          >
+                            {operation === "logs" ? (
+                              <ScrollText size={14} />
+                            ) : (
+                              <TerminalSquare size={14} />
+                            )}{" "}
+                            {result?.busy
+                              ? "正在打开…"
+                              : operation === "logs"
+                                ? "日志"
+                                : "终端"}
+                          </button>
+                          {result?.error && (
+                            <p className="resource-error" role="alert">
+                              {result.error}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </ContainerManagement>
+              ) : (
+                <ImageManagement
+                  key={`${token}/${selection.id}`}
+                  imageId={selection.id}
+                  name={selection.name}
+                  enabled={
+                    connected && !!current && docker.images.status === "ready"
+                  }
+                  active={active && showDetails}
+                  onContainer={(id, name) => {
+                    setView((v) => ({
+                      ...v,
+                      page: "containers",
+                      detailOpen: true,
+                      selection: {
+                        kind: "containers",
+                        id,
+                        name,
+                        engineGeneration: docker.engineGeneration,
+                        endpoint,
+                      },
+                    }));
+                  }}
+                />
               )}
             </>
           ) : (
@@ -757,6 +1131,37 @@ export function DockerPanel({
           )}
         </section>
       </div>
+      <DockerOperations
+        endpoint={endpoint}
+        onContainer={(id, name) =>
+          setView((v) => ({
+            ...v,
+            section: "objects",
+            page: "containers",
+            detailOpen: true,
+            selection: {
+              kind: "containers",
+              id,
+              name,
+              engineGeneration: docker.engineGeneration,
+              endpoint,
+            },
+          }))
+        }
+      />
+      {bulkActions.preview && (
+        <DockerConfirmDialog
+          preview={bulkActions.preview}
+          onClose={() => bulkActions.setPreview(null)}
+          onConfirm={() =>
+            bulkActions.submit(
+              bulkActions.preview!.targetId,
+              bulkActions.preview!.action,
+              bulkActions.preview,
+            )
+          }
+        />
+      )}
     </section>
   );
 }

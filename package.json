@@ -18,9 +18,12 @@
     "test:terminal-history": "playwright test --config playwright.terminal-history.config.ts",
     "test:transfers": "playwright test --config playwright.transfers.config.ts",
     "test:desktop": "playwright test",
+    "test:settings": "playwright test --config playwright.settings.config.ts",
     "test:tree": "playwright test --config playwright.file-tree.config.ts",
     "test:resources": "playwright test --config playwright.resources.config.ts",
-    "test:mounts": "playwright test --config playwright.mounts.config.ts"
+    "test:mounts": "playwright test --config playwright.mounts.config.ts",
+    "test:docker": "playwright test --config playwright.docker.config.ts",
+    "test:netbird": "playwright test --config playwright.netbird.config.ts"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Docker 管理 · SoDeck UI 设计</title>
+    <link
+      rel="icon"
+      href="../../src-tauri/icons/source.svg"
+      type="image/svg+xml"
+    />
+    <link rel="stylesheet" href="../../src/theme.css" />
+    <link rel="stylesheet" href="./docker-management.css" />
+  </head>
+  <body>
+    <header class="review-bar">
+      <div class="review-title">
+        <strong>Docker 管理</strong><span>交互设计稿 · 示例数据</span>
+      </div>
+      <div class="review-controls">
+        <label
+          >侧栏
+          <select id="panel-width" aria-label="侧栏宽度">
+            <option value="320">320 px</option>
+            <option value="360" selected>360 px</option>
+            <option value="480">480 px</option>
+          </select></label
+        >
+        <label
+          >场景
+          <select id="scenario" aria-label="演示场景">
+            <option value="normal">正常操作</option>
+            <option value="failure">操作失败</option>
+            <option value="unknown">结果待确认</option>
+            <option value="empty">空列表</option>
+            <option value="offline">连接中断</option>
+          </select></label
+        >
+        <button id="theme" class="review-button" aria-label="切换深色外观">
+          深色
+        </button>
+        <button id="reset" class="review-button">重置</button>
+      </div>
+    </header>
+    <main class="app-shell" aria-label="SoDeck 工作区设计预览">
+      <header class="titlebar">
+        <img
+          class="brand"
+          src="../../src-tauri/icons/source.svg"
+          alt="SoDeck"
+        />
+        <div class="session active">
+          <i class="dot running"></i><strong>Production</strong
+          ><span aria-hidden="true">×</span>
+        </div>
+        <div class="session secondary-session">
+          <i class="dot running"></i><span>Staging</span
+          ><span aria-hidden="true">×</span>
+        </div>
+        <span class="new-tab" aria-hidden="true">＋</span>
+        <div class="titlebar-end">
+          <span data-icon="network"></span><span data-icon="terminal"></span
+          ><span data-icon="logs"></span>
+        </div>
+      </header>
+      <div class="workspace">
+        <aside class="files" aria-label="远程文件预览">
+          <div class="pane-heading">
+            <span data-icon="folder"></span><strong>远程文件</strong
+            ><span class="push" data-icon="plus"></span
+            ><span data-icon="upload"></span><span data-icon="refresh"></span>
+          </div>
+          <p class="small muted file-server">Production</p>
+          <div class="file-location">
+            <span data-icon="up"></span
+            ><span class="field mono">/srv/storefront</span>
+          </div>
+          <div class="file-label"><span>名称</span><span>大小</span></div>
+          <div class="file-row">
+            <span data-icon="folder"></span><span>config</span><small>—</small>
+          </div>
+          <div class="file-row">
+            <span data-icon="folder"></span><span>data</span><small>—</small>
+          </div>
+          <div class="file-row">
+            <span data-icon="folder"></span><span>logs</span><small>—</small>
+          </div>
+          <button class="file-row file-selected" data-action="compose-file">
+            <span data-icon="file"></span><span>compose.yaml</span
+            ><small>1.8 KB</small>
+          </button>
+          <div class="file-row">
+            <span data-icon="file"></span><span>.env</span><small>240 B</small>
+          </div>
+          <div class="file-row">
+            <span data-icon="file"></span><span>README.md</span
+            ><small>2.4 KB</small>
+          </div>
+          <div class="file-footer small muted">
+            SFTP <span>/srv/storefront</span>
+          </div>
+        </aside>
+        <section class="terminal-pane" aria-label="服务器终端预览">
+          <div class="terminal-heading">
+            <span data-icon="terminal"></span>
+            <div>
+              <strong>Production</strong>
+              <div class="small muted mono">ops@production.example:22</div>
+            </div>
+            <span class="connection"><i class="dot running"></i>已连接</span
+            ><span class="terminal-header-action"
+              ><span data-icon="network"></span>端口转发</span
+            >
+          </div>
+          <div class="terminal-toolbar">
+            <span data-icon="history"></span><span>历史</span
+            ><span data-icon="search"></span><span>全局历史搜索</span
+            ><span class="toolbar-divider"></span><span data-icon="clear"></span
+            ><span>清理显示</span>
+          </div>
+          <div class="terminal-content">
+            <pre><span class="term-muted">Last login: Sat Oct 17 09:41:08 2026</span>
+
+<span class="term-green">ops@production</span>:<span class="term-path">/srv/storefront</span>$ docker compose ps
+NAME           IMAGE                STATUS
+api-gateway    nginx:1.27-alpine     Up 3 days (healthy)
+order-service  company/orders:2.4   Up 3 days (unhealthy)
+postgres       postgres:16          Up 3 days (healthy)
+redis          redis:7-alpine       Up 3 days
+
+<span class="term-green">ops@production</span>:<span class="term-path">/srv/storefront</span>$ <span class="caret"> </span></pre>
+          </div>
+          <div class="terminal-status">
+            <span
+              >⌁ 已连接 <span class="term-muted">本机 → Production</span></span
+            ><span class="mono">UTF-8</span>
+          </div>
+          <div class="terminal-status minor">
+            <span>CPU <b>12.8%</b>　内存 <b>37.5%</b></span
+            ><span>↓ 2.4 MiB/s　↑ 860 KiB/s</span>
+          </div>
+        </section>
+        <aside id="inspector" class="inspector" aria-label="Docker 管理侧栏">
+          <div class="service-navigation">
+            <div class="segments" role="tablist" aria-label="服务器侧栏">
+              <button role="tab" aria-selected="false" data-action="monitor">
+                <span data-icon="activity"></span>监控</button
+              ><button role="tab" aria-selected="true" data-action="docker">
+                <span data-icon="boxes"></span>Docker
+              </button>
+            </div>
+          </div>
+          <div id="engine-head"></div>
+          <div id="page" class="page"></div>
+          <div id="tasks" class="task-region" hidden></div>
+        </aside>
+      </div>
+      <footer class="app-status">
+        <span>2 个会话 · 2 已连接</span
+        ><span>本地工作空间　　⇄ 文件任务　0</span>
+      </footer>
+    </main>
+    <div id="menu" class="context-menu" role="menu" hidden></div>
+    <dialog id="dialog" aria-labelledby="dialog-title"></dialog>
+    <div
+      id="announce"
+      class="sr-only"
+      aria-live="polite"
+      aria-atomic="true"
+    ></div>
+    <script src="./docker-management.js"></script>
+  </body>
+</html>

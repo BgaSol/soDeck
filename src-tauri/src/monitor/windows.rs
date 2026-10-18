@@ -80,11 +80,10 @@ pub async fn open_monitor_window(
         }
         return Ok(());
     }
-    let result = crate::window_chrome::configure(WebviewWindowBuilder::new(
+    let result = crate::window_chrome::configure(
         &app,
-        &label,
-        WebviewUrl::App("index.html?monitor=1".into()),
-    ))
+        WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("index.html?monitor=1".into())),
+    )
     .title(crate::brand::window_title(
         &app,
         &format!("{} · 监控", spec.target().name),

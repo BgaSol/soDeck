@@ -13,6 +13,7 @@ pub struct DockerStatus {
     pub state: String,
     pub message: String,
     pub endpoint: String,
+    pub daemon_id: Option<String>,
 }
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -55,6 +56,7 @@ pub(crate) fn detect_on(
             state: "missing".into(),
             message: "当前账号未找到 docker 命令".into(),
             endpoint: String::new(),
+            daemon_id: None,
         });
     }
     let endpoint=query(session,"if [ -n \"$DOCKER_HOST\" ] && [ -z \"$DOCKER_CONTEXT\" ]; then printf '%s' \"$DOCKER_HOST\"; else docker context inspect --format '{{.Endpoints.docker.Host}}'; fi", check)?;
@@ -63,15 +65,13 @@ pub(crate) fn detect_on(
             state: "error".into(),
             message: format!("无法确认 Docker 目标：{}", endpoint.stderr.trim()),
             endpoint: String::new(),
+            daemon_id: None,
         });
     }
     let endpoint = endpoint.stdout.trim().to_string();
     let result = query(
         session,
-        &format!(
-            "{} info --format '{{{{json .ServerVersion}}}}'",
-            docker(&endpoint)
-        ),
+        &format!("{} info --format '{{{{json .ID}}}}'", docker(&endpoint)),
         check,
     )?;
     if result.code == 0 {
@@ -79,6 +79,7 @@ pub(crate) fn detect_on(
             state: "running".into(),
             message: "Docker 引擎可访问".into(),
             endpoint,
+            daemon_id: serde_json::from_str::<String>(result.stdout.trim()).ok(),
         })
     } else {
         let text = format!("{}{}", result.stderr, result.stdout);
@@ -91,6 +92,7 @@ pub(crate) fn detect_on(
             state: state.into(),
             message: text.trim().into(),
             endpoint,
+            daemon_id: None,
         })
     }
 }

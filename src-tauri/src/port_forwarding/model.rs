@@ -74,6 +74,7 @@ impl Rule {
 pub struct OpenRequest {
     pub id: String,
     pub server_id: Option<String>,
+    pub seed: Option<ForwardSeed>,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -161,4 +162,12 @@ pub struct Summary {
     pub active: usize,
     pub connections: usize,
     pub attention: usize,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForwardSeed {
+    pub name: String,
+    pub target_host: String,
+    pub target_port: u16,
 }

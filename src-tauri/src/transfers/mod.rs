@@ -1,6 +1,6 @@
 mod direct;
 pub mod download;
-mod model;
+pub(crate) mod model;
 mod pipeline;
 pub(crate) mod planner;
 mod recovery;
@@ -681,6 +681,7 @@ pub(crate) fn snapshot(state: &State) -> Vec<TaskView> {
             .iter()
             .map(|r| download::view(&r.task)),
     );
+    tasks.extend(state.docker.transfer_snapshot());
     model::sort_tasks(&mut tasks);
     tasks
 }
@@ -691,6 +692,10 @@ pub fn cancel_transfer(
     id: String,
 ) -> AppResult<()> {
     moves::workspace_only(&window)?;
+    if state.docker.cancel_transfer(&id) {
+        state.file_tasks.emit(&id);
+        return Ok(());
+    }
     if let Ok(item) = find_write(&state, &id) {
         let mut task = item.task.lock().unwrap();
         if task.active() {

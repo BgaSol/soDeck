@@ -889,7 +889,7 @@
 .docker-object-row:hover {
   background: var(--hover);
 }
-.docker-object-row[aria-selected="true"] {
+.docker-object-row[aria-current="true"] {
   background: var(--selected);
   color: var(--selected-text);
   border-color: var(--selection-border);

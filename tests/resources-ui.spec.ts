@@ -245,9 +245,7 @@ test("communication has an independent range and a bounded keyboard-accessible p
   await page.getByRole("button", { name: "通信详情", exact: true }).click();
   await expect(popover).toHaveCount(0);
   await page.getByRole("button", { name: "通信详情", exact: true }).click();
-  await page
-    .locator(".terminal-surface")
-    .click({ position: { x: 20, y: 15 } });
+  await page.locator(".terminal-surface").click({ position: { x: 20, y: 15 } });
   await expect(popover).toHaveCount(0);
   await page.evaluate(() => {
     (window as any).__MOUNTS__.monitor.onmessage({
@@ -443,7 +441,7 @@ test("sidebar details and narrow regions keep the same terminal and subscription
       await expect(overview(page)).toBeHidden();
       await page
         .getByRole("navigation", { name: "工作区域" })
-        .getByRole("button", { name: "监控与 Docker" })
+        .getByRole("button", { name: "监控与服务" })
         .click();
       await expect(overview(page)).toBeVisible();
       await page
@@ -496,13 +494,15 @@ test("Docker virtualizes 200 objects, supports keyboard and preserves filtered o
   await sendContainers(page, 200);
   await page.getByRole("tab", { name: "Docker", exact: true }).click();
   const panel = docker(page),
-    list = panel.getByRole("listbox", { name: "容器列表" });
-  await expect(list.getByRole("option").first()).toContainText("container-000");
-  expect(await list.getByRole("option").count()).toBeLessThan(40);
-  await list.getByRole("option").first().focus();
-  await list.getByRole("option").first().press("End");
+    list = panel.getByRole("list", { name: "容器列表" });
+  await expect(list.locator(".docker-object-row").first()).toContainText(
+    "container-000",
+  );
+  expect(await list.locator(".docker-object-row").count()).toBeLessThan(40);
+  await list.locator(".docker-object-row").first().focus();
+  await list.locator(".docker-object-row").first().press("End");
   await expect(
-    list.getByRole("option").filter({ hasText: "container-199" }),
+    list.locator(".docker-object-row").filter({ hasText: "container-199" }),
   ).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(
@@ -515,12 +515,12 @@ test("Docker virtualizes 200 objects, supports keyboard and preserves filtered o
   ).toBeDisabled();
   await panel.getByRole("button", { name: "返回列表" }).click();
   await panel.getByRole("textbox", { name: "搜索容器" }).fill("container-001");
-  await expect(list.getByRole("option")).toHaveCount(1);
+  await expect(list.locator(".docker-object-row")).toHaveCount(1);
   await panel.getByRole("textbox", { name: "搜索容器" }).fill("no-match");
   await expect(panel).toContainText("没有匹配的对象");
   await panel.getByRole("button", { name: "清除 Docker 搜索" }).click();
   await panel.getByRole("button", { name: /^镜像/ }).click();
-  await expect(panel.getByRole("listbox", { name: "镜像列表" })).toContainText(
+  await expect(panel.getByRole("list", { name: "镜像列表" })).toContainText(
     "nginx:alpine",
   );
   await expect
@@ -553,11 +553,13 @@ test("Docker keeps row positions until explicit sort or refresh, and health unkn
   await sendContainers(page, 5);
   await page.getByRole("tab", { name: "Docker", exact: true }).click();
   const panel = docker(page),
-    list = panel.getByRole("listbox", { name: "容器列表" });
+    list = panel.getByRole("list", { name: "容器列表" });
   await panel
     .getByRole("combobox", { name: "Docker 排序" })
     .selectOption("attention");
-  await expect(list.getByRole("option").first()).toContainText("container-002");
+  await expect(list.locator(".docker-object-row").first()).toContainText(
+    "container-002",
+  );
   await page.evaluate(() => {
     const metric = (value: any) => ({
       value,
@@ -590,13 +592,17 @@ test("Docker keeps row positions until explicit sort or refresh, and health unkn
       }),
     });
   });
-  await expect(list.getByRole("option").first()).toContainText("container-002");
+  await expect(list.locator(".docker-object-row").first()).toContainText(
+    "container-002",
+  );
   await expect(panel).toContainText("健康统计暂不可用");
   await panel
     .getByRole("combobox", { name: "Docker 排序" })
     .selectOption("name");
-  await expect(list.getByRole("option").first()).toContainText("container-000");
-  await list.getByRole("option").first().click();
+  await expect(list.locator(".docker-object-row").first()).toContainText(
+    "container-000",
+  );
+  await list.locator(".docker-object-row").first().click();
   await expect(
     panel.getByRole("button", { name: "进入 container-000 终端" }),
   ).toBeDisabled();
@@ -626,14 +632,20 @@ test("container operations are independent and late failures from old engines ar
   });
   await page.getByRole("tab", { name: "Docker", exact: true }).click();
   const panel = docker(page),
-    list = panel.getByRole("listbox", { name: "容器列表" });
-  await list.getByRole("option").filter({ hasText: "container-000" }).click();
+    list = panel.getByRole("list", { name: "容器列表" });
+  await list
+    .locator(".docker-object-row")
+    .filter({ hasText: "container-000" })
+    .click();
   await panel.getByRole("button", { name: "查看 container-000 日志" }).click();
   await expect(
     panel.getByRole("button", { name: "进入 container-000 终端" }),
   ).toBeEnabled();
   await panel.getByRole("button", { name: "返回列表" }).click();
-  await list.getByRole("option").filter({ hasText: "container-003" }).click();
+  await list
+    .locator(".docker-object-row")
+    .filter({ hasText: "container-003" })
+    .click();
   await panel.getByRole("button", { name: "查看 container-003 日志" }).click();
   await page.evaluate(() => {
     (window as any).pending["id-3/open_container_logs"].reject({
@@ -642,7 +654,10 @@ test("container operations are independent and late failures from old engines ar
   });
   await expect(panel).toContainText("container-003 logs failed");
   await panel.getByRole("button", { name: "返回列表" }).click();
-  await list.getByRole("option").filter({ hasText: "container-000" }).click();
+  await list
+    .locator(".docker-object-row")
+    .filter({ hasText: "container-000" })
+    .click();
   await expect(panel).not.toContainText("container-003 logs failed");
   await expect(
     panel.getByRole("button", { name: "查看 container-000 日志" }),
@@ -653,7 +668,7 @@ test("container operations are independent and late failures from old engines ar
       message: "old engine failure",
     });
   });
-  await expect(panel.getByRole("listbox")).toBeVisible();
+  await expect(panel.getByRole("list")).toBeVisible();
   await expect(panel).not.toContainText("old engine failure");
   expect(errors).toEqual([]);
 });
@@ -664,20 +679,20 @@ test("Docker details stay inside the sidebar at every width", async ({
   await sendContainers(page, 5);
   await page.getByRole("tab", { name: "Docker", exact: true }).click();
   const panel = docker(page);
-  await panel.getByRole("listbox").getByRole("option").first().click();
-  await expect(panel.getByRole("listbox")).toBeHidden();
+  await panel.getByRole("list").locator(".docker-object-row").first().click();
+  await expect(panel.getByRole("list")).toBeHidden();
   await expect(page.locator(".workspace-terminal")).toBeVisible();
   await page.screenshot({ path: ".qa/docker-detail-light.png" });
   await page.setViewportSize({ width: 650, height: 480 });
   await page
     .getByRole("navigation", { name: "工作区域" })
-    .getByRole("button", { name: "监控与 Docker" })
+    .getByRole("button", { name: "监控与服务" })
     .click();
-  await expect(panel.getByRole("listbox")).toBeHidden();
+  await expect(panel.getByRole("list")).toBeHidden();
   await expect(panel.getByRole("button", { name: "返回列表" })).toBeVisible();
   await page.screenshot({ path: ".qa/docker-detail-narrow.png" });
   await panel.getByRole("button", { name: "返回列表" }).click();
-  await expect(panel.getByRole("listbox")).toBeVisible();
+  await expect(panel.getByRole("list")).toBeVisible();
   expect(errors).toEqual([]);
 });
 test("mount pinning, search, current mount identity and file reveal share the existing cache", async ({
@@ -735,6 +750,30 @@ test("mount pinning, search, current mount identity and file reveal share the ex
   await expect(
     disk.getByRole("button", { name: "查看 /data 挂载详情", exact: true }),
   ).not.toContainText("68%");
+  expect(errors).toEqual([]);
+});
+test("an unresolved pinned mount is not reported as unmounted", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  const disk = page.getByRole("region", { name: "磁盘总览" });
+  await disk.getByRole("button", { name: /全部 \d+ 个/ }).click();
+  await disk.getByRole("button", { name: "关注 /data", exact: true }).click();
+  await disk.getByRole("button", { name: "返回关注" }).click();
+  await page.evaluate(() => {
+    const fixture = (window as any).__MOUNTS__;
+    fixture.table = {
+      ...fixture.table,
+      version: "ambiguous-data",
+      mounts: fixture.table.mounts.filter((m: any) => m.target !== "/data"),
+      issues: [{ kind: "ambiguousStack", target: "/data", layers: 2 }],
+    };
+    fixture.push();
+  });
+  await expect(disk).toContainText(
+    "/data · 挂载层级无法确认，容量已隐藏",
+  );
+  await expect(disk).not.toContainText("/data · 当前未挂载");
   expect(errors).toEqual([]);
 });
 test("stale metrics remain explicit in dark, reduced-motion and larger-text layouts", async ({
@@ -869,10 +908,12 @@ test("Docker preserves its object on connection failure and list position across
   await sendContainers(page, 200);
   await page.getByRole("tab", { name: "Docker", exact: true }).click();
   const panel = docker(page),
-    list = panel.getByRole("listbox");
-  await list.getByRole("option").first().focus();
-  await list.getByRole("option").first().press("End");
-  const last = list.getByRole("option").filter({ hasText: "container-199" });
+    list = panel.getByRole("list");
+  await list.locator(".docker-object-row").first().focus();
+  await list.locator(".docker-object-row").first().press("End");
+  const last = list
+    .locator(".docker-object-row")
+    .filter({ hasText: "container-199" });
   await expect(last).toBeFocused();
   await last.press("Enter");
   await page.getByRole("tab", { name: "监控", exact: true }).click();

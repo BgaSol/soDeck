@@ -10,6 +10,7 @@ export interface DockerSummary {
   total: number;
   byState: Record<string, number>;
   unhealthy: number | null;
+  unhealthyIds?: string[];
   healthError: string | null;
 }
 export interface DockerState {

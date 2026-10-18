@@ -22,7 +22,13 @@ export interface MountTable {
   version: string;
   status: "ready" | "unsupported";
   mounts: RemoteMount[];
+  issues?: MountIssue[];
   message?: string | null;
+}
+export interface MountIssue {
+  kind: "ambiguousStack";
+  target: string;
+  layers: number;
 }
 export interface CachedMountUsage {
   value?: RemoteMountUsage;

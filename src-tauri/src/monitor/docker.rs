@@ -12,7 +12,12 @@ fn summarize(containers: &[query::Container], health: AppResult<Vec<String>>) ->
     match health {
         Ok(ids) => {
             let ids: std::collections::HashSet<_> = ids.into_iter().collect();
-            summary.unhealthy = Some(containers.iter().filter(|c| ids.contains(&c.id)).count());
+            summary.unhealthy_ids = containers
+                .iter()
+                .filter(|c| ids.contains(&c.id))
+                .map(|c| c.id.clone())
+                .collect();
+            summary.unhealthy = Some(summary.unhealthy_ids.len());
         }
         Err(e) => summary.health_error = Some(e.message),
     }
@@ -84,7 +89,13 @@ pub(super) fn run(state: Weak<State>, entry: Arc<Entry>) {
                     let endpoint = engine.endpoint.clone();
                     let generation = {
                         let mut c = entry.core.lock().unwrap();
-                        if c.docker.engine.value.as_ref().map(|s| &s.endpoint) != Some(&endpoint) {
+                        if c.docker
+                            .engine
+                            .value
+                            .as_ref()
+                            .map(|s| (&s.endpoint, &s.daemon_id))
+                            != Some((&endpoint, &engine.daemon_id))
+                        {
                             c.docker.engine_generation += 1;
                             c.docker.containers = Metric::default();
                             c.docker.summary = Metric::default();

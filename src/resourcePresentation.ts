@@ -4,7 +4,7 @@ import { mountKind } from "./remoteMounts";
 export type ResourceMetric = "cpu" | "memory" | "network";
 export type MountGroup = "storage" | "system" | "runtime" | "memory";
 export interface ResourcePreferences {
-  tab: "monitor" | "docker";
+  tab: "monitor" | "docker" | "netbird";
   minutes: 5 | 15 | 60;
   networkInterface: string;
   collapsed?: string[]; // Legacy snapshots only.
@@ -39,7 +39,10 @@ export function normalizeResourcePreferences(
   return {
     ...defaultResourcePreferences,
     ...current,
-    tab: value?.tab === "docker" ? "docker" : "monitor",
+    tab:
+      value?.tab === "docker" || value?.tab === "netbird"
+        ? value.tab
+        : "monitor",
     minutes: value?.minutes === 15 || value?.minutes === 60 ? value.minutes : 5,
     networkInterface:
       typeof value?.networkInterface === "string" ? value.networkInterface : "",

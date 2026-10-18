@@ -54,6 +54,11 @@ export function MountOverview({
       ),
     [state.mounts.table],
   );
+  const mountIssues = state.mounts.table?.issues ?? [];
+  const issueByTarget = useMemo(
+    () => new Map(mountIssues.map((issue) => [issue.target, issue])),
+    [mountIssues],
+  );
   const filtered = useMemo(
     () =>
       mounts.filter((m) => {
@@ -276,7 +281,12 @@ export function MountOverview({
           .map((path) => (
             <div className="missing-mount" key={path}>
               <span>
-                {path} · {state.mounts.loading ? "正在获取" : "当前未挂载"}
+                {path} ·{" "}
+                {state.mounts.loading
+                  ? "正在获取"
+                  : issueByTarget.has(path)
+                    ? "挂载层级无法确认，容量已隐藏"
+                    : "当前未挂载"}
               </span>
               <button className="resource-link" onClick={() => togglePin(path)}>
                 取消关注
@@ -297,6 +307,13 @@ export function MountOverview({
       {notice && (
         <p className="resource-notice" role="status">
           {notice}
+        </p>
+      )}
+      {view.all && mountIssues.length > 0 && (
+        <p className="resource-notice" role="status">
+          {mountIssues.length === 1
+            ? `未列出 ${mountIssues[0].target}：挂载层级无法确认`
+            : `另有 ${mountIssues.length} 个挂载路径层级无法确认，未列出容量`}
         </p>
       )}
       {state.mounts.error && (

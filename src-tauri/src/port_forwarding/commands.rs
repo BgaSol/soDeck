@@ -42,15 +42,26 @@ pub async fn open_port_forward_window(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
     server_id: Option<String>,
+    seed: Option<ForwardSeed>,
 ) -> AppResult<()> {
     state.ensure_running()?;
     // Server profiles are safe metadata; independent session windows may preselect theirs.
     if let Some(id) = &server_id {
         state.database.lock().unwrap().get(id)?;
     }
+    if let Some(seed) = &seed {
+        if server_id.is_none()
+            || seed.name.len() > 255
+            || seed.target_port == 0
+            || seed.target_host.parse::<std::net::IpAddr>().is_err()
+        {
+            return Err(AppError::new("validation", "转发草稿参数无效"));
+        }
+    }
     *state.port_forwarding.open_request.lock().unwrap() = Some(OpenRequest {
         id: uuid::Uuid::new_v4().to_string(),
         server_id,
+        seed,
     });
     if let Some(existing) = window.app_handle().get_webview_window("port-forwarding") {
         existing
@@ -72,11 +83,14 @@ pub async fn open_port_forward_window(
         .lock()
         .unwrap()
         .remove("port-forwarding");
-    let result = crate::window_chrome::configure(WebviewWindowBuilder::new(
+    let result = crate::window_chrome::configure(
         window.app_handle(),
-        "port-forwarding",
-        WebviewUrl::App("index.html?port-forwarding=1".into()),
-    ))
+        WebviewWindowBuilder::new(
+            window.app_handle(),
+            "port-forwarding",
+            WebviewUrl::App("index.html?port-forwarding=1".into()),
+        ),
+    )
     .title("端口转发 · SoDeck")
     .inner_size(1100.0, 760.0)
     .min_inner_size(800.0, 560.0)

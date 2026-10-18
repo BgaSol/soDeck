@@ -41,6 +41,8 @@ pub(crate) fn state() -> Arc<State> {
         logs: Default::default(),
         history: Default::default(),
         monitor: Default::default(),
+        docker: Default::default(),
+        netbird: Default::default(),
         terminals: Mutex::new(HashMap::new()),
         pending_windows: Mutex::new(HashMap::new()),
         container_windows: Mutex::new(HashMap::new()),
@@ -1010,4 +1012,91 @@ fn jump_docker_monitor_and_background_traffic_are_shared() {
         sessions.push(id);
     }
     crate::monitor::tests::exercise_docker(state, context, &sessions[0], &sessions[1], &fixtures.root.path().join("b"));
+}
+
+#[test]
+#[ignore = "real SSH with stateful Docker simulation; requires Python paramiko"]
+fn jump_docker_management_tasks_and_uncertain_results() {
+    let fixtures = Fixtures::new(false);
+    let root = fixtures.root.path().join("b");
+    std::fs::write(root.join("docker-management.json"),serde_json::json!({"a".repeat(64):{"name":"web","state":"running","health":"healthy"},"b".repeat(64):{"name":"worker","state":"exited"}}).to_string()).unwrap();
+    let (connection, context) = connect(
+        &fixtures.plan(),
+        &mut AutoProvider::default(),
+        &Cancellation::default(),
+    )
+    .unwrap();
+    drop(connection);
+    let state = state();
+    for server in &fixtures.plan().hops {
+        state
+            .database
+            .lock()
+            .unwrap()
+            .save(crate::model::SaveServerRequest {
+                server: server.view(),
+                password_change: crate::model::PasswordChange::Set {
+                    value: server.password.clone(),
+                },
+            })
+            .unwrap();
+    }
+    let mut sessions = Vec::new();
+    for window in ["main", "workspace-test"] {
+        let (id, _, _, _, _) = register(
+            &state,
+            state.owner(window),
+            Arc::new(fixtures.plan()),
+            Channel::new(|_| Ok(())),
+        )
+        .unwrap();
+        state.terminals.lock().unwrap().get_mut(&id).unwrap().spec = Some(context.clone());
+        sessions.push(id);
+    }
+    crate::monitor::tests::exercise_management(state, context, &sessions[0], &sessions[1], &root);
+}
+
+#[test]
+#[ignore = "real loopback SSH with simulated NetBird; requires Python paramiko"]
+fn netbird_client_operations_over_verified_ssh() {
+    let fixtures = Fixtures::new(false);
+    let plan = ConnectionPlan::new(vec![fixtures.b.clone()]).unwrap();
+    let (transport, context) = connect(
+        &plan,
+        &mut AutoProvider::default(),
+        &Cancellation::default(),
+    )
+    .unwrap();
+    drop(transport);
+    let state = state();
+    state
+        .database
+        .lock()
+        .unwrap()
+        .save(crate::model::SaveServerRequest {
+            server: fixtures.b.view(),
+            password_change: crate::model::PasswordChange::Set {
+                value: fixtures.b.password.clone(),
+            },
+        })
+        .unwrap();
+    let mut sessions = Vec::new();
+    for window in ["main", "workspace-test"] {
+        let (id, _, _, _, _) = register(
+            &state,
+            state.owner(window),
+            Arc::new(plan.clone()),
+            Channel::new(|_| Ok(())),
+        )
+        .unwrap();
+        state.terminals.lock().unwrap().get_mut(&id).unwrap().spec = Some(context.clone());
+        sessions.push(id);
+    }
+    crate::netbird::tests::exercise(
+        state,
+        context,
+        &sessions[0],
+        &sessions[1],
+        &fixtures.root.path().join("b"),
+    );
 }

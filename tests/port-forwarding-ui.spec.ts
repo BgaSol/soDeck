@@ -570,6 +570,59 @@ test("server requests filter existing rules, deduplicate frames and wait for a d
   expect(errors).toEqual([]);
 });
 
+test("Docker port drafts wait for the current editor and never start a rule on arrival", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  const editor = await edit(page);
+  await editor.getByLabel("名称", { exact: true }).fill("未保存草稿");
+  const request = {
+    id: "docker-port-1",
+    serverId: "b",
+    seed: { name: "web · 80/tcp", targetHost: "127.0.0.1", targetPort: 8080 },
+  };
+  await page.evaluate(
+    (openRequest) => (window as any).__PF__.frame({ openRequest }),
+    request,
+  );
+  await expect(editor.getByLabel("名称", { exact: true })).toHaveValue(
+    "未保存草稿",
+  );
+  await editor.getByRole("button", { name: "取消", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "放弃修改？" })
+    .getByRole("button", { name: "放弃修改", exact: true })
+    .click();
+  const incoming = page.getByRole("dialog", { name: "新建端口转发" });
+  await expect(incoming.getByLabel("名称", { exact: true })).toHaveValue(
+    "web · 80/tcp",
+  );
+  await expect(incoming.getByLabel("目标地址", { exact: true })).toHaveValue(
+    "127.0.0.1",
+  );
+  await expect(incoming.getByLabel("目标端口", { exact: true })).toHaveValue(
+    "8080",
+  );
+  await incoming.getByRole("button", { name: "取消", exact: true }).click();
+  await page.evaluate(
+    (openRequest) => (window as any).__PF__.frame({ openRequest }),
+    request,
+  );
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      (window as any).__PF__.calls.filter((c: any) =>
+        [
+          "save_port_forward",
+          "start_port_forward",
+          "apply_port_forward",
+        ].includes(c.command),
+      ),
+    ),
+  ).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
 test("search never displays hidden selection and respects running configuration", async ({
   page,
 }) => {

@@ -36,7 +36,7 @@
   cursor: default;
 }
 .file-mount-row {
-  min-height: 48px;
+  min-height: 54px;
 }
 .file-mount-row .file-icon {
   color: var(--accent-text);
@@ -67,12 +67,47 @@
 }
 .file-tree-row .mount-usage {
   flex: none;
-  width: 65px;
-  padding: 4px;
+  width: 5.5rem;
+  padding: 2px 4px;
   font: var(--font-caption)/1.5 var(--mono);
   text-align: right;
 }
-.mount-usage.stale {
+
+@container file-panel (max-width: 219px) {
+  .file-tree-row .mount-usage {
+    width: 4.25rem;
+  }
+}
+
+@container file-panel (min-width: 360px) {
+  .file-tree-row .mount-usage {
+    width: 6.5rem;
+  }
+}
+
+.mount-capacity-total,
+.mount-capacity-percent,
+.mount-capacity-status {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.mount-capacity-total {
+  color: var(--text);
+}
+.mount-capacity-percent {
+  color: var(--muted);
+}
+.file-tree-row.selected .mount-capacity-total,
+.file-tree-row.selected .mount-capacity-percent {
+  color: inherit;
+}
+.mount-usage.stale .mount-capacity-total,
+.mount-usage.stale .mount-capacity-percent,
+.mount-usage.stale .mount-capacity-status {
   color: var(--muted);
 }
 .mount-meter {
@@ -88,6 +123,9 @@
   height: 100%;
   background: var(--blue);
 }
+.file-tree-row .mount-meter {
+  margin-top: 2px;
+}
 .mount-warning {
   --mount-warning: light-dark(#906008, #f0bd67);
 }
@@ -98,8 +136,8 @@
 .mount-critical .mount-meter > span {
   background: var(--mount-warning);
 }
-.mount-warning .mount-usage,
-.mount-critical .mount-usage,
+.file-tree-row.mount-warning .mount-capacity-percent,
+.file-tree-row.mount-critical .mount-capacity-percent,
 .mount-warning-text {
   color: var(--mount-warning);
 }
@@ -433,6 +471,7 @@
 /* File actions remain anchored to their directory; drag feedback is immediate. */
 .file-panel {
   position: relative;
+  container: file-panel / inline-size;
 }
 .file-toolbar {
   gap: 2px;

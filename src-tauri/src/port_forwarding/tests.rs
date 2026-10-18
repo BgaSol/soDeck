@@ -376,6 +376,7 @@ fn forward_observer_requires_ack_and_expires_with_its_window_generation() {
     assert!(frames.lock().unwrap()[0]["openRequest"].is_null());
     *state.port_forwarding.open_request.lock().unwrap() = Some(OpenRequest {
         id: "server-entry".into(),
+        seed: None,
         server_id: Some("server".into()),
     });
     state.port_forwarding.ack(&id, 1, &owner).unwrap();
@@ -393,6 +394,7 @@ fn forward_observer_requires_ack_and_expires_with_its_window_generation() {
     );
     *state.port_forwarding.open_request.lock().unwrap() = Some(OpenRequest {
         id: "global-entry".into(),
+        seed: None,
         server_id: None,
     });
     state.port_forwarding.ack(&id, 3, &owner).unwrap();

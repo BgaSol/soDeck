@@ -45,7 +45,8 @@ export function QuitDialog({
       </header>
       <p>{details}。</p>
       <p className="muted">
-        退出将关闭连接、停止端口转发和文件任务，并按确认内容处理未保存修改。已经删除的内容无法恢复。任务记录会保留，下次启动后可查看、核对；删除任务和端口转发不会自动继续。
+        退出将关闭连接、停止端口转发和文件任务，并按确认内容处理未保存修改。已经删除的内容无法恢复。普通文件任务记录会保留，下次启动后可查看、核对；删除任务和端口转发不会自动继续。Docker
+        管理及传输记录仅保留在本次运行期间，关闭连接不能保证远端操作取消，重新启动后需查看远端实际状态。
       </p>
       {error && (
         <p className="panel-error" role="alert">
@@ -57,7 +58,7 @@ export function QuitDialog({
           继续使用
         </button>
         <button className="primary" disabled={busy} onClick={() => void quit()}>
-          {busy ? "正在停止并退出…" : "确认退出"}
+          {busy ? "正在收尾并退出…" : "确认退出"}
         </button>
       </footer>
     </dialog>

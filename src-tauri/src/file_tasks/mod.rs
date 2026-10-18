@@ -145,7 +145,8 @@ pub(crate) fn snapshot(state: &State) -> AppResult<Vec<FileTask>> {
         let pending = state.transfers.has_pending_task(&t.id);
         let actions = Actions {
             stop: running && t.status != "cancelling",
-            retry: !running
+            retry: t.kind != "docker"
+                && !running
                 && !busy
                 && !pending
                 && matches!(
@@ -197,7 +198,7 @@ pub(crate) fn snapshot(state: &State) -> AppResult<Vec<FileTask>> {
         if let TaskData::Transfer(t) = &item.data {
             // Downloads already have durable execution metadata in this table.
             // A presentation projection must never replace that receipt.
-            if t.kind != "download" {
+            if t.kind != "download" && t.kind != "docker" {
                 store.save("transfer", &t.id, t)?;
             }
         }
@@ -351,6 +352,13 @@ pub async fn reconcile_file_task(
     id: String,
 ) -> AppResult<()> {
     crate::moves::workspace_only(&window)?;
+    if state
+        .docker
+        .reconcile_transfer(state.inner(), &state.owner(window.label()), &id)?
+    {
+        state.file_tasks.emit(&id);
+        return Ok(());
+    }
     if state.deletes.contains(&id) {
         remote_delete::reconcile_remote_delete(window, app, state, id)
             .await

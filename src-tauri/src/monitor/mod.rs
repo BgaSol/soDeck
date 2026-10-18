@@ -548,3 +548,44 @@ fn run_traffic(state: Weak<State>, entry: Arc<Entry>) {
         std::thread::sleep(Duration::from_millis(100));
     }
 }
+
+impl MonitorManager {
+    pub(crate) fn docker_binding(
+        &self,
+        identity: &str,
+    ) -> AppResult<crate::docker::model::EngineBinding> {
+        let entries = self.entries.lock().unwrap();
+        let entry = entries
+            .get(identity)
+            .ok_or_else(|| AppError::new("unavailable", "正在确认 Docker 引擎"))?;
+        let core = entry.core.lock().unwrap();
+        let engine = core
+            .docker
+            .engine
+            .value
+            .as_ref()
+            .filter(|e| e.state == "running" && core.docker.engine.status == "ready")
+            .ok_or_else(|| AppError::new("unavailable", "Docker 引擎当前不可用，请刷新状态"))?;
+        Ok(crate::docker::model::EngineBinding {
+            token: format!("{}/{}", entry.generation, core.docker.engine_generation),
+            generation: entry.generation.clone(),
+            engine_generation: core.docker.engine_generation,
+            endpoint: engine.endpoint.clone(),
+            daemon_id: engine.daemon_id.clone(),
+        })
+    }
+    pub(crate) fn invalidate_docker(
+        &self,
+        identity: &str,
+        binding: &crate::docker::model::EngineBinding,
+    ) {
+        if let Some(entry) = self.entries.lock().unwrap().get(identity) {
+            let mut core = entry.core.lock().unwrap();
+            if entry.generation == binding.generation
+                && core.docker.engine_generation == binding.engine_generation
+            {
+                core.docker_refresh += 1;
+            }
+        }
+    }
+}

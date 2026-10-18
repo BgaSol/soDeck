@@ -19,6 +19,7 @@ export const transferLabels: Record<TransferTask["status"], string> = {
 };
 
 const kinds: Record<TransferTask["kind"], string> = {
+  docker: "Docker 传输",
   download: "下载",
   upload: "上传",
   direct: "直传",

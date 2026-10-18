@@ -10,6 +10,7 @@ import type { MountTable } from "./remoteMounts";
 const table = (version = "v1"): MountTable => ({
   status: "ready",
   version,
+  issues: [],
   mounts: [
     {
       key: "1",

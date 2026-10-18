@@ -9,6 +9,30 @@ test("mount summaries, nested mounts, details and keyboard preserve tree behavio
   const errors = await setup(page);
   const data = row(page, "/data");
   await expect(data.locator(".mount-source")).toHaveText("/dev/sdb1");
+  await expect(row(page, "/").locator(".mount-capacity-total")).toHaveText(
+    "1 TiB",
+  );
+  await expect(data.locator(".mount-capacity-total")).toHaveText("1 TiB");
+  await expect(data.locator(".mount-capacity-percent")).toHaveText("68%");
+  const capacityTotals = [
+    [row(page, "/").locator(".mount-capacity-total"), "39.3 GiB"],
+    [data.locator(".mount-capacity-total"), "925.2 MiB"],
+  ] as const;
+  for (const [total, text] of capacityTotals) {
+    await total.evaluate((element, value) => {
+      element.textContent = value;
+    }, text);
+    expect(
+      await total.evaluate(
+        (element) => element.scrollWidth <= element.clientWidth,
+      ),
+    ).toBe(true);
+  }
+  await page.screenshot({ path: ".qa/mount-summary-capacity.png" });
+  await expect(data.locator(".mount-usage")).toHaveAttribute(
+    "aria-label",
+    /总容量 1 TiB，已用 696\.3 GiB，可用 327\.7 GiB，使用率 68%/,
+  );
   expect(
     (await data.locator(".mount-meter").boundingBox())!.width,
   ).toBeGreaterThan(20);
@@ -39,6 +63,12 @@ test("mount summaries, nested mounts, details and keyboard preserve tree behavio
   await page.keyboard.press("Escape");
   await row(page, "/proc").locator(".mount-usage").click();
   await expect(detail).toContainText("此文件系统不提供常规容量");
+  await expect(row(page, "/proc").locator(".mount-capacity-total")).toHaveCount(
+    0,
+  );
+  await expect(row(page, "/proc").locator(".mount-capacity-status")).toHaveText(
+    "—",
+  );
   expect(errors).toEqual([]);
 });
 
@@ -110,6 +140,9 @@ test("failed capacity refresh keeps old data and does not prevent directory expa
     (window as any).__MOUNTS__.failUsage = true;
   });
   await page.getByRole("button", { name: "刷新目录", exact: true }).click();
+  await expect(row(page, "/data").locator(".mount-capacity-total")).toHaveText(
+    "1 TiB",
+  );
   await expect(row(page, "/data").locator(".mount-usage")).toContainText(
     "68% · 上次",
   );
@@ -133,6 +166,44 @@ test("failed capacity refresh keeps old data and does not prevent directory expa
   expect(errors).toEqual([]);
 });
 
+test("stacked mount issues are scoped to directories visible in the file tree", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  const notice = page.locator(".mount-panel-notice");
+  await page.evaluate(() => {
+    const fixture = (window as any).__MOUNTS__;
+    fixture.table = {
+      ...fixture.table,
+      version: "unrelated-stack",
+      issues: [
+        {
+          kind: "ambiguousStack",
+          target: "/proc/sys/fs/binfmt_misc",
+          layers: 2,
+        },
+      ],
+    };
+    fixture.push();
+  });
+  await expect(notice).toHaveCount(0);
+  await page.evaluate(() => {
+    const fixture = (window as any).__MOUNTS__;
+    fixture.table = {
+      ...fixture.table,
+      version: "visible-stack",
+      mounts: fixture.table.mounts.filter((m: any) => m.target !== "/data"),
+      issues: [{ kind: "ambiguousStack", target: "/data", layers: 2 }],
+    };
+    fixture.push();
+  });
+  await expect(notice).toContainText(
+    "无法确认 /data 当前可见的挂载层，暂不展示该路径容量",
+  );
+  await expect(row(page, "/data").locator(".mount-usage")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
 test("mount details fit narrow dark windows and share backend updates without polling", async ({
   page,
 }) => {
@@ -145,9 +216,23 @@ test("mount details fit narrow dark windows and share backend updates without po
     .getByRole("button", { name: "文件", exact: true })
     .click();
   const resizer = page.getByRole("separator", { name: "调整文件区域宽度" });
+  const normalUsageWidth = (await row(page, "/backup")
+    .locator(".mount-usage")
+    .boundingBox())!.width;
   await resizer.focus();
   for (let i = 0; i < 14; i++) await resizer.press("ArrowLeft");
-  await row(page, "/backup").locator(".mount-usage").click();
+  const backup = row(page, "/backup");
+  expect(
+    (await backup.locator(".mount-usage").boundingBox())!.width,
+  ).toBeLessThan(normalUsageWidth);
+  expect(
+    (await backup.locator(".file-name").boundingBox())!.width,
+  ).toBeGreaterThan(20);
+  await expect(row(page, "/").locator(".mount-capacity-total")).toHaveText(
+    "1 TiB",
+  );
+  await page.screenshot({ path: ".qa/mount-summary-dark-narrow.png" });
+  await backup.locator(".mount-usage").click();
   const detail = page.getByRole("dialog", { name: "挂载详情" });
   await expect(detail).toBeVisible();
   const bounds = (await detail.boundingBox())!;

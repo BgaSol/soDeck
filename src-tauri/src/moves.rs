@@ -243,11 +243,14 @@ pub async fn move_workspace(
         let title = payload["tab"]["server"]["name"]
             .as_str()
             .unwrap_or("SSH 会话");
-        crate::window_chrome::configure(WebviewWindowBuilder::new(
+        crate::window_chrome::configure(
             &app,
-            &to,
-            WebviewUrl::App(format!("index.html?workspace={id}").into()),
-        ))
+            WebviewWindowBuilder::new(
+                &app,
+                &to,
+                WebviewUrl::App(format!("index.html?workspace={id}").into()),
+            ),
+        )
         .title(crate::brand::window_title(&app, title))
         .inner_size(1080.0, 760.0)
         .min_inner_size(650.0, 480.0)
@@ -312,6 +315,8 @@ pub fn take_workspace(
             return Err(AppError::new("transfer", "会话归属已变化，请重试"));
         }
         terminal.window = entry.to.clone();
+        drop(terminals);
+        state.netbird.close_session(id);
     }
     entry.claimed = true;
     Ok(Incoming {
@@ -421,6 +426,9 @@ fn rollback(app: &tauri::AppHandle, state: &State, id: &str, message: &str, sour
         }
         entry
     };
+    if let Some(session_id) = &entry.session_id {
+        state.netbird.close_session(session_id);
+    }
     let payload =
         serde_json::json!({"tabId":entry.payload["tab"]["id"], "transferId":id, "message":message});
     let _ = app.emit_to(&entry.from, "workspace-move-failed", &payload);

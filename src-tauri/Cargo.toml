@@ -15,7 +15,8 @@ cc = "1"
 custom-protocol = ["tauri/custom-protocol"]
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["devtools"] }
+tauri-plugin-prevent-default = "=6.0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.38", features = ["bundled", "hooks"] }
@@ -39,5 +40,6 @@ chrono = { version = "0.4", default-features = false, features = ["std"] }
 openssl = { version = "0.10", features = ["vendored"] }
 
 [target.'cfg(windows)'.dependencies]
+tauri-plugin-prevent-default = { version = "=6.0.1", features = ["platform-windows"] }
 windows-sys = { version = "0.61", features = ["Win32_Networking_WinSock"] }
 

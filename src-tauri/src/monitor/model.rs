@@ -126,6 +126,7 @@ pub struct DockerSummary {
     pub total: usize,
     pub by_state: BTreeMap<String, usize>,
     pub unhealthy: Option<usize>,
+    pub unhealthy_ids: Vec<String>,
     pub health_error: Option<String>,
 }
 #[derive(Clone, Debug, Default, Serialize)]

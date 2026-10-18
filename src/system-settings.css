@@ -1,0 +1,57 @@
+.system-settings-dialog {
+  width: 460px;
+}
+.system-settings-content {
+  padding: 4px 0 18px;
+}
+.developer-mode-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+}
+.developer-mode-option input {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  margin: 3px 0 0;
+  accent-color: var(--blue);
+}
+.developer-mode-option > span {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.developer-mode-option strong {
+  font-size: var(--font-body);
+  font-weight: 600;
+}
+.developer-mode-option > span > span,
+.system-settings-effect,
+.system-settings-current,
+.system-settings-save-status {
+  color: var(--muted);
+  font-size: var(--font-secondary);
+  line-height: 1.6;
+}
+.system-settings-effect {
+  margin: 8px 0 20px 28px;
+}
+.system-settings-current {
+  color: var(--text);
+}
+.system-settings-save-status {
+  min-height: 1.6em;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+.system-settings-content .panel-error {
+  margin-top: 12px;
+  overflow-wrap: anywhere;
+}
+.system-settings-devtools {
+  margin-top: 12px;
+  max-width: 100%;
+  white-space: normal;
+}

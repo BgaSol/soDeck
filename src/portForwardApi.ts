@@ -68,9 +68,15 @@ export interface ForwardSummary {
   connections: number;
   attention: number;
 }
+export interface ForwardSeed {
+  name: string;
+  targetHost: string;
+  targetPort: number;
+}
 export interface ForwardOpenRequest {
   id: string;
   serverId: string | null;
+  seed?: ForwardSeed | null;
 }
 export interface ForwardFrame {
   subscriptionId: string;
@@ -81,8 +87,11 @@ export interface ForwardFrame {
   error: AppError | null;
 }
 export const forwardApi = {
-  open: (serverId?: string) =>
-    invoke<void>("open_port_forward_window", { serverId: serverId || null }),
+  open: (serverId?: string, seed?: ForwardSeed) =>
+    invoke<void>("open_port_forward_window", {
+      serverId: serverId || null,
+      seed: seed ?? null,
+    }),
   summary: () => invoke<ForwardSummary>("port_forward_summary"),
   bootstrap: () =>
     invoke<{ generation: number; servers: Server[] }>("port_forward_bootstrap"),

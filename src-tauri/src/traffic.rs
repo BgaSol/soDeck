@@ -17,6 +17,9 @@ pub enum TrafficPurpose {
     ResourceMonitor,
     MountMonitor,
     DockerMonitor,
+    DockerAction,
+    NetBirdMonitor,
+    NetBirdAction,
     Terminal,
     ContainerTerminal,
     Logs,
@@ -28,10 +31,13 @@ pub enum TrafficPurpose {
 impl TrafficPurpose {
     fn bucket(self) -> usize {
         match self {
-            Self::ResourceMonitor | Self::MountMonitor | Self::DockerMonitor => 0,
+            Self::ResourceMonitor
+            | Self::MountMonitor
+            | Self::DockerMonitor
+            | Self::NetBirdMonitor => 0,
             Self::Terminal | Self::ContainerTerminal | Self::Logs => 1,
             Self::Files | Self::Transfer => 2,
-            Self::Shared => 3,
+            Self::Shared | Self::DockerAction | Self::NetBirdAction => 3,
             Self::PortForward => 4,
         }
     }

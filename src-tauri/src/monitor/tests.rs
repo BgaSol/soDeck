@@ -459,3 +459,35 @@ pub(crate) fn exercise(
     state.monitor.shutdown().unwrap();
     assert_eq!(state.monitor.jobs.load(Ordering::SeqCst), 0);
 }
+
+pub(crate) fn exercise_management(
+    state: Arc<State>,
+    context: SharedContext,
+    first: &str,
+    second: &str,
+    root: &Path,
+) {
+    state
+        .monitor
+        .subscribe(
+            &state,
+            context.clone(),
+            first.into(),
+            "main".into(),
+            Channel::new(|_| Ok(())),
+            Interest {
+                visible: true,
+                docker: DockerInterest {
+                    summary: true,
+                    containers: true,
+                    images: false,
+                },
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    wait("Docker engine is available for management", || {
+        state.monitor.docker_binding(context.identity()).is_ok()
+    });
+    crate::docker::tests::exercise(state, context, first, second, root);
+}

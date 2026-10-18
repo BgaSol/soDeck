@@ -44,7 +44,7 @@ export interface TransferTask {
     status: TransferTask["status"];
     error: string | null;
   } | null;
-  kind: "download" | WriteKind;
+  kind: "download" | "docker" | WriteKind;
   sourceName: string;
   sourcePath: string;
   targetName: string;

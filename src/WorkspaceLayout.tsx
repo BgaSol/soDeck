@@ -152,7 +152,7 @@ export function WorkspaceLayout({
           [
             ["files", "文件", Folder],
             ["terminal", "终端", TerminalSquare],
-            ["services", "监控与 Docker", PanelRight],
+            ["services", "监控与服务", PanelRight],
           ] as const
         ).map(([pane, label, Icon]) => (
           <button

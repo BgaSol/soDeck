@@ -1,0 +1,1 @@
+These are synthetic status fixtures using the JSON field names and Go duration encoding in upstream `client/status/status.go`, inspected October 18, 2026. They are not captures from an authenticated NetBird network. Compatibility and actual network operations still require an isolated Linux client smoke test. Keep unknown daemon states and missing identity fields read-only.

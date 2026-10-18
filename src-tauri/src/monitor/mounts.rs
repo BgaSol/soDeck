@@ -274,6 +274,7 @@ mod tests {
             version: "v1".into(),
             status: "ready",
             mounts: vec![],
+            issues: vec![],
             message: None,
         });
         core

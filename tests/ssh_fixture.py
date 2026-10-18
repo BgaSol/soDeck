@@ -10,6 +10,8 @@ and an 8 MiB slow.bin. Write a delay in seconds to .qa/sftp-read-delay to slow
 each slow.bin read. Create .qa/sftp-read-fail to fail reads; remove to retry.
 """
 import json
+from docker_fixture import handle as handle_docker_management
+from netbird_fixture import handle as handle_netbird
 import logging
 import errno
 import itertools
@@ -436,6 +438,10 @@ def container_logs(channel, command):
 
 def execute(channel, command):
     log("exec", command=command)
+    if handle_netbird(channel, command, QA):
+        return
+    if handle_docker_management(channel, command, QA):
+        return
     if "__SSH_WORKSPACE_PROBE__" in command:
         try:
             probe = shlex.split(command)[-1]
