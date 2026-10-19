@@ -28,6 +28,9 @@
   padding-left: 12px;
 }
 .window-tabs-slot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   flex: 0 1 auto;
   min-width: 0;
 }
@@ -211,6 +214,9 @@
   border-top: 1px solid var(--line);
 }
 @media (max-width: 900px) {
+  .window-titlebar-tabs .window-actions {
+    gap: 4px;
+  }
   .window-action-label {
     display: none;
   }

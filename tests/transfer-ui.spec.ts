@@ -1228,7 +1228,8 @@ test("upload picker and new configuration fit dark small windows", async ({
     .click();
   await page.getByRole("button", { name: "新建连接", exact: true }).click();
   await page.locator(".server-row").click();
-  await page.getByRole("button", { name: "编辑", exact: true }).click();
+  await page.locator(".server-row.selected").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "编辑", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("真实地址", { exact: true }).scrollIntoViewIfNeeded();
   await expect(dialog.getByLabel("直连端口")).toHaveValue("22");

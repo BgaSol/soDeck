@@ -73,6 +73,37 @@ pub struct SaveServerRequest {
     pub password_change: PasswordChange,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ServerDraft {
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub tags: Vec<String>,
+    pub auth_type: String,
+    pub private_key: String,
+    pub jump_server_id: Option<String>,
+    pub direct_host: Option<String>,
+    pub direct_port: u16,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum DuplicatePasswordPolicy {
+    Inherit,
+    Set { value: String },
+    Clear,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DuplicateServerRequest {
+    pub source_id: String,
+    pub draft: ServerDraft,
+    pub password_policy: DuplicatePasswordPolicy,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppError {

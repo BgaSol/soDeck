@@ -9,24 +9,16 @@ import {
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import {
-  Server as ServerIcon,
-  TerminalSquare,
-  X,
-  ScrollText,
-} from "lucide-react";
+import { TerminalSquare, X, ScrollText } from "lucide-react";
 import { WindowTitlebar, WindowLoading } from "./WindowTitlebar";
 import type { ReactNode } from "react";
 import { api, desktop } from "./api";
-import { BrandIcon } from "./AppBrand";
-import { APP_TAGLINE } from "./brand";
 import { TerminalPane } from "./TerminalPane";
 import { ServerEditor } from "./ServerEditor";
 import { ServerDeleteDialog } from "./ServerDeleteDialog";
 import { DatabaseResetDialog } from "./DatabaseResetDialog";
 import { logApi } from "./logApi";
 import { terminalHistoryApi } from "./terminalHistoryApi";
-import { FilePanel } from "./FilePanel";
 import { WorkspaceTitlebar } from "./WorkspaceTitlebar";
 import { DetachedApp } from "./DetachedApp";
 import { FileTaskPanel } from "./FileTaskPanel";
@@ -37,8 +29,8 @@ import { PortForwardButton } from "./PortForwardButton";
 import { forwardApi } from "./portForwardApi";
 import { useWorkspaceMoves } from "./useWorkspaceMoves";
 import { SessionWorkspace } from "./SessionWorkspace";
-import { ServerPickerDialog } from "./ServerPickerDialog";
-import { WorkspaceLayout } from "./WorkspaceLayout";
+import { ServerHome } from "./ServerHome";
+import { duplicateDraft, configurationFields } from "./serverConfiguration";
 import { emptyServer, errorOf, filterServers } from "./types";
 import {
   closeWorkspace,
@@ -46,7 +38,12 @@ import {
   openWorkspace,
   reorderWorkspace,
 } from "./workspaces";
-import type { AppError, Server, SaveServerRequest } from "./types";
+import type {
+  AppError,
+  Server,
+  SaveServerRequest,
+  DuplicatePasswordPolicy,
+} from "./types";
 import type { WorkspaceTab } from "./workspaces";
 const MonitorWindowApp = lazy(() =>
   import("./MonitorWindowApp").then(({ MonitorWindowApp }) => ({
@@ -161,13 +158,19 @@ export function App() {
     try {
       const values = await api.listServers();
       setServers(values);
-      setSelectedId(values[0]?.id || "");
+      setSelectedId(filterServers(values, "", "")[0]?.id || "");
     } catch (error) {
       setError(errorOf(error));
     }
   }
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [promptTab, setPromptTab] = useState<string | null>(null);
+  const [duplicateSource, setDuplicateSource] = useState<Server | null>(null);
+  const [focusRequest, setFocusRequest] = useState(0);
+  const [savedNotice, setSavedNotice] = useState<{
+    text: string;
+    serverId: string;
+  } | null>(null);
+  const lastVisited = useRef(new Map<string, number>());
+  const navigationSerial = useRef(0);
   type PendingConnection = {
     tabId: string;
     serverId: string;
@@ -175,6 +178,7 @@ export function App() {
     attempt: number;
     busy: boolean;
     error?: string;
+    navigationSerial: number;
   };
   const [pending, setPendingState] = useState<PendingConnection | null>(null);
   const pendingRef = useRef<PendingConnection | null>(null);
@@ -182,30 +186,23 @@ export function App() {
     pendingRef.current = value;
     setPendingState(value);
   }, []);
-  const pickerWasOpen = useRef(false);
-  const pickerTrigger = useRef<HTMLButtonElement | null>(null);
-  const focusTerminal = useRef(false);
   useEffect(() => {
-    if (pickerOpen) {
-      pickerWasOpen.current = true;
-      return;
-    }
-    if (!pickerWasOpen.current) return;
-    pickerWasOpen.current = false;
+    if (!workspaces.activeId) return;
+    lastVisited.current.set(workspaces.activeId, performance.now());
     const frame = requestAnimationFrame(() => {
-      const selector = focusTerminal.current
-        ? ".workspace-page-wrap:not([hidden]) .xterm-helper-textarea"
-        : ".new-session";
-      const target =
-        !focusTerminal.current && pickerTrigger.current?.isConnected
-          ? pickerTrigger.current
-          : document.querySelector<HTMLElement>(selector);
-      target?.focus();
-      pickerTrigger.current = null;
-      focusTerminal.current = false;
+      document
+        .querySelector<HTMLTextAreaElement>(
+          ".workspace-page-wrap:not([hidden]) .xterm-helper-textarea",
+        )
+        ?.focus();
     });
     return () => cancelAnimationFrame(frame);
-  }, [pickerOpen]);
+  }, [workspaces.activeId]);
+  function navigate(id: string) {
+    navigationSerial.current++;
+    setWorkspaces((current) => ({ ...current, activeId: id }));
+    if (!id) setFocusRequest((value) => value + 1);
+  }
   const moves = useWorkspaceMoves(setWorkspaces, setError);
   const tags = [...new Set(servers.flatMap((server) => server.tags))].sort(),
     visible = filterServers(servers, query, tag);
@@ -218,7 +215,7 @@ export function App() {
       .listServers()
       .then((values) => {
         setServers(values);
-        setSelectedId(values[0]?.id || "");
+        setSelectedId(filterServers(values, "", "")[0]?.id || "");
       })
       .catch((error) => setError(errorOf(error)))
       .finally(() => setLoading(false));
@@ -254,7 +251,9 @@ export function App() {
           docker?.attention
             ? `${docker.attention} 个 Docker 操作结果待确认`
             : "",
-          summary.active ? `${summary.active} 个文件任务尚未完成（含 Docker 传输）` : "",
+          summary.active
+            ? `${summary.active} 个文件任务尚未完成（含 Docker 传输）`
+            : "",
           summary.attention ? `${summary.attention} 个文件任务需要处理` : "",
           forwards.active
             ? `${forwards.active} 条端口转发仍在运行（${forwards.connections} 条业务连接）`
@@ -313,21 +312,19 @@ export function App() {
   function discardPending() {
     const current = pendingRef.current;
     setPending(null);
-    setPromptTab(null);
     if (current)
       setWorkspaces((state) => {
         const next = closeWorkspace(state, current.tabId);
         return {
           ...next,
-          activeId: next.tabs.some((t) => t.id === current.returnId)
-            ? current.returnId
-            : next.activeId,
+          activeId:
+            state.activeId === current.tabId
+              ? next.tabs.some((t) => t.id === current.returnId)
+                ? current.returnId
+                : ""
+              : state.activeId,
         };
       });
-  }
-  function closePicker() {
-    discardPending();
-    setPickerOpen(false);
   }
   const receiveStatus = useCallback(
     (id: string, attempt: number, state: string, failure?: AppError) => {
@@ -335,10 +332,9 @@ export function App() {
       if (!current || current.tabId !== id || current.attempt !== attempt)
         return;
       if (state === "已连接") {
-        focusTerminal.current = true;
         setPending(null);
-        setPromptTab(null);
-        setPickerOpen(false);
+        if (current.navigationSerial === navigationSerial.current)
+          setWorkspaces((value) => ({ ...value, activeId: id }));
       } else if (state === "连接失败" || (state === "error" && !current.busy)) {
         setPending({
           ...current,
@@ -347,29 +343,43 @@ export function App() {
         });
       } else if (state === "已断开") {
         setPending(null);
-        setPromptTab(null);
-        setPickerOpen(false);
+
         setWorkspaces((value) => {
           const next = closeWorkspace(value, id);
           return {
             ...next,
-            activeId: next.tabs.some((t) => t.id === current.returnId)
-              ? current.returnId
-              : next.activeId,
+            activeId:
+              value.activeId === id
+                ? next.tabs.some((t) => t.id === current.returnId)
+                  ? current.returnId
+                  : ""
+                : value.activeId,
           };
         });
       }
     },
     [setPending],
   );
-  const receivePrompt = useCallback((id: string, visible: boolean) => {
-    setPromptTab((current) => (visible ? id : current === id ? null : current));
-  }, []);
-  function open(server: Server) {
-    if (!desktop || pendingRef.current?.busy) return;
+  function open(server: Server, forceNew = false) {
+    if (!desktop) return;
+    if (!forceNew) {
+      const existing = workspaces.tabs
+        .filter((tab) => tab.server.id === server.id && tab.state === "已连接")
+        .sort(
+          (a, b) =>
+            (lastVisited.current.get(b.id) || 0) -
+            (lastVisited.current.get(a.id) || 0),
+        )[0];
+      if (existing) {
+        navigate(existing.id);
+        return;
+      }
+    }
+    if (pendingRef.current?.busy) return;
     if (!server.username) {
       setError({ kind: "validation", message: "请先填写 SSH 用户名。" });
       discardPending();
+      setDuplicateSource(null);
       setEditor(structuredClone(server));
       return;
     }
@@ -384,6 +394,7 @@ export function App() {
         attempt: previous.attempt + 1,
         busy: true,
         error: undefined,
+        navigationSerial: navigationSerial.current,
       });
       moves.handles.current.get(previous.tabId)!.reconnect();
       return;
@@ -395,31 +406,56 @@ export function App() {
       returnId: previous?.returnId ?? workspaces.activeId,
       attempt: 0,
       busy: true,
+      navigationSerial: navigationSerial.current,
     });
-    setWorkspaces((current) =>
-      openWorkspace(
+    setWorkspaces((current) => {
+      const next = openWorkspace(
         previous ? closeWorkspace(current, previous.tabId) : current,
         server,
         true,
         tabId,
-      ),
-    );
+      );
+      return {
+        ...next,
+        activeId: current.activeId === previous?.tabId ? "" : current.activeId,
+      };
+    });
   }
   function editServer(server: Server) {
-    discardPending();
+    setDuplicateSource(null);
     setEditor(structuredClone(server));
   }
-  async function save(server: SaveServerRequest) {
-    const saved = await api.saveServer(server);
+  function copyServer(server: Server) {
+    setDuplicateSource(structuredClone(server));
+    setEditor(duplicateDraft(server, servers));
+  }
+  async function save(
+    server: SaveServerRequest,
+    connect = false,
+    passwordPolicy?: DuplicatePasswordPolicy,
+    asNew = false,
+  ) {
+    const saved =
+      duplicateSource && !asNew
+        ? await api.duplicateServer({
+            sourceId: duplicateSource.id,
+            draft: configurationFields(server),
+            passwordPolicy: passwordPolicy || { type: "clear" },
+          })
+        : await api.saveServer(server);
     setServers((values) => [
-      ...values.filter((server) => server.id !== saved.id),
+      ...values.filter((value) => value.id !== saved.id),
       saved,
     ]);
     setSelectedId(saved.id);
-    setQuery("");
-    setTag("");
+    setSavedNotice({
+      text: `${duplicateSource && !asNew ? "副本已保存" : "配置已保存"}：${saved.name}`,
+      serverId: saved.id,
+    });
     setEditor(null);
+    setDuplicateSource(null);
     setError(null);
+    if (connect) open(saved, true);
   }
   async function remove(server: Server) {
     if (workspaces.tabs.some((tab) => tab.server.id === server.id))
@@ -446,7 +482,6 @@ export function App() {
     setError(null);
   }
   function requestDelete(server: Server) {
-    discardPending();
     setDeleting(server);
   }
   return (
@@ -455,18 +490,19 @@ export function App() {
         tabs={workspaces.tabs}
         activeId={workspaces.activeId}
         moving={moves.moving}
-        onSelect={(id) =>
-          setWorkspaces((current) => ({ ...current, activeId: id }))
-        }
+        onSelect={navigate}
+        onHome={() => navigate("")}
         onClose={(id) => {
-          if (!moves.moving.has(id))
-            setWorkspaces((current) => closeWorkspace(current, id));
+          if (moves.moving.has(id)) return;
+          navigationSerial.current++;
+          if (pendingRef.current?.tabId === id) discardPending();
+          else setWorkspaces((current) => closeWorkspace(current, id));
         }}
         onMove={(...args) => void moves.move(...args)}
         onReorder={(id, beforeId) =>
           setWorkspaces((current) => reorderWorkspace(current, id, beforeId))
         }
-        onNew={desktop ? () => setPickerOpen(true) : undefined}
+        onNew={desktop ? () => navigate("") : undefined}
         onError={(error) => setError(errorOf(error))}
         actions={
           <>
@@ -556,6 +592,14 @@ export function App() {
                 <SessionWorkspace
                   tab={tab}
                   active={workspaces.activeId === tab.id}
+                  promptActive={
+                    !editor &&
+                    !deleting &&
+                    !quitRequest &&
+                    databaseResetDetails === null &&
+                    (workspaces.activeId === tab.id ||
+                      (!workspaces.activeId && pending?.tabId === tab.id))
+                  }
                   initial={moves.snapshots.current.get(tab.id)}
                   onReady={() => moves.ready(tab.id)}
                   controllerRef={(value) => {
@@ -565,7 +609,6 @@ export function App() {
                   onChange={updateTab}
                   onConfigurationChanged={refreshConfigurations}
                   onConnectionStatus={receiveStatus}
-                  onPromptChange={receivePrompt}
                 />
                 {moves.moving.has(tab.id) && (
                   <div className="session-moving">
@@ -577,57 +620,38 @@ export function App() {
                 )}
               </div>
             ))}
-            {!workspaces.tabs.length && (
-              <WorkspaceLayout
-                files={<FilePanel sessionId={null} serverName="" />}
-                services={
-                  <aside className="resource-service-panel" aria-label="服务器">
-                    <div className="resource-panel-head">
-                      <strong>服务器</strong>
-                    </div>
-                    <div className="server-idle">
-                      <div className="server-idle-content">
-                        <ServerIcon
-                          className="server-idle-symbol"
-                          aria-hidden="true"
-                        />
-                        <h2>尚未连接</h2>
-                        <p>连接服务器，查看资源与运行状态。</p>
-                        <button
-                          type="button"
-                          className="server-idle-action"
-                          disabled={!desktop}
-                          onClick={(event) => {
-                            pickerTrigger.current = event.currentTarget;
-                            setPickerOpen(true);
-                          }}
-                        >
-                          选择服务器
-                        </button>
-                      </div>
-                    </div>
-                  </aside>
-                }
-                terminal={
-                  <main className="terminal-panel">
-                    <div className="session-welcome">
-                      <span className="welcome-symbol" aria-hidden="true">
-                        <BrandIcon size={76} />
-                      </span>
-                      <span className="welcome-caption">{APP_TAGLINE}</span>
-                      <h2>打开一个 SSH 连接</h2>
-                      <p>点击上方标签栏右侧的“＋”，选择服务器并连接。</p>
-                      <p>在会话中使用终端、文件目录和服务器总览。</p>
-                      <div className="welcome-features" aria-hidden="true">
-                        <span>SSH 终端</span>
-                        <span>SFTP 文件</span>
-                        <span>Docker 服务</span>
-                      </div>
-                    </div>
-                  </main>
-                }
-              />
-            )}
+            <ServerHome
+              servers={servers}
+              tabs={workspaces.tabs}
+              selectedId={selectedId}
+              query={query}
+              tag={tag}
+              loading={loading}
+              active={!workspaces.activeId}
+              focusRequest={focusRequest}
+              loadFailed={!!error && !servers.length}
+              pending={pending}
+              notice={savedNotice}
+              onSelect={setSelectedId}
+              onQuery={setQuery}
+              onTag={setTag}
+              onConnect={open}
+              onEdit={editServer}
+              onCopy={copyServer}
+              onDelete={requestDelete}
+              onNew={() => editServer(emptyServer())}
+              onCancel={discardPending}
+              onForward={(server) => {
+                void forwardApi
+                  .open(server.id)
+                  .catch((e) => setError(errorOf(e)));
+              }}
+              onReveal={(id) => {
+                setQuery("");
+                setTag("");
+                setSelectedId(id);
+              }}
+            />
           </div>
         </div>
       </div>
@@ -643,52 +667,19 @@ export function App() {
         </div>
       </footer>
       <DesktopDragPreview />
-      {pickerOpen && (
-        <ServerPickerDialog
-          servers={servers}
-          selectedId={selectedId}
-          query={query}
-          tag={tag}
-          loading={loading}
-          busy={!!pending?.busy}
-          suspended={
-            !!editor ||
-            !!deleting ||
-            !!promptTab ||
-            databaseResetDetails !== null ||
-            !!quitRequest
-          }
-          error={pending?.error || error?.message}
-          connectedIds={
-            new Set(
-              workspaces.tabs
-                .filter((t) => t.state === "已连接")
-                .map((t) => t.server.id),
-            )
-          }
-          onSelect={setSelectedId}
-          onQuery={setQuery}
-          onTag={setTag}
-          onConnect={open}
-          onEdit={editServer}
-          onDelete={requestDelete}
-          onNew={() => editServer(emptyServer())}
-          onClose={closePicker}
-          onResetDatabase={
-            error?.kind === "databaseSchema"
-              ? () => setDatabaseResetDetails(error.message)
-              : undefined
-          }
-        />
-      )}
       {editor && (
         <ServerEditor
           initial={editor}
+          duplicateSource={duplicateSource}
+          connectDisabled={!!pending?.busy}
           servers={servers}
           tags={tags}
           onSave={save}
           onDelete={editor.id ? requestDelete : undefined}
-          onClose={() => setEditor(null)}
+          onClose={() => {
+            setEditor(null);
+            setDuplicateSource(null);
+          }}
         />
       )}
       {databaseResetDetails !== null && (

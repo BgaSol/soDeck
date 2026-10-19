@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import {
   useCallback,
   useLayoutEffect,
@@ -74,6 +75,7 @@ export interface WorkspaceController {
 export function SessionWorkspace({
   tab,
   active,
+  promptActive = active,
   controllerRef,
   initial,
   onReady,
@@ -87,6 +89,7 @@ export function SessionWorkspace({
   initial?: WorkspaceSnapshot;
   onReady?: () => void;
   active: boolean;
+  promptActive?: boolean;
   onChange: (
     id: string,
     patch: Partial<Pick<WorkspaceTab, "server" | "state">>,
@@ -151,9 +154,9 @@ export function SessionWorkspace({
         : undefined),
   );
   useLayoutEffect(() => {
-    onPromptChange?.(tab.id, active && !!prompt);
+    onPromptChange?.(tab.id, promptActive && !!prompt);
     return () => onPromptChange?.(tab.id, false);
-  }, [tab.id, active, !!prompt, onPromptChange]);
+  }, [tab.id, promptActive, !!prompt, onPromptChange]);
   function reportState(state: string, failure?: AppError) {
     onConnectionStatus?.(tab.id, request?.attempt ?? 0, state, failure);
   }
@@ -416,34 +419,40 @@ export function SessionWorkspace({
               }
             />
           </div>
-          {active && prompt?.type === "authRequired" && (
-            <LoginDialog
-              key={prompt.challenge.id}
-              challenge={prompt.challenge}
-              disabled={!connection.connectionId}
-              onSubmit={(credentials) =>
-                connection.answer(prompt.challenge.id, {
-                  type: "credentials",
-                  ...credentials,
-                })
-              }
-              onClose={disconnect}
-            />
-          )}
-          {active && prompt?.type === "hostKeyRequired" && (
-            <FingerprintDialog
-              key={prompt.challenge.id}
-              challenge={prompt.challenge}
-              disabled={!connection.connectionId}
-              onTrust={() =>
-                connection.answer(prompt.challenge.id, {
-                  type: "trust",
-                  accept: true,
-                })
-              }
-              onClose={disconnect}
-            />
-          )}
+          {promptActive &&
+            prompt?.type === "authRequired" &&
+            createPortal(
+              <LoginDialog
+                key={prompt.challenge.id}
+                challenge={prompt.challenge}
+                disabled={!connection.connectionId}
+                onSubmit={(credentials) =>
+                  connection.answer(prompt.challenge.id, {
+                    type: "credentials",
+                    ...credentials,
+                  })
+                }
+                onClose={disconnect}
+              />,
+              document.body,
+            )}
+          {promptActive &&
+            prompt?.type === "hostKeyRequired" &&
+            createPortal(
+              <FingerprintDialog
+                key={prompt.challenge.id}
+                challenge={prompt.challenge}
+                disabled={!connection.connectionId}
+                onTrust={() =>
+                  connection.answer(prompt.challenge.id, {
+                    type: "trust",
+                    accept: true,
+                  })
+                }
+                onClose={disconnect}
+              />,
+              document.body,
+            )}
         </NetBirdProvider>
       </DockerManagementProvider>
     </MonitorProvider>

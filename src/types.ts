@@ -64,6 +64,14 @@ export type PasswordChange =
 export interface SaveServerRequest extends Server {
   passwordChange: PasswordChange;
 }
+export type ServerDraft = Omit<Server, "id" | "hasSavedPassword">;
+export type DuplicatePasswordPolicy =
+  { type: "inherit" } | { type: "clear" } | { type: "set"; value: string };
+export interface DuplicateServerRequest {
+  sourceId: string;
+  draft: ServerDraft;
+  passwordPolicy: DuplicatePasswordPolicy;
+}
 export interface HopView {
   index: number;
   role: "jump" | "target";
@@ -135,12 +143,15 @@ export function addressOf(server: Server) {
   return `${server.host.includes(":") ? "[" + server.host + "]" : server.host}:${server.port}`;
 }
 export function filterServers(servers: Server[], query: string, tag: string) {
-  const text = query.trim().toLocaleLowerCase();
+  const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   return servers
     .filter(
       (server) =>
-        (!text ||
-          `${server.name} ${server.host}`.toLocaleLowerCase().includes(text)) &&
+        words.every((word) =>
+          `${server.name} ${server.host} ${server.username} ${server.tags.join(" ")}`
+            .toLocaleLowerCase()
+            .includes(word),
+        ) &&
         (!tag || server.tags.includes(tag)),
     )
     .sort(

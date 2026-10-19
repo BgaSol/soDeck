@@ -1,4 +1,4 @@
-import { showServers, connectSelectedServer } from "./server-picker";
+import { showServers, connectSelectedServer, serverAction } from "./server-picker";
 import { chromium, expect, test, type Page } from "@playwright/test";
 import { readFile, unlink, writeFile } from "node:fs/promises";
 
@@ -88,7 +88,7 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
   try {
     await unlink(".qa/docker-mode").catch(() => {});
     await showServers(main);
-    await main.getByRole("button", { name: /^(新增|添加服务器)$/ }).click();
+    await main.getByRole("button", { name: /^新增服务器$/ }).click();
     let dialog = main.getByRole("dialog");
     await dialog.getByLabel(/^名称/).fill(name);
     await dialog.getByLabel("地址", { exact: true }).fill("127.0.0.1");
@@ -98,7 +98,7 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
     await dialog.getByPlaceholder("选择或输入标签").fill("QA");
     await dialog.getByRole("button", { name: "添加", exact: true }).click();
     await dialog.getByRole("button", { name: "保存", exact: true }).click();
-    await expect(main.getByRole("dialog", { name: /^服务器/ })).toBeVisible();
+    await expect(main.getByRole("region", { name: "服务器", exact: true })).toBeVisible();
     const first = (await ipc<any[]>(main, "list_servers")).find(
       (server) => server.name === name,
     );
@@ -116,7 +116,7 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
     await main.getByLabel("搜索服务器").fill("");
     await main.getByLabel("按标签筛选").selectOption("QA");
     await showServers(main);
-    await main.getByRole("button", { name: "编辑", exact: true }).click();
+    await serverAction(main, "编辑");
     dialog = main.getByRole("dialog");
     await dialog.getByPlaceholder("选择或输入标签").fill("qa");
     await dialog.getByRole("button", { name: "添加", exact: true }).click();
@@ -201,7 +201,7 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
     );
     // Server-list selection and CRUD must leave the active workspace connected.
     await showServers(main);
-    await main.getByRole("button", { name: /^(新增|添加服务器)$/ }).click();
+    await main.getByRole("button", { name: /^新增服务器$/ }).click();
     dialog = main.getByRole("dialog");
     await dialog.getByLabel(/^名称/).fill(other);
     await dialog.getByLabel("地址", { exact: true }).fill("192.0.2.1");
@@ -224,7 +224,7 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
     await closeContainer(container);
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(1);
     await showServers(main);
-    await main.getByRole("button", { name: "编辑", exact: true }).click();
+    await serverAction(main, "编辑");
     await main
       .getByRole("dialog")
       .getByRole("button", { name: "删除", exact: true })
@@ -233,7 +233,7 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
       .getByRole("dialog", { name: "删除服务器配置？" })
       .getByRole("button", { name: "确认删除" })
       .click();
-    await expect(main.getByRole("dialog", { name: /^服务器/ })).toBeVisible();
+    await expect(main.getByRole("region", { name: "服务器", exact: true })).toBeVisible();
     await main.getByRole("button", { name: "关闭服务器窗口" }).click();
     expect(
       (await ipc<any[]>(main, "list_servers")).some(
@@ -638,7 +638,7 @@ test("failed, pending and remotely closed tabs do not affect other connections",
     await authenticate(main);
     // Wrong credentials prompt only the duplicate; the original stays connected.
     await showServers(main);
-    await main.getByRole("button", { name: "编辑", exact: true }).click();
+    await serverAction(main, "编辑");
     await main
       .getByRole("dialog")
       .getByLabel("密码", { exact: true })
@@ -697,7 +697,7 @@ test("failed, pending and remotely closed tabs do not affect other connections",
       main.locator(".session-tab").filter({ hasText: pendingName }),
     ).toBeVisible();
     await main
-      .getByRole("dialog", { name: /^服务器/ })
+      .getByRole("region", { name: "服务器", exact: true })
       .getByRole("button", { name: "取消连接", exact: true })
       .click();
     await expect
@@ -783,7 +783,7 @@ test("saved passwords survive reload, connect automatically and can be cleared",
   try {
     await main.reload();
     await showServers(main);
-    await main.getByRole("button", { name: /^(新增|添加服务器)$/ }).click();
+    await main.getByRole("button", { name: /^新增服务器$/ }).click();
     const editor = main.getByRole("dialog");
     await editor.getByLabel(/^名称/).fill(name);
     await editor.getByLabel("地址", { exact: true }).fill("127.0.0.1");
@@ -803,7 +803,7 @@ test("saved passwords survive reload, connect automatically and can be cleared",
     await showServers(main);
     await main.locator(".server-row").filter({ hasText: name }).click();
     await showServers(main);
-    await main.getByRole("button", { name: "编辑", exact: true }).click();
+    await serverAction(main, "编辑");
     await expect(editor.getByLabel("密码", { exact: true })).toHaveValue("");
     await expect(editor.getByLabel("密码", { exact: true })).toHaveAttribute(
       "placeholder",
@@ -825,7 +825,7 @@ test("saved passwords survive reload, connect automatically and can be cleared",
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(2);
     // Clearing the configuration must not disconnect either already established SSH.
     await showServers(main);
-    await main.getByRole("button", { name: "编辑", exact: true }).click();
+    await serverAction(main, "编辑");
     await editor.getByRole("button", { name: "清空已保存密码" }).click();
     await editor.getByRole("button", { name: "保存", exact: true }).click();
     expect(await storedPassword()).toBe(false);

@@ -233,6 +233,60 @@ impl Database {
         server.tags = canonical;
         Ok(server)
     }
+    pub fn duplicate(
+        &mut self,
+        request: crate::model::DuplicateServerRequest,
+    ) -> AppResult<ServerView> {
+        use crate::model::DuplicatePasswordPolicy;
+        self.validate_schema()?;
+        let source = self.get(&request.source_id).map_err(|error| {
+            if error.kind == "notFound" {
+                AppError::new(
+                    "sourceMissing",
+                    "来源服务器已删除，请重新选择来源或改为普通新建。",
+                )
+            } else {
+                error
+            }
+        })?;
+        let draft = request.draft;
+        if draft.auth_type == "key" && draft.private_key.trim().is_empty() {
+            return Err(AppError::new("validation", "请填写私钥文件路径。"));
+        }
+        let password = match request.password_policy {
+            DuplicatePasswordPolicy::Inherit => {
+                if source.auth_type != "password"
+                    || draft.auth_type != "password"
+                    || source.password.is_empty()
+                {
+                    return Err(AppError::new(
+                        "sourcePasswordMissing",
+                        "来源已没有可复用的登录密码，请取消复用并在连接时输入，或填写新密码。",
+                    ));
+                }
+                source.password
+            }
+            DuplicatePasswordPolicy::Set { value } if draft.auth_type == "password" => value,
+            DuplicatePasswordPolicy::Set { .. } | DuplicatePasswordPolicy::Clear => String::new(),
+        };
+        // The target ID is generated here; no caller-provided ID can overwrite the source.
+        self.save_config(ServerConfig {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: draft.name,
+            host: draft.host,
+            port: draft.port,
+            username: draft.username,
+            tags: draft.tags,
+            auth_type: draft.auth_type,
+            private_key: draft.private_key,
+            password,
+            jump_server_id: draft.jump_server_id,
+            direct_host: draft.direct_host,
+            direct_port: draft.direct_port,
+        })
+        .map(|server| server.view())
+    }
+
     pub fn save(&mut self, request: SaveServerRequest) -> AppResult<ServerView> {
         self.validate_schema()?;
         let view = request.server;
@@ -671,5 +725,127 @@ mod tests {
             db.fingerprint("direct", "10.0.0.8", 22).unwrap().as_deref(),
             Some("direct-key")
         );
+    }
+
+    fn duplicate_request(
+        source: &ServerConfig,
+        policy: crate::model::DuplicatePasswordPolicy,
+    ) -> crate::model::DuplicateServerRequest {
+        let mut fields = serde_json::to_value(source.view()).unwrap();
+        fields.as_object_mut().unwrap().remove("id");
+        fields.as_object_mut().unwrap().remove("hasSavedPassword");
+        fields["name"] = "Independent copy".into();
+        crate::model::DuplicateServerRequest {
+            source_id: source.id.clone(),
+            draft: serde_json::from_value(fields).unwrap(),
+            password_policy: policy,
+        }
+    }
+
+    #[test]
+    fn duplicate_preserves_source_inherits_password_and_persists_independently() {
+        use crate::model::DuplicatePasswordPolicy;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("servers.db");
+        let mut db = Database::open(&path).unwrap();
+        let jump = db.save_config(server()).unwrap();
+        let mut value = server();
+        value.id.clear();
+        value.auth_type = "password".into();
+        value.password = "source-secret".into();
+        value.jump_server_id = Some(jump.id.clone());
+        value.tags = vec!["Production".into()];
+        let source = db.save_config(value).unwrap();
+        db.trust(&jump.id, &source.host, source.port, "trusted-key")
+            .unwrap();
+        let copied = db
+            .duplicate(duplicate_request(&source, DuplicatePasswordPolicy::Inherit))
+            .unwrap();
+        assert_ne!(source.id, copied.id);
+        assert!(copied.has_saved_password);
+        assert_eq!(copied.jump_server_id.as_deref(), Some(jump.id.as_str()));
+        assert_eq!(copied.tags, vec!["Production"]);
+        let encoded = serde_json::to_string(&copied).unwrap();
+        assert!(!encoded.contains("source-secret"));
+        assert!(serde_json::from_str::<serde_json::Value>(&encoded)
+            .unwrap()
+            .get("password")
+            .is_none());
+        assert_eq!(db.get(&source.id).unwrap().name, source.name);
+        let mut changed_source = source.clone();
+        changed_source.password = "changed-source-secret".into();
+        db.save_config(changed_source).unwrap();
+        drop(db);
+        let db = Database::open(&path).unwrap();
+        assert_eq!(db.get(&copied.id).unwrap().password, "source-secret");
+        assert_eq!(
+            db.get(&source.id).unwrap().password,
+            "changed-source-secret"
+        );
+        let keys: i64 = db
+            .connection
+            .query_row("SELECT count(*) FROM host_keys", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(keys, 1);
+    }
+
+    #[test]
+    fn duplicate_explicit_credential_policy_and_source_loss_do_not_create_partial_rows() {
+        use crate::model::DuplicatePasswordPolicy;
+        let mut db = Database::open(Path::new(":memory:")).unwrap();
+        let mut value = server();
+        value.auth_type = "password".into();
+        value.password = "secret".into();
+        let source = db.save_config(value).unwrap();
+        let cleared = db
+            .duplicate(duplicate_request(&source, DuplicatePasswordPolicy::Clear))
+            .unwrap();
+        assert!(!cleared.has_saved_password);
+        let replaced = db
+            .duplicate(duplicate_request(
+                &source,
+                DuplicatePasswordPolicy::Set {
+                    value: "new-secret".into(),
+                },
+            ))
+            .unwrap();
+        assert_eq!(db.get(&replaced.id).unwrap().password, "new-secret");
+        let mut empty = source.clone();
+        empty.password.clear();
+        db.save_config(empty).unwrap();
+        let count = db.list().unwrap().len();
+        assert_eq!(
+            db.duplicate(duplicate_request(&source, DuplicatePasswordPolicy::Inherit))
+                .unwrap_err()
+                .kind,
+            "sourcePasswordMissing"
+        );
+        assert_eq!(db.list().unwrap().len(), count);
+        db.delete(&source.id).unwrap();
+        assert_eq!(
+            db.duplicate(duplicate_request(&source, DuplicatePasswordPolicy::Clear))
+                .unwrap_err()
+                .kind,
+            "sourceMissing"
+        );
+        assert_eq!(db.list().unwrap().len(), count - 1);
+    }
+
+    #[test]
+    fn duplicate_rejects_invalid_route_key_and_caller_supplied_id() {
+        use crate::model::DuplicatePasswordPolicy;
+        let mut db = Database::open(Path::new(":memory:")).unwrap();
+        let source = db.save_config(server()).unwrap();
+        let mut invalid = duplicate_request(&source, DuplicatePasswordPolicy::Clear);
+        invalid.draft.jump_server_id = Some("removed-jump".into());
+        assert!(db.duplicate(invalid).is_err());
+        let mut invalid = duplicate_request(&source, DuplicatePasswordPolicy::Clear);
+        invalid.draft.auth_type = "key".into();
+        invalid.draft.private_key.clear();
+        assert!(db.duplicate(invalid).is_err());
+        let mut fields = serde_json::to_value(source.view()).unwrap();
+        fields.as_object_mut().unwrap().remove("hasSavedPassword");
+        assert!(serde_json::from_value::<crate::model::ServerDraft>(fields).is_err());
+        assert_eq!(db.list().unwrap().len(), 1);
     }
 }

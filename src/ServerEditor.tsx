@@ -1,4 +1,5 @@
 import { DialogHeader } from "./DialogHeader";
+import "./server-editor.css";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
@@ -8,17 +9,32 @@ import {
   X,
 } from "lucide-react";
 import { addTag, addressOf, errorOf } from "./types";
-import type { Server, SaveServerRequest, PasswordChange } from "./types";
+import { updateDuplicateHost } from "./serverConfiguration";
+import type {
+  Server,
+  SaveServerRequest,
+  PasswordChange,
+  DuplicatePasswordPolicy,
+} from "./types";
 interface Props {
   initial: Server;
   tags: string[];
   servers: Server[];
-  onSave: (server: SaveServerRequest) => Promise<void>;
+  duplicateSource?: Server | null;
+  connectDisabled?: boolean;
+  onSave: (
+    server: SaveServerRequest,
+    connect?: boolean,
+    policy?: DuplicatePasswordPolicy,
+    asNew?: boolean,
+  ) => Promise<void>;
   onDelete?: (server: Server) => void;
   onClose: () => void;
 }
 export function ServerEditor({
   initial,
+  duplicateSource,
+  connectDisabled = false,
   tags,
   servers,
   onSave,
@@ -32,6 +48,16 @@ export function ServerEditor({
   const [passwordChange, setPasswordChange] = useState<PasswordChange>({
     type: "keep",
   });
+  const initiallyInherit =
+    !!duplicateSource?.hasSavedPassword &&
+    duplicateSource.authType === "password";
+  const [inheritPassword, setInheritPassword] = useState(initiallyInherit);
+  const [createInstead, setCreateInstead] = useState(false);
+  const [sourceMissing, setSourceMissing] = useState(false);
+  const source = createInstead ? null : duplicateSource;
+  const submitting = useRef(false);
+  const directEdited = useRef(false);
+  const [directReset, setDirectReset] = useState(false);
   const candidates = servers.filter(
     (server) => server.id !== draft.id && !server.jumpServerId,
   );
@@ -48,7 +74,9 @@ export function ServerEditor({
   const dirty =
     JSON.stringify(initial) !== JSON.stringify(draft) ||
     !!tag.trim() ||
-    passwordChange.type !== "keep";
+    passwordChange.type !== "keep" ||
+    inheritPassword !== initiallyInherit ||
+    createInstead;
   const close = () => {
     if (busy) return;
     if (dirty) setConfirmDiscard(true);
@@ -64,9 +92,31 @@ export function ServerEditor({
   useEffect(() => {
     dialog.current?.showModal();
     nameInput.current?.focus();
+    if (duplicateSource) nameInput.current?.select();
   }, []);
   function update<K extends keyof Server>(key: K, value: Server[K]) {
-    setDraft((valueDraft) => ({ ...valueDraft, [key]: value }));
+    if (key === "directHost" || key === "directPort")
+      directEdited.current = true;
+    if (key === "host" && source) {
+      setDraft((current) =>
+        updateDuplicateHost(
+          current,
+          value as string,
+          source,
+          directEdited.current,
+        ),
+      );
+      if (
+        source.directHost &&
+        !directEdited.current &&
+        String(value).trim() !== source.host.trim()
+      )
+        setDirectReset(true);
+    } else setDraft((valueDraft) => ({ ...valueDraft, [key]: value }));
+    if (key === "authType" && value !== "password" && source) {
+      setInheritPassword(false);
+      setPasswordChange({ type: "keep" });
+    }
     setError("");
   }
   function append() {
@@ -75,8 +125,14 @@ export function ServerEditor({
       setTag("");
     }
   }
-  async function submit() {
-    if (busy || confirmDiscard) return;
+  async function submit(connect = false) {
+    if (
+      submitting.current ||
+      busy ||
+      confirmDiscard ||
+      (connect && connectDisabled)
+    )
+      return;
     const saved = {
       ...draft,
       passwordChange,
@@ -108,12 +164,28 @@ export function ServerEditor({
       setError("请选择可用的跳板服务器。");
       return;
     }
+    if (connect && !saved.username.trim()) {
+      setError("请填写 SSH 用户名后再连接。");
+      return;
+    }
+    submitting.current = true;
     setBusy(true);
     try {
-      await onSave(saved);
+      const policy: DuplicatePasswordPolicy =
+        draft.authType !== "password"
+          ? { type: "clear" }
+          : passwordChange.type === "set"
+            ? passwordChange
+            : source && inheritPassword
+              ? { type: "inherit" }
+              : { type: "clear" };
+      await onSave(saved, connect, policy, createInstead);
     } catch (error) {
-      setError(errorOf(error).message);
+      const failure = errorOf(error);
+      setError(failure.message);
+      setSourceMissing(failure.kind === "sourceMissing");
       setBusy(false);
+      submitting.current = false;
     }
   }
   return (
@@ -129,8 +201,14 @@ export function ServerEditor({
     >
       <DialogHeader
         id="server-editor-title"
-        title={initial.id ? "编辑服务器" : "新增服务器"}
-        subtitle="设置服务器地址、连接路径与认证方式。"
+        title={
+          source ? "复制服务器配置" : initial.id ? "编辑服务器" : "新增服务器"
+        }
+        subtitle={
+          source
+            ? `来自 ${source.name} · 保存为独立配置，不修改来源服务器。`
+            : "设置服务器地址、连接路径与认证方式。"
+        }
         closeLabel="关闭配置窗口"
         onClose={close}
         disabled={busy}
@@ -138,7 +216,11 @@ export function ServerEditor({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          void submit();
+          void submit(
+            (event.nativeEvent as SubmitEvent).submitter?.getAttribute(
+              "value",
+            ) === "connect",
+          );
         }}
       >
         <div className="editor-fields">
@@ -328,6 +410,19 @@ export function ServerEditor({
             </div>
             {draft.authType === "password" && (
               <div className="password-field">
+                {source?.authType === "password" && source.hasSavedPassword && (
+                  <label className="copy-password-option">
+                    <input
+                      type="checkbox"
+                      checked={inheritPassword && passwordChange.type !== "set"}
+                      onChange={(event) => {
+                        setInheritPassword(event.target.checked);
+                        setPasswordChange({ type: "keep" });
+                      }}
+                    />
+                    复用来源已保存的登录密码
+                  </label>
+                )}
                 <div className="password-field-heading">
                   <label htmlFor="server-password">密码</label>
                   {draft.hasSavedPassword && (
@@ -364,16 +459,22 @@ export function ServerEditor({
                     )
                   }
                   placeholder={
-                    draft.hasSavedPassword && passwordChange.type === "keep"
-                      ? "已保存密码，输入新密码以替换"
-                      : "留空则在连接时输入"
+                    source && inheritPassword && passwordChange.type === "keep"
+                      ? "复用来源密码，输入新密码可替换"
+                      : draft.hasSavedPassword && passwordChange.type === "keep"
+                        ? "已保存密码，输入新密码以替换"
+                        : "留空则在连接时输入"
                   }
                 />
                 <div className="password-field-footer">
                   <small className="field-help" id="server-password-help">
-                    {passwordChange.type === "clear"
-                      ? "下次连接时重新输入。"
-                      : "密码保存在本机，连接时自动使用。"}
+                    {source && inheritPassword && passwordChange.type === "keep"
+                      ? "保存时由本机继承密码；之后修改来源密码不会影响副本。"
+                      : passwordChange.type === "clear"
+                        ? "下次连接时重新输入。"
+                        : source && passwordChange.type === "keep"
+                          ? "未保存密码，连接时输入。"
+                          : "密码保存在本机，连接时自动使用。"}
                   </small>
                   {draft.hasSavedPassword && (
                     <button
@@ -500,6 +601,26 @@ export function ServerEditor({
             </datalist>
           </fieldset>
         </div>
+        {directReset && (
+          <p className="field-help editor-save-error" role="status">
+            SSH 地址已变更，已清空继承的直传地址，请按需重新填写。
+          </p>
+        )}
+        {sourceMissing && (
+          <div className="editor-save-error">
+            <button
+              type="button"
+              onClick={() => {
+                setCreateInstead(true);
+                setInheritPassword(false);
+                setSourceMissing(false);
+                setError("");
+              }}
+            >
+              保留草稿，改为普通新建
+            </button>
+          </div>
+        )}
         {error && (
           <p className="error editor-save-error" role="alert">
             {error}
@@ -535,12 +656,22 @@ export function ServerEditor({
               取消
             </button>
             <button
-              className="primary"
+              className={initial.id ? "primary" : ""}
               disabled={busy || invalidJump}
               type="submit"
             >
-              {busy ? "保存中…" : "保存"}
+              {busy ? "保存中…" : source ? "保存副本" : "保存"}
             </button>
+            {!initial.id && (
+              <button
+                className="primary"
+                type="submit"
+                value="connect"
+                disabled={busy || invalidJump || connectDisabled}
+              >
+                保存并连接
+              </button>
+            )}
           </footer>
         )}
       </form>

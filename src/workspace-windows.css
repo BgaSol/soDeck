@@ -2,6 +2,7 @@
   position: relative;
 }
 .window-tabs-slot .session-tabs {
+  flex: 0 1 auto;
   min-height: 34px;
   height: 34px;
   min-width: 0;

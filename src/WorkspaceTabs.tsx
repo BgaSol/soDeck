@@ -7,6 +7,7 @@ import {
   ChevronRight,
   ChevronDown,
   PanelTop,
+  Server as ServerIcon,
 } from "lucide-react";
 import type { WorkspaceTab } from "./workspaces";
 import { tabTitle } from "./workspaces";
@@ -25,6 +26,7 @@ export interface WorkspaceTabsProps {
   onMove: (id: string, target: string | null, beforeId?: string | null) => void;
   onReorder: (id: string, beforeId: string | null) => void;
   onNew?: () => void;
+  onHome?: () => void;
   onError: (error: unknown) => void;
 }
 
@@ -38,6 +40,7 @@ export function WorkspaceTabs({
   onMove,
   onReorder,
   onNew,
+  onHome,
   onError,
   appendDropRef,
   onAppendDropChange,
@@ -147,6 +150,17 @@ export function WorkspaceTabs({
       }));
   return (
     <>
+      {onHome && (
+        <button
+          className={`server-home-tab${!activeId ? " active" : ""}`}
+          aria-label="服务器首页"
+          aria-pressed={!activeId}
+          onClick={onHome}
+        >
+          <ServerIcon size={15} />
+          服务器
+        </button>
+      )}
       <div
         ref={scroll.root}
         className={`session-tabs${drag.over !== undefined ? " receiving-tab" : ""}`}
@@ -185,7 +199,9 @@ export function WorkspaceTabs({
                   id={`tab-${tab.id}`}
                   aria-controls={`panel-${tab.id}`}
                   aria-selected={activeId === tab.id}
-                  tabIndex={activeId === tab.id ? 0 : -1}
+                  tabIndex={
+                    activeId === tab.id || (!activeId && index === 0) ? 0 : -1
+                  }
                   aria-label={`${tabTitle(tab)}，${tab.state}`}
                   title={`${tabTitle(tab)} · ${tab.server.username}@${tab.server.host}:${tab.server.port} · ${tab.state} · 拖动标签可排序或移到独立窗口`}
                   disabled={moving.has(tab.id)}

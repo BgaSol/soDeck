@@ -414,7 +414,7 @@ test("normal mode cancels browser defaults but keeps business menus and real xte
     page.getByRole("menu", { name: /Mount fixture 操作/ }),
   ).toBeVisible();
   await page.keyboard.press("Escape");
-  await page.keyboard.press("Escape");
+  await page.getByRole("tab", { name: "Mount fixture，已连接", exact: true }).click();
   await page.locator(".terminal-surface textarea").focus();
   for (const key of ["Control+r", "Control+c", "Control+u", "F5", "F12"])
     await page.keyboard.press(key);

@@ -1,4 +1,4 @@
-import { showServers, connectSelectedServer } from "./server-picker";
+import { showServers, connectSelectedServer, serverAction } from "./server-picker";
 import {
   chromium,
   expect,
@@ -561,10 +561,7 @@ test("server deletion blocks tabs and independent windows, then removes the save
     f.main.getByRole("dialog", { name: "删除服务器配置？" });
   try {
     await showServers(f.main);
-    await f.main
-      .locator(".server-footer")
-      .getByRole("button", { name: "删除", exact: true })
-      .click();
+    await serverAction(f.main, "删除服务器");
     await expect(confirmation()).toContainText(f.name);
     await expect(
       confirmation().getByRole("button", { name: "确认删除" }),
@@ -675,10 +672,7 @@ test("server deletion supports cancellation, editor entry and filtered neighbour
       .locator(".server-row")
       .filter({ hasText: `${prefix} B` })
       .click();
-    await main
-      .locator(".server-footer")
-      .getByRole("button", { name: "删除", exact: true })
-      .click();
+    await serverAction(main, "删除服务器");
     await expect(confirmation()).toContainText("127.0.0.1:22222");
     await main.screenshot({ path: ".qa/server-delete-confirmation.png" });
     await confirmation()
@@ -689,18 +683,12 @@ test("server deletion supports cancellation, editor entry and filtered neighbour
         (s) => s.id === created[1].id,
       ),
     ).toBe(true);
-    await main
-      .locator(".server-footer")
-      .getByRole("button", { name: "删除", exact: true })
-      .click();
+    await serverAction(main, "删除服务器");
     await confirmation().getByRole("button", { name: "确认删除" }).click();
     await expect(main.locator(".server-row.selected")).toContainText(
       `${prefix} C`,
     );
-    await main
-      .locator(".server-footer")
-      .getByRole("button", { name: "编辑", exact: true })
-      .click();
+    await serverAction(main, "编辑");
     await main
       .getByRole("dialog")
       .getByRole("button", { name: "删除", exact: true })
@@ -714,7 +702,7 @@ test("server deletion supports cancellation, editor entry and filtered neighbour
       .getByRole("button", { name: "删除", exact: true })
       .click();
     await confirmation().getByRole("button", { name: "确认删除" }).click();
-    await expect(main.getByRole("dialog", { name: /^服务器/ })).toBeVisible();
+    await expect(main.getByRole("region", { name: "服务器", exact: true })).toBeVisible();
     await expect(main.locator(".server-row.selected")).toContainText(
       `${prefix} A`,
     );

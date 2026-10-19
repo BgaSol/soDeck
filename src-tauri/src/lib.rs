@@ -248,6 +248,17 @@ fn save_server(
     state.database.lock().unwrap().save(server)
 }
 #[tauri::command]
+fn duplicate_server(
+    window: WebviewWindow,
+    state: TauriState<Arc<State>>,
+    request: model::DuplicateServerRequest,
+) -> AppResult<ServerView> {
+    main_only(&window)?;
+    let _gate = state.configuration.lock().unwrap();
+    state.database.lock().unwrap().duplicate(request)
+}
+
+#[tauri::command]
 fn delete_server(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
@@ -677,6 +688,7 @@ pub fn run() {
             list_servers,
             reset_incompatible_database,
             save_server,
+            duplicate_server,
             delete_server,
             session_count,
             quit_app,
