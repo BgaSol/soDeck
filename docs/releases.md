@@ -4,15 +4,15 @@
 
 ## 发布新版本
 
-先完成业务改动并提交，确保工作区干净。下面以发布 0.1.2 为例：
+先完成业务改动并提交，确保工作区干净。下面以发布 0.1.3 为例：
 
 ~~~powershell
-npm run release:prepare -- 0.1.2
-npm run release:check -- v0.1.2
+npm run release:prepare -- 0.1.3
+npm run release:check -- v0.1.3
 git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json
-git commit -m "chore: release v0.1.2"
-git tag -a v0.1.2 -m "SoDeck v0.1.2"
-git push --atomic origin HEAD refs/tags/v0.1.2
+git commit -m "chore: release v0.1.3"
+git tag -a v0.1.3 -m "SoDeck v0.1.3"
+git push --atomic origin HEAD refs/tags/v0.1.3
 ~~~
 
 示例版本仅用于说明命令。首次启用应用内升级时，必须选择高于已发布版本的新版本号，并先按下文配置升级签名；已发布的 v0.1.1 不能覆盖。
@@ -53,6 +53,7 @@ Linux 包在 Ubuntu 24.04 构建，面向 Ubuntu 24.04 或更新的兼容环境�
 
 ## 失败与重试
 
+- v0.1.2 的 macOS 构建仅指定 DMG，缺少 updater 的 `.app.tar.gz`，收集校验失败，未公开 Release。v0.1.3 改为同时指定 `app,dmg`；保留原标签及失败记录。
 - 在 Actions → Release → 失败的运行中查看具体步骤；网络、上传等临时故障可以选择 Re-run failed jobs。
 - 构建修复涉及源码变更时，提交修复并发布新版本 tag；不要移动或覆盖已发布的 tag。
 - 上传失败时 Release 保持草稿。重试只替换该草稿中的本流程附件，全部校验通过后才公开；已公开版本始终拒绝覆盖。
