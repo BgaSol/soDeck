@@ -298,8 +298,8 @@ fn docker_engine_management_contract() {
         },
         Action::NetworkRemove,
     ] {
-        let plan =
-            resources::prepare(session, &engine.endpoint, &network.id, &action, &check).unwrap();
+        let plan = resources::prepare(session, &engine.endpoint, &network.id, &action, &check)
+            .unwrap_or_else(|error| panic!("{action:?} preflight failed: {error:?}"));
         assert_eq!(
             operations::execute(
                 session,

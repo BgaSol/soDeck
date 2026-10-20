@@ -233,6 +233,12 @@ pub fn overview(
         candidates,
     })
 }
+fn network_attached(networks: &[Network], id: &str, name: &str) -> bool {
+    networks
+        .iter()
+        .any(|network| network.id == id || (network.id.is_empty() && network.name == name))
+}
+
 pub fn prepare(
     session: &ssh2::Session,
     endpoint: &str,
@@ -321,7 +327,10 @@ pub fn prepare(
                 };
                 let c = inspect::container(session, endpoint, container, check)?;
                 let disconnect = matches!(action, Action::NetworkDisconnect { .. });
-                let attached = c.networks.iter().any(|n| n.id == id);
+                // A network attached while a container is stopped can have no
+                // NetworkID until it starts. Its exact canonical name still
+                // records the pending attachment. Never override a different ID.
+                let attached = network_attached(&c.networks, id, &d.name);
                 if attached != disconnect {
                     return Err(AppError::new(
                         "conflict",
@@ -415,5 +424,41 @@ pub fn observe(
         Ok(d) => Ok(format!("{} · {} 个容器引用", d.name, d.containers.len())),
         Err(e) if e.kind == "notFound" => Ok("removed".into()),
         Err(e) => Err(e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stopped_container_networks_match_pending_names_but_never_a_different_id() {
+        let network = |id: &str, name: &str| Network {
+            id: id.into(),
+            name: name.into(),
+            address: String::new(),
+            ipv6: String::new(),
+        };
+        assert!(network_attached(
+            &[network("", "app-net")],
+            "current-id",
+            "app-net"
+        ));
+        assert!(network_attached(
+            &[network("current-id", "app-net")],
+            "current-id",
+            "app-net"
+        ));
+        assert!(!network_attached(
+            &[network("old-id", "app-net")],
+            "current-id",
+            "app-net"
+        ));
+        assert!(!network_attached(
+            &[network("", "app-net-extra")],
+            "current-id",
+            "app-net"
+        ));
+        assert!(!network_attached(&[], "current-id", "app-net"));
     }
 }
