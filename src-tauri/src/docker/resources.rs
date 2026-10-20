@@ -250,16 +250,16 @@ pub fn prepare(
             } else {
                 "network"
             };
-            let existing = remote_read::exec(
+            // Docker uses different missing-resource messages for networks and
+            // volumes. Require a successful list and compare exact names instead
+            // of treating a CLI error string as proof that creation is safe.
+            let existing = read(
                 session,
-                &format!("{prefix} {kind} inspect {}", ssh::quote(id)),
+                &format!("{prefix} {kind} ls --format '{{{{.Name}}}}'"),
                 check,
             )?;
-            if existing.code == 0 {
+            if existing.lines().any(|name| name.trim() == id) {
                 return Err(AppError::new("conflict", "同名资源已存在"));
-            }
-            if !existing.stderr.to_lowercase().contains("no such") {
-                return Err(AppError::new("docker", "无法确认资源名称是否可用"));
             }
             messages.push(if kind == "volume" {
                 "创建本地驱动的数据卷。".into()

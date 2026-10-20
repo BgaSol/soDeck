@@ -270,8 +270,9 @@ fn docker_engine_management_contract() {
         .windows(bytes.len())
         .any(|v| v == bytes));
     for action in [Action::VolumeCreate, Action::NetworkCreate] {
-        let plan = resources::prepare(session, &engine.endpoint, &name, &action, &check).unwrap();
-        operations::execute(
+        let plan = resources::prepare(session, &engine.endpoint, &name, &action, &check)
+            .unwrap_or_else(|error| panic!("{action:?} preflight failed: {error:?}"));
+        let result = operations::execute(
             session,
             plan,
             &AtomicBool::new(false),
@@ -280,6 +281,11 @@ fn docker_engine_management_contract() {
             &|_, _| {},
         )
         .unwrap();
+        assert_eq!(result.code, 0, "{action:?}: {}", result.stderr);
+        let duplicate = resources::prepare(session, &engine.endpoint, &name, &action, &check)
+            .err()
+            .expect("creating an existing volume or network must be rejected");
+        assert_eq!(duplicate.kind, "conflict", "{action:?}: {duplicate:?}");
     }
     let all = resources::overview(session, &engine.endpoint, &check).unwrap();
     let network = all.networks.iter().find(|n| n.name == name).unwrap();
