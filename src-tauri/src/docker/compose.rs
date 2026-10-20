@@ -424,7 +424,9 @@ pub fn prepare(
         batch: None,
         private_config: Some(super::operations::PrivateConfig {
             prefix: a.prefix(&engine.endpoint, false),
-            content: frozen_config(config).to_string(),
+            // compose config already escapes literal dollars for a subsequent
+            // parse. Re-escaping here would change the actual environment values.
+            content: config.to_string(),
             suffix: suffix.into(),
         }),
         timeout: 1800,
@@ -446,30 +448,4 @@ pub fn observe(
         containers.len(),
         containers.iter().filter(|c| c.state == "running").count()
     ))
-}
-
-// Compose parses the resolved document again. Escape dollar signs so literal
-// environment values and command arguments cannot undergo a second expansion.
-fn frozen_config(mut value: Value) -> Value {
-    fn escape(value: &mut Value) {
-        match value {
-            Value::String(text) => *text = text.replace('$', "$$"),
-            Value::Array(values) => values.iter_mut().for_each(escape),
-            Value::Object(values) => values.values_mut().for_each(escape),
-            _ => (),
-        }
-    }
-    escape(&mut value);
-    value
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn resolved_values_are_frozen_without_second_interpolation() {
-        let source = serde_json::json!({"services":{"app":{"environment":{"TOKEN":"$TOKEN", "PLAIN":"ok"},"command":["echo","${HOME}"]}}});
-        let value = frozen_config(source);
-        assert_eq!(value["services"]["app"]["environment"]["TOKEN"], "$$TOKEN");
-        assert_eq!(value["services"]["app"]["command"][1], "$${HOME}");
-    }
 }
