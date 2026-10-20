@@ -1,3 +1,5 @@
+import { getMonitorPresentation } from "./resourcePresentation";
+import { monitorLive } from "./resourceMonitoring";
 import { useMonitor } from "./MonitorProvider";
 import { MetricChart } from "./MetricChart";
 import { rate } from "./resourceMonitoring";
@@ -87,8 +89,8 @@ export function ClientTrafficCard({
         <div className="metric-status">
           <span>
             {!traffic
-              ? "正在建立通信统计"
-              : `${traffic.activeConnections} 条目标连接 · ${!state.connected ? "已断开 · 最后数据" : traffic.status === "unavailable" ? "最后数据" : "更新于"} ${new Date(traffic.sampledAt).toLocaleTimeString()}`}
+              ? getMonitorPresentation(state).label || "正在建立通信统计"
+              : `${traffic.activeConnections} 条目标连接 · ${!monitorLive(state) ? `${state.connection === "disconnected" ? "已断开" : getMonitorPresentation(state).label} · 最后数据` : traffic.status === "unavailable" ? "最后数据" : "更新于"} ${new Date(traffic.sampledAt).toLocaleTimeString()}`}
           </span>
         </div>
         <details>

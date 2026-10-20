@@ -5,7 +5,6 @@ import { dockerApi, type ImageDetail } from "../dockerApi";
 import { containerStateNames } from "../dockerPresentation";
 import { errorOf } from "../types";
 import { DockerConfirmDialog } from "./DockerConfirmDialog";
-import { CreateContainerDialog } from "./CreateContainerDialog";
 import { DockerTransferDialog } from "./DockerTransferDialog";
 import { useDockerActions } from "./useDockerActions";
 
@@ -166,12 +165,14 @@ export function ImageManagement({
   enabled,
   active,
   onContainer,
+  onCreate,
 }: {
   imageId: string;
   name: string;
   enabled: boolean;
   active: boolean;
   onContainer: (id: string, name: string) => void;
+  onCreate: (id: string, name: string) => void;
 }) {
   const { store, state } = useDockerManagement();
   const [detail, setDetail] = useState<ImageDetail | null>(null),
@@ -179,8 +180,7 @@ export function ImageManagement({
     [loading, setLoading] = useState(false),
     [revision, setRevision] = useState(0),
     [tagging, setTagging] = useState(false);
-  const [creating, setCreating] = useState(false),
-    [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const scope = `${state.engine?.token}/${imageId}/${active}`;
   const actions = useDockerActions(scope, enabled && active);
   const finished = state.operations
@@ -188,7 +188,6 @@ export function ImageManagement({
     .join(",");
   useEffect(() => {
     setTagging(false);
-    setCreating(false);
     setExporting(false);
   }, [scope]);
   useEffect(() => {
@@ -238,7 +237,7 @@ export function ImageManagement({
         <button
           className="primary"
           disabled={!canAct}
-          onClick={() => setCreating(true)}
+          onClick={() => onCreate(imageId, name)}
         >
           创建容器…
         </button>
@@ -373,13 +372,6 @@ export function ImageManagement({
           onClose={() => setExporting(false)}
         />
       )}
-      {creating && active && (
-        <CreateContainerDialog
-          imageId={imageId}
-          imageName={name}
-          onClose={() => setCreating(false)}
-        />
-      )}
       {tagging && (
         <ReferenceDialog
           mode="tag"
@@ -392,7 +384,10 @@ export function ImageManagement({
       {actions.preview && (
         <DockerConfirmDialog
           preview={actions.preview}
-          onClose={() => actions.setPreview(null)}
+          onRefresh={actions.renewPreview}
+          uncertain={actions.uncertain}
+          onRetry={actions.retry}
+          onClose={actions.dismissPreview}
           onConfirm={() =>
             actions.submit(
               actions.preview!.targetId,

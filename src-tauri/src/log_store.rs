@@ -10,6 +10,24 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+// Serializes record commits with establishing a multi-segment read snapshot.
+// No network I/O is performed while holding this gate.
+pub(crate) fn source_gate(root: &Path, id: &str) -> std::sync::Arc<std::sync::Mutex<()>> {
+    use std::sync::{Arc, Mutex, OnceLock, Weak};
+    static GATES: OnceLock<Mutex<std::collections::HashMap<PathBuf, Weak<Mutex<()>>>>> =
+        OnceLock::new();
+    let mut gates = GATES.get_or_init(Default::default).lock().unwrap();
+    gates.retain(|_, v| v.strong_count() > 0);
+    gates
+        .entry(root.join(id))
+        .or_default()
+        .upgrade()
+        .unwrap_or_else(|| {
+            let gate = Arc::new(Mutex::new(()));
+            gates.insert(root.join(id), Arc::downgrade(&gate));
+            gate
+        })
+}
 pub(crate) const FRAGMENT_SIZE: usize = 64 * 1024;
 const SCAN_SIZE: i64 = 20_000;
 const SCHEMA: &str = "
@@ -105,7 +123,7 @@ pub struct Record {
     pub continuation: bool,
     pub prefix: String,
 }
-#[derive(Default, Deserialize)]
+#[derive(Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Query {
     pub before: Option<i64>,
@@ -219,6 +237,11 @@ pub fn stats(root: &Path, id: &str) -> AppResult<Stats> {
         stats.bytes += fs::metadata(&path)?.len();
         if let Ok(meta) = fs::metadata(format!("{}-wal", path.display())) {
             stats.bytes += meta.len();
+        }
+    }
+    for name in ["lifecycle.db", "lifecycle.db-wal"] {
+        if let Ok(metadata) = fs::metadata(source_dir(root, id)?.join(name)) {
+            stats.bytes += metadata.len();
         }
     }
     Ok(stats)
@@ -354,10 +377,45 @@ fn read_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<Record> {
         prefix: row.get(8)?,
     })
 }
+#[derive(Clone)]
+pub(crate) struct QuerySegment {
+    pub path: PathBuf,
+    pub exclude: Option<PathBuf>,
+}
+impl QuerySegment {
+    pub fn open(&self) -> AppResult<Connection> {
+        let c = reader(&self.path)?;
+        if let Some(exclude) = &self.exclude {
+            c.execute(
+                "ATTACH DATABASE ?1 AS frozen",
+                [exclude.to_string_lossy().as_ref()],
+            )?;
+        }
+        Ok(c)
+    }
+    pub fn clause(&self) -> &'static str {
+        if self.exclude.is_some() {
+            "AND message_seq NOT IN (SELECT first_seq FROM frozen.messages)"
+        } else {
+            ""
+        }
+    }
+}
 pub fn query(root: &Path, id: &str, q: &Query) -> AppResult<Page> {
+    let high = q.snapshot.unwrap_or(stats(root, id)?.last_seq);
+    let segments = files(&source_dir(root, id)?)?
+        .into_iter()
+        .map(|path| QuerySegment {
+            path,
+            exclude: None,
+        })
+        .collect::<Vec<_>>();
+    query_segments(&segments, q, high)
+}
+pub(crate) fn query_segments(segments: &[QuerySegment], q: &Query, high: i64) -> AppResult<Page> {
     let snapshot = match q.snapshot {
         Some(seq) => seq,
-        None => stats(root, id)?.last_seq,
+        None => high,
     }
     .max(0);
     let forward = q.after.is_some();
@@ -396,8 +454,8 @@ pub fn query(root: &Path, id: &str, q: &Query) -> AppResult<Page> {
         start.saturating_sub(1).min(snapshot)
     };
     let mut rows: Vec<Record> = Vec::new();
-    for path in files(&source_dir(root, id)?)? {
-        let c = reader(&path)?;
+    for segment in segments {
+        let c = segment.open()?;
         let has_prefix: bool = c.query_row(
             "SELECT count(*)>0 FROM pragma_table_info('records') WHERE name='prefix'",
             [],
@@ -405,10 +463,11 @@ pub fn query(root: &Path, id: &str, q: &Query) -> AppResult<Page> {
         )?;
         let sql = format!(
             "SELECT seq,stream,raw,text,timestamp,level,complete,continuation,{} FROM records
-   WHERE seq BETWEEN ?1 AND ?2 {} AND (?3='' OR stream=?3)
+   WHERE seq BETWEEN ?1 AND ?2 {} {} AND (?3='' OR stream=?3)
    AND (?4 IS NULL OR time_ns>=?4) AND (?5 IS NULL OR time_ns<=?5)
    AND (?6='' OR instr({},?6)>0) ORDER BY seq {} LIMIT ?8",
             if has_prefix { "prefix" } else { "''" },
+            segment.clause(),
             if indexed {
                 "AND seq IN (SELECT rowid FROM search WHERE search MATCH ?7)"
             } else {
@@ -989,5 +1048,20 @@ mod tests {
         assert_eq!(exported(root.path(), &source), line);
         assert_eq!(all_rows(root.path(), &source).len(), 1);
         assert!(crate::log_ingest::history_complete(root.path(), &source.source_id).unwrap());
+    }
+    #[test]
+    fn cancelling_replay_inside_timestamp_does_not_publish_an_extra_record() {
+        let root = tempfile::tempdir().unwrap();
+        let source = source_fixture();
+        let bytes = b"2026-10-20T01:02:03.000000000Z complete\n";
+        let mut first = Store::open(root.path(), &source, "one", false).unwrap();
+        first.append(&[(0, bytes.to_vec())]).unwrap();
+        first.finish("closed").unwrap();
+        drop(first);
+        let mut replay = Store::open(root.path(), &source, "two", false).unwrap();
+        replay.append(&[(0, b"2026-10-".to_vec())]).unwrap();
+        replay.finish("cancelled").unwrap();
+        assert_eq!(stats(root.path(), &source.source_id).unwrap().records, 1);
+        assert_eq!(exported(root.path(), &source), bytes);
     }
 }

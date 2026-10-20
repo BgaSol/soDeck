@@ -1,3 +1,4 @@
+import { selectTheme } from "./theme-fixture";
 // Browser interaction tests with explicit IPC simulation. Real SSH forwarding
 // and backend state are tested separately in connection_tests.rs.
 import { test, expect, type Page } from "@playwright/test";
@@ -1764,12 +1765,7 @@ test("large server home remains readable and scrollable in light, dark and scale
       width: variant.width,
       height: variant.height,
     });
-    await page
-      .getByRole("button", {
-        name: variant.dark ? "黑夜主题" : "白天主题",
-        exact: true,
-      })
-      .click();
+    await selectTheme(page, variant.dark ? "dark" : "light");
     await expect(
       home.getByRole("button", { name: "新增服务器", exact: true }),
     ).toBeInViewport();
@@ -1904,12 +1900,7 @@ test("refined server library visual review with realistic configurations and acc
   ).toBeVisible();
   for (const dark of [false, true]) {
     await page.setViewportSize({ width: 1360, height: 900 });
-    await page
-      .getByRole("button", {
-        name: dark ? "黑夜主题" : "白天主题",
-        exact: true,
-      })
-      .click();
+    await selectTheme(page, dark ? "dark" : "light");
     await expect(home.locator(".server-row.selected")).toHaveCSS(
       "background-color",
       dark ? "rgb(48, 52, 60)" : "rgb(255, 255, 255)",
@@ -1945,7 +1936,7 @@ test("refined server library visual review with realistic configurations and acc
       .click();
   }
   await page.setViewportSize({ width: 1360, height: 900 });
-  await page.getByRole("button", { name: "白天主题", exact: true }).click();
+  await selectTheme(page, "light");
   await details.getByRole("button", { name: "复制配置", exact: true }).click();
   const editor = page.getByRole("dialog", {
     name: "复制服务器配置",

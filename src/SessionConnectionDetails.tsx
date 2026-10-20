@@ -1,3 +1,4 @@
+import { monitorLive } from "./resourceMonitoring";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, ChevronUp, LockKeyhole, X } from "lucide-react";
@@ -49,7 +50,7 @@ export function SessionConnectionDetails({
   }, [open, active]);
   useEffect(() => {
     if (open && active) void store.loadTrafficHistory(preferences.minutes);
-  }, [open, active, store, preferences.minutes, state.connected]);
+  }, [open, active, store, preferences.minutes, monitorLive(state)]);
   useLayoutEffect(() => {
     if (!open) return;
     const place = () => {
@@ -101,7 +102,8 @@ export function SessionConnectionDetails({
   }, [open]);
   const traffic = state.traffic?.total;
   const stale =
-    !!traffic && (!state.connected || state.traffic?.status === "unavailable");
+    !!traffic &&
+    (!monitorLive(state) || state.traffic?.status === "unavailable");
   const routeParts = route.split(" → ");
   const destination = routeParts.pop();
   return (

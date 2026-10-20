@@ -1,6 +1,6 @@
 [package]
 name = "sodeck"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 
 [lib]
@@ -36,6 +36,8 @@ tauri-plugin-opener = "2"
 tauri-plugin-clipboard-manager = "2"
 libc = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
+tauri-plugin-updater = "2.14"
+semver = "1"
 
 [target.'cfg(unix)'.dependencies]
 openssl = { version = "0.10", features = ["vendored"] }

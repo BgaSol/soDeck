@@ -1,3 +1,5 @@
+import { listen } from "@tauri-apps/api/event";
+import { SoftwareUpdateSection } from "./SoftwareUpdateSection";
 import {
   useSystemSettings,
   receiveSystemSettings,
@@ -14,9 +16,26 @@ import { systemSettingsApi } from "./systemSettingsApi";
 import { errorOf } from "./types";
 import "./system-settings.css";
 import "./terminalClipboard/terminal-clipboard.css";
+import {
+  getThemePreference,
+  setThemePreference,
+  subscribeTheme,
+  themeOptions,
+  type ThemePreference,
+} from "./theme";
 
 export function SystemSettingsButton() {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!desktop) return;
+    let gone = false;
+    let off: (() => void) | undefined;
+    void listen("open-software-update", () => setOpen(true)).then(fn => {
+      if (gone) fn();
+      else off = fn;
+    }).catch(() => {});
+    return () => { gone = true; off?.(); };
+  }, []);
   const button = useRef<HTMLButtonElement>(null);
   return (
     <>
@@ -61,9 +80,16 @@ export function SystemSettingsDialog({
   const [opening, setOpening] = useState(false);
   const [saved, setSaved] = useState(false);
   const [clipboardSaved, setClipboardSaved] = useState(false);
+  const [, setThemeRevision] = useState(0);
   const saving = useRef(false);
   const alive = useRef(true);
   const receive = receiveSystemSettings;
+  useEffect(() => {
+    const off = subscribeTheme(() => setThemeRevision((v) => v + 1));
+    return () => {
+      off();
+    };
+  }, []);
   useEffect(() => {
     alive.current = true;
     dialog.current?.showModal();
@@ -177,6 +203,27 @@ export function SystemSettingsDialog({
         onClose={close}
       />
       <div className="system-settings-content">
+        <SoftwareUpdateSection />
+        <section className="appearance-settings" aria-label="外观主题">
+          <h3>外观</h3>
+          <label>
+            主题
+            <select
+              aria-label="外观主题"
+              value={getThemePreference()}
+              onChange={(e) =>
+                setThemePreference(e.target.value as ThemePreference)
+              }
+            >
+              {themeOptions.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p>跟随系统时，会根据系统的外观设置自动切换。</p>
+        </section>
         <section
           ref={terminalSection}
           className="terminal-clipboard-settings"

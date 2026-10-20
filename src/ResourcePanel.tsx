@@ -1,3 +1,4 @@
+import { monitorLive } from "./resourceMonitoring";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
@@ -28,6 +29,7 @@ import {
 import { errorOf } from "./types";
 import { formatMountBytes } from "./remoteMounts";
 import {
+  getMonitorPresentation,
   hasOldValue,
   metricMessage,
   type ResourceMetric,
@@ -73,8 +75,8 @@ export function ResourceStatusBar({
       <span className="resource-summary-label">服务器</span>
       <button
         onClick={(e) => onOpen("cpu", e.currentTarget)}
-        className={hasOldValue(cpu, state.connected) ? "is-stale" : ""}
-        title={metricMessage(cpu, state.connected)}
+        className={hasOldValue(cpu, state) ? "is-stale" : ""}
+        title={metricMessage(cpu, state)}
         aria-label="查看 CPU 监控"
       >
         <Cpu size={12} />
@@ -83,8 +85,8 @@ export function ResourceStatusBar({
       </button>
       <button
         onClick={(e) => onOpen("memory", e.currentTarget)}
-        className={hasOldValue(memory, state.connected) ? "is-stale" : ""}
-        title={metricMessage(memory, state.connected)}
+        className={hasOldValue(memory, state) ? "is-stale" : ""}
+        title={metricMessage(memory, state)}
         aria-label="查看内存监控"
       >
         <MemoryStick size={12} />
@@ -93,8 +95,8 @@ export function ResourceStatusBar({
       </button>
       <button
         onClick={(e) => onOpen("network", e.currentTarget)}
-        className={`resource-network-summary${hasOldValue(network, state.connected) ? " is-stale" : ""}`}
-        title={`${net?.name ?? networkInterface} · 服务器接收 / 发送 · ${metricMessage(network, state.connected)}`}
+        className={`resource-network-summary${hasOldValue(network, state) ? " is-stale" : ""}`}
+        title={`${net?.name ?? networkInterface} · 服务器接收 / 发送 · ${metricMessage(network, state)}`}
         aria-label="查看网络监控"
       >
         <ArrowDown size={12} />
@@ -102,7 +104,7 @@ export function ResourceStatusBar({
         <ArrowUp size={12} />
         <strong>{rate(net?.txPerSecond)}</strong>
       </button>
-      {!state.connected && (
+      {!monitorLive(state) && (
         <span className="resource-status-label">最后采样</span>
       )}
     </div>
@@ -153,7 +155,7 @@ export function ResourcePanel({
   }, [store, active, minutes]);
   useEffect(() => {
     setCursor(liveChartCursor);
-  }, [minutes, netName, store, active, standalone, state.connected]);
+  }, [minutes, netName, store, active, standalone, monitorLive(state)]);
   useEffect(() => {
     if (
       lastInterface.current &&
@@ -242,18 +244,18 @@ export function ResourcePanel({
               : serverName}
           </strong>
           <span>
-            {!state.connected
-              ? "已断开 · 保留最后采样"
-              : metricMessage(
-                  detail ? state.metrics[selectedMetric] : cpu,
-                  true,
-                )}
+            {metricMessage(detail ? state.metrics[selectedMetric] : cpu, state)}
           </span>
         </div>
         <button
           className="icon-button"
-          aria-label="刷新资源监控"
-          disabled={!state.connected}
+          aria-label={
+            getMonitorPresentation(state).canRetry ? "重试监控" : "刷新资源监控"
+          }
+          disabled={
+            state.subscription.phase === "subscribing" ||
+            (!monitorLive(state) && !getMonitorPresentation(state).canRetry)
+          }
           onClick={() => void store.refresh("metrics")}
         >
           <RefreshCw size={14} />
@@ -262,7 +264,7 @@ export function ResourcePanel({
       {onOpenWindow && (
         <button
           className="resource-link monitor-open-window"
-          disabled={opening || !state.connected}
+          disabled={opening || !monitorLive(state)}
           onClick={async () => {
             setOpening(true);
             setWindowError("");
@@ -315,9 +317,9 @@ export function ResourcePanel({
           })
         }
       >
-        {state.error && (
+        {(state.controlError || getMonitorPresentation(state).detail) && (
           <p className="resource-error" role="status">
-            {state.error}
+            {getMonitorPresentation(state).detail || state.controlError}
           </p>
         )}
         <div className="resource-metrics">
@@ -385,11 +387,8 @@ export function ResourcePanel({
                   </div>
                   {(detail ||
                     metric.status !== "ready" ||
-                    !state.connected) && (
-                    <ResourceStatus
-                      metric={metric}
-                      connected={state.connected}
-                    />
+                    !monitorLive(state)) && (
+                    <ResourceStatus metric={metric} connected={state} />
                   )}
                 </section>
               );

@@ -636,3 +636,42 @@ test("unsupported or failed shell probes fall back to a usable shell, and reconn
     }
   }
 });
+
+test("download keyboard ownership and theme preferences in native WebView", async () => {
+  const f = await fixture("ui refinement");
+  try {
+    await active(f.main).getByLabel("远程目录路径").fill("/");
+    await active(f.main).getByLabel("远程目录路径").press("Enter");
+    const file = node(f.main, "/readme.txt");
+    await expect(file).toBeVisible();
+    await file.focus();
+    await file.press("Shift+F10");
+    const item = f.main.getByRole("menuitem", { name: /下载/ });
+    await item.focus();
+    await item.press("Enter");
+    const dialog = f.main.getByRole("dialog", {
+        name: "下载文件",
+        exact: true,
+      }),
+      select = dialog.getByLabel("同名文件处理");
+    await expect(select).toBeFocused();
+    await expect(f.main.getByRole("menu", { name: "文件操作" })).toBeHidden();
+    await select.press("ArrowDown");
+    await expect(select).toHaveValue("skip");
+    await select.press("Tab");
+    await f.main.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(file).toBeFocused();
+    await f.main.getByRole("button", { name: "外观主题", exact: true }).click();
+    await f.main.getByRole("menuitemradio", { name: "深色主题" }).click();
+    await expect(f.main.locator("html")).toHaveAttribute("data-theme", "dark");
+    await f.main.getByRole("button", { name: "外观主题", exact: true }).click();
+    await f.main.getByRole("menuitemradio", { name: "跟随系统" }).click();
+    expect(
+      await f.main.evaluate(() => localStorage.getItem("sodeck.theme")),
+    ).toBeNull();
+    await f.main.screenshot({ path: ".qa/ui-refinement-native.png" });
+  } finally {
+    await f.cleanup();
+  }
+});

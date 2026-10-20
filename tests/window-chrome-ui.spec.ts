@@ -1,3 +1,4 @@
+import { selectTheme, expectThemePreference } from "./theme-fixture";
 import { test, expect, type Page } from "@playwright/test";
 
 // Browser IPC simulation verifies application close guards and layout; native
@@ -229,32 +230,35 @@ test("manual themes override system appearance and survive reload", async ({
   await page.emulateMedia({ colorScheme: "light" });
   await setup(page);
   const root = page.locator("html");
-  const day = page.getByRole("button", { name: "白天主题", exact: true });
-  const night = page.getByRole("button", { name: "黑夜主题", exact: true });
-  await expect(day).toHaveAttribute("aria-pressed", "true");
+  await expectThemePreference(page, "system");
   await page.emulateMedia({ colorScheme: "dark" });
-  await expect(night).toHaveAttribute("aria-pressed", "true");
-  await expect(root).toHaveCSS("background-color", "rgb(32, 33, 35)");
-
-  await day.focus();
-  await page.keyboard.press("Space");
-  await expect(day).toHaveAttribute("aria-pressed", "true");
-  await expect(night).toHaveAttribute("aria-pressed", "false");
-  await expect(root).toHaveCSS("color-scheme", "light");
-  await expect(root).toHaveCSS("background-color", "rgb(247, 247, 248)");
-  await page.emulateMedia({ colorScheme: "light" });
-  await page.emulateMedia({ colorScheme: "dark" });
-  await expect(day).toHaveAttribute("aria-pressed", "true");
-  await page.reload();
-  await expect(day).toHaveAttribute("aria-pressed", "true");
-  await expect(root).toHaveCSS("background-color", "rgb(247, 247, 248)");
-
-  await night.click();
-  await page.emulateMedia({ colorScheme: "light" });
-  await page.reload();
-  await expect(night).toHaveAttribute("aria-pressed", "true");
   await expect(root).toHaveCSS("color-scheme", "dark");
-  await expect(root).toHaveCSS("background-color", "rgb(32, 33, 35)");
+  const trigger = page.getByRole("button", { name: "外观主题", exact: true });
+  await trigger.focus();
+  await trigger.press("ArrowDown");
+  await expect(
+    page.getByRole("menuitemradio", { name: "跟随系统" }),
+  ).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(trigger).toBeFocused();
+  await expectThemePreference(page, "light");
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.reload();
+  await expectThemePreference(page, "light");
+  await expect(root).toHaveCSS("color-scheme", "light");
+  await selectTheme(page, "system");
+  await expect(root).toHaveCSS("color-scheme", "dark");
+  expect(
+    await page.evaluate(() => localStorage.getItem("sodeck.theme")),
+  ).toBeNull();
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(root).toHaveCSS("color-scheme", "light");
+  await selectTheme(page, "dark");
+  await page.reload();
+  await expectThemePreference(page, "dark");
+  await expect(root).toHaveCSS("color-scheme", "dark");
   await page.emulateMedia({ contrast: "more" });
   await expect(root).toHaveCSS("--muted", "#c6c6ce");
 });
@@ -271,10 +275,8 @@ test("theme changes synchronize existing and newly opened windows without resett
     await editor.emulateMedia({ colorScheme: "light" });
     await setup(editor, { editor: true });
     await editor.locator(".cm-content").fill("unsaved theme check\n");
-    await page.getByRole("button", { name: "黑夜主题", exact: true }).click();
-    await expect(
-      editor.getByRole("button", { name: "黑夜主题", exact: true }),
-    ).toHaveAttribute("aria-pressed", "true");
+    await selectTheme(page, "dark");
+    await expectThemePreference(editor, "dark");
     await expect(editor.locator(".remote-editor-app")).toHaveCSS(
       "--editor-keyword",
       "#d6a9f2",
@@ -285,14 +287,10 @@ test("theme changes synchronize existing and newly opened windows without resett
     await expect(editor.getByLabel("未保存", { exact: true })).toBeVisible();
 
     await setup(later, { editor: true });
-    await expect(
-      later.getByRole("button", { name: "黑夜主题", exact: true }),
-    ).toHaveAttribute("aria-pressed", "true");
-    await editor.getByRole("button", { name: "白天主题", exact: true }).click();
+    await expectThemePreference(later, "dark");
+    await selectTheme(editor, "light");
     for (const other of [page, later]) {
-      await expect(
-        other.getByRole("button", { name: "白天主题", exact: true }),
-      ).toHaveAttribute("aria-pressed", "true");
+      await expectThemePreference(other, "light");
       await expect(other.locator("html")).toHaveCSS(
         "background-color",
         "rgb(247, 247, 248)",

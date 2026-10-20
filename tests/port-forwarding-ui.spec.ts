@@ -1,3 +1,4 @@
+import { selectTheme } from "./theme-fixture";
 import { expect, test, type Page } from "@playwright/test";
 
 async function setup(page: Page, empty = false) {
@@ -779,7 +780,7 @@ test("actual UI fits minimum size with long IPv6 paths, dark theme and a fixed e
   await page.screenshot({
     path: `.qa/forwarding-actual-${testInfo.project.name}-light.png`,
   });
-  await page.getByRole("button", { name: "黑夜主题" }).click();
+  await selectTheme(page, "dark");
   await expect(page.locator('.forward-row[aria-pressed="true"]')).toHaveCSS(
     "background-color",
     "rgb(41, 63, 96)",
@@ -836,7 +837,7 @@ test("actual UI fits minimum size with long IPv6 paths, dark theme and a fixed e
     .getByRole("dialog", { name: "放弃修改？" })
     .getByRole("button", { name: "放弃修改", exact: true })
     .click();
-  await page.getByRole("button", { name: "白天主题" }).click();
+  await selectTheme(page, "light");
   await page.getByRole("button", { name: "新建转发", exact: true }).click();
   await page.screenshot({
     path: `.qa/forwarding-actual-${testInfo.project.name}-editor-light.png`,

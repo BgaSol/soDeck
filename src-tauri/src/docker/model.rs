@@ -341,6 +341,7 @@ pub struct ContainerStats {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Preview {
+    pub draft_token: String,
     pub id: String,
     pub engine: EngineBinding,
     pub target_id: String,

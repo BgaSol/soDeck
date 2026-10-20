@@ -218,6 +218,11 @@ fn persistent_receipts_recover_as_uncertain_and_deduplicate() {
         .unwrap()
         .unwrap();
     assert_eq!(recovered.operation.phase, "uncertain");
+    assert!(s.needs_update_attention().unwrap());
+    let mut acknowledged = recovered.clone();
+    acknowledged.operation.acknowledged = true;
+    s.save(&acknowledged).unwrap();
+    assert!(!s.needs_update_attention().unwrap());
     assert_eq!(recovered.operation.id, r.operation.id);
     assert_eq!(s.path("server").unwrap().as_deref(), Some("/opt/netbird"));
     assert!(s

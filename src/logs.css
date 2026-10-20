@@ -309,3 +309,398 @@
   font-size: var(--font-body);
   pointer-events: none;
 }
+
+/* Log window: content first, stable reading controls, platform-native scrolling. */
+.container-logs-app {
+  min-height: 0;
+  background: var(--surface);
+}
+.log-toolbar-shell {
+  position: relative;
+  z-index: 5;
+  flex-shrink: 0;
+  background: var(--material);
+  backdrop-filter: blur(16px);
+}
+.container-logs-app .log-tools {
+  gap: 0.4rem;
+  padding: 0.6rem 1rem;
+  background: transparent;
+  border: 0;
+}
+.log-tool-spacer {
+  flex: 1;
+}
+.log-tool-anchor {
+  position: relative;
+}
+.log-tools button,
+.log-reading-bar button,
+.log-query-status button {
+  gap: 0.4rem;
+  border-radius: var(--radius-control);
+}
+.log-tools button:active,
+.log-reading-bar button:active {
+  background: var(--selected);
+  transform: scale(0.98);
+}
+.log-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.4rem);
+  min-width: 15rem;
+  max-width: min(24rem, calc(100vw - 2rem));
+  max-height: 60vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-popover);
+  background: var(--sheet);
+  box-shadow: var(--shadow-popover);
+  animation: log-popover-in 120ms ease-out;
+  transform-origin: top right;
+}
+.log-tool-anchor:first-of-type .log-popover {
+  left: 0;
+  right: auto;
+  transform-origin: top left;
+}
+.log-popover label {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.log-popover label select,
+.log-popover label input[type="datetime-local"] {
+  width: 100%;
+}
+.log-popover input[type="checkbox"] {
+  width: auto;
+}
+.log-popover button {
+  justify-content: flex-start;
+}
+.log-popover small {
+  font-size: var(--font-secondary);
+  color: var(--muted);
+  line-height: 1.5;
+}
+.log-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 1rem 0.6rem;
+}
+.log-filter-chips button {
+  border: 0;
+  background: var(--tag);
+  font-size: var(--font-secondary);
+  min-height: 1.8rem;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.log-filter-chips .log-clear-filters {
+  background: transparent;
+  color: var(--accent-text);
+}
+.container-logs-app .log-search {
+  padding: 0.1rem 1rem 0.6rem;
+  border: 0;
+  background: transparent;
+}
+.log-search-main {
+  flex-wrap: wrap;
+}
+.log-search-main > input {
+  min-width: 12rem;
+  flex: 1;
+}
+.log-search-main label {
+  white-space: nowrap;
+}
+.log-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--font-secondary);
+  white-space: nowrap;
+}
+.log-status-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--muted);
+  border-radius: 50%;
+}
+.log-status-streaming .log-status-dot {
+  background: var(--green);
+}
+.log-status-failed .log-status-dot {
+  background: var(--error);
+}
+.log-connection-banner,
+.log-query-status,
+.log-replacements {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding: 0.5rem 1rem;
+  background: var(--canvas);
+  font-size: var(--font-secondary);
+  flex-shrink: 0;
+}
+.log-connection-banner > span,
+.log-query-status > span {
+  flex: 1;
+}
+.log-connection-failed {
+  background: var(--error-bg);
+}
+.log-connection-banner details {
+  max-width: 100%;
+}
+.log-connection-banner pre {
+  white-space: pre-wrap;
+  max-height: 8rem;
+  overflow: auto;
+}
+.container-logs-app .log-viewer {
+  background: var(--surface);
+  min-height: 6rem;
+  box-shadow: inset 0 5px 8px -8px var(--text);
+}
+.container-logs-app .log-virtual-list {
+  font: var(--log-font-size, 13px)/1.65 var(--mono);
+  outline-offset: -3px;
+}
+.container-logs-app .log-row {
+  padding: 2px 1rem;
+  min-height: 26px;
+  gap: 0.8rem;
+}
+.log-row-selected {
+  background: var(--selected) !important;
+}
+.container-logs-app .log-seq {
+  width: 4.5rem;
+  font: inherit;
+  font-size: 0.85em;
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+.log-row-body {
+  min-width: 0;
+}
+.log-context {
+  opacity: 0.8;
+  align-self: start;
+}
+.log-system-event {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.7rem 1rem 0.7rem 6.3rem;
+  color: var(--muted);
+  font: var(--font-secondary)/1.5 var(--font-family, system-ui);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.log-system-event:before,
+.log-system-event:after {
+  content: "";
+  height: 1px;
+  background: var(--line);
+  flex: 1;
+  min-width: 1rem;
+}
+.log-event-kind {
+  font-size: var(--font-caption);
+}
+.log-reading-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  padding: 0.6rem 1rem;
+  flex-shrink: 0;
+  background: var(--material);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid var(--line);
+  font-size: var(--font-secondary);
+}
+.log-reading-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+}
+.log-reading-status {
+  color: var(--text);
+}
+.log-follow-control {
+  margin-left: auto;
+  white-space: nowrap;
+}
+.log-resume {
+  color: var(--accent-text);
+  background: var(--selected);
+  border-color: transparent;
+}
+.log-selection-actions {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+.log-reading-bar .log-notice {
+  max-width: 25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.log-reading-bar .log-notice:empty {
+  display: none;
+}
+.log-source-details {
+  padding: 0.2rem 1rem 0.4rem;
+  font-size: var(--font-caption);
+  color: var(--muted);
+  flex-shrink: 0;
+  background: var(--canvas);
+}
+.log-source-details > div {
+  padding: 0.4rem 0;
+  max-height: 8rem;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}
+.log-source-details summary {
+  cursor: pointer;
+  width: max-content;
+}
+.container-logs-app .editor-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.container-logs-app :focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+.log-popover :focus-visible {
+  outline-offset: 1px;
+}
+@keyframes log-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (max-width: 760px) {
+  .log-reading-summary {
+    flex-basis: 50%;
+  }
+  .log-reading-summary > span:first-child {
+    display: none;
+  }
+  .log-source-details:not([open]) {
+    display: none;
+  }
+  .log-tools {
+    padding-inline: 0.6rem !important;
+  }
+  .log-event-kind {
+    display: none;
+  }
+  .log-system-event {
+    padding-left: 1rem;
+  }
+  .log-search-main label {
+    font-size: var(--font-secondary);
+  }
+  .log-popover {
+    min-width: 13rem;
+  }
+  .log-selection-actions {
+    order: 3;
+    flex-basis: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .container-logs-app * {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+  .log-tools button:active,
+  .log-reading-bar button:active {
+    transform: none;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .log-toolbar-shell,
+  .log-reading-bar,
+  .log-popover {
+    background: var(--surface);
+    backdrop-filter: none;
+  }
+}
+@media (prefers-contrast: more) {
+  .log-toolbar-shell,
+  .log-reading-bar,
+  .log-popover {
+    background: var(--surface);
+    backdrop-filter: none;
+    border: 1px solid currentColor;
+  }
+  .log-status-dot {
+    border: 1px solid currentColor;
+  }
+  .log-seq {
+    opacity: 1 !important;
+  }
+}
+@media (forced-colors: active) {
+  .log-popover,
+  .log-reading-bar {
+    border: 1px solid CanvasText;
+  }
+  .log-row-selected {
+    outline: 1px solid Highlight;
+  }
+  .log-status-dot {
+    background: CanvasText;
+  }
+}
+
+/* Scale title line boxes with user text size; the shared desktop chrome uses px. */
+.container-logs-app .window-titlebar {
+  height: auto;
+  min-height: 3.43rem;
+}
+.container-logs-app .window-drag-region {
+  height: auto;
+  padding-block: 0.35rem;
+}
+.container-logs-app .window-drag-region h1 {
+  line-height: 1.35;
+}
+.container-logs-app .window-drag-region p {
+  line-height: 1.35;
+}
+.container-logs-app .log-viewer {
+  min-height: 0;
+}

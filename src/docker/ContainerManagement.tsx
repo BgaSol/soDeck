@@ -17,8 +17,6 @@ import {
   operationBlocks,
   isContainerAction,
   type ContainerAction,
-  type DockerPreview,
-  type DockerOperationRequest,
   type DockerActionPayload,
 } from "../dockerApi";
 import { containerStateNames } from "../dockerPresentation";
@@ -27,6 +25,7 @@ import { PortForwardMenu } from "../PortForwardMenu";
 import { DockerConfirmDialog } from "./DockerConfirmDialog";
 import { ContainerSettingsDialog } from "./ContainerSettingsDialog";
 import { DockerTransferDialog } from "./DockerTransferDialog";
+import { useDockerActions } from "./useDockerActions";
 import { ContainerDiagnostics } from "./ContainerDiagnostics";
 
 function date(value: string) {
@@ -87,39 +86,26 @@ export function ContainerManagement({
         !isContainerAction(t.action),
     );
   const [transfer, setTransfer] = useState<"copyIn" | "copyOut" | null>(null);
-  const [submitting, setSubmitting] = useState(false),
-    [pendingId, setPendingId] = useState<string | null>(null);
   const [linkBusy, setLinkBusy] = useState(false);
   const [error, setError] = useState(""),
     [copied, setCopied] = useState(false);
-  const [preview, setPreview] = useState<DockerPreview | null>(null);
   const [settings, setSettings] = useState<"rename" | "restartPolicy" | null>(
     null,
   );
-  const request = useRef<DockerOperationRequest | null>(null),
-    inFlight = useRef(false);
   const scope = `${engine?.token}/${containerId}/${active}`;
+  const actionsFlow = useDockerActions(scope, enabled && !!engine);
+  const { preview } = actionsFlow;
+  useEffect(() => {
+    if (actionsFlow.phase === "accepted") setSettings(null);
+  }, [actionsFlow.phase]);
+  const submitting = actionsFlow.busy;
   const currentScope = useRef(scope);
   currentScope.current = scope;
   useEffect(() => {
-    setPreview(null);
     setSettings(null);
     setTransfer(null);
     setError("");
-    setPendingId(null);
-    request.current = null;
   }, [scope]);
-  useEffect(() => {
-    if (pendingId && tasks.some((task) => task.id === pendingId))
-      setPendingId(null);
-    if (
-      request.current &&
-      tasks.some((task) => task.requestId === request.current!.requestId)
-    ) {
-      request.current = null;
-      setError("");
-    }
-  }, [tasks, pendingId]);
   useEffect(() => {
     if (!copied) return;
     const timer = setTimeout(() => setCopied(false), 1600);
@@ -135,86 +121,22 @@ export function ContainerManagement({
     !detailState?.missing &&
     !locked &&
     !submitting &&
-    !pendingId &&
-    !request.current;
-  async function submit(
-    action: DockerActionPayload,
-    confirmation: DockerPreview | null = null,
-  ) {
-    if (!engine) return;
-    const targetScope = scope;
-    request.current ??= {
-      requestId: crypto.randomUUID(),
-      engineToken: engine.token,
-      targetId: containerId,
-      action,
-      previewId: confirmation?.id ?? null,
-    };
-    let id: string;
-    try {
-      id = await dockerApi.submit(store.sessionId, request.current);
-    } catch (e) {
-      const failure = errorOf(e);
-      if (
-        failure.kind === "confirmationRequired" ||
-        failure.kind === "conflict"
-      )
-        void store.refresh().catch(() => {});
-      if (
-        [
-          "conflict",
-          "validation",
-          "busy",
-          "permission",
-          "limit",
-          "confirmationRequired",
-          "disconnected",
-          "unavailable",
-          "cancelled",
-        ].includes(failure.kind)
-      )
-        request.current = null;
-      if (currentScope.current === targetScope) setError(failure.message);
-      throw e;
-    }
-    if (currentScope.current === targetScope) {
-      setPendingId(id);
-      request.current = null;
-    }
-  }
+    !actionsFlow.uncertain;
+  const submit = (action: DockerActionPayload, confirmation = preview) =>
+    actionsFlow.submit(containerId, action, confirmation);
   async function act(action: ContainerAction) {
-    if (!canManage || inFlight.current || !engine || !detail) return;
+    if (!canManage || !detail) return;
     if (action === "rename" || action === "restartPolicy") {
       setSettings(action);
       return;
     }
-    inFlight.current = true;
-    setSubmitting(true);
-    setError("");
-    const targetScope = scope;
-    // A new user intent receives its own id; retries after an IPC transport error
-    // keep the previous id in the explicit retry control below.
-    request.current = null;
-    try {
-      if (
-        action === "remove" ||
-        action === "kill" ||
-        (detail.autoRemove && (action === "stop" || action === "restart"))
-      ) {
-        const result = await dockerApi.prepare(
-          store.sessionId,
-          engine.token,
-          containerId,
-          { type: action },
-        );
-        if (currentScope.current === targetScope) setPreview(result);
-      } else await submit({ type: action });
-    } catch (e) {
-      if (currentScope.current === targetScope) setError(errorOf(e).message);
-    } finally {
-      inFlight.current = false;
-      if (currentScope.current === targetScope) setSubmitting(false);
-    }
+    const confirm =
+      action === "remove" ||
+      action === "kill" ||
+      (detail.autoRemove && (action === "stop" || action === "restart"));
+    await actionsFlow
+      .act(containerId, { type: action }, confirm)
+      .catch(() => {});
   }
   const runtime = detail?.state;
   async function hostLink(request: Parameters<typeof dockerApi.hostLink>[3]) {
@@ -362,7 +284,7 @@ export function ContainerManagement({
           </PortForwardMenu>
         )}
       </div>
-      {(submitting || pendingId) && (
+      {submitting && (
         <p className="resource-help" role="status">
           {preview ? "等待确认" : "正在确认容器状态…"}
         </p>
@@ -372,16 +294,15 @@ export function ContainerManagement({
           {error}
         </p>
       )}
-      {error && request.current && (
+      {actionsFlow.error && (
+        <p className="resource-error" role="alert">
+          {actionsFlow.error}
+        </p>
+      )}
+      {actionsFlow.uncertain && !preview && (
         <button
           disabled={submitting}
-          onClick={() => {
-            const action = request.current!.action;
-            setSubmitting(true);
-            void submit(action)
-              .catch(() => {})
-              .finally(() => setSubmitting(false));
-          }}
+          onClick={() => void actionsFlow.retry().catch(() => {})}
         >
           核对提交结果
         </button>
@@ -716,16 +637,18 @@ export function ContainerManagement({
       )}
       {preview && (
         <DockerConfirmDialog
-          key={preview.id}
           preview={preview}
-          onClose={() => {
-            setPreview(null);
-          }}
+          onRefresh={actionsFlow.renewPreview}
+          uncertain={actionsFlow.uncertain}
+          onRetry={actionsFlow.retry}
+          onClose={actionsFlow.dismissPreview}
           onConfirm={() => submit(preview.action, preview)}
         />
       )}
       {settings && detail && (
         <ContainerSettingsDialog
+          uncertain={actionsFlow.uncertain}
+          onRetry={actionsFlow.retry}
           mode={settings}
           detail={detail}
           onSubmit={submit}

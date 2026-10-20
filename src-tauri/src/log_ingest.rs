@@ -235,6 +235,8 @@ fn prior_segments(dir: &Path) -> AppResult<Vec<PriorSegment>> {
     }).collect()
 }
 pub struct Store {
+    gate: std::sync::Arc<std::sync::Mutex<()>>,
+    pub changed_from: Option<i64>,
     dir: PathBuf,
     connection: Connection,
     segment: usize,
@@ -249,6 +251,8 @@ pub struct Store {
 }
 impl Store {
     pub fn open(root: &Path, source: &Source, run_id: &str, history: bool) -> AppResult<Self> {
+        let gate = log_store::source_gate(root, &source.source_id);
+        let _guard = gate.lock().unwrap();
         let dir = log_store::source_dir(root, &source.source_id)?;
         fs::create_dir_all(&dir)?;
         let metadata = dir.join("source.json");
@@ -270,6 +274,8 @@ impl Store {
         connection.execute_batch(LEDGER)?;
         let segments = prior_segments(&dir)?;
         let mut store = Self {
+            gate: gate.clone(),
+            changed_from: None,
             dir,
             connection,
             segment,
@@ -347,6 +353,9 @@ impl Store {
         Ok(())
     }
     pub fn append(&mut self, chunks: &[(usize, Vec<u8>)]) -> AppResult<i64> {
+        let gate = self.gate.clone();
+        let _guard = gate.lock().unwrap();
+        self.changed_from = None;
         self.transaction(|s| {
             for (stream, bytes) in chunks {
                 let mut rest = bytes.as_slice();
@@ -538,6 +547,19 @@ impl Store {
         }
         Ok(None)
     }
+    fn incomplete_replay_header(&self, stream: usize) -> AppResult<bool> {
+        if self.prior_seq == 0 {
+            return Ok(false);
+        }
+        let first: Vec<u8> = self.connection.query_row(
+            "SELECT data FROM staging WHERE stream=?1 AND part=0",
+            [stream as i64],
+            |r| r.get(0),
+        )?;
+        Ok(first.len() < 64
+            && first.first().is_some_and(u8::is_ascii_digit)
+            && !first.contains(&b' '))
+    }
     fn has_prefix_candidate(&self, stream: usize) -> AppResult<bool> {
         // Don't publish a replay merely because a packet split its timestamp.
         let first: Vec<u8> = self.connection.query_row(
@@ -579,6 +601,10 @@ impl Store {
                     self.publish(stream, complete, Some(candidate))?;
                 }
                 self.consume(candidate, stream, None)?;
+            } else if !complete && self.incomplete_replay_header(stream)? {
+                // A reconnect cancelled inside the timestamp has not established
+                // a new message identity. Do not publish the replay header as a
+                // new application record; the next --since overlap replays it.
             } else if !complete && self.find(stream, None, false)?.is_some() {
                 // The connection stopped during an already archived complete
                 // line: the received prefix adds no new bytes.
@@ -691,6 +717,7 @@ impl Store {
             }
         }
         result?;
+        self.changed_from = Some(self.changed_from.map_or(first, |n| n.min(first)));
         self.next_seq = next_seq;
         self.pending[stream].published = Some((segment, first));
         self.pending[stream].published_len = self.pending[stream].len;
@@ -729,6 +756,9 @@ impl Store {
         Ok(())
     }
     pub fn finish(&mut self, note: &str) -> AppResult<()> {
+        let gate = self.gate.clone();
+        let _guard = gate.lock().unwrap();
+        self.changed_from = None;
         self.transaction(|s| {
             for stream in 0..2 {
                 s.stage(stream)?;

@@ -55,3 +55,24 @@
   max-width: 100%;
   white-space: normal;
 }
+
+.appearance-settings {
+  margin-bottom: 18px;
+}
+.appearance-settings > label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.appearance-settings select {
+  min-width: 150px;
+  max-width: 70%;
+}
+.appearance-settings p {
+  color: var(--muted);
+  font-size: var(--font-secondary);
+  margin-bottom: 0;
+}
+
+.appearance-settings h3 { margin: 0 0 12px; font-size: 15px; }

@@ -1,783 +1,624 @@
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { Channel } from "@tauri-apps/api/core";
+import { ScrollText, RefreshCw, X } from "lucide-react";
 import { WindowTitlebar } from "./WindowTitlebar";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Channel, invoke } from "@tauri-apps/api/core";
-import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
-import {
-  ScrollText,
-  RefreshCw,
-  Search,
-  ArrowDownToLine,
-  Download,
-  Copy,
-  X,
-} from "lucide-react";
 import { errorOf } from "./types";
 import {
   logApi,
-  type LogInfo,
-  type LogPage,
+  type ExportProgress,
+  type ExportScope,
+  type LogReplacement,
   type LogQuery,
-  type LogRow,
 } from "./logApi";
-import { LogText } from "./LogText";
-import type { HighlightOptions } from "./logHighlight";
+import { useLogSession } from "./logs/useLogSession";
+import { useLogQuery } from "./logs/useLogQuery";
+import { useLogPreferences } from "./logs/preferences";
+import { readReducer, collectionLabel, validRange } from "./logs/model";
+import { LogToolbar } from "./logs/LogToolbar";
+import { LogReadingBar } from "./logs/LogReadingBar";
+import { LogViewer, type ViewerHandle, type Anchor } from "./logs/LogViewer";
 import "./files.css";
 import "./logs.css";
-
-type LogEvent =
-  | { type: "ready"; following: boolean; tty: boolean; history: boolean }
-  | { type: "status"; status: string; error: string | null }
-  | { type: "saved"; lastSeq: number }
-  | { type: "end"; error: string | null };
-const PAGE_SIZE = 500,
-  MAX_ROWS = 5000,
-  MAX_BYTES = 16 * 1024 * 1024,
-  INITIAL_INDEX = 1_000_000_000;
-function bounded(rows: LogRow[], keepEnd: boolean) {
-  let bytes = 0,
-    result: LogRow[] = [];
-  const ordered = keepEnd ? [...rows].reverse() : rows;
-  for (const row of ordered) {
-    const size =
-      (row.raw.length + row.text.length + (row.prefix?.length ?? 0)) * 2;
-    if (
-      result.length >= MAX_ROWS ||
-      (result.length > 0 && bytes + size > MAX_BYTES)
-    )
-      break;
-    bytes += size;
-    result.push(row);
-  }
-  return keepEnd ? result.reverse() : result;
-}
 function iso(value: string) {
-  return value ? new Date(value).toISOString() : undefined;
+  if (!value) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.valueOf()) ? undefined : date.toISOString();
+}
+function localInput(value: string) {
+  const d = new Date(value);
+  return new Date(d.valueOf() - d.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 19);
 }
 export function ContainerLogsApp() {
-  const [info, setInfo] = useState<LogInfo | null>(null),
-    [error, setError] = useState(""),
-    [status, setStatus] = useState("正在连接…");
-  const [timestamps, setTimestamps] = useState(true),
-    [wrap, setWrap] = useState(false),
-    [highlight, setHighlight] = useState(true);
-  const [follow, setFollow] = useState(true),
-    [tty, setTty] = useState(false),
-    [collectionFailed, setCollectionFailed] = useState(false),
-    [running, setRunning] = useState(false);
-  const [rows, setRows] = useState<LogRow[]>([]),
-    [firstIndex, setFirstIndex] = useState(INITIAL_INDEX),
-    [hasOlder, setHasOlder] = useState(false),
-    [hasNewer, setHasNewer] = useState(false);
-  const [busy, setBusy] = useState(false),
-    [scanned, setScanned] = useState(0),
-    [searchOpen, setSearchOpen] = useState(false),
+  const session = useLogSession();
+  const [preferences, setPreferences] = useLogPreferences();
+  const [read, dispatch] = useReducer(readReducer, { mode: "follow" });
+  const [searchOpen, setSearchOpen] = useState(false),
     [draft, setDraft] = useState(""),
-    [keyword, setKeyword] = useState("");
-  const [caseSensitive, setCaseSensitive] = useState(false),
+    [keyword, setKeyword] = useState(""),
+    [caseSensitive, setCaseSensitive] = useState(false),
+    [liveSearch, setLiveSearch] = useState(false),
     [stream, setStream] = useState(""),
     [from, setFrom] = useState(""),
-    [to, setTo] = useState("");
-  const [contextQuery, setContextQuery] = useState<number | null>(null),
+    [to, setTo] = useState(""),
+    [boot, setBoot] = useState("");
+  const [rangeOpen, setRangeOpen] = useState(false),
     [rangeFrom, setRangeFrom] = useState(""),
     [rangeTo, setRangeTo] = useState(""),
-    [notice, setNotice] = useState("");
-  const [exporting, setExporting] = useState(false),
-    [reload, setReload] = useState(0);
-  const resetIntent = useRef<"latest" | null>(null);
-  const virtuoso = useRef<VirtuosoHandle>(null),
-    searchInput = useRef<HTMLInputElement>(null);
-  const current = useRef({
-    rows: [] as LogRow[],
-    firstIndex: INITIAL_INDEX,
-    before: 0,
-    snapshot: 0,
-    version: 0,
-    busy: false,
-    follow: true,
-    filtered: false,
-    dirty: false,
-    mounted: true,
-  });
-  const runEpoch = useRef(0),
-    filtersRef = useRef<LogQuery>({ limit: PAGE_SIZE }),
-    infoRef = useRef<LogInfo | null>(null);
+    [notice, setNotice] = useState(""),
+    [exporting, setExporting] = useState(false),
+    [exportProgress, setExportProgress] = useState<ExportProgress | null>(null),
+    [exportError, setExportError] = useState(""),
+    [replacements, setReplacements] = useState<LogReplacement[] | null>(null),
+    [finding, setFinding] = useState(false),
+    [now, setNow] = useState(Date.now());
+  const viewer = useRef<ViewerHandle>(null),
+    returnAnchor = useRef<Anchor | null>(null),
+    exportJob = useRef(""),
+    alive = useRef(true);
+  const selectedBoot = session.timeline.boots.find((b) => b.id === boot);
+  useEffect(() => {
+    if (
+      selectedBoot &&
+      !selectedBoot.finishedAt &&
+      session.timeline.boots[0]?.id !== selectedBoot.id
+    ) {
+      setBoot("");
+      setNotice("无法确认所选启动周期的结束时间，现按起始时间查看已保存日志。");
+    }
+  }, [selectedBoot, session.timeline.boots]);
+  const currentBoot =
+    !!selectedBoot &&
+    !selectedBoot.finishedAt &&
+    session.collection.container?.startedAt === selectedBoot.startedAt;
+  const mode =
+    ((from || to) && !currentBoot) || (keyword && !liveSearch)
+      ? "snapshot"
+      : "live";
   const filters = useMemo<LogQuery>(
     () => ({
-      limit: PAGE_SIZE,
-      keyword: contextQuery === null ? keyword : "",
+      limit: 500,
+      keyword,
       caseSensitive,
-      stream: contextQuery === null ? stream : "",
-      from: contextQuery === null ? iso(from) : undefined,
-      to: contextQuery === null ? iso(to) : undefined,
+      stream,
+      from: selectedBoot?.startedAt ?? iso(from),
+      to: selectedBoot?.finishedAt ?? iso(to),
     }),
-    [keyword, caseSensitive, stream, from, to, contextQuery],
+    [keyword, caseSensitive, stream, from, to, selectedBoot],
   );
-  filtersRef.current = filters;
-  current.current.filtered = !!(
-    filters.keyword ||
-    filters.stream ||
-    filters.from ||
-    filters.to ||
-    contextQuery !== null
+  const query = useLogQuery(
+    session.info,
+    filters,
+    mode,
+    read.mode === "follow",
+    session.revision,
+    session.changedFrom,
   );
-  const options = useMemo<HighlightOptions>(
-    () => ({ timestamps, highlight, keyword, caseSensitive }),
-    [timestamps, highlight, keyword, caseSensitive],
-  );
-  const pause = useCallback(() => {
-    current.current.follow = false;
-    setFollow(false);
-  }, []);
-  const publish = useCallback((next: LogRow[], index: number) => {
-    current.current.rows = next;
-    current.current.firstIndex = index;
-    setRows(next);
-    setFirstIndex(index);
-  }, []);
-  const refreshInfo = useCallback(async () => {
-    const value = await logApi.info();
-    if (!current.current.mounted) return null;
-    infoRef.current = value;
-    setInfo(value);
-    setTty(value.tty);
-    return value;
-  }, []);
-  const load = useCallback(
-    async (mode: "latest" | "older" | "newer" | "reset", anchor?: number) => {
-      const state = current.current;
-      if (state.busy || !state.mounted) return;
-      state.busy = true;
-      setBusy(true);
-      const version = state.version;
-      try {
-        let query = { ...filtersRef.current };
-        const filtered = state.filtered;
-        if (mode === "latest" || mode === "reset") {
-          const value = await refreshInfo();
-          if (!value || version !== state.version) return;
-          state.snapshot = value.stats.lastSeq;
-          query.snapshot = state.snapshot;
-          if (anchor !== undefined) {
-            query.before = anchor + 1;
-            query.limit = 100;
-          } else query.limit = PAGE_SIZE;
-        } else if (mode === "older") {
-          query.before = state.before;
-          query.snapshot = filtered ? state.snapshot : undefined;
-        } else {
-          query.after = Math.max(0, (state.rows.at(-1)?.seq ?? 1) - 1);
-          query.snapshot = filtered ? state.snapshot : undefined;
-        }
-        const wanted = anchor !== undefined ? 100 : PAGE_SIZE;
-        query.limit = Math.min(1000, wanted);
-        let found: LogRow[] = [],
-          page: LogPage,
-          total = 0;
-        do {
-          page = await logApi.page(query);
-          if (version !== state.version || !state.mounted) return;
-          total += page.scanned;
-          setScanned(total);
-          found =
-            query.after !== undefined
-              ? [...found, ...page.rows]
-              : [...page.rows, ...found];
-          if (found.length >= wanted || !page.hasMore) break;
-          if (query.after !== undefined) query.after = page.nextCursor;
-          else query.before = page.nextCursor;
-          query.limit = Math.min(1000, wanted - found.length);
-        } while (true);
-        if (anchor !== undefined) {
-          const after = await logApi.page({
-            limit: 50,
-            after: anchor,
-            snapshot: state.snapshot,
-          });
-          if (version !== state.version || !state.mounted) return;
-          found = [...found, ...after.rows];
-          setHasNewer(after.hasMore);
-        }
-        if (mode === "latest" || mode === "reset") {
-          const next = bounded(found, true);
-          publish(next, INITIAL_INDEX);
-          state.before =
-            found.length > next.length ? next[0].seq : page!.nextCursor;
-          setHasOlder(page!.hasMore || found.length > next.length);
-          if (anchor === undefined) setHasNewer(false);
-        } else if (mode === "older") {
-          const next = bounded([...found, ...state.rows], false);
-          publish(next, state.firstIndex - found.length);
-          state.before = page!.nextCursor;
-          setHasOlder(page!.hasMore);
-          setHasNewer(
-            (next.at(-1)?.seq ?? 0) < (infoRef.current?.stats.lastSeq ?? 0),
-          );
-        } else {
-          const merged = new Map(state.rows.map((row) => [row.seq, row]));
-          for (const row of found) merged.set(row.seq, row);
-          const combined = [...merged.values()].sort((a, b) => a.seq - b.seq),
-            next = bounded(combined, true);
-          const removed = combined.length - next.length;
-          publish(next, state.firstIndex + removed);
-          if (removed) {
-            state.before = next[0].seq;
-            setHasOlder(true);
-          }
-          setHasNewer(page!.hasMore);
-          if (page!.hasMore && state.follow) state.dirty = true;
-        }
-        if (current.current.follow && !filtered)
-          requestAnimationFrame(() =>
-            virtuoso.current?.scrollToIndex({
-              index: "LAST",
-              align: "end",
-              behavior: "auto",
-            }),
-          );
-      } catch (e) {
-        if (version === state.version && state.mounted)
-          setError(errorOf(e).message);
-      } finally {
-        if (version === state.version && state.mounted) {
-          state.busy = false;
-          setBusy(false);
-        }
-      }
-    },
-    [publish, refreshInfo],
-  );
-  const loadRef = useRef(load);
-  loadRef.current = load;
-  const start = useCallback(async () => {
-    const token = ++runEpoch.current;
-    setError("");
-    setStatus("正在连接…");
-    setRunning(true);
-    setCollectionFailed(false);
-    const output = new Channel<LogEvent>();
-    output.onmessage = (event) => {
-      if (runEpoch.current !== token || !current.current.mounted) return;
-      if (event.type === "ready") {
-        setTty(event.tty);
-        setError("");
-        setStatus(
-          event.history
-            ? "正在读取历史日志…"
-            : event.following
-              ? "实时采集中"
-              : "正在接续日志…",
-        );
-      } else if (event.type === "status") {
-        setStatus(event.status);
-        setError(event.error || "");
-      } else if (event.type === "saved") current.current.dirty = true;
-      else {
-        setRunning(false);
-        setStatus(event.error ? "读取已中断" : "日志读取已结束");
-        setError(event.error || "");
-        setCollectionFailed(!!event.error);
-        current.current.dirty = true;
-      }
-    };
-    try {
-      await invoke("logs_start", { output });
-    } catch (e) {
-      if (runEpoch.current === token) {
-        setError(errorOf(e).message);
-        setStatus("读取失败");
-        setRunning(false);
-        setCollectionFailed(true);
-      }
-    }
-  }, []);
-  const startRef = useRef(start);
-  startRef.current = start;
+  const filtered = !!(keyword || stream || from || to);
+  const selection = validRange(rangeFrom, rangeTo);
+  const filterIdentity = JSON.stringify(filters);
   useEffect(() => {
-    const state = current.current;
-    state.mounted = true;
-    let disposed = false;
-    void refreshInfo()
-      .then(async (value) => {
-        if (!value || disposed) return;
-        await loadRef.current("latest");
-        if (disposed) return;
-        if (value.canCollect) void startRef.current();
-        else {
-          pause();
-          setStatus("本地存档");
-        }
-      })
-      .catch((e) => {
-        if (!disposed) {
-          setError(errorOf(e).message);
-          setStatus("读取失败");
-        }
-      });
-    const timer = window.setInterval(() => {
-      if (!state.dirty || state.busy) return;
-      state.dirty = false;
-      void refreshInfo()
-        .then(() => {
-          if (state.follow && !state.filtered)
-            return loadRef.current(
-              state.rows.length &&
-                (infoRef.current?.stats.lastSeq ?? 0) -
-                  (state.rows.at(-1)?.seq ?? 0) <
-                  MAX_ROWS
-                ? "newer"
-                : "latest",
-            );
-          setHasNewer(
-            (infoRef.current?.stats.lastSeq ?? 0) >
-              (state.rows.at(-1)?.seq ?? 0),
-          );
-        })
-        .catch((e) => {
-          if (!disposed) setError(errorOf(e).message);
-        });
-    }, 300);
-    const key = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key === "f") {
-        event.preventDefault();
-        pause();
+    setRangeFrom("");
+    setRangeTo("");
+    window.getSelection()?.removeAllRanges();
+  }, [filterIdentity]);
+  const following =
+    read.mode === "follow" && mode === "live" && query.context === null;
+  useEffect(() => {
+    const t = setTimeout(() => setKeyword(draft), 250);
+    return () => clearTimeout(t);
+  }, [draft]);
+  useEffect(() => {
+    if (mode === "snapshot") dispatch({ type: "pause", reason: "manual" });
+  }, [mode]);
+  useEffect(() => {
+    if (session.collection.phase !== "reconnecting") return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [session.collection.phase]);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      if (exportJob.current)
+        void logApi.cancel(exportJob.current).catch(() => {});
+    };
+  }, []);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
         setSearchOpen(true);
-      }
+      } else if (e.key === "Escape" && !e.defaultPrevented)
+        setSearchOpen(false);
     };
     window.addEventListener("keydown", key);
-    const focus = () => {
-      const couldCollect = infoRef.current?.canCollect;
-      void refreshInfo()
-        .then((value) => {
-          if (value?.canCollect && couldCollect === false)
-            void startRef.current();
-        })
-        .catch((e) => {
-          if (!disposed) setError(errorOf(e).message);
-        });
-    };
-    window.addEventListener("focus", focus);
-    return () => {
-      disposed = true;
-      state.mounted = false;
-      state.version++;
-      runEpoch.current++;
-      clearInterval(timer);
-      window.removeEventListener("keydown", key);
-      window.removeEventListener("focus", focus);
-      void invoke("logs_stop").catch(() => {});
-    };
-  }, [pause, refreshInfo]);
-  useEffect(() => {
-    const timer = setTimeout(() => setKeyword(draft), 300);
-    return () => clearTimeout(timer);
-  }, [draft]);
-  const filterInit = useRef(true);
-  useEffect(() => {
-    if (filterInit.current) {
-      filterInit.current = false;
-      return;
-    }
-    current.current.version++;
-    current.current.busy = false;
-    setBusy(false);
-    const latestRequested = resetIntent.current === "latest";
-    resetIntent.current = null;
-    if (latestRequested) {
-      current.current.follow = true;
-      setFollow(true);
-    } else pause();
-    void loadRef.current(
-      latestRequested ? "latest" : "reset",
-      contextQuery ?? undefined,
-    );
-  }, [filters, reload, pause]);
-  useEffect(() => {
-    if (searchOpen) searchInput.current?.focus();
-  }, [searchOpen]);
-  function latest() {
-    setContextQuery(null);
+    return () => window.removeEventListener("keydown", key);
+  }, []);
+  const options = useMemo(
+    () => ({
+      timestamps: preferences.timestamps,
+      highlight: preferences.highlight,
+      keyword: query.ready ? keyword : "",
+      caseSensitive,
+    }),
+    [
+      preferences.timestamps,
+      preferences.highlight,
+      keyword,
+      caseSensitive,
+      query.ready,
+    ],
+  );
+  const events = useMemo(
+    () =>
+      filtered && query.context === null
+        ? []
+        : session.timeline.events.filter(
+            (e) => !query.snapshot || e.id <= query.snapshot.eventCursor,
+          ),
+    [session.timeline.events, query.snapshot, filtered, query.context],
+  );
+  function clearSelection() {
+    setRangeFrom("");
+    setRangeTo("");
+    setRangeOpen(false);
+    window.getSelection()?.removeAllRanges();
+  }
+  function clearFilters() {
     setDraft("");
     setKeyword("");
     setStream("");
     setFrom("");
     setTo("");
-    resetIntent.current = "latest";
-    setReload((value) => value + 1);
-    setSearchOpen(false);
+    setBoot("");
+    clearSelection();
   }
-  function cancel() {
-    current.current.version++;
-    current.current.busy = false;
-    setBusy(false);
-  }
-  async function exportLogs(selected: boolean) {
-    setExporting(true);
-    setError("");
-    try {
-      const path = await logApi.export(
-        selected ? Number(rangeFrom) : undefined,
-        selected ? Number(rangeTo) : undefined,
-      );
-      if (path) setNotice(`已导出：${path}`);
-    } catch (e) {
-      setError(errorOf(e).message);
-    } finally {
-      setExporting(false);
+  function onBoot(id: string) {
+    setBoot(id);
+    const b = session.timeline.boots.find((b) => b.id === id);
+    if (b) {
+      setFrom(localInput(b.startedAt));
+      setTo(b.finishedAt ? localInput(b.finishedAt) : "");
+    } else {
+      setFrom("");
+      setTo("");
     }
   }
-  const lastSeq = rows.at(-1)?.seq ?? 0,
-    newCount = Math.max(0, (info?.stats.lastSeq ?? 0) - lastSeq);
-  const rangeValid =
-    Number(rangeFrom) >= 1 && Number(rangeTo) >= Number(rangeFrom);
+  function resume() {
+    if (following) {
+      dispatch({ type: "pause", reason: "manual" });
+      return;
+    }
+    clearSelection();
+    if (query.context !== null) query.returnContext();
+    if (mode === "snapshot") {
+      setFrom("");
+      setTo("");
+      setBoot("");
+      setLiveSearch(true);
+    } else void query.load("latest");
+    dispatch({ type: "resume" });
+    viewer.current?.latest();
+  }
+  async function exportLogs(kind: "all" | "query" | "selection") {
+    if (exporting || (kind !== "all" && !query.ready)) return;
+    setExportError("");
+    setExporting(true);
+    setExportProgress(null);
+    const requestId = crypto.randomUUID();
+    exportJob.current = requestId;
+    let temporarySnapshot: string | null = null;
+    try {
+      let scope: ExportScope;
+      if (kind === "selection")
+        scope = {
+          type: "selection",
+          from: Number(rangeFrom),
+          to: Number(rangeTo),
+          snapshotId: query.snapshot?.id,
+        };
+      else if (kind === "query") {
+        const snapshot =
+          query.snapshot ?? (await logApi.snapshot(requestId + "-snapshot"));
+        if (!query.snapshot) temporarySnapshot = snapshot.id;
+        if (!alive.current) return;
+        scope = { type: "query", snapshotId: snapshot.id, query: filters };
+      } else scope = { type: "all" };
+      const output = new Channel<ExportProgress>();
+      output.onmessage = (p) => {
+        if (alive.current) setExportProgress(p);
+      };
+      const path = await logApi.exportScope(scope, requestId, output);
+      if (alive.current) setNotice(path ? "已导出：" + path : "已取消导出");
+    } catch (e) {
+      if (alive.current) {
+        const error = errorOf(e);
+        if (error.kind === "cancelled") setNotice("已取消导出");
+        else setExportError(error.message);
+      }
+    } finally {
+      if (temporarySnapshot)
+        void logApi.release(temporarySnapshot).catch(() => {});
+      exportJob.current = "";
+      if (alive.current) setExporting(false);
+    }
+  }
+  async function cancelExport() {
+    if (exportJob.current) {
+      await Promise.all([
+        logApi.cancel(exportJob.current),
+        logApi.cancel(exportJob.current + "-snapshot"),
+      ]);
+    }
+  }
+  async function copy() {
+    if (!query.ready) return;
+    try {
+      const text = await logApi.copy(
+        Number(rangeFrom),
+        Number(rangeTo),
+        query.snapshot?.id,
+      );
+      await navigator.clipboard.writeText(text);
+      setNotice("已复制完整原文");
+    } catch (e) {
+      setExportError(errorOf(e).message);
+    }
+  }
+  async function findReplacement() {
+    setFinding(true);
+    setExportError("");
+    try {
+      setReplacements(await logApi.replacements());
+    } catch (e) {
+      setExportError(errorOf(e).message);
+    } finally {
+      setFinding(false);
+    }
+  }
+  const newer = Math.max(
+    0,
+    (session.info?.stats.lastSeq ?? 0) - (query.rows.at(-1)?.seq ?? 0),
+  );
+  const reading = !query.ready
+    ? query.busy
+      ? "正在读取 · 保留上次结果"
+      : "保留上次结果 · 当前条件尚未应用"
+    : query.context !== null
+      ? "查看日志 #" + query.context + " 的上下文"
+      : mode === "snapshot"
+        ? "历史搜索 · " +
+          (query.snapshot
+            ? "快照截至 #" + query.snapshot.lastSeq
+            : "正在建立快照")
+        : following
+          ? "跟随最新"
+          : session.collection.phase === "streaming"
+            ? "已暂停滚动，仍在接收"
+            : "已暂停滚动";
+  const action = following
+    ? "暂停滚动"
+    : mode === "snapshot"
+      ? from || to
+        ? "退出时间范围并跟随"
+        : "实时筛选并跟随"
+      : newer
+        ? filtered
+          ? "继续跟随 · 有新日志"
+          : "继续跟随 · 新增 " + newer + " 条"
+        : "继续跟随";
+  const error = exportError || query.error || session.error;
+  const title = session.info
+    ? session.info.containerName + " · 日志"
+    : "容器日志";
   return (
     <div className="container-logs-app remote-editor-app">
       <WindowTitlebar
         leading={<ScrollText size={20} />}
-        title={
-          info
-            ? `${info.serverName} / ${info.containerName} / 日志`
-            : "容器日志"
-        }
+        title={title}
         subtitle={
-          info
-            ? `${info.host}:${info.port} · ${info.containerId.slice(0, 12)} · 本地永久保存`
-            : "正在读取本地存档…"
+          session.info
+            ? session.info.serverName +
+              " · " +
+              session.info.containerId.slice(0, 12)
+            : "正在读取日志来源"
         }
         actions={
-          <span className="log-status" role="status">
-            {status}
+          <span
+            className={"log-status log-status-" + session.collection.phase}
+            role="status"
+          >
+            <span className="log-status-dot" />
+            {collectionLabel(session.collection, now)}
           </span>
         }
-        onError={(error) => setError(errorOf(error).message)}
+        onError={(e) => session.setError(errorOf(e).message)}
       />
-      <div className="log-tools">
-        <button
-          onClick={() => {
-            pause();
-            setSearchOpen(true);
-          }}
+      <LogToolbar
+        searchOpen={searchOpen}
+        setSearchOpen={setSearchOpen}
+        draft={draft}
+        setDraft={setDraft}
+        caseSensitive={caseSensitive}
+        setCaseSensitive={setCaseSensitive}
+        liveSearch={liveSearch}
+        setLiveSearch={setLiveSearch}
+        stream={stream}
+        setStream={setStream}
+        from={from}
+        setFrom={(v) => {
+          setBoot("");
+          setFrom(v);
+        }}
+        to={to}
+        setTo={(v) => {
+          setBoot("");
+          setTo(v);
+        }}
+        clear={clearFilters}
+        preferences={preferences}
+        setPreferences={setPreferences}
+        exporting={exporting}
+        records={!!session.info?.stats.records}
+        queryReady={query.ready}
+        filtered={filtered}
+        selected={selection}
+        onExport={(kind) => void exportLogs(kind)}
+        onRange={() => setRangeOpen((v) => !v)}
+        boots={session.timeline.boots}
+        boot={boot}
+        onBoot={onBoot}
+      />
+      {(session.collection.phase === "reconnecting" ||
+        session.collection.phase === "failed" ||
+        session.collection.phase === "waitingContainer") && (
+        <div
+          className={
+            "log-connection-banner" +
+            (session.collection.phase === "failed"
+              ? " log-connection-failed"
+              : "")
+          }
         >
-          <Search size={14} />
-          查找
-        </button>
-        <label>
-          <input
-            type="checkbox"
-            checked={timestamps}
-            onChange={(e) => setTimestamps(e.target.checked)}
-          />
-          时间戳
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={wrap}
-            onChange={(e) => setWrap(e.target.checked)}
-          />
-          自动换行
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={highlight}
-            onChange={(e) => setHighlight(e.target.checked)}
-          />
-          高亮
-        </label>
-        <button
-          disabled={exporting || !info?.stats.records}
-          onClick={() => void exportLogs(false)}
-        >
-          <Download size={14} />
-          导出全部
-        </button>
-      </div>
-      {searchOpen && (
-        <div className="log-search" role="search">
-          <div className="log-search-main">
-            <Search size={15} />
-            <input
-              ref={searchInput}
-              aria-label="搜索全部本地日志"
-              placeholder="搜索全部本地历史，支持中文子串"
-              value={draft}
-              onChange={(e) => {
-                setContextQuery(null);
-                setDraft(e.target.value);
-              }}
-            />
-            <label>
-              <input
-                type="checkbox"
-                checked={caseSensitive}
-                onChange={(e) => setCaseSensitive(e.target.checked)}
-              />
-              区分大小写
-            </label>
-            <select
-              aria-label="日志输出流"
-              value={stream}
-              onChange={(e) => setStream(e.target.value)}
-            >
-              <option value="">全部输出流</option>
-              <option value="stdout">stdout</option>
-              <option value="stderr">stderr</option>
-            </select>
-            <button aria-label="关闭查找" onClick={() => setSearchOpen(false)}>
-              <X size={14} />
+          <span>
+            {session.collection.phase === "waitingContainer"
+              ? "容器启动后会自动接续日志，当前内容已保留。"
+              : session.collection.phase === "reconnecting"
+                ? "连接恢复后会自动补读，阅读位置保持不变。"
+                : session.collection.reason === "containerMissing"
+                  ? "原容器已不存在，已保存的日志仍可查看。"
+                  : "采集已停止，已保存的日志仍可查看。"}
+          </span>
+          {session.info?.canCollect &&
+            session.collection.phase !== "waitingContainer" && (
+              <button onClick={() => void session.retry()}>
+                <RefreshCw size={14} />
+                {session.collection.phase === "reconnecting"
+                  ? "立即重试"
+                  : "重试"}
+              </button>
+            )}
+          {session.collection.reason === "containerMissing" && (
+            <button disabled={finding} onClick={() => void findReplacement()}>
+              {finding ? "正在查找…" : "查找新容器"}
             </button>
-          </div>
-          <div className="log-search-filters">
-            <label>
-              从
-              <input
-                aria-label="日志开始时间"
-                type="datetime-local"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-              />
-            </label>
-            <label>
-              至
-              <input
-                aria-label="日志结束时间"
-                type="datetime-local"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-              />
-            </label>
-            <span>
-              {contextQuery !== null
-                ? `日志 #${contextQuery} 的上下文`
-                : `已加载 ${rows.length} 条匹配 · 搜索范围截至 #${current.current.snapshot}`}
-            </span>
-            {contextQuery === null &&
-              (info?.stats.lastSeq ?? 0) > current.current.snapshot && (
-                <button
-                  onClick={() => {
-                    setContextQuery(null);
-                    cancel();
-                    void loadRef.current("reset");
-                  }}
-                >
-                  更新搜索结果
-                </button>
-              )}
-            {busy && <button onClick={cancel}>取消搜索</button>}
-          </div>
+          )}
+          {session.collection.error && (
+            <details>
+              <summary>原因</summary>
+              <pre>{session.collection.error}</pre>
+            </details>
+          )}
         </div>
       )}
       {error && (
         <div className="editor-error" role="alert">
           {error}
-          {collectionFailed && info?.canCollect && (
-            <button onClick={() => void start()}>
-              <RefreshCw size={14} />
-              重试
-            </button>
-          )}
+          <button
+            aria-label="关闭错误提示"
+            onClick={() => {
+              setExportError("");
+              query.setError("");
+              session.setError("");
+            }}
+          >
+            <X size={14} />
+          </button>
         </div>
       )}
-      <div
-        className={`log-viewer${wrap ? " log-wrap" : ""}`}
-        onWheel={(e) => {
-          if (e.deltaY < 0) pause();
-        }}
-        onKeyDown={(e) => {
-          if (["ArrowUp", "PageUp", "Home"].includes(e.key)) pause();
-        }}
-        onPointerDown={pause}
-      >
-        <Virtuoso
-          ref={virtuoso}
-          className="log-virtual-list"
-          data={rows}
-          firstItemIndex={firstIndex}
-          computeItemKey={(_, row) => row.seq}
-          initialTopMostItemIndex={{
-            index: rows.length ? firstIndex + rows.length - 1 : firstIndex,
-            align: "end",
-          }}
-          alignToBottom
-          increaseViewportBy={{ top: 200, bottom: 200 }}
-          defaultItemHeight={27}
-          followOutput={follow && !current.current.filtered ? "auto" : false}
-          startReached={() => {
-            if (hasOlder && rows.length && !current.current.follow)
-              void loadRef.current("older");
-          }}
-          endReached={() => {
-            if (hasNewer && !current.current.follow)
-              void loadRef.current("newer");
-          }}
-          components={{
-            Header: () =>
-              hasOlder ? (
-                <div className="log-page-control">
-                  <button
-                    disabled={busy}
-                    onClick={() => {
-                      pause();
-                      void loadRef.current("older");
-                    }}
-                  >
-                    加载更早日志
-                  </button>
-                </div>
-              ) : null,
-            Footer: () =>
-              hasNewer ? (
-                <div className="log-page-control">
-                  <button
-                    disabled={busy}
-                    onClick={() => {
-                      pause();
-                      void loadRef.current("newer");
-                    }}
-                  >
-                    加载后续日志
-                  </button>
-                </div>
-              ) : null,
-          }}
-          itemContent={(_, row) => (
-            <div
-              className={`log-row${highlight && row.level ? ` log-level-${row.level}` : ""}`}
-              data-seq={row.seq}
-            >
+      {replacements && (
+        <div className="log-replacements" role="region" aria-label="替代容器">
+          {replacements.length ? (
+            replacements.map((r) => (
               <button
-                className="log-seq"
-                title="点击选择起始序号，Shift 点击选择结束序号"
-                onClick={(e) => {
-                  if (e.shiftKey && rangeFrom) setRangeTo(String(row.seq));
-                  else {
-                    setRangeFrom(String(row.seq));
-                    setRangeTo(String(row.seq));
-                  }
-                }}
+                key={r.id}
+                onClick={() =>
+                  void logApi
+                    .openReplacement(r.id)
+                    .catch((e) => setExportError(errorOf(e).message))
+                }
               >
-                #{row.seq}
+                查看 {r.name} · {r.id.slice(0, 12)} 的日志
               </button>
-              <div className="log-row-body">
-                {row.stream === "stderr" && !tty && (
-                  <span className="log-stream">[stderr] </span>
-                )}
-                {row.level && highlight && (
-                  <span className={`log-level-label log-level-${row.level}`}>
-                    {row.level.toUpperCase()}
-                  </span>
-                )}
-                {row.continuation && (
-                  <span className="log-fragment">续行 </span>
-                )}
-                {!!keyword && !!row.prefix && (
-                  <span className="log-fragment">跨片段上下文 </span>
-                )}
-                <LogText
-                  raw={(keyword && row.prefix
-                    ? row.prefix + row.text
-                    : row.raw
-                  ).slice(0, 12000)}
-                  options={options}
-                />
-                {row.raw.length > 12000 && (
-                  <span className="log-fragment">
-                    {" "}
-                    …长行已折叠，选择此序号可复制或导出全文
-                  </span>
-                )}
-                {!row.complete && !row.continuation && (
-                  <span className="log-fragment"> 未换行</span>
-                )}
-              </div>
-              {!!keyword && contextQuery === null && (
-                <button
-                  className="log-context"
-                  onClick={() => {
-                    pause();
-                    setContextQuery(row.seq);
-                  }}
-                >
-                  上下文
-                </button>
-              )}
-            </div>
+            ))
+          ) : (
+            <span>
+              未发现身份匹配的替代容器。请从服务器的 Docker 列表打开目标容器。
+            </span>
           )}
-        />
-        {!rows.length && !busy && (
-          <p className="log-empty">
-            {current.current.filtered
-              ? "没有匹配的本地日志"
-              : running && status !== "等待容器运行"
-                ? "暂无日志，正在等待新的输出…"
-                : "容器暂无日志"}
-          </p>
-        )}
-      </div>
-      <div className="log-range">
-        <label>
-          序号范围
+          <button
+            onClick={() => setReplacements(null)}
+            aria-label="收起替代容器"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      {(query.context !== null || mode === "snapshot" || query.busy) && (
+        <div className="log-query-status">
+          <span>
+            {!query.ready
+              ? query.busy
+                ? "正在应用查询条件"
+                : "查询未完成，可重试或继续跟随"
+              : query.context !== null
+                ? "日志 #" + query.context + " 的上下文"
+                : mode === "snapshot"
+                  ? "稳定搜索 · " + query.rows.length + " 条已加载"
+                  : "正在读取日志"}
+            {query.busy
+              ? " · 已检索 " + query.scanned.toLocaleString() + " 条"
+              : ""}
+          </span>
+          {query.context !== null ? (
+            <button
+              onClick={() => {
+                viewer.current?.restore(returnAnchor.current);
+                query.returnContext();
+              }}
+            >
+              返回搜索结果
+            </button>
+          ) : (
+            mode === "snapshot" && (
+              <button disabled={query.busy} onClick={query.refresh}>
+                {(session.info?.stats.lastSeq ?? 0) >
+                (query.snapshot?.lastSeq ?? 0)
+                  ? "有新日志 · 更新结果"
+                  : "更新结果"}
+              </button>
+            )
+          )}
+          {query.busy && <button onClick={query.cancel}>取消读取</button>}
+        </div>
+      )}
+      <LogViewer
+        ref={viewer}
+        rows={query.rows}
+        events={events}
+        options={options}
+        wrap={preferences.wrap}
+        fontSize={preferences.fontSize}
+        tty={session.collection.tty ?? session.info?.tty ?? false}
+        read={read}
+        live={mode === "live"}
+        busy={query.busy}
+        older={query.ready && query.older}
+        newer={query.ready && query.newer}
+        context={query.context}
+        keyword={query.ready ? keyword : ""}
+        selectedFrom={rangeFrom}
+        selectedTo={rangeTo}
+        onRead={dispatch}
+        onOlder={() => void query.load("older")}
+        onNewer={() => void query.load("newer")}
+        onSelect={(seq, extend) => {
+          if (!query.ready) return;
+          dispatch({ type: "pause", reason: "selection" });
+          if (extend && rangeFrom) {
+            setRangeFrom(String(Math.min(Number(rangeFrom), seq)));
+            setRangeTo(String(Math.max(Number(rangeFrom), seq)));
+          } else {
+            setRangeFrom(String(seq));
+            setRangeTo(String(seq));
+          }
+        }}
+        onContext={(seq) => {
+          if (!query.ready) return;
+          returnAnchor.current = viewer.current?.capture() ?? null;
+          dispatch({ type: "pause", reason: "manual" });
+          query.showContext(seq);
+        }}
+        empty={
+          filtered
+            ? "没有匹配的已保存日志"
+            : session.collection.phase === "streaming"
+              ? "正在接收，等待新的日志输出…"
+              : session.collection.phase === "offline"
+                ? "此存档暂无日志"
+                : "容器暂无日志"
+        }
+      />
+      {rangeOpen && (
+        <div className="log-range">
+          <label>
+            序号范围
+            <input
+              type="number"
+              min="1"
+              aria-label="复制起始序号"
+              value={rangeFrom}
+              onChange={(e) => {
+                dispatch({ type: "pause", reason: "selection" });
+                setRangeFrom(e.target.value);
+              }}
+            />
+          </label>
+          <span>—</span>
           <input
             type="number"
-            aria-label="复制起始序号"
-            min={1}
-            value={rangeFrom}
-            onChange={(e) => setRangeFrom(e.target.value)}
+            min="1"
+            aria-label="复制结束序号"
+            value={rangeTo}
+            onChange={(e) => setRangeTo(e.target.value)}
           />
-        </label>
-        <span>—</span>
-        <input
-          type="number"
-          aria-label="复制结束序号"
-          min={1}
-          value={rangeTo}
-          onChange={(e) => setRangeTo(e.target.value)}
-        />
-        <button
-          disabled={!rangeValid}
-          onClick={() => {
-            void logApi
-              .copy(Number(rangeFrom), Number(rangeTo))
-              .then((text) => navigator.clipboard.writeText(text))
-              .then(() => setNotice("已复制完整原文"))
-              .catch((e) => setError(errorOf(e).message));
-          }}
-        >
-          <Copy size={13} />
-          复制原文
-        </button>
-        <button
-          disabled={!rangeValid || exporting}
-          onClick={() => void exportLogs(true)}
-        >
-          导出范围
-        </button>
-        <span className="log-notice" role="status">
-          {notice}
-        </span>
-      </div>
-      <footer className="log-footer">
-        <span title={info?.directory}>
-          已保存 {info?.stats.records ?? 0} 条 ·{" "}
-          {((info?.stats.bytes ?? 0) / 1024 / 1024).toFixed(1)} MiB
-          {busy
-            ? ` · 正在读取，已检索 ${scanned} 条`
-            : ` · 当前加载 ${rows.length} 条`}
-          {tty ? " · 容器 TTY 输出已合并" : " · [stderr] 标记错误输出流"}
-        </span>
-        <label>
-          <input
-            type="checkbox"
-            checked={follow}
-            onChange={(e) => (e.target.checked ? latest() : pause())}
-          />
-          自动滚动
-        </label>
-        <button onClick={latest}>
-          <ArrowDownToLine size={14} />
-          {newCount && !follow ? `新增 ${newCount} 条 · ` : ""}跳到最新
-        </button>
-      </footer>
+          <button aria-label="收起序号选择" onClick={() => setRangeOpen(false)}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      {exporting && (
+        <div className="log-query-status" role="status">
+          <span>
+            {exportProgress
+              ? "正在导出 " +
+                exportProgress.records.toLocaleString() +
+                " 条 · " +
+                (exportProgress.bytes / 1024 / 1024).toFixed(1) +
+                " MiB"
+              : "正在准备导出…"}
+          </span>
+          <button onClick={() => void cancelExport()}>取消导出</button>
+        </div>
+      )}
+      <LogReadingBar
+        status={reading}
+        action={action}
+        following={following}
+        onAction={resume}
+        count={session.info?.stats.records ?? 0}
+        selected={selection}
+        onCopy={() => void copy()}
+        onExport={() => void exportLogs("selection")}
+        onClear={clearSelection}
+        notice={notice}
+        busy={exporting || !query.ready}
+      />
+      <details className="log-source-details">
+        <summary>日志详情</summary>
+        <div>
+          {session.info?.host}:{session.info?.port} ·{" "}
+          {session.info?.containerId}
+          <br />
+          已保存 {((session.info?.stats.bytes ?? 0) / 1024 / 1024).toFixed(
+            1,
+          )}{" "}
+          MiB · {session.info?.directory}
+          <br />
+          关闭日志窗口后停止采集，已保存的内容仍可离线查看。
+          {session.collection.container && (
+            <>
+              <br />
+              容器状态：{session.collection.container.state} · 最近确认{" "}
+              {new Date(
+                session.collection.container.observedAt,
+              ).toLocaleString()}
+            </>
+          )}
+        </div>
+      </details>
     </div>
   );
 }

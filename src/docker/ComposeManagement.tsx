@@ -242,7 +242,15 @@ export function ComposeManagement({
     return () => {
       alive = false;
     };
-  }, [store, state.engine?.token, state.catalogRevision, active, enabled, revision, finished]);
+  }, [
+    store,
+    state.engine?.token,
+    state.catalogRevision,
+    active,
+    enabled,
+    revision,
+    finished,
+  ]);
   const names = [
     ...new Set([
       ...(data?.projects.map((p) => p.name) ?? []),
@@ -550,7 +558,10 @@ export function ComposeManagement({
       {actions.preview && (
         <DockerConfirmDialog
           preview={actions.preview}
-          onClose={() => actions.setPreview(null)}
+          onRefresh={actions.renewPreview}
+          uncertain={actions.uncertain}
+          onRetry={actions.retry}
+          onClose={actions.dismissPreview}
           onConfirm={() =>
             actions.submit(
               actions.preview!.targetId,

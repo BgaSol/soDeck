@@ -113,6 +113,7 @@ export interface DockerOperation {
   items?: { targetId: string; name: string; phase: string; message: string }[];
 }
 export interface DockerPreview {
+  draftToken: string;
   id: string;
   engine: DockerEngineBinding;
   targetId: string;
@@ -171,6 +172,18 @@ export const dockerApi = {
       targetId,
       action,
     }),
+  renewPreview: (
+    sessionId: string,
+    draftToken: string,
+    expectedPreviewId: string,
+  ) =>
+    invoke<DockerPreview>("renew_docker_preview", {
+      sessionId,
+      draftToken,
+      expectedPreviewId,
+    }),
+  releasePreview: (sessionId: string, draftToken: string) =>
+    invoke<void>("release_docker_preview", { sessionId, draftToken }),
   submit: (sessionId: string, request: DockerOperationRequest) =>
     invoke<string>("submit_docker_operation", { sessionId, request }),
   reconcile: (sessionId: string, operationId: string) =>

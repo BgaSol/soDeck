@@ -1,4 +1,38 @@
-import type { Metric } from "./resourceMonitoring";
+import {
+  monitorLive,
+  type Metric,
+  type MonitorState,
+} from "./resourceMonitoring";
+export type MetricContext =
+  boolean | Pick<MonitorState, "connection" | "subscription">;
+export function getMonitorPresentation(state: MetricContext) {
+  if (typeof state === "boolean")
+    return {
+      label: state ? "" : "已断开",
+      stale: !state,
+      canRetry: false,
+      detail: "",
+    };
+  const failed = state.subscription.phase === "failed";
+  return {
+    label:
+      state.connection === "disconnected"
+        ? "已断开 · 保留最后采样"
+        : failed
+          ? "监控暂不可用"
+          : state.subscription.phase === "subscribing"
+            ? "正在连接监控"
+            : state.subscription.phase === "idle"
+              ? "监控已停止"
+              : "",
+    detail:
+      state.subscription.phase === "failed"
+        ? state.subscription.error.message
+        : "",
+    canRetry: failed && state.connection !== "disconnected",
+    stale: !monitorLive(state),
+  };
+}
 import type { RemoteMount } from "./remoteMounts";
 import { mountKind } from "./remoteMounts";
 export type ResourceMetric = "cpu" | "memory" | "network";
@@ -65,16 +99,19 @@ export function sampleTime(at: number | null | undefined) {
     ? "尚无采样"
     : `更新于 ${new Date(at).toLocaleTimeString()}`;
 }
-export function metricMessage(metric: Metric<unknown>, connected: boolean) {
-  const label = !connected
-    ? "已断开"
-    : metric.status === "collecting"
-      ? "正在采集"
+export function metricMessage(
+  metric: Metric<unknown>,
+  connected: MetricContext,
+) {
+  const label =
+    getMonitorPresentation(connected).label ||
+    (metric.status === "collecting"
+      ? "等待首次采样"
       : metric.status === "unsupported"
         ? "当前环境不支持"
         : metric.status === "ready"
           ? ""
-          : "暂不可用";
+          : "暂不可用");
   return (
     [
       label,
@@ -86,8 +123,11 @@ export function metricMessage(metric: Metric<unknown>, connected: boolean) {
       .join(" · ") || "尚无采样"
   );
 }
-export function hasOldValue(metric: Metric<unknown>, connected: boolean) {
-  return metric.value != null && (!connected || metric.status !== "ready");
+export function hasOldValue(metric: Metric<unknown>, connected: MetricContext) {
+  return (
+    metric.value != null &&
+    (getMonitorPresentation(connected).stale || metric.status !== "ready")
+  );
 }
 const pseudo = new Set([
   "proc",

@@ -395,7 +395,7 @@ def container_logs(channel, command):
     mode = mode_file.read_text().strip() if mode_file.exists() else "normal"
     log("logs-open", container=container, following=following, tail=tail,
         since=args[args.index("--since") + 1] if "--since" in args else None)
-    timestamp = "2026-10-14T09:00:00.000000000Z "
+    timestamp = ((QA / "docker-started-at").read_text().strip() if (QA / "docker-started-at").exists() else "2026-10-14T09:00:00.000000000Z") + " "
     try:
         if mode == "unsupported":
             channel.sendall_stderr(b"configured logging driver does not support reading\n")
@@ -418,6 +418,10 @@ def container_logs(channel, command):
             tick = 0
             while not channel.closed:
                 time.sleep(0.15)
+                runtime = (QA / "docker-mode").read_text().strip() if (QA / "docker-mode").exists() else "running"
+                if runtime in ("stopped", "restarting", "removed"):
+                    channel.send_exit_status(0)
+                    return
                 if (QA / "logs-disconnect").exists():
                     channel.get_transport().close()
                     return
@@ -531,9 +535,12 @@ def execute(channel, command):
         output = "\n".join(json.dumps({"ID": cid, "Names": name, "Image": "nginx:alpine", "State": state, "Status": state}) for cid, name, state in [
             (CID, "web-fixture", "running"), ("b" * 64, "stopped-fixture", "exited"), ("c" * 64, "paused-fixture", "paused")]) + "\n"
     elif " inspect --type container " in command:
-        state = {"Running": mode != "stopped" and "b" * 64 not in command, "Paused": mode == "paused", "Restarting": False}
+        started = (QA / "docker-started-at").read_text().strip() if (QA / "docker-started-at").exists() else "2026-10-14T08:00:00Z"
+        state = {"Running": mode not in ("stopped", "restarting") and "b" * 64 not in command, "Paused": mode == "paused", "Restarting": mode == "restarting", "Status": "exited" if mode == "stopped" else mode, "StartedAt": started, "FinishedAt": "2026-10-14T10:00:00Z" if mode == "stopped" else "0001-01-01T00:00:00Z"}
         metadata = {"State": state, "Config": {"Tty": mode == "tty"}} if "{{json .}}" in command else state
         output = json.dumps(metadata) + "\n"
+        if mode in ("unreachable", "permission", "removed"):
+            code, output, error = 1, "", {"unreachable": "Cannot connect to the Docker daemon", "permission": "permission denied", "removed": "No such container"}[mode]
     elif " logs --tail " in command:
         container_logs(channel, command)
         return

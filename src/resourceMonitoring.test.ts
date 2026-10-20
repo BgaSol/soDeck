@@ -103,7 +103,7 @@ describe("resource subscriptions", () => {
     });
     send({ type: "connection", generation: "g", connected: false });
     expect(store.getState().metrics.cpu.value?.percent).toBe(42);
-    expect(store.getState().connected).toBe(false);
+    expect(store.getState().connection).toBe("disconnected");
     send({ type: "connection", generation: "new", connected: true });
     send({ type: "connection", generation: "g", connected: false });
     send({
@@ -113,7 +113,7 @@ describe("resource subscriptions", () => {
       metrics,
       point: point(13),
     });
-    expect(store.getState().connected).toBe(true);
+    expect(store.getState().connection).toBe("connected");
     expect(store.getState().points).toEqual([]);
     send({
       type: "metrics",
@@ -347,7 +347,7 @@ describe("resource subscriptions", () => {
     request.resolve("late-sub");
     await opening;
     expect(api.unsubscribe).toHaveBeenCalledWith("late-sub");
-    expect(store.getState().connected).toBe(false);
+    expect(store.getState().subscription.phase).toBe("idle");
   });
   it("merges racing history and live samples without losing or duplicating points", async () => {
     const { api, store, send } = fixture();
@@ -476,5 +476,119 @@ describe("resource subscriptions", () => {
     expect(rate(null)).toBe("—");
     expect(rate(0)).toBe("0 B/s");
     expect(rate(1024)).toBe("1.0 KiB/s");
+  });
+});
+
+describe("subscription failure recovery", () => {
+  it("reports failure without inventing a disconnected SSH connection and retries once", async () => {
+    const { store, api } = fixture();
+    api.subscribe = vi.fn(async () => {
+      throw { kind: "unavailable", message: "采集失败" };
+    });
+    const first = store.start();
+    expect(store.start()).toBe(first);
+    await first;
+    expect(store.getState().connection).toBe("unknown");
+    expect(store.getState().subscription.phase).toBe("failed");
+    expect(store.getMounts().error).toBe("采集失败");
+    api.subscribe = vi.fn(async () => "recovered");
+    await store.refresh();
+    expect(store.getState().subscription.phase).toBe("active");
+    expect(api.subscribe).toHaveBeenCalledTimes(1);
+    store.stop();
+  });
+  it("invalidates an early snapshot when subscribe later fails", async () => {
+    const { store, api } = fixture();
+    api.subscribe = vi.fn(async (_session, _interest, receive) => {
+      receive({
+        type: "snapshot",
+        generation: "g",
+        metricsRevision: 1,
+        mountsRevision: 1,
+        metrics: emptyMetrics(),
+        mounts,
+      });
+      throw new Error("channel failed");
+    });
+    await store.start();
+    expect(store.getState().connection).toBe("connected");
+    expect(store.getState().subscription.phase).toBe("failed");
+  });
+});
+
+describe("subscription epochs and cache provenance", () => {
+  it("starts a new subscription immediately after stopping an unresolved start", async () => {
+    const { api, store } = fixture(),
+      first = deferred<string>(),
+      second = deferred<string>();
+    let count = 0;
+    api.subscribe = vi.fn(() =>
+      ++count === 1 ? first.promise : second.promise,
+    );
+    const a = store.start();
+    await Promise.resolve();
+    store.stop();
+    const b = store.start();
+    await Promise.resolve();
+    expect(api.subscribe).toHaveBeenCalledTimes(2);
+    second.resolve("new");
+    await b;
+    first.resolve("old");
+    await a;
+    expect(store.getState().subscription.phase).toBe("active");
+    expect(api.unsubscribe).toHaveBeenCalledWith("old");
+    store.stop();
+  });
+  it("preserves history on the same generation and clears it for a replacement source", async () => {
+    const { api, store, send } = fixture();
+    await store.start();
+    send({
+      type: "metrics",
+      generation: "g",
+      revision: 1,
+      metrics: emptyMetrics(),
+      point: point(3),
+    });
+    store.stop();
+    await store.start();
+    expect(store.getState().points.map((p) => p.sequence)).toEqual([3]);
+    store.stop();
+    api.subscribe = vi.fn(async (_, __, receive) => {
+      receive({
+        type: "snapshot",
+        generation: "new",
+        metricsRevision: 1,
+        mountsRevision: 1,
+        metrics: emptyMetrics(),
+        mounts,
+      });
+      return "new";
+    });
+    api.history = vi.fn(async () => ({
+      generation: "new",
+      points: [],
+      truncated: false,
+    }));
+    await store.start();
+    expect(store.getState().points).toEqual([]);
+    store.stop();
+  });
+  it("keeps mount data errors distinct from a successful subscription", async () => {
+    const { api, store } = fixture();
+    api.subscribe = vi.fn(async (_, __, receive) => {
+      receive({
+        type: "snapshot",
+        generation: "g",
+        metricsRevision: 1,
+        mountsRevision: 1,
+        metrics: emptyMetrics(),
+        mounts: { ...mounts, error: "挂载读取失败" },
+      });
+      return "sub";
+    });
+    await store.start();
+    expect(store.getMounts().error).toBe("挂载读取失败");
+    expect(store.getState().subscription.phase).toBe("active");
+    store.stop();
   });
 });

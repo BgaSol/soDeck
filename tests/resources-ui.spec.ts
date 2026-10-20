@@ -770,9 +770,7 @@ test("an unresolved pinned mount is not reported as unmounted", async ({
     };
     fixture.push();
   });
-  await expect(disk).toContainText(
-    "/data · 挂载层级无法确认，容量已隐藏",
-  );
+  await expect(disk).toContainText("/data · 挂载层级无法确认，容量已隐藏");
   await expect(disk).not.toContainText("/data · 当前未挂载");
   expect(errors).toEqual([]);
 });
@@ -945,3 +943,51 @@ test("Docker preserves its object on connection failure and list position across
   await expect(panel).toContainText("保留上次列表");
   expect(errors).toEqual([]);
 });
+
+for (const mode of ["workspace", "monitor"] as const)
+  test(
+    "monitor subscription failure is recoverable without inventing SSH disconnect: " +
+      mode,
+    async ({ page }) => {
+      const errors = await setup(page, mode);
+      await page.evaluate(() => {
+        const w = window as any,
+          base = w.__TAURI_INTERNALS__.invoke;
+        let failRefresh = true,
+          failSubscribe = true;
+        w.__TAURI_INTERNALS__.invoke = async (command: string, args: any) => {
+          if (command === "refresh_monitor" && failRefresh) {
+            failRefresh = false;
+            throw { kind: "permission", message: "监控通道已结束" };
+          }
+          if (
+            (command === "subscribe_monitor" ||
+              command === "subscribe_monitor_window") &&
+            failSubscribe
+          ) {
+            failSubscribe = false;
+            throw { kind: "unavailable", message: "暂时无法订阅" };
+          }
+          return base(command, args);
+        };
+      });
+      const panel = overview(page);
+      await panel
+        .getByRole("button", { name: "刷新资源监控", exact: true })
+        .click();
+      await expect(panel).toContainText("监控暂不可用");
+      await expect(panel).not.toContainText("已断开");
+      await panel
+        .getByRole("button", { name: "重试监控", exact: true })
+        .click();
+      await expect(panel).toContainText("暂时无法订阅");
+      await panel
+        .getByRole("button", { name: "重试监控", exact: true })
+        .click();
+      await expect(
+        panel.getByRole("button", { name: "刷新资源监控", exact: true }),
+      ).toBeEnabled();
+      await expect(panel).not.toContainText("监控暂不可用");
+      expect(errors).toEqual([]);
+    },
+  );

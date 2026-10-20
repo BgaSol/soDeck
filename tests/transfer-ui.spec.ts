@@ -603,6 +603,10 @@ async function setup(page: Page) {
           tasks.find((t) => t.id === args.id).cleanupPending = false;
           return;
         }
+        if (command === "port_forward_summary")
+          return { active: 0, connections: 0 };
+        if (command === "docker_operation_summary")
+          return { active: 0, attention: 0 };
         if (command === "detect_docker")
           return { state: "missing", message: "fixture", endpoint: "" };
         if (
@@ -1953,4 +1957,60 @@ test("large task history loads additional pages and quitting fails closed on tas
     ),
   ).toBe(0);
   expect(errors).toEqual([]);
+});
+
+for (const keyboard of [false, true])
+  test(
+    "download owns keyboard focus and returns to its file: " + keyboard,
+    async ({ page }) => {
+      const errors = await setup(page);
+      const file = page.locator('.file-row[data-path="/home/ops/one.txt"]');
+      if (keyboard) {
+        await file.focus();
+        await file.press("Shift+F10");
+      } else await file.click({ button: "right" });
+      const download = page.getByRole("menuitem", { name: /下载/ });
+      await download.focus();
+      await page.keyboard.press("Enter");
+      const dialog = page.getByRole("dialog", {
+          name: "下载文件",
+          exact: true,
+        }),
+        select = dialog.getByLabel("同名文件处理");
+      await expect(page.getByRole("menu", { name: "文件操作" })).toBeHidden();
+      await expect(select).toBeFocused();
+      await select.press("ArrowDown");
+      await expect(select).toHaveValue("skip");
+      await select.press("Tab");
+      await page.keyboard.press("Escape");
+      await expect(dialog).toBeHidden();
+      await expect(file).toBeFocused();
+      expect(errors).toEqual([]);
+    },
+  );
+
+test("download focus waits for the native picker result", async ({ page }) => {
+  await setup(page);
+  const file = page.locator('.file-row[data-path="/home/ops/one.txt"]');
+  await file.click({ button: "right" });
+  await page.getByRole("menuitem", { name: /下载/ }).click();
+  await page.evaluate(() => {
+    const w = window as any,
+      base = w.__TAURI_INTERNALS__.invoke;
+    w.__TAURI_INTERNALS__.invoke = (command: string, args: any) =>
+      command === "start_download"
+        ? new Promise((resolve) => {
+            w.__CANCEL_SAVE__ = () => resolve(null);
+          })
+        : base(command, args);
+  });
+  await page.getByRole("button", { name: "选择保存位置", exact: true }).click();
+  await expect(
+    page.getByRole("dialog", { name: "下载文件", exact: true }),
+  ).toBeHidden();
+  await expect
+    .poll(() => page.evaluate(() => typeof (window as any).__CANCEL_SAVE__))
+    .toBe("function");
+  await page.evaluate(() => (window as any).__CANCEL_SAVE__());
+  await expect(file).toBeFocused();
 });

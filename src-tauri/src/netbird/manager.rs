@@ -369,6 +369,9 @@ impl NetBirdManager {
             .values()
             .any(|ids| ids.iter().any(|s| s == id))
     }
+    pub fn blocks_update(&self) -> AppResult<bool> {
+        Ok(self.active() || self.with_store(|s| s.needs_update_attention())?)
+    }
     pub fn active(&self) -> bool {
         !self.locks.lock().unwrap().is_empty()
     }

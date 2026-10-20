@@ -71,6 +71,23 @@ impl Store {
             .query_row("SELECT data FROM receipts WHERE id=?1", [id], |r| r.get(0))?;
         serde_json::from_str(&s).map_err(|e| AppError::new("database", e))
     }
+    pub fn needs_update_attention(&self) -> AppResult<bool> {
+        let rows = self
+            .0
+            .prepare("SELECT data FROM receipts")?
+            .query_map([], |r| r.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        for row in rows {
+            let r: Receipt =
+                serde_json::from_str(&row).map_err(|e| AppError::new("database", e))?;
+            if r.operation.active()
+                || (r.operation.phase == "uncertain" && !r.operation.acknowledged)
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
     pub fn path(&self, server: &str) -> AppResult<Option<String>> {
         Ok(self
             .0

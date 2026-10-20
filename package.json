@@ -1,6 +1,6 @@
 {
   "name": "sodeck",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "scripts": {
@@ -28,7 +28,8 @@
     "test:terminal-clipboard:native": "node tests/terminal-clipboard-native.mjs",
     "release:prepare": "node scripts/release-version.mjs prepare",
     "release:check": "node scripts/release-version.mjs check",
-    "test:release": "node --test scripts/release.test.mjs"
+    "test:release": "node --test scripts/release.test.mjs",
+    "test:updates": "playwright test --config playwright.updates.config.ts"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

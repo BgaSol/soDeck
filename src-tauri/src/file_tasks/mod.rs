@@ -92,6 +92,22 @@ impl FileTask {
             TaskData::Delete(t) => &t.id,
         }
     }
+    pub(crate) fn blocks_update(&self) -> bool {
+        active(self.status())
+            || match &self.data {
+                TaskData::Transfer(t) => {
+                    t.kind != "download"
+                        && matches!(
+                            t.status.as_str(),
+                            "unknown" | "interrupted" | "needsAttention"
+                        )
+                }
+                TaskData::Delete(t) => matches!(
+                    t.status.as_str(),
+                    "unknown" | "interrupted" | "needsAttention"
+                ),
+            }
+    }
     fn status(&self) -> &str {
         match &self.data {
             TaskData::Transfer(t) => t.status.as_str(),
@@ -468,6 +484,9 @@ mod tests {
         );
         assert!(tasks[0].actions.retry && tasks[0].actions.dismiss);
         assert!(tasks[1].actions.reconcile);
+        assert!(!tasks[0].blocks_update());
+        assert!(tasks[1].blocks_update());
+        assert!(!tasks[2].blocks_update());
         assert!(!tasks[1].actions.retry && !tasks[1].actions.dismiss);
         assert!(tasks[2].actions.dismiss && !tasks[2].actions.retry);
         state

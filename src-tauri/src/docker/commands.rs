@@ -82,6 +82,38 @@ pub fn list_docker_operations(
 }
 
 #[tauri::command]
+pub async fn renew_docker_preview(
+    window: WebviewWindow,
+    state: TauriState<'_, Arc<State>>,
+    session_id: String,
+    draft_token: String,
+    expected_preview_id: String,
+) -> AppResult<Preview> {
+    let owner = owner(&state, &window)?;
+    let state = state.inner().clone();
+    crate::blocking(move || {
+        state.docker.renew_preview(
+            &state,
+            &session_id,
+            &owner,
+            &draft_token,
+            &expected_preview_id,
+        )
+    })
+    .await
+}
+#[tauri::command]
+pub fn release_docker_preview(
+    window: WebviewWindow,
+    state: TauriState<Arc<State>>,
+    session_id: String,
+    draft_token: String,
+) -> AppResult<()> {
+    state
+        .docker
+        .release_preview(&session_id, &draft_token, &owner(&state, &window)?)
+}
+#[tauri::command]
 pub async fn prepare_docker_operation(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,

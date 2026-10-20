@@ -501,7 +501,10 @@ export function ResourceManagement({
       {actions.preview && (
         <DockerConfirmDialog
           preview={actions.preview}
-          onClose={() => actions.setPreview(null)}
+          onRefresh={actions.renewPreview}
+          uncertain={actions.uncertain}
+          onRetry={actions.retry}
+          onClose={actions.dismissPreview}
           onConfirm={() =>
             actions.submit(
               actions.preview!.targetId,

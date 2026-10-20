@@ -1,0 +1,65 @@
+.software-update {
+  display: grid;
+  gap: 10px;
+  padding: 16px 0;
+  border-top: 1px solid var(--border, #80808033);
+}
+.software-update h3,
+.software-update p {
+  margin: 0;
+}
+.software-update p,
+.software-update li {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.update-muted {
+  opacity: 0.72;
+}
+.update-notes {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow: auto;
+  font-size: 13px;
+  padding: 12px 0;
+}
+.update-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.update-preference {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.software-update progress {
+  width: 100%;
+  accent-color: var(--accent, #3478f6);
+}
+.update-error {
+  color: var(--danger, #d44c4c);
+}
+.update-confirm {
+  padding: 14px;
+  border: 1px solid var(--border, #80808044);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+}
+.update-badge {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent, #3478f6);
+  margin-left: 5px;
+}
+
+.software-update button.primary:not(:disabled),
+.software-update button.primary:hover:not(:disabled) {
+  background: var(--blue);
+  color: #fff;
+}

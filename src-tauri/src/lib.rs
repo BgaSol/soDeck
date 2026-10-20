@@ -29,6 +29,7 @@ mod terminal_cwd;
 mod terminal_history;
 mod traffic;
 mod transfers;
+mod updates;
 mod window_chrome;
 
 use model::{AppError, AppResult, SaveServerRequest, ServerView};
@@ -300,6 +301,12 @@ async fn quit_app(
     discard_unsaved: Option<bool>,
 ) -> AppResult<()> {
     main_only(&window)?;
+    if app
+        .state::<updates::UpdateManager>()
+        .installation_in_progress()
+    {
+        return Err(AppError::new("busy", "正在准备安装更新，请等待安装结果。"));
+    }
     if !discard_unsaved.unwrap_or(false) && state.files.unsaved_count() > 0 {
         return Err(AppError::new(
             "unsaved",
@@ -308,12 +315,25 @@ async fn quit_app(
     }
     {
         let _gate = state.configuration.lock().unwrap();
+        if app
+            .state::<updates::UpdateManager>()
+            .installation_in_progress()
+        {
+            return Err(AppError::new("busy", "正在准备安装更新，请等待安装结果。"));
+        }
+        state.ensure_running()?;
         state.stopping.store(true, Ordering::SeqCst);
     }
+    shutdown_work(state.inner().clone()).await?;
+    app.exit(0);
+    Ok(())
+}
+
+async fn shutdown_work(state: Arc<State>) -> AppResult<()> {
     state.deletes.stop_all();
     state.port_forwarding.stop_all();
     state.transfers.stop_transfers();
-    let shutdown_state = state.inner().clone();
+    let shutdown_state = state.clone();
     let result = blocking(move || {
         shutdown_state.netbird.shutdown()?;
         shutdown_state.docker.shutdown()?;
@@ -334,7 +354,6 @@ async fn quit_app(
         state.stopping.store(false, Ordering::SeqCst);
         return Err(error);
     }
-    app.exit(0);
     Ok(())
 }
 
@@ -551,6 +570,7 @@ pub fn run() {
         window.create = false;
     }
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(move |app| {
@@ -611,6 +631,7 @@ pub fn run() {
                 closed_windows: Mutex::new(HashSet::new()),
                 window_generations: Mutex::new(HashMap::new()),
             }));
+            updates::initialize(app.handle())?;
             for config in &startup_windows {
                 WebviewWindowBuilder::from_config(app, config)?
                     .devtools(developer_mode)
@@ -713,6 +734,14 @@ pub fn run() {
             window_chrome::window_chrome,
             logs::open_container_logs,
             logs::logs_info,
+            logs::logs_retry,
+            logs::replacements::logs_replacements,
+            logs::replacements::open_log_replacement,
+            logs::logs_snapshot_create,
+            logs::logs_snapshot_release,
+            logs::logs_cancel_job,
+            logs::logs_export_start,
+            logs::logs_events_page,
             logs::logs_start,
             logs::logs_stop,
             logs::logs_page,
@@ -729,6 +758,14 @@ pub fn run() {
             delete_server,
             session_count,
             quit_app,
+            updates::update_snapshot,
+            updates::update_check,
+            updates::update_download,
+            updates::update_preferences,
+            updates::update_install,
+            updates::update_preflight,
+            updates::update_open_release,
+            updates::update_focus_main,
             connection::open_connection,
             connection::answer_connection,
             connection::close_connection,
@@ -763,6 +800,8 @@ pub fn run() {
             docker::commands::refresh_docker_management,
             docker::commands::list_docker_operations,
             docker::commands::prepare_docker_operation,
+            docker::commands::renew_docker_preview,
+            docker::commands::release_docker_preview,
             docker::commands::submit_docker_operation,
             docker::commands::reconcile_docker_operation,
             docker::commands::acknowledge_docker_operation,

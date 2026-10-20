@@ -1,3 +1,5 @@
+import { CreateContainerDialog } from "./docker/CreateContainerDialog";
+import { monitorLive } from "./resourceMonitoring";
 import {
   useCallback,
   useEffect,
@@ -95,16 +97,19 @@ export function DockerPanel({
   const id = useId();
   const status = docker.engine.value;
   const engineState =
-    !state.connected && !sessionId
+    !monitorLive(state) && !sessionId
       ? "disconnected"
       : (status?.state ?? "detecting");
   const endpoint = status?.endpoint ?? "";
   const token = `${docker.engineGeneration}\0${sessionId ?? ""}\0${endpoint}`;
   const [bulk, setBulk] = useState(false),
     [checked, setChecked] = useState(new Set<string>());
+  const [creating, setCreating] = useState<{ id: string; name: string } | null>(
+    null,
+  );
   const bulkActions = useDockerActions(
     `${token}/${active}/${view.section}`,
-    !!sessionId && active && state.connected && dockerCanAttempt(docker),
+    !!sessionId && active && monitorLive(state) && dockerCanAttempt(docker),
   );
   useEffect(() => {
     setBulk(false);
@@ -226,7 +231,8 @@ export function DockerPanel({
     selection.kind === view.page &&
     !!current &&
     !filtered.some((item) => dockerKey(item) === selectedKey);
-  const connected = !!sessionId && state.connected && dockerCanAttempt(docker);
+  const connected =
+    !!sessionId && monitorLive(state) && dockerCanAttempt(docker);
   const canAct = connected && active && !!current && "state" in current;
   const detailBack = useRef<HTMLButtonElement>(null);
   const showDetails =
@@ -250,12 +256,12 @@ export function DockerPanel({
   }
   const metric = view.page === "containers" ? docker.containers : docker.images;
   const freshnessMessage = (value: Metric<unknown>) =>
-    state.connected && value.status === "stale" && value.value != null
+    monitorLive(state) && value.status === "stale" && value.value != null
       ? "上次数据" +
         (value.updatedAt != null
           ? " · " + new Date(value.updatedAt).toLocaleTimeString()
           : "")
-      : metricMessage(value, state.connected);
+      : metricMessage(value, state);
   async function refreshDocker() {
     if (!sessionId || refreshFlight.current || docker.refreshing) return;
     refreshFlight.current = true;
@@ -1139,6 +1145,7 @@ export function DockerPanel({
                 </ContainerManagement>
               ) : (
                 <ImageManagement
+                  onCreate={(id, name) => setCreating({ id, name })}
                   key={`${token}/${selection.id}`}
                   imageId={selection.id}
                   name={selection.name}
@@ -1189,10 +1196,20 @@ export function DockerPanel({
           }))
         }
       />
+      {creating && (
+        <CreateContainerDialog
+          imageId={creating.id}
+          imageName={creating.name}
+          onClose={() => setCreating(null)}
+        />
+      )}
       {bulkActions.preview && (
         <DockerConfirmDialog
           preview={bulkActions.preview}
-          onClose={() => bulkActions.setPreview(null)}
+          onRefresh={bulkActions.renewPreview}
+          uncertain={bulkActions.uncertain}
+          onRetry={bulkActions.retry}
+          onClose={bulkActions.dismissPreview}
           onConfirm={() =>
             bulkActions.submit(
               bulkActions.preview!.targetId,

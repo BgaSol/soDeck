@@ -1,3 +1,4 @@
+import { selectTheme } from "./theme-fixture";
 import { test, expect, type Page } from "@playwright/test";
 import { setup } from "./terminal-fixture";
 const inputs = (page: Page) =>
@@ -385,7 +386,7 @@ test("preview stays usable in a narrow dark window and restores input focus", as
 }) => {
   await ready(page);
   await page.setViewportSize({ width: 640, height: 580 });
-  await page.getByRole("button", { name: "黑夜主题", exact: true }).click();
+  await selectTheme(page, "dark");
   await nativePaste(page, "echo first\necho second\n");
   const dialog = page.getByRole("dialog", { name: "粘贴到终端", exact: true });
   await expect(dialog).toBeVisible();

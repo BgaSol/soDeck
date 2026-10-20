@@ -221,7 +221,7 @@ test("container logs persist, highlight, search, virtualize and remain readable 
     library: Page | undefined;
   try {
     logs = await openLogs(f);
-    await expect(logs.locator(".log-status")).toHaveText("实时采集中");
+    await expect(logs.locator(".log-status")).toHaveText("实时接收");
     await expect(logs.locator(".log-viewer")).toContainText(
       "fixture history stdout",
     );
@@ -245,34 +245,37 @@ test("container logs persist, highlight, search, virtualize and remain readable 
       },
     });
     expect(f.context.pages().length).toBe(pages);
-    await terminal(f.main, "echo usable-during-logs");
+    // Verify the independent SSH terminal without depending on which native window has OS keyboard focus.
+    await ipc(f.main, "terminal_input", { sessionId:f.sessionId, data:"echo usable-during-logs\r" });
     await expect(
       f.main.locator(".session-page[role=tabpanel]:visible").locator(".terminal-surface"),
     ).toContainText(/usable-during-logs\s*ops@host/);
+    await logs.getByRole("button", {name:"显示",exact:true}).click();
     await logs.getByLabel("时间戳", { exact: true }).uncheck();
     await expect(logs.locator(".log-row-body").first()).not.toContainText(
       "2026-10-14T",
     );
     await logs.getByLabel("自动换行", { exact: true }).check();
     await expect(logs.locator(".log-viewer")).toHaveClass(/log-wrap/);
+    await logs.keyboard.press("Escape");
     await logs.getByRole("button", { name: "查找", exact: true }).click();
     await logs.getByLabel("搜索全部本地日志").fill("中文错误");
     await expect
       .poll(() => logs!.locator(".log-search-match").count())
       .toBeGreaterThan(0);
-    await expect(
-      logs.getByLabel("自动滚动", { exact: true }),
-    ).not.toBeChecked();
+    await expect(logs.locator(".log-reading-status")).not.toContainText("跟随最新");
     await logs
       .getByRole("button", { name: "上下文", exact: true })
       .first()
       .click();
-    await expect(logs.locator(".log-search-filters")).toContainText("的上下文");
+    await expect(logs.locator(".log-query-status")).toContainText("的上下文");
     await expect(logs.locator(".log-viewer")).toContainText(
       "fixture history stdout",
     );
-    await logs.getByRole("button", { name: /跳到最新/ }).click();
-    await expect(logs.getByLabel("自动滚动", { exact: true })).toBeChecked();
+    if (await logs.getByRole("button",{name:"返回搜索结果"}).isVisible()) await logs.getByRole("button",{name:"返回搜索结果"}).click();
+    if (await logs.getByRole("button",{name:"清除条件",exact:true}).isVisible()) await logs.getByRole("button",{name:"清除条件",exact:true}).click();
+    await logs.getByRole("button", { name: /继续跟随/ }).click();
+    await expect(logs.getByRole("button", {name:"暂停滚动",exact:true})).toBeVisible();
     await expect(logs.getByLabel("显示日志行数")).toHaveCount(0);
     for (const name of ["刷新视图", "恢复采集", "补取全部历史", "停止采集"])
       await expect(logs.getByRole("button", { name, exact: true })).toHaveCount(
@@ -281,17 +284,19 @@ test("container logs persist, highlight, search, virtualize and remain readable 
     const openedBefore = (await logEvents()).filter(
       (e) => e.event === "logs-open",
     ).length;
+    await logs.getByRole("button", {name:"显示",exact:true}).click();
     await logs.getByLabel("高亮", { exact: true }).uncheck();
     await logs.getByLabel("高亮", { exact: true }).check();
+    await logs.keyboard.press("Escape");
     expect(
       (await logEvents()).filter((e) => e.event === "logs-open").length,
     ).toBe(openedBefore);
     await logs.locator(".log-virtual-list").hover();
     await logs.mouse.wheel(0, -200);
-    await expect(
-      logs.getByLabel("自动滚动", { exact: true }),
-    ).not.toBeChecked();
-    await logs.getByRole("button", { name: /跳到最新/ }).click();
+    await expect(logs.locator(".log-reading-status")).not.toContainText("跟随最新");
+    if (await logs.getByRole("button",{name:"返回搜索结果"}).isVisible()) await logs.getByRole("button",{name:"返回搜索结果"}).click();
+    if (await logs.getByRole("button",{name:"清除条件",exact:true}).isVisible()) await logs.getByRole("button",{name:"清除条件",exact:true}).click();
+    await logs.getByRole("button", { name: /继续跟随/ }).click();
     await logs.emulateMedia({ colorScheme: "light" });
     await logs.screenshot({ path: ".qa/container-logs-light.png" });
     await logs.emulateMedia({ colorScheme: "dark" });
@@ -301,7 +306,7 @@ test("container logs persist, highlight, search, virtualize and remain readable 
       .click();
     await expect.poll(() => ipc<number>(f.main, "session_count")).toBe(0);
     await expect.poll(() => ipc<number>(f.main, "log_session_count")).toBe(1);
-    await expect(logs.locator(".log-status")).toHaveText("实时采集中");
+    await expect(logs.locator(".log-status")).toHaveText("实时接收");
     await closeWindow(logs);
     logs = undefined;
     await expect.poll(() => ipc<number>(f.main, "log_session_count")).toBe(0);
@@ -357,7 +362,7 @@ test("container logs persist, highlight, search, virtualize and remain readable 
 
 test("container logs automatically sync all history, deduplicate reopen/reconnect and resume a stopped container", async () => {
   const qa = process.env.SSH_WORKSPACE_FIXTURE_DIR || ".qa";
-  for (const name of ["logs-disconnect", "docker-mode"])
+  for (const name of ["logs-disconnect", "docker-mode", "docker-started-at"])
     await unlink(join(qa, name)).catch(() => {});
   await writeFile(join(qa, "logs-mode"), "burst");
   await writeFile(join(qa, "logs-freeze"), "1");
@@ -367,7 +372,7 @@ test("container logs automatically sync all history, deduplicate reopen/reconnec
   let logs: Page | undefined;
   try {
     logs = await openLogs(f, containerId, "burst-fixture");
-    await expect(logs.locator(".log-status")).toHaveText("实时采集中", {
+    await expect(logs.locator(".log-status")).toHaveText("实时接收", {
       timeout: 60000,
     });
     await expect
@@ -382,13 +387,15 @@ test("container logs automatically sync all history, deduplicate reopen/reconnec
     await expect
       .poll(() => logs!.locator(".log-search-match").count())
       .toBeGreaterThan(0);
-    await logs.getByRole("button", { name: /跳到最新/ }).click();
+    if (await logs.getByRole("button",{name:"返回搜索结果"}).isVisible()) await logs.getByRole("button",{name:"返回搜索结果"}).click();
+    if (await logs.getByRole("button",{name:"清除条件",exact:true}).isVisible()) await logs.getByRole("button",{name:"清除条件",exact:true}).click();
+    await logs.getByRole("button", { name: /继续跟随/ }).click();
     const source = (await ipc<any>(logs, "logs_info")).sourceId;
     await closeWindow(logs);
     logs = undefined;
     await expect.poll(() => ipc<number>(f.main, "log_session_count")).toBe(0);
     logs = await openLogs(f, containerId, "burst-fixture");
-    await expect(logs.locator(".log-status")).toHaveText("实时采集中");
+    await expect(logs.locator(".log-status")).toHaveText("实时接收");
     await expect
       .poll(async () => (await ipc<any>(logs!, "logs_info")).stats.records)
       .toBe(12005);
@@ -400,7 +407,7 @@ test("container logs automatically sync all history, deduplicate reopen/reconnec
     await writeFile(join(qa, "logs-disconnect"), "1");
     await expect(logs.locator(".log-status")).toContainText("秒后重试");
     await unlink(join(qa, "logs-disconnect"));
-    await expect(logs.locator(".log-status")).toHaveText("实时采集中", {
+    await expect(logs.locator(".log-status")).toHaveText("实时接收", {
       timeout: 30000,
     });
     await expect
@@ -410,7 +417,7 @@ test("container logs automatically sync all history, deduplicate reopen/reconnec
     await writeFile(join(qa, "logs-disconnect"), "1");
     await expect(logs.locator(".log-status")).toContainText("秒后重试");
     await unlink(join(qa, "logs-disconnect"));
-    await expect(logs.getByRole("alert")).toContainText(
+    await expect(logs.locator(".log-connection-banner")).toContainText(
       "logging driver does not support",
       { timeout: 30000 },
     );
@@ -419,29 +426,41 @@ test("container logs automatically sync all history, deduplicate reopen/reconnec
     ).toBeVisible();
     await writeFile(join(qa, "logs-mode"), "burst");
     await logs.getByRole("button", { name: "重试", exact: true }).click();
-    await expect(logs.locator(".log-status")).toHaveText("实时采集中", {
+    await expect(logs.locator(".log-status")).toHaveText("实时接收", {
       timeout: 30000,
     });
-    // Only a Docker diagnostic (without a Docker timestamp) may be added.
-    expect(
-      (await ipc<any>(logs, "logs_info")).stats.records,
-    ).toBeLessThanOrEqual(12006);
+    // CLI diagnostics are stored as system events, not application records.
+    expect((await ipc<any>(logs, "logs_info")).stats.records).toBe(12005);
     await closeWindow(logs);
     logs = undefined;
     await writeFile(join(qa, "logs-mode"), "empty");
     await writeFile(join(qa, "docker-mode"), "stopped");
     logs = await openLogs(f, emptyId, "empty-fixture");
-    await expect(logs.locator(".log-status")).toHaveText("等待容器运行");
+    await expect(logs.locator(".log-status")).toHaveText("等待容器启动");
     await expect(logs.getByText("容器暂无日志", { exact: true })).toBeVisible();
     await writeFile(join(qa, "docker-mode"), "running");
     await writeFile(join(qa, "logs-mode"), "normal");
     await unlink(join(qa, "logs-freeze"));
-    await expect(logs.locator(".log-status")).toHaveText("实时采集中", {
+    await expect(logs.locator(".log-status")).toHaveText("实时接收", {
       timeout: 20000,
     });
     await expect
       .poll(async () => (await ipc<any>(logs!, "logs_info")).stats.records)
       .toBeGreaterThan(5);
+    // Preserve reading intent across a real SSH stream EOF and a new observed start.
+    await logs.getByRole("button", { name: "暂停滚动", exact: true }).click();
+    const scrollBefore = await logs.getByLabel("容器日志内容", {exact:true}).evaluate(el => el.scrollTop);
+    const recordsBefore = (await ipc<any>(logs, "logs_info")).stats.records;
+    await writeFile(join(qa,"docker-mode"),"stopped");
+    await expect(logs.locator(".log-status")).toHaveText("等待容器启动", {timeout:20000});
+    await writeFile(join(qa,"docker-started-at"),"2026-10-14T09:10:00.000000000Z");
+    await writeFile(join(qa,"docker-mode"),"running");
+    await expect(logs.locator(".log-status")).toHaveText("实时接收", {timeout:20000});
+    await expect.poll(async()=>(await ipc<any>(logs!,"logs_info")).stats.records).toBeGreaterThan(recordsBefore);
+    await expect(logs.locator(".log-reading-status")).toContainText("已暂停滚动");
+    expect(Math.abs(await logs.getByLabel("容器日志内容", {exact:true}).evaluate(el=>el.scrollTop)-scrollBefore)).toBeLessThan(4);
+    await logs.getByRole("button", {name:/继续跟随/}).click();
+    await expect(logs.getByRole("button", {name:"暂停滚动",exact:true})).toBeVisible();
     await logs.setViewportSize({ width: 650, height: 400 });
     await logs.screenshot({ path: ".qa/container-logs-small.png" });
   } finally {
@@ -450,6 +469,7 @@ test("container logs automatically sync all history, deduplicate reopen/reconnec
       "logs-mode",
       "logs-disconnect",
       "docker-mode",
+      "docker-started-at",
       "logs-freeze",
     ])
       await unlink(join(qa, name)).catch(() => {});

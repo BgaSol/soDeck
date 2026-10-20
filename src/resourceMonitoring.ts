@@ -1,5 +1,5 @@
 import type { MountState, MountTable, CachedMountUsage } from "./remoteMounts";
-import { errorOf } from "./types";
+import { errorOf, type AppError } from "./types";
 import {
   emptyDocker,
   mergeTrafficHistory,
@@ -142,6 +142,17 @@ export interface MonitorApi {
     scope: "all" | "metrics" | "mounts" | "docker",
   ) => Promise<void>;
 }
+export type MonitorConnection = "unknown" | "connected" | "disconnected";
+export type MonitorSubscription =
+  | { phase: "idle" | "subscribing" | "active" }
+  | { phase: "failed"; error: AppError };
+export function monitorLive(
+  state: Pick<MonitorState, "connection" | "subscription">,
+) {
+  return (
+    state.connection === "connected" && state.subscription.phase === "active"
+  );
+}
 export interface MonitorState {
   docker: DockerState;
   traffic: ClientTrafficSample | null;
@@ -152,11 +163,12 @@ export interface MonitorState {
   metrics: Metrics;
   mounts: MountState;
   points: HistoryPoint[];
-  connected: boolean;
+  connection: MonitorConnection;
+  subscription: MonitorSubscription;
   historyLoading: boolean;
   historyError: string;
   historyTruncated: boolean;
-  error: string;
+  controlError: string;
 }
 const emptyMetric = <T>(): Metric<T> => ({
   value: null,
@@ -236,6 +248,9 @@ export class MonitorStore {
   private consumers = new Map<string, string[]>();
   private visible = false;
   private running = false;
+  private starting: Promise<void> | null = null;
+  private cachedGeneration = "";
+  private mountDataError = "";
   private minutes = 5;
   private historyRequest = 0;
   private trafficMinutes = 5;
@@ -257,11 +272,12 @@ export class MonitorStore {
       metrics: emptyMetrics(),
       mounts: { sessionId, usage: {}, fetchedAt: 0, loading: false, error: "" },
       points: [],
-      connected: false,
+      connection: "unknown",
+      subscription: { phase: "idle" },
       historyLoading: false,
       historyError: "",
       historyTruncated: false,
-      error: "",
+      controlError: "",
     };
   }
   getState = () => this.state;
@@ -279,7 +295,24 @@ export class MonitorStore {
     };
   };
   private update(patch: Partial<MonitorState>) {
-    this.state = { ...this.state, ...patch };
+    const next = { ...this.state, ...patch };
+    if ((patch.subscription || patch.connection) && !monitorLive(next)) {
+      patch.mounts = {
+        ...next.mounts,
+        loading: false,
+        error:
+          next.subscription.phase === "failed"
+            ? next.subscription.error.message
+            : next.mounts.error,
+        usage: Object.fromEntries(
+          Object.entries(next.mounts.usage).map(([key, value]) => [
+            key,
+            { ...value, loading: false, stale: true },
+          ]),
+        ),
+      };
+    }
+    this.state = { ...next, ...patch };
     this.listeners.forEach((f) => f());
     if (patch.mounts) this.mountListeners.forEach((f) => f());
   }
@@ -352,55 +385,113 @@ export class MonitorStore {
         await this.api.update(this.subscription, this.interest());
       }
     } catch (e) {
-      if (epoch === this.epoch) this.update({ error: errorOf(e).message });
+      if (epoch === this.epoch) this.controlFailed(e);
     } finally {
       if (this.updatingEpoch === epoch) this.updatingEpoch = null;
     }
   }
-  async start() {
-    if (!this.sessionId || this.running) return;
+  start(): Promise<void> {
+    if (this.starting) return this.starting;
+    if (!this.sessionId || this.running) return Promise.resolve();
     this.running = true;
     const epoch = ++this.epoch;
     this.generation = "";
-    this.metricsRevision = -1;
-    this.mountsRevision = -1;
-    this.dockerRevision = -1;
-    this.trafficRevision = -1;
+    this.connectionManaged = false;
+    this.metricsRevision =
+      this.mountsRevision =
+      this.dockerRevision =
+      this.trafficRevision =
+        -1;
     this.trafficEpoch = "";
-    this.update({ connected: true, error: "", points: [] });
-    try {
-      const id = await this.api.subscribe(
-        this.sessionId,
-        this.interest(),
-        (event) => {
-          if (epoch === this.epoch) this.receive(event);
+    this.update({ subscription: { phase: "subscribing" }, controlError: "" });
+    const work = Promise.resolve()
+      .then(async () => {
+        try {
+          const id = await this.api.subscribe(
+            this.sessionId,
+            this.interest(),
+            (event) => {
+              if (epoch === this.epoch) this.receive(event);
+            },
+          );
+          if (typeof id !== "string" || !id)
+            throw new Error("无法建立资源监控订阅");
+          if (epoch !== this.epoch) {
+            await this.api.unsubscribe(id);
+            return;
+          }
+          this.subscription = id;
+          this.update({
+            connection: this.connectionManaged
+              ? this.state.connection
+              : "connected",
+            subscription: { phase: "active" },
+            mounts: { ...this.state.mounts, error: this.mountDataError },
+          });
+          await this.sendInterest();
+          if (epoch === this.epoch && monitorLive(this.state))
+            void this.loadHistory(this.minutes);
+        } catch (e) {
+          if (epoch === this.epoch) this.failSubscription(e);
+        }
+      })
+      .finally(() => {
+        if (this.starting === work) this.starting = null;
+      });
+    this.starting = work;
+    return work;
+  }
+  private failSubscription(error: unknown) {
+    ++this.epoch;
+    this.running = false;
+    this.starting = null;
+    const id = this.subscription;
+    this.subscription = null;
+    if (id) void this.api.unsubscribe(id).catch(() => {});
+    this.update({
+      subscription: { phase: "failed", error: errorOf(error) },
+      historyLoading: false,
+      trafficHistoryLoading: false,
+    });
+  }
+  private controlFailed(error: unknown) {
+    const failure = errorOf(error);
+    if (failure.kind === "disconnected" || failure.kind === "permission")
+      this.failSubscription(failure);
+    else this.update({ controlError: failure.message });
+  }
+  private adoptGeneration(generation: string) {
+    this.generation = generation;
+    if (this.cachedGeneration && this.cachedGeneration !== generation) {
+      this.mountDataError = "";
+      this.update({
+        points: [],
+        trafficPoints: [],
+        metrics: emptyMetrics(),
+        traffic: null,
+        docker: emptyDocker(),
+        mounts: {
+          sessionId: this.sessionId,
+          usage: {},
+          fetchedAt: 0,
+          loading: false,
+          error: "",
         },
-      );
-      if (typeof id !== "string" || !id)
-        throw new Error("无法建立资源监控订阅");
-      if (epoch !== this.epoch) {
-        await this.api.unsubscribe(id);
-        return;
-      }
-      this.subscription = id;
-      await this.sendInterest();
-      if (epoch === this.epoch && this.state.connected)
-        void this.loadHistory(this.minutes);
-    } catch (e) {
-      if (epoch === this.epoch) {
-        this.running = false;
-        this.update({ error: errorOf(e).message });
-      }
+      });
+      this.trafficPointsEpoch = "";
     }
+    this.cachedGeneration = generation;
   }
   stop() {
     ++this.epoch;
+    this.starting = null;
     this.running = false;
     const subscription = this.subscription;
     this.subscription = null;
     if (subscription) void this.api.unsubscribe(subscription).catch(() => {});
     this.update({
-      connected: false,
+      connection: "unknown",
+      subscription: { phase: "idle" },
       historyLoading: false,
       trafficHistoryLoading: false,
       mounts: {
@@ -427,33 +518,34 @@ export class MonitorStore {
       this.historyRequest++;
       this.trafficHistoryRequest++;
       if (event.connected) {
-        this.generation = event.generation;
+        this.adoptGeneration(event.generation);
         this.metricsRevision =
           this.mountsRevision =
           this.dockerRevision =
           this.trafficRevision =
             -1;
         this.update({
-          connected: true,
-          points: [],
-          error: "",
+          connection: "connected",
+          controlError: "",
           historyError: "",
           trafficHistoryError: "",
         });
         void this.loadHistory(this.minutes);
       } else {
         this.update({
-          connected: false,
+          connection: "disconnected",
           historyLoading: false,
           trafficHistoryLoading: false,
         });
       }
       return;
     }
-    if (this.connectionManaged && !this.state.connected) return;
-    if (!this.generation) this.generation = event.generation;
+    if (this.connectionManaged && this.state.connection !== "connected") return;
+    if (!this.generation) this.adoptGeneration(event.generation);
     if (event.generation !== this.generation) return;
     const patch: Partial<MonitorState> = {};
+    if (!this.connectionManaged && event.type === "snapshot")
+      patch.connection = "connected";
     if (
       (event.type === "snapshot" && event.docker) ||
       event.type === "docker"
@@ -498,7 +590,6 @@ export class MonitorStore {
       if (revision >= this.metricsRevision) {
         this.metricsRevision = revision;
         patch.metrics = event.metrics;
-        patch.error = "";
       }
       if (event.type === "metrics")
         patch.points = mergeHistory(this.state.points, [event.point]);
@@ -508,6 +599,7 @@ export class MonitorStore {
         event.type === "snapshot" ? event.mountsRevision : event.revision;
       if (revision >= this.mountsRevision) {
         this.mountsRevision = revision;
+        this.mountDataError = event.mounts.error;
         patch.mounts = {
           ...event.mounts,
           sessionId: this.sessionId,
@@ -529,7 +621,7 @@ export class MonitorStore {
   }
   async loadHistory(minutes: number) {
     this.minutes = minutes;
-    if (!this.subscription || !this.state.connected) return;
+    if (!this.subscription || this.state.connection !== "connected") return;
     const epoch = this.epoch;
     const request = ++this.historyRequest;
     this.update({ historyLoading: true, historyError: "" });
@@ -540,11 +632,11 @@ export class MonitorStore {
         request === this.historyRequest &&
         !this.generation
       )
-        this.generation = result.generation;
+        this.adoptGeneration(result.generation);
       if (
         epoch !== this.epoch ||
         request !== this.historyRequest ||
-        !this.state.connected ||
+        this.state.connection !== "connected" ||
         minutes !== this.minutes ||
         result.generation !== this.generation
       )
@@ -572,7 +664,7 @@ export class MonitorStore {
         epoch === this.epoch &&
         request === this.historyRequest &&
         minutes === this.minutes &&
-        this.state.connected
+        this.state.connection === "connected"
       )
         this.update({ historyError: errorOf(e).message });
     } finally {
@@ -586,7 +678,7 @@ export class MonitorStore {
   }
   async loadTrafficHistory(minutes: number) {
     this.trafficMinutes = minutes;
-    if (!this.subscription || !this.state.connected) return;
+    if (!this.subscription || this.state.connection !== "connected") return;
     const epoch = this.epoch;
     const generation = this.generation;
     const request = ++this.trafficHistoryRequest;
@@ -597,7 +689,7 @@ export class MonitorStore {
         epoch !== this.epoch ||
         generation !== this.generation ||
         request !== this.trafficHistoryRequest ||
-        !this.state.connected ||
+        this.state.connection !== "connected" ||
         result.generation !== this.generation ||
         !result.traffic
       )
@@ -618,7 +710,7 @@ export class MonitorStore {
         epoch === this.epoch &&
         generation === this.generation &&
         request === this.trafficHistoryRequest &&
-        this.state.connected
+        this.state.connection === "connected"
       )
         this.update({ trafficHistoryError: errorOf(error).message });
     } finally {
@@ -639,15 +731,9 @@ export class MonitorStore {
     const epoch = this.epoch;
     try {
       await this.api.refresh(this.subscription, scope);
+      if (epoch === this.epoch) this.update({ controlError: "" });
     } catch (e) {
-      if (epoch !== this.epoch) return;
-      const failure = errorOf(e);
-      if (failure.kind === "disconnected" && this.state.connected) {
-        this.stop();
-        await this.start();
-      } else {
-        this.update({ error: failure.message });
-      }
+      if (epoch === this.epoch) this.controlFailed(e);
     }
   };
 }

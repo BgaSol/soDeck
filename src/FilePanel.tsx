@@ -1,6 +1,7 @@
 import {
   Fragment,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -147,8 +148,7 @@ export function FilePanel({
   const visibleMountIssues = useMemo(() => {
     const visible = new Set(mountPaths);
     return (mounts.state.table?.issues ?? []).filter(
-      (issue) =>
-        issue.kind === "ambiguousStack" && visible.has(issue.target),
+      (issue) => issue.kind === "ambiguousStack" && visible.has(issue.target),
     );
   }, [mountPaths, mounts.state.table?.issues]);
   const mountNotice =
@@ -189,7 +189,38 @@ export function FilePanel({
   } | null>(null);
   const [download, setDownload] = useState<FileEntry | null>(null);
   const [conflict, setConflict] = useState<DownloadConflict>("rename");
+  const downloadTitle = useId();
   const downloadDialog = useRef<HTMLDialogElement>(null);
+  const downloadReturn = useRef<{
+    path: string;
+    session: string | null;
+  } | null>(null);
+  const choosingDownload = useRef(false);
+  function beginDownload(file: FileEntry) {
+    downloadReturn.current = { path: file.path, session: sessionId };
+    setMenu(null);
+    setDownload(file);
+  }
+  function restoreDownloadFocus() {
+    const origin = downloadReturn.current;
+    if (
+      !origin ||
+      choosingDownload.current ||
+      origin.session !== sessionRef.current ||
+      document.querySelector("dialog[open]")
+    )
+      return;
+    downloadReturn.current = null;
+    (
+      rowElements.current.get(origin.path) ??
+      rowElements.current.get(model.getState().selected) ??
+      list.current
+    )?.focus({ preventScroll: true });
+  }
+  function closeDownload() {
+    setDownload(null);
+  }
+
   const previousSession = useRef(sessionId);
   const scrollOwner = useRef(model);
   const restoredScroll = useRef(false);
@@ -573,49 +604,65 @@ export function FilePanel({
       )
         dismiss();
     };
-    const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        dismiss();
-        if (menu.anchor?.isConnected) menu.anchor.focus();
-        else rowElements.current.get(menu.file.path)?.focus();
-      }
-      if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-        const buttons = Array.from(
-          contextMenu.current?.querySelectorAll<HTMLButtonElement>(
-            "button:not(:disabled)",
-          ) ?? [],
-        );
-        if (!buttons.length) return;
-        event.preventDefault();
-        const current = buttons.indexOf(
-          document.activeElement as HTMLButtonElement,
-        );
-        const next =
-          event.key === "Home"
-            ? 0
-            : event.key === "End"
-              ? buttons.length - 1
-              : (current +
-                  (event.key === "ArrowDown" ? 1 : -1) +
-                  buttons.length) %
-                buttons.length;
-        buttons[next]?.focus();
-      }
-    };
     document.addEventListener("pointerdown", outside, true);
     window.addEventListener("blur", dismiss);
     window.addEventListener("resize", dismiss);
-    window.addEventListener("keydown", key);
     return () => {
       document.removeEventListener("pointerdown", outside, true);
       window.removeEventListener("blur", dismiss);
       window.removeEventListener("resize", dismiss);
-      window.removeEventListener("keydown", key);
     };
   }, [menu]);
+  function menuKey(event: React.KeyboardEvent) {
+    if (
+      !menu ||
+      event.defaultPrevented ||
+      event.nativeEvent.isComposing ||
+      document.querySelector("dialog[open]")
+    )
+      return;
+    const dismiss = () => setMenu(null);
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      dismiss();
+      if (menu.anchor?.isConnected) menu.anchor.focus();
+      else rowElements.current.get(menu.file.path)?.focus();
+    }
+    if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      const buttons = Array.from(
+        contextMenu.current?.querySelectorAll<HTMLButtonElement>(
+          "button:not(:disabled)",
+        ) ?? [],
+      );
+      if (!buttons.length) return;
+      event.preventDefault();
+      const current = buttons.indexOf(
+        document.activeElement as HTMLButtonElement,
+      );
+      const next =
+        event.key === "Home"
+          ? 0
+          : event.key === "End"
+            ? buttons.length - 1
+            : (current +
+                (event.key === "ArrowDown" ? 1 : -1) +
+                buttons.length) %
+              buttons.length;
+      buttons[next]?.focus();
+    }
+  }
+
   useEffect(() => {
-    if (download) downloadDialog.current?.showModal();
-    else downloadDialog.current?.close();
+    if (download) {
+      downloadDialog.current?.showModal();
+      downloadDialog.current
+        ?.querySelector<HTMLSelectElement>("select")
+        ?.focus();
+    } else {
+      downloadDialog.current?.close();
+      restoreDownloadFocus();
+    }
   }, [download]);
   useEffect(() => {
     if (!active) setMenu(null);
@@ -638,6 +685,7 @@ export function FilePanel({
   async function startDownload() {
     if (!sessionId || !download || busy) return;
     const target = download;
+    choosingDownload.current = true;
     setDownload(null);
     setError("");
     setBusy(true);
@@ -653,6 +701,8 @@ export function FilePanel({
       setError(errorOf(error).message);
     } finally {
       setBusy(false);
+      choosingDownload.current = false;
+      restoreDownloadFocus();
     }
   }
 
@@ -1189,7 +1239,7 @@ export function FilePanel({
             <button
               className="quiet"
               disabled={busy}
-              onClick={() => setDownload(selectedFile)}
+              onClick={() => beginDownload(selectedFile)}
             >
               下载此项目
             </button>
@@ -1241,6 +1291,7 @@ export function FilePanel({
           ref={contextMenu}
           role="menu"
           aria-label={menu.create ? "新建" : "文件操作"}
+          onKeyDown={menuKey}
           style={{ left: Math.max(5, menu.x), top: Math.max(5, menu.y) }}
         >
           {menu.create ? (
@@ -1368,7 +1419,7 @@ export function FilePanel({
                   <button
                     role="menuitem"
                     disabled={busy}
-                    onClick={() => setDownload(menu.file)}
+                    onClick={() => beginDownload(menu.file)}
                   >
                     <Download size={14} />
                     下载{menu.file.isDir ? "文件夹" : "文件"}
@@ -1452,14 +1503,18 @@ export function FilePanel({
       <dialog
         ref={downloadDialog}
         className="download-dialog"
-        onCancel={() => setDownload(null)}
+        aria-labelledby={downloadTitle}
+        onCancel={(event) => {
+          event.preventDefault();
+          closeDownload();
+        }}
       >
         <div className="dialog-head">
-          <h2>下载{download?.isDir ? "文件夹" : "文件"}</h2>
+          <h2 id={downloadTitle}>下载{download?.isDir ? "文件夹" : "文件"}</h2>
           <button
             className="icon-button"
             aria-label="取消下载"
-            onClick={() => setDownload(null)}
+            onClick={closeDownload}
           >
             <X size={17} />
           </button>
@@ -1485,7 +1540,7 @@ export function FilePanel({
           </p>
         )}
         <div className="dialog-actions">
-          <button onClick={() => setDownload(null)}>取消</button>
+          <button onClick={closeDownload}>取消</button>
           <button className="primary" onClick={() => void startDownload()}>
             <Download size={15} />
             选择保存位置

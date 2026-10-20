@@ -570,3 +570,78 @@
   flex-direction: column;
   gap: 3px;
 }
+
+/* Modal chrome stays visible while long forms scroll independently. */
+.docker-flow-dialog {
+  width: min(500px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+}
+.docker-flow-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.docker-flow-dialog .dialog-head {
+  flex: none;
+  margin: 0;
+  padding: 18px 20px 12px;
+}
+.docker-flow-wide {
+  width: min(740px, calc(100vw - 32px));
+}
+.docker-flow-form {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.docker-editor-content:not([hidden]) {
+  display: contents;
+}
+.docker-editor-content[hidden] {
+  display: none;
+}
+.docker-flow-body {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 8px 20px 18px;
+}
+.docker-flow-dialog .dialog-actions {
+  flex: none;
+  margin: 0;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--line);
+}
+.docker-flow-dialog :is(input, select, textarea, button) {
+  scroll-margin-block: 16px;
+}
+.docker-flow-dialog .field-error {
+  color: var(--error);
+  line-height: 1.5;
+}
+.docker-flow-dialog [aria-invalid="true"] {
+  border-color: var(--error);
+}
+.docker-flow-dialog .docker-create-row {
+  align-items: start;
+}
+.docker-flow-dialog .docker-create-row > .icon-button {
+  margin-top: 23px;
+}
+.docker-flow-dialog .docker-form-field {
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .docker-flow-dialog .docker-create-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .docker-flow-dialog .dialog-actions {
+    flex-wrap: wrap;
+  }
+}

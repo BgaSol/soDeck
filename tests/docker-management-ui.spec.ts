@@ -60,6 +60,12 @@ async function management(
         ],
         updatedAt: Date.now(),
       };
+      const previews = new Map<string, any>();
+      const remember = (p: any) => {
+        p.draftToken = p.id + "-draft";
+        previews.set(p.draftToken, p);
+        return p;
+      };
       const tasks: any[] = [],
         calls: any[] = [];
       const metric = (value: any) => ({
@@ -136,6 +142,8 @@ async function management(
           !command.includes("docker_operation") &&
           !command.startsWith("get_docker_") &&
           !command.startsWith("prepare_docker_") &&
+          command !== "renew_docker_preview" &&
+          command !== "release_docker_preview" &&
           command !== "open_port_forward_window"
         )
           return base(command, args);
@@ -250,7 +258,7 @@ async function management(
             ],
           };
         if (command === "prepare_docker_create")
-          return {
+          return remember({
             id: "create-preview",
             engine,
             targetId: args.specification.name,
@@ -258,9 +266,9 @@ async function management(
             action: { type: "create", draftId: "create-preview" },
             consequences: ["使用本地镜像创建容器。创建后启动失败会保留容器。"],
             expiresAt: Date.now() + 60000,
-          };
+          });
         if (command === "prepare_docker_transfer")
-          return {
+          return remember({
             id: "transfer-preview",
             engine,
             targetId: args.targetId,
@@ -272,7 +280,7 @@ async function management(
             },
             consequences: ["本机目标：/tmp/selected.tar。不会在本机自动解包。"],
             expiresAt: Date.now() + 60000,
-          };
+          });
         if (command === "subscribe_docker_management") {
           channel = args.events;
           emit();
@@ -288,7 +296,7 @@ async function management(
           return;
         }
         if (command === "prepare_docker_operation")
-          return {
+          return remember({
             id: "preview",
             engine,
             targetId: args.targetId,
@@ -306,7 +314,25 @@ async function management(
                       : "此容器启用了自动删除。退出后容器及匿名卷可能被移除。",
             ],
             expiresAt: Date.now() + 60000,
+          });
+        if (command === "renew_docker_preview") {
+          const old = previews.get(args.draftToken);
+          if (!old) throw { kind: "previewUnavailable", message: "草稿已失效" };
+          if (old.id !== args.expectedPreviewId) return old;
+          const next = {
+            ...old,
+            id: old.id + "-renewed",
+            expiresAt: Date.now() + 60000,
           };
+          if (["create", "transfer"].includes(next.action.type))
+            next.action = { ...next.action, draftId: next.id };
+          previews.set(args.draftToken, next);
+          return next;
+        }
+        if (command === "release_docker_preview") {
+          previews.delete(args.draftToken);
+          return;
+        }
         if (command === "submit_docker_operation") {
           const duplicate = tasks.find(
             (t) => t.requestId === args.request.requestId,
@@ -896,4 +922,250 @@ test("a confirmed missing container never permits cached management actions", as
     await page.evaluate(() => (window as any).__DOCKER__.tasks.length),
   ).toBe(0);
   expect(errors).toEqual([]);
+});
+
+async function openCreate(page: Page) {
+  const result = await management(page);
+  await result.panel.getByRole("button", { name: "返回列表" }).click();
+  await result.panel.getByRole("button", { name: /^镜像/ }).click();
+  await result.panel
+    .getByRole("list", { name: "镜像列表" })
+    .locator(".docker-object-row")
+    .first()
+    .click();
+  await result.panel.getByRole("button", { name: "创建容器…" }).click();
+  return result;
+}
+test("creation preserves input across review and discard, validates collapsed fields and keeps one modal", async ({
+  page,
+}) => {
+  const { errors } = await openCreate(page);
+  const dialog = page.getByRole("dialog");
+  await page.getByLabel("容器名称", { exact: true }).fill("new-web");
+  await page.getByLabel("重启策略", { exact: true }).selectOption("on-failure");
+  await page.getByLabel("最大重试次数", { exact: true }).fill("7");
+  await page.getByLabel("重启策略", { exact: true }).selectOption("always");
+  await expect(page.getByLabel("最大重试次数", { exact: true })).toBeHidden();
+  await page.getByLabel("重启策略", { exact: true }).selectOption("on-failure");
+  await expect(page.getByLabel("最大重试次数", { exact: true })).toHaveValue(
+    "7",
+  );
+  const group = dialog.locator("details").filter({ hasText: "每行 KEY=value" });
+  await dialog
+    .locator("summary")
+    .filter({ hasText: /^环境变量/ })
+    .click();
+  await page.getByLabel("每行 KEY=value").fill("\nTOKEN=first\nTOKEN=second");
+  await dialog
+    .locator("summary")
+    .filter({ hasText: /^环境变量/ })
+    .click();
+  await page.getByRole("button", { name: "预览创建", exact: true }).click();
+  await expect(group).toHaveAttribute("open", "");
+  await expect(page.getByLabel("每行 KEY=value")).toBeFocused();
+  await expect(dialog).toContainText("第 3 行变量名重复");
+  await page.getByLabel("每行 KEY=value").fill("TOKEN= a=b  ");
+  await page.getByRole("button", { name: "预览创建", exact: true }).click();
+  await expect(page.locator("dialog[open]")).toHaveCount(1);
+  await expect(
+    page.getByRole("button", { name: "返回编辑", exact: true }),
+  ).toBeFocused();
+  await page.getByRole("button", { name: "返回编辑", exact: true }).click();
+  await expect(page.getByLabel("容器名称", { exact: true })).toHaveValue(
+    "new-web",
+  );
+  await expect(page.getByLabel("最大重试次数", { exact: true })).toHaveValue(
+    "7",
+  );
+  await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("button", { name: "继续编辑", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByLabel("容器名称", { exact: true })).toHaveValue(
+    "new-web",
+  );
+  await page.getByRole("button", { name: "取消", exact: true }).click();
+  await page.getByRole("button", { name: "放弃修改", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  expect(errors).toEqual([]);
+});
+test("expired creation renews in place and submits only the refreshed snapshot", async ({
+  page,
+}) => {
+  await openCreate(page);
+  await page.clock.install();
+  await page.getByLabel("容器名称", { exact: true }).fill("new-web");
+  await page.getByLabel("容器名称", { exact: true }).press("Enter");
+  const confirm = page.getByRole("button", {
+    name: "确认创建容器",
+    exact: true,
+  });
+  await expect(confirm).toBeEnabled();
+  await page.clock.runFor(61000);
+  await expect(confirm).toBeDisabled();
+  await page.getByRole("button", { name: "重新检查", exact: true }).click();
+  await expect(confirm).toBeEnabled();
+  await confirm.click();
+  const calls = await page.evaluate(() => (window as any).__DOCKER__.calls);
+  expect(
+    calls.filter((c: any) => c.command === "prepare_docker_create"),
+  ).toHaveLength(1);
+  expect(
+    calls.find((c: any) => c.command === "submit_docker_operation").args.request
+      .previewId,
+  ).toBe("create-preview-renewed");
+});
+test("a lost submission response keeps the original request and blocks new previews", async ({
+  page,
+}) => {
+  await openCreate(page);
+  await page.getByLabel("容器名称", { exact: true }).fill("new-web");
+  await page.getByRole("button", { name: "预览创建", exact: true }).click();
+  await page.evaluate(() => {
+    const w = window as any,
+      base = w.__TAURI_INTERNALS__.invoke;
+    let first = true;
+    w.__LOST_REQUESTS__ = [];
+    w.__TAURI_INTERNALS__.invoke = async (command: string, args: any) => {
+      if (command === "submit_docker_operation") {
+        w.__LOST_REQUESTS__.push(structuredClone(args.request));
+        if (first) {
+          first = false;
+          throw { kind: "ipc", message: "回包丢失" };
+        }
+      }
+      return base(command, args);
+    };
+  });
+  await page.getByRole("button", { name: "确认创建容器", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "返回编辑", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "重新检查", exact: true }),
+  ).toBeHidden();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.getByRole("button", { name: "核对提交结果", exact: true }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+  const requests = await page.evaluate(() => (window as any).__LOST_REQUESTS__);
+  expect(requests).toHaveLength(2);
+  expect(requests[1]).toEqual(requests[0]);
+});
+test("expired transfer reuses its chosen local file without another picker", async ({
+  page,
+}) => {
+  const { panel } = await management(page);
+  await page.clock.install();
+  await panel.getByRole("button", { name: "web 更多操作" }).click();
+  await page.getByRole("menuitem", { name: "导出容器文件（tar）…" }).click();
+  await page
+    .getByRole("button", { name: "选择保存位置…", exact: true })
+    .click();
+  await page.clock.runFor(61000);
+  await page.getByRole("button", { name: "重新检查", exact: true }).click();
+  const calls = await page.evaluate(() => (window as any).__DOCKER__.calls);
+  expect(
+    calls.filter((c: any) => c.command === "prepare_docker_transfer"),
+  ).toHaveLength(1);
+  expect(
+    calls.filter((c: any) => c.command === "renew_docker_preview"),
+  ).toHaveLength(1);
+  await expect(page.locator("dialog[open]")).toHaveCount(1);
+});
+
+test("long creation keeps title and actions reachable in a short enlarged-text window", async ({
+  page,
+}, info) => {
+  await openCreate(page);
+  await page.setViewportSize({ width: 420, height: 600 });
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "18px";
+  });
+  for (let i = 0; i < 6; i++)
+    await page.getByRole("button", { name: "添加端口", exact: true }).click();
+  const dialog = page.getByRole("dialog"),
+    body = dialog.locator(".docker-flow-body");
+  const header = await dialog.locator(".dialog-head").boundingBox(),
+    footer = await dialog.locator(".dialog-actions").boundingBox();
+  expect(header!.y).toBeGreaterThanOrEqual(0);
+  expect(footer!.y + footer!.height).toBeLessThanOrEqual(600);
+  expect(
+    await body.evaluate(
+      (e) => e.scrollHeight > e.clientHeight && e.scrollWidth <= e.clientWidth,
+    ),
+  ).toBe(true);
+  await body.evaluate((e) => {
+    e.scrollTop = e.scrollHeight;
+  });
+  expect((await dialog.locator(".dialog-head").boundingBox())!.y).toBe(
+    header!.y,
+  );
+  expect((await dialog.locator(".dialog-actions").boundingBox())!.y).toBe(
+    footer!.y,
+  );
+  await dialog.screenshot({
+    path: ".qa/ui-refinement-long-form-" + info.project.name + ".png",
+  });
+});
+
+test("engine changes preserve the create draft and require another preview", async ({
+  page,
+}) => {
+  await openCreate(page);
+  await page.getByLabel("容器名称", { exact: true }).fill("keep-me");
+  await page.getByRole("button", { name: "预览创建", exact: true }).click();
+  await page.evaluate(() => {
+    const qa = (window as any).__DOCKER__;
+    qa.engine.token = "replacement-engine";
+    qa.emit();
+  });
+  await expect(page.getByLabel("容器名称", { exact: true })).toHaveValue(
+    "keep-me",
+  );
+  await expect(page.getByRole("dialog")).toContainText("引擎已变化");
+  await expect(
+    page.getByRole("button", { name: "确认创建容器", exact: true }),
+  ).toBeHidden();
+  await page.getByRole("button", { name: "预览创建", exact: true }).click();
+  const call = await page.evaluate(() =>
+    (window as any).__DOCKER__.calls
+      .filter((c: any) => c.command === "prepare_docker_create")
+      .at(-1),
+  );
+  expect(call.args.engineToken).toBe("replacement-engine");
+});
+test("discarding an in-flight preflight releases its late preview without reopening", async ({
+  page,
+}) => {
+  await openCreate(page);
+  await page.getByLabel("容器名称", { exact: true }).fill("discard-me");
+  await page.evaluate(() => {
+    const w = window as any,
+      base = w.__TAURI_INTERNALS__.invoke;
+    w.__TAURI_INTERNALS__.invoke = (command: string, args: any) =>
+      command === "prepare_docker_create"
+        ? new Promise((resolve) => {
+            w.__FINISH_CREATE__ = async () =>
+              resolve(await base(command, args));
+          })
+        : base(command, args);
+  });
+  await page.getByRole("button", { name: "预览创建", exact: true }).click();
+  await page.getByRole("button", { name: "取消", exact: true }).click();
+  await page.getByRole("button", { name: "放弃修改", exact: true }).click();
+  await page.evaluate(() => (window as any).__FINISH_CREATE__());
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).__DOCKER__.calls.filter(
+            (c: any) => c.command === "release_docker_preview",
+          ).length,
+      ),
+    )
+    .toBe(1);
+  await expect(page.getByRole("dialog")).toBeHidden();
 });

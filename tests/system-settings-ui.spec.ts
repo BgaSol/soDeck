@@ -1,3 +1,4 @@
+import { selectTheme } from "./theme-fixture";
 import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { setup as workspace, row } from "./resource-fixture";
@@ -414,7 +415,9 @@ test("normal mode cancels browser defaults but keeps business menus and real xte
     page.getByRole("menu", { name: /Mount fixture 操作/ }),
   ).toBeVisible();
   await page.keyboard.press("Escape");
-  await page.getByRole("tab", { name: "Mount fixture，已连接", exact: true }).click();
+  await page
+    .getByRole("tab", { name: "Mount fixture，已连接", exact: true })
+    .click();
   await page.locator(".terminal-surface textarea").focus();
   for (const key of ["Control+r", "Control+c", "Control+u", "F5", "F12"])
     await page.keyboard.press(key);
@@ -431,10 +434,36 @@ test("normal mode cancels browser defaults but keeps business menus and real xte
     .getByRole("dialog")
     .screenshot({ path: ".qa/system-settings/light.png" });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "黑夜主题" }).click();
+  await selectTheme(page, "dark");
   await open(page);
   await page
     .getByRole("dialog")
     .screenshot({ path: ".qa/system-settings/dark.png" });
   expect(errors).toEqual([]);
+});
+
+test("appearance settings share the preference with the titlebar even when the color is unchanged", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await setup(page);
+  await open(page);
+  const select = page
+    .getByRole("dialog")
+    .getByRole("combobox", { name: "外观主题", exact: true });
+  await select.selectOption("light");
+  await expect(select).toHaveValue("light");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "外观主题", exact: true }).click();
+  await expect(
+    page.getByRole("menuitemradio", { name: "浅色主题" }),
+  ).toHaveAttribute("aria-checked", "true");
+  await page.keyboard.press("Escape");
+  await open(page);
+  await select.selectOption("system");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  expect(
+    await page.evaluate(() => localStorage.getItem("sodeck.theme")),
+  ).toBeNull();
 });

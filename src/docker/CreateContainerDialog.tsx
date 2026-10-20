@@ -1,14 +1,23 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type InputHTMLAttributes,
+} from "react";
 import { Plus, X } from "lucide-react";
 import { useDockerManagement } from "../DockerManagementProvider";
+import { dockerApi } from "../dockerApi";
+import { DockerConfirmationView } from "./DockerConfirmationView";
+import { DockerDialogFrame } from "./DockerDialogFrame";
+import { RestartPolicyFields } from "./RestartPolicyFields";
+import { useDockerActions } from "./useDockerActions";
 import {
-  dockerApi,
-  type CreateContainerSpec,
-  type DockerPreview,
-  type DockerOperationRequest,
-} from "../dockerApi";
-import { DockerConfirmDialog } from "./DockerConfirmDialog";
-import { errorOf } from "../types";
+  createInitialDraft,
+  draftEquals,
+  validateCreateDraft,
+  type CreateContainerDraft,
+} from "./createContainerDraft";
 export function CreateContainerDialog({
   imageId,
   imageName,
@@ -18,426 +27,508 @@ export function CreateContainerDialog({
   imageName: string;
   onClose: () => void;
 }) {
-  const { store, state } = useDockerManagement();
-  const dialog = useRef<HTMLDialogElement>(null),
-    pending = useRef(false),
-    request = useRef<DockerOperationRequest | null>(null);
-  const [spec, setSpec] = useState<CreateContainerSpec>({
-    imageId,
-    name: "",
-    start: true,
-    ports: [],
-    environment: [],
-    mounts: [],
-    network: null,
-    restartPolicy: "unless-stopped",
-    maximumRetryCount: 0,
-    command: [],
-    workingDirectory: "",
+  const { store, state } = useDockerManagement(),
+    dialog = useRef<HTMLDialogElement>(null),
+    prefix = useId();
+  const baseline = useRef(createInitialDraft()),
+    source = useRef(state.engine?.token),
+    editorFocus = useRef<string>('[data-field="name"]'),
+    editorScroll = useRef(0);
+  const [groups, setGroups] = useState<Record<string, boolean>>({
+    ports: true,
+    environment: false,
+    mounts: false,
+    more: true,
   });
-  const [env, setEnv] = useState(""),
-    [command, setCommand] = useState(""),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState(""),
-    [preview, setPreview] = useState<DockerPreview | null>(null);
+  const groupProps = (key: string) => ({
+    "data-group": key,
+    open: groups[key],
+    onToggle: (e: React.SyntheticEvent<HTMLDetailsElement>) => {
+      const open = e.currentTarget.open;
+      setGroups((v) => (v[key] === open ? v : { ...v, [key]: open }));
+    },
+  });
+  const [draft, setDraft] = useState<CreateContainerDraft>(createInitialDraft),
+    [touched, setTouched] = useState<Record<string, boolean>>({}),
+    [submitted, setSubmitted] = useState(false),
+    [discard, setDiscard] = useState(false);
+  const actions = useDockerActions(
+    store.sessionId + "/create/" + imageId,
+    !!state.engine,
+    onClose,
+  );
+  const preview = actions.preview,
+    dirty = !draftEquals(draft, baseline.current),
+    validation = validateCreateDraft(draft, imageId),
+    issues = validation.ok ? [] : validation.issues;
+  const engineChanged = source.current !== state.engine?.token;
   useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    if (!preview) dialog.current?.showModal();
-    return () => {
-      if (previous?.isConnected) previous.focus();
-    };
-  }, [preview]);
-  async function prepare() {
-    if (!state.engine || pending.current) return;
-    const environment = env
-      .split("\n")
-      .filter((line) => line.trim())
-      .map((line) => {
-        const at = line.indexOf("=");
-        if (at < 1) throw new Error("环境变量每行须为 KEY=value");
-        return { key: line.slice(0, at).trim(), value: line.slice(at + 1) };
-      });
-    if (new Set(environment.map((e) => e.key)).size !== environment.length)
-      throw new Error("环境变量键不能重复");
-    pending.current = true;
-    setBusy(true);
-    setError("");
-    try {
-      const value = await dockerApi.prepareCreate(
-        store.sessionId,
-        state.engine.token,
-        { ...spec, environment, command: command.split("\n").filter(Boolean) },
-      );
-      request.current = {
-        requestId: crypto.randomUUID(),
-        engineToken: value.engine.token,
-        targetId: value.targetId,
-        action: value.action,
-        previewId: value.id,
-      };
-      setPreview(value);
-    } finally {
-      pending.current = false;
-      setBusy(false);
-    }
+    if (engineChanged && !actions.uncertain && actions.phase !== "submitting")
+      actions.dismissPreview();
+  }, [state.engine?.token]);
+  const update = (patch: Partial<CreateContainerDraft>) =>
+    setDraft((v) => ({ ...v, ...patch }));
+  const touch = (key: string) => setTouched((v) => ({ ...v, [key]: true }));
+  const issue = (key: string) =>
+    submitted || touched[key]
+      ? issues.find((i) => i.field === key)?.message
+      : undefined;
+  const errorId = (key: string) => prefix + "-" + key;
+  function fieldError(key: string) {
+    return issue(key) ? (
+      <small id={errorId(key)} className="field-error" role="status">
+        {issue(key)}
+      </small>
+    ) : null;
   }
-  if (preview)
+  function attrs(key: string) {
+    return {
+      "data-field": key,
+      "aria-invalid": !!issue(key),
+      "aria-describedby": issue(key) ? errorId(key) : undefined,
+      onBlur: () => touch(key),
+    };
+  }
+  function input(
+    label: string,
+    key: string,
+    value: string,
+    onChange: (value: string) => void,
+    extra: InputHTMLAttributes<HTMLInputElement> = {},
+  ) {
     return (
-      <DockerConfirmDialog
-        preview={preview}
-        onClose={() => setPreview(null)}
-        onConfirm={async () => {
-          if (!request.current) return;
-          await dockerApi.submit(store.sessionId, request.current);
-          onClose();
-        }}
-      />
+      <label className="docker-form-field">
+        {label}
+        <input
+          aria-label={label}
+          {...extra}
+          {...attrs(key)}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        {fieldError(key)}
+      </label>
     );
+  }
+  function restoreEditor() {
+    setDiscard(false);
+    requestAnimationFrame(() => {
+      const body =
+        dialog.current?.querySelector<HTMLElement>(".docker-flow-body");
+      if (body) body.scrollTop = editorScroll.current;
+      dialog.current
+        ?.querySelector<HTMLElement>(editorFocus.current)
+        ?.focus({ preventScroll: true });
+    });
+  }
+  function back() {
+    actions.dismissPreview();
+    restoreEditor();
+  }
+  function close() {
+    if (actions.uncertain || actions.phase === "submitting") return;
+    const key = (document.activeElement as HTMLElement)?.dataset.field;
+    editorFocus.current = key
+      ? '[data-field="' + key + '"]'
+      : "[data-preview-create]";
+    actions.dismissPreview();
+    if (dirty) setDiscard(true);
+    else onClose();
+  }
+  async function prepare() {
+    if (actions.busy || !state.engine) return;
+    setSubmitted(true);
+    if (!validation.ok) {
+      const target = dialog.current?.querySelector<HTMLElement>(
+        '[data-field="' + validation.issues[0].field + '"]',
+      );
+      const group = target?.closest("details")?.dataset.group;
+      if (group) setGroups((v) => ({ ...v, [group]: true }));
+      requestAnimationFrame(() => {
+        target?.scrollIntoView({ block: "center" });
+        target?.focus({ preventScroll: true });
+      });
+      return;
+    }
+    const key = (document.activeElement as HTMLElement)?.dataset.field;
+    editorFocus.current = key
+      ? '[data-field="' + key + '"]'
+      : "[data-preview-create]";
+    source.current = state.engine.token;
+    await actions
+      .prepareWith(() =>
+        dockerApi.prepareCreate(
+          store.sessionId,
+          state.engine!.token,
+          validation.specification,
+        ),
+      )
+      .catch(() => {});
+  }
+  const focusKey = discard ? "discard" : preview ? "preview" : "edit";
   return (
-    <dialog
-      ref={dialog}
-      className="login-dialog docker-confirm-dialog docker-form-dialog"
-      aria-label="创建容器"
-      onCancel={(e) => {
-        e.preventDefault();
-        if (!busy) onClose();
-      }}
+    <DockerDialogFrame
+      dialogRef={dialog}
+      title={discard ? "放弃创建设置？" : preview ? "创建容器？" : "创建容器"}
+      wide
+      onClose={discard ? restoreEditor : close}
+      busy={actions.phase === "submitting" || actions.uncertain}
+      focusKey={focusKey}
+      onSubmit={!preview && !discard ? () => void prepare() : undefined}
     >
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void prepare().catch((e) => setError(errorOf(e).message));
-        }}
-      >
-        <header className="dialog-head">
-          <h2>创建容器</h2>
-        </header>
-        <p className="docker-confirm-object">{imageName}</p>
-        <label className="docker-form-field">
-          容器名称
-          <input
-            autoFocus
-            required
-            maxLength={255}
-            pattern="[A-Za-z0-9][A-Za-z0-9_.-]*"
-            value={spec.name}
-            onChange={(e) => setSpec((s) => ({ ...s, name: e.target.value }))}
-          />
-        </label>
-        <details className="docker-detail-group" open>
-          <summary>
-            发布端口<span>{spec.ports.length}</span>
-          </summary>
-          {spec.ports.map((p, i) => (
-            <div className="docker-create-row" key={i}>
-              <label>
-                宿主地址
-                <input
-                  aria-label={`宿主地址 ${i + 1}`}
-                  value={p.hostIp}
-                  onChange={(e) =>
-                    setSpec((s) => ({
-                      ...s,
-                      ports: s.ports.map((v, n) =>
-                        n === i ? { ...v, hostIp: e.target.value } : v,
-                      ),
-                    }))
-                  }
-                />
-              </label>
-              <label>
-                宿主端口
-                <input
-                  aria-label={`宿主端口 ${i + 1}`}
-                  type="number"
-                  min={1}
-                  max={65535}
-                  required
-                  value={p.hostPort || ""}
-                  onChange={(e) =>
-                    setSpec((s) => ({
-                      ...s,
-                      ports: s.ports.map((v, n) =>
-                        n === i
-                          ? { ...v, hostPort: Number(e.target.value) }
-                          : v,
-                      ),
-                    }))
-                  }
-                />
-              </label>
-              <label>
-                容器端口
-                <input
-                  aria-label={`容器端口 ${i + 1}`}
-                  type="number"
-                  min={1}
-                  max={65535}
-                  required
-                  value={p.containerPort || ""}
-                  onChange={(e) =>
-                    setSpec((s) => ({
-                      ...s,
-                      ports: s.ports.map((v, n) =>
-                        n === i
-                          ? { ...v, containerPort: Number(e.target.value) }
-                          : v,
-                      ),
-                    }))
-                  }
-                />
-              </label>
-              <select
-                aria-label={`协议 ${i + 1}`}
-                value={p.protocol}
-                onChange={(e) =>
-                  setSpec((s) => ({
-                    ...s,
-                    ports: s.ports.map((v, n) =>
-                      n === i ? { ...v, protocol: e.target.value } : v,
-                    ),
-                  }))
-                }
-              >
-                <option value="tcp">TCP</option>
-                <option value="udp">UDP</option>
-              </select>
+      {discard ? (
+        <>
+          <div className="docker-flow-body">
+            <p>尚未保存的容器设置将被丢弃。</p>
+          </div>
+          <footer className="dialog-actions">
+            <button type="button" data-initial-focus onClick={restoreEditor}>
+              继续编辑
+            </button>
+            <button type="button" className="danger" onClick={onClose}>
+              放弃修改
+            </button>
+          </footer>
+        </>
+      ) : preview ? (
+        <DockerConfirmationView
+          preview={preview}
+          onBack={back}
+          backLabel="返回编辑"
+          onRefresh={actions.renewPreview}
+          uncertain={actions.uncertain}
+          onRetry={actions.retry}
+          externalError={actions.error}
+          disabled={engineChanged}
+          onConfirm={() =>
+            actions.submit(preview.targetId, preview.action, preview)
+          }
+        />
+      ) : null}
+      {!preview && !discard && (
+        <div className="docker-editor-content">
+          <div
+            className="docker-flow-body"
+            onScroll={(e) => {
+              editorScroll.current = e.currentTarget.scrollTop;
+            }}
+            onBlur={(e) => {
+              const key = (e.target as HTMLElement).dataset.field;
+              if (key) touch(key);
+            }}
+          >
+            <p className="docker-confirm-object">{imageName}</p>
+            {engineChanged && (
+              <p className="docker-notice" role="status">
+                引擎已变化，设置已保留。请重新预检并核对目标引擎。
+              </p>
+            )}
+            {input("容器名称", "name", draft.name, (name) => update({ name }), {
+              "data-initial-focus": !preview && !discard ? true : undefined,
+              maxLength: 255,
+            } as InputHTMLAttributes<HTMLInputElement>)}
+            <details className="docker-detail-group" {...groupProps("ports")}>
+              <summary>
+                发布端口<span>{draft.ports.length}</span>
+              </summary>
+              {draft.ports.map((p, i) => (
+                <div className="docker-create-row" key={p.rowId}>
+                  {input(
+                    "宿主地址",
+                    "ports." + p.rowId + ".hostIp",
+                    p.hostIp,
+                    (hostIp) =>
+                      update({
+                        ports: draft.ports.map((v) =>
+                          v.rowId === p.rowId ? { ...v, hostIp } : v,
+                        ),
+                      }),
+                    { "aria-label": "宿主地址 " + (i + 1) },
+                  )}
+                  {input(
+                    "宿主端口",
+                    "ports." + p.rowId + ".hostPort",
+                    p.hostPort,
+                    (hostPort) =>
+                      update({
+                        ports: draft.ports.map((v) =>
+                          v.rowId === p.rowId ? { ...v, hostPort } : v,
+                        ),
+                      }),
+                    {
+                      type: "number",
+                      min: 1,
+                      max: 65535,
+                      "aria-label": "宿主端口 " + (i + 1),
+                    },
+                  )}
+                  {input(
+                    "容器端口",
+                    "ports." + p.rowId + ".containerPort",
+                    p.containerPort,
+                    (containerPort) =>
+                      update({
+                        ports: draft.ports.map((v) =>
+                          v.rowId === p.rowId ? { ...v, containerPort } : v,
+                        ),
+                      }),
+                    {
+                      type: "number",
+                      min: 1,
+                      max: 65535,
+                      "aria-label": "容器端口 " + (i + 1),
+                    },
+                  )}
+                  <label className="docker-form-field">
+                    协议
+                    <select
+                      aria-label={"协议 " + (i + 1)}
+                      value={p.protocol}
+                      onChange={(e) =>
+                        update({
+                          ports: draft.ports.map((v) =>
+                            v.rowId === p.rowId
+                              ? { ...v, protocol: e.target.value }
+                              : v,
+                          ),
+                        })
+                      }
+                    >
+                      <option value="tcp">TCP</option>
+                      <option value="udp">UDP</option>
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={"删除端口 " + (i + 1)}
+                    onClick={() =>
+                      update({
+                        ports: draft.ports.filter((v) => v.rowId !== p.rowId),
+                      })
+                    }
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
               <button
                 type="button"
-                className="icon-button"
-                aria-label={`删除端口 ${i + 1}`}
+                data-field="ports"
+                className="resource-link"
                 onClick={() =>
-                  setSpec((s) => ({
-                    ...s,
-                    ports: s.ports.filter((_, n) => n !== i),
-                  }))
+                  update({
+                    ports: [
+                      ...draft.ports,
+                      {
+                        rowId: crypto.randomUUID(),
+                        hostIp: "127.0.0.1",
+                        hostPort: "",
+                        containerPort: "",
+                        protocol: "tcp",
+                      },
+                    ],
+                  })
                 }
               >
-                <X size={13} />
+                <Plus size={12} />
+                添加端口
               </button>
-            </div>
-          ))}
-          <button
-            type="button"
-            className="resource-link"
-            onClick={() =>
-              setSpec((s) => ({
-                ...s,
-                ports: [
-                  ...s.ports,
-                  {
-                    hostIp: "127.0.0.1",
-                    hostPort: 0,
-                    containerPort: 0,
-                    protocol: "tcp",
-                  },
-                ],
-              }))
-            }
-          >
-            <Plus size={12} />
-            添加端口
-          </button>
-        </details>
-        <details className="docker-detail-group">
-          <summary>
-            环境变量<span>仅保留在当前草稿</span>
-          </summary>
-          <label className="docker-form-field">
-            每行 KEY=value
-            <textarea
-              className="form-textarea"
-              autoComplete="off"
-              spellCheck={false}
-              rows={4}
-              value={env}
-              onChange={(e) => setEnv(e.target.value)}
-            />
-          </label>
-          <p className="resource-help">
-            不支持多行值；离开创建窗口后清空。通过远端私有临时文件传入。
-          </p>
-        </details>
-        <details className="docker-detail-group">
-          <summary>
-            存储挂载<span>{spec.mounts.length}</span>
-          </summary>
-          {spec.mounts.map((m, i) => (
-            <div className="docker-mount-editor" key={i}>
-              <div className="docker-inline-tools">
-                <select
-                  aria-label={`挂载类型 ${i + 1}`}
-                  value={m.kind}
-                  onChange={(e) =>
-                    setSpec((s) => ({
-                      ...s,
-                      mounts: s.mounts.map((v, n) =>
-                        n === i ? { ...v, kind: e.target.value } : v,
-                      ),
-                    }))
-                  }
-                >
-                  <option value="bind">Bind Mount</option>
-                  <option value="volume">已有 Volume</option>
-                </select>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={m.readOnly}
-                    onChange={(e) =>
-                      setSpec((s) => ({
-                        ...s,
-                        mounts: s.mounts.map((v, n) =>
-                          n === i ? { ...v, readOnly: e.target.checked } : v,
-                        ),
-                      }))
-                    }
-                  />
-                  只读
-                </label>
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label={`删除挂载 ${i + 1}`}
-                  onClick={() =>
-                    setSpec((s) => ({
-                      ...s,
-                      mounts: s.mounts.filter((_, n) => n !== i),
-                    }))
-                  }
-                >
-                  <X size={13} />
-                </button>
-              </div>
-              <label className="docker-form-field">
-                {m.kind === "bind" ? "远端宿主绝对路径" : "已有 Volume 名称"}
-                <input
-                  required
-                  value={m.source}
-                  onChange={(e) =>
-                    setSpec((s) => ({
-                      ...s,
-                      mounts: s.mounts.map((v, n) =>
-                        n === i ? { ...v, source: e.target.value } : v,
-                      ),
-                    }))
-                  }
-                />
-              </label>
-              <label className="docker-form-field">
-                容器路径
-                <input
-                  required
-                  value={m.destination}
-                  onChange={(e) =>
-                    setSpec((s) => ({
-                      ...s,
-                      mounts: s.mounts.map((v, n) =>
-                        n === i ? { ...v, destination: e.target.value } : v,
-                      ),
-                    }))
-                  }
-                />
-              </label>
-            </div>
-          ))}
-          <button
-            type="button"
-            className="resource-link"
-            onClick={() =>
-              setSpec((s) => ({
-                ...s,
-                mounts: [
-                  ...s.mounts,
-                  {
-                    kind: "bind",
-                    source: "",
-                    destination: "",
-                    readOnly: false,
-                  },
-                ],
-              }))
-            }
-          >
-            <Plus size={12} />
-            添加挂载
-          </button>
-        </details>
-        <details className="docker-detail-group">
-          <summary>
-            更多设置<span>网络、重启与命令</span>
-          </summary>
-          <label className="docker-form-field">
-            已有网络名称
-            <input
-              value={spec.network ?? ""}
-              placeholder="默认 bridge"
-              onChange={(e) =>
-                setSpec((s) => ({ ...s, network: e.target.value || null }))
-              }
-            />
-          </label>
-          <label className="docker-form-field">
-            重启策略
-            <select
-              value={spec.restartPolicy}
-              onChange={(e) =>
-                setSpec((s) => ({ ...s, restartPolicy: e.target.value }))
-              }
+              {fieldError("ports")}
+            </details>
+            <details
+              className="docker-detail-group"
+              {...groupProps("environment")}
             >
-              <option value="no">不自动重启</option>
-              <option value="unless-stopped">除非手动停止</option>
-              <option value="always">始终重启</option>
-              <option value="on-failure">仅失败时重启</option>
-            </select>
-          </label>
-          <label className="docker-form-field">
-            工作目录
-            <input
-              value={spec.workingDirectory}
-              onChange={(e) =>
-                setSpec((s) => ({ ...s, workingDirectory: e.target.value }))
-              }
-            />
-          </label>
-          <label className="docker-form-field">
-            命令参数
-            <textarea
-              className="form-textarea"
-              rows={3}
-              value={command}
-              onChange={(e) => setCommand(e.target.value)}
-            />
-            <small>
-              每行一个参数，保持原样传递。例如第一行 /bin/sh，第二行
-              -c，第三行才是 shell 命令。
-            </small>
-          </label>
-        </details>
-        <label className="docker-check-field">
-          <input
-            type="checkbox"
-            checked={spec.start}
-            onChange={(e) =>
-              setSpec((s) => ({ ...s, start: e.target.checked }))
-            }
-          />
-          创建后启动
-        </label>
-        {error && (
-          <p className="resource-error" role="alert">
-            {error}
-          </p>
-        )}
-        <footer className="dialog-actions">
-          <button type="button" disabled={busy} onClick={onClose}>
-            取消
-          </button>
-          <button className="primary" disabled={busy}>
-            {busy ? "正在预检…" : "预览创建"}
-          </button>
-        </footer>
-      </form>
-    </dialog>
+              <summary>
+                环境变量<span>仅保留在当前草稿</span>
+              </summary>
+              <label className="docker-form-field">
+                每行 KEY=value
+                <textarea
+                  aria-label="每行 KEY=value"
+                  {...attrs("environmentText")}
+                  className="form-textarea"
+                  autoComplete="off"
+                  spellCheck={false}
+                  rows={4}
+                  value={draft.environmentText}
+                  onChange={(e) => update({ environmentText: e.target.value })}
+                />
+                {fieldError("environmentText")}
+              </label>
+            </details>
+            <details className="docker-detail-group" {...groupProps("mounts")}>
+              <summary>
+                挂载<span>{draft.mounts.length}</span>
+              </summary>
+              {draft.mounts.map((m, i) => (
+                <div
+                  className="docker-create-row docker-mount-editor"
+                  key={m.rowId}
+                >
+                  <label className="docker-form-field">
+                    类型
+                    <select
+                      value={m.kind}
+                      onChange={(e) =>
+                        update({
+                          mounts: draft.mounts.map((v) =>
+                            v.rowId === m.rowId
+                              ? { ...v, kind: e.target.value }
+                              : v,
+                          ),
+                        })
+                      }
+                    >
+                      <option value="bind">Bind</option>
+                      <option value="volume">Volume</option>
+                    </select>
+                  </label>
+                  {input(
+                    "来源",
+                    "mounts." + m.rowId + ".source",
+                    m.source,
+                    (source) =>
+                      update({
+                        mounts: draft.mounts.map((v) =>
+                          v.rowId === m.rowId ? { ...v, source } : v,
+                        ),
+                      }),
+                  )}
+                  {input(
+                    "容器路径",
+                    "mounts." + m.rowId + ".destination",
+                    m.destination,
+                    (destination) =>
+                      update({
+                        mounts: draft.mounts.map((v) =>
+                          v.rowId === m.rowId ? { ...v, destination } : v,
+                        ),
+                      }),
+                  )}
+                  <label className="docker-check-field">
+                    <input
+                      type="checkbox"
+                      checked={m.readOnly}
+                      onChange={(e) =>
+                        update({
+                          mounts: draft.mounts.map((v) =>
+                            v.rowId === m.rowId
+                              ? { ...v, readOnly: e.target.checked }
+                              : v,
+                          ),
+                        })
+                      }
+                    />
+                    只读
+                  </label>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={"删除挂载 " + (i + 1)}
+                    onClick={() =>
+                      update({
+                        mounts: draft.mounts.filter((v) => v.rowId !== m.rowId),
+                      })
+                    }
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                data-field="mounts"
+                className="resource-link"
+                onClick={() =>
+                  update({
+                    mounts: [
+                      ...draft.mounts,
+                      {
+                        rowId: crypto.randomUUID(),
+                        kind: "bind",
+                        source: "",
+                        destination: "",
+                        readOnly: false,
+                      },
+                    ],
+                  })
+                }
+              >
+                <Plus size={12} />
+                添加挂载
+              </button>
+              {fieldError("mounts")}
+            </details>
+            <details className="docker-detail-group" {...groupProps("more")}>
+              <summary>
+                更多设置<span>网络、重启与命令</span>
+              </summary>
+              {input(
+                "已有网络名称",
+                "network",
+                draft.network,
+                (network) => update({ network }),
+                { placeholder: "默认 bridge" },
+              )}
+              <RestartPolicyFields
+                policy={draft.restartPolicy}
+                count={draft.maximumRetryCount}
+                onPolicy={(restartPolicy) => update({ restartPolicy })}
+                onCount={(maximumRetryCount) => update({ maximumRetryCount })}
+                error={issue("maximumRetryCount")}
+                onBlur={() => touch("maximumRetryCount")}
+              />
+              {input(
+                "工作目录",
+                "workingDirectory",
+                draft.workingDirectory,
+                (workingDirectory) => update({ workingDirectory }),
+              )}
+              <label className="docker-form-field">
+                命令参数
+                <textarea
+                  aria-label="命令参数"
+                  {...attrs("commandText")}
+                  className="form-textarea"
+                  rows={3}
+                  value={draft.commandText}
+                  onChange={(e) => update({ commandText: e.target.value })}
+                />
+                <small>每行一个参数，保持原样传递。</small>
+                {fieldError("commandText")}
+              </label>
+            </details>
+            <label className="docker-check-field">
+              <input
+                type="checkbox"
+                checked={draft.start}
+                onChange={(e) => update({ start: e.target.checked })}
+              />
+              创建后启动
+            </label>
+            {actions.error && (
+              <p className="resource-error" role="alert">
+                {actions.error}
+              </p>
+            )}
+          </div>
+          <footer className="dialog-actions">
+            <button type="button" onClick={close}>
+              取消
+            </button>
+            <button
+              type="submit"
+              data-preview-create
+              className="primary"
+              disabled={actions.busy || !state.engine}
+            >
+              {actions.busy ? "正在预检…" : "预览创建"}
+            </button>
+          </footer>
+        </div>
+      )}
+    </DockerDialogFrame>
   );
 }

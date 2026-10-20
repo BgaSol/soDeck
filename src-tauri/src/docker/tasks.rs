@@ -1,4 +1,9 @@
-use super::{executor, inspect, model::*, query};
+use super::{
+    drafts::{Draft, DraftRegistry},
+    executor, inspect,
+    model::*,
+    query,
+};
 use crate::{
     connection::{self, SharedContext, WindowOwner},
     model::{AppError, AppResult},
@@ -42,20 +47,13 @@ struct Record {
     request: OperationRequest,
     cancel: Cancellation,
 }
-struct Draft {
-    preview: Preview,
-    identity: String,
-    owner: WindowOwner,
-    fingerprint: String,
-    create: Option<super::create::Spec>,
-    transfer: Option<super::transfer::Spec>,
-}
+
 #[derive(Default)]
 struct Core {
     subscribers: HashMap<String, Subscriber>,
     details: HashMap<String, CachedDetail>,
     records: Vec<Record>,
-    drafts: HashMap<String, Draft>,
+    drafts: DraftRegistry,
 }
 pub struct DockerManager {
     store: Mutex<Result<super::store::Store, AppError>>,
@@ -228,7 +226,7 @@ impl DockerManager {
     pub fn window_closed(&self, label: &str) {
         let mut core = self.core.lock().unwrap();
         core.subscribers.retain(|_, s| s.owner.label != label);
-        core.drafts.retain(|_, d| d.owner.label != label);
+        core.drafts.remove_owner(label);
     }
     pub fn summary(&self) -> Summary {
         let core = self.core.lock().unwrap();
@@ -347,7 +345,7 @@ impl DockerManager {
             }
         }
         let mut core = self.core.lock().unwrap();
-        core.drafts.retain(|_, d| d.preview.expires_at > now());
+        core.drafts.expire(now());
         // Details contain no credentials, and only currently subscribed objects stay cached.
         let targets: Vec<_> = core
             .subscribers
@@ -519,6 +517,67 @@ impl DockerManager {
             }
         }
     }
+    fn check_draft(
+        &self,
+        state: &State,
+        session: &str,
+        owner: &WindowOwner,
+        draft: &Draft,
+    ) -> AppResult<()> {
+        let spec = state.spec(session, &owner.label)?;
+        draft.authorize(session, spec.identity(), owner, now())?;
+        if state.owner(&owner.label).generation != owner.generation {
+            return Err(AppError::new("permission", "原窗口已结束"));
+        }
+        check_binding(state, &spec, &draft.preview.engine)
+    }
+    pub fn renew_preview(
+        &self,
+        state: &State,
+        session: &str,
+        owner: &WindowOwner,
+        token: &str,
+        expected: &str,
+    ) -> AppResult<Preview> {
+        let draft = self.core.lock().unwrap().drafts.current(token)?.clone();
+        self.check_draft(state, session, owner, &draft)?;
+        if draft.preview.id != expected {
+            return Ok(draft.preview);
+        }
+        let next = if let Some(input) = draft.create.clone() {
+            self.build_prepare_create(state, session, owner, &draft.preview.engine.token, input)?
+        } else if let Some(input) = draft.transfer.clone() {
+            self.build_prepare_transfer(state, session, owner, &draft.preview.engine.token, input)?
+        } else {
+            self.build_prepare(
+                state,
+                session,
+                owner,
+                &draft.preview.engine.token,
+                &draft.preview.target_id,
+                draft.preview.action.clone(),
+            )?
+        };
+        let _gate = state.configuration.lock().unwrap();
+        self.check_draft(state, session, owner, &draft)?;
+        self.core
+            .lock()
+            .unwrap()
+            .drafts
+            .replace(token, expected, next, now())
+    }
+    pub fn release_preview(
+        &self,
+        session: &str,
+        token: &str,
+        owner: &WindowOwner,
+    ) -> AppResult<()> {
+        self.core
+            .lock()
+            .unwrap()
+            .drafts
+            .release(token, session, owner)
+    }
     pub fn prepare(
         &self,
         state: &State,
@@ -528,6 +587,20 @@ impl DockerManager {
         id: &str,
         action: Action,
     ) -> AppResult<Preview> {
+        let draft = self.build_prepare(state, session, owner, token, id, action)?;
+        let _gate = state.configuration.lock().unwrap();
+        self.check_draft(state, session, owner, &draft)?;
+        self.core.lock().unwrap().drafts.insert(draft, now())
+    }
+    fn build_prepare(
+        &self,
+        state: &State,
+        session: &str,
+        owner: &WindowOwner,
+        token: &str,
+        id: &str,
+        action: Action,
+    ) -> AppResult<Draft> {
         action.validate_target(id)?;
         action.validate()?;
         let spec = state.spec(session, &owner.label)?;
@@ -583,6 +656,7 @@ impl DockerManager {
             (plan.name, plan.fingerprint, plan.consequences)
         };
         let preview = Preview {
+            draft_token: uuid(),
             id: uuid(),
             engine: engine.clone(),
             target_id: id.into(),
@@ -591,27 +665,16 @@ impl DockerManager {
             consequences,
             expires_at: now() + 60_000,
         };
-        let _gate = state.configuration.lock().unwrap();
-        check()?;
-        if state.owner(&owner.label).generation != owner.generation {
-            return Err(AppError::new("permission", "原窗口已结束"));
-        }
-        let mut core = self.core.lock().unwrap();
-        if core.drafts.len() >= 100 {
-            return Err(AppError::new("busy", "确认请求过多，请稍后重试"));
-        }
-        core.drafts.insert(
-            preview.id.clone(),
-            Draft {
-                preview: preview.clone(),
-                identity: spec.identity().into(),
-                owner: owner.clone(),
-                fingerprint,
-                create: None,
-                transfer: None,
-            },
-        );
-        Ok(preview)
+        Ok(Draft {
+            preview: preview.clone(),
+            identity: spec.identity().into(),
+            session: session.into(),
+            owner: owner.clone(),
+            fingerprint,
+            create: None,
+            transfer: None,
+            retain_until: now() + 900_000,
+        })
     }
     pub fn prepare_create(
         &self,
@@ -621,6 +684,19 @@ impl DockerManager {
         token: &str,
         input: super::create::Spec,
     ) -> AppResult<Preview> {
+        let draft = self.build_prepare_create(state, session, owner, token, input)?;
+        let _gate = state.configuration.lock().unwrap();
+        self.check_draft(state, session, owner, &draft)?;
+        self.core.lock().unwrap().drafts.insert(draft, now())
+    }
+    fn build_prepare_create(
+        &self,
+        state: &State,
+        session: &str,
+        owner: &WindowOwner,
+        token: &str,
+        input: super::create::Spec,
+    ) -> AppResult<Draft> {
         input.validate()?;
         let spec = state.spec(session, &owner.label)?;
         let engine = state.monitor.docker_binding(spec.identity())?;
@@ -640,6 +716,7 @@ impl DockerManager {
         let plan = super::create::prepare(connection.session(), &engine, &input, &check)?;
         let id = uuid();
         let preview = Preview {
+            draft_token: uuid(),
             id: id.clone(),
             engine: engine.clone(),
             target_id: input.name.clone(),
@@ -650,27 +727,16 @@ impl DockerManager {
             consequences: plan.consequences,
             expires_at: now() + 60_000,
         };
-        let _gate = state.configuration.lock().unwrap();
-        check()?;
-        if state.owner(&owner.label).generation != owner.generation {
-            return Err(AppError::new("permission", "原窗口已结束"));
-        }
-        let mut core = self.core.lock().unwrap();
-        if core.drafts.len() >= 100 {
-            return Err(AppError::new("busy", "确认请求过多，请稍后重试"));
-        }
-        core.drafts.insert(
-            id,
-            Draft {
-                preview: preview.clone(),
-                identity: spec.identity().into(),
-                owner: owner.clone(),
-                fingerprint: plan.fingerprint,
-                create: Some(input),
-                transfer: None,
-            },
-        );
-        Ok(preview)
+        Ok(Draft {
+            preview: preview.clone(),
+            identity: spec.identity().into(),
+            session: session.into(),
+            owner: owner.clone(),
+            fingerprint: plan.fingerprint,
+            create: Some(input),
+            transfer: None,
+            retain_until: now() + 900_000,
+        })
     }
     pub fn prepare_transfer(
         &self,
@@ -680,6 +746,19 @@ impl DockerManager {
         token: &str,
         input: super::transfer::Spec,
     ) -> AppResult<Preview> {
+        let draft = self.build_prepare_transfer(state, session, owner, token, input)?;
+        let _gate = state.configuration.lock().unwrap();
+        self.check_draft(state, session, owner, &draft)?;
+        self.core.lock().unwrap().drafts.insert(draft, now())
+    }
+    fn build_prepare_transfer(
+        &self,
+        state: &State,
+        session: &str,
+        owner: &WindowOwner,
+        token: &str,
+        input: super::transfer::Spec,
+    ) -> AppResult<Draft> {
         let spec = state.spec(session, &owner.label)?;
         let engine = state.monitor.docker_binding(spec.identity())?;
         if engine.token != token {
@@ -699,6 +778,7 @@ impl DockerManager {
             super::transfer::prepare(connection.session(), &engine, &input, &check)?;
         let id = uuid();
         let preview = Preview {
+            draft_token: uuid(),
             id: id.clone(),
             engine: engine.clone(),
             target_id: input.target.clone(),
@@ -710,27 +790,16 @@ impl DockerManager {
             consequences,
             expires_at: now() + 60_000,
         };
-        let _gate = state.configuration.lock().unwrap();
-        check()?;
-        if state.owner(&owner.label).generation != owner.generation {
-            return Err(AppError::new("permission", "原窗口已结束"));
-        }
-        let mut core = self.core.lock().unwrap();
-        if core.drafts.len() >= 100 {
-            return Err(AppError::new("busy", "确认请求过多，请稍后重试"));
-        }
-        core.drafts.insert(
-            id,
-            Draft {
-                preview: preview.clone(),
-                identity: spec.identity().into(),
-                owner: owner.clone(),
-                fingerprint,
-                create: None,
-                transfer: Some(input),
-            },
-        );
-        Ok(preview)
+        Ok(Draft {
+            preview: preview.clone(),
+            identity: spec.identity().into(),
+            session: session.into(),
+            owner: owner.clone(),
+            fingerprint,
+            create: None,
+            transfer: Some(input),
+            retain_until: now() + 900_000,
+        })
     }
     pub fn cancel_transfer(&self, id: &str) -> bool {
         let core = self.core.lock().unwrap();
@@ -928,10 +997,11 @@ impl DockerManager {
                 .drafts
                 .get(id)
                 .ok_or_else(|| AppError::new("conflict", "确认已失效，请重新预览"))?;
-            if draft.identity != spec.identity()
+            if draft.session != session
+                || draft.identity != spec.identity()
                 || draft.owner.label != owner.label
                 || draft.owner.generation != owner.generation
-                || draft.preview.expires_at < now()
+                || draft.preview.expires_at <= now()
                 || draft.preview.engine != engine
                 || draft.preview.target_id != request.target_id
                 || draft.preview.action != request.action

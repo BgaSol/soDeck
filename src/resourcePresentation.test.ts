@@ -1,3 +1,4 @@
+import { getMonitorPresentation } from "./resourcePresentation";
 import { describe, expect, it } from "vitest";
 import { chartSampleAt, chartPath } from "./MetricChart";
 import {
@@ -158,4 +159,16 @@ describe("actual sample cursors", () => {
       chartPath(points, (p) => p.value, 0, 40000, 5).match(/M/g),
     ).toHaveLength(3);
   });
+});
+
+it("shows failed subscription instead of collecting while SSH remains connected", () => {
+  const context = {
+    connection: "connected" as const,
+    subscription: {
+      phase: "failed" as const,
+      error: { kind: "unavailable", message: "订阅失败" },
+    },
+  };
+  expect(getMonitorPresentation(context).label).toBe("监控暂不可用");
+  expect(getMonitorPresentation(context).canRetry).toBe(true);
 });

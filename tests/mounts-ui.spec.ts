@@ -216,6 +216,9 @@ test("mount details fit narrow dark windows and share backend updates without po
     .getByRole("button", { name: "文件", exact: true })
     .click();
   const resizer = page.getByRole("separator", { name: "调整文件区域宽度" });
+  // Start above the wide capacity threshold; the current minimum pane is 280px.
+  await resizer.focus();
+  for (let i = 0; i < 12; i++) await resizer.press("ArrowRight");
   const normalUsageWidth = (await row(page, "/backup")
     .locator(".mount-usage")
     .boundingBox())!.width;

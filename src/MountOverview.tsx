@@ -1,3 +1,4 @@
+import { monitorLive } from "./resourceMonitoring";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Pin, Search } from "lucide-react";
 import { useMonitor, useMonitorPaths } from "./MonitorProvider";
@@ -116,7 +117,7 @@ export function MountOverview({
     ],
     [visiblePaths, selected],
   );
-  useMonitorPaths(store, paths, active && state.connected);
+  useMonitorPaths(store, paths, active && monitorLive(state));
   const changeView = (patch: Partial<typeof initialView>) =>
     onChange({ ...preferences, mounts: { ...view, ...patch } });
   function togglePin(path: string) {

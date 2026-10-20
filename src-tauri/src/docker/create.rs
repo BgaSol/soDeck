@@ -251,6 +251,16 @@ pub fn prepare(
         ),
         "创建后启动失败会保留容器和诊断信息，不自动删除或重复创建。".into(),
     ];
+    consequences.push(match spec.restart_policy.as_str() {
+        "on-failure" if spec.maximum_retry_count > 0 => format!(
+            "重启策略：仅失败时重启，最多重试 {} 次。",
+            spec.maximum_retry_count
+        ),
+        "on-failure" => "重启策略：仅失败时重启，重试次数不限。".into(),
+        "always" => "重启策略：始终重启。".into(),
+        "unless-stopped" => "重启策略：除非手动停止。".into(),
+        _ => "重启策略：不自动重启。".into(),
+    });
     consequences.extend(spec.ports.iter().map(|p| {
         format!(
             "发布 {}:{} → {}/{}",

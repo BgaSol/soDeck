@@ -324,6 +324,11 @@ impl FileState {
         moving.push((id.clone(), identity.into(), paths.to_vec()));
         Ok(MutationGuard { files: self, id })
     }
+    pub fn blocks_update(&self) -> bool {
+        self.has_activity()
+            || !self.opening.lock().unwrap().is_empty()
+            || !self.mutations.lock().unwrap().is_empty()
+    }
     pub fn has_activity(&self) -> bool {
         !self.editors.lock().unwrap().is_empty()
     }

@@ -1,11 +1,15 @@
 import type { Metric } from "./resourceMonitoring";
-import { hasOldValue, metricMessage } from "./resourcePresentation";
+import {
+  hasOldValue,
+  metricMessage,
+  type MetricContext,
+} from "./resourcePresentation";
 export function ResourceStatus({
   metric,
   connected,
 }: {
   metric: Metric<unknown>;
-  connected: boolean;
+  connected: MetricContext;
 }) {
   return (
     <div

@@ -1,3 +1,20 @@
+mod collector;
+mod diagnostics;
+#[cfg(test)]
+mod engine_tests;
+mod export;
+mod lifecycle;
+mod protocol;
+pub(crate) mod replacements;
+mod snapshot;
+use collector::collect_logs;
+#[cfg(test)]
+use collector::{command, read_logs, retry_delay};
+use protocol::{ContainerObservation, LogEvent};
+#[cfg(test)]
+fn retryable(e: &AppError) -> bool {
+    protocol::classify(e).retry(2)
+}
 use crate::connection::{self, SharedContext};
 use crate::ssh_transport::Cancellation;
 use crate::{
@@ -22,6 +39,8 @@ pub struct LogState {
     archive_window: Mutex<()>,
     windows: Mutex<HashMap<String, LogWindow>>,
     workers: Mutex<Vec<Run>>,
+    snapshots: Mutex<HashMap<String, (String, Arc<snapshot::Snapshot>)>>,
+    jobs: Mutex<HashMap<String, (String, Cancellation)>>,
 }
 struct LogWindow {
     spec: Option<SharedContext>,
@@ -35,6 +54,10 @@ struct Run {
     source_id: String,
     cancel: Cancellation,
     done: Arc<(Mutex<bool>, Condvar)>,
+    wake: Arc<(Mutex<bool>, Condvar)>,
+    revision: Arc<std::sync::atomic::AtomicU64>,
+    terminal: Arc<std::sync::atomic::AtomicBool>,
+    observation: Arc<Mutex<Option<ContainerObservation>>>,
 }
 impl Run {
     fn new(source_id: String) -> Self {
@@ -43,7 +66,37 @@ impl Run {
             source_id,
             cancel: Cancellation::default(),
             done: Arc::new((Mutex::new(false), Condvar::new())),
+            wake: Arc::new((Mutex::new(false), Condvar::new())),
+            revision: Default::default(),
+            terminal: Default::default(),
+            observation: Default::default(),
         }
+    }
+    fn emit(
+        &self,
+        output: &Channel<LogEvent>,
+        phase: &str,
+        reason: Option<&str>,
+        retry_at: Option<i64>,
+        error: Option<String>,
+        tty: Option<bool>,
+    ) {
+        if phase == "failed" {
+            self.terminal
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+        let _ = output.send(LogEvent::State {
+            collector_id: self.id.clone(),
+            event_revision: self
+                .revision
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            phase: phase.into(),
+            reason: reason.map(str::to_owned),
+            retry_at,
+            error,
+            container: self.observation.lock().unwrap().clone(),
+            tty,
+        });
     }
     fn wait(&self) -> AppResult<()> {
         let (lock, signal) = &*self.done;
@@ -78,6 +131,15 @@ impl LogState {
             .count()
     }
     pub fn stop(&self, label: &str, remove: bool) {
+        for (owner, cancel) in self.jobs.lock().unwrap().values() {
+            if owner == label {
+                cancel.cancel();
+            }
+        }
+        self.snapshots
+            .lock()
+            .unwrap()
+            .retain(|_, (owner, _)| owner != label);
         let mut windows = self.windows.lock().unwrap();
         if let Some(run) = windows.get(label).and_then(|w| w.run.as_ref()) {
             run.cancel.cancel();
@@ -87,6 +149,10 @@ impl LogState {
         }
     }
     pub fn shutdown(&self) -> AppResult<()> {
+        for (_, cancel) in self.jobs.lock().unwrap().values() {
+            cancel.cancel();
+        }
+        self.snapshots.lock().unwrap().clear();
         let workers = self.workers.lock().unwrap().clone();
         for run in &workers {
             run.cancel.cancel();
@@ -121,30 +187,6 @@ pub struct LogInfo {
     directory: String,
     stats: log_store::Stats,
 }
-#[derive(Serialize)]
-#[serde(
-    tag = "type",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase"
-)]
-pub enum LogEvent {
-    Ready {
-        following: bool,
-        tty: bool,
-        history: bool,
-    },
-    Status {
-        status: String,
-        error: Option<String>,
-    },
-    Saved {
-        last_seq: i64,
-    },
-    End {
-        error: Option<String>,
-    },
-}
-
 #[tauri::command]
 pub async fn open_container_logs(
     window: WebviewWindow,
@@ -341,10 +383,18 @@ pub async fn logs_page(
     app: tauri::AppHandle,
     state: TauriState<'_, Arc<State>>,
     query: log_store::Query,
+    snapshot_id: Option<String>,
 ) -> AppResult<log_store::Page> {
     let source = state.logs.source(window.label())?;
     let archive_root = root(&app)?;
-    crate::blocking(move || log_store::query(&archive_root, &source.source_id, &query)).await
+    let frozen = snapshot_id
+        .map(|id| get_snapshot(&state, window.label(), &id))
+        .transpose()?;
+    crate::blocking(move || match frozen {
+        Some(s) => s.query(&query),
+        None => log_store::query(&archive_root, &source.source_id, &query),
+    })
+    .await
 }
 #[tauri::command]
 pub async fn logs_export(
@@ -387,9 +437,13 @@ pub async fn logs_copy_range(
     state: TauriState<'_, Arc<State>>,
     from: i64,
     to: i64,
+    snapshot_id: Option<String>,
 ) -> AppResult<String> {
     let source = state.logs.source(window.label())?;
     let archive_root = root(&app)?;
+    let frozen = snapshot_id
+        .map(|id| get_snapshot(&state, window.label(), &id))
+        .transpose()?;
     crate::blocking(move || {
         if from < 1 || to < from {
             return Err(AppError::new("validation", "请选择有效的日志序号范围"));
@@ -397,20 +451,28 @@ pub async fn logs_copy_range(
         let mut cursor = from - 1;
         let mut text = String::new();
         loop {
-            let page = log_store::query(
-                &archive_root,
-                &source.source_id,
-                &log_store::Query {
-                    after: Some(cursor),
-                    snapshot: Some(to),
-                    limit: 500,
-                    ..Default::default()
-                },
-            )?;
+            let query = log_store::Query {
+                after: Some(cursor),
+                snapshot: Some(to),
+                limit: 500,
+                ..Default::default()
+            };
+            let page = match &frozen {
+                Some(s) => s.query(&query)?,
+                None => log_store::query(&archive_root, &source.source_id, &query)?,
+            };
             for row in page.rows {
-                text.push_str(&row.raw);
-                if row.complete {
-                    text.push('\n');
+                if let Some(s) = &frozen {
+                    text.push_str(&String::from_utf8_lossy(&export::original(
+                        &s.segments,
+                        row.seq,
+                        &Cancellation::default(),
+                    )?));
+                } else {
+                    text.push_str(&row.raw);
+                    if row.complete {
+                        text.push('\n');
+                    }
                 }
                 if text.len() > 8 * 1024 * 1024 {
                     return Err(AppError::new("logs", "所选内容超过 8 MiB，请使用导出"));
@@ -499,7 +561,11 @@ pub fn logs_start(
     Ok(id)
 }
 #[tauri::command]
-pub async fn logs_stop(window: WebviewWindow, state: TauriState<'_, Arc<State>>) -> AppResult<()> {
+pub async fn logs_stop(
+    window: WebviewWindow,
+    state: TauriState<'_, Arc<State>>,
+    collector_id: Option<String>,
+) -> AppResult<()> {
     let run = state
         .logs
         .windows
@@ -507,7 +573,7 @@ pub async fn logs_stop(window: WebviewWindow, state: TauriState<'_, Arc<State>>)
         .unwrap()
         .get(window.label())
         .and_then(|w| w.run.clone());
-    if let Some(run) = run {
+    if let Some(run) = run.filter(|r| collector_id.as_ref().is_none_or(|id| id == &r.id)) {
         run.cancel.cancel();
         crate::blocking(move || run.wait()).await?;
     }
@@ -523,266 +589,6 @@ fn validate_id(id: &str) -> AppResult<()> {
         Err(AppError::new("validation", "无效的容器 ID"))
     } else {
         Ok(())
-    }
-}
-fn command(
-    target: &crate::docker::ContainerTarget,
-    following: bool,
-    since: Option<&str>,
-) -> AppResult<String> {
-    validate_id(&target.id)?;
-    Ok(format!("env -u DOCKER_CONTEXT -u DOCKER_HOST docker --host {} logs --tail all --timestamps {} {} {}",ssh::quote(&target.endpoint),if following{"--follow"}else{""},
-  since.map(|s|format!("--since {}",ssh::quote(s))).unwrap_or_default(),ssh::quote(&target.id)))
-}
-fn wait_cancel(run: &Run, duration: Duration) {
-    let until = Instant::now() + duration;
-    while !run.cancel.is_cancelled() && Instant::now() < until {
-        std::thread::sleep(Duration::from_millis(50));
-    }
-}
-fn retry_delay(attempt: u32) -> Duration {
-    Duration::from_secs((1u64 << attempt.min(5)).min(30))
-}
-fn retryable(error: &AppError) -> bool {
-    matches!(error.kind.as_str(), "network" | "ssh" | "timeout")
-        || (error.kind == "io" && !error.message.starts_with("日志保存失败"))
-}
-
-fn collect_logs(
-    spec: &SharedContext,
-    target: &crate::docker::ContainerTarget,
-    source: &Source,
-    archive_root: &std::path::Path,
-    run: &Run,
-    output: &Channel<LogEvent>,
-) -> AppResult<()> {
-    let mut attempt = 0;
-    while !run.cancel.is_cancelled() {
-        let history = !crate::log_ingest::history_complete(archive_root, &source.source_id)?;
-        match read_logs(spec, target, source, archive_root, history, run, output) {
-            Ok(following) => {
-                attempt = 0;
-                if run.cancel.is_cancelled() {
-                    break;
-                }
-                if history {
-                    continue;
-                }
-                let _ = output.send(LogEvent::Status {
-                    status: if following {
-                        "日志流已结束，正在检查容器…"
-                    } else {
-                        "等待容器运行"
-                    }
-                    .into(),
-                    error: None,
-                });
-                wait_cancel(run, Duration::from_secs(5));
-            }
-            Err(error) if retryable(&error) => {
-                let delay = retry_delay(attempt);
-                attempt += 1;
-                let _ = output.send(LogEvent::Status {
-                    status: format!("连接中断，{} 秒后重试", delay.as_secs()),
-                    error: Some(error.message),
-                });
-                wait_cancel(run, delay);
-            }
-            Err(error) => return Err(error),
-        }
-    }
-    Ok(())
-}
-fn read_logs(
-    spec: &SharedContext,
-    target: &crate::docker::ContainerTarget,
-    source: &Source,
-    archive_root: &std::path::Path,
-    history: bool,
-    run: &Run,
-    output: &Channel<LogEvent>,
-) -> AppResult<bool> {
-    let connection =
-        connection::connect_verified(spec, &run.cancel, crate::traffic::TrafficPurpose::Logs)?;
-    let session = connection.session();
-    if run.cancel.is_cancelled() {
-        return Ok(false);
-    }
-    let inspect=ssh::exec(session,&format!("env -u DOCKER_CONTEXT -u DOCKER_HOST docker --host {} inspect --type container --format '{{{{json .}}}}' {}",ssh::quote(&target.endpoint),ssh::quote(&target.id)))?;
-    if inspect.code != 0 {
-        return Err(AppError::new("docker", inspect.stderr.trim()));
-    }
-    let metadata: serde_json::Value =
-        serde_json::from_str(inspect.stdout.trim()).map_err(|e| AppError::new("docker", e))?;
-    let following = metadata["State"]["Running"]
-        .as_bool()
-        .ok_or_else(|| AppError::new("docker", "无法确认容器状态"))?;
-    let tty = metadata["Config"]["Tty"].as_bool().unwrap_or(false);
-    if run.cancel.is_cancelled() {
-        return Ok(false);
-    }
-    let mut saved_source = source.clone();
-    saved_source.tty = tty;
-    let mut store = log_store::Store::open(
-        archive_root,
-        &saved_source,
-        &uuid::Uuid::new_v4().to_string(),
-        history,
-    )
-    .map_err(|e| AppError::new("logs", format!("日志保存失败：{}", e.message)))?;
-    let mut opened_channel = None;
-    let mut chunks = Vec::new();
-    let mut count = 0;
-    let mut stderr_tail = Vec::new();
-    let mut buffer = [0u8; 16384];
-    let mut flush = Instant::now();
-    let mut keepalive = Instant::now();
-    let mut write_failed = false;
-    let result = (|| {
-        // Once the archive run exists, setup failures and early cancellation
-        // must take the same flush/finish path as a running log stream.
-        run.cancel.check()?;
-        let mut channel = session.channel_session()?;
-        channel.exec(&command(
-            target,
-            following && !history,
-            store.since.as_deref(),
-        )?)?;
-        session.set_blocking(false);
-        opened_channel = Some(channel);
-        let channel = opened_channel.as_mut().unwrap();
-        let _ = output.send(LogEvent::Ready {
-            following,
-            tty,
-            history,
-        });
-        loop {
-            if run.cancel.is_cancelled() {
-                break;
-            }
-            let mut received = false;
-            let mut read_error = None;
-            for stream in 0..2 {
-                match channel.stream(stream as i32).read(&mut buffer) {
-                    Ok(n) if n > 0 => {
-                        received = true;
-                        chunks.push((stream, buffer[..n].to_vec()));
-                        count += n;
-                        if stream == 1 {
-                            stderr_tail.extend_from_slice(&buffer[..n]);
-                            if stderr_tail.len() > 8192 {
-                                stderr_tail.drain(..stderr_tail.len() - 8192);
-                            }
-                        }
-                    }
-                    Ok(_) => {}
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-                    Err(e) => {
-                        read_error = Some(e);
-                        break;
-                    }
-                }
-            }
-            let eof = channel.eof() && !received;
-            if eof
-                || read_error.is_some()
-                || flush.elapsed() >= Duration::from_millis(100)
-                || count >= 256 * 1024
-            {
-                if !chunks.is_empty() {
-                    let last_seq = match store.append(&chunks) {
-                        Ok(seq) => seq,
-                        Err(e) => {
-                            write_failed = true;
-                            return Err(AppError::new(
-                                "logs",
-                                format!("日志保存失败：{}", e.message),
-                            ));
-                        }
-                    };
-                    chunks.clear();
-                    count = 0;
-                    let _ = output.send(LogEvent::Saved { last_seq });
-                }
-                flush = Instant::now();
-            }
-            if let Some(e) = read_error {
-                return Err(AppError::new("network", e));
-            }
-            if eof {
-                let started = Instant::now();
-                loop {
-                    match channel.wait_close() {
-                        Ok(()) => break,
-                        Err(e) if e.code() == ssh2::ErrorCode::Session(-37) => {
-                            if run.cancel.is_cancelled() {
-                                break;
-                            }
-                            if started.elapsed() > Duration::from_secs(5) {
-                                return Err(AppError::new(
-                                    "network",
-                                    "日志连接已结束，未收到退出状态",
-                                ));
-                            }
-                            std::thread::sleep(Duration::from_millis(10));
-                        }
-                        Err(e) => return Err(e.into()),
-                    }
-                }
-                if !run.cancel.is_cancelled() && channel.exit_status()? != 0 {
-                    return Err(AppError::new(
-                        "docker",
-                        String::from_utf8_lossy(&stderr_tail).trim(),
-                    ));
-                }
-                break;
-            }
-            if keepalive.elapsed() > Duration::from_secs(20) {
-                if let Err(e) = session.keepalive_send() {
-                    if e.code() != ssh2::ErrorCode::Session(-37) {
-                        return Err(e.into());
-                    }
-                }
-                keepalive = Instant::now();
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        Ok(())
-    })();
-    // Flush even after cancellation, EOF, transport failure or a closed frontend.
-    if !write_failed {
-        if !chunks.is_empty() {
-            let seq = store
-                .append(&chunks)
-                .map_err(|e| AppError::new("logs", format!("日志保存失败：{}", e.message)))?;
-            let _ = output.send(LogEvent::Saved { last_seq: seq });
-        }
-        store
-            .finish(if run.cancel.is_cancelled() {
-                "用户停止采集"
-            } else if result.is_err() {
-                "连接中断；下次补采的覆盖无法确认"
-            } else {
-                "日志读取已结束"
-            })
-            .map_err(|e| AppError::new("logs", format!("日志保存失败：{}", e.message)))?;
-        if history && result.is_ok() && !run.cancel.is_cancelled() {
-            store
-                .mark_history_complete()
-                .map_err(|e| AppError::new("logs", format!("日志保存失败：{}", e.message)))?;
-        }
-        let _ = output.send(LogEvent::Saved {
-            last_seq: log_store::stats(archive_root, &source.source_id)?.last_seq,
-        });
-    }
-    if let Some(channel) = &mut opened_channel {
-        let _ = channel.close();
-    }
-    let _ = session.disconnect(None, "Log collection ended", None);
-    if run.cancel.is_cancelled() {
-        Ok(following)
-    } else {
-        result.map(|()| following)
     }
 }
 #[cfg(test)]
@@ -901,4 +707,200 @@ pub(crate) mod tests {
         )));
         assert!(!retryable(&AppError::new("docker", "permission denied")));
     }
+}
+
+#[tauri::command]
+pub fn logs_retry(window: WebviewWindow, state: TauriState<Arc<State>>) -> AppResult<bool> {
+    let windows = state.logs.windows.lock().unwrap();
+    let w = windows
+        .get(window.label())
+        .ok_or_else(|| AppError::new("window", "日志窗口已失效"))?;
+    if let Some(run) = w
+        .run
+        .as_ref()
+        .filter(|r| !r.terminal.load(std::sync::atomic::Ordering::SeqCst))
+    {
+        *run.wake.0.lock().unwrap() = true;
+        run.wake.1.notify_all();
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+#[tauri::command]
+pub async fn logs_events_page(
+    window: WebviewWindow,
+    app: tauri::AppHandle,
+    state: TauriState<'_, Arc<State>>,
+    after: Option<i64>,
+    before: Option<i64>,
+) -> AppResult<lifecycle::Timeline> {
+    let source = state.logs.source(window.label())?;
+    let root = root(&app)?;
+    crate::blocking(move || {
+        lifecycle::timeline(&root, &source.source_id, after.unwrap_or(0), before)
+    })
+    .await
+}
+
+fn get_snapshot(state: &State, owner: &str, id: &str) -> AppResult<Arc<snapshot::Snapshot>> {
+    state
+        .logs
+        .snapshots
+        .lock()
+        .unwrap()
+        .get(id)
+        .filter(|(label, _)| label == owner)
+        .map(|(_, s)| s.clone())
+        .ok_or_else(|| AppError::new("logs", "搜索快照已失效，请更新搜索结果"))
+}
+fn cache_root(app: &tauri::AppHandle) -> AppResult<PathBuf> {
+    Ok(app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| AppError::new("logs", e))?
+        .join("log-snapshots"))
+}
+fn register_job(state: &State, owner: &str, id: &str) -> AppResult<Cancellation> {
+    if id.is_empty() || id.len() > 128 {
+        return Err(AppError::new("validation", "无效任务标识"));
+    }
+    let mut jobs = state.logs.jobs.lock().unwrap();
+    if jobs.contains_key(id) {
+        return Err(AppError::new("logs", "任务已存在"));
+    }
+    if jobs.values().filter(|(label, _)| label == owner).count() >= 4 {
+        return Err(AppError::new("logs", "日志任务仍在结束，请稍后重试"));
+    }
+    let c = Cancellation::default();
+    jobs.insert(id.into(), (owner.into(), c.clone()));
+    Ok(c)
+}
+#[tauri::command]
+pub fn logs_cancel_job(
+    window: WebviewWindow,
+    state: TauriState<Arc<State>>,
+    request_id: String,
+) -> AppResult<()> {
+    if let Some((owner, cancel)) = state.logs.jobs.lock().unwrap().get(&request_id) {
+        if owner != window.label() {
+            return Err(AppError::new("window", "任务不属于当前窗口"));
+        }
+        cancel.cancel();
+    }
+    Ok(())
+}
+#[tauri::command]
+pub async fn logs_snapshot_create(
+    window: WebviewWindow,
+    app: tauri::AppHandle,
+    state: TauriState<'_, Arc<State>>,
+    request_id: String,
+) -> AppResult<snapshot::Info> {
+    let source = state.logs.source(window.label())?;
+    let owner = window.label().to_owned();
+    let cancel = register_job(&state, &owner, &request_id)?;
+    let root = root(&app)?;
+    let cache = cache_root(&app)?;
+    let state = state.inner().clone();
+    crate::blocking(move || {
+        let result = (|| {
+            let snapshot = snapshot::Snapshot::create(&root, &source.source_id, &cache, &cancel)?;
+            cancel.check()?;
+            let windows = state.logs.windows.lock().unwrap();
+            if !windows.contains_key(&owner) {
+                return Err(AppError::new("window", "日志窗口已关闭"));
+            }
+            let info = snapshot.info.clone();
+            state
+                .logs
+                .snapshots
+                .lock()
+                .unwrap()
+                .insert(info.id.clone(), (owner, snapshot));
+            Ok(info)
+        })();
+        state.logs.jobs.lock().unwrap().remove(&request_id);
+        result
+    })
+    .await
+}
+#[tauri::command]
+pub fn logs_snapshot_release(
+    window: WebviewWindow,
+    state: TauriState<Arc<State>>,
+    snapshot_id: String,
+) -> AppResult<()> {
+    let mut snapshots = state.logs.snapshots.lock().unwrap();
+    if snapshots
+        .get(&snapshot_id)
+        .is_some_and(|(owner, _)| owner == window.label())
+    {
+        snapshots.remove(&snapshot_id);
+    }
+    Ok(())
+}
+#[tauri::command]
+pub async fn logs_export_start(
+    window: WebviewWindow,
+    app: tauri::AppHandle,
+    state: TauriState<'_, Arc<State>>,
+    request_id: String,
+    scope: export::Scope,
+    output: Channel<export::Progress>,
+) -> AppResult<Option<String>> {
+    let source = state.logs.source(window.label())?;
+    let owner = window.label().to_owned();
+    let frozen = match &scope {
+        export::Scope::Query { snapshot_id, .. }
+        | export::Scope::Selection {
+            snapshot_id: Some(snapshot_id),
+            ..
+        } => Some(get_snapshot(&state, &owner, snapshot_id)?),
+        _ => None,
+    };
+    if let export::Scope::Selection { from, to, .. } = &scope {
+        if *from < 1 || to < from {
+            return Err(AppError::new("validation", "请选择有效的日志序号范围"));
+        }
+    }
+    let root = root(&app)?;
+    let cache = cache_root(&app)?;
+    let cancel = register_job(&state, &owner, &request_id)?;
+    let state = state.inner().clone();
+    crate::blocking(move || {
+        let result = (|| {
+            #[cfg(debug_assertions)]
+            let test_path = std::env::var_os("SSH_WORKSPACE_QA_LOG_EXPORT_DIR")
+                .map(|dir| PathBuf::from(dir).join(format!("logs-{}.log", uuid::Uuid::new_v4())));
+            #[cfg(not(debug_assertions))]
+            let test_path: Option<PathBuf> = None;
+            let path = test_path.or_else(|| {
+                rfd::FileDialog::new()
+                    .set_title("导出容器日志")
+                    .set_file_name("container-logs.log")
+                    .save_file()
+            });
+            let Some(path) = path else {
+                return Ok(None);
+            };
+            cancel.check()?;
+            let snapshot = match frozen {
+                Some(s) => s,
+                None => snapshot::Snapshot::create(&root, &source.source_id, &cache, &cancel)?,
+            };
+            let (query, from, to) = match scope {
+                export::Scope::All => (log_store::Query::default(), None, None),
+                export::Scope::Selection { from, to, .. } => {
+                    (log_store::Query::default(), Some(from), Some(to))
+                }
+                export::Scope::Query { query, .. } => (query, None, None),
+            };
+            export::save(&snapshot, query, from, to, &path, &cancel, &output)?;
+            Ok(Some(path.display().to_string()))
+        })();
+        state.logs.jobs.lock().unwrap().remove(&request_id);
+        result
+    })
+    .await
 }

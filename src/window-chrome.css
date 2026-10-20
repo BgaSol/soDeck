@@ -248,3 +248,21 @@
     opacity: 1;
   }
 }
+
+.theme-switcher {
+  position: relative;
+}
+.theme-menu {
+  position: fixed;
+  min-width: 164px;
+}
+.theme-menu button {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 8px 10px;
+  gap: 8px;
+}
+.theme-menu button span {
+  flex: 1;
+  text-align: left;
+}
