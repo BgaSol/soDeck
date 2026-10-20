@@ -340,7 +340,7 @@ fn docker_engine_management_contract() {
     let path = format!("/tmp/{name}.json");
     let sftp = session.sftp().unwrap();
     let compose_volume = format!("{name}-compose-data");
-    let configuration = serde_json::json!({"services":{"app":{"image":"alpine:3.20","command":["sleep","300"],"environment":{"SECRET":"compose-canary-$HOME","DOLLARS":"$$","BRACED":"${HOME}"},"volumes":["data:/data"]}},"volumes":{"data":{"name":compose_volume}}});
+    let configuration = serde_json::json!({"services":{"app":{"image":"alpine:3.20","command":["sleep","300"],"environment":{"SECRET":"compose-canary-$$HOME","DOLLARS":"$$$$","BRACED":"$${HOME}"},"volumes":["data:/data"]}},"volumes":{"data":{"name":compose_volume}}});
     sftp.create(Path::new(&path))
         .unwrap()
         .write_all(configuration.to_string().as_bytes())
@@ -409,7 +409,7 @@ fn docker_engine_management_contract() {
             )
             .unwrap();
             assert!(env.contains(&"SECRET=compose-canary-$HOME".to_string()));
-            assert!(env.contains(&"DOLLARS=$".to_string()));
+            assert!(env.contains(&"DOLLARS=$$".to_string()));
             assert!(env.contains(&"BRACED=${HOME}".to_string()));
             assert!(resources::prepare(
                 session,
