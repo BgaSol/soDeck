@@ -64,6 +64,29 @@ pub fn workspace_only(window: &WebviewWindow) -> AppResult<()> {
     }
 }
 
+#[tauri::command]
+pub fn request_workspace_connection(
+    window: WebviewWindow,
+    app: tauri::AppHandle,
+    server_id: String,
+    request_id: String,
+) -> AppResult<()> {
+    workspace_only(&window)?;
+    let main = app
+        .get_webview_window("main")
+        .ok_or_else(|| AppError::new("window", "主窗口不可用，请重新打开主窗口"))?;
+    app.emit_to(
+        "main",
+        "workspace-new-connection",
+        serde_json::json!({"serverId": server_id, "requestId": request_id}),
+    )
+    .map_err(|e| AppError::new("window", e))?;
+    main.show().map_err(|e| AppError::new("window", e))?;
+    main.unminimize().map_err(|e| AppError::new("window", e))?;
+    main.set_focus().map_err(|e| AppError::new("window", e))?;
+    Ok(())
+}
+
 fn owned_terminal<'a>(
     terminals: &'a HashMap<String, connection::ConnectionHandle>,
     id: &str,

@@ -69,7 +69,7 @@ export interface TerminalPaneProps {
   onState: (state: string) => void;
   onCwdChange?: (cwd: TerminalCwd | null) => void;
   onConnectionId?: (id: string | null) => void;
-  onConnectionEvent?: (event: TerminalEvent) => void;
+  onConnectionEvent?: (event: TerminalEvent, attempt: number) => void;
 }
 export function LiveTerminalPane({
   source,
@@ -419,7 +419,7 @@ export function LiveTerminalPane({
       callbacks.current.onCwdChange?.(null);
       callbacks.current.onState("连接中");
     }
-    if (!initial)
+    if (!initial && !request?.automatic)
       terminal.current?.writeln(
         "\r\n\x1b[38;2;142;160;183m正在建立安全连接…\x1b[0m",
       );
@@ -487,9 +487,13 @@ export function LiveTerminalPane({
       drain();
     }
     output.onmessage = (event) => {
-      if (cancelled) return;
-      callbacks.current.onConnectionEvent?.(event);
+      if (cancelled || closed) return;
+      callbacks.current.onConnectionEvent?.(event, request?.attempt ?? 0);
       if (event.type === "ready") {
+        if (request?.automatic)
+          write(
+            "\r\n\x1b[38;2;142;160;183m连接已恢复，已建立新的终端会话。\x1b[0m\r\n",
+          );
         const connected = event.connection.target;
         const previous = connectionSource.current;
         connectionSource.current = {
@@ -548,7 +552,8 @@ export function LiveTerminalPane({
         );
         if (event.error) callbacks.current.onError(event.error);
         setEnded(true);
-        write(`\r\n\x1b[38;2;142;160;183m${event.message}\x1b[0m\r\n`);
+        if (!request?.automatic)
+          write(`\r\n\x1b[38;2;142;160;183m${event.message}\x1b[0m\r\n`);
       }
     };
     const restore = initial
@@ -599,10 +604,20 @@ export function LiveTerminalPane({
         if (initial && !id) readyCallback.current?.();
       })
       .catch((error) => {
-        if (!cancelled) {
+        if (!cancelled && !closed) {
           callbacks.current.onConnectionId?.(null);
+          const failure = errorOf(error);
+          callbacks.current.onConnectionEvent?.(
+            {
+              type: "closed",
+              reason: "failed",
+              message: failure.message,
+              error: failure,
+            },
+            request?.attempt ?? 0,
+          );
           callbacks.current.onState("连接失败");
-          callbacks.current.onError(errorOf(error));
+          callbacks.current.onError(failure);
           setEnded(true);
         }
       });

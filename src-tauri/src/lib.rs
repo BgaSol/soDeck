@@ -785,6 +785,7 @@ pub fn run() {
             moves::terminal_freeze,
             moves::terminal_attach,
             moves::terminal_resume,
+            moves::request_workspace_connection,
             moves::move_workspace,
             moves::take_workspace,
             moves::workspace_ready,

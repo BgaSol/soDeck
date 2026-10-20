@@ -420,6 +420,54 @@ export function App() {
       };
     });
   }
+  const newConnectionRequests = useRef(new Set<string>());
+  const createConnection = useCallback(
+    async (serverId: string, afterId?: string, requestId?: string) => {
+      if (requestId && newConnectionRequests.current.has(requestId)) return;
+      if (requestId) {
+        newConnectionRequests.current.add(requestId);
+        if (newConnectionRequests.current.size > 256)
+          newConnectionRequests.current.delete(
+            newConnectionRequests.current.values().next().value!,
+          );
+      }
+      try {
+        const currentServers = await api.listServers();
+        const server = currentServers.find((item) => item.id === serverId);
+        if (!server) throw new Error("服务器配置已不存在，请刷新服务器列表。");
+        if (!server.username) throw new Error("请先填写 SSH 用户名。");
+        navigationSerial.current++;
+        setWorkspaces((current) =>
+          openWorkspace(current, server, true, undefined, afterId),
+        );
+        setError(null);
+      } catch (error) {
+        setError(errorOf(error));
+      }
+    },
+    [],
+  );
+  useEffect(() => {
+    if (!desktop) return;
+    let disposed = false;
+    let off: (() => void) | undefined;
+    void getCurrentWindow()
+      .listen<{ serverId: string; requestId: string }>(
+        "workspace-new-connection",
+        ({ payload }) => {
+          void createConnection(payload.serverId, undefined, payload.requestId);
+        },
+      )
+      .then((unlisten) => {
+        if (disposed) unlisten();
+        else off = unlisten;
+      })
+      .catch((error) => setError(errorOf(error)));
+    return () => {
+      disposed = true;
+      off?.();
+    };
+  }, [createConnection]);
   function editServer(server: Server) {
     setDuplicateSource(null);
     setEditor(structuredClone(server));
@@ -502,6 +550,15 @@ export function App() {
           setWorkspaces((current) => reorderWorkspace(current, id, beforeId))
         }
         onNew={desktop ? () => navigate("") : undefined}
+        onNewConnection={
+          desktop
+            ? (id) => {
+                const tab = workspaces.tabs.find((item) => item.id === id);
+                if (tab && !moves.moving.has(id))
+                  void createConnection(tab.server.id, id);
+              }
+            : undefined
+        }
         onError={(error) => setError(errorOf(error))}
         actions={
           <>

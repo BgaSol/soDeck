@@ -121,7 +121,7 @@ export function TerminalWorkspace(props: TerminalPaneProps) {
       clearInterval(timer);
     };
   }, [binding]);
-  function receive(event: TerminalEvent) {
+  function receive(event: TerminalEvent, attempt: number) {
     if (event.type === "history") {
       setBinding({
         sessionId: event.sessionId,
@@ -132,7 +132,7 @@ export function TerminalWorkspace(props: TerminalPaneProps) {
     }
     if (event.type === "data" && modeRef.current === "history")
       setChanged(true);
-    props.onConnectionEvent?.(event);
+    props.onConnectionEvent?.(event, attempt);
   }
   async function clear() {
     try {

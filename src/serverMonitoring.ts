@@ -15,11 +15,20 @@ export interface DockerSummary {
 }
 export interface DockerState {
   engineGeneration: number;
+  engineErrorKind?: string | null;
   engine: Metric<DockerStatus>;
   containers: Metric<Container[]>;
   summary: Metric<DockerSummary>;
   images: Metric<DockerImage[]>;
   refreshing: boolean;
+}
+export function dockerCanAttempt(docker: DockerState): boolean {
+  return (
+    docker.engine.value?.state === "running" &&
+    (docker.engine.status === "ready" ||
+      (docker.engine.status === "stale" &&
+        docker.engineErrorKind === "timeout"))
+  );
 }
 export function emptyDocker(): DockerState {
   const metric = <T>(): Metric<T> => ({
@@ -30,6 +39,7 @@ export function emptyDocker(): DockerState {
   });
   return {
     engineGeneration: 0,
+    engineErrorKind: null,
     engine: metric(),
     containers: metric(),
     summary: metric(),

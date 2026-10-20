@@ -68,6 +68,7 @@ async function management(
         updatedAt: Date.now(),
         error: null,
       });
+      const detailState: any = {};
       const emit = () =>
         channel?.onmessage({
           subscriptionId: "docker-sub",
@@ -81,6 +82,7 @@ async function management(
                 stale: false,
                 missing: false,
                 error: null,
+                ...detailState,
               }
             : null,
           operations: tasks,
@@ -101,6 +103,7 @@ async function management(
       w.__DOCKER__ = {
         calls,
         detail,
+        detailState,
         tasks,
         emit,
         engine,
@@ -714,3 +717,183 @@ for (const width of [320, 360, 480]) {
     expect(errors).toEqual([]);
   });
 }
+
+test("timeouts preserve detail actions and recover without reopening", async ({
+  page,
+}) => {
+  const { panel, errors } = await management(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    Object.assign(w.__DOCKER__.detailState, {
+      stale: true,
+      errorKind: "timeout",
+      error: "远端资源查询超时",
+    });
+    w.__DOCKER__.emit();
+    w.__MOUNTS__.sendDocker({
+      engineErrorKind: "timeout",
+      engine: {
+        value: {
+          state: "running",
+          endpoint: w.__DOCKER__.engine.endpoint,
+          message: "ok",
+        },
+        status: "stale",
+        updatedAt: Date.now() - 30000,
+        error: "远端资源查询超时",
+      },
+      containers: {
+        value: [
+          {
+            id: w.__DOCKER__.detail.id,
+            name: "web",
+            image: "nginx:alpine",
+            state: "running",
+            status: "running",
+          },
+        ],
+        status: "stale",
+        updatedAt: Date.now() - 30000,
+        error: "远端资源查询超时",
+      },
+    });
+  });
+  await expect(panel).toContainText("保留上次列表");
+  await expect(panel).toContainText("保留上次详情");
+  await expect(
+    panel.getByRole("button", { name: "查看 web 日志" }),
+  ).toBeEnabled();
+  await expect(
+    panel.getByRole("button", { name: "进入 web 终端" }),
+  ).toBeEnabled();
+  await expect(
+    panel.getByRole("button", { name: "停止 web", exact: true }),
+  ).toBeEnabled();
+  await panel.getByRole("button", { name: "停止 web", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__DOCKER__.tasks.length))
+    .toBe(1);
+  await expect(
+    panel.getByRole("button", { name: "停止 web", exact: true }),
+  ).toBeDisabled();
+  await page.evaluate(() => {
+    const w = window as any;
+    Object.assign(w.__DOCKER__.detailState, {
+      stale: false,
+      errorKind: null,
+      error: null,
+    });
+    w.__MOUNTS__.sendDocker({
+      engineErrorKind: null,
+      engine: {
+        value: {
+          state: "running",
+          endpoint: w.__DOCKER__.engine.endpoint,
+          message: "ok",
+        },
+        status: "ready",
+        updatedAt: Date.now(),
+        error: null,
+      },
+    });
+    w.__DOCKER__.finish();
+  });
+  await expect(panel).not.toContainText("远端资源查询超时");
+  await expect(
+    panel.getByRole("button", { name: "启动 web", exact: true }),
+  ).toBeEnabled();
+  expect(errors).toEqual([]);
+});
+
+test("detail permission failure blocks mutations but remains manually retryable", async ({
+  page,
+}) => {
+  const { panel, errors } = await management(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    Object.assign(w.__DOCKER__.detailState, {
+      stale: true,
+      errorKind: "permission",
+      error: "Docker 权限不足",
+    });
+    w.__DOCKER__.emit();
+  });
+  await expect(
+    panel.getByRole("button", { name: "停止 web", exact: true }),
+  ).toBeDisabled();
+  await panel.getByRole("button", { name: "立即重试", exact: true }).click();
+  expect(
+    await page.evaluate(() =>
+      (window as any).__DOCKER__.calls.some(
+        (c: any) => c.command === "refresh_docker_management",
+      ),
+    ),
+  ).toBe(true);
+  expect(
+    await page.evaluate(() => (window as any).__DOCKER__.tasks.length),
+  ).toBe(0);
+  expect(errors).toEqual([]);
+});
+
+test("stale list actions still open detail and submit while statistics are unavailable", async ({
+  page,
+}) => {
+  const { panel, errors } = await management(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.__DOCKER__.detail.statsError = "远端资源查询超时";
+    w.__DOCKER__.emit();
+    w.__MOUNTS__.sendDocker({
+      containers: {
+        value: [
+          {
+            id: w.__DOCKER__.detail.id,
+            name: "web",
+            image: "nginx:alpine",
+            state: "running",
+            status: "running",
+          },
+        ],
+        status: "stale",
+        updatedAt: Date.now() - 10000,
+        error: "远端资源查询超时",
+      },
+    });
+  });
+  await panel.getByRole("button", { name: "返回列表", exact: true }).click();
+  await panel
+    .getByRole("button", { name: "web 列表操作", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "重启", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__DOCKER__.tasks.length))
+    .toBe(1);
+  expect(
+    await page.evaluate(() => (window as any).__DOCKER__.tasks[0].action.type),
+  ).toBe("restart");
+  expect(errors).toEqual([]);
+});
+
+test("a confirmed missing container never permits cached management actions", async ({
+  page,
+}) => {
+  const { panel, errors } = await management(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    Object.assign(w.__DOCKER__.detailState, {
+      stale: true,
+      missing: true,
+      errorKind: "notFound",
+      error: "容器不存在",
+    });
+    w.__DOCKER__.emit();
+  });
+  await expect(panel).toContainText("容器不存在");
+  await expect(
+    panel.getByRole("button", { name: "停止 web", exact: true }),
+  ).toBeDisabled();
+  expect(
+    await page.evaluate(() => (window as any).__DOCKER__.tasks.length),
+  ).toBe(0);
+  expect(errors).toEqual([]);
+});

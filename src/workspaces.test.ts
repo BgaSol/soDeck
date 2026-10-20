@@ -14,6 +14,25 @@ describe("session workspaces", () => {
     name: "Web-01",
     username: "ops",
   };
+  it("creates an independent tab next to an inactive source and preserves other tabs", () => {
+    const first = openWorkspace(emptyWorkspaces(), server, true, "first");
+    const other = openWorkspace(
+      first,
+      { ...server, id: "other", name: "Other" },
+      true,
+      "other",
+    );
+    const created = openWorkspace(other, server, true, "new", "first");
+    expect(created.tabs.map((tab) => tab.id)).toEqual([
+      "first",
+      "new",
+      "other",
+    ]);
+    expect(created.activeId).toBe("new");
+    expect(created.tabs[0]).toBe(other.tabs[0]);
+    expect(created.tabs[1].number).toBe(2);
+    expect(created.tabs[1].server).not.toBe(created.tabs[0].server);
+  });
   it("focuses an existing tab by default and explicitly opens independent duplicates", () => {
     const first = openWorkspace(emptyWorkspaces(), server);
     const duplicate = openWorkspace(first, server, true);

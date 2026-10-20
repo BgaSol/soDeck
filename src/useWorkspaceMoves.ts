@@ -149,7 +149,10 @@ export function useWorkspaceMoves(
       const transferId = arrivals.current.get(id);
       if (!transferId) return;
       void invoke("workspace_ready", { transferId })
-        .then(() => arrivals.current.delete(id))
+        .then(() => {
+          arrivals.current.delete(id);
+          handles.current.get(id)?.resumeRecovery();
+        })
         .catch((e) => {
           setError(errorOf(e));
           void invoke("cancel_workspace_move", { transferId });

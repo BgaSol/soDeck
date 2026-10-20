@@ -120,6 +120,7 @@ pub(crate) fn exercise(
             )
             .unwrap()
     };
+    std::fs::write(root.join("docker-stats-delay"), "2").unwrap();
     let one = subscribe(first, first_owner.clone());
     let two = subscribe(second, second_owner.clone());
     state
@@ -133,6 +134,29 @@ pub(crate) fn exercise(
     wait("both windows receive snapshots", || {
         values.lock().unwrap().len() >= 2
     });
+    wait(
+        "inspect is visible before the slow stats request completes",
+        || {
+            state
+                .docker
+                .core
+                .lock()
+                .unwrap()
+                .details
+                .values()
+                .any(|cache| {
+                    cache.running
+                        && !cache.state.loading
+                        && !cache.state.stale
+                        && cache
+                            .state
+                            .value
+                            .as_ref()
+                            .is_some_and(|d| d.id == a && d.stats.is_none())
+                })
+        },
+    );
+    std::fs::remove_file(root.join("docker-stats-delay")).unwrap();
     std::fs::write(root.join("docker-action-delay"), "6.5").unwrap();
     let request = make(Action::Stop, &a);
     let id = state
@@ -403,6 +427,24 @@ pub(crate) fn exercise(
         std::fs::read_to_string(root.join("create-env-receipt")).unwrap(),
         "PASSWORD=secret-canary-value\n"
     );
+    // Windows filesystems cannot report POSIX 0600. Verify the actual SFTP
+    // creation mode on every platform, and the resulting mode on Unix too.
+    let events = std::fs::read_to_string(root.join("ssh-events.jsonl")).unwrap();
+    let opens: Vec<serde_json::Value> = events
+        .lines()
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .filter(|event: &serde_json::Value| {
+            event["event"] == "sftp-open"
+                && event["path"]
+                    .as_str()
+                    .is_some_and(|p| p.starts_with("/tmp/.sodeck-env-"))
+        })
+        .collect();
+    assert!(!opens.is_empty());
+    assert!(opens.iter().all(|event| event["mode"]
+        .as_u64()
+        .is_some_and(|mode| mode & 0o777 == 0o600)));
+    #[cfg(unix)]
     assert_eq!(
         std::fs::read_to_string(root.join("create-env-mode")).unwrap(),
         "384"

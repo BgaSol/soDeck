@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { windowTitle } from "./brand";
 import { desktop } from "./api";
@@ -46,6 +47,14 @@ export function DetachedApp() {
         onReorder={(id, before) =>
           setWorkspaces((c) => reorderWorkspace(c, id, before))
         }
+        onNewConnection={(id) => {
+          const tab = workspaces.tabs.find((item) => item.id === id);
+          if (tab && !moves.moving.has(id))
+            void invoke("request_workspace_connection", {
+              serverId: tab.server.id,
+              requestId: crypto.randomUUID(),
+            }).catch((error) => setError(errorOf(error)));
+        }}
         onError={(error) => setError(errorOf(error))}
       />
       <div className="workspaces">

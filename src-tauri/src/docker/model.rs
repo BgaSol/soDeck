@@ -325,6 +325,7 @@ pub struct ContainerDetail {
     pub networks: Vec<Network>,
     pub updated_at: u64,
     pub stats: Option<ContainerStats>,
+    pub stats_loading: bool,
     pub stats_error: Option<String>,
 }
 #[derive(Clone, Debug, Serialize)]
@@ -387,6 +388,7 @@ pub struct DetailState {
     pub value: Option<ContainerDetail>,
     pub loading: bool,
     pub stale: bool,
+    pub error_kind: Option<String>,
     pub missing: bool,
     pub error: Option<String>,
 }

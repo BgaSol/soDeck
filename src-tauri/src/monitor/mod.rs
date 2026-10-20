@@ -56,6 +56,7 @@ struct Core {
     schedule: mounts::Schedule,
     refresh: bool,
     docker: DockerState,
+    verified_docker: Option<crate::docker::DockerStatus>,
     docker_revision: u64,
     docker_refresh: u64,
     images_running: bool,
@@ -76,6 +77,7 @@ impl Default for Core {
             schedule: mounts::Schedule::default(),
             refresh: true,
             docker: DockerState::default(),
+            verified_docker: None,
             docker_revision: 0,
             docker_refresh: 0,
             images_running: false,
@@ -564,7 +566,7 @@ impl MonitorManager {
             .engine
             .value
             .as_ref()
-            .filter(|e| e.state == "running" && core.docker.engine.status == "ready")
+            .filter(|_| core.docker.can_attempt() && !entry.cancel.is_cancelled())
             .ok_or_else(|| AppError::new("unavailable", "Docker 引擎当前不可用，请刷新状态"))?;
         Ok(crate::docker::model::EngineBinding {
             token: format!("{}/{}", entry.generation, core.docker.engine_generation),
@@ -573,6 +575,14 @@ impl MonitorManager {
             endpoint: engine.endpoint.clone(),
             daemon_id: engine.daemon_id.clone(),
         })
+    }
+    pub(crate) fn retry_docker(&self, identity: &str) {
+        if let Some(entry) = self.entries.lock().unwrap().get(identity) {
+            let mut core = entry.core.lock().unwrap();
+            if !core.docker.refreshing {
+                core.docker_refresh += 1;
+            }
+        }
     }
     pub(crate) fn invalidate_docker(
         &self,

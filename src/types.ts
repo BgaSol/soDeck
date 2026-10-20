@@ -112,6 +112,7 @@ export type TerminalEvent =
       type: "closed";
       message: string;
       reason: "failed" | "cancelled" | "ended";
+      recovery?: "retry" | "userAction" | "none";
       error: AppError | null;
     }
   | { type: "frozen"; token: string }
@@ -119,6 +120,7 @@ export type TerminalEvent =
 export interface ConnectionRequest {
   serverId: string;
   attempt: number;
+  automatic?: boolean;
 }
 export const emptyServer = (): Server => ({
   id: "",

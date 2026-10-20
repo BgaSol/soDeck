@@ -321,6 +321,7 @@ pub fn run(
     let mut pending_write = Vec::<u8>::new();
     let mut write_offset = 0;
     let mut history_checkpoint = Instant::now();
+    let mut eof_started: Option<Instant> = None;
     let result: Result<(), String> = (|| loop {
         if cancel.is_cancelled() {
             return Ok(());
@@ -427,7 +428,29 @@ pub fn run(
                     }
                 }
             }
-            Ok(_) if channel.eof() => return Ok(()),
+            Ok(_) if channel.eof() => {
+                if eof_started.get_or_insert_with(Instant::now).elapsed() > Duration::from_secs(12)
+                {
+                    return Err("等待远端关闭终端超时".into());
+                }
+                // Consume the channel-close packet before inspecting the exit
+                // signal. A transport failure here is not a normal shell exit.
+                match channel.wait_close() {
+                    Ok(()) => {
+                        if let Some(error) = connection.transport_error() {
+                            return Err(error.message);
+                        }
+                        let signal = channel.exit_signal().map_err(|e| e.to_string())?;
+                        return if signal.exit_signal.is_some() {
+                            Err("远端终端被信号中断".into())
+                        } else {
+                            Ok(())
+                        };
+                    }
+                    Err(e) if e.code() == ssh2::ErrorCode::Session(-37) => {}
+                    Err(e) => return Err(e.to_string()),
+                }
+            }
             Ok(_) => {}
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
             Err(e) => return Err(e.to_string()),

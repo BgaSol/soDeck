@@ -13,6 +13,7 @@ async function setup(
     chrome?: string;
     inventorySize?: number;
     showcase?: boolean;
+    delayWorkspaceReady?: boolean;
   } = {},
 ) {
   const errors: string[] = [];
@@ -189,6 +190,10 @@ async function setup(
             return;
           }
           if (command === "move_workspace") return "fixture-transfer";
+          if (command === "workspace_ready" && options.delayWorkspaceReady)
+            return new Promise<void>((resolve) => {
+              w.__TEST__.commitMove = resolve;
+            });
           if (command === "delete_server") {
             const index = servers.findIndex((s) => s.id === args.id);
             if (index >= 0) servers.splice(index, 1);
@@ -231,12 +236,30 @@ async function setup(
           if (command === "open_connection") {
             const id = `connection-${serial++}`;
             channels.set(id, args.events);
+            const nextMode = w.__TEST__.nextMode;
+            delete w.__TEST__.nextMode;
+            if (nextMode === "reject")
+              throw { kind: "network", message: "fixture unavailable" };
+            if (nextMode === "pending") return id;
+            if (nextMode === "fail") {
+              emit(id, {
+                type: "closed",
+                reason: "failed",
+                message: "fixture unavailable",
+                error: { kind: "network", message: "fixture unavailable" },
+                recovery: "retry",
+              });
+              return id;
+            }
             // Exercise events arriving before open_connection returns its ID.
-            if (options.autoConnect) {
+            if (options.autoConnect && nextMode !== "authenticate") {
+              const target =
+                servers.find((server) => server.id === args.serverId) ??
+                servers[1];
               emit(id, {
                 type: "ready",
                 connection: {
-                  target: servers[1],
+                  target,
                   hops: [hop(0), hop(1)],
                   identity: "route",
                 },
@@ -2115,3 +2138,383 @@ for (const colorScheme of ["light", "dark"] as const) {
     expect(errors).toEqual([]);
   });
 }
+
+async function connectAutomatically(page: Page) {
+  await page.locator('.server-row[data-server-id="b"]').dblclick();
+  await expect(page.locator(".connection-state:visible")).toHaveText("已连接");
+}
+async function breakConnection(page: Page, nextMode?: string) {
+  await page.evaluate((mode) => {
+    const t = (window as any).__TEST__;
+    t.nextMode = mode;
+    t.emit(t.ids().at(-1), {
+      type: "closed",
+      reason: "failed",
+      message: "network interrupted",
+      error: { kind: "network", message: "network interrupted" },
+      recovery: "retry",
+    });
+  }, nextMode);
+}
+async function connectionCount(page: Page) {
+  return page.evaluate(
+    () =>
+      (window as any).__TEST__.calls.filter(
+        (c: any) => c.command === "open_connection",
+      ).length,
+  );
+}
+
+test("tab context menu creates an independent connection next to an inactive source", async ({
+  page,
+}) => {
+  const errors = await setup(page, false, { autoConnect: true });
+  await connectAutomatically(page);
+  const tabs = page
+    .getByRole("tablist", { name: "SSH 会话", exact: true })
+    .getByRole("tab");
+  const source = await tabs.first().getAttribute("id");
+  await tabs.first().click({ button: "right" });
+  await page
+    .getByRole("menuitem", { name: "新建连接到此服务器", exact: true })
+    .click();
+  await expect(tabs).toHaveCount(2);
+  await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("button", { name: "新建连接", exact: true }).click();
+  await page.locator('.server-row[data-server-id="a"]').dblclick();
+  await expect(tabs).toHaveCount(3);
+  await expect(tabs.last()).toHaveAttribute("aria-selected", "true");
+  const second = await tabs.nth(1).getAttribute("id");
+  await tabs.first().click({ button: "right" });
+  await page
+    .getByRole("menuitem", { name: "新建连接到此服务器", exact: true })
+    .click();
+  await expect(tabs).toHaveCount(4);
+  expect(await tabs.first().getAttribute("id")).toBe(source);
+  expect(await tabs.nth(2).getAttribute("id")).toBe(second);
+  await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
+  expect(await connectionCount(page)).toBe(4);
+  const lastServer = await page.evaluate(
+    () =>
+      (window as any).__TEST__.calls
+        .filter((c: any) => c.command === "open_connection")
+        .at(-1).args.serverId,
+  );
+  expect(lastServer).toBe("b");
+  await tabs.nth(1).press("Delete");
+  await expect(tabs).toHaveCount(3);
+  await expect(page.locator(".connection-state:visible")).toHaveText("已连接");
+  expect(errors).toEqual([]);
+});
+
+test("automatic recovery keeps the tab and terminal output and reconnects after failure", async ({
+  page,
+}) => {
+  const errors = await setup(page, false, { autoConnect: true });
+  await connectAutomatically(page);
+  await page.clock.install();
+  const tabId = await page
+    .locator('.tab-select[aria-selected="true"]')
+    .getAttribute("id");
+  await breakConnection(page, "fail");
+  await expect(page.locator(".connection-recovery")).toContainText("秒后重试");
+  await page.screenshot({ path: ".qa/connection-recovery-waiting.png" });
+  await page.clock.fastForward(3000);
+  await expect.poll(() => connectionCount(page)).toBe(2);
+  await expect(page.locator(".connection-recovery")).toContainText("第 2 次");
+  await page.clock.fastForward(6000);
+  await expect.poll(() => connectionCount(page)).toBe(3);
+  await expect(page.locator(".connection-state:visible")).toHaveText("已连接");
+  expect(
+    await page.locator('.tab-select[aria-selected="true"]').getAttribute("id"),
+  ).toBe(tabId);
+  await expect(page.locator(".terminal-surface:visible")).toContainText(
+    "connected to B",
+  );
+  await expect(page.locator(".terminal-surface:visible")).toContainText(
+    "连接已恢复",
+  );
+  await expect(page.locator(".terminal-surface:visible")).not.toContainText(
+    "fixture unavailable",
+  );
+  expect(errors).toEqual([]);
+});
+
+test("automatic recovery handles IPC rejection and stops timers when requested", async ({
+  page,
+}) => {
+  const errors = await setup(page, false, { autoConnect: true });
+  await connectAutomatically(page);
+  await page.clock.install();
+  await breakConnection(page, "reject");
+  await page.getByRole("button", { name: "立即重连", exact: true }).click();
+  await expect.poll(() => connectionCount(page)).toBe(2);
+  await expect(page.locator(".connection-recovery")).toContainText("第 2 次");
+  await page.getByRole("button", { name: "停止重连", exact: true }).click();
+  await page.clock.fastForward(120000);
+  expect(await connectionCount(page)).toBe(2);
+  await expect(page.locator(".connection-state:visible")).toHaveText("已断开");
+  await page.getByRole("button", { name: "重新连接", exact: true }).click();
+  await expect(page.locator(".connection-state:visible")).toHaveText("已连接");
+  expect(await connectionCount(page)).toBe(3);
+  expect(errors).toEqual([]);
+});
+
+test("stopping an in-flight recovery ignores late success and closing a waiting tab cancels retry", async ({
+  page,
+}) => {
+  const errors = await setup(page, false, { autoConnect: true });
+  await connectAutomatically(page);
+  await page.clock.install();
+  await breakConnection(page, "pending");
+  await page.getByRole("button", { name: "立即重连", exact: true }).click();
+  await expect(page.locator(".connection-state:visible")).toHaveText(
+    "正在重连",
+  );
+  await page.getByRole("button", { name: "停止重连", exact: true }).click();
+  await page.evaluate(() => {
+    const t = (window as any).__TEST__;
+    t.emit(t.ids().at(-1), {
+      type: "ready",
+      connection: { target: t.servers[1], hops: [], identity: "late" },
+    });
+  });
+  await page.clock.fastForward(60000);
+  await expect(page.locator(".connection-state:visible")).toHaveText("已断开");
+  expect(await connectionCount(page)).toBe(2);
+  await page.getByRole("button", { name: "重新连接", exact: true }).click();
+  await expect(page.locator(".connection-state:visible")).toHaveText("已连接");
+  await breakConnection(page);
+  await page.locator('.tab-select[aria-selected="true"]').press("Delete");
+  await page.clock.fastForward(60000);
+  expect(await connectionCount(page)).toBe(3);
+  expect(errors).toEqual([]);
+});
+
+test("normal exit and manual disconnect do not trigger automatic recovery", async ({
+  page,
+}) => {
+  const errors = await setup(page, false, { autoConnect: true });
+  await connectAutomatically(page);
+  await page.clock.install();
+  await page.evaluate(() => {
+    const t = (window as any).__TEST__;
+    t.emit(t.ids().at(-1), {
+      type: "closed",
+      reason: "ended",
+      message: "会话已结束",
+      error: null,
+      recovery: "none",
+    });
+  });
+  await page.clock.fastForward(60000);
+  expect(await connectionCount(page)).toBe(1);
+  await page.getByRole("button", { name: "重新连接", exact: true }).click();
+  await expect(page.locator(".connection-state:visible")).toHaveText("已连接");
+  await page.getByRole("button", { name: "断开", exact: true }).click();
+  await page.clock.fastForward(60000);
+  expect(await connectionCount(page)).toBe(2);
+  expect(errors).toEqual([]);
+});
+
+test("automatic recovery pauses for authentication without duplicate prompts", async ({
+  page,
+}) => {
+  const errors = await setup(page, false, { autoConnect: true });
+  await connectAutomatically(page);
+  await page.clock.install();
+  await breakConnection(page, "authenticate");
+  await page.getByRole("button", { name: "立即重连", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  await page.clock.fastForward(60000);
+  expect(await connectionCount(page)).toBe(2);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "取消", exact: true })
+    .click();
+  await page.clock.fastForward(60000);
+  expect(await connectionCount(page)).toBe(2);
+  await expect(page.locator(".connection-state:visible")).toHaveText("已断开");
+  expect(errors).toEqual([]);
+});
+
+test("waiting recovery transfers only after commit and detached tabs request new connections in main", async ({
+  page,
+  context,
+}) => {
+  const errors = await setup(page, false, { autoConnect: true });
+  await connectAutomatically(page);
+  await page.clock.install();
+  await breakConnection(page);
+  await page
+    .locator('.tab-select[aria-selected="true"]')
+    .click({ button: "right" });
+  await page
+    .getByRole("menuitem", { name: "移到独立窗口", exact: true })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).__TEST__.calls.some(
+          (c: any) => c.command === "move_workspace",
+        ),
+      ),
+    )
+    .toBe(true);
+  const snapshot: WorkspaceSnapshot = await page.evaluate(
+    () =>
+      (window as any).__TEST__.calls.find(
+        (c: any) => c.command === "move_workspace",
+      ).args.payload,
+  );
+  expect(snapshot.recovery?.phase).toBe("waiting");
+  expect(snapshot.terminal.sessionId).toBeNull();
+  await page.clock.fastForward(60000);
+  expect(await connectionCount(page)).toBe(1);
+  const detached = await context.newPage();
+  await detached.clock.install({
+    time: new Date(snapshot.recovery!.nextRetryAt! - 1000),
+  });
+  const detachedErrors = await setup(detached, false, {
+    snapshot,
+    autoConnect: true,
+    delayWorkspaceReady: true,
+  });
+  await expect
+    .poll(() =>
+      detached.evaluate(() => typeof (window as any).__TEST__.commitMove),
+    )
+    .toBe("function");
+  await detached.clock.fastForward(10000);
+  expect(await connectionCount(detached)).toBe(0);
+  await expect(detached.locator(".terminal-surface:visible")).toContainText(
+    "connected to B",
+  );
+  await detached.evaluate(() => (window as any).__TEST__.commitMove());
+  await detached.clock.fastForward(1);
+  await expect.poll(() => connectionCount(detached)).toBe(1);
+  await expect(detached.locator(".connection-state:visible")).toHaveText(
+    "已连接",
+  );
+  expect(await connectionCount(page)).toBe(1);
+  await detached
+    .locator('.tab-select[aria-selected="true"]')
+    .click({ button: "right" });
+  await detached.getByRole("menuitem", { name: /新建连接到此服务器/ }).click();
+  const request = await detached.evaluate(() =>
+    (window as any).__TEST__.calls.find(
+      (c: any) => c.command === "request_workspace_connection",
+    ),
+  );
+  expect(request.args.serverId).toBe("b");
+  expect(request.args.requestId).toBeTruthy();
+  await detached.close();
+  expect([...errors, ...detachedErrors]).toEqual([]);
+});
+
+test("failed migration resumes recovery in the source window", async ({
+  page,
+}) => {
+  const errors = await setup(page, false, { autoConnect: true });
+  await connectAutomatically(page);
+  await page.clock.install();
+  const tabId = (await page
+    .locator('.tab-select[aria-selected="true"]')
+    .getAttribute("id"))!.slice(4);
+  await breakConnection(page);
+  await page
+    .locator('.tab-select[aria-selected="true"]')
+    .click({ button: "right" });
+  await page
+    .getByRole("menuitem", { name: "移到独立窗口", exact: true })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).__TEST__.calls.some(
+          (c: any) => c.command === "move_workspace",
+        ),
+      ),
+    )
+    .toBe(true);
+  await page.clock.fastForward(10000);
+  expect(await connectionCount(page)).toBe(1);
+  await page.evaluate(
+    (tabId) =>
+      (window as any).__TEST__.emitWindow("workspace-move-failed", {
+        tabId,
+        transferId: "fixture-transfer",
+        message: "fixture move cancelled",
+      }),
+    tabId,
+  );
+  await page.clock.fastForward(1);
+  await expect.poll(() => connectionCount(page)).toBe(2);
+  await expect(page.locator(".connection-state:visible")).toHaveText("已连接");
+  expect(errors).toEqual([]);
+});
+
+test("background recovery preserves focus and cross-window creation requests are deduplicated", async ({
+  page,
+}) => {
+  const errors = await setup(page, false, { autoConnect: true });
+  await connectAutomatically(page);
+  await page.clock.install();
+  await page.evaluate(async () => {
+    const t = (window as any).__TEST__;
+    await t.emitWindow("workspace-new-connection", {
+      serverId: "b",
+      requestId: "once",
+    });
+    await t.emitWindow("workspace-new-connection", {
+      serverId: "b",
+      requestId: "once",
+    });
+  });
+  await expect.poll(() => connectionCount(page)).toBe(2);
+  const activeId = await page
+    .locator('.tab-select[aria-selected="true"]')
+    .getAttribute("id");
+  await page.evaluate(() => {
+    const t = (window as any).__TEST__;
+    t.emit(t.ids()[0], {
+      type: "closed",
+      reason: "failed",
+      message: "lost",
+      error: { kind: "network", message: "lost" },
+    });
+  });
+  await page.clock.fastForward(3000);
+  await expect.poll(() => connectionCount(page)).toBe(3);
+  expect(
+    await page.locator('.tab-select[aria-selected="true"]').getAttribute("id"),
+  ).toBe(activeId);
+  expect(errors).toEqual([]);
+});
+
+test("new tab connection failures remain visible without changing the source session", async ({
+  page,
+}) => {
+  const errors = await setup(page, false, { autoConnect: true });
+  await connectAutomatically(page);
+  await page.clock.install();
+  await page.evaluate(() => {
+    (window as any).__TEST__.nextMode = "fail";
+  });
+  const tabs = page
+    .getByRole("tablist", { name: "SSH 会话", exact: true })
+    .getByRole("tab");
+  await tabs.first().click({ button: "right" });
+  await page
+    .getByRole("menuitem", { name: "新建连接到此服务器", exact: true })
+    .click();
+  await expect(tabs).toHaveCount(2);
+  await expect(page.locator(".connection-state:visible")).toHaveText(
+    "连接失败",
+  );
+  await page.clock.fastForward(60000);
+  expect(await connectionCount(page)).toBe(2);
+  await tabs.first().click();
+  await expect(page.locator(".connection-state:visible")).toHaveText("已连接");
+  expect(errors).toEqual([]);
+});

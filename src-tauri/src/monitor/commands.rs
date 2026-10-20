@@ -125,7 +125,7 @@ pub fn refresh_monitor(
             v.stale = true;
         }
     }
-    if matches!(scope.as_str(), "all" | "docker") {
+    if matches!(scope.as_str(), "all" | "docker") && !c.docker.refreshing {
         c.docker_refresh += 1;
     }
     drop(c);

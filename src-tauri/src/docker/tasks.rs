@@ -32,6 +32,8 @@ struct CachedDetail {
     next: Instant,
     running: bool,
     version: u64,
+    failures: u32,
+    paused: bool,
 }
 struct Record {
     view: Operation,
@@ -377,14 +379,21 @@ impl DockerManager {
                     value: None,
                     loading: false,
                     stale: false,
+                    error_kind: None,
                     missing: false,
                     error: None,
                 },
                 next: Instant::now(),
                 running: false,
                 version: 0,
+                failures: 0,
+                paused: false,
             });
-        if cache.running || Instant::now() < cache.next || self.jobs.load(Ordering::SeqCst) >= 8 {
+        if cache.running
+            || cache.paused
+            || Instant::now() < cache.next
+            || self.jobs.load(Ordering::SeqCst) >= 8
+        {
             return;
         }
         cache.running = true;
@@ -397,6 +406,7 @@ impl DockerManager {
             let result: AppResult<ContainerDetail> = (|| {
                 let check = || {
                     state.ensure_running()?;
+                    state.check_context(&spec)?;
                     check_binding(&state, &spec, &engine)
                 };
                 check()?;
@@ -408,13 +418,38 @@ impl DockerManager {
                 verify_engine(connection.session(), &engine, &check)?;
                 let mut detail =
                     inspect::container(connection.session(), &engine.endpoint, &id, &check)?;
+                // Make inspect data visible while stats is still in flight. The pump
+                // publishes this cache independently; retain the job slot until stats ends.
+                {
+                    let mut core = state.docker.core.lock().unwrap();
+                    let Some(cache) = core.details.get_mut(&key) else {
+                        return Err(AppError::new("cancelled", "详情订阅已结束"));
+                    };
+                    if cache.version != version {
+                        return Err(AppError::new("cancelled", "详情已重新刷新"));
+                    }
+                    if detail.state == "running" {
+                        detail.stats = cache.state.value.as_ref().and_then(|d| d.stats.clone());
+                        detail.stats_loading = true;
+                    }
+                    cache.state.value = Some(detail.clone());
+                    cache.state.loading = false;
+                    cache.state.error = None;
+                    cache.state.error_kind = None;
+                    cache.state.stale = false;
+                    cache.state.missing = false;
+                }
                 if detail.state == "running" {
                     match super::stats::sample(connection.session(), &engine.endpoint, &id, &check)
                     {
-                        Ok(stats) => detail.stats = Some(stats),
+                        Ok(stats) => {
+                            detail.stats = Some(stats);
+                            detail.stats_error = None;
+                        }
                         Err(e) => detail.stats_error = Some(e.message),
                     }
                 }
+                detail.stats_loading = false;
                 Ok(detail)
             })();
             let mut core = state.docker.core.lock().unwrap();
@@ -433,11 +468,20 @@ impl DockerManager {
                                     .and_then(|previous| previous.stats.clone());
                             }
                             cache.state.value = Some(detail);
+                            cache.failures = 0;
                             cache.state.error = None;
+                            cache.state.error_kind = None;
                             cache.state.stale = false;
                             cache.state.missing = false;
                         }
                         Err(e) => {
+                            cache.failures = cache.failures.saturating_add(1);
+                            cache.paused = matches!(
+                                e.kind.as_str(),
+                                "hostKey" | "authentication" | "permission"
+                            );
+                            cache.next = Instant::now() + query::retry_delay(cache.failures, true);
+                            cache.state.error_kind = Some(e.kind.clone());
                             cache.state.stale = true;
                             cache.state.missing = e.kind == "notFound";
                             cache.state.error = Some(e.message);
@@ -450,8 +494,16 @@ impl DockerManager {
     }
     pub fn refresh(&self, state: &State, session: &str, owner: &WindowOwner) -> AppResult<()> {
         let spec = state.spec(session, &owner.label)?;
-        let engine = state.monitor.docker_binding(spec.identity())?;
-        self.invalidate(state, spec.identity(), &engine);
+        state.monitor.retry_docker(spec.identity());
+        let prefix = format!("{}\0", spec.identity());
+        for (key, cache) in &mut self.core.lock().unwrap().details {
+            if key.starts_with(&prefix) && !cache.running {
+                cache.version += 1;
+                cache.next = Instant::now();
+                cache.paused = false;
+                cache.failures = 0;
+            }
+        }
         Ok(())
     }
     fn invalidate(&self, state: &State, identity: &str, engine: &EngineBinding) {
@@ -462,6 +514,8 @@ impl DockerManager {
                 cache.version += 1;
                 cache.next = Instant::now();
                 cache.state.stale = true;
+                cache.paused = false;
+                cache.failures = 0;
             }
         }
     }

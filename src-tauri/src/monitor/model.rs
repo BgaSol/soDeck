@@ -133,11 +133,25 @@ pub struct DockerSummary {
 #[serde(rename_all = "camelCase")]
 pub struct DockerState {
     pub engine_generation: u64,
+    pub engine_error_kind: Option<String>,
     pub engine: Metric<crate::docker::DockerStatus>,
     pub containers: Metric<Vec<crate::docker::Container>>,
     pub summary: Metric<DockerSummary>,
     pub images: Metric<Vec<crate::docker::Image>>,
     pub refreshing: bool,
+}
+impl DockerState {
+    /// A timed-out observation does not revoke a previously verified target.
+    /// Callers must still verify its identity on their own connection before acting.
+    pub fn can_attempt(&self) -> bool {
+        self.engine
+            .value
+            .as_ref()
+            .is_some_and(|e| e.state == "running")
+            && (self.engine.status == "ready"
+                || (self.engine.status == "stale"
+                    && self.engine_error_kind.as_deref() == Some("timeout")))
+    }
 }
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -198,4 +212,43 @@ pub struct HistoryPage {
     pub points: Vec<HistoryPoint>,
     pub truncated: bool,
     pub traffic: crate::traffic::HistoryPage,
+}
+
+#[cfg(test)]
+mod availability_tests {
+    use super::*;
+    #[test]
+    fn only_classified_timeout_retains_verified_target() {
+        let mut docker = DockerState::default();
+        assert!(!docker.can_attempt());
+        docker.engine = Metric::success(
+            crate::docker::DockerStatus {
+                state: "running".into(),
+                message: "ok".into(),
+                endpoint: "unix:///docker.sock".into(),
+                daemon_id: Some("engine".into()),
+            },
+            1,
+        );
+        assert!(docker.can_attempt());
+        docker.engine.fail("stale", "failure");
+        assert!(!docker.can_attempt());
+        for kind in [
+            "permission",
+            "authentication",
+            "hostKey",
+            "network",
+            "disconnected",
+            "ssh",
+        ] {
+            docker.engine_error_kind = Some(kind.into());
+            assert!(!docker.can_attempt(), "{kind}");
+        }
+        docker.engine_error_kind = Some("timeout".into());
+        assert!(docker.can_attempt());
+        docker.engine.value.as_mut().unwrap().state = "unreachable".into();
+        assert!(!docker.can_attempt());
+        docker.engine.value = None;
+        assert!(!docker.can_attempt());
+    }
 }

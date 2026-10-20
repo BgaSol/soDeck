@@ -50,7 +50,12 @@ pub(crate) fn detect_on(
     session: &ssh2::Session,
     check: &impl Fn() -> AppResult<()>,
 ) -> AppResult<DockerStatus> {
-    let found = query(session, "command -v docker >/dev/null 2>&1", check)?;
+    let found = query(
+        session,
+        "command -v docker >/dev/null 2>&1",
+        "command",
+        check,
+    )?;
     if found.code != 0 {
         return Ok(DockerStatus {
             state: "missing".into(),
@@ -59,7 +64,7 @@ pub(crate) fn detect_on(
             daemon_id: None,
         });
     }
-    let endpoint=query(session,"if [ -n \"$DOCKER_HOST\" ] && [ -z \"$DOCKER_CONTEXT\" ]; then printf '%s' \"$DOCKER_HOST\"; else docker context inspect --format '{{.Endpoints.docker.Host}}'; fi", check)?;
+    let endpoint=query(session,"if [ -n \"$DOCKER_HOST\" ] && [ -z \"$DOCKER_CONTEXT\" ]; then printf '%s' \"$DOCKER_HOST\"; else docker context inspect --format '{{.Endpoints.docker.Host}}'; fi", "context", check)?;
     if endpoint.code != 0 || endpoint.stdout.trim().is_empty() {
         return Ok(DockerStatus {
             state: "error".into(),
@@ -72,6 +77,7 @@ pub(crate) fn detect_on(
     let result = query(
         session,
         &format!("{} info --format '{{{{json .ID}}}}'", docker(&endpoint)),
+        "engine-info",
         check,
     )?;
     if result.code == 0 {
@@ -95,6 +101,20 @@ pub(crate) fn detect_on(
             daemon_id: None,
         })
     }
+}
+pub(crate) fn retry_delay(failures: u32, visible: bool) -> std::time::Duration {
+    let seconds = if !visible {
+        60
+    } else {
+        match failures {
+            0 => 15,
+            1 => 3,
+            2 => 10,
+            3 => 30,
+            _ => 60,
+        }
+    };
+    std::time::Duration::from_secs(seconds)
 }
 pub(crate) fn docker(endpoint: &str) -> String {
     format!(
@@ -138,6 +158,7 @@ pub(crate) fn images_on(
             "{} image ls --no-trunc --format '{{{{json .}}}}'",
             docker(endpoint)
         ),
+        "images",
         check,
     )?;
     if result.code != 0 {
@@ -180,6 +201,7 @@ pub(crate) fn containers_on(
             "{} ps -a --no-trunc --format '{{{{json .}}}}'",
             docker(endpoint)
         ),
+        "containers",
         check,
     )?;
     if result.code != 0 {
@@ -205,9 +227,10 @@ pub(crate) fn containers_on(
 fn query(
     session: &ssh2::Session,
     command: &str,
+    stage: &str,
     check: &impl Fn() -> AppResult<()>,
 ) -> AppResult<ssh::ExecResult> {
-    crate::remote_read::exec(session, command, check)
+    crate::remote_read::docker_query(session, command, stage, check)
 }
 pub(crate) fn unhealthy_on(
     session: &ssh2::Session,
@@ -220,6 +243,7 @@ pub(crate) fn unhealthy_on(
             "{} ps -a --no-trunc --filter health=unhealthy --format '{{{{.ID}}}}'",
             docker(endpoint)
         ),
+        "health",
         check,
     )?;
     if result.code != 0 {
@@ -281,6 +305,15 @@ pub fn terminal_command_on(session: &ssh2::Session, target: &ContainerTarget) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn recovery_retries_quickly_then_caps_without_overflow() {
+        let delays: Vec<_> = [0, 1, 2, 3, 4, u32::MAX]
+            .iter()
+            .map(|n| retry_delay(*n, true).as_secs())
+            .collect();
+        assert_eq!(delays, [15, 3, 10, 30, 60, 60]);
+        assert_eq!(retry_delay(1, false).as_secs(), 60);
+    }
     #[test]
     fn commands_quote_remote_parameters() {
         assert_eq!(ssh::quote("a'b"), "'a'\\''b'");

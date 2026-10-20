@@ -11,13 +11,15 @@ pub fn sample(
     check: &impl Fn() -> AppResult<()>,
 ) -> AppResult<ContainerStats> {
     validate_id(id)?;
-    let result = remote_read::exec(
+    let result = remote_read::observed_read(
         session,
         &format!(
             "{} stats --no-stream --no-trunc --format '{{{{json .}}}}' {}",
             query::docker(endpoint),
             ssh::quote(id)
         ),
+        "container-stats",
+        std::time::Duration::from_secs(6),
         check,
     )?;
     if result.code != 0 {

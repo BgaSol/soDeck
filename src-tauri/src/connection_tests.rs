@@ -1207,3 +1207,157 @@ fn netbird_client_operations_over_verified_ssh() {
         &fixtures.root.path().join("b"),
     );
 }
+
+#[test]
+fn closed_events_classify_recovery_and_cancellation_wins() {
+    for (kind, recovery) in [
+        ("network", "retry"),
+        ("timeout", "retry"),
+        ("io", "retry"),
+        ("authentication", "userAction"),
+        ("hostKey", "userAction"),
+        ("validation", "none"),
+    ] {
+        let state = state();
+        let (output, events) = collector();
+        let (id, _, cancel, _, _) = register(
+            &state,
+            state.owner("main"),
+            Arc::new(ConnectionPlan::new(vec![server("a")]).unwrap()),
+            output,
+        )
+        .unwrap();
+        finish(&state, &id, &cancel, Err(AppError::new(kind, "fixture")));
+        let events = events.lock().unwrap();
+        assert_eq!(events[0]["reason"], "failed");
+        assert_eq!(events[0]["recovery"], recovery);
+        assert!(state.terminals.lock().unwrap().is_empty());
+    }
+    for cancelled in [false, true] {
+        let state = state();
+        let (output, events) = collector();
+        let (id, _, cancel, _, _) = register(
+            &state,
+            state.owner("main"),
+            Arc::new(ConnectionPlan::new(vec![server("a")]).unwrap()),
+            output,
+        )
+        .unwrap();
+        if cancelled {
+            cancel.cancel();
+        }
+        finish(
+            &state,
+            &id,
+            &cancel,
+            if cancelled {
+                Err(AppError::new("network", "late"))
+            } else {
+                Ok(())
+            },
+        );
+        let events = events.lock().unwrap();
+        assert_eq!(
+            events[0]["reason"],
+            if cancelled { "cancelled" } else { "ended" }
+        );
+        assert_eq!(events[0]["recovery"], "none");
+    }
+}
+
+#[test]
+#[ignore = "real loopback SSH; requires Python paramiko"]
+fn recovery_real_ssh_normal_exit_transport_loss_and_reconnect() {
+    for through_jump in [false, true] {
+        let mut fixtures = Fixtures::new(false);
+        let plan = if through_jump {
+            fixtures.plan()
+        } else {
+            ConnectionPlan::new(vec![fixtures.b.clone()]).unwrap()
+        };
+        // First prove that an ordinary shell exit is not a recoverable failure.
+        // Then terminate the loopback SSH server to exercise real socket loss.
+        for abrupt in [false, true] {
+            let state = state();
+            let (output, events) = collector();
+            let (id, receiver, cancel, _, _) =
+                register(&state, state.owner("main"), Arc::new(plan.clone()), output).unwrap();
+            let (connection, context) =
+                connect(&plan, &mut AutoProvider::default(), &cancel).unwrap();
+            let worker_state = state.clone();
+            let worker_id = id.clone();
+            let worker_cancel = cancel.clone();
+            let worker = thread::spawn(move || {
+                let result = terminal::run(
+                    connection,
+                    context,
+                    &worker_id,
+                    None,
+                    &worker_state,
+                    receiver,
+                    &worker_cancel,
+                    None,
+                );
+                finish(&worker_state, &worker_id, &worker_cancel, result);
+            });
+            wait_for(|| {
+                events
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|event| event["type"] == "ready")
+            });
+            if abrupt {
+                fixtures.children[0].kill().unwrap();
+                fixtures.children[0].wait().unwrap();
+            } else {
+                state.terminals.lock().unwrap()[&id]
+                    .sender
+                    .send(Input::Data(b"exit\r".to_vec()))
+                    .unwrap();
+            }
+            wait_for(|| {
+                events
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|event| event["type"] == "closed")
+            });
+            worker.join().unwrap();
+            let events = events.lock().unwrap();
+            let closed = events
+                .iter()
+                .find(|event| event["type"] == "closed")
+                .unwrap();
+            assert_eq!(closed["reason"], if abrupt { "failed" } else { "ended" });
+            assert_eq!(closed["recovery"], if abrupt { "retry" } else { "none" });
+            assert!(state.terminals.lock().unwrap().is_empty());
+        }
+        // Bring the same test endpoint back and prove a fresh connection works.
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let python = std::env::var_os("SSH_TEST_PYTHON")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| repo.join(".qa/venv/bin/python"));
+        let directory = fixtures.root.path().join("b");
+        let log = std::fs::File::create(directory.join("restart.log")).unwrap();
+        let child = Command::new(python)
+            .arg(repo.join("tests/ssh_fixture.py"))
+            .env("SSH_WORKSPACE_FIXTURE_DIR", &directory)
+            .env("SSH_WORKSPACE_FIXTURE_PORT", fixtures.b.port.to_string())
+            .env("SSH_WORKSPACE_FIXTURE_USER", &fixtures.b.username)
+            .env("SSH_WORKSPACE_FIXTURE_PASSWORD", &fixtures.b.password)
+            .stdout(Stdio::from(log.try_clone().unwrap()))
+            .stderr(Stdio::from(log))
+            .spawn()
+            .unwrap();
+        fixtures.children.push(child);
+        wait_for(|| TcpStream::connect(("127.0.0.1", fixtures.b.port)).is_ok());
+        let (connection, _) = connect(
+            &plan,
+            &mut AutoProvider::default(),
+            &Cancellation::default(),
+        )
+        .unwrap();
+        assert!(connection.session().authenticated());
+    }
+}

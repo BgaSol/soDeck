@@ -211,6 +211,7 @@ pub enum ConnectionEvent {
     Closed {
         message: String,
         reason: String,
+        recovery: RecoveryAction,
         error: Option<AppError>,
     },
 }
@@ -717,6 +718,21 @@ fn register(
     );
     Ok((id, receiver, cancel, stream, interaction))
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RecoveryAction {
+    Retry,
+    UserAction,
+    None,
+}
+fn recovery_action(error: Option<&AppError>) -> RecoveryAction {
+    match error.map(|error| error.kind.as_str()) {
+        Some("network" | "timeout" | "io" | "remoteInterrupted") => RecoveryAction::Retry,
+        Some("authentication" | "hostKey") => RecoveryAction::UserAction,
+        _ => RecoveryAction::None,
+    }
+}
+
 fn finish(state: &State, id: &str, cancel: &Cancellation, result: AppResult<()>) {
     let mut connections = state.terminals.lock().unwrap();
     if let Some(handle) = connections.get(id) {
@@ -739,6 +755,7 @@ fn finish(state: &State, id: &str, cancel: &Cancellation, result: AppResult<()>)
                 .map(|e| e.message.clone())
                 .unwrap_or_else(|| "会话已结束".into()),
             reason: reason.into(),
+            recovery: recovery_action(error.as_ref()),
             error,
         });
         let frozen = stream.is_frozen();

@@ -19,7 +19,7 @@ pub fn container(
     check: &impl Fn() -> AppResult<()>,
 ) -> AppResult<ContainerDetail> {
     validate_id(id)?;
-    let result = remote_read::exec(
+    let result = remote_read::docker_query(
         session,
         &format!(
             "{} container inspect --format {} {}",
@@ -27,6 +27,7 @@ pub fn container(
             ssh::quote(FORMAT),
             ssh::quote(id)
         ),
+        "container-inspect",
         check,
     )?;
     if result.code != 0 {
@@ -127,6 +128,7 @@ pub fn parse(output: &str, expected: &str) -> AppResult<ContainerDetail> {
         networks,
         updated_at: now(),
         stats: None,
+        stats_loading: false,
         stats_error: None,
     })
 }

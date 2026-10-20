@@ -215,7 +215,7 @@ class Files(paramiko.SFTPServerInterface):
             descriptor = os.open(local, flags | getattr(os, "O_BINARY", 0), attributes.st_mode or 0o666)
             mode = "r+b" if flags & os.O_RDWR else "wb" if flags & os.O_WRONLY else "rb"
             stream = os.fdopen(descriptor, mode)
-            log("sftp-open", path=path, flags=flags)
+            log("sftp-open", path=path, flags=flags, mode=attributes.st_mode)
             return FileHandle(flags, stream, self.canonicalize(path))
         except OSError as error:
             return paramiko.SFTPServer.convert_errno(error.errno)

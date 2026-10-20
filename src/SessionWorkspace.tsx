@@ -1,6 +1,7 @@
 import { createPortal } from "react-dom";
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useImperativeHandle,
   useRef,
@@ -48,6 +49,7 @@ import {
 import type { ResourceMetric } from "./resourcePresentation";
 import "./workspace-layout.css";
 import { useConnection } from "./useConnection";
+import type { RecoverySnapshot } from "./connectionRecovery";
 import { addressOf } from "./types";
 import type { AppError } from "./types";
 import type { WorkspaceTab } from "./workspaces";
@@ -57,6 +59,7 @@ import { errorOf } from "./types";
 export interface WorkspaceSnapshot {
   tab: WorkspaceTab;
   terminal: TerminalSnapshot;
+  recovery?: RecoverySnapshot;
   files?: FilePanelSnapshot;
   docker?: DockerPanelSnapshot;
   netbird?: NetBirdPanelSnapshot;
@@ -71,6 +74,7 @@ export interface WorkspaceController {
   prepareMove: () => Promise<WorkspaceSnapshot>;
   cancelMove: () => Promise<void>;
   reconnect: () => void;
+  resumeRecovery: () => void;
 }
 export function SessionWorkspace({
   tab,
@@ -136,7 +140,17 @@ export function SessionWorkspace({
     setView({ pane: "files" });
     setRevealRequest((p) => ({ path, sequence: (p?.sequence ?? 0) + 1 }));
   }
-  const connection = useConnection(tab.server.id, !!initial);
+  const connection = useConnection(tab.server.id, {
+    restored: !!initial,
+    connected: !!initial?.terminal.sessionId,
+    recovery: initial?.recovery,
+    onAttempt: () => {
+      setNetbirdSuspended(false);
+      setRestoredTerminal(undefined);
+      setError(null);
+      onChange(tab.id, { state: "连接中" });
+    },
+  });
   const { request, prompt } = connection;
   const [sessionId, setSessionId] = useState<string | null>(
       initial?.terminal.sessionId || null,
@@ -179,14 +193,20 @@ export function SessionWorkspace({
     controllerRef,
     () => ({
       prepareMove: async () => {
-        if (tab.state === "连接中" || !!prompt)
+        if (
+          connection.recovery.phase === "connecting" ||
+          tab.state === "连接中" ||
+          !!prompt
+        )
           throw new Error("请完成连接或关闭认证提示后再移动会话");
         if (!terminalController.current) throw new Error("终端尚未准备好");
+        const recovery = connection.pauseRecovery();
         const terminal = await terminalController.current.prepareMove();
         setNetbirdSuspended(true);
         return {
           tab: structuredClone(tab),
           terminal,
+          recovery,
           files: filesSnapshot.current,
           docker: dockerSnapshot.current,
           netbird: netbirdSnapshot.current,
@@ -197,18 +217,19 @@ export function SessionWorkspace({
         };
       },
       reconnect,
+      resumeRecovery: connection.resumeRecovery,
       cancelMove: async () => {
-        await terminalController.current?.cancelMove();
-        setNetbirdSuspended(false);
+        try {
+          await terminalController.current?.cancelMove();
+        } finally {
+          setNetbirdSuspended(false);
+          connection.resumeRecovery();
+        }
       },
     }),
     [tab, prompt, layout, resources, connectionPreferences, view, reconnect],
   );
   function reconnect() {
-    setNetbirdSuspended(false);
-    setRestoredTerminal(undefined);
-    setError(null);
-    onChange(tab.id, { state: "连接中" });
     connection.reconnect();
   }
   function disconnect() {
@@ -220,6 +241,22 @@ export function SessionWorkspace({
     onChange(tab.id, { state: "已断开" });
     reportState("已断开");
   }
+  const recoveryActive = connection.recovery.automatic;
+  const connectionState = prompt
+    ? "等待验证"
+    : connection.recovery.phase === "waiting"
+      ? "等待重连"
+      : connection.recovery.phase === "connecting"
+        ? recoveryActive
+          ? "正在重连"
+          : "连接中"
+        : connection.recovery.phase === "stopped"
+          ? "已断开"
+          : tab.state;
+  useEffect(() => {
+    if (connectionState !== tab.state)
+      onChange(tab.id, { state: connectionState });
+  }, [connectionState, tab.id, tab.state, onChange]);
   return (
     <MonitorProvider sessionId={sessionId} active={active}>
       <DockerManagementProvider sessionId={sessionId}>
@@ -311,24 +348,37 @@ export function SessionWorkspace({
                       </span>
                     </div>
                     <span
-                      className={`connection-state ${sessionId ? "running" : tab.state === "连接失败" ? "failed" : tab.state === "连接中" ? "connecting" : ""}`}
+                      className={`connection-state ${sessionId ? "running" : tab.state === "连接失败" ? "failed" : tab.state === "连接中" || recoveryActive ? "connecting" : ""}`}
                       role="status"
-                      title={tab.state}
-                      aria-label={tab.state}
+                      title={connectionState}
+                      aria-label={connectionState}
                     >
                       <span
                         className="connection-state-dot"
                         aria-hidden="true"
                       />
                       <span className="connection-state-label">
-                        {tab.state}
+                        {connectionState}
                       </span>
                     </span>
                     <PortForwardButton
                       serverId={tab.server.id}
                       onError={(e) => setError(errorOf(e))}
                     />
-                    {sessionId || tab.state === "连接中" ? (
+                    {recoveryActive ? (
+                      <>
+                        <button
+                          className="quiet"
+                          onClick={reconnect}
+                          disabled={connection.recovery.phase !== "waiting"}
+                        >
+                          立即重连
+                        </button>
+                        <button className="quiet" onClick={disconnect}>
+                          停止重连
+                        </button>
+                      </>
+                    ) : sessionId || tab.state === "连接中" || prompt ? (
                       <button
                         className="quiet terminal-connection-action"
                         onClick={disconnect}
@@ -349,7 +399,27 @@ export function SessionWorkspace({
                       </button>
                     )}
                   </header>
-                  {error && (
+                  {recoveryActive && (
+                    <div className="connection-recovery" role="status">
+                      {connection.recovery.phase === "waiting"
+                        ? "连接已断开，" +
+                          connection.seconds +
+                          " 秒后重试 · 第 " +
+                          (connection.recovery.attempts + 1) +
+                          " 次"
+                        : prompt
+                          ? "重连需要身份验证"
+                          : "正在重新连接 · 第 " +
+                            connection.recovery.attempts +
+                            " 次"}
+                      {error && (
+                        <span className="connection-recovery-detail">
+                          {error.message}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {error && !recoveryActive && (
                     <div className="connection-error" role="alert">
                       <span>{error.message}</span>
                       <button
@@ -390,8 +460,8 @@ export function SessionWorkspace({
                         reportState("error", failure);
                       }}
                       onConnectionId={connection.setId}
-                      onConnectionEvent={(event) => {
-                        connection.receive(event);
+                      onConnectionEvent={(event, attempt) => {
+                        connection.receive(event, attempt);
                         if (event.type === "ready") {
                           onChange(tab.id, { server: event.connection.target });
                           onConfigurationChanged?.();

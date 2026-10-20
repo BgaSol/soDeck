@@ -89,12 +89,13 @@ pub(super) fn run(state: Weak<State>, entry: Arc<Entry>) {
                     let endpoint = engine.endpoint.clone();
                     let generation = {
                         let mut c = entry.core.lock().unwrap();
-                        if c.docker
-                            .engine
-                            .value
-                            .as_ref()
-                            .map(|s| (&s.endpoint, &s.daemon_id))
-                            != Some((&endpoint, &engine.daemon_id))
+                        // Unavailable probes have no daemon identity. Only a successful
+                        // probe can establish that the target really changed.
+                        if running
+                            && c.verified_docker
+                                .as_ref()
+                                .map(|s| (&s.endpoint, &s.daemon_id))
+                                != Some((&endpoint, &engine.daemon_id))
                         {
                             c.docker.engine_generation += 1;
                             c.docker.containers = Metric::default();
@@ -104,6 +105,11 @@ pub(super) fn run(state: Weak<State>, entry: Arc<Entry>) {
                             c.images_paused = false;
                             images_refresh = u64::MAX;
                         }
+                        if running {
+                            c.verified_docker = Some(engine.clone());
+                        }
+                        c.docker.engine_error_kind = None;
+                        auth_paused = engine.state == "permission";
                         c.docker.engine = Metric::success(engine, at);
                         if !running {
                             c.docker
@@ -116,31 +122,57 @@ pub(super) fn run(state: Weak<State>, entry: Arc<Entry>) {
                         }
                         c.docker.engine_generation
                     };
+                    entry.publish_docker(&state);
                     if running {
                         let session = connection.as_ref().unwrap().session();
                         let result =
                             query::containers_on(session, &endpoint, &|| entry.check(&state));
-                        let result = result.map(|containers| {
-                            let summary = summarize(
-                                &containers,
-                                query::unhealthy_on(session, &endpoint, &|| entry.check(&state)),
-                            );
-                            (containers, summary)
-                        });
-                        let mut c = entry.core.lock().unwrap();
-                        if c.docker.engine_generation == generation {
-                            match result {
-                                Ok((containers, summary)) => {
-                                    c.docker.containers = Metric::success(containers, now());
-                                    c.docker.summary = Metric::success(summary, now());
-                                    failures = 0;
+                        match result {
+                            Ok(containers) => {
+                                // Publish the useful inventory before the optional health query.
+                                {
+                                    let mut c = entry.core.lock().unwrap();
+                                    if c.docker.engine_generation == generation {
+                                        c.docker.containers =
+                                            Metric::success(containers.clone(), now());
+                                        c.docker.summary = Metric::success(
+                                            summarize(
+                                                &containers,
+                                                Err(AppError::new(
+                                                    "collecting",
+                                                    "正在更新健康状态",
+                                                )),
+                                            ),
+                                            now(),
+                                        );
+                                    }
                                 }
-                                Err(e) => {
+                                entry.publish_docker(&state);
+                                let health = query::unhealthy_on(session, &endpoint, &|| {
+                                    entry.check(&state)
+                                });
+                                let health_failed = health.is_err();
+                                let summary = summarize(&containers, health);
+                                {
+                                    let mut c = entry.core.lock().unwrap();
+                                    if c.docker.engine_generation == generation {
+                                        c.docker.summary = Metric::success(summary, now());
+                                    }
+                                }
+                                // A timed-out channel must not be reused for the next cycle.
+                                if health_failed {
+                                    connection = None;
+                                }
+                                failures = 0;
+                            }
+                            Err(e) => {
+                                let mut c = entry.core.lock().unwrap();
+                                if c.docker.engine_generation == generation {
                                     c.docker.containers.fail("stale", &e.message);
                                     c.docker.summary.fail("stale", &e.message);
-                                    connection = None;
-                                    failures = failures.saturating_add(1);
                                 }
+                                connection = None;
+                                failures = failures.saturating_add(1);
                             }
                         }
                     } else {
@@ -149,6 +181,7 @@ pub(super) fn run(state: Weak<State>, entry: Arc<Entry>) {
                 }
                 Err(e) => {
                     let mut c = entry.core.lock().unwrap();
+                    c.docker.engine_error_kind = Some(e.kind.clone());
                     c.docker.engine.fail("stale", &e.message);
                     c.docker.containers.fail("stale", &e.message);
                     c.docker.summary.fail("stale", &e.message);
@@ -161,15 +194,8 @@ pub(super) fn run(state: Weak<State>, entry: Arc<Entry>) {
             }
             entry.core.lock().unwrap().docker.refreshing = false;
             entry.publish_docker(&state);
-            let seconds = if failures > 0 {
-                (30u64.saturating_mul(2u64.pow(failures.min(5) - 1))).min(300)
-            } else if visible {
-                15
-            } else {
-                60
-            };
             completed_at = Instant::now();
-            next = completed_at + Duration::from_secs(seconds);
+            next = completed_at + query::retry_delay(failures, visible);
         }
         if want_images {
             let request = {

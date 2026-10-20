@@ -163,6 +163,31 @@ pub(crate) fn exercise_docker(
                 && e["docker"]["images"]["value"][0]["name"] == "nginx:alpine"
         ));
     std::fs::remove_file(root.join("docker-images-delay")).unwrap();
+    // A real remote read timeout retains the binding and recovers automatically.
+    let binding = state.monitor.docker_binding(context.identity()).unwrap();
+    std::fs::write(root.join("docker-mode"), "timeout").unwrap();
+    entry.core.lock().unwrap().docker_refresh += 1;
+    wait(
+        "engine observation times out without revoking its target",
+        || {
+            let core = entry.core.lock().unwrap();
+            core.docker.engine.status == "stale"
+                && core.docker.engine_error_kind.as_deref() == Some("timeout")
+        },
+    );
+    assert_eq!(
+        state.monitor.docker_binding(context.identity()).unwrap(),
+        binding
+    );
+    assert!(entry.core.lock().unwrap().docker.containers.value.is_some());
+    std::fs::write(root.join("docker-mode"), "running").unwrap();
+    wait("automatic retry recovers without a manual refresh", || {
+        entry.core.lock().unwrap().docker.engine.status == "ready"
+    });
+    assert_eq!(
+        state.monitor.docker_binding(context.identity()).unwrap(),
+        binding
+    );
     std::fs::write(root.join("docker-mode"), "permission").unwrap();
     entry.core.lock().unwrap().docker_refresh += 1;
     wait("Docker permission error is isolated", || {
@@ -489,5 +514,76 @@ pub(crate) fn exercise_management(
     wait("Docker engine is available for management", || {
         state.monitor.docker_binding(context.identity()).is_ok()
     });
+    // Exercise real independent SSH preflight and mutations while the observation is stale.
+    let previous = state.monitor.docker_binding(context.identity()).unwrap();
+    {
+        let entries = state.monitor.entries.lock().unwrap();
+        let entry = entries.get(context.identity()).unwrap();
+        let mut core = entry.core.lock().unwrap();
+        core.docker.engine.fail("stale", "远端资源查询超时");
+        core.docker.engine_error_kind = Some("timeout".into());
+    }
+    assert_eq!(
+        state.monitor.docker_binding(context.identity()).unwrap(),
+        previous
+    );
     crate::docker::tests::exercise(state, context, first, second, root);
+}
+
+#[test]
+fn timeout_keeps_binding_but_permissions_and_closed_entry_do_not() {
+    let state = crate::connection::tests::state();
+    let entry = Arc::new(Entry::new(
+        state.monitor.jobs.clone(),
+        state.traffic.account("docker-test"),
+    ));
+    state
+        .monitor
+        .entries
+        .lock()
+        .unwrap()
+        .insert("docker-test".into(), entry.clone());
+    {
+        let mut core = entry.core.lock().unwrap();
+        core.docker.engine_generation = 7;
+        core.docker.engine = Metric::success(
+            crate::docker::DockerStatus {
+                state: "running".into(),
+                message: "ok".into(),
+                endpoint: "unix:///docker.sock".into(),
+                daemon_id: Some("engine".into()),
+            },
+            1,
+        );
+    }
+    let binding = state.monitor.docker_binding("docker-test").unwrap();
+    {
+        let mut core = entry.core.lock().unwrap();
+        core.docker.engine.fail("stale", "timeout");
+        core.docker.engine_error_kind = Some("timeout".into());
+    }
+    assert_eq!(
+        state.monitor.docker_binding("docker-test").unwrap(),
+        binding
+    );
+    entry.core.lock().unwrap().docker.engine_error_kind = Some("permission".into());
+    assert!(state.monitor.docker_binding("docker-test").is_err());
+    state.monitor.retry_docker("docker-test");
+    {
+        let mut core = entry.core.lock().unwrap();
+        assert_eq!(
+            core.docker_refresh, 1,
+            "manual recovery must not need a ready engine"
+        );
+        core.docker.refreshing = true;
+        core.docker.engine_error_kind = Some("timeout".into());
+    }
+    state.monitor.retry_docker("docker-test");
+    assert_eq!(
+        entry.core.lock().unwrap().docker_refresh,
+        1,
+        "in-flight refreshes are coalesced"
+    );
+    entry.cancel.cancel();
+    assert!(state.monitor.docker_binding("docker-test").is_err());
 }

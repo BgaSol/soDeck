@@ -129,7 +129,9 @@ export function ContainerManagement({
     enabled &&
     !!engine &&
     !!detail &&
-    !detailState?.stale &&
+    (!detailState?.stale ||
+      !detailState.error ||
+      detailState.errorKind === "timeout") &&
     !detailState?.missing &&
     !locked &&
     !submitting &&
@@ -153,6 +155,11 @@ export function ContainerManagement({
       id = await dockerApi.submit(store.sessionId, request.current);
     } catch (e) {
       const failure = errorOf(e);
+      if (
+        failure.kind === "confirmationRequired" ||
+        failure.kind === "conflict"
+      )
+        void store.refresh().catch(() => {});
       if (
         [
           "conflict",
@@ -238,7 +245,11 @@ export function ContainerManagement({
   }
   useEffect(() => {
     if (!requestedAction) return;
-    if (!enabled || error || detailState?.error) {
+    if (
+      !enabled ||
+      error ||
+      (detailState?.error && detailState.errorKind !== "timeout")
+    ) {
       onActionConsumed?.();
       return;
     }
@@ -246,7 +257,14 @@ export function ContainerManagement({
       onActionConsumed?.();
       void act(requestedAction);
     }
-  }, [requestedAction, canManage, enabled, error, detailState?.error]);
+  }, [
+    requestedAction,
+    canManage,
+    enabled,
+    error,
+    detailState?.error,
+    detailState?.errorKind,
+  ]);
   const actions: ContainerAction[] =
     runtime === "running"
       ? ["stop", "restart"]
@@ -346,7 +364,7 @@ export function ContainerManagement({
       </div>
       {(submitting || pendingId) && (
         <p className="resource-help" role="status">
-          {preview ? "等待确认" : "正在提交操作…"}
+          {preview ? "等待确认" : "正在确认容器状态…"}
         </p>
       )}
       {error && (
@@ -376,7 +394,25 @@ export function ContainerManagement({
       {detailState?.error && (
         <p className="docker-notice" role="status">
           {detailState.error}
-          {detail && " · 保留上次详情"}
+          {detail && (
+            <>
+              {" "}
+              · 保留上次详情（{new Date(detail.updatedAt).toLocaleTimeString()}
+              ）
+            </>
+          )}
+          {enabled &&
+            detailState.errorKind === "timeout" &&
+            "。正在自动重试，操作前会重新确认容器状态。"}{" "}
+          <button
+            className="resource-link"
+            disabled={detailState.loading}
+            onClick={() =>
+              void store.refresh().catch((e) => setError(errorOf(e).message))
+            }
+          >
+            立即重试
+          </button>
         </p>
       )}
       {!detail && !detailState?.error && engine && (
@@ -410,7 +446,10 @@ export function ContainerManagement({
               </div>
             </div>
           )}
-          {detail.statsError && (
+          {detail.statsLoading && (
+            <p className="resource-help">资源统计更新中…</p>
+          )}
+          {!detail.statsLoading && detail.statsError && (
             <p className="resource-help">
               资源采样暂不可用{detail.stats ? "，保留上次数据" : ""}：
               {detail.statsError}
@@ -657,7 +696,7 @@ export function ContainerManagement({
             </span>
             <button
               className="resource-link"
-              disabled={!enabled || detailState?.loading}
+              disabled={detailState?.loading}
               onClick={() =>
                 void store.refresh().catch((e) => setError(errorOf(e).message))
               }

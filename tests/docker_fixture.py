@@ -17,6 +17,9 @@ def handle(channel, command, root):
         return False
     if "__SODECK_BINARY_RESULT_" in command:
         return binary(channel, command, root)
+    stats_delay = root / "docker-stats-delay"
+    if " stats " in command and stats_delay.exists():
+        time.sleep(float(stats_delay.read_text()))
     code, output, error = 0, "", ""
     marker = re.search(r"__SODECK_DOCKER_RESULT_[a-f0-9]+__", command)
     mode_file = root / "docker-operation-mode"
@@ -96,7 +99,7 @@ def handle(channel, command, root):
                     values[cid] = {"name": name, "state": "created", "requestId": request, "imageId": args[args.index("--env-file") + 2] if "--env-file" in args else "sha256:" + "c" * 64}
                     if "--env-file" in args:
                         path = root / "remote" / args[args.index("--env-file") + 1].lstrip("/")
-                        (root / "create-env-receipt").write_text(path.read_text())
+                        (root / "create-env-receipt").write_bytes(path.read_bytes())
                         (root / "create-env-mode").write_text(str(path.stat().st_mode & 0o777))
                     database.write_text(json.dumps(values))
                     output = cid

@@ -14,9 +14,53 @@ pub(crate) fn exec(
     command: &str,
     check: &impl Fn() -> AppResult<()>,
 ) -> AppResult<ssh::ExecResult> {
+    exec_with_timeout(session, command, Duration::from_secs(6), check)
+}
+
+pub(crate) const DOCKER_QUERY_TIMEOUT: Duration = Duration::from_secs(12);
+
+pub(crate) fn docker_query(
+    session: &Session,
+    command: &str,
+    stage: &str,
+    check: &impl Fn() -> AppResult<()>,
+) -> AppResult<ssh::ExecResult> {
+    observed_read(session, command, stage, DOCKER_QUERY_TIMEOUT, check)
+}
+
+pub(crate) fn observed_read(
+    session: &Session,
+    command: &str,
+    stage: &str,
+    timeout: Duration,
+    check: &impl Fn() -> AppResult<()>,
+) -> AppResult<ssh::ExecResult> {
+    let started = Instant::now();
+    let result = exec_with_timeout(session, command, timeout, check);
+    if result.is_err() || started.elapsed() >= Duration::from_secs(2) {
+        // Do not log commands, endpoints, output or credentials.
+        eprintln!(
+            "Docker query stage={} elapsed_ms={} result={}",
+            stage,
+            started.elapsed().as_millis(),
+            result
+                .as_ref()
+                .map(|r| if r.code == 0 { "ok" } else { "exit" })
+                .unwrap_or_else(|e| e.kind.as_str())
+        );
+    }
+    result
+}
+
+pub(crate) fn exec_with_timeout(
+    session: &Session,
+    command: &str,
+    timeout: Duration,
+    check: &impl Fn() -> AppResult<()>,
+) -> AppResult<ssh::ExecResult> {
     session.set_blocking(false);
     let result = (|| {
-        let deadline = Instant::now() + Duration::from_secs(6);
+        let deadline = Instant::now() + timeout;
         let guard = || {
             check()?;
             if Instant::now() >= deadline {

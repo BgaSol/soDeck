@@ -83,12 +83,14 @@ export interface ContainerDetail {
     processes: string;
   } | null;
   statsError?: string | null;
+  statsLoading?: boolean;
 }
 export interface DockerDetailState {
   containerId: string;
   value: ContainerDetail | null;
   loading: boolean;
   stale: boolean;
+  errorKind?: string | null;
   missing: boolean;
   error: string | null;
 }

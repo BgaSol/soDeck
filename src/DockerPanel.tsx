@@ -36,6 +36,8 @@ import { PortForwardMenu } from "./PortForwardMenu";
 import "./docker/docker.css";
 import { useMonitor, useDockerInterest } from "./MonitorProvider";
 import { dockerStatusNames } from "./dockerPresentation";
+import type { Metric } from "./resourceMonitoring";
+import { dockerCanAttempt } from "./serverMonitoring";
 import { metricMessage } from "./resourcePresentation";
 import {
   containerStateNames,
@@ -75,6 +77,8 @@ export function DockerPanel({
   const [view, setView] = useState(() => normalizeDockerSnapshot(initialState));
   const [actions, setActions] = useState<Record<string, ActionState>>({});
   const [sortRevision, setSortRevision] = useState(0);
+  const [refreshError, setRefreshError] = useState("");
+  const refreshFlight = useRef(false);
   const [requestedAction, setRequestedAction] =
     useState<ContainerAction | null>(null);
   const root = useRef<HTMLElement>(null),
@@ -100,7 +104,7 @@ export function DockerPanel({
     [checked, setChecked] = useState(new Set<string>());
   const bulkActions = useDockerActions(
     `${token}/${active}/${view.section}`,
-    !!sessionId && active,
+    !!sessionId && active && state.connected && dockerCanAttempt(docker),
   );
   useEffect(() => {
     setBulk(false);
@@ -222,16 +226,8 @@ export function DockerPanel({
     selection.kind === view.page &&
     !!current &&
     !filtered.some((item) => dockerKey(item) === selectedKey);
-  const connected =
-    !!sessionId &&
-    state.connected &&
-    engineState === "running" &&
-    docker.engine.status === "ready";
-  const canAct =
-    connected &&
-    docker.containers.status === "ready" &&
-    !!current &&
-    "state" in current;
+  const connected = !!sessionId && state.connected && dockerCanAttempt(docker);
+  const canAct = connected && active && !!current && "state" in current;
   const detailBack = useRef<HTMLButtonElement>(null);
   const showDetails =
     view.section === "objects" && !!selection && view.detailOpen;
@@ -253,6 +249,27 @@ export function DockerPanel({
     );
   }
   const metric = view.page === "containers" ? docker.containers : docker.images;
+  const freshnessMessage = (value: Metric<unknown>) =>
+    state.connected && value.status === "stale" && value.value != null
+      ? "上次数据" +
+        (value.updatedAt != null
+          ? " · " + new Date(value.updatedAt).toLocaleTimeString()
+          : "")
+      : metricMessage(value, state.connected);
+  async function refreshDocker() {
+    if (!sessionId || refreshFlight.current || docker.refreshing) return;
+    refreshFlight.current = true;
+    setRefreshError("");
+    setSortRevision((v) => v + 1);
+    const origin = token;
+    try {
+      await Promise.all([store.refresh("docker"), management.store.refresh()]);
+    } catch (e) {
+      if (currentToken.current === origin) setRefreshError(errorOf(e).message);
+    } finally {
+      refreshFlight.current = false;
+    }
+  }
   const hasFilter =
     !!query || (view.page === "containers" && view.filter !== "all");
   const operationKey = (containerId: string, operation: Operation) =>
@@ -261,7 +278,9 @@ export function DockerPanel({
     if (
       !canAct ||
       !sessionId ||
-      (operation === "terminal" && container.state !== "running")
+      (operation === "terminal" &&
+        docker.containers.status === "ready" &&
+        container.state !== "running")
     )
       return;
     const key = operationKey(container.id, operation),
@@ -443,17 +462,15 @@ export function DockerPanel({
           <Boxes size={17} />
           <strong>Docker</strong>
           <span className={`docker-state ${connected ? "running" : ""}`}>
-            {dockerStatusNames[engineState] ?? engineState}
+            {connected && docker.engine.status === "stale"
+              ? "状态待确认"
+              : (dockerStatusNames[engineState] ?? engineState)}
           </span>
           <button
             className="icon-button"
             aria-label="刷新 Docker 状态"
             disabled={!sessionId || docker.refreshing}
-            onClick={() => {
-              setSortRevision((v) => v + 1);
-              void store.refresh("docker");
-              void management.store.refresh().catch(() => {});
-            }}
+            onClick={() => void refreshDocker()}
           >
             <RefreshCw
               size={14}
@@ -488,9 +505,7 @@ export function DockerPanel({
               ` · ${summary.byState.restarting} 重启中`}
           </div>
         )}
-        <div className="resource-help">
-          {metricMessage(metric, state.connected)}
-        </div>
+        <div className="resource-help">{freshnessMessage(metric)}</div>
       </header>
       <div
         className="docker-controls"
@@ -666,11 +681,34 @@ export function DockerPanel({
       )}
       {(docker.engine.error ||
         (engineState !== "running" && status?.message) ||
-        metric.error) && (
-        <p className="docker-notice" role="status">
-          {docker.engine.error || metric.error || status?.message}
-          {metric.value && " · 保留上次列表，连接恢复后可操作。"}
-        </p>
+        metric.error ||
+        refreshError) && (
+        <div className="docker-notice" role="status">
+          <span>
+            {refreshError ||
+              docker.engine.error ||
+              metric.error ||
+              status?.message}
+            {metric.value && (
+              <>
+                {" "}
+                · 保留上次列表
+                {metric.updatedAt != null && (
+                  <>（{new Date(metric.updatedAt).toLocaleTimeString()}）</>
+                )}
+                。
+              </>
+            )}
+            {connected && " 正在自动重试，操作前会重新确认容器状态。"}
+          </span>{" "}
+          <button
+            className="resource-link"
+            disabled={!sessionId || docker.refreshing}
+            onClick={() => void refreshDocker()}
+          >
+            立即重试
+          </button>
+        </div>
       )}
       {view.section === "resources" && (
         <ResourceManagement
@@ -988,7 +1026,7 @@ export function DockerPanel({
                 </p>
               )}
               <div className="resource-help">
-                {metricMessage(selectedMetric, state.connected)}
+                {freshnessMessage(selectedMetric)}
               </div>
               {selection.kind === "containers" ? (
                 <ContainerManagement
@@ -1050,6 +1088,7 @@ export function DockerPanel({
                         allowed =
                           canAct &&
                           (operation === "logs" ||
+                            docker.containers.status === "stale" ||
                             (current &&
                               "state" in current &&
                               current.state === "running"));
@@ -1071,7 +1110,8 @@ export function DockerPanel({
                               operation === "terminal" &&
                               current &&
                               "state" in current &&
-                              current.state !== "running"
+                              current.state !== "running" &&
+                              docker.containers.status === "ready"
                                 ? "仅运行中的容器可打开终端"
                                 : "在独立窗口打开"
                             }

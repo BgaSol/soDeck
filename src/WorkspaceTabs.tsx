@@ -26,6 +26,7 @@ export interface WorkspaceTabsProps {
   onMove: (id: string, target: string | null, beforeId?: string | null) => void;
   onReorder: (id: string, beforeId: string | null) => void;
   onNew?: () => void;
+  onNewConnection?: (tabId: string) => void;
   onHome?: () => void;
   onError: (error: unknown) => void;
 }
@@ -40,6 +41,7 @@ export function WorkspaceTabs({
   onMove,
   onReorder,
   onNew,
+  onNewConnection,
   onHome,
   onError,
   appendDropRef,
@@ -98,6 +100,13 @@ export function WorkspaceTabs({
     : undefined;
   const menuItems: TabMenuItem[] = selected
     ? [
+        {
+          id: "new-connection",
+          label: "新建连接到此服务器",
+          detail: detached ? "在主窗口打开" : undefined,
+          disabled: !onNewConnection || moving.has(selected.id),
+          run: () => onNewConnection?.(selected.id),
+        },
         {
           id: "move",
           label: detached ? "移回主窗口" : "移到独立窗口",
@@ -256,7 +265,7 @@ export function WorkspaceTabs({
                   }}
                 >
                   <span
-                    className={`tab-state ${tab.state === "已连接" ? "connected" : tab.state === "连接中" ? "connecting" : tab.state === "连接失败" ? "failed" : ""}`}
+                    className={`tab-state ${tab.state === "已连接" ? "connected" : ["连接中", "等待重连", "正在重连", "等待验证"].includes(tab.state) ? "connecting" : tab.state === "连接失败" ? "failed" : ""}`}
                     aria-hidden="true"
                   />
                   <span className="tab-name">{tabTitle(tab)}</span>

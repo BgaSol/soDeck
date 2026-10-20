@@ -35,6 +35,7 @@ export function openWorkspace(
   server: Server,
   forceNew = false,
   newId?: string,
+  afterId?: string,
 ): Workspaces {
   const existing = current.tabs.find((tab) => tab.server.id === server.id);
   if (existing && !forceNew) return { ...current, activeId: existing.id };
@@ -50,7 +51,10 @@ export function openWorkspace(
       ) + 1,
     state: "连接中",
   };
-  return { tabs: [...current.tabs, tab], activeId: tab.id };
+  const tabs = [...current.tabs];
+  const index = afterId ? tabs.findIndex((item) => item.id === afterId) : -1;
+  tabs.splice(index < 0 ? tabs.length : index + 1, 0, tab);
+  return { tabs, activeId: tab.id };
 }
 export function closeWorkspace(current: Workspaces, id: string): Workspaces {
   const index = current.tabs.findIndex((tab) => tab.id === id);
