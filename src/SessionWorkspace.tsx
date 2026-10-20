@@ -366,6 +366,12 @@ export function SessionWorkspace({
                   )}
                   <div className="terminal-host">
                     <TerminalPane
+                      source={{
+                        serverName: tab.server.name,
+                        host: tab.server.host,
+                        port: tab.server.port,
+                        username: tab.server.username,
+                      }}
                       workspaceId={tab.id}
                       controllerRef={terminalController}
                       initial={restoredTerminal}

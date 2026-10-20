@@ -339,7 +339,7 @@
 }
 .file-task-filters button[aria-pressed="true"] {
   background: var(--hover);
-  color: var(--blue);
+  color: var(--accent-text);
 }
 .file-task-clear { margin-left: auto; }
 .file-task-empty { padding: 18px 14px; color: var(--muted); text-align: center; }

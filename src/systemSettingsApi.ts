@@ -1,7 +1,13 @@
+import type {
+  TerminalClipboardPreferences,
+  TerminalPlatform,
+} from "./terminalClipboard/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 export interface SystemSettings {
+  terminalClipboard: TerminalClipboardPreferences;
+  platform: TerminalPlatform;
   developerMode: boolean;
   activeDeveloperMode: boolean;
   revision: number;
@@ -13,6 +19,14 @@ export const systemSettingsApi = {
   save: (developerMode: boolean, expectedRevision: number) =>
     invoke<SystemSettings>("set_developer_mode", {
       developerMode,
+      expectedRevision,
+    }),
+  saveClipboard: (
+    preferences: TerminalClipboardPreferences,
+    expectedRevision: number,
+  ) =>
+    invoke<SystemSettings>("set_terminal_clipboard_settings", {
+      preferences,
       expectedRevision,
     }),
   subscribe: (receive: (settings: SystemSettings) => void) =>

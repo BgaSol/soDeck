@@ -836,7 +836,8 @@
   }
 }
 @media (prefers-contrast: more) {
-  .server-home {
+  .server-home,
+  :root[data-theme="dark"] .server-home {
     --home-rule: var(--strong-line);
     --home-selection-line: var(--accent-text);
   }

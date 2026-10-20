@@ -16,6 +16,46 @@ import type {
   PasswordChange,
   DuplicatePasswordPolicy,
 } from "./types";
+const fieldOrder = [
+  "name",
+  "host",
+  "port",
+  "jumpServerId",
+  "username",
+  "privateKey",
+  "directPort",
+] as const;
+type EditorField = (typeof fieldOrder)[number];
+const fieldLabels: Record<EditorField, string> = {
+  name: "名称",
+  host: "地址",
+  port: "端口",
+  jumpServerId: "跳板服务器",
+  username: "用户名",
+  privateKey: "本地私钥路径",
+  directPort: "直连端口",
+};
+function validateFields(draft: Server, hasJump: boolean, connect: boolean) {
+  const errors: Partial<Record<EditorField, string>> = {};
+  if (!draft.name.trim()) errors.name = "请填写服务器名称。";
+  else if (draft.name.length > 120) errors.name = "名称最多可输入 120 个字符。";
+  if (!draft.host.trim()) errors.host = "请填写 IP 地址或域名。";
+  if (!Number.isInteger(draft.port) || draft.port < 1 || draft.port > 65535)
+    errors.port = "请输入 1–65535 的整数端口。";
+  if (draft.jumpServerId !== null && !hasJump)
+    errors.jumpServerId = "请选择可用的跳板服务器，或切换为直接连接。";
+  if (connect && !draft.username.trim())
+    errors.username = "请填写 SSH 用户名后再连接。";
+  if (draft.authType === "key" && !draft.privateKey.trim())
+    errors.privateKey = "请填写本地私钥文件的完整路径。";
+  if (
+    !Number.isInteger(draft.directPort) ||
+    draft.directPort < 1 ||
+    draft.directPort > 65535
+  )
+    errors.directPort = "请输入 1–65535 的整数端口。";
+  return errors;
+}
 interface Props {
   initial: Server;
   tags: string[];
@@ -71,6 +111,53 @@ export function ServerEditor({
   const nameInput = useRef<HTMLInputElement>(null);
   const continueButton = useRef<HTMLButtonElement>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [checkedFields, setCheckedFields] = useState<
+    Partial<Record<EditorField, boolean>>
+  >({});
+  const [validateForConnection, setValidateForConnection] = useState(false);
+  const [focusRequest, setFocusRequest] = useState<{
+    field: EditorField;
+  } | null>(null);
+  const fieldErrors = validateFields(draft, !!jump, validateForConnection);
+  function fieldControl(field: EditorField, hint?: string) {
+    const errorId =
+      checkedFields[field] && fieldErrors[field]
+        ? `server-${field}-error`
+        : undefined;
+    return {
+      "data-server-field": field,
+      "aria-label": fieldLabels[field],
+      "aria-invalid": errorId ? true : undefined,
+      "aria-describedby":
+        [hint, errorId].filter(Boolean).join(" ") || undefined,
+      onBlur: () =>
+        setCheckedFields((current) => ({ ...current, [field]: true })),
+    };
+  }
+  function fieldError(field: EditorField) {
+    return checkedFields[field] && fieldErrors[field] ? (
+      <span className="field-error" id={`server-${field}-error`}>
+        {fieldErrors[field]}
+      </span>
+    ) : null;
+  }
+  useEffect(() => {
+    if (!focusRequest) return;
+    const control = dialog.current?.querySelector<
+      HTMLInputElement | HTMLSelectElement
+    >(`[data-server-field="${focusRequest.field}"]`);
+    if (!control) return;
+    const target = control.disabled
+      ? dialog.current?.querySelector<HTMLInputElement>(
+          'input[name="connection-mode"][value="direct"]',
+        )
+      : control;
+    target?.focus({ preventScroll: true });
+    (target?.closest("label") ?? target)?.scrollIntoView({ block: "nearest" });
+    dialog.current
+      ?.querySelector(`#server-${focusRequest.field}-error`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [focusRequest]);
   const dirty =
     JSON.stringify(initial) !== JSON.stringify(draft) ||
     !!tag.trim() ||
@@ -117,6 +204,12 @@ export function ServerEditor({
       setInheritPassword(false);
       setPasswordChange({ type: "keep" });
     }
+    if (key === "authType") {
+      setCheckedFields((current) => ({ ...current, privateKey: false }));
+    }
+    if (key === "jumpServerId" && value === null) {
+      setCheckedFields((current) => ({ ...current, jumpServerId: false }));
+    }
     setError("");
   }
   function append() {
@@ -138,34 +231,15 @@ export function ServerEditor({
       passwordChange,
       tags: addTag(draft.tags, tag, tags),
     };
-    if (
-      !saved.name.trim() ||
-      !saved.host.trim() ||
-      !Number.isInteger(saved.port) ||
-      saved.port < 1 ||
-      saved.port > 65535
-    ) {
-      setError("请填写名称、地址及 1–65535 的端口。");
-      return;
-    }
-    if (
-      !Number.isInteger(saved.directPort) ||
-      saved.directPort < 1 ||
-      saved.directPort > 65535
-    ) {
-      setError("直连端口范围为 1–65535。");
-      return;
-    }
-    if (saved.authType === "key" && !saved.privateKey.trim()) {
-      setError("请选择私钥认证所使用的本地文件路径。");
-      return;
-    }
-    if (draft.jumpServerId !== null && !jump) {
-      setError("请选择可用的跳板服务器。");
-      return;
-    }
-    if (connect && !saved.username.trim()) {
-      setError("请填写 SSH 用户名后再连接。");
+    setValidateForConnection(connect);
+    setCheckedFields(
+      Object.fromEntries(fieldOrder.map((field) => [field, true])),
+    );
+    setError("");
+    const errors = validateFields(saved, !!jump, connect);
+    const firstError = fieldOrder.find((field) => errors[field]);
+    if (firstError) {
+      setFocusRequest({ field: firstError });
       return;
     }
     submitting.current = true;
@@ -214,6 +288,7 @@ export function ServerEditor({
         disabled={busy}
       />
       <form
+        noValidate
         onSubmit={(event) => {
           event.preventDefault();
           void submit(
@@ -236,22 +311,26 @@ export function ServerEditor({
               <input
                 ref={nameInput}
                 autoFocus
+                {...fieldControl("name")}
                 value={draft.name}
                 maxLength={120}
                 onChange={(e) => update("name", e.target.value)}
                 placeholder="例如 Web-01"
                 required
               />
+              {fieldError("name")}
             </label>
             <div className="form-columns">
               <label>
                 地址
                 <input
+                  {...fieldControl("host")}
                   value={draft.host}
                   onChange={(e) => update("host", e.target.value)}
                   placeholder="IP 或域名"
                   required
                 />
+                {fieldError("host")}
               </label>
               <label>
                 端口
@@ -259,10 +338,12 @@ export function ServerEditor({
                   type="number"
                   min={1}
                   max={65535}
+                  {...fieldControl("port")}
                   value={draft.port || ""}
                   onChange={(e) => update("port", Number(e.target.value))}
                   required
                 />
+                {fieldError("port")}
               </label>
             </div>
           </fieldset>
@@ -323,7 +404,7 @@ export function ServerEditor({
                   required
                   value={jump ? draft.jumpServerId : ""}
                   disabled={!candidates.length}
-                  aria-describedby="jump-help"
+                  {...fieldControl("jumpServerId", "jump-help")}
                   onChange={(e) => {
                     lastJump.current = e.target.value;
                     update("jumpServerId", e.target.value);
@@ -338,6 +419,7 @@ export function ServerEditor({
                     </option>
                   ))}
                 </select>
+                {fieldError("jumpServerId")}
                 <p className="field-help" id="jump-help">
                   {!candidates.length
                     ? "还没有可用的跳板服务器。请先保存一台可直接连接的服务器。"
@@ -389,10 +471,12 @@ export function ServerEditor({
               <label>
                 用户名
                 <input
+                  {...fieldControl("username")}
                   value={draft.username}
                   onChange={(e) => update("username", e.target.value)}
                   placeholder="例如 deploy"
                 />
+                {fieldError("username")}
               </label>
               <label>
                 认证方式
@@ -500,11 +584,15 @@ export function ServerEditor({
               <label>
                 本地私钥路径
                 <input
+                  {...fieldControl("privateKey", "server-private-key-help")}
                   value={draft.privateKey}
                   onChange={(e) => update("privateKey", e.target.value)}
                   placeholder="私钥文件的完整路径"
                 />
-                <small className="muted">密钥口令在连接时输入。</small>
+                {fieldError("privateKey")}
+                <small className="muted" id="server-private-key-help">
+                  密钥口令在连接时输入。
+                </small>
               </label>
             )}
           </fieldset>
@@ -529,13 +617,14 @@ export function ServerEditor({
               <label>
                 直连端口
                 <input
-                  aria-label="直连端口"
                   type="number"
                   min={1}
                   max={65535}
+                  {...fieldControl("directPort")}
                   value={draft.directPort}
                   onChange={(e) => update("directPort", Number(e.target.value))}
                 />
+                {fieldError("directPort")}
               </label>
             </div>
             <button
@@ -602,12 +691,15 @@ export function ServerEditor({
           </fieldset>
         </div>
         {directReset && (
-          <p className="field-help editor-save-error" role="status">
+          <p
+            className="field-help editor-feedback editor-feedback-info"
+            role="status"
+          >
             SSH 地址已变更，已清空继承的直传地址，请按需重新填写。
           </p>
         )}
         {sourceMissing && (
-          <div className="editor-save-error">
+          <div className="editor-feedback editor-feedback-info">
             <button
               type="button"
               onClick={() => {
@@ -622,7 +714,10 @@ export function ServerEditor({
           </div>
         )}
         {error && (
-          <p className="error editor-save-error" role="alert">
+          <p
+            className="error editor-feedback editor-feedback-error"
+            role="alert"
+          >
             {error}
           </p>
         )}

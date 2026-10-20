@@ -7,6 +7,23 @@ use std::{
 };
 use tauri::{Emitter, State, WebviewWindow};
 
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ShortcutMode {
+    #[default]
+    Platform,
+    Convenient,
+    Traditional,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TerminalClipboardPreferences {
+    shortcut_mode: ShortcutMode,
+    copy_on_select: bool,
+    right_click_paste: bool,
+}
+
 const SETTINGS_CHANGED: &str = "system-settings-changed";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -15,6 +32,8 @@ struct SettingsFile {
     version: u32,
     #[serde(default)]
     developer_mode: bool,
+    #[serde(default)]
+    terminal_clipboard: TerminalClipboardPreferences,
 }
 
 impl Default for SettingsFile {
@@ -22,6 +41,7 @@ impl Default for SettingsFile {
         Self {
             version: 1,
             developer_mode: false,
+            terminal_clipboard: TerminalClipboardPreferences::default(),
         }
     }
 }
@@ -31,6 +51,8 @@ impl Default for SettingsFile {
 pub struct SettingsSnapshot {
     developer_mode: bool,
     active_developer_mode: bool,
+    terminal_clipboard: TerminalClipboardPreferences,
+    platform: &'static str,
     revision: u64,
     load_error: Option<String>,
 }
@@ -69,7 +91,7 @@ impl SystemSettings {
             Err(error) => (
                 SettingsFile::default(),
                 Some(format!(
-                    "无法读取系统设置，本次开发者模式已关闭。请检查 {} 后重新启动：{}",
+                    "无法读取系统设置，本次使用默认设置且开发者模式已关闭。请检查 {} 后重新启动：{}",
                     path.display(),
                     error
                 )),
@@ -94,6 +116,14 @@ impl SystemSettings {
         SettingsSnapshot {
             developer_mode: saved.value.developer_mode,
             active_developer_mode: self.active_developer_mode,
+            terminal_clipboard: saved.value.terminal_clipboard.clone(),
+            platform: if cfg!(target_os = "windows") {
+                "windows"
+            } else if cfg!(target_os = "macos") {
+                "macos"
+            } else {
+                "linux"
+            },
             revision: saved.revision,
             load_error: saved.load_error.clone(),
         }
@@ -104,6 +134,26 @@ impl SystemSettings {
     }
 
     fn save(&self, developer_mode: bool, expected_revision: u64) -> AppResult<SettingsSnapshot> {
+        self.update(expected_revision, |next| {
+            next.developer_mode = developer_mode
+        })
+    }
+
+    fn save_clipboard(
+        &self,
+        preferences: TerminalClipboardPreferences,
+        expected_revision: u64,
+    ) -> AppResult<SettingsSnapshot> {
+        self.update(expected_revision, |next| {
+            next.terminal_clipboard = preferences
+        })
+    }
+
+    fn update(
+        &self,
+        expected_revision: u64,
+        update: impl FnOnce(&mut SettingsFile),
+    ) -> AppResult<SettingsSnapshot> {
         let mut saved = self.saved.lock().unwrap();
         if let Some(error) = &saved.load_error {
             // Do not overwrite unreadable or newer settings with defaults.
@@ -115,13 +165,13 @@ impl SystemSettings {
                 "设置已在其他窗口更新，请核对后重试。",
             ));
         }
-        if saved.value.developer_mode == developer_mode {
+        let mut next = saved.value.clone();
+        update(&mut next);
+        if saved.value.developer_mode == next.developer_mode
+            && saved.value.terminal_clipboard == next.terminal_clipboard
+        {
             return Ok(self.snapshot_of(&saved));
         }
-        let next = SettingsFile {
-            developer_mode,
-            ..saved.value.clone()
-        };
         let persist = || -> Result<(), Box<dyn std::error::Error>> {
             let parent = self.path.parent().ok_or("无法确定设置目录")?;
             std::fs::create_dir_all(parent)?;
@@ -172,6 +222,22 @@ pub async fn set_developer_mode(
 }
 
 #[tauri::command]
+pub async fn set_terminal_clipboard_settings(
+    app: tauri::AppHandle,
+    settings: State<'_, Arc<SystemSettings>>,
+    preferences: TerminalClipboardPreferences,
+    expected_revision: u64,
+) -> AppResult<SettingsSnapshot> {
+    let settings = settings.inner().clone();
+    let snapshot =
+        crate::blocking(move || settings.save_clipboard(preferences, expected_revision)).await?;
+    if let Err(error) = app.emit(SETTINGS_CHANGED, &snapshot) {
+        eprintln!("无法广播系统设置变更：{error}");
+    }
+    Ok(snapshot)
+}
+
+#[tauri::command]
 pub fn open_window_devtools(
     window: WebviewWindow,
     settings: State<'_, Arc<SystemSettings>>,
@@ -184,6 +250,60 @@ pub fn open_window_devtools(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clipboard_preferences_migrate_and_preserve_developer_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(&path, r#"{"version":1,"developerMode":true}"#).unwrap();
+        let settings = SystemSettings::load(path.clone());
+        assert_eq!(
+            settings.snapshot().terminal_clipboard,
+            TerminalClipboardPreferences::default()
+        );
+        let preferences = TerminalClipboardPreferences {
+            shortcut_mode: ShortcutMode::Traditional,
+            copy_on_select: true,
+            right_click_paste: true,
+        };
+        let saved = settings.save_clipboard(preferences.clone(), 0).unwrap();
+        assert!(saved.developer_mode);
+        assert!(saved.active_developer_mode);
+        assert_eq!(saved.revision, 1);
+        assert_eq!(
+            settings
+                .save_clipboard(preferences.clone(), 1)
+                .unwrap()
+                .revision,
+            1
+        );
+        assert_eq!(
+            settings.save(false, 0).unwrap_err().kind,
+            "settingsConflict"
+        );
+        settings.save(false, 1).unwrap();
+        let reloaded = SystemSettings::load(path);
+        assert!(!reloaded.developer_mode());
+        assert_eq!(reloaded.snapshot().terminal_clipboard, preferences);
+    }
+
+    #[test]
+    fn failed_clipboard_write_does_not_change_memory_or_revision() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let settings = SystemSettings::load(path.clone());
+        std::fs::create_dir(&path).unwrap();
+        let preferences = TerminalClipboardPreferences {
+            copy_on_select: true,
+            ..Default::default()
+        };
+        assert!(settings.save_clipboard(preferences, 0).is_err());
+        assert_eq!(
+            settings.snapshot().terminal_clipboard,
+            TerminalClipboardPreferences::default()
+        );
+        assert_eq!(settings.snapshot().revision, 0);
+    }
 
     #[test]
     fn preference_only_becomes_active_after_a_new_start() {

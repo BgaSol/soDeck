@@ -23,7 +23,9 @@
     "test:resources": "playwright test --config playwright.resources.config.ts",
     "test:mounts": "playwright test --config playwright.mounts.config.ts",
     "test:docker": "playwright test --config playwright.docker.config.ts",
-    "test:netbird": "playwright test --config playwright.netbird.config.ts"
+    "test:netbird": "playwright test --config playwright.netbird.config.ts",
+    "test:terminal-clipboard": "playwright test --config playwright.terminal-clipboard.config.ts",
+    "test:terminal-clipboard:native": "node tests/terminal-clipboard-native.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",
@@ -47,6 +49,7 @@
     "@codemirror/view": "^6.43.14",
     "@lezer/highlight": "^1.2.5",
     "@tauri-apps/api": "^2.12.3",
+    "@tauri-apps/plugin-clipboard-manager": "^2.5.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-serialize": "^0.14.0",
     "@xterm/xterm": "^6.0.0",

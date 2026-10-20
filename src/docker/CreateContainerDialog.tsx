@@ -246,6 +246,7 @@ export function CreateContainerDialog({
           <label className="docker-form-field">
             每行 KEY=value
             <textarea
+              className="form-textarea"
               autoComplete="off"
               spellCheck={false}
               rows={4}
@@ -402,6 +403,7 @@ export function CreateContainerDialog({
           <label className="docker-form-field">
             命令参数
             <textarea
+              className="form-textarea"
               rows={3}
               value={command}
               onChange={(e) => setCommand(e.target.value)}

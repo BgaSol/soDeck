@@ -9,7 +9,8 @@ body {
 }
 button,
 input,
-select {
+select,
+textarea.form-textarea {
   font: inherit;
 }
 button {
@@ -43,7 +44,8 @@ button:disabled {
   cursor: default;
 }
 input,
-select {
+select,
+textarea.form-textarea {
   width: 100%;
   min-width: 0;
   min-height: var(--field-height);
@@ -54,7 +56,27 @@ select {
   color: var(--text);
   background: var(--field);
 }
-input::placeholder {
+textarea.form-textarea {
+  min-height: 60px;
+  resize: vertical;
+  font-family: var(--mono);
+  line-height: 1.5;
+}
+/* Native :disabled also matches controls inside a disabled fieldset. */
+:is(
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea.form-textarea
+):disabled {
+  color: var(--muted);
+  -webkit-text-fill-color: var(--muted);
+  background-color: var(--tag);
+  border-color: var(--line);
+  opacity: 1;
+  cursor: default;
+}
+input::placeholder,
+textarea.form-textarea::placeholder {
   color: var(--muted);
 }
 select {
@@ -1322,11 +1344,18 @@ dialog .form-columns.equal {
 .connection-hop-user {
   white-space: nowrap;
 }
-.editor-save-error {
+.editor-feedback {
   flex: none;
   margin: 0;
   padding: 0.8rem 1.7rem;
+}
+.editor-feedback-info {
+  background: var(--field);
+  color: var(--muted);
+}
+.editor-feedback-error {
   background: var(--error-bg);
+  color: var(--error);
 }
 .editor-discard-actions {
   flex-wrap: wrap;

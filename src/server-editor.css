@@ -69,3 +69,16 @@ dialog.editor-dialog {
     padding: 12px 20px;
   }
 }
+
+.editor-dialog [aria-invalid="true"]:not(:disabled) {
+  border-color: var(--error);
+}
+.editor-dialog .field-error {
+  color: var(--error);
+  font-size: var(--font-secondary);
+  line-height: 1.5;
+}
+
+.editor-dialog .form-columns > label {
+  align-content: start;
+}

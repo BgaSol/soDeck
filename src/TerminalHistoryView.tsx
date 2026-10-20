@@ -1,3 +1,5 @@
+import { copyText } from "./terminalClipboard/clipboardService";
+import { historySelection } from "./terminalClipboard/historySelection";
 import { WindowTitlebar } from "./WindowTitlebar";
 import {
   useCallback,
@@ -157,6 +159,18 @@ export function TerminalHistoryView({
     }
     return [...groups];
   }, [sessions]);
+  const copyLifetime = useRef({ sessionId, epoch: 0, alive: true });
+  if (copyLifetime.current.sessionId !== sessionId) {
+    copyLifetime.current.sessionId = sessionId;
+    copyLifetime.current.epoch++;
+  }
+  useEffect(() => {
+    copyLifetime.current.alive = true;
+    return () => {
+      copyLifetime.current.alive = false;
+      copyLifetime.current.epoch++;
+    };
+  }, []);
   const filterCount = Number(caseSensitive) + Number(!!from || !!to);
   const sourceScope =
     scope === "source" ? (session?.source.id ?? binding?.sourceId) : undefined;
@@ -431,13 +445,27 @@ export function TerminalHistoryView({
     setReload((v) => v + 1);
   }
   async function copy(fromId: string, toId: string) {
+    const epoch = copyLifetime.current.epoch;
+    const valid = () =>
+      copyLifetime.current.alive && copyLifetime.current.epoch === epoch;
     try {
-      await navigator.clipboard.writeText(
-        await api.copy(sessionId, fromId, toId),
-      );
-      setNotice("已复制历史记录");
-    } catch (e) {
-      setError(errorOf(e).message);
+      if (await copyText(() => api.copy(sessionId, fromId, toId), valid)) {
+        if (valid()) setNotice("已复制历史记录");
+      }
+    } catch {
+      if (valid()) setError("复制失败，请重试");
+    }
+  }
+  async function copySelectedText(text: string) {
+    const epoch = copyLifetime.current.epoch;
+    const valid = () =>
+      copyLifetime.current.alive && copyLifetime.current.epoch === epoch;
+    try {
+      if (await copyText(text, valid)) {
+        if (valid()) setNotice("已复制");
+      }
+    } catch {
+      if (valid()) setError("复制失败，请重试");
     }
   }
   async function exportSession(raw: boolean, range = false) {
@@ -555,7 +583,41 @@ export function TerminalHistoryView({
     <section
       className={`terminal-history-view ${global ? "history-global" : "history-embedded"}`}
       aria-label="终端历史"
+      onCopy={(event) => {
+        if (
+          (event.target as HTMLElement).closest(
+            "input, textarea, [contenteditable=true]",
+          )
+        )
+          return;
+        const text = historySelection(event.currentTarget);
+        if (text) {
+          event.preventDefault();
+          void copySelectedText(text);
+        }
+      }}
       onKeyDown={(event) => {
+        if (
+          !replay &&
+          !event.nativeEvent.isComposing &&
+          (event.ctrlKey || event.metaKey) &&
+          !event.altKey &&
+          event.key.toLowerCase() === "c" &&
+          !(event.target as HTMLElement).closest(
+            "input, textarea, [contenteditable=true]",
+          )
+        ) {
+          const text = historySelection(event.currentTarget);
+          if (text || selected) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!event.repeat) {
+              if (text) void copySelectedText(text);
+              else if (selected) void copy(selected.from, selected.to);
+            }
+            return;
+          }
+        }
         if (
           (event.ctrlKey || event.metaKey) &&
           event.key.toLowerCase() === "f" &&

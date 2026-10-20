@@ -1,4 +1,22 @@
-import { useEffect, useRef, useState, useImperativeHandle } from "react";
+import { useTerminalClipboard } from "./terminalClipboard/useTerminalClipboard";
+import {
+  byteLength,
+  finalPasteSize,
+  INPUT_LIMIT,
+} from "./terminalClipboard/policy";
+import type {
+  ClipboardActions,
+  ClipboardViewState,
+  PasteTarget,
+  TerminalSourceLabel,
+} from "./terminalClipboard/types";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useImperativeHandle,
+} from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { Terminal } from "@xterm/xterm";
 import { SerializeAddon } from "@xterm/addon-serialize";
@@ -10,6 +28,7 @@ import type { AppError, ConnectionRequest, TerminalEvent } from "./types";
 import type { HistoryBinding, HistoryPosition } from "./terminalHistoryApi";
 
 export interface TerminalSnapshot {
+  source?: TerminalSourceLabel;
   sessionId: string | null;
   content: string;
   cols: number;
@@ -27,11 +46,14 @@ export interface TerminalCwd {
   sequence: number;
 }
 export interface TerminalController {
+  clipboard: ClipboardActions;
   prepareMove: () => Promise<TerminalSnapshot>;
   cancelMove: () => Promise<void>;
   clearDisplay: () => Promise<void>;
 }
 export interface TerminalPaneProps {
+  source?: TerminalSourceLabel;
+  onClipboardState?: (state: ClipboardViewState) => void;
   controllerRef?: Ref<TerminalController>;
   initial?: TerminalSnapshot;
   onReady?: () => void;
@@ -50,6 +72,8 @@ export interface TerminalPaneProps {
   onConnectionEvent?: (event: TerminalEvent) => void;
 }
 export function LiveTerminalPane({
+  source,
+  onClipboardState,
   request,
   controllerRef,
   initial,
@@ -87,6 +111,12 @@ export function LiveTerminalPane({
     onConnectionId,
     onConnectionEvent,
   };
+  const sourceProp = useRef(source);
+  sourceProp.current = source;
+  const connectionSource = useRef(initial?.source ?? source);
+  const inputEpoch = useRef(0);
+  const clipboard = useTerminalClipboard(onClipboardState);
+  const pasteCapture = useRef<string[] | null>(null);
   const latestCwd = useRef(initial?.cwd);
   const isActive = useRef(active);
   isActive.current = active;
@@ -108,9 +138,22 @@ export function LiveTerminalPane({
   useImperativeHandle(
     controllerRef,
     () => ({
+      clipboard: {
+        copySelection: async () => {
+          await clipboard.controller.current?.copySelection();
+        },
+        requestPaste: async (request) => {
+          await clipboard.controller.current?.requestPaste(request);
+        },
+        selectAllBuffer: () => clipboard.controller.current?.selectAllBuffer(),
+        sendControl: async (key) => {
+          await clipboard.controller.current?.sendControl(key);
+        },
+      },
       prepareMove: async () => {
         if (transferring.current) throw new Error("会话正在移动");
         transferring.current = true;
+        clipboard.invalidate();
         const id = session.current;
         try {
           if (id) {
@@ -139,6 +182,7 @@ export function LiveTerminalPane({
           const term = terminal.current;
           return {
             sessionId: session.current,
+            source: connectionSource.current,
             content: serializer.current?.serialize() || "",
             cols: term?.cols || 100,
             rows: term?.rows || 30,
@@ -147,6 +191,7 @@ export function LiveTerminalPane({
           };
         } catch (e) {
           transferring.current = false;
+          clipboard.controller.current?.refresh();
           if (id)
             await invoke("terminal_resume", { sessionId: id }).catch(() => {});
           throw e;
@@ -154,6 +199,7 @@ export function LiveTerminalPane({
       },
       cancelMove: async () => {
         transferring.current = false;
+        clipboard.controller.current?.refresh();
         if (session.current)
           await invoke("terminal_resume", { sessionId: session.current }).catch(
             () => {},
@@ -169,6 +215,23 @@ export function LiveTerminalPane({
     }),
     [],
   );
+  useEffect(() => {
+    if (!connectionSource.current && source) {
+      connectionSource.current = { ...source };
+      clipboard.controller.current?.refresh();
+    } else if (
+      container &&
+      source?.containerName &&
+      connectionSource.current &&
+      !connectionSource.current.containerName
+    ) {
+      connectionSource.current = {
+        ...connectionSource.current,
+        containerName: source.containerName,
+      };
+      clipboard.controller.current?.refresh();
+    }
+  }, [source, container]);
   const hadRequest = useRef(false);
   const [ended, setEnded] = useState(false);
   useEffect(() => {
@@ -229,11 +292,80 @@ export function LiveTerminalPane({
     });
     observer.observe(element.current!);
     const input = term.onData((data) => {
+      if (pasteCapture.current) {
+        pasteCapture.current.push(data);
+        return;
+      }
       if (session.current && !transferring.current)
         void invoke("terminal_input", {
           sessionId: session.current,
           data,
         }).catch((error) => callbacks.current.onError(errorOf(error)));
+    });
+    const target = (): PasteTarget | null => {
+      const origin = connectionSource.current;
+      return session.current &&
+        origin &&
+        isActive.current &&
+        isInteractive.current &&
+        !transferring.current
+        ? {
+            sessionId: session.current,
+            epoch: inputEpoch.current,
+            source: { ...origin },
+          }
+        : null;
+    };
+    const assertTarget = (expected: PasteTarget) => {
+      const current = target();
+      if (
+        !current ||
+        current.sessionId !== expected.sessionId ||
+        current.epoch !== expected.epoch
+      )
+        throw new Error("目标终端已改变");
+    };
+    const unbindClipboard = clipboard.attach(term, {
+      target,
+      reason: () =>
+        !session.current
+          ? "终端尚未连接"
+          : transferring.current
+            ? "会话正在移动"
+            : !connectionSource.current
+              ? "正在读取会话来源"
+              : "请先返回当前实时终端",
+      invalidate: () => {
+        inputEpoch.current++;
+      },
+      canFocus: () =>
+        isActive.current && isInteractive.current && !transferring.current,
+      paste: async (expected, text) => {
+        assertTarget(expected);
+        if (finalPasteSize(text, term.modes.bracketedPasteMode) > INPUT_LIMIT)
+          throw new Error("输入过大");
+        const emissions: string[] = [];
+        pasteCapture.current = emissions;
+        try {
+          term.paste(text);
+        } finally {
+          pasteCapture.current = null;
+        }
+        if (emissions.length !== 1 || byteLength(emissions[0]) > INPUT_LIMIT)
+          throw new Error("终端粘贴编码异常");
+        assertTarget(expected);
+        await invoke("terminal_input", {
+          sessionId: expected.sessionId,
+          data: emissions[0],
+        });
+      },
+      control: async (expected, key) => {
+        assertTarget(expected);
+        await invoke("terminal_input", {
+          sessionId: expected.sessionId,
+          data: key === "C" ? "\x03" : "\x16",
+        });
+      },
     });
     const parsed = term.onWriteParsed(() =>
       alternateCallback.current?.(term.buffer.active.type === "alternate"),
@@ -243,6 +375,7 @@ export function LiveTerminalPane({
     return () => {
       observer.disconnect();
       motionPreference.removeEventListener("change", updateMotion);
+      unbindClipboard();
       input.dispose();
       parsed.dispose();
       term.dispose();
@@ -250,7 +383,8 @@ export function LiveTerminalPane({
       fit.current = null;
     };
   }, []);
-  useEffect(() => {
+  useLayoutEffect(() => {
+    clipboard.invalidate();
     if (interactive && active) terminal.current?.focus();
     else terminal.current?.blur();
   }, [interactive, active]);
@@ -271,6 +405,8 @@ export function LiveTerminalPane({
       hadRequest.current = false;
       return;
     }
+    clipboard.invalidate();
+    connectionSource.current = initial?.source ?? sourceProp.current;
     hadRequest.current = true;
     latestCwd.current = initial?.cwd;
     let cancelled = false,
@@ -290,6 +426,7 @@ export function LiveTerminalPane({
     function markReady() {
       if (!ready || !opened || closed || cancelled) return;
       session.current = opened;
+      clipboard.controller.current?.refresh();
       callbacks.current.onSession(opened);
       if (opened && latestCwd.current)
         callbacks.current.onCwdChange?.({
@@ -353,6 +490,15 @@ export function LiveTerminalPane({
       if (cancelled) return;
       callbacks.current.onConnectionEvent?.(event);
       if (event.type === "ready") {
+        const connected = event.connection.target;
+        const previous = connectionSource.current;
+        connectionSource.current = {
+          serverName: connected.name,
+          host: connected.host ?? previous?.host ?? "",
+          port: connected.port ?? previous?.port ?? 22,
+          username: connected.username ?? previous?.username ?? "",
+          containerName: previous?.containerName,
+        };
         ready = true;
         markReady();
       } else if (event.type === "frozen") {
@@ -393,6 +539,7 @@ export function LiveTerminalPane({
       } else if (event.type === "closed") {
         closed = true;
         session.current = null;
+        clipboard.invalidate();
         callbacks.current.onSession(null);
         callbacks.current.onCwdChange?.(null);
         callbacks.current.onConnectionId?.(null);
@@ -462,6 +609,7 @@ export function LiveTerminalPane({
     return () => {
       cancelled = true;
       session.current = null;
+      clipboard.invalidate();
       callbacks.current.onSession(null);
       callbacks.current.onConnectionId?.(null);
       if (opened && !transferring.current)
@@ -471,10 +619,14 @@ export function LiveTerminalPane({
     };
   }, [request, container, initial]);
   return (
-    <div
-      className={`terminal-surface${ended ? " terminal-ended" : ""}`}
-      ref={element}
-    />
+    <>
+      <div
+        className={`terminal-surface${ended ? " terminal-ended" : ""}`}
+        ref={element}
+        inert={!interactive || !active}
+      />
+      {clipboard.ui}
+    </>
   );
 }
 export { TerminalWorkspace as TerminalPane } from "./TerminalWorkspace";

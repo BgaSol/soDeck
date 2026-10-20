@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "history-clipboard",
+  "description": "User initiated terminal text clipboard access",
+  "windows": ["terminal-history"],
+  "permissions": ["clipboard-manager:allow-write-text"]
+}

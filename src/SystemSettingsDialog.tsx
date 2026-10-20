@@ -1,11 +1,19 @@
+import {
+  useSystemSettings,
+  receiveSystemSettings,
+  refreshSystemSettings,
+} from "./useSystemSettings";
+import { convenientKeys } from "./terminalClipboard/policy";
+import type { TerminalClipboardPreferences } from "./terminalClipboard/types";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Settings, SquareTerminal } from "lucide-react";
 import { desktop } from "./api";
 import { DialogHeader } from "./DialogHeader";
-import { systemSettingsApi, type SystemSettings } from "./systemSettingsApi";
+import { systemSettingsApi } from "./systemSettingsApi";
 import { errorOf } from "./types";
 import "./system-settings.css";
+import "./terminalClipboard/terminal-clipboard.css";
 
 export function SystemSettingsButton() {
   const [open, setOpen] = useState(false);
@@ -37,46 +45,40 @@ export function SystemSettingsButton() {
   );
 }
 
-function SystemSettingsDialog({ onClose }: { onClose: () => void }) {
+export function SystemSettingsDialog({
+  onClose,
+  section,
+}: {
+  onClose: () => void;
+  section?: "terminal";
+}) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [settings, setSettings] = useState<SystemSettings | null>(null);
+  const terminalSection = useRef<HTMLElement>(null);
+  const settings = useSystemSettings();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState<boolean | null>(null);
   const [opening, setOpening] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [clipboardSaved, setClipboardSaved] = useState(false);
   const saving = useRef(false);
   const alive = useRef(true);
-
-  const receive = (next: SystemSettings) => {
-    if (alive.current)
-      setSettings((current) =>
-        !current || next.revision >= current.revision ? next : current,
-      );
-  };
-
+  const receive = receiveSystemSettings;
   useEffect(() => {
     alive.current = true;
     dialog.current?.showModal();
-    let unsubscribe: (() => void) | undefined;
-    const refresh = () => {
-      if (desktop)
-        void systemSettingsApi
-          .get()
-          .then(receive)
-          .catch((e) => {
-            if (alive.current) setError(errorOf(e).message);
-          });
-    };
+    if (section === "terminal") {
+      terminalSection.current?.scrollIntoView({ block: "nearest" });
+      terminalSection.current?.focus();
+    }
+    void refreshSystemSettings().catch((e) => {
+      if (alive.current) setError(errorOf(e).message);
+    });
     const escape = (event: KeyboardEvent) => {
-      // A disabled focused checkbox can leave focus on the body in Chromium.
-      // Keep Escape working while a save is pending, and only close the top dialog.
       if (
         event.key === "Escape" &&
         !event.isComposing &&
-        document
-          .querySelectorAll("dialog[open]")
-          .item(document.querySelectorAll("dialog[open]").length - 1) ===
+        Array.from(document.querySelectorAll("dialog[open]")).at(-1) ===
           dialog.current
       ) {
         event.preventDefault();
@@ -85,33 +87,32 @@ function SystemSettingsDialog({ onClose }: { onClose: () => void }) {
         onClose();
       }
     };
-    if (desktop) {
-      // Subscribe before taking the snapshot; revisions reject late replies/events.
-      void systemSettingsApi
-        .subscribe(receive)
-        .then((off) => {
-          if (!alive.current) off();
-          else {
-            unsubscribe = off;
-            refresh();
-          }
-        })
-        .catch((e) => {
-          if (alive.current) {
-            setError(errorOf(e).message);
-            refresh();
-          }
-        });
-    }
-    window.addEventListener("focus", refresh);
     window.addEventListener("keydown", escape, true);
     return () => {
       alive.current = false;
-      unsubscribe?.();
-      window.removeEventListener("focus", refresh);
       window.removeEventListener("keydown", escape, true);
     };
   }, []);
+
+  async function saveClipboard(preferences: TerminalClipboardPreferences) {
+    if (!settings || saving.current) return;
+    saving.current = true;
+    setBusy(true);
+    setError("");
+    setClipboardSaved(false);
+    try {
+      receive(
+        await systemSettingsApi.saveClipboard(preferences, settings.revision),
+      );
+      if (alive.current) setClipboardSaved(true);
+    } catch (error) {
+      if (alive.current) setError(errorOf(error).message);
+      await refreshSystemSettings().catch(() => {});
+    } finally {
+      saving.current = false;
+      if (alive.current) setBusy(false);
+    }
+  }
 
   async function save(developerMode: boolean) {
     if (!settings || saving.current) return;
@@ -176,6 +177,91 @@ function SystemSettingsDialog({ onClose }: { onClose: () => void }) {
         onClose={close}
       />
       <div className="system-settings-content">
+        <section
+          ref={terminalSection}
+          className="terminal-clipboard-settings"
+          tabIndex={-1}
+          aria-label="终端复制粘贴设置"
+        >
+          <h3>终端 · 复制粘贴</h3>
+          {settings?.platform !== "macos" && (
+            <>
+              <label>
+                <input
+                  type="checkbox"
+                  aria-label="便捷快捷键"
+                  disabled={
+                    !settings || !!settings.loadError || busy || !desktop
+                  }
+                  checked={
+                    settings
+                      ? convenientKeys(
+                          settings.platform,
+                          settings.terminalClipboard,
+                        )
+                      : false
+                  }
+                  onChange={(event) =>
+                    settings &&
+                    void saveClipboard({
+                      ...settings.terminalClipboard,
+                      shortcutMode: event.target.checked
+                        ? "convenient"
+                        : "traditional",
+                    })
+                  }
+                />
+                便捷快捷键
+              </label>
+              <p>
+                有选区时 Ctrl+C 复制，Ctrl+V 粘贴。关闭后使用 Ctrl+Shift+C /
+                V，Ctrl+C / V 交给远端。
+              </p>
+            </>
+          )}
+          {settings?.platform === "macos" && (
+            <p>使用 ⌘C / ⌘V 复制粘贴，Ctrl 按键交给远端。</p>
+          )}
+          <label>
+            <input
+              type="checkbox"
+              aria-label="选中即复制"
+              disabled={!settings || !!settings.loadError || busy || !desktop}
+              checked={settings?.terminalClipboard.copyOnSelect ?? false}
+              onChange={(event) =>
+                settings &&
+                void saveClipboard({
+                  ...settings.terminalClipboard,
+                  copyOnSelect: event.target.checked,
+                })
+              }
+            />
+            选中即复制
+          </label>
+          <p>完成鼠标选区后，将所选文字复制到系统剪贴板。</p>
+          <label>
+            <input
+              type="checkbox"
+              aria-label="右键直接粘贴"
+              disabled={!settings || !!settings.loadError || busy || !desktop}
+              checked={settings?.terminalClipboard.rightClickPaste ?? false}
+              onChange={(event) =>
+                settings &&
+                void saveClipboard({
+                  ...settings.terminalClipboard,
+                  rightClickPaste: event.target.checked,
+                })
+              }
+            />
+            右键直接粘贴
+          </label>
+          <p>
+            开启后用 Shift+右键打开菜单。远端接管鼠标时，普通右键仍交给远端。
+          </p>
+          <p role="status">
+            {clipboardSaved ? "终端设置已保存，立即生效。" : ""}
+          </p>
+        </section>
         <label className="developer-mode-option">
           <input
             type="checkbox"

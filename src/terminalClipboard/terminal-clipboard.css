@@ -1,0 +1,153 @@
+.terminal-context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 235px;
+  max-width: calc(100vw - 12px);
+  padding: 5px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px #0004;
+}
+.terminal-context-menu button {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  gap: 20px;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.terminal-context-menu button:hover:not(:disabled),
+.terminal-context-menu button:focus-visible {
+  background: var(--hover);
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+.terminal-context-menu button:disabled {
+  opacity: 0.4;
+}
+.terminal-context-menu kbd {
+  font-size: 11px;
+  color: var(--muted);
+}
+.terminal-context-menu [role="separator"] {
+  height: 1px;
+  background: var(--line);
+  margin: 4px;
+}
+.terminal-paste-dialog {
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+}
+.terminal-paste-dialog textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  background: var(--field);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  min-height: 160px;
+  height: min(32vh, 280px);
+  resize: vertical;
+  font-family: "Cascadia Code", Consolas, monospace;
+  white-space: pre;
+  line-height: 1.5;
+}
+.terminal-paste-source {
+  overflow-wrap: anywhere;
+  margin: 4px 0 12px;
+}
+.terminal-paste-source span,
+.terminal-paste-details {
+  color: var(--muted);
+  font-size: 12px;
+}
+.terminal-paste-warning {
+  margin: 10px 0 12px;
+  font-size: 13px;
+}
+.terminal-paste-details,
+.terminal-paste-adjustments {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 8px 0;
+}
+.terminal-paste-details {
+  justify-content: space-between;
+}
+.terminal-paste-details label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.terminal-paste-details input {
+  width: auto;
+}
+.terminal-whitespace-preview {
+  max-height: 120px;
+  overflow: auto;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.terminal-clipboard-notice {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 5;
+  max-width: min(430px, calc(100% - 24px));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  box-shadow: 0 3px 14px #0003;
+}
+.terminal-clipboard-notice[data-kind="error"] {
+  border-color: var(--red, #f08c91);
+}
+.terminal-clipboard-notice button {
+  padding: 1px 4px;
+  min-height: 22px;
+  background: transparent;
+  color: inherit;
+}
+.terminal-replay {
+  position: relative;
+}
+.terminal-clipboard-settings {
+  margin: 18px 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.terminal-clipboard-settings h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+.terminal-clipboard-settings > label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 5px;
+}
+.terminal-clipboard-settings input {
+  width: 16px;
+  height: 16px;
+}
+.terminal-clipboard-settings p {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 4px 0;
+}

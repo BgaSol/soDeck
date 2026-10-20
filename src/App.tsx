@@ -1,3 +1,4 @@
+import type { TerminalSourceLabel } from "./terminalClipboard/types";
 import {
   lazy,
   Component,
@@ -74,15 +75,12 @@ const PortForwardApp = lazy(() =>
   })),
 );
 function ContainerApp() {
-  const [info, setInfo] = useState<{
-      serverName: string;
-      containerName: string;
-    } | null>(null),
+  const [info, setInfo] = useState<TerminalSourceLabel | null>(null),
     [error, setError] = useState<AppError | null>(null),
     [state, setState] = useState("连接中"),
     [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    void invoke<{ serverName: string; containerName: string }>("container_info")
+    void invoke<TerminalSourceLabel>("container_info")
       .then(setInfo)
       .catch((e) => setError(errorOf(e)));
   }, []);
@@ -116,6 +114,7 @@ function ContainerApp() {
       <div className="container-terminal">
         <TerminalPane
           key={attempt}
+          source={info ?? undefined}
           container
           onSession={() => {}}
           onError={setError}

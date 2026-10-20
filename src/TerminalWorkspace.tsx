@@ -1,3 +1,9 @@
+import { useSystemSettings, browserPlatform } from "./useSystemSettings";
+import {
+  defaultPreferences,
+  emptyClipboardState,
+} from "./terminalClipboard/types";
+import { shortcutLabels } from "./terminalClipboard/policy";
 import {
   lazy,
   Suspense,
@@ -7,6 +13,8 @@ import {
   useState,
 } from "react";
 import {
+  Copy,
+  ClipboardPaste,
   ArrowLeft,
   Check,
   CircleAlert,
@@ -35,6 +43,12 @@ import "./terminal-history.css";
 
 export function TerminalWorkspace(props: TerminalPaneProps) {
   const live = useRef<TerminalController>(null);
+  const [clipboardState, setClipboardState] = useState(emptyClipboardState);
+  const settings = useSystemSettings();
+  const labels = shortcutLabels(
+    settings?.platform ?? browserPlatform,
+    settings?.terminalClipboard ?? defaultPreferences,
+  );
   const [binding, setBinding] = useState<HistoryBinding | undefined>(
     props.initial?.historyBinding,
   );
@@ -55,6 +69,18 @@ export function TerminalWorkspace(props: TerminalPaneProps) {
   useImperativeHandle(
     props.controllerRef,
     () => ({
+      clipboard: {
+        copySelection: async () => {
+          await live.current?.clipboard.copySelection();
+        },
+        requestPaste: async (request) => {
+          await live.current?.clipboard.requestPaste(request);
+        },
+        selectAllBuffer: () => live.current?.clipboard.selectAllBuffer(),
+        sendControl: async (key) => {
+          await live.current?.clipboard.sendControl(key);
+        },
+      },
       prepareMove: async () => {
         if (!live.current) throw new Error("终端尚未准备好");
         return {
@@ -157,6 +183,32 @@ export function TerminalWorkspace(props: TerminalPaneProps) {
             <Search size={15} aria-hidden="true" />
             <span className="terminal-tool-label">全局历史搜索</span>
           </button>
+          {mode === "live" && (
+            <>
+              <button
+                className="terminal-tool"
+                aria-label="复制终端选区"
+                title={"复制选区 · " + labels.copy}
+                disabled={!clipboardState.hasSelection}
+                onClick={() => void live.current?.clipboard.copySelection()}
+              >
+                <Copy size={15} />
+                <span className="terminal-tool-label">复制</span>
+              </button>
+              <button
+                className="terminal-tool"
+                aria-label="粘贴到终端"
+                title={
+                  clipboardState.unavailableReason ?? "粘贴 · " + labels.paste
+                }
+                disabled={!clipboardState.canPaste || clipboardState.busy}
+                onClick={() => void live.current?.clipboard.requestPaste()}
+              >
+                <ClipboardPaste size={15} />
+                <span className="terminal-tool-label">粘贴</span>
+              </button>
+            </>
+          )}
           <span className="terminal-tools-divider" aria-hidden="true" />
           <button
             className="terminal-tool"
@@ -218,7 +270,12 @@ export function TerminalWorkspace(props: TerminalPaneProps) {
           <LiveTerminalPane
             {...props}
             controllerRef={live}
-            interactive={mode === "live" && (props.active ?? true)}
+            interactive={
+              mode === "live" &&
+              (props.active ?? true) &&
+              (props.interactive ?? true)
+            }
+            onClipboardState={setClipboardState}
             onAlternate={setAlternate}
             onCleared={() => setCleared(true)}
             onSession={(id) => {

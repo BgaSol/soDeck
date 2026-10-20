@@ -1,3 +1,4 @@
+import { useTerminalClipboard } from "./terminalClipboard/useTerminalClipboard";
 import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { ArrowLeft, LockKeyhole } from "lucide-react";
@@ -17,6 +18,7 @@ export function TerminalReplayView({
   onClose: () => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const clipboard = useTerminalClipboard();
   const [status, setStatus] = useState("正在恢复历史屏幕…");
   const [playAll, setPlayAll] = useState(false);
   useEffect(() => {
@@ -32,7 +34,8 @@ export function TerminalReplayView({
       theme: { background: "#14171e", foreground: "#dce3ef" },
     });
     term.open(host.current!);
-    // No input handler, fit addon, link opener or clipboard bridge is attached to this player.
+    // Read-only binding never owns a session or an IPC input callback.
+    const unbind = clipboard.attachReadonly(term);
     void (async () => {
       let after = "0";
       try {
@@ -79,6 +82,7 @@ export function TerminalReplayView({
     })();
     return () => {
       cancelled = true;
+      unbind();
       term.dispose();
     };
   }, [row, playAll]);
@@ -93,6 +97,7 @@ export function TerminalReplayView({
         }
       }}
     >
+      {clipboard.ui}
       <header>
         <button autoFocus className="history-replay-back" onClick={onClose}>
           <ArrowLeft size={15} aria-hidden="true" />

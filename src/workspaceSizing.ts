@@ -11,7 +11,7 @@ export const defaultWorkspaceView: WorkspaceViewState = {
   pane: "terminal",
 };
 export const defaultWorkspaceSize: WorkspaceLayoutSize = {
-  fileWidth: 240,
+  fileWidth: 280,
   serviceWidth: 360,
 };
 export function normalizeWorkspaceView(
@@ -32,13 +32,17 @@ export function fitWorkspaceLayout(
 ) {
   const mode = width >= 1200 ? "three" : width >= 760 ? "two" : "single";
   const terminalMin = Math.min(320, width);
-  const fileMin = Math.min(180, width);
+  const fileMin = Math.min(280, width);
   const serviceMin = Math.min(320, width);
   const budget = Math.max(
     0,
     width - terminalMin - (mode === "three" ? 20 : 10),
   );
-  let fileWidth = clamp(preferred?.fileWidth || 240, fileMin, 520);
+  let fileWidth = clamp(
+    preferred?.fileWidth || defaultWorkspaceSize.fileWidth,
+    fileMin,
+    520,
+  );
   let serviceWidth = clamp(preferred?.serviceWidth || 360, serviceMin, 480);
   if (mode === "three") {
     fileWidth = Math.max(

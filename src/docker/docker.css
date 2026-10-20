@@ -436,12 +436,6 @@
   max-height: 85vh;
   overflow: auto;
 }
-.docker-form-field textarea {
-  min-height: 60px;
-  resize: vertical;
-  width: 100%;
-  box-sizing: border-box;
-}
 .docker-path-picker {
   border: 1px solid var(--line);
   padding: 10px;

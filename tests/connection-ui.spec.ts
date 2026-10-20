@@ -1984,3 +1984,134 @@ test("returning home restores keyboard focus to the open compact details", async
   await expect(home.getByLabel("搜索服务器")).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+for (const colorScheme of ["light", "dark"] as const) {
+  test(`server field validation follows edits and focuses the first error in ${colorScheme}`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
+    const errors = await setup(page);
+    await page.setViewportSize({ width: 860, height: 580 });
+    await page.getByRole("button", { name: "新增服务器", exact: true }).click();
+    const editor = page.getByRole("dialog", {
+      name: "新增服务器",
+      exact: true,
+    });
+    const name = editor.getByRole("textbox", { name: "名称", exact: true });
+    const host = editor.getByRole("textbox", { name: "地址", exact: true });
+    const port = editor.getByRole("spinbutton", { name: "端口", exact: true });
+    const directPort = editor.getByRole("spinbutton", {
+      name: "直连端口",
+      exact: true,
+    });
+    const save = editor.getByRole("button", { name: "保存", exact: true });
+    await expect(editor.locator('[aria-invalid="true"]')).toHaveCount(0);
+    await name.press("Tab");
+    await expect(name).toHaveAttribute("aria-invalid", "true");
+    await expect(name).toHaveAccessibleDescription("请填写服务器名称。");
+    await expect(host).not.toHaveAttribute("aria-invalid", "true");
+    await name.fill("UI validation");
+    await expect(name).not.toHaveAttribute("aria-invalid", "true");
+    await save.click();
+    await expect(host).toBeFocused();
+    await expect(host).toHaveAccessibleDescription("请填写 IP 地址或域名。");
+    await expect(host).toBeInViewport();
+    await host.fill("fixture.invalid");
+    await port.fill("1.5");
+    await directPort.fill("65536");
+    await save.click();
+    await expect(port).toBeFocused();
+    await expect(port).toHaveAccessibleDescription(
+      "请输入 1–65535 的整数端口。",
+    );
+    await port.fill("22");
+    await expect(port).not.toHaveAttribute("aria-invalid", "true");
+    await save.click();
+    await expect(directPort).toBeFocused();
+    await expect(directPort).toBeInViewport();
+    await expect(editor.locator("#server-directPort-error")).toBeInViewport({
+      ratio: 1,
+    });
+    const directHostBounds = await editor
+      .getByLabel("真实地址", { exact: true })
+      .boundingBox();
+    const directPortBounds = await directPort.boundingBox();
+    expect(Math.abs(directHostBounds!.y - directPortBounds!.y)).toBeLessThan(1);
+    await expect(directPort).toHaveAccessibleDescription(
+      "请输入 1–65535 的整数端口。",
+    );
+    expect(
+      await page.evaluate(() =>
+        (window as any).__TEST__.calls.filter(
+          (c: any) => c.command === "save_server",
+        ),
+      ),
+    ).toHaveLength(0);
+    await directPort.fill("22");
+    await save.click();
+    await expect(editor).toHaveCount(0);
+    expect(
+      await page.evaluate(() =>
+        (window as any).__TEST__.calls.filter(
+          (c: any) => c.command === "save_server",
+        ),
+      ),
+    ).toHaveLength(1);
+    expect(errors).toEqual([]);
+  });
+
+  test(`server validation handles authentication changes and save-only intent in ${colorScheme}`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
+    const errors = await setup(page);
+    await page.getByRole("button", { name: "新增服务器", exact: true }).click();
+    const editor = page.getByRole("dialog", {
+      name: "新增服务器",
+      exact: true,
+    });
+    await editor
+      .getByLabel("名称", { exact: true })
+      .fill("Authentication validation");
+    await editor.getByLabel("地址", { exact: true }).fill("fixture.invalid");
+    const auth = editor
+      .getByRole("combobox")
+      .filter({ has: page.locator('option[value="key"]') });
+    await auth.selectOption("key");
+    const key = editor.getByLabel("本地私钥路径", { exact: true });
+    await expect(key).not.toHaveAttribute("aria-invalid", "true");
+    await editor.getByRole("button", { name: "保存", exact: true }).click();
+    await expect(key).toBeFocused();
+    await expect(key).toHaveAttribute("aria-invalid", "true");
+    await expect(key).toHaveAccessibleDescription(
+      /密钥口令在连接时输入。.*请填写本地私钥文件的完整路径。/,
+    );
+    await key.fill("C:/Keys/test.pem");
+    await expect(key).not.toHaveAttribute("aria-invalid", "true");
+    await key.fill("");
+    await expect(key).toHaveAttribute("aria-invalid", "true");
+    await auth.selectOption("agent");
+    await expect(editor.locator('[aria-invalid="true"]')).toHaveCount(0);
+    await auth.selectOption("key");
+    await expect(key).not.toHaveAttribute("aria-invalid", "true");
+    await auth.selectOption("agent");
+    await editor
+      .getByRole("button", { name: "保存并连接", exact: true })
+      .click();
+    const username = editor.getByLabel("用户名", { exact: true });
+    await expect(username).toBeFocused();
+    await expect(username).toHaveAccessibleDescription(
+      "请填写 SSH 用户名后再连接。",
+    );
+    await editor.getByRole("button", { name: "保存", exact: true }).click();
+    await expect(editor).toHaveCount(0);
+    expect(
+      await page.evaluate(() =>
+        (window as any).__TEST__.calls.filter(
+          (c: any) => c.command === "open_connection",
+        ),
+      ),
+    ).toHaveLength(0);
+    expect(errors).toEqual([]);
+  });
+}

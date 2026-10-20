@@ -479,6 +479,9 @@ async fn open_container(
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ContainerInfo {
+    host: String,
+    port: u16,
+    username: String,
     server_name: String,
     container_name: String,
 }
@@ -492,6 +495,9 @@ fn container_info(
         .get(window.label())
         .ok_or_else(|| AppError::new("window", "容器窗口配置已失效"))?;
     Ok(ContainerInfo {
+        host: target.spec.target().host.clone(),
+        port: target.spec.target().port,
+        username: target.spec.target().username.clone(),
         server_name: target.spec.target().name.clone(),
         container_name: target.target.name.clone(),
     })
@@ -532,6 +538,7 @@ pub fn run() {
     }
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .setup(move |app| {
             let settings = Arc::new(system_settings::SystemSettings::load(
                 app.path().app_config_dir()?.join("settings.json"),
@@ -657,6 +664,7 @@ pub fn run() {
 
             system_settings::get_system_settings,
             system_settings::set_developer_mode,
+            system_settings::set_terminal_clipboard_settings,
             system_settings::open_window_devtools,
             port_forwarding::commands::open_port_forward_window,
             port_forwarding::commands::port_forward_bootstrap,
