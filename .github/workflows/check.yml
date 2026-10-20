@@ -1,64 +1,137 @@
 name: Desktop checks
-on: [push, pull_request]
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_call:
+    inputs:
+      package:
+        description: Build and upload installers for a tagged release
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
 jobs:
   check:
+    name: Check ${{ matrix.platform }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-24.04]
+        include:
+          - platform: windows-x64
+            os: windows-2022
+            target: x86_64-pc-windows-msvc
+            bundles: nsis,msi
+          - platform: macos-arm64
+            os: macos-15
+            target: aarch64-apple-darwin
+            bundles: dmg
+          - platform: macos-x64
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+            bundles: dmg
+          - platform: linux-x64
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            bundles: deb,appimage
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
           cache: npm
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          targets: ${{ matrix.target }}
+          components: rustfmt
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
         with:
           workspaces: src-tauri -> target
+          key: ${{ matrix.platform }}
       - name: Linux system libraries
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev pkg-config
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev pkg-config libfuse2 libxdo-dev xdg-utils
       - run: npm ci
+      - run: npm run release:check
+      - run: npm run test:release
       - run: npm test
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Build frontend assets required by Rust release configuration
+        run: npm run build
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
       - name: Real OpenSSH and rsync transfer tests
         if: runner.os == 'Linux'
         run: |
           docker build -t ssh-workspace-rsync-fixture tests/rsync
           python3 tests/rsync/environment.py
-          cargo test --manifest-path src-tauri/Cargo.toml --lib rsync_ -- --ignored --test-threads=1
+          cargo test --manifest-path src-tauri/Cargo.toml --locked --lib rsync_ -- --ignored --test-threads=1
       - name: Remove transfer test servers
         if: always() && runner.os == 'Linux'
         run: |
           if [ -f .qa/rsync-environment.json ]; then python3 tests/rsync/environment.py stop; fi
-      - run: npm run tauri -- build --no-bundle
+      - name: Compile desktop application
+        if: ${{ !inputs.package }}
+        run: npm run tauri -- build --ci --no-bundle --target ${{ matrix.target }} -- --locked
+      - name: Build release installers
+        if: inputs.package
+        env:
+          # Ad-hoc signing works without a developer certificate; this is not notarization.
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: npm run tauri -- build --ci --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} -- --locked
+      - name: Collect and verify installers
+        if: inputs.package
+        run: node scripts/release-assets.mjs collect ${{ matrix.platform }} src-tauri/target/${{ matrix.target }}/release/bundle .qa/release-assets
+      - name: Upload installers
+        if: inputs.package
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: installers-${{ matrix.platform }}
+          path: .qa/release-assets/*
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
 
   docker-engine:
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
           cache: npm
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
         with:
           workspaces: src-tauri -> target
+          key: docker-engine
       - name: Linux system libraries
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev pkg-config
-      - run: npm ci && npm run build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev pkg-config libxdo-dev
+      - run: npm ci
+      - run: npm run build
       - name: Docker CLI inspect template compatibility (no daemon required)
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib docker_inspect_templates_with_real_cli -- --ignored --nocapture
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --lib docker_inspect_templates_with_real_cli -- --ignored --nocapture
       - name: Start isolated nested Docker Engine
         run: |
           docker build -t sodeck-docker-engine-fixture tests/docker-engine
           python3 tests/docker-engine/environment.py
       - name: Real Engine management contract
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib docker_engine_management_contract -- --ignored --nocapture --test-threads=1
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --lib docker_engine_management_contract -- --ignored --nocapture --test-threads=1
       - name: Remove only the recorded test Engine
         if: always()
         run: python3 tests/docker-engine/environment.py stop

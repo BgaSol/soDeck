@@ -1,0 +1,72 @@
+name: Release
+run-name: Release ${{ github.ref_name }}
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+      - name: Require a version tag
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          test "$REF_TYPE" = "tag" || { echo "Choose a version tag, not a branch."; exit 1; }
+          node scripts/release-version.mjs check "$RELEASE_TAG"
+      - name: Refuse to overwrite a published release
+        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        with:
+          script: |
+            const tag = context.ref.slice('refs/tags/'.length);
+            try {
+              const { data } = await github.rest.repos.getReleaseByTag({ ...context.repo, tag });
+              if (!data.draft) core.setFailed('This version is already published. Create a new version tag.');
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+
+  build:
+    needs: validate
+    uses: ./.github/workflows/check.yml
+    with:
+      package: true
+
+  publish:
+    needs: [validate, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: installers-*
+          path: .qa/release-assets
+          merge-multiple: true
+      - name: Verify assets and publish release
+        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        with:
+          script: |
+            const { publishRelease } = await import(process.env.GITHUB_WORKSPACE + '/scripts/publish-release.mjs');
+            await publishRelease({ github, context, core });

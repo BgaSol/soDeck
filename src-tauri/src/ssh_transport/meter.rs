@@ -163,10 +163,13 @@ mod tests {
         hooks().write().unwrap().remove(&key);
     }
     #[test]
-    fn callbacks_preserve_abstract_count_partial_io_and_follow_session_clones() {
+    fn callbacks_preserve_abstract_count_io_and_follow_session_clones() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let stream = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
         let (mut peer, _) = listener.accept().unwrap();
+        socket2::SockRef::from(&stream)
+            .set_send_buffer_size(4096)
+            .unwrap();
         stream.set_nonblocking(true).unwrap();
         #[cfg(unix)]
         let fd = std::os::fd::AsRawFd::as_raw_fd(&stream);
@@ -202,10 +205,26 @@ mod tests {
             assert!(std::time::Instant::now() < deadline);
         }
         assert_eq!(&buf, b"test");
-        let large = vec![0u8; 16 * 1024 * 1024];
-        let written = unsafe { send(fd, large.as_ptr().cast(), large.len(), 0, slot) };
-        assert!(written > 0 && (written as usize) < large.len());
-        assert_eq!(counter.counts(), [3 + written as u64, 4]);
+        // Kernels may accept a full/partial write or return WouldBlock. Count
+        // exactly the bytes accepted, and do not count failed nonblocking sends.
+        let chunk = vec![0u8; 64 * 1024];
+        let mut sent = 0u64;
+        let mut blocked = false;
+        for _ in 0..1024 {
+            let written = unsafe { send(fd, chunk.as_ptr().cast(), chunk.len(), 0, slot) };
+            if written < 0 {
+                blocked = true;
+                assert_eq!(counter.counts(), [3 + sent, 4]);
+                break;
+            }
+            assert!(written > 0 && written as usize <= chunk.len());
+            sent += written as u64;
+            assert_eq!(counter.counts(), [3 + sent, 4]);
+        }
+        assert!(
+            blocked,
+            "non-reading peer should eventually cause backpressure"
+        );
         unsafe {
             assert_eq!(*slot, (&mut authentication_context as *mut u64).cast());
             *slot = std::ptr::null_mut();

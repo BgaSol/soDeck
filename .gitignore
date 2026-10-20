@@ -74,3 +74,6 @@ Desktop.ini
 \#*\#
 .\#*
 *~
+
+# Published installers are distributed through GitHub Releases
+/release/

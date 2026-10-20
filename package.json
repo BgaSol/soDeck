@@ -25,7 +25,10 @@
     "test:docker": "playwright test --config playwright.docker.config.ts",
     "test:netbird": "playwright test --config playwright.netbird.config.ts",
     "test:terminal-clipboard": "playwright test --config playwright.terminal-clipboard.config.ts",
-    "test:terminal-clipboard:native": "node tests/terminal-clipboard-native.mjs"
+    "test:terminal-clipboard:native": "node tests/terminal-clipboard-native.mjs",
+    "release:prepare": "node scripts/release-version.mjs prepare",
+    "release:check": "node scripts/release-version.mjs check",
+    "test:release": "node --test scripts/release.test.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

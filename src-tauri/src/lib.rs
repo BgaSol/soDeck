@@ -1,20 +1,19 @@
-mod traffic;
 mod brand;
 mod browser_behavior;
 mod connection;
 mod db;
 mod desktop_drag;
 mod docker;
-mod netbird;
-mod files;
 mod file_tasks;
+mod files;
 mod log_ingest;
 mod log_store;
 mod logs;
 mod model;
-mod port_forwarding;
 mod monitor;
 mod moves;
+mod netbird;
+mod port_forwarding;
 mod remote_delete;
 mod remote_fs;
 mod remote_mounts;
@@ -28,6 +27,7 @@ mod system_settings;
 mod terminal;
 mod terminal_cwd;
 mod terminal_history;
+mod traffic;
 mod transfers;
 mod window_chrome;
 
@@ -75,11 +75,19 @@ struct PendingContainer {
 impl State {
     fn connected_context(&self, identity: &str) -> AppResult<connection::SharedContext> {
         self.ensure_running()?;
-        self.terminals.lock().unwrap().values()
+        self.terminals
+            .lock()
+            .unwrap()
+            .values()
             .filter(|t| !t.sender.cancel.is_cancelled())
             .filter_map(|t| t.spec.clone())
             .find(|c| c.identity() == identity)
-            .ok_or_else(|| AppError::new("disconnected", "请先重新连接任务涉及的服务器；连接身份必须与原任务一致"))
+            .ok_or_else(|| {
+                AppError::new(
+                    "disconnected",
+                    "请先重新连接任务涉及的服务器；连接身份必须与原任务一致",
+                )
+            })
     }
     fn check_context(&self, context: &connection::ConnectionContext) -> AppResult<()> {
         self.ensure_running()?;
@@ -105,7 +113,10 @@ impl State {
             ));
         }
         if self.netbird.has_server(id) {
-            return Err(AppError::new("busy", "请等待此服务器的 NetBird 操作完成后再删除配置"));
+            return Err(AppError::new(
+                "busy",
+                "请等待此服务器的 NetBird 操作完成后再删除配置",
+            ));
         }
         if self.docker.has_server(id) {
             return Err(AppError::new(
@@ -114,7 +125,10 @@ impl State {
             ));
         }
         if self.port_forwarding.has_server(id)? {
-            return Err(AppError::new("busy", "请先修改或删除引用此服务器的端口转发规则，并停止相关转发"));
+            return Err(AppError::new(
+                "busy",
+                "请先修改或删除引用此服务器的端口转发规则，并停止相关转发",
+            ));
         }
         if self.moves.has_server(id)
             || self
@@ -556,14 +570,26 @@ pub fn run() {
             let file_tasks = file_tasks::FileTaskState::open(&dir.join("file-tasks.sqlite"))
                 .map_err(|e| std::io::Error::other(e.message))?;
             file_tasks.attach(app.handle().clone());
-            let deletes = remote_delete::DeleteState::restore(&mut file_tasks.store.lock().unwrap())
-                .map_err(|e| std::io::Error::other(e.message))?;
+            let deletes =
+                remote_delete::DeleteState::restore(&mut file_tasks.store.lock().unwrap())
+                    .map_err(|e| std::io::Error::other(e.message))?;
             let transfers = transfers::TransferState::open(dir.join("transfer-receipts"))
                 .map_err(|e| std::io::Error::other(e.message))?;
-            transfers.restore_downloads(&file_tasks).map_err(|e| std::io::Error::other(e.message))?;
-            transfers.observe_order(deletes.snapshot().iter().map(|t| t.sort_order).max().unwrap_or(0));
+            transfers
+                .restore_downloads(&file_tasks)
+                .map_err(|e| std::io::Error::other(e.message))?;
+            transfers.observe_order(
+                deletes
+                    .snapshot()
+                    .iter()
+                    .map(|t| t.sort_order)
+                    .max()
+                    .unwrap_or(0),
+            );
             app.manage(Arc::new(State {
-                port_forwarding: Arc::new(port_forwarding::PortForwardManager::open(&dir.join("port-forwards.sqlite"))),
+                port_forwarding: Arc::new(port_forwarding::PortForwardManager::open(
+                    &dir.join("port-forwards.sqlite"),
+                )),
                 traffic: traffic::TrafficManager::new(),
                 moves: moves::MoveState::default(),
                 monitor: monitor::MonitorManager::default(),
@@ -596,7 +622,9 @@ pub fn run() {
             if payload.event() == tauri::webview::PageLoadEvent::Started {
                 if let Some(state) = webview.try_state::<Arc<State>>() {
                     let _gate = state.configuration.lock().unwrap();
-                    state.port_forwarding.window_closed(&state.owner(webview.label()));
+                    state
+                        .port_forwarding
+                        .window_closed(&state.owner(webview.label()));
                     state.docker.window_closed(webview.label());
                     state.netbird.window_closed(webview.label());
                     state.deletes.discard_window_drafts(webview.label());
@@ -621,7 +649,9 @@ pub fn run() {
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 let state = window.state::<Arc<State>>();
                 let _gate = state.configuration.lock().unwrap();
-                state.port_forwarding.window_closed(&state.owner(window.label()));
+                state
+                    .port_forwarding
+                    .window_closed(&state.owner(window.label()));
                 state.docker.window_closed(window.label());
                 state.netbird.window_closed(window.label());
                 state.deletes.discard_window_drafts(window.label());
@@ -661,7 +691,6 @@ pub fn run() {
             netbird::commands::reconcile_netbird_operation,
             netbird::commands::acknowledge_netbird_operation,
             netbird::commands::set_netbird_cli_path,
-
             system_settings::get_system_settings,
             system_settings::set_developer_mode,
             system_settings::set_terminal_clipboard_settings,

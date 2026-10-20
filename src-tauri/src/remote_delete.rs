@@ -416,7 +416,11 @@ async fn prepare(
     let paths = normalize_paths(&paths)?;
     let operation = transfers::register_file_operation(state.clone(), context.clone())?;
     blocking(move || {
-        let connection = connection::connect_verified(&context, &operation.cancel, crate::traffic::TrafficPurpose::Files)?;
+        let connection = connection::connect_verified(
+            &context,
+            &operation.cancel,
+            crate::traffic::TrafficPurpose::Files,
+        )?;
         let session = connection.session();
         let sftp = session.sftp()?;
         let fs = SftpFs(&sftp);
@@ -934,7 +938,11 @@ fn run(
             ));
         }
     }
-    let connection = connection::connect_verified(&handle.context, &handle.cancel, crate::traffic::TrafficPurpose::Files)?;
+    let connection = connection::connect_verified(
+        &handle.context,
+        &handle.cancel,
+        crate::traffic::TrafficPurpose::Files,
+    )?;
     let session = connection.session();
     let sftp = session.sftp()?;
     let fs = SftpFs(&sftp);
@@ -1236,8 +1244,11 @@ pub async fn reconcile_remote_delete(
     let result = blocking(move || {
         let operation =
             transfers::register_file_operation(state.clone(), reconcile_handle.context.clone())?;
-        let connection =
-            connection::connect_verified(&reconcile_handle.context, &operation.cancel, crate::traffic::TrafficPurpose::Files)?;
+        let connection = connection::connect_verified(
+            &reconcile_handle.context,
+            &operation.cancel,
+            crate::traffic::TrafficPurpose::Files,
+        )?;
         let sftp = connection.session().sftp()?;
         let mut view = reconcile_handle.view.lock().unwrap().clone();
         let missing = reconcile_view(&sftp, &mut view, &|| operation.cancel.check())?;

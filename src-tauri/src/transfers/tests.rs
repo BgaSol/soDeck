@@ -34,7 +34,12 @@ impl Fixture {
         }
     }
     fn mkdir(&self, context: &SharedContext, relative: &str) {
-        let c = connection::connect_verified(context, &Cancellation::default(), crate::traffic::TrafficPurpose::Transfer).unwrap();
+        let c = connection::connect_verified(
+            context,
+            &Cancellation::default(),
+            crate::traffic::TrafficPurpose::Transfer,
+        )
+        .unwrap();
         c.session()
             .sftp()
             .unwrap()
@@ -42,7 +47,12 @@ impl Fixture {
             .unwrap();
     }
     fn put(&self, context: &SharedContext, relative: &str, bytes: &[u8]) {
-        let c = connection::connect_verified(context, &Cancellation::default(), crate::traffic::TrafficPurpose::Transfer).unwrap();
+        let c = connection::connect_verified(
+            context,
+            &Cancellation::default(),
+            crate::traffic::TrafficPurpose::Transfer,
+        )
+        .unwrap();
         let s = c.session().sftp().unwrap();
         let p = self.path(relative);
         if remote_write::metadata(&s, &p).unwrap().is_some() {
@@ -51,7 +61,12 @@ impl Fixture {
         direct::write_new(&s, &p, bytes).unwrap();
     }
     fn read(&self, relative: &str) -> Vec<u8> {
-        let c = connection::connect_verified(&self.b, &Cancellation::default(), crate::traffic::TrafficPurpose::Transfer).unwrap();
+        let c = connection::connect_verified(
+            &self.b,
+            &Cancellation::default(),
+            crate::traffic::TrafficPurpose::Transfer,
+        )
+        .unwrap();
         let mut out = vec![];
         c.session()
             .sftp()
@@ -63,7 +78,12 @@ impl Fixture {
         out
     }
     fn exists(&self, relative: &str) -> bool {
-        let c = connection::connect_verified(&self.b, &Cancellation::default(), crate::traffic::TrafficPurpose::Transfer).unwrap();
+        let c = connection::connect_verified(
+            &self.b,
+            &Cancellation::default(),
+            crate::traffic::TrafficPurpose::Transfer,
+        )
+        .unwrap();
         remote_write::metadata(&c.session().sftp().unwrap(), &self.path(relative))
             .unwrap()
             .is_some()
@@ -122,7 +142,12 @@ impl Fixture {
         assert!(!item.receipt.lock().unwrap().has_remote_resources());
     }
     fn exec(&self, context: &SharedContext, command: &str) -> String {
-        let c = connection::connect_verified(context, &Cancellation::default(), crate::traffic::TrafficPurpose::Transfer).unwrap();
+        let c = connection::connect_verified(
+            context,
+            &Cancellation::default(),
+            crate::traffic::TrafficPurpose::Transfer,
+        )
+        .unwrap();
         let (code, out, err) =
             direct::capabilities::exec(&c, &Cancellation::default(), command).unwrap();
         assert_eq!(code, 0, "{err}");

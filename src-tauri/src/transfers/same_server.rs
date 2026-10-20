@@ -282,7 +282,11 @@ pub fn refresh(item: &WriteHandle, a: &mut super::model::Attempt) -> AppResult<(
     if !a.dispatched || (a.source_finished && a.receiver_finished) {
         return Ok(());
     }
-    let c = crate::connection::connect_verified(&item.target, &Cancellation::default(), crate::traffic::TrafficPurpose::Transfer)?;
+    let c = crate::connection::connect_verified(
+        &item.target,
+        &Cancellation::default(),
+        crate::traffic::TrafficPurpose::Transfer,
+    )?;
     let exit = super::direct::exit_code(&c.session().sftp()?, &a.target_root, "copy.exit")?;
     a.source_finished = exit.is_some();
     a.receiver_finished = exit.is_some();

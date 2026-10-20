@@ -17,7 +17,11 @@ pub fn run(state: &State, app: Option<&tauri::AppHandle>, item: &WriteHandle) ->
     item.check()?;
     item.task.lock().unwrap().status = "checking".into();
     let requested = item.task.lock().unwrap().target_path.clone();
-    let target = connection::connect_verified(&item.target, &item.cancel, crate::traffic::TrafficPurpose::Transfer)?;
+    let target = connection::connect_verified(
+        &item.target,
+        &item.cancel,
+        crate::traffic::TrafficPurpose::Transfer,
+    )?;
     target.session().set_timeout(15000);
     let sftp = target.session().sftp()?;
     let root = sftp

@@ -68,8 +68,16 @@ impl Executor {
         let Source::Remote { context, .. } = &item.source else {
             unreachable!()
         };
-        let source = connection::connect_verified(context, &item.cancel, crate::traffic::TrafficPurpose::Transfer)?;
-        let target = connection::connect_verified(&item.target, &item.cancel, crate::traffic::TrafficPurpose::Transfer)?;
+        let source = connection::connect_verified(
+            context,
+            &item.cancel,
+            crate::traffic::TrafficPurpose::Transfer,
+        )?;
+        let target = connection::connect_verified(
+            &item.target,
+            &item.cancel,
+            crate::traffic::TrafficPurpose::Transfer,
+        )?;
         let auth = item
             .auth
             .lock()
@@ -447,8 +455,16 @@ pub fn refresh_attempt(item: &WriteHandle, attempt: &mut Attempt) -> AppResult<(
         attempt.receiver_finished = true;
         return Ok(());
     };
-    let source = connection::connect_verified(context, &Cancellation::default(), crate::traffic::TrafficPurpose::Transfer)?;
-    let target = connection::connect_verified(&item.target, &Cancellation::default(), crate::traffic::TrafficPurpose::Transfer)?;
+    let source = connection::connect_verified(
+        context,
+        &Cancellation::default(),
+        crate::traffic::TrafficPurpose::Transfer,
+    )?;
+    let target = connection::connect_verified(
+        &item.target,
+        &Cancellation::default(),
+        crate::traffic::TrafficPurpose::Transfer,
+    )?;
     let a = match &attempt.source_root {
         Some(root) => exit_code(&source.session().sftp()?, root, "source.exit")?,
         None => None,

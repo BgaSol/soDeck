@@ -436,7 +436,11 @@ fn run_download(state: &State, item: &DownloadHandle) -> AppResult<()> {
     check_cancel(item)?;
     item.task.lock().unwrap().status = "scanning".into();
     persist(state, item)?;
-    let connection = connection::connect_verified(&item.spec, &item.cancel, crate::traffic::TrafficPurpose::Transfer)?;
+    let connection = connection::connect_verified(
+        &item.spec,
+        &item.cancel,
+        crate::traffic::TrafficPurpose::Transfer,
+    )?;
     let session = connection.session();
     let sftp = session.sftp()?;
     let task = item.task.lock().unwrap().clone();

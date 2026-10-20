@@ -168,7 +168,11 @@ pub async fn open_editor(
     let spec = state.spec(&session_id, window.label())?;
     let _opening = state.files.begin_open(spec.target_public_key(), &path)?;
     let editor = blocking(move || {
-        let connection = connection::connect_verified(&spec, &Cancellation::default(), crate::traffic::TrafficPurpose::Files)?;
+        let connection = connection::connect_verified(
+            &spec,
+            &Cancellation::default(),
+            crate::traffic::TrafficPurpose::Files,
+        )?;
         let session = connection.session();
         let sftp = session.sftp()?;
         crate::remote_write::safe_ancestors(&sftp, &path)?;
@@ -369,7 +373,11 @@ pub async fn editor_load(
     let editor = editor_for(&state, &window)?;
     blocking(move || {
         let _gate = editor.gate.lock().unwrap();
-        let connection = connection::connect_verified(&editor.spec, &Cancellation::default(), crate::traffic::TrafficPurpose::Files)?;
+        let connection = connection::connect_verified(
+            &editor.spec,
+            &Cancellation::default(),
+            crate::traffic::TrafficPurpose::Files,
+        )?;
         let session = connection.session();
         let (bytes, _) = text_bytes(&session.sftp()?, &editor.path)?;
         document(&editor, &bytes)
@@ -406,7 +414,11 @@ pub async fn editor_save(
                 format!("文件涉及待核对任务 {task}，请先核对结果"),
             ));
         }
-        let connection = connection::connect_verified(&editor.spec, &Cancellation::default(), crate::traffic::TrafficPurpose::Files)?;
+        let connection = connection::connect_verified(
+            &editor.spec,
+            &Cancellation::default(),
+            crate::traffic::TrafficPurpose::Files,
+        )?;
         let session = connection.session();
         let sftp = session.sftp()?;
         let (before, stat) = text_bytes(&sftp, &editor.path)?;

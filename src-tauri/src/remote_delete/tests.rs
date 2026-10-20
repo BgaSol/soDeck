@@ -176,7 +176,12 @@ pub(crate) fn exercise_protocol(context: SharedContext, fixture: &Path) {
     .unwrap();
     std::fs::write(local.join("delete/keep"), "untouched").unwrap();
     let execute = |paths: &[&str]| {
-        let c = connection::connect_verified(&context, &Cancellation::default(), crate::traffic::TrafficPurpose::Shared).unwrap();
+        let c = connection::connect_verified(
+            &context,
+            &Cancellation::default(),
+            crate::traffic::TrafficPurpose::Shared,
+        )
+        .unwrap();
         let sftp = c.session().sftp().unwrap();
         let entries: Vec<_> = paths
             .iter()
@@ -276,7 +281,12 @@ pub(crate) fn exercise_protocol(context: SharedContext, fixture: &Path) {
     assert!(!local.join("delete/lost").exists());
     assert!(local.join("delete/keep").exists());
     std::fs::remove_file(fixture.join("sftp-delete-lost-reply")).unwrap();
-    let connection = connection::connect_verified(&context, &Cancellation::default(), crate::traffic::TrafficPurpose::Shared).unwrap();
+    let connection = connection::connect_verified(
+        &context,
+        &Cancellation::default(),
+        crate::traffic::TrafficPurpose::Shared,
+    )
+    .unwrap();
     let sftp = connection.session().sftp().unwrap();
     let mut observation = task.view.lock().unwrap().clone();
     assert_eq!(

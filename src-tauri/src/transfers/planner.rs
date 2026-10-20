@@ -267,7 +267,11 @@ pub fn scan(item: &WriteHandle) -> AppResult<Plan> {
             }
         }
         Source::Remote { context, paths } => {
-            let connection = connection::connect_verified(context, &item.cancel, crate::traffic::TrafficPurpose::Transfer)?;
+            let connection = connection::connect_verified(
+                context,
+                &item.cancel,
+                crate::traffic::TrafficPurpose::Transfer,
+            )?;
             let sftp = connection.session().sftp()?;
             for path in normalize_selection(paths)? {
                 let name = remote_path::name(&path)?.to_owned();

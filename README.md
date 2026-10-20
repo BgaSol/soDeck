@@ -2,6 +2,10 @@
 
 你的远程工作台。
 
+[GitHub 仓库](https://github.com/BgaSol/soDeck) · [下载安装包](https://github.com/BgaSol/soDeck/releases) · [构建状态](https://github.com/BgaSol/soDeck/actions)
+
+推送 `vMAJOR.MINOR.PATCH` tag 后，GitHub Actions 自动检查、构建 Windows / macOS / Linux 安装包，并发布 GitHub Release。发布步骤见 [版本发布说明](docs/releases.md)。
+
 跨平台 SSH 桌面客户端，采用 Tauri 2、React、TypeScript 和 Rust。配置保存在本机 SQLite 文件中，无需部署后端。
 
 ## 已实现
@@ -56,7 +60,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 npm run tauri -- build
 ```
 
-安装包输出到 `src-tauri/target/release/bundle/`。也可使用 `npm run tauri -- build --no-bundle` 只构建当前系统的可执行文件。Windows、macOS、Linux 分别在对应系统构建；仓库包含三平台 CI 配置。
+安装包输出到 `src-tauri/target/release/bundle/`。也可使用 `npm run tauri -- build --no-bundle` 只构建当前系统的可执行文件。Windows、macOS、Linux 分别在对应系统构建；仓库包含四组构建目标的 CI 与 tag 发布配置，macOS 分 Apple Silicon 和 Intel。
 
 ## 系统设置与开发者模式
 

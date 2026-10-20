@@ -70,7 +70,11 @@ pub fn cleanup(item: &WriteHandle) -> AppResult<()> {
         }
         if !a.target_root.is_empty() {
             valid_root(&a.target_root)?;
-            let c = connection::connect_verified(&item.target, &Cancellation::default(), crate::traffic::TrafficPurpose::Transfer)?;
+            let c = connection::connect_verified(
+                &item.target,
+                &Cancellation::default(),
+                crate::traffic::TrafficPurpose::Transfer,
+            )?;
             let s = c.session().sftp()?;
             remote_write::safe_ancestors(&s, &a.target_root)?;
             remove_tree(&s, &a.target_root, 0)?;
@@ -79,7 +83,11 @@ pub fn cleanup(item: &WriteHandle) -> AppResult<()> {
         }
         if let (Some(root), Source::Remote { context, .. }) = (&a.source_root, &item.source) {
             valid_root(root)?;
-            let c = connection::connect_verified(context, &Cancellation::default(), crate::traffic::TrafficPurpose::Transfer)?;
+            let c = connection::connect_verified(
+                context,
+                &Cancellation::default(),
+                crate::traffic::TrafficPurpose::Transfer,
+            )?;
             let s = c.session().sftp()?;
             remote_write::safe_ancestors(&s, root)?;
             remove_tree(&s, root, 0)?;
@@ -114,7 +122,11 @@ pub fn reconcile(state: &State, item: &WriteHandle) -> AppResult<()> {
             &task_id,
             |_| Ok(()),
         )?;
-        let c = connection::connect_verified(&item.target, &Cancellation::default(), crate::traffic::TrafficPurpose::Transfer)?;
+        let c = connection::connect_verified(
+            &item.target,
+            &Cancellation::default(),
+            crate::traffic::TrafficPurpose::Transfer,
+        )?;
         let s = c.session().sftp()?;
         let destination = remote_write::metadata(&s, &commit.destination)?;
         let recorded = item
