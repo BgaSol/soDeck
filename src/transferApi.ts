@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invokeDiagnosed as invoke } from "./diagnostics";
 export type ConflictPolicy = "rename" | "skip" | "overwrite";
 export type WriteKind = "upload" | "direct" | "serverCopy" | "serverMove";
 export interface RemoteClipboard {

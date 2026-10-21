@@ -1,6 +1,6 @@
 {
   "name": "sodeck",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,6 +11,7 @@
     "icons": "tauri icon src-tauri/icons/source.svg --output src-tauri/icons",
     "desktop": "tauri dev",
     "test": "vitest run",
+    "test:diagnostics": "playwright test --config playwright.diagnostics.config.ts",
     "test:connection": "playwright test --config playwright.connection.config.ts",
     "test:port-forwarding": "playwright test --config playwright.port-forwarding.config.ts",
     "test:database": "playwright test --config playwright.database.config.ts",
@@ -66,6 +67,7 @@
   "devDependencies": {
     "@playwright/test": "^1.64.0",
     "@tauri-apps/cli": "^2.10.0",
+    "@types/node": "^24.19.2",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.1.0",

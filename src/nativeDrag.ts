@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invokeDiagnosed as invoke } from "./diagnostics";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { desktop } from "./api";
 

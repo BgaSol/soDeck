@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invokeDiagnosed as invoke } from "./diagnostics";
 import { listen } from "@tauri-apps/api/event";
 export interface UpdateSnapshot {
   revision: number;

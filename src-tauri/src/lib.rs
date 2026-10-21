@@ -3,6 +3,7 @@ mod browser_behavior;
 mod connection;
 mod db;
 mod desktop_drag;
+mod diagnostics;
 mod docker;
 mod file_tasks;
 mod files;
@@ -540,6 +541,7 @@ async fn connect_container(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
     output: Channel<connection::ConnectionEvent>,
+    diagnostic_trace_id: Option<String>,
 ) -> AppResult<String> {
     let state = state.inner().clone();
     let label = window.label().to_string();
@@ -551,11 +553,20 @@ async fn connect_container(
         .get(&label)
         .cloned()
         .ok_or_else(|| AppError::new("window", "容器窗口配置已失效"))?;
-    connection::open_container(state, owner, pending.spec, pending.target, output)
+    connection::open_container(
+        state,
+        owner,
+        pending.spec,
+        pending.target,
+        output,
+        diagnostic_trace_id,
+    )
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    diagnostics::install_panic_hook();
+    diagnostics::event::Context::new().event("INFO", "app", "startup.begin", serde_json::json!({}));
     let mut context = tauri::generate_context!();
     let startup_windows = context
         .config()
@@ -569,11 +580,18 @@ pub fn run() {
     for window in &mut context.config_mut().app.windows {
         window.create = false;
     }
-    tauri::Builder::default()
+    let built = tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(move |app| {
+            let diagnostics_root = app
+                .path()
+                .app_local_data_dir()
+                .map(|p| p.join("diagnostics"))
+                .unwrap_or_else(|_| std::env::temp_dir().join("SoDeck-diagnostics"));
+            app.manage(diagnostics::initialize(diagnostics_root));
+            diagnostics::startup("settings.load");
             let settings = Arc::new(system_settings::SystemSettings::load(
                 app.path().app_config_dir()?.join("settings.json"),
             ));
@@ -585,19 +603,34 @@ pub fn run() {
                 .plugin(browser_behavior::shortcut_guard(developer_mode))?;
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
-            let database = db::Database::open(&dir.join("servers.db"))
-                .map_err(|e| std::io::Error::other(e.message))?;
+            diagnostics::startup("database.open");
+            let database = db::Database::open(&dir.join("servers.db")).map_err(|e| {
+                diagnostics::failure("startup", "storage.initialize.failed", &e);
+                std::io::Error::other(e.message)
+            })?;
+            diagnostics::startup("file_tasks.open");
             let file_tasks = file_tasks::FileTaskState::open(&dir.join("file-tasks.sqlite"))
-                .map_err(|e| std::io::Error::other(e.message))?;
+                .map_err(|e| {
+                    diagnostics::failure("startup", "storage.initialize.failed", &e);
+                    std::io::Error::other(e.message)
+                })?;
             file_tasks.attach(app.handle().clone());
             let deletes =
                 remote_delete::DeleteState::restore(&mut file_tasks.store.lock().unwrap())
-                    .map_err(|e| std::io::Error::other(e.message))?;
-            let transfers = transfers::TransferState::open(dir.join("transfer-receipts"))
-                .map_err(|e| std::io::Error::other(e.message))?;
-            transfers
-                .restore_downloads(&file_tasks)
-                .map_err(|e| std::io::Error::other(e.message))?;
+                    .map_err(|e| {
+                        diagnostics::failure("startup", "storage.initialize.failed", &e);
+                        std::io::Error::other(e.message)
+                    })?;
+            diagnostics::startup("transfers.open");
+            let transfers =
+                transfers::TransferState::open(dir.join("transfer-receipts")).map_err(|e| {
+                    diagnostics::failure("startup", "storage.initialize.failed", &e);
+                    std::io::Error::other(e.message)
+                })?;
+            transfers.restore_downloads(&file_tasks).map_err(|e| {
+                diagnostics::failure("startup", "storage.initialize.failed", &e);
+                std::io::Error::other(e.message)
+            })?;
             transfers.observe_order(
                 deletes
                     .snapshot()
@@ -606,6 +639,7 @@ pub fn run() {
                     .max()
                     .unwrap_or(0),
             );
+            diagnostics::startup("services.initialize");
             app.manage(Arc::new(State {
                 port_forwarding: Arc::new(port_forwarding::PortForwardManager::open(
                     &dir.join("port-forwards.sqlite"),
@@ -631,16 +665,25 @@ pub fn run() {
                 closed_windows: Mutex::new(HashSet::new()),
                 window_generations: Mutex::new(HashMap::new()),
             }));
+            diagnostics::startup("updates.initialize");
             updates::initialize(app.handle())?;
+            diagnostics::startup("windows.create");
             for config in &startup_windows {
                 WebviewWindowBuilder::from_config(app, config)?
                     .devtools(developer_mode)
                     .build()?;
             }
+            diagnostics::startup("startup.complete");
             Ok(())
         })
         .on_page_load(|webview, payload| {
             if payload.event() == tauri::webview::PageLoadEvent::Started {
+                diagnostics::observe(
+                    "window",
+                    "page.load",
+                    webview.label(),
+                    serde_json::json!({}),
+                );
                 if let Some(state) = webview.try_state::<Arc<State>>() {
                     let _gate = state.configuration.lock().unwrap();
                     state
@@ -668,6 +711,12 @@ pub fn run() {
                 desktop_drag::native_drop(window, event);
             }
             if matches!(event, tauri::WindowEvent::Destroyed) {
+                diagnostics::observe(
+                    "window",
+                    "window.destroyed",
+                    window.label(),
+                    serde_json::json!({}),
+                );
                 let state = window.state::<Arc<State>>();
                 let _gate = state.configuration.lock().unwrap();
                 state
@@ -699,6 +748,15 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            diagnostics::commands::get_diagnostics_status,
+            diagnostics::commands::open_diagnostics_directory,
+            diagnostics::commands::export_diagnostics,
+            diagnostics::commands::cancel_diagnostics_export,
+            diagnostics::commands::clear_diagnostics,
+            diagnostics::commands::reveal_diagnostics_export,
+            diagnostics::commands::append_frontend_diagnostics,
+            diagnostics::commands::register_diagnostics_window,
+            diagnostics::commands::ack_diagnostics_flush,
             netbird::commands::subscribe_netbird,
             netbird::commands::update_netbird_interest,
             netbird::commands::ack_netbird_frame,
@@ -875,6 +933,44 @@ pub fn run() {
             desktop_drag::targets::list_copy_targets,
             desktop_drag::targets::prepare_server_copy
         ])
-        .run(context)
-        .expect("无法启动桌面应用");
+        .build(context);
+    match built {
+        Ok(app) => app.run(|_, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                diagnostics::startup("shutdown.complete");
+                if let Some(service) = diagnostics::global() {
+                    service.finish();
+                }
+            }
+        }),
+        Err(_) => {
+            if diagnostics::global().is_none() {
+                diagnostics::initialize(std::env::temp_dir().join("SoDeck-diagnostics"));
+            }
+            diagnostics::event::Context::new().event(
+                "ERROR",
+                "app",
+                "startup.failed",
+                serde_json::json!({"detailOmitted": true}),
+            );
+            let location = diagnostics::global()
+                .map(|s| {
+                    let _ = s.flush();
+                    s.status().directory
+                })
+                .unwrap_or_default();
+            rfd::MessageDialog::new()
+                .set_title("SoDeck 启动失败")
+                .set_description(format!(
+                    "无法启动应用。请将本地诊断目录中的日志提供给开发者。\n日志位置：{}",
+                    if location.is_empty() {
+                        "无法创建日志，请检查本机写入权限"
+                    } else {
+                        &location
+                    }
+                ))
+                .set_level(rfd::MessageLevel::Error)
+                .show();
+        }
+    }
 }

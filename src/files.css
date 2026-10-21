@@ -347,70 +347,6 @@
   white-space: nowrap;
   margin-top: 4px;
 }
-.editor-dirty {
-  font-size: var(--font-caption);
-  display: inline-block;
-  margin-left: 8px;
-  vertical-align: middle;
-  color: var(--accent-text);
-}
-.remote-editor-tools {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  border-bottom: 1px solid var(--line);
-}
-.remote-editor-tools button {
-  font-size: var(--font-secondary);
-}
-.editor-shortcut {
-  font-size: var(--font-caption);
-  color: var(--muted);
-  margin-left: auto;
-}
-.remote-code-editor {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-.remote-code-editor .cm-editor {
-  outline: 0;
-}
-.remote-code-editor .cm-search input {
-  width: auto;
-  min-height: 25px;
-  padding: 3px 5px;
-  font-size: var(--font-secondary);
-}
-.remote-code-editor .cm-search button {
-  min-height: 25px;
-  font: inherit;
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 5px;
-}
-.remote-code-editor .cm-search input[type="checkbox"] {
-  width: auto;
-  min-height: initial;
-}
-.remote-code-editor .cm-tooltip {
-  color: var(--text);
-  background: var(--surface);
-  border-color: var(--line);
-}
-.remote-editor-status {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 6px 16px;
-  font-size: var(--font-caption);
-  color: var(--muted);
-  border-top: 1px solid var(--line);
-  min-height: 30px;
-}
 .editor-error {
   display: flex;
   align-items: center;
@@ -421,14 +357,6 @@
   padding: 10px 18px;
   font-size: var(--font-secondary);
   overflow-wrap: anywhere;
-}
-.editor-language {
-  width: auto;
-  max-width: 220px;
-  min-height: var(--control-height);
-  padding: 2px 24px 2px 8px;
-  font-size: var(--font-caption);
-  margin-left: auto;
 }
 .container-actions {
   display: flex;
@@ -458,13 +386,6 @@
 @media (max-width: 600px) {
   .remote-editor-header {
     padding: 12px;
-  }
-  .editor-shortcut {
-    display: none;
-  }
-  .remote-editor-status {
-    padding: 6px 10px;
-    font-size: var(--font-caption);
   }
 }
 

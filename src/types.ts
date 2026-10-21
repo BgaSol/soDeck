@@ -17,6 +17,8 @@ export interface Credentials {
   passphrase: string;
 }
 export interface AppError {
+  traceId?: string;
+  nativeCode?: number;
   kind: string;
   message: string;
   fingerprint?: string;

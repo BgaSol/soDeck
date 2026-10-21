@@ -1,4 +1,51 @@
 fn main() {
+    println!("cargo:rerun-if-changed=../.git/HEAD");
+    // A commit normally updates the branch ref without changing HEAD's text.
+    if let Ok(output) = std::process::Command::new("git")
+        .args(["symbolic-ref", "-q", "HEAD"])
+        .output()
+    {
+        if output.status.success() {
+            let reference = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+            if let Ok(path) = std::process::Command::new("git")
+                .args(["rev-parse", "--git-path", &reference])
+                .output()
+            {
+                if path.status.success() {
+                    println!(
+                        "cargo:rerun-if-changed={}",
+                        String::from_utf8_lossy(&path.stdout).trim()
+                    );
+                }
+            }
+        }
+    }
+    println!("cargo:rerun-if-changed=../.git/packed-refs");
+    println!("cargo:rerun-if-env-changed=GITHUB_SHA");
+    let commit = std::env::var("GITHUB_SHA")
+        .ok()
+        .or_else(|| {
+            std::process::Command::new("git")
+                .args(["rev-parse", "--short=12", "HEAD"])
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        })
+        .filter(|s| s.bytes().all(|c| c.is_ascii_hexdigit()))
+        .unwrap_or_else(|| "unknown".into());
+    let channel = if std::env::var("CI").is_ok() {
+        "ci"
+    } else {
+        "workspace"
+    };
+    println!(
+        "cargo:rustc-env=SODECK_BUILD_ID={}-{}-{}-{}",
+        env!("CARGO_PKG_VERSION"),
+        commit,
+        channel,
+        std::env::var("TARGET").unwrap_or_default()
+    );
     println!("cargo:rerun-if-changed=src/ssh_transport/meter.c");
     let mut build = cc::Build::new();
     build.file("src/ssh_transport/meter.c");

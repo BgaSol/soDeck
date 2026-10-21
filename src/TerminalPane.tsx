@@ -17,7 +17,8 @@ import {
   useState,
   useImperativeHandle,
 } from "react";
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { Channel } from "@tauri-apps/api/core";
+import { invokeDiagnosed as invoke, recordDiagnostic } from "./diagnostics";
 import { Terminal } from "@xterm/xterm";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import type { Ref } from "react";
@@ -550,7 +551,10 @@ export function LiveTerminalPane({
         callbacks.current.onState(
           event.reason === "failed" ? "连接失败" : "已断开",
         );
-        if (event.error) callbacks.current.onError(event.error);
+        if (event.error) {
+          recordDiagnostic({ event: "ui.error.shown", traceId: event.error.traceId, errorCode: event.error.kind, nativeCode: event.error.nativeCode, outcome: "failed" });
+          callbacks.current.onError(event.error);
+        }
         setEnded(true);
         if (!request?.automatic)
           write(`\r\n\x1b[38;2;142;160;183m${event.message}\x1b[0m\r\n`);

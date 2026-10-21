@@ -70,6 +70,7 @@ impl HistoryState {
         state
     }
     pub fn start(&self, id: &str, workspace: &str, source: Source) -> Recorder {
+        crate::diagnostics::state_event("terminal_history", id, "recording");
         let session = Session {
             id: id.into(),
             workspace_id: workspace.into(),

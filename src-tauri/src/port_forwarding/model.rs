@@ -143,6 +143,7 @@ impl Runtime {
         }
     }
     pub fn phase(&mut self, value: &str) {
+        crate::diagnostics::state_event("port_forward", &self.run_id, value);
         self.phase = value.into();
         self.prompt = None;
     }

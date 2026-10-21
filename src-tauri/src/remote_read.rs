@@ -38,15 +38,21 @@ pub(crate) fn observed_read(
     let started = Instant::now();
     let result = exec_with_timeout(session, command, timeout, check);
     if result.is_err() || started.elapsed() >= Duration::from_secs(2) {
-        // Do not log commands, endpoints, output or credentials.
-        eprintln!(
-            "Docker query stage={} elapsed_ms={} result={}",
-            stage,
-            started.elapsed().as_millis(),
-            result
-                .as_ref()
-                .map(|r| if r.code == 0 { "ok" } else { "exit" })
-                .unwrap_or_else(|e| e.kind.as_str())
+        let ctx = crate::diagnostics::event::Context::new();
+        let mut details = result
+            .as_ref()
+            .err()
+            .map(crate::diagnostics::event::error_details)
+            .unwrap_or_else(|| serde_json::json!({}));
+        details["phase"] = serde_json::json!(stage);
+        details["durationMs"] = serde_json::json!(started.elapsed().as_millis() as u64);
+        details["timeoutMs"] = serde_json::json!(timeout.as_millis() as u64);
+        details["exitCode"] = serde_json::json!(result.as_ref().ok().map(|r| r.code));
+        ctx.event(
+            if result.is_err() { "WARN" } else { "INFO" },
+            "docker",
+            "query.end",
+            details,
         );
     }
     result

@@ -1,4 +1,5 @@
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { Channel } from "@tauri-apps/api/core";
+import { invokeDiagnosed as invoke } from "../diagnostics";
 export type Action = "up" | "down" | "serviceStart" | "serviceRestart";
 export type Interest = "none" | "background" | "visible";
 export interface Binding {

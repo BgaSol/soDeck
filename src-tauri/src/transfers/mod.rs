@@ -222,6 +222,7 @@ impl TransferState {
         let mut r = item.receipt.lock().unwrap().clone();
         let mut view = item.task.lock().unwrap().clone();
         r.update_resources(&mut view);
+        crate::diagnostics::state_event("transfer", &view.id, view.status.as_str());
         r.view = Some(view);
         if let Some(store) = self.store.lock().unwrap().as_ref() {
             store.save(&r)?;
@@ -592,6 +593,7 @@ fn launch_write(app: tauri::AppHandle, state: Arc<State>, item: WriteHandle) {
             match result {
                 Ok(()) => task.status = "completed".into(),
                 Err(e) => {
+                    crate::diagnostics::task_failure("transfer", &task.id, &e);
                     task.status = if e.kind == "unknown" || e.kind == "conflictPending" {
                         "needsAttention"
                     } else if e.kind == "interrupted" {

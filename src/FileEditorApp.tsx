@@ -4,8 +4,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { basicSetup } from "codemirror";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
-import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { tags } from "@lezer/highlight";
 import { openSearchPanel } from "@codemirror/search";
 import { indentWithTab, redo, undo } from "@codemirror/commands";
 import {
@@ -21,7 +19,14 @@ import { windowTitle } from "./brand";
 import { fileApi } from "./fileApi";
 import type { EditorDocument } from "./fileApi";
 import { errorOf, formatSize } from "./types";
+import {
+  createEditorAppearance,
+  editorSyntaxHighlighting,
+} from "./editorTheme";
+import { editorSearchExtension } from "./editorSearchPanel";
+import { getTheme, subscribeTheme } from "./theme";
 import "./files.css";
+import "./file-editor.css";
 
 type Prompt = "close" | "reload" | "conflict" | null;
 
@@ -45,6 +50,7 @@ export function FileEditorApp() {
   const parent = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
   const editing = useRef(new Compartment());
+  const appearance = useRef(new Compartment());
   const dialog = useRef<HTMLDialogElement>(null);
   const documentRef = useRef<EditorDocument | null>(null);
   const saved = useRef("");
@@ -81,6 +87,7 @@ export function FileEditorApp() {
           keymap.of([
             {
               key: "Mod-s",
+              scope: "editor search-panel",
               run: () => {
                 void saveRef.current();
                 return true;
@@ -89,52 +96,9 @@ export function FileEditorApp() {
             indentWithTab,
           ]),
           language.current.of(loadedLanguage.current),
-          syntaxHighlighting(
-            HighlightStyle.define([
-              { tag: tags.keyword, color: "var(--editor-keyword)" },
-              {
-                tag: [tags.string, tags.regexp],
-                color: "var(--editor-string)",
-              },
-              {
-                tag: [tags.number, tags.bool, tags.null],
-                color: "var(--editor-number)",
-              },
-              { tag: tags.comment, color: "var(--muted)", fontStyle: "italic" },
-              {
-                tag: [tags.propertyName, tags.function(tags.variableName)],
-                color: "var(--editor-property)",
-              },
-              {
-                tag: [tags.typeName, tags.className],
-                color: "var(--editor-type)",
-              },
-              {
-                tag: [tags.variableName, tags.attributeName],
-                color: "var(--editor-property)",
-              },
-              {
-                tag: [tags.operator, tags.meta, tags.tagName],
-                color: "var(--editor-keyword)",
-              },
-              {
-                tag: tags.heading,
-                color: "var(--editor-property)",
-                fontWeight: "bold",
-              },
-              {
-                tag: tags.link,
-                color: "var(--editor-string)",
-                textDecoration: "underline",
-              },
-              { tag: tags.strong, fontWeight: "bold" },
-              { tag: tags.emphasis, fontStyle: "italic" },
-              {
-                tag: tags.invalid,
-                textDecoration: "underline wavy var(--error)",
-              },
-            ]),
-          ),
+          editorSyntaxHighlighting,
+          editorSearchExtension,
+          appearance.current.of(createEditorAppearance(getTheme())),
           EditorView.contentAttributes.of({
             "aria-label": "远程文件内容",
             spellcheck: "false",
@@ -146,41 +110,6 @@ export function FileEditorApp() {
               const line = update.state.doc.lineAt(head);
               setCursor({ line: line.number, column: head - line.from + 1 });
             }
-          }),
-          EditorView.theme({
-            "&": {
-              height: "100%",
-              backgroundColor: "var(--surface)",
-              color: "var(--text)",
-            },
-            ".cm-scroller": {
-              overflow: "auto",
-              fontFamily: "var(--mono)",
-              fontSize: "13px",
-              lineHeight: "1.65",
-            },
-            ".cm-content": { caretColor: "var(--text)", padding: "12px 0" },
-            ".cm-gutters": {
-              backgroundColor: "var(--canvas)",
-              color: "var(--muted)",
-              borderRight: "1px solid var(--line)",
-            },
-            ".cm-activeLine, .cm-activeLineGutter": {
-              backgroundColor: "var(--hover)",
-            },
-            "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection":
-              { backgroundColor: "var(--selected)" },
-            ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--text)" },
-            ".cm-panels": {
-              backgroundColor: "var(--canvas)",
-              color: "var(--text)",
-              borderColor: "var(--line)",
-            },
-            ".cm-searchMatch": {
-              backgroundColor: "#d6b64055",
-              outline: "1px solid #b8972e",
-            },
-            ".cm-searchMatch-selected": { backgroundColor: "#d6b640aa" },
           }),
         ],
       }),
@@ -279,6 +208,21 @@ export function FileEditorApp() {
   saveRef.current = save;
 
   useEffect(() => {
+    const unsubscribe = subscribeTheme(() => {
+      const view = editor.current;
+      if (!view) return;
+      const next = getTheme();
+      if (view.state.facet(EditorView.darkTheme) === (next === "dark")) return;
+      view.dispatch({
+        effects: appearance.current.reconfigure(createEditorAppearance(next)),
+      });
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
     void load();
   }, [load]);
   useEffect(() => {
@@ -370,7 +314,7 @@ export function FileEditorApp() {
   }
 
   return (
-    <div className="remote-editor-app">
+    <div className="remote-editor-app file-editor-app">
       <WindowTitlebar
         leading={<FileText size={19} />}
         title={
@@ -451,7 +395,11 @@ export function FileEditorApp() {
         </div>
       )}
       <footer className="remote-editor-status">
-        <span role="status">
+        <span
+          role="status"
+          aria-label="文件保存状态"
+          className="editor-save-status"
+        >
           {notice ||
             (dirty
               ? "未保存"
@@ -476,7 +424,7 @@ export function FileEditorApp() {
             </option>
           ))}
         </select>
-        <span>
+        <span className="editor-position">
           {cursor.line}:{cursor.column} · UTF-8 · {formatSize(size)} / 1 MB
         </span>
       </footer>

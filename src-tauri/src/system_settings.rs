@@ -182,6 +182,12 @@ impl SystemSettings {
             Ok(())
         };
         persist().map_err(|e| AppError::new("settings", format!("保存系统设置失败：{e}")))?;
+        crate::diagnostics::event::Context::new().event(
+            "INFO",
+            "settings",
+            "settings.saved",
+            serde_json::json!({"developerMode":next.developer_mode}),
+        );
         saved.value = next;
         saved.revision += 1;
         Ok(self.snapshot_of(&saved))

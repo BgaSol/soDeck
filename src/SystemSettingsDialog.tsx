@@ -1,3 +1,4 @@
+import { DiagnosticsSection } from "./DiagnosticsSection";
 import { listen } from "@tauri-apps/api/event";
 import { SoftwareUpdateSection } from "./SoftwareUpdateSection";
 import {
@@ -204,6 +205,7 @@ export function SystemSettingsDialog({
       />
       <div className="system-settings-content">
         <SoftwareUpdateSection />
+        <DiagnosticsSection />
         <section className="appearance-settings" aria-label="外观主题">
           <h3>外观</h3>
           <label>

@@ -1,3 +1,5 @@
+import { recordFrontendError } from "./diagnostics";
+import { DiagnosticsSection } from "./DiagnosticsSection";
 import type { TerminalSourceLabel } from "./terminalClipboard/types";
 import {
   lazy,
@@ -8,7 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invokeDiagnosed as invoke } from "./diagnostics";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { TerminalSquare, X, ScrollText } from "lucide-react";
 import { WindowTitlebar, WindowLoading } from "./WindowTitlebar";
@@ -776,6 +778,9 @@ class WindowErrorBoundary extends Component<
   { failed: boolean }
 > {
   state = { failed: false };
+  componentDidCatch(error: Error, info: { componentStack?: string | null }) {
+    recordFrontendError("frontend.render.error", error, info.componentStack ?? undefined);
+  }
   static getDerivedStateFromError() {
     return { failed: true };
   }
@@ -785,6 +790,7 @@ class WindowErrorBoundary extends Component<
         <div className="window-loading">
           <WindowTitlebar title="SoDeck" />
           <p role="alert">窗口内容加载失败，请关闭窗口后重试。</p>
+          <DiagnosticsSection />
         </div>
       );
     return this.props.children;

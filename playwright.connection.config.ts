@@ -1,7 +1,11 @@
 import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests",
-  testMatch: ["connection-ui.spec.ts", "window-chrome-ui.spec.ts"],
+  testMatch: [
+    "connection-ui.spec.ts",
+    "window-chrome-ui.spec.ts",
+    "file-editor-ui.spec.ts",
+  ],
   workers: 1,
   timeout: 30000,
   outputDir: ".qa/playwright-connection",

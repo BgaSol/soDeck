@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invokeDiagnosed as invoke } from "./diagnostics";
 export interface HistorySource {
   id: string;
   serverId: string;

@@ -299,6 +299,20 @@ test("theme changes synchronize existing and newly opened windows without resett
     await expect(editor.locator(".cm-content")).toContainText(
       "unsaved theme check",
     );
+    expect(
+      await editor.evaluate(
+        () =>
+          (window as any).__CHROME_TEST__.calls.filter(
+            (command: string) => command === "editor_load",
+          ).length,
+      ),
+    ).toBe(1);
+    await editor.getByRole("button", { name: "撤销", exact: true }).click();
+    await expect(editor.locator(".cm-content")).toContainText("original");
+    await editor.getByRole("button", { name: "重做", exact: true }).click();
+    await expect(editor.locator(".cm-content")).toContainText(
+      "unsaved theme check",
+    );
   } finally {
     await editor.close();
     await later.close();

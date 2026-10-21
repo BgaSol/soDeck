@@ -122,9 +122,27 @@ pub struct Cancellation(Arc<CancelState>);
 struct CancelState {
     cancelled: AtomicBool,
     sockets: Mutex<Vec<Weak<Socket>>>,
+    diagnostic: Mutex<Option<crate::diagnostics::event::Context>>,
 }
 impl Cancellation {
+    pub fn diagnostic(&self) -> crate::diagnostics::event::Context {
+        self.0
+            .diagnostic
+            .lock()
+            .unwrap()
+            .get_or_insert_with(crate::diagnostics::event::Context::new)
+            .clone()
+    }
+    pub fn set_diagnostic(&self, context: crate::diagnostics::event::Context) {
+        *self.0.diagnostic.lock().unwrap() = Some(context);
+    }
     pub fn cancel(&self) {
+        self.diagnostic().event(
+            "INFO",
+            "connection",
+            "cancel.requested",
+            serde_json::json!({"cancelled":true}),
+        );
         self.0.cancelled.store(true, Ordering::SeqCst);
         for socket in self
             .0
@@ -193,9 +211,22 @@ pub fn retry<T>(
 }
 
 pub fn tcp(host: &str, port: u16, cancel: &Cancellation) -> AppResult<Arc<Socket>> {
-    let addresses = resolver::resolve(host, port, cancel)?;
+    let diagnostic = cancel.diagnostic();
+    let mut dns = diagnostic.stage("ssh", "dns.resolve", serde_json::json!({"timeoutMs":12000,"addressKind":if host.parse::<std::net::IpAddr>().is_ok(){"ip"}else{"hostname"}}));
+    let addresses = resolver::resolve(host, port, cancel);
+    dns.finish(&addresses);
+    let addresses = addresses.map_err(|e| e.traced(&diagnostic))?;
+    diagnostic.event(
+        "DEBUG",
+        "ssh",
+        "dns.resolved",
+        serde_json::json!({"resolvedCount":addresses.len()}),
+    );
+    let mut tcp = diagnostic.stage("ssh", "tcp.connect", serde_json::json!({"timeoutMs":12000}));
+    let mut last_error = None;
     let deadline = Instant::now() + Duration::from_secs(12);
-    for address in addresses {
+    for (candidate, address) in addresses.into_iter().enumerate() {
+        diagnostic.event("DEBUG","ssh","tcp.candidate",serde_json::json!({"candidate":candidate+1,"family":if address.is_ipv4(){"ipv4"}else{"ipv6"},"timeoutMs":300}));
         let start = Instant::now();
         loop {
             cancel.check()?;
@@ -214,6 +245,7 @@ pub fn tcp(host: &str, port: u16, cancel: &Cancellation) -> AppResult<Arc<Socket
                     let socket = Arc::new(Socket::Tcp(stream));
                     socket.nonblocking()?;
                     cancel.register(&socket)?;
+                    tcp.finish(&Ok::<_, AppError>(()));
                     return Ok(socket);
                 }
                 Err(e)
@@ -221,14 +253,18 @@ pub fn tcp(host: &str, port: u16, cancel: &Cancellation) -> AppResult<Arc<Socket
                         e.kind(),
                         std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
                     ) && start.elapsed() < Duration::from_secs(8) => {}
-                Err(_) => break,
+                Err(e) => {
+                    last_error = Some(AppError::io("network", e));
+                    break;
+                }
             }
         }
     }
-    Err(AppError::new(
-        "network",
-        "连接失败或超时，请检查地址、端口及网络",
-    ))
+    let error = last_error
+        .unwrap_or_else(|| AppError::new("network", "连接失败或超时，请检查地址、端口及网络"))
+        .traced(&diagnostic);
+    tcp.finish(&Err::<(), _>(error.clone()));
+    Err(error)
 }
 
 #[cfg(unix)]

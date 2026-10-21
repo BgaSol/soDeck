@@ -339,6 +339,7 @@ impl NetBirdManager {
         Ok(())
     }
     fn publish_receipt(&self, r: &Receipt) {
+        crate::diagnostics::state_event("netbird", &r.operation.id, &r.operation.phase);
         if let Ok(e) = self.entry(&r.identity) {
             {
                 let mut c = e.core.lock().unwrap();

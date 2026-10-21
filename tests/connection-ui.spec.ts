@@ -1333,7 +1333,11 @@ test("titlebar tab drop targets use live geometry, auto-scroll, and exclude wind
   );
   expect(drops).toHaveLength(2);
   expect(drops[0].args.beforeId).toBeTruthy();
-  expect(drops[1].args).toEqual({ token: "append", beforeId: null });
+  expect(drops[1].args).toEqual({
+    token: "append",
+    beforeId: null,
+    diagnosticTraceId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+  });
   expect(errors).toEqual([]);
 });
 
@@ -1362,6 +1366,7 @@ test("titlebar tabs accept empty-window drops and reserve macOS controls", async
   expect(calls.find((c: any) => c.command === "drop_tab").args).toEqual({
     token: "empty-target",
     beforeId: null,
+    diagnosticTraceId: expect.stringMatching(/^[0-9a-f-]{36}$/),
   });
   expect(
     await page

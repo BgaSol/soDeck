@@ -231,6 +231,12 @@ pub fn run(
     history_origin: Option<(String, crate::terminal_history::model::Source)>,
 ) -> AppResult<()> {
     cancel.check()?;
+    let diagnostic = cancel.diagnostic();
+    let mut setup_stage = diagnostic.stage(
+        "terminal",
+        "terminal.setup",
+        serde_json::json!({"connectionRef":crate::diagnostics::alias(id)}),
+    );
     let session = connection.session();
     session.set_blocking(true);
     let integration = if command.is_none() {
@@ -252,8 +258,15 @@ pub fn run(
         None
     };
     let mut channel = session.channel_session()?;
+    diagnostic.event(
+        "DEBUG",
+        "terminal",
+        "channel.created",
+        serde_json::json!({}),
+    );
     channel.handle_extended_data(ssh2::ExtendedData::Merge)?;
     channel.request_pty("xterm-256color", None, Some((100, 30, 0, 0)))?;
+    diagnostic.event("DEBUG", "terminal", "pty.created", serde_json::json!({}));
     let cwd_token = if let Some(command) = command {
         channel.exec(&command)?;
         None
@@ -276,6 +289,13 @@ pub fn run(
         None
     };
     session.set_blocking(false);
+    setup_stage.finish(&Ok::<_, AppError>(()));
+    diagnostic.event(
+        "INFO",
+        "terminal",
+        "terminal.ready",
+        serde_json::json!({"connectionRef":crate::diagnostics::alias(id)}),
+    );
 
     use crate::terminal_history::model::EventKind;
     let binding = history_origin

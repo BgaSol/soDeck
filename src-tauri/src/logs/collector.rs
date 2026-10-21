@@ -32,6 +32,7 @@ fn event(
     kind: &str,
     detail: &str,
 ) {
+    crate::diagnostics::state_event("container_logs", &source.source_id, kind);
     // A connection may fail before Store::open creates source.json. Do not
     // create a half-initialized archive that would break the archive library.
     if !log_store::source_dir(root, &source.source_id)

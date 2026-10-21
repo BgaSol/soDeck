@@ -5,7 +5,7 @@ import {
   type DragEvent as ReactDragEvent,
   type RefObject,
 } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invokeDiagnosed as invoke } from "./diagnostics";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { desktop } from "./api";
 import { useDesktopDrag, useNativeDragStart } from "./nativeDrag";

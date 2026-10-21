@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invokeDiagnosed as invoke } from "./diagnostics";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { windowTitle } from "./brand";
 import { desktop } from "./api";

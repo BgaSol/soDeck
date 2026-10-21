@@ -1100,6 +1100,7 @@ impl DockerManager {
             .find(|r| r.view.id == id)
         {
             change(&mut record.view);
+            crate::diagnostics::state_event("docker", id, &record.view.phase);
         }
     }
     fn run(
@@ -1365,6 +1366,7 @@ impl DockerManager {
             Ok(())
         })();
         if let Err(e) = result {
+            crate::diagnostics::task_failure("docker", id, &e);
             self.change(id, |v| {
                 let unknown = attempted.load(Ordering::SeqCst)
                     && transfer_spec

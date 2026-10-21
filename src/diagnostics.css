@@ -1,0 +1,65 @@
+.diagnostics-settings {
+  margin: 22px 0;
+  padding: 18px 0;
+  border-block: 1px solid var(--border);
+}
+.diagnostics-settings h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+.diagnostics-settings p,
+.diagnostics-settings dl {
+  font-size: var(--font-secondary);
+  line-height: 1.6;
+}
+.diagnostics-settings > p {
+  color: var(--muted);
+}
+.diagnostics-settings dl > div {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+.diagnostics-settings dd {
+  margin: 0;
+  text-align: right;
+}
+.diagnostics-path {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+}
+.diagnostics-path code {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+.diagnostics-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.diagnostics-actions label {
+  display: flex;
+  width: 100%;
+  gap: 12px;
+  align-items: center;
+}
+.diagnostics-actions select {
+  min-width: 0;
+  flex: 1;
+}
+.diagnostics-confirm {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.diagnostics-confirm button + button {
+  margin-left: 8px;
+}
+.diagnostics-notice {
+  overflow-wrap: anywhere;
+}

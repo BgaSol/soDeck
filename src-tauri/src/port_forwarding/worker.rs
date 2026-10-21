@@ -251,6 +251,7 @@ pub(super) fn run(
         view.phase("stopped");
         view.note("已停止，监听端口与连接已释放");
     } else if let Err(error) = result {
+        crate::diagnostics::task_failure("port_forward", &view.run_id, &error);
         view.phase(if run.ever_ready.load(Ordering::SeqCst) {
             "stopped"
         } else {

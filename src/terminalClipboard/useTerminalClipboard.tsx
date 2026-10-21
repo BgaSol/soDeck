@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { recordDiagnostic } from "../diagnostics";
 import { createPortal } from "react-dom";
 import type { Terminal } from "@xterm/xterm";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -52,6 +53,7 @@ export function useTerminalClipboard(
     focus(): void;
   } | null>(null);
   const change = (next: ClipboardViewState) => {
+    if (next.notice && next.notice !== state.notice) recordDiagnostic({ event: "clipboard.result", outcome: next.notice.kind === "error" ? "failed" : "ok" });
     setState(next);
     stateCallback.current?.(next);
   };

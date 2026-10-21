@@ -1,4 +1,5 @@
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { Channel } from "@tauri-apps/api/core";
+import { invokeDiagnosed as invoke } from "./diagnostics";
 import type { ResourcePreferences } from "./resourcePresentation";
 import type { MonitorApi, MonitorEvent } from "./resourceMonitoring";
 import { monitorApi } from "./MonitorProvider";

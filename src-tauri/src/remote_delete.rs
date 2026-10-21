@@ -307,6 +307,7 @@ impl Handle {
             view.status = "cancelling".into();
         }
         view.revision += 1;
+        crate::diagnostics::state_event("delete", &view.id, &view.status);
     }
     fn emit(&self, app: Option<&tauri::AppHandle>, force: bool) {
         let Some(app) = app else {
@@ -841,6 +842,9 @@ fn remove_recorded(
             )
         })?;
     let result = remove_planned(fs, planned);
+    if let Err(error) = &result {
+        crate::diagnostics::task_failure("delete", id, error);
+    }
     let (outcome, message) = match &result {
         Ok(true) => ("deleted", None),
         Ok(false) => ("missing", None),

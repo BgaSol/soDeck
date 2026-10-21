@@ -540,6 +540,13 @@ fn connect_metered(
     traffic: &Arc<crate::traffic::TrafficManager>,
     purpose: crate::traffic::TrafficPurpose,
 ) -> AppResult<(SshConnection, SharedContext)> {
+    let diagnostic = cancel.diagnostic();
+    diagnostic.event(
+        "INFO",
+        "connection",
+        "connection.start",
+        serde_json::json!({"hops":plan.hops.len()}),
+    );
     let mut connection = None;
     let mut verified = Vec::new();
     for (index, server) in plan.hops.iter().enumerate() {
@@ -550,22 +557,39 @@ fn connect_metered(
             "建立跳板转发"
         };
         provider.progress(&hop, stage);
-        let mut current = match connection.take() {
+        let mut transport_stage = diagnostic.stage(
+            "ssh",
+            "transport.open",
+            serde_json::json!({"hop":index+1,"timeoutMs":12000}),
+        );
+        let current = match connection.take() {
             None => ssh_transport::tcp(&server.host, server.port, cancel)
                 .and_then(|s| SshConnection::new(s, None)),
             Some(parent) => ssh_transport::forward(parent, &server.host, server.port, cancel),
         }
-        .map_err(|e| e.at(server, index, stage))?;
+        .map_err(|e| e.at(server, index, stage).traced(&diagnostic));
+        transport_stage.finish(&current);
+        let mut current = current?;
         provider.progress(&hop, "SSH 握手");
-        current.handshake(cancel).map_err(|e| {
+        let mut handshake = diagnostic.stage(
+            "ssh",
+            "handshake",
+            serde_json::json!({"hop":index+1,"timeoutMs":12000}),
+        );
+        let result = current.handshake(cancel).map_err(|e| {
             current
                 .transport_error()
                 .unwrap_or(e)
                 .at(server, index, "SSH 握手")
-        })?;
+                .traced(&diagnostic)
+        });
+        handshake.finish(&result);
+        result?;
         let fingerprint =
             ssh::fingerprint(current.session()).map_err(|e| e.at(server, index, "读取指纹"))?;
-        provider
+        let mut verification =
+            diagnostic.stage("ssh", "host_key.verify", serde_json::json!({"hop":index+1}));
+        let verification_result = provider
             .verify(
                 &hop,
                 &route_identity(&verified),
@@ -573,7 +597,9 @@ fn connect_metered(
                 current.session(),
                 cancel,
             )
-            .map_err(|e| e.at(server, index, "核对指纹"))?;
+            .map_err(|e| e.at(server, index, "核对指纹").traced(&diagnostic));
+        verification.finish(&verification_result);
+        verification_result?;
         if index + 1 == plan.hops.len() {
             let mut identity_hops = verified.clone();
             identity_hops.push(VerifiedHop {
@@ -593,7 +619,10 @@ fn connect_metered(
                 .credentials(&hop, server, failure.as_ref(), current.session(), cancel)
                 .map_err(|e| e.at(server, index, "认证"))?;
             provider.progress(&hop, "认证");
-            match ssh::authenticate(current.session(), server, &credentials, cancel) {
+            let mut auth_stage = diagnostic.stage("ssh", "authentication", serde_json::json!({"hop":index+1,"attempt":attempt+1,"method":match server.auth_type.as_str(){"key"=>"key","password"=>"password","agent"=>"agent",_=>"unknown"}}));
+            let auth_result = ssh::authenticate(current.session(), server, &credentials, cancel);
+            auth_stage.finish(&auth_result);
+            match auth_result {
                 Ok(()) => break credentials,
                 Err(e)
                     if provider.interactive()
@@ -602,9 +631,15 @@ fn connect_metered(
                         && attempt < 2 =>
                 {
                     attempt += 1;
+                    diagnostic.event(
+                        "INFO",
+                        "ssh",
+                        "authentication.retry",
+                        serde_json::json!({"attempt":attempt+1,"reason":"credentials_required"}),
+                    );
                     failure = Some(e);
                 }
-                Err(e) => return Err(e.at(server, index, "认证")),
+                Err(e) => return Err(e.at(server, index, "认证").traced(&diagnostic)),
             }
         };
         cancel.check()?;
@@ -624,6 +659,12 @@ fn connect_metered(
     let connection = connection.expect("validated nonempty route");
     connection.session().set_blocking(true);
     let identity = route_identity(&verified);
+    diagnostic.event(
+        "INFO",
+        "connection",
+        "connection.verified",
+        serde_json::json!({"outcome":"ok"}),
+    );
     Ok((
         connection,
         Arc::new(ConnectionContext {
@@ -734,6 +775,25 @@ fn recovery_action(error: Option<&AppError>) -> RecoveryAction {
 }
 
 fn finish(state: &State, id: &str, cancel: &Cancellation, result: AppResult<()>) {
+    let diagnostic = cancel.diagnostic();
+    let result = result.map_err(|e| e.traced(&diagnostic));
+    let mut details = result
+        .as_ref()
+        .err()
+        .map(crate::diagnostics::event::error_details)
+        .unwrap_or_else(|| serde_json::json!({"outcome":"ok"}));
+    details["connectionRef"] = serde_json::json!(crate::diagnostics::alias(id));
+    details["cancelled"] = serde_json::json!(cancel.is_cancelled());
+    diagnostic.event(
+        if result.is_err() && !cancel.is_cancelled() {
+            "WARN"
+        } else {
+            "INFO"
+        },
+        "connection",
+        "connection.closed",
+        details,
+    );
     let mut connections = state.terminals.lock().unwrap();
     if let Some(handle) = connections.get(id) {
         let error = if cancel.is_cancelled() {
@@ -795,6 +855,7 @@ pub fn open_connection(
     server_id: String,
     workspace_id: Option<String>,
     events: Channel<ConnectionEvent>,
+    diagnostic_trace_id: Option<String>,
 ) -> AppResult<String> {
     crate::moves::workspace_only(&window)?;
     let state = state.inner().clone();
@@ -808,6 +869,10 @@ pub fn open_connection(
     )?);
     let (id, receiver, cancel, stream, interaction) =
         register(&state, state.owner(window.label()), plan.clone(), events)?;
+    cancel.set_diagnostic(crate::diagnostics::event::Context::from_trace(
+        diagnostic_trace_id.as_deref(),
+    ));
+    cancel.diagnostic().event("INFO","connection","connection.registered",serde_json::json!({"connectionRef":crate::diagnostics::alias(&id),"windowRef":crate::diagnostics::alias(window.label())}));
     drop(gate);
     let worker_id = id.clone();
     std::thread::spawn(move || {
@@ -880,6 +945,7 @@ pub fn open_container(
     context: SharedContext,
     target: crate::docker::ContainerTarget,
     output: Channel<ConnectionEvent>,
+    diagnostic_trace_id: Option<String>,
 ) -> AppResult<String> {
     let workspace_id = owner.label.clone();
     let gate = state.configuration.lock().unwrap();
@@ -887,6 +953,15 @@ pub fn open_container(
         context.hops.iter().map(|h| h.server.clone()).collect(),
     )?);
     let (id, receiver, cancel, _, _) = register(&state, owner, plan, output)?;
+    cancel.set_diagnostic(crate::diagnostics::event::Context::from_trace(
+        diagnostic_trace_id.as_deref(),
+    ));
+    cancel.diagnostic().event(
+        "INFO",
+        "connection",
+        "container.registered",
+        serde_json::json!({"connectionRef":crate::diagnostics::alias(&id)}),
+    );
     drop(gate);
     let worker_id = id.clone();
     std::thread::spawn(move || {

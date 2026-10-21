@@ -121,6 +121,7 @@ pub fn get_session(root: &Path, id: &str) -> AppResult<Session> {
     .ok_or_else(|| AppError::new("history", "终端历史不存在"))
 }
 pub fn error(root: &Path, id: &str, message: &str) {
+    crate::diagnostics::state_event("terminal_history", id, "storage_failed");
     if let Ok(c) = catalog(root) {
         let _ = c.execute(
             "UPDATE sessions SET error=?2 WHERE id=?1",

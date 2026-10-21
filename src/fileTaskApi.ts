@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invokeDiagnosed as invoke } from "./diagnostics";
 import type { DeleteTask } from "./fileApi";
 import type { TransferTask } from "./transferApi";
 

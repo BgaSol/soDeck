@@ -57,6 +57,7 @@ pub(crate) struct DownloadReceipt {
 }
 fn persist(state: &State, item: &DownloadHandle) -> AppResult<()> {
     let task = item.task.lock().unwrap().clone();
+    crate::diagnostics::state_event("download", &task.id, &task.status);
     let receipt = DownloadReceipt {
         identity: item.spec.identity().into(),
         destination: item.destination.clone(),
@@ -355,6 +356,7 @@ pub(super) fn launch_download(state: Arc<State>, item: DownloadHandle) {
             match result {
                 Ok(()) => task.status = "completed".into(),
                 Err(error) => {
+                    crate::diagnostics::task_failure("download", &task.id, &error);
                     task.status = if item.cancel.is_cancelled() || error.kind == "cancelled" {
                         "cancelled"
                     } else {

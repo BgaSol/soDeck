@@ -539,6 +539,7 @@ fn jump_real_ssh_sftp_docker_terminal_and_failure_paths() {
         context.clone(),
         target.clone(),
         container_output,
+        None,
     )
     .unwrap();
     wait_for(|| {

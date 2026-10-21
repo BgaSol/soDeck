@@ -107,6 +107,12 @@ pub struct DuplicateServerRequest {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppError {
+    #[serde(skip)]
+    pub diagnostic: crate::diagnostics::event::ErrorInfo,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trace_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_code: Option<i64>,
     pub kind: String,
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -119,8 +125,12 @@ pub struct AppError {
     pub stage: Option<Box<str>>,
 }
 impl AppError {
+    #[track_caller]
     pub fn new(kind: &str, message: impl ToString) -> Self {
         Self {
+            diagnostic: crate::diagnostics::event::ErrorInfo::new(kind),
+            trace_id: None,
+            native_code: None,
             kind: kind.into(),
             message: message.to_string(),
             fingerprint: None,
@@ -131,6 +141,9 @@ impl AppError {
     }
     pub fn host_key(fingerprint: String, previous: Option<String>) -> Self {
         Self {
+            diagnostic: crate::diagnostics::event::ErrorInfo::new("hostKey"),
+            trace_id: None,
+            native_code: None,
             kind: "hostKey".into(),
             message: if previous.is_some() {
                 "服务器指纹发生变化，请核对后决定是否更新"
@@ -155,18 +168,40 @@ impl AppError {
         }
         self
     }
+    pub fn traced(mut self, context: &crate::diagnostics::event::Context) -> Self {
+        self.trace_id = Some(context.trace_id.clone());
+        self
+    }
+    pub fn native(mut self, domain: &'static str, code: Option<i64>) -> Self {
+        self.diagnostic.domain = Some(domain);
+        self.diagnostic.native_code = code;
+        self.native_code = code;
+        self
+    }
+    #[track_caller]
+    pub fn io(kind: &str, error: std::io::Error) -> Self {
+        let code = error.raw_os_error().map(i64::from);
+        let native_kind = format!("{:?}", error.kind());
+        let mut result = Self::new(kind, error).native("os", code);
+        result.diagnostic.native_kind = Some(native_kind);
+        result
+    }
 }
 impl From<rusqlite::Error> for AppError {
+    #[track_caller]
     fn from(value: rusqlite::Error) -> Self {
-        Self::new("database", value)
+        let code = value.sqlite_error().map(|e| i64::from(e.extended_code));
+        Self::new("database", value).native("sqlite", code)
     }
 }
 impl From<std::io::Error> for AppError {
+    #[track_caller]
     fn from(value: std::io::Error) -> Self {
-        Self::new("io", value)
+        Self::io("io", value)
     }
 }
 impl From<ssh2::Error> for AppError {
+    #[track_caller]
     fn from(value: ssh2::Error) -> Self {
         let kind = match value.code() {
             ssh2::ErrorCode::Session(-15 | -18 | -19 | -48) => "authentication",
@@ -174,7 +209,11 @@ impl From<ssh2::Error> for AppError {
             ssh2::ErrorCode::Session(-7 | -13 | -43 | -45) => "network",
             _ => "ssh",
         };
-        Self::new(kind, value)
+        let (domain, code) = match value.code() {
+            ssh2::ErrorCode::Session(c) => ("libssh2", c),
+            ssh2::ErrorCode::SFTP(c) => ("sftp", c),
+        };
+        Self::new(kind, value).native(domain, Some(i64::from(code)))
     }
 }
 pub type AppResult<T> = Result<T, AppError>;

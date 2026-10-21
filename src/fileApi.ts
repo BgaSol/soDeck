@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invokeDiagnosed as invoke } from "./diagnostics";
 
 export type DownloadConflict = "rename" | "overwrite" | "skip";
 export interface DeleteEntry {

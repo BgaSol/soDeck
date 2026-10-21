@@ -1,3 +1,4 @@
+import { DiagnosticErrorInfo } from "./DiagnosticErrorInfo";
 import { createPortal } from "react-dom";
 import {
   useCallback,
@@ -421,7 +422,7 @@ export function SessionWorkspace({
                   )}
                   {error && !recoveryActive && (
                     <div className="connection-error" role="alert">
-                      <span>{error.message}</span>
+                      <div>{error.message}<DiagnosticErrorInfo error={error} /></div>
                       <button
                         className="icon-button"
                         onClick={() => setError(null)}

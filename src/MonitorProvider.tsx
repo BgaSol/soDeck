@@ -7,7 +7,8 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { Channel } from "@tauri-apps/api/core";
+import { invokeDiagnosed as invoke } from "./diagnostics";
 import { desktop } from "./api";
 import {
   MonitorStore,

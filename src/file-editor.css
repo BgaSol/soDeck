@@ -1,0 +1,302 @@
+.file-editor-app {
+  --editor-font-size: 0.929rem;
+  --editor-match: #f7e7ac;
+  --editor-match-current: #efcd64;
+  --editor-match-border: #927620;
+  --editor-input-border: #85858c;
+  --editor-focus: #0068d9;
+}
+:root[data-theme="dark"] .file-editor-app {
+  --editor-match: #51472a;
+  --editor-match-current: #6b5524;
+  --editor-match-border: #b9a363;
+  --editor-input-border: #7c7c85;
+  --editor-focus: #79b8ff;
+}
+.file-editor-app .editor-dirty {
+  font-size: var(--font-caption);
+  color: var(--accent-text);
+}
+.file-editor-app .remote-editor-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--line);
+}
+.file-editor-app .remote-editor-tools button {
+  font-size: var(--font-secondary);
+}
+.file-editor-app .editor-shortcut {
+  font-size: var(--font-caption);
+  color: var(--muted);
+  margin-left: auto;
+}
+.file-editor-app .remote-code-editor {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.file-editor-app .remote-editor-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  gap: 0.286rem 1rem;
+  padding: 0.286rem 1rem;
+  font-size: var(--font-caption);
+  color: var(--muted);
+  background: var(--canvas);
+  border-top: 1px solid var(--line);
+}
+.file-editor-app .editor-save-status {
+  margin-right: auto;
+}
+.file-editor-app .editor-position {
+  font-variant-numeric: tabular-nums;
+}
+.file-editor-app .editor-language {
+  width: auto;
+  max-width: min(15.7rem, 100%);
+  min-height: 2rem;
+  padding: 0.143rem 1.714rem 0.143rem 0.571rem;
+  font-size: var(--font-caption);
+  border-color: transparent;
+  color: var(--muted);
+  background-color: transparent;
+}
+.file-editor-app .editor-language:hover,
+.file-editor-app .editor-language:focus-visible {
+  color: var(--text);
+  background-color: var(--field);
+  border-color: var(--editor-input-border);
+}
+.file-editor-app .remote-code-editor .cm-panel.file-editor-search {
+  padding: 0.571rem 1rem;
+  font:
+    var(--font-body)/1.5 -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI Variable",
+    "Segoe UI",
+    "PingFang SC",
+    "Microsoft YaHei",
+    sans-serif;
+}
+.file-editor-app .cm-panels {
+  flex-shrink: 0;
+  min-height: 0;
+  max-height: 65%;
+  overflow: auto;
+}
+.file-editor-app .editor-search-main {
+  display: grid;
+  grid-template-columns: auto minmax(8rem, 1fr) auto auto auto auto;
+  grid-template-areas: "disclosure field result navigation options close";
+  align-items: center;
+  gap: 0.571rem;
+}
+.file-editor-app .editor-search-disclosure {
+  grid-area: disclosure;
+}
+.file-editor-app .editor-search-field {
+  grid-area: field;
+}
+.file-editor-app .editor-search-result {
+  grid-area: result;
+}
+.file-editor-app .editor-search-navigation {
+  grid-area: navigation;
+}
+.file-editor-app .editor-search-options-toggle {
+  grid-area: options;
+}
+.file-editor-app .editor-search-close {
+  grid-area: close;
+}
+.file-editor-app .editor-search-field {
+  position: relative;
+  min-width: 0;
+}
+.file-editor-app .editor-search-field > svg {
+  position: absolute;
+  left: 0.571rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+.file-editor-app .file-editor-search input.editor-search-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-height);
+  margin: 0;
+  padding: 0.286rem 0.714rem;
+  border: 1px solid var(--editor-input-border);
+  border-radius: var(--radius-control);
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+}
+.file-editor-app .editor-search-field input.editor-search-input {
+  padding-left: 2.143rem;
+}
+.file-editor-app .file-editor-search input[aria-invalid="true"] {
+  border-color: var(--error);
+}
+.file-editor-app .file-editor-search button.editor-search-button {
+  min-height: var(--control-height);
+  margin: 0;
+  padding: 0.286rem 0.571rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  font: inherit;
+  background: transparent;
+  color: var(--text);
+  white-space: nowrap;
+}
+.file-editor-app
+  .file-editor-search
+  button.editor-search-button:hover:not(:disabled) {
+  background: var(--hover);
+}
+.file-editor-app .file-editor-search button.editor-search-icon {
+  width: var(--control-height);
+  min-width: var(--control-height);
+  padding: 0.286rem;
+}
+.file-editor-app .editor-search-disclosure[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+.file-editor-app .editor-search-navigation,
+.file-editor-app .editor-search-replace-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.286rem;
+}
+.file-editor-app .editor-search-result {
+  font-size: var(--font-secondary);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.file-editor-app .editor-search-replace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.571rem;
+  margin-top: 0.571rem;
+  padding-left: calc(var(--control-height) + 0.571rem);
+}
+.file-editor-app
+  .file-editor-search
+  .editor-search-replace-actions
+  button.editor-search-button {
+  border-color: var(--editor-input-border);
+  background: var(--surface);
+}
+.file-editor-app .editor-search-options {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.571rem 1rem;
+  margin-top: 0.571rem;
+  padding-left: calc(var(--control-height) + 0.571rem);
+}
+.file-editor-app .file-editor-search label.editor-search-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.429rem;
+  min-height: var(--control-height);
+  margin: 0;
+  font: inherit;
+  white-space: nowrap;
+}
+.file-editor-app .file-editor-search input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--editor-focus);
+}
+.file-editor-app .editor-search-hint {
+  margin: 0.571rem 0 0;
+  padding-left: calc(var(--control-height) + 0.571rem);
+  color: var(--muted);
+  font-size: var(--font-secondary);
+}
+.file-editor-app .editor-search-hint[data-invalid="true"] {
+  color: var(--error);
+}
+.file-editor-app .file-editor-search [hidden] {
+  display: none;
+}
+.file-editor-app .editor-search-announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.file-editor-app .file-editor-search :focus-visible,
+.file-editor-app .editor-language:focus-visible {
+  outline: 2px solid var(--editor-focus);
+  outline-offset: 2px;
+}
+@media (max-width: 740px) {
+  .file-editor-app .editor-search-main {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "disclosure field field close"
+      ". result navigation options";
+  }
+}
+@media (max-width: 600px) {
+  .file-editor-app .editor-shortcut {
+    display: none;
+  }
+  .file-editor-app .remote-editor-status,
+  .file-editor-app .remote-code-editor .cm-panel.file-editor-search {
+    padding-inline: 0.714rem;
+  }
+}
+@media (max-width: 420px) {
+  .file-editor-app .editor-search-main {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "disclosure field close" "result result navigation" "options options options";
+  }
+  .file-editor-app .editor-search-replace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .file-editor-app .editor-search-options,
+  .file-editor-app .editor-search-replace,
+  .file-editor-app .editor-search-hint {
+    padding-left: 0;
+  }
+}
+@media (prefers-contrast: more) {
+  .file-editor-app,
+  :root[data-theme="dark"] .file-editor-app {
+    --editor-input-border: var(--strong-line);
+    --editor-match-border: var(--text);
+  }
+  .file-editor-app .editor-language {
+    border-color: var(--editor-input-border);
+  }
+  .file-editor-app .editor-search-button:disabled {
+    opacity: 1;
+    color: var(--muted);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .file-editor-app .file-editor-search button {
+    transition: none;
+  }
+}

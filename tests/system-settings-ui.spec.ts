@@ -336,9 +336,24 @@ test("normal mode preserves CodeMirror editing, undo, find and save shortcuts", 
       ),
     )
     .toBe("saved value");
+  await editor.fill("saved from search");
   await page.keyboard.press(`${mod}+f`);
   await expect(page.locator(".cm-search")).toBeVisible();
+  const searchField = page.getByRole("textbox", { name: "查找内容" });
+  await expect(searchField).toBeFocused();
+  await searchField.press(`${mod}+s`);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).__EDITOR_CALLS__
+            .filter((c: any) => c.command === "editor_save")
+            .at(-1)?.args.text,
+      ),
+    )
+    .toBe("saved from search");
   await page.keyboard.press("Escape");
+  await expect(editor).toBeFocused();
   expect(errors).toEqual([]);
 });
 

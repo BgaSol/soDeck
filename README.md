@@ -10,6 +10,8 @@
 
 ## 已实现
 
+- 本地诊断：默认自动记录运行过程、失败阶段、耗时和可用的原生错误码，不依赖开发者模式，不自动上传。系统设置 → 本地诊断支持打开目录、复制路径、打包 ZIP、取消及确认清理。Windows 默认位置为 `%LOCALAPPDATA%\com.sshworkspace.desktop\diagnostics`，可直接复制整个目录给开发者。详细说明见 [本地诊断使用与验证](docs/app-diagnostics-implementation.md)。
+
 - 应用内升级：系统设置提供软件更新，支持自动检查、跳过版本、查看说明、下载进度及签名校验；安装前检查未保存内容和正在进行的任务。0.1.1 用户需手动安装 0.1.3 基线版本，后续 Windows EXE、macOS 和 Linux AppImage 支持应用内升级；MSI、DEB 提供手动下载入口。详见 [在线升级实现记录](docs/online-update-implementation.md)。
 
 - 终端统一复制粘贴：Windows 默认有选区时 Ctrl+C 复制、无选区时保留中断，Ctrl+V 粘贴；支持终端右键菜单和工具栏。多行、末尾换行及大段文本提供预览，控制字符需显式处理；读取期间切换或重连会取消未发送操作。主窗口、独立 SSH 和容器终端共用交互，历史与屏幕回放可复制并保持只读。系统设置支持便捷快捷键、选中即复制、右键直接粘贴，跨窗口立即同步。实现与平台验证范围见 [终端复制粘贴验证记录](docs/terminal-clipboard-verification.md)。

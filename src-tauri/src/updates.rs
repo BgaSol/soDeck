@@ -144,6 +144,7 @@ impl UpdateManager {
         c.view.skipped_version = c.saved.skipped_version.clone();
         c.view.last_check = c.saved.last_check;
         let view = c.view.clone();
+        crate::diagnostics::state_event("updates", "application", &view.phase);
         let _ = app.emit(EVENT, &view);
         view
     }
@@ -569,6 +570,10 @@ pub async fn update_install(
         crate::shutdown_work(state.inner().clone()).await?;
         manager.publish(&app, |c| c.view.phase = "installing".into());
         crate::blocking(move || update.install(bytes.as_ref()).map_err(error)).await?;
+        crate::diagnostics::startup("update.restart");
+        if let Some(service) = crate::diagnostics::global() {
+            service.finish();
+        }
         app.restart();
     }
     .await;

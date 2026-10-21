@@ -59,7 +59,7 @@ pub(super) fn resolve(host: &str, port: u16, cancel: &Cancellation) -> AppResult
     loop {
         cancel.check()?;
         match receive.recv_timeout(Duration::from_millis(50)) {
-            Ok(result) => return result.map_err(|e| AppError::new("network", e)),
+            Ok(result) => return result.map_err(|e| AppError::io("network", e)),
             Err(mpsc::RecvTimeoutError::Timeout) if Instant::now() < deadline => {}
             _ => return Err(AppError::new("network", "服务器地址解析失败或超时")),
         }
