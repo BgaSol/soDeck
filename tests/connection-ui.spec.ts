@@ -33,6 +33,9 @@ async function setup(
         }
       };
       const channels = new Map<string, any>();
+      const savedPasswords = new Map<string, string>([
+        ["a", "fixture-saved-password"],
+      ]);
       const servers = [
         {
           id: "a",
@@ -158,6 +161,8 @@ async function setup(
       w.__TEST__ = {
         calls,
         servers,
+        savedPasswords,
+        passwordCopies: [],
         emit,
         emitWindow,
         ids: () => Array.from(channels.keys()),
@@ -198,6 +203,33 @@ async function setup(
           if (command === "delete_server") {
             const index = servers.findIndex((s) => s.id === args.id);
             if (index >= 0) servers.splice(index, 1);
+            savedPasswords.delete(args.id);
+            return;
+          }
+          if (command === "copy_saved_server_password") {
+            const server = servers.find((s) => s.id === args.id);
+            if (!server)
+              throw {
+                kind: "notFound",
+                message: "服务器不存在，请重新打开编辑窗口。",
+              };
+            if (
+              server.authType !== "password" ||
+              !server.hasSavedPassword ||
+              !savedPasswords.get(args.id)
+            )
+              throw {
+                kind: "unavailable",
+                message: "此服务器没有已保存的密码。",
+              };
+            if (w.__TEST__.passwordCopyError)
+              throw w.__TEST__.passwordCopyError;
+            const password = savedPasswords.get(args.id);
+            if (w.__TEST__.delayPasswordCopy)
+              await new Promise<void>((resolve) => {
+                w.__TEST__.finishPasswordCopy = resolve;
+              });
+            w.__TEST__.passwordCopies.push({ id: args.id, value: password });
             return;
           }
           if (command === "save_server") {
@@ -211,6 +243,10 @@ async function setup(
               server.id = `new-${serial++}`;
               servers.push(server);
             }
+            if (passwordChange.type === "set")
+              savedPasswords.set(server.id, passwordChange.value);
+            else if (passwordChange.type === "clear")
+              savedPasswords.delete(server.id);
             return structuredClone(server);
           }
           if (command === "duplicate_server") {
@@ -232,6 +268,13 @@ async function setup(
                   passwordPolicy.type === "set"),
             };
             servers.push(copy);
+            if (copy.hasSavedPassword)
+              savedPasswords.set(
+                copy.id,
+                passwordPolicy.type === "inherit"
+                  ? savedPasswords.get(sourceId)!
+                  : passwordPolicy.value,
+              );
             return structuredClone(copy);
           }
           if (command === "open_connection") {
@@ -489,6 +532,407 @@ test("server editor preserves passwords and explicitly clears or replaces them",
           .at(-1).args.server.passwordChange,
     ),
   ).toEqual({ type: "set", value: "replacement" });
+  expect(errors).toEqual([]);
+});
+
+test("saved password copies repeatedly by ID without revealing, saving or dirtying the editor", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await page.locator('.server-row[data-server-id="a"]').click();
+  await editSelected(page);
+  const editor = page.getByRole("dialog", { name: "编辑服务器", exact: true });
+  const copy = editor.getByRole("button", {
+    name: "复制已保存密码",
+    exact: true,
+  });
+  await expect(copy).toBeEnabled();
+  await expect(editor.getByLabel("密码", { exact: true })).toHaveValue("");
+  expect(
+    await page.evaluate(() => (window as any).__TEST__.passwordCopies),
+  ).toEqual([]);
+  await copy.focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    editor.locator(".password-copy-feedback [role=status]"),
+  ).toHaveText("密码已复制");
+  await copy.focus();
+  await page.keyboard.press("Space");
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as any).__TEST__.passwordCopies.length),
+    )
+    .toBe(2);
+  const state = await page.evaluate(() => ({
+    calls: (window as any).__TEST__.calls,
+    servers: (window as any).__TEST__.servers,
+    copies: (window as any).__TEST__.passwordCopies,
+  }));
+  expect(state.copies).toEqual(
+    Array(2).fill({ id: "a", value: "fixture-saved-password" }),
+  );
+  for (const call of state.calls.filter(
+    (c: any) => c.command === "copy_saved_server_password",
+  ))
+    expect(call.args).toEqual({
+      id: "a",
+      diagnosticTraceId: expect.any(String),
+    });
+  expect(
+    state.calls.filter((c: any) =>
+      ["save_server", "duplicate_server"].includes(c.command),
+    ),
+  ).toEqual([]);
+  expect(state.servers.every((s: any) => !("password" in s))).toBe(true);
+  await expect(editor).not.toContainText("fixture-saved-password");
+  await expect(editor.getByLabel("密码", { exact: true })).toHaveValue("");
+  await editor.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("saved password copy uses stored credentials while replacement or clearing is still a draft", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await page.locator('.server-row[data-server-id="a"]').click();
+  await editSelected(page);
+  const editor = page.getByRole("dialog", { name: "编辑服务器", exact: true });
+  const copy = editor.getByRole("button", {
+    name: "复制已保存密码",
+    exact: true,
+  });
+  await editor.getByLabel("密码", { exact: true }).fill("unsaved-replacement");
+  await expect(
+    editor.getByText("复制的是已保存密码，新密码保存后才生效。", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await copy.click();
+  await expect(editor.locator(".password-copy-feedback")).toHaveText(
+    "密码已复制",
+  );
+  expect(
+    await page.evaluate(
+      () => (window as any).__TEST__.passwordCopies.at(-1).value,
+    ),
+  ).toBe("fixture-saved-password");
+  await editor.getByRole("button", { name: "保存", exact: true }).click();
+  await editSelected(page);
+  await copy.click();
+  await expect(editor.locator(".password-copy-feedback")).toHaveText(
+    "密码已复制",
+  );
+  expect(
+    await page.evaluate(
+      () => (window as any).__TEST__.passwordCopies.at(-1).value,
+    ),
+  ).toBe("unsaved-replacement");
+  await editor
+    .getByRole("button", { name: "清空已保存密码", exact: true })
+    .click();
+  await expect(
+    editor.getByText("保存后清空，当前仍可复制已保存密码。", { exact: true }),
+  ).toBeVisible();
+  await expect(editor.locator(".password-copy-feedback")).toHaveText("");
+  await copy.click();
+  await expect(editor.locator(".password-copy-feedback")).toHaveText(
+    "密码已复制",
+  );
+  expect(
+    await page.evaluate(
+      () => (window as any).__TEST__.passwordCopies.at(-1).value,
+    ),
+  ).toBe("unsaved-replacement");
+  await editor.getByRole("button", { name: "保存", exact: true }).click();
+  const saves = await page.evaluate(() =>
+    (window as any).__TEST__.calls
+      .filter((c: any) => c.command === "save_server")
+      .map((c: any) => c.args.server.passwordChange),
+  );
+  expect(saves).toEqual([
+    { type: "set", value: "unsaved-replacement" },
+    { type: "clear" },
+  ]);
+  await editSelected(page);
+  await expect(copy).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("saved password copy is limited to ordinary edits of saved password authentication", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  const copy = page.getByRole("button", {
+    name: "复制已保存密码",
+    exact: true,
+  });
+  await page.getByRole("button", { name: "新增服务器", exact: true }).click();
+  await page.getByLabel("认证方式").selectOption("password");
+  await expect(copy).toHaveCount(0);
+  await page.getByRole("button", { name: "取消", exact: true }).click();
+  await page.getByRole("button", { name: "放弃修改", exact: true }).click();
+  await page.locator('.server-row[data-server-id="b"]').click();
+  await editSelected(page);
+  await expect(copy).toHaveCount(0);
+  await page.getByRole("button", { name: "取消", exact: true }).click();
+  const duplicate = await copyServer(page);
+  await expect(copy).toHaveCount(0);
+  await duplicate.getByRole("button", { name: "取消", exact: true }).click();
+  await page.locator('.server-row[data-server-id="a"]').click();
+  await editSelected(page);
+  for (const type of ["agent", "key"]) {
+    await page.getByLabel("认证方式").selectOption(type);
+    await expect(copy).toHaveCount(0);
+  }
+  await page.getByLabel("认证方式").selectOption("password");
+  await expect(copy).toBeEnabled();
+  // A retained old password on an Agent configuration is not a copyable password login.
+  await page.getByLabel("认证方式").selectOption("agent");
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await editSelected(page);
+  await page.getByLabel("认证方式").selectOption("password");
+  await expect(copy).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("saved password copy retries clipboard failures and never shows arbitrary error contents", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await page.locator('.server-row[data-server-id="a"]').click();
+  await editSelected(page);
+  const editor = page.getByRole("dialog", { name: "编辑服务器", exact: true });
+  const copy = editor.getByRole("button", {
+    name: "复制已保存密码",
+    exact: true,
+  });
+  await page.evaluate(() => {
+    (window as any).__TEST__.passwordCopyError = {
+      kind: "clipboard",
+      message: "DO_NOT_DISPLAY_SECRET",
+    };
+  });
+  await copy.click();
+  await expect(
+    editor.locator(".password-copy-feedback [role=alert]"),
+  ).toHaveText("密码复制失败，请重试。");
+  await expect(editor).not.toContainText("DO_NOT_DISPLAY_SECRET");
+  await expect(copy).toBeEnabled();
+  await page.evaluate(() => {
+    delete (window as any).__TEST__.passwordCopyError;
+  });
+  await copy.click();
+  await expect(
+    editor.locator(".password-copy-feedback [role=status]"),
+  ).toHaveText("密码已复制");
+  await expect(
+    editor.locator(".password-copy-feedback [role=alert]"),
+  ).toHaveText("");
+  expect(errors).toEqual([]);
+});
+
+for (const missing of ["password", "server"] as const) {
+  test(`saved password copy reports removed ${missing} and keeps the draft`, async ({
+    page,
+  }) => {
+    const errors = await setup(page);
+    await page.locator('.server-row[data-server-id="a"]').click();
+    await editSelected(page);
+    const editor = page.getByRole("dialog", {
+      name: "编辑服务器",
+      exact: true,
+    });
+    const copy = editor.getByRole("button", {
+      name: "复制已保存密码",
+      exact: true,
+    });
+    await editor.getByLabel(/^名称/).fill("Preserved draft");
+    await page.evaluate((missing) => {
+      const state = (window as any).__TEST__;
+      if (missing === "server") state.servers.splice(0, 1);
+      else state.savedPasswords.delete("a");
+    }, missing);
+    await copy.click();
+    await expect(
+      editor.locator(".password-copy-feedback [role=alert]"),
+    ).toHaveText(
+      missing === "server"
+        ? "服务器不存在，请重新打开编辑窗口。"
+        : "此服务器没有已保存的密码。",
+    );
+    await expect(copy).toBeDisabled();
+    await expect(editor.getByLabel(/^名称/)).toHaveValue("Preserved draft");
+    await editor.getByLabel("密码", { exact: true }).fill("new-draft");
+    await expect(copy).toBeDisabled();
+    await expect(
+      editor.getByRole("status").filter({ hasText: "已保存密码不可用" }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(() => (window as any).__TEST__.passwordCopies),
+    ).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+}
+
+for (const change of [
+  "password",
+  "auth",
+  "discard",
+  "close",
+  "save",
+] as const) {
+  test(`saved password copy ignores a late completion after ${change}`, async ({
+    page,
+  }) => {
+    const errors = await setup(page);
+    await page.locator('.server-row[data-server-id="a"]').click();
+    await editSelected(page);
+    const editor = page.getByRole("dialog", {
+      name: "编辑服务器",
+      exact: true,
+    });
+    const copy = editor.getByRole("button", {
+      name: "复制已保存密码",
+      exact: true,
+    });
+    await page.evaluate(() => {
+      (window as any).__TEST__.delayPasswordCopy = true;
+    });
+    // Same-turn clicks exercise the ref guard before React can render disabled.
+    await copy.evaluate((element: HTMLButtonElement) => {
+      element.click();
+      element.click();
+    });
+    await expect(copy).toBeDisabled();
+    await expect(copy).toHaveAttribute("aria-busy", "true");
+    expect(
+      await page.evaluate(
+        () =>
+          (window as any).__TEST__.calls.filter(
+            (c: any) => c.command === "copy_saved_server_password",
+          ).length,
+      ),
+    ).toBe(1);
+    if (change === "password")
+      await editor.getByLabel("密码", { exact: true }).fill("later-draft");
+    else if (change === "auth")
+      await editor.getByLabel("认证方式").selectOption("agent");
+    else if (change === "discard") {
+      await editor.getByLabel(/^名称/).fill("Draft");
+      await editor.getByRole("button", { name: "取消", exact: true }).click();
+      await expect(
+        editor.getByRole("button", { name: "继续编辑" }),
+      ).toBeFocused();
+    } else
+      await editor
+        .getByRole("button", {
+          name: change === "save" ? "保存" : "取消",
+          exact: true,
+        })
+        .click();
+    if (change === "close" || change === "save") {
+      await expect(editor).toHaveCount(0);
+      await editSelected(page);
+    }
+    await page.evaluate(() => {
+      (window as any).__TEST__.finishPasswordCopy();
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as any).__TEST__.passwordCopies.length),
+      )
+      .toBe(1);
+    if (change === "auth")
+      await editor.getByLabel("认证方式").selectOption("password");
+    if (change === "discard")
+      await editor.getByRole("button", { name: "继续编辑" }).click();
+    await expect(copy).toBeEnabled();
+    await expect(editor.locator(".password-copy-feedback")).toHaveText("");
+    expect(errors).toEqual([]);
+  });
+}
+
+test("saved password copy feedback stays readable in themes, narrow layouts and reduced motion", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await page.locator('.server-row[data-server-id="a"]').click();
+  for (const variant of [
+    { name: "light", theme: "light" as const, width: 1360, height: 900 },
+    { name: "dark", theme: "dark" as const, width: 860, height: 580 },
+    { name: "narrow", theme: "light" as const, width: 688, height: 464 },
+  ]) {
+    await selectTheme(page, variant.theme);
+    await page.setViewportSize({
+      width: variant.width,
+      height: variant.height,
+    });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await editSelected(page);
+    const editor = page.getByRole("dialog", {
+      name: "编辑服务器",
+      exact: true,
+    });
+    const copy = editor.getByRole("button", {
+      name: "复制已保存密码",
+      exact: true,
+    });
+    await copy.click();
+    await expect(
+      editor.locator(".password-copy-feedback [role=status]"),
+    ).toHaveText("密码已复制");
+    await expect(copy).toBeInViewport();
+    await expect(
+      editor.getByRole("button", { name: "保存", exact: true }),
+    ).toBeInViewport();
+    expect(
+      await editor.evaluate(
+        (element) => element.scrollWidth <= element.clientWidth,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: `.qa/server-password-copy-${variant.name}.png`,
+    });
+    await editor.getByRole("button", { name: "取消", exact: true }).click();
+  }
+  expect(errors).toEqual([]);
+});
+
+test("saved password copy remains available in forced-colors mode", async ({
+  page,
+  browserName,
+}) => {
+  test.skip(
+    browserName !== "chromium",
+    "forced-colors emulation is Chromium-only",
+  );
+  const errors = await setup(page);
+  await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
+  await page.locator('.server-row[data-server-id="a"]').click();
+  await editSelected(page);
+  const editor = page.getByRole("dialog", {
+    name: "编辑服务器",
+    exact: true,
+  });
+  const copy = editor.getByRole("button", {
+    name: "复制已保存密码",
+    exact: true,
+  });
+  await expect(copy).toBeVisible();
+  await copy.click();
+  await expect(
+    editor.locator(".password-copy-feedback [role=status]"),
+  ).toHaveText("密码已复制");
+  await expect(
+    editor.getByRole("button", { name: "保存", exact: true }),
+  ).toBeInViewport();
+  expect(
+    await editor.evaluate(
+      (element) => element.scrollWidth <= element.clientWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({ path: ".qa/server-password-copy-forced-colors.png" });
   expect(errors).toEqual([]);
 });
 

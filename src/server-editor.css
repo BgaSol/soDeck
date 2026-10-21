@@ -82,3 +82,40 @@ dialog.editor-dialog {
 .editor-dialog .form-columns > label {
   align-content: start;
 }
+
+.editor-dialog .password-saved-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+}
+.editor-dialog .password-copy-button {
+  min-height: 2.5rem;
+  min-width: 10rem;
+  padding-inline: 0.625rem;
+  font-size: var(--font-secondary);
+}
+.editor-dialog .password-copy-button:active:not(:disabled) {
+  background: var(--selected);
+}
+.editor-dialog .password-field-footer {
+  align-items: flex-start;
+}
+.editor-dialog .password-field-footer .field-help {
+  flex: 1 1 15rem;
+}
+.editor-dialog .password-copy-feedback {
+  min-height: 1.5em;
+  font-size: var(--font-secondary);
+  line-height: 1.5;
+  color: var(--muted);
+}
+.editor-dialog .password-copy-feedback [role="status"] {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.editor-dialog .password-copy-feedback svg {
+  flex-shrink: 0;
+}

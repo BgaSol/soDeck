@@ -67,6 +67,7 @@ pub fn known_command(command: &str) -> bool {
             | "reset_incompatible_database"
             | "save_server"
             | "duplicate_server"
+            | "copy_saved_server_password"
             | "delete_server"
             | "session_count"
             | "quit_app"

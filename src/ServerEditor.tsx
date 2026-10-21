@@ -4,10 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   Check,
+  Copy,
   Laptop,
   Server as ServerIcon,
   X,
 } from "lucide-react";
+import { api } from "./api";
 import { addTag, addressOf, errorOf } from "./types";
 import { updateDuplicateHost } from "./serverConfiguration";
 import type {
@@ -26,6 +28,9 @@ const fieldOrder = [
   "directPort",
 ] as const;
 type EditorField = (typeof fieldOrder)[number];
+type PasswordCopyState =
+  | { phase: "idle" | "copying" | "copied" }
+  | { phase: "failed"; unavailable: boolean; message: string };
 const fieldLabels: Record<EditorField, string> = {
   name: "名称",
   host: "地址",
@@ -88,6 +93,42 @@ export function ServerEditor({
   const [passwordChange, setPasswordChange] = useState<PasswordChange>({
     type: "keep",
   });
+  const [passwordCopy, setPasswordCopy] = useState<PasswordCopyState>({
+    phase: "idle",
+  });
+  const copyGeneration = useRef(0);
+  const copyPending = useRef<symbol | null>(null);
+  const copyMounted = useRef(false);
+  const showPasswordCopy =
+    !!initial.id &&
+    !duplicateSource &&
+    initial.authType === "password" &&
+    initial.hasSavedPassword &&
+    draft.authType === "password";
+  const passwordCopyUnavailable =
+    passwordCopy.phase === "failed" && passwordCopy.unavailable;
+  useEffect(() => {
+    copyMounted.current = true;
+    setPasswordCopy({ phase: "idle" });
+    return () => {
+      copyMounted.current = false;
+      copyGeneration.current++;
+      copyPending.current = null;
+    };
+  }, [initial.id]);
+  function invalidatePasswordCopy() {
+    copyGeneration.current++;
+    setPasswordCopy((current) =>
+      current.phase === "copying" ||
+      (current.phase === "failed" && current.unavailable)
+        ? current
+        : { phase: "idle" },
+    );
+  }
+  function changePassword(value: PasswordChange) {
+    invalidatePasswordCopy();
+    setPasswordChange(value);
+  }
   const initiallyInherit =
     !!duplicateSource?.hasSavedPassword &&
     duplicateSource.authType === "password";
@@ -166,6 +207,7 @@ export function ServerEditor({
     createInstead;
   const close = () => {
     if (busy) return;
+    invalidatePasswordCopy();
     if (dirty) setConfirmDiscard(true);
     else onClose();
   };
@@ -205,6 +247,7 @@ export function ServerEditor({
       setPasswordChange({ type: "keep" });
     }
     if (key === "authType") {
+      invalidatePasswordCopy();
       setCheckedFields((current) => ({ ...current, privateKey: false }));
     }
     if (key === "jumpServerId" && value === null) {
@@ -216,6 +259,49 @@ export function ServerEditor({
     if (tag.trim()) {
       update("tags", addTag(draft.tags, tag, tags));
       setTag("");
+    }
+  }
+  async function copySavedPassword() {
+    if (
+      !showPasswordCopy ||
+      passwordCopyUnavailable ||
+      copyPending.current ||
+      busy ||
+      submitting.current ||
+      confirmDiscard
+    )
+      return;
+    const request = Symbol();
+    const generation = ++copyGeneration.current;
+    copyPending.current = request;
+    setPasswordCopy({ phase: "copying" });
+    const current = () =>
+      copyMounted.current && copyGeneration.current === generation;
+    try {
+      await api.copySavedServerPassword(initial.id);
+      if (current()) setPasswordCopy({ phase: "copied" });
+    } catch (error) {
+      if (current()) {
+        const failure = errorOf(error);
+        const unavailable = ["notFound", "unavailable"].includes(failure.kind);
+        setPasswordCopy({
+          phase: "failed",
+          unavailable,
+          message: unavailable
+            ? failure.message
+            : failure.kind === "clipboard"
+              ? "密码复制失败，请重试。"
+              : "暂时无法复制已保存密码，请稍后重试。",
+        });
+      }
+    } finally {
+      if (copyPending.current === request) {
+        copyPending.current = null;
+        if (copyMounted.current)
+          setPasswordCopy((state) =>
+            state.phase === "copying" ? { phase: "idle" } : state,
+          );
+      }
     }
   }
   async function submit(connect = false) {
@@ -243,6 +329,7 @@ export function ServerEditor({
       return;
     }
     submitting.current = true;
+    invalidatePasswordCopy();
     setBusy(true);
     try {
       const policy: DuplicatePasswordPolicy =
@@ -509,23 +596,46 @@ export function ServerEditor({
                 )}
                 <div className="password-field-heading">
                   <label htmlFor="server-password">密码</label>
-                  {draft.hasSavedPassword && (
-                    <span
-                      className={`password-state${passwordChange.type === "clear" ? " pending" : ""}`}
-                      role="status"
-                    >
-                      {passwordChange.type === "clear" ? (
-                        "保存后清空"
-                      ) : passwordChange.type === "set" ? (
-                        "保存后替换"
-                      ) : (
-                        <>
-                          <Check size={13} aria-hidden="true" />
-                          已保存
-                        </>
-                      )}
-                    </span>
-                  )}
+                  <div className="password-saved-actions">
+                    {draft.hasSavedPassword && (
+                      <span
+                        className={`password-state${passwordChange.type === "clear" || passwordCopyUnavailable ? " pending" : ""}`}
+                        role="status"
+                      >
+                        {passwordCopyUnavailable ? (
+                          "已保存密码不可用"
+                        ) : passwordChange.type === "clear" ? (
+                          "保存后清空"
+                        ) : passwordChange.type === "set" ? (
+                          "保存后替换"
+                        ) : (
+                          <>
+                            <Check size={13} aria-hidden="true" />
+                            已保存
+                          </>
+                        )}
+                      </span>
+                    )}
+                    {showPasswordCopy && (
+                      <button
+                        type="button"
+                        className="quiet password-copy-button"
+                        aria-label="复制已保存密码"
+                        aria-describedby="server-password-help server-password-copy-feedback"
+                        aria-busy={passwordCopy.phase === "copying"}
+                        disabled={
+                          passwordCopy.phase === "copying" ||
+                          passwordCopyUnavailable
+                        }
+                        onClick={() => void copySavedPassword()}
+                      >
+                        <Copy size={14} aria-hidden="true" />
+                        {passwordCopy.phase === "copying"
+                          ? "复制中…"
+                          : "复制已保存密码"}
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <input
                   id="server-password"
@@ -536,7 +646,7 @@ export function ServerEditor({
                     passwordChange.type === "set" ? passwordChange.value : ""
                   }
                   onChange={(e) =>
-                    setPasswordChange(
+                    changePassword(
                       e.target.value
                         ? { type: "set", value: e.target.value }
                         : { type: "keep" },
@@ -545,27 +655,37 @@ export function ServerEditor({
                   placeholder={
                     source && inheritPassword && passwordChange.type === "keep"
                       ? "复用来源密码，输入新密码可替换"
-                      : draft.hasSavedPassword && passwordChange.type === "keep"
+                      : draft.hasSavedPassword &&
+                          !passwordCopyUnavailable &&
+                          passwordChange.type === "keep"
                         ? "已保存密码，输入新密码以替换"
                         : "留空则在连接时输入"
                   }
                 />
                 <div className="password-field-footer">
                   <small className="field-help" id="server-password-help">
-                    {source && inheritPassword && passwordChange.type === "keep"
-                      ? "保存时由本机继承密码；之后修改来源密码不会影响副本。"
-                      : passwordChange.type === "clear"
-                        ? "下次连接时重新输入。"
-                        : source && passwordChange.type === "keep"
-                          ? "未保存密码，连接时输入。"
-                          : "密码保存在本机，连接时自动使用。"}
+                    {passwordCopyUnavailable
+                      ? "请重新打开编辑窗口以获取最新配置。"
+                      : showPasswordCopy && passwordChange.type === "set"
+                        ? "复制的是已保存密码，新密码保存后才生效。"
+                        : showPasswordCopy && passwordChange.type === "clear"
+                          ? "保存后清空，当前仍可复制已保存密码。"
+                          : source &&
+                              inheritPassword &&
+                              passwordChange.type === "keep"
+                            ? "保存时由本机继承密码；之后修改来源密码不会影响副本。"
+                            : passwordChange.type === "clear"
+                              ? "下次连接时重新输入。"
+                              : source && passwordChange.type === "keep"
+                                ? "未保存密码，连接时输入。"
+                                : "密码保存在本机，连接时自动使用。"}
                   </small>
                   {draft.hasSavedPassword && (
                     <button
                       type="button"
                       className="quiet password-action"
                       onClick={() =>
-                        setPasswordChange(
+                        changePassword(
                           passwordChange.type === "clear"
                             ? { type: "keep" }
                             : { type: "clear" },
@@ -578,6 +698,30 @@ export function ServerEditor({
                     </button>
                   )}
                 </div>
+                {showPasswordCopy && (
+                  <div
+                    className="password-copy-feedback"
+                    id="server-password-copy-feedback"
+                  >
+                    <span role="status" aria-atomic="true">
+                      {passwordCopy.phase === "copying" &&
+                        "正在复制已保存密码…"}
+                      {passwordCopy.phase === "copied" && (
+                        <>
+                          <Check size={13} aria-hidden="true" />
+                          密码已复制
+                        </>
+                      )}
+                    </span>
+                    <span
+                      className="field-error"
+                      role="alert"
+                      aria-atomic="true"
+                    >
+                      {passwordCopy.phase === "failed" && passwordCopy.message}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
             {draft.authType === "key" && (

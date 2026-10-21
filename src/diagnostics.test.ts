@@ -77,6 +77,51 @@ describe("local diagnostic boundary", () => {
     ]);
   });
 
+  it("copies a saved password by ID and records only operation metadata", async () => {
+    const { api } = await import("./api");
+    const { flushDiagnostics } = await import("./diagnostics");
+    await expect(
+      api.copySavedServerPassword("fixture-server"),
+    ).resolves.toBeUndefined();
+    const request = invoke.mock.calls.find(
+      ([command]) => command === "copy_saved_server_password",
+    );
+    expect(request?.[1]).toEqual({
+      id: "fixture-server",
+      diagnosticTraceId: expect.any(String),
+    });
+    invoke.mockImplementation(async (command: string) => {
+      if (command === "copy_saved_server_password")
+        throw {
+          kind: "clipboard",
+          message: "SECRET_PASSWORD clipboard payload",
+        };
+    });
+    await expect(
+      api.copySavedServerPassword("fixture-server"),
+    ).rejects.toMatchObject({ kind: "clipboard" });
+    await flushDiagnostics();
+    const events = invoke.mock.calls
+      .filter(([command]) => command === "append_frontend_diagnostics")
+      .flatMap(([, args]) => args.events);
+    expect(events.filter((event: any) => event.event === "invoke.end")).toEqual(
+      [
+        expect.objectContaining({
+          command: "copy_saved_server_password",
+          outcome: "ok",
+        }),
+        expect.objectContaining({
+          command: "copy_saved_server_password",
+          outcome: "failed",
+          errorCode: "clipboard",
+        }),
+      ],
+    );
+    expect(JSON.stringify(events)).not.toMatch(
+      /SECRET_PASSWORD|clipboard payload|fixture-server/,
+    );
+  });
+
   it("reports bounded queue loss at flush even without another user operation", async () => {
     const api = await import("./diagnostics");
     for (let i = 0; i < 300; i++)

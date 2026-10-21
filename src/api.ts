@@ -19,6 +19,8 @@ export const api = {
     invoke<Server>("save_server", { server }),
   duplicateServer: (request: DuplicateServerRequest) =>
     invoke<Server>("duplicate_server", { request }),
+  copySavedServerPassword: (id: string) =>
+    invoke<void>("copy_saved_server_password", { id }),
   deleteServer: (id: string) => invoke<void>("delete_server", { id }),
   directory: (sessionId: string, path?: string) =>
     invoke<Directory>("list_directory", { sessionId, path: path || null }),

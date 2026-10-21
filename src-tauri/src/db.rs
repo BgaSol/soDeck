@@ -159,6 +159,28 @@ impl Database {
             .find(|s| s.id == id)
             .ok_or_else(|| AppError::new("notFound", "服务器不存在"))
     }
+    pub fn saved_password_for_copy(&self, id: &str) -> AppResult<String> {
+        if id.is_empty() {
+            return Err(AppError::new("validation", "请选择已保存的服务器。"));
+        }
+        self.validate_schema()?;
+        let (auth_type, password): (String, String) = self
+            .connection
+            .query_row(
+                "SELECT auth_type,password FROM servers WHERE id=?",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?
+            .ok_or_else(|| AppError::new("notFound", "服务器不存在，请重新打开编辑窗口。"))?;
+        if auth_type != "password" {
+            return Err(AppError::new("unavailable", "此服务器当前未使用密码认证。"));
+        }
+        if password.is_empty() {
+            return Err(AppError::new("unavailable", "此服务器没有已保存的密码。"));
+        }
+        Ok(password)
+    }
     pub fn update_direct_endpoint(&mut self, id: &str, host: String, port: u16) -> AppResult<()> {
         let mut server = self.get(id)?;
         server.direct_host = Some(host);
@@ -639,6 +661,95 @@ mod tests {
         assert!(db.save_password("missing", "other").is_err());
         db.delete(&id).unwrap();
         assert!(db.list().unwrap().is_empty());
+    }
+    #[test]
+    fn saved_password_copy_reads_exact_current_value_without_changing_configuration() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("servers.db");
+        let password = "  密码'\"$\\\n  ";
+        let mut value = server();
+        value.auth_type = "password".into();
+        value.password = password.into();
+        let id = Database::open(&path)
+            .unwrap()
+            .save_config(value)
+            .unwrap()
+            .id;
+        // Reopen the persisted database, as after an application restart.
+        let db = Database::open(&path).unwrap();
+        db.connection
+            .execute(
+                "UPDATE servers SET updated_at='2000-01-01 00:00:00' WHERE id=?",
+                [&id],
+            )
+            .unwrap();
+        let before = serde_json::to_value(db.get(&id).unwrap().view()).unwrap();
+        for _ in 0..2 {
+            assert_eq!(db.saved_password_for_copy(&id).unwrap(), password);
+        }
+        assert_eq!(
+            serde_json::to_value(db.get(&id).unwrap().view()).unwrap(),
+            before
+        );
+        let updated_at: String = db
+            .connection
+            .query_row("SELECT updated_at FROM servers WHERE id=?", [&id], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(updated_at, "2000-01-01 00:00:00");
+        db.save_password(&id, "replacement").unwrap();
+        assert_eq!(db.saved_password_for_copy(&id).unwrap(), "replacement");
+        db.save_password(&id, "   ").unwrap();
+        assert_eq!(db.saved_password_for_copy(&id).unwrap(), "   ");
+        db.save_password(&id, "").unwrap();
+        assert_eq!(
+            db.saved_password_for_copy(&id).unwrap_err().kind,
+            "unavailable"
+        );
+        db.delete(&id).unwrap();
+        assert_eq!(
+            db.saved_password_for_copy(&id).unwrap_err().kind,
+            "notFound"
+        );
+    }
+    #[test]
+    fn saved_password_copy_rejects_missing_or_inapplicable_credentials() {
+        let mut db = Database::open(Path::new(":memory:")).unwrap();
+        assert_eq!(
+            db.saved_password_for_copy("").unwrap_err().kind,
+            "validation"
+        );
+        assert_eq!(
+            db.saved_password_for_copy("missing").unwrap_err().kind,
+            "notFound"
+        );
+        let mut value = server();
+        value.auth_type = "password".into();
+        value.password = "test-secret".into();
+        let mut saved = db.save_config(value).unwrap();
+        // A crafted ID must not select another server's credentials.
+        assert_eq!(
+            db.saved_password_for_copy("' OR 1=1 --").unwrap_err().kind,
+            "notFound"
+        );
+        for auth_type in ["agent", "key"] {
+            saved.auth_type = auth_type.into();
+            saved.private_key = "fixture-key".into();
+            db.save_config(saved.clone()).unwrap();
+            let error = db.saved_password_for_copy(&saved.id).unwrap_err();
+            assert_eq!(error.kind, "unavailable");
+            assert!(!serde_json::to_string(&error)
+                .unwrap()
+                .contains("test-secret"));
+        }
+        db.connection
+            .execute_batch("ALTER TABLE servers DROP COLUMN password;")
+            .unwrap();
+        assert_eq!(
+            db.saved_password_for_copy(&saved.id).unwrap_err().kind,
+            "databaseSchema"
+        );
     }
     #[test]
     fn jump_constraints_are_bidirectional_and_deletion_is_restricted() {

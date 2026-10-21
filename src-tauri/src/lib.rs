@@ -45,6 +45,7 @@ use std::{
 use tauri::{
     ipc::Channel, Manager, State as TauriState, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
+use tauri_plugin_clipboard_manager::ClipboardExt;
 
 pub struct State {
     port_forwarding: Arc<port_forwarding::PortForwardManager>,
@@ -272,6 +273,29 @@ fn duplicate_server(
     main_only(&window)?;
     let _gate = state.configuration.lock().unwrap();
     state.database.lock().unwrap().duplicate(request)
+}
+
+#[tauri::command]
+async fn copy_saved_server_password(
+    window: WebviewWindow,
+    state: TauriState<'_, Arc<State>>,
+    id: String,
+) -> AppResult<()> {
+    main_only(&window)?;
+    let state = state.inner().clone();
+    let app = window.app_handle().clone();
+    blocking(move || {
+        state.ensure_running()?;
+        let password = {
+            let database = state.database.lock().unwrap();
+            database.saved_password_for_copy(&id)?
+        };
+        // Release the database before writing. Neither IPC nor diagnostics receives the secret.
+        app.clipboard()
+            .write_secret(password)
+            .map_err(|_| AppError::new("clipboard", "密码复制失败，请重试。"))
+    })
+    .await
 }
 
 #[tauri::command]
@@ -813,6 +837,7 @@ pub fn run() {
             reset_incompatible_database,
             save_server,
             duplicate_server,
+            copy_saved_server_password,
             delete_server,
             session_count,
             quit_app,
