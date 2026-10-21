@@ -109,7 +109,7 @@ fn update_target() -> AppResult<String> {
     let arch = std::env::consts::ARCH;
     match std::env::consts::OS {
         "windows" if arch == "x86_64" => Ok("windows-x86_64-nsis".into()),
-        "macos" if matches!(arch, "x86_64" | "aarch64") => Ok(format!("darwin-{arch}")),
+        "macos" if arch == "aarch64" => Ok("darwin-aarch64".into()),
         "linux" if arch == "x86_64" => Ok("linux-x86_64".into()),
         _ => Err(error("当前平台没有对应的升级包，请查看发布页面。")),
     }

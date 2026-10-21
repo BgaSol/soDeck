@@ -20,9 +20,14 @@ import {
 import {
   assetNames,
   collectAssets,
+  platforms,
   writeChecksums,
 } from "./release-assets.mjs";
-import { updateAssetNames, writeUpdateManifest } from "./update-assets.mjs";
+import {
+  updateAssetNames,
+  updateTargets,
+  writeUpdateManifest,
+} from "./update-assets.mjs";
 import { publishRelease } from "./publish-release.mjs";
 
 function temporary(t) {
@@ -147,9 +152,9 @@ test("collect refuses incomplete bundles and ignores unrelated stale versions", 
   );
 });
 
-test("checksums cover exactly six installers and reject missing or empty files", (t) => {
+test("checksums cover exactly five installers and reject missing or empty files", (t) => {
   const directory = installers(t, "1.2.3");
-  assert.equal(writeChecksums(directory, "1.2.3").length, 7);
+  assert.equal(writeChecksums(directory, "1.2.3").length, 6);
   const checksum = readFileSync(join(directory, "SHA256SUMS.txt"), "utf8");
   for (const name of assetNames("1.2.3")) {
     const hash = createHash("sha256")
@@ -162,6 +167,22 @@ test("checksums cover exactly six installers and reject missing or empty files",
   assert.throws(() => writeChecksums(directory, "1.2.3"), /Empty/);
   rmSync(join(directory, name));
   assert.throws(() => writeChecksums(directory, "1.2.3"), /incomplete/);
+});
+
+test("release and updater support Apple Silicon macOS without Intel artifacts", () => {
+  assert.deepEqual(Object.keys(platforms).sort(), [
+    "linux-x64",
+    "macos-arm64",
+    "windows-x64",
+  ]);
+  assert.deepEqual(
+    Object.keys(updateTargets).sort(),
+    Object.keys(platforms).sort(),
+  );
+  assert.ok(!assetNames("1.2.3").some((name) => name.includes("macos_x64")));
+  assert.ok(
+    !updateAssetNames("1.2.3").some((name) => name.includes("macos_x64")),
+  );
 });
 
 function fakeGitHub() {
@@ -250,7 +271,7 @@ test("release is published only after all signed update assets are uploaded and 
     ...args,
     directory: installers(t, checkVersion(), true),
   });
-  assert.equal(state.assets.length, 14);
+  assert.equal(state.assets.length, 11);
   assert.equal(state.events[0], "create-draft");
   assert.equal(state.events.at(-1), "publish");
   assert.equal(state.release.draft, false);
@@ -269,7 +290,7 @@ test("interrupted uploads remain draft and can be retried", async (t) => {
   state.failUpload = false;
   await publishRelease({ ...args, directory });
   assert.equal(state.release.draft, false);
-  assert.equal(state.assets.length, 14);
+  assert.equal(state.assets.length, 11);
 });
 
 test("moved tags and asset corruption never publish a release", async (t) => {
@@ -299,7 +320,11 @@ test("manifest verifies every signature and pins URLs to the tag", (t) => {
     "2026-10-20T00:00:00Z",
     publicKey,
   );
-  assert.equal(Object.keys(manifest.platforms).length, 4);
+  assert.deepEqual(Object.keys(manifest.platforms).sort(), [
+    "darwin-aarch64",
+    "linux-x86_64",
+    "windows-x86_64-nsis",
+  ]);
   for (const item of Object.values(manifest.platforms))
     assert.ok(item.url.includes("/download/v" + version + "/"));
   const name = updateAssetNames(version).find((n) => !n.endsWith(".sig"));

@@ -66,7 +66,7 @@ export async function publishRelease({
     const body = [
       "SoDeck " + tag,
       "",
-      "下载对应系统的安装包：Windows x64（EXE / MSI）、macOS（Apple Silicon / Intel）、Linux x64（DEB / AppImage）。",
+      "下载对应系统的安装包：Windows x64（EXE / MSI）、macOS Apple Silicon、Linux x64（DEB / AppImage）。",
       "",
       "本版本未配置 Windows 商业代码签名及 Apple Developer ID 签名/公证。macOS 包使用 ad-hoc 签名，首次安装可能需要在系统设置中允许打开。",
       "Linux 包在 Ubuntu 24.04 构建；建议在 Ubuntu 24.04 或更新的兼容系统运行。AppImage 下载后需添加执行权限。",

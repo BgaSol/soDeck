@@ -19,11 +19,6 @@ export const updateTargets = {
     suffix: "macos_arm64.app.tar.gz",
     extension: ".app.tar.gz",
   },
-  "macos-x64": {
-    target: "darwin-x86_64",
-    suffix: "macos_x64.app.tar.gz",
-    extension: ".app.tar.gz",
-  },
   "linux-x64": {
     target: "linux-x86_64",
     suffix: "linux_x64.AppImage",

@@ -18,7 +18,6 @@ export const platforms = {
     [".msi", "windows_x64.msi"],
   ],
   "macos-arm64": [[".dmg", "macos_arm64.dmg"]],
-  "macos-x64": [[".dmg", "macos_x64.dmg"]],
   "linux-x64": [
     [".deb", "linux_x64.deb"],
     [".AppImage", "linux_x64.AppImage"],

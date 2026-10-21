@@ -19,9 +19,78 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: desktop-checks-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ !inputs.package }}
+
 jobs:
-  check:
-    name: Check ${{ matrix.platform }}
+  verify:
+    name: Linux checks and integration tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          workspaces: src-tauri -> target
+          key: linux-verification
+      - name: Linux system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev pkg-config libfuse2 libxdo-dev xdg-utils
+      - run: npm ci
+      - name: Release metadata and frontend tests
+        run: |
+          npm run release:check
+          npm run test:release
+          npm test
+      - name: Install browser for updater UI checks
+        run: npx playwright install --with-deps chromium
+      - name: Updater and diagnostic UI checks
+        run: |
+          npm run test:updates
+          npm run test:diagnostics
+      - name: Rust format check
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+      - name: Build frontend assets required by Rust release configuration
+        run: npm run build
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Real OpenSSH and rsync transfer tests
+        run: |
+          docker build -t ssh-workspace-rsync-fixture tests/rsync
+          python3 tests/rsync/environment.py
+          cargo test --manifest-path src-tauri/Cargo.toml --locked --lib rsync_ -- --ignored --test-threads=1
+      - name: Remove transfer test servers
+        if: always()
+        run: |
+          if [ -f .qa/rsync-environment.json ]; then python3 tests/rsync/environment.py stop; fi
+      - name: Docker CLI inspect template compatibility (no daemon required)
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --lib docker_inspect_templates_with_real_cli -- --ignored --nocapture
+      - name: Start isolated nested Docker Engine
+        run: |
+          docker build -t sodeck-docker-engine-fixture tests/docker-engine
+          python3 tests/docker-engine/environment.py
+      - name: Real Engine management and log lifecycle contracts
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --locked --lib docker_engine_management_contract -- --ignored --nocapture --test-threads=1
+          cargo test --manifest-path src-tauri/Cargo.toml --locked --lib docker_engine_log_lifecycle_contract -- --ignored --nocapture --test-threads=1
+      - name: Remove only the recorded test Engine
+        if: always()
+        run: python3 tests/docker-engine/environment.py stop
+
+  build:
+    if: ${{ inputs.package || github.event_name == 'pull_request' }}
+    name: Build ${{ matrix.platform }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -35,10 +104,6 @@ jobs:
             os: macos-15
             target: aarch64-apple-darwin
             # Explicitly keep the app bundle so Tauri emits its signed updater archive.
-            bundles: app,dmg
-          - platform: macos-x64
-            os: macos-15-intel
-            target: x86_64-apple-darwin
             bundles: app,dmg
           - platform: linux-x64
             os: ubuntu-24.04
@@ -56,7 +121,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: ${{ matrix.target }}
-          components: rustfmt
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
         with:
           workspaces: src-tauri -> target
@@ -67,35 +131,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev pkg-config libfuse2 libxdo-dev xdg-utils
       - run: npm ci
-      - run: npm run release:check
-      - run: npm run test:release
-      - run: npm test
-      - name: Install browser for updater UI checks
-        if: runner.os == 'Linux'
-        run: npx playwright install --with-deps chromium
-      - name: Updater UI checks
-        if: runner.os == 'Linux'
-        run: npm run test:updates
-      - name: Local diagnostic UI checks
-        if: runner.os == 'Linux'
-        run: npm run test:diagnostics
-      - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
-      - name: Build frontend assets required by Rust release configuration
-        run: npm run build
-      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
-      - name: Real OpenSSH and rsync transfer tests
-        if: runner.os == 'Linux'
-        run: |
-          docker build -t ssh-workspace-rsync-fixture tests/rsync
-          python3 tests/rsync/environment.py
-          cargo test --manifest-path src-tauri/Cargo.toml --locked --lib rsync_ -- --ignored --test-threads=1
-      - name: Remove transfer test servers
-        if: always() && runner.os == 'Linux'
-        run: |
-          if [ -f .qa/rsync-environment.json ]; then python3 tests/rsync/environment.py stop; fi
-      - name: Compile desktop application
-        if: ${{ !inputs.package }}
-        run: npm run tauri -- build --ci --no-bundle --target ${{ matrix.target }} -- --locked
+      - name: Compile desktop application for pull requests
+        if: ${{ !inputs.package && github.event_name == 'pull_request' }}
+        run: npm run tauri -- build --debug --no-bundle --target ${{ matrix.target }} -- --locked
       - name: Require updater signing key for a tagged build
         if: inputs.package
         shell: bash
@@ -137,39 +175,3 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
-
-  docker-engine:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: 24
-          cache: npm
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
-        with:
-          workspaces: src-tauri -> target
-          key: docker-engine
-      - name: Linux system libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev pkg-config libxdo-dev
-      - run: npm ci
-      - run: npm run build
-      - name: Docker CLI inspect template compatibility (no daemon required)
-        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --lib docker_inspect_templates_with_real_cli -- --ignored --nocapture
-      - name: Start isolated nested Docker Engine
-        run: |
-          docker build -t sodeck-docker-engine-fixture tests/docker-engine
-          python3 tests/docker-engine/environment.py
-      - name: Real Engine management contract
-        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --lib docker_engine_management_contract -- --ignored --nocapture --test-threads=1
-      - name: Real Engine log restart and stop-start contract
-        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --lib docker_engine_log_lifecycle_contract -- --ignored --nocapture --test-threads=1
-      - name: Remove only the recorded test Engine
-        if: always()
-        run: python3 tests/docker-engine/environment.py stop
