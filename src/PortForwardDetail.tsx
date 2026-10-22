@@ -28,6 +28,9 @@ import { PortForwardMenu } from "./PortForwardMenu";
 import { formatMountBytes } from "./remoteMounts";
 import { rate } from "./resourceMonitoring";
 import { errorOf, type Server } from "./types";
+import { NetworkProxyGuide } from "./NetworkProxyGuide";
+import { NetworkProxyProbe } from "./NetworkProxyProbe";
+import type { ProxyProbeRequest } from "./portForwardApi";
 
 export function ForwardStatus({ phase }: { phase: string }) {
   return (
@@ -49,6 +52,8 @@ export function PortForwardDetail({
   onDelete,
   onApply,
   onProbe,
+  onProxyProbe,
+  onCancelProxyProbe,
   onOpenWeb,
 }: {
   view: ForwardView;
@@ -61,6 +66,8 @@ export function PortForwardDetail({
   onDelete: () => void;
   onApply: () => void;
   onProbe: () => void;
+  onProxyProbe: (request: ProxyProbeRequest) => void;
+  onCancelProxyProbe: (probeId: string) => void;
   onOpenWeb: () => void;
 }) {
   const runtime = view.runtime;
@@ -72,6 +79,7 @@ export function PortForwardDetail({
     servers,
   );
   const { settings, hops, local, address, copyable, target } = presentation;
+  const proxy = settings.service.kind === "networkProxy";
   const routeDescription = (route: Server[]) =>
     route.map((s) => `${s.name} (${endpoint(s.host, s.port)})`).join(" → ") ||
     "未配置服务器";
@@ -92,13 +100,18 @@ export function PortForwardDetail({
       setCopyError("无法复制：" + errorOf(e).message);
     }
   }
-  const targetResult = runtime?.targetResult;
-  const targetFailed = ready && targetResult && !targetResult.success;
+  const targetResult = proxy ? null : runtime?.targetResult;
+  const proxyProbe = runtime?.proxy?.lastProbe || null;
+  const targetFailed = !proxy && ready && targetResult && !targetResult.success;
   const diagnosticSummary = runtime?.probeId
     ? "正在测试目标…"
-    : targetResult
-      ? `${targetResult.source === "probe" ? "上次测试" : "最近连接"}${targetResult.success ? "成功" : "失败"} · ${new Date(targetResult.at).toLocaleTimeString()}`
-      : "目标尚未测试";
+    : proxy
+      ? proxyProbe
+        ? `${proxyProbe.success ? "上次测试成功" : "上次测试失败"} · ${new Date(proxyProbe.finishedAt).toLocaleTimeString()}`
+        : "目标尚未测试"
+      : targetResult
+        ? `${targetResult.source === "probe" ? "上次测试" : "最近连接"}${targetResult.success ? "成功" : "失败"} · ${new Date(targetResult.at).toLocaleTimeString()}`
+        : "目标尚未测试";
   return (
     <>
       <div className="forward-detail-head">
@@ -275,6 +288,12 @@ export function PortForwardDetail({
           </p>
         )}
       </section>
+      {proxy && (
+        <NetworkProxyGuide
+          address={address || null}
+          ready={ready}
+        />
+      )}
       <section>
         <div className="forward-section-head">
           <h3>转发路径</h3>
@@ -338,38 +357,60 @@ export function PortForwardDetail({
           <small>{diagnosticSummary}</small>
         </summary>
         <div className="forward-diagnostics-body">
-          <div className="forward-probe">
-            <div>
-              <strong>
-                {runtime?.probeId
-                  ? "正在测试目标连接…"
-                  : targetResult
-                    ? targetResult.success
-                      ? "目标连接成功"
-                      : "目标连接失败"
-                    : "目标尚未测试"}
-              </strong>
-              {targetResult && (
-                <p>
-                  {targetResult.message}
-                  <br />
-                  <time>
-                    {new Date(targetResult.at).toLocaleString()}
-                  </time> ·{" "}
-                  {targetResult.source === "probe"
-                    ? "主动 TCP 测试"
-                    : "业务连接结果"}
+          {proxy ? (
+            <>
+              <NetworkProxyProbe
+                view={view}
+                ready={ready}
+                busy={busy}
+                onStart={onProxyProbe}
+                onCancel={onCancelProxyProbe}
+              />
+              {runtime?.proxy?.lastConnection && (
+                <p className="field-help">
+                  最近连接：{runtime.proxy.lastConnection.host}:{runtime.proxy.lastConnection.port} · {runtime.proxy.lastConnection.message}
                 </p>
               )}
-            </div>
-            <button disabled={!ready || busy} onClick={onProbe}>
-              {runtime?.probeId ? "取消测试" : "测试目标连接"}
-            </button>
-          </div>
-          <p className="field-help">
-            目标由最终 SSH 服务器访问和解析。测试只建立并关闭 TCP
-            连接，不发送业务请求；结果代表测试时刻，服务端可能记录这次连接。
-          </p>
+              <p className="field-help">
+                目标主机名由最终 SSH 节点解析；单个目标失败不会停止整条 SSH 路径。
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="forward-probe">
+                <div>
+                  <strong>
+                    {runtime?.probeId
+                      ? "正在测试目标连接…"
+                      : targetResult
+                        ? targetResult.success
+                          ? "目标连接成功"
+                          : "目标连接失败"
+                        : "目标尚未测试"}
+                  </strong>
+                  {targetResult && (
+                    <p>
+                      {targetResult.message}
+                      <br />
+                      <time>
+                        {new Date(targetResult.at).toLocaleString()}
+                      </time> ·{" "}
+                      {targetResult.source === "probe"
+                        ? "主动 TCP 测试"
+                        : "业务连接结果"}
+                    </p>
+                  )}
+                </div>
+                <button disabled={!ready || busy} onClick={onProbe}>
+                  {runtime?.probeId ? "取消测试" : "测试目标连接"}
+                </button>
+              </div>
+              <p className="field-help">
+                目标由最终 SSH 服务器访问和解析。测试只建立并关闭 TCP
+                连接，不发送业务请求；结果代表测试时刻，服务端可能记录这次连接。
+              </p>
+            </>
+          )}
           {runtime && (
             <p className="field-help">
               本次运行开始于 {new Date(runtime.startedAt).toLocaleString()}

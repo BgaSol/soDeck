@@ -43,6 +43,8 @@ import "./terminal-history.css";
 
 export function TerminalWorkspace(props: TerminalPaneProps) {
   const live = useRef<TerminalController>(null);
+  const history = useRef<HTMLDivElement>(null);
+  const moving = useRef(false);
   const [clipboardState, setClipboardState] = useState(emptyClipboardState);
   const settings = useSystemSettings();
   const labels = shortcutLabels(
@@ -69,6 +71,17 @@ export function TerminalWorkspace(props: TerminalPaneProps) {
   useImperativeHandle(
     props.controllerRef,
     () => ({
+      focus: () => {
+        if (
+          !(props.active ?? true) ||
+          !(props.interactive ?? true) ||
+          moving.current ||
+          document.querySelector("dialog[open]")
+        )
+          return;
+        if (mode === "history") history.current?.focus({ preventScroll: true });
+        else live.current?.focus();
+      },
       clipboard: {
         copySelection: async () => {
           await live.current?.clipboard.copySelection();
@@ -83,17 +96,28 @@ export function TerminalWorkspace(props: TerminalPaneProps) {
       },
       prepareMove: async () => {
         if (!live.current) throw new Error("终端尚未准备好");
+        moving.current = true;
+        let snapshot;
+        try {
+          snapshot = await live.current.prepareMove();
+        } catch (e) {
+          moving.current = false;
+          throw e;
+        }
         return {
-          ...(await live.current.prepareMove()),
+          ...snapshot,
           historyBinding: binding,
           historyMode: mode,
           historyPosition: position.current,
         };
       },
-      cancelMove: async () => live.current?.cancelMove(),
+      cancelMove: async () => {
+        moving.current = false;
+        await live.current?.cancelMove();
+      },
       clearDisplay: async () => live.current?.clearDisplay(),
     }),
-    [binding, mode],
+    [binding, mode, props.active, props.interactive],
   );
   useEffect(() => {
     if (!binding) return;
@@ -286,7 +310,12 @@ export function TerminalWorkspace(props: TerminalPaneProps) {
           />
         </div>
         {mode === "history" && (
-          <div className="terminal-history-layer">
+          <div
+            className="terminal-history-layer"
+            ref={history}
+            tabIndex={-1}
+            aria-label="终端历史显示"
+          >
             <Suspense fallback={<div role="status">正在打开历史…</div>}>
               <TerminalHistoryView
                 binding={binding}

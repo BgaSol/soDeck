@@ -1,6 +1,6 @@
 {
   "name": "sodeck",
-  "version": "0.1.5",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -21,6 +21,7 @@
     "test:desktop": "playwright test",
     "test:settings": "playwright test --config playwright.settings.config.ts",
     "test:tree": "playwright test --config playwright.file-tree.config.ts",
+    "test:workspace-tools": "playwright test --config playwright.workspace-tools.config.ts",
     "test:resources": "playwright test --config playwright.resources.config.ts",
     "test:mounts": "playwright test --config playwright.mounts.config.ts",
     "test:docker": "playwright test --config playwright.docker.config.ts",

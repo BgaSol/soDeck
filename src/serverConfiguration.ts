@@ -1,4 +1,9 @@
-import type { Server, ServerDraft } from "./types";
+import type {
+  Server,
+  ServerDraft,
+  PasswordChange,
+  DuplicatePasswordPolicy,
+} from "./types";
 
 export function duplicateDraft(source: Server, servers: Server[]): Server {
   const suffix = " - 副本";
@@ -28,17 +33,38 @@ export function configurationFields(server: Server): ServerDraft {
   };
 }
 
-export function updateDuplicateHost(
+export function createServerName(
   draft: Server,
-  host: string,
   source: Server,
-  directEdited: boolean,
-): Server {
-  return {
-    ...draft,
-    host,
-    ...(!directEdited && source.directHost && host.trim() !== source.host.trim()
-      ? { directHost: null, directPort: 22 }
-      : {}),
-  };
+  servers: Server[],
+): string {
+  return source.id && draft.name.trim() === source.name.trim()
+    ? duplicateDraft(source, servers).name
+    : draft.name;
+}
+
+export function duplicatePasswordPolicy(
+  source: Server,
+  draft: Server,
+  change: PasswordChange,
+): DuplicatePasswordPolicy {
+  if (draft.authType !== "password" || change.type === "clear")
+    return { type: "clear" };
+  if (change.type === "set") return change;
+  return source.authType === "password" && source.hasSavedPassword
+    ? { type: "inherit" }
+    : { type: "clear" };
+}
+
+export function needsDirectAddressReview(
+  draft: Server,
+  source: Server,
+): boolean {
+  return (
+    !!source.id &&
+    !!source.directHost &&
+    draft.host.trim() !== source.host.trim() &&
+    draft.directHost === source.directHost &&
+    draft.directPort === source.directPort
+  );
 }

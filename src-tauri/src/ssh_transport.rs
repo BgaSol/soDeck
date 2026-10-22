@@ -1,6 +1,7 @@
 //! Socket ownership and bounded, cancellable SSH direct-tcpip forwarding.
 pub mod forwarding;
 mod meter;
+pub mod pipe;
 mod resolver;
 use crate::model::{AppError, AppResult};
 use ssh2::Session;

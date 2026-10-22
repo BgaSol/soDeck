@@ -5,11 +5,9 @@ import {
   Copy,
   Laptop,
   LockKeyhole,
-  Pencil,
   Server as ServerIcon,
-  Terminal,
 } from "lucide-react";
-import { desktop } from "./api";
+import { ServerActions } from "./ServerActions";
 import { addressOf, type Server } from "./types";
 
 interface Props {
@@ -18,11 +16,14 @@ interface Props {
   sessions: number;
   pending: { busy: boolean; error?: string } | null;
   canConnect: boolean;
+  canNewSession: boolean;
   failed: boolean;
   focusRequested: boolean;
-  onConnect: (server: Server) => void;
+  onConnect: (server: Server, forceNew?: boolean) => void;
   onEdit: (server: Server) => void;
   onCopy: (server: Server) => void;
+  onForward: (server: Server) => void;
+  onDelete: (server: Server) => void;
   onCopyAddress: (server: Server) => void;
   onBack: () => void;
 }
@@ -33,11 +34,14 @@ export function ServerDetails({
   sessions,
   pending,
   canConnect,
+  canNewSession,
   failed,
   focusRequested,
   onConnect,
   onEdit,
   onCopy,
+  onForward,
+  onDelete,
   onCopyAddress,
   onBack,
 }: Props) {
@@ -70,15 +74,6 @@ export function ServerDetails({
               <ArrowLeft size={16} />
               返回列表
             </button>
-            <button
-              className="quiet detail-edit"
-              onClick={() => onEdit(server)}
-              disabled={!desktop || !!pending}
-              title="编辑服务器配置"
-            >
-              <Pencil size={15} />
-              编辑
-            </button>
           </div>
           <div className="server-detail-content">
             <header className="server-detail-heading">
@@ -107,26 +102,19 @@ export function ServerDetails({
               <span className="detail-state-scope">本窗口</span>
             </div>
             <div className="server-detail-actions">
-              <button
-                className="primary"
-                disabled={!canConnect}
-                onClick={() => onConnect(server)}
-              >
-                <Terminal size={16} />
-                {sessions
-                  ? "进入已有会话"
-                  : pending?.busy
-                    ? "正在连接"
-                    : "连接服务器"}
-              </button>
-              <button
-                className="detail-copy"
-                disabled={!desktop}
-                onClick={() => onCopy(server)}
-              >
-                <Copy size={15} />
-                复制配置
-              </button>
+              <ServerActions
+                server={server}
+                connected={sessions > 0}
+                connecting={!!pending?.busy}
+                canConnect={canConnect}
+                canNewSession={canNewSession}
+                deleteBlocked={!!pending}
+                onConnect={onConnect}
+                onEdit={onEdit}
+                onCopy={onCopy}
+                onForward={onForward}
+                onDelete={onDelete}
+              />
             </div>
             <section className="server-detail-section" aria-label="连接信息">
               <h3>连接信息</h3>

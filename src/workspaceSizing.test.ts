@@ -1,64 +1,93 @@
 import { describe, expect, it } from "vitest";
-import {
-  defaultWorkspaceView,
-  fitWorkspaceLayout,
-  normalizeWorkspaceView,
-  workspaceVisibility,
-} from "./workspaceSizing";
-describe("workspace sizing", () => {
-  it("uses the available workspace width and reserves 320px for a visible terminal", () => {
-    for (const width of [320, 650, 759, 760, 860, 1199, 1200, 1440]) {
-      for (const preferred of [
-        undefined,
-        { fileWidth: 520, serviceWidth: 560 },
-        { fileWidth: 280, serviceWidth: 330 },
-      ]) {
-        const result = fitWorkspaceLayout(width, preferred);
-        expect(result.mode).toBe(
-          width >= 1200 ? "three" : width >= 760 ? "two" : "single",
-        );
-        if (result.mode === "three")
-          expect(
-            width - 20 - result.fileWidth - result.serviceWidth,
-          ).toBeGreaterThanOrEqual(320);
-        if (result.mode === "two") {
-          expect(width - 10 - result.serviceWidth).toBeGreaterThanOrEqual(320);
-          expect(width - 10 - result.fileWidth).toBeGreaterThanOrEqual(320);
-        }
-        expect(result.serviceWidth).toBeLessThanOrEqual(480);
-      }
-    }
-  });
-  it("fits without overwriting user widths and compresses files first", () => {
-    const preferred = { fileWidth: 520, serviceWidth: 480 };
-    expect(fitWorkspaceLayout(1200, preferred)).toMatchObject({
-      fileWidth: 380,
-      serviceWidth: 480,
+import { resolveWorkspaceLayout, workspaceMetrics } from "./workspaceSizing";
+import { defaultTools } from "./workspaceTools";
+const both = {
+  ...defaultTools,
+  servicesOpen: true,
+  lastSide: "services" as const,
+  compactPane: "services" as const,
+};
+describe("workspace tool layout", () => {
+  it("docks both tools when they fit and gives priority to the latest side otherwise", () => {
+    expect(resolveWorkspaceLayout({ width: 1440, tools: both })).toMatchObject({
+      mode: "docked",
+      visible: { files: true, terminal: true, services: true },
     });
-    expect(fitWorkspaceLayout(760, preferred).serviceWidth).toBe(430);
-    expect(fitWorkspaceLayout(1440, preferred)).toMatchObject(preferred);
+    for (const width of [1280, 1024])
+      expect(resolveWorkspaceLayout({ width, tools: both })).toMatchObject({
+        visible: { files: false, terminal: true, services: true },
+        services: { placement: "docked", width: 360 },
+      });
+    expect(resolveWorkspaceLayout({ width: 860, tools: both })).toMatchObject({
+      mode: "overlay",
+      services: { placement: "overlay" },
+      terminalVisible: true,
+    });
+    expect(resolveWorkspaceLayout({ width: 650, tools: both }).visible).toEqual(
+      { files: false, terminal: false, services: true },
+    );
+  });
+  it("leaves terminal space, bounds overlays, and displays exactly one compact pane", () => {
+    for (const scale of [1, 1.25, 1.5])
+      for (let width = 260; width <= 2100; width += 13)
+        for (const filesOpen of [false, true])
+          for (const servicesOpen of [false, true]) {
+            const m = workspaceMetrics(scale);
+            const result = resolveWorkspaceLayout({
+              width,
+              metrics: m,
+              tools: { ...both, filesOpen, servicesOpen },
+              preferred: { fileWidth: 520, serviceWidth: 480 },
+            });
+            const { files, services } = result;
+            if (result.mode === "single")
+              expect(
+                Object.values(result.visible).filter(Boolean),
+              ).toHaveLength(1);
+            else {
+              const occupied =
+                2 * m.rail +
+                (files.placement === "docked" ? files.width + m.separator : 0) +
+                (services.placement === "docked"
+                  ? services.width + m.separator
+                  : 0);
+              expect(width - occupied).toBeGreaterThanOrEqual(
+                m.terminal - 0.01,
+              );
+            }
+            for (const panel of [files, services])
+              if (panel.placement === "overlay")
+                expect(panel.width).toBeLessThanOrEqual(width - 2 * m.rail);
+          }
+  });
+  it("compresses rendered width without mutating preferences and recovers it on widening", () => {
+    const preferred = { fileWidth: 520, serviceWidth: 480 };
+    expect(
+      resolveWorkspaceLayout({ width: 1024, tools: both, preferred }).services
+        .width,
+    ).toBe(366);
+    expect(
+      resolveWorkspaceLayout({ width: 1800, tools: both, preferred }),
+    ).toMatchObject({ files: { width: 520 }, services: { width: 480 } });
     expect(preferred).toEqual({ fileWidth: 520, serviceWidth: 480 });
   });
-  it("selects narrow panes and ignores legacy focus mode", () => {
-    expect(workspaceVisibility("single", defaultWorkspaceView)).toEqual({
-      files: false,
-      terminal: true,
-      services: false,
-    });
+  it("initializes narrow windows in the terminal and falls back from a closed compact tool", () => {
     expect(
-      workspaceVisibility("two", { expanded: false, pane: "files" }),
+      resolveWorkspaceLayout({ width: 0, tools: defaultTools }).visible,
+    ).toEqual({ files: false, terminal: true, services: false });
+    expect(
+      resolveWorkspaceLayout({
+        width: 650,
+        tools: { ...both, servicesOpen: false },
+      }).terminalVisible,
+    ).toBe(true);
+  });
+  it("uses the other requested side if the latest side was explicitly closed", () => {
+    expect(
+      resolveWorkspaceLayout({
+        width: 1024,
+        tools: { ...both, servicesOpen: false },
+      }).visible,
     ).toEqual({ files: true, terminal: true, services: false });
-    expect(
-      normalizeWorkspaceView({ expanded: true, pane: "services" }),
-    ).toEqual({ pane: "services" });
-    expect(
-      workspaceVisibility("three", { expanded: true, pane: "services" }),
-    ).toEqual({ files: true, terminal: true, services: true });
-    expect(workspaceVisibility("two", { pane: "services" })).toEqual({
-      files: false,
-      terminal: true,
-      services: true,
-    });
-    expect(normalizeWorkspaceView()).toEqual(defaultWorkspaceView);
   });
 });

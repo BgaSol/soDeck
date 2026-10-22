@@ -1,3 +1,10 @@
+import { createPortal } from "react-dom";
+import { useContext } from "react";
+import {
+  WorkspaceInteractionContext,
+  canRestoreFocus,
+  useWorkspaceDialog,
+} from "./WorkspaceInteractionContext";
 import {
   Fragment,
   useEffect,
@@ -14,6 +21,7 @@ import {
   Link,
   Download,
   Folder,
+  PanelLeftClose,
   FileText,
   Pencil,
   RefreshCw,
@@ -81,10 +89,12 @@ export function FilePanel({
   onStateChange,
   terminalCwd,
   revealRequest,
+  onClose,
 }: {
   sessionId: string | null;
   serverName: string;
   active?: boolean;
+  onClose?: () => void;
   initialState?: FilePanelSnapshot;
   onStateChange?: (state: FilePanelSnapshot) => void;
   terminalCwd?: TerminalDirectory;
@@ -106,7 +116,31 @@ export function FilePanel({
     )
       return;
     appliedReveal.current = revealRequest.sequence;
-    void model.revealPath(revealRequest.path);
+    const origin = document.activeElement;
+    let canceled = false;
+    let frame = 0;
+    void model.revealPath(revealRequest.path).then(() => {
+      if (canceled) return;
+      frame = requestAnimationFrame(() => {
+        const target = rowElements.current.get(model.getState().selected);
+        if (
+          canceled ||
+          model.getState().error ||
+          document.querySelector("dialog[open]") ||
+          (document.activeElement !== origin &&
+            document.activeElement !== document.body) ||
+          !canRestoreFocus(target)
+        )
+          return;
+        setFocusedPath(model.getState().selected);
+        target.focus({ preventScroll: true });
+        target.scrollIntoView({ block: "nearest" });
+      });
+    });
+    return () => {
+      canceled = true;
+      cancelAnimationFrame(frame);
+    };
   }, [active, sessionId, revealRequest, model]);
   const { selected } = state;
   const selection = state.selection ?? (selected ? [selected] : []);
@@ -195,6 +229,8 @@ export function FilePanel({
     path: string;
     session: string | null;
   } | null>(null);
+  useWorkspaceDialog(downloadDialog, "files", !!download);
+  const interaction = useContext(WorkspaceInteractionContext);
   const choosingDownload = useRef(false);
   function beginDownload(file: FileEntry) {
     downloadReturn.current = { path: file.path, session: sessionId };
@@ -211,11 +247,12 @@ export function FilePanel({
     )
       return;
     downloadReturn.current = null;
-    (
+    const target =
       rowElements.current.get(origin.path) ??
       rowElements.current.get(model.getState().selected) ??
-      list.current
-    )?.focus({ preventScroll: true });
+      list.current;
+    if (interaction) interaction.restoreFocus(target, "files");
+    else if (canRestoreFocus(target)) target.focus({ preventScroll: true });
   }
   function closeDownload() {
     setDownload(null);
@@ -655,7 +692,6 @@ export function FilePanel({
 
   useEffect(() => {
     if (download) {
-      downloadDialog.current?.showModal();
       downloadDialog.current
         ?.querySelector<HTMLSelectElement>("select")
         ?.focus();
@@ -730,6 +766,16 @@ export function FilePanel({
             远程文件
           </h2>
           <div className="file-toolbar">
+            {onClose && (
+              <button
+                className="icon-button"
+                aria-label="收起文件面板"
+                title="收起文件面板"
+                onClick={onClose}
+              >
+                <PanelLeftClose size={16} />
+              </button>
+            )}
             <button
               className="icon-button"
               aria-label="新建"
@@ -1500,53 +1546,58 @@ export function FilePanel({
           }}
         />
       )}
-      <dialog
-        ref={downloadDialog}
-        className="download-dialog"
-        aria-labelledby={downloadTitle}
-        onCancel={(event) => {
-          event.preventDefault();
-          closeDownload();
-        }}
-      >
-        <div className="dialog-head">
-          <h2 id={downloadTitle}>下载{download?.isDir ? "文件夹" : "文件"}</h2>
-          <button
-            className="icon-button"
-            aria-label="取消下载"
-            onClick={closeDownload}
-          >
-            <X size={17} />
-          </button>
-        </div>
-        <p className="download-source">{download?.path}</p>
-        <label>
-          本地已有同名文件时
-          <select
-            aria-label="同名文件处理"
-            value={conflict}
-            onChange={(event) =>
-              setConflict(event.target.value as DownloadConflict)
-            }
-          >
-            <option value="rename">保留两份，自动重命名</option>
-            <option value="skip">跳过已有文件</option>
-            <option value="overwrite">覆盖已有文件</option>
-          </select>
-        </label>
-        {download?.isDir && (
-          <p className="muted download-hint">
-            保留目录结构和隐藏文件。符号链接会跳过并在下载结果中说明。
-          </p>
-        )}
-        <div className="dialog-actions">
-          <button onClick={closeDownload}>取消</button>
-          <button className="primary" onClick={() => void startDownload()}>
-            <Download size={15} />
-            选择保存位置
-          </button>
-        </div>
-      </dialog>
+      {createPortal(
+        <dialog
+          ref={downloadDialog}
+          className="download-dialog"
+          aria-labelledby={downloadTitle}
+          onCancel={(event) => {
+            event.preventDefault();
+            closeDownload();
+          }}
+        >
+          <div className="dialog-head">
+            <h2 id={downloadTitle}>
+              下载{download?.isDir ? "文件夹" : "文件"}
+            </h2>
+            <button
+              className="icon-button"
+              aria-label="取消下载"
+              onClick={closeDownload}
+            >
+              <X size={17} />
+            </button>
+          </div>
+          <p className="download-source">{download?.path}</p>
+          <label>
+            本地已有同名文件时
+            <select
+              aria-label="同名文件处理"
+              value={conflict}
+              onChange={(event) =>
+                setConflict(event.target.value as DownloadConflict)
+              }
+            >
+              <option value="rename">保留两份，自动重命名</option>
+              <option value="skip">跳过已有文件</option>
+              <option value="overwrite">覆盖已有文件</option>
+            </select>
+          </label>
+          {download?.isDir && (
+            <p className="muted download-hint">
+              保留目录结构和隐藏文件。符号链接会跳过并在下载结果中说明。
+            </p>
+          )}
+          <div className="dialog-actions">
+            <button onClick={closeDownload}>取消</button>
+            <button className="primary" onClick={() => void startDownload()}>
+              <Download size={15} />
+              选择保存位置
+            </button>
+          </div>
+        </dialog>,
+        document.body,
+      )}
     </section>
   );
 }

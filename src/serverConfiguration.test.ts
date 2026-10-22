@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   configurationFields,
   duplicateDraft,
-  updateDuplicateHost,
+  createServerName,
+  duplicatePasswordPolicy,
+  needsDirectAddressReview,
 } from "./serverConfiguration";
 import { emptyServer, filterServers } from "./types";
 
@@ -42,18 +44,60 @@ describe("server configuration duplication", () => {
     expect(fields).not.toHaveProperty("passwordChange");
     expect(JSON.stringify(fields)).not.toContain("secret");
   });
-  it("clears inherited direct endpoints after host changes, preserves explicitly edited values", () => {
-    const draft = duplicateDraft(original, [original]);
+  it("previews a unique create name without renaming an update or a custom name", () => {
+    expect(createServerName(original, original, [original])).toBe(
+      "Web-01 - 副本",
+    );
     expect(
-      updateDuplicateHost(draft, "other.internal", original, false),
-    ).toMatchObject({ directHost: null, directPort: 22 });
+      createServerName(original, original, [
+        original,
+        { ...original, name: "Web-01 - 副本" },
+      ]),
+    ).toBe("Web-01 - 副本 2");
     expect(
-      updateDuplicateHost(draft, "other.internal", original, true),
-    ).toMatchObject({ directHost: "10.0.0.8", directPort: 2222 });
+      createServerName({ ...original, name: "Other" }, original, [original]),
+    ).toBe("Other");
+    expect(original.name).toBe("Web-01");
+  });
+  it("maps password intent without inheriting for other authentication methods", () => {
     expect(
-      updateDuplicateHost(draft, " host.internal ", original, false).directHost,
-    ).toBe(original.directHost);
-    expect(original.directHost).toBe("10.0.0.8");
+      duplicatePasswordPolicy(original, original, { type: "keep" }).type,
+    ).toBe("inherit");
+    expect(
+      duplicatePasswordPolicy(original, original, { type: "clear" }).type,
+    ).toBe("clear");
+    expect(
+      duplicatePasswordPolicy(original, original, {
+        type: "set",
+        value: "replacement",
+      }),
+    ).toEqual({ type: "set", value: "replacement" });
+    expect(
+      duplicatePasswordPolicy(
+        original,
+        { ...original, authType: "key" },
+        { type: "keep" },
+      ).type,
+    ).toBe("clear");
+    expect(
+      duplicatePasswordPolicy(
+        { ...original, hasSavedPassword: false },
+        original,
+        { type: "keep" },
+      ).type,
+    ).toBe("clear");
+  });
+  it("reminds about unchanged direct endpoints while preserving the visible draft", () => {
+    const draft = { ...original, host: "other.internal" };
+    expect(needsDirectAddressReview(draft, original)).toBe(true);
+    expect(draft.directHost).toBe("10.0.0.8");
+    expect(
+      needsDirectAddressReview(
+        { ...draft, directHost: "other.internal" },
+        original,
+      ),
+    ).toBe(false);
+    expect(needsDirectAddressReview(original, original)).toBe(false);
   });
   it("matches multiple keywords across name, host, user and tags with AND semantics", () => {
     expect(filterServers([original], "生产 deploy host", "生产")).toHaveLength(

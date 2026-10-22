@@ -1,3 +1,5 @@
+import { createPortal } from "react-dom";
+import { useWorkspaceDialog } from "./WorkspaceInteractionContext";
 import { DialogHeader } from "./DialogHeader";
 import { useEffect, useRef, useState } from "react";
 import { ArrowRightLeft, RefreshCw } from "lucide-react";
@@ -23,9 +25,7 @@ export function CopyTargetDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
-  useEffect(() => {
-    dialog.current?.showModal();
-  }, []);
+  useWorkspaceDialog(dialog, "files");
   useEffect(() => {
     let live = true;
     setLoading(true);
@@ -59,7 +59,7 @@ export function CopyTargetDialog({
       setBusy(false);
     }
   }
-  return (
+  return createPortal(
     <dialog
       ref={dialog}
       className="file-operation-dialog"
@@ -147,6 +147,7 @@ export function CopyTargetDialog({
           </button>
         </footer>
       </form>
-    </dialog>
+    </dialog>,
+    document.body,
   );
 }

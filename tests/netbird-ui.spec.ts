@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./workspace-tool-helpers";
 import { test, expect, type Page } from "@playwright/test";
 import { setup } from "./resource-fixture";
 async function netbird(page: Page, path = "independent") {
@@ -213,7 +214,7 @@ async function netbird(page: Page, path = "independent") {
   );
   await page.getByRole("button", { name: "断开", exact: true }).click();
   await page.getByRole("button", { name: "重新连接", exact: true }).click();
-  await page.getByRole("tab", { name: "NetBird", exact: true }).click();
+  await openWorkspaceTool(page, "netbird");
   await expect(page.locator(".nb-summary")).toContainText("已连接");
   return errors;
 }
@@ -244,7 +245,7 @@ test("overview, peer filters, IPv6, detail probe and preserved navigation", asyn
   await expect(panel.locator(".nb-peer-row")).toContainText("中继");
   expect(errors).toEqual([]);
 });
-test("retains stale values and clears diagnostic contents on leaving the page", async ({
+test("retains stale values and diagnostic contents across tool changes", async ({
   page,
 }) => {
   const errors = await netbird(page);
@@ -265,9 +266,9 @@ test("retains stale values and clears diagnostic contents on leaving the page", 
   await page.getByRole("button", { name: "检测与日志", exact: true }).click();
   await page.getByRole("button", { name: "状态原文", exact: true }).click();
   await expect(page.locator(".nb-output pre")).toContainText("daemonStatus");
-  await page.getByRole("tab", { name: "监控", exact: true }).click();
-  await page.getByRole("tab", { name: "NetBird", exact: true }).click();
-  await expect(page.locator(".nb-output")).toHaveCount(0);
+  await openWorkspaceTool(page, "monitor");
+  await openWorkspaceTool(page, "netbird");
+  await expect(page.locator(".nb-output pre")).toContainText("daemonStatus");
   await expect
     .poll(() =>
       page.evaluate(() =>
@@ -302,6 +303,56 @@ for (const path of ["dependent", "unknown"])
       ),
     ).toBe(false);
   });
+test("late preflight waits for its tool, keeps its expiry and survives a narrow layout", async ({
+  page,
+}) => {
+  const errors = await netbird(page);
+  await page.clock.install();
+  await page.evaluate(() => {
+    const w = window as any,
+      base = w.__TAURI_INTERNALS__.invoke;
+    w.__TAURI_INTERNALS__.invoke = async (command: string, args: any) => {
+      const result = await base(command, args);
+      if (command !== "prepare_netbird_operation") return result;
+      return new Promise((resolve) => {
+        w.__releaseNetBirdPreview = () =>
+          resolve({ ...result, expiresAt: Date.now() + 1000 });
+      });
+    };
+  });
+  await page.getByLabel("NetBird 更多操作").click();
+  await page.getByRole("button", { name: "断开 NetBird", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => typeof (window as any).__releaseNetBirdPreview),
+    )
+    .toBe("function");
+  await openWorkspaceTool(page, "monitor");
+  const refresh = page.getByRole("button", { name: "刷新资源监控" });
+  await refresh.focus();
+  await page.evaluate(() => (window as any).__releaseNetBirdPreview());
+  const dialog = page.locator(".nb-confirm");
+  await expect(dialog).toHaveCount(1);
+  await expect(dialog).toBeHidden();
+  await expect(refresh).toBeFocused();
+  await page.clock.fastForward(2000);
+  await openWorkspaceTool(page, "netbird");
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("预检已过期，请关闭后重新检查。");
+  await expect(
+    dialog.getByRole("button", { name: "断开 NetBird", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    dialog.getByRole("button", { name: "取消", exact: true }),
+  ).toBeFocused();
+  await page.setViewportSize({ width: 650, height: 540 });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('[data-tool="netbird"]')).toBeFocused();
+  expect(errors).toEqual([]);
+});
+
 test("deduplicates a lost submit reply, shows verification and reconciles uncertainty", async ({
   page,
 }) => {
@@ -331,20 +382,18 @@ test("deduplicates a lost submit reply, shows verification and reconciles uncert
   await page.getByRole("button", { name: "检查当前状态", exact: true }).click();
   await expect(page.locator(".nb-operations")).toContainText("已完成");
 });
-test("three-tab keyboard navigation, narrow dark panel and reduced motion", async ({
+test("rail keyboard navigation, narrow dark panel and reduced motion", async ({
   page,
 }, testInfo) => {
   const errors = await netbird(page);
   await page.emulateMedia({ reducedMotion: "reduce", contrast: "more" });
-  const tab = page.getByRole("tab", { name: "NetBird", exact: true });
-  await tab.focus();
-  await page.keyboard.press("ArrowRight");
-  await expect(
-    page.getByRole("tab", { name: "监控", exact: true }),
-  ).toBeFocused();
-  await page.keyboard.press("End");
-  await expect(tab).toBeFocused();
-  await expect(tab).toHaveAttribute("aria-selected", "true");
+  const button = page.locator('[data-tool="netbird"]');
+  await button.focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(page.locator('[data-tool="monitor"]')).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(button).toBeFocused();
+  await expect(button).toHaveAttribute("aria-expanded", "true");
   await page.evaluate(() => {
     document.documentElement.dataset.theme = "dark";
     const panel = document.querySelector(

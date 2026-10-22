@@ -32,7 +32,7 @@ export function NetBirdPeerDetail({
       <p className="nb-empty">节点已不在当前快照中。可以返回列表继续查看。</p>
     );
   async function probe() {
-    if (!peer || !sessionId || !token || pending.current) return;
+    if (!enabled || !peer || !sessionId || !token || pending.current) return;
     pending.current = true;
     const current = epoch.current;
     setBusy(true);

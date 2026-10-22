@@ -20,15 +20,17 @@ fn rule(server: &str) -> Rule {
             server_id: server.into(),
             listen_address: "127.0.0.1".into(),
             listen_port: None,
-            target_host: "echo.internal.invalid".into(),
-            target_port: 7,
+            service: Service::PortForward {
+                target_host: "echo.internal.invalid".into(),
+                target_port: 7,
+            },
             auto_reconnect: true,
         },
     }
 }
 fn configure(state: &State, port: u16) -> Rule {
     let server = ServerView {
-        id: "forward-server".into(),
+        id: String::new(),
         name: "仅转发 SSH".into(),
         host: "127.0.0.1".into(),
         port,
@@ -41,7 +43,7 @@ fn configure(state: &State, port: u16) -> Rule {
         direct_host: None,
         direct_port: 22,
     };
-    state
+    let server = state
         .database
         .lock()
         .unwrap()
@@ -54,7 +56,7 @@ fn configure(state: &State, port: u16) -> Rule {
         .unwrap();
     state
         .port_forwarding
-        .with_store(|s| s.save(rule("forward-server")))
+        .with_store(|s| s.save(rule(&server.id)))
         .unwrap()
 }
 fn start(state: &Arc<State>, rule: &Rule) -> Arc<Run> {
@@ -176,7 +178,7 @@ fn forward_worker_lifecycle_reconnect_pinned_identity_and_configuration_snapshot
         state.terminals.lock().unwrap().is_empty(),
         "forward-only account needs no terminal"
     );
-    assert!(state.delete_server("forward-server").is_err());
+    assert!(state.delete_server(&rule.settings.server_id).is_err());
     // Closing the observer leaves the ready path running.
     state
         .port_forwarding
@@ -184,7 +186,7 @@ fn forward_worker_lifecycle_reconnect_pinned_identity_and_configuration_snapshot
     echo(&address);
     // Saved settings must never retarget a live run or its automatic reconnect.
     let mut edited = rule.clone();
-    edited.settings.target_host = "denied.invalid".into();
+    *edited.settings.service.host_mut() = "denied.invalid".into();
     state
         .port_forwarding
         .with_store(|s| s.save(edited))
@@ -324,10 +326,10 @@ fn forward_invalid_listener_and_unknown_schema_do_not_mutate_files() {
     invalid.settings.listen_address = "0.0.0.0".into();
     assert!(invalid.validate().is_err());
     invalid.settings.listen_address = "::1".into();
-    invalid.settings.target_host = "[2001:db8::1]".into();
+    *invalid.settings.service.host_mut() = "[2001:db8::1]".into();
     invalid.validate().unwrap();
-    assert_eq!(invalid.settings.target_host, "2001:db8::1");
-    invalid.settings.target_host = "http://internal/path".into();
+    assert_eq!(*invalid.settings.service.host_mut(), "2001:db8::1");
+    *invalid.settings.service.host_mut() = "http://internal/path".into();
     assert!(invalid.validate().is_err());
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("port-forwards.sqlite");
@@ -528,7 +530,7 @@ fn forward_openssh_restricted_accounts() {
     direct.wait().unwrap();
     echo(&address); // Rule paths must remain independent.
     let mut denied_rule = rule("b");
-    denied_rule.settings.target_host = "forbidden.internal.invalid".into();
+    *denied_rule.settings.service.host_mut() = "forbidden.internal.invalid".into();
     let denied_rule = state
         .port_forwarding
         .with_store(|s| s.save(denied_rule))
@@ -588,7 +590,7 @@ fn forward_cancelled_probe_does_not_publish_late_target_failure() {
     let state = crate::connection::tests::state();
     let _stop = Stop(state.clone());
     let mut denied = configure(&state, fixture.port);
-    denied.settings.target_host = "denied.invalid".into();
+    *denied.settings.service.host_mut() = "denied.invalid".into();
     let denied = state
         .port_forwarding
         .with_store(|s| s.save(denied))
@@ -626,4 +628,152 @@ fn forward_cancelled_probe_does_not_publish_late_target_failure() {
         1,
         "cancelled probe must not publish a late failure or event"
     );
+}
+
+#[test]
+#[ignore = "isolated real SSH; requires Python paramiko"]
+fn forward_proxy_browser_target_timeout_keeps_tunnel_and_existing_connections() {
+    fn http_connect(address: &str) -> TcpStream {
+        let mut client = TcpStream::connect(address).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(18)))
+            .unwrap();
+        client.write_all(b"CONNECT echo.internal.invalid:7 HTTP/1.1\r\nHost: echo.internal.invalid:7\r\n\r\n").unwrap();
+        client
+    }
+    fn header(client: &mut TcpStream) -> String {
+        let mut bytes = Vec::new();
+        while !bytes.ends_with(b"\r\n\r\n") {
+            let mut byte = [0; 1];
+            client.read_exact(&mut byte).unwrap();
+            bytes.push(byte[0]);
+            assert!(bytes.len() < 8192);
+        }
+        String::from_utf8(bytes).unwrap()
+    }
+    let fixture = Fixture::new();
+    let state = crate::connection::tests::state();
+    let _stop = Stop(state.clone());
+    let mut rule = configure(&state, fixture.port);
+    let mut access = state
+        .database
+        .lock()
+        .unwrap()
+        .get(&rule.settings.server_id)
+        .unwrap()
+        .view();
+    access.id.clear();
+    access.name = "现场访问节点".into();
+    access.host = "ssh.internal.invalid".into();
+    access.port = 22;
+    access.jump_server_id = Some(rule.settings.server_id.clone());
+    let access = state
+        .database
+        .lock()
+        .unwrap()
+        .save(SaveServerRequest {
+            server: access,
+            password_change: PasswordChange::Set {
+                value: "test-only".into(),
+            },
+        })
+        .unwrap();
+    rule.id.clear();
+    rule.revision = 0;
+    rule.settings.server_id = access.id;
+    rule.settings.service = Service::NetworkProxy;
+    let rule = state.port_forwarding.with_store(|s| s.save(rule)).unwrap();
+    let run = start(&state, &rule);
+    let mut answered = std::collections::HashSet::new();
+    until(|| {
+        let view = run.view.lock().unwrap().clone();
+        assert!(
+            !run.done.load(Ordering::SeqCst),
+            "proxy failed: {:?}",
+            view.error
+        );
+        if let Some(Prompt {
+            event: ConnectionEvent::HostKeyRequired { challenge },
+            ..
+        }) = view.prompt
+        {
+            if answered.insert(challenge.id.clone()) {
+                run.interaction
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .unwrap()
+                    .1
+                    .answer(&challenge.id, ConnectionAnswer::Trust { accept: true })
+                    .unwrap();
+            }
+        }
+        view.phase == "ready"
+    });
+    assert_eq!(
+        run.view
+            .lock()
+            .unwrap()
+            .connection
+            .as_ref()
+            .unwrap()
+            .hops
+            .len(),
+        2
+    );
+    let address = run.view.lock().unwrap().actual_address.clone().unwrap();
+    let mut existing = http_connect(&address);
+    assert!(header(&mut existing).starts_with("HTTP/1.1 200"));
+    existing.write_all(b"existing browser connection").unwrap();
+
+    let pause = fixture.dir.path().join("pause-forward");
+    std::fs::write(&pause, "pause").unwrap();
+    let mut slow = http_connect(&address);
+    until(|| fixture.dir.path().join("forward-waiting").exists());
+    assert!(header(&mut slow).starts_with("HTTP/1.1 504"));
+    {
+        let view = run.view.lock().unwrap();
+        assert_eq!(view.phase, "ready");
+        assert_eq!(
+            view.attempts, 0,
+            "a target timeout must not trigger SSH reconnect"
+        );
+    }
+    std::fs::remove_file(pause).unwrap();
+    existing.shutdown(Shutdown::Write).unwrap();
+    let mut answer = Vec::new();
+    existing.read_to_end(&mut answer).unwrap();
+    assert_eq!(answer, b"existing browser connection");
+
+    // New SOCKS5 requests share the same listener and verified SSH session.
+    let mut socks = TcpStream::connect(&address).unwrap();
+    socks
+        .set_read_timeout(Some(Duration::from_secs(8)))
+        .unwrap();
+    socks.write_all(&[5, 1, 0]).unwrap();
+    let mut method = [0; 2];
+    socks.read_exact(&mut method).unwrap();
+    assert_eq!(method, [5, 0]);
+    let host = b"echo.internal.invalid";
+    let mut request = vec![5, 1, 0, 3, host.len() as u8];
+    request.extend_from_slice(host);
+    request.extend_from_slice(&7u16.to_be_bytes());
+    socks.write_all(&request).unwrap();
+    let mut reply = [0; 10];
+    socks.read_exact(&mut reply).unwrap();
+    assert_eq!(&reply[..2], &[5, 0]);
+    socks.write_all(b"next browser request").unwrap();
+    socks.shutdown(Shutdown::Write).unwrap();
+    answer.clear();
+    socks.read_to_end(&mut answer).unwrap();
+    assert_eq!(answer, b"next browser request");
+    assert_eq!(run.view.lock().unwrap().attempts, 0);
+    drop((existing, slow, socks));
+    until(|| {
+        state
+            .port_forwarding
+            .total_connections
+            .load(Ordering::SeqCst)
+            == 0
+    });
 }

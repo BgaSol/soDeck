@@ -8,6 +8,7 @@ import {
   type ForwardView,
 } from "./portForwardApi";
 import { PortForwardPath } from "./PortForwardPath";
+import { SSHServerPicker } from "./SSHServerPicker";
 import { sameSettings } from "./portForwardPresentation";
 import {
   draftSettings,
@@ -60,6 +61,7 @@ export function PortForwardEditor({
     draft,
     servers.map((s) => s.id),
   );
+  const proxy = draft.kind === "networkProxy";
   useEffect(() => {
     dialog.current?.showModal();
     dialog.current
@@ -121,8 +123,7 @@ export function PortForwardEditor({
       setTouched({
         name: true,
         serverId: true,
-        targetHost: true,
-        targetPort: true,
+        ...(proxy ? {} : { targetHost: true, targetPort: true }),
         localPort: true,
       });
       dialog.current?.querySelector<HTMLElement>(`#forward-${first}`)?.focus();
@@ -135,7 +136,7 @@ export function PortForwardEditor({
         {
           ...initial,
           name: draft.name.trim(),
-          webScheme: draft.webScheme,
+          webScheme: proxy ? null : draft.webScheme,
           settings: draftSettings(draft),
         },
         !initial.id && start
@@ -197,53 +198,98 @@ export function PortForwardEditor({
               {fieldError("name")}
             </section>
             <section className="forward-form-section">
-              <h3>远程服务</h3>
-              <div className="forward-field">
-                <label htmlFor="forward-serverId">SSH 服务器</label>
-                <select
-                  {...validation("serverId")}
-                  value={draft.serverId}
-                  onChange={(e) => update("serverId", e.target.value)}
+              <h3>转发用途</h3>
+              <div
+                className="forward-service-mode"
+                role="radiogroup"
+                aria-label="转发用途"
+              >
+                <label
+                  className={draft.kind === "portForward" ? "selected" : ""}
                 >
-                  <option value="">请选择服务器</option>
-                  {servers.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} · {s.host}
-                      {s.jumpServerId ? "（经跳板）" : ""}
-                    </option>
-                  ))}
-                </select>
+                  <input
+                    type="radio"
+                    name="forward-kind"
+                    checked={draft.kind === "portForward"}
+                    disabled={!!initial.id}
+                    onChange={() => update("kind", "portForward")}
+                  />
+                  <span>
+                    <strong>固定端口转发</strong>
+                    <small>连接一个固定的现场服务</small>
+                  </span>
+                </label>
+                <label className={proxy ? "selected" : ""}>
+                  <input
+                    type="radio"
+                    name="forward-kind"
+                    checked={proxy}
+                    disabled={!!initial.id}
+                    onChange={() => update("kind", "networkProxy")}
+                  />
+                  <span>
+                    <strong>内网代理</strong>
+                    <small>按请求访问现场网络中的多个服务</small>
+                  </span>
+                </label>
+              </div>
+              {initial.id && (
+                <p className="field-help">
+                  已保存规则的用途不能更改；如需另一种用途，请新建规则。
+                </p>
+              )}
+            </section>
+            <section className="forward-form-section">
+              <h3>{proxy ? "代理路径" : "远程服务"}</h3>
+              <div className="forward-field">
+                <label htmlFor="forward-serverId">SSH 访问节点</label>
+                <SSHServerPicker
+                  {...validation("serverId")}
+                  servers={servers}
+                  value={draft.serverId}
+                  disabled={busy}
+                  onChange={(serverId) => update("serverId", serverId)}
+                />
                 {fieldError("serverId")}
               </div>
-              <div className="forward-fields">
-                <div className="forward-field">
-                  <label htmlFor="forward-targetHost">目标地址</label>
-                  <input
-                    {...validation("targetHost")}
-                    maxLength={253}
-                    value={draft.targetHost}
-                    onChange={(e) => update("targetHost", e.target.value)}
-                    placeholder="主机名或 IP"
-                  />
-                  {fieldError("targetHost")}
-                </div>
-                <div className="forward-field">
-                  <label htmlFor="forward-targetPort">目标端口</label>
-                  <input
-                    {...validation("targetPort")}
-                    inputMode="numeric"
-                    value={draft.targetPort}
-                    onChange={(e) =>
-                      setDraft((d) => updateTargetPort(d, e.target.value))
-                    }
-                    placeholder="1–65535"
-                  />
-                  {fieldError("targetPort")}
-                </div>
-              </div>
-              <p className="field-help">
-                由所选服务器访问；127.0.0.1 表示服务器自身。
-              </p>
+              {proxy ? (
+                <p className="field-help">
+                  一个本地地址同时支持 HTTP 代理和
+                  SOCKS5。目标由每次请求指定，并由最终 SSH 节点解析和访问。
+                </p>
+              ) : (
+                <>
+                  <div className="forward-fields">
+                    <div className="forward-field">
+                      <label htmlFor="forward-targetHost">目标地址</label>
+                      <input
+                        {...validation("targetHost")}
+                        maxLength={253}
+                        value={draft.targetHost}
+                        onChange={(e) => update("targetHost", e.target.value)}
+                        placeholder="主机名或 IP"
+                      />
+                      {fieldError("targetHost")}
+                    </div>
+                    <div className="forward-field">
+                      <label htmlFor="forward-targetPort">目标端口</label>
+                      <input
+                        {...validation("targetPort")}
+                        inputMode="numeric"
+                        value={draft.targetPort}
+                        onChange={(e) =>
+                          setDraft((d) => updateTargetPort(d, e.target.value))
+                        }
+                        placeholder="1–65535"
+                      />
+                      {fieldError("targetPort")}
+                    </div>
+                  </div>
+                  <p className="field-help">
+                    由所选服务器访问；127.0.0.1 表示服务器自身。
+                  </p>
+                </>
+              )}
             </section>
             <section className="forward-form-section">
               <h3>本地访问</h3>
@@ -316,22 +362,25 @@ export function PortForwardEditor({
                       <option value="::1">::1 · IPv6</option>
                     </select>
                   </label>
-                  <label className="forward-field">
-                    网页打开方式
-                    <select
-                      value={draft.webScheme || ""}
-                      onChange={(e) =>
-                        update(
-                          "webScheme",
-                          (e.target.value || null) as ForwardRule["webScheme"],
-                        )
-                      }
-                    >
-                      <option value="">无</option>
-                      <option value="http">HTTP</option>
-                      <option value="https">HTTPS</option>
-                    </select>
-                  </label>
+                  {!proxy && (
+                    <label className="forward-field">
+                      网页打开方式
+                      <select
+                        value={draft.webScheme || ""}
+                        onChange={(e) =>
+                          update(
+                            "webScheme",
+                            (e.target.value ||
+                              null) as ForwardRule["webScheme"],
+                          )
+                        }
+                      >
+                        <option value="">无</option>
+                        <option value="http">HTTP</option>
+                        <option value="https">HTTPS</option>
+                      </select>
+                    </label>
+                  )}
                 </div>
                 <label className="forward-check">
                   <input
@@ -351,9 +400,11 @@ export function PortForwardEditor({
                   : `${draft.listenAddress === "::1" ? "[::1]" : draft.listenAddress}:${draft.localPort || "端口"}`
               }
               target={
-                draft.targetHost
-                  ? `${endpoint(draft.targetHost.replace(/^\[|\]$/g, ""), null).replace(/:自动$/, "")}:${draft.targetPort || "端口"}`
-                  : "目标服务"
+                proxy
+                  ? "现场网络 · 由请求指定目标"
+                  : draft.targetHost
+                    ? `${endpoint(draft.targetHost.replace(/^\[|\]$/g, ""), null).replace(/:自动$/, "")}:${draft.targetPort || "端口"}`
+                    : "目标服务"
               }
             />
             {networkChanged && (

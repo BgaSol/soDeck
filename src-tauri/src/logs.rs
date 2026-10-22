@@ -115,6 +115,26 @@ impl Run {
     }
 }
 impl LogState {
+    pub(crate) fn update_impact_ids(&self) -> Vec<String> {
+        let mut ids = self
+            .workers
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|run| !*run.done.0.lock().unwrap())
+            .map(|run| run.id.clone())
+            .collect::<Vec<_>>();
+        ids.extend(
+            self.jobs
+                .lock()
+                .unwrap()
+                .keys()
+                .map(|id| format!("job:{id}")),
+        );
+        ids.sort();
+        ids
+    }
+
     pub fn has_server(&self, id: &str) -> bool {
         self.windows
             .lock()
@@ -762,6 +782,8 @@ fn cache_root(app: &tauri::AppHandle) -> AppResult<PathBuf> {
         .join("log-snapshots"))
 }
 fn register_job(state: &State, owner: &str, id: &str) -> AppResult<Cancellation> {
+    let _gate = state.configuration.lock().unwrap();
+    state.ensure_running()?;
     if id.is_empty() || id.len() > 128 {
         return Err(AppError::new("validation", "无效任务标识"));
     }

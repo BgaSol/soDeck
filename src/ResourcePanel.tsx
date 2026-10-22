@@ -117,6 +117,7 @@ export function ResourcePanel({
   onChange,
   standalone = false,
   onOpenMetric,
+  navigationSequence = 0,
   onRevealMount,
   onOpenWindow,
 }: {
@@ -125,6 +126,7 @@ export function ResourcePanel({
   preferences: ResourcePreferences;
   onChange: (next: ResourcePreferences) => void;
   standalone?: boolean;
+  navigationSequence?: number;
   onOpenMetric: (metric: ResourceMetric, trigger: HTMLButtonElement) => void;
   onRevealMount?: (path: string) => void;
   onOpenWindow?: () => Promise<void>;
@@ -149,7 +151,7 @@ export function ResourcePanel({
   const back = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (active && detail && !standalone) back.current?.focus();
-  }, [active, detail, standalone, selectedMetric]);
+  }, [detail, standalone, selectedMetric, navigationSequence]);
   useEffect(() => {
     if (active) void store.loadHistory(minutes);
   }, [store, active, minutes]);

@@ -1,5 +1,11 @@
+import { openWorkspaceTool } from "./workspace-tool-helpers";
 import { test, expect, type Page } from "@playwright/test";
-import { setup, row } from "./resource-fixture";
+import { setup as setupFixture, row } from "./resource-fixture";
+async function setup(page: Page, mode: "workspace" | "monitor" = "workspace") {
+  const errors = await setupFixture(page, mode);
+  if (mode === "workspace") await openWorkspaceTool(page, "monitor");
+  return errors;
+}
 const overview = (page: Page) =>
   page.getByRole("region", { name: "服务器资源监控", exact: true });
 const docker = (page: Page) =>
@@ -195,6 +201,8 @@ test("communication has an independent range and a bounded keyboard-accessible p
     overview(page).getByRole("button", { name: "1 小时" }),
   ).toHaveAttribute("aria-pressed", "true");
   await page.setViewportSize({ width: 650, height: 480 });
+  await page.getByRole("button", { name: "返回终端", exact: true }).click();
+  await page.getByRole("button", { name: "通信详情", exact: true }).click();
   await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
   const popover = page.getByRole("dialog", { name: "通信详情" });
   await expect(page.locator(".responsive-workspace")).toHaveAttribute(
@@ -322,8 +330,8 @@ test("communication retains its scope and does not depend on resource or Docker 
   await expect(
     page.getByRole("button", { name: "通信详情", exact: true }),
   ).toBeFocused();
-  await page.getByRole("tab", { name: "Docker", exact: true }).click();
-  await page.getByRole("tab", { name: "监控", exact: true }).click();
+  await openWorkspaceTool(page, "docker");
+  await openWorkspaceTool(page, "monitor");
   await page.getByRole("button", { name: "通信详情", exact: true }).click();
   await expect(
     traffic.getByRole("button", { name: "其中：监控查询" }),
@@ -434,25 +442,13 @@ test("sidebar details and narrow regions keep the same terminal and subscription
       )
       .toBe(true);
     if (width < 760) {
-      await page
-        .getByRole("navigation", { name: "工作区域" })
-        .getByRole("button", { name: "终端", exact: true })
-        .click();
+      await page.getByRole("button", { name: "返回终端", exact: true }).click();
       await expect(overview(page)).toBeHidden();
-      await page
-        .getByRole("navigation", { name: "工作区域" })
-        .getByRole("button", { name: "监控与服务" })
-        .click();
+      await openWorkspaceTool(page, "monitor");
       await expect(overview(page)).toBeVisible();
-      await page
-        .getByRole("navigation", { name: "工作区域" })
-        .getByRole("button", { name: "文件", exact: true })
-        .click();
+      await openWorkspaceTool(page, "files");
       await expect(row(page, "/data")).toBeVisible();
-      await page
-        .getByRole("navigation", { name: "工作区域" })
-        .getByRole("button", { name: "终端", exact: true })
-        .click();
+      await page.getByRole("button", { name: "返回终端", exact: true }).click();
     }
     await page.screenshot({ path: `.qa/workspace-${width}.png` });
   }
@@ -492,7 +488,7 @@ test("Docker virtualizes 200 objects, supports keyboard and preserves filtered o
 }) => {
   const errors = await setup(page);
   await sendContainers(page, 200);
-  await page.getByRole("tab", { name: "Docker", exact: true }).click();
+  await openWorkspaceTool(page, "docker");
   const panel = docker(page),
     list = panel.getByRole("list", { name: "容器列表" });
   await expect(list.locator(".docker-object-row").first()).toContainText(
@@ -533,7 +529,7 @@ test("Docker virtualizes 200 objects, supports keyboard and preserves filtered o
       ),
     )
     .toBe(true);
-  await page.getByRole("tab", { name: "监控", exact: true }).click();
+  await openWorkspaceTool(page, "monitor");
   await expect
     .poll(() =>
       page.evaluate(
@@ -551,7 +547,7 @@ test("Docker keeps row positions until explicit sort or refresh, and health unkn
 }) => {
   const errors = await setup(page);
   await sendContainers(page, 5);
-  await page.getByRole("tab", { name: "Docker", exact: true }).click();
+  await openWorkspaceTool(page, "docker");
   const panel = docker(page),
     list = panel.getByRole("list", { name: "容器列表" });
   await panel
@@ -630,7 +626,7 @@ test("container operations are independent and late failures from old engines ar
           })
         : original(command, args);
   });
-  await page.getByRole("tab", { name: "Docker", exact: true }).click();
+  await openWorkspaceTool(page, "docker");
   const panel = docker(page),
     list = panel.getByRole("list", { name: "容器列表" });
   await list
@@ -677,17 +673,14 @@ test("Docker details stay inside the sidebar at every width", async ({
 }) => {
   const errors = await setup(page);
   await sendContainers(page, 5);
-  await page.getByRole("tab", { name: "Docker", exact: true }).click();
+  await openWorkspaceTool(page, "docker");
   const panel = docker(page);
   await panel.getByRole("list").locator(".docker-object-row").first().click();
   await expect(panel.getByRole("list")).toBeHidden();
   await expect(page.locator(".workspace-terminal")).toBeVisible();
   await page.screenshot({ path: ".qa/docker-detail-light.png" });
   await page.setViewportSize({ width: 650, height: 480 });
-  await page
-    .getByRole("navigation", { name: "工作区域" })
-    .getByRole("button", { name: "监控与服务" })
-    .click();
+  await openWorkspaceTool(page, "docker");
   await expect(panel.getByRole("list")).toBeHidden();
   await expect(panel.getByRole("button", { name: "返回列表" })).toBeVisible();
   await page.screenshot({ path: ".qa/docker-detail-narrow.png" });
@@ -729,6 +722,7 @@ test("mount pinning, search, current mount identity and file reveal share the ex
   );
   await page.getByRole("button", { name: "在远程文件中定位" }).click();
   await expect(row(page, "/data")).toHaveAttribute("aria-selected", "true");
+  await expect(row(page, "/data")).toBeFocused();
   expect(
     await page.evaluate(() =>
       (window as any).__MOUNTS__.calls.filter(
@@ -806,9 +800,11 @@ test("stale metrics remain explicit in dark, reduced-motion and larger-text layo
   });
   await expect(overview(page)).toContainText("资源查询超时");
   await expect(overview(page)).toContainText("缺少 MemAvailable");
+  await page.getByRole("button", { name: "返回终端", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "查看 CPU 监控", exact: true }),
   ).toHaveAttribute("title", /上次采样/);
+  await openWorkspaceTool(page, "monitor");
   expect(
     await overview(page).evaluate((el) => el.scrollWidth <= el.clientWidth),
   ).toBe(true);
@@ -904,7 +900,7 @@ test("Docker preserves its object on connection failure and list position across
 }) => {
   const errors = await setup(page);
   await sendContainers(page, 200);
-  await page.getByRole("tab", { name: "Docker", exact: true }).click();
+  await openWorkspaceTool(page, "docker");
   const panel = docker(page),
     list = panel.getByRole("list");
   await list.locator(".docker-object-row").first().focus();
@@ -914,8 +910,8 @@ test("Docker preserves its object on connection failure and list position across
     .filter({ hasText: "container-199" });
   await expect(last).toBeFocused();
   await last.press("Enter");
-  await page.getByRole("tab", { name: "监控", exact: true }).click();
-  await page.getByRole("tab", { name: "Docker", exact: true }).click();
+  await openWorkspaceTool(page, "monitor");
+  await openWorkspaceTool(page, "docker");
   await expect(
     panel.getByRole("region", { name: "Docker 对象详情" }),
   ).toContainText("container-199");

@@ -27,8 +27,10 @@ import {
   updateAssetNames,
   updateTargets,
   writeUpdateManifest,
+  validateUpdaterSize,
 } from "./update-assets.mjs";
 import { publishRelease } from "./publish-release.mjs";
+import { readReleaseNotes } from "./release-notes.mjs";
 
 function temporary(t) {
   const tempRoot = resolve(tmpdir());
@@ -193,11 +195,13 @@ function fakeGitHub() {
     sha: "a".repeat(40),
     failUpload: false,
     corrupt: false,
+    releases: [],
   };
   const repos = {
     getLatestRelease: async () => {
       throw Object.assign(new Error("Not found"), { status: 404 });
     },
+    listReleases: async () => ({ data: state.releases }),
     getCommit: async () => ({ data: { sha: state.sha } }),
     getReleaseByTag: async () => {
       if (!state.release)
@@ -251,6 +255,8 @@ function fakeGitHub() {
   };
   const args = {
     publicKey,
+    releaseNotesText: "Test release notes",
+    probeManifest: async (expected) => expected,
     github: {
       rest: { repos },
       paginate: async (method, options) => (await method(options)).data,
@@ -351,9 +357,9 @@ test("missing signatures and older stable releases never publish", async (t) => 
   rmSync(join(directory, signatureName));
   await assert.rejects(publishRelease({ ...args, directory }));
   assert.ok(!state.events.includes("publish"));
-  args.github.rest.repos.getLatestRelease = async () => ({
-    data: { tag_name: "v255.255.65535" },
-  });
+  state.releases = [
+    { tag_name: "v255.255.65535", draft: false, prerelease: false },
+  ];
   await assert.rejects(
     publishRelease({ ...args, directory: installers(t, checkVersion(), true) }),
     /must be newer/,
@@ -380,4 +386,72 @@ test("a signed old package cannot be advertised under a new version", (t) => {
       ),
     /version does not match/,
   );
+});
+
+test("all historical stable releases count even if latest was rolled back", async (t) => {
+  const { state, args } = fakeGitHub();
+  state.releases = [
+    { tag_name: "v255.255.65535", draft: false, prerelease: false },
+    { tag_name: "v0.0.1", draft: false, prerelease: false },
+  ];
+  await assert.rejects(
+    publishRelease({ ...args, directory: installers(t, checkVersion(), true) }),
+    /every published stable/,
+  );
+  assert.equal(state.release, undefined);
+});
+test("public probe failures accurately report that the release is already public", async (t) => {
+  const { state, args } = fakeGitHub();
+  await assert.rejects(
+    publishRelease({
+      ...args,
+      directory: installers(t, checkVersion(), true),
+      probeManifest: async () => ({ version: "0.0.1" }),
+    }),
+    /is public.*probe failed/,
+  );
+  assert.equal(state.release.draft, false);
+});
+test("manifest manual assets exist and notes are shared with the release", async (t) => {
+  const { state, args } = fakeGitHub();
+  const directory = installers(t, checkVersion(), true);
+  await publishRelease({ ...args, directory });
+  const manifest = JSON.parse(
+    readFileSync(join(directory, "latest.json"), "utf8"),
+  );
+  assert.equal(manifest.notes, args.releaseNotesText);
+  assert.ok(state.release.body.startsWith(manifest.notes));
+  assert.equal(manifest.sodeck.schemaVersion, 1);
+  assert.equal(Object.keys(manifest.sodeck.manualAssets).length, 5);
+  const manual = manifest.sodeck.manualAssets["windows-x86_64-msi"];
+  rmSync(join(directory, manual));
+  assert.throws(() =>
+    writeUpdateManifest(
+      directory,
+      checkVersion(),
+      args.context.repo,
+      "Notes",
+      new Date().toISOString(),
+      publicKey,
+    ),
+  );
+});
+test("missing or oversized release notes and oversized updater assets fail before publishing", async (t) => {
+  const root = temporary(t);
+  assert.throws(() => readReleaseNotes("1.0.0", root), /Missing/);
+  mkdirSync(join(root, "docs/release-notes"), { recursive: true });
+  writeFileSync(join(root, "docs/release-notes/1.0.0.md"), " ");
+  assert.throws(() => readReleaseNotes("1.0.0", root), /nonempty/);
+  validateUpdaterSize(512 * 1024 * 1024);
+  assert.throws(() => validateUpdaterSize(512 * 1024 * 1024 + 1), /512 MiB/);
+  const { state, args } = fakeGitHub();
+  await assert.rejects(
+    publishRelease({
+      ...args,
+      releaseNotesText: "",
+      directory: installers(t, checkVersion(), true),
+    }),
+    /Missing/,
+  );
+  assert.equal(state.release, undefined);
 });

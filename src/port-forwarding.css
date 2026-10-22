@@ -617,6 +617,145 @@
   gap: 6px;
   min-width: 0;
 }
+.ssh-server-picker {
+  min-width: 0;
+}
+.ssh-server-picker-trigger {
+  width: 100%;
+  padding: 10px 12px;
+  gap: 10px;
+  text-align: left;
+  white-space: normal;
+  border-color: var(--strong-line);
+  background: var(--field);
+}
+.ssh-server-picker-trigger > svg {
+  flex: none;
+  color: var(--muted);
+}
+.ssh-server-picker-trigger[aria-expanded="true"] {
+  border-color: var(--blue);
+}
+.ssh-server-picker-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  line-height: 1.5;
+}
+.ssh-server-picker-copy > * {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ssh-server-picker-copy strong {
+  font-size: var(--font-body);
+  font-weight: 600;
+}
+.ssh-server-picker-copy small {
+  font-size: var(--font-secondary);
+  color: var(--muted);
+}
+.ssh-server-picker-copy .ssh-server-picker-route {
+  font-size: var(--font-caption);
+}
+.ssh-server-picker-popover:popover-open {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--strong-line);
+  border-radius: var(--radius-popover);
+  box-shadow: var(--shadow-popover);
+  overflow: hidden;
+  font-size: var(--font-body);
+}
+.ssh-server-picker-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  flex: none;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+.ssh-server-picker-search > svg {
+  flex: none;
+}
+.ssh-server-picker-search input {
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  box-shadow: none;
+  font-size: var(--font-secondary);
+}
+.ssh-server-picker-search input::-webkit-search-cancel-button {
+  display: none;
+}
+.ssh-server-picker-search:focus-within {
+  box-shadow: inset 0 -2px var(--blue);
+}
+.ssh-server-picker-search .icon-button {
+  flex: none;
+  width: 24px;
+  min-height: 24px;
+  height: 24px;
+  padding: 0;
+}
+.ssh-server-picker-list {
+  position: relative;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  min-height: 0;
+  padding: 4px;
+}
+.ssh-server-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius-control);
+  cursor: default;
+}
+.ssh-server-picker-option.active {
+  background: var(--selected);
+  color: var(--selected-text);
+}
+.ssh-server-picker-option.active small {
+  color: inherit;
+}
+.ssh-server-picker-option:active {
+  box-shadow: inset 0 0 0 100px var(--hover);
+}
+.ssh-server-picker-option > svg {
+  flex: none;
+  margin-left: auto;
+  color: var(--accent-text);
+}
+.ssh-server-picker-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 24px 12px;
+  color: var(--muted);
+  text-align: center;
+  font-size: var(--font-secondary);
+}
+.ssh-server-picker-foot {
+  padding: 8px 12px;
+  flex: none;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: var(--font-caption);
+}
 .forward-fields {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
@@ -665,6 +804,173 @@
 }
 .forward-editor [aria-invalid="true"] {
   border-color: var(--error);
+}
+.forward-service-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.forward-service-mode label {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-height: 62px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--field);
+  cursor: pointer;
+}
+.forward-service-mode label.selected {
+  border-color: var(--blue);
+  box-shadow: inset 0 0 0 1px var(--blue);
+  background: color-mix(in srgb, var(--blue) 7%, var(--field));
+}
+.forward-service-mode label:has(input:disabled) {
+  cursor: default;
+}
+.forward-service-mode span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.forward-service-mode strong {
+  font-size: var(--font-secondary);
+  font-weight: 600;
+}
+.forward-service-mode small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+.proxy-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+.proxy-addresses {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.proxy-address-row,
+.proxy-command {
+  display: grid;
+  grid-template-columns: minmax(112px, auto) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 38px;
+  padding: 7px 10px;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+.proxy-address-row > span {
+  color: var(--muted);
+  font-size: var(--font-caption);
+}
+.proxy-address-row code,
+.proxy-command code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-size: var(--font-secondary);
+}
+.proxy-command {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.proxy-command-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.proxy-shell-switch,
+.proxy-protocol {
+  display: inline-flex;
+  gap: 0;
+  flex-wrap: wrap;
+}
+.proxy-shell-switch button,
+.proxy-protocol button {
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 0;
+  font-size: var(--font-caption);
+}
+.proxy-shell-switch button:first-child,
+.proxy-protocol button:first-child {
+  border-radius: var(--radius-control) 0 0 var(--radius-control);
+}
+.proxy-shell-switch button:last-child,
+.proxy-protocol button:last-child {
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+}
+.proxy-shell-switch button.selected,
+.proxy-protocol button.selected {
+  color: var(--blue);
+  border-color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 9%, var(--field));
+  position: relative;
+  z-index: 1;
+}
+.proxy-target-example {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  font-size: var(--font-caption);
+  color: var(--muted);
+}
+.proxy-target-example input {
+  min-width: 0;
+  width: 100%;
+}
+.proxy-probe {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+.proxy-probe-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.proxy-probe-head p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+  font-size: var(--font-caption);
+}
+.proxy-probe-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  gap: 10px;
+  align-items: end;
+}
+.proxy-probe-port {
+  min-width: 0;
+}
+.proxy-probe-form .proxy-protocol {
+  grid-column: 1 / -1;
+}
+.proxy-probe-result {
+  margin: 0;
+  font-size: var(--font-caption);
+  line-height: 1.55;
+}
+.proxy-probe-result.success {
+  color: var(--green);
+}
+.proxy-probe-result.failure {
+  color: var(--error);
 }
 .forward-advanced {
   padding-top: 14px;
@@ -756,6 +1062,50 @@ button.primary.forward-danger {
   }
   .forward-route small {
     grid-column: 1;
+  }
+  .proxy-command-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+@media (max-width: 560px) {
+  .forward-service-mode {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .proxy-address-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .proxy-address-row > span {
+    grid-column: 1 / -1;
+  }
+  .proxy-probe-form {
+    grid-template-columns: minmax(0, 1fr) 84px;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .forward-service-mode label.selected,
+  .proxy-shell-switch button.selected,
+  .proxy-protocol button.selected {
+    background: var(--field);
+  }
+}
+@media (prefers-contrast: more) {
+  .ssh-server-picker-trigger,
+  .ssh-server-picker-popover:popover-open,
+  .forward-service-mode label,
+  .proxy-address-row,
+  .proxy-command,
+  .proxy-probe {
+    border-color: currentColor;
+  }
+  .proxy-shell-switch button.selected,
+  .proxy-protocol button.selected {
+    outline: 2px solid currentColor;
+    outline-offset: -2px;
+  }
+  .ssh-server-picker-option.active {
+    outline: 2px solid currentColor;
+    outline-offset: -2px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

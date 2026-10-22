@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./workspace-tool-helpers";
 import { selectTheme } from "./theme-fixture";
 // Browser interaction tests with explicit IPC simulation. Real SSH forwarding
 // and backend state are tested separately in connection_tests.rs.
@@ -238,6 +239,8 @@ async function setup(
               passwordChange.type === "set" ||
               (passwordChange.type === "keep" && server.hasSavedPassword);
             const i = servers.findIndex((s) => s.id === server.id);
+            if (server.id && i < 0)
+              throw { kind: "sourceMissing", message: "原服务器已被删除" };
             if (i >= 0) servers[i] = server;
             else {
               server.id = `new-${serial++}`;
@@ -391,15 +394,16 @@ async function setup(
   return errors;
 }
 async function editSelected(page: Page) {
-  await page.locator(".server-row.selected").click({ button: "right" });
-  await page.getByRole("menuitem", { name: "编辑", exact: true }).click();
+  await page
+    .locator('.server-row.selected [data-server-action="edit"]')
+    .click();
 }
 async function newSession(page: Page) {
   await page
-    .locator(".server-row")
-    .filter({ hasText: "Target B" })
-    .click({ button: "right" });
-  await page.getByRole("menuitem", { name: "新建会话", exact: true }).click();
+    .locator(
+      '.server-row[data-server-id="b"] [data-server-action="new-session"]',
+    )
+    .click();
 }
 async function connect(page: Page, forceNew = false) {
   if (forceNew) await newSession(page);
@@ -499,9 +503,9 @@ test("server editor preserves passwords and explicitly clears or replaces them",
   await expect(dialog.getByLabel("密码", { exact: true })).toHaveValue("");
   await expect(
     dialog.getByRole("radio", { name: "通过跳板机", exact: true }),
-  ).toBeDisabled();
+  ).toBeEnabled();
   await dialog.getByLabel(/^名称/).fill("Renamed A");
-  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await dialog.locator(".editor-save-actions button.primary").click();
   expect(
     await page.evaluate(
       () =>
@@ -512,7 +516,7 @@ test("server editor preserves passwords and explicitly clears or replaces them",
   ).toEqual({ type: "keep" });
   await editSelected(page);
   await dialog.getByRole("button", { name: "清空已保存密码" }).click();
-  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await dialog.locator(".editor-save-actions button.primary").click();
   expect(
     await page.evaluate(
       () =>
@@ -523,7 +527,7 @@ test("server editor preserves passwords and explicitly clears or replaces them",
   ).toEqual({ type: "clear" });
   await editSelected(page);
   await dialog.getByLabel("密码", { exact: true }).fill("replacement");
-  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await dialog.locator(".editor-save-actions button.primary").click();
   expect(
     await page.evaluate(
       () =>
@@ -541,7 +545,7 @@ test("saved password copies repeatedly by ID without revealing, saving or dirtyi
   const errors = await setup(page);
   await page.locator('.server-row[data-server-id="a"]').click();
   await editSelected(page);
-  const editor = page.getByRole("dialog", { name: "编辑服务器", exact: true });
+  const editor = page.getByRole("dialog", { name: "服务器配置", exact: true });
   const copy = editor.getByRole("button", {
     name: "复制已保存密码",
     exact: true,
@@ -597,14 +601,14 @@ test("saved password copy uses stored credentials while replacement or clearing 
   const errors = await setup(page);
   await page.locator('.server-row[data-server-id="a"]').click();
   await editSelected(page);
-  const editor = page.getByRole("dialog", { name: "编辑服务器", exact: true });
+  const editor = page.getByRole("dialog", { name: "服务器配置", exact: true });
   const copy = editor.getByRole("button", {
     name: "复制已保存密码",
     exact: true,
   });
   await editor.getByLabel("密码", { exact: true }).fill("unsaved-replacement");
   await expect(
-    editor.getByText("复制的是已保存密码，新密码保存后才生效。", {
+    editor.getByText("复制的是当前已保存密码，本次密码设置保存后生效。", {
       exact: true,
     }),
   ).toBeVisible();
@@ -617,7 +621,7 @@ test("saved password copy uses stored credentials while replacement or clearing 
       () => (window as any).__TEST__.passwordCopies.at(-1).value,
     ),
   ).toBe("fixture-saved-password");
-  await editor.getByRole("button", { name: "保存", exact: true }).click();
+  await editor.locator(".editor-save-actions button.primary").click();
   await editSelected(page);
   await copy.click();
   await expect(editor.locator(".password-copy-feedback")).toHaveText(
@@ -632,7 +636,9 @@ test("saved password copy uses stored credentials while replacement or clearing 
     .getByRole("button", { name: "清空已保存密码", exact: true })
     .click();
   await expect(
-    editor.getByText("保存后清空，当前仍可复制已保存密码。", { exact: true }),
+    editor.getByText("复制的是当前已保存密码，本次密码设置保存后生效。", {
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(editor.locator(".password-copy-feedback")).toHaveText("");
   await copy.click();
@@ -644,7 +650,7 @@ test("saved password copy uses stored credentials while replacement or clearing 
       () => (window as any).__TEST__.passwordCopies.at(-1).value,
     ),
   ).toBe("unsaved-replacement");
-  await editor.getByRole("button", { name: "保存", exact: true }).click();
+  await editor.locator(".editor-save-actions button.primary").click();
   const saves = await page.evaluate(() =>
     (window as any).__TEST__.calls
       .filter((c: any) => c.command === "save_server")
@@ -659,7 +665,7 @@ test("saved password copy uses stored credentials while replacement or clearing 
   expect(errors).toEqual([]);
 });
 
-test("saved password copy is limited to ordinary edits of saved password authentication", async ({
+test("saved password copy is available from both configuration entries for saved password authentication", async ({
   page,
 }) => {
   const errors = await setup(page);
@@ -677,7 +683,7 @@ test("saved password copy is limited to ordinary edits of saved password authent
   await expect(copy).toHaveCount(0);
   await page.getByRole("button", { name: "取消", exact: true }).click();
   const duplicate = await copyServer(page);
-  await expect(copy).toHaveCount(0);
+  await expect(copy).toBeEnabled();
   await duplicate.getByRole("button", { name: "取消", exact: true }).click();
   await page.locator('.server-row[data-server-id="a"]').click();
   await editSelected(page);
@@ -689,7 +695,7 @@ test("saved password copy is limited to ordinary edits of saved password authent
   await expect(copy).toBeEnabled();
   // A retained old password on an Agent configuration is not a copyable password login.
   await page.getByLabel("认证方式").selectOption("agent");
-  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await page.locator(".editor-save-actions button.primary").click();
   await editSelected(page);
   await page.getByLabel("认证方式").selectOption("password");
   await expect(copy).toHaveCount(0);
@@ -702,7 +708,7 @@ test("saved password copy retries clipboard failures and never shows arbitrary e
   const errors = await setup(page);
   await page.locator('.server-row[data-server-id="a"]').click();
   await editSelected(page);
-  const editor = page.getByRole("dialog", { name: "编辑服务器", exact: true });
+  const editor = page.getByRole("dialog", { name: "服务器配置", exact: true });
   const copy = editor.getByRole("button", {
     name: "复制已保存密码",
     exact: true,
@@ -740,7 +746,7 @@ for (const missing of ["password", "server"] as const) {
     await page.locator('.server-row[data-server-id="a"]').click();
     await editSelected(page);
     const editor = page.getByRole("dialog", {
-      name: "编辑服务器",
+      name: "服务器配置",
       exact: true,
     });
     const copy = editor.getByRole("button", {
@@ -789,7 +795,7 @@ for (const change of [
     await page.locator('.server-row[data-server-id="a"]').click();
     await editSelected(page);
     const editor = page.getByRole("dialog", {
-      name: "编辑服务器",
+      name: "服务器配置",
       exact: true,
     });
     const copy = editor.getByRole("button", {
@@ -827,7 +833,7 @@ for (const change of [
     } else
       await editor
         .getByRole("button", {
-          name: change === "save" ? "保存" : "取消",
+          name: change === "save" ? "保存修改" : "取消",
           exact: true,
         })
         .click();
@@ -871,7 +877,7 @@ test("saved password copy feedback stays readable in themes, narrow layouts and 
     await page.emulateMedia({ reducedMotion: "reduce" });
     await editSelected(page);
     const editor = page.getByRole("dialog", {
-      name: "编辑服务器",
+      name: "服务器配置",
       exact: true,
     });
     const copy = editor.getByRole("button", {
@@ -884,7 +890,7 @@ test("saved password copy feedback stays readable in themes, narrow layouts and 
     ).toHaveText("密码已复制");
     await expect(copy).toBeInViewport();
     await expect(
-      editor.getByRole("button", { name: "保存", exact: true }),
+      editor.locator(".editor-save-actions button.primary"),
     ).toBeInViewport();
     expect(
       await editor.evaluate(
@@ -912,7 +918,7 @@ test("saved password copy remains available in forced-colors mode", async ({
   await page.locator('.server-row[data-server-id="a"]').click();
   await editSelected(page);
   const editor = page.getByRole("dialog", {
-    name: "编辑服务器",
+    name: "服务器配置",
     exact: true,
   });
   const copy = editor.getByRole("button", {
@@ -925,7 +931,7 @@ test("saved password copy remains available in forced-colors mode", async ({
     editor.locator(".password-copy-feedback [role=status]"),
   ).toHaveText("密码已复制");
   await expect(
-    editor.getByRole("button", { name: "保存", exact: true }),
+    editor.locator(".editor-save-actions button.primary"),
   ).toBeInViewport();
   expect(
     await editor.evaluate(
@@ -953,7 +959,7 @@ test("jump configuration only offers direct servers and saves the selected route
   await expect(
     dialog.getByRole("list", { name: "连接路径：本机 → Jump A → New target" }),
   ).toBeVisible();
-  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await dialog.locator(".editor-save-actions button.primary").click();
   const saved = await page.evaluate(
     () =>
       (window as any).__TEST__.calls
@@ -985,7 +991,7 @@ test("connection settings keep actions visible in light, dark and small windows"
     });
     await page.locator(".server-row").filter({ hasText: "Target B" }).click();
     await editSelected(page);
-    const dialog = page.getByRole("dialog", { name: "编辑服务器" });
+    const dialog = page.getByRole("dialog", { name: "服务器配置" });
     const direct = dialog.getByRole("radio", { name: "直接连接", exact: true });
     await dialog.getByRole("radio", { name: "通过跳板机" }).focus();
     await page.keyboard.press("ArrowLeft");
@@ -997,7 +1003,7 @@ test("connection settings keep actions visible in light, dark and small windows"
     await expect(dialog.getByLabel("跳板服务器", { exact: true })).toHaveValue(
       "a",
     );
-    const save = dialog.getByRole("button", { name: "保存", exact: true });
+    const save = dialog.locator(".editor-save-actions button.primary");
     await expect(save).toBeInViewport();
     expect(
       await dialog.evaluate(
@@ -1106,7 +1112,7 @@ test("unsaved settings can be kept or discarded without native confirmation dial
   });
   await page.locator(".server-row").filter({ hasText: "Target B" }).click();
   await editSelected(page);
-  const dialog = page.getByRole("dialog", { name: "编辑服务器" });
+  const dialog = page.getByRole("dialog", { name: "服务器配置" });
   await dialog.getByLabel(/^名称/).fill("Unsaved target");
   await dialog.getByRole("button", { name: "取消", exact: true }).click();
   await expect(dialog.getByRole("alert")).toHaveText(
@@ -1116,7 +1122,7 @@ test("unsaved settings can be kept or discarded without native confirmation dial
   await page.keyboard.press("Escape");
   await expect(dialog.getByLabel(/^名称/)).toHaveValue("Unsaved target");
   await expect(
-    dialog.getByRole("button", { name: "保存", exact: true }),
+    dialog.locator(".editor-save-actions button.primary"),
   ).toBeEnabled();
   await dialog.getByRole("button", { name: "取消", exact: true }).click();
   await dialog.getByRole("button", { name: "放弃修改", exact: true }).click();
@@ -1150,12 +1156,17 @@ test("server home starts visible, preserves search and sessions, and enters an e
   await expect(home.getByLabel("搜索服务器")).toHaveValue("TARGET target-user");
   await expect(home.locator(".server-row")).toHaveCount(1);
   await expect(
-    home.getByRole("button", { name: "进入会话", exact: true }),
+    home
+      .locator(".server-catalog")
+      .getByRole("button", { name: "进入会话", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".terminal-surface")).toContainText(
     "connected to B",
   );
-  await home.getByRole("button", { name: "进入会话", exact: true }).click();
+  await home
+    .locator(".server-catalog")
+    .getByRole("button", { name: "进入会话", exact: true })
+    .click();
   await expect(home).toBeHidden();
   await expect(page.locator(".session-tab")).toHaveAttribute(
     "data-tab-id",
@@ -1210,6 +1221,7 @@ test("three columns resize independently, survive tab switches, and fit narrow w
 }) => {
   const errors = await setup(page);
   await connect(page);
+  await openWorkspaceTool(page, "monitor");
   const first = await page
     .getByRole("tablist", { name: "SSH 会话", exact: true })
     .getByRole("tab")
@@ -1225,6 +1237,7 @@ test("three columns resize independently, survive tab switches, and fit narrow w
   await page.getByRole("button", { name: "15 分钟", exact: true }).click();
   await page.getByRole("button", { name: "新建连接", exact: true }).click();
   await connect(page, true);
+  await openWorkspaceTool(page, "monitor");
   await expect(
     page.getByRole("button", { name: "5 分钟", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
@@ -1256,17 +1269,18 @@ test("three columns resize independently, survive tab switches, and fit narrow w
             .querySelector(".resource-service-panel")!
             .getBoundingClientRect();
           return (
-            (el.getAttribute("data-layout") === "three"
+            (el.getAttribute("data-layout") === "docked"
               ? file.right < terminal.left &&
                 terminal.right < service.left &&
-                Math.abs(file.top - service.top) < 1
-              : el.getAttribute("data-layout") === "two"
+                terminal.width >= 560
+              : el.getAttribute("data-layout") === "overlay"
                 ? file.width === 0 &&
-                  terminal.width >= 320 &&
-                  terminal.right < service.left
+                  terminal.width > 0 &&
+                  service.width > 0 &&
+                  service.right <= el.getBoundingClientRect().right - 44
                 : file.width === 0 &&
-                  service.width === 0 &&
-                  terminal.width > 0) && el.scrollWidth <= el.clientWidth
+                  service.width > 0 &&
+                  terminal.width === 0) && el.scrollWidth <= el.clientWidth
           );
         }),
       )
@@ -1305,18 +1319,16 @@ test("empty inventory can add, edit and delete from home", async ({ page }) => {
   await editor.getByLabel(/^名称/).fill("New server");
   await editor.getByLabel("地址", { exact: true }).fill("fixture.internal");
   await editor.getByLabel("用户名", { exact: true }).fill("ops");
-  await editor.getByRole("button", { name: "保存", exact: true }).click();
+  await editor.locator(".editor-save-actions button.primary").click();
   await expect(picker.locator(".server-row.selected")).toContainText(
     "New server",
   );
-  await picker.locator(".server-row").click({ button: "right" });
-  await page.getByRole("menuitem", { name: "编辑", exact: true }).click();
+  await picker.locator('.server-row [data-server-action="edit"]').click();
   await page
-    .getByRole("dialog", { name: "编辑服务器" })
+    .getByRole("dialog", { name: "服务器配置" })
     .getByRole("button", { name: "取消", exact: true })
     .click();
-  await picker.locator(".server-row").click({ button: "right" });
-  await page.getByRole("menuitem", { name: "删除服务器", exact: true }).click();
+  await picker.locator('.server-row [data-server-action="delete"]').click();
   await page
     .getByRole("dialog", { name: "删除服务器配置？" })
     .getByRole("button", { name: "确认删除" })
@@ -1335,6 +1347,7 @@ test("moving a workspace carries both widths and restores the same terminal with
 }) => {
   const errors = await setup(page);
   await connect(page);
+  await openWorkspaceTool(page, "monitor");
   const left = page.getByRole("separator", { name: "调整文件区域宽度" });
   const right = page.getByRole("separator", { name: "调整服务区域宽度" });
   await left.press("ArrowRight");
@@ -1343,7 +1356,7 @@ test("moving a workspace carries both widths and restores the same terminal with
     Number(await left.getAttribute("aria-valuenow")),
     Number(await right.getAttribute("aria-valuenow")),
   ];
-  await page.getByRole("tab", { name: "监控", exact: true }).click();
+  await openWorkspaceTool(page, "monitor");
   await page.getByRole("button", { name: "15 分钟", exact: true }).click();
   await page
     .getByRole("tablist", { name: "SSH 会话", exact: true })
@@ -1380,9 +1393,10 @@ test("moving a workspace carries both widths and restores the same terminal with
   expect(snapshot.terminal.content).toContain("connected to B");
   const detached = await context.newPage();
   const detachedErrors = await setup(detached, false, { snapshot });
-  await expect(
-    detached.getByRole("tab", { name: "监控", exact: true }),
-  ).toHaveAttribute("aria-selected", "true");
+  await expect(detached.locator('[data-tool="monitor"]')).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
   await expect(
     detached.getByRole("button", { name: "15 分钟", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
@@ -1409,20 +1423,14 @@ test("moving a workspace carries both widths and restores the same terminal with
   ).toHaveLength(1);
   await detached.setViewportSize({ width: 650, height: 480 });
   await expect(
-    detached.getByRole("navigation", { name: "工作区域" }),
+    detached.getByRole("navigation", { name: "服务工具" }),
   ).toBeInViewport();
-  await expect(detached.locator(".terminal-surface")).toBeVisible();
-  await detached
-    .getByRole("navigation", { name: "工作区域" })
-    .getByRole("button", { name: "监控与服务" })
-    .click();
+  await expect(detached.locator(".terminal-surface")).toBeHidden();
+  await openWorkspaceTool(detached, "monitor");
   await expect(
     detached.getByRole("button", { name: "15 分钟", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
-  await detached
-    .getByRole("navigation", { name: "工作区域" })
-    .getByRole("button", { name: "终端", exact: true })
-    .click();
+  await detached.getByRole("button", { name: "返回终端", exact: true }).click();
   await expect(detached.locator(".terminal-surface")).toContainText(
     "connected to B",
   );
@@ -1469,7 +1477,9 @@ test("pending connection starts once and cancellation disposes a late connection
     .getByRole("button", { name: "连接", exact: true })
     .dblclick();
   await expect(
-    picker.getByRole("button", { name: "连接中…", exact: true }),
+    picker
+      .locator(".server-catalog")
+      .getByRole("button", { name: "连接中…", exact: true }),
   ).toBeDisabled();
   expect(
     await page.evaluate(
@@ -1826,7 +1836,7 @@ test("sidebar and communication preferences survive window migration without cop
 }) => {
   const errors = await setup(page);
   await connect(page);
-  await page.getByRole("tab", { name: "Docker", exact: true }).click();
+  await openWorkspaceTool(page, "docker");
   await page.getByRole("textbox", { name: "搜索容器" }).fill("api-service");
   await page
     .getByRole("combobox", { name: "容器状态筛选" })
@@ -1863,7 +1873,14 @@ test("sidebar and communication preferences survive window migration without cop
         (c: any) => c.command === "move_workspace",
       ).args.payload,
   );
-  expect(snapshot.view).toEqual({ pane: "terminal" });
+  expect(snapshot.view).toBeUndefined();
+  expect(snapshot.tools).toEqual({
+    version: 2,
+    filesOpen: true,
+    servicesOpen: true,
+    compactPane: "services",
+    lastSide: "services",
+  });
   expect(snapshot.connectionPreferences).toEqual({
     minutes: 15,
     scope: "total",
@@ -1885,20 +1902,14 @@ test("sidebar and communication preferences survive window migration without cop
     "data-layout",
     "single",
   );
-  await detached
-    .getByRole("navigation", { name: "工作区域" })
-    .getByRole("button", { name: "监控与服务" })
-    .click();
+  await openWorkspaceTool(detached, "docker");
   await expect(detached.getByRole("textbox", { name: "搜索容器" })).toHaveValue(
     "api-service",
   );
   await expect(
     detached.getByRole("combobox", { name: "容器状态筛选" }),
   ).toHaveValue("running");
-  await detached
-    .getByRole("navigation", { name: "工作区域" })
-    .getByRole("button", { name: "终端", exact: true })
-    .click();
+  await detached.getByRole("button", { name: "返回终端", exact: true }).click();
   await expect(detached.locator(".terminal-surface")).toContainText(
     "connected to B",
   );
@@ -1913,13 +1924,15 @@ test("sidebar and communication preferences survive window migration without cop
   const fresh = await context.newPage();
   const freshErrors = await setup(fresh);
   await connect(fresh);
-  await expect(
-    fresh.getByRole("tab", { name: "监控", exact: true }),
-  ).toHaveAttribute("aria-selected", "true");
+  await expect(fresh.locator('[data-tool="monitor"]')).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await openWorkspaceTool(fresh, "monitor");
   await expect(
     fresh.getByRole("button", { name: "5 分钟", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
-  await fresh.getByRole("tab", { name: "Docker", exact: true }).click();
+  await openWorkspaceTool(fresh, "docker");
   await expect(fresh.getByRole("textbox", { name: "搜索容器" })).toHaveValue(
     "",
   );
@@ -1932,10 +1945,9 @@ test("sidebar and communication preferences survive window migration without cop
 
 async function copyServer(page: Page, id = "a") {
   const row = page.locator(`.server-row[data-server-id="${id}"]`);
-  await row.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "复制配置", exact: true }).click();
+  await row.locator('[data-server-action="copy"]').click();
   const editor = page.getByRole("dialog", {
-    name: "复制服务器配置",
+    name: "服务器配置",
     exact: true,
   });
   await expect(editor).toBeVisible();
@@ -1947,7 +1959,7 @@ test("copy cancellation creates nothing; saved copy inherits privately and revea
 }) => {
   const errors = await setup(page);
   let editor = await copyServer(page);
-  await expect(editor.getByLabel(/^名称/)).toHaveValue("Jump A - 副本");
+  await expect(editor.getByLabel(/^名称/)).toHaveValue("Jump A");
   await expect(editor.getByLabel(/^名称/)).toBeFocused();
   expect(
     await editor
@@ -1955,11 +1967,14 @@ test("copy cancellation creates nothing; saved copy inherits privately and revea
       .evaluate(
         (el: HTMLInputElement) => el.selectionEnd! - el.selectionStart!,
       ),
-  ).toBe("Jump A - 副本".length);
+  ).toBe("Jump A".length);
   await expect(editor.getByLabel("密码", { exact: true })).toHaveValue("");
   await expect(
-    editor.getByRole("checkbox", { name: "复用来源已保存的登录密码" }),
-  ).toBeChecked();
+    editor.getByText("新建名称：Jump A - 副本", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    editor.getByRole("button", { name: "复制已保存密码" }),
+  ).toBeEnabled();
   await page.screenshot({ path: ".qa/server-copy-editor.png" });
   await editor.getByRole("button", { name: "取消", exact: true }).click();
   expect(
@@ -1974,11 +1989,11 @@ test("copy cancellation creates nothing; saved copy inherits privately and revea
   editor = await copyServer(page);
   await editor.getByLabel(/^名称/).fill("Production copy");
   await editor.getByLabel("地址", { exact: true }).fill("production.example");
-  await editor.getByRole("button", { name: "保存副本", exact: true }).click();
+  await editor.getByRole("button", { name: "新建服务器", exact: true }).click();
   await expect(editor).toHaveCount(0);
   await expect(page.getByLabel("搜索服务器")).toHaveValue("jump.example");
   await expect(
-    page.getByRole("status").filter({ hasText: "副本已保存" }),
+    page.getByRole("status").filter({ hasText: "服务器已新建" }),
   ).toContainText("当前筛选下不可见");
   await page.getByRole("button", { name: "查看配置", exact: true }).click();
   await expect(page.locator(".server-row.selected")).toContainText(
@@ -2008,18 +2023,413 @@ test("copy cancellation creates nothing; saved copy inherits privately and revea
   expect(errors).toEqual([]);
 });
 
-test("copy preserves key configuration and clears inherited transfer endpoint when host changes", async ({
+test("edit can create an independent full draft and copy can update its fixed source", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await editSelected(page);
+  const editor = page.getByRole("dialog", { name: "服务器配置", exact: true });
+  await expect(editor.getByRole("button", { name: "保存并连接" })).toHaveCount(
+    0,
+  );
+  await expect(
+    editor.getByRole("button", { name: "删除", exact: true }),
+  ).toHaveCount(0);
+  await editor.getByLabel(/^名称/).fill("Independent draft");
+  await editor.getByLabel("地址", { exact: true }).fill("new.example");
+  await editor.getByLabel("端口", { exact: true }).fill("2222");
+  await editor.getByLabel("用户名", { exact: true }).fill("new-user");
+  await editor.getByLabel("真实地址", { exact: true }).fill("10.0.0.9");
+  await editor.getByLabel("直连端口").fill("2200");
+  await editor.getByLabel("标签", { exact: true }).fill("unadded-tag");
+  await editor.getByRole("button", { name: "新建服务器", exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  const created = await page.evaluate(() => {
+    const state = (window as any).__TEST__;
+    const source = state.servers.find((s: any) => s.id === "a");
+    const created = state.servers.find(
+      (s: any) => s.name === "Independent draft",
+    );
+    return {
+      source,
+      created,
+      sourcePassword: state.savedPasswords.get("a"),
+      password: state.savedPasswords.get(created.id),
+    };
+  });
+  expect(created.source).toMatchObject({
+    name: "Jump A",
+    host: "jump.example",
+    tags: [],
+    hasSavedPassword: true,
+  });
+  expect(created.created).toMatchObject({
+    host: "new.example",
+    port: 2222,
+    username: "new-user",
+    directHost: "10.0.0.9",
+    directPort: 2200,
+    tags: ["unadded-tag"],
+    hasSavedPassword: true,
+  });
+  expect(created.created.id).not.toBe("a");
+  expect(created.password).toBe(created.sourcePassword);
+  await copyServer(page, created.created.id);
+  await editor.getByLabel(/^名称/).fill("Updated fixed source");
+  await editor.getByLabel("标签", { exact: true }).fill("another-tag");
+  await editor.getByRole("button", { name: "清空已保存密码" }).click();
+  await editor.getByRole("button", { name: "保存修改", exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  const updated = await page.evaluate((id) => {
+    const state = (window as any).__TEST__;
+    return {
+      count: state.servers.length,
+      server: state.servers.find((s: any) => s.id === id),
+      sourcePassword: state.savedPasswords.get("a"),
+      password: state.savedPasswords.get(id),
+      calls: state.calls,
+    };
+  }, created.created.id);
+  expect(updated.count).toBe(3);
+  expect(updated.server).toMatchObject({
+    id: created.created.id,
+    name: "Updated fixed source",
+    tags: ["unadded-tag", "another-tag"],
+    hasSavedPassword: false,
+  });
+  expect(updated.password).toBeUndefined();
+  expect(updated.sourcePassword).toBe(created.sourcePassword);
+  expect(
+    updated.calls.filter((c: any) => c.command === "save_server").at(-1).args
+      .server.id,
+  ).toBe(created.created.id);
+  expect(
+    updated.calls.filter((c: any) => c.command === "open_connection"),
+  ).toHaveLength(0);
+  expect(errors).toEqual([]);
+});
+
+for (const policy of ["set", "clear"] as const) {
+  test(`new configuration ${policy} password leaves the source credential intact`, async ({
+    page,
+  }) => {
+    const errors = await setup(page);
+    await editSelected(page);
+    const editor = page.getByRole("dialog", {
+      name: "服务器配置",
+      exact: true,
+    });
+    if (policy === "set")
+      await editor
+        .getByLabel("密码", { exact: true })
+        .fill("new-fixture-secret");
+    else await editor.getByRole("button", { name: "清空已保存密码" }).click();
+    await editor
+      .getByRole("button", { name: "新建服务器", exact: true })
+      .click();
+    await expect(editor).toHaveCount(0);
+    const state = await page.evaluate(() => {
+      const state = (window as any).__TEST__;
+      const copy = state.servers.find((s: any) => s.name === "Jump A - 副本");
+      return {
+        copy,
+        sourcePassword: state.savedPasswords.get("a"),
+        password: state.savedPasswords.get(copy.id),
+        request: state.calls.find((c: any) => c.command === "duplicate_server")
+          .args.request,
+      };
+    });
+    expect(state.sourcePassword).toBe("fixture-saved-password");
+    expect(state.password).toBe(
+      policy === "set" ? "new-fixture-secret" : undefined,
+    );
+    expect(state.copy.hasSavedPassword).toBe(policy === "set");
+    expect(state.request.passwordPolicy.type).toBe(policy);
+    expect(errors).toEqual([]);
+  });
+}
+
+test("alternating save buttons in one event turn write only once", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await editSelected(page);
+  const editor = page.getByRole("dialog", { name: "服务器配置", exact: true });
+  await editor.getByLabel(/^名称/).fill("One write");
+  await page.evaluate(() => {
+    const w = window as any;
+    const invoke = w.__TAURI_INTERNALS__.invoke;
+    w.__TAURI_INTERNALS__.invoke = async (command: string, args: any) => {
+      if (command === "duplicate_server")
+        await new Promise<void>((resolve) => {
+          w.__TEST__.finishSave = resolve;
+        });
+      return invoke(command, args);
+    };
+  });
+  await editor.locator(".editor-save-actions").evaluate((footer) => {
+    const buttons = footer.querySelectorAll<HTMLButtonElement>("button");
+    buttons[1].click();
+    buttons[2].click();
+    buttons[1].click();
+  });
+  await expect(editor.getByRole("button", { name: "新建中…" })).toBeDisabled();
+  await expect(editor.getByRole("button", { name: "保存修改" })).toBeDisabled();
+  await page.evaluate(() => (window as any).__TEST__.finishSave());
+  await expect(editor).toHaveCount(0);
+  const calls = await page.evaluate(() =>
+    (window as any).__TEST__.calls.filter((c: any) =>
+      ["save_server", "duplicate_server"].includes(c.command),
+    ),
+  );
+  expect(calls).toHaveLength(1);
+  expect(calls[0].command).toBe("duplicate_server");
+  expect(errors).toEqual([]);
+});
+
+test("Enter, IME and password copy never choose a save intent", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await editSelected(page);
+  const editor = page.getByRole("dialog", { name: "服务器配置", exact: true });
+  await editor.getByLabel(/^名称/).press("Enter");
+  const tag = editor.getByLabel("标签", { exact: true });
+  await tag.fill("标签确认");
+  await tag.dispatchEvent("keydown", {
+    key: "Enter",
+    code: "Enter",
+    isComposing: true,
+  });
+  await expect(tag).toHaveValue("标签确认");
+  await expect(
+    editor.getByRole("button", { name: "移除标签 标签确认" }),
+  ).toHaveCount(0);
+  await tag.press("Enter");
+  await expect(
+    editor.getByRole("button", { name: "移除标签 标签确认" }),
+  ).toBeVisible();
+  await editor.getByRole("button", { name: "复制已保存密码" }).click();
+  await expect(editor.locator(".password-copy-feedback")).toHaveText(
+    "密码已复制",
+  );
+  expect(
+    await page.evaluate(() =>
+      (window as any).__TEST__.calls.filter((c: any) =>
+        ["save_server", "duplicate_server"].includes(c.command),
+      ),
+    ),
+  ).toHaveLength(0);
+  await editor.getByRole("button", { name: "保存修改" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(editor).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("automatic new name is reviewed again when the latest inventory conflicts", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await editSelected(page);
+  const editor = page.getByRole("dialog", { name: "服务器配置", exact: true });
+  await expect(editor.locator(".create-name-preview")).toHaveText(
+    "新建名称：Jump A - 副本",
+  );
+  await page.evaluate(() => {
+    const state = (window as any).__TEST__;
+    state.servers.push({
+      ...state.servers[0],
+      id: "external",
+      name: "Jump A - 副本",
+    });
+  });
+  await editor.getByRole("button", { name: "新建服务器", exact: true }).click();
+  await expect(editor.locator(".editor-feedback-error")).toContainText(
+    "名称已更新",
+  );
+  await expect(editor.locator(".create-name-preview")).toHaveText(
+    "新建名称：Jump A - 副本 2",
+  );
+  expect(
+    await page.evaluate(() =>
+      (window as any).__TEST__.calls.filter((c: any) =>
+        ["save_server", "duplicate_server"].includes(c.command),
+      ),
+    ),
+  ).toHaveLength(0);
+  await editor.getByRole("button", { name: "新建服务器", exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(page.locator(".server-row.selected")).toContainText(
+    "Jump A - 副本 2",
+  );
+  expect(errors).toEqual([]);
+});
+
+test("a jump server can create a new route while updates remain restricted", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await page.evaluate(() => {
+    const state = (window as any).__TEST__;
+    state.servers.push({
+      ...state.servers[0],
+      id: "c",
+      name: "Jump A - 副本",
+      hasSavedPassword: false,
+    });
+  });
+  // Refresh the inventory without re-running the test fixture init script.
+  await editSelected(page);
+  const editor = page.getByRole("dialog", { name: "服务器配置", exact: true });
+  await editor.getByRole("button", { name: "新建服务器", exact: true }).click();
+  await expect(editor.locator(".editor-feedback-error")).toContainText(
+    "名称已更新",
+  );
+  await editor.getByRole("radio", { name: "通过跳板机", exact: true }).check();
+  await editor.getByLabel("跳板服务器", { exact: true }).selectOption("c");
+  await expect(
+    editor.getByRole("button", { name: "保存修改", exact: true }),
+  ).toBeDisabled();
+  await expect(editor.getByLabel("地址", { exact: true })).toBeEditable();
+  await editor.getByLabel(/^名称/).fill("New routed server");
+  await editor.getByRole("button", { name: "新建服务器", exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__TEST__.servers.find((s: any) => s.id === "a")
+          .jumpServerId,
+    ),
+  ).toBeNull();
+  await expect(page.locator(".server-row.selected")).toContainText(
+    "New routed server",
+  );
+  expect(errors).toEqual([]);
+});
+
+test("a pending source connection blocks update but permits a new configuration", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    const invoke = w.__TAURI_INTERNALS__.invoke;
+    w.__TAURI_INTERNALS__.invoke = (command: string, args: any) => {
+      if (command === "open_connection") return new Promise(() => {});
+      return invoke(command, args);
+    };
+  });
+  const row = page.locator('.server-row[data-server-id="b"]');
+  await row.locator('[data-server-action="connect"]').click();
+  await row.locator('[data-server-action="edit"]').click();
+  const editor = page.getByRole("dialog", { name: "服务器配置", exact: true });
+  await expect(editor.getByRole("button", { name: "保存修改" })).toBeDisabled();
+  await expect(
+    editor.getByRole("button", { name: "新建服务器", exact: true }),
+  ).toBeEnabled();
+  await editor.getByLabel(/^名称/).fill("Pending source copy");
+  await editor.getByRole("button", { name: "新建服务器", exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(page.locator(".server-row.selected")).toContainText(
+    "Pending source copy",
+  );
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__TEST__.servers.find((s: any) => s.id === "b").name,
+    ),
+  ).toBe("Target B");
+  expect(errors).toEqual([]);
+});
+
+test("six direct actions remain reachable by keyboard and do not change the selected source", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  const row = page.locator('.server-row[data-server-id="b"]');
+  const actions = row.locator("[data-server-action]");
+  await expect(actions).toHaveCount(6);
+  for (const action of await actions.all()) {
+    await action.focus();
+    await expect(action).toBeFocused();
+  }
+  const copy = row.locator('[data-server-action="copy"]');
+  await copy.focus();
+  await expect(
+    row.locator(".action-copy .server-action-tooltip"),
+  ).toBeVisible();
+  await page.keyboard.press("Space");
+  const editor = page.getByRole("dialog", { name: "服务器配置", exact: true });
+  await expect(editor.getByLabel(/^名称/)).toHaveValue("Target B");
+  await editor.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(page.locator(".server-row.selected")).toContainText("Jump A");
+  await expect(copy).toBeFocused();
+  await row.locator('[data-server-action="edit"]').dblclick();
+  await expect(editor).toBeVisible();
+  expect(
+    await page.evaluate(() =>
+      (window as any).__TEST__.calls.filter(
+        (c: any) => c.command === "open_connection",
+      ),
+    ),
+  ).toHaveLength(0);
+  expect(errors).toEqual([]);
+});
+
+test("touch actions and dual confirmation buttons fit a narrow viewport", async ({
+  browser,
+  baseURL,
+}) => {
+  const context = await browser.newContext({
+    baseURL,
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  const errors = await setup(page);
+  const row = page.locator('.server-row[data-server-id="a"]');
+  for (const action of await row.locator("[data-server-action]").all()) {
+    await expect(action).toBeInViewport();
+    const box = await action.boundingBox();
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+  }
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({ path: ".qa/server-actions-touch-narrow.png" });
+  await row.locator('[data-server-action="copy"]').tap();
+  const editor = page.getByRole("dialog", { name: "服务器配置", exact: true });
+  for (const name of ["取消", "新建服务器", "保存修改"])
+    await expect(
+      editor.getByRole("button", { name, exact: true }),
+    ).toBeInViewport();
+  expect(await editor.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
+    true,
+  );
+  await editor.getByLabel("密码", { exact: true }).scrollIntoViewIfNeeded();
+  await expect(
+    editor.getByRole("button", { name: "复制已保存密码" }),
+  ).toBeInViewport();
+  await page.screenshot({ path: ".qa/server-editor-touch-narrow.png" });
+  expect(errors).toEqual([]);
+  await context.close();
+});
+
+test("copy preserves key configuration and visible transfer endpoint when host changes", async ({
   page,
 }) => {
   const errors = await setup(page);
   await page.locator('.server-row[data-server-id="b"]').click();
   await editSelected(page);
-  let editor = page.getByRole("dialog", { name: "编辑服务器" });
+  let editor = page.getByRole("dialog", { name: "服务器配置" });
   await editor.getByLabel("认证方式").selectOption("key");
   await editor.getByLabel("本地私钥路径").fill("C:\\Keys\\production.pem");
   await editor.getByLabel("真实地址", { exact: true }).fill("10.0.0.8");
   await editor.getByLabel("直连端口", { exact: true }).fill("2200");
-  await editor.getByRole("button", { name: "保存", exact: true }).click();
+  await editor.locator(".editor-save-actions button.primary").click();
   editor = await copyServer(page, "b");
   await expect(editor.getByLabel("本地私钥路径")).toHaveValue(
     "C:\\Keys\\production.pem",
@@ -2031,12 +2441,16 @@ test("copy preserves key configuration and clears inherited transfer endpoint wh
     "10.0.0.8",
   );
   await editor.getByLabel("地址", { exact: true }).fill("new-target.internal");
-  await expect(editor.getByLabel("真实地址", { exact: true })).toHaveValue("");
-  await expect(editor.getByLabel("直连端口", { exact: true })).toHaveValue(
-    "22",
+  await expect(editor.getByLabel("真实地址", { exact: true })).toHaveValue(
+    "10.0.0.8",
   );
-  await expect(editor.getByRole("status")).toContainText("已清空");
-  await editor.getByRole("button", { name: "保存副本", exact: true }).click();
+  await expect(editor.getByLabel("直连端口", { exact: true })).toHaveValue(
+    "2200",
+  );
+  await expect(editor.getByRole("status")).toContainText(
+    "真实地址仍为来源地址",
+  );
+  await editor.getByRole("button", { name: "新建服务器", exact: true }).click();
   const request = await page.evaluate(
     () =>
       (window as any).__TEST__.calls.find(
@@ -2048,8 +2462,8 @@ test("copy preserves key configuration and clears inherited transfer endpoint wh
     authType: "key",
     privateKey: "C:\\Keys\\production.pem",
     jumpServerId: "a",
-    directHost: null,
-    directPort: 22,
+    directHost: "10.0.0.8",
+    directPort: 2200,
   });
   editor = await copyServer(page, "b");
   await editor.getByLabel("真实地址", { exact: true }).fill("10.0.0.9");
@@ -2069,14 +2483,15 @@ test("missing copy source keeps the draft and can save as an ordinary new config
   const editor = await copyServer(page);
   await editor.getByLabel(/^名称/).fill("Draft survives");
   await page.evaluate(() => (window as any).__TEST__.servers.splice(0, 1));
-  await editor.getByRole("button", { name: "保存副本", exact: true }).click();
-  await expect(editor.getByRole("alert")).toContainText("来源服务器");
+  await editor.getByRole("button", { name: "新建服务器", exact: true }).click();
+  await expect(editor.locator(".editor-feedback-error")).toContainText(
+    "来源服务器",
+  );
   await expect(editor.getByLabel(/^名称/)).toHaveValue("Draft survives");
-  await editor.getByRole("button", { name: "保留草稿，改为普通新建" }).click();
-  const create = page.getByRole("dialog", { name: "新增服务器", exact: true });
-  await expect(create.getByLabel(/^名称/)).toHaveValue("Draft survives");
-  await create.getByRole("button", { name: "保存", exact: true }).click();
-  await expect(create).toHaveCount(0);
+  await expect(editor.getByRole("button", { name: "保存修改" })).toBeDisabled();
+  await editor.getByRole("button", { name: "清空已保存密码" }).click();
+  await editor.getByRole("button", { name: "新建服务器", exact: true }).click();
+  await expect(editor).toHaveCount(0);
   const saved = await page.evaluate(() =>
     (window as any).__TEST__.servers.find(
       (s: any) => s.name === "Draft survives",
@@ -2094,10 +2509,12 @@ test("removed source password keeps copy open and allows a replacement password"
   await page.evaluate(
     () => ((window as any).__TEST__.servers[0].hasSavedPassword = false),
   );
-  await editor.getByRole("button", { name: "保存副本", exact: true }).click();
-  await expect(editor.getByRole("alert")).toContainText("密码已被清空");
+  await editor.getByRole("button", { name: "新建服务器", exact: true }).click();
+  await expect(editor.locator(".editor-feedback-error")).toContainText(
+    "密码已被清空",
+  );
   await editor.getByLabel("密码", { exact: true }).fill("replacement-secret");
-  await editor.getByRole("button", { name: "保存副本", exact: true }).click();
+  await editor.getByRole("button", { name: "新建服务器", exact: true }).click();
   await expect(editor).toHaveCount(0);
   const state = await page.evaluate(() => ({
     calls: (window as any).__TEST__.calls,
@@ -2111,7 +2528,7 @@ test("removed source password keeps copy open and allows a replacement password"
   expect(errors).toEqual([]);
 });
 
-test("save and connect saves one copy even when connection fails and retries", async ({
+test("create saves one copy then explicit connect retries without another copy", async ({
   page,
 }) => {
   const errors = await setup(page);
@@ -2127,8 +2544,11 @@ test("save and connect saves one copy even when connection fails and retries", a
     };
   });
   const editor = await copyServer(page, "b");
-  await editor.getByRole("button", { name: "保存并连接", exact: true }).click();
+  await editor.getByRole("button", { name: "新建服务器", exact: true }).click();
   await expect(editor).toHaveCount(0);
+  await page
+    .locator('.server-row.selected [data-server-action="connect"]')
+    .click();
   const home = page.getByRole("region", { name: "服务器", exact: true });
   await expect(home.getByRole("alert")).toContainText(
     "copy connection refused",
@@ -2191,7 +2611,10 @@ test("finishing a background connection respects navigation and entering uses th
   const home = page.getByRole("region", { name: "服务器", exact: true });
   await expect(home).toBeVisible();
   await expect(home.locator('[data-server-id="b"]')).toContainText("2 个会话");
-  await home.getByRole("button", { name: "进入会话", exact: true }).click();
+  await home
+    .locator(".server-catalog")
+    .getByRole("button", { name: "进入会话", exact: true })
+    .click();
   await expect(
     page.locator(`.session-tab[data-tab-id="${first}"] .tab-select`),
   ).toHaveAttribute("aria-selected", "true");
@@ -2279,17 +2702,20 @@ test("server details follow keyboard selection and copy the selected configurati
   ).toContainText("Jump A");
   await details.getByRole("button", { name: "复制配置", exact: true }).click();
   const editor = page.getByRole("dialog", {
-    name: "复制服务器配置",
+    name: "服务器配置",
     exact: true,
   });
-  await expect(editor.getByLabel(/^名称/)).toHaveValue("Target B - 副本");
+  await expect(editor.getByLabel(/^名称/)).toHaveValue("Target B");
+  await expect(editor.locator(".create-name-preview")).toContainText(
+    "Target B - 副本",
+  );
   await expect(editor.getByLabel("跳板服务器", { exact: true })).toHaveValue(
     "a",
   );
   await editor.getByRole("button", { name: "取消", exact: true }).click();
   await details.getByRole("button", { name: "编辑", exact: true }).click();
   await expect(
-    page.getByRole("dialog", { name: "编辑服务器" }).getByLabel(/^名称/),
+    page.getByRole("dialog", { name: "服务器配置" }).getByLabel(/^名称/),
   ).toHaveValue("Target B");
   expect(errors).toEqual([]);
 });
@@ -2338,6 +2764,7 @@ test("refined server library visual review with realistic configurations and acc
     autoConnect: true,
   });
   const home = page.getByRole("region", { name: "服务器", exact: true });
+  await home.locator('[data-server-id="b"] .catalog-name').click();
   await home.locator('[data-server-id="b"] .catalog-connect').click();
   await expect(page.locator('.tab-select[aria-selected="true"]')).toHaveCount(
     1,
@@ -2356,10 +2783,7 @@ test("refined server library visual review with realistic configurations and acc
     );
     await expect(
       details.getByRole("button", { name: "复制配置", exact: true }),
-    ).toHaveCSS(
-      "background-color",
-      dark ? "rgb(36, 37, 39)" : "rgb(255, 255, 255)",
-    );
+    ).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     await page.screenshot({
       path: `.qa/server-library-v2-${dark ? "dark" : "light"}.png`,
     });
@@ -2372,7 +2796,7 @@ test("refined server library visual review with realistic configurations and acc
       .getByRole("button", { name: "查看服务器详情", exact: true })
       .click();
     await expect(
-      details.getByRole("button", { name: "进入已有会话", exact: true }),
+      details.getByRole("button", { name: "进入会话", exact: true }),
     ).toBeInViewport();
     expect(
       await details.evaluate((el) => el.scrollWidth <= el.clientWidth),
@@ -2388,13 +2812,13 @@ test("refined server library visual review with realistic configurations and acc
   await selectTheme(page, "light");
   await details.getByRole("button", { name: "复制配置", exact: true }).click();
   const editor = page.getByRole("dialog", {
-    name: "复制服务器配置",
+    name: "服务器配置",
     exact: true,
   });
   for (const width of [1360, 860]) {
     await page.setViewportSize({ width, height: width === 860 ? 580 : 900 });
     await expect(
-      editor.getByRole("button", { name: "保存并连接", exact: true }),
+      editor.getByRole("button", { name: "保存修改", exact: true }),
     ).toBeInViewport();
     await expect(editor.locator(".dialog-actions .primary")).toHaveCount(1);
     expect(
@@ -2424,6 +2848,7 @@ test("returning home restores keyboard focus to the open compact details", async
   const errors = await setup(page, false, { autoConnect: true });
   await page.setViewportSize({ width: 860, height: 580 });
   const home = page.getByRole("region", { name: "服务器", exact: true });
+  await home.locator('[data-server-id="b"] .catalog-name').click();
   await home.locator('[data-server-id="b"] .catalog-connect').click();
   await expect(home).toBeHidden();
   await page.getByRole("button", { name: "服务器首页", exact: true }).click();
@@ -2434,9 +2859,7 @@ test("returning home restores keyboard focus to the open compact details", async
   await expect(
     details.getByRole("heading", { name: "Target B", exact: true }),
   ).toBeFocused();
-  await details
-    .getByRole("button", { name: "进入已有会话", exact: true })
-    .click();
+  await details.getByRole("button", { name: "进入会话", exact: true }).click();
   await expect(home).toBeHidden();
   await page.getByRole("button", { name: "服务器首页", exact: true }).click();
   await expect(details).toBeVisible();
@@ -2467,7 +2890,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       name: "直连端口",
       exact: true,
     });
-    const save = editor.getByRole("button", { name: "保存", exact: true });
+    const save = editor.locator(".editor-save-actions button.primary");
     await expect(editor.locator('[aria-invalid="true"]')).toHaveCount(0);
     await name.press("Tab");
     await expect(name).toHaveAttribute("aria-invalid", "true");
@@ -2543,7 +2966,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     await auth.selectOption("key");
     const key = editor.getByLabel("本地私钥路径", { exact: true });
     await expect(key).not.toHaveAttribute("aria-invalid", "true");
-    await editor.getByRole("button", { name: "保存", exact: true }).click();
+    await editor.locator(".editor-save-actions button.primary").click();
     await expect(key).toBeFocused();
     await expect(key).toHaveAttribute("aria-invalid", "true");
     await expect(key).toHaveAccessibleDescription(
@@ -2558,15 +2981,10 @@ for (const colorScheme of ["light", "dark"] as const) {
     await auth.selectOption("key");
     await expect(key).not.toHaveAttribute("aria-invalid", "true");
     await auth.selectOption("agent");
-    await editor
-      .getByRole("button", { name: "保存并连接", exact: true })
-      .click();
-    const username = editor.getByLabel("用户名", { exact: true });
-    await expect(username).toBeFocused();
-    await expect(username).toHaveAccessibleDescription(
-      "请填写 SSH 用户名后再连接。",
-    );
-    await editor.getByRole("button", { name: "保存", exact: true }).click();
+    await expect(
+      editor.getByRole("button", { name: "保存并连接", exact: true }),
+    ).toHaveCount(0);
+    await editor.locator(".editor-save-actions button.primary").click();
     await expect(editor).toHaveCount(0);
     expect(
       await page.evaluate(() =>

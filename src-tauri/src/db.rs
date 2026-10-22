@@ -283,7 +283,7 @@ impl Database {
                 {
                     return Err(AppError::new(
                         "sourcePasswordMissing",
-                        "来源已没有可复用的登录密码，请取消复用并在连接时输入，或填写新密码。",
+                        "原服务器已没有可继承的登录密码，请填写新密码或选择清空已保存密码后再新建。",
                     ));
                 }
                 source.password
@@ -312,6 +312,19 @@ impl Database {
     pub fn save(&mut self, request: SaveServerRequest) -> AppResult<ServerView> {
         self.validate_schema()?;
         let view = request.server;
+        // An update must never resurrect a record removed while its editor was open.
+        if !view.id.is_empty() {
+            self.get(&view.id).map_err(|error| {
+                if error.kind == "notFound" {
+                    AppError::new(
+                        "sourceMissing",
+                        "原服务器已删除，请使用当前草稿新建服务器。",
+                    )
+                } else {
+                    error
+                }
+            })?;
+        }
         let password = match request.password_change {
             PasswordChange::Keep => self
                 .connection
@@ -817,6 +830,28 @@ mod tests {
             .unwrap();
         assert!(!cleared.has_saved_password);
         assert!(db.get(&saved.id).unwrap().password.is_empty());
+    }
+    #[test]
+    fn updating_a_deleted_server_does_not_recreate_it() {
+        let mut db = Database::open(Path::new(":memory:")).unwrap();
+        let saved = db.save_config(server()).unwrap();
+        db.delete(&saved.id).unwrap();
+        for password_change in [
+            PasswordChange::Keep,
+            PasswordChange::Clear,
+            PasswordChange::Set {
+                value: "replacement".into(),
+            },
+        ] {
+            let error = db
+                .save(SaveServerRequest {
+                    server: saved.view(),
+                    password_change,
+                })
+                .unwrap_err();
+            assert_eq!(error.kind, "sourceMissing");
+            assert!(db.list().unwrap().is_empty());
+        }
     }
     #[test]
     fn host_keys_are_isolated_by_network_scope() {

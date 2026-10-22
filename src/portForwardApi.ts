@@ -8,12 +8,13 @@ import type {
   TerminalEvent,
 } from "./types";
 
+export type ForwardService = { kind: "portForward"; targetHost: string; targetPort: number } | { kind: "networkProxy" };
+export type ForwardKind = ForwardService["kind"];
 export interface ForwardSettings {
   serverId: string;
   listenAddress: string;
   listenPort: number | null;
-  targetHost: string;
-  targetPort: number;
+  service: ForwardService;
   autoReconnect: boolean;
 }
 export interface ForwardRule {
@@ -55,7 +56,21 @@ export interface ForwardRuntime {
     message: string;
   } | null;
   probeId: string | null;
+  proxy: ProxyRuntime | null;
   notes: ForwardNote[];
+}
+export interface ProxyProbeRequest {
+  protocol: "httpConnect" | "socks5";
+  target: { host: string; port: number };
+}
+export interface ProxyProbeResult extends ProxyProbeRequest {
+  probeId: string; runId: string; startedAt: number; finishedAt: number;
+  success: boolean; stage: string; message: string;
+}
+export interface ProxyRuntime {
+  negotiatingConnections: number; waitingChannels: number; idleClients: number; activeTargetChannels: number;
+  lastProbe: ProxyProbeResult | null;
+  lastConnection: { at: number; host: string; port: number; protocol: string; stage: string; success: boolean; message: string } | null;
 }
 export interface ForwardView {
   rule: ForwardRule;
@@ -165,6 +180,10 @@ export const forwardApi = {
       runId: view.runtime?.runId,
       cancelProbeId,
     }),
+  proxyProbe: (generation: number, view: ForwardView, request: ProxyProbeRequest) =>
+    invoke<string>("test_network_proxy", { generation, id: view.rule.id, runId: view.runtime?.runId, request }),
+  cancelProxyProbe: (generation: number, view: ForwardView, probeId: string) =>
+    invoke<void>("cancel_network_proxy_test", { generation, id: view.rule.id, runId: view.runtime?.runId, probeId }),
   openWeb: (generation: number, view: ForwardView) =>
     invoke<void>("open_port_forward_web", {
       generation,
@@ -173,7 +192,7 @@ export const forwardApi = {
     }),
 };
 
-export function emptyForward(serverId = ""): ForwardRule {
+export function emptyForward(serverId = ""): ForwardRule & { settings: ForwardSettings & { service: Extract<ForwardService, {kind: "portForward"}> } } {
   return {
     id: "",
     revision: 0,
@@ -183,11 +202,13 @@ export function emptyForward(serverId = ""): ForwardRule {
       serverId,
       listenAddress: "127.0.0.1",
       listenPort: null,
-      targetHost: "127.0.0.1",
-      targetPort: 0,
+      service: { kind: "portForward", targetHost: "127.0.0.1", targetPort: 0 },
       autoReconnect: true,
     },
   };
+}
+export function emptyNetworkProxy(serverId = ""): ForwardRule {
+  return { ...emptyForward(serverId), settings: { serverId, listenAddress: "127.0.0.1", listenPort: 1080, autoReconnect: true, service: {kind: "networkProxy"} } };
 }
 export const forwardPhases: Record<string, string> = {
   starting: "启动中",

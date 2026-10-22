@@ -349,6 +349,7 @@ async fn quit_app(
         state.ensure_running()?;
         state.stopping.store(true, Ordering::SeqCst);
     }
+    app.state::<updates::UpdateManager>().cancel_preparation();
     shutdown_work(state.inner().clone()).await?;
     app.exit(0);
     Ok(())
@@ -734,6 +735,22 @@ pub fn run() {
             if let tauri::WindowEvent::DragDrop(event) = event {
                 desktop_drag::native_drop(window, event);
             }
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    let state = window.state::<Arc<State>>();
+                    let _gate = state.configuration.lock().unwrap();
+                    if window
+                        .state::<updates::UpdateManager>()
+                        .installation_in_progress()
+                    {
+                        api.prevent_close();
+                    } else {
+                        window
+                            .state::<updates::UpdateManager>()
+                            .cancel_preparation();
+                    }
+                }
+            }
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 diagnostics::observe(
                     "window",
@@ -812,6 +829,8 @@ pub fn run() {
             port_forwarding::commands::resume_port_forward,
             port_forwarding::commands::answer_port_forward,
             port_forwarding::commands::test_port_forward,
+            port_forwarding::commands::test_network_proxy,
+            port_forwarding::commands::cancel_network_proxy_test,
             port_forwarding::commands::open_port_forward_web,
             window_chrome::window_chrome,
             logs::open_container_logs,
@@ -845,6 +864,12 @@ pub fn run() {
             updates::update_check,
             updates::update_download,
             updates::update_preferences,
+            updates::update_cancel_download,
+            updates::update_skip_version,
+            updates::update_ack_notice,
+            updates::update_ack_result,
+            updates::update_open_manual_asset,
+            updates::update_restart_recovery,
             updates::update_install,
             updates::update_preflight,
             updates::update_open_release,
@@ -960,13 +985,27 @@ pub fn run() {
         ])
         .build(context);
     match built {
-        Ok(app) => app.run(|_, event| {
-            if matches!(event, tauri::RunEvent::Exit) {
+        Ok(app) => app.run(|app, event| match event {
+            tauri::RunEvent::ExitRequested { api, .. } => {
+                let state = app.state::<Arc<State>>();
+                let _gate = state.configuration.lock().unwrap();
+                if app
+                    .state::<updates::UpdateManager>()
+                    .installation_in_progress()
+                {
+                    api.prevent_exit();
+                } else {
+                    app.state::<updates::UpdateManager>().cancel_preparation();
+                }
+            }
+            tauri::RunEvent::Exit => {
+                app.state::<updates::UpdateManager>().stop();
                 diagnostics::startup("shutdown.complete");
                 if let Some(service) = diagnostics::global() {
                     service.finish();
                 }
             }
+            _ => {}
         }),
         Err(_) => {
             if diagnostics::global().is_none() {

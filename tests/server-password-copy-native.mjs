@@ -9,10 +9,12 @@ const phase = process.env.SODECK_PASSWORD_COPY_PHASE || "initial";
 const browser = await chromium.connectOverCDP(
   process.env.SODECK_PASSWORD_COPY_CDP_URL || "http://127.0.0.1:9249",
 );
+const appUrl =
+  process.env.SODECK_PASSWORD_COPY_APP_URL || "http://127.0.0.1:1479";
 const page = browser
   .contexts()[0]
   .pages()
-  .find((p) => p.url().startsWith("http://127.0.0.1:1479"));
+  .find((p) => p.url().startsWith(appUrl));
 if (!page) throw new Error("Isolated password-copy QA webview was not found");
 const ipc = (command, args = {}, target = page) =>
   target.evaluate(
@@ -95,9 +97,8 @@ try {
   expect(server).not.toHaveProperty("password");
   await page.reload();
   const row = page.locator(`.server-row[data-server-id="${server.id}"]`);
-  await row.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "编辑", exact: true }).click();
-  const editor = page.getByRole("dialog", { name: "编辑服务器", exact: true });
+  await row.locator('[data-server-action="edit"]').click();
+  const editor = page.getByRole("dialog", { name: "服务器配置", exact: true });
   const copy = editor.getByRole("button", {
     name: "复制已保存密码",
     exact: true,
@@ -142,7 +143,7 @@ try {
     await copy.click();
     await expect(feedback).toHaveText("密码已复制");
     expect(await readClipboard()).toBe(secret);
-    await editor.getByRole("button", { name: "保存", exact: true }).click();
+    await editor.getByRole("button", { name: "保存修改", exact: true }).click();
     const response = await ipc("copy_saved_server_password", { id: server.id });
     lastOwned = replacement;
     expect(response).toBeNull();
@@ -151,8 +152,57 @@ try {
       "unsaved replacement copies old value; saved replacement copies new value without IPC payload",
     );
 
-    await row.click({ button: "right" });
-    await page.getByRole("menuitem", { name: "编辑", exact: true }).click();
+    await row.locator('[data-server-action="copy"]').click();
+    await expect(
+      editor.getByRole("button", { name: "新建服务器", exact: true }),
+    ).toBeVisible();
+    await expect(
+      editor.getByRole("button", { name: "保存修改", exact: true }),
+    ).toBeVisible();
+    await copy.click();
+    await expect(feedback).toHaveText("密码已复制");
+    expect(await readClipboard()).toBe(replacement);
+    await editor.getByLabel(/^名称/).fill("Password copy QA renamed");
+    await editor.getByRole("button", { name: "保存修改", exact: true }).click();
+    const renamed = await ipc("list_servers");
+    expect(renamed).toHaveLength(1);
+    expect(renamed[0]).toMatchObject({
+      id: server.id,
+      name: "Password copy QA renamed",
+      hasSavedPassword: true,
+    });
+    checks.push(
+      "copy entry can copy the stored password and update the fixed source ID",
+    );
+
+    await row.locator('[data-server-action="edit"]').click();
+    await editor.getByLabel(/^名称/).fill("Password copy QA independent");
+    await editor.getByLabel("地址", { exact: true }).fill("127.0.0.2");
+    await editor.getByLabel("标签", { exact: true }).fill("native-unadded-tag");
+    await editor
+      .getByRole("button", { name: "新建服务器", exact: true })
+      .click();
+    const independentServers = await ipc("list_servers");
+    const independent = independentServers.find((s) => s.id !== server.id);
+    expect(independent).toMatchObject({
+      name: "Password copy QA independent",
+      host: "127.0.0.2",
+      tags: ["native-unadded-tag"],
+      hasSavedPassword: true,
+    });
+    expect(independentServers.find((s) => s.id === server.id)).toEqual(
+      renamed[0],
+    );
+    await ipc("copy_saved_server_password", { id: independent.id });
+    expect(await readClipboard()).toBe(replacement);
+    await ipc("delete_server", { id: independent.id });
+    await ipc("copy_saved_server_password", { id: server.id });
+    expect(await readClipboard()).toBe(replacement);
+    checks.push(
+      "edit entry creates an independent full draft with inherited credential and preserves the source",
+    );
+    await page.reload();
+    await row.locator('[data-server-action="edit"]').click();
     // Hold the actual Windows clipboard in another process to provoke a real write failure.
     lock = spawn(
       "powershell.exe",
@@ -234,12 +284,11 @@ try {
     await copy.click();
     await expect(feedback).toHaveText("密码已复制");
     expect(await readClipboard()).toBe(replacement);
-    await editor.getByRole("button", { name: "保存", exact: true }).click();
+    await editor.getByRole("button", { name: "保存修改", exact: true }).click();
     const cleared = await copyFailure(server.id);
     expect(cleared.kind).toBe("unavailable");
     expect(await readClipboard()).toBe(replacement);
-    await row.click({ button: "right" });
-    await page.getByRole("menuitem", { name: "编辑", exact: true }).click();
+    await row.locator('[data-server-action="edit"]').click();
     await expect(copy).toHaveCount(0);
     await editor.getByRole("button", { name: "取消", exact: true }).click();
     await ipc("delete_server", { id: server.id });

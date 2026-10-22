@@ -1,9 +1,9 @@
-use super::{model::*, Control, Run};
+use super::{model::*, proxy, Control, Run};
 use crate::{
     connection::{self, ConnectEventSink, ConnectionEvent, ConnectionPlan, SharedContext},
     model::{AppError, AppResult},
     ssh_transport::{
-        forwarding::{ForwardCore, Target, Update},
+        forwarding::{ForwardCore, Update},
         Cancellation, Socket, SshConnection,
     },
     traffic::{now, TrafficPurpose},
@@ -272,10 +272,18 @@ fn serve(
 ) -> AppResult<()> {
     let listener = listen(&rule.settings)?;
     run.view.lock().unwrap().actual_address = Some(listener.local_addr()?.to_string());
-    let target = Target {
-        host: rule.settings.target_host.clone(),
-        port: rule.settings.target_port,
+    let target = rule.settings.service.target();
+    let proxy_handle = if rule.settings.service.is_proxy() {
+        Some(state.port_forwarding.proxy_handle()?)
+    } else {
+        None
     };
+    let mut proxy_route: Option<(
+        Arc<proxy::Route>,
+        proxy::connector::Connector,
+        proxy::connector::Bridge,
+    )> = None;
+    let mut proxy_probe: Option<String> = None;
     let mut core: Option<ForwardCore> = None;
     let mut job = Some(connect(state, run, plan, true)?);
     let mut clients = Clients {
@@ -313,7 +321,39 @@ fn serve(
                         }
                     }
                 }
-                Control::Probe(uuid) => {
+                Control::ProxyProbe(uuid, request) => {
+                    if let Some((route, _, _)) = &proxy_route {
+                        let reserved = run.view.lock().unwrap().probe_id.as_ref() == Some(&uuid);
+                        if reserved {
+                            match route.start_probe(
+                                uuid.clone(),
+                                run.id.clone(),
+                                listener.local_addr()?,
+                                request,
+                            ) {
+                                Ok(()) => proxy_probe = Some(uuid),
+                                Err(e) => {
+                                    let mut v = run.view.lock().unwrap();
+                                    v.probe_id = None;
+                                    v.note(e.message);
+                                }
+                            }
+                        }
+                    } else {
+                        run.view.lock().unwrap().probe_id = None;
+                    }
+                }
+                Control::CancelProxyProbe(uuid) => {
+                    if let Some((route, _, _)) = &proxy_route {
+                        route.cancel_probe(&uuid);
+                    }
+                    if proxy_probe.as_ref() == Some(&uuid) {
+                        proxy_probe = None;
+                        run.view.lock().unwrap().probe_id = None;
+                    }
+                }
+                Control::Probe(uuid) if target.is_some() => {
+                    let target = target.as_ref().unwrap();
                     if let Some(core) = &mut core {
                         if probe.is_none() {
                             let id = next_id;
@@ -384,6 +424,17 @@ fn serve(
                     view.note("SSH 路径已就绪，可以连接本地端口");
                     *run.context.lock().unwrap() = Some(context);
                     core = Some(ForwardCore::new(connection));
+                    if let Some(handle) = &proxy_handle {
+                        let route = proxy::Route::new(
+                            handle.clone(),
+                            run.wake.clone(),
+                            state.port_forwarding.total_connections.clone(),
+                        );
+                        let (connector, bridge) = proxy::connector::bridge(route.clone());
+                        let connector =
+                            connector.with_registration(state, run.connections_generation.clone());
+                        proxy_route = Some((route, connector, bridge));
+                    }
                     run.ever_ready.store(true, Ordering::SeqCst);
                     failures = 0;
                 }
@@ -394,7 +445,20 @@ fn serve(
         for _ in 0..32 {
             match listener.accept() {
                 Ok((socket, address)) => {
-                    if let Some(core) = &mut core {
+                    let _gate = state.configuration.lock().unwrap();
+                    if state.ensure_running().is_err() {
+                        let _ = socket.shutdown(Shutdown::Both);
+                        continue;
+                    }
+                    run.connections_generation.fetch_add(1, Ordering::SeqCst);
+                    if let (Some(_), Some((route, connector, _))) = (&core, &proxy_route) {
+                        if let Err(e) =
+                            route.accept(connector.clone(), socket, address, listener.local_addr()?)
+                        {
+                            run.view.lock().unwrap().note(e.message);
+                        }
+                    } else if let Some(core) = &mut core {
+                        let target = target.as_ref().unwrap();
                         let id = next_id;
                         next_id += 1;
                         if clients.reserve(id) {
@@ -425,16 +489,25 @@ fn serve(
         }
         let mut progress = false;
         if let Some(core) = &mut core {
+            if let Some((_, _, bridge)) = &mut proxy_route {
+                bridge.poll(core);
+            }
             match core.drive() {
                 Ok(p) => progress = p,
                 Err(e) => failure = Some(e),
             }
             let mut view = run.view.lock().unwrap();
             for update in core.updates.drain(..) {
+                if let Some((_, _, bridge)) = &mut proxy_route {
+                    bridge.update(update);
+                    continue;
+                }
+                let target = target.as_ref().unwrap();
                 match update {
                     Update::Bytes {
                         sent: s,
                         received: r,
+                        ..
                     } => {
                         sent = sent.saturating_add(s);
                         received = received.saturating_add(r);
@@ -465,7 +538,6 @@ fn serve(
                         if !is_probe && !clients.ids.contains(&id) {
                             continue;
                         }
-                        clients.remove(id);
                         view.note(format!(
                             "目标 {}:{}：{}",
                             target.host, target.port, e.message
@@ -486,12 +558,43 @@ fn serve(
                         }
                     }
                     Update::Finished(id) => clients.remove(id),
+                    Update::Activated(_) => {}
                 }
             }
-            view.active_connections = clients.ids.len();
+            if let Some((route, _, bridge)) = &proxy_route {
+                let (waiting, active) = bridge.counts();
+                let info = route.runtime_info(waiting, active);
+                if proxy_probe
+                    .as_ref()
+                    .is_some_and(|id| info.last_probe.as_ref().is_some_and(|p| &p.probe_id == id))
+                {
+                    proxy_probe = None;
+                    view.probe_id = None;
+                }
+                view.active_connections = active;
+                view.proxy = Some(info);
+                sent = sent.saturating_add(route.sent.swap(0, Ordering::Relaxed));
+                received = received.saturating_add(route.received.swap(0, Ordering::Relaxed));
+            } else {
+                view.active_connections = clients.ids.len();
+            }
         }
         if let Some(error) = failure {
+            let retryable = matches!(error.kind.as_str(), "network" | "timeout" | "io");
+            let mut details = crate::diagnostics::event::error_details(&error);
+            details["taskRef"] = serde_json::json!(crate::diagnostics::alias(&run.id));
+            details["retryPlanned"] = serde_json::json!(
+                run.ever_ready.load(Ordering::SeqCst) && rule.settings.auto_reconnect && retryable
+            );
+            crate::diagnostics::event::Context::from_trace(error.trace_id.as_deref()).event(
+                "WARN",
+                "port_forward",
+                "route.interrupted",
+                details,
+            );
+            dispose_proxy(&mut proxy_route, &mut core);
             core = None;
+            proxy_probe = None;
             clients.clear();
             probe = None;
             run.cancel.lock().unwrap().take();
@@ -500,9 +603,14 @@ fn serve(
             }
             let mut view = run.view.lock().unwrap();
             view.active_connections = 0;
+            if let Some(p) = &mut view.proxy {
+                p.negotiating_connections = 0;
+                p.waiting_channels = 0;
+                p.idle_clients = 0;
+                p.active_target_channels = 0;
+            }
             view.probe_id = None;
             view.note(format!("路径中断，旧业务连接已关闭：{}", error.message));
-            let retryable = matches!(error.kind.as_str(), "network" | "timeout" | "io");
             view.error = Some(error);
             if retryable {
                 let seconds = (1u64 << failures.min(5)).min(30);
@@ -544,6 +652,8 @@ fn serve(
             }
         }
     })();
+    dispose_proxy(&mut proxy_route, &mut core);
+    drop(core);
     // Route worker owns socket cleanup; never advertise stopped while it is alive.
     if let Some(job) = job {
         if let Some(cancel) = run.cancel.lock().unwrap().as_ref() {
@@ -555,4 +665,20 @@ fn serve(
     run.view.lock().unwrap().sent_bytes = sent.to_string();
     run.view.lock().unwrap().received_bytes = received.to_string();
     result
+}
+
+fn dispose_proxy(
+    proxy: &mut Option<(
+        Arc<proxy::Route>,
+        proxy::connector::Connector,
+        proxy::connector::Bridge,
+    )>,
+    core: &mut Option<ForwardCore>,
+) {
+    if let Some((route, _, mut bridge)) = proxy.take() {
+        route.close();
+        bridge.close();
+        core.take();
+        route.wait();
+    }
 }

@@ -47,6 +47,7 @@ export interface TerminalCwd {
   sequence: number;
 }
 export interface TerminalController {
+  focus: () => void;
   clipboard: ClipboardActions;
   prepareMove: () => Promise<TerminalSnapshot>;
   cancelMove: () => Promise<void>;
@@ -62,6 +63,7 @@ export interface TerminalPaneProps {
   container?: boolean;
   active?: boolean;
   interactive?: boolean;
+  focusPolicy?: "automatic" | "managed";
   workspaceId?: string;
   onAlternate?: (alternate: boolean) => void;
   onCleared?: () => void;
@@ -82,6 +84,7 @@ export function LiveTerminalPane({
   container = false,
   active = true,
   interactive = true,
+  focusPolicy = "automatic",
   workspaceId,
   onAlternate,
   onCleared,
@@ -119,6 +122,8 @@ export function LiveTerminalPane({
   const clipboard = useTerminalClipboard(onClipboardState);
   const pasteCapture = useRef<string[] | null>(null);
   const latestCwd = useRef(initial?.cwd);
+  const focusPolicyRef = useRef(focusPolicy);
+  focusPolicyRef.current = focusPolicy;
   const isActive = useRef(active);
   isActive.current = active;
   const isInteractive = useRef(interactive);
@@ -136,9 +141,37 @@ export function LiveTerminalPane({
   } | null>(null);
   const readyCallback = useRef(onReady);
   readyCallback.current = onReady;
+  const fitRequest = useRef<() => void>(() => {});
+  const sizeQueue = useRef<{
+    generation: number;
+    frame: number;
+    sending: boolean;
+    pending: { id: string; cols: number; rows: number } | null;
+    last: string;
+  }>({ generation: 0, frame: 0, sending: false, pending: null, last: "" });
+  function resetSizeQueue() {
+    const q = sizeQueue.current;
+    cancelAnimationFrame(q.frame);
+    sizeQueue.current = {
+      generation: q.generation + 1,
+      frame: 0,
+      sending: false,
+      pending: null,
+      last: "",
+    };
+  }
   useImperativeHandle(
     controllerRef,
     () => ({
+      focus: () => {
+        if (
+          isActive.current &&
+          isInteractive.current &&
+          !transferring.current &&
+          !document.querySelector("dialog[open]")
+        )
+          terminal.current?.focus();
+      },
       clipboard: {
         copySelection: async () => {
           await clipboard.controller.current?.copySelection();
@@ -154,6 +187,7 @@ export function LiveTerminalPane({
       prepareMove: async () => {
         if (transferring.current) throw new Error("会话正在移动");
         transferring.current = true;
+        resetSizeQueue();
         clipboard.invalidate();
         const id = session.current;
         try {
@@ -192,6 +226,7 @@ export function LiveTerminalPane({
           };
         } catch (e) {
           transferring.current = false;
+          fitRequest.current();
           clipboard.controller.current?.refresh();
           if (id)
             await invoke("terminal_resume", { sessionId: id }).catch(() => {});
@@ -200,6 +235,7 @@ export function LiveTerminalPane({
       },
       cancelMove: async () => {
         transferring.current = false;
+        fitRequest.current();
         clipboard.controller.current?.refresh();
         if (session.current)
           await invoke("terminal_resume", { sessionId: session.current }).catch(
@@ -280,23 +316,56 @@ export function LiveTerminalPane({
       term.options.cursorBlink = !motionPreference.matches;
     };
     motionPreference.addEventListener("change", updateMotion);
-    const observer = new ResizeObserver(() => {
-      if (element.current?.clientWidth && element.current?.clientHeight) {
+    function sendSize(q: typeof sizeQueue.current) {
+      if (q !== sizeQueue.current || q.sending || !q.pending) return;
+      const next = q.pending;
+      q.pending = null;
+      if (session.current !== next.id || transferring.current) return;
+      const key = `${next.id}:${next.cols}:${next.rows}`;
+      if (q.last === key) return;
+      q.last = key;
+      q.sending = true;
+      void invoke("terminal_resize", {
+        sessionId: next.id,
+        cols: next.cols,
+        rows: next.rows,
+      })
+        .catch(() => {
+          if (q === sizeQueue.current && q.last === key) q.last = "";
+        })
+        .finally(() => {
+          q.sending = false;
+          sendSize(q);
+        });
+    }
+    fitRequest.current = () => {
+      const q = sizeQueue.current;
+      if (q.frame) return;
+      q.frame = requestAnimationFrame(() => {
+        q.frame = 0;
+        if (
+          q !== sizeQueue.current ||
+          !isActive.current ||
+          transferring.current ||
+          !element.current?.clientWidth ||
+          !element.current?.clientHeight
+        )
+          return;
         addon.fit();
-        if (session.current && !transferring.current)
-          void invoke("terminal_resize", {
-            sessionId: session.current,
-            cols: term.cols,
-            rows: term.rows,
-          }).catch(() => {});
-      }
-    });
+        if (session.current && term.cols > 0 && term.rows > 0) {
+          q.pending = { id: session.current, cols: term.cols, rows: term.rows };
+          sendSize(q);
+        }
+      });
+    };
+    const observer = new ResizeObserver(() => fitRequest.current());
     observer.observe(element.current!);
     const input = term.onData((data) => {
       if (pasteCapture.current) {
         pasteCapture.current.push(data);
         return;
       }
+      // xterm also emits protocol replies while its view is hidden.
       if (session.current && !transferring.current)
         void invoke("terminal_input", {
           sessionId: session.current,
@@ -375,6 +444,8 @@ export function LiveTerminalPane({
       term.writeln("\x1b[38;2;142;160;183m建立连接，开始终端会话。\x1b[0m");
     return () => {
       observer.disconnect();
+      resetSizeQueue();
+      fitRequest.current = () => {};
       motionPreference.removeEventListener("change", updateMotion);
       unbindClipboard();
       input.dispose();
@@ -386,16 +457,16 @@ export function LiveTerminalPane({
   }, []);
   useLayoutEffect(() => {
     clipboard.invalidate();
-    if (interactive && active) terminal.current?.focus();
-    else terminal.current?.blur();
-  }, [interactive, active]);
+    if (!interactive || !active) terminal.current?.blur();
+    else if (
+      focusPolicy === "automatic" &&
+      !document.querySelector("dialog[open]")
+    )
+      terminal.current?.focus();
+  }, [interactive, active, focusPolicy]);
   useEffect(() => {
     if (!active) return;
-    const frame = requestAnimationFrame(() => {
-      if (element.current?.clientWidth && element.current.clientHeight)
-        fit.current?.fit();
-    });
-    return () => cancelAnimationFrame(frame);
+    fitRequest.current();
   }, [active]);
   useEffect(() => {
     if (!request && !container && !initial) {
@@ -406,6 +477,7 @@ export function LiveTerminalPane({
       hadRequest.current = false;
       return;
     }
+    resetSizeQueue();
     clipboard.invalidate();
     connectionSource.current = initial?.source ?? sourceProp.current;
     hadRequest.current = true;
@@ -435,16 +507,14 @@ export function LiveTerminalPane({
           ...latestCwd.current,
         });
       if (opened) callbacks.current.onState("已连接");
-      if (isActive.current) {
-        fit.current?.fit();
-        if (isInteractive.current) terminal.current?.focus();
-      }
-      if (opened)
-        void invoke("terminal_resize", {
-          sessionId: opened,
-          cols: terminal.current?.cols || 100,
-          rows: terminal.current?.rows || 30,
-        }).catch(() => {});
+      fitRequest.current();
+      if (
+        isActive.current &&
+        isInteractive.current &&
+        focusPolicyRef.current === "automatic" &&
+        !document.querySelector("dialog[open]")
+      )
+        terminal.current?.focus();
       readyCallback.current?.();
     }
     const output = new Channel<TerminalEvent>();
@@ -552,7 +622,13 @@ export function LiveTerminalPane({
           event.reason === "failed" ? "连接失败" : "已断开",
         );
         if (event.error) {
-          recordDiagnostic({ event: "ui.error.shown", traceId: event.error.traceId, errorCode: event.error.kind, nativeCode: event.error.nativeCode, outcome: "failed" });
+          recordDiagnostic({
+            event: "ui.error.shown",
+            traceId: event.error.traceId,
+            errorCode: event.error.kind,
+            nativeCode: event.error.nativeCode,
+            outcome: "failed",
+          });
           callbacks.current.onError(event.error);
         }
         setEnded(true);
@@ -628,6 +704,7 @@ export function LiveTerminalPane({
     return () => {
       cancelled = true;
       session.current = null;
+      resetSizeQueue();
       clipboard.invalidate();
       callbacks.current.onSession(null);
       callbacks.current.onConnectionId?.(null);

@@ -1,5 +1,7 @@
+import { createPortal } from "react-dom";
+import { useWorkspaceDialog } from "./WorkspaceInteractionContext";
 import { DialogHeader } from "./DialogHeader";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { FilePlus2, FolderPlus, Upload, ArrowRightLeft } from "lucide-react";
 import { errorOf } from "./types";
 import { transferApi, notifyTransferStarted } from "./transferApi";
@@ -58,10 +60,7 @@ export function FileOperationDialog({
             : operation.kind === "serverCopy"
               ? "服务器内复制"
               : "复制到服务器";
-  useEffect(() => {
-    ref.current?.showModal();
-    input.current?.focus();
-  }, []);
+  useWorkspaceDialog(ref, "files");
   async function submit() {
     if (busy) return;
     setError("");
@@ -132,7 +131,7 @@ export function FileOperationDialog({
         : operation.kind === "upload"
           ? Upload
           : ArrowRightLeft;
-  return (
+  return createPortal(
     <dialog
       ref={ref}
       className="file-operation-dialog"
@@ -288,6 +287,7 @@ export function FileOperationDialog({
               名称
               <input
                 ref={input}
+                data-initial-focus
                 aria-label="新项目名称"
                 value={name}
                 disabled={busy}
@@ -361,6 +361,7 @@ export function FileOperationDialog({
           </button>
         </footer>
       </form>
-    </dialog>
+    </dialog>,
+    document.body,
   );
 }

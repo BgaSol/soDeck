@@ -7,6 +7,13 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+export const maxUpdaterAssetBytes = 512 * 1024 * 1024;
+export function validateUpdaterSize(size) {
+  if (!Number.isSafeInteger(size) || size <= 0 || size > maxUpdaterAssetBytes)
+    throw new Error(
+      "Updater artifact must be nonempty and within the 512 MiB client limit",
+    );
+}
 import { parseVersion } from "./release-version.mjs";
 export const updateTargets = {
   "windows-x64": {
@@ -120,10 +127,15 @@ export function collectUpdateAssets(
   );
   if (candidates.length !== 1)
     throw new Error("Expected exactly one updater artifact for " + platform);
-  const file = candidates[0],
-    data = readFileSync(file),
+  const file = candidates[0];
+  validateUpdaterSize(statSync(file).size);
+  const data = readFileSync(file),
     signature = readFileSync(file + ".sig", "utf8").trim();
   if (!data.length) throw new Error("Empty updater artifact");
+  if (data.length > maxUpdaterAssetBytes)
+    throw new Error(
+      "Updater artifact exceeds the 512 MiB client limit: " + file,
+    );
   verifyUpdateSignature(data, signature, publicKey, version);
   const name = "SoDeck_" + version + "_" + target.suffix;
   copyFileSync(file, join(destination, name));
@@ -139,6 +151,8 @@ export function writeUpdateManifest(
   publicKey,
 ) {
   parseVersion(version);
+  if (typeof notes !== "string" || Buffer.byteLength(notes, "utf8") > 64 * 1024)
+    throw new Error("Release notes exceed the 64 KiB client limit");
   if (
     !/^[A-Za-z0-9_.-]+$/.test(repo.owner) ||
     !/^[A-Za-z0-9_.-]+$/.test(repo.repo)
@@ -150,6 +164,7 @@ export function writeUpdateManifest(
     const file = join(directory, name);
     if (!statSync(file).size)
       throw new Error("Empty updater artifact: " + name);
+    validateUpdaterSize(statSync(file).size);
     const signature = readFileSync(file + ".sig", "utf8").trim();
     verifyUpdateSignature(readFileSync(file), signature, publicKey, version);
     platforms[target] = {
@@ -165,7 +180,25 @@ export function writeUpdateManifest(
       signature,
     };
   }
-  const manifest = { version, notes, pub_date: publishedAt, platforms };
+  const manualAssets = {
+    "windows-x86_64-nsis": `SoDeck_${version}_windows_x64-setup.exe`,
+    "windows-x86_64-msi": `SoDeck_${version}_windows_x64.msi`,
+    "linux-x86_64-deb": `SoDeck_${version}_linux_x64.deb`,
+    "linux-x86_64-appimage": `SoDeck_${version}_linux_x64.AppImage`,
+    "darwin-aarch64-dmg": `SoDeck_${version}_macos_arm64.dmg`,
+  };
+  for (const name of Object.values(manualAssets)) {
+    const file = join(directory, name);
+    if (!statSync(file).isFile() || !statSync(file).size)
+      throw new Error("Missing manual update asset: " + name);
+  }
+  const manifest = {
+    version,
+    notes,
+    pub_date: publishedAt,
+    platforms,
+    sodeck: { schemaVersion: 1, manualAssets },
+  };
   writeFileSync(
     join(directory, "latest.json"),
     JSON.stringify(manifest, null, 2) + "\n",

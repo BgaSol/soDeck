@@ -91,7 +91,7 @@ pub async fn open_port_forward_window(
             WebviewUrl::App("index.html?port-forwarding=1".into()),
         ),
     )
-    .title("端口转发 · SoDeck")
+    .title("端口转发与代理 · SoDeck")
     .inner_size(1100.0, 760.0)
     .min_inner_size(800.0, 560.0)
     .build();
@@ -374,6 +374,9 @@ pub fn test_port_forward(
     let _gate = state.configuration.lock().unwrap();
     owner(&state, &window, generation)?;
     let run = state.port_forwarding.run(&id, &run_id)?;
+    if run.rule.settings.service.is_proxy() {
+        return Err(AppError::new("validation", "内网代理请使用代理测试"));
+    }
     if let Some(id) = cancel_probe_id {
         run.control(Control::CancelProbe(id))?;
         return Ok(String::new());
@@ -386,11 +389,66 @@ pub fn test_port_forward(
     // Reserve before enqueueing so duplicate IPC calls cannot return phantom probes.
     view.probe_id = Some(id.clone());
     drop(view);
+    *run.probe_owner.lock().unwrap() = Some(state.owner(window.label()));
     if let Err(error) = run.control(Control::Probe(id.clone())) {
         run.view.lock().unwrap().probe_id = None;
         return Err(error);
     }
     Ok(id)
+}
+#[tauri::command]
+pub fn test_network_proxy(
+    window: WebviewWindow,
+    state: TauriState<Arc<State>>,
+    generation: u64,
+    id: String,
+    run_id: String,
+    request: proxy::ProbeRequest,
+) -> AppResult<String> {
+    let _gate = state.configuration.lock().unwrap();
+    let owner = owner(&state, &window, generation)?;
+    proxy::validate_target(&request.target.host, request.target.port)?;
+    let run = state.port_forwarding.run(&id, &run_id)?;
+    if !run.rule.settings.service.is_proxy() {
+        return Err(AppError::new("validation", "此规则不是内网代理"));
+    }
+    let mut view = run.view.lock().unwrap();
+    if view.phase != "ready" || view.probe_id.is_some() {
+        return Err(AppError::new("busy", "请等待代理就绪或当前测试结束"));
+    }
+    let probe_id = uuid::Uuid::new_v4().to_string();
+    view.probe_id = Some(probe_id.clone());
+    drop(view);
+    *run.probe_owner.lock().unwrap() = Some(owner);
+    if let Err(e) = run.control(Control::ProxyProbe(probe_id.clone(), request)) {
+        run.view.lock().unwrap().probe_id = None;
+        return Err(e);
+    }
+    Ok(probe_id)
+}
+#[tauri::command]
+pub fn cancel_network_proxy_test(
+    window: WebviewWindow,
+    state: TauriState<Arc<State>>,
+    generation: u64,
+    id: String,
+    run_id: String,
+    probe_id: String,
+) -> AppResult<()> {
+    let _gate = state.configuration.lock().unwrap();
+    let current = owner(&state, &window, generation)?;
+    let run = state.port_forwarding.run(&id, &run_id)?;
+    if !run.rule.settings.service.is_proxy()
+        || !run
+            .probe_owner
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|o| o.label == current.label && o.generation == current.generation)
+    {
+        return Err(AppError::new("permission", "此测试不属于当前窗口"));
+    }
+    run.control(Control::CancelProxyProbe(probe_id))
 }
 #[tauri::command]
 pub fn open_port_forward_web(
@@ -402,6 +460,9 @@ pub fn open_port_forward_web(
 ) -> AppResult<()> {
     owner(&state, &window, generation)?;
     let rule = state.port_forwarding.with_store(|s| s.get(&id))?;
+    if rule.settings.service.is_proxy() {
+        return Err(AppError::new("validation", "请在客户端中配置本地代理地址"));
+    }
     let scheme = rule
         .web_scheme
         .as_deref()

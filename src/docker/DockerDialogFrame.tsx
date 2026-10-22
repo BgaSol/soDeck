@@ -1,3 +1,4 @@
+import { useWorkspaceDialog } from "../WorkspaceInteractionContext";
 import { createPortal } from "react-dom";
 import {
   useEffect,
@@ -31,24 +32,9 @@ export function DockerDialogFrame({
   const local = useRef<HTMLDialogElement>(null),
     ref = dialogRef ?? local,
     id = useId();
+  useWorkspaceDialog(ref, "services", true, "docker");
   useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null,
-      element = ref.current;
-    element?.showModal();
-    return () => {
-      element?.close();
-      if (!document.querySelector("dialog[open]")) {
-        const target =
-          previous?.isConnected && !previous.closest("[hidden], [inert]")
-            ? previous
-            : document.querySelector<HTMLElement>(
-                '[role="tab"][aria-selected="true"]',
-              );
-        target?.focus({ preventScroll: true });
-      }
-    };
-  }, [ref]);
-  useEffect(() => {
+    if (!ref.current?.open) return;
     const target =
       ref.current?.querySelector<HTMLElement>(
         "[data-initial-focus]:not([hidden])",

@@ -38,13 +38,6 @@ dialog.editor-dialog {
   border-radius: 10px;
   padding: 4px;
 }
-.editor-dialog .copy-password-option {
-  padding: 10px 12px;
-  background: var(--selected);
-  border-radius: 8px;
-  font-size: 12px;
-  color: var(--selected-text);
-}
 .editor-dialog .dialog-actions {
   padding: 16px 28px;
 }
@@ -118,4 +111,34 @@ dialog.editor-dialog {
 }
 .editor-dialog .password-copy-feedback svg {
   flex-shrink: 0;
+}
+
+.editor-save-actions {
+  flex-wrap: wrap;
+}
+.editor-save-actions > p {
+  flex: 1 0 100%;
+  text-align: right;
+  margin: 0 0 4px;
+}
+.create-name-preview {
+  overflow-wrap: anywhere;
+}
+@media (pointer: coarse) {
+  .editor-dialog .dialog-actions button {
+    min-height: 44px;
+  }
+}
+@media (max-width: 420px) {
+  .editor-dialog .editor-save-actions {
+    gap: 8px;
+    padding-inline: 14px;
+  }
+  .editor-dialog .editor-save-actions button {
+    padding-inline: 10px;
+    flex: 1 1 auto;
+  }
+  .editor-save-actions > p {
+    text-align: left;
+  }
 }

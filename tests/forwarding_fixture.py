@@ -50,9 +50,14 @@ class Server(paramiko.ServerInterface):
             while (root / "pause-forward").exists():
                 time.sleep(0.01)
             (root / "forward-replied").write_text(str(channel_id))
-        if destination != ("echo.internal.invalid", 7):
+        if destination == ("echo.internal.invalid", 7):
+            address = target.getsockname()
+        elif destination == ("ssh.internal.invalid", 22):
+            # A second isolated SSH hop, without resolving or dialing host networks.
+            address = ("127.0.0.1", int(sys.argv[2]))
+        else:
             return paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
-        self.peers[channel_id] = socket.create_connection(target.getsockname())
+        self.peers[channel_id] = socket.create_connection(address)
         return paramiko.OPEN_SUCCEEDED
 
 def copy(source, destination):

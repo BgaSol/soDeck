@@ -11,12 +11,16 @@ export async function showServers(page: Page) {
 
 export async function connectSelectedServer(page: Page) {
   const home = await showServers(page);
-  await home.locator(".server-row.selected").click({ button: "right" });
-  await page.getByRole("menuitem", { name: "新建会话", exact: true }).click();
+  await home
+    .locator('.server-row.selected [data-server-action="new-session"]')
+    .click();
 }
 
 export async function serverAction(page: Page, action: string) {
   const home = await showServers(page);
-  await home.locator(".server-row.selected").click({ button: "right" });
-  await page.getByRole("menuitem", { name: action, exact: true }).click();
+  const label = action === "删除服务器" ? "删除配置" : action;
+  await home
+    .locator(".server-row.selected")
+    .getByRole("button", { name: label, exact: true })
+    .click();
 }

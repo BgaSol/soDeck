@@ -6,17 +6,51 @@ use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Settings {
     pub server_id: String,
     pub listen_address: String,
     pub listen_port: Option<u16>,
-    pub target_host: String,
-    pub target_port: u16,
+    pub service: Service,
     pub auto_reconnect: bool,
 }
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+pub enum Service {
+    PortForward {
+        #[serde(rename = "targetHost")]
+        target_host: String,
+        #[serde(rename = "targetPort")]
+        target_port: u16,
+    },
+    NetworkProxy,
+}
+impl Service {
+    pub fn is_proxy(&self) -> bool {
+        matches!(self, Self::NetworkProxy)
+    }
+    pub fn target(&self) -> Option<crate::ssh_transport::forwarding::Target> {
+        match self {
+            Self::PortForward {
+                target_host,
+                target_port,
+            } => Some(crate::ssh_transport::forwarding::Target {
+                host: target_host.clone(),
+                port: *target_port,
+            }),
+            Self::NetworkProxy => None,
+        }
+    }
+    #[cfg(test)]
+    pub fn host_mut(&mut self) -> &mut String {
+        match self {
+            Self::PortForward { target_host, .. } => target_host,
+            _ => panic!("fixed target required"),
+        }
+    }
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Rule {
     pub id: String,
     pub revision: u32,
@@ -27,13 +61,14 @@ pub struct Rule {
 impl Rule {
     pub fn validate(&mut self) -> AppResult<()> {
         self.name = self.name.trim().into();
-        self.settings.target_host = self.settings.target_host.trim().into();
-        let host = &mut self.settings.target_host;
-        if host.starts_with('[') && host.ends_with(']') {
-            let raw = &host[1..host.len() - 1];
-            if raw.parse::<Ipv6Addr>().is_ok() {
-                *host = raw.into();
-            }
+        if let Service::PortForward {
+            target_host,
+            target_port,
+        } = &mut self.settings.service
+        {
+            *target_host = super::proxy::validate_target(target_host, *target_port)?.host;
+        } else if self.web_scheme.is_some() {
+            return Err(AppError::new("validation", "内网代理不设置固定网页入口"));
         }
         let address: Option<IpAddr> = self.settings.listen_address.parse().ok();
         if !matches!(address, Some(IpAddr::V4(a)) if a == Ipv4Addr::LOCALHOST)
@@ -47,13 +82,6 @@ impl Rule {
         if self.name.is_empty()
             || self.name.chars().count() > 128
             || self.name.chars().any(char::is_control)
-            || host.is_empty()
-            || host.len() > 253
-            || host
-                .chars()
-                .any(|c| c.is_control() || c.is_whitespace() || "/\\@?#".contains(c))
-            || (host.contains(':') && host.parse::<Ipv6Addr>().is_err())
-            || self.settings.target_port == 0
             || self.settings.listen_port == Some(0)
             || self.settings.server_id.is_empty()
             || self
@@ -123,6 +151,7 @@ pub struct Runtime {
     pub prompt: Option<Prompt>,
     pub target_result: Option<TargetResult>,
     pub probe_id: Option<String>,
+    pub proxy: Option<super::proxy::RuntimeInfo>,
     pub notes: Vec<Note>,
 }
 impl Runtime {

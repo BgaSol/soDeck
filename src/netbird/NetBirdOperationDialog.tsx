@@ -1,14 +1,24 @@
+import { createPortal } from "react-dom";
+import { useContext, useLayoutEffect } from "react";
+import {
+  WorkspaceInteractionContext,
+  canRestoreFocus,
+} from "../WorkspaceInteractionContext";
 import { useEffect, useId, useRef, useState } from "react";
 import type { OperationRequest, Preview } from "./netbirdApi";
 import { actionLabels, at } from "./netbirdPresentation";
 import { errorOf } from "../types";
 export function NetBirdOperationDialog({
   preview,
+  visible = true,
+  workspaceActive = true,
   serverName,
   onConfirm,
   onClose,
 }: {
   preview: Preview;
+  visible?: boolean;
+  workspaceActive?: boolean;
   serverName: string;
   onConfirm: (request: OperationRequest) => Promise<void>;
   onClose: () => void;
@@ -27,21 +37,48 @@ export function NetBirdOperationDialog({
     action: preview.action,
     previewId: preview.id,
   }));
+  const interaction = useContext(WorkspaceInteractionContext);
+  const interactionRef = useRef(interaction);
+  interactionRef.current = interaction;
+  const presented = useRef(false);
+  const previous = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (workspaceActive && (presented.current || visible)) {
+      if (!dialog.current?.open) {
+        if (!presented.current)
+          previous.current = document.activeElement as HTMLElement | null;
+        dialog.current?.showModal();
+        cancel.current?.focus();
+        presented.current = true;
+      }
+    } else dialog.current?.close();
+  }, [workspaceActive, visible]);
   useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    dialog.current?.showModal();
-    cancel.current?.focus();
+    const element = dialog.current;
     const timer = setTimeout(
       () => setExpired(true),
       Math.max(0, preview.expiresAt - Date.now()),
     );
     return () => {
       clearTimeout(timer);
-      if (previous?.isConnected) previous.focus();
+      element?.close();
+      if (!presented.current) return;
+      queueMicrotask(() => {
+        if (document.querySelector("dialog[open]")) return;
+        if (interactionRef.current)
+          interactionRef.current.restoreFocus(previous.current, "services");
+        else if (canRestoreFocus(previous.current)) previous.current.focus();
+      });
     };
   }, [preview]);
   async function confirm() {
-    if (pending.current || !preview.allowed || (expired && !attempted)) return;
+    if (
+      !workspaceActive ||
+      pending.current ||
+      !preview.allowed ||
+      (expired && !attempted)
+    )
+      return;
     pending.current = true;
     setBusy(true);
     setError("");
@@ -57,7 +94,7 @@ export function NetBirdOperationDialog({
     }
   }
   const path = preview.path.result;
-  return (
+  return createPortal(
     <dialog
       ref={dialog}
       className="login-dialog nb-confirm"
@@ -125,6 +162,7 @@ export function NetBirdOperationDialog({
               : actionLabels[preview.action]}
         </button>
       </footer>
-    </dialog>
+    </dialog>,
+    document.body,
   );
 }

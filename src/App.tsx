@@ -33,7 +33,7 @@ import { forwardApi } from "./portForwardApi";
 import { useWorkspaceMoves } from "./useWorkspaceMoves";
 import { SessionWorkspace } from "./SessionWorkspace";
 import { ServerHome } from "./ServerHome";
-import { duplicateDraft, configurationFields } from "./serverConfiguration";
+import { createServerName, duplicatePasswordPolicy, configurationFields } from "./serverConfiguration";
 import { emptyServer, errorOf, filterServers } from "./types";
 import {
   closeWorkspace,
@@ -45,7 +45,7 @@ import type {
   AppError,
   Server,
   SaveServerRequest,
-  DuplicatePasswordPolicy,
+  ServerSaveIntent,
 } from "./types";
 import type { WorkspaceTab } from "./workspaces";
 const MonitorWindowApp = lazy(() =>
@@ -164,7 +164,7 @@ export function App() {
       setError(errorOf(error));
     }
   }
-  const [duplicateSource, setDuplicateSource] = useState<Server | null>(null);
+  const [editorSelectName, setEditorSelectName] = useState(false);
   const [focusRequest, setFocusRequest] = useState(0);
   const [savedNotice, setSavedNotice] = useState<{
     text: string;
@@ -190,14 +190,6 @@ export function App() {
   useEffect(() => {
     if (!workspaces.activeId) return;
     lastVisited.current.set(workspaces.activeId, performance.now());
-    const frame = requestAnimationFrame(() => {
-      document
-        .querySelector<HTMLTextAreaElement>(
-          ".workspace-page-wrap:not([hidden]) .xterm-helper-textarea",
-        )
-        ?.focus();
-    });
-    return () => cancelAnimationFrame(frame);
   }, [workspaces.activeId]);
   function navigate(id: string) {
     navigationSerial.current++;
@@ -380,7 +372,7 @@ export function App() {
     if (!server.username) {
       setError({ kind: "validation", message: "请先填写 SSH 用户名。" });
       discardPending();
-      setDuplicateSource(null);
+      setEditorSelectName(false);
       setEditor(structuredClone(server));
       return;
     }
@@ -471,40 +463,40 @@ export function App() {
     };
   }, [createConnection]);
   function editServer(server: Server) {
-    setDuplicateSource(null);
+    setEditorSelectName(false);
     setEditor(structuredClone(server));
   }
   function copyServer(server: Server) {
-    setDuplicateSource(structuredClone(server));
-    setEditor(duplicateDraft(server, servers));
+    setEditorSelectName(true);
+    setEditor(structuredClone(server));
   }
-  async function save(
-    server: SaveServerRequest,
-    connect = false,
-    passwordPolicy?: DuplicatePasswordPolicy,
-    asNew = false,
-  ) {
-    const saved =
-      duplicateSource && !asNew
-        ? await api.duplicateServer({
-            sourceId: duplicateSource.id,
-            draft: configurationFields(server),
-            passwordPolicy: passwordPolicy || { type: "clear" },
-          })
-        : await api.saveServer(server);
-    setServers((values) => [
-      ...values.filter((value) => value.id !== saved.id),
-      saved,
-    ]);
+  async function save(server: SaveServerRequest, intent: ServerSaveIntent, autoName: boolean) {
+    if (!editor) return;
+    if (intent === "update" && (!editor.id || server.id !== editor.id))
+      throw { kind: "validation", message: "无法确定要更新的服务器，请重新打开配置。" };
+    if (intent === "update" && pending?.serverId === editor.id && pending.busy)
+      throw { kind: "busy", message: "请完成或取消当前连接后再保存修改。" };
+    if (intent === "create" && autoName) {
+      const latest = await api.listServers();
+      const expectedName = createServerName(editor, editor, latest);
+      if (server.name !== expectedName) {
+        setServers(latest);
+        throw { kind: "namePreviewChanged", message: "可用的新建名称已更新，请确认名称预览后再次新建。" };
+      }
+    }
+    const saved = intent === "create" && server.id
+      ? await api.duplicateServer({
+          sourceId: editor.id,
+          draft: configurationFields(server),
+          passwordPolicy: duplicatePasswordPolicy(editor, server, server.passwordChange),
+        })
+      : await api.saveServer({ ...server, id: intent === "update" ? editor.id : "" });
+    setServers((values) => [...values.filter((value) => value.id !== saved.id), saved]);
     setSelectedId(saved.id);
-    setSavedNotice({
-      text: `${duplicateSource && !asNew ? "副本已保存" : "配置已保存"}：${saved.name}`,
-      serverId: saved.id,
-    });
+    setSavedNotice({ text: `${intent === "create" ? "服务器已新建" : "修改已保存"}：${saved.name}`, serverId: saved.id });
     setEditor(null);
-    setDuplicateSource(null);
+    setEditorSelectName(false);
     setError(null);
-    if (connect) open(saved, true);
   }
   async function remove(server: Server) {
     if (workspaces.tabs.some((tab) => tab.server.id === server.id))
@@ -728,15 +720,14 @@ export function App() {
       {editor && (
         <ServerEditor
           initial={editor}
-          duplicateSource={duplicateSource}
-          connectDisabled={!!pending?.busy}
+          selectName={editorSelectName}
+          updateBlocked={pending?.serverId === editor.id && pending.busy}
           servers={servers}
           tags={tags}
           onSave={save}
-          onDelete={editor.id ? requestDelete : undefined}
           onClose={() => {
             setEditor(null);
-            setDuplicateSource(null);
+            setEditorSelectName(false);
           }}
         />
       )}
@@ -779,7 +770,11 @@ class WindowErrorBoundary extends Component<
 > {
   state = { failed: false };
   componentDidCatch(error: Error, info: { componentStack?: string | null }) {
-    recordFrontendError("frontend.render.error", error, info.componentStack ?? undefined);
+    recordFrontendError(
+      "frontend.render.error",
+      error,
+      info.componentStack ?? undefined,
+    );
   }
   static getDerivedStateFromError() {
     return { failed: true };

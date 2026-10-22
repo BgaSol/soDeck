@@ -148,6 +148,7 @@ fn forward_core_concurrency_half_close_and_denied_target() {
                 Update::Bytes {
                     sent: s,
                     received: r,
+                    ..
                 } => {
                     sent += s;
                     received += r;
@@ -167,6 +168,116 @@ fn forward_core_concurrency_half_close_and_denied_target() {
     assert!(denied);
     assert_eq!(sent, 12 * 1024 * 1024);
     assert_eq!(received, sent);
+}
+
+#[test]
+#[ignore = "isolated real SSH; requires Python paramiko"]
+fn forward_core_target_open_timeout_preserves_route_and_drains_late_reply() {
+    let fixture = Fixture::new();
+    let mut core = fixture.core();
+    let pause = fixture.dir.path().join("pause-forward");
+    std::fs::write(&pause, "pause").unwrap();
+    core.enqueue(
+        1,
+        None,
+        Target {
+            host: "echo.internal.invalid".into(),
+            port: 7,
+        },
+        ("127.0.0.1".into(), 0),
+    )
+    .unwrap();
+    let poller = Poller::new().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !fixture.dir.path().join("forward-waiting").exists() {
+        assert!(Instant::now() < deadline);
+        core.drive().unwrap();
+        core.wait(&poller, None, Duration::from_millis(10)).unwrap();
+    }
+    // Age only this target request, without waiting for a wall-clock timeout.
+    core.opening.as_mut().unwrap().1 = Instant::now() - OPEN_TIMEOUT - Duration::from_secs(1);
+    core.drive()
+        .expect("one slow target must not tear down the SSH route");
+    assert_eq!(
+        core.updates
+            .iter()
+            .filter(|u| matches!(u, Update::Failed(1, e) if e.kind == "timeout"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        core.updates
+            .iter()
+            .filter(|u| matches!(u, Update::Finished(1)))
+            .count(),
+        1
+    );
+    core.updates.clear();
+    core.drive().unwrap();
+    assert!(core.updates.is_empty(), "report the timeout only once");
+    // Waiting behind the slow open is also bounded, without retiring the route.
+    core.enqueue(
+        99,
+        None,
+        Target {
+            host: "echo.internal.invalid".into(),
+            port: 7,
+        },
+        ("127.0.0.1".into(), 0),
+    )
+    .unwrap();
+    core.queue.front_mut().unwrap().queued_at =
+        Instant::now() - OPEN_TIMEOUT - Duration::from_secs(1);
+    core.drive().unwrap();
+    assert!(core.queue.is_empty());
+    assert_eq!(
+        core.updates
+            .iter()
+            .filter(|u| matches!(u, Update::Failed(99, e) if e.kind == "timeout"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        core.updates
+            .iter()
+            .filter(|u| matches!(u, Update::Finished(99)))
+            .count(),
+        1
+    );
+    core.updates.clear();
+    core.enqueue(
+        2,
+        None,
+        Target {
+            host: "echo.internal.invalid".into(),
+            port: 7,
+        },
+        ("127.0.0.1".into(), 0),
+    )
+    .unwrap();
+    std::fs::remove_file(pause).unwrap();
+    let mut opened = false;
+    while core.len() > 0 {
+        assert!(
+            Instant::now() < deadline,
+            "late target reply was not drained"
+        );
+        let progress = core.drive().unwrap();
+        for update in core.updates.drain(..) {
+            match update {
+                Update::Opened(1) | Update::Failed(1, _) | Update::Finished(1) => {
+                    panic!("timed-out target published a late update")
+                }
+                Update::Opened(2) => opened = true,
+                Update::Failed(2, e) => panic!("next target failed: {e:?}"),
+                _ => {}
+            }
+        }
+        if !progress {
+            core.wait(&poller, None, Duration::from_millis(10)).unwrap();
+        }
+    }
+    assert!(opened, "same SSH session must serve the next target");
 }
 
 #[test]

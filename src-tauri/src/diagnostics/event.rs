@@ -120,6 +120,23 @@ pub fn safe_details(value: Value) -> Value {
             }) {
                 out.insert(key.clone(), json!(v));
             }
+        } else if matches!(key.as_str(), "currentVersion" | "targetVersion") {
+            if let Some(v) = value.as_str().filter(|v| {
+                v.len() < 32
+                    && semver::Version::parse(v)
+                        .is_ok_and(|v| v.pre.is_empty() && v.build.is_empty())
+            }) {
+                out.insert(key.clone(), json!(v));
+            }
+        } else if key == "updateTarget" {
+            if let Some(v) = value.as_str().filter(|v| {
+                matches!(
+                    *v,
+                    "windows-x86_64-nsis" | "darwin-aarch64" | "linux-x86_64"
+                )
+            }) {
+                out.insert(key.clone(), json!(v));
+            }
         } else if key == "errorSource" {
             if let Some(v) = value
                 .as_str()

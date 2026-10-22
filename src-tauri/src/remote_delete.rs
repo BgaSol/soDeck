@@ -489,6 +489,19 @@ pub fn start_remote_delete(
     draft_id: String,
 ) -> AppResult<DeleteTask> {
     crate::moves::workspace_only(&window)?;
+    // Register before locking the deletion registry: installation takes the configuration
+    // gate before reading this registry. The registered operation covers this whole handoff.
+    let context = state
+        .deletes
+        .0
+        .lock()
+        .unwrap()
+        .drafts
+        .get(&draft_id)
+        .ok_or_else(|| AppError::new("expired", "删除准备已失效，请重新选择"))?
+        .context
+        .clone();
+    let operation = transfers::register_file_operation(state.inner().clone(), context)?;
     let _action = state.file_tasks.actions.lock().unwrap();
     let mut registry = state.deletes.0.lock().unwrap();
     let draft = registry
@@ -507,8 +520,6 @@ pub fn start_remote_delete(
     if draft.require_session {
         state.spec(&draft.session_id, window.label())?;
     }
-    let operation =
-        transfers::register_file_operation(state.inner().clone(), draft.context.clone())?;
     let view = DeleteTask {
         id: uuid::Uuid::new_v4().to_string(),
         session_id: draft.session_id.clone(),

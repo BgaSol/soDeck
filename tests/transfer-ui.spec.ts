@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { openWorkspaceTool } from "./workspace-tool-helpers";
 async function setup(page: Page) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -825,7 +826,11 @@ test("delete remains stoppable and fits a narrow dark window", async ({
   await page.evaluate(() => ((window as any).__TEST__.holdDelete = true));
   await page.setViewportSize({ width: 430, height: 640 });
   await page.emulateMedia({ colorScheme: "dark" });
-  await page.getByRole("button", { name: "文件", exact: true }).click();
+  await expect(page.locator(".responsive-workspace")).toHaveAttribute(
+    "data-layout",
+    "single",
+  );
+  await openWorkspaceTool(page, "files");
   await page
     .locator('.file-row[data-path="/home/ops/one.txt"]')
     .click({ button: "right" });
@@ -1208,7 +1213,7 @@ test("multiselection survives directory refresh and the toolbar stays concise", 
   await two.click({ modifiers: ["ControlOrMeta"] });
   await expect(one).toHaveAttribute("aria-selected", "true");
   await expect(two).toHaveAttribute("aria-selected", "true");
-  await expect(page.locator(".file-toolbar > button")).toHaveCount(3);
+  await expect(page.locator(".file-toolbar > button")).toHaveCount(4);
   await expect(
     page.getByRole("button", { name: "新建", exact: true }),
   ).toBeVisible();
@@ -1232,8 +1237,7 @@ test("upload picker and new configuration fit dark small windows", async ({
     .click();
   await page.getByRole("button", { name: "新建连接", exact: true }).click();
   await page.locator(".server-row").click();
-  await page.locator(".server-row.selected").click({ button: "right" });
-  await page.getByRole("menuitem", { name: "编辑", exact: true }).click();
+  await page.locator('.server-row.selected [data-server-action="edit"]').click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("真实地址", { exact: true }).scrollIntoViewIfNeeded();
   await expect(dialog.getByLabel("直连端口")).toHaveValue("22");
@@ -1332,6 +1336,7 @@ test("uncertain commits require reconciliation; interrupted execution can retry 
     id: "task-1",
     auth: { mode: "password", password: "test-only-password" },
     resume: false,
+    diagnosticTraceId: expect.any(String),
   });
 });
 

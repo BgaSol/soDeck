@@ -252,6 +252,14 @@ fn spawn(entry: &Arc<Entry>, task: impl FnOnce() + Send + 'static) {
     });
 }
 impl MonitorManager {
+    pub(crate) fn update_impact_ids(&self) -> Vec<String> {
+        self.entries
+            .lock()
+            .unwrap()
+            .values()
+            .map(|entry| entry.generation.clone())
+            .collect()
+    }
     fn subscribe(
         &self,
         state: &Arc<State>,
@@ -261,6 +269,8 @@ impl MonitorManager {
         output: Channel<MonitorEvent>,
         interest: Interest,
     ) -> AppResult<String> {
+        let _gate = state.configuration.lock().unwrap();
+        state.ensure_running()?;
         let identity = spec.identity().to_owned();
         let owner = state.owner(&window);
         let mut entries = self.entries.lock().unwrap();

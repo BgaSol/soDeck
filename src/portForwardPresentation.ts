@@ -18,10 +18,12 @@ export function forwardPresentation(view: ForwardView, servers: Server[]) {
       : [...(jump ? [jump] : []), ...(server ? [server] : [])];
   const address = active ? view.runtime?.actualAddress : null;
   const local = address || localDescription(settings);
-  const target = endpoint(settings.targetHost, settings.targetPort);
+  const proxy = settings.service.kind === "networkProxy";
+  const target = settings.service.kind === "portForward" ? endpoint(settings.service.targetHost, settings.service.targetPort) : "现场网络 · 由请求指定目标";
   const serverName = hops.at(-1)?.name || server?.name || "未配置服务器";
   return {
     settings,
+    proxy,
     hops,
     local,
     target,
@@ -33,6 +35,7 @@ export function forwardPresentation(view: ForwardView, servers: Server[]) {
       local,
       target,
       serverName,
+      proxy ? "内网代理 HTTP SOCKS5" : "固定端口转发",
       ...hops.map((s) => s.host),
     ]
       .join(" ")
@@ -46,9 +49,8 @@ export function localDescription(settings: ForwardSettings) {
     : endpoint(settings.listenAddress, settings.listenPort);
 }
 export function sameSettings(a: ForwardSettings, b: ForwardSettings) {
-  return (Object.keys(a) as (keyof ForwardSettings)[]).every(
-    (key) => a[key] === b[key],
-  );
+  return a.serverId === b.serverId && a.listenAddress === b.listenAddress && a.listenPort === b.listenPort && a.autoReconnect === b.autoReconnect && a.service.kind === b.service.kind &&
+    (a.service.kind !== "portForward" || (b.service.kind === "portForward" && a.service.targetHost === b.service.targetHost && a.service.targetPort === b.service.targetPort));
 }
 export function runningTime(startedAt: number) {
   const minutes = Math.max(0, Math.floor((Date.now() - startedAt) / 60000));

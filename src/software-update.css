@@ -4,15 +4,19 @@
   padding: 16px 0;
   border-top: 1px solid var(--border, #80808033);
 }
+
 .software-update h3,
 .software-update p {
   margin: 0;
 }
+
 .software-update p,
 .software-update li {
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
 }
+
 .update-muted {
   opacity: 0.72;
 }
@@ -22,32 +26,63 @@
   max-height: 220px;
   overflow: auto;
   font-size: 13px;
-  padding: 12px 0;
+  line-height: 1.55;
+  padding: 10px 0;
 }
 .update-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
 }
-.update-preference {
+.update-preferences {
+  display: flex;
+  gap: 18px 28px;
+  flex-wrap: wrap;
+}
+.update-preferences label {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 13px;
+  min-height: 32px;
 }
 .software-update progress {
+  display: block;
   width: 100%;
+  height: 4px;
   accent-color: var(--accent, #3478f6);
+}
+.update-progress {
+  display: grid;
+  gap: 6px;
 }
 .update-error {
   color: var(--danger, #d44c4c);
 }
-.update-confirm {
-  padding: 14px;
-  border: 1px solid var(--border, #80808044);
-  border-radius: 8px;
+.update-review {
   display: grid;
   gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border, #80808044);
+  border-radius: 6px;
+}
+.update-review ul {
+  margin: 0;
+  padding-left: 20px;
+}
+.update-result {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+}
+.update-result.completed {
+  color: var(--success, #29845b);
+}
+.update-result.incomplete {
+  color: var(--danger, #b43d3d);
 }
 .update-badge {
   display: inline-block;
@@ -57,9 +92,28 @@
   background: var(--accent, #3478f6);
   margin-left: 5px;
 }
-
 .software-update button.primary:not(:disabled),
 .software-update button.primary:hover:not(:disabled) {
   background: var(--blue);
   color: #fff;
+}
+
+@media (max-width: 520px) {
+  .update-preferences {
+    display: grid;
+    gap: 4px;
+  }
+  .update-actions > button {
+    max-width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .software-update *,
+  .software-update *::before,
+  .software-update *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

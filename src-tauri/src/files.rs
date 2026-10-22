@@ -269,6 +269,32 @@ fn editor_for(state: &State, window: &WebviewWindow) -> AppResult<EditorHandle> 
 }
 
 impl FileState {
+    pub(crate) fn update_impact_ids(&self) -> Vec<String> {
+        let mut ids = self
+            .editors
+            .lock()
+            .unwrap()
+            .keys()
+            .map(|id| format!("editor:{id}"))
+            .collect::<Vec<_>>();
+        ids.extend(
+            self.opening
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(id, _, _)| format!("opening:{id}")),
+        );
+        ids.extend(
+            self.mutations
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(id, _, _)| format!("mutation:{id}")),
+        );
+        ids.sort();
+        ids
+    }
+
     fn begin_open(&self, identity: &str, path: &str) -> AppResult<OpenGuard<'_>> {
         crate::remote_path::absolute(path)?;
         let moving = self.mutations.lock().unwrap();

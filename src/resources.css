@@ -7,14 +7,14 @@
   background: var(--sidebar);
   font-size: var(--font-body);
 }
-.resource-service-panel > [role="tabpanel"] {
+.resource-service-panel > div {
   display: flex;
   flex: 1;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
 }
-.resource-service-panel > [role="tabpanel"][hidden],
+.resource-service-panel > div[hidden],
 .docker-inspector [hidden] {
   display: none;
 }

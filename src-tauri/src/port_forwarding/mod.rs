@@ -1,6 +1,8 @@
 pub mod commands;
+mod migration;
 pub mod model;
 mod observe;
+mod proxy;
 mod store;
 #[cfg(test)]
 mod tests;
@@ -18,7 +20,7 @@ use std::{
     collections::HashMap,
     path::Path,
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
         mpsc::{self, SyncSender},
         Arc, Mutex,
     },
@@ -31,15 +33,19 @@ pub enum Control {
     CancelAuth(String),
     Probe(String),
     CancelProbe(String),
+    ProxyProbe(String, proxy::ProbeRequest),
+    CancelProxyProbe(String),
 }
 pub struct Run {
     pub id: String,
+    pub connections_generation: Arc<AtomicU64>,
     pub rule: Rule,
     pub server_ids: Vec<String>,
     pub stopped: AtomicBool,
     pub done: AtomicBool,
     pub ever_ready: AtomicBool,
     pub owner: Mutex<WindowOwner>,
+    pub probe_owner: Mutex<Option<WindowOwner>>,
     pub cancel: Mutex<Option<Cancellation>>,
     pub interaction: Mutex<Option<(String, Arc<connection::Interaction>)>>,
     pub context: Mutex<Option<SharedContext>>,
@@ -87,7 +93,8 @@ impl Run {
 pub struct PortForwardManager {
     store: Mutex<Result<Store, AppError>>,
     pub runs: Mutex<HashMap<String, Arc<Run>>>,
-    pub total_connections: AtomicUsize,
+    pub total_connections: Arc<AtomicUsize>,
+    proxy_executor: Mutex<Option<proxy::executor::Executor>>,
     pub intents: Mutex<HashMap<String, String>>,
     pub open_request: Mutex<Option<OpenRequest>>,
     observers: Mutex<HashMap<String, Arc<observe::Observer>>>,
@@ -99,11 +106,31 @@ impl Default for PortForwardManager {
     }
 }
 impl PortForwardManager {
+    pub(crate) fn update_impact_ids(&self) -> Vec<String> {
+        self.runs
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|run| !run.done.load(Ordering::SeqCst))
+            .map(|run| {
+                let view = run.view.lock().unwrap();
+                format!(
+                    "{}:{}:{}:{:?}",
+                    run.id,
+                    run.connections_generation.load(Ordering::SeqCst),
+                    view.active_connections,
+                    view.probe_id
+                )
+            })
+            .collect()
+    }
+
     pub fn open(path: &Path) -> Self {
         Self {
             store: Mutex::new(Store::open(path)),
             runs: Mutex::new(HashMap::new()),
-            total_connections: AtomicUsize::new(0),
+            total_connections: Arc::new(AtomicUsize::new(0)),
+            proxy_executor: Mutex::new(None),
             intents: Mutex::new(HashMap::new()),
             open_request: Mutex::new(None),
             observers: Mutex::new(HashMap::new()),
@@ -172,7 +199,17 @@ impl PortForwardManager {
         for run in runs {
             run.wait()?;
         }
+        if let Some(executor) = self.proxy_executor.lock().unwrap().take() {
+            executor.shutdown();
+        }
         Ok(())
+    }
+    fn proxy_handle(&self) -> AppResult<tokio::runtime::Handle> {
+        let mut executor = self.proxy_executor.lock().unwrap();
+        if executor.is_none() {
+            *executor = Some(proxy::executor::Executor::new()?);
+        }
+        Ok(executor.as_ref().unwrap().handle.clone())
     }
     pub fn window_closed(&self, owner: &WindowOwner) {
         if owner.label != "port-forwarding" {
@@ -189,6 +226,22 @@ impl PortForwardManager {
         self.intents.lock().unwrap().clear();
         let runs: Vec<_> = self.runs.lock().unwrap().values().cloned().collect();
         for run in runs {
+            let probe_owned = run
+                .probe_owner
+                .lock()
+                .unwrap()
+                .as_ref()
+                .is_some_and(|o| o.label == owner.label && o.generation == owner.generation);
+            if probe_owned {
+                let probe_id = run.view.lock().unwrap().probe_id.clone();
+                if let Some(id) = probe_id {
+                    let _ = run.control(if run.rule.settings.service.is_proxy() {
+                        Control::CancelProxyProbe(id)
+                    } else {
+                        Control::CancelProbe(id)
+                    });
+                }
+            }
             let current = run.owner.lock().unwrap();
             if current.label != owner.label || current.generation != owner.generation {
                 continue;
@@ -289,12 +342,14 @@ impl PortForwardManager {
         let (send, receive) = mpsc::sync_channel(16);
         let run = Arc::new(Run {
             id: id.clone(),
+            connections_generation: Arc::new(AtomicU64::new(0)),
             rule: rule.clone(),
             server_ids: plan.server_ids(),
             stopped: AtomicBool::new(false),
             done: AtomicBool::new(false),
             ever_ready: AtomicBool::new(false),
             owner: Mutex::new(owner),
+            probe_owner: Mutex::new(None),
             cancel: Mutex::new(None),
             interaction: Mutex::new(None),
             context: Mutex::new(None),
@@ -316,6 +371,7 @@ impl PortForwardManager {
                 prompt: None,
                 target_result: None,
                 probe_id: None,
+                proxy: None,
                 notes: Vec::new(),
             }),
             commands: send,

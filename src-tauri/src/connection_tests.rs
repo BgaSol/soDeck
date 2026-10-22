@@ -1167,7 +1167,22 @@ fn jump_docker_management_tasks_and_uncertain_results() {
 #[test]
 #[ignore = "real loopback SSH with simulated NetBird; requires Python paramiko"]
 fn netbird_client_operations_over_verified_ssh() {
-    let fixtures = Fixtures::new(false);
+    let mut fixtures = Fixtures::new(false);
+    let state = state();
+    let mut server = fixtures.b.view();
+    server.id.clear();
+    fixtures.b.id = state
+        .database
+        .lock()
+        .unwrap()
+        .save(crate::model::SaveServerRequest {
+            server,
+            password_change: crate::model::PasswordChange::Set {
+                value: fixtures.b.password.clone(),
+            },
+        })
+        .unwrap()
+        .id;
     let plan = ConnectionPlan::new(vec![fixtures.b.clone()]).unwrap();
     let (transport, context) = connect(
         &plan,
@@ -1176,18 +1191,6 @@ fn netbird_client_operations_over_verified_ssh() {
     )
     .unwrap();
     drop(transport);
-    let state = state();
-    state
-        .database
-        .lock()
-        .unwrap()
-        .save(crate::model::SaveServerRequest {
-            server: fixtures.b.view(),
-            password_change: crate::model::PasswordChange::Set {
-                value: fixtures.b.password.clone(),
-            },
-        })
-        .unwrap();
     let mut sessions = Vec::new();
     for window in ["main", "workspace-test"] {
         let (id, _, _, _, _) = register(

@@ -10,24 +10,29 @@ async function setup(page: Page, automaticInstall = true) {
         state: {
           revision: 0,
           phase: "idle",
-          currentVersion: "0.1.1",
-          version: null,
-          notes: null,
-          publishedAt: null,
-          downloaded: 0,
-          total: null,
+          currentVersion: "1.0.0",
+          release: null,
+          install: {
+            mode: automaticInstall ? "inApp" : "manual",
+            reason: automaticInstall ? null : "此安装方式请手动下载。",
+            target: automaticInstall ? "windows-x86_64-nsis" : null,
+            manualFormat: automaticInstall ? "exe" : "msi",
+          },
+          operation: null,
+          progress: null,
+          preferences: { revision: 0, autoCheck: true, autoDownload: true },
+          lastSuccessfulCheckAt: null,
+          suppression: null,
+          error: null,
+          result: null,
           message: null,
-          automaticInstall,
-          installReason: automaticInstall
-            ? "安装将关闭所有窗口并重启。"
-            : "此安装方式请手动下载。",
-          autoCheck: true,
           skippedVersion: null,
-          lastCheck: null,
         },
         calls: [] as string[],
-        blockers: [] as string[],
+        blockers: [] as any[],
         failCheck: false,
+        reviewChanged: false,
+        installToken: "",
         emit(patch: any) {
           Object.assign(mock.state, patch, {
             revision: mock.state.revision + 1,
@@ -93,32 +98,81 @@ async function setup(page: Page, automaticInstall = true) {
             if (mock.failCheck) throw { message: "网络不可用，请重试" };
             mock.emit({
               phase: "available",
-              version: "0.1.2",
-              notes: "修复连接稳定性",
-              lastCheck: 1700000000,
+              release: {
+                id: "release-a",
+                version: "1.0.1",
+                notes: "修复连接稳定性",
+                publishedAt: null,
+              },
+              lastSuccessfulCheckAt: 1700000000,
             });
             return { ...mock.state };
           }
           if (command === "update_preferences") {
-            mock.emit(args);
+            mock.emit({
+              preferences: {
+                ...mock.state.preferences,
+                ...args.patch,
+                revision: mock.state.preferences.revision + 1,
+              },
+            });
             return { ...mock.state };
           }
           if (command === "update_download") {
             mock.emit({
               phase: "downloading",
-              downloaded: 1048576,
-              total: 4194304,
+              operation: { id: "operation-a", source: "manual" },
+              progress: { downloaded: 1048576, total: 4194304 },
             });
+            return { ...mock.state };
+          }
+          if (command === "update_cancel_download") {
+            mock.emit({
+              phase: "available",
+              operation: null,
+              progress: null,
+              suppression: "cancelled",
+            });
+            return { ...mock.state };
+          }
+          if (command === "update_skip_version") {
+            mock.emit({ skippedVersion: args.skip ? "1.0.1" : null });
+            return { ...mock.state };
+          }
+          if (command === "update_ack_notice") return { ...mock.state };
+          if (command === "update_ack_result") {
+            if (args.resultId === mock.state.result?.id)
+              mock.emit({ result: null });
             return { ...mock.state };
           }
           if (command === "update_preflight")
             return {
+              releaseId: "release-a",
+              reviewToken: mock.blockers.length ? null : "review-a",
+              expiresAt: Date.now() / 1000 + 60,
               blockers: mock.blockers,
-              interruptions: ["断开 2 个终端会话", "停止 1 条端口转发"],
+              interruptions: [
+                { kind: "terminals", count: 2, connections: null },
+                { kind: "portForwarding", count: 1, connections: 3 },
+              ],
             };
           if (command === "update_install") {
+            mock.installToken = args.reviewToken;
+            if (mock.reviewChanged)
+              return {
+                status: "reviewChanged",
+                review: {
+                  releaseId: "release-a",
+                  reviewToken: "review-b",
+                  expiresAt: Date.now() / 1000 + 60,
+                  blockers: [],
+                  interruptions: [
+                    { kind: "terminals", count: 3, connections: null },
+                  ],
+                },
+              };
             mock.emit({ phase: "installing" });
-            return;
+            return { status: "accepted" };
           }
           if (command === "update_focus_main") {
             mock.event("open-software-update");
@@ -141,6 +195,58 @@ async function setup(page: Page, automaticInstall = true) {
   await page.getByRole("button", { name: "系统设置", exact: true }).click();
   return page.getByRole("region", { name: "软件更新", exact: true });
 }
+
+test("startup result survives a background check until explicitly dismissed", async ({
+  page,
+}) => {
+  const section = await setup(page);
+  await page.evaluate(() =>
+    (window as any).__UPDATES__.emit({
+      result: { id: "attempt-a", targetVersion: "1.0.0", outcome: "completed" },
+    }),
+  );
+  await expect(section).toContainText("已更新到 v1.0.0");
+  await section.getByRole("button", { name: "检查更新", exact: true }).click();
+  await expect(section).toContainText("已更新到 v1.0.0");
+  await section.getByRole("button", { name: "关闭", exact: true }).click();
+  await expect(section).not.toContainText("已更新到 v1.0.0");
+  expect(
+    await page.evaluate(() =>
+      (window as any).__UPDATES__.calls.includes("update_ack_result"),
+    ),
+  ).toBe(true);
+});
+
+test("failed installer handoff requires recovery restart before more work", async ({
+  page,
+}) => {
+  const section = await setup(page);
+  await section.getByRole("button", { name: "检查更新", exact: true }).click();
+  await page.evaluate(() =>
+    (window as any).__UPDATES__.emit({
+      phase: "failed",
+      error: { stage: "install", code: "restartRequired", retry: "none" },
+      message: "安装未完成，部分连接已关闭。请重启 SoDeck 后继续工作。",
+    }),
+  );
+  await expect(
+    section.getByRole("button", { name: "检查更新", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    section.getByRole("button", { name: "下载更新", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    section.getByRole("checkbox", { name: "自动下载更新", exact: true }),
+  ).toBeDisabled();
+  await section
+    .getByRole("button", { name: "重启 SoDeck", exact: true })
+    .click();
+  expect(
+    await page.evaluate(() =>
+      (window as any).__UPDATES__.calls.includes("update_restart_recovery"),
+    ),
+  ).toBe(true);
+});
 test("download survives settings close and requires a fresh work check before confirmation", async ({
   page,
 }) => {
@@ -148,7 +254,7 @@ test("download survives settings close and requires a fresh work check before co
   page.on("pageerror", (e) => errors.push(e.message));
   const section = await setup(page);
   await section.getByRole("button", { name: "检查更新", exact: true }).click();
-  await expect(section).toContainText("v0.1.2");
+  await expect(section).toContainText("v1.0.1");
   await section.getByRole("button", { name: "下载更新", exact: true }).click();
   await expect(section.getByRole("progressbar")).toHaveAttribute(
     "value",
@@ -158,14 +264,16 @@ test("download survives settings close and requires a fresh work check before co
   await page.evaluate(() =>
     (window as any).__UPDATES__.emit({
       phase: "ready",
-      downloaded: 4194304,
-      total: 4194304,
+      progress: null,
+      operation: null,
     }),
   );
   await page.getByRole("button", { name: "系统设置", exact: true }).click();
   await expect(section).toContainText("更新已准备好");
   await page.evaluate(() => {
-    (window as any).__UPDATES__.blockers = ["请保存并关闭所有远程文件编辑窗口"];
+    (window as any).__UPDATES__.blockers = [
+      { kind: "editors", count: 1, action: "saveAndCloseEditors" },
+    ];
   });
   await section
     .getByRole("button", { name: "安装并重启", exact: true })
@@ -178,11 +286,17 @@ test("download survives settings close and requires a fresh work check before co
     (window as any).__UPDATES__.blockers = [];
   });
   await section.getByRole("button", { name: "重新检查", exact: true }).click();
-  await expect(section).toContainText("停止 1 条端口转发");
+  await expect(section).toContainText("停止端口转发与内网代理：1 项");
   await expect(
     section.getByRole("button", { name: "确认安装并重启", exact: true }),
   ).toBeEnabled();
-  await page.screenshot({ path: ".qa/updates-confirm.png", fullPage: true });
+  await expect(
+    section.getByRole("button", { name: "安装并重启", exact: true }),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: ".qa/updates-confirm-1.0.png",
+    fullPage: true,
+  });
   expect(
     await page.evaluate(() =>
       (window as any).__UPDATES__.calls.includes("update_install"),
@@ -191,7 +305,7 @@ test("download survives settings close and requires a fresh work check before co
   await section
     .getByRole("button", { name: "确认安装并重启", exact: true })
     .click();
-  await expect(section).toContainText("正在安装");
+  await expect(section).toContainText("正在关闭连接并安装");
   expect(errors).toEqual([]);
 });
 test("manual formats show a download link; network failures remain errors", async ({
@@ -214,10 +328,10 @@ test("manual formats show a download link; network failures remain errors", asyn
   await expect(
     section.getByRole("button", { name: "恢复版本提醒" }),
   ).toBeVisible();
-  await section.getByRole("button", { name: "打开发布页 / 手动下载" }).click();
+  await section.getByRole("button", { name: "下载 MSI 安装包" }).click();
   expect(
     await page.evaluate(() =>
-      (window as any).__UPDATES__.calls.includes("update_open_release"),
+      (window as any).__UPDATES__.calls.includes("update_open_manual_asset"),
     ),
   ).toBe(true);
 });
@@ -231,6 +345,8 @@ test("download verification failure never offers installation and can be retried
   await page.evaluate(() =>
     (window as any).__UPDATES__.emit({
       phase: "failed",
+      operation: null,
+      progress: null,
       message: "更新下载或签名验证失败；未执行安装。",
     }),
   );
@@ -245,4 +361,78 @@ test("download verification failure never offers installation and can be retried
       (window as any).__UPDATES__.calls.includes("update_install"),
     ),
   ).toBe(false);
+});
+
+test("cancellation stays available and preferences are independent during download", async ({
+  page,
+}) => {
+  const section = await setup(page);
+  await section.getByRole("button", { name: "检查更新", exact: true }).click();
+  await section.getByRole("button", { name: "下载更新", exact: true }).click();
+  await expect(section.getByRole("button", { name: "取消下载" })).toBeEnabled();
+  await section.getByRole("checkbox", { name: "自动检查更新" }).uncheck();
+  await expect(
+    section.getByRole("checkbox", { name: "自动下载更新" }),
+  ).toBeChecked();
+  await section.getByRole("button", { name: "取消下载" }).click();
+  await expect(
+    section.getByRole("button", { name: "下载更新", exact: true }),
+  ).toBeEnabled();
+  await expect(section.getByRole("alert")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "系统设置", exact: true }).click();
+  await expect(section.getByRole("progressbar")).toHaveCount(0);
+  expect(
+    await page.evaluate(() => (window as any).__UPDATES__.state.suppression),
+  ).toBe("cancelled");
+});
+
+test("changed installation impact requires a fresh confirmation and later keeps the package", async ({
+  page,
+}) => {
+  const section = await setup(page);
+  await section.getByRole("button", { name: "检查更新", exact: true }).click();
+  await page.evaluate(() => {
+    const m = (window as any).__UPDATES__;
+    m.emit({ phase: "ready" });
+    m.reviewChanged = true;
+  });
+  await section
+    .getByRole("button", { name: "安装并重启", exact: true })
+    .click();
+  await section
+    .getByRole("button", { name: "确认安装并重启", exact: true })
+    .click();
+  await expect(section).toContainText("断开终端会话：3 项");
+  expect(
+    await page.evaluate(() => (window as any).__UPDATES__.installToken),
+  ).toBe("review-a");
+  await section.getByRole("button", { name: "稍后", exact: true }).click();
+  await expect(section).toContainText("更新已准备好");
+  await expect(section.getByRole("group", { name: "安装前检查" })).toHaveCount(
+    0,
+  );
+});
+
+test("background progress never opens settings or moves focus and reduced motion is respected", async ({
+  page,
+}) => {
+  const section = await setup(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "系统设置", exact: true }).focus();
+  await page.evaluate(() =>
+    (window as any).__UPDATES__.emit({
+      phase: "downloading",
+      operation: { id: "background", source: "automatic" },
+      progress: { downloaded: 512, total: null },
+    }),
+  );
+  await expect(section).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "系统设置", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(section.getByRole("progressbar")).not.toHaveAttribute("value");
+  await expect(section.getByRole("button", { name: "取消下载" })).toBeEnabled();
 });

@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 
 // Simulated IPC for presentation/interaction; the Rust tests exercise parsing and SSH separately.
 import { setup, row } from "./resource-fixture";
+import { openWorkspaceTool } from "./workspace-tool-helpers";
 
 test("mount summaries, nested mounts, details and keyboard preserve tree behavior", async ({
   page,
@@ -210,13 +211,10 @@ test("mount details fit narrow dark windows and share backend updates without po
   await page.clock.install();
   await page.emulateMedia({ colorScheme: "dark" });
   const errors = await setup(page);
-  await page.setViewportSize({ width: 850, height: 600 });
-  await page
-    .getByRole("navigation", { name: "工作区域" })
-    .getByRole("button", { name: "文件", exact: true })
-    .click();
+  await page.setViewportSize({ width: 1024, height: 600 });
+  await openWorkspaceTool(page, "files");
   const resizer = page.getByRole("separator", { name: "调整文件区域宽度" });
-  // Start above the wide capacity threshold; the current minimum pane is 280px.
+  // Start above the wide capacity threshold, then shrink within the dock budget.
   await resizer.focus();
   for (let i = 0; i < 12; i++) await resizer.press("ArrowRight");
   const normalUsageWidth = (await row(page, "/backup")
@@ -241,7 +239,7 @@ test("mount details fit narrow dark windows and share backend updates without po
   const bounds = (await detail.boundingBox())!;
   expect(bounds.x).toBeGreaterThanOrEqual(0);
   expect(bounds.y).toBeGreaterThanOrEqual(0);
-  expect(bounds.x + bounds.width).toBeLessThanOrEqual(850);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(1024);
   expect(bounds.y + bounds.height).toBeLessThanOrEqual(600);
   const tree = page.getByRole("tree", { name: "远程文件树" });
   expect(await tree.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(

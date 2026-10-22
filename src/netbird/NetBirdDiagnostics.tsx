@@ -7,8 +7,10 @@ export function NetBirdDiagnostics({
   snapshot,
   sessionId,
   onRefresh,
+  active = true,
 }: {
   snapshot: Snapshot;
+  active?: boolean;
   sessionId: string | null;
   onRefresh: () => Promise<void>;
 }) {
@@ -26,7 +28,7 @@ export function NetBirdDiagnostics({
     };
   }, [sessionId, snapshot.binding?.token]);
   async function read(kind: "raw" | "logs") {
-    if (!sessionId || !snapshot.binding || pending.current) return;
+    if (!active || !sessionId || !snapshot.binding || pending.current) return;
     pending.current = true;
     const current = epoch.current;
     setBusy(kind);
@@ -43,7 +45,7 @@ export function NetBirdDiagnostics({
     }
   }
   async function savePath(reset: boolean) {
-    if (!sessionId || pending.current) return;
+    if (!active || !sessionId || pending.current) return;
     pending.current = true;
     const current = epoch.current;
     setBusy("path");
@@ -103,13 +105,13 @@ export function NetBirdDiagnostics({
         <h4>状态与日志</h4>
         <div className="nb-actions">
           <button
-            disabled={!sessionId || !snapshot.binding || !!busy}
+            disabled={!active || !sessionId || !snapshot.binding || !!busy}
             onClick={() => void read("logs")}
           >
             {busy === "logs" ? "正在读取…" : "最近日志"}
           </button>
           <button
-            disabled={!sessionId || !snapshot.binding || !!busy}
+            disabled={!active || !sessionId || !snapshot.binding || !!busy}
             onClick={() => void read("raw")}
           >
             {busy === "raw" ? "正在读取…" : "状态原文"}
@@ -152,13 +154,15 @@ export function NetBirdDiagnostics({
         </label>
         <div className="nb-actions">
           <button
-            disabled={!sessionId || !!busy || !path.trim().startsWith("/")}
+            disabled={
+              !active || !sessionId || !!busy || !path.trim().startsWith("/")
+            }
             onClick={() => void savePath(false)}
           >
             保存并检测
           </button>
           <button
-            disabled={!sessionId || !!busy}
+            disabled={!active || !sessionId || !!busy}
             onClick={() => void savePath(true)}
           >
             自动检测

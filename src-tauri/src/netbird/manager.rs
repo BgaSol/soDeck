@@ -45,6 +45,7 @@ pub(super) struct Draft {
     pub signature: String,
 }
 pub struct NetBirdManager {
+    update_attention: std::sync::atomic::AtomicBool,
     pub(super) entries: Mutex<HashMap<String, Arc<Entry>>>,
     pub(super) store: Mutex<AppResult<Store>>,
     pub(super) drafts: Mutex<HashMap<String, Draft>>,
@@ -68,9 +69,16 @@ impl Default for NetBirdManager {
 }
 impl NetBirdManager {
     pub fn open(path: &Path) -> Self {
+        let store = Store::open(path);
+        let update_attention = store
+            .as_ref()
+            .ok()
+            .and_then(|s| s.needs_update_attention().ok())
+            .unwrap_or(true);
         Self {
+            update_attention: std::sync::atomic::AtomicBool::new(update_attention),
             entries: Mutex::new(HashMap::new()),
-            store: Mutex::new(Store::open(path)),
+            store: Mutex::new(store),
             drafts: Mutex::new(HashMap::new()),
             locks: Mutex::new(HashMap::new()),
             jobs: Mutex::new(HashMap::new()),
@@ -79,11 +87,20 @@ impl NetBirdManager {
     pub(super) fn with_store<T>(&self, f: impl FnOnce(&Store) -> AppResult<T>) -> AppResult<T> {
         let store = self.store.lock().unwrap();
         match &*store {
-            Ok(s) => f(s),
+            Ok(s) => {
+                let result = f(s);
+                self.update_attention.store(
+                    s.needs_update_attention().unwrap_or(true),
+                    std::sync::atomic::Ordering::SeqCst,
+                );
+                result
+            }
             Err(e) => Err(e.clone()),
         }
     }
-    pub(super) fn job(&self) -> AppResult<Job<'_>> {
+    pub(super) fn job(&self, state: &State) -> AppResult<Job<'_>> {
+        let _gate = state.configuration.lock().unwrap();
+        state.ensure_running()?;
         let mut jobs = self.jobs.lock().unwrap();
         if jobs.len() >= 12 {
             return Err(AppError::new("busy", "NetBird 后台请求过多，请稍后重试"));
@@ -208,7 +225,7 @@ impl NetBirdManager {
                 if let Some((session, owner, generation)) = work {
                     entry.publish();
                     let result = (|| {
-                        let job = state.netbird.job()?;
+                        let job = state.netbird.job(&state)?;
                         *entry.poll.lock().unwrap() = Some(job.cancel.clone());
                         let spec = state.spec(&session, &owner.label)?;
                         let check = || {
@@ -370,7 +387,10 @@ impl NetBirdManager {
             .any(|ids| ids.iter().any(|s| s == id))
     }
     pub fn blocks_update(&self) -> AppResult<bool> {
-        Ok(self.active() || self.with_store(|s| s.needs_update_attention())?)
+        Ok(self.active()
+            || self
+                .update_attention
+                .load(std::sync::atomic::Ordering::SeqCst))
     }
     pub fn active(&self) -> bool {
         !self.locks.lock().unwrap().is_empty()
@@ -424,7 +444,7 @@ impl NetBirdManager {
     ) -> AppResult<T> {
         let spec = state.spec(session, &owner.label)?;
         let (_, old) = self.bound(&spec, token)?;
-        let job = self.job()?;
+        let job = self.job(state)?;
         let check = || {
             job.cancel.check()?;
             self.check_owner(state, session, owner, spec.identity())

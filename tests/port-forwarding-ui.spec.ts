@@ -37,8 +37,11 @@ async function setup(page: Page, empty = false) {
           serverId: "b",
           listenAddress: "::1",
           listenPort: null,
-          targetHost: "db.internal",
-          targetPort: 3306,
+          service: {
+            kind: "portForward",
+            targetHost: "db.internal",
+            targetPort: 3306,
+          },
           autoReconnect: true,
         },
       };
@@ -65,6 +68,7 @@ async function setup(page: Page, empty = false) {
           prompt: null,
           probeId: null,
           targetResult: null,
+          proxy: null,
           notes: [
             { at: Date.now(), message: "SSH 路径已就绪，可以连接本地端口" },
           ],
@@ -230,6 +234,248 @@ async function setup(page: Page, empty = false) {
   ).toBeEnabled();
   return errors;
 }
+
+async function seedPickerServers(page: Page) {
+  await page.evaluate(() => {
+    const pf = (window as any).__PF__;
+    pf.servers.push(
+      {
+        ...pf.servers[0],
+        id: "vpn",
+        name: "VPN 入口",
+        host: "localhost",
+        username: "gateway",
+      },
+      {
+        ...pf.servers[0],
+        id: "site",
+        name: "192.168.1.186",
+        host: "192.168.1.186",
+        username: "site-ops",
+        tags: ["现场", "生产"],
+        jumpServerId: "vpn",
+      },
+    );
+    pf.frame();
+  });
+}
+
+test("SSH picker explains jump routes, searches addresses and saves the selected node", async ({
+  page,
+}, testInfo) => {
+  const errors = await setup(page, true);
+  await seedPickerServers(page);
+  await page.getByRole("button", { name: "新建转发", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "新建端口转发" });
+  const trigger = editor.getByRole("combobox", {
+    name: "SSH 访问节点",
+    exact: true,
+  });
+  await trigger.click();
+  const search = editor.getByRole("searchbox", { name: "搜索 SSH 节点" });
+  const list = editor.getByRole("listbox", { name: "SSH 访问节点" });
+  const options = list.getByRole("option");
+  await expect(search).toBeFocused();
+  await expect(options).toHaveCount(3);
+  await expect(list.getByRole("option", { selected: true })).toContainText(
+    "研发服务器",
+  );
+  await search.fill("192.168.1.186");
+  await expect(options).toHaveCount(1);
+  expect((await options.innerText()).match(/192\.168\.1\.186/g)).toHaveLength(
+    1,
+  );
+  await expect(options).toContainText("site-ops");
+  await expect(options).toContainText("localhost:22（跳板） → 此节点访问目标");
+  await search.fill("localhost");
+  await expect(options).toHaveCount(2);
+  await search.fill("现场 VPN");
+  await expect(options).toHaveCount(1);
+  await page.screenshot({
+    path: `.qa/ssh-picker-${testInfo.project.name}-light.png`,
+  });
+  await options.click();
+  await expect(search).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toContainText("192.168.1.186:22");
+  await expect(trigger).toContainText("localhost:22（跳板）");
+  const path = editor.getByRole("list", { name: "转发路径" });
+  await expect(path).toContainText("SSH 跳板");
+  await expect(path).toContainText("VPN 入口");
+  await expect(path).toContainText("SSH 访问节点");
+  await expect(path).toContainText("192.168.1.186:22");
+  await editor.getByLabel("名称", { exact: true }).fill("现场网站");
+  await editor.getByLabel("目标端口", { exact: true }).fill("4310");
+  await editor.getByLabel("创建后启动").uncheck();
+  await editor.getByRole("button", { name: "创建", exact: true }).click();
+  const saved = await page.evaluate(() =>
+    (window as any).__PF__.calls.find(
+      (call: any) => call.command === "save_port_forward",
+    ),
+  );
+  expect(saved.args.rule.settings.serverId).toBe("site");
+  expect(errors).toEqual([]);
+});
+
+test("SSH picker supports keyboard selection, cancellation, empty results and form tab order", async ({
+  page,
+}) => {
+  const errors = await setup(page, true);
+  await seedPickerServers(page);
+  await page.getByRole("button", { name: "新建转发", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "新建端口转发" });
+  await editor.getByLabel("名称", { exact: true }).fill("现场网络");
+  await editor.getByRole("radio", { name: "内网代理" }).check();
+  await expect(editor.getByRole("radio", { name: "内网代理" })).toBeChecked();
+  const trigger = editor.getByRole("combobox", {
+    name: "SSH 访问节点",
+    exact: true,
+  });
+  await trigger.focus();
+  await page.keyboard.press("ArrowDown");
+  const search = editor.getByRole("searchbox", { name: "搜索 SSH 节点" });
+  await expect(search).toBeFocused();
+  await search.fill("不存在的节点");
+  await expect(editor.getByRole("listbox").getByRole("option")).toHaveCount(0);
+  await expect(editor.getByRole("status")).toContainText("没有匹配的 SSH 节点");
+  await page.keyboard.press("Enter");
+  await expect(editor).toBeVisible();
+  expect(
+    await page.evaluate(() =>
+      (window as any).__PF__.calls.some(
+        (call: any) => call.command === "save_port_forward",
+      ),
+    ),
+  ).toBe(false);
+  await editor.getByRole("button", { name: "清除节点搜索" }).click();
+  await expect(search).toBeEmpty();
+  await expect(editor.getByRole("listbox").getByRole("option")).toHaveCount(3);
+  await search.fill("192.168.1.186");
+  await page.keyboard.press("Escape");
+  await expect(editor).toBeVisible();
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toContainText("研发服务器");
+  await trigger.press("ArrowUp");
+  await expect(search).toBeEmpty();
+  await search.fill("localhost");
+  await page.keyboard.press("ArrowDown");
+  await expect(search).toHaveAttribute(
+    "aria-activedescendant",
+    "forward-serverId-option-1",
+  );
+  await page.keyboard.press("Enter");
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toContainText("192.168.1.186:22");
+  await expect(editor.getByRole("list", { name: "转发路径" })).toContainText(
+    "现场网络 · 由请求指定目标",
+  );
+  await trigger.click();
+  await search.press("Tab");
+  await expect(search).toHaveCount(0);
+  await expect(
+    editor.getByRole("radio", { name: "固定端口", exact: true }),
+  ).toBeFocused();
+  await trigger.click();
+  await editor.getByLabel("名称", { exact: true }).click();
+  await expect(search).toHaveCount(0);
+  await expect(editor.getByLabel("名称", { exact: true })).toBeFocused();
+  expect(errors).toEqual([]);
+});
+
+test("SSH picker keeps validation focus and explains unavailable or empty server lists", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await seedPickerServers(page);
+  await page.evaluate(() => {
+    const pf = (window as any).__PF__;
+    pf.servers.shift();
+    pf.frame();
+  });
+  const editor = await edit(page);
+  const trigger = editor.getByRole("combobox", {
+    name: "SSH 访问节点",
+    exact: true,
+  });
+  await expect(trigger).toContainText("原 SSH 节点已不可用");
+  await editor.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toHaveAttribute("aria-invalid", "true");
+  await expect(editor.locator("#forward-serverId-error")).toBeVisible();
+  await trigger.click();
+  await editor.getByRole("listbox").getByRole("option").first().click();
+  await expect(trigger).toHaveAttribute("aria-invalid", "false");
+  await page.evaluate(() => {
+    const pf = (window as any).__PF__;
+    pf.servers.splice(0);
+    pf.frame();
+  });
+  await trigger.click();
+  await expect(editor.getByRole("status")).toContainText("暂无 SSH 节点");
+  await expect(editor.getByRole("status")).toContainText(
+    "请先在主窗口添加 SSH 服务器",
+  );
+  expect(errors).toEqual([]);
+});
+
+test("SSH picker stays inside a small viewport and scrolls the active node without moving the editor footer", async ({
+  page,
+}, testInfo) => {
+  const errors = await setup(page);
+  await page.setViewportSize({ width: 800, height: 560 });
+  await selectTheme(page, "dark");
+  await page.emulateMedia({ reducedMotion: "reduce", contrast: "more" });
+  await page.evaluate(() => {
+    const pf = (window as any).__PF__;
+    for (let index = 0; index < 24; index++)
+      pf.servers.push({
+        ...pf.servers[0],
+        id: `site-${index}`,
+        name: `现场集群的 SSH 访问节点 ${index} 用于检查长名称的显示与滚动`,
+        host: `2001:db8:abcd:abcd:abcd:abcd:abcd:${index + 1}`,
+      });
+    pf.rules[0].rule.settings.serverId = "site-23";
+    pf.frame();
+  });
+  const editor = await edit(page);
+  const trigger = editor.getByRole("combobox", {
+    name: "SSH 访问节点",
+    exact: true,
+  });
+  const footer = editor.locator(".forward-editor-footer");
+  const footerBefore = await footer.boundingBox();
+  await trigger.click();
+  const popup = editor.locator(".ssh-server-picker-popover");
+  const selected = editor
+    .getByRole("listbox")
+    .getByRole("option", { selected: true });
+  await expect(selected).toBeInViewport();
+  const box = await popup.boundingBox();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(800);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(560);
+  await page.keyboard.press("ArrowDown");
+  await expect(
+    editor.getByRole("listbox").getByRole("option").first(),
+  ).toBeInViewport();
+  await page.keyboard.press("ArrowUp");
+  await expect(selected).toBeInViewport();
+  expect(await footer.boundingBox()).toEqual(footerBefore);
+  expect(
+    await popup.evaluate(
+      (element) => element.scrollWidth <= element.clientWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: `.qa/ssh-picker-${testInfo.project.name}-minimum-dark.png`,
+  });
+  await page.keyboard.press("Escape");
+  await expect(
+    editor.getByRole("button", { name: "保存", exact: true }),
+  ).toBeInViewport();
+  expect(errors).toEqual([]);
+});
 
 test("ready rule shows actual IPv6 address, bounded frame acknowledgements and snapshot details", async ({
   page,
@@ -630,7 +876,7 @@ test("search never displays hidden selection and respects running configuration"
   await setup(page);
   await page.evaluate(() => {
     const pf = (window as any).__PF__;
-    pf.rules[0].rule.settings.targetHost = "next.internal";
+    pf.rules[0].rule.settings.service.targetHost = "next.internal";
     pf.rules[0].pendingChanges = true;
     pf.frame();
   });
@@ -795,7 +1041,7 @@ test("actual UI fits minimum size with long IPv6 paths, dark theme and a fixed e
     pf.rules[0].rule.name =
       "用于很长名称验证的远程服务转发配置用于很长名称验证的远程服务转发配置";
     pf.rules[0].runtime.actualAddress = "[::1]:49152";
-    pf.rules[0].runtime.settings.targetHost =
+    pf.rules[0].runtime.settings.service.targetHost =
       "2001:db8:abcd:abcd:abcd:abcd:abcd:1234";
     pf.frame();
   });

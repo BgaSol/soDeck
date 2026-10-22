@@ -97,7 +97,7 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
     await dialog.getByLabel("认证方式").selectOption("password");
     await dialog.getByPlaceholder("选择或输入标签").fill("QA");
     await dialog.getByRole("button", { name: "添加", exact: true }).click();
-    await dialog.getByRole("button", { name: "保存", exact: true }).click();
+    await dialog.locator(".editor-save-actions button.primary").click();
     await expect(main.getByRole("region", { name: "服务器", exact: true })).toBeVisible();
     const first = (await ipc<any[]>(main, "list_servers")).find(
       (server) => server.name === name,
@@ -120,7 +120,7 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
     dialog = main.getByRole("dialog");
     await dialog.getByPlaceholder("选择或输入标签").fill("qa");
     await dialog.getByRole("button", { name: "添加", exact: true }).click();
-    await dialog.getByRole("button", { name: "保存", exact: true }).click();
+    await dialog.locator(".editor-save-actions button.primary").click();
     expect(
       (await ipc<any[]>(main, "list_servers")).find(
         (server) => server.id === first.id,
@@ -205,7 +205,7 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
     dialog = main.getByRole("dialog");
     await dialog.getByLabel(/^名称/).fill(other);
     await dialog.getByLabel("地址", { exact: true }).fill("192.0.2.1");
-    await dialog.getByRole("button", { name: "保存", exact: true }).click();
+    await dialog.locator(".editor-save-actions button.primary").click();
     const second = (await ipc<any[]>(main, "list_servers")).find(
       (server) => server.name === other,
     );
@@ -224,11 +224,7 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
     await closeContainer(container);
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(1);
     await showServers(main);
-    await serverAction(main, "编辑");
-    await main
-      .getByRole("dialog")
-      .getByRole("button", { name: "删除", exact: true })
-      .click();
+    await serverAction(main, "删除服务器");
     await main
       .getByRole("dialog", { name: "删除服务器配置？" })
       .getByRole("button", { name: "确认删除" })
@@ -645,7 +641,7 @@ test("failed, pending and remotely closed tabs do not affect other connections",
       .fill("wrong-password");
     await main
       .getByRole("dialog")
-      .getByRole("button", { name: "保存", exact: true })
+      .locator(".editor-save-actions button.primary")
       .click();
     await connectSelectedServer(main);
     // Invalid stored credentials prompt again in the same connection attempt.
@@ -795,7 +791,7 @@ test("saved passwords survive reload, connect automatically and can be cleared",
       "password",
     );
     await editor.getByLabel("密码", { exact: true }).fill("fixture-password");
-    await editor.getByRole("button", { name: "保存", exact: true }).click();
+    await editor.locator(".editor-save-actions button.primary").click();
     serverId = (await ipc<any[]>(main, "list_servers")).find(
       (server) => server.name === name,
     ).id;
@@ -827,7 +823,7 @@ test("saved passwords survive reload, connect automatically and can be cleared",
     await showServers(main);
     await serverAction(main, "编辑");
     await editor.getByRole("button", { name: "清空已保存密码" }).click();
-    await editor.getByRole("button", { name: "保存", exact: true }).click();
+    await editor.locator(".editor-save-actions button.primary").click();
     expect(await storedPassword()).toBe(false);
     await main.getByRole("button", { name: "关闭服务器窗口" }).click();
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(2);

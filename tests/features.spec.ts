@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./workspace-tool-helpers";
 import { showServers, connectSelectedServer, serverAction } from "./server-picker";
 import {
   chromium,
@@ -617,8 +618,7 @@ test("server deletion blocks tabs and independent windows, then removes the save
     await f.main
       .locator(".server-row")
       .filter({ hasText: f.name })
-      .click({ button: "right" });
-    await f.main.getByRole("menuitem", { name: "删除服务器" }).click();
+      .getByRole("button", { name: "删除配置", exact: true }).click();
     await confirmation().getByRole("button", { name: "确认删除" }).click();
     await expect(confirmation().getByRole("alert")).toContainText("独立会话");
     expect(
@@ -654,7 +654,7 @@ test("server deletion blocks tabs and independent windows, then removes the save
   }
 });
 
-test("server deletion supports cancellation, editor entry and filtered neighbour selection", async () => {
+test("server deletion supports cancellation, direct actions and filtered neighbour selection", async () => {
   const browser = await chromium.connectOverCDP("http://127.0.0.1:9223");
   const main = browser
     .contexts()[0]
@@ -709,26 +709,17 @@ test("server deletion supports cancellation, editor entry and filtered neighbour
       `${prefix} C`,
     );
     await serverAction(main, "编辑");
-    await main
-      .getByRole("dialog")
-      .getByRole("button", { name: "删除", exact: true })
-      .click();
-    await confirmation()
-      .getByRole("button", { name: "取消", exact: true })
-      .click();
-    await expect(main.getByRole("dialog")).toContainText("编辑服务器");
-    await main
-      .getByRole("dialog")
-      .getByRole("button", { name: "删除", exact: true })
-      .click();
+    const serverEditor = main.getByRole("dialog", { name: "服务器配置", exact: true });
+    await expect(serverEditor.getByRole("button", { name: "删除", exact: true })).toHaveCount(0);
+    await serverEditor.getByRole("button", { name: "取消", exact: true }).click();
+    await serverAction(main, "删除服务器");
     await confirmation().getByRole("button", { name: "确认删除" }).click();
     await expect(main.getByRole("region", { name: "服务器", exact: true })).toBeVisible();
     await expect(main.locator(".server-row.selected")).toContainText(
       `${prefix} A`,
     );
     await showServers(main);
-    await main.locator(".server-row.selected").click({ button: "right" });
-    await main.getByRole("menuitem", { name: "删除服务器" }).click();
+    await serverAction(main, "删除服务器");
     await confirmation().getByRole("button", { name: "确认删除" }).click();
     await expect(main.getByLabel("按标签筛选")).toHaveValue("");
     expect(
@@ -1045,7 +1036,7 @@ test("tabs reorder, detach and rejoin without replacing their SSH connection or 
       ).length;
   try {
     await goTo(f.main, "/projects");
-    await active(f.main).getByRole("tab", { name: "Docker", exact: true }).click();
+    await openWorkspaceTool(active(f.main), "docker");
     await active(f.main).getByRole("button", { name: /^镜像/ }).click();
     await expect(
       active(f.main).getByText("nginx:alpine", { exact: true }),

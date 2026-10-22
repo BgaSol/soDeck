@@ -439,21 +439,7 @@
   font-size: 11px;
 }
 .server-detail-actions {
-  display: grid;
-  grid-template-columns: 1.25fr 1fr;
-  gap: 10px;
   margin: 22px 0 30px;
-}
-.server-detail-actions button {
-  font-size: 13px;
-  font-weight: 500;
-  min-height: 40px;
-  border-radius: var(--home-radius);
-  padding: 7px 10px;
-}
-.server-detail-actions .detail-copy {
-  background: var(--surface);
-  box-shadow: var(--home-control-shadow);
 }
 .server-detail-section {
   border-top: 1px solid var(--home-rule);
@@ -793,9 +779,6 @@
   .catalog-row-heading .catalog-status {
     margin-top: 4px;
   }
-  .server-home .catalog-actions .catalog-copy {
-    display: none;
-  }
   .catalog-footer {
     padding: 8px 20px;
   }
@@ -852,5 +835,108 @@
   }
   .catalog-status > i {
     background: CanvasText;
+  }
+}
+
+/* The same direct actions appear in the catalog and inspector. */
+.server-library {
+  container-type: inline-size;
+}
+.server-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+.server-action-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.server-action-wrap:is(.action-edit, .action-forward, .action-delete) {
+  margin-left: 5px;
+  padding-left: 5px;
+  border-left: 1px solid var(--strong-line);
+}
+.server-home .server-actions .server-action {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+}
+.server-home .server-actions .catalog-connect {
+  color: var(--accent-text);
+  background: var(--home-accent-fill);
+}
+.server-home .server-actions .server-action:hover:not(:disabled),
+.server-home .server-actions .server-action:active:not(:disabled) {
+  background: var(--selected);
+  color: var(--selected-text);
+}
+.server-home
+  .server-actions
+  [data-server-action="delete"]:hover:not(:disabled) {
+  color: var(--error);
+}
+.server-action-tooltip {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 5;
+  padding: 4px 7px;
+  border: 1px solid var(--strong-line);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--surface);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  visibility: hidden;
+}
+.server-action-wrap:hover .server-action-tooltip,
+.server-action-wrap:focus-within .server-action-tooltip {
+  visibility: visible;
+}
+@container (max-width: 620px) {
+  .server-home .catalog-row {
+    grid-template-columns: 38px minmax(0, 1fr);
+    row-gap: 10px;
+  }
+  .catalog-actions {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+@media (max-width: 480px) {
+  .server-home .catalog-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .catalog-actions {
+    grid-column: 1;
+  }
+}
+@media (pointer: coarse) {
+  .server-home .server-actions .server-action {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .server-actions {
+    gap: 0;
+  }
+  .server-action-wrap:is(.action-edit, .action-forward, .action-delete) {
+    margin-left: 2px;
+    padding-left: 2px;
+  }
+}
+@media (forced-colors: active) {
+  .server-home .server-actions .server-action {
+    border-color: ButtonText;
   }
 }

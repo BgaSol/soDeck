@@ -8,7 +8,7 @@ pub struct Store {
 }
 impl Store {
     pub fn open(path: &Path) -> AppResult<Self> {
-        let db = Connection::open(path)?;
+        let mut db = Connection::open(path)?;
         db.busy_timeout(std::time::Duration::from_secs(3))?;
         let version: i64 = db.pragma_query_value(None, "user_version", |r| r.get(0))?;
         let tables: i64 = db.query_row(
@@ -16,7 +16,7 @@ impl Store {
             [],
             |r| r.get(0),
         )?;
-        if version != 1 && (version != 0 || tables > 0) {
+        if !matches!(version, 1 | 2) && (version != 0 || tables > 0) {
             return Err(AppError::new(
                 "databaseSchema",
                 "端口转发数据库版本不受支持；原文件已保留",
@@ -29,23 +29,18 @@ impl Store {
               CREATE TABLE forward_rules(id TEXT PRIMARY KEY, revision INTEGER NOT NULL,
                 server_id TEXT NOT NULL, configuration TEXT NOT NULL);
               CREATE INDEX forward_rules_server ON forward_rules(server_id);
-              PRAGMA user_version=1; COMMIT;",
+              PRAGMA user_version=2; COMMIT;",
             )?;
+        }
+        if version == 1 {
+            super::migration::upgrade(&mut db, path)?;
         }
         let result = Self { db };
         result.list()?;
         Ok(result)
     }
     pub fn list(&self) -> AppResult<Vec<Rule>> {
-        let mut stmt = self
-            .db
-            .prepare("SELECT configuration FROM forward_rules ORDER BY rowid")?;
-        let rows = stmt
-            .query_map([], |r| r.get::<_, String>(0))?
-            .collect::<Result<Vec<_>, _>>()?;
-        rows.into_iter()
-            .map(|s| serde_json::from_str(&s).map_err(|e| AppError::new("databaseSchema", e)))
-            .collect()
+        super::migration::read(&self.db)
     }
     pub fn get(&self, id: &str) -> AppResult<Rule> {
         let value: Option<String> = self
@@ -74,6 +69,24 @@ impl Store {
             tx.execute("INSERT INTO forward_rules(id,revision,server_id,configuration) VALUES(?1,?2,?3,?4)",
                 params![rule.id, rule.revision, rule.settings.server_id, serde_json::to_string(&rule).unwrap()])?
         } else {
+            let previous: Option<String> = tx
+                .query_row(
+                    "SELECT configuration FROM forward_rules WHERE id=?1 AND revision=?2",
+                    params![rule.id, old],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            let previous: Rule = serde_json::from_str(
+                &previous
+                    .ok_or_else(|| AppError::new("conflict", "规则已修改或删除，请重新读取"))?,
+            )
+            .map_err(|_| AppError::new("databaseSchema", "规则内容无效"))?;
+            if previous.settings.service.is_proxy() != rule.settings.service.is_proxy() {
+                return Err(AppError::new(
+                    "validation",
+                    "已保存规则的用途不能更改，请新建规则",
+                ));
+            }
             tx.execute("UPDATE forward_rules SET revision=?2,server_id=?3,configuration=?4 WHERE id=?1 AND revision=?5",
                 params![rule.id, rule.revision, rule.settings.server_id, serde_json::to_string(&rule).unwrap(), old])?
         };
@@ -109,8 +122,10 @@ mod tests {
                 server_id: "server".into(),
                 listen_address: "127.0.0.1".into(),
                 listen_port: None,
-                target_host: "db.internal".into(),
-                target_port: 3306,
+                service: super::super::model::Service::PortForward {
+                    target_host: "db.internal".into(),
+                    target_port: 3306,
+                },
                 auto_reconnect: true,
             },
         }

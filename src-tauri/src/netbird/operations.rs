@@ -200,7 +200,7 @@ impl NetBirdManager {
             let mut r = r;
             let attempted = AtomicBool::new(false);
             let outcome = (|| {
-                let job = state.netbird.job()?;
+                let job = state.netbird.job(&state)?;
                 let until = Instant::now() + Duration::from_secs(55);
                 let check = || {
                     job.cancel.check()?;

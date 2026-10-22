@@ -243,7 +243,7 @@ export function DockerPanel({
   );
   useEffect(() => {
     if (active && showDetails) detailBack.current?.focus();
-  }, [active, showDetails]);
+  }, [showDetails]);
   function backToList() {
     setView((v) => ({ ...v, detailOpen: false }));
     requestAnimationFrame(() =>

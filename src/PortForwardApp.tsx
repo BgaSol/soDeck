@@ -67,8 +67,11 @@ export function PortForwardApp() {
     if (request.seed && request.serverId) {
       const draft = emptyForward(request.serverId);
       draft.name = request.seed.name;
-      draft.settings.targetHost = request.seed.targetHost;
-      draft.settings.targetPort = request.seed.targetPort;
+      draft.settings.service = {
+        kind: "portForward",
+        targetHost: request.seed.targetHost,
+        targetPort: request.seed.targetPort,
+      };
       setEditor(draft);
     }
   }, [data.openRequest, editor]);
@@ -238,7 +241,7 @@ export function PortForwardApp() {
   return (
     <div className="forward-app">
       <WindowTitlebar
-        title="端口转发"
+        title="端口转发与代理"
         leading={<Network size={19} />}
         onError={(e) => setError(errorOf(e).message)}
         actions={
@@ -415,6 +418,14 @@ export function PortForwardApp() {
                     current,
                     current.runtime?.probeId || null,
                   ),
+                )
+              }
+              onProxyProbe={(request) =>
+                void perform(() => forwardApi.proxyProbe(generation, current, request))
+              }
+              onCancelProxyProbe={(probeId) =>
+                void perform(() =>
+                  forwardApi.cancelProxyProbe(generation, current, probeId),
                 )
               }
               onOpenWeb={() =>

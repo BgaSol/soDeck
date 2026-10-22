@@ -1,5 +1,5 @@
 //! One owner drives all channels of an SSH session. No UI, rules, or reconnect policy.
-use super::{Socket, SshConnection};
+use super::{pipe::WorkerPipe, Socket, SshConnection};
 use crate::model::{AppError, AppResult};
 use polling::{Event, Events, Poller};
 use ssh2::{BlockDirections, Channel, ErrorCode};
@@ -22,9 +22,50 @@ pub struct Target {
 }
 pub enum Update {
     Opened(u64),
+    Activated(u64),
     Failed(u64, AppError),
     Finished(u64),
-    Bytes { sent: u64, received: u64 },
+    Bytes { id: u64, sent: u64, received: u64 },
+}
+pub enum FlowEndpoint {
+    Socket(Socket),
+    Pipe(WorkerPipe),
+    Probe,
+}
+impl FlowEndpoint {
+    fn shutdown_write(&self) {
+        match self {
+            Self::Socket(s) => s.shutdown(Shutdown::Write),
+            Self::Pipe(p) => p.shutdown_write(),
+            Self::Probe => {}
+        }
+    }
+    fn finish(&self) {
+        if let Self::Pipe(p) = self {
+            p.finish();
+        }
+    }
+}
+impl Read for FlowEndpoint {
+    fn read(&mut self, b: &mut [u8]) -> io::Result<usize> {
+        match self {
+            Self::Socket(s) => s.read(b),
+            Self::Pipe(p) => p.read(b),
+            Self::Probe => Ok(0),
+        }
+    }
+}
+impl Write for FlowEndpoint {
+    fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+        match self {
+            Self::Socket(s) => s.write(b),
+            Self::Pipe(p) => p.write(b),
+            Self::Probe => Ok(0),
+        }
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 struct Buffer {
     bytes: Box<[u8; BUFFER]>,
@@ -47,7 +88,9 @@ impl Buffer {
 }
 struct Flow {
     id: u64,
-    socket: Option<Socket>,
+    queued_at: Instant,
+    endpoint: FlowEndpoint,
+    active: bool,
     target: Target,
     origin: (String, u16),
     channel: Option<Channel>,
@@ -60,12 +103,21 @@ struct Flow {
     closing: Option<Instant>,
     close_sent: bool,
     abandoned: bool,
+    retired: bool,
 }
 impl Flow {
-    fn new(id: u64, socket: Option<Socket>, target: Target, origin: (String, u16)) -> Self {
+    fn new(
+        id: u64,
+        endpoint: FlowEndpoint,
+        target: Target,
+        origin: (String, u16),
+        active: bool,
+    ) -> Self {
         Self {
             id,
-            socket,
+            queued_at: Instant::now(),
+            endpoint,
+            active,
             target,
             origin,
             channel: None,
@@ -78,12 +130,31 @@ impl Flow {
             closing: None,
             close_sent: false,
             abandoned: false,
+            retired: false,
         }
+    }
+    fn retire_open(&mut self, updates: &mut Vec<Update>) {
+        if self.retired {
+            return;
+        }
+        if !self.abandoned {
+            updates.push(Update::Failed(
+                self.id,
+                AppError::new("timeout", "目标连接超时；SSH 路径保持连接"),
+            ));
+        }
+        self.abandoned = true;
+        self.retired = true;
+        if let FlowEndpoint::Socket(socket) = &self.endpoint {
+            socket.shutdown(Shutdown::Both);
+        }
+        self.endpoint = FlowEndpoint::Probe;
+        updates.push(Update::Finished(self.id));
     }
 }
 impl Drop for Flow {
     fn drop(&mut self) {
-        if let Some(s) = &self.socket {
+        if let FlowEndpoint::Socket(s) = &self.endpoint {
             s.shutdown(Shutdown::Both);
         }
     }
@@ -135,19 +206,60 @@ impl ForwardCore {
         target: Target,
         origin: (String, u16),
     ) -> AppResult<()> {
+        self.enqueue_endpoint(
+            id,
+            socket
+                .map(FlowEndpoint::Socket)
+                .unwrap_or(FlowEndpoint::Probe),
+            target,
+            origin,
+            true,
+        )
+    }
+    pub fn enqueue_suspended(
+        &mut self,
+        id: u64,
+        pipe: WorkerPipe,
+        target: Target,
+        origin: (String, u16),
+    ) -> AppResult<()> {
+        self.enqueue_endpoint(id, FlowEndpoint::Pipe(pipe), target, origin, false)
+    }
+    fn enqueue_endpoint(
+        &mut self,
+        id: u64,
+        endpoint: FlowEndpoint,
+        target: Target,
+        origin: (String, u16),
+        active: bool,
+    ) -> AppResult<()> {
         if self.len() >= 64 || self.queue.len() + usize::from(self.opening.is_some()) >= 8 {
             return Err(AppError::new("limit", "此转发的连接或等待队列已满"));
         }
-        if let Some(s) = &socket {
+        if let FlowEndpoint::Socket(s) = &endpoint {
             s.nonblocking()?;
         }
-        self.queue.push_back(Flow::new(id, socket, target, origin));
+        self.queue
+            .push_back(Flow::new(id, endpoint, target, origin, active));
         Ok(())
+    }
+    pub fn activate(&mut self, id: u64) {
+        if let Some(f) = self
+            .flows
+            .iter_mut()
+            .find(|f| f.id == id && !f.active && !f.abandoned && f.closing.is_none())
+        {
+            f.active = true;
+            self.updates.push(Update::Activated(id));
+        }
     }
     pub fn len(&self) -> usize {
         self.flows.len() + self.queue.len() + usize::from(self.opening.is_some())
     }
     pub fn cancel(&mut self, id: u64) {
+        if self.queue.iter().any(|f| f.id == id) {
+            self.updates.push(Update::Finished(id));
+        }
         self.queue.retain(|f| f.id != id);
         if let Some((f, _)) = self.opening.as_mut().filter(|(f, _)| f.id == id) {
             f.abandoned = true;
@@ -174,10 +286,10 @@ impl ForwardCore {
             return Ok(false);
         };
         if began.elapsed() > OPEN_TIMEOUT {
-            return Err(AppError::new(
-                "network",
-                "打开转发通道超时；正在结束此 SSH 路径",
-            ));
+            // The server may still be connecting this target. Fail only its
+            // client, and keep retrying the same libssh2 open until the late
+            // reply is drained; its session-wide request state cannot be reset.
+            f.retire_open(&mut self.updates);
         }
         let id = f.id;
         match self.connection.session().channel_direct_tcpip(
@@ -188,7 +300,7 @@ impl ForwardCore {
             Ok(channel) => {
                 let (mut f, _) = self.opening.take().unwrap();
                 f.channel = Some(channel);
-                if f.socket.is_none() || f.abandoned {
+                if matches!(f.endpoint, FlowEndpoint::Probe) || f.abandoned {
                     f.closing = Some(Instant::now());
                 }
                 if !f.abandoned {
@@ -202,13 +314,28 @@ impl ForwardCore {
                 Ok(false)
             }
             Err(e) => {
+                let target_failure = matches!(
+                    e.code(),
+                    ErrorCode::Session(code)
+                        if code == libssh2_sys::LIBSSH2_ERROR_CHANNEL_FAILURE
+                            || code == libssh2_sys::LIBSSH2_ERROR_TIMEOUT
+                );
                 let e: AppError = e.into();
-                if matches!(e.kind.as_str(), "network" | "timeout") {
+                if !target_failure {
                     return Err(e);
                 }
-                self.opening.take();
-                self.updates
-                    .push(Update::Failed(id, AppError::new("target", e.message)));
+                let (f, _) = self.opening.take().unwrap();
+                if !f.retired {
+                    self.updates.push(Update::Failed(
+                        id,
+                        if e.kind == "timeout" {
+                            e
+                        } else {
+                            AppError::new("target", e.message)
+                        },
+                    ));
+                    self.updates.push(Update::Finished(id));
+                }
                 Ok(true)
             }
         }
@@ -240,6 +367,7 @@ impl ForwardCore {
                         f.outgoing.pos += n;
                         if n > 0 {
                             self.updates.push(Update::Bytes {
+                                id,
                                 sent: n as u64,
                                 received: 0,
                             });
@@ -248,7 +376,10 @@ impl ForwardCore {
                     Operation::Eof => f.sent_eof = true,
                     Operation::Close => f.close_sent = true,
                     Operation::WaitClose => {
-                        self.updates.push(Update::Finished(id));
+                        f.endpoint.finish();
+                        if !f.retired {
+                            self.updates.push(Update::Finished(id));
+                        }
                         self.flows.remove(index);
                     }
                     _ => {}
@@ -273,7 +404,9 @@ impl ForwardCore {
                         f.closing = Some(Instant::now());
                     }
                     if matches!(op, Operation::Close | Operation::WaitClose) {
-                        self.updates.push(Update::Finished(id));
+                        if !f.retired {
+                            self.updates.push(Update::Finished(id));
+                        }
                         self.flows.remove(index);
                     }
                     Ok(true)
@@ -311,8 +444,19 @@ impl ForwardCore {
                 return Ok(progress);
             }
         }
+        self.queue.retain_mut(|f| {
+            if f.queued_at.elapsed() > OPEN_TIMEOUT {
+                f.retire_open(&mut self.updates);
+                false
+            } else {
+                true
+            }
+        });
         if self.opening.is_none() {
-            self.opening = self.queue.pop_front().map(|f| (f, Instant::now()));
+            self.opening = self.queue.pop_front().map(|f| {
+                let began = f.queued_at;
+                (f, began)
+            });
         }
         progress |= self.open()?;
         if self.pending.is_some() {
@@ -330,7 +474,8 @@ impl ForwardCore {
                     f.closing = Some(Instant::now());
                 }
                 if f.closing.is_none() {
-                    if let Some(socket) = &mut f.socket {
+                    if f.active {
+                        let socket = &mut f.endpoint;
                         if f.outgoing.empty() && !f.local_eof {
                             match socket.read(&mut f.outgoing.bytes[..]) {
                                 Ok(0) => {
@@ -352,6 +497,7 @@ impl ForwardCore {
                                 Ok(n) => {
                                     f.incoming.pos += n;
                                     self.updates.push(Update::Bytes {
+                                        id,
                                         sent: 0,
                                         received: n as u64,
                                     });
@@ -362,7 +508,7 @@ impl ForwardCore {
                             }
                         }
                         if f.remote_eof && f.incoming.empty() && !f.shutdown {
-                            socket.shutdown(Shutdown::Write);
+                            socket.shutdown_write();
                             f.shutdown = true;
                             progress = true;
                         }
@@ -388,6 +534,9 @@ impl ForwardCore {
                 if self.pending.is_some() {
                     return Ok(progress);
                 }
+                continue;
+            }
+            if !self.flows[i].active {
                 continue;
             }
             if !self.flows[i].outgoing.empty() {
@@ -451,7 +600,7 @@ impl ForwardCore {
                 sockets.push(socket);
             }
             for (i, f) in self.flows.iter().enumerate() {
-                if let Some(s) = &f.socket {
+                if let FlowEndpoint::Socket(s) = &f.endpoint {
                     if f.closing.is_some() {
                         continue;
                     }

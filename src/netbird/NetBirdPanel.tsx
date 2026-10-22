@@ -28,12 +28,14 @@ export function NetBirdPanel({
   sessionId,
   serverName,
   active,
+  workspaceActive = active,
   initialState,
   onStateChange,
 }: {
   sessionId: string | null;
   serverName: string;
   active: boolean;
+  workspaceActive?: boolean;
   initialState?: NetBirdPanelSnapshot;
   onStateChange?: (snapshot: NetBirdPanelSnapshot) => void;
 }) {
@@ -81,7 +83,10 @@ export function NetBirdPanel({
     return () => {
       ++epoch.current;
     };
-  }, [active, sessionId, token]);
+  }, [sessionId, token]);
+  useEffect(() => {
+    if (!active && menu.current) menu.current.open = false;
+  }, [active]);
   useLayoutEffect(() => {
     if (scroll.current)
       scroll.current.scrollTop = saved.current.scrollTop[view.page] ?? 0;
@@ -340,30 +345,36 @@ export function NetBirdPanel({
               }
             />
           )}
-          {view.page === "peer" && active && (
+          {view.page === "peer" && (
             <NetBirdPeerDetail
               key={`${view.selectedPeerId}-${token}`}
               peer={snapshot.peers.find((p) => p.id === view.selectedPeerId)}
               sessionId={sessionId}
               token={token ?? null}
               enabled={
-                !!sessionId && !!token && snapshot.collectionStatus === "ready"
+                active &&
+                !!sessionId &&
+                !!token &&
+                snapshot.collectionStatus === "ready"
               }
             />
           )}
-          {view.page === "diagnostics" && active && (
+          {view.page === "diagnostics" && (
             <NetBirdDiagnostics
               key={token}
               snapshot={snapshot}
+              active={active}
               sessionId={sessionId}
               onRefresh={() => store.refresh()}
             />
           )}
         </div>
       )}
-      {preview && active && sessionId && (
+      {preview && sessionId && (
         <NetBirdOperationDialog
           preview={preview}
+          visible={active}
+          workspaceActive={workspaceActive}
           serverName={serverName}
           onConfirm={async (request) => {
             await netbirdApi.submit(sessionId, request);

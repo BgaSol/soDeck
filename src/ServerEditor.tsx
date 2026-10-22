@@ -11,12 +11,15 @@ import {
 } from "lucide-react";
 import { api } from "./api";
 import { addTag, addressOf, errorOf } from "./types";
-import { updateDuplicateHost } from "./serverConfiguration";
+import {
+  createServerName,
+  needsDirectAddressReview,
+} from "./serverConfiguration";
 import type {
   Server,
   SaveServerRequest,
   PasswordChange,
-  DuplicatePasswordPolicy,
+  ServerSaveIntent,
 } from "./types";
 const fieldOrder = [
   "name",
@@ -40,7 +43,7 @@ const fieldLabels: Record<EditorField, string> = {
   privateKey: "本地私钥路径",
   directPort: "直连端口",
 };
-function validateFields(draft: Server, hasJump: boolean, connect: boolean) {
+function validateFields(draft: Server, hasJump: boolean) {
   const errors: Partial<Record<EditorField, string>> = {};
   if (!draft.name.trim()) errors.name = "请填写服务器名称。";
   else if (draft.name.length > 120) errors.name = "名称最多可输入 120 个字符。";
@@ -49,8 +52,6 @@ function validateFields(draft: Server, hasJump: boolean, connect: boolean) {
     errors.port = "请输入 1–65535 的整数端口。";
   if (draft.jumpServerId !== null && !hasJump)
     errors.jumpServerId = "请选择可用的跳板服务器，或切换为直接连接。";
-  if (connect && !draft.username.trim())
-    errors.username = "请填写 SSH 用户名后再连接。";
   if (draft.authType === "key" && !draft.privateKey.trim())
     errors.privateKey = "请填写本地私钥文件的完整路径。";
   if (
@@ -65,27 +66,29 @@ interface Props {
   initial: Server;
   tags: string[];
   servers: Server[];
-  duplicateSource?: Server | null;
-  connectDisabled?: boolean;
+  selectName?: boolean;
+  updateBlocked?: boolean;
   onSave: (
     server: SaveServerRequest,
-    connect?: boolean,
-    policy?: DuplicatePasswordPolicy,
-    asNew?: boolean,
+    intent: ServerSaveIntent,
+    autoName: boolean,
   ) => Promise<void>;
-  onDelete?: (server: Server) => void;
   onClose: () => void;
 }
 export function ServerEditor({
   initial,
-  duplicateSource,
-  connectDisabled = false,
+  selectName = false,
+  updateBlocked = false,
   tags,
   servers,
   onSave,
-  onDelete,
   onClose,
 }: Props) {
+  const opener = useRef(
+    document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null,
+  );
   const [draft, setDraft] = useState(() => structuredClone(initial)),
     [tag, setTag] = useState(""),
     [error, setError] = useState(""),
@@ -101,7 +104,6 @@ export function ServerEditor({
   const copyMounted = useRef(false);
   const showPasswordCopy =
     !!initial.id &&
-    !duplicateSource &&
     initial.authType === "password" &&
     initial.hasSavedPassword &&
     draft.authType === "password";
@@ -129,16 +131,12 @@ export function ServerEditor({
     invalidatePasswordCopy();
     setPasswordChange(value);
   }
-  const initiallyInherit =
-    !!duplicateSource?.hasSavedPassword &&
-    duplicateSource.authType === "password";
-  const [inheritPassword, setInheritPassword] = useState(initiallyInherit);
-  const [createInstead, setCreateInstead] = useState(false);
   const [sourceMissing, setSourceMissing] = useState(false);
-  const source = createInstead ? null : duplicateSource;
+  const [savingIntent, setSavingIntent] = useState<ServerSaveIntent | null>(
+    null,
+  );
   const submitting = useRef(false);
-  const directEdited = useRef(false);
-  const [directReset, setDirectReset] = useState(false);
+  const newName = createServerName(draft, initial, servers);
   const candidates = servers.filter(
     (server) => server.id !== draft.id && !server.jumpServerId,
   );
@@ -155,11 +153,10 @@ export function ServerEditor({
   const [checkedFields, setCheckedFields] = useState<
     Partial<Record<EditorField, boolean>>
   >({});
-  const [validateForConnection, setValidateForConnection] = useState(false);
   const [focusRequest, setFocusRequest] = useState<{
     field: EditorField;
   } | null>(null);
-  const fieldErrors = validateFields(draft, !!jump, validateForConnection);
+  const fieldErrors = validateFields(draft, !!jump);
   function fieldControl(field: EditorField, hint?: string) {
     const errorId =
       checkedFields[field] && fieldErrors[field]
@@ -202,9 +199,7 @@ export function ServerEditor({
   const dirty =
     JSON.stringify(initial) !== JSON.stringify(draft) ||
     !!tag.trim() ||
-    passwordChange.type !== "keep" ||
-    inheritPassword !== initiallyInherit ||
-    createInstead;
+    passwordChange.type !== "keep";
   const close = () => {
     if (busy) return;
     invalidatePasswordCopy();
@@ -219,33 +214,18 @@ export function ServerEditor({
     setConfirmDiscard(false);
   }
   useEffect(() => {
-    dialog.current?.showModal();
+    const modal = dialog.current;
+    modal?.showModal();
     nameInput.current?.focus();
-    if (duplicateSource) nameInput.current?.select();
+    if (selectName) nameInput.current?.select();
+    return () => {
+      modal?.close();
+      if (opener.current?.isConnected)
+        opener.current.focus({ preventScroll: true });
+    };
   }, []);
   function update<K extends keyof Server>(key: K, value: Server[K]) {
-    if (key === "directHost" || key === "directPort")
-      directEdited.current = true;
-    if (key === "host" && source) {
-      setDraft((current) =>
-        updateDuplicateHost(
-          current,
-          value as string,
-          source,
-          directEdited.current,
-        ),
-      );
-      if (
-        source.directHost &&
-        !directEdited.current &&
-        String(value).trim() !== source.host.trim()
-      )
-        setDirectReset(true);
-    } else setDraft((valueDraft) => ({ ...valueDraft, [key]: value }));
-    if (key === "authType" && value !== "password" && source) {
-      setInheritPassword(false);
-      setPasswordChange({ type: "keep" });
-    }
+    setDraft((current) => ({ ...current, [key]: value }));
     if (key === "authType") {
       invalidatePasswordCopy();
       setCheckedFields((current) => ({ ...current, privateKey: false }));
@@ -304,25 +284,40 @@ export function ServerEditor({
       }
     }
   }
-  async function submit(connect = false) {
+  const updateRestriction = sourceMissing
+    ? "原服务器已删除，无法保存修改。"
+    : updateBlocked
+      ? "原服务器正在连接，请完成或取消连接后再保存修改。"
+      : usedAsJump && draft.jumpServerId !== null
+        ? "原服务器正被用作跳板，保存修改需保持直接连接；当前配置可用于新建。"
+        : "";
+  async function submit(intent: ServerSaveIntent) {
     if (
       submitting.current ||
       busy ||
       confirmDiscard ||
-      (connect && connectDisabled)
+      (intent === "update" && (!initial.id || updateRestriction))
     )
       return;
-    const saved = {
+    const recoverWithoutSource =
+      sourceMissing &&
+      (draft.authType !== "password" || passwordChange.type !== "keep");
+    if (sourceMissing && !recoverWithoutSource) {
+      setError("原服务器已删除。请填写新密码，或明确选择不保存密码后再新建。");
+      return;
+    }
+    const saved: SaveServerRequest = {
       ...draft,
+      id: recoverWithoutSource ? "" : initial.id,
+      name: intent === "create" ? newName : draft.name,
       passwordChange,
       tags: addTag(draft.tags, tag, tags),
     };
-    setValidateForConnection(connect);
     setCheckedFields(
       Object.fromEntries(fieldOrder.map((field) => [field, true])),
     );
     setError("");
-    const errors = validateFields(saved, !!jump, connect);
+    const errors = validateFields(saved, !!jump);
     const firstError = fieldOrder.find((field) => errors[field]);
     if (firstError) {
       setFocusRequest({ field: firstError });
@@ -331,21 +326,20 @@ export function ServerEditor({
     submitting.current = true;
     invalidatePasswordCopy();
     setBusy(true);
+    setSavingIntent(intent);
     try {
-      const policy: DuplicatePasswordPolicy =
-        draft.authType !== "password"
-          ? { type: "clear" }
-          : passwordChange.type === "set"
-            ? passwordChange
-            : source && inheritPassword
-              ? { type: "inherit" }
-              : { type: "clear" };
-      await onSave(saved, connect, policy, createInstead);
+      await onSave(
+        saved,
+        intent,
+        !!initial.id && draft.name.trim() === initial.name.trim(),
+      );
     } catch (error) {
       const failure = errorOf(error);
       setError(failure.message);
-      setSourceMissing(failure.kind === "sourceMissing");
+      if (["sourceMissing", "notFound"].includes(failure.kind))
+        setSourceMissing(true);
       setBusy(false);
+      setSavingIntent(null);
       submitting.current = false;
     }
   }
@@ -362,12 +356,10 @@ export function ServerEditor({
     >
       <DialogHeader
         id="server-editor-title"
-        title={
-          source ? "复制服务器配置" : initial.id ? "编辑服务器" : "新增服务器"
-        }
+        title={initial.id ? "服务器配置" : "新增服务器"}
         subtitle={
-          source
-            ? `来自 ${source.name} · 保存为独立配置，不修改来源服务器。`
+          initial.id
+            ? `当前配置：${initial.name} · ${addressOf(initial)}`
             : "设置服务器地址、连接路径与认证方式。"
         }
         closeLabel="关闭配置窗口"
@@ -376,13 +368,14 @@ export function ServerEditor({
       />
       <form
         noValidate
-        onSubmit={(event) => {
-          event.preventDefault();
-          void submit(
-            (event.nativeEvent as SubmitEvent).submitter?.getAttribute(
-              "value",
-            ) === "connect",
-          );
+        onSubmit={(event) => event.preventDefault()}
+        onKeyDown={(event) => {
+          if (
+            event.key === "Enter" &&
+            !event.nativeEvent.isComposing &&
+            event.target instanceof HTMLInputElement
+          )
+            event.preventDefault();
         }}
       >
         <div className="editor-fields">
@@ -406,6 +399,11 @@ export function ServerEditor({
                 required
               />
               {fieldError("name")}
+              {initial.id && (
+                <small className="field-help create-name-preview">
+                  新建名称：{newName || "请填写名称"}
+                </small>
+              )}
             </label>
             <div className="form-columns">
               <label>
@@ -442,7 +440,6 @@ export function ServerEditor({
             <fieldset
               className="connection-choice"
               aria-label="连接方式"
-              disabled={usedAsJump}
               aria-describedby={usedAsJump ? "jump-usage-help" : undefined}
             >
               <label>
@@ -480,7 +477,7 @@ export function ServerEditor({
             </fieldset>
             {usedAsJump && (
               <p className="field-help" id="jump-usage-help">
-                此服务器已被用作跳板，需保持直接连接。
+                此服务器已被用作跳板；保存修改需保持直接连接，新建可选择其他路径。
               </p>
             )}
             {draft.jumpServerId !== null && (
@@ -581,19 +578,6 @@ export function ServerEditor({
             </div>
             {draft.authType === "password" && (
               <div className="password-field">
-                {source?.authType === "password" && source.hasSavedPassword && (
-                  <label className="copy-password-option">
-                    <input
-                      type="checkbox"
-                      checked={inheritPassword && passwordChange.type !== "set"}
-                      onChange={(event) => {
-                        setInheritPassword(event.target.checked);
-                        setPasswordChange({ type: "keep" });
-                      }}
-                    />
-                    复用来源已保存的登录密码
-                  </label>
-                )}
                 <div className="password-field-heading">
                   <label htmlFor="server-password">密码</label>
                   <div className="password-saved-actions">
@@ -653,34 +637,26 @@ export function ServerEditor({
                     )
                   }
                   placeholder={
-                    source && inheritPassword && passwordChange.type === "keep"
-                      ? "复用来源密码，输入新密码可替换"
-                      : draft.hasSavedPassword &&
-                          !passwordCopyUnavailable &&
-                          passwordChange.type === "keep"
-                        ? "已保存密码，输入新密码以替换"
-                        : "留空则在连接时输入"
+                    initial.hasSavedPassword && passwordChange.type === "keep"
+                      ? "已保存密码，输入新密码以替换"
+                      : "留空则在连接时输入"
                   }
                 />
                 <div className="password-field-footer">
                   <small className="field-help" id="server-password-help">
                     {passwordCopyUnavailable
-                      ? "请重新打开编辑窗口以获取最新配置。"
-                      : showPasswordCopy && passwordChange.type === "set"
-                        ? "复制的是已保存密码，新密码保存后才生效。"
-                        : showPasswordCopy && passwordChange.type === "clear"
-                          ? "保存后清空，当前仍可复制已保存密码。"
-                          : source &&
-                              inheritPassword &&
-                              passwordChange.type === "keep"
-                            ? "保存时由本机继承密码；之后修改来源密码不会影响副本。"
-                            : passwordChange.type === "clear"
-                              ? "下次连接时重新输入。"
-                              : source && passwordChange.type === "keep"
-                                ? "未保存密码，连接时输入。"
-                                : "密码保存在本机，连接时自动使用。"}
+                      ? "请重新打开配置窗口以获取最新状态。"
+                      : showPasswordCopy && passwordChange.type !== "keep"
+                        ? "复制的是当前已保存密码，本次密码设置保存后生效。"
+                        : passwordChange.type === "clear"
+                          ? "不保存密码，下次连接时输入。"
+                          : passwordChange.type === "set"
+                            ? "新密码将在保存后生效。"
+                            : initial.hasSavedPassword
+                              ? "保存修改保留原密码；新建服务器继承此密码。"
+                              : "未保存密码，连接时输入。"}
                   </small>
-                  {draft.hasSavedPassword && (
+                  {(initial.hasSavedPassword || sourceMissing) && (
                     <button
                       type="button"
                       className="quiet password-action"
@@ -693,8 +669,10 @@ export function ServerEditor({
                       }
                     >
                       {passwordChange.type === "clear"
-                        ? "保留已保存密码"
-                        : "清空已保存密码"}
+                        ? "保留原密码"
+                        : initial.hasSavedPassword
+                          ? "清空已保存密码"
+                          : "不保存密码"}
                     </button>
                   )}
                 </div>
@@ -817,7 +795,7 @@ export function ServerEditor({
                 placeholder="选择或输入标签"
                 maxLength={40}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") {
+                  if (e.key === "Enter" && !e.nativeEvent.isComposing) {
                     e.preventDefault();
                     append();
                   }
@@ -834,28 +812,26 @@ export function ServerEditor({
             </datalist>
           </fieldset>
         </div>
-        {directReset && (
+        {needsDirectAddressReview(draft, initial) && (
           <p
             className="field-help editor-feedback editor-feedback-info"
             role="status"
           >
-            SSH 地址已变更，已清空继承的直传地址，请按需重新填写。
+            真实地址仍为来源地址，请确认。
           </p>
         )}
         {sourceMissing && (
-          <div className="editor-feedback editor-feedback-info">
-            <button
-              type="button"
-              onClick={() => {
-                setCreateInstead(true);
-                setInheritPassword(false);
-                setSourceMissing(false);
-                setError("");
-              }}
-            >
-              保留草稿，改为普通新建
-            </button>
-          </div>
+          <p className="field-help editor-feedback">
+            草稿已保留。请明确设置新密码或选择不保存密码，再新建服务器。
+          </p>
+        )}
+        {updateRestriction && (
+          <p
+            id="server-update-restriction"
+            className="field-help editor-feedback"
+          >
+            {updateRestriction}
+          </p>
         )}
         {error && (
           <p
@@ -880,35 +856,34 @@ export function ServerEditor({
             </button>
           </footer>
         ) : (
-          <footer className="dialog-actions">
-            {onDelete && (
-              <button
-                type="button"
-                className="danger quiet push-right"
-                disabled={busy}
-                onClick={() => onDelete(initial)}
-              >
-                删除
-              </button>
+          <footer className="dialog-actions editor-save-actions">
+            {initial.id && (
+              <p className="field-help">
+                新建保存为独立配置；保存修改会更新当前服务器。
+              </p>
             )}
             <button type="button" onClick={close} disabled={busy}>
               取消
             </button>
             <button
-              className={initial.id ? "primary" : ""}
+              className={initial.id ? "" : "primary"}
               disabled={busy || invalidJump}
-              type="submit"
+              type="button"
+              onClick={() => void submit("create")}
             >
-              {busy ? "保存中…" : source ? "保存副本" : "保存"}
+              {savingIntent === "create" ? "新建中…" : "新建服务器"}
             </button>
-            {!initial.id && (
+            {initial.id && (
               <button
                 className="primary"
-                type="submit"
-                value="connect"
-                disabled={busy || invalidJump || connectDisabled}
+                disabled={busy || invalidJump || !!updateRestriction}
+                aria-describedby={
+                  updateRestriction ? "server-update-restriction" : undefined
+                }
+                type="button"
+                onClick={() => void submit("update")}
               >
-                保存并连接
+                {savingIntent === "update" ? "保存中…" : "保存修改"}
               </button>
             )}
           </footer>

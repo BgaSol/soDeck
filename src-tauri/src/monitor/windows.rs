@@ -140,6 +140,7 @@ impl MonitorManager {
         output: Channel<MonitorEvent>,
         interest: Interest,
     ) -> AppResult<String> {
+        let _gate = state.configuration.lock().unwrap();
         state.ensure_running()?;
         // Registry order is entries -> observers. No native window call runs under these locks.
         let entries = self.entries.lock().unwrap();

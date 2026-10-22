@@ -1,246 +1,328 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { desktop } from "./api";
 import { APP_VERSION } from "./brand";
 import { errorOf } from "./types";
-import { updateApi, updateBusy, type UpdatePreflight } from "./updateApi";
+import { updateApi, type InstallReview } from "./updateApi";
 import { receiveUpdate, useAppUpdate } from "./useAppUpdate";
 import "./software-update.css";
-const phases = {
-  idle: "尚未检查",
-  checking: "正在检查更新…",
-  upToDate: "已是最新版本",
-  available: "发现新版本",
-  downloading: "正在下载并验证更新…",
-  ready: "更新已准备好",
-  preparing: "正在准备安装…",
-  installing: "正在安装，请等待…",
-  failed: "更新未完成",
-};
+import { phaseLabel, updateActions } from "./updatePresentation";
+import { UpdateInstallReview } from "./UpdateInstallReview";
+
 const size = (n: number) => (n / 1024 / 1024).toFixed(1) + " MB";
+const mainWindow = () => desktop && getCurrentWindow().label === "main";
+
 export function SoftwareUpdateSection() {
   const state = useAppUpdate();
   const [error, setError] = useState("");
-  const [acting, setActing] = useState(false);
-  const [preflight, setPreflight] = useState<UpdatePreflight | null>(null);
-  const main = desktop && getCurrentWindow().label === "main";
-  const busy = acting || (!!state && updateBusy(state));
-  async function run(action: () => Promise<unknown>) {
+  const [pending, setPending] = useState<Set<string>>(() => new Set());
+  const [review, setReview] = useState<InstallReview | null>(null);
+  const main = mainWindow();
+  const actions = updateActions(state, main);
+
+  useEffect(() => {
+    if (state?.release && main)
+      void updateApi
+        .ackNotice(state.release.id)
+        .then(receiveUpdate)
+        .catch(() => {});
+  }, [state?.release?.id, main]);
+
+  async function run(key: string, action: () => Promise<unknown>) {
+    setPending((keys) => new Set(keys).add(key));
     setError("");
-    setActing(true);
     try {
       await action();
     } catch (e) {
       setError(errorOf(e).message);
     } finally {
-      setActing(false);
+      setPending((keys) => {
+        const next = new Set(keys);
+        next.delete(key);
+        return next;
+      });
     }
   }
+  async function preflight() {
+    if (!state?.release) return;
+    const next = await updateApi.preflight(state.release.id);
+    setReview(next);
+  }
+  async function install() {
+    if (!review?.reviewToken) return;
+    const result = await updateApi.install(review.reviewToken);
+    if (result.status === "reviewChanged") setReview(result.review);
+    else setReview(null);
+  }
+  const downloaded = state?.progress?.downloaded ?? 0;
+  const total = state?.progress?.total ?? null;
+  const skip =
+    !!state?.release && state.skippedVersion === state.release.version;
+  const canDownload = actions.download;
+  const canCheck = desktop && actions.check;
+
   return (
     <section className="software-update" aria-label="软件更新" tabIndex={-1}>
       <h3>软件更新</h3>
       <p>
         当前版本 <strong>v{state?.currentVersion ?? APP_VERSION}</strong>
-        {state?.version && (
+        {state?.release && (
           <>
             {" "}
-            · 可用版本 <strong>v{state.version}</strong>
+            · 可用版本 <strong>v{state.release.version}</strong>
           </>
         )}
       </p>
-      <p role="status" aria-live="polite">
+      <p className="update-status" role="status" aria-live="polite">
         {state
-          ? phases[state.phase]
+          ? phaseLabel[state.phase]
           : desktop
-            ? "正在读取更新状态…"
+            ? "正在读取更新状态"
             : "请在桌面 App 中检查更新"}
       </p>
-      {state?.lastCheck && (
+      {state?.lastSuccessfulCheckAt && (
         <p className="update-muted">
-          上次成功检查：{new Date(state.lastCheck * 1000).toLocaleString()}
+          上次检查：
+          {new Date(state.lastSuccessfulCheckAt * 1000).toLocaleString()}
         </p>
       )}
-      {state?.publishedAt && (
+      {state?.release?.publishedAt && (
         <p className="update-muted">
-          发布日期：{new Date(state.publishedAt).toLocaleDateString()}
+          发布日期：{new Date(state.release.publishedAt).toLocaleDateString()}
         </p>
       )}
-      {state?.notes && (
+      {!!state?.release?.notes && (
         <details>
           <summary>版本更新说明</summary>
-          <div className="update-notes">{state.notes}</div>
+          <div className="update-notes">{state.release.notes}</div>
         </details>
       )}
-      {state?.phase === "downloading" && (
-        <div>
-          <progress
-            aria-label="更新下载进度"
-            max={state.total ?? undefined}
-            value={state.total ? state.downloaded : undefined}
-          />
+      {(state?.phase === "downloading" || state?.phase === "verifying") && (
+        <div className="update-progress">
+          {state.phase === "downloading" && (
+            <progress
+              aria-label="更新下载进度"
+              max={total ?? undefined}
+              value={total ? downloaded : undefined}
+            />
+          )}
           <p>
-            {size(state.downloaded)}
-            {state.total ? " / " + size(state.total) : " 已下载"} ·
-            关闭此面板后继续下载
+            {state.phase === "downloading"
+              ? `${size(downloaded)}${total ? ` / ${size(total)}` : " 已下载"} · 关闭此面板后会继续`
+              : "下载完成，正在验证安装包"}
           </p>
         </div>
       )}
-      {state?.message && <p role="status">{state.message}</p>}
+      {state?.message && !state.error && (
+        <p className="update-muted">{state.message}</p>
+      )}
+      {state?.result && (
+        <div className={`update-result ${state.result.outcome}`} role="status">
+          <span>
+            {state.result.outcome === "completed"
+              ? `已更新到 v${state.result.targetVersion}`
+              : `更新到 v${state.result.targetVersion} 未完成`}
+          </span>
+          <button
+            disabled={!main || pending.has("ackResult")}
+            onClick={() =>
+              void run("ackResult", async () =>
+                receiveUpdate(await updateApi.ackResult(state.result!.id)),
+              )
+            }
+          >
+            关闭
+          </button>
+        </div>
+      )}
+      {state && (
+        <div className="update-preferences">
+          <label>
+            <input
+              type="checkbox"
+              checked={state.preferences.autoCheck}
+              disabled={
+                !desktop ||
+                !actions.preferences ||
+                pending.has("autoCheck") ||
+                pending.has("autoDownload")
+              }
+              onChange={(e) =>
+                void run("autoCheck", async () =>
+                  receiveUpdate(
+                    await updateApi.preferences(state.preferences.revision, {
+                      autoCheck: e.target.checked,
+                    }),
+                  ),
+                )
+              }
+            />
+            自动检查更新
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={state.preferences.autoDownload}
+              disabled={
+                !desktop ||
+                !actions.preferences ||
+                pending.has("autoCheck") ||
+                pending.has("autoDownload")
+              }
+              onChange={(e) =>
+                void run("autoDownload", async () =>
+                  receiveUpdate(
+                    await updateApi.preferences(state.preferences.revision, {
+                      autoDownload: e.target.checked,
+                    }),
+                  ),
+                )
+              }
+            />
+            自动下载更新
+          </label>
+        </div>
+      )}
       {error && (
         <p className="update-error" role="alert">
           {error}
         </p>
       )}
-      {state && (
-        <label className="update-preference">
-          <input
-            type="checkbox"
-            checked={state.autoCheck}
-            disabled={busy}
-            onChange={(e) =>
-              void run(async () =>
-                receiveUpdate(
-                  await updateApi.preferences(
-                    e.target.checked,
-                    state.skippedVersion,
-                  ),
-                ),
-              )
-            }
-          />
-          自动检查更新
-        </label>
+      {state?.error && (
+        <p className="update-error" role="alert">
+          {state.error.stage === "download"
+            ? "下载或验证没有完成。"
+            : (state.message ?? "更新没有完成。")}
+        </p>
       )}
       <div className="update-actions">
         <button
-          disabled={!desktop || busy || state?.phase === "ready"}
+          disabled={
+            !canCheck || pending.has("check") || pending.has("download")
+          }
           onClick={() =>
-            void run(async () => receiveUpdate(await updateApi.check()))
+            void run("check", async () => {
+              setReview(null);
+              receiveUpdate(await updateApi.check());
+            })
           }
         >
           检查更新
         </button>
-        {!!state?.version && (
+        {state?.release && (
           <button
-            disabled={busy}
-            onClick={() => void run(() => updateApi.openRelease())}
-          >
-            打开发布页 / 手动下载
-          </button>
-        )}
-        {state?.version &&
-          state.automaticInstall &&
-          !["ready", "preparing", "installing", "downloading"].includes(
-            state.phase,
-          ) &&
-          main && (
-            <button
-              className="primary"
-              disabled={busy}
-              onClick={() =>
-                void run(async () => receiveUpdate(await updateApi.download()))
-              }
-            >
-              下载更新
-            </button>
-          )}
-        {state?.phase === "ready" && main && (
-          <button
-            className="primary"
-            disabled={busy}
+            disabled={pending.has("release")}
             onClick={() =>
-              void run(async () => setPreflight(await updateApi.preflight()))
-            }
-          >
-            安装并重启
-          </button>
-        )}
-        {state?.version && !main && (
-          <button onClick={() => void run(() => updateApi.focusMain())}>
-            前往主窗口更新
-          </button>
-        )}
-        {state?.version && state.phase === "available" && (
-          <button
-            disabled={busy}
-            onClick={() =>
-              void run(async () =>
-                receiveUpdate(
-                  await updateApi.preferences(
-                    state.autoCheck,
-                    state.skippedVersion === state.version
-                      ? null
-                      : state.version,
-                  ),
-                ),
+              void run("release", () =>
+                updateApi.openRelease(state.release!.id),
               )
             }
           >
-            {state.skippedVersion === state.version
-              ? "恢复版本提醒"
-              : "跳过此版本"}
+            打开发布页
+          </button>
+        )}
+        {state?.release && state.install.mode === "manual" && main && (
+          <button
+            className="primary"
+            disabled={pending.has("manual")}
+            onClick={() =>
+              void run("manual", () =>
+                updateApi.openManualAsset(state.release!.id),
+              )
+            }
+          >
+            下载 {state.install.manualFormat?.toUpperCase()} 安装包
+          </button>
+        )}
+        {canDownload && (
+          <button
+            className="primary"
+            disabled={pending.has("download") || pending.has("check")}
+            onClick={() =>
+              void run("download", async () => {
+                setReview(null);
+                receiveUpdate(await updateApi.download(state!.release!.id));
+              })
+            }
+          >
+            {state?.error?.retry === "download" ? "重新下载" : "下载更新"}
+          </button>
+        )}
+        {(state?.phase === "downloading" || state?.phase === "verifying") &&
+          state.operation &&
+          main && (
+            <button
+              disabled={pending.has("cancel")}
+              onClick={() =>
+                void run("cancel", async () =>
+                  receiveUpdate(
+                    await updateApi.cancelDownload(state.operation!.id),
+                  ),
+                )
+              }
+            >
+              取消下载
+            </button>
+          )}
+        {state?.phase === "ready" &&
+          main &&
+          review?.releaseId !== state.release?.id && (
+            <button
+              className="primary"
+              disabled={pending.has("preflight") || pending.has("install")}
+              onClick={() => void run("preflight", preflight)}
+            >
+              安装并重启
+            </button>
+          )}
+        {state?.release && state.phase === "available" && (
+          <button
+            disabled={pending.has("skip")}
+            onClick={() =>
+              void run("skip", async () => {
+                receiveUpdate(
+                  await updateApi.skipVersion(state.release!.id, !skip),
+                );
+              })
+            }
+          >
+            {skip ? "恢复版本提醒" : "跳过此版本"}
+          </button>
+        )}
+        {state?.release && !main && (
+          <button
+            disabled={pending.has("focus")}
+            onClick={() => void run("focus", () => updateApi.focusMain())}
+          >
+            前往主窗口更新
+          </button>
+        )}
+        {state?.error?.code === "restartRequired" && main && (
+          <button
+            className="primary"
+            disabled={pending.has("recovery")}
+            onClick={() =>
+              void run("recovery", () => updateApi.restartRecovery())
+            }
+          >
+            重启 SoDeck
           </button>
         )}
       </div>
-      {state?.version && <p className="update-muted">{state.installReason}</p>}
-      {preflight && (
-        <div className="update-confirm" role="group" aria-label="安装前检查">
-          <strong>
-            {preflight.blockers.length
-              ? "安装前需要处理"
-              : "确认安装并重启 SoDeck"}
-          </strong>
-          {preflight.blockers.length > 0 && (
-            <ul>
-              {preflight.blockers.map((x) => (
-                <li key={x}>{x}</li>
-              ))}
-            </ul>
-          )}
-          {!preflight.blockers.length && (
-            <>
-              <p>
-                安装将关闭所有窗口。已保存配置会保留，重启后需要重新连接服务器。
-              </p>
-              <ul>
-                {preflight.interruptions.map((x) => (
-                  <li key={x}>{x}</li>
-                ))}
-              </ul>
-            </>
-          )}
-          <div className="update-actions">
-            <button disabled={busy} onClick={() => setPreflight(null)}>
-              稍后
-            </button>
-            {preflight.blockers.length ? (
-              <button
-                disabled={busy}
-                onClick={() =>
-                  void run(async () =>
-                    setPreflight(await updateApi.preflight()),
-                  )
-                }
-              >
-                重新检查
-              </button>
-            ) : (
-              <button
-                className="primary"
-                disabled={busy}
-                onClick={() =>
-                  void run(async () => {
-                    await updateApi.install();
-                    setPreflight(null);
-                  })
-                }
-              >
-                确认安装并重启
-              </button>
-            )}
-          </div>
-        </div>
+      {state?.install.reason && state.release && (
+        <p className="update-muted">{state.install.reason}</p>
       )}
+      {review &&
+        state?.phase === "ready" &&
+        review.releaseId === state.release?.id && (
+          <UpdateInstallReview
+            review={review}
+            pending={pending.has("preflight") || pending.has("install")}
+            onLater={() => setReview(null)}
+            onRefresh={() => void run("preflight", preflight)}
+            onInstall={() => void run("install", install)}
+          />
+        )}
     </section>
   );
 }

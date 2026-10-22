@@ -1,3 +1,5 @@
+import { createPortal } from "react-dom";
+import { useWorkspaceDialog } from "./WorkspaceInteractionContext";
 import { useEffect, useRef, useState } from "react";
 import { DialogHeader } from "./DialogHeader";
 import { fileApi, type DeletePreview, type DeleteTask } from "./fileApi";
@@ -19,10 +21,9 @@ export function DeleteFilesDialog({
   const alive = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  useWorkspaceDialog(dialog, "files");
   useEffect(() => {
     alive.current = true;
-    dialog.current?.showModal();
-    cancel.current?.focus();
     return () => {
       alive.current = false;
     };
@@ -47,7 +48,7 @@ export function DeleteFilesDialog({
       if (alive.current) setBusy(false);
     }
   }
-  return (
+  return createPortal(
     <dialog
       ref={dialog}
       className="delete-files-dialog"
@@ -102,7 +103,7 @@ export function DeleteFilesDialog({
         )}
       </div>
       <footer className="dialog-actions">
-        <button ref={cancel} disabled={busy} onClick={close}>
+        <button ref={cancel} data-initial-focus disabled={busy} onClick={close}>
           取消
         </button>
         <button
@@ -113,6 +114,7 @@ export function DeleteFilesDialog({
           {busy ? "正在开始…" : "永久删除"}
         </button>
       </footer>
-    </dialog>
+    </dialog>,
+    document.body,
   );
 }

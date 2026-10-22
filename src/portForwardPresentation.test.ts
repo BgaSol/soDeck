@@ -59,7 +59,10 @@ describe("forwarding form", () => {
       ).toBeTruthy();
     const ipv6 = { ...draft, targetHost: "[2001:db8::1]" };
     expect(validateForwardDraft(ipv6, ["s"])).toEqual({});
-    expect(draftSettings(ipv6).targetHost).toBe("2001:db8::1");
+    expect(draftSettings(ipv6).service).toMatchObject({
+      kind: "portForward",
+      targetHost: "2001:db8::1",
+    });
     expect(validateForwardDraft(draft, []).serverId).toBeTruthy();
   });
 });
@@ -68,8 +71,8 @@ describe("effective forwarding configuration", () => {
   it("keeps running search, address and route on one snapshot, then switches to saved settings when stopped", () => {
     const rule = emptyForward("s");
     rule.name = "数据库";
-    rule.settings.targetHost = "new.db";
-    rule.settings.targetPort = 5432;
+    rule.settings.service.targetHost = "new.db";
+    rule.settings.service.targetPort = 5432;
     const view = {
       rule,
       pendingChanges: true,
@@ -79,14 +82,14 @@ describe("effective forwarding configuration", () => {
         actualAddress: "[::1]:43000",
         settings: {
           ...rule.settings,
-          targetHost: "old.db",
+          service: { ...rule.settings.service, targetHost: "old.db" },
           listenAddress: "::1",
         },
         connection: {
           hops: [{ server: { ...server, name: "原服务器", host: "old.host" } }],
         },
       },
-    } as ForwardView;
+    } as unknown as ForwardView;
     const running = forwardPresentation(view, [server]);
     expect(running.local).toBe("[::1]:43000");
     expect(running.target).toBe("old.db:5432");

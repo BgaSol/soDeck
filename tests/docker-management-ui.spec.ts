@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./workspace-tool-helpers";
 import { test, expect, type Page } from "@playwright/test";
 import { setup } from "./resource-fixture";
 async function management(
@@ -396,7 +397,7 @@ async function management(
   // Recreate only the subscription, as the workspace was connected before the mock extension.
   await page.getByRole("button", { name: "断开", exact: true }).click();
   await page.getByRole("button", { name: "重新连接", exact: true }).click();
-  await page.getByRole("tab", { name: "Docker", exact: true }).click();
+  await openWorkspaceTool(page, "docker");
   const panel = page.getByRole("region", { name: "Docker 引擎与对象" });
   await panel
     .getByRole("list", { name: "容器列表" })
@@ -425,9 +426,9 @@ test("container lifecycle stays available while logs and background tasks remain
   ).toBeEnabled();
   await panel.getByRole("button", { name: "返回列表" }).click();
   await expect(panel.getByRole("list")).toContainText("操作中");
-  await page.getByRole("tab", { name: "监控", exact: true }).click();
+  await openWorkspaceTool(page, "monitor");
   await page.evaluate(() => (window as any).__DOCKER__.finish());
-  await page.getByRole("tab", { name: "Docker", exact: true }).click();
+  await openWorkspaceTool(page, "docker");
   await panel.getByRole("list").locator(".docker-object-row").first().click();
   await expect(
     panel.getByText("/data/apps/web", { exact: true }),
@@ -510,10 +511,7 @@ test("auto-remove and narrow dark layouts retain explicit consequences", async (
   await page.evaluate(() => (document.documentElement.dataset.theme = "dark"));
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.setViewportSize({ width: 650, height: 620 });
-  await page
-    .getByRole("navigation", { name: "工作区域" })
-    .getByRole("button", { name: "监控与服务" })
-    .click();
+  await openWorkspaceTool(page, "docker");
   await panel.getByRole("button", { name: "停止 web", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "停止容器？" });
   await expect(dialog).toContainText("匿名卷可能被移除");
@@ -546,8 +544,8 @@ test("supplementary actions and sensitive diagnostics reset when leaving the Doc
   await expect(panel.locator(".docker-raw-config")).toContainText(
     "fixture-secret-value",
   );
-  await page.getByRole("tab", { name: "监控", exact: true }).click();
-  await page.getByRole("tab", { name: "Docker", exact: true }).click();
+  await openWorkspaceTool(page, "monitor");
+  await openWorkspaceTool(page, "docker");
   await expect(panel).not.toContainText("fixture-secret-value");
   await panel.getByRole("button", { name: "web 更多操作" }).click();
   await page.getByRole("menuitem", { name: "暂停", exact: true }).click();
@@ -680,7 +678,7 @@ for (const width of [320, 360, 480]) {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.locator(".responsive-workspace").evaluate((element, size) => {
       (element as HTMLElement).style.setProperty(
-        "--service-width",
+        "--service-column",
         `${size}px`,
         "important",
       );

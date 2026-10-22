@@ -86,7 +86,7 @@ pub struct FileTask {
     actions: Actions,
 }
 impl FileTask {
-    fn id(&self) -> &str {
+    pub(crate) fn id(&self) -> &str {
         match &self.data {
             TaskData::Transfer(t) => &t.id,
             TaskData::Delete(t) => &t.id,
@@ -223,6 +223,22 @@ pub(crate) fn snapshot(state: &State) -> AppResult<Vec<FileTask>> {
     tasks.retain(|t| active(t.status()) || !hidden.contains(t.id()));
     tasks.sort_by(|a, b| b.order().cmp(&a.order()).then_with(|| a.id().cmp(b.id())));
     Ok(tasks)
+}
+
+/// In-memory installation guard. Unlike the presentation snapshot this never
+/// projects receipts or reads SQLite while the configuration gate is held.
+pub(crate) fn update_blocking_ids(state: &State) -> Vec<String> {
+    transfers::snapshot(state)
+        .into_iter()
+        .map(TaskData::Transfer)
+        .chain(state.deletes.snapshot().into_iter().map(TaskData::Delete))
+        .map(|data| FileTask {
+            data,
+            actions: Actions::default(),
+        })
+        .filter(|task| task.blocks_update())
+        .map(|task| task.id().to_owned())
+        .collect()
 }
 
 #[tauri::command]

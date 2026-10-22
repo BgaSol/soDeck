@@ -27,15 +27,24 @@ import {
 
 export function SystemSettingsButton() {
   const [open, setOpen] = useState(false);
+  const [section, setSection] = useState<"terminal" | "software-update">();
   useEffect(() => {
     if (!desktop) return;
     let gone = false;
     let off: (() => void) | undefined;
-    void listen("open-software-update", () => setOpen(true)).then(fn => {
-      if (gone) fn();
-      else off = fn;
-    }).catch(() => {});
-    return () => { gone = true; off?.(); };
+    void listen("open-software-update", () => {
+      setSection("software-update");
+      setOpen(true);
+    })
+      .then((fn) => {
+        if (gone) fn();
+        else off = fn;
+      })
+      .catch(() => {});
+    return () => {
+      gone = true;
+      off?.();
+    };
   }, []);
   const button = useRef<HTMLButtonElement>(null);
   return (
@@ -54,8 +63,10 @@ export function SystemSettingsButton() {
       {open &&
         createPortal(
           <SystemSettingsDialog
+            section={section}
             onClose={() => {
               setOpen(false);
+              setSection(undefined);
               button.current?.focus();
             }}
           />,
@@ -70,10 +81,11 @@ export function SystemSettingsDialog({
   section,
 }: {
   onClose: () => void;
-  section?: "terminal";
+  section?: "terminal" | "software-update";
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const terminalSection = useRef<HTMLElement>(null);
+  const updateSection = useRef<HTMLDivElement>(null);
   const settings = useSystemSettings();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -94,10 +106,6 @@ export function SystemSettingsDialog({
   useEffect(() => {
     alive.current = true;
     dialog.current?.showModal();
-    if (section === "terminal") {
-      terminalSection.current?.scrollIntoView({ block: "nearest" });
-      terminalSection.current?.focus();
-    }
     void refreshSystemSettings().catch((e) => {
       if (alive.current) setError(errorOf(e).message);
     });
@@ -120,6 +128,17 @@ export function SystemSettingsDialog({
       window.removeEventListener("keydown", escape, true);
     };
   }, []);
+
+  useEffect(() => {
+    const target =
+      section === "terminal"
+        ? terminalSection.current
+        : section === "software-update"
+          ? updateSection.current
+          : null;
+    target?.scrollIntoView({ block: "nearest" });
+    target?.focus();
+  }, [section]);
 
   async function saveClipboard(preferences: TerminalClipboardPreferences) {
     if (!settings || saving.current) return;
@@ -204,7 +223,9 @@ export function SystemSettingsDialog({
         onClose={close}
       />
       <div className="system-settings-content">
-        <SoftwareUpdateSection />
+        <div ref={updateSection} tabIndex={-1}>
+          <SoftwareUpdateSection />
+        </div>
         <DiagnosticsSection />
         <section className="appearance-settings" aria-label="外观主题">
           <h3>外观</h3>

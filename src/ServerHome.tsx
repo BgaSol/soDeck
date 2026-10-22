@@ -1,7 +1,5 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  Copy,
-  MoreHorizontal,
   Network,
   PanelRight,
   Plus,
@@ -10,7 +8,7 @@ import {
 } from "lucide-react";
 import { desktop } from "./api";
 import { addressOf, filterServers, type Server } from "./types";
-import { WorkspaceTabMenu } from "./WorkspaceTabMenu";
+import { ServerActions } from "./ServerActions";
 import type { WorkspaceTab } from "./workspaces";
 import { ServerDetails } from "./ServerDetails";
 import "./server-home.css";
@@ -46,13 +44,6 @@ export function ServerHome(props: Props) {
   const tags = [...new Set(servers.flatMap((server) => server.tags))].sort();
   const search = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
-  const menuId = useId();
-  const [menu, setMenu] = useState<{
-    server: Server;
-    anchor: HTMLElement;
-    x: number;
-    y: number;
-  } | null>(null);
   const [copyNotice, setCopyNotice] = useState("");
   const [showDetails, setShowDetails] = useState(false);
   const detailsToggle = useRef<HTMLButtonElement>(null);
@@ -74,11 +65,8 @@ export function ServerHome(props: Props) {
     if (active) {
       if (!showDetails || matchMedia("(min-width: 1001px)").matches)
         search.current?.focus({ preventScroll: true });
-    } else setMenu(null);
+    }
   }, [active, props.focusRequest]);
-  useEffect(() => {
-    if (menu && !servers.some((s) => s.id === menu.server.id)) setMenu(null);
-  }, [servers, menu]);
   useEffect(() => {
     if (showDetails && !visible.length) {
       setShowDetails(false);
@@ -100,7 +88,7 @@ export function ServerHome(props: Props) {
     return desktop && (!pending?.busy || (!forceNew && connected(server) > 0));
   }
   function selectWithKeyboard(event: React.KeyboardEvent) {
-    if (event.key === "Escape" && showDetails && !menu) {
+    if (event.key === "Escape" && showDetails) {
       event.preventDefault();
       backToList();
       return;
@@ -142,10 +130,6 @@ export function ServerHome(props: Props) {
       const server = visible.find((s) => s.id === selectedId);
       if (server && canConnect(server)) props.onConnect(server);
     }
-  }
-  function showMenu(server: Server, anchor: HTMLElement, x: number, y: number) {
-    props.onSelect(server.id);
-    setMenu({ server, anchor, x, y });
   }
   const selected = visible.find((s) => s.id === selectedId);
   return (
@@ -257,14 +241,6 @@ export function ServerHome(props: Props) {
                     )
                       props.onConnect(server);
                   }}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    const anchor =
-                      e.currentTarget.querySelector<HTMLElement>(
-                        ".catalog-more",
-                      )!;
-                    showMenu(server, anchor, e.clientX, e.clientY);
-                  }}
                 >
                   <div className="catalog-symbol" aria-hidden="true">
                     <ServerIcon size={21} />
@@ -339,37 +315,19 @@ export function ServerHome(props: Props) {
                     </div>
                   </div>
                   <div className="catalog-actions">
-                    <button
-                      className="catalog-connect"
-                      disabled={!canConnect(server)}
-                      onClick={() => props.onConnect(server)}
-                    >
-                      {count ? "进入会话" : attempt?.busy ? "连接中…" : "连接"}
-                    </button>
-                    <button
-                      className="catalog-copy icon-button"
-                      aria-label="复制"
-                      title={`复制 ${server.name} 的配置`}
-                      onClick={() => props.onCopy(server)}
-                      disabled={!desktop}
-                    >
-                      <Copy size={16} />
-                    </button>
-                    <button
-                      className="catalog-more icon-button"
-                      aria-label={`${server.name} 更多操作`}
-                      title="更多操作"
-                      aria-haspopup="menu"
-                      aria-expanded={menu?.server.id === server.id}
-                      onClick={(e) => {
-                        const b = e.currentTarget.getBoundingClientRect();
-                        if (menu?.server.id === server.id) setMenu(null);
-                        else
-                          showMenu(server, e.currentTarget, b.left, b.bottom);
-                      }}
-                    >
-                      <MoreHorizontal size={18} />
-                    </button>
+                    <ServerActions
+                      server={server}
+                      connected={count > 0}
+                      connecting={!!attempt?.busy}
+                      canConnect={canConnect(server)}
+                      canNewSession={canConnect(server, true)}
+                      deleteBlocked={!!attempt}
+                      onConnect={props.onConnect}
+                      onEdit={props.onEdit}
+                      onCopy={props.onCopy}
+                      onForward={props.onForward}
+                      onDelete={props.onDelete}
+                    />
                   </div>
                 </div>
               );
@@ -425,6 +383,7 @@ export function ServerHome(props: Props) {
           sessions={selected ? connected(selected) : 0}
           pending={pending?.serverId === selected?.id ? pending : null}
           canConnect={!!selected && canConnect(selected)}
+          canNewSession={!!selected && canConnect(selected, true)}
           failed={tabs.some(
             (t) => t.server.id === selected?.id && t.state === "连接失败",
           )}
@@ -432,6 +391,8 @@ export function ServerHome(props: Props) {
           onConnect={props.onConnect}
           onEdit={props.onEdit}
           onCopy={props.onCopy}
+          onForward={props.onForward}
+          onDelete={props.onDelete}
           onCopyAddress={copyAddress}
           onBack={backToList}
         />
@@ -492,55 +453,6 @@ export function ServerHome(props: Props) {
           <kbd>↓</kbd> 选择 <span>·</span> <kbd>Enter</kbd> 连接
         </span>
       </footer>
-      {menu && active && (
-        <WorkspaceTabMenu
-          id={menuId}
-          title={`${menu.server.name} 操作`}
-          {...menu}
-          items={[
-            {
-              id: "connect",
-              label: connected(menu.server) ? "进入会话" : "连接",
-              disabled: !canConnect(menu.server),
-              run: () => props.onConnect(menu.server),
-            },
-            {
-              id: "new",
-              label: "新建会话",
-              disabled: !canConnect(menu.server, true),
-              run: () => props.onConnect(menu.server, true),
-            },
-            {
-              id: "copy",
-              label: "复制配置",
-              disabled: !desktop,
-              run: () => props.onCopy(menu.server),
-            },
-            {
-              id: "edit",
-              label: "编辑",
-              disabled: !desktop || pending?.serverId === menu.server.id,
-              run: () => props.onEdit(menu.server),
-            },
-            {
-              id: "forward",
-              label: "端口转发",
-              disabled: !desktop,
-              run: () => props.onForward(menu.server),
-            },
-            {
-              id: "delete",
-              label: "删除服务器",
-              disabled: !desktop || pending?.serverId === menu.server.id,
-              run: () => props.onDelete(menu.server),
-            },
-          ]}
-          onClose={(restore) => {
-            if (restore) menu.anchor.focus();
-            setMenu(null);
-          }}
-        />
-      )}
     </section>
   );
 }

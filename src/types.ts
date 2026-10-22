@@ -66,6 +66,7 @@ export type PasswordChange =
 export interface SaveServerRequest extends Server {
   passwordChange: PasswordChange;
 }
+export type ServerSaveIntent = "create" | "update";
 export type ServerDraft = Omit<Server, "id" | "hasSavedPassword">;
 export type DuplicatePasswordPolicy =
   { type: "inherit" } | { type: "clear" } | { type: "set"; value: string };

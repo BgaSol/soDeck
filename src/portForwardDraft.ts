@@ -1,6 +1,7 @@
 import type { ForwardRule, ForwardSettings } from "./portForwardApi";
 
 export interface ForwardDraft {
+  kind: "portForward" | "networkProxy";
   name: string;
   serverId: string;
   targetHost: string;
@@ -20,13 +21,13 @@ export type DraftErrors = Partial<
   >
 >;
 export function forwardDraft(rule: ForwardRule): ForwardDraft {
+  const service = rule.settings.service;
   return {
+    kind: service.kind,
     name: rule.name,
     serverId: rule.settings.serverId,
-    targetHost: rule.settings.targetHost,
-    targetPort: rule.settings.targetPort
-      ? String(rule.settings.targetPort)
-      : "",
+    targetHost: service.kind === "portForward" ? service.targetHost : "",
+    targetPort: service.kind === "portForward" && service.targetPort ? String(service.targetPort) : "",
     portMode: rule.id && rule.settings.listenPort === null ? "auto" : "fixed",
     localPort:
       rule.settings.listenPort === null ? "" : String(rule.settings.listenPort),
@@ -43,7 +44,7 @@ export function updateTargetPort(
   return {
     ...draft,
     targetPort: value,
-    localPort: draft.localPortEdited ? draft.localPort : value,
+    localPort: draft.kind === "portForward" && !draft.localPortEdited ? value : draft.localPort,
   };
 }
 export function validateForwardDraft(
@@ -58,6 +59,7 @@ export function validateForwardDraft(
     errors.name = "名称不能包含控制字符，且不超过 128 个字符";
   if (!serverIds.includes(draft.serverId))
     errors.serverId = "请选择可用的 SSH 服务器";
+  if (draft.kind === "portForward") {
   if (!host) errors.targetHost = "请输入目标地址";
   else if (host.length > 253 || /[\s/\\@?#\u0000-\u001f\u007f]/.test(host))
     errors.targetHost = "请填写主机名或 IP，不含协议和路径";
@@ -72,9 +74,10 @@ export function validateForwardDraft(
       errors.targetHost = "请输入有效的 IPv6 地址；端口请单独填写";
     }
   }
+  }
   const portValid = (v: string) =>
     /^\d+$/.test(v) && Number(v) >= 1 && Number(v) <= 65535;
-  if (!portValid(draft.targetPort))
+  if (draft.kind === "portForward" && !portValid(draft.targetPort))
     errors.targetPort = "请输入 1–65535 之间的端口";
   if (draft.portMode === "fixed" && !portValid(draft.localPort))
     errors.localPort = "请输入 1–65535 之间的端口";
@@ -85,8 +88,7 @@ export function draftSettings(draft: ForwardDraft): ForwardSettings {
     serverId: draft.serverId,
     listenAddress: draft.listenAddress,
     listenPort: draft.portMode === "auto" ? null : Number(draft.localPort),
-    targetHost: draft.targetHost.trim().replace(/^\[([^\]]+)\]$/, "$1"),
-    targetPort: Number(draft.targetPort),
+    service: draft.kind === "networkProxy" ? { kind: "networkProxy" } : {kind: "portForward", targetHost: draft.targetHost.trim().replace(/^\[([^\]]+)\]$/, "$1"), targetPort: Number(draft.targetPort)},
     autoReconnect: draft.autoReconnect,
   };
 }
