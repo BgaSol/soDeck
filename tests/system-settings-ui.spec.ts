@@ -119,6 +119,45 @@ async function open(page: Page) {
   await expect(checkbox(page)).toBeEnabled();
 }
 
+test("settings use category navigation and keep the detail pane focused", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await open(page);
+  const dialog = settings(page);
+  const navigation = dialog.getByRole("navigation", { name: "设置分类" });
+  await expect(
+    navigation.getByRole("button", { name: /通用/ }),
+  ).toHaveAttribute("aria-current", "page");
+  await navigation.getByRole("button", { name: /终端/ }).click();
+  await expect(dialog).toContainText("终端 · 复制粘贴");
+  await expect(
+    navigation.getByRole("button", { name: /终端/ }),
+  ).toHaveAttribute("aria-current", "page");
+  await expect(dialog.locator(".system-settings-content")).toBeFocused();
+  await navigation.getByRole("button", { name: /诊断/ }).click();
+  await expect(dialog).toContainText("本地诊断");
+  await expect(
+    navigation.getByRole("button", { name: /诊断/ }),
+  ).toHaveAttribute("aria-current", "page");
+  expect(errors).toEqual([]);
+});
+
+test("category navigation stays within the dialog at a narrow width", async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await page.setViewportSize({ width: 420, height: 600 });
+  await open(page);
+  const dialog = settings(page);
+  await expect(
+    dialog.evaluate((element) => element.scrollWidth <= element.clientWidth),
+  ).toBeTruthy();
+  await dialog.getByRole("button", { name: /软件更新/ }).click();
+  await expect(dialog).toContainText("当前版本");
+  expect(errors).toEqual([]);
+});
+
 test("settings save, remain pending, can be undone, and failed saves restore the value", async ({
   page,
 }) => {
@@ -428,7 +467,9 @@ test("normal mode cancels browser defaults but keeps business menus and real xte
   const serverRow = page.locator(".server-row").first();
   await expect(serverRow.locator("[data-server-action]")).toHaveCount(6);
   await serverRow.click({ button: "right" });
-  await expect(page.getByRole("menu", { name: /Mount fixture 操作/ })).toHaveCount(0);
+  await expect(
+    page.getByRole("menu", { name: /Mount fixture 操作/ }),
+  ).toHaveCount(0);
   await page
     .getByRole("tab", { name: "Mount fixture，已连接", exact: true })
     .click();
