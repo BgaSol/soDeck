@@ -1,5 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
+import { installWorkspaceFixture } from "./workspace-fixture";
 async function setup(page: Page, automaticInstall = true) {
+  await installWorkspaceFixture(page);
   await page.addInitScript(
     ({ automaticInstall }) => {
       const w = window as any;
@@ -193,6 +195,7 @@ async function setup(page: Page, automaticInstall = true) {
   );
   await page.goto("/");
   await page.getByRole("button", { name: "系统设置", exact: true }).click();
+  await page.getByRole('button', { name: '软件更新 版本与更新', exact: true }).click();
   return page.getByRole("region", { name: "软件更新", exact: true });
 }
 
@@ -269,6 +272,7 @@ test("download survives settings close and requires a fresh work check before co
     }),
   );
   await page.getByRole("button", { name: "系统设置", exact: true }).click();
+  await page.getByRole('button', { name: '软件更新 版本与更新', exact: true }).click();
   await expect(section).toContainText("更新已准备好");
   await page.evaluate(() => {
     (window as any).__UPDATES__.blockers = [
@@ -433,6 +437,7 @@ test("background progress never opens settings or moves focus and reduced motion
     page.getByRole("button", { name: "系统设置", exact: true }),
   ).toBeFocused();
   await page.keyboard.press("Enter");
+  await page.getByRole('button', { name: '软件更新 版本与更新', exact: true }).click();
   await expect(section.getByRole("progressbar")).not.toHaveAttribute("value");
   await expect(section.getByRole("button", { name: "取消下载" })).toBeEnabled();
 });

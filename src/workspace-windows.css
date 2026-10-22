@@ -28,8 +28,8 @@
   height: 34px;
 }
 .window-tabs-slot .session-tab {
-  min-width: 120px;
-  max-width: 220px;
+  min-width: min(120px, var(--tab-available-width, 120px));
+  max-width: min(220px, calc(var(--tab-available-width, 220px) - 2px));
   height: 34px;
   border-radius: 7px;
 }

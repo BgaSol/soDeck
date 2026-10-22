@@ -82,7 +82,8 @@ export interface FilePanelSnapshot extends RemoteFileTreeSnapshot {
 }
 
 export function FilePanel({
-  sessionId,
+  contextId,
+  contextIdentity,
   serverName,
   active = true,
   initialState,
@@ -91,7 +92,8 @@ export function FilePanel({
   revealRequest,
   onClose,
 }: {
-  sessionId: string | null;
+  contextId: string | null;
+  contextIdentity?: string;
   serverName: string;
   active?: boolean;
   onClose?: () => void;
@@ -101,16 +103,17 @@ export function FilePanel({
   revealRequest?: { path: string; sequence: number };
 }) {
   const { model, state } = useRemoteFileTree(
-    sessionId,
+    contextId,
     active,
     initialState,
     terminalCwd,
+    contextIdentity,
   );
   const appliedReveal = useRef(0);
   useEffect(() => {
     if (
       !active ||
-      !sessionId ||
+      !contextId ||
       !revealRequest ||
       appliedReveal.current === revealRequest.sequence
     )
@@ -141,7 +144,7 @@ export function FilePanel({
       canceled = true;
       cancelAnimationFrame(frame);
     };
-  }, [active, sessionId, revealRequest, model]);
+  }, [active, contextId, revealRequest, model]);
   const { selected } = state;
   const selection = state.selection ?? (selected ? [selected] : []);
   const panel = useRef<HTMLElement>(null);
@@ -158,8 +161,8 @@ export function FilePanel({
   const [dropPath, setDropPath] = useState<string | null>(null);
   const [dropKind, setDropKind] = useState("remoteFiles");
   const hover = useRef<{ path: string; since: number } | null>(null);
-  const sessionRef = useRef(sessionId);
-  sessionRef.current = sessionId;
+  const sessionRef = useRef(contextId);
+  sessionRef.current = contextId;
   const [path, setPath] = useState(state.currentPath);
   const [focusedPath, setFocusedPath] = useState(selected || "/");
   const list = useRef<HTMLDivElement>(null);
@@ -174,7 +177,7 @@ export function FilePanel({
     [rows],
   );
   const mounts = useRemoteMounts(
-    sessionId,
+    contextId,
     active,
     mountPaths,
     initialState?.mounts,
@@ -233,7 +236,7 @@ export function FilePanel({
   const interaction = useContext(WorkspaceInteractionContext);
   const choosingDownload = useRef(false);
   function beginDownload(file: FileEntry) {
-    downloadReturn.current = { path: file.path, session: sessionId };
+    downloadReturn.current = { path: file.path, session: contextId };
     setMenu(null);
     setDownload(file);
   }
@@ -258,7 +261,7 @@ export function FilePanel({
     setDownload(null);
   }
 
-  const previousSession = useRef(sessionId);
+  const previousSession = useRef(contextId);
   const scrollOwner = useRef(model);
   const restoredScroll = useRef(false);
   const lastReveal = useRef(0);
@@ -292,8 +295,8 @@ export function FilePanel({
     setPath(state.currentPath);
   }, [state.currentPath, state.revealVersion]);
   useEffect(() => {
-    if (previousSession.current === sessionId) return;
-    previousSession.current = sessionId;
+    if (previousSession.current === contextId) return;
+    previousSession.current = contextId;
     setError("");
     setMenu(null);
     setDownload(null);
@@ -303,14 +306,14 @@ export function FilePanel({
     setDropPath(null);
     setMountDetail(null);
     setPathNotice(null);
-  }, [sessionId]);
+  }, [contextId]);
   useEffect(() => {
-    if (!desktop || !sessionId) return;
+    if (!desktop || !contextId) return;
     const id = crypto.randomUUID();
     let revision = 0;
     const update = () => {
       void transferApi
-        .registerView(sessionId, id, currentPath.current, ++revision)
+        .registerView(contextId, id, currentPath.current, ++revision)
         .catch(() => {});
     };
     viewRegistration.current = { id, update };
@@ -321,7 +324,7 @@ export function FilePanel({
       if (viewRegistration.current?.id === id) viewRegistration.current = null;
       void transferApi.unregisterView(id).catch(() => {});
     };
-  }, [sessionId]);
+  }, [contextId]);
   useEffect(() => {
     viewRegistration.current?.update();
   }, [state.currentPath]);
@@ -374,7 +377,7 @@ export function FilePanel({
   useDesktopDrag((event) => {
     if (
       !active ||
-      !sessionId ||
+      !contextId ||
       !panel.current ||
       event.kind === "workspaceTab"
     )
@@ -402,7 +405,7 @@ export function FilePanel({
       setDropPath(null);
       hover.current = null;
       if (!target || operation || busy) return;
-      const owner = sessionId;
+      const owner = contextId;
       void transferApi
         .claimDrop(event.token, owner, target)
         .then((draft) => {
@@ -416,14 +419,14 @@ export function FilePanel({
     }
   });
   useEffect(() => {
-    if (!desktop || !sessionId) return;
+    if (!desktop || !contextId) return;
     let live = true;
     let off: (() => void) | undefined;
     void getCurrentWindow()
-      .listen<{ sessionId: string; path: string }>(
+      .listen<{ contextId: string; path: string }>(
         "remote-directory-changed",
         ({ payload }) => {
-          if (payload.sessionId === sessionId)
+          if (payload.contextId === contextId)
             model.invalidateRemotePath(payload.path, active);
         },
       )
@@ -435,10 +438,10 @@ export function FilePanel({
       live = false;
       off?.();
     };
-  }, [sessionId, model, active]);
+  }, [contextId, model, active]);
   async function pickUpload(target: string) {
-    if (!sessionId || busy) return;
-    const owner = sessionId;
+    if (!contextId || busy) return;
+    const owner = contextId;
     setMenu(null);
     setError("");
     setBusy(true);
@@ -453,7 +456,7 @@ export function FilePanel({
     }
   }
   useEffect(() => {
-    if (!desktop || !sessionId) {
+    if (!desktop || !contextId) {
       setClipboard(null);
       return;
     }
@@ -463,7 +466,7 @@ export function FilePanel({
     const refresh = async () => {
       const current = ++revision;
       try {
-        const value = await transferApi.clipboard(sessionId);
+        const value = await transferApi.clipboard(contextId);
         if (live && current === revision) setClipboard(value);
       } catch {
         if (live && current === revision) setClipboard(null);
@@ -481,10 +484,10 @@ export function FilePanel({
       live = false;
       off?.();
     };
-  }, [sessionId]);
+  }, [contextId]);
   async function clipboardCopy(intent: "copy" | "move", file?: FileEntry) {
-    if (!sessionId || busy || operation) return;
-    const owner = sessionId;
+    if (!contextId || busy || operation) return;
+    const owner = contextId;
     const paths = (
       file && !selection.includes(file.path) ? [file.path] : selection
     ).filter((p) => p !== "/");
@@ -500,7 +503,7 @@ export function FilePanel({
     }
   }
   async function copyAbsolutePath(path: string) {
-    const owner = sessionId;
+    const owner = contextId;
     setMenu(null);
     setPathNotice(null);
     try {
@@ -521,8 +524,8 @@ export function FilePanel({
     if (anchor) setMountDetail({ key: mount.key, path: mount.target, anchor });
   }
   async function paste(target: string) {
-    if (!sessionId || busy || operation) return;
-    const owner = sessionId;
+    if (!contextId || busy || operation) return;
+    const owner = contextId;
     setMenu(null);
     setError("");
     setBusy(true);
@@ -544,14 +547,14 @@ export function FilePanel({
     rows.find((row) => row.file.path === selected && row.file.isDir)?.file
       .path ?? state.currentPath;
   function create(kind: "file" | "directory", path: string) {
-    if (!sessionId) return;
+    if (!contextId) return;
     setMenu(null);
-    setOperation({ kind, sessionId, path });
+    setOperation({ kind, contextId, path });
   }
   const deletePaths = (file?: FileEntry) =>
     file && !selection.includes(file.path) ? [file.path] : selection;
   const canDelete = (paths: string[]) =>
-    !!sessionId &&
+    !!contextId &&
     !busy &&
     !operation &&
     !download &&
@@ -564,8 +567,8 @@ export function FilePanel({
     );
   async function requestDelete(file?: FileEntry) {
     const paths = [...deletePaths(file)];
-    if (!sessionId || preparingDelete.current || !canDelete(paths)) return;
-    const owner = sessionId;
+    if (!contextId || preparingDelete.current || !canDelete(paths)) return;
+    const owner = contextId;
     preparingDelete.current = true;
     setMenu(null);
     setMountDetail(null);
@@ -584,7 +587,7 @@ export function FilePanel({
     }
   }
   function copyToServer(file?: FileEntry) {
-    if (!sessionId || busy) return;
+    if (!contextId || busy) return;
     const paths =
       file && !selection.includes(file.path) ? [file.path] : selection;
     const selectedPaths = paths.filter((path) => path !== "/");
@@ -705,12 +708,12 @@ export function FilePanel({
   }, [active]);
 
   async function edit(file: FileEntry) {
-    if (!sessionId || file.isDir || busy) return;
+    if (!contextId || file.isDir || busy) return;
     setMenu(null);
     setError("");
     setBusy(true);
     try {
-      await fileApi.openEditor(sessionId, file.path);
+      await fileApi.openEditor(contextId, file.path);
     } catch (error) {
       setError(errorOf(error).message);
     } finally {
@@ -719,7 +722,7 @@ export function FilePanel({
   }
 
   async function startDownload() {
-    if (!sessionId || !download || busy) return;
+    if (!contextId || !download || busy) return;
     const target = download;
     choosingDownload.current = true;
     setDownload(null);
@@ -727,7 +730,7 @@ export function FilePanel({
     setBusy(true);
     try {
       const id = await fileApi.startDownload(
-        sessionId,
+        contextId,
         target.path,
         target.isDir,
         conflict,
@@ -757,7 +760,7 @@ export function FilePanel({
       ref={panel}
       className="file-panel"
       aria-label="远程文件"
-      data-session-id={sessionId ?? undefined}
+      data-context-id={contextId ?? undefined}
     >
       <header className="panel-head">
         <div className="panel-title">
@@ -766,6 +769,20 @@ export function FilePanel({
             远程文件
           </h2>
           <div className="file-toolbar">
+            <button
+              className="quiet"
+              title={
+                terminalCwd
+                  ? terminalCwd.path
+                  : "当前终端与工具连接必须属于同一目标，且已取得目录"
+              }
+              disabled={!terminalCwd || !contextId}
+              onClick={() => {
+                if (terminalCwd) void model.revealPath(terminalCwd.path);
+              }}
+            >
+              定位到当前终端目录
+            </button>
             {onClose && (
               <button
                 className="icon-button"
@@ -782,7 +799,7 @@ export function FilePanel({
               title="新建文件或文件夹"
               aria-haspopup="menu"
               aria-expanded={menu?.create || undefined}
-              disabled={!sessionId || busy}
+              disabled={!contextId || busy}
               onClick={(event) => {
                 if (menu?.create) {
                   setMenu(null);
@@ -810,7 +827,7 @@ export function FilePanel({
               className="icon-button"
               aria-label="上传文件"
               title="选择本地文件上传"
-              disabled={!sessionId || busy}
+              disabled={!contextId || busy}
               onClick={() => void pickUpload(state.currentPath)}
             >
               <Upload size={15} />
@@ -818,7 +835,7 @@ export function FilePanel({
             <button
               className="icon-button"
               aria-label="刷新目录"
-              disabled={!sessionId || refreshLoading}
+              disabled={!contextId || refreshLoading}
               onClick={() => {
                 void model.refresh(refreshPath);
                 void mounts.model.refresh(true);
@@ -836,7 +853,7 @@ export function FilePanel({
           <button
             className="icon-button"
             aria-label="上一级目录"
-            disabled={!sessionId || state.currentPath === "/"}
+            disabled={!contextId || state.currentPath === "/"}
             onClick={() =>
               void model.revealPath(remoteParent(state.currentPath))
             }
@@ -847,7 +864,7 @@ export function FilePanel({
             aria-label="远程目录路径"
             value={path}
             onChange={(event) => setPath(event.target.value)}
-            disabled={!sessionId}
+            disabled={!contextId}
             placeholder="远程目录"
             onKeyDown={(event) => {
               if (event.key === "Enter") void model.revealPath(path);
@@ -862,15 +879,15 @@ export function FilePanel({
       <div
         className="file-list remote-file-tree"
         ref={list}
-        data-drop-directory={sessionId ? state.currentPath : undefined}
+        data-drop-directory={contextId ? state.currentPath : undefined}
         data-drop-active={dropPath === state.currentPath || undefined}
-        role={sessionId ? "tree" : undefined}
-        aria-label={sessionId ? "远程文件树" : undefined}
-        aria-multiselectable={sessionId ? true : undefined}
+        role={contextId ? "tree" : undefined}
+        aria-label={contextId ? "远程文件树" : undefined}
+        aria-multiselectable={contextId ? true : undefined}
         tabIndex={0}
         onContextMenu={(event) => {
           if (
-            !sessionId ||
+            !contextId ||
             (event.target as HTMLElement).closest("[role=treeitem]")
           )
             return;
@@ -929,9 +946,9 @@ export function FilePanel({
             event.preventDefault();
             void transferApi
               .clearClipboard(clipboard.id)
-              .then(() => (sessionId ? transferApi.clipboard(sessionId) : null))
+              .then(() => (contextId ? transferApi.clipboard(contextId) : null))
               .then((value) => {
-                if (sessionRef.current === sessionId) setClipboard(value);
+                if (sessionRef.current === contextId) setClipboard(value);
               })
               .catch((e) => setError(errorOf(e).message));
           }
@@ -941,7 +958,7 @@ export function FilePanel({
             model.setScrollTop(event.currentTarget.scrollTop);
         }}
       >
-        {!sessionId ? (
+        {!contextId ? (
           <div className="panel-empty">
             <Folder size={28} aria-hidden="true" />
             <strong>连接服务器后浏览文件</strong>
@@ -1022,12 +1039,12 @@ export function FilePanel({
                       )
                     )
                       return;
-                    if (!sessionId || file.path === "/") return;
+                    if (!contextId || file.path === "/") return;
                     dragStart.down(event, () => {
                       if (!selection.includes(file.path))
                         model.select(file.path, file.isDir);
                       return transferApi.beginDrag(
-                        sessionId,
+                        contextId,
                         selection.includes(file.path) ? selection : [file.path],
                       );
                     });
@@ -1519,9 +1536,9 @@ export function FilePanel({
           onRefresh={() => void mounts.model.refresh(true)}
         />
       )}
-      {copyPaths && sessionId && (
+      {copyPaths && contextId && (
         <CopyTargetDialog
-          sessionId={sessionId}
+          contextId={contextId}
           paths={copyPaths}
           onClose={() => setCopyPaths(null)}
           onPrepared={(draft) => {
@@ -1535,7 +1552,7 @@ export function FilePanel({
           operation={operation}
           onClose={() => setOperation(null)}
           onCreated={(path, directory) => {
-            const owner = sessionId;
+            const owner = contextId;
             void model.refresh(remoteParent(path)).then(() => {
               if (sessionRef.current === owner) {
                 void model.expand(remoteParent(path));

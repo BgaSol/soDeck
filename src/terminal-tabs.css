@@ -1,0 +1,106 @@
+.terminal-tabs {
+  display: flex;
+  align-items: center;
+  min-height: 37px;
+  border-bottom: 1px solid var(--line);
+  padding: 0 5px;
+  gap: 5px;
+  flex: 0 0 auto;
+  background: var(--surface);
+  color: var(--text);
+}
+.terminal-tabs-track {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  gap: 3px;
+  flex: 1;
+}
+.terminal-tab {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  border-bottom: 2px solid transparent;
+  opacity: 0.75;
+}
+.terminal-tab.active {
+  border-bottom-color: var(--blue);
+  opacity: 1;
+}
+.terminal-tab > button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px;
+  white-space: nowrap;
+}
+.terminal-tab > .terminal-tab-close {
+  padding: 6px 4px;
+}
+.terminal-tab input {
+  width: 130px;
+}
+.terminal-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #8491a3;
+}
+.terminal-tab-dot.connected {
+  background: #49ad85;
+}
+.terminal-tab-dot.authenticating,
+.terminal-tab-dot.waiting {
+  background: #d3a450;
+}
+.terminal-tab-dot.failed {
+  background: #dc7373;
+}
+.terminal-session {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.terminal-session[hidden] {
+  display: none;
+}
+.terminal-sessions {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.terminal-empty {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  flex: 1;
+  color: var(--muted);
+  background: var(--surface);
+}
+.workspace-tool-status {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 12px;
+  font-size: 12px;
+  flex-wrap: wrap;
+  background: var(--surface);
+  color: var(--text);
+  border-bottom: 1px solid var(--line);
+}
+.workspace-tool-status > strong {
+  margin-right: auto;
+}
+
+.terminal-tabs-all {
+  max-width: 120px;
+  min-width: 0;
+  font-size: 12px;
+}

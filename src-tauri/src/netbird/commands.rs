@@ -15,10 +15,11 @@ fn owner(state: &State, window: &WebviewWindow) -> AppResult<WindowOwner> {
 pub fn subscribe_netbird(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     interest: Interest,
     events: Channel<Frame>,
 ) -> AppResult<String> {
+    let session_id = state.context_key(&context, window.label())?;
     let owner = owner(&state, &window)?;
     state
         .netbird
@@ -70,9 +71,10 @@ pub fn refresh_netbird(
 pub async fn get_netbird_raw_status(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     binding_token: String,
 ) -> AppResult<Diagnostic> {
+    let session_id = state.context_key(&context, window.label())?;
     let owner = owner(&state, &window)?;
     let state = state.inner().clone();
     crate::blocking(move || {
@@ -90,9 +92,10 @@ pub async fn get_netbird_raw_status(
 pub async fn get_netbird_logs(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     binding_token: String,
 ) -> AppResult<Diagnostic> {
+    let session_id = state.context_key(&context, window.label())?;
     let owner = owner(&state, &window)?;
     let state = state.inner().clone();
     crate::blocking(move || {
@@ -110,10 +113,11 @@ pub async fn get_netbird_logs(
 pub async fn probe_netbird_peer(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     binding_token: String,
     request: ProbeRequest,
 ) -> AppResult<ProbeResult> {
+    let session_id = state.context_key(&context, window.label())?;
     let owner = owner(&state, &window)?;
     let state = state.inner().clone();
     crate::blocking(move || {
@@ -133,10 +137,12 @@ pub async fn probe_netbird_peer(
 pub async fn prepare_netbird_operation(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     binding_token: String,
     action: Action,
 ) -> AppResult<Preview> {
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
     let owner = owner(&state, &window)?;
     let state = state.inner().clone();
     crate::blocking(move || {
@@ -150,9 +156,11 @@ pub async fn prepare_netbird_operation(
 pub fn submit_netbird_operation(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     request: OperationRequest,
 ) -> AppResult<String> {
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
     let owner = owner(&state, &window)?;
     state
         .netbird
@@ -162,9 +170,11 @@ pub fn submit_netbird_operation(
 pub async fn reconcile_netbird_operation(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     operation_id: String,
 ) -> AppResult<()> {
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
     let owner = owner(&state, &window)?;
     let state = state.inner().clone();
     crate::blocking(move || {
@@ -178,9 +188,11 @@ pub async fn reconcile_netbird_operation(
 pub fn acknowledge_netbird_operation(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     operation_id: String,
 ) -> AppResult<()> {
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
     let owner = owner(&state, &window)?;
     state
         .netbird
@@ -190,12 +202,14 @@ pub fn acknowledge_netbird_operation(
 pub fn set_netbird_cli_path(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     path: Option<String>,
 ) -> AppResult<()> {
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
     let owner = owner(&state, &window)?;
     let _gate = state.configuration.lock().unwrap();
-    let spec = state.spec(&session_id, &owner.label)?;
+    let spec = state.workspace_context(&session_id, &owner.label)?;
     if state.netbird.has_server(&spec.target().id) {
         return Err(AppError::new("busy", "请等待操作完成后修改 CLI 路径"));
     }
@@ -218,4 +232,17 @@ pub fn set_netbird_cli_path(
     }
     e.publish();
     Ok(())
+}
+
+#[tauri::command]
+pub fn release_netbird_preview(
+    window: WebviewWindow,
+    state: TauriState<Arc<State>>,
+    context: crate::workspaces::ToolContextRef,
+    preview_id: String,
+) -> AppResult<()> {
+    let id = state.context_key(&context, window.label())?;
+    state
+        .netbird
+        .release_preview(&id, &owner(&state, &window)?, &preview_id)
 }

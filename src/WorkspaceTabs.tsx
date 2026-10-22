@@ -102,8 +102,8 @@ export function WorkspaceTabs({
     ? [
         {
           id: "new-connection",
-          label: "新建连接到此服务器",
-          detail: detached ? "在主窗口打开" : undefined,
+          label: "新建终端",
+
           disabled: !onNewConnection || moving.has(selected.id),
           run: () => onNewConnection?.(selected.id),
         },
@@ -141,7 +141,7 @@ export function WorkspaceTabs({
           : []),
         {
           id: "close",
-          label: "关闭会话",
+          label: "关闭服务器",
           disabled: moving.has(selected.id),
           run: () => {
             onClose(selected.id);
@@ -177,8 +177,8 @@ export function WorkspaceTabs({
         {scroll.overflowing && (
           <button
             className="icon-button tab-scroll-button"
-            aria-label="向左滚动会话"
-            title="向左滚动会话"
+            aria-label="向左滚动服务器"
+            title="向左滚动服务器"
             disabled={!scroll.canScrollLeft}
             onClick={() => scroll.scrollByPage(-1)}
           >
@@ -189,7 +189,7 @@ export function WorkspaceTabs({
           ref={scroll.strip}
           className="tab-scroll"
           role="tablist"
-          aria-label="SSH 会话"
+          aria-label="服务器标签"
           {...drag.htmlHandlers}
         >
           <div
@@ -273,8 +273,8 @@ export function WorkspaceTabs({
                 </button>
                 <button
                   className="tab-close"
-                  aria-label={`关闭 ${tabTitle(tab)} 会话`}
-                  title="关闭会话"
+                  aria-label={`关闭 ${tabTitle(tab)} 服务器`}
+                  title="关闭服务器"
                   disabled={moving.has(tab.id)}
                   onClick={() => {
                     onClose(tab.id);
@@ -291,8 +291,8 @@ export function WorkspaceTabs({
           <>
             <button
               className="icon-button tab-scroll-button"
-              aria-label="向右滚动会话"
-              title="向右滚动会话"
+              aria-label="向右滚动服务器"
+              title="向右滚动服务器"
               disabled={!scroll.canScrollRight}
               onClick={() => scroll.scrollByPage(1)}
             >
@@ -300,8 +300,8 @@ export function WorkspaceTabs({
             </button>
             <button
               className="icon-button tab-list-button"
-              aria-label="全部会话"
-              title="全部会话"
+              aria-label="全部服务器"
+              title="全部服务器"
               aria-haspopup="menu"
               aria-expanded={!!menu && !menu.tabId}
               aria-controls={menu && !menu.tabId ? menuId : undefined}
@@ -349,7 +349,7 @@ export function WorkspaceTabs({
       {menu && (
         <WorkspaceTabMenu
           id={menuId}
-          title={menu.tabId ? "会话操作" : "全部会话"}
+          title={menu.tabId ? "服务器操作" : "全部服务器"}
           anchor={menu.anchor}
           x={menu.x}
           y={menu.y}

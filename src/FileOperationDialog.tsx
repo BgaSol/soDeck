@@ -10,7 +10,7 @@ import { TransferAuthFields } from "./TransferAuthFields";
 import type { ConflictPolicy, TransferDraft, WriteKind } from "./transferApi";
 
 export type FileOperation =
-  | { kind: "file" | "directory"; sessionId: string; path: string }
+  | { kind: "file" | "directory"; contextId: string; path: string }
   | { kind: WriteKind; draft: TransferDraft };
 export function FileOperationDialog({
   operation,
@@ -77,9 +77,9 @@ export function FileOperationDialog({
     }
     setBusy(true);
     try {
-      if ("sessionId" in operation) {
+      if ("contextId" in operation) {
         const path = await transferApi.create(
-          operation.sessionId,
+          operation.contextId,
           operation.path,
           name,
           operation.kind,

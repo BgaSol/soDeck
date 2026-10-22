@@ -487,14 +487,15 @@ fn verified_mounts(
 pub async fn list_remote_mounts(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
 ) -> AppResult<MountTable> {
+    let session_id = state.context_key(&context, window.label())?;
     crate::moves::workspace_only(&window)?;
-    let spec = state.spec(&session_id, window.label())?;
+    let spec = state.workspace_context(&session_id, window.label())?;
     let owner = window.label().to_owned();
     let state = state.inner().clone();
     blocking(move || {
-        let check = || state.spec(&session_id, &owner).map(|_| ());
+        let check = || state.workspace_context(&session_id, &owner).map(|_| ());
         query_table(&spec, &Cancellation::default(), &check)
     })
     .await
@@ -504,19 +505,20 @@ pub async fn list_remote_mounts(
 pub async fn get_remote_mount_usage(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     mount_table_version: String,
     mount_keys: Vec<String>,
 ) -> AppResult<Vec<MountUsage>> {
+    let session_id = state.context_key(&context, window.label())?;
     crate::moves::workspace_only(&window)?;
-    let spec = state.spec(&session_id, window.label())?;
+    let spec = state.workspace_context(&session_id, window.label())?;
     if mount_keys.is_empty() || mount_keys.len() > 16 {
         return Err(AppError::new("validation", "每次查询需要 1 至 16 个挂载点"));
     }
     let owner = window.label().to_owned();
     let state = state.inner().clone();
     blocking(move || {
-        let check = || state.spec(&session_id, &owner).map(|_| ());
+        let check = || state.workspace_context(&session_id, &owner).map(|_| ());
         query_usage(
             &spec,
             &mount_table_version,

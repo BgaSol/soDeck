@@ -103,6 +103,8 @@ impl NetBirdManager {
                 ))
             },
         )?;
+        let _gate = state.configuration.lock().unwrap();
+        state.workspace_context(session, &owner.label)?;
         let mut drafts = self.drafts.lock().unwrap();
         drafts.retain(|_, d| d.preview.expires_at > now());
         if drafts.len() >= 128 {
@@ -111,6 +113,7 @@ impl NetBirdManager {
         drafts.insert(
             preview.id.clone(),
             Draft {
+                session: session.into(),
                 owner: owner.clone(),
                 identity,
                 preview: preview.clone(),
@@ -130,7 +133,7 @@ impl NetBirdManager {
             return Err(AppError::new("validation", "无效的请求 ID"));
         }
         let _gate = state.configuration.lock().unwrap();
-        let spec = state.spec(session, &owner.label)?;
+        let spec = state.workspace_context(session, &owner.label)?;
         self.check_owner(state, session, owner, spec.identity())?;
         if let Some(prior) = self.with_store(|s| s.request(spec.identity(), &request.request_id))? {
             if prior.operation.action != request.action
@@ -146,7 +149,8 @@ impl NetBirdManager {
         let draft = drafts
             .get(&request.preview_id)
             .ok_or_else(|| AppError::new("conflict", "操作预检已失效，请重新预检"))?;
-        if !preview_matches(draft, owner, spec.identity(), &request)
+        if draft.session != session
+            || !preview_matches(draft, owner, spec.identity(), &request)
             || snapshot.binding.as_ref().unwrap().signature != draft.signature
         {
             return Err(AppError::new("conflict", "操作预检已过期或客户端已变化"));
@@ -359,7 +363,7 @@ impl NetBirdManager {
         owner: &WindowOwner,
         id: &str,
     ) -> AppResult<()> {
-        let spec = state.spec(session, &owner.label)?;
+        let spec = state.workspace_context(session, &owner.label)?;
         let mut r = self.with_store(|s| s.get(id))?;
         if r.identity != spec.identity() {
             return Err(AppError::new("permission", "操作不属于当前 SSH 身份"));
@@ -410,7 +414,7 @@ impl NetBirdManager {
         owner: &WindowOwner,
         id: &str,
     ) -> AppResult<()> {
-        let spec = state.spec(session, &owner.label)?;
+        let spec = state.workspace_context(session, &owner.label)?;
         let mut r = self.with_store(|s| s.get(id))?;
         if r.identity != spec.identity() || r.operation.active() {
             return Err(AppError::new("conflict", "操作尚未结束或不属于当前会话"));

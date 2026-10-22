@@ -70,6 +70,7 @@ test("editor baseline: retry read and editing during an in-flight save", async (
   await page.evaluate(() => (window as any).__EDITOR_TEST__.failLoad(false));
   await page.getByRole("button", { name: "重试读取", exact: true }).click();
   const content = page.getByRole("textbox", { name: "远程文件内容" });
+  await expect(content).toContainText("port: 8080");
   await content.fill("first edit");
   await page.evaluate(() => (window as any).__EDITOR_TEST__.holdSave());
   await page.getByRole("button", { name: "保存", exact: true }).click();

@@ -22,7 +22,7 @@ export function DockerOperations({
   const [older, setOlder] = useState<DockerOperation[]>([]);
   const [cursor, setCursor] = useState<string | null | undefined>(undefined);
   const [loading, setLoading] = useState(false);
-  const scope = `${store.sessionId}/${endpoint}`;
+  const scope = `${store.contextId}/${endpoint}`;
   const current = useRef(scope),
     flight = useRef(false);
   current.current = scope;
@@ -44,7 +44,7 @@ export function DockerOperations({
   async function reconcile(task: DockerOperation) {
     setError("");
     try {
-      await dockerApi.reconcile(store.sessionId, task.id);
+      await dockerApi.reconcile(store.contextId, task.id);
     } catch (e) {
       setError(errorOf(e).message);
     }
@@ -56,7 +56,7 @@ export function DockerOperations({
     setError("");
     try {
       const page = await dockerApi.history(
-        store.sessionId,
+        store.contextId,
         cursor ?? state.operations.at(-1)?.id ?? null,
       );
       if (current.current === scope) {
@@ -183,7 +183,7 @@ export function DockerOperations({
                     disabled={task.reconciling || !task.observedState}
                     onClick={() => {
                       void dockerApi
-                        .acknowledge(store.sessionId, task.id)
+                        .acknowledge(store.contextId, task.id)
                         .catch((e) => setError(errorOf(e).message));
                     }}
                   >

@@ -138,12 +138,13 @@ pub fn set_remote_clipboard(
     window: WebviewWindow,
     app: tauri::AppHandle,
     state: TauriState<Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     paths: Vec<String>,
     intent: Intent,
 ) -> AppResult<()> {
+    let session_id = state.context_key(&context, window.label())?;
     moves::workspace_only(&window)?;
-    let context = state.spec(&session_id, window.label())?;
+    let context = state.workspace_context(&session_id, window.label())?;
     let paths = transfers::normalize_selection(&paths)?;
     *state.drags.clipboard.0.lock().unwrap() = Some(Clipboard {
         id: uuid::Uuid::new_v4().to_string(),
@@ -159,10 +160,11 @@ pub fn set_remote_clipboard(
 pub fn get_remote_clipboard(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
 ) -> AppResult<Option<ClipboardView>> {
+    let session_id = state.context_key(&context, window.label())?;
     moves::workspace_only(&window)?;
-    let target = state.spec(&session_id, window.label())?;
+    let target = state.workspace_context(&session_id, window.label())?;
     Ok(state
         .drags
         .clipboard
@@ -198,11 +200,13 @@ pub fn clear_remote_clipboard(
 pub fn prepare_remote_paste(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     parent_path: String,
 ) -> AppResult<DraftPreview> {
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
     moves::workspace_only(&window)?;
-    let target = state.spec(&session_id, window.label())?;
+    let target = state.workspace_context(&session_id, window.label())?;
     let (source, intent, id) = {
         let c = state.drags.clipboard.0.lock().unwrap();
         let c = c

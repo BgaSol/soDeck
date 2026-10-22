@@ -37,6 +37,18 @@ export function useTabStrip(activeId: string, layoutKey: string) {
     const overflowing =
       track.current.getBoundingClientRect().width > capacity + 1;
     const viewport = strip.current;
+    // The strip is intrinsically sized. Include unused titlebar drag space so
+    // an empty strip cannot pin the next tab's maximum width to zero.
+    const dragRegion = root.current
+      .closest(".window-titlebar")
+      ?.querySelector<HTMLElement>(".window-drag-region");
+    const reserved = dragRegion
+      ? parseFloat(getComputedStyle(dragRegion).flexBasis) || 0
+      : 0;
+    const available =
+      viewport.clientWidth +
+      Math.max(0, (dragRegion?.clientWidth ?? 0) - reserved);
+    track.current.style.setProperty("--tab-available-width", `${available}px`);
     const next = {
       overflowing,
       canScrollLeft: viewport.scrollLeft > 1,

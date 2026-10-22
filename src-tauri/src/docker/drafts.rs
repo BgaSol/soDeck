@@ -102,6 +102,11 @@ impl DraftRegistry {
     pub fn expire(&mut self, now: u64) {
         self.entries.retain(|_, d| d.retain_until > now);
     }
+    pub fn has_context(&self, context: &str, now: u64) -> bool {
+        self.entries
+            .values()
+            .any(|d| d.session == context && d.retain_until > now)
+    }
     pub fn remove_owner(&mut self, label: &str) {
         self.entries.retain(|_, d| d.owner.label != label);
     }

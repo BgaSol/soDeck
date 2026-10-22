@@ -1,3 +1,4 @@
+import { contextReference } from "./toolContext";
 import { invokeDiagnosed as invoke } from "./diagnostics";
 export type ConflictPolicy = "rename" | "skip" | "overwrite";
 export type WriteKind = "upload" | "direct" | "serverCopy" | "serverMove";
@@ -89,35 +90,51 @@ export interface TransferTask {
   warnings: string[];
 }
 export const transferApi = {
-  clipboard: (sessionId: string) =>
-    invoke<RemoteClipboard | null>("get_remote_clipboard", { sessionId }),
-  copy: (sessionId: string, paths: string[], intent: "copy" | "move") =>
-    invoke<void>("set_remote_clipboard", { sessionId, paths, intent }),
+  clipboard: (contextId: string) =>
+    invoke<RemoteClipboard | null>("get_remote_clipboard", {
+      context: contextReference(contextId),
+    }),
+  copy: (contextId: string, paths: string[], intent: "copy" | "move") =>
+    invoke<void>("set_remote_clipboard", {
+      context: contextReference(contextId),
+      paths,
+      intent,
+    }),
   clearClipboard: (id: string) =>
     invoke<void>("clear_remote_clipboard", { id }),
-  paste: (sessionId: string, parentPath: string) =>
-    invoke<TransferDraft>("prepare_remote_paste", { sessionId, parentPath }),
+  paste: (contextId: string, parentPath: string) =>
+    invoke<TransferDraft>("prepare_remote_paste", {
+      context: contextReference(contextId),
+      parentPath,
+    }),
   create: (
-    sessionId: string,
+    contextId: string,
     parentPath: string,
     name: string,
     kind: "file" | "directory",
   ) =>
     invoke<string>("create_remote_entry", {
-      sessionId,
+      context: contextReference(contextId),
       parentPath,
       name,
       kind,
     }),
-  pickFiles: (sessionId: string, parentPath: string) =>
+  pickFiles: (contextId: string, parentPath: string) =>
     invoke<TransferDraft | null>("pick_upload_files", {
-      sessionId,
+      context: contextReference(contextId),
       parentPath,
     }),
-  beginDrag: (sessionId: string, paths: string[]) =>
-    invoke<string>("begin_file_drag", { sessionId, paths }),
-  claimDrop: (token: string, sessionId: string, parentPath: string) =>
-    invoke<TransferDraft>("claim_file_drop", { token, sessionId, parentPath }),
+  beginDrag: (contextId: string, paths: string[]) =>
+    invoke<string>("begin_file_drag", {
+      context: contextReference(contextId),
+      paths,
+    }),
+  claimDrop: (token: string, contextId: string, parentPath: string) =>
+    invoke<TransferDraft>("claim_file_drop", {
+      token,
+      context: contextReference(contextId),
+      parentPath,
+    }),
   start: (
     draftId: string,
     conflict: ConflictPolicy,
@@ -128,19 +145,26 @@ export const transferApi = {
   setEndpoint: (draftId: string, host: string, port: number) =>
     invoke<TransferDraft>("set_transfer_endpoint", { draftId, host, port }),
   registerView: (
-    sessionId: string,
+    contextId: string,
     viewId: string,
     path: string,
     revision: number,
   ) =>
-    invoke<void>("register_file_view", { sessionId, viewId, path, revision }),
+    invoke<void>("register_file_view", {
+      context: contextReference(contextId),
+      viewId,
+      path,
+      revision,
+    }),
   unregisterView: (viewId: string) =>
     invoke<void>("unregister_file_view", { viewId }),
-  copyTargets: (sessionId: string) =>
-    invoke<CopyTarget[]>("list_copy_targets", { sessionId }),
-  prepareCopy: (sessionId: string, paths: string[], targetToken: string) =>
+  copyTargets: (contextId: string) =>
+    invoke<CopyTarget[]>("list_copy_targets", {
+      context: contextReference(contextId),
+    }),
+  prepareCopy: (contextId: string, paths: string[], targetToken: string) =>
     invoke<TransferDraft>("prepare_server_copy", {
-      sessionId,
+      context: contextReference(contextId),
       paths,
       targetToken,
     }),

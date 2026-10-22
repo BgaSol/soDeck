@@ -10,6 +10,7 @@ import {
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import type { DownloadTask, EditorDocument } from "../src/fileApi";
+import type { ToolContextRef } from "../src/toolContext";
 
 // Real Tauri + SSH/SFTP on a separate fixture and WebView profile. The suite only
 // observes protocol calls; it does not replace backend or shell responses.
@@ -40,7 +41,7 @@ const active = (page: Page) =>
 const node = (page: Page, path: string) =>
   active(page).locator(`[role="treeitem"][data-path=${JSON.stringify(path)}]`);
 
-async function authenticate(page: Page) {
+async function authenticate(page: Page, expectedDirectory = home) {
   await expect(async () => {
     const trust = page.getByRole("button", { name: "确认指纹并连接" });
     if (await trust.isVisible()) await trust.click();
@@ -52,14 +53,30 @@ async function authenticate(page: Page) {
   await expect(
     active(page).getByRole("tree", { name: "远程文件树" }),
   ).toBeVisible();
-  await expect(active(page).getByLabel("远程目录路径")).toHaveValue(home);
-  await expect(node(page, home)).toHaveAttribute("aria-selected", "true");
+  await expect(active(page).getByLabel("远程目录路径")).toHaveValue(
+    expectedDirectory,
+  );
+  await expect(node(page, expectedDirectory)).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
 }
 
 async function command(page: Page, value: string) {
-  await active(page).locator(".terminal-surface textarea").focus();
+  await active(page)
+    .locator(".terminal-session:visible .terminal-surface textarea")
+    .focus();
   await page.keyboard.insertText(value);
   await page.keyboard.press("Enter");
+}
+
+async function locate(page: Page, path: string) {
+  const button = page.getByRole("button", {
+    name: "定位到当前终端目录",
+    exact: true,
+  });
+  await expect(button).toHaveAttribute("title", path);
+  await button.click();
 }
 
 async function atDirectory(page: Page, path: string) {
@@ -93,7 +110,7 @@ interface Fixture {
   context: BrowserContext;
   main: Page;
   name: string;
-  sessionId: string;
+  contextRef: ToolContextRef;
   cleanup: () => Promise<void>;
 }
 
@@ -102,7 +119,7 @@ async function fixture(label: string): Promise<Fixture> {
   const context = browser.contexts()[0];
   const main = context.pages().find((page) => {
     if (
-      !page.url().startsWith("http://127.0.0.1:1420") &&
+      !page.url().startsWith("http://127.0.0.1:") &&
       !page.url().startsWith("http://tauri.localhost")
     )
       return false;
@@ -152,11 +169,15 @@ async function fixture(label: string): Promise<Fixture> {
     await showServers(main);
     await main.locator(".server-row").filter({ hasText: name }).dblclick();
     await authenticate(main);
-    const sessionId = await active(main)
+    const contextId = await active(main)
       .getByRole("region", { name: "远程文件" })
-      .getAttribute("data-session-id");
-    expect(sessionId).toBeTruthy();
-    return { browser, context, main, name, sessionId: sessionId!, cleanup };
+      .getAttribute("data-context-id");
+    expect(contextId).toBeTruthy();
+    const contextRef = {
+      id: contextId!,
+      epoch: Number(contextId!.split(".").at(-1)),
+    };
+    return { browser, context, main, name, contextRef, cleanup };
   } catch (error) {
     await cleanup().catch(() => {});
     throw error;
@@ -169,7 +190,7 @@ async function closeWindow(page: Page) {
   await page
     .evaluate(() => {
       const internals = (window as any).__TAURI_INTERNALS__;
-      return internals.invoke("plugin:window|close", {
+      return internals.invoke("plugin:window|destroy", {
         label: internals.metadata.currentWindow.label,
       });
     })
@@ -257,14 +278,14 @@ test("symlink descendants retain their logical paths, and readable descendants s
   const f = await fixture("links and permissions");
   try {
     const root = await ipc<any>(f.main, "list_directory", {
-      sessionId: f.sessionId,
+      context: f.contextRef,
       path: "/",
     });
     expect(
       root.entries.find((entry: any) => entry.path === "/tree-link"),
     ).toMatchObject({ isDir: true, isSymlink: true });
     const link = await ipc<any>(f.main, "list_directory", {
-      sessionId: f.sessionId,
+      context: f.contextRef,
       path: "/tree-link",
     });
     expect(link.path).toBe("/tree-link");
@@ -273,7 +294,7 @@ test("symlink descendants retain their logical paths, and readable descendants s
       "/tree-link/log",
     );
     const linkedChild = await ipc<any>(f.main, "list_directory", {
-      sessionId: f.sessionId,
+      context: f.contextRef,
       path: "/tree-link/log",
     });
     expect(linkedChild.resolvedPath).toBe("/var/log");
@@ -284,7 +305,7 @@ test("symlink descendants retain their logical paths, and readable descendants s
     await expect(node(f.main, "/tree-link/log/app.log")).toBeVisible();
     await f.main.screenshot({ path: ".qa/tree-symlink.png" });
     const chain = await ipc<any>(f.main, "list_directory_chain", {
-      sessionId: f.sessionId,
+      context: f.contextRef,
       path: "/traverse-only/leaf",
       knownPaths: ["/"],
     });
@@ -295,6 +316,7 @@ test("symlink descendants retain their logical paths, and readable descendants s
       "/traverse-only/leaf/visible.txt",
     );
     await command(f.main, "cd /traverse-only/leaf");
+    await locate(f.main, "/traverse-only/leaf");
     await atDirectory(f.main, "/traverse-only/leaf");
     await expect(node(f.main, "/traverse-only")).toHaveAttribute(
       "aria-expanded",
@@ -308,53 +330,47 @@ test("symlink descendants retain their logical paths, and readable descendants s
   }
 });
 
-test("successful shell cwd changes reveal ancestors; failed cd and late reads do not move the selection", async () => {
-  const f = await fixture("shell follow");
+test("shell CWD is a marker until explicit locate, and late reads do not replace a newer location", async () => {
+  const f = await fixture("explicit shell locate");
   try {
-    await command(f.main, "cd projects");
-    await atDirectory(f.main, `${home}/projects`);
-    await expect(node(f.main, `${home}/projects/home-note.txt`)).toBeVisible();
-    await expect(
-      active(f.main).locator(".terminal-surface textarea"),
-    ).toBeFocused();
-    await command(f.main, "cd ..");
-    await atDirectory(f.main, home);
-    await command(f.main, "cd /var/log");
-    await atDirectory(f.main, "/var/log");
-    await expect(node(f.main, "/var")).toHaveAttribute("aria-expanded", "true");
-    await command(f.main, "cd -");
-    await atDirectory(f.main, home);
-    await command(f.main, "cd '/中文 空格/子目录'");
-    await atDirectory(f.main, "/中文 空格/子目录");
-    await expect(node(f.main, "/中文 空格/子目录/中文.txt")).toBeVisible();
+    for (const path of [
+      home + "/projects",
+      home,
+      "/var/log",
+      home,
+      "/中文 空格/子目录",
+    ]) {
+      await command(f.main, "cd '" + path + "'");
+      const previous = await active(f.main)
+        .getByLabel("远程目录路径")
+        .inputValue();
+      await expect(
+        f.main.getByRole("button", { name: "定位到当前终端目录" }),
+      ).toHaveAttribute("title", path);
+      await expect(active(f.main).getByLabel("远程目录路径")).toHaveValue(
+        previous,
+      );
+      await locate(f.main, path);
+      await atDirectory(f.main, path);
+    }
     await command(f.main, "cd /does-not-exist");
-    await expect(active(f.main).locator(".terminal-surface")).toContainText(
-      "No such file or directory",
-    );
+    await expect(
+      active(f.main).locator(".terminal-session:visible .terminal-surface"),
+    ).toContainText("No such file or directory");
     await atDirectory(f.main, "/中文 空格/子目录");
     await command(f.main, "cd ~");
+    await locate(f.main, home);
     await atDirectory(f.main, home);
     await writeFile(join(qa, "sftp-delay"), "1");
     const pendingBefore = await listCount("/projects");
-    const requestsBefore = (await events()).filter(
-      (event) =>
-        event.event === "sftp-list-start" && event.path === "/projects",
-    ).length;
     await command(f.main, "cd /projects");
-    await expect
-      .poll(
-        async () =>
-          (await events()).filter(
-            (event) =>
-              event.event === "sftp-list-start" && event.path === "/projects",
-          ).length,
-      )
-      .toBeGreaterThan(requestsBefore);
+    await locate(f.main, "/projects");
     await expect(node(f.main, "/projects")).toHaveAttribute(
       "aria-busy",
       "true",
     );
     await command(f.main, "cd /var/log");
+    await locate(f.main, "/var/log");
     await atDirectory(f.main, "/var/log");
     await expect
       .poll(() => listCount("/projects"))
@@ -364,64 +380,69 @@ test("successful shell cwd changes reveal ancestors; failed cd and late reads do
       "true",
     );
     await atDirectory(f.main, "/var/log");
-    await expect(node(f.main, `${home}/projects`)).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
-    await f.main.screenshot({ path: ".qa/file-tree-terminal-follow.png" });
+    await f.main.screenshot({ path: ".qa/file-tree-terminal-locate.png" });
   } finally {
     await unlink(join(qa, "sftp-delay")).catch(() => {});
     await f.cleanup();
   }
 });
 
-test("tree expansion and cwd remain per-session through detached window transfers", async () => {
+test("shared tree and both terminal CWDs survive collective native window transfers", async () => {
   const f = await fixture("window migration");
   let detached: Page | undefined;
-  const title = `${f.name}，已连接`,
-    duplicateTitle = `${f.name} · 2，已连接`;
   try {
     await command(f.main, "cd projects");
-    await atDirectory(f.main, `${home}/projects`);
+    await locate(f.main, home + "/projects");
+    await atDirectory(f.main, home + "/projects");
     await node(f.main, "/var").click();
     await expect(node(f.main, "/var/log")).toBeVisible();
     await command(f.main, "cd '/中文 空格/子目录'");
+    await locate(f.main, "/中文 空格/子目录");
     await atDirectory(f.main, "/中文 空格/子目录");
-    await connectSelectedServer(f.main);
-    await authenticate(f.main);
+    await f.main.getByRole("button", { name: "新建终端", exact: true }).click();
     await expect(
-      f.main
-        .getByRole("tablist", { name: "SSH 会话", exact: true })
-        .getByRole("tab"),
+      active(f.main).locator(".terminal-session:visible .connection-state"),
+    ).toHaveText("已连接");
+    await expect(f.main.locator(".session-tab")).toHaveCount(1);
+    await expect(
+      f.main.getByRole("tablist", { name: "终端标签" }).getByRole("tab"),
     ).toHaveCount(2);
-    await expect(node(f.main, "/var")).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
-    await expect(node(f.main, "/中文 空格")).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
-    await f.main.getByRole("tab", { name: title, exact: true }).click();
+    await expect
+      .poll(
+        async () =>
+          (await ipc<any>(f.main, "list_server_workspaces")).workspaces
+            .find((w: any) => w.server.name === f.name)
+            ?.terminals.filter((t: any) => t.state === "connected").length,
+      )
+      .toBe(2);
     await atDirectory(f.main, "/中文 空格/子目录");
-    await expect(node(f.main, `${home}/projects`)).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
+    await expect(node(f.main, "/var")).toHaveAttribute("aria-expanded", "true");
     const connections = await terminalCount();
     const opened = f.context.waitForEvent("page");
     await f.main
-      .getByRole("tab", { name: title, exact: true })
+      .locator(".tab-select[aria-selected=true]")
       .click({ button: "right" });
     await f.main
       .getByRole("menuitem", { name: "移到独立窗口", exact: true })
       .click();
     detached = await opened;
-    await expect(active(detached).locator(".connection-state")).toHaveText(
-      "已连接",
-    );
+    await detached.waitForURL(/workspace=/);
+    await expect
+      .poll(
+        async () =>
+          (await ipc<any>(detached!, "list_server_workspaces")).workspaces.find(
+            (w: any) => w.server.name === f.name,
+          )?.lifecycle,
+      )
+      .toBe("active");
+    await expect(
+      active(detached).locator(".terminal-session:visible .connection-state"),
+    ).toHaveText("已连接");
+    await expect(
+      detached.getByRole("tablist", { name: "终端标签" }).getByRole("tab"),
+    ).toHaveCount(2);
     await atDirectory(detached, "/中文 空格/子目录");
-    await expect(node(detached, `${home}/projects`)).toHaveAttribute(
+    await expect(node(detached, home + "/projects")).toHaveAttribute(
       "aria-expanded",
       "true",
     );
@@ -429,43 +450,35 @@ test("tree expansion and cwd remain per-session through detached window transfer
       "aria-expanded",
       "true",
     );
-    await expect(node(detached, "/var/log")).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
     expect(await terminalCount()).toBe(connections);
-    await atDirectory(f.main, home);
+    await detached.getByRole("tab", { name: "终端 1", exact: true }).click();
+    await expect(
+      detached.getByRole("button", { name: "定位到当前终端目录" }),
+    ).toHaveAttribute("title", "/中文 空格/子目录");
+    await detached.getByRole("tab", { name: "终端 2", exact: true }).click();
     await command(detached, "cd /var/log");
+    await locate(detached, "/var/log");
     await atDirectory(detached, "/var/log");
-    await atDirectory(f.main, home);
     await detached
-      .getByRole("tab", { name: title, exact: true })
+      .locator(".tab-select[aria-selected=true]")
       .click({ button: "right" });
     await detached
       .getByRole("menuitem", { name: "移回主窗口", exact: true })
       .click();
     await expect.poll(() => detached!.isClosed()).toBe(true);
-    await expect(
-      f.main
-        .getByRole("tablist", { name: "SSH 会话", exact: true })
-        .getByRole("tab"),
-    ).toHaveCount(2);
-    await f.main.getByRole("tab", { name: title, exact: true }).click();
+    await expect(f.main.locator(".session-tab")).toHaveCount(1);
     await atDirectory(f.main, "/var/log");
-    await expect(node(f.main, `${home}/projects`)).toHaveAttribute(
+    await expect(node(f.main, home + "/projects")).toHaveAttribute(
       "aria-expanded",
       "true",
     );
     expect(await terminalCount()).toBe(connections);
     await expect.poll(() => ipc<number>(f.main, "session_count")).toBe(2);
-    await f.main
-      .getByRole("tab", { name: duplicateTitle, exact: true })
-      .click();
-    await atDirectory(f.main, home);
-    await expect(node(f.main, "/var")).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
+    await f.main.getByRole("tab", { name: "终端 1", exact: true }).click();
+    await atDirectory(f.main, "/var/log");
+    await expect(
+      f.main.getByRole("button", { name: "定位到当前终端目录" }),
+    ).toHaveAttribute("title", "/中文 空格/子目录");
     await f.main.screenshot({ path: ".qa/file-tree-migration.png" });
   } finally {
     if (detached && !detached.isClosed())
@@ -560,7 +573,7 @@ test("tree files still open the remote editor and download actual file and direc
     );
     await expect(node(f.main, "/editing/config.yaml")).toBeVisible();
     await expect(
-      f.main.getByRole("region", { name: "下载任务" }),
+      f.main.getByRole("button", { name: "查看文件任务", exact: true }),
     ).toBeVisible();
     await command(f.main, "echo tree-editor-download-usable");
     await expect(active(f.main).locator(".terminal-surface")).toContainText(
@@ -573,7 +586,7 @@ test("tree files still open the remote editor and download actual file and direc
   }
 });
 
-test("unsupported or failed shell probes fall back to a usable shell, and reconnect restores cwd following", async () => {
+test("unsupported or failed shell probes keep tools usable, and reconnect restores explicit CWD locate", async () => {
   for (const mode of ["unsupported", "fail"]) {
     await writeFile(join(qa, "shell-probe-mode"), mode);
     const before = (await events()).length;
@@ -619,13 +632,14 @@ test("unsupported or failed shell probes fall back to a usable shell, and reconn
       await active(f.main)
         .getByRole("button", { name: "重新连接", exact: true })
         .click();
-      await authenticate(f.main);
+      await authenticate(f.main, "/var/log");
       await expect(
         f.main
-          .getByRole("tablist", { name: "SSH 会话", exact: true })
+          .getByRole("tablist", { name: "服务器标签", exact: true })
           .getByRole("tab"),
       ).toHaveCount(1);
       await command(f.main, "cd projects");
+      await locate(f.main, home + "/projects");
       await atDirectory(f.main, `${home}/projects`);
       await expect(
         node(f.main, `${home}/projects/home-note.txt`),

@@ -1,7 +1,9 @@
+import { installWorkspaceFixture } from "./workspace-fixture";
 import { openWorkspaceTool } from "./workspace-tool-helpers";
 import { test, expect, type Page } from "@playwright/test";
 import { setup as setupFixture, row } from "./resource-fixture";
 async function setup(page: Page, mode: "workspace" | "monitor" = "workspace") {
+  await installWorkspaceFixture(page);
   const errors = await setupFixture(page, mode);
   if (mode === "workspace") await openWorkspaceTool(page, "monitor");
   return errors;
@@ -92,7 +94,7 @@ test("opening a monitor window passes the current metric without changing the te
   expect(
     calls.find((call: any) => call.command === "open_monitor_window").args,
   ).toMatchObject({
-    sessionId: "mount-session",
+    sessionId: expect.stringMatching(/^tools-.*\.1$/),
     preferences: { selectedMetric: "memory", minutes: 15 },
   });
   expect(await page.locator(".workspace-terminal").boundingBox()).toEqual(
@@ -253,7 +255,9 @@ test("communication has an independent range and a bounded keyboard-accessible p
   await page.getByRole("button", { name: "通信详情", exact: true }).click();
   await expect(popover).toHaveCount(0);
   await page.getByRole("button", { name: "通信详情", exact: true }).click();
-  await page.locator(".terminal-surface").click({ position: { x: 20, y: 15 } });
+  await page
+    .locator(".terminal-surface")
+    .click({ position: { x: 500, y: 15 } });
   await expect(popover).toHaveCount(0);
   await page.evaluate(() => {
     (window as any).__MOUNTS__.monitor.onmessage({

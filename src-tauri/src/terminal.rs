@@ -132,6 +132,17 @@ impl TerminalStream {
         self.flush_replay();
         self.ready_to_commit()
     }
+    pub fn reception_barrier(&self, transfer_id: String, session_id: String) -> AppResult<()> {
+        self.ready_to_commit()?;
+        self.output
+            .as_ref()
+            .unwrap()
+            .send(TerminalEvent::ReceptionBarrier {
+                transfer_id,
+                session_id,
+            })
+            .map_err(|e| AppError::new("transfer", e))
+    }
     pub fn rollback(&mut self) {
         if !self.is_frozen() {
             return;
@@ -166,6 +177,7 @@ impl TerminalStream {
     pub fn is_frozen(&self) -> bool {
         self.frozen_token.is_some()
     }
+    #[cfg(test)]
     pub fn frozen_with(&self, token: &str) -> bool {
         self.frozen_token.as_deref() == Some(token)
     }
@@ -333,6 +345,7 @@ pub fn run(
         }
         stream
     };
+    state.workspaces.connection_ready(id);
     let mut cwd_parser = cwd_token.as_deref().map(CwdParser::new);
     let mut buffer = [0u8; 16384];
     let mut queued = std::collections::VecDeque::<u8>::new();

@@ -3,12 +3,12 @@ import { Folder, File, ArrowUp } from "lucide-react";
 import { api } from "../api";
 import { errorOf, type Directory } from "../types";
 export function DockerPathPicker({
-  sessionId,
+  contextId,
   initialPath,
   onPick,
   onClose,
 }: {
-  sessionId: string;
+  contextId: string;
   initialPath: string;
   onPick: (path: string) => void;
   onClose: () => void;
@@ -21,7 +21,7 @@ export function DockerPathPicker({
     let alive = true;
     setDirectory(null);
     setError("");
-    void api.directory(sessionId, path).then(
+    void api.directory(contextId, path).then(
       (d) => {
         if (alive) {
           setDirectory(d);
@@ -35,7 +35,7 @@ export function DockerPathPicker({
     return () => {
       alive = false;
     };
-  }, [sessionId, path]);
+  }, [contextId, path]);
   return (
     <section className="docker-path-picker" aria-label="选择远端配置文件">
       <div className="docker-inline-tools">

@@ -25,14 +25,14 @@ export const initialPanel = (): NetBirdPanelSnapshot => ({
   scrollTop: {},
 });
 export function NetBirdPanel({
-  sessionId,
+  contextId,
   serverName,
   active,
   workspaceActive = active,
   initialState,
   onStateChange,
 }: {
-  sessionId: string | null;
+  contextId: string | null;
   serverName: string;
   active: boolean;
   workspaceActive?: boolean;
@@ -61,12 +61,18 @@ export function NetBirdPanel({
   }
   const changed = useRef(onStateChange);
   changed.current = onStateChange;
+  useEffect(() => {
+    if (!preview || !contextId) return;
+    return () => {
+      void netbirdApi.release(contextId, preview.id).catch(() => {});
+    };
+  }, [preview, contextId]);
   const working = state.operations.some((op) => activeOperation(op.phase));
   const token = snapshot.binding?.token;
   useEffect(() => {
     const update = () =>
       store.setInterest(
-        active && sessionId && !document.hidden ? "visible" : "none",
+        active && contextId && !document.hidden ? "visible" : "none",
       );
     update();
     document.addEventListener("visibilitychange", update);
@@ -74,7 +80,7 @@ export function NetBirdPanel({
       document.removeEventListener("visibilitychange", update);
       store.setInterest("none");
     };
-  }, [store, active, sessionId]);
+  }, [store, active, contextId]);
   useEffect(() => {
     ++epoch.current;
     setPreview(null);
@@ -83,7 +89,7 @@ export function NetBirdPanel({
     return () => {
       ++epoch.current;
     };
-  }, [sessionId, token]);
+  }, [contextId, token]);
   useEffect(() => {
     if (!active && menu.current) menu.current.open = false;
   }, [active]);
@@ -137,15 +143,16 @@ export function NetBirdPanel({
     }
   }
   async function prepare(action: Action) {
-    if (!active || !sessionId || !token) return;
+    if (!active || !contextId || !token) return;
     if (menu.current) {
       menu.current.open = false;
       menu.current.querySelector("summary")?.focus();
     }
     const current = epoch.current;
     await run("正在检查 SSH 路径…", async () => {
-      const result = await netbirdApi.prepare(sessionId, token, action);
+      const result = await netbirdApi.prepare(contextId, token, action);
       if (current === epoch.current) setPreview(result);
+      else void netbirdApi.release(contextId, result.id).catch(() => {});
     });
   }
   const title = {
@@ -155,7 +162,7 @@ export function NetBirdPanel({
     diagnostics: "检测与日志",
   }[view.page];
   const stale =
-    !sessionId ||
+    !contextId ||
     ["stale", "disconnected", "unavailable"].includes(
       snapshot.collectionStatus,
     );
@@ -183,7 +190,7 @@ export function NetBirdPanel({
           className="icon-button"
           aria-label="刷新 NetBird"
           title="刷新 NetBird"
-          disabled={!active || !sessionId || state.refreshing || !!pending}
+          disabled={!active || !contextId || state.refreshing || !!pending}
           onClick={() => void run("刷新中…", () => store.refresh())}
         >
           <RefreshCw
@@ -203,7 +210,7 @@ export function NetBirdPanel({
                     key={action}
                     disabled={
                       !active ||
-                      !sessionId ||
+                      !contextId ||
                       !token ||
                       working ||
                       !!pending ||
@@ -232,7 +239,7 @@ export function NetBirdPanel({
       </header>
       {(stale || snapshot.error) && (
         <div className="nb-banner" role="status">
-          {!sessionId
+          {!contextId
             ? "SSH 已断开，请重新连接服务器。"
             : snapshot.error || "正在显示上次成功的数据。"}
           {snapshot.updatedAt && (
@@ -276,10 +283,10 @@ export function NetBirdPanel({
                 <p>{op.message}</p>
                 {op.phase === "uncertain" && (
                   <button
-                    disabled={!active || !sessionId || !!pending || working}
+                    disabled={!active || !contextId || !!pending || working}
                     onClick={() =>
                       void run("正在检查当前状态…", () =>
-                        netbirdApi.reconcile(sessionId!, op.id),
+                        netbirdApi.reconcile(contextId!, op.id),
                       )
                     }
                   >
@@ -290,11 +297,11 @@ export function NetBirdPanel({
               {!activeOperation(op.phase) && (
                 <button
                   className="icon-button"
-                  disabled={!active || !sessionId || !!pending}
+                  disabled={!active || !contextId || !!pending}
                   aria-label="收起操作记录"
                   onClick={() =>
                     void run("", () =>
-                      netbirdApi.acknowledge(sessionId!, op.id),
+                      netbirdApi.acknowledge(contextId!, op.id),
                     )
                   }
                 >
@@ -335,7 +342,7 @@ export function NetBirdPanel({
           {view.page === "overview" && (
             <NetBirdOverview
               snapshot={snapshot}
-              connected={!!sessionId}
+              connected={!!contextId}
               busy={!active || working || !!pending}
               onAction={(action) => void prepare(action)}
               onPeers={() => change((v) => ({ ...v, page: "peers" }))}
@@ -349,11 +356,11 @@ export function NetBirdPanel({
             <NetBirdPeerDetail
               key={`${view.selectedPeerId}-${token}`}
               peer={snapshot.peers.find((p) => p.id === view.selectedPeerId)}
-              sessionId={sessionId}
+              contextId={contextId}
               token={token ?? null}
               enabled={
                 active &&
-                !!sessionId &&
+                !!contextId &&
                 !!token &&
                 snapshot.collectionStatus === "ready"
               }
@@ -364,20 +371,20 @@ export function NetBirdPanel({
               key={token}
               snapshot={snapshot}
               active={active}
-              sessionId={sessionId}
+              contextId={contextId}
               onRefresh={() => store.refresh()}
             />
           )}
         </div>
       )}
-      {preview && sessionId && (
+      {preview && contextId && (
         <NetBirdOperationDialog
           preview={preview}
           visible={active}
           workspaceActive={workspaceActive}
           serverName={serverName}
           onConfirm={async (request) => {
-            await netbirdApi.submit(sessionId, request);
+            await netbirdApi.submit(contextId, request);
           }}
           onClose={() => setPreview(null)}
         />

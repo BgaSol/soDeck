@@ -122,7 +122,7 @@ export interface Interest {
 }
 export interface MonitorApi {
   subscribe: (
-    sessionId: string,
+    contextId: string,
     interest: Interest,
     receive: (event: MonitorEvent) => void,
   ) => Promise<string>;
@@ -259,7 +259,7 @@ export class MonitorStore {
   private interestVersion = 0;
   private updatingEpoch: number | null = null;
   constructor(
-    readonly sessionId: string,
+    readonly contextId: string,
     private api: MonitorApi,
   ) {
     this.state = {
@@ -270,7 +270,7 @@ export class MonitorStore {
       trafficHistoryLoading: false,
       trafficHistoryError: "",
       metrics: emptyMetrics(),
-      mounts: { sessionId, usage: {}, fetchedAt: 0, loading: false, error: "" },
+      mounts: { contextId, usage: {}, fetchedAt: 0, loading: false, error: "" },
       points: [],
       connection: "unknown",
       subscription: { phase: "idle" },
@@ -392,7 +392,7 @@ export class MonitorStore {
   }
   start(): Promise<void> {
     if (this.starting) return this.starting;
-    if (!this.sessionId || this.running) return Promise.resolve();
+    if (!this.contextId || this.running) return Promise.resolve();
     this.running = true;
     const epoch = ++this.epoch;
     this.generation = "";
@@ -408,7 +408,7 @@ export class MonitorStore {
       .then(async () => {
         try {
           const id = await this.api.subscribe(
-            this.sessionId,
+            this.contextId,
             this.interest(),
             (event) => {
               if (epoch === this.epoch) this.receive(event);
@@ -471,7 +471,7 @@ export class MonitorStore {
         traffic: null,
         docker: emptyDocker(),
         mounts: {
-          sessionId: this.sessionId,
+          contextId: this.contextId,
           usage: {},
           fetchedAt: 0,
           loading: false,
@@ -602,7 +602,7 @@ export class MonitorStore {
         this.mountDataError = event.mounts.error;
         patch.mounts = {
           ...event.mounts,
-          sessionId: this.sessionId,
+          contextId: this.contextId,
           table: event.mounts.table ?? undefined,
           usage: Object.fromEntries(
             Object.entries(event.mounts.usage).map(([k, v]) => [

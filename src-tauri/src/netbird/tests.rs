@@ -239,6 +239,7 @@ fn previews_bind_owner_generation_action_target_and_expiry() {
         generation: 1,
     };
     let mut draft = manager::Draft {
+        session: "session".into(),
         owner: owner.clone(),
         identity: "identity".into(),
         signature: "signature".into(),

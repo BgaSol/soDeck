@@ -146,7 +146,7 @@ export function ContainerManagement({
     setError("");
     try {
       const link = await dockerApi.hostLink(
-        store.sessionId,
+        store.contextId,
         engine.token,
         containerId,
         request,
@@ -596,14 +596,14 @@ export function ContainerManagement({
             <>
               <ContainerDiagnostics
                 key={`${scope}/config`}
-                sessionId={store.sessionId}
+                contextId={store.contextId}
                 token={engine.token}
                 containerId={containerId}
                 section="configuration"
               />
               <ContainerDiagnostics
                 key={`${scope}/processes`}
-                sessionId={store.sessionId}
+                contextId={store.contextId}
                 token={engine.token}
                 containerId={containerId}
                 section="processes"

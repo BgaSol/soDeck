@@ -196,7 +196,7 @@ export function ImageManagement({
     setLoading(true);
     setError("");
     void dockerApi
-      .image(store.sessionId, state.engine.token, imageId)
+      .image(store.contextId, state.engine.token, imageId)
       .then(
         (value) => {
           if (alive) setDetail(value);

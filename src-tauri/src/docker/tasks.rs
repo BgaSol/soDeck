@@ -144,7 +144,7 @@ impl DockerManager {
         owner: WindowOwner,
         output: Channel<Frame>,
     ) -> AppResult<String> {
-        let spec = state.spec(&session, &owner.label)?;
+        let spec = state.workspace_context(&session, &owner.label)?;
         let id = uuid();
         self.core.lock().unwrap().subscribers.insert(
             id.clone(),
@@ -184,7 +184,7 @@ impl DockerManager {
         if sub.owner.label != owner.label || sub.owner.generation != owner.generation {
             return Err(AppError::new("permission", "Docker 订阅不属于当前窗口"));
         }
-        state.spec(&sub.session, &owner.label)?;
+        state.workspace_context(&sub.session, &owner.label)?;
         Ok(sub)
     }
     pub fn interest(
@@ -239,6 +239,9 @@ impl DockerManager {
                 .count(),
         }
     }
+    pub fn has_context_drafts(&self, context: &str) -> bool {
+        self.core.lock().unwrap().drafts.has_context(context, now())
+    }
     pub fn has_server(&self, id: &str) -> bool {
         self.core
             .lock()
@@ -274,7 +277,7 @@ impl DockerManager {
                 self.unsubscribe(&id, &sub.owner);
                 continue;
             }
-            let spec = match state.spec(&sub.session, &sub.owner.label) {
+            let spec = match state.workspace_context(&sub.session, &sub.owner.label) {
                 Ok(s) => Some(s),
                 Err(e) if e.kind == "permission" => continue,
                 Err(_) => None,
@@ -491,7 +494,7 @@ impl DockerManager {
         });
     }
     pub fn refresh(&self, state: &State, session: &str, owner: &WindowOwner) -> AppResult<()> {
-        let spec = state.spec(session, &owner.label)?;
+        let spec = state.workspace_context(session, &owner.label)?;
         state.monitor.retry_docker(spec.identity());
         let prefix = format!("{}\0", spec.identity());
         for (key, cache) in &mut self.core.lock().unwrap().details {
@@ -524,7 +527,7 @@ impl DockerManager {
         owner: &WindowOwner,
         draft: &Draft,
     ) -> AppResult<()> {
-        let spec = state.spec(session, &owner.label)?;
+        let spec = state.workspace_context(session, &owner.label)?;
         draft.authorize(session, spec.identity(), owner, now())?;
         if state.owner(&owner.label).generation != owner.generation {
             return Err(AppError::new("permission", "原窗口已结束"));
@@ -603,13 +606,13 @@ impl DockerManager {
     ) -> AppResult<Draft> {
         action.validate_target(id)?;
         action.validate()?;
-        let spec = state.spec(session, &owner.label)?;
+        let spec = state.workspace_context(session, &owner.label)?;
         let engine = state.monitor.docker_binding(spec.identity())?;
         if engine.token != token {
             return Err(AppError::new("conflict", "Docker 引擎已变化"));
         }
         let check = || {
-            state.spec(session, &owner.label)?;
+            state.workspace_context(session, &owner.label)?;
             check_binding(state, &spec, &engine)
         };
         let connection = connection::connect_verified(
@@ -698,13 +701,13 @@ impl DockerManager {
         input: super::create::Spec,
     ) -> AppResult<Draft> {
         input.validate()?;
-        let spec = state.spec(session, &owner.label)?;
+        let spec = state.workspace_context(session, &owner.label)?;
         let engine = state.monitor.docker_binding(spec.identity())?;
         if engine.token != token {
             return Err(AppError::new("conflict", "Docker 引擎已变化"));
         }
         let check = || {
-            state.spec(session, &owner.label)?;
+            state.workspace_context(session, &owner.label)?;
             check_binding(state, &spec, &engine)
         };
         let connection = connection::connect_verified(
@@ -759,13 +762,13 @@ impl DockerManager {
         token: &str,
         input: super::transfer::Spec,
     ) -> AppResult<Draft> {
-        let spec = state.spec(session, &owner.label)?;
+        let spec = state.workspace_context(session, &owner.label)?;
         let engine = state.monitor.docker_binding(spec.identity())?;
         if engine.token != token {
             return Err(AppError::new("conflict", "Docker 引擎已变化"));
         }
         let check = || {
-            state.spec(session, &owner.label)?;
+            state.workspace_context(session, &owner.label)?;
             check_binding(state, &spec, &engine)
         };
         let connection = connection::connect_verified(
@@ -833,12 +836,17 @@ impl DockerManager {
             };
             r.identity.clone()
         };
-        let sessions: Vec<_> = state.terminals.lock().unwrap().keys().cloned().collect();
+        let sessions: Vec<_> = state
+            .workspaces
+            .contexts()
+            .into_iter()
+            .map(|(id, _, _)| id)
+            .collect();
         let session = sessions
             .into_iter()
             .find(|session| {
                 state
-                    .spec(session, &owner.label)
+                    .workspace_context(session, &owner.label)
                     .is_ok_and(|s| s.identity() == identity)
             })
             .ok_or_else(|| {
@@ -857,7 +865,7 @@ impl DockerManager {
         owner: &WindowOwner,
         before: Option<&str>,
     ) -> AppResult<HistoryPage> {
-        let spec = state.spec(session, &owner.label)?;
+        let spec = state.workspace_context(session, &owner.label)?;
         if state.owner(&owner.label).generation != owner.generation {
             return Err(AppError::new("permission", "原窗口已结束"));
         }
@@ -947,7 +955,7 @@ impl DockerManager {
     ) -> AppResult<String> {
         request.validate()?;
         let _gate = state.configuration.lock().unwrap();
-        let spec = state.spec(session, &owner.label)?;
+        let spec = state.workspace_context(session, &owner.label)?;
         if state.owner(&owner.label).generation != owner.generation {
             return Err(AppError::new("permission", "原窗口已结束"));
         }
@@ -1405,7 +1413,7 @@ impl DockerManager {
         owner: &WindowOwner,
         id: &str,
     ) -> AppResult<()> {
-        let spec = state.spec(session, &owner.label)?;
+        let spec = state.workspace_context(session, &owner.label)?;
         let mut core = self.core.lock().unwrap();
         let record = core
             .records
@@ -1471,7 +1479,7 @@ impl DockerManager {
         owner: &WindowOwner,
         id: &str,
     ) -> AppResult<()> {
-        let spec = state.spec(session, &owner.label)?;
+        let spec = state.workspace_context(session, &owner.label)?;
         let mut core = self.core.lock().unwrap();
         let record = core
             .records

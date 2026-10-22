@@ -137,7 +137,7 @@ export function ResourceManagement({
     setBusy(true);
     setError("");
     void dockerApi
-      .resources(store.sessionId, state.engine.token)
+      .resources(store.contextId, state.engine.token)
       .then(
         (d) => {
           if (alive) setData(d);

@@ -162,10 +162,12 @@ pub async fn open_editor(
     window: WebviewWindow,
     app: tauri::AppHandle,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     path: String,
 ) -> AppResult<String> {
-    let spec = state.spec(&session_id, window.label())?;
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
+    let spec = state.workspace_context(&session_id, window.label())?;
     let _opening = state.files.begin_open(spec.target_public_key(), &path)?;
     let editor = blocking(move || {
         let connection = connection::connect_verified(

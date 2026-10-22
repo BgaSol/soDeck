@@ -12,9 +12,10 @@ fn owner(state: &State, window: &WebviewWindow) -> AppResult<WindowOwner> {
 pub fn subscribe_docker_management(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     events: Channel<Frame>,
 ) -> AppResult<String> {
+    let session_id = state.context_key(&context, window.label())?;
     let owner = owner(&state, &window)?;
     state
         .docker
@@ -60,8 +61,9 @@ pub fn unsubscribe_docker_management(
 pub fn refresh_docker_management(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
 ) -> AppResult<()> {
+    let session_id = state.context_key(&context, window.label())?;
     state
         .docker
         .refresh(&state, &session_id, &owner(&state, &window)?)
@@ -70,9 +72,10 @@ pub fn refresh_docker_management(
 pub fn list_docker_operations(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     before: Option<String>,
 ) -> AppResult<HistoryPage> {
+    let session_id = state.context_key(&context, window.label())?;
     state.docker.history(
         &state,
         &session_id,
@@ -85,10 +88,12 @@ pub fn list_docker_operations(
 pub async fn renew_docker_preview(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     draft_token: String,
     expected_preview_id: String,
 ) -> AppResult<Preview> {
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
     let owner = owner(&state, &window)?;
     let state = state.inner().clone();
     crate::blocking(move || {
@@ -106,9 +111,10 @@ pub async fn renew_docker_preview(
 pub fn release_docker_preview(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     draft_token: String,
 ) -> AppResult<()> {
+    let session_id = state.context_key(&context, window.label())?;
     state
         .docker
         .release_preview(&session_id, &draft_token, &owner(&state, &window)?)
@@ -117,11 +123,13 @@ pub fn release_docker_preview(
 pub async fn prepare_docker_operation(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     engine_token: String,
     target_id: String,
     action: Action,
 ) -> AppResult<Preview> {
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
     let owner = owner(&state, &window)?;
     let state = state.inner().clone();
     crate::blocking(move || {
@@ -140,9 +148,11 @@ pub async fn prepare_docker_operation(
 pub fn submit_docker_operation(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     request: OperationRequest,
 ) -> AppResult<String> {
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
     state
         .docker
         .submit(state.inner(), &session_id, owner(&state, &window)?, request)
@@ -151,9 +161,11 @@ pub fn submit_docker_operation(
 pub fn reconcile_docker_operation(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     operation_id: String,
 ) -> AppResult<()> {
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
     state.docker.reconcile(
         state.inner(),
         &session_id,
@@ -165,9 +177,11 @@ pub fn reconcile_docker_operation(
 pub fn acknowledge_docker_operation(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     operation_id: String,
 ) -> AppResult<()> {
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
     state
         .docker
         .acknowledge(&state, &session_id, &owner(&state, &window)?, &operation_id)
@@ -185,12 +199,13 @@ pub fn docker_operation_summary(
 pub async fn get_docker_container_diagnostics(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     engine_token: String,
     container_id: String,
     section: String,
     reveal: bool,
 ) -> AppResult<String> {
+    let session_id = state.context_key(&context, window.label())?;
     let owner = owner(&state, &window)?;
     let state = state.inner().clone();
     crate::blocking(move || {
@@ -199,13 +214,13 @@ pub async fn get_docker_container_diagnostics(
             traffic::TrafficPurpose,
         };
         validate_id(&container_id)?;
-        let spec = state.spec(&session_id, &owner.label)?;
+        let spec = state.workspace_context(&session_id, &owner.label)?;
         let engine = state.monitor.docker_binding(spec.identity())?;
         if engine.token != engine_token {
             return Err(AppError::new("conflict", "Docker 引擎已变化"));
         }
         let check = || {
-            state.spec(&session_id, &owner.label)?;
+            state.workspace_context(&session_id, &owner.label)?;
             if state.owner(&owner.label).generation != owner.generation
                 || state.monitor.docker_binding(spec.identity())? != engine
             {
@@ -279,10 +294,11 @@ pub async fn get_docker_container_diagnostics(
 pub async fn get_docker_image_detail(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     engine_token: String,
     image_id: String,
 ) -> AppResult<super::images::ImageDetail> {
+    let session_id = state.context_key(&context, window.label())?;
     let owner = owner(&state, &window)?;
     let state = state.inner().clone();
     crate::blocking(move || {
@@ -309,14 +325,14 @@ pub(super) fn read_engine<T>(
         connection, model::AppError, ssh_transport::Cancellation, traffic::TrafficPurpose,
     };
     state.ensure_running()?;
-    let spec = state.spec(session_id, &owner.label)?;
+    let spec = state.workspace_context(session_id, &owner.label)?;
     let engine = state.monitor.docker_binding(spec.identity())?;
     if engine.token != token {
         return Err(AppError::new("conflict", "Docker 引擎已变化"));
     }
     let check = || {
         state.ensure_running()?;
-        state.spec(session_id, &owner.label)?;
+        state.workspace_context(session_id, &owner.label)?;
         if state.owner(&owner.label).generation != owner.generation
             || state.monitor.docker_binding(spec.identity())? != engine
         {
@@ -339,11 +355,12 @@ pub(super) fn read_engine<T>(
 pub async fn get_docker_host_link(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     engine_token: String,
     container_id: String,
     request: super::links::LinkRequest,
 ) -> AppResult<super::links::HostLink> {
+    let session_id = state.context_key(&context, window.label())?;
     let owner = owner(&state, &window)?;
     let state = state.inner().clone();
     crate::blocking(move || {
@@ -364,13 +381,14 @@ pub async fn get_docker_host_link(
 pub async fn get_docker_compose_projects(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     engine_token: String,
 ) -> AppResult<super::compose::Overview> {
+    let session_id = state.context_key(&context, window.label())?;
     let owner = owner(&state, &window)?;
     let state = state.inner().clone();
     crate::blocking(move || {
-        let spec = state.spec(&session_id, &owner.label)?;
+        let spec = state.workspace_context(&session_id, &owner.label)?;
         read_engine(
             &state,
             &session_id,
@@ -387,14 +405,16 @@ pub async fn get_docker_compose_projects(
 pub async fn save_docker_compose_association(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     engine_token: String,
     mut association: super::compose::Association,
 ) -> AppResult<super::compose::Association> {
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
     let owner = owner(&state, &window)?;
     let state = state.inner().clone();
     crate::blocking(move || {
-        let spec = state.spec(&session_id, &owner.label)?;
+        let spec = state.workspace_context(&session_id, &owner.label)?;
         let engine = state.monitor.docker_binding(spec.identity())?;
         association.server_id = spec.target().id.clone();
         association.endpoint = engine.endpoint.clone();
@@ -430,7 +450,7 @@ pub async fn save_docker_compose_association(
             },
         )?;
         let _gate = state.configuration.lock().unwrap();
-        state.spec(&session_id, &owner.label)?;
+        state.workspace_context(&session_id, &owner.label)?;
         if state.owner(&owner.label).generation != owner.generation
             || state.monitor.docker_binding(spec.identity())? != engine
         {
@@ -472,13 +492,15 @@ pub async fn save_docker_compose_association(
 pub fn remove_docker_compose_association(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     association_id: String,
     revision: u32,
 ) -> AppResult<()> {
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
     let owner = owner(&state, &window)?;
     let _gate = state.configuration.lock().unwrap();
-    let spec = state.spec(&session_id, &owner.label)?;
+    let spec = state.workspace_context(&session_id, &owner.label)?;
     if state.docker.has_server(&spec.target().id) {
         return Err(crate::model::AppError::new(
             "busy",
@@ -502,10 +524,12 @@ pub fn remove_docker_compose_association(
 pub async fn prepare_docker_create(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     engine_token: String,
     specification: super::create::Spec,
 ) -> AppResult<Preview> {
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
     let owner = owner(&state, &window)?;
     let state = state.inner().clone();
     crate::blocking(move || {
@@ -520,9 +544,10 @@ pub async fn prepare_docker_create(
 pub async fn get_docker_resources(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     engine_token: String,
 ) -> AppResult<super::resources::Overview> {
+    let session_id = state.context_key(&context, window.label())?;
     let owner = owner(&state, &window)?;
     let state = state.inner().clone();
     crate::blocking(move || {
@@ -543,15 +568,17 @@ pub async fn get_docker_resources(
 pub async fn prepare_docker_transfer(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     engine_token: String,
     kind: super::transfer::Kind,
     target_id: String,
     container_path: String,
     conflict: String,
 ) -> AppResult<Option<Preview>> {
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
     let owner = owner(&state, &window)?;
-    state.spec(&session_id, &owner.label)?;
+    state.workspace_context(&session_id, &owner.label)?;
     super::transfer::validate(&kind, &target_id, &container_path, &conflict)?;
     let state = state.inner().clone();
     crate::blocking(move || {

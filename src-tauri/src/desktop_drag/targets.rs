@@ -50,13 +50,14 @@ impl Registry {
 pub fn register_file_view(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     view_id: String,
     path: String,
     revision: u64,
 ) -> AppResult<()> {
+    let session_id = state.context_key(&context, window.label())?;
     moves::workspace_only(&window)?;
-    state.spec(&session_id, window.label())?;
+    state.workspace_context(&session_id, window.label())?;
     uuid::Uuid::parse_str(&view_id).map_err(|_| AppError::new("validation", "文件视图标识无效"))?;
     crate::remote_path::absolute(&path)?;
     let generation = state.owner(window.label()).generation;
@@ -113,10 +114,12 @@ pub fn unregister_file_view(
 pub fn list_copy_targets(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
 ) -> AppResult<Vec<CopyTarget>> {
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
     moves::workspace_only(&window)?;
-    let source = state.spec(&session_id, window.label())?;
+    let source = state.workspace_context(&session_id, window.label())?;
     let mut registry = state.drags.targets.registry.lock().unwrap();
     registry.prune();
     registry
@@ -134,7 +137,7 @@ pub fn list_copy_targets(
         {
             continue;
         }
-        let Ok(target) = state.spec(&view.session, &view.owner) else {
+        let Ok(target) = state.workspace_context(&view.session, &view.owner) else {
             continue;
         };
         if target.target().id == source.target().id || target.identity() == source.identity() {
@@ -200,12 +203,14 @@ fn validate_grant(
 pub fn prepare_server_copy(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     paths: Vec<String>,
     target_token: String,
 ) -> AppResult<DraftPreview> {
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
     moves::workspace_only(&window)?;
-    let source = state.spec(&session_id, window.label())?;
+    let source = state.workspace_context(&session_id, window.label())?;
     let paths = transfers::normalize_selection(&paths)?;
     let mut registry = state.drags.targets.registry.lock().unwrap();
     let grant = registry
@@ -213,7 +218,7 @@ pub fn prepare_server_copy(
         .get(&target_token)
         .ok_or_else(|| AppError::new("permission", "目标授权已使用或过期，请刷新列表"))?;
     validate_grant(&state, &registry, grant, window.label(), &session_id)?;
-    let target = state.spec(&grant.view.session, &grant.view.owner)?;
+    let target = state.workspace_context(&grant.view.session, &grant.view.owner)?;
     let path = grant.view.path.clone();
     let result = draft(
         &state,

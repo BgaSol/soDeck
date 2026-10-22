@@ -1,3 +1,4 @@
+import { contextReference } from "./toolContext";
 import { isTauri } from "@tauri-apps/api/core";
 import { invokeDiagnosed as invoke } from "./diagnostics";
 import type {
@@ -22,36 +23,47 @@ export const api = {
   copySavedServerPassword: (id: string) =>
     invoke<void>("copy_saved_server_password", { id }),
   deleteServer: (id: string) => invoke<void>("delete_server", { id }),
-  directory: (sessionId: string, path?: string) =>
-    invoke<Directory>("list_directory", { sessionId, path: path || null }),
+  directory: (contextId: string, path?: string) =>
+    invoke<Directory>("list_directory", {
+      context: contextReference(contextId),
+      path: path || null,
+    }),
   directoryChain: (
-    sessionId: string,
+    contextId: string,
     path?: string,
     knownPaths: string[] = [],
   ) =>
     invoke<DirectoryBatch>("list_directory_chain", {
-      sessionId,
+      context: contextReference(contextId),
       path: path || null,
       knownPaths,
     }),
-  docker: (sessionId: string) =>
-    invoke<DockerStatus>("detect_docker", { sessionId }),
-  images: (sessionId: string, endpoint: string) =>
-    invoke<DockerImage[]>("docker_images", { sessionId, endpoint }),
-  containers: (sessionId: string, endpoint: string) =>
-    invoke<Container[]>("docker_containers", { sessionId, endpoint }),
-  openContainer: (sessionId: string, container: Container, endpoint: string) =>
+  docker: (contextId: string) =>
+    invoke<DockerStatus>("detect_docker", {
+      context: contextReference(contextId),
+    }),
+  images: (contextId: string, endpoint: string) =>
+    invoke<DockerImage[]>("docker_images", {
+      context: contextReference(contextId),
+      endpoint,
+    }),
+  containers: (contextId: string, endpoint: string) =>
+    invoke<Container[]>("docker_containers", {
+      context: contextReference(contextId),
+      endpoint,
+    }),
+  openContainer: (contextId: string, container: Container, endpoint: string) =>
     invoke<void>("open_container", {
-      sessionId,
+      context: contextReference(contextId),
       target: { id: container.id, name: container.name, endpoint },
     }),
   openContainerLogs: (
-    sessionId: string,
+    contextId: string,
     container: Container,
     endpoint: string,
   ) =>
     invoke<void>("open_container_logs", {
-      sessionId,
+      context: contextReference(contextId),
       target: { id: container.id, name: container.name, endpoint },
     }),
 };

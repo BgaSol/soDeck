@@ -223,7 +223,13 @@ export function TerminalHistoryView({
       if (pending) return;
       pending = true;
       try {
-        const next = await api.sessions();
+        const next = await api.sessions(
+          !global && binding && scope === "session"
+            ? { workspaceId: binding.workspaceId }
+            : !global && binding && scope === "source"
+              ? { sourceId: binding.sourceId }
+              : {},
+        );
         if (cancelled) return;
         setSessions(next);
         setSessionId((id) => id || next[0]?.id || "");
@@ -239,7 +245,7 @@ export function TerminalHistoryView({
       cancelled = true;
       clearInterval(timer);
     };
-  }, [binding?.sourceId, global]);
+  }, [binding?.sourceId, binding?.workspaceId, global, scope]);
 
   const publish = useCallback((next: HistoryRow[], first: number) => {
     current.current.rows = next;

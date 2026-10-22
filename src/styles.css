@@ -443,7 +443,7 @@ button.brand-button:hover {
   min-height: 33px;
   flex-shrink: 0;
 }
-.terminal-panel > .workspace-status {
+:is(.terminal-panel, .terminal-session) > .workspace-status {
   min-height: 28px;
   gap: 16px;
   align-items: center;
@@ -490,7 +490,7 @@ button.brand-button:hover {
     width: 32px;
     padding-inline: 0;
   }
-  .terminal-panel > .workspace-status {
+  :is(.terminal-panel, .terminal-session) > .workspace-status {
     gap: 10px;
     padding-inline: 12px;
   }

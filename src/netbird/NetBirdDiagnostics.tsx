@@ -5,13 +5,13 @@ import { CopyValue } from "./NetBirdCommon";
 import { errorOf } from "../types";
 export function NetBirdDiagnostics({
   snapshot,
-  sessionId,
+  contextId,
   onRefresh,
   active = true,
 }: {
   snapshot: Snapshot;
   active?: boolean;
-  sessionId: string | null;
+  contextId: string | null;
   onRefresh: () => Promise<void>;
 }) {
   const [data, setData] = useState<Diagnostic | null>(null),
@@ -26,16 +26,16 @@ export function NetBirdDiagnostics({
     return () => {
       ++epoch.current;
     };
-  }, [sessionId, snapshot.binding?.token]);
+  }, [contextId, snapshot.binding?.token]);
   async function read(kind: "raw" | "logs") {
-    if (!active || !sessionId || !snapshot.binding || pending.current) return;
+    if (!active || !contextId || !snapshot.binding || pending.current) return;
     pending.current = true;
     const current = epoch.current;
     setBusy(kind);
     setError("");
     setData(null);
     try {
-      const next = await netbirdApi[kind](sessionId, snapshot.binding.token);
+      const next = await netbirdApi[kind](contextId, snapshot.binding.token);
       if (current === epoch.current) setData(next);
     } catch (e) {
       if (current === epoch.current) setError(errorOf(e).message);
@@ -45,13 +45,13 @@ export function NetBirdDiagnostics({
     }
   }
   async function savePath(reset: boolean) {
-    if (!active || !sessionId || pending.current) return;
+    if (!active || !contextId || pending.current) return;
     pending.current = true;
     const current = epoch.current;
     setBusy("path");
     setError("");
     try {
-      await netbirdApi.path(sessionId, reset ? null : path.trim());
+      await netbirdApi.path(contextId, reset ? null : path.trim());
       if (current === epoch.current) {
         setData(null);
         if (reset) setPath("");
@@ -105,13 +105,13 @@ export function NetBirdDiagnostics({
         <h4>状态与日志</h4>
         <div className="nb-actions">
           <button
-            disabled={!active || !sessionId || !snapshot.binding || !!busy}
+            disabled={!active || !contextId || !snapshot.binding || !!busy}
             onClick={() => void read("logs")}
           >
             {busy === "logs" ? "正在读取…" : "最近日志"}
           </button>
           <button
-            disabled={!active || !sessionId || !snapshot.binding || !!busy}
+            disabled={!active || !contextId || !snapshot.binding || !!busy}
             onClick={() => void read("raw")}
           >
             {busy === "raw" ? "正在读取…" : "状态原文"}
@@ -155,14 +155,14 @@ export function NetBirdDiagnostics({
         <div className="nb-actions">
           <button
             disabled={
-              !active || !sessionId || !!busy || !path.trim().startsWith("/")
+              !active || !contextId || !!busy || !path.trim().startsWith("/")
             }
             onClick={() => void savePath(false)}
           >
             保存并检测
           </button>
           <button
-            disabled={!active || !sessionId || !!busy}
+            disabled={!active || !contextId || !!busy}
             onClick={() => void savePath(true)}
           >
             自动检测

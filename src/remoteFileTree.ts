@@ -14,7 +14,7 @@ export interface CachedDirectory {
   stale?: boolean;
 }
 export interface RemoteFileTreeSnapshot {
-  sessionId: string | null;
+  contextId: string | null;
   directories: Record<string, Omit<CachedDirectory, "loading">>;
   expanded: string[];
   selected: string;
@@ -36,9 +36,9 @@ export interface RemoteFileTreeState extends Omit<
   error: string;
 }
 export interface RemoteDirectoryApi {
-  directory: (sessionId: string, path?: string) => Promise<Directory>;
+  directory: (contextId: string, path?: string) => Promise<Directory>;
   directoryChain: (
-    sessionId: string,
+    contextId: string,
     path?: string,
     knownPaths?: string[],
   ) => Promise<DirectoryBatch>;
@@ -137,17 +137,17 @@ export class RemoteFileTree {
   private versions = new Map<string, number>();
   private navigation = 0;
   private initialized = false;
-  private sessionId: string | null;
+  private contextId: string | null;
 
   constructor(
-    sessionId: string | null,
+    contextId: string | null,
     private api: RemoteDirectoryApi,
     snapshot?: RemoteFileTreeSnapshot,
   ) {
-    this.sessionId = sessionId;
-    const saved = snapshot?.sessionId === sessionId ? snapshot : undefined;
+    this.contextId = contextId;
+    const saved = snapshot?.contextId === contextId ? snapshot : undefined;
     this.state = {
-      sessionId,
+      contextId,
       directories: Object.fromEntries(
         Object.entries(saved?.directories ?? {}).map(([path, node]) => [
           path,
@@ -263,7 +263,7 @@ export class RemoteFileTree {
 
   snapshot(): RemoteFileTreeSnapshot {
     const {
-      sessionId,
+      contextId,
       expanded,
       selected,
       currentPath,
@@ -273,7 +273,7 @@ export class RemoteFileTree {
       revealTarget,
     } = this.state;
     return {
-      sessionId,
+      contextId,
       expanded,
       selected,
       currentPath,
@@ -318,7 +318,7 @@ export class RemoteFileTree {
       )
         void this.refresh(path);
     }
-    if (!this.sessionId) return;
+    if (!this.contextId) return;
     if (!this.initialized) {
       this.initialized = true;
       if (this.state.revealing) return;
@@ -341,27 +341,24 @@ export class RemoteFileTree {
       void this.revealPath(this.state.revealTarget);
   }
 
-  acceptTerminalDirectory(cwd: TerminalDirectory, active: boolean) {
-    if (cwd.sessionId !== this.sessionId || !cwd.path.startsWith("/")) return;
+  acceptTerminalDirectory(cwd: TerminalDirectory | null, _active = false) {
+    if (!cwd) {
+      if (this.state.terminalCwd) this.update({ terminalCwd: undefined });
+      return;
+    }
+    if (!this.contextId || !cwd.path.startsWith("/")) return;
+    const previous = this.state.terminalCwd;
     if (
-      this.state.terminalCwd &&
-      cwd.sequence <= this.state.terminalCwd.sequence
+      previous?.sessionId === cwd.sessionId &&
+      cwd.sequence <= previous.sequence
     )
       return;
-    const next = { ...cwd, path: normalizeRemotePath(cwd.path) };
-    const unchanged = this.state.terminalCwd?.path === next.path;
     this.update({
-      terminalCwd: next,
-      ...(next.home?.startsWith("/")
-        ? { homePath: normalizeRemotePath(next.home) }
+      terminalCwd: { ...cwd, path: normalizeRemotePath(cwd.path) },
+      ...(cwd.home?.startsWith("/")
+        ? { homePath: normalizeRemotePath(cwd.home) }
         : {}),
     });
-    if (unchanged) return;
-    if (active) void this.revealPath(next.path);
-    else {
-      this.navigation++;
-      this.update({ revealTarget: next.path, revealing: false });
-    }
   }
 
   select(
@@ -427,7 +424,7 @@ export class RemoteFileTree {
   }
 
   private async loadDirectory(path: string, force = false): Promise<void> {
-    if (!this.sessionId) return;
+    if (!this.contextId) return;
     const existing = this.pending.get(path);
     if (existing) {
       await existing;
@@ -442,7 +439,7 @@ export class RemoteFileTree {
     const version = this.nextVersion(path);
     this.updateNode(path, { loading: true, error: undefined });
     const request = this.api
-      .directory(this.sessionId, path)
+      .directory(this.contextId, path)
       .then((directory) => {
         if (version !== this.versions.get(path)) return;
         this.applyDirectory(path, directory);
@@ -464,7 +461,7 @@ export class RemoteFileTree {
   private async readChain(
     path?: string,
   ): Promise<{ path?: string; error?: string }> {
-    if (!this.sessionId) return {};
+    if (!this.contextId) return {};
     const chain = path ? remotePathChain(path) : ["/"];
     // Wait for shared ancestors before batching missing paths, so simultaneous
     // navigation and manual expansion never request the same directory twice.
@@ -522,7 +519,7 @@ export class RemoteFileTree {
     let resultPath: string | undefined;
     let failure: string | undefined;
     const request = this.api
-      .directoryChain(this.sessionId, path, known)
+      .directoryChain(this.contextId, path, known)
       .then((result) => {
         resultPath = normalizeRemotePath(result.path);
         const next = { ...this.state.directories };
@@ -578,7 +575,7 @@ export class RemoteFileTree {
   }
 
   async revealPath(path?: string) {
-    if (!this.sessionId) return;
+    if (!this.contextId) return;
     const token = ++this.navigation;
     const home = this.state.terminalCwd?.home || this.state.homePath;
     const expandedHome =

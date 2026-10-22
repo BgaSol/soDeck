@@ -23,13 +23,15 @@ pub async fn create_remote_entry(
     window: WebviewWindow,
     app: tauri::AppHandle,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     parent_path: String,
     name: String,
     kind: EntryKind,
 ) -> AppResult<String> {
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
     moves::workspace_only(&window)?;
-    let spec = state.spec(&session_id, window.label())?;
+    let spec = state.workspace_context(&session_id, window.label())?;
     let path = crate::remote_path::join(&parent_path, &name)?;
     let identity = spec.identity().to_owned();
     let operation = crate::transfers::register_file_operation(state.inner().clone(), spec.clone())?;
@@ -234,11 +236,12 @@ fn read_directory(sftp: &Sftp, path: &str) -> AppResult<Directory> {
 pub async fn list_directory(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     path: Option<String>,
 ) -> AppResult<Directory> {
+    let session_id = state.context_key(&context, window.label())?;
     moves::workspace_only(&window)?;
-    let spec = state.spec(&session_id, window.label())?;
+    let spec = state.workspace_context(&session_id, window.label())?;
     blocking(move || {
         let connection = connection::connect_verified(
             &spec,
@@ -261,12 +264,13 @@ pub async fn list_directory(
 pub async fn list_directory_chain(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     path: Option<String>,
     known_paths: Option<Vec<String>>,
 ) -> AppResult<DirectoryBatch> {
+    let session_id = state.context_key(&context, window.label())?;
     moves::workspace_only(&window)?;
-    let spec = state.spec(&session_id, window.label())?;
+    let spec = state.workspace_context(&session_id, window.label())?;
     let known = known_paths.unwrap_or_default();
     if known.len() > 4096 {
         return Err(AppError::new("path", "缓存目录数量过多"));

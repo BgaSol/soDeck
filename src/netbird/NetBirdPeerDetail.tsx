@@ -5,12 +5,12 @@ import { Fact } from "./NetBirdCommon";
 import { errorOf } from "../types";
 export function NetBirdPeerDetail({
   peer,
-  sessionId,
+  contextId,
   token,
   enabled,
 }: {
   peer: Peer | undefined;
-  sessionId: string | null;
+  contextId: string | null;
   token: string | null;
   enabled: boolean;
 }) {
@@ -26,20 +26,20 @@ export function NetBirdPeerDetail({
     return () => {
       ++epoch.current;
     };
-  }, [peer?.id, token, sessionId]);
+  }, [peer?.id, token, contextId]);
   if (!peer)
     return (
       <p className="nb-empty">节点已不在当前快照中。可以返回列表继续查看。</p>
     );
   async function probe() {
-    if (!enabled || !peer || !sessionId || !token || pending.current) return;
+    if (!enabled || !peer || !contextId || !token || pending.current) return;
     pending.current = true;
     const current = epoch.current;
     setBusy(true);
     setError("");
     setResult(null);
     try {
-      const next = await netbirdApi.probe(sessionId, token, {
+      const next = await netbirdApi.probe(contextId, token, {
         peerId: peer.id,
         kind,
         port: kind === "tcp" ? Number(port) : null,

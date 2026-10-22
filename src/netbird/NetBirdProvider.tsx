@@ -10,22 +10,22 @@ import { desktop } from "../api";
 import { NetBirdStore } from "./netbirdStore";
 const Context = createContext<NetBirdStore | null>(null);
 export function NetBirdProvider({
-  sessionId,
+  contextId,
   children,
   suspended = false,
 }: {
-  sessionId: string | null;
+  contextId: string | null;
   children: ReactNode;
   suspended?: boolean;
 }) {
   const saved = useRef<NetBirdStore | null>(null);
-  if (!saved.current || (sessionId && sessionId !== saved.current.sessionId))
-    saved.current = new NetBirdStore(sessionId ?? "");
+  if (!saved.current || (contextId && contextId !== saved.current.contextId))
+    saved.current = new NetBirdStore(contextId ?? "");
   const store = saved.current;
   useEffect(() => {
-    if (desktop && sessionId && !suspended) void store.start();
+    if (desktop && contextId && !suspended) void store.start();
     return () => store.stop();
-  }, [sessionId, store, suspended]);
+  }, [contextId, store, suspended]);
   return <Context.Provider value={store}>{children}</Context.Provider>;
 }
 export function useNetBird() {

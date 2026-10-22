@@ -1,3 +1,7 @@
+import { workspaceApi } from "./workspaceApi";
+import { projectWorkspace } from "./workspaces";
+import { useServerWorkspaces } from "./useServerWorkspaces";
+import { useWorkspaceClose } from "./useWorkspaceClose";
 import { recordFrontendError } from "./diagnostics";
 import { DiagnosticsSection } from "./DiagnosticsSection";
 import type { TerminalSourceLabel } from "./terminalClipboard/types";
@@ -33,14 +37,13 @@ import { forwardApi } from "./portForwardApi";
 import { useWorkspaceMoves } from "./useWorkspaceMoves";
 import { SessionWorkspace } from "./SessionWorkspace";
 import { ServerHome } from "./ServerHome";
-import { createServerName, duplicatePasswordPolicy, configurationFields } from "./serverConfiguration";
-import { emptyServer, errorOf, filterServers } from "./types";
 import {
-  closeWorkspace,
-  emptyWorkspaces,
-  openWorkspace,
-  reorderWorkspace,
-} from "./workspaces";
+  createServerName,
+  duplicatePasswordPolicy,
+  configurationFields,
+} from "./serverConfiguration";
+import { emptyServer, errorOf, filterServers } from "./types";
+import { emptyWorkspaces, reorderWorkspace } from "./workspaces";
 import type {
   AppError,
   Server,
@@ -172,21 +175,6 @@ export function App() {
   } | null>(null);
   const lastVisited = useRef(new Map<string, number>());
   const navigationSerial = useRef(0);
-  type PendingConnection = {
-    tabId: string;
-    serverId: string;
-    returnId: string;
-    attempt: number;
-    busy: boolean;
-    error?: string;
-    navigationSerial: number;
-  };
-  const [pending, setPendingState] = useState<PendingConnection | null>(null);
-  const pendingRef = useRef<PendingConnection | null>(null);
-  const setPending = useCallback((value: PendingConnection | null) => {
-    pendingRef.current = value;
-    setPendingState(value);
-  }, []);
   useEffect(() => {
     if (!workspaces.activeId) return;
     lastVisited.current.set(workspaces.activeId, performance.now());
@@ -197,6 +185,8 @@ export function App() {
     if (!id) setFocusRequest((value) => value + 1);
   }
   const moves = useWorkspaceMoves(setWorkspaces, setError);
+  const allWorkspaces = useServerWorkspaces(setWorkspaces, setError);
+  const workspaceClose = useWorkspaceClose(setError);
   const tags = [...new Set(servers.flatMap((server) => server.tags))].sort(),
     visible = filterServers(servers, query, tag);
   useEffect(() => {
@@ -302,166 +292,59 @@ export function App() {
       off?.();
     };
   }, [refreshConfigurations]);
-  function discardPending() {
-    const current = pendingRef.current;
-    setPending(null);
-    if (current)
-      setWorkspaces((state) => {
-        const next = closeWorkspace(state, current.tabId);
-        return {
-          ...next,
-          activeId:
-            state.activeId === current.tabId
-              ? next.tabs.some((t) => t.id === current.returnId)
-                ? current.returnId
-                : ""
-              : state.activeId,
-        };
-      });
-  }
-  const receiveStatus = useCallback(
-    (id: string, attempt: number, state: string, failure?: AppError) => {
-      const current = pendingRef.current;
-      if (!current || current.tabId !== id || current.attempt !== attempt)
-        return;
-      if (state === "已连接") {
-        setPending(null);
-        if (current.navigationSerial === navigationSerial.current)
-          setWorkspaces((value) => ({ ...value, activeId: id }));
-      } else if (state === "连接失败" || (state === "error" && !current.busy)) {
-        setPending({
-          ...current,
-          busy: false,
-          error: failure?.message || current.error || "连接失败，请重试。",
-        });
-      } else if (state === "已断开") {
-        setPending(null);
-
-        setWorkspaces((value) => {
-          const next = closeWorkspace(value, id);
-          return {
-            ...next,
-            activeId:
-              value.activeId === id
-                ? next.tabs.some((t) => t.id === current.returnId)
-                  ? current.returnId
-                  : ""
-                : value.activeId,
-          };
-        });
-      }
-    },
-    [setPending],
-  );
-  function open(server: Server, forceNew = false) {
+  const configurationBusy = (id: string) =>
+    allWorkspaces.some(
+      (w) =>
+        w.server.id === id &&
+        (w.tools.state === "verifying" ||
+          w.terminals.some((t) =>
+            ["queued", "connecting", "authenticating"].includes(t.state),
+          )),
+    );
+  async function open(server: Server, newTerminal = false) {
     if (!desktop) return;
-    if (!forceNew) {
-      const existing = workspaces.tabs
-        .filter((tab) => tab.server.id === server.id && tab.state === "已连接")
-        .sort(
-          (a, b) =>
-            (lastVisited.current.get(b.id) || 0) -
-            (lastVisited.current.get(a.id) || 0),
-        )[0];
-      if (existing) {
-        navigate(existing.id);
-        return;
-      }
-    }
-    if (pendingRef.current?.busy) return;
     if (!server.username) {
       setError({ kind: "validation", message: "请先填写 SSH 用户名。" });
-      discardPending();
-      setEditorSelectName(false);
       setEditor(structuredClone(server));
       return;
     }
-    setError(null);
-    const previous = pendingRef.current;
-    if (
-      previous?.serverId === server.id &&
-      moves.handles.current.has(previous.tabId)
-    ) {
-      setPending({
-        ...previous,
-        attempt: previous.attempt + 1,
-        busy: true,
-        error: undefined,
-        navigationSerial: navigationSerial.current,
-      });
-      moves.handles.current.get(previous.tabId)!.reconnect();
-      return;
+    const serial = ++navigationSerial.current;
+    try {
+      const view = await workspaceApi.open(server.id, newTerminal);
+      if (
+        view.owner.label === getCurrentWindow().label &&
+        navigationSerial.current === serial
+      )
+        setWorkspaces((current) => ({
+          tabs: current.tabs.some((t) => t.id === view.id)
+            ? current.tabs
+            : [...current.tabs, projectWorkspace(view)],
+          activeId: view.id,
+        }));
+      setError(null);
+    } catch (e) {
+      setError(errorOf(e));
     }
-    const tabId = crypto.randomUUID();
-    setPending({
-      tabId,
-      serverId: server.id,
-      returnId: previous?.returnId ?? workspaces.activeId,
-      attempt: 0,
-      busy: true,
-      navigationSerial: navigationSerial.current,
-    });
-    setWorkspaces((current) => {
-      const next = openWorkspace(
-        previous ? closeWorkspace(current, previous.tabId) : current,
-        server,
-        true,
-        tabId,
-      );
-      return {
-        ...next,
-        activeId: current.activeId === previous?.tabId ? "" : current.activeId,
-      };
-    });
   }
-  const newConnectionRequests = useRef(new Set<string>());
   const createConnection = useCallback(
-    async (serverId: string, afterId?: string, requestId?: string) => {
-      if (requestId && newConnectionRequests.current.has(requestId)) return;
-      if (requestId) {
-        newConnectionRequests.current.add(requestId);
-        if (newConnectionRequests.current.size > 256)
-          newConnectionRequests.current.delete(
-            newConnectionRequests.current.values().next().value!,
-          );
-      }
+    async (serverId: string, _afterId?: string, requestId?: string) => {
       try {
-        const currentServers = await api.listServers();
-        const server = currentServers.find((item) => item.id === serverId);
-        if (!server) throw new Error("服务器配置已不存在，请刷新服务器列表。");
-        if (!server.username) throw new Error("请先填写 SSH 用户名。");
-        navigationSerial.current++;
-        setWorkspaces((current) =>
-          openWorkspace(current, server, true, undefined, afterId),
-        );
-        setError(null);
-      } catch (error) {
-        setError(errorOf(error));
+        const view = await workspaceApi.open(serverId, true, requestId);
+        if (view.owner.label === getCurrentWindow().label)
+          setWorkspaces((current) => ({
+            tabs: current.tabs.some((t) => t.id === view.id)
+              ? current.tabs.map((t) =>
+                  t.id === view.id ? projectWorkspace(view) : t,
+                )
+              : [...current.tabs, projectWorkspace(view)],
+            activeId: view.id,
+          }));
+      } catch (e) {
+        setError(errorOf(e));
       }
     },
     [],
   );
-  useEffect(() => {
-    if (!desktop) return;
-    let disposed = false;
-    let off: (() => void) | undefined;
-    void getCurrentWindow()
-      .listen<{ serverId: string; requestId: string }>(
-        "workspace-new-connection",
-        ({ payload }) => {
-          void createConnection(payload.serverId, undefined, payload.requestId);
-        },
-      )
-      .then((unlisten) => {
-        if (disposed) unlisten();
-        else off = unlisten;
-      })
-      .catch((error) => setError(errorOf(error)));
-    return () => {
-      disposed = true;
-      off?.();
-    };
-  }, [createConnection]);
   function editServer(server: Server) {
     setEditorSelectName(false);
     setEditor(structuredClone(server));
@@ -470,36 +353,60 @@ export function App() {
     setEditorSelectName(true);
     setEditor(structuredClone(server));
   }
-  async function save(server: SaveServerRequest, intent: ServerSaveIntent, autoName: boolean) {
+  async function save(
+    server: SaveServerRequest,
+    intent: ServerSaveIntent,
+    autoName: boolean,
+  ) {
     if (!editor) return;
     if (intent === "update" && (!editor.id || server.id !== editor.id))
-      throw { kind: "validation", message: "无法确定要更新的服务器，请重新打开配置。" };
-    if (intent === "update" && pending?.serverId === editor.id && pending.busy)
+      throw {
+        kind: "validation",
+        message: "无法确定要更新的服务器，请重新打开配置。",
+      };
+    if (intent === "update" && configurationBusy(editor.id))
       throw { kind: "busy", message: "请完成或取消当前连接后再保存修改。" };
     if (intent === "create" && autoName) {
       const latest = await api.listServers();
       const expectedName = createServerName(editor, editor, latest);
       if (server.name !== expectedName) {
         setServers(latest);
-        throw { kind: "namePreviewChanged", message: "可用的新建名称已更新，请确认名称预览后再次新建。" };
+        throw {
+          kind: "namePreviewChanged",
+          message: "可用的新建名称已更新，请确认名称预览后再次新建。",
+        };
       }
     }
-    const saved = intent === "create" && server.id
-      ? await api.duplicateServer({
-          sourceId: editor.id,
-          draft: configurationFields(server),
-          passwordPolicy: duplicatePasswordPolicy(editor, server, server.passwordChange),
-        })
-      : await api.saveServer({ ...server, id: intent === "update" ? editor.id : "" });
-    setServers((values) => [...values.filter((value) => value.id !== saved.id), saved]);
+    const saved =
+      intent === "create" && server.id
+        ? await api.duplicateServer({
+            sourceId: editor.id,
+            draft: configurationFields(server),
+            passwordPolicy: duplicatePasswordPolicy(
+              editor,
+              server,
+              server.passwordChange,
+            ),
+          })
+        : await api.saveServer({
+            ...server,
+            id: intent === "update" ? editor.id : "",
+          });
+    setServers((values) => [
+      ...values.filter((value) => value.id !== saved.id),
+      saved,
+    ]);
     setSelectedId(saved.id);
-    setSavedNotice({ text: `${intent === "create" ? "服务器已新建" : "修改已保存"}：${saved.name}`, serverId: saved.id });
+    setSavedNotice({
+      text: `${intent === "create" ? "服务器已新建" : "修改已保存"}：${saved.name}`,
+      serverId: saved.id,
+    });
     setEditor(null);
     setEditorSelectName(false);
     setError(null);
   }
   async function remove(server: Server) {
-    if (workspaces.tabs.some((tab) => tab.server.id === server.id))
+    if (allWorkspaces.some((tab) => tab.server.id === server.id))
       throw {
         kind: "busy",
         message: "请先关闭此服务器的所有会话标签页，再删除配置。",
@@ -536,8 +443,8 @@ export function App() {
         onClose={(id) => {
           if (moves.moving.has(id)) return;
           navigationSerial.current++;
-          if (pendingRef.current?.tabId === id) discardPending();
-          else setWorkspaces((current) => closeWorkspace(current, id));
+          const workspace = workspaces.tabs.find((t) => t.id === id);
+          if (workspace) void workspaceClose.close(workspace);
         }}
         onMove={(...args) => void moves.move(...args)}
         onReorder={(id, beforeId) =>
@@ -647,8 +554,7 @@ export function App() {
                     !deleting &&
                     !quitRequest &&
                     databaseResetDetails === null &&
-                    (workspaces.activeId === tab.id ||
-                      (!workspaces.activeId && pending?.tabId === tab.id))
+                    workspaces.activeId === tab.id
                   }
                   initial={moves.snapshots.current.get(tab.id)}
                   onReady={() => moves.ready(tab.id)}
@@ -658,11 +564,10 @@ export function App() {
                   }}
                   onChange={updateTab}
                   onConfigurationChanged={refreshConfigurations}
-                  onConnectionStatus={receiveStatus}
                 />
                 {moves.moving.has(tab.id) && (
                   <div className="session-moving">
-                    <span>正在移动会话…</span>
+                    <span>正在移动服务器…</span>
                     <button onClick={() => moves.cancel(tab.id)}>
                       取消移动
                     </button>
@@ -672,7 +577,7 @@ export function App() {
             ))}
             <ServerHome
               servers={servers}
-              tabs={workspaces.tabs}
+              tabs={allWorkspaces}
               selectedId={selectedId}
               query={query}
               tag={tag}
@@ -680,7 +585,7 @@ export function App() {
               active={!workspaces.activeId}
               focusRequest={focusRequest}
               loadFailed={!!error && !servers.length}
-              pending={pending}
+              pending={null}
               notice={savedNotice}
               onSelect={setSelectedId}
               onQuery={setQuery}
@@ -690,7 +595,7 @@ export function App() {
               onCopy={copyServer}
               onDelete={requestDelete}
               onNew={() => editServer(emptyServer())}
-              onCancel={discardPending}
+              onCancel={() => {}}
               onForward={(server) => {
                 void forwardApi
                   .open(server.id)
@@ -707,8 +612,13 @@ export function App() {
       </div>
       <footer className="workspace-summary">
         <span>
-          {workspaces.tabs.length} 个会话 ·{" "}
-          {workspaces.tabs.filter((tab) => tab.state === "已连接").length}{" "}
+          {allWorkspaces.length} 个服务器 ·{" "}
+          {allWorkspaces.reduce((n, w) => n + w.terminals.length, 0)} 个终端 ·{" "}
+          {allWorkspaces.reduce(
+            (n, w) =>
+              n + w.terminals.filter((t) => t.state === "connected").length,
+            0,
+          )}{" "}
           已连接
         </span>
         <div className="workspace-summary-end">
@@ -716,12 +626,13 @@ export function App() {
           <FileTaskPanel embedded />
         </div>
       </footer>
+      {workspaceClose.dialog}
       <DesktopDragPreview />
       {editor && (
         <ServerEditor
           initial={editor}
           selectName={editorSelectName}
-          updateBlocked={pending?.serverId === editor.id && pending.busy}
+          updateBlocked={configurationBusy(editor.id)}
           servers={servers}
           tags={tags}
           onSave={save}
@@ -741,7 +652,7 @@ export function App() {
       {deleting && (
         <ServerDeleteDialog
           server={deleting}
-          blocked={workspaces.tabs.some((tab) => tab.server.id === deleting.id)}
+          blocked={allWorkspaces.some((tab) => tab.server.id === deleting.id)}
           onDelete={remove}
           onClose={() => setDeleting(null)}
         />

@@ -604,14 +604,14 @@ test("server deletion blocks tabs and independent windows, then removes the save
     const logs = await openLogs(f);
     children.push(logs);
     await ipc(logs, "logs_stop");
-    await f.main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab").click({ button: "right" });
+    await f.main.getByRole("tablist", { name: "服务器标签", exact: true }).getByRole("tab").click({ button: "right" });
     const detachedOpened = f.context.waitForEvent("page");
     await f.main
       .getByRole("menuitem", { name: "移到独立窗口", exact: true })
       .click();
     const detached = await detachedOpened;
     children.push(detached);
-    await expect(f.main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(0);
+    await expect(f.main.getByRole("tablist", { name: "服务器标签", exact: true }).getByRole("tab")).toHaveCount(0);
     await detached.getByRole("button", { name: "断开", exact: true }).click();
     await expect.poll(() => ipc<number>(f.main, "session_count")).toBe(0);
     await showServers(f.main);
@@ -1071,7 +1071,7 @@ test("tabs reorder, detach and rejoin without replacing their SSH connection or 
 
     await connectSelectedServer(f.main);
     await authenticate(f.main);
-    await expect(f.main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(2);
+    await expect(f.main.getByRole("tablist", { name: "服务器标签", exact: true }).getByRole("tab")).toHaveCount(2);
     await expect.poll(() => ipc<number>(f.main, "session_count")).toBe(2);
     const connectionsBefore = await terminalOpens();
     const firstTab = f.main.getByRole("tab", { name: title, exact: true });
@@ -1087,7 +1087,7 @@ test("tabs reorder, detach and rejoin without replacing their SSH connection or 
         y: secondBounds!.height / 2,
       },
     });
-    await expect(f.main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab").first()).toHaveAttribute(
+    await expect(f.main.getByRole("tablist", { name: "服务器标签", exact: true }).getByRole("tab").first()).toHaveAttribute(
       "aria-label",
       duplicateTitle,
     );
@@ -1101,7 +1101,7 @@ test("tabs reorder, detach and rejoin without replacing their SSH connection or 
       detached.getByRole("tab", { name: title, exact: true }),
     ).toBeVisible();
     expect(detached.url()).toContain("workspace=");
-    await expect(f.main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(1);
+    await expect(f.main.getByRole("tablist", { name: "服务器标签", exact: true }).getByRole("tab")).toHaveCount(1);
     await expect(active(detached).locator(".connection-state")).toHaveText(
       "已连接",
     );
@@ -1152,7 +1152,7 @@ test("tabs reorder, detach and rejoin without replacing their SSH connection or 
     await detached
       .getByRole("menuitem", { name: "移回主窗口", exact: true })
       .click();
-    await expect(f.main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(2);
+    await expect(f.main.getByRole("tablist", { name: "服务器标签", exact: true }).getByRole("tab")).toHaveCount(2);
     await expect.poll(() => detached!.isClosed()).toBe(true);
     await f.main.getByRole("tab", { name: title, exact: true }).click();
     await expect(active(f.main).locator(".terminal-surface")).toContainText(

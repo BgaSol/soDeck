@@ -107,12 +107,7 @@ impl Entry {
         self.cancel.check()?;
         state.ensure_running()?;
         let sessions: Vec<_> = self.core.lock().unwrap().members.keys().cloned().collect();
-        let terminals = state.terminals.lock().unwrap();
-        if !sessions.iter().any(|id| {
-            terminals.get(id).is_some_and(|t| {
-                !t.sender.cancel.is_cancelled() && !t.stream.lock().unwrap().closed
-            })
-        }) {
+        if !sessions.iter().any(|id| state.workspaces.context_alive(id)) {
             return Err(AppError::new("cancelled", "服务器会话已结束"));
         }
         Ok(())
@@ -153,7 +148,9 @@ impl Entry {
                     Err(AppError::new("disconnected", "监控窗口已结束"))
                 }
             } else {
-                state.spec(&sub.session, &sub.window).map(|_| ())
+                state
+                    .workspace_context(&sub.session, &sub.window)
+                    .map(|_| ())
             };
             match access {
                 // Keep the old subscriber dormant while a workspace is in transit.
@@ -226,7 +223,7 @@ fn subscriber_valid(state: &State, sub: &Subscriber) -> bool {
                 .unwrap()
                 .get(&sub.window)
                 .is_some_and(|binding| &binding.identity == identity),
-            None => state.spec(&sub.session, &sub.window).is_ok(),
+            None => state.workspace_context(&sub.session, &sub.window).is_ok(),
         }
 }
 
@@ -275,7 +272,7 @@ impl MonitorManager {
         let owner = state.owner(&window);
         let mut entries = self.entries.lock().unwrap();
         // Revalidate under the registry lock so a concurrently closing session cannot leave an orphan worker.
-        state.spec(&session, &window)?;
+        state.workspace_context(&session, &window)?;
         let created = !entries.contains_key(spec.identity());
         let entry = entries
             .entry(spec.identity().into())
@@ -351,6 +348,18 @@ impl MonitorManager {
             }
         }
         Err(AppError::new("disconnected", "监控订阅已结束"))
+    }
+    pub fn rebind_context(&self, old: &str, new: &str) {
+        for entry in self.entries.lock().unwrap().values() {
+            let mut c = entry.core.lock().unwrap();
+            if let Some(context) = c.members.remove(old) {
+                c.members.insert(new.into(), context);
+            }
+            if c.preferred_session.as_deref() == Some(old) {
+                c.preferred_session = Some(new.into());
+            }
+            c.subscribers.retain(|_, s| s.session != old);
+        }
     }
     pub fn close_session(&self, session: &str) {
         let mut entries = self.entries.lock().unwrap();

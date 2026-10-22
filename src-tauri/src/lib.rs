@@ -32,6 +32,7 @@ mod traffic;
 mod transfers;
 mod updates;
 mod window_chrome;
+mod workspaces;
 
 use model::{AppError, AppResult, SaveServerRequest, ServerView};
 use serde::Serialize;
@@ -51,6 +52,7 @@ pub struct State {
     port_forwarding: Arc<port_forwarding::PortForwardManager>,
     traffic: Arc<traffic::TrafficManager>,
     moves: moves::MoveState,
+    workspaces: workspaces::WorkspaceState,
     files: files::FileState,
     file_tasks: file_tasks::FileTaskState,
     deletes: remote_delete::DeleteState,
@@ -78,19 +80,33 @@ struct PendingContainer {
 impl State {
     fn connected_context(&self, identity: &str) -> AppResult<connection::SharedContext> {
         self.ensure_running()?;
-        self.terminals
-            .lock()
-            .unwrap()
-            .values()
-            .filter(|t| !t.sender.cancel.is_cancelled())
-            .filter_map(|t| t.spec.clone())
+        self.workspaces
+            .contexts()
+            .into_iter()
+            .map(|(_, _, c)| c)
             .find(|c| c.identity() == identity)
             .ok_or_else(|| {
                 AppError::new(
                     "disconnected",
-                    "请先重新连接任务涉及的服务器；连接身份必须与原任务一致",
+                    "请先验证任务涉及的服务器工具连接；连接身份必须与原任务一致",
                 )
             })
+    }
+    fn workspace_context(&self, id: &str, window: &str) -> AppResult<connection::SharedContext> {
+        self.ensure_running()?;
+        self.workspaces.context(id, &self.owner(window))
+    }
+    fn workspace_operation(
+        &self,
+        context: &workspaces::ToolContextRef,
+        window: &str,
+    ) -> AppResult<workspaces::OperationLease> {
+        self.ensure_running()?;
+        self.workspaces.lease(context, &self.owner(window))
+    }
+    fn context_key(&self, context: &workspaces::ToolContextRef, window: &str) -> AppResult<String> {
+        self.ensure_running()?;
+        self.workspaces.context_key(context, &self.owner(window))
     }
     fn check_context(&self, context: &connection::ConnectionContext) -> AppResult<()> {
         self.ensure_running()?;
@@ -133,7 +149,8 @@ impl State {
                 "请先修改或删除引用此服务器的端口转发规则，并停止相关转发",
             ));
         }
-        if self.moves.has_server(id)
+        if self.workspaces.has_server(id)
+            || self.moves.has_server(id)
             || self
                 .terminals
                 .lock()
@@ -184,6 +201,9 @@ impl State {
         if terminal.window != window {
             return Err(AppError::new("permission", "此窗口无权访问该会话"));
         }
+        if terminal.stream.lock().unwrap().is_frozen() {
+            return Err(AppError::new("busy", "终端正在移交"));
+        }
         if terminal.sender.cancel.is_cancelled() || terminal.stream.lock().unwrap().closed {
             return Err(AppError::new("disconnected", "SSH 会话已经结束"));
         }
@@ -231,7 +251,8 @@ fn reset_incompatible_database(
     main_only(&window)?;
     let _gate = state.configuration.lock().unwrap();
     state.ensure_running()?;
-    if !state.terminals.lock().unwrap().is_empty()
+    if !state.workspaces.is_empty()
+        || !state.terminals.lock().unwrap().is_empty()
         || state.port_forwarding.summary().active > 0
         || state.docker.summary().active > 0
         || state.netbird.active()
@@ -262,7 +283,9 @@ fn save_server(
     main_only(&window)?;
     let _gate = state.configuration.lock().unwrap();
     state.port_forwarding.intents.lock().unwrap().clear();
-    state.database.lock().unwrap().save(server)
+    let saved = state.database.lock().unwrap().save(server)?;
+    workspaces::refresh_configuration(&state);
+    Ok(saved)
 }
 #[tauri::command]
 fn duplicate_server(
@@ -356,6 +379,7 @@ async fn quit_app(
 }
 
 async fn shutdown_work(state: Arc<State>) -> AppResult<()> {
+    workspaces::shutdown(&state);
     state.deletes.stop_all();
     state.port_forwarding.stop_all();
     state.transfers.stop_transfers();
@@ -390,6 +414,8 @@ fn terminal_input(
     session_id: String,
     data: String,
 ) -> AppResult<()> {
+    let workspace_guard = state.workspaces.registry.lock().unwrap();
+    workspace_guard.terminal_action(&session_id)?;
     state.spec(&session_id, window.label())?;
     if data.len() > 1024 * 1024 {
         return Err(AppError::new("limit", "单次输入超过 1 MB"));
@@ -412,6 +438,8 @@ fn terminal_resize(
     cols: u32,
     rows: u32,
 ) -> AppResult<()> {
+    let workspace_guard = state.workspaces.registry.lock().unwrap();
+    workspace_guard.terminal_action(&session_id)?;
     state.spec(&session_id, window.label())?;
     let terminals = state.terminals.lock().unwrap();
     if let Some(terminal) = terminals.get(&session_id) {
@@ -429,6 +457,8 @@ fn terminal_clear_display(
     state: TauriState<Arc<State>>,
     session_id: String,
 ) -> AppResult<()> {
+    let workspace_guard = state.workspaces.registry.lock().unwrap();
+    workspace_guard.terminal_action(&session_id)?;
     state.spec(&session_id, window.label())?;
     let terminals = state.terminals.lock().unwrap();
     let terminal = terminals
@@ -443,32 +473,35 @@ fn terminal_clear_display(
 async fn detect_docker(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
 ) -> AppResult<docker::DockerStatus> {
+    let session_id = state.context_key(&context, window.label())?;
     moves::workspace_only(&window)?;
-    let spec = state.spec(&session_id, window.label())?;
+    let spec = state.workspace_context(&session_id, window.label())?;
     blocking(move || docker::detect(&spec)).await
 }
 #[tauri::command]
 async fn docker_images(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     endpoint: String,
 ) -> AppResult<Vec<docker::Image>> {
+    let session_id = state.context_key(&context, window.label())?;
     moves::workspace_only(&window)?;
-    let spec = state.spec(&session_id, window.label())?;
+    let spec = state.workspace_context(&session_id, window.label())?;
     blocking(move || docker::images(&spec, &endpoint)).await
 }
 #[tauri::command]
 async fn docker_containers(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     endpoint: String,
 ) -> AppResult<Vec<docker::Container>> {
+    let session_id = state.context_key(&context, window.label())?;
     moves::workspace_only(&window)?;
-    let spec = state.spec(&session_id, window.label())?;
+    let spec = state.workspace_context(&session_id, window.label())?;
     blocking(move || docker::containers(&spec, &endpoint)).await
 }
 
@@ -477,12 +510,14 @@ async fn open_container(
     window: WebviewWindow,
     app: tauri::AppHandle,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     target: docker::ContainerTarget,
 ) -> AppResult<()> {
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
     moves::workspace_only(&window)?;
     let gate = state.configuration.lock().unwrap();
-    let spec = state.spec(&session_id, window.label())?;
+    let spec = state.workspace_context(&session_id, window.label())?;
     let key = format!("{}|{}|{}", spec.identity(), target.endpoint, target.id);
     let (label, create) = {
         let mut windows = state.container_windows.lock().unwrap();
@@ -671,6 +706,7 @@ pub fn run() {
                 )),
                 traffic: traffic::TrafficManager::new(),
                 moves: moves::MoveState::default(),
+                workspaces: workspaces::WorkspaceState::default(),
                 monitor: monitor::MonitorManager::default(),
                 docker: docker::DockerManager::open(&dir.join("docker-management.sqlite")),
                 netbird: netbird::NetBirdManager::open(&dir.join("netbird.sqlite")),
@@ -690,6 +726,9 @@ pub fn run() {
                 closed_windows: Mutex::new(HashSet::new()),
                 window_generations: Mutex::new(HashMap::new()),
             }));
+            app.state::<Arc<State>>()
+                .workspaces
+                .attach(app.handle().clone());
             diagnostics::startup("updates.initialize");
             updates::initialize(app.handle())?;
             diagnostics::startup("windows.create");
@@ -720,8 +759,13 @@ pub fn run() {
                     state.monitor.stop_window(webview.label());
                     state.logs.stop(webview.label(), false);
                     state.history.cancel_window(webview.label());
-                    let mut generations = state.window_generations.lock().unwrap();
-                    *generations.entry(webview.label().into()).or_default() += 1;
+                    drop(_gate);
+                    moves::window_unavailable(webview.app_handle(), &state, webview.label(), true);
+                    workspaces::close_window(&state, webview.label());
+                    {
+                        let mut generations = state.window_generations.lock().unwrap();
+                        *generations.entry(webview.label().into()).or_default() += 1;
+                    }
                     for terminal in state.terminals.lock().unwrap().values() {
                         if terminal.window == webview.label() {
                             let _ = terminal.sender.send(terminal::Input::Close);
@@ -769,7 +813,9 @@ pub fn run() {
                 state.monitor.close_monitor_window(window.label());
                 state.logs.stop(window.label(), true);
                 state.history.cancel_window(window.label());
+                drop(_gate);
                 moves::window_closed(window.app_handle(), &state, window.label());
+                workspaces::close_window(&state, window.label());
                 state
                     .closed_windows
                     .lock()
@@ -789,6 +835,17 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            workspaces::list_server_workspaces,
+            workspaces::mount_server_workspace,
+            workspaces::open_server_workspace,
+            workspaces::create_workspace_terminal,
+            workspaces::update_workspace_terminal,
+            workspaces::prepare_workspace_close,
+            workspaces::close_server_workspace,
+            workspaces::close_workspace_terminal,
+            workspaces::refresh_workspace_context,
+            workspaces::answer_workspace_context,
+            workspaces::cancel_workspace_context,
             diagnostics::commands::get_diagnostics_status,
             diagnostics::commands::open_diagnostics_directory,
             diagnostics::commands::export_diagnostics,
@@ -807,6 +864,7 @@ pub fn run() {
             netbird::commands::get_netbird_logs,
             netbird::commands::probe_netbird_peer,
             netbird::commands::prepare_netbird_operation,
+            netbird::commands::release_netbird_preview,
             netbird::commands::submit_netbird_operation,
             netbird::commands::reconcile_netbird_operation,
             netbird::commands::acknowledge_netbird_operation,
@@ -876,6 +934,8 @@ pub fn run() {
             updates::update_focus_main,
             connection::open_connection,
             connection::answer_connection,
+            connection::present_connection_challenge,
+            workspaces::present_workspace_context_challenge,
             connection::close_connection,
             terminal_input,
             terminal_resize,
@@ -934,8 +994,11 @@ pub fn run() {
             moves::terminal_resume,
             moves::request_workspace_connection,
             moves::move_workspace,
+            moves::prepare_workspace_move,
+            moves::acknowledge_workspace_terminal,
             moves::take_workspace,
             moves::workspace_ready,
+            moves::workspace_move_status,
             moves::cancel_workspace_move,
             moves::begin_tab_drag,
             moves::drop_tab,

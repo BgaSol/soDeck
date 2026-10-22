@@ -81,8 +81,12 @@ export function ServerHome(props: Props) {
     row?.scrollIntoView({ block: "nearest" });
   }, [selectedId, props.notice]);
   function connected(server: Server) {
-    return tabs.filter((t) => t.server.id === server.id && t.state === "已连接")
-      .length;
+    return tabs
+      .filter((t) => t.server.id === server.id)
+      .reduce(
+        (n, w) => n + w.terminals.filter((t) => t.state === "connected").length,
+        0,
+      );
   }
   function canConnect(server: Server, forceNew = false) {
     return desktop && (!pending?.busy || (!forceNew && connected(server) > 0));
@@ -211,6 +215,7 @@ export function ServerHome(props: Props) {
           >
             {visible.map((server) => {
               const count = connected(server);
+              const workspace = tabs.find((t) => t.server.id === server.id);
               const attempt = pending?.serverId === server.id ? pending : null;
               const failed =
                 attempt?.error ||
@@ -263,16 +268,18 @@ export function ServerHome(props: Props) {
                       <span
                         className="catalog-status"
                         data-state={state}
-                        title="会话状态仅统计本窗口"
+                        title="终端状态统计当前应用的所有服务器窗口"
                       >
                         <i aria-hidden="true" />
                         {attempt?.busy
                           ? "连接中…"
                           : count
-                            ? `已连接 · ${count} 个会话`
+                            ? `已连接 · ${count} 个终端`
                             : failed
                               ? "连接失败"
-                              : "未连接"}
+                              : workspace
+                                ? `${workspace.terminals.length} 个终端 · ${workspace.tools.context ? "工具可用" : "工具需要验证"}`
+                                : "未连接"}
                       </span>
                     </div>
                     <button
@@ -318,10 +325,11 @@ export function ServerHome(props: Props) {
                     <ServerActions
                       server={server}
                       connected={count > 0}
+                      workspaceOpen={!!workspace}
                       connecting={!!attempt?.busy}
                       canConnect={canConnect(server)}
                       canNewSession={canConnect(server, true)}
-                      deleteBlocked={!!attempt}
+                      deleteBlocked={!!attempt || !!workspace}
                       onConnect={props.onConnect}
                       onEdit={props.onEdit}
                       onCopy={props.onCopy}
@@ -381,6 +389,7 @@ export function ServerHome(props: Props) {
           server={selected}
           jump={servers.find((s) => s.id === selected?.jumpServerId)}
           sessions={selected ? connected(selected) : 0}
+          workspace={tabs.find((t) => t.server.id === selected?.id)}
           pending={pending?.serverId === selected?.id ? pending : null}
           canConnect={!!selected && canConnect(selected)}
           canNewSession={!!selected && canConnect(selected, true)}

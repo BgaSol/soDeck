@@ -5,6 +5,7 @@ import type { Server } from "./types";
 interface Props {
   server: Server;
   connected: boolean;
+  workspaceOpen?: boolean;
   connecting: boolean;
   canConnect: boolean;
   canNewSession: boolean;
@@ -21,18 +22,19 @@ export function ServerActions(props: Props) {
   const actions = [
     {
       id: "connect",
-      label: props.connected
-        ? "进入会话"
-        : props.connecting
-          ? "连接中…"
-          : "连接",
+      label:
+        props.workspaceOpen || props.connected
+          ? "进入会话"
+          : props.connecting
+            ? "连接中…"
+            : "连接",
       icon: Terminal,
       disabled: !props.canConnect,
       run: () => props.onConnect(server),
     },
     {
       id: "new-session",
-      label: "新建会话",
+      label: "新建终端",
       icon: Plus,
       disabled: !props.canNewSession,
       run: () => props.onConnect(server, true),

@@ -21,7 +21,7 @@ export class DockerManagementStore {
   private interestVersion = 0;
   private sendingInterest = false;
   constructor(
-    readonly sessionId: string,
+    readonly contextId: string,
     private api: DockerManagementApi = dockerApi,
   ) {}
   getState = () => this.state;
@@ -39,7 +39,7 @@ export class DockerManagementStore {
     const epoch = ++this.epoch;
     this.update(empty());
     try {
-      const id = await this.api.subscribe(this.sessionId, (frame) => {
+      const id = await this.api.subscribe(this.contextId, (frame) => {
         if (epoch !== this.epoch) return;
         // A Channel frame may arrive before the subscribe promise resolves.
         if (
@@ -101,6 +101,6 @@ export class DockerManagementStore {
     }
   }
   async refresh() {
-    await this.api.refresh(this.sessionId);
+    await this.api.refresh(this.contextId);
   }
 }

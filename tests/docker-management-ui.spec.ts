@@ -394,9 +394,8 @@ async function management(
       autoRemove: options.autoRemove ?? false,
     },
   );
-  // Recreate only the subscription, as the workspace was connected before the mock extension.
-  await page.getByRole("button", { name: "断开", exact: true }).click();
-  await page.getByRole("button", { name: "重新连接", exact: true }).click();
+  // Explicitly verify a new tool generation after installing the service fixture.
+  await page.getByRole("button", { name: "更新工具连接", exact: true }).click();
   await openWorkspaceTool(page, "docker");
   const panel = page.getByRole("region", { name: "Docker 引擎与对象" });
   await panel

@@ -2,12 +2,12 @@ import { useEffect, useState } from "react";
 import { dockerApi } from "../dockerApi";
 import { errorOf } from "../types";
 export function ContainerDiagnostics({
-  sessionId,
+  contextId,
   token,
   containerId,
   section,
 }: {
-  sessionId: string;
+  contextId: string;
   token: string;
   containerId: string;
   section: "configuration" | "processes";
@@ -39,7 +39,7 @@ export function ContainerDiagnostics({
     let alive = true;
     setBusy(true);
     void dockerApi
-      .diagnostics(sessionId, token, containerId, section, reveal)
+      .diagnostics(contextId, token, containerId, section, reveal)
       .then(
         (text) => {
           if (alive) setValue(text);
@@ -54,7 +54,7 @@ export function ContainerDiagnostics({
     return () => {
       alive = false;
     };
-  }, [sessionId, token, containerId, section, open, reveal, revision]);
+  }, [contextId, token, containerId, section, open, reveal, revision]);
   return (
     <details
       className="docker-detail-group"

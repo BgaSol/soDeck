@@ -29,6 +29,7 @@ import type { AppError, ConnectionRequest, TerminalEvent } from "./types";
 import type { HistoryBinding, HistoryPosition } from "./terminalHistoryApi";
 
 export interface TerminalSnapshot {
+  transferId?: string;
   source?: TerminalSourceLabel;
   sessionId: string | null;
   content: string;
@@ -65,6 +66,8 @@ export interface TerminalPaneProps {
   interactive?: boolean;
   focusPolicy?: "automatic" | "managed";
   workspaceId?: string;
+  terminalId?: string;
+  ownerEpoch?: number;
   onAlternate?: (alternate: boolean) => void;
   onCleared?: () => void;
   onSession: (id: string | null) => void;
@@ -86,6 +89,8 @@ export function LiveTerminalPane({
   interactive = true,
   focusPolicy = "automatic",
   workspaceId,
+  terminalId,
+  ownerEpoch,
   onAlternate,
   onCleared,
   onSession,
@@ -515,7 +520,7 @@ export function LiveTerminalPane({
         !document.querySelector("dialog[open]")
       )
         terminal.current?.focus();
-      readyCallback.current?.();
+      if (!initial) readyCallback.current?.();
     }
     const output = new Channel<TerminalEvent>();
     // Preserve stream order across a local clear and a migration barrier. Ordinary writes
@@ -558,7 +563,7 @@ export function LiveTerminalPane({
       drain();
     }
     output.onmessage = (event) => {
-      if (cancelled || closed) return;
+      if (cancelled || (closed && event.type !== "receptionBarrier")) return;
       callbacks.current.onConnectionEvent?.(event, request?.attempt ?? 0);
       if (event.type === "ready") {
         if (request?.automatic)
@@ -576,6 +581,22 @@ export function LiveTerminalPane({
         };
         ready = true;
         markReady();
+      } else if (event.type === "receptionBarrier") {
+        barrier(() => {
+          void invoke("acknowledge_workspace_terminal", {
+            transferId: event.transferId,
+            terminalId,
+          })
+            .then(() => {
+              if (!cancelled) readyCallback.current?.();
+            })
+            .catch((error) => {
+              callbacks.current.onError(errorOf(error));
+              void invoke("cancel_workspace_move", {
+                transferId: event.transferId,
+              });
+            });
+        });
       } else if (event.type === "frozen") {
         barrier(() => {
           if (frozen.current?.token === event.token) {
@@ -662,16 +683,19 @@ export function LiveTerminalPane({
         ? invoke<string>("connect_container", { output })
         : invoke<string>("open_connection", {
             serverId: request!.serverId,
-            workspaceId: workspaceId ?? null,
+            binding: {
+              workspaceId,
+              terminalId,
+              ownerEpoch,
+              attempt: request?.attempt ?? 0,
+              requestId: crypto.randomUUID(),
+            },
             events: output,
           });
     void task
       .then((id) => {
         opened = id;
-        if (closed && !cancelled && initial) {
-          readyCallback.current?.();
-          return;
-        }
+        if (closed && !cancelled && initial) return;
         if (cancelled || closed) {
           if (id && !transferring.current)
             void invoke("close_connection", { connectionId: id }).catch(
@@ -681,7 +705,16 @@ export function LiveTerminalPane({
         }
         callbacks.current.onConnectionId?.(id);
         markReady();
-        if (initial && !id) readyCallback.current?.();
+        if (initial && !id) {
+          void invoke("acknowledge_workspace_terminal", {
+            transferId: initial.transferId,
+            terminalId,
+          })
+            .then(() => {
+              if (!cancelled) readyCallback.current?.();
+            })
+            .catch((error) => callbacks.current.onError(errorOf(error)));
+        }
       })
       .catch((error) => {
         if (!cancelled && !closed) {

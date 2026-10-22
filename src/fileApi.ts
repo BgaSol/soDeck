@@ -1,3 +1,4 @@
+import { contextReference } from "./toolContext";
 import { invokeDiagnosed as invoke } from "./diagnostics";
 
 export type DownloadConflict = "rename" | "overwrite" | "skip";
@@ -23,7 +24,7 @@ export interface DeletePreview {
 }
 export interface DeleteTask {
   id: string;
-  sessionId: string;
+  sessionId: string; // Legacy persisted field; new tasks store their tool capability id here.
   serverName: string;
   status:
     | "checking"
@@ -80,8 +81,11 @@ export interface DownloadTask {
   error: string | null;
 }
 export const fileApi = {
-  prepareDelete: (sessionId: string, paths: string[]) =>
-    invoke<DeletePreview>("prepare_remote_delete", { sessionId, paths }),
+  prepareDelete: (contextId: string, paths: string[]) =>
+    invoke<DeletePreview>("prepare_remote_delete", {
+      context: contextReference(contextId),
+      paths,
+    }),
   prepareDeleteRetry: (taskId: string) =>
     invoke<DeletePreview>("prepare_delete_retry", { taskId }),
   startDelete: (draftId: string) =>
@@ -91,21 +95,24 @@ export const fileApi = {
     invoke<void>("cancel_remote_delete", { taskId }),
   reconcileDelete: (taskId: string) =>
     invoke<DeleteTask>("reconcile_remote_delete", { taskId }),
-  openEditor: (sessionId: string, path: string) =>
-    invoke<string>("open_editor", { sessionId, path }),
+  openEditor: (contextId: string, path: string) =>
+    invoke<string>("open_editor", {
+      context: contextReference(contextId),
+      path,
+    }),
   loadEditor: () => invoke<EditorDocument>("editor_load"),
   setEditorDirty: (dirty: boolean) =>
     invoke<void>("editor_set_dirty", { dirty }),
   saveEditor: (text: string, version: string, force = false) =>
     invoke<EditorDocument>("editor_save", { text, version, force }),
   startDownload: (
-    sessionId: string,
+    contextId: string,
     path: string,
     isDir: boolean,
     conflict: DownloadConflict,
   ) =>
     invoke<string | null>("start_download", {
-      sessionId,
+      context: contextReference(contextId),
       path,
       isDir,
       conflict,

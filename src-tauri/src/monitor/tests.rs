@@ -382,12 +382,17 @@ pub(crate) fn exercise(
     );
     // A moving workspace keeps the same backend entry/history but revokes the old window.
     state
-        .terminals
+        .workspaces
+        .registry
         .lock()
         .unwrap()
-        .get_mut(first)
+        .entries
+        .values_mut()
+        .find(|w| w.view.tools.context.as_ref().is_some_and(|c| c.id == first))
         .unwrap()
-        .window = "workspace-moved".into();
+        .view
+        .owner
+        .label = "workspace-moved".into();
     assert!(state.monitor.owned(&state, &one, "main").is_err());
     let old_count = received_a.lock().unwrap().len();
     entry.publish_mounts(&state);
@@ -429,12 +434,17 @@ pub(crate) fn exercise(
         .owned(&state, &moved_id, "workspace-moved")
         .is_err());
     state
-        .terminals
+        .workspaces
+        .registry
         .lock()
         .unwrap()
-        .get_mut(first)
+        .entries
+        .values_mut()
+        .find(|w| w.view.tools.context.as_ref().is_some_and(|c| c.id == first))
         .unwrap()
-        .window = "main".into();
+        .view
+        .owner
+        .label = "main".into();
     assert!(
         state.monitor.owned(&state, &one, "main").is_ok(),
         "move rollback restores the original subscriber"

@@ -39,7 +39,7 @@ export class NetBirdStore {
   private sending = false;
   private refreshing: Promise<void> | null = null;
   constructor(
-    readonly sessionId: string,
+    readonly contextId: string,
     private api: Api = netbirdApi,
   ) {}
   getState = () => this.state;
@@ -70,7 +70,7 @@ export class NetBirdStore {
     const epoch = ++this.epoch;
     try {
       const id = await this.api.subscribe(
-        this.sessionId,
+        this.contextId,
         this.level,
         (frame) => {
           if (epoch !== this.epoch) return;

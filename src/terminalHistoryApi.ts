@@ -11,7 +11,7 @@ export interface HistorySource {
 }
 export interface HistorySession {
   id: string;
-  workspaceId: string;
+  workspaceId: string; // Legacy storage name: stable terminal group, never the server workspace id.
   source: HistorySource;
   startedAt: number;
   endedAt: number | null;
@@ -25,7 +25,7 @@ export interface HistorySession {
 export interface HistoryBinding {
   sessionId: string;
   sourceId: string;
-  workspaceId: string;
+  workspaceId: string; // Legacy storage name: stable terminal group, never the server workspace id.
 }
 export interface HistoryPosition {
   sessionId: string;

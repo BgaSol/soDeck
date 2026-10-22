@@ -41,6 +41,10 @@ struct Grant {
 }
 #[derive(Clone)]
 struct Draft {
+    capabilities: Vec<(
+        crate::workspaces::ToolContextRef,
+        crate::connection::WindowOwner,
+    )>,
     kind: String,
     intent: Intent,
     clipboard_id: Option<String>,
@@ -374,11 +378,12 @@ pub fn begin_file_drag(
     window: WebviewWindow,
     app: tauri::AppHandle,
     state: TauriState<Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     paths: Vec<String>,
 ) -> AppResult<String> {
+    let session_id = state.context_key(&context, window.label())?;
     moves::workspace_only(&window)?;
-    let context = state.spec(&session_id, window.label())?;
+    let context = state.workspace_context(&session_id, window.label())?;
     let paths = super::transfers::normalize_selection(&paths)?;
     let label = if paths.len() == 1 {
         crate::remote_path::name(&paths[0])?.to_owned()
@@ -499,11 +504,17 @@ fn create_operation_draft(
     } else {
         None
     };
+    let contexts = match &source {
+        Source::Local(_) => vec![target.clone()],
+        Source::Remote { context, .. } => vec![context.clone(), target.clone()],
+    };
+    let capabilities = state.workspaces.capabilities_for(&contexts)?;
     let mut drafts = state.drags.drafts.lock().unwrap();
     drafts.retain(|_, d| d.expires > Instant::now());
     drafts.insert(
         id.clone(),
         Draft {
+            capabilities,
             kind: kind.into(),
             intent,
             clipboard_id,
@@ -559,11 +570,12 @@ pub fn claim_file_drop(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
     token: String,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     parent_path: String,
 ) -> AppResult<DraftPreview> {
+    let session_id = state.context_key(&context, window.label())?;
     moves::workspace_only(&window)?;
-    let target = state.spec(&session_id, window.label())?;
+    let target = state.workspace_context(&session_id, window.label())?;
     let grant = claim_grant(&state, &token, window.label())?;
     create_operation_draft(
         &state,
@@ -597,11 +609,12 @@ fn claim_grant(state: &State, token: &str, window: &str) -> AppResult<Grant> {
 pub async fn pick_upload_files(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     parent_path: String,
 ) -> AppResult<Option<DraftPreview>> {
+    let session_id = state.context_key(&context, window.label())?;
     moves::workspace_only(&window)?;
-    let target = state.spec(&session_id, window.label())?;
+    let target = state.workspace_context(&session_id, window.label())?;
     let generation = state.owner(window.label()).generation;
     let paths = crate::blocking(|| {
         Ok(rfd::FileDialog::new()
@@ -610,7 +623,7 @@ pub async fn pick_upload_files(
     })
     .await?;
     let Some(paths) = paths else { return Ok(None) };
-    state.spec(&session_id, window.label())?;
+    state.workspace_context(&session_id, window.label())?;
     if state.owner(window.label()).generation != generation {
         return Err(AppError::new("permission", "窗口已变化"));
     }
@@ -640,6 +653,11 @@ pub fn start_transfer(
     if let Some(id) = &draft.started {
         return Ok(id.clone());
     }
+    let _leases: Vec<_> = draft
+        .capabilities
+        .iter()
+        .map(|(reference, owner)| state.workspaces.lease(reference, owner))
+        .collect::<AppResult<_>>()?;
     if let Some(id) = &draft.clipboard_id {
         state.drags.clipboard.reserve(id)?;
     }
@@ -755,6 +773,7 @@ mod tests {
             direct_port: 22,
         };
         let a = crate::connection::tests::mock_context(config.clone());
+        crate::connection::tests::register_tool_context(&state, a.clone(), "main");
         let source = Source::Remote {
             context: a.clone(),
             paths: vec!["/src/file".into()],
@@ -842,6 +861,8 @@ mod tests {
         source_config.id = "source-a".into();
         source_config.host = "source.example".into();
         let source_context = crate::connection::tests::mock_context(source_config);
+        crate::connection::tests::register_tool_context(&state, context.clone(), "main");
+        crate::connection::tests::register_tool_context(&state, source_context.clone(), "main");
         let draft = create_draft(
             &state,
             "main",

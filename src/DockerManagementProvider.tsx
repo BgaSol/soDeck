@@ -10,20 +10,20 @@ import { desktop } from "./api";
 import { DockerManagementStore } from "./dockerManagement";
 const DockerContext = createContext<DockerManagementStore | null>(null);
 export function DockerManagementProvider({
-  sessionId,
+  contextId,
   children,
 }: {
-  sessionId: string | null;
+  contextId: string | null;
   children: ReactNode;
 }) {
   const saved = useRef<DockerManagementStore | null>(null);
-  if (!saved.current || (sessionId && saved.current.sessionId !== sessionId))
-    saved.current = new DockerManagementStore(sessionId ?? "");
+  if (!saved.current || (contextId && saved.current.contextId !== contextId))
+    saved.current = new DockerManagementStore(contextId ?? "");
   const store = saved.current;
   useEffect(() => {
-    if (desktop && sessionId) void store.start();
+    if (desktop && contextId) void store.start();
     return () => store.stop();
-  }, [store, sessionId]);
+  }, [store, contextId]);
   return (
     <DockerContext.Provider value={store}>{children}</DockerContext.Provider>
   );

@@ -3,7 +3,7 @@ import { MonitorContext, useMonitorPaths } from "./MonitorProvider";
 import type { MountSnapshot, MountState } from "./remoteMounts";
 
 const emptyState: MountState = {
-  sessionId: "",
+  contextId: "",
   usage: {},
   fetchedAt: 0,
   loading: false,
@@ -14,13 +14,13 @@ const getEmptyState = () => emptyState;
 
 // The empty workspace has no provider; connected workspaces use the shared backend cache.
 export function useRemoteMounts(
-  sessionId: string | null,
+  contextId: string | null,
   active: boolean,
   paths: string[],
   _initial?: MountSnapshot,
 ) {
   const store = useContext(MonitorContext);
-  useMonitorPaths(store, paths, active && !!sessionId);
+  useMonitorPaths(store, paths, active && !!contextId);
   const state = useSyncExternalStore(
     store?.subscribeMounts ?? emptySubscribe,
     store?.getMounts ?? getEmptyState,

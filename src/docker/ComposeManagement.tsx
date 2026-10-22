@@ -74,7 +74,7 @@ function AssociationDialog({
           setBusy(true);
           setError("");
           void dockerApi
-            .saveAssociation(store.sessionId, state.engine.token, {
+            .saveAssociation(store.contextId, state.engine.token, {
               ...value,
               files: lines(files),
               envFiles: lines(env),
@@ -168,7 +168,7 @@ function AssociationDialog({
         </details>
         {picker && (
           <DockerPathPicker
-            sessionId={store.sessionId}
+            contextId={store.contextId}
             initialPath={value.directory}
             onClose={() => setPicker(null)}
             onPick={(path) => {
@@ -227,7 +227,7 @@ export function ComposeManagement({
     setBusy(true);
     setError("");
     void dockerApi
-      .projects(store.sessionId, state.engine.token)
+      .projects(store.contextId, state.engine.token)
       .then(
         (d) => {
           if (alive) setData(d);
@@ -395,7 +395,7 @@ export function ComposeManagement({
                         run: () => {
                           void dockerApi
                             .removeAssociation(
-                              store.sessionId,
+                              store.contextId,
                               association.id,
                               association.revision,
                             )
@@ -480,7 +480,7 @@ export function ComposeManagement({
                   onClick={() =>
                     void api
                       .openContainerLogs(
-                        store.sessionId,
+                        store.contextId,
                         {
                           id: c.id,
                           name: c.name,

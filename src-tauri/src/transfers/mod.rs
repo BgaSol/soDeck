@@ -386,18 +386,17 @@ pub fn register_file_operation(
 pub fn directory_changed(app: &tauri::AppHandle, identity: &str, path: &str) {
     if let Some(state) = app.try_state::<Arc<State>>() {
         let targets: Vec<_> = state
-            .terminals
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|(_, t)| t.spec.as_ref().is_some_and(|s| s.identity() == identity))
-            .map(|(id, t)| (id.clone(), t.window.clone()))
+            .workspaces
+            .contexts()
+            .into_iter()
+            .filter(|(_, _, context)| context.identity() == identity)
+            .map(|(id, window, _)| (id, window))
             .collect();
         for (id, window) in targets {
             let _ = app.emit_to(
                 &window,
                 "remote-directory-changed",
-                serde_json::json!({"sessionId":id,"path":path}),
+                serde_json::json!({"contextId":id,"path":path}),
             );
         }
     }
@@ -771,17 +770,7 @@ fn recover_handle(state: &State, id: &str) -> AppResult<WriteHandle> {
         .find(|r| r.view.as_ref().is_some_and(|v| v.id == id))
         .cloned()
         .ok_or_else(|| AppError::new("notFound", "任务不存在"))?;
-    let context = |identity: &str| -> AppResult<SharedContext> {
-        state
-            .terminals
-            .lock()
-            .unwrap()
-            .values()
-            .filter(|t| !t.sender.cancel.is_cancelled())
-            .filter_map(|t| t.spec.clone())
-            .find(|s| s.identity() == identity)
-            .ok_or_else(|| AppError::new("disconnected", "请先重新连接任务涉及的服务器"))
-    };
+    let context = |identity: &str| state.connected_context(identity);
     let target = context(&r.target_identity)?;
     let source = if r.source_identity.is_empty() {
         Source::Local(r.source_paths.iter().map(PathBuf::from).collect())

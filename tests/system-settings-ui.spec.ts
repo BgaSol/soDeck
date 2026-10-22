@@ -461,7 +461,7 @@ test("normal mode cancels browser defaults but keeps business menus and real xte
   await page
     .getByRole("tab", { name: "Mount fixture，已连接", exact: true })
     .click({ button: "right" });
-  await expect(page.getByRole("menu", { name: "会话操作" })).toBeVisible();
+  await expect(page.getByRole("menu", { name: "服务器操作" })).toBeVisible();
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "新建连接", exact: true }).click();
   const serverRow = page.locator(".server-row").first();

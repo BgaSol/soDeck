@@ -9,7 +9,7 @@ pub(super) fn preflight(
 ) -> AppResult<(InstallReview, String)> {
     let mut blockers = Vec::new();
     let mut interruptions = Vec::new();
-    let mut identity = Vec::new();
+    let mut identity = state.workspaces.impact_ids();
     let file_ids = state.files.update_impact_ids();
     if state.files.blocks_update() {
         blockers.push(Blocker {

@@ -212,12 +212,14 @@ pub async fn open_container_logs(
     window: WebviewWindow,
     app: tauri::AppHandle,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     target: crate::docker::ContainerTarget,
 ) -> AppResult<()> {
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
     crate::moves::workspace_only(&window)?;
     validate_id(&target.id)?;
-    let spec = state.spec(&session_id, window.label())?;
+    let spec = state.workspace_context(&session_id, window.label())?;
     let source = Source::new(&spec, &target);
     open_window(&app, &state, source, Some(spec), Some(target))
 }

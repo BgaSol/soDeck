@@ -212,8 +212,7 @@ async function netbird(page: Page, path = "independent") {
     },
     { path },
   );
-  await page.getByRole("button", { name: "断开", exact: true }).click();
-  await page.getByRole("button", { name: "重新连接", exact: true }).click();
+  await page.getByRole("button", { name: "更新工具连接", exact: true }).click();
   await openWorkspaceTool(page, "netbird");
   await expect(page.locator(".nb-summary")).toContainText("已连接");
   return errors;
@@ -506,7 +505,7 @@ test("cancelled workspace moves resume subscriptions and preserve the NetBird sn
     };
   });
   await page
-    .getByRole("tablist", { name: "SSH 会话", exact: true })
+    .getByRole("tablist", { name: "服务器标签", exact: true })
     .getByRole("tab")
     .click({ button: "right" });
   await page

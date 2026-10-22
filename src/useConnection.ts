@@ -22,13 +22,16 @@ export function useConnection(
   serverId: string,
   options: {
     restored: boolean;
+    initialAttempt?: number;
     connected?: boolean;
     recovery?: RecoverySnapshot;
     onAttempt: () => void;
   },
 ) {
   const [request, setRequest] = useState<ConnectionRequest | undefined>(() =>
-    options.restored ? undefined : { serverId, attempt: 0 },
+    options.restored
+      ? undefined
+      : { serverId, attempt: options.initialAttempt ?? 0 },
   );
   const [prompt, setPrompt] = useState<ConnectionPrompt | null>(null);
   const [progress, setProgress] = useState("");
@@ -44,7 +47,7 @@ export function useConnection(
   const [now, setNow] = useState(Date.now());
   const currentId = useRef<string | null>(null);
   const currentPrompt = useRef<ConnectionPrompt | null>(null);
-  const generation = useRef(0);
+  const generation = useRef(options.initialAttempt ?? 0);
   const onAttempt = useRef(options.onAttempt);
   onAttempt.current = options.onAttempt;
   const schedulerRef = useRef<ConnectionRecovery | null>(null);

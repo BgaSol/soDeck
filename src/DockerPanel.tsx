@@ -57,7 +57,7 @@ export type { DockerPanelSnapshot } from "./dockerPresentation";
 type Operation = "logs" | "terminal";
 type ActionState = { busy: boolean; error: string };
 export function DockerPanel({
-  sessionId,
+  contextId,
   serverName,
   serverId,
   onRevealPath,
@@ -65,7 +65,7 @@ export function DockerPanel({
   initialState,
   onStateChange,
 }: {
-  sessionId: string | null;
+  contextId: string | null;
   serverName: string;
   serverId?: string;
   onRevealPath?: (path: string) => void;
@@ -97,11 +97,11 @@ export function DockerPanel({
   const id = useId();
   const status = docker.engine.value;
   const engineState =
-    !monitorLive(state) && !sessionId
+    !monitorLive(state) && !contextId
       ? "disconnected"
       : (status?.state ?? "detecting");
   const endpoint = status?.endpoint ?? "";
-  const token = `${docker.engineGeneration}\0${sessionId ?? ""}\0${endpoint}`;
+  const token = `${docker.engineGeneration}\0${contextId ?? ""}\0${endpoint}`;
   const [bulk, setBulk] = useState(false),
     [checked, setChecked] = useState(new Set<string>());
   const [creating, setCreating] = useState<{ id: string; name: string } | null>(
@@ -109,7 +109,7 @@ export function DockerPanel({
   );
   const bulkActions = useDockerActions(
     `${token}/${active}/${view.section}`,
-    !!sessionId && active && monitorLive(state) && dockerCanAttempt(docker),
+    !!contextId && active && monitorLive(state) && dockerCanAttempt(docker),
   );
   useEffect(() => {
     setBulk(false);
@@ -232,7 +232,7 @@ export function DockerPanel({
     !!current &&
     !filtered.some((item) => dockerKey(item) === selectedKey);
   const connected =
-    !!sessionId && monitorLive(state) && dockerCanAttempt(docker);
+    !!contextId && monitorLive(state) && dockerCanAttempt(docker);
   const canAct = connected && active && !!current && "state" in current;
   const detailBack = useRef<HTMLButtonElement>(null);
   const showDetails =
@@ -263,7 +263,7 @@ export function DockerPanel({
           : "")
       : metricMessage(value, state);
   async function refreshDocker() {
-    if (!sessionId || refreshFlight.current || docker.refreshing) return;
+    if (!contextId || refreshFlight.current || docker.refreshing) return;
     refreshFlight.current = true;
     setRefreshError("");
     setSortRevision((v) => v + 1);
@@ -283,7 +283,7 @@ export function DockerPanel({
   async function act(container: Container, operation: Operation) {
     if (
       !canAct ||
-      !sessionId ||
+      !contextId ||
       (operation === "terminal" &&
         docker.containers.status === "ready" &&
         container.state !== "running")
@@ -295,8 +295,8 @@ export function DockerPanel({
     setActions((a) => ({ ...a, [key]: { busy: true, error: "" } }));
     try {
       if (operation === "logs")
-        await api.openContainerLogs(sessionId, container, endpoint);
-      else await api.openContainer(sessionId, container, endpoint);
+        await api.openContainerLogs(contextId, container, endpoint);
+      else await api.openContainer(contextId, container, endpoint);
       if (alive.current && currentToken.current === requestToken)
         setActions((a) => ({ ...a, [key]: { busy: false, error: "" } }));
     } catch (error) {
@@ -475,7 +475,7 @@ export function DockerPanel({
           <button
             className="icon-button"
             aria-label="刷新 Docker 状态"
-            disabled={!sessionId || docker.refreshing}
+            disabled={!contextId || docker.refreshing}
             onClick={() => void refreshDocker()}
           >
             <RefreshCw
@@ -581,7 +581,7 @@ export function DockerPanel({
             <ImagePullButton
               enabled={
                 active &&
-                !!sessionId &&
+                !!contextId &&
                 !!management.state.engine &&
                 metric.status === "ready"
               }
@@ -709,7 +709,7 @@ export function DockerPanel({
           </span>{" "}
           <button
             className="resource-link"
-            disabled={!sessionId || docker.refreshing}
+            disabled={!contextId || docker.refreshing}
             onClick={() => void refreshDocker()}
           >
             立即重试

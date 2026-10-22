@@ -33,6 +33,7 @@ pub(crate) fn state() -> Arc<State> {
         configuration: Mutex::new(()),
         stopping: std::sync::atomic::AtomicBool::new(false),
         moves: Default::default(),
+        workspaces: Default::default(),
         files: Default::default(),
         deletes: Default::default(),
         file_tasks: Default::default(),
@@ -68,6 +69,36 @@ fn wait_for(mut check: impl FnMut() -> bool) {
     while !check() {
         assert!(Instant::now() < deadline, "condition timed out");
         thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn save_fixture_plan(state: &State, plan: &mut ConnectionPlan, keep_password: bool) {
+    let mut previous = None;
+    for hop in &mut plan.hops {
+        if !keep_password {
+            hop.password.clear();
+        }
+        let mut view = hop.view();
+        view.id.clear();
+        view.jump_server_id = previous.clone();
+        let saved = state
+            .database
+            .lock()
+            .unwrap()
+            .save(crate::model::SaveServerRequest {
+                server: view,
+                password_change: if keep_password {
+                    crate::model::PasswordChange::Set {
+                        value: hop.password.clone(),
+                    }
+                } else {
+                    crate::model::PasswordChange::Clear
+                },
+            })
+            .unwrap();
+        hop.id = saved.id.clone();
+        hop.jump_server_id = previous;
+        previous = Some(saved.id);
     }
 }
 
@@ -109,6 +140,7 @@ fn challenge_replies_are_typed_bound_and_single_use() {
     let (sender, receiver) = mpsc::sync_channel(1);
     *interaction.pending.lock().unwrap() = Some(PendingChallenge {
         id: "current".into(),
+        presented: None,
         kind: ChallengeKind::Trust,
         sender,
     });
@@ -680,13 +712,15 @@ fn jump_real_ssh_sftp_docker_terminal_and_failure_paths() {
 #[ignore = "real SSH fixtures; requires Python paramiko; run explicitly"]
 fn jump_background_downloads_and_log_archive() {
     let fixtures = Fixtures::new(false);
+    let state = state();
+    let mut plan = fixtures.plan();
+    save_fixture_plan(&state, &mut plan, true);
     let (connection, context) = connect(
-        &fixtures.plan(),
+        &plan,
         &mut AutoProvider::default(),
         &Cancellation::default(),
     )
     .unwrap();
-    let state = state();
     // The verification connection is gone; background jobs must own their paths.
     drop(connection);
     crate::transfers::download::tests::exercise_jump_downloads(
@@ -750,18 +784,9 @@ fn jump_interactive_prompts_and_cancel_at_second_host() {
     let fixtures = Fixtures::new(false);
     let state = state();
     let mut plan = fixtures.plan();
-    for hop in &mut plan.hops {
-        hop.password.clear();
-        state
-            .database
-            .lock()
-            .unwrap()
-            .save(crate::model::SaveServerRequest {
-                server: hop.view(),
-                password_change: crate::model::PasswordChange::Clear,
-            })
-            .unwrap();
-    }
+    save_fixture_plan(&state, &mut plan, false);
+    let first_id = plan.hops[0].id.clone();
+    let second_id = plan.hops[1].id.clone();
     let plan = Arc::new(plan);
     let (output, events) = collector();
     let (id, _, cancel, stream, interaction) = register(
@@ -858,14 +883,20 @@ fn jump_interactive_prompts_and_cancel_at_second_host() {
         .iter()
         .any(|e| e["event"] == "authentication"));
     assert_eq!(
-        state.database.lock().unwrap().get("a").unwrap().password,
+        state
+            .database
+            .lock()
+            .unwrap()
+            .get(&first_id)
+            .unwrap()
+            .password,
         "jump-password"
     );
     assert!(state
         .database
         .lock()
         .unwrap()
-        .get("b")
+        .get(&second_id)
         .unwrap()
         .password
         .is_empty());
@@ -967,15 +998,7 @@ fn jump_resource_monitor_shares_samples_and_isolates_slow_mounts() {
     let state = state();
     let mut sessions = Vec::new();
     for window in ["main", "workspace-test"] {
-        let (id, _, _, _, _) = register(
-            &state,
-            state.owner(window),
-            Arc::new(fixtures.plan()),
-            Channel::new(|_| Ok(())),
-        )
-        .unwrap();
-        state.terminals.lock().unwrap().get_mut(&id).unwrap().spec = Some(context.clone());
-        sessions.push(id);
+        sessions.push(register_tool_context(&state, context.clone(), window));
     }
     crate::monitor::tests::exercise(state, context, &sessions[0], &sessions[1], &root);
 }
@@ -1103,15 +1126,7 @@ fn jump_docker_monitor_and_background_traffic_are_shared() {
     let state = state();
     let mut sessions = Vec::new();
     for window in ["main", "workspace-test"] {
-        let (id, _, _, _, _) = register(
-            &state,
-            state.owner(window),
-            Arc::new(fixtures.plan()),
-            Channel::new(|_| Ok(())),
-        )
-        .unwrap();
-        state.terminals.lock().unwrap().get_mut(&id).unwrap().spec = Some(context.clone());
-        sessions.push(id);
+        sessions.push(register_tool_context(&state, context.clone(), window));
     }
     crate::monitor::tests::exercise_docker(
         state,
@@ -1128,38 +1143,19 @@ fn jump_docker_management_tasks_and_uncertain_results() {
     let fixtures = Fixtures::new(false);
     let root = fixtures.root.path().join("b");
     std::fs::write(root.join("docker-management.json"),serde_json::json!({"a".repeat(64):{"name":"web","state":"running","health":"healthy"},"b".repeat(64):{"name":"worker","state":"exited"}}).to_string()).unwrap();
+    let state = state();
+    let mut plan = fixtures.plan();
+    save_fixture_plan(&state, &mut plan, true);
     let (connection, context) = connect(
-        &fixtures.plan(),
+        &plan,
         &mut AutoProvider::default(),
         &Cancellation::default(),
     )
     .unwrap();
     drop(connection);
-    let state = state();
-    for server in &fixtures.plan().hops {
-        state
-            .database
-            .lock()
-            .unwrap()
-            .save(crate::model::SaveServerRequest {
-                server: server.view(),
-                password_change: crate::model::PasswordChange::Set {
-                    value: server.password.clone(),
-                },
-            })
-            .unwrap();
-    }
     let mut sessions = Vec::new();
     for window in ["main", "workspace-test"] {
-        let (id, _, _, _, _) = register(
-            &state,
-            state.owner(window),
-            Arc::new(fixtures.plan()),
-            Channel::new(|_| Ok(())),
-        )
-        .unwrap();
-        state.terminals.lock().unwrap().get_mut(&id).unwrap().spec = Some(context.clone());
-        sessions.push(id);
+        sessions.push(register_tool_context(&state, context.clone(), window));
     }
     crate::monitor::tests::exercise_management(state, context, &sessions[0], &sessions[1], &root);
 }
@@ -1193,15 +1189,7 @@ fn netbird_client_operations_over_verified_ssh() {
     drop(transport);
     let mut sessions = Vec::new();
     for window in ["main", "workspace-test"] {
-        let (id, _, _, _, _) = register(
-            &state,
-            state.owner(window),
-            Arc::new(plan.clone()),
-            Channel::new(|_| Ok(())),
-        )
-        .unwrap();
-        state.terminals.lock().unwrap().get_mut(&id).unwrap().spec = Some(context.clone());
-        sessions.push(id);
+        sessions.push(register_tool_context(&state, context.clone(), window));
     }
     crate::netbird::tests::exercise(
         state,
@@ -1364,4 +1352,23 @@ fn recovery_real_ssh_normal_exit_transport_loss_and_reconnect() {
         .unwrap();
         assert!(connection.session().authenticated());
     }
+}
+
+/// Explicit capability setup for shared-tool integration fixtures. Two entries
+/// model the same verified route held by separate window owners.
+pub(crate) fn register_tool_context(state: &State, context: SharedContext, window: &str) -> String {
+    let owner = state.owner(window);
+    let mut r = state.workspaces.registry.lock().unwrap();
+    // Different profile IDs exercise independent ownership. The retained verified
+    // context deliberately describes the same route so monitor deduplication is real.
+    let mut server = context.target().view();
+    server.id = uuid::Uuid::new_v4().to_string();
+    let view = r
+        .open(server, owner, false, &uuid::Uuid::new_v4().to_string())
+        .unwrap();
+    let w = r.entries.get_mut(&view.id).unwrap();
+    crate::workspaces::install_context(w, context);
+    w.view.terminals.clear();
+    w.view.active_terminal_id = None;
+    w.view.tools.context.as_ref().unwrap().id.clone()
 }

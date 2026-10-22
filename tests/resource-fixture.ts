@@ -1,9 +1,11 @@
+import { installWorkspaceFixture } from "./workspace-fixture";
 import { expect, type Page } from "@playwright/test";
 
 export async function setup(
   page: Page,
   mode: "workspace" | "monitor" = "workspace",
 ) {
+  await installWorkspaceFixture(page);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.addInitScript(() => {

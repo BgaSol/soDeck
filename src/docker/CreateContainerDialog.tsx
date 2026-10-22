@@ -53,7 +53,7 @@ export function CreateContainerDialog({
     [submitted, setSubmitted] = useState(false),
     [discard, setDiscard] = useState(false);
   const actions = useDockerActions(
-    store.sessionId + "/create/" + imageId,
+    store.contextId + "/create/" + imageId,
     !!state.engine,
     onClose,
   );
@@ -158,7 +158,7 @@ export function CreateContainerDialog({
     await actions
       .prepareWith(() =>
         dockerApi.prepareCreate(
-          store.sessionId,
+          store.contextId,
           state.engine!.token,
           validation.specification,
         ),

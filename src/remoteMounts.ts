@@ -37,7 +37,7 @@ export interface CachedMountUsage {
   error?: string;
 }
 export interface MountSnapshot {
-  sessionId: string;
+  contextId: string;
   table?: MountTable;
   usage: Record<string, CachedMountUsage>;
   fetchedAt: number;

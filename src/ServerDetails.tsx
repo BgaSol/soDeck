@@ -1,3 +1,4 @@
+import type { WorkspaceTab } from "./workspaces";
 import { useEffect, useRef } from "react";
 import {
   ArrowLeft,
@@ -14,6 +15,7 @@ interface Props {
   server?: Server;
   jump?: Server;
   sessions: number;
+  workspace?: WorkspaceTab;
   pending: { busy: boolean; error?: string } | null;
   canConnect: boolean;
   canNewSession: boolean;
@@ -32,6 +34,7 @@ export function ServerDetails({
   server,
   jump,
   sessions,
+  workspace,
   pending,
   canConnect,
   canNewSession,
@@ -95,20 +98,29 @@ export function ServerDetails({
               {pending?.busy
                 ? "正在建立连接"
                 : sessions
-                  ? `已连接 · ${sessions} 个会话`
+                  ? `已连接 · ${sessions} 个终端`
                   : pending?.error || failed
                     ? "连接失败"
-                    : "尚未连接"}
-              <span className="detail-state-scope">本窗口</span>
+                    : workspace
+                      ? `${workspace.terminals.length} 个终端 · ${workspace.tools.context ? "工具可用" : "工具需要验证"}`
+                      : "尚未连接"}
+              <span className="detail-state-scope">
+                {workspace?.owner.label === "main"
+                  ? "主窗口"
+                  : workspace
+                    ? "独立窗口"
+                    : "当前应用"}
+              </span>
             </div>
             <div className="server-detail-actions">
               <ServerActions
                 server={server}
                 connected={sessions > 0}
+                workspaceOpen={!!workspace}
                 connecting={!!pending?.busy}
                 canConnect={canConnect}
                 canNewSession={canNewSession}
-                deleteBlocked={!!pending}
+                deleteBlocked={!!pending || !!workspace}
                 onConnect={onConnect}
                 onEdit={onEdit}
                 onCopy={onCopy}

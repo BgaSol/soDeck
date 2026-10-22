@@ -388,11 +388,13 @@ fn mount_snapshot(
 pub async fn prepare_remote_delete(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     paths: Vec<String>,
 ) -> AppResult<DeletePreview> {
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
     crate::moves::workspace_only(&window)?;
-    let context = state.spec(&session_id, window.label())?;
+    let context = state.workspace_context(&session_id, window.label())?;
     let owner = state.owner(window.label());
     prepare(
         state.inner().clone(),
@@ -443,7 +445,7 @@ async fn prepare(
             }
         }
         if require_session {
-            state.spec(&session_id, &owner.label)?;
+            state.workspace_context(&session_id, &owner.label)?;
         }
         if state.owner(&owner.label).generation != owner.generation {
             return Err(AppError::new(
@@ -501,6 +503,29 @@ pub fn start_remote_delete(
         .ok_or_else(|| AppError::new("expired", "删除准备已失效，请重新选择"))?
         .context
         .clone();
+    let _lease = {
+        let registry = state.deletes.0.lock().unwrap();
+        let d = registry
+            .drafts
+            .get(&draft_id)
+            .ok_or_else(|| AppError::new("expired", "删除准备已失效"))?;
+        if d.require_session {
+            let epoch = d
+                .session_id
+                .rsplit_once('.')
+                .and_then(|(_, e)| e.parse().ok())
+                .ok_or_else(crate::workspaces::stale)?;
+            Some(state.workspace_operation(
+                &crate::workspaces::ToolContextRef {
+                    id: d.session_id.clone(),
+                    epoch,
+                },
+                window.label(),
+            )?)
+        } else {
+            None
+        }
+    };
     let operation = transfers::register_file_operation(state.inner().clone(), context)?;
     let _action = state.file_tasks.actions.lock().unwrap();
     let mut registry = state.deletes.0.lock().unwrap();
@@ -518,7 +543,7 @@ pub fn start_remote_delete(
         return Err(AppError::new("expired", "删除确认已过期，请重新选择"));
     }
     if draft.require_session {
-        state.spec(&draft.session_id, window.label())?;
+        state.workspace_context(&draft.session_id, window.label())?;
     }
     let view = DeleteTask {
         id: uuid::Uuid::new_v4().to_string(),

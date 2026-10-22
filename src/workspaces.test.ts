@@ -14,45 +14,33 @@ describe("session workspaces", () => {
     name: "Web-01",
     username: "ops",
   };
-  it("creates an independent tab next to an inactive source and preserves other tabs", () => {
+  it("keeps one top-level tab per saved server even for a new-terminal intent", () => {
     const first = openWorkspace(emptyWorkspaces(), server, true, "first");
     const other = openWorkspace(
       first,
-      { ...server, id: "other", name: "Other" },
-      true,
+      { ...server, id: "other" },
+      false,
       "other",
     );
-    const created = openWorkspace(other, server, true, "new", "first");
-    expect(created.tabs.map((tab) => tab.id)).toEqual([
-      "first",
-      "new",
-      "other",
-    ]);
-    expect(created.activeId).toBe("new");
-    expect(created.tabs[0]).toBe(other.tabs[0]);
-    expect(created.tabs[1].number).toBe(2);
-    expect(created.tabs[1].server).not.toBe(created.tabs[0].server);
+    const entered = openWorkspace(other, server, true, "unused");
+    expect(entered.tabs.map((t) => t.id)).toEqual(["first", "other"]);
+    expect(entered.activeId).toBe("first");
+    expect(entered.tabs.map(tabTitle)).toEqual(["Web-01", "Web-01"]);
   });
-  it("focuses an existing tab by default and explicitly opens independent duplicates", () => {
+  it("keeps a zero-terminal workspace and treats different config IDs independently", () => {
     const first = openWorkspace(emptyWorkspaces(), server);
-    const duplicate = openWorkspace(first, server, true);
-    expect(duplicate.tabs.map(tabTitle)).toEqual(["Web-01", "Web-01 · 2"]);
-    expect(duplicate.tabs[0].id).not.toBe(duplicate.tabs[1].id);
-    const focused = openWorkspace(duplicate, server);
-    expect(focused.tabs).toHaveLength(2);
-    expect(focused.activeId).toBe(first.activeId);
-    const edited = { ...server, host: "new-host" };
-    expect(openWorkspace(focused, edited).tabs[0].server.host).toBe(
-      server.host,
-    );
+    expect(first.tabs[0].terminals).toEqual([]);
+    expect(openWorkspace(first, server).activeId).toBe(first.activeId);
+    const second = openWorkspace(first, { ...server, id: "other" });
+    expect(second.tabs).toHaveLength(2);
   });
-  it("closes only the selected tab and chooses a surviving neighbour", () => {
+  it("closes only the selected server and chooses a surviving neighbour", () => {
     const first = openWorkspace(emptyWorkspaces(), server);
-    const second = openWorkspace(first, { ...server, id: "db", name: "DB-01" });
-    const third = openWorkspace(second, server, true);
+    const second = openWorkspace(first, { ...server, id: "db" });
+    const third = openWorkspace(second, { ...server, id: "cache" });
     const backgroundClosed = closeWorkspace(third, second.activeId);
     expect(backgroundClosed.activeId).toBe(third.activeId);
-    expect(backgroundClosed.tabs.map((tab) => tab.id)).toEqual([
+    expect(backgroundClosed.tabs.map((t) => t.id)).toEqual([
       first.activeId,
       third.activeId,
     ]);

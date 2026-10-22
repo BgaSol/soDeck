@@ -1,5 +1,8 @@
+import { workspaceApi } from "./workspaceApi";
+import { useServerWorkspaces } from "./useServerWorkspaces";
+import { useWorkspaceClose } from "./useWorkspaceClose";
+import { useRef } from "react";
 import { useCallback, useEffect, useState } from "react";
-import { invokeDiagnosed as invoke } from "./diagnostics";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { windowTitle } from "./brand";
 import { desktop } from "./api";
@@ -17,6 +20,40 @@ export function DetachedApp() {
   const [workspaces, setWorkspaces] = useState(emptyWorkspaces);
   const [error, setError] = useState<AppError | null>(null);
   const moves = useWorkspaceMoves(setWorkspaces, setError, true);
+  useServerWorkspaces(setWorkspaces, setError);
+  const workspaceClose = useWorkspaceClose(setError, () => {
+    void getCurrentWindow().destroy();
+  });
+  const latest = useRef({
+    workspaces,
+    close: workspaceClose.close,
+    moving: moves.moving,
+  });
+  latest.current = {
+    workspaces,
+    close: workspaceClose.close,
+    moving: moves.moving,
+  };
+  useEffect(() => {
+    let live = true;
+    let off: (() => void) | undefined;
+    void getCurrentWindow()
+      .onCloseRequested((event) => {
+        const current = latest.current;
+        if (!current.workspaces.tabs.length) return;
+        event.preventDefault();
+        if (current.moving.size) return;
+        void current.close(current.workspaces.tabs[0]);
+      })
+      .then((fn) => {
+        if (live) off = fn;
+        else fn();
+      });
+    return () => {
+      live = false;
+      off?.();
+    };
+  }, []);
   const activeServerName = workspaces.tabs.find(
     (tab) => tab.id === workspaces.activeId,
   )?.server.name;
@@ -50,10 +87,9 @@ export function DetachedApp() {
         onNewConnection={(id) => {
           const tab = workspaces.tabs.find((item) => item.id === id);
           if (tab && !moves.moving.has(id))
-            void invoke("request_workspace_connection", {
-              serverId: tab.server.id,
-              requestId: crypto.randomUUID(),
-            }).catch((error) => setError(errorOf(error)));
+            void workspaceApi
+              .createTerminal(tab)
+              .catch((error) => setError(errorOf(error)));
         }}
         onError={(error) => setError(errorOf(error))}
       />
@@ -83,7 +119,7 @@ export function DetachedApp() {
               />
               {moves.moving.has(tab.id) && (
                 <div className="session-moving">
-                  <span>正在移动会话…</span>
+                  <span>正在移动服务器…</span>
                   <button onClick={() => moves.cancel(tab.id)}>取消移动</button>
                 </div>
               )}
@@ -92,6 +128,7 @@ export function DetachedApp() {
         </div>
       </div>
       <FileTaskPanel />
+      {workspaceClose.dialog}
       <DesktopDragPreview />
     </div>
   );

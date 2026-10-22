@@ -40,7 +40,7 @@ it("deletion refreshes parents first, prunes collapsed current subtrees and rese
     directoryChain: vi.fn(async () => batch("/", ["/"])),
   };
   const model = new RemoteFileTree("session", api, {
-    sessionId: "session",
+    contextId: "session",
     directories: {
       "/": { directory: directory("/", ["/a"]) },
       "/a": { directory: directory("/a", ["/a/b"]) },
@@ -72,7 +72,7 @@ it.each([true, false])(
       directoryChain: vi.fn(async () => batch("/", ["/"])),
     };
     const model = new RemoteFileTree("session", api, {
-      sessionId: "session",
+      contextId: "session",
       directories: {
         "/": { directory: directory("/", ["/a"]) },
         "/a": { directory: directory("/a", ["/a/b"]) },
@@ -141,7 +141,7 @@ describe("remote file tree", () => {
       ),
     };
     const model = new RemoteFileTree("one", api, {
-      sessionId: "one",
+      contextId: "one",
       directories: { "/": { directory: directory("/", ["/a", "/b"]) } },
       expanded: ["/"],
       selected: "",
@@ -163,7 +163,7 @@ describe("remote file tree", () => {
     expect(model.getState().directories["/a"].directory?.path).toBe("/a");
   });
 
-  it("does not let late home initialization replace a terminal directory change", async () => {
+  it("only explicit terminal location supersedes late home initialization", async () => {
     const home = deferred<DirectoryBatch>();
     const api = {
       directory: vi.fn(async () => directory("/")),
@@ -178,6 +178,8 @@ describe("remote file tree", () => {
       { sessionId: "one", path: "/var", sequence: 2 },
       true,
     );
+    expect(model.getState().terminalCwd?.path).toBe("/var");
+    void model.revealPath("/var");
     home.resolve(batch("/home/ops", ["/", "/home", "/home/ops"]));
     await tick();
     expect(model.getState().selected).toBe("/var");
@@ -268,7 +270,7 @@ describe("remote file tree", () => {
       directoryChain: vi.fn(async () => batch("/", ["/"])),
     };
     const model = new RemoteFileTree("one", api, {
-      sessionId: "one",
+      contextId: "one",
       directories: { "/": { directory: directory("/", ["/a", "/b"]) } },
       expanded: ["/"],
       selected: "/b",
@@ -296,7 +298,7 @@ describe("remote file tree", () => {
     inflight.resolve(directory("/a"));
   });
 
-  it("ignores wrong sessions and old cwd events, defers hidden-tab navigation, and leaves manual browsing alone on unchanged prompts", async () => {
+  it("updates CWD per terminal session without navigating or carrying sequence numbers across terminals", async () => {
     const api = {
       directory: vi.fn(async () => directory("/")),
       directoryChain: vi.fn(async (_session: string, path?: string) =>
@@ -322,7 +324,14 @@ describe("remote file tree", () => {
     expect(api.directoryChain).not.toHaveBeenCalled();
     model.activate();
     await tick();
-    expect(model.getState().selected).toBe("/var");
+    expect(model.getState().selected).toBe("/home/ops");
+    expect(model.getState().terminalCwd?.path).toBe("/var");
+    model.acceptTerminalDirectory(
+      { sessionId: "reconnected", path: "/new", sequence: 1 },
+      true,
+    );
+    expect(model.getState().terminalCwd?.path).toBe("/new");
+    expect(model.getState().currentPath).toBe("/home/ops");
     model.select("/", true);
     model.acceptTerminalDirectory(
       { sessionId: "one", path: "/var", sequence: 11 },
@@ -339,7 +348,7 @@ describe("remote file tree", () => {
       directoryChain: vi.fn(async () => batch("/usr", ["/usr"])),
     };
     const model = new RemoteFileTree("one", api, {
-      sessionId: "one",
+      contextId: "one",
       directories: { "/": { directory: directory("/", ["/bin", "/usr"]) } },
       expanded: ["/"],
       selected: "",
@@ -383,7 +392,7 @@ describe("remote file tree", () => {
       directoryChain: vi.fn(async () => batch("/", ["/"])),
     };
     const model = new RemoteFileTree("one", api, {
-      sessionId: "one",
+      contextId: "one",
       directories: {
         "/": { directory: directory("/", ["/a"]) },
         "/a": { directory: directory("/a", ["/a/late"]) },
@@ -415,7 +424,7 @@ describe("remote file tree", () => {
       ),
     };
     const model = new RemoteFileTree("one", api, {
-      sessionId: "one",
+      contextId: "one",
       directories: {},
       expanded: ["/"],
       selected: "",
@@ -464,7 +473,7 @@ describe("remote file tree", () => {
       })),
     };
     const model = new RemoteFileTree("one", api, {
-      sessionId: "one",
+      contextId: "one",
       directories: {
         "/": { directory: directory("/", ["/home"]) },
         "/home": { directory: directory("/home", ["/home/ops"]) },
@@ -506,7 +515,7 @@ describe("remote file tree", () => {
       })),
     };
     const model = new RemoteFileTree("one", api, {
-      sessionId: "one",
+      contextId: "one",
       directories: {
         "/": {
           directory: {
@@ -570,6 +579,8 @@ describe("remote file tree", () => {
       true,
     );
     await tick();
+    expect(api.directoryChain).not.toHaveBeenCalled();
+    await model.revealPath("/work");
     expect(model.getState().homePath).toBe("/real-home");
     await model.revealPath("~/projects");
     expect(api.directoryChain.mock.calls[1][1]).toBe("/real-home/projects");
@@ -587,7 +598,7 @@ describe("remote file tree", () => {
       directoryChain: vi.fn(() => pending.promise),
     };
     const model = new RemoteFileTree("one", api, {
-      sessionId: "one",
+      contextId: "one",
       directories: { "/": { directory: directory("/", ["/a", "/b"]) } },
       expanded: ["/"],
       selected: "/",

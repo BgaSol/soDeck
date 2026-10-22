@@ -140,12 +140,14 @@ pub fn list_downloads(
 pub async fn start_download(
     window: WebviewWindow,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     path: String,
     is_dir: bool,
     conflict: ConflictPolicy,
 ) -> AppResult<Option<String>> {
-    let spec = state.spec(&session_id, window.label())?;
+    let _lease = state.workspace_operation(&context, window.label())?;
+    let session_id = state.context_key(&context, window.label())?;
+    let spec = state.workspace_context(&session_id, window.label())?;
     remote_path(&path)?;
     let name = path
         .trim_end_matches('/')

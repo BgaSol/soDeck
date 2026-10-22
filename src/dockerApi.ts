@@ -1,3 +1,4 @@
+import { contextReference } from "./toolContext";
 import { Channel } from "@tauri-apps/api/core";
 import { invokeDiagnosed as invoke } from "./diagnostics";
 export type ContainerAction =
@@ -140,9 +141,9 @@ export interface DockerOperationRequest {
   previewId: string | null;
 }
 export const dockerApi = {
-  subscribe: (sessionId: string, receive: (frame: DockerFrame) => void) =>
+  subscribe: (contextId: string, receive: (frame: DockerFrame) => void) =>
     invoke<string>("subscribe_docker_management", {
-      sessionId,
+      context: contextReference(contextId),
       events: new Channel(receive),
     }),
   unsubscribe: (subscriptionId: string) =>
@@ -154,47 +155,61 @@ export const dockerApi = {
     }),
   ack: (subscriptionId: string, revision: number) =>
     invoke<void>("ack_docker_management", { subscriptionId, revision }),
-  refresh: (sessionId: string) =>
-    invoke<void>("refresh_docker_management", { sessionId }),
-  history: (sessionId: string, before: string | null) =>
+  refresh: (contextId: string) =>
+    invoke<void>("refresh_docker_management", {
+      context: contextReference(contextId),
+    }),
+  history: (contextId: string, before: string | null) =>
     invoke<{ operations: DockerOperation[]; nextCursor: string | null }>(
       "list_docker_operations",
-      { sessionId, before },
+      { context: contextReference(contextId), before },
     ),
   prepare: (
-    sessionId: string,
+    contextId: string,
     engineToken: string,
     targetId: string,
     action: DockerActionPayload,
   ) =>
     invoke<DockerPreview>("prepare_docker_operation", {
-      sessionId,
+      context: contextReference(contextId),
       engineToken,
       targetId,
       action,
     }),
   renewPreview: (
-    sessionId: string,
+    contextId: string,
     draftToken: string,
     expectedPreviewId: string,
   ) =>
     invoke<DockerPreview>("renew_docker_preview", {
-      sessionId,
+      context: contextReference(contextId),
       draftToken,
       expectedPreviewId,
     }),
-  releasePreview: (sessionId: string, draftToken: string) =>
-    invoke<void>("release_docker_preview", { sessionId, draftToken }),
-  submit: (sessionId: string, request: DockerOperationRequest) =>
-    invoke<string>("submit_docker_operation", { sessionId, request }),
-  reconcile: (sessionId: string, operationId: string) =>
-    invoke<void>("reconcile_docker_operation", { sessionId, operationId }),
-  acknowledge: (sessionId: string, operationId: string) =>
-    invoke<void>("acknowledge_docker_operation", { sessionId, operationId }),
+  releasePreview: (contextId: string, draftToken: string) =>
+    invoke<void>("release_docker_preview", {
+      context: contextReference(contextId),
+      draftToken,
+    }),
+  submit: (contextId: string, request: DockerOperationRequest) =>
+    invoke<string>("submit_docker_operation", {
+      context: contextReference(contextId),
+      request,
+    }),
+  reconcile: (contextId: string, operationId: string) =>
+    invoke<void>("reconcile_docker_operation", {
+      context: contextReference(contextId),
+      operationId,
+    }),
+  acknowledge: (contextId: string, operationId: string) =>
+    invoke<void>("acknowledge_docker_operation", {
+      context: contextReference(contextId),
+      operationId,
+    }),
   summary: () =>
     invoke<{ active: number; attention: number }>("docker_operation_summary"),
   prepareTransfer: (
-    sessionId: string,
+    contextId: string,
     engineToken: string,
     kind: DockerTransferKind,
     targetId: string,
@@ -202,7 +217,7 @@ export const dockerApi = {
     conflict: string,
   ) =>
     invoke<DockerPreview | null>("prepare_docker_transfer", {
-      sessionId,
+      context: contextReference(contextId),
       engineToken,
       kind,
       targetId,
@@ -210,44 +225,47 @@ export const dockerApi = {
       conflict,
     }),
   prepareCreate: (
-    sessionId: string,
+    contextId: string,
     engineToken: string,
     specification: CreateContainerSpec,
   ) =>
     invoke<DockerPreview>("prepare_docker_create", {
-      sessionId,
+      context: contextReference(contextId),
       engineToken,
       specification,
     }),
-  resources: (sessionId: string, engineToken: string) =>
-    invoke<DockerResources>("get_docker_resources", { sessionId, engineToken }),
-  projects: (sessionId: string, engineToken: string) =>
+  resources: (contextId: string, engineToken: string) =>
+    invoke<DockerResources>("get_docker_resources", {
+      context: contextReference(contextId),
+      engineToken,
+    }),
+  projects: (contextId: string, engineToken: string) =>
     invoke<ComposeOverview>("get_docker_compose_projects", {
-      sessionId,
+      context: contextReference(contextId),
       engineToken,
     }),
   saveAssociation: (
-    sessionId: string,
+    contextId: string,
     engineToken: string,
     association: ComposeAssociation,
   ) =>
     invoke<ComposeAssociation>("save_docker_compose_association", {
-      sessionId,
+      context: contextReference(contextId),
       engineToken,
       association,
     }),
   removeAssociation: (
-    sessionId: string,
+    contextId: string,
     associationId: string,
     revision: number,
   ) =>
     invoke<void>("remove_docker_compose_association", {
-      sessionId,
+      context: contextReference(contextId),
       associationId,
       revision,
     }),
   hostLink: (
-    sessionId: string,
+    contextId: string,
     engineToken: string,
     containerId: string,
     request:
@@ -265,26 +283,26 @@ export const dockerApi = {
       port: number | null;
       name: string;
     }>("get_docker_host_link", {
-      sessionId,
+      context: contextReference(contextId),
       engineToken,
       containerId,
       request,
     }),
-  image: (sessionId: string, engineToken: string, imageId: string) =>
+  image: (contextId: string, engineToken: string, imageId: string) =>
     invoke<ImageDetail>("get_docker_image_detail", {
-      sessionId,
+      context: contextReference(contextId),
       engineToken,
       imageId,
     }),
   diagnostics: (
-    sessionId: string,
+    contextId: string,
     engineToken: string,
     containerId: string,
     section: "configuration" | "processes",
     reveal: boolean,
   ) =>
     invoke<string>("get_docker_container_diagnostics", {
-      sessionId,
+      context: contextReference(contextId),
       engineToken,
       containerId,
       section,

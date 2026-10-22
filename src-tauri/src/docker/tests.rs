@@ -183,7 +183,7 @@ pub(crate) fn exercise(
             .kind,
         "busy"
     );
-    assert!(state.docker.has_server("a") && state.docker.has_server("b"));
+    assert!(context.server_ids().all(|id| state.docker.has_server(id)));
     wait(
         "long stop completes outside six-second query timeout",
         || !task(&state, &id).active(),
@@ -593,7 +593,8 @@ pub(crate) fn exercise(
     });
     state.docker.window_closed("main");
     state.docker.window_closed("workspace-test");
-    state.terminals.lock().unwrap().clear();
+    crate::workspaces::close_window(&state, "main");
+    crate::workspaces::close_window(&state, "workspace-test");
     wait("background task survives closing workspaces", || {
         !task(&state, &background).active()
     });

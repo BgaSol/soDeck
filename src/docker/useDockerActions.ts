@@ -38,7 +38,7 @@ export function useDockerActions(
   const release = (p: DockerPreview | null) => {
     if (p)
       void dockerApi
-        .releasePreview(store.sessionId, p.draftToken)
+        .releasePreview(store.contextId, p.draftToken)
         .catch(() => {});
   };
   useEffect(() => {
@@ -118,7 +118,7 @@ export function useDockerActions(
     setError("");
     try {
       const value = await dockerApi.renewPreview(
-        store.sessionId,
+        store.contextId,
         p.draftToken,
         p.id,
       );
@@ -165,7 +165,7 @@ export function useDockerActions(
     setPhase("submitting");
     setError("");
     try {
-      const id = await dockerApi.submit(store.sessionId, r);
+      const id = await dockerApi.submit(store.contextId, r);
       if (current.current === origin && epoch.current === generation)
         accept(r, id);
     } catch (e) {
@@ -204,7 +204,7 @@ export function useDockerActions(
     if (confirm)
       await prepareWith(() =>
         dockerApi.prepare(
-          store.sessionId,
+          store.contextId,
           state.engine!.token,
           targetId,
           action,

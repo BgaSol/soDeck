@@ -8,12 +8,12 @@ import type { CopyTarget, TransferDraft } from "./transferApi";
 import { errorOf } from "./types";
 
 export function CopyTargetDialog({
-  sessionId,
+  contextId,
   paths,
   onClose,
   onPrepared,
 }: {
-  sessionId: string;
+  contextId: string;
   paths: string[];
   onClose: () => void;
   onPrepared: (draft: TransferDraft) => void;
@@ -31,7 +31,7 @@ export function CopyTargetDialog({
     setLoading(true);
     setError("");
     void transferApi
-      .copyTargets(sessionId)
+      .copyTargets(contextId)
       .then((next) => {
         if (live) {
           setTargets(next);
@@ -47,13 +47,13 @@ export function CopyTargetDialog({
     return () => {
       live = false;
     };
-  }, [sessionId, revision]);
+  }, [contextId, revision]);
   async function prepare() {
     if (!selected || busy || loading) return;
     setBusy(true);
     setError("");
     try {
-      onPrepared(await transferApi.prepareCopy(sessionId, paths, selected));
+      onPrepared(await transferApi.prepareCopy(contextId, paths, selected));
     } catch (e) {
       setError(errorOf(e).message);
       setBusy(false);

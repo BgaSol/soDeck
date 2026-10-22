@@ -39,6 +39,7 @@ pub(super) struct Entry {
     pub poll: Mutex<Option<Cancellation>>,
 }
 pub(super) struct Draft {
+    pub session: String,
     pub owner: WindowOwner,
     pub identity: String,
     pub preview: Preview,
@@ -151,7 +152,7 @@ impl NetBirdManager {
         events: Channel<Frame>,
     ) -> AppResult<String> {
         interest.validate()?;
-        let spec = state.spec(&session, &owner.label)?;
+        let spec = state.workspace_context(&session, &owner.label)?;
         let entry = self.entry(spec.identity())?;
         let id = uuid::Uuid::new_v4().to_string();
         let start = {
@@ -227,7 +228,7 @@ impl NetBirdManager {
                     let result = (|| {
                         let job = state.netbird.job(&state)?;
                         *entry.poll.lock().unwrap() = Some(job.cancel.clone());
-                        let spec = state.spec(&session, &owner.label)?;
+                        let spec = state.workspace_context(&session, &owner.label)?;
                         let check = || {
                             job.cancel.check()?;
                             state
@@ -280,7 +281,7 @@ impl NetBirdManager {
         identity: &str,
     ) -> AppResult<()> {
         if state.owner(&owner.label).generation != owner.generation
-            || state.spec(session, &owner.label)?.identity() != identity
+            || state.workspace_context(session, &owner.label)?.identity() != identity
         {
             return Err(AppError::new("conflict", "窗口或 SSH 会话已变化"));
         }
@@ -379,6 +380,31 @@ impl NetBirdManager {
             }
         }
     }
+    pub fn has_context_drafts(&self, context: &str) -> bool {
+        self.drafts
+            .lock()
+            .unwrap()
+            .values()
+            .any(|d| d.session == context && d.preview.expires_at > crate::traffic::now())
+    }
+    pub fn release_preview(
+        &self,
+        context: &str,
+        owner: &WindowOwner,
+        preview: &str,
+    ) -> AppResult<()> {
+        let mut drafts = self.drafts.lock().unwrap();
+        if let Some(d) = drafts.get(preview) {
+            if d.session != context
+                || d.owner.label != owner.label
+                || d.owner.generation != owner.generation
+            {
+                return Err(AppError::new("permission", "预检不属于当前工具连接"));
+            }
+        }
+        drafts.remove(preview);
+        Ok(())
+    }
     pub fn has_server(&self, id: &str) -> bool {
         self.locks
             .lock()
@@ -442,7 +468,7 @@ impl NetBirdManager {
             &dyn Fn() -> AppResult<()>,
         ) -> AppResult<T>,
     ) -> AppResult<T> {
-        let spec = state.spec(session, &owner.label)?;
+        let spec = state.workspace_context(session, &owner.label)?;
         let (_, old) = self.bound(&spec, token)?;
         let job = self.job(state)?;
         let check = || {

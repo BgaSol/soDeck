@@ -74,6 +74,8 @@ impl ConnectionContext {
                     && a.private_key == s.private_key
                     && a.password == s.password
                     && a.jump_server_id == s.jump_server_id
+                    && a.direct_host == s.direct_host
+                    && a.direct_port == s.direct_port
             })
     }
     pub fn target(&self) -> &ServerConfig {
@@ -208,6 +210,12 @@ pub enum ConnectionEvent {
     Frozen {
         token: String,
     },
+    ReceptionBarrier {
+        #[serde(rename = "transferId")]
+        transfer_id: String,
+        #[serde(rename = "sessionId")]
+        session_id: String,
+    },
     Closed {
         message: String,
         reason: String,
@@ -248,12 +256,22 @@ struct PendingChallenge {
     id: String,
     kind: ChallengeKind,
     sender: mpsc::SyncSender<ConnectionAnswer>,
+    presented: Option<Instant>,
 }
 #[derive(Default)]
 pub struct Interaction {
     pending: Mutex<Option<PendingChallenge>>,
 }
 impl Interaction {
+    pub fn present(&self, id: &str) -> AppResult<()> {
+        let mut pending = self.pending.lock().unwrap();
+        let challenge = pending
+            .as_mut()
+            .filter(|c| c.id == id)
+            .ok_or_else(|| AppError::new("challenge", "认证提示已过期"))?;
+        challenge.presented.get_or_insert_with(Instant::now);
+        Ok(())
+    }
     pub fn answer(&self, id: &str, answer: ConnectionAnswer) -> AppResult<()> {
         let mut pending = self.pending.lock().unwrap();
         let challenge = pending
@@ -286,6 +304,7 @@ impl Interaction {
             id: id.clone(),
             kind,
             sender,
+            presented: None,
         });
         if let Err(error) = events.send(event) {
             self.pending.lock().unwrap().take();
@@ -305,7 +324,15 @@ impl Interaction {
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
             }
-            if started.elapsed() > Duration::from_secs(180) {
+            if self
+                .pending
+                .lock()
+                .unwrap()
+                .as_ref()
+                .and_then(|c| c.presented)
+                .is_some_and(|at| at.elapsed() > Duration::from_secs(180))
+                || started.elapsed() > Duration::from_secs(1800)
+            {
                 return Err(AppError::new(
                     "interactionTimeout",
                     "等待认证或指纹确认超时，请重新连接",
@@ -825,8 +852,7 @@ fn finish(state: &State, id: &str, cancel: &Cancellation, result: AppResult<()>)
         }
     }
     drop(connections);
-    state.monitor.close_session(id);
-    state.netbird.close_session(id);
+    state.workspaces.finish_connection(id);
 }
 
 pub fn wait_closed(state: &State) -> AppResult<()> {
@@ -838,6 +864,11 @@ pub fn wait_closed(state: &State) -> AppResult<()> {
             .unwrap()
             .values()
             .all(|handle| handle.stream.lock().unwrap().closed)
+            && state
+                .workspaces
+                .verifications
+                .load(std::sync::atomic::Ordering::SeqCst)
+                == 0
         {
             return Ok(());
         }
@@ -853,7 +884,7 @@ pub fn open_connection(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
     server_id: String,
-    workspace_id: Option<String>,
+    binding: crate::workspaces::TerminalBinding,
     events: Channel<ConnectionEvent>,
     diagnostic_trace_id: Option<String>,
 ) -> AppResult<String> {
@@ -867,8 +898,47 @@ pub fn open_connection(
             .unwrap()
             .resolve_connection(&server_id)?,
     )?);
+    let owner = state.owner(window.label());
+    let mut registry = state.workspaces.registry.lock().unwrap();
+    let workspace = registry.owned_mut(&binding.workspace_id, &owner, binding.owner_epoch)?;
+    if workspace.view.server.id != server_id {
+        return Err(crate::workspaces::stale());
+    }
+    let cached = workspace.context.clone().filter(|c| c.matches_plan(&plan));
+    let terminal = workspace
+        .view
+        .terminals
+        .iter_mut()
+        .find(|t| t.id == binding.terminal_id)
+        .ok_or_else(crate::workspaces::stale)?;
+    if let Some(id) = &terminal.connection_id {
+        if terminal.request_id.as_deref() == Some(&binding.request_id)
+            && terminal.attempt == binding.attempt
+        {
+            return Ok(id.clone());
+        }
+        if state
+            .terminals
+            .lock()
+            .unwrap()
+            .get(id)
+            .is_some_and(|h| !h.sender.cancel.is_cancelled())
+        {
+            return Err(AppError::new("busy", "终端连接尚未结束"));
+        }
+    }
+    if terminal.request_id.is_some() && binding.attempt <= terminal.attempt {
+        return Err(crate::workspaces::stale());
+    }
     let (id, receiver, cancel, stream, interaction) =
-        register(&state, state.owner(window.label()), plan.clone(), events)?;
+        register(&state, owner.clone(), plan.clone(), events)?;
+    terminal.connection_id = Some(id.clone());
+    terminal.attempt = binding.attempt;
+    terminal.request_id = Some(binding.request_id.clone());
+    terminal.state = "connecting".into();
+    registry.changed(&binding.workspace_id);
+    drop(registry);
+    state.workspaces.publish();
     cancel.set_diagnostic(crate::diagnostics::event::Context::from_trace(
         diagnostic_trace_id.as_deref(),
     ));
@@ -877,18 +947,42 @@ pub fn open_connection(
     let worker_id = id.clone();
     std::thread::spawn(move || {
         let result = (|| {
-            let (connection, context) = connect_metered(
-                &plan,
-                &mut InteractiveProvider {
-                    state: &state,
-                    events: Arc::new(TerminalConnectSink(stream)),
+            // Cached credentials are only reused for an identical plan and still
+            // pass the real server's host-key verification on this new transport.
+            let verified = cached.as_ref().map(|c| {
+                connect_verified(c, &cancel, crate::traffic::TrafficPurpose::Terminal)
+                    .map(|s| (s, c.clone()))
+            });
+            let (connection, context) = match verified {
+                Some(Ok(ready)) => ready,
+                _ => connect_interactive(
+                    &state,
+                    &plan,
+                    Arc::new(TerminalConnectSink(stream)),
                     interaction,
-                    pinned: None,
-                },
-                &cancel,
-                &state.traffic,
-                crate::traffic::TrafficPurpose::Terminal,
-            )?;
+                    None,
+                    &cancel,
+                    crate::traffic::TrafficPurpose::Terminal,
+                )?,
+            };
+            cancel.check()?;
+            {
+                let _gate = state.configuration.lock().unwrap();
+                let changed = state
+                    .database
+                    .lock()
+                    .unwrap()
+                    .resolve_connection(&context.target().id)
+                    .and_then(ConnectionPlan::new)
+                    .map_or(true, |latest| !context.matches_plan(&latest));
+                state.workspaces.publish_context(
+                    &binding,
+                    &owner,
+                    &worker_id,
+                    context.clone(),
+                    changed,
+                )?;
+            }
             let source = crate::terminal_history::model::Source::new(&context, None);
             terminal::run(
                 connection,
@@ -898,12 +992,28 @@ pub fn open_connection(
                 &state,
                 receiver,
                 &cancel,
-                Some((workspace_id.unwrap_or_else(|| worker_id.clone()), source)),
+                Some((binding.terminal_id, source)),
             )
         })();
         finish(&state, &worker_id, &cancel, result);
     });
     Ok(id)
+}
+#[tauri::command]
+pub fn present_connection_challenge(
+    window: WebviewWindow,
+    state: TauriState<Arc<State>>,
+    connection_id: String,
+    challenge_id: String,
+) -> AppResult<()> {
+    let connections = state.terminals.lock().unwrap();
+    let h = connections
+        .get(&connection_id)
+        .ok_or_else(crate::workspaces::stale)?;
+    if h.window != window.label() {
+        return Err(crate::workspaces::stale());
+    }
+    h.interaction.present(&challenge_id)
 }
 #[tauri::command]
 pub fn answer_connection(
@@ -929,6 +1039,8 @@ pub fn close_connection(
     state: TauriState<Arc<State>>,
     connection_id: String,
 ) -> AppResult<()> {
+    let workspace_guard = state.workspaces.registry.lock().unwrap();
+    workspace_guard.terminal_action(&connection_id)?;
     let connections = state.terminals.lock().unwrap();
     if let Some(handle) = connections.get(&connection_id) {
         if handle.window != window.label() {

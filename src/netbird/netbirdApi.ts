@@ -1,3 +1,4 @@
+import { contextReference } from "../toolContext";
 import { Channel } from "@tauri-apps/api/core";
 import { invokeDiagnosed as invoke } from "../diagnostics";
 export type Action = "up" | "down" | "serviceStart" | "serviceRestart";
@@ -99,14 +100,14 @@ export interface ProbeResult {
 }
 export const netbirdApi = {
   subscribe(
-    sessionId: string,
+    contextId: string,
     level: Interest,
     receive: (frame: Frame) => void,
   ) {
     const events = new Channel<Frame>();
     events.onmessage = receive;
     return invoke<string>("subscribe_netbird", {
-      sessionId,
+      context: contextReference(contextId),
       interest: { level },
       events,
     });
@@ -122,32 +123,55 @@ export const netbirdApi = {
     invoke<void>("ack_netbird_frame", { subscriptionId, revision }),
   refresh: (subscriptionId: string) =>
     invoke<void>("refresh_netbird", { subscriptionId }),
-  raw: (sessionId: string, bindingToken: string) =>
-    invoke<Diagnostic>("get_netbird_raw_status", { sessionId, bindingToken }),
-  logs: (sessionId: string, bindingToken: string) =>
-    invoke<Diagnostic>("get_netbird_logs", { sessionId, bindingToken }),
+  raw: (contextId: string, bindingToken: string) =>
+    invoke<Diagnostic>("get_netbird_raw_status", {
+      context: contextReference(contextId),
+      bindingToken,
+    }),
+  logs: (contextId: string, bindingToken: string) =>
+    invoke<Diagnostic>("get_netbird_logs", {
+      context: contextReference(contextId),
+      bindingToken,
+    }),
   probe: (
-    sessionId: string,
+    contextId: string,
     bindingToken: string,
     request: { peerId: string; kind: "icmp" | "tcp"; port: number | null },
   ) =>
     invoke<ProbeResult>("probe_netbird_peer", {
-      sessionId,
+      context: contextReference(contextId),
       bindingToken,
       request,
     }),
-  prepare: (sessionId: string, bindingToken: string, action: Action) =>
+  prepare: (contextId: string, bindingToken: string, action: Action) =>
     invoke<Preview>("prepare_netbird_operation", {
-      sessionId,
+      context: contextReference(contextId),
       bindingToken,
       action,
     }),
-  submit: (sessionId: string, request: OperationRequest) =>
-    invoke<string>("submit_netbird_operation", { sessionId, request }),
-  reconcile: (sessionId: string, operationId: string) =>
-    invoke<void>("reconcile_netbird_operation", { sessionId, operationId }),
-  acknowledge: (sessionId: string, operationId: string) =>
-    invoke<void>("acknowledge_netbird_operation", { sessionId, operationId }),
-  path: (sessionId: string, path: string | null) =>
-    invoke<void>("set_netbird_cli_path", { sessionId, path }),
+  release: (contextId: string, previewId: string) =>
+    invoke<void>("release_netbird_preview", {
+      context: contextReference(contextId),
+      previewId,
+    }),
+  submit: (contextId: string, request: OperationRequest) =>
+    invoke<string>("submit_netbird_operation", {
+      context: contextReference(contextId),
+      request,
+    }),
+  reconcile: (contextId: string, operationId: string) =>
+    invoke<void>("reconcile_netbird_operation", {
+      context: contextReference(contextId),
+      operationId,
+    }),
+  acknowledge: (contextId: string, operationId: string) =>
+    invoke<void>("acknowledge_netbird_operation", {
+      context: contextReference(contextId),
+      operationId,
+    }),
+  path: (contextId: string, path: string | null) =>
+    invoke<void>("set_netbird_cli_path", {
+      context: contextReference(contextId),
+      path,
+    }),
 };

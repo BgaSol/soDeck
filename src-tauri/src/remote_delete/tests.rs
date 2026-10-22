@@ -170,7 +170,11 @@ pub(crate) fn exercise_protocol(context: SharedContext, fixture: &Path) {
     std::fs::create_dir_all(local.join("delete/tree/empty")).unwrap();
     std::fs::write(local.join("delete/tree/.hidden"), "keep no hidden files").unwrap();
     std::fs::write(
-        local.join("delete/tree/中文 '$(x)\n.txt"),
+        local.join(if cfg!(windows) {
+            "delete/tree/中文 '$(x).txt"
+        } else {
+            "delete/tree/中文 '$(x)\n.txt"
+        }),
         "names are literal",
     )
     .unwrap();

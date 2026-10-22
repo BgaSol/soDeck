@@ -23,7 +23,7 @@ export function DockerTransferDialog({
   const [path, setPath] = useState("/tmp"),
     [conflict, setConflict] = useState("rename");
   const actions = useDockerActions(
-    store.sessionId + "/" + state.engine?.token + "/" + kind + "/" + targetId,
+    store.contextId + "/" + state.engine?.token + "/" + kind + "/" + targetId,
     !!state.engine,
     onClose,
   );
@@ -34,7 +34,7 @@ export function DockerTransferDialog({
     void actions
       .prepareWith(() =>
         dockerApi.prepareTransfer(
-          store.sessionId,
+          store.contextId,
           state.engine!.token,
           kind,
           targetId,

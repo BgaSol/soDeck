@@ -237,7 +237,7 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
       ),
     ).toBe(false);
     await main
-      .getByRole("button", { name: `关闭 ${name} 会话`, exact: true })
+      .getByRole("button", { name: `关闭 ${name} 服务器`, exact: true })
       .click();
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(0);
     expect(errors).toEqual([]);
@@ -426,7 +426,7 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
     await showServers(main);
     await main.locator(".server-row").filter({ hasText: nameB }).dblclick();
     await authenticate(main);
-    await expect(main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(2);
+    await expect(main.getByRole("tablist", { name: "服务器标签", exact: true }).getByRole("tab")).toHaveCount(2);
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(2);
     await expect(active().getByLabel("远程目录路径")).toHaveValue("/");
     await expect(
@@ -506,7 +506,7 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
       .click({ button: "right" });
     await main.getByRole("menuitem", { name: "新建连接", exact: true }).click();
     await authenticate(main);
-    await expect(main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(3);
+    await expect(main.getByRole("tablist", { name: "服务器标签", exact: true }).getByRole("tab")).toHaveCount(3);
     await expect(
       main.getByRole("tab", { name: `${nameA} · 2，已连接`, exact: true }),
     ).toHaveAttribute("aria-selected", "true");
@@ -522,7 +522,7 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
     await main
       .getByRole("tab", { name: `${nameA}，已连接`, exact: true })
       .click();
-    await expect(main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(3);
+    await expect(main.getByRole("tablist", { name: "服务器标签", exact: true }).getByRole("tab")).toHaveCount(3);
     await expect(active().getByLabel("远程目录路径")).toHaveValue("/projects");
     await expect(active().locator(".terminal-surface")).not.toContainText(
       "duplicate-marker",
@@ -542,17 +542,17 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(4);
     // Closing a background tab leaves the active tab and container alone.
     await main
-      .getByRole("button", { name: `关闭 ${nameB} 会话`, exact: true })
+      .getByRole("button", { name: `关闭 ${nameB} 服务器`, exact: true })
       .click();
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(3);
     await expect(active().locator(".terminal-toolbar strong")).toHaveText(
       nameA,
     );
     await main
-      .getByRole("button", { name: `关闭 ${nameA} 会话`, exact: true })
+      .getByRole("button", { name: `关闭 ${nameA} 服务器`, exact: true })
       .click();
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(2);
-    await expect(main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(1);
+    await expect(main.getByRole("tablist", { name: "服务器标签", exact: true }).getByRole("tab")).toHaveCount(1);
     expect((await ipc<any>(container, "container_info")).serverName).toBe(
       nameA,
     );
@@ -577,10 +577,10 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
       "survivor-marker",
     );
     await main
-      .getByRole("button", { name: `关闭 ${nameA} · 2 会话`, exact: true })
+      .getByRole("button", { name: `关闭 ${nameA} · 2 服务器`, exact: true })
       .click();
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(1);
-    await expect(main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(0);
+    await expect(main.getByRole("tablist", { name: "服务器标签", exact: true }).getByRole("tab")).toHaveCount(0);
     await closeContainer(container);
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(0);
     expect(errors).toEqual([]);
@@ -659,7 +659,7 @@ test("failed, pending and remotely closed tabs do not affect other connections",
     ).toBe(true);
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(2);
     await main
-      .getByRole("button", { name: `关闭 ${name} · 2 会话`, exact: true })
+      .getByRole("button", { name: `关闭 ${name} · 2 服务器`, exact: true })
       .click();
     // Closing a tab before authentication completes must eventually dispose its session.
     await expect(
@@ -704,7 +704,7 @@ test("failed, pending and remotely closed tabs do not affect other connections",
       .toBeGreaterThan(closedBefore);
     await unlink(".qa/auth-delay");
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(1);
-    await expect(main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(1);
+    await expect(main.getByRole("tablist", { name: "服务器标签", exact: true }).getByRole("tab")).toHaveCount(1);
     // Remote exit keeps the output and tab, and reconnecting does not add a new tab.
     await active().locator(".terminal-surface textarea").focus();
     await main.keyboard.type("echo retained-before-exit");
@@ -725,7 +725,7 @@ test("failed, pending and remotely closed tabs do not affect other connections",
       .getByRole("button", { name: "重新连接", exact: true })
       .click();
     await authenticate(main);
-    await expect(main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(1);
+    await expect(main.getByRole("tablist", { name: "服务器标签", exact: true }).getByRole("tab")).toHaveCount(1);
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(1);
     await expect(active().locator(".terminal-surface")).toContainText(
       "retained-before-exit",
@@ -735,7 +735,7 @@ test("failed, pending and remotely closed tabs do not affect other connections",
       .getByRole("tab", { name: `${name}，已连接`, exact: true })
       .focus();
     await main.keyboard.press("Delete");
-    await expect(main.getByRole("tablist", { name: "SSH 会话", exact: true }).getByRole("tab")).toHaveCount(0);
+    await expect(main.getByRole("tablist", { name: "服务器标签", exact: true }).getByRole("tab")).toHaveCount(0);
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(0);
   } finally {
     await unlink(".qa/auth-delay").catch(() => {});

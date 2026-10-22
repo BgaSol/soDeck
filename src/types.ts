@@ -119,6 +119,7 @@ export type TerminalEvent =
       error: AppError | null;
     }
   | { type: "frozen"; token: string }
+  | { type: "receptionBarrier"; transferId: string; sessionId: string }
   | { type: "cwd"; path: string; home: string | null; sequence: number };
 export interface ConnectionRequest {
   serverId: string;

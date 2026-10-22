@@ -1,6 +1,8 @@
+import { installWorkspaceFixture } from "./workspace-fixture";
 import { test, expect, type Page } from "@playwright/test";
 import { openWorkspaceTool } from "./workspace-tool-helpers";
 async function setup(page: Page) {
+  await installWorkspaceFixture(page);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.addInitScript(() => {
@@ -421,7 +423,7 @@ async function setup(page: Page) {
               task.affectedDirectories = ["/home/ops"];
               w.__TEST__.emit("file-task-updated", { taskId: task.id });
               w.__TEST__.emit("remote-directory-changed", {
-                sessionId: "session-a",
+                contextId: w.__WORKSPACES__.workspaces[0].tools.context.id,
                 path: "/home/ops",
               });
             }, 80);
@@ -1213,7 +1215,7 @@ test("multiselection survives directory refresh and the toolbar stays concise", 
   await two.click({ modifiers: ["ControlOrMeta"] });
   await expect(one).toHaveAttribute("aria-selected", "true");
   await expect(two).toHaveAttribute("aria-selected", "true");
-  await expect(page.locator(".file-toolbar > button")).toHaveCount(4);
+  await expect(page.locator(".file-toolbar > button")).toHaveCount(5);
   await expect(
     page.getByRole("button", { name: "新建", exact: true }),
   ).toBeVisible();
@@ -1237,7 +1239,9 @@ test("upload picker and new configuration fit dark small windows", async ({
     .click();
   await page.getByRole("button", { name: "新建连接", exact: true }).click();
   await page.locator(".server-row").click();
-  await page.locator('.server-row.selected [data-server-action="edit"]').click();
+  await page
+    .locator('.server-row.selected [data-server-action="edit"]')
+    .click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("真实地址", { exact: true }).scrollIntoViewIfNeeded();
   await expect(dialog.getByLabel("直连端口")).toHaveValue("22");
@@ -1397,10 +1401,11 @@ test("native tab drag preserves begin, drop and finish IPC", async ({
 }) => {
   const errors = await setup(page);
   const tab = page.getByRole("tab", { name: /Server A/ });
+  await tab.hover();
   const box = (await tab.boundingBox())!;
-  await page.mouse.move(box.x + 15, box.y + 15);
+  await page.mouse.move(box.x + 8, box.y + 8);
   await page.mouse.down();
-  await page.mouse.move(box.x + 40, box.y + 15);
+  await page.mouse.move(box.x + 35, box.y + 8);
   await expect
     .poll(() =>
       page.evaluate(
@@ -1417,6 +1422,10 @@ test("native tab drag preserves begin, drop and finish IPC", async ({
         (c: any) => c.command === "begin_workspace_drag",
       ).args.token,
   );
+  const dropPoint = await page.locator(".tab-scroll").evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  });
   await page.evaluate(
     ({ x, y, token }) =>
       (window as any).__TEST__.emit("desktop-drag", {
@@ -1428,7 +1437,7 @@ test("native tab drag preserves begin, drop and finish IPC", async ({
         count: 1,
         label: "移动会话",
       }),
-    { x: box.x + 40, y: box.y + 15, token },
+    { ...dropPoint, token },
   );
   await expect
     .poll(() =>

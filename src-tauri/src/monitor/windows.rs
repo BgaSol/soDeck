@@ -34,11 +34,12 @@ pub async fn open_monitor_window(
     window: WebviewWindow,
     app: tauri::AppHandle,
     state: TauriState<'_, Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     mut preferences: WindowPreferences,
 ) -> AppResult<()> {
+    let session_id = state.context_key(&context, window.label())?;
     crate::moves::workspace_only(&window)?;
-    let spec = state.spec(&session_id, window.label())?;
+    let spec = state.workspace_context(&session_id, window.label())?;
     if !matches!(preferences.minutes, 5 | 15 | 60) {
         preferences.minutes = 5;
     }

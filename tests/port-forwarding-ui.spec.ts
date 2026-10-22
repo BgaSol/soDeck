@@ -1,7 +1,9 @@
+import { installWorkspaceFixture } from "./workspace-fixture";
 import { selectTheme } from "./theme-fixture";
 import { expect, test, type Page } from "@playwright/test";
 
 async function setup(page: Page, empty = false) {
+  await installWorkspaceFixture(page);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.addInitScript(

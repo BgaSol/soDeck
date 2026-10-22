@@ -3,6 +3,22 @@ pub fn known_command(command: &str) -> bool {
     matches!(
         command,
         "get_diagnostics_status"
+            | "prepare_workspace_move"
+            | "acknowledge_workspace_terminal"
+            | "present_connection_challenge"
+            | "present_workspace_context_challenge"
+            | "list_server_workspaces"
+            | "mount_server_workspace"
+            | "workspace_move_status"
+            | "open_server_workspace"
+            | "create_workspace_terminal"
+            | "update_workspace_terminal"
+            | "prepare_workspace_close"
+            | "close_server_workspace"
+            | "close_workspace_terminal"
+            | "refresh_workspace_context"
+            | "answer_workspace_context"
+            | "cancel_workspace_context"
             | "open_diagnostics_directory"
             | "export_diagnostics"
             | "cancel_diagnostics_export"
@@ -20,6 +36,7 @@ pub fn known_command(command: &str) -> bool {
             | "get_netbird_logs"
             | "probe_netbird_peer"
             | "prepare_netbird_operation"
+            | "release_netbird_preview"
             | "submit_netbird_operation"
             | "reconcile_netbird_operation"
             | "acknowledge_netbird_operation"
@@ -281,5 +298,7 @@ pub fn known_error_code(code: &str) -> bool {
             | "validation"
             | "verification"
             | "window"
+            | "workspaceChanged"
+            | "version"
     )
 }

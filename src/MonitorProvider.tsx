@@ -1,3 +1,4 @@
+import { contextReference } from "./toolContext";
 import {
   createContext,
   useContext,
@@ -18,9 +19,9 @@ import {
 import type { DockerInterest } from "./serverMonitoring";
 
 export const monitorApi: MonitorApi = {
-  subscribe: (sessionId, interest, receive) =>
+  subscribe: (contextId, interest, receive) =>
     invoke("subscribe_monitor", {
-      sessionId,
+      context: contextReference(contextId),
       interest,
       events: new Channel<MonitorEvent>(receive),
     }),
@@ -36,17 +37,17 @@ export const monitorApi: MonitorApi = {
 export const MonitorContext = createContext<MonitorStore | null>(null);
 
 export function MonitorProvider({
-  sessionId,
+  contextId,
   active,
   children,
 }: {
-  sessionId: string | null;
+  contextId: string | null;
   active: boolean;
   children: ReactNode;
 }) {
   const saved = useRef<MonitorStore | null>(null);
-  if (!saved.current || (sessionId && saved.current.sessionId !== sessionId))
-    saved.current = new MonitorStore(sessionId ?? "", monitorApi);
+  if (!saved.current || (contextId && saved.current.contextId !== contextId))
+    saved.current = new MonitorStore(contextId ?? "", monitorApi);
   const store = saved.current;
   useEffect(() => {
     const visible = () => store.setVisible(active && !document.hidden);
@@ -55,9 +56,9 @@ export function MonitorProvider({
     return () => document.removeEventListener("visibilitychange", visible);
   }, [store, active]);
   useEffect(() => {
-    if (desktop && sessionId) void store.start();
+    if (desktop && contextId) void store.start();
     return () => store.stop();
-  }, [store, sessionId]);
+  }, [store, contextId]);
   return (
     <MonitorContext.Provider value={store}>{children}</MonitorContext.Provider>
   );

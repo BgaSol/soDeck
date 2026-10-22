@@ -1,11 +1,13 @@
 // IPC is simulated here; db.rs tests exercise real SQLite backups and rebuilds.
 import { expect, test, type Page } from "@playwright/test";
+import { installWorkspaceFixture } from "./workspace-fixture";
 
 const database =
   "/Users/test/Library/Application Support/com.sshworkspace.desktop/servers.db";
 const backup = database.replace("servers.db", "servers.backup-test.db");
 
 async function setup(page: Page) {
+  await installWorkspaceFixture(page);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.addInitScript(

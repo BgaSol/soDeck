@@ -16,13 +16,14 @@ pub(super) fn validate(interest: &Interest) -> AppResult<()> {
 pub fn subscribe_monitor(
     window: WebviewWindow,
     state: TauriState<Arc<State>>,
-    session_id: String,
+    context: crate::workspaces::ToolContextRef,
     events: Channel<MonitorEvent>,
     interest: Interest,
 ) -> AppResult<String> {
+    let session_id = state.context_key(&context, window.label())?;
     crate::moves::workspace_only(&window)?;
     validate(&interest)?;
-    let spec = state.spec(&session_id, window.label())?;
+    let spec = state.workspace_context(&session_id, window.label())?;
     state.monitor.subscribe(
         state.inner(),
         spec,
