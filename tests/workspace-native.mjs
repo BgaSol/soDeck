@@ -115,7 +115,7 @@ try {
       id: "",
       name: "Workspace tabs native " + Date.now(),
       host: "127.0.0.1",
-      port: 22225,
+      port: Number(process.env.SODECK_WORKSPACE_FIXTURE_PORT || 22225),
       username: "ops",
       tags: ["QA"],
       authType: "password",
@@ -349,8 +349,9 @@ try {
     "native return migration retains all terminals and the same backend connections",
   );
   await select(main, 1);
-  await terminal(main)
-    .getByRole("button", { name: "断开", exact: true })
+  await main.getByRole("button", { name: "当前终端更多操作" }).click();
+  await main
+    .getByRole("menuitem", { name: "断开当前终端", exact: true })
     .click();
   await connected(main, 2);
   const mixedIds = (await list(main))[0].terminals.map((t) => t.connectionId);
@@ -393,7 +394,10 @@ try {
     path: "/var/log",
   });
   await moveBack(emptyWindow);
-  await main.getByRole("button", { name: "更新工具连接", exact: true }).click();
+  await main.locator(".session-tab.active .tab-server-menu").click();
+  await main
+    .getByRole("menuitem", { name: "更新工具连接", exact: true })
+    .click();
   await expect
     .poll(async () => (await list(main))[0].tools.context.epoch)
     .toBe(empty.tools.context.epoch + 1);

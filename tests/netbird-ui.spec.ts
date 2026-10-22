@@ -212,7 +212,10 @@ async function netbird(page: Page, path = "independent") {
     },
     { path },
   );
-  await page.getByRole("button", { name: "更新工具连接", exact: true }).click();
+  await page.locator(".session-tab.active .tab-server-menu").click();
+  await page
+    .getByRole("menuitem", { name: "更新工具连接", exact: true })
+    .click();
   await openWorkspaceTool(page, "netbird");
   await expect(page.locator(".nb-summary")).toContainText("已连接");
   return errors;

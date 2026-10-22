@@ -50,7 +50,7 @@ async function authenticate(main: Page) {
     const trust = main.getByRole("button", { name: "确认指纹并连接" });
     if (await trust.isVisible()) await trust.click();
     await expect(
-      main.locator(".session-page[role=tabpanel]:visible").locator(".connection-state"),
+      main.locator(".session-page[role=tabpanel]:visible").locator(".session-connection-state"),
     ).toHaveText("已连接", { timeout: 1000 });
   }).toPass({ timeout: 20000 });
   await selectContainer(main);
@@ -190,7 +190,7 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
     // Closing a container must leave the main terminal alive.
     await closeContainer(container);
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(1);
-    await expect(main.locator(".connection-state")).toHaveText("已连接");
+    await expect(main.locator(".session-connection-state")).toHaveText("已连接");
     const reopened = context.waitForEvent("page");
     await main
       .getByRole("button", { name: "进入 web-fixture 终端" })
@@ -210,8 +210,8 @@ test("SQLite CRUD, real SSH/SFTP, Docker tree and independent container windows"
       (server) => server.name === other,
     );
     created.push(second.id);
-    await expect(main.locator(".terminal-toolbar strong")).toHaveText(name);
-    await expect(main.locator(".connection-state")).toHaveText("已连接");
+    await expect(main.locator(".session-tab.active .tab-name")).toHaveText(name);
+    await expect(main.locator(".session-connection-state")).toHaveText("已连接");
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(2);
     expect((await ipc<any>(container, "container_info")).serverName).toBe(name);
     await container.locator(".terminal-surface textarea").focus();
@@ -284,7 +284,7 @@ test("Docker failures and stopped/shell-less containers preserve the host termin
     await main.getByRole("button").filter({ hasText: name }).click();
     await main.getByRole("button", { name: "连接", exact: true }).click();
     await authenticate(main);
-    await expect(main.locator(".connection-state")).toHaveText("已连接");
+    await expect(main.locator(".session-connection-state")).toHaveText("已连接");
     await expect(
       main.getByRole("button", { name: "进入 web-fixture 终端" }),
     ).toBeEnabled();
@@ -299,7 +299,7 @@ test("Docker failures and stopped/shell-less containers preserve the host termin
       await expect(main.locator(".docker-engine-title")).toContainText(status, {
         timeout: mode === "timeout" ? 30000 : 18000,
       });
-      await expect(main.locator(".connection-state")).toHaveText("已连接");
+      await expect(main.locator(".session-connection-state")).toHaveText("已连接");
       if (
         await main
           .getByRole("button", { name: "进入 web-fixture 终端" })
@@ -327,7 +327,7 @@ test("Docker failures and stopped/shell-less containers preserve the host termin
         .click();
       container = await opened;
       await expect(container.getByRole("alert")).toContainText(error);
-      await expect(main.locator(".connection-state")).toHaveText("已连接");
+      await expect(main.locator(".session-connection-state")).toHaveText("已连接");
       await closeContainer(container);
     }
     await main.reload();
@@ -419,7 +419,7 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
     // Selecting B does not switch, clear or disconnect A.
     await showServers(main);
     await main.locator(".server-row").filter({ hasText: nameB }).click();
-    await expect(active().locator(".terminal-toolbar strong")).toHaveText(
+    await expect(main.locator(".session-tab.active .tab-name")).toHaveText(
       nameA,
     );
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(1);
@@ -545,7 +545,7 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
       .getByRole("button", { name: `关闭 ${nameB} 服务器`, exact: true })
       .click();
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(3);
-    await expect(active().locator(".terminal-toolbar strong")).toHaveText(
+    await expect(main.locator(".session-tab.active .tab-name")).toHaveText(
       nameA,
     );
     await main
@@ -560,7 +560,8 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
     await expect(active().locator(".terminal-surface")).toContainText(
       /survivor-marker\s*ops@host/,
     );
-    await active().getByRole("button", { name: "断开", exact: true }).click();
+    await main.getByRole("button", { name: "当前终端更多操作" }).click();
+    await main.getByRole("menuitem", { name: "断开当前终端", exact: true }).click();
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(1);
     await expect(
       main.getByRole("tab", { name: `${nameA} · 2，已断开`, exact: true }),
@@ -568,8 +569,7 @@ test("multiple SSH tabs retain their own terminal, file and Docker state", async
     await expect(active().locator(".terminal-surface")).toContainText(
       "survivor-marker",
     );
-    await active()
-      .getByRole("button", { name: "重新连接", exact: true })
+    await main.getByRole("button", { name: "重新连接", exact: true })
       .click();
     await authenticate(main);
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(2);
@@ -721,8 +721,7 @@ test("failed, pending and remotely closed tabs do not affect other connections",
     await expect(active().locator(".terminal-surface")).toContainText(
       "retained-before-exit",
     );
-    await active()
-      .getByRole("button", { name: "重新连接", exact: true })
+    await main.getByRole("button", { name: "重新连接", exact: true })
       .click();
     await authenticate(main);
     await expect(main.getByRole("tablist", { name: "服务器标签", exact: true }).getByRole("tab")).toHaveCount(1);
@@ -770,7 +769,7 @@ test("saved passwords survive reload, connect automatically and can be cleared",
     await expect(async () => {
       const trust = main.getByRole("button", { name: "确认指纹并连接" });
       if (await trust.isVisible()) await trust.click();
-      await expect(active().locator(".connection-state")).toHaveText("已连接", {
+      await expect(active().locator(".session-connection-state")).toHaveText("已连接", {
         timeout: 1000,
       });
     }).toPass({ timeout: 20000 });
@@ -812,10 +811,10 @@ test("saved passwords survive reload, connect automatically and can be cleared",
     await connectSelectedServer(main);
     await waitForAutoConnection();
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(2);
-    await active().getByRole("button", { name: "断开", exact: true }).click();
+    await main.getByRole("button", { name: "当前终端更多操作" }).click();
+    await main.getByRole("menuitem", { name: "断开当前终端", exact: true }).click();
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(1);
-    await active()
-      .getByRole("button", { name: "重新连接", exact: true })
+    await main.getByRole("button", { name: "重新连接", exact: true })
       .click();
     await waitForAutoConnection();
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(2);
@@ -827,9 +826,9 @@ test("saved passwords survive reload, connect automatically and can be cleared",
     expect(await storedPassword()).toBe(false);
     await main.getByRole("button", { name: "关闭服务器窗口" }).click();
     await expect.poll(() => ipc<number>(main, "session_count")).toBe(2);
-    await active().getByRole("button", { name: "断开", exact: true }).click();
-    await active()
-      .getByRole("button", { name: "重新连接", exact: true })
+    await main.getByRole("button", { name: "当前终端更多操作" }).click();
+    await main.getByRole("menuitem", { name: "断开当前终端", exact: true }).click();
+    await main.getByRole("button", { name: "重新连接", exact: true })
       .click();
     await expect(
       main.getByRole("dialog").getByLabel("密码", { exact: true }),

@@ -1,7 +1,7 @@
 .terminal-tabs {
   display: flex;
   align-items: center;
-  min-height: 37px;
+  min-height: 2.857143rem;
   border-bottom: 1px solid var(--line);
   padding: 0 5px;
   gap: 5px;
@@ -13,7 +13,7 @@
   display: flex;
   min-width: 0;
   overflow-x: auto;
-  scrollbar-width: thin;
+  scrollbar-width: none;
   gap: 3px;
   flex: 1;
 }
@@ -35,11 +35,93 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 8px;
+  padding: 0 8px;
+  min-height: 2.285714rem;
   white-space: nowrap;
 }
 .terminal-tab > .terminal-tab-close {
-  padding: 6px 4px;
+  padding: 0;
+  justify-content: center;
+  min-width: 2rem;
+}
+.terminal-tab-name {
+  max-width: 13rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.terminal-tab-dot {
+  flex: none;
+}
+.terminal-tab:hover {
+  opacity: 1;
+  background: var(--hover);
+}
+.terminal-tabs-track::-webkit-scrollbar {
+  display: none;
+}
+.terminal-header-actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 4px;
+}
+.terminal-header-actions > button {
+  min-height: 2.285714rem;
+  min-width: 2.285714rem;
+  flex: none;
+}
+.terminal-header-history {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.terminal-header-history[aria-pressed="true"] {
+  color: var(--selected-text);
+  background: var(--selected);
+}
+.terminal-header-actions > button:active {
+  background: var(--selected);
+}
+.terminal-recovery-action {
+  white-space: nowrap;
+}
+.terminal-context-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  min-height: 2.5rem;
+  padding: 4px 10px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  font-size: var(--font-secondary);
+}
+.terminal-context-line > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.terminal-context-line > button {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.terminal-record-warning {
+  color: var(--danger, #c04d45);
+}
+.terminal-cleared-link {
+  font-size: var(--font-caption);
+  padding: 0 4px;
+}
+@container terminal-card (max-width: 480px) {
+  .terminal-header-label {
+    display: none;
+  }
+  .terminal-tab-name {
+    max-width: 9rem;
+  }
 }
 .terminal-tab input {
   width: 130px;
@@ -83,24 +165,4 @@
   flex: 1;
   color: var(--muted);
   background: var(--surface);
-}
-.workspace-tool-status {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  padding: 6px 12px;
-  font-size: 12px;
-  flex-wrap: wrap;
-  background: var(--surface);
-  color: var(--text);
-  border-bottom: 1px solid var(--line);
-}
-.workspace-tool-status > strong {
-  margin-right: auto;
-}
-
-.terminal-tabs-all {
-  max-width: 120px;
-  min-width: 0;
-  font-size: 12px;
 }

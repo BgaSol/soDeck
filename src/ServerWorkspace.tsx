@@ -16,9 +16,14 @@ import {
   type TerminalDetails,
   type TerminalSessionController,
   type TerminalSessionSnapshot,
+  type TerminalHeaderState,
 } from "./TerminalSession";
-import { TerminalTabs } from "./TerminalTabs";
-import { WorkspaceToolConnection } from "./WorkspaceToolConnection";
+import { TerminalTabs, type TerminalHeaderAction } from "./TerminalTabs";
+import {
+  WorkspaceToolConnection,
+  type WorkspaceToolController,
+  type WorkspaceToolView,
+} from "./WorkspaceToolConnection";
 import { WorkspaceConnectionQueue } from "./workspaceConnectionQueue";
 import { WorkspaceCloseDialog } from "./WorkspaceCloseDialog";
 import { FilePanel, type FilePanelSnapshot } from "./FilePanel";
@@ -48,8 +53,7 @@ import {
 import type { WorkspaceLayoutSize } from "./workspaceSizing";
 import { terminalTitle, type WorkspaceTab } from "./workspaces";
 import { workspaceApi } from "./workspaceApi";
-import { addressOf, errorOf, type AppError } from "./types";
-import { PortForwardButton } from "./PortForwardButton";
+import { errorOf, type AppError } from "./types";
 import "./workspace-layout.css";
 
 export interface WorkspaceSnapshot {
@@ -72,6 +76,7 @@ export interface WorkspaceController {
   cancelMove: (expectedTransferId?: string) => Promise<void>;
   reconnect: () => void;
   resumeRecovery: () => void;
+  runToolConnection: () => void;
 }
 export function ServerWorkspace({
   tab,
@@ -84,6 +89,7 @@ export function ServerWorkspace({
   onConfigurationChanged,
   onConnectionStatus,
   onPromptChange,
+  onToolState,
 }: {
   tab: WorkspaceTab;
   active: boolean;
@@ -103,6 +109,7 @@ export function ServerWorkspace({
     error?: AppError,
   ) => void;
   onPromptChange?: (id: string, visible: boolean) => void;
+  onToolState?: (id: string, state: WorkspaceToolView) => void;
 }) {
   const [presentation, dispatch] = useReducer(
     workspacePresentationReducer,
@@ -113,6 +120,24 @@ export function ServerWorkspace({
   const { root, ruler, metrics, resolved } = useWorkspaceLayout(tools, layout);
   const visible = resolved.visible;
   const handles = useRef(new Map<string, TerminalSessionController>());
+  const toolController = useRef<WorkspaceToolController>(null);
+  const [toolView, setToolView] = useState<WorkspaceToolView>({
+    busy: false,
+    error: "",
+    promptPending: false,
+  });
+  const [headers, setHeaders] = useState<Record<string, TerminalHeaderState>>(
+    {},
+  );
+  const captureHeader = useCallback(
+    (id: string, value: TerminalHeaderState) => {
+      setHeaders((previous) => ({ ...previous, [id]: value }));
+    },
+    [],
+  );
+  useEffect(() => {
+    onToolState?.(tab.id, toolView);
+  }, [onToolState, tab.id, toolView]);
   const [selected, setSelected] = useState(tab.activeTerminalId);
   const mru = useRef<string[]>([]);
   const activeId = tab.terminals.some((t) => t.id === selected)
@@ -229,6 +254,44 @@ export function ServerWorkspace({
     focus.requestFocus(side);
     dispatch({ type: "close-side", side });
   }
+  function terminalAction(id: string, action: TerminalHeaderAction) {
+    if (
+      moving ||
+      !active ||
+      tab.lifecycle !== "active" ||
+      !tab.terminals.some((t) => t.id === id)
+    )
+      return;
+    const controller = handles.current.get(id);
+    if (!controller) return;
+    if (action === "disconnect") {
+      controller.disconnect();
+      return;
+    }
+    if (action === "reconnect") {
+      controller.reconnect();
+      return;
+    }
+    if (id !== activeId) return;
+    if (action === "history") controller.toggleHistory();
+    if (action === "search") controller.openHistorySearch();
+    if (action === "challenge") controller.presentChallenge();
+    if (action === "details")
+      root.current
+        ?.querySelector<HTMLButtonElement>(
+          ".terminal-session:not([hidden]) [aria-label='通信详情']",
+        )
+        ?.click();
+    if (action === "copy") void controller.clipboard.copySelection();
+    if (action === "paste") {
+      controller.focus();
+      void controller.clipboard.requestPaste();
+    }
+    if (action === "clear") {
+      controller.focus();
+      void controller.clearDisplay().catch((e) => setError(errorOf(e).message));
+    }
+  }
   async function createTerminal() {
     try {
       await workspaceApi.createTerminal(tab);
@@ -242,6 +305,11 @@ export function ServerWorkspace({
         candidate !== id && tab.terminals.some((t) => t.id === candidate),
     );
     await workspaceApi.closeTerminal(tab, id);
+    setHeaders((previous) => {
+      const copy = { ...previous };
+      delete copy[id];
+      return copy;
+    });
     if (activeId === id && next) select(next);
     setDetails((previous) => {
       const copy = { ...previous };
@@ -250,10 +318,14 @@ export function ServerWorkspace({
     });
   }
   useImperativeHandle(controllerRef, () => ({
+    runToolConnection: () => {
+      if (!moving) toolController.current?.run();
+    },
     prepareMove: async (onPrepared) => {
       if (
         document.querySelector("dialog[open]") ||
-        tab.tools.state === "verifying"
+        tab.tools.state === "verifying" ||
+        toolView.busy
       )
         throw new Error("请先完成或取消当前对话框及工具验证，再移动工作区");
       if (handles.current.size !== tab.terminals.length)
@@ -326,6 +398,13 @@ export function ServerWorkspace({
       <DockerManagementProvider contextId={moving ? null : contextId}>
         <NetBirdProvider contextId={contextId} suspended={moving}>
           <WorkspaceInteractionContext value={focus.interaction}>
+            <WorkspaceToolConnection
+              workspace={tab}
+              active={promptActive && !moving}
+              queue={queue}
+              controllerRef={toolController}
+              onState={setToolView}
+            />
             <div
               className="session-workspace-host"
               hidden={!active}
@@ -435,26 +514,13 @@ export function ServerWorkspace({
                 }
                 terminal={
                   <main className="terminal-panel">
-                    <div className="workspace-tool-status">
-                      <strong
-                        title={`${tab.server.username}@${addressOf(tab.server)}`}
-                      >
-                        {tab.server.name}
-                      </strong>
-                      <WorkspaceToolConnection
-                        workspace={tab}
-                        active={promptActive && !moving}
-                        queue={queue}
-                      />
-                      <PortForwardButton
-                        serverId={tab.server.id}
-                        onError={(e) => setError(errorOf(e).message)}
-                      />
-                    </div>
                     <TerminalTabs
                       tabs={tab.terminals}
                       activeId={activeId}
                       disabled={moving}
+                      active={active && visible.terminal}
+                      header={activeId ? headers[activeId] : undefined}
+                      onAction={terminalAction}
                       onSelect={select}
                       onCreate={() => void createTerminal()}
                       onClose={(id) => {
@@ -509,6 +575,7 @@ export function ServerWorkspace({
                               activeController.current = value;
                           }}
                           onDetails={captureDetails}
+                          onHeaderState={captureHeader}
                           onReady={terminalReady}
                           onConfigurationChanged={onConfigurationChanged}
                           onPromptChange={onPromptChange}

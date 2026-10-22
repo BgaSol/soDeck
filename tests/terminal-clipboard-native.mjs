@@ -27,15 +27,14 @@ page.on("pageerror", (error) => errors.push(error.message));
 const checks = [];
 let original;
 let lastOwned;
+const fixtureLog =
+  process.env.SODECK_CLIPBOARD_FIXTURE_LOG ||
+  ".qa/clipboard-ssh/ssh-events.jsonl";
 const commands = () =>
-  fs
-    .readFileSync(
-      process.env.SODECK_CLIPBOARD_FIXTURE_LOG ||
-        ".qa/clipboard-ssh/ssh-events.jsonl",
-      "utf8",
-    )
+  (fs.existsSync(fixtureLog) ? fs.readFileSync(fixtureLog, "utf8") : "")
     .trim()
     .split("\n")
+    .filter(Boolean)
     .map((line) => JSON.parse(line))
     .filter((event) => event.event === "terminal-input")
     .map((event) => event.command);
@@ -70,7 +69,7 @@ try {
   await expect(async () => {
     if (await trust.isVisible()) await trust.click();
     await expect(
-      page.locator(".session-page[role=tabpanel]:visible .connection-state"),
+      page.locator(".terminal-session:visible .session-connection-state"),
     ).toHaveText("已连接", { timeout: 1000 });
   }).toPass({ timeout: 20000 });
   checks.push("real SSH connection");
@@ -106,11 +105,21 @@ try {
   lastOwned = await ipc("plugin:clipboard-manager|read_text");
   expect(commands().length).toBe(before);
   checks.push("native context menu and Ctrl+C copy without interrupt");
+  await page.getByRole("button", { name: "当前终端更多操作" }).click();
+  await page.getByRole("menuitem", { name: "复制选区", exact: true }).click();
+  await expect
+    .poll(() => ipc("plugin:clipboard-manager|read_text"))
+    .toContain("native_clipboard");
+  expect(commands().length).toBe(before);
+  checks.push(
+    "integrated header menu preserves and copies native xterm selection",
+  );
   await ipc("plugin:clipboard-manager|write_text", {
     text: "echo native_preview\n",
   });
   lastOwned = "echo native_preview\n";
-  await page.keyboard.press("Control+v");
+  await page.getByRole("button", { name: "当前终端更多操作" }).click();
+  await page.getByRole("menuitem", { name: "粘贴", exact: true }).click();
   const preview = page.getByRole("dialog", { name: "粘贴到终端", exact: true });
   await expect(preview).toBeVisible();
   await expect(preview).toContainText("ops@127.0.0.1:22239");
@@ -131,7 +140,34 @@ try {
     "native multiline preview, source label and explicit newline removal",
   );
   const panel = page.locator(".session-page[role=tabpanel]:visible");
-  await panel.getByRole("tab", { name: "Docker", exact: true }).click();
+  const terminalNode = await surface.elementHandle();
+  await expect(page.locator(".terminal-tabs")).toHaveCSS("min-height", "40px");
+  await page.getByRole("button", { name: "历史", exact: true }).click();
+  await expect(page.locator(".terminal-history-layer")).toBeVisible();
+  await page.getByRole("button", { name: "当前终端更多操作" }).click();
+  await expect(page.getByRole("menuitem", { name: /^粘贴/ })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await page
+    .locator(".terminal-context-line")
+    .getByRole("button", { name: "返回实时终端", exact: true })
+    .click();
+  await expect(input).toBeFocused();
+  expect(
+    await terminalNode.evaluate(
+      (node) =>
+        node ===
+        document.querySelector(
+          ".terminal-session:not([hidden]) .terminal-surface",
+        ),
+    ),
+  ).toBe(true);
+  await page.screenshot({ path: ".qa/terminal-header-native.png" });
+  checks.push(
+    "40px integrated header keeps the native terminal instance and restores focus after readonly history",
+  );
+  const docker = panel.locator('[data-tool="docker"]');
+  if ((await docker.getAttribute("aria-expanded")) !== "true")
+    await docker.click();
   await panel
     .getByRole("group", { name: "Docker 对象类型" })
     .getByRole("button", { name: /^容器/ })

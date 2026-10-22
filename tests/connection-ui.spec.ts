@@ -6,13 +6,248 @@ import { selectTheme } from "./theme-fixture";
 import { test, expect, type Page } from "@playwright/test";
 import type { WorkspaceSnapshot } from "../src/SessionWorkspace";
 
+test("single terminal workbar keeps history, menus and terminal identity stable", async ({
+  page,
+}) => {
+  const errors = await setup(page, false, { autoConnect: true });
+  await connectAutomatically(page);
+  const surface = page.locator(".terminal-session:visible .terminal-surface");
+  const before = await surface.elementHandle();
+  const count = await connectionCount(page);
+  await expect(
+    page.locator(
+      ".workspace-tool-status, .terminal-session .terminal-toolbar, .terminal-session .terminal-history-toolbar",
+    ),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "全部终端", exact: true }),
+  ).toHaveCount(0);
+  const more = page.getByRole("button", { name: "当前终端更多操作" });
+  await more.click();
+  await expect(
+    page.getByRole("menu", { name: "终端 1", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("End");
+  await expect(
+    page.getByRole("menuitem", { name: "关闭终端", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(more).toBeFocused();
+  await page.getByRole("button", { name: "历史", exact: true }).click();
+  await expect(page.locator(".terminal-history-layer")).toBeVisible();
+  await more.click();
+  await expect(page.getByRole("menuitem", { name: /^粘贴/ })).toBeDisabled();
+  await expect(
+    page.getByRole("menuitem", { name: /^清理显示/ }),
+  ).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await page
+    .locator(".terminal-context-line")
+    .getByRole("button", { name: "返回实时终端", exact: true })
+    .click();
+  await expect(surface.locator("textarea")).toBeFocused();
+  expect(
+    await before!.evaluate(
+      (node) =>
+        node ===
+        document.querySelector(
+          ".terminal-session:not([hidden]) .terminal-surface",
+        ),
+    ),
+  ).toBe(true);
+  expect(await connectionCount(page)).toBe(count);
+  for (const width of [320, 480, 640, 900]) {
+    await page
+      .locator(".terminal-panel")
+      .evaluate(
+        (node, width) => ((node as HTMLElement).style.width = `${width}px`),
+        width,
+      );
+    await expect
+      .poll(() =>
+        page
+          .locator(".terminal-tabs")
+          .evaluate((node) => Math.round(node.getBoundingClientRect().height)),
+      )
+      .toBe(40);
+    expect(
+      await page.locator(".terminal-tabs").evaluate((node) => {
+        const right = node.getBoundingClientRect().right;
+        return [
+          ...node.querySelectorAll(".terminal-header-actions > button"),
+        ].every((button) => button.getBoundingClientRect().right <= right);
+      }),
+    ).toBe(true);
+  }
+  await page
+    .locator(".terminal-panel")
+    .evaluate((node) => (node as HTMLElement).style.removeProperty("width"));
+  expect(errors).toEqual([]);
+});
+
+test("twelve long terminal tabs keep actions reachable at narrow widths and enlarged text", async ({
+  page,
+}) => {
+  const errors = await setup(page, false, { autoConnect: true });
+  await connectAutomatically(page);
+  for (let n = 1; n < 12; n++) {
+    await page.getByRole("button", { name: "新建终端", exact: true }).click();
+    await expect(
+      page.locator(".terminal-session:visible .session-connection-state"),
+    ).toHaveText("已连接");
+  }
+  const tabs = page.getByRole("tablist", { name: "终端标签" });
+  await tabs.getByRole("tab", { selected: true }).press("F2");
+  const name = "生产应用服务器 / 持续部署与运行日志 / 区域十二";
+  await page.getByRole("textbox", { name: "终端名称", exact: true }).fill(name);
+  await page
+    .getByRole("textbox", { name: "终端名称", exact: true })
+    .press("Enter");
+  for (const size of [14, 20]) {
+    await page.evaluate(
+      (size) => (document.documentElement.style.fontSize = `${size}px`),
+      size,
+    );
+    for (const width of [320, 480, 640, 900]) {
+      await page
+        .locator(".terminal-panel")
+        .evaluate(
+          (node, width) => ((node as HTMLElement).style.width = `${width}px`),
+          width,
+        );
+      await expect(
+        page.getByRole("button", { name: "全部终端", exact: true }),
+      ).toBeVisible();
+      await expect
+        .poll(() =>
+          page.locator(".terminal-tabs").evaluate((node) => {
+            const rect = node.getBoundingClientRect();
+            return [
+              ...node.querySelectorAll(".terminal-header-actions > button"),
+            ].every((button) => {
+              const bounds = button.getBoundingClientRect();
+              return (
+                bounds.left >= rect.left &&
+                bounds.right <= rect.right &&
+                bounds.height >= 28
+              );
+            });
+          }),
+        )
+        .toBe(true);
+    }
+  }
+  await page.evaluate(() =>
+    document.documentElement.style.removeProperty("font-size"),
+  );
+  await page
+    .locator(".terminal-panel")
+    .evaluate((node) => ((node as HTMLElement).style.width = "480px"));
+  await page.getByRole("button", { name: "全部终端", exact: true }).click();
+  await expect(page.getByRole("menuitemradio")).toHaveCount(12);
+  await expect(
+    page.getByRole("menuitemradio", { checked: true }),
+  ).toContainText(name);
+  await page
+    .getByRole("menuitemradio")
+    .filter({ hasText: /^终端 1已连接$/ })
+    .click();
+  await expect(tabs.getByRole("tab", { selected: true })).toHaveText("终端 1");
+  await page.getByRole("button", { name: "当前终端更多操作" }).click();
+  await page.getByRole("menuitem", { name: /^清理显示/ }).click();
+  await expect(
+    page.locator(".terminal-session:visible .xterm-helper-textarea"),
+  ).toBeFocused();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__TEST__.calls
+          .filter((c: any) => c.command === "terminal_clear_display")
+          .at(-1)?.args.sessionId,
+    ),
+  ).toBe(await page.evaluate(() => (window as any).__TEST__.ids()[0]));
+  expect(await connectionCount(page)).toBe(12);
+  expect(errors).toEqual([]);
+});
+
+test("server tool menu survives dismissal and cancellation releases the terminal queue", async ({
+  page,
+}) => {
+  const errors = await setup(page, false, { autoConnect: true });
+  await connectAutomatically(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    const original = w.__TAURI_INTERNALS__.invoke;
+    w.__TAURI_INTERNALS__.invoke = (command: string, args: any) => {
+      if (command === "refresh_workspace_context") {
+        w.__toolRequest = args;
+        return Promise.resolve("pending-tool-verification");
+      }
+      return original(command, args);
+    };
+  });
+  const trigger = page.getByRole("button", {
+    name: "Target B 服务器菜单",
+    exact: true,
+  });
+  await trigger.click();
+  await expect(page.getByRole("menu")).toContainText(
+    "target-user@target.internal:22",
+  );
+  await page
+    .getByRole("menuitem", { name: "更新工具连接", exact: true })
+    .click();
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await trigger.click();
+  await expect(
+    page.getByRole("menuitem", { name: "取消验证", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(trigger).toBeFocused();
+  await page.evaluate(() => {
+    const w = window as any;
+    w.__toolRequest.events.onmessage({
+      type: "authRequired",
+      challenge: {
+        id: "tool-password",
+        hop: { index: 0, role: "target", server: w.__TEST__.servers[1] },
+        message: null,
+      },
+    });
+  });
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "取消", exact: true })
+    .click();
+  await page.getByRole("button", { name: "新建终端", exact: true }).click();
+  await expect(
+    page.locator(".terminal-session:visible .session-connection-state"),
+  ).toHaveText("已连接");
+  expect(await connectionCount(page)).toBe(2);
+  await trigger.click();
+  await expect(
+    page.getByRole("menuitem", { name: "更新工具连接", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("menuitem", { name: "端口转发", exact: true }).click();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__TEST__.calls
+          .filter((c: any) => c.command === "open_port_forward_window")
+          .at(-1)?.args.serverId,
+    ),
+  ).toBe("b");
+  expect(errors).toEqual([]);
+});
+
 test("server workspace keeps five independent terminal tabs and its tools after the last terminal closes", async ({
   page,
 }) => {
   const errors = await setup(page, false, { autoConnect: true });
   await page.locator('.server-row[data-server-id="b"]').dblclick();
   await expect(
-    page.locator(".terminal-session:visible .connection-state"),
+    page.locator(".terminal-session:visible .session-connection-state"),
   ).toHaveText("已连接");
   const contextId = await page
     .locator(".file-panel")
@@ -26,7 +261,7 @@ test("server workspace keeps five independent terminal tabs and its tools after 
       page.getByRole("tablist", { name: "终端标签" }).getByRole("tab"),
     ).toHaveCount(i + 2);
     await expect(
-      page.locator(".terminal-session:visible .connection-state"),
+      page.locator(".terminal-session:visible .session-connection-state"),
     ).toHaveText("已连接");
   }
   await expect(page.locator(".session-tab")).toHaveCount(1);
@@ -105,7 +340,7 @@ test("terminal CWD only changes the marker until explicit locate and is isolated
   const errors = await setup(page, false, { autoConnect: true });
   await page.locator('.server-row[data-server-id="b"]').dblclick();
   await expect(
-    page.locator(".terminal-session:visible .connection-state"),
+    page.locator(".terminal-session:visible .session-connection-state"),
   ).toHaveText("已连接");
   const before = await page.locator(".file-panel input").first().inputValue();
   await page.evaluate(() => {
@@ -123,7 +358,7 @@ test("terminal CWD only changes the marker until explicit locate and is isolated
   await expect(page.locator(".file-panel input").first()).toHaveValue(before);
   await page.getByRole("button", { name: "新建终端", exact: true }).click();
   await expect(
-    page.locator(".terminal-session:visible .connection-state"),
+    page.locator(".terminal-session:visible .session-connection-state"),
   ).toHaveText("已连接");
   await expect(
     page.getByRole("button", { name: "定位到当前终端目录" }),
@@ -160,7 +395,7 @@ test("terminal tabs rename, reorder by keyboard, keep MRU on close and expose ov
   const errors = await setup(page, false, { autoConnect: true });
   await page.locator('.server-row[data-server-id="b"]').dblclick();
   await expect(
-    page.locator(".terminal-session:visible .connection-state"),
+    page.locator(".terminal-session:visible .session-connection-state"),
   ).toHaveText("已连接");
   for (let i = 0; i < 3; i++) {
     await page.getByRole("button", { name: "新建终端", exact: true }).click();
@@ -199,10 +434,14 @@ test("terminal tabs rename, reorder by keyboard, keep MRU on close and expose ov
     tabs.getByRole("tab", { name: "终端 4", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
   await page.setViewportSize({ width: 780, height: 650 });
-  const id = await tabs
-    .getByRole("tab", { name: "终端 1", exact: true })
-    .getAttribute("data-terminal-id");
-  await page.getByLabel("全部终端", { exact: true }).selectOption(id!);
+  await page.getByRole("button", { name: "收起文件面板", exact: true }).click();
+  await page
+    .locator(".terminal-panel")
+    .evaluate((node) => ((node as HTMLElement).style.width = "320px"));
+  await page.getByRole("button", { name: "全部终端", exact: true }).click();
+  await page
+    .getByRole("menuitemradio", { name: "终端 1 已连接", exact: true })
+    .click();
   await expect(
     tabs.getByRole("tab", { name: "终端 1", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
@@ -396,6 +635,7 @@ async function setup(
             return false;
           if (command === "plugin:window|is_focused") return true;
           if (command === "list_servers") return structuredClone(servers);
+          if (command === "terminal_history_sessions") return [];
           if (command === "take_workspace")
             return { payload: options.snapshot, beforeId: null };
           if (command === "terminal_freeze") {
@@ -637,7 +877,7 @@ async function connect(page: Page, forceNew = false) {
   await expect(
     page
       .locator(".session-page[role=tabpanel]:visible")
-      .locator(".connection-state:visible"),
+      .locator(".session-connection-state:visible"),
   ).toHaveText("已连接");
 }
 
@@ -670,7 +910,7 @@ test("server tab width recovers after the strip becomes empty and terminal navig
   await readable();
   for (const theme of ["light", "dark"] as const) {
     await selectTheme(page, theme);
-    for (const selector of [".terminal-tabs", ".workspace-tool-status"]) {
+    for (const selector of [".terminal-tabs"]) {
       expect(
         await page.locator(selector).evaluate((element) => {
           const style = getComputedStyle(element);
@@ -1469,14 +1709,14 @@ test("failed connection retries in the same tab", async ({ page }) => {
     page.locator(".terminal-session:visible").getByRole("alert"),
   ).toContainText("fixture connection refused");
   const id = await page.locator(".session-tab").getAttribute("data-tab-id");
-  await page.getByRole("button", { name: "重新连接", exact: true }).click();
+  await page.getByRole("button", { name: "重试连接", exact: true }).click();
   let dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "确认指纹并连接" }).click();
   await dialog.getByRole("button", { name: "确认指纹并连接" }).click();
   await dialog.getByLabel("密码", { exact: true }).fill("target-password");
   await dialog.getByRole("button", { name: "连接", exact: true }).click();
   await expect(
-    page.locator(".terminal-session:visible .connection-state"),
+    page.locator(".terminal-session:visible .session-connection-state"),
   ).toHaveText("已连接");
   await expect(page.locator(".session-tab")).toHaveCount(1);
   await expect(page.locator(".session-tab")).toHaveAttribute(
@@ -1673,7 +1913,7 @@ test("moving a workspace carries both widths and restores the same terminal with
   await expect(
     detached
       .locator(".session-page[role=tabpanel]:visible")
-      .locator(".connection-state:visible"),
+      .locator(".session-connection-state:visible"),
   ).toHaveText("已连接");
   await expect(
     detached.getByRole("separator", { name: "调整文件区域宽度" }),
@@ -1747,7 +1987,7 @@ test("pending connection starts once and cancellation disposes a late connection
     .getByRole("button", { name: "连接", exact: true })
     .dblclick();
   await expect(
-    page.locator(".terminal-session:visible .connection-state"),
+    page.locator(".terminal-session:visible .session-connection-state"),
   ).toHaveText("连接中");
   expect(
     await page.evaluate(
@@ -1804,7 +2044,7 @@ async function createTitlebarTabs(
     await expect(
       page
         .locator(".session-page[role=tabpanel]:visible")
-        .locator(".connection-state:visible"),
+        .locator(".session-connection-state:visible"),
     ).toHaveText("已连接");
   }
   return errors;
@@ -2843,7 +3083,7 @@ test("create saves one copy then explicit connect retries without another copy",
     "copy connection refused",
   );
   const tabId = await page.locator(".session-tab").getAttribute("data-tab-id");
-  await home.getByRole("button", { name: "重新连接", exact: true }).click();
+  await page.getByRole("button", { name: "重试连接", exact: true }).click();
   await expect(home.getByRole("alert")).toContainText(
     "copy connection refused",
   );
@@ -3279,7 +3519,9 @@ for (const colorScheme of ["light", "dark"] as const) {
 
 async function connectAutomatically(page: Page) {
   await page.locator('.server-row[data-server-id="b"]').dblclick();
-  await expect(page.locator(".connection-state:visible")).toHaveText("已连接");
+  await expect(page.locator(".session-connection-state:visible")).toHaveText(
+    "已连接",
+  );
 }
 async function breakConnection(page: Page, nextMode?: string) {
   await page.evaluate((mode) => {
@@ -3342,14 +3584,18 @@ test("automatic recovery keeps the tab and terminal output and reconnects after 
     .locator('.tab-select[aria-selected="true"]')
     .getAttribute("id");
   await breakConnection(page, "fail");
-  await expect(page.locator(".connection-recovery")).toContainText("秒后重试");
+  await expect(page.locator(".terminal-context-line")).toContainText(
+    "秒后重试",
+  );
   await page.screenshot({ path: ".qa/connection-recovery-waiting.png" });
   await page.clock.fastForward(3000);
   await expect.poll(() => connectionCount(page)).toBe(2);
-  await expect(page.locator(".connection-recovery")).toContainText("第 2 次");
+  await expect(page.locator(".terminal-context-line")).toContainText("第 2 次");
   await page.clock.fastForward(6000);
   await expect.poll(() => connectionCount(page)).toBe(3);
-  await expect(page.locator(".connection-state:visible")).toHaveText("已连接");
+  await expect(page.locator(".session-connection-state:visible")).toHaveText(
+    "已连接",
+  );
   expect(
     await page.locator('.tab-select[aria-selected="true"]').getAttribute("id"),
   ).toBe(tabId);
@@ -3374,13 +3620,17 @@ test("automatic recovery handles IPC rejection and stops timers when requested",
   await breakConnection(page, "reject");
   await page.getByRole("button", { name: "立即重连", exact: true }).click();
   await expect.poll(() => connectionCount(page)).toBe(2);
-  await expect(page.locator(".connection-recovery")).toContainText("第 2 次");
+  await expect(page.locator(".terminal-context-line")).toContainText("第 2 次");
   await page.getByRole("button", { name: "停止重连", exact: true }).click();
   await page.clock.fastForward(120000);
   expect(await connectionCount(page)).toBe(2);
-  await expect(page.locator(".connection-state:visible")).toHaveText("已断开");
+  await expect(page.locator(".session-connection-state:visible")).toHaveText(
+    "已断开",
+  );
   await page.getByRole("button", { name: "重新连接", exact: true }).click();
-  await expect(page.locator(".connection-state:visible")).toHaveText("已连接");
+  await expect(page.locator(".session-connection-state:visible")).toHaveText(
+    "已连接",
+  );
   expect(await connectionCount(page)).toBe(3);
   expect(errors).toEqual([]);
 });
@@ -3393,7 +3643,7 @@ test("stopping an in-flight recovery ignores late success and closing a waiting 
   await page.clock.install();
   await breakConnection(page, "pending");
   await page.getByRole("button", { name: "立即重连", exact: true }).click();
-  await expect(page.locator(".connection-state:visible")).toHaveText(
+  await expect(page.locator(".session-connection-state:visible")).toHaveText(
     "正在重连",
   );
   await page.getByRole("button", { name: "停止重连", exact: true }).click();
@@ -3405,10 +3655,14 @@ test("stopping an in-flight recovery ignores late success and closing a waiting 
     });
   });
   await page.clock.fastForward(60000);
-  await expect(page.locator(".connection-state:visible")).toHaveText("已断开");
+  await expect(page.locator(".session-connection-state:visible")).toHaveText(
+    "已断开",
+  );
   expect(await connectionCount(page)).toBe(2);
   await page.getByRole("button", { name: "重新连接", exact: true }).click();
-  await expect(page.locator(".connection-state:visible")).toHaveText("已连接");
+  await expect(page.locator(".session-connection-state:visible")).toHaveText(
+    "已连接",
+  );
   await breakConnection(page);
   await page.locator('.tab-select[aria-selected="true"]').press("Delete");
   await page
@@ -3439,8 +3693,13 @@ test("normal exit and manual disconnect do not trigger automatic recovery", asyn
   await page.clock.fastForward(60000);
   expect(await connectionCount(page)).toBe(1);
   await page.getByRole("button", { name: "重新连接", exact: true }).click();
-  await expect(page.locator(".connection-state:visible")).toHaveText("已连接");
-  await page.getByRole("button", { name: "断开", exact: true }).click();
+  await expect(page.locator(".session-connection-state:visible")).toHaveText(
+    "已连接",
+  );
+  await page.getByRole("button", { name: "当前终端更多操作" }).click();
+  await page
+    .getByRole("menuitem", { name: "断开当前终端", exact: true })
+    .click();
   await page.clock.fastForward(60000);
   expect(await connectionCount(page)).toBe(2);
   expect(errors).toEqual([]);
@@ -3463,7 +3722,9 @@ test("automatic recovery pauses for authentication without duplicate prompts", a
     .click();
   await page.clock.fastForward(60000);
   expect(await connectionCount(page)).toBe(2);
-  await expect(page.locator(".connection-state:visible")).toHaveText("已断开");
+  await expect(page.locator(".session-connection-state:visible")).toHaveText(
+    "已断开",
+  );
   expect(errors).toEqual([]);
 });
 
@@ -3522,9 +3783,9 @@ test("waiting recovery transfers only after commit and detached tabs request new
   await detached.evaluate(() => (window as any).__TEST__.commitMove());
   await detached.clock.fastForward(1);
   await expect.poll(() => connectionCount(detached)).toBe(1);
-  await expect(detached.locator(".connection-state:visible")).toHaveText(
-    "已连接",
-  );
+  await expect(
+    detached.locator(".session-connection-state:visible"),
+  ).toHaveText("已连接");
   expect(await connectionCount(page)).toBe(1);
   await detached
     .locator('.tab-select[aria-selected="true"]')
@@ -3581,7 +3842,9 @@ test("failed migration resumes recovery in the source window", async ({
   }, tabId);
   await page.clock.fastForward(1);
   await expect.poll(() => connectionCount(page)).toBe(2);
-  await expect(page.locator(".connection-state:visible")).toHaveText("已连接");
+  await expect(page.locator(".session-connection-state:visible")).toHaveText(
+    "已连接",
+  );
   expect(errors).toEqual([]);
 });
 
@@ -3649,7 +3912,9 @@ test("late migration notifications cannot cancel or remove a newer source transa
   ).toBe(cancellations);
   await notify("workspace-move-failed", currentId);
   await expect(page.locator(".session-moving")).toHaveCount(0);
-  await expect(page.locator(".connection-state:visible")).toHaveText("已连接");
+  await expect(page.locator(".session-connection-state:visible")).toHaveText(
+    "已连接",
+  );
   expect(await connectionCount(page)).toBe(1);
   expect(errors).toEqual([]);
 });
@@ -3710,12 +3975,14 @@ test("new tab connection failures remain visible without changing the source ses
   await top.first().click({ button: "right" });
   await page.getByRole("menuitem", { name: "新建终端", exact: true }).click();
   await expect(tabs).toHaveCount(2);
-  await expect(page.locator(".connection-state:visible")).toHaveText(
+  await expect(page.locator(".session-connection-state:visible")).toHaveText(
     "连接失败",
   );
   await page.clock.fastForward(60000);
   expect(await connectionCount(page)).toBe(2);
   await tabs.first().click();
-  await expect(page.locator(".connection-state:visible")).toHaveText("已连接");
+  await expect(page.locator(".session-connection-state:visible")).toHaveText(
+    "已连接",
+  );
   expect(errors).toEqual([]);
 });

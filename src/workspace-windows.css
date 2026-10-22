@@ -28,7 +28,7 @@
   height: 34px;
 }
 .window-tabs-slot .session-tab {
-  min-width: min(120px, var(--tab-available-width, 120px));
+  min-width: min(148px, var(--tab-available-width, 148px));
   max-width: min(220px, calc(var(--tab-available-width, 220px) - 2px));
   height: 34px;
   border-radius: 7px;
@@ -95,8 +95,62 @@
 }
 .tab-menu-detail {
   font-size: var(--font-caption);
-  flex-shrink: 0;
+  max-width: 58%;
+  white-space: normal;
+  overflow-wrap: anywhere;
   opacity: 0.8;
+}
+.tab-server-menu {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+.tab-server-menu:hover,
+.tab-server-menu[aria-expanded="true"] {
+  background: var(--selected);
+  color: var(--text);
+}
+.tab-server-menu:active {
+  background: var(--selected);
+}
+.tab-menu-heading {
+  padding: 6px 10px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.tab-menu-info {
+  padding: 5px 10px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  font-size: var(--font-secondary);
+}
+.tab-menu-info > span {
+  display: block;
+  margin-top: 3px;
+  font-size: var(--font-caption);
+}
+.workspace-tab-menu > .tab-menu-group {
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+  border-radius: 0;
+}
+.workspace-tab-menu > .tab-menu-danger {
+  color: var(--danger, #c04d45);
+}
+@media (prefers-contrast: more) {
+  .workspace-tab-menu {
+    border: 1px solid var(--text);
+    background: var(--surface);
+  }
+  .terminal-tab {
+    opacity: 1;
+  }
 }
 .tab-select[draggable="true"] {
   cursor: grab;

@@ -1,4 +1,5 @@
 import { workspaceApi } from "./workspaceApi";
+import { useWorkspaceToolActions } from "./useWorkspaceToolActions";
 import { projectWorkspace } from "./workspaces";
 import { useServerWorkspaces } from "./useServerWorkspaces";
 import { useWorkspaceClose } from "./useWorkspaceClose";
@@ -185,6 +186,12 @@ export function App() {
     if (!id) setFocusRequest((value) => value + 1);
   }
   const moves = useWorkspaceMoves(setWorkspaces, setError);
+  const toolActions = useWorkspaceToolActions(
+    workspaces.tabs,
+    moves.moving,
+    moves.handles,
+    (e) => setError(errorOf(e)),
+  );
   const allWorkspaces = useServerWorkspaces(setWorkspaces, setError);
   const workspaceClose = useWorkspaceClose(setError);
   const tags = [...new Set(servers.flatMap((server) => server.tags))].sort(),
@@ -438,6 +445,8 @@ export function App() {
         tabs={workspaces.tabs}
         activeId={workspaces.activeId}
         moving={moves.moving}
+        toolStates={toolActions.toolStates}
+        onToolAction={toolActions.onToolAction}
         onSelect={navigate}
         onHome={() => navigate("")}
         onClose={(id) => {
@@ -563,6 +572,7 @@ export function App() {
                     else moves.handles.current.delete(tab.id);
                   }}
                   onChange={updateTab}
+                  onToolState={toolActions.onToolState}
                   onConfigurationChanged={refreshConfigurations}
                 />
                 {moves.moving.has(tab.id) && (

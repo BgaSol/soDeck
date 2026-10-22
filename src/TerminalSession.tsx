@@ -7,13 +7,16 @@ import {
   type Ref,
 } from "react";
 import { createPortal } from "react-dom";
-import { Plug, Unplug, X } from "lucide-react";
+import { ArrowLeft, X } from "lucide-react";
 import {
   TerminalPane,
-  type TerminalController,
   type TerminalCwd,
   type TerminalSnapshot,
 } from "./TerminalPane";
+import {
+  type TerminalChromeState,
+  type TerminalWorkspaceController,
+} from "./TerminalWorkspace";
 import { useConnection } from "./useConnection";
 import { LoginDialog, FingerprintDialog } from "./ConnectionDialogs";
 import { DiagnosticErrorInfo } from "./DiagnosticErrorInfo";
@@ -26,7 +29,6 @@ import type { ResourceMetric } from "./resourcePresentation";
 import type { RecoverySnapshot } from "./connectionRecovery";
 import {
   terminalStateLabel,
-  terminalTitle,
   type WorkspaceTab,
   type TerminalTab,
 } from "./workspaces";
@@ -41,11 +43,23 @@ export interface TerminalSessionSnapshot {
   terminal: TerminalSnapshot;
   recovery: RecoverySnapshot;
 }
-export interface TerminalSessionController extends TerminalController {
+export interface TerminalSessionController extends TerminalWorkspaceController {
   snapshot: () => Promise<TerminalSessionSnapshot>;
   reconnect: () => void;
   disconnect: () => void;
   resumeRecovery: () => void;
+  presentChallenge: () => void;
+}
+export interface TerminalHeaderState {
+  status: string;
+  sessionId: string | null;
+  automatic: boolean;
+  phase: string;
+  seconds: number;
+  attempts: number;
+  prompt: boolean;
+  error: AppError | null;
+  chrome?: TerminalChromeState;
 }
 export interface TerminalDetails {
   sessionId: string | null;
@@ -68,6 +82,7 @@ export function TerminalSession({
   onConfigurationChanged,
   onPromptChange,
   onConnectionStatus,
+  onHeaderState,
   resources,
   preferences,
   onPreferences,
@@ -85,6 +100,7 @@ export function TerminalSession({
   onReady: (id: string) => void;
   onConfigurationChanged?: () => void;
   onPromptChange?: (id: string, visible: boolean) => void;
+  onHeaderState?: (id: string, state: TerminalHeaderState) => void;
   onConnectionStatus?: (
     id: string,
     attempt: number,
@@ -107,7 +123,8 @@ export function TerminalSession({
   );
   const [error, setError] = useState<AppError | null>(null);
   const [state, setState] = useState(terminalStateLabel(tab.state));
-  const live = useRef<TerminalController>(null);
+  const live = useRef<TerminalWorkspaceController>(null);
+  const [chrome, setChrome] = useState<TerminalChromeState>();
   const release = useRef<(() => void) | null>(null);
   const restoredConnection = useRef(
     !!initial || tab.state !== "queued",
@@ -157,6 +174,31 @@ export function TerminalSession({
           : connection.request && admitted !== connection.request
             ? "等待连接"
             : state;
+  useEffect(() => {
+    onHeaderState?.(tab.id, {
+      status,
+      sessionId,
+      automatic: connection.recovery.automatic,
+      phase: connection.recovery.phase,
+      seconds: connection.seconds,
+      attempts: connection.recovery.attempts,
+      prompt: !!connection.prompt,
+      error,
+      chrome,
+    });
+  }, [
+    onHeaderState,
+    tab.id,
+    status,
+    sessionId,
+    connection.recovery.automatic,
+    connection.recovery.phase,
+    connection.recovery.attempts,
+    connection.seconds,
+    !!connection.prompt,
+    error,
+    chrome,
+  ]);
   useEffect(() => {
     const map: Record<string, TerminalTab["state"]> = {
       等待连接: "queued",
@@ -222,6 +264,8 @@ export function TerminalSession({
       sendControl: async (k) => live.current?.clipboard.sendControl(k),
     },
     clearDisplay: async () => live.current?.clearDisplay(),
+    toggleHistory: () => live.current?.toggleHistory(),
+    openHistorySearch: () => live.current?.openHistorySearch(),
     prepareMove: async () => {
       if (!live.current) throw new Error("终端尚未准备好");
       return live.current.prepareMove();
@@ -256,6 +300,13 @@ export function TerminalSession({
     resumeRecovery: connection.resumeRecovery,
     reconnect: connection.reconnect,
     disconnect,
+    presentChallenge: () => {
+      if (connection.prompt && connection.connectionId)
+        void invoke("present_connection_challenge", {
+          connectionId: connection.connectionId,
+          challengeId: connection.prompt.challenge.id,
+        }).catch(() => {});
+    },
   }));
   const prompt = connection.prompt;
   return (
@@ -267,58 +318,39 @@ export function TerminalSession({
       id={`terminal-panel-${tab.id}`}
       aria-labelledby={`terminal-tab-${tab.id}`}
     >
-      <header className="terminal-toolbar">
-        <strong>{terminalTitle(tab)}</strong>
-        <span
-          className={`connection-state ${sessionId ? "running" : ""}`}
-          role="status"
-        >
-          {status}
-        </span>
-
-        {connection.recovery.automatic ||
-        sessionId ||
-        ["连接中", "等待连接", "等待重连", "等待验证"].includes(status) ||
-        prompt ? (
+      {chrome?.mode === "history" ? (
+        <div className="terminal-context-line" role="status">
+          <span>
+            正在查看历史{chrome.changed ? " · 实时终端有新输出" : " · 只读"}
+          </span>
           <button
-            className="quiet terminal-connection-action"
-            onClick={disconnect}
+            className="quiet"
+            onClick={() => live.current?.toggleHistory()}
           >
-            <Unplug size={15} />
-            {connection.recovery.automatic
-              ? "停止重连"
-              : sessionId
-                ? "断开"
-                : "取消连接"}
+            <ArrowLeft size={14} />
+            返回实时终端
           </button>
-        ) : (
-          <button className="primary" onClick={connection.reconnect}>
-            <Plug size={15} />
-            重新连接
-          </button>
-        )}
-        {connection.recovery.phase === "waiting" && (
-          <button onClick={connection.reconnect}>立即重连</button>
-        )}
-      </header>
-      {connection.recovery.automatic && (
-        <div className="connection-recovery" role="status">
-          {connection.recovery.phase === "waiting"
-            ? `连接已断开，${connection.seconds} 秒后重试 · 第 ${connection.recovery.attempts + 1} 次`
-            : prompt
-              ? "重连需要身份验证"
-              : `正在重新连接 · 第 ${connection.recovery.attempts} 次`}
-          {error && (
-            <span className="connection-recovery-detail">{error.message}</span>
-          )}
         </div>
-      )}
-      {error && !connection.recovery.automatic && (
-        <div className="connection-error" role="alert">
-          <div>
+      ) : connection.recovery.automatic ? (
+        <div className="terminal-context-line" role="status">
+          <span>
+            {connection.recovery.phase === "waiting"
+              ? `连接已断开，${connection.seconds} 秒后重试 · 第 ${connection.recovery.attempts + 1} 次`
+              : prompt
+                ? "重连需要身份验证"
+                : `正在重新连接 · 第 ${connection.recovery.attempts} 次`}
+            {error ? ` · ${error.message}` : ""}
+          </span>
+          <button className="quiet" onClick={disconnect}>
+            停止重连
+          </button>
+        </div>
+      ) : error ? (
+        <div className="terminal-context-line" role="alert">
+          <span>
             {error.message}
             <DiagnosticErrorInfo error={error} />
-          </div>
+          </span>
           <button
             className="icon-button"
             onClick={() => setError(null)}
@@ -327,7 +359,7 @@ export function TerminalSession({
             <X size={14} />
           </button>
         </div>
-      )}
+      ) : null}
       <div className="terminal-host">
         <TerminalPane
           source={{
@@ -345,6 +377,8 @@ export function TerminalSession({
           request={admitted}
           active={active}
           interactive={interactive}
+          integrated
+          onChromeState={setChrome}
           onReady={() => {
             release.current?.();
             onReady(tab.id);
@@ -382,6 +416,23 @@ export function TerminalSession({
         />
       </div>
       <footer className="workspace-status session-statusbar">
+        {chrome?.recordError && (
+          <span
+            className="terminal-record-warning"
+            role="status"
+            title={chrome.recordLabel}
+          >
+            历史保存异常
+          </span>
+        )}
+        {chrome?.cleared && chrome.mode === "live" && (
+          <button
+            className="quiet terminal-cleared-link"
+            onClick={() => live.current?.toggleHistory()}
+          >
+            已清理 · 查看此前记录
+          </button>
+        )}
         <SessionConnectionDetails
           active={active}
           status={status}

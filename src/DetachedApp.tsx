@@ -1,4 +1,5 @@
 import { workspaceApi } from "./workspaceApi";
+import { useWorkspaceToolActions } from "./useWorkspaceToolActions";
 import { useServerWorkspaces } from "./useServerWorkspaces";
 import { useWorkspaceClose } from "./useWorkspaceClose";
 import { useRef } from "react";
@@ -20,6 +21,12 @@ export function DetachedApp() {
   const [workspaces, setWorkspaces] = useState(emptyWorkspaces);
   const [error, setError] = useState<AppError | null>(null);
   const moves = useWorkspaceMoves(setWorkspaces, setError, true);
+  const toolActions = useWorkspaceToolActions(
+    workspaces.tabs,
+    moves.moving,
+    moves.handles,
+    (e) => setError(errorOf(e)),
+  );
   useServerWorkspaces(setWorkspaces, setError);
   const workspaceClose = useWorkspaceClose(setError, () => {
     void getCurrentWindow().destroy();
@@ -78,6 +85,8 @@ export function DetachedApp() {
         activeId={workspaces.activeId}
         detached
         moving={moves.moving}
+        toolStates={toolActions.toolStates}
+        onToolAction={toolActions.onToolAction}
         onSelect={(id) => setWorkspaces((c) => ({ ...c, activeId: id }))}
         onClose={() => void getCurrentWindow().close()}
         onMove={(...args) => void moves.move(...args)}
@@ -116,6 +125,7 @@ export function DetachedApp() {
                   else moves.handles.current.delete(tab.id);
                 }}
                 onChange={update}
+                onToolState={toolActions.onToolState}
               />
               {moves.moving.has(tab.id) && (
                 <div className="session-moving">

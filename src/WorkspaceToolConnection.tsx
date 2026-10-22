@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type Ref,
+} from "react";
 import { createPortal } from "react-dom";
 import { Channel } from "@tauri-apps/api/core";
 import { invokeDiagnosed as invoke } from "./diagnostics";
@@ -9,14 +15,27 @@ import type { ConnectionPrompt } from "./useConnection";
 import { errorOf, type ConnectionAnswer, type TerminalEvent } from "./types";
 import type { WorkspaceConnectionQueue } from "./workspaceConnectionQueue";
 
+export interface WorkspaceToolView {
+  busy: boolean;
+  error: string;
+  promptPending: boolean;
+}
+export interface WorkspaceToolController {
+  run: () => void;
+}
+
 export function WorkspaceToolConnection({
   workspace,
   active,
   queue,
+  controllerRef,
+  onState,
 }: {
   workspace: WorkspaceTab;
   active: boolean;
   queue: WorkspaceConnectionQueue;
+  controllerRef?: Ref<WorkspaceToolController>;
+  onState?: (state: WorkspaceToolView) => void;
 }) {
   const [prompt, setPrompt] = useState<ConnectionPrompt | null>(null),
     [id, setId] = useState<string | null>(null),
@@ -25,12 +44,17 @@ export function WorkspaceToolConnection({
   const abort = useRef<AbortController | null>(null);
   const currentId = useRef<string | null>(null);
   const release = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    onState?.({ busy, error, promptPending: !!prompt });
+  }, [onState, busy, error, !!prompt]);
   function cancel() {
     abort.current?.abort();
     if (currentId.current)
       void invoke("cancel_workspace_context", {
         verificationId: currentId.current,
       }).catch(() => {});
+    currentId.current = null;
+    setId(null);
     setPrompt(null);
     setBusy(false);
   }
@@ -53,7 +77,7 @@ export function WorkspaceToolConnection({
       }).catch(() => {});
   }, [active, id, prompt]);
   async function start() {
-    if (busy) return;
+    if (busy || (abort.current && !abort.current.signal.aborted)) return;
     setBusy(true);
     setError("");
     const controller = new AbortController();
@@ -77,6 +101,7 @@ export function WorkspaceToolConnection({
           setBusy(false);
           setId(null);
           currentId.current = null;
+          if (abort.current === controller) abort.current = null;
           done();
           if (event.error) setError(event.error.message);
         }
@@ -93,11 +118,21 @@ export function WorkspaceToolConnection({
         setId(verificationId);
       }
     } catch (e) {
-      if (!controller.signal.aborted) setError(errorOf(e).message);
-      release.current?.();
-      setBusy(false);
+      if (abort.current === controller) {
+        if (!controller.signal.aborted) setError(errorOf(e).message);
+        release.current?.();
+        abort.current = null;
+        setBusy(false);
+      }
     }
   }
+  useImperativeHandle(controllerRef, () => ({
+    run: () => {
+      if (workspace.lifecycle !== "active") return;
+      if (busy) cancel();
+      else void start();
+    },
+  }));
   async function answer(response: ConnectionAnswer) {
     if (!id || !prompt) return;
     const challengeId = prompt.challenge.id;
@@ -110,28 +145,6 @@ export function WorkspaceToolConnection({
   }
   return (
     <>
-      <span>
-        {busy
-          ? "正在验证工具连接"
-          : workspace.tools.context
-            ? "工具可用"
-            : "工具需要验证"}
-      </span>
-      {workspace.tools.configurationChanged && (
-        <span>配置已更新，工具仍使用原连接</span>
-      )}
-      <button
-        className="quiet"
-        disabled={workspace.lifecycle !== "active"}
-        onClick={() => (busy ? cancel() : void start())}
-      >
-        {busy
-          ? "取消验证"
-          : workspace.tools.context
-            ? "更新工具连接"
-            : "连接工具"}
-      </button>
-      {error && <span role="alert">{error}</span>}
       {active &&
         prompt?.type === "authRequired" &&
         createPortal(

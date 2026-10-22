@@ -395,7 +395,10 @@ async function management(
     },
   );
   // Explicitly verify a new tool generation after installing the service fixture.
-  await page.getByRole("button", { name: "更新工具连接", exact: true }).click();
+  await page.locator(".session-tab.active .tab-server-menu").click();
+  await page
+    .getByRole("menuitem", { name: "更新工具连接", exact: true })
+    .click();
   await openWorkspaceTool(page, "docker");
   const panel = page.getByRole("region", { name: "Docker 引擎与对象" });
   await panel

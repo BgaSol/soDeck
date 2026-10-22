@@ -7,6 +7,9 @@ export interface TabMenuItem {
   detail?: string;
   selected?: boolean;
   disabled?: boolean;
+  info?: boolean;
+  groupBefore?: boolean;
+  danger?: boolean;
   run: () => void;
 }
 
@@ -97,24 +100,36 @@ export function WorkspaceTabMenu({
         enabled[next]?.focus();
       }}
     >
-      {items.map((item) => (
-        <button
-          key={item.id}
-          role={item.selected === undefined ? "menuitem" : "menuitemradio"}
-          aria-checked={item.selected}
-          disabled={item.disabled}
-          tabIndex={-1}
-          onClick={() => {
-            item.run();
-            close.current(false);
-          }}
-        >
-          <span className="tab-menu-name">{item.label}</span>
-          {item.detail && (
-            <span className="tab-menu-detail">{item.detail}</span>
-          )}
-        </button>
-      ))}
+      <div className="tab-menu-heading" role="presentation">
+        {title}
+      </div>
+      {items.map((item) =>
+        item.info ? (
+          <div key={item.id} className="tab-menu-info" role="presentation">
+            {item.label}
+            {item.detail && <span>{item.detail}</span>}
+          </div>
+        ) : (
+          <button
+            key={item.id}
+            className={`${item.groupBefore ? "tab-menu-group" : ""}${item.danger ? " tab-menu-danger" : ""}`}
+            role={item.selected === undefined ? "menuitem" : "menuitemradio"}
+            aria-checked={item.selected}
+            disabled={item.disabled}
+            title={item.detail}
+            tabIndex={-1}
+            onClick={() => {
+              close.current(false);
+              item.run();
+            }}
+          >
+            <span className="tab-menu-name">{item.label}</span>
+            {item.detail && (
+              <span className="tab-menu-detail">{item.detail}</span>
+            )}
+          </button>
+        ),
+      )}
     </div>,
     document.body,
   );

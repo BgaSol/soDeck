@@ -10,6 +10,7 @@ import {
   Server as ServerIcon,
 } from "lucide-react";
 import type { WorkspaceTab } from "./workspaces";
+import type { WorkspaceToolView } from "./WorkspaceToolConnection";
 import { tabTitle } from "./workspaces";
 import { useTabStrip } from "./useTabStrip";
 import { useWorkspaceTabDrag } from "./useWorkspaceTabDrag";
@@ -29,6 +30,8 @@ export interface WorkspaceTabsProps {
   onNewConnection?: (tabId: string) => void;
   onHome?: () => void;
   onError: (error: unknown) => void;
+  toolStates?: Record<string, WorkspaceToolView>;
+  onToolAction?: (id: string, action: "connection" | "forward") => void;
 }
 
 export function WorkspaceTabs({
@@ -44,6 +47,8 @@ export function WorkspaceTabs({
   onNewConnection,
   onHome,
   onError,
+  toolStates,
+  onToolAction,
   appendDropRef,
   onAppendDropChange,
 }: WorkspaceTabsProps & {
@@ -87,10 +92,21 @@ export function WorkspaceTabs({
       });
   }
   useEffect(() => {
-    if (menu?.tabId && !tabs.some((tab) => tab.id === menu.tabId))
+    if (
+      menu?.tabId &&
+      !tabs.some(
+        (tab) =>
+          tab.id === menu.tabId &&
+          tab.lifecycle === "active" &&
+          !moving.has(tab.id),
+      )
+    )
       setMenu(null);
     if (menu && !menu.tabId && !scroll.overflowing) setMenu(null);
-  }, [tabs, menu, scroll.overflowing]);
+  }, [tabs, menu, scroll.overflowing, moving]);
+  useEffect(() => {
+    setMenu(null);
+  }, [activeId]);
   function select(id: string) {
     onSelect(id);
     focusTab(id);
@@ -101,8 +117,56 @@ export function WorkspaceTabs({
   const menuItems: TabMenuItem[] = selected
     ? [
         {
+          id: "identity",
+          label: selected.server.name,
+          detail: `${selected.server.username}@${selected.server.host}:${selected.server.port}`,
+          info: true,
+          run: () => {},
+        },
+        {
+          id: "tools-status",
+          label: toolStates?.[selected.id]?.busy
+            ? "正在验证工具连接"
+            : selected.tools.context
+              ? "工具可用"
+              : "工具需要验证",
+          detail:
+            toolStates?.[selected.id]?.error ||
+            (selected.tools.configurationChanged
+              ? "配置已更新，工具仍使用原连接"
+              : undefined),
+          info: true,
+          run: () => {},
+        },
+        {
+          id: "tools-connection",
+          label: toolStates?.[selected.id]?.busy
+            ? "取消验证"
+            : selected.tools.context
+              ? "更新工具连接"
+              : "连接工具",
+          disabled:
+            !onToolAction ||
+            selected.lifecycle !== "active" ||
+            moving.has(selected.id),
+          run: () => {
+            onSelect(selected.id);
+            onToolAction?.(selected.id, "connection");
+          },
+        },
+        {
+          id: "port-forward",
+          label: "端口转发",
+          disabled:
+            !onToolAction ||
+            selected.lifecycle !== "active" ||
+            moving.has(selected.id),
+          run: () => onToolAction?.(selected.id, "forward"),
+        },
+        {
           id: "new-connection",
           label: "新建终端",
+          groupBefore: true,
 
           disabled: !onNewConnection || moving.has(selected.id),
           run: () => onNewConnection?.(selected.id),
@@ -270,6 +334,31 @@ export function WorkspaceTabs({
                   />
                   <span className="tab-name">{tabTitle(tab)}</span>
                   <span className="sr-only">{tab.state}</span>
+                </button>
+                <button
+                  className="tab-server-menu"
+                  aria-label={`${tabTitle(tab)} 服务器菜单`}
+                  title="服务器菜单"
+                  aria-haspopup="menu"
+                  aria-expanded={menu?.tabId === tab.id}
+                  aria-controls={menu?.tabId === tab.id ? menuId : undefined}
+                  disabled={moving.has(tab.id) || tab.lifecycle !== "active"}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    if (menu?.anchor === event.currentTarget) {
+                      closeMenu(true);
+                      return;
+                    }
+                    const bounds = event.currentTarget.getBoundingClientRect();
+                    setMenu({
+                      tabId: tab.id,
+                      anchor: event.currentTarget,
+                      x: bounds.left,
+                      y: bounds.bottom + 4,
+                    });
+                  }}
+                >
+                  <ChevronDown size={13} />
                 </button>
                 <button
                   className="tab-close"
