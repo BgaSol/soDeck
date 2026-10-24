@@ -1,0 +1,13 @@
+[package]
+name = "sodeck-plugin-host"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rquickjs = { version = "=0.14.0", default-features = false, features = ["std"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,8 @@
+{
+  "name": "@sodeck/terminal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "vite build", "check": "tsc --noEmit -p tsconfig.json", "test": "node --test tests/worker.test.mjs && vitest run src" },
+  "dependencies": { "@sodeck/sdk": "1.0.0", "@xterm/xterm": "6.0.0", "@xterm/addon-fit": "0.11.0", "@xterm/addon-serialize": "0.14.0", "react": "19.2.0", "react-dom": "19.2.0", "lucide-react": "0.468.0" }
+}

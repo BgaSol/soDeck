@@ -1,0 +1,14 @@
+[workspace]
+members = ["crates/core", "crates/plugin-manager", "crates/plugin-host", "apps/desktop/src-tauri"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+
+[profile.dev]
+debug = 1
+
+[profile.release]
+debug = 1
+strip = "none"

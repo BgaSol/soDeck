@@ -1,0 +1,10 @@
+node_modules/
+target/
+dist/
+apps/desktop/src-tauri/gen/schemas/
+.qa/
+.local/
+*.log
+resources/*.sodeck-plugin
+resources/development-public-key.json
+.DS_Store

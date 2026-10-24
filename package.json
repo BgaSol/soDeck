@@ -1,0 +1,40 @@
+{
+  "name": "sodeck-v2",
+  "version": "2.0.0-dev.1",
+  "private": true,
+  "type": "module",
+  "workspaces": ["apps/desktop", "packages/*", "plugins/terminal"],
+  "scripts": {
+    "desktop": "node scripts/desktop.mjs dev",
+    "desktop:build": "node scripts/desktop.mjs build --no-bundle",
+    "build": "npm run build --workspaces --if-present",
+    "check": "npm run check --workspaces --if-present && node scripts/check-boundaries.mjs",
+    "test:contracts": "npm run test --workspaces --if-present",
+    "test:core": "node scripts/cargo.mjs test --workspace",
+    "plugin:pack": "node scripts/pack-plugin.mjs",
+    "desktop:package-dev": "node scripts/package-dev.mjs",
+    "test:terminal:native": "node tests/desktop/native.mjs",
+    "test:updates:native": "node tests/desktop/updates.mjs"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.12.3",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/addon-serialize": "0.14.0",
+    "@xterm/xterm": "6.0.0",
+    "lucide-react": "0.468.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.0",
+    "@tauri-apps/cli": "2.10.0",
+    "@types/node": "24.19.2",
+    "@types/react": "19.2.0",
+    "@types/react-dom": "19.2.0",
+    "@vitejs/plugin-react": "5.1.0",
+    "esbuild": "0.28.2",
+    "typescript": "5.9.3",
+    "vite": "7.3.7",
+    "vitest": "4.1.12"
+  }
+}

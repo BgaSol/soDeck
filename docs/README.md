@@ -1,10 +1,14 @@
 # SoDeck v2 文档导航
 
-更新日期：2026-10-24 · 修订：r2
+更新日期：2026-10-25 · 修订：r6
 
 ## 1. 接续入口
 
 先读 [AI 入口](../AGENTS.md)和[开发规范](../DEVELOPMENT.md)，再从[产品与当前工作](product.md)进入当前任务。接续已有任务时核对确认范围、规格修订和工作区，再按需阅读下表，不要求每次通读所有远期文档。
+
+当前首批方案是 [T-003：核心与真实终端](tasks/T-003-core-terminal.md)，由[核心 SSH](core/ssh.md)、[终端插件](plugins/terminal/README.md)及[实施技术方案](technical/first-terminal.md)细化；不再以前置测试插件作为交付。
+
+已确认任务的本地构建、运行与验证命令见 [Windows 开发入口](development-entry.md)，实际覆盖及限制以 T-003 结果为准。
 
 ## 2. 从粗到细
 
@@ -16,6 +20,9 @@
 | 总体结构 | [架构](architecture.md) | 核心与插件分层、协作边界、验证路线 |
 | 公共规范 | [UI](standards/ui.md)、[编码](standards/coding.md)、[测试](standards/testing.md) | 各模块共同遵循的细则 |
 | 核心 | [核心能力](core/README.md) | 公共能力、资源归属及下属功能索引 |
+| 核心详细设计 | [设计方案](core/design.md)、[通信契约](core/communication.md)、[资源生命周期](core/resources.md) | 能力清单、状态所有者、基础规格及测试流程 |
+| 核心调用记录 | [逐次留痕规格](core/call-records.md) | 无插件权限分配、调用记录字段与异常处理、测试流程 |
+| 核心工作台 | [工作台、插件视图与窗口](core/workbench.md) | UI 职责边界、服务器工作区、停靠/Tab/独立窗口、分屏、托盘及自己的测试流程 |
 | 技术 | [选型与工程组织](technical/README.md) | 候选、比较方法、采用依据及验证限制 |
 | 插件技术 | [运行容器](technical/plugin-runtime.md)、[协议](technical/plugin-protocol.md)、[更新](technical/plugin-updates.md) | 运行、公开通信、版本与恢复机制 |
 | 业务插件 | [插件入口](plugins/README.md) | 插件职责、独立总览和功能规格要求 |
@@ -29,7 +36,7 @@
 | --- | --- |
 | 核心能力变更 | 核心总览、对应功能、公开契约及受影响插件 |
 | 插件功能 | 该插件总览、当前功能、所调用的核心接口 |
-| UI 设计或调整 | UI 规范及对应功能的交互与状态 |
+| UI 设计或调整 | UI 规范、工作台承载契约及对应功能的交互与状态 |
 | 技术实验 | 已确认产品约束、相应技术候选、实验方案及判断标准 |
 | 缺陷修复 | 正确行为的规格、复现与回归用例、相关实现与日志 |
 | 安装、数据迁移或发布 | 对应功能、版本兼容、恢复方案与实际平台验证 |
