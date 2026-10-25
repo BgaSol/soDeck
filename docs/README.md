@@ -1,12 +1,14 @@
 # SoDeck v2 文档导航
 
-更新日期：2026-10-25 · 修订：r6
+更新日期：2026-10-25 · 修订：r8
 
 ## 1. 接续入口
 
 先读 [AI 入口](../AGENTS.md)和[开发规范](../DEVELOPMENT.md)，再从[产品与当前工作](product.md)进入当前任务。接续已有任务时核对确认范围、规格修订和工作区，再按需阅读下表，不要求每次通读所有远期文档。
 
 当前首批方案是 [T-003：核心与真实终端](tasks/T-003-core-terminal.md)，由[核心 SSH](core/ssh.md)、[终端插件](plugins/terminal/README.md)及[实施技术方案](technical/first-terminal.md)细化；不再以前置测试插件作为交付。
+
+本轮界面方向进入 [T-004：顶部服务器 Tab 与工作区窗口设计](tasks/T-004-server-tabs.md)及 [F-CORE-006](core/server-tabs.md)：无独立标题栏、整工作区新窗口与合并。具体模块、公共契约与升级验证见[代码修改方案](technical/server-tabs-implementation.md)，按用户要求确认后再编码。T-003 的实现/测试与确认范围继续由原任务维护。
 
 已确认任务的本地构建、运行与验证命令见 [Windows 开发入口](development-entry.md)，实际覆盖及限制以 T-003 结果为准。
 
@@ -23,6 +25,7 @@
 | 核心详细设计 | [设计方案](core/design.md)、[通信契约](core/communication.md)、[资源生命周期](core/resources.md) | 能力清单、状态所有者、基础规格及测试流程 |
 | 核心调用记录 | [逐次留痕规格](core/call-records.md) | 无插件权限分配、调用记录字段与异常处理、测试流程 |
 | 核心工作台 | [工作台、插件视图与窗口](core/workbench.md) | UI 职责边界、服务器工作区、停靠/Tab/独立窗口、分屏、托盘及自己的测试流程 |
+| 服务器 Tab 与工作区窗口 | [功能设计与测试](core/server-tabs.md) | 无独立标题栏、两层 Tab、完整工作区拆合、窗口归属、关闭与恢复 |
 | 技术 | [选型与工程组织](technical/README.md) | 候选、比较方法、采用依据及验证限制 |
 | 插件技术 | [运行容器](technical/plugin-runtime.md)、[协议](technical/plugin-protocol.md)、[更新](technical/plugin-updates.md) | 运行、公开通信、版本与恢复机制 |
 | 业务插件 | [插件入口](plugins/README.md) | 插件职责、独立总览和功能规格要求 |
