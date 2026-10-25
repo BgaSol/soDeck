@@ -28,10 +28,11 @@ export async function rpc(page, method, params = {}, requestId) {
   if (response.error) throw Object.assign(new Error(response.error.message), response.error);
   return response.result;
 }
-export async function launch({data, shellPort=9333, pluginPort=9334, executable=join(root,'target/debug/sodeck-desktop.exe'), packagePath=join(root,'resources/terminal.sodeck-plugin'), keysPath=join(root,'resources/development-public-key.json')}={}) {
+export async function launch({allowStartupWarning=false,data, shellPort=9333, pluginPort=9334, executable=join(root,'target/debug/sodeck-desktop.exe'), packagePath=join(root,'resources/terminal.sodeck-plugin'), keysPath=join(root,'resources/development-public-key.json')}={}) {
   data = resolve(data ?? join(root, '.qa/native', String(Date.now())));
   await mkdir(data, {recursive:true});
-  const process = spawn(executable, [], {
+  const launchDebugger=globalThis.process.env.SODECK_TEST_LAUNCH_DEBUGGER;
+  const process = spawn(launchDebugger??executable, launchDebugger?[executable,join(data,'debugger.log')]:[], {
     cwd: root, windowsHide:true, stdio:['ignore','pipe','pipe'],
     env:{...globalThis.process.env,SODECK_DATA_DIR:data,SODECK_SHELL_DEBUG_PORT:String(shellPort),
       SODECK_WEBVIEW_ARGS:`--remote-debugging-port=${pluginPort}`,
@@ -46,7 +47,14 @@ export async function launch({data, shellPort=9333, pluginPort=9334, executable=
     page.on('pageerror',error=>errors.push(error.message));
     await page.waitForSelector('#root > *');
     const info=await rpc(page,'app.info');
-    if(info.startupError) throw new Error(`Native startup: ${info.startupError}`);
+    if(info.startupError&&!allowStartupWarning) throw new Error(`Native startup: ${info.startupError}`);
+    if(launchDebugger){const child=output.match(/SODECK_CHILD_PID=(\d+)/);if(!child)throw new Error('Debugger did not report its child PID');process.pid=Number(child[1]);}
+    if(globalThis.process.env.SODECK_TEST_DEBUGGER) {
+      const watch=globalThis.process.env.SODECK_TEST_WATCH_CALLBACK?output.match(/SODECK_HANDLER=([a-f0-9]+,\d+)/)?.[1]:undefined;
+      const debuggerProcess=spawn(globalThis.process.env.SODECK_TEST_DEBUGGER,[String(process.pid),join(data,'debugger.log'),...(watch?[watch]:[])],{cwd:root,windowsHide:true,stdio:'inherit'});
+      debuggerProcess.on('error',error=>errors.push(error.message));
+      await delay(1500);
+    }
     return {process,browser,page,data,pluginPort,errors,output:()=>output};
   } catch(error) {process.kill();await writeFile(join(data,'launch-error.log'),output);throw error;}
 }
@@ -65,6 +73,9 @@ export async function pluginPages(runtime) {
   return runtime.pluginBrowser.contexts().flatMap(c=>c.pages()).filter(p=>p.url().includes('sodeck-plugin.localhost'));
 }
 export async function pluginRpc(page,method,params={}){
+  // Context exists before the UI module loads. Let its bridge initialize first,
+  // otherwise that initialization can replace our temporary response handler.
+  await page.waitForFunction(()=>typeof window.__sodeckReceive==='function');
   const response=await page.evaluate(({method,params})=>new Promise((resolve,reject)=>{
     const requestId=`native-test-${crypto.randomUUID()}`;
     const previous=window.__sodeckReceive;
@@ -76,8 +87,14 @@ export async function pluginRpc(page,method,params={}){
 }
 export async function stop(runtime) {
   if(!runtime)return;
-  if(runtime.process.exitCode===null){try{await rpc(runtime.page,'app.exit');}catch{} }
-  try{await until(()=>runtime.process.exitCode!==null,10000);}catch{runtime.process.kill();}
+  const shutdown=runtime.shutdown??={requestedAt:new Date().toISOString(),forced:false};
+  if(runtime.process.exitCode===null&&runtime.process.signalCode===null){try{await rpc(runtime.page,'app.exit');}catch(error){shutdown.requestError=error.message;} }
+  try{await until(()=>runtime.process.exitCode!==null||runtime.process.signalCode!==null,10000);}catch{
+    shutdown.forced=true;runtime.process.kill();
+    await until(()=>runtime.process.exitCode!==null||runtime.process.signalCode!==null,10000).catch(()=>{});
+  }
+  shutdown.exitCode=runtime.process.exitCode;shutdown.signalCode=runtime.process.signalCode;
+  await writeFile(join(runtime.data,'shutdown.json'),JSON.stringify(shutdown,null,2));
   await runtime.pluginBrowser?.close().catch(()=>{});
   await runtime.browser.close().catch(()=>{});
   await writeFile(join(runtime.data,'process.log'),runtime.output());

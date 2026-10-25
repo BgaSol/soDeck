@@ -148,6 +148,15 @@ fn real_ssh_host_trust_shared_leases_and_channels() {
         mount_generation: Some(1),
         ..caller.clone()
     };
+    // A later invalid resource may not partially move the first input surface.
+    let entry=|view:&str,pty:&Value,mount:u64|json!({"viewId":view,"workspaceId":"test-workspace","mountGeneration":mount,"resources":[{"kind":"pty","id":pty["ptyId"],"generation":pty["generation"]}]});
+    let mut bad=entry("terminal-b",&pb,2);bad["resources"][0]["generation"]=json!(999999);
+    assert_eq!(core.bind_view_resources(&caller.instance_id,&[entry("terminal-a",&pa,2),bad]).unwrap_err().code,"STALE_HANDLE");
+    let old_a=Caller{view_id:Some("terminal-a".into()),mount_generation:Some(1),..caller.clone()};
+    core.call(&old_a,"pty.read",json!({"ptyId":pa["ptyId"],"generation":pa["generation"],"after":0})).unwrap();
+    assert_eq!(core.bind_view_resources(&caller.instance_id,&[entry("wrong-view",&pa,2)]).unwrap_err().code,"STALE_MOUNT");
+    assert!(core.release_view_resources(&caller.instance_id,&[json!({"kind":"pty","id":pa["ptyId"],"generation":pa["generation"]}),json!({"kind":"pty","id":pb["ptyId"],"generation":999999})]).is_err());
+    assert_eq!(core.resources()["ptys"].as_array().unwrap().len(),2);
     core.call(&caller,"pty.bind",json!({"ptyId":pa["ptyId"],"generation":pa["generation"],"viewId":"terminal-a","mountGeneration":2})).unwrap();
     assert_eq!(core.call(&surface_a,"pty.write",json!({"ptyId":pa["ptyId"],"generation":pa["generation"],"inputSeq":2,"bytes":STANDARD.encode(b"stale-surface")})).unwrap_err().code,"STALE_MOUNT");
     assert_eq!(

@@ -1,0 +1,90 @@
+import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+import {mkdir,writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
+import {root,launch,rpc,until,stop,pluginPages,pluginRpc,delay} from './harness.mjs';
+
+const output=join(root,'.qa/t-004/generic',String(Date.now()));await mkdir(output,{recursive:true});
+const packagePath=join(output,'fixture.sodeck-plugin');
+const build=spawnSync(process.execPath,[join(root,'scripts/pack-plugin.mjs'),'--source',join(root,'tests/fixtures/workbench-v2'),'--out',packagePath],{cwd:root,windowsHide:true,encoding:'utf8'});assert.equal(build.status,0,build.stderr);
+let app;const checks=[];
+const surface=id=>until(async()=>{for(const p of await pluginPages(app)){try{if(await p.evaluate(()=>window.__SODECK_CONTEXT__?.viewId)===id)return p;}catch{}}});
+const configure=async(id,args)=>pluginRpc(await surface(id),'plugin.invoke',{command:'fixture.configure',args});
+try{
+  app=await launch({data:join(output,'app'),shellPort:9493,pluginPort:9494,packagePath});
+  const server=await rpc(app.page,'servers.create',{name:'通用契约隔离',host:'localhost',port:22,username:'fixture',authType:'password'});
+  await rpc(app.page,'workspaces.open',{serverId:server.id});
+  const first=await rpc(app.page,'commands.execute',{commandId:'sample.new',workspaceId:server.id,args:{title:'自定义页面'}});
+  await (await surface(first.viewId)).getByText('夹具已就绪',{exact:false}).waitFor();
+  await rpc(app.page,'commands.execute',{commandId:'sample.rename',viewId:first.viewId,args:{title:'通用元数据'}});
+  assert.equal((await rpc(app.page,'workbench.snapshot')).views.find(v=>v.viewId===first.viewId).title,'通用元数据');
+  await assert.rejects(pluginRpc(await surface(first.viewId),'plugin.invoke',{command:'fixture.update',args:{viewId:first.viewId,actions:['undeclared.action']}}),e=>e.code==='INVALID_PARAMS');
+  const operationId=crypto.randomUUID(),request={workspaceId:server.id,operationId};
+  const move=await rpc(app.page,'workspaces.move',request);const again=await rpc(app.page,'workspaces.move',request);assert.equal(again.targetWindowId,move.targetWindowId);
+  await assert.rejects(rpc(app.page,'workspaces.move',{...request,index:1}),e=>e.code==='REQUEST_CONFLICT');
+  const mergeRequest={sourceWindowId:move.targetWindowId,operationId:crypto.randomUUID()};
+  const merged=await rpc(app.page,'windows.merge',mergeRequest);await delay(400);
+  assert.deepEqual(await rpc(app.page,'windows.merge',mergeRequest),merged);
+  checks.push('ST-10/16: non-terminal commands open/update/move; undeclared action rejected; repeated move and merge reuse results after source window reclamation');
+  const second=await rpc(app.page,'commands.execute',{commandId:'sample.new',workspaceId:server.id});await surface(second.viewId);
+  await configure(second.viewId,{holdReady:second.viewId});
+  const generation=await (await surface(second.viewId)).evaluate(()=>window.__SODECK_CONTEXT__.mountGeneration);
+  const failedCandidate=assert.rejects(rpc(app.page,'workspaces.move',{workspaceId:server.id,operationId:crypto.randomUUID()}),e=>e.code==='MOVE_CANCELLED');
+  const candidate=await until(async()=>{for(const page of await pluginPages(app)){if(await page.evaluate(({id,g})=>window.__SODECK_CONTEXT__?.viewId===id&&window.__SODECK_CONTEXT__?.mountGeneration>g&&window.__fixtureHeldReady,{id:second.viewId,g:generation}))return page;}});
+  const cdp=await candidate.context().newCDPSession(candidate);await Promise.race([cdp.send('Page.crash').catch(()=>{}),delay(2000)]);await failedCandidate;
+  assert.equal((await rpc(app.page,'workbench.snapshot')).workspaces.find(w=>w.workspaceId===server.id).ownerWindowId,'main');
+  await configure(second.viewId,{holdReady:null});
+  checks.push('ST-09: actual last candidate renderer crash before ready rolls back all views without changing the source owner');
+  await configure(second.viewId,{blocked:second.viewId});const before=(await rpc(app.page,'workbench.snapshot')).views.map(v=>v.viewId).sort();
+  await assert.rejects(rpc(app.page,'workspaces.close',{workspaceId:server.id}),e=>e.code==='CANCELED');
+  assert.deepEqual((await rpc(app.page,'workbench.snapshot')).views.map(v=>v.viewId).sort(),before);
+  assert.equal((await configure(second.viewId,{})).closes.length,0);
+  await configure(second.viewId,{blocked:null,failed:second.viewId});
+  const partial=await rpc(app.page,'workspaces.close',{workspaceId:server.id});
+  assert.equal(partial.results.filter(r=>!r.closed).length,1);assert.equal(partial.results.find(r=>!r.closed).viewId,second.viewId);
+  await configure(second.viewId,{failed:null});await rpc(app.page,'workspaces.close',{workspaceId:server.id});
+  await rpc(app.page,'views.close',{viewId:second.viewId});
+  checks.push('ST-11/16: prepare cancellation closes nothing; commit failure reports per-view outcome and retry closes only remaining view; repeated close is idempotent');
+  await rpc(app.page,'workspaces.open',{serverId:server.id});
+  for(let n=0;n<9;n++){
+    const v=await rpc(app.page,'commands.execute',{commandId:'sample.new',workspaceId:server.id});
+    await (await surface(v.viewId)).evaluate(()=>{
+      const previous=window.__sodeckNotify;window.__sodeckNotify=async event=>{
+        if(event.type!=='view.prepareMove')return previous(event);
+        const data=JSON.stringify({schema:1,text:'s'.repeat(15*256*1024-128)}),size=256*1024,total=Math.ceil(data.length/size);
+        for(let index=0;index<total;index++)await call('view.snapshotChunk',{operationId:event.payload.operationId,index,total,data:data.slice(index*size,(index+1)*size)});
+      };
+    });
+  }
+  await assert.rejects(rpc(app.page,'workspaces.move',{workspaceId:server.id,operationId:crypto.randomUUID()}),e=>e.code==='CAPACITY');
+  assert.equal((await rpc(app.page,'workbench.snapshot')).workspaces.find(w=>w.workspaceId===server.id).ownerWindowId,'main');
+  const budgetCleanup=(await rpc(app.page,'diagnostics.get')).workbench;
+  assert.equal(budgetCleanup.snapshots,0);assert.equal(budgetCleanup.bindings,10);assert.equal(budgetCleanup.native.surfaces,10);
+  await rpc(app.page,'workspaces.close',{workspaceId:server.id});
+  checks.push('ST-09: nine valid 3.75 MiB source snapshots exceed the 32 MiB batch budget; no candidates or partial migration survive');
+  const global=await rpc(app.page,'commands.execute',{commandId:'sample.global'});
+  const p=await surface(global.viewId);await p.getByText('夹具已就绪',{exact:false}).waitFor();
+  const globalContext=(await configure(global.viewId,{})).contexts.at(-1);assert.equal(globalContext.workspaceId,'@app');assert.equal(globalContext.serverId,null);
+  assert.ok((await p.evaluate(()=>window.__SODECK_CONTEXT__.windowId)).startsWith('detached-'));
+  assert.deepEqual((await rpc(app.page,'workbench.snapshot')).workspaceIds,[]);
+  await rpc(app.page,'views.move',{viewId:global.viewId,placement:'center'});
+  await app.page.locator(`#tab-${global.viewId}`).waitFor();assert.equal(await (await surface(global.viewId)).evaluate(()=>window.__SODECK_CONTEXT__.windowId),'main');
+  const inspector=await rpc(app.page,'commands.execute',{commandId:'sample.inspector'});
+  await (await surface(inspector.viewId)).getByText('夹具已就绪',{exact:false}).waitFor();
+  await rpc(app.page,'workbench.configure',{dockViewId:inspector.viewId,visible:false});
+  assert.equal((await rpc(app.page,'workbench.snapshot')).dockSlots.find(v=>v.viewId===inspector.viewId).visible,false);
+  await rpc(app.page,'workspaces.open',{serverId:server.id});
+  const list=(await rpc(app.page,'workbench.snapshot')).views.find(v=>v.viewType==='sample.list');
+  await rpc(app.page,'views.move',{viewId:list.viewId,placement:'right'});
+  await rpc(app.page,'views.activate',{viewId:inspector.viewId});
+  await app.page.locator(`.sessions-panel [data-view-id="${inspector.viewId}"]`).waitFor();
+  await rpc(app.page,'views.activate',{viewId:list.viewId});
+  await app.page.locator(`.sessions-panel [data-view-id="${list.viewId}"]`).waitFor();
+  await rpc(app.page,'workspaces.close',{workspaceId:server.id});
+  await rpc(app.page,'views.close',{viewId:global.viewId});await rpc(app.page,'views.close',{viewId:inspector.viewId});
+  checks.push('ST-16: global default window mounts, returns to main as a visible tab without a server; global dock toggles through generic configuration');
+  const resources=await rpc(app.page,'resources.list');assert.equal(resources.ptys.length,0);assert.equal(resources.connections.length,0);
+  await stop(app);assert.equal(app.process.exitCode,0);app=null;
+  await writeFile(join(output,'results.json'),JSON.stringify({checks,scope:'Signed contract fixture only, not a second product plugin'},null,2));console.log(JSON.stringify({checks,output}));
+}catch(error){await writeFile(join(output,'failure.json'),JSON.stringify({checks,error:String(error),stack:error.stack},null,2));console.error(error);process.exitCode=1;}
+finally{await stop(app);}

@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { SurfaceQueue, type SurfaceLayout } from "./surface-queue";
 
-const layout = (visible: boolean, width: number): SurfaceLayout => ({ viewId: "v1", bounds: { x: 0, y: 0, width, height: 200 }, visible });
+const layout = (visible: boolean, width: number): SurfaceLayout => ({ windowId: "main", mountGeneration: 1, viewId: "v1", bounds: { x: 0, y: 0, width, height: 200 }, visible });
 describe("native surface presentation", () => {
+  it("does not coalesce different window or mount generations", async () => {
+    const calls: SurfaceLayout[] = []; const releases: (() => void)[] = [];
+    const queue = new SurfaceQueue(value => { calls.push(value); return new Promise(resolve => releases.push(() => resolve(null))); });
+    const old = queue.submit(layout(false, 0));
+    const current = queue.submit({ ...layout(true, 600), windowId: "workspace-target", mountGeneration: 2 });
+    expect(calls).toHaveLength(2); expect(calls[1].visible).toBe(true);
+    for (const release of releases) release(); await Promise.all([old, current]);
+  });
   it("serializes an old-container hide before a new-container show", async () => {
     const calls: SurfaceLayout[] = []; const releases: (() => void)[] = [];
     const queue = new SurfaceQueue(value => { calls.push(value); return new Promise(resolve => releases.push(() => resolve(null))); });

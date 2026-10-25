@@ -13,6 +13,8 @@ const runtime = globalThis as typeof globalThis & { sodeck: CoreBridge; sodeckPl
 const sessions = new Map<string, Session>();
 const changing = new Set<string>(), operations = new Set<Promise<unknown>>();
 const pendingOpens = new Map<string, { canceled: boolean }>();
+// Cancellation can arrive before the worker starts the corresponding command.
+const canceledOperations = new Set<string>();
 let sequence = 0, operationSequence = 0, initialized = false, fontSize = 14, opening = 0;
 const fault = (code: string, message: string) => ({ code, message });
 const string = (value: unknown, name: string): string => {
@@ -23,6 +25,10 @@ const find = (id: unknown): Session => {
   const session = sessions.get(string(id, "sessionId"));
   if (!session) throw fault("SESSION_ENDED", "会话已经结束，请明确新建连接");
   return session;
+};
+const fromContext = (ctx: Params): Session => {
+  const data = (ctx.pluginData ?? {}) as Params;
+  return [...sessions.values()].find(s => s.viewId === ctx.viewId) ?? find(data.sessionId);
 };
 const snapshot = (session: Session): Session => ({ ...session });
 async function mutate<T>(id: string, operation: () => Promise<T>): Promise<T> {
@@ -36,14 +42,15 @@ async function open(params: Params, existing?: Session): Promise<Session> {
   const serverId = string(params.serverId ?? existing?.serverId, "serverId");
   const workspaceId = string(params.workspaceId ?? existing?.workspaceId ?? serverId, "workspaceId");
   const operationId = params.operationId === undefined ? undefined : string(params.operationId, "operationId");
-  const pending = { canceled: false };
+  const pending = { canceled: operationId ? canceledOperations.has(operationId) : false };
   if (operationId) {
     if (pendingOpens.has(operationId)) throw fault("REQUEST_CONFLICT", "该新建操作已经在进行中");
     pendingOpens.set(operationId, pending);
   }
   opening++;
-  let lease: Lease | undefined, pty: Pty | undefined;
+  let lease: Lease | undefined, pty: Pty | undefined, createdView: string | undefined;
   try {
+    if (pending.canceled) throw fault("CANCELED", "已取消连接");
     lease = await runtime.sodeck.call<Lease>("connections.acquire", { serverId, workspaceId, ...(operationId ? { operationId } : {}) });
     if (pending.canceled) throw fault("CANCELED", "已取消连接");
     pty = await runtime.sodeck.call<Pty>("pty.open", { leaseId: lease.leaseId, cols: 100, rows: 30, ...(operationId ? { operationId } : {}) });
@@ -54,9 +61,26 @@ async function open(params: Params, existing?: Session): Promise<Session> {
     };
     if (pending.canceled) throw fault("CANCELED", "已取消连接");
     if (!initialized) throw fault("PLUGIN_STOPPING", "终端插件正在停止");
-    sessions.set(session.sessionId, session); return snapshot(session);
+    sessions.set(session.sessionId, session);
+    const view = existing?.viewId ? { viewId: existing.viewId } : await runtime.sodeck.call<{ viewId: string }>("views.open", {
+      workspaceId, viewType: "terminal.session", instanceKey: session.sessionId,
+      title: session.title, displayStatus: "loading", actions: ["terminal.rename"],
+      runtimeData: { sessionId: session.sessionId }, operationId,
+    });
+    if (!existing?.viewId) createdView = view.viewId;
+    session.viewId = view.viewId;
+    if (pending.canceled) throw fault("CANCELED", "已取消连接");
+    await runtime.sodeck.call("views.bindResources", { viewId: view.viewId, operationId, resources: [
+      { kind: "pty", id: pty.ptyId, generation: pty.generation }, { kind: "lease", id: lease.leaseId },
+    ] });
+    if (pending.canceled) throw fault("CANCELED", "已取消连接");
+    await runtime.sodeck.call("views.update", { viewId: view.viewId, title: session.title, displayStatus: "running", actions: ["terminal.rename"], pluginState: { sessionId: session.sessionId }, operationId });
+    return snapshot(session);
   } catch (error) {
     let cleanupError: unknown;
+    if (createdView) try { await runtime.sodeck.call("views.close", { viewId: createdView, operationId }); } catch (failure) { cleanupError = failure; }
+    for (const [id, session] of sessions) if (session.ptyId === pty?.ptyId) sessions.delete(id);
+    if (existing) { existing.status = "ended"; sessions.set(existing.sessionId, existing); }
     if (pty) try { await runtime.sodeck.call("pty.close", { ptyId: pty.ptyId, generation: pty.generation }); } catch (failure) { cleanupError = failure; }
     if (lease) try { await runtime.sodeck.call("connections.release", { leaseId: lease.leaseId }); } catch (failure) { cleanupError ??= failure; }
     if (cleanupError) throw { ...fault("CLEANUP_REQUIRED", "创建终端结束但资源未完全释放，请在核心资源页检查"), details: { leaseId: lease?.leaseId, ptyId: pty?.ptyId, originalCode: (error as { code?: string })?.code, cleanupCode: (cleanupError as { code?: string })?.code } };
@@ -67,9 +91,9 @@ async function open(params: Params, existing?: Session): Promise<Session> {
   }
 }
 async function close(session: Session): Promise<void> {
-  await runtime.sodeck.call("pty.close", { ptyId: session.ptyId, generation: session.generation });
+  if (session.ptyId) await runtime.sodeck.call("pty.close", { ptyId: session.ptyId, generation: session.generation });
   session.status = "ended";
-  await runtime.sodeck.call("connections.release", { leaseId: session.leaseId });
+  if (session.leaseId) await runtime.sodeck.call("connections.release", { leaseId: session.leaseId });
 }
 async function refreshStatuses(): Promise<void> {
   const resources = await runtime.sodeck.call<{ ptys: { ptyId?: string; id?: string; state?: string; status?: string }[] }>("resources.list");
@@ -87,9 +111,54 @@ runtime.sodeckPlugin = {
   async invoke(command, params = {}) {
     if (!initialized) throw fault("PLUGIN_NOT_READY", "终端插件尚未就绪");
     switch (command) {
+      case "command.execute": {
+        const ctx = (params.context ?? {}) as Params, args = (params.args ?? {}) as Params;
+        const data = (ctx.pluginData ?? {}) as Params;
+        switch (params.commandId) {
+          case "terminal.new": return mutate(`opening-${++operationSequence}`, () => open({ ...args, serverId: ctx.serverId, workspaceId: ctx.workspaceId, operationId: ctx.operationId }));
+          case "terminal.rename": return runtime.sodeckPlugin.invoke("sessions.rename", { sessionId: fromContext(ctx).sessionId, title: args.title });
+          case "terminal.reconnect": {
+            const session = fromContext(ctx);
+            return mutate(session.sessionId, async () => { await close(session); return open({ operationId: ctx.operationId }, session); });
+          }
+          default: throw fault("METHOD_NOT_FOUND", "终端未声明此命令");
+        }
+      }
+      case "lifecycle.initialize": {
+        if(params.viewType==="terminal.sessions") {await refreshStatuses();return {sessions:[...sessions.values()].filter(s=>s.workspaceId===params.workspaceId).map(snapshot)};}
+        const data=(params.pluginData??{}) as Params;
+        return {fontSize,session:snapshot(fromContext(params))};
+      }
+      case "lifecycle.prepareClose": return { allow: true };
+      case "lifecycle.restore": {
+        const sessionId = string(params.instanceKey || params.viewId, "instanceKey");
+        const viewId = string(params.viewId, "viewId");
+        sessions.set(sessionId, { sessionId, viewId, serverId: string(params.serverId, "serverId"), workspaceId: string(params.workspaceId, "workspaceId"), title: string(params.title, "title"), status: "ended", ptyId: "", streamId: "", leaseId: "", connectionId: "", generation: 0 });
+        return { displayStatus: "ended", actions: ["terminal.rename", "terminal.reconnect"] };
+      }
+      case "sessions.status": {
+        const session = find(params.sessionId);
+        if (session.ptyId !== params.ptyId) return { updated: false };
+        const state = string(params.status, "status");
+        session.status = state;
+        const live = ["active", "running", "connected"].includes(state);
+        if (session.viewId) await runtime.sodeck.call("views.update", {viewId: session.viewId, displayStatus: live ? "running" : "ready", actions: live ? ["terminal.rename"] : ["terminal.rename", "terminal.reconnect"]});
+        return { updated: true };
+      }
+      case "lifecycle.close": {
+        const session = [...sessions.values()].find(item => item.viewId === params.viewId);
+        if (session) {
+          // A failed open can compensate its view while still holding its own
+          // mutation guard. The resource close is idempotent in the core.
+          await close(session); sessions.delete(session.sessionId);
+        }
+        return { closed: true };
+      }
       case "sessions.open": case "sessions.create": return mutate(`opening-${++operationSequence}`, () => open(params));
-      case "sessions.cancelOpen": {
+      case "sessions.cancelOpen": case "lifecycle.cancel": {
         const operationId = string(params.operationId, "operationId");
+        canceledOperations.add(operationId);
+        if (canceledOperations.size > 10000) canceledOperations.delete(canceledOperations.values().next().value!);
         const pending = pendingOpens.get(operationId);
         if (pending) pending.canceled = true;
         return runtime.sodeck.call("operations.cancel", { operationId });
@@ -106,7 +175,10 @@ runtime.sodeckPlugin = {
         const session = find(params.sessionId);
         const title = typeof params.title === "string" ? params.title.trim() : "";
         if (!title || [...title].length > 80 || /[\u0000-\u001f\u007f-\u009f]/.test(title)) throw fault("INVALID_PARAMS", "标题须为 1–80 个字符，且不含控制字符");
-        return mutate(session.sessionId, async () => { session.title = title; return snapshot(session); });
+        return mutate(session.sessionId, async () => {
+          if (session.viewId) await runtime.sodeck.call("views.update", { viewId: session.viewId, title });
+          session.title = title; return snapshot(session);
+        });
       }
       case "sessions.list":
         await refreshStatuses();
@@ -126,7 +198,7 @@ runtime.sodeckPlugin = {
         await runtime.sodeck.call("storage.set", { key: "fontSize", value }); fontSize = value; return { fontSize };
       }
       case "settings.reset": {
-        if (__TERMINAL_VERSION__ === "0.1.0") throw fault("METHOD_NOT_FOUND", "当前终端版本不提供恢复默认字号");
+        if (__TERMINAL_VERSION__ === "0.2.0") throw fault("METHOD_NOT_FOUND", "当前终端版本不提供恢复默认字号");
         await runtime.sodeck.call("storage.set", { key: "fontSize", value: 14 }); fontSize = 14; return { fontSize };
       }
       default: throw fault("METHOD_NOT_FOUND", "终端插件未提供此操作");

@@ -1,9 +1,16 @@
 {
   "name": "@sodeck/sdk",
-  "version": "1.0.0",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "scripts": { "check": "tsc --noEmit -p tsconfig.json", "test": "vitest run" },
-  "dependencies": { "@tauri-apps/api": "2.12.3" }
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.12.3"
+  }
 }

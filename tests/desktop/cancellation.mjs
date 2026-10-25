@@ -1,3 +1,4 @@
+import {openTerminal,invokePlugin} from './workbench-helpers.mjs';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -54,7 +55,7 @@ try {
     name: '本机取消夹具', host: '127.0.0.1', port: hanging.address().port, username: 'test-user', authType: 'password',
   });
   const operationId = randomUUID();
-  const opening = settle(rpc(app.page, 'workbench.openTerminal', { serverId: server.id, operationId }));
+  const opening = settle(openTerminal(app.page,server.id,operationId));
   await until(async () => sockets.size === 1 && (await rpc(app.page, 'workbench.snapshot')).pendingOpens.some(open => open.operationId === operationId));
   const cancel = app.page.getByRole('button', { name: `取消连接到 ${server.name}`, exact: true });
   await cancel.waitFor({ state: 'visible' });
@@ -67,15 +68,15 @@ try {
   assert.ok(metrics.cancelMs < 1000, `Native cancellation took ${metrics.cancelMs} ms`);
   await noResidualResources();
   await until(() => sockets.size === 0, 3000);
-  assert.deepEqual(await rpc(app.page, 'plugin.invoke', { command: 'sessions.list', args: {} }), []);
+  assert.deepEqual(await invokePlugin(app,'sessions.list'), []);
   await until(() => cancel.count().then(count => count === 0));
   await app.page.screenshot({ path: join(output, 'canceled-connection.png') });
   checks.push('Actual shell cancel button ends a real no-banner SSH handshake within 1 second; worker sessions, views, PTYs, leases, connections and TCP socket are cleared');
 
   const beforeSockets = acceptedSockets;
   const beforeId = randomUUID();
-  assert.equal((await rpc(app.page, 'workbench.cancelOpen', { operationId: beforeId })).canceled, true);
-  const preCanceled = await settle(rpc(app.page, 'workbench.openTerminal', { serverId: server.id, operationId: beforeId }));
+  assert.equal((await rpc(app.page, 'workbench.operation.cancel', { operationId: beforeId })).canceled, true);
+  const preCanceled = await settle(openTerminal(app.page,server.id,beforeId));
   assert.equal(preCanceled.error?.code, 'CANCELED');
   await noResidualResources();
   await delay(200);
@@ -100,16 +101,16 @@ try {
   const real = await rpc(app.page, 'servers.create', {
     name: '取消后可用会话', host: '127.0.0.1', port: config.port, username: 'test-user', authType: 'password',
   });
-  const challenge = await settle(rpc(app.page, 'workbench.openTerminal', { serverId: real.id, operationId: randomUUID() }));
+  const challenge = await settle(openTerminal(app.page,real.id,randomUUID()));
   assert.equal(challenge.error?.code, 'HOST_KEY_REQUIRED');
   await rpc(app.page, 'hosts.trust', { serverId: real.id, ...challenge.error.details });
   await rpc(app.page, 'auth.set', { serverId: real.id, password: 'isolated-test-password', remember: false });
   const completedId = randomUUID();
-  const view = await rpc(app.page, 'workbench.openTerminal', { serverId: real.id, operationId: completedId });
-  await rpc(app.page, 'workbench.activate', { viewId: view.viewId });
+  const view = await openTerminal(app.page,real.id,completedId);
+  await rpc(app.page, 'views.activate', { viewId: view.viewId });
   const terminal = await terminalPage(view.viewId);
   const before = await rpc(app.page, 'resources.list');
-  const lateCancel = await rpc(app.page, 'workbench.cancelOpen', { operationId: completedId });
+  const lateCancel = await rpc(app.page, 'workbench.operation.cancel', { operationId: completedId });
   assert.equal(lateCancel.canceled, false);
   assert.equal(lateCancel.viewId, view.viewId);
   const after = await rpc(app.page, 'resources.list');

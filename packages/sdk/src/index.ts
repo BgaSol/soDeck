@@ -1,11 +1,16 @@
+import { validateWorkbenchRequest,validateWorkbenchResult,validateWorkbenchEvent } from "./workbench";
+export * as workbenchContract from "./workbench";
+export { initializeTheme, applyTheme, showMenu } from './presentation';
+export type { ThemeResult, MenuItem } from './presentation';
 export interface RpcRequest { apiVersion: 1; requestId: string; method: string; params: unknown; timeoutMs?: number }
 export interface RpcFault { code: string; message: string; details?: unknown; operationId?: string; phase?: string }
 export interface RpcResponse<T = unknown> { requestId: string; result?: T; error?: RpcFault }
 export interface CoreNotification { type: string; payload?: unknown }
 export interface ViewContext {
+  theme?: import('./workbench.generated').ThemeResult;
   viewId?: string; viewType?: string; workspaceId?: string; serverId?: string; serverName?: string;
-  pluginVersion?: string; mountGeneration?: number; ptyId?: string; generation?: number;
-  detachedViewId?: string; sessionId?: string; snapshot?: unknown;
+  pluginVersion?: string; mountGeneration?: number; windowId?: string;
+  detachedViewId?: string; pluginData?: Record<string, unknown>; pluginState?: unknown; snapshot?: unknown;
 }
 export class CoreError extends Error {
   readonly code: string;
@@ -28,6 +33,8 @@ export type Transport = (request: RpcRequest) => Promise<RpcResponse>;
 export function createCore(transport: Transport) {
   return {
     async call<T = unknown>(method: string, params: unknown = {}, timeoutMs = 35_000): Promise<T> {
+      const invalid = validateWorkbenchRequest(method, params);
+      if (invalid) throw new CoreError({ code: "INVALID_PARAMS", message: invalid });
       const request: RpcRequest = { apiVersion: 1, requestId: crypto.randomUUID(), method, params, timeoutMs };
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
@@ -37,6 +44,8 @@ export function createCore(transport: Transport) {
         ]);
         if (response.requestId !== request.requestId) throw new CoreError({ code: "PROTOCOL_ERROR", message: "核心响应与当前请求不匹配" });
         if (response.error) throw new CoreError(response.error);
+        const invalidResult=validateWorkbenchResult(method,response.result);
+        if(invalidResult)throw new CoreError({code:'PROTOCOL_ERROR',message:invalidResult,details:response.result});
         return response.result as T;
       } finally { if (timer !== undefined) clearTimeout(timer); }
     },
@@ -54,7 +63,11 @@ function installBridge() {
     if (!item) return;
     clearTimeout(item.timer); pending.delete(response.requestId); item.resolve(response);
   };
-  window.__sodeckNotify = notification => { for (const listener of listeners) listener(notification); };
+  window.__sodeckNotify = notification => {
+    const invalid=validateWorkbenchEvent(notification.type,notification.payload);
+    if(invalid){console.error(invalid);return;}
+    for (const listener of listeners) listener(notification);
+  };
 }
 const nativeTransport: Transport = async request => {
   installBridge();

@@ -2,6 +2,9 @@
 members = ["crates/core", "crates/plugin-manager", "crates/plugin-host", "apps/desktop/src-tauri"]
 resolver = "2"
 
+[patch.crates-io]
+tauri-runtime-wry = { path = "third-party/tauri-runtime-wry" }
+
 [workspace.package]
 edition = "2021"
 license = "MIT"

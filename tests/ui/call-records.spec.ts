@@ -1,14 +1,16 @@
+import {presentationFixture} from "./presentation-fixture";
 import { test, expect } from "@playwright/test";
 
 test("call viewer pages with opaque cursor, resets filters and ignores stale replies", async ({ page }) => {
+  await presentationFixture(page);
   await page.addInitScript(() => {
     const root = window as any;
     const calls: any[] = [];
     root.__CALL_TEST__ = { calls };
     root.__TAURI_INTERNALS__ = { invoke: async (_: string, { request }: any) => {
-      let result: any = {};
+      const p=(window as any).__PRESENTATION__.handle(request);if(p)return p;let result: any = {};
       if (request.method === "servers.list") result = { servers: [] };
-      if (request.method === "workbench.snapshot") result = { views: [], pendingOpens: [], activeWorkspaceId: null };
+      if (request.method === "workbench.snapshot") result = {schemaVersion:3,windowId:"main",windowRole:"main",workspaceIds:[],workspaces:[],commands:[],viewDeclarations:[],dockSlots:[],views:[],revision:0,split:"none",splitRatio:.5,pendingOpens:[],recoveryWarnings:[]};
       if (request.method === "calls.list") {
         calls.push(request.params);
         const p = request.params;

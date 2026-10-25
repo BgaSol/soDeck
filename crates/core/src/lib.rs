@@ -729,6 +729,118 @@ impl Core {
             }
         }
     }
+    /// Validate the entire batch before changing any input binding. Keeping the
+    /// registry and all affected PTY locks excludes close and partial commits.
+    pub fn bind_view_resources(&self, instance: &str, entries: &[Value]) -> Result<Value> {
+        let registry = self.registry.lock().unwrap();
+        if registry.revoked.contains(instance) {
+            return Err(CoreError::new("INSTANCE_EXPIRED", "插件实例已结束"));
+        }
+        let mut pending = Vec::new();
+        let mut seen = HashSet::new();
+        for entry in entries {
+            let view = field(entry, "viewId")?;
+            let workspace = field(entry, "workspaceId")?;
+            let mount = number(entry, "mountGeneration")?;
+            let resources = entry["resources"]
+                .as_array()
+                .ok_or_else(|| CoreError::new("INVALID_PARAMS", "资源引用无效"))?;
+            for reference in resources {
+                let id = field(reference, "id")?;
+                match field(reference, "kind")? {
+                    "pty" => {
+                        let pty = registry
+                            .ptys
+                            .get(id)
+                            .ok_or_else(|| CoreError::new("STALE_HANDLE", "PTY 已结束"))?;
+                        if pty.instance_id != instance
+                            || pty.connection.workspace_id != workspace
+                            || pty.generation != number(reference, "generation")?
+                            || !seen.insert(id.to_string())
+                        {
+                            return Err(CoreError::new(
+                                "STALE_HANDLE",
+                                "资源归属、代次或重复绑定无效",
+                            ));
+                        }
+                        pending.push((pty.clone(), view.to_string(), mount));
+                    }
+                    "lease" => {
+                        let lease = registry
+                            .leases
+                            .get(id)
+                            .ok_or_else(|| CoreError::new("STALE_HANDLE", "租约已释放"))?;
+                        if lease.instance_id != instance
+                            || lease.connection.workspace_id != workspace
+                        {
+                            return Err(CoreError::new("STALE_HANDLE", "租约归属不匹配"));
+                        }
+                    }
+                    _ => return Err(CoreError::new("UNSUPPORTED_API", "不支持的视图资源类型")),
+                }
+            }
+        }
+        pending.sort_by(|a, b| a.0.id.cmp(&b.0.id));
+        let mut states = pending
+            .iter()
+            .map(|(pty, _, _)| pty.state.lock().unwrap())
+            .collect::<Vec<_>>();
+        for ((_, view, mount), state) in pending.iter().zip(states.iter()) {
+            if *mount==0 || state.view_id.as_deref().is_some_and(|id|id!=view) || state.mount_generation.is_some_and(|old| *mount < old) {
+                return Err(CoreError::new("STALE_MOUNT", "挂载代次必须前进"));
+            }
+        }
+        let mut cursors = serde_json::Map::new();
+        for ((_, view, mount), state) in pending.iter().zip(states.iter_mut()) {
+            state.view_id = Some(view.clone());
+            state.mount_generation = Some(*mount);
+            cursors.insert(
+                view.clone(),
+                json!({"acknowledged":state.acknowledged,"lastInputSeq":state.last_input}),
+            );
+        }
+        Ok(Value::Object(cursors))
+    }
+    pub fn release_view_resources(&self, instance: &str, references: &[Value]) -> Result<()> {
+        let mut registry = self.registry.lock().unwrap();
+        // Reject a bad later reference before releasing any earlier resource.
+        for reference in references {
+            let id=field(reference,"id")?;
+            match field(reference,"kind")? {
+                "pty"=>{let generation=number(reference,"generation")?;if registry.ptys.get(id).is_some_and(|p|p.instance_id!=instance||p.generation!=generation){return Err(CoreError::new("STALE_HANDLE","资源归属不匹配"));}}
+                "lease"=>if registry.leases.get(id).is_some_and(|l|l.instance_id!=instance){return Err(CoreError::new("STALE_HANDLE","租约归属不匹配"));},
+                _=>return Err(CoreError::new("UNSUPPORTED_API","不支持的资源类型")),
+            }
+        }
+        // Never close a shared connection directly: release only this view's uses.
+        for reference in references {
+            let id = field(reference, "id")?;
+            if reference["kind"] == "pty" {
+                if let Some(pty) = registry.ptys.get(id) {
+                    if pty.instance_id != instance
+                        || pty.generation != number(reference, "generation")?
+                    {
+                        return Err(CoreError::new("STALE_HANDLE", "资源归属不匹配"));
+                    }
+                    pty.connection.close_pty(&pty.state);
+                }
+                registry.ptys.remove(id);
+            } else if reference["kind"] == "lease" {
+                if registry
+                    .leases
+                    .get(id)
+                    .is_some_and(|l| l.instance_id != instance)
+                {
+                    return Err(CoreError::new("STALE_HANDLE", "租约归属不匹配"));
+                }
+                registry.leases.remove(id);
+            } else {
+                return Err(CoreError::new("UNSUPPORTED_API", "不支持的资源类型"));
+            }
+        }
+        Self::reap(&mut registry);
+        Ok(())
+    }
     pub fn resources(&self) -> Value {
         let registry = self.registry.lock().unwrap();
         json!({"connections":registry.connections.values().map(|c|json!({"id":c.id,"serverId":c.server.id,"workspaceId":c.workspace_id,"generation":c.generation,"state":*c.status.lock().unwrap()})).collect::<Vec<_>>(),"ptys":registry.ptys.values().map(|p|{let state=p.state.lock().unwrap();json!({"id":p.id,"serverId":p.connection.server.id,"connectionId":p.connection.id,"generation":p.generation,"instanceId":p.instance_id,"state":state.state,"reason":state.reason,"bufferedBytes":state.buffered,"queuedInputBytes":state.queued_input,"viewId":state.view_id})}).collect::<Vec<_>>(),"leases":registry.leases.iter().map(|(id,l)|json!({"id":id,"connectionId":l.connection.id,"instanceId":l.instance_id})).collect::<Vec<_>>()})

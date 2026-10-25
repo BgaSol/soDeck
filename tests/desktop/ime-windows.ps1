@@ -1,7 +1,7 @@
 param(
  [ValidateSet('focus','state','language','keys')][string]$Action='state',
  [Parameter(Mandatory=$true)][ValidateRange(1,2147483647)][int]$AppProcessId,
- [string]$Title='SoDeck v2', [string]$Keys, [string]$Layout='0000000008040804'
+ [string]$Title='SoDeck v2', [string]$Keys, [string]$Layout='0000000008040804', [long]$WindowHandle=0
 )
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false)
@@ -50,7 +50,10 @@ public static class SoDeckImeTest {
  }
 }
 '@
-$imeWindow=[SoDeckImeTest]::Window($AppProcessId,$Title)
+$imeWindow=if($WindowHandle -ne 0){[IntPtr]$WindowHandle}else{[SoDeckImeTest]::Window($AppProcessId,$Title)}
+[uint32]$imeOwner=0
+[SoDeckImeTest]::GetWindowThreadProcessId($imeWindow,[ref]$imeOwner)|Out-Null
+if($imeOwner -ne $AppProcessId){throw 'IME target is not owned by this test App'}
 if($Action -eq 'focus') {
  [SoDeckImeTest]::ShowWindow($imeWindow,9)|Out-Null
  [SoDeckImeTest]::SetForegroundWindow($imeWindow)|Out-Null

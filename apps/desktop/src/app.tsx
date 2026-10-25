@@ -1,222 +1,178 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
-import { Activity, ArrowLeftToLine, ArrowUpRight, ChevronDown, CircleHelp, Columns2, Command, Database, Ellipsis, FileTerminal as FolderTerminal, LayoutPanelTop, List, Logs, Package, PanelBottom, PanelLeftClose, Plus, Power, Rows2, Server as ServerIcon, Settings2, TerminalSquare, X } from "lucide-react";
-import { core, context, CoreError, errorMessage, onCoreNotification } from "@sodeck/sdk";
+import type { PointerEvent as ReactPointerEvent } from "react";
+import { Activity, ArrowLeftToLine, ChevronDown, ChevronLeft, ChevronRight, LayoutPanelTop, Logs, Package, PanelLeftClose, Plus, Power, Server as ServerIcon, X } from "lucide-react";
+import { core, context, CoreError, errorMessage, onCoreNotification, showMenu } from "@sodeck/sdk";
+import { useOverflow } from "./use-overflow";
 import { NativeSurface } from "./surface";
 import { ServerDialog } from "./server-dialog";
+import { ServerPicker } from "./server-picker";
+import { ServerTabs } from "./server-tabs";
+import { WindowControls } from "./window-controls";
 import { AuthDialog } from "./auth-dialog";
 import { Dialog } from "./dialog";
 import { ManagementDialog } from "./management-dialog";
 import { emptyWorkbench } from "./types";
-import type { PendingOpen, Server, View, Workbench } from "./types";
+import type { Command, Server, View, Workbench } from "./types";
 
-type Page = "plugins" | "resources" | "calls";
+type CommandRequest = { commandId: string; workspaceId?: string; viewId?: string; args?: unknown; operationId?: string };
 type Drag = { view: View; x: number; y: number; offsetX: number; offsetY: number };
 export function App() {
-  const [servers, setServers] = useState<Server[]>([]);
-  const [workbench, setWorkbench] = useState<Workbench>(emptyWorkbench);
-  const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
-  const [error, setError] = useState("");
-  const [serverEditor, setServerEditor] = useState<Server | "new" | null>(null);
-  const [auth, setAuth] = useState<{ server: Server; fault: CoreError; operationId?: string } | null>(null);
-  const [page, setPage] = useState<Page | null>(null);
-  const [deleteServer, setDeleteServer] = useState<Server | null>(null);
-  const [connecting, setConnecting] = useState<PendingOpen | null>(null);
-  const [cancelling, setCancelling] = useState<Set<string>>(new Set());
-  const openingRef = useRef<PendingOpen | null>(null);
-  const cancellingRef = useRef(new Set<string>());
-  const canceledOpens = useRef(new Set<string>());
-  const newTerminalButton = useRef<HTMLButtonElement>(null);
-  const [serverMenu, setServerMenu] = useState<string | null>(null);
-  const [viewMenu, setViewMenu] = useState<string | null>(null);
-  const [appMenu, setAppMenu] = useState(false);
-  const [drag, setDrag] = useState<Drag | null>(null);
-  const [activeTabs, setActiveTabs] = useState<Record<number, string>>({});
-  const [splitRatio, setSplitRatio] = useState(.5);
-  const [sideWidth, setSideWidth] = useState(226);
-  const [bottomHeight, setBottomHeight] = useState(245);
-  const refreshInFlight = useRef(false);
-  const dragCandidate = useRef<{ view: View; x: number; y: number; offsetX: number; offsetY: number } | null>(null);
-  const dragged = useRef<Drag | null>(null);
-  const suppressTabClick = useRef<string | null>(null);
-  const workspaceRef = useRef<HTMLDivElement>(null);
+  const [servers, setServers] = useState<Server[]>([]), [workbench, setWorkbench] = useState<Workbench>(emptyWorkbench);
+  const [error, setError] = useState(""), [picker, setPicker] = useState(false);
+  const [serverEditor, setServerEditor] = useState<Server | "new" | null>(null), [deleteServer, setDeleteServer] = useState<Server | null>(null);
+  const [auth, setAuth] = useState<{ server: Server; fault: CoreError; request: CommandRequest } | null>(null), [page, setPage] = useState<"plugins" | "resources" | "calls" | null>(null);
+  const [commandInput,setCommandInput]=useState<{view:View;command:Command}|null>(null);
+  const [savingInput,setSavingInput]=useState(false);
+  const [draft,setDraft]=useState(""),[inputError,setInputError]=useState("");
+  const [pageList,setPageList]=useState<"server"|"view"|null>(null),[pageQuery,setPageQuery]=useState("");
+  const [dragging, setDragging] = useState(false), [drag, setDrag] = useState<Drag | null>(null);
+  const [sideWidth, setSideWidth] = useState(226), [bottomHeight, setBottomHeight] = useState(245);
+  const [pendingCommand, setPendingCommand] = useState<string | null>(null), [moveOperation, setMoveOperation] = useState<string | null>(null);
+  const tabRow=useRef<HTMLDivElement>(null);
+  const tabOverflow=useOverflow(tabRow,workbench.views.map(v=>v.viewId+v.title).join(","));
+  useEffect(()=>{document.getElementById(`tab-${workbench.focusedViewId}`)?.scrollIntoView({block:"nearest",inline:"nearest"});},[workbench.focusedViewId]);
+  const canceled = useRef(new Set<string>()), refreshing = useRef(false), refreshAgain = useRef(false);
+  const workspaceRef = useRef<HTMLDivElement>(null), topRef = useRef<HTMLElement>(null);
+  const dragCandidate = useRef<Drag | null>(null), dragged = useRef<Drag | null>(null), suppressClick = useRef<string | null>(null);
   const detachedId = context().detachedViewId;
-  const modal = Boolean(serverEditor || auth || page || deleteServer);
-  const blocked = modal || Boolean(drag || viewMenu || serverMenu || appMenu);
-  useEffect(() => { void core.call("workbench.modal", { open: blocked }).catch(() => {}); }, [blocked]);
+  const modal = Boolean(picker || serverEditor || auth || page || deleteServer || commandInput || pageList);
+  const blocked = modal || Boolean(dragging || drag);
   const refresh = useCallback(async () => {
-    if (refreshInFlight.current) return; refreshInFlight.current = true;
-    try {
-      const [serverResult, layout] = await Promise.all([core.call<{ servers: Server[] }>("servers.list"), core.call<Workbench>("workbench.snapshot")]);
-      setServers(serverResult.servers); setWorkbench({ ...emptyWorkbench, ...layout });
-    } catch (e) { setError(errorMessage(e)); } finally { refreshInFlight.current = false; }
+    if (refreshing.current) { refreshAgain.current = true; return; } refreshing.current = true;
+    try { do {
+      refreshAgain.current = false;
+      const [result, layout] = await Promise.all([core.call<{ servers: Server[] }>("servers.list"), core.call<Workbench>("workbench.snapshot")]);
+      setServers(result.servers); setWorkbench({ ...emptyWorkbench, ...layout });
+    } while (refreshAgain.current); } catch (e) { setError(errorMessage(e)); } finally { refreshing.current = false; }
   }, []);
-  useEffect(() => {
-    void refresh();
-    const off = onCoreNotification(notification => {
-      if (["workbench.changed", "servers.changed", "sessions.changed"].includes(notification.type)) void refresh();
-      if (notification.type === "workbench.warning") {
-        const warning = notification.payload as { message?: string };
-        if (warning.message) setError(warning.message);
-      }
-      if (notification.type === "workbench.openCanceled") {
-        const { operationId } = notification.payload as { operationId: string };
-        canceledOpens.current.add(operationId);
-        if (canceledOpens.current.size > 1000) canceledOpens.current.delete(canceledOpens.current.values().next().value!);
-        setAuth(current => current?.operationId === operationId ? null : current);
-      }
-      if (notification.type === "auth.required") {
-        const payload = notification.payload as { server: Server; operationId?: string; error: { code: string; message: string; details?: unknown } };
-        if (!payload.operationId || !canceledOpens.current.has(payload.operationId)) setAuth({ server: payload.server, fault: new CoreError(payload.error), operationId: payload.operationId });
-      }
-    });
-    const interval = setInterval(() => void refresh(), 1600);
-    return () => { off(); clearInterval(interval); };
-  }, [refresh]);
   const run = useCallback(async (method: string, params: unknown = {}) => {
+    if (["workspaces.move", "windows.merge"].includes(method)) setMoveOperation((params as { operationId?: string }).operationId ?? null);
     try { setError(""); const result = await core.call(method, params); await refresh(); return result; }
     catch (e) { setError(errorMessage(e)); return undefined; }
+    finally { if (["workspaces.move", "windows.merge"].includes(method)) setMoveOperation(null); }
   }, [refresh]);
-  const activeServer = servers.find(server => server.id === workbench.activeWorkspaceId) ?? servers.find(server => workbench.views.some(view => view.workspaceId === workbench.activeWorkspaceId && view.serverId === server.id)) ?? servers.find(server => server.id === selectedServerId);
-  const activateServer = async (server: Server) => {
-    setSelectedServerId(server.id); setServerMenu(null); setActiveTabs({}); await run("workbench.activateWorkspace", { serverId: server.id });
-  };
-  const openTerminal = async (server: Server) => {
-    if (openingRef.current) return;
-    const operation = { serverId: server.id, operationId: crypto.randomUUID() };
-    openingRef.current = operation; setConnecting(operation); setError("");
-    try { await core.call("workbench.openTerminal", operation, 130_000); await refresh(); }
-    catch (e) {
-      if (e instanceof CoreError && ["HOST_KEY_REQUIRED", "HOST_KEY_CHANGED", "AUTH_REQUIRED", "AUTH_FAILED"].includes(e.code)) { if (!canceledOpens.current.has(operation.operationId)) setAuth({ server, fault: e, operationId: operation.operationId }); }
-      else if (e instanceof CoreError && e.code === "CANCELED") { /* Cancellation is an expected end state. */ }
-      else setError(errorMessage(e));
-    } finally { openingRef.current = null; setConnecting(null); await refresh(); }
-  };
-  const cancelOpen = async (operationId: string) => {
-    if (cancellingRef.current.has(operationId)) return;
-    const previous = document.activeElement as HTMLElement | null;
-    canceledOpens.current.add(operationId);
-    if (canceledOpens.current.size > 1000) canceledOpens.current.delete(canceledOpens.current.values().next().value!);
-    cancellingRef.current.add(operationId); setCancelling(new Set(cancellingRef.current)); setError("");
-    try { await core.call("workbench.cancelOpen", { operationId }); await refresh(); }
-    catch (e) { setError(errorMessage(e)); }
-    finally {
-      cancellingRef.current.delete(operationId); setCancelling(new Set(cancellingRef.current));
-      requestAnimationFrame(() => { if (previous && !previous.isConnected && document.activeElement === document.body) newTerminalButton.current?.focus(); });
-    }
-  };
-  const pendingOpens = connecting && !workbench.pendingOpens.some(open => open.operationId === connecting.operationId) ? [...workbench.pendingOpens, connecting] : workbench.pendingOpens;
-  const moveView = async (view: View, placement: string, group = 0, screenPosition?: { x: number; y: number }) => {
-    setViewMenu(null); await run("workbench.move", { viewId: view.viewId, placement, group, ...(screenPosition ? { screenPosition } : {}) });
-    if (placement === "center") setActiveTabs(current => ({ ...current, [group]: view.viewId }));
-  };
+  useEffect(() => { void core.call("workbench.modal", { open: blocked }).catch(e => setError(errorMessage(e))); }, [blocked]);
   useEffect(() => {
-    const keydown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { setViewMenu(null); setServerMenu(null); setAppMenu(false); dragCandidate.current = null; dragged.current = null; setDrag(null); }
-      if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "t" && !modal && activeServer) { event.preventDefault(); void openTerminal(activeServer); }
+    void refresh(); void core.call<{ startupError?: string }>("app.info").then(info => { if (info.startupError) setError(info.startupError); }).catch(() => {});
+    const off = onCoreNotification(n => {
+      if (["workbench.changed", "servers.changed"].includes(n.type)) void refresh();
+      if (n.type === "workbench.warning") setError((n.payload as { message: string }).message);
+      if (n.type === "workbench.openCanceled") { const id = (n.payload as { operationId: string }).operationId; canceled.current.add(id); setAuth(current => current?.request.operationId === id ? null : current); }
+      if (n.type === "auth.required") {
+        const p = n.payload as CommandRequest & { server: Server; error: { code: string; message: string; details?: unknown } };
+        if (!p.operationId || !canceled.current.has(p.operationId)) setAuth({ server: p.server, fault: new CoreError(p.error), request: { commandId: p.commandId, workspaceId: p.server.id, viewId: p.viewId, args: p.args, operationId: p.operationId } });
+      }
+    });
+    const interval = setInterval(() => void refresh(), 2000); return () => { off(); clearInterval(interval); };
+  }, [refresh]);
+  useEffect(() => {
+    if (!topRef.current) return;
+    const report = () => {
+      const rect = (el: Element | null) => { if (!el) return undefined; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
+      void core.call("windows.chrome", { titlebar: rect(topRef.current), drag: rect(document.querySelector("[data-chrome-drag]")), maximize: rect(document.querySelector("[data-chrome-maximize]")), tabStrip: rect(document.querySelector("[data-server-tabs]")), tabs: [...document.querySelectorAll<HTMLElement>("[data-workspace-id]")].map(el => ({ workspaceId: el.dataset.workspaceId, ...rect(el) })) }).catch(e => setError(errorMessage(e)));
+    };
+    const observer = new ResizeObserver(report); observer.observe(topRef.current); window.addEventListener("resize", report); window.addEventListener("scroll", report, true); report();
+    return () => { observer.disconnect(); window.removeEventListener("resize", report); window.removeEventListener("scroll", report, true); };
+  }, [workbench.workspaceIds.join(","), detachedId]);
+  const execute = async (request: CommandRequest) => {
+    const operationId = crypto.randomUUID(); setPendingCommand(operationId); setError("");
+    try { await core.call("commands.execute", { ...request, operationId }, 130_000); }
+    catch (e) { if (!(e instanceof CoreError && ["HOST_KEY_REQUIRED", "HOST_KEY_CHANGED", "AUTH_REQUIRED", "AUTH_FAILED", "CANCELED"].includes(e.code))) setError(errorMessage(e)); }
+    finally { setPendingCommand(null); await refresh(); }
+  };
+  const cancel = async (operationId: string) => { const previous=document.activeElement; canceled.current.add(operationId); await run("workbench.operation.cancel", { operationId }); requestAnimationFrame(()=>{if(previous&&!previous.isConnected)document.querySelector<HTMLButtonElement>(".tab-tools > button")?.focus();}); };
+  const openServer = async (server: Server, newWindow = false) => { setPicker(false); await run("workspaces.open", { serverId: server.id, target: newWindow ? "newWindow" : "currentWindow", operationId: crypto.randomUUID() }); };
+  const activeServer = servers.find(s => s.id === workbench.activeWorkspaceId), primary = workbench.commands.filter(c => c.primary && (c.scope === "global" || c.scope === "server" && activeServer));
+  const commandButton = (c: Command) => <button key={c.id} disabled={Boolean(pendingCommand)} onClick={() => void execute({ commandId: c.id, ...(c.scope === "server" ? { workspaceId: workbench.activeWorkspaceId! } : {}) })}><Plus size={14} />{c.title}</button>;
+  const moveWorkspace = (id: string, targetWindowId?: string) => { void run("workspaces.move", { workspaceId: id, ...(targetWindowId ? { targetWindowId } : {}), operationId: crypto.randomUUID() }); };
+  const moveView = async (v: View, placement: string, group = 0, screenPosition?: { x: number; y: number }) => { await run("views.move", { viewId: v.viewId, placement, group, ...(screenPosition ? { screenPosition } : {}) }); };
+  useEffect(() => {
+    const keydown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {   dragCandidate.current = null; dragged.current = null; setDrag(null); }
+      if (e.ctrlKey && e.key.toLowerCase() === "o" && !modal) { e.preventDefault(); setPicker(true); }
+      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "t" && !modal && activeServer && primary[0]) { e.preventDefault(); void execute({ commandId: primary[0].id, workspaceId: activeServer.id }); }
+      if (e.altKey && e.key === " ") { e.preventDefault(); void run("windows.control", { action: "systemMenu" }); }
     };
     window.addEventListener("keydown", keydown); return () => window.removeEventListener("keydown", keydown);
   });
-  const visibleViews = workbench.views.filter(view => detachedId ? view.viewId === detachedId : view.workspaceId === workbench.activeWorkspaceId && view.placement !== "detached");
-  const detachedView = detachedId ? workbench.views.find(view => view.viewId === detachedId) : undefined;
-  const sessions = visibleViews.find(view => view.viewType === "terminal.sessions");
-  const terminalViews = visibleViews.filter(view => view.viewType !== "terminal.sessions");
-  const centers = terminalViews.filter(view => view.placement === "center");
-  const bottomViews = terminalViews.filter(view => view.placement === "bottom");
-  const bottomActive = bottomViews.find(view => view.active) ?? bottomViews.find(view => view.viewId === activeTabs[2]) ?? bottomViews[0];
-  const count = workbench.views.filter(view => view.viewType === "terminal.session" && ["active", "running", "connected"].includes(view.status)).length;
-
-  const activateTab = (viewId: string, group: number) => {
-    setActiveTabs(current => ({ ...current, [group]: viewId }));
-    void run("workbench.activate", { viewId });
-  };
-  const tabKeyDown = (event: ReactKeyboardEvent, view: View, group: number) => {
-    if (event.target !== event.currentTarget) return;
-    if (event.key === "Enter" || event.key === " ") { event.preventDefault(); activateTab(view.viewId, group); return; }
-    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-    const peers = group === 2 ? bottomViews : centers.filter(item => workbench.split === "none" || item.group === group);
-    const index = peers.findIndex(item => item.viewId === view.viewId);
-    const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? peers.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + peers.length) % peers.length;
-    const next = peers[nextIndex];
-    if (!next) return;
-    event.preventDefault();
-    document.getElementById(`tab-${next.viewId}`)?.focus();
-    activateTab(next.viewId, group);
-  };
-
-  const pointerDown = (event: ReactPointerEvent, view: View) => {
-    if (event.button !== 0 || (event.target as HTMLElement).closest("button")) return;
-    suppressTabClick.current = null;
-    const rect = event.currentTarget.getBoundingClientRect();
-    dragCandidate.current = { view, x: event.clientX, y: event.clientY, offsetX: event.clientX - rect.x, offsetY: event.clientY - rect.y };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
-  const pointerMove = (event: ReactPointerEvent) => {
-    const candidate = dragCandidate.current;
-    if (!candidate) return;
-    if (!dragged.current && Math.hypot(event.clientX - candidate.x, event.clientY - candidate.y) < 8) return;
-    suppressTabClick.current = candidate.view.viewId;
-    const next = { ...candidate, x: event.clientX, y: event.clientY }; dragged.current = next; setDrag(next);
-  };
-  const pointerUp = (event: ReactPointerEvent) => {
-    const current = dragged.current;
-    dragCandidate.current = null; dragged.current = null; setDrag(null);
-    if (!current) return;
-    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-drop-placement]");
-    if (target) void moveView(current.view, target.dataset.dropPlacement!, Number(target.dataset.dropGroup ?? 0));
-    else if (event.clientX < 0 || event.clientY < 0 || event.clientX > innerWidth || event.clientY > innerHeight) void moveView(current.view, "detached", 0, { x: event.screenX, y: event.screenY });
-  };
-  const resize = (event: ReactPointerEvent, type: "side" | "split" | "bottom") => {
-    const startX = event.clientX, startY = event.clientY, initialSide = sideWidth, initialBottom = bottomHeight;
-    const initialRatio = splitRatio;
-    const target = event.currentTarget; target.setPointerCapture(event.pointerId);
+  const visibleViews = workbench.views.filter(v => detachedId ? v.viewId === detachedId : (v.workspaceId === workbench.activeWorkspaceId || v.workspaceId === "@app" && workbench.windowId === "main") && v.placement !== "detached");
+  const centers = visibleViews.filter(v => v.placement === "center"), bottom = visibleViews.filter(v => v.placement === "bottom");
+  const surface = (v: View) => <NativeSurface key={`${v.viewId}:${v.mountGeneration}`} view={v} visible={!blocked} commands={workbench.commands} />;
+  const resize = (e: ReactPointerEvent, kind: "side" | "bottom", edge = "left") => {
+    const x = e.clientX, y = e.clientY, side = sideWidth, height = bottomHeight;
+    const target = e.currentTarget; target.setPointerCapture(e.pointerId);
     const move = (next: PointerEvent) => {
-      if (type === "side") setSideWidth(Math.max(200, Math.min(400, initialSide + (next.clientX - startX) * (workbench.sessionsSide === "right" ? -1 : 1))));
-      if (type === "bottom") setBottomHeight(Math.max(160, Math.min(innerHeight * .65, initialBottom - next.clientY + startY)));
-      if (type === "split") {
-        const rect = workspaceRef.current?.getBoundingClientRect(); if (!rect) return;
-        setSplitRatio(Math.max(.25, Math.min(.75, initialRatio + (workbench.split === "horizontal" ? (next.clientX - startX) / rect.width : (next.clientY - startY) / rect.height))));
-      }
+      if (kind === "side") setSideWidth(Math.max(200, Math.min(400, side + (next.clientX - x) * (edge === "right" ? -1 : 1))));
+      if (kind === "bottom") setBottomHeight(Math.max(160, Math.min(innerHeight * .65, height - next.clientY + y)));
     };
-    const up = () => { target.removeEventListener("pointermove", move as EventListener); target.removeEventListener("pointerup", up); target.removeEventListener("pointercancel", up); };
-    target.addEventListener("pointermove", move as EventListener); target.addEventListener("pointerup", up, { once: true }); target.addEventListener("pointercancel", up, { once: true });
+    const end = () => { target.removeEventListener("pointermove", move as EventListener); target.removeEventListener("pointerup", end); target.removeEventListener("pointercancel", end); };
+    target.addEventListener("pointermove", move as EventListener); target.addEventListener("pointerup", end); target.addEventListener("pointercancel", end);
   };
-  const tab = (view: View, active: boolean, group: number) => <div key={view.viewId} id={`tab-${view.viewId}`} className={`view-tab ${active ? "active" : ""}`} role="tab" aria-selected={active} tabIndex={active ? 0 : -1} title={view.title} onPointerDown={event => pointerDown(event, view)} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={() => { dragCandidate.current = null; dragged.current = null; setDrag(null); }} onClick={() => { if (suppressTabClick.current === view.viewId) { suppressTabClick.current = null; return; } activateTab(view.viewId, group); }} onKeyDown={event => tabKeyDown(event, view, group)}>
-    <TerminalSquare size={14} /><span>{view.title}</span><button className="icon-button tab-menu" aria-label={`${view.title} 的视图操作`} onClick={event => { event.stopPropagation(); setViewMenu(viewMenu === view.viewId ? null : view.viewId); }}><Ellipsis size={14} /></button><button className="icon-button tab-close" title="关闭终端并结束会话" aria-label={`关闭 ${view.title}`} onClick={event => { event.stopPropagation(); void run("workbench.close", { viewId: view.viewId }); }}><X size={13} /></button>
-    {viewMenu === view.viewId && <div className="popover tab-popover" role="menu" onClick={event => event.stopPropagation()}><button onClick={() => void moveView(view, "center", 0)}><LayoutPanelTop size={14} />移到中央</button><button onClick={() => void moveView(view, "center", 1)}><Columns2 size={14} />移到另一区域</button><button onClick={() => void moveView(view, "bottom")}><PanelBottom size={14} />移到底部</button><button onClick={() => void moveView(view, "detached")}><ArrowUpRight size={14} />独立窗口</button></div>}
+  const menu = async (items: {id:string;label:string;enabled:boolean;separator?:boolean}[], x:number,y:number) => {
+    try { return await showMenu(items,{x,y}); } catch(e) { setError(errorMessage(e));return null; }
+  };
+  const serverContext = async (id:string,x:number,y:number) => {
+    const ws=workbench.workspaces.find(w=>w.workspaceId===id);if(!ws)return;
+    const targets=[...new Set(["main",...workbench.workspaces.map(w=>w.ownerWindowId)])].filter(w=>w!==ws.ownerWindowId);
+    const selected=await menu([{id:"detach",label:"移到新窗口",enabled:true},...targets.map(w=>({id:"window:"+w,label:w==="main"?"合并回主窗口":"移到 "+(servers.find(s=>s.id===workbench.workspaces.find(v=>v.ownerWindowId===w)?.serverId)?.name??"工作区")+" 窗口",enabled:true})),...(workbench.windowRole==="workspace"?[{id:"merge",label:"当前窗口全部合并回主窗口",enabled:true}]:[]),{id:"edit",label:"编辑服务器",enabled:true,separator:true},{id:"close",label:"关闭工作区并结束会话",enabled:true}],x,y);
+    if(selected==="detach")moveWorkspace(id);else if(selected?.startsWith("window:"))moveWorkspace(id,selected.slice(7));else if(selected==="merge")void run("windows.merge",{operationId:crypto.randomUUID()});else if(selected==="edit"){const server=servers.find(s=>s.id===id);if(server)setServerEditor(server);}else if(selected==="close")void run("workspaces.close",{workspaceId:id});
+  };
+  const viewContext = async (v:View,x:number,y:number) => {
+    const commands=workbench.commands.filter(c=>c.scope==="view"&&v.actions.includes(c.id));
+    const selected=await menu([...commands.map(c=>({id:"command:"+c.id,label:c.title,enabled:true})),{id:"move",label:v.placement==="detached"?"返回所属工作区":"移到独立窗口",enabled:true,separator:true},{id:"close",label:"关闭视图并结束会话",enabled:true}],x,y);
+    if(selected==="move")void moveView(v,v.placement==="detached"?"center":"detached");
+    else if(selected==="close")void run("views.close",{viewId:v.viewId});
+    else if(selected?.startsWith("command:")){const c=commands.find(c=>c.id===selected.slice(8));if(!c)return;if(c.input){setDraft(v.title);setInputError("");setCommandInput({view:v,command:c});}else void execute({commandId:c.id,viewId:v.viewId});}
+  };
+  const applicationMenu = async (x:number,y:number) => {
+    const selected=await menu([{id:"plugins",label:"管理插件",enabled:true},{id:"resources",label:"运行资源",enabled:true},{id:"calls",label:"调用记录",enabled:true},{id:"recall",label:"找回所有窗口",enabled:true},{id:"layoutRetry",label:"重试保存布局",enabled:true},...(workbench.windowRole==="workspace"?[{id:"merge",label:"全部合并回主窗口",enabled:true}]:[]),{id:"exit",label:"退出 SoDeck",enabled:true,separator:true}],x,y);
+    if(selected==="plugins"||selected==="resources"||selected==="calls")setPage(selected);else if(selected==="layoutRetry")void run("workbench.persistence.retry");else if(selected==="recall")void run("windows.control",{action:"recall"});else if(selected==="merge")void run("windows.merge",{operationId:crypto.randomUUID()});else if(selected==="exit")void run("app.exit");
+  };
+  const tab = (v: View, active: boolean, peers: View[]) => <div key={v.viewId} id={`tab-${v.viewId}`} className={`view-tab ${active ? "active" : ""}`} role="tab" aria-selected={active} tabIndex={active ? 0 : -1} title={v.title} aria-label={v.title} onContextMenu={e=>{e.preventDefault();void viewContext(v,e.clientX,e.clientY);}} onClick={() => { if (suppressClick.current === v.viewId) { suppressClick.current = null; return; } void run("views.activate", { viewId: v.viewId }); }} onKeyDown={e => {
+    if (e.target !== e.currentTarget) return;
+    if ((e.key==="F10"&&e.shiftKey)||e.key==="ContextMenu") {e.preventDefault();const r=e.currentTarget.getBoundingClientRect();void viewContext(v,r.left,r.bottom);}
+    if (["Enter", " "].includes(e.key)) { e.preventDefault(); void run("views.activate", { viewId: v.viewId }); }
+    if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) { e.preventDefault(); const i = peers.indexOf(v), next = peers[e.key === "Home" ? 0 : e.key === "End" ? peers.length - 1 : (i + (e.key === "ArrowRight" ? 1 : -1) + peers.length) % peers.length]; document.getElementById(`tab-${next.viewId}`)?.focus(); void run("views.activate", { viewId: next.viewId }); }
+  }} onPointerDown={e => { if (e.button !== 0 || (e.target as HTMLElement).closest("button")) return; const r = e.currentTarget.getBoundingClientRect(); dragCandidate.current = { view: v, x: e.clientX, y: e.clientY, offsetX: e.clientX - r.x, offsetY: e.clientY - r.y }; e.currentTarget.setPointerCapture(e.pointerId); }} onPointerMove={e => {
+    const c = dragCandidate.current; if (!c || (!dragged.current && Math.hypot(e.clientX - c.x, e.clientY - c.y) < 8)) return; suppressClick.current = v.viewId; dragged.current = { ...c, x: e.clientX, y: e.clientY }; setDrag(dragged.current);
+  }} onPointerUp={e => {
+    const current = dragged.current; dragCandidate.current = null; dragged.current = null; setDrag(null); if (!current) return;
+    const target = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-drop-placement]");
+    if (target) void moveView(v, target.dataset.dropPlacement!, Number(target.dataset.dropGroup ?? 0));
+    else if (e.clientX < 0 || e.clientY < 0 || e.clientX > innerWidth || e.clientY > innerHeight) void moveView(v, "detached", 0, { x: e.screenX, y: e.screenY });
+  }} onPointerCancel={() => { dragCandidate.current = null; dragged.current = null; setDrag(null); }}>
+    <LayoutPanelTop size={14} /><span>{v.title}</span><button className="icon-button" aria-label={`关闭 ${v.title}`} title="关闭视图并结束其会话" onClick={e => { e.stopPropagation(); void run("views.close", { viewId: v.viewId }); }}><X size={13} /></button>
   </div>;
-  const renderGroup = (group: number) => {
-    const views = centers.filter(view => workbench.split === "none" || view.group === group);
-    const active = views.find(view => view.active || workbench.activeViewIds?.[group] === view.viewId) ?? views.find(view => view.viewId === activeTabs[group]) ?? views[0];
-    return <section className="editor-group" data-drop-placement="center" data-drop-group={group} style={workbench.split !== "none" ? { flex: group === 0 ? splitRatio : 1 - splitRatio } : undefined}>
-      <div className="tab-bar" role="tablist" aria-label={`终端区域 ${group + 1}`}>{views.map(view => tab(view, view.viewId === active?.viewId, group))}{activeServer && <button className="icon-button new-tab" aria-label="新建终端" onClick={() => void openTerminal(activeServer)} disabled={Boolean(connecting)}><Plus size={15} /></button>}</div>
-      <div className="editor-content">{active ? <NativeSurface view={active} visible={!blocked} /> : <div className="group-empty"><TerminalSquare size={24} strokeWidth={1.2} /><p>将终端移到这里</p></div>}</div>
-    </section>;
+  const renderGroup = (_group:number) => {
+    const active=centers.find(v=>v.viewId===workbench.focusedViewId)??centers.find(v=>v.active)??centers[0];
+    return <section className="editor-group" data-drop-placement="center" data-drop-group="0"><div className="tab-bar"><div ref={tabRow} className="tab-scroll" role="tablist" aria-label="工作区页面">{centers.map(v=>tab(v,v.viewId===active?.viewId,centers))}</div><div className="tab-tools">{primary.map(commandButton)}{tabOverflow && <><button className="icon-button" aria-label="向左滚动终端页" onClick={()=>document.querySelector('.tab-scroll')?.scrollBy({left:-240})}><ChevronLeft size={14}/></button><button className="icon-button" aria-label="向右滚动终端页" onClick={()=>document.querySelector('.tab-scroll')?.scrollBy({left:240})}><ChevronRight size={14}/></button><button className="icon-button" aria-label="已打开页面" onClick={()=>{setPageQuery("");setPageList("view");}}><ChevronDown size={14}/></button></>}</div></div><div className="editor-content">{active?surface(active):<div className="workspace-empty"><LayoutPanelTop size={30}/><h2>工作区已准备好</h2><p>打开页面，开始工作</p><div>{primary.map(commandButton)}</div></div>}</div></section>;
   };
-  const sessionPanel = sessions && workbench.sessionsVisible && <aside className="sessions-panel" style={{ width: sideWidth }}><div className="panel-heading"><span><List size={13} />终端会话</span><div><button className="icon-button" title={workbench.sessionsSide === "left" ? "移到右侧" : "移到左侧"} aria-label="切换会话列表位置" onClick={() => void run("workbench.configure", { sessionsSide: workbench.sessionsSide === "left" ? "right" : "left" })}><ArrowLeftToLine size={13} style={{ transform: workbench.sessionsSide === "left" ? "rotate(180deg)" : undefined }} /></button><button className="icon-button" aria-label="收起会话列表" onClick={() => void run("workbench.configure", { sessionsVisible: false })}><PanelLeftClose size={13} /></button></div></div><NativeSurface view={sessions} visible={!blocked} /><div className={`resize-handle side ${workbench.sessionsSide}`} role="separator" tabIndex={0} aria-label="调整会话列表宽度" aria-orientation="vertical" onPointerDown={event => resize(event, "side")} onKeyDown={event => { if (event.key === "ArrowLeft") setSideWidth(Math.max(200, sideWidth - 16)); if (event.key === "ArrowRight") setSideWidth(Math.min(400, sideWidth + 16)); }} /></aside>;
+  const dock = (edge: "left" | "right") => {
+    const candidates = visibleViews.filter(v => v.placement === edge && v.active && workbench.dockSlots.some(s => s.viewId === v.viewId && s.visible));
+    const v = candidates.find(v => v.viewId === workbench.focusedViewId) ?? candidates.find(v => v.workspaceId !== "@app") ?? candidates[0];
+    return v && <aside className="sessions-panel" style={{ width: sideWidth }}><div className="panel-heading"><span>{v.title}</span><div><button className="icon-button" aria-label={`移动 ${v.title}`} title="切换停靠位置" onClick={() => void moveView(v, edge === "left" ? "right" : "left")}><ArrowLeftToLine size={13} /></button><button className="icon-button" aria-label={`收起 ${v.title}`} onClick={() => void run("workbench.configure", { dockViewId: v.viewId, visible: false })}><PanelLeftClose size={13} /></button></div></div>{surface(v)}<div className={`resize-handle side ${edge}`} role="separator" tabIndex={0} aria-label="调整侧栏宽度" onPointerDown={e => resize(e, "side", edge)} onKeyDown={e => { if (e.key === "ArrowLeft") setSideWidth(Math.max(200, sideWidth - 16)); if (e.key === "ArrowRight") setSideWidth(Math.min(400, sideWidth + 16)); }} /></aside>;
+  };
+  const bottomActive = bottom.find(v => v.active) ?? bottom[0], detachedView = visibleViews[0];
   return <div className="app-shell">
-    <header className="topbar"><div className="brand"><div className="brand-mark"><Command size={17} strokeWidth={1.7} /></div><span>SoDeck</span><span className="version">v2</span></div><div className="breadcrumb">{detachedId ? "独立终端" : "工作台"}{activeServer && <><span>/</span><strong>{activeServer.name}</strong></>}</div><div className="top-actions">{detachedId && <button onClick={() => { const view = workbench.views.find(item => item.viewId === detachedId); if (view) void moveView(view, "center"); }}><ArrowLeftToLine size={14} />返回主窗口</button>}<button className="icon-button" title="运行资源" aria-label="运行资源" onClick={() => setPage("resources")}><Activity size={17} /></button><div className="menu-parent"><button className="icon-button" aria-label="应用菜单" aria-expanded={appMenu} onClick={() => setAppMenu(!appMenu)}><ChevronDown size={16} /></button>{appMenu && <div className="popover app-popover"><button onClick={() => { setAppMenu(false); void run("app.hide"); }}>收起到托盘</button><button onClick={() => { setAppMenu(false); void run("app.exit"); }}><Power size={14} />退出 SoDeck</button></div>}</div></div></header>
-    <div className="app-body">{!detachedId && <><nav className="activity-rail" aria-label="主要工具"><button className="rail-button active" aria-label="服务器" title="服务器"><ServerIcon size={20} /></button><button className={`rail-button ${workbench.sessionsVisible ? "selected" : ""}`} title="终端会话" aria-label="显示或收起终端会话" onClick={() => void run("workbench.configure", { sessionsVisible: !workbench.sessionsVisible })}><FolderTerminal size={20} /></button><div className="rail-spacer" /><button className="rail-button" title="插件" aria-label="插件" onClick={() => setPage("plugins")}><Package size={20} /></button><button className="rail-button" title="调用记录" aria-label="调用记录" onClick={() => setPage("calls")}><Logs size={20} /></button></nav>
-      <aside className="servers-panel"><div className="server-list-heading"><span>服务器</span><button className="icon-button" title="添加服务器" aria-label="添加服务器" onClick={() => setServerEditor("new")}><Plus size={16} /></button></div><div className="server-list">{servers.map(server => <div key={server.id} className={`server-item ${activeServer?.id === server.id ? "active" : ""}`}><button className="server-select" onClick={() => void activateServer(server)}><span className="server-avatar"><ServerIcon size={17} /></span><span className="server-label"><strong>{server.name}</strong><small>{server.host}</small></span></button><button className="icon-button server-more" aria-label={`${server.name} 的操作`} onClick={() => setServerMenu(serverMenu === server.id ? null : server.id)}><Ellipsis size={15} /></button>{serverMenu === server.id && <div className="popover server-popover"><button onClick={() => { setServerEditor(server); setServerMenu(null); }}><Settings2 size={14} />编辑服务器</button><button onClick={() => { setDeleteServer(server); setServerMenu(null); }}>删除服务器</button></div>}</div>)}</div><button className="add-server" onClick={() => setServerEditor("new")}><Plus size={15} />添加服务器</button><div className="sidebar-note"><span className="local-indicator" />本地工作区<p>连接与凭据由核心统一管理</p></div></aside></>}
-      <main className="main-area">
-        {error && <div className="app-error" role="alert"><span>{error}</span><button className="icon-button" aria-label="收起错误提示" onClick={() => setError("")}><X size={14} /></button></div>}
-        {pendingOpens.length > 0 && <div className="pending-connections" aria-label="正在建立的连接">{pendingOpens.map(open => {
-          const server = servers.find(server => server.id === open.serverId);
-          const busy = cancelling.has(open.operationId);
-          return <div className="connection-progress" key={open.operationId}><span role="status">{busy || open.cancelling ? "正在取消连接" : "正在连接"}<strong>{server?.name ?? "服务器"}</strong></span><button disabled={busy} aria-label={`取消连接到 ${server?.name ?? "服务器"}`} onClick={() => void cancelOpen(open.operationId)}>{busy ? "正在取消…" : "取消连接"}</button></div>;
-        })}</div>}
-        {detachedId ? <div className="detached-area">{detachedView ? <><div className="tab-bar" role="tablist" aria-label="独立终端">{tab(detachedView, true, 0)}</div><div className="editor-content"><NativeSurface view={detachedView} visible={!blocked} /></div></> : <div className="group-empty">正在载入终端视图…</div>}</div> : !activeServer ? <div className="welcome"><div className="welcome-icon"><TerminalSquare size={33} strokeWidth={1.25} /></div><div className="eyebrow">YOUR WORKSPACE, CONNECTED</div><h1>从一台服务器开始。</h1><p>打开终端，专注于眼前的工作。<br />连接、会话与窗口，在同一个工作台中有序展开。</p><button className="primary large" onClick={() => setServerEditor("new")}><Plus size={16} />添加服务器</button><div className="welcome-hints"><span><Database size={14} />连接信息保存在本机</span><span><Package size={14} />终端以插件独立更新</span></div>{servers.length > 0 && <p className="select-hint">选择左侧服务器以打开工作区</p>}</div> : <>
-          <header className="workspace-heading"><div><div className="workspace-name"><ServerIcon size={17} /><h1>{activeServer.name}</h1><span className="protocol-pill">SSH</span></div><p>{activeServer.username}@{activeServer.host}<span>:</span>{activeServer.port}</p></div><div className="workspace-tools"><div className="segmented" aria-label="分屏方向"><button className={workbench.split === "none" ? "active" : ""} aria-label="单区域" title="单区域" onClick={() => void run("workbench.configure", { split: "none" })}><LayoutPanelTop size={16} /></button><button className={workbench.split === "horizontal" ? "active" : ""} aria-label="左右分屏" title="左右分屏" onClick={() => void run("workbench.configure", { split: "horizontal" })}><Columns2 size={16} /></button><button className={workbench.split === "vertical" ? "active" : ""} aria-label="上下分屏" title="上下分屏" onClick={() => void run("workbench.configure", { split: "vertical" })}><Rows2 size={16} /></button></div><button ref={newTerminalButton} className="primary" onClick={() => void openTerminal(activeServer)} disabled={Boolean(connecting)}><Plus size={15} />{connecting ? "连接中…" : "新建终端"}</button></div></header>
-          <div className="workspace-body">{workbench.sessionsSide === "left" && sessionPanel}<div className="workspace-editors" ref={workspaceRef}>{centers.length || workbench.split !== "none" ? <div className={`editor-groups ${workbench.split}`}>{renderGroup(0)}{workbench.split !== "none" && <><div className={`resize-handle split ${workbench.split}`} role="separator" tabIndex={0} aria-label="调整分屏大小" onPointerDown={event => resize(event, "split")} onKeyDown={event => { if (["ArrowLeft", "ArrowUp"].includes(event.key)) setSplitRatio(Math.max(.25, splitRatio - .05)); if (["ArrowRight", "ArrowDown"].includes(event.key)) setSplitRatio(Math.min(.75, splitRatio + .05)); }} />{renderGroup(1)}</>}</div> : <div className="workspace-empty" data-drop-placement="center" data-drop-group="0"><TerminalSquare size={31} strokeWidth={1.2} /><h2>工作区已准备好</h2><p>创建终端以连接 {activeServer.name}</p><button onClick={() => void openTerminal(activeServer)} disabled={Boolean(connecting)}><Plus size={14} />新建终端</button><small>Ctrl + Shift + T</small></div>}
-            {bottomActive && <section className="bottom-panel" style={{ height: bottomHeight }} data-drop-placement="bottom"><div className="resize-handle bottom" role="separator" tabIndex={0} aria-label="调整底部终端高度" onPointerDown={event => resize(event, "bottom")} onKeyDown={event => { if (event.key === "ArrowUp") setBottomHeight(bottomHeight + 16); if (event.key === "ArrowDown") setBottomHeight(Math.max(160, bottomHeight - 16)); }} /><div className="tab-bar" role="tablist" aria-label="底部终端">{bottomViews.map(view => tab(view, view.viewId === bottomActive.viewId, 2))}</div><NativeSurface view={bottomActive} visible={!blocked} /></section>}
-          </div>{workbench.sessionsSide === "right" && sessionPanel}</div>
-        </>}
+    <header ref={topRef} className="window-topbar">{detachedId ? <div className="detached-heading">{detachedView && tab(detachedView,true,[detachedView])}</div> : <ServerTabs workbench={workbench} servers={servers} run={run} onPicker={() => setPicker(true)} onMenu={(id,x,y)=>void serverContext(id,x,y)} onList={()=>{setPageQuery("");setPageList("server");}} onDragging={setDragging} />}
+      <div className="window-drag-space" data-chrome-drag onPointerDown={e => { if (e.button === 0) void run("windows.control", { action: "drag" }); }} onDoubleClick={() => void run("windows.control", { action: "toggleMaximize" })} onContextMenu={e => { e.preventDefault(); void run("windows.control", { action: "systemMenu" }); }} /><button className="application-menu" aria-label="应用菜单" onClick={e=>{const r=e.currentTarget.getBoundingClientRect();void applicationMenu(r.left,r.bottom);}}>应用</button><WindowControls run={run} />
+    </header>
+    <div className="app-body">{!detachedId && <nav className="activity-rail" aria-label="工作区工具"><button className="rail-button" aria-label="打开服务器" onClick={() => setPicker(true)}><ServerIcon size={19} /></button>{visibleViews.filter(v => ["left", "right"].includes(v.placement)).map(v => <button key={v.viewId} className="rail-button" aria-label={`显示或收起 ${v.title}`} title={v.title} onClick={() => void run("workbench.configure", { dockViewId: v.viewId, visible: !workbench.dockSlots.find(s => s.viewId === v.viewId)?.visible })}><LayoutPanelTop size={19} /></button>)}<div className="rail-spacer" /><button className="rail-button" aria-label="运行资源" onClick={() => setPage("resources")}><Activity size={19} /></button><button className="rail-button" aria-label="插件" onClick={() => setPage("plugins")}><Package size={19} /></button><button className="rail-button" aria-label="调用记录" onClick={() => setPage("calls")}><Logs size={19} /></button></nav>}
+      <main className="main-area">{error && <div className="app-error" role="alert"><span>{error}</span><button className="icon-button" aria-label="收起错误提示" onClick={() => setError("")}><X size={14} /></button></div>}{workbench.recoveryWarnings.map(w => <div className="app-error" key={w}>{w}</div>)}
+        {workbench.pendingOpens.map(op => <div className="connection-progress" key={op.operationId}><span role="status">{op.cancelling ? "正在取消" : "正在处理"} · {servers.find(s => s.id === op.serverId)?.name}</span><button aria-label={`取消连接到 ${servers.find(s => s.id === op.serverId)?.name ?? "服务器"}`} onClick={() => void cancel(op.operationId)}>取消连接</button></div>)}{moveOperation && <div className="connection-progress"><span role="status">正在移动工作区…</span><button onClick={() => void cancel(moveOperation)}>取消移动</button></div>}
+        {detachedId ? <div className="detached-area">{detachedView && <><div className="editor-content">{surface(detachedView)}</div></>}</div> : !activeServer && visibleViews.length === 0 ? <div className="welcome"><div className="welcome-icon"><ServerIcon size={32} strokeWidth={1.3} /></div><h1>打开服务器，开始工作。</h1><p>每台服务器拥有自己的页面与布局。<br />拖动顶部标签，即可在窗口之间移动工作区。</p><button className="primary large" onClick={() => setPicker(true)}><Plus size={16} />打开服务器</button></div> : <>
+          <div className="workspace-body">{dock("left")}<div className="workspace-editors" ref={workspaceRef}><div className="editor-groups">{renderGroup(0)}</div>
+            {bottomActive && <section className="bottom-panel" style={{ height: bottomHeight }} data-drop-placement="bottom"><div className="resize-handle bottom" role="separator" tabIndex={0} aria-label="调整底部面板高度" onPointerDown={e => resize(e, "bottom")} onKeyDown={e => { if (e.key === "ArrowUp") setBottomHeight(bottomHeight + 16); if (e.key === "ArrowDown") setBottomHeight(Math.max(160, bottomHeight - 16)); }} /><div className="tab-bar" role="tablist" aria-label="底部视图">{bottom.map(v => tab(v, v.viewId === bottomActive.viewId, bottom))}</div>{surface(bottomActive)}</section>}
+          </div>{dock("right")}</div></>}
       </main></div>
-    <footer className="statusbar"><span><i className="local-indicator" />{count ? `${count} 个终端运行中` : "就绪"}</span><span className="statusbar-right"><button onClick={() => setPage("plugins")}><Package size={12} />插件</button><span>Windows · SSH</span><button aria-label="查看当前工作区信息" title="主窗口关闭后继续在托盘运行，退出会结束全部会话。" onClick={() => setAppMenu(!appMenu)}><CircleHelp size={13} /></button></span></footer>
-    {drag && <><div className="drag-targets"><div data-drop-placement="center" data-drop-group="0">移到中央</div><div data-drop-placement="center" data-drop-group="1">移到另一区域</div><div data-drop-placement="bottom">移到底部</div><div data-drop-placement="detached">独立窗口</div></div><div className="drag-preview" style={{ left: drag.x - drag.offsetX, top: drag.y - drag.offsetY }}><TerminalSquare size={14} />{drag.view.title}</div></>}
-    {serverEditor && <ServerDialog server={serverEditor === "new" ? undefined : serverEditor} onClose={() => setServerEditor(null)} onSaved={server => { setServerEditor(null); void refresh(); void activateServer(server); }} />}
-    {auth && <AuthDialog key={`${auth.server.id}-${auth.fault.code}`} server={auth.server} fault={auth.fault} onClose={() => { if (auth.operationId) canceledOpens.current.add(auth.operationId); setAuth(null); }} onReady={() => { const { server, operationId } = auth; setAuth(null); if (!operationId || !canceledOpens.current.has(operationId)) void openTerminal(server); }} />}
+    <footer className="statusbar"><span><i className="local-indicator" />{activeServer ? `${activeServer.username}@${activeServer.host}:${activeServer.port}` : "就绪"}</span><span>{workbench.windowRole === "main" ? "主窗口" : workbench.windowRole === "workspace" ? "工作区窗口" : "独立视图"}</span></footer>
+    {drag && <><div className="drag-targets"><div data-drop-placement="center" data-drop-group="0">移到中央</div><div data-drop-placement="detached">独立窗口</div></div><div className="drag-preview" style={{ left: drag.x - drag.offsetX, top: drag.y - drag.offsetY }}>{drag.view.title}</div></>}
+    {commandInput && <Dialog title={commandInput.command.title} onClose={()=>setCommandInput(null)}><form onSubmit={async e=>{e.preventDefault();if(savingInput)return;setSavingInput(true);try{await core.call("commands.execute",{commandId:commandInput.command.id,viewId:commandInput.view.viewId,args:{[commandInput.command.input!.key]:draft.trim()},operationId:crypto.randomUUID()});setCommandInput(null);await refresh();}catch(e){setInputError(errorMessage(e));}finally{setSavingInput(false);}}}><label>{commandInput.command.input!.label}<input autoFocus value={draft} onFocus={e=>e.target.select()} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.nativeEvent.isComposing&&e.key==="Enter")e.preventDefault();}}/></label>{inputError&&<p role="alert" className="inline-error">{inputError}</p>}<footer><button type="button" onClick={()=>setCommandInput(null)}>取消</button><button type="submit" disabled={savingInput||[...draft.trim()].length<commandInput.command.input!.minLength||[...draft.trim()].length>commandInput.command.input!.maxLength}>保存</button></footer></form></Dialog>}
+    {pageList && <Dialog dismissOnOutside title={pageList==="server"?"已打开服务器":"已打开页面"} onClose={()=>setPageList(null)}><div className="management-body"><input aria-label="搜索已打开页面" placeholder="按名称搜索" value={pageQuery} onChange={e=>setPageQuery(e.target.value)}/><div className="opened-list">{(pageList==="server"?workbench.workspaces.map(w=>({id:w.workspaceId,title:servers.find(s=>s.id===w.serverId)?.name??w.serverId,note:w.ownerWindowId===workbench.windowId?"本窗口":"其他窗口"})):workbench.views.filter(v=>v.workspaceId===workbench.activeWorkspaceId).map(v=>({id:v.viewId,title:v.title,note:v.placement==="detached"?"独立窗口":"本窗口"}))).filter(p=>p.title.toLowerCase().includes(pageQuery.toLowerCase())).map(p=><button key={p.id} onClick={()=>{void run(pageList==="server"?"workspaces.open":"views.activate",pageList==="server"?{serverId:p.id,target:"currentWindow",operationId:crypto.randomUUID()}:{viewId:p.id});setPageList(null);}}><span>{p.title}</span><small>{p.note}</small></button>)}</div></div></Dialog>}
+    {picker && <ServerPicker servers={servers} workspaces={workbench.workspaces} onClose={() => setPicker(false)} onOpen={(server, newWindow) => void openServer(server, newWindow)} onEdit={server => { setPicker(false); setServerEditor(server); }} onDelete={server => { setPicker(false); setDeleteServer(server); }} />}
+    {serverEditor && <ServerDialog server={serverEditor === "new" ? undefined : serverEditor} onClose={() => { setServerEditor(null); void refresh(); }} onSaved={server => { setServerEditor(null); void openServer(server); }} />}
+    {auth && <AuthDialog key={`${auth.server.id}-${auth.fault.code}`} server={auth.server} fault={auth.fault} onClose={() => { if (auth.request.operationId) void cancel(auth.request.operationId); setAuth(null); }} onReady={() => { const request = auth.request; setAuth(null); if (request.operationId && !canceled.current.has(request.operationId)) void run("commands.retry", { operationId: request.operationId }); }} />}
     {page && <ManagementDialog page={page} onClose={() => setPage(null)} />}
-    {deleteServer && <Dialog title="删除服务器" subtitle={deleteServer.name} onClose={() => setDeleteServer(null)}><div className="confirm-body"><p>删除连接档案，并结束此服务器当前运行的所有终端。</p><p className="form-help">远程服务器上的文件不会被删除。</p><footer><button onClick={() => setDeleteServer(null)}>取消</button><button className="danger" onClick={async () => { const server = deleteServer; const result = await run("servers.delete", { serverId: server.id, stopSessions: true }); if (result !== undefined) { setDeleteServer(null); if (selectedServerId === server.id) setSelectedServerId(null); } }}>结束会话并删除</button></footer></div></Dialog>}
+    {deleteServer && <Dialog title="删除服务器" subtitle={deleteServer.name} onClose={() => setDeleteServer(null)}><div className="confirm-body"><p>删除连接档案，并结束此服务器当前运行的所有会话。</p><p className="form-help">远程服务器上的文件不会被删除。</p><footer><button onClick={() => setDeleteServer(null)}>取消</button><button className="danger" onClick={async () => { const result = await run("servers.delete", { serverId: deleteServer.id, stopSessions: true }); if (result !== undefined) setDeleteServer(null); }}>结束会话并删除</button></footer></div></Dialog>}
   </div>;
 }

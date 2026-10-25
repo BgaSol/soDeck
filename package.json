@@ -1,20 +1,25 @@
 {
   "name": "sodeck-v2",
-  "version": "2.0.0-dev.1",
+  "version": "2.0.0-dev.3",
   "private": true,
   "type": "module",
-  "workspaces": ["apps/desktop", "packages/*", "plugins/terminal"],
+  "workspaces": [
+    "apps/desktop",
+    "packages/*",
+    "plugins/terminal"
+  ],
   "scripts": {
     "desktop": "node scripts/desktop.mjs dev",
     "desktop:build": "node scripts/desktop.mjs build --no-bundle",
     "build": "npm run build --workspaces --if-present",
-    "check": "npm run check --workspaces --if-present && node scripts/check-boundaries.mjs",
+    "check": "node scripts/generate-workbench.mjs --check && npm run check --workspaces --if-present && node scripts/check-boundaries.mjs",
     "test:contracts": "npm run test --workspaces --if-present",
     "test:core": "node scripts/cargo.mjs test --workspace",
     "plugin:pack": "node scripts/pack-plugin.mjs",
     "desktop:package-dev": "node scripts/package-dev.mjs",
     "test:terminal:native": "node tests/desktop/native.mjs",
-    "test:updates:native": "node tests/desktop/updates.mjs"
+    "test:updates:native": "node tests/desktop/updates.mjs",
+    "test:workbench:native": "node tests/desktop/server-tabs.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.3",

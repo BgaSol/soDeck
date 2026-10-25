@@ -1,0 +1,20 @@
+{
+  "pluginId":"sodeck.terminal","version":"0.2.1",
+  "requires":{"core":">=2.0.0, <3.0.0","pluginApi":"^2.0.0","capabilities":["workspace.v2"],"platforms":["windows"]},
+  "entry":{"ui":"ui/index.html","worker":"worker/main.js"},
+  "contributes":{
+    "commands":[
+      {"id":"sample.new","title":"新建夹具页面","scope":"server","primary":true},
+      {"id":"sample.rename","title":"夹具元数据","scope":"view","primary":false},
+      {"id":"sample.global","title":"全局夹具","scope":"global","primary":false},
+      {"id":"sample.inspector","title":"全局检查器","scope":"global","primary":false}
+    ],
+    "workspaceEntries":[{"viewType":"sample.list","openByDefault":true}],
+    "views":[
+      {"id":"sample.list","title":"夹具列表","scope":"server","supportedHosts":["dock"],"dockEdges":["left","right"],"defaultLocation":{"host":"dock","edge":"left"},"multiple":false,"stateVersion":1,"minWidth":200,"minHeight":160},
+      {"id":"sample.page","title":"夹具页面","scope":"server","supportedHosts":["tab","window"],"dockEdges":[],"defaultLocation":{"host":"tab"},"multiple":true,"stateVersion":1,"minWidth":320,"minHeight":160},
+      {"id":"sample.global","title":"全局夹具","scope":"global","supportedHosts":["tab","window"],"dockEdges":[],"defaultLocation":{"host":"window"},"multiple":false,"stateVersion":1,"minWidth":320,"minHeight":160},
+      {"id":"sample.inspector","title":"全局检查器","scope":"global","supportedHosts":["dock"],"dockEdges":["right"],"defaultLocation":{"host":"dock","edge":"right"},"multiple":false,"stateVersion":1,"minWidth":200,"minHeight":160}
+    ]
+  },"dataSchemaVersion":1
+}

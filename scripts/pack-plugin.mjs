@@ -14,7 +14,7 @@ for (let i = 2; i < process.argv.length; i += 2) {
 const pluginName = args.get('--plugin') ?? 'terminal';
 if (!/^[a-z0-9-]+$/.test(pluginName)) throw new Error('Invalid plugin name');
 const pluginDir = join(root, 'plugins', pluginName);
-const version = args.get('--version') ?? '0.1.0';
+const version = args.get('--version') ?? '0.3.0';
 const source = resolve(args.get('--source') ?? join(pluginDir, 'dist'));
 if (!args.has('--source')) {
   const vite = spawnSync(process.execPath, [join(root, 'node_modules/vite/bin/vite.js'), 'build'], {
@@ -85,7 +85,7 @@ if (archive.length > 32 * 1024 * 1024) throw new Error('Package exceeds 32 MiB c
 const output = resolve(args.get('--out') ?? join(root, 'resources', `${manifest.pluginId}-${manifest.version}.sodeck-plugin`));
 await mkdir(dirname(output),{recursive:true}); await writeFile(output,archive);
 // Keep the baseline factory package separate from the independently built update.
-if (!args.has('--out') && manifest.version === '0.1.0') await writeFile(join(root, 'resources', `${pluginName}.sodeck-plugin`), archive);
+if (!args.has('--out') && manifest.version === '0.3.0') await writeFile(join(root, 'resources', `${pluginName}.sodeck-plugin`), archive);
 if (!args.has('--key')) {
   const publicPath = join(root, 'resources/development-public-key.json');
   await mkdir(dirname(publicPath),{recursive:true});

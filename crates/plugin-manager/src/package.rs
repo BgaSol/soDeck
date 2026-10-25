@@ -45,6 +45,43 @@ pub struct Entry {
 #[serde(deny_unknown_fields)]
 pub struct Contributions {
     pub views: Vec<ViewDeclaration>,
+    #[serde(default)]
+    pub commands: Vec<CommandDeclaration>,
+    #[serde(default, rename = "workspaceEntries")]
+    pub workspace_entries: Vec<WorkspaceEntry>,
+    #[serde(default, rename = "retiredViews")]
+    pub retired_views: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CommandDeclaration {
+    pub id: String,
+    pub title: String,
+    pub scope: String,
+    #[serde(default)]
+    pub primary: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input: Option<CommandInput>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CommandInput {
+    pub kind: String,
+    pub key: String,
+    pub label: String,
+    pub initial: String,
+    pub min_length: u32,
+    pub max_length: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceEntry {
+    pub view_type: String,
+    #[serde(default)]
+    pub open_by_default: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -266,7 +303,40 @@ fn validate_manifest(m: &Manifest) -> Result<()> {
     {
         return Err(invalid("Invalid plugin entry or data schema"));
     }
+    let mut commands = BTreeSet::new();
+    for command in &m.contributes.commands {
+        if command.input.as_ref().is_some_and(|i| i.kind != "text" || i.initial != "viewTitle" || i.key.is_empty() || i.key.len() > 64 || i.label.is_empty() || i.label.len() > 256 || i.max_length > 256 || i.min_length > i.max_length) {
+            return Err(invalid("Invalid command input declaration"));
+        }
+        if command.id.is_empty()
+            || command.title.trim().is_empty()
+            || !["server", "view", "global"].contains(&command.scope.as_str())
+            || !commands.insert(command.id.clone())
+        {
+            return Err(invalid("Invalid or duplicate command declaration"));
+        }
+    }
+    let mut entries = BTreeSet::new();
+    for entry in &m.contributes.workspace_entries {
+        if !entries.insert(&entry.view_type)
+            || !m
+                .contributes
+                .views
+                .iter()
+                .any(|view| view.id == entry.view_type && view.scope == "server" && !view.multiple)
+        {
+            return Err(invalid(
+                "Workspace entry must reference a declared singleton server view",
+            ));
+        }
+    }
     let mut ids = BTreeSet::new();
+    let mut retired = BTreeSet::new();
+    for id in &m.contributes.retired_views {
+        if id.is_empty() || !retired.insert(id) || m.contributes.views.iter().any(|v| &v.id == id) {
+            return Err(invalid("Invalid retired view declaration"));
+        }
+    }
     for view in &m.contributes.views {
         if view.id.is_empty()
             || !ids.insert(&view.id)

@@ -1,0 +1,274 @@
+[
+  {"kind":"result","method":"workbench.surface","params":{"failed":true},"valid":true},
+  {"kind":"result","method":"workbench.surface","params":{"ended":true},"valid":true},
+  {"kind":"result","method":"workbench.surface","params":{"ended":false},"valid":false},
+  {
+    "method": "workspaces.open",
+    "params": {
+      "serverId": "server-a",
+      "target": "newWindow"
+    },
+    "valid": true
+  },
+  {
+    "method": "workspaces.open",
+    "params": {
+      "serverId": ""
+    },
+    "valid": false
+  },
+  {
+    "method": "workspaces.open",
+    "params": {
+      "serverId": "a",
+      "target": "unknown"
+    },
+    "valid": false
+  },
+  {
+    "method": "workspaces.move",
+    "params": {
+      "workspaceId": "a",
+      "targetWindowId": "main",
+      "index": 0,
+      "operationId": "op"
+    },
+    "valid": true
+  },
+  {
+    "method": "workspaces.move",
+    "params": {
+      "workspaceId": "a",
+      "pluginId": "spoof"
+    },
+    "valid": false
+  },
+  {
+    "method": "views.move",
+    "params": {
+      "viewId": "v",
+      "placement": "center",
+      "group": 2
+    },
+    "valid": false
+  },
+  {
+    "method": "views.bindResources",
+    "params": {
+      "viewId": "v",
+      "resources": [
+        {
+          "kind": "pty",
+          "id": "p",
+          "generation": 1
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "method": "views.bindResources",
+    "params": {
+      "viewId": "v",
+      "resources": [
+        {
+          "kind": "connection",
+          "id": "c"
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "method": "views.update",
+    "params": {
+      "viewId": "v",
+      "displayStatus": "ready",
+      "pluginState": {
+        "filter": "mine"
+      }
+    },
+    "valid": true
+  },
+  {
+    "method": "views.update",
+    "params": {
+      "viewId": "v",
+      "workspaceId": "another"
+    },
+    "valid": false
+  },
+  {
+    "method": "workbench.surface",
+    "params": {
+      "windowId": "main",
+      "viewId": "v",
+      "mountGeneration": 1,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 100
+      },
+      "visible": true
+    },
+    "valid": true
+  },
+  {
+    "method": "workbench.surface",
+    "params": {
+      "windowId": "main",
+      "viewId": "v",
+      "mountGeneration": -1,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 100
+      },
+      "visible": true
+    },
+    "valid": false
+  },
+  {
+    "method": "commands.execute",
+    "params": {
+      "commandId": "sample.open",
+      "workspaceId": "a",
+      "args": {
+        "example": 1
+      }
+    },
+    "valid": true
+  },
+  {
+    "method": "commands.execute",
+    "params": {
+      "commandId": "sample.open",
+      "instanceId": "untrusted"
+    },
+    "valid": false
+  },
+  {
+    "method": "views.bindResources",
+    "params": {
+      "viewId": "view",
+      "resources": [
+        {
+          "kind": "pty",
+          "id": "pty"
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "method": "workspaces.move",
+    "kind": "result",
+    "params": {
+      "operationId": "move",
+      "phase": "committed",
+      "committed": true,
+      "persisted": false
+    },
+    "valid": true
+  },
+  {
+    "method": "workspaces.move",
+    "kind": "result",
+    "params": {
+      "phase": "committed",
+      "persisted": true
+    },
+    "valid": false
+  },
+  {
+    "method": "workbench.changed",
+    "kind": "event",
+    "params": {
+      "revision": 4,
+      "windowIds": [
+        "main"
+      ],
+      "workspaceIds": [
+        "a"
+      ],
+      "viewIds": [],
+      "changeKind": "snapshot"
+    },
+    "valid": true
+  },
+  {
+    "method": "workbench.changed",
+    "kind": "event",
+    "params": {},
+    "valid": false
+  },
+  {
+    "kind": "result",
+    "method": "views.update",
+    "params": {
+      "viewId": "v",
+      "title": "x"
+    },
+    "valid": false
+  },
+  {
+    "kind": "result",
+    "method": "workspaces.open",
+    "params": {
+      "workspaceId": "a",
+      "ownerWindowId": "main",
+      "created": true,
+      "committed": true,
+      "persisted": false
+    },
+    "valid": true
+  },
+  {
+    "kind": "result",
+    "method": "workspaces.open",
+    "params": {
+      "workspaceId": "a",
+      "ownerWindowId": "main",
+      "created": "yes"
+    },
+    "valid": false
+  },
+  {
+    "kind": "result",
+    "method": "views.close",
+    "params": null,
+    "valid": true
+  },
+  {
+    "kind": "result",
+    "method": "views.close",
+    "params": {},
+    "valid": false
+  },
+  {
+    "kind": "result",
+    "method": "workbench.operation.cancel",
+    "params": {
+      "canceled": true
+    },
+    "valid": true
+  },
+  {
+    "kind": "result",
+    "method": "workbench.operation.cancel",
+    "params": {
+      "canceled": 1
+    },
+    "valid": false
+  },
+  {
+    "kind": "result",
+    "method": "windows.chrome",
+    "params": {
+      "not": "null"
+    },
+    "valid": false
+  }
+]

@@ -1,37 +1,75 @@
-use std::{collections::HashSet, sync::{Condvar, Mutex}};
+use std::{
+    collections::HashSet,
+    sync::{Condvar, Mutex},
+};
 
 #[derive(Default)]
-struct Pending { active: HashSet<String>, closes: HashSet<String> }
+struct Pending {
+    active: HashSet<String>,
+    closes: HashSet<String>,
+}
 
 /// Moves and closes share one gate per logical view. A native close reserves
 /// the next turn, so repeated clicks cannot race or be silently discarded.
 #[derive(Default)]
-pub struct ViewOperations { pending: Mutex<Pending>, changed: Condvar }
+pub struct ViewOperations {
+    pending: Mutex<Pending>,
+    changed: Condvar,
+}
 
-pub struct Operation<'a> { owner: &'a ViewOperations, id: String, queued_close: bool }
+pub struct Operation<'a> {
+    owner: &'a ViewOperations,
+    id: String,
+    queued_close: bool,
+}
 impl ViewOperations {
+    pub fn counts(&self) -> (usize, usize) {
+        let pending = self.pending.lock().unwrap();
+        (pending.active.len(), pending.closes.len())
+    }
     pub fn busy(&self, id: &str) -> bool {
         let pending = self.pending.lock().unwrap();
         pending.active.contains(id) || pending.closes.contains(id)
     }
     pub fn begin(&self, id: &str) -> Option<Operation<'_>> {
         let mut pending = self.pending.lock().unwrap();
-        if pending.closes.contains(id) || !pending.active.insert(id.into()) { return None; }
-        Some(Operation { owner: self, id: id.into(), queued_close: false })
+        if pending.closes.contains(id) || !pending.active.insert(id.into()) {
+            return None;
+        }
+        Some(Operation {
+            owner: self,
+            id: id.into(),
+            queued_close: false,
+        })
     }
-    pub fn queue_close(&self, id: &str) -> bool { self.pending.lock().unwrap().closes.insert(id.into()) }
+    pub fn queue_close(&self, id: &str) -> bool {
+        self.pending.lock().unwrap().closes.insert(id.into())
+    }
+    pub fn cancel_close(&self, id: &str) {
+        self.pending.lock().unwrap().closes.remove(id);
+        self.changed.notify_all();
+    }
     pub fn wait_close(&self, id: &str) -> Operation<'_> {
         let pending = self.pending.lock().unwrap();
-        let mut pending = self.changed.wait_while(pending, |pending| pending.active.contains(id)).unwrap();
+        let mut pending = self
+            .changed
+            .wait_while(pending, |pending| pending.active.contains(id))
+            .unwrap();
         pending.active.insert(id.into());
-        Operation { owner: self, id: id.into(), queued_close: true }
+        Operation {
+            owner: self,
+            id: id.into(),
+            queued_close: true,
+        }
     }
 }
 impl Drop for Operation<'_> {
     fn drop(&mut self) {
         let mut pending = self.owner.pending.lock().unwrap();
         pending.active.remove(&self.id);
-        if self.queued_close { pending.closes.remove(&self.id); }
+        if self.queued_close {
+            pending.closes.remove(&self.id);
+        }
         self.owner.changed.notify_all();
     }
 }
@@ -39,7 +77,10 @@ impl Drop for Operation<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{sync::{Arc, mpsc}, time::Duration};
+    use std::{
+        sync::{mpsc, Arc},
+        time::Duration,
+    };
     #[test]
     fn native_close_waits_for_move_and_reserves_next_turn_once() {
         let operations = Arc::new(ViewOperations::default());

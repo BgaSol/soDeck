@@ -3,6 +3,8 @@
 Usage: python -u tests/core/ssh_fixture.py <temporary-directory>
 The first stdout line reports the assigned loopback port and test key paths.
 """
+import base64
+import os
 import json
 import socket
 import sys
@@ -103,6 +105,8 @@ def echo(channel):
             data = channel.recv(32768)
             if not data:
                 break
+            if os.environ.get("SODECK_TEST_CAPTURE_INPUT") == "1":
+                event("input-bytes", channel=channel.get_id(), bytes=base64.b64encode(data).decode("ascii"))
             # Echo interactive input as soon as it arrives, including a single
             # character without Enter. The control-line recognizer is separate
             # and bounded; it must not turn this fixture into a line-buffered UI.

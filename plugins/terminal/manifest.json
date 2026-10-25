@@ -1,17 +1,78 @@
 {
   "pluginId": "sodeck.terminal",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "requires": {
     "core": ">=2.0.0, <3.0.0",
-    "pluginApi": "^1.0.0",
-    "capabilities": ["servers.v1", "connections.v1", "remote.pty.v1", "resources.v1", "storage.v1", "workspace.v1", "clipboard.v1"],
-    "platforms": ["windows"]
+    "pluginApi": "^3.0.0",
+    "capabilities": [
+      "servers.v1",
+      "connections.v1",
+      "remote.pty.v1",
+      "resources.v1",
+      "storage.v1",
+      "workspace.v3",
+      "clipboard.v1",
+      "ui.presentation.v1"
+    ],
+    "platforms": [
+      "windows"
+    ]
   },
-  "entry": { "ui": "ui/index.html", "worker": "worker/main.js" },
+  "entry": {
+    "ui": "ui/index.html",
+    "worker": "worker/main.js"
+  },
   "contributes": {
+    "commands": [
+      {
+        "id": "terminal.new",
+        "title": "新建终端",
+        "scope": "server",
+        "primary": true
+      },
+      {
+        "id": "terminal.rename",
+        "title": "修改显示名称",
+        "scope": "view",
+        "primary": false,
+        "input": {
+          "kind": "text",
+          "key": "title",
+          "label": "显示名称",
+          "initial": "viewTitle",
+          "minLength": 1,
+          "maxLength": 80
+        }
+      },
+      {
+        "id": "terminal.reconnect",
+        "title": "重新连接",
+        "scope": "view",
+        "primary": false
+      }
+    ],
+    "workspaceEntries": [],
     "views": [
-      { "id": "terminal.sessions", "title": "终端会话", "scope": "server", "supportedHosts": ["dock"], "dockEdges": ["left", "right"], "defaultLocation": { "host": "dock", "edge": "left" }, "multiple": false, "stateVersion": 1, "minWidth": 200, "minHeight": 160 },
-      { "id": "terminal.session", "title": "终端", "scope": "server", "supportedHosts": ["tab", "dock", "window"], "dockEdges": ["bottom"], "defaultLocation": { "host": "tab" }, "multiple": true, "stateVersion": 1, "minWidth": 320, "minHeight": 160 }
+      {
+        "id": "terminal.session",
+        "title": "终端",
+        "scope": "server",
+        "supportedHosts": [
+          "tab",
+          "window"
+        ],
+        "dockEdges": [],
+        "defaultLocation": {
+          "host": "tab"
+        },
+        "multiple": true,
+        "stateVersion": 1,
+        "minWidth": 320,
+        "minHeight": 160
+      }
+    ],
+    "retiredViews": [
+      "terminal.sessions"
     ]
   },
   "dataSchemaVersion": 1

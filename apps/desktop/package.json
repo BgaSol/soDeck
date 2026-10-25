@@ -1,8 +1,19 @@
 {
   "name": "@sodeck/desktop",
-  "version": "2.0.0-dev.1",
+  "version": "2.0.0-dev.3",
   "private": true,
   "type": "module",
-  "scripts": { "dev": "vite --host 127.0.0.1", "build": "vite build", "check": "tsc --noEmit -p tsconfig.json", "test": "vitest run" },
-  "dependencies": { "@sodeck/sdk": "1.0.0", "@tauri-apps/api": "2.12.3", "react": "19.2.0", "react-dom": "19.2.0", "lucide-react": "0.468.0" }
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sodeck/sdk": "3.0.0",
+    "@tauri-apps/api": "2.12.3",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "lucide-react": "0.468.0"
+  }
 }

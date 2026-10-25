@@ -27,7 +27,7 @@ impl Fixture {
     }
     fn files(&self, version: &str, text: &str) -> BTreeMap<String, Vec<u8>> {
         let manifest = json!({"pluginId":"sodeck.terminal","version":version,
-            "requires":{"core":">=2.0.0, <3.0.0","pluginApi":"^1.0.0","capabilities":["remote.pty.v1"]},
+            "requires":{"core":">=2.0.0, <3.0.0","pluginApi":"^3.0.0","capabilities":["remote.pty.v1"]},
             "entry":{"ui":"ui/index.html","worker":"worker/main.js"},"dataSchemaVersion":1,
             "contributes":{"views":[{"id":"terminal.session","title":"Terminal","scope":"server","supportedHosts":["tab","window","dock"],"dockEdges":["bottom"],"defaultLocation":{"host":"tab"}}]}});
         BTreeMap::from([
@@ -266,6 +266,9 @@ fn signed_incompatible_candidates_preserve_active_and_existing_pending() {
     for (path, value) in [
         ("/requires/core", json!(">=9.0.0")),
         ("/requires/pluginApi", json!("^8.0.0")),
+        ("/requires/pluginApi", json!("^1.0.0")),
+        ("/requires/pluginApi", json!("^2.0.0")),
+        ("/requires/capabilities", json!(["workspace.v1"])),
         ("/requires/capabilities", json!(["unsupported.capability"])),
         (
             "/requires/platforms",

@@ -1,0 +1,1761 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sodeck.local/contracts/workbench-v2",
+  "title": "SoDeck workspace.v2",
+  "x-apiVersion": "2.0.0",
+  "x-methods": {
+    "workbench.snapshot": "WorkbenchSnapshot",
+    "workbench.configure": "WorkbenchConfigure",
+    "workbench.surface": "WorkbenchSurface",
+    "workbench.modal": "WorkbenchModal",
+    "workspaces.open": "WorkspacesOpen",
+    "workspaces.activate": "WorkspacesActivate",
+    "workspaces.reorder": "WorkspacesReorder",
+    "workspaces.move": "WorkspacesMove",
+    "workspaces.drag": "WorkspacesDrag",
+    "workspaces.close": "WorkspacesClose",
+    "windows.merge": "WindowsMerge",
+    "windows.close": "WindowsClose",
+    "windows.control": "WindowsControl",
+    "views.open": "ViewsOpen",
+    "views.update": "ViewsUpdate",
+    "views.bindResources": "ViewsBindResources",
+    "views.activate": "ViewsActivate",
+    "views.close": "ViewsClose",
+    "views.recover": "ViewsRecover",
+    "views.move": "ViewsMove",
+    "commands.execute": "CommandsExecute",
+    "workbench.operation.get": "WorkbenchOperationGet",
+    "workbench.operation.cancel": "WorkbenchOperationCancel",
+    "commands.retry": "CommandsRetry",
+    "view.initialize": "ViewInitialize",
+    "windows.chrome": "WindowsChrome"
+  },
+  "$defs": {
+    "Rect": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number",
+          "minimum": 0
+        },
+        "height": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "additionalProperties": false
+    },
+    "Resource": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "pty",
+            "lease"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "pty"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "required": [
+              "generation"
+            ]
+          }
+        }
+      ]
+    },
+    "WorkbenchSnapshot": {
+      "type": "object",
+      "properties": {
+        "targetWindowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "WorkbenchConfigure": {
+      "type": "object",
+      "properties": {
+        "split": {
+          "type": "string",
+          "enum": [
+            "none",
+            "horizontal",
+            "vertical"
+          ]
+        },
+        "splitRatio": {
+          "type": "number",
+          "minimum": 0.2,
+          "maximum": 0.8
+        },
+        "dockViewId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "visible": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "WorkbenchSurface": {
+      "type": "object",
+      "properties": {
+        "windowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "viewId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "mountGeneration": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bounds": {
+          "$ref": "#/$defs/Rect"
+        },
+        "visible": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "windowId",
+        "viewId",
+        "mountGeneration",
+        "bounds",
+        "visible"
+      ],
+      "additionalProperties": false
+    },
+    "WorkbenchModal": {
+      "type": "object",
+      "properties": {
+        "open": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "open"
+      ],
+      "additionalProperties": false
+    },
+    "WorkbenchOperationGet": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "WorkbenchOperationCancel": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspacesOpen": {
+      "type": "object",
+      "properties": {
+        "serverId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "target": {
+          "type": "string",
+          "enum": [
+            "currentWindow",
+            "newWindow"
+          ]
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "serverId"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspacesActivate": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "workspaceId"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspacesReorder": {
+      "type": "object",
+      "properties": {
+        "windowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "workspaceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 1000
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "workspaceIds"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspacesMove": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "targetWindowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "workspaceId"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspacesDrag": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "workspaceId"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspacesClose": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "workspaceId"
+      ],
+      "additionalProperties": false
+    },
+    "WindowsMerge": {
+      "type": "object",
+      "properties": {
+        "sourceWindowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "targetWindowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "WindowsClose": {
+      "type": "object",
+      "properties": {
+        "windowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "WindowsControl": {
+      "type": "object",
+      "properties": {
+        "windowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "minimize",
+            "toggleMaximize",
+            "show",
+            "systemMenu",
+            "drag",
+            "recall"
+          ]
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    },
+    "ViewsOpen": {
+      "type": "object",
+      "properties": {
+        "viewType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "instanceKey": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "runtimeData": {},
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "displayStatus": {
+          "type": "string",
+          "enum": [
+            "loading",
+            "ready",
+            "running",
+            "ended",
+            "error",
+            "viewFailed"
+          ]
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 1000
+        },
+        "pluginState": {},
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "viewType",
+        "workspaceId"
+      ],
+      "additionalProperties": false
+    },
+    "ViewsUpdate": {
+      "type": "object",
+      "properties": {
+        "viewId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "displayStatus": {
+          "type": "string",
+          "enum": [
+            "loading",
+            "ready",
+            "running",
+            "ended",
+            "error",
+            "viewFailed"
+          ]
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 1000
+        },
+        "pluginState": {},
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "viewId"
+      ],
+      "additionalProperties": false
+    },
+    "ViewsBindResources": {
+      "type": "object",
+      "properties": {
+        "viewId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Resource"
+          },
+          "maxItems": 1000
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "viewId",
+        "resources"
+      ],
+      "additionalProperties": false
+    },
+    "ViewsActivate": {
+      "type": "object",
+      "properties": {
+        "viewId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "viewId"
+      ],
+      "additionalProperties": false
+    },
+    "ViewsClose": {
+      "type": "object",
+      "properties": {
+        "viewId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "viewId"
+      ],
+      "additionalProperties": false
+    },
+    "ViewsRecover": {
+      "type": "object",
+      "properties": {
+        "viewId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "viewId"
+      ],
+      "additionalProperties": false
+    },
+    "ViewsMove": {
+      "type": "object",
+      "properties": {
+        "viewId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "placement": {
+          "type": "string",
+          "enum": [
+            "center",
+            "left",
+            "right",
+            "bottom",
+            "detached"
+          ]
+        },
+        "group": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "screenPosition": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y"
+          ],
+          "additionalProperties": false
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "viewId",
+        "placement"
+      ],
+      "additionalProperties": false
+    },
+    "CommandsExecute": {
+      "type": "object",
+      "properties": {
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "viewId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "args": {},
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "commandId"
+      ],
+      "additionalProperties": false
+    },
+    "OperationResult": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "preparing",
+            "committed",
+            "rolledBack",
+            "running",
+            "finished"
+          ]
+        },
+        "committed": {
+          "type": "boolean"
+        },
+        "persisted": {
+          "type": "boolean"
+        },
+        "canceled": {
+          "type": "boolean"
+        },
+        "error": {},
+        "warning": {},
+        "request": {},
+        "targetWindowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "workspaceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 1000
+        }
+      },
+      "required": [
+        "operationId",
+        "phase",
+        "committed"
+      ],
+      "additionalProperties": false
+    },
+    "ViewContext": {
+      "type": "object",
+      "properties": {
+        "viewId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "viewType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "serverId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "serverName": {
+          "type": "string"
+        },
+        "windowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "pluginVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "mountGeneration": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pluginData": {},
+        "pluginState": {},
+        "snapshot": {},
+        "detachedViewId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "ChangedEvent": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "windowIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 1000
+        },
+        "workspaceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 1000
+        },
+        "viewIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 1000
+        },
+        "changeKind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "revision",
+        "windowIds",
+        "workspaceIds",
+        "viewIds",
+        "changeKind"
+      ],
+      "additionalProperties": false
+    },
+    "CommandsRetry": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "ViewInitialize": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "ChromeTab": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number",
+          "minimum": 0
+        },
+        "height": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "workspaceId",
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "additionalProperties": false
+    },
+    "WindowsChrome": {
+      "type": "object",
+      "properties": {
+        "titlebar": {
+          "$ref": "#/$defs/Rect"
+        },
+        "drag": {
+          "$ref": "#/$defs/Rect"
+        },
+        "maximize": {
+          "$ref": "#/$defs/Rect"
+        },
+        "tabStrip": {
+          "$ref": "#/$defs/Rect"
+        },
+        "tabs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ChromeTab"
+          },
+          "maxItems": 100
+        }
+      },
+      "required": [
+        "titlebar",
+        "drag",
+        "maximize",
+        "tabs"
+      ],
+      "additionalProperties": false
+    },
+    "PluginResult": {},
+    "EmptyResult": {
+      "type": "null"
+    },
+    "Fault": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {},
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "phase": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "ViewResult": {
+      "type": "object",
+      "properties": {
+        "viewId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "pluginId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "viewType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "serverId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "loading",
+            "ready",
+            "running",
+            "ended",
+            "error",
+            "viewFailed"
+          ]
+        },
+        "placement": {
+          "enum": [
+            "center",
+            "left",
+            "right",
+            "bottom",
+            "detached"
+          ]
+        },
+        "group": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stateVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "instanceKey": {
+          "type": "string"
+        },
+        "mountGeneration": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failureReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recoveryStatus": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pluginState": {},
+        "committed": {
+          "type": "boolean"
+        },
+        "persisted": {
+          "type": "boolean"
+        },
+        "warning": {
+          "$ref": "#/$defs/Fault"
+        }
+      },
+      "required": [
+        "viewId",
+        "pluginId",
+        "viewType",
+        "workspaceId",
+        "title",
+        "status",
+        "placement",
+        "group",
+        "actions",
+        "revision",
+        "stateVersion"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspaceLocation": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "serverId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "ownerWindowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "workspaceId",
+        "serverId",
+        "ownerWindowId"
+      ],
+      "additionalProperties": false
+    },
+    "DockSlotResult": {
+      "type": "object",
+      "properties": {
+        "viewId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "edge": {
+          "enum": [
+            "left",
+            "right",
+            "bottom"
+          ]
+        },
+        "visible": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "viewId",
+        "edge",
+        "visible"
+      ],
+      "additionalProperties": false
+    },
+    "CommandDeclaration": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "title": {
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "server",
+            "global",
+            "view"
+          ]
+        },
+        "primary": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "scope",
+        "primary"
+      ],
+      "additionalProperties": false
+    },
+    "SnapshotResult": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "enum": [
+            2
+          ]
+        },
+        "windowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "windowRole": {
+          "enum": [
+            "main",
+            "workspace",
+            "view"
+          ]
+        },
+        "workspaceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "activeWorkspaceId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "focusedViewId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "workspaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkspaceLocation"
+          }
+        },
+        "views": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ViewResult"
+          }
+        },
+        "split": {
+          "enum": [
+            "none",
+            "horizontal",
+            "vertical"
+          ]
+        },
+        "splitRatio": {
+          "type": "number",
+          "minimum": 0.2,
+          "maximum": 0.8
+        },
+        "dockSlots": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DockSlotResult"
+          }
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "recoveryWarnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CommandDeclaration"
+          }
+        },
+        "viewDeclarations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "locations": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "locations"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "pendingOpens": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "operationId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "serverId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "commandId": {
+                "type": "string"
+              },
+              "cancelling": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "operationId",
+              "serverId",
+              "commandId",
+              "cancelling"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "windowId",
+        "windowRole",
+        "workspaceIds",
+        "activeWorkspaceId",
+        "workspaces",
+        "views",
+        "split",
+        "splitRatio",
+        "dockSlots",
+        "revision",
+        "recoveryWarnings"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspaceOpenResult": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "ownerWindowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "created": {
+          "type": "boolean"
+        },
+        "committed": {
+          "type": "boolean"
+        },
+        "persisted": {
+          "type": "boolean"
+        },
+        "warning": {
+          "$ref": "#/$defs/Fault"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "ownerWindowId",
+        "created",
+        "committed",
+        "persisted"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspaceActivateResult": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "ownerWindowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "committed": {
+          "type": "boolean"
+        },
+        "persisted": {
+          "type": "boolean"
+        },
+        "warning": {
+          "$ref": "#/$defs/Fault"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "ownerWindowId",
+        "committed",
+        "persisted"
+      ],
+      "additionalProperties": false
+    },
+    "ReorderResult": {
+      "type": "object",
+      "properties": {
+        "reordered": {
+          "type": "boolean"
+        },
+        "committed": {
+          "type": "boolean"
+        },
+        "persisted": {
+          "type": "boolean"
+        },
+        "warning": {
+          "$ref": "#/$defs/Fault"
+        }
+      },
+      "required": [
+        "reordered",
+        "committed",
+        "persisted"
+      ],
+      "additionalProperties": false
+    },
+    "CloseResult": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "queued": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "queued"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "closed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "closed"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "hidden": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "hidden"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "results": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "viewId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "closed": {
+                    "type": "boolean"
+                  },
+                  "error": {
+                    "$ref": "#/$defs/Fault"
+                  }
+                },
+                "required": [
+                  "viewId",
+                  "closed"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "committed": {
+              "type": "boolean"
+            },
+            "persisted": {
+              "type": "boolean"
+            },
+            "warning": {
+              "$ref": "#/$defs/Fault"
+            }
+          },
+          "required": [
+            "results",
+            "committed",
+            "persisted"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "RecoverResult": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "ended": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ended"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "viewId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "recovered": {
+              "type": "boolean"
+            },
+            "committed": {
+              "type": "boolean"
+            },
+            "persisted": {
+              "type": "boolean"
+            },
+            "warning": {
+              "$ref": "#/$defs/Fault"
+            }
+          },
+          "required": [
+            "viewId",
+            "recovered",
+            "committed",
+            "persisted"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "BindResult": {
+      "type": "object",
+      "properties": {
+        "bound": {
+          "type": "boolean"
+        },
+        "cursor": {}
+      },
+      "required": [
+        "bound",
+        "cursor"
+      ],
+      "additionalProperties": false
+    },
+    "WindowControlResult": {
+      "type": "object",
+      "properties": {
+        "maximized": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "maximized"
+      ],
+      "additionalProperties": false
+    },
+    "CancelResult": {
+      "type": "object",
+      "properties": {
+        "canceled": {
+          "type": "boolean"
+        },
+        "committed": {
+          "type": "boolean"
+        },
+        "viewId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "canceled"
+      ],
+      "additionalProperties": false
+    },
+    "OperationQueryResult": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OperationResult"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "operationId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "phase": {
+              "enum": [
+                "finished",
+                "running"
+              ]
+            },
+            "waitingAuth": {
+              "type": "boolean"
+            },
+            "canceled": {
+              "type": "boolean"
+            },
+            "viewId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "result": {},
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Fault"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "operationId",
+            "phase",
+            "waitingAuth",
+            "canceled",
+            "viewId",
+            "result",
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "SurfaceResult": {
+      "anyOf": [
+        {"type":"null"},
+        {"type":"object","properties":{"failed":{"enum":[true]}},"required":["failed"],"additionalProperties":false},
+        {"type":"object","properties":{"ended":{"enum":[true]}},"required":["ended"],"additionalProperties":false}
+      ]
+    },
+    "DragResult": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OperationResult"
+        },
+        {
+          "$ref": "#/$defs/ReorderResult"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "canceled": {
+              "type": "boolean"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "canceled"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "x-results": {
+    "workspaces.move": "OperationResult",
+    "windows.merge": "OperationResult",
+    "workbench.snapshot": "SnapshotResult",
+    "workbench.configure": "SnapshotResult",
+    "workbench.surface": "SurfaceResult",
+    "workbench.modal": "EmptyResult",
+    "workspaces.open": "WorkspaceOpenResult",
+    "workspaces.activate": "WorkspaceActivateResult",
+    "workspaces.reorder": "ReorderResult",
+    "workspaces.drag": "DragResult",
+    "workspaces.close": "CloseResult",
+    "windows.close": "CloseResult",
+    "windows.control": "WindowControlResult",
+    "windows.chrome": "EmptyResult",
+    "views.open": "ViewResult",
+    "views.update": "ViewResult",
+    "views.activate": "ViewResult",
+    "views.close": "CloseResult",
+    "views.bindResources": "BindResult",
+    "views.recover": "RecoverResult",
+    "commands.execute": "PluginResult",
+    "commands.retry": "PluginResult",
+    "view.initialize": "PluginResult",
+    "workbench.operation.get": "OperationQueryResult",
+    "workbench.operation.cancel": "CancelResult",
+    "views.move": "ViewResult"
+  },
+  "x-events": {
+    "workbench.changed": "ChangedEvent",
+    "workbench.warning": "Fault"
+  }
+}

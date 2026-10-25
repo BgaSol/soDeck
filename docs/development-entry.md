@@ -1,6 +1,59 @@
 # Windows 本地开发与验证入口
 
-适用范围：T-003 的 Windows 开发版本。先读 [文档入口](README.md)、[T-003](tasks/T-003-core-terminal.md) 和[联调契约](technical/implementation-contract.md)。功能修改先更新本次方案与测试流程，确认后再编码；测试结果写回对应任务附录。
+T-007 服务器编辑修订的当前方案与实际结果见 [任务](tasks/T-007-server-editor.md)、[结果](tasks/T-007-results.md)。构建后执行 `npm run desktop:package-dev -- T007` 生成独立 `.local/dev/SoDeck-v2-T007/`。新增原生入口 `node tests/desktop/server-editor.mjs` 使用隔离 Tauri/WebView2、DPAPI 和 loopback SSH，由 CDP 操作表单，不访问日常服务器或使用全局键盘。目录包冒烟可设置 `SODECK_TEST_PACKAGE_DIR` 指向交付目录。
+
+当前分支适用 T-006 / 核心 `2.0.0-dev.3`、终端 `0.3.0`、插件 API 3 / `workspace.v3`。先读 [T-006](tasks/T-006-workbench-interaction.md)、[实施方案](technical/workbench-interaction-implementation.md) 和[实测记录](tasks/T-006-results.md)。功能修改先更新方案与测试流程，按已确认范围实施。
+
+## T-006 当前入口
+
+依次执行 `npm run plugin:pack`、`npm run desktop:build -- --debug`、`npm run desktop:package-dev`。打包命令只复制已构建产物至 `.local/dev/SoDeck-v2-T006/`，保留该目录 data 和旧 T-004 包，不自动编译。双击 Start-SoDeck.cmd；版本/哈希、验收步骤、截图和证据随包提供。
+
+| 入口 | 用途 |
+| --- | --- |
+| `npm run check`、`npm run test:contracts` | 生成契约、类型、依赖边界、SDK/worker/终端输入 |
+| `node scripts/cargo.mjs test --workspace --offline` | Rust 工作区，包括主题/菜单/布局迁移及恢复保护 |
+| `npx playwright test -c playwright.ui.config.ts` | 浏览器交互、通用输入框、剪贴板延迟/去重与协议模式 |
+| `node tests/desktop/t006.mjs` | Windows 原生菜单、剪贴板、焦点及十次视图拆合 |
+| `node tests/desktop/themes.mjs` | 同一二进制两主题、多表面、无效主题回退 |
+| `node tests/desktop/ime.mjs` | 实际 Microsoft Pinyin 和移窗输入归属 |
+| `node tests/desktop/package-smoke.mjs` | T-006 目录包全文件哈希、配套插件启动和离线拆合 |
+
+全局焦点/键盘的原生测试必须串行；Computer Use 会话不要混用 PowerShell 输入路线。脚本实际覆盖及未运行矩阵以 T-006 实测记录为准，不因列有入口就视为全部已通过。主题测试入口 SODECK_THEME_FILE 仅用于隔离验证，不代表已实现主题设置。历史 API 2 独立更新/升级脚本不能直接作为 API 3 的通过依据。
+
+## T-004 历史入口
+
+```powershell
+npm ci
+npm run plugin:pack
+npm run desktop:build -- --debug
+npm run desktop:package-dev
+```
+
+以下记录对应 T-004 当时的版本：最后一步曾复制到 `.local/dev/SoDeck-v2-T004/`。当前打包目标以 T-006 为准；保留历史包和该目录 data。终端/SDK 改动后必须重新执行 `plugin:pack`。构建工具、开发签名和真实 SSH 回送夹具的环境要求见下文。
+
+| 本次入口 | 覆盖 |
+| --- | --- |
+| `npm run check`、`npm run test:contracts` | 生成契约新鲜度、类型/依赖边界、SDK/worker/表面队列 |
+| `node scripts/cargo.mjs test --workspace --offline` | 核心、插件宿主/管理器、工作台模型和共享契约；ignored 外部服务用例另跑 |
+| `npx playwright test -c playwright.ui.config.ts` | 19 项浏览器交互，不替代 Windows 原生 |
+| `node tests/desktop/server-tabs.mjs` | 实际工作区拆合、PTY 身份、元数据、重连绑定、关闭范围 |
+| `node tests/desktop/server-tabs-chrome.mjs` | Windows 命中、Snap 截图、物理排序/跨窗/拖出/取消 |
+| `node tests/desktop/server-tabs-faults.mjs` | 快照超限、30 秒超时、目标关闭、取消/排队关闭、退出、存储失败 |
+| `node tests/desktop/workbench-contract.mjs` | 签名非业务夹具、候选崩溃、32 MiB 批次上限、通用命令、关闭及全局视图 |
+| `node tests/desktop/server-tabs-load.mjs` | 五窗口、一 worker、四 PTY 负载、十次拆合、二十次创建关闭与内部计数 |
+| `node tests/desktop/exit-stress.mjs` | 三次独立启动，每次十次拆合与并发 IPC、10050 次请求达到容量上限，关闭后正常退出；不依赖鼠标或远端服务 |
+| `node tests/desktop/ime.mjs` | Microsoft Pinyin 真实按键、组合输入取消迁移、移窗后两窗中文唯一回显 |
+| `npm run test:terminal:native`、`node tests/desktop/cancellation.mjs` | 受影响终端基线与真实 SSH 取消/回收 |
+| `npm run test:updates:native`、`node tests/desktop/server-tabs-upgrade.mjs` | 同核心下实际 `0.2.0 → 0.2.1` 独立更新、旧核心/包/布局升级 |
+| `node tests/desktop/package-smoke.mjs` | 独立目录包哈希、配套插件启动、离线拆合及正常退出，不写交付包的 data |
+
+原生测试串行运行，先构建 debug 核心并打包终端。独立更新运行期间不得重建核心；测试包在各自 `.qa` 目录，不覆盖交付包。所有测试使用独立数据与本机协议服务；Linux/OpenSSH、不同 DPI 双屏、完整辅助技术的缺口见任务记录。验收步骤见 [T-004 开发包说明](tasks/T-004-acceptance.md)。
+
+构建使用同版本 tauri-runtime-wry 2.12.3 的局部生命周期修复，来源、许可证、差异与撤除条件见 [补丁说明](../third-party/tauri-runtime-wry/SODECK-PATCH.md)。Cargo 不依赖 `.local` 诊断源码，开发目录包同时保留此依赖的许可证。
+
+## T-003 历史入口说明
+
+以下保留 T-003 的历史环境、版本及证据说明。`0.1.x` 包和旧工作台 API 不适用于当前分支；补充脚本中未列入上表的入口尚未适配 API 2，不应直接用于当前回归。T-003 原始产物及已通过记录仍有效，其事实不被 T-004 改写。
 
 ## 环境与首次启动
 
