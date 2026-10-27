@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { transform } from 'esbuild';
+import { build } from 'esbuild';
+import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 
 const source = await readFile(new URL('../src/worker.ts',import.meta.url),'utf8');
-async function fixture(version='0.2.0', override) {
+async function fixture(version='0.4.0', override) {
   const records=[], leases=new Set(), ptys=new Map(), settings=new Map(), views=new Map(); let sequence=0;
   const call = async (method,params) => {
     records.push({method,params});
@@ -15,19 +16,25 @@ async function fixture(version='0.2.0', override) {
       case 'storage.set': settings.set(params.key,params.value);return {saved:true};
       case 'connections.acquire': {const leaseId=`lease-${++sequence}`;leases.add(leaseId);return {leaseId,connectionId:'shared-connection',generation:1};}
       case 'connections.release': leases.delete(params.leaseId);return {released:true};
-      case 'pty.open': {const ptyId=`pty-${++sequence}`;ptys.set(ptyId,{ptyId,state:'running'});return {ptyId,generation:1,streamId:ptyId};}
+      case 'pty.openCommand':
+      case 'pty.open': {const ptyId=`pty-${++sequence}`;ptys.set(ptyId,{ptyId,state:'running'});return {ptyId,generation:1,streamId:ptyId,connectionId:'shared-connection'};}
+      case 'directories.register':return {sourceId:'source-'+params.viewId,sourceGeneration:'generation'};
+      case 'directories.report':return {accepted:true,sourceRevision:'1'};
+      case 'directories.unregister':return {accepted:true};
       case 'pty.close': ptys.delete(params.ptyId);return {closed:true};
       case 'operations.cancel': return {canceled:true};
       case 'resources.list': return {ptys:[...ptys.values()]};
       case 'views.open': {const viewId=`view-${++sequence}`;views.set(viewId,{...params,viewId});return {viewId};}
+      case 'views.presentation':return {scope:{workspaceId:'one',workspaceGeneration:'generation'}};
       case 'views.bindResources': return {bound:true};
       case 'views.update': {const view={...views.get(params.viewId),...params};views.set(params.viewId,view);return view;}
       case 'views.close': views.delete(params.viewId);return {closed:true};
       default:throw new Error(`Unexpected method ${method}`);
     }
   };
-  const context={sodeck:{call}};
-  const {code}=await transform(source,{loader:'ts',format:'iife',target:'es2022',define:{__TERMINAL_VERSION__:JSON.stringify(version)}});
+  const context={sodeck:{call,onNotification:()=>()=>{}},setTimeout,clearTimeout};
+  const bundle=await build({entryPoints:[fileURLToPath(new URL('../src/worker.ts',import.meta.url))],bundle:true,write:false,format:'iife',platform:'neutral',target:'es2022',define:{__TERMINAL_VERSION__:JSON.stringify(version)}});
+  const code=bundle.outputFiles[0].text;
   runInNewContext(code,context);
   const worker=context.sodeckPlugin; await worker.prepare({});await worker.activate({});
   return {worker,records,leases,ptys,settings,views};
@@ -46,29 +53,32 @@ test('real worker opens independent PTYs on shared connection and closes only it
 });
 
 test('failed PTY creation releases the acquired lease',async()=>{
-  const f=await fixture('0.2.0',method=>{if(method==='pty.open')throw {code:'PTY_REFUSED',message:'fixture'};});
+  const f=await fixture('0.2.0',method=>{if(method==='pty.openCommand')throw {code:'PTY_REFUSED',message:'fixture'};});
   await assert.rejects(f.worker.invoke('sessions.create',{serverId:'one'}),error=>error.code==='PTY_REFUSED');
   assert.equal(f.leases.size,0);assert.equal(f.ptys.size,0);
 });
 
-for(const failure of ['views.open','views.bindResources','views.update'])test(`failed ${failure} compensates resources and only the new view`,async()=>{
+for(const failure of ['views.open','views.bindResources','views.update'])test(`failed ${failure} releases resources and retains an allocated error page`,async()=>{
   let fail=false;
   const f=await fixture('0.2.1',method=>{if(fail&&method===failure)throw {code:'FIXTURE_FAILURE'};});
   const retained=await f.worker.invoke('command.execute',{commandId:'terminal.new',context:{workspaceId:'one',serverId:'one',operationId:'retained'}});
   fail=true;
   await assert.rejects(f.worker.invoke('command.execute',{commandId:'terminal.new',context:{workspaceId:'one',serverId:'one',operationId:'failed'}}),e=>e.code==='FIXTURE_FAILURE');
-  assert.equal(f.ptys.size,1);assert.equal(f.leases.size,1);assert.equal(f.views.size,1);assert.ok(f.views.has(retained.viewId));
-  assert.equal((await f.worker.invoke('sessions.list',{})).length,1);
+  assert.equal(f.ptys.size,1);assert.equal(f.leases.size,1);assert.equal(f.views.size,failure==='views.open'?1:2);assert.ok(f.views.has(retained.viewId));
+  const list=await f.worker.invoke('sessions.list',{});
+  assert.equal(list.length,failure==='views.open'?1:2);
+  if(failure!=='views.open')assert.equal(list.find(s=>s.viewId!==retained.viewId).status,'failed');
   await f.worker.stop();
 });
 
-test('late cancellation after view allocation compensates the view and its resources',async()=>{
+test('late cancellation retains the page and releases all resources',async()=>{
   let entered,release;const started=new Promise(r=>entered=r),blocked=new Promise(r=>release=r);
   const f=await fixture('0.2.1',async method=>{if(method==='views.bindResources'){entered();await blocked;}});
   const result=f.worker.invoke('command.execute',{commandId:'terminal.new',context:{workspaceId:'one',serverId:'one',operationId:'late'}});
   const rejected=assert.rejects(result,e=>e.code==='CANCELED');
   await started;await f.worker.invoke('lifecycle.cancel',{operationId:'late'});release();await rejected;
-  assert.equal(f.views.size,0);assert.equal(f.ptys.size,0);assert.equal(f.leases.size,0);
+  assert.equal(f.views.size,1);assert.equal(f.ptys.size,0);assert.equal(f.leases.size,0);
+  assert.equal((await f.worker.invoke("sessions.list",{}))[0].status,"canceled");
 });
 
 test('canceling one pending acquisition releases its late lease without affecting another session',async()=>{
@@ -83,8 +93,8 @@ test('canceling one pending acquisition releases its late lease without affectin
   await f.worker.invoke('sessions.cancelOpen',{operationId:'cancel-one'});release();await rejected;
   assert.equal(f.ptys.size,1);assert.equal(f.leases.size,1);
   assert.ok(f.ptys.has(other.ptyId));
-  assert.equal(f.records.filter(r=>r.method==='pty.open'&&r.params.operationId==='cancel-one').length,0);
-  assert.equal((await f.worker.invoke('sessions.list',{})).length,1);
+  assert.equal(f.records.filter(r=>r.method==='pty.openCommand'&&r.params.operationId==='cancel-one').length,0);
+  const list=await f.worker.invoke('sessions.list',{});assert.equal(list.length,2);assert.equal(list.filter(s=>s.status==='canceled').length,1);
   await f.worker.stop();
 });
 
@@ -92,12 +102,12 @@ test('canceling while PTY is pending closes the late PTY and its lease',async()=
   let entered, release;
   const started=new Promise(resolve=>{entered=resolve;});
   const blocked=new Promise(resolve=>{release=resolve;});
-  const f=await fixture('0.2.0',async(method,params)=>{if(method==='pty.open'&&params.operationId==='cancel-pty'){entered();await blocked;}});
+  const f=await fixture('0.2.0',async(method,params)=>{if(method==='pty.openCommand'&&params.operationId==='cancel-pty'){entered();await blocked;}});
   const opening=f.worker.invoke('sessions.create',{serverId:'one',operationId:'cancel-pty'});
   const rejected=assert.rejects(opening,error=>error.code==='CANCELED');
   await started;await f.worker.invoke('sessions.cancelOpen',{operationId:'cancel-pty'});release();await rejected;
   assert.equal(f.ptys.size,0);assert.equal(f.leases.size,0);
-  assert.equal((await f.worker.invoke('sessions.list',{})).length,0);
+  assert.equal((await f.worker.invoke('sessions.list',{}))[0].status,'canceled');
   assert.equal(f.records.filter(r=>r.method==='pty.close').length,1);
 });
 
@@ -110,7 +120,7 @@ test('cancel-before-create reaches core and cleanup failures stay visible',async
   await f.worker.invoke('sessions.cancelOpen',{operationId:'early'});
   await assert.rejects(f.worker.invoke('sessions.create',{serverId:'one',operationId:'early'}),error=>error.code==='CANCELED');
   assert.equal(f.leases.size,0);assert.equal(f.ptys.size,0);
-  const broken=await fixture('0.2.0',method=>{if(method==='pty.open')throw {code:'CANCELED'};if(method==='connections.release')throw {code:'IO_ERROR'};});
+  const broken=await fixture('0.2.0',method=>{if(method==='pty.openCommand')throw {code:'CANCELED'};if(method==='connections.release')throw {code:'IO_ERROR'};});
   await assert.rejects(broken.worker.invoke('sessions.create',{serverId:'one',operationId:'cleanup'}),error=>error.code==='CLEANUP_REQUIRED'&&error.details.cleanupCode==='IO_ERROR');
 });
 
@@ -137,7 +147,7 @@ test('reconnect preserves logical identity and rejects concurrent close',async()
 test('App restart starts empty and does not reopen remote shells',async()=>{
   const first=await fixture();await first.worker.invoke('sessions.create',{serverId:'one'});
   const restarted=await fixture();assert.equal((await restarted.worker.invoke('sessions.list',{})).length,0);
-  assert.equal(restarted.records.filter(r=>r.method==='connections.acquire'||r.method==='pty.open').length,0);
+  assert.equal(restarted.records.filter(r=>r.method==='connections.acquire'||r.method==='pty.openCommand').length,0);
 });
 
 test('rename trims a display title and publishes generic metadata without changing resource identity',async()=>{
@@ -163,3 +173,34 @@ test('rename trims a display title and publishes generic metadata without changi
  const opened=await f.worker.invoke('command.execute',{commandId:'terminal.reconnect',context:{viewId:'saved-view',operationId:'restore-reconnect'}});
  assert.equal(opened.viewId,'saved-view');assert.equal(opened.sessionId,'saved-session');assert.equal(opened.title,'new title');assert.equal(f.ptys.size,1);assert.equal(f.records.filter(r=>r.method==='views.open').length,0);await f.worker.stop();
  });
+
+
+test('initial terminal page precedes acquisition; authentication retry reuses its identity',async()=>{
+  let auth=true;const f=await fixture('0.4.0',method=>{if(method==='connections.acquire'&&auth)throw {code:'AUTH_REQUIRED',message:'需要密码'};});
+  await assert.rejects(f.worker.invoke('command.execute',{commandId:'terminal.new',context:{serverId:'one',workspaceId:'one',operationId:'initial'}}),e=>e.code==='AUTH_REQUIRED');
+  const [pending]=await f.worker.invoke('sessions.list',{});assert.equal(pending.status,'waitingAuth');assert.equal(f.views.size,1);
+  assert.ok(f.records.findIndex(r=>r.method==='views.open')<f.records.findIndex(r=>r.method==='connections.acquire'));
+  auth=false;
+  const ready=await f.worker.invoke('command.execute',{commandId:'terminal.new',context:{serverId:'one',workspaceId:'one',operationId:'retry',viewId:pending.viewId}});
+  assert.equal(ready.sessionId,pending.sessionId);assert.equal(ready.viewId,pending.viewId);assert.equal(f.views.size,1);assert.equal(f.ptys.size,1);
+  await f.worker.stop();
+});
+
+test('closing during PTY acquisition cannot resurrect a logical terminal or leak late resources',async()=>{
+  let release,entered;const blocked=new Promise(r=>release=r),started=new Promise(r=>entered=r);
+  const f=await fixture('0.4.0',async method=>{if(method==='pty.openCommand'){entered();await blocked;}});
+  const opening=f.worker.invoke('sessions.create',{serverId:'one',operationId:'close'});
+  const rejected=assert.rejects(opening,e=>e.code==='CANCELED');await started;
+  const [pending]=await f.worker.invoke('sessions.list',{});
+  await f.worker.invoke('lifecycle.close',{viewId:pending.viewId});f.views.delete(pending.viewId);release();await rejected;
+  assert.equal((await f.worker.invoke('sessions.list',{})).length,0);assert.equal(f.ptys.size,0);assert.equal(f.leases.size,0);assert.equal(f.views.size,0);
+});
+
+test('retained failed pages count toward capacity and retry reuses the reserved slot',async()=>{
+  let fail=true;const f=await fixture('0.4.0',method=>{if(method==='connections.acquire'&&fail)throw {code:'CONNECTION_FAILED',message:'fixture'};});
+  for(let i=0;i<8;i++)await assert.rejects(f.worker.invoke('sessions.create',{serverId:'one',operationId:'open-'+i}),e=>e.code==='CONNECTION_FAILED');
+  assert.equal(f.views.size,8);await assert.rejects(f.worker.invoke('sessions.create',{serverId:'one'}),e=>e.code==='CAPACITY');
+  const [first]=await f.worker.invoke('sessions.list',{});fail=false;
+  const ready=await f.worker.invoke('command.execute',{commandId:'terminal.reconnect',context:{viewId:first.viewId,operationId:'retry'}});
+  assert.equal(ready.viewId,first.viewId);assert.equal(f.views.size,8);assert.equal(f.ptys.size,1);await f.worker.stop();
+});

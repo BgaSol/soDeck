@@ -1,0 +1,6 @@
+@layer reset, tokens, vendor, components, composition, accessibility;
+@import './styles/reset.css' layer(reset);
+@import './tokens/tokens.generated.css' layer(tokens);
+@import './styles/components.css' layer(components);
+@import './styles/legacy.css' layer(components);
+@import './styles/accessibility.css' layer(accessibility);

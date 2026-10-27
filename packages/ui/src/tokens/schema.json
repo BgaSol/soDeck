@@ -1,0 +1,479 @@
+{
+  "schemaVersion": 1,
+  "foundation": [
+    "space-0",
+    "space-1",
+    "space-2",
+    "space-3",
+    "space-4",
+    "space-6",
+    "font-family",
+    "font-mono",
+    "font-size",
+    "font-small",
+    "font-title",
+    "font-display",
+    "line-height",
+    "terminal-font-size",
+    "terminal-line-height",
+    "control-height",
+    "field-height",
+    "icon-height",
+    "menu-row-height",
+    "tree-row-height",
+    "tree-indent",
+    "status-height",
+    "tab-height",
+    "topbar-height",
+    "window-control-width",
+    "radius-control",
+    "radius-card",
+    "radius-dialog",
+    "focus-width",
+    "motion-fast",
+    "motion-layer",
+    "content-pad-x",
+    "content-pad-y"
+  ],
+  "profile": [
+    "border-width",
+    "control-weight",
+    "title-weight",
+    "icon-stroke",
+    "button-shadow-x",
+    "button-shadow-y",
+    "button-shadow-blur",
+    "card-shadow-x",
+    "card-shadow-y",
+    "card-shadow-blur",
+    "dialog-shadow-x",
+    "dialog-shadow-y",
+    "dialog-shadow-blur",
+    "press-offset",
+    "decoration-opacity"
+  ],
+  "properties": {
+    "window-control-width": {"type":"dimension","units":["px","rem"],"min":0,"max":1000},
+    "space-0": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "space-1": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "space-2": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "space-3": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "space-4": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "space-6": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "font-family": {
+      "type": "font"
+    },
+    "font-mono": {
+      "type": "font"
+    },
+    "font-size": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "font-small": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "font-title": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "font-display": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "line-height": {
+      "type": "number",
+      "min": 0,
+      "max": 800
+    },
+    "terminal-font-size": {
+      "type": "number",
+      "min": 0,
+      "max": 800
+    },
+    "terminal-line-height": {
+      "type": "number",
+      "min": 0,
+      "max": 800
+    },
+    "control-height": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "field-height": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "icon-height": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "menu-row-height": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "tree-row-height": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "tree-indent": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "status-height": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "tab-height": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "topbar-height": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "radius-control": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "radius-card": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "radius-dialog": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "focus-width": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "motion-fast": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "motion-layer": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "content-pad-x": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "content-pad-y": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "border-width": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "control-weight": {
+      "type": "number",
+      "min": 0,
+      "max": 800
+    },
+    "title-weight": {
+      "type": "number",
+      "min": 0,
+      "max": 800
+    },
+    "icon-stroke": {
+      "type": "number",
+      "min": 0,
+      "max": 800
+    },
+    "button-shadow-x": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "button-shadow-y": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "button-shadow-blur": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "card-shadow-x": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "card-shadow-y": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "card-shadow-blur": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "dialog-shadow-x": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "dialog-shadow-y": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "dialog-shadow-blur": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "press-offset": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem",
+        "ms"
+      ],
+      "min": 0,
+      "max": 1000
+    },
+    "decoration-opacity": {
+      "type": "number",
+      "min": 0,
+      "max": 800
+    }
+  }
+}

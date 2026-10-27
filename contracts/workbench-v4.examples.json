@@ -1,0 +1,690 @@
+[
+  {
+    "kind": "result",
+    "method": "workbench.surface",
+    "params": {
+      "failed": true
+    },
+    "valid": true
+  },
+  {
+    "kind": "result",
+    "method": "workbench.surface",
+    "params": {
+      "ended": true
+    },
+    "valid": true
+  },
+  {
+    "kind": "result",
+    "method": "workbench.surface",
+    "params": {
+      "ended": false
+    },
+    "valid": false
+  },
+  {
+    "method": "workspaces.open",
+    "params": {
+      "serverId": "server-a",
+      "target": "newWindow"
+    },
+    "valid": true
+  },
+  {
+    "method": "workspaces.open",
+    "params": {
+      "serverId": ""
+    },
+    "valid": false
+  },
+  {
+    "method": "workspaces.open",
+    "params": {
+      "serverId": "a",
+      "target": "unknown"
+    },
+    "valid": false
+  },
+  {
+    "method": "workspaces.move",
+    "params": {
+      "workspaceId": "a",
+      "targetWindowId": "main",
+      "index": 0,
+      "operationId": "op"
+    },
+    "valid": true
+  },
+  {
+    "method": "workspaces.move",
+    "params": {
+      "workspaceId": "a",
+      "pluginId": "spoof"
+    },
+    "valid": false
+  },
+  {
+    "method": "views.move",
+    "params": {
+      "viewId": "v",
+      "placement": "center",
+      "group": 2
+    },
+    "valid": false
+  },
+  {
+    "method": "views.bindResources",
+    "params": {
+      "viewId": "v",
+      "resources": [
+        {
+          "kind": "pty",
+          "id": "p",
+          "generation": 1
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "method": "views.bindResources",
+    "params": {
+      "viewId": "v",
+      "resources": [
+        {
+          "kind": "connection",
+          "id": "c"
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "method": "views.update",
+    "params": {
+      "viewId": "v",
+      "displayStatus": "ready",
+      "pluginState": {
+        "filter": "mine"
+      }
+    },
+    "valid": true
+  },
+  {
+    "method": "views.update",
+    "params": {
+      "viewId": "v",
+      "workspaceId": "another"
+    },
+    "valid": false
+  },
+  {
+    "method": "workbench.surface",
+    "params": {
+      "windowId": "main",
+      "viewId": "v",
+      "mountGeneration": 1,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 100
+      },
+      "visible": true
+    },
+    "valid": true
+  },
+  {
+    "method": "workbench.surface",
+    "params": {
+      "windowId": "main",
+      "viewId": "v",
+      "mountGeneration": -1,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 100
+      },
+      "visible": true
+    },
+    "valid": false
+  },
+  {
+    "method": "commands.execute",
+    "params": {
+      "commandId": "sample.open",
+      "workspaceId": "a",
+      "args": {
+        "example": 1
+      }
+    },
+    "valid": true
+  },
+  {
+    "method": "commands.execute",
+    "params": {
+      "commandId": "sample.open",
+      "instanceId": "untrusted"
+    },
+    "valid": false
+  },
+  {
+    "method": "views.bindResources",
+    "params": {
+      "viewId": "view",
+      "resources": [
+        {
+          "kind": "pty",
+          "id": "pty"
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "method": "workspaces.move",
+    "kind": "result",
+    "params": {
+      "operationId": "move",
+      "phase": "committed",
+      "committed": true,
+      "persisted": false
+    },
+    "valid": true
+  },
+  {
+    "method": "workspaces.move",
+    "kind": "result",
+    "params": {
+      "phase": "committed",
+      "persisted": true
+    },
+    "valid": false
+  },
+  {
+    "method": "workbench.changed",
+    "kind": "event",
+    "params": {
+      "revision": 4,
+      "windowIds": [
+        "main"
+      ],
+      "workspaceIds": [
+        "a"
+      ],
+      "viewIds": [],
+      "changeKind": "snapshot"
+    },
+    "valid": true
+  },
+  {
+    "method": "workbench.changed",
+    "kind": "event",
+    "params": {},
+    "valid": false
+  },
+  {
+    "kind": "result",
+    "method": "views.update",
+    "params": {
+      "viewId": "v",
+      "title": "x"
+    },
+    "valid": false
+  },
+  {
+    "kind": "result",
+    "method": "workspaces.open",
+    "params": {
+      "workspaceId": "a",
+      "ownerWindowId": "main",
+      "created": true,
+      "committed": true,
+      "persisted": false
+    },
+    "valid": true
+  },
+  {
+    "kind": "result",
+    "method": "workspaces.open",
+    "params": {
+      "workspaceId": "a",
+      "ownerWindowId": "main",
+      "created": "yes"
+    },
+    "valid": false
+  },
+  {
+    "kind": "result",
+    "method": "views.close",
+    "params": null,
+    "valid": true
+  },
+  {
+    "kind": "result",
+    "method": "views.close",
+    "params": {},
+    "valid": false
+  },
+  {
+    "kind": "result",
+    "method": "workbench.operation.cancel",
+    "params": {
+      "canceled": true
+    },
+    "valid": true
+  },
+  {
+    "kind": "result",
+    "method": "workbench.operation.cancel",
+    "params": {
+      "canceled": 1
+    },
+    "valid": false
+  },
+  {
+    "kind": "result",
+    "method": "windows.chrome",
+    "params": {
+      "not": "null"
+    },
+    "valid": false
+  },
+  {
+    "method": "ui.theme.get",
+    "params": {},
+    "valid": true
+  },
+  {
+    "method": "ui.theme.get",
+    "params": null,
+    "valid": false
+  },
+  {
+    "kind": "result",
+    "method": "ui.theme.get",
+    "params": {
+      "schemaVersion": 1,
+      "id": "graphite",
+      "mode": "dark",
+      "colors": {
+        "canvas": "#17191d",
+        "surface": "#202329",
+        "elevated": "#292d34",
+        "field": "#17191d",
+        "text": "#e8eaed",
+        "secondary": "#b1b6c0",
+        "muted": "#8c929d",
+        "border": "#373c45",
+        "accent": "#84aeed",
+        "focus": "#94baf3",
+        "success": "#86c69a",
+        "warning": "#e4ba76",
+        "error": "#e59696",
+        "hover": "#30353d",
+        "pressed": "#3b424c",
+        "selected": "#293c55",
+        "selectedText": "#e8eaed",
+        "disabled": "#777e89",
+        "dangerHover": "#ae2940",
+        "dangerText": "#ffffff",
+        "scrim": "#090b10b8",
+        "shadow": "#00000066",
+        "dragBackground": "#293c55e8",
+        "selection": "#354e71",
+        "scrollbar": "#48505c",
+        "transparent": "#00000000"
+      },
+      "terminal": {
+        "foreground": "#e8eaed",
+        "background": "#111316",
+        "cursor": "#84aeed",
+        "cursorAccent": "#111316",
+        "selectionBackground": "#354e71",
+        "selectionForeground": "#e8eaed",
+        "selectionInactiveBackground": "#303d50",
+        "scrollbarSliderBackground": "#48505c",
+        "scrollbarSliderHoverBackground": "#8c929d",
+        "scrollbarSliderActiveBackground": "#b1b6c0",
+        "overviewRulerBorder": "#373c45",
+        "black": "#202329",
+        "red": "#e59696",
+        "green": "#86c69a",
+        "yellow": "#e4ba76",
+        "blue": "#84aeed",
+        "magenta": "#c5a4e8",
+        "cyan": "#87cbcc",
+        "white": "#d6d9df",
+        "brightBlack": "#7d8796",
+        "brightRed": "#f2abab",
+        "brightGreen": "#a2d7ae",
+        "brightYellow": "#f0cf94",
+        "brightBlue": "#a5c5f5",
+        "brightMagenta": "#d4b9f0",
+        "brightCyan": "#a5dfe0",
+        "brightWhite": "#ffffff",
+        "extendedAnsi": [
+          "#000000",
+          "#00005f",
+          "#000087",
+          "#0000af",
+          "#0000d7",
+          "#0000ff",
+          "#005f00",
+          "#005f5f",
+          "#005f87",
+          "#005faf",
+          "#005fd7",
+          "#005fff",
+          "#008700",
+          "#00875f",
+          "#008787",
+          "#0087af",
+          "#0087d7",
+          "#0087ff",
+          "#00af00",
+          "#00af5f",
+          "#00af87",
+          "#00afaf",
+          "#00afd7",
+          "#00afff",
+          "#00d700",
+          "#00d75f",
+          "#00d787",
+          "#00d7af",
+          "#00d7d7",
+          "#00d7ff",
+          "#00ff00",
+          "#00ff5f",
+          "#00ff87",
+          "#00ffaf",
+          "#00ffd7",
+          "#00ffff",
+          "#5f0000",
+          "#5f005f",
+          "#5f0087",
+          "#5f00af",
+          "#5f00d7",
+          "#5f00ff",
+          "#5f5f00",
+          "#5f5f5f",
+          "#5f5f87",
+          "#5f5faf",
+          "#5f5fd7",
+          "#5f5fff",
+          "#5f8700",
+          "#5f875f",
+          "#5f8787",
+          "#5f87af",
+          "#5f87d7",
+          "#5f87ff",
+          "#5faf00",
+          "#5faf5f",
+          "#5faf87",
+          "#5fafaf",
+          "#5fafd7",
+          "#5fafff",
+          "#5fd700",
+          "#5fd75f",
+          "#5fd787",
+          "#5fd7af",
+          "#5fd7d7",
+          "#5fd7ff",
+          "#5fff00",
+          "#5fff5f",
+          "#5fff87",
+          "#5fffaf",
+          "#5fffd7",
+          "#5fffff",
+          "#870000",
+          "#87005f",
+          "#870087",
+          "#8700af",
+          "#8700d7",
+          "#8700ff",
+          "#875f00",
+          "#875f5f",
+          "#875f87",
+          "#875faf",
+          "#875fd7",
+          "#875fff",
+          "#878700",
+          "#87875f",
+          "#878787",
+          "#8787af",
+          "#8787d7",
+          "#8787ff",
+          "#87af00",
+          "#87af5f",
+          "#87af87",
+          "#87afaf",
+          "#87afd7",
+          "#87afff",
+          "#87d700",
+          "#87d75f",
+          "#87d787",
+          "#87d7af",
+          "#87d7d7",
+          "#87d7ff",
+          "#87ff00",
+          "#87ff5f",
+          "#87ff87",
+          "#87ffaf",
+          "#87ffd7",
+          "#87ffff",
+          "#af0000",
+          "#af005f",
+          "#af0087",
+          "#af00af",
+          "#af00d7",
+          "#af00ff",
+          "#af5f00",
+          "#af5f5f",
+          "#af5f87",
+          "#af5faf",
+          "#af5fd7",
+          "#af5fff",
+          "#af8700",
+          "#af875f",
+          "#af8787",
+          "#af87af",
+          "#af87d7",
+          "#af87ff",
+          "#afaf00",
+          "#afaf5f",
+          "#afaf87",
+          "#afafaf",
+          "#afafd7",
+          "#afafff",
+          "#afd700",
+          "#afd75f",
+          "#afd787",
+          "#afd7af",
+          "#afd7d7",
+          "#afd7ff",
+          "#afff00",
+          "#afff5f",
+          "#afff87",
+          "#afffaf",
+          "#afffd7",
+          "#afffff",
+          "#d70000",
+          "#d7005f",
+          "#d70087",
+          "#d700af",
+          "#d700d7",
+          "#d700ff",
+          "#d75f00",
+          "#d75f5f",
+          "#d75f87",
+          "#d75faf",
+          "#d75fd7",
+          "#d75fff",
+          "#d78700",
+          "#d7875f",
+          "#d78787",
+          "#d787af",
+          "#d787d7",
+          "#d787ff",
+          "#d7af00",
+          "#d7af5f",
+          "#d7af87",
+          "#d7afaf",
+          "#d7afd7",
+          "#d7afff",
+          "#d7d700",
+          "#d7d75f",
+          "#d7d787",
+          "#d7d7af",
+          "#d7d7d7",
+          "#d7d7ff",
+          "#d7ff00",
+          "#d7ff5f",
+          "#d7ff87",
+          "#d7ffaf",
+          "#d7ffd7",
+          "#d7ffff",
+          "#ff0000",
+          "#ff005f",
+          "#ff0087",
+          "#ff00af",
+          "#ff00d7",
+          "#ff00ff",
+          "#ff5f00",
+          "#ff5f5f",
+          "#ff5f87",
+          "#ff5faf",
+          "#ff5fd7",
+          "#ff5fff",
+          "#ff8700",
+          "#ff875f",
+          "#ff8787",
+          "#ff87af",
+          "#ff87d7",
+          "#ff87ff",
+          "#ffaf00",
+          "#ffaf5f",
+          "#ffaf87",
+          "#ffafaf",
+          "#ffafd7",
+          "#ffafff",
+          "#ffd700",
+          "#ffd75f",
+          "#ffd787",
+          "#ffd7af",
+          "#ffd7d7",
+          "#ffd7ff",
+          "#ffff00",
+          "#ffff5f",
+          "#ffff87",
+          "#ffffaf",
+          "#ffffd7",
+          "#ffffff",
+          "#080808",
+          "#121212",
+          "#1c1c1c",
+          "#262626",
+          "#303030",
+          "#3a3a3a",
+          "#444444",
+          "#4e4e4e",
+          "#585858",
+          "#626262",
+          "#6c6c6c",
+          "#767676",
+          "#808080",
+          "#8a8a8a",
+          "#949494",
+          "#9e9e9e",
+          "#a8a8a8",
+          "#b2b2b2",
+          "#bcbcbc",
+          "#c6c6c6",
+          "#d0d0d0",
+          "#dadada",
+          "#e4e4e4",
+          "#eeeeee"
+        ]
+      },
+      "revision": 1
+    },
+    "valid": true
+  },
+  {
+    "method": "ui.menu.open",
+    "params": {
+      "menuId": "one",
+      "anchor": {
+        "x": 10,
+        "y": 10
+      },
+      "items": []
+    },
+    "valid": false
+  },
+  {
+    "method": "ui.menu.open",
+    "params": {
+      "menuId": "one",
+      "anchor": {
+        "x": 10,
+        "y": 10
+      },
+      "items": [
+        {
+          "id": "copy",
+          "label": "复制",
+          "enabled": true,
+          "shortcut": "Ctrl+C"
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "kind": "event",
+    "method": "ui.menu.closed",
+    "params": {
+      "menuId": "one",
+      "status": "closed",
+      "selectedId": null
+    },
+    "valid": true
+  },
+  {
+    "method": "workspaces.initialize",
+    "params": {
+      "workspaceId": "a"
+    },
+    "valid": true
+  },
+  {
+    "method": "commands.execute",
+    "params": {
+      "commandId": "example.init",
+      "workspaceId": "a",
+      "workspaceGeneration": "g",
+      "initializerId": "init"
+    },
+    "valid": true
+  },
+  {
+    "method": "workspaces.initialize",
+    "params": {},
+    "valid": false
+  },
+  {
+    "kind": "result",
+    "method": "workbench.operation.get",
+    "params": {
+      "workspaceId": "a",
+      "ownerWindowId": "main",
+      "created": true,
+      "committed": true,
+      "persisted": false
+    },
+    "valid": true
+  }
+]

@@ -1,9 +1,10 @@
 //! One bounded QuickJS process for each plugin business instance.
 mod engine;
+pub mod dispatcher;
 mod process;
 mod transport;
 
-pub use process::{CoreCallback, PluginProcess};
+pub use process::{BinaryCallbacks, BinarySink, CoreCallback, PluginProcess};
 use serde::{Deserialize, Serialize};
 use std::{
     io,
@@ -73,7 +74,7 @@ fn run() -> Result<(), String> {
     std::thread::spawn(move || {
         let mut input = io::stdin().lock();
         loop {
-            match transport::read_frame(&mut input) {
+            match transport::read_wire(&mut input) {
                 Ok(Some(frame)) => {
                     if send.send(Ok(frame)).is_err() {
                         break;
@@ -92,15 +93,24 @@ fn run() -> Result<(), String> {
     let mut output = io::stdout().lock();
     loop {
         match receive.recv_timeout(Duration::from_millis(5)) {
-            Ok(Ok(frame)) => engine.receive(frame)?,
+            Ok(Ok(frame)) => match frame {transport::Wire::Json(v)=>engine.receive(v)?,transport::Wire::Binary(f)=>engine.receive_binary(f)?},
             Ok(Err(e)) => return Err(e.to_string()),
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
             Err(mpsc::RecvTimeoutError::Timeout) => {}
+        }
+        for _ in 0..3 {
+            match receive.try_recv() {
+                Ok(Ok(transport::Wire::Json(v))) => engine.receive(v)?,
+                Ok(Ok(transport::Wire::Binary(f))) => engine.receive_binary(f)?,
+                Ok(Err(e))=>return Err(e.to_string()),
+                Err(_)=>break,
+            }
         }
         engine.tick()?;
         for frame in engine.drain()? {
             transport::write_frame(&mut output, &frame).map_err(|e| e.to_string())?;
         }
+        for frame in engine.drain_binary() { transport::write_binary(&mut output,&frame).map_err(|e|e.to_string())?; }
         if disconnected.load(Ordering::SeqCst) {
             break;
         }

@@ -1,8 +1,15 @@
-:root{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;font-size:13px;line-height:1.45;color:var(--text);background:var(--terminal-background);font-synthesis:none}*{box-sizing:border-box}html,body,#root{margin:0;width:100%;height:100%;overflow:hidden}button{font:inherit;border:1px solid var(--border);border-radius:6px;background:var(--elevated);color:var(--text);cursor:pointer;min-height:28px;padding:4px 10px}button:hover{background:var(--hover)}button:active{background:var(--pressed)}button:disabled{color:var(--disabled);cursor:default}button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}.terminal-view{height:100%;display:flex;flex-direction:column;position:relative;background:var(--terminal-background)}.terminal-content{flex:1;min-height:0;padding:10px 8px 4px 12px;overflow:hidden}.terminal-content>.xterm{height:100%;padding:0}.xterm .xterm-viewport{scrollbar-width:thin;scrollbar-color:var(--scrollbar) var(--transparent);background:var(--terminal-background)!important}.notice{padding:8px 12px;font-size:13px;line-height:1.5;display:flex;gap:8px;background:var(--surface)}.notice.error{color:var(--error)}.notice>span{flex:1;overflow-wrap:anywhere}.dismiss{padding:0 4px;border:0;background:var(--transparent)}.ended{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--surface);font-size:13px;color:var(--secondary)}.terminal-status{min-height:24px;display:flex;align-items:center;justify-content:space-between;padding:2px 12px;font-size:12px;color:var(--secondary);background:var(--surface);border-top:1px solid var(--border)}.terminal-status>span{display:flex;align-items:center;gap:7px}.status-dot{width:6px;height:6px;border-radius:50%;background:var(--muted);display:inline-block}.status-dot.running,.status-dot.connected,.status-dot.active{background:var(--success)}.status-dot.connecting{background:var(--warning)}.status-dot.failed,.status-dot.disconnected{background:var(--error)}@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
-
-:root{--vscode-scrollbar-shadow:var(--shadow)}
+@import '@xterm/xterm/css/xterm.css' layer(vendor);
+@layer composition {
+/* xterm adapter: solid native work surface, geometry never depends on theme. */
+:root{background:var(--terminal-background);--vscode-scrollbar-shadow:var(--shadow)}
+.terminal-view{height:100%;display:flex;flex-direction:column;position:relative;background:var(--terminal-background)}
+.terminal-content{flex:1;min-height:0;display:flex;padding:var(--sd-space-3) var(--sd-space-2) var(--sd-space-1) var(--sd-space-3);overflow:hidden}
+.terminal-grid{flex:1;min-width:0;min-height:0;overflow:hidden;padding:0}
+.terminal-grid>.xterm{height:100%;padding:0}
+.xterm .xterm-viewport{scrollbar-width:thin;scrollbar-color:var(--scrollbar) var(--transparent);background:var(--terminal-background)!important}
 .xterm .xterm-scrollable-element>.visible{background:var(--transparent)}
-.xterm .composition-view{background:var(--terminal-background);color:var(--terminal-foreground)}
+.xterm .composition-view{background:var(--terminal-background);color:var(--terminal-foreground);border-color:var(--terminal-cursor)}
 .xterm .xterm-accessibility-debug:focus{outline-color:var(--focus)}
-
-.xterm .composition-view{border-color:var(--terminal-cursor)}
+.terminal-connection .sd-notice-body{display:flex;align-items:center;flex-wrap:wrap;gap:var(--sd-space-3)}
+.terminal-connection .sd-notice-body>span{flex:1}
+}

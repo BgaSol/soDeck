@@ -1,8 +1,30 @@
 # 插件 SDK、通信与版本契约
 
-更新日期：2026-10-25 · 修订：r6 · 状态：通用契约基线；T-003 首批子集已实施，实际支持字段及验证见[联调契约](implementation-contract.md)和[任务](../tasks/T-003-core-terminal.md)。
+更新日期：2026-10-27 · 修订：r19 · 状态：通用契约基线；实际支持见任务结果，T-016事件增量为能力设计。
+
+T-016按P-53提出[统一事件/诊断契约](../core/observability.md)：宿主绑定来源和操作上下文，插件随独立包携带受限、版本化的事件/快照/指标描述，使用核心公开采集与查询服务。描述不是权限清单；旧包可继续运行但业务采集覆盖不足明确可见。历史类型保留、可补读feed、防审计递归和未来AI只读证据路径见F-CORE-018～022。新能力名称/manifest字段/schema与API版本在后续代码方案固定，本稿不占用T-015的4.8版本、不修改旧strict DTO、不开放插件互调或外部上传。
+
+T-015增量已在[代码方案r1 §3～5](workflow-polish-implementation.md)固定：API/SDK4.8、servers.catalog.v1/plugins.metadata.v1/workspace.contributions.v2/ui.dialog.v1能力，manifest可选displayName与contributes.presentation，新方法/投影和临时模态endpoint。新增两份schema及生成器，不给旧strict DTO塞字段；新核心兼容旧包，新包最低API4.8。边界来源[F-CORE-017](../core/plugin-display.md)/[F-CORE-008](../core/workbench-interaction.md)/[F-PROXY-003](../plugins/proxy/features/tunnel-panel.md)。本次尚未编码，不将提案描述为已发布接口。
+
+T-014基于当前已实现API/SDK4.6.0提交[网络契约r6](../core/dynamic-proxy.md#8-公开契约与资源归属r6)和[代码方案r1](network-tunnel-implementation.md)，建议4.7.0增加network.tcp.v1/network.stream.v1/network.resources.v1及net.group.v1状态。控制RPC/旧严格DTO保持，TCP正文走已建立持续调用的二进制帧，实例来源、epoch/额度、关闭与审计均有独立验证。旧核心拒绝缺失能力的新包，新核心使用未重编译旧终端/文件包；能力声明仍不是权限。workspace.v4资源枚举不增加新kind，网络组由宿主view索引绑定。旧段落所列版本是当时方案背景，本增量未实施。
+
+T-012建议保留主题v2和app.theme.v1的严格负载，新增`ui.theme.catalog.v1`目录/按ID选择能力与`ui.theme.dopamine.v1`完整样式兼容声明；旧live客户端实时换色但保留旧控件，旧静态客户端自然重挂载更新。能力不构成权限。具体参数、投影与测试见[F-CORE-012 §7](../core/appearance.md#7-t-012-第三主题增量方案)和[T-012](../tasks/T-012-dopamine.md)。此增量尚未实现。
+
+T-012 r3进一步将通用样式与组件集中到公开`@sodeck/ui`，保持UI无SDK/业务依赖、SDK无React/UI依赖；组件与CSS随插件独立构建，核心只分发既有主题快照，不热替换旧插件的代码或几何。新设计参数和补充表面色不扩充严格v2消息，应用专用菜单桥不更改插件`ui.menu.*`协议。目录、公共导出兼容与更新矩阵见[代码方案§8](design-system-implementation.md#8-主题接口更新与旧包兼容)，验证见F-CORE-012 DS-03/06。T-013的4.4增量优先保留，T-012初拟4.5或整合时首个未占用版本。
 
 以下接口名称、schema 和清单为设计示意，不能作为已经实现的 SDK 使用。接口落地前应补齐对应核心能力规格和契约测试流程。
+
+T-011拟采用API/SDK 4.3与`ui.theme.live.v1`、主题数据v2，复用`core.state.v1`增加固定`app.theme.v1`契约和宿主绑定的窗口来源；旧目录/视图scope及响应不改形状。`ui.theme.get`按协商投影，严格旧SDK不接收未知字段/通知；旧插件保持挂载时颜色，当前随包两插件实时跟随。接口、兼容矩阵、独立构建和AP-07验证见[F-CORE-012](../core/appearance.md)及[代码规划](../tasks/T-011-appearance.md#3-代码修改规划)。能力声明仍用于兼容，不增加插件权限。这是待确认增量，不修改T-010的4.2实际结果。
+
+T-009 已实施插件 API 4 / `workspace.v4`，当前生成契约为 `contracts/workbench-v4.schema.json`。`workspaceInitializers: [{id, commandId}]` 显式登记同插件的 server 命令；核心按本次工作区 generation 和动作去重调度。`workspaces.open`/快照返回初始化状态，`workspaces.initialize` 重试未创建页面的失败，已有页面通过原命令/认证重试。定位、移窗、表面挂载不重触发，不执行所有 primary 命令。运行布局结果 `persisted:false` 为正常语义，偏好/旧快照清理通过 `workbench.preferences.retry`。行为与测试见 [F-CORE-010](../core/clean-start.md)，完整兼容/错误/取消落点见[代码方案](clean-start-implementation.md)，实际验证见 [T-009 结果](../tasks/T-009-results.md)。历史 v2/v3 契约保留用于资料及旧测试；API 3 插件不冒充当前兼容包。
+
+T-008 的 `files.*` / 非 PTY `exec.*`、连接观察/仅复用及操作回执，其功能语义与测试统一见 [F-CORE-009 r3](../core/remote-read.md)；[代码方案 r1](server-files-implementation.md)固定 API/SDK 4.1、能力版本、字段、错误、预算与生成 schema。当前 dev.5 / files 0.1.0 已交付实现，实际双插件及剩余验证见 [T-008 结果](../tasks/T-008-results.md)；历史多来源夹具测试不替代真实双插件证据。
+
+T-008 r4 延续 API 4 基线：复用 `workspaceEntries` 默认文件视图和已有工作区 generation，不以文件 initializer 重复发起自动连接；命令/动作、认证/取消和资源回执按真实插件归属隔离。已实现 `connections.observe` 与 `connections.acquireExisting`，后者原子登记现存连接租约且禁止新建回退；普通 acquire 不具备该保证。`workspace.multiplugin.v1` / `workspace.presentation.v1` 承载所有者路由、呈现通知和焦点；未声明能力的旧终端不接收未知生命周期命令。
+
+T-008 终端 0.4.0 原包保持不变：核心按协商能力投影原 v4 响应，不能给严格旧 SDK 增加未知字段，也不能放宽全部校验冒充兼容。files 0.1.0 要求 `^4.1.0` 及声明能力；传输 `RpcRequest.apiVersion:1` 与插件 API 分开。正常 `persisted:false`、原终端兼容、真实双插件与缺能力拒绝由 RI-06 和代码方案 MP-01 验证，实施确认及结果在 T-008 记录。
+
+T-010 计划增量为 API/SDK 4.2（整数 API 4、workspace.v4 和 RPC v1 保持），增加 `core.state.v1`、`workspace.directory.v1`、`remote.pty.observe.v1`、`remote.pty.start.v1`。方法和 schema 规划见[通用通信策略](component-communication.md)及[联动代码方案](terminal-directory-follow-implementation.md)：固定契约的原子快照/订阅、同所有者 PTY 观察、通用 PTY exec 启动；旧包不接收未知字段或通知。能力描述用于版本兼容，不是插件权限表。本增量未实现，确认与测试由 T-010 维护。
 
 基础行为的细化及测试见[调用与状态通信](../core/communication.md)和[资源与生命周期](../core/resources.md)；本文件维护 SDK 能力分组、插件协作的扩展方向与版本规则，不重复维护单项测试结果。
 

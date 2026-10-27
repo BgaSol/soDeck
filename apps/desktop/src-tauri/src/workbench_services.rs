@@ -21,6 +21,69 @@ impl Drop for WorkspaceGuard<'_> {
 }
 
 impl State {
+    fn finish_workspace_open(&self, params: &Value, window: &str, mut result: Value) -> Value {
+        if let Some(ws) = self.workbench.lock().unwrap().workspaces.get(params["serverId"].as_str().unwrap_or("")) {
+            result["generation"] = json!(ws.generation);
+            result["initializers"] = json!(ws.initializers);
+        }
+        let result = self.commit_runtime(result);
+        if let Some(id) = params["operationId"].as_str() {
+            self.layout_operations.lock().unwrap().insert(id.into(), Arc::new(LayoutOperation {
+                request: json!({"method":"workspaces.open","windowId":window,"params":params}),
+                result: Mutex::new(result.clone()), canceled: AtomicBool::new(false), created: Instant::now(),
+            }));
+        }
+        result
+    }
+    fn initialize_workspace(self: &Arc<Self>, id: &str) -> Result<()> {
+        let plugins = self.all_plugins();
+        let (generation, window, jobs) = {
+            let mut w = self.workbench.lock().unwrap();
+            let ws = w.workspaces.get_mut(id).ok_or_else(|| err("WORKSPACE_CLOSED", "工作区已关闭"))?;
+            if plugins.is_empty(){ws.initialization_error=Some("没有可用插件，请检查插件后重试".into());return Ok(());}
+            ws.initialization_error = None;
+            let mut jobs = vec![];
+            for plugin in &plugins { for init in &plugin.package.manifest.contributes.workspace_initializers {
+                let init_key=format!("{}::{}",plugin.package.manifest.plugin_id,init.id);
+                if ws.initializers.iter().any(|i| i.id == init_key && (i.state != "failed" || i.view_id.is_some())) { continue; }
+                let operation = Uuid::new_v4().to_string();
+                ws.initializers.retain(|i| i.id != init_key);
+                ws.initializers.push(crate::workbench::Initializer { id:init_key.clone(), command_id:init.command_id.clone(), operation_id:operation.clone(), state:"running".into(), view_id:None, error:None });
+                jobs.push((plugin.package.manifest.plugin_id.clone(),init_key, init.command_id.clone(), operation));
+            }
+            }
+            (ws.generation.clone(), ws.owner_window_id.clone(), jobs)
+        };
+        for (plugin,initializer, command, operation) in jobs {
+            let state = self.clone(); let id = id.to_string(); let generation = generation.clone(); let window = window.clone();
+            std::thread::spawn(move || {
+                let params = json!({"pluginId":plugin,"commandId":command,"workspaceId":id,"workspaceGeneration":generation,"initializerId":initializer,"operationId":operation});
+                let result = state.dispatch(&Caller::shell(), Some(&format!("@window:{window}")), "commands.execute", params);
+                let view = state.pending_opens.lock().unwrap().get(&operation).and_then(|o| o.view_id.clone());
+                {
+                    let mut w = state.workbench.lock().unwrap();
+                    if let Some(ws) = w.workspaces.get_mut(&id).filter(|ws| ws.generation == generation) {
+                        if let Some(init) = ws.initializers.iter_mut().find(|i| i.operation_id == operation) {
+                            init.state = if result.is_ok() {"finished"} else {"failed"}.into();
+                            init.view_id = view;
+                            init.error = result.err().map(|e| e.message);
+                        }
+                    }
+                }
+                state.changed();
+            });
+        }
+        Ok(())
+    }
+    pub(super) fn cancel_view_open(&self, view: &str) -> Result<()> {
+        let operations = {
+            let mut ops = self.pending_opens.lock().unwrap();
+            ops.iter_mut().filter(|(_,o)| o.view_id.as_deref() == Some(view) && !o.canceled && (!o.finished || o.waiting_auth))
+                .map(|(id,o)| {o.canceled=true; o.waiting_auth=false; id.clone()}).collect::<Vec<_>>()
+        };
+        for id in operations { self.worker("lifecycle.cancel", json!({"operationId":id}))?; }
+        Ok(())
+    }
     pub(super) fn workspace_guard(&self, ids: &[String]) -> Result<WorkspaceGuard<'_>> {
         self.workspace_guard_except(ids, None)
     }
@@ -33,9 +96,16 @@ impl State {
         if ids.iter().any(|id| busy.contains(id)) {
             return Err(err("MOVE_IN_PROGRESS", "该工作区正在移动或关闭"));
         }
+        {
+            let w = self.workbench.lock().unwrap();
+            let ops = self.pending_opens.lock().unwrap();
+            if ids.iter().filter_map(|id| w.workspaces.get(id)).any(|ws| ws.initializers.iter().any(|i| i.state == "running" && !ops.contains_key(&i.operation_id))) {
+                return Err(err("MOVE_IN_PROGRESS", "工作区正在登记初始页面"));
+            }
+        }
         if self.pending_opens.lock().unwrap().iter().any(|(id, o)| {
             Some(id.as_str()) != own_operation
-                && (!o.finished || o.waiting_auth)
+                && !o.canceled && (!o.finished || o.waiting_auth)
                 && o.server_id.as_ref().is_some_and(|s| ids.contains(s))
         }) {
             return Err(err("MOVE_IN_PROGRESS", "请先完成或取消连接操作"));
@@ -51,7 +121,7 @@ impl State {
             if let Some(id) = source.strip_prefix("@window:") {
                 return Ok(id.into());
             }
-            return Ok(self.binding(source)?.window.clone());
+            return self.endpoint_window(source,false);
         }
         if let Some(op) = params["operationId"].as_str() {
             if let Some(p) = self.pending_opens.lock().unwrap().get(op) {
@@ -85,6 +155,9 @@ impl State {
         let mut builder =
             WebviewWindowBuilder::new(&self.app, id, WebviewUrl::App("index.html".into()))
                 .title("SoDeck v2")
+                .icon(crate::brand::icon(false)).map_err(|e|native_error(e.to_string()))?
+                .background_color(self.theme_background())
+                .initialization_script(crate::theme::bootstrap(&self.theme_snapshot(true)))
                 .decorations(false)
                 .visible(false)
                 .inner_size(1100., 740.)
@@ -95,7 +168,7 @@ impl State {
                 ))
                 .data_directory(self.data.join("profiles/shell"));
         if cfg!(debug_assertions) {
-            if let Ok(port) = std::env::var("SODECK_SHELL_DEBUG_PORT") {
+            if let Some(port) = self.app.state::<crate::startup_config::DebugConfig>().shell_port {
                 builder =
                     builder.additional_browser_args(&format!("--remote-debugging-port={port}"));
             }
@@ -124,7 +197,7 @@ impl State {
                 | "workbench.configure"
                 | "workbench.surface"
                 | "workbench.modal"
-                | "workbench.persistence.retry"
+                | "workbench.preferences.retry"
                 | "workbench.operation.get"
                 | "workbench.operation.cancel"
         ) && !method.starts_with("workspaces.")
@@ -140,48 +213,17 @@ impl State {
         Some((|| {
             let window = self.source_window(source, params)?;
             match method {
-                "workbench.persistence.retry" => {
-                    self.workbench.lock().unwrap().retry_save(&self.data.join("workbench.json")).map_err(native_error)?;
+                "workbench.preferences.retry" => {
+                    self.save_preferences()?;
+                    crate::window_preferences::retire(&self.data).map_err(native_error)?;
+                    self.workbench.lock().unwrap().recovery_warnings.clear();
                     self.changed();Ok(json!({"persisted":true}))
                 }
                 "workbench.snapshot" => {
                     let target = params["targetWindowId"].as_str().unwrap_or(&window);
                     let mut snapshot = self.workbench.lock().unwrap().snapshot(target);
-                    snapshot["commands"] = self
-                        .loaded()
-                        .map(|l| {
-                            serde_json::to_value(&l.package.manifest.contributes.commands).unwrap()
-                        })
-                        .unwrap_or(json!([]));
-                    snapshot["viewDeclarations"] = self
-                        .loaded()
-                        .map(|l| {
-                            json!(l
-                                .package
-                                .manifest
-                                .contributes
-                                .views
-                                .iter()
-                                .map(|d| {
-                                    let locations =
-                                        ["center", "left", "right", "bottom", "detached"]
-                                            .into_iter()
-                                            .filter(|p| {
-                                                let host = match *p {
-                                                    "center" => "tab",
-                                                    "detached" => "window",
-                                                    _ => "dock",
-                                                };
-                                                d.supported_hosts.iter().any(|h| h == host)
-                                                    && (host != "dock"
-                                                        || d.dock_edges.iter().any(|e| e == p))
-                                            })
-                                            .collect::<Vec<_>>();
-                                    json!({"id":d.id,"locations":locations})
-                                })
-                                .collect::<Vec<_>>())
-                        })
-                        .unwrap_or(json!([]));
+                    snapshot["commands"]=json!(self.all_plugins().iter().flat_map(|p|p.package.manifest.contributes.commands.clone()).collect::<Vec<_>>());
+                    snapshot["viewDeclarations"]=json!(self.all_plugins().iter().flat_map(|p|p.package.manifest.contributes.views.iter().map(|d|{let locations=["center","left","right","detached"].into_iter().filter(|place|{let host=match *place{"center"=>"tab","detached"=>"window",_=>"dock"};d.supported_hosts.iter().any(|h|h==host)&&(host!="dock"||d.dock_edges.iter().any(|e|e==place))}).collect::<Vec<_>>();json!({"id":d.id,"locations":locations})})).collect::<Vec<_>>());
                     snapshot["pendingOpens"]=json!(self.pending_opens.lock().unwrap().iter().filter(|(_,o)|!o.finished&&o.window_id==target).map(|(id,o)|json!({"operationId":id,"serverId":o.server_id,"commandId":o.command_id,"cancelling":o.canceled})).collect::<Vec<_>>());
                     Ok(snapshot)
                 }
@@ -189,7 +231,7 @@ impl State {
                     let mut w = self.workbench.lock().unwrap();
                     let mut next = w.clone();
                     next.configure(&window, params).map_err(native_error)?;
-                    w.commit(next, &self.data.join("workbench.json"))
+                    w.commit(next)
                         .map_err(native_error)?;
                     let result = w.snapshot(&window);
                     drop(w);
@@ -207,12 +249,19 @@ impl State {
                     params["visible"].as_bool().unwrap_or(false),
                 ),
                 "workbench.modal" => {
-                    self.native
-                        .modal(window, params["open"].as_bool().unwrap_or(false))
-                        .map_err(native_error)?;
+                    self.shell_modal(&window, params["open"].as_bool().unwrap_or(false))?;
                     Ok(Value::Null)
                 }
                 "workspaces.open" => {
+                    let _creation = self.workspace_creation.lock().unwrap();
+                    if let Some(id) = params["operationId"].as_str() {
+                        if let Some(op) = self.layout_operations.lock().unwrap().get(id) {
+                            if op.request != json!({"method":"workspaces.open","windowId":window,"params":params}) {
+                                return Err(err("REQUEST_CONFLICT", "操作标识已经用于其他请求"));
+                            }
+                            return Ok(op.result.lock().unwrap().clone());
+                        }
+                    }
                     let id = required(params, "serverId")?;
                     self.core
                         .call(&Caller::shell(), "servers.get", json!({"serverId":id}))?;
@@ -231,9 +280,8 @@ impl State {
                             .activate_workspace(id)
                             .map_err(native_error)?;
                         self.show_window(&owner);
-                        return Ok(self.save_committed(
+                        return Ok(self.finish_workspace_open(params, &window,
                             json!({"workspaceId":id,"ownerWindowId":owner,"created":false}),
-                            "位置已定位，但布局未保存",
                         ));
                     }
                     let target = if params["target"] == "newWindow" {
@@ -266,25 +314,31 @@ impl State {
                         .unwrap()
                         .open_workspace(id, &target)
                         .map_err(native_error)?;
-                    if let Ok(plugin) = self.loaded() {
+                    for plugin in self.all_plugins() {
                         let mut w = self.workbench.lock().unwrap();
                         for entry in &plugin.package.manifest.contributes.workspace_entries {
                             if entry.open_by_default {
-                                w.open_view(
+                                if let Err(e)=w.open_view(
                                     &plugin.package.manifest.plugin_id,
                                     &entry.view_type,
                                     id,
                                     "",
                                 )
-                                .map_err(native_error)?;
+                                {if let Some(ws)=w.workspaces.get_mut(id){ws.initialization_error=Some(e);}}
                             }
                         }
                     }
+                    {let w=self.workbench.lock().unwrap();if let Some(ws)=w.workspaces.get(id){self.core.register_workspace(id,&ws.generation);}}
+                    self.initialize_workspace(id)?;
                     self.show_window(&target);
-                    Ok(self.save_committed(
+                    Ok(self.finish_workspace_open(params, &window,
                         json!({"workspaceId":id,"ownerWindowId":target,"created":true}),
-                        "工作区已打开，但布局未保存",
                     ))
+                }
+                "workspaces.initialize" => {
+                    let _creation = self.workspace_creation.lock().unwrap();
+                    self.initialize_workspace(required(params, "workspaceId")?)?;
+                    Ok(json!({"scheduled":true}))
                 }
                 "workspaces.activate" => {
                     let id = required(params, "workspaceId")?;
@@ -294,10 +348,8 @@ impl State {
                         w.owner(id).map_err(native_error)?
                     };
                     self.show_window(&owner);
-                    Ok(self.save_committed(
-                        json!({"workspaceId":id,"ownerWindowId":owner}),
-                        "切换已完成，布局未保存",
-                    ))
+                    Ok(self.commit_runtime(
+                        json!({"workspaceId":id,"ownerWindowId":owner})))
                 }
                 "workspaces.reorder" => {
                     self.check_revision(params)?;
@@ -309,7 +361,7 @@ impl State {
                         .unwrap()
                         .reorder(target, ids)
                         .map_err(native_error)?;
-                    Ok(self.save_committed(json!({"reordered":true}), "排序已完成，布局未保存"))
+                    Ok(self.commit_runtime(json!({"reordered":true})))
                 }
                 "workspaces.move" | "windows.merge" => {
                     let request = json!({"method":method,"windowId":window,"params":params});
@@ -396,7 +448,9 @@ impl State {
                             .start_dragging()
                             .map_err(|e| native_error(e.to_string()))?,
                         "recall" => {
-                            for w in self.app.webview_windows().values() {
+                            for (id,w) in self.app.webview_windows() {
+                                if id.starts_with("application-menu-"){continue;}
+                                self.cancel_menus(&id);
                                 let _ = w.center();
                                 let _ = w.show();
                             }
@@ -420,13 +474,18 @@ impl State {
                             return Err(err("SOURCE_INVALID", "认证须在原窗口完成"));
                         }
                         op.waiting_auth = false;
-                        (op.request.clone(), op.window_id.clone())
+                        {
+                            let mut request = op.request.clone();
+                            request["viewId"] = json!(op.view_id);
+                            (request, op.window_id.clone())
+                        }
                     };
+                    request.as_object_mut().unwrap().remove("initializerId");
                     request["operationId"] = json!(Uuid::new_v4().to_string());
                     self.execute_command(caller, &origin, &request)
                 }
                 "views.open" => {
-                    let plugin = self.loaded()?;
+                    let plugin = self.loaded_for(caller.plugin_id.as_deref().ok_or_else(||err("SOURCE_INVALID","缺少插件来源"))?)?;
                     if caller.plugin_id.as_deref() != Some(&plugin.package.manifest.plugin_id) {
                         return Err(err("SOURCE_INVALID", "视图须由已登记插件创建"));
                     }
@@ -447,6 +506,8 @@ impl State {
                     let _worker = self.check_worker_operation(workspace, params)?;
                     let mut w = self.workbench.lock().unwrap();
                     let mut candidate = w.clone();
+                    let previous_windows = w.windows.clone();
+                    let previous_focus=w.workspaces.get(workspace).filter(|ws|ws.focus_intent>0).and_then(|ws|ws.focus_target.clone());
                     let mut view = candidate
                         .open_view(
                             &plugin.package.manifest.plugin_id,
@@ -464,6 +525,21 @@ impl State {
                         .iter_mut()
                         .find(|v| v.view_id == view.view_id)
                         .unwrap() = view.clone();
+                    // Preserve the user's foreground workspace during asynchronous page creation.
+                    if params["operationId"].as_str().is_some_and(|id|self.pending_opens.lock().unwrap().get(id).is_some_and(|op|op.request.get("initializerId").is_some())) {
+                        if let Some(focus)=previous_focus {
+                            if let Some(ws)=candidate.workspaces.get_mut(workspace){ws.focus_target=Some(focus.clone());}
+                            if let Ok(owner)=candidate.owner(workspace){if let Some(win)=candidate.windows.get_mut(&owner){win.focused_view_id=Some(focus);}}
+                        }
+                    }
+                    for (id, previous) in previous_windows {
+                        if previous.active_workspace_id.as_deref() != Some(workspace) {
+                            if let Some(win) = candidate.windows.get_mut(&id) {
+                                win.active_workspace_id = previous.active_workspace_id;
+                                win.focused_view_id = previous.focused_view_id;
+                            }
+                        }
+                    }
                     *w = candidate;
                     drop(w);
                     if view.placement == "detached" {
@@ -479,10 +555,8 @@ impl State {
                             p.view_id = Some(view.view_id.clone());
                         }
                     }
-                    Ok(self.save_committed(
-                        serde_json::to_value(view).unwrap(),
-                        "视图已打开，但布局未保存",
-                    ))
+                    Ok(self.commit_runtime(
+                        serde_json::to_value(view).unwrap()))
                 }
                 "views.update" => {
                     let id = required(params, "viewId")?;
@@ -517,10 +591,8 @@ impl State {
                     w.revision += 1;
                     drop(w);
                     self.update_window_titles();
-                    Ok(self.save_committed(
-                        serde_json::to_value(updated).unwrap(),
-                        "视图已更新，但布局未保存",
-                    ))
+                    Ok(self.commit_runtime(
+                        serde_json::to_value(updated).unwrap()))
                 }
                 "views.bindResources" => {
                     let _mount = self.mounting.lock().unwrap();
@@ -583,12 +655,12 @@ impl State {
                             !o.finished || o.created.elapsed() < Duration::from_secs(600)
                         });
                         if let Some(op) = ops.get_mut(id) {
-                            if op.finished && op.view_id.is_some() {
+                            if op.finished && !op.waiting_auth {
                                 return Ok(json!({"canceled":false,"viewId":op.view_id}));
                             }
                             op.canceled = true;
                             op.waiting_auth = false;
-                            !op.finished
+                            true
                         } else {
                             if ops.len() >= 10000 {
                                 return Err(err("CAPACITY", "操作记录已满"));
@@ -596,6 +668,8 @@ impl State {
                             ops.insert(
                                 id.into(),
                                 PendingOpen {
+                                    plugin_id: String::new(),
+                                    generation: None,
                                     created: Instant::now(),
                                     server_id: None,
                                     window_id: window.clone(),
@@ -664,7 +738,7 @@ impl State {
         Ok(())
     }
     fn validate_view_actions(&self, view: &View) -> Result<()> {
-        let plugin = self.loaded()?;
+        let plugin = self.loaded_for(&view.plugin_id)?;
         if view.actions.iter().any(|id| {
             !plugin
                 .package
@@ -688,13 +762,10 @@ impl State {
             return Err(err("MOVE_IN_PROGRESS", "工作区正在移动或关闭"));
         }
         if let Some(id) = params["operationId"].as_str() {
-            if self
-                .pending_opens
-                .lock()
-                .unwrap()
-                .get(id)
-                .is_some_and(|o| o.canceled)
-            {
+            let (canceled, generation) = self.pending_opens.lock().unwrap().get(id)
+                .map(|o| (o.canceled, o.generation.clone())).unwrap_or((true, None));
+            let current = self.workbench.lock().unwrap().workspaces.get(workspace).map(|w| w.generation.clone());
+            if canceled || generation != current {
                 return Err(err("CANCELED", "操作已取消"));
             }
         }
@@ -706,7 +777,7 @@ impl State {
         window: &str,
         params: &Value,
     ) -> Result<Value> {
-        let loaded = self.loaded()?;
+        let loaded = self.command_plugin(caller,params)?;
         let command = required(params, "commandId")?;
         let declaration = loaded
             .package
@@ -776,6 +847,23 @@ impl State {
             if busy.contains(&workspace) {
                 return Err(err("MOVE_IN_PROGRESS", "工作区正在移动或关闭"));
             }
+            let generation = {
+                let w = self.workbench.lock().unwrap();
+                let ws = w.workspaces.get(&workspace).ok_or_else(|| err("WORKSPACE_CLOSED", "工作区已关闭"))?;
+                if params["workspaceGeneration"].as_str().is_some_and(|g| g != ws.generation) {
+                    return Err(err("CANCELED", "原工作区已关闭"));
+                }
+                if let Some(initializer) = params["initializerId"].as_str() {
+                    if !ws.initializers.iter().any(|i| i.id == initializer && i.command_id == command && i.operation_id == operation) {
+                        return Err(err("SOURCE_INVALID", "初始化动作与工作区不匹配"));
+                    }
+                } else if view.is_none() {
+                    if let Some(init) = ws.initializers.iter().find(|i| i.id.starts_with(&format!("{}::",loaded.package.manifest.plugin_id)) && i.command_id == command && i.state == "running") {
+                        return Ok(json!({"operationId":init.operation_id,"viewId":init.view_id,"pending":true}));
+                    }
+                }
+                ws.generation.clone()
+            };
             let mut ops = self.pending_opens.lock().unwrap();
             ops.retain(|_, o| !o.finished || o.created.elapsed() < Duration::from_secs(600));
             if let Some(op) = ops.get(&operation) {
@@ -796,13 +884,15 @@ impl State {
             ops.insert(
                 operation.clone(),
                 PendingOpen {
+                    plugin_id: loaded.package.manifest.plugin_id.clone(),
+                    generation: Some(generation),
                     created: Instant::now(),
                     server_id: Some(workspace.clone()),
                     window_id: window.into(),
                     command_id: command.into(),
                     canceled: false,
                     finished: false,
-                    view_id: None,
+                    view_id: view.as_ref().map(|v| v.view_id.clone()),
                     request: params.clone(),
                     result: None,
                     waiting_auth: false,
@@ -811,21 +901,9 @@ impl State {
         }
         self.changed();
         let server_id = (workspace != "@app").then_some(&workspace);
-        let context = json!({"windowId":window,"workspaceId":workspace,"serverId":server_id,"viewId":view.as_ref().map(|v|&v.view_id),"pluginData":view.as_ref().map(|v|&v.runtime_data),"pluginState":view.as_ref().map(|v|&v.plugin_state),"title":view.as_ref().map(|v|&v.title),"instanceKey":view.as_ref().map(|v|&v.instance_key),"operationId":operation});
+        let context = json!({"pluginId":loaded.package.manifest.plugin_id,"workspaceGeneration":self.workbench.lock().unwrap().workspaces.get(&workspace).map(|w|w.generation.clone()),"windowId":window,"workspaceId":workspace,"serverId":server_id,"viewId":view.as_ref().map(|v|&v.view_id),"pluginData":view.as_ref().map(|v|&v.runtime_data),"pluginState":view.as_ref().map(|v|&v.plugin_state),"title":view.as_ref().map(|v|&v.title),"instanceKey":view.as_ref().map(|v|&v.instance_key),"operationId":operation});
         let mut result=self.worker("command.execute",json!({"commandId":command,"args":params.get("args").cloned().unwrap_or(json!({})),"context":context}));
-        let canceled_view = {
-            let ops = self.pending_opens.lock().unwrap();
-            ops.get(&operation)
-                .filter(|op| op.canceled)
-                .map(|op| op.view_id.clone())
-        };
-        if let Some(view) = canceled_view {
-            if let Some(id) = view {
-                let exists = self.workbench.lock().unwrap().view(&id).is_ok();
-                if exists {
-                    self.close_view_for_operation(&id, Some(&operation))?;
-                }
-            }
+        if self.pending_opens.lock().unwrap().get(&operation).is_some_and(|o| o.canceled) {
             result = Err(err("CANCELED", "操作已取消"));
         }
         {
@@ -863,7 +941,12 @@ impl State {
                     "servers.get",
                     json!({"serverId":workspace}),
                 )?;
-                let event = json!({"type":"auth.required","payload":{"server":server,"error":error,"operationId":operation,"commandId":command,"viewId":params["viewId"],"args":params["args"]}});
+                let auth_server=if let Some(challenge)=error.details.as_ref().and_then(|d|d["challengeId"].as_str()) {
+                    let resolved=self.core.call(&Caller::shell(),"auth.challenge.v2.get",json!({"challengeId":challenge,"targetServerId":workspace}))?;
+                    if resolved["workspaceId"]!=workspace || resolved["operationId"]!=operation {return Err(err("HOST_CHALLENGE_MISMATCH","认证操作与当前工作区不一致"));}
+                    resolved["server"].clone()
+                }else{server};
+                let event = json!({"type":"auth.required","payload":{"server":auth_server,"workspaceId":workspace,"error":error,"operationId":operation,"commandId":command,"viewId":params["viewId"],"args":params["args"]}});
                 if let Some(w) = self.app.get_webview_window(window) {
                     let _ = w.eval(&format!("window.__sodeckNotify?.({event});"));
                 }
@@ -1015,14 +1098,16 @@ impl State {
             .filter(|v| ids.contains(&v.workspace_id))
             .cloned()
             .collect::<Vec<_>>();
-        if self.loaded().is_ok() {
+        {
             for v in &views {
+                if self.loaded_for(&v.plugin_id).is_err(){continue;}
                 let prepare=self.worker("lifecycle.prepareClose",json!({"viewId":v.view_id,"workspaceId":v.workspace_id,"pluginData":v.runtime_data}))?;
                 if prepare["allow"] != true {
                     return Err(err("CANCELED", "关闭已取消"));
                 }
             }
         }
+        {let w=self.workbench.lock().unwrap();for id in ids{if let Some(ws)=w.workspaces.get(id){self.core.revoke_workspace(id,&ws.generation);}}}
         let mut results = vec![];
         for v in &views {
             let result = self.close_reserved_view(&v.view_id);
@@ -1040,7 +1125,7 @@ impl State {
             }
         }
         self.reap_empty_windows();
-        Ok(self.save_committed(json!({"results":results}), "关闭已执行，但布局未保存"))
+        Ok(self.commit_runtime(json!({"results":results})))
     }
     pub(super) fn reap_empty_windows(&self) {
         let empty = {

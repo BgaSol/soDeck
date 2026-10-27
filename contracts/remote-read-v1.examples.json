@@ -1,0 +1,9 @@
+[
+  {"name":"byte path stat","kind":"x-methods","method":"files.stat","valid":true,"value":{"scope":{"workspaceId":"w","workspaceGeneration":"g"},"leaseId":"lease","connectionGeneration":1,"operationId":"op","path":{"bytesBase64":"L2JhY2tcc2xhc2g="}}},
+  {"name":"missing generation","kind":"x-methods","method":"files.stat","valid":false,"value":{"scope":{"workspaceId":"w"},"leaseId":"lease","connectionGeneration":1,"operationId":"op","path":{"bytesBase64":"Lw=="}}},
+  {"name":"numeric file size loses precision","kind":"x-results","method":"files.stat","valid":false,"value":{"type":"file","size":1024,"mtime":null,"atime":null,"permissions":null,"uid":null,"gid":null}},
+  {"name":"large exact file size","kind":"x-results","method":"files.stat","valid":true,"value":{"type":"file","size":"9007199254740993","mtime":null,"atime":null,"permissions":null,"uid":null,"gid":null}},
+  {"name":"close ownership required","kind":"x-methods","method":"files.closeDirectory","valid":false,"value":{"scope":{"workspaceId":"w","workspaceGeneration":"g"},"directoryId":"d"}},
+  {"name":"oversize chunk rejected","kind":"x-methods","method":"files.read","valid":false,"value":{"scope":{"workspaceId":"w","workspaceGeneration":"g"},"leaseId":"lease","connectionGeneration":1,"operationId":"read","fileId":"f","offset":"0","maxBytes":65537}},
+  {"name":"unknown result field rejected","kind":"x-results","method":"files.openRead","valid":false,"value":{"fileId":"f","privateConnection":"secret"}}
+]

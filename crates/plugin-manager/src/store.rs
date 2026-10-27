@@ -97,13 +97,27 @@ impl PluginManager {
     }
 
     pub fn prepare_package(&mut self, archive: impl AsRef<Path>) -> Result<Manifest> {
+        self.prepare(archive.as_ref(),false,None)
+    }
+
+    /// Bundled packages seed an installation; they never replace a pending
+    /// independent update or downgrade an already installed plugin on restart.
+    pub fn prepare_bundled(&mut self, archive: impl AsRef<Path>) -> Result<Manifest> {
+        self.prepare(archive.as_ref(),true,None)
+    }
+
+    pub fn prepare_bundled_for(&mut self,archive:impl AsRef<Path>,expected_id:Option<&str>)->Result<Manifest>{self.prepare(archive.as_ref(),true,expected_id)}
+
+    fn prepare(&mut self, archive: &Path, only_missing: bool, expected_id:Option<&str>) -> Result<Manifest> {
         let staging = self
             .root
             .join("staging")
             .join(uuid::Uuid::new_v4().to_string());
         let result = (|| {
-            package::extract(archive.as_ref(), &staging)?;
+            package::extract(archive, &staging)?;
             let manifest = package::verify(&staging, &self.keys)?;
+            if expected_id.is_some_and(|id|id!=manifest.plugin_id){return Err(invalid("随附插件身份与资源索引不符"));}
+            if only_missing && (self.state.active.contains_key(&manifest.plugin_id)||self.state.pending.contains_key(&manifest.plugin_id)) {return Ok(manifest);}
             let destination = self.package_path(&manifest.plugin_id, &manifest.version);
             if destination.exists() {
                 let existing = package::verify(&destination, &self.keys)?;
@@ -249,6 +263,19 @@ impl PluginManager {
 
     fn package_path(&self, id: &str, version: &str) -> PathBuf {
         self.root.join("packages").join(id).join(version)
+    }
+    /// Names are taken only from verified immutable packages; pending metadata
+    /// cannot replace the active package's identity in the running workbench.
+    pub fn metadata(&self) -> Vec<serde_json::Value> {
+        self.status().into_iter().map(|status| {
+            let name = |version: Option<&str>| version.and_then(|v| package::verify(&self.package_path(&status.plugin_id, v), &self.keys).ok()).map(|m| m.display_name());
+            serde_json::json!({
+                "displayName": name(status.active_version.as_deref()).unwrap_or_else(|| status.plugin_id.clone()),
+                "pendingDisplayName": name(status.pending_version.as_deref()),
+                "pluginId": status.plugin_id, "activeVersion": status.active_version,
+                "pendingVersion": status.pending_version, "error": status.error
+            })
+        }).collect()
     }
     fn persist(&mut self, next: State) -> Result<()> {
         atomic_json(&self.root.join("activation.json"), &next)?;

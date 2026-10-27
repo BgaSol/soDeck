@@ -1,0 +1,19 @@
+{
+  "name": "@sodeck/network-proxy",
+  "version": "0.2.2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run src"
+  },
+  "dependencies": {
+    "@noble/hashes": "2.0.1",
+    "@sodeck/sdk": "^4.8.0",
+    "@sodeck/ui": "1.4.0",
+    "lucide-react": "0.468.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  }
+}

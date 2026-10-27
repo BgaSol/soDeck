@@ -1,9 +1,10 @@
 [workspace]
-members = ["crates/core", "crates/plugin-manager", "crates/plugin-host", "apps/desktop/src-tauri"]
+members = ["crates/communication", "crates/core", "crates/plugin-manager", "crates/plugin-host", "apps/desktop/src-tauri"]
 resolver = "2"
 
 [patch.crates-io]
 tauri-runtime-wry = { path = "third-party/tauri-runtime-wry" }
+ssh2 = { path = "third-party/ssh2" }
 
 [workspace.package]
 edition = "2021"

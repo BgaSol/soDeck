@@ -14,7 +14,7 @@ test.beforeEach(async ({ page }) => {
     const viewResult = (v: any) => ({pluginId:'sodeck.terminal',actions:[],revision:1,stateVersion:1,...v,status:v.status==='active'?'running':v.status});
     const snapshot = () => {
       const {sessionsSide: _side,sessionsVisible: _visible,...state}=layout;
-      return JSON.parse(JSON.stringify({...state,schemaVersion:3,views:views.map(viewResult),pendingOpens:layout.pendingOpens.map(v=>({commandId:'terminal.new',cancelling:false,...v}))}));
+      return JSON.parse(JSON.stringify({...state,schemaVersion:4,views:views.map(viewResult),pendingOpens:layout.pendingOpens.map(v=>({commandId:'terminal.new',cancelling:false,...v}))}));
     };
     const changed = () => (window as any).__sodeckNotify({type:'workbench.changed',payload:{revision:++layout.revision,windowIds:['main'],workspaceIds:layout.workspaceIds,viewIds:views.map(v=>v.viewId),changeKind:'snapshot'}});
     (window as any).__UI_TEST__ = { calls, views, layout, servers, changed };
@@ -22,11 +22,16 @@ test.beforeEach(async ({ page }) => {
       calls.push(request);
       const presentation=(window as any).__PRESENTATION__.handle(request);if(presentation)return presentation;let result: any = null;
       let params = request.params; if(request.method === "commands.retry") {params = (window as any).__UI_TEST__.retry[params.operationId]; request.method = "commands.execute";} if(request.method === "commands.execute") {params = {...params,serverId:params.workspaceId}; ((window as any).__UI_TEST__.retry ??= {})[params.operationId]=params;}
-      if (request.method === "servers.list") result = { servers: [...servers] };
+      if (request.method === "servers.list") {
+        if((window as any).__UI_TEST__.holdList)await new Promise<void>(r=>(window as any).__UI_TEST__.releaseList=r);
+        if((window as any).__UI_TEST__.listError)return {requestId:request.requestId,error:{code:"STORAGE_ERROR",message:"档案读取失败"}};
+        result = { servers: [...servers] };
+      }
       if (request.method === "servers.create") { result = { ...params, id: `server-${servers.length + 1}`, revision: 1, hasSecret: false }; servers.push(result); }
       if (request.method === "servers.update") { const server=servers.find(s=>s.id===params.serverId);result={...server,...params,revision:server.revision+1};Object.assign(server,result); }
       if (request.method === "workbench.snapshot") result = snapshot();
-      if (request.method === "workspaces.open") { layout.activeWorkspaceId = params.serverId; if(!layout.workspaceIds.includes(params.serverId)){layout.workspaceIds.push(params.serverId);layout.workspaces.push({workspaceId:params.serverId,serverId:params.serverId,ownerWindowId:"main"});} }
+      if(request.method==='workbench.contributions')result={commands:layout.commands.map(c=>({...c,pluginId:'sodeck.terminal'})),views:[]};
+      if (request.method === "workspaces.open") { layout.activeWorkspaceId = params.serverId; if(!layout.workspaceIds.includes(params.serverId)){layout.workspaceIds.push(params.serverId);layout.workspaces.push({workspaceId:params.serverId,serverId:params.serverId,generation:"test",initializers:[],initializationError:null,ownerWindowId:"main"});} }
       if (request.method === "workbench.configure") Object.assign(layout, params);
       if (request.method === "views.activate") {
         const selected = views.find(view => view.viewId === params.viewId);
@@ -38,7 +43,7 @@ test.beforeEach(async ({ page }) => {
           (window as any).__UI_TEST__.changed();
           return new Promise(resolve => waiting.set(params.operationId, error => resolve({ requestId: request.requestId, error })));
         }
-        if (!trusted) { const error={ code: "HOST_KEY_REQUIRED", message: "核对主机身份", details: { fingerprint: "SHA256:isolated-test-fixture", algorithm: "ssh-ed25519" } }; queueMicrotask(()=>(window as any).__sodeckNotify({type:"auth.required",payload:{...params,server:servers[0],error}})); return {requestId:request.requestId,error}; }
+        if (!trusted) { const error=(window as any).__UI_TEST__.hostFault??{ code: "HOST_KEY_REQUIRED", message: "核对主机身份", details: { fingerprint: "SHA256:isolated-test-fixture", algorithm: "ssh-ed25519" } }; queueMicrotask(()=>(window as any).__sodeckNotify({type:"auth.required",payload:{...params,server:servers[0],error}})); return {requestId:request.requestId,error}; }
         if (!authenticated) { const error={ code: "AUTH_REQUIRED", message: "请输入凭据" };queueMicrotask(()=>(window as any).__sodeckNotify({type:"auth.required",payload:{...params,server:servers[0],error}}));return {requestId:request.requestId,error}; }
         const terminals = views.filter(view => view.viewType === "terminal.session").length;
         result = { viewId: `view-${terminals + 1}`, viewType: "terminal.session", workspaceId: params.serverId, serverId: params.serverId, title: `终端 ${terminals + 1}`, placement: "center", group: 0, mountGeneration: 1, status: "active" }; views.push(result);
@@ -52,7 +57,8 @@ test.beforeEach(async ({ page }) => {
         (window as any).__UI_TEST__.changed();
         result = { canceled: true };
       }
-      if (request.method === "hosts.trust") trusted = true;
+      if (request.method === "hosts.trust") {if((window as any).__UI_TEST__.trustError)return {requestId:request.requestId,error:{code:'IO_ERROR',message:'测试：信任记录写入失败'}};trusted = true;}
+      if (request.method === 'clipboard.writeText') {if((window as any).__UI_TEST__.clipboardError)return {requestId:request.requestId,error:{code:'IO_ERROR',message:'测试：剪贴板暂不可用'}};(window as any).__UI_TEST__.clipboard=params.text;result={written:true};}
       if (request.method === "auth.set") {
         if((window as any).__UI_TEST__.credentialFault)return {requestId:request.requestId,error:{code:'SECRET_STORE_ERROR',message:'测试凭据存储不可用'}};
         if((window as any).__UI_TEST__.holdCredential)await new Promise<void>(resolve=>(window as any).__UI_TEST__.releaseCredential=resolve);
@@ -60,6 +66,7 @@ test.beforeEach(async ({ page }) => {
       }
       if (request.method === "views.move") { const view = views.find(v => v.viewId === params.viewId); if (view) { Object.assign(view, { placement: params.placement, group: params.group ?? 0 }); if (view.group === 1) layout.split = "horizontal"; } }
       if (request.method === "views.close") { const index = views.findIndex(v => v.viewId === params.viewId); if (index >= 0) views.splice(index, 1); }
+      if (request.method === "capabilities.list") result = {capabilities:[]};
       if (request.method === "plugins.list") result = [{ pluginId: "sodeck.terminal", activeVersion: "0.1.0" }];
       if (request.method === "resources.list") result = { connections: [], ptys: [], leases: [] };
       if (request.method === "calls.list") result = { calls: [] };
@@ -72,21 +79,22 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-async function addServer(page: import("@playwright/test").Page) {
+async function addServer(page: import("@playwright/test").Page,options?:{fault?:any;theme?:string}) {
   await page.goto("/");
+  if(options)await page.evaluate(options=>{(window as any).__UI_TEST__.hostFault=options.fault;if(options.theme)(window as any).__PRESENTATION__.change(options.theme);},options);
   await page.getByRole("button", { name: "打开服务器", exact: true }).first().click();
-  await page.getByRole("button", { name: "添加服务器", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "添加服务器", exact: true }).click();
   await page.getByLabel("显示名称").fill("隔离测试服务器");
   await page.getByLabel("主机地址").fill("127.0.0.1");
   await page.getByLabel("用户名").fill("test-user");
-  await page.getByRole("button", { name: "保存服务器" }).click();
+  await page.getByRole("button", { name: "保存并打开" }).click();
   await expect(page.getByRole("tab", { name: /隔离测试服务器/ })).toBeVisible();
 }
 
 async function newServerDraft(page: import("@playwright/test").Page) {
   await page.goto('/');
   await page.getByRole('button',{name:'打开服务器',exact:true}).first().click();
-  await page.getByRole('button',{name:'添加服务器',exact:true}).click();
+  await page.getByRole('dialog').getByRole('button',{name:'添加服务器',exact:true}).click();
   await page.getByLabel('显示名称').fill('预设密码测试');
   await page.getByLabel('主机地址').fill('127.0.0.1');
   await page.getByLabel('用户名').fill('isolated-user');
@@ -101,7 +109,7 @@ test('preset password defaults to remembered, saves once and still requires host
   await page.getByRole('button',{name:'隐藏密码',exact:true}).click();await expect(password).toHaveAttribute('type','password');
   await page.screenshot({path:'.qa/t007/server-editor.png'});
   await page.evaluate(()=>(window as any).__UI_TEST__.holdCredential=true);
-  await page.getByRole('button',{name:'保存服务器'}).click();
+  await page.getByRole('button',{name:'保存并打开'}).click();
   await expect(page.getByRole('button',{name:'正在保存',exact:true})).toBeDisabled();
   await page.keyboard.press('Escape');await page.getByRole('button',{name:'关闭对话框'}).click();await page.keyboard.press('Enter');
   await expect(page.getByRole('dialog')).toHaveCount(1);
@@ -112,7 +120,7 @@ test('preset password defaults to remembered, saves once and still requires host
   expect(calls.find((c:any)=>c.method==='servers.create').params).not.toHaveProperty('password');
   expect(calls.filter((c:any)=>c.method==='auth.set')).toHaveLength(1);
   expect(calls.find((c:any)=>c.method==='auth.set').params).toMatchObject({serverId:'server-1',password:'isolated-browser-password',remember:true});
-  expect(calls.some((c:any)=>['commands.execute','connections.acquire','pty.open'].includes(c.method))).toBe(false);
+  expect(calls.filter((c:any)=>c.method==='workspaces.open')).toHaveLength(1); // Backend initialization is covered by the real native harness.
   await page.getByRole('button',{name:'新建终端',exact:true}).first().click();
   await expect(page.getByRole('heading',{name:'确认服务器身份'})).toBeVisible();
   await page.getByRole('button',{name:'信任并连接',exact:true}).click();
@@ -123,10 +131,10 @@ test('preset password defaults to remembered, saves once and still requires host
 test('credential failure retains draft and retries the same saved server, with blank edits preserving credentials',async({page})=>{
   await newServerDraft(page);await page.evaluate(()=>(window as any).__UI_TEST__.credentialFault=true);
   const password=page.getByLabel(/^登录密码/);await password.fill('retry-only-fixture');
-  await page.getByRole('button',{name:'保存服务器'}).click();
+  await page.getByRole('button',{name:'保存并打开'}).click();
   await expect(page.getByRole('alert')).toContainText('服务器已保存，密码未保存');await expect(password).toHaveValue('retry-only-fixture');
   await page.getByLabel('显示名称').fill('重试后的服务器');await page.evaluate(()=>(window as any).__UI_TEST__.credentialFault=false);
-  await page.getByRole('button',{name:'保存服务器'}).click();await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByRole('button',{name:'保存并打开'}).click();await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('button',{name:'打开服务器',exact:true}).first().click();await page.getByRole('button',{name:'编辑 重试后的服务器',exact:true}).click();
   await expect(page.getByLabel(/^登录密码/)).toHaveValue('');await expect(page.getByLabel(/^登录密码/)).toHaveAttribute('placeholder','已保存密码，留空保持');
   await page.getByLabel('显示名称').fill('保留密码');await page.getByRole('button',{name:'保存服务器'}).click();
@@ -139,9 +147,9 @@ test('credential failure retains draft and retries the same saved server, with b
 test('preset password can be transient and switching authentication discards the password draft',async({page})=>{
   await newServerDraft(page);await page.getByLabel(/^登录密码/).fill('transient-fixture');
   await page.getByLabel('在此设备上记住密码').uncheck();
-  await page.getByRole('button',{name:'保存服务器'}).click();await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByRole('button',{name:'保存并打开'}).click();await expect(page.getByRole('dialog')).toHaveCount(0);
   expect(await page.evaluate(()=>(window as any).__UI_TEST__.calls.find((c:any)=>c.method==='auth.set').params.remember)).toBe(false);
-  await page.getByRole('button',{name:'打开服务器',exact:true}).first().click();await page.getByRole('button',{name:'添加服务器',exact:true}).click();
+  await page.getByRole('button',{name:'打开服务器',exact:true}).first().click();await page.getByRole('dialog').getByRole('button',{name:'添加服务器',exact:true}).click();
   await expect(page.getByLabel(/^登录密码/)).toHaveValue('');await page.getByLabel(/^登录密码/).fill('discard-fixture');
   await page.getByLabel('认证方式').selectOption('key');await expect(page.getByLabel(/^登录密码/)).toHaveCount(0);
   await page.getByLabel('认证方式').selectOption('password');await expect(page.getByLabel(/^登录密码/)).toHaveValue('');
@@ -149,16 +157,16 @@ test('preset password can be transient and switching authentication discards the
 
 test("shows honest empty state and validates server before submitting", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "打开服务器，开始工作。" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "添加第一台服务器" })).toBeVisible();
   await page.screenshot({ path: ".qa/ui/welcome.png" });
   await page.getByRole("button", { name: "打开服务器", exact: true }).first().click();
-  await page.getByRole("button", { name: "添加服务器", exact: true }).click();
-  await expect(page.getByRole("button", { name: "保存服务器" })).toBeDisabled();
+  await page.getByRole("dialog").getByRole("button", { name: "添加服务器", exact: true }).click();
+  await expect(page.getByRole("button", { name: "保存并打开" })).toBeDisabled();
   await page.getByLabel("显示名称").fill("名称"); await page.getByLabel("主机地址").fill("127.0.0.1"); await page.getByLabel("用户名").fill("user");
   await page.getByLabel("端口").fill("65536");
-  await expect(page.getByRole("button", { name: "保存服务器" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "保存并打开" })).toBeDisabled();
   await page.getByLabel("端口").fill("22");
-  await expect(page.getByRole("button", { name: "保存服务器" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "保存并打开" })).toBeEnabled();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
@@ -331,4 +339,83 @@ test("a missing-plugin placeholder does not claim a live connection and keeps th
   await expect.poll(() => page.evaluate(() => (window as any).__UI_TEST__.calls.filter((call: any) => call.method === "workbench.surface").length)).toBeGreaterThan(before);
   await expect(placeholder).toContainText("PLUGIN_UNAVAILABLE：终端插件包不可用，请检查安装状态");
   await expect(placeholder.getByRole("button", { name: "重新加载视图" })).toBeEnabled();
+});
+
+
+test('clean startup loading and read failures do not masquerade as an empty profile list',async({page})=>{
+  await page.addInitScript(()=>{(window as any).__UI_TEST__.holdList=true;});
+  await page.goto('/');await expect(page.getByRole('heading',{name:'正在准备工作区…'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'添加服务器',exact:true})).toHaveCount(0);
+  await page.evaluate(()=>{const t=(window as any).__UI_TEST__;t.holdList=false;t.listError=true;t.releaseList();});
+  await expect(page.getByRole('heading',{name:'工作区暂时无法读取'})).toBeVisible();
+  await page.evaluate(()=>(window as any).__UI_TEST__.listError=false);
+  await page.getByRole('button',{name:'重试读取',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'添加第一台服务器'})).toBeVisible();
+  await page.getByRole('main').getByRole('button',{name:'添加服务器',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'添加服务器',exact:true})).toBeVisible();await page.keyboard.press('Escape');
+  expect(await page.evaluate(()=>(window as any).__UI_TEST__.calls.filter((c:any)=>['workspaces.open','commands.execute'].includes(c.method)))).toHaveLength(0);
+});
+
+test('editing a saved but unopened server only saves and does not open a workspace',async({page})=>{
+ await page.goto('/');await page.evaluate(()=>{const t=(window as any).__UI_TEST__;t.servers.push({id:'saved',name:'已保存',host:'127.0.0.1',port:22,username:'user',authType:'password',revision:1,hasSecret:true});t.changed();});
+ await page.getByRole('button',{name:'打开服务器',exact:true}).first().click();await page.getByRole('button',{name:'编辑 已保存',exact:true}).click();
+ await page.getByLabel('显示名称').fill('修改名称');await page.getByRole('button',{name:'保存服务器',exact:true}).click();
+ await expect(page.getByRole('dialog')).toHaveCount(0);const calls=await page.evaluate(()=>(window as any).__UI_TEST__.calls);
+ expect(calls.filter((c:any)=>c.method==='servers.update')).toHaveLength(1);expect(calls.filter((c:any)=>['workspaces.open','commands.execute'].includes(c.method))).toHaveLength(0);
+});
+
+
+test('authentication arriving for a background workspace does not interrupt the foreground workspace',async({page})=>{
+ await addServer(page);
+ await page.evaluate(()=>{const t=(window as any).__UI_TEST__;t.servers.push({id:'background',name:'后台服务器',host:'127.0.0.1',port:22,username:'user',authType:'password',revision:1,hasSecret:false});(window as any).__sodeckNotify({type:'auth.required',payload:{server:t.servers[1],operationId:'background-auth',commandId:'terminal.new',error:{code:'AUTH_REQUIRED',message:'需要认证'}}});});
+ await expect(page.getByRole('tab',{name:/隔离测试服务器/})).toHaveAttribute('aria-selected','true');
+ await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+
+test('clean-start primary action stays reachable at the minimum viewport and 200 percent zoom',async({page})=>{
+ await page.setViewportSize({width:760,height:480});await page.emulateMedia({reducedMotion:'reduce',forcedColors:'active'});await page.goto('/');
+ await page.evaluate(()=>document.documentElement.style.zoom='2');
+ const button=page.getByRole('main').getByRole('button',{name:'添加服务器',exact:true});await expect(button).toBeVisible();
+ await button.scrollIntoViewIfNeeded();const rect=await button.boundingBox();expect(rect!.y).toBeGreaterThanOrEqual(0);expect(rect!.y+rect!.height).toBeLessThanOrEqual(480);expect(rect!.x+rect!.width).toBeLessThanOrEqual(760);
+ await button.focus();await page.keyboard.press('Enter');await expect(page.getByRole('dialog')).toBeVisible();await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+for(const theme of ['dopamine','light','dark'])test(`identity redesign: compact direct connection and exact copy in ${theme}`,async({page})=>{
+  const fingerprint='SHA256:+j8hDdfV6uF7dNXaX9dG1vC41DdXxxvMoH8sVfQkS00';
+  await addServer(page,{theme,fault:{code:'HOST_KEY_REQUIRED',message:'核对主机身份',details:{challengeId:'identity-test',fingerprint,algorithm:'ssh-ed25519',hopIndex:0,hopCount:1,route:{nodes:[{serverId:'server-1',name:'隔离测试服务器',host:'127.0.0.1',port:22,username:'test-user',role:'target'}]}}}});
+  await page.getByRole('button',{name:'新建终端',exact:true}).first().click();
+  const dialog=page.getByRole('dialog',{name:'确认服务器身份'});await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('查看完整路径',{exact:true})).toHaveCount(0);await expect(dialog.locator('.sd-code-value code')).toHaveText(fingerprint);
+  const geometry=await dialog.boundingBox();expect(geometry!.height).toBeLessThan(420);
+  await page.getByRole('button',{name:'复制当前指纹'}).click();await expect.poll(()=>page.evaluate(()=>(window as any).__UI_TEST__.clipboard)).toBe(fingerprint);
+  expect(await page.evaluate(()=>(window as any).__UI_TEST__.calls.some((r:any)=>r.method==='hosts.trust'))).toBe(false);
+  await page.screenshot({path:`.local/test-results/t017/identity-${theme}.png`});
+  await page.getByRole('button',{name:'信任并连接',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>(window as any).__UI_TEST__.calls.find((r:any)=>r.method==='hosts.trust')?.params)).toMatchObject({challengeId:'identity-test',fingerprint,algorithm:'ssh-ed25519'});
+});
+test('changed identity keeps both fingerprints, failures and reachable actions with enlarged text',async({page})=>{
+  await page.setViewportSize({width:760,height:480});
+  const old='SHA256:old-identity-'.repeat(5),current='SHA256:new-identity-'.repeat(5);
+  await addServer(page,{theme:'dopamine',fault:{code:'HOST_KEY_CHANGED',message:'身份变化',details:{challengeId:'changed-test',fingerprint:current,previousFingerprint:old,algorithm:'ecdsa-sha2-nistp256',role:'jump',hopIndex:1,hopCount:3,route:{nodes:[0,1,2].map(i=>({serverId:String(i),name:`节点${i}`,host:`node-${i}.internal`,port:22,username:'tester',role:i===2?'target':'jump'}))}}}});
+  await page.getByRole('button',{name:'新建终端',exact:true}).first().click();
+  await page.evaluate(()=>{document.documentElement.style.fontSize='26px';(window as any).__UI_TEST__.clipboardError=true;(window as any).__UI_TEST__.trustError=true;});
+  const dialog=page.getByRole('dialog',{name:'服务器身份发生变化'});await expect(dialog.getByText(/密钥与上次连接不同/)).toBeVisible();
+  await expect(dialog.locator('code').first()).toHaveText(old);await expect(dialog.locator('code').last()).toHaveText(current);
+  await dialog.getByRole('button',{name:'复制当前指纹'}).click();await expect(dialog.getByRole('alert')).toContainText('剪贴板');
+  await dialog.getByText('查看完整路径',{exact:true}).click();await expect(dialog.getByText('节点2',{exact:true})).toBeVisible();
+  const accept=dialog.getByRole('button',{name:'更新信任并连接'}),box=await accept.boundingBox();expect(box!.y+box!.height).toBeLessThan(480);
+  expect(await dialog.evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
+  await accept.click();await expect(dialog.getByText('测试：信任记录写入失败',{exact:true})).toBeVisible();
+  await page.screenshot({path:'.local/test-results/t017/identity-changed-zoom.png'});
+  await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);
+});
+
+for(const mode of ['dopamine','light','dark'])test(`dock borders face the editor on both sides: ${mode}`,async({page})=>{
+  await addServer(page,{theme:mode});
+  await page.evaluate(()=>{const f=(window as any).__UI_TEST__,workspaceId=f.layout.activeWorkspaceId;for(const edge of ['left','right']){f.views.push({viewId:`dock-${edge}`,viewType:`test.${edge}`,workspaceId,serverId:workspaceId,title:edge==='left'?'文件':'网络隧道',placement:edge,active:true,group:0,mountGeneration:1,status:'running'});f.layout.dockSlots.push({viewId:`dock-${edge}`,edge,visible:true});}f.changed();});
+  await expect(page.locator('.sessions-panel')).toHaveCount(2);
+  const read=async(edge:string)=>page.locator(`.sessions-panel[data-edge=${edge}]`).evaluate(e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect(),content=e.querySelector('.native-surface')!.getBoundingClientRect();return {left:s.borderLeftWidth,right:s.borderRightWidth,color:s.borderLeftWidth==='1px'?s.borderLeftColor:s.borderRightColor,insetLeft:content.left-r.left,insetRight:r.right-content.right};});
+  const left=await read('left'),right=await read('right');expect(left.left).toBe('0px');expect(left.right).toBe('1px');expect(right.left).toBe('1px');expect(right.right).toBe('0px');expect(right.color).toBe(left.color);expect(right.insetLeft).toBe(1);expect(left.insetRight).toBe(1);
+  await page.screenshot({path:`.local/test-results/t017-r2/dock-borders-${mode}.png`});
 });

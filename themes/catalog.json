@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "defaultThemeId": "dopamine",
+  "themes": [
+    {
+      "id": "dopamine",
+      "label": "多巴胺",
+      "mode": "light",
+      "profile": "dopamine",
+      "file": "dopamine.json"
+    },
+    {
+      "id": "soft-light",
+      "label": "浅色",
+      "mode": "light",
+      "profile": "soft",
+      "file": "soft-light.json"
+    },
+    {
+      "id": "soft-dark",
+      "label": "深色",
+      "mode": "dark",
+      "profile": "soft",
+      "file": "soft-dark.json"
+    }
+  ]
+}

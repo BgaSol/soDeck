@@ -1,0 +1,26 @@
+@layer composition {
+/* Files only own virtual geometry, column constraints and content arrangement. */
+:root{background:var(--surface)}
+.density-probe{position:absolute;visibility:hidden;pointer-events:none;width:1px;height:var(--sd-tree-row-height)}
+.files-view{position:relative;display:flex;flex-direction:column;height:100%;min-width:0}
+.path-bar{display:flex;gap:var(--sd-space-2);padding:var(--sd-space-2)}
+.path-bar input{flex:1}
+.files-toolbar{justify-content:space-between;padding-block:0}
+.files-toolbar>div{display:flex;align-items:center;gap:var(--sd-space-1)}
+.files-toolbar>div>span{width:60px;text-align:right}
+.follow-status{display:flex;flex-direction:column;gap:2px;padding:var(--sd-space-2);overflow-wrap:anywhere;flex-shrink:0}
+.file-tree{flex:1;min-height:84px;overflow:auto}
+.file-tree:focus-visible{outline-offset:-2px}
+.tree-spacer{position:relative;min-width:100%}
+.tree-rows{position:absolute;left:0;min-width:100%;width:max-content}
+.file-row{width:100%;min-width:0;flex-direction:column;align-items:stretch;gap:0}
+.file-row-main{display:flex;align-items:center;gap:var(--sd-space-1);min-width:0;flex-shrink:0}
+.mount-capacity{display:flex;align-items:center;justify-content:flex-end;gap:var(--sd-space-1);white-space:nowrap;flex-shrink:0}
+.filename{width:0;min-width:32px;flex:1;overflow:hidden;text-overflow:clip}
+.expander{width:16px;min-width:16px;min-height:24px;height:24px;padding:0;flex-shrink:0}
+.file-size{min-width:64px;text-align:right;flex-shrink:0}
+.action-row .filename{white-space:normal;line-height:1.2}
+.action-row .file-size{display:none}
+.connect-state{padding:var(--sd-space-3);text-align:center}
+.connect-state p{margin:0 0 var(--sd-space-2)}
+}

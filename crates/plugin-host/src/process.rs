@@ -14,6 +14,12 @@ use std::{
 };
 
 pub type CoreCallback = Arc<dyn Fn(&str, Value) -> Result<Value, RpcError> + Send + Sync>;
+pub type BinarySink = dyn FnMut(sodeck_communication::binary::Frame) -> bool;
+#[derive(Clone)]
+pub struct BinaryCallbacks {
+    pub receive: Arc<dyn Fn(sodeck_communication::binary::Frame) -> Result<(), RpcError> + Send + Sync>,
+    pub produce: Arc<dyn Fn(&mut BinarySink) + Send + Sync>,
+}
 type Reply = mpsc::SyncSender<Result<Value, RpcError>>;
 const QUEUE_BYTES: usize = 4 * 1024 * 1024;
 
@@ -35,28 +41,41 @@ struct WriteJob {
 
 #[derive(Clone)]
 struct Writer {
+    wake: Arc<Mutex<Option<std::thread::Thread>>>,
+    binary: Arc<Mutex<sodeck_communication::binary::Queue>>,
     send: mpsc::SyncSender<WriteJob>,
+    control: mpsc::SyncSender<WriteJob>,
     total: Arc<AtomicUsize>,
+    control_bytes: Arc<AtomicUsize>,
 }
 impl Writer {
+    fn wake(&self) { if let Some(thread)=self.wake.lock().unwrap().as_ref(){thread.unpark();} }
+    fn binary(&self, frame:sodeck_communication::binary::Frame)->bool {
+        let accepted=self.binary.lock().unwrap().push(frame).unwrap_or(false);
+        if accepted {self.wake();} accepted
+    }
     fn enqueue(&self, frame: &Value) -> Result<Arc<AtomicU8>, RpcError> {
+        self.enqueue_lane(frame, false)
+    }
+    fn enqueue_lane(&self, frame: &Value, control: bool) -> Result<Arc<AtomicU8>, RpcError> {
         let bytes = serde_json::to_vec(frame)
             .map_err(|_| RpcError::new("PROTOCOL", "Frame encoding failed"))?;
         if bytes.is_empty() || bytes.len() > transport::MAX_FRAME {
             return Err(not_sent("CAPACITY", "Plugin frame exceeds 1 MiB"));
         }
-        self.total
+        let total = if control {&self.control_bytes} else {&self.total};
+        total
             .try_update(Ordering::SeqCst, Ordering::SeqCst, |used| {
                 used.checked_add(bytes.len())
-                    .filter(|next| *next <= QUEUE_BYTES)
+                    .filter(|next| *next <= if control {32 * 1024} else {QUEUE_BYTES - 32 * 1024})
             })
             .map_err(|_| not_sent("CAPACITY", "Plugin write queue exceeds 4 MiB"))?;
         let state = Arc::new(AtomicU8::new(0));
         let permit = QueuePermit {
             bytes: bytes.len(),
-            total: self.total.clone(),
+            total: total.clone(),
         };
-        self.send
+        (if control {&self.control} else {&self.send})
             .try_send(WriteJob {
                 bytes,
                 state: state.clone(),
@@ -68,6 +87,7 @@ impl Writer {
                     not_sent("PLUGIN_CRASHED", "Plugin writer stopped")
                 }
             })?;
+        self.wake();
         Ok(state)
     }
 }
@@ -79,6 +99,8 @@ pub struct PluginProcess {
     sequence: AtomicU64,
     alive: Arc<AtomicBool>,
     code: String,
+    binary_enabled: bool,
+    binary_ready: Arc<AtomicBool>,
 }
 
 impl PluginProcess {
@@ -86,6 +108,12 @@ impl PluginProcess {
         executable: impl AsRef<Path>,
         worker_path: impl AsRef<Path>,
         callback: CoreCallback,
+    ) -> Result<Self, RpcError> {
+        Self::spawn_with_binary(executable,worker_path,callback,None)
+    }
+    pub fn spawn_with_binary(
+        executable: impl AsRef<Path>, worker_path: impl AsRef<Path>,
+        callback: CoreCallback, binary: Option<BinaryCallbacks>,
     ) -> Result<Self, RpcError> {
         if fs::metadata(worker_path.as_ref()).map_err(io_error)?.len() > 768 * 1024 {
             return Err(not_sent("CAPACITY", "Worker exceeds startup frame budget"));
@@ -115,15 +143,42 @@ impl PluginProcess {
         let pending: Arc<Mutex<HashMap<String, Reply>>> = Arc::new(Mutex::new(HashMap::new()));
         let alive = Arc::new(AtomicBool::new(true));
         let (send, receive) = mpsc::sync_channel::<WriteJob>(32);
+        let (control, control_receive) = mpsc::sync_channel::<WriteJob>(32);
         let writer = Writer {
+            wake: Arc::new(Mutex::new(None)),
+            binary: Arc::new(Mutex::new(sodeck_communication::binary::Queue::default())),
             send,
+            control,
             total: Arc::new(AtomicUsize::new(0)),
+            control_bytes: Arc::new(AtomicUsize::new(0)),
         };
         let write_alive = alive.clone();
         let write_pending = pending.clone();
         let write_child = child.clone();
+        let write_binary = writer.binary.clone();
+        let write_wake = writer.wake.clone();
         std::thread::spawn(move || {
-            while let Ok(job) = receive.recv() {
+            *write_wake.lock().unwrap()=Some(std::thread::current());
+            let mut control_batch=0;
+            loop {
+                let priority=if control_batch<8 {control_receive.try_recv().ok()} else {None};
+                let job=if let Some(job)=priority {control_batch+=1;job} else {
+                    control_batch=0;
+                    match receive.try_recv() {
+                        Ok(job)=>job,
+                        Err(mpsc::TryRecvError::Empty)=>{
+                            if !write_alive.load(Ordering::SeqCst){break;}
+                            let frame=write_binary.lock().unwrap().pop();
+                            if let Some(frame)=frame {
+                                if transport::write_binary(&mut input,&frame).is_err(){
+                                    fail_process(&write_alive,&write_pending,&write_child,RpcError::new("PLUGIN_IO","Binary pipe write failed"));break;
+                                }
+                            } else {std::thread::park_timeout(Duration::from_millis(5));}
+                            continue;
+                        },
+                        Err(mpsc::TryRecvError::Disconnected)=>break,
+                    }
+                };
                 if !write_alive.load(Ordering::SeqCst) {
                     break;
                 }
@@ -158,8 +213,38 @@ impl PluginProcess {
         let reader_alive = alive.clone();
         let reader_child = child.clone();
         let active_calls = Arc::new(AtomicUsize::new(0));
+        let binary_ready=Arc::new(AtomicBool::new(false));
+        let binary_enabled=binary.is_some();
+        let pump_wake=Arc::new(Mutex::new(None::<std::thread::Thread>));
+        if let Some(callbacks)=binary.clone() {
+            let ready=binary_ready.clone();let active=alive.clone();let binary_writer=writer.clone();
+            let wake=pump_wake.clone();
+            std::thread::Builder::new().name("plugin-binary-pump".into()).spawn(move||{
+                *wake.lock().unwrap()=Some(std::thread::current());
+                while active.load(Ordering::SeqCst) {
+                    if ready.load(Ordering::SeqCst) {
+                        let writer=binary_writer.clone();
+                        (callbacks.produce)(&mut move |frame|writer.binary(frame));
+                    }
+                    std::thread::park_timeout(Duration::from_millis(1));
+                }
+            }).map_err(io_error)?;
+        }
+        let read_binary_ready=binary_ready.clone();
         std::thread::spawn(move || {
-            while let Ok(Some(frame)) = transport::read_frame(&mut output) {
+            while let Ok(Some(wire)) = transport::read_wire(&mut output) {
+                let frame=match wire {
+                    transport::Wire::Json(value)=>value,
+                    transport::Wire::Binary(frame)=>{
+                        let Some(callback)=&binary else {break};
+                        if !read_binary_ready.load(Ordering::SeqCst){break;}
+                        if let Err(error)=(callback.receive)(frame) {
+                            if !matches!(error.code.as_str(),"STALE_HANDLE"|"PROTOCOL_ERROR"){break;}
+                        }
+                        if let Some(thread)=pump_wake.lock().unwrap().as_ref(){thread.unpark();}
+                        continue;
+                    }
+                };
                 match frame["kind"].as_str() {
                     Some("result") => {
                         let Some(id) = frame["id"]
@@ -210,10 +295,12 @@ impl PluginProcess {
                         let callback_alive = reader_alive.clone();
                         let callback_pending = replies.clone();
                         let callback_child = reader_child.clone();
-                        std::thread::spawn(move || {
+                        let dispatch_method=method.clone();
+                        let rejected_id=id.clone();
+                        let job=Box::new(move || {
                             let result =
                                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                    callback(&method, params)
+                                    if callback_alive.load(Ordering::SeqCst) {callback(&method, params)} else {Err(RpcError::new("PLUGIN_STOPPING","Plugin instance ended before execution"))}
                                 }))
                                 .unwrap_or_else(|_| {
                                     Err(RpcError::new("INTERNAL", "Core callback failed"))
@@ -223,7 +310,8 @@ impl PluginProcess {
                                 Err(error) => json!({"kind":"result","id":id,"error":error}),
                             };
                             if callback_alive.load(Ordering::SeqCst) {
-                                if writer.enqueue(&response).is_err() {
+                                let control=matches!(method.as_str(),"state.ack"|"state.close"|"directories.unregister"|"pty.observe.close"|"net.groups.close"|"net.streams.close"|"net.operations.cancel"|"net.operations.get");
+                                if writer.enqueue_lane(&response,control).is_err() {
                                     // A completed core call may not fit on the wire. Tell the
                                     // worker its result is unknown rather than dropping it.
                                     let mut unavailable = RpcError::new("RESULT_UNKNOWN", "Core response cannot be delivered within plugin wire limits");
@@ -246,6 +334,12 @@ impl PluginProcess {
                             }
                             calls.fetch_sub(1, Ordering::SeqCst);
                         });
+                        if crate::dispatcher::short(&dispatch_method) {
+                            if !crate::dispatcher::submit(&dispatch_method,job) {
+                                active_calls.fetch_sub(1,Ordering::SeqCst);
+                                if reader_writer.enqueue_lane(&json!({"kind":"result","id":rejected_id,"error":RpcError::new("CAPACITY","Short core call queue is full")}),true).is_err(){break;}
+                            }
+                        } else {std::thread::spawn(job);}
                     }
                     _ => break,
                 }
@@ -267,14 +361,21 @@ impl PluginProcess {
             sequence: AtomicU64::new(0),
             alive,
             code,
+            binary_enabled,
+            binary_ready,
         })
     }
 
     pub fn initialize(&self, context: Value) -> Result<Value, RpcError> {
-        self.request(
-            json!({"kind":"initialize", "code":self.code, "context":context}),
+        let result=self.request(
+            json!({"kind":"initialize", "code":self.code, "context":context,"binaryVersion":if self.binary_enabled {1}else{0}}),
             Duration::from_secs(15),
-        )
+        )?;
+        if self.binary_enabled {
+            if result["binaryVersion"]!=1 {self.terminate();return Err(RpcError::new("PROTOCOL_ERROR","Binary worker version mismatch"));}
+            self.binary_ready.store(true,Ordering::SeqCst);
+        }
+        Ok(result)
     }
     pub fn invoke(&self, command: &str, params: Value) -> Result<Value, RpcError> {
         self.invoke_with_timeout(command, params, Duration::from_secs(180))
@@ -292,6 +393,11 @@ impl PluginProcess {
     }
     pub fn is_alive(&self) -> bool {
         self.alive.load(Ordering::SeqCst)
+    }
+    pub fn notify(&self, event: &str, payload: Value) -> Result<(), RpcError> {
+        if !self.is_alive(){return Err(RpcError::new("PLUGIN_CRASHED","Plugin process is unavailable"));}
+        self.writer.enqueue_lane(&json!({"kind":"notification","type":event,"payload":payload}),
+            matches!(event,"state.closed"|"state.resyncRequired"|"workspace.closed")).map(|_|())
     }
     pub fn process_id(&self) -> u32 {
         self.child.lock().unwrap().id()

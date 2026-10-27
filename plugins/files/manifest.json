@@ -1,0 +1,90 @@
+{
+  "pluginId": "sodeck.files",
+  "version": "0.6.0",
+  "requires": {
+    "core": ">=2.0.0, <3.0.0",
+    "pluginApi": "^4.8.0",
+    "platforms": [
+      "windows"
+    ],
+    "capabilities": [
+      "servers.v1",
+      "connections.v1",
+      "resources.v1",
+      "storage.v1",
+      "workspace.v4",
+      "clipboard.v1",
+      "ui.presentation.v1",
+      "remote.files.read.v1",
+      "remote.exec.v1",
+      "connections.observe.v1",
+      "workspace.multiplugin.v1",
+      "workspace.presentation.v1",
+      "core.state.v1",
+      "workspace.directory.v1",
+      "ui.theme.live.v1",
+      "ui.theme.catalog.v1",
+      "ui.theme.dopamine.v1",
+      "workspace.contributions.v2",
+      "plugins.metadata.v1"
+    ]
+  },
+  "entry": {
+    "ui": "ui/index.html",
+    "worker": "worker/main.js"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "files.connect",
+        "title": "连接并读取文件",
+        "scope": "server",
+        "primary": false
+      }
+    ],
+    "views": [
+      {
+        "id": "files.explorer",
+        "title": "文件",
+        "scope": "server",
+        "supportedHosts": [
+          "dock"
+        ],
+        "dockEdges": [
+          "left",
+          "right"
+        ],
+        "defaultLocation": {
+          "host": "dock",
+          "edge": "left"
+        },
+        "multiple": false,
+        "stateVersion": 2,
+        "minWidth": 260,
+        "minHeight": 240
+      }
+    ],
+    "workspaceEntries": [
+      {
+        "viewType": "files.explorer",
+        "openByDefault": true
+      }
+    ],
+    "workspaceInitializers": [],
+    "presentation": {
+      "tools": [
+        {
+          "viewType": "files.explorer",
+          "commandId": "files.connect",
+          "edge": "left",
+          "icon": "folder",
+          "defaultWidth": 320
+        }
+      ],
+      "tabCreate": [],
+      "dialogs": []
+    }
+  },
+  "dataSchemaVersion": 1,
+  "displayName": "文件"
+}

@@ -4,7 +4,7 @@ mod store;
 
 pub use package::{
     CommandDeclaration, Contributions, Entry, Location, Manifest, Requirements, Signature,
-    ViewDeclaration, WorkspaceEntry,
+    ViewDeclaration, WorkspaceEntry, Presentation, ToolContribution, TabCreateContribution, DialogDeclaration,
 };
 pub use store::{InstalledPlugin, PluginManager, PluginStatus};
 
@@ -27,17 +27,6 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub const CORE_VERSION: &str = "2.0.0";
-pub const API_VERSION: &str = "3.0.0";
-pub const CAPABILITIES: &[&str] = &[
-    "servers.v1",
-    "credentials.v1",
-    "connections.v1",
-    "remote.pty.v1",
-    "resources.v1",
-    "storage.v1",
-    "workspace.v3",
-    "ui.presentation.v1",
-    "diagnostics.v1",
-    "clipboard.v1",
-    "plugin.invoke.v1",
-];
+#[path="../../../contracts/capabilities.rs"]
+mod capabilities;
+pub use capabilities::{API_VERSION, CAPABILITIES};

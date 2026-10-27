@@ -1,0 +1,10 @@
+{
+  "navigation": "$surface",
+  "tool": "$surface",
+  "successSurface": "$surface",
+  "errorSurface": "$surface",
+  "focusGap": "$canvas",
+  "capacityNormal": "#D5EBDC",
+  "capacityWarning": "#F4E5B8",
+  "capacityCritical": "#F5D7DA"
+}

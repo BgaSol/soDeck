@@ -1,7 +1,24 @@
 mod model;
+mod route;
+mod route_store;
+mod route_services;
+mod route_v2;
 mod secrets;
 mod ssh;
 mod store;
+mod server_catalog;
+mod server_catalog_store;
+pub mod store_bootstrap;
+mod remote_read;
+mod pty_observe;
+mod pty_start;
+mod network;
+pub mod contract;
+#[path="workbench_ui_contract.generated.rs"]
+pub mod workbench_ui_contract;
+#[path="../../../contracts/capabilities.rs"]
+pub mod capabilities;
+pub use remote_read::WorkspaceScope;
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use model::{field, id, number};
@@ -47,29 +64,50 @@ struct Operation {
     active: usize,
     touched: Instant,
 }
+struct ConnectionAdmission { registry:Arc<Mutex<Registry>>, id:String }
+impl Drop for ConnectionAdmission {
+    fn drop(&mut self){self.registry.lock().unwrap().pending_connections.remove(&self.id);}
+}
 
 pub struct Core {
+    shared: Arc<CoreState>,
+    owns_lifetime: bool,
+}
+#[doc(hidden)]
+pub struct CoreState {
+    configuration: Mutex<()>,
+    route_attempts: Mutex<HashMap<String, route_services::Attempt>>,
     store: Store,
     secrets: Secrets,
-    registry: Mutex<Registry>,
+    registry: Arc<Mutex<Registry>>,
     next_generation: AtomicU64,
-    connect_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    connect_locks: Mutex<HashMap<String, std::sync::Weak<Mutex<()>>>>,
     credential_revisions: Mutex<HashMap<String, u64>>,
     host_challenges: Mutex<HashMap<String, Value>>,
     log_faults: Mutex<VecDeque<Value>>,
     log_dropped: AtomicU64,
     call_count: AtomicU64,
     operations: Mutex<HashMap<(String, String), Operation>>,
+    pty_starts: Arc<Mutex<HashMap<(String,String),pty_start::Receipt>>>,
+    remote: Arc<Mutex<remote_read::RemoteRegistry>>,
+    remote_admission: Mutex<()>,
+    remote_budget: Arc<Mutex<ssh::remote::IoBudget>>,
+    transport_budget: Arc<Mutex<ssh::TransportBudget>>,
+    network: Mutex<network::Registry>,
+    network_jobs: Mutex<Option<std::sync::mpsc::SyncSender<network::Job>>>,
+    network_stopped: AtomicBool,
 }
 impl Core {
     pub fn open(data_dir: impl AsRef<Path>) -> Result<Self> {
         std::fs::create_dir_all(data_dir.as_ref())?;
         let store = Store::open(data_dir.as_ref())?;
         store.maintain()?;
-        Ok(Self {
+        let core = Self { shared: Arc::new(CoreState {
+            configuration: Mutex::new(()),
+            route_attempts: Mutex::new(HashMap::new()),
             store,
             secrets: Secrets::open(data_dir.as_ref())?,
-            registry: Mutex::new(Registry::default()),
+            registry: Arc::new(Mutex::new(Registry::default())),
             next_generation: AtomicU64::new(model::now_ms()),
             connect_locks: Mutex::new(HashMap::new()),
             credential_revisions: Mutex::new(HashMap::new()),
@@ -78,7 +116,18 @@ impl Core {
             log_dropped: AtomicU64::new(0),
             call_count: AtomicU64::new(0),
             operations: Mutex::new(HashMap::new()),
-        })
+            pty_starts: Arc::new(Mutex::new(HashMap::new())),
+            remote: Arc::new(Mutex::new(remote_read::RemoteRegistry::default())),
+            remote_admission: Mutex::new(()),
+            remote_budget: Arc::new(Mutex::new(ssh::remote::IoBudget::default())),
+            transport_budget: Arc::new(Mutex::new(ssh::TransportBudget::default())),
+            network: Mutex::new(network::Registry::default()),
+            network_jobs: Mutex::new(None),
+            network_stopped: AtomicBool::new(false),
+        }), owns_lifetime: true };
+        core.start_remote_maintenance();
+        core.start_network();
+        Ok(core)
     }
     /// Native hosts bind caller identity before entering this boundary. Params never
     /// override source attribution. Run network methods on a background executor.
@@ -115,6 +164,9 @@ impl Core {
                 | "diagnostics.get"
                 | "operations.cancel"
                 | "workbench.cancelOpen"
+                | "state.close" | "pty.observe.close" | "directories.unregister" | "files.close" | "files.closeDirectory" | "exec.cancel" | "exec.close" | "remote.operations.get" | "remote.operations.forget"
+                | "net.groups.close" | "net.routes.release" | "net.listeners.close" | "net.streams.close"
+                | "net.operations.get" | "net.operations.cancel" | "net.resources.list" | "net.resources.stop"
         );
         let record = self.store.call_start(caller, method, params);
         if record.is_err() {
@@ -126,7 +178,8 @@ impl Core {
                 ));
             }
         }
-        let result = operation();
+        let expired = self.registry.lock().unwrap().revoked.contains(&caller.instance_id);
+        let result = if expired {Err(CoreError::new("INSTANCE_EXPIRED", "插件实例已经结束"))} else {operation()};
         if let Ok(record) = record {
             if self.store.call_finish(&record, &result).is_err() {
                 self.fault(method, "result-not-persisted");
@@ -158,9 +211,14 @@ impl Core {
         json!({"logFaults":*self.log_faults.lock().unwrap(),"droppedLogFaults":self.log_dropped.load(Ordering::Relaxed)})
     }
     fn dispatch(&self, caller: &Caller, method: &str, p: &Value) -> Result<Value> {
+        if method.starts_with("servers.catalog.") || method.starts_with("serverGroups.") {return self.catalog_dispatch(caller,method,p);}
+        if method.starts_with("net.") { return self.network_dispatch(caller, method, p); }
+        if method.starts_with("servers.routes.v2.") || method.starts_with("connections.route.v2.") || method == "auth.challenge.v2.get" { return self.route_v2_dispatch(caller,method,p); }
+        if method.starts_with("servers.routes.") || matches!(method,"connections.route.get"|"connections.routes.list"|"auth.challenge.get") { return self.route_dispatch(caller,method,p); }
+        if method.starts_with("files.") || method.starts_with("exec.") || method.starts_with("remote.operations.") || matches!(method,"connections.observe"|"connections.acquireExisting") {return self.remote_dispatch(caller,method,p);}
         match method {
             "capabilities.list" => Ok(
-                json!({"apiVersion":1,"capabilities":["servers.v1","connections.v1","pty.v1","resources.v1","settings.v1","calls.v1"]}),
+                json!({"apiVersion":1,"capabilities":capabilities::CAPABILITIES}),
             ),
             "servers.list" => {
                 let mut servers = self.store.servers()?;
@@ -174,55 +232,20 @@ impl Core {
                 server.has_secret = self.secrets.remembered(&server.id);
                 Ok(serde_json::to_value(server)?)
             }
-            "servers.create" | "servers.update" => {
-                let old = if method == "servers.update" {
-                    Some(self.store.server(field(p, "serverId")?)?)
-                } else {
-                    None
-                };
-                let expected = if old.is_some() {
-                    Some(number(p, "expectedRevision")?)
-                } else {
-                    None
-                };
-                let mut server = Server {
-                    id: old.as_ref().map_or_else(id, |s| s.id.clone()),
-                    name: field(p, "name")?.trim().into(),
-                    host: field(p, "host")?.trim().into(),
-                    port: u16::try_from(p.get("port").and_then(Value::as_u64).unwrap_or(22))
-                        .map_err(|_| CoreError::new("INVALID_PARAMS", "端口范围为 1–65535"))?,
-                    username: field(p, "username")?.trim().into(),
-                    auth_type: p
-                        .get("authType")
-                        .and_then(Value::as_str)
-                        .unwrap_or("password")
-                        .into(),
-                    revision: old.as_ref().map_or(1, |s| s.revision + 1),
-                    has_secret: old.as_ref().is_some_and(|s| self.secrets.remembered(&s.id)),
-                };
-                self.store.save_server(&server, expected)?;
-                // Changed authentication must not silently reuse an old secret.
-                if old.as_ref().is_some_and(|s| {
-                    s.auth_type != server.auth_type
-                        || s.username != server.username
-                        || s.host != server.host
-                        || s.port != server.port
-                }) {
-                    self.secrets.remove(&server.id)?;
-                    server.has_secret = false;
-                }
-                Ok(serde_json::to_value(server)?)
-            }
+            "servers.create" | "servers.update" => self.save_server_configuration(p, method == "servers.update", p.get("connectionRoute").is_none()),
             "servers.delete" => {
+                let _config_guard=self.configuration.lock().unwrap();
                 let server_id = field(p, "serverId")?;
                 self.store.server(server_id)?;
+                let dependents=self.store.dependents(server_id)?;
+                if !dependents.is_empty(){return Err(CoreError::new("SERVER_DEPENDENTS","此服务器被用作跳板，请先修改依赖服务器的连接方式").details(json!({"servers":dependents})));}
                 let active: Vec<String> = self
                     .registry
                     .lock()
                     .unwrap()
                     .connections
                     .values()
-                    .filter(|c| c.server.id == server_id)
+                    .filter(|c| c.route.contains(server_id))
                     .map(|c| c.id.clone())
                     .collect();
                 if !active.is_empty()
@@ -245,8 +268,11 @@ impl Core {
                 Ok(json!({"deleted":true}))
             }
             "auth.set" => {
+                let _config_guard=self.configuration.lock().unwrap();
                 let server_id = field(p, "serverId")?;
                 let server = self.store.server(server_id)?;
+                if let Some(id)=p["challengeId"].as_str(){let challenge=self.checked_challenge(id)?;if challenge["serverId"]!=server_id {return Err(CoreError::new("HOST_CHALLENGE_MISMATCH","认证对象不匹配"));}}
+                let plan=self.route_plan(server_id)?;
                 let key = if server.auth_type == "key" {
                     let path = field(p, "privateKeyPath")?;
                     let metadata = std::fs::metadata(path)?;
@@ -258,6 +284,7 @@ impl Core {
                     String::new()
                 };
                 let credential = Credential {
+                    context: Some(plan.credential_context(plan.nodes.len()-1)),
                     password: p
                         .get("password")
                         .and_then(Value::as_str)
@@ -284,31 +311,26 @@ impl Core {
                 Ok(json!({"stored":true,"remembered":self.secrets.remembered(server_id)}))
             }
             "hosts.trust" => {
-                let server_id = field(p, "serverId")?;
-                let server = self.store.server(server_id)?;
-                let challenge = self
-                    .host_challenges
-                    .lock()
-                    .unwrap()
-                    .remove(server_id)
-                    .ok_or_else(|| {
-                        CoreError::new("HOST_CHALLENGE_EXPIRED", "请重新连接以获取当前主机身份")
-                    })?;
-                let fingerprint = field(p, "fingerprint")?;
-                if challenge["fingerprint"].as_str() != Some(fingerprint)
-                    || challenge["host"].as_str() != Some(server.host.as_str())
-                    || challenge["port"].as_u64() != Some(server.port as u64)
-                {
-                    return Err(CoreError::new(
-                        "HOST_CHALLENGE_MISMATCH",
-                        "确认的主机指纹与当前握手不一致",
-                    ));
+                let _guard=self.configuration.lock().unwrap();
+                let server_id=field(p,"serverId")?;let fingerprint=field(p,"fingerprint")?;
+                let challenge_id=if let Some(id)=p["challengeId"].as_str(){id.to_string()}else{
+                    self.host_challenges.lock().unwrap().iter().find(|(_,v)|v["serverId"]==server_id&&v["fingerprint"]==fingerprint).map(|(id,_)|id.clone()).ok_or_else(||CoreError::new("HOST_CHALLENGE_EXPIRED","请重新连接以获取当前主机身份"))?
+                };
+                let challenge=self.checked_challenge(&challenge_id)?;
+                if challenge["serverId"]!=server_id||challenge["fingerprint"]!=fingerprint {
+                    return Err(CoreError::new("HOST_CHALLENGE_MISMATCH","确认的主机身份与当前握手不一致"));
                 }
-                self.store.trust(
-                    &format!("{}:{}", server.host, server.port),
-                    fingerprint,
-                    challenge["algorithm"].as_str().unwrap_or("unknown"),
-                )?;
+                if challenge["previousFingerprint"].is_string() {
+                    *self.credential_revisions.lock().unwrap().entry(server_id.into()).or_default() += 1;
+                    // A replaced gateway can expose another private network.
+                    // Reconfirm downstream credentials before using the new path.
+                    for dependent in self.store.dependents(server_id)? {
+                        self.secrets.remove(&dependent.id)?;
+                        *self.credential_revisions.lock().unwrap().entry(dependent.id).or_default()+=1;
+                    }
+                }
+                self.store.trust(field(&challenge,"trustKey")?,fingerprint,field(&challenge,"algorithm")?)?;
+                self.host_challenges.lock().unwrap().remove(&challenge_id);
                 Ok(json!({"trusted":true}))
             }
             "connections.acquire" => {
@@ -343,9 +365,22 @@ impl Core {
                 }
                 registry.leases.remove(lease_id);
                 Self::reap(&mut registry);
+                drop(registry);
+                self.remote_release(lease_id);
                 Ok(json!({"released":true}))
             }
-            "pty.open" => self.with_operation(caller, p, |token| self.open_pty(caller, p, token)),
+            "pty.open" => {
+                if p.get("command").is_some()||p.get("observe").is_some(){return Err(CoreError::new("INVALID_PARAMS","自定义启动请使用 pty.openCommand"));}
+                self.with_operation(caller, p, |token| self.open_pty(caller, p, token))
+            }
+            "pty.openCommand" => {
+                pty_observe::validate("pty.openCommand","x-methods",p)?;
+                let command=field(p,"command")?;
+                if command.len()>32768||command.contains('\0'){return Err(CoreError::new("INVALID_PARAMS","PTY 启动命令无效或超长"));}
+                self.start_pty(caller,p)
+            }
+            "pty.start.get"=>self.pty_start_result(caller,p),
+            "pty.observe.open"|"pty.observe.read"|"pty.observe.close"=>self.observe_pty(caller,method,p).and_then(|result|{pty_observe::validate(method,"x-results",&result)?;Ok(result)}),
             "pty.read" => {
                 let pty = self.pty(p)?;
                 self.check_binding(caller, &pty)?;
@@ -474,8 +509,15 @@ impl Core {
         result
     }
     fn acquire(&self, caller: &Caller, p: &Value, operation: &AtomicBool) -> Result<Value> {
+        self.acquire_for(caller, p, operation, "session", &caller.instance_id)
+    }
+    fn acquire_for(&self, caller: &Caller, p: &Value, operation: &AtomicBool, purpose: &str, lease_owner: &str) -> Result<Value> {
         let initial_epoch = self.registry.lock().unwrap().shutdown_epoch;
-        let server = self.store.server(field(p, "serverId")?)?;
+        let plan={let _guard=self.configuration.lock().unwrap();self.route_plan(field(p,"serverId")?)?};
+        if p.get("expectedRouteRevision").and_then(Value::as_str).is_some_and(|r| r != plan.revision) {
+            return Err(CoreError::new("ROUTE_CHANGED", "连接路径已变化，请应用配置并重新启动"));
+        }
+        let server=plan.target().clone();
         if p.get("configRevision")
             .and_then(Value::as_u64)
             .is_some_and(|revision| revision != server.revision)
@@ -486,14 +528,15 @@ impl Core {
             ));
         }
         let workspace = field(p, "workspaceId")?.to_owned();
-        let key = format!("{}:{}:{}", server.id, server.revision, workspace);
-        let gate = self
-            .connect_locks
-            .lock()
-            .unwrap()
-            .entry(key)
-            .or_insert_with(|| Arc::new(Mutex::new(())))
-            .clone();
+        let state_key = format!("{}:{}:{}", server.id, plan.revision, workspace);
+        let key = format!("{state_key}:{purpose}");
+        let gate = {
+            let mut gates=self.connect_locks.lock().unwrap();
+            gates.retain(|_,gate|gate.strong_count()>0);
+            if gates.len()>=512&&!gates.contains_key(&key){return Err(CoreError::new("LIMIT_EXCEEDED","等待连接过多"));}
+            if let Some(gate)=gates.get(&key).and_then(std::sync::Weak::upgrade){gate}
+            else {let gate=Arc::new(Mutex::new(()));gates.insert(key.clone(),Arc::downgrade(&gate));gate}
+        };
         let _guard = loop {
             if operation.load(Ordering::SeqCst) {
                 return Err(CoreError::new("CANCELED", "连接已取消"));
@@ -519,13 +562,7 @@ impl Core {
         if self.registry.lock().unwrap().shutdown_epoch != initial_epoch {
             return Err(CoreError::new("CANCELED", "应用正在清理连接"));
         }
-        let credential_revision = self
-            .credential_revisions
-            .lock()
-            .unwrap()
-            .get(&server.id)
-            .copied()
-            .unwrap_or(0);
+
         let existing = self
             .registry
             .lock()
@@ -534,19 +571,17 @@ impl Core {
             .values()
             .find(|c| {
                 c.server.id == server.id
+                    && c.purpose == purpose
                     && c.server.revision == server.revision
                     && c.workspace_id == workspace
-                    && c.credential_revision == credential_revision
+                    && c.route.revision == plan.revision
                     && *c.status.lock().unwrap() == "active"
             })
             .cloned();
+        let mut _admission=None;
         let connection = if let Some(connection) = existing {
             connection
         } else {
-            let known = self
-                .store
-                .host_key(&format!("{}:{}", server.host, server.port))?;
-            let credential = self.secrets.get(&server.id)?;
             let pending_id = id();
             let canceled = Arc::new(AtomicBool::new(false));
             {
@@ -556,44 +591,46 @@ impl Core {
                 {
                     return Err(CoreError::new("CANCELED", "连接消费者已经结束"));
                 }
+                if registry.connections.len()+registry.pending_connections.len()>=64 {
+                    return Err(CoreError::new("LIMIT_EXCEEDED","目标连接已达到 64 个上限"));
+                }
                 registry.pending_connections.insert(
                     pending_id.clone(),
                     (caller.instance_id.clone(), canceled.clone()),
                 );
+                _admission=Some(ConnectionAdmission{registry:self.registry.clone(),id:pending_id.clone()});
             }
-            let result = Connection::connect(
-                server.clone(),
-                workspace,
-                self.next_generation.fetch_add(1, Ordering::SeqCst),
-                credential_revision,
-                known,
-                credential,
-                canceled,
-                operation,
+            if purpose == "session" {self.connection_state(&state_key,"connecting");}
+            let result = Connection::connect_for(
+                purpose.to_owned(), plan.clone(), workspace.clone(), self.next_generation.fetch_add(1,Ordering::SeqCst),
+                canceled,operation,self.transport_budget.clone(),
+                |index,fingerprint,algorithm,verified|self.verify_route_node(&plan,index,fingerprint,algorithm,verified),
+                |index,stage|{
+                    self.route_progress(&plan,&workspace,index,stage,None);
+                    if self.store.route_stage(caller,p,&plan,index,stage,None).is_err(){self.fault("connections.route.stage","stage-not-persisted");}
+                },
             );
-            self.registry
-                .lock()
-                .unwrap()
-                .pending_connections
-                .remove(&pending_id);
             match result {
-                Ok(connection) => connection,
-                Err(error) => {
-                    if matches!(
-                        error.code.as_str(),
-                        "HOST_KEY_REQUIRED" | "HOST_KEY_CHANGED"
-                    ) {
-                        if let Some(details) = &error.details {
-                            self.host_challenges
-                                .lock()
-                                .unwrap()
-                                .insert(server.id, details.clone());
-                        }
+                Ok(connection) => {if purpose == "session" {self.connection_state(&state_key,"active");}connection},
+                Err(mut error) => {
+                    let index=error.details.as_ref().and_then(|d|d["hopIndex"].as_u64()).unwrap_or(0) as usize;
+                    if self.store.route_stage(caller,p,&plan,index,"failed",Some(&error)).is_err(){self.fault("connections.route.stage","stage-not-persisted");}
+                    if purpose == "session" {self.connection_state(&state_key,if matches!(error.code.as_str(),"HOST_KEY_REQUIRED"|"HOST_KEY_CHANGED"|"AUTH_REQUIRED"|"AUTH_FAILED"){"authRequired"}else if error.code=="CANCELED"{"idle"}else{"failed"});}
+                    if matches!(error.code.as_str(),"HOST_KEY_REQUIRED"|"HOST_KEY_CHANGED"|"AUTH_REQUIRED"|"AUTH_FAILED") {
+                        self.route_challenge(caller,p,&plan,&mut error)?;
                     }
+                    self.route_progress(&plan,&workspace,error.details.as_ref().and_then(|d|d["hopIndex"].as_u64()).unwrap_or(0) as usize,if error.code=="CANCELED"{"canceled"}else{"failed"},Some(&error));
                     return Err(error);
                 }
             }
         };
+        let _config_guard=self.configuration.lock().unwrap();
+        if self.route_plan(&server.id).map(|p|p.revision).ok().as_deref()!=Some(plan.revision.as_str()) {
+            if !self.registry.lock().unwrap().connections.contains_key(&connection.id){connection.stop();}
+            return Err(CoreError::new("REVISION_CONFLICT","连接路径已变化，请重新连接"));
+        }
+        self.route_progress(&plan,&workspace,plan.nodes.len()-1,"active",None);
+        if self.store.route_stage(caller,p,&plan,plan.nodes.len()-1,"active",None).is_err(){self.fault("connections.route.stage","stage-not-persisted");}
         let mut registry = self.registry.lock().unwrap();
         if operation.load(Ordering::SeqCst) {
             if !registry.connections.contains_key(&connection.id) {
@@ -611,6 +648,10 @@ impl Core {
             connection.stop();
             return Err(CoreError::new("CANCELED", "应用正在清理连接"));
         }
+        if registry.leases.len()>=1024 {
+            if !registry.connections.contains_key(&connection.id){connection.stop();}
+            return Err(CoreError::new("LIMIT_EXCEEDED","连接使用关系已达到上限"));
+        }
         let lease_id = id();
         registry
             .connections
@@ -619,7 +660,7 @@ impl Core {
             lease_id.clone(),
             Lease {
                 connection: connection.clone(),
-                instance_id: caller.instance_id.clone(),
+                instance_id: lease_owner.to_owned(),
             },
         );
         Ok(
@@ -649,7 +690,9 @@ impl Core {
             (connection, registry.shutdown_epoch)
         };
         let pty_id = id();
-        let result = connection.open(&pty_id, cols, rows, operation);
+        let command=p.get("command").and_then(Value::as_str).map(str::to_owned);
+        let observe=p["observe"]==true;
+        let result = connection.open(&pty_id, cols, rows, operation, command, observe);
         let mut registry = self.registry.lock().unwrap();
         registry.pending_ptys -= 1;
         let state = result?;
@@ -675,6 +718,7 @@ impl Core {
             current.mount_generation = caller.mount_generation;
         }
         let generation = self.next_generation.fetch_add(1, Ordering::SeqCst);
+        let observer=state.lock().unwrap().observer.as_ref().map(|o|json!({"observerId":o.id,"cursor":"0"}));
         registry.ptys.insert(
             pty_id.clone(),
             Arc::new(Pty {
@@ -685,9 +729,9 @@ impl Core {
                 state,
             }),
         );
-        Ok(
-            json!({"ptyId":pty_id,"streamId":pty_id,"connectionId":connection.id,"generation":generation}),
-        )
+        let mut result=json!({"ptyId":pty_id,"streamId":pty_id,"connectionId":connection.id,"generation":generation});
+        if let Some(observer)=observer {result["observer"]=observer;}
+        Ok(result)
     }
     fn pty(&self, p: &Value) -> Result<Arc<Pty>> {
         let registry = self.registry.lock().unwrap();
@@ -732,13 +776,18 @@ impl Core {
     /// Validate the entire batch before changing any input binding. Keeping the
     /// registry and all affected PTY locks excludes close and partial commits.
     pub fn bind_view_resources(&self, instance: &str, entries: &[Value]) -> Result<Value> {
+        self.bind_owned_view_resources(&entries.iter().map(|e| (instance.to_owned(), e.clone())).collect::<Vec<_>>())
+    }
+    /// Host-only transaction: each view carries its trusted plugin instance.
+    /// All owners and resources are checked before changing any binding.
+    pub fn bind_owned_view_resources(&self, entries: &[(String, Value)]) -> Result<Value> {
         let registry = self.registry.lock().unwrap();
-        if registry.revoked.contains(instance) {
-            return Err(CoreError::new("INSTANCE_EXPIRED", "插件实例已结束"));
-        }
         let mut pending = Vec::new();
         let mut seen = HashSet::new();
-        for entry in entries {
+        for (instance, entry) in entries {
+            if registry.revoked.contains(instance) {
+                return Err(CoreError::new("INSTANCE_EXPIRED", "插件实例已结束"));
+            }
             let view = field(entry, "viewId")?;
             let workspace = field(entry, "workspaceId")?;
             let mount = number(entry, "mountGeneration")?;
@@ -753,7 +802,7 @@ impl Core {
                             .ptys
                             .get(id)
                             .ok_or_else(|| CoreError::new("STALE_HANDLE", "PTY 已结束"))?;
-                        if pty.instance_id != instance
+                        if &pty.instance_id != instance
                             || pty.connection.workspace_id != workspace
                             || pty.generation != number(reference, "generation")?
                             || !seen.insert(id.to_string())
@@ -770,7 +819,7 @@ impl Core {
                             .leases
                             .get(id)
                             .ok_or_else(|| CoreError::new("STALE_HANDLE", "租约已释放"))?;
-                        if lease.instance_id != instance
+                        if &lease.instance_id != instance
                             || lease.connection.workspace_id != workspace
                         {
                             return Err(CoreError::new("STALE_HANDLE", "租约归属不匹配"));
@@ -839,11 +888,16 @@ impl Core {
             }
         }
         Self::reap(&mut registry);
+        drop(registry);
+        for reference in references {
+            if reference["kind"] == "lease" { self.remote_release(field(reference,"id")?); }
+        }
         Ok(())
     }
     pub fn resources(&self) -> Value {
+        let remote = self.remote_resources();
         let registry = self.registry.lock().unwrap();
-        json!({"connections":registry.connections.values().map(|c|json!({"id":c.id,"serverId":c.server.id,"workspaceId":c.workspace_id,"generation":c.generation,"state":*c.status.lock().unwrap()})).collect::<Vec<_>>(),"ptys":registry.ptys.values().map(|p|{let state=p.state.lock().unwrap();json!({"id":p.id,"serverId":p.connection.server.id,"connectionId":p.connection.id,"generation":p.generation,"instanceId":p.instance_id,"state":state.state,"reason":state.reason,"bufferedBytes":state.buffered,"queuedInputBytes":state.queued_input,"viewId":state.view_id})}).collect::<Vec<_>>(),"leases":registry.leases.iter().map(|(id,l)|json!({"id":id,"connectionId":l.connection.id,"instanceId":l.instance_id})).collect::<Vec<_>>()})
+        json!({"remote":remote,"connections":registry.connections.values().map(|c|json!({"id":c.id,"serverId":c.server.id,"workspaceId":c.workspace_id,"generation":c.generation,"state":*c.status.lock().unwrap()})).collect::<Vec<_>>(),"ptys":registry.ptys.values().map(|p|{let state=p.state.lock().unwrap();json!({"id":p.id,"serverId":p.connection.server.id,"connectionId":p.connection.id,"generation":p.generation,"instanceId":p.instance_id,"state":state.state,"reason":state.reason,"bufferedBytes":state.buffered,"queuedInputBytes":state.queued_input,"viewId":state.view_id})}).collect::<Vec<_>>(),"leases":registry.leases.iter().map(|(id,l)|json!({"id":id,"connectionId":l.connection.id,"instanceId":l.instance_id})).collect::<Vec<_>>()})
     }
     fn stop_resource(&self, resource_id: &str) -> Result<Value> {
         let mut registry = self.registry.lock().unwrap();
@@ -869,6 +923,8 @@ impl Core {
         Ok(json!({"stopped":true,"alreadyClosed":true}))
     }
     pub fn close_instance(&self, instance_id: &str) {
+        self.network_stop_instance(instance_id);
+        self.remote_stop_instance(instance_id);
         for ((instance, _), operation) in self.operations.lock().unwrap().iter() {
             if instance == instance_id {
                 operation.canceled.store(true, Ordering::SeqCst);
@@ -895,6 +951,7 @@ impl Core {
         Self::reap(&mut registry);
     }
     pub fn shutdown(&self) {
+        self.network_stop();
         for operation in self.operations.lock().unwrap().values() {
             operation.canceled.store(true, Ordering::SeqCst);
         }
@@ -913,8 +970,12 @@ impl Core {
 }
 impl Drop for Core {
     fn drop(&mut self) {
-        self.shutdown();
+        if self.owns_lifetime { self.shutdown(); }
     }
+}
+impl std::ops::Deref for Core {
+    type Target = CoreState;
+    fn deref(&self) -> &Self::Target { &self.shared }
 }
 
 #[cfg(test)]

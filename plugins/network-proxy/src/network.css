@@ -1,0 +1,17 @@
+@layer composition {
+/* Only the network list/detail arrangement lives in the plugin. */
+.network-view{height:100%;display:flex;flex-direction:column;min-width:0;min-height:0}
+.network-toolbar{justify-content:space-between}
+.network-list{min-width:0;flex:1;min-height:0}
+.network-empty{flex:1;min-height:0;padding-top:var(--sd-space-3)}
+.network-detail-scroll{min-width:0;flex:1;min-height:0}
+.network-details{padding:var(--sd-space-2);overflow-wrap:anywhere}
+.network-detail-heading{flex-wrap:nowrap}
+.network-detail-actions{justify-content:space-between}
+.network-actions,.network-pagination{justify-content:flex-end;padding-top:var(--sd-space-3);flex-shrink:0}
+.network-editor{display:flex;flex-direction:column;min-height:0;padding:0 var(--sd-space-6) var(--sd-space-6)}
+.network-fields{overflow:auto;min-height:0;padding:var(--sd-space-1)}
+.network-guide{padding-top:var(--sd-space-3)}
+.network-pad{padding:var(--sd-space-6)}
+}
+

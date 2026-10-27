@@ -1,0 +1,71 @@
+{
+  "name": "Pocket Deck",
+  "sources": [
+    "pocket-deck.svg",
+    "pocket-deck-micro.svg",
+    "pocket-deck-monochrome.svg"
+  ],
+  "exports": [
+    {
+      "size": 16,
+      "file": "pocket-deck-16.png",
+      "source": "pocket-deck-micro.svg",
+      "sha256": "e10da0ec084fde654dbd7f64e6071e85a653fd23da0b6d409ab140074a04bfa6"
+    },
+    {
+      "size": 20,
+      "file": "pocket-deck-20.png",
+      "source": "pocket-deck-micro.svg",
+      "sha256": "a7d3238a966640d60a410b01ed8cdc180d7f051ac41424983acb82007d818806"
+    },
+    {
+      "size": 24,
+      "file": "pocket-deck-24.png",
+      "source": "pocket-deck-micro.svg",
+      "sha256": "0175245900325b3d754f25d660d2d2537a1ccd4e6ee4668ab33e97e55ac335db"
+    },
+    {
+      "size": 32,
+      "file": "pocket-deck-32.png",
+      "source": "pocket-deck.svg",
+      "sha256": "b90602b9af9fe74e0ace85fda67faa29b7251a22e53d674e31cbaa84d6a4602e"
+    },
+    {
+      "size": 40,
+      "file": "pocket-deck-40.png",
+      "source": "pocket-deck.svg",
+      "sha256": "ce693022c97be024dde763d8108e0ba6f74709b6cd36f1fecb55df567af7599e"
+    },
+    {
+      "size": 48,
+      "file": "pocket-deck-48.png",
+      "source": "pocket-deck.svg",
+      "sha256": "be1b6661c83e07a326bbcbea21b23a5fb5843ddd361c3c5d621b7d2e1c6416c3"
+    },
+    {
+      "size": 64,
+      "file": "pocket-deck-64.png",
+      "source": "pocket-deck.svg",
+      "sha256": "83d59d41dffd9d8d77f74be5dfafaea1f0caac5e6b51cba28e964942dfbf1ab8"
+    },
+    {
+      "size": 128,
+      "file": "pocket-deck-128.png",
+      "source": "pocket-deck.svg",
+      "sha256": "ffa686ad0b8a0cc43bdb11e93cbf5f9d36a8400ea7c10b30b37f198663a13799"
+    },
+    {
+      "size": 256,
+      "file": "pocket-deck-256.png",
+      "source": "pocket-deck.svg",
+      "sha256": "00648aa5a8fd9dcbb952607fae8655aa763222fd7c5620ec55a3a71defac0806"
+    },
+    {
+      "size": 512,
+      "file": "pocket-deck-512.png",
+      "source": "pocket-deck.svg",
+      "sha256": "9155d7c53511b5371545e24c67e42f3a969d59824f02780b7a374e81ad87cb35"
+    }
+  ],
+  "icoSha256": "1ed01b195e412dbf87f4053d7ee1af20899024cf332b7c7894612c95498e62a5"
+}

@@ -1,0 +1,1051 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Scope": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "workspaceGeneration": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "workspaceId",
+        "workspaceGeneration"
+      ],
+      "additionalProperties": false
+    },
+    "Handle": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "generation"
+      ],
+      "additionalProperties": false
+    },
+    "OperationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "Peer": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        }
+      },
+      "required": [
+        "host",
+        "port"
+      ],
+      "additionalProperties": false
+    },
+    "Cursor": {
+      "type": "object",
+      "properties": {
+        "stream": {
+          "$ref": "#/$defs/Handle"
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "consumed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "written": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "stream",
+        "epoch",
+        "consumed",
+        "written"
+      ],
+      "additionalProperties": false
+    },
+    "Error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "details": {}
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "Attachment": {
+      "type": "object",
+      "properties": {
+        "slot": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "window": {
+          "enum": [
+            65536
+          ]
+        },
+        "readOffset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "writeOffset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "writeCredit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "slot",
+        "epoch",
+        "window",
+        "readOffset",
+        "writeOffset",
+        "writeCredit"
+      ],
+      "additionalProperties": false
+    },
+    "AcceptedStream": {
+      "type": "object",
+      "properties": {
+        "stream": {
+          "$ref": "#/$defs/Handle"
+        },
+        "peer": {
+          "$ref": "#/$defs/Peer"
+        },
+        "probeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "stream",
+        "peer"
+      ],
+      "additionalProperties": false
+    },
+    "GroupSummary": {
+      "type": "object",
+      "properties": {
+        "group": {
+          "$ref": "#/$defs/Handle"
+        },
+        "viewId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "state": {
+          "enum": [
+            "active",
+            "closing",
+            "closed"
+          ]
+        },
+        "listeners": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 128
+        },
+        "routes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 128
+        },
+        "streams": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 128
+        },
+        "pendingAccept": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 128
+        },
+        "pendingOpen": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "bytesRead": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bytesWritten": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "cleanupPending": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 512
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "availableRoutes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 128
+        },
+        "connections": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 128
+        }
+      },
+      "required": [
+        "group",
+        "viewId",
+        "state",
+        "listeners",
+        "routes",
+        "streams",
+        "pendingAccept",
+        "pendingOpen",
+        "bytesRead",
+        "bytesWritten",
+        "cleanupPending",
+        "revision",
+        "availableRoutes",
+        "connections"
+      ],
+      "additionalProperties": false
+    },
+    "GroupCreated": {
+      "type": "object",
+      "properties": {
+        "group": {
+          "$ref": "#/$defs/Handle"
+        }
+      },
+      "required": [
+        "group"
+      ],
+      "additionalProperties": false
+    },
+    "RouteReady": {
+      "type": "object",
+      "properties": {
+        "route": {
+          "$ref": "#/$defs/Handle"
+        },
+        "serverId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "routeRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "state": {
+          "enum": [
+            "ready",
+            "unavailable"
+          ]
+        }
+      },
+      "required": [
+        "route",
+        "serverId",
+        "routeRevision",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "ListenerOpened": {
+      "type": "object",
+      "properties": {
+        "listener": {
+          "$ref": "#/$defs/Handle"
+        },
+        "address": {
+          "$ref": "#/$defs/Peer"
+        },
+        "accepting": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "listener",
+        "address",
+        "accepting"
+      ],
+      "additionalProperties": false
+    },
+    "StreamOpened": {
+      "type": "object",
+      "properties": {
+        "stream": {
+          "$ref": "#/$defs/Handle"
+        },
+        "probeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "stream"
+      ],
+      "additionalProperties": false
+    },
+    "Accepted": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AcceptedStream"
+          },
+          "maxItems": 16
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "additionalProperties": false
+    },
+    "Exchanged": {
+      "type": "object",
+      "properties": {
+        "attachment": {
+          "$ref": "#/$defs/Attachment"
+        }
+      },
+      "required": [
+        "attachment"
+      ],
+      "additionalProperties": false
+    },
+    "Closed": {
+      "type": "object",
+      "properties": {
+        "closed": {
+          "type": "boolean"
+        },
+        "cleanupPending": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 512
+        }
+      },
+      "required": [
+        "closed",
+        "cleanupPending"
+      ],
+      "additionalProperties": false
+    },
+    "Changed": {
+      "type": "object",
+      "properties": {
+        "accepted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "accepted"
+      ],
+      "additionalProperties": false
+    },
+    "Spliced": {
+      "type": "object",
+      "properties": {
+        "splice": {
+          "$ref": "#/$defs/Handle"
+        }
+      },
+      "required": [
+        "splice"
+      ],
+      "additionalProperties": false
+    },
+    "OperationValue": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GroupCreated"
+        },
+        {
+          "$ref": "#/$defs/RouteReady"
+        },
+        {
+          "$ref": "#/$defs/ListenerOpened"
+        },
+        {
+          "$ref": "#/$defs/StreamOpened"
+        },
+        {
+          "$ref": "#/$defs/Accepted"
+        },
+        {
+          "$ref": "#/$defs/Exchanged"
+        },
+        {
+          "$ref": "#/$defs/Closed"
+        },
+        {
+          "$ref": "#/$defs/Changed"
+        },
+        {
+          "$ref": "#/$defs/Spliced"
+        },
+        {
+          "$ref": "#/$defs/Stopped"
+        }
+      ]
+    },
+    "Receipt": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "succeeded",
+            "failed",
+            "canceled"
+          ]
+        },
+        "claimed": {
+          "type": "boolean"
+        },
+        "result": {
+          "$ref": "#/$defs/OperationValue"
+        },
+        "error": {
+          "$ref": "#/$defs/Error"
+        }
+      },
+      "required": [
+        "operationId",
+        "state",
+        "claimed"
+      ],
+      "additionalProperties": false
+    },
+    "CreateGroup": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "viewId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "scope",
+        "viewId",
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "GroupRequest": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "group": {
+          "$ref": "#/$defs/Handle"
+        }
+      },
+      "required": [
+        "scope",
+        "group"
+      ],
+      "additionalProperties": false
+    },
+    "CloseGroup": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "group": {
+          "$ref": "#/$defs/Handle"
+        },
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "scope",
+        "group",
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "AcquireRoute": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "group": {
+          "$ref": "#/$defs/Handle"
+        },
+        "serverId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "expectedRouteRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "scope",
+        "group",
+        "serverId",
+        "expectedRouteRevision",
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "RouteRequest": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "group": {
+          "$ref": "#/$defs/Handle"
+        },
+        "route": {
+          "$ref": "#/$defs/Handle"
+        },
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "scope",
+        "group",
+        "route",
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "OpenListener": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "group": {
+          "$ref": "#/$defs/Handle"
+        },
+        "host": {
+          "enum": [
+            "127.0.0.1"
+          ]
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "scope",
+        "group",
+        "host",
+        "port",
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "ListenerRequest": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "group": {
+          "$ref": "#/$defs/Handle"
+        },
+        "listener": {
+          "$ref": "#/$defs/Handle"
+        },
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "scope",
+        "group",
+        "listener",
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "SetAccepting": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "group": {
+          "$ref": "#/$defs/Handle"
+        },
+        "listener": {
+          "$ref": "#/$defs/Handle"
+        },
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "scope",
+        "group",
+        "listener",
+        "operationId",
+        "enabled"
+      ],
+      "additionalProperties": false
+    },
+    "AcceptRequest": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "group": {
+          "$ref": "#/$defs/Handle"
+        },
+        "listener": {
+          "$ref": "#/$defs/Handle"
+        },
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        },
+        "maxItems": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        }
+      },
+      "required": [
+        "scope",
+        "group",
+        "listener",
+        "operationId",
+        "maxItems"
+      ],
+      "additionalProperties": false
+    },
+    "OpenTcp": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "group": {
+          "$ref": "#/$defs/Handle"
+        },
+        "route": {
+          "$ref": "#/$defs/Handle"
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "scope",
+        "group",
+        "route",
+        "host",
+        "port",
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "StreamRequest": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "group": {
+          "$ref": "#/$defs/Handle"
+        },
+        "stream": {
+          "$ref": "#/$defs/Handle"
+        },
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "scope",
+        "group",
+        "stream",
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "SpliceRequest": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "group": {
+          "$ref": "#/$defs/Handle"
+        },
+        "left": {
+          "$ref": "#/$defs/Cursor"
+        },
+        "right": {
+          "$ref": "#/$defs/Cursor"
+        },
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "scope",
+        "group",
+        "left",
+        "right",
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "OperationRequest": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "group": {
+          "$ref": "#/$defs/Handle"
+        },
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "ListResources": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "group": {
+          "$ref": "#/$defs/Handle"
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "StopResource": {
+      "type": "object",
+      "properties": {
+        "resource": {
+          "$ref": "#/$defs/Handle"
+        },
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "resource",
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "Resource": {
+      "type": "object",
+      "properties": {
+        "handle": {
+          "$ref": "#/$defs/Handle"
+        },
+        "kind": {
+          "enum": [
+            "group",
+            "listener",
+            "route",
+            "transport",
+            "stream",
+            "splice"
+          ]
+        },
+        "state": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "group": {
+          "$ref": "#/$defs/Handle"
+        },
+        "instanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "viewId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "address": {
+          "$ref": "#/$defs/Peer"
+        },
+        "serverId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "routeRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "bytesRead": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bytesWritten": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "cleanupPending": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 512
+        }
+      },
+      "required": [
+        "handle",
+        "kind",
+        "state",
+        "scope",
+        "group",
+        "instanceId",
+        "viewId",
+        "bytesRead",
+        "bytesWritten",
+        "cleanupPending"
+      ],
+      "additionalProperties": false
+    },
+    "ResourcePage": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Resource"
+          },
+          "maxItems": 64
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ],
+      "additionalProperties": false
+    },
+    "Stopped": {
+      "type": "object",
+      "properties": {
+        "closed": {
+          "type": "boolean"
+        },
+        "cleanupPending": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 512
+        },
+        "affectedGroups": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/Handle"
+          }
+        }
+      },
+      "required": [
+        "closed",
+        "cleanupPending",
+        "affectedGroups"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "x-methods": {
+    "net.groups.create": "CreateGroup",
+    "net.groups.get": "GroupRequest",
+    "net.groups.close": "CloseGroup",
+    "net.routes.acquire": "AcquireRoute",
+    "net.routes.refresh": "RouteRequest",
+    "net.routes.release": "RouteRequest",
+    "net.listeners.open": "OpenListener",
+    "net.listeners.setAccepting": "SetAccepting",
+    "net.listeners.accept": "AcceptRequest",
+    "net.listeners.close": "ListenerRequest",
+    "net.listeners.connectSelf": "ListenerRequest",
+    "net.tcp.open": "OpenTcp",
+    "net.streams.exchange": "StreamRequest",
+    "net.streams.halfClose": "StreamRequest",
+    "net.streams.close": "StreamRequest",
+    "net.streams.splice": "SpliceRequest",
+    "net.operations.get": "OperationRequest",
+    "net.operations.claim": "OperationRequest",
+    "net.operations.cancel": "OperationRequest",
+    "net.resources.list": "ListResources",
+    "net.resources.stop": "StopResource"
+  },
+  "x-results": {
+    "net.groups.create": "Receipt",
+    "net.groups.get": "GroupSummary",
+    "net.groups.close": "Receipt",
+    "net.routes.acquire": "Receipt",
+    "net.routes.refresh": "Receipt",
+    "net.routes.release": "Receipt",
+    "net.listeners.open": "Receipt",
+    "net.listeners.setAccepting": "Receipt",
+    "net.listeners.accept": "Receipt",
+    "net.listeners.close": "Receipt",
+    "net.listeners.connectSelf": "Receipt",
+    "net.tcp.open": "Receipt",
+    "net.streams.exchange": "Receipt",
+    "net.streams.halfClose": "Receipt",
+    "net.streams.close": "Receipt",
+    "net.streams.splice": "Receipt",
+    "net.operations.get": "Receipt",
+    "net.operations.claim": "Receipt",
+    "net.operations.cancel": "Receipt",
+    "net.resources.list": "ResourcePage",
+    "net.resources.stop": "Receipt"
+  },
+  "x-events": {
+    "net.group.v1": "GroupSummary"
+  },
+  "x-binary": {
+    "version": 1,
+    "headerBytes": 24,
+    "maxPayloadBytes": 65536,
+    "maxOffset": 9007199254740991
+  }
+}

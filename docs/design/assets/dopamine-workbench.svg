@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1120" viewBox="0 0 1600 1120" role="img"><style>text{font-family:"Segoe UI","Microsoft YaHei",sans-serif;fill:#20211F}.mono{white-space:pre;font-family:"Cascadia Mono",Consolas,monospace}path,line,polyline{stroke-linecap:round;stroke-linejoin:round}</style>
+<rect x="0" y="0" width="1600" height="1120" rx="0" fill="#FBF1E8" stroke="#20211F" stroke-width="0"/>
+<svg x="45" y="34" width="88" height="88" viewBox="0 0 128 128">
+<rect x="49" y="92" width="30" height="23" rx="3" fill="#FFFBE6" stroke="#20211F" stroke-width="4"/>
+<rect x="32" y="114" width="70" height="12" rx="5" fill="#20211F"/>
+<rect x="29" y="111" width="70" height="12" rx="5" fill="#FFB7CF" stroke="#20211F" stroke-width="4"/>
+<rect x="17" y="16" width="100" height="87" rx="17" fill="#20211F"/>
+<rect x="12" y="11" width="100" height="87" rx="17" fill="#FFFBE6" stroke="#20211F" stroke-width="4"/>
+<rect x="24" y="24" width="76" height="55" rx="10" fill="#42C69B" stroke="#20211F" stroke-width="4"/>
+<path d="M 41 39 L 55 51 L 41 63" stroke="#20211F" stroke-width="5" fill="none"/>
+<line x1="65" y1="63" x2="80" y2="63" stroke="#20211F" stroke-width="5"/>
+<line x1="26" y1="87" x2="51" y2="87" stroke="#20211F" stroke-width="4"/>
+<circle cx="92" cy="87" r="4" fill="#FFDE75" stroke="#20211F" stroke-width="2"/>
+</svg>
+<text x="152" y="76" font-size="38" font-weight="800" style="fill:#20211F" class="">SoDeck / 多巴胺</text>
+<text x="155" y="108" font-size="18" font-weight="500" style="fill:#20211F" class="">奶油底 · 糖果色块 · 粗黑轮廓 · 右下硬阴影</text>
+<rect x="1274" y="53" width="264" height="34" rx="8" fill="#20211F"/>
+<rect x="1272" y="51" width="264" height="34" rx="8" fill="#FFFBE6" stroke="#20211F" stroke-width="2"/>
+<text x="1284" y="74" font-size="15" font-weight="600" style="fill:#20211F" class="">T-012 · 静态设计提案 r2</text>
+<rect x="62" y="163" width="1480" height="686" rx="16" fill="#20211F"/>
+<rect x="54" y="155" width="1480" height="686" rx="16" fill="#FFFBE6" stroke="#20211F" stroke-width="4"/>
+<path d="M 70 155 H 1518 Q 1534 155 1534 171 V 218 H 54 V 171 Q 54 155 70 155" stroke="#20211F" stroke-width="0" fill="#FBF1E8"/>
+<line x1="55" y1="218" x2="1533" y2="218" stroke="#20211F" stroke-width="3"/>
+<rect x="74" y="169" width="254" height="48" rx="9" fill="#FFB7CF" stroke="#20211F" stroke-width="3"/>
+<rect x="344" y="172" width="232" height="43" rx="9" fill="#FFFBE6" stroke="#20211F" stroke-width="2"/>
+<rect x="92" y="184" width="20" height="17" rx="3" fill="#FFFBE6" stroke="#20211F" stroke-width="2"/>
+<line x1="98" y1="189" x2="106" y2="189" stroke="#20211F" stroke-width="2"/>
+<text x="125" y="201" font-size="18" font-weight="700" style="fill:#20211F" class="">开发环境</text>
+<text x="297" y="200" font-size="24" font-weight="500" style="fill:#20211F" class="">×</text>
+<text x="365" y="200" font-size="17" font-weight="500" style="fill:#20211F" class="">测试环境</text>
+<text x="548" y="200" font-size="23" font-weight="400" style="fill:#20211F" class="">×</text>
+<text x="600" y="201" font-size="28" font-weight="600" style="fill:#20211F" class="">＋</text>
+<g transform="translate(1235 170) scale(1.2)"><rect x="2" y="2" width="88" height="32" rx="8" fill="#20211F" stroke="none" stroke-width="1" /><rect x="0" y="0" width="88" height="32" rx="8" fill="#FFFBE6" stroke="#20211F" stroke-width="2" /><g transform="translate(10 8) scale(0.6666666666666666)" fill="none" stroke="#20211F" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="7" height="7" rx="1.3"/><rect x="15" y="2" width="7" height="7" rx="1.3"/><rect x="2" y="15" width="7" height="7" rx="1.3"/><rect x="15" y="15" width="7" height="7" rx="1.3"/></g><text x="33" y="21" font-size="13" fill="#20211F" font-weight="600" >应用</text><path d="M69 14l4 4 4 -4" stroke="#20211F" stroke-width="1.7" fill="none"/></g>
+<line x1="1380" y1="191" x2="1395" y2="191" stroke="#20211F" stroke-width="2"/>
+<rect x="1434" y="183" width="14" height="14" rx="1" fill="#FBF1E8" stroke="#20211F" stroke-width="2"/>
+<path d="M 1492 184 L 1505 197 M 1505 184 L 1492 197" stroke="#20211F" stroke-width="2" fill="none"/>
+<rect x="68" y="240" width="42" height="42" rx="9" fill="#20211F"/>
+<rect x="66" y="238" width="42" height="42" rx="9" fill="#FFDE75" stroke="#20211F" stroke-width="2.5"/>
+<g fill="#FFFBE6" stroke="#20211F" stroke-width="2"><rect x="76" y="247" width="22" height="10" rx="2"/><rect x="76" y="262" width="22" height="10" rx="2"/></g><g fill="#20211F"><circle cx="81" cy="252" r="1.5"/><circle cx="81" cy="267" r="1.5"/></g>
+<rect x="68" y="298" width="42" height="42" rx="9" fill="#20211F"/>
+<rect x="66" y="296" width="42" height="42" rx="9" fill="#8DD9E8" stroke="#20211F" stroke-width="2.5"/>
+<text x="77" y="325" font-size="24" font-weight="700" style="fill:#20211F" class="">□</text>
+<rect x="68" y="687" width="42" height="42" rx="9" fill="#20211F"/>
+<rect x="66" y="685" width="42" height="42" rx="9" fill="#FFB7CF" stroke="#20211F" stroke-width="2.5"/>
+<text x="77" y="714" font-size="24" font-weight="700" style="fill:#20211F" class="">◇</text>
+<rect x="68" y="745" width="42" height="42" rx="9" fill="#20211F"/>
+<rect x="66" y="743" width="42" height="42" rx="9" fill="#8DA8FF" stroke="#20211F" stroke-width="2.5"/>
+<text x="77" y="772" font-size="24" font-weight="700" style="fill:#20211F" class="">≡</text>
+<rect x="130" y="238" width="350" height="554" rx="11" fill="#20211F"/>
+<rect x="126" y="234" width="350" height="554" rx="11" fill="#FFFBE6" stroke="#20211F" stroke-width="3"/>
+<path d="M 138 234 H 464 Q 476 234 476 246 V 282 H 126 V 246 Q 126 234 138 234" stroke="#20211F" stroke-width="0" fill="#FFB7CF"/>
+<line x1="128" y1="282" x2="474" y2="282" stroke="#20211F" stroke-width="2"/>
+<path d="M 143 248 L 151 248 L 155 252 L 170 252 L 170 269 L 143 269 Z" stroke="#20211F" stroke-width="2.3" fill="#FFFBE6"/>
+<text x="183" y="266" font-size="19" font-weight="700" style="fill:#20211F" class="">文件</text>
+<text x="431" y="266" font-size="23" font-weight="400" style="fill:#20211F" class="">⇤</text>
+<rect x="141" y="298" width="275" height="40" rx="8" fill="#FFFEF5" stroke="#20211F" stroke-width="2"/>
+<text x="153" y="324" font-size="16" font-weight="400" style="fill:#20211F" class="mono">/srv/sodeck</text>
+<rect x="429" y="300" width="34" height="40" rx="8" fill="#20211F"/>
+<rect x="427" y="298" width="34" height="40" rx="8" fill="#FFDE75" stroke="#20211F" stroke-width="2"/>
+<text x="435" y="325" font-size="22" font-weight="700" style="fill:#20211F" class="">→</text>
+<rect x="143" y="354" width="112" height="34" rx="8" fill="#20211F"/>
+<rect x="141" y="352" width="112" height="34" rx="8" fill="#42C69B" stroke="#20211F" stroke-width="2"/>
+<text x="153" y="375" font-size="15" font-weight="600" style="fill:#20211F" class="">✓ 跟随终端</text>
+<text x="274" y="375" font-size="23" font-weight="600" style="fill:#20211F" class="">◎</text>
+<text x="326" y="375" font-size="22" font-weight="600" style="fill:#20211F" class="">◉</text>
+<text x="378" y="375" font-size="25" font-weight="600" style="fill:#20211F" class="">↻</text>
+<text x="145" y="414" font-size="14" font-weight="600" style="fill:#50534C" class="">名称</text>
+<text x="414" y="414" font-size="14" font-weight="600" style="fill:#50534C" class="">大小</text>
+<line x1="128" y1="426" x2="474" y2="426" stroke="#20211F" stroke-width="1.5"/>
+<path d="M 146 447 l 4 4 l -4 4" stroke="#20211F" stroke-width="2" fill="none"/>
+<path d="M 159 440 L 167 440 L 171 444 L 186 444 L 186 461 L 159 461 Z" stroke="#20211F" stroke-width="2.3" fill="#FFDE75"/>
+<text x="195" y="457" font-size="15" font-weight="400" style="fill:#20211F" class="">srv</text>
+<rect x="137" y="470" width="328" height="32" rx="5" fill="#FFDE75" stroke="#20211F" stroke-width="2"/>
+<path d="M 163 482 l 4 4 l -4 4" stroke="#20211F" stroke-width="2" fill="none"/>
+<path d="M 176 475 L 184 475 L 188 479 L 203 479 L 203 496 L 176 496 Z" stroke="#20211F" stroke-width="2.3" fill="#FFFBE6"/>
+<text x="212" y="492" font-size="15" font-weight="600" style="fill:#20211F" class="">sodeck</text>
+<path d="M 180 517 l 4 4 l -4 4" stroke="#20211F" stroke-width="2" fill="none"/>
+<path d="M 193 510 L 201 510 L 205 514 L 220 514 L 220 531 L 193 531 Z" stroke="#20211F" stroke-width="2.3" fill="#FFDE75"/>
+<text x="229" y="527" font-size="15" font-weight="400" style="fill:#20211F" class="">config</text>
+<path d="M 180 552 l 4 4 l -4 4" stroke="#20211F" stroke-width="2" fill="none"/>
+<path d="M 193 545 L 201 545 L 205 549 L 220 549 L 220 566 L 193 566 Z" stroke="#20211F" stroke-width="2.3" fill="#FFDE75"/>
+<text x="229" y="562" font-size="15" font-weight="400" style="fill:#20211F" class="">logs</text>
+<rect x="195" y="579" width="17" height="22" rx="2" fill="#FFFBE6" stroke="#20211F" stroke-width="1.8"/>
+<text x="223" y="596" font-size="13" font-weight="400" style="fill:#20211F" class="">docker-compose.yml</text>
+<text x="413" y="597" font-size="12" font-weight="400" style="fill:#50534C" class="">2.4 KB</text>
+<rect x="195" y="614" width="17" height="22" rx="2" fill="#FFFBE6" stroke="#20211F" stroke-width="1.8"/>
+<text x="223" y="631" font-size="13" font-weight="400" style="fill:#20211F" class="">.env.example</text>
+<text x="413" y="632" font-size="12" font-weight="400" style="fill:#50534C" class="">526 B</text>
+<line x1="128" y1="660" x2="474" y2="660" stroke="#20211F" stroke-width="2"/>
+<rect x="141" y="675" width="102" height="29" rx="6" fill="#8DD9E8" stroke="#20211F" stroke-width="2"/>
+<text x="153" y="696" font-size="15" font-weight="700" style="fill:#20211F" class="">挂载详情</text>
+<text x="145" y="729" font-size="13" font-weight="400" style="fill:#50534C" class="">位置</text>
+<text x="224" y="729" font-size="14" font-weight="600" style="fill:#20211F" class="">/srv/sodeck</text>
+<text x="145" y="759" font-size="13" font-weight="400" style="fill:#50534C" class="">文件系统</text>
+<text x="224" y="759" font-size="14" font-weight="400" style="fill:#20211F" class="">ext4  ·  可读写</text>
+<rect x="498" y="238" width="1022" height="554" rx="11" fill="#20211F"/>
+<rect x="494" y="234" width="1022" height="554" rx="11" fill="#FFFBE6" stroke="#20211F" stroke-width="3"/>
+<path d="M 506 234 H 1504 Q 1516 234 1516 246 V 283 H 494 V 246 Q 494 234 506 234" stroke="#20211F" stroke-width="0" fill="#42C69B"/>
+<line x1="496" y1="283" x2="1514" y2="283" stroke="#20211F" stroke-width="2"/>
+<rect x="509" y="245" width="169" height="38" rx="8" fill="#FFDE75" stroke="#20211F" stroke-width="2.5"/>
+<text x="525" y="270" font-size="17" font-weight="700" style="fill:#20211F" class="">&gt;_  终端 1</text>
+<text x="651" y="270" font-size="22" font-weight="400" style="fill:#20211F" class="">×</text>
+<text x="699" y="269" font-size="16" font-weight="500" style="fill:#20211F" class="">终端 2</text>
+<text x="779" y="269" font-size="21" font-weight="400" style="fill:#20211F" class="">×</text>
+<rect x="1374" y="244" width="127" height="34" rx="8" fill="#20211F"/>
+<rect x="1372" y="242" width="127" height="34" rx="8" fill="#FFFBE6" stroke="#20211F" stroke-width="2"/>
+<text x="1384" y="265" font-size="15" font-weight="600" style="fill:#20211F" class="">＋ 新建终端</text>
+<text x="518" y="322" font-size="18" font-weight="400" style="fill:#176B4F" class="mono">dev@server:~$ cd /srv/sodeck</text>
+<text x="518" y="354" font-size="18" font-weight="400" style="fill:#20211F" class="mono">dev@server:/srv/sodeck$ ls -la</text>
+<text x="518" y="386" font-size="18" font-weight="400" style="fill:#245B9A" class="mono">config/    logs/    docker-compose.yml</text>
+<text x="518" y="418" font-size="18" font-weight="400" style="fill:#20211F" class="mono"></text>
+<text x="518" y="450" font-size="18" font-weight="400" style="fill:#20211F" class="mono">dev@server:/srv/sodeck$ docker compose ps</text>
+<text x="518" y="482" font-size="18" font-weight="400" style="fill:#50534C" class="mono">NAME          STATUS             PORTS</text>
+<text x="518" y="514" font-size="18" font-weight="400" style="fill:#176B4F" class="mono">web           Up 2 hours         0.0.0.0:8080</text>
+<text x="518" y="546" font-size="18" font-weight="400" style="fill:#176B4F" class="mono">worker        Up 2 hours         —</text>
+<text x="518" y="578" font-size="18" font-weight="400" style="fill:#20211F" class="mono"></text>
+<text x="518" y="610" font-size="18" font-weight="400" style="fill:#20211F" class="mono">dev@server:/srv/sodeck$ </text>
+<rect x="818" y="593" width="11" height="22" rx="0" fill="#5346A6" stroke="#20211F" stroke-width="0"/>
+<line x1="496" y1="750" x2="1514" y2="750" stroke="#20211F" stroke-width="2"/>
+<path d="M 496 751 H 1514 V 775 Q 1514 786 1504 786 H 506 Q 496 786 496 775 Z" stroke="#20211F" stroke-width="0" fill="#D5F1E5"/>
+<circle cx="516" cy="769" r="5" fill="#176B4F" stroke="none" stroke-width="2"/>
+<text x="529" y="775" font-size="14" font-weight="600" style="fill:#20211F" class="">已连接</text>
+<text x="825" y="775" font-size="14" font-weight="400" style="fill:#20211F" class="">✓ Shell 目录集成</text>
+<text x="1415" y="775" font-size="14" font-weight="400" style="fill:#20211F" class="">字号 14</text>
+<line x1="56" y1="803" x2="1532" y2="803" stroke="#20211F" stroke-width="2"/>
+<circle cx="78" cy="824" r="5" fill="#176B4F" stroke="none" stroke-width="2"/>
+<text x="91" y="830" font-size="13" font-weight="500" style="fill:#20211F" class="">dev@server  ·  SSH</text>
+<text x="1457" y="830" font-size="13" font-weight="400" style="fill:#20211F" class="">主窗口</text>
+<rect x="59" y="887" width="475" height="170" rx="13" fill="#20211F"/>
+<rect x="54" y="882" width="475" height="170" rx="13" fill="#FFDE75" stroke="#20211F" stroke-width="3"/>
+<text x="76" y="923" font-size="22" font-weight="750" style="fill:#20211F" class="">01  保留高效工作结构</text>
+<text x="76" y="966" font-size="17" font-weight="400" style="fill:#20211F" class="">两层 Tab、文件侧栏与终端位置保持。</text>
+<text x="76" y="998" font-size="17" font-weight="400" style="fill:#20211F" class="">彩色区块建立层级，内容区保持清楚。</text>
+<rect x="559" y="887" width="475" height="170" rx="13" fill="#20211F"/>
+<rect x="554" y="882" width="475" height="170" rx="13" fill="#FFB7CF" stroke="#20211F" stroke-width="3"/>
+<text x="576" y="923" font-size="22" font-weight="750" style="fill:#20211F" class="">02  完整的第三套风格</text>
+<text x="576" y="966" font-size="17" font-weight="400" style="fill:#20211F" class="">控件粗边 + 零模糊实影 + 强字重。</text>
+<text x="576" y="998" font-size="17" font-weight="400" style="fill:#20211F" class="">按下时视觉层下沉，命中区域不移动。</text>
+<rect x="1059" y="887" width="480" height="170" rx="13" fill="#20211F"/>
+<rect x="1054" y="882" width="480" height="170" rx="13" fill="#8DD9E8" stroke="#20211F" stroke-width="3"/>
+<text x="1076" y="923" font-size="22" font-weight="750" style="fill:#20211F" class="">03  内容始终稳定</text>
+<text x="1076" y="966" font-size="17" font-weight="400" style="fill:#20211F" class="">奶油终端纸面，ANSI 单独校准。</text>
+<text x="1076" y="998" font-size="17" font-weight="400" style="fill:#20211F" class="">换主题保留会话、选区与文件草稿。</text>
+<text x="55" y="1091" font-size="14" font-weight="500" style="fill:#50534C" class="">设计稿 · 示意数据 · 非运行界面     /     正式尺寸与兼容规则见 T-012 r2</text>
+</svg>

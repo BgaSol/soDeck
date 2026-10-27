@@ -212,6 +212,9 @@ impl NativeViews {
     pub fn modal(&self, window: String, open: bool) -> NativeResult<()> {
         self.call(move || platform::modal(&window, open))
     }
+    pub fn backgrounds(&self, ids:Vec<String>,color:(u8,u8,u8,u8)) {
+        let _=self.app.run_on_main_thread(move||{for id in ids{let _=platform::background(&id,color);}});
+    }
     pub fn diagnostics(&self) -> NativeResult<Value> {
         let mut counts = self.call(|| Ok(platform::diagnostics()))?;
         counts["pendingTasks"] = self.pending.load(Ordering::SeqCst).into();
@@ -261,6 +264,7 @@ mod platform {
         window: tauri::WebviewWindow,
         bounds: Cell<Bounds>,
         visible: Cell<bool>,
+        shown: Cell<bool>,
     }
     thread_local! {
         static SURFACES: RefCell<HashMap<String,Rc<Surface>>> = RefCell::new(HashMap::new());
@@ -312,8 +316,21 @@ mod platform {
         let url = format!("http://sodeck-plugin.localhost/{id}/{entry}");
         let allowed_url = url.clone();
         let source = id.clone();
+        let dialog=context.get("dialog").is_some();
         let mut builder = WebViewBuilder::new_with_web_context(&mut web_context)
+            .with_transparent(dialog)
+            .with_background_color(if dialog{(0,0,0,0)}else{crate::theme::background(&context["theme"])})
+            .with_initialization_script(&crate::theme::bootstrap_surface(&context["theme"],dialog))
             .with_initialization_script(&format!("Object.defineProperty(window,'__SODECK_CONTEXT__',{{value:Object.freeze({context}),writable:false}});"))
+            .with_initialization_script(r#"(() => {
+                let sequence=0;
+                const focus = event => {
+                    if (window.__SODECK_CONTEXT__.dialog || !event.isTrusted || event.type==='keydown' && event.key!=='Tab') return;
+                    window.ipc.postMessage(JSON.stringify({apiVersion:1,requestId:'host-focus-'+(++sequence),method:'views.requestFocus',params:{viewId:window.__SODECK_CONTEXT__.viewId,userGesture:true}}));
+                };
+                document.addEventListener('pointerdown',focus,true);
+                document.addEventListener('keydown',focus,true);
+            })();"#)
             .with_custom_protocol("sodeck-plugin".into(), move |_, request| {
                 let decoded = percent_encoding::percent_decode_str(request.uri().path()).decode_utf8().ok();
                 let relative = decoded.as_deref().and_then(|path| path.strip_prefix(&prefix));
@@ -330,11 +347,9 @@ mod platform {
             .with_ipc_handler(move |request| ipc(source.clone(), request.body().clone()))
             .with_focused(false).with_visible(false)
             .with_bounds(wry::Rect { position: wry::dpi::LogicalPosition::new(0.,0.).into(), size: wry::dpi::LogicalSize::new(1.,1.).into() });
-        if let Ok(args) = std::env::var("SODECK_WEBVIEW_ARGS") {
-            if cfg!(debug_assertions) {
-                builder = builder.with_additional_browser_args(args);
-            }
-        }
+        let debug=app.state::<crate::startup_config::DebugConfig>();
+        if let Some(args)=&debug.webview_args {builder=builder.with_additional_browser_args(args.clone());}
+        if let Some(port)=debug.plugin_ports.get(context["pluginId"].as_str().unwrap_or("")) {builder=builder.with_additional_browser_args(format!("--remote-debugging-port={port}"));}
         let webview = builder
             .build_as_child(&container)
             .map_err(|e| e.to_string())?;
@@ -358,6 +373,7 @@ mod platform {
             window,
             bounds: Cell::new(Bounds::default()),
             visible: Cell::new(false),
+            shown: Cell::new(false),
         });
         SURFACES.with(|s| s.borrow_mut().insert(id.clone(), native.clone()));
         if let Err(error) = native.webview.load_url(&url) {
@@ -376,6 +392,7 @@ mod platform {
         });
         let visible =
             surface.visible.get() && !blocked && bounds.width >= 1. && bounds.height >= 1.;
+        surface.shown.set(visible);
         if !visible {
             surface
                 .webview
@@ -424,6 +441,7 @@ mod platform {
         s.visible.set(visible);
         apply(&s)
     }
+    pub fn background(id:&str,color:(u8,u8,u8,u8))->NativeResult<()>{surface(id)?.webview.set_background_color(color).map_err(|e|e.to_string())}
     pub fn eval(id: &str, script: &str) -> NativeResult<()> {
         surface(id)?
             .webview
@@ -445,7 +463,7 @@ mod platform {
     }
     pub fn focus(id: &str) -> NativeResult<()> {
         let s = surface(id)?;
-        if !s.visible.get() {
+        if !s.visible.get() || !s.window.is_focused().unwrap_or(false) || MODALS.with(|m|m.borrow().get(s.window.label()).copied().unwrap_or(false)) {
             return Ok(());
         }
         unsafe {
@@ -499,6 +517,7 @@ mod platform {
     pub fn present(_: &str, _: Bounds, _: bool) -> NativeResult<()> {
         Err("原生视图不可用".into())
     }
+    pub fn background(_:&str,_:(u8,u8,u8,u8))->NativeResult<()>{Ok(())}
     pub fn eval(_: &str, _: &str) -> NativeResult<()> {
         Err("原生视图不可用".into())
     }

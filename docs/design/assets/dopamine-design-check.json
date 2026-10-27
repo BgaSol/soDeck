@@ -1,0 +1,289 @@
+{
+  "kind": "static design validation, not runtime UI verification",
+  "documents": 12,
+  "brokenLocalLinks": [],
+  "contrastPairs": [
+    {
+      "foreground": "#20211F",
+      "background": "#FFFBE6",
+      "role": "text/cream",
+      "ratio": 15.548493163818893,
+      "minimum": 4.5
+    },
+    {
+      "foreground": "#20211F",
+      "background": "#FBF1E8",
+      "role": "text/canvas",
+      "ratio": 14.513413920635115,
+      "minimum": 4.5
+    },
+    {
+      "foreground": "#20211F",
+      "background": "#FFDE75",
+      "role": "text/yellow",
+      "ratio": 12.286783194542386,
+      "minimum": 4.5
+    },
+    {
+      "foreground": "#20211F",
+      "background": "#FFB7CF",
+      "role": "text/pink",
+      "ratio": 9.952998509878347,
+      "minimum": 4.5
+    },
+    {
+      "foreground": "#20211F",
+      "background": "#42C69B",
+      "role": "text/mint",
+      "ratio": 7.532352749975321,
+      "minimum": 4.5
+    },
+    {
+      "foreground": "#20211F",
+      "background": "#8DD9E8",
+      "role": "text/cyan",
+      "ratio": 10.181320277082666,
+      "minimum": 4.5
+    },
+    {
+      "foreground": "#20211F",
+      "background": "#8DA8FF",
+      "role": "text/blue",
+      "ratio": 7.066519214085329,
+      "minimum": 4.5
+    },
+    {
+      "foreground": "#20211F",
+      "background": "#FF896E",
+      "role": "text/coral",
+      "ratio": 6.972447656782952,
+      "minimum": 4.5
+    },
+    {
+      "foreground": "#50534C",
+      "background": "#FFFBE6",
+      "role": "secondary",
+      "ratio": 7.527144654918308,
+      "minimum": 4.5
+    },
+    {
+      "foreground": "#62665C",
+      "background": "#FBF1E8",
+      "role": "muted",
+      "ratio": 5.273354342453133,
+      "minimum": 4.5
+    },
+    {
+      "foreground": "#176B4F",
+      "background": "#D5F1E5",
+      "role": "success",
+      "ratio": 5.393773102399354,
+      "minimum": 4.5
+    },
+    {
+      "foreground": "#A12C38",
+      "background": "#FFD7CC",
+      "role": "error",
+      "ratio": 5.402397263359666,
+      "minimum": 4.5
+    },
+    {
+      "foreground": "#7A4A08",
+      "background": "#FFFBE6",
+      "role": "warning",
+      "ratio": 7.184938086743695,
+      "minimum": 4.5
+    },
+    {
+      "foreground": "#20211F",
+      "background": "#C8BDF4",
+      "role": "selection",
+      "ratio": 9.271453569062395,
+      "minimum": 4.5
+    },
+    {
+      "foreground": "#5346A6",
+      "background": "#FFFBE6",
+      "role": "focus/cream",
+      "ratio": 7.226165220940487,
+      "minimum": 3
+    },
+    {
+      "foreground": "#5346A6",
+      "background": "#FFDE75",
+      "role": "focus/yellow",
+      "ratio": 5.710284878552905,
+      "minimum": 3
+    },
+    {
+      "foreground": "#5346A6",
+      "background": "#FFB7CF",
+      "role": "focus/pink",
+      "ratio": 4.625657992603221,
+      "minimum": 3
+    },
+    {
+      "foreground": "#5346A6",
+      "background": "#42C69B",
+      "role": "focus/mint",
+      "ratio": 3.5006624050480304,
+      "minimum": 3
+    }
+  ],
+  "r2Review": {
+    "kind": "static documentation only, no app tests run",
+    "documents": [
+      "docs/product.md",
+      "docs/README.md",
+      "docs/standards/ui.md",
+      "docs/standards/theme.md",
+      "docs/core/appearance.md",
+      "docs/core/brand.md",
+      "docs/core/README.md",
+      "docs/core/workbench-interaction.md",
+      "docs/plugins/terminal/features/terminal-input.md",
+      "docs/plugins/files/features/server-file-tree.md",
+      "docs/technical/plugin-protocol.md",
+      "docs/tasks/T-012-dopamine.md",
+      "docs/design/dopamine.md"
+    ],
+    "brokenLocalLinks": [],
+    "menuContrastPairs": [
+      {
+        "foreground": "#20211F",
+        "background": "#FFFBE6",
+        "role": "dopamine/menu text",
+        "ratio": 15.548493163818893,
+        "minimum": 4.5
+      },
+      {
+        "foreground": "#50534C",
+        "background": "#FFFBE6",
+        "role": "dopamine/menu subtitle",
+        "ratio": 7.527144654918308,
+        "minimum": 4.5
+      },
+      {
+        "foreground": "#20211F",
+        "background": "#FFDE75",
+        "role": "dopamine/active row",
+        "ratio": 12.286783194542386,
+        "minimum": 4.5
+      },
+      {
+        "foreground": "#A12C38",
+        "background": "#FFFBE6",
+        "role": "dopamine/exit text",
+        "ratio": 6.885422861819092,
+        "minimum": 4.5
+      },
+      {
+        "foreground": "#5346A6",
+        "background": "#FBF1E8",
+        "role": "dopamine/button focus",
+        "ratio": 6.7451119414228895,
+        "minimum": 3
+      },
+      {
+        "foreground": "#222838",
+        "background": "#FFFFFF",
+        "role": "soft-light/menu text",
+        "ratio": 14.699317815189717,
+        "minimum": 4.5
+      },
+      {
+        "foreground": "#586174",
+        "background": "#FFFFFF",
+        "role": "soft-light/menu subtitle",
+        "ratio": 6.218518887178337,
+        "minimum": 4.5
+      },
+      {
+        "foreground": "#222838",
+        "background": "#ECE8FA",
+        "role": "soft-light/active row",
+        "ratio": 12.24218265867242,
+        "minimum": 4.5
+      },
+      {
+        "foreground": "#B53950",
+        "background": "#FFFFFF",
+        "role": "soft-light/exit text",
+        "ratio": 5.7285645712546875,
+        "minimum": 4.5
+      },
+      {
+        "foreground": "#6554C0",
+        "background": "#F3F5F9",
+        "role": "soft-light/button focus",
+        "ratio": 5.370312596125308,
+        "minimum": 3
+      },
+      {
+        "foreground": "#E8EDF7",
+        "background": "#292F3E",
+        "role": "soft-dark/menu text",
+        "ratio": 11.390315518648215,
+        "minimum": 4.5
+      },
+      {
+        "foreground": "#B3BCD0",
+        "background": "#292F3E",
+        "role": "soft-dark/menu subtitle",
+        "ratio": 7.017635434125935,
+        "minimum": 4.5
+      },
+      {
+        "foreground": "#E8EDF7",
+        "background": "#35314E",
+        "role": "soft-dark/active row",
+        "ratio": 10.517888481568889,
+        "minimum": 4.5
+      },
+      {
+        "foreground": "#F1A4B6",
+        "background": "#292F3E",
+        "role": "soft-dark/exit text",
+        "ratio": 6.829775635528229,
+        "minimum": 4.5
+      },
+      {
+        "foreground": "#C6B7FF",
+        "background": "#171B25",
+        "role": "soft-dark/button focus",
+        "ratio": 9.524030856735726,
+        "minimum": 3
+      }
+    ],
+    "renderedAndViewed": [
+      "application-menu.png",
+      "dopamine-workbench.png"
+    ],
+    "retainedR1Board": "dopamine-components.png"
+  },
+  "r3CodePlanReview": {
+    "kind": "documentation and source inspection only; no implementation, build or runtime tests",
+    "documents": [
+      "docs/product.md",
+      "docs/README.md",
+      "docs/architecture.md",
+      "docs/standards/ui.md",
+      "docs/standards/theme.md",
+      "docs/standards/coding.md",
+      "docs/core/appearance.md",
+      "docs/core/README.md",
+      "docs/plugins/terminal/features/terminal-input.md",
+      "docs/plugins/files/features/server-file-tree.md",
+      "docs/technical/plugin-protocol.md",
+      "docs/technical/README.md",
+      "docs/tasks/T-012-dopamine.md",
+      "docs/design/dopamine.md",
+      "docs/technical/design-system-implementation.md"
+    ],
+    "brokenLocalLinks": [],
+    "brokenNewHeadingLinks": [],
+    "technicalPlanRevision": "r1",
+    "taskRevision": "r3",
+    "visualRevisionUnchanged": "r2"
+  }
+}

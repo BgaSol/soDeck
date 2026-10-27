@@ -27,7 +27,7 @@ impl Fixture {
     }
     fn files(&self, version: &str, text: &str) -> BTreeMap<String, Vec<u8>> {
         let manifest = json!({"pluginId":"sodeck.terminal","version":version,
-            "requires":{"core":">=2.0.0, <3.0.0","pluginApi":"^3.0.0","capabilities":["remote.pty.v1"]},
+            "requires":{"core":">=2.0.0, <3.0.0","pluginApi":"^4.0.0","capabilities":["remote.pty.v1"]},
             "entry":{"ui":"ui/index.html","worker":"worker/main.js"},"dataSchemaVersion":1,
             "contributes":{"views":[{"id":"terminal.session","title":"Terminal","scope":"server","supportedHosts":["tab","window","dock"],"dockEdges":["bottom"],"defaultLocation":{"host":"tab"}}]}});
         BTreeMap::from([
@@ -120,6 +120,32 @@ fn update_is_pending_until_startup_and_data_is_copied() {
 }
 
 #[test]
+fn verified_display_names_and_presentation_do_not_change_legacy_status() {
+    let f=Fixture::new();let mut manager=f.manager();
+    manager.prepare_package(f.package("0.1.0","old")).unwrap();manager.activate_pending(|_,_|Ok(())).unwrap();
+    assert_eq!(manager.metadata()[0]["displayName"],"Terminal");
+    let mut files=f.files("0.2.0","new");
+    let mut manifest:serde_json::Value=serde_json::from_slice(&files["manifest.json"]).unwrap();
+    manifest["displayName"]=json!("  中文插件  ");
+    manifest["requires"]["capabilities"]=json!(["workspace.contributions.v2"]);
+    manifest["contributes"]["commands"]=json!([{"id":"new","title":"新建页面","scope":"server","primary":true}]);
+    manifest["contributes"]["presentation"]=json!({"tabCreate":[{"commandId":"new","icon":"plus"}]});
+    files.insert("manifest.json".into(),serde_json::to_vec(&manifest).unwrap());
+    manager.prepare_package(f.write_package("0.2.0",files)).unwrap();
+    assert_eq!(manager.metadata()[0]["displayName"],"Terminal");
+    assert_eq!(manager.metadata()[0]["pendingDisplayName"],"中文插件");
+    assert!(serde_json::to_value(manager.status()).unwrap()[0].get("displayName").is_none());
+    manager.activate_pending(|_,_|Ok(())).unwrap();
+    assert_eq!(manager.metadata()[0]["displayName"],"中文插件");
+    let active=manager.active("sodeck.terminal").unwrap().unwrap();
+    assert!(serde_json::to_value(&active.manifest.contributes.commands[0]).unwrap().get("presentation").is_none());
+    for bad in [json!({"tabCreate":[{"commandId":"missing","icon":"plus"}]}),json!({"tools":[{"viewType":"terminal.session","commandId":"new","edge":"right","icon":"folder","defaultWidth":360}]}),json!({"dialogs":[{"id":"edit","title":"编辑","width":560,"height":520}]})] {
+        let mut invalid=manifest.clone();invalid["contributes"]["presentation"]=bad;
+        let parsed:Manifest=serde_json::from_value(invalid).unwrap();assert!(package::validate_manifest(&parsed).is_err());
+    }
+}
+
+#[test]
 fn initialization_failure_preserves_active_data() {
     let f = Fixture::new();
     let mut manager = f.manager();
@@ -153,6 +179,15 @@ fn initialization_failure_preserves_active_data() {
         .unwrap()
         .contains("fixture failure"));
     assert!(manager.status()[0].pending_version.is_none());
+}
+
+#[test]
+fn bundled_package_does_not_replace_an_independent_pending_update() {
+    let f=Fixture::new();let mut manager=f.manager();
+    let factory=f.package("0.1.0","factory");manager.prepare_bundled(&factory).unwrap();manager.activate_pending(|_,_|Ok(())).unwrap();
+    manager.prepare_package(f.package("0.1.1","candidate")).unwrap();manager.prepare_bundled(&factory).unwrap();
+    assert_eq!(manager.status()[0].pending_version.as_deref(),Some("0.1.1"));manager.activate_pending(|_,_|Ok(())).unwrap();manager.prepare_bundled(&factory).unwrap();
+    assert_eq!(manager.status()[0].active_version.as_deref(),Some("0.1.1"));assert!(manager.status()[0].pending_version.is_none());
 }
 
 #[test]
@@ -268,6 +303,7 @@ fn signed_incompatible_candidates_preserve_active_and_existing_pending() {
         ("/requires/pluginApi", json!("^8.0.0")),
         ("/requires/pluginApi", json!("^1.0.0")),
         ("/requires/pluginApi", json!("^2.0.0")),
+        ("/requires/pluginApi", json!("^3.0.0")),
         ("/requires/capabilities", json!(["workspace.v1"])),
         ("/requires/capabilities", json!(["unsupported.capability"])),
         (
@@ -414,4 +450,25 @@ fn extraction_rejects_archive_count_expansion_and_case_limits() {
         .to_string()
         .contains("128 MiB"));
     assert!(manager.status().is_empty());
+}
+
+
+#[test]
+fn workspace_initializers_validate_explicit_generic_server_commands() {
+    let f = Fixture::new();
+    for (scope, input, initializers, valid) in [
+        ("server", false, json!([{"id":"sample.initial","commandId":"sample.seed"}]), true),
+        ("view", false, json!([{"id":"sample.initial","commandId":"sample.seed"}]), false),
+        ("server", true, json!([{"id":"sample.initial","commandId":"sample.seed"}]), false),
+        ("server", false, json!([{"id":"sample.initial","commandId":"absent"}]), false),
+        ("server", false, json!([{"id":"a","commandId":"sample.seed"},{"id":"b","commandId":"sample.seed"}]), false),
+    ] {
+        let mut files=f.files("0.4.0","fixture");
+        let mut m:serde_json::Value=serde_json::from_slice(&files["manifest.json"]).unwrap();
+        m["contributes"]["commands"]=json!([{"id":"sample.seed","title":"Sample","scope":scope,"primary":false}]);
+        if input {m["contributes"]["commands"][0]["input"]=json!({"kind":"text","key":"title","label":"Title","initial":"viewTitle","minLength":1,"maxLength":80});}
+        m["contributes"]["workspaceInitializers"]=initializers;
+        files.insert("manifest.json".into(),serde_json::to_vec(&m).unwrap());
+        assert_eq!(f.manager().prepare_package(f.write_package("generic",files)).is_ok(),valid);
+    }
 }

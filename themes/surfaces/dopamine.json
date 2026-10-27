@@ -1,0 +1,10 @@
+{
+  "navigation": "#FFB7CF",
+  "tool": "#42C69B",
+  "successSurface": "#D5F1E5",
+  "errorSurface": "#FFD7CC",
+  "focusGap": "#FFFBE6",
+  "capacityNormal": "#BFE7CE",
+  "capacityWarning": "#F5DF9B",
+  "capacityCritical": "#F3BEB8"
+}

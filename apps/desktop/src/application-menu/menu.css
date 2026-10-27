@@ -1,0 +1,9 @@
+@layer composition {
+ html:has(.application-menu-shield),body:has(.application-menu-shield),body:has(.application-menu-shield) #root{background:transparent!important}
+ .application-menu-shield{position:fixed;inset:0}
+ .application-menu-position{position:absolute;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);visibility:hidden}
+ .application-menu-position[data-placed=true]{visibility:visible}
+ .application-menu-position>.sd-menu{width:max(288px,22.153846rem);max-height:calc(100vh - 16px)}
+ .application-menu{margin:0 6px;flex-shrink:0}
+ .application-menu .sd-button-label{display:flex;align-items:center;gap:8px}
+}

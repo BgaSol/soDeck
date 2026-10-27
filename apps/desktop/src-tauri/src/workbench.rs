@@ -1,4 +1,4 @@
-//! Authoritative layout; runtime resource bindings are never persisted.
+//! Authoritative in-memory workbench. Legacy snapshot code is retained only for historical tests.
 use crate::window_registry::WindowRecord;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -64,6 +64,16 @@ pub struct DockSlot {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Workspace {
+    #[serde(skip)]
+    pub directory_source_view: Option<String>,
+    #[serde(skip)]
+    pub directory_selection_revision: u64,
+    #[serde(default = "new_generation")]
+    pub generation: String,
+    #[serde(default)]
+    pub initializers: Vec<Initializer>,
+    #[serde(default)]
+    pub initialization_error: Option<String>,
     #[serde(default = "main_window")]
     pub owner_window_id: String,
     pub split: String,
@@ -73,22 +83,45 @@ pub struct Workspace {
     pub split_ratio: f64,
     #[serde(default)]
     pub focus_target: Option<String>,
+    #[serde(skip)]
+    pub dock_widths: BTreeMap<String,u64>,
+    #[serde(skip)]
+    pub focus_intent: u64,
 }
 impl Default for Workspace {
     fn default() -> Self {
         Self {
+            directory_source_view: None,
+            directory_selection_revision: 0,
+            generation: new_generation(),
+            initializers: vec![],
+            initialization_error: None,
             owner_window_id: main_window(),
             split: "none".into(),
             dock_slots: vec![],
             split_ratio: 0.5,
             focus_target: None,
+            dock_widths: BTreeMap::new(),
+            focus_intent: 0,
         }
     }
+}
+fn new_generation() -> String { Uuid::new_v4().to_string() }
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Initializer {
+    pub id: String,
+    pub command_id: String,
+    pub operation_id: String,
+    pub state: String,
+    pub view_id: Option<String>,
+    pub error: Option<String>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Workbench {
     pub schema_version: u32,
+    #[cfg(test)]
     #[serde(skip)]
     pub migration_pending: bool,
     pub views: Vec<View>,
@@ -101,6 +134,7 @@ pub struct Workbench {
     declarations: BTreeMap<String, ViewDeclaration>,
     #[serde(skip)]
     pub recovery_warnings: Vec<String>,
+    #[cfg(test)]
     #[serde(skip)]
     pub persistence_blocked: Option<String>,
 }
@@ -108,6 +142,7 @@ impl Default for Workbench {
     fn default() -> Self {
         Self {
             schema_version: 3,
+            #[cfg(test)]
             migration_pending: false,
             views: vec![],
             workspaces: BTreeMap::new(),
@@ -116,11 +151,13 @@ impl Default for Workbench {
             resources: BTreeMap::new(),
             declarations: BTreeMap::new(),
             recovery_warnings: vec![],
+            #[cfg(test)]
             persistence_blocked: None,
         }
     }
 }
 impl Workbench {
+    #[cfg(test)]
     pub fn load(path: &Path) -> Result<Self, String> {
         if !path.exists() {
             return Ok(Self::default());
@@ -248,11 +285,13 @@ impl Workbench {
         for ws in saved.workspaces.values_mut() { ws.split="none".into();ws.split_ratio=0.5; }
         Ok(saved)
     }
-    pub fn set_declarations(&mut self, declarations: Vec<ViewDeclaration>) -> Result<(), String> {
+    #[cfg(test)]
+    pub fn set_declarations(&mut self,declarations:Vec<ViewDeclaration>)->Result<(),String>{self.set_owned_declarations(declarations.into_iter().map(|d|(String::new(),d)).collect())}
+    pub fn set_owned_declarations(&mut self, declarations: Vec<(String,ViewDeclaration)>) -> Result<(), String> {
         let mut next = BTreeMap::new();
-        for d in declarations {
+        for (owner,d) in declarations {
             validate_declaration(&d)?;
-            if next.insert(d.id.clone(), d).is_some() {
+            if next.insert(format!("{owner}::{}",d.id), d).is_some() {
                 return Err("视图声明重复".into());
             }
         }
@@ -260,7 +299,7 @@ impl Workbench {
         let mut singles = BTreeSet::new();
         let mut relocated = BTreeSet::new();
         for v in &mut self.views {
-            match self.declarations.get(&v.view_type) {
+            match self.declarations.get(&format!("{}::{}",v.plugin_id,v.view_type)).or_else(||self.declarations.get(&format!("::{}",v.view_type))) {
                 None => {
                     if v.status != "viewFailed" {
                         v.recovery_status = Some(v.status.clone());
@@ -271,7 +310,7 @@ impl Workbench {
                 Some(d) => {
                     if v.state_version != d.state_version
                         || (!d.multiple
-                            && !singles.insert((v.view_type.clone(), v.workspace_id.clone())))
+                            && !singles.insert((v.plugin_id.clone(),v.view_type.clone(), v.workspace_id.clone())))
                     {
                         v.status = "viewFailed".into();
                         v.failure_reason = Some("保存状态不兼容，请明确重新加载".into());
@@ -319,13 +358,14 @@ impl Workbench {
         }
         Ok(())
     }
+    #[cfg(test)]
     pub fn retire_views(&mut self, plugin: &str, ids: &[String]) {
         self.views.retain(|v| !(v.plugin_id==plugin && ids.contains(&v.view_type) && v.runtime_data.is_null() && !self.resources.contains_key(&v.view_id)));
         for ws in self.workspaces.values_mut() { ws.dock_slots.retain(|s|self.views.iter().any(|v|v.view_id==s.view_id)); }
     }
     pub fn reset_incompatible_state(&mut self, id: &str) -> Result<bool, String> {
         let v = self.view(id)?;
-        let d = self.declarations.get(&v.view_type).ok_or("插件不可用")?;
+        let d = self.declarations.get(&format!("{}::{}",v.plugin_id,v.view_type)).or_else(||self.declarations.get(&format!("::{}",v.view_type))).ok_or("插件不可用")?;
         if d.state_version == v.state_version {
             return Ok(false);
         }
@@ -471,7 +511,7 @@ impl Workbench {
                 value
             })
             .collect::<Vec<_>>();
-        json!({"schemaVersion":3,"windowId":window,"windowRole":if detached.is_some(){"view"}else if window=="main"{"main"}else{"workspace"},"workspaceIds":record.map(|w|w.workspace_ids.clone()).unwrap_or_default(),"activeWorkspaceId":active,"focusedViewId":record.and_then(|w|w.focused_view_id.clone()),"workspaces":self.workspaces.iter().map(|(id,w)|json!({"workspaceId":id,"serverId":id,"ownerWindowId":w.owner_window_id})).collect::<Vec<_>>(),"views":views,"split":ws.split,"splitRatio":ws.split_ratio,"dockSlots":ws.dock_slots,"revision":self.revision,"recoveryWarnings":self.recovery_warnings})
+        json!({"schemaVersion":4,"windowId":window,"windowRole":if detached.is_some(){"view"}else if window=="main"{"main"}else{"workspace"},"workspaceIds":record.map(|w|w.workspace_ids.clone()).unwrap_or_default(),"activeWorkspaceId":active,"focusedViewId":record.and_then(|w|w.focused_view_id.clone()),"workspaces":self.workspaces.iter().map(|(id,w)|json!({"workspaceId":id,"serverId":id,"ownerWindowId":w.owner_window_id,"generation":w.generation,"initializers":w.initializers,"initializationError":w.initialization_error})).collect::<Vec<_>>(),"views":views,"split":ws.split,"splitRatio":ws.split_ratio,"dockSlots":ws.dock_slots,"revision":self.revision,"recoveryWarnings":self.recovery_warnings})
     }
     pub fn open_view(
         &mut self,
@@ -482,7 +522,7 @@ impl Workbench {
     ) -> Result<View, String> {
         let d = self
             .declarations
-            .get(kind)
+            .get(&format!("{plugin}::{kind}")).or_else(||self.declarations.get(&format!("::{kind}")))
             .cloned()
             .ok_or("插件未声明视图")?;
         let workspace = if d.scope == "global" {
@@ -558,6 +598,7 @@ impl Workbench {
     }
     pub fn activate(&mut self, id: &str) -> Result<View, String> {
         let view = self.view(id)?;
+        let directory=self.provides_directory(&view);
         self.activate_workspace(&view.workspace_id)?;
         let owner = self.owner(&view.workspace_id)?;
         if let Some(window) = self.windows.get_mut(&owner) {
@@ -570,6 +611,10 @@ impl Workbench {
             }
         }
         if let Some(ws) = self.workspaces.get_mut(&view.workspace_id) {
+            if directory && ws.directory_source_view.as_deref()!=Some(id) {
+                ws.directory_source_view=Some(id.into());
+                ws.directory_selection_revision+=1;
+            }
             ws.focus_target = Some(id.into());
             for slot in &mut ws.dock_slots {
                 if slot.view_id == id {
@@ -579,6 +624,11 @@ impl Workbench {
         }
         self.view(id)
     }
+    pub fn provides_directory(&self,view:&View)->bool {
+        self.declarations.get(&format!("{}::{}",view.plugin_id,view.view_type))
+            .or_else(||self.declarations.get(&format!("::{}",view.view_type)))
+            .is_some_and(|d|d.context_providers.iter().any(|p|p=="directory"))
+    }
     pub fn close(&mut self, id: &str) -> Result<View, String> {
         let view = self.view(id)?;
         self.views.retain(|v| v.view_id != id);
@@ -587,13 +637,17 @@ impl Workbench {
             w.dock_slots.retain(|s| s.view_id != id);
         }
         self.normalize(&view.workspace_id);
+        if self.workspaces.get(&view.workspace_id).is_some_and(|ws|ws.directory_source_view.as_deref()==Some(id)) {
+            let replacement=self.workspaces.get(&view.workspace_id).and_then(|ws|ws.focus_target.as_deref()).and_then(|id|self.view(id).ok()).filter(|v|self.provides_directory(v)).map(|v|v.view_id);
+            if let Some(ws)=self.workspaces.get_mut(&view.workspace_id){ws.directory_source_view=replacement;ws.directory_selection_revision+=1;}
+        }
         self.revision += 1;
         Ok(view)
     }
     pub fn validate_placement(&self, kind: &str, location: &str) -> Result<(), String> {
         if self
             .declarations
-            .get(kind)
+            .get(kind).or_else(||self.declarations.get(&format!("::{}",kind.rsplit("::").next().unwrap_or(kind))))
             .is_some_and(|d| supports(d, location))
         {
             Ok(())
@@ -609,7 +663,7 @@ impl Workbench {
         generation: u64,
     ) -> Result<View, String> {
         let old = self.view(id)?;
-        self.validate_placement(&old.view_type, placement)?;
+        self.validate_placement(&format!("{}::{}",old.plugin_id,old.view_type), placement)?;
         if group != 0 {
             return Err("当前仅支持一个中央区域".into());
         }
@@ -673,11 +727,11 @@ impl Workbench {
         *self = next;
         Ok(())
     }
-    pub fn commit(&mut self, candidate: Self, path: &Path) -> Result<(), String> {
-        candidate.save(path)?;
+    pub fn commit(&mut self, candidate: Self) -> Result<(), String> {
         *self = candidate;
         Ok(())
     }
+    #[cfg(test)]
     pub fn save(&self, path: &Path) -> Result<(), String> {
         if let Some(reason) = &self.persistence_blocked {
             return Err(format!("原布局已保护，恢复备份前不会覆盖：{reason}"));
@@ -692,6 +746,7 @@ impl Workbench {
         drop(file);
         replace(&pending, path)
     }
+    #[cfg(test)]
     pub fn retry_save(&mut self,path:&Path)->Result<(),String>{
         if self.persistence_blocked.is_some() && !self.migration_pending {return Err("原布局无法读取，请退出应用后恢复 workbench.pre-v3 备份；不会用空布局覆盖".into());}
         let protected=self.persistence_blocked.take();
@@ -732,6 +787,7 @@ impl Workbench {
         }
     }
 }
+#[cfg(test)]
 fn migrate_legacy(value: &mut Value) -> Result<(), String> {
     let active = value["activeWorkspaceId"].clone();
     let views = value["views"].as_array_mut().ok_or("旧布局缺少视图")?;
@@ -819,7 +875,7 @@ fn validate_declaration(d: &ViewDeclaration) -> Result<(), String> {
     }
     default_placement(d).map(|_| ())
 }
-fn replace(source: &Path, target: &Path) -> Result<(), String> {
+pub(crate) fn replace(source: &Path, target: &Path) -> Result<(), String> {
     #[cfg(windows)]
     {
         use std::os::windows::ffi::OsStrExt;
@@ -871,6 +927,23 @@ mod tests {
         w.open_view("sample.plugin", "sample.page", ws, "").unwrap()
     }
     #[test]
+    fn directory_selection_is_separate_from_focus_and_workspace() {
+        let mut w = model();
+        let mut provider = declaration("sample.page", true);
+        provider.context_providers=vec!["directory".into()];
+        w.set_declarations(vec![provider,declaration("sample.list",false)]).unwrap();
+        let a=open(&mut w,"a");let b=open(&mut w,"a");let other=open(&mut w,"b");
+        w.activate(&a.view_id).unwrap();
+        let revision=w.workspaces["a"].directory_selection_revision;
+        let files=w.open_view("sample.plugin","sample.list","a","").unwrap();
+        w.activate(&files.view_id).unwrap();
+        assert_eq!(w.workspaces["a"].directory_source_view.as_deref(),Some(a.view_id.as_str()));
+        assert_eq!(w.workspaces["a"].directory_selection_revision,revision);
+        w.activate(&b.view_id).unwrap();
+        assert_eq!(w.workspaces["a"].directory_selection_revision,revision+1);
+        assert_eq!(w.workspaces["b"].directory_source_view.as_deref(),Some(other.view_id.as_str()));
+    }
+    #[test]
     fn singleton_multiple_and_instance_key_are_independent_of_workers() {
         let mut w = model();
         let a = w
@@ -900,6 +973,15 @@ mod tests {
                 .unwrap()
                 .view_id
         );
+    }
+    #[test]
+    fn two_plugins_can_own_the_same_local_singleton_type() {
+        let mut w=Workbench::default();
+        let declarations=vec![("plugin.a".into(),declaration("same.local",false)),("plugin.b".into(),declaration("same.local",false))];
+        w.set_owned_declarations(declarations.clone()).unwrap();w.open_workspace("server","main").unwrap();
+        let a=w.open_view("plugin.a","same.local","server","").unwrap();let b=w.open_view("plugin.b","same.local","server","").unwrap();
+        assert_ne!(a.view_id,b.view_id);w.set_owned_declarations(declarations).unwrap();
+        assert!(w.views.iter().all(|v|v.status!="viewFailed"));assert_eq!(w.views.len(),2);
     }
     #[test]
     fn global_singleton_keeps_app_scope() {
@@ -1038,22 +1120,13 @@ mod tests {
         w.persistence_blocked=Some("broken source".into());assert!(w.retry_save(&path).is_err());
     }
     #[test]
-    fn failed_save_preserves_memory_disk_and_allows_retry() {
+    fn runtime_commit_does_not_write_or_depend_on_disk() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("layout.json");
-        let mut w = model();
-        open(&mut w, "a");
-        w.save(&path).unwrap();
-        let before = std::fs::read(&path).unwrap();
-        let mut next = w.clone();
-        open(&mut next, "b");
+        let path = dir.path().join("workbench.json");
+        let mut w = model(); open(&mut w, "a");
         std::fs::create_dir(path.with_extension("pending")).unwrap();
-        assert!(w.commit(next.clone(), &path).is_err());
-        assert_eq!(w.views.len(), 1);
-        assert_eq!(std::fs::read(&path).unwrap(), before);
-        std::fs::remove_dir(path.with_extension("pending")).unwrap();
-        w.commit(next, &path).unwrap();
-        assert_eq!(w.views.len(), 2);
+        let mut next = w.clone(); open(&mut next, "b");
+        w.commit(next).unwrap(); assert_eq!(w.views.len(),2); assert!(!path.exists());
     }
     #[test]
     fn layout_never_persists_runtime_handles_or_catalog() {

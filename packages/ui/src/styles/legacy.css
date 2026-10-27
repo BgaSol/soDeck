@@ -1,0 +1,26 @@
+/* Compatibility for pre-1.1 consumers. New UI uses explicit components. */
+:where(button,input:not(.sd-input),select:not(.sd-input),textarea) { font:inherit; color:var(--text); }
+:where(button:not(.sd-button)) { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:32px; padding:6px 12px; border:1px solid var(--controlBorder); border-radius:var(--sd-radius-control); background:var(--elevated); cursor:pointer; white-space:nowrap; transition:box-shadow 120ms ease; }
+:where(button:not(.sd-button):hover) { background:var(--hover); }
+:where(button:not(.sd-button):active) { background:var(--pressed); }
+:where(button:not(.sd-button):disabled) { color:var(--disabled); background:var(--surface); cursor:default; }
+:where(button,input:not(.sd-input),select:not(.sd-input),textarea,[tabindex],summary):focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
+:where(input:not(.sd-input),select:not(.sd-input),textarea) { min-width:0; min-height:36px; padding:8px 10px; border:1px solid var(--controlBorder); border-radius:var(--sd-radius-control); background:var(--field); }
+:where(input)::placeholder { color:var(--muted); }
+:where(input[aria-invalid=true]) { border-color:var(--error); }
+:where(input[type=checkbox],input[type=radio]) { accent-color:var(--accent); min-height:0; padding:0; }
+:where(.primary) { background:var(--primary); color:var(--primaryText); border-color:var(--primary); font-weight:600; }
+:where(.primary:hover) { background:var(--primaryHover); border-color:var(--primaryHover); }
+:where(.primary:active) { background:var(--primaryPressed); border-color:var(--primaryPressed); }
+:where(.danger) { color:var(--error); }
+:where(.danger:hover) { color:var(--dangerText); background:var(--dangerHover); border-color:var(--dangerHover); }
+:where(.icon-button,.icon) { min-width:28px; min-height:28px; padding:4px; border-color:var(--transparent); background:var(--transparent); color:var(--secondary); flex-shrink:0; }
+:where(.icon-button:hover,.icon:hover) { color:var(--text); background:var(--hover); }
+:where(.icon-button:active,.icon:active) { background:var(--pressed); }
+:where(.inline-error,.inline-success,.ui-notice) { display:flex; align-items:center; gap:8px; padding:8px 12px; border:1px solid var(--border); border-radius:var(--sd-radius-control); background:var(--surface); font-size:1rem; line-height:1.5; overflow-wrap:anywhere; }
+.ui-notice>span { flex:1; min-width:0; }
+:where(.ui-notice) { color:var(--secondary); }
+:where(.inline-error,.ui-notice.error) { color:var(--error); }
+:where(.inline-success) { color:var(--success); }
+::selection { color:var(--selectedText); background:var(--selection); }
+* { scrollbar-color:var(--scrollbar) var(--transparent); scrollbar-width:thin; }

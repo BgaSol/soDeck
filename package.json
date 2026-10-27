@@ -1,25 +1,28 @@
 {
   "name": "sodeck-v2",
-  "version": "2.0.0-dev.3",
+  "version": "2.0.0-dev.14",
   "private": true,
   "type": "module",
   "workspaces": [
     "apps/desktop",
     "packages/*",
-    "plugins/terminal"
+    "plugins/*"
   ],
   "scripts": {
     "desktop": "node scripts/desktop.mjs dev",
     "desktop:build": "node scripts/desktop.mjs build --no-bundle",
     "build": "npm run build --workspaces --if-present",
-    "check": "node scripts/generate-workbench.mjs --check && npm run check --workspaces --if-present && node scripts/check-boundaries.mjs",
+    "check": "node scripts/generate-server-catalog.mjs --check && node scripts/generate-workbench-ui.mjs --check && node scripts/generate-network.mjs --check && node scripts/generate-ui-tokens.mjs --check && node scripts/check-ui-boundaries.mjs && node scripts/generate-connection-route.mjs --check && node scripts/generate-communication.mjs --check && node scripts/generate-workbench.mjs --check && node scripts/generate-remote-read.mjs --check && npm run check --workspaces --if-present && node scripts/check-boundaries.mjs",
     "test:contracts": "npm run test --workspaces --if-present",
     "test:core": "node scripts/cargo.mjs test --workspace",
     "plugin:pack": "node scripts/pack-plugin.mjs",
     "desktop:package-dev": "node scripts/package-dev.mjs",
     "test:terminal:native": "node tests/desktop/native.mjs",
     "test:updates:native": "node tests/desktop/updates.mjs",
-    "test:workbench:native": "node tests/desktop/server-tabs.mjs"
+    "test:clean-start:native": "node tests/desktop/clean-start.mjs",
+    "test:clean-start:plugins": "node tests/desktop/clean-start-plugins.mjs",
+    "test:workbench:native": "node tests/desktop/server-tabs.mjs",
+    "test:design-system": "node --test scripts/ui-tokens.test.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.3",
@@ -38,6 +41,8 @@
     "@types/react-dom": "19.2.0",
     "@vitejs/plugin-react": "5.1.0",
     "esbuild": "0.28.2",
+    "postcss": "8.5.6",
+    "postcss-selector-parser": "7.1.0",
     "typescript": "5.9.3",
     "vite": "7.3.7",
     "vitest": "4.1.12"

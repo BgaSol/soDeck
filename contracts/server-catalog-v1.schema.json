@@ -1,0 +1,561 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "Revision": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$",
+      "maxLength": 19
+    },
+    "OperationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "ConnectionRoute": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "direct"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "sshJump"
+              ]
+            },
+            "jumpServerId": {
+              "$ref": "#/$defs/Id"
+            }
+          },
+          "required": [
+            "kind",
+            "jumpServerId"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Server": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "username": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "authType": {
+          "enum": [
+            "password",
+            "key"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "hasSecret": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "host",
+        "port",
+        "username",
+        "authType",
+        "revision",
+        "hasSecret"
+      ],
+      "additionalProperties": false
+    },
+    "Configuration": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "username": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "authType": {
+          "enum": [
+            "password",
+            "key"
+          ]
+        },
+        "connectionRoute": {
+          "$ref": "#/$defs/ConnectionRoute"
+        }
+      },
+      "required": [
+        "name",
+        "host",
+        "port",
+        "username",
+        "authType",
+        "connectionRoute"
+      ],
+      "additionalProperties": false
+    },
+    "Group": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "serverCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "revision",
+        "serverCount"
+      ],
+      "additionalProperties": false
+    },
+    "CatalogItem": {
+      "type": "object",
+      "properties": {
+        "server": {
+          "$ref": "#/$defs/Server"
+        },
+        "connectionRoute": {
+          "$ref": "#/$defs/ConnectionRoute"
+        },
+        "groupId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "membershipRevision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "postCommitPending": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "server",
+        "connectionRoute",
+        "groupId",
+        "membershipRevision",
+        "postCommitPending"
+      ],
+      "additionalProperties": false
+    },
+    "PageRequest": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "CatalogQuery": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "query": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "groupId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "GroupsPage": {
+      "type": "object",
+      "properties": {
+        "groups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Group"
+          }
+        },
+        "catalogRevision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "groups",
+        "catalogRevision",
+        "nextCursor"
+      ],
+      "additionalProperties": false
+    },
+    "CatalogPage": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CatalogItem"
+          }
+        },
+        "catalogRevision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "catalogRevision",
+        "nextCursor"
+      ],
+      "additionalProperties": false
+    },
+    "GroupCreate": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "operationId",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "GroupUpdate": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        },
+        "groupId": {
+          "$ref": "#/$defs/Id"
+        },
+        "expectedRevision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "operationId",
+        "groupId",
+        "expectedRevision",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "GroupDelete": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        },
+        "groupId": {
+          "$ref": "#/$defs/Id"
+        },
+        "expectedRevision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "expectedCatalogRevision": {
+          "$ref": "#/$defs/Revision"
+        }
+      },
+      "required": [
+        "operationId",
+        "groupId",
+        "expectedRevision",
+        "expectedCatalogRevision"
+      ],
+      "additionalProperties": false
+    },
+    "GroupSaved": {
+      "type": "object",
+      "properties": {
+        "group": {
+          "$ref": "#/$defs/Group"
+        },
+        "catalogRevision": {
+          "$ref": "#/$defs/Revision"
+        }
+      },
+      "required": [
+        "group",
+        "catalogRevision"
+      ],
+      "additionalProperties": false
+    },
+    "GroupDeleted": {
+      "type": "object",
+      "properties": {
+        "deleted": {
+          "enum": [
+            true
+          ]
+        },
+        "movedCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "catalogRevision": {
+          "$ref": "#/$defs/Revision"
+        }
+      },
+      "required": [
+        "deleted",
+        "movedCount",
+        "catalogRevision"
+      ],
+      "additionalProperties": false
+    },
+    "CatalogGet": {
+      "type": "object",
+      "properties": {
+        "serverId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "serverId"
+      ],
+      "additionalProperties": false
+    },
+    "CatalogSave": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        },
+        "serverId": {
+          "$ref": "#/$defs/Id"
+        },
+        "expectedServerRevision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "expectedMembershipRevision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "configuration": {
+          "$ref": "#/$defs/Configuration"
+        },
+        "groupId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "OperationQuery": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "OperationResult": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "unknown"
+              ]
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "committed"
+              ]
+            },
+            "result": {
+              "$ref": "#/$defs/CatalogItem"
+            }
+          },
+          "required": [
+            "status",
+            "result"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "x-methods": {
+    "serverGroups.list": "PageRequest",
+    "serverGroups.create": "GroupCreate",
+    "serverGroups.update": "GroupUpdate",
+    "serverGroups.delete": "GroupDelete",
+    "servers.catalog.list": "CatalogQuery",
+    "servers.catalog.get": "CatalogGet",
+    "servers.catalog.save": "CatalogSave",
+    "servers.catalog.operation": "OperationQuery"
+  },
+  "x-results": {
+    "serverGroups.list": "GroupsPage",
+    "serverGroups.create": "GroupSaved",
+    "serverGroups.update": "GroupSaved",
+    "serverGroups.delete": "GroupDeleted",
+    "servers.catalog.list": "CatalogPage",
+    "servers.catalog.get": "CatalogItem",
+    "servers.catalog.save": "CatalogItem",
+    "servers.catalog.operation": "OperationResult"
+  }
+}

@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile,cp} from 'node:fs/promises';
+import {resolve,join} from 'node:path';
+import {createHash} from 'node:crypto';
+import {spawnSync,execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+import {build} from 'esbuild';
+import {networkHarness} from './network-harness.mjs';
+import {rpc} from './harness.mjs';
+const h=await networkHarness('updates',9931),core=resolve('target/debug/sodeck-desktop.exe');
+const digest=async p=>createHash('sha256').update(await readFile(p)).digest('hex'),coreHash=await digest(core);
+const source=join(h.output,'candidate');await cp('plugins/network-proxy/dist',source,{recursive:true});
+const pack=(folder,version,out)=>{const r=spawnSync(process.execPath,['scripts/pack-plugin.mjs','--plugin','network-proxy','--source',folder,'--version',version,'--out',out],{encoding:'utf8',windowsHide:true});assert.equal(r.status,0,r.stderr+r.stdout);};
+let prepared=false;
+try{
+ await build({entryPoints:[resolve('plugins/network-proxy/src/worker.ts')],outfile:join(source,'worker/main.js'),bundle:true,format:'iife',platform:'neutral',plugins:[{name:'test-protocol-update',setup(b){b.onLoad({filter:/protocol[\\/]http\.ts$/},async a=>({loader:'ts',contents:(await readFile(a.path,'utf8')).replace("return '502 Bad Gateway';","return '503 Service Unavailable';")}));}}]});
+ const html=await readFile(join(source,'ui/index.html'),'utf8'),asset=html.match(/src="\.\/([^\"]+\.js)"/)[1],ui=join(source,'ui',asset);
+ const uiBefore=await readFile(ui,'utf8');assert.ok(uiBefore.includes('复制地址'));await writeFile(ui,uiBefore.replaceAll('复制地址','复制入口（更新验证）'));
+ const candidate=join(h.output,'network-0.2.1.sodeck-plugin');pack(source,'0.2.1',candidate);
+ const badSource=join(h.output,'bad-candidate');await cp(source,badSource,{recursive:true});await writeFile(join(badSource,'worker/main.js'),await readFile(join(badSource,'worker/main.js'),'utf8')+'\nglobalThis.sodeckPlugin.prepare=async()=>{await sodeck.call("storage.set",{key:"network-rules",value:{schemaVersion:1,rules:[]}});throw Error("T014_PREPARE_FAILED");};');
+ const bad=join(h.output,'network-0.2.2-bad.sodeck-plugin');pack(badSource,'0.2.2',bad);
+ let app=await h.start();const nodes=await h.create();await h.trust();await h.open();const rule=await h.save();await h.run(rule);
+ const status=async()=>(await rpc(h.app.page,'plugins.list')).find(p=>p.pluginId==='sodeck.network-proxy');
+ const errorStatus=async()=>{const port=(await h.state(rule)).address.port;return (await promisify(execFile)('curl.exe',['-sS','--max-time','10','--noproxy','','--proxy',`http://127.0.0.1:${port}`,'-o','NUL','-w','%{http_code}','http://refuse.internal/'],{windowsHide:true})).stdout;};
+ assert.equal(await errorStatus(),'502');const runId=(await h.state(rule)).id;
+ await rpc(app.page,'plugins.prepareUpdate',{path:candidate});assert.equal((await status()).activeVersion,'0.2.0');assert.equal((await status()).pendingVersion,'0.2.1');assert.equal((await h.state(rule)).id,runId);assert.equal(await errorStatus(),'502');
+ await h.stop();app=await h.start();assert.equal((await status()).activeVersion,'0.2.1');assert.equal((await rpc(app.page,'workbench.snapshot')).views.length,0);await h.auth(nodes);await h.open();assert.equal(await h.state(rule),undefined);await h.run(rule);assert.equal(await errorStatus(),'503');const updatedPage=await h.page();await updatedPage.getByRole('button',{name:'内网入口',exact:true}).click();await updatedPage.getByRole('button',{name:'复制入口（更新验证）',exact:true}).waitFor();await updatedPage.getByRole('button',{name:'返回列表',exact:true}).click();
+ h.note('Independent 0.2.1 changes both UI and real HTTP error behavior only after restart; saved rules survive and running rules never auto-resume');
+ await rpc(app.page,'plugins.prepareUpdate',{path:bad});await h.stop();app=await h.start();assert.equal((await status()).activeVersion,'0.2.1');assert.match((await status()).error,/T014_PREPARE_FAILED/);await h.auth(nodes);await h.open();assert.equal((await h.invoke('network.snapshot')).total,1);await h.run(rule);assert.equal(await errorStatus(),'503');
+ h.note('Failing candidate prepare rolls back its storage writes and retains the prior working plugin');
+ assert.equal(await digest(core),coreHash);prepared=true;
+ await writeFile(join(h.output,'integrity.json'),JSON.stringify({coreHash,candidate:await digest(candidate),bad:await digest(bad)},null,2));
+}finally{await h.close();if(!prepared)console.error('Update verification incomplete');}

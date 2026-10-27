@@ -137,6 +137,8 @@ def connection(stream):
     transport.get_security_options().kex = ("diffie-hellman-group14-sha256",)
     event("connection-open")
     try:
+        while (root / 'pause-handshake').exists():
+            time.sleep(.01)
         transport.add_server_key(rotated_host_key if (root / "rotate-host-key").exists() else host_key)
         transport.start_server(server=Server())
         channels = []

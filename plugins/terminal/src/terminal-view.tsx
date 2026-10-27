@@ -1,27 +1,35 @@
+import {Button,Input} from '@sodeck/ui';
+import { Notice,StatusBar,StatusDot,Checkbox,foundation } from '@sodeck/ui';
+import { onThemeError,retryTheme } from '@sodeck/sdk';
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { terminalGeometry } from './terminal-geometry';
+import { observeState, presentation } from '@sodeck/sdk';
 import { SerializeAddon } from "@xterm/addon-serialize";
-import { core, context, CoreError, decodeBytes, encodeBytes, errorMessage, onCoreNotification, showMenu, type ThemeResult } from "@sodeck/sdk";
+import { core, connectionCommandTimeout, context, CoreError, decodeBytes, encodeBytes, errorMessage, onCoreNotification, showMenu, subscribeTheme, currentTheme, type ThemeResult } from "@sodeck/sdk";
 import { TerminalClipboard } from "./clipboard";
-const statusLabel=(s:string)=>({running:"已连接",active:"已连接",connected:"已连接",connecting:"正在连接",ended:"会话已结束",failed:"连接失败",disconnected:"连接已断开"}[s]??s);
+const statusLabel=(s:string)=>({running:"已连接",active:"已连接",connected:"已连接",connecting:"正在连接",waitingAuth:"等待认证",canceled:"已取消连接",ended:"会话已结束",failed:"连接失败",disconnected:"连接已断开"}[s]??s);
 import { snapshotChunks } from "./snapshot";
 
 declare const __TERMINAL_VERSION__: string;
-interface Binding { sessionId: string; ptyId: string; generation: number; status: string }
+interface Binding { sessionId: string; ptyId: string; generation: number; status: string; error?: string; operationId?: string }
 interface ReadResult { frames: { sequence: number; bytes: string }[]; lastSequence: number; state: string; reason?: string }
 interface Snapshot { schema: 1; screen: string; cursor: number; inputSeq: number; fontSize: number; viewportY: number; cols: number; rows: number; inputPaused?: boolean; selection?: { start: { x: number; y: number }; end: { x: number; y: number } } }
-const defaultFont = 14;
+const defaultFont = foundation['terminal-font-size'];
 
 
 export function TerminalView({theme}:{theme:ThemeResult}) {
+  const [themeError,setThemeError]=useState<string>();
+  useEffect(()=>onThemeError(setThemeError),[]);
   const host = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<(() => void) | null>(null);
   const bindingRef = useRef<Binding | null>(null);
   const sendRef = useRef<((text: string) => void) | null>(null);
-  const [fontSize, setFontSize] = useState(defaultFont);
+  const [fontSize, setFontSize] = useState<number>(defaultFont);
+  const [shellIntegration,setShellIntegration]=useState(true);
   const [status, setStatus] = useState("connecting");
   const [error, setError] = useState("");
   const clipboardRef=useRef<TerminalClipboard|null>(null);
@@ -31,32 +39,34 @@ export function TerminalView({theme}:{theme:ThemeResult}) {
   const [inputPaused, setInputPaused] = useState(false);
   const copy=useCallback(()=>clipboardRef.current?.copy(),[]);
   const paste=useCallback(()=>clipboardRef.current?.paste(),[]);
+  useEffect(()=>{
+    let alive=true;
+    const refresh=()=>{void core.call<{shellIntegration?:boolean}>('plugin.invoke',{command:'settings.get'}).then(value=>{if(alive)setShellIntegration(value.shellIntegration!==false);}).catch(()=>{});};
+    window.addEventListener('focus',refresh);document.addEventListener('focusin',refresh);
+    return()=>{alive=false;window.removeEventListener('focus',refresh);document.removeEventListener('focusin',refresh);};
+  },[]);
   useEffect(() => {
     if (!host.current) return;
-    let alive = true, frozen = false, committed = false, composing = false, mounted = false, inputBlocked = false, readRunning = false;
+    let alive = true, frozen = false, committed = false, composing = false, mounted = false, inputBlocked = false, readRunning = false, presentationVisible = true;
     let cursor = 0, inputSeq = 0, queuedBytes = 0;
     let pollTimer: ReturnType<typeof setTimeout> | undefined;
+    let presentationFeed:Awaited<ReturnType<typeof observeState>>|undefined;
     let readFlight = Promise.resolve();
     let inputFlight = Promise.resolve();
     let binding: Binding | null = null;
-    const term = new Terminal({ fontFamily: '"Cascadia Mono", Consolas, "Noto Sans Mono", monospace', fontSize: defaultFont, lineHeight: 1.12, cursorBlink: true, scrollback: 5000, allowProposedApi: true,
-      theme: theme.terminal });
+    const term = new Terminal({ fontFamily: foundation['font-mono'], fontSize: defaultFont, lineHeight: foundation['terminal-line-height'], cursorBlink: true, scrollback: 5000, allowProposedApi: true,
+      theme: (currentTheme()??theme).terminal });
     const fit = new FitAddon(), serialize = new SerializeAddon();
     term.loadAddon(fit); term.loadAddon(serialize); term.open(host.current);
+    const directoryOsc=term.parser.registerOscHandler(633,data=>data.startsWith('SoDeck;1;'));
     terminalRef.current = term;
     const handle = () => ({ ptyId: binding!.ptyId, generation: binding!.generation });
-    let lastSize = "";
-    const fitTerminal = () => {
-      if (!alive || frozen || !host.current || host.current.clientWidth < 30 || host.current.clientHeight < 30) return;
-      fit.fit();
-      if (!binding || !mounted || term.cols < 2 || term.rows < 1) return;
-      const size = `${term.cols}:${term.rows}`;
-      if (size === lastSize) return;
-      lastSize = size;
-      void core.call("pty.resize", { ...handle(), cols: term.cols, rows: term.rows }).catch(e => { lastSize = ""; if (alive) setError(errorMessage(e)); });
-    };
+    const geometry = terminalGeometry({element:host.current,term,fit,
+      enabled:()=>alive&&!frozen&&presentationVisible,
+      binding:()=>mounted&&binding?.ptyId?binding:null,
+      resize:size=>core.call('pty.resize',size),error:e=>{if(alive)setError(errorMessage(e));}});
+    const fitTerminal = geometry.schedule;
     fitRef.current = fitTerminal;
-    const observer = new ResizeObserver(fitTerminal); observer.observe(host.current);
     const writeOutput = (bytes: Uint8Array | string) => new Promise<void>(resolve => term.write(bytes, resolve));
     const send = (text: string) => {
       if (!alive || frozen || inputBlocked || !mounted || !binding || !["active", "running", "connected"].includes(binding.status)) return;
@@ -104,7 +114,7 @@ export function TerminalView({theme}:{theme:ThemeResult}) {
     host.current.addEventListener("compositionend", compositionEnd);
     const readOnce = async (): Promise<void> => {
       if (readRunning) return readFlight;
-      if (!alive || frozen || !binding) return;
+      if (!alive || frozen || !binding?.ptyId) return;
       readRunning = true;
       try {
         const output = await core.call<ReadResult>("pty.read", { ...handle(), after: cursor });
@@ -145,19 +155,23 @@ export function TerminalView({theme}:{theme:ThemeResult}) {
         });
       }
       if (notification.type === "view.moveCancelled") { frozen = false; setMoving(false); readFlight = readOnce(); fitTerminal(); term.focus(); }
+      if (notification.type === 'view.presentation') { presentationVisible=(notification.payload as {visible?:boolean})?.visible!==false;if(presentationVisible)fitTerminal(); }
       if (notification.type === "view.moveCommitted") { clipboard.invalidate(); committed = true; frozen = true; setMoving(true); }
       if (notification.type === "view.focus") term.focus();
-      if (notification.type === "view.resourcesChanged" && mounted && !frozen) {
+      if (["view.resourcesChanged", "workbench.changed"].includes(notification.type) && mounted && !frozen) {
         void core.call<{session:Binding}>("view.initialize").then(data=>{
-          if(alive && data.session.ptyId!==binding?.ptyId)setReload(value=>value+1);
+          if(!alive)return;
+          if(data.session.ptyId!==binding?.ptyId)setReload(value=>value+1);
+          else { const changed=binding?.status!==data.session.status; binding=data.session; bindingRef.current=binding; setStatus(binding.status); if(binding.error||changed&&!binding.ptyId)setError(binding.error??""); }
         }).catch(e=>{if(alive)setError(errorMessage(e));});
       }
     });
     const initialize = async () => {
       try {
         const ctx = context();
-        const settings = await core.call<{ fontSize: number; session: Binding }>("view.initialize");
+        const settings = await core.call<{ fontSize: number; shellIntegration?:boolean; session: Binding }>("view.initialize");
         if (!alive) return;
+        setShellIntegration(settings.shellIntegration!==false);
         const state = (reload === 0 ? ctx.snapshot : undefined) as (Snapshot & { recovered?: boolean; acknowledged?: number; lastInputSeq?: number }) | undefined;
         const snapshot = state?.recovered ? undefined : state;
         if (state?.recovered) { cursor = state.acknowledged ?? 0; inputSeq = state.lastInputSeq ?? 0; setError("终端显示已重建，旧屏幕无法恢复。SSH 会话仍在继续，接下来显示新的输出。"); }
@@ -174,7 +188,7 @@ export function TerminalView({theme}:{theme:ThemeResult}) {
         }
         binding = settings.session;
         if (!alive) return;
-        clipboard.invalidate(); bindingRef.current = binding; setStatus(binding.status); fitTerminal();
+        clipboard.invalidate(); bindingRef.current = binding; setStatus(binding.status); if(binding.error)setError(binding.error); fitTerminal();
         const ready = await core.call<{ ready: boolean; lastInputSeq?: number; acknowledged?: number; screenGap?: boolean }>("view.ready", { cursor });
         if (!alive) return;
         // A recovered renderer starts from the host's authoritative cursors;
@@ -182,18 +196,29 @@ export function TerminalView({theme}:{theme:ThemeResult}) {
         if (ready.lastInputSeq !== undefined) inputSeq = ready.lastInputSeq;
         if (!snapshot && ready.acknowledged !== undefined) cursor = ready.acknowledged;
         if (ready.screenGap) setError("终端显示已重建，旧屏幕无法恢复。SSH 会话仍在继续，接下来显示新的输出。");
-        mounted = true; fitTerminal(); term.focus(); readFlight = readOnce();
+        mounted = true; fitTerminal(); if(document.hasFocus()&&document.visibilityState==="visible")term.focus(); readFlight = readOnce();
+        const feed=await observeState({call:(method,params)=>core.call(method,params),onNotification:onCoreNotification},
+          {contract:'view.presentation.v1',target:{scope:{workspaceId:ctx.workspaceId!,workspaceGeneration:ctx.workspaceGeneration!},viewId:ctx.viewId!}},presentation,
+          value=>{presentationVisible=value.visible;if(value.visible)fitTerminal();},{onError:e=>{if(alive)setError(errorMessage(e));}});
+        if(!alive){await feed.dispose();return;}presentationFeed=feed;
+        const latest=await core.call<{session:Binding}>("view.initialize");
+        if(alive) {
+          if(latest.session.ptyId!==binding.ptyId)setReload(value=>value+1);
+          else {binding=latest.session;bindingRef.current=binding;setStatus(binding.status);if(binding.error)setError(binding.error);}
+        }
       } catch (e) { if (alive) { setError(errorMessage(e)); setStatus("failed"); } }
     };
     void initialize();
     const element = host.current;
     return () => {
       clipboard.invalidate();clipboardRef.current=null;selectionChange.dispose();window.removeEventListener("blur",blur);document.removeEventListener("focusout",blur);element.removeEventListener("paste",pasteEvent,true);element.removeEventListener("contextmenu",contextMenu,true);
-      alive = false; off(); observer.disconnect(); onData.dispose(); if (pollTimer) clearTimeout(pollTimer);
+      alive = false; off(); geometry.dispose(); onData.dispose(); if (pollTimer) clearTimeout(pollTimer);
+      void presentationFeed?.dispose();
       element.removeEventListener("compositionstart", compositionStart); element.removeEventListener("compositionend", compositionEnd);
-      term.dispose(); terminalRef.current = null; fitRef.current = null; sendRef.current = null; bindingRef.current = null;
+      directoryOsc.dispose();term.dispose(); terminalRef.current = null; fitRef.current = null; sendRef.current = null; bindingRef.current = null;
     };
-  }, [copy, paste, reload, theme]);
+  }, [copy, paste, reload]);
+  useEffect(()=>subscribeTheme(value=>{if(terminalRef.current)terminalRef.current.options.theme=value.terminal;}),[]);
   const changeFont = async (size: number, reset = false) => {
     try {
       const settings = await core.call<{ fontSize: number }>("plugin.invoke", { command: reset ? "settings.reset" : "settings.set", args: { fontSize: Math.max(10, Math.min(24, size)) } });
@@ -202,26 +227,29 @@ export function TerminalView({theme}:{theme:ThemeResult}) {
     } catch (e) { setError(errorMessage(e)); }
   };
   const reconnect = async () => {
+    if(status==="connecting")return;
     clipboardRef.current?.invalidate();setStatus("connecting"); setError("");
     try {
-      await core.call<Binding>("commands.execute", { commandId: "terminal.reconnect", viewId: context().viewId, operationId: crypto.randomUUID() }, 130_000);
+      await core.call<Binding>("commands.execute", { commandId: "terminal.reconnect", viewId: context().viewId, operationId: crypto.randomUUID() }, await connectionCommandTimeout(core,context().serverId,context().workspaceId));
       setReload(value => value + 1);
-    } catch (e) { setError(errorMessage(e)); setStatus("failed"); }
+    } catch (e) { setError(errorMessage(e)); setStatus(e instanceof CoreError && e.code==="CANCELED"?"canceled":e instanceof CoreError && ["AUTH_REQUIRED","AUTH_FAILED","HOST_KEY_REQUIRED","HOST_KEY_CHANGED"].includes(e.code)?"waitingAuth":"failed"); }
   };
   menuRef.current=async(x,y)=>{
     const term=terminalRef.current;if(!term||moving)return;
     const active=["active","running","connected"].includes(status)&&!inputPaused;
     try {
-      const selected=await showMenu([{id:"copy",label:"复制",enabled:term.hasSelection(),shortcut:"Ctrl+C"},{id:"paste",label:"粘贴",enabled:active,shortcut:"Ctrl+V"},{id:"smaller",label:"缩小字号",enabled:fontSize>10,separator:true},{id:"larger",label:"增大字号",enabled:fontSize<24},{id:"reset",label:"恢复默认字号",enabled:fontSize!==14},...(!active?[{id:"reconnect",label:"重新连接",enabled:!moving,separator:true}]:[])],{x,y});
+      const selected=await showMenu([{id:"copy",label:"复制",enabled:term.hasSelection(),shortcut:"Ctrl+C"},{id:"paste",label:"粘贴",enabled:active,shortcut:"Ctrl+V"},{id:"smaller",label:"缩小字号",enabled:fontSize>10,separator:true},{id:"larger",label:"增大字号",enabled:fontSize<24},{id:"reset",label:"恢复默认字号",enabled:fontSize!==defaultFont},...(!active?[{id:"reconnect",label:"重新连接",enabled:!moving&&status!=="connecting"&&status!=="waitingAuth",separator:true}]:[])],{x,y});
       if(!terminalRef.current||term!==terminalRef.current)return;
       if(document.hasFocus())term.focus();
       if(selected==="copy")await copy();else if(selected==="paste"){await core.call("views.activate",{viewId:context().viewId});term.focus();await paste();}else if(selected==="smaller")await changeFont(fontSize-1);else if(selected==="larger")await changeFont(fontSize+1);else if(selected==="reset")await changeFont(defaultFont,true);else if(selected==="reconnect")await reconnect();
     }catch(e){setError(errorMessage(e));}
   };
   return <section className="terminal-view" aria-label={(context().serverName ?? "服务器")+" 终端"}>
-    {error && <div className="notice error" role="alert"><span>{error}</span><button className="dismiss" aria-label="收起提示" onClick={()=>setError("")}>×</button></div>}
-    <div className="terminal-content" ref={host}/>
-    {(inputPaused||!["active","running","connected","connecting"].includes(status))&&<div className="ended"><span>{inputPaused?"输入已暂停，请先核对远端执行结果":statusLabel(status)+" · 本次屏幕已保留"}</span><button onClick={()=>void reconnect()}>重新连接</button></div>}
-    <footer className="terminal-status"><span><i className={"status-dot "+status}/>{moving?"正在移动":statusLabel(status)}</span><span>字号 {fontSize}</span></footer>
+    {themeError&&<Notice kind="error" action={<Button onClick={()=>void retryTheme()}>重试同步</Button>}>{themeError}</Notice>}
+    {error && <Notice kind="error" onDismiss={()=>setError("")}>{error}</Notice>}
+    <div className="terminal-content"><div className="terminal-grid" ref={host}/></div>
+    {(["connecting","waitingAuth"].includes(status))&&<Notice className="terminal-connection"><span>{statusLabel(status)}…</span>{status==="waitingAuth"&&<Button onClick={()=>{const operationId=bindingRef.current?.operationId;if(operationId)void connectionCommandTimeout(core,context().serverId,context().workspaceId).then(timeout=>core.call("commands.retry",{operationId},timeout)).catch(e=>setError(errorMessage(e)));}}>继续认证</Button>}<Button onClick={()=>{const operationId=bindingRef.current?.operationId;if(operationId)void core.call("workbench.operation.cancel",{operationId}).catch(e=>setError(errorMessage(e)));}}>取消连接</Button></Notice>}
+    {(inputPaused||!["active","running","connected","connecting","waitingAuth"].includes(status))&&<Notice className="terminal-connection"><span>{inputPaused?"输入已暂停，请先核对远端执行结果":statusLabel(status)+" · 本次屏幕已保留"}</span><Button onClick={()=>void reconnect()}>重新连接</Button></Notice>}
+    <StatusBar className="terminal-status"><span><StatusDot tone={["running","active","connected"].includes(status)?"success":["connecting","waitingAuth"].includes(status)?"warning":["failed","disconnected"].includes(status)?"error":"neutral"}/>{moving?"正在移动":statusLabel(status)}</span><Checkbox label="Shell 目录集成" title="用于目录自动跟随；SSH 执行入口可能额外读取非交互启动配置。仅对新建或明确重连的终端生效。" aria-label="Shell 目录集成" checked={shellIntegration} onChange={async e=>{const enabled=e.target.checked;try{await core.call('plugin.invoke',{command:'settings.shellIntegration',args:{enabled}});setShellIntegration(enabled);}catch(error){setError(errorMessage(error));}}}/><span>字号 {fontSize}</span></StatusBar>
   </section>;
 }

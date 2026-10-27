@@ -1,8 +1,12 @@
 # SoDeck 核心能力
 
-更新日期：2026-10-25 · 修订：r10 · 状态：职责基线；实现与验收见 T-003/T-004，启动设置及 UI 交互方案分别见 T-005/T-006。
+更新日期：2026-10-27 · 修订：r29 · 状态：职责基线；各任务分别维护确认、实现与验收。
 
 本文件描述核心提供什么、与业务插件的边界和通用资源规则。具体技术实现见[技术方案](../technical/README.md)。能力目录不等于首发功能清单，也不代表所有协议能力都已确定。
+
+P-53新增[统一事件与诊断能力设计](observability.md)，包括事件/操作链、历史/补读、重要问题、现场/指标/证据包、留存/健康。核心提供公共服务，插件报告自己的业务事实，未来AI通过相同公开接口读证据；不开放事件驱动的插件命令互调。本稿为[T-016 r1](../tasks/T-016-observability.md)能力设计，尚未实施。
+
+T-015最新数据规则：按P-52，数据库结构版本不一致时弹窗提示、备份旧库及关联凭据并创建全新库，不做旧库迁移；同版本配置保留。有效行为与START-DB测试见[启动r5](startup-settings.md)，[全新启动r3](clean-start.md)补充保留前提，[服务器管理r3](server-management.md)沿用此规则；最终实施确认由[T-015 r3](../tasks/T-015-workflow-polish.md)记录。
 
 本轮先读[程序核心设计方案](design.md)，了解十二组能力、状态所有者和验证顺序，再按需进入[调用与状态通信](communication.md)、[资源与生命周期](resources.md)和[工作台、插件视图与窗口](workbench.md)。本轮提问、检查和用户反馈集中在 [T-002](../tasks/T-002-core-design.md)。
 
@@ -16,7 +20,23 @@
 
 按产品 P-14，插件平等调用全部公开且已支持的核心能力，不建立插件能力/服务器授权。每次调用由核心统一留痕，细则及测试见[插件核心调用记录](call-records.md)。身份、参数和资源有效性检查用于归因与运行正确性。
 
+[T-008](../tasks/T-008-server-file-tree.md) 为目录树实现 [F-CORE-009](remote-read.md) 公共 SFTP/有界 exec 及通用多插件承载；目录与挂载解释归[文件插件](../plugins/files/README.md)。当前 dev.5 / API 4.1 的实测和剩余验证见 [T-008 结果](../tasks/T-008-results.md)，不改写旧任务的已验证范围。
+
+[T-010](../tasks/T-010-terminal-directory-follow.md) 已实现 [F-CORE-011](directory-context.md)：核心管理工作区目录来源、状态和代次，终端报告实际 shell 目录、文件消费公开上下文。目录来源与键盘焦点分开，不开放插件互调；实测见[任务结果](../tasks/T-010-results.md)。
+
+T-010 的[通用通信策略](../technical/component-communication.md)与[代码规划](../technical/terminal-directory-follow-implementation.md)已经实施目录/视图呈现共用的状态订阅、公共 PTY 观察与 API 4.2 兼容；测试规格在 F-CORE-001 r5/F-CORE-011 r2，实际结果只在任务记录。
+
 ## 1. 能力与边界
+
+[T-014 r7](../tasks/T-014-network-proxy.md)提交[F-CORE-015 r6](dynamic-proxy.md)及[代码方案r1](../technical/network-tunnel-implementation.md)：核心复用T-013路径/身份，新增通用监听/目标TCP、独立网络池、二进制流与splice；[插件](../plugins/proxy/README.md)持有固定转发/HTTP/SOCKS业务。公开契约和实现已建立，预算保持；[T-014结果](../tasks/T-014-results.md)记录NT验证层级及实际范围。
+
+[T-013](../tasks/T-013-ssh-jump.md) / [F-CORE-014](ssh-jump.md)将已声明的跳板职责细化为单层 SSH 连接路径提案：核心统一身份、传输、依赖快照、复用及释放，终端/文件仍通过目标租约访问。本任务已获实施确认，具体实现、实测和交付由任务维护。
+
+[T-012 r3](../tasks/T-012-dopamine.md)为[F-CORE-012 §7/8](appearance.md#7-t-012-第三主题增量方案)提交第三主题、默认迁移、公共组件与DS测试，新增[F-CORE-013](brand.md)品牌资产和专属测试；[静态设计稿r2](../design/dopamine.md)及[代码方案r1](../technical/design-system-implementation.md)供评审，本轮未授权实施。
+
+[T-011](../tasks/T-011-appearance.md) 已获确认并实现 [F-CORE-012](appearance.md) 整体视觉与深浅色切换：核心持有App主题/偏好，外壳和插件通过公开呈现/状态契约消费；App scope及真实窗口订阅身份复用通用通信，验证见[实施结果](../tasks/T-011-results.md)。
+
+本轮 [T-009](../tasks/T-009-clean-start.md) / [F-CORE-010 r2](clean-start.md) 定义全新启动与自动首终端：保留配置/偏好、工作现场仅限本次运行；启动为空，用户创建服务器工作区后自动创建一个终端并连接。核心统一启动及工作区初始化调度/去重/取消，插件管理会话业务；定位/移动不增开。确认与交付状态由任务维护，[API 4 代码方案](../technical/clean-start-implementation.md)及[实测记录](../tasks/T-009-results.md)分别说明契约与验证范围。
 
 ### 1.1 核心提供什么
 
@@ -80,7 +100,7 @@ SFTP、HTTP 或其他协议能力按实际插件需求引入。把能力放进�
 - 按产品 P-12，关闭终端或插件面板默认结束它创建的会话；用户明确选择保留且完成核心托管时例外。不能由组件卸载偶然决定，也不影响其他消费者仍持有的连接租约。
 - 插件崩溃后，核心限制其残留资源和缓冲量，按资源策略取消或保留，并提供全局查看与清理入口。业务恢复只能在结果状态已核对后进行。
 - 插件卸载时，明确处理其私有数据和资源引用；用户保存的核心资源不能被静默删除。
-- 按[产品 P-11](../product.md)，明确退出 App 结束全部本机持有的连接、监听和 PTY 通道，包括明确保留的运行资源；需要后台工作时保持 App 运行。重启可恢复配置和工作区布局，但不等于原 SSH/PTY 会话继续存在；具体恢复行为在相关功能确认。
+- 按[产品 P-11](../product.md)，明确退出 App 结束全部本机持有的连接、监听和 PTY 通道，包括明确保留的运行资源；需要后台工作时保持 App 运行。P-33 的启动规则见 [F-CORE-010](clean-start.md)：保留配置，取消跨启动工作区/视图恢复；同次运行的移动、切换和表面恢复继续保留状态，不等于重建 SSH/PTY。
 - 按产品 P-18，主窗口“×”收起到托盘，App 和独立窗口继续运行；移动视图、切换工作区、主窗口隐藏均不触发默认会话关闭。独立窗口与工作区的具体关系见[工作台规格](workbench.md)。
 
 ## 3. 单项能力如何细化
@@ -89,6 +109,19 @@ SFTP、HTTP 或其他协议能力按实际插件需求引入。把能力放进�
 
 | 功能编号 | 功能与范围 | 规格及测试流程 | 任务记录 | 消费者 |
 | --- | --- | --- | --- | --- |
+| F-CORE-023 | 通信总方案、实时速率/流量、来源与多跳计量 | [功能与CM测试](connection-metrics.md) | [T-019 r2](../tasks/T-019-connection-metrics.md) | 外壳、业务插件及未来诊断消费者；功能方案待确认 |
+| F-CORE-024 | 通信历史、比较、导出与留存 | [功能与CH测试](communication-history.md) | [T-019 r2](../tasks/T-019-connection-metrics.md) | 公共观测存储、外壳与证据服务；未实施 |
+| F-CORE-025 | 连接诊断、可选SSH响应探测与应用内提醒 | [功能与CQ测试](connection-quality.md) | [T-019 r2](../tasks/T-019-connection-metrics.md) | 连接服务、公共问题与外壳；未实施 |
+| F-CORE-026 | 主动上下行测速、取消、方法兼容与结果 | [功能与CSPEED测试](connection-speedtest.md) | [T-019 r2](../tasks/T-019-connection-metrics.md) | 核心诊断任务、历史与外壳；未实施 |
+| F-CORE-018 | 统一事件采集、分级日志、用户动作和操作关联 | [模型与EV测试](observability/events.md) | [T-016](../tasks/T-016-observability.md) | 外壳、宿主、核心及全部插件 |
+| F-CORE-019 | 历史查询/统计与可补读订阅 | [契约与HQ测试](observability/history.md) | [T-016](../tasks/T-016-observability.md) | 诊断消费者、未来AI |
+| F-CORE-020 | 重要问题聚合、确认、恢复与通知意图 | [生命周期与IS测试](observability/issues.md) | [T-016](../tasks/T-016-observability.md) | 外壳和诊断插件 |
+| F-CORE-021 | 诊断现场、有限指标和证据包 | [能力与DE测试](observability/evidence.md) | [T-016](../tasks/T-016-observability.md) | 人工排查、未来AI及导出消费者 |
+| F-CORE-022 | 观测留存、脱敏、审计兼容和存储健康 | [策略与ST测试](observability/storage.md) | [T-016](../tasks/T-016-observability.md) | 启动、核心存储及诊断服务 |
+| F-CORE-016 | 服务器表单与分组管理 | [行为、数据及SM测试](server-management.md) | [T-015设计](../tasks/T-015-workflow-polish.md) | 外壳、服务器目录；插件连接消费者保持兼容 |
+| F-CORE-017 | 插件中文名与稳定身份展示 | [元数据及PN测试](plugin-display.md) | [T-015设计](../tasks/T-015-workflow-polish.md) | 插件包、管理器与展示界面 |
+| F-CORE-015 | listener/TCP、网络池、资源组、二进制流/splice及多级路径接入（API 4.7） | [契约与NT流程](dynamic-proxy.md) | [实施方案T-014](../tasks/T-014-network-proxy.md) | 网络隧道插件；兼容回归终端/文件 |
+| F-CORE-014 | 核心 SSH 跳板、逐节点认证、路径快照与生命周期 | [功能与测试](ssh-jump.md) | [设计方案 T-013](../tasks/T-013-ssh-jump.md) | 核心外壳、终端/文件及其他目标连接消费者 |
 | F-CORE-001 | 核心调用、状态事件与有界流的公共契约 | [规格与测试](communication.md) | [设计任务 T-002](../tasks/T-002-core-design.md) | 外壳、插件及核心能力模块 |
 | F-CORE-002 | 资源归属、租约、生命周期与清理 | [规格与测试](resources.md) | [设计任务 T-002](../tasks/T-002-core-design.md) | 连接、I/O、隧道、插件运行实例 |
 | F-CORE-003 | 无插件权限分配的核心调用记录 | [规格与测试](call-records.md) | [设计任务 T-002](../tasks/T-002-core-design.md) | 全部插件、调用网关及诊断入口 |
@@ -97,6 +130,9 @@ SFTP、HTTP 或其他协议能力按实际插件需求引入。把能力放进�
 | F-CORE-006 | 无独立标题栏、顶部服务器 Tab 与完整工作区窗口拆合 | [规格与测试](server-tabs.md) | [设计方案 T-004](../tasks/T-004-server-tabs.md) | 原生窗口、核心工作台、视图与会话迁移 |
 | F-CORE-007 | 直接启动、数据/资源默认定位与 App 设置入口 | [规格与测试](startup-settings.md) | [设计方案 T-005](../tasks/T-005-startup-settings.md) | 核心启动、外壳设置、插件管理和目录包 |
 | F-CORE-008 | 统一视觉、两层导航、Tab/右键关闭、单组布局及兼容迁移 | [规格与测试](workbench-interaction.md) | [设计方案 T-006](../tasks/T-006-workbench-interaction.md) | 核心外壳、公共 UI/原生适配、终端及插件公开契约 |
+| F-CORE-009 | 远端目录/属性/有界读取与非 PTY 执行 | [功能语义与测试](remote-read.md) | [设计方案 T-008](../tasks/T-008-server-file-tree.md) | 文件插件；协议资源可供其他插件复用，挂载业务解析留在插件 |
+| F-CORE-010 | 全新启动、配置/运行状态分离、旧快照退役及新工作区首终端 | [功能及测试](clean-start.md) | [设计方案 T-009](../tasks/T-009-clean-start.md) | 核心启动、工作台、存储、窗口及插件初始化动作 |
+| F-CORE-012 | 整体视觉、浅深主题、全局选择/持久化和实时分发 | [功能及测试](appearance.md) | [方案 T-011](../tasks/T-011-appearance.md) | 工作台、窗口、原生菜单、公开SDK和当前终端/文件插件 |
 
 其余能力的范围与验证准备见[设计方案](design.md)，进入实际任务前再建立各自详细规格；公共设计不等于全部待实现清单。T-003 补充本批选用范围、技术建议与预算，状态及确认只在任务维护。
 

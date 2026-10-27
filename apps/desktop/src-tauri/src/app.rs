@@ -1,3 +1,19 @@
+#[path = "plugin_dialogs.rs"]
+mod plugin_dialogs;
+#[path = "surface_endpoint.rs"]
+mod surface_endpoint;
+#[path = "application_menu.rs"]
+mod application_menu;
+#[path = "plugin_registry.rs"]
+mod plugin_registry;
+#[path = "communication_services.rs"]
+mod communication_services;
+#[path = "appearance_services.rs"]
+mod appearance_services;
+#[path = "directory_context.rs"]
+mod directory_context;
+#[path = "plugin_presentation.rs"]
+mod plugin_presentation;
 #[path = "presentation_services.rs"]
 mod presentation_services;
 #[path = "workbench_services.rs"]
@@ -111,6 +127,8 @@ struct SnapshotTransfer {
     next: usize,
 }
 struct PendingOpen {
+    plugin_id: String,
+    generation: Option<String>,
     created: Instant,
     server_id: Option<String>,
     window_id: String,
@@ -123,13 +141,23 @@ struct PendingOpen {
     waiting_auth: bool,
 }
 pub struct State {
-    theme: Value,
+    communication: Mutex<sodeck_communication::Hub>,
+    state_participants: Mutex<HashMap<String,std::collections::HashSet<String>>>,
+    directories: Mutex<HashMap<String,directory_context::DirectorySource>>,
+    theme: Mutex<crate::theme::Appearance>,
+    app_generation: String,
     menus: Arc<crate::presentation::Menus>,
+    application_menus: Mutex<HashMap<String,application_menu::ApplicationMenu>>,
+    menu_opening: Mutex<()>,
     core: Arc<Core>,
     plugins: Mutex<PluginManager>,
-    loaded: Mutex<Option<Arc<Loaded>>>,
+    loaded: Mutex<HashMap<String,Arc<Loaded>>>,
     workbench: Mutex<Workbench>,
     bindings: Mutex<HashMap<String, Arc<Binding>>>,
+    view_badges: Mutex<HashMap<String, u64>>,
+    dialogs: Mutex<HashMap<String, Arc<plugin_dialogs::Session>>>,
+    dialog_transition: Mutex<()>,
+    shell_modals: Mutex<std::collections::HashSet<String>>,
     view_operations: ViewOperations,
     snapshots: Mutex<HashMap<String, SnapshotTransfer>>,
     cache: Mutex<HashMap<String, Arc<Cached>>>,
@@ -137,8 +165,10 @@ pub struct State {
     mounting: Mutex<()>,
     shutdown_lock: Mutex<()>,
     workspace_busy: Mutex<std::collections::BTreeSet<String>>,
+    workspace_creation: Mutex<()>,
     chrome_reports: Mutex<HashMap<String, crate::window_chrome::Report>>,
     dragging: AtomicBool,
+    seen_window_focus: Mutex<std::collections::HashSet<String>>,
     queued_window_closes: Mutex<std::collections::BTreeSet<String>>,
     layout_operations: Mutex<HashMap<String, Arc<services::LayoutOperation>>>,
     native: NativeViews,
@@ -208,6 +238,7 @@ fn spawn_plugin(
     let initializing = Arc::new(AtomicBool::new(true));
     let init = initializing.clone();
     let callback_core = core.clone();
+    let binary_owner = caller.clone();
     let callback = Arc::new(move |method: &str, params: Value| {
         let core = &callback_core;
         let active_gateway = public_gateway
@@ -246,10 +277,14 @@ fn spawn_plugin(
         })
     });
     let process = Arc::new(
-        PluginProcess::spawn(
+        PluginProcess::spawn_with_binary(
             std::env::current_exe().map_err(|e| e.to_string())?,
             &package.worker_path,
             callback,
+            Some(sodeck_plugin_host::BinaryCallbacks {
+                receive: {let core=core.clone();let owner=binary_owner.clone();Arc::new(move|frame|core.network_input(&owner,frame).map_err(|e|RpcError::new(&e.code,e.message)))},
+                produce: {let core=core.clone();let owner=binary_owner.clone();Arc::new(move|sink|core.network_output(&owner,|frame|sink(frame)))},
+            }),
         )
         .map_err(|e| e.to_string())?,
     );
@@ -275,26 +310,9 @@ fn spawn_plugin(
 }
 
 impl State {
-    fn loaded(&self) -> Result<Arc<Loaded>> {
-        let loaded = self.loaded.lock().unwrap().clone().ok_or_else(|| {
-            err(
-                "PLUGIN_UNAVAILABLE",
-                self.startup_error
-                    .lock()
-                    .unwrap()
-                    .clone()
-                    .unwrap_or_else(|| "终端插件尚未安装或不可用".into()),
-            )
-        })?;
-        if !loaded.process.is_alive() {
-            return Err(err(
-                "PLUGIN_CRASHED",
-                "终端插件后台已经结束，正在回收其资源",
-            ));
-        }
-        Ok(loaded)
-    }
     fn changed(&self) {
+        self.sync_directories();
+        self.prune_state_feeds();
         let payload = {
             let w = self.workbench.lock().unwrap();
             json!({"revision":w.revision,"windowIds":w.windows.keys().collect::<Vec<_>>(),"workspaceIds":w.workspaces.keys().collect::<Vec<_>>(),"viewIds":w.views.iter().map(|v|&v.view_id).collect::<Vec<_>>(),"changeKind":"snapshot"})
@@ -321,11 +339,9 @@ impl State {
             let _ = self.native.notify(id, "workbench.changed", payload.clone());
         }
     }
-    fn save(&self) -> Result<()> {
-        self.workbench
-            .lock()
-            .unwrap()
-            .save(&self.data.join("workbench.json"))
+    fn save_preferences(&self) -> Result<()> {
+        let w = self.workbench.lock().unwrap();
+        crate::window_preferences::save(&self.data, w.windows.get("main").and_then(|w| w.bounds.clone()))
             .map_err(|e| err("STORAGE_ERROR", e))
     }
     fn warning(&self, warning: &Value) {
@@ -334,25 +350,11 @@ impl State {
             let _ = window.eval(&format!("window.__sodeckNotify?.({notification});"));
         }
     }
-    fn save_committed(&self, mut result: Value, message: &str) -> Value {
+    fn commit_runtime(&self, mut result: Value) -> Value {
         result["committed"] = json!(true);
-        match self.save() {
-            Ok(()) => result["persisted"] = json!(true),
-            Err(error) => {
-                let warning = json!({"code":"STORAGE_ERROR","message":message,"details":{"cause":error.message}});
-                result["persisted"] = json!(false);
-                result["warning"] = warning.clone();
-                self.warning(&warning);
-            }
-        }
+        result["persisted"] = json!(false);
         self.changed();
         result
-    }
-    fn worker(&self, command: &str, args: Value) -> Result<Value> {
-        self.loaded()?.process.invoke(command, args).map_err(|e| {
-            serde_json::from_value(serde_json::to_value(e).unwrap())
-                .unwrap_or_else(|_| err("PLUGIN_ERROR", "终端插件调用失败"))
-        })
     }
     fn binding(&self, id: &str) -> Result<Arc<Binding>> {
         self.bindings
@@ -380,7 +382,7 @@ impl State {
             .get(&view.view_id)
             .cloned()
             .unwrap_or_default();
-        let cursors=self.core.bind_view_resources(&self.loaded()?.instance,&[json!({"viewId":view.view_id,"workspaceId":view.workspace_id,"mountGeneration":view.mount_generation,"resources":references})])?;
+        let cursors=self.core.bind_view_resources(&self.loaded_for(&view.plugin_id)?.instance,&[json!({"viewId":view.view_id,"workspaceId":view.workspace_id,"mountGeneration":view.mount_generation,"resources":references})])?;
         Ok(cursors[&view.view_id].clone())
     }
     fn create_binding(
@@ -390,7 +392,7 @@ impl State {
         snapshot: Option<Value>,
         candidate: bool,
     ) -> Result<Arc<Binding>> {
-        let loaded = self.loaded()?;
+        let loaded = self.loaded_for(&view.plugin_id)?;
         let server = if view.workspace_id == "@app" {
             json!({"name":null})
         } else {
@@ -428,7 +430,7 @@ impl State {
             .lock()
             .unwrap()
             .insert(id.clone(), binding.clone());
-        let context = json!({"theme":self.theme,"viewId":view.view_id,"viewType":view.view_type,"workspaceId":view.workspace_id,"serverId":view.server_id,"serverName":server["name"],"pluginVersion":loaded.package.manifest.version,"mountGeneration":view.mount_generation,"windowId":window,"pluginData":view.runtime_data,"pluginState":view.plugin_state,"snapshot":snapshot});
+        let context = json!({"workspaceGeneration":self.workbench.lock().unwrap().workspaces.get(&view.workspace_id).map(|w|w.generation.clone()),"pluginId":view.plugin_id,"theme":self.theme_snapshot(loaded.package.manifest.requires.capabilities.iter().any(|c|c=="ui.theme.live.v1")),"viewId":view.view_id,"viewType":view.view_type,"workspaceId":view.workspace_id,"serverId":view.server_id,"serverName":server["name"],"pluginVersion":loaded.package.manifest.version,"mountGeneration":view.mount_generation,"windowId":window,"pluginData":view.runtime_data,"pluginState":view.plugin_state,"snapshot":snapshot});
         let weak = Arc::downgrade(self);
         let fail = weak.clone();
         let ipc = Arc::new(move |source: String, body: String| {
@@ -483,6 +485,7 @@ impl State {
             header.method.as_deref(),
             Some(
                 "app.exit"
+                    | "state.close" | "state.ack" | "pty.observe.close" | "directories.unregister"
                     | "views.close"
                     | "workspaces.close"
                     | "windows.close"
@@ -535,7 +538,10 @@ impl State {
             return;
         }
         let state = self.clone();
-        std::thread::spawn(move || {
+        let method=header.method.unwrap_or_else(||"rpc.invalid".into());
+        let short=sodeck_plugin_host::dispatcher::short(&method);
+        let rejected_source=source.clone();let request_id=header.request_id.unwrap_or_else(||"invalid".into());
+        let job=Box::new(move || {
             let response = match serde_json::from_str::<Request>(&body) {
                 Ok(request) => state.request(Some(&source), request),
                 Err(_) => {
@@ -554,20 +560,30 @@ impl State {
                 "window.__sodeckReceive?.({});",
                 serde_json::to_string(&response).unwrap()
             );
-            let _ = state.native.eval(source, script);
+            if short {let _=state.native.post_eval(source,script);} else {let _=state.native.eval(source,script);}
             state.inflight.fetch_sub(1, Ordering::SeqCst);
         });
+        if short {
+            if !sodeck_plugin_host::dispatcher::submit(&method,job){
+                self.inflight.fetch_sub(1,Ordering::SeqCst);
+                let result=self.caller(Some(&rejected_source)).and_then(|caller|self.core.record(&caller,&method,&json!({"capacity":true}),||Err(err("CAPACITY","短调用队列已满"))));
+                let response=Response::from(request_id,result);
+                let _=self.native.post_eval(rejected_source,format!("window.__sodeckReceive?.({});",serde_json::to_string(&response).unwrap()));
+            }
+        } else {std::thread::spawn(job);}
     }
     fn caller(&self, source: Option<&str>) -> Result<Caller> {
         if let Some(source) = source {
+            if let Some(caller)=self.endpoint_caller(source)? {return Ok(caller);}
             if let Some(window) = source.strip_prefix("@window:") {
+                self.endpoint_window(source,false)?;
                 if self.app.get_webview_window(window).is_none() {
                     return Err(err("SOURCE_INVALID", "窗口已关闭"));
                 }
                 return Ok(Caller::shell());
             }
             let b = self.binding(source)?;
-            let l = self.loaded()?;
+            let l = self.plugin_for_view(&b.view_id)?;
             Ok(Caller {
                 source: "plugin".into(),
                 plugin_id: Some(l.package.manifest.plugin_id.clone()),
@@ -639,7 +655,7 @@ impl State {
             || (request.method == "plugin.invoke"
                 && request.params["command"]
                     .as_str()
-                    .is_some_and(|c| c.ends_with(".get") || c.ends_with(".list")));
+                    .is_some_and(|c| c.ends_with(".get") || c.ends_with(".list") || c.ends_with(".snapshot")));
         if query {
             return Response::from(
                 request.request_id,
@@ -745,11 +761,37 @@ impl State {
         method: &str,
         params: Value,
     ) -> Result<Value> {
-        if let Some(source) = source.filter(|s| !s.starts_with("@window:")) {
+        if caller.plugin_id.is_some() && (params.get("scope").is_some() || method=="connections.acquire") {
+            let checked=(|| {
+                let owner=caller.plugin_id.as_deref().unwrap();
+                let w=self.workbench.lock().unwrap();
+                if let Some(scope)=params.get("scope") {
+                    let id=required(scope,"workspaceId")?;
+                    let generation=required(scope,"workspaceGeneration")?;
+                    let ws=w.workspaces.get(id).ok_or_else(||err("STALE_WORKSPACE","工作区已关闭"))?;
+                    if ws.generation!=generation || !w.views.iter().any(|v|v.workspace_id==id&&v.plugin_id==owner){return Err(err("STALE_WORKSPACE","插件工作区来源已失效"));}
+                    if let Some(view)=&caller.view_id {if w.view(view).map_err(native_error)?.workspace_id!=id{return Err(err("SOURCE_INVALID","请求不属于当前视图工作区"));}}
+                }
+                if method=="connections.acquire" {
+                    let operation=required(&params,"operationId")?;
+                    let ops=self.pending_opens.lock().unwrap();
+                    let op=ops.get(operation).ok_or_else(||err("STALE_OPERATION","连接操作已失效"))?;
+                    let workspace=required(&params,"workspaceId")?;
+                    if op.plugin_id!=owner||op.canceled||op.server_id.as_deref()!=Some(workspace)||w.workspaces.get(workspace).is_none_or(|ws|Some(&ws.generation)!=op.generation.as_ref()){return Err(err("CANCELED","连接所属工作区已关闭"));}
+                }
+                Ok(())
+            })();
+            if let Err(error)=checked{return self.core.record(caller,method,&params,||Err(error));}
+        }
+        if source.is_some_and(|s|self.dialog_endpoint(s).is_some()) && (method.starts_with("view.")||matches!(method,"views.requestFocus"|"views.recover"|"views.presentation"|"views.move"|"views.close"|"workbench.surface"|"workbench.modal")) {
+            return self.core.record(caller,method,&params,||Err(err("INVALID_CONTEXT","弹窗不是主视图挂载")));
+        }
+        if let Some(source) = source.filter(|s| !s.starts_with("@window:") && self.dialog_endpoint(s).is_none()) {
             let b = self.binding(source)?;
             let phase = b.phase.load(Ordering::SeqCst);
             if phase == 3
                 || (phase != 1
+                    && !(phase == 0 && (method.starts_with("ui.theme.") || matches!(method,"state.ack"|"state.close") || (matches!(method,"state.get"|"state.open") && params["contract"]=="app.theme.v1")))
                     && !matches!(
                         method,
                         "view.initialize"
@@ -762,6 +804,12 @@ impl State {
                     Err(err("MOUNT_EXPIRED", "当前视图没有有效输入绑定"))
                 });
             }
+        }
+        if method.starts_with("state.") {
+            return self.core.record(caller,method,&params,||self.state_call(caller,source,method,&params));
+        }
+        if method.starts_with("directories.") {
+            return self.core.record(caller,method,&params,||self.directory_call(caller,method,&params));
         }
         if method.starts_with("workspaces.")
             || method.starts_with("windows.")
@@ -777,6 +825,7 @@ impl State {
         {
             return self.core.record(caller, method, &params, || {
                 let result = self.external(caller, source, method, &params)?;
+                sodeck_core::workbench_ui_contract::validate("x-results", method, &result)?;
                 crate::workbench_contract::validate_kind("x-results", method, &result)
                     .map_err(|e| err("PROTOCOL_ERROR", e))?;
                 Ok(result)
@@ -800,6 +849,9 @@ impl State {
                     .filter(|v| !v.finished)
                     .count();
                 let native = self.native.diagnostics().map_err(native_error)?;
+                value["communication"]=serde_json::to_value(self.communication.lock().unwrap().stats()).unwrap();
+                value["pluginInstances"] = json!(self.all_plugins().iter().map(|p|json!({"pluginId":p.package.manifest.plugin_id,"instanceId":p.instance,"processId":p.process.process_id(),"alive":p.process.is_alive()})).collect::<Vec<_>>());
+                value["pluginDialogs"] = json!({"active":self.dialogs.lock().unwrap().values().filter(|d|!d.cleaned.load(Ordering::SeqCst)).count()});
                 value["workbench"] = json!({"bindings":bindings,"snapshots":snapshots,"busyWorkspaces":busy,"queuedWindowCloses":queued_windows,"viewOperations":view_operations,"queuedViewCloses":queued_views,"pendingCommands":pending_commands,"native":native});
             }
         }
@@ -820,7 +872,7 @@ impl State {
             let mut w = self.workbench.lock().unwrap();
             let _ = w.remove_workspace(id);
             drop(w);
-            let _ = self.save();
+            let _ = self.save_preferences();
             self.changed();
         }
         result
@@ -837,6 +889,10 @@ impl State {
         }
         crate::workbench_contract::validate(method, params)
             .map_err(|e| err("INVALID_PARAMS", e))?;
+        sodeck_core::workbench_ui_contract::validate("x-methods", method, params)?;
+        if matches!(method,"views.presentation"|"views.requestFocus"|"workbench.contributions"|"workbench.contributions.v2"|"views.badge.set"|"workbench.dock.configure") {return self.extended_workbench(_caller,source,method,params);}
+        if method.starts_with("ui.dialog.") {return self.dialog_call(_caller,source,method,params);}
+        if method.starts_with("ui.theme.") { return self.appearance_service(_caller,method,params); }
         if method.starts_with("ui.") { return self.presentation_service(source,method,params); }
         if matches!(method,"views.move"|"views.activate"|"views.close"|"workspaces.activate"|"workspaces.move"|"workspaces.close"|"windows.merge"|"workspaces.drag"|"app.exit") {
             for id in self.app.webview_windows().keys() { self.cancel_menus(id); }
@@ -846,7 +902,7 @@ impl State {
         }
         match method {
             "app.info" => Ok(
-                json!({"version":"2.0.0-dev.3","platform":std::env::consts::OS,"startupError":self.startup_error.lock().unwrap().clone()}),
+                json!({"version":env!("CARGO_PKG_VERSION"),"platform":std::env::consts::OS,"startupError":self.startup_error.lock().unwrap().clone()}),
             ),
             "app.show" => {
                 if let Some(w) = self.app.get_webview_window("main") {
@@ -876,6 +932,7 @@ impl State {
             "plugins.list" => {
                 Ok(serde_json::to_value(self.plugins.lock().unwrap().status()).unwrap())
             }
+            "plugins.metadata.list" => Ok(json!({"plugins":self.plugins.lock().unwrap().metadata()})),
             "plugins.prepareUpdate" => {
                 let path = if let Some(path) = params["path"].as_str().filter(|p| !p.is_empty()) {
                     PathBuf::from(path)
@@ -904,7 +961,12 @@ impl State {
                 if command == "command.execute" || command.starts_with("lifecycle.") {
                     return Err(err("SOURCE_INVALID", "宿主生命周期不能通过业务路由调用"));
                 }
-                self.worker(command, params.get("args").cloned().unwrap_or(json!({})))
+                let mut args=params.get("args").cloned().unwrap_or(json!({}));
+                let owner=_caller.plugin_id.as_deref().ok_or_else(||err("SOURCE_INVALID","插件来源缺失"))?;
+                if self.loaded_for(owner)?.package.manifest.requires.capabilities.iter().any(|c|c=="workspace.presentation.v1") {
+                    args["viewId"]=json!(_caller.view_id);
+                }
+                self.worker_for(owner, command, args)
             }
             "clipboard.readText" => {
                 let text = arboard::Clipboard::new()
@@ -931,7 +993,8 @@ impl State {
                 if self.view_operations.busy(id) {
                     return Err(err("MOVE_IN_PROGRESS", "正在移动或关闭视图"));
                 }
-                let _ = self.loaded()?;
+                let owner=self.workbench.lock().unwrap().view(id).map_err(native_error)?.plugin_id;
+                self.recover_plugin(&owner)?;
                 {
                     let mut w = self.workbench.lock().unwrap();
                     let mut candidate = w.clone();
@@ -947,7 +1010,7 @@ impl State {
                         return Ok(json!({"ended":true}));
                     }
                     if reset {
-                        w.commit(candidate, &self.data.join("workbench.json"))
+                        w.commit(candidate)
                             .map_err(|e| err("STORAGE_ERROR", e))?;
                     }
                 }
@@ -986,10 +1049,8 @@ impl State {
                     }
                     return Err(error);
                 }
-                Ok(self.save_committed(
-                    json!({"viewId":id,"recovered":true}),
-                    "视图已恢复，但工作台布局保存失败；当前会话仍可继续使用。",
-                ))
+                Ok(self.commit_runtime(
+                    json!({"viewId":id,"recovered":true})))
             }
             "views.activate" => {
                 let id = required(params, "viewId")?;
@@ -1012,7 +1073,6 @@ impl State {
                         let _ = w.set_focus();
                     }
                 }
-                self.save()?;
                 self.changed();
                 Ok(serde_json::to_value(v).unwrap())
             }
@@ -1054,7 +1114,12 @@ impl State {
                     .unwrap()
                     .view(&b.view_id)
                     .map_err(native_error)?;
-                self.worker("lifecycle.initialize",json!({"viewId":view.view_id,"viewType":view.view_type,"workspaceId":view.workspace_id,"pluginData":view.runtime_data,"instanceKey":view.instance_key,"serverId":view.server_id,"title":view.title}))
+                let generation=self.workbench.lock().unwrap().workspaces.get(&view.workspace_id).map(|w|w.generation.clone());
+                let plugin=self.loaded_for(&view.plugin_id)?;
+                self.core.register_network_view(&plugin.instance,&view.view_id,sodeck_core::WorkspaceScope {
+                    workspace_id:view.workspace_id.clone(),workspace_generation:generation.clone().ok_or_else(||err("STALE_WORKSPACE","工作区已关闭"))?,
+                })?;
+                self.worker("lifecycle.initialize",json!({"viewId":view.view_id,"viewType":view.view_type,"workspaceId":view.workspace_id,"workspaceGeneration":generation,"pluginData":view.runtime_data,"instanceKey":view.instance_key,"serverId":view.server_id,"title":view.title}))
             }
             "view.ready" => {
                 let b =
@@ -1195,10 +1260,16 @@ impl State {
             }
         };
         if binding.phase.load(Ordering::SeqCst) != 3 {
+            let was_visible=binding.geometry.lock().unwrap().1;
             self.native
                 .present(binding.id.clone(), bounds, visible)
                 .map_err(native_error)?;
             *binding.geometry.lock().unwrap() = (bounds, visible);
+            if visible&&!was_visible {
+                let focused=self.workbench.lock().unwrap().workspaces.get(&view.workspace_id).is_some_and(|w|w.focus_target.as_deref()==Some(id));
+                if focused {let _=self.native.focus(binding.id.clone());let _=self.native.notify(binding.id.clone(),"view.focus",json!({}));}
+            }
+            if visible!=was_visible {drop(_mount);self.publish_presentation(id);}
         }
         Ok(Value::Null)
     }
@@ -1210,8 +1281,9 @@ impl State {
             Ok(view) => view,
             Err(_) => return Ok(()),
         };
+        self.cancel_view_open(id)?;
         let _workspace = self.workspace_guard_except(&[view.workspace_id.clone()], operation)?;
-        if self.loaded().is_ok() {
+        if self.loaded_for(&view.plugin_id).is_ok() {
             let prepare=self.worker("lifecycle.prepareClose",json!({"viewId":id,"workspaceId":view.workspace_id,"pluginData":view.runtime_data,"operationId":operation}))?;
             if prepare["allow"] != true {
                 return Err(err("CANCELED", "关闭已取消"));
@@ -1263,7 +1335,7 @@ impl State {
                 return;
             }
             let result = (|| {
-                if state.loaded().is_ok() {
+                if state.loaded_for(&view.plugin_id).is_ok() {
                     let prepare=state.worker("lifecycle.prepareClose",json!({"viewId":id,"workspaceId":view.workspace_id,"pluginData":view.runtime_data}))?;
                     if prepare["allow"] != true {
                         return Err(err("CANCELED", "关闭已取消"));
@@ -1279,17 +1351,21 @@ impl State {
         });
     }
     fn close_view_inner(self: &Arc<Self>, id: &str) -> Result<()> {
+        self.cancel_plugin_dialogs(Some(id));
         let view = self
             .workbench
             .lock()
             .unwrap()
             .view(id)
             .map_err(native_error)?;
-        if let Ok(plugin) = self.loaded() {
-            self.worker(
+        if let Ok(plugin) = self.loaded_for(&view.plugin_id) {
+            // Close is already committed. Revoke native listeners before waiting
+            // for worker cleanup; a failed worker cannot keep a port alive.
+            self.core.close_network_view(&plugin.instance,id);
+            let _cleanup = self.worker(
                 "lifecycle.close",
                 json!({"viewId":id,"workspaceId":view.workspace_id,"pluginData":view.runtime_data}),
-            )?;
+            );
             let resources = self
                 .workbench
                 .lock()
@@ -1326,10 +1402,8 @@ impl State {
         if let Some(w) = self.app.get_webview_window(&format!("detached-{id}")) {
             let _ = w.destroy();
         }
-        self.save_committed(
-            json!({}),
-            "视图已关闭，但布局未保存；重启后可能恢复已结束的占位。",
-        );
+        self.commit_runtime(
+            json!({}));
         Ok(())
     }
     fn move_view(self: &Arc<Self>, id: &str, placement: &str, group: u8) -> Result<Value> {
@@ -1425,6 +1499,7 @@ impl State {
         }
     }
     fn move_inner(self: &Arc<Self>, id: &str, placement: &str, group: u8) -> Result<Value> {
+        self.cancel_plugin_dialogs(Some(id));
         let deadline = Instant::now() + Duration::from_secs(10);
         let old = self
             .workbench
@@ -1435,7 +1510,7 @@ impl State {
         self.workbench
             .lock()
             .unwrap()
-            .validate_placement(&old.view_type, placement)
+            .validate_placement(&format!("{}::{}",old.plugin_id,old.view_type), placement)
             .map_err(native_error)?;
         if group > 1 {
             return Err(err("UNSUPPORTED_LAYOUT", "最多支持两个区域"));
@@ -1477,14 +1552,14 @@ impl State {
                     .moved(id, placement, group, old.mount_generation)
                     .map_err(native_error)?;
                 current
-                    .commit(candidate, &self.data.join("workbench.json"))
+                    .commit(candidate)
                     .map_err(|e| err("STORAGE_ERROR", e))?;
                 moved
             };
             self.changed();
             let mut result = serde_json::to_value(moved).unwrap();
             result["committed"] = json!(true);
-            result["persisted"] = json!(true);
+            result["persisted"] = json!(false);
             return Ok(result);
         }
         let source = self
@@ -1570,7 +1645,7 @@ impl State {
                     .map_err(native_error)?;
             }
             let references = current.resources.get(id).cloned().unwrap_or_default();
-            let cursors=self.core.bind_view_resources(&self.loaded()?.instance,&[json!({"viewId":id,"workspaceId":old.workspace_id,"mountGeneration":target_view.mount_generation,"resources":references})])?;
+            let cursors=self.core.bind_view_resources(&self.loaded_for(&old.plugin_id)?.instance,&[json!({"viewId":id,"workspaceId":old.workspace_id,"mountGeneration":target_view.mount_generation,"resources":references})])?;
             *b.resume.lock().unwrap() = cursors[id].clone();
             *current = next;
             source.phase.store(3, Ordering::SeqCst);
@@ -1593,10 +1668,8 @@ impl State {
                     let _ = w.destroy();
                 }
             }
-            Ok(self.save_committed(
-                serde_json::to_value(moved).unwrap(),
-                "移动已完成，但布局未保存；重启后可能恢复原位置。",
-            ))
+            Ok(self.commit_runtime(
+                serde_json::to_value(moved).unwrap()))
         })();
         if result.is_err() && source.phase.load(Ordering::SeqCst) != 3 {
             if let Some(b) = target {
@@ -1635,6 +1708,9 @@ impl State {
         };
         let mut window =
             WebviewWindowBuilder::new(&self.app, &label, WebviewUrl::App("index.html".into()))
+                .icon(crate::brand::icon(false)).map_err(|e|native_error(e.to_string()))?
+                .background_color(self.theme_background())
+                .initialization_script(crate::theme::bootstrap(&self.theme_snapshot(true)))
                 .title(format!(
                     "{} · {} — SoDeck",
                     server["name"].as_str().unwrap_or("服务器"),
@@ -1649,7 +1725,7 @@ impl State {
                 ))
                 .data_directory(self.data.join("profiles/shell"));
         if cfg!(debug_assertions) {
-            if let Ok(port) = std::env::var("SODECK_SHELL_DEBUG_PORT") {
+            if let Some(port) = self.app.state::<crate::startup_config::DebugConfig>().shell_port {
                 window = window.additional_browser_args(&format!("--remote-debugging-port={port}"));
             }
         }
@@ -1686,6 +1762,7 @@ impl State {
         if self.stopping.swap(true, Ordering::SeqCst) {
             return;
         }
+        self.cancel_plugin_dialogs(None);
         let _mount = self.mounting.lock().unwrap();
         let bindings = self
             .bindings
@@ -1700,12 +1777,12 @@ impl State {
             let _ = self.native.close(b.id.clone());
         }
         self.bindings.lock().unwrap().clear();
-        if let Some(plugin) = self.loaded.lock().unwrap().take() {
+        for (_,plugin) in std::mem::take(&mut *self.loaded.lock().unwrap()) {
             let _ = plugin.process.stop();
             self.core.close_instance(&plugin.instance);
         }
         self.core.shutdown();
-        let _ = self.save();
+        let _ = self.save_preferences();
         // Destroy shell WebViews while the event loop can still dispatch their
         // native teardown. Dropping them from the event-handler's destructor
         // can re-enter that handler while its captured state is being freed.
@@ -1713,55 +1790,7 @@ impl State {
             let _ = window.destroy();
         }
     }
-    fn monitor(self: &Arc<Self>) {
-        let weak = Arc::downgrade(self);
-        std::thread::spawn(move || loop {
-            std::thread::sleep(Duration::from_millis(250));
-            let Some(state) = weak.upgrade() else { break };
-            if state.stopping.load(Ordering::SeqCst) {
-                break;
-            }
-            let plugin = state.loaded.lock().unwrap().clone();
-            if let Some(plugin) = plugin {
-                if !plugin.process.is_alive() {
-                    let _mount = state.mounting.lock().unwrap();
-                    if state.stopping.load(Ordering::SeqCst) {
-                        break;
-                    }
-                    state.core.close_instance(&plugin.instance);
-                    state.loaded.lock().unwrap().take();
-                    *state.startup_error.lock().unwrap() = Some(
-                        "终端插件后台已结束，所属连接已回收；可重启 SoDeck 重新加载插件。".into(),
-                    );
-                    let mut w = state.workbench.lock().unwrap();
-                    let affected = w.resources.keys().cloned().collect::<Vec<_>>();
-                    for view in &mut w.views {
-                        if affected.contains(&view.view_id) {
-                            view.status = "ended".into();
-                            view.runtime_data = Value::Null;
-                        }
-                    }
-                    w.resources.clear();
-                    drop(w);
-                    let bindings = state
-                        .bindings
-                        .lock()
-                        .unwrap()
-                        .values()
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    for b in bindings {
-                        b.phase.store(3, Ordering::SeqCst);
-                        b.changed.notify_all();
-                        let _ = state.native.close(b.id.clone());
-                    }
-                    state.bindings.lock().unwrap().clear();
-                    state.changed();
-                    break;
-                }
-            }
-        });
-    }
+
 }
 
 #[tauri::command]
@@ -1772,7 +1801,8 @@ async fn rpc(
 ) -> std::result::Result<Response, String> {
     let state = state.inner().clone();
     let id = request.request_id.clone();
-    if window.label() != "main"
+    let registered_dialog=state.dialogs.lock().unwrap().values().find(|d|d.label==window.label()&&!d.cleaned.load(Ordering::SeqCst)).map(|d|d.source.clone());
+    if registered_dialog.is_none() && window.label() != "main"
         && !window.label().starts_with("workspace-")
         && !window.label().starts_with("detached-")
     {
@@ -1782,33 +1812,12 @@ async fn rpc(
         ));
     }
     Ok(tauri::async_runtime::spawn_blocking(move || {
-        state.request(Some(&format!("@window:{}", window.label())), request)
+        state.request(Some(&registered_dialog.unwrap_or_else(||format!("@window:{}", window.label()))), request)
     })
     .await
     .unwrap_or_else(|_| Response::from(id, Err(err("INTERNAL", "调用任务意外结束")))))
 }
 
-fn bootstrap_paths(app: &tauri::AppHandle) -> (PathBuf, PathBuf) {
-    if let (Some(package), Some(keys)) = (
-        std::env::var_os("SODECK_PLUGIN_PACKAGE"),
-        std::env::var_os("SODECK_PLUGIN_KEYS"),
-    ) {
-        return (package.into(), keys.into());
-    }
-    let root = app
-        .path()
-        .resource_dir()
-        .unwrap_or_else(|_| PathBuf::from("."));
-    let dir = if root.join("resources/terminal.sodeck-plugin").exists() {
-        root.join("resources")
-    } else {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../resources")
-    };
-    (
-        dir.join("terminal.sodeck-plugin"),
-        dir.join("development-public-key.json"),
-    )
-}
 fn read_keys(path: &Path) -> std::result::Result<TrustedKeys, String> {
     use base64::Engine;
     let value: Value = serde_json::from_slice(&fs::read(path).map_err(|e| e.to_string())?)
@@ -1840,12 +1849,15 @@ fn read_keys(path: &Path) -> std::result::Result<TrustedKeys, String> {
 }
 pub fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![rpc])
+        .invoke_handler(tauri::generate_handler![rpc,application_menu::application_menu_open,application_menu::application_menu_reply])
         .setup(|app| {
+            // Tauri panics on a setup Err from its event callback. Handle the
+            // failure here so GUI-only launches always have a visible channel.
+            let result=(|| -> std::result::Result<(),Box<dyn std::error::Error>> {
             let handle = app.handle().clone();
-            let data = std::env::var_os("SODECK_DATA_DIR")
-                .map(PathBuf::from)
-                .unwrap_or(handle.path().app_data_dir()?);
+            let config=crate::startup_config::StartupConfig::resolve(&std::env::current_exe()?,&handle.path().app_data_dir()?,&handle.path().resource_dir()?)?;
+            let data=config.data;
+            app.manage(config.debug);
             fs::create_dir_all(&data)?;
             let lock = fs::OpenOptions::new()
                 .read(true)
@@ -1855,24 +1867,38 @@ pub fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 .open(data.join("app.lock"))?;
             fs2::FileExt::try_lock_exclusive(&lock)
                 .map_err(|_| std::io::Error::other("此数据目录已有 SoDeck 实例运行"))?;
+            crate::startup_diagnostics::use_data(&data);
+            crate::startup_diagnostics::record("database preflight");
+            sodeck_core::store_bootstrap::prepare_database(&data, |notice| {
+                let description=format!("{}\n数据库结构版本：{} → {}\n\n将备份旧数据库和加密凭据，再创建全新数据库。原服务器、信任记录和数据库设置不会自动导入。插件包和独立偏好保留。\n\n备份位置：{}",
+                    if notice.recovering {"上次数据库重建未完成，将先恢复该操作。"}else{"数据库版本与当前程序不一致。"},
+                    notice.previous_version,notice.current_version,notice.backup_path.display());
+                rfd::MessageDialog::new().set_title("SoDeck · 数据库版本更新").set_description(description).set_level(rfd::MessageLevel::Info).set_buttons(rfd::MessageButtons::Ok).show();
+                Ok(())
+            })?;
             let core = Arc::new(Core::open(data.join("core"))?);
-            let (package, keys) = bootstrap_paths(&handle);
-            let theme_path=handle.path().resource_dir()?.join("themes/graphite.json");
-            let (theme, mut startup_error)=crate::theme::load(&theme_path);
-            let trusted = match read_keys(&keys) {
+            crate::startup_diagnostics::record("database ready");
+            let (theme, mut startup_error)=crate::theme::load(&data);
+            let resources=match config.resources {Ok(resources)=>Some(resources),Err(error)=>{startup_error=Some(error);None}};
+            if let Some(resources)=&resources {for warning in &resources.warnings {crate::startup_diagnostics::record(&format!("startup warning: {warning}"));startup_error.get_or_insert_with(||warning.clone());}}
+            let app_generation=Uuid::new_v4().to_string();
+            let mut communication=sodeck_communication::Hub::default();
+            let theme_key=sodeck_communication::Key{contract:"app.theme.v1".into(),scope:app_generation.clone(),object:"theme".into()};
+            communication.reserve(theme_key.clone(),32*1024).map_err(|e|std::io::Error::other(e.0))?;
+            communication.put(theme_key,json!({"appGeneration":app_generation}),theme.effective.clone()).map_err(|e|std::io::Error::other(e.0))?;
+            let trusted = match resources.as_ref().map_or_else(||Err("随附插件资源不可用".into()),|r|read_keys(&r.keys)) {
                 Ok(k) => k,
                 Err(e) => {
-                    startup_error = Some(e);
+                    if startup_error.is_none(){startup_error = Some(e);}
                     TrustedKeys::new()
                 }
             };
             let mut plugins = PluginManager::open(data.join("plugins"), trusted)?;
-            let upgrade_legacy=plugins.status().iter().any(|p|p.plugin_id=="sodeck.terminal" && p.active_version.as_deref().is_some_and(|v|v.starts_with("0.1.") || v.starts_with("0.2."))) && plugins.active("sodeck.terminal").is_err();
-            if (plugins.status().is_empty() || upgrade_legacy)
-                && package.exists()
-            {
-                if let Err(e) = plugins.prepare_package(&package) {
-                    startup_error = Some(e.to_string());
+            if let Some(resources)=resources {
+                for bundle in resources.packages {
+                    match plugins.prepare_bundled_for(&bundle.path,bundle.plugin_id.as_deref()) {
+                        Ok(_)=>{},Err(error)=>{startup_error.get_or_insert_with(||error.to_string());},
+                    }
                 }
             }
             let init_core = core.clone();
@@ -1881,60 +1907,39 @@ pub fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 let _ = loaded.process.stop();
                 Ok(())
             }) {
-                startup_error = Some(e.to_string());
+                startup_error.get_or_insert_with(||e.to_string());
             }
-            let loaded = match plugins.active("sodeck.terminal") {
-                Ok(Some(p)) => match spawn_plugin(core.clone(), &p) {
-                    Ok(p) => Some(p),
-                    Err(e) => {
-                        startup_error = Some(e);
-                        None
-                    }
-                },
-                Ok(None) => None,
-                Err(e) => {
-                    startup_error = Some(e.to_string());
-                    None
-                }
-            };
-            let mut workbench = match Workbench::load(&data.join("workbench.json")) {
-                Ok(w) => w,
-                Err(e) => {
-                    startup_error = Some(e.clone());
-                    let mut fallback=Workbench::default();
-                    fallback.persistence_blocked=Some(e);
-                    fallback
-                }
-            };
-            if let Some(plugin)=&loaded { workbench.retire_views(&plugin.package.manifest.plugin_id,&plugin.package.manifest.contributes.retired_views); }
-            workbench
-                .set_declarations(
-                    loaded
-                        .as_ref()
-                        .map(|plugin| plugin.package.manifest.contributes.views.clone())
-                        .unwrap_or_default(),
-                )
-                .map_err(std::io::Error::other)?;
-            if workbench.migration_pending {
-                if let Err(e)=workbench.save(&data.join("workbench.json")) { workbench.persistence_blocked=Some(e.clone()); startup_error=Some(format!("布局迁移未保存，原文件仍保留：{e}")); } else {workbench.migration_pending=false;}
-            }
-            if let Some(plugin)=&loaded {
-                for view in workbench.views.iter_mut().filter(|v|v.status!="viewFailed") {
-                    let restored=plugin.process.invoke("lifecycle.restore",json!({"viewId":view.view_id,"viewType":view.view_type,"workspaceId":view.workspace_id,"stateVersion":view.state_version,"pluginState":view.plugin_state,"instanceKey":view.instance_key,"serverId":view.server_id,"title":view.title}));
-                    match restored {
-                        Ok(metadata)=>if let Err(e)=State::apply_view_metadata(view,&metadata){view.status="viewFailed".into();view.failure_reason=Some(e.message);},
-                        Err(e)=>{view.status="viewFailed".into();view.failure_reason=Some(e.message);}
-                    }
+            let mut loaded=HashMap::new();
+            for status in plugins.status() {
+                match plugins.active(&status.plugin_id) {
+                    Ok(Some(package))=>match spawn_plugin(core.clone(),&package){Ok(plugin)=>{loaded.insert(status.plugin_id.clone(),plugin);},Err(e)=>{startup_error.get_or_insert(e);}},
+                    Err(e)=>{startup_error.get_or_insert_with(||e.to_string());},Ok(None)=>{},
                 }
             }
+            let (main_bounds, warnings) = crate::window_preferences::load(&data);
+            let mut workbench = Workbench::default();
+            workbench.windows.get_mut("main").unwrap().bounds = main_bounds;
+            workbench.recovery_warnings = warnings;
+            workbench.set_owned_declarations(loaded.values().flat_map(|p|p.package.manifest.contributes.views.iter().cloned().map(|v|(p.package.manifest.plugin_id.clone(),v))).collect()).map_err(std::io::Error::other)?;
+            if let Some(error)=&startup_error {crate::startup_diagnostics::record(&format!("startup warning: {error}"));}
             let state = Arc::new(State {
-                theme,
+                communication: Mutex::new(communication),
+                state_participants: Mutex::new(HashMap::new()),
+                directories: Mutex::new(HashMap::new()),
+                theme: Mutex::new(theme),
+                app_generation,
                 menus: Arc::new(crate::presentation::Menus::default()),
+                application_menus: Mutex::new(HashMap::new()),
+                menu_opening: Mutex::new(()),
                 core,
                 plugins: Mutex::new(plugins),
                 loaded: Mutex::new(loaded),
                 workbench: Mutex::new(workbench),
                 bindings: Mutex::new(HashMap::new()),
+                view_badges: Mutex::new(HashMap::new()),
+                dialogs: Mutex::new(HashMap::new()),
+                dialog_transition: Mutex::new(()),
+                shell_modals: Mutex::new(std::collections::HashSet::new()),
                 view_operations: ViewOperations::default(),
                 snapshots: Mutex::new(HashMap::new()),
                 pending_opens: Mutex::new(HashMap::new()),
@@ -1942,8 +1947,10 @@ pub fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 mounting: Mutex::new(()),
                 shutdown_lock: Mutex::new(()),
                 workspace_busy: Mutex::new(std::collections::BTreeSet::new()),
+                workspace_creation: Mutex::new(()),
                 chrome_reports: Mutex::new(HashMap::new()),
                 dragging: AtomicBool::new(false),
+                seen_window_focus: Mutex::new(std::collections::HashSet::new()),
                 queued_window_closes: Mutex::new(std::collections::BTreeSet::new()),
                 layout_operations: Mutex::new(HashMap::new()),
                 native: NativeViews::new(handle.clone()).map_err(std::io::Error::other)?,
@@ -1955,56 +1962,30 @@ pub fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 startup_error: Mutex::new(startup_error),
             });
             app.manage(state.clone());
-            if let Some(plugin) = state.loaded.lock().unwrap().as_ref() {
+            for plugin in state.loaded.lock().unwrap().values() {
                 *plugin.gateway.lock().unwrap() = Some(Arc::downgrade(&state));
             }
             state.monitor();
+            state.start_state_pump();
             let mut main =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                     .title("SoDeck v2")
+                    .icon(crate::brand::icon(false))?
+                    .background_color(state.theme_background())
+                    .initialization_script(crate::theme::bootstrap(&state.theme_snapshot(true)))
                     .decorations(false)
                     .initialization_script(r#"window.__SODECK_CONTEXT__={windowId:"main"};"#)
                     .inner_size(1280., 820.)
                     .min_inner_size(760., 480.)
                     .data_directory(state.data.join("profiles/shell"));
             if cfg!(debug_assertions) {
-                if let Ok(port) = std::env::var("SODECK_SHELL_DEBUG_PORT") {
+                if let Some(port) = handle.state::<crate::startup_config::DebugConfig>().shell_port {
                     main = main.additional_browser_args(&format!("--remote-debugging-port={port}"));
                 }
             }
             main.build()?;
+            crate::startup_diagnostics::record("main window ready");
             state.restore_window("main");
-            let windows = state
-                .workbench
-                .lock()
-                .unwrap()
-                .windows
-                .keys()
-                .filter(|id| id.as_str() != "main")
-                .cloned()
-                .collect::<Vec<_>>();
-            for id in windows {
-                if let Err(error) = state.create_workspace_window(&id) {
-                    *state.startup_error.lock().unwrap() = Some(error.message);
-                } else {
-                    state.restore_window(&id);
-                    state.show_window(&id);
-                }
-            }
-            let restored = state
-                .workbench
-                .lock()
-                .unwrap()
-                .views
-                .iter()
-                .filter(|v| v.placement == "detached")
-                .cloned()
-                .collect::<Vec<_>>();
-            for view in restored {
-                if let Err(error) = state.open_detached(&view) {
-                    *state.startup_error.lock().unwrap() = Some(error.message);
-                }
-            }
             use tauri::{
                 menu::{Menu, MenuItem},
                 tray::TrayIconBuilder,
@@ -2012,12 +1993,8 @@ pub fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
             let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
             let exit = MenuItem::with_id(app, "exit", "退出 SoDeck", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &exit])?;
-            let mut pixels = vec![0u8; 32 * 32 * 4];
-            for p in pixels.chunks_exact_mut(4) {
-                p.copy_from_slice(&[71, 113, 180, 255]);
-            }
             let tray = TrayIconBuilder::with_id("sodeck")
-                .icon(tauri::image::Image::new_owned(pixels, 32, 32))
+                .icon(crate::brand::icon(true))
                 .tooltip("SoDeck v2")
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id().as_ref() {
@@ -2042,12 +2019,21 @@ pub fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 *state.startup_error.lock().unwrap() = Some(format!("系统托盘不可用：{e}"));
             }
             Ok(())
+            })();
+            if let Err(error)=result {
+                if let Some(state)=app.try_state::<Arc<State>>() {state.shutdown();}
+                crate::startup_diagnostics::fatal(&error);
+                std::process::exit(1);
+            }
+            Ok(())
         })
         .on_window_event(|window, event| {
             let Some(state) = window.app_handle().try_state::<Arc<State>>() else {
                 return;
             };
             let state = state.inner().clone();
+            if window.label().starts_with("application-menu-"){return;}
+            if state.dialog_window_event(window.label(),event){return;}
             match event {
                 tauri::WindowEvent::CloseRequested { api, .. } => {
                     state.cancel_menus(window.label());
@@ -2065,13 +2051,17 @@ pub fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
                         state.queue_workspace_close(window.label());
                     }
                 }
-                tauri::WindowEvent::Focused(false) => { if !crate::presentation::owns_focus(){state.cancel_menus(window.label());} },
+                tauri::WindowEvent::Focused(true) => {
+                    let seen=!state.seen_window_focus.lock().unwrap().insert(window.label().into());
+                    if seen {let label=window.label().to_string();std::thread::spawn(move||state.select_directory_window(&label));}
+                },
+                tauri::WindowEvent::Focused(false) => { let label=window.label().to_string();let menu=state.application_menus.lock().unwrap().get(&label).map(|e|e.token.clone()); std::thread::spawn(move||{std::thread::sleep(Duration::from_millis(80));let current=state.application_menus.lock().unwrap().get(&label).map(|e|e.token.clone());if current==menu&&!crate::presentation::owns_focus()&&!state.application_menu_has_focus(&label)&&!state.app.get_webview_window(&label).is_some_and(|w|w.is_focused().unwrap_or(false)){state.cancel_menus(&label);}}); },
                 tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
                     state.cancel_menus(window.label());
                     let label=window.label().to_string();
-                    std::thread::spawn(move||state.remember_window(&label));
+                    std::thread::spawn(move||{state.align_plugin_dialogs(&label);state.remember_window(&label);});
                 },
-                tauri::WindowEvent::Destroyed => { state.cancel_menus(window.label());state.chrome_reports.lock().unwrap().remove(window.label()); },
+                tauri::WindowEvent::Destroyed => { state.communication.lock().unwrap().remove_owner(&format!("@window:{}:{}",state.app_generation,window.label()));state.seen_window_focus.lock().unwrap().remove(window.label());state.cancel_menus(window.label());state.chrome_reports.lock().unwrap().remove(window.label()); },
                 _ => {}
             }
         })

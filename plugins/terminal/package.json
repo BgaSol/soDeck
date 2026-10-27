@@ -1,6 +1,6 @@
 {
   "name": "@sodeck/terminal",
-  "version": "0.3.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,12 +9,13 @@
     "test": "node --test tests/worker.test.mjs && vitest run src"
   },
   "dependencies": {
-    "@sodeck/sdk": "3.0.0",
+    "@sodeck/sdk": "^4.8.0",
     "@xterm/xterm": "6.0.0",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/addon-serialize": "0.14.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "lucide-react": "0.468.0"
+    "lucide-react": "0.468.0",
+    "@sodeck/ui": "1.4.0"
   }
 }

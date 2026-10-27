@@ -4,18 +4,14 @@ use serde_json::{json, Value};
 use std::{path::Path, sync::Mutex};
 
 pub struct Store {
-    db: Mutex<Connection>,
+    pub(crate) db: Mutex<Connection>,
 }
 impl Store {
     pub fn open(root: &Path) -> Result<Self> {
+        crate::store_bootstrap::ensure_current(root)?;
         let db = Connection::open(root.join("core.sqlite"))?;
         db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;
           PRAGMA max_page_count=57344; PRAGMA journal_size_limit=4194304; PRAGMA wal_autocheckpoint=256;
-          CREATE TABLE IF NOT EXISTS servers(id TEXT PRIMARY KEY, data TEXT NOT NULL);
-          CREATE TABLE IF NOT EXISTS host_keys(endpoint TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, algorithm TEXT NOT NULL);
-          CREATE TABLE IF NOT EXISTS settings(namespace TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(namespace,key));
-          CREATE TABLE IF NOT EXISTS calls(id TEXT PRIMARY KEY, started INTEGER NOT NULL, ended INTEGER, caller TEXT NOT NULL, method TEXT NOT NULL, server_id TEXT, summary TEXT NOT NULL, status TEXT NOT NULL, error_code TEXT);
-          CREATE INDEX IF NOT EXISTS calls_started ON calls(started);
           UPDATE calls SET status='interrupted',error_code='APP_INTERRUPTED' WHERE ended IS NULL;")?;
         Ok(Self { db: Mutex::new(db) })
     }
@@ -38,35 +34,12 @@ impl Store {
             .transpose()?
             .ok_or_else(|| CoreError::new("NOT_FOUND", "服务器不存在"))
     }
-    pub fn save_server(&self, server: &Server, expected: Option<u64>) -> Result<()> {
-        server.validate()?;
-        let mut db = self.db.lock().unwrap();
-        let transaction = db.transaction()?;
-        let previous: Option<String> = transaction
-            .query_row("SELECT data FROM servers WHERE id=?", [&server.id], |row| {
-                row.get(0)
-            })
-            .optional()?;
-        match (previous, expected) {
-            (None, None) => {}
-            (Some(raw), Some(revision))
-                if serde_json::from_str::<Server>(&raw)?.revision == revision => {}
-            _ => {
-                return Err(CoreError::new(
-                    "REVISION_CONFLICT",
-                    "服务器配置已变化，请重新加载",
-                ))
-            }
-        }
-        transaction.execute("INSERT INTO servers(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data", params![server.id, serde_json::to_string(server)?])?;
-        transaction.commit()?;
-        Ok(())
-    }
     pub fn delete_server(&self, server_id: &str) -> Result<()> {
-        self.db
-            .lock()
-            .unwrap()
-            .execute("DELETE FROM servers WHERE id=?", [server_id])?;
+        let mut db=self.db.lock().unwrap();
+        let tx=db.transaction()?;
+        tx.execute("DELETE FROM servers WHERE id=?", [server_id])?;
+        crate::server_catalog_store::bump_revision(&tx)?;
+        tx.commit()?;
         Ok(())
     }
     pub fn host_key(&self, endpoint: &str) -> Result<Option<String>> {
@@ -116,6 +89,15 @@ impl Store {
         db.execute("INSERT INTO calls(id,started,caller,method,server_id,summary,status) VALUES(?,?,?,?,?,?,'running')", params![record_id,now_ms() as i64,serde_json::to_string(caller)?,method,params.get("serverId").and_then(Value::as_str),summary.to_string()])?;
         Ok(record_id)
     }
+    pub fn route_stage(&self,caller:&Caller,operation:&Value,plan:&crate::route::RoutePlan,index:usize,stage:&str,error:Option<&CoreError>)->Result<()> {
+        // Internal stages share retention but cannot masquerade as plugin calls.
+        // Only opaque identifiers, revisions and error codes are persisted.
+        let summary=json!({"originInstanceId":caller.instance_id,"originPluginId":caller.plugin_id,"operationId":operation.get("operationId"),"workspaceId":operation.get("workspaceId"),"routeRevision":plan.revision,"nodeId":plan.nodes[index].server.id,"configRevision":plan.nodes[index].server.revision,"hopIndex":index,"stage":stage});
+        let now=now_ms() as i64;
+        self.db.lock().unwrap().execute("INSERT INTO calls(id,started,ended,caller,method,server_id,summary,status,error_code) VALUES(?,?,?,?,?,?,?,?,?)",
+            params![id(),now,now,json!({"source":"core","instanceId":"connection-broker"}).to_string(),"connections.route.stage",plan.target_server_id,summary.to_string(),if error.is_some(){"failed"}else{"succeeded"},error.map(|e|e.code.as_str())])?;
+        Ok(())
+    }
     pub fn call_finish(&self, record_id: &str, result: &Result<Value>) -> Result<()> {
         self.db.lock().unwrap().execute(
             "UPDATE calls SET ended=?,status=?,error_code=? WHERE id=?",
@@ -130,6 +112,12 @@ impl Store {
                 record_id
             ],
         )?;
+        Ok(())
+    }
+    pub(crate) fn network_stream_finish(&self, record_id: &str, read: u64, written: u64, duration: u64, error: Option<&str>) -> Result<()> {
+        let summary=json!({"bytesRead":read,"bytesWritten":written,"durationMs":duration});
+        self.db.lock().unwrap().execute("UPDATE calls SET ended=?,status=?,error_code=?,summary=? WHERE id=?",
+            params![now_ms() as i64,if error.is_some(){"failed"}else{"succeeded"},error,summary.to_string(),record_id])?;
         Ok(())
     }
     pub fn calls(&self, filters: &Value) -> Result<Value> {

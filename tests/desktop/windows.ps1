@@ -1,4 +1,4 @@
-param([ValidateSet('list','close','show','capture','screen','cursor','drag','move','click','hit','resize','doubleClick','systemMenu','escape','menuKey','minimize')][string]$Action='list',[Parameter(Mandatory=$true)][ValidateRange(1,2147483647)][int]$AppProcessId,[string]$Title='SoDeck v2',[string]$OutputPath,[int]$X,[int]$Y,[int]$StartX,[int]$StartY,[long]$WindowHandle=0,[string]$CancelDrag='false',[int]$Width,[int]$Height,[int]$KeyCode=27)
+param([ValidateSet('list','close','show','capture','screen','cursor','drag','move','click','menuClick','hit','resize','doubleClick','systemMenu','escape','menuKey','minimize')][string]$Action='list',[Parameter(Mandatory=$true)][ValidateRange(1,2147483647)][int]$AppProcessId,[string]$Title='SoDeck v2',[string]$OutputPath,[int]$X,[int]$Y,[int]$StartX,[int]$StartY,[long]$WindowHandle=0,[string]$CancelDrag='false',[int]$Width,[int]$Height,[int]$KeyCode=27)
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false)
 # The harness supplies the PID of the executable it launched. Never select a
@@ -14,6 +14,7 @@ public static class SoDeckNativeTest {
  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc callback,IntPtr p);
  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h,out uint pid);
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h,StringBuilder text,int max);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h,StringBuilder text,int max);
  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h,out Rect rect);
  [DllImport("user32.dll",SetLastError=true)] public static extern bool GetClientRect(IntPtr h,out Rect rect);
@@ -36,14 +37,16 @@ public static class SoDeckNativeTest {
  [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr value);
  public struct Rect {public int left,top,right,bottom;}
  public struct Point {public int x,y;}
- public class Window {public long handle; public string title; public bool visible,maximized,minimized; public int x,y,width,height,clientX,clientY,clientWidth,clientHeight; public uint dpi;}
+ [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr h,uint command);
+ [DllImport("user32.dll",EntryPoint="GetWindowLongPtrW")] public static extern IntPtr GetWindowLongPtr(IntPtr h,int index);
+ public class Window {public long owner; public bool toolWindow,topmost;public long handle; public string title; public bool visible,maximized,minimized; public int x,y,width,height,clientX,clientY,clientWidth,clientHeight; public uint dpi;}
  public static Window[] List(uint process) {
   var list=new List<Window>();EnumWindows((h,p)=>{uint pid;GetWindowThreadProcessId(h,out pid);if(pid!=process)return true;
    var text=new StringBuilder(512);GetWindowText(h,text,512);if(text.Length==0)return true;
    Rect r;GetWindowRect(h,out r);Rect client;var origin=new Point();
    if(!GetClientRect(h,out client)||!ClientToScreen(h,ref origin))throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
    var dpi=GetDpiForWindow(h);if(dpi==0)throw new InvalidOperationException("Owned window has no DPI");
-   list.Add(new Window{handle=h.ToInt64(),title=text.ToString(),visible=IsWindowVisible(h),maximized=IsZoomed(h),minimized=IsIconic(h),x=r.left,y=r.top,width=r.right-r.left,height=r.bottom-r.top,clientX=origin.x,clientY=origin.y,clientWidth=client.right-client.left,clientHeight=client.bottom-client.top,dpi=dpi});return true;},IntPtr.Zero);return list.ToArray();
+   list.Add(new Window{owner=GetWindow(h,4).ToInt64(),toolWindow=(GetWindowLongPtr(h,-20).ToInt64()&128)!=0,topmost=(GetWindowLongPtr(h,-20).ToInt64()&8)!=0,handle=h.ToInt64(),title=text.ToString(),visible=IsWindowVisible(h),maximized=IsZoomed(h),minimized=IsIconic(h),x=r.left,y=r.top,width=r.right-r.left,height=r.bottom-r.top,clientX=origin.x,clientY=origin.y,clientWidth=client.right-client.left,clientHeight=client.bottom-client.top,dpi=dpi});return true;},IntPtr.Zero);return list.ToArray();
  }
 }
 '@
@@ -68,6 +71,16 @@ switch($Action){
  'doubleClick' {Focus-TestWindow;[SoDeckNativeTest]::SetCursorPos($X,$Y)|Out-Null;Start-Sleep -Milliseconds 100;for($i=0;$i -lt 2;$i++){[SoDeckNativeTest]::mouse_event(2,0,0,0,[UIntPtr]::Zero);[SoDeckNativeTest]::mouse_event(4,0,0,0,[UIntPtr]::Zero);Start-Sleep -Milliseconds 80}}
  'systemMenu' {Focus-TestWindow;[SoDeckNativeTest]::keybd_event(18,0,0,[UIntPtr]::Zero);try{[SoDeckNativeTest]::keybd_event(32,0,0,[UIntPtr]::Zero);[SoDeckNativeTest]::keybd_event(32,0,2,[UIntPtr]::Zero)}finally{[SoDeckNativeTest]::keybd_event(18,0,2,[UIntPtr]::Zero)}}
  'menuKey' {[SoDeckNativeTest]::keybd_event([byte]$KeyCode,0,0,[UIntPtr]::Zero);[SoDeckNativeTest]::keybd_event([byte]$KeyCode,0,2,[UIntPtr]::Zero)}
+ 'menuClick' {
+  $point=New-Object SoDeckNativeTest+Point;$point.x=$X;$point.y=$Y
+  $menuHandle=[SoDeckNativeTest]::WindowFromPoint($point);[uint32]$menuOwner=0
+  [SoDeckNativeTest]::GetWindowThreadProcessId($menuHandle,[ref]$menuOwner)|Out-Null
+  $menuClass=New-Object System.Text.StringBuilder 128
+  [SoDeckNativeTest]::GetClassName($menuHandle,$menuClass,128)|Out-Null
+  if($menuOwner -ne $AppProcessId -or $menuClass.ToString() -ne '#32768'){throw 'Point is not inside the owned native popup; no input sent'}
+  [SoDeckNativeTest]::SetCursorPos($X,$Y)|Out-Null;Start-Sleep -Milliseconds 100
+  [SoDeckNativeTest]::mouse_event(2,0,0,0,[UIntPtr]::Zero);Start-Sleep -Milliseconds 60;[SoDeckNativeTest]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+ }
  'minimize' {[SoDeckNativeTest]::ShowWindow($taskHandle,6)|Out-Null}
  'escape' {Focus-TestWindow;[SoDeckNativeTest]::keybd_event(27,0,0,[UIntPtr]::Zero);[SoDeckNativeTest]::keybd_event(27,0,2,[UIntPtr]::Zero)}
  'cursor' {[SoDeckNativeTest]::SetCursorPos($X,$Y)|Out-Null;$taskPoint=New-Object SoDeckNativeTest+Point;[SoDeckNativeTest]::GetCursorPos([ref]$taskPoint)|Out-Null;$taskUnder=[SoDeckNativeTest]::WindowFromPoint($taskPoint);$taskRoot=[SoDeckNativeTest]::GetAncestor($taskUnder,2);[uint32]$taskUnderPid=0;[SoDeckNativeTest]::GetWindowThreadProcessId($taskUnder,[ref]$taskUnderPid)|Out-Null;@{x=$taskPoint.x;y=$taskPoint.y;handle=$taskUnder.ToInt64();root=$taskRoot.ToInt64();pid=$taskUnderPid;expectedPid=$AppProcessId;expectedRoot=$taskHandle.ToInt64()}|ConvertTo-Json -Compress}

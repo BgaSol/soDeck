@@ -1,4 +1,5 @@
-use rquickjs::{Context, Function, Runtime};
+use rquickjs::{Context, Function, Runtime, TypedArray};
+use sodeck_communication::binary::{Frame as BinaryFrame, Queue as BinaryQueue};
 use serde_json::Value;
 use std::{
     collections::{HashSet, VecDeque},
@@ -14,6 +15,7 @@ pub(crate) struct Engine {
     runtime: Runtime,
     deadline: Arc<Mutex<Instant>>,
     outgoing: Arc<Mutex<VecDeque<Value>>>,
+    binary: Arc<Mutex<BinaryQueue>>,
     rejections: Arc<Mutex<HashSet<usize>>>,
     rejection_overflow: Arc<AtomicBool>,
     loaded: bool,
@@ -124,9 +126,18 @@ impl Engine {
         let context = Context::full(&runtime).map_err(|e| e.to_string())?;
         let outgoing = Arc::new(Mutex::new(VecDeque::new()));
         let queue = outgoing.clone();
+        let binary = Arc::new(Mutex::new(BinaryQueue::default()));
+        let binary_send = binary.clone();
         let start = Instant::now();
         context
             .with(|ctx| -> rquickjs::Result<()> {
+                ctx.globals().set("__nativeBinarySend", Function::new(ctx.clone(), move |bytes: TypedArray<u8>| -> bool {
+                    // No JS call or mutation occurs while this slice is borrowed;
+                    // decode copies it before returning to the QuickJS event loop.
+                    let Some(bytes) = (unsafe { bytes.as_bytes() }) else { return false };
+                    let Ok(frame) = BinaryFrame::decode(bytes) else { return false };
+                    binary_send.lock().unwrap().push(frame).unwrap_or(false)
+                })?)?;
                 ctx.globals().set(
                     "__nativeSend",
                     Function::new(ctx.clone(), move |text: String| -> bool {
@@ -156,6 +167,7 @@ impl Engine {
             runtime,
             deadline,
             outgoing,
+            binary,
             rejections,
             rejection_overflow,
             loaded: false,
@@ -228,5 +240,20 @@ impl Engine {
     }
     pub fn drain(&self) -> Result<Vec<Value>, String> {
         Ok(self.outgoing.lock().unwrap().drain(..).collect())
+    }
+    pub fn receive_binary(&mut self, frame: BinaryFrame) -> Result<(), String> {
+        if !self.loaded { return Err("Binary stream before initialization".into()); }
+        self.budget();
+        let bytes = frame.encode().map_err(|e|e.to_string())?;
+        self.context.with(|ctx| -> rquickjs::Result<()> {
+            let receive:Function=ctx.globals().get("__receiveBinary")?;
+            receive.call((TypedArray::new_copy(ctx,bytes)?,))
+        }).map_err(|e|e.to_string())?;
+        self.check_budget()
+    }
+    pub fn drain_binary(&self) -> Vec<BinaryFrame> {
+        let mut queue=self.binary.lock().unwrap(); let mut bytes=0; let mut frames=Vec::new();
+        while bytes < 256*1024 {let Some(frame)=queue.pop() else {break};bytes+=frame.size();frames.push(frame);}
+        frames
     }
 }

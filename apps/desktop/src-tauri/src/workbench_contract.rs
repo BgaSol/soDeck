@@ -6,7 +6,7 @@ fn schema() -> &'static Value {
     static SCHEMA: OnceLock<Value> = OnceLock::new();
     SCHEMA.get_or_init(|| {
         serde_json::from_str(include_str!(
-            "../../../../contracts/workbench-v3.schema.json"
+            "../../../../contracts/workbench-v4.schema.json"
         ))
         .expect("checked contract schema")
     })
@@ -118,7 +118,7 @@ mod tests {
     #[test]
     fn shared_contract_examples() {
         let cases: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../contracts/workbench-v3.examples.json"
+            "../../../../contracts/workbench-v4.examples.json"
         ))
         .unwrap();
         for c in cases.as_array().unwrap() {

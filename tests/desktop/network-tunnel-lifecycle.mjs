@@ -1,0 +1,68 @@
+import assert from 'node:assert/strict';
+import net from 'node:net';
+import {execFileSync} from 'node:child_process';
+import {join} from 'node:path';
+import {writeFile} from 'node:fs/promises';
+import {networkHarness} from './network-harness.mjs';
+import {rpc,until,delay,nativeWindow} from './harness.mjs';
+const h=await networkHarness('lifecycle',9921);let held;
+try{
+ const app=await h.start(),nodes=await h.create();await h.open();
+ const proxy=await h.save();await assert.rejects(h.run(proxy),e=>e.code==='HOST_KEY_REQUIRED');
+ await app.page.getByRole('dialog',{name:'确认服务器身份',exact:true}).waitFor();
+ await app.page.getByRole('dialog').getByRole('button',{name:'取消',exact:true}).click();
+ await until(async()=>(await h.state(proxy)).status==='stopped');
+ await until(async()=>(await rpc(app.page,'net.resources.list')).items.length===0);
+ h.note('Canceling core host identity challenge closes the paused listener and its group');
+ await h.trust();
+ held=net.createServer();await new Promise(r=>held.listen(0,'127.0.0.1',r));
+ const collision=await h.save({name:'占用端口',bindMode:'fixed',port:held.address().port});
+ await assert.rejects(h.run(collision),e=>e.code==='PORT_IN_USE');assert.equal((await h.state(collision)).status,'failed');
+ await new Promise(r=>held.close(r));held=undefined;await h.run(collision);await h.invoke('network.stop',{id:collision.id});
+ h.note('Occupied port fails visibly without a partial listener; retry succeeds after the port is released');
+ await h.run(proxy);const original=await h.state(proxy);assert.equal(await h.curl(original.address.port),'REMOTE-http.internal');
+ const fixed=await h.save({name:'固定入口',type:'port-forward',targetHost:'http.internal',targetPort:80});await h.run(fixed);
+ const groups=(await rpc(app.page,'net.resources.list')).items.filter(i=>i.kind==='group').map(i=>i.handle.id).sort();
+ const transport=(await rpc(app.page,'net.resources.list')).items.find(i=>i.kind==='transport');
+ const stopped=await rpc(app.page,'net.resources.stop',{resource:transport.handle,operationId:crypto.randomUUID()});
+ assert.deepEqual(stopped.result.affectedGroups.map(g=>g.id).sort(),groups);
+ await until(async()=>(await h.state(proxy)).status==='needs-attention');await until(async()=>(await h.state(fixed)).status==='needs-attention');
+ await delay(1500);assert.equal((await h.state(proxy)).address.port,original.address.port);assert.equal((await rpc(app.page,'net.resources.list')).items.filter(i=>i.kind==='transport').length,0);
+ await h.run(proxy,false,'network.reconnect');assert.equal(await h.curl(original.address.port),'REMOTE-http.internal');
+ await h.run(fixed,false,'network.reconnect');
+ h.note('Force-stopping a shared transport reports both groups; default recovery stays off, reserves ports and resumes only after manual reconnect');
+ // Moving the presentation must retain both the worker run and unsaved editor.
+ let page=await h.page();await page.getByRole('button',{name:'编辑',exact:true}).click();await page.getByLabel('名称',{exact:true}).fill('移窗保留草稿');
+ await rpc(app.page,'views.move',{viewId:h.view.viewId,placement:'detached',operationId:crypto.randomUUID()});page=await h.page();
+ assert.equal(await page.getByLabel('名称',{exact:true}).inputValue(),'移窗保留草稿');assert.equal((await h.state(proxy)).id,original.id);
+ assert.equal(await h.curl(original.address.port),'REMOTE-http.internal');
+ await rpc(app.page,'views.move',{viewId:h.view.viewId,placement:'center',operationId:crypto.randomUUID()});page=await h.page();assert.equal(await page.getByLabel('名称',{exact:true}).inputValue(),'移窗保留草稿');await page.keyboard.press('Escape');
+ const win=(await nativeWindow(app,'list')).find(w=>w.visible);await nativeWindow(app,'close',{WindowHandle:win.handle});assert.equal(await h.curl(original.address.port),'REMOTE-http.internal');await nativeWindow(app,'show',{WindowHandle:win.handle});
+ h.note('Detached/merged view retains its unsaved draft and run identity; hiding to tray keeps the proxy reachable');
+ // A saved path change cannot silently retarget a running proxy or recovery.
+ const middle=nodes[1],{id,revision,hasSecret,...body}=middle;
+ await rpc(app.page,'servers.routes.v2.update',{...body,serverId:id,expectedRevision:revision,name:'中转已编辑',port:23});
+ assert.equal(await h.curl(original.address.port),'REMOTE-http.internal');
+ await assert.rejects(h.run(proxy,false,'network.reconnect'),e=>e.code==='ROUTE_CHANGED');
+ const updated=(await rpc(app.page,'servers.routes.v2.list')).servers.find(s=>s.id===id),{revision:nextRevision,hasSecret:unused,id:unusedId,...rest}=updated;
+ await rpc(app.page,'servers.routes.v2.update',{...rest,serverId:id,expectedRevision:nextRevision,port:22});
+ await h.auth(nodes);await h.trust();
+ await h.run(proxy,true);assert.notEqual((await h.state(proxy)).id,original.id);await h.invoke('network.stop',{id:fixed.id});
+ h.note('Saved route edits leave existing traffic on the original path; recovery rejects changed revision until explicit restart');
+ const auto=await h.save({name:'自动恢复入口',autoReconnect:true});await h.run(auto);
+ await h.control('block',0);await until(async()=>(await h.state(auto)).status==='reconnecting');
+ await until(async()=>{const s=await h.state(auto);return s.status==='needs-attention'&&(await h.events()).filter(e=>e.event==='blocked-connection').length>=3;},30000);
+ const attempts=(await h.events()).filter(e=>e.event==='blocked-connection');assert.equal(attempts.length,3);assert.ok(attempts[1].time-attempts[0].time>=2.8);assert.ok(attempts[2].time-attempts[1].time>=9.8);
+ await delay(1500);assert.equal((await h.events()).filter(e=>e.event==='blocked-connection').length,3);
+ await h.control('unblock',0);await h.run(auto,false,'network.reconnect');assert.equal(await h.curl((await h.state(auto)).address.port),'REMOTE-http.internal');
+ await h.control('block',0);await until(async()=>(await h.state(auto)).status==='reconnecting');await h.invoke('network.stop',{id:auto.id});await h.control('unblock',0);await delay(1500);assert.equal((await h.state(auto)).status,'stopped');
+ h.note('Opt-in reconnect exhausts exactly three attempts with 1/3/10-second backoff; manual recovery succeeds and stop cancels a scheduled retry');
+ await h.run(proxy,true);const port=(await h.state(proxy)).address.port;
+ const instance=(await rpc(app.page,'diagnostics.get')).pluginInstances.find(i=>i.pluginId==='sodeck.network-proxy');assert.ok(instance.processId);
+ execFileSync('powershell.exe',['-NoProfile','-Command',`Stop-Process -Id ${Number(instance.processId)} -ErrorAction Stop`],{windowsHide:true});
+ await until(async()=>(await rpc(app.page,'net.resources.list')).items.length===0,5000);
+ const rebound=net.createServer();await new Promise((r,j)=>{rebound.once('error',j);rebound.listen(port,'127.0.0.1',r);});await new Promise(r=>rebound.close(r));
+ h.note('Killing the exact network worker releases all groups and permits immediate listener port reuse');
+ await writeFile(join(h.output,'retry-attempts.json'),JSON.stringify(attempts,null,2));
+}catch(e){const p=await h.page().catch(()=>null);await p?.screenshot({path:join(h.output,'failure.png')}).catch(()=>{});throw e;}
+finally{if(held)await new Promise(r=>held.close(r));await h.close();}

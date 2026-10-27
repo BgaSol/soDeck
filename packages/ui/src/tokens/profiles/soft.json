@@ -1,0 +1,17 @@
+{
+  "border-width": "1px",
+  "control-weight": 500,
+  "title-weight": 600,
+  "icon-stroke": 2,
+  "button-shadow-x": "0px",
+  "button-shadow-y": "0px",
+  "button-shadow-blur": "0px",
+  "card-shadow-x": "0px",
+  "card-shadow-y": "4px",
+  "card-shadow-blur": "14px",
+  "dialog-shadow-x": "0px",
+  "dialog-shadow-y": "16px",
+  "dialog-shadow-blur": "40px",
+  "press-offset": "0px",
+  "decoration-opacity": 0.32
+}

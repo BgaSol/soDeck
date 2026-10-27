@@ -1,13 +1,33 @@
+import {validateWorkbenchUi} from './workbench-ui';
+export {openDialog,dialogContext,readyDialog,completeDialog,closeDialog,onDialogCancel} from './dialogs';
+export type {WorkbenchContributionsV2,PluginMetadata,ToolContribution,TabCreateContribution,DialogResult} from './workbench-ui';
+import {validateDirectory} from './directory';
+import {validateCatalog} from './server-catalog';
+export type {Group,CatalogItem,CatalogPage,GroupsPage,CatalogSave,OperationResult} from './server-catalog';
+import {validateNetwork} from './network';
+import {validateConnectionRoute} from './connection-route';
+export {connectionCommandTimeout} from './connection-timeout';
+export {decodeRouteStatus,decodeRouteStatusV2} from './connection-route';
+export type {ConnectionRoute,RouteServer,RouteSummary,RouteStatus} from './connection-route.generated';
+export type {RouteMeta,RouteReference,NodePage,ServerPage,RouteStatusV2,ResourcePage,ResourceRouteV2,DependencyPage,SegmentPage} from './connection-route-v2.generated';
+import {validatePty} from './pty';
 import { validateWorkbenchRequest,validateWorkbenchResult,validateWorkbenchEvent } from "./workbench";
+import { validateRemoteRead } from './remote-read';
+import { validateState } from './state';
+export {observeState,presentation} from './state';
+export type {StateSubscription,StateBridge} from './state';
+export * as remoteReadContract from './remote-read';
 export * as workbenchContract from "./workbench";
-export { initializeTheme, applyTheme, showMenu } from './presentation';
-export type { ThemeResult, MenuItem } from './presentation';
+export { initializeTheme, applyTheme, showMenu, currentTheme, subscribeTheme, onThemeError, retryTheme } from './presentation';
+export type { ThemeResult, LiveTheme, MenuItem, ThemePreference, ThemeCatalog, ThemeCatalogEntry } from './presentation';
 export interface RpcRequest { apiVersion: 1; requestId: string; method: string; params: unknown; timeoutMs?: number }
 export interface RpcFault { code: string; message: string; details?: unknown; operationId?: string; phase?: string }
 export interface RpcResponse<T = unknown> { requestId: string; result?: T; error?: RpcFault }
 export interface CoreNotification { type: string; payload?: unknown }
 export interface ViewContext {
-  theme?: import('./workbench.generated').ThemeResult;
+  dialog?:import('./dialogs').DialogContext;surfaceWindowId?:string;
+  pluginId?: string; workspaceGeneration?: string;
+  theme?: import('./workbench.generated').ThemeResponse;
   viewId?: string; viewType?: string; workspaceId?: string; serverId?: string; serverName?: string;
   pluginVersion?: string; mountGeneration?: number; windowId?: string;
   detachedViewId?: string; pluginData?: Record<string, unknown>; pluginState?: unknown; snapshot?: unknown;
@@ -33,7 +53,7 @@ export type Transport = (request: RpcRequest) => Promise<RpcResponse>;
 export function createCore(transport: Transport) {
   return {
     async call<T = unknown>(method: string, params: unknown = {}, timeoutMs = 35_000): Promise<T> {
-      const invalid = validateWorkbenchRequest(method, params);
+      const invalid = validateWorkbenchUi('x-methods',method,params) ?? validateCatalog('x-methods',method,params) ?? validateNetwork('x-methods',method,params) ?? validateConnectionRoute('x-methods',method,params) ?? validateWorkbenchRequest(method, params) ?? validateRemoteRead('x-methods',method,params) ?? validateState('x-methods',method,params) ?? validateDirectory('x-methods',method,params) ?? validatePty('x-methods',method,params);
       if (invalid) throw new CoreError({ code: "INVALID_PARAMS", message: invalid });
       const request: RpcRequest = { apiVersion: 1, requestId: crypto.randomUUID(), method, params, timeoutMs };
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -44,7 +64,7 @@ export function createCore(transport: Transport) {
         ]);
         if (response.requestId !== request.requestId) throw new CoreError({ code: "PROTOCOL_ERROR", message: "核心响应与当前请求不匹配" });
         if (response.error) throw new CoreError(response.error);
-        const invalidResult=validateWorkbenchResult(method,response.result);
+        const invalidResult=validateWorkbenchUi('x-results',method,response.result) ?? validateCatalog('x-results',method,response.result) ?? validateNetwork('x-results',method,response.result) ?? validateConnectionRoute('x-results',method,response.result) ?? validateWorkbenchResult(method,response.result) ?? validateRemoteRead('x-results',method,response.result) ?? validateState('x-results',method,response.result) ?? validateDirectory('x-results',method,response.result) ?? validatePty('x-results',method,response.result);
         if(invalidResult)throw new CoreError({code:'PROTOCOL_ERROR',message:invalidResult,details:response.result});
         return response.result as T;
       } finally { if (timer !== undefined) clearTimeout(timer); }
@@ -64,7 +84,7 @@ function installBridge() {
     clearTimeout(item.timer); pending.delete(response.requestId); item.resolve(response);
   };
   window.__sodeckNotify = notification => {
-    const invalid=validateWorkbenchEvent(notification.type,notification.payload);
+    const invalid=validateWorkbenchUi('x-events',notification.type,notification.payload) ?? validateWorkbenchEvent(notification.type,notification.payload) ?? validateState('x-events',notification.type,notification.payload);
     if(invalid){console.error(invalid);return;}
     for (const listener of listeners) listener(notification);
   };

@@ -1,10 +1,21 @@
 {
   "name": "@sodeck/sdk",
-  "version": "3.0.0",
+  "version": "4.8.0",
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./remote-read": "./src/remote-read.ts",
+    "./state": "./src/state.ts",
+    "./directory": "./src/directory.ts",
+    "./bytes": "./src/bytes.ts",
+    "./remote-client": "./src/remote-client.ts",
+    "./linux-path-view": "./src/linux-path-view.ts",
+    "./worker": "./src/worker.ts",
+    "./pty": "./src/pty.ts",
+    "./network": "./src/network.ts",
+    "./network-stream": "./src/network-stream.ts",
+    "./network-client": "./src/network-client.ts"
   },
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json",

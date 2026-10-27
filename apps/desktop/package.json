@@ -1,6 +1,6 @@
 {
   "name": "@sodeck/desktop",
-  "version": "2.0.0-dev.3",
+  "version": "2.0.0-dev.14",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,10 +10,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@sodeck/sdk": "3.0.0",
+    "@sodeck/sdk": "^4.8.0",
     "@tauri-apps/api": "2.12.3",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "lucide-react": "0.468.0"
+    "lucide-react": "0.468.0",
+    "@sodeck/ui": "1.4.0"
   }
 }

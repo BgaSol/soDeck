@@ -1,12 +1,20 @@
 # Windows 本地开发与验证入口
 
+当前 T-008：核心 `2.0.0-dev.5`、SDK/API `4.1.0`（`workspace.v4` 保持）、文件 `0.1.0`、原签名终端 `0.4.0`。授权、实际通过项和剩余验证见 [任务](tasks/T-008-server-file-tree.md)、[实测](tasks/T-008-results.md)，试用见 [验收步骤](tasks/T-008-acceptance.md)。
+
+T-008 构建顺序：`node scripts/pack-plugin.mjs --plugin files --out resources/files.sodeck-plugin`、`npm run build -w @sodeck/desktop`、`node scripts/cargo.mjs build -p sodeck-desktop --features custom-protocol`、`npm run desktop:package-dev -- T008`。打包使用 `.qa/t008/baseline/terminal-0.4.0.sodeck-plugin` 的原签名副本，不重新构建终端。输出 `.local/dev/SoDeck-v2-T008/`；`SODECK_TEST_PACKAGE_DIR` 指向该目录后运行 `node tests/desktop/package-smoke.mjs`，会复制到另一目录后验证。
+
+文件原生入口 `tests/desktop/files.mjs`、`files-platform.mjs`、`files-visual.mjs`、`files-load.mjs`、`files-updates.mjs`、`files-degraded.mjs` 必须串行，引用独立 Linux 配置；环境见 [隔离 Linux 说明](../tests/linux/t008/README.md)。核心外部测试显式运行 `node scripts/cargo.mjs test -p sodeck-core --test remote_read -- --ignored --nocapture` 并设置 `SODECK_TEST_REMOTE_CONFIG`。源码中列有入口不等于所有矩阵通过，以实测和限制为准。
+
+历史 T-009 基线：核心 `2.0.0-dev.4`、终端 `0.4.0`、SDK/API 4 / `workspace.v4`。规格、授权与结果见 [任务](tasks/T-009-clean-start.md)、[实测](tasks/T-009-results.md)。构建顺序为 `npm run plugin:pack`、`npm run desktop:build -- --debug`、`npm run desktop:package-dev -- T009`，独立输出 `.local/dev/SoDeck-v2-T009/`，不覆盖历史包或日常数据。原生回归入口为 `npm run test:clean-start:native` 和 `npm run test:clean-start:plugins`，必须串行运行；覆盖具体范围以实测为准。以下旧任务及其脚本保留历史依据，不直接用于验证已替代的布局恢复行为。
+
 T-007 服务器编辑修订的当前方案与实际结果见 [任务](tasks/T-007-server-editor.md)、[结果](tasks/T-007-results.md)。构建后执行 `npm run desktop:package-dev -- T007` 生成独立 `.local/dev/SoDeck-v2-T007/`。新增原生入口 `node tests/desktop/server-editor.mjs` 使用隔离 Tauri/WebView2、DPAPI 和 loopback SSH，由 CDP 操作表单，不访问日常服务器或使用全局键盘。目录包冒烟可设置 `SODECK_TEST_PACKAGE_DIR` 指向交付目录。
 
-当前分支适用 T-006 / 核心 `2.0.0-dev.3`、终端 `0.3.0`、插件 API 3 / `workspace.v3`。先读 [T-006](tasks/T-006-workbench-interaction.md)、[实施方案](technical/workbench-interaction-implementation.md) 和[实测记录](tasks/T-006-results.md)。功能修改先更新方案与测试流程，按已确认范围实施。
+历史 T-006 基线： 核心 `2.0.0-dev.3`、终端 `0.3.0`、插件 API 3 / `workspace.v3`。先读 [T-006](tasks/T-006-workbench-interaction.md)、[实施方案](technical/workbench-interaction-implementation.md) 和[实测记录](tasks/T-006-results.md)。功能修改先更新方案与测试流程，按已确认范围实施。
 
-## T-006 当前入口
+## T-006 历史入口
 
-依次执行 `npm run plugin:pack`、`npm run desktop:build -- --debug`、`npm run desktop:package-dev`。打包命令只复制已构建产物至 `.local/dev/SoDeck-v2-T006/`，保留该目录 data 和旧 T-004 包，不自动编译。双击 Start-SoDeck.cmd；版本/哈希、验收步骤、截图和证据随包提供。
+依次执行 `npm run plugin:pack`、`npm run desktop:build -- --debug`、`npm run desktop:package-dev -- T006`。打包命令只复制已构建产物至 `.local/dev/SoDeck-v2-T006/`，保留该目录 data 和旧 T-004 包，不自动编译。双击 Start-SoDeck.cmd；版本/哈希、验收步骤、截图和证据随包提供。
 
 | 入口 | 用途 |
 | --- | --- |
@@ -122,3 +130,17 @@ npm run test:updates:native
 现有 `native.mjs` 与生命周期默认 CLI 模式使用 `windows.ps1`；`ime.mjs` 还使用 `ime-windows.ps1` 的前台窗口与 SendInput 自动化。这些是独立 CLI 路线。Computer Use 会话采用上述外部关闭模式，当前中文 IME 成功记录来自 Computer Use 原生按键和实际窗口观察，流程与证据见[IME 记录](tasks/T-003-ime-results.md)，没有新增通用 `ime-sky.mjs` 入口。控制桌面焦点的原生测试应串行执行，避免窗口创建影响另一个测试的前台输入，也不要在同一次 Computer Use 操作期间并行运行旧 PowerShell 全局输入脚本。
 
 Windows 单显示 Microsoft Pinyin、候选位置与迁移时组合输入已单独验证；Linux/OpenSSH、多屏/DPI、辅助技术及正式安装发布仍按任务单独验收。完整已执行范围见[核心记录](tasks/T-003-core-results.md)、[插件更新记录](tasks/T-003-plugin-results.md)和[桌面交付记录](tasks/T-003-desktop-results.md)。
+
+## T-013 跳板验证入口
+
+实施和环境见 [T-013 结果](tasks/T-013-results.md)。`tests/linux/t013/setup.py` 只针对专属 QEMU overlay（管理22313、跳板22314），`tests/desktop/ssh-jump.mjs` 使用9811–9813，UI脚本使用9821–9823，迁移9831/9832，负载9841/9842；独立开发包命令为 `node scripts/package-dev.mjs T013`。专属核心测试需隔离 Python/Paramiko，并用 `--include-ignored` 明确启用，不能把默认忽略记为通过。清理脚本只关闭本任务 guest，宿主临时文件保留的策略限制见结果。
+
+## T-012 三主题与设计系统入口
+
+实际代码与验证见[T-012结果](tasks/T-012-results.md)。`npm run check`包括设计参数生成漂移、PostCSS/TS AST插件样式边界及类型检查；`npm run test:design-system`运行生成器和违规夹具。`apps/desktop/design-system.html`为Vite开发组件目录，不进入生产导航。样式唯一参数来源是`packages/ui/src/tokens`，颜色是`themes`；插件通过`@sodeck/ui`公开入口使用。
+
+原生测试串行：`node tests/desktop/dopamine.mjs`（9841–9843，三窗/8表面/200菜单）、`dopamine-visual.mjs`（9981–9983，DPI/IME/高对比）、`dopamine-compatibility.mjs`（9923起递增）、`dopamine-lifecycle.mjs`（9901–9903）。全部结果在`.qa/t012`；真实SSH只用专属QEMU loopback22281。`node scripts/package-dev.mjs T012`生成独立目录包。不要与T-013原生负载测试同时运行，两个测试共用9841调试端口。保留和恢复本次实际捕获的系统设置。
+
+## T-013 r2 多级验证入口
+
+新环境为 `.qa/t013-multihop` / QEMU22323、22324，使用 `tests/linux/t013/multihop-setup.py`；不复用已停的r1网络。`ssh-multihop.mjs`（9861–9863，`MH_OLD=1`/`MH_FILES_ONLY=1`）、`ssh-multihop-ui.mjs`（9871–9873）、`ssh-multihop-long-ui.mjs`（9911/9912）、`ssh-multihop-migration.mjs`（动态空闲端口）串行执行，真实边界见[多级结果](tasks/T-013-multihop-results.md)。`ssh_multihop.rs`含需Python/Paramiko的8项，用 `--include-ignored`显式运行；1001节点配置与16节点网络分开记录。独立目录包命令：`node scripts/package-dev.mjs T013-Multihop`；用 `SODECK_TEST_PACKAGE_DIR`指定新包后执行`tests/desktop/package-smoke.mjs`。

@@ -102,6 +102,7 @@ impl State {
         let result = (|| {
             for view in &moving {
                 check()?;
+                self.cancel_plugin_dialogs(Some(&view.view_id));
                 let Some(source) = self.view_binding(&view.view_id) else {
                     continue;
                 };
@@ -219,14 +220,15 @@ impl State {
                 }
                 v.mount_generation = binding.generation;
                 v.revision += 1;
-                entries.push(json!({"viewId":v.view_id,"workspaceId":v.workspace_id,"mountGeneration":v.mount_generation,"resources":w.resources.get(&v.view_id).cloned().unwrap_or_default()}));
+                let owner = self.loaded_for(&v.plugin_id)?.instance.clone();
+                entries.push((owner, json!({"viewId":v.view_id,"workspaceId":v.workspace_id,"mountGeneration":v.mount_generation,"resources":w.resources.get(&v.view_id).cloned().unwrap_or_default()})));
             }
             let mut outcome = operation.result.lock().unwrap();
             check()?;
             if !entries.is_empty() {
                 let cursors = self
                     .core
-                    .bind_view_resources(&self.loaded()?.instance, &entries)?;
+                    .bind_owned_view_resources(&entries)?;
                 for (view, _, candidate, _) in &prepared {
                     *candidate.as_ref().unwrap().resume.lock().unwrap() =
                         cursors[&view.view_id].clone();
@@ -257,7 +259,7 @@ impl State {
             self.show_window(target);
             self.reap_empty_windows();
             self.update_window_titles();
-            Ok(self.save_committed(json!({"operationId":op_id,"phase":"committed","workspaceIds":ids,"targetWindowId":target}),"工作区已移动，但布局未保存"))
+            Ok(self.commit_runtime(json!({"operationId":op_id,"phase":"committed","workspaceIds":ids,"targetWindowId":target})))
         })();
         for (_, _, _, transfer) in &prepared {
             self.snapshots.lock().unwrap().remove(transfer);

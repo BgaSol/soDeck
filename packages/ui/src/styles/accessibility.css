@@ -1,0 +1,23 @@
+@media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; } }
+@media(prefers-reduced-transparency:reduce) { .material { background:var(--elevated)!important; backdrop-filter:none!important; } }
+@media(prefers-contrast:more) { :where(button,input,select,textarea) { border-color:var(--controlBorder); } }
+@media(forced-colors:active) {
+  :root { --canvas:Canvas!important; --surface:Canvas!important; --elevated:Canvas!important; --field:Canvas!important; --text:CanvasText!important; --secondary:CanvasText!important; --muted:GrayText!important; --border:ButtonText!important; --controlBorder:ButtonText!important; --focus:Highlight!important; --accent:Highlight!important; --selected:Highlight!important; --selectedText:HighlightText!important; --hover:Highlight!important; --pressed:Highlight!important; --primary:ButtonFace!important; --primaryText:ButtonText!important; --primaryHover:Highlight!important; --primaryPressed:Highlight!important; --disabled:GrayText!important; }
+  .theme-preview { forced-color-adjust:auto; } .preview-gradient { background:none!important; }
+}
+:root[data-high-contrast=true] .material { background:var(--elevated)!important; backdrop-filter:none!important; }
+:root[data-high-contrast=true] .preview-gradient { background:var(--surface)!important; }
+:root[data-high-contrast=true] * {box-shadow:none!important;text-shadow:none!important;}
+@media(forced-colors:active){*{box-shadow:none!important;text-shadow:none!important}}
+
+.sd-sr-only,.visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+:root[data-high-contrast=true],:root[data-high-contrast=true] .sd-theme-scope{--sd-navigation:var(--surface);--sd-tool:var(--surface);--sd-success-surface:var(--surface);--sd-error-surface:var(--surface);--sd-border-width:1px;--sd-press-offset:0px}
+@media(forced-colors:active){:root,.sd-theme-scope{--sd-navigation:Canvas;--sd-tool:Canvas;--sd-success-surface:Canvas;--sd-error-surface:Canvas;--sd-border-width:1px;--sd-press-offset:0px}.sd-button-face,.sd-input,.sd-dialog,.sd-menu{border:1px solid ButtonText}.sd-tree-row[data-selected=true]{outline:1px solid Highlight}.sd-progress{border:1px solid CanvasText}}
+@media(prefers-reduced-motion:reduce){.sd-button-face,.sd-button-content{translate:none!important}.sd-busy{animation:none}}
+
+@media(prefers-reduced-transparency:reduce){.sd-dialog-backdrop{background:var(--canvas)}}
+:root[data-high-contrast=true] :is(.sd-button-face,.sd-input,.sd-dialog,.sd-menu){border-color:var(--controlBorder)}
+:root[data-high-contrast=true] .sd-capacity-fill{background:var(--surface);border-inline-end:1px solid var(--text)}
+:root[data-high-contrast=true] .sd-tree-row[data-capacity][data-selected=true]{outline-color:var(--text)}
+@media(forced-colors:active){.sd-capacity-fill{background:Canvas;border-inline-end:1px solid CanvasText}.sd-tree-row[data-capacity][data-selected=true]{outline-color:Highlight}}
+.sd-capacity-fill[data-empty]{border-inline-end:0}

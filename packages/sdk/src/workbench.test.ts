@@ -1,4 +1,4 @@
-import cases from "../../../contracts/workbench-v3.examples.json";
+import cases from "../../../contracts/workbench-v4.examples.json";
 import { expect, it } from "vitest";
 import { validateWorkbenchRequest,validateWorkbenchResult,validateWorkbenchEvent } from "./workbench";
 it("checks the shared workbench positive and negative examples", () => {

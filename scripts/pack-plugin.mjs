@@ -14,18 +14,19 @@ for (let i = 2; i < process.argv.length; i += 2) {
 const pluginName = args.get('--plugin') ?? 'terminal';
 if (!/^[a-z0-9-]+$/.test(pluginName)) throw new Error('Invalid plugin name');
 const pluginDir = join(root, 'plugins', pluginName);
-const version = args.get('--version') ?? '0.3.0';
+const sourceManifest = JSON.parse(await readFile(join(pluginDir, 'manifest.json'), 'utf8'));
+const version = args.get('--version') ?? sourceManifest.version;
 const source = resolve(args.get('--source') ?? join(pluginDir, 'dist'));
 if (!args.has('--source')) {
   const vite = spawnSync(process.execPath, [join(root, 'node_modules/vite/bin/vite.js'), 'build'], {
     cwd: pluginDir, stdio: 'inherit', windowsHide: true,
-    env: { ...process.env, TERMINAL_PLUGIN_VERSION: version },
+    env: { ...process.env, TERMINAL_PLUGIN_VERSION: version, FILES_PLUGIN_VERSION: version, NETWORK_PLUGIN_VERSION: version },
   });
   if (vite.status !== 0) throw new Error('Plugin UI build failed');
   const { build } = await import('esbuild');
   await build({ entryPoints: [join(pluginDir, 'src/worker.ts')], outfile: join(source, 'worker/main.js'),
     bundle: true, format: 'iife', platform: 'neutral', target: 'es2022',
-    define: { __TERMINAL_VERSION__: JSON.stringify(version) }, minify: false,
+    define: { __TERMINAL_VERSION__: JSON.stringify(version), __FILES_VERSION__: JSON.stringify(version), __NETWORK_VERSION__: JSON.stringify(version) }, minify: false,
   });
   await copyFile(join(pluginDir, 'manifest.json'), join(source, 'manifest.json'));
 }
@@ -85,7 +86,7 @@ if (archive.length > 32 * 1024 * 1024) throw new Error('Package exceeds 32 MiB c
 const output = resolve(args.get('--out') ?? join(root, 'resources', `${manifest.pluginId}-${manifest.version}.sodeck-plugin`));
 await mkdir(dirname(output),{recursive:true}); await writeFile(output,archive);
 // Keep the baseline factory package separate from the independently built update.
-if (!args.has('--out') && manifest.version === '0.3.0') await writeFile(join(root, 'resources', `${pluginName}.sodeck-plugin`), archive);
+if (!args.has('--out') && manifest.version === sourceManifest.version) await writeFile(join(root, 'resources', `${pluginName}.sodeck-plugin`), archive);
 if (!args.has('--key')) {
   const publicPath = join(root, 'resources/development-public-key.json');
   await mkdir(dirname(publicPath),{recursive:true});

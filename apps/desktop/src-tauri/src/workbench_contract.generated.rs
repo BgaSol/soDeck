@@ -183,6 +183,9 @@ pub struct CommandsExecute {
     pub view_id: Option<String>,
     pub args: Option<serde_json::Value>,
     pub operation_id: Option<String>,
+    pub workspace_generation: Option<String>,
+    pub initializer_id: Option<String>,
+    pub plugin_id: Option<String>,
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all="camelCase", deny_unknown_fields)]
@@ -293,6 +296,9 @@ pub struct WorkspaceLocation {
     pub workspace_id: String,
     pub server_id: String,
     pub owner_window_id: String,
+    pub generation: String,
+    pub initializers: Vec<Initializer>,
+    pub initialization_error: serde_json::Value,
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all="camelCase", deny_unknown_fields)]
@@ -339,6 +345,8 @@ pub struct WorkspaceOpenResult {
     pub committed: bool,
     pub persisted: bool,
     pub warning: Option<Fault>,
+    pub generation: Option<String>,
+    pub initializers: Option<Vec<Initializer>>,
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all="camelCase", deny_unknown_fields)]
@@ -432,4 +440,147 @@ pub struct ThemeGet {
 #[serde(rename_all="camelCase", deny_unknown_fields)]
 pub struct PersistenceResult {
     pub persisted: serde_json::Value,
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
+pub struct Initializer {
+    pub id: String,
+    pub command_id: String,
+    pub operation_id: String,
+    pub state: serde_json::Value,
+    pub view_id: serde_json::Value,
+    pub error: serde_json::Value,
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
+pub struct InitializationResult {
+    pub scheduled: serde_json::Value,
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
+pub struct WorkspaceScope {
+    pub workspace_id: String,
+    pub workspace_generation: String,
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
+pub struct ViewPresentation {
+    pub view_id: String,
+    pub scope: WorkspaceScope,
+    pub visible: bool,
+    pub focused: bool,
+    pub revision: u64,
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
+pub struct ViewsPresentationRequest {
+    pub view_id: String,
+}
+pub type ViewsPresentationResult = serde_json::Value;
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
+pub struct ViewsRequestFocusRequest {
+    pub view_id: String,
+    pub user_gesture: serde_json::Value,
+}
+pub type ViewsRequestFocusResult = serde_json::Value;
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
+pub struct OwnedCommand {
+    pub id: String,
+    pub title: String,
+    pub scope: serde_json::Value,
+    pub primary: bool,
+    pub input: Option<serde_json::Value>,
+    pub plugin_id: String,
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
+pub struct WorkbenchContributionsRequest {
+
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
+pub struct WorkbenchContributionsResult {
+    pub commands: Vec<OwnedCommand>,
+    pub views: Vec<serde_json::Value>,
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
+pub struct WorkbenchDockConfigureRequest {
+    pub workspace_id: String,
+    pub workspace_generation: String,
+    pub edge: serde_json::Value,
+    pub width: Option<u64>,
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
+pub struct WorkbenchDockConfigureResult {
+    pub width: u64,
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
+pub struct LiveTheme {
+    pub schema_version: serde_json::Value,
+    pub id: String,
+    pub mode: serde_json::Value,
+    pub colors: serde_json::Value,
+    pub terminal: serde_json::Value,
+    pub revision: String,
+    pub high_contrast: bool,
+    pub test_override: bool,
+}
+pub type ThemeResponse = serde_json::Value;
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
+pub struct ThemePreference {
+    pub mode: serde_json::Value,
+    pub theme_id: String,
+    pub revision: String,
+    pub high_contrast: bool,
+    pub test_override: bool,
+    pub legacy_plugins: Vec<String>,
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
+pub struct ThemeSelect {
+    pub mode: serde_json::Value,
+    pub expected_revision: String,
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
+pub struct ThemeChoose {
+    pub theme_id: serde_json::Value,
+    pub expected_revision: String,
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
+pub struct ThemeCatalogEntry {
+    pub id: String,
+    pub label: String,
+    pub mode: serde_json::Value,
+    pub preview: LiveTheme,
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
+pub struct ThemeCatalog {
+    pub revision: String,
+    pub selected_theme_id: String,
+    pub effective_theme_id: String,
+    pub default_theme_id: String,
+    pub high_contrast: bool,
+    pub test_override: bool,
+    pub legacy_plugins: Vec<String>,
+    pub partial_style_plugins: Vec<String>,
+    pub themes: Vec<ThemeCatalogEntry>,
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
+pub struct EditServerDialog {
+    pub server_id: String,
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
+pub struct EditorShown {
+    pub shown: bool,
 }

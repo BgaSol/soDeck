@@ -28,13 +28,13 @@ export async function rpc(page, method, params = {}, requestId) {
   if (response.error) throw Object.assign(new Error(response.error.message), response.error);
   return response.result;
 }
-export async function launch({allowStartupWarning=false,data, shellPort=9333, pluginPort=9334, executable=join(root,'target/debug/sodeck-desktop.exe'), packagePath=join(root,'resources/terminal.sodeck-plugin'), keysPath=join(root,'resources/development-public-key.json')}={}) {
+export async function launch({allowStartupWarning=false,data, shellPort=9333, pluginPort=9334, executable=join(root,'target/debug/sodeck-desktop.exe'), packagePath=join(root,'resources/terminal.sodeck-plugin'), keysPath=join(root,'resources/development-public-key.json'),cwd=root}={}) {
   data = resolve(data ?? join(root, '.qa/native', String(Date.now())));
   await mkdir(data, {recursive:true});
   const launchDebugger=globalThis.process.env.SODECK_TEST_LAUNCH_DEBUGGER;
   const process = spawn(launchDebugger??executable, launchDebugger?[executable,join(data,'debugger.log')]:[], {
-    cwd: root, windowsHide:true, stdio:['ignore','pipe','pipe'],
-    env:{...globalThis.process.env,SODECK_DATA_DIR:data,SODECK_SHELL_DEBUG_PORT:String(shellPort),
+    cwd, windowsHide:true, stdio:['ignore','pipe','pipe'],
+    env:{...globalThis.process.env,SODECK_DEV_MODE:'1',SODECK_DATA_DIR:data,SODECK_SHELL_DEBUG_PORT:String(shellPort),
       SODECK_WEBVIEW_ARGS:`--remote-debugging-port=${pluginPort}`,
       SODECK_PLUGIN_PACKAGE:packagePath,SODECK_PLUGIN_KEYS:keysPath},
   });

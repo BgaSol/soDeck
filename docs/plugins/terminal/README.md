@@ -1,11 +1,17 @@
 # 终端插件
 
-更新日期：2026-10-25 · 修订：r3
-插件 ID：`sodeck.terminal` · 当前任务：[T-003](../../tasks/T-003-core-terminal.md) · Windows 开发包已建立，验收范围见任务
+更新日期：2026-10-27 · 修订：r10
+最新提案：[T-015](../../tasks/T-015-workflow-polish.md)覆盖末行裁切和Tab末尾＋；TERM-VIEW-01～03见[F-TERM-001 r10](features/ssh-terminal.md)，入口/窗口见[F-CORE-008 r6](../../core/workbench-interaction.md)。仅设计，不改写旧任务实现/实测。
 
-最新设计：[T-006](../../tasks/T-006-workbench-interaction.md) 基于当前 T-004 终端包 0.2.1 / API 2 提出交互收敛。下文首批视图/SDK v1/耦合描述属于 T-003/T-004 设计时基线，当前实现以 T-004 结果和本次只读核实为准；新方案未实现，不能因修改本索引声称界面已改变。
+插件 ID：`sodeck.terminal` · 当前任务：[T-009](../../tasks/T-009-clean-start.md) · Windows 开发包与验收范围见任务
+
+最新基线：[T-009](../../tasks/T-009-clean-start.md) 的终端包 0.4.0 / API 4，启动和首终端证据见[实测记录](../../tasks/T-009-results.md)。[T-006](../../tasks/T-006-workbench-interaction.md) 的交互收敛按其任务维护。下文首批视图/SDK v1/耦合描述保留 T-003/T-004 设计时基线，按相应后续规格覆盖，不作为当前进度。
 
 ## 1. 目标与边界
+
+[T-013](../../tasks/T-013-ssh-jump.md)提出核心跳板连接；终端继续只申请目标租约/PTY，显示当前阶段和失败，通过核心处理认证，不拥有跳板会话。专属消费测试 TERM-JP-01/02 在 [F-TERM-001](features/ssh-terminal.md)。下文首批排除跳板为 T-003 历史范围，本次增量尚待确认。
+
+目录联动已随 [T-010](../../tasks/T-010-terminal-directory-follow.md) 实施为 terminal 0.5.0 / API 4.2：worker 独立观察 PTY 并报告目录，保持 UI 显示 ack。Bash 5.1/5.2 和关闭集成的原登录流程已实测，Zsh 自动跟随后置。结果与开发包见[实测记录](../../tasks/T-010-results.md)，原 0.4.0 包保留，正式发布未发生。
 
 按产品 P-19，作为首个实际业务插件与核心一起交付：用户添加服务器后能打开真实 SSH 终端，操作多个会话，分屏、弹出和移回窗口，并单独更新终端包。Windows 首先验证，远端首批验证 Linux/OpenSSH。
 
@@ -19,6 +25,7 @@
 | --- | --- | --- | --- |
 | F-TERM-001：真实 SSH 终端与会话交互 | [功能规格](features/ssh-terminal.md)；TERM-01 至 TERM-12 | [核心 SSH](../../core/ssh.md)、工作台、记录及资源契约 | [T-003](../../tasks/T-003-core-terminal.md) |
 | F-TERM-002：复制粘贴与本地菜单 | [功能规格](features/terminal-input.md)；IN-01 至 IN-07 | 核心剪贴板/PTY、F-CORE-008 共享 UI | [T-006](../../tasks/T-006-workbench-interaction.md) |
+| F-TERM-003：工作目录报告 | [功能设计](features/directory-reporting.md)；DR-01 至 DR-09 | [核心目录上下文](../../core/directory-context.md)、PTY 与 shell 集成；不直接驱动文件树 | [T-010](../../tasks/T-010-terminal-directory-follow.md) |
 | 插件包独立更新与恢复 | [本批更新流程及 UPD 测试](../../technical/first-terminal.md#5-本批独立更新及测试) | 核心插件管理器；插件数据 schema | [T-003](../../tasks/T-003-core-terminal.md) |
 | 会话托管、历史、回放等 | 尚未安排；进入相应任务时分别建功能规格 | 按真实需求补齐 | 无 |
 
@@ -49,11 +56,13 @@ T-004 建议保持上述业务实例粒度，补齐窗口级上下文、通用�
 
 插件包包含 UI、业务 bundle、清单及签名，独立构建，依赖 SDK/API v1 及本批实际能力；不包含插件权限表。核心绑定来源并逐次记录调用，日志不录入终端正文。
 
-持久数据 schema 1 保存字号等插件设置；默认字号 14 CSS px，范围 10–24。工作台保存位置和可恢复会话占位；PTY、输入及滚屏正文不持久化。App 重启后占位显示“会话已结束”，用户明确新建或重新连接，不自动恢复远端 shell。
+持久数据 schema 1 保存字号等插件设置；默认字号 14 CSS px，范围 10–24。PTY、输入及滚屏正文不持久化。P-33/P-34 的 [F-CORE-010 r2](../../core/clean-start.md) / [T-009](../../tasks/T-009-clean-start.md) 取消跨启动占位恢复，保留字号等偏好；App 启动为空，用户创建服务器工作区后自动创建一个首终端并连接。定位/移窗不增开，额外终端手动新建；失败/取消原位重试，关闭最后终端不强制补建。插件通过 API 4 的显式 `workspaceInitializers` 管理初始化业务，核心通用调度，不把 primary 命令直接当初始化钩子；契约见[代码方案](../../technical/clean-start-implementation.md)。同次运行断线重连和表面恢复保持，确认与实际验证见 T-009。
 
-插件独立构建和测试入口已建立，命令见[开发入口](../../development-entry.md)。插件级回归组合为 SSH、TERM、UPD 和任务选取的公共用例；测试数据、故障恢复和清理由对应流程定义。实际结果与验收只在 T-003 记录。
+插件独立构建和测试入口已建立，命令见[开发入口](../../development-entry.md)。插件级回归组合为 SSH、TERM、UPD 和任务选取的公共用例；测试数据、故障恢复和清理由对应流程定义。实际结果与验收由各次任务记录，原结果只证明对应版本。
 
 ## 5. 修订记录
+
+- r6，2026-10-26：登记 T-010 的实际 cwd 报告和 shell 兼容设计，新增 DR 流程；原终端 0.4.0 不具备该能力，本轮没有改包或编码。
 
 - r3，2026-10-25：登记 T-006 的视图收敛和独立 F-TERM-002 输入规格，区分旧声明与待确认目标；保持插件业务/资源边界。
 

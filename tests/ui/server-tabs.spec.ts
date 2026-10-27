@@ -7,13 +7,14 @@ test.beforeEach(async({page})=>{
   await page.setViewportSize({width:800,height:600});
   await page.addInitScript(()=>{
     const servers=Array.from({length:22},(_,i)=>({id:`server-${i}`,name:`服务器 ${i} · 很长的显示名称`,host:`host-${i}.test`,port:22,username:`user-${i}`,authType:'password'}));
-    const workspaces=servers.slice(0,21).map((s,i)=>({workspaceId:s.id,serverId:s.id,ownerWindowId:i===20?'workspace-other':'main'}));
-    const layout={schemaVersion:3,windowId:'main',windowRole:'main',workspaceIds:servers.slice(0,20).map(s=>s.id),activeWorkspaceId:'server-0',workspaces,commands:[],viewDeclarations:[],dockSlots:[],views:[],revision:1,split:'none',splitRatio:.5,pendingOpens:[],recoveryWarnings:[]};
+    const workspaces=servers.slice(0,21).map((s,i)=>({workspaceId:s.id,serverId:s.id,generation:"test",initializers:[],initializationError:null,ownerWindowId:i===20?'workspace-other':'main'}));
+    const layout={schemaVersion:4,windowId:'main',windowRole:'main',workspaceIds:servers.slice(0,20).map(s=>s.id),activeWorkspaceId:'server-0',workspaces,commands:[],viewDeclarations:[],dockSlots:[],views:[],revision:1,split:'none',splitRatio:.5,pendingOpens:[],recoveryWarnings:[]};
     const fixture={calls:[] as any[],layout};(window as any).__TABS_TEST__=fixture;
     (window as any).__TAURI_INTERNALS__={invoke:async(_:string,{request}:any)=>{
       fixture.calls.push(request);const presentation=(window as any).__PRESENTATION__.handle(request);if(presentation)return presentation;let result:any=null;
       if(request.method==='servers.list')result={servers};
       if(request.method==='workbench.snapshot')result=JSON.parse(JSON.stringify(layout));
+      if(request.method==='workbench.contributions')result={commands:layout.commands.map(c=>({...c,pluginId:'sodeck.terminal'})),views:[]};
       if(request.method==='workspaces.activate'){layout.activeWorkspaceId=request.params.workspaceId;result={workspaceId:request.params.workspaceId,ownerWindowId:'main',committed:true,persisted:true};}
       if(request.method==='workspaces.open')result={workspaceId:request.params.serverId,created:false,ownerWindowId:workspaces.find(w=>w.serverId===request.params.serverId)?.ownerWindowId??'main',committed:true,persisted:true};
       if(request.method==='workspaces.move')result={operationId:request.params.operationId,phase:'committed',committed:true,persisted:true,targetWindowId:request.params.targetWindowId};

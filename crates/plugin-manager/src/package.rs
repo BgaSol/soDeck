@@ -17,6 +17,8 @@ const MAX_FILES: usize = 2000;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Manifest {
     pub plugin_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
     pub version: String,
     pub requires: Requirements,
     pub entry: Entry,
@@ -44,13 +46,48 @@ pub struct Entry {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Contributions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<Presentation>,
     pub views: Vec<ViewDeclaration>,
     #[serde(default)]
     pub commands: Vec<CommandDeclaration>,
     #[serde(default, rename = "workspaceEntries")]
     pub workspace_entries: Vec<WorkspaceEntry>,
+    #[serde(default, rename = "workspaceInitializers")]
+    pub workspace_initializers: Vec<WorkspaceInitializer>,
     #[serde(default, rename = "retiredViews")]
     pub retired_views: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Presentation {
+    #[serde(default)]
+    pub tools: Vec<ToolContribution>,
+    #[serde(default)]
+    pub tab_create: Vec<TabCreateContribution>,
+    #[serde(default)]
+    pub dialogs: Vec<DialogDeclaration>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ToolContribution { pub view_type: String, pub command_id: String, pub edge: String, pub icon: String, pub default_width: u32 }
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TabCreateContribution { pub command_id: String, pub icon: String }
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DialogDeclaration { pub id: String, pub title: String, pub width: u32, pub height: u32 }
+
+impl Manifest {
+    pub fn display_name(&self) -> String {
+        if let Some(name) = &self.display_name { return name.trim().to_owned(); }
+        let mut views = self.contributes.views.iter();
+        match (views.next(), views.next()) {
+            (Some(view), None) => view.title.clone(),
+            _ => self.plugin_id.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -86,7 +123,16 @@ pub struct WorkspaceEntry {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceInitializer {
+    pub id: String,
+    pub command_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ViewDeclaration {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub context_providers: Vec<String>,
     pub id: String,
     pub title: String,
     pub scope: String,
@@ -256,7 +302,7 @@ pub(crate) fn verify(root: &Path, keys: &TrustedKeys) -> Result<Manifest> {
     Ok(manifest)
 }
 
-fn validate_manifest(m: &Manifest) -> Result<()> {
+pub(crate) fn validate_manifest(m: &Manifest) -> Result<()> {
     if m.plugin_id.is_empty()
         || m.plugin_id.len() > 128
         || !m
@@ -303,6 +349,38 @@ fn validate_manifest(m: &Manifest) -> Result<()> {
     {
         return Err(invalid("Invalid plugin entry or data schema"));
     }
+    if m.display_name.as_ref().is_some_and(|name| name.trim().is_empty() || name.trim().chars().count() > 64 || name.chars().any(char::is_control)) {
+        return Err(invalid("Invalid plugin display name"));
+    }
+    if let Some(presentation) = &m.contributes.presentation {
+        if !m.requires.capabilities.iter().any(|c| c == "workspace.contributions.v2") {
+            return Err(invalid("Presentation requires workspace.contributions.v2"));
+        }
+        if presentation.tools.len() > 32 || presentation.tab_create.len() > 1 || presentation.dialogs.len() > 16 {
+            return Err(invalid("Too many presentation declarations"));
+        }
+        let server_command = |id: &str| m.contributes.commands.iter().any(|c| c.id == id && c.scope == "server" && c.input.is_none());
+        let mut tools = BTreeSet::new();
+        for tool in &presentation.tools {
+            if !tools.insert(&tool.view_type) || !["left", "right"].contains(&tool.edge.as_str())
+                || !["folder", "arrow-left-right", "terminal", "layout-panel"].contains(&tool.icon.as_str())
+                || !(260..=480).contains(&tool.default_width) || !server_command(&tool.command_id)
+                || !m.contributes.views.iter().any(|v| v.id == tool.view_type && v.scope == "server" && !v.multiple && v.supported_hosts.iter().any(|h| h == "dock") && v.dock_edges.contains(&tool.edge)) {
+                return Err(invalid("Invalid tool contribution"));
+            }
+        }
+        for action in &presentation.tab_create {
+            if action.icon != "plus" || !server_command(&action.command_id) { return Err(invalid("Invalid tab creation contribution")); }
+        }
+        let mut dialogs = BTreeSet::new();
+        for dialog in &presentation.dialogs {
+            if dialog.id.is_empty() || dialog.id.len() > 256 || !dialogs.insert(&dialog.id) || dialog.title.trim().is_empty() || dialog.title.chars().count() > 256
+                || !(320..=960).contains(&dialog.width) || !(240..=960).contains(&dialog.height)
+                || !m.requires.capabilities.iter().any(|c| c == "ui.dialog.v1") {
+                return Err(invalid("Invalid plugin dialog declaration"));
+            }
+        }
+    }
     let mut commands = BTreeSet::new();
     for command in &m.contributes.commands {
         if command.input.as_ref().is_some_and(|i| i.kind != "text" || i.initial != "viewTitle" || i.key.is_empty() || i.key.len() > 64 || i.label.is_empty() || i.label.len() > 256 || i.max_length > 256 || i.min_length > i.max_length) {
@@ -314,6 +392,15 @@ fn validate_manifest(m: &Manifest) -> Result<()> {
             || !commands.insert(command.id.clone())
         {
             return Err(invalid("Invalid or duplicate command declaration"));
+        }
+    }
+    let mut initializers = BTreeSet::new();
+    let mut initial_commands = BTreeSet::new();
+    for init in &m.contributes.workspace_initializers {
+        if init.id.is_empty() || init.id.len() > 256 || !initializers.insert(&init.id)
+            || !initial_commands.insert(&init.command_id)
+            || !m.contributes.commands.iter().any(|c| c.id == init.command_id && c.scope == "server" && c.input.is_none()) {
+            return Err(invalid("Workspace initializer must reference a unique server command without input"));
         }
     }
     let mut entries = BTreeSet::new();
@@ -338,6 +425,7 @@ fn validate_manifest(m: &Manifest) -> Result<()> {
         }
     }
     for view in &m.contributes.views {
+        if view.context_providers.len()>1||view.context_providers.iter().any(|p|p!="directory") {return Err(invalid("Unknown or duplicate context provider"));}
         if view.id.is_empty()
             || !ids.insert(&view.id)
             || view.title.is_empty()

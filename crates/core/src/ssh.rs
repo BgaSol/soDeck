@@ -6,12 +6,16 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use ssh2::{Channel, Session};
+pub(crate) mod remote;
+pub(crate) mod observer;
+pub(crate) mod network;
+mod transport;
 use std::{
     collections::{HashMap, VecDeque},
     io::{Read, Write},
     net::{Shutdown, TcpStream, ToSocketAddrs},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc::{self, Receiver, SyncSender},
         Arc, Mutex,
     },
@@ -22,12 +26,36 @@ use std::{
 const OUTPUT_BUDGET: usize = 2 * 1024 * 1024;
 const INPUT_BUDGET: usize = 256 * 1024;
 
+#[derive(Default)]
+pub(crate) struct TransportBudget { pub sessions: usize, pub bridges: usize }
+pub(crate) struct TransportReservation { budget: Arc<Mutex<TransportBudget>>, sessions: usize, bridges: usize }
+impl TransportReservation {
+    fn reserve(budget: Arc<Mutex<TransportBudget>>, sessions: usize) -> Result<Self> {
+        let bridges = sessions.saturating_sub(1);
+        {
+            let mut used = budget.lock().unwrap();
+            if sessions > 256 - used.sessions || bridges > 256 - used.bridges {
+                return Err(CoreError::new("CONNECTION_RESOURCES_EXHAUSTED", "连接资源不足，请释放其他连接后重试").details(json!({"requiredSessions":sessions,"availableSessions":256-used.sessions,"requiredBridges":bridges,"availableBridges":256-used.bridges})));
+            }
+            used.sessions += sessions; used.bridges += bridges;
+        }
+        Ok(Self { budget, sessions, bridges })
+    }
+}
+impl Drop for TransportReservation {
+    fn drop(&mut self) {
+        let mut used = self.budget.lock().unwrap();
+        used.sessions -= self.sessions; used.bridges -= self.bridges;
+    }
+}
+
 #[derive(Clone)]
 pub struct Frame {
     pub sequence: u64,
     pub bytes: Vec<u8>,
 }
 pub struct PtyState {
+    pub observer: Option<observer::Observer>,
     pub frames: VecDeque<Frame>,
     pub buffered: usize,
     pub last_sequence: u64,
@@ -45,6 +73,7 @@ pub struct PtyState {
 impl PtyState {
     fn new(cols: u32, rows: u32) -> Self {
         Self {
+            observer:None,
             frames: VecDeque::new(),
             buffered: 0,
             last_sequence: 0,
@@ -102,7 +131,10 @@ impl PtyState {
 }
 
 enum Command {
+    Tcp(network::Open),
+    Remote(remote::Job),
     Open {
+        command:Option<String>,
         id: String,
         cols: u32,
         rows: u32,
@@ -120,153 +152,120 @@ enum Command {
     },
 }
 pub struct Connection {
+    pub purpose: String,
     pub id: String,
     pub server: Server,
     pub workspace_id: String,
     pub generation: u64,
-    pub credential_revision: u64,
+    pub route: crate::route::RoutePlan,
+    pub bridge_metrics: Option<Arc<Mutex<Value>>>,
+    pub bridge_segments: Vec<Arc<Mutex<Value>>>,
+    pub failure_hop: Arc<AtomicUsize>,
+    pub transport_live: Arc<AtomicBool>,
     commands: SyncSender<Command>,
     canceled: Arc<AtomicBool>,
     socket: TcpStream,
     pub status: Arc<Mutex<String>>,
+    pub remote_metrics: Arc<Mutex<Value>>,
+    pub network_metrics: Arc<Mutex<network::Metrics>>,
 }
 impl Connection {
+    pub(crate) fn open_tcp(&self, open: network::Open) -> Result<()> { self.send(Command::Tcp(open)) }
+    pub(crate) fn remote(&self, job: remote::Job) -> Result<()> { self.send(Command::Remote(job)) }
     pub fn connect(
-        server: Server,
+        route: crate::route::RoutePlan,
         workspace_id: String,
         generation: u64,
-        credential_revision: u64,
-        known_key: Option<String>,
-        credential: Option<Credential>,
         canceled: Arc<AtomicBool>,
         operation: &AtomicBool,
+        budget: Arc<Mutex<TransportBudget>>,
+        verify: impl FnMut(usize, &str, &str, &[String]) -> Result<Credential>,
+        progress: impl FnMut(usize, &str),
     ) -> Result<Arc<Self>> {
-        let (resolved_tx, resolved_rx) = mpsc::sync_channel(1);
-        let endpoint = (server.host.clone(), server.port);
-        thread::spawn(move || {
-            let _ = resolved_tx.send(
-                endpoint
-                    .to_socket_addrs()
-                    .map(|addresses| addresses.collect::<Vec<_>>()),
-            );
-        });
-        let resolve_deadline = Instant::now() + Duration::from_secs(15);
-        let addresses = loop {
-            if canceled.load(Ordering::SeqCst) || operation.load(Ordering::SeqCst) {
-                return Err(CoreError::new("CANCELED", "连接已取消"));
-            }
-            match resolved_rx.recv_timeout(Duration::from_millis(50)) {
-                Ok(result) => {
-                    break result.map_err(|_| CoreError::new("NETWORK_ERROR", "无法解析主机名"))?
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) if Instant::now() < resolve_deadline => {}
-                _ => return Err(CoreError::new("CONNECT_TIMEOUT", "主机名解析超时")),
-            }
-        };
-        let deadline = Instant::now() + Duration::from_secs(15);
-        let mut socket = None;
-        'addresses: for address in addresses {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                break;
-            }
-            let candidate_deadline = Instant::now() + remaining.min(Duration::from_secs(5));
-            while Instant::now() < candidate_deadline {
-                if canceled.load(Ordering::SeqCst) || operation.load(Ordering::SeqCst) {
-                    return Err(CoreError::new("CANCELED", "连接已取消"));
-                }
-                match TcpStream::connect_timeout(&address, Duration::from_millis(250)) {
-                    Ok(stream) => {
-                        socket = Some(stream);
-                        break 'addresses;
+        Self::connect_for("session".into(), route, workspace_id, generation, canceled, operation, budget, verify, progress)
+    }
+    pub fn connect_for(
+        purpose: String,
+        route: crate::route::RoutePlan,
+        workspace_id: String,
+        generation: u64,
+        canceled: Arc<AtomicBool>,
+        operation: &AtomicBool,
+        budget: Arc<Mutex<TransportBudget>>,
+        mut verify: impl FnMut(usize, &str, &str, &[String]) -> Result<Credential>,
+        mut progress: impl FnMut(usize, &str),
+    ) -> Result<Arc<Self>> {
+        let reservation = TransportReservation::reserve(budget, route.nodes.len())?;
+        let deadline=Instant::now()+Duration::from_secs(120 + 75 * route.nodes.len().saturating_sub(2) as u64);
+        let mut parent=None;
+        let mut bridges=transport::BridgeChain::default();
+        let mut verified=Vec::new();
+        let transport_failed=Arc::new(AtomicBool::new(false));
+        let failure_hop=Arc::new(AtomicUsize::new(usize::MAX));
+        for (index,node) in route.nodes.iter().enumerate() {
+            let server=&node.server;
+            let mut stage=if index==0 {"connect"} else {"forward"};
+            let connected=(|| {
+                progress(index,stage);
+                let socket=match parent.take() {
+                    None=>transport::tcp(&server.host,server.port,&canceled,operation,deadline)?,
+                    Some((session,socket))=>{
+                        let (socket,bridge)=transport::forward(session,socket,&server.host,server.port,&canceled,operation,deadline,transport_failed.clone(),failure_hop.clone(),index)?;
+                        bridges.0.push(bridge);socket
                     }
-                    Err(error)
-                        if matches!(
-                            error.kind(),
-                            std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
-                        ) => {}
-                    Err(_) => break,
-                }
-            }
+                };
+                let mut session=Session::new().map_err(|_|CoreError::new("SSH_ERROR","无法创建 SSH 会话"))?;
+                session.set_tcp_stream(socket.try_clone()?);session.set_blocking(false);
+                stage="handshake";progress(index,stage);
+                transport::protocol(&canceled,operation,deadline,||session.handshake())?;
+                let (key,_)=session.host_key().ok_or_else(||CoreError::new("SSH_ERROR","服务器未提供主机密钥"))?;
+                let fingerprint=format!("SHA256:{}",STANDARD.encode(Sha256::digest(key)).trim_end_matches('='));
+                let length=key.get(..4).map(|v|u32::from_be_bytes(v.try_into().unwrap()) as usize).unwrap_or(0);
+                let algorithm=key.get(4..4+length).and_then(|v|std::str::from_utf8(v).ok()).unwrap_or("unknown");
+                stage="verify";progress(index,stage);
+                let credential=verify(index,&fingerprint,algorithm,&verified)?;
+                transport::check(&canceled,operation,deadline)?;
+                stage="authenticate";progress(index,stage);
+                let auth=if server.auth_type=="password" {
+                    transport::protocol(&canceled,operation,deadline,||session.userauth_password(&server.username,&credential.password))
+                } else {
+                    transport::protocol(&canceled,operation,deadline,||session.userauth_pubkey_memory(&server.username,None,&credential.private_key,(!credential.passphrase.is_empty()).then_some(credential.passphrase.as_str())))
+                };
+                auth.map_err(|e|if matches!(e.code.as_str(),"CANCELED"|"CONNECT_TIMEOUT"){e}else{CoreError::new("AUTH_FAILED","SSH 认证失败，请检查用户名与凭据")})?;
+                if !session.authenticated(){return Err(CoreError::new("AUTH_FAILED","SSH 认证未完成"))}
+                session.set_keepalive(true,30);verified.push(fingerprint);
+                Ok((session,socket))
+            })();
+            parent=Some(connected.map_err(|mut e:CoreError|{
+                let role=if index+1==route.nodes.len(){"target"}else{"jump"};
+                let mut details=e.details.take().unwrap_or(json!({}));
+                details["serverId"]=json!(server.id);details["targetServerId"]=json!(route.target_server_id);
+                details["hopIndex"]=json!(index);details["hopCount"]=json!(route.nodes.len());details["role"]=json!(role);
+                details["stage"]=json!(stage);details["routeRevision"]=json!(route.revision);
+                if e.code!="CANCELED" {e.message=format!("{} {}：{}",if role=="jump"{"跳板"}else{"目标"},server.name,e.message);}
+                e.details=Some(details);e
+            })?);
         }
-        let socket = socket.ok_or_else(|| {
-            CoreError::new("NETWORK_ERROR", "SSH 连接失败，请检查地址、端口及网络")
-        })?;
-        socket.set_nonblocking(true)?;
-        socket.set_nodelay(true)?;
-        let mut session =
-            Session::new().map_err(|_| CoreError::new("SSH_ERROR", "无法创建 SSH 会话"))?;
-        session.set_tcp_stream(socket.try_clone()?);
-        session.set_blocking(false);
-        retry(&canceled, operation, || session.handshake())?;
-        let (key, _) = session
-            .host_key()
-            .ok_or_else(|| CoreError::new("SSH_ERROR", "服务器未提供主机密钥"))?;
-        let fingerprint = format!(
-            "SHA256:{}",
-            STANDARD.encode(Sha256::digest(key)).trim_end_matches('=')
-        );
-        let algorithm_length = key
-            .get(..4)
-            .map(|v| u32::from_be_bytes(v.try_into().unwrap()) as usize)
-            .unwrap_or(0);
-        let algorithm = key
-            .get(4..4 + algorithm_length)
-            .and_then(|v| std::str::from_utf8(v).ok())
-            .unwrap_or("unknown")
-            .to_owned();
-        if known_key.as_deref() != Some(fingerprint.as_str()) {
-            let code = if known_key.is_some() {
-                "HOST_KEY_CHANGED"
-            } else {
-                "HOST_KEY_REQUIRED"
-            };
-            return Err(CoreError::new(code, if known_key.is_some() {"服务器主机密钥已改变，认证已停止"} else {"请确认服务器主机身份"}).details(json!({"serverId":server.id,"host":server.host,"port":server.port,"algorithm":algorithm,"fingerprint":fingerprint,"previousFingerprint":known_key})));
-        }
-        let credential = credential.ok_or_else(|| {
-            CoreError::new("AUTH_REQUIRED", "请输入 SSH 认证信息")
-                .details(json!({"serverId":server.id,"authType":server.auth_type}))
-        })?;
-        let authentication = if server.auth_type == "password" {
-            retry(&canceled, operation, || {
-                session.userauth_password(&server.username, &credential.password)
-            })
-        } else {
-            authenticate_key(
-                &session,
-                &server.username,
-                &credential,
-                &canceled,
-                operation,
-            )
-        };
-        authentication.map_err(|error| {
-            if error.code == "CANCELED" || error.code == "TIMEOUT" {
-                return error;
-            }
-            CoreError::new("AUTH_FAILED", "SSH 认证失败，请检查用户名与凭据")
-                .details(json!({"cause":error.code,"diagnostic":error.message}))
-        })?;
-        if !session.authenticated() {
-            return Err(CoreError::new("AUTH_FAILED", "SSH 认证未完成"));
-        }
-        session.set_keepalive(true, 30);
-        let (sender, receiver) = mpsc::sync_channel(128);
-        let status = Arc::new(Mutex::new("active".into()));
-        let connection = Arc::new(Self {
-            id: id(),
-            server,
-            workspace_id,
-            generation,
-            credential_revision,
-            commands: sender,
-            canceled: canceled.clone(),
-            socket,
-            status: status.clone(),
+        let (session,socket)=parent.expect("validated route");
+        let (sender,receiver)=mpsc::sync_channel(128);
+        let status=Arc::new(Mutex::new("active".into()));
+        let remote_metrics=Arc::new(Mutex::new(json!({"sessions":0,"handles":0,"execs":0,"queued":0,"cleanupPending":0})));
+        let network_metrics=Arc::new(Mutex::new(network::Metrics::default()));
+        let transport_live=Arc::new(AtomicBool::new(true));
+        let connection=Arc::new(Self {
+            purpose, network_metrics: network_metrics.clone(),
+            id:id(),server:route.target().clone(),workspace_id,generation,
+            route,bridge_metrics:bridges.0.first().map(|b|b.metrics.clone()),
+            bridge_segments:bridges.0.iter().map(|b|b.metrics.clone()).collect(),commands:sender,
+            failure_hop,transport_live:transport_live.clone(),
+            canceled:canceled.clone(),socket,status:status.clone(),remote_metrics:remote_metrics.clone(),
         });
-        thread::Builder::new()
-            .name("sodeck-ssh-io".into())
-            .spawn(move || run(session, receiver, canceled, status))?;
+        thread::Builder::new().name("sodeck-ssh-io".into()).spawn(move||{
+            run(session,receiver,canceled,status,remote_metrics,transport_failed,network_metrics);
+            drop(bridges);
+            drop(reservation);
+            transport_live.store(false,Ordering::SeqCst);
+        })?;
         Ok(connection)
     }
     pub fn open(
@@ -275,10 +274,14 @@ impl Connection {
         cols: u32,
         rows: u32,
         operation: &AtomicBool,
+        command:Option<String>,
+        observe:bool,
     ) -> Result<Arc<Mutex<PtyState>>> {
         let state = Arc::new(Mutex::new(PtyState::new(cols, rows)));
+        if observe {state.lock().unwrap().observer=Some(observer::Observer::new(0));}
         let (reply, response) = mpsc::sync_channel(1);
         self.send(Command::Open {
+            command,
             id: pty_id.into(),
             cols,
             rows,
@@ -368,22 +371,6 @@ impl Connection {
     }
 }
 
-fn authenticate_key(
-    session: &Session,
-    username: &str,
-    credential: &Credential,
-    canceled: &AtomicBool,
-    operation: &AtomicBool,
-) -> Result<()> {
-    retry(canceled, operation, || {
-        session.userauth_pubkey_memory(
-            username,
-            None,
-            &credential.private_key,
-            (!credential.passphrase.is_empty()).then_some(credential.passphrase.as_str()),
-        )
-    })
-}
 impl Drop for Connection {
     fn drop(&mut self) {
         self.stop();
@@ -400,32 +387,6 @@ pub fn dimensions(cols: u64, rows: u64) -> Result<(u32, u32)> {
         Ok((cols as u32, rows as u32))
     }
 }
-fn retry<T>(
-    canceled: &AtomicBool,
-    operation: &AtomicBool,
-    mut run: impl FnMut() -> std::result::Result<T, ssh2::Error>,
-) -> Result<T> {
-    let deadline = Instant::now() + Duration::from_secs(30);
-    loop {
-        if canceled.load(Ordering::SeqCst) || operation.load(Ordering::SeqCst) {
-            return Err(CoreError::new("CANCELED", "SSH 操作已取消"));
-        }
-        match run() {
-            Ok(value) => return Ok(value),
-            Err(e) if e.code() == ssh2::ErrorCode::Session(-37) => {}
-            Err(error) => {
-                return Err(CoreError::new(
-                    "SSH_ERROR",
-                    format!("SSH 协议操作失败 ({:?})", error.code()),
-                ))
-            }
-        }
-        if Instant::now() >= deadline {
-            return Err(CoreError::new("TIMEOUT", "SSH 协议操作超时"));
-        }
-        thread::sleep(Duration::from_millis(4));
-    }
-}
 struct ActivePty {
     channel: Channel,
     state: Arc<Mutex<PtyState>>,
@@ -434,6 +395,7 @@ struct ActivePty {
     resize: Option<(u32, u32)>,
 }
 struct PendingOpen {
+    command:Option<String>,
     id: String,
     cols: u32,
     rows: u32,
@@ -442,12 +404,33 @@ struct PendingOpen {
     channel: Option<Channel>,
     phase: u8,
     deadline: Instant,
+    in_flight: bool,
+    failure: Option<CoreError>,
 }
 impl PendingOpen {
     fn advance(&mut self, session: &Session) -> Result<bool> {
-        if Instant::now() >= self.deadline {
-            return Err(CoreError::new("TIMEOUT", "打开终端超时"));
+        if self.failure.is_none() {
+            if self.state.lock().unwrap().close_requested {
+                self.failure = Some(CoreError::new("CANCELED", "终端创建已取消"));
+            } else if Instant::now() >= self.deadline {
+                self.failure = Some(CoreError::new("TIMEOUT", "打开终端超时"));
+            }
+            if let Some(error) = &self.failure {
+                let _ = self.reply.try_send(Err(error.clone()));
+            }
         }
+        // libssh2 keeps channel-open and request state across EAGAIN. Drain the
+        // exact started operation before freeing its channel or starting another.
+        if self.failure.is_some() && !self.in_flight {
+            if let Some(channel) = &mut self.channel {
+                match channel.close() {
+                    Err(e) if e.code() == ssh2::ErrorCode::Session(-37) => return Ok(false),
+                    _ => {}
+                }
+            }
+            return Err(self.failure.clone().unwrap());
+        }
+        self.in_flight = true;
         let result = match self.phase {
             0 => session.channel_session().map(|channel| {
                 self.channel = Some(channel);
@@ -457,12 +440,13 @@ impl PendingOpen {
                 None,
                 Some((self.cols, self.rows, 0, 0)),
             ),
-            _ => self.channel.as_mut().unwrap().shell(),
+            _ => if let Some(command)=&self.command {self.channel.as_mut().unwrap().exec(command)} else {self.channel.as_mut().unwrap().shell()},
         };
         match result {
             Ok(()) => {
+                self.in_flight = false;
                 self.phase += 1;
-                Ok(self.phase == 3)
+                Ok(self.phase == 3 && self.failure.is_none())
             }
             Err(error) if error.code() == ssh2::ErrorCode::Session(-37) => Ok(false),
             Err(error) => Err(CoreError::new(
@@ -477,11 +461,16 @@ fn run(
     commands: Receiver<Command>,
     canceled: Arc<AtomicBool>,
     status: Arc<Mutex<String>>,
+    remote_metrics: Arc<Mutex<Value>>,
+    transport_failed: Arc<AtomicBool>,
+    network_metrics: Arc<Mutex<network::Metrics>>,
 ) {
     let mut channels: HashMap<String, ActivePty> = HashMap::new();
     let mut pending: VecDeque<PendingOpen> = VecDeque::new();
     let mut last_keepalive = Instant::now();
-    while !canceled.load(Ordering::SeqCst) {
+    let mut remote = remote::Remote::default();
+    let mut network = network::Network::default();
+    while !canceled.load(Ordering::SeqCst) && !transport_failed.load(Ordering::SeqCst) {
         for _ in 0..32 {
             let command = match commands.try_recv() {
                 Ok(c) => c,
@@ -492,7 +481,10 @@ fn run(
                 }
             };
             match command {
+                Command::Tcp(open) => network.push(open),
+                Command::Remote(job) => remote.push(job),
                 Command::Open {
+                    command,
                     id,
                     cols,
                     rows,
@@ -500,6 +492,7 @@ fn run(
                     reply,
                 } => {
                     pending.push_back(PendingOpen {
+                        command,
                         id,
                         cols,
                         rows,
@@ -508,6 +501,8 @@ fn run(
                         channel: None,
                         phase: 0,
                         deadline: Instant::now() + Duration::from_secs(30),
+                        in_flight: false,
+                        failure: None,
                     });
                 }
                 Command::Write { id, bytes } => {
@@ -522,17 +517,7 @@ fn run(
                 }
             }
         }
-        pending.retain(|open| {
-            if open.state.lock().unwrap().close_requested {
-                let _ = open
-                    .reply
-                    .send(Err(CoreError::new("CANCELED", "终端创建已取消")));
-                false
-            } else {
-                true
-            }
-        });
-        if let Some(open) = pending.front_mut() {
+        if let Some(open) = pending.front_mut().filter(|_| !remote.opening() && !network.opening()) {
             match open.advance(&session) {
                 Ok(true) => {
                     let mut open = pending.pop_front().unwrap();
@@ -544,22 +529,26 @@ fn run(
                         resize: None,
                     };
                     channels.insert(open.id.clone(), pty);
-                    if open.reply.send(Ok(())).is_err() {
-                        channels.remove(&open.id);
+                    if open.reply.try_send(Ok(())).is_err() {
+                        if let Some(pty) = channels.get(&open.id) {
+                            pty.state.lock().unwrap().close_requested = true;
+                        }
                     }
                 }
                 Ok(false) => {}
                 Err(error) => {
                     let open = pending.pop_front().unwrap();
-                    let _ = open.reply.send(Err(error));
+                    let _ = open.reply.try_send(Err(error));
                 }
             }
         }
         let mut completed = Vec::new();
         for (id, pty) in &mut channels {
             if pty.state.lock().unwrap().close_requested {
-                let _ = pty.channel.send_eof();
-                let _ = pty.channel.close();
+                match pty.channel.close() {
+                    Err(e) if e.code() == ssh2::ErrorCode::Session(-37) => continue,
+                    _ => {}
+                }
                 let mut state = pty.state.lock().unwrap();
                 state.state = "closed".into();
                 state.reason = Some("closed-by-user".into());
@@ -607,6 +596,7 @@ fn run(
                         let mut state = pty.state.lock().unwrap();
                         state.last_sequence += 1;
                         let sequence = state.last_sequence;
+                        if let Some(observer)=&mut state.observer {observer.push(sequence,&data);}
                         state.buffered += count;
                         state.frames.push_back(Frame {
                             sequence,
@@ -633,6 +623,11 @@ fn run(
         for id in completed {
             channels.remove(&id);
         }
+        remote.tick(&session, pending.is_empty() && !network.opening());
+        let drain_complete = network.tick(&session, pending.is_empty() && !remote.opening());
+        *network_metrics.lock().unwrap() = network.metrics();
+        if drain_complete { break; }
+        *remote_metrics.lock().unwrap() = remote.metrics();
         if last_keepalive.elapsed() > Duration::from_secs(15) {
             match session.keepalive_send() {
                 Ok(_) => {}
@@ -641,7 +636,7 @@ fn run(
             }
             last_keepalive = Instant::now();
         }
-        thread::sleep(Duration::from_millis(2));
+        if network.progress {thread::yield_now();}else{thread::park_timeout(Duration::from_millis(if network.metrics().active>0 {1}else{2}));}
     }
     for (_, pty) in channels {
         let mut state = pty.state.lock().unwrap();
@@ -650,6 +645,9 @@ fn run(
         state.queued_input = 0;
     }
     *status.lock().unwrap() = "closed".into();
+    drop(network);
+    *network_metrics.lock().unwrap() = network::Metrics::default();
+    *remote_metrics.lock().unwrap() = json!({"sessions":0,"handles":0,"execs":0,"queued":0,"cleanupPending":0});
 }
 
 #[cfg(test)]
@@ -662,6 +660,8 @@ mod tests {
         let (_peer, _) = listener.accept().unwrap();
         let (commands, _receiver) = mpsc::sync_channel(1);
         let connection = Connection {
+            purpose: "session".into(),
+            network_metrics: Arc::new(Mutex::new(network::Metrics::default())),
             id: "queue-test".into(),
             server: Server {
                 id: "server".into(),
@@ -675,11 +675,16 @@ mod tests {
             },
             workspace_id: "test".into(),
             generation: 1,
-            credential_revision: 0,
+            route: crate::route::RoutePlan {target_server_id:"test".into(),revision:"test".into(),nodes:vec![]},
+            bridge_metrics:None,
+            bridge_segments:Vec::new(),
+            failure_hop:Arc::new(AtomicUsize::new(usize::MAX)),
+            transport_live:Arc::new(AtomicBool::new(false)),
             commands,
             canceled: Arc::new(AtomicBool::new(false)),
             socket,
             status: Arc::new(Mutex::new("active".into())),
+            remote_metrics: Arc::new(Mutex::new(Value::Null)),
         };
         let state = Arc::new(Mutex::new(PtyState::new(80, 24)));
         connection.resize("pty", 80, 24).unwrap();

@@ -4,10 +4,11 @@ test.beforeEach(async({page})=>{
  await presentationFixture(page);
  await page.addInitScript(()=>{
  const view={viewId:'view-1',pluginId:'sample.plugin',viewType:'sample.page',workspaceId:'s',serverId:'s',title:'终端 1',status:'ended',placement:'center',group:0,active:true,mountGeneration:1,revision:1,stateVersion:1,actions:['sample.rename']};
- const layout={schemaVersion:3,windowId:'main',windowRole:'main',workspaceIds:['s'],activeWorkspaceId:'s',workspaces:[{workspaceId:'s',serverId:'s',ownerWindowId:'main'}],commands:[{id:'sample.rename',title:'修改显示名称',scope:'view',primary:false,input:{kind:'text',key:'title',label:'显示名称',initial:'viewTitle',minLength:1,maxLength:80}}],viewDeclarations:[],dockSlots:[],views:[view],revision:1,split:'none',splitRatio:.5,pendingOpens:[],recoveryWarnings:[]};
+ const layout={schemaVersion:4,windowId:'main',windowRole:'main',workspaceIds:['s'],activeWorkspaceId:'s',workspaces:[{workspaceId:'s',serverId:'s',generation:'test',initializers:[],initializationError:null,ownerWindowId:'main'}],commands:[{id:'sample.rename',title:'修改显示名称',scope:'view',primary:false,input:{kind:'text',key:'title',label:'显示名称',initial:'viewTitle',minLength:1,maxLength:80}}],viewDeclarations:[],dockSlots:[],views:[view],revision:1,split:'none',splitRatio:.5,pendingOpens:[],recoveryWarnings:[]};
  const f={calls:[] as any[],fail:false};(window as any).__INPUT_TEST__=f;
  (window as any).__TAURI_INTERNALS__={invoke:async(_:string,{request}:any)=>{f.calls.push(request);const p=(window as any).__PRESENTATION__.handle(request);if(p)return p;let result:any=null;
  if(request.method==='servers.list')result={servers:[{id:'s',name:'隔离服务器',host:'test',port:22,username:'test'}]};if(request.method==='workbench.snapshot')result=JSON.parse(JSON.stringify(layout));
+      if(request.method==='workbench.contributions')result={commands:layout.commands.map(c=>({...c,pluginId:'sample.plugin'})),views:[]};
  if(request.method==='commands.execute'){if(f.fail){f.fail=false;return {requestId:request.requestId,error:{code:'BUSY',message:'隔离重命名失败，请重试'}};}view.title=request.params.args.title;}
  return {requestId:request.requestId,result};}};
  });await page.goto('/');await page.getByRole('tab',{name:'终端 1',exact:true}).click({button:'right'});await chooseMenu(page,'command:sample.rename');

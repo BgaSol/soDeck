@@ -1,3 +1,4 @@
+import {Button} from '@sodeck/ui';
 import { useEffect, useRef, useState } from "react";
 import { core, context, CoreError, errorMessage } from "@sodeck/sdk";
 import type { Command, View } from "./types";
@@ -28,7 +29,7 @@ export function NativeSurface({ view, visible, commands = [] }: { view: View; vi
       frame = requestAnimationFrame(() => {
         if (disposed || !element.current) return;
         const rect = element.current.getBoundingClientRect();
-        const value = { windowId, mountGeneration: view.mountGeneration, viewId: view.viewId, bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, visible: visible && !["loading", "ended", "viewFailed"].includes(view.status) && rect.width >= 1 && rect.height >= 1 };
+        const value = { windowId, mountGeneration: view.mountGeneration, viewId: view.viewId, bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, visible: visible && !["ended", "viewFailed"].includes(view.status) && rect.width >= 1 && rect.height >= 1 };
         const encoded = JSON.stringify(value);
         if (encoded === previous) return;
         previous = encoded;
@@ -40,5 +41,5 @@ export function NativeSurface({ view, visible, commands = [] }: { view: View; vi
     measure();
     return () => { disposed = true; cancelAnimationFrame(frame); observer.disconnect(); window.removeEventListener("resize", measure); window.removeEventListener("scroll", measure, true); void layouts.submit({ windowId, mountGeneration: view.mountGeneration, viewId: view.viewId, bounds: { x: 0, y: 0, width: 0, height: 0 }, visible: false }).catch(() => {}); };
   }, [windowId, view.viewId, view.mountGeneration, view.status, visible]);
-  return <div ref={element} className="native-surface" data-view-id={view.viewId} data-testid="native-surface">{view.status === "loading" ? <div className="surface-error" role="status">正在准备视图…</div> : view.status === "ended" ? <div className="surface-error"><strong>会话已结束</strong><p>工作台保留了这个位置。</p>{commands.filter(command => view.actions?.includes(command.id) && !command.input).map(command => <button key={command.id} disabled={acting} onClick={() => void act("commands.execute", { commandId: command.id, workspaceId: view.workspaceId, viewId: view.viewId, operationId: crypto.randomUUID() }, 130_000)}>{command.title}</button>)}{(actionError || error) && <p role="alert">{actionError || error}</p>}</div> : (error || actionError || view.status === "viewFailed") && <div className="surface-error" role="alert"><strong>视图暂时不可用</strong><p>{error || failureReason}</p>{actionError && <p>{actionError}</p>}<button disabled={acting} onClick={() => void act("views.recover", { viewId: view.viewId })}>重新加载视图</button></div>}</div>;
+  return <div ref={element} className="native-surface" data-view-id={view.viewId} data-testid="native-surface">{view.status === "ended" ? <div className="surface-error"><strong>会话已结束</strong><p>工作台保留了这个位置。</p>{commands.filter(command => view.actions?.includes(command.id) && !command.input).map(command => <Button key={command.id} disabled={acting} onClick={() => void act("commands.execute", { commandId: command.id, workspaceId: view.workspaceId, viewId: view.viewId, operationId: crypto.randomUUID() }, 130_000)}>{command.title}</Button>)}{(actionError || error) && <p role="alert">{actionError || error}</p>}</div> : (error || actionError || view.status === "viewFailed") && <div className="surface-error" role="alert"><strong>视图暂时不可用</strong><p>{error || failureReason}</p>{actionError && <p>{actionError}</p>}<Button disabled={acting} onClick={() => void act("views.recover", { viewId: view.viewId })}>重新加载视图</Button></div>}</div>;
 }

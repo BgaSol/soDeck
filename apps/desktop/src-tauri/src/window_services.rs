@@ -166,10 +166,8 @@ impl State {
                         ids.insert(at, id.into());
                         w.reorder(source, ids).map_err(native_error)?;
                         drop(w);
-                        return Ok(self.save_committed(
-                            json!({"reordered":true}),
-                            "排序已完成，但布局未保存",
-                        ));
+                        return Ok(self.commit_runtime(
+                            json!({"reordered":true})));
                     }
                     return self.move_workspace_batch(
                         vec![id.into()],
@@ -237,6 +235,12 @@ impl State {
                     height: size.height,
                     maximized,
                 });
+            }
+        }
+        if id == "main" {
+            if let Err(error) = crate::window_preferences::save(&self.data, w.windows.get("main").and_then(|w| w.bounds.clone())) {
+                let message = format!("窗口偏好未保存：{error}");
+                if !w.recovery_warnings.contains(&message) { w.recovery_warnings.push(message); }
             }
         }
     }

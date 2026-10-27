@@ -1,8 +1,15 @@
 use serde_json::Value;
 use std::io::{self, Read, Write};
 pub const MAX_FRAME: usize = 1024 * 1024;
+pub enum Wire { Json(Value), Binary(sodeck_communication::binary::Frame) }
 
 pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Value>> {
+    match read_wire(reader)? {
+        Some(Wire::Json(value)) => Ok(Some(value)), None => Ok(None),
+        _ => Err(io::Error::new(io::ErrorKind::InvalidData, "Unexpected binary frame")),
+    }
+}
+pub fn read_wire(reader: &mut impl Read) -> io::Result<Option<Wire>> {
     let mut length = [0u8; 4];
     if reader.read(&mut length[..1])? == 0 {
         return Ok(None);
@@ -17,9 +24,16 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Value>> {
     }
     let mut bytes = vec![0; length];
     reader.read_exact(&mut bytes)?;
+    if bytes[0] == 0 { return sodeck_communication::binary::Frame::decode(&bytes).map(|f|Some(Wire::Binary(f))); }
     serde_json::from_slice(&bytes)
-        .map(Some)
+        .map(|v|Some(Wire::Json(v)))
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+}
+pub fn write_binary(writer: &mut impl Write, frame: &sodeck_communication::binary::Frame) -> io::Result<()> {
+    let bytes = frame.encode()?;
+    writer.write_all(&(bytes.len() as u32).to_be_bytes())?;
+    writer.write_all(&bytes)?;
+    writer.flush()
 }
 
 pub fn write_frame(writer: &mut impl Write, frame: &Value) -> io::Result<()> {
