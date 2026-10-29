@@ -1,9 +1,9 @@
-param([ValidateSet('list','close','show','capture','screen','cursor','drag','move','click','menuClick','hit','resize','doubleClick','systemMenu','escape','menuKey','minimize')][string]$Action='list',[Parameter(Mandatory=$true)][ValidateRange(1,2147483647)][int]$AppProcessId,[string]$Title='SoDeck v2',[string]$OutputPath,[int]$X,[int]$Y,[int]$StartX,[int]$StartY,[long]$WindowHandle=0,[string]$CancelDrag='false',[int]$Width,[int]$Height,[int]$KeyCode=27)
+param([ValidateSet('list','close','show','capture','screen','cursor','drag','move','click','menuClick','hit','resize','doubleClick','systemMenu','escape','menuKey','minimize')][string]$Action='list',[Parameter(Mandatory=$true)][ValidateRange(1,2147483647)][int]$AppProcessId,[string]$Executable='', [string]$Title='SoDeck v2',[string]$OutputPath,[int]$X,[int]$Y,[int]$StartX,[int]$StartY,[long]$WindowHandle=0,[string]$CancelDrag='false',[int]$Width,[int]$Height,[int]$KeyCode=27)
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false)
 # The harness supplies the PID of the executable it launched. Never select a
 # window from the desktop by title alone, or operate on another application's PID.
-$taskExecutable=[System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../target/debug/sodeck-desktop.exe'))
+$taskExecutable=if($Executable){[System.IO.Path]::GetFullPath($Executable)}else{[System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../target/debug/sodeck-desktop.exe'))}
 $taskProcess=Get-Process -Id $AppProcessId -ErrorAction Stop
 if(-not [string]::Equals($taskProcess.Path,$taskExecutable,[StringComparison]::OrdinalIgnoreCase)){throw 'PID does not belong to this workspace test executable'}
 Add-Type -AssemblyName System.Drawing

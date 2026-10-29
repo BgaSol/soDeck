@@ -1,0 +1,2563 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Empty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {}
+    },
+    "Id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "Revision": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 20,
+      "pattern": "^(0|[1-9][0-9]{0,19})$",
+      "format": "uint64"
+    },
+    "Fields": {
+      "type": "object"
+    },
+    "Level": {
+      "type": "string",
+      "enum": [
+        "trace",
+        "debug",
+        "info",
+        "warn",
+        "error",
+        "fatal"
+      ]
+    },
+    "Kind": {
+      "type": "string",
+      "enum": [
+        "action",
+        "call",
+        "domain",
+        "log",
+        "lifecycle",
+        "health"
+      ]
+    },
+    "Outcome": {
+      "type": "string",
+      "enum": [
+        "requested",
+        "running",
+        "succeeded",
+        "failed",
+        "canceled",
+        "timedOut",
+        "unknown",
+        "interrupted"
+      ]
+    },
+    "Target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "ref"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "server",
+            "workspace",
+            "view",
+            "resource",
+            "entity"
+          ]
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "generation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "Source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "pluginId",
+        "pluginVersion",
+        "instanceId",
+        "viewId",
+        "mountGeneration"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "pluginId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pluginVersion": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "instanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "viewId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mountGeneration": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "Context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "traceId",
+        "spanId",
+        "parentSpanId",
+        "actionId",
+        "contextRef"
+      ],
+      "properties": {
+        "traceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "spanId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "parentSpanId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "contextRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      }
+    },
+    "Coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "reasons"
+      ],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "full",
+            "partial",
+            "audit-only",
+            "degraded",
+            "disabled",
+            "stale"
+          ]
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "maxItems": 32
+        }
+      }
+    },
+    "Fault": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 256
+        }
+      }
+    },
+    "Event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventId",
+        "storeEpoch",
+        "sequence",
+        "schemaVersion",
+        "type",
+        "typeVersion",
+        "kind",
+        "level",
+        "occurredAt",
+        "receivedAt",
+        "committedAt",
+        "bootId",
+        "configEpoch",
+        "source",
+        "initiator",
+        "provenance",
+        "targets",
+        "traceId",
+        "spanId",
+        "parentSpanId",
+        "actionId",
+        "callId",
+        "operationId",
+        "causeEventId",
+        "clientEventId",
+        "outcome",
+        "errorCode",
+        "attributes",
+        "completeness"
+      ],
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "storeEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "sequence": {
+          "$ref": "#/$defs/Revision"
+        },
+        "schemaVersion": {
+          "type": "integer",
+          "enum": [
+            2
+          ]
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "typeVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "kind": {
+          "$ref": "#/$defs/Kind"
+        },
+        "level": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Level"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "occurredAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "receivedAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "committedAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bootId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "configEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        },
+        "initiator": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "assurance"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "user",
+                "system",
+                "plugin",
+                "unknown"
+              ]
+            },
+            "assurance": {
+              "type": "string",
+              "enum": [
+                "verified",
+                "reported",
+                "unknown"
+              ]
+            }
+          }
+        },
+        "provenance": {
+          "type": "string",
+          "enum": [
+            "core-observed",
+            "plugin-reported",
+            "derived",
+            "imported-emergency"
+          ]
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Target"
+          },
+          "maxItems": 16
+        },
+        "traceId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "spanId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parentSpanId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actionId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "callId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "operationId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "causeEventId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clientEventId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Outcome"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "errorCode": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attributes": {
+          "$ref": "#/$defs/Fields"
+        },
+        "completeness": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "maxItems": 16
+        },
+        "stageKey": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "Item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clientEventId",
+        "type",
+        "typeVersion",
+        "occurredAt",
+        "fields"
+      ],
+      "properties": {
+        "clientEventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "typeVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "occurredAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "contextRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Target"
+          },
+          "maxItems": 16
+        },
+        "fields": {
+          "$ref": "#/$defs/Fields"
+        },
+        "level": {
+          "$ref": "#/$defs/Level"
+        },
+        "outcome": {
+          "$ref": "#/$defs/Outcome"
+        },
+        "errorCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "causeEventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "Receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clientEventId",
+        "status"
+      ],
+      "properties": {
+        "clientEventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "persisted",
+            "duplicate",
+            "filtered",
+            "rejected"
+          ]
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "sequence": {
+          "$ref": "#/$defs/Revision"
+        },
+        "error": {
+          "$ref": "#/$defs/Fault"
+        }
+      }
+    },
+    "Filter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "fromUtc": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "toUtc": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "timeField": {
+          "type": "string",
+          "enum": [
+            "occurredAt",
+            "receivedAt"
+          ]
+        },
+        "configEpochs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "maxItems": 16
+        },
+        "bootId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "pluginId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "instanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "kind": {
+          "$ref": "#/$defs/Kind"
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "level": {
+          "$ref": "#/$defs/Level"
+        },
+        "outcome": {
+          "$ref": "#/$defs/Outcome"
+        },
+        "errorCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "serverId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "diagnosticRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "traceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "callId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "clientEventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "excludeDiagnosticCalls": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "filter"
+      ],
+      "properties": {
+        "filter": {
+          "$ref": "#/$defs/Filter"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "ascending": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "storeEpoch",
+        "highWatermark",
+        "retainedFromUtc",
+        "retainedToUtc",
+        "coverage",
+        "items",
+        "nextCursor"
+      ],
+      "properties": {
+        "storeEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "highWatermark": {
+          "$ref": "#/$defs/Revision"
+        },
+        "retainedFromUtc": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retainedToUtc": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "coverage": {
+          "$ref": "#/$defs/Coverage"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Event"
+          },
+          "maxItems": 200
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8192
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "TypeQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "pluginId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "events",
+            "actions",
+            "snapshots",
+            "metrics"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "typeVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      }
+    },
+    "DescriptorItem": {
+      "type": "object"
+    },
+    "TypePage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "nextCursor"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DescriptorItem"
+          },
+          "maxItems": 100
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8192
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "Begin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clientOperationId",
+        "actionType",
+        "trigger",
+        "fields"
+      ],
+      "properties": {
+        "clientOperationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "actionType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "typeVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "trigger": {
+          "type": "string",
+          "enum": [
+            "user",
+            "system",
+            "plugin"
+          ]
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Target"
+          },
+          "maxItems": 16
+        },
+        "fields": {
+          "$ref": "#/$defs/Fields"
+        }
+      }
+    },
+    "Stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contextRef",
+        "stageKey",
+        "phase"
+      ],
+      "properties": {
+        "contextRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "stageKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "start",
+            "finish"
+          ]
+        },
+        "outcome": {
+          "$ref": "#/$defs/Outcome"
+        },
+        "fields": {
+          "$ref": "#/$defs/Fields"
+        },
+        "errorCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "End": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contextRef",
+        "outcome"
+      ],
+      "properties": {
+        "contextRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "outcome": {
+          "$ref": "#/$defs/Outcome"
+        },
+        "fields": {
+          "$ref": "#/$defs/Fields"
+        },
+        "errorCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "Snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshotType",
+        "typeVersion",
+        "scope",
+        "producerRevision",
+        "observedAt",
+        "fields"
+      ],
+      "properties": {
+        "snapshotType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "typeVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "producerRevision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "observedAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "fields": {
+          "$ref": "#/$defs/Fields"
+        }
+      }
+    },
+    "Metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metricType",
+        "typeVersion",
+        "scope",
+        "windowId",
+        "fromUtc",
+        "toUtc",
+        "sampleId",
+        "unit",
+        "labels"
+      ],
+      "properties": {
+        "metricType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "typeVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "windowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "fromUtc": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "toUtc": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sampleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "value": {
+          "type": "number"
+        },
+        "buckets": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "maxItems": 33
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "labels": {
+          "$ref": "#/$defs/Fields"
+        }
+      }
+    },
+    "DataQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "pluginId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "fromUtc": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "toUtc": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        }
+      }
+    },
+    "JobRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "filter": {
+          "$ref": "#/$defs/Filter"
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "traceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "allowPartial": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "jobId",
+        "kind",
+        "state",
+        "phase",
+        "createdAt",
+        "updatedAt",
+        "manifest",
+        "error"
+      ],
+      "properties": {
+        "jobId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "capture",
+            "evidence",
+            "export",
+            "cleanup"
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "running",
+            "succeeded",
+            "partial",
+            "failed",
+            "canceled",
+            "interrupted"
+          ]
+        },
+        "phase": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "updatedAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "manifest": {
+          "$ref": "#/$defs/Fields"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Fault"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "JobGet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "jobId"
+      ],
+      "properties": {
+        "jobId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        }
+      }
+    },
+    "JobResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "job",
+        "chunks",
+        "nextOffset"
+      ],
+      "properties": {
+        "job": {
+          "$ref": "#/$defs/Job"
+        },
+        "chunks": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "maxItems": 4
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "Policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "logLevel",
+        "debugUntil",
+        "factRetentionDays",
+        "logRetentionDays",
+        "diagnosticRetentionDays"
+      ],
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "logLevel": {
+          "$ref": "#/$defs/Level"
+        },
+        "debugUntil": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "factRetentionDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "logRetentionDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 7
+        },
+        "diagnosticRetentionDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 7
+        },
+        "sourceOverrides": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sourceId",
+              "logLevel",
+              "debugUntil"
+            ],
+            "properties": {
+              "sourceId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "logLevel": {
+                "$ref": "#/$defs/Level"
+              },
+              "debugUntil": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            }
+          }
+        }
+      }
+    },
+    "PolicySet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedRevision",
+        "patch"
+      ],
+      "properties": {
+        "expectedRevision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "patch": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {
+            "logLevel": {
+              "$ref": "#/$defs/Level"
+            },
+            "debugUntil": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "factRetentionDays": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30
+            },
+            "logRetentionDays": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 7
+            },
+            "diagnosticRetentionDays": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 7
+            },
+            "sourceOverrides": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sourceId",
+                  "logLevel",
+                  "debugUntil"
+                ],
+                "properties": {
+                  "sourceId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "logLevel": {
+                    "$ref": "#/$defs/Level"
+                  },
+                  "debugUntil": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "FeedOpen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "filter"
+      ],
+      "properties": {
+        "filter": {
+          "$ref": "#/$defs/Filter"
+        },
+        "checkpoint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "from": {
+          "type": "string",
+          "enum": [
+            "now",
+            "retained"
+          ]
+        }
+      }
+    },
+    "FeedAck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subscriptionId",
+        "feedEpoch"
+      ],
+      "properties": {
+        "subscriptionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "feedEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "batchId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "acceptGap": {
+          "type": "boolean"
+        }
+      }
+    },
+    "FeedBatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subscriptionId",
+        "feedEpoch",
+        "batchId",
+        "checkpoint",
+        "items"
+      ],
+      "properties": {
+        "subscriptionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "feedEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "batchId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "checkpoint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Event"
+          },
+          "maxItems": 100
+        }
+      }
+    },
+    "FeedGap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subscriptionId",
+        "feedEpoch",
+        "reason",
+        "checkpoint"
+      ],
+      "properties": {
+        "subscriptionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "feedEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "checkpoint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        }
+      }
+    },
+    "FeedClosed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subscriptionId",
+        "feedEpoch",
+        "reason"
+      ],
+      "properties": {
+        "subscriptionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "feedEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "FeedOpened": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subscriptionId",
+        "feedEpoch",
+        "highWatermark",
+        "checkpoint",
+        "effectiveFilter"
+      ],
+      "properties": {
+        "subscriptionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "feedEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "highWatermark": {
+          "$ref": "#/$defs/Revision"
+        },
+        "checkpoint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "effectiveFilter": {
+          "$ref": "#/$defs/Fields"
+        }
+      }
+    },
+    "observability_describeRequest": {
+      "$ref": "#/$defs/Empty"
+    },
+    "observability_describeResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "apiVersion",
+        "storeEpoch",
+        "capabilities",
+        "limits",
+        "sources",
+        "policy"
+      ],
+      "properties": {
+        "apiVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "storeEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "maxItems": 32
+        },
+        "limits": {
+          "$ref": "#/$defs/Fields"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Fields"
+          },
+          "maxItems": 256
+        },
+        "policy": {
+          "$ref": "#/$defs/Policy"
+        }
+      }
+    },
+    "events_types_listRequest": {
+      "$ref": "#/$defs/TypeQuery"
+    },
+    "events_types_listResult": {
+      "$ref": "#/$defs/TypePage"
+    },
+    "events_types_getRequest": {
+      "$ref": "#/$defs/TypeQuery"
+    },
+    "events_types_getResult": {
+      "$ref": "#/$defs/DescriptorItem"
+    },
+    "events_v2_appendBatchRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "batchId",
+        "items"
+      ],
+      "properties": {
+        "batchId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Item"
+          },
+          "maxItems": 32
+        }
+      }
+    },
+    "events_v2_appendBatchResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "storeEpoch",
+        "items",
+        "deduplication"
+      ],
+      "properties": {
+        "storeEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Receipt"
+          },
+          "maxItems": 32
+        },
+        "deduplication": {
+          "type": "string",
+          "enum": [
+            "retained-events"
+          ]
+        }
+      }
+    },
+    "traces_beginRequest": {
+      "$ref": "#/$defs/Begin"
+    },
+    "traces_beginResult": {
+      "$ref": "#/$defs/Context"
+    },
+    "traces_stageRequest": {
+      "$ref": "#/$defs/Stage"
+    },
+    "traces_stageResult": {
+      "$ref": "#/$defs/Context"
+    },
+    "traces_endRequest": {
+      "$ref": "#/$defs/End"
+    },
+    "traces_endResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "context",
+        "outcome",
+        "duplicate"
+      ],
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/Context"
+        },
+        "outcome": {
+          "$ref": "#/$defs/Outcome"
+        },
+        "duplicate": {
+          "type": "boolean"
+        }
+      }
+    },
+    "traces_getRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "traceId"
+      ],
+      "properties": {
+        "traceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        }
+      }
+    },
+    "traces_getResult": {
+      "$ref": "#/$defs/Page"
+    },
+    "observability_targets_resolveRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "server",
+            "workspace",
+            "view",
+            "resource"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "generation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "observability_targets_resolveResult": {
+      "$ref": "#/$defs/Target"
+    },
+    "events_v2_queryRequest": {
+      "$ref": "#/$defs/Query"
+    },
+    "events_v2_queryResult": {
+      "$ref": "#/$defs/Page"
+    },
+    "events_v2_getRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "storeEpoch",
+        "eventId"
+      ],
+      "properties": {
+        "storeEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "events_v2_getResult": {
+      "$ref": "#/$defs/Event"
+    },
+    "events_v2_aggregateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "filter",
+        "groupBy"
+      ],
+      "properties": {
+        "filter": {
+          "$ref": "#/$defs/Filter"
+        },
+        "groupBy": {
+          "type": "string",
+          "enum": [
+            "type",
+            "level",
+            "outcome",
+            "source",
+            "errorCode",
+            "minute",
+            "hour"
+          ]
+        }
+      }
+    },
+    "events_v2_aggregateResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "storeEpoch",
+        "highWatermark",
+        "coverage",
+        "groups",
+        "fromUtc",
+        "toUtc"
+      ],
+      "properties": {
+        "storeEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "highWatermark": {
+          "$ref": "#/$defs/Revision"
+        },
+        "coverage": {
+          "$ref": "#/$defs/Coverage"
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "count",
+              "duration"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "count": {
+                "$ref": "#/$defs/Revision"
+              },
+              "duration": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "unit",
+                  "sampleCount",
+                  "min",
+                  "max",
+                  "mean",
+                  "buckets"
+                ],
+                "properties": {
+                  "unit": {
+                    "type": "string",
+                    "enum": [
+                      "ms"
+                    ]
+                  },
+                  "sampleCount": {
+                    "$ref": "#/$defs/Revision"
+                  },
+                  "min": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "max": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "mean": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "buckets": {
+                    "type": "array",
+                    "minItems": 11,
+                    "maxItems": 11,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "upperBound",
+                        "count"
+                      ],
+                      "properties": {
+                        "upperBound": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "count": {
+                          "$ref": "#/$defs/Revision"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "maxItems": 200
+        },
+        "fromUtc": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "toUtc": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "events_v2_openRequest": {
+      "$ref": "#/$defs/FeedOpen"
+    },
+    "events_v2_openResult": {
+      "$ref": "#/$defs/FeedOpened"
+    },
+    "events_v2_ackRequest": {
+      "$ref": "#/$defs/FeedAck"
+    },
+    "events_v2_ackResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "acknowledged",
+        "checkpoint"
+      ],
+      "properties": {
+        "acknowledged": {
+          "type": "boolean"
+        },
+        "checkpoint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        }
+      }
+    },
+    "events_v2_closeRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subscriptionId",
+        "feedEpoch"
+      ],
+      "properties": {
+        "subscriptionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "feedEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "events_v2_closeResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "closed"
+      ],
+      "properties": {
+        "closed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "diagnostics_snapshots_reportRequest": {
+      "$ref": "#/$defs/Snapshot"
+    },
+    "diagnostics_snapshots_reportResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "storedSnapshotId",
+        "receivedAt",
+        "status"
+      ],
+      "properties": {
+        "storedSnapshotId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "receivedAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "stored",
+            "duplicate",
+            "ignored"
+          ]
+        }
+      }
+    },
+    "diagnostics_snapshots_queryRequest": {
+      "$ref": "#/$defs/DataQuery"
+    },
+    "diagnostics_snapshots_queryResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "nextCursor",
+        "coverage"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Fields"
+          },
+          "maxItems": 200
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8192
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "coverage": {
+          "$ref": "#/$defs/Coverage"
+        }
+      }
+    },
+    "diagnostics_snapshots_getRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshotId"
+      ],
+      "properties": {
+        "snapshotId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "producerRevision": {
+          "$ref": "#/$defs/Revision"
+        }
+      }
+    },
+    "diagnostics_snapshots_getResult": {
+      "$ref": "#/$defs/Fields"
+    },
+    "metrics_reportRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Metric"
+          },
+          "maxItems": 32
+        }
+      }
+    },
+    "metrics_reportResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Fields"
+          },
+          "maxItems": 32
+        }
+      }
+    },
+    "metrics_queryRequest": {
+      "$ref": "#/$defs/MetricQuery"
+    },
+    "metrics_queryResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "nextCursor",
+        "coverage"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Fields"
+          },
+          "maxItems": 200
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8192
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "coverage": {
+          "$ref": "#/$defs/Coverage"
+        }
+      }
+    },
+    "diagnostics_captureRequest": {
+      "$ref": "#/$defs/JobRequest"
+    },
+    "diagnostics_captureResult": {
+      "$ref": "#/$defs/Job"
+    },
+    "evidence_createRequest": {
+      "$ref": "#/$defs/JobRequest"
+    },
+    "evidence_createResult": {
+      "$ref": "#/$defs/Job"
+    },
+    "diagnostics_capture_getRequest": {
+      "$ref": "#/$defs/JobGet"
+    },
+    "diagnostics_capture_getResult": {
+      "$ref": "#/$defs/JobResult"
+    },
+    "evidence_getRequest": {
+      "$ref": "#/$defs/JobGet"
+    },
+    "evidence_getResult": {
+      "$ref": "#/$defs/JobResult"
+    },
+    "events_v2_cleanup_getRequest": {
+      "$ref": "#/$defs/JobGet"
+    },
+    "events_v2_cleanup_getResult": {
+      "$ref": "#/$defs/JobResult"
+    },
+    "diagnostics_capture_cancelRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "jobId"
+      ],
+      "properties": {
+        "jobId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "diagnostics_capture_cancelResult": {
+      "$ref": "#/$defs/Job"
+    },
+    "evidence_cancelRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "jobId"
+      ],
+      "properties": {
+        "jobId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "evidence_cancelResult": {
+      "$ref": "#/$defs/Job"
+    },
+    "events_v2_cleanup_cancelRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "jobId"
+      ],
+      "properties": {
+        "jobId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "events_v2_cleanup_cancelResult": {
+      "$ref": "#/$defs/Job"
+    },
+    "evidence_exportRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "jobId",
+        "format"
+      ],
+      "properties": {
+        "jobId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "jsonl"
+          ]
+        }
+      }
+    },
+    "evidence_exportResult": {
+      "$ref": "#/$defs/Job"
+    },
+    "events_v2_cleanup_startRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "storeEpoch",
+        "filter"
+      ],
+      "properties": {
+        "storeEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "filter": {
+          "$ref": "#/$defs/Filter"
+        }
+      }
+    },
+    "events_v2_cleanup_startResult": {
+      "$ref": "#/$defs/Job"
+    },
+    "observability_v2_policy_getRequest": {
+      "$ref": "#/$defs/Empty"
+    },
+    "observability_v2_policy_getResult": {
+      "$ref": "#/$defs/Policy"
+    },
+    "observability_v2_policy_setRequest": {
+      "$ref": "#/$defs/PolicySet"
+    },
+    "observability_v2_policy_setResult": {
+      "$ref": "#/$defs/Policy"
+    },
+    "observability_v2_health_getRequest": {
+      "$ref": "#/$defs/Empty"
+    },
+    "observability_v2_health_getResult": {
+      "$ref": "#/$defs/Fields"
+    },
+    "MetricQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "pluginId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "fromUtc": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "toUtc": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "resolutionMs": {
+          "type": "integer",
+          "enum": [
+            10000,
+            60000
+          ]
+        }
+      }
+    }
+  },
+  "x-methods": {
+    "observability.describe": "observability_describeRequest",
+    "events.types.list": "events_types_listRequest",
+    "events.types.get": "events_types_getRequest",
+    "events.v2.appendBatch": "events_v2_appendBatchRequest",
+    "traces.begin": "traces_beginRequest",
+    "traces.stage": "traces_stageRequest",
+    "traces.end": "traces_endRequest",
+    "traces.get": "traces_getRequest",
+    "observability.targets.resolve": "observability_targets_resolveRequest",
+    "events.v2.query": "events_v2_queryRequest",
+    "events.v2.get": "events_v2_getRequest",
+    "events.v2.aggregate": "events_v2_aggregateRequest",
+    "events.v2.open": "events_v2_openRequest",
+    "events.v2.ack": "events_v2_ackRequest",
+    "events.v2.close": "events_v2_closeRequest",
+    "diagnostics.snapshots.report": "diagnostics_snapshots_reportRequest",
+    "diagnostics.snapshots.query": "diagnostics_snapshots_queryRequest",
+    "diagnostics.snapshots.get": "diagnostics_snapshots_getRequest",
+    "metrics.report": "metrics_reportRequest",
+    "metrics.query": "metrics_queryRequest",
+    "diagnostics.capture": "diagnostics_captureRequest",
+    "evidence.create": "evidence_createRequest",
+    "diagnostics.capture.get": "diagnostics_capture_getRequest",
+    "evidence.get": "evidence_getRequest",
+    "events.v2.cleanup.get": "events_v2_cleanup_getRequest",
+    "diagnostics.capture.cancel": "diagnostics_capture_cancelRequest",
+    "evidence.cancel": "evidence_cancelRequest",
+    "events.v2.cleanup.cancel": "events_v2_cleanup_cancelRequest",
+    "evidence.export": "evidence_exportRequest",
+    "events.v2.cleanup.start": "events_v2_cleanup_startRequest",
+    "observability.v2.policy.get": "observability_v2_policy_getRequest",
+    "observability.v2.policy.set": "observability_v2_policy_setRequest",
+    "observability.v2.health.get": "observability_v2_health_getRequest"
+  },
+  "x-results": {
+    "observability.describe": "observability_describeResult",
+    "events.types.list": "events_types_listResult",
+    "events.types.get": "events_types_getResult",
+    "events.v2.appendBatch": "events_v2_appendBatchResult",
+    "traces.begin": "traces_beginResult",
+    "traces.stage": "traces_stageResult",
+    "traces.end": "traces_endResult",
+    "traces.get": "traces_getResult",
+    "observability.targets.resolve": "observability_targets_resolveResult",
+    "events.v2.query": "events_v2_queryResult",
+    "events.v2.get": "events_v2_getResult",
+    "events.v2.aggregate": "events_v2_aggregateResult",
+    "events.v2.open": "events_v2_openResult",
+    "events.v2.ack": "events_v2_ackResult",
+    "events.v2.close": "events_v2_closeResult",
+    "diagnostics.snapshots.report": "diagnostics_snapshots_reportResult",
+    "diagnostics.snapshots.query": "diagnostics_snapshots_queryResult",
+    "diagnostics.snapshots.get": "diagnostics_snapshots_getResult",
+    "metrics.report": "metrics_reportResult",
+    "metrics.query": "metrics_queryResult",
+    "diagnostics.capture": "diagnostics_captureResult",
+    "evidence.create": "evidence_createResult",
+    "diagnostics.capture.get": "diagnostics_capture_getResult",
+    "evidence.get": "evidence_getResult",
+    "events.v2.cleanup.get": "events_v2_cleanup_getResult",
+    "diagnostics.capture.cancel": "diagnostics_capture_cancelResult",
+    "evidence.cancel": "evidence_cancelResult",
+    "events.v2.cleanup.cancel": "events_v2_cleanup_cancelResult",
+    "evidence.export": "evidence_exportResult",
+    "events.v2.cleanup.start": "events_v2_cleanup_startResult",
+    "observability.v2.policy.get": "observability_v2_policy_getResult",
+    "observability.v2.policy.set": "observability_v2_policy_setResult",
+    "observability.v2.health.get": "observability_v2_health_getResult"
+  },
+  "x-events": {
+    "events.v2.batch": "FeedBatch",
+    "events.v2.gap": "FeedGap",
+    "events.v2.closed": "FeedClosed"
+  }
+}

@@ -1,5 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "x-imports": {
+    "Traffic": "communication-metrics-v1.schema.json",
+    "Quality": "connection-quality-v1.schema.json",
+    "Settings": "settings.generated.json"
+  },
   "$defs": {
     "Scope": {
       "type": "object",
@@ -75,10 +80,46 @@
           "properties": {
             "contract": {
               "enum": [
+                "communication.quality.v1"
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/QualitySummaryRequest"
+            }
+          },
+          "required": [
+            "contract",
+            "target"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "contract": {
+              "enum": [
+                "communication.summary.v1"
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/TrafficSummaryRequest"
+            }
+          },
+          "required": [
+            "contract",
+            "target"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "contract": {
+              "enum": [
                 "workspace.directory.v1",
-                "connections.route.v1",
+                "connections.route.v2",
                 "view.presentation.v1",
-                "connections.route.v2"
+                "connections.diagnostics.v1"
               ]
             },
             "target": {
@@ -97,7 +138,7 @@
             "contract": {
               "enum": [
                 "app.theme.v1",
-                "servers.catalog.v1"
+                "servers.catalog.v2"
               ]
             },
             "target": {
@@ -127,6 +168,78 @@
             "target"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "contract": {
+              "enum": [
+                "settings.catalog.v1"
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/AppTarget"
+            }
+          },
+          "required": [
+            "contract",
+            "target"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "contract": {
+              "enum": [
+                "settings.page.v1"
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/SettingsSettingsPageRequest"
+            }
+          },
+          "required": [
+            "contract",
+            "target"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "contract": {
+              "enum": [
+                "plugins.management.v1"
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/AppTarget"
+            }
+          },
+          "required": [
+            "contract",
+            "target"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "contract": {
+              "enum": [
+                "updates.state.v1"
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/AppTarget"
+            }
+          },
+          "required": [
+            "contract",
+            "target"
+          ],
+          "additionalProperties": false
         }
       ]
     },
@@ -146,7 +259,7 @@
         "objectId": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 128
+          "maxLength": 256
         },
         "revision": {
           "type": "string",

@@ -6,6 +6,7 @@ import {root,launch,rpc,until,stop,pluginPages,pluginRpc,nativeWindow,delay} fro
 
 // Isolated Windows Tauri/WebView2 and loopback SSH; no user server or app data.
 const output=join(root,'.qa/t009',String(Date.now()));
+const trayRegression=process.argv.includes('--tray-regression');
 await mkdir(output,{recursive:true});const checks=[];
 const note=message=>{checks.push(message);console.log(message);};
 const python=process.env.SODECK_TEST_PYTHON??'C:/Users/bgaso/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe';
@@ -25,11 +26,14 @@ try {
   app=await launch({data,shellPort:9593,pluginPort:9594});await empty();
   await nativeWindow(app,'show',{WindowHandle:(await nativeWindow(app,'list')).find(w=>w.visible).handle});
   for(const name of ['workbench.json','workbench.pre-v3-fixture.json','workbench.pending'])assert.equal(await access(join(data,name)).then(()=>true,()=>false),false);
-  await app.page.getByRole('button',{name:'添加服务器',exact:true}).click();
-  await app.page.getByLabel('显示名称').fill('自动连接 · A');await app.page.getByLabel('主机地址').fill('127.0.0.1');await app.page.getByLabel('端口',{exact:true}).fill(String(config.port));await app.page.getByLabel('用户名').fill('test-user');await app.page.getByLabel(/^登录密码/).fill(password);
-  await app.page.getByRole('button',{name:'保存并打开',exact:true}).click();
+  await app.page.getByRole('button',{name:'新建 SSH 连接',exact:true}).click();
+  await app.page.getByLabel('显示名称').fill('自动连接 · A');await app.page.getByLabel('主机地址').fill('127.0.0.1');await app.page.getByLabel('SSH 端口',{exact:true}).fill(String(config.port));await app.page.getByLabel('用户名').fill('test-user');await app.page.getByLabel(/^登录密码/).fill(password);
+  await app.page.getByRole('button',{name:'保存并连接',exact:true}).click();
   await app.page.getByRole('heading',{name:'确认服务器身份'}).waitFor();
   const server=(await rpc(app.page,'servers.list')).servers[0];let s=await snapshot();assert.equal(s.views.length,1);const firstId=s.views[0].viewId;
+  // This protocol fixture implements shell, not Bash exec integration.
+  // Configure the isolated plugin before completing its first authentication.
+  await pluginRpc(await terminal(firstId),'plugin.invoke',{command:'settings.shellIntegration',args:{enabled:false}});
   await app.page.screenshot({path:join(output,'initial-auth.png')});
   await app.page.getByRole('button',{name:'信任并连接',exact:true}).click();
   const p=await terminal(firstId);await until(async()=>(await p.locator('.xterm-rows').innerText()).includes('fixture-ready'));
@@ -72,12 +76,13 @@ try {
   app.process.kill();await until(()=>app.process.signalCode!==null||app.process.exitCode!==null);await stop(app);app=undefined;
   app=await launch({data,shellPort:9593,pluginPort:9594});await empty();
   note('CS-02: forced application termination also restarts with an empty workspace');
+  if(!trayRegression){
   const invalid=await rpc(app.page,'servers.create',{name:'失败后重试 · B',host:'127.0.0.1',port:1,username:'test-user',authType:'password'});
   await rpc(app.page,'workspaces.open',{serverId:invalid.id});
   await until(async()=>{const views=(await snapshot()).views;return views.length===1&&views[0].status==='error';});
   const failed=(await snapshot()).views[0];assert.equal((await resources()).ptys.length,0);
   await rpc(app.page,'servers.update',{serverId:invalid.id,expectedRevision:invalid.revision,name:invalid.name,host:'127.0.0.1',port:config.port,username:'test-user',authType:'password'});
-  await rpc(app.page,'auth.set',{serverId:invalid.id,password,remember:false});
+  await rpc(app.page,'auth.ssh.set',{serverId:invalid.id,password,remember:false});
   // Trust is keyed by target; opening this profile must still use the normal core path.
   const reconnect=rpc(app.page,'commands.execute',{commandId:'terminal.reconnect',viewId:failed.viewId,operationId:crypto.randomUUID()});
   await reconnect;await until(async()=>(await resources()).ptys.length===1);assert.equal((await snapshot()).views[0].viewId,failed.viewId);
@@ -100,7 +105,7 @@ try {
   for(let i=1;i<8;i++)await rpc(app.page,'commands.execute',{commandId:'terminal.new',workspaceId:server.id,operationId:crypto.randomUUID()});
   assert.equal((await resources()).ptys.length,8);
   const capacity=await rpc(app.page,'servers.create',{name:'容量 · C',host:'127.0.0.1',port:config.port,username:'test-user',authType:'password'});
-  await rpc(app.page,'auth.set',{serverId:capacity.id,password,remember:false});
+  await rpc(app.page,'auth.ssh.set',{serverId:capacity.id,password,remember:false});
   await rpc(app.page,'workspaces.open',{serverId:capacity.id});
   await until(async()=>(await snapshot()).workspaces.find(w=>w.serverId===capacity.id)?.initializers[0]?.state==='failed');
   assert.equal((await snapshot()).views.filter(v=>v.serverId===capacity.id).length,0);
@@ -135,9 +140,10 @@ try {
   const duplicate=spawn(join(root,'target/debug/sodeck-desktop.exe'),[],{cwd:root,windowsHide:true,stdio:'ignore',env:{...process.env,SODECK_DATA_DIR:data}});
   await until(()=>duplicate.exitCode!==null);assert.notEqual(duplicate.exitCode,0);assert.equal((await resources()).ptys.length,2);
   note('CS-10: a second process using the same data directory is rejected without resetting the running workspace');
+  }
   await shutdown();
   await writeFile(join(output,'results.json'),JSON.stringify({passed:true,scope:'Windows Tauri/WebView2 + loopback SSH, CDP input; not physical keyboard or Linux shell',checks},null,2));
-  await writeFile(join(root,'.qa/t009/native-latest.json'),JSON.stringify({output},null,2));console.log(JSON.stringify({passed:true,output,checks},null,2));
+  await writeFile(join(root,trayRegression?'.qa/tray/clean-start-latest.json':'.qa/t009/native-latest.json'),JSON.stringify({output,trayRegression},null,2));console.log(JSON.stringify({passed:true,output,trayRegression,checks},null,2));
 } catch(error) {
   await writeFile(join(output,'failure.json'),JSON.stringify({checks,error:String(error),stack:error.stack},null,2));console.error(error);process.exitCode=1;
 } finally {

@@ -64,7 +64,7 @@ try{
  await until(async()=>{const dialog=app.page.getByRole('dialog');return await dialog.count()&&(await dialog.innerText()).includes('目标 2/2');});
  await screenshot('target-trust');await app.page.getByRole('button',{name:'信任并连接',exact:true}).click();
  await until(async()=>(await rpc(app.page,'resources.list')).ptys.some(p=>p.state==='active'),30000);
- const servers=(await rpc(app.page,'servers.routes.list')).servers;const target=servers.find(s=>s.connectionRoute.kind==='sshJump');
+ const servers=(await rpc(app.page,'servers.routes.list')).servers;const target=servers.find(s=>s.accessPath.kind==='sshJump');
  assert.equal((await rpc(app.page,'workbench.snapshot')).workspaces.length,1);
  checks.push('JP-04/05: native dialogs display gateway 1/2 then target 2/2; preset credentials saved to correct nodes; only target workspace opens');
  await app.page.locator('.connection-status').click();await app.page.getByRole('dialog',{name:'连接路径'}).waitFor();await screenshot('path-details');
@@ -72,7 +72,7 @@ try{
  await app.page.keyboard.press('Escape');
  await app.page.getByRole('button',{name:'打开服务器',exact:true}).first().click();
  // Use the picker delete action for the saved gateway; refusal is reviewable before any stop.
- const gateway=servers.find(s=>s.id===target.connectionRoute.jumpServerId);
+ const gateway=servers.find(s=>s.id===target.accessPath.jumpServerId);
  const row=app.page.locator('.picker-row').filter({has:app.page.getByRole('button',{name:`删除 ${gateway.name}`,exact:true})});
  assert.equal(await row.count(),1);{await row.getByRole('button',{name:/删除/}).click();await screenshot('delete-dependency');await app.page.keyboard.press('Escape');}
  assert.deepEqual(app.errors,[]);

@@ -1,3 +1,5 @@
+import {observation,sampler,configureObservation} from './observation';
+import type {Invocation} from '@sodeck/sdk/observation';
 import {workerClient} from '@sodeck/sdk/worker';
 import { Explorer } from "./state";
 import {FollowController} from './follow';
@@ -9,7 +11,7 @@ const runtime = globalThis as typeof globalThis & {
   sodeck: StateBridge;
   sodeckPlugin: unknown;
 };
-const bridge=workerClient(runtime.sodeck);
+const bridge=workerClient(runtime.sodeck);configureObservation(bridge);
 const states = new Map<string, Explorer>();
 const follows=new Map<string,FollowController>();
 function follow(s:Explorer){return follows.get(s.scope.workspaceGeneration)!;}
@@ -42,7 +44,7 @@ function initialize(p: Params) {
     states.set(viewId, s);
     let controller=follows.get(s.scope.workspaceGeneration);
     if(!controller){controller=new FollowController(bridge);follows.set(s.scope.workspaceGeneration,controller);}
-    const owner=controller;s.followSnapshot=()=>owner.snapshot();
+    const owner=controller;s.followSnapshot=()=>owner.snapshot();s.followDiagnostics=()=>owner.observationSnapshot();
     void controller.attach(s).catch(()=>{});
   }
   return s;
@@ -57,7 +59,8 @@ runtime.sodeckPlugin = {
 
   },
   activate() {},
-  async invoke(command: string, p: Params) {
+  async invoke(command: string, p: Params, invocation?:Invocation) {
+    const diagnostic=observation?.withInvocation(invocation);
     if (command === "lifecycle.initialize") return initialize(p).snapshot();
     if (command === "lifecycle.prepareClose") return { allow: true };
     if (command === "lifecycle.presentation") {
@@ -88,7 +91,7 @@ runtime.sodeckPlugin = {
               s.scope.workspaceGeneration === ctx.workspaceGeneration,
           );
       if(!s){const opened=await bridge.call<{viewId:string}>('views.open',{viewType:'files.explorer',workspaceId:ctx.workspaceId,operationId:ctx.operationId,title:'文件'});s=initialize({...ctx,viewId:opened.viewId});}
-      await s.connect(String(ctx.operationId));
+      await s.connect(String(ctx.operationId),diagnostic);
       return { viewId: s.viewId };
     }
     const s = state(p);
@@ -98,8 +101,8 @@ runtime.sodeckPlugin = {
       case "files.snapshot":
         void controller.tick();
         return s.snapshot(Number(p.startUnit)||0,Number(p.countUnits)||100,Number(p.overscanUnits)||0,typeof p.anchorId==='string'?p.anchorId:undefined,Number(p.anchorOffset)||0,p.continuation===true);
-      case 'follow.setEnabled':await controller.setEnabled(p.enabled===true);break;
-      case 'follow.locateOnce':controller.locateOnce();break;
+      case 'follow.setEnabled':await controller.setEnabled(p.enabled===true,diagnostic);break;
+      case 'follow.locateOnce':controller.locateOnce(diagnostic);break;
       case 'follow.interaction':controller.interactionState(p.active===true,p.submitted===true);break;
       case "files.diagnostics":
         return {
@@ -119,22 +122,22 @@ runtime.sodeckPlugin = {
         return s.snapshot();
       }
       case "files.toggle":
-        s.toggle(String(p.id));
+        s.toggle(String(p.id),diagnostic);
         break;
       case "files.select":
-        s.schedule(() => s.select(String(p.id)));
+        await s.schedule(() => s.select(String(p.id)),'select',diagnostic);
         break;
       case "files.more":
-        s.schedule(() => s.load(String(p.id)));
+        await s.schedule(client => s.load(String(p.id),false,client),"readMore",diagnostic);
         break;
       case "files.refresh":
-        s.refresh(typeof p.id === "string" ? p.id : undefined);
+        await s.refresh(typeof p.id === "string" ? p.id : undefined,diagnostic);
         break;
       case "files.locate": {
         const target =
           typeof p.text === "string" ? path(p.text) : (p.path as RemotePath);
         if (!target?.bytesBase64) throw fault("INVALID_PARAMS", "路径无效");
-        s.schedule(() => s.locate(target));
+        await s.schedule(client => s.locate(target,client),"locate",diagnostic);
         break;
       }
       case 'files.linkTarget':return s.linkTarget(String(p.id));
@@ -156,5 +159,6 @@ runtime.sodeckPlugin = {
     await Promise.all([...follows.values()].map(s=>s.dispose()));follows.clear();
     await Promise.all([...states.values()].map((s) => s.dispose()));
     states.clear();
+    sampler?.stop();await observation?.stop();
   },
 };

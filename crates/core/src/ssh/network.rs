@@ -11,6 +11,7 @@ pub(crate) struct Metrics {
     pub draining: bool,
 }
 pub(crate) struct Open {
+    pub traffic: Option<crate::traffic::Registration>,
     pub host: String,
     pub port: u16,
     pub state: Arc<Mutex<Stream>>,
@@ -22,7 +23,7 @@ pub(crate) struct Open {
 }
 impl Open {
     pub fn new(host: String, port: u16, state: Arc<Mutex<Stream>>, canceled: Arc<AtomicBool>) -> Self {
-        Self { host, port, state, canceled, result: Arc::new(Mutex::new(None)), queued: Instant::now(), started: None, in_flight: false }
+        Self { traffic:None, host, port, state, canceled, result: Arc::new(Mutex::new(None)), queued: Instant::now(), started: None, in_flight: false }
     }
     fn complete(&self, result: Result<()>) {
         let mut stored = self.result.lock().unwrap();
@@ -30,6 +31,7 @@ impl Open {
     }
 }
 struct Active {
+    _traffic: Option<crate::traffic::Registration>,
     channel: Channel,
     state: Arc<Mutex<Stream>>,
 }
@@ -68,14 +70,14 @@ impl Network {
             }
             if can_open || open.in_flight {
                 open.started.get_or_insert_with(Instant::now);
-                match session.channel_direct_tcpip(&open.host, open.port, Some(("127.0.0.1", 0))) {
+                match crate::traffic::origin(session,&open.traffic).and_then(|_|session.channel_direct_tcpip(&open.host, open.port, Some(("127.0.0.1", 0)))) {
                     Ok(channel) => {
                         let open = self.pending.pop_front().unwrap();
                         if open.canceled.load(Ordering::SeqCst) || open.result.lock().unwrap().as_ref().is_some_and(|r| r.is_err()) {
                             open.state.lock().unwrap().close();
                             open.complete(Err(CoreError::new("CANCELED", "目标连接已取消")));
                         } else { open.complete(Ok(())); }
-                        self.channels.push(Active { channel, state: open.state });
+                        self.channels.push(Active { channel, state: open.state, _traffic:open.traffic });
                     }
                     Err(e) if e.code() == ssh2::ErrorCode::Session(-37) => open.in_flight = true,
                     Err(e) => {

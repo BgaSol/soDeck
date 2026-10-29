@@ -78,6 +78,8 @@ mod budget_tests {
 }
 
 pub struct Job {
+    pub(crate) observation: Option<crate::observability::resource::ResourceObservation>,
+    pub(crate) traffic: Option<crate::traffic::Registration>,
     ticket: IoTicket,
     pub method: String,
     pub params: Value,
@@ -111,6 +113,8 @@ impl Job {
             })
             .min(30_000);
         Self {
+            observation: None,
+            traffic: None,
             ticket,
             method: method.into(),
             params,
@@ -235,6 +239,7 @@ impl ExecState {
 }
 struct Handle {
     file: File,
+    _observation: Option<crate::observability::resource::ResourceObservation>,
     alive: Arc<AtomicBool>,
     touched: Instant,
     cursor: u64,
@@ -243,6 +248,7 @@ struct Handle {
 }
 impl Drop for Handle {fn drop(&mut self){self.alive.store(false,Ordering::SeqCst);}}
 struct SftpSession {
+    _traffic: Option<crate::traffic::Registration>,
     sftp: Sftp,
     alive: Arc<AtomicBool>,
     handles: HashMap<String, Handle>,
@@ -307,6 +313,7 @@ impl Remote {
     }
     pub fn tick(&mut self, session: &Session, allow_open: bool) {
         // Only one channel-opening state machine can use libssh2's session at a time.
+        let opening=self.opening();
         if let Some(job) = self.queue.front_mut() {
             if job.valid().is_err() && !self.opening {
                 job.finish(job.valid().map(|_| Value::Null));
@@ -335,13 +342,14 @@ impl Remote {
                     .unwrap()
                     .queue
                     .push_back(job);
-            } else if (allow_open && !self.opening()) || self.opening {
-                match session.sftp() {
+            } else if (allow_open && !opening) || self.opening {
+                match crate::traffic::origin(session,&job.traffic).and_then(|_|session.sftp()) {
                     Ok(sftp) => {
                         let job = self.queue.pop_front().unwrap();
                         self.sessions.insert(
                             job.lease.clone(),
                             SftpSession {
+                                _traffic: job.traffic.clone(),
                                 sftp,
                                 alive: job.lease_alive.clone(),
                                 handles: HashMap::new(),
@@ -467,10 +475,13 @@ impl SftpSession {
                     )
                     .map(|file| {
                         let id = p["resourceId"].as_str().unwrap().to_owned();
+                        let mut observation=job.observation.take();
+                        if let Some(value)=&mut observation{value.activate();}
                         self.handles.insert(
                             id.clone(),
                             Handle {
                                 file,
+                                _observation: observation,
                                 alive: job.resource_alive.clone().unwrap(),
                                 touched: Instant::now(),
                                 cursor: 0,
@@ -630,7 +641,10 @@ impl Exec {
         }
         self.in_flight = true;
         let outcome = match self.phase {
-            0 => session.channel_session().map(|c| self.channel = Some(c)),
+            0 => crate::traffic::origin(session,&self.job.traffic).and_then(|_|session.channel_session()).map(|c| {
+                self.channel = Some(c);
+                if let Some(value)=&mut self.job.observation{value.activate();}
+            }),
             1 => self
                 .channel
                 .as_mut()

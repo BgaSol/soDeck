@@ -243,7 +243,7 @@ try {
   assert.equal(activated.activeVersion, '0.2.1'); assert.equal(activated.pendingVersion, null);
   assert.equal((await invoke(app, 'settings.get')).fontSize, 19);
   assert.equal((await rpc(app.page, 'resources.list')).ptys.length, 0, 'Restart must not silently recreate remote shells');
-  await rpc(app.page, 'auth.set', { serverId: server.id, password: 'isolated-test-password', remember: false });
+  await rpc(app.page, 'auth.ssh.set', { serverId: server.id, password: 'isolated-test-password', remember: false });
   const newView = await openTerminal(app,server.id);
   const newTerminal = await terminalPage(app, newView.viewId);
   await newTerminal.getByRole('button', { name: '恢复默认字号' }).click();

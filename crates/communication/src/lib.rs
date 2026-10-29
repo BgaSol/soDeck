@@ -2,6 +2,7 @@
 mod feed;
 pub mod binary;
 pub use feed::{Delivery, Hub, Key, Snapshot, Stats};
+pub const STATE_SCHEMA: &str = include_str!("state-feed.generated.json");
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Fault(pub &'static str);

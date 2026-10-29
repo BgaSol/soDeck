@@ -1,10 +1,14 @@
 # F-CORE-005：服务器、认证与 SSH/PTY 首条流程
 
-更新日期：2026-10-27 · 修订：r6 · 文档就绪：可评审
+更新日期：2026-10-28 · 修订：r8 · 文档就绪：可评审
 所属模块：服务器、认证、连接与远程 I/O · 关联任务：[T-003](../tasks/T-003-core-terminal.md)
 上级：[核心能力](README.md) · 公共契约：[通信](communication.md)、[资源](resources.md)、[记录](call-records.md)
 
 ## 1. 本批范围
+
+T-027凭据/执行增量提案：[F-CORE-031 r2](mixed-route.md)及[代码方案r1 §4/5](../technical/mixed-route-implementation.md#5-凭据认证与可靠提交)统一SSH/SOCKS步骤执行，凭据按owner+已验证前缀context存binding/加密blob，preset在新context首次使用需明确归属确认。主机密钥仍先验证；挑战包括step/operation/attempt/workspace代次，取消后不得写凭据。API6替换旧严格DTO，MR-CODE-01/04/05/06验证；本增量待T-027确认，不改写原SSH交付结果。
+
+T-025凭据预设增量设计：[F-CORE-029 r2](connection-home.md) / [代码方案r1 §5.3](../technical/connection-home-implementation.md#53-预设凭据的条件提交)新增credentials.configuration.v1的prepare/set/operation。提交按目标配置、实际依赖身份及凭据revision条件核对，防止并发改地址后将旧草稿秘密绑定到新身份；回执只在本进程内存，日志/配置回执不含秘密。私钥预设复用核心读取/1MiB上限，主机指纹及连接挑战流程保持。CH-04/09/10与HCODE-05/06验证并发、文件错误、丢回执及部分成功；本段仅设计，历史SSH结果不代表该增量通过。
 
 本节“首批/暂不提供”保留 T-003 的历史范围；SFTP/有界 exec 已由 [F-CORE-009](remote-read.md)扩展，首终端由 [F-CORE-010](clean-start.md)扩展。核心单层跳板已随 [T-013 r1](../tasks/T-013-ssh-jump.md)确认并实施，结果由该任务维护。用户进一步要求取消固定层数，[F-CORE-014 r3 §7](ssh-jump.md#7-多级路径修订方案r3替代-r1-的单层限制) / T-013 r2 提交任意有限级路径、完整依赖与 MH-01～10，多级方案待确认。涉及跳板时本文 host:port 信任、仅目标修订的复用和删除检查由路径上下文规则扩展；直连回归保持，旧结果不改写为多级已通过。
 

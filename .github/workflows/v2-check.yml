@@ -1,0 +1,35 @@
+name: SoDeck v2 checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.22.0
+          cache: npm
+      - name: Install the pinned Rust and Perl toolchains
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal
+          rustup default 1.99.1
+          if (-not (Test-Path 'C:\Strawberry\perl\bin\perl.exe')) { choco install strawberryperl --version=5.40.2.1 --yes --no-progress }
+          "OPENSSL_SRC_PERL=C:\Strawberry\perl\bin\perl.exe" >> $env:GITHUB_ENV
+      - run: npm ci
+      - run: npm run check
+      - run: npm run test:contracts
+      - run: node --test scripts/release/plan.test.mjs
+      - run: node scripts/cargo.mjs test --locked -p sodeck-updater -p sodeck-plugin-manager -p sodeck-desktop
+      - run: npx playwright install chromium
+      - run: npx playwright test -c playwright.ui.config.ts tests/ui/updates.spec.ts tests/ui/plugin-management.spec.ts tests/ui/settings.spec.ts
+      - run: npm run build

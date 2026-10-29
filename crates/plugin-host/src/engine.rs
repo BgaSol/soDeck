@@ -36,6 +36,18 @@ mod tests {
     }
 
     #[test]
+    fn public_clock_survives_wall_clock_changes_and_is_frozen() {
+        on_js_stack(|| {
+            let mut engine = Engine::new(Arc::new(AtomicBool::new(false))).unwrap();
+            engine.receive(json!({"kind":"initialize","id":"init","context":{},"code":"globalThis.sodeckPlugin={invoke(){const a=sodeck.clock.monotonicMs();Date.now=()=>-999999;const b=sodeck.clock.monotonicMs();return {a,b,frozen:Object.isFrozen(sodeck.clock)}}}"})).unwrap();
+            engine.tick().unwrap(); engine.drain().unwrap();
+            engine.receive(json!({"kind":"invoke","id":"clock","command":"clock"})).unwrap(); engine.tick().unwrap();
+            let frames=engine.drain().unwrap();let value=&frames[0]["result"];
+            assert!(value["b"].as_f64().unwrap()>=value["a"].as_f64().unwrap());
+            assert_eq!(value["frozen"],true);
+        });
+    }
+    #[test]
     fn lifecycle_and_asynchronous_core_roundtrip() {
         on_js_stack(|| {
             let mut engine = Engine::new(Arc::new(AtomicBool::new(false))).unwrap();

@@ -104,7 +104,7 @@ try {
   const challenge = await settle(openTerminal(app.page,real.id,randomUUID()));
   assert.equal(challenge.error?.code, 'HOST_KEY_REQUIRED');
   await rpc(app.page, 'hosts.trust', { serverId: real.id, ...challenge.error.details });
-  await rpc(app.page, 'auth.set', { serverId: real.id, password: 'isolated-test-password', remember: false });
+  await rpc(app.page, 'auth.ssh.set', { serverId: real.id, password: 'isolated-test-password', remember: false });
   const completedId = randomUUID();
   const view = await openTerminal(app.page,real.id,completedId);
   await rpc(app.page, 'views.activate', { viewId: view.viewId });

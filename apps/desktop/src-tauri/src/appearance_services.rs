@@ -3,7 +3,7 @@ use sodeck_communication::Key;
 
 impl State {
     pub(super) fn theme_background(&self)->tauri::window::Color {let (r,g,b,a)=crate::theme::background(&self.theme_snapshot(true));tauri::window::Color(r,g,b,a)}
-    fn refresh_native_theme(&self){
+    pub(super) fn refresh_native_theme(&self){
         let theme=self.theme_snapshot(true);let (r,g,b,a)=crate::theme::background(&theme);
         for (id,window) in self.app.webview_windows(){self.cancel_menus(&id);if !id.starts_with("plugin-dialog-"){let _=window.set_background_color(Some(tauri::window::Color(r,g,b,a)));}}
         let live:std::collections::HashSet<_>=self.all_plugins().iter().filter(|p|p.package.manifest.requires.capabilities.iter().any(|c|c=="ui.theme.live.v1")).map(|p|p.package.manifest.plugin_id.clone()).collect();
@@ -45,10 +45,11 @@ impl State {
                 let next=theme.chosen(id).map_err(|e|err("INVALID_PARAMS",e))?;
                 // The theme slot is reserved at startup. No Hub/workbench lock
                 // is held during file I/O; the theme mutex serializes writers.
-                crate::theme::save_id(&self.data,id).map_err(|e|err("PERSISTENCE_FAILED",format!("外观未更改：{e}")))?;
+                crate::theme::save_selection(&self.data,&theme,id,&Uuid::new_v4().to_string(),"legacy").map_err(|e|err("PERSISTENCE_FAILED",format!("外观未更改：{e}")))?;
                 self.communication.lock().unwrap().put(self.theme_key(),json!({"appGeneration":self.app_generation}),next.effective.clone()).map_err(|e|err(e.0,"主题状态提交失败"))?;
                 *theme=next;let result=if catalog{self.theme_catalog(&theme)}else{self.theme_preference(&theme)};drop(theme);
                 self.refresh_native_theme();
+                let _=self.appearance_settings_page();
                 Ok(result)
             }
             _=>Err(err("METHOD_NOT_FOUND","未知主题接口")),

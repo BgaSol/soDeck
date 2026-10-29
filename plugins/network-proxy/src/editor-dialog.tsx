@@ -1,3 +1,4 @@
+import {invoke} from './ui-observation';
 import {useEffect,useRef,useState} from 'react';
 import {core,context,dialogContext,readyDialog,completeDialog,closeDialog,errorMessage} from '@sodeck/sdk';
 import {Button,EmptyState,Notice} from '@sodeck/ui';
@@ -7,7 +8,7 @@ import type {Rule} from './rules';
 type Action='save'|'start'|'restart';
 type Saved={ruleId:string;revision:number;action:Action};
 type Data={original?:Rule;automatic:boolean;value:Draft;running:boolean};
-const invoke=<T,>(command:string,args:Record<string,unknown>)=>core.call<T>('plugin.invoke',{command,args});
+
 export function EditorDialog(){
   const token=(dialogContext()?.initialState as {editorToken?:string})?.editorToken;
   const [data,setData]=useState<Data>(),[type,setType]=useState<Rule['type']>('network-proxy'),[values,setValues]=useState<Record<Rule['type'],Draft>>({'network-proxy':draft('network-proxy'),'port-forward':draft('port-forward')}),[busy,setBusy]=useState(false),[error,setError]=useState(''),[unknown,setUnknown]=useState(false);

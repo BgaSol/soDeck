@@ -16,7 +16,7 @@ try{
  const servers=[];
  for(let i=0;i<2;i++){
   const server=await rpc(app.page,'servers.create',{name:`主题生命周期 ${i+1}`,host:config.host,port:config.port,username:config.username,authType:'key'});
-  await rpc(app.page,'auth.set',{serverId:server.id,privateKeyPath:config.privateKeyPath,remember:true});
+  await rpc(app.page,'auth.ssh.set',{serverId:server.id,privateKeyPath:config.privateKeyPath,remember:true});
   try{const lease=await rpc(app.page,'connections.acquire',{serverId:server.id,workspaceId:server.id,operationId:crypto.randomUUID()});await rpc(app.page,'connections.release',{leaseId:lease.leaseId});}catch(error){assert.equal(error.code,'HOST_KEY_REQUIRED');await rpc(app.page,'hosts.trust',{serverId:server.id,...error.details});}servers.push(server);
  }
  for(let cycle=0;cycle<3;cycle++){

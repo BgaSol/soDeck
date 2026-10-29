@@ -31,7 +31,7 @@ async function close(){await stop(app);app=undefined;for(const b of browsers.spl
 try{
  await start(original);
  const server=await rpc(app.page,'servers.create',{name:'T018 isolated Linux',host:config.host,port:config.port,username:config.username,authType:'key'});
- await rpc(app.page,'auth.set',{serverId:server.id,privateKeyPath:config.privateKeyPath,remember:true});
+ await rpc(app.page,'auth.ssh.set',{serverId:server.id,privateKeyPath:config.privateKeyPath,remember:true});
  try{const lease=await rpc(app.page,'connections.acquire',{serverId:server.id,workspaceId:server.id,operationId:crypto.randomUUID()});await rpc(app.page,'connections.release',{leaseId:lease.leaseId});}catch(e){assert.equal(e.code,'HOST_KEY_REQUIRED');await rpc(app.page,'hosts.trust',{serverId:server.id,challengeId:e.details.challengeId,fingerprint:e.details.fingerprint});}
  await opened(server);await invoke('follow.setEnabled',{enabled:false});await locate('/');
  await until(async()=>(await snapshot()).rows.find(r=>r.id==='Lw==')?.capacity?.state==='ready');

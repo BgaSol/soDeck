@@ -14,6 +14,7 @@ use std::{
 };
 
 pub type CoreCallback = Arc<dyn Fn(&str, Value) -> Result<Value, RpcError> + Send + Sync>;
+pub type CoreContextCallback = Arc<dyn Fn(&str, Value, Option<Value>) -> Result<Value, RpcError> + Send + Sync>;
 pub type BinarySink = dyn FnMut(sodeck_communication::binary::Frame) -> bool;
 #[derive(Clone)]
 pub struct BinaryCallbacks {
@@ -37,6 +38,7 @@ struct WriteJob {
     // 0 queued, 1 sending, 2 sent, 3 cancelled before any write.
     state: Arc<AtomicU8>,
     _permit: QueuePermit,
+    _retention:Option<Arc<dyn Send+Sync>>,
 }
 
 #[derive(Clone)]
@@ -60,6 +62,9 @@ impl Writer {
     fn enqueue_lane(&self, frame: &Value, control: bool) -> Result<Arc<AtomicU8>, RpcError> {
         let bytes = serde_json::to_vec(frame)
             .map_err(|_| RpcError::new("PROTOCOL", "Frame encoding failed"))?;
+        self.enqueue_bytes(bytes,control,None)
+    }
+    fn enqueue_bytes(&self,bytes:Vec<u8>,control:bool,retention:Option<Arc<dyn Send+Sync>>)->Result<Arc<AtomicU8>,RpcError>{
         if bytes.is_empty() || bytes.len() > transport::MAX_FRAME {
             return Err(not_sent("CAPACITY", "Plugin frame exceeds 1 MiB"));
         }
@@ -80,6 +85,7 @@ impl Writer {
                 bytes,
                 state: state.clone(),
                 _permit: permit,
+                _retention:retention,
             })
             .map_err(|error| match error {
                 mpsc::TrySendError::Full(_) => not_sent("CAPACITY", "Plugin write queue is full"),
@@ -101,6 +107,7 @@ pub struct PluginProcess {
     code: String,
     binary_enabled: bool,
     binary_ready: Arc<AtomicBool>,
+    diagnostic_ready: AtomicBool,
 }
 
 impl PluginProcess {
@@ -115,10 +122,21 @@ impl PluginProcess {
         executable: impl AsRef<Path>, worker_path: impl AsRef<Path>,
         callback: CoreCallback, binary: Option<BinaryCallbacks>,
     ) -> Result<Self, RpcError> {
+        Self::spawn_with_context(executable, worker_path, Arc::new(move |method, params, _| callback(method, params)), binary)
+    }
+    pub fn spawn_with_context(
+        executable: impl AsRef<Path>, worker_path: impl AsRef<Path>,
+        callback: CoreContextCallback, binary: Option<BinaryCallbacks>,
+    ) -> Result<Self, RpcError> {
         if fs::metadata(worker_path.as_ref()).map_err(io_error)?.len() > 768 * 1024 {
             return Err(not_sent("CAPACITY", "Worker exceeds startup frame budget"));
         }
         let code = fs::read_to_string(worker_path).map_err(io_error)?;
+        Self::spawn_source_with_context(executable, code, callback, binary)
+    }
+    /// Production callers supply the exact source from a verified package snapshot.
+    pub fn spawn_source_with_context(executable: impl AsRef<Path>, code: String, callback: CoreContextCallback, binary: Option<BinaryCallbacks>) -> Result<Self,RpcError> {
+        if code.len()>768*1024 {return Err(not_sent("CAPACITY","Worker exceeds startup frame budget"));}
         let mut command = Command::new(executable.as_ref());
         command
             .arg(INTERNAL_MODE)
@@ -284,6 +302,12 @@ impl PluginProcess {
                         let id = id.to_owned();
                         let method = method.to_owned();
                         let params = frame["params"].clone();
+                        let request_bytes=frame.to_string().len();
+                        let metadata = frame.get("metadata").cloned();
+                        if metadata.as_ref().is_some_and(|m| m.to_string().len() > 1024) {
+                            if reader_writer.enqueue_lane(&json!({"kind":"result","id":id,"error":RpcError::new("INVALID_REQUEST","Diagnostic metadata exceeds limit")}),true).is_err(){break;}
+                            continue;
+                        }
                         if active_calls.fetch_add(1, Ordering::SeqCst) >= 32 {
                             active_calls.fetch_sub(1, Ordering::SeqCst);
                             if reader_writer.enqueue(&json!({"kind":"result","id":id,"error":RpcError::new("CAPACITY", "Too many plugin core calls")})).is_err() { break; }
@@ -300,7 +324,7 @@ impl PluginProcess {
                         let job=Box::new(move || {
                             let result =
                                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                    if callback_alive.load(Ordering::SeqCst) {callback(&method, params)} else {Err(RpcError::new("PLUGIN_STOPPING","Plugin instance ended before execution"))}
+                                    if callback_alive.load(Ordering::SeqCst) {callback(&method, params, metadata)} else {Err(RpcError::new("PLUGIN_STOPPING","Plugin instance ended before execution"))}
                                 }))
                                 .unwrap_or_else(|_| {
                                     Err(RpcError::new("INTERNAL", "Core callback failed"))
@@ -310,7 +334,7 @@ impl PluginProcess {
                                 Err(error) => json!({"kind":"result","id":id,"error":error}),
                             };
                             if callback_alive.load(Ordering::SeqCst) {
-                                let control=matches!(method.as_str(),"state.ack"|"state.close"|"directories.unregister"|"pty.observe.close"|"net.groups.close"|"net.streams.close"|"net.operations.cancel"|"net.operations.get");
+                                let control=crate::dispatcher::control(&method);
                                 if writer.enqueue_lane(&response,control).is_err() {
                                     // A completed core call may not fit on the wire. Tell the
                                     // worker its result is unknown rather than dropping it.
@@ -335,7 +359,7 @@ impl PluginProcess {
                             calls.fetch_sub(1, Ordering::SeqCst);
                         });
                         if crate::dispatcher::short(&dispatch_method) {
-                            if !crate::dispatcher::submit(&dispatch_method,job) {
+                            if !crate::dispatcher::submit_sized(&dispatch_method,request_bytes,job) {
                                 active_calls.fetch_sub(1,Ordering::SeqCst);
                                 if reader_writer.enqueue_lane(&json!({"kind":"result","id":rejected_id,"error":RpcError::new("CAPACITY","Short core call queue is full")}),true).is_err(){break;}
                             }
@@ -363,18 +387,20 @@ impl PluginProcess {
             code,
             binary_enabled,
             binary_ready,
+            diagnostic_ready: AtomicBool::new(false),
         })
     }
 
     pub fn initialize(&self, context: Value) -> Result<Value, RpcError> {
         let result=self.request(
-            json!({"kind":"initialize", "code":self.code, "context":context,"binaryVersion":if self.binary_enabled {1}else{0}}),
+            json!({"kind":"initialize", "code":self.code, "context":context,"diagnosticContextVersion":1,"binaryVersion":if self.binary_enabled {1}else{0}}),
             Duration::from_secs(15),
         )?;
         if self.binary_enabled {
             if result["binaryVersion"]!=1 {self.terminate();return Err(RpcError::new("PROTOCOL_ERROR","Binary worker version mismatch"));}
             self.binary_ready.store(true,Ordering::SeqCst);
         }
+        self.diagnostic_ready.store(result["diagnosticContextVersion"]==1,Ordering::SeqCst);
         Ok(result)
     }
     pub fn invoke(&self, command: &str, params: Value) -> Result<Value, RpcError> {
@@ -386,10 +412,12 @@ impl PluginProcess {
         params: Value,
         timeout: Duration,
     ) -> Result<Value, RpcError> {
-        self.request(
-            json!({"kind":"invoke", "command":command, "params":params}),
-            timeout,
-        )
+        self.invoke_with_context(command,params,timeout,None)
+    }
+    pub fn invoke_with_context(&self,command:&str,params:Value,timeout:Duration,metadata:Option<Value>)->Result<Value,RpcError>{
+        let mut frame=json!({"kind":"invoke", "command":command, "params":params});
+        if self.diagnostic_ready.load(Ordering::SeqCst){if let Some(metadata)=metadata{frame["metadata"]=metadata;}}
+        self.request(frame,timeout)
     }
     pub fn is_alive(&self) -> bool {
         self.alive.load(Ordering::SeqCst)
@@ -397,15 +425,23 @@ impl PluginProcess {
     pub fn notify(&self, event: &str, payload: Value) -> Result<(), RpcError> {
         if !self.is_alive(){return Err(RpcError::new("PLUGIN_CRASHED","Plugin process is unavailable"));}
         self.writer.enqueue_lane(&json!({"kind":"notification","type":event,"payload":payload}),
-            matches!(event,"state.closed"|"state.resyncRequired"|"workspace.closed")).map(|_|())
+            matches!(event,"state.closed"|"state.resyncRequired"|"workspace.closed"|"events.v2.gap"|"events.v2.closed")).map(|_|())
+    }
+    /// Host-authored serialized history: credit follows this writer's queued frame.
+    pub fn notify_serialized(&self,event:&str,payload:Arc<str>,retention:Arc<dyn Send+Sync>)->Result<(),RpcError>{
+        if !self.is_alive(){return Err(RpcError::new("PLUGIN_CRASHED","Plugin process is unavailable"));}
+        let prefix=format!("{{\"kind\":\"notification\",\"type\":{},\"payload\":",serde_json::to_string(event).unwrap());
+        let mut bytes=Vec::with_capacity(prefix.len()+payload.len()+1);bytes.extend_from_slice(prefix.as_bytes());bytes.extend_from_slice(payload.as_bytes());bytes.push(b'}');
+        self.writer.enqueue_bytes(bytes,matches!(event,"events.v2.gap"|"events.v2.closed"),Some(retention)).map(|_|())
     }
     pub fn process_id(&self) -> u32 {
         self.child.lock().unwrap().id()
     }
-    pub fn stop(&self) -> Result<Value, RpcError> {
+    pub fn stop(&self) -> Result<Value, RpcError> {self.stop_with_timeout(Duration::from_secs(5))}
+    pub fn stop_with_timeout(&self,timeout:Duration) -> Result<Value, RpcError> {
         // Admission and waiting share the deadline; neither requires ownership
         // of ChildStdin. Killing the child also releases any blocked writer.
-        let result = self.request(json!({"kind":"stop"}), Duration::from_secs(5));
+        let result = self.request(json!({"kind":"stop"}), timeout);
         self.terminate();
         result
     }

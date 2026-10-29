@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import {onDialogCancel,dialogContext} from '@sodeck/sdk';
-import {Button,Checkbox,Dialog,FormFields,FormSection,Inline,Notice,RadioGroup,Stack,TextField} from '@sodeck/ui';
+import {Button,Checkbox,Dialog,DialogActions,FormFields,FormSection,Inline,Notice,RadioGroup,Stack,TextField} from '@sodeck/ui';
 import type {Rule} from './rules';
 import {draft,edit,type Draft} from './editor-model';
 export {draft,edit,ruleFromDraft,type Draft} from './editor-model';
@@ -31,7 +31,7 @@ export function Editor({value,onChange,old,automatic=false,dirty:allDirty,runnin
       </Stack></FormFields></ScrollFields>
       <Inline className="network-actions"><Button onClick={close} disabled={busy}>取消</Button><Button type="submit" busy={busy}>{pending?'核对保存结果':running?'保存，下次启动生效':'保存'}</Button><Button variant="primary" disabled={pending} busy={busy} onClick={()=>onSave(running?'restart':'start')}>{running?'应用并重启':'保存并启动'}</Button></Inline>
     </form>
-    {discard&&<Dialog title="放弃未保存的修改？" onClose={()=>setDiscard(false)}><Stack className="network-pad"><Inline><Button onClick={()=>setDiscard(false)}>继续编辑</Button><Button variant="danger" onClick={onClose}>放弃修改</Button></Inline></Stack></Dialog>}
+    {discard&&<Dialog title="放弃未保存的修改？" onClose={()=>setDiscard(false)}><DialogActions><Button data-dialog-default variant="primary" onClick={()=>setDiscard(false)}>继续编辑</Button><Button variant="danger" onClick={onClose}>放弃修改</Button></DialogActions></Dialog>}
   </Dialog>;
 }
 function ScrollFields({children}:{children:React.ReactNode}) {return <div className="network-fields">{children}</div>;}

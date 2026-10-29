@@ -4,8 +4,8 @@ import {resolve,join,delimiter} from 'node:path';
 import {chromium} from 'playwright';
 import {launch,rpc,pluginRpc,until,stop,delay,nativeWindow} from './harness.mjs';
 const output=resolve(process.env.T010_NATIVE_OUTPUT??'.qa/t010/native');await mkdir(output,{recursive:true});
-const config=JSON.parse((await readFile('.qa/t010/linux/test-config.json','utf8')).replace(/^\uFEFF/,''));
-assert.equal(config.host,'127.0.0.1');assert.equal(config.port,22281);
+const config=JSON.parse((await readFile(process.env.SODECK_TEST_REMOTE_CONFIG??'.qa/t010/linux/test-config.json','utf8')).replace(/^\uFEFF/,''));
+assert.equal(config.host,'127.0.0.1');assert.ok(Number.isInteger(config.port)&&config.port>1024);
 process.env.SODECK_PLUGIN_PACKAGES=[resolve('resources/terminal.sodeck-plugin'),resolve('resources/files.sodeck-plugin')].join(delimiter);
 process.env.SODECK_PLUGIN_DEBUG_PORTS=JSON.stringify({'sodeck.files':9762,'sodeck.terminal':9763});
 let app,file,term;const browsers=[],results=[],hiddenIntervals=[];
@@ -14,12 +14,14 @@ const snapshot=()=>invoke(file,'files.snapshot',{countUnits:200});
 const note=text=>{results.push(text);console.log(text);};
 async function pages(port){const browser=await chromium.connectOverCDP('http://127.0.0.1:'+port);browsers.push(browser);return browser;}
 const all=browser=>browser.contexts().flatMap(c=>c.pages());
-async function entered(page,text){await page.locator('.xterm-helper-textarea').pressSequentially(text+'\r');}
+async function entered(page,text){await page.locator('.xterm-helper-textarea').pressSequentially(text);await page.locator('.xterm-helper-textarea').press('Enter');}
+async function confirmed(page,path){const scope=await page.evaluate(()=>({workspaceId:window.__SODECK_CONTEXT__.workspaceId,workspaceGeneration:window.__SODECK_CONTEXT__.workspaceGeneration}));await until(async()=>{const {value}=await pluginRpc(page,'state.get',{contract:'workspace.directory.v1',target:scope});return value.status==='ready'&&Buffer.from(value.physicalPath?.bytesBase64??'','base64').toString()===path;},30000);}
+async function integration(enabled){const pageId='plugin:sodeck.terminal:general';const {snapshot:s}=await rpc(app.page,'settings.page.get',{pageId});await rpc(app.page,'settings.commit',{pageId,providerEpoch:s.providerEpoch,schemaVersion:s.schemaVersion,expectedRevision:s.settingsRevision,operationId:crypto.randomUUID(),changes:[{key:'shellIntegration',value:enabled}]});}
 async function followed(path){return until(async()=>{const s=await snapshot();return s.path===path&&!s.follow.loading?s:false;},30000);}
 try{
  app=await launch({data:join(output,'data-'+Date.now()),shellPort:9761,pluginPort:9762});
  const server=await rpc(app.page,'servers.create',{name:'T010 directory follow',host:config.host,port:config.port,username:config.username,authType:'key'});
- await rpc(app.page,'auth.set',{serverId:server.id,privateKeyPath:config.privateKeyPath,remember:true});
+ await rpc(app.page,'auth.ssh.set',{serverId:server.id,privateKeyPath:config.privateKeyPath,remember:true});
  try{const lease=await rpc(app.page,'connections.acquire',{serverId:server.id,workspaceId:server.id,operationId:crypto.randomUUID()});await rpc(app.page,'connections.release',{leaseId:lease.leaseId});}
  catch(e){if(e.code!=='HOST_KEY_REQUIRED')throw e;await rpc(app.page,'hosts.trust',{serverId:server.id,challengeId:e.details.challengeId,fingerprint:e.details.fingerprint});}
  await rpc(app.page,'workspaces.open',{serverId:server.id});
@@ -44,8 +46,9 @@ try{
  await entered(second,'cd /etc');await followed('/etc');
  await rpc(app.page,'views.activate',{viewId:firstView});await followed('/var/log');
  await file.getByRole('button',{name:'跟随终端',exact:true}).click();
- await entered(term,'cd /tmp');await delay(1800);assert.equal((await snapshot()).path,'/var/log');
- await file.getByRole('button',{name:'定位到终端目录',exact:true}).click();await followed('/tmp');assert.equal((await snapshot()).follow.enabled,false);
+ await entered(term,'cd /tmp');await confirmed(term,'/tmp');assert.equal((await snapshot()).path,'/var/log');
+ await file.getByRole('button',{name:'定位到终端目录',exact:true}).click();
+ await followed('/tmp');assert.equal((await snapshot()).follow.enabled,false);
  note('DF-01/03: terminal switching uses independent cwd; follow toggle and one-shot location remain independent');
  await invoke(file,'follow.setEnabled',{enabled:true});await followed('/tmp');
  const fileView=await file.evaluate(()=>window.__SODECK_CONTEXT__.viewId);
@@ -62,7 +65,7 @@ try{
  await entered(term,'cd /tmp');await followed('/tmp');
  await entered(term,'cd /usr/share');await until(async()=>(await snapshot()).follow.loading);await invoke(file,'files.cancel');await delay(500);
  const canceledPath=(await snapshot()).path;assert.equal((await snapshot()).follow.paused,true);
- await entered(term,'cd /etc');await delay(2000);assert.equal((await snapshot()).path,canceledPath);
+ await entered(term,'cd /etc');await confirmed(term,'/etc');assert.equal((await snapshot()).path,canceledPath);
  await invoke(file,'follow.locateOnce');await followed('/etc');assert.equal((await snapshot()).follow.paused,true);
  await invoke(file,'follow.setEnabled',{enabled:true});await followed('/etc');
  note('DF-05/11: path draft and manual submit win over delayed automatic work; cancel pauses future prompts until explicit locate');
@@ -85,7 +88,7 @@ try{
  await nativeWindow(app,'show',{WindowHandle:main.handle});await nativeWindow(app,'show',{WindowHandle:detached.handle});await followed('/usr');
  note('DC-04: explicit native activation of a detached terminal selects its own cwd');
  await rpc(app.page,'views.move',{viewId:secondView,placement:'center'});await rpc(app.page,'views.activate',{viewId:firstView});await followed('/etc');
- await invoke(term,'settings.shellIntegration',{enabled:false});
+ await integration(false);
  await entered(term,'cd /var');await followed('/var');
  await rpc(app.page,'commands.execute',{pluginId:'sodeck.terminal',commandId:'terminal.new',workspaceId:server.id,operationId:crypto.randomUUID()});
  const legacy=await until(async()=>{for(const p of all(tb))if(!p.isClosed()){const id=await p.evaluate(()=>window.__SODECK_CONTEXT__?.viewId);if(id&&id!==firstView&&id!==secondView)return p;}},20000);
@@ -93,7 +96,7 @@ try{
  await nativeWindow(app,'show',{WindowHandle:main.handle});
  await entered(legacy,"printf 'T010_%s_OK\\n' LEGACY");await until(async()=>(await legacy.locator('.xterm-rows>div').allTextContents()).join('').includes('T010_LEGACY_OK'));
  assert.equal((await snapshot()).path,'/var');
- await invoke(legacy,'settings.shellIntegration',{enabled:true});
+ await integration(true);
  const legacyView=await legacy.evaluate(()=>window.__SODECK_CONTEXT__.viewId);
  await rpc(app.page,'commands.execute',{pluginId:'sodeck.terminal',commandId:'terminal.reconnect',viewId:legacyView,operationId:crypto.randomUUID()});await followed('/home/'+config.username);
  note('DR-09: setting affects new/reconnected terminals only; original shell remains usable when integration is disabled');
@@ -104,11 +107,11 @@ try{
  const originalScope=await file.evaluate(()=>({workspaceId:window.__SODECK_CONTEXT__.workspaceId,workspaceGeneration:window.__SODECK_CONTEXT__.workspaceGeneration}));
  const resourceIds=(await rpc(app.page,'resources.list')).ptys.map(p=>p.id).sort();
  const move=await rpc(app.page,'workspaces.move',{workspaceId:server.id,operationId:crypto.randomUUID()});
- await rpc(app.page,'windows.merge',{sourceWindowId:move.targetWindowId,targetWindowId:'main',operationId:crypto.randomUUID()});
+ try{await rpc(app.page,'windows.merge',{sourceWindowId:move.targetWindowId,targetWindowId:'main',operationId:crypto.randomUUID()});}catch(e){assert.equal(e.code,'CLOSE_REVIEW_REQUIRED');}await until(async()=>!(await rpc(app.page,'workbench.snapshot')).workspaces.some(w=>w.ownerWindowId===move.targetWindowId));
  file=await until(async()=>{for(const p of all(fb))if(!p.isClosed()&&await p.evaluate(()=>window.__SODECK_CONTEXT__?.viewId)===fileView)return p;});
  await followed('/home/'+config.username);assert.deepEqual((await rpc(app.page,'resources.list')).ptys.map(p=>p.id).sort(),resourceIds);
  const other=await rpc(app.page,'servers.create',{name:'T010 isolated workspace',host:config.host,port:config.port,username:config.username,authType:'key'});
- await rpc(app.page,'auth.set',{serverId:other.id,privateKeyPath:config.privateKeyPath,remember:true});await rpc(app.page,'workspaces.open',{serverId:other.id});
+ await rpc(app.page,'auth.ssh.set',{serverId:other.id,privateKeyPath:config.privateKeyPath,remember:true});await rpc(app.page,'workspaces.open',{serverId:other.id});
  const otherFile=await until(async()=>{for(const p of all(fb))if(!p.isClosed()&&await p.evaluate(()=>window.__SODECK_CONTEXT__?.workspaceId)===other.id)return p;});
  await until(async()=>(await invoke(otherFile,'files.snapshot')).path==='/home/'+config.username,30000);
  await invoke(otherFile,'follow.setEnabled',{enabled:false});await invoke(otherFile,'files.locate',{text:'/etc'});

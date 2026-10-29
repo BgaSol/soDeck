@@ -7,7 +7,7 @@ import './menu.css';
 
 type Payload={fontSize:number;limits?:{left:number;top:number;right:number;bottom:number};token:string;items:MenuEntry[];anchor:{x:number;y:number};keyboard:boolean};
 declare global{interface Window{__SODECK_APPLICATION_MENU__?:Payload;__sodeckApplicationMenuReason?:string;}}
-const icons={appearance:Palette,plugins:Package,resources:Activity,calls:Logs,recall:Layers,merge:ArrowDownToLine,layoutRetry:Save,exit:Power};
+const icons={appearance:Palette,plugins:Package,communication:Activity,resources:Activity,calls:Logs,recall:Layers,merge:ArrowDownToLine,layoutRetry:Save,exit:Power};
 export function ApplicationMenuPopup(){
  const data=window.__SODECK_APPLICATION_MENU__!;
  const panel=useRef<HTMLDivElement>(null),finished=useRef(false);

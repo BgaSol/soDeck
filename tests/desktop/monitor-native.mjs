@@ -1,0 +1,42 @@
+import assert from 'node:assert/strict';
+import {writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
+import {monitorHarness,invoke,snapshot} from './monitor-harness.mjs';
+import {rpc,until,delay} from './harness.mjs';
+const h=await monitorHarness('native'),checks=[];let failure;
+try{
+  const app=await h.start(),server=await h.create('T024 Linux resource monitor');
+  await rpc(app.page,'workspaces.open',{serverId:server.id});
+  await writeFile(join(h.output,'startup-workbench.json'),JSON.stringify(await rpc(app.page,'workbench.snapshot'),null,2));
+  await writeFile(join(h.output,'startup-info.json'),JSON.stringify(await rpc(app.page,'app.info'),null,2));
+  await delay(1500);await app.page.screenshot({path:join(h.output,'startup.png')});await writeFile(join(h.output,'startup-ui.json'),JSON.stringify({errors:app.errors,text:await app.page.locator('body').innerText()},null,2));
+  const page=await h.view('sodeck.monitor',server.id),terminal=await h.view('sodeck.terminal',server.id);
+  const current=await until(async()=>{const s=await snapshot(page);return s.cpu.value?.percent!==null&&s.cpu.value&&s.memory.value&&s.mounts.some(m=>m.capacity.value)?s:false;},45000);
+  assert.equal(current.system.os,'Linux');assert.ok(current.cpu.value.percent>=0&&current.cpu.value.percent<=100);assert.equal(current.cleanupPending,false);
+  checks.push('real Linux CPU, memory, inventory and filesystem capacity through plugin exec');
+  const workbench=await rpc(app.page,'workbench.snapshot'),workspace=workbench.workspaces.find(w=>w.workspaceId===server.id);
+  await writeFile(join(h.output,'workbench.json'),JSON.stringify(workbench,null,2));
+  assert.ok(workbench.views.filter(v=>v.viewType==='monitor.resources').length===1);
+  await page.screenshot({path:join(h.output,'monitor-live.png')});
+  await terminal.locator('.xterm-helper-textarea').pressSequentially("printf 'T024-TERMINAL-ALIVE\\n'\r");
+  await until(async()=>(await terminal.locator('.xterm-rows').innerText()).includes('T024-TERMINAL-ALIVE'));
+  checks.push('terminal remains interactive while monitor samples');
+  await invoke(page,'monitor.setOptions',{options:{paused:true}});
+  await until(async()=>{const s=await snapshot(page);return s.options.paused&&!s.cleanupPending&&s.diagnostics.activeJobs===0;},8000);
+  const paused=await snapshot(page);await delay(2500);assert.equal((await snapshot(page)).cpu.updatedAt,paused.cpu.updatedAt);
+  await invoke(page,'monitor.refresh',{actionId:crypto.randomUUID()});
+  await until(async()=>{const s=await snapshot(page);return s.cpu.updatedAt!==paused.cpu.updatedAt&&!s.cleanupPending;},15000);
+  const once=await snapshot(page);assert.equal(once.options.paused,true);await delay(2500);assert.equal((await snapshot(page)).cpu.updatedAt,once.cpu.updatedAt);
+  checks.push('pause releases resources; refresh once stays paused');
+  await invoke(page,'monitor.setOptions',{options:{paused:false}});await until(async()=>(await snapshot(page)).connection==='connected',15000);
+  const viewId=await page.evaluate(()=>window.__SODECK_CONTEXT__.viewId);
+  await rpc(app.page,'workbench.configure',{dockViewId:viewId,visible:false});
+  await until(async()=>{const s=await snapshot(page);return !s.visible&&!s.cleanupPending&&s.diagnostics.activeJobs===0;},8000);
+  const hidden=await snapshot(page);await delay(2500);assert.equal((await snapshot(page)).cpu.updatedAt,hidden.cpu.updatedAt);
+  await rpc(app.page,'views.activate',{viewId});await until(async()=>(await snapshot(page)).connection==='connected',15000);
+  checks.push('hidden dock stops sampling and reuses shared connection on show');
+  await writeFile(join(h.output,'sample.json'),JSON.stringify(await snapshot(page),null,2));
+  await rpc(app.page,'workspaces.close',{workspaceId:server.id});await until(async()=>(await rpc(app.page,'resources.list')).leases.length===0,15000);
+  checks.push('workspace close returns leases to zero');
+}catch(error){failure={message:error.message,stack:error.stack};throw error;}
+finally{await writeFile(join(h.output,'results.json'),JSON.stringify({checks,failure},null,2));await h.stop();}

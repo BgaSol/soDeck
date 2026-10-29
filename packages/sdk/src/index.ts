@@ -1,15 +1,33 @@
+import {validatePluginManagement} from './plugin-management';
+import {validateUpdates} from './updates';
+export {updatesClient} from './updates';
+import {validateConnectionDiagnostics,diagnosticFaultMessage} from './connection-diagnostics';
+export * from './connection-diagnostics';
+import {validateSettings} from './settings';
 import {validateWorkbenchUi} from './workbench-ui';
+import {validateObservation,type DiagnosticMetadata} from './observation';
+export {createObservation,observeHistory,DiagnosticEntities} from './observation';
+export type {DiagnosticMetadata,Invocation,ObservationTransport} from './observation';
 export {openDialog,dialogContext,readyDialog,completeDialog,closeDialog,onDialogCancel} from './dialogs';
 export type {WorkbenchContributionsV2,PluginMetadata,ToolContribution,TabCreateContribution,DialogResult} from './workbench-ui';
 import {validateDirectory} from './directory';
+import {validateConnectionConfiguration} from './connection-configuration';
+export type {HomeIntent,HomeSnapshot,HomePage,HomeAttached,HomeOpened} from './connection-home.generated';
+export type {DependencyIdentity} from './server-catalog.generated';
+export type {Proxy,ProxyItem,ProxyPage,ProxySave,ProxySaved,ProxyOperationResult} from './proxy-catalog.generated';
+export type {CredentialTarget,CredentialPrepare,CredentialPrepared,CredentialSet,CredentialStored,CredentialOperationResult} from './credential-configuration.generated';
 import {validateCatalog} from './server-catalog';
 export type {Group,CatalogItem,CatalogPage,GroupsPage,CatalogSave,OperationResult} from './server-catalog';
 import {validateNetwork} from './network';
-import {validateConnectionRoute} from './connection-route';
+import {validateTraffic} from './traffic';
+export {byteCount,formatByteCount,formatTrafficRate,decodeTrafficSummary,communicationObjectId} from './traffic';
+export type {Summary as CommunicationSummary,Target as CommunicationTarget,Page as CommunicationPage} from './traffic';
+import {validateAccessPath} from './connection-route';
 export {connectionCommandTimeout} from './connection-timeout';
-export {decodeRouteStatus,decodeRouteStatusV2} from './connection-route';
-export type {ConnectionRoute,RouteServer,RouteSummary,RouteStatus} from './connection-route.generated';
-export type {RouteMeta,RouteReference,NodePage,ServerPage,RouteStatusV2,ResourcePage,ResourceRouteV2,DependencyPage,SegmentPage} from './connection-route-v2.generated';
+export {decodeRouteStatus} from './connection-route';
+export type {AccessPath,SocksProxy,RouteServer,RouteNode} from './connection-route.generated';
+export type {RouteStep} from './connection-route.generated';
+export type {RouteMeta,RouteReference,NodePage,ServerPage,RouteStatus,ResourcePage,ResourceRoute,DependencyPage,SegmentPage} from './connection-route.generated';
 import {validatePty} from './pty';
 import { validateWorkbenchRequest,validateWorkbenchResult,validateWorkbenchEvent } from "./workbench";
 import { validateRemoteRead } from './remote-read';
@@ -20,11 +38,13 @@ export * as remoteReadContract from './remote-read';
 export * as workbenchContract from "./workbench";
 export { initializeTheme, applyTheme, showMenu, currentTheme, subscribeTheme, onThemeError, retryTheme } from './presentation';
 export type { ThemeResult, LiveTheme, MenuItem, ThemePreference, ThemeCatalog, ThemeCatalogEntry } from './presentation';
-export interface RpcRequest { apiVersion: 1; requestId: string; method: string; params: unknown; timeoutMs?: number }
+export interface RpcRequest { apiVersion: 1; requestId: string; method: string; params: unknown; timeoutMs?: number; metadata?:DiagnosticMetadata }
 export interface RpcFault { code: string; message: string; details?: unknown; operationId?: string; phase?: string }
 export interface RpcResponse<T = unknown> { requestId: string; result?: T; error?: RpcFault }
 export interface CoreNotification { type: string; payload?: unknown }
 export interface ViewContext {
+  diagnosticContextVersion?:1;
+  observationCreditBytes?:number;
   dialog?:import('./dialogs').DialogContext;surfaceWindowId?:string;
   pluginId?: string; workspaceGeneration?: string;
   theme?: import('./workbench.generated').ThemeResponse;
@@ -52,10 +72,15 @@ declare global {
 export type Transport = (request: RpcRequest) => Promise<RpcResponse>;
 export function createCore(transport: Transport) {
   return {
-    async call<T = unknown>(method: string, params: unknown = {}, timeoutMs = 35_000): Promise<T> {
-      const invalid = validateWorkbenchUi('x-methods',method,params) ?? validateCatalog('x-methods',method,params) ?? validateNetwork('x-methods',method,params) ?? validateConnectionRoute('x-methods',method,params) ?? validateWorkbenchRequest(method, params) ?? validateRemoteRead('x-methods',method,params) ?? validateState('x-methods',method,params) ?? validateDirectory('x-methods',method,params) ?? validatePty('x-methods',method,params);
+    async call<T = unknown>(method: string, params: unknown = {}, timeoutMs = 35_000, metadata?:DiagnosticMetadata): Promise<T> {
+      const updatesInvalid=validateUpdates('x-methods',method,params);if(updatesInvalid)throw new CoreError({code:'INVALID_PARAMS',message:updatesInvalid});
+      const settingsInvalid=validateSettings('x-methods',method,params);if(settingsInvalid)throw Object.assign(new Error(settingsInvalid),{code:'INVALID_PARAMS'});
+      const observationInvalid=validateObservation('x-methods',method,params);if(observationInvalid)throw new CoreError({code:'INVALID_PARAMS',message:observationInvalid});
+      const trafficInvalid=validateTraffic('x-methods',method,params);
+      if(trafficInvalid)throw new CoreError({code:'INVALID_PARAMS',message:trafficInvalid});
+      const invalid = validatePluginManagement('x-methods',method,params) ?? validateConnectionDiagnostics('x-methods',method,params) ?? validateConnectionConfiguration('x-methods',method,params) ?? validateWorkbenchUi('x-methods',method,params) ?? validateCatalog('x-methods',method,params) ?? validateNetwork('x-methods',method,params) ?? validateAccessPath('x-methods',method,params) ?? validateWorkbenchRequest(method, params) ?? validateRemoteRead('x-methods',method,params) ?? validateState('x-methods',method,params) ?? validateDirectory('x-methods',method,params) ?? validatePty('x-methods',method,params);
       if (invalid) throw new CoreError({ code: "INVALID_PARAMS", message: invalid });
-      const request: RpcRequest = { apiVersion: 1, requestId: crypto.randomUUID(), method, params, timeoutMs };
+      const request: RpcRequest = { apiVersion: 1, requestId: crypto.randomUUID(), method, params, timeoutMs,...(metadata?{metadata}:{}) };
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         const response = await Promise.race([
@@ -64,7 +89,12 @@ export function createCore(transport: Transport) {
         ]);
         if (response.requestId !== request.requestId) throw new CoreError({ code: "PROTOCOL_ERROR", message: "核心响应与当前请求不匹配" });
         if (response.error) throw new CoreError(response.error);
-        const invalidResult=validateWorkbenchUi('x-results',method,response.result) ?? validateCatalog('x-results',method,response.result) ?? validateNetwork('x-results',method,response.result) ?? validateConnectionRoute('x-results',method,response.result) ?? validateWorkbenchResult(method,response.result) ?? validateRemoteRead('x-results',method,response.result) ?? validateState('x-results',method,response.result) ?? validateDirectory('x-results',method,response.result) ?? validatePty('x-results',method,response.result);
+        const updatesResult=validateUpdates('x-results',method,response.result);if(updatesResult)throw new CoreError({code:'PROTOCOL_ERROR',message:updatesResult});
+        const settingsInvalidResult=validateSettings('x-results',method,response.result);if(settingsInvalidResult)throw Object.assign(new Error(settingsInvalidResult),{code:'PROTOCOL_ERROR'});
+      const observationResult=validateObservation('x-results',method,response.result);if(observationResult)throw new CoreError({code:'PROTOCOL_ERROR',message:observationResult});
+        const trafficInvalidResult=validateTraffic('x-results',method,response.result);
+        if(trafficInvalidResult)throw new CoreError({code:'PROTOCOL_ERROR',message:trafficInvalidResult});
+        const invalidResult=validatePluginManagement('x-results',method,response.result) ?? validateConnectionDiagnostics('x-results',method,response.result) ?? validateConnectionConfiguration('x-results',method,response.result) ?? validateWorkbenchUi('x-results',method,response.result) ?? validateCatalog('x-results',method,response.result) ?? validateNetwork('x-results',method,response.result) ?? validateAccessPath('x-results',method,response.result) ?? validateWorkbenchResult(method,response.result) ?? validateRemoteRead('x-results',method,response.result) ?? validateState('x-results',method,response.result) ?? validateDirectory('x-results',method,response.result) ?? validatePty('x-results',method,response.result);
         if(invalidResult)throw new CoreError({code:'PROTOCOL_ERROR',message:invalidResult,details:response.result});
         return response.result as T;
       } finally { if (timer !== undefined) clearTimeout(timer); }
@@ -107,11 +137,13 @@ const nativeTransport: Transport = async request => {
 };
 
 export const core = createCore(nativeTransport);
+export const observationTransport={get observationCreditBytes(){return context().observationCreditBytes??0;},call:<T=unknown>(method:string,params:unknown={},metadata?:DiagnosticMetadata)=>core.call<T>(method,params,35_000,metadata),onNotification:onCoreNotification};
 export function context(): Readonly<ViewContext> { return window.__SODECK_CONTEXT__ ?? {}; }
 export function onCoreNotification(listener: (notification: CoreNotification) => void): () => void {
   installBridge(); listeners.add(listener); return () => listeners.delete(listener);
 }
 export function errorMessage(error: unknown): string {
+  const diagnostic=diagnosticFaultMessage(error);if(diagnostic)return diagnostic;
   if (error instanceof Error) return error.message;
   if (typeof error === "object" && error !== null && "message" in error && typeof error.message === "string") return error.message;
   return "操作未完成，请重试或查看调用记录。";
@@ -124,3 +156,4 @@ export function encodeBytes(bytes: Uint8Array): string {
 export function decodeBytes(encoded: string): Uint8Array {
   return Uint8Array.from(atob(encoded), char => char.charCodeAt(0));
 }
+export {isConnectionAuthenticationError} from './connection-authentication';

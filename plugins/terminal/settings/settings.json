@@ -1,0 +1,47 @@
+{
+  "descriptorVersion": 1,
+  "pluginId": "sodeck.terminal",
+  "pages": [
+    {
+      "id": "general",
+      "title": "终端",
+      "order": 100,
+      "schemaVersion": 1,
+      "sections": [
+        {
+          "id": "display",
+          "title": "终端显示",
+          "fields": [
+            {
+              "key": "fontSize",
+              "label": "字号",
+              "type": "integer",
+              "default": 14,
+              "minimum": 10,
+              "maximum": 24,
+              "effect": "immediate",
+              "keywords": [
+                "字体",
+                "大小"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "integration",
+          "title": "目录集成",
+          "fields": [
+            {
+              "key": "shellIntegration",
+              "label": "Shell 目录集成",
+              "type": "boolean",
+              "default": true,
+              "effect": "newSession",
+              "description": "仅在确认支持的 Linux/Bash 上启用；Windows 或无法确认时使用普通 Shell。仅影响新建或明确重连的终端，探测及集成可能额外读取非交互启动配置。"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

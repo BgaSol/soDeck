@@ -1,8 +1,16 @@
 # 插件 SDK、通信与版本契约
 
-更新日期：2026-10-27 · 修订：r19 · 状态：通用契约基线；实际支持见任务结果，T-016事件增量为能力设计。
+更新日期：2026-10-29 · 修订：r25 · 状态：通用契约基线；T-028增量待确认，实际支持见各任务结果。
 
-T-016按P-53提出[统一事件/诊断契约](../core/observability.md)：宿主绑定来源和操作上下文，插件随独立包携带受限、版本化的事件/快照/指标描述，使用核心公开采集与查询服务。描述不是权限清单；旧包可继续运行但业务采集覆盖不足明确可见。历史类型保留、可补读feed、防审计递归和未来AI只读证据路径见F-CORE-018～022。新能力名称/manifest字段/schema与API版本在后续代码方案固定，本稿不占用T-015的4.8版本、不修改旧strict DTO、不开放插件互调或外部上传。
+T-028新增[插件管理契约方案（第5节）](plugin-management-implementation.md)：拟API/SDK6.2、新plugins.management.v1与plugins.optional-signature.v1，分页元数据、启用偏好/原子回执、导入操作及应用级feed。旧plugins.list/metadata.list/prepareUpdate严格DTO保持，当前^6.1插件无需重编译。停用/未签名不改变公开调用归因或P-14；签名要求统一由[F-CORE-032](../core/plugin-management.md)替代。所有新接口尚未实现，确认见[T-028](../tasks/T-028-plugin-management.md)。
+
+T-027新主版本建议：[混合连接代码方案r1 §6/7](mixed-route-implementation.md#6-契约宿主和界面修改位置)采用API/SDK6.0.0，四官方插件声明^6.0.0及实际v2路径能力，旧包/旧核心互相明确拒绝，不加API5适配。插件职责和独立构建/签名/重启更新保持，各插件文档有具体代码与测试；MR-CODE-10要求API6环境内单包A→B独立更新，不用全量替换冒充。当前未实施，确认见[T-027 r2](../tasks/T-027-mixed-route.md)。
+
+T-023设置接入推荐增量见[F-CORE-028 r2 §4](../core/settings.md#4-核心与插件契约)及[代码方案r1 §4～6](settings-implementation.md#4-插件声明格式和校验)：API5.1新增settings.contributions.v1/storage.preferences.v1/ui.settings.v1，旧settings.v1/get/set键值能力保留；manifest可选contributes.settings引用签名包内settings/settings.json。固定provider回调经现有wire、带代次/修订提交、同文件原子回执、结果核对与settings.page/catalog状态feed。插件拥有配置语义/校验/布局/生效，核心拥有注册/呈现/编排/通用存储，不开放插件互调或权限审批。SCODE-01～03/09/11及SET/TERM-SET验证契约和独立更新；旧无声明插件可运行，更新重启生效，新增接口尚未实现，等待整体方案确认。
+
+T-016 r5[接入需求](../core/observability/integration.md)基于当前API4.9明确分组capability、包内版本化采集描述、UI/worker统一无DOM采集client、经协商的诊断上下文元数据及一个在途采集请求。上下文不塞业务params、不破坏旧strict DTO，完整事件查询另用events.v2.*；新采集包需相应能力，旧包仍audit-only。类型注册受真实包身份约束，不是权限表；插件事件不能作跨插件命令。[代码方案r1](observability-implementation.md)固定API/SDK4.10、可选manifest.observability={descriptorVersion:1,path}、metadata.diagnostics={version:1,contextRef}、worker diagnosticContextVersion协商、invoke第三上下文参数与宿主同实例转交。旧严格DTO不变，diagnostics.get保留，新任务使用diagnostics.capture.get/cancel；v2健康/策略/清理独立。API/SDK4.10及三个独立采集包已实现，版本支持和验证边界见[T-016结果](../tasks/T-016-results.md)。
+
+T-016按P-53提出[统一事件/诊断契约](../core/observability.md)：宿主绑定来源和操作上下文，插件随独立包携带受限、版本化的事件/快照/指标描述，使用核心公开采集与查询服务。描述不是权限清单；旧包可继续运行但业务采集覆盖不足明确可见。历史类型保留、可补读feed、防审计递归和未来AI只读证据路径见F-CORE-018～022。新能力名称/manifest字段/schema与API版本已在本轮代码方案固定，本稿不占用T-015的4.8版本、不修改旧strict DTO、不开放插件互调或外部上传。
 
 T-015增量已在[代码方案r1 §3～5](workflow-polish-implementation.md)固定：API/SDK4.8、servers.catalog.v1/plugins.metadata.v1/workspace.contributions.v2/ui.dialog.v1能力，manifest可选displayName与contributes.presentation，新方法/投影和临时模态endpoint。新增两份schema及生成器，不给旧strict DTO塞字段；新核心兼容旧包，新包最低API4.8。边界来源[F-CORE-017](../core/plugin-display.md)/[F-CORE-008](../core/workbench-interaction.md)/[F-PROXY-003](../plugins/proxy/features/tunnel-panel.md)。本次尚未编码，不将提案描述为已发布接口。
 

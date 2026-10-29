@@ -1,9 +1,9 @@
 {
   "pluginId": "sodeck.terminal",
-  "version": "0.8.0",
+  "version": "0.13.1",
   "requires": {
     "core": ">=2.0.0, <3.0.0",
-    "pluginApi": "^4.8.0",
+    "pluginApi": "^6.1.0",
     "capabilities": [
       "servers.v1",
       "connections.v1",
@@ -25,7 +25,19 @@
       "ui.theme.catalog.v1",
       "ui.theme.dopamine.v1",
       "workspace.contributions.v2",
-      "plugins.metadata.v1"
+      "plugins.metadata.v1",
+      "observability.events.v2",
+      "observability.context.v1",
+      "observability.snapshots.v1",
+      "observability.metrics.v1",
+      "settings.contributions.v1",
+      "storage.preferences.v1",
+      "ui.settings.v1",
+      "connections.route.v2",
+      "connections.diagnostics.v1",
+      "ui.connectionDiagnostics.v1",
+      "auth.ssh.confirm.v1",
+      "runtime.clock.v1"
     ],
     "platforms": [
       "windows"
@@ -105,8 +117,16 @@
         }
       ],
       "dialogs": []
+    },
+    "settings": {
+      "descriptorVersion": 1,
+      "path": "settings/settings.json"
     }
   },
   "dataSchemaVersion": 1,
-  "displayName": "终端"
+  "displayName": "终端",
+  "observability": {
+    "descriptorVersion": 1,
+    "path": "diagnostics/observability.json"
+  }
 }

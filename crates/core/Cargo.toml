@@ -7,16 +7,19 @@ edition = "2021"
 sodeck-communication = { path = "../communication" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rusqlite = { version = "0.38", features = ["bundled", "backup"] }
+rusqlite = { version = "0.38", features = ["bundled", "backup", "hooks"] }
 ssh2 = { version = "0.9", features = ["vendored-openssl", "openssl-on-win32"] }
 base64 = "0.22"
 sha2 = "0.10"
+hmac = "0.12"
 uuid = { version = "1", features = ["v4"] }
 zeroize = "1"
 regex = "1"
+getrandom = "0.3"
 polling = "3"
 socket2 = "0.6"
 unicode-normalization = "0.1"
+idna = "1"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_Memory", "Win32_Foundation"] }

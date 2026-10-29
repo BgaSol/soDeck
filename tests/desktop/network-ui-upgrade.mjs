@@ -20,7 +20,7 @@ const open=async serverId=>{
 try {
   await start(baseline);assert.equal((await version()).activeVersion,'0.2.1');
   // No SSH connection is started; this tests saved configuration and package activation only.
-  const server=await rpc(app.page,'servers.routes.v2.create',{name:'隔离更新验证',host:'127.0.0.1',port:1,username:'test',connectionRoute:{kind:'direct'}});
+  const server=await rpc(app.page,'servers.routes.create',{name:'隔离更新验证',host:'127.0.0.1',port:1,username:'test',accessPath:{kind:'direct'}});
   let page=await open(server.id);
   const rule=await pluginRpc(page,'plugin.invoke',{command:'network.save',args:{expectedRevision:0,rule:{name:'保留原有规则',type:'network-proxy',bindMode:'fixed',port:10808,autoReconnect:false}}});
   await rpc(app.page,'plugins.prepareUpdate',{path:candidate});

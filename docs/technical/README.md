@@ -1,6 +1,22 @@
 # 技术方案与技术选型
 
-更新日期：2026-10-27 · 修订：r14 · 状态：总体候选与取舍背景；已采用组合及验证限制以各任务结果为准。
+更新日期：2026-10-29 · 修订：r27 · 状态：总体候选与取舍背景；已采用组合及验证限制以各任务结果为准。
+
+[在线升级代码方案r2](online-updates-implementation.md)已获用户实施确认：专用GitHub标签/完整签名目录、五组件构建输入与实际版本、来源/候选提交点、Tauri缓存验签及NSIS退出恢复、API6.3且core7/观测2保持。dev.21本地实现、QA安装A→B、四插件与试用包结果见[T-029实施结果](../tasks/T-029-results.md)，操作入口见[发布工具](release-v2.md)。G5真实Actions/公网验证待另行授权，不视为已发布。
+
+[插件管理代码方案r1](plugin-management-implementation.md)对应[T-028](../tasks/T-028-plugin-management.md)：API6.2增量、同一已验证字节快照、独立启用文件与启动/恢复门禁、设置草稿协调、第三方打包及Windows验证；保持core v7。实际实现与验证见[结果](../tasks/T-028-results.md)。
+
+[混合多级连接代码方案r1](mixed-route-implementation.md)对应[T-027 r2](../tasks/T-027-mixed-route.md)/[F-CORE-031 r2](../core/mixed-route.md)：按用户要求不做兼容，采用单一步骤表、API6/core v7备份重建、SSH/SOCKS顺序执行、凭据上下文/预算及四插件各自修改计划。MR-CODE-01～10与插件专项均已定义；当前仅设计，等待整体实施确认。
+
+[连接首页代码方案r1](connection-home-implementation.md)对应[T-025 r2](../tasks/T-025-connection-home.md)/[F-CORE-029 r2](../core/connection-home.md)：外壳独立模块/草稿，核心系统页选中与原生呈现、代理可靠目录、凭据条件写、两阶段关闭及HCODE-01～11；规划API5.3增量，旧契约和v6数据库保持，不默认重建库。与T-023设置退出和T-024呈现正确衔接，本轮未编码。
+
+[资源监控代码方案r1](server-monitor-implementation.md)对应[T-024 r2](../tasks/T-024-server-monitor.md)：独立插件采集/解析/趋势，公共clock、有界exec、系列图表与默认视图增量；API/SDK5.2顺接已授权的T-023/5.1，数据库不变。固定预算、Linux/BusyBox及Windows原生/独立更新验证；仅设计，未获本任务实施确认。
+
+统一设置代码方案见[T-023 r1](settings-implementation.md)：API5.1贡献与provider、成组原子保存/回执、主题v3、窗口退出、状态feed及终端独立更新已按确认范围实施。SCODE-01～11的分层证据、实际版本及目录包由[实施结果](../tasks/T-023-results.md)维护。
+
+[核心事件与诊断代码修改方案r1](observability-implementation.md)对应[T-016 r5](../tasks/T-016-observability.md)：基于当前API4.9/观测schema1，固定4.10/观测2、可信元数据、统一存储与三插件接入、证据及验证关口。仅观测四分区备份重建，同版本core5及凭据保留；问题/通知/AI和新诊断界面后续。等待用户最终确认，本轮未编码。
+
+[通信监控代码修改方案r1](communication-monitor-implementation.md)细化[T-019 r3](../tasks/T-019-connection-metrics.md)：真实计量、SSH响应探测、内存测速、公共观测存储、API4.9、原生工具窗、schema4→5及验证/开发包。当前仅设计，等待用户最终实施确认；三个先行实验尚未运行。
 
 本轮[T-015代码修改设计r2](workflow-polish-implementation.md)覆盖13项体验反馈及P-52数据库策略，固定模块、API4.8/SDK/manifest增量、分组事务、版本不一致时提示/备份/全新建库、通用原生模态、文件高度/容量、启动与六个关口；[任务r3](../tasks/T-015-workflow-polish.md)等待用户最终确认。旧库增量迁移提案已替代，文档中的新增接口/代码/脚本尚未建立。
 
@@ -32,6 +48,10 @@
 验证顺序与总体目标见[架构实施阶段](../architecture.md#4-实施顺序与架构验收)。尚未明确的指标由对应原型任务提前定义，不以事后结果倒推通过标准。
 
 ## 3. 详细方案
+
+- [SOCKS5 SSH 路径代码修改设计 r3](socks-route-implementation.md)，T-020 的主机隧道/网络代理边界、互斥 `accessPath`、显式 SSH 列表、API 5 单一契约、数据库 v6、SOCKS 协议、认证/复用和 SK-01～09 入口；已获确认实施，传输交接、统一替换和验证见[T-020 结果](../tasks/T-020-results.md)
+
+- [通信监控代码修改方案](communication-monitor-implementation.md)，覆盖四项功能的模块/文件、底层适配、接口与插件兼容、数据备份重建、有界资源及E1～E3/MCODE验证；确认与实测由T-019维护
 
 - [网络隧道插件代码实施方案](network-tunnel-implementation.md)，T-014 r7的QuickJS协议/规则、核心公开TCP/网络池/splice、二进制流、API4.7兼容、预算与真实Windows/Linux验证、独立开发包；已确认实施，结果见 T-014
 

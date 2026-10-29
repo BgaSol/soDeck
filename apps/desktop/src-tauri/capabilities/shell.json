@@ -1,6 +1,13 @@
 {
   "identifier": "shell",
   "description": "SoDeck core shell event and window APIs",
-  "windows": ["main", "workspace-*", "detached-*"],
-  "permissions": ["core:default"]
+  "windows": [
+    "main",
+    "workspace-*",
+    "detached-*",
+    "settings"
+  ],
+  "permissions": [
+    "core:default"
+  ]
 }

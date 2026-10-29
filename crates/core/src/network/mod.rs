@@ -53,6 +53,7 @@ struct PendingTcp {
 }
 struct Splice { handle: Handle, group: String, left: String, right: String, key: Key, active: bool, created: Instant }
 struct Receipt {
+    diagnostic:Option<Value>,
     caller: Caller,
     method: String, params: Value, scope: Option<WorkspaceScope>, group: Option<String>,
     canceled: Arc<AtomicBool>, outcome: Option<Result<Value>>, completed: Option<Instant>,
@@ -60,6 +61,8 @@ struct Receipt {
 }
 #[derive(Default)]
 pub(crate) struct Registry {
+    observed:HashMap<String,crate::observability::resource::ResourceObservation>,
+    observation:std::sync::Weak<crate::observability::Observability>,
     scopes: HashMap<String, String>, views: HashMap<String, (String, WorkspaceScope)>,
     groups: HashMap<String, Group>, listeners: HashMap<String, Listener>,
     endpoints: HashMap<String, Endpoint>, routes: HashMap<String, Route>, pools: HashMap<String, Pool>,
@@ -131,9 +134,11 @@ impl Registry {
         self.endpoints.insert(handle.id.clone(), Endpoint { handle: handle.clone(), group: group.into(),
             state: Arc::new(Mutex::new(Stream::default())), socket, connection: None,
             delivered, accepted:false, created: Instant::now(), exchange: None, closed_at:None, route:None });
+        if let Some(store)=self.observation.upgrade(){if let Some(g)=self.groups.get(group){let caller=store.resource_caller(&g.owner);self.observed.insert(handle.id.clone(),crate::observability::resource::ResourceObservation::new(&store,&caller,&handle.id,Some(handle.generation),None,"network.stream"));}}
         Ok(handle)
     }
     fn close_resource(&mut self, id: &str) {
+        let _observation=self.observed.remove(id);
         if self.groups.contains_key(id) {
             let g = self.groups.get_mut(id).unwrap();
             g.closed.get_or_insert_with(Instant::now); g.revision += 1;
@@ -167,6 +172,7 @@ impl Registry {
 
 impl Core {
     pub(crate) fn start_network(&self) {
+        self.network.lock().unwrap().observation=Arc::downgrade(&self.observability);
         let (send, receive) = std::sync::mpsc::sync_channel::<Job>(64);
         *self.network_jobs.lock().unwrap() = Some(send);
         let receive = Arc::new(Mutex::new(receive));
@@ -190,7 +196,11 @@ impl Core {
         }).expect("network I/O executor");
     }
     fn queue_network(&self, job: Job) -> Result<()> {
-        self.network_jobs.lock().unwrap().as_ref().ok_or_else(stale)?.try_send(job).map_err(|_| capacity())
+        let context=crate::observability::AuditScope::capture();
+        let diagnostic=crate::DiagnosticScope::capture();
+        self.network_jobs.lock().unwrap().as_ref().ok_or_else(stale)?.try_send(Box::new(move|core|{
+            let _scope=crate::observability::AuditScope::resume(context);let _diagnostic=crate::DiagnosticScope::resume(diagnostic);job(core);
+        })).map_err(|_| capacity())
     }
     pub fn register_network_view(&self, instance: &str, view: &str, scope: WorkspaceScope) -> Result<()> {
         let mut n = self.network.lock().unwrap();

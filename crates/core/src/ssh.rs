@@ -10,6 +10,7 @@ pub(crate) mod remote;
 pub(crate) mod observer;
 pub(crate) mod network;
 mod transport;
+mod route_executor;
 use std::{
     collections::{HashMap, VecDeque},
     io::{Read, Write},
@@ -27,25 +28,27 @@ const OUTPUT_BUDGET: usize = 2 * 1024 * 1024;
 const INPUT_BUDGET: usize = 256 * 1024;
 
 #[derive(Default)]
-pub(crate) struct TransportBudget { pub sessions: usize, pub bridges: usize }
-pub(crate) struct TransportReservation { budget: Arc<Mutex<TransportBudget>>, sessions: usize, bridges: usize }
+pub(crate) struct TransportBudget { pub sessions: usize, pub bridges: usize, pub proxy_contexts: usize, pub snapshot_bytes: usize }
+pub(crate) struct TransportReservation { budget: Arc<Mutex<TransportBudget>>, cost: crate::route::budget::Cost }
 impl TransportReservation {
-    fn reserve(budget: Arc<Mutex<TransportBudget>>, sessions: usize) -> Result<Self> {
-        let bridges = sessions.saturating_sub(1);
+    fn reserve(budget: Arc<Mutex<TransportBudget>>, cost: &crate::route::budget::Cost) -> Result<Self> {
         {
             let mut used = budget.lock().unwrap();
-            if sessions > 256 - used.sessions || bridges > 256 - used.bridges {
-                return Err(CoreError::new("CONNECTION_RESOURCES_EXHAUSTED", "连接资源不足，请释放其他连接后重试").details(json!({"requiredSessions":sessions,"availableSessions":256-used.sessions,"requiredBridges":bridges,"availableBridges":256-used.bridges})));
+            if cost.sessions > 256 - used.sessions || cost.bridges > 256 - used.bridges
+                || cost.proxy_contexts > 512 - used.proxy_contexts || cost.snapshot_bytes > 16*1024*1024 - used.snapshot_bytes {
+                return Err(CoreError::new("CONNECTION_RESOURCES_EXHAUSTED", "连接资源不足，请释放其他连接后重试").details(json!({"required":cost,"available":{"sessions":256-used.sessions,"bridges":256-used.bridges,"proxyContexts":512-used.proxy_contexts,"snapshotBytes":16*1024*1024-used.snapshot_bytes}})));
             }
-            used.sessions += sessions; used.bridges += bridges;
+            used.sessions += cost.sessions; used.bridges += cost.bridges;
+            used.proxy_contexts += cost.proxy_contexts; used.snapshot_bytes += cost.snapshot_bytes;
         }
-        Ok(Self { budget, sessions, bridges })
+        Ok(Self { budget, cost: cost.clone() })
     }
 }
 impl Drop for TransportReservation {
     fn drop(&mut self) {
         let mut used = self.budget.lock().unwrap();
-        used.sessions -= self.sessions; used.bridges -= self.bridges;
+        used.sessions -= self.cost.sessions; used.bridges -= self.cost.bridges;
+        used.proxy_contexts -= self.cost.proxy_contexts; used.snapshot_bytes -= self.cost.snapshot_bytes;
     }
 }
 
@@ -134,6 +137,7 @@ enum Command {
     Tcp(network::Open),
     Remote(remote::Job),
     Open {
+        traffic: Option<crate::traffic::Registration>,
         command:Option<String>,
         id: String,
         cols: u32,
@@ -166,10 +170,30 @@ pub struct Connection {
     canceled: Arc<AtomicBool>,
     socket: TcpStream,
     pub status: Arc<Mutex<String>>,
+    pub lifecycle: Arc<Mutex<Option<Value>>>,
     pub remote_metrics: Arc<Mutex<Value>>,
     pub network_metrics: Arc<Mutex<network::Metrics>>,
+    traffic: Option<Arc<crate::traffic::Traffic>>,
+    probe: crate::quality::probe::Slot,
 }
 impl Connection {
+    pub(crate) fn check_response(&self,budget:&Arc<crate::quality::probe::Budget>)->Result<Arc<crate::quality::probe::Request>> {
+        if self.canceled.load(Ordering::SeqCst)||*self.status.lock().unwrap()!="active" {return Err(CoreError::new("DISCONNECTED","没有可用的已认证连接"));}
+        let mut slot=self.probe.lock().unwrap();
+        if slot.is_some(){return Err(CoreError::new("CAPACITY","该连接正在探测或退役诊断通道"));}
+        let caller=crate::Caller{instance_id:"connection-diagnostics".into(),..crate::Caller::shell()};
+        let traffic=self.traffic_resource(&caller,&id(),&self.generation.to_string(),"diagnostic",None);
+        let probe=crate::quality::probe::Probe::new(budget,traffic)?;let request=probe.request.clone();*slot=Some(probe);Ok(request)
+    }
+    pub(crate) fn traffic_resource(&self, caller:&crate::Caller, resource:&str, generation:&str, kind:&str,
+        workspace_generation:Option<&str>) -> Option<crate::traffic::Registration> {
+        self.traffic.as_ref().map(|traffic|traffic.register(crate::traffic::Owner {
+            server_id:self.server.id.clone(),config_epoch:traffic.config_epoch.clone(),
+            workspace_id:Some(self.workspace_id.clone()),workspace_generation:workspace_generation.map(str::to_owned),
+            plugin_id:caller.plugin_id.clone(),instance_id:caller.instance_id.clone(),resource_id:resource.into(),
+            generation:generation.into(),kind:kind.into(),route_run_id:self.id.clone(),layer:"channel".into(),access_mode:self.route.access_path.mode().into(),
+        }))
+    }
     pub(crate) fn open_tcp(&self, open: network::Open) -> Result<()> { self.send(Command::Tcp(open)) }
     pub(crate) fn remote(&self, job: remote::Job) -> Result<()> { self.send(Command::Remote(job)) }
     pub fn connect(
@@ -180,9 +204,9 @@ impl Connection {
         operation: &AtomicBool,
         budget: Arc<Mutex<TransportBudget>>,
         verify: impl FnMut(usize, &str, &str, &[String]) -> Result<Credential>,
-        progress: impl FnMut(usize, &str),
+        mut progress: impl FnMut(usize, &str),
     ) -> Result<Arc<Self>> {
-        Self::connect_for("session".into(), route, workspace_id, generation, canceled, operation, budget, verify, progress)
+        Self::connect_for("session".into(), route, workspace_id, generation, canceled, operation, budget, None, None, verify, |_,_|Ok(Credential::default()), |index,event|{if event.state=="running"{progress(index,event.stage)}})
     }
     pub fn connect_for(
         purpose: String,
@@ -192,79 +216,59 @@ impl Connection {
         canceled: Arc<AtomicBool>,
         operation: &AtomicBool,
         budget: Arc<Mutex<TransportBudget>>,
+        traffic: Option<Arc<crate::traffic::Traffic>>,
+        observation: Option<Arc<crate::observability::Observability>>,
         mut verify: impl FnMut(usize, &str, &str, &[String]) -> Result<Credential>,
-        mut progress: impl FnMut(usize, &str),
+        mut proxy_auth: impl FnMut(usize, &[String])->Result<Credential>,
+        mut progress: impl FnMut(usize, crate::connection_diagnostics::PhaseEvent<'_>),
     ) -> Result<Arc<Self>> {
-        let reservation = TransportReservation::reserve(budget, route.nodes.len())?;
-        let deadline=Instant::now()+Duration::from_secs(120 + 75 * route.nodes.len().saturating_sub(2) as u64);
-        let mut parent=None;
-        let mut bridges=transport::BridgeChain::default();
-        let mut verified=Vec::new();
+        let reservation = TransportReservation::reserve(budget, &route.cost)?;
+        let connection_id=id();
+        let deadline=Instant::now()+Duration::from_millis(route.cost.attempt_timeout_ms());
         let transport_failed=Arc::new(AtomicBool::new(false));
         let failure_hop=Arc::new(AtomicUsize::new(usize::MAX));
-        for (index,node) in route.nodes.iter().enumerate() {
-            let server=&node.server;
-            let mut stage=if index==0 {"connect"} else {"forward"};
-            let connected=(|| {
-                progress(index,stage);
-                let socket=match parent.take() {
-                    None=>transport::tcp(&server.host,server.port,&canceled,operation,deadline)?,
-                    Some((session,socket))=>{
-                        let (socket,bridge)=transport::forward(session,socket,&server.host,server.port,&canceled,operation,deadline,transport_failed.clone(),failure_hop.clone(),index)?;
-                        bridges.0.push(bridge);socket
-                    }
-                };
-                let mut session=Session::new().map_err(|_|CoreError::new("SSH_ERROR","无法创建 SSH 会话"))?;
-                session.set_tcp_stream(socket.try_clone()?);session.set_blocking(false);
-                stage="handshake";progress(index,stage);
-                transport::protocol(&canceled,operation,deadline,||session.handshake())?;
-                let (key,_)=session.host_key().ok_or_else(||CoreError::new("SSH_ERROR","服务器未提供主机密钥"))?;
-                let fingerprint=format!("SHA256:{}",STANDARD.encode(Sha256::digest(key)).trim_end_matches('='));
-                let length=key.get(..4).map(|v|u32::from_be_bytes(v.try_into().unwrap()) as usize).unwrap_or(0);
-                let algorithm=key.get(4..4+length).and_then(|v|std::str::from_utf8(v).ok()).unwrap_or("unknown");
-                stage="verify";progress(index,stage);
-                let credential=verify(index,&fingerprint,algorithm,&verified)?;
-                transport::check(&canceled,operation,deadline)?;
-                stage="authenticate";progress(index,stage);
-                let auth=if server.auth_type=="password" {
-                    transport::protocol(&canceled,operation,deadline,||session.userauth_password(&server.username,&credential.password))
-                } else {
-                    transport::protocol(&canceled,operation,deadline,||session.userauth_pubkey_memory(&server.username,None,&credential.private_key,(!credential.passphrase.is_empty()).then_some(credential.passphrase.as_str())))
-                };
-                auth.map_err(|e|if matches!(e.code.as_str(),"CANCELED"|"CONNECT_TIMEOUT"){e}else{CoreError::new("AUTH_FAILED","SSH 认证失败，请检查用户名与凭据")})?;
-                if !session.authenticated(){return Err(CoreError::new("AUTH_FAILED","SSH 认证未完成"))}
-                session.set_keepalive(true,30);verified.push(fingerprint);
-                Ok((session,socket))
-            })();
-            parent=Some(connected.map_err(|mut e:CoreError|{
-                let role=if index+1==route.nodes.len(){"target"}else{"jump"};
-                let mut details=e.details.take().unwrap_or(json!({}));
-                details["serverId"]=json!(server.id);details["targetServerId"]=json!(route.target_server_id);
-                details["hopIndex"]=json!(index);details["hopCount"]=json!(route.nodes.len());details["role"]=json!(role);
-                details["stage"]=json!(stage);details["routeRevision"]=json!(route.revision);
-                if e.code!="CANCELED" {e.message=format!("{} {}：{}",if role=="jump"{"跳板"}else{"目标"},server.name,e.message);}
-                e.details=Some(details);e
-            })?);
-        }
-        let (session,socket)=parent.expect("validated route");
+        let mut hooks=route_executor::ConnectionHooks {
+            verify:&mut verify, proxy_auth:&mut proxy_auth, progress:&mut progress,
+            traffic:traffic.as_ref(), route:&route, workspace_id:&workspace_id,
+            connection_id:&connection_id, generation, registrations:Vec::new(),proxy_registrations:Default::default(),
+        };
+        let route_executor::Established {session,socket,bridges} = route_executor::Execution {
+            steps:&route.steps,canceled:&canceled,operation,deadline,failed:transport_failed.clone(),failure_step:failure_hop.clone(),
+        }.connect(&mut hooks).map_err(|mut error| {
+            let details=error.details.get_or_insert_with(||json!({}));
+            details["targetServerId"]=json!(route.target_server_id);
+            details["routeRevision"]=json!(route.revision);
+            error
+        })?;
+        let registrations=std::mem::take(&mut hooks.registrations);
+        let proxy_registrations=std::mem::take(&mut hooks.proxy_registrations);
+        drop(hooks);
         let (sender,receiver)=mpsc::sync_channel(128);
         let status=Arc::new(Mutex::new("active".into()));
+        let lifecycle=Arc::new(Mutex::new(None));
         let remote_metrics=Arc::new(Mutex::new(json!({"sessions":0,"handles":0,"execs":0,"queued":0,"cleanupPending":0})));
         let network_metrics=Arc::new(Mutex::new(network::Metrics::default()));
         let transport_live=Arc::new(AtomicBool::new(true));
+        let probe=Arc::new(Mutex::new(None));
         let connection=Arc::new(Self {
             purpose, network_metrics: network_metrics.clone(),
-            id:id(),server:route.target().clone(),workspace_id,generation,
+            id:connection_id,server:route.target().clone(),workspace_id,generation,traffic,
             route,bridge_metrics:bridges.0.first().map(|b|b.metrics.clone()),
             bridge_segments:bridges.0.iter().map(|b|b.metrics.clone()).collect(),commands:sender,
-            failure_hop,transport_live:transport_live.clone(),
-            canceled:canceled.clone(),socket,status:status.clone(),remote_metrics:remote_metrics.clone(),
+            failure_hop:failure_hop.clone(),transport_live:transport_live.clone(),lifecycle:lifecycle.clone(),
+            canceled:canceled.clone(),socket,status:status.clone(),remote_metrics:remote_metrics.clone(),probe:probe.clone(),
         });
+        let resource=connection.id.clone();let server=connection.server.id.clone();
+        if let Some(store)=&observation {store.connection_lifecycle(&resource,generation,&server,true);}
         thread::Builder::new().name("sodeck-ssh-io".into()).spawn(move||{
-            run(session,receiver,canceled,status,remote_metrics,transport_failed,network_metrics);
+            run(session,receiver,canceled.clone(),status,remote_metrics,transport_failed.clone(),network_metrics,probe);
+            let index=failure_hop.load(Ordering::SeqCst);
+            *lifecycle.lock().unwrap()=Some(json!({"state":if transport_failed.load(Ordering::SeqCst)||!canceled.load(Ordering::SeqCst){"disconnected"}else{"closed"},"stepIndex":(index!=usize::MAX).then_some(index),"observedAt":crate::model::now_ms()}));
             drop(bridges);
+            drop(registrations);drop(proxy_registrations);
             drop(reservation);
             transport_live.store(false,Ordering::SeqCst);
+            if let Some(store)=observation{store.connection_lifecycle(&resource,generation,&server,false);}
         })?;
         Ok(connection)
     }
@@ -276,11 +280,13 @@ impl Connection {
         operation: &AtomicBool,
         command:Option<String>,
         observe:bool,
+        traffic:Option<crate::traffic::Registration>,
     ) -> Result<Arc<Mutex<PtyState>>> {
         let state = Arc::new(Mutex::new(PtyState::new(cols, rows)));
         if observe {state.lock().unwrap().observer=Some(observer::Observer::new(0));}
         let (reply, response) = mpsc::sync_channel(1);
         self.send(Command::Open {
+            traffic,
             command,
             id: pty_id.into(),
             cols,
@@ -388,6 +394,7 @@ pub fn dimensions(cols: u64, rows: u64) -> Result<(u32, u32)> {
     }
 }
 struct ActivePty {
+    _traffic:Option<crate::traffic::Registration>,
     channel: Channel,
     state: Arc<Mutex<PtyState>>,
     writes: VecDeque<Vec<u8>>,
@@ -395,6 +402,7 @@ struct ActivePty {
     resize: Option<(u32, u32)>,
 }
 struct PendingOpen {
+    traffic:Option<crate::traffic::Registration>,
     command:Option<String>,
     id: String,
     cols: u32,
@@ -432,7 +440,7 @@ impl PendingOpen {
         }
         self.in_flight = true;
         let result = match self.phase {
-            0 => session.channel_session().map(|channel| {
+            0 => crate::traffic::origin(session,&self.traffic).and_then(|_|session.channel_session()).map(|channel| {
                 self.channel = Some(channel);
             }),
             1 => self.channel.as_mut().unwrap().request_pty(
@@ -464,6 +472,7 @@ fn run(
     remote_metrics: Arc<Mutex<Value>>,
     transport_failed: Arc<AtomicBool>,
     network_metrics: Arc<Mutex<network::Metrics>>,
+    probe: crate::quality::probe::Slot,
 ) {
     let mut channels: HashMap<String, ActivePty> = HashMap::new();
     let mut pending: VecDeque<PendingOpen> = VecDeque::new();
@@ -484,6 +493,7 @@ fn run(
                 Command::Tcp(open) => network.push(open),
                 Command::Remote(job) => remote.push(job),
                 Command::Open {
+                    traffic,
                     command,
                     id,
                     cols,
@@ -492,6 +502,7 @@ fn run(
                     reply,
                 } => {
                     pending.push_back(PendingOpen {
+                        traffic,
                         command,
                         id,
                         cols,
@@ -517,11 +528,13 @@ fn run(
                 }
             }
         }
-        if let Some(open) = pending.front_mut().filter(|_| !remote.opening() && !network.opening()) {
+        let probe_opening=probe.lock().unwrap().as_ref().is_some_and(|p|p.opening());
+        if let Some(open) = pending.front_mut().filter(|_| !remote.opening() && !network.opening() && !probe_opening) {
             match open.advance(&session) {
                 Ok(true) => {
                     let mut open = pending.pop_front().unwrap();
                     let pty = ActivePty {
+                        _traffic:open.traffic,
                         channel: open.channel.take().unwrap(),
                         state: open.state,
                         writes: VecDeque::new(),
@@ -623,11 +636,15 @@ fn run(
         for id in completed {
             channels.remove(&id);
         }
-        remote.tick(&session, pending.is_empty() && !network.opening());
-        let drain_complete = network.tick(&session, pending.is_empty() && !remote.opening());
+        remote.tick(&session, pending.is_empty() && !network.opening() && !probe_opening);
+        let drain_complete = network.tick(&session, pending.is_empty() && !remote.opening() && !probe_opening);
         *network_metrics.lock().unwrap() = network.metrics();
         if drain_complete { break; }
         *remote_metrics.lock().unwrap() = remote.metrics();
+        {
+            let mut slot=probe.lock().unwrap();
+            if slot.as_mut().is_some_and(|p|p.tick(&session,pending.is_empty()&&!remote.opening()&&!network.opening())){slot.take();}
+        }
         if last_keepalive.elapsed() > Duration::from_secs(15) {
             match session.keepalive_send() {
                 Ok(_) => {}
@@ -644,6 +661,7 @@ fn run(
         state.reason = Some("connection-closed".into());
         state.queued_input = 0;
     }
+    probe.lock().unwrap().take();
     *status.lock().unwrap() = "closed".into();
     drop(network);
     *network_metrics.lock().unwrap() = network::Metrics::default();
@@ -660,6 +678,8 @@ mod tests {
         let (_peer, _) = listener.accept().unwrap();
         let (commands, _receiver) = mpsc::sync_channel(1);
         let connection = Connection {
+            probe:Arc::new(Mutex::new(None)),
+            traffic: None,
             purpose: "session".into(),
             network_metrics: Arc::new(Mutex::new(network::Metrics::default())),
             id: "queue-test".into(),
@@ -675,7 +695,7 @@ mod tests {
             },
             workspace_id: "test".into(),
             generation: 1,
-            route: crate::route::RoutePlan {target_server_id:"test".into(),revision:"test".into(),nodes:vec![]},
+            route: crate::route::RoutePlan {target_server_id:"test".into(),revision:"test".into(),identity_revision:"test".into(),steps:vec![],access_path:crate::route::AccessPath::default(),cost:crate::route::budget::Cost::for_steps(&[])},
             bridge_metrics:None,
             bridge_segments:Vec::new(),
             failure_hop:Arc::new(AtomicUsize::new(usize::MAX)),
@@ -684,6 +704,7 @@ mod tests {
             canceled: Arc::new(AtomicBool::new(false)),
             socket,
             status: Arc::new(Mutex::new("active".into())),
+            lifecycle:Arc::new(Mutex::new(None)),
             remote_metrics: Arc::new(Mutex::new(Value::Null)),
         };
         let state = Arc::new(Mutex::new(PtyState::new(80, 24)));

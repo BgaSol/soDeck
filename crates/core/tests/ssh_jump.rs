@@ -1,10 +1,11 @@
+mod support;
 use serde_json::{json,Value};
 use sodeck_core::{Caller,Core};
 use base64::{Engine,engine::general_purpose::STANDARD};
 use std::{io::{BufRead,BufReader},process::{Child,Command,Stdio},time::{Duration,Instant},sync::Arc};
 
 fn create(core:&Core,name:&str,host:&str,port:u16,user:&str,jump:Option<&Value>)->Value {
-    core.call(&Caller::shell(),"servers.routes.create",json!({"name":name,"host":host,"port":port,"username":user,"authType":"password","connectionRoute":jump.map_or(json!({"kind":"direct"}),|id|json!({"kind":"sshJump","jumpServerId":id}))})).unwrap()
+    core.call(&Caller::shell(),"servers.routes.create",json!({"name":name,"host":host,"port":port,"username":user,"authType":"password","accessPath":jump.map_or(json!({"steps":[]}),|id|support::ssh_steps(json!([id])))})).unwrap()
 }
 fn edit(core:&Core,server:&Value,changes:Value)->sodeck_core::Result<Value>{
     let mut p=server.clone();p.as_object_mut().unwrap().remove("id");p.as_object_mut().unwrap().remove("hasSecret");p.as_object_mut().unwrap().remove("revision");p["serverId"]=server["id"].clone();p["expectedRevision"]=server["revision"].clone();
@@ -12,21 +13,12 @@ fn edit(core:&Core,server:&Value,changes:Value)->sodeck_core::Result<Value>{
     core.call(&Caller::shell(),"servers.routes.update",p)
 }
 #[test]
-fn dependency_validation_legacy_projection_and_same_schema_reopen(){
-    let dir=tempfile::tempdir().unwrap();let core=Core::open(dir.path()).unwrap();
-    let a=create(&core,"A","gateway",22,"jump",None);
-    let b=create(&core,"B","private",22,"target",Some(&a["id"]));
-    assert_eq!(edit(&core,&a,json!({"connectionRoute":{"kind":"sshJump","jumpServerId":b["id"]}})).unwrap_err().code,"INVALID_ROUTE");
-    assert_eq!(edit(&core,&b,json!({"connectionRoute":{"kind":"sshJump","jumpServerId":b["id"]}})).unwrap_err().code,"INVALID_ROUTE");
+fn explicit_dependencies_and_same_schema_reopen(){
+    let dir=tempfile::tempdir().unwrap();let core=Core::open(dir.path()).unwrap();let a=create(&core,"A","gateway",22,"jump",None);let b=create(&core,"B","private",22,"target",Some(&a["id"]));
+    assert_eq!(edit(&core,&b,json!({"accessPath":support::ssh_steps(json!([b["id"]]))})).unwrap_err().code,"INVALID_ROUTE");
     assert_eq!(core.call(&Caller::shell(),"servers.delete",json!({"serverId":a["id"],"stopSessions":true})).unwrap_err().code,"SERVER_DEPENDENTS");
-    let mut p=b.clone();p.as_object_mut().unwrap().remove("connectionRoute");p["serverId"]=b["id"].clone();p["expectedRevision"]=b["revision"].clone();p["name"]=json!("legacy edit");
-    let old=core.call(&Caller::shell(),"servers.update",p).unwrap();assert!(old.get("connectionRoute").is_none());
-    let b=core.call(&Caller::shell(),"servers.routes.get",json!({"serverId":b["id"]})).unwrap();assert_eq!(b["connectionRoute"]["jumpServerId"],a["id"]);
-    assert_eq!(edit(&core,&b,json!({"connectionRoute":{"kind":"socks"}})).unwrap_err().code,"INVALID_PARAMS");
-    let b=edit(&core,&b,json!({"connectionRoute":{"kind":"direct"}})).unwrap();
-    core.call(&Caller::shell(),"servers.delete",json!({"serverId":a["id"]})).unwrap();
-    drop(core);let reopened=Core::open(dir.path()).unwrap();assert_eq!(reopened.call(&Caller::shell(),"servers.get",json!({"serverId":b["id"]})).unwrap()["name"],"legacy edit");
-    assert!(!dir.path().join("backups").exists());
+    let b=edit(&core,&b,json!({"accessPath":{"steps":[]}})).unwrap();core.call(&Caller::shell(),"servers.delete",json!({"serverId":a["id"]})).unwrap();drop(core);
+    let reopened=Core::open(dir.path()).unwrap();assert_eq!(reopened.call(&Caller::shell(),"servers.routes.get",json!({"serverId":b["id"]})).unwrap()["accessPath"]["steps"],json!([]));assert!(!dir.path().join("backups").exists());
 }
 
 struct Fixture{child:Child,root:tempfile::TempDir,port:u16}
@@ -43,7 +35,7 @@ impl Drop for Fixture{fn drop(&mut self){drop(self.child.stdin.take());let _=sel
 fn setup(core:&Core,fixture:&Fixture)->(Value,Value){
     let a=create(core,"Gateway","127.0.0.1",fixture.port,"jump-user",None);
     let b=create(core,"Target","target.internal",22,"test-user",Some(&a["id"]));
-    for (server,password) in [(&a,"jump-test-password"),(&b,"isolated-test-password")]{core.call(&Caller::shell(),"auth.set",json!({"serverId":server["id"],"password":password})).unwrap();}
+    for (server,password) in [(&a,"jump-test-password"),(&b,"isolated-test-password")]{core.call(&Caller::shell(),"auth.ssh.set",json!({"serverId":server["id"],"password":password})).unwrap();}
     (a,b)
 }
 fn acquire(core:&Core,b:&Value,operation:&str)->sodeck_core::Result<Value>{core.call(&Caller::shell(),"connections.acquire",json!({"serverId":b["id"],"workspaceId":b["id"],"operationId":operation}))}
@@ -77,8 +69,8 @@ fn nested_ssh_shares_target_and_preserves_route_identity(){
     let new=acquire(&core,&b,"new-config").unwrap();assert_ne!(first["connectionId"],new["connectionId"]);
     let status=core.call(&Caller::shell(),"connections.route.get",json!({"serverId":b["id"],"workspaceId":b["id"]})).unwrap();assert_eq!(status["running"].as_array().unwrap().len(),2);
     assert!(status["running"].as_array().unwrap().iter().any(|r|r["configurationChanged"]==true));
-    let deps=core.call(&Caller::shell(),"servers.routes.dependencies",json!({"serverId":a["id"]})).unwrap();assert_eq!(deps["running"].as_array().unwrap().len(),2);
-    let resources=core.call(&Caller::shell(),"connections.routes.list",json!({})).unwrap();assert_eq!(resources["connections"].as_array().unwrap().len(),2);
+    let deps=core.call(&Caller::shell(),"servers.routes.dependencies",json!({"serverId":a["id"]})).unwrap();assert_eq!(deps["dependencies"].as_array().unwrap().iter().filter(|d|d["kind"]=="running").count(),2);
+    let resources=core.call(&Caller::shell(),"connections.route.list",json!({})).unwrap();assert_eq!(resources["connections"].as_array().unwrap().len(),2);
     edit(&core,&a,json!({"username":"different-account"})).unwrap();
     assert_eq!(core.call(&Caller::shell(),"servers.routes.get",json!({"serverId":b["id"]})).unwrap()["hasSecret"],false);
     assert!(!f.events().contains("session-denied"));assert!(f.events().contains("target.internal"));
@@ -115,7 +107,7 @@ fn waiters_revision_races_and_fifty_path_cycles(){
     for round in 0..50 {
         let lease=acquire(&core,&b,&format!("cycle-{round}")).unwrap();
         let status=core.call(&Caller::shell(),"connections.route.get",json!({"serverId":b["id"],"workspaceId":b["id"]})).unwrap();
-        assert!(status["running"][0]["bridge"]["peakBufferedBytes"].as_u64().unwrap()<=256*1024);
+        assert!(status["running"][0]["resources"]["bridges"].as_u64().unwrap()==1);
         core.call(&Caller::shell(),"connections.release",json!({"leaseId":lease["leaseId"]})).unwrap();
     }
     let pause=f.root.path().join("pause-forward");std::fs::write(&pause,b"1").unwrap();
@@ -135,13 +127,14 @@ fn waiters_revision_races_and_fifty_path_cycles(){
 fn mismatched_schema_requires_visible_startup_reset(){
     let dir=tempfile::tempdir().unwrap();let root=dir.path().join("core");let core=Core::open(&root).unwrap();
     let server=create(&core,"Old direct","example.invalid",22,"tester",None);
-    core.call(&Caller::shell(),"auth.set",json!({"serverId":server["id"],"password":"migration-secret","remember":true})).unwrap();drop(core);
-    let db=rusqlite::Connection::open(root.join("core.sqlite")).unwrap();db.execute_batch("DROP TABLE server_routes; PRAGMA user_version=0").unwrap();drop(db);
+    support::prefill(&core,"ssh",&server["id"],json!({"password":"migration-secret","remember":true}));drop(core);
+    let db=rusqlite::Connection::open(root.join("core.sqlite")).unwrap();db.execute_batch("DROP TABLE server_route_steps; PRAGMA user_version=0").unwrap();drop(db);
     assert_eq!(Core::open(&root).err().unwrap().code,"UNSUPPORTED_DATA_VERSION");
     let backup=sodeck_core::store_bootstrap::prepare_database(dir.path(),|_|Ok(())).unwrap().unwrap();
-    let db=rusqlite::Connection::open(backup.join("core.sqlite")).unwrap();assert_eq!(db.query_row("PRAGMA user_version",[],|r|r.get::<_,u32>(0)).unwrap(),0);
+    let db=rusqlite::Connection::open(backup.join("core/core.sqlite")).unwrap();assert_eq!(db.query_row("PRAGMA user_version",[],|r|r.get::<_,u32>(0)).unwrap(),0);
     assert_eq!(db.query_row("SELECT count(*) FROM servers",[],|r|r.get::<_,u32>(0)).unwrap(),1);
-    assert!(backup.join("secrets").join(format!("{}.dpapi",server["id"].as_str().unwrap())).exists());
+    let secret_ref:String=db.query_row("SELECT secret_id FROM credential_bindings WHERE owner_id=?",[server["id"].as_str().unwrap()],|r|r.get(0)).unwrap();
+    assert!(backup.join("core/secrets").join(format!("{secret_ref}.dpapi")).exists());
     let fresh=Core::open(&root).unwrap();assert!(fresh.call(&Caller::shell(),"servers.list",json!({})).unwrap()["servers"].as_array().unwrap().is_empty());drop(fresh);
     let db=rusqlite::Connection::open(root.join("core.sqlite")).unwrap();db.execute_batch("PRAGMA user_version=999").unwrap();drop(db);
     assert_eq!(Core::open(&root).err().unwrap().code,"UNSUPPORTED_DATA_VERSION");
@@ -161,7 +154,7 @@ fn host_changes_network_isolation_and_disconnect_have_no_fallback(){
     core.call(&Caller::shell(),"hosts.trust",e.details.unwrap()).unwrap();
     let e=acquire(&core,&b,"new-network").unwrap_err();assert_eq!(e.code,"HOST_KEY_REQUIRED");assert_eq!(e.details.as_ref().unwrap()["role"],"target");core.call(&Caller::shell(),"hosts.trust",e.details.unwrap()).unwrap();
     assert_eq!(acquire(&core,&b,"new-network-auth").unwrap_err().code,"AUTH_REQUIRED");
-    core.call(&Caller::shell(),"auth.set",json!({"serverId":b["id"],"password":"isolated-test-password"})).unwrap();
+    core.call(&Caller::shell(),"auth.ssh.set",json!({"serverId":b["id"],"password":"isolated-test-password"})).unwrap();
     let lease=acquire(&core,&b,"after-key-change").unwrap();let pty=core.call(&Caller::shell(),"pty.open",json!({"leaseId":lease["leaseId"]})).unwrap();output(&core,&pty,"fixture-ready");
     std::fs::write(f.root.path().join("drop-gateway"),b"1").unwrap();
     let deadline=Instant::now()+Duration::from_secs(5);loop {
@@ -179,11 +172,11 @@ fn authentication_failures_and_handshake_cancellation_identify_the_real_node(){
     let challenge=acquire(&core,&b,"second-hop").unwrap_err();assert_eq!(challenge.details.as_ref().unwrap()["role"],"target");
     assert!(!std::fs::read_to_string(f.root.path().join("target/events.jsonl")).unwrap().contains("password-auth"));core.call(&Caller::shell(),"hosts.trust",challenge.details.unwrap()).unwrap();
     for (server,role,password) in [(&a,"jump","jump-test-password"),(&b,"target","isolated-test-password")] {
-        core.call(&Caller::shell(),"auth.set",json!({"serverId":server["id"],"password":"wrong-fixture-password"})).unwrap();
+        core.call(&Caller::shell(),"auth.ssh.set",json!({"serverId":server["id"],"password":"wrong-fixture-password"})).unwrap();
         let wrong=format!("wrong-{role}");let error=acquire(&core,&b,&wrong).unwrap_err();assert_eq!(error.code,"AUTH_FAILED");assert_eq!(error.details.as_ref().unwrap()["role"],role);
         core.call(&Caller::shell(),"operations.cancel",json!({"operationId":wrong})).unwrap();
-        assert_eq!(core.call(&Caller::shell(),"auth.set",json!({"serverId":server["id"],"challengeId":error.details.unwrap()["challengeId"],"password":password})).unwrap_err().code,"HOST_CHALLENGE_EXPIRED");
-        core.call(&Caller::shell(),"auth.set",json!({"serverId":server["id"],"password":password})).unwrap();
+        assert_eq!(core.call(&Caller::shell(),"auth.ssh.set",json!({"serverId":server["id"],"challengeId":error.details.unwrap()["challengeId"],"password":password})).unwrap_err().code,"HOST_CHALLENGE_EXPIRED");
+        core.call(&Caller::shell(),"auth.ssh.set",json!({"serverId":server["id"],"password":password})).unwrap();
         // Cancellation is deliberately durable; a new operation is needed.
         let lease=acquire(&core,&b,&format!("correct-{role}")).unwrap();core.call(&Caller::shell(),"connections.release",json!({"leaseId":lease["leaseId"]})).unwrap();
     }
@@ -213,11 +206,11 @@ fn sixty_four_routes_include_internal_transports_in_the_target_budget(){
 fn separate_target_dependencies_and_same_address_networks_stay_isolated(){
     let f=Fixture::start();let other=Fixture::start();let dir=tempfile::tempdir().unwrap();let core=Core::open(dir.path()).unwrap();let(a,b)=setup(&core,&f);
     let first=trust_connect(&core,&b,"b");let gateway=trust_connect(&core,&a,"gateway-own");
-    let c=create(&core,"C","target.internal",22,"test-user",Some(&a["id"]));core.call(&Caller::shell(),"auth.set",json!({"serverId":c["id"],"password":"isolated-test-password"})).unwrap();let third=trust_connect(&core,&c,"c");assert_ne!(first["connectionId"],third["connectionId"]);
+    let c=create(&core,"C","target.internal",22,"test-user",Some(&a["id"]));core.call(&Caller::shell(),"auth.ssh.set",json!({"serverId":c["id"],"password":"isolated-test-password"})).unwrap();let third=trust_connect(&core,&c,"c");assert_ne!(first["connectionId"],third["connectionId"]);
     core.call(&Caller::shell(),"connections.release",json!({"leaseId":gateway["leaseId"]})).unwrap();assert_eq!(core.resources()["connections"].as_array().unwrap().len(),2);
     core.call(&Caller::shell(),"connections.release",json!({"leaseId":first["leaseId"]})).unwrap();let pty=core.call(&Caller::shell(),"pty.open",json!({"leaseId":third["leaseId"]})).unwrap();output(&core,&pty,"fixture-ready");
-    let a2=create(&core,"other network","127.0.0.1",other.port,"jump-user",None);core.call(&Caller::shell(),"auth.set",json!({"serverId":a2["id"],"password":"jump-test-password"})).unwrap();
-    let b=edit(&core,&b,json!({"connectionRoute":{"kind":"sshJump","jumpServerId":a2["id"]}})).unwrap();assert_eq!(b["hasSecret"],false);
+    let a2=create(&core,"other network","127.0.0.1",other.port,"jump-user",None);core.call(&Caller::shell(),"auth.ssh.set",json!({"serverId":a2["id"],"password":"jump-test-password"})).unwrap();
+    let b=edit(&core,&b,json!({"accessPath":{"kind":"hostTunnel","jumpServerIds":[a2["id"]]}})).unwrap();assert_eq!(b["hasSecret"],false);
     let e=acquire(&core,&b,"network-a").unwrap_err();assert_eq!(e.code,"HOST_KEY_REQUIRED");core.call(&Caller::shell(),"hosts.trust",e.details.unwrap()).unwrap();
     let e=acquire(&core,&b,"network-b").unwrap_err();assert_eq!(e.code,"HOST_KEY_REQUIRED");assert_eq!(e.details.as_ref().unwrap()["role"],"target");core.call(&Caller::shell(),"hosts.trust",e.details.unwrap()).unwrap();assert_eq!(acquire(&core,&b,"network-auth").unwrap_err().code,"AUTH_REQUIRED");
     core.shutdown();
@@ -227,11 +220,13 @@ fn separate_target_dependencies_and_same_address_networks_stay_isolated(){
 fn failed_route_transaction_leaves_no_profile_and_unknown_stored_routes_never_connect(){
     let dir=tempfile::tempdir().unwrap();let core=Core::open(dir.path()).unwrap();
     let db=rusqlite::Connection::open(dir.path().join("core.sqlite")).unwrap();
-    db.execute_batch("CREATE TRIGGER fail_route BEFORE INSERT ON server_routes BEGIN SELECT RAISE(ABORT,'fixture transaction failure'); END;").unwrap();
-    assert!(core.call(&Caller::shell(),"servers.routes.create",json!({"name":"fail","host":"localhost","username":"test","connectionRoute":{"kind":"direct"}})).is_err());
-    assert_eq!(core.call(&Caller::shell(),"servers.list",json!({})).unwrap()["servers"].as_array().unwrap().len(),0);
-    db.execute_batch("DROP TRIGGER fail_route").unwrap();let server=create(&core,"test","localhost",22,"test",None);
-    db.execute("UPDATE server_routes SET data=?",[r#"{"kind":"unsupported"}"#]).unwrap();
+    let gateway=create(&core,"gateway","localhost",22,"test",None);
+    db.execute_batch("CREATE TRIGGER fail_route BEFORE INSERT ON server_route_steps BEGIN SELECT RAISE(ABORT,'fixture transaction failure'); END;").unwrap();
+    assert!(core.call(&Caller::shell(),"servers.routes.create",json!({"name":"fail","host":"localhost","username":"test","accessPath":support::ssh_steps(json!([gateway["id"]]))})).is_err());
+    let servers=core.call(&Caller::shell(),"servers.list",json!({})).unwrap();
+    assert_eq!(servers["servers"].as_array().unwrap().len(),1);assert_eq!(servers["servers"][0]["id"],gateway["id"]);
+    db.execute_batch("DROP TRIGGER fail_route").unwrap();let server=create(&core,"test","localhost",22,"test",Some(&gateway["id"]));
+    db.execute_batch("PRAGMA ignore_check_constraints=ON; UPDATE server_route_steps SET kind='unsupported'").unwrap();
     assert_eq!(acquire(&core,&server,"unsupported").unwrap_err().code,"INVALID_ROUTE");
 }
 
@@ -248,7 +243,7 @@ fn fifty_cancellations_leave_no_gateway_and_audit_failure_does_not_block_cleanup
         let start=Instant::now();core.call(&Caller::shell(),"operations.cancel",json!({"operationId":operation})).unwrap();assert_eq!(worker.join().unwrap().unwrap_err().code,"CANCELED");assert!(start.elapsed()<Duration::from_secs(1));
     }
     std::fs::remove_file(pause).unwrap();let lease=acquire(&core,&b,"before-log-failure").unwrap();
-    rusqlite::Connection::open(dir.path().join("core.sqlite")).unwrap().execute_batch("DROP TABLE calls").unwrap();
+    rusqlite::Connection::open(dir.path().join("observability/facts.sqlite")).unwrap().execute_batch("DROP TABLE calls").unwrap();
     assert_eq!(acquire(&core,&b,"log-unavailable").unwrap_err().code,"LOG_UNAVAILABLE");core.call(&Caller::shell(),"connections.release",json!({"leaseId":lease["leaseId"]})).unwrap();
     assert!(core.resources()["connections"].as_array().unwrap().is_empty());core.shutdown();
     let deadline=Instant::now()+Duration::from_secs(5);while f.events().matches("connection-open").count()!=f.events().matches("connection-close").count(){assert!(Instant::now()<deadline);std::thread::sleep(Duration::from_millis(20));}

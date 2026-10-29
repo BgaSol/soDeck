@@ -91,11 +91,12 @@ impl State {
     }
     pub(super) fn worker_for(&self, plugin: &str, command: &str, args: Value) -> Result<Value> {
         let timeout = if command == "command.execute" {
-            args["context"]["serverId"].as_str().and_then(|id|self.core.route_attempt_timeout(id).ok()).map(|budget|budget+std::time::Duration::from_secs(60)).unwrap_or(std::time::Duration::from_secs(180))
+            match args["context"]["serverId"].as_str() { Some(id)=>self.core.route_attempt_timeout(id)?+std::time::Duration::from_secs(60), None=>std::time::Duration::from_secs(180) }
         } else { std::time::Duration::from_secs(180) };
-        self.loaded_for(plugin)?
-            .process
-            .invoke_with_timeout(command, args, timeout)
+        let loaded=self.loaded_for(plugin)?;
+        let owner=Caller{source:"plugin".into(),plugin_id:Some(plugin.into()),plugin_version:Some(loaded.package.manifest.version.clone()),instance_id:loaded.instance.clone(),view_id:None,mount_generation:None};
+        let metadata=self.core.transfer_diagnostic_context(&owner)?;
+        loaded.process.invoke_with_context(command, args, timeout, metadata)
             .map_err(|e| {
                 serde_json::from_value(serde_json::to_value(e).unwrap())
                     .unwrap_or_else(|_| err("PLUGIN_ERROR", "插件调用失败"))
@@ -140,6 +141,7 @@ impl State {
                     if state.stopping.load(Ordering::SeqCst) {
                         break;
                     }
+                    state.core.observe_plugin_lifecycle(&plugin.instance,"crash",Some("PLUGIN_CRASHED"));
                     state.core.close_instance(&plugin.instance);
                     state.communication.lock().unwrap().remove_instance(&plugin.instance);
                     state
@@ -147,6 +149,7 @@ impl State {
                         .lock()
                         .unwrap()
                         .remove(&plugin.package.manifest.plugin_id);
+                    state.settings_provider_changed(&plugin.package.manifest.plugin_id);
                     let affected = {
                         let mut w = state.workbench.lock().unwrap();
                         let ids = w
@@ -192,13 +195,14 @@ impl State {
             .plugins
             .lock()
             .unwrap()
-            .active(id)
+            .load_for_run(id)
             .map_err(|e| err("PLUGIN_UNAVAILABLE", e.to_string()))?
             .ok_or_else(|| err("PLUGIN_UNAVAILABLE", "插件包不可用"))?;
         let plugin =
             spawn_plugin(self.core.clone(), &package).map_err(|e| err("PLUGIN_ERROR", e))?;
         *plugin.gateway.lock().unwrap() = Some(Arc::downgrade(self));
         self.loaded.lock().unwrap().insert(id.into(), plugin);
+        self.settings_provider_changed(id);
         Ok(())
     }
 }

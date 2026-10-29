@@ -37,10 +37,11 @@ impl State {
     }
     fn initialize_workspace(self: &Arc<Self>, id: &str) -> Result<()> {
         let plugins = self.all_plugins();
+        let enabled_missing=plugins.is_empty()&&{let m=self.plugins.lock().unwrap();m.status().iter().any(|s|m.boot_enabled(&s.plugin_id))};
         let (generation, window, jobs) = {
             let mut w = self.workbench.lock().unwrap();
             let ws = w.workspaces.get_mut(id).ok_or_else(|| err("WORKSPACE_CLOSED", "工作区已关闭"))?;
-            if plugins.is_empty(){ws.initialization_error=Some("没有可用插件，请检查插件后重试".into());return Ok(());}
+            if plugins.is_empty(){ws.initialization_error=enabled_missing.then(||"没有可用插件，请检查插件后重试".into());return Ok(());}
             ws.initialization_error = None;
             let mut jobs = vec![];
             for plugin in &plugins { for init in &plugin.package.manifest.contributes.workspace_initializers {
@@ -118,9 +119,6 @@ impl State {
     }
     pub(super) fn source_window(&self, source: Option<&str>, params: &Value) -> Result<String> {
         if let Some(source) = source {
-            if let Some(id) = source.strip_prefix("@window:") {
-                return Ok(id.into());
-            }
             return self.endpoint_window(source,false);
         }
         if let Some(op) = params["operationId"].as_str() {
@@ -314,11 +312,15 @@ impl State {
                         .unwrap()
                         .open_workspace(id, &target)
                         .map_err(native_error)?;
-                    for plugin in self.all_plugins() {
+                    let mut default_plugins = self.all_plugins();
+                    default_plugins.sort_by(|a,b| a.package.manifest.plugin_id.cmp(&b.package.manifest.plugin_id));
+                    for plugin in default_plugins {
                         let mut w = self.workbench.lock().unwrap();
-                        for entry in &plugin.package.manifest.contributes.workspace_entries {
+                        let mut entries = plugin.package.manifest.contributes.workspace_entries.iter().collect::<Vec<_>>();
+                        entries.sort_by(|a,b| a.view_type.cmp(&b.view_type));
+                        for entry in entries {
                             if entry.open_by_default {
-                                if let Err(e)=w.open_view(
+                                if let Err(e)=w.open_default_view(
                                     &plugin.package.manifest.plugin_id,
                                     &entry.view_type,
                                     id,
@@ -384,7 +386,7 @@ impl State {
                             .windows
                             .get(source)
                             .ok_or_else(|| err("WINDOW_CLOSED", "窗口已关闭"))?;
-                        (win.workspace_ids.clone(), win.active_workspace_id.clone())
+                        (win.workspace_ids.clone(), win.selected_workspace().cloned())
                     } else {
                         let id = required(params, "workspaceId")?.to_string();
                         (vec![id.clone()], Some(id))
@@ -419,6 +421,8 @@ impl State {
                     }
                 }
                 "windows.close" => {
+                    if params["windowId"].as_str().unwrap_or(&window)==settings_window::LABEL {return self.settings_request_close("close");}
+                    if params["windowId"].as_str().unwrap_or(&window)==monitor_window::LABEL {return self.close_monitor(source);}
                     self.close_workspace_window(params["windowId"].as_str().unwrap_or(&window))
                 }
                 "windows.control" => {
@@ -533,9 +537,9 @@ impl State {
                         }
                     }
                     for (id, previous) in previous_windows {
-                        if previous.active_workspace_id.as_deref() != Some(workspace) {
+                        if previous.selected_workspace().map(String::as_str) != Some(workspace) {
                             if let Some(win) = candidate.windows.get_mut(&id) {
-                                win.active_workspace_id = previous.active_workspace_id;
+                                win.selection = previous.selection;win.last_workspace_id=previous.last_workspace_id;win.navigation_revision=previous.navigation_revision;
                                 win.focused_view_id = previous.focused_view_id;
                             }
                         }
@@ -555,8 +559,8 @@ impl State {
                             p.view_id = Some(view.view_id.clone());
                         }
                     }
-                    Ok(self.commit_runtime(
-                        serde_json::to_value(view).unwrap()))
+                    if !existed{if let Ok(target)=self.core.observation_target("view",&view.view_id,Some(&view.mount_generation.to_string())){let _=self.core.observe_host_event(caller,"core.view.created",json!({"objectRef":target["ref"],"generation":view.mount_generation.to_string()}));}}
+                    Ok(self.commit_runtime(serde_json::to_value(view).unwrap()))
                 }
                 "views.update" => {
                     let id = required(params, "viewId")?;
@@ -902,7 +906,8 @@ impl State {
         self.changed();
         let server_id = (workspace != "@app").then_some(&workspace);
         let context = json!({"pluginId":loaded.package.manifest.plugin_id,"workspaceGeneration":self.workbench.lock().unwrap().workspaces.get(&workspace).map(|w|w.generation.clone()),"windowId":window,"workspaceId":workspace,"serverId":server_id,"viewId":view.as_ref().map(|v|&v.view_id),"pluginData":view.as_ref().map(|v|&v.runtime_data),"pluginState":view.as_ref().map(|v|&v.plugin_state),"title":view.as_ref().map(|v|&v.title),"instanceKey":view.as_ref().map(|v|&v.instance_key),"operationId":operation});
-        let mut result=self.worker("command.execute",json!({"commandId":command,"args":params.get("args").cloned().unwrap_or(json!({})),"context":context}));
+        let invoke=||self.worker("command.execute",json!({"commandId":command,"args":params.get("args").cloned().unwrap_or(json!({})),"context":context}));
+        let mut result=if caller.plugin_id.is_none(){self.core.host_diagnostic_action(command,params.get("initializerId").is_none(),invoke)}else{invoke()};
         if self.pending_opens.lock().unwrap().get(&operation).is_some_and(|o| o.canceled) {
             result = Err(err("CANCELED", "操作已取消"));
         }
@@ -911,24 +916,12 @@ impl State {
                 op.finished = true;
                 op.result = Some(result.clone());
                 op.waiting_auth = result.as_ref().err().is_some_and(|e| {
-                    [
-                        "HOST_KEY_REQUIRED",
-                        "HOST_KEY_CHANGED",
-                        "AUTH_REQUIRED",
-                        "AUTH_FAILED",
-                    ]
-                    .contains(&e.code.as_str())
+                    sodeck_core::is_connection_authentication_error(&e.code)
                 }) && !op.canceled;
             }
         }
         if let Err(error) = &result {
-            if [
-                "HOST_KEY_REQUIRED",
-                "HOST_KEY_CHANGED",
-                "AUTH_REQUIRED",
-                "AUTH_FAILED",
-            ]
-            .contains(&error.code.as_str())
+            if sodeck_core::is_connection_authentication_error(&error.code)
                 && !self
                     .pending_opens
                     .lock()
@@ -942,13 +935,13 @@ impl State {
                     json!({"serverId":workspace}),
                 )?;
                 let auth_server=if let Some(challenge)=error.details.as_ref().and_then(|d|d["challengeId"].as_str()) {
-                    let resolved=self.core.call(&Caller::shell(),"auth.challenge.v2.get",json!({"challengeId":challenge,"targetServerId":workspace}))?;
+                    let resolved=self.core.call(&Caller::shell(),"auth.challenge.get",json!({"challengeId":challenge,"targetServerId":workspace}))?;
                     if resolved["workspaceId"]!=workspace || resolved["operationId"]!=operation {return Err(err("HOST_CHALLENGE_MISMATCH","认证操作与当前工作区不一致"));}
-                    resolved["server"].clone()
+                    if resolved["ownerKind"]=="socks5"{server}else{resolved["server"].clone()}
                 }else{server};
                 let event = json!({"type":"auth.required","payload":{"server":auth_server,"workspaceId":workspace,"error":error,"operationId":operation,"commandId":command,"viewId":params["viewId"],"args":params["args"]}});
-                if let Some(w) = self.app.get_webview_window(window) {
-                    let _ = w.eval(&format!("window.__sodeckNotify?.({event});"));
+                if self.workbench.lock().unwrap().windows.get(window).is_some_and(|w|w.selected_workspace().map(String::as_str)==Some(workspace.as_str())) { if let Some(w) = self.app.get_webview_window(window) {
+                    let _ = w.eval(&format!("window.__sodeckNotify?.({event});")); }
                 }
             }
         }
@@ -966,9 +959,10 @@ impl State {
             } else {
                 w.windows
                     .get(window.label())
-                    .and_then(|win| win.active_workspace_id.clone())
+                    .and_then(|win| win.selected_workspace().cloned())
                     .map(|id| (id, None))
             };
+            if w.windows.get(window.label()).is_some_and(|r|r.selection==crate::window_registry::Selection::ConnectionHome){let _=window.set_title("新建连接 — SoDeck");continue;}
             if let Some((id, title)) = workspace {
                 if let Ok(server) =
                     self.core
@@ -993,6 +987,7 @@ impl State {
             return Ok(json!({"hidden":true}));
         }
         if let Some(view) = id.strip_prefix("detached-") {
+            self.cancel_window_evidence_export(id);
             if let Err(error) = self.close_view(view) {
                 if error.code == "MOVE_IN_PROGRESS" {
                     self.queue_native_close(view.into());
@@ -1063,7 +1058,8 @@ impl State {
                 .remove(&window_id);
         });
     }
-    fn close_workspaces(self: &Arc<Self>, ids: &[String]) -> Result<Value> {
+    pub(super) fn close_workspaces(self: &Arc<Self>, ids: &[String]) -> Result<Value> {
+        if self.begin_close_review(window_close_review::Action::Close(ids.to_vec()),None)?{return Err(err("CLOSE_REVIEW_REQUIRED","请先处理连接页草稿"));}
         let canceled = {
             let mut ops = self.pending_opens.lock().unwrap();
             ops.iter_mut()
@@ -1107,6 +1103,11 @@ impl State {
                 }
             }
         }
+        // A native save modal must finish before surface teardown needs the UI thread.
+        let ending_windows={let w=self.workbench.lock().unwrap();w.windows.iter()
+            .filter(|(id,window)|id.as_str()!="main"&&!window.workspace_ids.is_empty()&&window.workspace_ids.iter().all(|workspace|ids.contains(workspace)))
+            .map(|(id,_)|id.clone()).collect::<Vec<_>>()};
+        for window in ending_windows{self.cancel_window_evidence_export(&window);}
         {let w=self.workbench.lock().unwrap();for id in ids{if let Some(ws)=w.workspaces.get(id){self.core.revoke_workspace(id,&ws.generation);}}}
         let mut results = vec![];
         for v in &views {
@@ -1120,7 +1121,8 @@ impl State {
             let mut w = self.workbench.lock().unwrap();
             for id in ids {
                 if !w.views.iter().any(|v| v.workspace_id == *id) {
-                    w.remove_workspace(id).map_err(native_error)?;
+                    let generation=w.workspaces.get(id).map(|v|v.generation.clone());w.remove_workspace(id).map_err(native_error)?;
+                    if let Some(generation)=generation{if let Ok(target)=self.core.observation_target("workspace",id,Some(&generation)){let _=self.core.observe_host_event(&Caller::shell(),"core.workspace.closed",json!({"objectRef":target["ref"],"generation":generation}));}}
                 }
             }
         }
@@ -1142,6 +1144,7 @@ impl State {
             empty
         };
         for id in empty {
+            {let mut registry=self.connection_home.lock().unwrap();registry.sessions.remove(&id);registry.receipts.retain(|(window,_),_|window!=&id);}
             if let Some(win) = self.app.get_webview_window(&id) {
                 // Let the initiating shell receive its committed result first.
                 std::thread::spawn(move || {

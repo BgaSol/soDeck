@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { Explorer } from "./state";
 import { root } from "./remote-path";
 import type { Bridge, Attributes } from "./remote";
@@ -20,6 +20,10 @@ function fixture(total = 1) {
     async call<T>(method: string, p: Record<string, unknown> = {}) {
       let result: unknown;
       switch (method) {
+        case "servers.get": result={revision:1};break;
+        case "connections.acquire": result={leaseId:'duplicate',connectionId:'connection',generation:1};break;
+        case "capabilities.list":result={capabilities:['connections.route.v2']};break;
+        case "connections.route.get":result={running:[{connectionId:'connection',generation:1,state:'active',route:{routeRevision:'r1'},configurationChanged:false}]};break;
         case "files.openDirectory":
           cursor = 0;
           result = { directoryId: "directory-" + ++sequence, cursor: 0 };
@@ -85,6 +89,30 @@ function fixture(total = 1) {
   };
 }
 describe("file worker lifecycle and budgets", () => {
+  it('connect failure preserves its exact reference and safe message for snapshot deduplication',async()=>{
+    const reference={bootId:'b',attemptId:'a',attemptGeneration:2},error={code:'PROXY_DISCONNECTED',message:'raw private failure',details:{diagnosticRef:reference,stage:'proxyNegotiate',stepIndex:2}};
+    const {explorer:e}=fixture();e.remote.lease=undefined;vi.spyOn(e.bridge,'call').mockImplementation(async method=>{if(method==='servers.get')return {revision:1} as never;if(method==='connections.acquire')throw error;return {} as never;});
+    await expect(e.connect('failed')).rejects.toEqual(error);const s=e.snapshot();expect(s.diagnosticRef).toEqual(reference);expect(s.message).toContain('第 3 站');expect(s.message).not.toContain('raw private');await e.dispose();
+  });
+  it("repeated connect preserves an already loaded view and releases the duplicate lease", async()=>{
+    const {explorer:e}=fixture();await e.load(root.bytesBase64);e.state='ready';
+    const lease=e.remote.lease,call=vi.spyOn(e.bridge,'call');
+    await e.connect('repeated');
+    expect(e.state).toBe('ready');expect(e.remote.lease).toBe(lease);
+    expect(e.nodes.get(root.bytesBase64)?.children).toHaveLength(1);
+    expect(call).toHaveBeenCalledWith('connections.release',{leaseId:'duplicate'});
+    await e.dispose();
+  });
+  it.each([false,true])("resumes canceled initial loading after workspace visibility returns (cached=%s)",async cached=>{
+    const {explorer:e}=fixture();
+    if(cached)await e.load(root.bytesBase64);
+    e.state='loading';
+    await e.presentation(false,1);await e.presentation(true,2);
+    await vi.waitFor(()=>expect(e.state).toBe('ready'));
+    expect(e.nodes.get(root.bytesBase64)?.loaded).toBe(true);
+    expect(e.nodes.get(root.bytesBase64)?.children).toHaveLength(1);
+    await e.dispose();
+  });
   it("refresh removes disappeared descendants and selects the existing parent", async () => {
     const f = fixture();
     await f.explorer.load(root.bytesBase64);

@@ -1,4 +1,4 @@
-use crate::{Error, Result, TrustedKeys, API_VERSION, CAPABILITIES, CORE_VERSION};
+use crate::{Error, Result, TrustedKeys};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -8,6 +8,14 @@ use std::{
     io::Read,
     path::{Path, PathBuf},
 };
+
+mod integrity;
+mod signature;
+mod snapshot;
+mod compatibility;
+pub use signature::SignatureStatus;
+pub use snapshot::{InspectedPackage, VerifiedPackageSnapshot};
+pub use compatibility::CompatibilityContext;
 
 const MAX_ARCHIVE: u64 = 32 * 1024 * 1024;
 const MAX_EXPANDED: u64 = 128 * 1024 * 1024;
@@ -24,7 +32,13 @@ pub struct Manifest {
     pub entry: Entry,
     pub contributes: Contributions,
     pub data_schema_version: u32,
+    #[serde(default, skip_serializing_if="Option::is_none")]
+    pub observability: Option<ObservationReference>,
 }
+
+#[derive(Clone,Debug,Deserialize,Serialize)]
+#[serde(rename_all="camelCase",deny_unknown_fields)]
+pub struct ObservationReference {pub descriptor_version:u32,pub path:String}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -47,6 +61,8 @@ pub struct Entry {
 #[serde(deny_unknown_fields)]
 pub struct Contributions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings: Option<SettingsReference>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub presentation: Option<Presentation>,
     pub views: Vec<ViewDeclaration>,
     #[serde(default)]
@@ -58,6 +74,10 @@ pub struct Contributions {
     #[serde(default, rename = "retiredViews")]
     pub retired_views: Vec<String>,
 }
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
+pub struct SettingsReference { pub descriptor_version: u32, pub path: String }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -252,57 +272,27 @@ pub(crate) fn extract(archive_path: &Path, target: &Path) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn verify(root: &Path, keys: &TrustedKeys) -> Result<Manifest> {
-    if fs::symlink_metadata(root)?.file_type().is_symlink() {
-        return Err(invalid("Package root is a link"));
-    }
-    let files = collect_files(root)?;
-    if files.len() > MAX_FILES {
-        return Err(invalid("Too many package files"));
-    }
-    let integrity_bytes = bounded_read(&root.join("integrity.json"), 1024 * 1024)?;
-    let signature: Signature =
-        serde_json::from_slice(&bounded_read(&root.join("signature.json"), 16 * 1024)?)?;
-    let public_key = keys
-        .get(&signature.key_id)
-        .ok_or_else(|| invalid("Untrusted plugin signer"))?;
-    let signature = base64::engine::general_purpose::STANDARD
-        .decode(signature.signature)
-        .map_err(|_| invalid("Malformed signature"))?;
-    ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, public_key)
-        .verify(&integrity_bytes, &signature)
-        .map_err(|_| invalid("Invalid plugin signature"))?;
-    let integrity: BTreeMap<String, String> = serde_json::from_slice(&integrity_bytes)?;
-    if !integrity.contains_key("manifest.json") || integrity.len() + 2 != files.len() {
-        return Err(invalid("Package inventory mismatch"));
-    }
-    let mut total = 0u64;
-    for (path, expected_hash) in &integrity {
-        if !valid_relative(path)
-            || path == "integrity.json"
-            || path == "signature.json"
-            || !files.contains(path)
-        {
-            return Err(invalid("Invalid package inventory path"));
-        }
-        let bytes = bounded_read(&root.join(path), MAX_EXPANDED)?;
-        total += bytes.len() as u64;
-        if total > MAX_EXPANDED || format!("{:x}", Sha256::digest(bytes)) != *expected_hash {
-            return Err(invalid("Plugin content hash mismatch"));
-        }
-    }
-    let manifest: Manifest =
-        serde_json::from_slice(&bounded_read(&root.join("manifest.json"), 1024 * 1024)?)?;
-    validate_manifest(&manifest)?;
-    if !integrity.contains_key(&manifest.entry.ui)
-        || !integrity.contains_key(&manifest.entry.worker)
-    {
-        return Err(invalid("Missing plugin entry"));
-    }
-    Ok(manifest)
+pub(crate) fn read_snapshot(root: &Path, keys: &TrustedKeys) -> Result<VerifiedPackageSnapshot> { snapshot::read(root, keys) }
+pub(crate) fn is_link(m: &fs::Metadata) -> bool {
+    #[cfg(windows)] { use std::os::windows::fs::MetadataExt; m.file_attributes() & 0x400 != 0 }
+    #[cfg(not(windows))] { m.file_type().is_symlink() }
 }
 
 pub(crate) fn validate_manifest(m: &Manifest) -> Result<()> {
+    validate_structure(m)?;
+    CompatibilityContext::current().validate(m)
+}
+
+pub(crate) fn validate_structure(m: &Manifest) -> Result<()> {
+    if let Some(settings)=&m.contributes.settings {
+        if settings.descriptor_version!=1 || !valid_relative(&settings.path)
+            || !["settings.contributions.v1","storage.preferences.v1"].iter().all(|c|m.requires.capabilities.iter().any(|v|v==c)) {
+            return Err(invalid("Invalid settings reference or missing capabilities"));
+        }
+    }
+    if let Some(observation)=&m.observability {
+        if observation.descriptor_version!=1||observation.path!="diagnostics/observability.json"||!["observability.events.v2","observability.context.v1","observability.snapshots.v1","observability.metrics.v1"].iter().all(|required|m.requires.capabilities.iter().any(|c|c==required)){return Err(invalid("Invalid observation descriptor reference or missing capabilities"));}
+    }
     if m.plugin_id.is_empty()
         || m.plugin_id.len() > 128
         || !m
@@ -317,31 +307,14 @@ pub(crate) fn validate_manifest(m: &Manifest) -> Result<()> {
     if !valid_relative(&m.version) || semver::Version::parse(&m.version).is_err() {
         return Err(invalid("Invalid plugin version"));
     }
-    for (requirement, actual) in [
-        (&m.requires.core, CORE_VERSION),
-        (&m.requires.plugin_api, API_VERSION),
-    ] {
-        let requirement = semver::VersionReq::parse(requirement)
+    for requirement in [&m.requires.core, &m.requires.plugin_api] {
+        semver::VersionReq::parse(requirement)
             .map_err(|_| invalid("Invalid compatibility range"))?;
-        if !requirement.matches(&semver::Version::parse(actual).unwrap()) {
-            return Err(invalid("Plugin requires an incompatible core or API"));
-        }
     }
-    if m.requires
-        .capabilities
-        .iter()
-        .any(|c| !CAPABILITIES.contains(&c.as_str()))
-    {
-        return Err(invalid("Plugin requires an unavailable capability"));
-    }
-    if !m.requires.platforms.is_empty()
-        && !m
-            .requires
-            .platforms
-            .iter()
-            .any(|p| p == std::env::consts::OS)
-    {
-        return Err(invalid("Plugin does not support this platform"));
+    if m.requires.capabilities.len() > 256 || m.requires.platforms.len() > 16
+        || m.requires.capabilities.iter().any(|v| v.is_empty() || v.len() > 128)
+        || m.requires.platforms.iter().any(|v| v.is_empty() || v.len() > 64) {
+        return Err(invalid("Invalid capability or platform declarations"));
     }
     if m.data_schema_version == 0
         || !valid_relative(&m.entry.ui)
@@ -470,7 +443,7 @@ fn collect_files(root: &Path) -> Result<BTreeSet<String>> {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let ty = entry.file_type()?;
-            if ty.is_symlink() {
+            if is_link(&fs::symlink_metadata(entry.path())?) {
                 return Err(invalid("Package contains a link"));
             }
             if ty.is_dir() {
@@ -485,6 +458,7 @@ fn collect_files(root: &Path) -> Result<BTreeSet<String>> {
                 if !valid_relative(&relative) {
                     return Err(invalid("Invalid installed package path"));
                 }
+                if files.iter().any(|p: &String| p.eq_ignore_ascii_case(&relative)) { return Err(invalid("Duplicate package path")); }
                 files.insert(relative);
                 if files.len() > MAX_FILES {
                     return Err(invalid("Too many package files"));
@@ -498,6 +472,7 @@ fn collect_files(root: &Path) -> Result<BTreeSet<String>> {
 }
 
 fn bounded_read(path: &PathBuf, limit: u64) -> Result<Vec<u8>> {
+    if is_link(&fs::symlink_metadata(path)?) || !fs::metadata(path)?.is_file() { return Err(invalid("Package file is not regular")); }
     if fs::metadata(path)?.len() > limit {
         return Err(invalid("Package file exceeds limit"));
     }

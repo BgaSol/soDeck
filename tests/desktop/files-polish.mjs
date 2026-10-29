@@ -13,7 +13,7 @@ const note=s=>{checks.push(s);console.log(s);};
 async function locate(text){await file.getByRole('textbox',{name:'远端绝对路径'}).fill(text);await file.getByRole('button',{name:'定位路径',exact:true}).click();await until(async()=>{const s=await snapshot();return s.path===text&&!s.loading;},30000);}
 try{
  app=await launch({data:join(output,'data'),shellPort:9841,pluginPort:9842});
- const server=await rpc(app.page,'servers.create',{name:'T015 files Linux',host:config.host,port:config.port,username:config.username,authType:'key'});await rpc(app.page,'auth.set',{serverId:server.id,privateKeyPath:config.privateKeyPath});
+ const server=await rpc(app.page,'servers.create',{name:'T015 files Linux',host:config.host,port:config.port,username:config.username,authType:'key'});await rpc(app.page,'auth.ssh.set',{serverId:server.id,privateKeyPath:config.privateKeyPath});
  try{await rpc(app.page,'connections.acquire',{serverId:server.id,workspaceId:server.id,operationId:crypto.randomUUID()});}catch(e){assert.equal(e.code,'HOST_KEY_REQUIRED');await rpc(app.page,'hosts.trust',{serverId:server.id,challengeId:e.details.challengeId,fingerprint:e.details.fingerprint});}
  await rpc(app.page,'workspaces.open',{serverId:server.id});browser=await until(()=>chromium.connectOverCDP('http://127.0.0.1:9842'));file=await until(()=>browser.contexts().flatMap(c=>c.pages())[0]);
  await until(async()=>(await snapshot()).path==='/home/'+config.username,30000);await invoke('follow.setEnabled',{enabled:false});

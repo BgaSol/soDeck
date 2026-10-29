@@ -32,8 +32,8 @@ try {
   app=await launch({data:join(output,'data'),shellPort:9891,pluginPort:9892,packagePath,allowStartupWarning:true});
   let previous;const nodes=[];
   for(let i=0;i<3;i++) {
-    const node=await rpc(app.page,'servers.routes.v2.create',{name:`Network node ${i+1}`,host:i===0?'127.0.0.1':`node-${i}.internal`,port:i===0?config.port:22,username:'network-test',connectionRoute:previous?{kind:'sshJump',jumpServerId:previous.id}:{kind:'direct'}});
-    await rpc(app.page,'auth.set',{serverId:node.id,password:'isolated-network-password',remember:false});nodes.push(node);previous=node;
+    const node=await rpc(app.page,'servers.routes.create',{name:`Network node ${i+1}`,host:i===0?'127.0.0.1':`node-${i}.internal`,port:i===0?config.port:22,username:'network-test',accessPath:previous?{kind:'sshJump',jumpServerId:previous.id}:{kind:'direct'}});
+    await rpc(app.page,'auth.ssh.set',{serverId:node.id,password:'isolated-network-password',remember:false});nodes.push(node);previous=node;
   }
   const target=nodes.at(-1);await rpc(app.page,'workspaces.open',{serverId:target.id});
   assert.equal((await rpc(app.page,'workbench.snapshot')).views.length,0,'network must not open automatically');

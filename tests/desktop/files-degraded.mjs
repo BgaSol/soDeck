@@ -26,6 +26,6 @@ try{
   // silently restart authentication; explicit file connect remains available.
   const canceledServer=await rpc(app.page,'servers.create',{name:'取消认证',host:h.config.host,port:h.config.port,username:h.config.username,authType:'key'});await rpc(app.page,'workspaces.open',{serverId:canceledServer.id});
   await app.page.getByRole('button',{name:'取消',exact:true}).click();const idle=await h.view('sodeck.files',canceledServer.id);await until(async()=>(await snapshot(idle)).state==='idle');
-  assert.equal((await rpc(app.page,'resources.list')).connections.length,0);await rpc(app.page,'auth.set',{serverId:canceledServer.id,privateKeyPath:h.config.privateKeyPath});
+  assert.equal((await rpc(app.page,'resources.list')).connections.length,0);await rpc(app.page,'auth.ssh.set',{serverId:canceledServer.id,privateKeyPath:h.config.privateKeyPath});
   await rpc(app.page,'commands.execute',{pluginId:'sodeck.files',commandId:'files.connect',workspaceId:canceledServer.id,operationId:crypto.randomUUID()});await until(async()=>(await snapshot(idle)).state==='ready',25000);checks.push('FT-14/RI-07: canceled terminal authentication stays canceled; explicit file command can connect independently');
 }finally{await writeFile(join(h.output,'results.json'),JSON.stringify(checks,null,2));await h.stop();}

@@ -1,10 +1,11 @@
 # F-CORE-017：插件名称与身份展示
 
-文档就绪：可评审 · 修订：r2 · 日期：2026-10-27
+文档就绪：可评审 · 修订：r3 · 日期：2026-10-29
 所属：插件管理器、公开元数据与外壳 · 任务：[T-015](../tasks/T-015-workflow-polish.md)
 
 ## 1. 行为与契约
 
+T-028增量由[F-CORE-032](plugin-management.md)统一维护：列表移入设置，分别显示启用偏好、实际运行、当前/候选版本及各自签名状态。显示名来自已验证清单，只是包声明，不凭名称或sodeck前缀认定官方；坏包仍以登记ID展示失败，不能因取名校验失败从列表消失。旧metadata DTO保持，新管理API见[代码方案](../technical/plugin-management-implementation.md)。PM-02/04/10/15/20验证；本增量待确认，原PN结果保持。
 插件管理页用中文名作主标题：`sodeck.terminal` 为“终端”，`sodeck.files` 为“文件”，`sodeck.network-proxy` 为“网络隧道”。下方显示稳定 pluginId 和版本，中文名不代替更新、资源归属、调用记录或路由的身份键。
 
 给 manifest 增加可选 `displayName`（1～64 个 Unicode 字符、去首尾空白、拒绝控制字符），由插件包声明，核心验证后在新 `plugins.metadata.list` 中提供；旧plugins.list严格投影不变，外壳不再按pluginId特判中文名。新核心兼容旧包；旧包优先取唯一主视图标题，不唯一则回退ID。禁止从未验证路径读标题或当HTML渲染。字段、版本、模块和兼容矩阵见[代码方案r1 §3](../technical/workflow-polish-implementation.md)。

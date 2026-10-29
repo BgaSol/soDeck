@@ -1,6 +1,20 @@
 # 终端插件
 
-更新日期：2026-10-27 · 修订：r10
+更新日期：2026-10-29 · 修订：r20
+
+T-029：[F-TERM-007](features/online-updates.md)定义终端独立发布、手动下载/安装和真实PTY/设置A→B回归；下载/来源/安装服务归核心，当前待整体方案确认。
+
+T-028：[F-TERM-006 r1](features/plugin-management.md)定义终端启停、PTY/设置provider与无签名单包更新回归。启停由核心管理，预期不改终端业务代码；方案确认和结果见[T-028](../../tasks/T-028-plugin-management.md)。
+
+Windows Shell临时修复：[F-TERM-003 r4 / WIN-SHELL-01](features/directory-reporting.md)仅在确认Linux+Bash后启用目录集成；Windows/未知使用普通SSH Shell，不修改全局偏好。终端0.13.1独立包与Windows/Linux原生证据见[T-027结果](../../tasks/T-027-results.md)。
+
+T-027：[插件计划 r4](features/mixed-route-integration.md)保留原混合连接接入及 TERM-MR 结果，新增每终端诊断引用/详情入口、一次组合确认、公共 UI 与 TERM-DIAG-01～03。公共传输只由核心实现，插件独立构建/更新；本轮增量待整体确认，状态见[T-027 r7](../../tasks/T-027-mixed-route.md)。
+
+统一设置接入：[F-TERM-005 r2](features/settings.md)由终端0.11.0声明字号/Shell目录集成，核心统一呈现；[代码方案r1 §10](../../technical/settings-implementation.md#10-终端接入和独立更新验证)规定provider、原子保存、全视图feed/移窗快照。真实SSH与A/B独立更新证据见[T-023结果](../../tasks/T-023-results.md)。
+
+本轮代码接入见[T-016代码方案r1](../../technical/observability-implementation.md)，已固定4.10能力、包目录、上下文、实际完成点与独立更新验证；等待用户最终确认，当前插件代码未改。
+
+本轮诊断接入需求：[F-TERM-004 r2](features/observability.md)细化会话/重连/取消/关闭、目录集成健康、公开快照/指标及TERM-OBS测试；通过[T-016核心公共接口](../../core/observability/integration.md)采集，保留PTY/认证职责。仅设计，未改变当前插件实现。
 最新提案：[T-015](../../tasks/T-015-workflow-polish.md)覆盖末行裁切和Tab末尾＋；TERM-VIEW-01～03见[F-TERM-001 r10](features/ssh-terminal.md)，入口/窗口见[F-CORE-008 r6](../../core/workbench-interaction.md)。仅设计，不改写旧任务实现/实测。
 
 插件 ID：`sodeck.terminal` · 当前任务：[T-009](../../tasks/T-009-clean-start.md) · Windows 开发包与验收范围见任务
@@ -23,9 +37,11 @@
 
 | 功能 | 规格及自己的测试流程 | 依赖 | 任务 |
 | --- | --- | --- | --- |
+| F-TERM-005：统一设置接入 | [行为与TERM-SET测试](features/settings.md) | 核心[F-CORE-028](../../core/settings.md)、原插件存储与终端视图 | [T-023](../../tasks/T-023-settings.md) |
 | F-TERM-001：真实 SSH 终端与会话交互 | [功能规格](features/ssh-terminal.md)；TERM-01 至 TERM-12 | [核心 SSH](../../core/ssh.md)、工作台、记录及资源契约 | [T-003](../../tasks/T-003-core-terminal.md) |
 | F-TERM-002：复制粘贴与本地菜单 | [功能规格](features/terminal-input.md)；IN-01 至 IN-07 | 核心剪贴板/PTY、F-CORE-008 共享 UI | [T-006](../../tasks/T-006-workbench-interaction.md) |
 | F-TERM-003：工作目录报告 | [功能设计](features/directory-reporting.md)；DR-01 至 DR-09 | [核心目录上下文](../../core/directory-context.md)、PTY 与 shell 集成；不直接驱动文件树 | [T-010](../../tasks/T-010-terminal-directory-follow.md) |
+| F-TERM-004：事件与诊断接入 | [采集规格](features/observability.md)；TERM-OBS-01～06 | 核心事件/context/快照/指标；不录制终端正文 | [T-016](../../tasks/T-016-observability.md) |
 | 插件包独立更新与恢复 | [本批更新流程及 UPD 测试](../../technical/first-terminal.md#5-本批独立更新及测试) | 核心插件管理器；插件数据 schema | [T-003](../../tasks/T-003-core-terminal.md) |
 | 会话托管、历史、回放等 | 尚未安排；进入相应任务时分别建功能规格 | 按真实需求补齐 | 无 |
 

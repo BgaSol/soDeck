@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "channel": "preview",
+  "identifier": "com.sodeck.v2.preview",
+  "productName": "SoDeck v2 Preview",
+  "keyId": "sodeck-v2-release-1",
+  "catalogPublicKey": null,
+  "updaterPublicKey": null,
+  "qa": false
+}

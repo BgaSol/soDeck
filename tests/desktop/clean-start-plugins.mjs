@@ -31,7 +31,7 @@ try {
   await until(()=>stdout.includes('\n'));const config=JSON.parse(stdout.split('\n')[0]);
   app=await start();await empty();
   const server=await rpc(app.page,'servers.create',{name:'插件更新测试',host:'127.0.0.1',port:config.port,username:'test-user',authType:'password'});
-  await rpc(app.page,'auth.set',{serverId:server.id,password:'isolated-test-password',remember:true});
+  await rpc(app.page,'auth.ssh.set',{serverId:server.id,password:'isolated-test-password',remember:true});
   await rpc(app.page,'workspaces.open',{serverId:server.id});await app.page.getByRole('button',{name:'信任并连接',exact:true}).click();
   let page=await terminal();await pluginRpc(page,'plugin.invoke',{command:'settings.set',args:{fontSize:19}});
   const before=(await rpc(app.page,'resources.list')).ptys;

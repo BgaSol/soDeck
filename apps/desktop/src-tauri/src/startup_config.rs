@@ -11,9 +11,13 @@ pub struct DebugConfig {
 }
 static DEBUG:std::sync::OnceLock<DebugConfig>=std::sync::OnceLock::new();
 pub fn debug()->&'static DebugConfig{DEBUG.get_or_init(DebugConfig::default)}
+pub fn qa_build()->bool {
+    let identity:serde_json::Value=serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/build-identity.json"))).expect("Compiled identity");
+    identity["qa"]==true&&identity["identifier"].as_str().is_some_and(|s|s.starts_with("com.sodeck.v2.qa."))
+}
 pub struct Bundle { pub plugin_id:Option<String>,pub path:PathBuf }
 pub struct Resources { pub keys:PathBuf,pub packages:Vec<Bundle>,pub warnings:Vec<String> }
-pub struct StartupConfig { pub data:PathBuf,pub resources:Result<Resources,String>,pub debug:DebugConfig }
+pub struct StartupConfig { pub mode:String, pub data:PathBuf,pub resources:Result<Resources,String>,pub debug:DebugConfig }
 #[derive(Deserialize)]
 #[serde(rename_all="camelCase",deny_unknown_fields)]
 struct Portable { schema_version:u32 }
@@ -43,11 +47,12 @@ fn indexed_resources(exe_dir:&Path,framework:&Path)->Result<Resources,String>{
     let index:Index=json(&root.join("bundled-plugins.json"))?;
     if index.schema_version!=1{return Err("随附插件索引版本不支持".into());}
     let mut expected=std::collections::BTreeSet::from(["sodeck.terminal","sodeck.files","sodeck.network-proxy"]);
+    let mut optional=std::collections::BTreeSet::from(["sodeck.monitor"]);
     let keys=resource(&root,&index.public_keys)?;
     let mut packages=Vec::new();
     let mut warnings=Vec::new();
     for entry in index.plugins {
-        if !expected.remove(entry.plugin_id.as_str()){return Err("随附插件索引包含未知或重复项".into());}
+        if !expected.remove(entry.plugin_id.as_str())&&!optional.remove(entry.plugin_id.as_str()){return Err("随附插件索引包含未知或重复项".into());}
         match resource(&root,&entry.path) {
             Ok(path)=>packages.push(Bundle{plugin_id:Some(entry.plugin_id),path}),
             Err(error)=>warnings.push(error),
@@ -72,6 +77,12 @@ impl StartupConfig {
             dir.join("data")
         }else{system_data.to_path_buf()};
         let mut debug=DebugConfig::default();
+        if qa_build() {
+            debug.shell_port=vars.get("SODECK_QA_SHELL_DEBUG_PORT").and_then(|v|v.to_str()).and_then(|v|v.parse::<u16>().ok()).filter(|p|*p>1024);
+            debug.webview_args=vars.get("SODECK_QA_WEBVIEW_ARGS").and_then(|v|v.to_str()).map(str::to_owned);
+            debug.plugin_ports=vars.get("SODECK_QA_PLUGIN_DEBUG_PORTS").and_then(|v|v.to_str()).and_then(|s|serde_json::from_str::<BTreeMap<String,u16>>(s).ok()).unwrap_or_default();
+            debug.plugin_ports.retain(|_,p|*p>1024);
+        }
         if developer {
             debug.theme_file=vars.get("SODECK_THEME_FILE").map(PathBuf::from);
             debug.brand_file=vars.get("SODECK_TEST_BRAND_FILE").map(PathBuf::from);
@@ -90,7 +101,7 @@ impl StartupConfig {
                 _=>Err("开发覆盖必须同时指定插件包和签名公钥".into()),
             }
         }else{indexed_resources(dir,framework)};
-        Ok(Self{data,resources,debug})
+        Ok(Self{data,resources,debug,mode:if developer{"development"}else if portable.exists(){"portable"}else{"standard"}.into()})
     }
 }
 
@@ -118,5 +129,17 @@ mod tests {
         let t=fixture();fs::remove_file(t.path().join("resources/files.pkg")).unwrap();
         let resources=indexed_resources(t.path(),t.path()).unwrap();
         assert!(resources.keys.is_file());assert_eq!(resources.packages.len(),2);assert_eq!(resources.warnings.len(),1);assert!(resources.warnings[0].contains("files.pkg"));
+    }
+    #[test]fn monitor_bundle_is_optional_but_cannot_be_duplicated(){
+        let t=fixture();let root=t.path().join("resources");
+        let mut index:serde_json::Value=json(&root.join("bundled-plugins.json")).unwrap();
+        fs::write(root.join("monitor.pkg"),"fixture").unwrap();
+        let monitor=serde_json::json!({"pluginId":"sodeck.monitor","path":"monitor.pkg"});
+        index["plugins"].as_array_mut().unwrap().push(monitor.clone());
+        fs::write(root.join("bundled-plugins.json"),serde_json::to_vec(&index).unwrap()).unwrap();
+        assert_eq!(indexed_resources(t.path(),t.path()).unwrap().packages.len(),4);
+        index["plugins"].as_array_mut().unwrap().push(monitor);
+        fs::write(root.join("bundled-plugins.json"),serde_json::to_vec(&index).unwrap()).unwrap();
+        assert!(indexed_resources(t.path(),t.path()).is_err());
     }
 }

@@ -1,6 +1,6 @@
 {
   "name": "sodeck-v2",
-  "version": "2.0.0-dev.14",
+  "version": "2.0.0-dev.21",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -12,11 +12,12 @@
     "desktop": "node scripts/desktop.mjs dev",
     "desktop:build": "node scripts/desktop.mjs build --no-bundle",
     "build": "npm run build --workspaces --if-present",
-    "check": "node scripts/generate-server-catalog.mjs --check && node scripts/generate-workbench-ui.mjs --check && node scripts/generate-network.mjs --check && node scripts/generate-ui-tokens.mjs --check && node scripts/check-ui-boundaries.mjs && node scripts/generate-connection-route.mjs --check && node scripts/generate-communication.mjs --check && node scripts/generate-workbench.mjs --check && node scripts/generate-remote-read.mjs --check && npm run check --workspaces --if-present && node scripts/check-boundaries.mjs",
+    "check": "node scripts/generate-updates.mjs --check && node scripts/generate-runtime-compatibility.mjs --check && node scripts/generate-plugin-management.mjs --check && node scripts/generate-connection-diagnostics.mjs --check && node scripts/generate-connection-home.mjs --check && node scripts/generate-settings.mjs --check && node scripts/generate-observability.mjs --check && node scripts/generate-traffic.mjs --check && node scripts/generate-server-catalog.mjs --check && node scripts/generate-workbench-ui.mjs --check && node scripts/generate-network.mjs --check && node scripts/generate-ui-tokens.mjs --check && node scripts/check-ui-boundaries.mjs && node scripts/generate-connection-route.mjs --check && node scripts/generate-communication.mjs --check && node scripts/generate-workbench.mjs --check && node scripts/generate-remote-read.mjs --check && npm run check --workspaces --if-present && node scripts/check-boundaries.mjs",
     "test:contracts": "npm run test --workspaces --if-present",
     "test:core": "node scripts/cargo.mjs test --workspace",
     "plugin:pack": "node scripts/pack-plugin.mjs",
     "desktop:package-dev": "node scripts/package-dev.mjs",
+    "desktop:package-t027": "node scripts/package-mixed-route-dev.mjs",
     "test:terminal:native": "node tests/desktop/native.mjs",
     "test:updates:native": "node tests/desktop/updates.mjs",
     "test:clean-start:native": "node tests/desktop/clean-start.mjs",
@@ -35,7 +36,7 @@
   },
   "devDependencies": {
     "@playwright/test": "1.64.0",
-    "@tauri-apps/cli": "2.10.0",
+    "@tauri-apps/cli": "2.12.4",
     "@types/node": "24.19.2",
     "@types/react": "19.2.0",
     "@types/react-dom": "19.2.0",
@@ -43,6 +44,7 @@
     "esbuild": "0.28.2",
     "postcss": "8.5.6",
     "postcss-selector-parser": "7.1.0",
+    "semver": "6.3.1",
     "typescript": "5.9.3",
     "vite": "7.3.7",
     "vitest": "4.1.12"

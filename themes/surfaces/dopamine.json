@@ -6,5 +6,9 @@
   "focusGap": "#FFFBE6",
   "capacityNormal": "#BFE7CE",
   "capacityWarning": "#F5DF9B",
-  "capacityCritical": "#F3BEB8"
+  "capacityCritical": "#F3BEB8",
+  "trafficSend": "#3159A4",
+  "trafficReceive": "#7B3D93",
+  "trafficGap": "#716B60",
+  "trafficEvent": "#8C5900"
 }

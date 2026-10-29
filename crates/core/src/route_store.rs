@@ -1,13 +1,12 @@
-use crate::{model::Server, route::ConnectionRoute, store::Store, CoreError, Result};
+use crate::{model::Server, route::{AccessPath, RouteStep, ResolvedStep, ProxyResolve, plan::{SshStep, ProxyStep}}, store::Store, CoreError, Result};
 use rusqlite::{params, OptionalExtension};
-use std::collections::{HashSet, VecDeque};
 
 impl Store {
-    pub fn connection_route(&self, id: &str) -> Result<ConnectionRoute> {
+    pub fn connection_route(&self, id: &str) -> Result<AccessPath> {
         let db = self.db.lock().unwrap();
         route(&db, id)
     }
-    pub fn route_servers(&self, id: &str) -> Result<Vec<Server>> {
+    pub fn resolved_route(&self, id: &str) -> Result<(AccessPath, Vec<ResolvedStep>)> {
         let mut db = self.db.lock().unwrap();
         let tx = db.transaction()?;
         resolve(&tx, id, None)
@@ -16,21 +15,21 @@ impl Store {
         let db = self.db.lock().unwrap();
         dependents(&db, id)
     }
-    pub fn preview_route(&self, value: &Server, config: &ConnectionRoute) -> Result<Vec<Server>> {
+    pub fn preview_route(&self, value: &Server, config: &AccessPath) -> Result<(AccessPath, Vec<ResolvedStep>)> {
         let db = self.db.lock().unwrap();
         resolve(&db, &value.id, Some((value, config)))
     }
-    pub fn save_server_route(&self, value: &Server, expected: Option<u64>, config: Option<&ConnectionRoute>, multihop: bool) -> Result<()> {
+    pub fn save_server_route(&self, value: &Server, expected: Option<u64>, config: Option<&AccessPath>) -> Result<()> {
         value.validate()?;
         let mut db = self.db.lock().unwrap();
         let tx = db.transaction()?;
-        save_server_route_tx(&tx,value,expected,config,multihop)?;
+        save_server_route_tx(&tx,value,expected,config)?;
         crate::server_catalog_store::bump_revision(&tx)?;
         tx.commit()?;
         Ok(())
     }
 }
-pub(crate) fn save_server_route_tx(tx:&rusqlite::Connection,value:&Server,expected:Option<u64>,config:Option<&ConnectionRoute>,multihop:bool)->Result<()> {
+pub(crate) fn save_server_route_tx(tx:&rusqlite::Connection,value:&Server,expected:Option<u64>,config:Option<&AccessPath>)->Result<()> {
         value.validate()?;
         let previous: Option<String> = tx.query_row("SELECT data FROM servers WHERE id=?", [&value.id], |r| r.get(0)).optional()?;
         match (previous, expected) {
@@ -39,72 +38,58 @@ pub(crate) fn save_server_route_tx(tx:&rusqlite::Connection,value:&Server,expect
             _ => return Err(CoreError::new("REVISION_CONFLICT", "服务器配置已变化，请重新加载")),
         }
         let config = config.cloned().unwrap_or(route(&tx, &value.id)?);
-        if !multihop && expected.is_some() && resolve(&tx, &value.id, None)?.len() > 2 {
-            return Err(CoreError::new("ROUTE_VERSION_REQUIRED", "旧路由接口不能修改多级路径"));
-        }
-        let candidate = Some((value, &config));
-        let nodes = resolve(&tx, &value.id, candidate)?;
-        if !multihop {
-            // The old route contract cannot create a multihop path indirectly
-            // by changing a server already used by another target.
-            if nodes.len() > 2 || dependents(&tx, &value.id)?.iter().any(|s| resolve(&tx, &s.id, candidate).map_or(true, |p| p.len() > 2)) {
-                return Err(CoreError::new("ROUTE_VERSION_REQUIRED", "此路径需要多级跳板接口"));
+        resolve(&tx, &value.id, Some((value, &config)))?;
+        tx.execute("INSERT INTO servers(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data", params![value.id,serde_json::to_string(value)?])?;
+        tx.execute("DELETE FROM server_route_steps WHERE target_server_id=?",[&value.id])?;
+        for (index,step) in config.steps.iter().enumerate() {
+            match step {
+                RouteStep::Ssh { step_id, server_id } => {
+                    tx.execute("INSERT INTO server_route_steps(target_server_id,ordinal,step_id,kind,ssh_server_id) VALUES(?,?,?,'ssh',?)",params![value.id,index as i64,step_id,server_id])?;
+                }
+                RouteStep::Socks5 { step_id, proxy_id, resolve } => {
+                    tx.execute("INSERT INTO server_route_steps(target_server_id,ordinal,step_id,kind,proxy_id,resolve) VALUES(?,?,?,'socks5',?,?)",params![value.id,index as i64,step_id,proxy_id,if *resolve==ProxyResolve::Proxy {"proxy"} else {"local"}])?;
+                }
             }
         }
-        tx.execute("INSERT INTO servers(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data", params![value.id,serde_json::to_string(value)?])?;
-        tx.execute("INSERT INTO server_routes(server_id,data,jump_server_id) VALUES(?,?,?) ON CONFLICT(server_id) DO UPDATE SET data=excluded.data,jump_server_id=excluded.jump_server_id", params![value.id,serde_json::to_string(&config)?,config.jump_id()])?;
         Ok(())
 }
 pub(crate) fn server(db: &rusqlite::Connection, id: &str) -> Result<Server> {
     let raw: Option<String> = db.query_row("SELECT data FROM servers WHERE id=?", [id], |r| r.get(0)).optional()?;
     raw.map(|v|serde_json::from_str(&v).map_err(CoreError::from)).transpose()?.ok_or_else(||CoreError::new("NOT_FOUND","服务器不存在"))
 }
-pub(crate) fn route(db: &rusqlite::Connection, id: &str) -> Result<ConnectionRoute> {
-    let raw: Option<String> = db.query_row("SELECT data FROM server_routes WHERE server_id=?", [id], |r|r.get(0)).optional()?;
-    raw.map(|v|serde_json::from_str(&v).map_err(|_|CoreError::new("INVALID_ROUTE","不支持的连接路径格式"))).transpose().map(|v|v.unwrap_or_default())
-}
-pub(crate) fn dependents(db: &rusqlite::Connection, id: &str) -> Result<Vec<Server>> {
-    let mut pending = VecDeque::from([id.to_owned()]);
-    let mut visited = HashSet::from([id.to_owned()]);
-    let mut result = Vec::new();
-    while let Some(parent) = pending.pop_front() {
-        for child in direct_dependents(db, &parent)? {
-            if visited.insert(child.id.clone()) {
-                pending.push_back(child.id.clone());
-                result.push(child);
-            }
-        }
+pub(crate) fn route(db: &rusqlite::Connection, id: &str) -> Result<AccessPath> {
+    let mut query=db.prepare("SELECT ordinal,step_id,kind,ssh_server_id,proxy_id,resolve FROM server_route_steps WHERE target_server_id=? ORDER BY ordinal")?;
+    let rows=query.query_map([id],|r|Ok((r.get::<_,i64>(0)? as usize,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<String>>(3)?,r.get::<_,Option<String>>(4)?,r.get::<_,Option<String>>(5)?)))?;
+    let mut steps=Vec::new();
+    for row in rows {
+        let (ordinal,step_id,kind,server,proxy,resolve)=row?;
+        if ordinal!=steps.len(){return Err(CoreError::new("INVALID_ROUTE","连接步骤顺序不连续"));}
+        steps.push(match (kind.as_str(),server,proxy,resolve.as_deref()) {
+            ("ssh",Some(server_id),None,None)=>RouteStep::Ssh{step_id,server_id},
+            ("socks5",None,Some(proxy_id),Some("proxy"))=>RouteStep::Socks5{step_id,proxy_id,resolve:ProxyResolve::Proxy},
+            ("socks5",None,Some(proxy_id),Some("local"))=>RouteStep::Socks5{step_id,proxy_id,resolve:ProxyResolve::Local},
+            _=>return Err(CoreError::new("INVALID_ROUTE","连接步骤数据无效")),
+        });
     }
-    Ok(result)
+    let path=AccessPath{steps};path.validate(id)?;Ok(path)
 }
-fn direct_dependents(db: &rusqlite::Connection, id: &str) -> Result<Vec<Server>> {
-    let mut query = db.prepare("SELECT s.data FROM servers s JOIN server_routes r ON s.id=r.server_id WHERE r.jump_server_id=?")?;
-    let rows = query.query_map([id], |r|r.get::<_,String>(0))?;
+pub(crate) fn dependents(db:&rusqlite::Connection,id:&str)->Result<Vec<Server>> {
+    let mut query=db.prepare("SELECT DISTINCT s.data FROM servers s JOIN server_route_steps r ON s.id=r.target_server_id WHERE r.ssh_server_id=?")?;
+    let rows=query.query_map([id],|r|r.get::<_,String>(0))?;
     rows.map(|r|Ok(serde_json::from_str(&r?)?)).collect()
 }
-
-fn resolve(db: &rusqlite::Connection, id: &str, candidate: Option<(&Server, &ConnectionRoute)>) -> Result<Vec<Server>> {
-    let mut current = id.to_owned();
-    let mut visited = HashSet::new();
-    let mut nodes = Vec::new();
-    loop {
-        if !visited.insert(current.clone()) {
-            return Err(CoreError::new("INVALID_ROUTE", "跳板路径存在循环引用").details(serde_json::json!({"serverId":current})));
-        }
-        let (node, config) = match candidate.filter(|(s,_)| s.id == current) {
-            Some((s,r)) => (s.clone(), r.clone()),
-            None => (server(db, &current).map_err(|error| {
-                if !nodes.is_empty() && error.code == "NOT_FOUND" {
-                    CoreError::new("INVALID_ROUTE", "跳板路径引用的服务器不存在").details(serde_json::json!({"serverId":current}))
-                } else { error }
-            })?, route(db, &current)?),
-        };
-        nodes.push(node);
-        match config.jump_id() {
-            Some(next) => current = next.to_owned(),
-            None => break,
-        }
+pub(crate) fn proxy(db:&rusqlite::Connection,id:&str)->Result<crate::route::SocksProxy>{
+    let raw:Option<String>=db.query_row("SELECT data FROM socks_proxies WHERE id=?",[id],|r|r.get(0)).optional()?;
+    raw.map(|r|serde_json::from_str(&r).map_err(CoreError::from)).transpose()?.ok_or_else(||CoreError::new("PROXY_NOT_FOUND","网络代理不存在"))
+}
+pub(crate) fn resolve(db:&rusqlite::Connection,id:&str,candidate:Option<(&Server,&AccessPath)>)->Result<(AccessPath,Vec<ResolvedStep>)> {
+    let (target,path)=match candidate{Some((s,p))=>(s.clone(),p.clone()),None=>(server(db,id)?,route(db,id)?)};
+    path.validate(id)?;target.validate()?;let mut steps=Vec::new();
+    for step in &path.steps {
+        steps.push(match step {
+            RouteStep::Ssh{step_id,server_id}=>{let server=server(db,server_id)?;server.validate()?;ResolvedStep::Ssh(SshStep{step_id:step_id.clone(),server,credential_revision:0})},
+            RouteStep::Socks5{step_id,proxy_id,resolve}=>{let proxy=proxy(db,proxy_id)?;proxy.validate()?;ResolvedStep::Socks5(ProxyStep{step_id:step_id.clone(),proxy,resolve:*resolve,credential_revision:0})},
+        });
     }
-    nodes.reverse();
-    Ok(nodes)
+    steps.push(ResolvedStep::Ssh(SshStep{step_id:"target".into(),server:target,credential_revision:0}));Ok((path,steps))
 }

@@ -17,7 +17,7 @@ try{
   await until(()=>stdout.includes('\n'));const config=JSON.parse(stdout.split('\n')[0]);
   app=await launch({data:join(output,'data'),packagePath,shellPort:9861,pluginPort:9862});
   const server=await rpc(app.page,'servers.create',{name:'T015 geometry',host:'127.0.0.1',port:config.port,username:'test-user',authType:'password'});
-  await rpc(app.page,'auth.set',{serverId:server.id,password:'isolated-test-password',remember:false});
+  await rpc(app.page,'auth.ssh.set',{serverId:server.id,password:'isolated-test-password',remember:false});
   await rpc(app.page,'workspaces.open',{serverId:server.id});
   await app.page.getByRole('button',{name:'信任并连接',exact:true}).click();
   page=await until(async()=>(await pluginPages(app))[0]);

@@ -16,7 +16,7 @@ try{
   const create=async name=>{
     const server=await rpc(app.page,'servers.create',{name,host:'127.0.0.1',port:config.port,username:'test-user',authType:'password'});
     let error;try{await rpc(app.page,'connections.acquire',{serverId:server.id,workspaceId:server.id});}catch(e){error=e;}
-    assert.ok(['HOST_KEY_REQUIRED','AUTH_REQUIRED'].includes(error?.code));if(error.code==='HOST_KEY_REQUIRED')await rpc(app.page,'hosts.trust',{serverId:server.id,...error.details});await rpc(app.page,'auth.set',{serverId:server.id,password:'isolated-test-password',remember:false});return server;
+    assert.ok(['HOST_KEY_REQUIRED','AUTH_REQUIRED'].includes(error?.code));if(error.code==='HOST_KEY_REQUIRED')await rpc(app.page,'hosts.trust',{serverId:server.id,...error.details});await rpc(app.page,'auth.ssh.set',{serverId:server.id,password:'isolated-test-password',remember:false});return server;
   };
   const a=await create('本机工作区 A'),b=await create('本机工作区 B');
   await rpc(app.page,'workspaces.open',{serverId:a.id});await rpc(app.page,'workspaces.open',{serverId:b.id});

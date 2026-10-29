@@ -64,7 +64,7 @@ fn stream_audit_excludes_payload_and_cleanup_survives_log_failure() {
     let temp=tempfile::tempdir().unwrap();let core=Core::open(temp.path()).unwrap();setup(&core);let g=group(&core);let l=listener(&core,&g);
     let mut socket=TcpStream::connect(("127.0.0.1",l["address"]["port"].as_u64().unwrap() as u16)).unwrap();let stream=accept(&core,&g,&l)["stream"].clone();
     run(&core,"net.streams.exchange",json!({"group":g,"stream":stream}));socket.write_all(b"PRIVATE-NETWORK-BODY").unwrap();std::thread::sleep(Duration::from_millis(30));
-    let db=rusqlite::Connection::open(temp.path().join("core.sqlite")).unwrap();db.execute_batch("CREATE TRIGGER log_failure BEFORE INSERT ON calls BEGIN SELECT RAISE(FAIL,'test log unavailable'); END;").unwrap();
+    let db=rusqlite::Connection::open(temp.path().join("observability/facts.sqlite")).unwrap();db.execute_batch("CREATE TRIGGER log_failure BEFORE INSERT ON calls BEGIN SELECT RAISE(FAIL,'test log unavailable'); END;").unwrap();
     assert_eq!(finish(&core,start(&core,"net.groups.close",json!({"group":g})))["state"],"succeeded");assert!(TcpStream::connect(("127.0.0.1",l["address"]["port"].as_u64().unwrap() as u16)).is_err());
     db.execute_batch("DROP TRIGGER log_failure;").unwrap();let until=Instant::now()+Duration::from_secs(2);
     loop{let ended:Option<i64>=db.query_row("SELECT ended FROM calls WHERE method='net.streams.exchange.lifecycle'",[],|r|r.get(0)).unwrap();if ended.is_some(){break;}assert!(Instant::now()<until);std::thread::sleep(Duration::from_millis(5));}
@@ -124,11 +124,11 @@ impl Fixture {
     fn route(&self,core:&Core,g:&Value)->Value {
         let mut previous:Option<Value>=None;
         for index in 0..3 {
-            let node=core.call(&Caller::shell(),"servers.routes.v2.create",json!({"name":format!("node-{index}"),"host":if index==0{"127.0.0.1".into()}else{format!("node-{index}.internal")},"port":if index==0{self.port}else{22},"username":"network-test","connectionRoute":previous.as_ref().map_or(json!({"kind":"direct"}),|p|json!({"kind":"sshJump","jumpServerId":p["id"]}))})).unwrap();
-            core.call(&Caller::shell(),"auth.set",json!({"serverId":node["id"],"password":"isolated-network-password"})).unwrap();previous=Some(node);
+            let node=core.call(&Caller::shell(),"servers.routes.create",json!({"name":format!("node-{index}"),"host":if index==0{"127.0.0.1".into()}else{format!("node-{index}.internal")},"port":if index==0{self.port}else{22},"username":"network-test","accessPath":previous.as_ref().map_or(json!({"kind":"direct"}),|p|{let mut ids=p["accessPath"]["jumpServerIds"].as_array().cloned().unwrap_or_default();ids.push(p["id"].clone());json!({"kind":"hostTunnel","jumpServerIds":ids})})})).unwrap();
+            core.call(&Caller::shell(),"auth.ssh.set",json!({"serverId":node["id"],"password":"isolated-network-password"})).unwrap();previous=Some(node);
         }
         let target=previous.unwrap();
-        let status=core.call(&Caller::shell(),"connections.route.v2.get",json!({"serverId":target["id"],"workspaceId":"network-test"})).unwrap();
+        let status=core.call(&Caller::shell(),"connections.route.get",json!({"serverId":target["id"],"workspaceId":"network-test"})).unwrap();
         let revision=status["saved"]["routeRevision"].clone();
         assert!(revision.is_string(),"{status}");
         for _ in 0..4 {
@@ -163,7 +163,7 @@ fn target_timeout_and_four_draining_members_keep_existing_channels() {
     let rejected=finish(&core,start(&core,"net.tcp.open",json!({"group":g,"route":route,"host":"echo.internal","port":9999})));assert_eq!(rejected["error"]["code"],"CAPACITY");
     let list=core.call(&Caller::shell(),"net.resources.list",json!({})).unwrap();assert_eq!(list["items"].as_array().unwrap().iter().filter(|x|x["kind"]=="transport").count(),4);
     for stream in held {let a=run(&core,"net.streams.exchange",json!({"group":g,"stream":stream}))["attachment"].clone();let slot=a["slot"].as_u64().unwrap() as u32;let epoch=a["epoch"].as_u64().unwrap() as u32;core.network_input(&Caller::shell(),Frame{kind:Kind::Data,slot,epoch,offset:0,payload:b"alive".to_vec()}).unwrap();let mut data=Vec::new();let until=Instant::now()+Duration::from_secs(4);while data.len()<5 {core.network_output(&Caller::shell(),|f|{if f.kind==Kind::Data&&f.slot==slot{data.extend(f.payload);}true});assert!(Instant::now()<until);std::thread::sleep(Duration::from_millis(5));}assert_eq!(data,b"alive");}
-    run(&core,"net.groups.close",json!({"group":g}));let until=Instant::now()+Duration::from_secs(5);loop{let r=core.call(&Caller::shell(),"connections.route.v2.list",json!({})).unwrap();if r["usage"]==json!({"sessions":0,"bridges":0}){break;}assert!(Instant::now()<until,"{r}");std::thread::sleep(Duration::from_millis(10));}
+    run(&core,"net.groups.close",json!({"group":g}));let until=Instant::now()+Duration::from_secs(5);loop{let r=core.call(&Caller::shell(),"connections.route.list",json!({})).unwrap();if r["usage"]==json!({"sessions":0,"bridges":0}){break;}assert!(Instant::now()<until,"{r}");std::thread::sleep(Duration::from_millis(10));}
 }
 
 #[test]
@@ -185,6 +185,6 @@ fn three_node_target_channel_splice_and_stuck_open_isolation() {
     client.shutdown(Shutdown::Write).unwrap();let mut tail=Vec::new();client.read_to_end(&mut tail).unwrap();assert_eq!(tail,b"AFTER-EOF");
     run(&core,"net.groups.close",json!({"group":g}));
     let until=Instant::now()+Duration::from_secs(5);
-    loop {let usage=core.call(&Caller::shell(),"connections.route.v2.list",json!({})).unwrap();if usage["usage"]==json!({"sessions":0,"bridges":0}){break;}assert!(Instant::now()<until,"{usage}");std::thread::sleep(Duration::from_millis(20));}
+    loop {let usage=core.call(&Caller::shell(),"connections.route.list",json!({})).unwrap();if usage["usage"]==json!({"sessions":0,"bridges":0}){break;}assert!(Instant::now()<until,"{usage}");std::thread::sleep(Duration::from_millis(20));}
     let events=std::fs::read_to_string(f.root.path().join("events.jsonl")).unwrap();assert!(events.contains("withheld-open"));assert!(events.contains("echo.internal"));
 }

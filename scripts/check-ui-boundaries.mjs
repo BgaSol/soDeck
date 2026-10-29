@@ -36,6 +36,6 @@ export function styleErrors(file,source){
 }
 async function walk(dir){const out=[];for(const entry of await readdir(dir,{withFileTypes:true})){if(['dist','node_modules'].includes(entry.name))continue;const path=resolve(dir,entry.name);if(entry.isDirectory())out.push(...await walk(path));else if(/\.(tsx?|css)$/.test(entry.name))out.push(path);}return out;}
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
- const errors=[];for(const plugin of ['terminal','files','network-proxy'])for(const file of await walk(resolve(root,`plugins/${plugin}/src`))){if(file.endsWith('.test.ts'))continue;for(const error of styleErrors(relative(root,file),await readFile(file,'utf8')))errors.push(`${relative(root,file)}: ${error}`);}
+ const errors=[];for(const plugin of (await readdir(resolve(root,'plugins'),{withFileTypes:true})).filter(p=>p.isDirectory()).map(p=>p.name))for(const file of await walk(resolve(root,`plugins/${plugin}/src`))){if(file.endsWith('.test.ts'))continue;for(const error of styleErrors(relative(root,file),await readFile(file,'utf8')))errors.push(`${relative(root,file)}: ${error}`);}
  if(errors.length)throw new Error(errors.join('\n'));console.log('Plugin UI boundaries passed (AST + PostCSS).');
 }

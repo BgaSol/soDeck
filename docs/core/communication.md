@@ -1,6 +1,23 @@
 # F-CORE-001：调用与状态通信
 
-更新日期：2026-10-27 · 修订：r9 · 文档就绪：可评审；T-016历史事件增量为设计，实际实施见各任务
+更新日期：2026-10-28 · 修订：r13 · 文档就绪：可评审；T-027增量待确认，其他任务范围与结果不变
+
+T-027契约增量提案见[代码方案r1 §6](../technical/mixed-route-implementation.md#6-契约宿主和界面修改位置)：API/SDK6只提供新路径steps/step/edge与认证形状，删除API5路径/目录兼容投影，路由/目录/配置凭据能力修订v2。PTY/远程I/O等未改语义的方法继续复用，四官方插件一起升级；SDK/宿主命令预算取核心返回值，全部调用继续留痕。MR-CODE-02/06/10覆盖严格契约、超时及包版本拒绝；确认与结果见[T-027](../tasks/T-027-mixed-route.md)。
+
+## T-024增量：公开worker单调时钟
+
+对应[代码方案r1 §4.1](../technical/server-monitor-implementation.md#41-worker单调时钟)，计划在T-023的API5.1之后以5.2增加`runtime.clock.v1`：`sodeck.clock.monotonicMs(): number`返回该worker创建以来的有限非负毫秒数，单调不减，来自已有Rust Instant，重启重置，不能跨worker比较或当UTC。SDK公开类型/适配，插件不能直接访问`__nativeNow`。缺失/非法clock使依赖它的新插件明确不兼容，不以Date.now代替。
+
+这是本地纯计算接口，不是核心RPC、资源或外部I/O，因此不生成逐次调用记录；原核心连接/exec调用继续全部留痕。API5.0及T-023的5.1方法、信封与DTO保持，旧包继续运行；monitor声明`^5.2.0`与能力，旧核心拒绝新包。准确实现与预算见代码方案，不增加任意topic或插件互调。
+
+本功能新增测试（计划，结果见[T-024](../tasks/T-024-server-monitor.md)）：
+
+| 用例 | 准备/操作 | 预期 | 清理/方式 |
+| --- | --- | --- | --- |
+| COM-MON-01 | 可控墙钟与真实worker；前后调整Date.now并连续读取clock，重启worker | 不倒退、不受校时影响；新worker从新起点计，不允许跨实例差值 | 恢复夹具并停止worker；宿主单元+真实进程，对应MCODE-01 |
+| COM-MON-02 | 5.0/5.1/5.2核心与原三插件、T-023终端及新监控清单；缺clock/非法值夹具 | 旧包和设置在5.2正常；旧核心拒绝monitor；新插件发现缺clock停采且原因明确 | 恢复隔离包/数据；包兼容+真实宿主，对应MCODE-01/10 |
+
+本节r11已随T-024获确认，实际集成API5.3及验证见[T-024结果](../tasks/T-024-results.md)，与下文历史任务分别记录。桌面只读查询与可重复的state.ack/pty.observe.read不进入写操作请求去重缓存；写操作仍保留原去重窗口/容量，所有核心RPC继续逐次审计。
 
 T-016按P-53提出[事件采集/关联](observability/events.md)与[历史订阅](observability/history.md)：已提交事实有持久游标、至少一次补读和显式缺口；现有state feed继续允许合并，只表示最新状态。诊断数据可跨来源读取，不能携带命令或触发另一插件的隐式业务调用。来源、代次、作用域和逐次调用审计保持，订阅控制调用审计不反向投递造成自激循环。EV/HQ测试与预算在对应规格维护，接口尚未实现。
 
@@ -10,6 +27,8 @@ T-015增量见[代码方案r1 §3～5](../technical/workflow-polish-implementati
 上级：[核心设计](design.md) · 通用要求：[插件协议](../technical/plugin-protocol.md)
 
 ## 1. 目标与范围
+
+T-019代码设计增量：[实施稿r1 §7](../technical/communication-monitor-implementation.md)固定API/SDK4.9、通信/质量/测速/问题App作用域state契约，沿用Hub的32KiB快照与有界背压，不把历史大列表放入推送；分页/历史通过有界query，调用逐次审计，采样/投影不是新RPC。SDK先匹配订阅代次再校验，旧contract形状保持。单独TaskScope用于无工作区诊断任务，不伪造服务器工作区；MCODE-01/06/10/13验证作用域、兼容和调度。T-016可靠历史feed仍未纳入本次实现能力位。
 
 T-011增量（待确认）：[F-CORE-012](appearance.md)通过现有有界状态订阅增加`app.theme.v1`，App scope为`{appGeneration}`，target为`{app:"current"}`；已有工作区scope不改形状。核心拥有主题，真实外壳窗口使用宿主绑定的窗口owner，插件沿用实例/表面身份，不伪造工作区。主题对象生命周期至App退出，关闭工作区不会回收；窗口销毁释放自己的订阅。接口、容量/失败/兼容和专属AP-03/07/08测试由F-CORE-012维护，原COM用例继续回归。该增量尚未实现，T-010原确认和证据保持。
 

@@ -2,7 +2,7 @@ use super::*;
 impl State {
     pub(super) fn menu_notification(&self, source: &str, result: &crate::presentation::ResultState) {
         let payload = serde_json::to_value(result).unwrap();
-        if let Some(window) = source.strip_prefix("@window:").and_then(|id|self.app.get_webview_window(id)) {
+        if let Some(window) = source.starts_with("@window:").then(||self.endpoint_window(source,true).ok()).flatten().and_then(|id|self.app.get_webview_window(&id)) {
             let _ = window.eval(&format!("window.__sodeckNotify?.({});",json!({"type":"ui.menu.closed","payload":payload})));
         } else { let _ = self.native.post_eval(source.into(),format!("window.__sodeckNotify?.({});",json!({"type":"ui.menu.closed","payload":payload}))); }
     }

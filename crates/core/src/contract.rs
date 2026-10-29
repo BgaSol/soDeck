@@ -69,6 +69,7 @@ pub fn check(schema: &Value, s: &Value, value: &Value, path: &str) -> Result<(),
             }
         }
         Some("string") => {
+            if s["format"]=="uint64" && value.as_str().is_none_or(|v|v.parse::<u64>().is_err()) {return Err(invalid());}
             if let Some(pattern) = s["pattern"].as_str() {
                 if !regex::Regex::new(pattern)
                     .map_err(|_| invalid())?

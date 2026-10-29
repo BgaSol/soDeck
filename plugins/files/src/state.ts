@@ -1,4 +1,7 @@
+import {diagnosticReference,diagnosticSummary,errorMessage as connectionErrorMessage,type DiagnosticRef,type DiagnosticList} from '@sodeck/sdk';
+import {isConnectionAuthenticationError,type RouteStatus} from '@sodeck/sdk';
 import {CapacityCache,type CacheValue} from './capacity-cache';
+import {observation,sampler,DiagnosticEntities,errorCode,type ObservationClient} from './observation';
 import {RowLayout} from './row-layout';
 import {
   Remote,
@@ -60,6 +63,7 @@ export interface Snapshot {
   revision: number;
   state: string;
   message?: string;
+  diagnosticRef?:DiagnosticRef;
   showHidden: boolean;
   selected: string;
   selectedIndex: number;
@@ -92,6 +96,19 @@ const node = (p: RemotePath, attributes = unknown): Node => ({
   eof: false,
 });
 export class Explorer {
+  private readonly entities=new DiagnosticEntities();
+  private diagnostic=observation;private diagnosticLease?:Lease;private recentErrorCode?:string;
+  observationContext(){return this.diagnostic;}
+  followDiagnostics?:()=>Record<string,unknown>;
+  private async bindDiagnostic(client:ObservationClient|undefined=observation){
+    if(!client)return;const lease=this.remote.lease;
+    if(lease&&lease===this.diagnosticLease)return client.withResourceContext(this.diagnostic);
+    return client.withTargets(await client.targets([{kind:'server',id:this.serverId},{kind:'workspace',id:this.scope.workspaceId,generation:this.scope.workspaceGeneration},{kind:'view',id:this.viewId},...(lease?[{kind:'resource' as const,id:lease.connectionId,generation:String(lease.generation)}]:[])]));
+  }
+  private readonly capacityStates=new Map<string,string>();
+  private reportCapacity(key:string,state:string,began:number,error?:unknown){if(this.capacityStates.get(key)===state)return;if(!this.capacityStates.has(key)&&this.capacityStates.size>=512)this.capacityStates.delete(this.capacityStates.keys().next().value!);this.capacityStates.set(key,state);void this.diagnostic?.emit('plugin.sodeck.files.capacity.state.changed',{state,durationMs:Date.now()-began},error?{outcome:'failed',errorCode:errorCode(error)}:{});}
+  private readonly diagnosticRemotes=new Set<Remote>();
+  private observationTimer?:ReturnType<typeof setTimeout>;
   followSnapshot?:()=>import('./follow').FollowSnapshot;
   private followVisible=new Set<string>();
   snapshotTiming = { flatMs: 0, encodeMs: 0 };
@@ -120,9 +137,10 @@ export class Explorer {
   private layout=new RowLayout([]);private layoutRevision=0;private mountEpoch=0;
   readonly capacities=new CapacityCache<Capacity>(key=>{
     const [generation,connection,mountEpoch,id]=JSON.parse(key) as [string,number,number,string];
-    const snapshot=this.mountSnapshot,n=this.nodes.get(id),remote=this.remote.fork();
-    const valid=generation===this.scope.workspaceGeneration&&connection===this.remote.lease?.generation&&mountEpoch===this.mountEpoch&&this.visible&&!this.disposed&&snapshot&&n;
-    return {promise:valid?mountCapacity(remote,n.path,snapshot):Promise.reject(fault('CANCELED','容量读取已失效')),cancel:()=>remote.cancel()};
+    const snapshot=this.mountSnapshot,n=this.nodes.get(id),owner=this.remote,lease=owner.lease,serial=this.serial,remote=owner.fork();let canceled=false;
+    const valid=()=>!canceled&&serial===this.serial&&owner===this.remote&&lease===this.remote.lease&&generation===this.scope.workspaceGeneration&&connection===this.remote.lease?.generation&&mountEpoch===this.mountEpoch&&snapshot===this.mountSnapshot&&this.visible&&!this.disposed;
+    const began=Date.now();const promise=valid()&&snapshot&&n?mountCapacity(remote,n.path,snapshot).then(value=>{if(valid())this.reportCapacity(key,'available',began);return value;},error=>{if(valid()&&errorCode(error)!=='CANCELED')this.reportCapacity(key,errorCode(error).includes('UNSUPPORTED')?'unsupported':'failed',began,error);throw error;}).finally(async()=>{sampler?.metric('capacity.collect.duration',this.viewId,'histogram','ms',Date.now()-began);await remote.cancel();}):Promise.reject(fault('CANCELED','容量读取已失效'));
+    return {promise,cancel:()=>{canceled=true;return remote.cancel();}};
   },()=>{if(!this.disposed)this.changed();});
   private capacityKey(id:string){return JSON.stringify([this.scope.workspaceGeneration,this.remote.lease?.generation??0,this.mountEpoch,id]);}
   private connectionRevision?: number;
@@ -138,13 +156,18 @@ export class Explorer {
   }
   changed() {
     this.revision++;
+    if(observation&&!this.disposed&&this.observationTimer===undefined)this.observationTimer=setTimeout(()=>{
+      this.observationTimer=undefined;if(this.disposed)return;const capacity=this.capacities.diagnostics(),bytes=this.cacheBytes();
+      sampler?.snapshot('files.explorer.v1',this.viewId,{state:this.state,visible:this.visible,nodes:this.nodes.size,cacheBytes:bytes,queueDepth:this.jobs.size,capacityActive:capacity.active,capacityCache:capacity.entries,capacityPending:capacity.pending,mountState:this.collecting?'collecting':this.mountSnapshot?'available':this.mountError?'unavailable':'unknown',followStatus:this.followSnapshot?.().status??'unknown',followEnabled:this.followSnapshot?.().enabled??false,...this.followDiagnostics?.(),...(this.recentErrorCode?{recentErrorCode:this.recentErrorCode}:{})});
+      sampler?.metric('explorer.cache.bytes',this.viewId,'gauge','bytes',bytes);sampler?.metric('explorer.queue.depth',this.viewId,'gauge','count',this.jobs.size);
+    },5000);
   }
   private background(work: () => Promise<unknown>) {
     const serial=this.serial;
     const task = work()
       .catch((e) => {
         if (!this.disposed && serial===this.serial && (e as { code?: string }).code !== "CANCELED") {
-          this.error = message(e);
+          this.recentErrorCode=errorCode(e);this.error = message(e);
           if(this.state==='loading'){this.state='partialError';const rootNode=this.nodes.get(root.bytesBase64);if(rootNode)rootNode.error=this.error;}
           this.changed();
         }
@@ -176,48 +199,31 @@ export class Explorer {
       return;
     }
     if (this.remote.lease) {
+      const serial=this.serial,remote=this.remote;
       this.background(async () => {
         await this.verifyConnection();
         if (this.remote.lease && !this.nodes.get(root.bytesBase64)!.loaded)
           await this.load(root.bytesBase64);
+        if(serial!==this.serial||remote!==this.remote||this.disposed||!this.visible)return;
+        // The first load may have been canceled when this workspace was hidden.
+        if(this.state==='loading'&&this.nodes.get(root.bytesBase64)?.loaded){
+          this.state=[...this.nodes.values()].some(n=>n.error)?'partialError':'ready';this.changed();
+        }
         if (this.remote.lease) await this.select(this.selected);
       });
     } else void this.observe();
   }
+  diagnosticRef?:DiagnosticRef;
+  private routeRevision?:string;
   private async verifyConnection() {
-    const capabilities=await this.bridge.call<{capabilities:string[]}>('capabilities.list');
-    if(capabilities?.capabilities?.includes('connections.route.v1')){
-      const status=await this.bridge.call<{running:{connectionId:string;generation:number;state:string}[]}>('connections.route.get',{serverId:this.serverId,workspaceId:this.scope.workspaceId});
-      const lease=this.remote.lease;
-      // Visibility and window moves validate the held snapshot. A saved route
-      // edit cannot silently replace or dispose a still-live old connection.
-      if(status.running.some(r=>r.connectionId===lease?.connectionId&&r.generation===lease?.generation&&r.state==='active'))return;
-      await this.bridge.call('views.bindResources',{viewId:this.viewId,resources:[]});
-      await this.remote.dispose();this.state='disconnected';this.error='连接已结束，请重新连接并读取';this.changed();return;
-    }
-    const server = await this.bridge.call<{ revision: number }>("servers.get", {
-      serverId: this.serverId,
-    });
-    const state = await this.bridge.call<{
-      state: string;
-      connection: { generation: number } | null;
-    }>("connections.observe", {
-      scope: this.scope,
-      serverId: this.serverId,
-      configRevision: server.revision,
-      waitMs: 0,
-    });
-    if (
-      server.revision !== this.connectionRevision ||
-      state.state !== "active" ||
-      state.connection?.generation !== this.remote.lease?.generation
-    ) {
-      await this.bridge.call('views.bindResources',{viewId:this.viewId,resources:[]});
-      await this.remote.dispose();
-      this.state = "disconnected";
-      this.error = "连接或服务器配置已变化，请重新连接并读取";
-      this.changed();
-    }
+    const remote=this.remote,lease=remote.lease;
+    if(!lease)return;
+    const status=await this.bridge.call<RouteStatus>('connections.route.get',{serverId:this.serverId,workspaceId:this.scope.workspaceId});
+    if(this.remote!==remote||remote.lease!==lease)return;
+    const held=status.running.find(r=>r.connectionId===lease.connectionId&&r.generation===lease.generation&&r.state==='active');
+    if(held&&(!this.routeRevision||this.routeRevision===held.route.routeRevision)){this.routeRevision=held.route.routeRevision;return;}
+    await this.bridge.call('views.bindResources',{viewId:this.viewId,resources:[]});
+    await remote.dispose();this.routeRevision=undefined;this.state='disconnected';this.error='连接已结束，请重新连接并读取';this.changed();
   }
   private async observe() {
     if (this.observing || !this.visible || this.disposed || this.remote.lease)
@@ -252,11 +258,15 @@ export class Explorer {
         return;
       }
       this.state = state.state === "connecting" ? "waitingConnection" : "idle";
+      const history=await this.bridge.call<DiagnosticList>('connections.diagnostics.list',{workspaceId:this.scope.workspaceId,workspaceGeneration:this.scope.workspaceGeneration,serverId:this.serverId,purpose:'session'});
+      if(this.disposed||!this.visible||this.remote.lease)return;
+      const recent=history.attempts[0];this.diagnosticRef=recent?.reference;
+      this.error=recent&&['running','waiting','failed','canceled'].includes(recent.state)?diagnosticSummary(recent):undefined;
       this.changed();
     } catch (e) {
       if (!this.disposed) {
         this.state = "idle";
-        this.error = message(e);
+        this.diagnosticRef=diagnosticReference(e);this.error = message(e);
         this.changed();
       }
     } finally {
@@ -268,30 +278,33 @@ export class Explorer {
         );
     }
   }
-  async connect(operationId: string) {
+  async connect(operationId: string,inherited:ObservationClient|undefined=observation) {
     if (this.disposed) throw fault("CANCELED", "文件视图已关闭");
-    this.state = "loading";
-    this.error = undefined;
-    this.changed();
+    const diagnostic=await (await this.bindDiagnostic(inherited))?.beginAction('plugin.sodeck.files.explorer.connect');const began=Date.now();let outcome:'succeeded'|'failed'|'canceled'='succeeded',failure:string|undefined;
+    void diagnostic?.emit('plugin.sodeck.files.explorer.connect.started');
+    // Auto-observe may already own a loaded lease. A duplicate acquisition is
+    // released by connected(), so it must not leave that view stuck loading.
+    if(!this.remote.lease){this.state = "loading";this.error = undefined;this.diagnosticRef=undefined;this.changed();}
     try {
-      const server = await this.bridge.call<{ revision: number }>(
+      const server = await (diagnostic??this.bridge).call<{ revision: number }>(
         "servers.get",
         { serverId: this.serverId },
       );
-      const lease = await this.bridge.call<Lease>("connections.acquire", {
+      const lease = await (diagnostic??this.bridge).call<Lease>("connections.acquire", {
         serverId: this.serverId,
         workspaceId: this.scope.workspaceId,
         operationId,
       });
-      await this.connected(lease, server.revision);
+      await this.connected(lease, server.revision,diagnostic);
     } catch (e) {
+      failure=errorCode(e);this.recentErrorCode=failure;outcome=failure==='CANCELED'?'canceled':'failed';
       this.state = "idle";
-      this.error = message(e);
+      this.diagnosticRef=diagnosticReference(e);this.error = isConnectionAuthenticationError(e)?"等待完成连接路径认证":connectionErrorMessage(e);
       this.changed();
       throw e;
-    }
+    }finally{void diagnostic?.emit('plugin.sodeck.files.explorer.connect.completed',{durationMs:Date.now()-began},{outcome,...(failure?{errorCode:failure}:{})});void diagnostic?.end(outcome,{},failure);}
   }
-  private async connected(lease: Lease, revision: number) {
+  private async connected(lease: Lease, revision: number,diagnostic?:ObservationClient) {
     if (this.disposed) {
       await this.bridge.call("connections.release", { leaseId: lease.leaseId });
       return;
@@ -303,7 +316,9 @@ export class Explorer {
     this.serial++;
     this.selection++;
     this.remote = new Remote(this.bridge, this.scope);
-    this.remote.lease = lease;
+    this.remote.lease = lease;this.diagnosticRef=undefined;
+    this.diagnostic=(await this.bindDiagnostic(diagnostic??observation))?.withInvocation();
+    this.diagnosticLease=lease;
     this.capacities.clear();this.mountEpoch++;
     this.connectionRevision = revision;
     this.state = "loading";
@@ -324,30 +339,37 @@ export class Explorer {
     }
     if (!this.visible) return;
     const serial=this.serial,remote=this.remote;
+    const loading=await (diagnostic??this.diagnostic)?.beginAction('plugin.sodeck.files.directory.operation',{operation:'refresh'});
     this.background(async () => {
+      let outcome:'succeeded'|'failed'|'canceled'='succeeded';
+      try{
       const n = this.nodes.get(root.bytesBase64)!;
       n.expanded = true;
-      const attributes = await remote.stat(root);
-      if(serial!==this.serial||this.disposed)return;
+      const probe=remote.fork(loading);this.diagnosticRemotes.add(probe);let attributes;try{attributes=await probe.stat(root);}finally{this.diagnosticRemotes.delete(probe);await probe.cancel();}
+      if(serial!==this.serial||this.disposed){outcome="canceled";return;}
       n.attributes=attributes;
-      await this.load(root.bytesBase64);
+      const result=await this.load(root.bytesBase64,false,loading);
+      if(result?.outcome==="failed")outcome="failed";
       if(serial===this.serial&&!this.disposed)this.state = n.error?'partialError':'ready';
+      }catch(error){outcome=errorCode(error)==="CANCELED"?"canceled":"failed";throw error;}finally{void loading?.end(outcome);}
     });
     this.background(() => this.collect());
   }
   async collect() {
     if (this.collecting || !this.visible || !this.remote.lease) return;
     this.collecting = true;
+    const began=Date.now();let outcome:'succeeded'|'failed'|'canceled'='succeeded',failure:string|undefined,mountCount=0;
     const serial = this.serial;
     try {
-      const snapshot = await mounts(this.remote);
-      if (this.disposed || serial !== this.serial) return;
+      const snapshot = await mounts(this.remote);mountCount=snapshot.mounts.length;
+      if (this.disposed || serial !== this.serial){outcome="canceled";return;}
       this.capacities.clear();this.mountEpoch++;
       this.mountSnapshot = snapshot;
       this.mountError = undefined;
       this.changed();
       await this.select(this.selected);
     } catch (e) {
+      failure=errorCode(e);this.recentErrorCode=failure;outcome=failure==='CANCELED'?'canceled':'failed';
       if (serial === this.serial && !this.disposed) {
         this.mountError = message(e);
         this.capacities.clear();this.mountEpoch++;
@@ -356,6 +378,7 @@ export class Explorer {
         await this.select(this.selected);
       }
     } finally {
+      void this.diagnostic?.emit('plugin.sodeck.files.mount.collection.completed',{mountCount,method:'kernel',durationMs:Date.now()-began},{outcome,...(failure?{errorCode:failure}:{})});
       this.collecting = false;
     }
   }
@@ -409,11 +432,11 @@ export class Explorer {
         if (child.directoryId)
           void this.remote.close(child.directoryId).catch(() => {});
       }
-      this.nodes.delete(key);
+      this.entities.release(key);this.nodes.delete(key);
     }
     n.children = [];
   }
-  async load(key: string, refresh = false) {
+  async load(key: string, refresh = false, diagnostic:ObservationClient|undefined=this.diagnostic) {
     const n = this.nodes.get(key);
     if (
       !n ||
@@ -424,12 +447,14 @@ export class Explorer {
     )
       return;
     const serial = this.serial;
+    const began=Date.now(),directoryRef=this.entities.ref(key);let outcome:'succeeded'|'failed'|'canceled'='succeeded',failure:string|undefined,entries=0,applied=false;
+    const remote=diagnostic?.metadata?this.remote.fork(diagnostic):this.remote;if(remote!==this.remote)this.diagnosticRemotes.add(remote);if(remote!==this.remote&&n.directoryId)this.remote.transfer(n.directoryId,remote);
     n.loading = true;
     n.error = undefined;
     this.changed();
     try {
       if (refresh) {
-        if (n.directoryId) await this.remote.close(n.directoryId);
+        if (n.directoryId) await remote.close(n.directoryId);
         n.directoryId = undefined;
         n.cursor = 0;
       }
@@ -439,13 +464,14 @@ export class Explorer {
             "CURSOR_EXPIRED",
             "目录游标已关闭或过期，请刷新此目录后继续",
           );
-        const open = await this.remote.openDirectory(n.path);
+        const open = await remote.openDirectory(n.path);
         n.directoryId = open.directoryId;
         n.cursor = 0;
       }
-      const page = await this.remote.page(n.directoryId, n.cursor);
+      const page = await remote.page(n.directoryId, n.cursor);entries=page.entries.length;
       if (serial !== this.serial || this.disposed) {
-        if (n.directoryId) await this.remote.close(n.directoryId);
+        outcome="canceled";
+        if (n.directoryId) await remote.close(n.directoryId);
         n.directoryId = undefined;
         return;
       }
@@ -482,8 +508,8 @@ export class Explorer {
           if (!child) continue;
           if (chain.includes(old)) {
             try {
-              child.attributes = await this.remote.stat(child.path);
-              if (serial !== this.serial) return;
+              child.attributes = await remote.stat(child.path);
+              if (serial !== this.serial){outcome="canceled";return;}
               keys.push(old);
               continue;
             } catch (e) {
@@ -495,10 +521,11 @@ export class Explorer {
             await this.select(key);
           }
           this.evictChildren(child);
-          if (child.directoryId) await this.remote.close(child.directoryId);
-          this.nodes.delete(old);
+          if (child.directoryId) await remote.close(child.directoryId);
+          this.entities.release(old);this.nodes.delete(old);
         }
       }
+      applied=true;
       n.children = keys.sort((a, b) => {
         const x = this.nodes.get(a)!,
           y = this.nodes.get(b)!;
@@ -515,23 +542,28 @@ export class Explorer {
       n.observedAt = Date.now();
       if (page.eof) n.directoryId = undefined;
     } catch (e) {
+      outcome=errorCode(e)==='CANCELED'?'canceled':'failed';failure=errorCode(e);
       if (serial === this.serial) {
         n.error = message(e);
         if (n.directoryId)
-          await this.remote.close(n.directoryId).catch(() => {});
+          await remote.close(n.directoryId).catch(() => {});
         n.directoryId = undefined;
       }
     } finally {
+      if(remote!==this.remote){if(n.directoryId)remote.transfer(n.directoryId,this.remote);this.diagnosticRemotes.delete(remote);await remote.cancel();}
+      void diagnostic?.emit('plugin.sodeck.files.directory.read.completed',{...(directoryRef?{directoryRef}:{}),entryCount:entries,pageCount:1,durationMs:Date.now()-began,cacheHit:false,applied},{outcome,...(failure?{errorCode:failure}:{})});
+      sampler?.metric('directory.read.duration',this.viewId,'histogram','ms',Date.now()-began);sampler?.metric('directory.read.result',this.viewId,'counter','count',1,{outcome});
       n.loading = false;
       this.changed();
     }
+    return {outcome};
   }
-  toggle(key: string) {
+  toggle(key: string,diagnostic:ObservationClient|undefined=observation) {
     const n = this.nodes.get(key);
     if (!n || n.attributes.type !== "directory") return;
     n.expanded = !n.expanded;
     this.changed();
-    if (n.expanded && !n.loaded) this.background(() => this.load(key));
+    if (n.expanded && !n.loaded) void this.schedule(client=>this.load(key,false,client),'readMore',diagnostic);
     if (!n.expanded && n.directoryId) {
       const id = n.directoryId;
       n.directoryId = undefined;
@@ -553,10 +585,12 @@ export class Explorer {
     if(serial!==this.serial||!this.visible||this.disposed)throw fault('CANCELED','链接读取已取消');
     return {path:target.path,type:attributes.type};
   }
-  async locate(target: RemotePath) {
+  async locate(target: RemotePath,diagnostic?:ObservationClient) {
+    const remote=diagnostic?this.remote.fork(diagnostic):this.remote;if(remote!==this.remote)this.diagnosticRemotes.add(remote);
+    try {
     const serial = this.serial;
     const chain = ancestors(target);
-    const targetAttributes = await this.remote.stat(target);
+    const targetAttributes = await remote.stat(target);
     if (serial !== this.serial || this.disposed) return;
     this.admit(chain.length, chain.length * 512);
     for (let i = 0; i < chain.length; i++) {
@@ -569,7 +603,7 @@ export class Explorer {
             p,
             i === chain.length - 1
               ? targetAttributes
-              : await this.remote.stat(p),
+              : await remote.stat(p),
           ),
         );
       if (serial !== this.serial) return;
@@ -582,6 +616,7 @@ export class Explorer {
     this.nodes.get(target.bytesBase64)!.attributes = targetAttributes;
     this.changed();
     await this.select(target.bytesBase64);
+    }finally{if(remote!==this.remote){this.diagnosticRemotes.delete(remote);await remote.cancel();}}
   }
   async locateFollow(target:RemotePath,remote:Remote,valid:()=>boolean){
     const chain=ancestors(target),prepared:Node[]=[];
@@ -631,10 +666,10 @@ export class Explorer {
     void this.select(target.bytesBase64).catch(e=>{if(valid()){this.error=message(e);this.changed();}});
   }
   manualNavigation(){this.followVisible.clear();this.changed();}
-  refresh(key?: string) {
+  refresh(key?: string,diagnostic:ObservationClient|undefined=observation) {
     if (!this.remote.lease || !this.visible) return;
-    this.background(async () => {
-      await this.verifyConnection();if(!this.remote.lease)return;
+    return this.schedule(async diagnostic => {
+      await this.verifyConnection();if(!this.remote.lease)throw fault('CONNECTION_NOT_READY','连接已结束，请重新连接并读取');
       const serial=this.serial;this.error=undefined;
       const targets = key
         ? [key]
@@ -643,19 +678,30 @@ export class Explorer {
             .map((r) => r.id);
       for (const id of targets) {
         if (!this.visible||serial!==this.serial) return;
-        await this.load(id, true);
+        await this.load(id, true,diagnostic);
       }
       await this.collect();
       if(serial===this.serial)this.state=[...this.nodes.values()].some(n=>n.error)?'partialError':'ready';
-    });
+      return {outcome:this.state==='partialError'?'failed':'succeeded'};
+    },'refresh',diagnostic);
   }
-  schedule(action: () => Promise<unknown>) {
-    this.background(action);
+  schedule(action: (diagnostic?:ObservationClient) => Promise<unknown>,operation='readMore',inherited:ObservationClient|undefined=observation) {
+    const serial=this.serial;
+    const context=this.bindDiagnostic(inherited).then(client=>client?.beginAction('plugin.sodeck.files.directory.operation',{operation}));
+    this.background(async()=>{
+      const diagnostic=await context;
+      const began=Date.now();let outcome:'succeeded'|'canceled'|'failed'='succeeded',failure:string|undefined;
+      void diagnostic?.emit('plugin.sodeck.files.directory.operation.started',{operation,operationRevision:this.revision});
+      try{if(serial!==this.serial||this.disposed){outcome='canceled';return;}const result=await action(diagnostic);if(result&&typeof result==="object"&&"outcome"in result&&["failed","canceled"].includes(String(result.outcome)))outcome=result.outcome as "failed"|"canceled";}
+      catch(error){failure=errorCode(error);outcome=failure==='CANCELED'?'canceled':'failed';throw error;}
+      finally{void diagnostic?.emit('plugin.sodeck.files.directory.operation.completed',{operation,operationRevision:this.revision,durationMs:Date.now()-began},{outcome,...(failure?{errorCode:failure}:{})});void diagnostic?.end(outcome,{},failure);}
+    });
+    return context?.then(()=>{});
   }
   async cancel() {
     this.serial++;
     this.selection++;this.capacities.visible([]);
-    await Promise.all([this.detailRemote?.cancel(), this.remote.cancel()]);
+    await Promise.all([this.detailRemote?.cancel(), this.remote.cancel(),...[...this.diagnosticRemotes].map(remote=>remote.cancel())]);
     for (const n of this.nodes.values()) {
       n.directoryId = undefined;
       n.loading = false;
@@ -730,7 +776,7 @@ export class Explorer {
     const capacityKeys=rows.slice(visible.first,visible.end).filter(r=>r.mount&&r.unitOffset<startUnit+countUnits&&r.unitOffset+r.units>startUnit).map(r=>this.capacityKey(r.id));
     if(!continuation)this.capacities.visible(this.visible&&!!this.remote.lease?capacityKeys:[]);
     const selectedIndex=rows.findIndex(r=>r.id===this.selected);
-    const snapshot:Snapshot={revision:this.revision,layoutRevision:this.layoutRevision,state:this.state,message:this.error,showHidden:true,selected:this.selected,selectedIndex,selectedUnit:selectedIndex<0?-1:this.layout.offsets[selectedIndex],selectedPath:this.nodes.get(this.selected)?.path??root,rows:[],total:rows.length,startUnit:this.layout.offsets[range.first]??0,nextUnit:this.layout.offsets[range.first]??0,totalUnits:this.layout.total,viewportUnit:startUnit,scrollTop:this.scrollTop,mountError:this.mountError,loading:this.jobs.size>0,path:pathText(this.nodes.get(this.selected)?.path??root),version:__FILES_VERSION__,follow:this.followSnapshot?.()};
+    const snapshot:Snapshot={revision:this.revision,layoutRevision:this.layoutRevision,state:this.state,diagnosticRef:this.diagnosticRef,message:this.error,showHidden:true,selected:this.selected,selectedIndex,selectedUnit:selectedIndex<0?-1:this.layout.offsets[selectedIndex],selectedPath:this.nodes.get(this.selected)?.path??root,rows:[],total:rows.length,startUnit:this.layout.offsets[range.first]??0,nextUnit:this.layout.offsets[range.first]??0,totalUnits:this.layout.total,viewportUnit:startUnit,scrollTop:this.scrollTop,mountError:this.mountError,loading:this.jobs.size>0,path:pathText(this.nodes.get(this.selected)?.path??root),version:__FILES_VERSION__,follow:this.followSnapshot?.()};
     let bytes=JSON.stringify(snapshot).length*3;
     for(const original of rows.slice(range.first,range.end)){
       const row={...original,...(original.mount?{capacity:this.capacities.get(this.capacityKey(original.id))??{state:'loading' as const}}:{})};
@@ -743,11 +789,15 @@ export class Explorer {
   rowAt(index:number){const rows=this.flat();return rows[Math.max(0,Math.min(rows.length-1,Math.floor(index)))];}
   rowAtUnit(unit:number){const rows=this.flat();return rows[this.layout.at(unit)];}
   async dispose() {
+    clearTimeout(this.observationTimer);
+    void observation?.emit('plugin.sodeck.files.explorer.closed',{pendingCount:this.jobs.size,reason:'view-close'});
+    this.entities.clear();sampler?.release(this.viewId);
     this.disposed = true;this.capacities.clear();
     this.visible = false;
     this.serial++;
     this.selection++;
     clearTimeout(this.observeTimer);
+    await Promise.allSettled([...this.diagnosticRemotes].map(remote=>remote.cancel()));
     await this.detailRemote?.cancel();
     await this.remote.dispose();
     this.nodes.clear();

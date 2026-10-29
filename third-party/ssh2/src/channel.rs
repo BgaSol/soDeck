@@ -47,6 +47,36 @@ pub struct Channel {
 }
 
 impl Channel {
+    /// Origin token captured at C channel creation (zero means unattributed).
+    pub fn byte_counter_token(&self) -> u64 {
+        let locked = self.lock();
+        unsafe { raw::sodeck_channel_token(locked.raw) }
+    }
+
+    /// Send the fixed diagnostic request. EAGAIN must resume on this channel.
+    /// Returns only once the request is sent; start timing before receive.
+    pub fn probe_send(&self) -> Result<(), Error> {
+        let locked = self.lock();
+        locked.sess.rc(unsafe { raw::sodeck_probe_send(locked.raw) })
+    }
+
+    /// true = CHANNEL_SUCCESS, false = CHANNEL_FAILURE. Both prove a response.
+    pub fn probe_receive(&self) -> Result<bool, Error> {
+        let locked = self.lock();
+        let rc = unsafe { raw::sodeck_probe_receive(locked.raw) };
+        match rc { 99 => Ok(true), 100 => Ok(false), _ => {
+            locked.sess.rc(rc)?;
+            Err(Error::from_errno(::ErrorCode::Session(raw::LIBSSH2_ERROR_PROTO)))
+        } }
+    }
+
+    /// Retire after timeout/cancellation. A partially sent request must first
+    /// finish probe_send; the owner must then close, never reuse, this channel.
+    pub fn probe_cancel(&self) {
+        let locked = self.lock();
+        unsafe { raw::sodeck_probe_cancel(locked.raw) }
+    }
+
     pub(crate) fn from_raw_opt(
         raw: *mut raw::LIBSSH2_CHANNEL,
         err: Option<Error>,

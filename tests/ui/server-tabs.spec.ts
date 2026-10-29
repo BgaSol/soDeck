@@ -22,11 +22,11 @@ test.beforeEach(async({page})=>{
     }};
   });
   await page.goto('/');
-  await expect(page.getByRole('tablist',{name:'服务器工作区'}).getByRole('tab')).toHaveCount(20);
+  await expect(page.getByRole('tablist',{name:'工作台页面'}).getByRole('tab')).toHaveCount(20);
 });
 
 test('twenty server tabs stay on one row and keyboard selection scrolls the active tab into view',async({page})=>{
-  const tabs=page.getByRole('tablist',{name:'服务器工作区'}).getByRole('tab');
+  const tabs=page.getByRole('tablist',{name:'工作台页面'}).getByRole('tab');
   await tabs.first().focus();await tabs.first().press('End');await expect(tabs.last()).toBeFocused();await expect(tabs.last()).toHaveAttribute('aria-selected','true');
   await expect.poll(()=>page.locator('.server-tabs').evaluate(el=>el.scrollLeft)).toBeGreaterThan(0);
   const rows=await tabs.evaluateAll(items=>items.map(el=>el.getBoundingClientRect().top));expect(new Set(rows).size).toBe(1);
@@ -39,41 +39,32 @@ test('twenty server tabs stay on one row and keyboard selection scrolls the acti
 test('picker searches account and address, locates existing workspace and only opens explicitly selected new window',async({page})=>{
   await page.getByRole('button',{name:'打开服务器',exact:true}).first().click();
   await page.getByLabel('搜索服务器').fill('user-20');
-  await expect(page.locator('.picker-row')).toHaveCount(1);await expect(page.locator('.picker-row')).toContainText('其他窗口');
-  await page.locator('.picker-open').click();
+  await expect(page.locator('[data-connection-row]')).toHaveCount(1);await expect(page.locator('[data-connection-row]')).toContainText('已打开');
+  await page.getByRole('listitem',{name:/打开服务器/}).click();
   await expect.poll(()=>page.evaluate(()=>(window as any).__TABS_TEST__.calls.filter((c:any)=>c.method==='workspaces.open').at(-1)?.params)).toMatchObject({serverId:'server-20',target:'currentWindow'});
   await page.getByRole('button',{name:'打开服务器',exact:true}).first().click();await page.getByLabel('搜索服务器').fill('host-21.test');
-  await page.getByRole('button',{name:/在新窗口打开 服务器 21/}).click();
+  await page.getByRole('listitem',{name:/打开服务器 服务器 21/}).click({button:'right'});await chooseMenu(page,'open');
   await expect.poll(()=>page.evaluate(()=>(window as any).__TABS_TEST__.calls.filter((c:any)=>c.method==='workspaces.open').at(-1)?.params)).toMatchObject({serverId:'server-21',target:'newWindow'});
   expect(await page.evaluate(()=>(window as any).__TABS_TEST__.calls.some((c:any)=>['connections.acquire','commands.execute','pty.open'].includes(c.method)))).toBe(false);
 });
 
 test('keyboard workspace menu selects another window through the generic move contract',async({page})=>{
-  const tab=page.getByRole('tablist',{name:'服务器工作区'}).getByRole('tab').first();await tab.focus();await tab.press('Shift+F10');
+  const tab=page.getByRole('tablist',{name:'工作台页面'}).getByRole('tab').first();await tab.focus();await tab.press('Shift+F10');
   await chooseMenu(page,'window:workspace-other');
   await expect.poll(()=>page.evaluate(()=>(window as any).__TABS_TEST__.calls.find((c:any)=>c.method==='workspaces.move')?.params)).toMatchObject({workspaceId:'server-0',targetWindowId:'workspace-other'});
 });
 
-test('server picker keeps search on one row and uses compact, scrollable themed content',async({page})=>{
-  for(const [name,path] of [['graphite','themes/graphite.json'],['paper','tests/fixtures/themes/paper.json']]){
-    const theme=JSON.parse(readFileSync(path,'utf8'));
-    await page.evaluate(theme=>{for(const [key,value] of Object.entries(theme.colors))document.documentElement.style.setProperty('--'+key,String(value));document.documentElement.style.colorScheme=theme.mode;},theme);
-    await page.setViewportSize({width:900,height:600});
-    await page.getByRole('button',{name:'打开服务器',exact:true}).first().click();
-    const search=page.getByLabel('搜索服务器');await expect(search).toBeFocused();
-    const geometry=await page.locator('.server-search').evaluate(el=>{
-      const icon=el.querySelector('svg')!.getBoundingClientRect(),input=el.querySelector('input')!.getBoundingClientRect(),bounds=el.getBoundingClientRect();
-      return {iconCenter:icon.y+icon.height/2,inputCenter:input.y+input.height/2,iconRight:icon.right,inputLeft:input.left,inputRight:input.right,right:bounds.right,border:getComputedStyle(el.querySelector('input')!).borderTopWidth};
-    });
-    expect(Math.abs(geometry.iconCenter-geometry.inputCenter)).toBeLessThan(1);
-    expect(geometry.inputLeft).toBeGreaterThan(geometry.iconRight);expect(geometry.inputRight).toBeLessThan(geometry.right);expect(geometry.border).toBe('0px');
-    const list=await page.locator('.picker-list').evaluate(el=>({height:el.clientHeight,content:el.scrollHeight}));expect(list.content).toBeGreaterThan(list.height);
-    await expect(page.getByRole('button',{name:'添加服务器',exact:true})).toBeInViewport();
-    await search.fill('host-0.test');await expect(page.locator('.picker-row')).toHaveCount(1);
-    expect((await page.getByRole('dialog').boundingBox())!.height).toBeLessThan(380);
-    await page.screenshot({path:`.qa/t007/${name}-picker.png`});
+test('connection directory scrolls independently and keeps creation actions reachable in three themes',async({page})=>{
+  await page.setViewportSize({width:900,height:600});
+  await page.getByRole('button',{name:'打开服务器',exact:true}).first().click();
+  for(const mode of ['light','dark','dopamine']){
+    await page.evaluate(mode=>(window as any).__PRESENTATION__.change(mode),mode);
+    const search=page.getByLabel('搜索服务器');await search.fill('');
+    const list=await page.locator('.connection-server-list').evaluate(el=>({height:el.clientHeight,content:el.scrollHeight}));expect(list.content).toBeGreaterThan(list.height);
+    await expect(page.getByRole('button',{name:'新建 SSH 连接',exact:true}).first()).toBeInViewport();
+    await search.fill('host-0.test');await expect(page.locator('[data-connection-row]')).toHaveCount(1);
+    await page.screenshot({path:`.qa/t025/directory-${mode}.png`});
     await search.fill('not-a-saved-server');await expect(page.getByText('没有匹配的服务器',{exact:true})).toBeVisible();
-    await expect(page.getByRole('status')).toContainText('0 个匹配');
-    await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByText('共 0 台',{exact:true})).toBeVisible();await expect(page.getByRole('dialog')).toHaveCount(0);
   }
 });

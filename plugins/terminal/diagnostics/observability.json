@@ -1,0 +1,740 @@
+{
+  "schemaVersion": 1,
+  "pluginId": "sodeck.terminal",
+  "events": [
+    {
+      "type": "plugin.sodeck.terminal.session.open.started",
+      "typeVersion": 1,
+      "fields": {
+        "sessionId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "attemptId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "mode": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "new",
+            "reconnect"
+          ]
+        },
+        "durationMs": {
+          "type": "integer",
+          "classification": "duration",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "retryOf": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "previousState": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 32,
+          "enum": [
+            "connecting",
+            "waitingAuth",
+            "running",
+            "active",
+            "connected",
+            "failed",
+            "canceled",
+            "ended",
+            "closed",
+            "disconnected",
+            "unknown"
+          ]
+        }
+      },
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "session.open.started"
+    },
+    {
+      "type": "plugin.sodeck.terminal.session.open.completed",
+      "typeVersion": 1,
+      "fields": {
+        "sessionId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "attemptId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "mode": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "new",
+            "reconnect"
+          ]
+        },
+        "durationMs": {
+          "type": "integer",
+          "classification": "duration",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "retryOf": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "previousState": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 32,
+          "enum": [
+            "connecting",
+            "waitingAuth",
+            "running",
+            "active",
+            "connected",
+            "failed",
+            "canceled",
+            "ended",
+            "closed",
+            "disconnected",
+            "unknown"
+          ]
+        }
+      },
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "session.open.completed"
+    },
+    {
+      "type": "plugin.sodeck.terminal.session.close.started",
+      "typeVersion": 1,
+      "fields": {
+        "sessionId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "reason": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "user",
+            "workspace-close",
+            "app-exit"
+          ]
+        },
+        "durationMs": {
+          "type": "integer",
+          "classification": "duration",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "session.close.started"
+    },
+    {
+      "type": "plugin.sodeck.terminal.session.close.completed",
+      "typeVersion": 1,
+      "fields": {
+        "sessionId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "reason": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "user",
+            "workspace-close",
+            "app-exit"
+          ]
+        },
+        "durationMs": {
+          "type": "integer",
+          "classification": "duration",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "session.close.completed"
+    },
+    {
+      "type": "plugin.sodeck.terminal.session.state.changed",
+      "typeVersion": 1,
+      "fields": {
+        "sessionId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "from": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "connecting",
+            "waitingAuth",
+            "running",
+            "active",
+            "connected",
+            "failed",
+            "canceled",
+            "ended",
+            "closed",
+            "disconnected",
+            "unknown"
+          ]
+        },
+        "to": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "connecting",
+            "waitingAuth",
+            "running",
+            "active",
+            "connected",
+            "failed",
+            "canceled",
+            "ended",
+            "closed",
+            "disconnected",
+            "unknown"
+          ]
+        },
+        "observationBasis": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "worker-observed",
+            "core-response",
+            "ui-reported"
+          ]
+        },
+        "attemptId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        }
+      },
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "session.state.changed"
+    },
+    {
+      "type": "plugin.sodeck.terminal.session.cleanup.failed",
+      "typeVersion": 1,
+      "fields": {
+        "sessionId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "originalCode": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "cleanupCode": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        }
+      },
+      "kind": "domain",
+      "level": "warn",
+      "messageKey": "session.cleanup.failed"
+    },
+    {
+      "type": "plugin.sodeck.terminal.session.metadata.changed",
+      "typeVersion": 1,
+      "fields": {
+        "sessionId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "changedField": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "title"
+          ]
+        }
+      },
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "session.metadata.changed"
+    },
+    {
+      "type": "plugin.sodeck.terminal.settings.changed",
+      "typeVersion": 1,
+      "fields": {
+        "changedField": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "fontSize",
+            "shellIntegration"
+          ]
+        },
+        "value": {
+          "type": "integer",
+          "classification": "count",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "enabled": {
+          "type": "boolean",
+          "classification": "state"
+        }
+      },
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "settings.changed"
+    },
+    {
+      "type": "plugin.sodeck.terminal.integration.state.changed",
+      "typeVersion": 1,
+      "fields": {
+        "state": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "starting",
+            "ready",
+            "unsupported",
+            "degraded",
+            "stopped"
+          ]
+        },
+        "directoryRevision": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "sessionRef": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        }
+      },
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "integration.state.changed"
+    },
+    {
+      "type": "plugin.sodeck.terminal.integration.report.failed",
+      "typeVersion": 1,
+      "fields": {
+        "reasonCode": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "sessionRef": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        }
+      },
+      "kind": "domain",
+      "level": "warn",
+      "messageKey": "integration.report.failed"
+    },
+    {
+      "type": "plugin.sodeck.terminal.session.cancel.requested",
+      "typeVersion": 1,
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "session.cancel.requested",
+      "fields": {
+        "operationId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        }
+      }
+    },
+    {
+      "type": "plugin.sodeck.terminal.session.cancel.completed",
+      "typeVersion": 1,
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "session.cancel.completed",
+      "fields": {
+        "operationId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        }
+      }
+    }
+  ],
+  "actions": [
+    {
+      "type": "plugin.sodeck.terminal.session.open",
+      "typeVersion": 1,
+      "fields": {
+        "sessionId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "attemptId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "mode": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "new",
+            "reconnect"
+          ]
+        },
+        "durationMs": {
+          "type": "integer",
+          "classification": "duration",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "retryOf": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "previousState": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 32,
+          "enum": [
+            "connecting",
+            "waitingAuth",
+            "running",
+            "active",
+            "connected",
+            "failed",
+            "canceled",
+            "ended",
+            "closed",
+            "disconnected",
+            "unknown"
+          ]
+        }
+      },
+      "kind": "action"
+    },
+    {
+      "type": "plugin.sodeck.terminal.session.close",
+      "typeVersion": 1,
+      "fields": {
+        "sessionId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "reason": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "user",
+            "workspace-close",
+            "app-exit"
+          ]
+        },
+        "durationMs": {
+          "type": "integer",
+          "classification": "duration",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "kind": "action"
+    },
+    {
+      "type": "plugin.sodeck.terminal.settings.change",
+      "typeVersion": 1,
+      "kind": "action",
+      "fields": {}
+    }
+  ],
+  "snapshots": [
+    {
+      "type": "terminal.sessions.v1",
+      "typeVersion": 1,
+      "fields": {
+        "total": {
+          "type": "integer",
+          "classification": "count",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "truncated": {
+          "type": "boolean",
+          "classification": "state"
+        },
+        "pendingAttempts": {
+          "type": "integer",
+          "classification": "count",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "integrationEnabled": {
+          "type": "boolean",
+          "classification": "state"
+        },
+        "sessions": {
+          "type": "array",
+          "classification": "structure",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "classification": "structure",
+            "properties": {
+              "sessionId": {
+                "type": "string",
+                "classification": "safe-id",
+                "maxLength": 128
+              },
+              "state": {
+                "type": "string",
+                "classification": "enum",
+                "maxLength": 128,
+                "enum": [
+                  "connecting",
+                  "waitingAuth",
+                  "running",
+                  "active",
+                  "connected",
+                  "failed",
+                  "canceled",
+                  "ended",
+                  "closed",
+                  "disconnected",
+                  "unknown"
+                ]
+              },
+              "attemptId": {
+                "type": "string",
+                "classification": "safe-id",
+                "maxLength": 128
+              },
+              "resourceRefs": {
+                "type": "array",
+                "classification": "structure",
+                "maxItems": 16,
+                "items": {
+                  "type": "string",
+                  "classification": "safe-id",
+                  "maxLength": 128
+                }
+              },
+              "integrationState": {
+                "type": "string",
+                "classification": "enum",
+                "maxLength": 32,
+                "enum": [
+                  "starting",
+                  "ready",
+                  "unsupported",
+                  "degraded",
+                  "stopped",
+                  "disabled"
+                ]
+              },
+              "directoryRevision": {
+                "type": "string",
+                "classification": "safe-id",
+                "maxLength": 128
+              },
+              "recentErrorCode": {
+                "type": "string",
+                "classification": "safe-id",
+                "maxLength": 64
+              }
+            }
+          }
+        },
+        "stateCounts": {
+          "type": "object",
+          "classification": "structure",
+          "properties": {
+            "connecting": {
+              "type": "integer",
+              "classification": "count",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "waitingAuth": {
+              "type": "integer",
+              "classification": "count",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "running": {
+              "type": "integer",
+              "classification": "count",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "active": {
+              "type": "integer",
+              "classification": "count",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "connected": {
+              "type": "integer",
+              "classification": "count",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "failed": {
+              "type": "integer",
+              "classification": "count",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "canceled": {
+              "type": "integer",
+              "classification": "count",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "ended": {
+              "type": "integer",
+              "classification": "count",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "closed": {
+              "type": "integer",
+              "classification": "count",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "disconnected": {
+              "type": "integer",
+              "classification": "count",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "unknown": {
+              "type": "integer",
+              "classification": "count",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        }
+      },
+      "staleAfterMs": 300000
+    }
+  ],
+  "metrics": [
+    {
+      "type": "session.open.duration",
+      "typeVersion": 1,
+      "fields": {},
+      "metricKind": "histogram",
+      "unit": "ms",
+      "labels": {},
+      "buckets": [
+        10,
+        50,
+        100,
+        250,
+        500,
+        1000,
+        3000,
+        10000,
+        30000,
+        120000
+      ]
+    },
+    {
+      "type": "session.reconnect.duration",
+      "typeVersion": 1,
+      "fields": {},
+      "metricKind": "histogram",
+      "unit": "ms",
+      "labels": {},
+      "buckets": [
+        10,
+        50,
+        100,
+        250,
+        500,
+        1000,
+        3000,
+        10000,
+        30000,
+        120000
+      ]
+    },
+    {
+      "type": "session.open.result",
+      "typeVersion": 1,
+      "fields": {},
+      "metricKind": "counter",
+      "unit": "count",
+      "labels": {
+        "outcome": [
+          "succeeded",
+          "failed",
+          "canceled",
+          "unknown"
+        ]
+      }
+    },
+    {
+      "type": "session.active",
+      "typeVersion": 1,
+      "fields": {},
+      "metricKind": "gauge",
+      "unit": "count",
+      "labels": {
+        "state": [
+          "connecting",
+          "waitingAuth",
+          "running",
+          "active",
+          "connected",
+          "failed",
+          "canceled",
+          "ended",
+          "closed",
+          "disconnected",
+          "unknown"
+        ]
+      }
+    }
+  ]
+}

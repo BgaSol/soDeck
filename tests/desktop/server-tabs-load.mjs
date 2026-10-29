@@ -24,7 +24,7 @@ try{
     const s=await rpc(app.page,'servers.create',{name,host:'127.0.0.1',port,username:'test-user',authType:'password'});
     let challenge;try{await rpc(app.page,'connections.acquire',{serverId:s.id,workspaceId:s.id});}catch(e){challenge=e;}
     assert.ok(['HOST_KEY_REQUIRED','AUTH_REQUIRED'].includes(challenge?.code));if(challenge.code==='HOST_KEY_REQUIRED')await rpc(app.page,'hosts.trust',{serverId:s.id,...challenge.details});
-    await rpc(app.page,'auth.set',{serverId:s.id,password:'isolated-test-password'});await rpc(app.page,'workspaces.open',{serverId:s.id});servers.push(s);
+    await rpc(app.page,'auth.ssh.set',{serverId:s.id,password:'isolated-test-password'});await rpc(app.page,'workspaces.open',{serverId:s.id});servers.push(s);
   }
   const [a,b,c]=servers,views=[];
   for(const s of [a,a,b,b])views.push(await rpc(app.page,'commands.execute',{commandId:'terminal.new',workspaceId:s.id}));

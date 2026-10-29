@@ -8,6 +8,8 @@ const STATE_BYTES: usize = 32 * 1024;
 const STORE_BYTES: usize = 8 * 1024 * 1024;
 const INSTANCE_BYTES: usize = 512 * 1024;
 const QUEUE_BYTES: usize = 8 * 1024 * 1024;
+const MONITOR_BYTES: usize = 2 * 1024 * 1024;
+fn monitor(key:&Key)->bool {key.contract.starts_with("communication.")||key.contract.starts_with("observability.")}
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Key {
@@ -78,6 +80,11 @@ impl Hub {
     /// Reserve a bounded state slot before a domain's durable commit. Other
     /// objects cannot consume this capacity while persistence is in progress.
     pub fn reserve(&mut self, key: Key, bytes: usize) -> Result<()> {
+        if key.contract.starts_with("settings.") {
+            let keys=self.objects.keys().chain(self.reservations.keys()).filter(|k|k.contract.starts_with("settings.")&&*k!=&key).collect::<HashSet<_>>();
+            let charged=keys.iter().map(|k|self.reservations.get(*k).copied().unwrap_or(0).max(self.objects.get(*k).map_or(0,|o|o.snapshot.bytes))).sum::<usize>();
+            if charged+bytes>4*1024*1024||keys.iter().filter(|k|k.contract=="settings.page.v1").count()+usize::from(key.contract=="settings.page.v1")>128{return Err(Fault("CAPACITY"));}
+        }
         let used = self.state_bytes + self.reservations.iter().map(|(k,n)|n.saturating_sub(self.objects.get(k).map_or(0,|o|o.snapshot.bytes))).sum::<usize>();
         let current = self.reservations.get(&key).copied().unwrap_or(0);
         let stored=self.objects.get(&key).map_or(0,|o|o.snapshot.bytes);
@@ -105,6 +112,13 @@ impl Hub {
         if snapshot.bytes > STATE_BYTES || self.state_bytes - previous_bytes + snapshot.bytes.max(self.reservations.get(&key).copied().unwrap_or(0)) + reserved > STORE_BYTES {
             return Err(Fault("CAPACITY"));
         }
+        if key.contract.starts_with("settings.") {
+            let keys=self.objects.keys().chain(self.reservations.keys()).filter(|k|k.contract.starts_with("settings.")&&*k!=&key).collect::<HashSet<_>>();
+            let charged=keys.iter().map(|k|self.reservations.get(*k).copied().unwrap_or(0).max(self.objects.get(*k).map_or(0,|o|o.snapshot.bytes))).sum::<usize>();
+            if charged+snapshot.bytes.max(self.reservations.get(&key).copied().unwrap_or(0))>4*1024*1024||keys.iter().filter(|k|k.contract=="settings.page.v1").count()+usize::from(key.contract=="settings.page.v1")>128||(key.contract=="settings.catalog.v1"&&snapshot.bytes>4096){return Err(Fault("CAPACITY"));}
+        }
+        if monitor(&key) && (self.objects.iter().filter(|(k,_)|monitor(k)&&*k!=&key).map(|(_,o)|o.snapshot.bytes).sum::<usize>()+snapshot.bytes>MONITOR_BYTES
+            || (prior.is_none()&&self.objects.keys().filter(|k|monitor(k)).count()>=128)) {return Err(Fault("CAPACITY"));}
         let snapshot = Arc::new(snapshot);
         self.state_bytes = self.state_bytes - previous_bytes + snapshot.bytes;
         let object = self.objects.entry(key).or_insert_with(|| Object {snapshot:snapshot.clone(), subscribers:HashSet::new()});
@@ -121,12 +135,13 @@ impl Hub {
 
     fn enforce_budget(&mut self, id: &str) {
         let Some(owner) = self.feeds.get(id).map(|f| f.instance.clone()) else { return; };
-        let (mut total, mut instance) = (0, 0);
+        let (mut total, mut instance,mut monitoring) = (0, 0,0);
         for feed in self.feeds.values() {
             total += feed.bytes();
             if feed.instance == owner { instance += feed.bytes(); }
+            if monitor(&feed.key){monitoring+=feed.bytes();}
         }
-        if total > QUEUE_BYTES || instance > INSTANCE_BYTES {
+        if total > QUEUE_BYTES || instance > INSTANCE_BYTES || (monitor(&self.feeds[id].key)&&monitoring>MONITOR_BYTES) {
             let feed = self.feeds.get_mut(id).unwrap();
             feed.latest = None;
             feed.in_flight = None;
@@ -209,6 +224,10 @@ impl Hub {
         for key in keys { self.remove(&key); }
     }
     pub fn keys(&self) -> impl Iterator<Item=&Key> { self.objects.keys() }
+    pub fn prune_unused_monitor_objects(&mut self) {
+        let keys:Vec<_>=self.objects.iter().filter(|(k,o)|monitor(k)&&o.subscribers.is_empty()).map(|(k,_)|k.clone()).collect();
+        for key in keys {self.remove(&key);}
+    }
 
     /// A transport failure never silently advances a live state view.
     pub fn delivery_failed(&mut self, id: &str) {
@@ -246,6 +265,11 @@ impl Hub {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn settings_reservations_leave_half_the_store_for_business(){
+        let mut hub=Hub::default();for n in 0..128{let key=Key{contract:"settings.page.v1".into(),scope:"app".into(),object:n.to_string()};hub.reserve(key.clone(),32*1024).unwrap();hub.put(key,json!({}),json!(n)).unwrap();}
+        let extra=Key{contract:"settings.page.v1".into(),scope:"app".into(),object:"extra".into()};assert_eq!(hub.reserve(extra.clone(),1024),Err(Fault("CAPACITY")));assert!(hub.put(extra,json!({}),json!(1)).is_err());
+        hub.put(Key{contract:"app.theme.v1".into(),scope:"app".into(),object:"theme".into()},json!({}),json!("x".repeat(16000))).unwrap();
+    }
     #[test]
     fn reserved_commit_survives_full_store_and_releases_on_remove(){
         let mut hub=Hub::default();let reserved=Key{contract:"app.theme.v1".into(),scope:"app".into(),object:"theme".into()};

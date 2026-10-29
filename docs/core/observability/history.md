@@ -1,7 +1,13 @@
 # F-CORE-019：历史查询、统计与可靠补读
 
-修订：r1 · 日期：2026-10-27 · 文档就绪：能力方案可评审，接口尚未实现
+修订：r5 · 日期：2026-10-28 · 文档就绪：功能需求可评审；T-016实施与验证中
+
+r4按用户明确决定：128订阅极限负载的1秒p95性能目标移到后续优化；本期仍验证正常使用、预算/背压与业务隔离。HQ-07既有128订阅数据作为压力观察保留，不以延迟未达标判本期功能失败，也不改写为性能通过。实际结果见T-016。
 所属：核心诊断查询与历史订阅 · 上级：[总览](../observability.md) · 任务：[T-016](../../tasks/T-016-observability.md)
+
+2026-10-27复核：T-019已建立events.query/get/aggregate的窄DTO和五分钟水位游标，需保留原strict契约；目前没有通用来源/级别筛选或历史feed。本修订以events.v2.*提供完整信封与插件历史，接入组合见[需求](integration.md)。旧接口支持程度以代码/原任务实测为准，下方HQ仍是本功能目标的规划流程。
+
+r3由[代码方案r1 §5.3](../../technical/observability-implementation.md)固定跨分区水位、两类游标和反馈排除表：历史页游标5分钟有效；feed的消费checkpoint使用持久store密钥，可在同storeEpoch跨App重启补读，仍受实际留存限制。已按T-016实施；实际入口和验证缺口见[T-016结果](../../tasks/T-016-results.md)。r5补充原定耗时分布的有界实现细节。
 
 ## 1. 目标与范围
 
@@ -9,24 +15,28 @@
 
 ## 2. 查询能力和一致性
 
-建议 `events.query/get/aggregate`、`traces.get`。过滤支持时间区间、bootId、来源/插件/模块、kind/type/level/outcome/errorCode、server/workspace/resource、trace/call/operation及issue引用；受控文本搜索仅作用于已允许的安全摘要。不能传SQL、脚本或任意数据库路径。
+新增建议 `events.v2.query/get/aggregate`、`traces.get`；保留现有`events.query/get/aggregate`。v2过滤支持时间区间、bootId/configEpoch、来源/插件/模块/实例、clientEventId、kind/type/level/outcome/errorCode、server/workspace/diagnosticRef、trace/call/operation；后续issue服务可用时再按其引用关联。受控文本搜索仅作用于已允许的安全摘要。不能传SQL、脚本或任意数据库路径。
+
+v2查询明确选择配置epoch，默认当前；需要跨旧服务器配置历史时显式给出epoch列表，不能把同名服务器跨epoch合并。旧格式事件可在v2投影中读取，但缺少的level/initiator/span字段标unknown和legacyPartial，不臆补为info/用户动作。诊断ref失效不影响历史查询，不因此重新取得活动资源。
 
 默认每页100条、上限200条，并有256KiB响应预算；单项详情按eventId取。排序采用storeEpoch内的提交sequence，时间条件采用显式选择的occurredAt/receivedAt；相同毫秒和系统时钟回拨不造成分页跳漏。第一页固定highWatermark、过滤条件指纹和存储epoch；后续游标不透明且校验，新增事件不挤入这次历史快照。读取请求自身在取highWatermark之前登记开始，其终态晚于快照是正常边界。
 
 每次返回retainedRange、highWatermark、coverage/gaps、nextCursor；已删除、过滤无结果、超出留存区间分别表达。轮转或清理跨过后续页时返回CURSOR_EXPIRED及可用起点，不静默宣称分页完整；`get`区分NOT_FOUND和GONE。一次查询时效5分钟，过期重开，不靠长期SQLite读事务阻塞checkpoint。
 
-统计支持按分钟/小时、级别、类型、错误码、来源等受控维度做计数和已采集耗时分布，说明统计窗口、样本数、采样/缺口及精度。只报告本机已记录样本，不把缺失样本当零。建议单次范围最多30天、200个分组，耗时查询最多2秒，超额要求缩小范围。首轮不开放自由报表语言。
+统计支持按分钟/小时、级别、类型、错误码、来源等受控维度做计数和已采集耗时分布，说明统计窗口、样本数、采样/缺口及精度。只报告本机已记录样本，不把缺失样本当零。本次单次范围最多30天、200个分组，耗时查询最多2秒，超额要求缩小范围。首轮不开放自由报表语言。
+
+实施细化（2026-10-28，HQ-03原范围）：每组返回计数及毫秒耗时的样本数、最小/最大/平均值和固定区间直方图（上界1/5/10/50/100/500/1000/5000/10000/60000ms，最后区间无上界）。只统计事件attributes.durationMs、核心attributes.summary.durationMs或attributes.sample.durationMs；缺字段不计入样本，无样本时数值为null。区间计数精确，区间内分布未知；不伪造精确百分位。结果同时返回实际查询时间窗，沿用固定水位和coverage。每组固定11个桶，无随事件数量增长的样本数组。
 
 ## 3. 实时订阅和补读
 
-建议 `events.open/ack/close` 及 `events.batch/gap/closed` 通知。open绑定当前调用者及过滤条件，返回subscriptionId、feedEpoch、起始游标和当时highWatermark；初始暂停，SDK安装监听后ack激活。可传历史游标从其后补读，或选择从当前水位开始；不默认回放全部历史。
+建议 `events.v2.open/ack/close` 及 `events.v2.batch/gap/closed` 通知。open绑定当前调用者及过滤条件，返回subscriptionId、feedEpoch、起始游标和当时highWatermark；初始暂停，SDK安装监听后ack激活。可传历史游标从其后补读，或选择从当前水位开始；不默认回放全部历史。
 
 - 记录提交后才可推送，事件本身不合并；一批最多100条或64KiB。每订阅最多一个未确认批次，慢消费者其余进度留在磁盘游标，不在内存复制全历史。
 - ack表示消费者已接收/保存到自身处理队列，不代表业务副作用完成。重复投递/ack允许；保存消费进度由消费者显式决定。断开/重启重开可重放，不能保证恰好一次。
 - 队列/磁盘历史缺口返回gap，包含已确认位置、仍可读取范围及原因；消费者明确选择继续可用区间或结束。不同storeEpoch不能比较游标，存储重建要求重新查询。
 - 建议每实例最多16个历史订阅，App128个；单实例交付预算512KiB、App8MiB，为已有宿主总队列预算的子额度，最终代码方案统一核算。open握手10秒、未ack60秒关闭；控制消息有保留额度，主通道失效则整个feed失效。
 - 实例/表面代次结束自动释放；隐藏视图可退订，worker订阅只受其自身生命周期约束。close幂等，关闭后的迟到批次不得更新新订阅。
-- 所有公开方法包括ack/查询都审计。API审计产生的事件属于`kind=call`，历史feed默认排除call，并且任何feed一律排除`events.*`自身投递控制、`issues.*`投递控制及证据任务进度查询的调用审计，防止订阅ack生成新的可投递事件形成反馈环。这些调用仍可通过历史query查到；该排除写入effectiveFilter，不能静默隐藏。
+- 所有公开方法包括ack/查询都审计。历史feed默认排除kind=call；即使显式包含call，也按集中方法表排除所有诊断生产/查询/控制/管理的调用审计及仅记录其自身的常规进度事件，覆盖events/traces/observability/metrics/diagnostics/evidence、旧diagnostics.get/calls.list及既有通信观测查询。防止ack或上报触发自投递反馈；真正业务action/domain、显式策略变化和真实存储故障仍可投递。被排除调用可通过历史query查到，effectiveFilter明确列出排除范围。
 
 事件查看、导出、AI查询也会产生审计，但不能自动因“查了记录”创建新的问题或触发诊断包。内部统计、投影和物理写入不走公共RPC。
 
@@ -49,5 +59,7 @@ AC-01查询稳定且范围诚实；AC-02逐条补读和缺口明确；AC-03订�
 | HQ-05 / 02、03 | 停读至超时及轮转后恢复；旧epoch/重复ack、close后迟到批次 | 队列不增长；明确gap/closed；旧消息不污染新订阅，幂等关闭 |
 | HQ-06 / 03 | 订阅含调用事件后持续ack/query，停止外部业务流量 | 控制调用仍审计但不反复自投递；effectiveFilter可见；最终交付停止 |
 | HQ-07 / 03 | 16实例/128feed、正常与慢消费者、持续200事件/秒60秒；同时发取消/退出 | 无消费者饿死；遵守总预算；取消可用、实例结束1秒内计数归零；记录延迟而非假定实时 |
+| HQ-08 / 01、03 | 保留原strict查询客户端并读取v2新增插件事件；跨configEpoch过滤、legacy事件、clientEventId去重查询 | 旧DTO保持原形，v2来源/级别筛选正确；旧事件缺字段和epoch差异明确，不伪造历史完整性 |
+| HQ-09 / 01、02、03 | 保存消费checkpoint后重启App；清理后重开；订阅包含call并只运行上报/查询/ack | 同epoch保留内至少一次补读；轮转明确gap，不因临时签名密钥失效丢进度；查询/上报自身不形成自激 |
 
 清理：关闭feed与App、恢复时钟/保留配置，删除临时库，保留脱敏计数、队列峰值与时间测量。首轮性能目标在实施稿按硬件与最终队列预算固定，不能凭本能力稿宣称已达成。

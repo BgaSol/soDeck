@@ -1,7 +1,9 @@
 # F-CORE-025：连接诊断、往返探测与异常提醒
 
+> 2026-10-27 范围调整：用户要求 T-019 快速收尾，问题记录、知悉与通知留待后续独立规划。本文件相关完整设计保留，但不作为本次交付；当前有效范围与检查见 [T-019 r4](../tasks/T-019-connection-metrics.md)。
+
 文档就绪：功能方案可评审；接口未实现  
-修订及日期：r1 · 2026-10-27  
+修订及日期：r2 · 2026-10-27
 所属：核心连接事实、公共问题服务、外壳呈现  
 上级：[通信总方案](connection-metrics.md) · 任务：[T-019](../tasks/T-019-connection-metrics.md)  
 相关：[问题生命周期](observability/issues.md)、[证据](observability/evidence.md)、[界面](../design/communication-monitor.md)
@@ -16,11 +18,11 @@
 
 ## 2. 探测与质量指标
 
-候选方法是现有SSH会话上带响应的无副作用协议请求，测得请求成功发送至对应有效响应的往返时间；具体SSH库支持及响应匹配在代码方案验证。请求不执行Shell命令、不打开对外端口，不要求ICMP或sudo。
+代码方案选用`ssh-channel-response-v1`：在现有SSH会话开不启动shell/exec的诊断channel，发送固定未知扩展请求、要求回复，按channel ID匹配SUCCESS或FAILURE；服务器拒绝未知请求也是有效往返响应。发送完成后才计时，通道创建/本机排队另计；超时/取消退役旧channel，防止迟到回复误中下一次。方法不执行Shell、不开放端口、不要求ICMP/sudo；MaxSessions或策略拒绝诊断channel时显示不支持。[代码方案§4/E2](../technical/communication-monitor-implementation.md)核实源码入口并定义真实采用关口，尚未进行运行验证。
 
 每个不同目标/账号/路径修订选择一条既有可用连接作代表，显示所测连接ID；相同物理测量任务被多个视图共享，不为每个终端发一份。代表连接结束可切换到同范围其他既有连接并标记新分段，不因探测持有租约阻止最后业务断开。共享第一跳但最终目标不同不合并为同一端到端结果。
 
-建议周期5秒，超时3秒，每连接最多1个在途请求；本机排队超过1秒或事件循环暂停导致迟发，记“未发出/调度延迟”，不计网络超时。超过周期不补发突发队列。全App同时最多8个在途探测、每秒最多8次发送，超额均匀排队/跳过并标覆盖；单个请求/响应负载有界，最终协议上限由代码稿固定。
+建议周期5秒，超时3秒，每连接最多1个在途请求；本机排队超过1秒或事件循环暂停导致迟发，记“未发出/调度延迟”，不计网络超时。超过周期不补发突发队列。全App同时最多8个在途探测、每秒最多8次发送，超额均匀排队/跳过并标覆盖；代码方案固定每次请求≤128B、有效回复≤16B，SSH封装另计。
 
 | 指标 | 定义与展示 |
 | --- | --- |
@@ -62,11 +64,11 @@
 
 ## 5. 状态、接口与依赖
 
-建议公开quality.policy.get/set、quality.check/start/cancel/get以及quality.summary；问题确认、历史查询和证据走公共issues/events/evidence能力。请求绑定serverId、路径修订及代表连接代次，结果包含method/version、observedAt、duration、outcome、sampleCounts、覆盖及来源；操作ID幂等，迟到旧请求只能落其原历史。
+公开quality.policy.get/set、quality.check.start/get/cancel以及quality.summary；问题确认、历史查询和证据走公共issues/events/evidence能力。请求绑定serverId、路径修订及代表连接代次，结果包含method/version、observedAt、duration、outcome、sampleCounts、覆盖及来源；操作ID幂等，迟到旧请求只能落其原历史。
 
 状态为disabled/unsupported/waiting/checking/ready/degraded/ended，CHECK_TIMEOUT与SCHEDULING_DELAY、DISCONNECTED、UNSUPPORTED、CANCELED、CAPACITY分开。采集字段受白名单限制；公开控制调用留痕，周期探测作为一个持续操作记录起止/统计及异常，避免每5秒重复制造用户动作。
 
-本功能负责连接领域规则与探测，公共问题服务负责投影、确认、去重、恢复历史；外壳负责提示显示。T-016未实现的公共依赖必须纳入代码稿的实际交付顺序，不能以私有日志替代后宣称通用体系完成。
+本功能负责连接领域规则与探测，公共问题服务负责投影、确认、去重、恢复历史；外壳负责提示显示。T-016未实现的公共依赖已纳入代码方案第6/10节的子集及交付顺序，不能以私有日志替代后宣称通用体系完成。
 
 ## 6. 验收与专属测试流程
 
@@ -87,6 +89,8 @@ AC-01探测语义准确；AC-02规则与恢复有证据；AC-03问题不刷屏/�
 | CQ-09 / 05 | 三主题/高对比/减少动态/键盘/200%文字；弹出轻提示与全局列表 | 状态不只靠颜色；提示不抢输入焦点，点击准确定位；阈值错误可访问 | 恢复偏好 |
 
 ## 7. 修订与技术关口
+
+- r2，2026-10-27：确定独立诊断channel回复方法、拒绝回复语义和超时退役；CQ-01/02/06/07按该方法验证，另加E2/MCODE-04，不使用keepalive发送成功充当响应。
 
 - r1，2026-10-27：完整功能方案，区分被动事实/主动探测/解释性提示，九项专属流程。
 

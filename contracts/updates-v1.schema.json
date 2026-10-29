@@ -1,0 +1,681 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Id": {
+      "type": "string",
+      "maxLength": 128,
+      "minLength": 1
+    },
+    "Revision": {
+      "type": "string",
+      "maxLength": 128,
+      "minLength": 1
+    },
+    "OperationId": {
+      "type": "string",
+      "maxLength": 36,
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "Empty": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "Stage": {
+      "enum": [
+        "available",
+        "downloading",
+        "verifying",
+        "downloaded",
+        "preparing",
+        "ready",
+        "waitingForCore",
+        "reviewing",
+        "handoffPending",
+        "handoffAttempted",
+        "installed",
+        "failed",
+        "cancelled",
+        "requiresUserAction",
+        "unknown",
+        "blocked"
+      ]
+    },
+    "Error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 512
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "OperationRequest": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "PlanRequest": {
+      "type": "object",
+      "properties": {
+        "componentIds": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "expectedRevision": {
+          "$ref": "#/$defs/Revision"
+        }
+      },
+      "required": [
+        "componentIds"
+      ],
+      "additionalProperties": false
+    },
+    "ActionRequest": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        },
+        "planRevision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "componentIds": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        }
+      },
+      "required": [
+        "operationId",
+        "planRevision",
+        "componentIds"
+      ],
+      "additionalProperties": false
+    },
+    "RestartRequest": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        },
+        "planRevision": {
+          "$ref": "#/$defs/Revision"
+        }
+      },
+      "required": [
+        "operationId",
+        "planRevision"
+      ],
+      "additionalProperties": false
+    },
+    "ListRequest": {
+      "type": "object",
+      "properties": {
+        "cursor": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "Component": {
+      "type": "object",
+      "properties": {
+        "componentId": {
+          "$ref": "#/$defs/Id"
+        },
+        "currentVersion": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "availableVersion": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selected": {
+          "type": "boolean"
+        },
+        "stage": {
+          "$ref": "#/$defs/Stage"
+        },
+        "received": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "blockedReasons": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "maxLength": 512
+          }
+        },
+        "requiredComponentIds": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "origin": {
+          "enum": [
+            "bundled",
+            "official",
+            "local",
+            "core"
+          ]
+        },
+        "followOfficial": {
+          "type": "boolean"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "componentId",
+        "currentVersion",
+        "availableVersion",
+        "selected",
+        "stage",
+        "received",
+        "total",
+        "blockedReasons",
+        "requiredComponentIds",
+        "origin",
+        "followOfficial",
+        "error"
+      ],
+      "additionalProperties": false
+    },
+    "ComponentResult": {
+      "type": "object",
+      "properties": {
+        "componentId": {
+          "$ref": "#/$defs/Id"
+        },
+        "stage": {
+          "$ref": "#/$defs/Stage"
+        },
+        "received": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "componentId",
+        "stage",
+        "received",
+        "total",
+        "error"
+      ],
+      "additionalProperties": false
+    },
+    "Operation": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        },
+        "kind": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "stage": {
+          "$ref": "#/$defs/Stage"
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "components": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/ComponentResult"
+          }
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "operationId",
+        "kind",
+        "stage",
+        "running",
+        "components",
+        "error",
+        "updatedAt"
+      ],
+      "additionalProperties": false
+    },
+    "Policy": {
+      "type": "object",
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/Revision"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "autoCheck": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "generation",
+        "revision",
+        "autoCheck"
+      ],
+      "additionalProperties": false
+    },
+    "PolicyValidate": {
+      "type": "object",
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/Revision"
+        },
+        "expectedRevision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "autoCheck": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "generation",
+        "expectedRevision",
+        "autoCheck"
+      ],
+      "additionalProperties": false
+    },
+    "PolicyCommit": {
+      "type": "object",
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/Revision"
+        },
+        "expectedRevision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "autoCheck": {
+          "type": "boolean"
+        },
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "generation",
+        "expectedRevision",
+        "autoCheck",
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "PolicyOperationRequest": {
+      "type": "object",
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/Revision"
+        },
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "generation",
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "PolicyOperation": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": [
+            "saved",
+            "unknown"
+          ]
+        },
+        "result": {
+          "$ref": "#/$defs/Policy"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "Valid": {
+      "type": "object",
+      "properties": {
+        "valid": {
+          "enum": [
+            true
+          ]
+        }
+      },
+      "required": [
+        "valid"
+      ],
+      "additionalProperties": false
+    },
+    "Status": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "channel": {
+          "enum": [
+            "development",
+            "stable",
+            "preview"
+          ]
+        },
+        "appVersion": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "buildId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "distribution": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "configured": {
+          "type": "boolean"
+        },
+        "checking": {
+          "type": "boolean"
+        },
+        "lastCheck": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lastSuccess": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retryAfter": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "warnings": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "maxLength": 512
+          }
+        },
+        "policy": {
+          "$ref": "#/$defs/Policy"
+        },
+        "restartRequired": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "revision",
+        "channel",
+        "appVersion",
+        "buildId",
+        "distribution",
+        "configured",
+        "checking",
+        "lastCheck",
+        "lastSuccess",
+        "retryAfter",
+        "error",
+        "warnings",
+        "policy",
+        "restartRequired"
+      ],
+      "additionalProperties": false
+    },
+    "ComponentList": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "items": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/Component"
+          }
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "revision",
+        "items",
+        "nextCursor"
+      ],
+      "additionalProperties": false
+    },
+    "Plan": {
+      "type": "object",
+      "properties": {
+        "planRevision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "catalogRevision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "components": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/Component"
+          }
+        },
+        "componentIds": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "downloadBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "blockedReasons": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "maxLength": 512
+          }
+        }
+      },
+      "required": [
+        "planRevision",
+        "catalogRevision",
+        "components",
+        "componentIds",
+        "downloadBytes",
+        "blockedReasons"
+      ],
+      "additionalProperties": false
+    },
+    "FollowRequest": {
+      "type": "object",
+      "properties": {
+        "pluginId": {
+          "$ref": "#/$defs/Id"
+        },
+        "expectedDigest": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "pluginId",
+        "expectedDigest",
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "Feed": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "checking": {
+          "type": "boolean"
+        },
+        "activeOperations": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        }
+      },
+      "required": [
+        "revision",
+        "checking",
+        "activeOperations"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "x-methods": {
+    "updates.status.get": "Empty",
+    "updates.components.list": "ListRequest",
+    "updates.plan.get": "PlanRequest",
+    "updates.check": "OperationRequest",
+    "updates.download": "ActionRequest",
+    "updates.install": "ActionRequest",
+    "updates.cancel": "OperationRequest",
+    "updates.operation.get": "OperationRequest",
+    "updates.policy.validate": "PolicyValidate",
+    "updates.policy.commit": "PolicyCommit",
+    "updates.policy.operation.get": "PolicyOperationRequest",
+    "updates.source.followOfficial": "FollowRequest",
+    "app.restartForUpdates": "RestartRequest"
+  },
+  "x-results": {
+    "updates.status.get": "Status",
+    "updates.components.list": "ComponentList",
+    "updates.plan.get": "Plan",
+    "updates.check": "Operation",
+    "updates.download": "Operation",
+    "updates.install": "Operation",
+    "updates.cancel": "Operation",
+    "updates.operation.get": "Operation",
+    "updates.policy.validate": "Valid",
+    "updates.policy.commit": "Policy",
+    "updates.policy.operation.get": "PolicyOperation",
+    "updates.source.followOfficial": "Operation",
+    "app.restartForUpdates": "Operation"
+  }
+}

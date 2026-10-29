@@ -25,7 +25,7 @@ try {
  mainHandle=(await nativeWindow(app,'list')).find(w=>w.visible&&w.title.includes('SoDeck')).handle;
  const server=await rpc(app.page,'servers.create',{name:'IME 本机隔离 SSH',host:'127.0.0.1',port:config.port,username:'test-user',authType:'password'});
  let challenge;try{await openTerminal(app.page,server.id);}catch(error){challenge=error;}
- assert.equal(challenge?.code,'HOST_KEY_REQUIRED');await rpc(app.page,'hosts.trust',{serverId:server.id,...challenge.details});await rpc(app.page,'auth.set',{serverId:server.id,password:'isolated-test-password'});
+ assert.equal(challenge?.code,'HOST_KEY_REQUIRED');await rpc(app.page,'hosts.trust',{serverId:server.id,...challenge.details});await rpc(app.page,'auth.ssh.set',{serverId:server.id,password:'isolated-test-password'});
  const view=await openTerminal(app.page,server.id);
  terminal=await until(async()=>{for(const page of await pluginPages(app))if(await page.evaluate(()=>window.__SODECK_CONTEXT__?.viewId)===view.viewId)return page;});
  await until(()=>terminal.locator('.xterm-rows').innerText().then(text=>text.includes('fixture-ready')));
@@ -110,7 +110,7 @@ try {
  await commitAt('ceshi','workspace-child');
  assert.deepEqual((await rpc(app.page,'resources.list')).ptys.map(p=>p.id),resourcesBefore.ptys.map(p=>p.id));
  const other=await rpc(app.page,'servers.create',{name:'IME 独立工作区',host:'127.0.0.1',port:config.port,username:'test-user',authType:'password'});
- await rpc(app.page,'auth.set',{serverId:other.id,password:'isolated-test-password'});
+ await rpc(app.page,'auth.ssh.set',{serverId:other.id,password:'isolated-test-password'});
  const second=await openTerminal(app.page,other.id);
  terminal=await until(async()=>{for(const p of await pluginPages(app))if(await p.evaluate(()=>window.__SODECK_CONTEXT__?.viewId)===second.viewId)return p;});
  await until(()=>terminal.locator('.xterm-rows').innerText().then(t=>t.includes('fixture-ready')));mainHandle=originalMain;

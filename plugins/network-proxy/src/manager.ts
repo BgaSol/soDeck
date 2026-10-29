@@ -1,3 +1,4 @@
+import {observation,releaseRun,releaseRuns,type ObservationClient} from './observation';
 import type {Scope} from '@sodeck/sdk/network';
 import type {NetworkStreams} from '@sodeck/sdk/network-stream';
 import type {StateBridge} from '@sodeck/sdk/state';
@@ -24,29 +25,29 @@ export class Manager {
     while(utf8(JSON.stringify(result)).length>32768&&items.length>1){items.pop();result.nextStart=offset+items.length;}
     if(utf8(JSON.stringify(result)).length>32768)throw fault('CAPACITY','单条规则快照超过 32 KiB');return result;
   }
-  async start(id:string,commandId:string,restart=false):Promise<unknown> {
+  async start(id:string,commandId:string,restart=false,diagnostic:ObservationClient|undefined=observation):Promise<unknown> {
     if(this.closed)throw fault('VIEW_CLOSED','视图已关闭');
-    const current=this.flights.get(id);if(current){if(!restart)return current;await this.stop(id);return this.start(id,commandId);}
+    const current=this.flights.get(id);if(current){if(!restart)return current;await this.stop(id,diagnostic);return this.start(id,commandId,false,diagnostic);}
     const old=this.runs.get(id);
     if(old&&['ready','reconnecting'].includes(old.status)&&!restart)return old.snapshot();
     const generation=(this.generations.get(id)??0)+1;this.generations.set(id,generation);
     const work=(async()=>{
-      if(old)await old.stop();
+      if(old){await old.stop(diagnostic);releaseRun(old.id);}
       if(this.closed)throw fault('VIEW_CLOSED','视图已关闭');
       if(this.generations.get(id)!==generation)throw fault('CANCELED','启动已取消');
       const run=new Run(this.rules.get(this.serverId,id),this.scope,this.viewId,this.bridge,this.streams,()=>this.publishBadge());this.runs.set(id,run);this.publishBadge();
-      await run.start(commandId);return run.snapshot();
+      await run.start(commandId,diagnostic);return run.snapshot();
     })();this.flights.set(id,work);
     try{return await work;}finally{if(this.flights.get(id)===work)this.flights.delete(id);}
   }
-  async reconnect(id:string,commandId:string) {
+  async reconnect(id:string,commandId:string,diagnostic:ObservationClient|undefined=observation) {
     const run=this.runs.get(id);if(!run)throw fault('INVALID_STATE','规则尚未启动');
     const current=this.flights.get(id);if(current)return current;
-    if(!run.route)return this.start(id,commandId);
-    const work=run.reconnect(commandId);this.flights.set(id,work);try{await work;return run.snapshot();}finally{if(this.flights.get(id)===work)this.flights.delete(id);}
+    if(!run.route)return this.start(id,commandId,false,diagnostic);
+    const work=run.reconnect(commandId,diagnostic);this.flights.set(id,work);try{await work;return run.snapshot();}finally{if(this.flights.get(id)===work)this.flights.delete(id);}
   }
-  async stop(id:string){this.generations.set(id,(this.generations.get(id)??0)+1);this.flights.delete(id);await this.runs.get(id)?.stop();}
+  async stop(id:string,diagnostic:ObservationClient|undefined=observation){this.generations.set(id,(this.generations.get(id)??0)+1);this.flights.delete(id);await this.runs.get(id)?.stop(diagnostic);}
   async cancel(operation:string){await Promise.all([...this.runs.entries()].filter(([,r])=>r.commandId===operation).map(([id])=>this.stop(id)));}
-  async dispose(){this.closed=true;await Promise.all([...this.runs.values()].map(r=>r.stop()));this.runs.clear();}
+  async dispose(){this.closed=true;await Promise.all([...this.runs.values()].map(r=>r.stop()));this.runs.clear();releaseRuns(this.viewId);}
 }
 export type Snapshot=ReturnType<Manager['snapshot']>;

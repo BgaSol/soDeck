@@ -31,7 +31,7 @@ fn real_sftp_exec_and_shared_pty() {
     invoke(
         &core,
         &shell,
-        "auth.set",
+        "auth.ssh.set",
         json!({"serverId":server["id"],"privateKeyPath":cfg["privateKeyPath"]}),
     );
     let acquisition =
@@ -80,6 +80,10 @@ fn real_sftp_exec_and_shared_pty() {
         p
     };
     let remote_path = |p: &str| json!({"bytesBase64":STANDARD.encode(p)});
+    // A rejected native open must not report a resource that only had a reserved ID.
+    assert!(core.call(&files,"files.openRead",params(json!({"operationId":"missing-open","path":remote_path("/sodeck-t016-missing-file")}))).is_err());
+    let before=invoke(&core,&shell,"events.v2.query",json!({"filter":{"type":"core.resource.created"},"limit":100}));
+    assert!(!before["items"].as_array().unwrap().iter().any(|event|event["attributes"]["method"]=="remote.handle"));
     let stat = invoke(
         &core,
         &files,
@@ -96,6 +100,8 @@ fn real_sftp_exec_and_shared_pty() {
     let page_params = params(
         json!({"operationId":"page","directoryId":directory["directoryId"],"cursor":0,"maxEntries":3}),
     );
+    let opened=invoke(&core,&shell,"events.v2.query",json!({"filter":{"type":"core.resource.created"},"limit":100}));
+    assert_eq!(opened["items"].as_array().unwrap().iter().filter(|event|event["attributes"]["method"]=="remote.handle").count(),1);
     let page = invoke(&core, &files, "files.readDirectory", page_params.clone());
     assert_eq!(page["entries"].as_array().unwrap().len(), 3);
     assert_eq!(

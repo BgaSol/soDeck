@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "channel": "stable",
+  "identifier": "com.sodeck.v2",
+  "productName": "SoDeck v2",
+  "keyId": "sodeck-v2-release-1",
+  "catalogPublicKey": null,
+  "updaterPublicKey": null,
+  "qa": false
+}

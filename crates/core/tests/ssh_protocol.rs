@@ -83,7 +83,7 @@ fn real_ssh_host_trust_shared_leases_and_channels() {
     let server=core.call(&caller,"servers.create",json!({"name":"isolated","host":"127.0.0.1","port":fixture.port,"username":"test-user"})).unwrap();
     core.call(
         &caller,
-        "auth.set",
+        "auth.ssh.set",
         json!({"serverId":server["id"],"password":"isolated-test-password","remember":true}),
     )
     .unwrap();
@@ -98,7 +98,7 @@ fn real_ssh_host_trust_shared_leases_and_channels() {
         .unwrap();
     core.call(
         &caller,
-        "auth.set",
+        "auth.ssh.set",
         json!({"serverId":server["id"],"password":"wrong-test-password"}),
     )
     .unwrap();
@@ -110,7 +110,7 @@ fn real_ssh_host_trust_shared_leases_and_channels() {
     );
     core.call(
         &caller,
-        "auth.set",
+        "auth.ssh.set",
         json!({"serverId":server["id"],"password":"isolated-test-password","remember":true}),
     )
     .unwrap();
@@ -218,7 +218,7 @@ fn real_ssh_host_trust_shared_leases_and_channels() {
         ("client-ed25519-encrypted", "test-passphrase"),
     ] {
         let key_server = core.call(&caller, "servers.create", json!({"name":key_name,"host":"127.0.0.1","port":fixture.port,"username":"test-user","authType":"key"})).unwrap();
-        core.call(&caller, "auth.set", json!({"serverId":key_server["id"],"privateKeyPath":fixture.directory.path().join(key_name),"passphrase":passphrase,"remember":true})).unwrap();
+        core.call(&caller, "auth.ssh.set", json!({"serverId":key_server["id"],"privateKeyPath":fixture.directory.path().join(key_name),"passphrase":passphrase,"remember":true})).unwrap();
         core.call(
             &caller,
             "connections.acquire",
@@ -382,7 +382,7 @@ fn released_lease_rejects_late_pty_without_stopping_shared_connection() {
         .unwrap();
     core.call(
         &caller,
-        "auth.set",
+        "auth.ssh.set",
         json!({
             "serverId":server["id"], "password":"isolated-test-password"
         }),

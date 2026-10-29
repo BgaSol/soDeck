@@ -1,6 +1,16 @@
 # 网络隧道插件：端口转发与内网代理
 
-更新日期：2026-10-27 · 总览修订：r9
+更新日期：2026-10-29 · 总览修订：r15
+
+T-029：[F-PROXY-006](features/online-updates.md)定义隧道独立发布、在线安装、HTTP/SOCKS/转发不中断与退出释放回归；更新下载不借用隧道插件，当前待整体方案确认。
+
+T-028：[F-PROXY-005 r1](features/plugin-management.md)定义隧道启停、固定转发/HTTP/SOCKS监听及停用候选零执行回归。启停由核心管理，预期不改隧道业务代码；方案确认和结果见[T-028](../../tasks/T-028-plugin-management.md)。
+
+T-027：[插件计划 r4](features/mixed-route-integration.md)保留原 PF/NP/PROXY-MR 接入结果，新增 Run/池成员诊断引用与详情入口、监听/SSH路径/业务目标错误分类、组合确认及弹窗修复；PROXY-DIAG-01～03 分别验证固定转发与 HTTP/SOCKS 内网代理。保持独立包与既有重连边界；本轮增量待整体确认，状态见[T-027 r7](../../tasks/T-027-mixed-route.md)。
+
+本轮代码接入见[T-016代码方案r1](../../technical/observability-implementation.md)，已固定4.10能力、包目录、上下文、实际完成点与独立更新验证；等待用户最终确认，当前插件代码未改。
+
+本轮诊断接入需求：[F-PROXY-004 r2](features/observability.md)覆盖规则保存、Run状态/重连/检查、协议失败、快照/指标和PROXY-OBS测试；使用[T-016公共接口](../../core/observability/integration.md)，保持核心通信流量单一计量。本轮仅设计，不新增问题/知悉/通知入口。
 插件身份：`sodeck.network-proxy@0.1.0`（已实现；最低 API 4.7.0）  
 当前任务：[T-014](../../tasks/T-014-network-proxy.md) · 用户依据：[P-44 / P-45](../../product.md)
 
@@ -29,6 +39,7 @@ v1 的 `PortForward` 与 `NetworkProxy` 仅提供功能参考；本次同时包�
 | --- | --- | --- |
 | F-PROXY-002 点对点端口转发 | [固定目标、多机器路径、规则隔离与 PF-01～05](features/port-forward.md) | 核心 SSH 路径、TCP 监听与通道、租约 |
 | F-PROXY-001 HTTP/SOCKS 内网代理 | [同端口、多目标、浏览器访问与 NP-01～07](features/network-proxy.md) | 同一核心传输和资源能力、代理协议运行载体 |
+| F-PROXY-004 事件与诊断接入 | [业务事件、公开现场与PROXY-OBS-01～06](features/observability.md) | 核心事件/context/快照/指标；[T-016](../../tasks/T-016-observability.md) |
 | F-CORE-015 公共能力候选 | [隧道、端口、既有多级路径接入](../../core/dynamic-proxy.md) | 既有 SSH/多级跳板、资源和通信契约；公开 TCP 能力目前仍是草案 |
 
 本次需求明确包括 Windows/Linux SSH 主机；客户端按 v2 当前 Windows 验证基线规划，不将远端 Windows 支持与客户端平台混淆。推荐支持多规则、多端口并存和两种功能同时运行。配置可以保存，运行不跨 App 重启恢复。

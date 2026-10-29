@@ -1,3 +1,5 @@
+import type {ObservationClient} from '@sodeck/sdk/observation';
+import {observation,errorCode} from './observation';
 import {workerClient} from '@sodeck/sdk/worker';
 import {Remote,type Bridge,type Lease,type WorkspaceScope} from '@sodeck/sdk/remote-client';
 import {decode} from '@sodeck/sdk/bytes';
@@ -25,7 +27,8 @@ export class DirectoryReporter {
   private reports:Promise<unknown>=Promise.resolve();
   private protocol:DirectoryProtocol;
   private received=0n;
-  constructor(private bridge:ReporterBridge,private scope:WorkspaceScope,private serverId:string,private viewId:string,private pty:ObservedPty,tag:string){
+  private observationState="starting";private directoryRevision="0";
+  constructor(private bridge:ReporterBridge,private scope:WorkspaceScope,private serverId:string,private viewId:string,private pty:ObservedPty,tag:string,private diagnostic:ObservationClient=observation,private sessionRef?:string,private observed?:(state:string,revision:string,error?:string)=>void){
     this.bridge=workerClient(bridge);
     this.remote=new Remote(this.bridge,scope);
     this.protocol=new DirectoryProtocol(tag,r=>{
@@ -58,8 +61,8 @@ export class DirectoryReporter {
       if(this.disposed||!source||this.source!==source)return;
       const payload={...source,reportSequence:String(++this.publishSequence),status,...(report?{logicalPath:report.logical,physicalPath:report.physical,evidence:report.evidence}:{})};
       while(!this.disposed&&this.source===source){
-        try{await this.bridge.call('directories.report',payload);break;}catch(e){
-          if((e as {code?:string}).code!=='RATE_LIMITED')break;
+        try{const receipt=await this.bridge.call<{sourceRevision:string}>('directories.report',payload);this.directoryRevision=receipt.sourceRevision;this.observed?.(this.observationState,this.directoryRevision);const next=['ready','lastConfirmed'].includes(status)?'ready':status==='unsupported'?'unsupported':status==='disconnected'?'stopped':'degraded';if(next!==this.observationState){this.observationState=next;this.observed?.(next,this.directoryRevision);void this.diagnostic.emit('plugin.sodeck.terminal.integration.state.changed',{state:next,directoryRevision:this.directoryRevision,...(this.sessionRef?{sessionRef:this.sessionRef}:{})});}break;}catch(e){
+          if((e as {code?:string}).code!=='RATE_LIMITED'){if(this.observationState!=='degraded'){this.observationState='degraded';this.observed?.('degraded',this.directoryRevision,errorCode(e));void this.diagnostic.emit('plugin.sodeck.terminal.integration.report.failed',{reasonCode:errorCode(e),...(this.sessionRef?{sessionRef:this.sessionRef}:{})},{outcome:'failed'});}break;}
           await new Promise<void>(r=>setTimeout(r,150));
         }
       }
@@ -114,5 +117,6 @@ export class DirectoryReporter {
     await this.disposeSource();
     if(this.pty.observer)await this.bridge.call('pty.observe.close',{ptyId:this.pty.ptyId,generation:this.pty.generation,observerId:this.pty.observer.observerId}).catch(()=>{});
     await this.remote.dispose();
+    if(this.observationState!=="stopped"){this.observationState="stopped";this.observed?.("stopped",this.directoryRevision);void this.diagnostic.emit("plugin.sodeck.terminal.integration.state.changed",{state:"stopped",directoryRevision:this.publishSequence});}
   }
 }

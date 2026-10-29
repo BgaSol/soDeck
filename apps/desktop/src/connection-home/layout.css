@@ -1,0 +1,17 @@
+.connection-home{display:flex;flex:1;min-height:0;min-width:0;overflow:hidden}
+.connection-directory{display:flex;flex-direction:column;width:280px;min-width:240px;max-width:360px;flex-shrink:0;min-height:0}
+.connection-directory-tools{padding:var(--sd-space-4)}
+.connection-server-list{flex:1;min-height:0;overflow:auto;padding-inline:var(--sd-space-2)}
+.connection-form-area{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0;padding-inline:var(--sd-space-6);overflow:hidden}
+.connection-form-frame{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;width:100%;max-width:var(--sd-form-content-width);align-self:center}
+.connection-fields{min-height:0;overflow:auto;flex:1;padding:var(--sd-space-1) var(--sd-space-1) var(--sd-space-6)}
+.connection-endpoint{display:grid;grid-template-columns:minmax(0,1fr) 100px;gap:var(--sd-space-4)}
+.connection-path{padding-left:var(--sd-space-6);margin:0;display:flex;flex-direction:column;gap:var(--sd-space-2)}
+.connection-path li{display:block;min-width:0;padding-block:var(--sd-space-2);overflow-wrap:anywhere}
+.connection-path li>span{min-width:0;overflow-wrap:anywhere}
+.connection-drafts{padding-top:var(--sd-space-3);max-width:var(--sd-form-content-width);width:100%;align-self:center}
+.connection-manager-row{display:flex;align-items:center;justify-content:space-between;gap:var(--sd-space-4);width:100%;min-width:0}
+.connection-manager-row>div{min-width:0;overflow-wrap:anywhere}
+.connection-mobile-navigation{display:none}
+@media(max-width:820px){.connection-endpoint{grid-template-columns:minmax(0,1fr)}.connection-form-area{padding-inline:var(--sd-space-4)}}
+@media(max-width:680px){.connection-directory{display:none;width:100%;max-width:none;min-width:0}.connection-mobile-navigation{display:flex;padding-block:var(--sd-space-2)}.connection-home[data-show-list=true] .connection-directory{display:flex}.connection-home[data-show-list=true] .connection-form-area{flex:0;min-width:100px}.connection-home[data-show-list=true] .connection-form-frame,.connection-home[data-show-list=true] .connection-drafts{display:none}}

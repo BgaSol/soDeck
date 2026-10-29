@@ -7,6 +7,29 @@ use std::{
 };
 
 #[test]
+fn supplied_source_runs_without_reopening_worker_path(){
+    let directory=tempfile::tempdir().unwrap();let path=directory.path().join("worker.js");
+    let source="globalThis.sodeckPlugin={invoke(){return 'verified-source'},stop(){}};";
+    fs::write(&path,source).unwrap();let verified=fs::read_to_string(&path).unwrap();fs::write(&path,"throw Error('disk-mutation');").unwrap();
+    let process=PluginProcess::spawn_source_with_context(env!("CARGO_BIN_EXE_sodeck-plugin-host"),verified,Arc::new(|_,_,_|Ok(serde_json::Value::Null)),None).unwrap();
+    process.initialize(json!({})).unwrap();assert_eq!(process.invoke("test",json!({})).unwrap(),"verified-source");process.stop().unwrap();
+}
+
+#[test]
+fn diagnostic_metadata_roundtrips_and_console_never_serializes_arguments(){
+    let temp=tempfile::tempdir().unwrap();let worker=temp.path().join("observation.js");
+    fs::write(&worker,r#"let serialized=0;globalThis.sodeckPlugin={async invoke(command,params,invocation){console.error({toJSON(){serialized++;throw Error('SECRET-MARKER');}},'SECRET-MARKER');const result=await sodeck.call('business.test',{serialized},invocation.metadata);return {result,version:sodeck.diagnosticContextVersion,frozen:Object.isFrozen(invocation.metadata.diagnostics)};},stop(){}};"#).unwrap();
+    let received=Arc::new(Mutex::new(Vec::new()));let captured=received.clone();
+    let process=PluginProcess::spawn_with_context(env!("CARGO_BIN_EXE_sodeck-plugin-host"),worker,Arc::new(move|method,params,metadata|{captured.lock().unwrap().push(json!({"method":method,"params":params,"metadata":metadata}));Ok(params)}),None).unwrap();
+    assert_eq!(process.initialize(json!({})).unwrap()["diagnosticContextVersion"],1);
+    let metadata=json!({"diagnostics":{"version":1,"contextRef":"opaque-reference"}});
+    let value=process.invoke_with_context("test",json!({}),Duration::from_secs(2),Some(metadata.clone())).unwrap();
+    assert_eq!(value["version"],1);assert_eq!(value["result"]["serialized"],0);assert_eq!(value["frozen"],true);
+    assert_eq!(received.lock().unwrap().iter().find(|v|v["method"]=="business.test").unwrap()["metadata"],metadata);
+    process.stop().unwrap();assert!(!serde_json::to_string(&*received.lock().unwrap()).unwrap().contains("SECRET-MARKER"));
+}
+
+#[test]
 fn independent_process_routes_calls_and_stops() {
     let temp = tempfile::tempdir().unwrap();
     let worker = temp.path().join("worker.js");

@@ -18,7 +18,7 @@ export function BusyIndicator({label='正在加载'}:{label?:string}) {return <s
 export function InputGroup({children,className}:{children:ReactNode;className?:string}) {return <div className={cx('sd-input-group',className)}>{children}</div>;}
 export function FormFields({className,...props}:import('react').FieldsetHTMLAttributes<HTMLFieldSetElement>){return <fieldset {...props} className={cx('sd-form-fields',className)}/>;}
 
-type FieldInfo={label:string;labelVisibility?:'visible'|'sr-only';help?:ReactNode;error?:ReactNode};
+type FieldInfo={label:ReactNode;labelVisibility?:'visible'|'sr-only';help?:ReactNode;error?:ReactNode};
 /** For composition with an existing associated label or Field. */
 export function Input({className,type,...props}:Omit<ComponentPropsWithRef<'input'>,'style'>){return <input {...props} type={type} className={cx(type==='checkbox'||type==='radio'?'sd-choice-input':'sd-input',className)}/>;}
 export function Select({className,...props}:Omit<ComponentPropsWithRef<'select'>,'style'>){return <select {...props} className={cx('sd-input',className)}/>;}

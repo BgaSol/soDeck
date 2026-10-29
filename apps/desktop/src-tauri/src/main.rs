@@ -11,6 +11,7 @@ mod window_chrome;
 mod workbench;
 mod workbench_contract;
 mod theme;
+mod atomic_file;
 mod presentation;
 
 fn main() {

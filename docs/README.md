@@ -1,10 +1,32 @@
 # SoDeck v2 文档导航
 
-更新日期：2026-10-27 · 修订：r41
+更新日期：2026-10-29 · 修订：r64
 
 ## 1. 接续入口
 
-客户端与服务器通信监控进入[T-019 r2完整功能方案](tasks/T-019-connection-metrics.md)：用户已认可整体方向，本轮提交[实时计量与总方案](core/connection-metrics.md)、[历史/比较/导出](core/communication-history.md)、[诊断/探测/提醒](core/connection-quality.md)、[主动测速](core/connection-speedtest.md)及[统一界面](design/communication-monitor.md)，四项各有测试流程。具体方案待评审，仅文档，尚无代码实施确认。
+GitHub自动发布与在线升级当前评审入口：[T-029 r2](tasks/T-029-online-updates.md) / [F-CORE-033 r2](core/online-updates.md) / [代码方案r2](technical/online-updates-implementation.md)。用户已选自动检查提示、手动下载安装、首期官方插件；r2细化组件构建输入、模块/契约、来源/安装恢复、Windows安装与数据格式门禁，含31项公共测试、四插件各4项专项及G1～G5。当前仅文档，等待整体实施确认。
+
+插件开放与启停见[T-028](tasks/T-028-plugin-management.md)、[F-CORE-032 r1](core/plugin-management.md)、[代码方案r1](technical/plugin-management-implementation.md)：强制完整性、无签名提示并可加载、统一设置逐插件勾选、完整重启生效，API6.2且core v7保持。实际dev.20目录入口、PM/四插件验证及截图见[实施结果](tasks/T-028-results.md)，独立资源打包见[插件开发](plugin-development.md)。
+
+混合连接原实现、目录包及真实故障排查见[T-027结果](tasks/T-027-results.md)。本轮用户反馈统一到[T-027 r7](tasks/T-027-mixed-route.md) / [整体修订 r2](design/connection-editor-refinement.md) / [逐步连接诊断 r1](technical/connection-diagnostics.md)：每阶段完成/失败/未执行、统一详情与复制、文件重复错误和监控等待、弹窗/下拉/表单以及首次身份与登录合并确认；四插件各 r4 列代码落点及专属测试，含 REF/DIAG。当前仅规划、待整体确认。下段为前序设计历史。
+
+SSH与SOCKS5混合多级连接见[T-027 r1](tasks/T-027-mixed-route.md) / [F-CORE-031 r1](core/mixed-route.md)：用户已确认代理位于第二台SSH主机的回环地址；设计统一有序路径、逐段访问来源、DNS/身份/资源/错误及MR-01～10。当前仅功能方案，等待评审和后续代码设计，不改变T-020/T-025历史实施结果。
+
+桌面交互设计见[T-026 r1](tasks/T-026-desktop-interaction.md) / [F-CORE-030 r1](core/desktop-interaction.md)：统一隐藏各类WebView的浏览器入口，保留业务/编辑/系统菜单、终端输入和系统缩放，包含原生模块实现位置、调试/导航/生命周期边界及DI-01～10。只完成文档，用户明确要求确认后才改代码。
+
+连接首页与服务器/代理表单重构见[T-025 r4](tasks/T-025-connection-home.md) / [F-CORE-029 r2](core/connection-home.md)及[代码方案r1](technical/connection-home-implementation.md)。已完成统一启动/＋左右布局、草稿可靠提交和两阶段关闭；API5.3、业务库v6保持。分层验证、真实SSH/SOCKS、原生DPI/IME和独立Windows目录包见[结果](tasks/T-025-results.md)，用户验收待反馈。
+
+当前服务器资源监控代码设计见[T-024 r2](tasks/T-024-server-monitor.md) / [代码方案r1](technical/server-monitor-implementation.md)：[插件总览r2](plugins/monitor/README.md)、[F-MON-001 r2](plugins/monitor/features/server-resources.md)及公共规格明确采集/趋势、API/SDK5.2、有限执行/clock、图表、默认视图、预算和MON/MCODE验证。顺接T-023的5.1，实施尚待本任务明确确认。
+
+设置窗口与插件配置声明见[T-023 r4](tasks/T-023-settings.md)：[代码方案r1](technical/settings-implementation.md)已获实施确认并落地API5.1契约、组存储/回执、主题v3及原生窗口；[F-CORE-028 r2](core/settings.md)与[F-TERM-005 r2](plugins/terminal/features/settings.md)维护行为。[实施结果](tasks/T-023-results.md)记录分层验证、独立插件更新、目录包及用户验收边界。
+
+SSH经SOCKS代理连接的功能设计见[T-020](tasks/T-020-socks-route.md) / [F-CORE-027 r4](core/socks-route.md)：明确 SSH 是主机隧道代理、SOCKS5 是网络代理，建议三种访问方式互斥，附 SK-01～09 测试。已获授权实施，实际验证与开发包见[实施结果](tasks/T-020-results.md)；与网络隧道插件对外提供代理服务区分。
+
+T-020代码设计见[SOCKS5 SSH路径代码修改方案 r3](technical/socks-route-implementation.md)：基于当前源码定义互斥 `accessPath`、显式 SSH 列表、API 5 单一契约、数据库 v6 重建、目标级 DNS、独立 SOCKS 状态机和认证/复用边界；传输交接已验证，实施授权和交付见任务记录。
+
+事件/诊断本轮进入[T-016 r5](tasks/T-016-observability.md)的[代码修改设计r1](technical/observability-implementation.md)：固定API4.10/观测schema2、核心与SDK模块、三插件接入、四分区历史备份重建、资源预算及78项本期规划验证。[接入需求r2](core/observability/integration.md)维护行为边界。等待用户最终确认后编码；问题/通知、AI和新诊断界面后续，不恢复T-019已撤入口。
+
+客户端与服务器通信监控进入[T-019 r3](tasks/T-019-connection-metrics.md)：用户已认可整体方向，现提交[代码修改方案r1](technical/communication-monitor-implementation.md)，衔接[实时计量与总方案](core/connection-metrics.md)、[历史/比较/导出](core/communication-history.md)、[诊断/探测/提醒](core/connection-quality.md)、[主动测速](core/connection-speedtest.md)及[统一界面](design/communication-monitor.md)。模块/接口、数据库影响、先行实验及专属测试均已写入；仅文档，等待最终实施确认。
 
 文件列表整行容量与公共等级见[T-018](tasks/T-018-file-capacity.md)，延续原型后的明确实施授权；功能与FC-01～05测试由[F-FILES-001 r16](plugins/files/features/server-file-tree.md)维护。
 

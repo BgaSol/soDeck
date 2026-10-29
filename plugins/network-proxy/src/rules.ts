@@ -1,3 +1,4 @@
+import {observation,type ObservationClient} from './observation';
 import {utf8} from '@sodeck/sdk/bytes';
 import {networkOperation,type NetworkRpc} from '@sodeck/sdk/network-client';
 import {fault,validHost} from './protocol/address';
@@ -29,8 +30,10 @@ export function validateRule(value:unknown):Rule {
 }
 export class Rules {
   private data:Collection={schemaVersion:1,rules:[]};private tail=Promise.resolve();
-  private pending?:{next:Collection;receipt:SaveReceipt};
+  private pending?:{next:Collection;receipt:SaveReceipt;diagnostic?:ObservationClient};
   constructor(private rpc:NetworkRpc){}
+  private reported=new Set<string>();
+  private saved(rule:Rule,diagnostic:ObservationClient|undefined=observation){const key=`${rule.id}:${rule.revision}`;if(this.reported.has(key))return;this.reported.add(key);if(this.reported.size>512)this.reported.delete(this.reported.values().next().value!);void diagnostic?.emit('plugin.sodeck.network-proxy.rule.saved',{ruleId:rule.id,revision:rule.revision,kind:rule.type,portMode:rule.bindMode});}
   async load() {
     const value=await this.rpc.call<Collection|null>('storage.get',{key:'network-rules'});if(value===null)return;
     if(!value||value.schemaVersion!==1||!Array.isArray(value.rules)||value.rules.length>256||utf8(JSON.stringify(value)).length>524288)throw fault('SCHEMA_UNSUPPORTED','网络规则版本或容量不兼容，未修改原数据');
@@ -53,7 +56,7 @@ export class Rules {
   all(serverId:string){return this.data.rules.filter(r=>r.serverId===serverId).map(r=>({...r}));}
   get(serverId:string,id:string){const rule=this.data.rules.find(r=>r.id===id&&r.serverId===serverId);if(!rule)throw fault('NOT_FOUND','规则不存在');return {...rule};}
   private serialize<T>(action:()=>Promise<T>):Promise<T> {const next=this.tail.then(action);this.tail=next.then(()=>{},()=>{});return next;}
-  save(serverId:string,draft:unknown,expectedRevision:number):Promise<Rule> {
+  save(serverId:string,draft:unknown,expectedRevision:number,diagnostic:ObservationClient|undefined=observation):Promise<Rule> {
     return this.serialize(async()=>{
       if(this.pending)await this.reconcile();
       if(!draft||typeof draft!=='object')throw fault('INVALID_PARAMS','规则格式无效');
@@ -65,10 +68,10 @@ export class Rules {
       const naming={...this.data.naming};delete naming[rule.id];
       const next:Collection={...this.data,naming,rules:old?this.data.rules.map(r=>r.id===old.id?rule:r):[...this.data.rules,rule]};
       if(utf8(JSON.stringify(next)).length>524288)throw fault('CAPACITY','规则配置超过 512 KiB');
-      await this.rpc.call('storage.set',{key:'network-rules',value:next});this.data=next;return {...rule};
+      await (diagnostic??this.rpc).call('storage.set',{key:'network-rules',value:next});this.data=next;this.saved(rule,diagnostic);return {...rule};
     });
   }
-  saveDraft(serverId:string,draft:unknown,expectedRevision:number,nameMode:'auto'|'manual',submissionId:string,hash:string):Promise<SaveReceipt> {
+  saveDraft(serverId:string,draft:unknown,expectedRevision:number,nameMode:'auto'|'manual',submissionId:string,hash:string,diagnostic:ObservationClient|undefined=observation):Promise<SaveReceipt> {
     return this.serialize(async()=>{
       if(!submissionId||submissionId.length>128||!(/^[a-f0-9]{64}$/).test(hash)||!['auto','manual'].includes(nameMode))throw fault('INVALID_PARAMS','提交身份无效');
       if(this.pending){
@@ -87,10 +90,10 @@ export class Rules {
       const saved={submissionId,requestHash:hash,ruleId:rule.id,revision:rule.revision};
       const next:Collection={schemaVersion:1,rules:old?this.data.rules.map(r=>r.id===old.id?rule:r):[...this.data.rules,rule],naming,saveReceipts:[...(this.data.saveReceipts??[]).slice(-63),saved]};
       if(utf8(JSON.stringify(next)).length>524288)throw fault('CAPACITY','规则配置超过 512 KiB');
-      try{await this.rpc.call('storage.set',{key:'network-rules',value:next});this.data=next;return saved;}
+      try{await (diagnostic??this.rpc).call('storage.set',{key:'network-rules',value:next});this.data=next;this.saved(rule,diagnostic);return saved;}
       catch(error){
         if(!['RESULT_UNKNOWN','TIMEOUT'].includes(String((error as {code?:string}).code)))throw error;
-        this.pending={next,receipt:saved};return this.reconcile();
+        this.pending={next,receipt:saved,diagnostic};return this.reconcile();
       }
     });
   }
@@ -99,18 +102,18 @@ export class Rules {
     try{
       const value=this.decode(await this.rpc.call<Collection>('storage.get',{key:'network-rules'}));
       const receipt=value.saveReceipts?.find(r=>r.submissionId===pending.receipt.submissionId&&r.requestHash===pending.receipt.requestHash);
-      if(receipt){this.data=value;this.pending=undefined;return {...receipt};}
+      if(receipt){this.data=value;this.pending=undefined;const rule=value.rules.find(r=>r.id===receipt.ruleId&&r.revision===receipt.revision);if(rule)this.saved(rule,pending.diagnostic);return {...receipt};}
     }catch{/* An unreadable or absent receipt cannot establish that a timed-out write failed. */}
     throw fault('RESULT_UNKNOWN','保存结果待核实，请保持此草稿并重试核对');
   }
   result(submissionId:string):Promise<SaveReceipt|undefined>{return this.serialize(async()=>{if(this.pending){if(this.pending.receipt.submissionId!==submissionId)throw fault('RESULT_UNKNOWN','另一笔保存仍待核实');return this.reconcile();}return this.data.saveReceipts?.find(r=>r.submissionId===submissionId);});}
-  remove(serverId:string,id:string,expectedRevision:number) {
+  remove(serverId:string,id:string,expectedRevision:number,diagnostic:ObservationClient|undefined=observation) {
     return this.serialize(async()=>{
       if(this.pending)await this.reconcile();
       const old=this.get(serverId,id);if(old.revision!==expectedRevision)throw fault('REVISION_CONFLICT','规则已被修改，请刷新后再删除');
       const naming={...this.data.naming};delete naming[id];
       const next:Collection={...this.data,naming,rules:this.data.rules.filter(r=>r.id!==id)};
-      await this.rpc.call('storage.set',{key:'network-rules',value:next});this.data=next;
+      await (diagnostic??this.rpc).call('storage.set',{key:'network-rules',value:next});this.data=next;void diagnostic?.emit('plugin.sodeck.network-proxy.rule.deleted',{ruleId:id,revision:old.revision,kind:old.type});
     });
   }
 }

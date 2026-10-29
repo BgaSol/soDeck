@@ -16,7 +16,7 @@ impl Core {
         let mut db=self.store.db.lock().unwrap();
         let key=caller_key(caller);
         let result=match method {
-            "servers.catalog.get"=>self.catalog_project(catalog::item(&db,field(p,"serverId")?)?),
+            "servers.catalog.get"=>self.catalog_project(&db,catalog::item(&db,field(p,"serverId")?)?)?,
             "serverGroups.list"|"servers.catalog.list"=>{
                 let revision=catalog::revision(&db)?;
                 let mut query=p.clone();query.as_object_mut().unwrap().remove("cursor");
@@ -34,7 +34,7 @@ impl Core {
                     let search=p["query"].as_str().unwrap_or("").trim().to_lowercase();
                     let mut q=db.prepare("SELECT id FROM servers ORDER BY json_extract(data,'$.name') COLLATE NOCASE,id")?;
                     for id in q.query_map([],|r|r.get::<_,String>(0))? {
-                        let item=self.catalog_project(catalog::item(&db,&id?)?);
+                        let item=self.catalog_project(&db,catalog::item(&db,&id?)?)?;
                         if p.get("groupId").is_some_and(|g|*g!=item["groupId"]) {continue;}
                         let group=item["groupId"].as_str().map(|id|catalog::group(&db,id)).transpose()?;
                         let s=&item["server"];
@@ -59,7 +59,7 @@ impl Core {
                     None=>json!({"status":"unknown"}),
                     Some(receipt)=>{
                         if receipt["value"].get("server").is_none() {return Err(CoreError::new("OPERATION_CONFLICT","此操作不是服务器保存"));}
-                        json!({"status":"committed","result":self.catalog_project(receipt["value"].clone())})
+                        json!({"status":"committed","result":self.catalog_project(&db,receipt["value"].clone())?})
                     }
                 }
             },
@@ -77,22 +77,22 @@ impl Core {
                 let pending=receipt["pendingSecrets"].as_array().unwrap();
                 for id in pending {
                     let server_id=id.as_str().unwrap();
-                    self.secrets.remove(server_id).map_err(|e|e.details(json!({"committed":true,"serverId":value["server"]["id"],"operationId":operation,"stage":"credentialCleanup"})))?;
+                    self.secrets.remove_owner(&db,"ssh",server_id).map_err(|e|e.details(json!({"committed":true,"serverId":value["server"]["id"],"operationId":operation,"stage":"credentialCleanup"})))?;
                     *self.credential_revisions.lock().unwrap().entry(server_id.into()).or_default()+=1;
                 }
                 if !pending.is_empty() {
                     value["postCommitPending"]=json!(false);
                     db.execute("UPDATE server_catalog_receipts SET result=? WHERE operation_id=?",params![serde_json::to_string(&json!({"value":value,"pendingSecrets":[]}))?,operation])?;
                 }
-                if method=="servers.catalog.save" {self.catalog_project(value)}else{value}
+                if method=="servers.catalog.save" {self.catalog_project(&db,value)?}else{value}
             },
             _=>return Err(CoreError::new("METHOD_NOT_FOUND","未知服务器目录方法")),
         };
         contract::validate("x-results",method,&result)?;
         Ok(result)
     }
-    fn catalog_project(&self,mut value:Value)->Value {
-        if let Some(id)=value["server"]["id"].as_str().map(str::to_owned) {value["server"]["hasSecret"]=json!(self.secrets.remembered(&id));}
-        value
+    fn catalog_project(&self,db:&rusqlite::Connection,mut value:Value)->Result<Value> {
+        if let Some(id)=value["server"]["id"].as_str().map(str::to_owned) {value["server"]["hasSecret"]=json!(self.has_server_credential(db,&id)?);}
+        Ok(value)
     }
 }

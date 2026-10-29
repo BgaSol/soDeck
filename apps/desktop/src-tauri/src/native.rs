@@ -18,8 +18,10 @@ pub type Ipc = Arc<dyn Fn(String, String) + Send + Sync>;
 pub type Failure = Arc<dyn Fn(String) + Send + Sync>;
 
 #[derive(Clone)]
-pub struct Assets(Arc<HashMap<String, Vec<u8>>>);
+pub struct Assets(Arc<std::collections::BTreeMap<String, Arc<[u8]>>>);
 impl Assets {
+    pub fn from_verified(snapshot:&sodeck_plugin_manager::VerifiedPackageSnapshot)->Self {Self(snapshot.files())}
+    #[cfg(test)]
     pub fn load(root: &Path) -> NativeResult<Self> {
         fn collect(
             root: &Path,
@@ -56,10 +58,10 @@ impl Assets {
         }
         let mut files = HashMap::new();
         collect(root, root, &mut files, &mut 0)?;
-        Ok(Self(Arc::new(files)))
+        Ok(Self(Arc::new(files.into_iter().map(|(k,v)|(k,Arc::from(v))).collect())))
     }
     fn get(&self, path: &str) -> Option<&[u8]> {
-        self.0.get(path).map(Vec::as_slice)
+        self.0.get(path).map(|v|v.as_ref())
     }
 }
 

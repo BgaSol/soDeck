@@ -1,9 +1,9 @@
 {
   "pluginId": "sodeck.files",
-  "version": "0.6.0",
+  "version": "0.10.0",
   "requires": {
     "core": ">=2.0.0, <3.0.0",
-    "pluginApi": "^4.8.0",
+    "pluginApi": "^6.1.0",
     "platforms": [
       "windows"
     ],
@@ -26,7 +26,15 @@
       "ui.theme.catalog.v1",
       "ui.theme.dopamine.v1",
       "workspace.contributions.v2",
-      "plugins.metadata.v1"
+      "plugins.metadata.v1",
+      "observability.events.v2",
+      "observability.context.v1",
+      "observability.snapshots.v1",
+      "observability.metrics.v1",
+      "connections.route.v2",
+      "connections.diagnostics.v1",
+      "ui.connectionDiagnostics.v1",
+      "auth.ssh.confirm.v1"
     ]
   },
   "entry": {
@@ -86,5 +94,9 @@
     }
   },
   "dataSchemaVersion": 1,
-  "displayName": "文件"
+  "displayName": "文件",
+  "observability": {
+    "descriptorVersion": 1,
+    "path": "diagnostics/observability.json"
+  }
 }

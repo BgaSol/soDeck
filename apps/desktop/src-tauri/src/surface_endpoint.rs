@@ -12,6 +12,8 @@ impl State {
         Ok(Some(dialog.caller.clone()))
     }
     pub(super) fn endpoint_window(&self, source: &str, surface: bool) -> Result<String> {
+        if let Some(window)=self.settings_window_for_source(source)? {return Ok(window);}
+        if let Some(window)=self.monitor_window_for_source(source)? {return Ok(window);}
         if let Some(dialog) = self.dialog_endpoint(source) {
             if !self.dialog_parent_valid(&dialog) { return Err(err("SOURCE_INVALID", "弹窗来源已失效")); }
             return Ok(if surface {dialog.label.clone()} else {dialog.owner.clone()});
@@ -27,7 +29,7 @@ impl State {
     }
     pub(super) fn endpoint_notify(&self, source: &str, event: &str, payload: Value) {
         let script = format!("window.__sodeckNotify?.({});", json!({"type":event,"payload":payload}));
-        if let Some(window) = source.strip_prefix("@window:").and_then(|id|self.app.get_webview_window(id)) {
+        if let Some(window) = source.starts_with("@window:").then(||self.endpoint_window(source,true).ok()).flatten().and_then(|id|self.app.get_webview_window(&id)) {
             let _=window.eval(&script);
         } else { let _=self.native.post_eval(source.into(), script); }
     }

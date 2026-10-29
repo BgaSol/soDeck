@@ -1,0 +1,384 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "x-extends": "workbench-v4.schema.json",
+  "$defs": {
+    "HomeIntent": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "home",
+                "newSsh",
+                "newProxy",
+                "manageProxies",
+                "manageGroups"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "editServer"
+              ]
+            },
+            "serverId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [
+            "kind",
+            "serverId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "editProxy"
+              ]
+            },
+            "proxyId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [
+            "kind",
+            "proxyId"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "HomeOpen": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "targetWindowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "intent": {
+          "$ref": "#/$defs/HomeIntent"
+        }
+      },
+      "required": [
+        "operationId",
+        "intent"
+      ],
+      "additionalProperties": false
+    },
+    "HomePage": {
+      "type": "object",
+      "properties": {
+        "open": {
+          "type": "boolean"
+        },
+        "selected": {
+          "type": "boolean"
+        },
+        "generation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "open",
+        "selected",
+        "generation"
+      ],
+      "additionalProperties": false
+    },
+    "HomeSnapshot": {
+      "type": "object",
+      "properties": {
+        "workbench": {
+          "$ref": "#/$defs/SnapshotResult"
+        },
+        "page": {
+          "$ref": "#/$defs/HomePage"
+        },
+        "navigationRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "workbench",
+        "page",
+        "navigationRevision"
+      ],
+      "additionalProperties": false
+    },
+    "HomeOpened": {
+      "type": "object",
+      "properties": {
+        "windowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "generation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "navigationRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "windowId",
+        "generation",
+        "navigationRevision"
+      ],
+      "additionalProperties": false
+    },
+    "HomeEmpty": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "HomeAttach": {
+      "type": "object",
+      "properties": {
+        "rendererId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "rendererId"
+      ],
+      "additionalProperties": false
+    },
+    "HomeAttached": {
+      "type": "object",
+      "properties": {
+        "pageSession": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "replacedDirty": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "pageSession",
+        "replacedDirty"
+      ],
+      "additionalProperties": false
+    },
+    "HomeReport": {
+      "type": "object",
+      "properties": {
+        "pageSession": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "draftRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "dirtyCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "maxItems": 32
+        },
+        "closeTicket": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "pageSession",
+        "draftRevision",
+        "dirtyCount",
+        "operations"
+      ],
+      "additionalProperties": false
+    },
+    "HomeClose": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "enum": [
+            "close"
+          ]
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "HomeRespond": {
+      "type": "object",
+      "properties": {
+        "pageSession": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "ticket": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "draftRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "decision": {
+          "enum": [
+            "discard",
+            "cancel",
+            "abandonWait"
+          ]
+        }
+      },
+      "required": [
+        "pageSession",
+        "ticket",
+        "draftRevision",
+        "decision"
+      ],
+      "additionalProperties": false
+    },
+    "HomeAccepted": {
+      "type": "object",
+      "properties": {
+        "accepted": {
+          "enum": [
+            true
+          ]
+        }
+      },
+      "required": [
+        "accepted"
+      ],
+      "additionalProperties": false
+    },
+    "HomePick": {
+      "type": "object",
+      "properties": {
+        "pageSession": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "draftId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "pageSession",
+        "draftId",
+        "requestId"
+      ],
+      "additionalProperties": false
+    },
+    "HomePicked": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "canceled"
+              ]
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "selected"
+              ]
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32768
+            }
+          },
+          "required": [
+            "status",
+            "path"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "x-methods": {
+    "ui.connectionHome.open": "HomeOpen",
+    "ui.connectionHome.snapshot": "HomeEmpty",
+    "ui.connectionHome.session.attach": "HomeAttach",
+    "ui.connectionHome.session.report": "HomeReport",
+    "ui.connectionHome.close.request": "HomeClose",
+    "ui.connectionHome.close.respond": "HomeRespond",
+    "ui.connectionHome.pickPrivateKey": "HomePick"
+  },
+  "x-results": {
+    "ui.connectionHome.open": "HomeOpened",
+    "ui.connectionHome.snapshot": "HomeSnapshot",
+    "ui.connectionHome.session.attach": "HomeAttached",
+    "ui.connectionHome.session.report": "HomeAccepted",
+    "ui.connectionHome.close.request": "HomeAccepted",
+    "ui.connectionHome.close.respond": "HomeAccepted",
+    "ui.connectionHome.pickPrivateKey": "HomePicked"
+  }
+}

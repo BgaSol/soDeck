@@ -1,0 +1,89 @@
+name: SoDeck v2 release
+on:
+  push:
+    tags: ['sodeck-v2/stable/*', 'sodeck-v2/preview/*']
+permissions:
+  contents: read
+concurrency:
+  group: sodeck-v2-${{ startsWith(github.ref_name, 'sodeck-v2/stable/') && 'stable' || 'preview' }}
+  cancel-in-progress: false
+jobs:
+  check:
+    uses: ./.github/workflows/v2-check.yml
+  build:
+    needs: check
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.22.0
+          cache: npm
+      - shell: pwsh
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal
+          rustup default 1.99.1
+          if (-not (Test-Path 'C:\Strawberry\perl\bin\perl.exe')) { choco install strawberryperl --version=5.40.2.1 --yes --no-progress }
+          "OPENSSL_SRC_PERL=C:\Strawberry\perl\bin\perl.exe" >> $env:GITHUB_ENV
+      - run: npm ci
+      - name: Discover, verify and plan independent components
+        shell: pwsh
+        run: node scripts/release/discover.mjs --tag $env:GITHUB_REF_NAME --out .qa/release
+      - name: Build and sign the trusted tag
+        shell: pwsh
+        env:
+          SODECK_V2_RELEASE_PRIVATE_KEY: ${{ secrets.SODECK_V2_RELEASE_PRIVATE_KEY }}
+          SODECK_V2_UPDATER_PRIVATE_KEY: ${{ secrets.SODECK_V2_UPDATER_PRIVATE_KEY }}
+          SODECK_V2_UPDATER_PASSWORD: ${{ secrets.SODECK_V2_UPDATER_PASSWORD }}
+        run: |
+          if (-not $env:SODECK_V2_RELEASE_PRIVATE_KEY -or -not $env:SODECK_V2_UPDATER_PRIVATE_KEY) { throw 'Missing SoDeck v2 signing secrets' }
+          $releaseKeyPath = Join-Path $env:RUNNER_TEMP 'sodeck-v2-release-private.pem'
+          try {
+            [IO.File]::WriteAllText($releaseKeyPath, $env:SODECK_V2_RELEASE_PRIVATE_KEY)
+            $env:SODECK_V2_RELEASE_KEY_FILE = $releaseKeyPath
+            node scripts/release/build.mjs --plan .qa/release/plan.json
+            if ($LASTEXITCODE -ne 0) { throw 'Release build failed' }
+          } finally { Remove-Item -LiteralPath $releaseKeyPath -ErrorAction SilentlyContinue }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sodeck-v2-release
+          path: .qa/release
+          include-hidden-files: true
+          retention-days: 7
+  publish:
+    needs: build
+    runs-on: windows-2025
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.22.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: sodeck-v2-release
+          path: .qa/release
+      - shell: pwsh
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal
+          rustup default 1.99.1
+          node scripts/cargo.mjs build --locked -p sodeck-updater --bin sodeck-release-verify
+      - name: Upload immutable assets, sign their actual IDs and publish
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SODECK_V2_RELEASE_PRIVATE_KEY: ${{ secrets.SODECK_V2_RELEASE_PRIVATE_KEY }}
+        run: |
+          $releaseKeyPath = Join-Path $env:RUNNER_TEMP 'sodeck-v2-catalog-private.pem'
+          try {
+            [IO.File]::WriteAllText($releaseKeyPath, $env:SODECK_V2_RELEASE_PRIVATE_KEY)
+            $env:SODECK_V2_RELEASE_KEY_FILE = $releaseKeyPath
+            node scripts/release/publish.mjs --plan .qa/release/plan.json
+            if ($LASTEXITCODE -ne 0) { throw 'Publication failed; review the retained draft' }
+          } finally { Remove-Item -LiteralPath $releaseKeyPath -ErrorAction SilentlyContinue }

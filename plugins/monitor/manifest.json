@@ -1,0 +1,107 @@
+{
+  "pluginId": "sodeck.monitor",
+  "version": "0.3.0",
+  "displayName": "资源监控",
+  "requires": {
+    "core": ">=2.0.0, <3.0.0",
+    "pluginApi": "^6.1.0",
+    "platforms": [
+      "windows"
+    ],
+    "capabilities": [
+      "servers.v1",
+      "connections.v1",
+      "resources.v1",
+      "workspace.v4",
+      "plugin.invoke.v1",
+      "connections.observe.v1",
+      "connections.route.v2",
+      "remote.exec.v1",
+      "core.state.v1",
+      "workspace.multiplugin.v1",
+      "workspace.presentation.v1",
+      "workspace.contributions.v2",
+      "plugins.metadata.v1",
+      "ui.presentation.v1",
+      "ui.theme.live.v1",
+      "ui.theme.catalog.v1",
+      "ui.theme.dopamine.v1",
+      "runtime.clock.v1",
+      "observability.events.v2",
+      "observability.context.v1",
+      "observability.snapshots.v1",
+      "observability.metrics.v1",
+      "connections.diagnostics.v1",
+      "ui.connectionDiagnostics.v1",
+      "auth.ssh.confirm.v1"
+    ]
+  },
+  "entry": {
+    "ui": "ui/index.html",
+    "worker": "worker/main.js"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "monitor.open",
+        "title": "资源监控",
+        "scope": "server",
+        "primary": false
+      },
+      {
+        "id": "monitor.connect",
+        "title": "连接并监控",
+        "scope": "server",
+        "primary": false
+      }
+    ],
+    "views": [
+      {
+        "id": "monitor.resources",
+        "title": "资源监控",
+        "scope": "server",
+        "supportedHosts": [
+          "dock",
+          "tab",
+          "window"
+        ],
+        "dockEdges": [
+          "right"
+        ],
+        "defaultLocation": {
+          "host": "dock",
+          "edge": "right"
+        },
+        "multiple": false,
+        "stateVersion": 1,
+        "minWidth": 280,
+        "minHeight": 240
+      }
+    ],
+    "workspaceEntries": [
+      {
+        "viewType": "monitor.resources",
+        "openByDefault": true
+      }
+    ],
+    "workspaceInitializers": [],
+    "presentation": {
+      "tools": [
+        {
+          "viewType": "monitor.resources",
+          "commandId": "monitor.open",
+          "edge": "right",
+          "icon": "layout-panel",
+          "defaultWidth": 320
+        }
+      ],
+      "tabCreate": [],
+      "dialogs": []
+    }
+  },
+  "dataSchemaVersion": 1,
+  "observability": {
+    "descriptorVersion": 1,
+    "path": "diagnostics/observability.json"
+  }
+}

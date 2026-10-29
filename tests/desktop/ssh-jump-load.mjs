@@ -8,9 +8,9 @@ process.env.SODECK_PLUGIN_PACKAGES=['terminal','files'].map(p=>resolve(`resource
 let app;const results={};
 try{
  app=await launch({data:join(output,'data-'+Date.now()),shellPort:9841,pluginPort:9842});
- const a=await rpc(app.page,'servers.routes.create',{name:'负载 A',host:cfg.host,port:cfg.port,username:cfg.jumpUser,authType:'key',connectionRoute:{kind:'direct'}});
- const b=await rpc(app.page,'servers.routes.create',{name:'负载 B',host:cfg.targetHost,port:cfg.targetPort,username:cfg.targetUser,authType:'key',connectionRoute:{kind:'sshJump',jumpServerId:a.id}});
- for(const [server,key]of [[a,cfg.jumpKey],[b,cfg.targetKey]])await rpc(app.page,'auth.set',{serverId:server.id,privateKeyPath:key});
+ const a=await rpc(app.page,'servers.routes.create',{name:'负载 A',host:cfg.host,port:cfg.port,username:cfg.jumpUser,authType:'key',accessPath:{kind:'direct'}});
+ const b=await rpc(app.page,'servers.routes.create',{name:'负载 B',host:cfg.targetHost,port:cfg.targetPort,username:cfg.targetUser,authType:'key',accessPath:{kind:'sshJump',jumpServerId:a.id}});
+ for(const [server,key]of [[a,cfg.jumpKey],[b,cfg.targetKey]])await rpc(app.page,'auth.ssh.set',{serverId:server.id,privateKeyPath:key});
  const leases=[];const start=Date.now();
  for(let n=0;n<8;n++)for(;;){try{leases.push(await rpc(app.page,'connections.acquire',{serverId:b.id,workspaceId:`load-${n}`,operationId:crypto.randomUUID()}));break;}catch(e){if(e.code!=='HOST_KEY_REQUIRED')throw e;await rpc(app.page,'hosts.trust',{serverId:e.details.serverId,challengeId:e.details.challengeId,fingerprint:e.details.fingerprint});}}
  assert.equal(new Set(leases.map(l=>l.connectionId)).size,8);results.open8Ms=Date.now()-start;

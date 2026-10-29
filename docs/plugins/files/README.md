@@ -1,6 +1,16 @@
 # 文件插件
 
-更新日期：2026-10-27 · 修订：r10
+更新日期：2026-10-29 · 修订：r16
+
+T-029：[F-FILES-005](features/online-updates.md)定义文件插件独立发布、在线单包安装与真实SFTP/容量回归；下载/来源/安装服务归核心，当前待整体方案确认。
+
+T-028：[F-FILES-004 r1](features/plugin-management.md)定义文件启停、SFTP/容量与无终端目录浏览回归。启停由核心管理，预期不改文件业务代码；方案确认和结果见[T-028](../../tasks/T-028-plugin-management.md)。
+
+T-027：[插件计划 r4](features/mixed-route-integration.md)保留原混合连接接入与 FILES-MR 结果，新增结构化故障/详情入口、同连接错误红黄双条去重、准确被动状态和 FILES-DIAG-01～03。目录/cwd/容量业务及代次隔离保持；本轮增量待整体确认，状态见[T-027 r7](../../tasks/T-027-mixed-route.md)。
+
+本轮代码接入见[T-016代码方案r1](../../technical/observability-implementation.md)，已固定4.10能力、包目录、上下文、实际完成点与独立更新验证；等待用户最终确认，当前插件代码未改。
+
+本轮诊断接入需求：[F-FILES-003 r2](features/observability.md)细化读取/定位实际异步终态、目录跟随和挂载/容量退化、安全快照/指标及FILES-OBS测试。使用[T-016核心接口](../../core/observability/integration.md)，不把路径base64节点ID存入历史；仅设计，原业务实现不改。
 最新实施：[T-018](../../tasks/T-018-file-capacity.md)按P-56确认，把容量改为单行背景、行尾用量与公共三级颜色；功能及测试以[F-FILES-001 r16](features/server-file-tree.md)为准。下方T-015提案为历史。
 最新提案：[T-015 r2](../../tasks/T-015-workflow-polish.md)与[F-FILES-001 r14](features/server-file-tree.md)细化隐藏项、加载和挂载行容量，含FT-UX-01～04/CODE-05；[代码方案r1 §7](../../technical/workflow-polish-implementation.md)固定高度单位/虚拟窗口、容量缓存/并发及旧快照处理。中文名按[F-CORE-017](../../core/plugin-display.md)。仅设计，旧任务实现/实测保持。
 
@@ -24,6 +34,7 @@
 | --- | --- | --- | --- |
 | F-FILES-001：每服务器目录树、文件大小与挂载详情 | [功能规格](features/server-file-tree.md)，FT-01 至 FT-14 | [远端只读 I/O](../../core/remote-read.md)、工作台、主题及多插件承载 | [T-008](../../tasks/T-008-server-file-tree.md) |
 | F-FILES-002：跟随终端目录 | [功能设计](features/terminal-directory-follow.md)，DF-01 至 DF-11 | [核心目录上下文](../../core/directory-context.md)，不直接调用终端插件 | [T-010](../../tasks/T-010-terminal-directory-follow.md) |
+| F-FILES-003：事件与诊断接入 | [采集规格](features/observability.md)，FILES-OBS-01～06 | 核心事件/context/快照/指标；不依赖私有诊断轮询 | [T-016](../../tasks/T-016-observability.md) |
 | 文件修改、传输和递归用量分析 | 待需求细化 | 不进入本轮 | 尚未安排 |
 
 ## 3. 视图与状态

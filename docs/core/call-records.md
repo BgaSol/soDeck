@@ -1,11 +1,13 @@
 # F-CORE-003：插件核心调用记录
 
-更新日期：2026-10-27 · 修订：r6 · 文档就绪：T-016统一记录衔接为设计；T-015查看交互及历史实测保留
+更新日期：2026-10-27 · 修订：r7 · 文档就绪：T-019统一记录代码设计待最终确认；T-015查看交互及历史实测保留
 所属模块：核心调用网关及调用记录服务
 关联任务：[T-002](../tasks/T-002-core-design.md)
 依据：[产品 P-14](../product.md) · 相关契约：[调用与状态通信](communication.md)
 
 ## T-016：统一事件与诊断的审计衔接
+
+T-019具体实施稿（待最终确认）：[代码方案r1 §6](../technical/communication-monitor-implementation.md)将Core::record和网络流审计切换到同一CallStore，facts库中调用开始/结束与calls兼容投影同事务；旧calls.list字段/过滤/游标保持，返回retentionDays改30（受容量约束），不双写旧库。core schema5按P-52完整备份重建，旧7天记录不自动迁入。执行前持久化门槛/终态不明及清理豁免保持；查询自身不得触发问题/证据反馈环。LOG既有回归及MCODE-07～09覆盖，不能从本稿声称已采用。
 
 [P-53/T-016](../tasks/T-016-observability.md)提出将调用作为统一事件中的受保护类别，保持每个公开调用、失败和重送分别留痕，保留执行前持久化/终态不明/资源清理边界。运行日志级别和采样不能省略调用。拟由单一观测存储提供旧calls.list兼容投影，建议事实留存从7天扩为30天；当前实现及T-015界面行为不因本提案改变。数据版本按P-52备份重建，旧记录不自动导入。具体事务、容量、降级、查询自身审计防递归和ST/EV/HQ流程由[F-CORE-022](observability/storage.md)、[F-CORE-018](observability/events.md)、[F-CORE-019](observability/history.md)维护，尚未编码。
 

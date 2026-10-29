@@ -1,0 +1,548 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Empty": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "Id": {
+      "type": "string",
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[a-z0-9-](?:[a-z0-9.-]*[a-z0-9-])?$"
+    },
+    "Revision": {
+      "type": "string",
+      "maxLength": 20,
+      "pattern": "^(0|[1-9][0-9]{0,19})$",
+      "format": "uint64"
+    },
+    "OperationId": {
+      "type": "string",
+      "maxLength": 36,
+      "format": "uuid"
+    },
+    "Generation": {
+      "type": "string",
+      "maxLength": 36,
+      "format": "uuid"
+    },
+    "SignatureInfo": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "unsigned",
+            "verified",
+            "developmentVerified",
+            "unverified",
+            "invalid"
+          ]
+        },
+        "keyId": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "PackageInfo": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "signature": {
+          "$ref": "#/$defs/SignatureInfo"
+        },
+        "digest": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 512
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "version",
+        "displayName",
+        "signature",
+        "digest",
+        "valid",
+        "error"
+      ],
+      "additionalProperties": false
+    },
+    "ManagedPlugin": {
+      "type": "object",
+      "properties": {
+        "pluginId": {
+          "$ref": "#/$defs/Id"
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "bootEnabled": {
+          "type": "boolean"
+        },
+        "selected": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PackageInfo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pending": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PackageInfo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 512
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "restartRequired": {
+          "type": "boolean"
+        },
+        "runtimeStatus": {
+          "enum": [
+            "running",
+            "disabled",
+            "failed",
+            "pending"
+          ]
+        }
+      },
+      "required": [
+        "pluginId",
+        "displayName",
+        "enabled",
+        "bootEnabled",
+        "selected",
+        "pending",
+        "error",
+        "restartRequired",
+        "runtimeStatus"
+      ],
+      "additionalProperties": false
+    },
+    "ManagementListRequest": {
+      "type": "object",
+      "properties": {
+        "cursor": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "query": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "ManagementList": {
+      "type": "object",
+      "properties": {
+        "catalogRevision": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "items": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/ManagedPlugin"
+          }
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "catalogRevision",
+        "items",
+        "nextCursor"
+      ],
+      "additionalProperties": false
+    },
+    "EnablementSnapshot": {
+      "type": "object",
+      "properties": {
+        "storageStatus": {
+          "enum": [
+            "ready",
+            "corrupt",
+            "newer",
+            "unavailable"
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Generation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 512
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "diagnosticToken": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "storageStatus",
+        "generation",
+        "revision",
+        "reason",
+        "diagnosticToken"
+      ],
+      "additionalProperties": false
+    },
+    "EnablementChange": {
+      "type": "object",
+      "properties": {
+        "pluginId": {
+          "$ref": "#/$defs/Id"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "pluginId",
+        "enabled"
+      ],
+      "additionalProperties": false
+    },
+    "EnablementValidate": {
+      "type": "object",
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/Generation"
+        },
+        "expectedRevision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "changes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/EnablementChange"
+          }
+        }
+      },
+      "required": [
+        "generation",
+        "expectedRevision",
+        "changes"
+      ],
+      "additionalProperties": false
+    },
+    "EnablementCommit": {
+      "type": "object",
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/Generation"
+        },
+        "expectedRevision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "changes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/EnablementChange"
+          }
+        },
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "generation",
+        "expectedRevision",
+        "changes",
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "Valid": {
+      "type": "object",
+      "properties": {
+        "valid": {
+          "enum": [
+            true
+          ]
+        }
+      },
+      "required": [
+        "valid"
+      ],
+      "additionalProperties": false
+    },
+    "EnablementSaved": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        },
+        "generation": {
+          "$ref": "#/$defs/Generation"
+        },
+        "persistedRevision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "restartRequired": {
+          "type": "boolean"
+        },
+        "backupPath": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "operationId",
+        "generation",
+        "persistedRevision",
+        "restartRequired"
+      ],
+      "additionalProperties": false
+    },
+    "EnablementOperationRequest": {
+      "type": "object",
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/Generation"
+        },
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "generation",
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "EnablementOperation": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": [
+            "saved",
+            "running",
+            "rejected",
+            "unknown"
+          ]
+        },
+        "result": {
+          "$ref": "#/$defs/EnablementSaved"
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 512
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "PackagePrepare": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "PackageOperationRequest": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "PackageOperation": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        },
+        "state": {
+          "enum": [
+            "selecting",
+            "verifying",
+            "prepared",
+            "failed",
+            "cancelled",
+            "unknown"
+          ]
+        },
+        "pluginId": {
+          "$ref": "#/$defs/Id"
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "signature": {
+          "$ref": "#/$defs/SignatureInfo"
+        },
+        "digest": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "error": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "code": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "operationId",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "EnablementRepair": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        },
+        "diagnosticToken": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "operationId",
+        "diagnosticToken"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "x-methods": {
+    "plugins.management.list": "ManagementListRequest",
+    "plugins.enablement.get": "Empty",
+    "plugins.enablement.validate": "EnablementValidate",
+    "plugins.enablement.commit": "EnablementCommit",
+    "plugins.enablement.operation.get": "EnablementOperationRequest",
+    "plugins.package.prepare": "PackagePrepare",
+    "plugins.package.operation.get": "PackageOperationRequest",
+    "plugins.enablement.repair": "EnablementRepair"
+  },
+  "x-results": {
+    "plugins.management.list": "ManagementList",
+    "plugins.enablement.get": "EnablementSnapshot",
+    "plugins.enablement.validate": "Valid",
+    "plugins.enablement.commit": "EnablementSaved",
+    "plugins.enablement.operation.get": "EnablementOperation",
+    "plugins.package.prepare": "PackageOperation",
+    "plugins.package.operation.get": "PackageOperation",
+    "plugins.enablement.repair": "EnablementSaved"
+  }
+}

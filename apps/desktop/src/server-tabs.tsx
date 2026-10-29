@@ -3,11 +3,12 @@ import {Button} from '@sodeck/ui';
 import { useEffect, useRef, useState } from "react";
 import type { PointerEvent } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, Plus, Server as ServerIcon, X } from "lucide-react";
-import { onCoreNotification } from "@sodeck/sdk";
+import { onCoreNotification,type HomePage } from "@sodeck/sdk";
 import { useOverflow } from "./use-overflow";
 import type { Server, Workbench } from "./types";
 
-export function ServerTabs({ workbench, servers, run, onPicker, onMenu, onList, onDragging }: {
+export function ServerTabs({ workbench, servers, run, onPicker, onMenu, onList, onDragging,home,onHomeClose }: {
+  home:HomePage;onHomeClose():void;
   workbench: Workbench; servers: Server[]; run(method: string, params?: unknown): Promise<unknown>;
   onList():void; onPicker(): void; onMenu(id: string, x: number, y: number): void; onDragging(value: boolean): void;
 }) {
@@ -35,7 +36,14 @@ export function ServerTabs({ workbench, servers, run, onPicker, onMenu, onList, 
     current.operationId=crypto.randomUUID();
     void run("workspaces.drag", { workspaceId: current.id, operationId: current.operationId }).finally(() => { candidate.current = null; setDrag(null); onDragging(false); });
   };
-  return <><div ref={row} className="server-tabs" data-server-tabs role="tablist" aria-label="服务器工作区">
+  const navigateKey=(event:import('react').KeyboardEvent,id:string)=>{
+    if(!["ArrowLeft","ArrowRight","Home","End"].includes(event.key))return;
+    event.preventDefault();const ids=[...(home.open?['@home']:[]),...workbench.workspaceIds],index=ids.indexOf(id);
+    const next=ids[event.key==='Home'?0:event.key==='End'?ids.length-1:(index+(event.key==='ArrowRight'?1:-1)+ids.length)%ids.length];
+    document.getElementById(`server-tab-${next}`)?.focus();if(next==='@home')onPicker();else void run('workspaces.activate',{workspaceId:next});
+  };
+  return <><div ref={row} className="server-tabs" data-server-tabs role="tablist" aria-label="工作台页面">
+    {home.open&&<TabItem id="server-tab-@home" className="server-tab" selected={home.selected} tabIndex={home.selected?0:-1} aria-label="新建连接" onClick={onPicker} onKeyDown={e=>{if(e.target!==e.currentTarget)return;navigateKey(e,'@home');if(e.key==='Enter'||e.key===' '){e.preventDefault();onPicker();}if(e.key==='Delete'){e.preventDefault();onHomeClose();}}}><Plus size={14}/><span>新建连接</span><Button variant="quiet" size="compact" className="icon-button" aria-label="关闭新建连接页" onClick={e=>{e.stopPropagation();onHomeClose();}}><X size={13}/></Button></TabItem>}
     {workbench.workspaceIds.map((id, index) => {
       const server = servers.find(s => s.id === id), active = workbench.activeWorkspaceId === id;
       const name = server?.name ?? "服务器不可用";
@@ -44,9 +52,7 @@ export function ServerTabs({ workbench, servers, run, onPicker, onMenu, onList, 
         if (event.target !== event.currentTarget) return;
         if (event.key === "Delete") { event.preventDefault(); void run("workspaces.close", { workspaceId: id }); }
         if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
-          event.preventDefault(); const ids = workbench.workspaceIds;
-          const next = ids[event.key === "Home" ? 0 : event.key === "End" ? ids.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + ids.length) % ids.length];
-          document.getElementById(`server-tab-${next}`)?.focus(); void run("workspaces.activate", { workspaceId: next });
+          navigateKey(event,id);
         }
         if (event.key === "Enter" || event.key === " ") { event.preventDefault(); void run("workspaces.activate", { workspaceId: id }); }
         if ((event.key === "F10" && event.shiftKey)||event.key === "ContextMenu") { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); onMenu(id, rect.left, rect.bottom); }

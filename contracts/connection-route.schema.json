@@ -1,0 +1,1941 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "AccessPath": {
+      "type": "object",
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RouteStep"
+          }
+        }
+      },
+      "required": [
+        "steps"
+      ],
+      "additionalProperties": false
+    },
+    "Server": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "username": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "authType": {
+          "enum": [
+            "password",
+            "key"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "hasSecret": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "host",
+        "port",
+        "username",
+        "authType",
+        "revision",
+        "hasSecret"
+      ],
+      "additionalProperties": false
+    },
+    "RouteServer": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "username": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "authType": {
+          "enum": [
+            "password",
+            "key"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "hasSecret": {
+          "type": "boolean"
+        },
+        "accessPath": {
+          "$ref": "#/$defs/AccessPath"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "host",
+        "port",
+        "username",
+        "authType",
+        "revision",
+        "hasSecret",
+        "accessPath"
+      ],
+      "additionalProperties": false
+    },
+    "CreateServer": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "username": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "authType": {
+          "enum": [
+            "password",
+            "key"
+          ]
+        },
+        "accessPath": {
+          "$ref": "#/$defs/AccessPath"
+        }
+      },
+      "required": [
+        "name",
+        "host",
+        "username",
+        "accessPath"
+      ],
+      "additionalProperties": false
+    },
+    "UpdateServer": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "username": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "authType": {
+          "enum": [
+            "password",
+            "key"
+          ]
+        },
+        "accessPath": {
+          "$ref": "#/$defs/AccessPath"
+        },
+        "serverId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "name",
+        "host",
+        "username",
+        "accessPath",
+        "serverId",
+        "expectedRevision"
+      ],
+      "additionalProperties": false
+    },
+    "ServerId": {
+      "type": "object",
+      "properties": {
+        "serverId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "serverId"
+      ],
+      "additionalProperties": false
+    },
+    "RouteRequest": {
+      "type": "object",
+      "properties": {
+        "serverId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "serverId",
+        "workspaceId"
+      ],
+      "additionalProperties": false
+    },
+    "RouteNode": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "stepId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "stepIndex": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "fromStepId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "host": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "configRevision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "username": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "kind": {
+              "enum": [
+                "ssh"
+              ]
+            },
+            "serverId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "authType": {
+              "enum": [
+                "password",
+                "key"
+              ]
+            },
+            "role": {
+              "enum": [
+                "jump",
+                "target"
+              ]
+            },
+            "arrival": {
+              "$ref": "#/$defs/EdgeSummary"
+            },
+            "hasBoundCredential": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "stepId",
+            "stepIndex",
+            "fromStepId",
+            "name",
+            "host",
+            "port",
+            "configRevision",
+            "username",
+            "kind",
+            "serverId",
+            "authType",
+            "role",
+            "arrival",
+            "hasBoundCredential"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "stepId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "stepIndex": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "fromStepId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "host": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "configRevision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "username": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "kind": {
+              "enum": [
+                "socks5"
+              ]
+            },
+            "proxyId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "authType": {
+              "enum": [
+                "none",
+                "usernamePassword"
+              ]
+            },
+            "role": {
+              "enum": [
+                "proxy"
+              ]
+            },
+            "resolve": {
+              "enum": [
+                "proxy",
+                "local"
+              ]
+            },
+            "arrival": {
+              "$ref": "#/$defs/EdgeSummary"
+            },
+            "hasBoundCredential": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "stepId",
+            "stepIndex",
+            "fromStepId",
+            "name",
+            "host",
+            "port",
+            "configRevision",
+            "username",
+            "kind",
+            "proxyId",
+            "authType",
+            "role",
+            "resolve",
+            "arrival",
+            "hasBoundCredential"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "details": {}
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "Bridge": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": [
+            "active",
+            "closed",
+            "failed"
+          ]
+        },
+        "upstreamBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "downstreamBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "peakBufferedBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "edgeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "state",
+        "upstreamBytes",
+        "downstreamBytes",
+        "peakBufferedBytes",
+        "edgeId"
+      ],
+      "additionalProperties": false
+    },
+    "ChallengeRequest": {
+      "type": "object",
+      "properties": {
+        "challengeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "targetServerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "challengeId",
+        "targetServerId"
+      ],
+      "additionalProperties": false
+    },
+    "RouteReference": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "saved"
+              ]
+            },
+            "serverId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "routeRevision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "kind",
+            "serverId",
+            "routeRevision"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "running"
+              ]
+            },
+            "serverId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "connectionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "routeRevision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "kind",
+            "serverId",
+            "connectionId",
+            "generation",
+            "routeRevision"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "attempt"
+              ]
+            },
+            "serverId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "workspaceId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "routeRevision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "attemptId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "kind",
+            "serverId",
+            "workspaceId",
+            "routeRevision",
+            "attemptId"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "RouteMeta": {
+      "type": "object",
+      "properties": {
+        "targetServerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "targetName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "routeRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "stepCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "sshCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "proxyCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "attemptTimeoutMs": {
+          "type": "integer",
+          "minimum": 120000,
+          "maximum": 900000
+        },
+        "reference": {
+          "$ref": "#/$defs/RouteReference"
+        }
+      },
+      "required": [
+        "targetServerId",
+        "targetName",
+        "routeRevision",
+        "stepCount",
+        "sshCount",
+        "proxyCount",
+        "attemptTimeoutMs",
+        "reference"
+      ],
+      "additionalProperties": false
+    },
+    "PageRequest": {
+      "type": "object",
+      "properties": {
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "ServerPage": {
+      "type": "object",
+      "properties": {
+        "servers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RouteServer"
+          },
+          "maxItems": 64
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "servers",
+        "nextCursor"
+      ],
+      "additionalProperties": false
+    },
+    "NodesRequest": {
+      "type": "object",
+      "properties": {
+        "reference": {
+          "$ref": "#/$defs/RouteReference"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "reference"
+      ],
+      "additionalProperties": false
+    },
+    "NodePage": {
+      "type": "object",
+      "properties": {
+        "route": {
+          "$ref": "#/$defs/RouteMeta"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RouteNode"
+          },
+          "maxItems": 64
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "route",
+        "nodes",
+        "offset",
+        "nextCursor"
+      ],
+      "additionalProperties": false
+    },
+    "PreviewRequest": {
+      "type": "object",
+      "properties": {
+        "server": {
+          "$ref": "#/$defs/Server"
+        },
+        "accessPath": {
+          "$ref": "#/$defs/AccessPath"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "server",
+        "accessPath"
+      ],
+      "additionalProperties": false
+    },
+    "Use": {
+      "type": "object",
+      "properties": {
+        "sessions": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bridges": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "sessions",
+        "bridges"
+      ],
+      "additionalProperties": false
+    },
+    "RunningRoute": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "route": {
+          "$ref": "#/$defs/RouteMeta"
+        },
+        "state": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "configurationChanged": {
+          "type": "boolean"
+        },
+        "resources": {
+          "$ref": "#/$defs/Use"
+        },
+        "failureStep": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "connectionId",
+        "generation",
+        "route",
+        "state",
+        "configurationChanged",
+        "resources",
+        "failureStep"
+      ],
+      "additionalProperties": false
+    },
+    "RouteAttempt": {
+      "type": "object",
+      "properties": {
+        "route": {
+          "$ref": "#/$defs/RouteMeta"
+        },
+        "current": {
+          "$ref": "#/$defs/RouteNode"
+        },
+        "stage": {
+          "enum": [
+            "connect",
+            "forward",
+            "handshake",
+            "verify",
+            "authenticate",
+            "active",
+            "failed",
+            "canceled",
+            "proxyDial",
+            "proxyNegotiate",
+            "proxyAuthenticate",
+            "proxyConnect",
+            "proxyCredentials",
+            "resolve"
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updated": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "stepIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "attemptGeneration": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "operationId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "route",
+        "stepIndex",
+        "current",
+        "stage",
+        "error",
+        "updated",
+        "attemptGeneration",
+        "operationId"
+      ],
+      "additionalProperties": false
+    },
+    "RouteStatus": {
+      "type": "object",
+      "properties": {
+        "saved": {
+          "$ref": "#/$defs/RouteMeta"
+        },
+        "running": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RunningRoute"
+          },
+          "maxItems": 64
+        },
+        "attempt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RouteAttempt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runningCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "currentCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "changedCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "saved",
+        "running",
+        "attempt",
+        "runningCount",
+        "currentCount",
+        "changedCount"
+      ],
+      "additionalProperties": false
+    },
+    "Challenge": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "server": {
+              "$ref": "#/$defs/Server"
+            },
+            "targetServerId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "workspaceId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "operationId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "route": {
+              "$ref": "#/$defs/RouteMeta"
+            },
+            "role": {
+              "enum": [
+                "jump",
+                "target"
+              ]
+            },
+            "ownerKind": {
+              "enum": [
+                "sshHost",
+                "targetSsh"
+              ]
+            },
+            "ownerId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "proxy": {
+              "type": "null"
+            },
+            "stepIndex": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "stepCount": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "stepId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "targetServerId",
+            "workspaceId",
+            "operationId",
+            "route",
+            "role",
+            "stepIndex",
+            "stepCount",
+            "ownerKind",
+            "ownerId",
+            "proxy",
+            "server",
+            "stepId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "targetServerId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "workspaceId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "operationId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "route": {
+              "$ref": "#/$defs/RouteMeta"
+            },
+            "ownerKind": {
+              "enum": [
+                "socks5"
+              ]
+            },
+            "ownerId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "proxy": {
+              "$ref": "#/$defs/SocksProxy"
+            },
+            "stepIndex": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "stepCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "stepId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "targetServerId",
+            "workspaceId",
+            "operationId",
+            "route",
+            "ownerKind",
+            "ownerId",
+            "proxy",
+            "stepIndex",
+            "stepCount",
+            "stepId"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ResourceRoute": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "state": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "route": {
+          "$ref": "#/$defs/RouteMeta"
+        },
+        "holders": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 1024
+        },
+        "resources": {
+          "$ref": "#/$defs/Use"
+        },
+        "failureStep": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "connectionId",
+        "workspaceId",
+        "generation",
+        "state",
+        "route",
+        "holders",
+        "resources",
+        "failureStep"
+      ],
+      "additionalProperties": false
+    },
+    "ResourcePage": {
+      "type": "object",
+      "properties": {
+        "connections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResourceRoute"
+          },
+          "maxItems": 64
+        },
+        "usage": {
+          "$ref": "#/$defs/Use"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "connections",
+        "usage",
+        "nextCursor"
+      ],
+      "additionalProperties": false
+    },
+    "DependenciesRequest": {
+      "type": "object",
+      "properties": {
+        "serverId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "serverId"
+      ],
+      "additionalProperties": false
+    },
+    "Dependency": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "saved"
+              ]
+            },
+            "server": {
+              "$ref": "#/$defs/Server"
+            },
+            "direct": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "server",
+            "direct"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "running"
+              ]
+            },
+            "connection": {
+              "$ref": "#/$defs/ResourceRoute"
+            }
+          },
+          "required": [
+            "kind",
+            "connection"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "DependencyPage": {
+      "type": "object",
+      "properties": {
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Dependency"
+          },
+          "maxItems": 64
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "dependencies",
+        "nextCursor"
+      ],
+      "additionalProperties": false
+    },
+    "SegmentsRequest": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "connectionId",
+        "generation"
+      ],
+      "additionalProperties": false
+    },
+    "Segment": {
+      "type": "object",
+      "properties": {
+        "edgeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "metrics": {
+          "$ref": "#/$defs/Bridge"
+        }
+      },
+      "required": [
+        "edgeId",
+        "metrics"
+      ],
+      "additionalProperties": false
+    },
+    "SegmentPage": {
+      "type": "object",
+      "properties": {
+        "segments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Segment"
+          },
+          "maxItems": 64
+        },
+        "resources": {
+          "$ref": "#/$defs/Use"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "segments",
+        "resources",
+        "nextCursor"
+      ],
+      "additionalProperties": false
+    },
+    "SocksProxy": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "authType": {
+          "enum": [
+            "none",
+            "usernamePassword"
+          ]
+        },
+        "username": {
+          "type": "string",
+          "maxLength": 255
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "hasPreset": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "host",
+        "port",
+        "authType",
+        "username",
+        "revision",
+        "hasPreset"
+      ],
+      "additionalProperties": false
+    },
+    "ProxySave": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "authType": {
+          "enum": [
+            "none",
+            "usernamePassword"
+          ]
+        },
+        "username": {
+          "type": "string",
+          "maxLength": 255
+        },
+        "proxyId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "name",
+        "host",
+        "port",
+        "authType"
+      ],
+      "additionalProperties": false
+    },
+    "ProxyRequest": {
+      "type": "object",
+      "properties": {
+        "proxyId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "proxyId"
+      ],
+      "additionalProperties": false
+    },
+    "ProxyPage": {
+      "type": "object",
+      "properties": {
+        "proxies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SocksProxy"
+          },
+          "maxItems": 10000
+        }
+      },
+      "required": [
+        "proxies"
+      ],
+      "additionalProperties": false
+    },
+    "ProxyDelete": {
+      "type": "object",
+      "properties": {
+        "deleted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "deleted"
+      ],
+      "additionalProperties": false
+    },
+    "ProxyAuth": {
+      "type": "object",
+      "properties": {
+        "proxyId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "challengeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "password": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "remember": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "proxyId",
+        "password",
+        "challengeId",
+        "remember"
+      ],
+      "additionalProperties": false
+    },
+    "AuthStored": {
+      "type": "object",
+      "properties": {
+        "stored": {
+          "type": "boolean"
+        },
+        "remembered": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "stored",
+        "remembered"
+      ],
+      "additionalProperties": false
+    },
+    "SshAuth": {
+      "type": "object",
+      "properties": {
+        "serverId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "challengeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "password": {
+          "type": "string",
+          "maxLength": 1048576
+        },
+        "privateKeyPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "passphrase": {
+          "type": "string",
+          "maxLength": 1048576
+        },
+        "remember": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "serverId",
+        "challengeId",
+        "remember"
+      ],
+      "additionalProperties": false
+    },
+    "RouteStep": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "stepId": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "kind": {
+              "enum": [
+                "ssh"
+              ]
+            },
+            "serverId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "stepId",
+            "kind",
+            "serverId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "stepId": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "kind": {
+              "enum": [
+                "socks5"
+              ]
+            },
+            "proxyId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "resolve": {
+              "enum": [
+                "proxy",
+                "local"
+              ]
+            }
+          },
+          "required": [
+            "stepId",
+            "kind",
+            "proxyId",
+            "resolve"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "UsePreset": {
+      "type": "object",
+      "properties": {
+        "challengeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "remember": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "challengeId",
+        "operationId",
+        "remember"
+      ],
+      "additionalProperties": false
+    },
+    "TrustHost": {
+      "type": "object",
+      "properties": {
+        "serverId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "challengeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "fingerprint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "serverId",
+        "challengeId",
+        "fingerprint"
+      ],
+      "additionalProperties": false
+    },
+    "EdgeSummary": {
+      "type": "object",
+      "properties": {
+        "edgeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "fromStepId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "toStepId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "mechanism": {
+          "enum": [
+            "tcp",
+            "sshForward",
+            "socksConnect"
+          ]
+        },
+        "resolve": {
+          "enum": [
+            "local",
+            "ssh",
+            "proxy"
+          ]
+        }
+      },
+      "required": [
+        "edgeId",
+        "fromStepId",
+        "toStepId",
+        "mechanism",
+        "resolve"
+      ],
+      "additionalProperties": false
+    },
+    "SshConfirm": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "challengeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "operationId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trust": {
+          "enum": [
+            "accept",
+            "update",
+            "keep"
+          ]
+        },
+        "credential": {
+          "enum": [
+            "preset",
+            "input",
+            "bound"
+          ]
+        },
+        "remember": {
+          "type": "boolean"
+        },
+        "password": {
+          "type": "string",
+          "maxLength": 1048576
+        },
+        "privateKeyPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "passphrase": {
+          "type": "string",
+          "maxLength": 1048576
+        }
+      },
+      "required": [
+        "challengeId",
+        "operationId",
+        "trust",
+        "credential",
+        "remember"
+      ]
+    }
+  },
+  "x-methods": {
+    "servers.routes.list": "PageRequest",
+    "servers.routes.get": "ServerId",
+    "servers.routes.create": "CreateServer",
+    "servers.routes.update": "UpdateServer",
+    "servers.routes.preview": "PreviewRequest",
+    "servers.routes.dependencies": "DependenciesRequest",
+    "connections.route.get": "RouteRequest",
+    "connections.route.nodes": "NodesRequest",
+    "connections.route.list": "PageRequest",
+    "connections.route.segments": "SegmentsRequest",
+    "auth.challenge.get": "ChallengeRequest",
+    "proxies.socks5.list": "PageRequest",
+    "proxies.socks5.get": "ProxyRequest",
+    "proxies.socks5.create": "ProxySave",
+    "proxies.socks5.update": "ProxySave",
+    "proxies.socks5.delete": "ProxyRequest",
+    "auth.socks5.set": "ProxyAuth",
+    "auth.ssh.set": "SshAuth",
+    "auth.credentials.usePreset": "UsePreset",
+    "hosts.trust": "TrustHost",
+    "auth.ssh.confirm": "SshConfirm"
+  },
+  "x-results": {
+    "servers.routes.list": "ServerPage",
+    "servers.routes.get": "RouteServer",
+    "servers.routes.create": "RouteServer",
+    "servers.routes.update": "RouteServer",
+    "servers.routes.preview": "NodePage",
+    "servers.routes.dependencies": "DependencyPage",
+    "connections.route.get": "RouteStatus",
+    "connections.route.nodes": "NodePage",
+    "connections.route.list": "ResourcePage",
+    "connections.route.segments": "SegmentPage",
+    "auth.challenge.get": "Challenge",
+    "proxies.socks5.list": "ProxyPage",
+    "proxies.socks5.get": "SocksProxy",
+    "proxies.socks5.create": "SocksProxy",
+    "proxies.socks5.update": "SocksProxy",
+    "proxies.socks5.delete": "ProxyDelete",
+    "auth.socks5.set": "AuthStored",
+    "auth.ssh.set": "AuthStored",
+    "auth.credentials.usePreset": "AuthStored",
+    "auth.ssh.confirm": "AuthStored"
+  }
+}

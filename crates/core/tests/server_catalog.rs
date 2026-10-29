@@ -1,19 +1,20 @@
+mod support;
 use serde_json::{json,Value};
 use sodeck_core::{Core,Caller};
 fn call(core:&Core,method:&str,p:Value)->Value {core.call(&Caller::shell(),method,p).unwrap()}
 fn group(core:&Core,name:&str)->Value {call(core,"serverGroups.create",json!({"operationId":uuid::Uuid::new_v4().to_string(),"name":name}))}
-fn configuration(name:&str)->Value {json!({"name":name,"host":"test.invalid","port":22,"username":"tester","authType":"password","connectionRoute":{"kind":"direct"}})}
+fn configuration(name:&str)->Value {json!({"name":name,"host":"test.invalid","port":22,"username":"tester","authType":"password","accessPath":{"steps":[]}})}
 fn save(core:&Core,group:&Value)->Value {call(core,"servers.catalog.save",json!({"operationId":uuid::Uuid::new_v4().to_string(),"configuration":configuration("测试服务器"),"groupId":group}))}
 
 #[test]
 fn atomic_membership_legacy_updates_and_deletion() {
     let dir=tempfile::tempdir().unwrap();let core=Core::open(dir.path()).unwrap();
     let group=group(&core,"生产");let server=save(&core,&group["group"]["id"]);
-    call(&core,"auth.set",json!({"serverId":server["server"]["id"],"password":"isolated-test","remember":false}));
+    support::prefill(&core,"ssh",&server["server"]["id"],json!({"password":"isolated-test","remember":false}));
     let moved=call(&core,"servers.catalog.save",json!({"operationId":"move","serverId":server["server"]["id"],"expectedMembershipRevision":server["membershipRevision"],"groupId":null}));
     assert_eq!(moved["server"]["revision"],server["server"]["revision"]);
     let mut old=configuration("旧API改名");old["serverId"]=server["server"]["id"].clone();old["expectedRevision"]=server["server"]["revision"].clone();
-    call(&core,"servers.routes.v2.update",old);
+    call(&core,"servers.routes.update",old);
     let again=call(&core,"servers.catalog.save",json!({"operationId":"move-back","serverId":server["server"]["id"],"expectedMembershipRevision":moved["membershipRevision"],"groupId":group["group"]["id"]}));
     assert_eq!(again["server"]["name"],"旧API改名");
     let listed=call(&core,"serverGroups.list",json!({}));assert_eq!(listed["groups"][0]["serverCount"],1);
@@ -55,19 +56,16 @@ fn names_normalize_and_unknown_fields_fail() {
 }
 
 #[test]
-fn credential_cleanup_failure_retains_committed_identity_and_can_resume() {
+fn identity_edit_preserves_old_bound_blob_without_using_it_for_new_identity() {
     let dir=tempfile::tempdir().unwrap();let core=Core::open(dir.path()).unwrap();let saved=save(&core,&Value::Null);
-    let id=saved["server"]["id"].as_str().unwrap();let blocked=dir.path().join("secrets").join(format!("{id}.dpapi"));
-    // A directory at the encrypted-file path makes removal fail on every OS.
-    std::fs::create_dir_all(&blocked).unwrap();
+    let id=&saved["server"]["id"];support::prefill(&core,"ssh",id,json!({"password":"old-context","remember":true}));
+    let before=std::fs::read_dir(dir.path().join("secrets")).unwrap().map(|e|e.unwrap().file_name()).collect::<Vec<_>>();
     let mut config=configuration("已提交");config["host"]=json!("changed.invalid");
-    let request=json!({"operationId":"cleanup-once","serverId":id,"expectedServerRevision":1,"configuration":config});
-    let failure=core.call(&Caller::shell(),"servers.catalog.save",request.clone()).unwrap_err();
-    assert_eq!(failure.details.as_ref().unwrap()["stage"],"credentialCleanup");
-    let pending=call(&core,"servers.catalog.operation",json!({"operationId":"cleanup-once"}));
-    assert_eq!(pending["result"]["postCommitPending"],true);assert_eq!(pending["result"]["server"]["revision"],2);
-    std::fs::remove_dir(&blocked).unwrap();
-    let resumed=call(&core,"servers.catalog.save",request);assert_eq!(resumed["server"]["id"],id);assert_eq!(resumed["server"]["revision"],2);assert_eq!(resumed["postCommitPending"],false);assert_eq!(resumed["server"]["hasSecret"],false);
+    let request=json!({"operationId":"edit-once","serverId":id,"expectedServerRevision":1,"configuration":config});
+    let updated=call(&core,"servers.catalog.save",request.clone());
+    assert_eq!(updated["server"]["revision"],2);assert_eq!(updated["server"]["hasSecret"],false);
+    assert_eq!(call(&core,"servers.catalog.save",request),updated);
+    assert_eq!(std::fs::read_dir(dir.path().join("secrets")).unwrap().map(|e|e.unwrap().file_name()).collect::<Vec<_>>(),before);
     assert_eq!(call(&core,"servers.catalog.list",json!({}))["items"].as_array().unwrap().len(),1);
 }
 

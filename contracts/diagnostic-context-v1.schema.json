@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {},
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "diagnostics"
+  ],
+  "properties": {
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "contextRef"
+      ],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "enum": [
+            1
+          ]
+        },
+        "contextRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      }
+    }
+  }
+}

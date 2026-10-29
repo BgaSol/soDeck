@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "platform": "windows-x86_64",
+  "node": "24.22.0",
+  "rust": "1.99.1",
+  "components": [
+    {"id":"core","path":"apps/desktop","kind":"core"},
+    {"id":"sodeck.terminal","path":"plugins/terminal","kind":"plugin"},
+    {"id":"sodeck.files","path":"plugins/files","kind":"plugin"},
+    {"id":"sodeck.network-proxy","path":"plugins/network-proxy","kind":"plugin"},
+    {"id":"sodeck.monitor","path":"plugins/monitor","kind":"plugin"}
+  ]
+}

@@ -1,3 +1,5 @@
+import {diagnosticReference,sameDiagnostic,openConnectionDiagnostics,type DiagnosticRef} from '@sodeck/sdk';
+import {invoke as observedInvoke} from './ui-observation';
 import {Input,Button,BusyIndicator} from '@sodeck/ui';
 import { Notice,TreeRow,StatusBar,Toolbar,Text,foundation } from '@sodeck/ui';
 import { onThemeError,retryTheme } from '@sodeck/sdk';
@@ -39,6 +41,7 @@ export function FilesView() {
   useEffect(()=>{const el=densityProbe.current;if(!el)return;const measure=()=>setRowHeight(el.getBoundingClientRect().height);const observer=new ResizeObserver(measure);observer.observe(el);measure();return()=>observer.disconnect();},[]);
   const [themeError,setThemeError]=useState<string>();
   useEffect(()=>onThemeError(setThemeError),[]);
+  const [errorRef,setErrorRef]=useState<DiagnosticRef>();
   const [snapshot, setSnapshot] = useState<Snapshot>(),
     [error, setError] = useState(""),
     [pathInput, setPathInput] = useState("/"),
@@ -64,10 +67,7 @@ export function FilesView() {
   },[snapshot,rowHeight]);
   const invoke = useCallback(
     <T,>(command: string, args: Record<string, unknown> = {}) =>
-      core.call<T>("plugin.invoke", {
-        command,
-        args: { ...args, viewId: ctx.viewId },
-      }),
+      observedInvoke<T>(command,{...args,viewId:ctx.viewId}),
     [],
   );
   const poll = useRef<() => Promise<void>>(async () => {});
@@ -107,7 +107,7 @@ export function FilesView() {
       if(!s.loading)following.current=undefined;
       timer.current=setTimeout(()=>void poll.current(),s.state==='idle'?1000:250);
     } catch (e) {
-      if (mounted.current) setError(errorMessage(e));
+      if (mounted.current) {setError(errorMessage(e));setErrorRef(diagnosticReference(e));}
     } finally {
       fetching.current = false;
       if(rerun.current&&mounted.current&&visible.current){rerun.current=false;clearTimeout(timer.current);timer.current=setTimeout(()=>void poll.current(),0);}
@@ -120,7 +120,7 @@ export function FilesView() {
         await invoke(command, args);
         await poll.current();
       } catch (e) {
-        setError(errorMessage(e));
+        setError(errorMessage(e));setErrorRef(diagnosticReference(e));
       }
     },
     [invoke],
@@ -169,13 +169,13 @@ export function FilesView() {
           {contract:'view.presentation.v1',target:{scope:{workspaceId:ctx.workspaceId!,workspaceGeneration:ctx.workspaceGeneration!},viewId:ctx.viewId!}},presentation,value=>{
             visible.current=value.visible;
             if(value.visible)void poll.current();else clearTimeout(timer.current);
-          },{onError:e=>{if(!disposed)setError(errorMessage(e));}});
+          },{onError:e=>{if(!disposed){setError(errorMessage(e));setErrorRef(diagnosticReference(e));}}});
         if(disposed){await feed.dispose();return;}presentationFeed=feed;
         await invoke("files.presentation");
         await poll.current();
         if(tree.current){const saved=ctx.snapshot as {version?:number;scrollUnit?:number}|undefined;tree.current.scrollTop=saved?.version===2?(saved.scrollUnit??0)*rowHeight:saved?.version===1?Math.max(0,s.selectedUnit)*rowHeight:s.scrollTop;}
       } catch (e) {
-        if (!disposed) setError(errorMessage(e));
+        if (!disposed) {setError(errorMessage(e));setErrorRef(diagnosticReference(e));}
       }
     })();
     return () => {
@@ -226,11 +226,11 @@ export function FilesView() {
     if (id === "copy")
       void core
         .call("clipboard.writeText", { text: clipboardPath(row.path).text })
-        .catch((e) => setError(errorMessage(e)));
+        .catch((e) => {setError(errorMessage(e));setErrorRef(undefined);});
     else if(id==='target'){const target=await invoke<{path:RemotePath;type:string}>('files.linkTarget',{id:row.id});locate(target.path);}
     else if (id === "refresh") void act("files.refresh", { id: row.id });
     else if (id === "toggle") void act("files.toggle", { id: row.id });
-    }catch(e){setError(errorMessage(e));}finally{await invoke('follow.interaction',{active:false});}
+    }catch(e){setError(errorMessage(e));setErrorRef(diagnosticReference(e));}finally{await invoke('follow.interaction',{active:false});}
   };
   const choose = (r: Row) => {
     if (r.action) {
@@ -379,11 +379,11 @@ export function FilesView() {
       </Toolbar>
       {snapshot?.follow&&<div className="follow-status" role="status"><Text>{snapshot.follow.paused?'跟随已暂停':snapshot.follow.enabled?'跟随':'手动浏览'}{snapshot.follow.source?` · ${snapshot.follow.source}`:''}</Text><Text tone="muted" size="small">{snapshot.follow.loading?'正在定位…':snapshot.follow.message}</Text></div>}
     {themeError&&<Notice kind="error" action={<Button onClick={()=>void retryTheme()}>重试同步</Button>}>{themeError}</Notice>}
-      {error && (
-        <Notice kind="error" onDismiss={()=>setError("")}>{error}</Notice>
+      {error && (!errorRef||!sameDiagnostic(errorRef,snapshot?.diagnosticRef)) && (
+        <Notice kind="error" action={errorRef&&<Button onClick={()=>void openConnectionDiagnostics(core,errorRef).catch(e=>{setError(errorMessage(e));setErrorRef(undefined);})}>查看连接详情</Button>} onDismiss={()=>setError("")}>{error}</Notice>
       )}
       {snapshot?.message && (
-        <Notice kind="warning">
+        <Notice kind="warning" action={snapshot.diagnosticRef&&<Button onClick={()=>void openConnectionDiagnostics(core,snapshot.diagnosticRef!).catch(e=>setError(errorMessage(e)))}>查看连接详情</Button>}>
           {snapshot.message}
         </Notice>
       )}

@@ -21,7 +21,7 @@ try{
    process.env.SODECK_THEME_FILE=resolve(path);
    app=await launch({data:join(output,`${theme}-${percent}-${Date.now()}`),shellPort:9771,pluginPort:9772});
    const server=await rpc(app.page,'servers.create',{name:`目录联动 · ${theme} · ${percent}%`,host:config.host,port:config.port,username:config.username,authType:'key'});
-   await rpc(app.page,'auth.set',{serverId:server.id,privateKeyPath:config.privateKeyPath,remember:true});
+   await rpc(app.page,'auth.ssh.set',{serverId:server.id,privateKeyPath:config.privateKeyPath,remember:true});
    try{await rpc(app.page,'connections.acquire',{serverId:server.id,workspaceId:server.id,operationId:crypto.randomUUID()});}catch(e){assert.equal(e.code,'HOST_KEY_REQUIRED');await rpc(app.page,'hosts.trust',{serverId:server.id,challengeId:e.details.challengeId,fingerprint:e.details.fingerprint});}
    await rpc(app.page,'workspaces.open',{serverId:server.id});
    const connect=async port=>{const b=await until(()=>chromium.connectOverCDP('http://127.0.0.1:'+port));browsers.push(b);return until(()=>b.contexts().flatMap(c=>c.pages()).find(p=>p.url().includes('sodeck-plugin')));};

@@ -11,6 +11,7 @@ impl State {
         operation: Option<&str>,
         request: Value,
     ) -> Result<Value> {
+        if self.begin_close_review(window_close_review::Action::Move{ids:ids.clone(),target:target.into(),index,active:active.map(str::to_owned),operation:operation.map(str::to_owned),request:request.clone()},None)?{return Err(err("CLOSE_REVIEW_REQUIRED","请先处理源窗口的连接草稿"));}
         let op_id = operation
             .map(str::to_string)
             .unwrap_or_else(|| Uuid::new_v4().to_string());

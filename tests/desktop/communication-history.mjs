@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict';
+import {readFile,mkdir,mkdtemp,writeFile} from 'node:fs/promises';
+import {join,resolve} from 'node:path';
+import {launch,rpc,until,stop,delay} from './harness.mjs';
+
+const output=resolve('.qa/t019/native-history');await mkdir(output,{recursive:true});
+const data=await mkdtemp(join(output,'data-'));
+const fixture=JSON.parse(await readFile('.qa/t019/config.json','utf8')).nodes.find(n=>n.platform==='linux');
+assert.equal(fixture.host,'127.0.0.1');assert.equal(fixture.port,22331);
+let app;const checks=[];const note=text=>{checks.push(text);console.log(text);};
+const monitorPage=()=>until(async()=>{for(const page of app.browser.contexts().flatMap(c=>c.pages()).filter(p=>!p.isClosed()))if(await page.evaluate(()=>Boolean(window.__SODECK_MONITOR_CONTEXT__)).catch(()=>false))return page;});
+try {
+ app=await launch({data,shellPort:9393,pluginPort:9394});
+ const server=await rpc(app.page,'servers.create',{name:'历史验证 · Linux',host:fixture.host,port:fixture.port,username:fixture.username,authType:'key'});
+ await rpc(app.page,'auth.ssh.set',{serverId:server.id,privateKeyPath:fixture.key});
+ const request=()=>({serverId:server.id,workspaceId:'t019-history',operationId:crypto.randomUUID()});
+ try {await rpc(app.page,'connections.acquire',request());assert.fail('Expected host-key challenge');}catch(error){assert.equal(error.code,'HOST_KEY_REQUIRED');await rpc(app.page,'hosts.trust',{serverId:server.id,fingerprint:error.details.fingerprint});}
+ const lease=await rpc(app.page,'connections.acquire',request());
+ const pty=await rpc(app.page,'pty.open',{leaseId:lease.leaseId,cols:80,rows:24});
+ const input=Buffer.from("printf 'T019 persistent real SSH history\n'\n");
+ await rpc(app.page,'pty.write',{ptyId:pty.ptyId,generation:pty.generation,inputSeq:1,bytes:input.toString('base64')});
+ await until(async()=>BigInt((await rpc(app.page,'communication.summary')).receivedBytes)>0n);
+ const summary=await rpc(app.page,'communication.summary');
+ const target={kind:'server',serverId:server.id,configEpoch:summary.configEpoch};
+ const from=Date.now()-60000;
+ await until(async()=>BigInt((await rpc(app.page,'communication.history.query',{target,range:{kind:'utc',fromUtc:from,toUtc:Date.now()}})).statistics.sentBytes)>=BigInt(input.length),15000);
+ note('Real SSH bytes reached the shared persistent history store');
+ const operation={operationId:crypto.randomUUID(),target:{target,layer:'channel'}};
+ const first=await rpc(app.page,'ui.communicationMonitor.open',operation),again=await rpc(app.page,'ui.communicationMonitor.open',operation);
+ assert.deepEqual(again,first);
+ const monitor=await monitorPage();await monitor.getByRole('tab',{name:'历史',exact:true}).click();
+ await monitor.getByRole('region',{name:'历史统计'}).waitFor();assert.equal(await monitor.getByRole('alert').count(),0);
+ await monitor.screenshot({path:join(output,'real-ssh-history.png')});
+ note('Native history UI reads actual stored data; repeated open operation keeps its receipt');
+ await monitor.getByRole('tab',{name:'设置',exact:true}).click();await monitor.getByLabel('速率单位').selectOption('bits');await monitor.getByRole('button',{name:'保存设置'}).click();await monitor.getByText('设置已保存',{exact:true}).waitFor();
+ const policy=await rpc(app.page,'communication.policy.get');await rpc(app.page,'communication.policy.set',{expectedRevision:policy.revision,patch:{rateUnit:'bytes'}});
+ await monitor.getByRole('tab',{name:'概览',exact:true}).click();await until(async()=>(await monitor.locator('.sd-metric-pair').first().textContent()).includes('B/s'));
+ const updated=await rpc(app.page,'communication.policy.get');await rpc(app.page,'communication.policy.set',{expectedRevision:updated.revision,patch:{rateUnit:'bits'}});
+ await until(async()=>(await monitor.locator('.sd-metric-pair').first().textContent()).includes('bit/s'));
+ await rpc(monitor,'windows.close').catch(error=>{if(!monitor.isClosed())throw error;});await until(()=>monitor.isClosed());
+ await assert.rejects(()=>rpc(app.page,'ui.communicationMonitor.open',operation),{code:'WINDOW_CLOSED'});
+ await rpc(app.page,'pty.close',{ptyId:pty.ptyId,generation:pty.generation});await rpc(app.page,'connections.release',{leaseId:lease.leaseId});await delay(1200);
+ const final=await rpc(app.page,'communication.summary',{target});
+ const untilUtc=Date.now()+100;
+ let saved;
+ await until(async()=>{saved=await rpc(app.page,'communication.history.query',{target,range:{kind:'utc',fromUtc:from,toUtc:untilUtc}});return saved.statistics.sentBytes===final.sentBytes&&saved.statistics.receivedBytes===final.receivedBytes;},15000);
+ await stop(app);assert.equal(app.shutdown.forced,false);app=await launch({data,shellPort:9393,pluginPort:9394});
+ const reopened=await rpc(app.page,'communication.history.query',{target,range:{kind:'utc',fromUtc:from,toUtc:untilUtc}});
+ for(const field of ['sentBytes','receivedBytes','peakSendRate','peakReceiveRate'])assert.equal(reopened.statistics[field],saved.statistics[field]);
+ assert.ok(reopened.statistics.validMs>=saved.statistics.validMs);assert.equal((await rpc(app.page,'communication.policy.get')).rateUnit,'bits');
+ const audit=await rpc(app.page,'calls.list',{method:'app.exit'});assert.equal(audit.retentionDays,30);assert.equal(audit.records[0].status,'succeeded');
+ assert.equal((await rpc(app.page,'resources.list')).connections.length,0);
+ await stop(app);assert.equal(app.shutdown.forced,false);app=await launch({data,shellPort:9393,pluginPort:9394});
+ const stable=await rpc(app.page,'communication.history.query',{target,range:{kind:'utc',fromUtc:from,toUtc:untilUtc}});
+ assert.deepEqual(stable.statistics,reopened.statistics);
+ note('Restart preserved exact history totals and settings, completed exit audit, and restored no SSH resources');
+ assert.equal(app.errors.length,0,app.errors.join('\n'));
+ await writeFile(join(output,'results.json'),JSON.stringify({passed:true,checks,data,statistics:reopened.statistics},null,2));
+}catch(error){await writeFile(join(output,'failure.json'),JSON.stringify({checks,data,error:String(error),stack:error.stack},null,2));throw error;}
+finally {await stop(app);}

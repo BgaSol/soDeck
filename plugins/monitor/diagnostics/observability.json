@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "pluginId": "sodeck.monitor",
+  "events": [
+    {
+      "type": "plugin.sodeck.monitor.action",
+      "typeVersion": 1,
+      "fields": {
+        "action": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 64,
+          "enum": [
+            "open",
+            "connect",
+            "pause",
+            "refresh",
+            "select"
+          ]
+        }
+      },
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "monitor.action"
+    },
+    {
+      "type": "plugin.sodeck.monitor.state.changed",
+      "typeVersion": 1,
+      "fields": {
+        "state": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 64,
+          "enum": [
+            "waiting",
+            "connecting",
+            "connected",
+            "disconnected",
+            "cleanupPending",
+            "hidden",
+            "paused",
+            "partial",
+            "collecting"
+          ]
+        }
+      },
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "monitor.state.changed"
+    }
+  ],
+  "actions": [],
+  "snapshots": [
+    {
+      "type": "monitor.runtime.v1",
+      "typeVersion": 1,
+      "fields": {
+        "state": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 64,
+          "enum": [
+            "waiting",
+            "connecting",
+            "connected",
+            "disconnected",
+            "cleanupPending",
+            "hidden",
+            "paused",
+            "partial",
+            "collecting"
+          ]
+        },
+        "activeJobs": {
+          "type": "integer",
+          "classification": "count",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "cacheBytes": {
+          "type": "integer",
+          "classification": "count",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "cleanupPending": {
+          "type": "boolean",
+          "classification": "state"
+        }
+      }
+    }
+  ],
+  "metrics": [
+    {
+      "type": "monitor.cache.bytes",
+      "typeVersion": 1,
+      "fields": {},
+      "metricKind": "gauge",
+      "unit": "bytes",
+      "labels": {}
+    },
+    {
+      "fields": {},
+      "unit": "ms",
+      "buckets": [
+        10,
+        50,
+        100,
+        250,
+        500,
+        1000,
+        3000,
+        10000,
+        30000,
+        120000
+      ],
+      "metricKind": "histogram",
+      "labels": {
+        "lane": [
+          "fast",
+          "slow"
+        ]
+      },
+      "typeVersion": 1,
+      "type": "monitor.collection.duration"
+    },
+    {
+      "fields": {},
+      "unit": "count",
+      "metricKind": "counter",
+      "labels": {
+        "lane": [
+          "fast",
+          "slow"
+        ]
+      },
+      "typeVersion": 1,
+      "type": "monitor.collection.failed"
+    }
+  ]
+}

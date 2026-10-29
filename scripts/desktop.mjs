@@ -9,7 +9,7 @@ const cli = join(root, 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
 const localPerl = join(root, '.local/build-tools/strawberry/perl/bin/perl.exe');
 const child = spawn(process.execPath, [cli, ...process.argv.slice(2)], {
   cwd: join(root, 'apps', 'desktop'), stdio: 'inherit', windowsHide: true,
-  env: { ...process.env, SODECK_DEV_MODE:'1', SODECK_PLUGIN_KEYS:join(root,'resources/development-public-key.json'),SODECK_PLUGIN_PACKAGES:['terminal','files','network-proxy'].map(name=>join(root,`resources/${name}.sodeck-plugin`)).join(delimiter), ...(existsSync(localPerl) ? {OPENSSL_SRC_PERL:process.env.OPENSSL_SRC_PERL ?? localPerl} : {}), PATH: [join(homedir(), '.cargo', 'bin'), process.env.PATH ?? ''].join(delimiter) },
+  env: { ...process.env, SODECK_DEV_MODE:'1', SODECK_PLUGIN_KEYS:join(root,'resources/development-public-key.json'),SODECK_PLUGIN_PACKAGES:['terminal','files','network-proxy','monitor'].map(name=>join(root,`resources/${name}.sodeck-plugin`)).join(delimiter), ...(existsSync(localPerl) ? {OPENSSL_SRC_PERL:process.env.OPENSSL_SRC_PERL ?? localPerl} : {}), PATH: [join(homedir(), '.cargo', 'bin'), process.env.PATH ?? ''].join(delimiter) },
 });
 child.on('error', error => { console.error(error.message); process.exitCode = 1; });
 child.on('exit', code => { process.exitCode = code ?? 1; });

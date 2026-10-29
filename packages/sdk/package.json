@@ -1,6 +1,6 @@
 {
   "name": "@sodeck/sdk",
-  "version": "4.8.0",
+  "version": "6.3.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -12,10 +12,20 @@
     "./remote-client": "./src/remote-client.ts",
     "./linux-path-view": "./src/linux-path-view.ts",
     "./worker": "./src/worker.ts",
+    "./runtime": "./src/runtime.ts",
+    "./bounded-exec": "./src/bounded-exec.ts",
     "./pty": "./src/pty.ts",
     "./network": "./src/network.ts",
     "./network-stream": "./src/network-stream.ts",
-    "./network-client": "./src/network-client.ts"
+    "./network-client": "./src/network-client.ts",
+    "./traffic": "./src/traffic.ts",
+    "./quality": "./src/quality.ts",
+    "./observability": "./src/observability.ts",
+    "./observation": "./src/observation.ts",
+    "./settings": "./src/settings.ts",
+    "./settings-provider": "./src/settings-provider.ts",
+    "./plugin-management": "./src/plugin-management.ts",
+    "./updates": "./src/updates.ts"
   },
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json",

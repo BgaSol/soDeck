@@ -156,6 +156,11 @@ pub enum OpenType {
 }
 
 impl Sftp {
+    /// Origin of the underlying channel, including SFTP initialization traffic.
+    pub fn byte_counter_token(&self) -> Result<u64, Error> {
+        let locked = self.lock()?;
+        Ok(unsafe { raw::sodeck_channel_token(raw::libssh2_sftp_get_channel(locked.raw)) })
+    }
     pub(crate) fn from_raw_opt(
         raw: *mut raw::LIBSSH2_SFTP,
         err: Option<Error>,

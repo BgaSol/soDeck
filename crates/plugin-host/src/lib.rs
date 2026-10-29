@@ -4,7 +4,7 @@ pub mod dispatcher;
 mod process;
 mod transport;
 
-pub use process::{BinaryCallbacks, BinarySink, CoreCallback, PluginProcess};
+pub use process::{BinaryCallbacks, BinarySink, CoreCallback, CoreContextCallback, PluginProcess};
 use serde::{Deserialize, Serialize};
 use std::{
     io,

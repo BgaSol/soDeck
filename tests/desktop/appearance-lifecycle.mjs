@@ -4,9 +4,9 @@ import {resolve,join,delimiter} from 'node:path';
 import {chromium} from 'playwright';
 import {launch,rpc,until,stop} from './harness.mjs';
 
-const output=resolve('.qa/t011/lifecycle');await mkdir(output,{recursive:true});
-const config=JSON.parse(await readFile('.qa/t010/linux/test-config.json','utf8'));
-assert.equal(config.host,'127.0.0.1');assert.equal(config.port,22281);
+const output=resolve(process.env.T023_APPEARANCE_OUTPUT??'.qa/t011/lifecycle');await mkdir(output,{recursive:true});
+const config=JSON.parse(await readFile(process.env.SODECK_TEST_REMOTE_CONFIG??'.qa/t010/linux/test-config.json','utf8'));
+assert.equal(config.host,'127.0.0.1');assert.ok(Number.isInteger(config.port)&&config.port>1024);
 process.env.SODECK_PLUGIN_PACKAGES=[resolve('resources/terminal.sodeck-plugin'),resolve('resources/files.sodeck-plugin')].join(delimiter);
 process.env.SODECK_PLUGIN_DEBUG_PORTS=JSON.stringify({'sodeck.files':9902,'sodeck.terminal':9903});
 delete process.env.SODECK_THEME_FILE;
@@ -16,7 +16,7 @@ try{
  const servers=[];
  for(let i=0;i<2;i++){
   const server=await rpc(app.page,'servers.create',{name:`主题生命周期 ${i+1}`,host:config.host,port:config.port,username:config.username,authType:'key'});
-  await rpc(app.page,'auth.set',{serverId:server.id,privateKeyPath:config.privateKeyPath,remember:true});
+  await rpc(app.page,'auth.ssh.set',{serverId:server.id,privateKeyPath:config.privateKeyPath,remember:true});
   try{const lease=await rpc(app.page,'connections.acquire',{serverId:server.id,workspaceId:server.id,operationId:crypto.randomUUID()});await rpc(app.page,'connections.release',{leaseId:lease.leaseId});}catch(error){assert.equal(error.code,'HOST_KEY_REQUIRED');await rpc(app.page,'hosts.trust',{serverId:server.id,...error.details});}servers.push(server);
  }
  for(let cycle=0;cycle<3;cycle++){
@@ -28,10 +28,10 @@ try{
   await until(async()=>{for(const page of [app.page,child]){const wb=await rpc(page,'workbench.snapshot');if(wb.pendingOpens.length||!wb.views.every(v=>v.status===(v.pluginId==='sodeck.files'?'ready':'running')))return false;}return true;},30000);
   await until(async()=>(await rpc(app.page,'diagnostics.get')).communication.contracts['app.theme.v1']===6);
   for(const mode of ['light','dark']){const pref=await rpc(child,'ui.theme.preference.get');const next=await rpc(child,'ui.theme.select',{mode,expectedRevision:pref.revision});await until(async()=>(await Promise.all(surfaces.map(p=>p.evaluate(()=>document.documentElement.dataset.themeRevision)))).every(r=>r===next.revision));}
-  await rpc(child,'windows.merge',{operationId:crypto.randomUUID()});for(const server of servers)await rpc(app.page,'workspaces.close',{workspaceId:server.id});
+  try{await rpc(child,'windows.merge',{operationId:crypto.randomUUID()});}catch(e){assert.equal(e.code,'CLOSE_REVIEW_REQUIRED');}await until(()=>child.isClosed());for(const server of servers)await rpc(app.page,'workspaces.close',{workspaceId:server.id});
   const start=performance.now();await until(async()=>(await rpc(app.page,'diagnostics.get')).communication.contracts['app.theme.v1']===1,1000);
   const cleanupMs=performance.now()-start,stats=(await rpc(app.page,'diagnostics.get')).communication;
-  assert.ok(cleanupMs<=1000);assert.ok(stats.queueBytes<=8*1024*1024);assert.equal(stats.subscriptions,1);
+  assert.ok(cleanupMs<=1000);assert.ok(stats.queueBytes<=8*1024*1024);assert.equal(stats.contracts['app.theme.v1'],1);assert.ok(!Object.keys(stats.contracts).some(k=>k==='settings.page.v1'||k==='view.presentation.v1'));
   await until(async()=>{const r=await rpc(app.page,'resources.list');return ['ptys','connections','leases'].every(k=>r[k].length===0);});
   samples.push({cycle,surfaces:surfaces.length,cleanupMs,stats});console.log(`cycle ${cycle+1}: 6 surfaces return to one subscription in ${cleanupMs.toFixed(1)} ms`);
   for(const browser of browsers.splice(0))await browser.close().catch(()=>{});

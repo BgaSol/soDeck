@@ -1,23 +1,30 @@
+import {ConnectionDiagnostics} from './connection-diagnostics';
+import type {DiagnosticRef} from '@sodeck/sdk';
+import {diagnosticReference,isConnectionAuthenticationError} from '@sodeck/sdk';
 import {contributionActions,ToolButtons,type Tool} from './workbench-tools';
 import type {WorkbenchContributionsV2} from '@sodeck/sdk';
-import {loadServers} from './route-client';
+import {ConnectionHome,ConnectionHomeDialogs} from './connection-home/page';
+import {useConnectionHome} from './connection-home/controller';
+import {useConnectionCatalog} from './connection-home/catalog';
+import type {HomeSnapshot,HomeIntent,HomePage} from '@sodeck/sdk';
 import {ApplicationMenuButton} from "./application-menu";
-import {Button,Input,BrandMark,StatusBar,StatusDot,TabItem} from '@sodeck/ui';
+import {Button,IconButton,Input,StatusBar,StatusDot,TabItem} from '@sodeck/ui';
 import {ConnectionStatus,DeleteServerDialog} from './connection-status';
+import {CommunicationSummary} from './communication-monitor/summary';
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { Activity, ArrowLeftToLine, ChevronDown, ChevronLeft, ChevronRight, LayoutPanelTop, Logs, Package, PanelLeftClose, Plus, Power, Server as ServerIcon, X } from "lucide-react";
+import { Settings, Activity, ArrowLeftToLine, ChevronDown, ChevronLeft, ChevronRight, LayoutPanelTop, Logs, Package, PanelLeftClose, Plus, Power, Server as ServerIcon, X } from "lucide-react";
 import { core, connectionCommandTimeout, context, CoreError, errorMessage, onCoreNotification, onThemeError, retryTheme, showMenu } from "@sodeck/sdk";
 import { useOverflow } from "./use-overflow";
 import { NativeSurface } from "./surface";
-import { ServerDialog } from "./server-dialog";
-import { ServerPicker } from "./server-picker";
-import {ServerGroups} from './server-groups';
-import {loadCatalog} from './server-catalog-client';
+
+
+
+
+import {catalogServer} from './server-catalog-client';
 import { ServerTabs } from "./server-tabs";
 import { WindowControls } from "./window-controls";
 import { AuthDialog } from "./auth-dialog";
-import { AppearanceDialog } from './appearance-dialog';
 import { Notice } from '@sodeck/ui';
 import { Dialog } from "./dialog";
 import { ManagementDialog } from "./management-dialog";
@@ -27,18 +34,22 @@ import type { Command, Server, View, Workbench } from "./types";
 type CommandRequest = { commandId: string; pluginId?: string; workspaceId?: string; viewId?: string; args?: unknown; operationId?: string };
 type Drag = { view: View; x: number; y: number; offsetX: number; offsetY: number };
 export function App() {
-  const [appearance,setAppearance]=useState(false),[themeError,setThemeError]=useState<string>();
+  const directory=useConnectionCatalog();
+  const servers=directory.catalog.items.map(catalogServer);
+  const [home,setHome]=useState<{page:HomePage;navigationRevision:string}>({page:{open:true,selected:true,generation:"initial"},navigationRevision:"0"});
+  const [themeError,setThemeError]=useState<string>();
   useEffect(()=>onThemeError(setThemeError),[]);
-  const [servers, setServers] = useState<Server[]>([]), [workbench, setWorkbench] = useState<Workbench>(emptyWorkbench);
+  const [workbench, setWorkbench] = useState<Workbench>(emptyWorkbench);
   const [routesSupported,setRoutesSupported]=useState(false),[multihopSupported,setMultihopSupported]=useState(false);
-  const [catalogSupported,setCatalogSupported]=useState(false),[groupsPage,setGroupsPage]=useState(false);
-  const catalogSupport=useRef(false),contributionsSupport=useRef(false);
+
+  const contributionsSupport=useRef(false);
   const [contributionsV2,setContributionsV2]=useState<WorkbenchContributionsV2|null>(null),[badges,setBadges]=useState<Record<string,number>>({});
-  const capabilities=useRef<Promise<0|1|2>|undefined>(undefined);
+  const capabilities=useRef<Promise<boolean>|undefined>(undefined);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
-  const [error, setError] = useState(""), [picker, setPicker] = useState(false);
-  const [serverEditor, setServerEditor] = useState<Server | "new" | null>(null), [deleteServer, setDeleteServer] = useState<Server | null>(null);
-  const [auth, setAuth] = useState<{ server: Server; fault: CoreError; request: CommandRequest } | null>(null), [page, setPage] = useState<"plugins" | "resources" | "calls" | null>(null);
+  const [error, setError] = useState("");
+  const [deleteServer, setDeleteServer] = useState<Server | null>(null);
+  const [diagnostic,setDiagnostic]=useState<DiagnosticRef>();
+  const [auth, setAuth] = useState<{ server: Server; fault: CoreError; request: CommandRequest } | null>(null), [page, setPage] = useState<"resources" | "calls" | null>(null);
   const [commandInput,setCommandInput]=useState<{view:View;command:Command}|null>(null);
   const [savingInput,setSavingInput]=useState(false);
   const [draft,setDraft]=useState(""),[inputError,setInputError]=useState("");
@@ -54,41 +65,46 @@ export function App() {
   const dragCandidate = useRef<Drag | null>(null), dragged = useRef<Drag | null>(null), suppressClick = useRef<string | null>(null);
   const detachedId = context().detachedViewId;
   const [routeModal,setRouteModal]=useState(false);
-  const modal = Boolean(groupsPage || routeModal || appearance || picker || serverEditor || auth || page || deleteServer || commandInput || pageList);
-  const blocked = modal || Boolean(dragging || drag);
   const refresh = useCallback(async () => {
     if (refreshing.current) { refreshAgain.current = true; return; } refreshing.current = true;
     try { do {
       refreshAgain.current = false;
-      capabilities.current??=core.call<{capabilities:string[]}>("capabilities.list").then(c=>{contributionsSupport.current=Boolean(c?.capabilities?.includes('workspace.contributions.v2'));catalogSupport.current=Boolean(c?.capabilities?.includes('servers.catalog.v1'));setCatalogSupported(catalogSupport.current);return c?.capabilities?.includes("servers.routes.v2")?2:c?.capabilities?.includes("servers.routes.v1")?1:0;});
-      const version=await capabilities.current;setRoutesSupported(version>0);setMultihopSupported(version===2);
-      const [result, layout, contributions] = await Promise.all([catalogSupport.current?loadCatalog():loadServers(version), core.call<Workbench>("workbench.snapshot"),core.call<{commands:Command[]}>("workbench.contributions")]);
+      capabilities.current??=core.call<{capabilities:string[]}>("capabilities.list").then(c=>{contributionsSupport.current=Boolean(c?.capabilities?.includes('workspace.contributions.v2'));return Boolean(c?.capabilities?.includes("servers.routes.v2"));});
+      const version=await capabilities.current;setRoutesSupported(version);setMultihopSupported(version);
+      const [snapshot, contributions] = await Promise.all([core.call<HomeSnapshot>("ui.connectionHome.snapshot"),core.call<{commands:Command[]}>("workbench.contributions")]);
+      const layout=snapshot.workbench;
+      setHome(old=>BigInt(snapshot.navigationRevision)>=BigInt(old.navigationRevision)?{page:snapshot.page,navigationRevision:snapshot.navigationRevision}:old);
       if(contributionsSupport.current){const c=await core.call<WorkbenchContributionsV2>('workbench.contributions.v2');setContributionsV2(c);setBadges(Object.fromEntries(c.badges.map(b=>[b.viewId,b.count])));}
-      setServers(result.servers); setWorkbench({ ...emptyWorkbench, ...layout, commands:contributions.commands }); setLoadState("ready");
+      setWorkbench(old=>layout.revision>=old.revision?{ ...emptyWorkbench, ...layout, commands:contributions.commands } as Workbench:old); setLoadState("ready");
     } while (refreshAgain.current); } catch (e) { setLoadState("error"); setError(errorMessage(e)); } finally { refreshing.current = false; }
   }, []);
   const run = useCallback(async (method: string, params: unknown = {}, timeoutMs?:number) => {
     if (["workspaces.move", "windows.merge"].includes(method)) setMoveOperation((params as { operationId?: string }).operationId ?? null);
     try { setError(""); const result = await core.call(method, params, timeoutMs); await refresh(); return result; }
-    catch (e) { setError(errorMessage(e)); return undefined; }
+    catch (e) { if(!(e instanceof CoreError&&e.code==="CLOSE_REVIEW_REQUIRED")&&!diagnosticReference(e))setError(errorMessage(e)); return undefined; }
     finally { if (["workspaces.move", "windows.merge"].includes(method)) setMoveOperation(null); }
   }, [refresh]);
+  const openHome=useCallback((intent:HomeIntent={kind:"home"})=>{void run("ui.connectionHome.open",{operationId:crypto.randomUUID(),intent});},[run]);
+  const connectionHome=useConnectionHome(directory.catalog,directory.ready,directory.refresh,home.page.selected,home.navigationRevision,async(id,operationId)=>{await core.call("workspaces.open",{serverId:id,target:"currentWindow",operationId});await refresh();},!context().detachedViewId);
+  const modal = Boolean(diagnostic || routeModal || auth || page || deleteServer || commandInput || pageList || connectionHome.closing || connectionHome.discard);
+  const blocked = modal || Boolean(dragging || drag);
   useEffect(() => { void core.call("workbench.modal", { open: blocked }).catch(e => setError(errorMessage(e))); }, [blocked]);
   useEffect(() => {
     void refresh(); void core.call<{ startupError?: string }>("app.info").then(info => { if (info.startupError) setError(info.startupError); }).catch(() => {});
     const off = onCoreNotification(n => {
       if (["workbench.changed", "servers.changed"].includes(n.type)) void refresh();
-      if(n.type==='ui.servers.editRequested')setServerEditor((n.payload as {server:Server}).server);
+      if(n.type==='ui.servers.editRequested')openHome({kind:'editServer',serverId:(n.payload as {server:Server}).server.id});
       if(n.type==='views.badge.changed'){const p=n.payload as {viewId:string;count:number};setBadges(old=>({...old,[p.viewId]:p.count}));}
       if (n.type === "workbench.warning") setError((n.payload as { message: string }).message);
       if (n.type === "workbench.openCanceled") { const id = (n.payload as { operationId: string }).operationId; canceled.current.add(id); setAuth(current => current?.request.operationId === id ? null : current); }
+      if(n.type==='connectionDiagnostics.open')setDiagnostic((n.payload as {reference:DiagnosticRef}).reference);
       if (n.type === "auth.required") {
         const p = n.payload as CommandRequest & { server: Server; error: { code: string; message: string; details?: unknown } };
         // A background workspace retains its authentication action in the terminal page.
         // Query current ownership/selection rather than using this effect's old render state.
         void core.call<Workbench>("workbench.snapshot").then(current => {
           if (current.activeWorkspaceId === (p.workspaceId??p.server.id) && (!p.operationId || !canceled.current.has(p.operationId)))
-            setAuth({ server: p.server, fault: new CoreError(p.error), request: { commandId: p.commandId, workspaceId: p.workspaceId??p.server.id, viewId: p.viewId, args: p.args, operationId: p.operationId } });
+            setAuth(old=>(old?.fault.details as {challengeId?:string})?.challengeId===(p.error.details as {challengeId?:string})?.challengeId?old:{ server: p.server, fault: new CoreError(p.error), request: { commandId: p.commandId, workspaceId: p.workspaceId??p.server.id, viewId: p.viewId, args: p.args, operationId: p.operationId } });
         }).catch(e=>setError(errorMessage(e)));
       }
     });
@@ -110,11 +126,11 @@ export function App() {
       if(canceled.current.has(operationId))return;
       await core.call("commands.execute", { ...request, operationId }, timeout);
     }
-    catch (e) { if (!(e instanceof CoreError && ["HOST_KEY_REQUIRED", "HOST_KEY_CHANGED", "AUTH_REQUIRED", "AUTH_FAILED", "CANCELED"].includes(e.code))) setError(errorMessage(e)); }
+    catch (e) { if (!diagnosticReference(e) && !isConnectionAuthenticationError(e) && !(e instanceof CoreError && e.code==='CANCELED')) setError(errorMessage(e)); }
     finally { setPendingCommand(null); await refresh(); }
   };
   const cancel = async (operationId: string) => { const previous=document.activeElement; canceled.current.add(operationId); await run("workbench.operation.cancel", { operationId }); requestAnimationFrame(()=>{if(previous&&!previous.isConnected)document.querySelector<HTMLButtonElement>(".tab-tools > button")?.focus();}); };
-  const openServer = async (server: Server, newWindow = false) => { setPicker(false); await run("workspaces.open", { serverId: server.id, target: newWindow ? "newWindow" : "currentWindow", operationId: crypto.randomUUID() }); };
+  const openServer = async (server: Server, newWindow = false) => { await run("workspaces.open", { serverId: server.id, target: newWindow ? "newWindow" : "currentWindow", operationId: crypto.randomUUID() }); };
   const activeServer = servers.find(s => s.id === workbench.activeWorkspaceId), primary = workbench.commands.filter(c => c.primary && (c.scope === "global" || c.scope === "server" && activeServer));
   const actions=contributionActions(contributionsV2,workbench.commands);
   const createTab=async()=>{
@@ -146,13 +162,13 @@ export function App() {
   useEffect(() => {
     const keydown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {   dragCandidate.current = null; dragged.current = null; setDrag(null); }
-      if (e.ctrlKey && e.key.toLowerCase() === "o" && !modal) { e.preventDefault(); setPicker(true); }
+      if (e.ctrlKey && e.key.toLowerCase() === "o" && !modal) { e.preventDefault(); openHome(); }
       if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "t" && !modal && activeServer && actions.create.length) { e.preventDefault(); void createTab(); }
       if (e.altKey && e.key === " ") { e.preventDefault(); void run("windows.control", { action: "systemMenu" }); }
     };
     window.addEventListener("keydown", keydown); return () => window.removeEventListener("keydown", keydown);
   });
-  const visibleViews = workbench.views.filter(v => detachedId ? v.viewId === detachedId : (v.workspaceId === workbench.activeWorkspaceId || v.workspaceId === "@app" && workbench.windowId === "main") && v.placement !== "detached");
+  const visibleViews = workbench.views.filter(v => detachedId ? v.viewId === detachedId : !home.page.selected && (v.workspaceId === workbench.activeWorkspaceId || v.workspaceId === "@app" && workbench.windowId === "main") && v.placement !== "detached");
   const centers = visibleViews.filter(v => v.placement === "center"), bottom = visibleViews.filter(v => v.placement === "bottom");
   const surface = (v: View) => <NativeSurface key={`${v.viewId}:${v.mountGeneration}`} view={v} visible={!blocked} commands={workbench.commands} />;
   const resize = (e: ReactPointerEvent, kind: "side" | "bottom", edge = "left") => {
@@ -173,7 +189,7 @@ export function App() {
     const ws=workbench.workspaces.find(w=>w.workspaceId===id);if(!ws)return;
     const targets=[...new Set(["main",...workbench.workspaces.map(w=>w.ownerWindowId)])].filter(w=>w!==ws.ownerWindowId);
     const selected=await menu([{id:"detach",label:"移到新窗口",enabled:true},...targets.map(w=>({id:"window:"+w,label:w==="main"?"合并回主窗口":"移到 "+(servers.find(s=>s.id===workbench.workspaces.find(v=>v.ownerWindowId===w)?.serverId)?.name??"工作区")+" 窗口",enabled:true})),...(workbench.windowRole==="workspace"?[{id:"merge",label:"当前窗口全部合并回主窗口",enabled:true}]:[]),{id:"edit",label:"编辑服务器",enabled:true,separator:true},{id:"close",label:"关闭工作区并结束会话",enabled:true}],x,y);
-    if(selected==="detach")moveWorkspace(id);else if(selected?.startsWith("window:"))moveWorkspace(id,selected.slice(7));else if(selected==="merge")void run("windows.merge",{operationId:crypto.randomUUID()});else if(selected==="edit"){const server=servers.find(s=>s.id===id);if(server)setServerEditor(server);}else if(selected==="close")void run("workspaces.close",{workspaceId:id});
+    if(selected==="detach")moveWorkspace(id);else if(selected?.startsWith("window:"))moveWorkspace(id,selected.slice(7));else if(selected==="merge")void run("windows.merge",{operationId:crypto.randomUUID()});else if(selected==="edit"){const server=servers.find(s=>s.id===id);if(server)openHome({kind:'editServer',serverId:server.id});}else if(selected==="close")void run("workspaces.close",{workspaceId:id});
   };
   const viewContext = async (v:View,x:number,y:number) => {
     const commands=workbench.commands.filter(c=>c.scope==="view"&&(!c.pluginId||c.pluginId===v.pluginId)&&v.actions.includes(c.id));
@@ -183,7 +199,8 @@ export function App() {
     else if(selected?.startsWith("command:")){const c=commands.find(c=>c.id===selected.slice(8));if(!c)return;if(c.input){setDraft(v.title);setInputError("");setCommandInput({view:v,command:c});}else void execute({commandId:c.id,viewId:v.viewId});}
   };
   const applicationMenu = (selected:string) => {
-    if(selected==="appearance")setAppearance(true);else if(selected==="plugins"||selected==="resources"||selected==="calls")setPage(selected);else if(selected==="layoutRetry")void run("workbench.preferences.retry");else if(selected==="recall")void run("windows.control",{action:"recall"});else if(selected==="merge")void run("windows.merge",{operationId:crypto.randomUUID()});else if(selected==="exit")void run("app.exit");
+    if(selected==='communication'){void run('ui.communicationMonitor.open',{operationId:crypto.randomUUID()});return;}
+    if(selected==="appearance")void run("ui.settings.open",{operationId:crypto.randomUUID(),pageId:"core:appearance"});else if(selected==="plugins")void run("ui.settings.open",{operationId:crypto.randomUUID(),pageId:"core:plugins"});else if(selected==="resources"||selected==="calls")setPage(selected);else if(selected==="layoutRetry")void run("workbench.preferences.retry");else if(selected==="recall")void run("windows.control",{action:"recall"});else if(selected==="merge")void run("windows.merge",{operationId:crypto.randomUUID()});else if(selected==="exit")void run("app.exit");
   };
   const tab = (v: View, active: boolean, peers: View[]) => <TabItem key={v.viewId} id={`tab-${v.viewId}`} className={`view-tab ${active ? "active" : ""}`} role="tab" selected={active} tabIndex={active ? 0 : -1} title={v.title} aria-label={v.title} onContextMenu={e=>{e.preventDefault();void viewContext(v,e.clientX,e.clientY);}} onClick={() => { if (suppressClick.current === v.viewId) { suppressClick.current = null; return; } void run("views.activate", { viewId: v.viewId }); }} onKeyDown={e => {
     if (e.target !== e.currentTarget) return;
@@ -202,7 +219,7 @@ export function App() {
   </TabItem>;
   const renderGroup = (_group:number) => {
     const active=centers.find(v=>v.viewId===workbench.focusedViewId)??centers.find(v=>v.active)??centers[0];
-    return <section className="editor-group" data-drop-placement="center" data-drop-group="0"><div className="tab-bar"><div ref={tabRow} className="tab-scroll" role="tablist" aria-label="工作区页面">{centers.map(v=>tab(v,v.viewId===active?.viewId,centers))}{actions.create.length>0&&<Button variant="quiet" size="compact" className="tab-create icon-button" aria-label="新建页面" title="新建页面（Ctrl+Shift+T）" disabled={!!pendingCommand||!!initializing} onClick={()=>void createTab()}><Plus size={16}/></Button>}</div><div className="tab-tools">{actions.fallback.filter(c=>c.scope!=="server"||activeServer).map(commandButton)}{tabOverflow && <><Button variant="quiet" size="compact" className="icon-button" aria-label="向左滚动终端页" onClick={()=>document.querySelector('.tab-scroll')?.scrollBy({left:-240})}><ChevronLeft size={14}/></Button><Button variant="quiet" size="compact" className="icon-button" aria-label="向右滚动终端页" onClick={()=>document.querySelector('.tab-scroll')?.scrollBy({left:240})}><ChevronRight size={14}/></Button><Button variant="quiet" size="compact" className="icon-button" aria-label="已打开页面" onClick={()=>{setPageQuery("");setPageList("view");}}><ChevronDown size={14}/></Button></>}</div></div><div className="editor-content">{active?surface(active):<div className="workspace-empty"><LayoutPanelTop size={30}/><h2>{initializationError?"初始页面未能打开":initializing?"正在打开终端":"工作区已准备好"}</h2><p role={initializationError?"alert":initializing?"status":undefined}>{initializationError??(initializing?"正在准备连接…":"打开页面，开始工作")}</p><div>{initializationError?<><Button onClick={()=>void run("workspaces.initialize",{workspaceId:workbench.activeWorkspaceId})}>重试打开</Button><Button onClick={()=>setPage("plugins")}>查看插件</Button></>:primary.map(commandButton)}</div></div>}</div></section>;
+    return <section className="editor-group" data-drop-placement="center" data-drop-group="0"><div className="tab-bar"><div ref={tabRow} className="tab-scroll" role="tablist" aria-label="工作区页面">{centers.map(v=>tab(v,v.viewId===active?.viewId,centers))}{actions.create.length>0&&<Button variant="quiet" size="compact" className="tab-create icon-button" aria-label="新建页面" title="新建页面（Ctrl+Shift+T）" disabled={!!pendingCommand||!!initializing} onClick={()=>void createTab()}><Plus size={16}/></Button>}</div><div className="tab-tools">{actions.fallback.filter(c=>c.scope!=="server"||activeServer).map(commandButton)}{tabOverflow && <><Button variant="quiet" size="compact" className="icon-button" aria-label="向左滚动终端页" onClick={()=>document.querySelector('.tab-scroll')?.scrollBy({left:-240})}><ChevronLeft size={14}/></Button><Button variant="quiet" size="compact" className="icon-button" aria-label="向右滚动终端页" onClick={()=>document.querySelector('.tab-scroll')?.scrollBy({left:240})}><ChevronRight size={14}/></Button><Button variant="quiet" size="compact" className="icon-button" aria-label="已打开页面" onClick={()=>{setPageQuery("");setPageList("view");}}><ChevronDown size={14}/></Button></>}</div></div><div className="editor-content">{active?surface(active):<div className="workspace-empty"><LayoutPanelTop size={30}/><h2>{initializationError?"初始页面未能打开":initializing?"正在打开终端":"工作区已准备好"}</h2><p role={initializationError?"alert":initializing?"status":undefined}>{initializationError??(initializing?"正在准备连接…":"打开页面，开始工作")}</p><div>{initializationError?<><Button onClick={()=>void run("workspaces.initialize",{workspaceId:workbench.activeWorkspaceId})}>重试打开</Button><Button onClick={()=>void run("ui.settings.open",{operationId:crypto.randomUUID(),pageId:"core:plugins"})}>查看插件</Button></>:primary.map(commandButton)}</div></div>}</div></section>;
   };
   const dock = (edge: "left" | "right") => {
     const candidates = visibleViews.filter(v => v.placement === edge && v.active && workbench.dockSlots.some(s => s.viewId === v.viewId && s.visible));
@@ -211,26 +228,25 @@ export function App() {
   };
   const bottomActive = bottom.find(v => v.active) ?? bottom[0], detachedView = visibleViews[0];
   return <div className="app-shell">
-    <header ref={topRef} className="window-topbar">{detachedId ? <div className="detached-heading">{detachedView && tab(detachedView,true,[detachedView])}</div> : <ServerTabs workbench={workbench} servers={servers} run={run} onPicker={() => setPicker(true)} onMenu={(id,x,y)=>void serverContext(id,x,y)} onList={()=>{setPageQuery("");setPageList("server");}} onDragging={setDragging} />}
-      <div className="window-drag-space" data-chrome-drag onPointerDown={e => { if (e.button === 0) void run("windows.control", { action: "drag" }); }} onDoubleClick={() => void run("windows.control", { action: "toggleMaximize" })} onContextMenu={e => { e.preventDefault(); void run("windows.control", { action: "systemMenu" }); }} /><ApplicationMenuButton onSelect={applicationMenu} onError={e=>setError(errorMessage(e))}/><WindowControls run={run} />
+    <header ref={topRef} className="window-topbar">{detachedId ? <div className="detached-heading">{detachedView && tab(detachedView,true,[detachedView])}</div> : <ServerTabs home={home.page} onHomeClose={()=>void run("ui.connectionHome.close.request",{reason:"close"})} workbench={workbench} servers={servers} run={run} onPicker={() => openHome()} onMenu={(id,x,y)=>void serverContext(id,x,y)} onList={()=>{setPageQuery("");setPageList("server");}} onDragging={setDragging} />}
+      <div className="window-drag-space" data-chrome-drag onPointerDown={e => { if (e.button === 0) void run("windows.control", { action: "drag" }); }} onDoubleClick={() => void run("windows.control", { action: "toggleMaximize" })} onContextMenu={e => { e.preventDefault(); void run("windows.control", { action: "systemMenu" }); }} /><IconButton label="设置" icon={Settings} variant="quiet" onClick={()=>void run("ui.settings.open",{operationId:crypto.randomUUID()})}/><ApplicationMenuButton onSelect={applicationMenu} onError={e=>setError(errorMessage(e))}/><WindowControls run={run} />
     </header>
-    <div className="app-body">{!detachedId && <nav className="activity-rail" aria-label="工作区工具"><Button variant="quiet" size="compact" className="rail-button" aria-label="打开服务器" onClick={() => setPicker(true)}><ServerIcon size={19} /></Button><ToolButtons edge="left" tools={actions.tools} views={visibleViews} visible={new Set(workbench.dockSlots.filter(s=>s.visible).map(s=>s.viewId))} badges={badges} disabled={!activeServer||!!pendingCommand} onToggle={v=>void run('workbench.configure',{dockViewId:v.viewId,visible:!workbench.dockSlots.find(s=>s.viewId===v.viewId)?.visible})} onOpen={t=>void openTool(t)}/><div className="rail-spacer" /><Button variant="quiet" size="compact" className="rail-button" aria-label="运行资源" onClick={() => setPage("resources")}><Activity size={19} /></Button><Button variant="quiet" size="compact" className="rail-button" aria-label="插件" onClick={() => setPage("plugins")}><Package size={19} /></Button><Button variant="quiet" size="compact" className="rail-button" aria-label="调用记录" onClick={() => setPage("calls")}><Logs size={19} /></Button></nav>}
+    <div className="app-body">{!detachedId && <nav className="activity-rail" aria-label="工作区工具"><Button variant="quiet" size="compact" className="rail-button" aria-label="打开服务器" onClick={() => openHome()}><ServerIcon size={19} /></Button><ToolButtons edge="left" tools={actions.tools} views={visibleViews} visible={new Set(workbench.dockSlots.filter(s=>s.visible).map(s=>s.viewId))} badges={badges} disabled={!activeServer||!!pendingCommand} onToggle={v=>void run('workbench.configure',{dockViewId:v.viewId,visible:!workbench.dockSlots.find(s=>s.viewId===v.viewId)?.visible})} onOpen={t=>void openTool(t)}/><div className="rail-spacer" /><Button variant="quiet" size="compact" className="rail-button" aria-label="运行资源" onClick={() => setPage("resources")}><Activity size={19} /></Button><Button variant="quiet" size="compact" className="rail-button" aria-label="插件" onClick={() => void run("ui.settings.open",{operationId:crypto.randomUUID(),pageId:"core:plugins"})}><Package size={19} /></Button><Button variant="quiet" size="compact" className="rail-button" aria-label="调用记录" onClick={() => setPage("calls")}><Logs size={19} /></Button></nav>}
       <main className="main-area">{themeError&&<Notice kind="error" action={<Button onClick={()=>void retryTheme()}>重试同步</Button>}>{themeError}</Notice>}{error && <div className="app-error" role="alert"><span>{error}</span><Button variant="quiet" size="compact" className="icon-button" aria-label="收起错误提示" onClick={() => setError("")}><X size={14} /></Button></div>}{workbench.recoveryWarnings.map(w => <div className="app-error" key={w}>{w}</div>)}
         {workbench.pendingOpens.map(op => <div className="connection-progress" key={op.operationId}><span role="status">{op.cancelling ? "正在取消" : "正在处理"} · {servers.find(s => s.id === op.serverId)?.name}</span><Button aria-label={`取消连接到 ${servers.find(s => s.id === op.serverId)?.name ?? "服务器"}`} onClick={() => void cancel(op.operationId)}>取消连接</Button></div>)}{moveOperation && <div className="connection-progress"><span role="status">正在移动工作区…</span><Button onClick={() => void cancel(moveOperation)}>取消移动</Button></div>}
-        {detachedId ? <div className="detached-area">{detachedView && <><div className="editor-content">{surface(detachedView)}</div></>}</div> : !activeServer && visibleViews.length === 0 ? <div className="welcome"><BrandMark/><h1>{loadState==="loading"?"正在准备工作区…":loadState==="error"?"工作区暂时无法读取":servers.length?"打开服务器，开始工作。":"添加第一台服务器"}</h1><p>{loadState==="loading"?"正在读取服务器档案":loadState==="error"?"请重试读取已保存的服务器。":servers.length?"本次工作区为空。选择服务器后将自动打开终端并连接。":"保存连接信息后，将为你打开终端并连接。"}</p>{loadState!=="loading"&&<Button variant="primary" className="primary large" onClick={()=>loadState==="error"?void refresh():servers.length?setPicker(true):setServerEditor("new")}><Plus size={16}/>{loadState==="error"?"重试读取":servers.length?"打开服务器":"添加服务器"}</Button>}</div> : <>
+        {detachedId ? <div className="detached-area">{detachedView && <><div className="editor-content">{surface(detachedView)}</div></>}</div> : home.page.selected ? <ConnectionHome controller={connectionHome} catalog={directory.catalog} ready={directory.ready} error={directory.error} refresh={directory.refresh} opened={new Set(workbench.workspaces.map(w=>w.serverId))} onOpen={(item,newWindow)=>void openServer(catalogServer(item),newWindow)} onDelete={item=>setDeleteServer(catalogServer(item))}/> : !activeServer && visibleViews.length===0 ? <div className="welcome"><Button onClick={()=>openHome()}>新建连接</Button></div> : <>
           <div className="workspace-body">{dock("left")}<div className="workspace-editors" ref={workspaceRef}><div className="editor-groups">{renderGroup(0)}</div>
             {bottomActive && <section className="bottom-panel" style={{ height: bottomHeight }} data-drop-placement="bottom"><div className="resize-handle bottom" role="separator" tabIndex={0} aria-label="调整底部面板高度" onPointerDown={e => resize(e, "bottom")} onKeyDown={e => { if (e.key === "ArrowUp") setBottomHeight(bottomHeight + 16); if (e.key === "ArrowDown") setBottomHeight(Math.max(160, bottomHeight - 16)); }} /><div className="tab-bar" role="tablist" aria-label="底部视图">{bottom.map(v => tab(v, v.viewId === bottomActive.viewId, bottom))}</div>{surface(bottomActive)}</section>}
           </div>{dock("right")}</div></>}
       </main>{!detachedId&&<nav className="activity-rail right" aria-label="右侧工作区工具"><ToolButtons edge="right" tools={actions.tools} views={visibleViews} visible={new Set(workbench.dockSlots.filter(s=>s.visible).map(s=>s.viewId))} badges={badges} disabled={!activeServer||!!pendingCommand} onToggle={v=>void run('workbench.configure',{dockViewId:v.viewId,visible:!workbench.dockSlots.find(s=>s.viewId===v.viewId)?.visible})} onOpen={t=>void openTool(t)}/></nav>}</div>
-    <StatusBar className="statusbar"><span><StatusDot tone="success"/>{activeServer ? `${activeServer.username}@${activeServer.host}:${activeServer.port}` : "就绪"}</span><span>{routesSupported&&activeWorkspace&&<ConnectionStatus multihop={multihopSupported} key={activeWorkspace.generation} workspaceId={activeWorkspace.workspaceId} generation={activeWorkspace.generation} onModalChange={setRouteModal}/>}</span><span>{workbench.windowRole === "main" ? "主窗口" : workbench.windowRole === "workspace" ? "工作区窗口" : "独立视图"}</span></StatusBar>
+    <StatusBar className="statusbar"><span><StatusDot tone="success"/>{activeServer ? `${activeServer.username}@${activeServer.host}:${activeServer.port}` : "就绪"}</span><span>{routesSupported&&activeWorkspace&&<ConnectionStatus multihop={multihopSupported} key={activeWorkspace.generation} workspaceId={activeWorkspace.workspaceId} generation={activeWorkspace.generation} onModalChange={setRouteModal}/>} {activeServer&&<CommunicationSummary key={activeServer.id} serverId={activeServer.id} onError={setError}/>}</span><span>{workbench.windowRole === "main" ? "主窗口" : workbench.windowRole === "workspace" ? "工作区窗口" : "独立视图"}</span></StatusBar>
     {drag && <><div className="drag-targets"><div data-drop-placement="center" data-drop-group="0">移到中央</div><div data-drop-placement="detached">独立窗口</div></div><div className="drag-preview" style={{ left: drag.x - drag.offsetX, top: drag.y - drag.offsetY }}>{drag.view.title}</div></>}
     {commandInput && <Dialog title={commandInput.command.title} onClose={()=>setCommandInput(null)}><form onSubmit={async e=>{e.preventDefault();if(savingInput)return;setSavingInput(true);try{await core.call("commands.execute",{commandId:commandInput.command.id,viewId:commandInput.view.viewId,args:{[commandInput.command.input!.key]:draft.trim()},operationId:crypto.randomUUID()});setCommandInput(null);await refresh();}catch(e){setInputError(errorMessage(e));}finally{setSavingInput(false);}}}><label>{commandInput.command.input!.label}<Input autoFocus value={draft} onFocus={e=>e.target.select()} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.nativeEvent.isComposing&&e.key==="Enter")e.preventDefault();}}/></label>{inputError&&<p role="alert" className="inline-error">{inputError}</p>}<footer><Button type="button" onClick={()=>setCommandInput(null)}>取消</Button><Button type="submit" disabled={savingInput||[...draft.trim()].length<commandInput.command.input!.minLength||[...draft.trim()].length>commandInput.command.input!.maxLength}>保存</Button></footer></form></Dialog>}
     {pageList && <Dialog dismissOnOutside title={pageList==="server"?"已打开服务器":"已打开页面"} onClose={()=>setPageList(null)}><div className="management-body"><Input aria-label="搜索已打开页面" placeholder="按名称搜索" value={pageQuery} onChange={e=>setPageQuery(e.target.value)}/><div className="opened-list">{(pageList==="server"?workbench.workspaces.map(w=>({id:w.workspaceId,title:servers.find(s=>s.id===w.serverId)?.name??w.serverId,note:w.ownerWindowId===workbench.windowId?"本窗口":"其他窗口"})):workbench.views.filter(v=>v.workspaceId===workbench.activeWorkspaceId).map(v=>({id:v.viewId,title:v.title,note:v.placement==="detached"?"独立窗口":"本窗口"}))).filter(p=>p.title.toLowerCase().includes(pageQuery.toLowerCase())).map(p=><Button key={p.id} onClick={()=>{void run(pageList==="server"?"workspaces.open":"views.activate",pageList==="server"?{serverId:p.id,target:"currentWindow",operationId:crypto.randomUUID()}:{viewId:p.id});setPageList(null);}}><span>{p.title}</span><small>{p.note}</small></Button>)}</div></div></Dialog>}
-    {picker && <ServerPicker catalogSupported={catalogSupported} onManageGroups={()=>{setPicker(false);setGroupsPage(true);}} servers={servers} workspaces={workbench.workspaces} onClose={() => setPicker(false)} onOpen={(server, newWindow) => void openServer(server, newWindow)} onEdit={server => { setPicker(false); setServerEditor(server); }} onDelete={server => { setPicker(false); setDeleteServer(server); }} />}
-    {groupsPage&&<ServerGroups servers={servers} onClose={()=>{setGroupsPage(false);setPicker(true);}} onEdit={server=>{setGroupsPage(false);setServerEditor(server);}}/>}
-    {serverEditor && <ServerDialog catalogSupported={catalogSupported} servers={servers} routesSupported={routesSupported} multihopSupported={multihopSupported} server={serverEditor === "new" ? undefined : serverEditor} onClose={() => { setServerEditor(null); void refresh(); }} onSaved={server => { const created=serverEditor==="new"; setServerEditor(null); if(created)void openServer(server); else void refresh(); }} />}
+    {diagnostic&&<ConnectionDiagnostics key={diagnostic.attemptId} reference={diagnostic} onClose={()=>setDiagnostic(undefined)}/>}
     {auth && <AuthDialog key={`${auth.server.id}-${auth.fault.code}-${(auth.fault.details as {challengeId?:string})?.challengeId??""}`} server={auth.server} fault={auth.fault} onClose={() => { if (auth.request.operationId) void cancel(auth.request.operationId); setAuth(null); }} onReady={() => { const request = auth.request; setAuth(null); if (request.operationId && !canceled.current.has(request.operationId)) void connectionCommandTimeout(core,request.workspaceId).then(timeout=>{if(request.operationId&&!canceled.current.has(request.operationId))return run("commands.retry", { operationId: request.operationId },timeout);}).catch(e=>setError(errorMessage(e))); }} />}
-    {appearance && <AppearanceDialog onClose={()=>setAppearance(false)} />}
+
+    <ConnectionHomeDialogs controller={connectionHome}/>
     {page && <ManagementDialog page={page} onClose={() => setPage(null)} />}
     {deleteServer && <DeleteServerDialog server={deleteServer} onClose={()=>setDeleteServer(null)} onDeleted={()=>{setDeleteServer(null);void refresh();}}/>}
   </div>;

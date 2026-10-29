@@ -79,7 +79,7 @@ impl Core {
                         _ => {
                             if n.next_slot == u32::MAX || n.next_epoch == u32::MAX { return Err(capacity()); }
                             n.next_slot += 1; n.next_epoch += 1; let (slot, epoch) = (n.next_slot, n.next_epoch);
-                            let audit = self.store.call_start(caller, "net.streams.exchange.lifecycle", p)?;
+                            let audit = self.observability.call_start(caller, "net.streams.exchange.lifecycle", p)?;
                             let e = n.endpoints.get_mut(&id).unwrap();
                             let result = e.state.lock().unwrap().attach(slot, epoch);
                             match result {
@@ -88,7 +88,7 @@ impl Core {
                                     n.attachments.insert((caller.instance_id.clone(), slot), (epoch, id));
                                     Ok(Some((json!({"attachment":attachment}), Vec::new())))
                                 }
-                                Err(error) => { let _ = self.store.call_finish(&audit, &Err(error.clone())); Err(error) }
+                                Err(error) => { let _ = self.observability.call_finish(&audit, &Err(error.clone())); Err(error) }
                             }
                         }
                     }
@@ -130,7 +130,7 @@ impl Core {
             if !active {
                 let canceled = n.receipts.get(&key).is_none_or(|r| r.canceled.load(Ordering::SeqCst));
                 if canceled || timeout || a.closed || b.closed {
-                    a.close(); b.close(); drop(a); drop(b); n.splices.remove(&id);
+                    a.close(); b.close(); drop(a); drop(b); n.splices.remove(&id);n.observed.remove(&id);
                     n.complete(&key, Err(CoreError::new(if canceled {"CANCELED"} else {"TARGET_CONNECT_TIMEOUT"}, "流移交未能完成，连接已关闭")), Vec::new()); continue;
                 }
                 if !a.ready_to_splice() || !b.ready_to_splice() { continue; }
@@ -138,7 +138,7 @@ impl Core {
                 n.complete(&key, Ok(json!({"splice":handle})), vec![id.clone()]);
             }
             let before=(a.consumed,b.consumed);a.splice_into(&mut b); b.splice_into(&mut a);progress|=before!=(a.consumed,b.consumed);
-            if a.finished() && b.finished() { a.close(); b.close(); n.splices.remove(&id); }
+            if a.finished() && b.finished() { a.close(); b.close(); n.splices.remove(&id); n.observed.remove(&id); }
         }
         self.reap_network_pools(&mut n);
         let update:Vec<_>=n.groups.values().filter(|g|g.stats_at.elapsed()>=Duration::from_secs(1)).map(|g|g.handle.id.clone()).collect();
@@ -155,6 +155,7 @@ impl Core {
         }).map(|e| e.handle.id.clone()).collect();
         let mut audits = Vec::new();
         for id in expired {
+            n.observed.remove(&id);
             if let Some(e) = n.endpoints.remove(&id) {
                 n.closed_resources.insert(id.clone(),(e.handle.clone(),e.group.clone(),"stream",Instant::now()));
                 let mut s = e.state.lock().unwrap(); s.close();
@@ -166,7 +167,7 @@ impl Core {
             for l in n.listeners.values_mut() { l.pending.retain(|a| a.stream.id != id); }
         }
         drop(n);
-        for (audit, result) in audits { if self.store.network_stream_finish(&audit,result["bytesRead"].as_u64().unwrap(),result["bytesWritten"].as_u64().unwrap(),result["durationMs"].as_u64().unwrap(),result["error"].as_str()).is_err() { self.fault("net.streams.exchange.lifecycle", "result-not-persisted"); } }
+        for (audit, result) in audits { if self.observability.network_stream_finish(&audit,result["bytesRead"].as_u64().unwrap(),result["bytesWritten"].as_u64().unwrap(),result["durationMs"].as_u64().unwrap(),result["error"].as_str()).is_err() { self.fault("net.streams.exchange.lifecycle", "result-not-persisted"); } }
         progress
     }
     /// Frames inherit the host's binding; attachment IDs never establish identity.

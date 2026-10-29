@@ -41,11 +41,11 @@ try{
  h.note('Detached/merged view retains its unsaved draft and run identity; hiding to tray keeps the proxy reachable');
  // A saved path change cannot silently retarget a running proxy or recovery.
  const middle=nodes[1],{id,revision,hasSecret,...body}=middle;
- await rpc(app.page,'servers.routes.v2.update',{...body,serverId:id,expectedRevision:revision,name:'中转已编辑',port:23});
+ await rpc(app.page,'servers.routes.update',{...body,serverId:id,expectedRevision:revision,name:'中转已编辑',port:23});
  assert.equal(await h.curl(original.address.port),'REMOTE-http.internal');
  await assert.rejects(h.run(proxy,false,'network.reconnect'),e=>e.code==='ROUTE_CHANGED');
- const updated=(await rpc(app.page,'servers.routes.v2.list')).servers.find(s=>s.id===id),{revision:nextRevision,hasSecret:unused,id:unusedId,...rest}=updated;
- await rpc(app.page,'servers.routes.v2.update',{...rest,serverId:id,expectedRevision:nextRevision,port:22});
+ const updated=(await rpc(app.page,'servers.routes.list')).servers.find(s=>s.id===id),{revision:nextRevision,hasSecret:unused,id:unusedId,...rest}=updated;
+ await rpc(app.page,'servers.routes.update',{...rest,serverId:id,expectedRevision:nextRevision,port:22});
  await h.auth(nodes);await h.trust();
  await h.run(proxy,true);assert.notEqual((await h.state(proxy)).id,original.id);await h.invoke('network.stop',{id:fixed.id});
  h.note('Saved route edits leave existing traffic on the original path; recovery rejects changed revision until explicit restart');

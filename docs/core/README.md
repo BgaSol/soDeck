@@ -1,6 +1,22 @@
 # SoDeck 核心能力
 
-更新日期：2026-10-27 · 修订：r29 · 状态：职责基线；各任务分别维护确认、实现与验收。
+更新日期：2026-10-29 · 修订：r44 · 状态：职责基线；各任务分别维护确认、实现与验收。
+
+[F-CORE-033：GitHub发布与在线升级](online-updates.md)定义自动检查提示、用户下载安装、核心/官方插件独立升级和兼容/退出边界；[代码方案](../technical/online-updates-implementation.md)与[T-029](../tasks/T-029-online-updates.md)为本次待确认来源，不改变T-028已交付事实。
+
+[F-CORE-032：插件完整性、签名状态与启停管理](plugin-management.md)定义设置统一入口、完整重启启停、严格包检查、第三方无签名加载；确认与交付见[T-028](../tasks/T-028-plugin-management.md)，实际验证见[结果](../tasks/T-028-results.md)。
+
+T-027最新代码方案见[代码r1](../technical/mixed-route-implementation.md)/[功能r2](mixed-route.md)：API6/core v7只保留新模型，单一步骤表、通用SSH/SOCKS执行、凭据binding和全链预算；四插件按各自计划修改，MR/MR-CODE及插件测试分别维护。只完成方案，r1兼容建议由用户明确取消，当前未实施。
+
+混合多级连接见[F-CORE-031 r1](mixed-route.md) / [T-027](../tasks/T-027-mixed-route.md)：核心统一组合SSH与SOCKS5有序节点，外壳展示每一步的访问来源，插件继续消费最终目标连接；提出回环/DNS/身份/预算及MR专属测试。当前为功能设计，具体代码方案与实施确认后续记录。
+
+桌面交互统一规则见[F-CORE-030 r1](desktop-interaction.md) / [T-026](../tasks/T-026-desktop-interaction.md)：核心宿主统一适配Tauri与raw Wry的默认菜单、浏览器快捷行为、导航及调试方式，保留业务/文本编辑与系统交互。包含实现设计和DI测试，不新增业务插件、公开API或数据库结构；确认与进度只由任务维护。
+
+连接入口重构见[T-025 r4](../tasks/T-025-connection-home.md) / [F-CORE-029 r2](connection-home.md)及[代码方案r1](../technical/connection-home-implementation.md)。系统页、草稿、代理回执/分页、凭据条件写和两阶段关闭已实现，API5.3、业务库v6保持。核心持有目录/凭据/工作区，外壳持有草稿；[结果](../tasks/T-025-results.md)记录验证与目录包，用户验收待反馈。
+
+T-016本轮[代码方案r1](../technical/observability-implementation.md)固定核心事件/关联、v2历史补读、现场/指标/证据与三插件接入的模块、API4.10、观测schema2、预算和验证关口。[接入需求r2](observability/integration.md)、F-CORE-018/019 r3、021/022 r5维护行为/测试；F-CORE-020问题服务单独后续。仅观测历史四分区备份重建，同版本业务库/凭据保留。等待最终确认，状态见[T-016 r5](../tasks/T-016-observability.md)。
+
+通信监控四项能力的[代码修改方案r1](../technical/communication-monitor-implementation.md)已明确采集、公共观测子集、接口/数据版本与验证关口，确认范围由[T-019 r3](../tasks/T-019-connection-metrics.md)维护；当前尚未实施。
 
 本文件描述核心提供什么、与业务插件的边界和通用资源规则。具体技术实现见[技术方案](../technical/README.md)。能力目录不等于首发功能清单，也不代表所有协议能力都已确定。
 
@@ -109,10 +125,14 @@ SFTP、HTTP 或其他协议能力按实际插件需求引入。把能力放进�
 
 | 功能编号 | 功能与范围 | 规格及测试流程 | 任务记录 | 消费者 |
 | --- | --- | --- | --- | --- |
-| F-CORE-023 | 通信总方案、实时速率/流量、来源与多跳计量 | [功能与CM测试](connection-metrics.md) | [T-019 r2](../tasks/T-019-connection-metrics.md) | 外壳、业务插件及未来诊断消费者；功能方案待确认 |
-| F-CORE-024 | 通信历史、比较、导出与留存 | [功能与CH测试](communication-history.md) | [T-019 r2](../tasks/T-019-connection-metrics.md) | 公共观测存储、外壳与证据服务；未实施 |
-| F-CORE-025 | 连接诊断、可选SSH响应探测与应用内提醒 | [功能与CQ测试](connection-quality.md) | [T-019 r2](../tasks/T-019-connection-metrics.md) | 连接服务、公共问题与外壳；未实施 |
-| F-CORE-026 | 主动上下行测速、取消、方法兼容与结果 | [功能与CSPEED测试](connection-speedtest.md) | [T-019 r2](../tasks/T-019-connection-metrics.md) | 核心诊断任务、历史与外壳；未实施 |
+| F-CORE-030 | 桌面交互、WebView默认菜单/快捷行为、原生编辑与调试边界 | [规则、实现设计与DI测试](desktop-interaction.md) | [T-026](../tasks/T-026-desktop-interaction.md) | 核心外壳、所有受管窗口及插件表面 |
+| F-CORE-029 | 统一启动/＋连接首页、SSH与代理表单、节点选择及草稿 | [功能与CH测试](connection-home.md) | [T-025](../tasks/T-025-connection-home.md) | 核心外壳、目录及工作区；连接消费者保持原边界 |
+| F-CORE-028 | 右上角设置窗口、分组/搜索、统一编辑及插件声明接入 | [行为、契约与SET测试r2](settings.md)、[代码方案r1](../technical/settings-implementation.md) | [T-023及实测](../tasks/T-023-results.md) | 外壳、核心设置provider及终端插件 |
+| F-CORE-027 | SSH经SOCKS5网络代理、与SSH主机隧道边界分离 | [功能与SK测试](socks-route.md) | [T-020](../tasks/T-020-socks-route.md) | 核心外壳、终端、文件及网络连接消费者 |
+| F-CORE-023 | 通信总方案、实时速率/流量、来源与多跳计量 | [功能与CM测试](connection-metrics.md) | [T-019 r3](../tasks/T-019-connection-metrics.md) | 外壳、业务插件及未来诊断消费者；待最终方案确认 |
+| F-CORE-024 | 通信历史、比较、导出与留存 | [功能与CH测试](communication-history.md) | [T-019 r3](../tasks/T-019-connection-metrics.md) | 公共观测存储、外壳与证据服务；未实施 |
+| F-CORE-025 | 连接诊断、可选SSH响应探测与应用内提醒 | [功能与CQ测试](connection-quality.md) | [T-019 r3](../tasks/T-019-connection-metrics.md) | 连接服务、公共问题与外壳；未实施 |
+| F-CORE-026 | 主动上下行测速、取消、方法兼容与结果 | [功能与CSPEED测试](connection-speedtest.md) | [T-019 r3](../tasks/T-019-connection-metrics.md) | 核心诊断任务、历史与外壳；未实施 |
 | F-CORE-018 | 统一事件采集、分级日志、用户动作和操作关联 | [模型与EV测试](observability/events.md) | [T-016](../tasks/T-016-observability.md) | 外壳、宿主、核心及全部插件 |
 | F-CORE-019 | 历史查询/统计与可补读订阅 | [契约与HQ测试](observability/history.md) | [T-016](../tasks/T-016-observability.md) | 诊断消费者、未来AI |
 | F-CORE-020 | 重要问题聚合、确认、恢复与通知意图 | [生命周期与IS测试](observability/issues.md) | [T-016](../tasks/T-016-observability.md) | 外壳和诊断插件 |
@@ -122,6 +142,7 @@ SFTP、HTTP 或其他协议能力按实际插件需求引入。把能力放进�
 | F-CORE-017 | 插件中文名与稳定身份展示 | [元数据及PN测试](plugin-display.md) | [T-015设计](../tasks/T-015-workflow-polish.md) | 插件包、管理器与展示界面 |
 | F-CORE-015 | listener/TCP、网络池、资源组、二进制流/splice及多级路径接入（API 4.7） | [契约与NT流程](dynamic-proxy.md) | [实施方案T-014](../tasks/T-014-network-proxy.md) | 网络隧道插件；兼容回归终端/文件 |
 | F-CORE-014 | 核心 SSH 跳板、逐节点认证、路径快照与生命周期 | [功能与测试](ssh-jump.md) | [设计方案 T-013](../tasks/T-013-ssh-jump.md) | 核心外壳、终端/文件及其他目标连接消费者 |
+| F-CORE-031 | SSH/SOCKS5 混合多级路径、逐段地址上下文与统一编辑器 | [功能与MR测试](mixed-route.md) | [设计方案 T-027](../tasks/T-027-mixed-route.md) | 连接首页、核心连接/身份与全部目标连接消费者 |
 | F-CORE-001 | 核心调用、状态事件与有界流的公共契约 | [规格与测试](communication.md) | [设计任务 T-002](../tasks/T-002-core-design.md) | 外壳、插件及核心能力模块 |
 | F-CORE-002 | 资源归属、租约、生命周期与清理 | [规格与测试](resources.md) | [设计任务 T-002](../tasks/T-002-core-design.md) | 连接、I/O、隧道、插件运行实例 |
 | F-CORE-003 | 无插件权限分配的核心调用记录 | [规格与测试](call-records.md) | [设计任务 T-002](../tasks/T-002-core-design.md) | 全部插件、调用网关及诊断入口 |

@@ -1,0 +1,66 @@
+import assert from 'node:assert/strict';
+import {mkdir,readFile,writeFile} from 'node:fs/promises';
+import {join,resolve} from 'node:path';
+import {launch,rpc,until,stop} from './harness.mjs';
+const output=resolve('.qa/t023/native');await mkdir(output,{recursive:true});
+const checks=[];let app,settings;
+const note=text=>{checks.push(text);console.log(text);};
+const findSettings=()=>until(async()=>{for(const p of app.browser.contexts().flatMap(c=>c.pages()).filter(p=>!p.isClosed()))if(await p.evaluate(()=>!!window.__SODECK_SETTINGS_CONTEXT__).catch(()=>false)){await p.waitForSelector('.settings-window');return p;}});
+const pageId='plugin:sodeck.terminal:general';
+const request=(snapshot,changes,operationId=crypto.randomUUID())=>({pageId:snapshot.pageId,providerEpoch:snapshot.providerEpoch,schemaVersion:snapshot.schemaVersion,expectedRevision:snapshot.settingsRevision,changes,operationId});
+try{
+  app=await launch({data:join(output,'data-'+Date.now()),shellPort:9841,pluginPort:9842});
+  const catalog=await rpc(app.page,'settings.catalog.list');assert.ok(catalog.items.some(e=>e.pageId===pageId&&e.available));
+  const before=await rpc(app.page,'workbench.snapshot');
+  await app.page.getByRole('button',{name:'设置',exact:true}).click();settings=await findSettings();
+  const context=await rpc(settings,'ui.settings.context.get');
+  const again=await rpc(app.page,'ui.settings.open',{operationId:crypto.randomUUID(),pageId});assert.equal(again.generation,context.generation);
+  await settings.getByRole('heading',{name:'终端',exact:true}).waitFor();await until(()=>settings.getByLabel('字号',{exact:true}).inputValue().then(v=>v==='14'));
+  assert.equal((await rpc(app.page,'workbench.snapshot')).workspaces.length,before.workspaces.length);
+  note('Right header opens one native settings window without creating a workspace');
+  await settings.getByLabel('字号',{exact:true}).fill('18');
+  await settings.getByRole('button',{name:'应用与数据',exact:true}).click();await settings.getByRole('heading',{name:'应用与数据'}).waitFor();
+  const info=await rpc(settings,'app.runtimeInfo.get');assert.equal(info.mode,'development');assert.equal(resolve(info.dataPath),resolve(app.data));
+  await settings.getByRole('button',{name:/^终端/}).click();assert.equal(await settings.getByLabel('字号',{exact:true}).inputValue(),'18');
+  const original=await rpc(app.page,'settings.page.get',{pageId});assert.equal(original.snapshot.values.find(v=>v.key==='fontSize').value,14);
+  await settings.getByRole('button',{name:'应用',exact:true}).click();await until(async()=>(await rpc(app.page,'settings.page.get',{pageId})).snapshot.values.find(v=>v.key==='fontSize').value===18);
+  await until(()=>settings.getByRole('button',{name:'应用',exact:true}).isDisabled());
+  note('Draft survives navigation, runtime information is accurate, Apply persists the plugin group');
+  const current=(await rpc(app.page,'settings.page.get',{pageId})).snapshot;
+  const commit=request(current,[{key:'fontSize',value:19},{key:'shellIntegration',value:false}]);
+  const saved=await rpc(app.page,'settings.commit',commit);assert.equal(saved.synchronization,'current');
+  const duplicate=await rpc(app.page,'settings.commit',commit);assert.equal(duplicate.persistedRevision,saved.persistedRevision);
+  const receipt=await rpc(app.page,'settings.operation.get',{pageId,storageGeneration:current.storageGeneration,operationId:commit.operationId});assert.equal(receipt.state,'saved');
+  await assert.rejects(rpc(app.page,'settings.commit',{...commit,changes:[{key:'fontSize',value:20}]}),e=>e.code==='CONFLICT');
+  await assert.rejects(rpc(app.page,'settings.commit',{...commit,operationId:crypto.randomUUID()}),e=>e.code==='CONFLICT');
+  note('Atomic group commit, persisted receipt, duplicate operation and stale revision checks pass');
+  await until(()=>settings.getByLabel('字号',{exact:true}).inputValue().then(v=>v==='19'));
+  await settings.getByLabel('字号',{exact:true}).fill('21');
+  const latest=(await rpc(app.page,'settings.page.get',{pageId})).snapshot;
+  await rpc(app.page,'settings.commit',request(latest,[{key:'fontSize',value:20}]));
+  await settings.getByRole('button',{name:'载入最新',exact:true}).waitFor();assert.equal(await settings.getByLabel('字号',{exact:true}).inputValue(),'21');
+  await settings.getByRole('button',{name:'载入最新',exact:true}).click();await until(()=>settings.getByLabel('字号',{exact:true}).inputValue().then(v=>v==='20'));
+  await settings.getByLabel('搜索设置').fill('目录');await until(()=>settings.getByRole('button',{name:/^终端/}).count().then(n=>n===1));assert.equal(await settings.getByRole('button',{name:'外观',exact:true}).count(),0);await settings.getByLabel('搜索设置').fill('');
+  note('Feed changes preserve conflicting drafts; search uses declared setting metadata');
+  await settings.getByLabel('字号',{exact:true}).fill('22');
+  await settings.getByRole('button',{name:'取消',exact:true}).click();await settings.getByRole('button',{name:'继续编辑',exact:true}).click();assert.ok(!settings.isClosed());
+  await assert.rejects(rpc(app.page,'app.exit'),e=>['SETTINGS_REVIEW_REQUIRED','CLOSE_REVIEW_REQUIRED'].includes(e.code));await settings.getByRole('button',{name:'继续编辑',exact:true}).click();assert.equal(app.process.exitCode,null);
+  await settings.getByRole('button',{name:'取消',exact:true}).click();await settings.getByRole('button',{name:'放弃更改',exact:true}).click();await until(()=>settings.isClosed());
+  assert.equal((await rpc(app.page,'settings.page.get',{pageId})).snapshot.values.find(v=>v.key==='fontSize').value,20);
+  note('Cancel and application exit require the current draft handshake; discard retains already saved settings');
+  await rpc(app.page,'ui.settings.open',{operationId:crypto.randomUUID()});settings=await findSettings();
+  const next=await rpc(settings,'ui.settings.context.get');assert.notEqual(next.generation,context.generation);
+  for(const id of ['dopamine','soft-dark','soft-light']){
+    const appearance=(await rpc(app.page,'settings.page.get',{pageId:'core:appearance'})).snapshot;
+    await rpc(app.page,'settings.commit',request(appearance,[{key:'themeId',value:id}]));
+    await settings.waitForFunction(id=>document.documentElement.dataset.theme===id,id);
+    await settings.screenshot({path:join(output,`settings-${id}.png`)});
+  }
+  const appearance=JSON.parse(await readFile(join(app.data,'appearance-preferences.json'),'utf8'));assert.equal(appearance.schemaVersion,3);assert.ok(appearance.receipts.length>=3);
+  await settings.evaluate(()=>{document.documentElement.style.fontSize='26px';});await settings.screenshot({path:join(output,'settings-scale-200.png')});
+  assert.equal(await settings.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  note('Three themes synchronize across native windows; appearance v3 receipts and 200% layout checked');
+  await settings.getByRole('button',{name:'确定',exact:true}).click();await until(()=>settings.isClosed());
+  assert.deepEqual(app.errors,[]);await writeFile(join(output,'results.json'),JSON.stringify({passed:true,checks,data:app.data},null,2));
+}catch(e){if(settings&&!settings.isClosed())await settings.screenshot({path:join(output,'failure.png')}).catch(()=>{});await writeFile(join(output,'failure.json'),JSON.stringify({checks,error:String(e),stack:e.stack,data:app?.data},null,2));throw e;}
+finally{if(settings&&!settings.isClosed()){await rpc(settings,'ui.settings.close.request',{reason:'close'}).catch(()=>{});await settings.getByRole('button',{name:'放弃更改',exact:true}).click({timeout:1500}).catch(()=>{});}await stop(app);}

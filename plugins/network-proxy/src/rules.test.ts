@@ -1,14 +1,28 @@
 import {describe,it,expect} from 'vitest';
 import {Rules,requestHash} from './rules';
+import type {ObservationClient} from './observation';
 const draft={name:'代理',type:'network-proxy',bindMode:'fixed',port:10808,autoReconnect:false};
 function storage(initial:unknown=null) {
   let value=initial;let fail=false;
-  return {fail:()=>{fail=true;},get:()=>value,call:async<T>(method:string,params:unknown):Promise<T>=>{
+  return {fail:(value=true)=>{fail=value;},get:()=>value,call:async<T>(method:string,params:unknown):Promise<T>=>{
     if(method==='storage.get')return value as T;
     if(fail)throw Error('disk full');value=(params as {value:unknown}).value;return {} as T;
   }};
 }
 describe('rule persistence and concurrency',()=>{
+  it('emits saved/deleted only once after confirmed writes, never for conflicts or failed storage',async()=>{
+    const store=storage(),rules=new Rules(store),events:{type:string;fields:unknown}[]=[];
+    const diagnostic={call:store.call,async emit(type:string,fields:unknown){events.push({type,fields});}} as unknown as ObservationClient;
+    await rules.load();const saved=await rules.save('server',draft,0,diagnostic);
+    await expect(rules.save('server',saved,0,diagnostic)).rejects.toMatchObject({code:'REVISION_CONFLICT'});
+    store.fail();await expect(rules.save('server',{...saved,name:'unsaved'},1,diagnostic)).rejects.toThrow('disk full');
+    await expect(rules.remove('server',saved.id,1,diagnostic)).rejects.toThrow('disk full');expect(events).toHaveLength(1);
+    store.fail(false);await rules.save('server',{...saved,name:'updated'},1,diagnostic);await rules.remove('server',saved.id,2,diagnostic);
+    expect(events.map(e=>e.type)).toEqual(['plugin.sodeck.network-proxy.rule.saved','plugin.sodeck.network-proxy.rule.saved','plugin.sodeck.network-proxy.rule.deleted']);
+    expect(events.map(e=>(e.fields as {revision:number}).revision)).toEqual([1,2,2]);expect(JSON.stringify(events)).not.toContain('updated');
+    const input={...draft,name:''},hash=requestHash(input);await rules.saveDraft('server',input,0,'auto','same-submission',hash,diagnostic);await rules.saveDraft('server',input,0,'auto','same-submission',hash,diagnostic);
+    expect(events.filter(e=>e.type.endsWith('rule.saved'))).toHaveLength(3);
+  });
   it('atomically stores automatic names and durable bounded save receipts',async()=>{
     const store=storage(),rules=new Rules(store);await rules.load();
     const input={...draft,name:'',bindMode:'auto',port:0},hash=requestHash(input);

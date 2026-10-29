@@ -115,7 +115,7 @@ try {
     return true;
   });
   await rpc(app.page, 'hosts.trust', { serverId: server.id, ...snapshots.hostChallenge });
-  await rpc(app.page, 'auth.set', { serverId: server.id, password: 'isolated-test-password', remember: false });
+  await rpc(app.page, 'auth.ssh.set', { serverId: server.id, password: 'isolated-test-password', remember: false });
   const first = await rpc(app.page, 'workbench.openTerminal', { serverId: server.id });
   const second = await rpc(app.page, 'workbench.openTerminal', { serverId: server.id });
   await terminalPage(second.viewId);
@@ -217,7 +217,7 @@ try {
   checks.push('server deletion refuses active resources without changing state; explicit deletion clears workspace, sessions and actual remote channels/connection');
 
   const exitServer = await rpc(app.page, 'servers.create', { name: '活动退出验证', host: '127.0.0.1', port, username: 'test-user', authType: 'password' });
-  await rpc(app.page, 'auth.set', { serverId: exitServer.id, password: 'isolated-test-password', remember: false });
+  await rpc(app.page, 'auth.ssh.set', { serverId: exitServer.id, password: 'isolated-test-password', remember: false });
   const exitFirst = await rpc(app.page, 'workbench.openTerminal', { serverId: exitServer.id });
   const exitSecond = await rpc(app.page, 'workbench.openTerminal', { serverId: exitServer.id });
   await terminalPage(exitSecond.viewId);

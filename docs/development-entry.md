@@ -1,5 +1,15 @@
 # Windows 本地开发与验证入口
 
+T-029当前工作区：核心`2.0.0-dev.21`、API/SDK`6.3.0`，core v7和四观测分区v2保持。实现/测试结果见[T-029](tasks/T-029-results.md)，发布配置与命令见[v2发布工具](technical/release-v2.md)。生产渠道公钥尚未配置，development构建明确禁用官方源检查；第三方手动导入保持。下面T-028及更早入口记录各任务当时的交付。
+
+T-029试用入口为`.local/dev/SoDeck-v2-T029-r2/Start-SoDeck.cmd`，独立data且未内置测试服务器。重建执行`node scripts/desktop.mjs build --debug --no-bundle`与`node scripts/cargo.mjs build -p sodeck-plugin-host --bin sodeck-plugin-host`；`node scripts/package-online-updates-dev.mjs`只向全新目录打包，禁止覆盖已有包。原生验证`tests/desktop/online-updates.mjs`、`online-update-installer.mjs`、`online-updates-package.mjs`串行执行，安装脚本只可使用T-029 QA夹具与专属Linux服务。完整实测和清理由结果维护。
+
+T-028当前入口：核心 `2.0.0-dev.20`、API/SDK `6.2.0`，core数据库v7。先读[任务](tasks/T-028-plugin-management.md)与[实测](tasks/T-028-results.md)，第三方资源包见[插件开发](plugin-development.md)。构建前端后执行 `node scripts/cargo.mjs build -p sodeck-desktop -p sodeck-plugin-host --features sodeck-desktop/custom-protocol --offline`；`node scripts/package-plugin-management-dev.mjs`只向全新`.local/dev/SoDeck-v2-T028-r1`打包，存在时拒绝覆盖。
+
+原生测试 `plugin-management.mjs`、`plugin-management-import.mjs`、`plugin-management-updates.mjs`、`plugin-management-package.mjs` 位于 `tests/desktop`，需串行；updates需先准备测试A/B包和隔离Linux SSH服务，package需设置 `SODECK_TEST_PYTHON` 指向Python3供只读数据库备份。具体环境与通过范围见结果。浏览器入口为 `npx playwright test -c playwright.ui.config.ts plugin-management.spec.ts settings.spec.ts connection-home.spec.ts`；管理器检查为 `node scripts/cargo.mjs test -p sodeck-plugin-manager --offline`。
+
+下方保留各历史任务当时的版本和入口，不把旧命令当作当前功能的验证结论。
+
 当前 T-008：核心 `2.0.0-dev.5`、SDK/API `4.1.0`（`workspace.v4` 保持）、文件 `0.1.0`、原签名终端 `0.4.0`。授权、实际通过项和剩余验证见 [任务](tasks/T-008-server-file-tree.md)、[实测](tasks/T-008-results.md)，试用见 [验收步骤](tasks/T-008-acceptance.md)。
 
 T-008 构建顺序：`node scripts/pack-plugin.mjs --plugin files --out resources/files.sodeck-plugin`、`npm run build -w @sodeck/desktop`、`node scripts/cargo.mjs build -p sodeck-desktop --features custom-protocol`、`npm run desktop:package-dev -- T008`。打包使用 `.qa/t008/baseline/terminal-0.4.0.sodeck-plugin` 的原签名副本，不重新构建终端。输出 `.local/dev/SoDeck-v2-T008/`；`SODECK_TEST_PACKAGE_DIR` 指向该目录后运行 `node tests/desktop/package-smoke.mjs`，会复制到另一目录后验证。

@@ -1,6 +1,8 @@
 import {schema as wire} from './state-feed.generated';
 import type {StateRequest,Snapshot,OpenResult,StateUpdate,StateControl,Presentation} from './state-feed.generated';
 import {validate,type Shape} from './schema';
+import {communicationObjectId} from './traffic';
+import {qualityObjectId} from './quality';
 
 export interface Notification {type:string;payload?:unknown}
 export interface StateBridge {
@@ -26,6 +28,13 @@ export function presentation(value:unknown):Presentation {
 /** Latest state only. Domain work must use its own cancellation/generation. */
 export async function observeState<T>(bridge:StateBridge,request:StateRequest,decode:(value:unknown)=>T,
   listener:(value:T,snapshot:Snapshot)=>void,options:{signal?:AbortSignal;onError?:(error:unknown)=>void}={}):Promise<StateSubscription<T>> {
+  const appObjects:Partial<Record<StateRequest['contract'],string>>={
+    'updates.state.v1':'updates',
+    'app.theme.v1':'theme','servers.catalog.v2':'catalog','settings.catalog.v1':'catalog','plugins.management.v1':'plugins',
+    ...(request.contract==='settings.page.v1'?{'settings.page.v1':request.target.pageId}:{}),
+    ...(request.contract==='communication.summary.v1'?{'communication.summary.v1':await communicationObjectId(request.target)}:{}),
+    ...(request.contract==='communication.quality.v1'?{'communication.quality.v1':await qualityObjectId(request.target)}:{}),
+  };
   let active:OpenResult|undefined,current:T|undefined,revision:string|undefined;
   let sequence=0n,disposed=false,recovering:Promise<void>|undefined,appGeneration:string|undefined;
   let cancelWait:(()=>void)|undefined;
@@ -41,8 +50,9 @@ export async function observeState<T>(bridge:StateBridge,request:StateRequest,de
   const install=(snapshot:Snapshot)=>{
     const target=request.target as {scope?:unknown;workspaceId?:string;viewId?:string;group?:{id:string}};
     const expectedScope=target.scope??target;
-    const valid=request.contract==='app.theme.v1'||request.contract==='servers.catalog.v1'
-      ? 'appGeneration' in snapshot.scope && snapshot.objectId===(request.contract==='servers.catalog.v1'?'catalog':'theme') && (!appGeneration||snapshot.scope.appGeneration===appGeneration)
+    const appObject=appObjects[request.contract];
+    const valid=appObject!==undefined
+      ? 'appGeneration' in snapshot.scope && snapshot.objectId===appObject && (!appGeneration||snapshot.scope.appGeneration===appGeneration)
       : 'workspaceId' in snapshot.scope && snapshot.scope.workspaceId===(expectedScope as {workspaceId:string}).workspaceId && snapshot.scope.workspaceGeneration===(expectedScope as {workspaceGeneration:string}).workspaceGeneration && snapshot.objectId===(target.group?.id??target.viewId??target.workspaceId);
     if(!valid)throw Object.assign(new Error('State snapshot belongs to another object'),{code:'PROTOCOL_ERROR'});
     const value=decode(snapshot.value);

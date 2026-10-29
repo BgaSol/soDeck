@@ -12,7 +12,7 @@ fn startup_receipt_and_eight_independent_observers(){
     let temp=tempfile::tempdir().unwrap();let core=Core::open(temp.path()).unwrap();let caller=Caller::shell();
     let call=|method:&str,p:Value|core.call(&caller,method,p).unwrap_or_else(|e|panic!("{method}: {e}"));
     let server=call("servers.create",json!({"name":"observer fixture","host":cfg["host"],"port":cfg["port"],"username":cfg["username"],"authType":"key"}));
-    call("auth.set",json!({"serverId":server["id"],"privateKeyPath":cfg["privateKeyPath"]}));
+    call("auth.ssh.set",json!({"serverId":server["id"],"privateKeyPath":cfg["privateKeyPath"]}));
     let params=json!({"serverId":server["id"],"workspaceId":"observer"});
     let challenge=core.call(&caller,"connections.acquire",params.clone()).unwrap_err();assert_eq!(challenge.code,"HOST_KEY_REQUIRED");
     call("hosts.trust",json!({"serverId":server["id"],"fingerprint":challenge.details.unwrap()["fingerprint"]}));

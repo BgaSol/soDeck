@@ -17,7 +17,7 @@ try{
  app=await launch({data:join(output,'app'),shellPort:9563,pluginPort:9564});
  const win=(await nativeWindow(app,'list')).find(w=>w.visible&&w.title.includes('SoDeck'));
  const server=await rpc(app.page,'servers.create',{name:'T006 隔离 SSH · Graphite',host:'127.0.0.1',port:config.port,username:'test-user',authType:'password'});
- let challenge;try{await openTerminal(app.page,server.id);}catch(e){challenge=e;}assert.equal(challenge?.code,'HOST_KEY_REQUIRED');await rpc(app.page,'hosts.trust',{serverId:server.id,...challenge.details});await rpc(app.page,'auth.set',{serverId:server.id,password:'isolated-test-password'});
+ let challenge;try{await openTerminal(app.page,server.id);}catch(e){challenge=e;}assert.equal(challenge?.code,'HOST_KEY_REQUIRED');await rpc(app.page,'hosts.trust',{serverId:server.id,...challenge.details});await rpc(app.page,'auth.ssh.set',{serverId:server.id,password:'isolated-test-password'});
  const first=await openTerminal(app.page,server.id);let terminal=await findSurface(first.viewId);await until(()=>terminal.locator('.xterm-rows').innerText().then(t=>t.includes('fixture-ready')));
  assert.equal((await rpc(app.page,'workbench.snapshot')).schemaVersion,3);assert.equal(await app.page.locator('.sessions-panel').count(),0);assert.equal(await terminal.locator('.terminal-toolbar').count(),0);
  const theme=await rpc(app.page,'ui.theme.get');assert.deepEqual(await terminal.evaluate(()=>window.__SODECK_CONTEXT__.theme),theme);record('UX-01/03: native single central group, no session sidebar or repeated terminal toolbar; same theme snapshot');

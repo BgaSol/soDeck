@@ -265,11 +265,10 @@ impl Workbench {
         }
         for w in saved.windows.values_mut() {
             if !w
-                .active_workspace_id
-                .as_ref()
+                .selected_workspace()
                 .is_some_and(|id| w.workspace_ids.contains(id))
             {
-                w.active_workspace_id = w.workspace_ids.first().cloned();
+                w.select_workspace(w.workspace_ids.first().cloned());
             }
         }
         if !legacy && !saved.recovery_warnings.is_empty() {
@@ -351,7 +350,7 @@ impl Workbench {
                     });
                 }
             }
-            if let Some(focus)=ws.focus_target.clone().or_else(||self.windows.values().find(|w|w.active_workspace_id.as_deref()==Some(&id)).and_then(|w|w.focused_view_id.clone())) {
+            if let Some(focus)=ws.focus_target.clone().or_else(||self.windows.values().find(|w|w.selected_workspace().map(String::as_str)==Some(&id)).and_then(|w|w.focused_view_id.clone())) {
                 if self.views.iter().any(|v|v.view_id==focus && v.placement=="center") { for v in self.views.iter_mut().filter(|v|v.workspace_id==id && v.placement=="center") {v.active=v.view_id==focus;} }
             }
             self.normalize(&id);
@@ -403,7 +402,7 @@ impl Workbench {
         }
         let w = self.windows.get_mut(window).ok_or("窗口不存在")?;
         w.workspace_ids.push(id.into());
-        w.active_workspace_id = Some(id.into());
+        w.select_workspace(Some(id.into()));
         self.workspaces.insert(
             id.into(),
             Workspace {
@@ -422,7 +421,7 @@ impl Workbench {
         self.windows
             .get_mut(&owner)
             .ok_or("窗口不存在")?
-            .active_workspace_id = Some(id.into());
+            .select_workspace(Some(id.into()));
         self.windows.get_mut(&owner).unwrap().focused_view_id =
             self.workspaces.get(id).and_then(|w| w.focus_target.clone());
         self.revision += 1;
@@ -461,12 +460,12 @@ impl Workbench {
         let w = self.windows.get_mut(target).unwrap();
         let at = index.min(w.workspace_ids.len());
         w.workspace_ids.splice(at..at, ids.iter().cloned());
-        w.active_workspace_id = Some(
+        w.select_workspace(Some(
             active
                 .filter(|a| ids.iter().any(|s| s == a))
                 .unwrap_or(&ids[0])
                 .into(),
-        );
+        ));
         for id in ids {
             self.workspaces.get_mut(id).unwrap().owner_window_id = target.into();
         }
@@ -491,13 +490,13 @@ impl Workbench {
         let active = detached
             .and_then(|id| self.views.iter().find(|v| v.view_id == id))
             .map(|v| v.workspace_id.clone())
-            .or_else(|| record.and_then(|w| w.active_workspace_id.clone()));
+            .or_else(|| record.and_then(|w| w.selected_workspace().cloned()));
         let mut ws = active
             .as_ref()
             .and_then(|id| self.workspaces.get(id))
             .cloned()
             .unwrap_or_default();
-        if window == "main" {
+        if window == "main" && record.is_none_or(|w|w.selection!=crate::window_registry::Selection::ConnectionHome) {
             if let Some(global) = self.workspaces.get("@app") {
                 ws.dock_slots.extend(global.dock_slots.clone());
             }
@@ -511,7 +510,7 @@ impl Workbench {
                 value
             })
             .collect::<Vec<_>>();
-        json!({"schemaVersion":4,"windowId":window,"windowRole":if detached.is_some(){"view"}else if window=="main"{"main"}else{"workspace"},"workspaceIds":record.map(|w|w.workspace_ids.clone()).unwrap_or_default(),"activeWorkspaceId":active,"focusedViewId":record.and_then(|w|w.focused_view_id.clone()),"workspaces":self.workspaces.iter().map(|(id,w)|json!({"workspaceId":id,"serverId":id,"ownerWindowId":w.owner_window_id,"generation":w.generation,"initializers":w.initializers,"initializationError":w.initialization_error})).collect::<Vec<_>>(),"views":views,"split":ws.split,"splitRatio":ws.split_ratio,"dockSlots":ws.dock_slots,"revision":self.revision,"recoveryWarnings":self.recovery_warnings})
+        json!({"schemaVersion":4,"windowId":window,"windowRole":if detached.is_some(){"view"}else if window=="main"{"main"}else{"workspace"},"workspaceIds":record.map(|w|w.workspace_ids.clone()).unwrap_or_default(),"activeWorkspaceId":active,"focusedViewId":record.filter(|w|w.selected_workspace().is_some()).and_then(|w|w.focused_view_id.clone()),"workspaces":self.workspaces.iter().map(|(id,w)|json!({"workspaceId":id,"serverId":id,"ownerWindowId":w.owner_window_id,"generation":w.generation,"initializers":w.initializers,"initializationError":w.initialization_error})).collect::<Vec<_>>(),"views":views,"split":ws.split,"splitRatio":ws.split_ratio,"dockSlots":ws.dock_slots,"revision":self.revision,"recoveryWarnings":self.recovery_warnings})
     }
     pub fn open_view(
         &mut self,
@@ -520,6 +519,13 @@ impl Workbench {
         workspace: &str,
         key: &str,
     ) -> Result<View, String> {
+        self.open_view_with_activation(plugin, kind, workspace, key, true)
+    }
+    /// Automatic workspace contributions must not steal focus or an occupied dock.
+    pub fn open_default_view(&mut self, plugin: &str, kind: &str, workspace: &str, key: &str) -> Result<View, String> {
+        self.open_view_with_activation(plugin, kind, workspace, key, false)
+    }
+    fn open_view_with_activation(&mut self, plugin: &str, kind: &str, workspace: &str, key: &str, activate: bool) -> Result<View, String> {
         let d = self
             .declarations
             .get(&format!("{plugin}::{kind}")).or_else(||self.declarations.get(&format!("::{kind}")))
@@ -545,10 +551,10 @@ impl Workbench {
             })
             .cloned()
         {
-            return self.activate(&v.view_id);
+            return if activate { self.activate(&v.view_id) } else { Ok(v) };
         }
         let placement = default_placement(&d)?;
-        let v = View {
+        let mut v = View {
             view_id: Uuid::new_v4().to_string(),
             plugin_id: plugin.into(),
             view_type: kind.into(),
@@ -569,9 +575,10 @@ impl Workbench {
             mount_generation: 1,
             runtime_data: Value::Null,
         };
+        v.active = activate || !self.views.iter().any(|current| same_container(current, &v) && current.active);
         for current in &mut self.views {
             if same_container(current, &v) {
-                current.active = false;
+                if v.active { current.active = false; }
             }
         }
         if ["left", "right", "bottom"].contains(&placement.as_str()) {
@@ -582,10 +589,11 @@ impl Workbench {
                 .push(DockSlot {
                     view_id: v.view_id.clone(),
                     edge: placement,
-                    visible: true,
+                    visible: v.active,
                 });
         }
         self.views.push(v.clone());
+        if !activate { self.revision += 1; return Ok(v); }
         self.activate_workspace(workspace)?;
         self.activate(&v.view_id)
     }
@@ -702,7 +710,7 @@ impl Workbench {
         } else {
             self.windows
                 .get(window)
-                .and_then(|w| w.active_workspace_id.clone())
+                .and_then(|w| w.selected_workspace().cloned())
                 .or_else(|| {
                     (window == "main" && self.workspaces.contains_key("@app"))
                         .then(|| "@app".into())
@@ -875,36 +883,7 @@ fn validate_declaration(d: &ViewDeclaration) -> Result<(), String> {
     }
     default_placement(d).map(|_| ())
 }
-pub(crate) fn replace(source: &Path, target: &Path) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        use std::os::windows::ffi::OsStrExt;
-        use windows::core::PCWSTR;
-        let s = source
-            .as_os_str()
-            .encode_wide()
-            .chain(Some(0))
-            .collect::<Vec<_>>();
-        let t = target
-            .as_os_str()
-            .encode_wide()
-            .chain(Some(0))
-            .collect::<Vec<_>>();
-        unsafe {
-            windows::Win32::Storage::FileSystem::MoveFileExW(
-                PCWSTR(s.as_ptr()),
-                PCWSTR(t.as_ptr()),
-                windows::Win32::Storage::FileSystem::MOVEFILE_REPLACE_EXISTING
-                    | windows::Win32::Storage::FileSystem::MOVEFILE_WRITE_THROUGH,
-            )
-            .map_err(|e| e.to_string())
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        std::fs::rename(source, target).map_err(|e| e.to_string())
-    }
-}
+pub(crate) fn replace(source: &Path, target: &Path) -> Result<(), String> { crate::atomic_file::replace(source,target) }
 
 #[cfg(test)]
 mod tests {
@@ -925,6 +904,22 @@ mod tests {
     }
     fn open(w: &mut Workbench, ws: &str) -> View {
         w.open_view("sample.plugin", "sample.page", ws, "").unwrap()
+    }
+    #[test]
+    fn default_views_preserve_focus_and_dock_selection() {
+        let mut w=model();
+        let mut first=declaration("first",false); first.default_location.host="dock".into();first.default_location.edge=Some("right".into());
+        let mut second=first.clone(); second.id="second".into();
+        w.set_declarations(vec![declaration("sample.page",true),first,second]).unwrap();
+        let terminal=open(&mut w,"a");
+        let a=w.open_default_view("sample.plugin","first","a","").unwrap();
+        let b=w.open_default_view("sample.plugin","second","a","").unwrap();
+        assert!(a.active); assert!(!b.active);
+        assert_eq!(w.windows["main"].focused_view_id.as_deref(),Some(terminal.view_id.as_str()));
+        assert_eq!(w.open_default_view("sample.plugin","first","a","").unwrap().view_id,a.view_id);
+        w.activate(&b.view_id).unwrap();
+        assert!(!w.open_default_view("sample.plugin","first","a","").unwrap().active);
+        assert_eq!(w.windows["main"].focused_view_id.as_deref(),Some(b.view_id.as_str()));
     }
     #[test]
     fn directory_selection_is_separate_from_focus_and_workspace() {
@@ -1224,7 +1219,7 @@ mod tests {
         let v = open(&mut w, "a");
         w.move_workspaces(&["a".into()], "workspace-x", 0, Some("a"))
             .unwrap();
-        assert_eq!(w.windows["main"].active_workspace_id.as_deref(), Some("b"));
+        assert_eq!(w.windows["main"].selected_workspace().map(String::as_str), Some("b"));
         w.activate_workspace("b").unwrap();
         assert_eq!(w.snapshot("workspace-x")["activeWorkspaceId"], "a");
         assert_eq!(w.view_window(&v).unwrap(), "workspace-x");
@@ -1236,5 +1231,31 @@ mod tests {
         w.move_workspaces(&["a".into()], "main", 1, None).unwrap();
         assert_eq!(w.windows["main"].workspace_ids, vec!["b", "a"]);
         assert!(w.reorder("main", vec!["a".into(), "a".into()]).is_err());
+    }
+}
+
+#[cfg(test)]
+mod connection_home_tests {
+    use super::*;
+    #[test]
+    fn home_projects_no_active_workspace_without_discarding_resource_context(){
+        let mut w=Workbench::default();w.open_workspace("server-a","main").unwrap();
+        w.workspaces.get_mut("server-a").unwrap().focus_target=Some("terminal-a".into());
+        w.workspaces.get_mut("server-a").unwrap().directory_source_view=Some("terminal-a".into());
+        w.windows.get_mut("main").unwrap().focused_view_id=Some("terminal-a".into());
+        w.windows.get_mut("main").unwrap().select_home();let snapshot=w.snapshot("main");
+        assert_eq!(snapshot["activeWorkspaceId"],Value::Null);assert_eq!(snapshot["focusedViewId"],Value::Null);assert_eq!(snapshot["dockSlots"],json!([]));
+        assert_eq!(w.workspaces["server-a"].directory_source_view.as_deref(),Some("terminal-a"));
+        crate::workbench_contract::validate_kind("x-results","workbench.snapshot",&snapshot).unwrap();
+        w.activate_workspace("server-a").unwrap();assert_eq!(w.snapshot("main")["focusedViewId"],"terminal-a");
+        assert_eq!(w.windows["main"].workspace_ids,vec!["server-a"]);
+    }
+    #[test]
+    fn home_stays_with_its_window_and_is_not_a_movable_workspace(){
+        let mut w=Workbench::default();w.open_workspace("a","main").unwrap();w.windows.get_mut("main").unwrap().select_home();
+        let generation=w.windows["main"].home_generation.clone();w.windows.insert("child".into(),WindowRecord::new("child"));
+        w.move_workspaces(&["a".into()],"child",0,None).unwrap();assert_eq!(w.windows["main"].home_generation,generation);assert_eq!(w.snapshot("main")["activeWorkspaceId"],Value::Null);
+        assert_eq!(w.snapshot("child")["activeWorkspaceId"],"a");assert!(!w.windows["child"].home_open);
+        assert!(w.reorder("main",vec!["@home".into()]).is_err());
     }
 }

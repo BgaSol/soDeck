@@ -1,11 +1,11 @@
 param(
  [ValidateSet('focus','state','language','keys')][string]$Action='state',
  [Parameter(Mandatory=$true)][ValidateRange(1,2147483647)][int]$AppProcessId,
- [string]$Title='SoDeck v2', [string]$Keys, [string]$Layout='0000000008040804', [long]$WindowHandle=0
+ [string]$Executable='', [string]$Title='SoDeck v2', [string]$Keys, [string]$Layout='0000000008040804', [long]$WindowHandle=0
 )
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false)
-$imeExecutable=[System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../target/debug/sodeck-desktop.exe'))
+$imeExecutable=if($Executable){[System.IO.Path]::GetFullPath($Executable)}else{[System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../target/debug/sodeck-desktop.exe'))}
 $imeProcess=Get-Process -Id $AppProcessId -ErrorAction Stop
 if(-not [string]::Equals($imeProcess.Path,$imeExecutable,[StringComparison]::OrdinalIgnoreCase)){throw 'PID does not belong to this workspace test executable'}
 Add-Type @'

@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 
 pub(super) fn check(kind:&str, method:&str, value:&Value)->Result<()> {
     static SCHEMA:OnceLock<Value>=OnceLock::new();
-    let schema=SCHEMA.get_or_init(||serde_json::from_str(include_str!("../../../../contracts/state-feed-v1.schema.json")).unwrap());
+    let schema=SCHEMA.get_or_init(||serde_json::from_str(sodeck_communication::STATE_SCHEMA).unwrap());
     let name=schema[kind][method].as_str().ok_or_else(||err("UNSUPPORTED_API","未知状态契约方法"))?;
     sodeck_core::contract::check(schema,&schema["$defs"][name],value,method).map_err(|message|err("INVALID_PARAMS",message))
 }
@@ -19,39 +19,83 @@ pub(super) fn caller_key(caller:&Caller)->String {
 impl State {
     pub(super) fn state_call(&self,caller:&Caller,source:Option<&str>,method:&str,p:&Value)->Result<Value>{
         check("x-methods",method,p)?;
-        let window=source.and_then(|s|s.strip_prefix("@window:"));
-        if let Some(window)=window {if self.app.get_webview_window(window).is_none(){return Err(err("SOURCE_INVALID","窗口已关闭"));}}
+        let window=source.filter(|s|s.starts_with("@window:")).map(|s|self.endpoint_window(s,true)).transpose()?;
+        if let Some(window)=&window {if self.app.get_webview_window(window).is_none(){return Err(err("SOURCE_INVALID","窗口已关闭"));}}
         else {self.state_caller(caller)?;}
         let owner=self.endpoint_feed_owner(caller,source);
-        if p["contract"]=="servers.catalog.v1" {
-            let key=Key{contract:"servers.catalog.v1".into(),scope:self.app_generation.clone(),object:"catalog".into()};
+        if p["contract"]=="updates.state.v1" {
+            self.publish_updates();let key=self.updates_key();let mut hub=self.communication.lock().unwrap();
+            let result=if method=="state.get"{serde_json::to_value(hub.get(&key).map_err(fault)?.as_ref()).unwrap()}else{hub.open_for(&owner,window.as_ref().map_or(caller.instance_id.as_str(),|_|owner.as_str()),&key,Instant::now()).map_err(fault)?};
+            check("x-results",method,&result)?;return Ok(result);
+        }
+        if p["contract"]=="plugins.management.v1" {
+            self.publish_plugin_management()?;let key=self.plugin_management_key();let mut hub=self.communication.lock().unwrap();
+            let result=if method=="state.get"{serde_json::to_value(hub.get(&key).map_err(fault)?.as_ref()).unwrap()}else{hub.open_for(&owner,window.as_ref().map_or(caller.instance_id.as_str(),|_|owner.as_str()),&key,Instant::now()).map_err(fault)?};
+            check("x-results",method,&result)?;return Ok(result);
+        }
+        if matches!(p["contract"].as_str(),Some("settings.catalog.v1"|"settings.page.v1")) {
+            let page=if p["contract"]=="settings.catalog.v1" {self.settings_catalog(caller,&json!({}))?;"catalog"}else{
+                let page=required(&p["target"],"pageId")?;
+                self.settings_call(caller,"settings.page.get",&json!({"pageId":page}))?;page
+            };
+            let mut hub=self.communication.lock().unwrap();let key=self.settings_key(page);
+            let result=if method=="state.get"{serde_json::to_value(hub.get(&key).map_err(fault)?.as_ref()).unwrap()}
+                else{hub.open_for(&owner,window.as_ref().map_or(caller.instance_id.as_str(),|_|owner.as_str()),&key,Instant::now()).map_err(fault)?};
+            check("x-results",method,&result)?;return Ok(result);
+        }
+        if p["contract"]=="communication.quality.v1" {
+            let key=Key{contract:"communication.quality.v1".into(),scope:self.app_generation.clone(),object:Core::quality_object_id(&p["target"])?};
+            let value=self.core.quality_state(&p["target"])?;let mut hub=self.communication.lock().unwrap();
+            hub.prune_unused_monitor_objects();
+            if hub.get(&key).ok().is_none_or(|s|s.value["revision"].as_str().and_then(|s|s.parse::<u64>().ok())<=value["revision"].as_str().and_then(|s|s.parse::<u64>().ok())) {
+                hub.put(key.clone(),json!({"appGeneration":self.app_generation}),value).map_err(fault)?;
+            }
+            let result=if method=="state.get"{serde_json::to_value(hub.get(&key).map_err(fault)?.as_ref()).unwrap()}
+                else{hub.open_for(&owner,window.as_ref().map_or(caller.instance_id.as_str(),|_|owner.as_str()),&key,Instant::now()).map_err(fault)?};
+            check("x-results",method,&result)?;return Ok(result);
+        }
+        if p["contract"]=="communication.summary.v1" {
+            let key=Key{contract:"communication.summary.v1".into(),scope:self.app_generation.clone(),object:Core::communication_object_id(&p["target"])?};
+            let value=self.core.communication_snapshot(&p["target"])?;
+            let mut hub=self.communication.lock().unwrap();
+            hub.prune_unused_monitor_objects();
+            // A sampler update may win while the first snapshot is being acquired.
+            if hub.get(&key).ok().is_none_or(|s|s.value["revision"].as_str().and_then(|s|s.parse::<u64>().ok())<=value["revision"].as_str().and_then(|s|s.parse::<u64>().ok())) {
+                hub.put(key.clone(),json!({"appGeneration":self.app_generation}),value).map_err(fault)?;
+            }
+            let value=if method=="state.get" {serde_json::to_value(hub.get(&key).map_err(fault)?.as_ref()).unwrap()}
+                else {hub.open_for(&owner,window.as_ref().map_or(caller.instance_id.as_str(),|_|owner.as_str()),&key,Instant::now()).map_err(fault)?};
+            check("x-results",method,&value)?;return Ok(value);
+        }
+        if p["contract"]=="servers.catalog.v2" {
+            let key=Key{contract:"servers.catalog.v2".into(),scope:self.app_generation.clone(),object:"catalog".into()};
             let revision=self.core.catalog_revision()?;
             let mut hub=self.communication.lock().unwrap();
             hub.put(key.clone(),json!({"appGeneration":self.app_generation}),json!({"catalogRevision":revision})).map_err(fault)?;
             let value=if method=="state.get"{serde_json::to_value(hub.get(&key).map_err(fault)?.as_ref()).unwrap()}
-                else{hub.open_for(&owner,window.map_or(caller.instance_id.as_str(),|_|owner.as_str()),&key,Instant::now()).map_err(fault)?};
+                else{hub.open_for(&owner,window.as_ref().map_or(caller.instance_id.as_str(),|_|owner.as_str()),&key,Instant::now()).map_err(fault)?};
             check("x-results",method,&value)?;return Ok(value);
         }
         if p["contract"]=="app.theme.v1" {
             if !self.supports_live_theme(caller){return Err(err("UNSUPPORTED_API","插件未声明实时主题契约"));}
             let mut hub=self.communication.lock().unwrap();let key=self.theme_key();
             let value=if method=="state.get"{serde_json::to_value(hub.get(&key).map_err(fault)?.as_ref()).unwrap()}
-                else{hub.open_for(&owner,window.map_or(caller.instance_id.as_str(),|_|owner.as_str()),&key,Instant::now()).map_err(fault)?};
+                else{hub.open_for(&owner,window.as_ref().map_or(caller.instance_id.as_str(),|_|owner.as_str()),&key,Instant::now()).map_err(fault)?};
             check("x-results",method,&value)?;return Ok(value);
         }
-        if matches!(p["contract"].as_str(),Some("connections.route.v1"|"connections.route.v2")) {
+        if matches!(p["contract"].as_str(),Some("connections.route.v2"|"connections.diagnostics.v1")) {
             let workspace=required(&p["target"],"workspaceId")?;
             let generation=required(&p["target"],"workspaceGeneration")?;
             let w=self.workbench.lock().unwrap();
             let ws=w.workspaces.get(workspace).ok_or_else(||err("STALE_WORKSPACE","工作区已结束"))?;
             if ws.generation!=generation {return Err(err("STALE_WORKSPACE","工作区已换代"));}
             if window.is_none() && caller.plugin_id.as_ref().is_none_or(|id|!w.views.iter().any(|v|v.workspace_id==workspace&&v.plugin_id==*id)) {return Err(err("SOURCE_INVALID","连接状态不属于调用者工作区"));}
-            let value=if p["contract"]=="connections.route.v2"{self.core.route_snapshot_v2(workspace,workspace)?}else{self.core.route_snapshot(workspace,workspace)?};
+            let value=if p["contract"]=="connections.diagnostics.v1"{self.core.connection_diagnostics_snapshot(&p["target"])?}else{self.core.route_snapshot(workspace,workspace)?};
             let key=Key{contract:required(p,"contract")?.into(),scope:generation.into(),object:workspace.into()};
             let mut hub=self.communication.lock().unwrap();
             hub.put(key.clone(),p["target"].clone(),value).map_err(fault)?;
             let value=if method=="state.get" {serde_json::to_value(hub.get(&key).map_err(fault)?.as_ref()).unwrap()}
-                else {hub.open_for(&owner,window.map_or(caller.instance_id.as_str(),|_|owner.as_str()),&key,Instant::now()).map_err(fault)?};
+                else {hub.open_for(&owner,window.as_ref().map_or(caller.instance_id.as_str(),|_|owner.as_str()),&key,Instant::now()).map_err(fault)?};
             check("x-results",method,&value)?;return Ok(value);
         }
         if window.is_some() && matches!(method,"state.get"|"state.open"){return Err(err("SOURCE_INVALID","窗口不支持此状态订阅"));}
@@ -136,10 +180,14 @@ impl State {
     /// workbench, binding, or registry locks. Weak ownership allows shutdown.
     pub(super) fn start_state_pump(self:&Arc<Self>){
         let weak=Arc::downgrade(self);
-        std::thread::spawn(move||{let mut liveness=Instant::now();let mut appearance=Instant::now();loop{
+        std::thread::spawn(move||{let mut liveness=Instant::now();let mut appearance=Instant::now();let mut traffic_revision=u64::MAX;let mut quality_revision=u64::MAX;loop{
             std::thread::sleep(Duration::from_millis(10));
             let Some(state)=weak.upgrade()else{break;};
             if state.stopping.load(Ordering::SeqCst){break;}
+            let revision=state.core.communication_revision();
+            if revision!=traffic_revision {state.sync_communication_summaries();traffic_revision=revision;}
+            let revision=state.core.quality_revision();
+            if revision!=quality_revision{state.sync_quality_states();quality_revision=revision;}
             if liveness.elapsed()>=Duration::from_millis(100){state.maintain_plugin_dialogs();state.sync_catalog();state.sync_directories();state.sync_connection_routes();state.sync_network_groups();liveness=Instant::now();}
             if appearance.elapsed()>=Duration::from_millis(500){state.refresh_system_theme();state.expire_application_menus();appearance=Instant::now();}
             let plugins:HashMap<_,_>=state.all_plugins().into_iter().map(|p|(p.instance.clone(),p)).collect();
@@ -151,7 +199,7 @@ impl State {
             let deliveries=state.communication.lock().unwrap().drain(Instant::now());
             for delivery in deliveries {
                 if let Some(id)=delivery.owner.strip_prefix(&format!("@window:{}:",state.app_generation)) {
-                    let result=state.app.get_webview_window(id).map(|w|w.eval(&format!("window.__sodeckNotify?.({});",json!({"type":delivery.event,"payload":delivery.payload}))));
+                    let result=state.endpoint_window(&format!("@window:{id}"),true).ok().and_then(|id|state.app.get_webview_window(&id)).map(|w|w.eval(&format!("window.__sodeckNotify?.({});",json!({"type":delivery.event,"payload":delivery.payload}))));
                     let mut hub=state.communication.lock().unwrap();
                     match result{Some(Ok(()))=>hub.delivered(&delivery.subscription_id,delivery.event),Some(Err(_))=>hub.delivery_failed(&delivery.subscription_id),None=>hub.remove_owner(&delivery.owner)}
                     continue;
@@ -180,19 +228,42 @@ impl State {
             }
         }});
     }
+    fn sync_communication_summaries(&self) {
+        let keys={let mut hub=self.communication.lock().unwrap();hub.prune_unused_monitor_objects();hub.keys().filter(|k|k.contract=="communication.summary.v1").cloned().collect::<Vec<_>>()};
+        for key in keys {
+            let previous=self.communication.lock().unwrap().get(&key);
+            let Ok(previous)=previous else {continue};
+            // Constant-size cached counters; no public RPC, history SQL or resource list construction.
+            let result=self.core.communication_snapshot(&json!({"target":previous.value["target"],"layer":previous.value["layer"]}));
+            let mut hub=self.communication.lock().unwrap();
+            if hub.get(&key).is_err(){continue;}
+            match result {Ok(value)=>{if hub.put(key.clone(),json!({"appGeneration":self.app_generation}),value).is_err(){hub.remove(&key);}},Err(_)=>hub.remove(&key)}
+        }
+    }
+    fn sync_quality_states(&self) {
+        let keys={let mut hub=self.communication.lock().unwrap();hub.prune_unused_monitor_objects();hub.keys().filter(|k|k.contract=="communication.quality.v1").cloned().collect::<Vec<_>>()};
+        for key in keys {
+            let Ok(previous)=self.communication.lock().unwrap().get(&key)else{continue};
+            let mut target=json!({"configEpoch":previous.value["configEpoch"]});
+            if previous.value["serverId"].is_string(){target["serverId"]=previous.value["serverId"].clone();}
+            let result=self.core.quality_state(&target);let mut hub=self.communication.lock().unwrap();
+            if hub.get(&key).is_err(){continue;}
+            match result{Ok(value)=>{if hub.put(key.clone(),json!({"appGeneration":self.app_generation}),value).is_err(){hub.remove(&key);}},Err(_)=>hub.remove(&key)}
+        }
+    }
     fn sync_connection_routes(&self) {
-        let keys=self.communication.lock().unwrap().keys().filter(|k|matches!(k.contract.as_str(),"connections.route.v1"|"connections.route.v2")).cloned().collect::<Vec<_>>();
+        let keys=self.communication.lock().unwrap().keys().filter(|k|matches!(k.contract.as_str(),"connections.route.v2"|"connections.diagnostics.v1")).cloned().collect::<Vec<_>>();
         for key in keys {
             let w=self.workbench.lock().unwrap();
             let Some(ws)=w.workspaces.get(&key.object).filter(|ws|ws.generation==key.scope)else{continue};
-            if let Ok(value)=if key.contract=="connections.route.v2"{self.core.route_snapshot_v2(&key.object,&key.object)}else{self.core.route_snapshot(&key.object,&key.object)} {
+            if let Ok(value)=if key.contract=="connections.diagnostics.v1"{self.core.connection_diagnostics_snapshot(&json!({"workspaceId":key.object,"workspaceGeneration":ws.generation}))}else{self.core.route_snapshot(&key.object,&key.object)} {
                 let scope=json!({"workspaceId":key.object,"workspaceGeneration":ws.generation});
                 let _=self.communication.lock().unwrap().put(key,scope,value);
             }
         }
     }
     fn sync_catalog(&self) {
-        let key=Key{contract:"servers.catalog.v1".into(),scope:self.app_generation.clone(),object:"catalog".into()};
+        let key=Key{contract:"servers.catalog.v2".into(),scope:self.app_generation.clone(),object:"catalog".into()};
         let exists=self.communication.lock().unwrap().get(&key).is_ok();
         if exists {if let Ok(revision)=self.core.catalog_revision(){let _=self.communication.lock().unwrap().put(key,json!({"appGeneration":self.app_generation}),json!({"catalogRevision":revision}));}}
     }
@@ -217,7 +288,7 @@ impl State {
             }
         }
         let mut hub=self.communication.lock().unwrap();
-        let expired:Vec<_>=hub.keys().filter(|key|!matches!(key.contract.as_str(),"app.theme.v1"|"servers.catalog.v1")&&(!scopes.contains(&key.scope)||(key.contract=="view.presentation.v1"&&!views.contains(&key.object)))).cloned().collect();
+        let expired:Vec<_>=hub.keys().filter(|key|!matches!(key.contract.as_str(),"updates.state.v1"|"plugins.management.v1"|"app.theme.v1"|"settings.catalog.v1"|"settings.page.v1"|"servers.catalog.v2"|"communication.summary.v1"|"communication.quality.v1")&&(!scopes.contains(&key.scope)||(key.contract=="view.presentation.v1"&&!views.contains(&key.object)))).cloned().collect();
         for key in expired {hub.remove(&key);}
         drop(hub);
         let plugins=self.all_plugins();
@@ -229,7 +300,10 @@ impl State {
             }
         }
         live.extend(self.dialogs.lock().unwrap().values().filter(|d|!d.cleaned.load(Ordering::SeqCst)).map(|d|d.feed_owner.clone()));
-        live.extend(self.app.webview_windows().keys().map(|id|format!("@window:{}:{}",self.app_generation,id)));
+        live.extend(self.app.webview_windows().keys().filter(|id|id.as_str()!=monitor_window::LABEL&&id.as_str()!=settings_window::LABEL).map(|id|format!("@window:{}:{}",self.app_generation,id)));
+        if let Some(source)=self.settings_source(){live.insert(format!("@window:{}:{}",self.app_generation,source.strip_prefix("@window:").unwrap()));}
+        if let Some(source)=self.monitor_source(){live.insert(format!("@window:{}:{}",self.app_generation,source.strip_prefix("@window:").unwrap()));}
         self.communication.lock().unwrap().retain_owners(&live);
+        self.core.retain_observation_owners(&live);
     }
 }

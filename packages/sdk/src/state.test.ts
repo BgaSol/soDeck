@@ -1,5 +1,6 @@
 import {describe,it,expect,vi} from 'vitest';
 import {observeState,validateState,type Notification,type StateBridge} from './state';
+import {communicationObjectId} from './traffic';
 const scope={workspaceId:'w',workspaceGeneration:'g'};
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
 function fixture(){
@@ -14,6 +15,22 @@ function fixture(){
   return {bridge,calls,listeners,snapshot,emit:(type:string,payload:unknown)=>{for(const listener of listeners)listener({type,payload});}};
 }
 describe('latest state feed',()=>{
+  it('subscribes to application plugin-management updates and checks their identity',async()=>{
+    const f=fixture(),original=f.bridge.call,values:number[]=[];
+    f.bridge.call=async<T>(m:string,p:unknown)=>m==='state.open'?{subscriptionId:'plugins',feedEpoch:'epoch',sequence:'0',snapshot:{scope:{appGeneration:'app'},objectId:'plugins',revision:'1',value:1}} as T:original<T>(m,p);
+    const sub=await observeState(f.bridge,{contract:'plugins.management.v1',target:{app:'current'}},Number,v=>values.push(v));await tick();
+    f.emit('state.update',{subscriptionId:'plugins',feedEpoch:'epoch',sequence:'1',snapshot:{scope:{appGeneration:'app'},objectId:'plugins',revision:'2',value:2}});await tick();expect(values).toEqual([1,2]);await sub.dispose();
+  });
+  it('binds communication feeds to the complete target and preserves old contract rules',async()=>{
+    const f=fixture(),original=f.bridge.call;
+    const target={target:{kind:'server' as const,configEpoch:'epoch',serverId:'server-a'}};
+    const objectId=await communicationObjectId(target);
+    f.bridge.call=async<T>(m:string,p:unknown)=>m==='state.open'?{subscriptionId:'metrics',feedEpoch:'epoch',sequence:'0',snapshot:{scope:{appGeneration:'app'},objectId,revision:'1',value:1}} as T:original<T>(m,p);
+    const sub=await observeState(f.bridge,{contract:'communication.summary.v1',target},Number,()=>{});expect(sub.current).toBe(1);await sub.dispose();
+    await expect(observeState(f.bridge,{contract:'communication.summary.v1',target:{...target,layer:'transport'}},Number,()=>{})).rejects.toThrow('another object');
+    expect(validateState('x-methods','state.open',{contract:'communication.summary.v1',target:{...target,pluginId:'spoof'}})).toBeTruthy();
+    expect(validateState('x-methods','state.open',{contract:'app.theme.v1',target:{app:'current'}})).toBeUndefined();
+  });
   it('pins app generation across updates and recovery without accepting another app object',async()=>{
     const f=fixture(),errors:unknown[]=[],original=f.bridge.call;
     f.bridge.call=async<T>(m:string,p:unknown)=>m==='state.open'?{subscriptionId:'app',feedEpoch:'epoch',sequence:'0',snapshot:{scope:{appGeneration:'generation-1'},objectId:'theme',revision:'1',value:1}} as T:original<T>(m,p);

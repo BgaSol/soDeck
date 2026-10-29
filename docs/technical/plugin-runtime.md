@@ -1,6 +1,10 @@
 # 插件包与运行方案
 
-更新日期：2026-10-26 · 修订：r8 · 状态：候选比较及 v1 迁移依据；T-014二进制流增量待确认；T-003 已实现独立 QuickJS 进程与 raw Wry 视图，实际验证与限制见[桌面结果](../tasks/T-003-desktop-results.md)。
+更新日期：2026-10-29 · 修订：r11 · 状态：候选与历史实现背景；T-028增量待确认，其他任务实现与限制见各任务。
+
+T-028覆盖本文件的插件来源/包校验/启停规则：[F-CORE-032](../core/plugin-management.md)允许第三方、完整性必需、签名可选、完整重启启停；[代码方案](plugin-management-implementation.md)在已有运行容器上增加已验证字节快照与启动/恢复门禁。停用插件不执行候选初始化或设置provider，不改变核心/插件分层与资源所有权。当前仅设计，下面候选讨论和历史“首期官方”不构成新的来源限制。
+
+T-024运行时增量：[公共通信](../core/communication.md)维护`runtime.clock.v1`及COM-MON-01/02，代码落点见[监控代码方案§4.1](server-monitor-implementation.md#41-worker单调时钟)。在既有Instant与QuickJS定时器基础上提供公开单调clock，实际集成API/SDK5.3，monitor最低要求5.2；不暴露私有native接口，不新增后台进程或插件权限。实施与验证见[T-024结果](../tasks/T-024-results.md)，不混入其他任务授权。
 
 本文件记录插件包、运行容器和隔离的候选方案。独立 WebView、QuickJS 及每插件独立进程仍需按[技术选型流程](README.md)比较和验证，不能因为已有方案描述就直接成为其他规格的实现前提。
 
@@ -10,7 +14,7 @@ T-014具体增量见[代码方案r1](network-tunnel-implementation.md)：延续�
 
 ### 1.1 插件包包含界面和业务逻辑
 
-建议每个插件发布一个带清单和签名的版本包，例如 `.sodeck-plugin`。格式名称为拟定值，具体封装在原型阶段确定。
+当前实现使用ZIP封装的 `.sodeck-plugin`。T-028方案保留必需manifest与integrity清单，将signature设为可选；具体校验和加载矩阵见F-CORE-032，而非要求第三方取得官方签名。
 
 ```text
 plugin-package/

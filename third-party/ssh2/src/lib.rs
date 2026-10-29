@@ -225,6 +225,7 @@ use std::ffi::CStr;
 
 pub use agent::{Agent, PublicKey};
 pub use channel::{Channel, ExitSignal, ReadWindow, Stream, WriteWindow};
+pub use metrics::{ByteMeter, ByteCounter, ByteCounts};
 pub use error::{Error, ErrorCode};
 pub use knownhosts::{Host, KnownHosts};
 pub use listener::Listener;
@@ -241,6 +242,7 @@ pub use DisconnectCode::{ProtocolVersionNotSupported, ServiceNotAvailable};
 
 mod agent;
 mod channel;
+mod metrics;
 mod error;
 mod knownhosts;
 mod listener;

@@ -6,5 +6,9 @@
   "focusGap": "$canvas",
   "capacityNormal": "#D5EBDC",
   "capacityWarning": "#F4E5B8",
-  "capacityCritical": "#F5D7DA"
+  "capacityCritical": "#F5D7DA",
+  "trafficSend": "#3161AD",
+  "trafficReceive": "#6942A5",
+  "trafficGap": "#687386",
+  "trafficEvent": "#8A5900"
 }

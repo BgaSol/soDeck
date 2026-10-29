@@ -77,6 +77,8 @@ impl State {
                     if b.view_id != id
                         || b.phase.load(Ordering::SeqCst) != 1
                         || !b.geometry.lock().unwrap().1
+                        || !self.page_allows_surface(&v,&b.window)
+                        || self.shell_modals.lock().unwrap().contains(&b.window)
                     {
                         return Err(err("STALE_MOUNT", "表面不可见或已失效"));
                     }

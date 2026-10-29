@@ -35,8 +35,8 @@ export class Remote {
     readonly scope: WorkspaceScope,
     private limiter: Limiter = { active: 0, queue: [] },
   ) {}
-  fork() {
-    const r = new Remote(this.bridge, this.scope, this.limiter);
+  fork(bridge:Bridge=this.bridge) {
+    const r = new Remote(bridge, this.scope, this.limiter);
     r.lease = this.lease;
     return r;
   }

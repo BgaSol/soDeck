@@ -54,7 +54,7 @@ struct Receipt {
 }
 #[derive(Default)]
 pub(crate) struct RemoteRegistry {
-    scopes: HashMap<String, String>,
+    pub(crate) scopes: HashMap<String, String>,
     leases: HashMap<String, (WorkspaceScope, Arc<AtomicBool>, String)>,
     resources: HashMap<String, Resource>,
     receipts: HashMap<(String, String), Receipt>,
@@ -154,6 +154,7 @@ impl Core {
         let remote = Arc::downgrade(&self.remote);
         let starts = Arc::downgrade(&self.pty_starts);
         let registry = Arc::downgrade(&self.registry);
+        let core = Arc::downgrade(&self.shared);
         std::thread::spawn(move || loop {
             std::thread::sleep(Duration::from_millis(250));
             let (Some(remote), Some(registry)) = (remote.upgrade(), registry.upgrade()) else {
@@ -161,6 +162,7 @@ impl Core {
             };
             if let Some(starts)=starts.upgrade(){pty_start::sweep(&mut starts.lock().unwrap(),&mut registry.lock().unwrap());}
             remote.lock().unwrap().sweep(&mut registry.lock().unwrap());
+            if let Some(shared)=core.upgrade(){let core=Core{shared,owns_lifetime:false};core.quality_tick();core.retry_credential_invalidation();core.maintain_diagnostics();}
         });
     }
     pub(crate) fn connection_state(&self, key: &str, state: &str) {
@@ -175,11 +177,8 @@ impl Core {
     }
     pub fn register_workspace(&self, id: &str, generation: &str) {
         self.network_scope(id, generation, true);
-        self.remote
-            .lock()
-            .unwrap()
-            .scopes
-            .insert(id.into(), generation.into());
+        let prior=self.remote.lock().unwrap().scopes.insert(id.into(), generation.into());
+        if prior.as_deref()!=Some(generation){if let Ok(target)=self.observation_target("workspace",id,Some(generation)){let _=self.observe_host_event(&Caller::shell(),"core.workspace.created",json!({"objectRef":target["ref"],"generation":generation}));}}
     }
     pub fn revoke_workspace(&self, id: &str, generation: &str) {
         self.network_scope(id, generation, false);
@@ -544,6 +543,9 @@ impl Core {
         if let Some(id) = &resource_id {
             params["resourceId"] = json!(id);
         }
+        let metric=connection.traffic_resource(caller,
+            if method=="exec.start" {resource_id.as_deref().unwrap()} else {&lease_id},
+            &connection.generation.to_string(),if method=="exec.start" {"exec"} else {"sftp"},Some(&scope.workspace_generation));
         let mut job = Job::new(
             method,
             params,
@@ -553,6 +555,9 @@ impl Core {
             ticket,
         );
         job.exec = exec;
+        job.observation = resource_id.as_ref().map(|id|
+            observability::resource::ResourceObservation::pending(&self.observability,caller,id,Some(connection.generation),Some(&connection.server.id),"remote.handle"));
+        job.traffic = metric;
         job.resource_alive = Some(resource_alive.clone());
         let result = job.result.clone();
         {
@@ -662,7 +667,6 @@ impl Core {
                     c.server.id == server.id
                         && c.purpose == "session"
                         && c.workspace_id == scope.workspace_id
-                        && c.server.revision == server.revision
                         && c.route.revision == plan.revision
                         && *c.status.lock().unwrap() == "active"
                 })
@@ -750,6 +754,7 @@ impl Core {
             registry.leases.insert(
                 lease_id.clone(),
                 Lease {
+                    _observation:observability::resource::ResourceObservation::new(&self.observability,caller,&lease_id,None,Some(&connection.server.id),"lease"),
                     connection: connection.clone(),
                     instance_id: caller.instance_id.clone(),
                 },

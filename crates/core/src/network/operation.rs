@@ -1,6 +1,15 @@
 use super::*;
 
 impl Core {
+    pub(crate) fn network_diagnostic_end(&self, instance: &str, operation: &str) -> Option<&'static str> {
+        let n = self.network.lock().unwrap();
+        let Some(r) = n.receipts.get(&(instance.into(), operation.into())) else { return Some("HOST_CHALLENGE_EXPIRED") };
+        if r.canceled.load(Ordering::SeqCst)
+            || r.group.as_ref().is_none_or(|id| n.groups.get(id).is_none_or(|g| g.closed.is_some()))
+            || r.scope.as_ref().is_none_or(|s| n.scopes.get(&s.workspace_id) != Some(&s.workspace_generation)) {
+            Some("CANCELED")
+        } else { None }
+    }
     pub(crate) fn network_challenge_live(&self, instance: &str, operation: &str) -> bool {
         let n = self.network.lock().unwrap();
         n.receipts.get(&(instance.into(),operation.into())).is_some_and(|r|
@@ -35,7 +44,7 @@ impl Registry {
         let limit = if cleanup { 4096 } else { 4000 };
         let per_instance = if cleanup { 512 } else { 480 };
         if self.receipts.len() + self.tombstones.len() >= limit || self.receipts.keys().chain(self.tombstones.keys()).filter(|k| k.0 == caller.instance_id).count() >= per_instance { return Err(capacity()); }
-        self.receipts.insert(key.clone(), Receipt { caller:caller.clone(), method: method.into(), params: p.clone(),
+        self.receipts.insert(key.clone(), Receipt { diagnostic:crate::observability::DiagnosticScope::capture(),caller:caller.clone(), method: method.into(), params: p.clone(),
             scope: p.get("scope").map(|s| serde_json::from_value(s.clone())).transpose()?, group,
             canceled: Arc::new(AtomicBool::new(false)), outcome: None, completed: None, claimed: false, resources: Vec::new() });
         Ok((key, true))
@@ -50,6 +59,16 @@ impl Registry {
         let receipt = self.receipts.get_mut(key).unwrap();
         receipt.completed = Some(Instant::now());
         receipt.outcome = Some(if canceled { Err(CoreError::new("CANCELED", "网络操作已取消")) } else { result });
+        if let Some(store)=self.observation.upgrade(){
+            let mut targets=Vec::new();
+            for name in ["group","route","listener","stream","resource"]{if let Ok(handle)=Handle::parse(&receipt.params[name]){targets.push((handle.id,handle.generation));}}
+            if let Some(Ok(value))=&receipt.outcome{for name in ["group","route","listener","stream","splice"]{if let Ok(handle)=Handle::parse(&value[name]){targets.push((handle.id,handle.generation));}}}
+            let (caller,method,diagnostic,outcome)=(receipt.caller.clone(),receipt.method.clone(),receipt.diagnostic.clone(),receipt.outcome.clone().unwrap());
+            if let Some(group)=receipt.group.as_ref(){if let Some(route)=self.routes.values().find(|r|&r.group==group){if let Some(pool)=self.pools.get(&route.pool){for member in pool.members.iter().take(2){targets.push((member.connection.id.clone(),member.connection.generation));}}}}
+            store.network_completed(&caller,&method,&key.1,&outcome,targets,diagnostic);
+        }
+        if !failed{if let Some(store)=self.observation.upgrade(){let caller=self.receipts[key].caller.clone();for id in &resources{if self.observed.contains_key(id){continue;}let handle=self.groups.get(id).map(|v|&v.handle).or_else(||self.listeners.get(id).map(|v|&v.handle)).or_else(||self.routes.get(id).map(|v|&v.handle)).or_else(||self.endpoints.get(id).map(|v|&v.handle)).or_else(||self.splices.get(id).map(|v|&v.handle));if let Some(handle)=handle{self.observed.insert(id.clone(),crate::observability::resource::ResourceObservation::new(&store,&caller,id,Some(handle.generation),None,"network.resource"));}}}}
+        let receipt=self.receipts.get_mut(key).unwrap();
         if !failed { receipt.resources = resources.clone(); }
         if failed { for id in resources { self.close_resource(&id); } }
     }
@@ -70,8 +89,7 @@ impl Registry {
             receipt.canceled.store(true, Ordering::SeqCst);
             let resources = receipt.resources.clone();
             if receipt.outcome.is_none() {
-                receipt.outcome = Some(Err(CoreError::new("CANCELED", "网络操作已取消")));
-                receipt.completed = Some(Instant::now());
+                self.complete(&key,Err(CoreError::new("CANCELED", "网络操作已取消")),Vec::new());
             }
             for id in resources { self.close_resource(&id); }
         }

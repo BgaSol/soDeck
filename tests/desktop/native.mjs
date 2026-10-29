@@ -21,7 +21,7 @@ try{
   let challenge;try{await openTerminal(app.page,server.id);}catch(error){challenge=error;}
   assert.equal(challenge?.code,'HOST_KEY_REQUIRED');checks.push('first connection requires host trust');
   await rpc(app.page,'hosts.trust',{serverId:server.id,...challenge.details});
-  await rpc(app.page,'auth.set',{serverId:server.id,password:'isolated-test-password',remember:false});
+  await rpc(app.page,'auth.ssh.set',{serverId:server.id,password:'isolated-test-password',remember:false});
   const first=await openTerminal(app.page,server.id);
   await rpc(app.page,'views.activate',{viewId:first.viewId});
   const terminal=await until(async()=>{const pages=await pluginPages(app);for(const page of pages){if(await page.evaluate(()=>window.__SODECK_CONTEXT__?.viewId)===first.viewId)return page;}});
@@ -38,7 +38,7 @@ try{
   let challengeB;try{await openTerminal(app.page,serverB.id);}catch(error){challengeB=error;}
   assert.ok(['HOST_KEY_REQUIRED','AUTH_REQUIRED'].includes(challengeB?.code));
   if(challengeB.code==='HOST_KEY_REQUIRED')await rpc(app.page,'hosts.trust',{serverId:serverB.id,...challengeB.details});
-  await rpc(app.page,'auth.set',{serverId:serverB.id,password:'isolated-test-password'});
+  await rpc(app.page,'auth.ssh.set',{serverId:serverB.id,password:'isolated-test-password'});
   const b1=await openTerminal(app.page,serverB.id),b2=await openTerminal(app.page,serverB.id);
   await rpc(app.page,'workspaces.activate',{workspaceId:server.id});
   await rpc(app.page,'views.move',{viewId:peer.viewId,placement:'center',group:1});

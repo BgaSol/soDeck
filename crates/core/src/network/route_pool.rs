@@ -103,7 +103,9 @@ impl Core {
             if let Some(member) = member {
                 let endpoint = n.endpoints.get_mut(&open.endpoint).unwrap();
                 endpoint.connection = Some(member.connection.clone()); member.idle_since = Instant::now();
-                let job = crate::ssh::network::Open::new(open.host.clone(), open.port, endpoint.state.clone(), open.canceled.clone());
+                let mut job = crate::ssh::network::Open::new(open.host.clone(), open.port, endpoint.state.clone(), open.canceled.clone());
+                job.traffic=member.connection.traffic_resource(&n.receipts[&open.key].caller,
+                    &endpoint.handle.id,&endpoint.handle.generation.to_string(),"tcp",Some(&pool.scope.workspace_generation));
                 let result = job.result.clone();
                 match member.connection.open_tcp(job) {
                     Ok(()) => { member.connection.network_metrics.lock().unwrap().pending += 1; open.opening = Some(result); n.pending.push(open); }

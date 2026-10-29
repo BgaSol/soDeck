@@ -1,6 +1,6 @@
 {
   "name": "@sodeck/files",
-  "version": "0.6.0",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,10 +9,10 @@
     "test": "vitest run src && node --test tests/worker.test.mjs"
   },
   "dependencies": {
-    "@sodeck/sdk": "^4.8.0",
+    "@sodeck/sdk": "^6.1.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "lucide-react": "0.468.0",
-    "@sodeck/ui": "1.4.0"
+    "@sodeck/ui": "1.8.0"
   }
 }

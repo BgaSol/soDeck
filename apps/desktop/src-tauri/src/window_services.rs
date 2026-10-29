@@ -11,9 +11,8 @@ impl State {
             return None;
         }
         Some((|| {
-            let window = source
-                .and_then(|s| s.strip_prefix("@window:"))
-                .ok_or_else(|| err("SOURCE_INVALID", "窗口布局须来自原生外壳"))?;
+            let source=source.filter(|s|s.starts_with("@window:")).ok_or_else(||err("SOURCE_INVALID","窗口布局须来自原生外壳"))?;
+            let window=self.endpoint_window(source,true)?;
             if method == "windows.chrome" {
                 let report: crate::window_chrome::Report =
                     serde_json::from_value(params.clone())
@@ -23,7 +22,7 @@ impl State {
                 }
                 let win = self
                     .app
-                    .get_webview_window(window)
+                    .get_webview_window(&window)
                     .ok_or_else(|| err("WINDOW_CLOSED", "窗口已关闭"))?;
                 crate::window_chrome::update(&win, report.clone()).map_err(native_error)?;
                 self.chrome_reports
@@ -33,7 +32,7 @@ impl State {
                 Ok(Value::Null)
             } else {
                 self.drag_workspace(
-                    window,
+                    &window,
                     required(params, "workspaceId")?,
                     params["operationId"].as_str(),
                 )

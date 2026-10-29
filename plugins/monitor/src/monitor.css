@@ -1,0 +1,11 @@
+html,body,#root{height:100%;margin:0;overflow:hidden}
+.monitor-view{height:100%;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+.monitor-toolbar,.monitor-heading{justify-content:space-between;flex-wrap:wrap}
+.monitor-intro{display:flex;flex-direction:column;gap:var(--sd-space-1);padding:var(--sd-space-3);overflow-wrap:anywhere}
+.monitor-connect{padding-inline:var(--sd-space-3);padding-bottom:var(--sd-space-2)}
+.monitor-options{flex-wrap:wrap;gap:var(--sd-space-3)}
+.monitor-options>.sd-field{flex:1;min-width:0}
+.monitor-content{flex:1;min-height:0;padding:var(--sd-space-3)}
+.monitor-card{padding:var(--sd-space-3);min-width:0;overflow-wrap:anywhere}
+.monitor-card details>div{margin-top:var(--sd-space-3)}
+.monitor-card dd{overflow-wrap:anywhere}

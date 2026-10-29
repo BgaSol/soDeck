@@ -24,7 +24,7 @@ impl Session {
         // Never expose that result while the temporary input barrier still exists.
         if source==self.parent&&self.terminal()&&!self.cleaned.load(Ordering::SeqCst){json!({"sessionId":self.id,"status":"open"})}else{self.result()}
     }
-    fn terminal(&self) -> bool { self.finished.lock().unwrap().is_some() }
+    pub(super) fn terminal(&self) -> bool { self.finished.lock().unwrap().is_some() }
 }
 
 impl State {
@@ -108,7 +108,7 @@ impl State {
             window.set_size(owner.inner_size().map_err(|e|native_error(e.to_string()))?).map_err(|e|native_error(e.to_string()))?;
             window.set_position(owner.inner_position().map_err(|e|native_error(e.to_string()))?).map_err(|e|native_error(e.to_string()))?;
             let view=self.workbench.lock().unwrap().view(&parent.view_id).map_err(native_error)?;
-            let context=json!({"pluginId":view.plugin_id,"pluginVersion":plugin.package.manifest.version,"viewId":view.view_id,"viewType":view.view_type,"mountGeneration":parent.generation,"workspaceId":view.workspace_id,"workspaceGeneration":self.workbench.lock().unwrap().workspaces.get(&view.workspace_id).map(|w|w.generation.clone()),"serverId":view.server_id,"windowId":d.owner,"surfaceWindowId":d.label,"theme":self.theme_snapshot(true),"dialog":{"sessionId":id,"dialogId":declaration.id,"title":declaration.title,"width":declaration.width,"height":declaration.height,"initialState":p["initialState"]}});
+            let context=json!({"diagnosticContextVersion":1,"observationCreditBytes":self.core.grant_observation_credit(&caller.instance_id,&d.feed_owner,32*1024),"pluginId":view.plugin_id,"pluginVersion":plugin.package.manifest.version,"viewId":view.view_id,"viewType":view.view_type,"mountGeneration":parent.generation,"workspaceId":view.workspace_id,"workspaceGeneration":self.workbench.lock().unwrap().workspaces.get(&view.workspace_id).map(|w|w.generation.clone()),"serverId":view.server_id,"windowId":d.owner,"surfaceWindowId":d.label,"theme":self.theme_snapshot(true),"dialog":{"sessionId":id,"dialogId":declaration.id,"title":declaration.title,"width":declaration.width,"height":declaration.height,"initialState":p["initialState"]}});
             let weak=Arc::downgrade(self);let fail=weak.clone();
             self.native.create(d.source.clone(),d.label.clone(),plugin.package.manifest.entry.ui.clone(),context,plugin.assets.clone(),Arc::new(move|s,b|{if let Some(state)=weak.upgrade(){state.receive(s,b);}}),Arc::new(move|s|{if let Some(state)=fail.upgrade(){std::thread::spawn(move||{if let Some(d)=state.dialog_endpoint(&s){state.finish_plugin_dialog(&d,"failed",Some(json!({"code":"DIALOG_START_FAILED","message":"弹窗表面已结束"})));}});}}),self.data.join("profiles").join(&view.plugin_id)).map_err(native_error)?;
             Ok(())
@@ -147,6 +147,7 @@ impl State {
         if d.cleaned.load(Ordering::SeqCst){return;}
         self.cancel_menus(&d.label);
         self.communication.lock().unwrap().remove_owner(&d.feed_owner);
+        self.core.close_observation_owner(&d.feed_owner);
         let _=self.native.close(d.source.clone());
         let focused=self.app.get_webview_window(&d.label).is_some_and(|w|w.is_focused().unwrap_or(false));
         if let Some(popup)=self.app.get_webview_window(&d.label){let _=popup.destroy();}

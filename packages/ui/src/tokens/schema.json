@@ -33,7 +33,17 @@
     "motion-fast",
     "motion-layer",
     "content-pad-x",
-    "content-pad-y"
+    "content-pad-y",
+    "chart-table-height",
+    "metric-value-width",
+    "chart-focus-width",
+    "chart-min-height",
+    "chart-line-width",
+    "chart-compact-height",
+    "form-content-width",
+    "form-title-size",
+    "catalog-row-height",
+    "search-options-height"
   ],
   "profile": [
     "border-width",
@@ -53,7 +63,15 @@
     "decoration-opacity"
   ],
   "properties": {
-    "window-control-width": {"type":"dimension","units":["px","rem"],"min":0,"max":1000},
+    "window-control-width": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem"
+      ],
+      "min": 0,
+      "max": 1000
+    },
     "space-0": {
       "type": "dimension",
       "units": [
@@ -474,6 +492,96 @@
       "type": "number",
       "min": 0,
       "max": 800
+    },
+    "chart-table-height": {
+      "units": [
+        "px",
+        "rem"
+      ],
+      "max": 1000,
+      "min": 0,
+      "type": "dimension"
+    },
+    "metric-value-width": {
+      "units": [
+        "px",
+        "rem"
+      ],
+      "max": 1000,
+      "min": 0,
+      "type": "dimension"
+    },
+    "chart-focus-width": {
+      "units": [
+        "px",
+        "rem"
+      ],
+      "max": 1000,
+      "min": 0,
+      "type": "dimension"
+    },
+    "chart-min-height": {
+      "units": [
+        "px",
+        "rem"
+      ],
+      "max": 1000,
+      "min": 0,
+      "type": "dimension"
+    },
+    "chart-line-width": {
+      "units": [
+        "px",
+        "rem"
+      ],
+      "max": 1000,
+      "min": 0,
+      "type": "dimension"
+    },
+    "chart-compact-height": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem"
+      ],
+      "min": 60,
+      "max": 200
+    },
+    "form-content-width": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem"
+      ],
+      "min": 1,
+      "max": 1000
+    },
+    "form-title-size": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem"
+      ],
+      "min": 1,
+      "max": 1000
+    },
+    "catalog-row-height": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem"
+      ],
+      "min": 1,
+      "max": 1000
+    },
+    "search-options-height": {
+      "type": "dimension",
+      "units": [
+        "px",
+        "rem"
+      ],
+      "min": 1,
+      "max": 1000
     }
   }
 }

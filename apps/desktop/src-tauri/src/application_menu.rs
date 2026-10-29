@@ -1,10 +1,12 @@
 //! Host-owned transparent input shield and menu. Never hides plugin surfaces.
 use super::*;
 #[derive(Clone)]
-pub(super) struct ApplicationMenu { pub owner:String,pub label:String,pub menu_id:String,pub token:String,pub actions:Vec<String>,pub shown:Arc<AtomicBool>,pub opened:Instant }
+pub(super) struct ApplicationMenu { pub owner:String,pub source:String,pub label:String,pub menu_id:String,pub token:String,pub actions:Vec<String>,pub shown:Arc<AtomicBool>,pub opened:Instant }
 
 impl State {
     fn application_menu_owner_valid(&self,owner:&str)->bool {
+        if self.settings_registered(owner){return true;}
+        if self.monitor_registered(owner){return true;}
         let workbench=self.workbench.lock().unwrap();
         workbench.windows.contains_key(owner)||owner.strip_prefix("detached-").is_some_and(|id|workbench.views.iter().any(|v|v.view_id==id&&v.placement=="detached"))
     }
@@ -31,7 +33,7 @@ impl State {
         if focused {if let Some(owner)=self.app.get_webview_window(&entry.owner){let _=owner.set_focus();}}
         if let Some(result)=self.menus.finish(&entry.menu_id,selected){
             if let Some(owner)=self.app.get_webview_window(&entry.owner){let _=owner.eval(&format!("window.__sodeckApplicationMenuReason={};",json!(reason)));}
-            self.menu_notification(&format!("@window:{}",entry.owner),&result);
+            self.menu_notification(&entry.source,&result);
         }
     }
 }
@@ -40,6 +42,7 @@ impl State {
 pub(super) async fn application_menu_open(window:tauri::WebviewWindow,state:tauri::State<'_,Arc<State>>,menu_id:String,anchor:Value,keyboard:bool,font_size:f64)->std::result::Result<(),String>{
     let state=state.inner().clone();let owner=window.label().to_string();
     if !state.application_menu_owner_valid(&owner){return Err("菜单来源窗口失效".into());}
+    let source=if owner==monitor_window::LABEL {state.monitor_source().ok_or("监控窗口已关闭")?}else{format!("@window:{owner}")};
     if Uuid::parse_str(&menu_id).is_err(){return Err("菜单标识无效".into());}
     let x=anchor["x"].as_f64().filter(|v|v.is_finite()&&v.abs()<100000.).ok_or("菜单位置无效")?;
     if !font_size.is_finite()||!(8.0..=64.0).contains(&font_size){return Err("文字尺寸无效".into());}
@@ -47,12 +50,13 @@ pub(super) async fn application_menu_open(window:tauri::WebviewWindow,state:taur
     tauri::async_runtime::spawn_blocking(move||{
         let _opening=state.menu_opening.lock().unwrap();
         for id in state.app.webview_windows().keys(){state.cancel_menus(id);}
-        state.menus.begin(&menu_id,&format!("@window:{owner}"),&owner)?;
+        state.endpoint_window(&source,true).map_err(|e|e.message)?;
+        state.menus.begin(&menu_id,&source,&owner)?;
         let theme=state.theme_snapshot(true);let theme_label=if theme["highContrast"]==true{"高对比".to_string()}else if theme["testOverride"]==true{"测试主题".into()}else{crate::theme::catalog()["themes"].as_array().unwrap().iter().find(|v|v["id"]==theme["id"]).and_then(|v|v["label"].as_str()).unwrap_or("外观").to_string()};
-        let mut items=vec![json!({"id":"appearance","label":"外观","badge":theme_label}),json!({"id":"plugins","label":"管理插件"}),json!({"id":"resources","label":"运行资源","separator":true}),json!({"id":"calls","label":"调用记录"}),json!({"id":"recall","label":"找回所有窗口","separator":true})];
+        let mut items=vec![json!({"id":"appearance","label":"外观","badge":theme_label}),json!({"id":"plugins","label":"管理插件"}),json!({"id":"communication","label":"通信监控","separator":true}),json!({"id":"resources","label":"运行资源"}),json!({"id":"calls","label":"调用记录"}),json!({"id":"recall","label":"找回所有窗口","separator":true})];
         if owner.starts_with("workspace-"){items.push(json!({"id":"merge","label":"全部合并回主窗口"}));}
         items.extend([json!({"id":"layoutRetry","label":"重试保存","detail":"偏好与清理记录"}),json!({"id":"exit","label":"退出 SoDeck","danger":true,"separator":true})]);
-        let entry=ApplicationMenu{owner:owner.clone(),label:format!("application-menu-{}",Uuid::new_v4()),menu_id,token:Uuid::new_v4().to_string(),opened:Instant::now(),shown:Arc::new(AtomicBool::new(false)),actions:items.iter().map(|v|v["id"].as_str().unwrap().into()).collect()};
+        let entry=ApplicationMenu{owner:owner.clone(),source,label:format!("application-menu-{}",Uuid::new_v4()),menu_id,token:Uuid::new_v4().to_string(),opened:Instant::now(),shown:Arc::new(AtomicBool::new(false)),actions:items.iter().map(|v|v["id"].as_str().unwrap().into()).collect()};
         state.application_menus.lock().unwrap().insert(owner.clone(),entry.clone());
         let result=(||->std::result::Result<(),String>{
             #[cfg(debug_assertions)]
@@ -85,7 +89,7 @@ pub(super) async fn application_menu_open(window:tauri::WebviewWindow,state:taur
 pub(super) async fn application_menu_reply(window:tauri::WebviewWindow,state:tauri::State<'_,Arc<State>>,token:String,action:Option<String>,reason:String)->std::result::Result<(),String>{
     let state=state.inner().clone();
     let entry=state.application_menus.lock().unwrap().values().find(|v|v.label==window.label()&&v.token==token).cloned().ok_or("菜单会话失效")?;
-    if !state.application_menu_owner_valid(&entry.owner){state.finish_application_menu(&entry,None,"owner-closed");return Err("来源窗口已关闭".into());}
+    if !state.application_menu_owner_valid(&entry.owner)||state.endpoint_window(&entry.source,true).is_err(){state.finish_application_menu(&entry,None,"owner-closed");return Err("来源窗口已关闭".into());}
     if reason=="ready"{
         let ready=(||{window.show().map_err(|e|e.to_string())?;window.set_focus().map_err(|e|e.to_string())?;
             configure_popup_window(&window)?;

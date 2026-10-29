@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "classification"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "boolean",
+            "integer",
+            "number",
+            "string",
+            "array",
+            "object"
+          ]
+        },
+        "classification": {
+          "type": "string",
+          "enum": [
+            "safe-id",
+            "enum",
+            "count",
+            "duration",
+            "state",
+            "structure"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "enum": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "maxItems": 32
+        },
+        "items": {
+          "$ref": "#/$defs/Field"
+        },
+        "maxItems": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "properties": {
+          "type": "object"
+        }
+      }
+    },
+    "Definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "typeVersion",
+        "fields"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "typeVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "kind": {
+          "$ref": "#/$defs/Kind"
+        },
+        "level": {
+          "$ref": "#/$defs/Level"
+        },
+        "messageKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "fields": {
+          "type": "object"
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "metricKind": {
+          "type": "string",
+          "enum": [
+            "counter",
+            "gauge",
+            "histogram"
+          ]
+        },
+        "labels": {
+          "type": "object"
+        },
+        "buckets": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 32
+        },
+        "staleAfterMs": {
+          "type": "integer",
+          "minimum": 5000,
+          "maximum": 3600000
+        }
+      }
+    },
+    "Kind": {
+      "type": "string",
+      "enum": [
+        "action",
+        "call",
+        "domain",
+        "log",
+        "lifecycle",
+        "health"
+      ]
+    },
+    "Level": {
+      "type": "string",
+      "enum": [
+        "trace",
+        "debug",
+        "info",
+        "warn",
+        "error",
+        "fatal"
+      ]
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "pluginId",
+    "events",
+    "actions",
+    "snapshots",
+    "metrics"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "enum": [
+        1
+      ]
+    },
+    "pluginId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Definition"
+      },
+      "maxItems": 128
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Definition"
+      },
+      "maxItems": 128
+    },
+    "snapshots": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Definition"
+      },
+      "maxItems": 128
+    },
+    "metrics": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Definition"
+      },
+      "maxItems": 32
+    }
+  }
+}

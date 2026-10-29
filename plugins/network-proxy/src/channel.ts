@@ -1,11 +1,11 @@
 import type {Handle} from '@sodeck/sdk/network';
-import type {NetworkClient} from '@sodeck/sdk/network-client';
+import {networkOperation,type NetworkRpc,type NetworkClient} from '@sodeck/sdk/network-client';
 import type {ByteSession} from '@sodeck/sdk/network-stream';
 import type {Channel} from './protocol/channel';
 
 export class CoreChannel implements Channel {
   private released=false;
-  constructor(readonly net:NetworkClient,readonly group:Handle,readonly bytes:ByteSession,private onRelease:()=>void=()=>{}){}
+  constructor(readonly net:NetworkClient,readonly group:Handle,readonly bytes:ByteSession,private onRelease:()=>void=()=>{},private rpc:NetworkRpc=net.rpc){}
   get eof(){return this.bytes.eof;}
   readable(deadline?:number){return this.bytes.readable(deadline);}
   peek(max?:number){return this.bytes.peek(max);}
@@ -14,7 +14,7 @@ export class CoreChannel implements Channel {
   async close() {
     if(this.released)return;this.released=true;this.onRelease();
     this.bytes.dispose();
-    try {await this.net.execute('net.streams.close',{group:this.group,stream:this.bytes.stream});}
+    try {await this.net.execute('net.streams.close',{group:this.group,stream:this.bytes.stream},networkOperation(),this.rpc);}
     catch(error){if(!['STALE_HANDLE','STALE_SCOPE','OPERATION_EXPIRED'].includes(String((error as {code?:string}).code)))throw error;}
   }
   async finish() {
@@ -28,6 +28,6 @@ export class CoreChannel implements Channel {
   }
   async splice(other:Channel) {
     if(!(other instanceof CoreChannel)||other.group.id!==this.group.id)throw Error('Unrelated network streams');
-    await this.net.splice(this.group,this.bytes,other.bytes);this.released=true;other.released=true;this.onRelease();other.onRelease();
+    await this.net.splice(this.group,this.bytes,other.bytes,this.rpc);this.released=true;other.released=true;this.onRelease();other.onRelease();
   }
 }

@@ -93,7 +93,7 @@ fn four_ptys_backpressure_latency_and_twenty_lifecycles() {
         .unwrap();
     core.call(
         &caller,
-        "auth.set",
+        "auth.ssh.set",
         json!({"serverId":server["id"],"password":"isolated-test-password"}),
     )
     .unwrap();

@@ -18,7 +18,7 @@ async function start(data,terminal,files,extra={}){
 }
 async function server(){
  const s=await rpc(app.page,'servers.create',{name:'T010 compatibility',host:cfg.host,port:cfg.port,username:cfg.username,authType:'key'});
- await rpc(app.page,'auth.set',{serverId:s.id,privateKeyPath:cfg.privateKeyPath,remember:true});
+ await rpc(app.page,'auth.ssh.set',{serverId:s.id,privateKeyPath:cfg.privateKeyPath,remember:true});
  try{await rpc(app.page,'connections.acquire',{serverId:s.id,workspaceId:s.id,operationId:crypto.randomUUID()});}catch(e){assert.equal(e.code,'HOST_KEY_REQUIRED');await rpc(app.page,'hosts.trust',{serverId:s.id,challengeId:e.details.challengeId,fingerprint:e.details.fingerprint});}
  return s;
 }

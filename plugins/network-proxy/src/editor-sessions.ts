@@ -1,3 +1,4 @@
+import type {ObservationClient} from './observation';
 import {networkOperation} from '@sodeck/sdk/network-client';
 import {Rules,requestHash,type Rule} from './rules';
 import {draft,edit,ruleFromDraft,type Draft} from './editor-model';
@@ -24,7 +25,7 @@ export class Editors {
   }
   private session(m:Manager,token:unknown){const s=this.sessions.get(String(token));if(!s||s.viewId!==m.viewId||s.generation!==m.scope.workspaceGeneration||m.closed)throw fault('EDITOR_EXPIRED','编辑会话已结束');return s;}
   get(m:Manager,token:unknown){const s=this.session(m,token);return {original:s.original,automatic:s.automatic,value:s.original?edit(s.original,s.automatic):draft(s.type),running:!!s.original&&!!m.runs.get(s.original.id)&&!['stopped','failed'].includes(m.runs.get(s.original.id)!.status)};}
-  async save(m:Manager,p:Record<string,unknown>){
+  async save(m:Manager,p:Record<string,unknown>,diagnostic?:ObservationClient){
     const s=this.session(m,p.editorToken),action=p.action as Action;if(!['save','start','restart'].includes(action)||typeof p.submissionId!=='string'||!p.submissionId||p.submissionId.length>128)throw fault('INVALID_PARAMS','提交操作无效');
     const input=p.draft as Draft,rule=ruleFromDraft(input,m.serverId,s.original);if(!s.original)rule.id='';
     const nameMode=input.name.trim()?'manual':'auto';
@@ -32,7 +33,7 @@ export class Editors {
     if(s.submission&&(s.submission.id!==p.submissionId||s.submission.hash!==hash))throw fault('OPERATION_CONFLICT','保存结果待核实，请先完成当前提交');
     s.submission={id:p.submissionId,hash,action};
     try{
-      const r=await this.rules.saveDraft(m.serverId,rule,s.original?.revision??0,nameMode,p.submissionId,hash);
+      const r=await this.rules.saveDraft(m.serverId,rule,s.original?.revision??0,nameMode,p.submissionId,hash,diagnostic);
       s.result={ruleId:r.ruleId,revision:r.revision,action};return s.result;
     }catch(error){if((error as {code?:string}).code!=='RESULT_UNKNOWN')s.submission=undefined;throw error;}
   }

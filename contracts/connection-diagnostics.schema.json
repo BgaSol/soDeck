@@ -1,0 +1,749 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Connection diagnostics v1",
+  "$defs": {
+    "RouteReference": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "saved"
+              ]
+            },
+            "serverId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "routeRevision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "kind",
+            "serverId",
+            "routeRevision"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "running"
+              ]
+            },
+            "serverId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "connectionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "routeRevision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "kind",
+            "serverId",
+            "connectionId",
+            "generation",
+            "routeRevision"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "attempt"
+              ]
+            },
+            "serverId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "workspaceId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "routeRevision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "attemptId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "kind",
+            "serverId",
+            "workspaceId",
+            "routeRevision",
+            "attemptId"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "RouteMeta": {
+      "type": "object",
+      "properties": {
+        "targetServerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "targetName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "routeRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "stepCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "sshCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "proxyCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "attemptTimeoutMs": {
+          "type": "integer",
+          "minimum": 120000,
+          "maximum": 900000
+        },
+        "reference": {
+          "$ref": "#/$defs/RouteReference"
+        }
+      },
+      "required": [
+        "targetServerId",
+        "targetName",
+        "routeRevision",
+        "stepCount",
+        "sshCount",
+        "proxyCount",
+        "attemptTimeoutMs",
+        "reference"
+      ],
+      "additionalProperties": false
+    },
+    "DiagnosticRef": {
+      "type": "object",
+      "properties": {
+        "bootId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "attemptId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "attemptGeneration": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "bootId",
+        "attemptId",
+        "attemptGeneration"
+      ],
+      "additionalProperties": false
+    },
+    "DiagnosticError": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "stepIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "stage": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "reply": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "receivedBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "expectedBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "osErrorCode": {
+          "type": "integer"
+        },
+        "sshErrorCode": {
+          "type": "integer"
+        },
+        "operation": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "candidateAttempts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "additionalProperties": false
+    },
+    "DiagnosticSummary": {
+      "type": "object",
+      "properties": {
+        "reference": {
+          "$ref": "#/$defs/DiagnosticRef"
+        },
+        "workspaceId": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "workspaceGeneration": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "serverId": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "instanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "source": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "operationId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "state": {
+          "enum": [
+            "running",
+            "waiting",
+            "succeeded",
+            "failed",
+            "canceled",
+            "superseded"
+          ]
+        },
+        "started": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "updated": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "round": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "route": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RouteMeta"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DiagnosticError"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "previous": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DiagnosticRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "continuation": {
+          "type": "boolean"
+        },
+        "connection": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "connectionId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "generation": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "connectionId",
+                "generation"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reused": {
+          "type": "boolean"
+        },
+        "coverage": {
+          "enum": [
+            "complete",
+            "partial"
+          ]
+        },
+        "lifecycle": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "enum": [
+                    "disconnected",
+                    "closed"
+                  ]
+                },
+                "stepIndex": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "observedAt": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "state",
+                "stepIndex",
+                "observedAt"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "memberId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "reference",
+        "workspaceId",
+        "workspaceGeneration",
+        "serverId",
+        "instanceId",
+        "source",
+        "operationId",
+        "purpose",
+        "state",
+        "started",
+        "updated",
+        "durationMs",
+        "revision",
+        "round",
+        "route",
+        "error",
+        "previous",
+        "continuation",
+        "connection",
+        "reused",
+        "coverage",
+        "lifecycle",
+        "memberId"
+      ],
+      "additionalProperties": false
+    },
+    "DiagnosticPhase": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "round": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "stepIndex": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stage": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "state": {
+          "enum": [
+            "running",
+            "succeeded",
+            "failed",
+            "waiting",
+            "canceled",
+            "notApplicable"
+          ]
+        },
+        "started": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DiagnosticError"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "round",
+        "stepIndex",
+        "stage",
+        "state",
+        "started",
+        "durationMs",
+        "error"
+      ],
+      "additionalProperties": false
+    },
+    "DiagnosticListRequest": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "workspaceGeneration": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "serverId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "purpose": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "instanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 2048
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "workspaceId"
+      ],
+      "additionalProperties": false
+    },
+    "DiagnosticList": {
+      "type": "object",
+      "properties": {
+        "attempts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DiagnosticSummary"
+          },
+          "maxItems": 10
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 2048
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "attempts",
+        "total",
+        "nextCursor"
+      ],
+      "additionalProperties": false
+    },
+    "DiagnosticGet": {
+      "type": "object",
+      "properties": {
+        "reference": {
+          "$ref": "#/$defs/DiagnosticRef"
+        }
+      },
+      "required": [
+        "reference"
+      ],
+      "additionalProperties": false
+    },
+    "DiagnosticPhasesRequest": {
+      "type": "object",
+      "properties": {
+        "reference": {
+          "$ref": "#/$defs/DiagnosticRef"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 2048
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "reference",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "DiagnosticPhases": {
+      "type": "object",
+      "properties": {
+        "reference": {
+          "$ref": "#/$defs/DiagnosticRef"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "phases": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/DiagnosticPhase"
+          }
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 2048
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "coverage": {
+          "enum": [
+            "complete",
+            "partial"
+          ]
+        }
+      },
+      "required": [
+        "reference",
+        "revision",
+        "phases",
+        "nextCursor",
+        "coverage"
+      ],
+      "additionalProperties": false
+    },
+    "DiagnosticOpenResult": {
+      "type": "object",
+      "properties": {
+        "accepted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "accepted"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "x-methods": {
+    "connections.diagnostics.list": "DiagnosticListRequest",
+    "connections.diagnostics.get": "DiagnosticGet",
+    "connections.diagnostics.phases": "DiagnosticPhasesRequest",
+    "ui.connectionDiagnostics.open": "DiagnosticGet"
+  },
+  "x-results": {
+    "connections.diagnostics.list": "DiagnosticList",
+    "connections.diagnostics.get": "DiagnosticSummary",
+    "connections.diagnostics.phases": "DiagnosticPhases",
+    "ui.connectionDiagnostics.open": "DiagnosticOpenResult"
+  },
+  "x-events": {
+    "connectionDiagnostics.open": "DiagnosticGet"
+  }
+}

@@ -38,5 +38,5 @@ export class CapacityCache<T>{
       });
     }
   }
-  diagnostics(){return {active:this.active,entries:this.entries.size,visible:this.wanted.size};}
+  diagnostics(){return {active:this.active,pending:[...this.entries.values()].filter(e=>e.value.state==='loading'&&!e.task).length,entries:this.entries.size,visible:this.wanted.size};}
 }

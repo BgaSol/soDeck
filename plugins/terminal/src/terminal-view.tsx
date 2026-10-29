@@ -1,3 +1,7 @@
+import {openConnectionDiagnostics,type DiagnosticRef,isConnectionAuthenticationError} from '@sodeck/sdk';
+import {settingsPageId,defaultFontSize,terminalPreferences} from './settings';
+import {validateSettings,type SettingsSnapshot} from '@sodeck/sdk/settings';
+import {changeSetting} from './ui-observation';
 import {Button,Input} from '@sodeck/ui';
 import { Notice,StatusBar,StatusDot,Checkbox,foundation } from '@sodeck/ui';
 import { onThemeError,retryTheme } from '@sodeck/sdk';
@@ -14,10 +18,10 @@ const statusLabel=(s:string)=>({running:"已连接",active:"已连接",connected
 import { snapshotChunks } from "./snapshot";
 
 declare const __TERMINAL_VERSION__: string;
-interface Binding { sessionId: string; ptyId: string; generation: number; status: string; error?: string; operationId?: string }
+interface Binding { sessionId: string; ptyId: string; generation: number; status: string; error?: string; operationId?: string; diagnosticRef?:DiagnosticRef; integrationAvailable?:boolean }
 interface ReadResult { frames: { sequence: number; bytes: string }[]; lastSequence: number; state: string; reason?: string }
 interface Snapshot { schema: 1; screen: string; cursor: number; inputSeq: number; fontSize: number; viewportY: number; cols: number; rows: number; inputPaused?: boolean; selection?: { start: { x: number; y: number }; end: { x: number; y: number } } }
-const defaultFont = foundation['terminal-font-size'];
+const defaultFont = defaultFontSize;
 
 
 export function TerminalView({theme}:{theme:ThemeResult}) {
@@ -28,8 +32,13 @@ export function TerminalView({theme}:{theme:ThemeResult}) {
   const fitRef = useRef<(() => void) | null>(null);
   const bindingRef = useRef<Binding | null>(null);
   const sendRef = useRef<((text: string) => void) | null>(null);
+  const settingsRef=useRef<SettingsSnapshot|undefined>(undefined);
+  const settingBusy=useRef(false);
+  const [settingsBusy,setSettingsBusy]=useState(false);
   const [fontSize, setFontSize] = useState<number>(defaultFont);
   const [shellIntegration,setShellIntegration]=useState(true);
+  const [integrationAvailable,setIntegrationAvailable]=useState<boolean>();
+  const [settingsAvailable,setSettingsAvailable]=useState(false);
   const [status, setStatus] = useState("connecting");
   const [error, setError] = useState("");
   const clipboardRef=useRef<TerminalClipboard|null>(null);
@@ -39,17 +48,15 @@ export function TerminalView({theme}:{theme:ThemeResult}) {
   const [inputPaused, setInputPaused] = useState(false);
   const copy=useCallback(()=>clipboardRef.current?.copy(),[]);
   const paste=useCallback(()=>clipboardRef.current?.paste(),[]);
-  useEffect(()=>{
-    let alive=true;
-    const refresh=()=>{void core.call<{shellIntegration?:boolean}>('plugin.invoke',{command:'settings.get'}).then(value=>{if(alive)setShellIntegration(value.shellIntegration!==false);}).catch(()=>{});};
-    window.addEventListener('focus',refresh);document.addEventListener('focusin',refresh);
-    return()=>{alive=false;window.removeEventListener('focus',refresh);document.removeEventListener('focusin',refresh);};
-  },[]);
   useEffect(() => {
     if (!host.current) return;
+    // A replaced PTY can report its closure while the reconnect is completing.
+    // The new binding reports its own errors; do not retain the old PTY error.
+    if (reload > 0) setError("");
     let alive = true, frozen = false, committed = false, composing = false, mounted = false, inputBlocked = false, readRunning = false, presentationVisible = true;
     let cursor = 0, inputSeq = 0, queuedBytes = 0;
     let pollTimer: ReturnType<typeof setTimeout> | undefined;
+    let settingsFeed:Awaited<ReturnType<typeof observeState>>|undefined;
     let presentationFeed:Awaited<ReturnType<typeof observeState>>|undefined;
     let readFlight = Promise.resolve();
     let inputFlight = Promise.resolve();
@@ -162,7 +169,7 @@ export function TerminalView({theme}:{theme:ThemeResult}) {
         void core.call<{session:Binding}>("view.initialize").then(data=>{
           if(!alive)return;
           if(data.session.ptyId!==binding?.ptyId)setReload(value=>value+1);
-          else { const changed=binding?.status!==data.session.status; binding=data.session; bindingRef.current=binding; setStatus(binding.status); if(binding.error||changed&&!binding.ptyId)setError(binding.error??""); }
+          else { const changed=binding?.status!==data.session.status; binding=data.session; bindingRef.current=binding; setStatus(binding.status);setIntegrationAvailable(binding.integrationAvailable); if(binding.error||changed&&!binding.ptyId)setError(binding.error??""); }
         }).catch(e=>{if(alive)setError(errorMessage(e));});
       }
     });
@@ -176,7 +183,7 @@ export function TerminalView({theme}:{theme:ThemeResult}) {
         const snapshot = state?.recovered ? undefined : state;
         if (state?.recovered) { cursor = state.acknowledged ?? 0; inputSeq = state.lastInputSeq ?? 0; setError("终端显示已重建，旧屏幕无法恢复。SSH 会话仍在继续，接下来显示新的输出。"); }
         inputBlocked = snapshot?.inputPaused ?? false; setInputPaused(inputBlocked);
-        const size = Math.min(24, Math.max(10, snapshot?.fontSize ?? settings.fontSize ?? defaultFont));
+        const size = Math.min(24, Math.max(10, settings.fontSize ?? defaultFont));
         term.options.fontSize = size; setFontSize(size);
         if (snapshot) {
           if (snapshot.schema !== 1) throw new Error("终端快照版本不兼容，未恢复此视图。");
@@ -188,11 +195,17 @@ export function TerminalView({theme}:{theme:ThemeResult}) {
         }
         binding = settings.session;
         if (!alive) return;
-        clipboard.invalidate(); bindingRef.current = binding; setStatus(binding.status); if(binding.error)setError(binding.error); fitTerminal();
+        clipboard.invalidate(); bindingRef.current = binding; setStatus(binding.status);setIntegrationAvailable(binding.integrationAvailable); if(binding.error)setError(binding.error); fitTerminal();
         const ready = await core.call<{ ready: boolean; lastInputSeq?: number; acknowledged?: number; screenGap?: boolean }>("view.ready", { cursor });
         if (!alive) return;
         // A recovered renderer starts from the host's authoritative cursors;
         // output already consumed by the lost surface cannot be reconstructed.
+        try{settingsFeed=await observeState({call:core.call,onNotification:onCoreNotification},{contract:'settings.page.v1',target:{pageId:settingsPageId}},value=>{const error=validateSettings('x-results','storage.preferences.read',value);if(error)throw Error(error);return value as SettingsSnapshot;},snapshot=>{
+          if(!alive)return;setSettingsAvailable(snapshot.syncState!=='unavailable');if(snapshot.syncState!=='current')setError('配置已保存，终端设置同步待恢复');if(snapshot.syncState==='unavailable')return;settingsRef.current=snapshot;const next=terminalPreferences(snapshot);setShellIntegration(next.shellIntegration);setFontSize(next.fontSize);
+          if(term.options.fontSize!==next.fontSize){term.options.fontSize=next.fontSize;fitTerminal();}
+        },{onError:e=>{if(alive)setError(errorMessage(e));}});
+        }catch(e){if(alive){setSettingsAvailable(false);setError('终端设置暂不可用：'+errorMessage(e));}}
+        if(!alive){await settingsFeed?.dispose();return;}
         if (ready.lastInputSeq !== undefined) inputSeq = ready.lastInputSeq;
         if (!snapshot && ready.acknowledged !== undefined) cursor = ready.acknowledged;
         if (ready.screenGap) setError("终端显示已重建，旧屏幕无法恢复。SSH 会话仍在继续，接下来显示新的输出。");
@@ -204,7 +217,7 @@ export function TerminalView({theme}:{theme:ThemeResult}) {
         const latest=await core.call<{session:Binding}>("view.initialize");
         if(alive) {
           if(latest.session.ptyId!==binding.ptyId)setReload(value=>value+1);
-          else {binding=latest.session;bindingRef.current=binding;setStatus(binding.status);if(binding.error)setError(binding.error);}
+          else {binding=latest.session;bindingRef.current=binding;setStatus(binding.status);setIntegrationAvailable(binding.integrationAvailable);if(binding.error)setError(binding.error);}
         }
       } catch (e) { if (alive) { setError(errorMessage(e)); setStatus("failed"); } }
     };
@@ -213,26 +226,24 @@ export function TerminalView({theme}:{theme:ThemeResult}) {
     return () => {
       clipboard.invalidate();clipboardRef.current=null;selectionChange.dispose();window.removeEventListener("blur",blur);document.removeEventListener("focusout",blur);element.removeEventListener("paste",pasteEvent,true);element.removeEventListener("contextmenu",contextMenu,true);
       alive = false; off(); geometry.dispose(); onData.dispose(); if (pollTimer) clearTimeout(pollTimer);
-      void presentationFeed?.dispose();
+      void presentationFeed?.dispose();void settingsFeed?.dispose();settingsRef.current=undefined;
       element.removeEventListener("compositionstart", compositionStart); element.removeEventListener("compositionend", compositionEnd);
       directoryOsc.dispose();term.dispose(); terminalRef.current = null; fitRef.current = null; sendRef.current = null; bindingRef.current = null;
     };
   }, [copy, paste, reload]);
   useEffect(()=>subscribeTheme(value=>{if(terminalRef.current)terminalRef.current.options.theme=value.terminal;}),[]);
-  const changeFont = async (size: number, reset = false) => {
-    try {
-      const settings = await core.call<{ fontSize: number }>("plugin.invoke", { command: reset ? "settings.reset" : "settings.set", args: { fontSize: Math.max(10, Math.min(24, size)) } });
-      const next = settings.fontSize; setFontSize(next); if (terminalRef.current) terminalRef.current.options.fontSize = next;
-      requestAnimationFrame(() => fitRef.current?.());
-    } catch (e) { setError(errorMessage(e)); }
+  const saveSetting=async(command:string,args:Record<string,unknown>)=>{
+    if(!settingsAvailable||!settingsRef.current){setError('设置暂不可用，请在设置窗口重新同步');return;}if(settingBusy.current)return;settingBusy.current=true;setSettingsBusy(true);
+    try{await changeSetting(command,args,settingsRef.current);}catch(e){setError(errorMessage(e));}finally{settingBusy.current=false;setSettingsBusy(false);}
   };
+  const changeFont=(size:number,reset=false)=>saveSetting(reset?'settings.reset':'settings.set',{fontSize:Math.max(10,Math.min(24,size))});
   const reconnect = async () => {
     if(status==="connecting")return;
     clipboardRef.current?.invalidate();setStatus("connecting"); setError("");
     try {
       await core.call<Binding>("commands.execute", { commandId: "terminal.reconnect", viewId: context().viewId, operationId: crypto.randomUUID() }, await connectionCommandTimeout(core,context().serverId,context().workspaceId));
       setReload(value => value + 1);
-    } catch (e) { setError(errorMessage(e)); setStatus(e instanceof CoreError && e.code==="CANCELED"?"canceled":e instanceof CoreError && ["AUTH_REQUIRED","AUTH_FAILED","HOST_KEY_REQUIRED","HOST_KEY_CHANGED"].includes(e.code)?"waitingAuth":"failed"); }
+    } catch (e) { setError(errorMessage(e)); setStatus(e instanceof CoreError && e.code==="CANCELED"?"canceled":e instanceof CoreError && isConnectionAuthenticationError(e.code)?"waitingAuth":"failed"); }
   };
   menuRef.current=async(x,y)=>{
     const term=terminalRef.current;if(!term||moving)return;
@@ -246,10 +257,10 @@ export function TerminalView({theme}:{theme:ThemeResult}) {
   };
   return <section className="terminal-view" aria-label={(context().serverName ?? "服务器")+" 终端"}>
     {themeError&&<Notice kind="error" action={<Button onClick={()=>void retryTheme()}>重试同步</Button>}>{themeError}</Notice>}
-    {error && <Notice kind="error" onDismiss={()=>setError("")}>{error}</Notice>}
+    {error && <Notice kind="error" action={error===bindingRef.current?.error&&bindingRef.current?.diagnosticRef&&<Button onClick={()=>void openConnectionDiagnostics(core,bindingRef.current!.diagnosticRef!).catch(e=>setError(errorMessage(e)))}>查看连接详情</Button>} onDismiss={()=>setError("")}>{error}</Notice>}
     <div className="terminal-content"><div className="terminal-grid" ref={host}/></div>
     {(["connecting","waitingAuth"].includes(status))&&<Notice className="terminal-connection"><span>{statusLabel(status)}…</span>{status==="waitingAuth"&&<Button onClick={()=>{const operationId=bindingRef.current?.operationId;if(operationId)void connectionCommandTimeout(core,context().serverId,context().workspaceId).then(timeout=>core.call("commands.retry",{operationId},timeout)).catch(e=>setError(errorMessage(e)));}}>继续认证</Button>}<Button onClick={()=>{const operationId=bindingRef.current?.operationId;if(operationId)void core.call("workbench.operation.cancel",{operationId}).catch(e=>setError(errorMessage(e)));}}>取消连接</Button></Notice>}
     {(inputPaused||!["active","running","connected","connecting","waitingAuth"].includes(status))&&<Notice className="terminal-connection"><span>{inputPaused?"输入已暂停，请先核对远端执行结果":statusLabel(status)+" · 本次屏幕已保留"}</span><Button onClick={()=>void reconnect()}>重新连接</Button></Notice>}
-    <StatusBar className="terminal-status"><span><StatusDot tone={["running","active","connected"].includes(status)?"success":["connecting","waitingAuth"].includes(status)?"warning":["failed","disconnected"].includes(status)?"error":"neutral"}/>{moving?"正在移动":statusLabel(status)}</span><Checkbox label="Shell 目录集成" title="用于目录自动跟随；SSH 执行入口可能额外读取非交互启动配置。仅对新建或明确重连的终端生效。" aria-label="Shell 目录集成" checked={shellIntegration} onChange={async e=>{const enabled=e.target.checked;try{await core.call('plugin.invoke',{command:'settings.shellIntegration',args:{enabled}});setShellIntegration(enabled);}catch(error){setError(errorMessage(error));}}}/><span>字号 {fontSize}</span></StatusBar>
+    <StatusBar className="terminal-status"><span><StatusDot tone={["running","active","connected"].includes(status)?"success":["connecting","waitingAuth"].includes(status)?"warning":["failed","disconnected"].includes(status)?"error":"neutral"}/>{moving?"正在移动":statusLabel(status)}</span><Checkbox label="Shell 目录集成" title={integrationAvailable===false?"当前远端未确认支持 Linux/Bash 目录集成，本会话使用普通 SSH Shell。":"用于受支持 Linux/Bash 的目录自动跟随；仅对新建或明确重连生效。"} aria-label="Shell 目录集成" checked={shellIntegration&&integrationAvailable!==false} disabled={settingsBusy||!settingsAvailable||integrationAvailable===false} onChange={e=>void saveSetting('settings.shellIntegration',{enabled:e.target.checked})}/>{integrationAvailable===false&&<span>本会话未启用</span>}<span>字号 {fontSize}</span></StatusBar>
   </section>;
 }

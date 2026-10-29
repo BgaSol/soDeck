@@ -65,7 +65,7 @@ try {
     assert.equal(error.code, 'HOST_KEY_REQUIRED'); challenge = error.details; return true;
   });
   await rpc(app.page, 'hosts.trust', { serverId: server.id, ...challenge });
-  await rpc(app.page, 'auth.set', { serverId: server.id, password: 'isolated-test-password', remember: false });
+  await rpc(app.page, 'auth.ssh.set', { serverId: server.id, password: 'isolated-test-password', remember: false });
   const first = await rpc(app.page, 'workbench.openTerminal', { serverId: server.id });
   const second = await rpc(app.page, 'workbench.openTerminal', { serverId: server.id });
   await terminalPage(second.viewId);

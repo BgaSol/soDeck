@@ -2,9 +2,17 @@ mod model;
 mod route;
 mod route_store;
 mod route_services;
-mod route_v2;
+mod route_diagnostics;
+pub mod connection_diagnostics;
+mod proxies;
+mod proxy_catalog;
+mod configuration_receipts;
+mod configuration_admission;
+mod configuration_dependencies;
+mod credential_configuration;
 mod secrets;
 mod ssh;
+mod socks5;
 mod store;
 mod server_catalog;
 mod server_catalog_store;
@@ -13,16 +21,25 @@ mod remote_read;
 mod pty_observe;
 mod pty_start;
 mod network;
+pub mod speedtest;
+mod traffic;
+mod quality;
+mod observability;
 pub mod contract;
+#[path="connection_home_contract.generated.rs"]
+pub mod connection_home_contract;
 #[path="workbench_ui_contract.generated.rs"]
 pub mod workbench_ui_contract;
 #[path="../../../contracts/capabilities.rs"]
 pub mod capabilities;
 pub use remote_read::WorkspaceScope;
+pub use observability::DiagnosticScope;
+pub use observability::ObservationDelivery;
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use model::{field, id, number};
 pub use model::{Caller, CoreError, Result, Server};
+pub fn is_connection_authentication_error(code:&str)->bool { matches!(code,"HOST_KEY_REQUIRED"|"HOST_KEY_CHANGED"|"AUTH_REQUIRED"|"AUTH_FAILED"|"PROXY_AUTH_REQUIRED"|"PROXY_AUTH_FAILED"|"CREDENTIAL_CONFIRM_REQUIRED") }
 use secrets::{Credential, Secrets};
 use serde_json::{json, Value};
 use ssh::{Connection, PtyState};
@@ -38,10 +55,12 @@ use std::{
 use store::Store;
 
 struct Lease {
+    _observation:observability::resource::ResourceObservation,
     connection: Arc<Connection>,
     instance_id: String,
 }
 struct Pty {
+    _observation:observability::resource::ResourceObservation,
     id: String,
     connection: Arc<Connection>,
     instance_id: String,
@@ -76,13 +95,17 @@ pub struct Core {
 #[doc(hidden)]
 pub struct CoreState {
     configuration: Mutex<()>,
+    configuration_admission: configuration_admission::Admission,
     route_attempts: Mutex<HashMap<String, route_services::Attempt>>,
+    connection_diagnostics: Mutex<connection_diagnostics::Diagnostics>,
     store: Store,
+    observability: Arc<observability::Observability>,
     secrets: Secrets,
     registry: Arc<Mutex<Registry>>,
     next_generation: AtomicU64,
     connect_locks: Mutex<HashMap<String, std::sync::Weak<Mutex<()>>>>,
     credential_revisions: Mutex<HashMap<String, u64>>,
+    configuration_credentials: Mutex<credential_configuration::ConfigurationCredentials>,
     host_challenges: Mutex<HashMap<String, Value>>,
     log_faults: Mutex<VecDeque<Value>>,
     log_dropped: AtomicU64,
@@ -96,21 +119,52 @@ pub struct CoreState {
     network: Mutex<network::Registry>,
     network_jobs: Mutex<Option<std::sync::mpsc::SyncSender<network::Job>>>,
     network_stopped: AtomicBool,
+    observation_stopping: AtomicBool,
+    traffic: Arc<traffic::Traffic>,
+    traffic_queries: traffic::Queries,
+    quality: quality::Quality,
 }
 impl Core {
     pub fn open(data_dir: impl AsRef<Path>) -> Result<Self> {
-        std::fs::create_dir_all(data_dir.as_ref())?;
-        let store = Store::open(data_dir.as_ref())?;
-        store.maintain()?;
+        let data_dir=data_dir.as_ref();
+        std::fs::create_dir_all(data_dir)?;
+        store_bootstrap::ensure_current(data_dir)?;
+        let observations=data_dir.join("observability");
+        observability::Observability::ensure_new(&observations)?;
+        Self::open_paths(data_dir,&observations)
+    }
+    /// Desktop startup has already locked and prepared this complete dataset.
+    pub fn open_dataset(data_root: impl AsRef<Path>) -> Result<Self> {
+        let data_root=data_root.as_ref();
+        if data_root.join("core-reset.json").exists() {
+            return Err(CoreError::new("DATABASE_RECOVERY_REQUIRED","数据集重建尚未完成"));
+        }
+        Self::open_paths(&data_root.join("core"),&data_root.join("observability"))
+    }
+    fn open_paths(data_dir:&Path,observations:&Path)->Result<Self> {
+        let store = Store::open(data_dir)?;
+        let secrets=Secrets::open(data_dir)?;
+        secrets.cleanup(&store.db.lock().unwrap())?;
+        let traffic=traffic::Traffic::new(store.configuration_epoch()?);
+        let observability=observability::Observability::open(observations,traffic.boot_id.clone(),traffic.config_epoch.clone())?;
+        observability.recover_calls()?;
+        observability.recover_jobs()?;
+        observability.recover_spans()?;
+        observability.maintain()?;
+        traffic.attach_history(observability.clone());
         let core = Self { shared: Arc::new(CoreState {
             configuration: Mutex::new(()),
+            configuration_admission: configuration_admission::Admission::default(),
             route_attempts: Mutex::new(HashMap::new()),
+            connection_diagnostics: Mutex::new(connection_diagnostics::Diagnostics::default()),
             store,
-            secrets: Secrets::open(data_dir.as_ref())?,
+            observability,
+            secrets,
             registry: Arc::new(Mutex::new(Registry::default())),
             next_generation: AtomicU64::new(model::now_ms()),
             connect_locks: Mutex::new(HashMap::new()),
             credential_revisions: Mutex::new(HashMap::new()),
+            configuration_credentials: Mutex::new(credential_configuration::ConfigurationCredentials::new()?),
             host_challenges: Mutex::new(HashMap::new()),
             log_faults: Mutex::new(VecDeque::new()),
             log_dropped: AtomicU64::new(0),
@@ -124,9 +178,17 @@ impl Core {
             network: Mutex::new(network::Registry::default()),
             network_jobs: Mutex::new(None),
             network_stopped: AtomicBool::new(false),
+            observation_stopping: AtomicBool::new(false),
+            traffic,
+            traffic_queries:traffic::Queries::default(),
+            quality:quality::Quality::default(),
         }), owns_lifetime: true };
+        core.traffic.set_history_enabled(core.communication_policy()?["saveHistory"].as_bool().unwrap());
+        core.restore_quality_policies()?;
         core.start_remote_maintenance();
         core.start_network();
+        core.traffic.start()?;
+        let _=core.observe_host_event(&Caller::shell(),"core.app.started",json!({}));
         Ok(core)
     }
     /// Native hosts bind caller identity before entering this boundary. Params never
@@ -142,7 +204,8 @@ impl Core {
             {
                 return Err(CoreError::new("INSTANCE_EXPIRED", "插件实例已经结束"));
             }
-            self.dispatch(caller, method, &params)
+            let result=self.dispatch(caller, method, &params);
+            if let Ok(value)=&result{self.observe_committed(caller,method,&params,value);}result
         })
     }
     /// Desktop-owned public APIs (workbench/clipboard/plugin manager) share the
@@ -167,8 +230,11 @@ impl Core {
                 | "state.close" | "pty.observe.close" | "directories.unregister" | "files.close" | "files.closeDirectory" | "exec.cancel" | "exec.close" | "remote.operations.get" | "remote.operations.forget"
                 | "net.groups.close" | "net.routes.release" | "net.listeners.close" | "net.streams.close"
                 | "net.operations.get" | "net.operations.cancel" | "net.resources.list" | "net.resources.stop"
-        );
-        let record = self.store.call_start(caller, method, params);
+                | "observability.health.get" | "quality.check.cancel" | "quality.check.get"
+                | "speedtest.cancel" | "speedtest.get" | "communication.history.cleanup.cancel" | "communication.history.cleanup.get"
+                | "communication.export.cancel" | "communication.export.get" | "evidence.cancel" | "evidence.get"
+        ) || matches!(method,"observability.v2.health.get"|"events.v2.ack"|"events.v2.close"|"diagnostics.capture.get"|"diagnostics.capture.cancel"|"events.v2.cleanup.get"|"events.v2.cleanup.cancel") || (method=="quality.policy.set"&&params["patch"]["enabled"]==false&&params["patch"].as_object().is_some_and(|p|p.len()==1));
+        let record = self.observability.call_start(caller, method, params);
         if record.is_err() {
             self.fault(method, "start-not-persisted");
             if !available_without_log {
@@ -179,9 +245,10 @@ impl Core {
             }
         }
         let expired = self.registry.lock().unwrap().revoked.contains(&caller.instance_id);
+        let _audit_scope=observability::AuditScope::enter(record.as_ref().ok().map(String::as_str),params);
         let result = if expired {Err(CoreError::new("INSTANCE_EXPIRED", "插件实例已经结束"))} else {operation()};
         if let Ok(record) = record {
-            if self.store.call_finish(&record, &result).is_err() {
+            if self.observability.call_finish(&record, &result).is_err() {
                 self.fault(method, "result-not-persisted");
                 if result.is_ok() && !available_without_log {
                     return Err(CoreError::new(
@@ -193,7 +260,7 @@ impl Core {
             }
         }
         if self.call_count.fetch_add(1, Ordering::Relaxed) % 1000 == 999 {
-            if self.store.maintain().is_err() {
+            if self.observability.maintain().is_err() {
                 self.fault("calls.maintenance", "retention-failed");
             }
         }
@@ -211,10 +278,19 @@ impl Core {
         json!({"logFaults":*self.log_faults.lock().unwrap(),"droppedLogFaults":self.log_dropped.load(Ordering::Relaxed)})
     }
     fn dispatch(&self, caller: &Caller, method: &str, p: &Value) -> Result<Value> {
+        let _configuration_permit = self.configuration_admission.enter(caller, method, p)?;
+        if method.starts_with("quality."){return self.quality_dispatch(caller,method,p);}
+        if method.starts_with("events.")||method.starts_with("observability.")||method.starts_with("traces.")||method.starts_with("metrics.")||method.starts_with("diagnostics.snapshots.")||method=="diagnostics.capture"||method.starts_with("diagnostics.capture.")||method.starts_with("evidence."){return self.observation_dispatch(caller,method,p);}
+        if matches!(method,"communication.history.query"|"communication.history.compare"|"communication.policy.get"|"communication.policy.set") {return self.communication_history(method,p);}
+        if matches!(method,"communication.summary"|"communication.sources"|"communication.connections") {return self.traffic_dispatch(caller,method,p);}
         if method.starts_with("servers.catalog.") || method.starts_with("serverGroups.") {return self.catalog_dispatch(caller,method,p);}
+        if method.starts_with("proxies.catalog."){return self.proxy_catalog_dispatch(caller,method,p);}
+        if method.starts_with("credentials.configuration."){return self.credential_configuration_dispatch(caller,method,p);}
         if method.starts_with("net.") { return self.network_dispatch(caller, method, p); }
-        if method.starts_with("servers.routes.v2.") || method.starts_with("connections.route.v2.") || method == "auth.challenge.v2.get" { return self.route_v2_dispatch(caller,method,p); }
-        if method.starts_with("servers.routes.") || matches!(method,"connections.route.get"|"connections.routes.list"|"auth.challenge.get") { return self.route_dispatch(caller,method,p); }
+        if matches!(method,"auth.ssh.confirm"|"auth.ssh.set"|"auth.socks5.set"|"auth.credentials.usePreset"){return self.runtime_credential_dispatch(caller,method,p);}
+        if method.starts_with("proxies.socks5.") {return self.proxy_dispatch(method,p);}
+        if method.starts_with("connections.diagnostics."){return self.connection_diagnostics_dispatch(caller,method,p);}
+        if method.starts_with("servers.routes.") || method.starts_with("connections.route.") || method=="auth.challenge.get" {return self.route_dispatch(caller,method,p);}
         if method.starts_with("files.") || method.starts_with("exec.") || method.starts_with("remote.operations.") || matches!(method,"connections.observe"|"connections.acquireExisting") {return self.remote_dispatch(caller,method,p);}
         match method {
             "capabilities.list" => Ok(
@@ -223,16 +299,16 @@ impl Core {
             "servers.list" => {
                 let mut servers = self.store.servers()?;
                 for server in &mut servers {
-                    server.has_secret = self.secrets.remembered(&server.id);
+                    server.has_secret = self.secrets.remembered(&self.store.db.lock().unwrap(),"ssh",&server.id,"preset")?;
                 }
                 Ok(json!({"servers":servers}))
             }
             "servers.get" => {
                 let mut server = self.store.server(field(p, "serverId")?)?;
-                server.has_secret = self.secrets.remembered(&server.id);
+                server.has_secret = self.secrets.remembered(&self.store.db.lock().unwrap(),"ssh",&server.id,"preset")?;
                 Ok(serde_json::to_value(server)?)
             }
-            "servers.create" | "servers.update" => self.save_server_configuration(p, method == "servers.update", p.get("connectionRoute").is_none()),
+            "servers.create" | "servers.update" => self.save_server_configuration(p, method == "servers.update"),
             "servers.delete" => {
                 let _config_guard=self.configuration.lock().unwrap();
                 let server_id = field(p, "serverId")?;
@@ -263,78 +339,28 @@ impl Core {
                 for connection in active {
                     self.stop_resource(&connection)?;
                 }
-                self.secrets.remove(server_id)?;
+                self.secrets.remove_owner(&self.store.db.lock().unwrap(),"ssh",server_id)?;
                 self.store.delete_server(server_id)?;
                 Ok(json!({"deleted":true}))
-            }
-            "auth.set" => {
-                let _config_guard=self.configuration.lock().unwrap();
-                let server_id = field(p, "serverId")?;
-                let server = self.store.server(server_id)?;
-                if let Some(id)=p["challengeId"].as_str(){let challenge=self.checked_challenge(id)?;if challenge["serverId"]!=server_id {return Err(CoreError::new("HOST_CHALLENGE_MISMATCH","认证对象不匹配"));}}
-                let plan=self.route_plan(server_id)?;
-                let key = if server.auth_type == "key" {
-                    let path = field(p, "privateKeyPath")?;
-                    let metadata = std::fs::metadata(path)?;
-                    if metadata.len() > 1024 * 1024 {
-                        return Err(CoreError::new("LIMIT_EXCEEDED", "私钥文件超过 1 MiB"));
-                    }
-                    std::fs::read_to_string(path)?
-                } else {
-                    String::new()
-                };
-                let credential = Credential {
-                    context: Some(plan.credential_context(plan.nodes.len()-1)),
-                    password: p
-                        .get("password")
-                        .and_then(Value::as_str)
-                        .unwrap_or("")
-                        .into(),
-                    private_key: key,
-                    passphrase: p
-                        .get("passphrase")
-                        .and_then(Value::as_str)
-                        .unwrap_or("")
-                        .into(),
-                };
-                self.secrets.set(
-                    server_id,
-                    credential,
-                    p.get("remember").and_then(Value::as_bool).unwrap_or(false),
-                )?;
-                *self
-                    .credential_revisions
-                    .lock()
-                    .unwrap()
-                    .entry(server_id.into())
-                    .or_default() += 1;
-                Ok(json!({"stored":true,"remembered":self.secrets.remembered(server_id)}))
             }
             "hosts.trust" => {
                 let _guard=self.configuration.lock().unwrap();
                 let server_id=field(p,"serverId")?;let fingerprint=field(p,"fingerprint")?;
-                let challenge_id=if let Some(id)=p["challengeId"].as_str(){id.to_string()}else{
-                    self.host_challenges.lock().unwrap().iter().find(|(_,v)|v["serverId"]==server_id&&v["fingerprint"]==fingerprint).map(|(id,_)|id.clone()).ok_or_else(||CoreError::new("HOST_CHALLENGE_EXPIRED","请重新连接以获取当前主机身份"))?
-                };
+                crate::route_diagnostics::check("x-methods","hosts.trust",p)?;
+                let challenge_id=field(p,"challengeId")?.to_owned();
                 let challenge=self.checked_challenge(&challenge_id)?;
                 if challenge["serverId"]!=server_id||challenge["fingerprint"]!=fingerprint {
                     return Err(CoreError::new("HOST_CHALLENGE_MISMATCH","确认的主机身份与当前握手不一致"));
                 }
-                if challenge["previousFingerprint"].is_string() {
-                    *self.credential_revisions.lock().unwrap().entry(server_id.into()).or_default() += 1;
-                    // A replaced gateway can expose another private network.
-                    // Reconfirm downstream credentials before using the new path.
-                    for dependent in self.store.dependents(server_id)? {
-                        self.secrets.remove(&dependent.id)?;
-                        *self.credential_revisions.lock().unwrap().entry(dependent.id).or_default()+=1;
-                    }
+                if caller.source!="shell"&&challenge["instanceId"]!=caller.instance_id {
+                    return Err(CoreError::new("HOST_CHALLENGE_MISMATCH","认证答复来源不匹配"));
                 }
                 self.store.trust(field(&challenge,"trustKey")?,fingerprint,field(&challenge,"algorithm")?)?;
                 self.host_challenges.lock().unwrap().remove(&challenge_id);
                 Ok(json!({"trusted":true}))
             }
             "connections.acquire" => {
-                self.with_operation(caller, p, |token| self.acquire(caller, p, token))
+                {let mut result=self.with_operation(caller, p, |token| self.acquire(caller, p, token));if result.as_ref().err().is_some_and(|e|e.details.as_ref().is_none_or(|d|d["diagnosticRef"].is_null())){let mut attempt=connection_diagnostics::AttemptGuard::new(self,caller,p,"session");attempt.finish(&mut result);}result}
             }
             "operations.cancel" => {
                 let key = Self::operation_key(caller, p)?;
@@ -456,7 +482,7 @@ impl Core {
                 )?;
                 Ok(json!({"saved":true}))
             }
-            "calls.list" => self.store.calls(p),
+            "calls.list" => self.observability.calls(p),
             "diagnostics.get" => Ok(self.diagnostics()),
             _ => Err(CoreError::new("METHOD_NOT_FOUND", "核心尚未实现此方法")),
         }
@@ -512,8 +538,15 @@ impl Core {
         self.acquire_for(caller, p, operation, "session", &caller.instance_id)
     }
     fn acquire_for(&self, caller: &Caller, p: &Value, operation: &AtomicBool, purpose: &str, lease_owner: &str) -> Result<Value> {
+        let mut attempt=connection_diagnostics::AttemptGuard::new(self,caller,p,purpose);
+        let mut result=self.acquire_recorded(caller,p,operation,purpose,lease_owner,&attempt.token);
+        attempt.finish(&mut result);
+        result
+    }
+    fn acquire_recorded(&self, caller: &Caller, p: &Value, operation: &AtomicBool, purpose: &str, lease_owner: &str, attempt_id:&str) -> Result<Value> {
         let initial_epoch = self.registry.lock().unwrap().shutdown_epoch;
         let plan={let _guard=self.configuration.lock().unwrap();self.route_plan(field(p,"serverId")?)?};
+        self.diagnostic_plan(attempt_id,&plan);
         if p.get("expectedRouteRevision").and_then(Value::as_str).is_some_and(|r| r != plan.revision) {
             return Err(CoreError::new("ROUTE_CHANGED", "连接路径已变化，请应用配置并重新启动"));
         }
@@ -563,6 +596,9 @@ impl Core {
             return Err(CoreError::new("CANCELED", "应用正在清理连接"));
         }
 
+        self.diagnostic_phase(attempt_id,None,connection_diagnostics::PhaseEvent::success("queue"));
+        self.begin_route_attempt(caller,p,&plan,&workspace,attempt_id);
+        self.diagnostic_phase(attempt_id,None,connection_diagnostics::PhaseEvent::start("admit"));
         let existing = self
             .registry
             .lock()
@@ -572,7 +608,6 @@ impl Core {
             .find(|c| {
                 c.server.id == server.id
                     && c.purpose == purpose
-                    && c.server.revision == server.revision
                     && c.workspace_id == workspace
                     && c.route.revision == plan.revision
                     && *c.status.lock().unwrap() == "active"
@@ -580,6 +615,7 @@ impl Core {
             .cloned();
         let mut _admission=None;
         let connection = if let Some(connection) = existing {
+            self.diagnostic_reused(attempt_id);self.diagnostic_phase(attempt_id,None,connection_diagnostics::PhaseEvent::success("admit"));
             connection
         } else {
             let pending_id = id();
@@ -601,36 +637,36 @@ impl Core {
                 _admission=Some(ConnectionAdmission{registry:self.registry.clone(),id:pending_id.clone()});
             }
             if purpose == "session" {self.connection_state(&state_key,"connecting");}
+            let mut admitted=false;
             let result = Connection::connect_for(
                 purpose.to_owned(), plan.clone(), workspace.clone(), self.next_generation.fetch_add(1,Ordering::SeqCst),
-                canceled,operation,self.transport_budget.clone(),
+                canceled,operation,self.transport_budget.clone(),Some(self.traffic.clone()),Some(self.observability.clone()),
                 |index,fingerprint,algorithm,verified|self.verify_route_node(&plan,index,fingerprint,algorithm,verified),
-                |index,stage|{
-                    self.route_progress(&plan,&workspace,index,stage,None);
-                    if self.store.route_stage(caller,p,&plan,index,stage,None).is_err(){self.fault("connections.route.stage","stage-not-persisted");}
+                |index,verified|self.proxy_credential_for(&plan,index,verified),
+                |index,event|{
+                    if !admitted{self.diagnostic_phase(attempt_id,None,connection_diagnostics::PhaseEvent::success("admit"));admitted=true;}
+                    if event.state=="running" {self.route_progress(attempt_id,index,event.stage,None);}
+                    self.diagnostic_phase(attempt_id,Some(index),event);
                 },
             );
             match result {
-                Ok(connection) => {if purpose == "session" {self.connection_state(&state_key,"active");}connection},
+                Ok(connection) => connection,
                 Err(mut error) => {
-                    let index=error.details.as_ref().and_then(|d|d["hopIndex"].as_u64()).unwrap_or(0) as usize;
-                    if self.store.route_stage(caller,p,&plan,index,"failed",Some(&error)).is_err(){self.fault("connections.route.stage","stage-not-persisted");}
-                    if purpose == "session" {self.connection_state(&state_key,if matches!(error.code.as_str(),"HOST_KEY_REQUIRED"|"HOST_KEY_CHANGED"|"AUTH_REQUIRED"|"AUTH_FAILED"){"authRequired"}else if error.code=="CANCELED"{"idle"}else{"failed"});}
-                    if matches!(error.code.as_str(),"HOST_KEY_REQUIRED"|"HOST_KEY_CHANGED"|"AUTH_REQUIRED"|"AUTH_FAILED") {
-                        self.route_challenge(caller,p,&plan,&mut error)?;
+                    if purpose == "session" {self.connection_state(&state_key,if is_connection_authentication_error(&error.code){"authRequired"}else if error.code=="CANCELED"{"idle"}else{"failed"});}
+                    if is_connection_authentication_error(&error.code) {
+                        self.route_challenge(caller,p,&plan,&attempt_id,&mut error)?;
                     }
-                    self.route_progress(&plan,&workspace,error.details.as_ref().and_then(|d|d["hopIndex"].as_u64()).unwrap_or(0) as usize,if error.code=="CANCELED"{"canceled"}else{"failed"},Some(&error));
+                    self.route_progress(&attempt_id,error.details.as_ref().and_then(|d|d["stepIndex"].as_u64()).unwrap_or(0) as usize,if error.code=="CANCELED"{"canceled"}else{"failed"},Some(&error));
                     return Err(error);
                 }
             }
         };
+        self.diagnostic_phase(attempt_id,None,connection_diagnostics::PhaseEvent::start("deliver"));
         let _config_guard=self.configuration.lock().unwrap();
         if self.route_plan(&server.id).map(|p|p.revision).ok().as_deref()!=Some(plan.revision.as_str()) {
             if !self.registry.lock().unwrap().connections.contains_key(&connection.id){connection.stop();}
             return Err(CoreError::new("REVISION_CONFLICT","连接路径已变化，请重新连接"));
         }
-        self.route_progress(&plan,&workspace,plan.nodes.len()-1,"active",None);
-        if self.store.route_stage(caller,p,&plan,plan.nodes.len()-1,"active",None).is_err(){self.fault("connections.route.stage","stage-not-persisted");}
         let mut registry = self.registry.lock().unwrap();
         if operation.load(Ordering::SeqCst) {
             if !registry.connections.contains_key(&connection.id) {
@@ -659,10 +695,15 @@ impl Core {
         registry.leases.insert(
             lease_id.clone(),
             Lease {
+                _observation:observability::resource::ResourceObservation::new(&self.observability,caller,&lease_id,None,Some(&connection.server.id),"lease"),
                 connection: connection.clone(),
                 instance_id: lease_owner.to_owned(),
             },
         );
+        drop(registry);
+        self.diagnostic_connection(attempt_id,&connection);
+        self.route_progress(attempt_id,plan.steps.len()-1,"active",None);
+        if purpose=="session" {self.connection_state(&state_key,"active");}
         Ok(
             json!({"leaseId":lease_id,"connectionId":connection.id,"generation":connection.generation}),
         )
@@ -692,7 +733,9 @@ impl Core {
         let pty_id = id();
         let command=p.get("command").and_then(Value::as_str).map(str::to_owned);
         let observe=p["observe"]==true;
-        let result = connection.open(&pty_id, cols, rows, operation, command, observe);
+        let generation = self.next_generation.fetch_add(1, Ordering::SeqCst);
+        let metric=connection.traffic_resource(caller,&pty_id,&generation.to_string(),"pty",None);
+        let result = connection.open(&pty_id, cols, rows, operation, command, observe,metric);
         let mut registry = self.registry.lock().unwrap();
         registry.pending_ptys -= 1;
         let state = result?;
@@ -717,11 +760,11 @@ impl Core {
             current.view_id = caller.view_id.clone();
             current.mount_generation = caller.mount_generation;
         }
-        let generation = self.next_generation.fetch_add(1, Ordering::SeqCst);
         let observer=state.lock().unwrap().observer.as_ref().map(|o|json!({"observerId":o.id,"cursor":"0"}));
         registry.ptys.insert(
             pty_id.clone(),
             Arc::new(Pty {
+                _observation:observability::resource::ResourceObservation::new(&self.observability,caller,&pty_id,Some(generation),Some(&connection.server.id),"pty"),
                 id: pty_id.clone(),
                 connection: connection.clone(),
                 instance_id: caller.instance_id.clone(),
@@ -923,6 +966,8 @@ impl Core {
         Ok(json!({"stopped":true,"alreadyClosed":true}))
     }
     pub fn close_instance(&self, instance_id: &str) {
+        self.observability.close_source(instance_id);
+        self.quality.cancel_owner(instance_id);
         self.network_stop_instance(instance_id);
         self.remote_stop_instance(instance_id);
         for ((instance, _), operation) in self.operations.lock().unwrap().iter() {
@@ -951,6 +996,8 @@ impl Core {
         Self::reap(&mut registry);
     }
     pub fn shutdown(&self) {
+        if !self.observation_stopping.swap(true,Ordering::SeqCst){let _=self.observe_host_event(&Caller::shell(),"core.app.stopping",json!({}));}
+        self.quality.stop();
         self.network_stop();
         for operation in self.operations.lock().unwrap().values() {
             operation.canceled.store(true, Ordering::SeqCst);
@@ -966,11 +1013,15 @@ impl Core {
         registry.ptys.clear();
         registry.leases.clear();
         registry.connections.clear();
+        drop(registry);
+        self.traffic.stop();
     }
+    /// Call only after public exit's final audit has committed.
+    pub fn flush_observability(&self)->bool {self.observability.shutdown()}
 }
 impl Drop for Core {
     fn drop(&mut self) {
-        if self.owns_lifetime { self.shutdown(); }
+        if self.owns_lifetime { self.shutdown(); self.flush_observability(); }
     }
 }
 impl std::ops::Deref for Core {
@@ -986,14 +1037,14 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let core = Core::open(directory.path()).unwrap();
         let caller = Caller::shell();
-        core.store.fail_writes(true);
+        core.observability.fail_writes(true);
         core.call(
             &caller,
             "operations.cancel",
             json!({"operationId":"pre-canceled"}),
         )
         .unwrap();
-        core.store.fail_writes(false);
+        core.observability.fail_writes(false);
         let params = json!({"operationId":"pre-canceled","serverId":"absent","workspaceId":"test"});
         assert_eq!(
             core.call(&caller, "connections.acquire", params.clone())
@@ -1034,7 +1085,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let core = Core::open(directory.path()).unwrap();
         let caller = Caller::shell();
-        core.store.fail_writes(true);
+        core.observability.fail_writes(true);
         let error = core
             .call(
                 &caller,
@@ -1054,15 +1105,15 @@ mod tests {
         let diagnostics = core.call(&caller, "diagnostics.get", json!({})).unwrap();
         assert_eq!(diagnostics["logFaults"].as_array().unwrap().len(), 3);
         assert_eq!(diagnostics["logFaults"][2]["method"], "diagnostics.get");
-        core.store.fail_writes(false);
+        core.observability.fail_writes(false);
         let error = core
             .record(&caller, "test.sideEffect", &json!({}), || {
-                core.store.fail_writes(true);
+                core.observability.fail_writes(true);
                 Ok(json!({"executed":true}))
             })
             .unwrap_err();
         assert_eq!(error.code, "RESULT_UNKNOWN");
-        core.store.fail_writes(false);
+        core.observability.fail_writes(false);
         drop(core);
         let reopened = Core::open(directory.path()).unwrap();
         let logs = reopened
@@ -1169,3 +1220,5 @@ mod tests {
             .all(|record| record["caller"]["pluginId"] == "a"));
     }
 }
+
+pub use observability::with_startup_diagnostics_io;

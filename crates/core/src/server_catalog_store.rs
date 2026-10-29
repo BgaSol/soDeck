@@ -1,4 +1,4 @@
-use crate::{model::{id,now_ms},route::ConnectionRoute,route_store,CoreError,Result,Server};
+use crate::{model::id,route::AccessPath,route_store,CoreError,Result,Server};
 use rusqlite::{Connection,OptionalExtension,params};
 use serde_json::{json,Value};
 use unicode_normalization::UnicodeNormalization;
@@ -18,7 +18,7 @@ pub(crate) fn membership(db:&Connection,server_id:&str)->Result<(Option<String>,
 }
 pub(crate) fn item(db:&Connection,server_id:&str)->Result<Value> {
     let (group,revision)=membership(db,server_id)?;
-    Ok(json!({"server":route_store::server(db,server_id)?,"connectionRoute":route_store::route(db,server_id)?,"groupId":group,"membershipRevision":revision.to_string(),"postCommitPending":false}))
+    Ok(json!({"server":route_store::server(db,server_id)?,"accessPath":route_store::route(db,server_id)?,"groupId":group,"membershipRevision":revision.to_string(),"postCommitPending":false}))
 }
 pub(crate) fn group(db:&Connection,group_id:&str)->Result<Value> {
     db.query_row("SELECT g.id,g.name,g.revision,(SELECT count(*) FROM server_group_membership m WHERE m.group_id=g.id) FROM server_groups g WHERE id=?",[group_id],|r|Ok(json!({"id":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?,"revision":r.get::<_,i64>(2)?.to_string(),"serverCount":r.get::<_,i64>(3)?}))).optional()?.ok_or_else(||CoreError::new("GROUP_NOT_FOUND","分组已删除，请重新选择"))
@@ -54,23 +54,20 @@ pub(crate) fn save(db:&Connection,p:&Value)->Result<(Value,Vec<String>)> {
     let group_changed=p.get("groupId").is_some_and(|v|v.as_str()!=previous_group.as_deref());
     if p.get("groupId").is_some() && old.is_some() && p["expectedMembershipRevision"]!=member_revision.to_string() {return Err(conflict());}
     if let Some(group_id)=p["groupId"].as_str() {group(db,group_id)?;}
-    let mut pending=Vec::new();
+    let pending=Vec::new();
     let mut changed=old.is_none()||group_changed;
     if let Some(config)=p.get("configuration") {
         let previous_route=old.as_ref().map(|s|route_store::route(db,&s.id)).transpose()?;
-        let route:ConnectionRoute=serde_json::from_value(config["connectionRoute"].clone())?;
+        let route:AccessPath=serde_json::from_value(config["accessPath"].clone())?;
+        if let Some(expected)=p.get("expectedDependencies"){crate::configuration_dependencies::check(db,&route,expected)?;}
         if old.as_ref().is_some_and(|s|p["expectedServerRevision"].as_u64()!=Some(s.revision)) {return Err(conflict());}
         let mut server=Server{id:server_id.clone(),name:config["name"].as_str().unwrap().trim().into(),host:config["host"].as_str().unwrap().trim().into(),port:config["port"].as_u64().unwrap() as u16,username:config["username"].as_str().unwrap().trim().into(),auth_type:config["authType"].as_str().unwrap().into(),revision:old.as_ref().map_or(1,|s|s.revision),has_secret:false};
         server.validate()?;
-        let auth_changed=old.as_ref().is_some_and(|s|s.host!=server.host||s.port!=server.port||s.username!=server.username||s.auth_type!=server.auth_type||Some(&route)!=previous_route.as_ref());
-        let config_changed=old.as_ref().is_none_or(|s|s.name!=server.name)||auth_changed;
+        let auth_changed=old.as_ref().is_some_and(|s|s.host!=server.host||s.port!=server.port||s.username!=server.username||s.auth_type!=server.auth_type);
+        let config_changed=old.as_ref().is_none_or(|s|s.name!=server.name)||auth_changed||Some(&route)!=previous_route.as_ref();
         if config_changed {
             if let Some(s)=&old {server.revision=s.revision.checked_add(1).ok_or_else(||CoreError::new("LIMIT_EXCEEDED","服务器修订已达上限"))?;}
-            if auth_changed {
-                pending.push(server_id.clone());
-                pending.extend(route_store::dependents(db,&server_id)?.into_iter().map(|s|s.id));
-            }
-            route_store::save_server_route_tx(db,&server,old.as_ref().map(|s|s.revision),Some(&route),true)?;
+            route_store::save_server_route_tx(db,&server,old.as_ref().map(|s|s.revision),Some(&route))?;
             changed=true;
         }
     }
@@ -83,19 +80,4 @@ pub(crate) fn save(db:&Connection,p:&Value)->Result<(Value,Vec<String>)> {
     Ok((value,pending))
 }
 
-pub(crate) fn receipt(db:&Connection,operation:&str,caller:&str,hash:Option<&str>)->Result<Option<Value>> {
-    let row:Option<(String,String,String)>=db.query_row("SELECT caller_key,request_hash,result FROM server_catalog_receipts WHERE operation_id=?",[operation],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
-    row.map(|(who,previous,result)|{
-        if who!=caller || hash.is_some_and(|h|h!=previous) {return Err(CoreError::new("OPERATION_CONFLICT","该操作标识已用于其他请求"));}
-        Ok(serde_json::from_str(&result)?)
-    }).transpose()
-}
-pub(crate) fn insert_receipt(db:&Connection,operation:&str,caller:&str,hash:&str,value:&Value,pending:&[String])->Result<()> {
-    let result=serde_json::to_string(&json!({"value":value,"pendingSecrets":pending}))?;
-    if result.len()>8192 {return Err(CoreError::new("LIMIT_EXCEEDED","保存回执超出容量"));}
-    db.execute("DELETE FROM server_catalog_receipts WHERE created_at<? AND json_array_length(result,'$.pendingSecrets')=0",[now_ms().saturating_sub(86400000) as i64])?;
-    let count:i64=db.query_row("SELECT count(*) FROM server_catalog_receipts",[],|r|r.get(0))?;
-    if count>=1024 {return Err(CoreError::new("LIMIT_EXCEEDED","保存回执已满，请稍后重试"));}
-    db.execute("INSERT INTO server_catalog_receipts(operation_id,caller_key,request_hash,result,created_at) VALUES(?,?,?,?,?)",params![operation,caller,hash,result,now_ms() as i64])?;
-    Ok(())
-}
+pub(crate) use crate::configuration_receipts::{receipt,insert_receipt};

@@ -66,7 +66,7 @@ try {
   try { await rpc(app.page, 'workbench.openTerminal', { serverId: server.id }); } catch (error) { challenge = error; }
   assert.equal(challenge?.code, 'HOST_KEY_REQUIRED');
   await rpc(app.page, 'hosts.trust', { serverId: server.id, ...challenge.details });
-  await rpc(app.page, 'auth.set', { serverId: server.id, password: 'isolated-input-password' });
+  await rpc(app.page, 'auth.ssh.set', { serverId: server.id, password: 'isolated-input-password' });
   views.A = await rpc(app.page, 'workbench.openTerminal', { serverId: server.id });
   views.B = await rpc(app.page, 'workbench.openTerminal', { serverId: server.id });
   await rpc(app.page, 'workbench.move', { viewId: views.B.viewId, placement: 'center', group: 1 });

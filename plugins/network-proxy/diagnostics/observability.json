@@ -1,0 +1,1050 @@
+{
+  "schemaVersion": 1,
+  "pluginId": "sodeck.network-proxy",
+  "events": [
+    {
+      "type": "plugin.sodeck.network-proxy.rule.saved",
+      "typeVersion": 1,
+      "fields": {
+        "ruleId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "revision": {
+          "type": "integer",
+          "classification": "count",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "kind": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "port-forward",
+            "network-proxy"
+          ]
+        },
+        "portMode": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "fixed",
+            "auto"
+          ]
+        }
+      },
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "rule.saved"
+    },
+    {
+      "type": "plugin.sodeck.network-proxy.rule.deleted",
+      "typeVersion": 1,
+      "fields": {
+        "ruleId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "revision": {
+          "type": "integer",
+          "classification": "count",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "kind": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "port-forward",
+            "network-proxy"
+          ]
+        }
+      },
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "rule.deleted"
+    },
+    {
+      "type": "plugin.sodeck.network-proxy.run.start.started",
+      "typeVersion": 1,
+      "fields": {
+        "runId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleRevision": {
+          "type": "integer",
+          "classification": "count",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "durationMs": {
+          "type": "integer",
+          "classification": "duration",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "run.start.started"
+    },
+    {
+      "type": "plugin.sodeck.network-proxy.run.start.completed",
+      "typeVersion": 1,
+      "fields": {
+        "runId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleRevision": {
+          "type": "integer",
+          "classification": "count",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "durationMs": {
+          "type": "integer",
+          "classification": "duration",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "run.start.completed"
+    },
+    {
+      "type": "plugin.sodeck.network-proxy.run.reconnect.started",
+      "typeVersion": 1,
+      "fields": {
+        "runId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleRevision": {
+          "type": "integer",
+          "classification": "count",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "durationMs": {
+          "type": "integer",
+          "classification": "duration",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "attemptId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "retryOf": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "retryIndex": {
+          "type": "integer",
+          "classification": "count",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "backoffMs": {
+          "type": "integer",
+          "classification": "duration",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "trigger": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 16,
+          "enum": [
+            "automatic",
+            "user"
+          ]
+        }
+      },
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "run.reconnect.started"
+    },
+    {
+      "type": "plugin.sodeck.network-proxy.run.reconnect.completed",
+      "typeVersion": 1,
+      "fields": {
+        "runId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleRevision": {
+          "type": "integer",
+          "classification": "count",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "durationMs": {
+          "type": "integer",
+          "classification": "duration",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "attemptId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "retryOf": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "retryIndex": {
+          "type": "integer",
+          "classification": "count",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "backoffMs": {
+          "type": "integer",
+          "classification": "duration",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "trigger": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 16,
+          "enum": [
+            "automatic",
+            "user"
+          ]
+        }
+      },
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "run.reconnect.completed"
+    },
+    {
+      "type": "plugin.sodeck.network-proxy.run.stop.started",
+      "typeVersion": 1,
+      "fields": {
+        "runId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleRevision": {
+          "type": "integer",
+          "classification": "count",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "durationMs": {
+          "type": "integer",
+          "classification": "duration",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "run.stop.started"
+    },
+    {
+      "type": "plugin.sodeck.network-proxy.run.stop.completed",
+      "typeVersion": 1,
+      "fields": {
+        "runId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleRevision": {
+          "type": "integer",
+          "classification": "count",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "durationMs": {
+          "type": "integer",
+          "classification": "duration",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "run.stop.completed"
+    },
+    {
+      "type": "plugin.sodeck.network-proxy.run.state.changed",
+      "typeVersion": 1,
+      "fields": {
+        "runId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "from": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "stopped",
+            "starting",
+            "ready",
+            "reconnecting",
+            "needs-attention",
+            "stopping",
+            "failed"
+          ]
+        },
+        "to": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "stopped",
+            "starting",
+            "ready",
+            "reconnecting",
+            "needs-attention",
+            "stopping",
+            "failed"
+          ]
+        }
+      },
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "run.state.changed"
+    },
+    {
+      "type": "plugin.sodeck.network-proxy.proxy.target.failed",
+      "typeVersion": 1,
+      "fields": {
+        "runId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "reasonCode": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "stage": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "target",
+            "client",
+            "cleanup",
+            "check",
+            "route",
+            "accept",
+            "other"
+          ]
+        }
+      },
+      "kind": "domain",
+      "level": "warn",
+      "messageKey": "proxy.target.failed"
+    },
+    {
+      "type": "plugin.sodeck.network-proxy.proxy.protocol.failed",
+      "typeVersion": 1,
+      "fields": {
+        "runId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "reasonCode": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "stage": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "target",
+            "client",
+            "cleanup",
+            "check",
+            "route",
+            "accept",
+            "other"
+          ]
+        }
+      },
+      "kind": "domain",
+      "level": "warn",
+      "messageKey": "proxy.protocol.failed"
+    },
+    {
+      "type": "plugin.sodeck.network-proxy.run.cleanup.failed",
+      "typeVersion": 1,
+      "fields": {
+        "runId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "reasonCode": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "stage": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "target",
+            "client",
+            "cleanup",
+            "check",
+            "route",
+            "accept",
+            "other"
+          ]
+        }
+      },
+      "kind": "domain",
+      "level": "warn",
+      "messageKey": "run.cleanup.failed"
+    },
+    {
+      "type": "plugin.sodeck.network-proxy.check.failed",
+      "typeVersion": 1,
+      "fields": {
+        "runId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "reasonCode": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "stage": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "target",
+            "client",
+            "cleanup",
+            "check",
+            "route",
+            "accept",
+            "other"
+          ]
+        }
+      },
+      "kind": "domain",
+      "level": "warn",
+      "messageKey": "check.failed"
+    },
+    {
+      "type": "plugin.sodeck.network-proxy.run.failure",
+      "typeVersion": 1,
+      "fields": {
+        "runId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "reasonCode": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "stage": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "target",
+            "client",
+            "cleanup",
+            "check",
+            "route",
+            "accept",
+            "other"
+          ]
+        }
+      },
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "run.failure"
+    },
+    {
+      "type": "plugin.sodeck.network-proxy.check.completed",
+      "typeVersion": 1,
+      "fields": {
+        "runId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "protocol": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 128,
+          "enum": [
+            "http",
+            "socks",
+            "tcp"
+          ]
+        },
+        "durationMs": {
+          "type": "integer",
+          "classification": "duration",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "kind": "domain",
+      "level": "info",
+      "messageKey": "check.completed"
+    }
+  ],
+  "actions": [
+    {
+      "type": "plugin.sodeck.network-proxy.run.start",
+      "typeVersion": 1,
+      "fields": {
+        "runId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleRevision": {
+          "type": "integer",
+          "classification": "count",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "durationMs": {
+          "type": "integer",
+          "classification": "duration",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "kind": "action"
+    },
+    {
+      "type": "plugin.sodeck.network-proxy.run.reconnect",
+      "typeVersion": 1,
+      "fields": {
+        "runId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleRevision": {
+          "type": "integer",
+          "classification": "count",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "durationMs": {
+          "type": "integer",
+          "classification": "duration",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "attemptId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "retryOf": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "retryIndex": {
+          "type": "integer",
+          "classification": "count",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "backoffMs": {
+          "type": "integer",
+          "classification": "duration",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "trigger": {
+          "type": "string",
+          "classification": "enum",
+          "maxLength": 16,
+          "enum": [
+            "automatic",
+            "user"
+          ]
+        }
+      },
+      "kind": "action"
+    },
+    {
+      "type": "plugin.sodeck.network-proxy.run.stop",
+      "typeVersion": 1,
+      "fields": {
+        "runId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleRevision": {
+          "type": "integer",
+          "classification": "count",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "durationMs": {
+          "type": "integer",
+          "classification": "duration",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "kind": "action"
+    },
+    {
+      "type": "plugin.sodeck.network-proxy.check",
+      "typeVersion": 1,
+      "fields": {
+        "runId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleRevision": {
+          "type": "integer",
+          "classification": "count",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "durationMs": {
+          "type": "integer",
+          "classification": "duration",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "kind": "action"
+    },
+    {
+      "type": "plugin.sodeck.network-proxy.rule.edit",
+      "typeVersion": 1,
+      "kind": "action",
+      "fields": {}
+    },
+    {
+      "type": "plugin.sodeck.network-proxy.client",
+      "typeVersion": 1,
+      "kind": "action",
+      "fields": {
+        "runId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "ruleId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        },
+        "clientId": {
+          "type": "string",
+          "classification": "safe-id",
+          "maxLength": 128
+        }
+      }
+    }
+  ],
+  "snapshots": [
+    {
+      "type": "network.runs.v1",
+      "typeVersion": 1,
+      "fields": {
+        "total": {
+          "type": "integer",
+          "classification": "count",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "truncated": {
+          "type": "boolean",
+          "classification": "state"
+        },
+        "runs": {
+          "type": "array",
+          "classification": "structure",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "classification": "structure",
+            "properties": {
+              "runId": {
+                "type": "string",
+                "classification": "safe-id",
+                "maxLength": 128
+              },
+              "state": {
+                "type": "string",
+                "classification": "enum",
+                "maxLength": 128,
+                "enum": [
+                  "stopped",
+                  "starting",
+                  "ready",
+                  "reconnecting",
+                  "needs-attention",
+                  "stopping",
+                  "failed"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "classification": "enum",
+                "maxLength": 128,
+                "enum": [
+                  "port-forward",
+                  "network-proxy"
+                ]
+              },
+              "ruleId": {
+                "type": "string",
+                "classification": "safe-id",
+                "maxLength": 128
+              },
+              "ruleRevision": {
+                "type": "integer",
+                "classification": "count",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "portMode": {
+                "type": "string",
+                "classification": "enum",
+                "maxLength": 32,
+                "enum": [
+                  "automatic",
+                  "fixed"
+                ]
+              },
+              "localPort": {
+                "type": "integer",
+                "classification": "count",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "routeRevision": {
+                "type": "string",
+                "classification": "safe-id",
+                "maxLength": 128
+              },
+              "activeChannelCount": {
+                "type": "integer",
+                "classification": "count",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "retryIndex": {
+                "type": "integer",
+                "classification": "count",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "checkState": {
+                "type": "string",
+                "classification": "enum",
+                "maxLength": 32,
+                "enum": [
+                  "checking",
+                  "succeeded",
+                  "failed"
+                ]
+              },
+              "recentErrorCode": {
+                "type": "string",
+                "classification": "safe-id",
+                "maxLength": 128
+              },
+              "resourceRefs": {
+                "type": "array",
+                "classification": "structure",
+                "maxItems": 16,
+                "items": {
+                  "type": "string",
+                  "classification": "safe-id",
+                  "maxLength": 128
+                }
+              }
+            }
+          }
+        },
+        "stateCounts": {
+          "type": "object",
+          "classification": "structure",
+          "properties": {
+            "stopped": {
+              "type": "integer",
+              "classification": "count",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "starting": {
+              "type": "integer",
+              "classification": "count",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "ready": {
+              "type": "integer",
+              "classification": "count",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "reconnecting": {
+              "type": "integer",
+              "classification": "count",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "needs-attention": {
+              "type": "integer",
+              "classification": "count",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "stopping": {
+              "type": "integer",
+              "classification": "count",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "failed": {
+              "type": "integer",
+              "classification": "count",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        }
+      },
+      "staleAfterMs": 300000
+    }
+  ],
+  "metrics": [
+    {
+      "type": "run.start.duration",
+      "typeVersion": 1,
+      "fields": {},
+      "metricKind": "histogram",
+      "unit": "ms",
+      "labels": {},
+      "buckets": [
+        10,
+        50,
+        100,
+        250,
+        500,
+        1000,
+        3000,
+        10000,
+        30000,
+        120000
+      ]
+    },
+    {
+      "type": "run.reconnect.duration",
+      "typeVersion": 1,
+      "fields": {},
+      "metricKind": "histogram",
+      "unit": "ms",
+      "labels": {},
+      "buckets": [
+        10,
+        50,
+        100,
+        250,
+        500,
+        1000,
+        3000,
+        10000,
+        30000,
+        120000
+      ]
+    },
+    {
+      "type": "check.duration",
+      "typeVersion": 1,
+      "fields": {},
+      "metricKind": "histogram",
+      "unit": "ms",
+      "labels": {},
+      "buckets": [
+        10,
+        50,
+        100,
+        250,
+        500,
+        1000,
+        3000,
+        10000,
+        30000,
+        120000
+      ]
+    },
+    {
+      "type": "proxy.failure",
+      "typeVersion": 1,
+      "fields": {},
+      "metricKind": "counter",
+      "unit": "count",
+      "labels": {
+        "stage": [
+          "target",
+          "client",
+          "cleanup",
+          "check",
+          "route",
+          "accept",
+          "other"
+        ]
+      }
+    },
+    {
+      "type": "run.active",
+      "typeVersion": 1,
+      "fields": {},
+      "metricKind": "gauge",
+      "unit": "count",
+      "labels": {
+        "state": [
+          "stopped",
+          "starting",
+          "ready",
+          "reconnecting",
+          "needs-attention",
+          "stopping",
+          "failed"
+        ]
+      }
+    },
+    {
+      "type": "client.active",
+      "typeVersion": 1,
+      "fields": {},
+      "metricKind": "gauge",
+      "unit": "count",
+      "labels": {}
+    }
+  ]
+}

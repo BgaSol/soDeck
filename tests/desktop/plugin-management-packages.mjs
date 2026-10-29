@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile,mkdir,stat} from 'node:fs/promises';
+import {resolve,join,dirname} from 'node:path';
+import {execFileSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
+import {fixturePackage} from './settings-package-mutate.mjs';
+const output=resolve('.qa/t028/packages-'+Date.now());await mkdir(output,{recursive:true});
+const hash=b=>createHash('sha256').update(b).digest('hex');
+const build=(...args)=>JSON.parse(execFileSync(process.execPath,['scripts/pack-plugin.mjs',...args],{windowsHide:true,encoding:'utf8',maxBuffer:8*1024*1024}).trim().split('\n').at(-1));
+const baseline=resolve('.local/dev/SoDeck-v2-T027-r9/resources/terminal.sodeck-plugin');
+const A=join(output,'terminal-a.sodeck-plugin');await writeFile(A,await fixturePackage(baseline,e=>e.delete('signature.json'),{resign:false}));
+const signed=join(output,'terminal-b-signed.sodeck-plugin');build('--plugin','terminal','--version','0.13.2','--out',signed);
+const source=join(output,'third-party-build');let entries;
+await fixturePackage(signed,e=>{entries=e;},{resign:false});
+for(const [name,bytes] of entries){await mkdir(dirname(join(source,name)),{recursive:true});await writeFile(join(source,name),bytes);}
+const manifest=JSON.parse(await readFile(join(source,'manifest.json'),'utf8'));manifest.requires.pluginApi='^6.2.0';manifest.requires.capabilities.push('plugins.optional-signature.v1');await writeFile(join(source,'manifest.json'),JSON.stringify(manifest));
+const keyPath='.local/signing/development-private.pem',keyBefore=await stat(keyPath);
+const B=join(output,'terminal-b-unsigned.sodeck-plugin');assert.equal(build('--source',source,'--signing','none','--out',B).signing,'none');
+assert.equal((await stat(keyPath)).mtimeMs,keyBefore.mtimeMs);
+await fixturePackage(B,e=>{assert.equal(e.has('signature.json'),false);const inventory=JSON.parse(e.get('integrity.json'));assert.equal(Object.keys(inventory).length,e.size-1);for(const [path,digest] of Object.entries(inventory))assert.equal(hash(e.get(path)),digest);},{resign:false});
+assert.throws(()=>build('--source',source,'--signing','none','--key-id','not-allowed','--out',join(output,'rejected.sodeck-plugin')));
+const result={passed:true,output,A:{path:A,version:'0.13.1',sha256:hash(await readFile(A))},B:{path:B,version:'0.13.2',sha256:hash(await readFile(B))},source};
+await writeFile('.qa/t028/packages.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result));

@@ -1,0 +1,396 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "x-imports": {
+    "Metrics": "communication-metrics-v1.schema.json"
+  },
+  "$defs": {
+    "LiveRange": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "live"
+          ]
+        },
+        "minutes": {
+          "enum": [
+            1,
+            5,
+            30,
+            60
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "minutes"
+      ],
+      "additionalProperties": false
+    },
+    "HistoryRequest": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/MetricsTarget"
+        },
+        "layer": {
+          "$ref": "#/$defs/MetricsLayer"
+        },
+        "range": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LiveRange"
+            },
+            {
+              "$ref": "#/$defs/UtcRange"
+            }
+          ]
+        }
+      },
+      "required": [
+        "range"
+      ],
+      "additionalProperties": false
+    },
+    "HistoryPoint": {
+      "type": "object",
+      "properties": {
+        "fromUtc": {
+          "$ref": "#/$defs/MetricsTimestamp"
+        },
+        "toUtc": {
+          "$ref": "#/$defs/MetricsTimestamp"
+        },
+        "sentBytes": {
+          "$ref": "#/$defs/MetricsDecimal"
+        },
+        "receivedBytes": {
+          "$ref": "#/$defs/MetricsDecimal"
+        },
+        "validMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sendRate": {
+          "$ref": "#/$defs/MetricsRate"
+        },
+        "receiveRate": {
+          "$ref": "#/$defs/MetricsRate"
+        },
+        "gap": {
+          "type": "boolean"
+        },
+        "peakSendRate": {
+          "$ref": "#/$defs/MetricsRate"
+        },
+        "peakReceiveRate": {
+          "$ref": "#/$defs/MetricsRate"
+        },
+        "peakResolutionMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sampleCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "invalid": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "fromUtc",
+        "toUtc",
+        "sentBytes",
+        "receivedBytes",
+        "validMs",
+        "sendRate",
+        "receiveRate",
+        "gap"
+      ],
+      "additionalProperties": false
+    },
+    "HistoryResult": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LiveHistoryResult"
+        },
+        {
+          "$ref": "#/$defs/StoredHistoryResult"
+        }
+      ]
+    },
+    "UtcRange": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "utc"
+          ]
+        },
+        "fromUtc": {
+          "$ref": "#/$defs/MetricsTimestamp"
+        },
+        "toUtc": {
+          "$ref": "#/$defs/MetricsTimestamp"
+        }
+      },
+      "required": [
+        "kind",
+        "fromUtc",
+        "toUtc"
+      ],
+      "additionalProperties": false
+    },
+    "LiveHistoryResult": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "$ref": "#/$defs/MetricsSummary"
+        },
+        "fromUtc": {
+          "$ref": "#/$defs/MetricsTimestamp"
+        },
+        "toUtc": {
+          "$ref": "#/$defs/MetricsTimestamp"
+        },
+        "retainedFromUtc": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MetricsTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resolutionMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "points": {
+          "type": "array",
+          "maxItems": 1200,
+          "items": {
+            "$ref": "#/$defs/HistoryPoint"
+          }
+        },
+        "coverage": {
+          "enum": [
+            "complete",
+            "partial"
+          ]
+        }
+      },
+      "required": [
+        "summary",
+        "fromUtc",
+        "toUtc",
+        "retainedFromUtc",
+        "resolutionMs",
+        "points",
+        "coverage"
+      ],
+      "additionalProperties": false
+    },
+    "StoredHistoryResult": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "stored"
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/MetricsTarget"
+        },
+        "layer": {
+          "$ref": "#/$defs/MetricsLayer"
+        },
+        "storeEpoch": {
+          "$ref": "#/$defs/MetricsId"
+        },
+        "highWatermark": {
+          "$ref": "#/$defs/MetricsDecimal"
+        },
+        "fromUtc": {
+          "$ref": "#/$defs/MetricsTimestamp"
+        },
+        "toUtc": {
+          "$ref": "#/$defs/MetricsTimestamp"
+        },
+        "retainedFromUtc": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MetricsTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resolutionMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "points": {
+          "type": "array",
+          "maxItems": 1200,
+          "items": {
+            "$ref": "#/$defs/HistoryPoint"
+          }
+        },
+        "statistics": {
+          "$ref": "#/$defs/HistoryPoint"
+        },
+        "coverage": {
+          "enum": [
+            "complete",
+            "partial"
+          ]
+        },
+        "boundaryOmitted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "target",
+        "layer",
+        "storeEpoch",
+        "highWatermark",
+        "fromUtc",
+        "toUtc",
+        "retainedFromUtc",
+        "resolutionMs",
+        "points",
+        "statistics",
+        "coverage",
+        "boundaryOmitted"
+      ],
+      "additionalProperties": false
+    },
+    "CompareRequest": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/MetricsTarget"
+        },
+        "layer": {
+          "$ref": "#/$defs/MetricsLayer"
+        },
+        "first": {
+          "$ref": "#/$defs/UtcRange"
+        },
+        "second": {
+          "$ref": "#/$defs/UtcRange"
+        }
+      },
+      "required": [
+        "first",
+        "second"
+      ],
+      "additionalProperties": false
+    },
+    "CompareResult": {
+      "type": "object",
+      "properties": {
+        "first": {
+          "$ref": "#/$defs/StoredHistoryResult"
+        },
+        "second": {
+          "$ref": "#/$defs/StoredHistoryResult"
+        },
+        "comparable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "first",
+        "second",
+        "comparable"
+      ],
+      "additionalProperties": false
+    },
+    "Policy": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/MetricsDecimal"
+        },
+        "saveHistory": {
+          "type": "boolean"
+        },
+        "rateUnit": {
+          "enum": [
+            "bytes",
+            "bits"
+          ]
+        },
+        "notifications": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "revision",
+        "saveHistory",
+        "rateUnit",
+        "notifications"
+      ],
+      "additionalProperties": false
+    },
+    "PolicyPatch": {
+      "type": "object",
+      "properties": {
+        "saveHistory": {
+          "type": "boolean"
+        },
+        "rateUnit": {
+          "enum": [
+            "bytes",
+            "bits"
+          ]
+        },
+        "notifications": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "PolicySet": {
+      "type": "object",
+      "properties": {
+        "expectedRevision": {
+          "$ref": "#/$defs/MetricsDecimal"
+        },
+        "patch": {
+          "$ref": "#/$defs/PolicyPatch"
+        }
+      },
+      "required": [
+        "expectedRevision",
+        "patch"
+      ],
+      "additionalProperties": false
+    },
+    "Empty": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "x-methods": {
+    "communication.history.query": "HistoryRequest",
+    "communication.history.compare": "CompareRequest",
+    "communication.policy.get": "Empty",
+    "communication.policy.set": "PolicySet"
+  },
+  "x-results": {
+    "communication.history.query": "HistoryResult",
+    "communication.history.compare": "CompareResult",
+    "communication.policy.get": "Policy",
+    "communication.policy.set": "Policy"
+  }
+}

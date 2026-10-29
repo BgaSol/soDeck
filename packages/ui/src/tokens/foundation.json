@@ -31,5 +31,15 @@
   "motion-fast": "100ms",
   "motion-layer": "140ms",
   "content-pad-x": "12px",
-  "content-pad-y": "8px"
+  "content-pad-y": "8px",
+  "chart-table-height": "320px",
+  "metric-value-width": "11.5rem",
+  "chart-focus-width": "3px",
+  "chart-min-height": "180px",
+  "chart-compact-height": "100px",
+  "chart-line-width": "2px",
+  "form-content-width": "720px",
+  "form-title-size": "1.538462rem",
+  "catalog-row-height": "4.923077rem",
+  "search-options-height": "320px"
 }

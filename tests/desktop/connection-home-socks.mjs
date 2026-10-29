@@ -1,0 +1,49 @@
+// T-025 native new-form SOCKS flow and real terminal/SFTP/network consumers.
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {createInterface} from 'node:readline';
+import {mkdir,writeFile,readFile} from 'node:fs/promises';
+import {resolve,join,delimiter} from 'node:path';
+import net from 'node:net';
+import {chromium} from 'playwright';
+import {launch,rpc,pluginRpc,until,stop,delay} from './harness.mjs';
+const output=resolve('.qa/t025/socks-'+Date.now());await mkdir(output,{recursive:true});
+for(const port of [12561,12562,12563,12564]){const s=net.createServer();await new Promise((ok,no)=>s.once('error',no).listen(port,'127.0.0.1',ok));await new Promise(ok=>s.close(ok));}
+const python='C:/Users/bgaso/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe';
+const fixture=spawn(python,['-u','tests/core/socks_route_fixture.py',join(output,'fixture')],{windowsHide:true,stdio:['pipe','pipe','pipe'],env:{...process.env,PYTHONPATH:resolve('.local/python'),SODECK_TEST_SOCKS_TARGET_PORT:'22345'}});
+let stderr='';fixture.stderr.on('data',b=>stderr+=b);
+const config=await new Promise((ok,no)=>{createInterface({input:fixture.stdout}).once('line',line=>ok(JSON.parse(line)));fixture.once('exit',()=>no(Error(stderr)));});
+process.env.SODECK_PLUGIN_PACKAGES=['terminal','files','network-proxy'].map(n=>resolve(`.qa/t025/packages/${n}.sodeck-plugin`)).join(delimiter);
+process.env.SODECK_PLUGIN_DEBUG_PORTS=JSON.stringify({'sodeck.terminal':12562,'sodeck.files':12563,'sodeck.network-proxy':12564});
+let app;const checks=[],browsers=new Map();const note=text=>{checks.push(text);console.log(text);};
+async function plugin(name,port){let browser=browsers.get(name);if(!browser?.isConnected()){browser=await chromium.connectOverCDP('http://127.0.0.1:'+port);browsers.set(name,browser);}return until(async()=>{for(const p of browser.contexts().flatMap(c=>c.pages()))if(p.url().includes('sodeck-plugin.localhost')&&await p.evaluate(name=>window.__SODECK_CONTEXT__?.pluginId==='sodeck.'+(name==='network'?'network-proxy':name),name))return p;});}
+try{
+ app=await launch({data:join(output,'data'),shellPort:12561,pluginPort:12562,packagePath:resolve('.qa/t025/packages/terminal.sodeck-plugin')});const page=app.page;
+ await page.getByRole('heading',{name:'新建 SSH 连接',exact:true}).waitFor();
+ await page.getByLabel('主机地址',{exact:true}).fill('target.internal');await page.getByLabel('用户名',{exact:true}).fill('tester');await page.getByLabel('私钥',{exact:true}).check();await page.getByLabel('私钥文件',{exact:true}).fill(resolve('.qa/t025/linux/test-key'));await page.getByLabel('显示名称',{exact:true}).fill('T025 SOCKS target');
+ await page.getByLabel('SOCKS5 代理',{exact:true}).check();await page.getByRole('button',{name:'新建代理',exact:true}).last().click();
+ const inline=page.getByRole('region',{name:'就地新建代理'});await inline.getByLabel('代理地址',{exact:true}).fill('127.0.0.1');await inline.getByLabel('代理端口',{exact:true}).fill(String(config.authPort));await inline.getByLabel('用户名和密码',{exact:true}).check();await inline.getByLabel('代理用户名',{exact:true}).fill('proxy-user');await inline.getByLabel('代理密码',{exact:true}).fill('proxy-password');await inline.getByRole('button',{name:'保存并选用'}).click();await inline.waitFor({state:'hidden'});
+ assert.equal((await rpc(page,'proxies.socks5.list')).proxies.length,1);assert.equal((await rpc(page,'servers.list')).servers.length,0);assert.equal((await rpc(page,'workbench.snapshot')).workspaces.length,0);note('Inline proxy saves independently, selects its captured SSH draft, and creates no workspace');
+ await page.getByRole('button',{name:'保存并连接',exact:true}).click();await page.getByRole('button',{name:'信任并连接',exact:true}).click();await until(async()=>(await rpc(page,'resources.list')).ptys.some(p=>p.state==='active'),60000);
+ const target=(await rpc(page,'servers.routes.list')).servers[0];const route=await rpc(page,'connections.route.get',{serverId:target.id,workspaceId:target.id});assert.equal(route.saved.accessMode,'networkProxy');assert.deepEqual(route.running[0].resources,{sessions:1,bridges:0});
+ const terminal=await plugin('terminal',12562);await until(async()=>(await terminal.locator('.xterm-rows').innerText()).includes('tester@'),30000);await terminal.locator('.xterm-helper-textarea').pressSequentially("printf 'T025_%s\\n' SOCKS_REAL");await terminal.locator('.xterm-helper-textarea').press('Enter');await until(async()=>(await terminal.locator('.xterm-rows').innerText()).includes('T025_SOCKS_REAL'),30000);note('Stored proxy password + SSH private key authenticate to real OpenSSH through SOCKS; first host trust is still required');
+ const workspace=(await rpc(page,'workbench.snapshot')).workspaces.find(w=>w.serverId===target.id);const scope={workspaceId:workspace.workspaceId,workspaceGeneration:workspace.generation};
+ const lease=await rpc(page,'connections.acquireExisting',{scope,serverId:target.id,configRevision:target.revision,operationId:crypto.randomUUID()});
+ const common={scope,leaseId:lease.leaseId,connectionGeneration:lease.generation};
+ const stat=await rpc(page,'files.stat',{...common,operationId:crypto.randomUUID(),path:{bytesBase64:Buffer.from('/etc/os-release').toString('base64')}});assert.ok(['file','symlink'].includes(stat.type));
+ const files=await plugin('files',12563);await rpc(page,'commands.execute',{pluginId:'sodeck.files',commandId:'files.connect',workspaceId:target.id,operationId:crypto.randomUUID()});const fsnap=await until(async()=>{const s=await pluginRpc(files,'plugin.invoke',{command:'files.snapshot',args:{count:100}});return s.state==='ready'&&!s.loading&&s.rows?.length>1?s:false;},45000);assert.ok(fsnap.rows.length);await rpc(page,'commands.execute',{pluginId:'sodeck.files',commandId:'files.connect',workspaceId:target.id,operationId:crypto.randomUUID()});assert.equal((await pluginRpc(files,'plugin.invoke',{command:'files.snapshot',args:{count:100}})).state,'ready');await delay(200);await files.screenshot({path:join(output,'files.png')});
+ const execRequest={...common,operationId:crypto.randomUUID(),command:"printf 'socks-real-exec'; exit 7"};const exec=await until(()=>rpc(page,'exec.start',execRequest).catch(e=>{if(e.code==='LIMIT_EXCEEDED')return false;throw e;}),30000);let text='',after=0;await until(async()=>{const r=await rpc(page,'exec.read',{...common,execId:exec.execId,afterSequence:after});for(const f of r.frames){text+=Buffer.from(f.bytesBase64,'base64').toString();after=f.sequence;}await rpc(page,'exec.ack',{...common,execId:exec.execId,sequence:after});if(r.state==='completed'){assert.equal(r.exitCode,7);return true;}return false;},15000);assert.ok(text.includes('socks-real-exec'));await rpc(page,'exec.close',{...common,execId:exec.execId});
+ await rpc(page,'connections.release',{leaseId:lease.leaseId});note('SFTP stat and official files plugin directory listing share the target connection');
+ const opened=await rpc(page,'commands.execute',{pluginId:'sodeck.network-proxy',commandId:'network.open',workspaceId:target.id,operationId:crypto.randomUUID()});
+ const network=await until(()=>plugin('network',12564),30000);const invoke=(command,args={})=>pluginRpc(network,'plugin.invoke',{command,args});
+ await network.getByRole('button',{name:'创建',exact:true}).waitFor();await until(()=>invoke('network.snapshot'),15000);
+ const rule=await invoke('network.save',{expectedRevision:0,rule:{name:'OpenSSH 测试入口',type:'port-forward',bindMode:'auto',port:0,autoReconnect:false,targetHost:'127.0.0.1',targetPort:22}});
+ await rpc(page,'commands.execute',{pluginId:'sodeck.network-proxy',commandId:'network.start',viewId:opened.viewId,operationId:crypto.randomUUID(),args:{id:rule.id}});
+ const run=await until(async()=>{const s=await invoke('network.snapshot',{selected:rule.id});return s.selected.run?.status==='ready'?s.selected.run:false;},45000);
+ const socket=net.connect(run.address.port,'127.0.0.1');let banner='';socket.on('data',b=>banner+=b.toString());socket.on('error',()=>{});try{await until(()=>banner.startsWith('SSH-2.0-OpenSSH'),15000);}finally{socket.destroy();}
+ const routes=await rpc(page,'connections.route.list',{});assert.ok(routes.connections.length>=2);assert.ok(routes.connections.every(r=>r.resources.sessions===1&&r.resources.bridges===0));await network.getByText('OpenSSH 测试入口',{exact:true}).click();await network.getByText('就绪',{exact:true}).waitFor();await network.getByText('连接路径',{exact:true}).click();await network.getByText('SOCKS5 网络代理 · 1 台主机',{exact:true}).waitFor();await network.screenshot({path:join(output,'network.png')});await invoke('network.stop',{id:rule.id});note('Official network plugin uses its own SOCKS-backed pool and forwards a real OpenSSH banner');
+
+ await rpc(page,'workspaces.close',{workspaceId:target.id});await until(async()=>{const r=await rpc(page,'resources.list');return !r.ptys.length&&!r.connections.length&&!r.leases.length;});
+ assert.deepEqual(app.errors,[]);await writeFile(join(output,'results.json'),JSON.stringify({passed:true,checks},null,2));
+}catch(e){await app?.page.screenshot({path:join(output,'failure.png')}).catch(()=>{});for(const [name,browser] of browsers)for(const [index,p] of browser.contexts().flatMap(c=>c.pages()).entries()){await p.screenshot({path:join(output,`${name}-failure-${index}.png`)}).catch(()=>{});await writeFile(join(output,`${name}-body-${index}.txt`),await p.locator('body').innerText().catch(()=>''));}await writeFile(join(output,'failure.json'),JSON.stringify({checks,error:String(e),stack:e.stack},null,2));throw e;}
+finally{await stop(app);for(const b of browsers.values())await b.close().catch(()=>{});fixture.stdin.end();await until(()=>fixture.exitCode!==null,5000).catch(()=>fixture.kill());await writeFile('.qa/t025/socks-latest.json',JSON.stringify({output,checks,shutdown:app?.shutdown,stderr},null,2));}

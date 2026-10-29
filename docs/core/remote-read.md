@@ -1,12 +1,24 @@
 # F-CORE-009：远端目录读取与有界执行
 
 文档就绪：可评审（实施契约与预算见代码方案 r1）
-更新日期：2026-10-26 · 修订：r5 · 关联任务：[T-008](../tasks/T-008-server-file-tree.md)、[T-013](../tasks/T-013-ssh-jump.md)
-所属：核心 Remote I/O · 消费者：[文件插件](../plugins/files/README.md)
+更新日期：2026-10-28 · 修订：r6 · 关联任务：[T-008](../tasks/T-008-server-file-tree.md)、[T-013](../tasks/T-013-ssh-jump.md)、[T-024设计](../tasks/T-024-server-monitor.md)
+所属：核心 Remote I/O · 消费者：[文件插件](../plugins/files/README.md)、[资源监控设计](../plugins/monitor/README.md)
 依据：[核心职责](README.md)、[通信](communication.md)、[资源](resources.md)、[调用记录](call-records.md)、[SSH](ssh.md)
 实现落点：[代码设计与修改规划 r1](../technical/server-files-implementation.md)；实施授权及实际验证见 [T-008 结果](../tasks/T-008-results.md)。
 
 ## 1. 目标和范围
+
+T-024增量仅扩展SDK消费方式，不改remote-read-v1 wire契约。[代码方案§4.2](../technical/server-monitor-implementation.md#42-有界执行sdk)新增有界exec客户端：配置总期限/输出上限/单调clock、结构化退出/截断/错误、单一read/ack、有限回执查询、取消及迟到资源回收；不解释指标、不拥有或释放调用者租约。现有Remote调用和文件插件本次不迁移。
+
+`remote.operations.get`取得成功会claim资源，`forget`不能当作关闭；收到迟到execId必须按原scope/lease/generation关闭。响应不明只查同一operationId，不重发start；总期限到达仍未确认回收时保留cleanupPending和清理配额。取消/关闭不得为了本插件回收断开共享socket。SDK、宿主与功能预算由代码方案共同约束，不把Promise.race超时当作底层操作已结束。
+
+本功能新增测试（计划，结果归T-024）：
+
+| 用例 | 准备/操作 | 预期 | 清理/方式 |
+| --- | --- | --- | --- |
+| RI-MON-01 | 丢exec.start响应、回执running/迟到成功、丢ack和非零退出，分别触发总期限 | 不重放start；有界查询；结构化结果正确；已claim句柄被关闭后才forget | 取消/关闭并核对资源；SDK夹具+真实exec，MCODE-02 |
+| RI-MON-02 | 终端/文件/监控共享目标；监控输出超限/慢exec中隐藏、关闭、失联 | 超限不算成功；可通信5秒内回收所属资源；失联清理状态可见，其他租约不误关 | 恢复网络并核对句柄/租约；真实SSH+原生，MCODE-02/07 |
+| RI-MON-03 | 新有界客户端与旧Remote共存，检查32KiB页、stdout/stderr总预算、未决调用配额及文件既有用例 | wire未变，严格DTO通过，旧文件行为不变；客户端不隐藏仍未完成的I/O | 释放资源恢复夹具；SDK/契约/文件回归，MCODE-02/06 |
 
 为文件插件提供读取目录/属性和运行有界非交互命令的公共能力。T-008 在既有 SSH/PTY 上实现本文件的 SFTP 和通用 exec 增量，随 dev.5 开发包提供；这不等于正式发布。
 

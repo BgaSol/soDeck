@@ -32,7 +32,7 @@ try{
    assert.equal(await app.page.getByRole('button',{name:'添加跳板服务器',exact:true}).evaluate(e=>e===document.activeElement),true);
  }
  assert.equal((await rpc(app.page,'workbench.snapshot')).workspaces.length,0);
- assert.equal((await rpc(app.page,'servers.routes.v2.list')).servers.length,3);
+ assert.equal((await rpc(app.page,'servers.routes.list')).servers.length,3);
  checks.push('MH-01: four nested drafts preserve independent passwords/names; each save returns focus to parent; no gateway workspace opens');
  const ime=(action,args=[])=>ps('tests/desktop/ime-windows.ps1',['-Action',action,'-AppProcessId',String(app.process.pid),'-WindowHandle',String(win.handle),...args]);
  const name=app.page.getByRole('textbox',{name:'显示名称',exact:true});await nativeWindow(app,'show',{WindowHandle:win.handle});await name.fill('');await name.focus();
@@ -45,7 +45,7 @@ try{
    assert.equal(await app.page.evaluate(()=>window.__imeComposing),true);await screenshot('ime-composition');await ime('keys',['-Keys','SPACE']);
    await until(async()=>!await app.page.evaluate(()=>window.__imeComposing));const events=await app.page.evaluate(()=>window.__imeEvents);
    assert.ok(events.some(e=>e.type==='compositionstart'&&e.isTrusted));assert.ok(events.some(e=>e.type==='input'&&e.isTrusted&&/[\u3400-\u9fff]/.test(e.data??'')));
-   assert.equal((await rpc(app.page,'servers.routes.v2.list')).servers.length,3);await writeFile(join(output,'ime-events.json'),JSON.stringify(events,null,2));
+   assert.equal((await rpc(app.page,'servers.routes.list')).servers.length,3);await writeFile(join(output,'ime-events.json'),JSON.stringify(events,null,2));
    checks.push('MH-10: trusted Microsoft Pinyin composition in target draft commits Chinese text without submitting the parent form');
  }finally{if(await app.page.evaluate(()=>window.__imeComposing))await ime('keys',['-Keys','ESC']);if(shifted)await ime('keys',['-Keys','SHIFT']);await ime('language',['-Layout',imeOriginal.focusLayout]);await name.fill('内网目标 D · 中文草稿');}
  for(const percent of [100,200]){
@@ -71,7 +71,7 @@ try{
    await screenshot(`trust-${i+1}-of-4`);await app.page.getByRole('button',{name:'信任并连接',exact:true}).click();
  }
  await until(async()=>(await rpc(app.page,'resources.list')).ptys.some(p=>p.state==='active'),30000);
- const servers=(await rpc(app.page,'servers.routes.v2.list')).servers,target=servers.find(s=>s.name==='内网目标 D · 中文草稿');
+ const servers=(await rpc(app.page,'servers.routes.list')).servers,target=servers.find(s=>s.name==='内网目标 D · 中文草稿');
  assert.equal((await rpc(app.page,'workbench.snapshot')).workspaces.length,1);
  checks.push('MH-03: all four native trust dialogs identify exact k/N and final target; saved per-node passwords authenticate to OpenSSH');
  await app.page.locator('.connection-status').click();await app.page.getByRole('dialog',{name:'连接路径'}).waitFor();await app.page.getByRole('button',{name:'查看完整路径',exact:true}).first().click();await app.page.getByText('4/4 · 目标 · 内网目标 D · 中文草稿',{exact:true}).waitFor();await screenshot('path-details');
@@ -79,7 +79,7 @@ try{
  await app.page.keyboard.press('Escape');
  await app.page.getByRole('button',{name:'打开服务器',exact:true}).first().click();
  // Use the picker delete action for the saved gateway; refusal is reviewable before any stop.
- const gateway=servers.find(s=>s.connectionRoute.kind==='direct');
+ const gateway=servers.find(s=>s.accessPath.kind==='direct');
  const row=app.page.locator('.picker-row').filter({has:app.page.getByRole('button',{name:`删除 ${gateway.name}`,exact:true})});
  assert.equal(await row.count(),1);{await row.getByRole('button',{name:/删除/}).click();await until(async()=>/内网目标 D/.test(await app.page.getByRole('dialog').innerText()));await screenshot('delete-dependency');await app.page.keyboard.press('Escape');}
  await app.page.getByRole('button',{name:'打开服务器',exact:true}).first().click();

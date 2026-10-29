@@ -1,7 +1,9 @@
 # F-PROXY-001：SSH 内网代理
 
-文档就绪：r7 界面增量可评审；r6 已确认实施的事实与结果保留于 T-014
-规格修订及更新日期：r7 · 2026-10-27
+文档就绪：可评审；r8登记T-027混合路径增量，r6已确认实施的事实与结果保留于T-014
+规格修订及更新日期：r8 · 2026-10-28
+
+T-027增量：[插件混合连接计划r1](mixed-route-integration.md)维护API6路径展示/Run/重连及NP-MR-01的HTTP/SOCKS内网代理专属流程，PROXY-MR覆盖共用生命周期；到达SSH主机的外部SOCKS与本插件本地客户端入口分别呈现。本次待确认，原业务结果保留。
 所属插件：`sodeck.network-proxy`  
 上级总览：[网络隧道插件](../README.md)  
 核心依赖：[F-CORE-015 隧道与多跳候选](../../../core/dynamic-proxy.md)、[SSH 跳板](../../../core/ssh-jump.md)、[工作台](../../../core/workbench.md)、[UI 规范](../../../standards/ui.md)  

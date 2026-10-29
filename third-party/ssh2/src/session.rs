@@ -96,6 +96,8 @@ unsafe fn with_abstract<R, F: FnOnce() -> R>(
 
 pub(crate) struct SessionInner {
     pub(crate) raw: *mut raw::LIBSSH2_SESSION,
+    observer: Option<Box<::metrics::Observer>>,
+    channel_counters: Vec<::ByteCounter>,
     #[cfg(unix)]
     tcp: Option<Box<dyn AsRawFd>>,
     #[cfg(windows)]
@@ -168,10 +170,42 @@ impl Session {
                     inner: Arc::new(Mutex::new(SessionInner {
                         raw: ret,
                         tcp: None,
+                        observer: None,
+                        channel_counters: Vec::new(),
                     })),
                 })
             }
         }
+    }
+
+    /// Attach a bounded numeric observer before starting the handshake.
+    pub fn set_byte_meter(&self, meter: &::ByteMeter, transport: &::ByteCounter) -> Result<(), Error> {
+        let mut inner = self.inner();
+        if inner.observer.is_some() || !meter.owns(transport) {
+            return Err(Error::from_errno(ErrorCode::Session(raw::LIBSSH2_ERROR_BAD_USE)));
+        }
+        let mut observer = Box::new(::metrics::Observer { meter: meter.clone(), transport: transport.clone() });
+        unsafe { raw::sodeck_session_observer(inner.raw,
+            &mut *observer as *mut ::metrics::Observer as *mut c_void, Some(::metrics::observe)); }
+        inner.observer = Some(observer);
+        Ok(())
+    }
+
+    /// Bind the next channel's origin before open/SFTP initialization. Call again
+    /// with the same counter when continuing EAGAIN. Existing channels keep theirs.
+    pub fn set_channel_origin(&self, counter: Option<&::ByteCounter>) -> Result<(), Error> {
+        let mut inner = self.inner();
+        if let Some(counter) = counter {
+            if !inner.observer.as_ref().map_or(false, |o| o.meter.owns(counter)) || counter.counts().closed {
+                return Err(Error::from_errno(ErrorCode::Session(raw::LIBSSH2_ERROR_BAD_USE)));
+            }
+            inner.channel_counters.retain(|c| !c.counts().closed);
+            if !inner.channel_counters.iter().any(|c| c.token() == counter.token()) {
+                inner.channel_counters.push(counter.clone());
+            }
+        }
+        unsafe { raw::sodeck_channel_origin(inner.raw, counter.map_or(0, |c| c.token())); }
+        Ok(())
     }
 
     #[doc(hidden)]
@@ -1175,8 +1209,9 @@ impl SessionInner {
 impl Drop for SessionInner {
     fn drop(&mut self) {
         unsafe {
-            let _rc = raw::libssh2_session_free(self.raw);
+            let _rc = raw::sodeck_session_free_local(self.raw);
         }
+        if let Some(observer) = &self.observer { observer.transport.finish(); }
     }
 }
 

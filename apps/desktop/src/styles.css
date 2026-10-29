@@ -108,29 +108,6 @@
 .password-field>button{flex-shrink:0}
 .dialog .server-credentials .check-label{margin-top:12px;font-size:.923rem}
 .credential-help{margin:6px 0 0;line-height:1.5}
-.dialog.server-picker-dialog{width:560px}
-.server-picker{display:flex;flex-direction:column;min-height:0;padding:0 24px 24px}
-.dialog .server-search{display:flex;flex-direction:row;align-items:center;gap:10px;flex-shrink:0;margin:0;padding:0 12px;border:1px solid var(--controlBorder);border-radius:var(--sd-radius-control);background:var(--field);color:var(--muted)}
-.server-search>svg{flex-shrink:0}
-.dialog .server-search:focus-within{outline:2px solid var(--focus);outline-offset:-2px}
-.dialog .server-search input{flex:1;min-width:0;height:40px;padding:0;border:0;background:var(--transparent);outline:none}
-.picker-list{min-height:0;max-height:min(48vh,360px);overflow:auto;margin:16px -4px;padding:4px;scrollbar-gutter:stable}
-.picker-row{display:flex;align-items:center;gap:4px;padding:4px;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
-.picker-row+.picker-row{margin-top:8px}
-.picker-row:hover,.picker-row:focus-within{background:var(--hover)}
-.picker-open{display:flex;flex:1;min-width:0;align-items:center;justify-content:flex-start;text-align:left;background:var(--transparent);border:0;padding:8px;gap:12px}
-.picker-open:hover,.picker-open:active{background:var(--transparent)}
-.picker-avatar{display:flex;align-items:center;justify-content:center;width:36px;height:36px;flex-shrink:0;border:1px solid var(--border);border-radius:10px;color:var(--accent);background:var(--elevated)}
-.picker-details{display:flex;flex:1;min-width:0;flex-direction:column;gap:4px}
-.picker-details>strong,.picker-details>small{display:block;overflow:hidden;text-overflow:clip;white-space:nowrap}
-.picker-details>strong{font-weight:600;font-size:1.077rem;line-height:1.4}
-.picker-details>small,.picker-status{font-size:.923rem;color:var(--secondary);line-height:1.4}
-.picker-actions{display:flex;gap:2px;align-items:center;padding-right:4px;flex-shrink:0}
-.picker-actions .picker-delete:hover{color:var(--error)}
-.picker-empty{text-align:center;padding:28px 12px;margin:0;color:var(--secondary)}
-.dialog .picker-footer{justify-content:space-between;flex-shrink:0;gap:12px;margin-top:0;padding-top:16px;border-top:1px solid var(--border)}
-.picker-footer>span{font-size:.923rem;color:var(--muted)}
-
 /* Appearance uses the same palette data as real windows. */
 .dialog.appearance-dialog{width:700px}
 .appearance-body{padding:4px 24px 24px;overflow:auto}
@@ -201,7 +178,7 @@
 .tab-bar,.panel-heading{height:max(36px,2.77rem);min-height:max(36px,2.77rem)}
 .statusbar{height:max(24px,1.846rem);min-height:max(24px,1.846rem)}
 .dialog h2{font-size:1.385rem}.welcome h1{font-size:1.846rem}
-@media(max-width:600px){.dialog>header{padding:16px}.dialog>form,.appearance-body,.management-body,.server-picker{padding-left:16px;padding-right:16px}}
+@media(max-width:600px){.dialog>header{padding:16px}.dialog>form,.appearance-body,.management-body{padding-left:16px;padding-right:16px}}
 
 /* Connection paths use the same semantic surfaces and scroll boundaries as forms. */
 .server-form-step:not([hidden]){display:flex;flex-direction:column;min-height:0;overflow:hidden}
@@ -242,3 +219,10 @@
 /* Route details use the shared type and colors; only path-list geometry is local. */
 .route-node-list { max-block-size: 16rem; overflow: auto; overflow-wrap: anywhere; padding-inline-start: 1.5rem; }
 .route-node-list li > span { display: block; }
+
+.diagnostic-nodes{list-style:none;padding:0;margin:0;overflow-wrap:anywhere;display:flex;flex-direction:column;gap:var(--sd-space-3)}
+.diagnostic-nodes summary{cursor:pointer;font-weight:var(--sd-title-weight)}
+.diagnostic-phases{padding-inline-start:var(--sd-space-6);margin-block:var(--sd-space-3);overflow-wrap:anywhere}
+.diagnostic-phases li{margin-block:var(--sd-space-2)}
+.diagnostic-phases li>span,.diagnostic-phases li>small{display:block}
+.diagnostic-phases li>small{color:var(--secondary);font-size:var(--sd-font-small)}

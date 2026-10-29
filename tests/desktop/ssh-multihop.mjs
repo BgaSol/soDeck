@@ -18,16 +18,16 @@ const invoke=(page,command,args={})=>pluginRpc(page,'plugin.invoke',{command,arg
 const snapshot=page=>invoke(page,'files.snapshot',{count:100});
 const screen=name=>app.page.screenshot({path:join(output,`${name}.png`)});
 async function plugin(port,workspace){const browser=await until(()=>chromium.connectOverCDP(`http://127.0.0.1:${port}`),30000);browsers.push(browser);return until(async()=>{for(const p of browser.contexts().flatMap(c=>c.pages()))if(await p.evaluate(()=>window.__SODECK_CONTEXT__?.workspaceId)===workspace)return p;},30000);}
-async function create(node,jump,name=node.name){return rpc(app.page,'servers.routes.v2.create',{name,host:node.host,port:node.port,username:node.username,authType:'key',connectionRoute:jump?{kind:'sshJump',jumpServerId:jump.id}:{kind:'direct'}});}
-async function credential(server,node,encrypted=false){await rpc(app.page,'auth.set',{serverId:server.id,privateKeyPath:encrypted?node.encryptedKey:node.key,passphrase:encrypted?'fixture-passphrase':'',remember:false});}
+async function create(node,jump,name=node.name){return rpc(app.page,'servers.routes.create',{name,host:node.host,port:node.port,username:node.username,authType:'key',accessPath:jump?{kind:'sshJump',jumpServerId:jump.id}:{kind:'direct'}});}
+async function credential(server,node,encrypted=false){await rpc(app.page,'auth.ssh.set',{serverId:server.id,privateKeyPath:encrypted?node.encryptedKey:node.key,passphrase:encrypted?'fixture-passphrase':'',remember:false});}
 async function connect(server,count){for(let i=0;i<=count;i++){try{return await rpc(app.page,'connections.acquire',{serverId:server.id,workspaceId:server.id,operationId:crypto.randomUUID()});}catch(e){assert.equal(e.code,'HOST_KEY_REQUIRED',e.message);assert.equal(e.details.hopCount,count);await rpc(app.page,'hosts.trust',{serverId:e.details.serverId,challengeId:e.details.challengeId,fingerprint:e.details.fingerprint});}}throw Error('Path did not finish');}
 async function release(lease){await rpc(app.page,'connections.release',{leaseId:lease.leaseId});}
 async function probe(server,count){const lease=await connect(server,count);const pty=await rpc(app.page,'pty.open',{leaseId:lease.leaseId});await rpc(app.page,'pty.write',{...pty,inputSeq:1,bytes:Buffer.from("printf 'MH%s\\n' _OPENSSH_PROOF\r").toString('base64')});await until(async()=>{const r=await rpc(app.page,'pty.read',{...pty,after:0});return r.frames.some(f=>Buffer.from(f.bytes,'base64').toString().includes('MH_OPENSSH_PROOF'));},30000);await rpc(app.page,'pty.close',pty);await release(lease);}
-async function edit(server,changes){const {id,revision,hasSecret,...body}=server;return rpc(app.page,'servers.routes.v2.update',{...body,...changes,serverId:id,expectedRevision:revision});}
+async function edit(server,changes){const {id,revision,hasSecret,...body}=server;return rpc(app.page,'servers.routes.update',{...body,...changes,serverId:id,expectedRevision:revision});}
 try{
  for(const n of config.nodes.slice(1))await assert.rejects(()=>lookup(n.host));
  app=await launch({data:join(output,`${old?'old':filesOnly?'files-only':'current'}-${Date.now()}`),shellPort:9861,pluginPort:9862,allowStartupWarning:filesOnly,packagePath:resolve(packages,`${filesOnly?'files':'terminal'}.sodeck-plugin`)});
- assert.ok((await rpc(app.page,'capabilities.list')).capabilities.includes('connections.route.v2'));
+ assert.ok((await rpc(app.page,'capabilities.list')).capabilities.includes('connections.route'));
  const installed=await rpc(app.page,'plugins.list');
  if(filesOnly)assert.deepEqual(installed.map(p=>p.pluginId),['sodeck.files']);
  if(old){assert.equal(installed.find(p=>p.pluginId==='sodeck.terminal').activeVersion,'0.6.0');assert.equal(installed.find(p=>p.pluginId==='sodeck.files').activeVersion,'0.3.2');}
@@ -65,7 +65,7 @@ try{
    await rpc(app.page,'commands.execute',{pluginId:'sodeck.terminal',commandId:'terminal.new',workspaceId:target.id,operationId:crypto.randomUUID()});
    await until(async()=>(await snapshot(files)).follow.message==='连接不同，暂不跟随',30000);
    await rpc(app.page,'views.activate',{viewId:before[0].viewId});await until(async()=>(await snapshot(files)).follow.message!=='连接不同，暂不跟随');
-   const dependencies=await rpc(app.page,'servers.routes.v2.dependencies',{serverId:nodes[0].id});
+   const dependencies=await rpc(app.page,'servers.routes.dependencies',{serverId:nodes[0].id});
    assert.ok(dependencies.dependencies.some(d=>d.kind==='saved'&&d.server.id===target.id&&!d.direct));
    assert.ok(dependencies.dependencies.filter(d=>d.kind==='running').length>=2);
    await assert.rejects(()=>rpc(app.page,'servers.delete',{serverId:nodes[0].id,stopSessions:true}),e=>e.code==='SERVER_DEPENDENTS');
@@ -81,7 +81,7 @@ try{
    for(const mode of ['dopamine','light','dark']){const preference=await rpc(app.page,'ui.theme.preference.get');await rpc(app.page,'ui.theme.choose',{themeId:mode==='dopamine'?mode:'soft-'+mode,expectedRevision:preference.revision});await delay(200);await screen(`workspace-${mode}`);}
  }
  await rpc(app.page,'workspaces.close',{workspaceId:target.id});
- await until(async()=>{const r=await rpc(app.page,'connections.route.v2.list');return r.usage.sessions===0&&r.usage.bridges===0;},5000);
+ await until(async()=>{const r=await rpc(app.page,'connections.route.list');return r.usage.sessions===0&&r.usage.bridges===0;},5000);
  assert.equal((await rpc(app.page,'resources.list')).ptys.length,0);assert.deepEqual(app.errors,[]);
  note('Closing the target workspace releases all target and intermediate transports; no page errors');
 }finally{for(const b of browsers)await b.close().catch(()=>{});await stop(app);await writeFile(join(output,`${old?'old-':filesOnly?'files-only-':''}results.json`),JSON.stringify(results,null,2));}

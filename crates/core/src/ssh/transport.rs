@@ -47,8 +47,9 @@ pub fn check(canceled: &AtomicBool, operation: &AtomicBool, deadline: Instant) -
         Err(CoreError::new("CONNECT_TIMEOUT", "连接阶段超时"))
     } else { Ok(()) }
 }
-pub fn tcp(host: &str, port: u16, canceled: &AtomicBool, operation: &AtomicBool, total: Instant) -> Result<TcpStream> {
+pub fn resolve(host: &str, port: u16, canceled: &AtomicBool, operation: &AtomicBool, total: Instant) -> Result<Vec<std::net::SocketAddr>> {
     check(canceled,operation,total)?;
+    if let Ok(ip)=host.trim_matches(['[',']']).parse::<std::net::IpAddr>() {return Ok(vec![std::net::SocketAddr::new(ip,port)]);}
     if RESOLVERS.try_update(Ordering::SeqCst,Ordering::SeqCst,|n|(n<16).then_some(n+1)).is_err() {
         return Err(CoreError::new("LIMIT_EXCEEDED", "主机解析任务已满，请稍后重试"));
     }
@@ -68,7 +69,12 @@ pub fn tcp(host: &str, port: u16, canceled: &AtomicBool, operation: &AtomicBool,
             _=>return Err(CoreError::new("NETWORK_ERROR","主机解析未完成")),
         }
     };
+    Ok(addresses)
+}
+pub fn tcp(host: &str, port: u16, canceled: &AtomicBool, operation: &AtomicBool, total: Instant) -> Result<TcpStream> {
+    let addresses=resolve(host,port,canceled,operation,total)?;
     let deadline=total.min(Instant::now()+Duration::from_secs(15));
+    let mut last_error=None;
     for address in addresses {
         let candidate=deadline.min(Instant::now()+Duration::from_secs(5));
         check(canceled,operation,deadline)?;
@@ -77,7 +83,7 @@ pub fn tcp(host: &str, port: u16, canceled: &AtomicBool, operation: &AtomicBool,
         match socket.connect(&address.into()) {
             Ok(())=>{let stream:TcpStream=socket.into();stream.set_nodelay(true)?;return Ok(stream)},
             Err(e) if e.kind()==std::io::ErrorKind::WouldBlock||matches!(e.raw_os_error(),Some(115|36|10035))=>{},
-            Err(_)=>continue,
+            Err(error)=>{last_error=Some(error);continue;},
         }
         let stream:TcpStream=socket.into();let poller=Poller::new()?;
         unsafe{poller.add(&stream,Event::writable(0))?;}
@@ -86,7 +92,10 @@ pub fn tcp(host: &str, port: u16, canceled: &AtomicBool, operation: &AtomicBool,
             while Instant::now()<candidate {
                 check(canceled,operation,deadline)?;
                 events.clear();poller.wait(&mut events,Some(Duration::from_millis(50)))?;
-                if events.iter().any(|e|e.writable) {return Ok(stream.take_error()?.is_none()&&stream.peer_addr().is_ok());}
+                if events.iter().any(|e|e.writable) {
+                    if let Some(error)=stream.take_error()? {last_error=Some(error);return Ok(false);}
+                    return Ok(stream.peer_addr().is_ok());
+                }
                 poller.modify(&stream,Event::writable(0))?;
             }
             Ok(false)
@@ -94,7 +103,7 @@ pub fn tcp(host: &str, port: u16, canceled: &AtomicBool, operation: &AtomicBool,
         let _=poller.delete(&stream);
         if result? {stream.set_nodelay(true)?;return Ok(stream)}
     }
-    Err(CoreError::new("NETWORK_ERROR","SSH 连接失败，请检查地址、端口及网络"))
+    Err(CoreError::new("NETWORK_ERROR","连接端点失败，请检查地址、端口及网络").details(json!({"operation":"connect","osErrorCode":last_error.and_then(|e|e.raw_os_error())})))
 }
 
 #[cfg(test)]
@@ -123,7 +132,7 @@ pub fn protocol<T>(canceled:&AtomicBool,operation:&AtomicBool,total:Instant,mut 
         match call() {
             Ok(value)=>return Ok(value),
             Err(e) if e.code()==ssh2::ErrorCode::Session(-37)=>{},
-            Err(e)=>return Err(CoreError::new("SSH_ERROR",format!("SSH 协议操作失败 ({:?})",e.code()))),
+            Err(e)=>return Err(CoreError::new("SSH_ERROR","SSH 协议操作失败").details(json!({"sshErrorCode":match e.code(){ssh2::ErrorCode::Session(n)|ssh2::ErrorCode::SFTP(n)=>n}}))),
         }
         thread::sleep(Duration::from_millis(4));
     }
@@ -155,7 +164,7 @@ fn pair()->Result<(TcpStream,TcpStream)> {
 pub fn forward(session:Session,gateway:TcpStream,host:&str,port:u16,canceled:&AtomicBool,operation:&AtomicBool,total:Instant,failed:Arc<AtomicBool>,failure_hop:Arc<AtomicUsize>,hop:usize)->Result<(TcpStream,Bridge)> {
     let deadline=total.min(Instant::now()+Duration::from_secs(15));
     let channel=protocol(canceled,operation,deadline,||session.channel_direct_tcpip(host,port,None)).map_err(|e|{
-        if matches!(e.code.as_str(),"CANCELED"|"CONNECT_TIMEOUT") {e} else {CoreError::new("JUMP_FORWARD_FAILED","跳板无法转发到目标，请检查目标地址及 SSH 转发设置").details(json!({"cause":e.code}))}
+        if matches!(e.code.as_str(),"CANCELED"|"CONNECT_TIMEOUT") {e} else {CoreError::new("JUMP_FORWARD_FAILED","跳板无法转发到目标，请检查目标地址及 SSH 转发设置").details(e.details.unwrap_or(json!({})))}
     })?;
     let (client,local)=pair()?;
     let stop=Arc::new(AtomicBool::new(false));

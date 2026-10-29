@@ -14,7 +14,7 @@ try{
   app=await launch({data:join(output,'app'),shellPort:9453,pluginPort:9454});
   const server=await rpc(app.page,'servers.create',{name:'工作区故障隔离',host:'127.0.0.1',port:config.port,username:'test-user',authType:'password'});
   const challenge=await fail(rpc(app.page,'connections.acquire',{serverId:server.id,workspaceId:server.id}),'HOST_KEY_REQUIRED');
-  await rpc(app.page,'hosts.trust',{serverId:server.id,...challenge.details});await rpc(app.page,'auth.set',{serverId:server.id,password:'isolated-test-password',remember:false});await rpc(app.page,'workspaces.open',{serverId:server.id});
+  await rpc(app.page,'hosts.trust',{serverId:server.id,...challenge.details});await rpc(app.page,'auth.ssh.set',{serverId:server.id,password:'isolated-test-password',remember:false});await rpc(app.page,'workspaces.open',{serverId:server.id});
   const first=await rpc(app.page,'commands.execute',{commandId:'terminal.new',workspaceId:server.id});const firstPage=await surface(first.viewId);await until(()=>firstPage.locator('.xterm-rows').innerText().then(t=>t.includes('fixture-ready')));
   const second=await rpc(app.page,'commands.execute',{commandId:'terminal.new',workspaceId:server.id});const secondPage=await surface(second.viewId);await until(()=>secondPage.locator('.xterm-rows').innerText().then(t=>t.includes('fixture-ready')));
   const baseline=await rpc(app.page,'resources.list');
