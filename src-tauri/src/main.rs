@@ -107,12 +107,13 @@ async fn restart_app(
     if install_core && !app.updater.ready() {
         return Err("请先下载核心更新".into());
     }
-    if app.core.updates_busy() {
-        return Err("请等待更新检查或下载完成再重启".into());
-    }
     app.exiting
         .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
         .map_err(|_| "应用正在退出或重启")?;
+    if let Err(error) = app.core.prepare_restart() {
+        app.exiting.store(0, Ordering::Release);
+        return Err(error);
+    }
     let core = app.core.clone();
     let stopped = tauri::async_runtime::spawn_blocking(move || core.shutdown())
         .await

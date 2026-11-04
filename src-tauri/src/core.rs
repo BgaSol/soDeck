@@ -174,11 +174,7 @@ impl AppCore {
             record.pending_update = saved.pending_update.clone();
             record.previous = saved.previous.clone();
             record.update_error = saved.update_error.clone();
-            record.manifest.update_source = saved
-                .manifest
-                .update_source
-                .clone()
-                .or(record.manifest.update_source);
+            record.manifest.update_source = saved.manifest.update_source.clone();
         }
         let id = record.manifest.id.clone();
         let (instance, control, ready, ready_rx) = Instance::new(record.clone(), self.next_id());
@@ -421,6 +417,19 @@ impl AppCore {
         self.closing.store(false, Ordering::Release);
         self.restart_after_error.store(true, Ordering::Release);
         self.changed();
+    }
+
+    pub fn is_closing(&self) -> bool {
+        self.closing.load(Ordering::Acquire)
+    }
+
+    pub fn prepare_restart(&self) -> Result<(), String> {
+        let updates = self.updates.lock().unwrap();
+        if !updates.busy.is_empty() {
+            return Err("请等待更新检查或下载完成再重启".into());
+        }
+        self.closing.store(true, Ordering::Release);
+        Ok(())
     }
 
     pub fn set_theme(&self, theme: &str) -> Result<(), String> {

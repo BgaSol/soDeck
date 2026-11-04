@@ -90,7 +90,7 @@ mod tests {
 pub struct UpdateState {
     pub items: HashMap<String, UpdateView>,
     candidates: HashMap<String, UpdateManifest>,
-    busy: HashSet<String>,
+    pub(crate) busy: HashSet<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -513,7 +513,11 @@ impl AppCore {
         self.changed();
     }
     pub(crate) fn update_operation(self: &Arc<Self>, id: &str) -> Result<Operation, String> {
-        if !self.updates.lock().unwrap().busy.insert(id.into()) {
+        let mut updates = self.updates.lock().unwrap();
+        if self.is_closing() {
+            return Err("应用正在退出或重启".into());
+        }
+        if !updates.busy.insert(id.into()) {
             return Err("该组件正在检查或下载更新".into());
         }
         Ok(Operation {

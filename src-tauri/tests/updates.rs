@@ -205,6 +205,22 @@ fn enable_and_disable_wait_for_restart_and_keep_data() {
 }
 
 #[test]
+fn clearing_update_source_survives_autoload() {
+    let f = Fixture::new();
+    let mut value = manifest("0.1.0");
+    value["updateSource"] = json!({"repository":"test/repo","tagPrefix":"plugin-fixture-v"});
+    fs::write(f.external.join("plugin.json"), value.to_string()).unwrap();
+    let core = f.open();
+    core.add_plugin(&f.external).unwrap();
+    core.set_update_source("test.fixture", None).unwrap();
+    drop(core);
+    let core = f.open();
+    core.start_enabled();
+    assert!(core.snapshot().plugins[0].manifest.update_source.is_none());
+    core.shutdown().unwrap();
+}
+
+#[test]
 fn enabled_update_keeps_old_process_until_restart_then_runs_new_program() {
     let f = Fixture::new();
     f.add();
