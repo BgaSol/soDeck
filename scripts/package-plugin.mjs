@@ -3,8 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { verifyBinary } from "./verify-binary.mjs";
 
-function run(command, args) {
-  const result = spawnSync(command, args, { stdio: "inherit" });
+function run(command, args, options = {}) {
+  const result = spawnSync(command, args, { stdio: "inherit", ...options });
   if (result.error) throw result.error;
   if (result.status !== 0)
     throw new Error(`${command} failed (${result.status})`);
@@ -24,19 +24,17 @@ const targets = [
   "aarch64-apple-darwin",
 ];
 if (!targets.includes(target)) throw new Error(`Unsupported target: ${target}`);
-run("cargo", [
-  "build",
-  "--manifest-path",
-  "plugins/hello/Cargo.toml",
-  "--release",
-  "--locked",
-  "--target",
-  target,
-]);
+run("cargo", ["build", "--release", "--locked", "--target", target], {
+  cwd: "plugins/hello",
+});
 const cargo = fs.readFileSync("plugins/hello/Cargo.toml", "utf8");
 const version = cargo.match(/^version = "([^"]+)"/m)[1];
 const stem = `sodeck-hello_${version}_${target}`;
-const directory = path.resolve("artifacts/plugins", stem);
+const outputArg = process.argv.indexOf("--out-dir");
+const output =
+  outputArg === -1 ? "artifacts/plugins" : process.argv[outputArg + 1];
+if (!output) throw new Error("--out-dir requires a directory");
+const directory = path.resolve(output, stem);
 fs.mkdirSync(path.join(directory, "bin"), { recursive: true });
 const executable = `sodeck-hello${target.includes("windows") ? ".exe" : ""}`;
 const destination = path.join(directory, "bin", executable);

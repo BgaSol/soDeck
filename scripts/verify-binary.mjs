@@ -10,6 +10,28 @@ export function verifyBinary(file, target) {
     actual = bytes.readUInt16LE(offset + 4);
     if (actual !== (arm ? 0xaa64 : 0x8664))
       throw new Error("Wrong PE architecture");
+    const sections = offset + 24 + bytes.readUInt16LE(offset + 20);
+    const sectionCount = bytes.readUInt16LE(offset + 6);
+    const fileOffset = (rva) => {
+      for (let i = 0; i < sectionCount; i++) {
+        const section = sections + 40 * i;
+        const start = bytes.readUInt32LE(section + 12);
+        const size = Math.max(
+          bytes.readUInt32LE(section + 8),
+          bytes.readUInt32LE(section + 16),
+        );
+        if (rva >= start && rva < start + size)
+          return bytes.readUInt32LE(section + 20) + rva - start;
+      }
+      throw new Error("Invalid PE import address");
+    };
+    const imports = fileOffset(bytes.readUInt32LE(offset + 24 + 120));
+    for (let entry = imports; bytes.readUInt32LE(entry + 12); entry += 20) {
+      const start = fileOffset(bytes.readUInt32LE(entry + 12));
+      const name = bytes.toString("ascii", start, bytes.indexOf(0, start));
+      if (/^(vcruntime|msvcp)\d/i.test(name))
+        throw new Error(`External Visual C++ runtime dependency: ${name}`);
+    }
   } else if (target.includes("linux")) {
     if (bytes.toString("ascii", 1, 4) !== "ELF" || bytes[4] !== 2)
       throw new Error("Not ELF64");

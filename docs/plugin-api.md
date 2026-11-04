@@ -60,6 +60,8 @@ stdin/stdout 每行一个 UTF-8 JSON-RPC 2.0 对象，以 LF 结尾，最大 64 
 npm run plugin:build
 # 指定目标时仍需要相应编译环境
 npm run plugin:build -- --target aarch64-apple-darwin
+# 已加载的插件不能原位覆盖；可卸载后构建，或使用另外的输出目录
+npm run plugin:build -- --out-dir artifacts/another-build
 ```
 
-产物位于 `artifacts/plugins/`，包含清单和原生入口的目录与压缩归档。Hello 自己的版本只在 `plugins/hello/Cargo.toml` 中修改，独立于核心版本；用户运行时不需要 Rust 或 Node.js。
+产物位于 `artifacts/plugins/`，包含清单和原生入口的目录与压缩归档。构建脚本在 Hello 工程目录调用 Cargo，使其 Windows 静态运行库配置生效；归档前检查原生架构和额外的 Visual C++ 运行库依赖。Hello 自己的版本只在 `plugins/hello/Cargo.toml` 中修改，独立于核心版本；用户运行时不需要 Rust、Node.js 或额外安装 Visual C++ 运行库。
