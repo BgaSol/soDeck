@@ -68,6 +68,7 @@ ARM64 构建和上述检查均在原生 ARM64 Runner 执行。本机 Windows x86
 
 ## 后续设计
 
+- [下一迭代：外置插件基础功能实施计划](docs/plan-plugin-foundation.md)
 - [产品范围](docs/product.md)
 - [架构草案](docs/architecture.md)
 - [安装与分发](docs/distribution.md)
