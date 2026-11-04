@@ -1,0 +1,93 @@
+name: Verify packaged core and plugin
+
+on:
+  workflow_dispatch:
+    inputs:
+      core_run_id:
+        description: Successful Package SoDeck run ID
+        type: string
+        required: true
+      plugin_run_id:
+        description: Successful Package Hello plugin run ID
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x86_64
+            runner: windows-2025
+          - name: windows-aarch64
+            runner: windows-11-arm
+          - name: linux-x86_64
+            runner: ubuntu-22.04
+          - name: linux-aarch64
+            runner: ubuntu-22.04-arm
+          - name: macos-aarch64
+            runner: macos-15
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+      - uses: actions/download-artifact@v5
+        with:
+          name: SoDeck-${{ matrix.name }}
+          run-id: ${{ inputs.core_run_id }}
+          github-token: ${{ github.token }}
+          path: packages/core
+      - uses: actions/download-artifact@v5
+        with:
+          name: Hello-${{ matrix.name }}
+          run-id: ${{ inputs.plugin_run_id }}
+          github-token: ${{ github.token }}
+          path: packages/plugin
+      - name: Install runtime dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-0 xvfb dbus-x11
+      - name: Windows packaged integration
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem packages/core -Filter '*-setup.exe' -Recurse | Select-Object -First 1
+          $installDir = Join-Path $env:RUNNER_TEMP 'SoDeck'
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDir" -WindowStyle Hidden -PassThru -Wait
+          if ($install.ExitCode -ne 0) { throw "Installer failed: $($install.ExitCode)" }
+          $archive = Get-ChildItem packages/plugin/*.zip | Select-Object -First 1
+          tar -xf $archive.FullName -C packages/plugin
+          $env:SODECK_TEST_PLUGIN = (Get-ChildItem packages/plugin -Directory | Select-Object -First 1).FullName
+          $env:SODECK_TEST_DATA_DIR = Join-Path $env:RUNNER_TEMP 'sodeck-data'
+          node scripts/smoke.mjs "$installDir/sodeck.exe"
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDir" -WindowStyle Hidden -PassThru -Wait
+          if ($install.ExitCode -ne 0) { throw 'Same-version reinstall failed' }
+          $env:SODECK_VERIFY_PERSISTED = '1'
+          node scripts/smoke.mjs "$installDir/sodeck.exe"
+      - name: Linux packaged integration
+        if: runner.os == 'Linux'
+        env:
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+        run: |
+          dpkg-deb -x $(find packages/core -name '*.deb' | head -1) "$RUNNER_TEMP/SoDeck"
+          tar -xzf packages/plugin/*.tar.gz -C packages/plugin
+          export SODECK_TEST_PLUGIN="$(find "$PWD/packages/plugin" -mindepth 1 -maxdepth 1 -type d | head -1)"
+          node scripts/smoke.mjs dbus-run-session -- xvfb-run -a "$RUNNER_TEMP/SoDeck/usr/bin/sodeck"
+      - name: macOS packaged integration
+        if: runner.os == 'macOS'
+        run: |
+          hdiutil attach $(find packages/core -name '*.dmg' | head -1) -nobrowse -readonly -mountpoint "$RUNNER_TEMP/SoDeck"
+          trap 'hdiutil detach "$RUNNER_TEMP/SoDeck"' EXIT
+          tar -xzf packages/plugin/*.tar.gz -C packages/plugin
+          export SODECK_TEST_PLUGIN="$(find "$PWD/packages/plugin" -mindepth 1 -maxdepth 1 -type d | head -1)"
+          node scripts/smoke.mjs "$RUNNER_TEMP/SoDeck/SoDeck.app/Contents/MacOS/sodeck"

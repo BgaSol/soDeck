@@ -60,6 +60,7 @@ jobs:
           workspaces: src-tauri -> target
       - run: npm ci
       - run: npm run check
+      - run: npm run test
       - name: Check release version
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
@@ -72,7 +73,7 @@ jobs:
         with:
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
           releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('SoDeck {0}', github.ref_name) || '' }}
-          releaseBody: Hello SoDeck. Download the installer for your system and architecture.
+          releaseBody: SoDeck core. Plugins are distributed separately; see the release notes for loading instructions.
           releaseDraft: true
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundle }} -- --locked
       - uses: actions/upload-artifact@v4
@@ -91,17 +92,20 @@ jobs:
           $installDir = Join-Path $env:RUNNER_TEMP 'SoDeck'
           $install = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDir" -WindowStyle Hidden -PassThru -Wait
           if ($install.ExitCode -ne 0) { throw "Installer failed: $($install.ExitCode)" }
+          node scripts/verify-binary.mjs "$installDir/sodeck.exe" '${{ matrix.target }}'
           node scripts/smoke.mjs "$installDir/sodeck.exe"
       - name: Extract and launch Linux package
         if: runner.os == 'Linux'
         env:
-          WEBKIT_DISABLE_DMABUF_RENDERER: '1'
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
         run: |
           dpkg-deb -x src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb "$RUNNER_TEMP/SoDeck"
+          node scripts/verify-binary.mjs "$RUNNER_TEMP/SoDeck/usr/bin/sodeck" '${{ matrix.target }}'
           node scripts/smoke.mjs dbus-run-session -- xvfb-run -a "$RUNNER_TEMP/SoDeck/usr/bin/sodeck"
       - name: Mount and launch macOS package
         if: runner.os == 'macOS'
         run: |
           hdiutil attach src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg -nobrowse -readonly -mountpoint "$RUNNER_TEMP/SoDeck"
           trap 'hdiutil detach "$RUNNER_TEMP/SoDeck"' EXIT
+          node scripts/verify-binary.mjs "$RUNNER_TEMP/SoDeck/SoDeck.app/Contents/MacOS/sodeck" '${{ matrix.target }}'
           node scripts/smoke.mjs "$RUNNER_TEMP/SoDeck/SoDeck.app/Contents/MacOS/sodeck"
