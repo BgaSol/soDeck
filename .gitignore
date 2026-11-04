@@ -2,4 +2,6 @@
 /src-tauri/target/
 /src-tauri/gen/
 /dist/
+/plugins/hello/target/
 *.log
+/artifacts/

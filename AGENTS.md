@@ -37,7 +37,7 @@ SoDeck 是面向运维人员的远程服务器桌面工具。核心负责桌面�
 - 保持 README、产品需求和架构决策与代码同步。
 - GitHub Actions 构建和 GitHub Releases 分发是交付要求，详见 `docs/distribution.md`。构建入口必须能在干净环境运行，不依赖开发者绝对路径、手工复制文件或本机未声明的工具。
 - 工程初始化时同时提供检查、构建和打包入口，以及执行这些入口的 GitHub 工作流；当前文档阶段不添加调用不存在命令的工作流。
-- 当前阶段仅实现 Hello SoDeck 和打包，入口为 `npm run dev`、`npm run check`、`npm run build`；应用版本只修改 `src-tauri/tauri.conf.json`。不提前开发 SSH、插件运行时或自动更新。
+- 当前阶段实现工作台、外置插件生命周期、日志和重要消息，入口为 `npm run dev`、`npm run check`、`npm run test`、`npm run build`；应用版本只修改 `src-tauri/tauri.conf.json`。Hello 插件通过 `npm run plugin:build` 独立打包。不提前开发 SSH、插件业务视图或自动更新。
 - 核心和插件独立版本、独立分发，提交锁文件并固定工具链。核心打包只依赖核心及自身运行资源，不依赖插件构建或验收；插件加载只做清单、入口、API 主版本及适用系统架构的基本检查。
 - 先复用标准安装器和 GitHub Actions，避免自建发布框架。一个版本使用普通版本标签和 Release，不增加内部批次、签名链、全平台联动门禁或逐层确认流程。
 - 每个提交只包含一个主题，提交信息说明用户可见的行为变化。

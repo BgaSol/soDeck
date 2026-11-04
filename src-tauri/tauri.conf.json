@@ -1,23 +1,28 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "SoDeck",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.bgasol.sodeck",
   "build": {
-    "frontendDist": "../src"
+    "beforeDevCommand": "npm run web:dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run web:build",
+    "frontendDist": "../dist"
   },
   "app": {
     "windows": [
       {
         "title": "SoDeck",
-        "width": 800,
-        "height": 520,
-        "minWidth": 400,
-        "minHeight": 300
+        "width": 1100,
+        "height": 720,
+        "minWidth": 720,
+        "minHeight": 480,
+        "decorations": false,
+        "hiddenTitle": true
       }
     ],
     "security": {
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'"
     }
   },
   "bundle": {
