@@ -42,6 +42,8 @@ git push origin v0.1.0
 
 同一工作流会生成安装包并上传到对应的 Release 草稿。各目标独立执行，一个失败不会取消其他目标。手动运行只生成下载产物，不创建 Release。
 
+发布工作流完成后，在 Releases 检查草稿附件，点击 **Publish release** 即可发布。
+
 工作流还会安装或解包产物，启动包内程序并等待页面加载后退出。这个检查在各目标的原生 Runner 上完成，不能代替真实设备上的界面体验验收。
 
 升级时退出程序，运行新版 Windows 安装包、安装新版 Linux 包或替换 macOS 应用。保持相同应用标识，用户数据目录独立于安装目录。
@@ -61,6 +63,8 @@ Windows 安装包未配置商业代码签名；macOS 使用 ad-hoc 签名。构�
 | macOS ARM64 | 通过 | 通过，挂载 DMG 后启动 |
 
 ARM64 构建和上述检查均在原生 ARM64 Runner 执行。本机 Windows x86_64 另外验证了安装、打开窗口、关闭退出和卸载。其他系统尚未做真实设备人工界面验收，覆盖升级尚未做跨版本实测。
+
+`v0.1.0` 的[标签发布工作流](https://github.com/BgaSol/soDeck/actions/runs/41873423553)也已全部通过，五份安装包已上传到 [Release 草稿](https://github.com/BgaSol/soDeck/releases/tag/untagged-2c2b22214ff1e9c8adc8)。其中 Linux x86_64 和 macOS ARM64 在首次尝试长时间停留后取消重试，第二次完成；应用和工作流代码未作修改。草稿尚未正式发布。
 
 ## 后续设计
 
