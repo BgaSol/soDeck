@@ -29,8 +29,8 @@ export class ServerManager {
     });
   }
   async start() {
-    try { this.catalog = await this.api.read(); this.render(); }
-    catch (error) { this.host.innerHTML = `<div class="error-box">无法读取服务器目录：${e(error)} ${action("reload", "重试")}</div>`; }
+    try { this.catalog = await this.api.read(); this.render(); return true; }
+    catch (error) { this.host.innerHTML = `<div class="error-box">无法读取服务器目录：${e(error)} ${action("reload", "重试")}</div>`; return false; }
   }
   private render() { if (this.catalog) replace(this.host, page(this.catalog, this.state)); }
   private top() { return this.frames.at(-1); }

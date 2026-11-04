@@ -442,8 +442,8 @@ async function start() {
       (await win.isMaximized()) ? "restore" : "maximize",
     );
   });
-  await Promise.all([refresh(), servers.start()]);
-  if (snapshot) await core.ready();
+  const [, catalogReady] = await Promise.all([refresh(), servers.start()]);
+  if (snapshot && catalogReady) await core.ready();
   setInterval(() => {
     if (layer === "status") scheduleRefresh();
   }, 5000);
