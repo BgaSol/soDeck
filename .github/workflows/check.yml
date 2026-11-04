@@ -22,4 +22,5 @@ jobs:
           node-version-file: .node-version
       - run: npm ci
       - run: npm run check
+      - run: npm run plugin:check
       - run: npm run web:build

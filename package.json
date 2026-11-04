@@ -6,7 +6,8 @@
     "build": "tauri build",
     "web:dev": "vite",
     "web:build": "tsc && vite build",
-    "check": "tsc && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo fmt --manifest-path plugins/hello/Cargo.toml -- --check",
+    "check": "tsc && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
+    "plugin:check": "cargo fmt --manifest-path plugins/hello/Cargo.toml -- --check",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml --features test-fixtures --locked",
     "plugin:build": "node scripts/package-plugin.mjs"
   },

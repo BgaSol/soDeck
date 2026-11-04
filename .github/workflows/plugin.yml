@@ -46,9 +46,11 @@ jobs:
         with:
           toolchain: 1.99.1
           targets: ${{ matrix.target }}
+          components: rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: plugins/hello -> target
+      - run: cargo fmt --manifest-path plugins/hello/Cargo.toml -- --check
       - run: node scripts/package-plugin.mjs --target ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
