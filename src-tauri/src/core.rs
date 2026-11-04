@@ -18,6 +18,7 @@ use std::{
 type Listener = Arc<dyn Fn(&str, Value) + Send + Sync>;
 
 pub struct AppCore {
+    pub(crate) servers: Mutex<crate::servers::ServerStore>,
     pub(crate) store: Mutex<Store>,
     pub(crate) updates: Mutex<crate::updates::UpdateState>,
     pub(crate) mutations: Mutex<()>,
@@ -42,7 +43,8 @@ pub fn now() -> u64 {
 
 impl AppCore {
     pub fn open(directory: PathBuf, version: String) -> Result<Arc<Self>, String> {
-        let store = Store::open(directory)?;
+        let store = Store::open(directory.clone())?;
+        let servers = crate::servers::ServerStore::open(directory);
         let startup_enabled = store
             .plugins
             .iter()
@@ -50,6 +52,7 @@ impl AppCore {
             .map(|p| p.manifest.id.clone())
             .collect();
         let core = Arc::new(Self {
+            servers: Mutex::new(servers),
             store: Mutex::new(store),
             updates: Mutex::new(crate::updates::UpdateState::default()),
             mutations: Mutex::new(()),
@@ -111,6 +114,9 @@ impl AppCore {
             restart_required: self.restart_after_error.load(Ordering::Acquire),
         };
         drop(store);
+        if let Some(error) = &self.servers.lock().unwrap().error {
+            snapshot.storage_errors.push(error.clone());
+        }
         let instances = self.instances.lock().unwrap();
         for record in records {
             let update_source = record.manifest.update_source.clone();

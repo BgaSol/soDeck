@@ -1,0 +1,231 @@
+import { open } from "@tauri-apps/plugin-dialog";
+import { newDraft, referenced, serverApi, toInput, type Catalog, type Change, type Draft, type ServerApi } from "./server-api";
+import { action, editor, page, type PageState } from "./server-views";
+import { escape as e, replace } from "./ui";
+import "./servers.css";
+
+interface Frame {
+  dialog: HTMLDialogElement; kind: "editor" | "groups" | "group" | "confirm";
+  draft?: Draft; initial?: string; proxy?: boolean; inline?: boolean;
+  revision: number; busy: boolean; error: string; groupId?: string;
+}
+export class ServerManager {
+  private catalog?: Catalog;
+  private state: PageState = { tab: "servers", query: "", group: "all", selected: "" };
+  private frames: Frame[] = [];
+  private busy = false;
+  constructor(private host: HTMLElement, private notify: (message: string) => void, private api: ServerApi = serverApi) {
+    host.addEventListener("click", event => {
+      const b = (event.target as Element).closest<HTMLButtonElement>("[data-server-action]");
+      if (b && !b.disabled) void this.perform(b).catch(error => notify(String(error)));
+    });
+    host.addEventListener("input", event => {
+      const input = event.target as HTMLInputElement;
+      if (input.id === "catalog-query") { this.state.query = input.value; this.render(); }
+    });
+    host.addEventListener("change", event => {
+      const input = event.target as HTMLSelectElement;
+      if (input.id === "catalog-group") { this.state.group = input.value; this.render(); }
+    });
+  }
+  async start() {
+    try { this.catalog = await this.api.read(); this.render(); }
+    catch (error) { this.host.innerHTML = `<div class="error-box">无法读取服务器目录：${e(error)} ${action("reload", "重试")}</div>`; }
+  }
+  private render() { if (this.catalog) replace(this.host, page(this.catalog, this.state)); }
+  private top() { return this.frames.at(-1); }
+  private frame(kind: Frame["kind"]): Frame {
+    const dialog = document.createElement("dialog");
+    dialog.className = `catalog-dialog ${kind === "editor" ? "endpoint-dialog" : "small-dialog"}`;
+    dialog.setAttribute("aria-label", kind === "editor" ? "编辑资料" : kind === "groups" ? "管理分组" : kind === "group" ? "编辑分组" : "确认操作");
+    const frame: Frame = { dialog, kind, revision: this.catalog!.revision, busy: false, error: "" };
+    dialog.addEventListener("cancel", event => { event.preventDefault(); void this.cancel(frame); });
+    dialog.addEventListener("click", event => {
+      if (frame !== this.top()) return;
+      const button = (event.target as Element).closest<HTMLButtonElement>("[data-server-action]");
+      if (button && !button.disabled) void this.perform(button).catch(error => this.notify(String(error)));
+    });
+    dialog.addEventListener("input", event => this.editField(frame, event.target as HTMLInputElement));
+    dialog.addEventListener("change", event => this.editField(frame, event.target as HTMLInputElement));
+    dialog.addEventListener("submit", event => { event.preventDefault(); void this.save(frame); });
+    this.frames.push(frame); document.body.append(dialog);
+    return frame;
+  }
+  private dismiss(f: Frame) {
+    if (f !== this.top()) return;
+    f.dialog.close(); f.dialog.remove(); this.frames.pop();
+    if (f.draft) f.draft.password = "";
+  }
+  private renderEditor(f: Frame) {
+    replace(f.dialog, editor(this.catalog!, f.draft!, !!f.proxy, f.error, f.busy));
+  }
+  private openEditor(proxy: boolean, id?: string, inline = false) {
+    const record = id ? (proxy ? this.catalog!.proxies : this.catalog!.servers).find(r => r.id === id) : undefined;
+    if (id && !record) throw new Error("资料已不存在，请刷新目录");
+    const f = this.frame("editor"); f.proxy = proxy; f.inline = inline; f.draft = newDraft(record);
+    if (proxy && !record) { f.draft.port = "1080"; f.draft.authType = "none"; }
+    if (!proxy && !record && this.catalog!.groups.some(g => g.id === this.state.group)) f.draft.groupId = this.state.group;
+    f.initial = JSON.stringify(f.draft); this.renderEditor(f); f.dialog.showModal();
+    f.dialog.querySelector<HTMLInputElement>("#draft-host")?.focus();
+  }
+  private editField(f: Frame, input: HTMLInputElement) {
+    if (!f.draft || f.busy) return;
+    const key = input.dataset.field;
+    const d = f.draft;
+    if (key && key in d) {
+      if (key === "remember") d.remember = input.checked;
+      else if (key === "routed") d.routed = input.value === "true";
+      else if (["name", "host", "port", "username", "groupId", "privateKeyPath", "password", "authType"].includes(key)) {
+        (d as unknown as Record<string, string>)[key] = input.value;
+        if (key === "password" && input.value) d.clearSecret = false;
+      }
+      if (key === "authType") { d.password = ""; d.remember = false; d.clearSecret = false; this.renderEditor(f); }
+      if (key === "routed") this.renderEditor(f);
+    }
+    if (input.dataset.step !== undefined) {
+      const step = d.route[Number(input.dataset.step)];
+      if (step.kind === "ssh") step.serverId = input.value; else step.proxyId = input.value;
+      this.renderEditor(f);
+    }
+  }
+  private dirty(f: Frame) {
+    return !!f.draft && f.initial !== JSON.stringify(f.draft) || f.kind === "group" && f.dialog.querySelector<HTMLInputElement>("#group-name")?.value !== f.initial;
+  }
+  private confirm(title: string, text: string, accept = "确定"): Promise<boolean> {
+    const f = this.frame("confirm");
+    f.dialog.innerHTML = `<header class="catalog-dialog-heading"><h2>${e(title)}</h2></header><div class="confirmation-body"><p>${e(text)}</p></div><footer class="catalog-dialog-footer">${action("confirm-no", "继续返回")}${action("confirm-yes", e(accept), "", "primary")}</footer>`;
+    return new Promise(resolve => {
+      const finish = (value: boolean) => { this.dismiss(f); resolve(value); };
+      f.dialog.addEventListener("click", event => {
+        const name = (event.target as Element).closest<HTMLElement>("[data-server-action]")?.dataset.serverAction;
+        if (name === "confirm-yes") finish(true); else if (name === "confirm-no") finish(false);
+      });
+      f.dialog.addEventListener("cancel", () => finish(false), { once: true });
+      f.dialog.showModal(); f.dialog.querySelector<HTMLElement>("button")?.focus();
+    });
+  }
+  private async cancel(f: Frame) {
+    if (f.busy || f.kind === "confirm") return;
+    if (!this.dirty(f) || await this.confirm("放弃未保存的修改？", "当前表单的修改尚未保存。已经单独保存的代理和分组会保留。", "放弃修改")) this.dismiss(f);
+  }
+  async allowExit() {
+    if (this.busy || this.frames.some(f => f.busy)) { this.notify("资料正在保存，请稍后退出"); return false; }
+    return !this.frames.some(f => this.dirty(f)) || this.confirm("退出并放弃修改？", "表单中尚未保存的修改会丢失。", "退出并放弃");
+  }
+  private async mutate(change: Change, revision = this.catalog!.revision) {
+    const result = await this.api.change(revision, change);
+    this.catalog = result.catalog; this.render(); return result.selectedId;
+  }
+  private async save(f: Frame) {
+    if (f.busy || f !== this.top()) return;
+    f.error = ""; f.busy = true;
+    try {
+      if (f.kind === "group") {
+        const name = f.dialog.querySelector<HTMLInputElement>("#group-name")!.value;
+        f.dialog.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled = true;
+        const id = await this.mutate({ op: "saveGroup", id: f.groupId ?? null, name }, f.revision);
+        this.dismiss(f); const parent = this.top();
+        if (parent?.kind === "editor") { parent.revision = this.catalog!.revision; parent.draft!.groupId = id!; this.renderEditor(parent); }
+        else if (parent?.kind === "groups") this.renderGroups(parent);
+        this.notify("分组已保存");
+      } else if (f.kind === "editor") {
+        const d = f.draft!;
+        if (d.routed && !f.proxy && !d.route.length) throw new Error("请添加中转节点，或选择直接连接");
+        if (d.routed && d.route.some(r => r.kind === "ssh" ? !r.serverId : !r.proxyId)) throw new Error("请为每一站选择已保存的资料");
+        if (!/^\d+$/.test(d.port) || +d.port < 1 || +d.port > 65535) throw new Error("端口范围为 1–65535");
+        this.renderEditor(f);
+        const id = await this.mutate({ op: f.proxy ? "saveProxy" : "saveServer", draft: toInput(d, !!f.proxy) }, f.revision);
+        this.dismiss(f); const parent = this.top();
+        if (f.inline && parent?.draft) {
+          parent.revision = this.catalog!.revision;
+          parent.draft.routed = true; parent.draft.route.push({ id: "", kind: "socks5", proxyId: id! }); this.renderEditor(parent);
+        } else { this.state.selected = id!; this.render(); }
+        this.notify(f.proxy ? "代理资料已保存" : "服务器资料已保存");
+      }
+    } catch (error) {
+      f.error = String(error);
+      if (f.kind === "editor") { f.busy = false; this.renderEditor(f); f.dialog.querySelector(".error-box")?.scrollIntoView({ block: "nearest" }); }
+      else { f.dialog.querySelector<HTMLElement>(".group-error")!.textContent = f.error; f.dialog.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled = false; }
+    } finally { f.busy = false; }
+  }
+  private renderGroups(f: Frame) {
+    replace(f.dialog, `<header class="catalog-dialog-heading"><h2>管理分组</h2>${action("cancel", "关闭")}</header><div class="group-list">${this.catalog!.groups.map(g => `<div><strong>${e(g.name)}</strong><small>${this.catalog!.servers.filter(s => s.groupId === g.id).length} 台服务器</small>${action("rename-group", "重命名", `data-id="${e(g.id)}"`)}${action("delete-group", "删除", `data-id="${e(g.id)}"`, "danger")}</div>`).join("") || '<p class="hint">还没有分组</p>'}</div><footer class="catalog-dialog-footer">${action("new-group", "+ 新建分组", "", "primary")}</footer>`);
+  }
+  private openGroup(id?: string) {
+    const name = this.catalog!.groups.find(g => g.id === id)?.name ?? "";
+    const parent = this.top();
+    const f = this.frame("group"); f.groupId = id; f.initial = name;
+    if (parent?.kind === "editor") f.revision = parent.revision;
+    f.dialog.innerHTML = `<form><header class="catalog-dialog-heading"><h2>${id ? "重命名分组" : "新建分组"}</h2></header><div class="confirmation-body"><label class="catalog-field" for="group-name">分组名称<input id="group-name" value="${e(name)}" required></label><p class="hint">独立保存，取消服务器表单后仍保留。</p><p class="group-error" role="alert"></p></div><footer class="catalog-dialog-footer">${action("cancel", "取消")}<button type="submit" class="primary">保存分组</button></footer></form>`;
+    f.dialog.showModal(); f.dialog.querySelector<HTMLInputElement>("input")?.focus();
+  }
+  private async perform(button: HTMLButtonElement) {
+    const name = button.dataset.serverAction!; const id = button.dataset.id ?? "";
+    const f = this.top(); const d = f?.draft;
+    if (this.busy || f?.busy) return;
+    if (name === "confirm-no" || name === "confirm-yes") return;
+    switch (name) {
+      case "tab": this.state.tab = button.dataset.tab as PageState["tab"]; this.state.selected = ""; this.state.query = ""; this.render(); break;
+      case "select": this.state.selected = id; this.render(); break;
+      case "back": this.state.selected = ""; this.render(); break;
+      case "new": this.openEditor(this.state.tab === "proxies"); break;
+      case "edit": this.openEditor(this.state.tab === "proxies", id); break;
+      case "cancel": if (f) await this.cancel(f); break;
+      case "reload": await this.start(); break;
+      case "reload-editor": {
+        if (!f || !await this.confirm("重新读取表单？", "当前输入将被目录中最新保存的资料替换。", "重新读取")) break;
+        this.catalog = await this.api.read();
+        if (this.catalog.error) throw new Error(this.catalog.error);
+        const r = (f.proxy ? this.catalog.proxies : this.catalog.servers).find(r => r.id === d?.id);
+        if (d?.id && !r) throw new Error("资料已被删除，当前草稿已保留");
+        f.draft = newDraft(r); if (f.proxy && !r) { f.draft.port = "1080"; f.draft.authType = "none"; }
+        f.initial = JSON.stringify(f.draft); f.revision = this.catalog.revision; f.error = ""; this.renderEditor(f); this.render(); break;
+      }
+      case "locate": {
+        if (f) { if (await this.confirm("离开当前表单？", "先关闭表单，再定位这条资料；未保存的修改将被放弃。", "定位资料")) { this.dismiss(f); } else break; }
+        this.state.tab = this.catalog!.servers.some(s => s.id === id) ? "servers" : "proxies";
+        this.state.selected = id; this.state.group = "all"; this.state.query = ""; this.render(); break;
+      }
+      case "copy": await this.listMutation({ op: this.state.tab === "proxies" ? "copyProxy" : "copyServer", id }); this.notify("已复制资料，未复制密码或口令"); break;
+      case "delete": {
+        const deps = referenced(this.catalog!, id);
+        if (deps.length) { await this.confirm("此资料正在被引用", `请先编辑以下服务器的路径：${deps.map(s => s.name).join("、")}`, "知道了"); break; }
+        const r = [...this.catalog!.servers, ...this.catalog!.proxies].find(r => r.id === id)!;
+        if (await this.confirm("删除这条资料？", `删除「${r.name}」及其当前凭据。远端服务器和本机私钥文件不受影响。`, "删除资料")) {
+          await this.listMutation({ op: this.state.tab === "proxies" ? "deleteProxy" : "deleteServer", id }); this.state.selected = ""; this.render(); this.notify("资料已删除");
+        } break;
+      }
+      case "groups": { const groupFrame = this.frame("groups"); this.renderGroups(groupFrame); groupFrame.dialog.showModal(); break; }
+      case "new-group": this.openGroup(); break;
+      case "rename-group": this.openGroup(id); break;
+      case "delete-group":
+        if (await this.confirm("删除分组？", "分组中的服务器将移到未分组，服务器资料会保留。", "删除分组")) {
+          await this.listMutation({ op: "deleteGroup", id }); if (this.state.group === id) this.state.group = "all";
+          this.renderGroups(f!); this.render();
+        } break;
+      case "inline-proxy": this.openEditor(true, undefined, true); if (f) this.top()!.revision = f.revision; break;
+      case "add-ssh": if (d) { d.route.push({ id: "", kind: "ssh", serverId: "" }); this.renderEditor(f!); } break;
+      case "add-socks": if (d) { d.route.push({ id: "", kind: "socks5", proxyId: "" }); this.renderEditor(f!); } break;
+      case "step-up": case "step-down": case "step-remove": {
+        if (!d) break;
+        const i = Number(button.dataset.index); const j = i + (name === "step-up" ? -1 : 1);
+        if (name === "step-remove") d.route.splice(i, 1);
+        else if (j >= 0 && j < d.route.length) [d.route[i], d.route[j]] = [d.route[j], d.route[i]];
+        this.renderEditor(f!); break;
+      }
+      case "clear-secret": if (d) { d.clearSecret = !d.clearSecret; d.password = ""; this.renderEditor(f!); } break;
+      case "choose-key": {
+        if (!d) break;
+        const path = await open({ multiple: false, directory: false, title: "选择私钥文件" });
+        if (typeof path === "string" && f === this.top()) { d.privateKeyPath = path; this.renderEditor(f!); } break;
+      }
+      case "recover":
+        if (await this.confirm("从备份恢复目录？", "会恢复上一份有效目录，当前文件另存保留。备份可能包含旧密码。", "恢复目录")) { this.catalog = await this.api.recover(); this.render(); this.notify("目录已恢复"); } break;
+    }
+  }
+  private async listMutation(change: Change) {
+    this.busy = true;
+    try { const id = await this.mutate(change); if (id) this.state.selected = id; this.render(); }
+    finally { this.busy = false; }
+  }
+}

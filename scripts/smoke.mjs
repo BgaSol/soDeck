@@ -39,11 +39,11 @@ function launch(persisted = false) {
 }
 try {
   launch(process.env.SODECK_VERIFY_PERSISTED === "1");
-  if (plugin) launch(true);
+  if (process.env.SODECK_VERIFY_PERSISTED !== "1") launch(true);
   console.log(
     plugin
       ? "Packaged core loaded/stopped/reloaded plugin; logs, messages and preferences survived restart."
-      : "Packaged application rendered the workbench and exited successfully.",
+      : "Packaged app rendered, saved server/proxy/group records and a mixed route, then reopened with persisted data and exited successfully.",
   );
 } finally {
   // This path was created by mkdtemp in this process, never supplied by the user.

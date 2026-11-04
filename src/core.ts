@@ -76,6 +76,7 @@ export interface Filter {
   until?: number;
 }
 export const core = {
+  close: () => invoke<void>("close_app"),
   snapshot: () => invoke<Snapshot>("snapshot"),
   add: (directory: string) => invoke<string>("add_plugin", { directory }),
   enabled: (id: string, enabled: boolean) => invoke<void>("set_plugin_enabled", { id, enabled }),

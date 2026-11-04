@@ -62,6 +62,11 @@ jobs:
       - run: npm run check
       - run: npm run test
       - run: npm run scripts:test
+      - name: Verify server forms with actual core
+        if: matrix.name == 'windows-x86_64'
+        run: |
+          npx playwright install chromium
+          npm run ui:test
       - name: Check release version
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash

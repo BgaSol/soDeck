@@ -9,7 +9,7 @@ use sodeck::{
 use std::{
     path::PathBuf,
     sync::{
-        atomic::{AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
         Arc,
     },
 };
@@ -22,11 +22,39 @@ struct Application {
     smoke: bool,
     plugin_test: Option<PathBuf>,
     verify_persisted: bool,
+    frontend_loaded: AtomicBool,
 }
 
 #[tauri::command]
 fn snapshot(app: State<Application>) -> Snapshot {
     app.core.snapshot()
+}
+#[tauri::command]
+fn close_app(handle: tauri::AppHandle) {
+    begin_exit(&handle);
+}
+
+#[tauri::command]
+fn server_catalog(app: State<Application>) -> serde_json::Value {
+    app.core.server_catalog()
+}
+#[tauri::command]
+async fn change_catalog(
+    app: State<'_, Application>,
+    revision: u64,
+    change: sodeck::servers::CatalogChange,
+) -> Result<serde_json::Value, String> {
+    let core = app.core.clone();
+    tauri::async_runtime::spawn_blocking(move || core.change_catalog(revision, change))
+        .await
+        .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn recover_catalog(app: State<'_, Application>) -> Result<serde_json::Value, String> {
+    let core = app.core.clone();
+    tauri::async_runtime::spawn_blocking(move || core.recover_catalog())
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -163,6 +191,7 @@ fn mark_read(app: State<Application>, id: Option<String>) -> Result<(), String> 
 
 #[tauri::command]
 fn frontend_ready(handle: tauri::AppHandle, app: State<Application>) {
+    app.frontend_loaded.store(true, Ordering::Release);
     if !app.smoke
         || app
             .exiting
@@ -177,6 +206,7 @@ fn frontend_ready(handle: tauri::AppHandle, app: State<Application>) {
     let persisted = app.verify_persisted;
     std::thread::spawn(move || {
         let validation = (|| {
+            sodeck::validation::server_roundtrip(&core, persisted)?;
             if let Some(bundle) = update_bundle {
                 sodeck::validation::core_update_bundle(&handle, &bundle)?;
             }
@@ -215,6 +245,15 @@ fn argument(name: &str) -> Option<PathBuf> {
     args.find(|a| a == name)
         .and_then(|_| args.next())
         .map(PathBuf::from)
+}
+
+fn request_exit(handle: &tauri::AppHandle) {
+    let app = handle.state::<Application>();
+    if app.frontend_loaded.load(Ordering::Acquire) && !app.smoke {
+        let _ = handle.emit("core-request-close", ());
+    } else {
+        begin_exit(handle);
+    }
 }
 
 fn begin_exit(handle: &tauri::AppHandle) {
@@ -271,6 +310,7 @@ fn main() {
                 smoke,
                 plugin_test: smoke.then(|| argument("--plugin-test")).flatten(),
                 verify_persisted: smoke && std::env::args().any(|a| a == "--verify-persisted"),
+                frontend_loaded: AtomicBool::new(false),
             });
             if !smoke {
                 std::thread::spawn(move || core.start_enabled());
@@ -292,12 +332,16 @@ fn main() {
                     != 2
                 {
                     api.prevent_close();
-                    begin_exit(window.app_handle());
+                    request_exit(window.app_handle());
                 }
             }
         })
         .invoke_handler(tauri::generate_handler![
+            server_catalog,
+            change_catalog,
+            recover_catalog,
             snapshot,
+            close_app,
             add_plugin,
             set_plugin_enabled,
             set_plugin_update_source,
@@ -325,7 +369,7 @@ fn main() {
                 return;
             }
             api.prevent_exit();
-            begin_exit(handle);
+            request_exit(handle);
         }
     });
 }

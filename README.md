@@ -1,10 +1,12 @@
 # SoDeck
 
-面向运维人员的远程服务器工作台。v0.2.1 新增旧版多巴胺主题，可从 v0.2.0 在线升级；核心与插件独立更新，插件启停重启生效。SSH、终端、文件、Docker、NetBird 与网络代理仍在后续迭代实现。
+面向运维人员的远程服务器工作台。当前源码版本 v0.3.0 实现服务器、SOCKS5 代理和分组的增删改查、搜索、复制与混合多层路径配置。此版只保存资料，不建立连接。保留多巴胺主题、核心与插件独立更新、插件启停重启生效。正式发行仍以 GitHub Releases 为准。
 
 核心与插件独立版本、独立打包，从公开的 [GitHub Releases](https://github.com/BgaSol/soDeck/releases) 分发。核心安装包不含业务插件。版本与验收记录见 [v0.1.1](docs/releases/v0.1.1.md)、[v0.2.0](docs/releases/v0.2.0.md) 和 [v0.2.1](docs/releases/v0.2.1.md)。
 
 ## 使用
+
+工作台直接管理服务器与 SOCKS5 代理：新增、编辑、复制、删除、搜索和分组；SSH 与 SOCKS5 路径可混合排序。记住的密码和私钥口令按选择明文保存到应用数据目录的 `servers.json`，私钥只保存路径。未记住的秘密仅当前进程有效。数据异常时保留原文件，可从上一份有效备份恢复。
 
 1. 下载对应系统和架构的核心安装包与独立插件归档，解压插件。
 2. 右上角 **设置 → 插件管理 → 添加插件目录**，选择包含 plugin.json 的目录。
@@ -29,16 +31,18 @@ npm run check
 npm run plugin:check
 npm run scripts:test
 npm run test
+npx playwright install chromium
+npm run ui:test
 npm run build -- --bundles nsis -- --locked
 npm run plugin:build
 ```
 
-核心版本只修改 `src-tauri/tauri.conf.json`，Hello 版本只修改 `plugins/hello/Cargo.toml`。核心标签 `v0.2.1` 和插件标签 `plugin-hello-v0.1.1` 分别触发五目标独立构建及 Release 草稿；更新清单自动生成，检查后正式发布。普通本地打包不需要更新签名密钥。
+核心版本只修改 `src-tauri/tauri.conf.json`，Hello 版本只修改 `plugins/hello/Cargo.toml`。核心标签 `v<版本>` 和插件标签 `plugin-hello-v0.1.1` 分别触发五目标独立构建及 Release 草稿；更新清单自动生成，检查后正式发布。普通本地打包不需要更新签名密钥。
 
 | 工作流 | 用途 |
 | --- | --- |
 | Check | 类型、Rust 格式、发布脚本测试及前端构建 |
-| Package SoDeck | 五目标核心安装包、更新签名和 core-update.json |
+| Package SoDeck | 五目标原生核心安装包、目录保存重开烟测、更新签名；标签发布时生成 core-update.json |
 | Package plugin | 按插件目录独立打包、生成 plugin-update.json |
 | Verify packaged core and plugin | 五目标实际包的插件、日志、消息与重启保留 |
 
@@ -48,6 +52,7 @@ npm run plugin:build
 
 - [产品范围](docs/product.md)
 - [架构与边界](docs/architecture.md)
+- [服务器管理设计（暂不建连）](docs/plan-server-management.md)
 - [插件 API v1](docs/plugin-api.md)
 - [在线更新实施与验收](docs/plan-online-updates.md)
 - [上一阶段实施计划](docs/plan-plugin-foundation.md)

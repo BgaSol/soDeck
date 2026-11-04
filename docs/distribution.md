@@ -70,3 +70,5 @@ npm run plugin:build -- --plugin hello --out-dir artifacts/another-build
 本机执行类型、格式、脚本测试、Rust 集成测试、前端构建和本机安装包烟测。Rust 测试使用本机 HTTP 服务器验证下载、哈希、平台/API 不兼容、重启切换和启动失败恢复；正式更新来源只允许 HTTPS。
 
 核心工作流在五个原生目标运行 Rust 测试，再安装/解包 EXE、DEB、DMG 后启动包内程序；AppImage 另检查启动和退出。`Verify packaged core and plugin` 下载实际核心与插件产物验证日志、消息、目录、状态和重启保留。CI 包内启动不等价于真实设备的交互式安装升级，实际完成范围记录在对应版本说明。
+
+服务器管理验收：`npx playwright install chromium` 后运行 `npm run ui:test`，以无头浏览器调用真实目录核心，测试数据保存在临时目录，不连接服务器。核心打包工作流在 Windows x86_64 执行此检查；所有五目标的 `scripts/smoke.mjs` 都会在实际包中保存服务器、分组、代理及混合路径，再重开验证持久资料与临时秘密生命周期。

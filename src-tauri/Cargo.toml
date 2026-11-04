@@ -10,6 +10,12 @@ default-run = "sodeck"
 test-fixtures = []
 
 [[bin]]
+name = "catalog-fixture"
+path = "tests/fixtures/catalog.rs"
+required-features = ["test-fixtures"]
+test = false
+
+[[bin]]
 name = "plugin-fixture"
 path = "tests/fixtures/plugin.rs"
 required-features = ["test-fixtures"]

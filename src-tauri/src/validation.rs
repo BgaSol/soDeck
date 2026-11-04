@@ -7,6 +7,51 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub fn server_roundtrip(core: &AppCore, persisted: bool) -> Result<(), String> {
+    use serde_json::{json, Value};
+    let catalog = core.server_catalog();
+    if persisted {
+        let servers = catalog["servers"].as_array().ok_or("目录未返回服务器")?;
+        let target = servers
+            .iter()
+            .find(|s| s["name"] == "Package target")
+            .ok_or("重开后服务器未保留")?;
+        if target["route"].as_array().map(Vec::len) != Some(3)
+            || target["authentication"]["hasSavedSecret"] != true
+            || servers
+                .iter()
+                .any(|s| s["authentication"]["hasSessionSecret"] == true)
+            || catalog["proxies"].as_array().map(Vec::len) != Some(1)
+        {
+            return Err("重开后路径、代理或凭据状态不正确".into());
+        }
+        return Ok(());
+    }
+    let apply = |change: Value| -> Result<String, String> {
+        let result = core.change_catalog(
+            core.server_catalog()["revision"].as_u64().unwrap(),
+            serde_json::from_value(change).map_err(|e| e.to_string())?,
+        )?;
+        Ok(result["selectedId"].as_str().unwrap_or("").into())
+    };
+    let group = apply(json!({"op":"saveGroup","id":null,"name":"Package test"}))?;
+    let gateway = apply(
+        json!({"op":"saveServer","draft":{"id":null,"name":"Package gateway","host":"gateway.invalid","port":22,"username":"ops","groupId":group,"authentication":{"type":"password","secret":{"action":"replace","value":"fixture-session","remember":false}},"route":[]}}),
+    )?;
+    let proxy = apply(
+        json!({"op":"saveProxy","draft":{"id":null,"name":"Package proxy","host":"127.0.0.1","port":1080,"authentication":{"type":"none","secret":{"action":"clear"}}}}),
+    )?;
+    let target = apply(
+        json!({"op":"saveServer","draft":{"id":null,"name":"Package target","host":"db.internal","port":22,"username":"ops","groupId":group,"authentication":{"type":"privateKey","privateKeyPath":"fixture-key","secret":{"action":"replace","value":"fixture-saved","remember":true}},"route":[{"id":"","kind":"ssh","serverId":gateway},{"id":"","kind":"socks5","proxyId":proxy},{"id":"","kind":"socks5","proxyId":proxy}]}}),
+    )?;
+    let copy = apply(json!({"op":"copyServer","id":target}))?;
+    apply(json!({"op":"deleteServer","id":copy}))?;
+    if core.server_catalog().to_string().contains("fixture-saved") {
+        return Err("目录泄漏测试秘密".into());
+    }
+    Ok(())
+}
+
 pub fn core_update_bundle(handle: &tauri::AppHandle, bundle: &Path) -> Result<(), String> {
     use tauri_plugin_updater::UpdaterExt;
     let signature =

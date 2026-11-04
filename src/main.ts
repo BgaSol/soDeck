@@ -5,10 +5,12 @@ import { core, type Snapshot, type Message } from "./core";
 import * as views from "./views";
 import { button as b, escape as e, icon, replace } from "./ui";
 import "./style.css";
+import { ServerManager } from "./servers";
 
 const win = getCurrentWindow();
 const root = document.querySelector<HTMLDivElement>("#app")!;
-root.innerHTML = `<header class="topbar"><div class="app-tab">${icon("grid")}<span>工作台</span></div><div id="drag-region" class="drag-region" aria-hidden="true"></div><nav class="global-tools" aria-label="应用工具"><button data-action="status" id="status-button" aria-label="应用状态" aria-expanded="false"><span class="health-dot"></span><span id="health">正在连接</span></button>${b("messages", '<span id="message-count">消息</span>', "bell", "icon-label", 'id="messages-button" aria-label="消息中心"')}${b("settings", "设置", "settings", "icon-label", 'id="settings-button"')}</nav><div id="window-controls" class="window-controls">${b("minimize", "", "minus", "", 'aria-label="最小化"')}${b("maximize", "", "maximize", "", 'id="maximize-button" aria-label="最大化或还原"')}${b("close-window", "", "close", "close-window", 'aria-label="关闭窗口"')}</div></header><main class="workspace"><div class="welcome"><div class="welcome-emblem"><div class="brand-mark">S</div></div><span class="eyebrow">YOUR SERVER WORKBENCH</span><h1>Hello, SoDeck.</h1><p>一个轻盈的起点。<br>在这里连接服务器，展开你的工作。</p><div class="welcome-line"></div><span class="welcome-caption">工作台已就绪</span></div><span class="workspace-note">SoDeck · 远程服务器工作台</span></main><div id="overlay" hidden></div><div id="toasts" class="toasts" aria-live="polite"></div>`;
+root.innerHTML = `<header class="topbar"><div class="app-tab">${icon("grid")}<span>服务器</span></div><div id="drag-region" class="drag-region" aria-hidden="true"></div><nav class="global-tools" aria-label="应用工具"><button data-action="status" id="status-button" aria-label="应用状态" aria-expanded="false"><span class="health-dot"></span><span id="health">正在连接</span></button>${b("messages", '<span id="message-count">消息</span>', "bell", "icon-label", 'id="messages-button" aria-label="消息中心"')}${b("settings", "设置", "settings", "icon-label", 'id="settings-button"')}</nav><div id="window-controls" class="window-controls">${b("minimize", "", "minus", "", 'aria-label="最小化"')}${b("maximize", "", "maximize", "", 'id="maximize-button" aria-label="最大化或还原"')}${b("close-window", "", "close", "close-window", 'aria-label="关闭窗口"')}</div></header><main class="workspace" id="server-workspace"></main><div id="overlay" hidden></div><div id="toasts" class="toasts" aria-live="polite"></div>`;
+const servers = new ServerManager(document.querySelector<HTMLElement>("#server-workspace")!, text => toast(text));
 const overlay = document.querySelector<HTMLDivElement>("#overlay")!;
 let snapshot: Snapshot | undefined;
 let layer = "";
@@ -17,6 +19,7 @@ let lastError = "";
 let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 let refreshing = false;
 let refreshAgain = false;
+let exitPrompt = false;
 let logGeneration = 0;
 const state: views.ViewState = {
   section: "plugins",
@@ -297,14 +300,14 @@ root.addEventListener("click", (event) => {
       case "update-restart":
         await pluginAction(`update:${id}`, async () => {
           const restart = await core.download(id);
-          if (name === "update-restart" && restart) await core.restart(state.updates["sodeck.core"]?.phase === "ready");
+          if (name === "update-restart" && restart && await servers.allowExit()) await core.restart(state.updates["sodeck.core"]?.phase === "ready");
         });
         break;
       case "restart-app":
-        await pluginAction("restart", () => core.restart(state.updates["sodeck.core"]?.phase === "ready"));
+        await pluginAction("restart", async () => { if (await servers.allowExit()) await core.restart(state.updates["sodeck.core"]?.phase === "ready"); });
         break;
       case "install-core":
-        await pluginAction("restart", () => core.restart(true));
+        await pluginAction("restart", async () => { if (await servers.allowExit()) await core.restart(true); });
         break;
       case "save-update-source": {
         const p = snapshot?.plugins.find((p) => p.manifest.id === id);
@@ -419,6 +422,14 @@ document
 
 async function start() {
   await listen("core-changed", scheduleRefresh);
+  await listen("core-request-close", () => {
+    if (exitPrompt) return;
+    exitPrompt = true;
+    void action(async () => {
+      try { if (await servers.allowExit()) await core.close(); }
+      finally { exitPrompt = false; }
+    });
+  });
   await listen<Message>("core-message", (event) => {
     toast(event.payload.title, event.payload);
     scheduleRefresh();
@@ -431,7 +442,7 @@ async function start() {
       (await win.isMaximized()) ? "restore" : "maximize",
     );
   });
-  await refresh();
+  await Promise.all([refresh(), servers.start()]);
   if (snapshot) await core.ready();
   setInterval(() => {
     if (layer === "status") scheduleRefresh();

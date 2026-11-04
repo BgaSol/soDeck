@@ -3,6 +3,7 @@ pub mod desktop_updates;
 pub mod model;
 mod platform;
 mod plugins;
+pub mod servers;
 mod storage;
 pub mod updates;
 pub mod validation;
