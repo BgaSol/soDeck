@@ -3,6 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { verifyBinary } from "./verify-binary.mjs";
+// Git Bash's GNU tar treats C: as a remote host; Windows ships a native bsdtar.
+const tar = process.platform === "win32" ? path.join(process.env.SystemRoot, "System32", "tar.exe") : "tar";
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, { stdio: "inherit", ...options });
@@ -69,7 +71,7 @@ fs.writeFileSync(
   ) + "\n",
 );
 if (target.includes("windows"))
-  run("tar", [
+  run(tar, [
     "-a",
     "-c",
     "-f",
@@ -79,7 +81,7 @@ if (target.includes("windows"))
     stem,
   ]);
 else
-  run("tar", [
+  run(tar, [
     "-czf",
     `${directory}.tar.gz`,
     "-C",
