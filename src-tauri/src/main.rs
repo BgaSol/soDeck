@@ -1,6 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use sodeck::{model::*, AppCore};
+use sodeck::{
+    desktop_updates::CoreUpdater,
+    model::*,
+    updates::{ReleaseClient, UpdateView},
+    AppCore,
+};
 use std::{
     path::PathBuf,
     sync::{
@@ -12,6 +17,7 @@ use tauri::{Emitter, Manager, State};
 
 struct Application {
     core: Arc<AppCore>,
+    updater: CoreUpdater,
     exiting: AtomicU8,
     smoke: bool,
     plugin_test: Option<PathBuf>,
@@ -24,22 +30,107 @@ fn snapshot(app: State<Application>) -> Snapshot {
 }
 
 #[tauri::command]
-async fn load_plugin(
-    app: State<'_, Application>,
-    directory: PathBuf,
-) -> Result<PluginView, String> {
+async fn add_plugin(app: State<'_, Application>, directory: PathBuf) -> Result<String, String> {
     let core = app.core.clone();
-    tauri::async_runtime::spawn_blocking(move || core.load(&directory))
+    tauri::async_runtime::spawn_blocking(move || core.add_plugin(&directory))
         .await
         .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-async fn unload_plugin(app: State<'_, Application>, id: String) -> Result<PluginView, String> {
+async fn set_plugin_enabled(
+    app: State<'_, Application>,
+    id: String,
+    enabled: bool,
+) -> Result<(), String> {
     let core = app.core.clone();
-    tauri::async_runtime::spawn_blocking(move || core.unload(&id))
+    tauri::async_runtime::spawn_blocking(move || core.set_enabled(&id, enabled))
         .await
         .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn update_status(app: State<Application>) -> std::collections::HashMap<String, UpdateView> {
+    app.core.update_views()
+}
+
+#[tauri::command]
+async fn set_plugin_update_source(
+    app: State<'_, Application>,
+    id: String,
+    source: Option<UpdateSource>,
+) -> Result<(), String> {
+    let core = app.core.clone();
+    tauri::async_runtime::spawn_blocking(move || core.set_update_source(&id, source))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn check_update(
+    handle: tauri::AppHandle,
+    app: State<'_, Application>,
+    id: String,
+) -> Result<(), String> {
+    if id == sodeck::updates::CORE_ID {
+        return app.updater.check(&handle, &app.core).await;
+    }
+    let core = app.core.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        core.check_component(&id, &ReleaseClient::github()?)
+            .map(|_| ())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn download_update(app: State<'_, Application>, id: String) -> Result<bool, String> {
+    if id == sodeck::updates::CORE_ID {
+        app.updater.download(&app.core).await?;
+        return Ok(true);
+    }
+    let core = app.core.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        core.download_plugin(&id, &ReleaseClient::github()?)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn restart_app(
+    handle: tauri::AppHandle,
+    app: State<'_, Application>,
+    install_core: bool,
+) -> Result<(), String> {
+    if install_core && !app.updater.ready() {
+        return Err("请先下载核心更新".into());
+    }
+    if app.core.updates_busy() {
+        return Err("请等待更新检查或下载完成再重启".into());
+    }
+    app.exiting
+        .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+        .map_err(|_| "应用正在退出或重启")?;
+    let core = app.core.clone();
+    let stopped = tauri::async_runtime::spawn_blocking(move || core.shutdown())
+        .await
+        .map_err(|e| e.to_string())?;
+    if let Err(error) = stopped {
+        app.exiting.store(0, Ordering::Release);
+        return Err(error);
+    }
+    app.exiting.store(2, Ordering::Release);
+    if install_core {
+        if let Err(error) = app.updater.install() {
+            app.exiting.store(0, Ordering::Release);
+            app.core.resume_after_failed_install();
+            return Err(format!("安装未完成，更新包已保留，可重试：{error}"));
+        }
+    }
+    handle.request_restart();
+    Ok(())
 }
 
 #[tauri::command]
@@ -81,9 +172,13 @@ fn frontend_ready(handle: tauri::AppHandle, app: State<Application>) {
     }
     let core = app.core.clone();
     let plugin = app.plugin_test.clone();
+    let update_bundle = argument("--update-bundle-test");
     let persisted = app.verify_persisted;
     std::thread::spawn(move || {
         let validation = (|| {
+            if let Some(bundle) = update_bundle {
+                sodeck::validation::core_update_bundle(&handle, &bundle)?;
+            }
             if let Some(directory) = plugin {
                 sodeck::validation::plugin_roundtrip(&core, &directory, persisted)?;
             }
@@ -154,6 +249,7 @@ fn main() {
     let smoke = std::env::args().any(|arg| arg == "--smoke-test");
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
             let directory = if smoke {
                 argument("--test-data-dir").unwrap_or_else(|| {
@@ -168,12 +264,16 @@ fn main() {
                 let _ = handle.emit(name, value);
             }));
             app.manage(Application {
-                core,
+                core: core.clone(),
+                updater: CoreUpdater::default(),
                 exiting: AtomicU8::new(0),
                 smoke,
                 plugin_test: smoke.then(|| argument("--plugin-test")).flatten(),
                 verify_persisted: smoke && std::env::args().any(|a| a == "--verify-persisted"),
             });
+            if !smoke {
+                std::thread::spawn(move || core.start_enabled());
+            }
             #[cfg(target_os = "macos")]
             {
                 let window = app.get_webview_window("main").unwrap();
@@ -197,8 +297,13 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             snapshot,
-            load_plugin,
-            unload_plugin,
+            add_plugin,
+            set_plugin_enabled,
+            set_plugin_update_source,
+            update_status,
+            check_update,
+            download_update,
+            restart_app,
             forget_plugin,
             set_theme,
             read_logs,

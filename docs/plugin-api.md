@@ -17,7 +17,9 @@
 }
 ```
 
-每个包包含一个目标的程序，五个 target 见分发文档。Unix 入口需要执行位。核心只做必需字段、版本、API 主版本、目标及目录内入口的基本检查。同一 ID 只能有一个活动实例；卸载后可重新选择新目录替换记录。
+每个包包含一个目标的程序，五个 target 见分发文档。Unix 入口需要执行位。核心只做必需字段、版本、API 主版本、目标及目录内入口的基本检查。同一 ID 只能有一个活动实例。启用/关闭在重启后生效，核心启动时加载已启用插件。
+
+清单可选 `updateSource: { "repository": "BgaSol/soDeck", "tagPrefix": "plugin-hello-v" }`。未声明来源的本地插件可在设置中显式配置。插件仍为 API v1，不增加运行时更新 RPC。发布维护与重启切换见分发文档。
 
 ## 通信
 
@@ -43,7 +45,7 @@ stdin/stdout 每行一个 UTF-8 JSON-RPC 2.0 对象，以 LF 结尾，最大 64 
 
 消息级别：info/success/warning/error，notify 默认 false；消息持久化成功才返回 ID。最多保留 1000 条。同一插件非空 dedupeKey 在 5 分钟内合并，更新内容、实例、时间和次数并标为未读；合并期间不重复弹提示。标题最多 1024 字节，正文最多 16 KiB。
 
-卸载时核心发送：
+应用退出或重启停止插件时核心发送：
 
 ```json
 {"jsonrpc":"2.0","id":"shutdown","method":"shutdown","params":{}}
@@ -60,7 +62,7 @@ stdin/stdout 每行一个 UTF-8 JSON-RPC 2.0 对象，以 LF 结尾，最大 64 
 npm run plugin:build
 # 指定目标时仍需要相应编译环境
 npm run plugin:build -- --target aarch64-apple-darwin
-# 已加载的插件不能原位覆盖；可卸载后构建，或使用另外的输出目录
+# 正在运行的插件不能原位覆盖；关闭并重启后构建，或使用另外的输出目录
 npm run plugin:build -- --out-dir artifacts/another-build
 ```
 

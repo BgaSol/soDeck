@@ -24,3 +24,4 @@ jobs:
       - run: npm run check
       - run: npm run plugin:check
       - run: npm run web:build
+      - run: npm run scripts:test

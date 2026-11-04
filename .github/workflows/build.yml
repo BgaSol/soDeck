@@ -25,11 +25,11 @@ jobs:
           - name: linux-x86_64
             runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            bundle: deb
+            bundle: deb,appimage
           - name: linux-aarch64
             runner: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
-            bundle: deb
+            bundle: deb,appimage
           - name: macos-aarch64
             runner: macos-15
             target: aarch64-apple-darwin
@@ -49,7 +49,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev patchelf xvfb dbus-x11
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev patchelf xvfb dbus-x11 libfuse2
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.99.1
@@ -61,29 +61,27 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run test
+      - run: npm run scripts:test
       - name: Check release version
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: |
-          node --input-type=module -e 'import fs from "node:fs"; const {version} = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json")); if (process.env.GITHUB_REF_NAME !== `v${version}`) throw new Error("Tag must match tauri.conf.json version");'
+          node scripts/release-metadata.mjs --kind core
       - name: Build installer
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPIMAGE_EXTRACT_AND_RUN: "1"
         with:
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
           releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('SoDeck {0}', github.ref_name) || '' }}
           releaseBody: SoDeck core. Plugins are distributed separately; see the release notes for loading instructions.
           releaseDraft: true
-          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundle }} -- --locked
-      - uses: actions/upload-artifact@v4
-        with:
-          name: SoDeck-${{ matrix.name }}
-          path: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe
-            src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
-            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-          if-no-files-found: error
+          includeUpdaterJson: false
+          args: --config src-tauri/tauri.release.conf.json --target ${{ matrix.target }} --bundles ${{ matrix.bundle }} -- --locked
+      - run: node scripts/collect-core.mjs ${{ matrix.target }}
       - name: Install and launch Windows package
         if: runner.os == 'Windows'
         shell: pwsh
@@ -93,6 +91,7 @@ jobs:
           $install = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDir" -WindowStyle Hidden -PassThru -Wait
           if ($install.ExitCode -ne 0) { throw "Installer failed: $($install.ExitCode)" }
           node scripts/verify-binary.mjs "$installDir/sodeck.exe" '${{ matrix.target }}'
+          $env:SODECK_TEST_UPDATE_BUNDLE = $installer.FullName
           node scripts/smoke.mjs "$installDir/sodeck.exe"
       - name: Extract and launch Linux package
         if: runner.os == 'Linux'
@@ -101,11 +100,43 @@ jobs:
         run: |
           dpkg-deb -x src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb "$RUNNER_TEMP/SoDeck"
           node scripts/verify-binary.mjs "$RUNNER_TEMP/SoDeck/usr/bin/sodeck" '${{ matrix.target }}'
+          export SODECK_TEST_UPDATE_BUNDLE="$(find src-tauri/target/${{ matrix.target }}/release/bundle/appimage -name '*.AppImage' | head -1)"
           node scripts/smoke.mjs dbus-run-session -- xvfb-run -a "$RUNNER_TEMP/SoDeck/usr/bin/sodeck"
+          APPIMAGE_EXTRACT_AND_RUN=1 node scripts/smoke.mjs dbus-run-session -- xvfb-run -a src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
       - name: Mount and launch macOS package
         if: runner.os == 'macOS'
         run: |
           hdiutil attach src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg -nobrowse -readonly -mountpoint "$RUNNER_TEMP/SoDeck"
           trap 'hdiutil detach "$RUNNER_TEMP/SoDeck"' EXIT
           node scripts/verify-binary.mjs "$RUNNER_TEMP/SoDeck/SoDeck.app/Contents/MacOS/sodeck" '${{ matrix.target }}'
+          export SODECK_TEST_UPDATE_BUNDLE="$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name '*.app.tar.gz' | head -1)"
           node scripts/smoke.mjs "$RUNNER_TEMP/SoDeck/SoDeck.app/Contents/MacOS/sodeck"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SoDeck-${{ matrix.name }}
+          path: artifacts/core/
+          if-no-files-found: error
+  metadata:
+    needs: package
+    if: always() && !cancelled() && startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: SoDeck-*
+          merge-multiple: true
+          path: artifacts/core
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/release-metadata.mjs --kind core --input artifacts/core
+          gh release view "$GITHUB_REF_NAME" --json isDraft > release.json
+          node -e 'if (!JSON.parse(require("fs").readFileSync("release.json")).isDraft) throw new Error("Published core versions are immutable")'
+          gh release upload "$GITHUB_REF_NAME" artifacts/core/core-update.json --clobber
+          gh release edit "$GITHUB_REF_NAME" --notes-file "docs/releases/$GITHUB_REF_NAME.md"

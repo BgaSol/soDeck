@@ -33,6 +33,8 @@ export function icon(name: string) {
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-11v1"/>',
     copy: '<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V3H3v13h5"/>',
     check: '<path d="m5 12 4 4L19 6"/>',
+    download: '<path d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5"/>',
+    restart: '<path d="M20 7v5h-5M20 12a8 8 0 1 0-2 5M20 7v5"/>',
   };
   return `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">${paths[name] ?? paths.info}</svg>`;
 }

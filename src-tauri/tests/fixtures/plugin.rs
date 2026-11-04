@@ -36,6 +36,12 @@ fn main() {
                 if mode == "timeout" {
                     continue;
                 }
+                if mode == "init-error" {
+                    send(
+                        json!({"jsonrpc":"2.0","id":frame["id"],"error":{"code":-1,"message":"fixture init failure"}}),
+                    );
+                    continue;
+                }
                 if mode == "child" {
                     let child = Command::new(std::env::current_exe().unwrap())
                         .arg("--child")

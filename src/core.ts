@@ -6,6 +6,7 @@ export interface Manifest {
   apiVersion: string;
   target: string;
   entry: string;
+  updateSource?: { repository: string; tagPrefix: string };
 }
 export interface Plugin {
   directory: string;
@@ -16,6 +17,10 @@ export interface Plugin {
   startedAt: number | null;
   error: string | null;
   cleanupComplete: boolean;
+  enabled: boolean;
+  pendingRestart: boolean;
+  pendingVersion: string | null;
+  updateError: string | null;
 }
 export interface Snapshot {
   version: string;
@@ -30,6 +35,16 @@ export interface Snapshot {
   plugins: Plugin[];
   unreadCount: number;
   storageErrors: string[];
+  restartRequired: boolean;
+}
+export interface Update {
+  id: string;
+  phase: string;
+  version: string | null;
+  notes: string;
+  downloadedBytes: number;
+  totalBytes: number | null;
+  error: string | null;
 }
 export interface Log {
   id: string;
@@ -62,8 +77,13 @@ export interface Filter {
 }
 export const core = {
   snapshot: () => invoke<Snapshot>("snapshot"),
-  load: (directory: string) => invoke<Plugin>("load_plugin", { directory }),
-  unload: (id: string) => invoke<Plugin>("unload_plugin", { id }),
+  add: (directory: string) => invoke<string>("add_plugin", { directory }),
+  enabled: (id: string, enabled: boolean) => invoke<void>("set_plugin_enabled", { id, enabled }),
+  updateSource: (id: string, source: Manifest["updateSource"] | null) => invoke<void>("set_plugin_update_source", { id, source }),
+  updates: () => invoke<Record<string, Update>>("update_status"),
+  checkUpdate: (id: string) => invoke<void>("check_update", { id }),
+  download: (id: string) => invoke<boolean>("download_update", { id }),
+  restart: (installCore = false) => invoke<void>("restart_app", { installCore }),
   forget: (id: string) => invoke<void>("forget_plugin", { id }),
   theme: (theme: string) => invoke<void>("set_theme", { theme }),
   logs: (filter: Filter) => invoke<Log[]>("read_logs", { filter }),

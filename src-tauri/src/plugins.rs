@@ -29,6 +29,9 @@ pub fn read_manifest(directory: &Path) -> Result<PluginRecord, String> {
     let manifest: Manifest =
         serde_json::from_slice(&fs::read(&path).map_err(|error| error.to_string())?)
             .map_err(|error| format!("插件清单格式错误：{error}"))?;
+    if manifest.id == crate::updates::CORE_ID {
+        return Err("插件 ID 不能使用核心保留名称 sodeck.core".into());
+    }
     if manifest.id.is_empty()
         || manifest.id.len() > 128
         || !manifest.id.starts_with(|c: char| c.is_ascii_alphanumeric())
@@ -75,6 +78,10 @@ pub fn read_manifest(directory: &Path) -> Result<PluginRecord, String> {
     Ok(PluginRecord {
         directory,
         manifest,
+        enabled: false,
+        pending_update: None,
+        previous: None,
+        update_error: None,
     })
 }
 
@@ -155,6 +162,10 @@ impl Instance {
                     started_at: None,
                     error: None,
                     cleanup_complete: false,
+                    enabled: record.enabled,
+                    pending_restart: false,
+                    pending_version: None,
+                    update_error: record.update_error,
                 }),
                 control: sender,
             }),

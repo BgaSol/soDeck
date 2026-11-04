@@ -1,18 +1,40 @@
-name: Package Hello plugin
+name: Package plugin
 
 on:
+  push:
+    tags: ["plugin-*-v*"]
   workflow_dispatch:
     inputs:
-      release_tag:
-        description: Existing Release tag to attach packages to (empty for Artifacts only)
-        required: false
+      plugin:
+        description: Plugin directory under plugins/
+        default: hello
+        required: true
         type: string
+      publish:
+        description: Create a draft independent plugin Release
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
 jobs:
+  select:
+    runs-on: ubuntu-22.04
+    outputs:
+      plugin: ${{ steps.config.outputs.plugin }}
+      tag: ${{ steps.config.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+      - id: config
+        env:
+          PLUGIN: ${{ inputs.plugin || 'hello' }}
+        run: node scripts/release-metadata.mjs --kind plugin --plugin "$PLUGIN"
   package:
+    needs: select
     strategy:
       fail-fast: false
       matrix:
@@ -35,8 +57,6 @@ jobs:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
@@ -49,22 +69,46 @@ jobs:
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: plugins/hello -> target
-      - run: cargo fmt --manifest-path plugins/hello/Cargo.toml -- --check
-      - run: node scripts/package-plugin.mjs --target ${{ matrix.target }}
+          workspaces: plugins/${{ needs.select.outputs.plugin }} -> target
+      - shell: bash
+        env:
+          PLUGIN: ${{ needs.select.outputs.plugin }}
+        run: |
+          cargo fmt --manifest-path "plugins/$PLUGIN/Cargo.toml" -- --check
+          node scripts/package-plugin.mjs --plugin "$PLUGIN" --target '${{ matrix.target }}'
       - uses: actions/upload-artifact@v4
         with:
-          name: Hello-${{ matrix.name }}
+          name: Plugin-${{ needs.select.outputs.plugin }}-${{ matrix.name }}
           path: |
             artifacts/plugins/*.zip
             artifacts/plugins/*.tar.gz
+            artifacts/plugins/plugin-*.json
           if-no-files-found: error
-      - name: Attach to an existing Release
-        if: inputs.release_tag != ''
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
+  release:
+    needs: [select, package]
+    if: always() && !cancelled() && needs.select.result == 'success' && (startsWith(github.ref, 'refs/tags/') || inputs.publish)
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: Plugin-${{ needs.select.outputs.plugin }}-*
+          merge-multiple: true
+          path: artifacts/plugins
+      - env:
+          PLUGIN: ${{ needs.select.outputs.plugin }}
+          TAG: ${{ needs.select.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view "$RELEASE_TAG"
-          gh release upload "$RELEASE_TAG" artifacts/plugins/*.${{ runner.os == 'Windows' && 'zip' || 'tar.gz' }} --clobber
+          node scripts/release-metadata.mjs --kind plugin --plugin "$PLUGIN" --tag "$TAG" --input artifacts/plugins
+          if gh release view "$TAG" --json isDraft > release.json; then
+            node -e 'if (!JSON.parse(require("fs").readFileSync("release.json")).isDraft) throw new Error("Published versions are immutable; bump the version")'
+          else
+            gh release create "$TAG" --target "$GITHUB_SHA" --draft --latest=false --title "$PLUGIN ${TAG##*-v}" --notes-file "plugins/$PLUGIN/CHANGELOG.md"
+          fi
+          find artifacts/plugins -maxdepth 1 -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name 'plugin-update.json' \) -exec gh release upload "$TAG" --clobber {} +

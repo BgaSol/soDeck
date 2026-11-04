@@ -29,6 +29,8 @@ const state: views.ViewState = {
   paused: false,
   error: "",
   busy: new Set(),
+  updates: {},
+  sourceDrafts: {},
 };
 
 function applyTheme() {
@@ -165,7 +167,7 @@ async function refresh() {
   }
   refreshing = true;
   try {
-    snapshot = await core.snapshot();
+    [snapshot, state.updates] = await Promise.all([core.snapshot(), core.updates()]);
     lastError = "";
     applyTheme();
     renderTop();
@@ -279,18 +281,39 @@ root.addEventListener("click", (event) => {
         });
         if (typeof directory === "string")
           await pluginAction("choose", async () => {
-            const p = await core.load(directory);
-            state.plugin = p.manifest.id;
+            state.plugin = await core.add(directory);
           });
         break;
       }
-      case "load-plugin": {
+      case "toggle-plugin": {
         const p = snapshot?.plugins.find((p) => p.manifest.id === id);
-        if (p) await pluginAction(id, () => core.load(p.directory));
+        if (p) await pluginAction(id, () => core.enabled(id, !p.enabled));
         break;
       }
-      case "unload-plugin":
-        await pluginAction(id, () => core.unload(id));
+      case "check-update":
+        await pluginAction(`update:${id}`, () => core.checkUpdate(id));
+        break;
+      case "download-update":
+      case "update-restart":
+        await pluginAction(`update:${id}`, async () => {
+          const restart = await core.download(id);
+          if (name === "update-restart" && restart) await core.restart(state.updates["sodeck.core"]?.phase === "ready");
+        });
+        break;
+      case "restart-app":
+        await pluginAction("restart", () => core.restart(state.updates["sodeck.core"]?.phase === "ready"));
+        break;
+      case "install-core":
+        await pluginAction("restart", () => core.restart(true));
+        break;
+      case "save-update-source": {
+        const p = snapshot?.plugins.find((p) => p.manifest.id === id);
+        const source = state.sourceDrafts[id] ?? p?.manifest.updateSource;
+        if (source) await pluginAction(id, () => core.updateSource(id, { repository: source.repository.trim(), tagPrefix: source.tagPrefix.trim() }));
+        break;
+      }
+      case "clear-update-source":
+        await pluginAction(id, async () => { await core.updateSource(id, null); delete state.sourceDrafts[id]; });
         break;
       case "forget-plugin":
         await pluginAction(id, async () => {
@@ -356,6 +379,14 @@ root.addEventListener("click", (event) => {
 let queryTimer: ReturnType<typeof setTimeout>;
 root.addEventListener("input", (event) => {
   const input = event.target as HTMLInputElement;
+  if (input.dataset.source && state.plugin) {
+    const saved = snapshot?.plugins.find(p => p.manifest.id === state.plugin)?.manifest.updateSource;
+    const draft = state.sourceDrafts[state.plugin] ?? { repository: saved?.repository ?? "", tagPrefix: saved?.tagPrefix ?? "" };
+    if (input.dataset.source === "repository") draft.repository = input.value;
+    else draft.tagPrefix = input.value;
+    state.sourceDrafts[state.plugin] = draft;
+    return;
+  }
   if (input.id !== "log-query") return;
   state.filter.query = input.value;
   clearTimeout(queryTimer);

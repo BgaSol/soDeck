@@ -48,7 +48,7 @@ jobs:
           path: packages/core
       - uses: actions/download-artifact@v5
         with:
-          name: Hello-${{ matrix.name }}
+          name: Plugin-hello-${{ matrix.name }}
           run-id: ${{ inputs.plugin_run_id }}
           github-token: ${{ github.token }}
           path: packages/plugin

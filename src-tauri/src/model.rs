@@ -2,6 +2,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
 
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSource {
+    pub repository: String,
+    pub tag_prefix: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {
@@ -11,6 +18,15 @@ pub struct Manifest {
     pub api_version: String,
     pub target: String,
     pub entry: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_source: Option<UpdateSource>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginPackage {
+    pub directory: PathBuf,
+    pub manifest: Manifest,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -18,6 +34,14 @@ pub struct Manifest {
 pub struct PluginRecord {
     pub directory: PathBuf,
     pub manifest: Manifest,
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub pending_update: Option<PluginPackage>,
+    #[serde(default)]
+    pub previous: Option<PluginPackage>,
+    #[serde(default)]
+    pub update_error: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
@@ -41,6 +65,10 @@ pub struct PluginView {
     pub started_at: Option<u64>,
     pub error: Option<String>,
     pub cleanup_complete: bool,
+    pub enabled: bool,
+    pub pending_restart: bool,
+    pub pending_version: Option<String>,
+    pub update_error: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -137,4 +165,5 @@ pub struct Snapshot {
     pub plugins: Vec<PluginView>,
     pub unread_count: usize,
     pub storage_errors: Vec<String>,
+    pub restart_required: bool,
 }

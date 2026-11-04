@@ -1104,3 +1104,17 @@
     }
   }
 }
+@layer components {
+  .restart-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; margin-bottom: 22px; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent-bg); }
+  .restart-banner p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+  .update-card { padding: 16px; margin: 20px 0; border: 1px solid var(--border); border-radius: 10px; background: var(--subtle); }
+  .update-card h3 { margin: 0 0 10px; }
+  .update-card .actions { flex-wrap: wrap; }
+  .update-notes { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; color: var(--muted); max-height: 180px; overflow: auto; }
+  .update-card progress { width: 100%; height: 7px; accent-color: var(--accent); }
+  .update-source { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .update-source label { display: grid; gap: 6px; margin: 12px 0; color: var(--muted); }
+  .update-source input { width: 100%; min-width: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; color: var(--text); background: var(--panel); }
+  .plugin-switch::before { content: ''; display: block; width: 25px; height: 14px; border-radius: 10px; background: radial-gradient(circle at 6px center, var(--panel) 0 4px, transparent 4.5px), var(--muted); border: 0; }
+  .plugin-switch.on::before { background: radial-gradient(circle at 19px center, var(--panel) 0 4px, transparent 4.5px), var(--accent); }
+}

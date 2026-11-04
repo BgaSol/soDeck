@@ -1,8 +1,10 @@
 pub mod core;
+pub mod desktop_updates;
 pub mod model;
 mod platform;
 mod plugins;
 mod storage;
+pub mod updates;
 pub mod validation;
 
 pub use core::AppCore;

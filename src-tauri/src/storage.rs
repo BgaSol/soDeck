@@ -64,8 +64,14 @@ impl Store {
             .truncate(false)
             .open(root.join("app.lock"))
             .map_err(|error| format!("无法打开应用数据锁：{error}"))?;
-        lock.try_lock()
-            .map_err(|_| "应用数据正在被另一个 SoDeck 实例使用，请先关闭它。".to_string())?;
+        // Tauri spawns the replacement just before the old process exits during restart.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while lock.try_lock().is_err() {
+            if std::time::Instant::now() >= deadline {
+                return Err("应用数据正在被另一个 SoDeck 实例使用，请先关闭它。".into());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
         let (plugins, plugin_error) = read_json(&root.join("plugins.json"));
         let (messages, message_error) = read_json(&root.join("messages.json"));
         let (preferences, preference_error) = read_json(&root.join("preferences.json"));

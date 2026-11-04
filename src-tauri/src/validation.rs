@@ -7,6 +7,33 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub fn core_update_bundle(handle: &tauri::AppHandle, bundle: &Path) -> Result<(), String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let signature =
+        std::fs::read_to_string(format!("{}.sig", bundle.display())).map_err(|e| e.to_string())?;
+    let updater = handle
+        .updater_builder()
+        .target(crate::TARGET)
+        .endpoints(vec!["https://github.com/BgaSol/soDeck".parse().unwrap()])
+        .map_err(|e| e.to_string())?
+        .version_comparator(|_, _| true)
+        .build()
+        .map_err(|e| e.to_string())?;
+    let update = updater.restore_update(serde_json::json!({"version": crate::app_version(), "platforms": {crate::TARGET: {"url": "https://github.com/BgaSol/soDeck", "signature": signature.trim()}}})).map_err(|e| e.to_string())?.ok_or("无法恢复签名更新包信息")?;
+    let bytes = std::fs::read(bundle).map_err(|e| e.to_string())?;
+    update
+        .verify(&bytes)
+        .map_err(|e| format!("发行包签名验证失败：{e}"))?;
+    let mut changed = bytes;
+    if let Some(first) = changed.first_mut() {
+        *first ^= 1;
+    }
+    if update.verify(&changed).is_ok() {
+        return Err("更新器错误地接受了修改过的发行包".into());
+    }
+    Ok(())
+}
+
 pub fn plugin_roundtrip(
     core: &Arc<AppCore>,
     directory: &Path,
@@ -19,6 +46,31 @@ pub fn plugin_roundtrip(
             || core.snapshot().preferences.theme != "dark")
     {
         return Err("重启后插件目录、消息、已读或主题未保留".into());
+    }
+    if persisted {
+        core.start_enabled();
+        if !core
+            .snapshot()
+            .plugins
+            .iter()
+            .any(|p| p.enabled && p.status == crate::model::PluginStatus::Running)
+        {
+            return Err("重启后未自动加载启用插件".into());
+        }
+        let id = core.snapshot().plugins[0].manifest.id.clone();
+        core.set_enabled(&id, false)?;
+        if core.snapshot().plugins[0].status != crate::model::PluginStatus::Running {
+            return Err("关闭插件不应立即停止进程".into());
+        }
+        core.set_enabled(&id, true)?;
+        core.unload(&id)?;
+    } else {
+        core.add_plugin(directory)?;
+        if !core.snapshot().restart_required
+            || core.snapshot().plugins[0].status != crate::model::PluginStatus::Unloaded
+        {
+            return Err("新增启用插件应等待重启".into());
+        }
     }
     let first = core.load(directory)?;
     let deadline = Instant::now() + Duration::from_secs(5);

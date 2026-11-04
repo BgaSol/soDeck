@@ -6,7 +6,7 @@ use crate::{
 };
 use serde_json::{json, Value};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -18,7 +18,10 @@ use std::{
 type Listener = Arc<dyn Fn(&str, Value) + Send + Sync>;
 
 pub struct AppCore {
-    store: Mutex<Store>,
+    pub(crate) store: Mutex<Store>,
+    pub(crate) updates: Mutex<crate::updates::UpdateState>,
+    pub(crate) mutations: Mutex<()>,
+    startup_enabled: HashSet<String>,
     instances: Mutex<HashMap<String, Arc<Instance>>>,
     listener: Mutex<Option<Listener>>,
     version: String,
@@ -26,6 +29,7 @@ pub struct AppCore {
     started: Instant,
     sequence: AtomicU64,
     closing: AtomicBool,
+    restart_after_error: AtomicBool,
     log_rate: Mutex<(Instant, usize, u64)>,
 }
 
@@ -39,8 +43,17 @@ pub fn now() -> u64 {
 impl AppCore {
     pub fn open(directory: PathBuf, version: String) -> Result<Arc<Self>, String> {
         let store = Store::open(directory)?;
+        let startup_enabled = store
+            .plugins
+            .iter()
+            .filter(|p| p.enabled)
+            .map(|p| p.manifest.id.clone())
+            .collect();
         let core = Arc::new(Self {
             store: Mutex::new(store),
+            updates: Mutex::new(crate::updates::UpdateState::default()),
+            mutations: Mutex::new(()),
+            startup_enabled,
             instances: Mutex::new(HashMap::new()),
             listener: Mutex::new(None),
             version,
@@ -48,6 +61,7 @@ impl AppCore {
             started: Instant::now(),
             sequence: AtomicU64::new(0),
             closing: AtomicBool::new(false),
+            restart_after_error: AtomicBool::new(false),
             log_rate: Mutex::new((Instant::now(), 0, 0)),
         });
         core.log(None, "info", "SoDeck 已启动", None);
@@ -94,11 +108,13 @@ impl AppCore {
             plugins: Vec::new(),
             unread_count: store.messages.iter().filter(|m| !m.read).count(),
             storage_errors: store.errors.iter().flatten().cloned().collect(),
+            restart_required: self.restart_after_error.load(Ordering::Acquire),
         };
         drop(store);
         let instances = self.instances.lock().unwrap();
         for record in records {
-            let view = instances
+            let update_source = record.manifest.update_source.clone();
+            let mut view = instances
                 .get(&record.manifest.id)
                 .map(|i| i.view())
                 .unwrap_or_else(|| {
@@ -116,8 +132,23 @@ impl AppCore {
                         started_at: None,
                         error: missing.then(|| "插件目录不存在，请重新选择目录".into()),
                         cleanup_complete: true,
+                        enabled: record.enabled,
+                        pending_restart: false,
+                        pending_version: None,
+                        update_error: record.update_error.clone(),
                     }
                 });
+            view.enabled = record.enabled;
+            view.manifest.update_source = update_source;
+            view.pending_restart = record.enabled
+                != self.startup_enabled.contains(&view.manifest.id)
+                || record.pending_update.is_some();
+            view.pending_version = record
+                .pending_update
+                .as_ref()
+                .map(|p| p.manifest.version.clone());
+            view.update_error = record.update_error;
+            snapshot.restart_required |= view.pending_restart;
             snapshot.plugins.push(view);
         }
         snapshot
@@ -130,7 +161,25 @@ impl AppCore {
         if self.closing.load(Ordering::Acquire) {
             return Err("应用正在退出".into());
         }
-        let record = plugins::read_manifest(directory)?;
+        let mut record = plugins::read_manifest(directory)?;
+        if let Some(saved) = self
+            .store
+            .lock()
+            .unwrap()
+            .plugins
+            .iter()
+            .find(|p| p.manifest.id == record.manifest.id)
+        {
+            record.enabled = saved.enabled;
+            record.pending_update = saved.pending_update.clone();
+            record.previous = saved.previous.clone();
+            record.update_error = saved.update_error.clone();
+            record.manifest.update_source = saved
+                .manifest
+                .update_source
+                .clone()
+                .or(record.manifest.update_source);
+        }
         let id = record.manifest.id.clone();
         let (instance, control, ready, ready_rx) = Instance::new(record.clone(), self.next_id());
         {
@@ -180,6 +229,17 @@ impl AppCore {
     }
 
     pub fn forget(&self, id: &str) -> Result<(), String> {
+        let _operation = self.mutations.lock().unwrap();
+        if self
+            .store
+            .lock()
+            .unwrap()
+            .plugins
+            .iter()
+            .any(|p| p.manifest.id == id && p.enabled)
+        {
+            return Err("请先关闭插件并重启，再移除记录".into());
+        }
         let mut instances = self.instances.lock().unwrap();
         if instances
             .get(id)
@@ -222,6 +282,145 @@ impl AppCore {
             self.closing.store(false, Ordering::Release);
             Err(errors.join("；"))
         }
+    }
+
+    pub fn add_plugin(&self, directory: &Path) -> Result<String, String> {
+        let _operation = self.mutations.lock().unwrap();
+        let mut record = plugins::read_manifest(directory)?;
+        let id = record.manifest.id.clone();
+        let mut store = self.store.lock().unwrap();
+        if store.plugins.iter().any(|p| p.manifest.id == id) {
+            return Err("该插件已有记录，请在详情中管理或移除旧记录后再添加".into());
+        }
+        record.enabled = true;
+        store.register(record)?;
+        drop(store);
+        self.changed();
+        Ok(id)
+    }
+
+    pub fn set_enabled(&self, id: &str, enabled: bool) -> Result<(), String> {
+        let _operation = self.mutations.lock().unwrap();
+        let mut store = self.store.lock().unwrap();
+        let mut record = store
+            .plugins
+            .iter()
+            .find(|p| p.manifest.id == id)
+            .cloned()
+            .ok_or("插件记录不存在")?;
+        record.enabled = enabled;
+        store.register(record)?;
+        drop(store);
+        self.changed();
+        Ok(())
+    }
+
+    pub fn set_update_source(&self, id: &str, source: Option<UpdateSource>) -> Result<(), String> {
+        if let Some(source) = &source {
+            crate::updates::validate_source(source)?;
+        }
+        let _operation = self.mutations.lock().unwrap();
+        let mut store = self.store.lock().unwrap();
+        let mut record = store
+            .plugins
+            .iter()
+            .find(|p| p.manifest.id == id)
+            .cloned()
+            .ok_or("插件记录不存在")?;
+        record.manifest.update_source = source;
+        store.register(record)?;
+        drop(store);
+        self.updates.lock().unwrap().items.remove(id);
+        self.changed();
+        Ok(())
+    }
+
+    /// Called once during application startup, before any UI-triggered plugin operations.
+    pub fn start_enabled(self: &Arc<Self>) {
+        let _operation = self.mutations.lock().unwrap();
+        let records = self.store.lock().unwrap().plugins.clone();
+        for mut record in records {
+            if let Some(pending) = record.pending_update.take() {
+                let checked = plugins::read_manifest(&pending.directory).and_then(|candidate| {
+                    if candidate.manifest.id != record.manifest.id
+                        || candidate.manifest.version != pending.manifest.version
+                    {
+                        return Err("待更新插件的 ID 或版本已改变".into());
+                    }
+                    Ok(())
+                });
+                match checked {
+                    Ok(()) => {
+                        record.previous = Some(PluginPackage {
+                            directory: record.directory.clone(),
+                            manifest: record.manifest.clone(),
+                        });
+                        record.directory = pending.directory;
+                        record.manifest = pending.manifest;
+                        record.update_error = None;
+                    }
+                    Err(error) => {
+                        record.update_error = Some(error);
+                    }
+                }
+                let saved = self.store.lock().unwrap().register(record.clone());
+                if let Err(error) = saved {
+                    self.log(None, "error", &error, None);
+                    continue;
+                }
+            }
+            if !record.enabled {
+                continue;
+            }
+            match self.load(&record.directory) {
+                Ok(_) => {
+                    if record.previous.take().is_some() {
+                        let saved = self.store.lock().unwrap().register(record.clone());
+                        if let Err(error) = saved {
+                            self.log(None, "error", &error, None);
+                        }
+                    }
+                }
+                Err(error) => {
+                    if let Some(previous) = record.previous.take() {
+                        // Only restore binaries; plugin data belongs to the plugin and is kept.
+                        record.directory = previous.directory;
+                        record.manifest = previous.manifest;
+                        record.update_error = Some(format!("新版启动失败，已恢复旧程序：{error}"));
+                        let saved = self.store.lock().unwrap().register(record.clone());
+                        if saved.is_ok() {
+                            let _ = self.load(&record.directory);
+                        }
+                    } else {
+                        record.update_error = Some(error.clone());
+                        let _ = self.store.lock().unwrap().register(record.clone());
+                        self.log(
+                            None,
+                            "error",
+                            &format!("插件 {} 启动失败：{error}", record.manifest.id),
+                            None,
+                        );
+                    }
+                }
+            }
+        }
+        self.changed();
+    }
+
+    pub(crate) fn plugin_needs_restart(&self, id: &str) -> bool {
+        self.startup_enabled.contains(id)
+            || self
+                .instances
+                .lock()
+                .unwrap()
+                .get(id)
+                .is_some_and(|p| !p.view().cleanup_complete)
+    }
+
+    pub fn resume_after_failed_install(&self) {
+        self.closing.store(false, Ordering::Release);
+        self.restart_after_error.store(true, Ordering::Release);
+        self.changed();
     }
 
     pub fn set_theme(&self, theme: &str) -> Result<(), String> {

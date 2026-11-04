@@ -17,6 +17,7 @@ function launch(persisted = false) {
   const extra = ["--smoke-test", "--test-data-dir", directory];
   if (plugin) extra.push("--plugin-test", plugin);
   if (persisted) extra.push("--verify-persisted");
+  if (process.env.SODECK_TEST_UPDATE_BUNDLE) extra.push("--update-bundle-test", process.env.SODECK_TEST_UPDATE_BUNDLE);
   const result = spawnSync(command, [...args, ...extra], {
     stdio: "inherit",
     timeout: 30_000,
