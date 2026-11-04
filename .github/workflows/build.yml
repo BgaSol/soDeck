@@ -1,0 +1,107 @@
+name: Package SoDeck
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x86_64
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            bundle: nsis
+          - name: windows-aarch64
+            runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            bundle: nsis
+          - name: linux-x86_64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundle: deb
+          - name: linux-aarch64
+            runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            bundle: deb
+          - name: macos-aarch64
+            runner: macos-15
+            target: aarch64-apple-darwin
+            bundle: dmg
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev patchelf xvfb dbus-x11
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.1
+          targets: ${{ matrix.target }}
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: npm ci
+      - run: npm run check
+      - name: Check release version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; const {version} = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json")); if (process.env.GITHUB_REF_NAME !== `v${version}`) throw new Error("Tag must match tauri.conf.json version");'
+      - name: Build installer
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('SoDeck {0}', github.ref_name) || '' }}
+          releaseBody: Hello SoDeck. Download the installer for your system and architecture.
+          releaseDraft: true
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundle }} -- --locked
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SoDeck-${{ matrix.name }}
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe
+            src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
+            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+      - name: Install and launch Windows package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem 'src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe' | Select-Object -First 1
+          $installDir = Join-Path $env:RUNNER_TEMP 'SoDeck'
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDir" -WindowStyle Hidden -PassThru -Wait
+          if ($install.ExitCode -ne 0) { throw "Installer failed: $($install.ExitCode)" }
+          node scripts/smoke.mjs "$installDir/sodeck.exe"
+      - name: Extract and launch Linux package
+        if: runner.os == 'Linux'
+        env:
+          WEBKIT_DISABLE_DMABUF_RENDERER: '1'
+        run: |
+          dpkg-deb -x src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb "$RUNNER_TEMP/SoDeck"
+          node scripts/smoke.mjs dbus-run-session -- xvfb-run -a "$RUNNER_TEMP/SoDeck/usr/bin/sodeck"
+      - name: Mount and launch macOS package
+        if: runner.os == 'macOS'
+        run: |
+          hdiutil attach src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg -nobrowse -readonly -mountpoint "$RUNNER_TEMP/SoDeck"
+          trap 'hdiutil detach "$RUNNER_TEMP/SoDeck"' EXIT
+          node scripts/smoke.mjs "$RUNNER_TEMP/SoDeck/SoDeck.app/Contents/MacOS/sodeck"

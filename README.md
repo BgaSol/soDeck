@@ -1,16 +1,56 @@
 # SoDeck
 
-SoDeck 是面向运维人员的远程服务器工具。它提供统一的连接、终端、文件和网络能力，并通过插件扩展 Docker、NetBird 等具体运维功能。
+当前阶段只做一个显示 **Hello SoDeck** 的桌面应用，先跑通安装和打包，再开始运维功能。
 
-当前项目处于产品和架构收敛阶段。第一版目标、插件边界和核心能力见：
+## 本地运行
 
-- [`docs/product.md`](docs/product.md)
-- [`docs/architecture.md`](docs/architecture.md)
+需要 Node.js 24、Rust 及 [Tauri 系统构建依赖](https://v2.tauri.app/start/prerequisites/)。
 
-## 当前默认方向
+```sh
+npm ci
+npm run dev
+```
 
-- Windows 优先的桌面应用
-- Tauri + Rust 核心 + React/TypeScript 界面
-- SSH 为第一种远程连接协议
-- 插件独立进程运行，通过版本化 RPC 与核心通信
-- 先完成终端、文件和本地 SOCKS 代理，再接入 Docker 与 NetBird
+检查与打包：
+
+```sh
+npm run check
+npm run build -- --bundles nsis
+```
+
+Windows 使用 `nsis`，Linux 使用 `deb`，macOS 使用 `dmg`。
+产物在 `src-tauri/target/release/bundle/`；指定 `--target` 后则位于 `src-tauri/target/<target>/release/bundle/`。
+
+界面是静态 HTML，Rust 只有 Tauri 窗口入口。无业务插件、服务器连接或自动更新。程序图标沿用旧版 SoDeck 的品牌资源。
+
+## GitHub 打包
+
+在 Actions 中选择 **Package SoDeck → Run workflow**，完成后下载对应的 Artifact。支持：
+
+| 系统 | 架构 | 安装包 |
+| --- | --- | --- |
+| Windows | x86_64、ARM64 | `.exe` |
+| Linux | x86_64、ARM64 | `.deb` |
+| macOS | ARM64 | `.dmg` |
+
+发布版本只修改 `src-tauri/tauri.conf.json` 中的 `version`，提交后推送匹配的标签，例如：
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+同一工作流会生成安装包并上传到对应的 Release 草稿。各目标独立执行，一个失败不会取消其他目标。手动运行只生成下载产物，不创建 Release。
+
+工作流还会安装或解包产物，启动包内程序并等待页面加载后退出。这个检查在各目标的原生 Runner 上完成，不能代替真实设备上的界面体验验收。
+
+升级时退出程序，运行新版 Windows 安装包、安装新版 Linux 包或替换 macOS 应用。保持相同应用标识，用户数据目录独立于安装目录。
+
+Windows 安装包未配置商业代码签名；macOS 使用 ad-hoc 签名。构建成功和实际安装测试分别记录，不承诺没有系统来源提示。
+
+## 后续设计
+
+- [产品范围](docs/product.md)
+- [架构草案](docs/architecture.md)
+- [安装与分发](docs/distribution.md)
+- [旧版功能和界面提取](docs/legacy-review.md)

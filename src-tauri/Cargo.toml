@@ -1,0 +1,15 @@
+[package]
+name = "sodeck"
+# Internal crate version; the application version lives in tauri.conf.json.
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "=2.7.4", features = [] }
+
+[dependencies]
+tauri = { version = "=2.12.5", features = [] }
+
+[profile.release]
+strip = true

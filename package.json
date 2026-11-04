@@ -1,0 +1,12 @@
+{
+  "name": "sodeck",
+  "private": true,
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "check": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.4"
+  }
+}
