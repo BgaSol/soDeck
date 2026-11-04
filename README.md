@@ -1,6 +1,6 @@
 # SoDeck
 
-面向运维人员的远程服务器工作台。v0.2.0 开发内容为核心与插件在线更新、插件启停重启生效。SSH、终端、文件、Docker、NetBird 与网络代理仍在后续迭代实现。
+面向运维人员的远程服务器工作台。v0.2.0 提供核心与插件在线更新、插件启停重启生效。SSH、终端、文件、Docker、NetBird 与网络代理仍在后续迭代实现。
 
 核心与插件独立版本、独立打包，从公开的 [GitHub Releases](https://github.com/BgaSol/soDeck/releases) 分发。核心安装包不含业务插件。已发布版本及实际验收情况见 [v0.1.1](docs/releases/v0.1.1.md) 和 [v0.2.0](docs/releases/v0.2.0.md)。
 
