@@ -2,6 +2,8 @@
 
 面向运维人员的远程服务器工作台。当前 v0.1.1 实现无独立标题栏的桌面壳、外置插件、统一日志和重要消息；SSH、终端、文件、Docker、NetBird 与网络代理在后续迭代实现。
 
+[v0.1.1 已正式发布](https://github.com/BgaSol/soDeck/releases/tag/v0.1.1)，包含五个核心安装包和五个独立 Hello 插件包。[交付记录](docs/releases/v0.1.1.md)列出下载链接、验收结果与边界。
+
 ## 使用
 
 从 [Releases](https://github.com/BgaSol/soDeck/releases) 下载对应系统和架构的核心安装包。核心包不含插件，也不需要用户安装开发工具。
@@ -49,8 +51,9 @@ Windows 未配置商业代码签名，macOS 使用 ad-hoc 签名。仓库目前�
 ## 验收记录
 
 - v0.1.0 的 [五目标标签构建](https://github.com/BgaSol/soDeck/actions/runs/41873423553) 已通过，安装包已在 [v0.1.0](https://github.com/BgaSol/soDeck/releases/tag/v0.1.0) 正式发布。
-- v0.1.1 本机 Windows x86_64：类型检查、格式、前端构建、NSIS 打包通过；9 项 Rust 测试通过，覆盖真实进程重载、初始化超时、崩溃、忽略退出、子进程清理、输出洪水、日志轮转和存储错误。
-- 本机实际窗口已检查无独立标题栏、设置中的目录选择与 Hello 插件运行。其余交互和五目标实际安装包验证正在完成，最终结果在本节更新。
+- v0.1.1 的[核心五目标构建](https://github.com/BgaSol/soDeck/actions/runs/41891124844)、[独立插件五目标构建](https://github.com/BgaSol/soDeck/actions/runs/41894181313)和[实际包组合验收](https://github.com/BgaSol/soDeck/actions/runs/41895050583)全部通过。五个平台均检查包内程序、插件加载/卸载/重载、日志、消息和重启保留；Windows 两种架构另通过同版覆盖安装保留数据检查。
+- 9 项 Rust 测试在五个原生目标通过，覆盖真实进程重载、初始化超时、崩溃、忽略退出、子进程清理、输出洪水、日志轮转和存储错误。本机 Windows x86_64 另通过类型、格式、前端构建、NSIS 打包，并实际检查无独立标题栏、设置中的目录选择、Hello 运行、日志和消息界面。
+- Windows 插件的 Visual C++ 运行库依赖已复现并修复为静态链接；打包时自动检查该问题。本机已安装核心的注册信息与界面版本为 v0.1.1。macOS 核心与组合任务首次等待 Runner，取消后仅重试未完成目标成功，其余成功结果保留。
 - v0.1.0 没有插件/消息数据，因此本次升级不能证明业务数据跨版本迁移；另行验证 v0.1.1 的重启和同版覆盖保留。Linux/macOS 尚无真实设备人工界面和系统升级验收。
 
 ## 设计文档
