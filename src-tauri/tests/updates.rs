@@ -37,8 +37,13 @@ impl Server {
         let thread = thread::spawn(move || {
             while !done.load(Ordering::Acquire) {
                 if let Ok((mut stream, _)) = listener.accept() {
+                    // macOS/Windows may inherit the listener's nonblocking mode.
+                    stream.set_nonblocking(false).unwrap();
                     stream
                         .set_read_timeout(Some(Duration::from_secs(2)))
+                        .unwrap();
+                    stream
+                        .set_write_timeout(Some(Duration::from_secs(5)))
                         .unwrap();
                     let mut header = Vec::new();
                     let mut byte = [0];

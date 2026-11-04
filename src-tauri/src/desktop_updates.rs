@@ -3,6 +3,8 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
+#[cfg(target_os = "linux")]
+use tauri::Manager;
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 #[derive(Default)]
