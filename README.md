@@ -1,8 +1,8 @@
 # SoDeck
 
-面向运维人员的远程服务器工作台。当前源码版本 v0.3.0 实现服务器、SOCKS5 代理和分组的增删改查、搜索、复制与混合多层路径配置。此版只保存资料，不建立连接。保留多巴胺主题、核心与插件独立更新、插件启停重启生效。正式发行仍以 GitHub Releases 为准。
+面向运维人员的远程服务器工作台。v0.3.0 实现服务器、SOCKS5 代理和分组的增删改查、搜索、复制与混合多层路径配置。此版只保存资料，不建立连接。保留多巴胺主题、核心与插件独立更新、插件启停重启生效。可通过应用更新升级到 v0.3.0，或从 GitHub Releases 下载对应安装包。
 
-核心与插件独立版本、独立打包，从公开的 [GitHub Releases](https://github.com/BgaSol/soDeck/releases) 分发。核心安装包不含业务插件。版本与验收记录见 [v0.1.1](docs/releases/v0.1.1.md)、[v0.2.0](docs/releases/v0.2.0.md) 和 [v0.2.1](docs/releases/v0.2.1.md)。
+核心与插件独立版本、独立打包，从公开的 [GitHub Releases](https://github.com/BgaSol/soDeck/releases) 分发。核心安装包不含业务插件。版本与验收记录见 [v0.1.1](docs/releases/v0.1.1.md)、[v0.2.0](docs/releases/v0.2.0.md)、[v0.2.1](docs/releases/v0.2.1.md) 和 [v0.3.0](docs/releases/v0.3.0.md)。
 
 ## 使用
 
