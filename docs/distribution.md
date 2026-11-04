@@ -28,7 +28,7 @@ npm run test
 npm run build -- --bundles nsis -- --locked
 ```
 
-正式更新包添加 `--config src-tauri/tauri.release.conf.json` 并通过环境提供签名私钥。Linux 使用 `--bundles deb,appimage`，macOS 使用 `--bundles dmg`。Node 24.22.0、Rust 1.99.1 与锁文件固定；Linux 运行基线仍为 Ubuntu 22.04/24.04 LTS。
+正式更新包添加 `--config src-tauri/tauri.release.conf.json` 并通过环境提供签名私钥。Linux 使用 `--bundles deb,appimage`，macOS 使用 `--bundles dmg,app`，显式生成安装盘和签名更新归档。Node 24.22.0、Rust 1.99.1 与锁文件固定；Linux 运行基线仍为 Ubuntu 22.04/24.04 LTS。
 
 ## 插件生命周期与更新
 

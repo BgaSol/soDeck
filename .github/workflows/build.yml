@@ -33,7 +33,7 @@ jobs:
           - name: macos-aarch64
             runner: macos-15
             target: aarch64-apple-darwin
-            bundle: dmg
+            bundle: dmg,app
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
@@ -106,6 +106,7 @@ jobs:
           dpkg-deb -x src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb "$RUNNER_TEMP/SoDeck"
           node scripts/verify-binary.mjs "$RUNNER_TEMP/SoDeck/usr/bin/sodeck" '${{ matrix.target }}'
           export SODECK_TEST_UPDATE_BUNDLE="$(find src-tauri/target/${{ matrix.target }}/release/bundle/appimage -name '*.AppImage' | head -1)"
+          test -n "$SODECK_TEST_UPDATE_BUNDLE"
           node scripts/smoke.mjs dbus-run-session -- xvfb-run -a "$RUNNER_TEMP/SoDeck/usr/bin/sodeck"
           APPIMAGE_EXTRACT_AND_RUN=1 node scripts/smoke.mjs dbus-run-session -- xvfb-run -a src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
       - name: Mount and launch macOS package
@@ -115,6 +116,7 @@ jobs:
           trap 'hdiutil detach "$RUNNER_TEMP/SoDeck"' EXIT
           node scripts/verify-binary.mjs "$RUNNER_TEMP/SoDeck/SoDeck.app/Contents/MacOS/sodeck" '${{ matrix.target }}'
           export SODECK_TEST_UPDATE_BUNDLE="$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name '*.app.tar.gz' | head -1)"
+          test -n "$SODECK_TEST_UPDATE_BUNDLE"
           node scripts/smoke.mjs "$RUNNER_TEMP/SoDeck/SoDeck.app/Contents/MacOS/sodeck"
       - uses: actions/upload-artifact@v4
         with:

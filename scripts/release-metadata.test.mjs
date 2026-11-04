@@ -31,8 +31,10 @@ test("core manifests select signatures per native target and require the signed 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-core-release-test-"));
   try {
     const directory = path.join(root, "aarch64-apple-darwin"); fs.mkdirSync(directory);
-    fs.writeFileSync(path.join(directory, "SoDeck.app.tar.gz.sig"), "signature");
     const config = { id: "sodeck.core", version: "1.0.0", tag: "v1.0.0", notes: "" };
+    fs.writeFileSync(path.join(directory, "SoDeck.dmg"), "installer");
+    assert.throws(() => generate("core", config, root), /Missing updater artifact/);
+    fs.writeFileSync(path.join(directory, "SoDeck.app.tar.gz.sig"), "signature");
     assert.throws(() => generate("core", config, root), /Missing signed artifact/);
     fs.writeFileSync(path.join(directory, "SoDeck.app.tar.gz"), "app");
     assert.equal(generate("core", config, root).platforms["aarch64-apple-darwin"].signature, "signature");
