@@ -260,6 +260,50 @@ fn enabled_update_keeps_old_process_until_restart_then_runs_new_program() {
 }
 
 #[test]
+fn changed_update_source_survives_version_switch_and_rollback() {
+    for (enabled, mode, source) in [
+        (true, "", None),
+        (
+            true,
+            "init-error",
+            Some(UpdateSource {
+                repository: "test/another".into(),
+                tag_prefix: "plugin-fixture-v".into(),
+            }),
+        ),
+        (false, "init-error", None),
+    ] {
+        let f = Fixture::new();
+        f.add();
+        let server = Server::new();
+        server.release(f.package(mode), "1", TARGET);
+        let core = f.open();
+        core.set_enabled("test.fixture", enabled).unwrap();
+        core.start_enabled();
+        core.check_component("test.fixture", &server.client())
+            .unwrap();
+        core.download_plugin("test.fixture", &server.client())
+            .unwrap();
+        core.set_update_source("test.fixture", source.clone())
+            .unwrap();
+        core.set_enabled("test.fixture", true).unwrap();
+        core.shutdown().unwrap();
+        drop(core);
+
+        let core = f.open();
+        core.start_enabled();
+        let plugin = &core.snapshot().plugins[0];
+        assert_eq!(plugin.status, PluginStatus::Running);
+        assert_eq!(plugin.manifest.update_source, source);
+        assert_eq!(
+            plugin.manifest.version,
+            if mode.is_empty() { "0.1.1" } else { "0.1.0" }
+        );
+        core.shutdown().unwrap();
+    }
+}
+
+#[test]
 fn failed_new_initialization_restores_previous_program() {
     let f = Fixture::new();
     f.add();

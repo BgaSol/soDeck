@@ -323,7 +323,14 @@ impl AppCore {
             .find(|p| p.manifest.id == id)
             .cloned()
             .ok_or("插件记录不存在")?;
-        record.manifest.update_source = source;
+        record.manifest.update_source = source.clone();
+        // Update sources are user settings and must survive switching program versions.
+        if let Some(pending) = &mut record.pending_update {
+            pending.manifest.update_source = source.clone();
+        }
+        if let Some(previous) = &mut record.previous {
+            previous.manifest.update_source = source;
+        }
         store.register(record)?;
         drop(store);
         self.updates.lock().unwrap().items.remove(id);
