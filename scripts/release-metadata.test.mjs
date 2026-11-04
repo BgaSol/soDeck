@@ -38,3 +38,16 @@ test("core manifests select signatures per native target and require the signed 
     assert.equal(generate("core", config, root).platforms["aarch64-apple-darwin"].signature, "signature");
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
+test("Linux core updates select AppImage signatures alongside DEB and legacy signatures", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-linux-release-test-"));
+  try {
+    const directory = path.join(root, "aarch64-unknown-linux-gnu"); fs.mkdirSync(directory);
+    for (const file of ["SoDeck.AppImage", "SoDeck.deb", "SoDeck.AppImage.tar.gz"]) {
+      fs.writeFileSync(path.join(directory, file), "package");
+      fs.writeFileSync(path.join(directory, `${file}.sig`), `signature:${file}`);
+    }
+    const manifest = generate("core", { id: "sodeck.core", version: "1.0.0", tag: "v1.0.0", notes: "" }, root);
+    assert.equal(manifest.platforms["aarch64-unknown-linux-gnu"].signature, "signature:SoDeck.AppImage");
+    assert.match(manifest.platforms["aarch64-unknown-linux-gnu"].url, /SoDeck.AppImage$/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});

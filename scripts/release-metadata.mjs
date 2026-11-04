@@ -38,7 +38,8 @@ export function generate(kind, config, input, repository = "BgaSol/soDeck") {
   } else if (kind === "core") {
     for (const target of targets) {
       const marker = `${target}/`;
-      const signatures = files.filter(file => file.replaceAll("\\", "/").includes(marker) && file.endsWith(".sig"));
+      const updaterExtension = target.includes("windows") ? ".exe" : target.includes("darwin") ? ".app.tar.gz" : ".AppImage";
+      const signatures = files.filter(file => file.replaceAll("\\", "/").includes(marker) && file.endsWith(`${updaterExtension}.sig`));
       if (!signatures.length) continue;
       if (signatures.length !== 1) throw new Error(`Ambiguous updater artifact for ${target}`);
       const signatureFile = signatures[0];

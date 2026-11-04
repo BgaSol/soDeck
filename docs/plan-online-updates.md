@@ -21,4 +21,4 @@
 
 ## 依赖选择
 
-新增固定版本的 Tauri 官方 updater（维护方 Tauri，用标准安装器代替自写安装助手）、reqwest（维护方 Hyper，HTTPS 下载）、semver（维护方 dtolnay，版本比较）、sha2（RustCrypto，下载完整性）、zip/tar/flate2（各格式的常用维护库，解压现有插件包）。大部分已是 Tauri 的间接依赖。替代方案是系统 shell 下载解压和自写更新器，会增加跨平台差异，不采用。插件不增加签名、权限声明或授权流程。
+新增固定版本的 Tauri 官方 updater（维护方 Tauri，用标准安装器代替自写安装助手）、reqwest（维护方 Hyper，HTTPS 下载）、rustls（维护方 rustls，显式初始化 HTTPS 所需的 ring 加密提供方）、semver（维护方 dtolnay，版本比较）、sha2（RustCrypto，下载完整性）、zip/tar/flate2（各格式的常用维护库，解压现有插件包）。大部分已是 Tauri 的间接依赖。替代方案是系统 shell 下载解压和自写更新器，会增加跨平台差异，不采用。插件不增加签名、权限声明或授权流程。

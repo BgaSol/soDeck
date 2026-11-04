@@ -10,7 +10,7 @@ for (const kind of ["nsis", "deb", "dmg", "macos", "appimage"]) {
   const directory = path.join(root, kind);
   if (!fs.existsSync(directory)) continue;
   for (const file of fs.readdirSync(directory)) {
-    if (!/\.(exe|deb|dmg|AppImage|app\.tar\.gz|sig)$/.test(file)) continue;
+    if (!/\.(exe|deb|dmg|AppImage|app\.tar\.gz)(\.sig)?$/.test(file)) continue;
     fs.copyFileSync(path.join(directory, file), path.join(output, file)); count++;
   }
 }
