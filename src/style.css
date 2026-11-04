@@ -1,4 +1,4 @@
-@layer base,components;
+@layer base,components,themes;
 @layer base {
   :root {
     font-family:
@@ -643,6 +643,7 @@
   }
   .themes {
     display: flex;
+    flex-wrap: wrap;
     gap: 16px;
     margin-bottom: 20px;
   }
@@ -707,6 +708,22 @@
   }
   .theme-preview.system {
     background: linear-gradient(90deg, #f6f7f9 50%, #252832 50%);
+  }
+  .theme-preview.dopamine {
+    background: #fffbe6;
+    border: 2px solid #20211f;
+  }
+  .theme-preview.dopamine i {
+    background: #ffb7cf;
+    border-right: 2px solid #20211f;
+  }
+  .theme-preview.dopamine span {
+    background: #ffde75;
+    border: 1px solid #20211f;
+    height: 8px;
+  }
+  .theme-preview.dopamine span + span {
+    background: #42c69b;
   }
   .about-brand {
     display: flex;
@@ -1102,6 +1119,82 @@
       animation: none !important;
       transition: none !important;
     }
+  }
+}
+@layer themes {
+  /* Palette and flat 2px outlines from the previous SoDeck dopamine theme. */
+  :root[data-theme="dopamine"] {
+    --canvas: #fbf1e8;
+    --panel: #fffbe6;
+    --subtle: #fffef5;
+    --text: #20211f;
+    --muted: #62665c;
+    --border: #20211f;
+    --accent: #5346a6;
+    --accent-bg: #ffde75;
+    --hover: #fff0bc;
+    --good: #176b4f;
+    --warning: #7a4a08;
+    --error: #a12c38;
+    --shadow: none;
+    color-scheme: light;
+  }
+  :root[data-theme="dopamine"] {
+    button, input, select, .layer, .welcome-emblem, .brand-mark,
+    .app-tab, .plugin-layout, .plugin-row, .plugin-symbol, .theme-preview,
+    .metrics, .log-results, .toast, .restart-banner, .update-card {
+      border-width: 2px;
+    }
+    button { font-weight: 600; }
+    button:active:not(:disabled) { background: #f5dea3; }
+    button:disabled { background: #ece8d9; color: #62665c; opacity: 1; }
+    button:focus-visible, input:focus-visible, select:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
+    }
+    svg { stroke-width: 2.25; }
+    h1, h2, h3 { font-weight: 700; }
+    .topbar { border-bottom-width: 2px; background: var(--panel); }
+    .app-tab { background: #ffb7cf; color: var(--text); border-bottom: 0; }
+    .workspace { background: var(--canvas); }
+    .welcome-emblem { background: #42c69b; box-shadow: none; }
+    .brand-mark { background: var(--panel); color: var(--text); border-color: var(--border); }
+    .welcome h1 { font-weight: 700; }
+    .welcome-line { height: 2px; background: #ff896e; }
+    .modal-backdrop { background: #20211f66; }
+    .layer { border-radius: 16px; }
+    .layer-heading { border-bottom-width: 2px; }
+    .settings-nav { background: #ffb7cf; border-right-width: 2px; }
+    .nav-label, .nav-bottom { color: #50534c; }
+    .nav-item { color: var(--text); }
+    .nav-item.active, .theme-option.selected, .segmented button.selected {
+      background: var(--accent-bg); color: var(--text); box-shadow: none;
+    }
+    .nav-item.active { outline: 2px solid var(--border); outline-offset: -2px; }
+    .primary { background: var(--accent-bg); color: var(--text); border-color: var(--border); }
+    .primary:hover { background: #ffe795; filter: none; }
+    .primary:active:not(:disabled) { background: #f1c650; }
+    .global-tools button:hover { background: var(--accent-bg); }
+    .window-controls { border-left-width: 2px; }
+    .window-controls button, .global-tools button, .icon-button, .quiet,
+    .text-button, .nav-item, .segmented button, .message-row { border: 0; }
+    .window-controls button { min-height: 42px; }
+    .window-controls .close-window:hover { background: #ffd7cc; color: #8d2432; }
+    .plugin-row.selected, .theme-option.selected { border-color: var(--border); }
+    .plugin-list, .message-list { background: var(--subtle); border-right-width: 2px; }
+    .plugin-symbol { background: #8dd9e8; color: var(--text); }
+    .badge { background: var(--hover); }
+    .badge.running, .badge.success { background: #d5f1e5; }
+    .badge.failed, .badge.error { background: #ffd7cc; }
+    .error-box { background: #ffd7cc; border: 2px solid var(--border); }
+    .restart-banner { border-color: var(--border); }
+    .theme-preview { border-color: var(--border); }
+    .metrics { background: #d5f1e5; }
+    .segmented { border: 2px solid var(--border); }
+    .plugin-switch.on::before { background: radial-gradient(circle at 19px center, var(--panel) 0 4px, transparent 4.5px), var(--good); }
+    .message-row { border-bottom: 1px solid var(--border); }
+    .toast { box-shadow: none; }
+    .update-card progress { accent-color: var(--good); }
   }
 }
 @layer components {

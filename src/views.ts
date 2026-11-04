@@ -84,6 +84,7 @@ function appUpdates(s: Snapshot, v: ViewState) {
 }
 function appearance(s: Snapshot) {
   return `<div class="section-heading"><div><h2>外观</h2><p>选择适合当前环境的显示主题。</p></div></div><h3 class="field-title">应用主题</h3><div class="themes">${[
+    ["dopamine", "多巴胺"],
     ["system", "跟随系统"],
     ["light", "浅色"],
     ["dark", "深色"],

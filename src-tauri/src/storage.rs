@@ -125,7 +125,7 @@ impl Store {
     }
 
     pub fn set_theme(&mut self, theme: &str) -> Result<(), String> {
-        if !["system", "light", "dark"].contains(&theme) {
+        if !["system", "light", "dark", "dopamine"].contains(&theme) {
             return Err("未知的主题设置".into());
         }
         if self.blocked[2] {

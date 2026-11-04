@@ -1,8 +1,8 @@
 # SoDeck
 
-面向运维人员的远程服务器工作台。v0.2.0 提供核心与插件在线更新、插件启停重启生效。SSH、终端、文件、Docker、NetBird 与网络代理仍在后续迭代实现。
+面向运维人员的远程服务器工作台。v0.2.1 新增旧版多巴胺主题，可从 v0.2.0 在线升级；核心与插件独立更新，插件启停重启生效。SSH、终端、文件、Docker、NetBird 与网络代理仍在后续迭代实现。
 
-核心与插件独立版本、独立打包，从公开的 [GitHub Releases](https://github.com/BgaSol/soDeck/releases) 分发。核心安装包不含业务插件。已发布版本及实际验收情况见 [v0.1.1](docs/releases/v0.1.1.md) 和 [v0.2.0](docs/releases/v0.2.0.md)。
+核心与插件独立版本、独立打包，从公开的 [GitHub Releases](https://github.com/BgaSol/soDeck/releases) 分发。核心安装包不含业务插件。版本与验收记录见 [v0.1.1](docs/releases/v0.1.1.md)、[v0.2.0](docs/releases/v0.2.0.md) 和 [v0.2.1](docs/releases/v0.2.1.md)。
 
 ## 使用
 
@@ -10,6 +10,7 @@
 2. 右上角 **设置 → 插件管理 → 添加插件目录**，选择包含 plugin.json 的目录。
 3. 重启后自动加载启用插件；启用、关闭和已启用插件更新都在重启后生效。多项修改可统一重启一次。
 4. 插件详情检查与下载其独立更新；核心更新位于 **设置 → 应用更新**。
+5. **设置 → 外观**可选多巴胺、跟随系统、浅色和深色，即选即保存。多巴胺沿用旧版奶油底、粉色导航、黄色选中、薄荷绿点缀与深色粗描边，无装饰阴影；升级保留当前偏好。
 
 v0.1.1 用户需手动安装一次带更新功能的版本。旧插件记录默认关闭，启用后重启；旧 Hello 可配置仓库 `BgaSol/soDeck`、标签前缀 `plugin-hello-v` 获取独立更新。没有来源的插件继续手动维护。
 
@@ -32,7 +33,7 @@ npm run build -- --bundles nsis -- --locked
 npm run plugin:build
 ```
 
-核心版本只修改 `src-tauri/tauri.conf.json`，Hello 版本只修改 `plugins/hello/Cargo.toml`。核心标签 `v0.2.0` 和插件标签 `plugin-hello-v0.1.1` 分别触发五目标独立构建及 Release 草稿；更新清单自动生成，检查后正式发布。普通本地打包不需要更新签名密钥。
+核心版本只修改 `src-tauri/tauri.conf.json`，Hello 版本只修改 `plugins/hello/Cargo.toml`。核心标签 `v0.2.1` 和插件标签 `plugin-hello-v0.1.1` 分别触发五目标独立构建及 Release 草稿；更新清单自动生成，检查后正式发布。普通本地打包不需要更新签名密钥。
 
 | 工作流 | 用途 |
 | --- | --- |
