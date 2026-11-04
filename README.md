@@ -64,7 +64,7 @@ Windows 安装包未配置商业代码签名；macOS 使用 ad-hoc 签名。构�
 
 ARM64 构建和上述检查均在原生 ARM64 Runner 执行。本机 Windows x86_64 另外验证了安装、打开窗口、关闭退出和卸载。其他系统尚未做真实设备人工界面验收，覆盖升级尚未做跨版本实测。
 
-`v0.1.0` 的[标签发布工作流](https://github.com/BgaSol/soDeck/actions/runs/41873423553)也已全部通过，五份安装包已上传到 [Release 草稿](https://github.com/BgaSol/soDeck/releases/tag/untagged-2c2b22214ff1e9c8adc8)。其中 Linux x86_64 和 macOS ARM64 在首次尝试长时间停留后取消重试，第二次完成；应用和工作流代码未作修改。草稿尚未正式发布。
+`v0.1.0` 的[标签发布工作流](https://github.com/BgaSol/soDeck/actions/runs/41873423553)也已全部通过，五份安装包已在 [v0.1.0 Release](https://github.com/BgaSol/soDeck/releases/tag/v0.1.0) 正式发布。其中 Linux x86_64 和 macOS ARM64 在首次尝试长时间停留后取消重试，第二次完成；应用和工作流代码未作修改。当前仓库为私有仓库，查看和下载需要登录有仓库访问权限的 GitHub 账号。
 
 ## 后续设计
 
