@@ -76,6 +76,9 @@ jobs:
               $server = (Get-ChildItem $directory -Recurse -Filter sshd.exe | Select-Object -First 1).FullName
               if (-not $server) { throw 'OpenSSH server is missing' }
               "SODECK_SSHD=$server" >> $env:GITHUB_ENV
+              # On Windows internal-sftp launches sftp-server.exe through the
+              # login shell; a portable directory is not in that user's PATH.
+              "SODECK_SFTP_SERVER=$(Join-Path (Split-Path $server) 'sftp-server.exe')" >> $env:GITHUB_ENV
             } else {
               $capability = Get-WindowsCapability -Online -Name 'OpenSSH.Server*' | Select-Object -First 1
               Add-WindowsCapability -Online -Name $capability.Name
@@ -84,8 +87,6 @@ jobs:
       - name: Windows installed package with independent plugins
         if: runner.os == 'Windows'
         shell: pwsh
-        env:
-          SODECK_SSHD_LOG_LEVEL: ${{ matrix.name == 'windows-aarch64' && 'DEBUG3' || 'ERROR' }}
         run: |
           foreach ($plugin in @('terminal','files')) {
             $archive = Get-ChildItem "packages/$plugin" -Filter '*.zip' | Select-Object -First 1
