@@ -34,7 +34,12 @@ const page = await browser.newPage({ viewport: { width: 1100, height: 720 } });
 const errors = [];
 page.on("pageerror", error => errors.push(String(error)));
 page.on("request", request => { assert.equal(new URL(request.url()).hostname, "127.0.0.1", "Unexpected network request"); });
-await page.exposeBinding("catalogInvoke", (_, command, args) => bridge.call(command, args));
+await page.exposeBinding("catalogInvoke", async (_, command, args) => {
+  const result = await bridge.call(command, args);
+  // Disk completion may precede the UI callback. Keep this race reproducible.
+  if (args?.change?.op === "deleteGroup") await new Promise(resolve => setTimeout(resolve, 150));
+  return result;
+});
 await page.addInitScript(() => { window.__TAURI_INTERNALS__ = { invoke: (command, args) => window.catalogInvoke(command, args) }; });
 await page.route(url, route => route.fulfill({ contentType: "text/html", body: `<html lang="zh-CN"><head><meta charset="UTF-8"></head><body><header class="topbar"><div class="app-tab">SoDeck · 服务器</div></header><main class="workspace" id="test-workspace"></main><div id="test-notice"></div><script type="module">import '/style.css'; import {ServerManager} from '/servers.ts'; window.manager=new ServerManager(document.querySelector('main'),text=>document.querySelector('#test-notice').textContent=text); await window.manager.start(); window.testReady=true;</script></body></html>` }));
 const dialogs = () => page.locator("dialog[open]").last();
@@ -121,7 +126,9 @@ try {
   const productionGroup=(await read()).groups.find(g=>g.name==="生产环境").id;
   await action("groups", work()).click(); await dialogs().locator(`[data-server-action="rename-group"][data-id="${productionGroup}"]`).click();
   await dialogs().locator("#group-name").fill("生产组"); await save(); await expectDialogs(1);
-  await dialogs().locator(`[data-server-action="delete-group"][data-id="${productionGroup}"]`).click(); await action("confirm-yes").click(); await expectDialogs(1); await action("cancel").click();
+  await dialogs().locator(`[data-server-action="delete-group"][data-id="${productionGroup}"]`).click(); await action("confirm-yes").click(); await expectDialogs(1);
+  await dialogs().locator(`[data-server-action="delete-group"][data-id="${productionGroup}"]`).waitFor({ state: "detached" });
+  await action("cancel").click(); await expectDialogs(0);
   assert.equal((await read()).servers.find(s => s.id === target).groupId, null);
   checks.push("分组重命名，删除分组保留服务器");
 
