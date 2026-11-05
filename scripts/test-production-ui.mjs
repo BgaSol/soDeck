@@ -50,14 +50,22 @@ const browser = await chromium.launch({ headless: true, ...(process.env.SODECK_B
 const page = await browser.newPage({ viewport: { width: 1100, height: 720 } });
 const errors = [], checks = [];
 page.on("pageerror", error => errors.push(String(error)));
-await page.exposeBinding("desktopInvoke", (_, command, args) => call(command, { ...args, window: "main" }));
+let suppressConnectionQuestions = false;
+await page.exposeBinding("desktopInvoke", async (_, command, args) => {
+  const value = await call(command, { ...args, window: "main" });
+  // A progress event can arrive after the start response; exercise that order deterministically.
+  if (suppressConnectionQuestions && command === 'connection') return value.map(v => ({...v, question: null}));
+  return value;
+});
 await page.addInitScript(() => {
   let id = 0;
+  const callbacks = new Map(), listeners = new Map();
+  window.emitTestEvent = (event, payload = null) => { for (const [eventId, item] of listeners) if (item.event === event) callbacks.get(item.handler)?.({event, id:eventId, payload}); };
   window.__TAURI_INTERNALS__ = {
     metadata: { currentWindow: { label: "main" } },
-    transformCallback: () => ++id,
+    transformCallback: callback => { const token = ++id; callbacks.set(token, callback); return token; },
     invoke: (command, args) => {
-      if (command === "plugin:event|listen") return Promise.resolve(++id);
+      if (command === "plugin:event|listen") { const eventId = ++id; listeners.set(eventId, args); return Promise.resolve(eventId); }
       if (command === "plugin:event|unlisten" || command === "workspace_surface") return Promise.resolve();
       return window.desktopInvoke(command, args);
     },
@@ -152,7 +160,15 @@ try {
   await page.screenshot({path:'artifacts/production-ui/server-picker.png'});
   await page.keyboard.press('ArrowUp');
   assert.equal(await page.evaluate(()=>document.activeElement?.textContent),'新建服务器');
+  suppressConnectionQuestions = true;
   await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');
+  for(let i=0;i<100;i++) {
+    if ((await call('connection',{command:{op:'snapshot'}})).some(v=>v.question?.kind==='credentials')) break;
+    if(i===99)throw new Error('Connection did not reach its credential question');
+    await new Promise(resolve=>setTimeout(resolve,10));
+  }
+  suppressConnectionQuestions = false;
+  await page.evaluate(()=>window.emitTestEvent('connections-changed'));
   await page.getByRole('dialog',{name:'补充连接凭据'}).waitFor();assert.equal(await page.locator('.server-tab').count(),0);
   await page.keyboard.press('Escape');await page.locator('.connection-dialog').waitFor({state:'detached'});
   checks.push('一级加号：空目录新建服务器、三主题窄窗固定浮层、搜索无结果不误新建、键盘选择进入真实连接凭据流程且不伪造工作区');
