@@ -2,7 +2,7 @@
 
 面向运维人员的远程服务器工作台。v0.4.0 在服务器资料管理基础上加入服务器工作区壳、原生多窗口归属、Tab 排序和拆合。SSH 与业务组件尚未接入，普通启动仍显示服务器管理，连接成功后才会产生工作区。测试使用隔离会话验证，不伪造真实连接。
 
-核心与插件独立版本、独立打包，从公开的 [GitHub Releases](https://github.com/BgaSol/soDeck/releases) 分发。核心安装包不含业务插件。版本与验收记录见 [v0.1.1](docs/releases/v0.1.1.md)、[v0.2.0](docs/releases/v0.2.0.md)、[v0.2.1](docs/releases/v0.2.1.md) 、[v0.3.0](docs/releases/v0.3.0.md) 和 [v0.4.0](docs/releases/v0.4.0.md)。
+核心与插件独立版本、独立打包，从公开的 [GitHub Releases](https://github.com/BgaSol/soDeck/releases) 分发。核心安装包不含业务插件。版本与验收记录见 [v0.1.1](docs/releases/v0.1.1.md)、[v0.2.0](docs/releases/v0.2.0.md)、[v0.2.1](docs/releases/v0.2.1.md)、[v0.3.0](docs/releases/v0.3.0.md) 和 [v0.4.0](docs/releases/v0.4.0.md)。
 
 ## 使用
 
