@@ -371,6 +371,6 @@ plugins/files/
 - 无头 UI：原服务器 12 组、工作台 13 组回归通过；新增连接 UI 使用真实核心验证凭据补填、进度、取消、重试、Escape、秘密不落盘/投影及零页面异常。最后一次 UI 构建运行覆盖首站 DNS 进度，截图位于 artifacts/connection-ui/。
 - 实际安装的 Windows x86_64 核心连临时回环 OpenSSH，执行有界测试命令；真实会话跨原生窗口移出/移回继续可用，再断开和退出。Hello 与 UI 示例独立加载、停止、重载、原生组件窗口和重开数据保留一并验证。最终报告：artifacts/connections-final-914a840e/data/smoke-result.json；安装程序：src-tauri/target/release/bundle/nsis/SoDeck_0.4.0_x64-setup.exe。
 - 已独立核验安装后程序的原生 x86_64 架构和无外置 Visual C++ 运行库依赖。安装文件与构建目录文件的 SHA-256 不同，逐字节核对后确认仅 Tauri 安装类型标记由 `__TAURI_BUNDLE_TYPE_VAR_UNK` 变为 `__TAURI_BUNDLE_TYPE_VAR_NSS`；其余字节完全一致，记录位于 artifacts/connections-final-914a840e/binary-identity.json。
-- GitHub 工作流声明 Windows x86_64 OpenSSH 测试依赖，增加源码/包内互操作入口，仍保留五目标原生构建和既有独立分发；本批未推送或执行 GitHub Actions。
+- GitHub 工作流声明 Windows x86_64 OpenSSH 测试依赖，增加源码/包内互操作入口，仍保留五目标原生构建和既有独立分发；本批本机收尾时尚未推送或执行 GitHub Actions。
 
-Windows ARM64、Linux x86_64/ARM64、macOS ARM64 未在本机验证，不能标为通过。当前版本号仍为 0.4.0，未提交标签或发行新 Release。下一批是以正式终端插件落实 PTY、流与插件资源归属，再接文件业务。
+本机收尾时版本号为 0.4.0，Windows ARM64、Linux x86_64/ARM64、macOS ARM64 未在本机验证。随后按用户要求以 v0.5.0 正式发布为 Latest：五目标原生打包、包内验证及独立插件兼容验收均通过，详情见 [发行记录](releases/v0.5.0.md)。下一批是以正式终端插件落实 PTY、流与插件资源归属，再接文件业务。
