@@ -8,6 +8,12 @@ fn main() {
         let request: Value = serde_json::from_str(&line.unwrap()).unwrap();
         let args = &request["args"];
         let result = match request["command"].as_str().unwrap() {
+            "snapshot" => Ok(json!(core.snapshot())),
+            "update_status" => Ok(json!(core.update_views())),
+            "set_theme" => core
+                .set_theme(args["theme"].as_str().unwrap())
+                .map(|_| Value::Null),
+            "frontend_ready" => Ok(Value::Null),
             "connection" => {
                 let c = &args["command"];
                 let window = args["window"].as_str().unwrap_or("main");

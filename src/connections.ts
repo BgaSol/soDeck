@@ -2,7 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { escape as e } from "./ui";
 import type { Context } from "./workspaces";
-import "./connections.css";
 
 type Question = { kind: "credentials"; id: string; nodeIndex: number; name: string; endpoint: string; authentication: string; username: string; privateKeyPath: string | null }
   | { kind: "hostKey"; id: string; nodeIndex: number; name: string; endpoint: string; algorithm: string; fingerprint: string; previousFingerprint: string | null }

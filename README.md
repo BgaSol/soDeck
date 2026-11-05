@@ -6,6 +6,8 @@
 
 核心支持主机指纹、密码和私钥认证，以及工作台断开/原位重连；插件控制通信支持有界并发和退出取消。终端、SFTP 和正文数据通道仍待实现，详见 [连接实施记录](docs/implementation-connections.md) 和 [整改记录](docs/plan-code-reorganization.md)。
 
+v0.5.1 修复正式构建中服务器表单无法滚动、布局错位及多巴胺配色不完整的问题，保留已保存的主题。修复范围及验证见 [v0.5.1](docs/releases/v0.5.1.md)。
+
 核心与插件独立版本、独立打包，从公开的 [GitHub Releases](https://github.com/BgaSol/soDeck/releases) 分发。核心安装包不含业务插件。版本与验收记录见 [v0.1.1](docs/releases/v0.1.1.md)、[v0.2.0](docs/releases/v0.2.0.md)、[v0.2.1](docs/releases/v0.2.1.md)、[v0.3.0](docs/releases/v0.3.0.md)、[v0.4.0](docs/releases/v0.4.0.md) 和 [v0.5.0](docs/releases/v0.5.0.md)。
 
 ## 使用

@@ -1,7 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { escape as e, icon, replace } from "./ui";
 import type { Context, Projection, Workspace } from "./workspaces";
-import "./components.css";
 
 type Call = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 interface Definition { key: string; id: string; pluginId: string; pluginName: string; pluginInstanceId: string; title: string; icon: string; container: string; instancePolicy: string; entry: string; available: boolean; createAction?: string; locateEntry: boolean }

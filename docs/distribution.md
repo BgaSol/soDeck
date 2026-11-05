@@ -77,4 +77,6 @@ npm run plugin:build -- --plugin hello --out-dir artifacts/another-build
 
 服务器管理验收：`npx playwright install chromium` 后运行 `npm run ui:test`，以无头浏览器调用真实目录核心，测试数据保存在临时目录，不连接服务器。核心打包工作流在 Windows x86_64 执行此检查；所有五目标的 `scripts/smoke.mjs` 都会在实际包中保存服务器、分组、代理及混合路径，再重开验证持久资料与临时秘密生命周期。
 
+`npm run ui:test` 还会运行 `npm run ui:production:test`：先生成正式前端产物，再直接加载 dist 中的 HTML/JS/CSS，配合隔离的真实目录核心检查保存主题、服务器/代理表单、滚轮、底部字段、焦点和固定页脚；覆盖浅色、深色、多巴胺及 1100×720 / 720×480。此检查用于发现开发模块样式加载顺序与正式打包顺序不同造成的回归，不以开发服务器的截图代替正式产物。
+
 v0.4.0 起同一入口还运行工作区界面测试；所有原生包烟测增加真实多 WebView 的移窗、合并、独立窗口关闭和空窗口回收，并用实际窗口几何验证 Tab 条和无效区域。烟测不操作指针，因此不能替代跨窗手势与混合 DPI 的人工验收。Wayland 全局坐标不足时使用菜单移窗。测试会话仅来自独立 fixture 或显式烟测入口的隔离资料；普通发行界面不注入示例连接。

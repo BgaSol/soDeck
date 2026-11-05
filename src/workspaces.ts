@@ -1,6 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
 import { escape as e, icon, replace } from "./ui";
-import "./workspaces.css";
 import { Components } from "./components";
 
 export interface Context { workspaceId: string; serverId: string; connectionId: string; generation: number }

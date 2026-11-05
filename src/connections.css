@@ -1,3 +1,4 @@
+@layer components {
 .connection-card { padding: 16px; margin: 16px 0; border: 1px solid var(--border); border-radius: 12px; background: var(--subtle); }
 .connection-card p { color: var(--muted); margin: 8px 0 12px; line-height: 1.5; }
 .connection-dialog { width: min(560px, calc(100vw - 40px)); }
@@ -9,3 +10,4 @@
 .connection-key-path { display: flex; gap: 8px; }
 .connection-key-path input { min-width: 0; flex: 1; }
 .workspace-status button { font-size: 11px; padding: 2px 8px; }
+}

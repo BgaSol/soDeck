@@ -2,7 +2,6 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { newDraft, referenced, serverApi, toInput, type Catalog, type Change, type Draft, type ServerApi } from "./server-api";
 import { action, editor, page, type PageState } from "./server-views";
 import { escape as e, replace } from "./ui";
-import "./servers.css";
 import type { ConnectionView } from "./connections";
 
 interface Frame {
