@@ -21,3 +21,9 @@
 - 核心 Windows NSIS 打包通过；隔离目录安装后的实际 WebView 完成终端正文、文件读写下载、原生移窗、两次重开及退出。最终报告位于 `artifacts/native-tree-smoke-final/smoke-result.json`，截图位于 `artifacts/files-ui/`。
 
 以上为发布前的本机记录；五目标正式构建、标签与 Release 的后续结果见 [v0.6.1 发行说明](releases/v0.6.1.md)。挂载容量、跟随终端目录及上传/删除/重命名仍在本次范围之外。大目录按页加载；跨窗会重新读取此前展开目录及页数，耗时随已加载内容和网络延迟增加，目录变化后滚动位置可能有所偏移。
+
+## 正式发布与原生验收
+
+2026-11-05，核心 `v0.6.1`、文件 `plugin-files-v0.2.0`、终端 `plugin-terminal-v0.1.1` 从 `bfea180` 独立构建并正式发布。核心设为 Latest，两个插件不占用核心的 Latest。核心 16 个附件、每个插件 6 个附件，更新清单均覆盖五目标，已核对版本、下载地址和签名/哈希，并完成匿名下载校验。
+
+核心原生构建及安装/启动验收 [42008315667](https://github.com/BgaSol/soDeck/actions/runs/42008315667)，终端独立构建 [42008315509](https://github.com/BgaSol/soDeck/actions/runs/42008315509)，文件独立构建 [42008315198](https://github.com/BgaSol/soDeck/actions/runs/42008315198)，均五目标通过。使用上述实际发行包的原生终端与文件组合验收 [42009725924](https://github.com/BgaSol/soDeck/actions/runs/42009725924) 五目标全部通过，覆盖实际 WebView/Channel/xterm 正文往返、SFTP 读取/保存/下载、移窗、重开和退出。
