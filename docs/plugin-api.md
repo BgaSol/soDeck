@@ -125,7 +125,7 @@ UI v1 的 `mount.capabilities.clipboard === 1` 表示宿主提供原生文本剪
 
 `tokens` 保留原颜色字段，新增 `sd-stroke-structure/control`、`sd-icon-stroke`、`sd-control-weight`、`sd-title-weight`、`sd-radius-control`、`sd-tab-height`、`sd-status-height`、`sd-hit-size` 及导航、工具栏、主操作和反馈状态语义色；具体名称以 `src/theme.ts` 为准。终端提供 `terminal-background/foreground/cursor/selection` 与 ANSI16（`terminal-black` 至 `terminal-brightWhite`）。插件将字段设置为同名 `--` CSS 变量，配合打包的 `shared.css` 使用；旧插件可忽略新增项，新插件保留基础色回退。主题变更不重建视图或会话。
 
-## 通用 TCP 与弹窗（新增能力，尚未发布）
+## 通用 TCP 与弹窗（核心 0.7.0 新增）
 
 核心通过 `initialize.capabilities` 声明 `net.tcp.v1` 和 `ui.dialog.v1`，API 主版本保持 1。`net.*` 仅供插件进程调用；业务协议及规则由插件实现。监听持有创建时的已认证会话，域名原样交给最终远端解析，断线后不会自动接到新会话。
 

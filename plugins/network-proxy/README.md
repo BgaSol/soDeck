@@ -1,6 +1,6 @@
 # 网络隧道
 
-独立插件 `sodeck.network-proxy`，需要核心能力 `net.tcp.v1` 和 `ui.dialog.v1`。在已连接服务器的工作台右侧打开“网络隧道”；侧栏默认收起，可通过宿主菜单移到左侧。
+独立插件 `sodeck.network-proxy`，需要核心 0.7.0 提供的 `net.tcp.v1` 和 `ui.dialog.v1`。在已连接服务器的工作台右侧打开“网络隧道”；侧栏默认收起，可通过宿主菜单移到左侧。
 
 - TCP 转发：本机端口 → 当前服务器 → 固定目标。
 - SOCKS5：无认证的 TCP CONNECT，支持 IPv4、IPv6、域名；域名由最终远端服务器解析。

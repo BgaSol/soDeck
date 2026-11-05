@@ -1,8 +1,8 @@
 # SoDeck
 
-面向运维人员的远程服务器工作台。v0.6.1 在真实终端、SFTP 文件及混合 SSH / SOCKS5 连接上，恢复紧凑目录树和旧版工作台风格。普通启动显示服务器管理，真实认证成功后才创建工作区。
+面向运维人员的远程服务器工作台。v0.7.0 增加独立网络隧道插件，提供 TCP 转发、SOCKS5 代理和流量统计，并统一工作台主题与原生剪贴板交互。普通启动显示服务器管理，真实认证成功后才创建工作区。发行与验收范围见 [v0.7.0](docs/releases/v0.7.0.md)。
 
-外置插件声明侧栏与中央页面，核心统一管理两侧入口、混合 Tab、布局偏好、关闭确认和跨窗重挂载。`plugins/terminal` 提供真实多 Tab 终端；`plugins/files` 提供目录、1 MiB 内 UTF-8 文件编辑、保存冲突检查和单文件下载。`plugins/ui-example` 仅保留交互测试。核心包不包含这些插件。
+外置插件声明侧栏、中央页面及编辑弹窗，核心统一管理两侧入口、混合 Tab、布局偏好、关闭确认和跨窗重挂载。`plugins/terminal` 提供真实多 Tab 终端；`plugins/files` 提供目录、1 MiB 内 UTF-8 文件编辑、保存冲突检查和单文件下载；`plugins/network-proxy` 提供按服务器管理的 TCP 转发与 SOCKS5 代理，复用现有混合跳板，域名由最终远端解析。`plugins/ui-example` 仅保留交互测试。核心包不包含这些插件。
 
 当前版本沿用旧版紧凑工作台：文件侧栏提供真正的多分支目录树、路径定位、独立分页、右键操作和键盘导航；单击选中、双击文件打开中央编辑器。隐藏、重挂载和移窗保留导航状态。多巴胺、浅色、深色主题同步到文件与终端。新版文件插件 0.2.0 需要核心 0.6.1 的目录游标能力，旧版文件插件仍可使用原来的接口。范围见 [文件树设计](docs/plan-file-tree.md)，验证和限制见 [实施记录](docs/implementation-file-tree.md)，发行说明见 [v0.6.1](docs/releases/v0.6.1.md)。
 
@@ -19,7 +19,7 @@ v0.5.2 补齐设置中的官方插件下载安装入口，并独立发行组件�
 工作台直接管理服务器与 SOCKS5 代理：新增、编辑、复制、删除、搜索和分组；SSH 与 SOCKS5 路径可混合排序。记住的密码和私钥口令按选择明文保存到应用数据目录的 `servers.json`，私钥只保存路径。未记住的秘密仅当前进程有效。数据异常时保留原文件，可从上一份有效备份恢复。
 
 1. 下载对应系统和架构的核心安装包，或从旧版的应用更新入口升级。
-2. 在 **设置 → 插件管理 → 官方插件** 点击“下载并启用”，客户端自动下载本机版本并解压保存。v0.6.0 提供真实终端和文件插件，Hello 与组件交互示例仅供测试；其他本地插件仍通过“添加插件目录”选择包含 plugin.json 的目录。
+2. 先更新核心，再在 **设置 → 插件管理 → 官方插件** 点击“下载并启用”，客户端下载对应正式 Release 的本机版本。v0.7.0 配套终端 0.1.2、文件 0.2.1 和网络隧道 0.1.0；插件 Release 正式发布后可下载。Hello 与组件交互示例仅供测试；其他本地插件仍通过“添加插件目录”选择包含 plugin.json 的目录。
 3. 重启后自动加载启用插件；启用、关闭和已启用插件更新都在重启后生效。多项修改可统一重启一次。
 4. 插件详情检查与下载其独立更新；核心更新位于 **设置 → 应用更新**。
 5. **设置 → 外观**可选多巴胺、跟随系统、浅色和深色，即选即保存。多巴胺沿用旧版奶油底、粉色导航、黄色选中、薄荷绿点缀与深色粗描边，无装饰阴影；升级保留当前偏好。
@@ -52,10 +52,12 @@ npm run terminal:input:test
 npm run ssh:test
 npm run terminal:test
 npm run files:test
+npm run network:test
 npm run build -- --bundles nsis -- --locked
 npm run plugin:build
 node scripts/package-plugin.mjs --plugin terminal
 node scripts/package-plugin.mjs --plugin files
+node scripts/package-plugin.mjs --plugin network-proxy
 ```
 
 核心版本只修改 `src-tauri/tauri.conf.json`，Hello 版本只修改 `plugins/hello/Cargo.toml`。核心标签 `v<版本>` 和插件标签 `plugin-hello-v0.1.1` 分别触发五目标独立构建及 Release 草稿；更新清单自动生成，检查后正式发布。普通本地打包不需要更新签名密钥。

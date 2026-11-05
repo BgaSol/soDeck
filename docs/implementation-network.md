@@ -1,6 +1,6 @@
 # 网络隧道实施与验收
 
-本轮新增独立插件 `sodeck.network-proxy` 0.1.0。核心版本尚未提升，没有创建标签或 Release，官方列表已有来源，但正式发布插件前无法从 GitHub 下载。
+本轮新增独立插件 `sodeck.network-proxy` 0.1.0，配套核心 0.7.0。发行标签分别为 `plugin-network-proxy-v0.1.0` 与 `v0.7.0`；官方列表已有来源，插件 Release 正式发布前无法从 GitHub 下载。构建及正式发布状态以 [v0.7.0 发行记录](releases/v0.7.0.md) 为准。
 
 ## 代码边界
 
