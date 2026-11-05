@@ -18,6 +18,9 @@ use std::{
 type Listener = Arc<dyn Fn(&str, Value) + Send + Sync>;
 
 pub struct AppCore {
+    pub(crate) files: crate::remote_files::Files,
+    pub(crate) network_metrics: crate::network_metrics::Metrics,
+    pub(crate) terminals: crate::terminal::Terminals,
     pub(crate) connections: crate::connections::Connections,
     pub component_ui: Mutex<crate::component_ui::Runtime>,
     pub workspaces: Mutex<crate::workspaces::Runtime>,
@@ -59,6 +62,9 @@ impl AppCore {
             .map(|p| p.manifest.id.clone())
             .collect();
         let core = Arc::new(Self {
+            files: crate::remote_files::Files::default(),
+            network_metrics: crate::network_metrics::Metrics::default(),
+            terminals: crate::terminal::Terminals::default(),
             connections: crate::connections::Connections::open(&directory),
             component_ui: Mutex::new(crate::component_ui::Runtime::open(&directory)?),
             workspaces: Mutex::new(crate::workspaces::Runtime::default()),
@@ -286,6 +292,8 @@ impl AppCore {
             .collect::<Vec<_>>();
         self.component_ui.lock().unwrap().require_closed(&ids)?;
         self.closing.store(true, Ordering::Release);
+        self.terminals.cancel(|_| true);
+        self.files.cancel(|_| true);
         let instances: Vec<_> = self.instances.lock().unwrap().values().cloned().collect();
         let pending: Vec<_> = instances
             .iter()

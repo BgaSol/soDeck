@@ -5,7 +5,7 @@
 
 具体代码落点、现有模块的保留/拆分、资源与锁边界、异步 RPC 和分批迁移见 [代码整改方案](plan-code-reorganization.md)。第一批插件控制通信与第二批连接服务已进入源码，真实插件业务继续按批实施。
 
-当前实现 Tauri 桌面壳、原生 DOM/TypeScript 前端、外置进程插件、日志、重要消息、主题存储、独立在线更新和本机服务器/代理目录。当前源码已实现 SSH/SOCKS5 混合连接服务，工作区接纳真实认证会话并保持窗口移动时的连接身份。PTY/SFTP 与插件数据通道仍待实现。核心升级复用 Tauri 官方 updater；不引入 React 或数据库。依赖用途与替代方案分别见在线更新实施计划和连接实施记录。
+当前实现 Tauri 桌面壳、原生 DOM/TypeScript 前端、外置进程插件、日志、重要消息、主题存储、独立在线更新和本机服务器/代理目录。源码已实现 SSH/SOCKS5 混合连接、PTY、SFTP 文件原语、有界视图数据桥及网络统计；终端和文件分别由独立插件提供。核心升级复用 Tauri 官方 updater；不引入 React 或数据库。当前范围、依赖和验证边界见 [真实插件实施记录](implementation-remote-plugins.md)。
 
 当前代码职责：`main.rs` 组合窗口、命令桥和有界退出；`core.rs` 持有真实状态；`plugins/manifest.rs` 负责清单，`plugins/process.rs` 监督进程，`plugins/rpc.rs` 处理有界控制帧/读写，`plugins/dispatch.rs` 有界分派插件对核心的调用，`plugins/mod.rs` 保留内部入口；`platform.rs` 管理 Windows Job/Unix 进程组；`storage.rs` 保存配置、消息和轮转日志。前端 `main.ts` 管理窗口与浮层，`views.ts` 展示核心数据，`core.ts` 统一调用边界。界面不直接启动插件，不另存运行状态。
 

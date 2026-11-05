@@ -1,4 +1,5 @@
 //! Checks run only by the packaged-application smoke-test entry point.
+mod remote_plugins;
 use crate::{model::LogFilter, AppCore};
 use std::{
     path::Path,
@@ -22,6 +23,7 @@ pub async fn ssh_roundtrip(
         port: u16,
         username: String,
         private_key_path: String,
+        remote_file: Option<String>,
     }
     let config: Config = serde_json::from_slice(&std::fs::read(config).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
@@ -68,6 +70,9 @@ pub async fn ssh_roundtrip(
     let (bytes, status) = core.connection_validation_exec(&context, command).await?;
     if status != 0 || !String::from_utf8_lossy(&bytes).contains("sodeck-openssh-ok") {
         return Err("实际安装包的 SSH 命令验证失败".into());
+    }
+    if let Some(remote) = &config.remote_file {
+        remote_plugins::roundtrip(core, &context, remote).await?;
     }
     // Moving a real session must not create a second SSH transport.
     handle.state::<crate::windows::DesktopWindows>().move_to(

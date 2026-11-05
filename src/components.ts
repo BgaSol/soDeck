@@ -1,6 +1,8 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { ComponentData } from "./component-data";
 import { escape as e, icon, replace } from "./ui";
 import type { Context, Projection, Workspace } from "./workspaces";
+import type { NetworkSnapshot } from "./core";
 
 type Call = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 interface Definition { key: string; id: string; pluginId: string; pluginName: string; pluginInstanceId: string; title: string; icon: string; container: string; instancePolicy: string; entry: string; available: boolean; createAction?: string; locateEntry: boolean }
@@ -8,13 +10,14 @@ interface Preference { side: string; pinned: boolean; startup: string; order: nu
 interface View { id: string; definitionKey: string; pluginInstanceId: string; context: Context; title: string; dirty: boolean; busy: boolean; error?: string; lastUsed: number }
 interface UiWorkspace { views: View[]; preferences: Record<string, Preference>; left: string | null; right: string | null; editor: string | null }
 export interface UiProjection { definitions: Record<string, Definition>; workspaces: Record<string, UiWorkspace>; error?: string }
-interface Surface { node: HTMLDivElement; frame: HTMLIFrameElement; view: View; token?: string; chain: Promise<unknown>; visible: boolean; initialized: boolean; focusPending?: number; timeout: ReturnType<typeof setTimeout> }
+interface Surface { node: HTMLDivElement; frame: HTMLIFrameElement; view: View; token?: string; chain: Promise<unknown>; visible: boolean; initialized: boolean; focusPending?: number; flushable?: boolean; flushing?: {id: string; done: (error?: string) => void}; timeout: ReturnType<typeof setTimeout> }
 interface Shell { node: HTMLElement; surfaces: Map<string, Surface>; observer: ResizeObserver; workspace: Workspace; ui: UiWorkspace; railCapacity?: number }
 interface ClosePlan { token: string; views: string[]; dirty: { id: string; title: string; serverName: string; dirty: boolean; busy: boolean; error?: string }[] }
 const empty = (): UiWorkspace => ({ views: [], preferences: {}, left: null, right: null, editor: null });
 
 /** Shell and frames have different lifetimes. Rendering chrome never reconstructs a mounted iframe. */
 export class Components {
+  private data: ComponentData;
   private shells = new Map<string, Shell>();
   private definitions: Record<string, Definition> = {};
   private state?: Projection;
@@ -25,7 +28,10 @@ export class Components {
   private focusEpoch = 0;
   private interaction = () => { this.focusEpoch++; };
   private theme = new MutationObserver(() => this.broadcast());
+  private networkTimer = setInterval(() => { void this.updateNetwork(); }, 1000);
+  private networkPending = false;
   constructor(private content: HTMLElement, private call: Call, private notify: (message: string) => void, private refresh: () => Promise<void>) {
+    this.data = new ComponentData(call);
     window.addEventListener("message", this.message);
     this.theme.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "style"] });
     window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", this.systemTheme);
@@ -89,12 +95,13 @@ export class Components {
     const slot = node.querySelector<HTMLElement>(".central-slot")!;
     if (!editors.length) replace(slot, `<div class="workspace-empty"><div class="empty-icon">${icon("plug")}</div><h2>${e(shell.workspace.name)}</h2><p>${Object.keys(this.definitions).length ? "从侧栏打开组件，或点击＋新建页面" : "安装并启用带界面的插件后，可在这里使用组件"}</p><div class="workspace-context">${e(shell.workspace.endpoint)}</div></div>`); else replace(slot, "");
     replace(node.querySelector(".workspace-status")!, `<span class="health-dot ${shell.workspace.connected ? "good" : "warning"}"></span><span>${shell.workspace.connected ? "已连接" : "连接已断开"}</span><span class="workspace-endpoint">${e(shell.workspace.endpoint)}</span><button data-disconnect-context="${e(JSON.stringify(shell.workspace.context))}" ${shell.workspace.connected ? "" : "hidden"}>断开</button><button data-reconnect-server="${e(shell.workspace.context.serverId)}" ${shell.workspace.connected ? "hidden" : ""}>重新连接</button><span class="workspace-owner">${this.state?.window.role === "main" ? "主窗口" : "独立窗口"}</span>`);
+    const network=document.createElement("button");network.className="workspace-network";network.dataset.action="status";network.title="服务器连接传输速率；点击查看应用状态与插件业务量";network.textContent="↓ 0 B/s ↑ 0 B/s";node.querySelector(".workspace-status")!.append(network);
     for (const [id, surface] of shell.surfaces) if (!w.views.some(v => v.id === id)) { this.removeSurface(surface); shell.surfaces.delete(id); }
     for (const v of w.views) {
       const d = this.definitions[v.definitionKey]; if (!d) continue;
       let surface = shell.surfaces.get(v.id);
       if (surface && (surface.view.context.connectionId !== v.context.connectionId || surface.view.context.generation !== v.context.generation)) {
-        this.removeSurface(surface); shell.surfaces.delete(v.id); surface = undefined;
+        this.post(surface, {type: "contextChanged", context: v.context});
       }
       if (!surface) {
         const host = document.createElement("div"); host.className = "component-surface"; host.dataset.viewId = v.id;
@@ -105,6 +112,7 @@ export class Components {
         shell.surfaces.set(v.id, surface);
       }
       surface.view = v;
+      surface.frame.title = `${v.title} · ${shell.workspace.name}`;
       if (!d.available) this.surfaceError(surface, "插件已停止，页面状态仍保留。请查看应用状态与日志。");
     }
     requestAnimationFrame(() => this.position(shell));
@@ -159,9 +167,16 @@ export class Components {
       return;
     }
     if (!surface.token || message.surfaceId !== surface.token) return;
-    if (message.type === "mounted") { clearTimeout(surface.timeout); void this.invoke("ready", { surfaceId: surface.token }).then(async () => { await this.refresh(); if (surface.focusPending === this.focusEpoch && surface.visible) this.focusSurface(surface); }).catch(error => this.surfaceError(surface, String(error))); return; }
+    if (message.type === "mounted") { surface.flushable = message.flush === true; clearTimeout(surface.timeout); void this.invoke("ready", { surfaceId: surface.token }).then(async () => { await this.refresh(); if (surface.focusPending === this.focusEpoch && surface.visible) this.focusSurface(surface); }).catch(error => this.surfaceError(surface, String(error))); return; }
+    if (message.type === "flushed" && surface.flushing && surface.flushing.id === message.id) { surface.flushing.done(message.error); return; }
     if (message.type !== "request" || typeof message.id !== "string") return;
     const requestId = message.id;
+    if (message.method === "data") {
+      void this.data.request(surface.token, message.params, data => this.post(surface, {type: "data", data}))
+        .then(data => this.post(surface, {type: "response", id: requestId, data}))
+        .catch(error => this.post(surface, {type: "response", id: requestId, error: String(error)}));
+      return;
+    }
     const task = async () => {
       try {
         let data: unknown;
@@ -221,7 +236,15 @@ export class Components {
     node.addEventListener("keydown", event => { if (event.key === "Escape") { this.closeMenu(); anchor.focus(); } }); document.body.append(node); this.menu = node; node.querySelector<HTMLElement>("input,button")?.focus();
   }
   private closeMenu() { this.menu?.remove(); this.menu = undefined; }
-  async flush() { await Promise.all([...this.shells.values()].flatMap(s => [...s.surfaces.values()].map(f => f.chain))); }
+  async flush() {
+    const surfaces = [...this.shells.values()].flatMap(s => [...s.surfaces.values()]);
+    await Promise.all(surfaces.filter(s => s.flushable && s.token).map(s => new Promise<void>((resolve,reject) => {
+      const id=crypto.randomUUID(), timer=setTimeout(() => {s.flushing=undefined;reject(new Error("草稿同步超时，操作已取消"));}, 45000);
+      s.flushing={id,done:error=>{clearTimeout(timer);s.flushing=undefined;error?reject(new Error(error)):resolve();}};
+      this.post(s,{type:"flush",id});
+    })));
+    await Promise.all(surfaces.map(f => f.chain));
+  }
   async close(workspaceIds: string[], viewId?: string) {
     if (this.dialog) return false;
     await this.flush();
@@ -240,8 +263,16 @@ export class Components {
     } catch (error) { await this.invoke("finishClose", { ...plan, decision: "cancel" }).catch(() => {}); throw error; }
   }
   async allowExit() { return this.close(await this.invoke<string[]>("allWorkspaces")); }
+  private async updateNetwork() {
+    if(this.disposed||this.networkPending||!this.shells.size)return;this.networkPending=true;
+    try {const snapshot=await this.call<NetworkSnapshot>("network_snapshot");for(const shell of this.shells.values()){
+      const t=snapshot.servers.find(t=>t.serverId===shell.workspace.context.serverId),node=shell.node.querySelector(".workspace-network");
+      const rate=(v:number)=>v<1024?`${v.toFixed(0)} B/s`:v<1048576?`${(v/1024).toFixed(1)} KiB/s`:`${(v/1048576).toFixed(1)} MiB/s`;
+      if(node)node.textContent=`↓ ${rate(t?.receivedPerSecond??0)} ↑ ${rate(t?.sentPerSecond??0)}`;
+    }} catch { /* A diagnostic endpoint must not interrupt the workbench. */ }finally{this.networkPending=false;}
+  }
   private async run(action: () => Promise<unknown>) { try { await action(); } catch (error) { this.notify(String(error)); } }
-  private removeSurface(s: Surface) { clearTimeout(s.timeout); this.post(s, { type: "unmount" }); s.node.remove(); }
+  private removeSurface(s: Surface) { clearTimeout(s.timeout); this.data.detach(s.token); this.post(s, { type: "unmount" }); s.node.remove(); }
   private destroy(shell: Shell) { shell.observer.disconnect(); for (const f of shell.surfaces.values()) this.removeSurface(f); shell.node.remove(); }
-  dispose() { this.disposed = true; this.closeMenu(); window.removeEventListener("message", this.message); document.removeEventListener("pointerdown", this.outside); document.removeEventListener("pointerdown", this.interaction, true); document.removeEventListener("keydown", this.interaction, true); this.theme.disconnect(); window.matchMedia("(prefers-color-scheme: dark)").removeEventListener("change", this.systemTheme); for (const shell of this.shells.values()) this.destroy(shell); }
+  dispose() { this.disposed = true; clearInterval(this.networkTimer); this.closeMenu(); window.removeEventListener("message", this.message); document.removeEventListener("pointerdown", this.outside); document.removeEventListener("pointerdown", this.interaction, true); document.removeEventListener("keydown", this.interaction, true); this.theme.disconnect(); window.matchMedia("(prefers-color-scheme: dark)").removeEventListener("change", this.systemTheme); for (const shell of this.shells.values()) this.destroy(shell); }
 }

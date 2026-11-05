@@ -13,6 +13,8 @@
     "ui:test": "node scripts/test-server-ui.mjs && node scripts/test-workspace-ui.mjs && node scripts/test-connection-ui.mjs && npm run ui:production:test",
     "ui:production:test": "npm run web:build && node scripts/test-production-ui.mjs",
     "ssh:test": "node scripts/test-openssh.mjs",
+    "terminal:test": "node scripts/test-openssh.mjs --terminal",
+    "files:test": "node scripts/test-openssh.mjs --files",
     "plugin:build": "node scripts/package-plugin.mjs"
   },
   "devDependencies": {

@@ -1,0 +1,106 @@
+name: Verify native remote plugins
+on:
+  workflow_dispatch:
+    inputs:
+      core_run_id:
+        description: Successful core package run from this commit
+        type: string
+        required: true
+      terminal_run_id:
+        description: Successful terminal plugin package run from this commit
+        type: string
+        required: true
+      files_run_id:
+        description: Successful files plugin package run from this commit
+        type: string
+        required: true
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: windows-x86_64, runner: windows-2025}
+          - {name: windows-aarch64, runner: windows-11-arm}
+          - {name: linux-x86_64, runner: ubuntu-22.04}
+          - {name: linux-aarch64, runner: ubuntu-22.04-arm}
+          - {name: macos-aarch64, runner: macos-15}
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+      - uses: actions/download-artifact@v5
+        with:
+          name: SoDeck-${{ matrix.name }}
+          run-id: ${{ inputs.core_run_id }}
+          github-token: ${{ github.token }}
+          path: packages/core
+      - uses: actions/download-artifact@v5
+        with:
+          name: Plugin-terminal-${{ matrix.name }}
+          run-id: ${{ inputs.terminal_run_id }}
+          github-token: ${{ github.token }}
+          path: packages/terminal
+      - uses: actions/download-artifact@v5
+        with:
+          name: Plugin-files-${{ matrix.name }}
+          run-id: ${{ inputs.files_run_id }}
+          github-token: ${{ github.token }}
+          path: packages/files
+      - name: Install Linux runtime and test server
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-0 xvfb dbus-x11 openssh-server
+          sudo mkdir -p /run/sshd
+      - name: Install Windows test server
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "$env:WINDIR/System32/OpenSSH/sshd.exe")) {
+            $capability = Get-WindowsCapability -Online -Name 'OpenSSH.Server*' | Select-Object -First 1
+            Add-WindowsCapability -Online -Name $capability.Name
+          }
+      - name: Windows installed package with independent plugins
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          foreach ($plugin in @('terminal','files')) {
+            $archive = Get-ChildItem "packages/$plugin" -Filter '*.zip' | Select-Object -First 1
+            tar -xf $archive.FullName -C "packages/$plugin"
+          }
+          $env:SODECK_TEST_TERMINAL_PLUGIN = (Get-ChildItem packages/terminal -Directory | Select-Object -First 1).FullName
+          $env:SODECK_TEST_FILES_PLUGIN = (Get-ChildItem packages/files -Directory | Select-Object -First 1).FullName
+          $installer = Get-ChildItem packages/core -Filter '*-setup.exe' -Recurse | Select-Object -First 1
+          $installDir = Join-Path $env:RUNNER_TEMP 'SoDeck-remote'
+          $installed = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDir" -WindowStyle Hidden -Wait -PassThru
+          if ($installed.ExitCode -ne 0) { throw 'Install failed' }
+          node scripts/test-openssh.mjs --packaged "$installDir/sodeck.exe"
+      - name: Linux extracted package with independent plugins
+        if: runner.os == 'Linux'
+        env:
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+        run: |
+          tar -xzf packages/terminal/*.tar.gz -C packages/terminal
+          tar -xzf packages/files/*.tar.gz -C packages/files
+          export SODECK_TEST_TERMINAL_PLUGIN="$(find "$PWD/packages/terminal" -mindepth 1 -maxdepth 1 -type d | head -1)"
+          export SODECK_TEST_FILES_PLUGIN="$(find "$PWD/packages/files" -mindepth 1 -maxdepth 1 -type d | head -1)"
+          dpkg-deb -x $(find packages/core -name '*.deb' | head -1) "$RUNNER_TEMP/SoDeck-remote"
+          node scripts/test-openssh.mjs --packaged dbus-run-session -- xvfb-run -a "$RUNNER_TEMP/SoDeck-remote/usr/bin/sodeck"
+      - name: macOS mounted package with independent plugins
+        if: runner.os == 'macOS'
+        run: |
+          tar -xzf packages/terminal/*.tar.gz -C packages/terminal
+          tar -xzf packages/files/*.tar.gz -C packages/files
+          export SODECK_TEST_TERMINAL_PLUGIN="$(find "$PWD/packages/terminal" -mindepth 1 -maxdepth 1 -type d | head -1)"
+          export SODECK_TEST_FILES_PLUGIN="$(find "$PWD/packages/files" -mindepth 1 -maxdepth 1 -type d | head -1)"
+          hdiutil attach $(find packages/core -name '*.dmg' | head -1) -nobrowse -readonly -mountpoint "$RUNNER_TEMP/SoDeck-remote"
+          trap 'hdiutil detach "$RUNNER_TEMP/SoDeck-remote"' EXIT
+          node scripts/test-openssh.mjs --packaged "$RUNNER_TEMP/SoDeck-remote/SoDeck.app/Contents/MacOS/sodeck"

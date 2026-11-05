@@ -85,7 +85,11 @@ function content() {
 }
 function renderLayer() {
   const target = document.querySelector<HTMLElement>("#layer-content");
-  if (target) replace(target, content());
+  if (target) {
+    const expanded=[...target.querySelectorAll<HTMLDetailsElement>('details[data-network-server][open]')].map(d=>d.dataset.networkServer);
+    replace(target, content());
+    for(const key of expanded)target.querySelector<HTMLDetailsElement>(`details[data-network-server="${CSS.escape(key!)}"]`)?.setAttribute('open','');
+  }
 }
 async function showLayer(next: string) {
   if (layer === next && next === "status") {
@@ -181,6 +185,7 @@ async function refresh() {
   refreshing = true;
   try {
     [snapshot, state.updates] = await Promise.all([core.snapshot(), core.updates()]);
+    snapshot.network=await core.network();
     lastError = "";
     applyTheme();
     renderTop();
@@ -466,7 +471,7 @@ async function start() {
   if (snapshot && catalogReady) await core.ready();
   setInterval(() => {
     if (layer === "status") scheduleRefresh();
-  }, 5000);
+  }, 1000);
 }
 void start().catch((error) => {
   lastError = String(error);

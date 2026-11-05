@@ -59,7 +59,7 @@ pub(crate) fn supervise(
     let mut failure = core.plugin_data(id).and_then(|path| queue_frame(&writer, json!({
         "jsonrpc":"2.0", "id":"initialize", "method":"initialize", "params":{
             "coreApiVersion":API_VERSION, "coreVersion":core.version(), "dataDirectory":path,
-            "capabilities":["logging.write","messages.publish","ui.v1","rpc.concurrent"]
+              "capabilities":["logging.write","messages.publish","ui.v1","rpc.concurrent","terminal.v1","viewData.v1","files.v1"]
         }
     }))).err();
     let mut ready = Some(ready);
@@ -151,6 +151,10 @@ pub(crate) fn supervise(
         // Allow the pipe readers to deliver final diagnostics after process exit.
         let drain_complete = exited_at.is_none_or(|at| at.elapsed() >= Duration::from_millis(150));
         if (failure.is_some() || exited.is_some() || expired) && drain_complete {
+            core.terminals
+                .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
+            core.files
+                .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
             for (_, (_, reply)) in requests.drain() {
                 let _ = reply.send(Err("插件通信已停止，请求已取消".into()));
             }
@@ -195,6 +199,11 @@ pub(crate) fn supervise(
                     );
                     Ok(())
                 };
+                // Fence resources created by a worker that raced the initial exit cleanup.
+                core.terminals
+                    .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
+                core.files
+                    .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
                 if let Some(sender) = ready.take() {
                     let _ =
                         sender.send(outcome.clone().and(Err("插件在初始化完成前已停止".into())));

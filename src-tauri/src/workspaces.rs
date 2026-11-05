@@ -407,6 +407,16 @@ impl AppCore {
         self.workspaces.lock().unwrap().projection(window)
     }
     pub fn workspace_changed(&self) {
+        let live: std::collections::HashSet<_> = self
+            .component_ui
+            .lock()
+            .unwrap()
+            .workspaces
+            .values()
+            .flat_map(|w| w.views.iter().map(|v| v.id.clone()))
+            .collect();
+        self.terminals.cancel(|owner| !live.contains(&owner.view));
+        self.files.cancel(|owner| !live.contains(&owner.view));
         self.event("workspaces-changed", serde_json::Value::Null);
     }
 

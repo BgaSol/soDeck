@@ -1,10 +1,10 @@
 # SoDeck
 
-面向运维人员的远程服务器工作台。v0.5.0 在服务器资料管理、原生多窗口和 Tab 拆合基础上，增加真实 SSH / SOCKS5 混合多层连接与插件组件宿主。普通启动显示服务器管理，真实认证成功后才创建工作区。
+面向运维人员的远程服务器工作台。当前开发版本 v0.6.0 在 SSH / SOCKS5 混合多层连接和多窗口工作台上，增加真实终端、SFTP 文件插件和服务器/插件业务流量统计。普通启动显示服务器管理，真实认证成功后才创建工作区。
 
-外置插件声明侧栏与中央页面，核心统一管理两侧入口、混合 Tab、布局偏好、关闭确认和跨窗重挂载。`plugins/ui-example` 独立提供文件列表/编辑、多终端草稿和转发占位，验证交互但不执行远程操作；核心包不包含该插件。
+外置插件声明侧栏与中央页面，核心统一管理两侧入口、混合 Tab、布局偏好、关闭确认和跨窗重挂载。`plugins/terminal` 提供真实多 Tab 终端；`plugins/files` 提供目录、1 MiB 内 UTF-8 文件编辑、保存冲突检查和单文件下载。`plugins/ui-example` 仅保留交互测试。核心包不包含这些插件。
 
-核心支持主机指纹、密码和私钥认证，以及工作台断开/原位重连；插件控制通信支持有界并发和退出取消。终端、SFTP 和正文数据通道仍待实现，详见 [连接实施记录](docs/implementation-connections.md) 和 [整改记录](docs/plan-code-reorganization.md)。
+核心支持主机指纹、密码和私钥认证，以及工作台断开/原位重连；插件控制通信支持有界并发和退出取消。正文数据桥使用 16 KiB 分块；终端有确认、背压与跨窗显示恢复。实现与验收边界见 [真实插件实施记录](docs/implementation-remote-plugins.md)。v0.6.0 尚待正式发行，不代表 GitHub Latest 已升级。
 
 v0.5.1 修复正式构建中服务器表单无法滚动、布局错位及多巴胺配色不完整的问题，保留已保存的主题。修复范围及验证见 [v0.5.1](docs/releases/v0.5.1.md)。
 
@@ -45,8 +45,12 @@ npx playwright install chromium
 npm run ui:test
 # 本机需 OpenSSH 服务端与 ssh-keygen；脚本仅启动临时回环测试端
 npm run ssh:test
+npm run terminal:test
+npm run files:test
 npm run build -- --bundles nsis -- --locked
 npm run plugin:build
+node scripts/package-plugin.mjs --plugin terminal
+node scripts/package-plugin.mjs --plugin files
 ```
 
 核心版本只修改 `src-tauri/tauri.conf.json`，Hello 版本只修改 `plugins/hello/Cargo.toml`。核心标签 `v<版本>` 和插件标签 `plugin-hello-v0.1.1` 分别触发五目标独立构建及 Release 草稿；更新清单自动生成，检查后正式发布。普通本地打包不需要更新签名密钥。
@@ -57,6 +61,7 @@ npm run plugin:build
 | Package SoDeck | 五目标原生核心安装包、目录保存重开、原生工作区移窗/关闭烟测、更新签名；标签发布时生成 core-update.json |
 | Package plugin | 按插件目录独立打包、生成 plugin-update.json |
 | Verify packaged core and plugin | 五目标实际包的插件、日志、消息与重启保留 |
+| Verify native remote plugins | 三个独立打包运行的实际核心/终端/文件包，验证原生数据桥与 OpenSSH 业务 |
 
 详细步骤、签名密钥与验证边界见 [分发文档](docs/distribution.md)。Windows 未配置商业代码签名，macOS 使用 ad-hoc 签名；更新包签名由 Tauri updater 单独处理。插件按可信扩展使用，没有权限清单和逐项授权。
 

@@ -77,6 +77,9 @@ impl Runtime {
             .find(|v| v.id == id)
             .ok_or_else(|| "组件页面已关闭".into())
     }
+    pub(crate) fn resource_view(&self, id: &str) -> Result<&View, String> {
+        self.view(id)
+    }
     pub(super) fn update_metadata(&mut self, id: &str, metadata: &Value) -> Result<(), String> {
         let v = self
             .workspaces
@@ -213,7 +216,6 @@ impl AppCore {
         for d in ui.definitions.values_mut() {
             d.available = false;
         }
-        let first = ui.preferences.definitions.is_empty();
         let mut preferences = ui.preferences.clone();
         for p in plugins.iter().filter(|p| p.status == PluginStatus::Running) {
             if let Some(declaration) = &p.manifest.ui {
@@ -224,12 +226,8 @@ impl AppCore {
                         .entry(key.clone())
                         .or_insert(Preference {
                             side: d.default_side.clone(),
-                            pinned: first && d.default_pinned,
-                            startup: if first {
-                                d.open_on_workspace.clone()
-                            } else {
-                                none()
-                            },
+                            pinned: d.default_pinned,
+                            startup: d.open_on_workspace.clone(),
                             order: d.startup_order,
                         });
                     ui.definitions.insert(

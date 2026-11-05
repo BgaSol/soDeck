@@ -22,7 +22,7 @@ function launch(persisted = false) {
   if (process.env.SODECK_TEST_UPDATE_BUNDLE) extra.push("--update-bundle-test", path.resolve(process.env.SODECK_TEST_UPDATE_BUNDLE));
   const result = spawnSync(command, [...args, ...extra], {
     stdio: "inherit",
-    timeout: 30_000,
+    timeout: process.env.SODECK_TEST_TERMINAL_PLUGIN ? 90_000 : 30_000,
   });
   const failure = path.join(directory, "smoke-error.txt");
   if (fs.existsSync(failure)) throw new Error(fs.readFileSync(failure, "utf8"));

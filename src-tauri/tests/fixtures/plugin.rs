@@ -28,6 +28,7 @@ fn main() {
     let mut data = None;
     let mut ui_views: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
     let mut pending_reentry = None;
+    let mut pending_terminal = None;
     let mut deferred = None;
     let mut probes: Option<(Value, std::collections::HashMap<String, Value>)> = None;
     for line in io::stdin().lock().lines() {
@@ -44,6 +45,13 @@ fn main() {
                     continue;
                 }
                 if method == "ui.event" {
+                    if p["data"]["rpc"] == "terminal.open" {
+                        pending_terminal = Some(frame["id"].clone());
+                        send(
+                            json!({"jsonrpc":"2.0","id":"fixture-terminal","method":"terminal.open","params":{"viewId":id,"cols":80,"rows":24}}),
+                        );
+                        continue;
+                    }
                     match p["data"]["rpc"].as_str() {
                         Some("defer") => {
                             deferred = Some(frame["id"].clone());
@@ -163,6 +171,15 @@ fn main() {
                 send(
                     json!({"jsonrpc":"2.0","id":3,"method":"logging.write","params":{"level":"info","message":"fixture stopping"}}),
                 );
+            }
+            _ if frame["id"] == "fixture-terminal" => {
+                if let Some(id) = pending_terminal.take() {
+                    send(if frame.get("error").is_some() {
+                        json!({"jsonrpc":"2.0","id":id,"error":frame["error"]})
+                    } else {
+                        json!({"jsonrpc":"2.0","id":id,"result":{"data":frame["result"]}})
+                    });
+                }
             }
             _ if frame["id"] == "fixture-reentry" => {
                 if let Some(id) = pending_reentry.take() {

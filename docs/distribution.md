@@ -1,5 +1,7 @@
 # SoDeck 安装、升级与插件分发
 
+v0.6.0 增加 terminal/files 两个独立目录，沿用 Package plugin 的 `--plugin` 和 `plugin-terminal-v*` / `plugin-files-v*` 标签。核心构建不依赖它们。新增 Verify native remote plugins 工作流，接收同一提交的三个独立打包 run ID，在五个原生 runner 安装/解包实际产物，启动隔离 OpenSSH，验证 PTY 经原生 Channel 到 xterm 再回传显示快照，以及文件读取、原子保存和下载。工作流定义不等于已运行；实际结果见 [实施记录](implementation-remote-plugins.md)。
+
 ## 原则
 
 核心独立安装和升级，业务插件全部外置。源码和发行包位于公开的 `BgaSol/soDeck`，使用 GitHub Actions 与普通 Releases，不另建更新服务器或插件市场。

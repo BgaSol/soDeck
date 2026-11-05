@@ -24,5 +24,8 @@ jobs:
       - run: npm run check
       - run: npm run plugin:check
       - run: cargo fmt --manifest-path plugins/ui-example/Cargo.toml -- --check
+      - run: cargo fmt --manifest-path plugins/terminal/Cargo.toml -- --check
+      - run: cargo fmt --manifest-path plugins/files/Cargo.toml -- --check
+      - run: cargo fmt --manifest-path crates/plugin-client/Cargo.toml -- --check
       - run: npm run web:build
       - run: npm run scripts:test

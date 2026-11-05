@@ -22,7 +22,7 @@ try {
     `Port ${port}`, "ListenAddress 127.0.0.1", `HostKey ${quote(path.join(directory, "host"))}`,
     `PidFile ${quote(path.join(directory, "pid"))}`, `AuthorizedKeysFile ${quote(path.join(directory, "user.pub"))}`,
     "StrictModes no", "PasswordAuthentication no", "KbdInteractiveAuthentication no", "PubkeyAuthentication yes",
-    "AllowTcpForwarding yes", "LogLevel ERROR", ...(process.platform === "win32" ? [] : ["UsePAM no"]), "",
+    "AllowTcpForwarding yes", "Subsystem sftp internal-sftp", "LogLevel ERROR", ...(process.platform === "win32" ? [] : ["UsePAM no"]), "",
   ].join("\n"));
   let diagnostic = "";
   daemon = spawn(sshd, ["-D", "-e", "-f", path.join(directory, "sshd_config")], { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
@@ -38,21 +38,33 @@ try {
   if (!ready) throw new Error("OpenSSH did not listen within 5 seconds");
   const packagedIndex=process.argv.indexOf("--packaged");
   if (packagedIndex !== -1) {
-    const executable=process.argv[packagedIndex+1]; if (!executable) throw new Error("--packaged requires the installed executable");
+    const executable=process.argv.slice(packagedIndex+1); if (!executable.length) throw new Error("--packaged requires the installed executable or launcher command");
     const config=path.join(directory,"validation.json");
-    fs.writeFileSync(config,JSON.stringify({port,username,privateKeyPath:path.join(directory,"user")}));
+    const remoteFile=path.join(directory,'native-file.txt');fs.writeFileSync(remoteFile,'sodeck-native-original\n');
+    fs.writeFileSync(config,JSON.stringify({port,username,privateKeyPath:path.join(directory,"user"),remoteFile:remoteFile.replaceAll('\\','/')}));
     const result=await new Promise((resolve,reject)=>{
-      const smoke=spawn(process.execPath,["scripts/smoke.mjs",path.resolve(executable)],{windowsHide:true,stdio:"inherit",env:{...process.env,SODECK_TEST_SSH_CONFIG:config}});
+      const smoke=spawn(process.execPath,["scripts/smoke.mjs",...executable],{windowsHide:true,stdio:"inherit",env:{...process.env,SODECK_TEST_SSH_CONFIG:config}});
       smoke.on("error",reject);smoke.on("exit",resolve);
     });
     if (result!==0) throw new Error(`Packaged OpenSSH validation failed (${result}): ${diagnostic}`);
   } else {
+    const terminal=process.argv.includes('--terminal');
+    const files=process.argv.includes('--files');
+    const env={ ...process.env, SODECK_TEST_SSH_PORT: String(port), SODECK_TEST_SSH_USER: username, SODECK_TEST_SSH_KEY: path.join(directory, "user") };
+    for(const plugin of [terminal?'terminal':null,files?'files':null].filter(Boolean)){
+      const build=spawnSync(process.execPath,['scripts/package-plugin.mjs','--plugin',plugin],{stdio:'inherit',windowsHide:true});if(build.status!==0)throw new Error(`${plugin} package failed`);
+      const version=fs.readFileSync(`plugins/${plugin}/Cargo.toml`,'utf8').match(/^version = "([^"]+)"/m)[1];
+      const target=spawnSync('rustc',['-vV'],{encoding:'utf8'}).stdout.match(/^host: (.+)$/m)[1];
+      env[`SODECK_TEST_${plugin.toUpperCase()}_PLUGIN`]=path.resolve(`artifacts/plugins/sodeck-${plugin}_${version}_${target}`);
+    }
     const result = await new Promise((resolve, reject) => {
-    const test = spawn("cargo", ["test", "--manifest-path", "src-tauri/Cargo.toml", "--features", "test-fixtures", "--locked", "--test", "connections", "openssh_interop", "--", "--ignored", "--exact", "--nocapture"], {
-      windowsHide: true, stdio: "inherit", env: { ...process.env, SODECK_TEST_SSH_PORT: String(port), SODECK_TEST_SSH_USER: username, SODECK_TEST_SSH_KEY: path.join(directory, "user") },
+    const test = spawn("cargo", ["test", "--manifest-path", "src-tauri/Cargo.toml", "--features", "test-fixtures", "--locked", "--test", "connections", files?'openssh_files_plugin':terminal?'openssh_terminal_plugin':'openssh_interop', "--", "--ignored", "--exact", "--nocapture"], {
+      windowsHide: true, stdio: "inherit", env,
     }); test.on("error", reject); test.on("exit", resolve);
   });
   if (result !== 0) throw new Error(`OpenSSH interoperability failed (${result}): ${diagnostic}`);
+  if(terminal){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-terminal-ui.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('Terminal UI failed');}
+  if(files){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-files-ui.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('File UI failed');}
   }
 } finally {
   if (daemon && daemon.exitCode === null) { const exited = new Promise(resolve => daemon.once("exit", resolve)); daemon.kill(); await exited; }

@@ -13,12 +13,38 @@ use std::{
 };
 
 pub(super) fn plugin_request(
-    core: &AppCore,
+    core: &Arc<AppCore>,
     id: &str,
     instance: &str,
     frame: &Value,
 ) -> Result<Value, RpcError> {
     match frame["method"].as_str().unwrap_or_default() {
+        "metrics.networkSnapshot" => Ok(core.network_snapshot()),
+        "files.request" => core
+            .files_control(id, instance, &frame["params"])
+            .map_err(RpcError::execution),
+        "terminal.open" => {
+            let p = &frame["params"];
+            let view = p["viewId"]
+                .as_str()
+                .ok_or_else(|| RpcError::invalid("缺少 viewId"))?;
+            let cols = p["cols"].as_u64().unwrap_or(80);
+            let rows = p["rows"].as_u64().unwrap_or(24);
+            if cols > 1000 || rows > 500 {
+                return Err(RpcError::invalid("终端尺寸超出范围"));
+            }
+            core.terminal_open(id, instance, view, cols as u32, rows as u32)
+                .map_err(RpcError::execution)
+        }
+        "terminal.close" => core
+            .terminal_close(
+                id,
+                instance,
+                frame["params"]["id"]
+                    .as_str()
+                    .ok_or_else(|| RpcError::invalid("缺少终端 ID"))?,
+            )
+            .map_err(RpcError::execution),
         "logging.write" => {
             let params = &frame["params"];
             let level = params["level"]

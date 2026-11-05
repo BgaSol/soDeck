@@ -13,6 +13,29 @@ static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 // Keep native process launch pressure out of the five-second initialization budget.
 // Calls inside each fixture remain concurrent in the RPC integration tests.
 static STARTUP: Mutex<()> = Mutex::new(());
+#[test]
+fn separately_registered_plugins_keep_their_own_recommended_defaults() {
+    let f = Fixture::new();
+    f.load().unwrap();
+    // Preferences already exist for another plugin: first launch is per declaration,
+    // not per entire application. A user preference still wins on later snapshots.
+    let second = f.root.join("second");
+    fs::create_dir_all(second.join("ui")).unwrap();
+    let binary = format!("fixture{}", std::env::consts::EXE_SUFFIX);
+    fs::copy(env!("CARGO_BIN_EXE_plugin-fixture"), second.join(&binary)).unwrap();
+    fs::write(second.join("ui/index.html"), "ok").unwrap();
+    fs::write(second.join("plugin.json"),json!({"id":"test.second","name":"Second","version":"0.1.0","apiVersion":"1","target":TARGET,"entry":binary,"ui":{"apiVersion":"1","entry":"ui/index.html","views":[{"id":"browser","title":"Second files","icon":"folder","container":"sidebar","instancePolicy":"perWorkspace","defaultPinned":true,"openOnWorkspace":"reveal"}]}}).to_string()).unwrap();
+    f.core.ui_snapshot("main").unwrap();
+    {
+        let _startup = STARTUP.lock().unwrap();
+        f.core.load(&second).unwrap();
+    }
+    let w = f.open("defaults");
+    let state = f.core.ui_snapshot("main").unwrap();
+    let p = &state["workspaces"][&w.context.workspace_id]["preferences"]["test.second:browser"];
+    assert_eq!(p["pinned"], true);
+    assert_eq!(p["startup"], "reveal");
+}
 struct Fixture {
     root: PathBuf,
     plugin: PathBuf,

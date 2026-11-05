@@ -9,7 +9,7 @@ use sodeck::{
     AppCore,
 };
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     net::SocketAddr,
     path::PathBuf,
     sync::{
@@ -26,6 +26,9 @@ use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Default)]
 struct Ssh {
+    terminal_channels: HashSet<ChannelId>,
+    shells: Arc<AtomicUsize>,
+    sizes: Arc<Mutex<Vec<(u32, u32)>>>,
     auth: Arc<AtomicUsize>,
     live: Arc<AtomicUsize>,
     hosts: Arc<Mutex<Vec<String>>>,
@@ -33,6 +36,63 @@ struct Ssh {
 }
 impl server::Handler for Ssh {
     type Error = russh::Error;
+    async fn pty_request(
+        &mut self,
+        id: ChannelId,
+        term: &str,
+        cols: u32,
+        rows: u32,
+        _: u32,
+        _: u32,
+        _: &[(russh::Pty, u32)],
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        assert_eq!(term, "xterm-256color");
+        self.terminal_channels.insert(id);
+        self.sizes.lock().unwrap().push((cols, rows));
+        session.channel_success(id)?;
+        Ok(())
+    }
+    async fn shell_request(
+        &mut self,
+        id: ChannelId,
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        let shell = self.shells.fetch_add(1, Ordering::Relaxed) + 1;
+        session.channel_success(id)?;
+        session.data(id, format!("shell-{shell}> ").into_bytes())?;
+        Ok(())
+    }
+    async fn window_change_request(
+        &mut self,
+        _: ChannelId,
+        cols: u32,
+        rows: u32,
+        _: u32,
+        _: u32,
+        _: &mut Session,
+    ) -> Result<(), Self::Error> {
+        self.sizes.lock().unwrap().push((cols, rows));
+        Ok(())
+    }
+    async fn data(
+        &mut self,
+        id: ChannelId,
+        data: &[u8],
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        if !self.terminal_channels.contains(&id) {
+            return Ok(());
+        }
+        if data == b"exit\r" {
+            session.exit_status_request(id, 7)?;
+            session.eof(id)?;
+            session.close(id)?;
+        } else {
+            session.data(id, data.to_vec())?;
+        }
+        Ok(())
+    }
     async fn auth_password(
         &mut self,
         user: &str,
@@ -202,6 +262,8 @@ impl Drop for Socks {
 }
 
 static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
+include!("fixtures/terminal_flow.rs");
+include!("fixtures/files_flow.rs");
 struct Fixture {
     core: Arc<AppCore>,
     path: PathBuf,

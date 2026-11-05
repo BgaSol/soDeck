@@ -4,5 +4,10 @@
 /dist/
 /plugins/hello/target/
 /plugins/ui-example/target/
+/plugins/terminal/target/
+/plugins/terminal/node_modules/
+/plugins/terminal/ui/
+/plugins/files/target/
+/crates/plugin-client/target/
 *.log
 /artifacts/

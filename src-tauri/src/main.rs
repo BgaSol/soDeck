@@ -27,6 +27,64 @@ struct Application {
 }
 
 #[tauri::command]
+async fn component_data(
+    app: State<'_, Application>,
+    window: tauri::WebviewWindow,
+    surface_id: String,
+    request: serde_json::Value,
+    channel: tauri::ipc::Channel<sodeck::streams::Frame>,
+) -> Result<serde_json::Value, String> {
+    if request["op"] == "files" {
+        if request["action"] == "download" {
+            use tauri_plugin_dialog::DialogExt;
+            app.core
+                .validate_file_download(window.label(), &surface_id, &request)?;
+            let filename = request["path"]
+                .as_str()
+                .unwrap_or("download")
+                .rsplit('/')
+                .next()
+                .unwrap_or("download")
+                .to_string();
+            let dialog = window.dialog().file().set_file_name(filename);
+            let chosen = tauri::async_runtime::spawn_blocking(move || dialog.blocking_save_file())
+                .await
+                .map_err(|e| e.to_string())?;
+            let Some(chosen) = chosen else {
+                return Ok(serde_json::json!({"cancelled":true}));
+            };
+            let local = chosen.into_path().map_err(|e| e.to_string())?;
+            return app
+                .core
+                .files_download(window.label(), &surface_id, request, local)
+                .await;
+        }
+        return app
+            .core
+            .files_data(window.label(), &surface_id, request)
+            .await;
+    }
+    let sink = Some({
+        Arc::new(move |frame| channel.send(frame).map_err(|e| e.to_string()))
+            as sodeck::streams::Sink
+    });
+    app.core
+        .terminal_data(
+            window.label(),
+            &surface_id,
+            serde_json::from_value(request).map_err(|e| e.to_string())?,
+            sink,
+        )
+        .await
+        .map(|_| serde_json::Value::Null)
+}
+
+#[tauri::command]
+fn network_snapshot(app: State<Application>) -> serde_json::Value {
+    app.core.network_snapshot()
+}
+
+#[tauri::command]
 fn snapshot(app: State<Application>) -> Snapshot {
     app.core.snapshot()
 }
@@ -431,6 +489,8 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            component_data,
+            network_snapshot,
             sodeck::connections::desktop::connection,
             server_catalog,
             change_catalog,

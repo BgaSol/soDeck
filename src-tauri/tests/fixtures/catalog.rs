@@ -19,6 +19,55 @@ fn main() {
                 .map(|id| json!(id))
             }
             "snapshot" => Ok(json!(core.snapshot())),
+            "network_snapshot" => Ok(core.network_snapshot()),
+            "component_data" => {
+                if args["request"]["op"] == "files" {
+                    let result = if args["request"]["action"] == "download" {
+                        let local = std::env::var("SODECK_TEST_DOWNLOAD_PATH")
+                            .expect("test download destination");
+                        tauri::async_runtime::block_on(core.files_download(
+                            args["window"].as_str().unwrap_or("main"),
+                            args["surfaceId"].as_str().unwrap(),
+                            args["request"].clone(),
+                            local.into(),
+                        ))
+                    } else {
+                        tauri::async_runtime::block_on(core.files_data(
+                            args["window"].as_str().unwrap_or("main"),
+                            args["surfaceId"].as_str().unwrap(),
+                            args["request"].clone(),
+                        ))
+                    };
+                    let mut out = io::stdout().lock();
+                    let reply = match result {
+                        Ok(value) => json!({"id":request["id"],"value":value}),
+                        Err(error) => json!({"id":request["id"],"error":error}),
+                    };
+                    writeln!(out, "{reply}").unwrap();
+                    out.flush().unwrap();
+                    continue;
+                }
+                let token = args["surfaceId"].as_str().unwrap().to_string();
+                let send_token = token.clone();
+                let sink: sodeck::streams::Sink = std::sync::Arc::new(move |frame| {
+                    let mut out = io::stdout().lock();
+                    serde_json::to_writer(
+                        &mut out,
+                        &json!({"event":"data","surface":send_token,"frame":frame}),
+                    )
+                    .map_err(|e| e.to_string())?;
+                    writeln!(out)
+                        .and_then(|_| out.flush())
+                        .map_err(|e| e.to_string())
+                });
+                tauri::async_runtime::block_on(core.terminal_data(
+                    args["window"].as_str().unwrap_or("main"),
+                    &token,
+                    serde_json::from_value(args["request"].clone()).unwrap(),
+                    Some(sink),
+                ))
+                .map(|_| Value::Null)
+            }
             "update_status" => Ok(json!(core.update_views())),
             "set_theme" => core
                 .set_theme(args["theme"].as_str().unwrap())

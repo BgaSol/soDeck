@@ -38,7 +38,8 @@ flate2 = "=1.1.10"
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
 russh = { version = "=0.65.1", default-features = false, features = ["ring", "rsa"] }
-tokio = { version = "=1.54.1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time"] }
+russh-sftp = "=3.0.1"
+tokio = { version = "=1.54.1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "fs"] }
 tokio-util = { version = "=0.7.20", features = ["rt"] }
 
 [target.'cfg(unix)'.dependencies]

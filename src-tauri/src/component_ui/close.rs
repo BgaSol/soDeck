@@ -110,7 +110,15 @@ impl AppCore {
         let result = (|| {
             if decision == "save" {
                 for v in &views {
-                    let reply = self.ui_plugin_call(v, "ui.save", Value::Null)?;
+                    let mut reply = self.ui_plugin_call(v, "ui.save", Value::Null)?;
+                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(125);
+                    while reply["metadata"]["busy"] == true {
+                        if std::time::Instant::now() >= deadline {
+                            return Err("保存仍在进行，关闭已取消；请检查任务结果".into());
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                        reply = self.ui_plugin_call(v, "ui.beforeClose", Value::Null)?;
+                    }
                     self.component_ui
                         .lock()
                         .unwrap()
@@ -129,6 +137,8 @@ impl AppCore {
                         Some(json!({"viewId":v.id,"pluginId":v.plugin_id,"error":e})),
                     );
                 }
+                self.terminals.cancel(|owner| owner.view == v.id);
+                self.files.cancel(|owner| owner.view == v.id);
             }
             let mut ui = self.component_ui.lock().unwrap();
             let editors: HashSet<_> = ui

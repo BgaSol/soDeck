@@ -2,7 +2,7 @@
 mod admission;
 pub mod desktop;
 mod host_keys;
-mod io;
+pub(crate) mod io;
 mod route;
 mod socks5;
 mod ssh;
@@ -355,6 +355,19 @@ impl Drop for Connections {
 }
 
 impl AppCore {
+    pub(crate) fn connection_session(
+        &self,
+        context: &Context,
+    ) -> Result<Arc<route::Session>, String> {
+        let entries = self.connections.entries.lock().unwrap();
+        self.workspaces.lock().unwrap().validate_context(context)?;
+        entries
+            .get(&context.server_id)
+            .filter(|a| a.view().context.as_ref() == Some(context))
+            .and_then(|a| a.session.lock().unwrap().clone())
+            .filter(|s| !s.is_closed())
+            .ok_or("服务器连接已断开".into())
+    }
     #[cfg(feature = "test-fixtures")]
     pub async fn connection_probe(
         &self,
@@ -460,6 +473,8 @@ impl AppCore {
             session: Mutex::new(None),
         });
         entries.insert(server.into(), a.clone());
+        self.network_metrics
+            .register_transport(server, a.counters.clone());
         drop(entries);
         drop(servers);
         let view = a.view();

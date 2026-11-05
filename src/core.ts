@@ -24,6 +24,7 @@ export interface Plugin {
   updateError: string | null;
 }
 export interface Snapshot {
+  network?: NetworkSnapshot;
   connectedServers: number;
   connectingServers: number;
   version: string;
@@ -40,6 +41,8 @@ export interface Snapshot {
   storageErrors: string[];
   restartRequired: boolean;
 }
+export interface NetworkTotal { serverId: string; name?: string; pluginId?: string; sent: string; received: string; sentPerSecond: number; receivedPerSecond: number; quality: string }
+export interface NetworkSnapshot { servers: NetworkTotal[]; plugins: NetworkTotal[]; note: string }
 export interface Update {
   id: string;
   phase: string;
@@ -79,6 +82,7 @@ export interface Filter {
   until?: number;
 }
 export const core = {
+  network: () => invoke<NetworkSnapshot>("network_snapshot"),
   close: () => invoke<void>("close_app"),
   snapshot: () => invoke<Snapshot>("snapshot"),
   add: (directory: string) => invoke<string>("add_plugin", { directory }),

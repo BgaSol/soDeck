@@ -17,6 +17,18 @@ const plugin = pluginArg === -1 ? "hello" : process.argv[pluginArg + 1];
 if (!/^[a-z][a-z0-9-]*$/.test(plugin ?? "")) throw new Error("Invalid plugin directory name");
 const pluginRoot = `plugins/${plugin}`;
 const metadata = JSON.parse(fs.readFileSync(`${pluginRoot}/release.json`, "utf8"));
+if (fs.existsSync(`${pluginRoot}/package.json`)) {
+  // Explicit UI build, isolated from the core and other plugins; no arbitrary release hooks.
+  let npmCli=process.env.npm_execpath;
+  if(process.platform==='win32'&&!npmCli){
+    const location=spawnSync('where.exe',['npm.cmd'],{encoding:'utf8',windowsHide:true});
+    if(location.status!==0)throw new Error('Node.js/npm is required to build this plugin UI');
+    npmCli=path.join(path.dirname(location.stdout.trim().split(/\r?\n/)[0]),'node_modules/npm/bin/npm-cli.js');
+  }
+  const npm=(args)=>npmCli?run(process.execPath,[npmCli,...args],{cwd:pluginRoot}):run('npm',args,{cwd:pluginRoot});
+  npm(["ci", "--ignore-scripts"]);
+  npm(["run", "build"]);
+}
 const targetArg = process.argv.indexOf("--target");
 const target =
   targetArg === -1

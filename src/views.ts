@@ -30,7 +30,12 @@ export function status(s: Snapshot) {
     <div class="metrics"><div><strong>${s.plugins.filter((p) => p.status === "running").length}</strong><span>运行插件</span></div><div><strong>${s.plugins.filter((p) => ["starting", "stopping"].includes(p.status)).length}</strong><span>正在处理</span></div><div><strong>${failed.length}</strong><span>异常插件</span></div></div>
     <dl>${pair("远程会话", `${s.connectedServers ?? 0} 已连接 · ${s.connectingServers ?? 0} 正在连接`)}${pair("平台", `${s.os} · ${s.arch}`)}${pair("运行时间", `${Math.floor(s.uptimeMs / 3600000)} 小时 ${Math.floor(s.uptimeMs / 60000) % 60} 分钟`)}${pair("启动时间", date(s.startedAt))}${pair("日志与消息", s.storageErrors.length ? "存储异常" : "存储可用")}${pair("数据目录", s.dataDirectory)}</dl>
     ${s.storageErrors.map((error) => `<p class="error-box">${e(error)}</p>`).join("")}${failed.map((p) => `<div class="error-box"><b>${e(p.manifest.name)}</b><p>${e(p.updateError ?? p.error)}</p>${b("locate-plugin", "查看插件", undefined, "text-button", `data-id="${e(p.manifest.id)}"`)}</div>`).join("")}
-    <div class="panel-footer">${b("logs", "查看日志", "log")}${b("copy-status", "复制状态", "copy", "quiet")}</div>`;
+    ${networkStatus(s)}<div class="panel-footer">${b("logs", "查看日志", "log")}${b("copy-status", "复制状态", "copy", "quiet")}</div>`;
+}
+export function byteSize(value: string | number) { const n=Number(value);return n<1024?`${n.toFixed(0)} B`:n<1048576?`${(n/1024).toFixed(1)} KiB`:n<1073741824?`${(n/1048576).toFixed(1)} MiB`:`${(n/1073741824).toFixed(2)} GiB`; }
+function networkStatus(s: Snapshot) {
+  if (!s.network?.servers?.length) return "";
+  return `<section class="network-status"><h3>服务器网络</h3>${s.network.servers.map(t=>`<details data-network-server="${e(t.serverId)}"><summary>${e(t.name||t.serverId)} · ↓ ${byteSize(t.receivedPerSecond)}/s ↑ ${byteSize(t.sentPerSecond)}/s</summary><p>本次运行传输：↓ ${byteSize(t.received)} ↑ ${byteSize(t.sent)}</p>${s.network!.plugins.filter(p=>p.serverId===t.serverId).map(p=>`<div class="pair"><span>${e(s.plugins.find(v=>v.manifest.id===p.pluginId)?.manifest.name||p.pluginId)}</span><span>业务量 ↓ ${byteSize(p.received)} ↑ ${byteSize(p.sent)}<br>↓ ${byteSize(p.receivedPerSecond)}/s ↑ ${byteSize(p.sentPerSecond)}/s</span></div>`).join("")}</details>`).join("")}<p class="hint">${e(s.network.note)}</p></section>`;
 }
 
 export function settings(s: Snapshot, v: ViewState) {

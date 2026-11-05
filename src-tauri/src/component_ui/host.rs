@@ -2,6 +2,53 @@
 use super::*;
 
 impl AppCore {
+    pub(crate) fn ui_ready_surface(&self, view: &str) -> Option<(String, String)> {
+        self.component_ui
+            .lock()
+            .unwrap()
+            .surfaces
+            .iter()
+            .find(|(_, s)| s.view == view && s.ready)
+            .map(|(token, s)| (s.window.clone(), token.clone()))
+    }
+    pub(crate) fn ui_data_surface_ids(&self) -> HashSet<String> {
+        self.component_ui
+            .lock()
+            .unwrap()
+            .surfaces
+            .keys()
+            .cloned()
+            .collect()
+    }
+    pub(crate) fn ui_data_view(&self, window: &str, token: &str) -> Result<View, String> {
+        let ui = self.component_ui.lock().unwrap();
+        let s = ui
+            .surfaces
+            .get(token)
+            .filter(|s| s.window == window)
+            .ok_or("界面挂载已失效")?;
+        Ok(ui.view(&s.view)?.clone())
+    }
+    pub(crate) fn ui_data_writable(&self, window: &str, token: &str) -> Result<View, String> {
+        let view = {
+            let ui = self.component_ui.lock().unwrap();
+            let s = ui
+                .surfaces
+                .get(token)
+                .filter(|s| s.window == window && s.ready)
+                .ok_or("界面尚未就绪或挂载已失效")?;
+            let v = ui.view(&s.view)?;
+            if ui.frozen(&v.context.workspace_id) {
+                return Err("工作区正在确认关闭".into());
+            }
+            v.clone()
+        };
+        self.workspaces
+            .lock()
+            .unwrap()
+            .validate_owned(window, &view.context)?;
+        Ok(view)
+    }
     pub fn ui_process_update(
         &self,
         plugin: &str,

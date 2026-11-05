@@ -13,6 +13,20 @@ pub(crate) struct Session {
     cancel: CancellationToken,
 }
 impl Session {
+    pub(crate) fn cancellation(&self) -> CancellationToken {
+        self.cancel.clone()
+    }
+    pub(crate) async fn open_channel(&self) -> Result<russh::Channel<russh::client::Msg>, String> {
+        if self.is_closed() {
+            return Err("服务器连接已断开".into());
+        }
+        self.chain
+            .last()
+            .ok_or("SSH 会话不存在")?
+            .channel_open_session()
+            .await
+            .map_err(|e| e.to_string())
+    }
     pub fn is_closed(&self) -> bool {
         self.cancel.is_cancelled() || self.chain.iter().any(|s| s.is_closed())
     }
