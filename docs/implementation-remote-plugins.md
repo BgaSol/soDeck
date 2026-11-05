@@ -66,3 +66,11 @@ GitHub 原生验收已全部通过：
 文件冲突或断线后可从编辑器“导出草稿”写入本地文件，不依赖当前远程会话。GitHub 原生 macOS 回归发现取消与 socket 错误在同次轮询就绪时可能误报失败；等待器现保留取消结果，并增加确定性回归。
 
 下载取消回归先接收实际远端数据再取消，确认本地原件和草稿保留、临时文件清理，并在同一视图立即重新下载。它复现了缓存已关闭 SFTP 会话的问题；失败/取消现丢弃该会话，重试重新打开。另覆盖 1 MiB 精确读取、超限读取、16 KiB 数据块限制、分块 staging 超限保留原缓冲，以及实际编辑器的“保存并关闭”。
+
+## 正式发行
+
+2026-11-05 按用户要求打标签并正式发布：核心 [v0.6.0](https://github.com/BgaSol/soDeck/releases/tag/v0.6.0) 标为 Latest，终端 [0.1.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.1.0) 和文件 [0.1.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.1.0) 独立发行、均不占用 Latest。三个标签指向 175dc91。
+
+标签构建 [核心 41999927841](https://github.com/BgaSol/soDeck/actions/runs/41999927841)、[终端 41999928144](https://github.com/BgaSol/soDeck/actions/runs/41999928144)、[文件 41999927130](https://github.com/BgaSol/soDeck/actions/runs/41999927130) 全部通过五个原生目标。核心 16 个附件包含五目标签名及更新清单；两插件各 6 个附件包含五目标归档及更新清单。正式发布前逐项核验目标、版本、来源 URL、核心签名文件和插件归档 SHA-256；发布后匿名验证 Latest=v0.6.0 和三个公开清单。记录在 artifacts/release-v0.6.0/。
+
+从旧版本先升级核心，再到设置下载终端/文件，重启生效；核心安装包不包含业务插件。中文输入法、复杂全屏终端及真实设备的升级体验仍按上文列出的范围人工验证，不将公开下载可用等同于这些人工验收完成。
