@@ -1,6 +1,6 @@
 # SoDeck
 
-面向运维人员的远程服务器工作台。v0.8.0 增加两级 Tab 的快捷新建入口，简化工作台底栏，并补齐连接凭据重试与成功后保存。发行范围与验证进度见 [v0.8.0](docs/releases/v0.8.0.md)，已发布版本从 [Latest](https://github.com/BgaSol/soDeck/releases/latest) 下载或从应用内升级。核心与业务插件独立分发，核心包不包含业务插件。
+面向运维人员的远程服务器工作台。v0.8.1 增加两级 Tab 的快捷新建入口，简化工作台底栏，并补齐连接凭据重试与成功后保存。发行范围与验证进度见 [v0.8.1](docs/releases/v0.8.1.md)，已发布版本从 [Latest](https://github.com/BgaSol/soDeck/releases/latest) 下载或从应用内升级。核心与业务插件独立分发，核心包不包含业务插件。
 
 外置插件声明侧栏、中央页面及编辑弹窗，核心统一管理两侧入口、混合 Tab、布局偏好、关闭确认和跨窗重挂载。`plugins/terminal` 提供真实多 Tab 终端；`plugins/files` 提供目录、1 MiB 内 UTF-8 文件编辑、保存冲突检查和单文件下载；`plugins/network-proxy` 提供按服务器管理的 TCP 转发与 SOCKS5 代理，复用现有混合跳板，域名由最终远端解析。核心包不包含这些插件。
 
