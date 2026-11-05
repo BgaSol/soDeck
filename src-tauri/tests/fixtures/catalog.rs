@@ -8,7 +8,39 @@ fn main() {
         let request: Value = serde_json::from_str(&line.unwrap()).unwrap();
         let args = &request["args"];
         let result = match request["command"].as_str().unwrap() {
+            "connection" => {
+                let c = &args["command"];
+                let window = args["window"].as_str().unwrap_or("main");
+                let result = match c["op"].as_str().unwrap() {
+                    "snapshot" => Ok(()),
+                    "start" => core
+                        .start_connection(window, c["serverId"].as_str().unwrap())
+                        .map(|_| ()),
+                    "cancel" => core.cancel_connection(window, c["attemptId"].as_str().unwrap()),
+                    "answer" => core.answer_connection(
+                        window,
+                        c["attemptId"].as_str().unwrap(),
+                        c["questionId"].as_str().unwrap(),
+                        serde_json::from_value(c["answer"].clone()).unwrap(),
+                    ),
+                    "disconnect" => core.disconnect_connection(
+                        window,
+                        &serde_json::from_value(c["context"].clone()).unwrap(),
+                    ),
+                    _ => Err("未知测试连接操作".into()),
+                };
+                result.map(|_| json!(core.connection_views()))
+            }
             "server_catalog" => Ok(core.server_catalog()),
+            "component_ui" => sodeck::component_ui::dispatch(
+                &core,
+                args["window"].as_str().unwrap(),
+                args["operation"].as_str().unwrap(),
+                args["args"].clone(),
+            ),
+            "fixture_load_plugin" => core
+                .load(std::path::Path::new(args["directory"].as_str().unwrap()))
+                .map(|p| json!(p)),
             "change_catalog" => core.change_catalog(
                 args["revision"].as_u64().unwrap(),
                 serde_json::from_value(args["change"].clone()).unwrap(),
@@ -83,4 +115,18 @@ fn main() {
         println!("{response}");
         io::stdout().flush().unwrap();
     }
+    // UI integration tests may stop early; explicitly release process groups.
+    let ids = core
+        .component_ui
+        .lock()
+        .unwrap()
+        .workspaces
+        .keys()
+        .cloned()
+        .collect();
+    if let Ok(plan) = core.ui_close_prepare("main", ids, None) {
+        let views = serde_json::from_value(plan["views"].clone()).unwrap();
+        let _ = core.ui_close_finish(plan["token"].as_str().unwrap(), views, "discard");
+    }
+    let _ = core.shutdown();
 }

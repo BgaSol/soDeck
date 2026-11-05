@@ -2,6 +2,33 @@
 
 插件是独立原生程序，核心不需要识别具体插件 ID。插件按可信扩展使用，没有权限清单、授权或签名流程。
 
+当前源码为 API v1 增加可选 UI v1，旧无 UI 插件无需修改；已发行 v0.4.0 不支持该扩展。界面方案与验收见 [组件 UI 设计](plan-component-ui.md)，实际协议如下。
+
+后续终端/文件能力的调用关系、流式数据桥、异步保存/长任务和带宽归属设计见 [远程工作台提案](plan-remote-workbench.md)。其中方法名为提案，不是当前可调用的 RPC；实现时以保持旧插件兼容的扩展同步本协议。
+
+## 可选 UI v1（当前源码）
+
+清单可添加 `ui: { apiVersion: "1", entry: "ui/index.html", views: [...] }`，完整示例见 `plugins/ui-example/release.json`。视图 ID 在插件内稳定，核心用 `pluginId:localId` 标识定义、另分配 viewId 标识实例。每个视图必须声明 `id/title/icon/container/instancePolicy`：
+
+- `container`：`sidebar` 或 `editor`。侧栏第一版只支持 `perWorkspace` 单例；中央还支持 `multiple` 和 `perResource`。资源标识按远程文件系统语义由插件提供，不按本机 Windows 路径转换。
+- `defaultSide`：left/right，默认 left；`defaultPinned`：初始固定入口，默认 false；`openOnWorkspace`：none/reveal/createOne，默认 none；`startupOrder`：初始动作顺序。首次布局采用当前插件推荐值，以后新增插件进更多入口，不覆盖已有偏好。
+- `createAction`：中央“＋”中的创建动作名称；目标就是本视图。`locateEntry: true`：可固定的中央定位入口，优先定位最近使用的实例，没有时创建一个。文件编辑器需要 resourceKey，不声明空页面创建动作。
+
+插件包附带已构建的 HTML/JS/CSS，核心通过本地 `sodeck-plugin` 协议加载，不依赖开发服务器或用户 Node 环境。打包脚本自动复制插件的 `ui/`，核心安装包不包含它们。
+
+核心 → 插件进程的 JSON-RPC 方法：`ui.mount`、`ui.event`、`ui.beforeClose`、`ui.save`、`ui.disposeView`。共同参数为 `{viewId, viewType, context, resourceKey, params, data}`，其中 Context 由核心固定绑定。`ui.mount` 首次创建逻辑状态，之后同 viewId 重挂载读取原状态，必须幂等；返回 `{ data, metadata: { title?, dirty?, busy? } }`。`ui.event` 的 data 是 UI 事件；beforeClose 同步报告最终状态；save 保存或返回错误；disposeView 在完成关闭决定后释放实例，必须幂等。该最小协议没有额外的 ui.createView 或运行时注册系统。
+
+插件进程可主动调用 `ui.updateView`，参数 `{viewId, metadata:{title?,dirty?,busy?}}`，供后台任务报告状态。核心附加调用插件和本次进程身份，只接受其自有视图；汇总关闭期间冻结更新。
+
+页面与宿主使用 `postMessage`，信封固定 `channel: "sodeck-ui-v1"`。页面先发 `{type:"ready"}`，宿主回 `mount`（含 viewId、viewType、surfaceId、context、data、tokens、visible），页面初始化后发 `{type:"mounted",surfaceId}`。`request` 带 surfaceId、id、method、params；宿主以同 id 的 `response` 返回 data 或 error。支持：
+
+- `event`：交给所属插件进程的 ui.event，结果更新页面元数据。
+- `openView`：`{viewType,resourceKey?,params?}`，只打开本插件在同一工作区中声明的视图。核心分配动作 requestId，IPC 重试复用，真实多次新建允许多个实例。
+
+宿主还通知 `visibilityChanged/themeChanged/focus/unmount`。核心校验真实页面 sender、挂载 token、插件进程实例与工作区 Context。移窗时先等目标页面 mounted，再提交窗口归属；旧表面事件因此失效。同窗切换只隐藏已挂载页面，不能重写其 DOM。示例 bridge 位于 `plugins/ui-example/ui/bridge.js`。
+
+UI 事件最多 24 KiB，是控制交互接口，不能用来传终端输出或文件内容流。RPC 原有 64 KiB 帧上限仍在，超时 5 秒；真实业务的数据通道、背压和恢复策略后续单独实现。可信插件不增加权限表或授权流程。
+
 ## 目录与清单
 
 解压后选择含 `plugin.json` 的目录：
@@ -23,16 +50,20 @@
 
 ## 通信
 
-stdin/stdout 每行一个 UTF-8 JSON-RPC 2.0 对象，以 LF 结尾，最大 64 KiB。stdout 只输出协议，stderr 作为诊断日志。请求必须带 ID，响应使用相同 ID；通知省略 ID。参数错误返回 `-32602`，未知方法返回 `-32601`；持久化等执行失败也返回 error，调用方应检查响应，不根据日志推测调用成功。
+stdin/stdout 每行一个 UTF-8 JSON-RPC 2.0 对象，以 LF 结尾，最大 64 KiB（含 JSON 转义和末尾 LF，双向均检查）。stdout 只输出协议，stderr 作为诊断日志。请求带字符串或数字 ID，响应使用相同 ID；通知省略 ID。参数错误返回 `-32602`，未知方法返回 `-32601`，持久化等执行失败返回 `-32000`，核心请求队列已满返回 `-32001`，核心处理超时返回 `-32003`。调用方应检查响应，不根据日志推测调用成功。
+
+当前源码的控制通信已改为有界双向分派：每插件最多 4 个处理线程、32 个未完成的插件 → 核心调用；核心 → 插件调用队列及在途表各最多 64 项。接收循环不等待业务处理，响应按请求 ID 匹配，完成顺序可以不同。停止请求有独立队列，写入端优先发送响应、初始化与 shutdown，输出或请求压力不会无限堆积。队列或写入通路持续不可用时明确失败，不静默丢成功响应。
+
+停止插件时取消等待中的核心 → 插件请求；通信结束后旧实例的排队工作失效、迟到结果不再回写。5 秒超时是等待期限，不承诺撤销已经开始的持久化副作用；长远端操作将使用单独任务/取消机制，不能通过延长全局超时实现。插件自身也必须持续读取控制帧，不能同步等待核心响应时停止读取核心发来的请求。正文数据通道尚未实现。
 
 核心发起：
 
 ```json
-{"jsonrpc":"2.0","id":"initialize","method":"initialize","params":{"coreApiVersion":"1","dataDirectory":"<系统应用数据目录>/plugin-data/sodeck.hello"}}
+{"jsonrpc":"2.0","id":"initialize","method":"initialize","params":{"coreApiVersion":"1","coreVersion":"0.4.0","capabilities":["logging.write","messages.publish","ui.v1","rpc.concurrent"],"dataDirectory":"<系统应用数据目录>/plugin-data/sodeck.hello"}}
 {"jsonrpc":"2.0","id":"initialize","result":{"apiVersion":"1"}}
 ```
 
-核心等待初始化 5 秒。插件收到初始化响应后可调用以下方法。插件不能自行声称来源，核心附加 pluginId、instanceId、receivedAt。
+核心等待初始化 5 秒。插件回应 initialize 后可调用以下方法。新增 coreVersion/capabilities 是可选协议信息，旧插件忽略即可；能力表示当前核心实际实现，不是授权清单。核心现在可以建立 SSH 会话，但尚未向插件开放会话、PTY 或 SFTP RPC，所以此处不声明这些能力。插件不能自行声称来源，核心附加 pluginId、instanceId、receivedAt。
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"logging.write","params":{"level":"info","message":"服务已启动","fields":{"port":8080}}}
@@ -54,7 +85,7 @@ stdin/stdout 每行一个 UTF-8 JSON-RPC 2.0 对象，以 LF 结尾，最大 64 
 
 插件应结束任务、发送收尾日志并退出。核心在 3 秒内继续处理收尾 RPC；超时结束进程组/Windows Job 中的进程，并确认主进程结束。停止期间不能创建新业务任务。stdin 关闭时插件也应自行退出。
 
-当前没有插件业务视图、SSH 或代理 API。新增可选参数保持 API v1；不兼容变化增加 API 主版本。
+当前已提供上文 UI v1，尚无真实 SSH、PTY、文件或代理 API。新增可选参数保持 API v1；不兼容变化增加 API 主版本。
 
 ## 本地构建 Hello
 

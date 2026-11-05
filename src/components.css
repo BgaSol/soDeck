@@ -1,0 +1,41 @@
+@layer components {
+  .server-workbench { position: relative; }
+  .server-workbench.left-open { grid-template-columns: 42px var(--effective-left-width,220px) minmax(0,1fr) 42px; }
+  .server-workbench.right-open { grid-template-columns: 42px minmax(0,1fr) var(--effective-right-width,220px) 42px; }
+  .server-workbench.left-open.right-open { grid-template-columns: 42px var(--effective-left-width,220px) minmax(0,1fr) var(--effective-right-width,220px) 42px; }
+  .incoming-component-workspace { position: absolute; inset: 0; visibility: hidden; pointer-events: none; }
+  .workbench-panel { flex-direction: column; min-height: 0; }
+  .left-open .left-panel, .right-open .right-panel { display: flex; }
+  .workbench-panel header { flex-shrink: 0; padding: 0 8px; }
+  .workbench-panel header > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .workbench-panel header > div { display: flex; flex-shrink: 0; }
+  .workbench-panel header button { padding: 3px; min-height: 26px; background: transparent; border: 0; }
+  .component-slot { flex: 1; min-height: 0; min-width: 0; }
+  .component-tabs { padding: 0 3px; gap: 3px; }
+  .component-tabs > button { padding: 4px; min-height: 26px; border: 0; flex-shrink: 0; background: transparent; }
+  .component-tab-list { display: flex; overflow-x: auto; scrollbar-width: thin; flex: 1; min-width: 0; height: 100%; }
+  .component-tab { display: flex; align-items: center; max-width: 210px; flex-shrink: 0; border-right: 1px solid var(--border); }
+  .component-tab.selected { background: var(--accent-bg); color: var(--text); box-shadow: inset 0 -2px var(--accent); }
+  .component-tab button { background: transparent; border: 0; padding: 4px 5px; min-height: 29px; min-width: 0; }
+  .component-tab [role="tab"] { justify-content: start; font-size: 12px; }
+  .component-tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .component-tab svg { width: 14px; height: 14px; flex-shrink: 0; }
+  .component-surfaces { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .component-surface { position: absolute; pointer-events: auto; overflow: hidden; }
+  .component-surface iframe { border: 0; width: 100%; height: 100%; display: block; background: var(--canvas); }
+  .component-error { position: absolute; inset: 0; padding: 24px; color: var(--text); background: var(--panel); overflow: auto; }
+  .workbench-rail { min-height: 0; overflow-y: auto; scrollbar-width: none; gap: 4px; }
+  .workbench-rail .component-more { margin-top: auto; flex-shrink: 0; }
+  .workbench-rail > button { flex-shrink: 0; }
+  .component-menu { width: 272px; max-height: min(420px, 70vh); overflow: auto; }
+  .component-menu input { width: 100%; margin-bottom: 5px; }
+  .component-menu-row { display: flex; min-width: 0; }
+  .component-menu-row > button:first-child { flex: 1; overflow: hidden; }
+  .component-menu-row > button + button { width: auto; flex-shrink: 0; color: var(--muted); }
+  .component-close-dialog { width: min(440px, calc(100% - 32px)); padding: 24px; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
+  .component-close-dialog::backdrop { background: #0006; }
+  .component-close-dialog h2 { font-size: 18px; margin: 0 0 14px; }
+  .component-close-dialog p, .component-close-dialog li { font-size: 13px; overflow-wrap: anywhere; }
+  .component-close-dialog ul { max-height: 220px; overflow: auto; padding-left: 18px; }
+  .component-close-dialog footer { display: flex; justify-content: end; gap: 8px; flex-wrap: wrap; margin-top: 24px; }
+}

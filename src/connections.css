@@ -1,0 +1,11 @@
+.connection-card { padding: 16px; margin: 16px 0; border: 1px solid var(--border); border-radius: 12px; background: var(--subtle); }
+.connection-card p { color: var(--muted); margin: 8px 0 12px; line-height: 1.5; }
+.connection-dialog { width: min(560px, calc(100vw - 40px)); }
+.connection-prompt-body { padding: 20px 24px; max-height: 65vh; overflow: auto; }
+.connection-prompt-body p { line-height: 1.6; }
+.connection-prompt-body label { display: grid; gap: 8px; margin: 16px 0; }
+.connection-prompt-body code, .connection-prompt-body dd { overflow-wrap: anywhere; }
+.connection-prompt-body code { padding: 12px; background: var(--subtle); border: 1px solid var(--border); border-radius: 8px; user-select: text; }
+.connection-key-path { display: flex; gap: 8px; }
+.connection-key-path input { min-width: 0; flex: 1; }
+.workspace-status button { font-size: 11px; padding: 2px 8px; }

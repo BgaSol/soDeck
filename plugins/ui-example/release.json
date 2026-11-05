@@ -1,0 +1,17 @@
+{
+  "id": "sodeck.ui-example",
+  "name": "组件交互示例",
+  "apiVersion": "1",
+  "binary": "sodeck-ui-example",
+  "tagPrefix": "plugin-ui-example-v",
+  "ui": {
+    "apiVersion": "1",
+    "entry": "ui/index.html",
+    "views": [
+      { "id": "files", "title": "文件", "icon": "folder", "container": "sidebar", "instancePolicy": "perWorkspace", "defaultSide": "left", "defaultPinned": true, "openOnWorkspace": "reveal", "startupOrder": 10 },
+      { "id": "editor", "title": "文件编辑器", "icon": "log", "container": "editor", "instancePolicy": "perResource" },
+      { "id": "terminal", "title": "终端", "icon": "terminal", "container": "editor", "instancePolicy": "multiple", "defaultSide": "left", "defaultPinned": true, "locateEntry": true, "createAction": "新建终端", "openOnWorkspace": "createOne", "startupOrder": 20 },
+      { "id": "forwarding", "title": "网络转发", "icon": "network", "container": "sidebar", "instancePolicy": "perWorkspace", "defaultSide": "right", "defaultPinned": true, "openOnWorkspace": "none", "startupOrder": 30 }
+    ]
+  }
+}

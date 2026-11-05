@@ -218,6 +218,10 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
     let core = app.core.clone();
     let plugin = app.plugin_test.clone();
     let update_bundle = argument("--update-bundle-test");
+    let ui_plugin = argument("--ui-plugin-test");
+    let ui_test_requested = ui_plugin.is_some();
+    let ssh_config = argument("--ssh-test-config");
+    let ssh_test_requested = ssh_config.is_some();
     let persisted = app.verify_persisted;
     std::thread::spawn(move || {
         let validation = (|| {
@@ -229,13 +233,21 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
             if let Some(directory) = plugin {
                 sodeck::validation::plugin_roundtrip(&core, &directory, persisted)?;
             }
+            if let Some(directory) = ui_plugin {
+                sodeck::validation::component_ui_roundtrip(&handle, &core, &directory)?;
+            }
+            if let Some(config) = ssh_config {
+                tauri::async_runtime::block_on(sodeck::validation::ssh_roundtrip(
+                    &handle, &core, &config,
+                ))?;
+            }
             Ok::<(), String>(())
         })();
         let stopped = core.shutdown();
         let result = validation.and(stopped);
         if result.is_ok() {
             let status = core.snapshot();
-            let report = serde_json::json!({"completed":true,"workspaceNative":true,"version":status.version,"target":status.target});
+            let report = serde_json::json!({"completed":true,"workspaceNative":true,"componentUiNative":ui_test_requested,"sshNative":ssh_test_requested,"version":status.version,"target":status.target});
             let _ = std::fs::write(
                 status.data_directory.join("smoke-result.json"),
                 report.to_string(),
@@ -307,6 +319,21 @@ fn begin_exit(handle: &tauri::AppHandle) {
 fn main() {
     let smoke = std::env::args().any(|arg| arg == "--smoke-test");
     let app = tauri::Builder::default()
+        .register_uri_scheme_protocol("sodeck-plugin", |context, request| {
+            let path = request.uri().path().trim_start_matches('/');
+            let result = path.split_once('/').ok_or("缺少插件资源路径".to_string()).and_then(|(plugin, relative)| {
+                context.app_handle().state::<Application>().core.ui_resource(plugin, relative)
+            });
+            let (status, bytes, mime) = match result {
+                Ok((bytes, mime)) => (200, bytes, mime),
+                Err(e) => (404, e.into_bytes(), "text/plain; charset=utf-8"),
+            };
+            tauri::http::Response::builder().status(status)
+                .header("Content-Type", mime)
+                .header("Access-Control-Allow-Origin", "*")
+                .header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'self' http://tauri.localhost tauri: http://localhost:1420")
+                .body(bytes).unwrap()
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
@@ -355,19 +382,14 @@ fn main() {
                     if window.label() == "main" {
                         request_exit(window.app_handle());
                     } else {
-                        let handle = window.app_handle().clone();
-                        let label = window.label().to_owned();
-                        // Destroy from the event loop after the close event has returned.
-                        tauri::async_runtime::spawn_blocking(move || {
-                            if let Err(error) = handle
-                                .state::<DesktopWindows>()
-                                .close_secondary(&handle, &label)
-                            {
-                                if let Some(w) = handle.get_webview_window(&label) {
-                                    let _ = w.emit("core-exit-error", error);
-                                }
-                            }
-                        });
+                        let desktop = window.state::<DesktopWindows>();
+                        let empty = desktop.core.workspace_projection(window.label()).is_ok_and(|p| desktop.core.component_ui.lock().unwrap().require_closed(&p.window.workspace_ids).is_ok());
+                        if empty {
+                            let handle = window.app_handle().clone(); let label = window.label().to_owned();
+                            tauri::async_runtime::spawn_blocking(move || {
+                                if let Err(error) = handle.state::<DesktopWindows>().close_secondary(&handle, &label) { let _ = handle.emit("core-exit-error", error); }
+                            });
+                        } else { let _ = window.emit("workspace-request-close", ()); }
                     }
                 }
             }
@@ -376,6 +398,10 @@ fn main() {
             }
             if let tauri::WindowEvent::Destroyed = event {
                 let desktop = window.state::<DesktopWindows>();
+                if let Ok(p) = desktop.core.workspace_projection(window.label()) {
+                    for id in p.window.workspace_ids { desktop.core.cancel_workspace_connection(&id); }
+                }
+                desktop.core.cancel_window_connections(window.label());
                 desktop
                     .core
                     .workspaces
@@ -387,6 +413,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            sodeck::connections::desktop::connection,
             server_catalog,
             change_catalog,
             recover_catalog,
@@ -414,9 +441,11 @@ fn main() {
             windows::workspace_move,
             windows::workspace_cancel_move,
             windows::workspace_close,
+            windows::workspace_close_window,
             windows::workspace_drag_start,
             windows::workspace_drag_sample,
             windows::workspace_drag_finish
+            ,sodeck::component_ui::component_ui
         ])
         .build(tauri::generate_context!())
         .expect("failed to start SoDeck");

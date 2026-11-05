@@ -1,0 +1,11 @@
+[package]
+name = "sodeck-ui-example"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+serde_json = "=1.0.154"
+
+[profile.release]
+strip = true

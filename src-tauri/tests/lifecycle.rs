@@ -89,6 +89,15 @@ fn load_stop_reload_and_persist() {
     let f = Fixture::new("");
     let core = f.open();
     let first = core.load(&f.plugin).unwrap();
+    let initialization: serde_json::Value = serde_json::from_slice(
+        &fs::read(f.root.join("data/plugin-data/test.fixture/initialize.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(initialization["coreVersion"], "test");
+    assert!(initialization["capabilities"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("rpc.concurrent")));
     wait_for(|| !core.messages().is_empty());
     assert_eq!(
         core.messages().len(),

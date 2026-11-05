@@ -40,6 +40,11 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version-file: .node-version
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.1
+      - name: Build external component UI example
+        run: node scripts/package-plugin.mjs --plugin ui-example --out-dir artifacts/ui-example
       - uses: actions/download-artifact@v5
         with:
           name: SoDeck-${{ matrix.name }}
@@ -68,6 +73,7 @@ jobs:
           $archive = Get-ChildItem packages/plugin/*.zip | Select-Object -First 1
           tar -xf $archive.FullName -C packages/plugin
           $env:SODECK_TEST_PLUGIN = (Get-ChildItem packages/plugin -Directory | Select-Object -First 1).FullName
+          $env:SODECK_TEST_UI_PLUGIN = (Get-ChildItem artifacts/ui-example -Directory | Select-Object -First 1).FullName
           $env:SODECK_TEST_DATA_DIR = Join-Path $env:RUNNER_TEMP 'sodeck-data'
           node scripts/smoke.mjs "$installDir/sodeck.exe"
           $install = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDir" -WindowStyle Hidden -PassThru -Wait
@@ -82,6 +88,7 @@ jobs:
           dpkg-deb -x $(find packages/core -name '*.deb' | head -1) "$RUNNER_TEMP/SoDeck"
           tar -xzf packages/plugin/*.tar.gz -C packages/plugin
           export SODECK_TEST_PLUGIN="$(find "$PWD/packages/plugin" -mindepth 1 -maxdepth 1 -type d | head -1)"
+          export SODECK_TEST_UI_PLUGIN="$(find "$PWD/artifacts/ui-example" -mindepth 1 -maxdepth 1 -type d | head -1)"
           node scripts/smoke.mjs dbus-run-session -- xvfb-run -a "$RUNNER_TEMP/SoDeck/usr/bin/sodeck"
       - name: macOS packaged integration
         if: runner.os == 'macOS'
@@ -90,4 +97,5 @@ jobs:
           trap 'hdiutil detach "$RUNNER_TEMP/SoDeck"' EXIT
           tar -xzf packages/plugin/*.tar.gz -C packages/plugin
           export SODECK_TEST_PLUGIN="$(find "$PWD/packages/plugin" -mindepth 1 -maxdepth 1 -type d | head -1)"
+          export SODECK_TEST_UI_PLUGIN="$(find "$PWD/artifacts/ui-example" -mindepth 1 -maxdepth 1 -type d | head -1)"
           node scripts/smoke.mjs "$RUNNER_TEMP/SoDeck/SoDeck.app/Contents/MacOS/sodeck"

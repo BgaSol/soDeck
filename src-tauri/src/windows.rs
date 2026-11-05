@@ -90,7 +90,17 @@ impl DesktopWindows {
         }
     }
     pub fn close_secondary(&self, handle: &tauri::AppHandle, window: &str) -> Result<(), String> {
+        let ids = self.core.workspace_projection(window)?.window.workspace_ids;
+        self.core
+            .component_ui
+            .lock()
+            .unwrap()
+            .require_closed(&ids)?;
         self.core.workspaces.lock().unwrap().close_window(window)?;
+        for id in &ids {
+            self.core.connections.cancel_workspace(id);
+        }
+        self.core.connections.cancel_window(window);
         self.remove_surface(window);
         let _ = handle.emit("workspace-drop-preview", DropTarget::Invalid);
         if let Some(w) = handle.get_webview_window(window) {
@@ -116,6 +126,9 @@ impl DesktopWindows {
     ) -> Result<(), String> {
         if self.core.is_closing() {
             return Err("应用正在退出".into());
+        }
+        if self.core.component_ui.lock().unwrap().frozen(id) {
+            return Err("工作区正在确认关闭".into());
         }
         let new_window = target.is_none();
         let target = target.unwrap_or_else(|| format!("workspace-{}", self.core.next_id()));
@@ -166,7 +179,14 @@ impl DesktopWindows {
             let started = Instant::now();
             loop {
                 let state = self.core.workspaces.lock().unwrap();
-                if state.is_ready(&target) {
+                if state.is_ready(&target)
+                    && self
+                        .core
+                        .component_ui
+                        .lock()
+                        .unwrap()
+                        .target_ready(id, &target)
+                {
                     break;
                 }
                 if !state.windows.contains_key(&target) || self.core.is_closing() {
@@ -378,6 +398,20 @@ pub fn workspace_layout(
     id: String,
     layout: Layout,
 ) -> Result<(), String> {
+    let projection = desktop.core.workspace_projection(window.label())?;
+    if !projection
+        .workspaces
+        .iter()
+        .any(|w| w.context.workspace_id == id)
+    {
+        return Err("工作区已移动或关闭".into());
+    }
+    desktop
+        .core
+        .component_ui
+        .lock()
+        .unwrap()
+        .save_widths(layout.left_width, layout.right_width)?;
     desktop
         .core
         .workspaces
@@ -430,13 +464,31 @@ pub fn workspace_close(
 ) -> Result<(), String> {
     desktop
         .core
+        .component_ui
+        .lock()
+        .unwrap()
+        .require_closed(std::slice::from_ref(&id))?;
+    desktop
+        .core
         .workspaces
         .lock()
         .unwrap()
         .close(window.label(), &id)?;
+    desktop.core.connections.cancel_workspace(&id);
     desktop.core.workspace_changed();
     desktop.cleanup_empty(&handle, window.label());
     Ok(())
+}
+#[tauri::command]
+pub fn workspace_close_window(
+    handle: tauri::AppHandle,
+    window: WebviewWindow,
+    desktop: State<DesktopWindows>,
+) -> Result<(), String> {
+    if window.label() == "main" {
+        return Err("请通过应用关闭入口退出".into());
+    }
+    desktop.close_secondary(&handle, window.label())
 }
 #[tauri::command]
 pub fn workspace_drag_start(

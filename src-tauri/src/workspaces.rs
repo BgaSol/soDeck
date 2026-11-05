@@ -12,7 +12,7 @@ pub struct Context {
     pub generation: u64,
 }
 
-/// Constructed by the future connection service, never by a frontend command.
+/// Constructed by the connection service, never by a frontend command.
 pub struct ConnectedSession {
     pub server_id: String,
     pub connection_id: String,
@@ -45,6 +45,8 @@ pub struct Workspace {
     pub name: String,
     pub endpoint: String,
     pub connected: bool,
+    #[serde(skip)]
+    pub(crate) target_identity: Option<String>,
     pub window_id: String,
     pub layout: Layout,
     // These are reserved component slots, not running plugins.
@@ -106,6 +108,37 @@ impl Default for Runtime {
 }
 
 impl Runtime {
+    pub fn ids(&self) -> Vec<String> {
+        self.workspaces.keys().cloned().collect()
+    }
+    pub fn names(&self) -> HashMap<String, String> {
+        self.workspaces
+            .iter()
+            .map(|(id, w)| (id.clone(), w.name.clone()))
+            .collect()
+    }
+    pub fn validate_owned(&self, window: &str, context: &Context) -> Result<(), String> {
+        self.validate_identity(context)?;
+        self.movable(window, &context.workspace_id)
+    }
+    pub(crate) fn by_server(&self, server: &str) -> Option<&Workspace> {
+        self.workspaces
+            .values()
+            .find(|w| w.context.server_id == server)
+    }
+    pub(crate) fn set_target_identity(&mut self, id: &str, identity: String) {
+        if let Some(w) = self.workspaces.get_mut(id) {
+            w.target_identity = Some(identity);
+        }
+    }
+    pub(crate) fn adopt(&mut self, workspace: Workspace) {
+        let id = workspace.context.workspace_id.clone();
+        let main = self.windows.get_mut("main").unwrap();
+        main.workspace_ids.push(id.clone());
+        main.active_workspace = Some(id.clone());
+        self.workspaces.insert(id, workspace);
+        self.revision += 1;
+    }
     pub fn projection(&self, window: &str) -> Result<Projection, String> {
         let win = self.windows.get(window).ok_or("窗口已关闭")?.clone();
         Ok(Projection {
@@ -307,11 +340,18 @@ impl Runtime {
         self.revision += 1;
     }
     pub fn validate_context(&self, context: &Context) -> Result<(), String> {
+        self.validate_identity(context)?;
+        if !self.workspaces[&context.workspace_id].connected {
+            return Err("连接已失效，请使用当前会话".into());
+        }
+        Ok(())
+    }
+    pub fn validate_identity(&self, context: &Context) -> Result<(), String> {
         let w = self
             .workspaces
             .get(&context.workspace_id)
             .ok_or("工作区已关闭")?;
-        if &w.context != context || !w.connected {
+        if &w.context != context {
             return Err("连接已失效，请使用当前会话".into());
         }
         Ok(())
@@ -396,6 +436,7 @@ impl AppCore {
             return Ok(w);
         }
         let id = self.next_id();
+        let (left_width, right_width) = self.component_ui.lock().unwrap().widths();
         let workspace = Workspace {
             context: Context {
                 workspace_id: id.clone(),
@@ -406,8 +447,13 @@ impl AppCore {
             name,
             endpoint: session.endpoint,
             connected: true,
+            target_identity: None,
             window_id: "main".into(),
-            layout: Layout::default(),
+            layout: Layout {
+                left_width,
+                right_width,
+                ..Layout::default()
+            },
             view_ids: vec![],
             active_view_id: None,
         };

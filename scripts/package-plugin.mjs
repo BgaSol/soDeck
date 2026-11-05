@@ -46,6 +46,7 @@ const directory = path.resolve(output, stem);
 fs.mkdirSync(path.join(directory, "bin"), { recursive: true });
 const executable = `${metadata.binary}${target.includes("windows") ? ".exe" : ""}`;
 const destination = path.join(directory, "bin", executable);
+if (fs.existsSync(`${pluginRoot}/ui`)) fs.cpSync(`${pluginRoot}/ui`, path.join(directory, "ui"), { recursive: true });
 fs.copyFileSync(
   `${pluginRoot}/target/${target}/release/${executable}`,
   destination,
@@ -65,6 +66,7 @@ fs.writeFileSync(
       target,
       entry: `bin/${executable}`,
       updateSource: { repository: "BgaSol/soDeck", tagPrefix: metadata.tagPrefix },
+      ...(metadata.ui ? { ui: metadata.ui } : {}),
     },
     null,
     2,

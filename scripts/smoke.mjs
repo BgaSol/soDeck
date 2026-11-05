@@ -16,6 +16,8 @@ function launch(persisted = false) {
   fs.rmSync(report, { force: true });
   const extra = ["--smoke-test", "--test-data-dir", directory];
   if (plugin) extra.push("--plugin-test", plugin);
+  if (process.env.SODECK_TEST_UI_PLUGIN) extra.push("--ui-plugin-test", path.resolve(process.env.SODECK_TEST_UI_PLUGIN));
+  if (process.env.SODECK_TEST_SSH_CONFIG) extra.push("--ssh-test-config", path.resolve(process.env.SODECK_TEST_SSH_CONFIG));
   if (persisted) extra.push("--verify-persisted");
   if (process.env.SODECK_TEST_UPDATE_BUNDLE) extra.push("--update-bundle-test", path.resolve(process.env.SODECK_TEST_UPDATE_BUNDLE));
   const result = spawnSync(command, [...args, ...extra], {
@@ -32,6 +34,8 @@ function launch(persisted = false) {
   if (
     !fs.existsSync(report) ||
     !JSON.parse(fs.readFileSync(report, "utf8")).completed || !JSON.parse(fs.readFileSync(report, "utf8")).workspaceNative
+    || (process.env.SODECK_TEST_UI_PLUGIN && !JSON.parse(fs.readFileSync(report, "utf8")).componentUiNative)
+    || (process.env.SODECK_TEST_SSH_CONFIG && !JSON.parse(fs.readFileSync(report, "utf8")).sshNative)
   )
     throw new Error(
       "Packaged application did not complete the current smoke-test protocol",

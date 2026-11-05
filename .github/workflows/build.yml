@@ -61,6 +61,18 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run test
+      - name: Install OpenSSH test server
+        if: matrix.name == 'windows-x86_64'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "$env:WINDIR/System32/OpenSSH/sshd.exe")) {
+            $capability = Get-WindowsCapability -Online -Name 'OpenSSH.Server*' | Select-Object -First 1
+            if (-not $capability) { throw 'OpenSSH Server capability is unavailable' }
+            Add-WindowsCapability -Online -Name $capability.Name
+          }
+      - name: Verify against isolated OpenSSH
+        if: matrix.name == 'windows-x86_64'
+        run: npm run ssh:test
       - run: npm run scripts:test
       - name: Verify server forms with actual core
         if: matrix.name == 'windows-x86_64'
@@ -103,6 +115,7 @@ jobs:
           node scripts/verify-binary.mjs "$installDir/sodeck.exe" '${{ matrix.target }}'
           $env:SODECK_TEST_UPDATE_BUNDLE = $installer.FullName
           node scripts/smoke.mjs "$installDir/sodeck.exe"
+          if ('${{ matrix.name }}' -eq 'windows-x86_64') { node scripts/test-openssh.mjs --packaged "$installDir/sodeck.exe" }
       - name: Extract and launch Linux package
         if: runner.os == 'Linux'
         env:

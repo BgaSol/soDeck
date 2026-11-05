@@ -18,13 +18,15 @@ use std::{
 type Listener = Arc<dyn Fn(&str, Value) + Send + Sync>;
 
 pub struct AppCore {
+    pub(crate) connections: crate::connections::Connections,
+    pub component_ui: Mutex<crate::component_ui::Runtime>,
     pub workspaces: Mutex<crate::workspaces::Runtime>,
     pub(crate) servers: Mutex<crate::servers::ServerStore>,
     pub(crate) store: Mutex<Store>,
     pub(crate) updates: Mutex<crate::updates::UpdateState>,
     pub(crate) mutations: Mutex<()>,
     startup_enabled: HashSet<String>,
-    instances: Mutex<HashMap<String, Arc<Instance>>>,
+    pub(crate) instances: Mutex<HashMap<String, Arc<Instance>>>,
     listener: Mutex<Option<Listener>>,
     version: String,
     started_at: u64,
@@ -43,9 +45,13 @@ pub fn now() -> u64 {
 }
 
 impl AppCore {
+    pub(crate) fn version(&self) -> &str {
+        &self.version
+    }
+
     pub fn open(directory: PathBuf, version: String) -> Result<Arc<Self>, String> {
         let store = Store::open(directory.clone())?;
-        let servers = crate::servers::ServerStore::open(directory);
+        let servers = crate::servers::ServerStore::open(directory.clone());
         let startup_enabled = store
             .plugins
             .iter()
@@ -53,6 +59,8 @@ impl AppCore {
             .map(|p| p.manifest.id.clone())
             .collect();
         let core = Arc::new(Self {
+            connections: crate::connections::Connections::open(&directory),
+            component_ui: Mutex::new(crate::component_ui::Runtime::open(&directory)?),
             workspaces: Mutex::new(crate::workspaces::Runtime::default()),
             servers: Mutex::new(servers),
             store: Mutex::new(store),
@@ -98,9 +106,18 @@ impl AppCore {
     }
 
     pub fn snapshot(&self) -> Snapshot {
+        let connections = self.connection_views();
         let store = self.store.lock().unwrap();
         let records = store.plugins.clone();
         let mut snapshot = Snapshot {
+            connected_servers: connections
+                .iter()
+                .filter(|v| v.state == "connected")
+                .count(),
+            connecting_servers: connections
+                .iter()
+                .filter(|v| v.state == "connecting")
+                .count(),
             version: self.version.clone(),
             target: TARGET.into(),
             os: std::env::consts::OS.into(),
@@ -259,6 +276,15 @@ impl AppCore {
     }
 
     pub fn shutdown(&self) -> Result<(), String> {
+        let ids = self
+            .component_ui
+            .lock()
+            .unwrap()
+            .workspaces
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        self.component_ui.lock().unwrap().require_closed(&ids)?;
         self.closing.store(true, Ordering::Release);
         let instances: Vec<_> = self.instances.lock().unwrap().values().cloned().collect();
         let pending: Vec<_> = instances
@@ -281,6 +307,15 @@ impl AppCore {
             }
         }
         if errors.is_empty() {
+            let connections = self.connections.stop_all();
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while connections.iter().any(|t| !t.is_cancelled()) && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            if connections.iter().any(|t| !t.is_cancelled()) {
+                self.closing.store(false, Ordering::Release);
+                return Err("连接资源仍在收尾，请重试退出".into());
+            }
             self.workspaces.lock().unwrap().clear();
             Ok(())
         } else {

@@ -1,4 +1,5 @@
 //! Local server directory. This module does not open network connections.
+pub(crate) mod connection_profile;
 use crate::{core::now, storage, AppCore};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -647,6 +648,7 @@ impl AppCore {
             }
         }
         store.commit(c, sessions)?;
+        self.connections.cancel_stale(&store);
         self.workspaces
             .lock()
             .unwrap()

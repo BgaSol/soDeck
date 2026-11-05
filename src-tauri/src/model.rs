@@ -20,6 +20,8 @@ pub struct Manifest {
     pub entry: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub update_source: Option<UpdateSource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui: Option<crate::component_ui::Declaration>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -153,6 +155,8 @@ impl Default for Preferences {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
+    pub connected_servers: usize,
+    pub connecting_servers: usize,
     pub version: String,
     pub target: String,
     pub os: String,

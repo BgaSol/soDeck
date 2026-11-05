@@ -1,16 +1,22 @@
 # SoDeck 架构草案
 
-当前实现 Tauri 桌面壳、原生 DOM/TypeScript 前端、外置进程插件、日志、重要消息、主题存储、独立在线更新和本机服务器/代理目录。SSH 传输与网络服务仍未实现，工作区已定义内存会话身份和代次。核心升级复用 Tauri 官方 updater；不引入 React 或数据库。新增依赖用途与替代方案见在线更新实施计划。
+下一轮后端提案见 [远程工作台设计](plan-remote-workbench.md)：核心统一执行 SSH/SOCKS5 混合路径、管理最终会话、PTY/文件原语、流/任务及网络计量；终端与文件业务分别在独立插件中实现。带宽区分最外层连接传输、插件有效载荷和估算分摊；此段为计划，以下记录当前实现。
 
-当前代码职责：`main.rs` 组合窗口、命令桥和有界退出；`core.rs` 持有真实状态；`plugins.rs` 负责清单和逐行 RPC；`platform.rs` 管理 Windows Job/Unix 进程组；`storage.rs` 保存配置、消息和轮转日志。前端 `main.ts` 管理窗口与浮层，`views.ts` 展示核心数据，`core.ts` 统一调用边界。界面不直接启动插件，不另存运行状态。
+具体代码落点、现有模块的保留/拆分、资源与锁边界、异步 RPC 和分批迁移见 [代码整改方案](plan-code-reorganization.md)。第一批插件控制通信与第二批连接服务已进入源码，真实插件业务继续按批实施。
 
-`servers.rs` 已实现服务器与 SOCKS5 代理目录管理，以及两者混合的有序多层路径，暂不建连，见 [服务器管理方案](plan-server-management.md)。用户已明确选择密码与私钥口令直接在本机文件保存、不加密，不接系统凭据库；下一段地址固定由当前中转逐站解析。目录使用单实例锁、修订检查、串行提交和上一份有效备份。磁盘认证与界面投影分开；`server-api.ts`、`server-views.ts`、`servers.ts` 分别维护桌面调用、展示和交互草稿。桌面退出与更新重启先询问未保存表单。
+当前实现 Tauri 桌面壳、原生 DOM/TypeScript 前端、外置进程插件、日志、重要消息、主题存储、独立在线更新和本机服务器/代理目录。当前源码已实现 SSH/SOCKS5 混合连接服务，工作区接纳真实认证会话并保持窗口移动时的连接身份。PTY/SFTP 与插件数据通道仍待实现。核心升级复用 Tauri 官方 updater；不引入 React 或数据库。依赖用途与替代方案分别见在线更新实施计划和连接实施记录。
+
+当前代码职责：`main.rs` 组合窗口、命令桥和有界退出；`core.rs` 持有真实状态；`plugins/manifest.rs` 负责清单，`plugins/process.rs` 监督进程，`plugins/rpc.rs` 处理有界控制帧/读写，`plugins/dispatch.rs` 有界分派插件对核心的调用，`plugins/mod.rs` 保留内部入口；`platform.rs` 管理 Windows Job/Unix 进程组；`storage.rs` 保存配置、消息和轮转日志。前端 `main.ts` 管理窗口与浮层，`views.ts` 展示核心数据，`core.ts` 统一调用边界。界面不直接启动插件，不另存运行状态。
+
+控制通信整改已在当前源码完成：双向请求按 ID 匹配，处理不阻塞接收循环，停止优先，等待和队列有界；进程退出结束在途请求、作废排队工作。回归用真实插件进程复现并修复嵌套请求超时。该改动不增加 SSH、数据通道或业务插件，也不新增生产依赖；尚未发行新版本。
+
+`servers.rs` 已实现服务器与 SOCKS5 代理目录管理，以及两者混合的有序多层路径，目录模块不自行建连，见 [服务器管理方案](plan-server-management.md)。用户已明确选择密码与私钥口令直接在本机文件保存、不加密，不接系统凭据库；下一段地址固定由当前中转逐站解析。目录使用单实例锁、修订检查、串行提交和上一份有效备份。磁盘认证与界面投影分开；`server-api.ts`、`server-views.ts`、`servers.ts` 分别维护桌面调用、展示和交互草稿。桌面退出与更新重启先询问未保存表单。
 
 ## 分层
 
 [服务器 Tab 与可拆合工作区](plan-server-workspaces.md) 已实现到 v0.4.0。`workspaces.rs` 管理内存窗口、工作区、固定 Context 和布局；`windows.rs` 管理原生窗口、先准备后提交的移动和屏幕物理坐标命中；`workspaces.ts` 渲染窗口投影、手势和组件空槽。没有新增生产依赖、持久布局、数据库或 Dock 框架。
 
-只有核心连接服务可交入 `ConnectedSession`；没有前端“创建已连接工作区”命令。当前测试由独立 fixture 或显式 `--smoke-test --test-data-dir` 入口使用隔离档案注入会话。服务器档案修改只更新运行工作区的名称，endpoint 和 connectionId 保留；删除打开档案被拒绝。断线保留工作区，重连递增 generation，旧 Context 被拒绝。
+只有核心连接服务可交入 `ConnectedSession`；没有前端“创建已连接工作区”命令。正常连接由 connections 服务完成资料快照、逐站身份验证、认证和取消；成功接纳时短锁核对配置身份及尝试 token。连接计数、私钥边界与原生验证见 [连接实施记录](implementation-connections.md)。测试仍可由独立 fixture 或显式 `--smoke-test --test-data-dir` 入口使用隔离档案注入会话。服务器档案修改只更新运行工作区的名称，endpoint 和 connectionId 保留；删除打开档案被拒绝。断线保留工作区，重连递增 generation，旧 Context 被拒绝。
 
 主窗口固定保留服务器管理；独立窗口不复制管理表单。所有全局退出、重启和升级操作集中到主窗口，先检查其中的未保存目录表单；业务组件关闭检查待首个真实组件接入。移走最后一个 Tab 回收空子窗口，关闭子窗口只关闭其工作区，主窗口退出清理整个应用。Wayland 缺少可靠全局坐标时拒绝猜测落点并提供菜单移动。
 
@@ -38,7 +44,7 @@
 
 ## 插件模型
 
-每个插件包含清单和独立进程。当前已采用逐行 UTF-8 JSON-RPC 2.0 stdin/stdout，协议见 [插件 API v1](plugin-api.md)。业务视图接口留到首个业务插件实现时再设计。
+每个插件包含清单和独立进程。当前已采用逐行 UTF-8 JSON-RPC 2.0 stdin/stdout，协议见 [插件 API v1](plugin-api.md)。当前源码已加入可选 UI v1：`component_ui.rs` 定义声明与数据，`component_ui/layout.rs` 负责登记/布局，`host.rs` 负责资源/挂载/RPC，`close.rs` 负责汇总关闭。前端 `components.ts` 保留 iframe，`workspaces.ts` 继续管理服务器级页签与手势。示例业务和草稿在外置 `plugins/ui-example`；不在核心识别文件或终端插件 ID。详见 [组件与核心 UI 交互设计](plan-component-ui.md)，此能力尚未随新版本发行。
 
 插件按可信扩展运行，不实现插件权限清单、授权审批或沙箱。进程分离用于生命周期管理和故障恢复，插件仍可能直接使用操作系统允许的本机和网络能力。核心 API 保留版本、参数有效性和资源状态检查。SSH 认证不属于插件权限系统，仍由连接服务完成。
 
@@ -55,7 +61,7 @@
 }
 ```
 
-核心通过稳定接口提供可复用服务，返回会话或资源句柄，避免插件依赖底层实现。句柄用于标识资源和管理生命周期，不作为插件权限凭证。目前只实现 logging.write 和 messages.publish；完整 MVP 的后续接口包括：
+核心通过稳定接口提供可复用服务，返回会话或资源句柄，避免插件依赖底层实现。句柄用于标识资源和管理生命周期，不作为插件权限凭证。目前实现 logging.write、messages.publish 和上述 UI v1；完整 MVP 的后续接口包括：
 
 - `connection.exec`：执行非交互命令并返回流式输出。
 - `connection.pty`：创建和管理交互式终端。

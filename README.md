@@ -1,8 +1,12 @@
 # SoDeck
 
-面向运维人员的远程服务器工作台。v0.4.0 在服务器资料管理基础上加入服务器工作区壳、原生多窗口归属、Tab 排序和拆合。SSH 与业务组件尚未接入，普通启动仍显示服务器管理，连接成功后才会产生工作区。测试使用隔离会话验证，不伪造真实连接。
+面向运维人员的远程服务器工作台。v0.5.0 在服务器资料管理、原生多窗口和 Tab 拆合基础上，增加真实 SSH / SOCKS5 混合多层连接与插件组件宿主。普通启动显示服务器管理，真实认证成功后才创建工作区。
 
-核心与插件独立版本、独立打包，从公开的 [GitHub Releases](https://github.com/BgaSol/soDeck/releases) 分发。核心安装包不含业务插件。版本与验收记录见 [v0.1.1](docs/releases/v0.1.1.md)、[v0.2.0](docs/releases/v0.2.0.md)、[v0.2.1](docs/releases/v0.2.1.md)、[v0.3.0](docs/releases/v0.3.0.md) 和 [v0.4.0](docs/releases/v0.4.0.md)。
+外置插件声明侧栏与中央页面，核心统一管理两侧入口、混合 Tab、布局偏好、关闭确认和跨窗重挂载。`plugins/ui-example` 独立提供文件列表/编辑、多终端草稿和转发占位，验证交互但不执行远程操作；核心包不包含该插件。
+
+核心支持主机指纹、密码和私钥认证，以及工作台断开/原位重连；插件控制通信支持有界并发和退出取消。终端、SFTP 和正文数据通道仍待实现，详见 [连接实施记录](docs/implementation-connections.md) 和 [整改记录](docs/plan-code-reorganization.md)。
+
+核心与插件独立版本、独立打包，从公开的 [GitHub Releases](https://github.com/BgaSol/soDeck/releases) 分发。核心安装包不含业务插件。版本与验收记录见 [v0.1.1](docs/releases/v0.1.1.md)、[v0.2.0](docs/releases/v0.2.0.md)、[v0.2.1](docs/releases/v0.2.1.md)、[v0.3.0](docs/releases/v0.3.0.md)、[v0.4.0](docs/releases/v0.4.0.md) 和 [v0.5.0](docs/releases/v0.5.0.md)。
 
 ## 使用
 
@@ -20,6 +24,8 @@ Windows x86_64/ARM64 使用 EXE，Linux x86_64/ARM64 提供 DEB 与 AppImage，A
 
 应用无独立标题栏，状态、设置、消息位于右上角浮层。插件日志和重要消息独立；普通错误日志不自动弹通知。设置、消息、日志和插件数据存于系统应用数据目录，独立于安装目录。
 
+可从服务器详情点击“连接服务器”；每站指纹确认后才提交该站凭据。连接中的补填仅用于这次尝试；记住凭据仍通过编辑资料完成。工作台底部可以断开或手动重连，右上角应用状态显示连接数量。
+
 ## 开发与发布
 
 固定 Node.js 24.22.0、Rust 1.99.1，需要 [Tauri 系统构建依赖](https://v2.tauri.app/start/prerequisites/)。
@@ -33,6 +39,8 @@ npm run scripts:test
 npm run test
 npx playwright install chromium
 npm run ui:test
+# 本机需 OpenSSH 服务端与 ssh-keygen；脚本仅启动临时回环测试端
+npm run ssh:test
 npm run build -- --bundles nsis -- --locked
 npm run plugin:build
 ```
@@ -54,6 +62,9 @@ npm run plugin:build
 - [架构与边界](docs/architecture.md)
 - [服务器管理设计（暂不建连）](docs/plan-server-management.md)
 - [服务器 Tab 与可拆合工作区设计](docs/plan-server-workspaces.md)
+- [组件与核心 UI 交互设计（提案）](docs/plan-component-ui.md)
+- [远程工作台：混合跳板、终端、文件与带宽统计（提案）](docs/plan-remote-workbench.md)
+- [远程工作台代码整改方案（提案）](docs/plan-code-reorganization.md)
 - [插件 API v1](docs/plugin-api.md)
 - [在线更新实施与验收](docs/plan-online-updates.md)
 - [上一阶段实施计划](docs/plan-plugin-foundation.md)

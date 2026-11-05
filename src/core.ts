@@ -23,6 +23,8 @@ export interface Plugin {
   updateError: string | null;
 }
 export interface Snapshot {
+  connectedServers: number;
+  connectingServers: number;
   version: string;
   target: string;
   os: string;

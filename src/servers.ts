@@ -3,6 +3,7 @@ import { newDraft, referenced, serverApi, toInput, type Catalog, type Change, ty
 import { action, editor, page, type PageState } from "./server-views";
 import { escape as e, replace } from "./ui";
 import "./servers.css";
+import type { ConnectionView } from "./connections";
 
 interface Frame {
   dialog: HTMLDialogElement; kind: "editor" | "groups" | "group" | "confirm";
@@ -10,6 +11,8 @@ interface Frame {
   revision: number; busy: boolean; error: string; groupId?: string;
 }
 export class ServerManager {
+  private connections: ConnectionView[] = [];
+  setConnections(views: ConnectionView[]) { this.connections = views; this.render(); }
   private catalog?: Catalog;
   private state: PageState = { tab: "servers", query: "", group: "all", selected: "" };
   private frames: Frame[] = [];
@@ -32,7 +35,7 @@ export class ServerManager {
     try { this.catalog = await this.api.read(); this.render(); return true; }
     catch (error) { this.host.innerHTML = `<div class="error-box">无法读取服务器目录：${e(error)} ${action("reload", "重试")}</div>`; return false; }
   }
-  private render() { if (this.catalog) replace(this.host, page(this.catalog, this.state)); }
+  private render() { if (this.catalog) replace(this.host, page(this.catalog, this.state, this.connections)); }
   private top() { return this.frames.at(-1); }
   private frame(kind: Frame["kind"]): Frame {
     const dialog = document.createElement("dialog");

@@ -3,5 +3,6 @@
 /src-tauri/gen/
 /dist/
 /plugins/hello/target/
+/plugins/ui-example/target/
 *.log
 /artifacts/

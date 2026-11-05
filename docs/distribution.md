@@ -43,6 +43,8 @@ npm run build -- --bundles nsis -- --locked
 
 每个 Rust 插件在 `plugins/<名称>/` 包含：Cargo.toml（唯一版本来源）、Cargo.lock、release.json（ID、名称、API、二进制名、标签前缀）、CHANGELOG.md 和 src/。现有模板为 Hello。新增其他语言插件时再扩展构建适配，不提前建立通用构建框架。
 
+组件宿主示例 `ui-example` 使用同一独立打包入口：`npm run plugin:build -- --plugin ui-example`。它另包含可选 `release.json.ui` 声明和 `ui/` 静态资源，打包自动复制，不增加前端构建工具或生产依赖。Windows 与 Hello 一样静态链接 CRT。`Verify packaged core and plugin` 现在在五个原生 runner 上独立构建该示例，并以 `SODECK_TEST_UI_PLUGIN` 验证已安装核心的界面加载与移窗；核心打包本身仍不依赖示例插件。
+
 ```sh
 # 本地插件打包，默认 hello
 npm run plugin:build
@@ -66,6 +68,8 @@ npm run plugin:build -- --plugin hello --out-dir artifacts/another-build
 应用分页读取 Releases，筛选组件自己的标签前缀、正式版本和本机平台；插件还检查 API。不会用全仓库 latest 混淆核心和不同插件。插件 Release 发布时标为非 latest，核心保持仓库默认发行入口。检查和下载失败显示原因与重试，不改旧程序。
 
 ## 验证
+
+真实连接的新增依赖与本机验证范围见 [连接实施记录](implementation-connections.md)。`npm run ssh:test` 使用临时回环 OpenSSH 服务验证实际客户端，`npm run ssh:test -- --packaged <安装后的程序>` 进一步验证包内连接与原生窗口移动。Windows x86_64 工作流执行这两层；其他目标继续原生构建/隔离 Rust 连接测试及包内启动，不将本机结果外推为五平台已通过。
 
 本机执行类型、格式、脚本测试、Rust 集成测试、前端构建和本机安装包烟测。Rust 测试使用本机 HTTP 服务器验证下载、哈希、平台/API 不兼容、重启切换和启动失败恢复；正式更新来源只允许 HTTPS。
 

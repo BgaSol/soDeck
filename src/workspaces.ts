@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { escape as e, icon, replace } from "./ui";
 import "./workspaces.css";
+import { Components } from "./components";
 
 export interface Context { workspaceId: string; serverId: string; connectionId: string; generation: number }
 export interface Layout { leftOpen: boolean; rightOpen: boolean; leftWidth: number; rightWidth: number }
@@ -12,6 +13,7 @@ interface Gesture { id: string; pointer: number; x: number; y: number; grabX: nu
 
 /** Each view is rendered from its own immutable context; no global active server API. */
 export class Workspaces {
+  private components: Components;
   private state?: Projection;
   private refreshing?: Promise<void>;
   private again = false;
@@ -25,6 +27,7 @@ export class Workspaces {
   private resizeObserver: ResizeObserver;
 
   constructor(private tabs: HTMLElement, private content: HTMLElement, private catalog: HTMLElement, private notify: (message: string) => void, private call: Invoke = invoke) {
+    this.components = new Components(content, call, notify, () => this.refresh());
     tabs.addEventListener("click", event => {
       if (this.gesture?.token) return;
       const button = (event.target as Element).closest<HTMLElement>("[data-workspace-action]");
@@ -43,13 +46,6 @@ export class Workspaces {
     document.querySelector("#catalog-tab")?.addEventListener("click", () => void this.run(() => this.call("workspace_activate", { id: null })));
     document.addEventListener("pointerdown", event => { if (!this.menu?.contains(event.target as Node)) this.closeMenu(); });
     document.addEventListener("keydown", event => this.key(event));
-    content.addEventListener("click", event => {
-      const button = (event.target as Element).closest<HTMLElement>("[data-panel]");
-      const w = this.current(); if (!button || !w) return;
-      const layout = { ...w.layout };
-      if (button.dataset.panel === "left") layout.leftOpen = !layout.leftOpen; else layout.rightOpen = !layout.rightOpen;
-      void this.run(() => this.call("workspace_layout", { id: w.context.workspaceId, layout }));
-    });
     content.addEventListener("pointerdown", event => this.resize(event));
     this.observer = new MutationObserver(() => this.report());
     this.observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["open", "hidden", "inert"] });
@@ -62,7 +58,7 @@ export class Workspaces {
       do {
         this.again = false;
         const state = await this.call<Projection>("workspace_snapshot");
-        if (!this.state || state.revision >= this.state.revision) { this.state = state; this.render(); }
+        if (!this.state || state.revision >= this.state.revision) { this.state = state; await this.components.sync(state); this.render(); }
       } while (this.again);
     })().finally(() => { this.refreshing = undefined; });
     return this.refreshing;
@@ -86,25 +82,24 @@ export class Workspaces {
     if (focusId) this.tabs.querySelector<HTMLElement>(`[data-id="${CSS.escape(focusId)}"] [data-workspace-action="${focusAction ?? "select"}"]`)?.focus({ preventScroll: true });
     const w = this.current();
     this.catalog.hidden = !main || Boolean(w);
-    this.content.hidden = !w && main;
+    this.content.hidden = !w && main && !state.incoming;
     if (w) {
       const layout = w.layout;
       this.content.dataset.workspaceId = w.context.workspaceId;
       this.content.inert = this.moving.has(w.context.workspaceId);
       this.content.style.setProperty("--left-width", `${layout.leftWidth}px`);
       this.content.style.setProperty("--right-width", `${layout.rightWidth}px`);
-      replace(this.content, `<section class="server-workbench ${layout.leftOpen ? "left-open" : ""} ${layout.rightOpen ? "right-open" : ""}" aria-label="${e(w.name)} 的工作区"><aside class="workbench-rail left-rail" aria-label="左侧工具"><button data-panel="left" aria-label="文件面板" aria-expanded="${layout.leftOpen}" title="文件面板">${icon("folder")}</button></aside><aside class="workbench-panel left-panel"><header>文件<span class="slot-badge">组件槽位</span></header><div class="slot-empty">文件插件将显示在这里</div><div role="separator" aria-label="左侧面板宽度" aria-orientation="vertical" tabindex="0" data-resize="left"></div></aside><section class="workbench-center"><div class="component-tabs" aria-label="服务器内组件页签"><span>组件工作区</span></div><div class="workspace-empty"><div class="empty-icon">${icon("plug")}</div><h2>${e(w.name)}</h2><p>此工作区中的组件都属于这台服务器</p><span>文件、终端等功能接入后会显示在这里</span><div class="workspace-context">${e(w.endpoint)}</div></div></section><aside class="workbench-panel right-panel"><header>网络<span class="slot-badge">组件槽位</span></header><div class="slot-empty">网络组件将显示在这里</div><div role="separator" aria-label="右侧面板宽度" aria-orientation="vertical" tabindex="0" data-resize="right"></div></aside><aside class="workbench-rail right-rail" aria-label="右侧工具"><button data-panel="right" aria-label="网络面板" aria-expanded="${layout.rightOpen}" title="网络面板">${icon("network")}</button></aside><footer class="workspace-status"><span class="health-dot ${w.connected ? "good" : "warning"}"></span><span>${w.connected ? "已连接" : "连接已断开"}</span><span class="workspace-endpoint">${e(w.endpoint)}</span><span class="workspace-owner">${main ? "主窗口" : "独立窗口"}</span></footer></section>`);
-    } else { replace(this.content, `<div class="workspace-empty"><h2>${state.incoming ? "正在接收工作区…" : "此窗口没有工作区"}</h2></div>`); }
+    }
     this.paintPreview(); this.report();
   }
   private async action(action: string, id: string) {
     if (action === "menu") { this.openMenu(id, this.tabs.querySelector<HTMLElement>(`.server-tab[data-id="${CSS.escape(id)}"]`)!); return; }
     this.closeMenu();
     if (action === "select") { await this.call("workspace_activate", { id }); return; }
-    if (action === "close") { await this.call("workspace_close", { id }); return; }
+    if (action === "close") { if (await this.components.close([id])) await this.call("workspace_close", { id }); return; }
     if (this.moving.has(id)) return;
     this.moving.add(id); this.render();
-    try { await this.call("workspace_move", { id, target: action === "return" ? "main" : null, index: Number.MAX_SAFE_INTEGER }); }
+    try { await this.components.flush(); await this.call("workspace_move", { id, target: action === "return" ? "main" : null, index: Number.MAX_SAFE_INTEGER }); }
     finally { this.moving.delete(id); }
   }
   private openMenu(id: string, anchor: HTMLElement) {
@@ -175,7 +170,7 @@ export class Workspaces {
   }
   private async completeGesture(g: Gesture) {
     this.moving.add(g.id);
-    try { await this.call("workspace_drag_finish", { token: g.token, cancel: g.cancelled }); }
+    try { await this.components.flush(); await this.call("workspace_drag_finish", { token: g.token, cancel: g.cancelled }); }
     catch (error) { this.notify(String(error)); }
     finally { this.moving.delete(g.id); this.clearGesture(g); await this.refresh().catch(() => {}); }
   }
@@ -202,8 +197,11 @@ export class Workspaces {
     if (!handle || !w || event.button !== 0) return; event.preventDefault();
     const side = handle.dataset.resize!, key = side === "left" ? "leftWidth" : "rightWidth", x = event.clientX, initial = w.layout[key];
     let width = initial; handle.setPointerCapture(event.pointerId);
-    const move = (ev: PointerEvent) => { width = Math.max(160, Math.min(480, Math.round(initial + (ev.clientX - x) * (side === "left" ? 1 : -1)))); this.content.style.setProperty(`--${side}-width`, `${width}px`); };
+    const move = (ev: PointerEvent) => { width = Math.max(160, Math.min(480, Math.round(initial + (ev.clientX - x) * (side === "left" ? 1 : -1)))); this.content.querySelector<HTMLElement>(`.server-workbench[data-id="${CSS.escape(w.context.workspaceId)}"]`)?.style.setProperty(`--${side}-width`, `${width}px`); };
     const end = (ev: PointerEvent) => { handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", end); handle.removeEventListener("pointercancel", end); if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId); void this.run(() => this.call("workspace_layout", { id: w.context.workspaceId, layout: { ...w.layout, [key]: ev.type === "pointercancel" ? initial : width } })); };
     handle.addEventListener("pointermove", move); handle.addEventListener("pointerup", end); handle.addEventListener("pointercancel", end);
   }
+  allowExit() { return this.components.allowExit(); }
+  flush() { return this.components.flush(); }
+  async closeWindow() { if (await this.components.close(this.state?.workspaces.map(w => w.context.workspaceId) ?? [])) await this.call("workspace_close_window"); }
 }
