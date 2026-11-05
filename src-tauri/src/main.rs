@@ -70,6 +70,24 @@ async fn recover_catalog(app: State<'_, Application>) -> Result<serde_json::Valu
 }
 
 #[tauri::command]
+fn official_plugins() -> &'static [sodeck::official_plugins::OfficialPlugin] {
+    sodeck::official_plugins::OFFICIAL_PLUGINS
+}
+
+#[tauri::command]
+async fn install_official_plugin(
+    app: State<'_, Application>,
+    id: String,
+) -> Result<String, String> {
+    let core = app.core.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        core.install_official_plugin(&id, &ReleaseClient::github()?)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 async fn add_plugin(app: State<'_, Application>, directory: PathBuf) -> Result<String, String> {
     let core = app.core.clone();
     tauri::async_runtime::spawn_blocking(move || core.add_plugin(&directory))
@@ -420,6 +438,8 @@ fn main() {
             snapshot,
             close_app,
             add_plugin,
+            official_plugins,
+            install_official_plugin,
             set_plugin_enabled,
             set_plugin_update_source,
             update_status,

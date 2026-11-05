@@ -1,7 +1,8 @@
-import type { Snapshot, Plugin, Log, Message, Filter, Update, Manifest } from "./core";
+import type { Snapshot, Plugin, Log, Message, Filter, Update, Manifest, OfficialPlugin } from "./core";
 import { button as b, date, empty, escape as e, icon, statusText } from "./ui";
 
 export interface ViewState {
+  officialPlugins: OfficialPlugin[];
   section: string;
   plugin: string;
   messages: Message[];
@@ -46,7 +47,16 @@ export function settings(s: Snapshot, v: ViewState) {
 function plugins(s: Snapshot, v: ViewState) {
   const p = s.plugins.find((p) => p.manifest.id === v.plugin);
   return `<div class="section-heading"><div><h2>插件管理</h2><p>启用和关闭在重启后生效。</p></div>${b("choose-plugin", "添加插件目录", "folder", "primary", v.busy.has("choose") ? "disabled" : "")}</div>${v.error ? `<div role="alert" class="error-box">${e(v.error)}</div>` : ""}
-    ${s.plugins.length ? `<div class="plugin-layout ${p ? "has-selection" : ""}"><div class="plugin-list" data-scroll="plugin-list">${s.plugins.map((p) => pluginRow(p, v)).join("")}</div><div class="plugin-detail" data-scroll="plugin-detail">${p ? detail(p, v) : empty("选择一个插件", "在左侧查看运行状态、路径和日志。")}</div></div>` : empty("尚未加载插件", "选择已解压的插件目录开始。插件独立下载，核心安装包不包含插件。")}`;
+    ${officialPlugins(s, v)}${s.plugins.length ? `<div class="plugin-layout ${p ? "has-selection" : ""}"><div class="plugin-list" data-scroll="plugin-list">${s.plugins.map((p) => pluginRow(p, v)).join("")}</div><div class="plugin-detail" data-scroll="plugin-detail">${p ? detail(p, v) : empty("选择一个插件", "在左侧查看运行状态、路径和日志。")}</div></div>` : empty("尚未安装插件", "从上方下载官方插件，或添加已解压的本地插件目录。")}`;
+}
+function officialPlugins(s: Snapshot, v: ViewState) {
+  return `<section class="official-plugins" aria-label="官方插件"><h3>官方插件</h3><p class="hint">从 GitHub 下载适合本机的版本，安装后重启启用。插件程序独立于核心安装包。</p><div class="official-plugin-list">${v.officialPlugins.map(plugin => {
+    const installed = s.plugins.find(p => p.manifest.id === plugin.id);
+    const u = v.updates[plugin.id];
+    const busy = v.busy.has(`install:${plugin.id}`) || ["checking", "downloading"].includes(u?.phase ?? "");
+    const attrs = `data-id="${e(plugin.id)}" ${busy ? "disabled" : ""}`;
+    return `<article class="official-plugin" data-official-plugin="${e(plugin.id)}"><div><h3>${e(plugin.name)}</h3><p>${e(plugin.description)}</p>${installed ? `<small>${e(installed.manifest.version)} · ${installed.pendingRestart ? "待重启" : installed.enabled ? "已启用" : "已关闭"}</small>` : ""}</div>${installed ? b("select-plugin", "管理", undefined, "quiet", attrs) : b("install-official-plugin", busy ? u?.phase === "downloading" ? "正在下载…" : "正在查找版本…" : u?.phase === "error" ? "重试安装" : "下载并启用", "download", "primary", attrs)}${!installed && u?.phase === "downloading" ? `<progress aria-label="${e(plugin.name)}下载进度" ${u.totalBytes ? `value="${u.downloadedBytes}" max="${u.totalBytes}"` : ""}></progress><small>已下载 ${(u.downloadedBytes / 1048576).toFixed(1)} MiB</small>` : ""}${!installed && u?.error ? `<p class="error-box" role="alert">${e(u.error)}</p>` : ""}</article>`;
+  }).join("")}</div></section>`;
 }
 function pluginRow(p: Plugin, v: ViewState) {
   return `<button data-action="select-plugin" data-id="${e(p.manifest.id)}" class="plugin-row ${p.manifest.id === v.plugin ? "selected" : ""}"><div class="plugin-symbol">${icon("plug")}</div><div><b>${e(p.manifest.name)}</b><small>${e(p.manifest.id)}</small><span class="badge ${p.status}">${statusText[p.status]}</span>${p.pendingRestart ? '<span class="badge warning">待重启</span>' : ""}</div><span class="plugin-version">${e(p.manifest.version)}</span></button>`;

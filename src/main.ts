@@ -31,6 +31,7 @@ let refreshAgain = false;
 let exitPrompt = false;
 let logGeneration = 0;
 const state: views.ViewState = {
+  officialPlugins: [],
   section: "plugins",
   plugin: "",
   messages: [],
@@ -303,6 +304,9 @@ root.addEventListener("click", (event) => {
         if (p) await pluginAction(id, () => core.enabled(id, !p.enabled));
         break;
       }
+      case "install-official-plugin":
+        await pluginAction(`install:${id}`, async () => { state.plugin = await core.installOfficial(id); });
+        break;
       case "check-update":
         await pluginAction(`update:${id}`, () => core.checkUpdate(id));
         break;
@@ -431,6 +435,7 @@ document
   .addEventListener("dblclick", () => void action(() => win.toggleMaximize()));
 
 async function start() {
+  state.officialPlugins = await core.officialPlugins();
   await listen("core-changed", scheduleRefresh);
   await listen("connections-changed", () => { void connections.refresh().catch(error => toast(String(error), undefined, true)); scheduleRefresh(); });
   await listen("workspaces-changed", () => void workspaces.refresh().catch(error => toast(String(error), undefined, true)));

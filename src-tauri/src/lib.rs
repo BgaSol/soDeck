@@ -3,6 +3,7 @@ pub mod connections;
 pub mod core;
 pub mod desktop_updates;
 pub mod model;
+pub mod official_plugins;
 mod platform;
 mod plugins;
 pub mod servers;

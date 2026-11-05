@@ -105,6 +105,16 @@ impl Server {
     fn client(&self) -> ReleaseClient {
         ReleaseClient::test_server(&self.base)
     }
+    fn official_release(&self, bytes: Vec<u8>, api: &str, target: &str) {
+        self.release(bytes, api, target);
+        let mut manifest: serde_json::Value =
+            serde_json::from_slice(&self.routes.lock().unwrap()["/manifest.json"]).unwrap();
+        manifest["id"] = json!("sodeck.hello");
+        self.put("/manifest.json", manifest.to_string());
+        self.put("/repos/BgaSol/soDeck/releases", json!([
+            {"tag_name":"plugin-hello-v0.1.1","draft":false,"prerelease":false,"assets":[{"name":"plugin-update.json","browser_download_url":format!("{}/manifest.json",self.base)}]}
+        ]).to_string());
+    }
 }
 impl Drop for Server {
     fn drop(&mut self) {
@@ -146,11 +156,19 @@ impl Fixture {
         .unwrap();
     }
     fn package(&self, mode: &str) -> Vec<u8> {
+        self.package_for("test.fixture", mode)
+    }
+    fn package_for(&self, id: &str, mode: &str) -> Vec<u8> {
+        let mut metadata = manifest("0.1.1");
+        metadata["id"] = json!(id);
+        // The core must keep its selected source, not a source supplied by the archive.
+        metadata["updateSource"] =
+            json!({"repository":"other/source","tagPrefix":"plugin-other-v"});
         let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
         for (path, bytes) in [
             (
                 "plugin/plugin.json".into(),
-                manifest("0.1.1").to_string().into_bytes(),
+                metadata.to_string().into_bytes(),
             ),
             (
                 format!("plugin/fixture{}", std::env::consts::EXE_SUFFIX),
@@ -177,6 +195,95 @@ impl Drop for Fixture {
 }
 fn manifest(version: &str) -> serde_json::Value {
     json!({"id":"test.fixture","name":"Update Fixture","version":version,"apiVersion":"1","target":TARGET,"entry":format!("fixture{}",std::env::consts::EXE_SUFFIX)})
+}
+
+#[test]
+fn official_first_install_downloads_registers_and_waits_for_restart() {
+    let f = Fixture::new();
+    let core = f.open();
+    let server = Server::new();
+    server.official_release(f.package_for("sodeck.hello", ""), "1", TARGET);
+    assert!(core
+        .install_official_plugin("unknown.plugin", &server.client())
+        .is_err());
+    assert_eq!(
+        core.install_official_plugin("sodeck.hello", &server.client())
+            .unwrap(),
+        "sodeck.hello"
+    );
+    let snapshot = core.snapshot();
+    let plugin = &snapshot.plugins[0];
+    assert_eq!(plugin.status, PluginStatus::Unloaded);
+    assert!(plugin.enabled && plugin.pending_restart && snapshot.restart_required);
+    assert!(plugin
+        .directory
+        .starts_with(fs::canonicalize(f.root.join("data/plugins")).unwrap()));
+    assert_eq!(
+        plugin.manifest.update_source.as_ref().unwrap().repository,
+        "BgaSol/soDeck"
+    );
+    assert_eq!(
+        plugin.manifest.update_source.as_ref().unwrap().tag_prefix,
+        "plugin-hello-v"
+    );
+    let installed = plugin.directory.clone();
+    assert!(core
+        .install_official_plugin("sodeck.hello", &server.client())
+        .is_err());
+    assert_eq!(core.snapshot().plugins.len(), 1);
+    assert_eq!(core.snapshot().plugins[0].directory, installed);
+    drop(core);
+    let core = f.open();
+    core.start_enabled();
+    assert_eq!(core.snapshot().plugins[0].status, PluginStatus::Running);
+    assert!(!core.snapshot().restart_required);
+    core.shutdown().unwrap();
+}
+
+#[test]
+fn official_install_failures_leave_no_record_and_can_retry() {
+    let f = Fixture::new();
+    let core = f.open();
+    let server = Server::new();
+    for (api, target) in [("2", TARGET), ("1", "unsupported-target")] {
+        server.official_release(f.package_for("sodeck.hello", ""), api, target);
+        assert!(core
+            .install_official_plugin("sodeck.hello", &server.client())
+            .is_err());
+        assert!(core.snapshot().plugins.is_empty());
+    }
+    server.official_release(f.package_for("sodeck.hello", ""), "1", TARGET);
+    server.put("/plugin.zip", b"broken".to_vec());
+    assert!(core
+        .install_official_plugin("sodeck.hello", &server.client())
+        .unwrap_err()
+        .contains("SHA-256"));
+    server.official_release(f.package(""), "1", TARGET);
+    assert!(core
+        .install_official_plugin("sodeck.hello", &server.client())
+        .unwrap_err()
+        .contains("ID"));
+    server.official_release(f.package_for("sodeck.hello", ""), "1", TARGET);
+    fs::create_dir_all(f.root.join("data/plugins.json.tmp")).unwrap();
+    assert!(core
+        .install_official_plugin("sodeck.hello", &server.client())
+        .is_err());
+    assert!(core.snapshot().plugins.is_empty());
+    assert_eq!(
+        fs::read_dir(f.root.join("data/plugins/sodeck.hello"))
+            .unwrap()
+            .count(),
+        0
+    );
+    assert!(!fs::read_dir(f.root.join("data")).unwrap().any(|e| e
+        .unwrap()
+        .path()
+        .extension()
+        .is_some_and(|e| e == "part")));
+    fs::remove_dir(f.root.join("data/plugins.json.tmp")).unwrap();
+    core.install_official_plugin("sodeck.hello", &server.client())
+        .unwrap();
+    assert_eq!(core.update_views()["sodeck.hello"].phase, "ready");
 }
 
 #[test]

@@ -8,6 +8,16 @@ fn main() {
         let request: Value = serde_json::from_str(&line.unwrap()).unwrap();
         let args = &request["args"];
         let result = match request["command"].as_str().unwrap() {
+            "official_plugins" => Ok(json!(sodeck::official_plugins::OFFICIAL_PLUGINS)),
+            "install_official_plugin" => {
+                let base = std::env::var("SODECK_TEST_PLUGIN_API")
+                    .expect("installer fixture requires a loopback test API");
+                core.install_official_plugin(
+                    args["id"].as_str().unwrap(),
+                    &sodeck::updates::ReleaseClient::test_server(&base),
+                )
+                .map(|id| json!(id))
+            }
             "snapshot" => Ok(json!(core.snapshot())),
             "update_status" => Ok(json!(core.update_views())),
             "set_theme" => core

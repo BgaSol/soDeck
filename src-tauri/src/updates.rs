@@ -624,7 +624,7 @@ impl AppCore {
             .cloned()
             .ok_or("请先检查插件更新")?;
         self.update_phase(id, "downloading", None);
-        let result = self.prepare_plugin(id, &candidate, client);
+        let result = self.prepare_plugin(id, &candidate, client, false);
         match &result {
             Ok(_) => self.update_phase(id, "ready", None),
             Err(error) => self.update_phase(id, "error", Some(error.clone())),
@@ -636,6 +636,7 @@ impl AppCore {
         id: &str,
         candidate: &UpdateManifest,
         client: &ReleaseClient,
+        initial_install: bool,
     ) -> Result<bool, String> {
         let root = self.store.lock().unwrap().root.clone();
         let archive = root.join(format!("plugin-download-{}.part", self.next_id()));
@@ -656,7 +657,7 @@ impl AppCore {
                 .path()
                 .ends_with(".zip");
             let directory = unpack(&archive, &output, zip_format)?;
-            let package = plugins::read_manifest(&directory)?;
+            let mut package = plugins::read_manifest(&directory)?;
             if package.manifest.id != id
                 || package.manifest.version != candidate.version
                 || package.manifest.api_version != candidate.api_version
@@ -666,6 +667,25 @@ impl AppCore {
             let _mutation = self.mutations.lock().unwrap();
             let active = self.plugin_needs_restart(id);
             let mut store = self.store.lock().unwrap();
+            if initial_install {
+                if store.plugins.iter().any(|p| p.manifest.id == id) {
+                    return Err("该插件已有记录，请在详情中检查更新".into());
+                }
+                if self.is_closing() {
+                    return Err("应用正在退出或重启".into());
+                }
+                package.manifest.update_source = candidate.source.clone();
+                package.enabled = true;
+                store.register(package)?;
+                drop(store);
+                self.log(
+                    None,
+                    "info",
+                    &format!("官方插件 {id} {} 已安装，重启后启用", candidate.version),
+                    None,
+                );
+                return Ok(true);
+            }
             let mut record = store
                 .plugins
                 .iter()
@@ -719,6 +739,49 @@ impl AppCore {
         let _ = fs::remove_file(&archive);
         if result.is_err() && output.starts_with(root.join("plugins")) {
             let _ = fs::remove_dir_all(&output);
+        }
+        result
+    }
+
+    pub fn install_official_plugin(
+        self: &Arc<Self>,
+        id: &str,
+        client: &ReleaseClient,
+    ) -> Result<String, String> {
+        let source = crate::official_plugins::source(id)?;
+        let _operation = self.update_operation(id)?;
+        self.update_phase(id, "checking", None);
+        let result: Result<String, String> = (|| {
+            if self
+                .store
+                .lock()
+                .unwrap()
+                .plugins
+                .iter()
+                .any(|p| p.manifest.id == id)
+            {
+                return Err("该插件已有记录，请在详情中检查更新".into());
+            }
+            let candidate = client
+                .discover(&source, id, "0.0.0")?
+                .ok_or("该官方插件尚未发布适用的正式版本")?;
+            self.updates.lock().unwrap().items.insert(
+                id.into(),
+                UpdateView {
+                    id: id.into(),
+                    phase: "downloading".into(),
+                    version: Some(candidate.version.clone()),
+                    notes: candidate.notes.clone(),
+                    ..Default::default()
+                },
+            );
+            self.changed();
+            self.prepare_plugin(id, &candidate, client, true)?;
+            Ok(id.to_string())
+        })();
+        match &result {
+            Ok(_) => self.update_phase(id, "ready", None),
+            Err(error) => self.update_phase(id, "error", Some(error.clone())),
         }
         result
     }
