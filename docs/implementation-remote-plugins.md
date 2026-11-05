@@ -59,7 +59,7 @@ GitHub 原生验收已全部通过：
 | [文件独立包 41993991923](https://github.com/BgaSol/soDeck/actions/runs/41993991923) | 五目标原生二进制与视图，包含错误日志 |
 | [组合验收 41995021265](https://github.com/BgaSol/soDeck/actions/runs/41995021265) | 五个原生 runner 均通过实际安装包、独立插件、回环 OpenSSH、真实 WebView/Channel/xterm 往返、文件读/保存/下载及重开退出 |
 
-核心/终端产物来自 b5f07a6，文件产物来自 0f3faaf；后续提交调整测试端路径和诊断，不改变这些产品二进制。Windows ARM 测试端的 internal-sftp 实际从登录 shell 启动 sftp-server.exe；便携目录不在 PATH 时退出，已在隔离配置中使用绝对路径并重新验收。以上是原生 CI 验证，不替代真实设备的交互手势与系统升级测试。本轮未创建标签或 Release，GitHub Latest 保持 v0.5.2。
+核心/终端产物来自 b5f07a6，文件产物来自 0f3faaf；后续提交调整测试端路径和诊断，不改变这些产品二进制。Windows ARM 测试端的 internal-sftp 实际从登录 shell 启动 sftp-server.exe；便携目录不在 PATH 时退出，已在隔离配置中使用绝对路径并重新验收。以上是原生 CI 验证，不替代真实设备的交互手势与系统升级测试。上述开发验收未创建标签或 Release；之后用户要求发行，使用核心 v0.6.0 及两个独立插件 0.1.0 标签，见 [版本说明](releases/v0.6.0.md)。
 
 待人工确认：中文输入法、全屏终端、复杂 VT 状态持续移窗、混合 DPI 手势及设备升级。复杂 ACL、硬链接和特殊文件不保证安全编辑。插件协议分摊和逐跳计量尚未提供。
 
