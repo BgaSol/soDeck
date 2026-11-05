@@ -30,6 +30,15 @@ try{
  await sidebar.getByRole('button',{name:'设置 file.txt',exact:false}).click();
  let editor=main.frameLocator('iframe[title^="设置 file.txt"]');let text=editor.locator('textarea');await text.waitFor();await wait(()=>text.isEnabled());assert.equal(await text.inputValue(),'before\n中文\n');
  await text.fill('after\n中文\n');await editor.getByRole('button',{name:'保存',exact:true}).click();await editor.getByRole('status').filter({hasText:'已保存到服务器'}).waitFor();assert.equal(fs.readFileSync(filename,'utf8'),'\uFEFFafter\r\n中文\r\n');
+ // Close must flush the iframe, wait for the remote save, then release the view.
+ await text.fill('saved by close\n中文\n');
+ const viewId=await main.locator('iframe[title^="设置 file.txt"]').evaluate(el=>el.closest('.component-surface').dataset.viewId);
+ await main.locator(`[data-component-action="close"][data-key="${viewId}"]`).click();
+ await main.getByRole('button',{name:'保存并关闭',exact:true}).click();
+ await main.locator(`.component-surface[data-view-id="${viewId}"]`).waitFor({state:'detached'});
+ assert.equal(fs.readFileSync(filename,'utf8'),'\uFEFFsaved by close\r\n中文\r\n');
+ await sidebar.getByRole('button',{name:'设置 file.txt',exact:false}).click();
+ editor=main.frameLocator('iframe[title^="设置 file.txt"]');text=editor.locator('textarea');await wait(()=>text.isEnabled());assert.equal(await text.inputValue(),'saved by close\n中文\n');
  await text.fill('draft survives move\n中文');await main.evaluate(()=>window.manager.flush());
  // Destruction/remount must recover the staged draft, with no remote read replacing it.
  await main.reload();await main.waitForFunction(()=>window.ready);editor=main.frameLocator('iframe[title^="设置 file.txt"]');text=editor.locator('textarea');await wait(async()=>await text.inputValue()==='draft survives move\n中文');
@@ -38,6 +47,6 @@ try{
  const [v]=await call('connection',{command:{op:'snapshot'}});await call('connection',{command:{op:'disconnect',context:v.context}});await main.evaluate(()=>window.manager.refresh());assert.equal(await text.inputValue(),'draft survives move\n中文');
  await editor.getByRole('button',{name:'导出草稿',exact:true}).click();await editor.getByRole('status').filter({hasText:'草稿已导出'}).waitFor();assert.equal(fs.readFileSync(local,'utf8'),'\uFEFFdraft survives move\r\n中文');
  assert.deepEqual(errors,[]);fs.mkdirSync('artifacts/files-ui',{recursive:true});await main.screenshot({path:'artifacts/files-ui/real-files.png'});
- console.log('Actual files UI passed: Chinese paths, BOM/CRLF save, draft remount, external conflict, streamed download, disconnect preserves draft');
+ console.log('Actual files UI passed: Chinese paths, BOM/CRLF save, save-and-close, draft remount, external conflict, streamed download, offline draft export');
 }catch(error){for(const page of pages){console.error(await page.locator('#notice').textContent());for(const frame of page.frames().slice(1))console.error((await frame.locator('body').innerText()).slice(0,2000));fs.mkdirSync('artifacts/files-ui',{recursive:true});await page.screenshot({path:'artifacts/files-ui/failure.png'});}throw error;
 }finally{await browser.close();await vite.close();if(child.exitCode===null){child.stdin.end();await new Promise(resolve=>child.once('exit',resolve));}if(path.dirname(path.resolve(data))!==path.resolve(os.tmpdir())||!path.basename(data).startsWith('sodeck-files-ui-'))throw new Error('Unexpected cleanup');fs.rmSync(data,{recursive:true,force:true});}

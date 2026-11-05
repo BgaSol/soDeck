@@ -424,15 +424,16 @@ impl AppCore {
     ) -> Result<Value, String> {
         self.connection_session(&context)?;
         let id = self.next_id();
+        let cancel = r.cancel.child_token();
         {
             let mut job = r.job.lock().unwrap();
             if job["state"] == "running" {
                 return Err("文件任务正在进行".into());
             }
+            // Publish the cancellation token before callers can observe running.
+            *r.job_cancel.lock().unwrap() = cancel.clone();
             *job = json!({"id":id,"state":"running","kind":if download.is_some(){"download"}else{"save"},"received":"0"});
         }
-        let cancel = r.cancel.child_token();
-        *r.job_cancel.lock().unwrap() = cancel.clone();
         let core = self.clone();
         let job_id = id.clone();
         tauri::async_runtime::spawn(async move {
@@ -574,7 +575,11 @@ async fn save_file(
     cancel: &CancellationToken,
 ) -> Result<Value, String> {
     let mut state = r.state.lock().await;
-    let s = sftp(core, &mut state, context).await?;
+    let s = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return Err("保存已取消，草稿保留".into()),
+        session = sftp(core, &mut state, context) => session?,
+    };
     let doc = state.document.as_ref().ok_or("尚未打开文件")?.clone();
     drop(state);
     if !s.atomic {
@@ -699,7 +704,11 @@ async fn download_file(
     cancel: &CancellationToken,
 ) -> Result<Value, String> {
     let mut state = r.state.lock().await;
-    let s = sftp(core, &mut state, context).await?;
+    let s = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return Err("下载已取消，本地原文件保留".into()),
+        session = sftp(core, &mut state, context) => session?,
+    };
     drop(state);
     let parent = local.parent().ok_or("下载目标没有父目录")?;
     let temporary = LocalTemporary(parent.join(format!(".sodeck-{}.part", core.next_id())));
@@ -766,5 +775,18 @@ async fn download_file(
         closed?;
         Ok(result)
     };
-    tokio::select! {biased;_=cancel.cancelled()=>{let _=s.raw.close_session();Err("下载已取消，本地原文件保留".into())},v=work=>v}
+    let result = tokio::select! {biased;_=cancel.cancelled()=>Err("下载已取消，本地原文件保留".into()),v=work=>v};
+    if result.is_err() {
+        let _ = s.raw.close_session();
+        let mut state = r.state.lock().await;
+        if state
+            .session
+            .as_ref()
+            .is_some_and(|old| Arc::ptr_eq(old, &s))
+        {
+            state.session = None;
+            state.directory = None;
+        }
+    }
+    result
 }
