@@ -41,6 +41,7 @@ pub enum DropTarget {
     },
     Invalid,
 }
+#[derive(Clone)]
 struct Drag {
     token: String,
     source: String,
@@ -219,8 +220,11 @@ impl DesktopWindows {
         workspace: &str,
         offset: (f64, f64),
     ) -> Result<DropTarget, String> {
-        let surfaces = self.surfaces.lock().unwrap();
-        for label in self.focus.lock().unwrap().iter().rev() {
+        // Native queries may synchronously use the event loop. Never keep a
+        // registry lock while querying a window whose callbacks update it.
+        let surfaces = self.surfaces.lock().unwrap().clone();
+        let focus = self.focus.lock().unwrap().clone();
+        for label in focus.iter().rev() {
             let Some(w) = handle.get_webview_window(label) else {
                 continue;
             };
@@ -471,12 +475,24 @@ pub fn workspace_drag_sample(
     desktop: State<DesktopWindows>,
     token: String,
 ) -> Result<DropTarget, String> {
-    let lock = desktop.drag.lock().unwrap();
-    let drag = lock
+    let drag = desktop
+        .drag
+        .lock()
+        .unwrap()
         .as_ref()
         .filter(|d| d.token == token && d.source == window.label())
+        .cloned()
         .ok_or("拖动已取消")?;
-    let target = desktop.hit(&handle, drag)?;
+    let target = desktop.hit(&handle, &drag)?;
+    if !desktop
+        .drag
+        .lock()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|d| d.token == token)
+    {
+        return Ok(DropTarget::Invalid);
+    }
     let _ = handle.emit("workspace-drop-preview", &target);
     Ok(target)
 }
@@ -497,6 +513,7 @@ pub async fn workspace_drag_finish(
             return Err("拖动已取消".into());
         }
         let drag = lock.take().unwrap();
+        drop(lock);
         let target = if cancel {
             Ok(DropTarget::Invalid)
         } else {
