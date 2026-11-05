@@ -78,6 +78,12 @@ npm run plugin:build -- --plugin hello --out-dir artifacts/another-build
 
 核心工作流在五个原生目标运行 Rust 测试，再安装/解包 EXE、DEB、DMG 后启动包内程序；AppImage 另检查启动和退出。`Verify packaged core and plugin` 下载实际核心与插件产物验证日志、消息、目录、状态和重启保留。CI 包内启动不等价于真实设备的交互式安装升级，实际完成范围记录在对应版本说明。
 
+真实业务插件使用独立入口 `npm run plugin:build -- --plugin terminal` 和 `--plugin files`，版本分别来自自己的 Cargo.toml，标签为 `plugin-terminal-v<版本>` / `plugin-files-v<版本>`。终端打包在插件目录内执行锁定的 npm 安装和静态资源构建；核心打包不调用这些步骤。普通构建不创建发行版本，官方列表登记来源后仍需发布对应的独立 Release 才能下载。
+
+`Verify native remote plugins` 手动输入核心、终端、文件三个成功打包运行的 ID，在五个原生 runner 下载实际包。它安装/解包核心、加载两个独立插件、连接隔离 OpenSSH，验证实际 WebView/Channel/xterm 的 PTY 往返、文件读取/保存/下载、窗口移动以及重开退出。它独立于核心打包，不阻塞无插件核心的构建与启动。源码侧 `npm run terminal:test` / `npm run files:test` 另验证多 Tab、草稿、保存关闭、冲突、大小边界、取消和重试。
+
+Windows ARM64 runner 的 OpenSSH 系统可选组件安装曾持续等待十余分钟；该测试在缺少 sshd 时使用微软 Win32-OpenSSH 的固定版本 ARM64 便携包并校验 SHA-256，仅启动隔离回环服务，不安装系统服务，也不随产品分发。其他平台使用 runner 系统包提供的 OpenSSH。
+
 服务器管理验收：`npx playwright install chromium` 后运行 `npm run ui:test`，以无头浏览器调用真实目录核心，测试数据保存在临时目录，不连接服务器。核心打包工作流在 Windows x86_64 执行此检查；所有五目标的 `scripts/smoke.mjs` 都会在实际包中保存服务器、分组、代理及混合路径，再重开验证持久资料与临时秘密生命周期。
 
 `npm run ui:test` 还会运行 `npm run ui:production:test`：先生成正式前端产物，再直接加载 dist 中的 HTML/JS/CSS，配合隔离的真实目录核心检查保存主题、服务器/代理表单、滚轮、底部字段、焦点和固定页脚；覆盖浅色、深色、多巴胺及 1100×720 / 720×480。此检查用于发现开发模块样式加载顺序与正式打包顺序不同造成的回归，不以开发服务器的截图代替正式产物。

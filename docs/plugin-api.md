@@ -27,7 +27,7 @@
 
 宿主还通知 `visibilityChanged/themeChanged/focus/unmount`。核心校验真实页面 sender、挂载 token、插件进程实例与工作区 Context。移窗时先等目标页面 mounted，再提交窗口归属；旧表面事件因此失效。同窗切换只隐藏已挂载页面，不能重写其 DOM。示例 bridge 位于 `plugins/ui-example/ui/bridge.js`。
 
-UI 事件最多 24 KiB，是控制交互接口，不能用来传终端输出或文件内容流。RPC 原有 64 KiB 帧上限仍在，超时 5 秒；真实业务的数据通道、背压和恢复策略后续单独实现。可信插件不增加权限表或授权流程。
+UI 事件最多 24 KiB，是控制交互接口，不能用来传终端输出或文件内容流。RPC 保留 64 KiB 帧上限和 5 秒等待期限；v0.6.0 的真实业务正文另走下述有界视图数据桥。可信插件不增加权限表或授权流程。
 
 ## 目录与清单
 
@@ -54,16 +54,16 @@ stdin/stdout 每行一个 UTF-8 JSON-RPC 2.0 对象，以 LF 结尾，最大 64 
 
 当前源码的控制通信已改为有界双向分派：每插件最多 4 个处理线程、32 个未完成的插件 → 核心调用；核心 → 插件调用队列及在途表各最多 64 项。接收循环不等待业务处理，响应按请求 ID 匹配，完成顺序可以不同。停止请求有独立队列，写入端优先发送响应、初始化与 shutdown，输出或请求压力不会无限堆积。队列或写入通路持续不可用时明确失败，不静默丢成功响应。
 
-停止插件时取消等待中的核心 → 插件请求；通信结束后旧实例的排队工作失效、迟到结果不再回写。5 秒超时是等待期限，不承诺撤销已经开始的持久化副作用；长远端操作将使用单独任务/取消机制，不能通过延长全局超时实现。插件自身也必须持续读取控制帧，不能同步等待核心响应时停止读取核心发来的请求。正文数据通道尚未实现。
+停止插件时取消等待中的核心 → 插件请求；通信结束后旧实例的排队工作失效、迟到结果不再回写。5 秒超时是等待期限，不承诺撤销已经开始的持久化副作用；长远端操作使用单独任务/取消机制。插件自身也必须持续读取控制帧，不能同步等待核心响应时停止读取核心发来的请求。正文不经此控制协议传送。
 
 核心发起：
 
 ```json
-{"jsonrpc":"2.0","id":"initialize","method":"initialize","params":{"coreApiVersion":"1","coreVersion":"0.4.0","capabilities":["logging.write","messages.publish","ui.v1","rpc.concurrent"],"dataDirectory":"<系统应用数据目录>/plugin-data/sodeck.hello"}}
+{"jsonrpc":"2.0","id":"initialize","method":"initialize","params":{"coreApiVersion":"1","coreVersion":"0.6.0","capabilities":["logging.write","messages.publish","ui.v1","rpc.concurrent","terminal.v1","viewData.v1","files.v1"],"dataDirectory":"<系统应用数据目录>/plugin-data/sodeck.hello"}}
 {"jsonrpc":"2.0","id":"initialize","result":{"apiVersion":"1"}}
 ```
 
-核心等待初始化 5 秒。插件回应 initialize 后可调用以下方法。新增 coreVersion/capabilities 是可选协议信息，旧插件忽略即可；能力表示当前核心实际实现，不是授权清单。核心现在可以建立 SSH 会话，但尚未向插件开放会话、PTY 或 SFTP RPC，所以此处不声明这些能力。插件不能自行声称来源，核心附加 pluginId、instanceId、receivedAt。
+核心等待初始化 5 秒。插件回应 initialize 后可调用以下方法。coreVersion/capabilities 是可选协议信息，旧插件忽略即可；能力表示当前核心实际实现，不是授权清单。真实业务插件检查所需能力后调用 PTY 或文件原语，复用核心会话。插件不能自行声称来源，核心附加 pluginId、instanceId、receivedAt。
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"logging.write","params":{"level":"info","message":"服务已启动","fields":{"port":8080}}}
@@ -92,7 +92,7 @@ API v1 通过 capabilities 扩展真实 PTY、SFTP 与正文桥。插件检查 t
 - terminal.open({viewId,cols,rows}) 返回 id；terminal.close({id}) 释放 PTY，结束状态走正文通道。资源固定创建时会话，不自动重放命令。
 - files.request({action:"open",viewId}) 返回 id；close/status/save 传 id。save 返回后台任务，status 为 running/completed/failed；关闭协调可等待完成，不阻塞接收线程。
 - metrics.networkSnapshot() 返回服务器 socket 量、插件有效载荷、约 3 秒速率与质量。累计为十进制 u64 字符串，不以目录 JSON 代替网络字节。
-- iframe 经 sodeck.request("data",request) 调用正文桥。终端 op 为 attach/ack/write/resize/checkpoint/detach；文件 op="files"，action 为 home/list/stat/read/describe/chunk/stage/save/status/download/cancel。每块最多 16 KiB；按真实 view/实例/Context 校验，不通过普通 ui.event 传正文。
+- iframe 经 sodeck.request("data",request) 调用正文桥。终端 op 为 attach/ack/write/resize/checkpoint/detach；文件 op="files"，action 为 home/list/stat/read/describe/chunk/stage/save/status/download/cancel/exportDraft。每块最多 16 KiB；按真实 view/实例/Context 校验，不通过普通 ui.event 传正文。download/exportDraft 由核心打开本地保存对话框；导出草稿不要求远端在线。
 - 页面以 mounted 消息 flush=true 声明移窗/关闭前需要同步。收到 flush，完成在途同步后回复同 id 的 flushed；携带 error 可阻止丢失输入。旧插件不声明则保留原行为。
 
 所有权、缓冲、保存与下载约束见 [实施记录](implementation-remote-plugins.md)。不引入跨插件直调或插件授权流程。

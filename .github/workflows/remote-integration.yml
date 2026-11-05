@@ -65,8 +65,21 @@ jobs:
         shell: pwsh
         run: |
           if (-not (Test-Path "$env:WINDIR/System32/OpenSSH/sshd.exe")) {
-            $capability = Get-WindowsCapability -Online -Name 'OpenSSH.Server*' | Select-Object -First 1
-            Add-WindowsCapability -Online -Name $capability.Name
+            if ('${{ matrix.name }}' -eq 'windows-aarch64') {
+              # Windows ARM FoD provisioning can stall on the hosted runner.
+              # Use Microsoft's pinned native portable server only for this test.
+              $archive = Join-Path $env:RUNNER_TEMP 'OpenSSH-ARM64.zip'
+              Invoke-WebRequest 'https://github.com/PowerShell/Win32-OpenSSH/releases/download/10.4.0.0p1-Preview/OpenSSH-ARM64.zip' -OutFile $archive
+              if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne 'D2B1928225479FEC9E0C938F527FDB5ED676446CCA1BBCC5AF84ACA1F272842E') { throw 'OpenSSH test archive hash mismatch' }
+              $directory = Join-Path $env:RUNNER_TEMP 'OpenSSH-test'
+              Expand-Archive -LiteralPath $archive -DestinationPath $directory
+              $server = (Get-ChildItem $directory -Recurse -Filter sshd.exe | Select-Object -First 1).FullName
+              if (-not $server) { throw 'OpenSSH server is missing' }
+              "SODECK_SSHD=$server" >> $env:GITHUB_ENV
+            } else {
+              $capability = Get-WindowsCapability -Online -Name 'OpenSSH.Server*' | Select-Object -First 1
+              Add-WindowsCapability -Online -Name $capability.Name
+            }
           }
       - name: Windows installed package with independent plugins
         if: runner.os == 'Windows'
