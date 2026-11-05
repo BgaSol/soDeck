@@ -231,3 +231,42 @@ fn corrupt_and_unwritable_storage_preserves_original() {
     assert!(core.set_theme("dark").is_err());
     core.shutdown().unwrap();
 }
+
+#[test]
+fn retired_examples_are_removed_before_startup_and_removal_is_persisted() {
+    let f = Fixture::new("");
+    let core = f.open();
+    core.add_plugin(&f.plugin).unwrap();
+    drop(core);
+    let path = f.root.join("data/plugins.json");
+    let mut records: Vec<serde_json::Value> =
+        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    for id in ["sodeck.hello", "sodeck.ui-example"] {
+        let mut record = records[0].clone();
+        record["manifest"]["id"] = json!(id);
+        record["enabled"] = json!(true);
+        records.push(record);
+    }
+    fs::write(&path, serde_json::to_vec(&records).unwrap()).unwrap();
+    // An unwritable migration leaves the original records available for recovery.
+    fs::create_dir(path.with_extension("json.tmp")).unwrap();
+    assert!(AppCore::open(f.root.join("data"), "test".into()).is_err());
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&fs::read(&path).unwrap()).unwrap(),
+        json!(records)
+    );
+    fs::remove_dir(path.with_extension("json.tmp")).unwrap();
+    for _ in 0..2 {
+        let core = f.open();
+        core.start_enabled();
+        let snapshot = core.snapshot();
+        assert_eq!(snapshot.plugins.len(), 1);
+        assert_eq!(snapshot.plugins[0].manifest.id, "test.fixture");
+        assert_eq!(snapshot.plugins[0].status, PluginStatus::Running);
+        assert!(snapshot.storage_errors.is_empty());
+        core.shutdown().unwrap();
+    }
+    let saved: Vec<serde_json::Value> = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(saved.len(), 1);
+    assert!(f.plugin.join("plugin.json").is_file());
+}

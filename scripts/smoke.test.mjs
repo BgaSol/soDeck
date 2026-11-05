@@ -27,8 +27,6 @@ test("package validation paths survive a launcher changing its working directory
       fs.writeFileSync(path.join(value("--test-data-dir"), "smoke-result.json"), '{"completed":true,"workspaceNative":true,"sshNative":true}');
     `);
     const env = { ...process.env, SODECK_TEST_UPDATE_BUNDLE: "update.AppImage", SODECK_TEST_SSH_CONFIG: "ssh-validation.json" };
-    delete env.SODECK_TEST_PLUGIN;
-    delete env.SODECK_TEST_UI_PLUGIN;
     delete env.SODECK_TEST_DATA_DIR;
     delete env.SODECK_VERIFY_PERSISTED;
     const result = spawnSync(process.execPath, [fileURLToPath(new URL("./smoke.mjs", import.meta.url)), process.execPath, launcher], { cwd: root, env, encoding: "utf8" });
@@ -49,7 +47,7 @@ test("network package validation rejects a generic report and clears stale failu
       if(process.env.WRITE_NETWORK_REPORT==='1')fs.writeFileSync(path.join(data,'network-smoke-result.json'),JSON.stringify({completed:true}));
     `);
     const env={...process.env,SODECK_TEST_DATA_DIR:data,SODECK_VERIFY_PERSISTED:'1',SODECK_TEST_NETWORK_PLUGIN:'isolated-test-package'};
-    for(const name of ['SODECK_TEST_PLUGIN','SODECK_TEST_UI_PLUGIN','SODECK_TEST_SSH_CONFIG','SODECK_TEST_UPDATE_BUNDLE','SODECK_TEST_CLIPBOARD'])delete env[name];
+    for(const name of ['SODECK_TEST_SSH_CONFIG','SODECK_TEST_UPDATE_BUNDLE','SODECK_TEST_CLIPBOARD'])delete env[name];
     const run=()=>spawnSync(process.execPath,[fileURLToPath(new URL('./smoke.mjs',import.meta.url)),process.execPath,launcher],{env,encoding:'utf8'});
     // A report left by a previous run must not substitute for this run's result.
     fs.writeFileSync(path.join(data,'network-smoke-result.json'),'{"completed":true}');

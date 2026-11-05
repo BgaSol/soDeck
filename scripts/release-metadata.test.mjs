@@ -4,26 +4,46 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { checkTag, generate } from "./release-metadata.mjs";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { checkTag, generate, pluginConfig } from "./release-metadata.mjs";
+
+test("plugin build and release commands require an explicit plugin selection", () => {
+  const env = { ...process.env };
+  delete env.GITHUB_REF_NAME;
+  delete env.GITHUB_REF_TYPE;
+  delete env.GITHUB_OUTPUT;
+  for (const [script, args] of [["package-plugin.mjs", []], ["release-metadata.mjs", ["--kind", "plugin"]]]) {
+    const result = spawnSync(process.execPath, [fileURLToPath(new URL(script, import.meta.url)), ...args], { env, encoding: "utf8" });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Specify a plugin with --plugin/);
+  }
+  for (const plugin of ["terminal", "files", "network-proxy"]) {
+    const config = pluginConfig(plugin);
+    assert.equal(config.id, `sodeck.${plugin}`);
+    checkTag(config, `plugin-${plugin}-v${config.version}`);
+  }
+});
+
 test("component tags stay independent", () => {
-  const config = { tag: "plugin-hello-v1.2.3" };
-  checkTag(config, "plugin-hello-v1.2.3");
+  const config = { tag: "plugin-fixture-v1.2.3" };
+  checkTag(config, "plugin-fixture-v1.2.3");
   assert.throws(() => checkTag(config, "v1.2.3"));
   assert.throws(() => checkTag(config, "plugin-files-v1.2.3"));
 });
 test("plugin manifest includes only packages with matching component, version and hash", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-release-test-"));
   try {
-    const config = { id: "sodeck.hello", version: "1.2.3", apiVersion: "1", tag: "plugin-hello-v1.2.3", notes: "hello" };
+    const config = { id: "test.fixture", version: "1.2.3", apiVersion: "1", tag: "plugin-fixture-v1.2.3", notes: "test fixture" };
     const archive = Buffer.from("plugin archive");
-    fs.writeFileSync(path.join(root, "hello.zip"), archive);
-    const metadata = { id: config.id, version: config.version, apiVersion: "1", target: "aarch64-pc-windows-msvc", file: "hello.zip", sha256: createHash("sha256").update(archive).digest("hex") };
+    fs.writeFileSync(path.join(root, "fixture.zip"), archive);
+    const metadata = { id: config.id, version: config.version, apiVersion: "1", target: "aarch64-pc-windows-msvc", file: "fixture.zip", sha256: createHash("sha256").update(archive).digest("hex") };
     const file = path.join(root, "plugin-windows.json");
     fs.writeFileSync(file, JSON.stringify(metadata));
     const manifest = generate("plugin", config, root);
     assert.deepEqual(Object.keys(manifest.platforms), [metadata.target]);
-    assert.match(manifest.platforms[metadata.target].url, /plugin-hello-v1.2.3\/hello.zip$/);
-    fs.writeFileSync(path.join(root, "hello.zip"), "corrupt");
+    assert.match(manifest.platforms[metadata.target].url, /plugin-fixture-v1.2.3\/fixture.zip$/);
+    fs.writeFileSync(path.join(root, "fixture.zip"), "corrupt");
     assert.throws(() => generate("plugin", config, root), /hash mismatch/);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

@@ -1,7 +1,7 @@
 //! Checks run only by the packaged-application smoke-test entry point.
 mod network;
 mod remote_plugins;
-use crate::{model::LogFilter, AppCore};
+use crate::AppCore;
 use std::{
     path::Path,
     sync::Arc,
@@ -148,118 +148,6 @@ pub async fn ssh_roundtrip(
     Ok(())
 }
 
-/// Isolated --smoke-test data only. Exercises actual native webviews, not SSH.
-pub fn component_ui_roundtrip(
-    handle: &tauri::AppHandle,
-    core: &Arc<AppCore>,
-    directory: &Path,
-) -> Result<(), String> {
-    use crate::{windows::DesktopWindows, workspaces::ConnectedSession};
-    use serde_json::json;
-    use tauri::Manager;
-    let plugin = core.load(directory)?;
-    let catalog = core.server_catalog();
-    let server = catalog["servers"]
-        .as_array()
-        .ok_or("缺少测试目录")?
-        .iter()
-        .find(|s| s["name"] == "Package gateway")
-        .ok_or("缺少测试服务器")?;
-    let desktop = handle.state::<DesktopWindows>();
-    let w = desktop.accept_session(
-        handle,
-        ConnectedSession {
-            server_id: server["id"].as_str().unwrap().into(),
-            connection_id: "ui-native-example".into(),
-            endpoint: "ops@ui-example.invalid".into(),
-        },
-    )?;
-    core.ui_snapshot("main")?;
-    core.workspace_changed();
-    let wait = |window: &str| -> Result<(), String> {
-        let started = Instant::now();
-        while !core
-            .component_ui
-            .lock()
-            .unwrap()
-            .target_ready(&w.context.workspace_id, window)
-        {
-            if started.elapsed() > Duration::from_secs(10) {
-                return Err(format!("原生窗口 {window} 中插件界面未就绪"));
-            }
-            thread::sleep(Duration::from_millis(20));
-        }
-        Ok(())
-    };
-    wait("main")?;
-    let state = core.ui_snapshot("main")?;
-    let views = state["workspaces"][&w.context.workspace_id]["views"]
-        .as_array()
-        .ok_or("缺少组件页面")?;
-    if views.len() != 2 {
-        return Err("默认应只有文件列表和一个终端".into());
-    }
-    let editor = core.ui_action("main", &w.context, json!({"op":"open","key":format!("{}:editor",plugin.manifest.id),"resourceKey":"/etc/native-example.conf","params":{"name":"native-example.conf"},"requestId":"native-open"}))?;
-    wait("main")?;
-    let id = editor["viewId"].as_str().unwrap();
-    let surface = core
-        .component_ui
-        .lock()
-        .unwrap()
-        .mounted_surface(id, "main")
-        .ok_or("未找到已挂载的编辑器")?;
-    core.ui_event(
-        "main",
-        &surface,
-        json!({"action":"edit","text":"native window draft","cursor":7,"scroll":0}),
-    )?;
-    desktop.move_to(handle, "main", &w.context.workspace_id, None, 0, None)?;
-    let owner = core
-        .workspaces
-        .lock()
-        .unwrap()
-        .owner(&w.context.workspace_id)
-        .ok_or("工作区丢失")?;
-    wait(&owner)?;
-    if core
-        .ui_event("main", &surface, json!({"action":"edit","text":"stale"}))
-        .is_ok()
-    {
-        return Err("旧窗口仍可发送编辑事件".into());
-    }
-    desktop.move_to(
-        handle,
-        &owner,
-        &w.context.workspace_id,
-        Some("main".into()),
-        0,
-        None,
-    )?;
-    wait("main")?;
-    let restored = core.ui_attach("main", id)?;
-    if restored["data"]["text"] != "native window draft" {
-        return Err("移窗后编辑草稿未保留".into());
-    }
-    let plan = core.ui_close_prepare("main", vec![w.context.workspace_id.clone()], None)?;
-    if plan["dirty"].as_array().map(Vec::len) != Some(1) {
-        return Err("关闭未发现未保存文件".into());
-    }
-    core.ui_close_finish(
-        plan["token"].as_str().unwrap(),
-        serde_json::from_value(plan["views"].clone()).map_err(|e| e.to_string())?,
-        "save",
-    )?;
-    core.workspaces
-        .lock()
-        .unwrap()
-        .close("main", &w.context.workspace_id)?;
-    core.workspace_changed();
-    core.unload(&plugin.manifest.id)?;
-    core.forget(&plugin.manifest.id)?;
-    Ok(())
-}
-
-/// Isolated --smoke-test data only. Exercises actual native webviews, not SSH.
 pub fn workspace_roundtrip(handle: &tauri::AppHandle, core: &AppCore) -> Result<(), String> {
     use crate::{
         windows::DesktopWindows,
@@ -472,73 +360,6 @@ pub fn core_update_bundle(handle: &tauri::AppHandle, bundle: &Path) -> Result<()
     }
     if update.verify(&changed).is_ok() {
         return Err("更新器错误地接受了修改过的发行包".into());
-    }
-    Ok(())
-}
-
-pub fn plugin_roundtrip(
-    core: &Arc<AppCore>,
-    directory: &Path,
-    persisted: bool,
-) -> Result<(), String> {
-    if persisted
-        && (core.snapshot().plugins.is_empty()
-            || core.messages().is_empty()
-            || core.messages().iter().any(|m| !m.read)
-            || core.snapshot().preferences.theme != "dark")
-    {
-        return Err("重启后插件目录、消息、已读或主题未保留".into());
-    }
-    if persisted {
-        core.start_enabled();
-        if !core
-            .snapshot()
-            .plugins
-            .iter()
-            .any(|p| p.enabled && p.status == crate::model::PluginStatus::Running)
-        {
-            return Err("重启后未自动加载启用插件".into());
-        }
-        let id = core.snapshot().plugins[0].manifest.id.clone();
-        core.set_enabled(&id, false)?;
-        if core.snapshot().plugins[0].status != crate::model::PluginStatus::Running {
-            return Err("关闭插件不应立即停止进程".into());
-        }
-        core.set_enabled(&id, true)?;
-        core.unload(&id)?;
-    } else {
-        core.add_plugin(directory)?;
-        if !core.snapshot().restart_required
-            || core.snapshot().plugins[0].status != crate::model::PluginStatus::Unloaded
-        {
-            return Err("新增启用插件应等待重启".into());
-        }
-    }
-    let first = core.load(directory)?;
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while core.messages().is_empty() && Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(20));
-    }
-    if core.messages().is_empty() {
-        return Err("插件没有发布重要消息".into());
-    }
-    let logs = core.logs(&LogFilter {
-        plugin_id: first.manifest.id.clone(),
-        ..Default::default()
-    });
-    if !logs.iter().any(|l| l.source == "plugin") {
-        return Err("插件没有写入普通日志".into());
-    }
-    core.unload(&first.manifest.id)?;
-    let second = core.load(directory)?;
-    if first.instance_id == second.instance_id {
-        return Err("重新加载复用了旧实例".into());
-    }
-    core.unload(&second.manifest.id)?;
-    core.mark_read(None)?;
-    core.set_theme("dark")?;
-    if !core.snapshot().storage_errors.is_empty() {
-        return Err("存储状态异常".into());
     }
     Ok(())
 }

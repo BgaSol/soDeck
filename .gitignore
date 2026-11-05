@@ -2,14 +2,9 @@
 /src-tauri/target/
 /src-tauri/gen/
 /dist/
-/plugins/hello/target/
-/plugins/ui-example/target/
-/plugins/terminal/target/
+/plugins/*/target/
 /plugins/terminal/node_modules/
 /plugins/terminal/ui/
-/plugins/files/target/
 /crates/plugin-client/target/
 *.log
 /artifacts/
-
-/plugins/network-proxy/target/

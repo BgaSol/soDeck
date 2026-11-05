@@ -13,7 +13,8 @@ function run(command, args, options = {}) {
     throw new Error(`${command} failed (${result.status})`);
 }
 const pluginArg = process.argv.indexOf("--plugin");
-const plugin = pluginArg === -1 ? "hello" : process.argv[pluginArg + 1];
+const plugin = pluginArg === -1 ? undefined : process.argv[pluginArg + 1];
+if (!plugin) throw new Error("Specify a plugin with --plugin terminal, --plugin files, or --plugin network-proxy");
 if (!/^[a-z][a-z0-9-]*$/.test(plugin ?? "")) throw new Error("Invalid plugin directory name");
 const pluginRoot = `plugins/${plugin}`;
 const metadata = JSON.parse(fs.readFileSync(`${pluginRoot}/release.json`, "utf8"));

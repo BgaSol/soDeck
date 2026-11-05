@@ -1,3 +1,4 @@
+//! Test-only stateful UI protocol fixture. Never packaged or distributed.
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
@@ -41,12 +42,12 @@ fn dispatch(
             }
             "editor" => p["params"]["name"]
                 .as_str()
-                .unwrap_or("示例文件")
+                .unwrap_or("夹具文件")
                 .to_string(),
-            _ => return Err("未知示例视图".into()),
+            _ => return Err("未知夹具视图".into()),
         };
         let text = if kind == "editor" {
-            "# SoDeck 示例文件，不会写入服务器\nserver {\n    listen 80;\n}\n"
+            "# SoDeck 夹具文件，不会写入服务器\nserver {\n    listen 80;\n}\n"
         } else {
             ""
         }

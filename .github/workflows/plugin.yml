@@ -7,7 +7,7 @@ on:
     inputs:
       plugin:
         description: Plugin directory under plugins/
-        default: hello
+        default: terminal
         required: true
         type: string
       publish:
@@ -31,7 +31,7 @@ jobs:
           node-version-file: .node-version
       - id: config
         env:
-          PLUGIN: ${{ inputs.plugin || 'hello' }}
+          PLUGIN: ${{ inputs.plugin || 'terminal' }}
         run: node scripts/release-metadata.mjs --kind plugin --plugin "$PLUGIN"
   package:
     needs: select

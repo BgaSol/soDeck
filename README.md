@@ -1,8 +1,8 @@
 # SoDeck
 
-面向运维人员的远程服务器工作台。v0.7.0 增加独立网络隧道插件，提供 TCP 转发、SOCKS5 代理和流量统计，并统一工作台主题与原生剪贴板交互。普通启动显示服务器管理，真实认证成功后才创建工作区。核心已正式发布为 [Latest v0.7.0](https://github.com/BgaSol/soDeck/releases/latest)，终端 0.1.2、文件 0.2.1、网络隧道 0.1.0 独立发行；五目标原生构建与实际包组合验收均通过，范围见 [v0.7.0](docs/releases/v0.7.0.md)。
+面向运维人员的远程服务器工作台。v0.7.1 退役 Hello 和组件交互示例，官方插件仅保留终端、文件和网络隧道；升级启动前自动移除旧示例登记。五目标发布验证进行中，范围见 [v0.7.1](docs/releases/v0.7.1.md)。已发布的 [Latest](https://github.com/BgaSol/soDeck/releases/latest) 提供正式安装包。核心与业务插件独立分发，核心包不包含业务插件。
 
-外置插件声明侧栏、中央页面及编辑弹窗，核心统一管理两侧入口、混合 Tab、布局偏好、关闭确认和跨窗重挂载。`plugins/terminal` 提供真实多 Tab 终端；`plugins/files` 提供目录、1 MiB 内 UTF-8 文件编辑、保存冲突检查和单文件下载；`plugins/network-proxy` 提供按服务器管理的 TCP 转发与 SOCKS5 代理，复用现有混合跳板，域名由最终远端解析。`plugins/ui-example` 仅保留交互测试。核心包不包含这些插件。
+外置插件声明侧栏、中央页面及编辑弹窗，核心统一管理两侧入口、混合 Tab、布局偏好、关闭确认和跨窗重挂载。`plugins/terminal` 提供真实多 Tab 终端；`plugins/files` 提供目录、1 MiB 内 UTF-8 文件编辑、保存冲突检查和单文件下载；`plugins/network-proxy` 提供按服务器管理的 TCP 转发与 SOCKS5 代理，复用现有混合跳板，域名由最终远端解析。核心包不包含这些插件。
 
 当前版本沿用旧版紧凑工作台：文件侧栏提供真正的多分支目录树、路径定位、独立分页、右键操作和键盘导航；单击选中、双击文件打开中央编辑器。隐藏、重挂载和移窗保留导航状态。多巴胺、浅色、深色主题同步到文件与终端。新版文件插件 0.2.0 需要核心 0.6.1 的目录游标能力，旧版文件插件仍可使用原来的接口。范围见 [文件树设计](docs/plan-file-tree.md)，验证和限制见 [实施记录](docs/implementation-file-tree.md)，发行说明见 [v0.6.1](docs/releases/v0.6.1.md)。
 
@@ -19,14 +19,14 @@ v0.5.2 补齐设置中的官方插件下载安装入口，并独立发行组件�
 工作台直接管理服务器与 SOCKS5 代理：新增、编辑、复制、删除、搜索和分组；SSH 与 SOCKS5 路径可混合排序。记住的密码和私钥口令按选择明文保存到应用数据目录的 `servers.json`，私钥只保存路径。未记住的秘密仅当前进程有效。数据异常时保留原文件，可从上一份有效备份恢复。
 
 1. 下载对应系统和架构的核心安装包，或从旧版的应用更新入口升级。
-2. 先更新核心，再在 **设置 → 插件管理 → 官方插件** 点击“下载并启用”，客户端下载对应正式 Release 的本机版本。v0.7.0 配套终端 0.1.2、文件 0.2.1 和网络隧道 0.1.0，均已正式发布并可独立下载。Hello 与组件交互示例仅供测试；其他本地插件仍通过“添加插件目录”选择包含 plugin.json 的目录。
+2. 先更新核心，再在 **设置 → 插件管理 → 官方插件** 点击“下载并启用”，客户端下载对应正式 Release 的本机版本。v0.7.0 配套终端 0.1.2、文件 0.2.1 和网络隧道 0.1.0，均已正式发布并可独立下载。官方列表仅保留终端、文件和网络隧道；其他本地插件仍通过“添加插件目录”选择包含 plugin.json 的目录。
 3. 重启后自动加载启用插件；启用、关闭和已启用插件更新都在重启后生效。多项修改可统一重启一次。
 4. 插件详情检查与下载其独立更新；核心更新位于 **设置 → 应用更新**。
 5. **设置 → 外观**可选多巴胺、跟随系统、浅色和深色，即选即保存。多巴胺沿用旧版奶油底、粉色导航、黄色选中、薄荷绿点缀与深色粗描边，无装饰阴影；升级保留当前偏好。
 
-终端和文件使用独立 Release。开发验收也可以独立打包后添加 `artifacts/plugins/sodeck-terminal_<版本>_<target>` 和 `sodeck-files_<版本>_<target>` 目录，不需添加组件交互示例。核心安装包保持不含插件。
+终端和文件使用独立 Release。开发验收也可以独立打包后添加 `artifacts/plugins/sodeck-terminal_<版本>_<target>` 和 `sodeck-files_<版本>_<target>` 目录。核心安装包保持不含插件。
 
-v0.1.1 用户需手动安装一次带更新功能的版本。旧插件记录默认关闭，启用后重启；旧 Hello 可配置仓库 `BgaSol/soDeck`、标签前缀 `plugin-hello-v` 获取独立更新。没有来源的插件继续手动维护。
+Hello 与组件交互示例已退役：源码、官方安装来源和发行配置已删除，升级后自动移除旧登记。原外部程序、数据、消息和日志按移除记录规则保留。宿主回归使用仅测试的夹具，不再发行示例插件；历史版本记录仍可查阅。没有更新来源的其他插件继续手动维护。
 
 Windows x86_64/ARM64 使用 EXE，Linux x86_64/ARM64 提供 DEB 与 AppImage，Apple Silicon macOS 使用 DMG。Linux 的应用内升级使用 AppImage；DEB 继续使用系统包管理器。
 
@@ -54,21 +54,19 @@ npm run terminal:test
 npm run files:test
 npm run network:test
 npm run build -- --bundles nsis -- --locked
-npm run plugin:build
-node scripts/package-plugin.mjs --plugin terminal
-node scripts/package-plugin.mjs --plugin files
-node scripts/package-plugin.mjs --plugin network-proxy
+npm run plugin:build -- --plugin terminal
+npm run plugin:build -- --plugin files
+npm run plugin:build -- --plugin network-proxy
 ```
 
-核心版本只修改 `src-tauri/tauri.conf.json`，Hello 版本只修改 `plugins/hello/Cargo.toml`。核心标签 `v<版本>` 和插件标签 `plugin-hello-v0.1.1` 分别触发五目标独立构建及 Release 草稿；更新清单自动生成，检查后正式发布。普通本地打包不需要更新签名密钥。
+核心版本只修改 `src-tauri/tauri.conf.json`，插件版本只修改各自的 `plugins/<名称>/Cargo.toml`。核心标签 `v<版本>` 和插件标签 `plugin-terminal-v<版本>`、`plugin-files-v<版本>`、`plugin-network-proxy-v<版本>` 分别触发五目标独立构建及 Release 草稿；更新清单自动生成，检查后正式发布。普通本地打包不需要更新签名密钥。
 
 | 工作流 | 用途 |
 | --- | --- |
 | Check | 类型、Rust 格式、发布脚本测试及前端构建 |
 | Package SoDeck | 五目标原生核心安装包、目录保存重开、原生工作区移窗/关闭烟测、更新签名；标签发布时生成 core-update.json |
 | Package plugin | 按插件目录独立打包、生成 plugin-update.json |
-| Verify packaged core and plugin | 五目标实际包的插件、日志、消息与重启保留 |
-| Verify native remote plugins | 三个独立打包运行的实际核心/终端/文件包，验证原生数据桥与 OpenSSH 业务 |
+| Verify native remote plugins | 独立打包的实际核心和终端/文件/网络隧道包，验证原生数据桥、OpenSSH 与网络业务 |
 
 详细步骤、签名密钥与验证边界见 [分发文档](docs/distribution.md)。Windows 未配置商业代码签名，macOS 使用 ad-hoc 签名；更新包签名由 Tauri updater 单独处理。插件按可信扩展使用，没有权限清单和逐项授权。
 

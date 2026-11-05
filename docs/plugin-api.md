@@ -10,7 +10,7 @@
 
 ## 可选 UI v1（当前源码）
 
-清单可添加 `ui: { apiVersion: "1", entry: "ui/index.html", views: [...] }`，完整示例见 `plugins/ui-example/release.json`。视图 ID 在插件内稳定，核心用 `pluginId:localId` 标识定义、另分配 viewId 标识实例。每个视图必须声明 `id/title/icon/container/instancePolicy`：
+清单可添加 `ui: { apiVersion: "1", entry: "ui/index.html", views: [...] }`，完整示例见 `plugins/files/release.json`。视图 ID 在插件内稳定，核心用 `pluginId:localId` 标识定义、另分配 viewId 标识实例。每个视图必须声明 `id/title/icon/container/instancePolicy`：
 
 - `container`：`sidebar` 或 `editor`。侧栏第一版只支持 `perWorkspace` 单例；中央还支持 `multiple` 和 `perResource`。资源标识按远程文件系统语义由插件提供，不按本机 Windows 路径转换。
 - `defaultSide`：left/right，默认 left；`defaultPinned`：初始固定入口，默认 false；`openOnWorkspace`：none/reveal/createOne，默认 none；`startupOrder`：初始动作顺序。首次布局采用当前插件推荐值，以后新增插件进更多入口，不覆盖已有偏好。
@@ -27,7 +27,7 @@
 - `event`：交给所属插件进程的 ui.event，结果更新页面元数据。
 - `openView`：`{viewType,resourceKey?,params?}`，只打开本插件在同一工作区中声明的视图。核心分配动作 requestId，IPC 重试复用，真实多次新建允许多个实例。
 
-宿主还通知 `visibilityChanged/themeChanged/focus/unmount`。核心校验真实页面 sender、挂载 token、插件进程实例与工作区 Context。移窗时先等目标页面 mounted，再提交窗口归属；旧表面事件因此失效。同窗切换只隐藏已挂载页面，不能重写其 DOM。示例 bridge 位于 `plugins/ui-example/ui/bridge.js`。
+宿主还通知 `visibilityChanged/themeChanged/focus/unmount`。核心校验真实页面 sender、挂载 token、插件进程实例与工作区 Context。移窗时先等目标页面 mounted，再提交窗口归属；旧表面事件因此失效。同窗切换只隐藏已挂载页面，不能重写其 DOM。示例 bridge 位于 `plugins/files/ui/bridge.js`。
 
 UI 事件最多 24 KiB，是控制交互接口，不能用来传终端输出或文件内容流。RPC 保留 64 KiB 帧上限和 5 秒等待期限；v0.6.0 的真实业务正文另走下述有界视图数据桥。可信插件不增加权限表或授权流程。
 
@@ -37,18 +37,18 @@ UI 事件最多 24 KiB，是控制交互接口，不能用来传终端输出或�
 
 ```json
 {
-  "id": "sodeck.hello",
-  "name": "Hello 插件",
+  "id": "sodeck.terminal",
+  "name": "终端",
   "version": "0.1.0",
   "apiVersion": "1",
   "target": "x86_64-pc-windows-msvc",
-  "entry": "bin/sodeck-hello.exe"
+  "entry": "bin/sodeck-terminal.exe"
 }
 ```
 
 每个包包含一个目标的程序，五个 target 见分发文档。Unix 入口需要执行位。核心只做必需字段、版本、API 主版本、目标及目录内入口的基本检查。同一 ID 只能有一个活动实例。启用/关闭在重启后生效，核心启动时加载已启用插件。
 
-清单可选 `updateSource: { "repository": "BgaSol/soDeck", "tagPrefix": "plugin-hello-v" }`。未声明来源的本地插件可在设置中显式配置。插件仍为 API v1，不增加运行时更新 RPC。发布维护与重启切换见分发文档。
+清单可选 `updateSource: { "repository": "BgaSol/soDeck", "tagPrefix": "plugin-terminal-v" }`。未声明来源的本地插件可在设置中显式配置。插件仍为 API v1，不增加运行时更新 RPC。发布维护与重启切换见分发文档。
 
 ## 通信
 
@@ -61,7 +61,7 @@ stdin/stdout 每行一个 UTF-8 JSON-RPC 2.0 对象，以 LF 结尾，最大 64 
 核心发起：
 
 ```json
-{"jsonrpc":"2.0","id":"initialize","method":"initialize","params":{"coreApiVersion":"1","coreVersion":"0.6.0","capabilities":["logging.write","messages.publish","ui.v1","rpc.concurrent","terminal.v1","viewData.v1","files.v1"],"dataDirectory":"<系统应用数据目录>/plugin-data/sodeck.hello"}}
+{"jsonrpc":"2.0","id":"initialize","method":"initialize","params":{"coreApiVersion":"1","coreVersion":"0.6.0","capabilities":["logging.write","messages.publish","ui.v1","rpc.concurrent","terminal.v1","viewData.v1","files.v1"],"dataDirectory":"<系统应用数据目录>/plugin-data/sodeck.terminal"}}
 {"jsonrpc":"2.0","id":"initialize","result":{"apiVersion":"1"}}
 ```
 
@@ -149,14 +149,14 @@ UI v1 的 `mount.capabilities.clipboard === 1` 表示宿主提供原生文本剪
 
 清单的视图可声明 `container:"dialog",instancePolicy:"perWorkspace"`，禁止 startup/pin/create/locate 组合。宿主提供标题、关闭、三主题和可滚动容器；按原有 ui.mount/event/beforeClose/save/disposeView 协议工作。iframe 的 `sodeck.request("closeView",{})` 请求关闭当前逻辑视图，仍经过 flush 和保存/放弃/取消；关闭编辑弹窗不关闭同插件的管理侧栏资源。
 
-## 本地构建 Hello
+## 本地构建业务插件
 
 ```sh
-npm run plugin:build
+npm run plugin:build -- --plugin terminal
 # 指定目标时仍需要相应编译环境
-npm run plugin:build -- --target aarch64-apple-darwin
+npm run plugin:build -- --plugin terminal --target aarch64-apple-darwin
 # 正在运行的插件不能原位覆盖；关闭并重启后构建，或使用另外的输出目录
-npm run plugin:build -- --out-dir artifacts/another-build
+npm run plugin:build -- --plugin terminal --out-dir artifacts/another-build
 ```
 
-产物位于 `artifacts/plugins/`，包含清单和原生入口的目录与压缩归档。构建脚本在 Hello 工程目录调用 Cargo，使其 Windows 静态运行库配置生效；归档前检查原生架构和额外的 Visual C++ 运行库依赖。Hello 自己的版本只在 `plugins/hello/Cargo.toml` 中修改，独立于核心版本；用户运行时不需要 Rust、Node.js 或额外安装 Visual C++ 运行库。
+产物位于 `artifacts/plugins/`，包含清单和原生入口的目录与压缩归档。构建脚本在所选插件工程目录调用 Cargo，使其 Windows 静态运行库配置生效；归档前检查原生架构和额外的 Visual C++ 运行库依赖。每个插件自己的版本只在 `plugins/<名称>/Cargo.toml` 中修改，独立于核心版本；用户运行时不需要 Rust、Node.js 或额外安装 Visual C++ 运行库。

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 export const targets = ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc", "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "aarch64-apple-darwin"];
 export function pluginConfig(plugin, root = ".") {
-  if (!/^[a-z][a-z0-9-]*$/.test(plugin)) throw new Error("Invalid plugin name");
+  if (typeof plugin !== "string" || !/^[a-z][a-z0-9-]*$/.test(plugin)) throw new Error("Invalid plugin name");
   const directory = path.join(root, "plugins", plugin);
   const metadata = JSON.parse(fs.readFileSync(path.join(directory, "release.json"), "utf8"));
   const version = fs.readFileSync(path.join(directory, "Cargo.toml"), "utf8").match(/^version = "(\d+\.\d+\.\d+)"/m)?.[1];
@@ -61,10 +61,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const arg = name => { const index = process.argv.indexOf(`--${name}`); return index < 0 ? undefined : process.argv[index + 1]; };
   const kind = arg("kind");
   const tag = arg("tag") ?? process.env.GITHUB_REF_NAME;
-  const plugin = tag?.match(/^plugin-([a-z][a-z0-9-]*)-v\d+\.\d+\.\d+$/)?.[1] ?? arg("plugin") ?? "hello";
+  const plugin = tag?.match(/^plugin-([a-z][a-z0-9-]*)-v\d+\.\d+\.\d+$/)?.[1] ?? arg("plugin");
+  if (kind === "plugin" && !plugin) throw new Error("Specify a plugin with --plugin <directory> or a plugin release tag");
   const config = kind === "plugin" ? pluginConfig(plugin) : coreConfig();
   if (arg("tag") || process.env.GITHUB_REF_TYPE === "tag") checkTag(config, tag);
-  if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `plugin=${plugin}\ntag=${config.tag}\n`);
+  if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${kind === "plugin" ? `plugin=${plugin}\n` : ""}tag=${config.tag}\n`);
   if (arg("input")) {
     const manifest = generate(kind, config, arg("input"));
     fs.writeFileSync(path.join(arg("input"), `${kind}-update.json`), JSON.stringify(manifest, null, 2) + "\n");

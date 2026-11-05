@@ -8,19 +8,17 @@ import readline from "node:readline";
 import { createServer } from "vite";
 import { chromium } from "playwright";
 
-const build = spawnSync("cargo", ["build", "--manifest-path", "src-tauri/Cargo.toml", "--features", "test-fixtures", "--bin", "catalog-fixture", "--locked"], { stdio: "inherit" });
+const build = spawnSync("cargo", ["build", "--manifest-path", "src-tauri/Cargo.toml", "--features", "test-fixtures", "--bin", "catalog-fixture", "--bin", "workspace-ui-fixture", "--locked"], { stdio: "inherit" });
 if (build.status !== 0) throw new Error("Catalog test bridge build failed");
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-ui-"));
-const exampleBuild = spawnSync("cargo", ["build", "--manifest-path", "plugins/ui-example/Cargo.toml", "--locked"], { stdio: "inherit" });
-if (exampleBuild.status !== 0) throw new Error("UI example build failed");
 const pluginRoot = path.join(directory, "ui-plugin");fs.mkdirSync(pluginRoot);
 const suffix = process.platform === "win32" ? ".exe" : "";
-fs.copyFileSync(`plugins/ui-example/target/debug/sodeck-ui-example${suffix}`, path.join(pluginRoot, `sodeck-ui-example${suffix}`));
-fs.cpSync("plugins/ui-example/ui", path.join(pluginRoot,"ui"), {recursive:true});
-const metadata = JSON.parse(fs.readFileSync("plugins/ui-example/release.json","utf8"));
-for(let index=0;index<20;index++)metadata.ui.views.push({id:`extra${index}`,title:`扩展示例组件 ${index}`,icon:'plug',container:'sidebar',instancePolicy:'perWorkspace',defaultSide:'left'});
+fs.copyFileSync(`src-tauri/target/debug/workspace-ui-fixture${suffix}`, path.join(pluginRoot, `workspace-ui-fixture${suffix}`));
+fs.cpSync("scripts/fixtures/workspace-ui/ui", path.join(pluginRoot,"ui"), {recursive:true});
+const metadata = JSON.parse(fs.readFileSync("scripts/fixtures/workspace-ui/manifest.json","utf8"));
+for(let index=0;index<20;index++)metadata.ui.views.push({id:`extra${index}`,title:`扩展测试组件 ${index}`,icon:'plug',container:'sidebar',instancePolicy:'perWorkspace',defaultSide:'left'});
 const target = spawnSync("rustc",["-vV"],{encoding:"utf8"}).stdout.match(/^host: (.+)$/m)[1];
-fs.writeFileSync(path.join(pluginRoot,"plugin.json"),JSON.stringify({...metadata,version:"0.1.0",target,entry:`sodeck-ui-example${suffix}`}));
+fs.writeFileSync(path.join(pluginRoot,"plugin.json"),JSON.stringify({...metadata,target,entry:`workspace-ui-fixture${suffix}`}));
 const executable = path.resolve(`src-tauri/target/debug/catalog-fixture${process.platform === "win32" ? ".exe" : ""}`);
 function startBridge() {
   const child = spawn(executable, [directory], { stdio: ["pipe", "pipe", "inherit"], windowsHide: true });
@@ -64,7 +62,7 @@ async function makePage(window) {
 async function refresh() { for (const page of pages) await page.evaluate(()=>window.manager.refresh()); }
 const select = async (page,id)=>{ await page.locator(`.server-tab-select[data-id="${id}"]`).click(); await page.waitForFunction(id=>document.querySelector(`.server-tab-select[data-id="${id}"]`)?.getAttribute("aria-selected")==="true",id); };
 const menu = (page,id)=>page.locator(`.tab-menu-button[data-id="${id}"]`).click();
-const panel = (page,side)=>page.locator(`.server-workbench:visible [data-component-action="toggle"][data-key="sodeck.ui-example:${side==='left'?'files':'forwarding'}"]`);
+const panel = (page,side)=>page.locator(`.server-workbench:visible [data-component-action="toggle"][data-key="test.workspace-ui:${side==='left'?'files':'forwarding'}"]`);
 async function open(name,index) {
   const changed=await call("change_catalog",{revision:(await call("server_catalog")).revision,change:{op:"saveServer",draft:{name,host:"same.invalid",port:22,username:"ops",authentication:{type:"password",secret:{action:"clear"}},route:[]}}});
   return call("workspace_fixture_open",{serverId:changed.selectedId,connectionId:`fixture-${index}`,endpoint:`ops@${index}.invalid:22`});
@@ -76,7 +74,7 @@ try {
   await call("fixture_load_plugin",{directory:pluginRoot});
   const a=await open("生产 Web",1),b=await open("测试环境",2),c=await open("长名称服务器-".repeat(12),3);
   const aid=a.context.workspaceId,bid=b.context.workspaceId,cid=c.context.workspaceId; await refresh();
-  await select(main,aid); await panel(main,"left").click(); await main.waitForFunction(()=>document.querySelector('.server-workbench:not([hidden]) [data-component-action="toggle"][data-key="sodeck.ui-example:files"]').getAttribute('aria-expanded')==='false'); await panel(main,"right").click(); await main.waitForFunction(()=>document.querySelector('.server-workbench:not([hidden]) [data-component-action="toggle"][data-key="sodeck.ui-example:forwarding"]').getAttribute('aria-expanded')==='true');
+  await select(main,aid); await panel(main,"left").click(); await main.waitForFunction(()=>document.querySelector('.server-workbench:not([hidden]) [data-component-action="toggle"][data-key="test.workspace-ui:files"]').getAttribute('aria-expanded')==='false'); await panel(main,"right").click(); await main.waitForFunction(()=>document.querySelector('.server-workbench:not([hidden]) [data-component-action="toggle"][data-key="test.workspace-ui:forwarding"]').getAttribute('aria-expanded')==='true');
   await select(main,bid); assert.equal(await panel(main,"left").getAttribute("aria-expanded"),"true"); assert.equal(await panel(main,"right").getAttribute("aria-expanded"),"false");
   await select(main,aid); assert.equal(await panel(main,"left").getAttribute("aria-expanded"),"false"); assert.equal(await panel(main,"right").getAttribute("aria-expanded"),"true");
   assert((await main.locator(".server-workbench:visible .workspace-endpoint").innerText()).includes("1.invalid"));
@@ -114,10 +112,10 @@ try {
   assert.equal(await editor.inputValue(),'draft for server A');assert.equal(await editorFrame.locator('body').getAttribute('data-retained'),'same iframe');
   checks.push('多终端独立草稿、最近使用定位、混合 Tab、同文件去重、切换不重建 iframe');
   await board.getByRole('button',{name:'左侧更多组件',exact:true}).click();
-  await main.getByRole('textbox',{name:'查找组件或页面'}).fill('扩展示例组件 19');
+  await main.getByRole('textbox',{name:'查找组件或页面'}).fill('扩展测试组件 19');
   await main.locator('.component-menu-row:visible').getByRole('menuitem',{name:'固定',exact:true}).click();
-  assert.equal((await componentState('main')).workspaces[aid].preferences['sodeck.ui-example:extra19'].pinned,true);
-  await board.getByRole('button',{name:'左侧更多组件',exact:true}).click();await main.getByRole('textbox',{name:'查找组件或页面'}).fill('扩展示例组件 19');
+  assert.equal((await componentState('main')).workspaces[aid].preferences['test.workspace-ui:extra19'].pinned,true);
+  await board.getByRole('button',{name:'左侧更多组件',exact:true}).click();await main.getByRole('textbox',{name:'查找组件或页面'}).fill('扩展测试组件 19');
   await main.locator('.component-menu-row:visible').getByRole('menuitem',{name:'取消固定',exact:true}).click();
   checks.push('20 个扩展视图通过更多入口查找、固定和取消固定');
   await board.getByRole('button',{name:'网络转发 面板菜单',exact:true}).click();
@@ -176,9 +174,9 @@ try {
   assert.deepEqual((await projection("main")).window.workspaceIds,[cid,bid]);
   checks.push("指针门槛、拖动排序、Esc 和无效落点；原生命中由独立测试验证");
   await select(main,bid); await panel(main,"left").click();
-  await main.waitForFunction(()=>document.querySelector('.server-workbench:not([hidden]) .left-rail [data-key="sodeck.ui-example:files"]').getAttribute('aria-expanded')==='false');
+  await main.waitForFunction(()=>document.querySelector('.server-workbench:not([hidden]) .left-rail [data-key="test.workspace-ui:files"]').getAttribute('aria-expanded')==='false');
   await panel(main,"left").click();
-  await main.waitForFunction(()=>document.querySelector('.server-workbench:not([hidden]) .left-rail [data-key="sodeck.ui-example:files"]').getAttribute('aria-expanded')==='true');
+  await main.waitForFunction(()=>document.querySelector('.server-workbench:not([hidden]) .left-rail [data-key="test.workspace-ui:files"]').getAttribute('aria-expanded')==='true');
   const separator=main.locator('.server-workbench:visible [data-resize="left"]');
   const initialWidth=await main.locator('.server-workbench:visible').evaluate(el=>parseFloat(el.style.getPropertyValue('--left-width')));
   await separator.focus(); await main.keyboard.press("ArrowRight");

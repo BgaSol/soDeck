@@ -93,6 +93,14 @@ impl Store {
         if let Err(error) = fs::create_dir_all(store.root.join("logs")) {
             store.errors[3] = Some(format!("无法创建日志目录：{error}"));
         }
+        // Retire the two former demonstration packages before startup/update selection.
+        // As with removing a plugin record, leave external programs and user data alone.
+        let mut plugins = store.plugins.clone();
+        plugins.retain(|p| !matches!(p.manifest.id.as_str(), "sodeck.hello" | "sodeck.ui-example"));
+        if plugins.len() != store.plugins.len() {
+            store.save(0, "plugins.json", &plugins)?;
+            store.plugins = plugins;
+        }
         store.recent = query_logs(&store.root, &[], &LogFilter::default(), 5000).into();
         Ok(store)
     }

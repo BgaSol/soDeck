@@ -80,7 +80,7 @@ function detail(p: Plugin, v: ViewState) {
 
 function sourceFields(p: Plugin, v: ViewState) {
   const source = v.sourceDrafts[p.manifest.id] ?? p.manifest.updateSource;
-  return `<div class="update-source"><h3>更新来源</h3><label>GitHub 仓库<input id="update-repository" data-source="repository" value="${e(source?.repository ?? "")}" placeholder="owner/repository" autocomplete="off"></label><label>插件标签前缀<input id="update-prefix" data-source="tagPrefix" value="${e(source?.tagPrefix ?? "")}" placeholder="plugin-hello-v" autocomplete="off"></label><div class="actions">${b("save-update-source", "保存来源", undefined, "quiet", `data-id="${e(p.manifest.id)}"`)}${p.manifest.updateSource ? b("clear-update-source", "改为手动更新", undefined, "text-button", `data-id="${e(p.manifest.id)}"`) : ""}</div><p class="hint">只从你信任的仓库更新。未配置来源时可继续手动管理。</p></div>`;
+  return `<div class="update-source"><h3>更新来源</h3><label>GitHub 仓库<input id="update-repository" data-source="repository" value="${e(source?.repository ?? "")}" placeholder="owner/repository" autocomplete="off"></label><label>插件标签前缀<input id="update-prefix" data-source="tagPrefix" value="${e(source?.tagPrefix ?? "")}" placeholder="plugin-terminal-v" autocomplete="off"></label><div class="actions">${b("save-update-source", "保存来源", undefined, "quiet", `data-id="${e(p.manifest.id)}"`)}${p.manifest.updateSource ? b("clear-update-source", "改为手动更新", undefined, "text-button", `data-id="${e(p.manifest.id)}"`) : ""}</div><p class="hint">只从你信任的仓库更新。未配置来源时可继续手动管理。</p></div>`;
 }
 
 function updateControls(id: string, v: ViewState, local = false, restart = false) {

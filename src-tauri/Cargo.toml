@@ -21,6 +21,12 @@ path = "tests/fixtures/plugin.rs"
 required-features = ["test-fixtures"]
 test = false
 
+[[bin]]
+name = "workspace-ui-fixture"
+path = "tests/fixtures/workspace_ui.rs"
+required-features = ["test-fixtures"]
+test = false
+
 [build-dependencies]
 tauri-build = { version = "=2.7.4", features = [] }
 

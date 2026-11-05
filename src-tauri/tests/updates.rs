@@ -109,10 +109,10 @@ impl Server {
         self.release(bytes, api, target);
         let mut manifest: serde_json::Value =
             serde_json::from_slice(&self.routes.lock().unwrap()["/manifest.json"]).unwrap();
-        manifest["id"] = json!("sodeck.hello");
+        manifest["id"] = json!("sodeck.terminal");
         self.put("/manifest.json", manifest.to_string());
         self.put("/repos/BgaSol/soDeck/releases", json!([
-            {"tag_name":"plugin-hello-v0.1.1","draft":false,"prerelease":false,"assets":[{"name":"plugin-update.json","browser_download_url":format!("{}/manifest.json",self.base)}]}
+            {"tag_name":"plugin-terminal-v0.1.1","draft":false,"prerelease":false,"assets":[{"name":"plugin-update.json","browser_download_url":format!("{}/manifest.json",self.base)}]}
         ]).to_string());
     }
 }
@@ -198,18 +198,32 @@ fn manifest(version: &str) -> serde_json::Value {
 }
 
 #[test]
+fn official_sources_only_include_supported_business_plugins() {
+    assert_eq!(
+        sodeck::official_plugins::OFFICIAL_PLUGINS
+            .iter()
+            .map(|p| p.id)
+            .collect::<Vec<_>>(),
+        ["sodeck.network-proxy", "sodeck.terminal", "sodeck.files"]
+    );
+    for id in ["sodeck.hello", "sodeck.ui-example"] {
+        assert!(sodeck::official_plugins::source(id).is_err());
+    }
+}
+
+#[test]
 fn official_first_install_downloads_registers_and_waits_for_restart() {
     let f = Fixture::new();
     let core = f.open();
     let server = Server::new();
-    server.official_release(f.package_for("sodeck.hello", ""), "1", TARGET);
+    server.official_release(f.package_for("sodeck.terminal", ""), "1", TARGET);
     assert!(core
         .install_official_plugin("unknown.plugin", &server.client())
         .is_err());
     assert_eq!(
-        core.install_official_plugin("sodeck.hello", &server.client())
+        core.install_official_plugin("sodeck.terminal", &server.client())
             .unwrap(),
-        "sodeck.hello"
+        "sodeck.terminal"
     );
     let snapshot = core.snapshot();
     let plugin = &snapshot.plugins[0];
@@ -224,11 +238,11 @@ fn official_first_install_downloads_registers_and_waits_for_restart() {
     );
     assert_eq!(
         plugin.manifest.update_source.as_ref().unwrap().tag_prefix,
-        "plugin-hello-v"
+        "plugin-terminal-v"
     );
     let installed = plugin.directory.clone();
     assert!(core
-        .install_official_plugin("sodeck.hello", &server.client())
+        .install_official_plugin("sodeck.terminal", &server.client())
         .is_err());
     assert_eq!(core.snapshot().plugins.len(), 1);
     assert_eq!(core.snapshot().plugins[0].directory, installed);
@@ -246,31 +260,31 @@ fn official_install_failures_leave_no_record_and_can_retry() {
     let core = f.open();
     let server = Server::new();
     for (api, target) in [("2", TARGET), ("1", "unsupported-target")] {
-        server.official_release(f.package_for("sodeck.hello", ""), api, target);
+        server.official_release(f.package_for("sodeck.terminal", ""), api, target);
         assert!(core
-            .install_official_plugin("sodeck.hello", &server.client())
+            .install_official_plugin("sodeck.terminal", &server.client())
             .is_err());
         assert!(core.snapshot().plugins.is_empty());
     }
-    server.official_release(f.package_for("sodeck.hello", ""), "1", TARGET);
+    server.official_release(f.package_for("sodeck.terminal", ""), "1", TARGET);
     server.put("/plugin.zip", b"broken".to_vec());
     assert!(core
-        .install_official_plugin("sodeck.hello", &server.client())
+        .install_official_plugin("sodeck.terminal", &server.client())
         .unwrap_err()
         .contains("SHA-256"));
     server.official_release(f.package(""), "1", TARGET);
     assert!(core
-        .install_official_plugin("sodeck.hello", &server.client())
+        .install_official_plugin("sodeck.terminal", &server.client())
         .unwrap_err()
         .contains("ID"));
-    server.official_release(f.package_for("sodeck.hello", ""), "1", TARGET);
+    server.official_release(f.package_for("sodeck.terminal", ""), "1", TARGET);
     fs::create_dir_all(f.root.join("data/plugins.json.tmp")).unwrap();
     assert!(core
-        .install_official_plugin("sodeck.hello", &server.client())
+        .install_official_plugin("sodeck.terminal", &server.client())
         .is_err());
     assert!(core.snapshot().plugins.is_empty());
     assert_eq!(
-        fs::read_dir(f.root.join("data/plugins/sodeck.hello"))
+        fs::read_dir(f.root.join("data/plugins/sodeck.terminal"))
             .unwrap()
             .count(),
         0
@@ -281,9 +295,9 @@ fn official_install_failures_leave_no_record_and_can_retry() {
         .extension()
         .is_some_and(|e| e == "part")));
     fs::remove_dir(f.root.join("data/plugins.json.tmp")).unwrap();
-    core.install_official_plugin("sodeck.hello", &server.client())
+    core.install_official_plugin("sodeck.terminal", &server.client())
         .unwrap();
-    assert_eq!(core.update_views()["sodeck.hello"].phase, "ready");
+    assert_eq!(core.update_views()["sodeck.terminal"].phase, "ready");
 }
 
 #[test]

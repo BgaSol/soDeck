@@ -10,7 +10,6 @@ if (!command)
 const directory =
   process.env.SODECK_TEST_DATA_DIR ||
   fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-package-"));
-const plugin = process.env.SODECK_TEST_PLUGIN;
 function launch(persisted = false) {
   const report = path.join(directory, "smoke-result.json");
   fs.rmSync(report, { force: true });
@@ -20,8 +19,6 @@ function launch(persisted = false) {
   fs.rmSync(networkReport, { force: true });
   const extra = ["--smoke-test", "--test-data-dir", directory];
   if (process.env.SODECK_TEST_CLIPBOARD === "1") extra.push("--clipboard-test");
-  if (plugin) extra.push("--plugin-test", plugin);
-  if (process.env.SODECK_TEST_UI_PLUGIN) extra.push("--ui-plugin-test", path.resolve(process.env.SODECK_TEST_UI_PLUGIN));
   if (process.env.SODECK_TEST_SSH_CONFIG) extra.push("--ssh-test-config", path.resolve(process.env.SODECK_TEST_SSH_CONFIG));
   if (persisted) extra.push("--verify-persisted");
   if (process.env.SODECK_TEST_UPDATE_BUNDLE) extra.push("--update-bundle-test", path.resolve(process.env.SODECK_TEST_UPDATE_BUNDLE));
@@ -49,7 +46,6 @@ function launch(persisted = false) {
   if (
     !fs.existsSync(report) ||
     !JSON.parse(fs.readFileSync(report, "utf8")).completed || !JSON.parse(fs.readFileSync(report, "utf8")).workspaceNative
-    || (process.env.SODECK_TEST_UI_PLUGIN && !JSON.parse(fs.readFileSync(report, "utf8")).componentUiNative)
     || (process.env.SODECK_TEST_SSH_CONFIG && !JSON.parse(fs.readFileSync(report, "utf8")).sshNative)
     || (process.env.SODECK_TEST_CLIPBOARD === "1" && !JSON.parse(fs.readFileSync(report, "utf8")).clipboardNative)
     || (process.env.SODECK_TEST_NETWORK_PLUGIN && (!fs.existsSync(networkReport) || !JSON.parse(fs.readFileSync(networkReport, "utf8")).completed))
@@ -62,9 +58,7 @@ try {
   launch(process.env.SODECK_VERIFY_PERSISTED === "1");
   if (process.env.SODECK_VERIFY_PERSISTED !== "1") launch(true);
   console.log(
-    plugin
-      ? "Packaged core loaded/stopped/reloaded plugin; logs, messages and preferences survived restart."
-      : "Packaged app rendered, moved workspaces between native windows, closed secondary windows, saved catalog records, reopened persisted data and exited successfully.",
+    "Packaged app rendered, moved workspaces between native windows, closed secondary windows, saved catalog records, reopened persisted data and exited successfully.",
   );
 } finally {
   // This path was created by mkdtemp in this process, never supplied by the user.

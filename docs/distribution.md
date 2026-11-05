@@ -39,27 +39,28 @@ npm run build -- --bundles nsis -- --locked
 - 启用/关闭只改期望状态，当前进程继续运行；重启统一生效，启动自动加载启用项。可以连续修改多个插件再重启一次。
 - 下载先完成校验和解压，再保存新目录记录；已启用或本次启动已加载的插件在下次启动切换。完全关闭的插件立即更新记录，仍不启动。
 - 在线程序位于 `<应用数据>/plugins/<插件ID>/<版本-唯一标识>/`。原外部目录保留；数据始终在 `plugin-data/<插件ID>/`。旧程序保留用于新版初始化失败后的恢复；不承诺数据迁移回退，不建立多级版本事务框架。
-- 没有来源的本地插件支持手动更新。详情可显式配置发行仓库与标签前缀；旧 Hello 使用 `BgaSol/soDeck` 与 `plugin-hello-v`。不根据 ID 猜测来源。
+- 没有来源的本地插件支持手动更新。详情可显式配置发行仓库与标签前缀，例如终端使用 `BgaSol/soDeck` 与 `plugin-terminal-v`。不根据 ID 猜测来源。
 - 关闭并重启后才能移除记录，不删除程序、数据、消息和日志。当前不提供运行中热加载/卸载的用户入口。
 
 ## 仓库维护
 
-每个 Rust 插件在 `plugins/<名称>/` 包含：Cargo.toml（唯一版本来源）、Cargo.lock、release.json（ID、名称、API、二进制名、标签前缀）、CHANGELOG.md 和 src/。现有模板为 Hello。新增其他语言插件时再扩展构建适配，不提前建立通用构建框架。
+每个 Rust 插件在 `plugins/<名称>/` 包含：Cargo.toml（唯一版本来源）、Cargo.lock、release.json（ID、名称、API、二进制名、标签前缀）、CHANGELOG.md 和 src/。现有业务目录为 terminal、files 和 network-proxy。新增其他语言插件时再扩展构建适配，不提前建立通用构建框架。
 
-组件宿主示例 `ui-example` 使用同一独立打包入口：`npm run plugin:build -- --plugin ui-example`。它另包含可选 `release.json.ui` 声明和 `ui/` 静态资源，打包自动复制，不增加前端构建工具或生产依赖。Windows 与 Hello 一样静态链接 CRT。`Verify packaged core and plugin` 现在在五个原生 runner 上独立构建该示例，并以 `SODECK_TEST_UI_PLUGIN` 验证已安装核心的界面加载与移窗；核心打包本身仍不依赖示例插件。
+Hello 和组件交互示例已退役，删除了独立工程、官方来源和示例包验收工作流。升级启动前移除这两个 ID 的旧登记，按既有移除规则保留原程序目录和数据。历史 Release 和版本说明保留。宿主交互回归使用 `scripts/fixtures/workspace-ui/` 与仅在 `test-fixtures` 下构建的 `workspace-ui-fixture`，不作为产品插件打包、安装或发行。实际包继续由 `Verify native remote plugins` 验证。
 
 ```sh
-# 本地插件打包，默认 hello
-npm run plugin:build
-npm run plugin:build -- --plugin hello --out-dir artifacts/another-build
+# 本地插件打包，必须明确插件目录
+npm run plugin:build -- --plugin terminal
+npm run plugin:build -- --plugin files
+npm run plugin:build -- --plugin network-proxy --out-dir artifacts/another-build
 # 发布核心
 # 修改 tauri.conf.json 版本及 docs/releases/v<版本>.md 后提交
  git tag v0.2.0
  git push origin v0.2.0
 # 独立发布插件
-# 修改 plugins/hello/Cargo.toml 版本、锁文件和 CHANGELOG 后提交
- git tag plugin-hello-v0.1.1
- git push origin plugin-hello-v0.1.1
+# 修改 plugins/terminal/Cargo.toml 版本、锁文件和 CHANGELOG 后提交
+ git tag plugin-terminal-v0.1.2
+ git push origin plugin-terminal-v0.1.2
 ```
 
 普通提交只运行相关检查。`Package SoDeck` 匹配 `v*`，`Package plugin` 匹配 `plugin-*-v*`；两者也支持手动生成 Artifact。插件手动入口可选 plugin 和 publish（生成独立草稿）。标签必须匹配对应唯一版本来源。
@@ -78,7 +79,7 @@ npm run plugin:build -- --plugin hello --out-dir artifacts/another-build
 
 本机执行类型、格式、脚本测试、Rust 集成测试、前端构建和本机安装包烟测。Rust 测试使用本机 HTTP 服务器验证下载、哈希、平台/API 不兼容、重启切换和启动失败恢复；正式更新来源只允许 HTTPS。
 
-核心工作流在五个原生目标运行 Rust 测试，再安装/解包 EXE、DEB、DMG 后启动包内程序；AppImage 另检查启动和退出。`Verify packaged core and plugin` 下载实际核心与插件产物验证日志、消息、目录、状态和重启保留。CI 包内启动不等价于真实设备的交互式安装升级，实际完成范围记录在对应版本说明。
+核心工作流在五个原生目标运行 Rust 测试，再安装/解包 EXE、DEB、DMG 后启动包内程序；AppImage 另检查启动和退出。`Verify native remote plugins` 下载实际核心与业务插件产物验证原生界面、实际远程业务、移窗与重开退出；插件生命周期、日志、消息和重启持久化另由通用集成夹具覆盖。CI 包内启动不等价于真实设备的交互式安装升级，实际完成范围记录在对应版本说明。
 
 真实业务插件使用独立入口 `npm run plugin:build -- --plugin terminal` 和 `--plugin files`，版本分别来自自己的 Cargo.toml，标签为 `plugin-terminal-v<版本>` / `plugin-files-v<版本>`。终端打包在插件目录内执行锁定的 npm 安装和静态资源构建；核心打包不调用这些步骤。普通构建不创建发行版本，官方列表登记来源后仍需发布对应的独立 Release 才能下载。
 

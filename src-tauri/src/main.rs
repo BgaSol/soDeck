@@ -21,7 +21,6 @@ struct Application {
     updater: CoreUpdater,
     exiting: AtomicU8,
     smoke: bool,
-    plugin_test: Option<PathBuf>,
     verify_persisted: bool,
     frontend_loaded: AtomicBool,
 }
@@ -369,10 +368,7 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
         return;
     }
     let core = app.core.clone();
-    let plugin = app.plugin_test.clone();
     let update_bundle = argument("--update-bundle-test");
-    let ui_plugin = argument("--ui-plugin-test");
-    let ui_test_requested = ui_plugin.is_some();
     let ssh_config = argument("--ssh-test-config");
     let ssh_test_requested = ssh_config.is_some();
     let clipboard_test_requested = std::env::args().any(|a| a == "--clipboard-test");
@@ -387,12 +383,6 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
             if let Some(bundle) = update_bundle {
                 sodeck::validation::core_update_bundle(&handle, &bundle)?;
             }
-            if let Some(directory) = plugin {
-                sodeck::validation::plugin_roundtrip(&core, &directory, persisted)?;
-            }
-            if let Some(directory) = ui_plugin {
-                sodeck::validation::component_ui_roundtrip(&handle, &core, &directory)?;
-            }
             if let Some(config) = ssh_config {
                 tauri::async_runtime::block_on(sodeck::validation::ssh_roundtrip(
                     &handle, &core, &config,
@@ -404,7 +394,7 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
         let result = validation.and(stopped);
         if result.is_ok() {
             let status = core.snapshot();
-            let report = serde_json::json!({"completed":true,"workspaceNative":true,"componentUiNative":ui_test_requested,"sshNative":ssh_test_requested,"clipboardNative":clipboard_test_requested,"version":status.version,"target":status.target});
+            let report = serde_json::json!({"completed":true,"workspaceNative":true,"sshNative":ssh_test_requested,"clipboardNative":clipboard_test_requested,"version":status.version,"target":status.target});
             let _ = std::fs::write(
                 status.data_directory.join("smoke-result.json"),
                 report.to_string(),
@@ -512,7 +502,6 @@ fn main() {
                 updater: CoreUpdater::default(),
                 exiting: AtomicU8::new(0),
                 smoke,
-                plugin_test: smoke.then(|| argument("--plugin-test")).flatten(),
                 verify_persisted: smoke && std::env::args().any(|a| a == "--verify-persisted"),
                 frontend_loaded: AtomicBool::new(false),
             });
