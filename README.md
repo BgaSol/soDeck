@@ -53,6 +53,7 @@ npm run plugin:build
 - [产品范围](docs/product.md)
 - [架构与边界](docs/architecture.md)
 - [服务器管理设计（暂不建连）](docs/plan-server-management.md)
+- [服务器 Tab 与可拆合工作区设计](docs/plan-server-workspaces.md)
 - [插件 API v1](docs/plugin-api.md)
 - [在线更新实施与验收](docs/plan-online-updates.md)
 - [上一阶段实施计划](docs/plan-plugin-foundation.md)
