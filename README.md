@@ -8,6 +8,8 @@
 
 v0.5.1 修复正式构建中服务器表单无法滚动、布局错位及多巴胺配色不完整的问题，保留已保存的主题。修复范围及验证见 [v0.5.1](docs/releases/v0.5.1.md)。
 
+v0.5.2 补齐设置中的官方插件下载安装入口，并独立发行组件交互示例。点击下载后重启启用；现有两个官方插件均为示例，真实终端与文件业务仍待实现。发行及验证见 [v0.5.2](docs/releases/v0.5.2.md)。
+
 核心与插件独立版本、独立打包，从公开的 [GitHub Releases](https://github.com/BgaSol/soDeck/releases) 分发。核心安装包不含业务插件。版本与验收记录见 [v0.1.1](docs/releases/v0.1.1.md)、[v0.2.0](docs/releases/v0.2.0.md)、[v0.2.1](docs/releases/v0.2.1.md)、[v0.3.0](docs/releases/v0.3.0.md)、[v0.4.0](docs/releases/v0.4.0.md) 和 [v0.5.0](docs/releases/v0.5.0.md)。
 
 ## 使用
