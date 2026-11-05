@@ -454,12 +454,12 @@ pub fn workspace_drag_start(
     {
         return Err("工作区已移动或关闭".into());
     }
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
     let mut drag = desktop.drag.lock().unwrap();
     if drag.is_some() {
         return Err("已有 Tab 正在拖动".into());
     }
     let token = desktop.core.next_id();
-    let scale = window.scale_factor().map_err(|e| e.to_string())?;
     *drag = Some(Drag {
         token: token.clone(),
         source: window.label().into(),
