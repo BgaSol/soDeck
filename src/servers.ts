@@ -81,7 +81,7 @@ export class ServerManager {
         (d as unknown as Record<string, string>)[key] = input.value;
         if (key === "password" && input.value) d.clearSecret = false;
       }
-      if (key === "authType") { d.password = ""; d.remember = false; d.clearSecret = false; this.renderEditor(f); }
+      if (key === "authType") { d.password = ""; d.remember = true; d.clearSecret = false; this.renderEditor(f); }
       if (key === "routed") this.renderEditor(f);
     }
     if (input.dataset.step !== undefined) {

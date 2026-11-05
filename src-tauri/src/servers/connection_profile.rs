@@ -10,14 +10,17 @@ pub(crate) struct Profile {
 }
 #[derive(Clone)]
 pub(crate) struct Node {
+    pub record_id: String,
     pub name: String,
     pub host: String,
     pub port: u16,
     pub username: String,
     pub auth: Auth,
     pub trust_scope: String,
+    pub save_credentials: Option<bool>,
+    has_saved_secret: bool,
 }
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub(crate) enum Auth {
     Password(Option<String>),
     Key {
@@ -48,6 +51,17 @@ impl Node {
             Auth::Socks { username, .. } => json!({"type":"socks5", "username":username}),
         };
         json!({"protocol":if self.is_ssh() {"ssh"} else {"socks5"},"host":self.host,"port":self.port,"username":self.username,"authentication":authentication})
+    }
+}
+impl Profile {
+    pub fn matches(&self, other: &Self) -> bool {
+        self.identity == other.identity
+            && self.nodes.len() == other.nodes.len()
+            && self.nodes.iter().zip(&other.nodes).all(|(a, b)| {
+                a.record_id == b.record_id
+                    && a.auth == b.auth
+                    && a.has_saved_secret == b.has_saved_secret
+            })
     }
 }
 fn hash(value: &Value) -> String {
@@ -81,12 +95,15 @@ impl ServerStore {
                 _ => return Err("SSH 认证方式无效".into()),
             };
             Ok(Node {
+                record_id: s.id.clone(),
                 name: s.name.clone(),
                 host: s.host.clone(),
                 port: s.port,
                 username: s.username.clone(),
                 auth,
                 trust_scope: String::new(),
+                save_credentials: None,
+                has_saved_secret: s.authentication.secret().is_some(),
             })
         };
         let mut nodes = Vec::new();
@@ -118,12 +135,15 @@ impl ServerStore {
                         _ => return Err("SOCKS5 认证方式无效".into()),
                     };
                     Node {
+                        record_id: p.id.clone(),
                         name: p.name.clone(),
                         host: p.host.clone(),
                         port: p.port,
                         username: String::new(),
                         auth: Auth::Socks { username, password },
                         trust_scope: String::new(),
+                        save_credentials: None,
+                        has_saved_secret: p.authentication.secret().is_some(),
                     }
                 }
             });
@@ -145,5 +165,63 @@ impl ServerStore {
             nodes,
             identity,
         })
+    }
+
+    // Called only after the whole route authenticates and admission validates its original snapshot.
+    pub(crate) fn save_connection_credentials(
+        &mut self,
+        profile: &Profile,
+    ) -> Result<bool, String> {
+        if !profile
+            .nodes
+            .iter()
+            .any(|n| n.save_credentials == Some(true))
+        {
+            return Ok(false);
+        }
+        let mut catalog = self.catalog.clone();
+        let mut sessions = self.sessions.clone();
+        let time = timestamp();
+        for node in profile
+            .nodes
+            .iter()
+            .filter(|n| n.save_credentials == Some(true))
+        {
+            let (authentication, updated_at) = if node.is_ssh() {
+                let record = catalog
+                    .servers
+                    .iter_mut()
+                    .find(|s| s.id == node.record_id)
+                    .ok_or("服务器资料已不存在")?;
+                (&mut record.authentication, &mut record.updated_at)
+            } else {
+                let record = catalog
+                    .proxies
+                    .iter_mut()
+                    .find(|p| p.id == node.record_id)
+                    .ok_or("代理资料已不存在")?;
+                (&mut record.authentication, &mut record.updated_at)
+            };
+            let secret = match &node.auth {
+                Auth::Password(value)
+                | Auth::Socks {
+                    password: value, ..
+                } => value.clone(),
+                Auth::Key { path, passphrase } => {
+                    if let Authentication::PrivateKey {
+                        private_key_path, ..
+                    } = authentication
+                    {
+                        *private_key_path = path.clone();
+                    }
+                    passphrase.clone().filter(|p| !p.is_empty())
+                }
+            };
+            authentication.set_secret(secret);
+            *updated_at = time.clone();
+            sessions.remove(&node.record_id);
+        }
+        self.commit(catalog, sessions)?;
+        Ok(true)
     }
 }

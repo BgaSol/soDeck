@@ -82,6 +82,8 @@ pub enum Question {
         authentication: String,
         username: String,
         private_key_path: Option<String>,
+        message: Option<String>,
+        remember: bool,
     },
     #[serde(rename_all = "camelCase")]
     HostKey {
@@ -110,6 +112,8 @@ pub enum Answer {
     Credentials {
         secret: String,
         private_key_path: Option<String>,
+        #[serde(default)]
+        remember: bool,
     },
     HostKey {
         accept: bool,
@@ -243,7 +247,7 @@ impl Attempt {
             _ => None,
         };
         if let Some(auth) = auth {
-            self.fill_credentials(node, index, auth).await?;
+            self.fill_credentials(node, index, auth, None).await?;
         }
         Ok(())
     }
@@ -252,6 +256,7 @@ impl Attempt {
         node: &mut Node,
         index: usize,
         authentication: &str,
+        message: Option<&str>,
     ) -> Result<(), Error> {
         self.stage("credentials", index);
         let answer = self
@@ -269,22 +274,28 @@ impl Attempt {
                     Auth::Key { path, .. } => path.clone(),
                     _ => None,
                 },
+                message: message.map(str::to_string),
+                remember: node.save_credentials.unwrap_or(true),
             })
             .await?;
         match answer {
             Answer::Credentials {
                 secret,
                 private_key_path,
-            } => match &mut node.auth {
-                Auth::Password(p) => *p = Some(secret),
-                Auth::Socks { password, .. } => *password = Some(secret),
-                Auth::Key { path, passphrase } => {
-                    if let Some(p) = private_key_path.filter(|s| !s.trim().is_empty()) {
-                        *path = Some(p);
+                remember,
+            } => {
+                node.save_credentials = Some(remember);
+                match &mut node.auth {
+                    Auth::Password(p) => *p = Some(secret),
+                    Auth::Socks { password, .. } => *password = Some(secret),
+                    Auth::Key { path, passphrase } => {
+                        if let Some(p) = private_key_path.filter(|s| !s.trim().is_empty()) {
+                            *path = Some(p);
+                        }
+                        *passphrase = Some(secret);
                     }
-                    *passphrase = Some(secret);
                 }
-            },
+            }
             _ => return Err(Error::new("invalidAnswer", "连接问题的回复类型不匹配")),
         }
         Ok(())
@@ -527,6 +538,7 @@ impl AppCore {
         if let Answer::Credentials {
             secret,
             private_key_path,
+            ..
         } = &answer
         {
             if secret.len() > 4096 || private_key_path.as_ref().is_some_and(|p| p.len() > 4096) {
@@ -567,6 +579,7 @@ impl AppCore {
 }
 
 async fn run(a: Arc<Attempt>, profile: Profile, keys: Arc<host_keys::HostKeys>) {
+    let mut authenticated = profile.clone();
     let result = async {
         if let Some(previous) = &a.previous_endpoint {
             let node = profile.nodes.last().unwrap();
@@ -581,7 +594,7 @@ async fn run(a: Arc<Attempt>, profile: Profile, keys: Arc<host_keys::HostKeys>) 
                 return Err(Error::cancelled());
             }
         }
-        route::connect(profile.clone(), a.clone(), keys).await
+        route::connect(&mut authenticated, a.clone(), keys).await
     }
     .await;
     let mut connected = false;
@@ -592,8 +605,11 @@ async fn run(a: Arc<Attempt>, profile: Profile, keys: Arc<host_keys::HostKeys>) 
                 .core
                 .upgrade()
                 .ok_or_else(Error::cancelled)
-                .and_then(|core| core.adopt_connection(&a, &profile, session.clone()));
+                .and_then(|core| {
+                    core.adopt_connection(&a, &profile, &authenticated, session.clone())
+                });
             drop(profile);
+            drop(authenticated);
             match accepted {
                 Ok(context) => {
                     {

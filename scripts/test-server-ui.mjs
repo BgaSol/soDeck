@@ -56,11 +56,13 @@ try {
   await load();
   assert.equal(await work().locator(".catalog-page").evaluate(el => el.getBoundingClientRect().width), 1100);
   await action("new", work()).click(); await field("host").fill("gateway.invalid"); await field("username").fill("ops");
-  await field("password").fill("ui-saved-secret"); await field("remember").check(); await field("name").fill("入口跳板"); await save(); await expectDialogs(0);
+  assert.equal(await field("remember").isChecked(), true);
+  await field("password").fill("ui-saved-secret"); await field("name").fill("入口跳板"); await save(); await expectDialogs(0);
   let catalog = await read(); const gateway = catalog.servers[0].id;
   assert.equal(catalog.servers[0].authentication.hasSavedSecret, true); assert(!JSON.stringify(catalog).includes("ui-saved-secret"));
   assert(fs.readFileSync(path.join(directory, "servers.json"), "utf8").includes("ui-saved-secret"));
   await action("edit", work()).click(); assert.equal(await field("password").inputValue(), "");
+  assert.equal(await field("remember").isChecked(), true);
   await field("name").fill("公网入口"); await save(); await expectDialogs(0);
   checks.push("创建、编辑、秘密不回填和留空保持");
 
@@ -71,6 +73,7 @@ try {
 
   await work().locator('[data-tab="proxies"]').click(); await action("new", work()).click();
   await field("host").fill("127.0.0.1"); await field("authType").selectOption("usernamePassword");
+  assert.equal(await field("remember").isChecked(), true);
   await field("username").fill("proxy-ops"); await field("password").fill("ui-proxy-secret"); await field("remember").check();
   await field("name").fill("回环代理"); await save(); await expectDialogs(0);
   catalog = await read(); const proxy = catalog.proxies[0].id;
@@ -87,7 +90,7 @@ try {
   await action("add-socks").click(); await dialogs().locator('[data-step="2"]').selectOption(proxy);
   assert((await dialogs().locator(".route-preview").innerText()).includes("公网入口 的回环地址"));
   await dialogs().locator('[data-server-action="step-up"][data-index="2"]').click();
-  await field("password").fill("ui-session-secret"); await save(); await expectDialogs(0);
+  await field("password").fill("ui-session-secret"); await field("remember").uncheck(); await save(); await expectDialogs(0);
   catalog = await read(); const target = catalog.servers.find(s => s.name === "生产数据库").id;
   assert.deepEqual(catalog.servers.find(s => s.id === target).route.map(r => r.kind), ["ssh", "socks5", "socks5"]);
   assert.equal(catalog.servers.find(s => s.id === target).authentication.hasSessionSecret, true);

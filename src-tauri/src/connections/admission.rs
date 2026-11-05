@@ -7,12 +7,13 @@ impl AppCore {
         &self,
         a: &Arc<Attempt>,
         profile: &Profile,
+        authenticated: &Profile,
         session: Arc<route::Session>,
     ) -> Result<Context, Error> {
-        let servers = self.servers.lock().unwrap();
+        let mut servers = self.servers.lock().unwrap();
         if !servers
             .connection_snapshot(&profile.server_id)
-            .is_ok_and(|p| p.identity == profile.identity)
+            .is_ok_and(|p| p.matches(profile))
         {
             return Err(Error::new("profileChanged", "连接资料已修改，请重新连接"));
         }
@@ -31,16 +32,34 @@ impl AppCore {
         if existing.as_ref().map(|w| &w.context) != a.expected_context.as_ref() {
             return Err(Error::new("workspaceChanged", "工作区已关闭或会话已改变"));
         }
+        if existing
+            .as_ref()
+            .is_some_and(|w| ui.frozen(&w.context.workspace_id))
+        {
+            return Err(Error::new("workspaceClosing", "工作区正在关闭"));
+        }
+        workspaces
+            .projection(&a.source_window)
+            .map_err(|_| Error::cancelled())?;
+        let saved = servers
+            .save_connection_credentials(authenticated)
+            .map_err(|message| {
+                Error::new(
+                    "credentialsSave",
+                    format!("认证已成功，但保存连接凭据失败：{message}。请重试连接。"),
+                )
+            })?;
+        let identity = servers
+            .connection_snapshot(&profile.server_id)
+            .map_err(|message| Error::new("profileChanged", message))?
+            .identity;
         let node = profile.nodes.last().unwrap();
         let endpoint = format!("{}@{}", node.username, node.endpoint());
         let context = if let Some(w) = existing {
-            if ui.frozen(&w.context.workspace_id) {
-                return Err(Error::new("workspaceClosing", "工作区正在关闭"));
-            }
             let context = workspaces
                 .reconnect(&w.context, a.view().attempt_id, endpoint)
                 .map_err(|_| Error::new("workspaceChanged", "重连上下文已失效"))?;
-            workspaces.set_target_identity(&context.workspace_id, profile.identity.clone());
+            workspaces.set_target_identity(&context.workspace_id, identity);
             ui.rebind_context(&context);
             workspaces
                 .activate(&w.window_id, Some(&context.workspace_id))
@@ -48,9 +67,6 @@ impl AppCore {
             a.state.lock().unwrap().view.window_id = w.window_id;
             context
         } else {
-            workspaces
-                .projection(&a.source_window)
-                .map_err(|_| Error::cancelled())?;
             let id = self.next_id();
             let (left_width, right_width) = ui.widths();
             let context = Context {
@@ -68,7 +84,7 @@ impl AppCore {
                 name,
                 endpoint,
                 connected: true,
-                target_identity: Some(profile.identity.clone()),
+                target_identity: Some(identity),
                 window_id: "main".into(),
                 layout: Layout {
                     left_width,
@@ -92,6 +108,10 @@ impl AppCore {
         drop(workspaces);
         drop(entries);
         drop(servers);
+        if saved {
+            self.changed();
+            self.event("server-catalog-changed", serde_json::Value::Null);
+        }
         self.workspace_changed();
         self.log(None,"info","远程连接已通过认证",Some(serde_json::json!({"serverId":profile.server_id,"connectionId":context.connection_id,"nodeCount":profile.nodes.len()})));
         Ok(context)

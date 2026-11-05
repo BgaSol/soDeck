@@ -295,6 +295,23 @@ impl Fixture {
     fn proxy(&self, host: &str, port: u16, auth: bool) -> String {
         self.change(json!({"op":"saveProxy","draft":{"name":host,"host":host,"port":port,"authentication":if auth{json!({"type":"usernamePassword","username":"proxy","secret":{"action":"replace","value":"proxy-secret","remember":true}})}else{json!({"type":"none","secret":{"action":"clear"}})}}}))["selectedId"].as_str().unwrap().into()
     }
+    fn disk(&self) -> Value {
+        serde_json::from_slice(&std::fs::read(self.path.join("servers.json")).unwrap()).unwrap()
+    }
+    fn password(&self, id: &str, value: Option<&str>) {
+        let mut draft = self.core.server_catalog()["servers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["id"] == id)
+            .unwrap()
+            .clone();
+        draft["authentication"] = json!({"type":"password","secret":match value {
+            Some(value) => json!({"action":"replace","value":value,"remember":true}),
+            None => json!({"action":"clear"}),
+        }});
+        self.change(json!({"op":"saveServer","draft":draft}));
+    }
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
@@ -334,6 +351,336 @@ async fn connected(f: &Fixture, id: &str) -> View {
         .into_iter()
         .find(|v| v.server_id == id)
         .unwrap()
+}
+
+async fn credential_prompt(f: &Fixture) -> View {
+    until(|| {
+        let v = f.core.connection_views().remove(0);
+        if let Some(Question::HostKey { id, .. }) = &v.question {
+            f.core
+                .answer_connection("main", &v.attempt_id, &id, Answer::HostKey { accept: true })
+                .unwrap();
+        }
+        assert!(v.state != "failed", "{:?}", v.error);
+        matches!(v.question, Some(Question::Credentials { .. }))
+    })
+    .await;
+    f.core.connection_views().remove(0)
+}
+
+async fn credentials_accepted(f: &Fixture) -> View {
+    until(|| {
+        let v = f.core.connection_views().remove(0);
+        if let Some(Question::HostKey { id, .. }) = &v.question {
+            f.core
+                .answer_connection("main", &v.attempt_id, id, Answer::HostKey { accept: true })
+                .unwrap();
+        }
+        assert!(v.state != "failed", "{:?}", v.error);
+        v.state == "connected"
+    })
+    .await;
+    f.core.connection_views().remove(0)
+}
+
+async fn next_credential_prompt(f: &Fixture, previous: &View) -> View {
+    let Some(Question::Credentials {
+        id: previous_id, ..
+    }) = &previous.question
+    else {
+        panic!()
+    };
+    until(|| {
+        let v = f.core.connection_views().remove(0);
+        if let Some(Question::HostKey { id, .. }) = &v.question {
+            f.core
+                .answer_connection("main", &v.attempt_id, id, Answer::HostKey { accept: true })
+                .unwrap();
+        }
+        assert!(v.state != "failed", "{:?}", v.error);
+        matches!(&v.question, Some(Question::Credentials { id, .. }) if id != previous_id)
+    })
+    .await;
+    credential_prompt(f).await
+}
+
+fn submit_credentials(f: &Fixture, v: &View, secret: &str, remember: bool) {
+    let Some(Question::Credentials { id, .. }) = &v.question else {
+        panic!("expected credential prompt")
+    };
+    f.core
+        .answer_connection(
+            "main",
+            &v.attempt_id,
+            id,
+            serde_json::from_value(json!({"kind":"credentials","secret":secret,"privateKeyPath":null,"remember":remember})).unwrap(),
+        )
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn expired_saved_password_is_replaced_after_success_and_reused_on_reconnect() {
+    let f = Fixture::new();
+    let target = SshServer::new().await;
+    let id = f.server("127.0.0.1", target.addr.port(), json!([]));
+    f.password(&id, Some("expired-password"));
+    f.core.start_connection("main", &id).unwrap();
+    let prompt = credential_prompt(&f).await;
+    submit_credentials(&f, &prompt, "wrong-password", true);
+    let prompt = next_credential_prompt(&f, &prompt).await;
+    assert_eq!(
+        f.disk()["servers"][0]["authentication"]["savedPassword"],
+        "expired-password"
+    );
+    assert!(matches!(
+        &prompt.question,
+        Some(Question::Credentials {
+            message: Some(_),
+            remember: true,
+            ..
+        })
+    ));
+    submit_credentials(&f, &prompt, "secret", true);
+    until(|| {
+        let v = f.core.connection_views().remove(0);
+        assert!(v.state != "failed", "{:?}", v.error);
+        v.state == "connected"
+    })
+    .await;
+    let disk: Value =
+        serde_json::from_slice(&std::fs::read(f.path.join("servers.json")).unwrap()).unwrap();
+    assert_eq!(
+        disk["servers"][0]["authentication"]["savedPassword"],
+        "secret"
+    );
+    let context = f.core.connection_views()[0].context.clone().unwrap();
+    f.core.disconnect_connection("main", &context).unwrap();
+    until(|| f.core.connection_views()[0].state == "disconnected").await;
+    connected(&f, &id).await;
+    assert_eq!(target.state.auth.load(Ordering::Relaxed), 4);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn unchecked_credentials_only_apply_to_this_attempt_and_preserve_saved_password() {
+    for previous in [None, Some("expired-password")] {
+        let f = Fixture::new();
+        let target = SshServer::new().await;
+        let id = f.server("127.0.0.1", target.addr.port(), json!([]));
+        f.password(&id, previous);
+        let original = f.disk();
+        f.core.start_connection("main", &id).unwrap();
+        let prompt = credential_prompt(&f).await;
+        assert!(matches!(
+            prompt.question,
+            Some(Question::Credentials { remember: true, .. })
+        ));
+        submit_credentials(&f, &prompt, "secret", false);
+        // Missing credentials are collected before the host identity question.
+        until(|| {
+            let v = f.core.connection_views().remove(0);
+            if let Some(Question::HostKey { id, .. }) = v.question {
+                f.core
+                    .answer_connection("main", &v.attempt_id, &id, Answer::HostKey { accept: true })
+                    .unwrap();
+            }
+            v.state == "connected"
+        })
+        .await;
+        assert_eq!(f.disk(), original);
+        assert_eq!(
+            f.core.server_catalog()["servers"][0]["authentication"]["hasSessionSecret"],
+            false
+        );
+        let context = f.core.connection_views()[0].context.clone().unwrap();
+        f.core.disconnect_connection("main", &context).unwrap();
+        until(|| f.core.connection_views()[0].state == "disconnected").await;
+        f.core.start_connection("main", &id).unwrap();
+        let retry = credential_prompt(&f).await;
+        f.core.cancel_connection("main", &retry.attempt_id).unwrap();
+        until(|| f.core.connection_views()[0].state == "cancelled").await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancelled_or_rejected_host_never_saves_submitted_credentials() {
+    for accept in [false, true] {
+        let f = Fixture::new();
+        let target = SshServer::new().await;
+        let id = f.server("127.0.0.1", target.addr.port(), json!([]));
+        f.password(&id, None);
+        let original = f.disk();
+        f.core.start_connection("main", &id).unwrap();
+        let prompt = credential_prompt(&f).await;
+        submit_credentials(&f, &prompt, "secret", true);
+        until(|| {
+            matches!(
+                f.core.connection_views()[0].question,
+                Some(Question::HostKey { .. })
+            )
+        })
+        .await;
+        let v = f.core.connection_views().remove(0);
+        if accept {
+            f.core.cancel_connection("main", &v.attempt_id).unwrap();
+        } else if let Some(Question::HostKey { id, .. }) = v.question {
+            f.core
+                .answer_connection(
+                    "main",
+                    &v.attempt_id,
+                    &id,
+                    Answer::HostKey { accept: false },
+                )
+                .unwrap();
+        }
+        until(|| f.core.connection_views()[0].state != "connecting").await;
+        assert_eq!(f.disk(), original);
+        assert_eq!(target.state.auth.load(Ordering::Relaxed), 0);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn credential_save_failure_keeps_old_password_and_can_retry() {
+    let f = Fixture::new();
+    let target = SshServer::new().await;
+    let id = f.server("127.0.0.1", target.addr.port(), json!([]));
+    f.password(&id, Some("expired-password"));
+    let original = f.disk();
+    f.core.start_connection("main", &id).unwrap();
+    let prompt = credential_prompt(&f).await;
+    std::fs::create_dir(f.path.join("servers.json.tmp")).unwrap();
+    submit_credentials(&f, &prompt, "secret", true);
+    until(|| f.core.connection_views()[0].state == "failed").await;
+    assert_eq!(
+        f.core.connection_views()[0].error.as_ref().unwrap().code,
+        "credentialsSave"
+    );
+    assert_eq!(f.disk(), original);
+    assert!(f
+        .core
+        .workspace_projection("main")
+        .unwrap()
+        .workspaces
+        .is_empty());
+    std::fs::remove_dir(f.path.join("servers.json.tmp")).unwrap();
+    f.core.start_connection("main", &id).unwrap();
+    let prompt = credential_prompt(&f).await;
+    submit_credentials(&f, &prompt, "secret", true);
+    credentials_accepted(&f).await;
+    assert_eq!(
+        f.disk()["servers"][0]["authentication"]["savedPassword"],
+        "secret"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_password_edit_is_not_overwritten_by_an_old_connection_prompt() {
+    let f = Fixture::new();
+    let target = SshServer::new().await;
+    let id = f.server("127.0.0.1", target.addr.port(), json!([]));
+    f.password(&id, Some("expired-password"));
+    f.core.start_connection("main", &id).unwrap();
+    let prompt = credential_prompt(&f).await;
+    f.password(&id, Some("newer-edit"));
+    submit_credentials(&f, &prompt, "secret", true);
+    until(|| f.core.connection_views()[0].state == "failed").await;
+    assert_eq!(
+        f.core.connection_views()[0].error.as_ref().unwrap().code,
+        "profileChanged"
+    );
+    assert_eq!(
+        f.disk()["servers"][0]["authentication"]["savedPassword"],
+        "newer-edit"
+    );
+    assert!(f
+        .core
+        .workspace_projection("main")
+        .unwrap()
+        .workspaces
+        .is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mixed_route_saves_each_record_atomically_after_target_authentication() {
+    for cancel in [true, false] {
+        let f = Fixture::new();
+        let target = SshServer::new().await;
+        let socks = Socks::new(target.addr, true).await;
+        let gateway = SshServer::new().await;
+        gateway
+            .state
+            .routes
+            .lock()
+            .unwrap()
+            .insert("proxy.remote.invalid".into(), socks.addr);
+        let jump = f.server("127.0.0.1", gateway.addr.port(), json!([]));
+        f.password(&jump, Some("old-jump-password"));
+        let proxy = f.proxy("proxy.remote.invalid", 1080, true);
+        let mut draft = f.core.server_catalog()["proxies"][0].clone();
+        draft["authentication"] =
+            json!({"type":"usernamePassword","username":"proxy","secret":{"action":"clear"}});
+        f.change(json!({"op":"saveProxy","draft":draft}));
+        let id = f.server(
+            "target.remote.invalid",
+            22,
+            json!([
+                {"kind":"ssh","id":"","serverId":jump},
+                {"kind":"socks5","id":"","proxyId":proxy}
+            ]),
+        );
+        f.password(&id, Some("old-target-password"));
+        let original = f.disk();
+        f.core.start_connection("main", &id).unwrap();
+        let prompt = credential_prompt(&f).await;
+        assert!(matches!(
+            prompt.question,
+            Some(Question::Credentials { node_index: 1, .. })
+        ));
+        submit_credentials(&f, &prompt, "proxy-secret", true);
+        let prompt = next_credential_prompt(&f, &prompt).await;
+        assert!(matches!(
+            prompt.question,
+            Some(Question::Credentials { node_index: 0, .. })
+        ));
+        submit_credentials(&f, &prompt, "secret", true);
+        let prompt = next_credential_prompt(&f, &prompt).await;
+        assert!(matches!(
+            prompt.question,
+            Some(Question::Credentials { node_index: 2, .. })
+        ));
+        assert_eq!(f.disk(), original);
+        if cancel {
+            f.core
+                .cancel_connection("main", &prompt.attempt_id)
+                .unwrap();
+            until(|| f.core.connection_views()[0].state == "cancelled").await;
+            assert_eq!(f.disk(), original);
+        } else {
+            submit_credentials(&f, &prompt, "secret", true);
+            let v = credentials_accepted(&f).await;
+            let disk = f.disk();
+            for record in disk["servers"].as_array().unwrap() {
+                assert_eq!(record["authentication"]["savedPassword"], "secret");
+            }
+            assert_eq!(
+                disk["proxies"][0]["authentication"]["savedPassword"],
+                "proxy-secret"
+            );
+            assert_eq!(
+                disk["revision"].as_u64().unwrap(),
+                original["revision"].as_u64().unwrap() + 1
+            );
+            let serialized = serde_json::to_string(&f.core.connection_views()).unwrap();
+            assert!(!serialized.contains("proxy-secret"));
+            assert_eq!(
+                f.core
+                    .connection_probe(&v.context.unwrap(), "mixed-credentials")
+                    .await
+                    .unwrap()
+                    .0,
+                b"mixed-credentials"
+            );
+        }
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -571,7 +918,7 @@ async fn reconnect_preserves_workspace_moves_and_rejects_changed_host_before_aut
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn missing_password_is_ephemeral_and_wrong_password_creates_no_workspace() {
+async fn wrong_password_reprompts_without_saving_or_creating_a_workspace() {
     let f = Fixture::new();
     let target = SshServer::new().await;
     let id = f.server("127.0.0.1", target.addr.port(), json!([]));
@@ -592,22 +939,30 @@ async fn missing_password_is_ephemeral_and_wrong_password_creates_no_workspace()
             Answer::Credentials {
                 secret: "wrong-password".into(),
                 private_key_path: None,
+                remember: false,
             },
         )
         .unwrap();
     until(|| {
         let v = f.core.connection_views().remove(0);
-        if let Some(Question::HostKey { id, .. }) = v.question {
+        if let Some(Question::HostKey { id, .. }) = &v.question {
             f.core
                 .answer_connection("main", &v.attempt_id, &id, Answer::HostKey { accept: true })
                 .unwrap();
         }
-        v.state == "failed"
+        matches!(&v.question, Some(Question::Credentials { id, .. }) if id != &q)
     })
     .await;
     assert_eq!(
-        f.core.connection_views()[0].error.as_ref().unwrap().code,
-        "authenticationRejected"
+        matches!(
+            f.core.connection_views()[0].question,
+            Some(Question::Credentials {
+                remember: false,
+                message: Some(_),
+                ..
+            })
+        ),
+        true
     );
     assert!(f
         .core
@@ -623,6 +978,60 @@ async fn missing_password_is_ephemeral_and_wrong_password_creates_no_workspace()
             .unwrap()
             .contains("wrong-password"));
     }
+    f.core.cancel_connection("main", &v.attempt_id).unwrap();
+    until(|| f.core.connection_views()[0].state == "cancelled").await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn private_key_prompt_saves_verified_path_and_passphrase_and_retries_wrong_input() {
+    let f = Fixture::new();
+    let target = SshServer::new().await;
+    let id = f.server("127.0.0.1", target.addr.port(), json!([]));
+    let key = target.key.encrypt(&mut rand::rng(), "key-phrase").unwrap();
+    let path = f.path.join("prompt-key");
+    std::fs::write(
+        &path,
+        key.to_openssh(russh::keys::ssh_key::LineEnding::LF)
+            .unwrap()
+            .as_bytes(),
+    )
+    .unwrap();
+    let mut draft = f.core.server_catalog()["servers"][0].clone();
+    draft["authentication"] =
+        json!({"type":"privateKey","privateKeyPath":null,"secret":{"action":"clear"}});
+    f.change(json!({"op":"saveServer","draft":draft}));
+    let original = f.disk();
+    f.core.start_connection("main", &id).unwrap();
+    let prompt = credential_prompt(&f).await;
+    let Some(Question::Credentials { id: question, .. }) = &prompt.question else {
+        panic!()
+    };
+    f.core.answer_connection("main", &prompt.attempt_id, question,
+        serde_json::from_value(json!({"kind":"credentials","secret":"wrong-phrase","privateKeyPath":path,"remember":true})).unwrap()).unwrap();
+    let prompt = next_credential_prompt(&f, &prompt).await;
+    assert!(
+        matches!(&prompt.question, Some(Question::Credentials { message: Some(message), .. }) if message.contains("口令错误"))
+    );
+    assert_eq!(f.disk(), original);
+    submit_credentials(&f, &prompt, "key-phrase", true);
+    let v = credentials_accepted(&f).await;
+    assert_eq!(
+        f.disk()["servers"][0]["authentication"]["privateKeyPath"],
+        path.to_str().unwrap()
+    );
+    assert_eq!(
+        f.disk()["servers"][0]["authentication"]["savedPassphrase"],
+        "key-phrase"
+    );
+    assert!(!serde_json::to_string(&f.core.connection_views())
+        .unwrap()
+        .contains("key-phrase"));
+    f.core
+        .disconnect_connection("main", &v.context.unwrap())
+        .unwrap();
+    until(|| f.core.connection_views()[0].state == "disconnected").await;
+    connected(&f, &id).await;
+    assert_eq!(target.state.auth.load(Ordering::Relaxed), 2);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -671,6 +1080,7 @@ async fn private_key_plain_and_encrypted_ed25519_and_rsa_authenticate() {
                             Answer::Credentials {
                                 secret: "key-phrase".into(),
                                 private_key_path: None,
+                                remember: false,
                             },
                         ),
                     };

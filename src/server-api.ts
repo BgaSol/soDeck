@@ -41,7 +41,7 @@ export function newDraft(record?: Server | Proxy): Draft {
     port: String(record?.port ?? 22), username: record?.protocol === "ssh" ? record.username : record?.authentication.username ?? "",
     groupId: record?.protocol === "ssh" ? record.groupId ?? "" : "", authType: record?.authentication.type ?? "password",
     privateKeyPath: record?.authentication.privateKeyPath ?? "", password: "",
-    remember: record?.authentication.hasSavedSecret ?? false, clearSecret: false,
+    remember: record?.authentication.hasSavedSecret ?? true, clearSecret: false,
     route: record?.protocol === "ssh" ? structuredClone(record.route) : [], routed: record?.protocol === "ssh" && record.route.length > 0,
   };
 }

@@ -442,6 +442,7 @@ document
 async function start() {
   state.officialPlugins = await core.officialPlugins();
   await listen("core-changed", scheduleRefresh);
+  await listen("server-catalog-changed", () => { void servers?.start(); });
   await listen("connections-changed", () => { void connections.refresh().catch(error => toast(String(error), undefined, true)); scheduleRefresh(); });
   await listen("workspaces-changed", () => void workspaces.refresh().catch(error => toast(String(error), undefined, true)));
   await listen("workspace-request-close", () => void action(() => workspaces.closeWindow()));

@@ -62,7 +62,7 @@ impl Drop for Session {
 }
 
 pub(super) async fn connect(
-    mut profile: Profile,
+    profile: &mut Profile,
     a: Arc<Attempt>,
     keys: Arc<HostKeys>,
 ) -> Result<Session, Error> {

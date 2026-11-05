@@ -107,48 +107,61 @@ pub(super) async fn connect(
             client::connect_stream(Arc::new(config), stream, handler).await
         })
         .await?;
-    let result = match &node.auth {
-        Auth::Password(Some(password)) => {
-            a.wait("authentication", index, async {
-                handle
-                    .authenticate_password(&node.username, password)
-                    .await
-                    .map_err(Error::from)
-            })
-            .await?
-        }
-        Auth::Key { .. } => {
-            let mut parsed = a.wait("privateKey", index, load_key(node)).await;
-            if matches!(&parsed,Err(e) if e.code=="keyEncrypted") {
-                a.fill_credentials(node, index, "privateKey").await?;
-                parsed = a.wait("privateKey", index, load_key(node)).await;
+    loop {
+        let result = match &node.auth {
+            Auth::Password(Some(password)) => {
+                a.wait("authentication", index, async {
+                    handle
+                        .authenticate_password(&node.username, password)
+                        .await
+                        .map_err(Error::from)
+                })
+                .await?
             }
-            let key = parsed?;
-            a.wait("authentication", index, async {
-                let hash = handle
-                    .best_supported_rsa_hash()
-                    .await
-                    .map_err(Error::from)?
-                    .flatten();
-                handle
-                    .authenticate_publickey(
-                        &node.username,
-                        PrivateKeyWithHashAlg::new(Arc::new(key), hash),
-                    )
-                    .await
-                    .map_err(Error::from)
-            })
-            .await?
+            Auth::Key { .. } => {
+                let parsed = a.wait("privateKey", index, load_key(node)).await;
+                if let Err(error) = &parsed {
+                    if error.code == "keyEncrypted" || error.code == "keyPassphrase" {
+                        a.fill_credentials(node, index, "privateKey", Some(&error.message))
+                            .await?;
+                        continue;
+                    }
+                }
+                let key = parsed?;
+                a.wait("authentication", index, async {
+                    let hash = handle
+                        .best_supported_rsa_hash()
+                        .await
+                        .map_err(Error::from)?
+                        .flatten();
+                    handle
+                        .authenticate_publickey(
+                            &node.username,
+                            PrivateKeyWithHashAlg::new(Arc::new(key), hash),
+                        )
+                        .await
+                        .map_err(Error::from)
+                })
+                .await?
+            }
+            _ => return Err(Error::new("credentials", "缺少 SSH 认证资料")),
+        };
+        if result.success() {
+            return Ok(handle);
         }
-        _ => return Err(Error::new("credentials", "缺少 SSH 认证资料")),
-    };
-    if !result.success() {
-        return Err(Error::new(
-            "authenticationRejected",
-            "SSH 认证失败，请检查此节点的用户名和凭据",
-        ));
+        let authentication = if matches!(node.auth, Auth::Key { .. }) {
+            "privateKey"
+        } else {
+            "password"
+        };
+        a.fill_credentials(
+            node,
+            index,
+            authentication,
+            Some("SSH 认证失败，请检查用户名并重新输入凭据。"),
+        )
+        .await?;
     }
-    Ok(handle)
 }
 async fn load_key(node: &Node) -> Result<russh::keys::PrivateKey, Error> {
     let Auth::Key { path, passphrase } = &node.auth else {
@@ -167,9 +180,9 @@ async fn load_key(node: &Node) -> Result<russh::keys::PrivateKey, Error> {
         if bytes.len() > 1024 * 1024 {
             return Err(Error::new("keyRead", "私钥文件超过 1 MiB"));
         }
-        if passphrase.as_ref().is_none_or(|p| p.is_empty())
-            && russh::keys::PrivateKey::from_openssh(&bytes).is_ok_and(|k| k.is_encrypted())
-        {
+        let encrypted =
+            russh::keys::PrivateKey::from_openssh(&bytes).is_ok_and(|k| k.is_encrypted());
+        if passphrase.as_ref().is_none_or(|p| p.is_empty()) && encrypted {
             return Err(Error::new("keyEncrypted", "私钥已加密，请提供口令"));
         }
         russh::keys::decode_secret_key(&bytes, passphrase.as_deref().filter(|p| !p.is_empty()))
@@ -177,6 +190,7 @@ async fn load_key(node: &Node) -> Result<russh::keys::PrivateKey, Error> {
                 russh::keys::Error::KeyIsEncrypted => {
                     Error::new("keyEncrypted", "私钥已加密，请提供口令")
                 }
+                _ if encrypted => Error::new("keyPassphrase", "私钥口令错误，请重新输入"),
                 _ => Error::new("keyParse", "私钥格式无效、不支持或口令错误"),
             })
     })

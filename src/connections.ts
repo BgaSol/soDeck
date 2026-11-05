@@ -3,7 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { escape as e } from "./ui";
 import type { Context } from "./workspaces";
 
-type Question = { kind: "credentials"; id: string; nodeIndex: number; name: string; endpoint: string; authentication: string; username: string; privateKeyPath: string | null }
+type Question = { kind: "credentials"; id: string; nodeIndex: number; name: string; endpoint: string; authentication: string; username: string; privateKeyPath: string | null; message: string | null; remember: boolean }
   | { kind: "hostKey"; id: string; nodeIndex: number; name: string; endpoint: string; algorithm: string; fingerprint: string; previousFingerprint: string | null }
   | { kind: "targetChange"; id: string; previousEndpoint: string; endpoint: string };
 export interface ConnectionView {
@@ -66,7 +66,7 @@ export class ConnectionsUi {
     const node = document.createElement("dialog"); node.className = "catalog-dialog connection-dialog";
     const title = q.kind === "credentials" ? "补充连接凭据" : q.kind === "targetChange" ? "重连目标已变更" : q.previousFingerprint ? "SSH 主机密钥已变化" : "确认 SSH 主机身份";
     node.setAttribute("aria-label", title);
-    const content = q.kind === "credentials" ? `<p>第 ${q.nodeIndex + 1} 站 · ${e(q.name)} · ${e(q.endpoint)}</p><p class="hint">账号 ${e(q.username)} · 此处输入仅用于本次连接，记住凭据请编辑服务器资料。</p><form id="connection-auth">${q.authentication === "privateKey" ? `<label>私钥文件<div class="connection-key-path"><input name="path" value="${e(q.privateKeyPath ?? "")}" required><button type="button" data-key-picker>选择文件</button></div></label>` : ""}<label>${q.authentication === "privateKey" ? "私钥口令" : "密码"}<input name="secret" type="password" autocomplete="new-password" ${q.authentication === "privateKey" ? "" : "required"}></label></form>`
+    const content = q.kind === "credentials" ? `<p>第 ${q.nodeIndex + 1} 站 · ${e(q.name)} · ${e(q.endpoint)}</p><p class="hint">账号 ${e(q.username)}</p>${q.message ? `<p class="error-box" role="alert">${e(q.message)}</p>` : ""}<form id="connection-auth">${q.authentication === "privateKey" ? `<label>私钥文件<div class="connection-key-path"><input name="path" value="${e(q.privateKeyPath ?? "")}" required><button type="button" data-key-picker>选择文件</button></div></label>` : ""}<label>${q.authentication === "privateKey" ? "私钥口令" : "密码"}<input name="secret" type="password" autocomplete="new-password" ${q.authentication === "privateKey" ? "" : "required"}></label><label class="connection-remember"><input name="remember" type="checkbox" ${q.remember ? "checked" : ""}>在此设备上记住${q.authentication === "privateKey" ? "口令" : "密码"}</label><p class="hint">连接成功后保存到对应资料，替换原凭据；以明文保存在本机文件。取消勾选则仅用于本次连接。</p></form>`
       : q.kind === "targetChange" ? `<p>服务器的地址、账号、认证方式或访问路径已修改。</p><dl><dt>原连接</dt><dd>${e(q.previousEndpoint)}</dd><dt>当前目标</dt><dd>${e(q.endpoint)}</dd></dl><p>按新资料重连后，旧会话资源仍会失效。</p>`
       : `<p>第 ${q.nodeIndex + 1} 站 · ${e(q.name)} · ${e(q.endpoint)}</p>${q.previousFingerprint ? `<p class="error-box">已记录的主机密钥与本次不同，请核对服务器身份后再更新。</p><label>原指纹<code>${e(q.previousFingerprint)}</code></label>` : "<p>请核对该服务器的主机指纹。信任后才会提交此节点的认证凭据。</p>"}<label>${e(q.algorithm)}<code>${e(q.fingerprint)}</code></label>`;
     node.innerHTML = `<header class="catalog-dialog-heading"><h2>${title}</h2></header><section class="connection-prompt-body">${content}<p class="connection-prompt-error error-box" role="alert" hidden></p></section><footer class="catalog-dialog-footer"><button data-prompt-cancel>取消连接</button><button class="primary" data-prompt-accept>${q.kind === "credentials" ? "继续连接" : q.kind === "targetChange" ? "按新资料重连" : q.previousFingerprint ? "更新指纹并继续" : "信任并继续"}</button></footer>`;
@@ -81,7 +81,8 @@ export class ConnectionsUi {
         else {
           const secret = node.querySelector<HTMLInputElement>('[name="secret"]')?.value ?? "";
           const path = node.querySelector<HTMLInputElement>('[name="path"]')?.value ?? null;
-          await this.send({ op: "answer", attemptId: v.attemptId, questionId: q.id, answer: q.kind === "credentials" ? { kind: "credentials", secret, privateKeyPath: path } : { kind: q.kind, accept: true } });
+          const remember = node.querySelector<HTMLInputElement>('[name="remember"]')?.checked ?? false;
+          await this.send({ op: "answer", attemptId: v.attemptId, questionId: q.id, answer: q.kind === "credentials" ? { kind: "credentials", secret, privateKeyPath: path, remember } : { kind: q.kind, accept: true } });
         }
         if (this.dialog === current) this.closePrompt();
         await this.refresh();
