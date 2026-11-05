@@ -35,7 +35,7 @@ async fn component_data(
     channel: tauri::ipc::Channel<sodeck::streams::Frame>,
 ) -> Result<serde_json::Value, String> {
     if request["op"] == "files" {
-        if request["action"] == "download" {
+        if request["action"] == "download" || request["action"] == "exportDraft" {
             use tauri_plugin_dialog::DialogExt;
             app.core
                 .validate_file_download(window.label(), &surface_id, &request)?;
@@ -54,6 +54,12 @@ async fn component_data(
                 return Ok(serde_json::json!({"cancelled":true}));
             };
             let local = chosen.into_path().map_err(|e| e.to_string())?;
+            if request["action"] == "exportDraft" {
+                return app
+                    .core
+                    .files_export(window.label(), &surface_id, request, local)
+                    .await;
+            }
             return app
                 .core
                 .files_download(window.label(), &surface_id, request, local)

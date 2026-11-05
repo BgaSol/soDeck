@@ -457,6 +457,10 @@ async fn cancelled_handshake_and_profile_edit_release_the_real_socket() {
         .unwrap()
         .unwrap();
     until(|| f.core.connection_views()[0].state == "cancelled").await;
+    assert_eq!(
+        f.core.connection_views()[0].error.as_ref().unwrap().code,
+        "cancelled"
+    );
     assert!(f
         .core
         .workspace_projection("main")

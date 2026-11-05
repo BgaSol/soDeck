@@ -22,7 +22,16 @@ fn main() {
             "network_snapshot" => Ok(core.network_snapshot()),
             "component_data" => {
                 if args["request"]["op"] == "files" {
-                    let result = if args["request"]["action"] == "download" {
+                    let result = if args["request"]["action"] == "exportDraft" {
+                        let local = std::env::var("SODECK_TEST_DOWNLOAD_PATH")
+                            .expect("test export destination");
+                        tauri::async_runtime::block_on(core.files_export(
+                            args["window"].as_str().unwrap_or("main"),
+                            args["surfaceId"].as_str().unwrap(),
+                            args["request"].clone(),
+                            local.into(),
+                        ))
+                    } else if args["request"]["action"] == "download" {
                         let local = std::env::var("SODECK_TEST_DOWNLOAD_PATH")
                             .expect("test download destination");
                         tauri::async_runtime::block_on(core.files_download(

@@ -51,3 +51,5 @@ SFTP 使用 `russh-sftp` 3.0.1（Apache-2.0，AspectUnk 上游维护，2026-11-0
 2026-11-05 本机 Windows x86_64 已通过 check、scripts:test（6）、Rust 回归（含统计与默认布局回归，独立 OpenSSH 用专用入口执行）、既有 UI 回归（服务器 12、工作台 13、连接与正式资源 4）；独立终端包通过 PTY、xterm、多 Tab、重挂载；文件包通过中文路径、BOM/CRLF、外部修改拒绝、2 MiB 下载、断线草稿。v0.6.0 EXE 构建后安装到隔离目录，实际 WebView/Channel/xterm 快照往返、SFTP 读取/保存/下载、原生移窗及两次重开退出已通过，报告在 artifacts/native-remote-data-4/smoke-result.json。其余四个原生目标结果尚待 GitHub Actions，不能将本机结果外推。
 
 待人工确认：中文输入法、全屏终端、复杂 VT 状态持续移窗、混合 DPI 手势及设备升级。复杂 ACL、硬链接和特殊文件不保证安全编辑。插件协议分摊和逐跳计量尚未提供。
+
+文件冲突或断线后可从编辑器“导出草稿”写入本地文件，不依赖当前远程会话。GitHub 原生 macOS 回归发现取消与 socket 错误在同次轮询就绪时可能误报失败；等待器现保留取消结果，并增加确定性回归。

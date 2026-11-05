@@ -71,7 +71,7 @@
    const footer=document.createElement('footer');footer.append(button('取消下载',()=>data('cancel')));root.append(footer);
    await data('describe');const target=m.data.path|| (await data('home')).path;await list(target);pathInput.disabled=false;
   }else{
-   const title=document.createElement('span');title.className='path';title.textContent=m.data.path;title.title=m.data.path;header.append(title,button('保存',save,'primary'),button('下载远端',()=>download(m.data.path)));
+   const title=document.createElement('span');title.className='path';title.textContent=m.data.path;title.title=m.data.path;header.append(title,button('保存',save,'primary'),button('下载远端',()=>download(m.data.path)),button('导出草稿',async()=>{await queue;const result=await data('exportDraft',{path:m.data.path});if(!result.cancelled)message('草稿已导出：'+result.path);}));
    textarea=document.createElement('textarea');textarea.spellcheck=false;textarea.disabled=true;textarea.setAttribute('aria-label','远端文件编辑器');root.append(textarea);
    let info=await data('describe');if(!info.path)info=await data('read',{path:m.data.path});
    const bytes=new Uint8Array(info.size);for(let offset=0;offset<bytes.length;offset+=16384){const block=await data('chunk',{offset});bytes.set(block.data,offset);}

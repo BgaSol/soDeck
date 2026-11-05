@@ -195,7 +195,12 @@ impl Attempt {
         loop {
             tokio::select! { biased;
                 _=self.cancel.cancelled()=>return Err(Error::cancelled()),
-                result=&mut future=>return result.map_err(|mut e|{if e.stage.is_empty(){e.stage=stage.into();}e}),
+                result=&mut future=>{
+                    // Cancellation may arrive while the IO future is being polled on
+                    // another runtime worker. Socket abort must retain cancelled status.
+                    if self.cancel.is_cancelled(){return Err(Error::cancelled());}
+                    return result.map_err(|mut e|{if e.stage.is_empty(){e.stage=stage.into();}e});
+                },
                 _=timer.tick()=>if start.elapsed().saturating_sub(self.paused().saturating_sub(paused))>=Duration::from_secs(30){return Err(Error {stage:stage.into(),..Error::new("timeout","当前连接阶段超过 30 秒，请检查路径或服务")});}
             }
         }
@@ -653,4 +658,56 @@ async fn run(a: Arc<Attempt>, profile: Profile, keys: Arc<host_keys::HostKeys>) 
         core.log(None,if view.state=="failed"{"warn"}else{"info"},if connected{"远程会话已结束"}else{"连接尝试已结束"},Some(serde_json::json!({"serverId":view.server_id,"attemptId":view.attempt_id,"code":view.error.as_ref().map(|e|&e.code),"stage":view.stage})));
     }
     a.changed();
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+    #[tokio::test]
+    async fn cancelled_socket_error_in_same_poll_keeps_cancelled_outcome() {
+        let a = Attempt {
+            state: Mutex::new(State {
+                view: View {
+                    attempt_id: "test".into(),
+                    server_id: "server".into(),
+                    window_id: "main".into(),
+                    state: "connecting".into(),
+                    stage: "".into(),
+                    node_index: 0,
+                    node_count: 1,
+                    endpoint: "test".into(),
+                    question: None,
+                    context: None,
+                    error: None,
+                    sent_bytes: "0".into(),
+                    received_bytes: "0".into(),
+                },
+                reply: None,
+                question_clock: None,
+                paused: Duration::ZERO,
+                question_sequence: 0,
+            }),
+            identity: "test".into(),
+            source_window: "main".into(),
+            expected_context: None,
+            previous_endpoint: None,
+            cancel: CancellationToken::new(),
+            done: CancellationToken::new(),
+            counters: Arc::new(io::Counters::default()),
+            core: Weak::new(),
+            session: Mutex::new(None),
+        };
+        let result = a
+            .wait("sshHandshake", 0, async {
+                // Models the socket waking with ConnectionAborted while its enclosing
+                // select has already polled the cancellation branch for this turn.
+                a.cancel.cancel();
+                Err::<(), _>(Error::io(std::io::Error::new(
+                    std::io::ErrorKind::ConnectionAborted,
+                    "cancelled socket",
+                )))
+            })
+            .await;
+        assert_eq!(result.unwrap_err().code, "cancelled");
+    }
 }

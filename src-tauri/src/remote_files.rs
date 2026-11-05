@@ -99,6 +99,53 @@ fn attrs(a: &FileAttributes) -> Value {
 }
 
 impl AppCore {
+    pub async fn files_export(
+        &self,
+        window: &str,
+        token: &str,
+        p: Value,
+        local: PathBuf,
+    ) -> Result<Value, String> {
+        self.validate_file_download(window, token, &p)?;
+        let v = self.ui_data_writable(window, token)?;
+        let r = self.file_resource(&v.plugin_id, &v.plugin_instance_id, string(&p, "id")?)?;
+        let bytes = r
+            .state
+            .lock()
+            .await
+            .document
+            .as_ref()
+            .ok_or("尚未打开文件")?
+            .bytes
+            .clone();
+        let temporary = LocalTemporary(
+            local
+                .parent()
+                .ok_or("目标没有父目录")?
+                .join(format!(".sodeck-{}.part", self.next_id())),
+        );
+        let before = std::fs::metadata(&local)
+            .ok()
+            .map(|m| (m.len(), m.modified().ok()));
+        let mut output = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary.0)
+            .await
+            .map_err(err)?;
+        output.write_all(&bytes).await.map_err(err)?;
+        output.sync_all().await.map_err(err)?;
+        drop(output);
+        if std::fs::metadata(&local)
+            .ok()
+            .map(|m| (m.len(), m.modified().ok()))
+            != before
+        {
+            return Err("本地目标已变化，未覆盖".into());
+        }
+        tokio::fs::rename(&temporary.0, &local).await.map_err(err)?;
+        Ok(json!({"path":local,"size":bytes.len()}))
+    }
     pub fn validate_file_download(
         &self,
         window: &str,
@@ -337,7 +384,7 @@ impl AppCore {
                     let f = sftp(self, &mut s, &view.context).await?;
                     let resolved = canonical(&f.raw, &target).await?;
                     let a = f.raw.lstat(resolved.clone()).await.map_err(err)?.attrs;
-                    if !a.is_regular() {
+                    if !a.file_type().is_file() {
                         return Err("只支持编辑普通文件".into());
                     }
                     let bytes = read_small(&f.raw, &resolved, &a, |n| {
@@ -541,7 +588,7 @@ async fn save_file(
                 return Err("文件链接目标已经变化，草稿保留".to_string());
             }
             let attrs = s.raw.lstat(doc.resolved.clone()).await.map_err(err)?.attrs;
-            if !attrs.is_regular() {
+            if !attrs.file_type().is_file() {
                 return Err("文件类型发生变化，草稿保留".into());
             }
             let current = read_small(&s.raw, &doc.resolved, &attrs, |n| {
@@ -662,7 +709,7 @@ async fn download_file(
     let work = async {
         let target = canonical(&s.raw, remote).await?;
         let a = s.raw.stat(target.clone()).await.map_err(err)?.attrs;
-        if !a.is_regular() {
+        if !a.file_type().is_file() {
             return Err("只支持下载普通文件".into());
         }
         let handle = s
