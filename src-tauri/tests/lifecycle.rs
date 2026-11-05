@@ -156,7 +156,12 @@ fn timeout_and_ignored_shutdown_are_bounded() {
         } else {
             assert!(core.load(&f.plugin).is_err());
         }
-        assert!(start.elapsed() < Duration::from_secs(7));
+        assert!(
+            start.elapsed() < Duration::from_secs(7),
+            "mode={mode}, elapsed={:?}, status={:?}",
+            start.elapsed(),
+            core.snapshot().plugins[0].error
+        );
         if mode != "no-read" {
             assert!(!alive(f.pid("pid")));
         }

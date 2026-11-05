@@ -288,6 +288,9 @@ pub(crate) fn supervise(
     let instance_id = initial.instance_id.as_deref().unwrap();
     core.log(Some((id, instance_id)), "info", "正在启动插件", None);
     let entry = initial.directory.join(&initial.manifest.entry);
+    // Process creation is part of initialization. In particular, Windows may spend
+    // seconds starting a newly built executable before the protocol loop begins.
+    let init_deadline = Instant::now() + Duration::from_secs(5);
     let started = platform::spawn(&entry, &initial.directory)
         .map_err(|error| format!("无法启动插件程序：{error}"));
     let (mut child, group) = match started {
@@ -322,7 +325,6 @@ pub(crate) fn supervise(
     let mut failure=core.plugin_data(id).and_then(|path| queue_frame(&writer,json!({"jsonrpc":"2.0","id":"initialize","method":"initialize","params":{"coreApiVersion":API_VERSION,"dataDirectory":path}}))).err();
     let mut ready = Some(ready);
     let mut initialized = false;
-    let init_deadline = Instant::now() + Duration::from_secs(5);
     let mut stop_deadline = None;
     let mut stop_waiters = Vec::new();
     let mut forced = false;
