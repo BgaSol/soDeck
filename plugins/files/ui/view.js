@@ -8,7 +8,7 @@
  function message(text,error=false){if(status){status.textContent=text;status.classList.toggle('error',error);}if(error)void event({action:'error',message:String(text).slice(0,2048)}).catch(()=>{});}
  function perform(fn){return Promise.resolve().then(fn).catch(e=>message(e.message,true));}
  const size=n=>n==null?'':Number(n)<1024?`${n} B`:`${(Number(n)/1024).toFixed(1)} KiB`;
- function button(text,fn,cls=''){const b=document.createElement('button');b.textContent=text;b.className=cls;b.addEventListener('click',()=>void perform(fn));return b;}
+ function button(text,fn,cls=''){const b=document.createElement('button');b.textContent=text;b.className='sd-control '+cls;b.addEventListener('click',()=>void perform(fn));return b;}
  async function watchJob(start){
   if(start.cancelled)return;
   jobId=start.id;busy=true;if(cancelButton)cancelButton.hidden=false;await event({action:'busy',busy:true});clearTimeout(jobTimer);
@@ -44,7 +44,7 @@
  async function init(m){
   id=m.data.fileId;theme(m.tokens);root.replaceChildren();
   status=document.createElement('div');status.className='status';status.setAttribute('role','status');
-  const footer=document.createElement('footer');footer.append(status);
+  const footer=document.createElement('footer');footer.className='sd-edge-top';footer.append(status);
   // Ready precedes remote operations; describe/chunk may also be used by an incoming window.
   sodeck.mounted(true);
   if(m.viewType==='files'){

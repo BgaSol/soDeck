@@ -1,0 +1,91 @@
+// Shipped xterm + terminal UI + real host clipboard transport, with deterministic clipboard/PTY endpoints.
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import {spawnSync} from 'node:child_process';
+import {createServer} from 'vite';
+import {chromium} from 'playwright';
+const build=spawnSync(process.execPath,['build.mjs'],{cwd:'plugins/terminal',stdio:'inherit',windowsHide:true});
+if(build.status!==0)throw new Error('Terminal UI build failed; install its locked dependencies first');
+const vite=await createServer({server:{host:'127.0.0.1',port:0}});await vite.listen();const url=vite.resolvedUrls.local[0];
+const browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:1024,height:700}});
+const errors=[];page.on('pageerror',error=>errors.push(String(error)));
+let requestedPlatform='Win32';
+const harness=`<!doctype html><html data-theme="dopamine"><head><meta charset="utf-8"></head><body><button id="outside">外部焦点</button><iframe id="terminal" style="width:900px;height:480px;border:0"></iframe><script type="module">
+import '/style.css';import {ClipboardBridge} from '/clipboard.ts';import {themeTokens} from '/theme.ts';
+window.writes=[];window.clipboard='中文🙂\\nsecond line';window.copies=[];window.reads=0;window.delayRead=false;
+const host=new ClipboardBridge(async()=>{window.reads++;return window.delayRead?new Promise(resolve=>window.finishRead=resolve):window.clipboard;},async text=>window.copies.push(text));
+const frame=document.querySelector('iframe'),token='test-surface';let generation=1,visible=true,offset=0;
+const post=message=>frame.contentWindow.postMessage({channel:'sodeck-ui-v1',surfaceId:token,...message},location.origin);
+window.testPost=post;window.setTheme=theme=>{document.documentElement.dataset.theme=theme;post({type:'themeChanged',tokens:themeTokens()});};
+window.addEventListener('message',async event=>{
+ if(event.source!==frame.contentWindow||event.data?.channel!=='sodeck-ui-v1')return;
+ const message=event.data;
+ if(message.type==='ready'){post({type:'mount',viewId:'A',context:{generation},data:{streamId:'pty'},tokens:themeTokens(),capabilities:{clipboard:1},visible:true});return;}
+ if(message.type==='mounted'){window.ready=true;return;}
+ if(message.type!=='request')return;
+ try{
+  let data={};
+  if(message.method==='clipboard'){const revision=generation;data=await host.request(token,message.params,()=>visible&&generation===revision&&document.hasFocus()&&document.activeElement===frame);}
+  if(message.method==='data'){
+   const p=message.params;
+   if(p.op==='write')window.writes.push(p.data);
+   if(p.op==='attach'){post({type:'data',data:{kind:'caughtUp',packet:1,offset:0,data:[]}});}
+  }
+  post({type:'response',id:message.id,data});
+ }catch(error){post({type:'response',id:message.id,error:String(error)});}
+});
+frame.src='/__terminal__/index.html';
+window.hideTerminal=()=>{visible=false;generation++;host.discard(token);post({type:'visibilityChanged',visible:false});};
+window.showTerminal=()=>{visible=true;post({type:'visibilityChanged',visible:true});};
+</script></body></html>`;
+await page.route(url,route=>route.fulfill({contentType:'text/html',body:harness}));
+await page.route(url+'__terminal__/**',route=>{
+ const relative=new URL(route.request().url()).pathname.replace('/__terminal__/','');const filename=path.join('plugins/terminal/ui',relative);
+ let body=fs.readFileSync(filename);if(relative==='vendor/xterm.js')body=Buffer.concat([body,Buffer.from('\n;window.RealTerminal=window.Terminal;window.Terminal=class extends window.RealTerminal{constructor(options){super(options);window.testTerminal=this;}};')]);
+ if(relative==='index.html')body=Buffer.from(body.toString().replace('<body>',`<body><script>Object.defineProperty(navigator,'platform',{configurable:true,value:'${requestedPlatform}'});Object.defineProperty(navigator,'userAgentData',{configurable:true,value:undefined});</script>`));
+ return route.fulfill({contentType:{'.js':'text/javascript','.css':'text/css','.html':'text/html'}[path.extname(filename)],body});
+});
+const frame=page.frameLocator('iframe');
+const bytes=()=>page.evaluate(()=>new TextDecoder().decode(Uint8Array.from(window.writes.flat())));
+const reset=()=>page.evaluate(()=>{window.writes=[];window.copies=[];window.reads=0;window.delayRead=false;});
+const focus=()=>frame.locator('.xterm-helper-textarea').focus();
+const term=async code=>{const child=page.frames().find(f=>f.url().includes('/__terminal__/index.html'));return child.evaluate(code);};
+try{
+ await page.goto(url);await page.waitForFunction(()=>window.ready);await focus();
+ // Composition is owned by the IME; local clipboard shortcuts must not intervene.
+ await frame.locator('.xterm-helper-textarea').dispatchEvent('compositionstart');
+ await page.keyboard.press('Control+v');await page.waitForFunction(()=>window.writes.length>0);assert.equal(await page.evaluate(()=>window.reads),0);
+ await frame.locator('.xterm-helper-textarea').dispatchEvent('compositionend');await reset();
+ await page.keyboard.press('Control+v');await page.waitForFunction(()=>window.writes.length>0);assert.equal(await bytes(),'中文🙂\rsecond line');assert.equal(await page.evaluate(()=>window.reads),1);await reset();
+ await term(()=>new Promise(resolve=>window.testTerminal.write('\x1b[?2004h',resolve)));await page.keyboard.press('Control+Shift+v');await page.waitForFunction(()=>window.writes.length>0);assert.equal(await bytes(),'\x1b[200~中文🙂\rsecond line\x1b[201~');await reset();
+ await term(()=>new Promise(resolve=>window.testTerminal.write('copy 中文🙂',resolve)));await term(()=>window.testTerminal.select(0,0,5));await page.keyboard.press('Control+c');await page.waitForFunction(()=>window.copies.length===1);assert.equal((await page.evaluate(()=>window.copies))[0],'copy ');assert.equal(await bytes(),'');assert.equal(await term(()=>window.testTerminal.hasSelection()),false);
+ await page.keyboard.press('Control+c');await page.waitForFunction(()=>window.writes.length>0);assert.equal(await bytes(),'\x03');await reset();
+ // Menu actions do not read early and Escape does not reach the remote program.
+ await frame.locator('#terminal').click({button:'right'});assert.equal(await page.evaluate(()=>window.reads),0);await page.keyboard.press('Escape');assert.equal(await frame.locator('.terminal-menu').count(),0);assert.equal(await bytes(),'');
+ await frame.locator('#terminal').click({button:'right'});await frame.getByRole('menuitem',{name:/^粘贴/}).click();await page.waitForFunction(()=>window.writes.length>0);assert.equal(await page.evaluate(()=>window.reads),1);await reset();
+ // Mouse-reporting programs own right click; Shift explicitly opens the local menu.
+ await term(()=>new Promise(resolve=>window.testTerminal.write('\x1b[?1000h',resolve)));
+ await frame.locator('#terminal').click({button:'right'});assert.equal(await frame.locator('.terminal-menu').count(),0);assert.equal(await page.evaluate(()=>window.reads),0);
+ await frame.locator('#terminal').click({button:'right',modifiers:['Shift']});await frame.getByRole('menu').waitFor();await page.keyboard.press('Escape');
+ await term(()=>new Promise(resolve=>window.testTerminal.write('\x1b[?1000l',resolve)));await reset();
+ // Auto-repeat and overlapping shortcut presses share one native read and one paste.
+ await focus();await page.evaluate(()=>window.delayRead=true);await page.keyboard.down('Control');await page.keyboard.down('v');await page.keyboard.down('v');await page.keyboard.up('v');await page.keyboard.up('Control');
+ await page.keyboard.press('Control+v');await page.waitForFunction(()=>Boolean(window.finishRead));assert.equal(await page.evaluate(()=>window.reads),1);
+ await page.evaluate(()=>{window.finishRead('single-flight');window.finishRead=null;});await page.waitForFunction(()=>window.writes.length>0);assert.equal(await bytes(),'\x1b[200~single-flight\x1b[201~');await reset();
+ // A late native clipboard response must never cross a visibility/context change.
+ await focus();await page.evaluate(()=>window.delayRead=true);await page.keyboard.press('Control+v');await page.waitForFunction(()=>Boolean(window.finishRead));await page.evaluate(()=>{window.hideTerminal();window.finishRead('must-not-send');});await page.waitForTimeout(80);assert.equal(await bytes(),'');await page.evaluate(()=>window.showTerminal());await reset();await focus();
+ await term(()=>window.testTerminal.select(0,0,5));
+ const geometry=()=>({cols:window.testTerminal.cols,rows:window.testTerminal.rows,selection:window.testTerminal.getSelection(),scroll:window.testTerminal.buffer.active.viewportY});
+ const before=await term(geometry);
+ for(const theme of ['light','dark','dopamine']){await page.evaluate(theme=>window.setTheme(theme),theme);await page.waitForTimeout(20);assert.deepEqual(await term(geometry),before);}
+ assert.equal(await term(()=>window.testTerminal.options.theme.selectionBackground),'#c8bdf4');assert.deepEqual(errors,[]);
+ for(const [platform,key]of [['Linux','Control+Shift+v'],['MacIntel','Meta+v']]){
+   requestedPlatform=platform;await page.reload();await page.waitForFunction(()=>window.ready);await focus();await page.keyboard.press(key);await page.waitForFunction(()=>window.writes.length>0);assert.equal(await page.evaluate(()=>window.reads),1);await reset();
+   if(platform==='Linux'){await page.keyboard.press('Control+v');await page.waitForFunction(()=>window.writes.length>0);assert.equal(await bytes(),'\x16');assert.equal(await page.evaluate(()=>window.reads),0);}
+   else {await page.keyboard.press('Control+c');await page.waitForFunction(()=>window.writes.length>0);assert.equal(await bytes(),'\x03');}
+ }
+ requestedPlatform='Win32';await page.reload();await page.waitForFunction(()=>window.ready);await focus();await frame.locator('#terminal').click({button:'right'});
+ fs.mkdirSync('artifacts/terminal-ui',{recursive:true});await page.screenshot({path:'artifacts/terminal-ui/clipboard-menu.png'});
+ console.log('Terminal input passed: real xterm copy/Ctrl+C/paste/bracketed paste, local menu, no duplicate input, late paste cancellation, theme keeps geometry; no page errors');
+}catch(error){console.error({errors,frames:page.frames().map(f=>f.url())});throw error;}finally{await browser.close();await vite.close();}

@@ -1,0 +1,86 @@
+/* The only runtime theme definitions. Geometry is shared, appearance is not. */
+@layer themes {
+  :root {
+    --canvas: #f6f7f9; --panel: #fff; --subtle: #f8f9fb;
+    --text: #242936; --muted: #586174; --border: #dce1eb;
+    --accent: #7661d1; --accent-bg: #f0ecfc; --hover: #eff0f5;
+    --good: #23734f; --warning: #8a590f; --error: #b53950;
+    --shadow: 0 12px 40px #22283e21;
+    --file-tree-bg: #f8f9fb; --status-bg: #f3f5f9;
+    --folder-color: #99762e; --folder-fill: #f6d98a; --tree-selection-border: transparent;
+    --sd-stroke-structure: 1px; --sd-stroke-control: 1px; --sd-icon-stroke: 2;
+    --sd-control-weight: 500; --sd-title-weight: 600;
+    --sd-navigation: #f0ecfc; --sd-tools: #f1f3f8; --sd-rail: #f8f9fb;
+    --sd-primary: #7661d1; --sd-primary-text: #fff;
+    --sd-primary-hover: #6550bf; --sd-pressed: #e1dcef;
+    --sd-success-bg: #e5f1eb; --sd-error-bg: #fbe8e9; --sd-scrim: #18203438;
+    --sd-symbol: #f0ecfc; --sd-symbol-selected: #e0d8f6;
+    --sd-tab-selected: #fff; --sd-server-selected: #f0ecfc;
+    --sd-selection: #dad3f3; --sd-disabled-bg: #eeeff2;
+    --terminal-background: #fcfcfe; --terminal-foreground: #252b3a;
+    --terminal-cursor: #6554c0; --terminal-selection: #dad3f3;
+    --terminal-black: #252b3a; --terminal-red: #a12c38; --terminal-green: #176b4f;
+    --terminal-yellow: #7a4a08; --terminal-blue: #245b9a; --terminal-magenta: #7b3e8c;
+    --terminal-cyan: #196976; --terminal-white: #d4d6df;
+    --terminal-brightBlack: #62665c; --terminal-brightRed: #922534;
+    --terminal-brightGreen: #145f47; --terminal-brightYellow: #704207;
+    --terminal-brightBlue: #214f87; --terminal-brightMagenta: #733780;
+    --terminal-brightCyan: #145c68; --terminal-brightWhite: #f5f6fa;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --canvas: #191b22; --panel: #22252e; --subtle: #1e2028;
+    --text: #e2e5ee; --muted: #b3bcd0; --border: #394356;
+    --accent: #b3a2f7; --accent-bg: #353047; --hover: #30343f;
+    --good: #95d5b4; --warning: #eac386; --error: #f1a4b6;
+    --shadow: 0 12px 40px #0006; --file-tree-bg: #1e2028; --status-bg: #202633;
+    --folder-color: #d6b768; --folder-fill: #51452c;
+    --sd-navigation: #35314e; --sd-tools: #252a36; --sd-rail: #1e2028;
+    --sd-primary: #cfbfef; --sd-primary-text: #22252e;
+    --sd-primary-hover: #e0d6f6; --sd-pressed: #414053;
+    --sd-success-bg: #234335; --sd-error-bg: #54313b; --sd-scrim: #080b1280;
+    --sd-symbol: #353047; --sd-symbol-selected: #494063;
+    --sd-tab-selected: #35314e; --sd-server-selected: #35314e;
+    --sd-selection: #48405f; --sd-disabled-bg: #30343f;
+    --terminal-background: #151923; --terminal-foreground: #e8edf7;
+    --terminal-cursor: #c6b7ff; --terminal-selection: #48405f;
+    --terminal-black: #202633; --terminal-red: #f1a4b6; --terminal-green: #95d5b4;
+    --terminal-yellow: #eac386; --terminal-blue: #86b5ff; --terminal-magenta: #c4a4ff;
+    --terminal-cyan: #8dd9e8; --terminal-white: #d0d6e4;
+    --terminal-brightBlack: #949fb5; --terminal-brightRed: #ffb7c4;
+    --terminal-brightGreen: #b0e9c9; --terminal-brightYellow: #ffdf9e;
+    --terminal-brightBlue: #abcfff; --terminal-brightMagenta: #ddc4ff;
+    --terminal-brightCyan: #b7edf7; --terminal-brightWhite: #f5f7ff;
+    color-scheme: dark;
+  }
+  :root[data-theme="dopamine"] {
+    --canvas: #fbf1e8; --panel: #fffbe6; --subtle: #fffef5;
+    --text: #20211f; --muted: #62665c; --border: #20211f;
+    --accent: #5346a6; --accent-bg: #ffde75; --hover: #fff0bc;
+    --good: #176b4f; --warning: #7a4a08; --error: #a12c38; --shadow: none;
+    --file-tree-bg: #fffbe6; --status-bg: #d5f1e5;
+    --folder-color: #66522d; --folder-fill: #ffde75; --tree-selection-border: #20211f;
+    --sd-stroke-structure: 2px; --sd-stroke-control: 2px; --sd-icon-stroke: 2.25;
+    --sd-control-weight: 600; --sd-title-weight: 700;
+    --sd-navigation: #ffb7cf; --sd-tools: #42c69b; --sd-rail: #fbf1e8;
+    --sd-primary: #ffde75; --sd-primary-text: #20211f;
+    --sd-primary-hover: #ffe795; --sd-pressed: #f5dea3;
+    --sd-success-bg: #d5f1e5; --sd-error-bg: #ffd7cc; --sd-scrim: #20211f66;
+    --sd-symbol: #bde9db; --sd-symbol-selected: #8dd9e8;
+    --sd-tab-selected: #ffde75; --sd-server-selected: #ffb7cf;
+    --sd-selection: #c8bdf4; --sd-disabled-bg: #ece8d9;
+    --terminal-background: #fffbe6; --terminal-foreground: #20211f;
+    --terminal-cursor: #5346a6; --terminal-selection: #c8bdf4;
+    --terminal-black: #20211f; --terminal-white: #dad7c7;
+    color-scheme: light;
+  }
+  @media (forced-colors: active) {
+    :root { --canvas: Canvas; --panel: Canvas; --subtle: Canvas; --text: CanvasText;
+      --muted: CanvasText; --border: CanvasText; --accent: Highlight; --accent-bg: Highlight;
+      --hover: Canvas; --sd-navigation: Canvas; --sd-tools: Canvas; --sd-rail: Canvas;
+      --status-bg: Canvas; --sd-tab-selected: Highlight; --sd-server-selected: Highlight;
+      --sd-primary: ButtonFace; --sd-primary-text: ButtonText; --shadow: none;
+      --terminal-background: Canvas; --terminal-foreground: CanvasText; --terminal-cursor: CanvasText;
+      --terminal-selection: Highlight; --file-tree-bg: Canvas; }
+  }
+}

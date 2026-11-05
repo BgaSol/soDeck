@@ -27,6 +27,77 @@ struct Application {
 }
 
 #[tauri::command]
+async fn clipboard_text(
+    handle: tauri::AppHandle,
+    operation: String,
+    text: Option<String>,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    // Native reads must stay off the event loop (in particular on Linux).
+    tauri::async_runtime::spawn_blocking(move || match operation.as_str() {
+        "read" => {
+            let text = match handle.clipboard().read_text() {
+                Ok(text) => text,
+                // The pinned official plugin erases arboard's error variants.
+                Err(tauri_plugin_clipboard_manager::Error::Clipboard(message))
+                    if message == "The clipboard contents were not available in the requested format or the clipboard is empty." => String::new(),
+                Err(error) => return Err(format!("无法读取系统剪贴板：{error}")),
+            };
+            if text.len() > 256 * 1024 {
+                return Err("剪贴板超过 256 KiB，请分段粘贴；本次未发送".into());
+            }
+            Ok(Some(text))
+        }
+        "write" => {
+            let text = text.ok_or("缺少剪贴板文本")?;
+            if text.len() > 256 * 1024 {
+                return Err("剪贴板文本超过 256 KiB".into());
+            }
+            handle
+                .clipboard()
+                .write_text(text)
+                .map_err(|e| format!("无法写入系统剪贴板：{e}"))?;
+            Ok(None)
+        }
+        _ => Err("未知剪贴板操作".into()),
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// Explicit isolated smoke mode only; restore the previous text even after a failed assertion.
+async fn clipboard_roundtrip(handle: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let original = {
+        let handle = handle.clone();
+        tauri::async_runtime::spawn_blocking(move || handle.clipboard().read_text())
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| format!("剪贴板烟测需要已有文本以便恢复：{e}"))?
+    };
+    if original.len() > 256 * 1024 {
+        return Err("剪贴板烟测的原有文本超过恢复上限".into());
+    }
+    let sample = "SoDeck 原生剪贴板 🙂\r\nsecond line\n".repeat(300);
+    let result = async {
+        clipboard_text(handle.clone(), "write".into(), Some(sample.clone())).await?;
+        if clipboard_text(handle.clone(), "read".into(), None).await? != Some(sample) {
+            return Err("原生剪贴板文本往返不一致".into());
+        }
+        if clipboard_text(handle.clone(), "write".into(), Some("中".repeat(90_000)))
+            .await
+            .is_ok()
+        {
+            return Err("原生剪贴板未拒绝超限文本".into());
+        }
+        Ok(())
+    }
+    .await;
+    let restored = clipboard_text(handle, "write".into(), Some(original)).await;
+    result.and(restored.map(|_| ()))
+}
+
+#[tauri::command]
 async fn component_data(
     app: State<'_, Application>,
     window: tauri::WebviewWindow,
@@ -304,9 +375,13 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
     let ui_test_requested = ui_plugin.is_some();
     let ssh_config = argument("--ssh-test-config");
     let ssh_test_requested = ssh_config.is_some();
+    let clipboard_test_requested = std::env::args().any(|a| a == "--clipboard-test");
     let persisted = app.verify_persisted;
     std::thread::spawn(move || {
         let validation = (|| {
+            if clipboard_test_requested {
+                tauri::async_runtime::block_on(clipboard_roundtrip(handle.clone()))?;
+            }
             sodeck::validation::server_roundtrip(&core, persisted)?;
             sodeck::validation::workspace_roundtrip(&handle, &core)?;
             if let Some(bundle) = update_bundle {
@@ -329,7 +404,7 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
         let result = validation.and(stopped);
         if result.is_ok() {
             let status = core.snapshot();
-            let report = serde_json::json!({"completed":true,"workspaceNative":true,"componentUiNative":ui_test_requested,"sshNative":ssh_test_requested,"version":status.version,"target":status.target});
+            let report = serde_json::json!({"completed":true,"workspaceNative":true,"componentUiNative":ui_test_requested,"sshNative":ssh_test_requested,"clipboardNative":clipboard_test_requested,"version":status.version,"target":status.target});
             let _ = std::fs::write(
                 status.data_directory.join("smoke-result.json"),
                 report.to_string(),
@@ -417,6 +492,7 @@ fn main() {
                 .body(bytes).unwrap()
         })
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
             let directory = if smoke {
@@ -495,6 +571,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            clipboard_text,
             component_data,
             network_snapshot,
             sodeck::connections::desktop::connection,

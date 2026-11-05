@@ -29,3 +29,5 @@ jobs:
       - run: cargo fmt --manifest-path crates/plugin-client/Cargo.toml -- --check
       - run: npm run web:build
       - run: npm run scripts:test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run terminal:input:test

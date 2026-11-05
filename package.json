@@ -14,6 +14,7 @@
     "ui:production:test": "npm run web:build && node scripts/test-production-ui.mjs",
     "ssh:test": "node scripts/test-openssh.mjs",
     "terminal:test": "node scripts/test-openssh.mjs --terminal",
+    "terminal:input:test": "npm ci --prefix plugins/terminal --ignore-scripts && node scripts/test-terminal-input.mjs",
     "files:test": "node scripts/test-openssh.mjs --files",
     "plugin:build": "node scripts/package-plugin.mjs"
   },

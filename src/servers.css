@@ -4,7 +4,7 @@
   .catalog-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 24px; }
   .catalog-heading h1 { font-size: 26px; letter-spacing: -.6px; margin: 7px 0; }
   .catalog-heading p { color: var(--muted); font-size: 12px; }
-  .catalog-tabs { display: flex; gap: 20px; border-bottom: 1px solid var(--border); }
+  .catalog-tabs { display: flex; gap: 20px; border-bottom: var(--sd-stroke-structure) solid var(--border); }
   .catalog-tabs button { border: 0; border-radius: 0; background: transparent; padding: 10px 5px 12px; border-bottom: 3px solid transparent; color: var(--muted); }
   .catalog-tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
   .catalog-tabs span { background: var(--hover); padding: 2px 7px; font-size: 10px; border-radius: 6px; }
@@ -13,9 +13,9 @@
   .catalog-search svg { position: absolute; left: 12px; }
   .catalog-search input { width: 100%; padding-left: 36px; }
   .catalog-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(285px, 34%); border: 1px solid var(--border); border-radius: 12px; background: var(--panel); overflow: hidden; }
-  .catalog-list { min-width: 0; overflow: auto; border-right: 1px solid var(--border); }
-  .catalog-list-heading { display: flex; justify-content: space-between; padding: 13px 20px; font-size: 11px; color: var(--muted); background: var(--subtle); border-bottom: 1px solid var(--border); }
-  .catalog-row { display: flex; gap: 12px; width: 100%; text-align: left; white-space: normal; justify-content: flex-start; padding: 17px 18px; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; }
+  .catalog-list { min-width: 0; overflow: auto; border-right: var(--sd-stroke-structure) solid var(--border); }
+  .catalog-list-heading { display: flex; justify-content: space-between; padding: 13px 20px; font-size: 11px; color: var(--muted); background: var(--subtle); border-bottom: var(--sd-stroke-structure) solid var(--border); }
+  .catalog-row { display: flex; gap: 12px; width: 100%; text-align: left; white-space: normal; justify-content: flex-start; padding: 17px 18px; border: 0; border-bottom: var(--sd-stroke-structure) solid var(--border); border-radius: 0; background: transparent; }
   .catalog-row.selected { background: var(--accent-bg); }
   .endpoint-symbol { display: inline-flex; align-items: center; justify-content: center; background: var(--subtle); color: var(--accent); width: 36px; height: 36px; border: 1px solid var(--border); border-radius: 10px; flex-shrink: 0; }
   .catalog-row-name { flex: 1; min-width: 0; }
@@ -32,7 +32,7 @@
   .endpoint-fields dt { color: var(--muted); }
   .endpoint-fields dd { margin: 0; overflow-wrap: anywhere; }
   .catalog-detail-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 24px 0; }
-  .detail-route, .endpoint-dependencies { border-top: 1px solid var(--border); padding-top: 20px; margin-top: 20px; }
+  .detail-route, .endpoint-dependencies { border-top: var(--sd-stroke-structure) solid var(--border); padding-top: 20px; margin-top: 20px; }
   .detail-route h3, .endpoint-dependencies h3 { font-size: 12px; margin-bottom: 14px; }
   .dependency-link { display: block; width: 100%; text-align: left; white-space: normal; overflow-wrap: anywhere; margin-top: 8px; }
   .catalog-note { color: var(--muted); font-size: 10px; padding-top: 12px; text-align: center; }
@@ -52,14 +52,14 @@
   .catalog-dialog { padding: 0; width: min(720px, calc(100vw - 32px)); max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); border: 1px solid var(--border); border-radius: 14px; color: var(--text); background: var(--panel); box-shadow: var(--shadow); overflow: hidden; }
   .catalog-dialog::backdrop { background: #11152266; }
   .catalog-dialog form { display: flex; flex-direction: column; max-height: calc(100dvh - 36px); }
-  .catalog-dialog-heading { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid var(--border); flex-shrink: 0; gap: 12px; }
+  .catalog-dialog-heading { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: var(--sd-stroke-structure) solid var(--border); flex-shrink: 0; gap: 12px; }
   .catalog-dialog-heading h2 { margin-top: 4px; }
   .catalog-dialog-heading .eyebrow { font-size: 9px; }
   .catalog-form-body { border: 0; padding: 0 24px; margin: 0; min-width: 0; min-height: 0; overflow-y: auto; flex: 1; }
   .catalog-form-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
-  .catalog-dialog-footer { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 16px 24px; border-top: 1px solid var(--border); background: var(--subtle); flex-shrink: 0; }
+  .catalog-dialog-footer { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 16px 24px; border-top: var(--sd-stroke-structure) solid var(--border); background: var(--subtle); flex-shrink: 0; }
   .catalog-dialog-footer > .hint { margin-right: auto; font-size: 10px; }
-  .form-section { padding: 22px 0; border-bottom: 1px solid var(--border); }
+  .form-section { padding: 22px 0; border-bottom: var(--sd-stroke-structure) solid var(--border); }
   .form-section:last-child { border-bottom: 0; }
   .form-section h3 { font-size: 12px; margin-bottom: 18px; }
   .catalog-field { display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin-top: 14px; min-width: 0; }
@@ -113,18 +113,5 @@
     .route-editor-step { flex-wrap: wrap; padding: 10px; }
     .route-step-actions { margin-left: auto; }
     .key-picker, .group-picker { flex-wrap: wrap; }
-  }
-}
-@layer themes {
-  :root[data-theme="dopamine"] {
-    .catalog-layout, .catalog-dialog, .route-editor-step, .route-number, .endpoint-symbol { border-width: 2px; }
-    .catalog-tabs button.active { border-bottom-color: var(--text); }
-    .catalog-tabs button.active span { background: #ffb7cf; }
-    .endpoint-symbol { background: #bde9db; color: var(--text); }
-    .catalog-heading > .primary { background: #ffde75; }
-    .catalog-row.selected .endpoint-symbol { background: #8dd9e8; }
-    .catalog-dialog::backdrop { background: #20211f66; }
-    .catalog-dialog-heading { background: #ffb7cf; }
-    .catalog-dialog-footer { background: var(--panel); }
   }
 }

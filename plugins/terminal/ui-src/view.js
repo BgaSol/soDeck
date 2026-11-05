@@ -3,9 +3,10 @@
   const terminal=new Terminal({allowProposedApi:true,cursorBlink:true,fontSize:13,scrollback:1000,convertEol:false});
   const fit=new FitAddon.FitAddon(),serialize=new SerializeAddon.SerializeAddon();terminal.loadAddon(fit);terminal.loadAddon(serialize);terminal.open(host);
   let id,offset=0,inputSequence=0,chain=Promise.resolve(),inputChain=Promise.resolve(),disposed=false,caughtUp=false,restoring=false,visible=false,enabled=false;
-  let savedOffset=0,lastSave=0,escape='normal',utf8=0,inputPending=0;
+  let savedOffset=0,lastSave=0,escape='normal',utf8=0,inputPending=0,mountKey='';
   const encoder=new TextEncoder();
-  const fail=error=>{status.textContent=String(error);status.classList.add('error');};
+  const fail=error=>{status.hidden=false;status.textContent=String(error);status.classList.add('error');};
+  const controls=installTerminalInput(terminal,host,()=>({key:mountKey,canCopy:!disposed&&!restoring,canPaste:enabled&&!restoring&&!disposed&&visible}),fail);
   const request=p=>sodeck.request('data',{id,...p});
   const write=bytes=>new Promise(resolve=>terminal.write(bytes,resolve));
   function scan(bytes){for(const b of bytes){
@@ -32,9 +33,14 @@
     fit.fit();await request({op:'resize',cols:Math.min(1000,terminal.cols),rows:Math.min(500,terminal.rows)});
   }
   const observer=new ResizeObserver(()=>{if(enabled)void inputChain.then(size).catch(()=>{});});observer.observe(host);
-  function theme(tokens){Object.entries(tokens||{}).forEach(([k,v])=>document.documentElement.style.setProperty('--'+k,v));terminal.options.theme={background:tokens?.panel||'#fff',foreground:tokens?.text||'#222',cursor:tokens?.text||'#222',selectionBackground:'#7198d866'};}
+  function theme(tokens){
+    Object.entries(tokens||{}).forEach(([k,v])=>document.documentElement.style.setProperty('--'+k,v));
+    const palette={background:tokens?.['terminal-background']||tokens?.panel||'#fff',foreground:tokens?.['terminal-foreground']||tokens?.text||'#222',cursor:tokens?.['terminal-cursor']||tokens?.accent||'#5346a6',selectionBackground:tokens?.['terminal-selection']||tokens?.['accent-bg']||'#dad3f3',selectionForeground:tokens?.['terminal-foreground']||tokens?.text||'#222'};
+    for(const name of ['black','red','green','yellow','blue','magenta','cyan','white','brightBlack','brightRed','brightGreen','brightYellow','brightBlue','brightMagenta','brightCyan','brightWhite'])if(tokens?.['terminal-'+name])palette[name]=tokens['terminal-'+name];
+    terminal.options.theme=palette;controls.themeChanged();
+  }
   addEventListener('sodeck:mount',event=>{
-    const mount=event.detail;id=mount.data.streamId;visible=mount.visible;theme(mount.tokens);
+    const mount=event.detail;id=mount.data.streamId;mountKey=mount.surfaceId+':'+JSON.stringify(mount.context);visible=mount.visible;theme(mount.tokens);
     status.textContent=`${mount.serverName||'服务器'} · 正在接续终端…`;
     void request({op:'attach'}).catch(fail);
   });
@@ -43,26 +49,27 @@
       if(disposed)return;
       const frame=event.detail.data;
       if(frame.kind==='error'){fail(frame.metadata);return;}
-      if(frame.kind==='reset'){restoring=true;enabled=false;terminal.reset();offset=frame.offset;savedOffset=offset;const d=frame.metadata;if(d?.cols&&d?.rows)terminal.resize(d.cols,d.rows);}
+      if(frame.kind==='reset'){controls.invalidate();restoring=true;enabled=false;terminal.reset();offset=frame.offset;savedOffset=offset;const d=frame.metadata;if(d?.cols&&d?.rows)terminal.resize(d.cols,d.rows);}
       if(frame.kind==='snapshot')await write(Uint8Array.from(frame.data));
       if(frame.kind==='restore')restoring=false;
       if(frame.kind==='data'){const bytes=Uint8Array.from(frame.data);await write(bytes);scan(bytes);offset=frame.offset;}
       await request({op:'ack',packet:frame.packet});
       if(frame.kind==='caughtUp'){
-        caughtUp=true;enabled=true;status.textContent='远程终端 · 已连接';
+        caughtUp=true;enabled=true;status.textContent='远程终端 · 已连接';status.hidden=true;status.classList.remove('error');document.body.dataset.ready='true';
         // Incoming windows may render before ownership commits. Only the owner saves a checkpoint.
         await checkpoint(true).catch(()=>{});sodeck.mounted();void size().catch(()=>{});
       }
-      if(frame.kind==='end'){enabled=false;status.textContent=frame.metadata?.error||`终端已退出${frame.metadata?.exitCode==null?'':` · ${frame.metadata.exitCode}`}`;}
+      if(frame.kind==='end'){controls.invalidate();enabled=false;status.hidden=false;status.textContent=frame.metadata?.error||`终端已退出${frame.metadata?.exitCode==null?'':` · ${frame.metadata.exitCode}`}`;}
       if(frame.kind==='data')await checkpoint().catch(error=>{if(!String(error).includes('窗口'))throw error;});
     }).catch(fail);
   });
   function input(text){if(!enabled||restoring||disposed)return;const bytes=encoder.encode(text);if(inputPending+bytes.length>256*1024){fail('输入待发送内容超过 256 KiB，请稍后分段粘贴；本次输入未发送');return;}inputPending+=bytes.length;inputChain=inputChain.then(async()=>{for(let i=0;i<bytes.length;i+=16384){await request({op:'write',sequence:inputSequence,data:Array.from(bytes.subarray(i,i+16384))});inputSequence++;}}).catch(error=>{enabled=false;fail(error);}).finally(()=>{inputPending-=bytes.length;});}
   terminal.onData(input);
-  addEventListener('sodeck:visibilityChanged',event=>{visible=event.detail.visible;if(visible)void size().catch(()=>{});});
+  addEventListener('sodeck:visibilityChanged',event=>{visible=event.detail.visible;if(!visible)controls.invalidate();if(visible)void size().catch(()=>{});});
+  addEventListener('sodeck:contextChanged',()=>{controls.invalidate();enabled=false;});
   addEventListener('sodeck:themeChanged',event=>theme(event.detail.tokens));
   addEventListener('sodeck:focus',()=>{terminal.focus();void size().catch(()=>{});});
-  addEventListener('sodeck:unmount',()=>{disposed=true;observer.disconnect();terminal.dispose();});
+  addEventListener('sodeck:unmount',()=>{disposed=true;controls.dispose();observer.disconnect();terminal.dispose();});
   // The final output chunk may arrive without another chunk to trigger a checkpoint.
   const timer=setInterval(()=>{if(disposed){clearInterval(timer);return;}chain=chain.then(()=>checkpoint()).catch(()=>{});},500);
 })();

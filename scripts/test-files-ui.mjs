@@ -12,12 +12,13 @@ fs.writeFileSync(path.join(remote,'gone.txt'),'temporary');
 for(const directory of ['many-a','many-b']){fs.mkdirSync(path.join(remote,directory));for(let i=0;i<215;i++)fs.writeFileSync(path.join(remote,directory,`item-${String(i).padStart(3,'0')}.txt`),'test');}
 const child=spawn(path.resolve(`src-tauri/target/debug/catalog-fixture${process.platform==='win32'?'.exe':''}`),[path.join(data,'app')],{stdio:['pipe','pipe','inherit'],windowsHide:true,env:{...process.env,SODECK_TEST_DOWNLOAD_PATH:local}});
 const pending=[],pages=[],errors=[],requests=[];child.on('exit',()=>{for(const p of pending.splice(0))p.reject(new Error('Core fixture exited'));});
+let clipboard='';
 readline.createInterface({input:child.stdout}).on('line',line=>{const r=JSON.parse(line);const p=pending.shift();if(!p)throw new Error('Unexpected fixture response');r.error?p.reject(new Error(r.error)):p.resolve(r.value);});
 const call=(command,args={})=>new Promise((resolve,reject)=>{pending.push({resolve,reject});child.stdin.write(JSON.stringify({command,args})+'\n');});
 const vite=await createServer({server:{host:'127.0.0.1',port:0}});await vite.listen();const url=vite.resolvedUrls.local[0];const browser=await chromium.launch({headless:true});
 async function pageFor(window){
  const page=await browser.newPage({viewport:{width:1180,height:760}});pages.push(page);page.on('pageerror',e=>errors.push(String(e)));
- await page.exposeBinding('testInvoke',(_,command,args={})=>{requests.push({command,args});return call(command,{...args,window});});
+ await page.exposeBinding('testInvoke',(_,command,args={})=>{requests.push({command,args});if(command==='clipboard_text'){if(args.operation==='read')return clipboard;clipboard=args.text;return null;}return call(command,{...args,window});});
  await page.route(url+'__plugin__/**',route=>{const relative=new URL(route.request().url()).pathname.split('/').slice(3).join('/');const filename=path.join(process.env.SODECK_TEST_FILES_PLUGIN,relative);return route.fulfill({contentType:{'.js':'text/javascript','.css':'text/css','.html':'text/html'}[path.extname(filename)]||'application/octet-stream',body:fs.readFileSync(filename)});});
  await page.route(url,route=>route.fulfill({contentType:'text/html',body:`<!doctype html><html lang="zh-CN" data-theme="dopamine"><head><meta charset="utf-8"></head><body><header class="topbar"><button id="catalog-tab">服务器管理</button><div id="server-tabs" class="server-tabs"></div></header><main class="workspace"><div id="server-catalog"></div><div id="workspace-content"></div></main><div id="notice"></div><script type="module">import '/style.css';import {Workspaces} from '/workspaces.ts';window.__TAURI_INTERNALS__={convertFileSrc:p=>new URL('/__plugin__/'+p,location.href).href,transformCallback:()=>1};window.adapter=(command,args={})=>{if(args.channel){args={...args};delete args.channel;}return window.testInvoke(command,args);};window.manager=new Workspaces(document.querySelector('#server-tabs'),document.querySelector('#workspace-content'),document.querySelector('#server-catalog'),m=>document.querySelector('#notice').textContent=m,window.adapter);await window.manager.start();window.ready=true;</script></body></html>`}));
  await page.goto(url);await page.waitForFunction(()=>window.ready);return page;
@@ -60,9 +61,9 @@ try{
  fs.mkdirSync(path.join(remote,'empty'));await sidebar.getByRole('button',{name:'读取失败 · 重试'}).click();await wait(()=>sidebar.getByRole('button',{name:'读取失败 · 重试'}).count().then(n=>n===0));
  for(const name of ['many-a','many-b','empty'])await row(name).locator('.tree-arrow').click();
  await row('gone.txt').click();fs.unlinkSync(path.join(remote,'gone.txt'));await sidebar.getByRole('button',{name:'刷新选中目录',exact:true}).click();await row('gone.txt').waitFor({state:'detached'});assert.equal(await row('remote 中文').getAttribute('aria-selected'),'true');
- await main.context().grantPermissions(['clipboard-read','clipboard-write'],{origin:url});await row('设置 file.txt').click({button:'right'});await sidebar.getByRole('menuitem',{name:'复制完整路径',exact:true}).click();
+ await row('设置 file.txt').click({button:'right'});await sidebar.getByRole('menuitem',{name:'复制完整路径',exact:true}).click();
  await sidebar.getByRole('status').filter({hasText:'路径已复制'}).waitFor();
- assert((await main.evaluate(()=>navigator.clipboard.readText())).endsWith('/设置 file.txt'));
+ assert(clipboard.endsWith('/设置 file.txt'));
  await row('设置 file.txt').click();await sidebar.getByRole('tree').press('Shift+F10');await sidebar.getByRole('menu').waitFor();await main.keyboard.press('Escape');await sidebar.getByRole('menu').waitFor({state:'detached'});
  await row('设置 file.txt').click();assert.equal(await main.locator('iframe[title^="设置 file.txt"]').count(),0);
  await row('设置 file.txt').dblclick();
@@ -90,9 +91,18 @@ try{
  assert.equal(await sidebar.getByRole('tree').evaluate(el=>el.scrollTop),savedScroll);
  // Theme colors reach the real iframe; narrow sidebars stay inside their bounds.
  fs.mkdirSync('artifacts/files-ui',{recursive:true});
+ await main.mouse.move(500,20);
  for(const theme of ['light','dark','dopamine']){
   await main.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
   await wait(async()=>{const host=await main.locator('html').evaluate(el=>getComputedStyle(el).getPropertyValue('--file-tree-bg').trim());return sidebar.locator('html').evaluate(el=>getComputedStyle(el).getPropertyValue('--file-tree-bg').trim()).then(value=>value===host);});
+  const expected=await main.locator('html').evaluate(el=>({panel:getComputedStyle(el).getPropertyValue('--panel').trim(),primary:getComputedStyle(el).getPropertyValue('--sd-primary').trim()}));
+  await wait(()=>editor.locator('html').evaluate((el,panel)=>getComputedStyle(el).getPropertyValue('--panel').trim()===panel,expected.panel));
+  const rgb=hex=>{let digits=hex.slice(1);if(digits.length===3)digits=[...digits].map(v=>v+v).join('');return 'rgb('+digits.match(/../g).map(v=>parseInt(v,16)).join(', ')+')';};
+  await wait(()=>editor.locator('.editor-toolbar button').evaluateAll((bs,colors)=>bs[0]&&getComputedStyle(bs[0]).backgroundColor===colors[0]&&getComputedStyle(bs[1]).backgroundColor===colors[1],[rgb(expected.primary),rgb(expected.panel)]));
+  const buttons=await editor.locator('.editor-toolbar button').evaluateAll(bs=>bs.map(b=>getComputedStyle(b).backgroundColor));
+  assert.equal(buttons[0],rgb(expected.primary));assert.equal(buttons[1],rgb(expected.panel));
+  const strokes=await editor.locator('.editor-toolbar .primary').evaluate(b=>({border:getComputedStyle(b).borderTopColor,stroke:getComputedStyle(b,'::before').borderTopWidth,weight:getComputedStyle(b).fontWeight}));
+  assert.equal(strokes.border,'rgba(0, 0, 0, 0)');assert.equal(strokes.stroke,theme==='dopamine'?'2px':'1px');assert.equal(strokes.weight,theme==='dopamine'?'600':'500');
   await main.screenshot({path:`artifacts/files-ui/tree-${theme}.png`});
  }
  const board=await main.locator('.server-workbench').getAttribute('data-id');

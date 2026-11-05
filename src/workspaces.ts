@@ -75,7 +75,7 @@ export class Workspaces {
     const scroll = this.tabs.scrollLeft;
     replace(this.tabs, state.workspaces.map(w => {
       const id = e(w.context.workspaceId), active = state.window.activeWorkspace === w.context.workspaceId;
-      return `<div class="server-tab ${active ? "selected" : ""} ${this.moving.has(w.context.workspaceId) ? "moving" : ""}" data-id="${id}"><button class="server-tab-select" role="tab" aria-selected="${active}" tabindex="${active ? 0 : -1}" data-workspace-action="select" data-id="${id}" title="${e(w.name)} · ${e(w.endpoint)}"><span class="health-dot ${w.connected ? "good" : "warning"}"></span><span class="tab-name">${e(w.name)}</span></button><button class="tab-menu-button" data-workspace-action="menu" data-id="${id}" aria-label="${e(w.name)} 的菜单" title="工作区菜单">⋯</button><button class="tab-close-button" data-workspace-action="close" data-id="${id}" aria-label="关闭 ${e(w.name)}" title="关闭工作区">${icon("close")}</button></div>`;
+      return `<div class="server-tab sd-tab ${active ? "selected" : ""} ${this.moving.has(w.context.workspaceId) ? "moving" : ""}" data-id="${id}"><button class="server-tab-select" role="tab" aria-selected="${active}" tabindex="${active ? 0 : -1}" data-workspace-action="select" data-id="${id}" title="${e(w.name)} · ${e(w.endpoint)}"><span class="health-dot ${w.connected ? "good" : "warning"}"></span><span class="tab-name">${e(w.name)}</span></button><button class="tab-menu-button sd-icon" data-workspace-action="menu" data-id="${id}" aria-label="${e(w.name)} 的菜单" title="工作区菜单">${icon("more")}</button><button class="tab-close-button sd-icon" data-workspace-action="close" data-id="${id}" aria-label="关闭 ${e(w.name)}" title="关闭工作区">${icon("close")}</button></div>`;
     }).join(""));
     this.tabs.scrollLeft = scroll;
     if (focusId) this.tabs.querySelector<HTMLElement>(`[data-id="${CSS.escape(focusId)}"] [data-workspace-action="${focusAction ?? "select"}"]`)?.focus({ preventScroll: true });
@@ -104,7 +104,7 @@ export class Workspaces {
   private openMenu(id: string, anchor: HTMLElement) {
     this.closeMenu();
     if (!anchor || !this.state?.workspaces.some(w => w.context.workspaceId === id)) return;
-    const node = document.createElement("div"); node.className = "workspace-menu"; node.setAttribute("role", "menu");
+    const node = document.createElement("div"); node.className = "workspace-menu sd-menu"; node.setAttribute("role", "menu");
     node.innerHTML = `<button role="menuitem" data-choice="detach">${icon("maximize")}移至新窗口</button>${this.state.window.id !== "main" ? `<button role="menuitem" data-choice="return">${icon("arrow")}返回主窗口</button>` : ""}<button role="menuitem" data-choice="close">${icon("close")}关闭工作区</button>`;
     const rect = anchor.getBoundingClientRect(); node.style.left = `${Math.max(4, Math.min(rect.left, innerWidth - 190))}px`; node.style.top = `${rect.bottom + 4}px`;
     node.addEventListener("click", event => { const action = (event.target as Element).closest<HTMLElement>("[data-choice]")?.dataset.choice; if (action) void this.run(() => this.action(action, id)); });

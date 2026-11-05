@@ -51,7 +51,7 @@
       document.addEventListener('keydown', e => { if (e.key === 'Escape') this.closeMenu(true); });
     }
     tool(name, label, fn) {
-      const b = document.createElement('button'); b.type = 'button'; b.title = label; b.setAttribute('aria-label', label); b.append(icon(name)); b.addEventListener('click', () => void this.run(fn)); return b;
+      const b = document.createElement('button'); b.className='sd-icon'; b.type = 'button'; b.title = label; b.setAttribute('aria-label', label); b.append(icon(name)); b.addEventListener('click', () => void this.run(fn)); return b;
     }
     async run(fn) { try { await fn(); } catch (error) { this.message(error.message, true); } }
     node(path, attrs = { kind: 'directory' }, name = path.split('/').pop() || path) {
@@ -253,8 +253,8 @@
     closeMenu(focus = false) { this.menu?.remove(); this.menu = null; if (focus) this.tree.focus(); }
     showMenu(n, x, y) {
       this.closeMenu();
-      const menu = document.createElement('div'); menu.className = 'tree-menu'; menu.setAttribute('role', 'menu');
-      const actions = [[n.attrs.kind === 'directory' ? 'folder' : 'file', n.attrs.kind === 'directory' ? '展开 / 折叠' : '打开文件', () => this.open(n)], ['download', '下载文件', () => this.download(n.path)], ['copy', '复制完整路径', async () => { await navigator.clipboard.writeText(n.path); this.message('路径已复制'); }], ['refresh', '刷新所在目录', () => this.refresh()]];
+      const menu = document.createElement('div'); menu.className = 'tree-menu sd-menu'; menu.setAttribute('role', 'menu');
+      const actions = [[n.attrs.kind === 'directory' ? 'folder' : 'file', n.attrs.kind === 'directory' ? '展开 / 折叠' : '打开文件', () => this.open(n)], ['download', '下载文件', () => this.download(n.path)], ['copy', '复制完整路径', async () => { await sodeckClipboard.writeText(n.path); this.message('路径已复制'); }], ['refresh', '刷新所在目录', () => this.refresh()]];
       for (const [name, label, action] of actions) {
         if (name === 'download' && n.attrs.kind === 'directory') continue;
         const b = document.createElement('button'); b.setAttribute('role', 'menuitem'); b.append(icon(name), document.createTextNode(label));

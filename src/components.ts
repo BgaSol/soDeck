@@ -1,4 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { themeTokens } from "./theme";
+import { ClipboardBridge } from "./clipboard";
 import { ComponentData } from "./component-data";
 import { escape as e, icon, replace } from "./ui";
 import type { Context, Projection, Workspace } from "./workspaces";
@@ -17,6 +19,7 @@ const empty = (): UiWorkspace => ({ views: [], preferences: {}, left: null, righ
 
 /** Shell and frames have different lifetimes. Rendering chrome never reconstructs a mounted iframe. */
 export class Components {
+  private clipboard = new ClipboardBridge(() => this.call<string>("clipboard_text", {operation:"read"}), text => this.call<void>("clipboard_text", {operation:"write",text}));
   private data: ComponentData;
   private shells = new Map<string, Shell>();
   private definitions: Record<string, Definition> = {};
@@ -58,7 +61,7 @@ export class Components {
       let shell = this.shells.get(id);
       if (!shell) {
         const node = document.createElement("section"); node.className = "server-workbench"; node.dataset.id = id;
-        node.innerHTML = `<aside class="workbench-rail left-rail" aria-label="左侧组件"></aside><aside class="workbench-panel left-panel"><header></header><div class="component-slot"></div><div role="separator" aria-label="左侧面板宽度" aria-orientation="vertical" tabindex="0" data-resize="left"></div></aside><section class="workbench-center"><div class="component-tabs"></div><div class="component-slot central-slot"></div></section><aside class="workbench-panel right-panel"><header></header><div class="component-slot"></div><div role="separator" aria-label="右侧面板宽度" aria-orientation="vertical" tabindex="0" data-resize="right"></div></aside><aside class="workbench-rail right-rail" aria-label="右侧组件"></aside><footer class="workspace-status"></footer><div class="component-surfaces"></div>`;
+        node.innerHTML = `<aside class="workbench-rail left-rail sd-edge-right" aria-label="左侧组件"></aside><aside class="workbench-panel left-panel sd-edge-right"><header class="sd-panel-header sd-edge-bottom"></header><div class="component-slot"></div><div role="separator" aria-label="左侧面板宽度" aria-orientation="vertical" tabindex="0" data-resize="left"></div></aside><section class="workbench-center"><div class="component-tabs sd-tab-strip sd-edge-bottom"></div><div class="component-slot central-slot"></div></section><aside class="workbench-panel right-panel sd-edge-left"><header class="sd-panel-header sd-edge-bottom"></header><div class="component-slot"></div><div role="separator" aria-label="右侧面板宽度" aria-orientation="vertical" tabindex="0" data-resize="right"></div></aside><aside class="workbench-rail right-rail sd-edge-left" aria-label="右侧组件"></aside><footer class="workspace-status sd-status-bar sd-edge-top"></footer><div class="component-surfaces"></div>`;
         const observer = new ResizeObserver(() => this.position(shell!)); observer.observe(node);
         node.querySelectorAll(".component-slot").forEach(slot => observer.observe(slot));
         shell = { node, surfaces: new Map(), observer, workspace: w, ui: empty() }; this.shells.set(id, shell); this.content.append(node);
@@ -81,26 +84,28 @@ export class Components {
       const entries = Object.values(this.definitions).filter(d => w.preferences[d.key]?.side === side && (d.container === "sidebar" || d.locateEntry)).sort((a,b) => (w.preferences[a.key].order - w.preferences[b.key].order) || a.key.localeCompare(b.key));
       replace(node.querySelector(`.${side}-rail`)!, entries.filter(d => w.preferences[d.key].pinned).slice(0, shell.railCapacity ?? 20).map(d => {
         const active = d.container === "sidebar" ? w.views.some(v => v.id === selected && v.definitionKey === d.key) : w.views.some(v => v.id === w.editor && v.definitionKey === d.key);
-        return `<button data-component-action="${d.container === "sidebar" ? "toggle" : "locate"}" data-key="${e(d.key)}" aria-label="${e(d.container === "sidebar" ? d.title : `定位${d.title}`)}" aria-expanded="${active}" title="${e(d.title)} · ${e(d.pluginName)}" ${!d.available ? "disabled" : ""}>${icon(d.icon)}</button>`;
-      }).join("") + `<button class="component-more" data-component-action="more" data-key="${side}" aria-label="${side === "left" ? "左" : "右"}侧更多组件">⋯</button>`);
+        return `<button class="sd-icon" data-component-action="${d.container === "sidebar" ? "toggle" : "locate"}" data-key="${e(d.key)}" aria-label="${e(d.container === "sidebar" ? d.title : `定位${d.title}`)}" aria-expanded="${active}" title="${e(d.title)} · ${e(d.pluginName)}" ${!d.available ? "disabled" : ""}>${icon(d.icon)}</button>`;
+      }).join("") + `<button class="component-more sd-icon" data-component-action="more" data-key="${side}" aria-label="${side === "left" ? "左" : "右"}侧更多组件">${icon("more")}</button>`);
       const view = w.views.find(v => v.id === selected);
-      replace(node.querySelector(`.${side}-panel header`)!, view ? `<span title="${e(this.definitions[view.definitionKey]?.pluginName)}">${e(view.title)}</span><div><button data-component-action="panel-menu" data-key="${e(view.definitionKey)}" aria-label="${e(view.title)} 面板菜单">⋯</button><button data-component-action="collapse" data-key="${side}" aria-label="收起${e(view.title)}">${icon("minus")}</button></div>` : "");
+      replace(node.querySelector(`.${side}-panel header`)!, view ? `<span title="${e(this.definitions[view.definitionKey]?.pluginName)}">${e(view.title)}</span><div><button class="sd-icon" data-component-action="panel-menu" data-key="${e(view.definitionKey)}" aria-label="${e(view.title)} 面板菜单">${icon("more")}</button><button class="sd-icon" data-component-action="collapse" data-key="${side}" aria-label="收起${e(view.title)}">${icon("minus")}</button></div>` : "");
     }
     const editors = w.views.filter(v => this.definitions[v.definitionKey]?.container === "editor");
-    replace(node.querySelector(".component-tabs")!, `<div class="component-tab-list" role="tablist" aria-label="组件页面">${editors.map(v => `<div class="component-tab ${w.editor === v.id ? "selected" : ""}" draggable="true" data-view="${e(v.id)}"><button role="tab" aria-selected="${w.editor === v.id}" data-component-action="select" data-key="${e(v.id)}" title="${e(v.title)}">${icon(this.definitions[v.definitionKey]?.icon)}<span>${e(v.title)}${v.dirty ? " ●" : ""}</span></button><button data-component-action="close" data-key="${e(v.id)}" aria-label="关闭 ${e(v.title)}">${icon("close")}</button></div>`).join("")}</div><button data-component-action="create" aria-label="新建组件页面" title="新建组件页面">＋</button><button data-component-action="pages" aria-label="全部组件页面" title="全部组件页面">⌄</button>`);
+    const tabScroll=node.querySelector(".component-tab-list")?.scrollLeft??0;
+    replace(node.querySelector(".component-tabs")!, `<div class="component-tab-list" role="tablist" aria-label="组件页面">${editors.map(v => `<div class="component-tab sd-tab ${w.editor === v.id ? "selected" : ""}" draggable="true" data-view="${e(v.id)}"><button role="tab" aria-selected="${w.editor === v.id}" data-component-action="select" data-key="${e(v.id)}" title="${e(v.title)}">${icon(this.definitions[v.definitionKey]?.icon)}<span>${e(v.title)}${v.dirty ? " ●" : ""}</span></button><button class="sd-icon" data-component-action="close" data-key="${e(v.id)}" aria-label="关闭 ${e(v.title)}">${icon("close")}</button></div>`).join("")}</div><button class="sd-icon" data-component-action="create" aria-label="新建组件页面" title="新建组件页面">${icon("plus")}</button><button class="sd-icon" data-component-action="pages" aria-label="全部组件页面" title="全部组件页面">${icon("chevron")}</button>`);
     const list = node.querySelector(".component-tab-list")!;
+    list.scrollLeft=tabScroll;
     list.addEventListener("dragstart", event => { const ev = event as DragEvent; const id = (ev.target as Element).closest<HTMLElement>("[data-view]")?.dataset.view; if (id) ev.dataTransfer?.setData("text/sodeck-view", id); });
     list.addEventListener("dragover", event => event.preventDefault());
     list.addEventListener("drop", event => { event.preventDefault(); const ev = event as DragEvent, id = ev.dataTransfer?.getData("text/sodeck-view"), target = (ev.target as Element).closest<HTMLElement>("[data-view]")?.dataset.view; if (id && target) void this.run(() => this.perform(shell, { op: "reorder", viewId: id, index: w.views.findIndex(v => v.id === target) })); });
     const slot = node.querySelector<HTMLElement>(".central-slot")!;
     if (!editors.length) replace(slot, `<div class="workspace-empty"><div class="empty-icon">${icon("plug")}</div><h2>${e(shell.workspace.name)}</h2><p>${Object.keys(this.definitions).length ? "从侧栏打开组件，或点击＋新建页面" : "安装并启用带界面的插件后，可在这里使用组件"}</p><div class="workspace-context">${e(shell.workspace.endpoint)}</div></div>`); else replace(slot, "");
-    replace(node.querySelector(".workspace-status")!, `<span class="health-dot ${shell.workspace.connected ? "good" : "warning"}"></span><span>${shell.workspace.connected ? "已连接" : "连接已断开"}</span><span class="workspace-endpoint">${e(shell.workspace.endpoint)}</span><button data-disconnect-context="${e(JSON.stringify(shell.workspace.context))}" ${shell.workspace.connected ? "" : "hidden"}>断开</button><button data-reconnect-server="${e(shell.workspace.context.serverId)}" ${shell.workspace.connected ? "hidden" : ""}>重新连接</button><span class="workspace-owner">${this.state?.window.role === "main" ? "主窗口" : "独立窗口"}</span>`);
-    const network=document.createElement("button");network.className="workspace-network";network.dataset.action="status";network.title="服务器连接传输速率；点击查看应用状态与插件业务量";network.textContent="↓ 0 B/s ↑ 0 B/s";node.querySelector(".workspace-status")!.append(network);
+    replace(node.querySelector(".workspace-status")!, `<button class="sd-status-action workspace-connection" data-component-action="connection-menu" aria-label="连接状态与详情" title="${e(shell.workspace.endpoint)}"><span class="health-dot ${shell.workspace.connected ? "good" : "warning"}"></span><span>${shell.workspace.connected ? "已连接" : "连接已断开"}</span><span class="workspace-endpoint">${e(shell.workspace.endpoint)}</span>${icon("chevron")}</button><button class="sd-status-action" data-reconnect-server="${e(shell.workspace.context.serverId)}" ${shell.workspace.connected ? "hidden" : ""}>重新连接</button><span class="workspace-status-spacer"></span><button class="workspace-network sd-status-action" data-action="status" title="服务器连接传输速率；点击查看应用状态与插件业务量">↓ 0 B/s ↑ 0 B/s</button><button class="sd-icon" data-component-action="connection-menu" aria-label="工作区更多操作">${icon("more")}</button>`);
     for (const [id, surface] of shell.surfaces) if (!w.views.some(v => v.id === id)) { this.removeSurface(surface); shell.surfaces.delete(id); }
     for (const v of w.views) {
       const d = this.definitions[v.definitionKey]; if (!d) continue;
       let surface = shell.surfaces.get(v.id);
       if (surface && (surface.view.context.connectionId !== v.context.connectionId || surface.view.context.generation !== v.context.generation)) {
+        if(surface.token)this.clipboard.discard(surface.token);
         this.post(surface, {type: "contextChanged", context: v.context});
       }
       if (!surface) {
@@ -108,7 +113,13 @@ export class Components {
         const frame = document.createElement("iframe"); frame.title = `${v.title} · ${shell.workspace.name}`;
         frame.allow = "clipboard-write";
         frame.src = new URL(`${d.pluginId}/${d.entry}`, convertFileSrc("", "sodeck-plugin")).href;
-        host.append(frame); node.querySelector(".component-surfaces")!.append(host);
+        if(d.container === "dialog") {
+          const modal=document.createElement("dialog"); modal.className="plugin-view-dialog";modal.setAttribute("aria-label",v.title);
+          const header=document.createElement("header"),title=document.createElement("span"),close=document.createElement("button");title.textContent=v.title;close.textContent="×";close.setAttribute("aria-label","关闭弹窗");
+          const requestClose=()=>void this.run(()=>this.close([shell.workspace.context.workspaceId],v.id));
+          close.addEventListener("click",requestClose);modal.addEventListener("cancel",event=>{event.preventDefault();requestClose();});header.append(title,close);modal.append(header,frame);host.append(modal);
+        } else host.append(frame);
+        node.querySelector(".component-surfaces")!.append(host);
         surface = { node: host, frame, view: v, chain: Promise.resolve(), visible: false, initialized: false, timeout: setTimeout(() => this.surfaceError(surface!, "组件界面未在 8 秒内就绪"), 8000) };
         shell.surfaces.set(v.id, surface);
       }
@@ -134,6 +145,14 @@ export class Components {
     shell.node.style.setProperty("--effective-right-width", `${Math.min(preferredRight, room)}px`);
     for (const surface of shell.surfaces.values()) {
       const id = surface.view.id;
+      if(this.definitions[surface.view.definitionKey]?.container === "dialog") {
+        const modal=surface.node.querySelector<HTMLDialogElement>("dialog")!;
+        const visible=!shell.node.hidden&&!shell.node.classList.contains("incoming-component-workspace")&&!this.dialog;
+        surface.node.hidden=false;
+        if(visible&&!modal.open)modal.showModal();else if(!visible&&modal.open)modal.close();
+        if(surface.visible!==visible){surface.visible=visible;this.post(surface,{type:"visibilityChanged",visible});}
+        continue;
+      }
       let slot: HTMLElement | null = null;
       if (w.left === id && left) slot = shell.node.querySelector(".left-panel .component-slot");
       if (w.right === id && right) slot = shell.node.querySelector(".right-panel .component-slot");
@@ -141,14 +160,11 @@ export class Components {
       const visible = Boolean(slot && !shell.node.hidden && !shell.node.classList.contains("incoming-component-workspace"));
       surface.node.hidden = !slot;
       if (slot) { const s = slot.getBoundingClientRect(); Object.assign(surface.node.style, { left: `${s.left-r.left}px`, top: `${s.top-r.top}px`, width: `${s.width}px`, height: `${s.height}px` }); }
-      if (surface.visible !== visible) { surface.visible = visible; this.post(surface, { type: "visibilityChanged", visible }); }
+      if (surface.visible !== visible) { if(!visible&&surface.token)this.clipboard.discard(surface.token); surface.visible = visible; this.post(surface, { type: "visibilityChanged", visible }); }
     }
   }
   resizePanels() { for (const shell of this.shells.values()) this.position(shell); }
-  private tokens() {
-    const css = getComputedStyle(document.documentElement), names = ["canvas", "panel", "subtle", "text", "muted", "border", "accent", "accent-bg", "hover", "good", "error", "shadow", "file-tree-bg", "status-bg", "folder-color", "folder-fill", "tree-selection-border"];
-    return { ...Object.fromEntries(names.map(name => [name, css.getPropertyValue(`--${name}`).trim()])), "color-scheme": css.colorScheme };
-  }
+  private tokens() { return themeTokens(); }
   private post(surface: Surface, message: Record<string, unknown>) { surface.frame.contentWindow?.postMessage({ channel: "sodeck-ui-v1", surfaceId: surface.token, ...message }, new URL(surface.frame.src).origin === "null" ? "*" : new URL(surface.frame.src).origin); }
   private broadcast() { for (const s of this.shells.values()) for (const f of s.surfaces.values()) this.post(f, { type: "themeChanged", tokens: this.tokens() }); }
   private systemTheme = () => this.broadcast();
@@ -163,7 +179,7 @@ export class Components {
     if (message.type === "ready") {
       if (surface.initialized) return; surface.initialized = true;
       surface.chain = this.invoke<{ surfaceId: string; data: unknown; view: View }>("attach", { viewId: surface.view.id }).then(result => {
-        surface.token = result.surfaceId; this.post(surface, { type: "mount", context: result.view.context, serverName: this.shells.get(surface.view.context.workspaceId)?.workspace.name, viewId: surface.view.id, viewType: surface.view.definitionKey.split(":")[1], data: result.data, tokens: this.tokens(), visible: surface.visible });
+        surface.token = result.surfaceId; this.post(surface, { type: "mount", context: result.view.context, serverName: this.shells.get(surface.view.context.workspaceId)?.workspace.name, viewId: surface.view.id, viewType: surface.view.definitionKey.split(":")[1], data: result.data, tokens: this.tokens(), capabilities: {clipboard:1}, visible: surface.visible });
         surface.frame.dataset.surfaceId = result.surfaceId;
       }).catch(error => this.surfaceError(surface, String(error)));
       return;
@@ -173,6 +189,20 @@ export class Components {
     if (message.type === "flushed" && surface.flushing && surface.flushing.id === message.id) { surface.flushing.done(message.error); return; }
     if (message.type !== "request" || typeof message.id !== "string") return;
     const requestId = message.id;
+    if (message.method === "clipboard") {
+      const token=surface.token,context=JSON.stringify(surface.view.context),epoch=this.focusEpoch;
+      const valid=()=>!this.disposed&&surface.token===token&&surface.visible&&document.hasFocus()&&document.activeElement===surface.frame&&JSON.stringify(surface.view.context)===context&&this.focusEpoch===epoch;
+      void this.clipboard.request(token,message.params??{},valid)
+        .then(data=>this.post(surface,{type:"response",id:requestId,data}))
+        .catch(error=>this.post(surface,{type:"response",id:requestId,error:String(error)}));
+      return;
+    }
+    if(message.method === "closeView") {
+      void surface.chain.then(()=>this.close([surface.view.context.workspaceId],surface.view.id))
+        .then(data=>this.post(surface,{type:"response",id:requestId,data}))
+        .catch(error=>this.post(surface,{type:"response",id:requestId,error:String(error)}));
+      return;
+    }
     if (message.method === "data") {
       void this.data.request(surface.token, message.params, data => this.post(surface, {type: "data", data}))
         .then(data => this.post(surface, {type: "response", id: requestId, data}))
@@ -203,6 +233,15 @@ export class Components {
   }
   private async action(id: string, action: string, key: string, anchor: HTMLElement) {
     const shell = this.shells.get(id)!;
+    if (action === "connection-menu") {
+      this.showMenu(anchor, [
+        { label: "复制连接地址", action: async () => { await this.call("clipboard_text",{operation:"write",text:shell.workspace.endpoint}); } },
+        { label: shell.workspace.connected ? "断开连接" : "重新连接", action: async () => {
+          await this.call("connection", { command: shell.workspace.connected ? {op:"disconnect",context:shell.workspace.context} : {op:"start",serverId:shell.workspace.context.serverId} }); await this.refresh();
+        } },
+      ], false, `${shell.workspace.endpoint} · ${this.state?.window.role === "main" ? "主窗口" : "独立窗口"}`);
+      return;
+    }
     if (["toggle", "locate", "collapse"].includes(action)) { await this.perform(shell, { op: action, key, side: key }); this.focus(shell, action === "collapse" ? undefined : key); return; }
     if (action === "select") { await this.perform(shell, { op: "select", viewId: key }); const surface = shell.surfaces.get(key); if (surface) this.focusSurface(surface); return; }
     if (action === "close") { await this.close([id], key); return; }
@@ -224,18 +263,20 @@ export class Components {
     else this.showMenu(anchor, actions.map(d => ({ label: `${d.pluginName} · ${d.createAction}`, action: () => this.perform(shell, { op: "open", key: d.key }) })));
   }
   private focus(shell: Shell, key?: string) {
-    const selected = shell.ui.views.find(v => v.definitionKey === key && [shell.ui.left, shell.ui.right, shell.ui.editor].includes(v.id));
+    const selected = shell.ui.views.find(v => v.definitionKey === key && (this.definitions[v.definitionKey]?.container === "dialog" || [shell.ui.left, shell.ui.right, shell.ui.editor].includes(v.id)));
     if (selected) { const surface = shell.surfaces.get(selected.id); if (surface) this.focusSurface(surface); }
     else shell.node.querySelector<HTMLElement>(`[data-key="${CSS.escape(key ?? "")}"]`)?.focus();
   }
   private focusSurface(surface: Surface) { if (!surface.token) { surface.focusPending = this.focusEpoch; return; } surface.focusPending = undefined; surface.frame.focus(); this.post(surface, { type: "focus" }); }
-  private showMenu(anchor: HTMLElement, entries: { label: string; action: () => Promise<unknown>; extra?: { label: string; action: () => Promise<unknown> } }[], searchable = false) {
-    this.closeMenu(); const node = document.createElement("div"); node.className = "workspace-menu component-menu";
+  private showMenu(anchor: HTMLElement, entries: { label: string; action: () => Promise<unknown>; extra?: { label: string; action: () => Promise<unknown> } }[], searchable = false, detail?: string) {
+    this.closeMenu(); const node = document.createElement("div"); node.className = "workspace-menu component-menu sd-menu";
+    node.setAttribute("role", "menu");
+    if (detail) { const text=document.createElement("p");text.textContent=detail;node.append(text); }
     if (searchable) { const input = document.createElement("input"); input.placeholder = "查找组件或页面"; input.setAttribute("aria-label", "查找组件或页面"); input.addEventListener("input", () => node.querySelectorAll<HTMLElement>(".component-menu-row").forEach(r => r.hidden = !r.textContent!.toLowerCase().includes(input.value.toLowerCase()))); node.append(input); }
-    for (const item of entries) { const row = document.createElement("div"); row.className = "component-menu-row"; for (const entry of [item, item.extra].filter(Boolean) as { label: string; action: () => Promise<unknown> }[]) { const b = document.createElement("button"); b.textContent = entry.label; b.addEventListener("click", () => { this.closeMenu(); void this.run(entry.action); }); row.append(b); } node.append(row); }
+    for (const item of entries) { const row = document.createElement("div"); row.className = "component-menu-row"; for (const entry of [item, item.extra].filter(Boolean) as { label: string; action: () => Promise<unknown> }[]) { const b = document.createElement("button"); b.setAttribute("role", "menuitem"); b.textContent = entry.label; b.addEventListener("click", () => { this.closeMenu(); void this.run(entry.action); }); row.append(b); } node.append(row); }
     if (!entries.length) { const text = document.createElement("p"); text.textContent = "暂无可用组件"; node.append(text); }
     const r = anchor.getBoundingClientRect(); Object.assign(node.style, { left: `${Math.max(4, Math.min(r.left, innerWidth-280))}px`, top: `${Math.min(r.bottom+4, innerHeight-260)}px` });
-    node.addEventListener("keydown", event => { if (event.key === "Escape") { this.closeMenu(); anchor.focus(); } }); document.body.append(node); this.menu = node; node.querySelector<HTMLElement>("input,button")?.focus();
+    node.addEventListener("keydown", event => { if (event.key === "Escape") { this.closeMenu(); anchor.focus(); } }); document.body.append(node); const bounds=node.getBoundingClientRect();node.style.top=`${Math.max(4, Math.min(r.bottom+4, innerHeight-bounds.height-4))}px`; this.menu = node; node.querySelector<HTMLElement>("input,button")?.focus();
   }
   private closeMenu() { this.menu?.remove(); this.menu = undefined; }
   async flush() {
@@ -259,6 +300,7 @@ export class Components {
         const finish = (d: string) => { dialog.remove(); this.dialog = undefined; resolve(d); };
         dialog.addEventListener("cancel", event => { event.preventDefault(); finish("cancel"); });
         dialog.addEventListener("click", event => { const d = (event.target as Element).closest<HTMLElement>("[data-decision]")?.dataset.decision; if (d) finish(d); });
+        for(const s of this.shells.values())this.position(s);
         document.body.append(dialog); dialog.showModal();
       });
       await this.invoke("finishClose", { ...plan, decision }); await this.refresh(); return decision !== "cancel";
@@ -274,7 +316,7 @@ export class Components {
     }} catch { /* A diagnostic endpoint must not interrupt the workbench. */ }finally{this.networkPending=false;}
   }
   private async run(action: () => Promise<unknown>) { try { await action(); } catch (error) { this.notify(String(error)); } }
-  private removeSurface(s: Surface) { clearTimeout(s.timeout); this.data.detach(s.token); this.post(s, { type: "unmount" }); s.node.remove(); }
+  private removeSurface(s: Surface) { clearTimeout(s.timeout); if(s.token)this.clipboard.discard(s.token); this.data.detach(s.token); this.post(s, { type: "unmount" }); s.node.remove(); }
   private destroy(shell: Shell) { shell.observer.disconnect(); for (const f of shell.surfaces.values()) this.removeSurface(f); shell.node.remove(); }
   dispose() { this.disposed = true; clearInterval(this.networkTimer); this.closeMenu(); window.removeEventListener("message", this.message); document.removeEventListener("pointerdown", this.outside); document.removeEventListener("pointerdown", this.interaction, true); document.removeEventListener("keydown", this.interaction, true); this.theme.disconnect(); window.matchMedia("(prefers-color-scheme: dark)").removeEventListener("change", this.systemTheme); for (const shell of this.shells.values()) this.destroy(shell); }
 }

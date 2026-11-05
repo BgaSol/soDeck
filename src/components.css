@@ -6,20 +6,29 @@
   .incoming-component-workspace { position: absolute; inset: 0; visibility: hidden; pointer-events: none; }
   .workbench-panel { flex-direction: column; min-height: 0; }
   .left-open .left-panel, .right-open .right-panel { display: flex; }
-  .workbench-panel header { flex-shrink: 0; padding: 0 8px 0 12px; font-weight: 600; background: var(--subtle); }
   .workbench-panel header > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .workbench-panel header > div { display: flex; flex-shrink: 0; }
-  .workbench-panel header button { padding: 3px; min-height: 26px; background: transparent; border: 0; }
   .component-slot { flex: 1; min-height: 0; min-width: 0; }
-  .component-tabs { padding: 0 3px 0 0; gap: 3px; background: var(--subtle); }
-  .component-tabs > button { padding: 4px; min-height: 26px; border: 0; flex-shrink: 0; background: transparent; }
   .component-tab-list { display: flex; overflow-x: auto; scrollbar-width: thin; flex: 1; min-width: 0; height: 100%; }
-  .component-tab { display: flex; align-items: center; max-width: 210px; flex-shrink: 0; border-right: 1px solid var(--border); }
-  .component-tab.selected { background: var(--accent-bg); color: var(--text); box-shadow: inset 0 -2px var(--accent); }
-  .component-tab button { background: transparent; border: 0; padding: 4px 7px; min-height: 31px; min-width: 0; border-radius: 0; }
+  .component-tab-list { align-items: end; gap: 4px; padding-top: 6px; }
+  .component-tab { height: 30px; max-width: 210px; }
+  .component-tab [role="tab"] { min-width: 76px; max-width: 180px; }
+  .component-tab > button:last-child { width: 26px; flex-shrink: 0; padding: 5px; }
+  .component-tab > button:last-child svg { width: 12px; height: 12px; }
+  .component-tabs { flex-shrink: 0; color: var(--text); }
+  .workbench-panel header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; padding: 0 5px 0 12px; }
+  .workbench-panel { padding-inline-end: 2px; }
+  .right-panel { padding-inline: 2px 0; }
+  .workbench-rail { background: var(--sd-rail); }
+  .workbench-rail button[aria-expanded="true"] { background: var(--sd-tools); color: var(--text); }
+  .workspace-status { grid-column: 1 / -1; }
+  .workspace-status-spacer { flex: 1; min-width: 0; }
+  .workspace-connection { min-width: 0; max-width: 65%; justify-content: start; flex-shrink: 1; }
+  .workspace-connection svg { width: 12px; height: 12px; }
+  .workspace-network { font-variant-numeric: tabular-nums; min-width: 180px; font-weight: 400; }
+  @media (max-width: 760px) { .workspace-network { display: none; } .workspace-connection { max-width: 75%; } }
   .component-tab [role="tab"] { justify-content: start; font-size: 12px; }
   .component-tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .component-tab svg { width: 14px; height: 14px; flex-shrink: 0; }
   .component-surfaces { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
   .component-surface { position: absolute; pointer-events: auto; overflow: hidden; }
   .component-surface iframe { border: 0; width: 100%; height: 100%; display: block; background: var(--canvas); }
@@ -34,15 +43,13 @@
   .component-menu-row > button + button { width: auto; flex-shrink: 0; color: var(--muted); }
   .component-close-dialog { width: min(440px, calc(100% - 32px)); padding: 24px; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
   .component-close-dialog::backdrop { background: #0006; }
+  .plugin-view-dialog { width: min(580px, calc(100vw - 40px)); height: min(640px, calc(100dvh - 48px)); padding: 0; border: 2px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--text); overflow: hidden; pointer-events: auto; }
+  .plugin-view-dialog::backdrop { background: #0006; }
+  .plugin-view-dialog > header { height: 44px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px 0 18px; border-bottom: var(--sd-stroke-structure) solid var(--border); background: var(--subtle); font-weight: var(--sd-title-weight); }
+  .plugin-view-dialog > header button { border: 0; background: transparent; padding: 4px 8px; font-size: 22px; }
+  .plugin-view-dialog > iframe { height: calc(100% - 44px); }
   .component-close-dialog h2 { font-size: 18px; margin: 0 0 14px; }
   .component-close-dialog p, .component-close-dialog li { font-size: 13px; overflow-wrap: anywhere; }
   .component-close-dialog ul { max-height: 220px; overflow: auto; padding-left: 18px; }
   .component-close-dialog footer { display: flex; justify-content: end; gap: 8px; flex-wrap: wrap; margin-top: 24px; }
-}
-@layer themes {
-  :root[data-theme="dopamine"] .workbench-panel header,
-  :root[data-theme="dopamine"] .component-tabs { background: #ffd6e3; }
-  :root[data-theme="dopamine"] .workbench-rail { background: #fff1dd; }
-  :root[data-theme="dopamine"] .component-tab.selected { background: var(--accent-bg); box-shadow: inset 0 -2px var(--text); }
-  :root[data-theme="dopamine"] .workspace-status { background: var(--status-bg); }
 }

@@ -14,7 +14,10 @@ const plugin = process.env.SODECK_TEST_PLUGIN;
 function launch(persisted = false) {
   const report = path.join(directory, "smoke-result.json");
   fs.rmSync(report, { force: true });
+  const failure = path.join(directory, "smoke-error.txt");
+  fs.rmSync(failure, { force: true });
   const extra = ["--smoke-test", "--test-data-dir", directory];
+  if (process.env.SODECK_TEST_CLIPBOARD === "1") extra.push("--clipboard-test");
   if (plugin) extra.push("--plugin-test", plugin);
   if (process.env.SODECK_TEST_UI_PLUGIN) extra.push("--ui-plugin-test", path.resolve(process.env.SODECK_TEST_UI_PLUGIN));
   if (process.env.SODECK_TEST_SSH_CONFIG) extra.push("--ssh-test-config", path.resolve(process.env.SODECK_TEST_SSH_CONFIG));
@@ -24,7 +27,6 @@ function launch(persisted = false) {
     stdio: "inherit",
     timeout: process.env.SODECK_TEST_TERMINAL_PLUGIN ? 90_000 : 30_000,
   });
-  const failure = path.join(directory, "smoke-error.txt");
   if (fs.existsSync(failure)) {
     const log = path.join(directory, 'logs/current.jsonl');
     if (fs.existsSync(log)) {
@@ -47,6 +49,7 @@ function launch(persisted = false) {
     !JSON.parse(fs.readFileSync(report, "utf8")).completed || !JSON.parse(fs.readFileSync(report, "utf8")).workspaceNative
     || (process.env.SODECK_TEST_UI_PLUGIN && !JSON.parse(fs.readFileSync(report, "utf8")).componentUiNative)
     || (process.env.SODECK_TEST_SSH_CONFIG && !JSON.parse(fs.readFileSync(report, "utf8")).sshNative)
+    || (process.env.SODECK_TEST_CLIPBOARD === "1" && !JSON.parse(fs.readFileSync(report, "utf8")).clipboardNative)
   )
     throw new Error(
       "Packaged application did not complete the current smoke-test protocol",

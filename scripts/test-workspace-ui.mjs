@@ -115,20 +115,20 @@ try {
   checks.push('多终端独立草稿、最近使用定位、混合 Tab、同文件去重、切换不重建 iframe');
   await board.getByRole('button',{name:'左侧更多组件',exact:true}).click();
   await main.getByRole('textbox',{name:'查找组件或页面'}).fill('扩展示例组件 19');
-  await main.locator('.component-menu-row:visible').getByRole('button',{name:'固定',exact:true}).click();
+  await main.locator('.component-menu-row:visible').getByRole('menuitem',{name:'固定',exact:true}).click();
   assert.equal((await componentState('main')).workspaces[aid].preferences['sodeck.ui-example:extra19'].pinned,true);
   await board.getByRole('button',{name:'左侧更多组件',exact:true}).click();await main.getByRole('textbox',{name:'查找组件或页面'}).fill('扩展示例组件 19');
-  await main.locator('.component-menu-row:visible').getByRole('button',{name:'取消固定',exact:true}).click();
+  await main.locator('.component-menu-row:visible').getByRole('menuitem',{name:'取消固定',exact:true}).click();
   checks.push('20 个扩展视图通过更多入口查找、固定和取消固定');
   await board.getByRole('button',{name:'网络转发 面板菜单',exact:true}).click();
-  await main.getByRole('button',{name:'移到左侧',exact:true}).click();
+  await main.getByRole('menuitem',{name:'移到左侧',exact:true}).click();
   await main.waitForFunction(id=>!document.querySelector(`.server-workbench[data-id="${id}"]`).classList.contains('right-open'),aid);
   assert((await componentState("main")).workspaces[aid].left);
   await board.getByRole('button',{name:'文件',exact:true}).click();
   assert.equal(await editor.inputValue(),'draft for server A');
   // Move it back so the existing ownership/layout checks keep their initial shape.
   await board.getByRole('button',{name:'网络转发',exact:true}).click();
-  await board.getByRole('button',{name:'网络转发 面板菜单',exact:true}).click();await main.getByRole('button',{name:'移到右侧',exact:true}).click();
+  await board.getByRole('button',{name:'网络转发 面板菜单',exact:true}).click();await main.getByRole('menuitem',{name:'移到右侧',exact:true}).click();
   await board.getByRole('button',{name:'文件',exact:true}).click();
   checks.push('同侧单面板、左右移动保留 viewId 和编辑草稿');
   const closeEditor=()=>board.locator(`[data-component-action="close"][data-key="${editorId}"]`).click();
@@ -195,10 +195,32 @@ try {
   for (const theme of ["light","dark","dopamine"]) for (const width of [1100,720]) {
     await main.setViewportSize({width,height:480}); await main.emulateMedia({reducedMotion:"reduce"});
     await main.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+    await main.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    const chrome=await main.locator('.server-workbench:visible').evaluate(node=>{
+      const footer=node.querySelector('.workspace-status'),rect=footer.getBoundingClientRect();
+      const buttons=[...footer.querySelectorAll('button')].filter(b=>!b.hidden&&getComputedStyle(b).display!=='none');
+      return {height:rect.height,buttonsFit:buttons.every(b=>{const r=b.getBoundingClientRect();return r.top>=rect.top&&r.bottom<=rect.bottom;}),buttonBorders:buttons.map(b=>getComputedStyle(b).borderTopWidth),divider:getComputedStyle(node.querySelector('.left-rail'),'::after').width,tools:getComputedStyle(node.querySelector('.component-tabs')).backgroundColor};
+    });
+    assert.equal(chrome.height,32);assert(chrome.buttonsFit,JSON.stringify(chrome));assert(chrome.buttonBorders.every(width=>width==='0px'));
+    assert.equal(chrome.divider,theme==='dopamine'?'2px':'1px');
+    if(theme==='dopamine')assert.equal(chrome.tools,'rgb(66, 198, 155)');
     assert.equal(await main.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     assert.equal(await main.locator(".window-controls").evaluate(el=>el.getBoundingClientRect().right<=innerWidth),true);
+    await main.locator('.server-workbench:visible [aria-label="连接状态与详情"]').click();
+    const menu=main.getByRole('menu');await menu.getByRole('menuitem',{name:'复制连接地址',exact:true}).waitFor();
+    assert(await menu.evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&r.right<=innerWidth;}));
+    await main.keyboard.press('Escape');await menu.waitFor({state:'detached'});
+    if(width===1100){fs.mkdirSync('artifacts/workbench-design',{recursive:true});await main.screenshot({path:`artifacts/workbench-design/workbench-${theme}.png`});}
   }
   await main.setViewportSize({width:1100,height:720});
+  const display=await main.context().newCDPSession(main);
+  for(const scale of [1.25,1.5]){
+    await display.send('Emulation.setDeviceMetricsOverride',{width:1100,height:720,deviceScaleFactor:scale,mobile:false});
+    assert.equal(await main.locator('.server-workbench:visible .workspace-status').evaluate(el=>el.getBoundingClientRect().height),32);
+    assert(await main.locator('.server-workbench:visible').evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.bottom<=innerHeight;}));
+    await main.screenshot({path:`artifacts/workbench-design/workbench-dopamine-${scale}.png`});
+  }
+  await display.send('Emulation.clearDeviceMetricsOverride');await display.detach();
   await main.screenshot({path:path.join(directory,"workspace.png")});
   const output=path.resolve("artifacts/workspace-ui.png");fs.mkdirSync(path.dirname(output),{recursive:true});fs.copyFileSync(path.join(directory,"workspace.png"),output);
   checks.push("长名称、多主题、720×480 和减少动态下布局可用");

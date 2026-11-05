@@ -134,7 +134,7 @@ try {
   await page.locator("#settings-button").click();
   const hello = page.locator('[data-official-plugin="sodeck.hello"]');
   const install = () => hello.locator('[data-action="install-official-plugin"]');
-  assert.equal(await page.locator(".official-plugin").count(), 4);
+  for(const id of ['sodeck.hello','sodeck.terminal','sodeck.files','sodeck.ui-example']) assert.equal(await page.locator(`[data-official-plugin="${id}"]`).count(),1);
   assert.match(await page.locator('[data-official-plugin="sodeck.terminal"]').textContent(), /真实终端/);
   assert.match(await page.locator('[data-official-plugin="sodeck.files"]').textContent(), /编辑 UTF-8 小文件/);
   assert.deepEqual(requests, [], "Opening settings must not download plugins automatically");

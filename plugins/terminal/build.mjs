@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 fs.mkdirSync('ui/vendor',{recursive:true});
 fs.cpSync('ui-src','ui',{recursive:true});
+fs.copyFileSync('../../src/ui.css','ui/shared.css');
+fs.copyFileSync('../shared/clipboard.js','ui/clipboard-bridge.js');
 for(const [pkg,file,name] of [
   ['@xterm/xterm','lib/xterm.js','xterm.js'], ['@xterm/xterm','css/xterm.css','xterm.css'],
   ['@xterm/addon-fit','lib/addon-fit.js','fit.js'], ['@xterm/addon-serialize','lib/addon-serialize.js','serialize.js']
