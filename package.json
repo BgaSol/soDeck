@@ -15,6 +15,7 @@
     "ssh:test": "node scripts/test-openssh.mjs",
     "terminal:test": "node scripts/test-openssh.mjs --terminal",
     "terminal:input:test": "npm ci --prefix plugins/terminal --ignore-scripts && node scripts/test-terminal-input.mjs",
+    "network:test": "node scripts/test-openssh.mjs --network",
     "files:test": "node scripts/test-openssh.mjs --files",
     "plugin:build": "node scripts/package-plugin.mjs"
   },

@@ -14,6 +14,10 @@ on:
         description: Successful files plugin package run from this commit
         type: string
         required: true
+      network_run_id:
+        description: Optional network-proxy plugin package run from this commit
+        type: string
+        required: false
 permissions:
   contents: read
   actions: read
@@ -54,6 +58,13 @@ jobs:
           run-id: ${{ inputs.files_run_id }}
           github-token: ${{ github.token }}
           path: packages/files
+      - uses: actions/download-artifact@v5
+        if: inputs.network_run_id != ''
+        with:
+          name: Plugin-network-proxy-${{ matrix.name }}
+          run-id: ${{ inputs.network_run_id }}
+          github-token: ${{ github.token }}
+          path: packages/network-proxy
       - name: Install Linux runtime and test server
         if: runner.os == 'Linux'
         run: |
@@ -94,6 +105,12 @@ jobs:
           }
           $env:SODECK_TEST_TERMINAL_PLUGIN = (Get-ChildItem packages/terminal -Directory | Select-Object -First 1).FullName
           $env:SODECK_TEST_FILES_PLUGIN = (Get-ChildItem packages/files -Directory | Select-Object -First 1).FullName
+          if ('${{ inputs.network_run_id }}' -ne '') {
+            $archive = Get-ChildItem packages/network-proxy -Filter '*.zip' | Select-Object -First 1
+            tar -xf $archive.FullName -C packages/network-proxy
+            if ($LASTEXITCODE -ne 0) { throw 'Network plugin extraction failed' }
+            $env:SODECK_TEST_NETWORK_PLUGIN = (Get-ChildItem packages/network-proxy -Directory | Select-Object -First 1).FullName
+          }
           $installer = Get-ChildItem packages/core -Filter '*-setup.exe' -Recurse | Select-Object -First 1
           $installDir = Join-Path $env:RUNNER_TEMP 'SoDeck-remote'
           $installed = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDir" -WindowStyle Hidden -Wait -PassThru
@@ -108,6 +125,10 @@ jobs:
           tar -xzf packages/files/*.tar.gz -C packages/files
           export SODECK_TEST_TERMINAL_PLUGIN="$(find "$PWD/packages/terminal" -mindepth 1 -maxdepth 1 -type d | head -1)"
           export SODECK_TEST_FILES_PLUGIN="$(find "$PWD/packages/files" -mindepth 1 -maxdepth 1 -type d | head -1)"
+          if [ -n '${{ inputs.network_run_id }}' ]; then
+            tar -xzf packages/network-proxy/*.tar.gz -C packages/network-proxy
+            export SODECK_TEST_NETWORK_PLUGIN="$(find "$PWD/packages/network-proxy" -mindepth 1 -maxdepth 1 -type d | head -1)"
+          fi
           dpkg-deb -x $(find packages/core -name '*.deb' | head -1) "$RUNNER_TEMP/SoDeck-remote"
           node scripts/test-openssh.mjs --packaged dbus-run-session -- xvfb-run -a "$RUNNER_TEMP/SoDeck-remote/usr/bin/sodeck"
       - name: macOS mounted package with independent plugins
@@ -117,6 +138,10 @@ jobs:
           tar -xzf packages/files/*.tar.gz -C packages/files
           export SODECK_TEST_TERMINAL_PLUGIN="$(find "$PWD/packages/terminal" -mindepth 1 -maxdepth 1 -type d | head -1)"
           export SODECK_TEST_FILES_PLUGIN="$(find "$PWD/packages/files" -mindepth 1 -maxdepth 1 -type d | head -1)"
+          if [ -n '${{ inputs.network_run_id }}' ]; then
+            tar -xzf packages/network-proxy/*.tar.gz -C packages/network-proxy
+            export SODECK_TEST_NETWORK_PLUGIN="$(find "$PWD/packages/network-proxy" -mindepth 1 -maxdepth 1 -type d | head -1)"
+          fi
           hdiutil attach $(find packages/core -name '*.dmg' | head -1) -nobrowse -readonly -mountpoint "$RUNNER_TEMP/SoDeck-remote"
           trap 'hdiutil detach "$RUNNER_TEMP/SoDeck-remote"' EXIT
           node scripts/test-openssh.mjs --packaged "$RUNNER_TEMP/SoDeck-remote/SoDeck.app/Contents/MacOS/sodeck"

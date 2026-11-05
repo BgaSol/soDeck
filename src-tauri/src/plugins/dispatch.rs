@@ -19,6 +19,9 @@ pub(super) fn plugin_request(
     frame: &Value,
 ) -> Result<Value, RpcError> {
     match frame["method"].as_str().unwrap_or_default() {
+        method if method.starts_with("net.") => core
+            .network_request(id, instance, method, &frame["params"])
+            .map_err(RpcError::execution),
         "metrics.networkSnapshot" => Ok(core.network_snapshot()),
         "files.request" => core
             .files_control(id, instance, &frame["params"])

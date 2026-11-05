@@ -264,6 +264,7 @@ impl Drop for Socks {
 static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 include!("fixtures/terminal_flow.rs");
 include!("fixtures/files_flow.rs");
+include!("fixtures/network_flow.rs");
 struct Fixture {
     core: Arc<AppCore>,
     path: PathBuf,

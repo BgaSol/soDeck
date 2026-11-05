@@ -1,4 +1,5 @@
 //! Checks run only by the packaged-application smoke-test entry point.
+mod network;
 mod remote_plugins;
 use crate::{model::LogFilter, AppCore};
 use std::{
@@ -74,6 +75,7 @@ pub async fn ssh_roundtrip(
     if let Some(remote) = &config.remote_file {
         remote_plugins::roundtrip(core, &context, remote).await?;
     }
+    let network = network::start(core, &context).await?;
     // Moving a real session must not create a second SSH transport.
     handle.state::<crate::windows::DesktopWindows>().move_to(
         handle,
@@ -90,6 +92,9 @@ pub async fn ssh_roundtrip(
         .owner(&context.workspace_id)
         .ok_or("工作区已丢失")?;
     let _ = core.connection_validation_exec(&context, command).await?;
+    if let Some(network) = &network {
+        network.verify().await?;
+    }
     handle.state::<crate::windows::DesktopWindows>().move_to(
         handle,
         &owner,
@@ -110,6 +115,14 @@ pub async fn ssh_roundtrip(
     })
     .await
     .map_err(|_| "包内 SSH 未完成断开")?;
+    if let Some(network) = &network {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        for addr in network.addresses.iter().take(2) {
+            if tokio::net::TcpStream::connect(addr).await.is_ok() {
+                return Err("断开后网络监听未释放".into());
+            }
+        }
+    }
     core.ui_snapshot("main")?;
     let plan = core.ui_close_prepare("main", vec![context.workspace_id.clone()], None)?;
     core.ui_close_finish(
@@ -122,6 +135,16 @@ pub async fn ssh_roundtrip(
         .unwrap()
         .close("main", &context.workspace_id)?;
     core.workspace_changed();
+    if network.is_some() {
+        std::fs::write(
+            core.snapshot()
+                .data_directory
+                .join("network-smoke-result.json"),
+            json!({"completed":true,"tcpForward":true,"socks5":true,"moved":true,"released":true})
+                .to_string(),
+        )
+        .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 

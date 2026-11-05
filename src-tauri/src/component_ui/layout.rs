@@ -169,7 +169,7 @@ impl Runtime {
             } else {
                 w.right = Some(selected.clone());
             }
-        } else {
+        } else if d.definition.container == "editor" {
             w.editor = Some(selected.clone());
         }
         Ok(selected)

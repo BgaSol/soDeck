@@ -4,34 +4,48 @@ use std::{
     collections::HashMap,
     io::{self, BufRead, Write},
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc, Arc, Mutex,
     },
     time::Duration,
 };
 const MAX: usize = 64 * 1024;
+#[derive(Clone)]
 pub struct Client {
+    inner: Arc<Inner>,
+}
+struct Inner {
+    closed: AtomicBool,
     writer: Mutex<io::Stdout>,
     pending: Mutex<HashMap<String, mpsc::SyncSender<Result<Value, String>>>>,
     sequence: AtomicU64,
 }
 impl Client {
+    pub fn is_closed(&self) -> bool {
+        self.inner.closed.load(Ordering::Acquire)
+    }
     fn send(&self, frame: Value) -> Result<(), String> {
+        if self.inner.closed.load(Ordering::Acquire) {
+            return Err("核心通信已结束".into());
+        }
         let mut bytes = serde_json::to_vec(&frame).map_err(|e| e.to_string())?;
         bytes.push(b'\n');
         if bytes.len() > MAX {
             return Err("控制帧超过 64 KiB".into());
         }
-        let mut out = self.writer.lock().unwrap();
+        let mut out = self.inner.writer.lock().unwrap();
         out.write_all(&bytes)
             .and_then(|_| out.flush())
             .map_err(|e| e.to_string())
     }
     pub fn call(&self, method: &str, params: Value) -> Result<Value, String> {
-        let id = format!("plugin-{}", self.sequence.fetch_add(1, Ordering::Relaxed));
+        let id = format!(
+            "plugin-{}",
+            self.inner.sequence.fetch_add(1, Ordering::Relaxed)
+        );
         let (tx, rx) = mpsc::sync_channel(1);
         {
-            let mut pending = self.pending.lock().unwrap();
+            let mut pending = self.inner.pending.lock().unwrap();
             if pending.len() >= 32 {
                 return Err("插件请求已满".into());
             }
@@ -43,7 +57,7 @@ impl Client {
                 rx.recv_timeout(Duration::from_secs(4))
                     .map_err(|_| "核心请求超时".to_string())?
             });
-        self.pending.lock().unwrap().remove(&id);
+        self.inner.pending.lock().unwrap().remove(&id);
         result
     }
 }
@@ -51,9 +65,12 @@ pub fn run(
     handler: impl Fn(&Client, &str, Value) -> Result<Value, String> + Send + Sync + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = Arc::new(Client {
-        writer: Mutex::new(io::stdout()),
-        pending: Mutex::new(HashMap::new()),
-        sequence: AtomicU64::new(0),
+        inner: Arc::new(Inner {
+            closed: AtomicBool::new(false),
+            writer: Mutex::new(io::stdout()),
+            pending: Mutex::new(HashMap::new()),
+            sequence: AtomicU64::new(0),
+        }),
     });
     let handler = Arc::new(handler);
     let (tx, rx) = mpsc::sync_channel::<Value>(32);
@@ -120,7 +137,7 @@ pub fn run(
                 client.send(json!({"jsonrpc":"2.0","id":frame["id"],"error":{"code":-32001,"message":"插件队列已满"}}))?;
             }
         } else if let Some(id) = frame["id"].as_str() {
-            if let Some(reply) = client.pending.lock().unwrap().remove(id) {
+            if let Some(reply) = client.inner.pending.lock().unwrap().remove(id) {
                 let result = if frame.get("error").is_some() {
                     Err(frame["error"]["message"]
                         .as_str()
@@ -133,7 +150,8 @@ pub fn run(
             }
         }
     }
-    for (_, reply) in client.pending.lock().unwrap().drain() {
+    client.inner.closed.store(true, Ordering::Release);
+    for (_, reply) in client.inner.pending.lock().unwrap().drain() {
         let _ = reply.send(Err("核心通信已结束".into()));
     }
     Ok(())

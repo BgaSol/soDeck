@@ -11,6 +11,7 @@ use tokio_util::sync::CancellationToken;
 pub(crate) struct Session {
     pub(super) chain: Vec<russh::client::Handle<ssh::Client>>,
     cancel: CancellationToken,
+    pub(crate) path: serde_json::Value,
 }
 impl Session {
     pub(crate) fn cancellation(&self) -> CancellationToken {
@@ -26,6 +27,18 @@ impl Session {
             .channel_open_session()
             .await
             .map_err(|e| e.to_string())
+    }
+    pub(crate) async fn open_tcp(&self, host: &str, port: u16) -> Result<Stream, String> {
+        if self.is_closed() {
+            return Err("服务器连接已断开".into());
+        }
+        self.chain
+            .last()
+            .ok_or("SSH 会话不存在")?
+            .channel_open_direct_tcpip(host, port as u32, "127.0.0.1", 0)
+            .await
+            .map(|channel| Box::new(channel.into_stream()) as Stream)
+            .map_err(|error| error.to_string())
     }
     pub fn is_closed(&self) -> bool {
         self.cancel.is_cancelled() || self.chain.iter().any(|s| s.is_closed())
@@ -85,6 +98,7 @@ pub(super) async fn connect(
     )));
     let mut session = Session {
         chain: vec![],
+        path: serde_json::json!(profile.nodes.iter().map(|n|serde_json::json!({"kind":if n.is_ssh(){"ssh"}else{"socks5"},"host":n.host,"port":n.port})).collect::<Vec<_>>()),
         cancel: a.cancel.clone(),
     };
     for index in 0..profile.nodes.len() {

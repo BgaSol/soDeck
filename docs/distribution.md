@@ -72,6 +72,8 @@ npm run plugin:build -- --plugin hello --out-dir artifacts/another-build
 
 ## 验证
 
+工作台样式与原生剪贴板的实施和平台边界见 [实施记录](implementation-workbench-design.md)。`npm run terminal:input:test` 安装终端锁定的前端依赖后验证实际 xterm 与剪贴板桥，无需 OpenSSH；Check 工作流执行该回归。真实远端仍由 `terminal:test` / `files:test` 及原生实际包工作流验证。原生剪贴板为显式 `SODECK_TEST_CLIPBOARD=1` 烟测，普通包烟测不改测试桌面的剪贴板。
+
 真实连接的新增依赖与本机验证范围见 [连接实施记录](implementation-connections.md)。`npm run ssh:test` 使用临时回环 OpenSSH 服务验证实际客户端，`npm run ssh:test -- --packaged <安装后的程序>` 进一步验证包内连接与原生窗口移动。Windows x86_64 工作流执行这两层；其他目标继续原生构建/隔离 Rust 连接测试及包内启动，不将本机结果外推为五平台已通过。
 
 本机执行类型、格式、脚本测试、Rust 集成测试、前端构建和本机安装包烟测。Rust 测试使用本机 HTTP 服务器验证下载、哈希、平台/API 不兼容、重启切换和启动失败恢复；正式更新来源只允许 HTTPS。
@@ -81,6 +83,8 @@ npm run plugin:build -- --plugin hello --out-dir artifacts/another-build
 真实业务插件使用独立入口 `npm run plugin:build -- --plugin terminal` 和 `--plugin files`，版本分别来自自己的 Cargo.toml，标签为 `plugin-terminal-v<版本>` / `plugin-files-v<版本>`。终端打包在插件目录内执行锁定的 npm 安装和静态资源构建；核心打包不调用这些步骤。普通构建不创建发行版本，官方列表登记来源后仍需发布对应的独立 Release 才能下载。
 
 `Verify native remote plugins` 手动输入核心、终端、文件三个成功打包运行的 ID，在五个原生 runner 下载实际包。它安装/解包核心、加载两个独立插件、连接隔离 OpenSSH，验证实际 WebView/Channel/xterm 的 PTY 往返、文件读取/保存/下载、窗口移动以及重开退出。它独立于核心打包，不阻塞无插件核心的构建与启动。源码侧 `npm run terminal:test` / `npm run files:test` 另验证多 Tab、草稿、保存关闭、冲突、大小边界、取消和重试。
+
+网络插件另用 `npm run plugin:build -- --plugin network-proxy` 打包，标签 `plugin-network-proxy-v<版本>`；没有发布独立 Release 前，官方来源无法下载安装。原生远程验收可额外填写 `network_run_id`，验证实际包的侧栏、编辑弹窗、TCP/SOCKS5 正文、移窗和端口释放。`npm run network:test` 提供源码侧真实插件与混合跳板、OpenSSH 和页面验证。当前完成范围与尚未运行的平台见 [网络实施记录](implementation-network.md)。
 
 Windows ARM64 runner 的 OpenSSH 系统可选组件安装曾持续等待十余分钟；该测试在缺少 sshd 时使用微软 Win32-OpenSSH 的固定版本 ARM64 便携包并校验 SHA-256，仅启动隔离回环服务，不安装系统服务，也不随产品分发。其他平台使用 runner 系统包提供的 OpenSSH。
 

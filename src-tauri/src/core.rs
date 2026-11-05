@@ -18,6 +18,7 @@ use std::{
 type Listener = Arc<dyn Fn(&str, Value) + Send + Sync>;
 
 pub struct AppCore {
+    pub(crate) network: crate::network::Network,
     pub(crate) files: crate::remote_files::Files,
     pub(crate) network_metrics: crate::network_metrics::Metrics,
     pub(crate) terminals: crate::terminal::Terminals,
@@ -62,6 +63,7 @@ impl AppCore {
             .map(|p| p.manifest.id.clone())
             .collect();
         let core = Arc::new(Self {
+            network: crate::network::Network::default(),
             files: crate::remote_files::Files::default(),
             network_metrics: crate::network_metrics::Metrics::default(),
             terminals: crate::terminal::Terminals::default(),
@@ -293,6 +295,7 @@ impl AppCore {
         self.component_ui.lock().unwrap().require_closed(&ids)?;
         self.closing.store(true, Ordering::Release);
         self.terminals.cancel(|_| true);
+        self.network.cancel(|_| true);
         self.files.cancel(|_| true);
         let instances: Vec<_> = self.instances.lock().unwrap().values().cloned().collect();
         let pending: Vec<_> = instances

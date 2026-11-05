@@ -13,6 +13,12 @@ pub struct OfficialPlugin {
 
 pub const OFFICIAL_PLUGINS: &[OfficialPlugin] = &[
     OfficialPlugin {
+        id: "sodeck.network-proxy",
+        name: "网络隧道",
+        description: "通过当前服务器建立本地 TCP 转发和 SOCKS5 代理，按规则查看连接与流量。",
+        tag_prefix: "plugin-network-proxy-v",
+    },
+    OfficialPlugin {
         id: "sodeck.terminal",
         name: "终端",
         description: "通过当前服务器连接打开真实终端，支持多个终端页和跨窗口接续。",

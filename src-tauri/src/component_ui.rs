@@ -77,12 +77,18 @@ impl Declaration {
                 || d.title.trim().is_empty()
                 || d.title.len() > 256
                 || d.icon.len() > 80
-                || !["sidebar", "editor"].contains(&d.container.as_str())
+                || !["sidebar", "editor", "dialog"].contains(&d.container.as_str())
                 || !["perWorkspace", "perResource", "multiple"]
                     .contains(&d.instance_policy.as_str())
                 || !["left", "right"].contains(&d.default_side.as_str())
                 || !["none", "reveal", "createOne"].contains(&d.open_on_workspace.as_str())
-                || (d.container == "sidebar" && d.instance_policy != "perWorkspace")
+                || (["sidebar", "dialog"].contains(&d.container.as_str())
+                    && d.instance_policy != "perWorkspace")
+                || (d.container == "dialog"
+                    && (d.open_on_workspace != "none"
+                        || d.default_pinned
+                        || d.locate_entry
+                        || d.create_action.is_some()))
                 || (d.instance_policy == "perResource" && d.open_on_workspace != "none")
                 || (d.locate_entry && d.container != "editor")
                 || d.create_action

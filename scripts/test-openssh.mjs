@@ -50,19 +50,22 @@ try {
   } else {
     const terminal=process.argv.includes('--terminal');
     const files=process.argv.includes('--files');
+    const network=process.argv.includes('--network');
     const env={ ...process.env, SODECK_TEST_SSH_PORT: String(port), SODECK_TEST_SSH_USER: username, SODECK_TEST_SSH_KEY: path.join(directory, "user") };
-    for(const plugin of [terminal?'terminal':null,files?'files':null].filter(Boolean)){
+    for(const plugin of [terminal?'terminal':null,files?'files':null,network?'network-proxy':null].filter(Boolean)){
       const build=spawnSync(process.execPath,['scripts/package-plugin.mjs','--plugin',plugin],{stdio:'inherit',windowsHide:true});if(build.status!==0)throw new Error(`${plugin} package failed`);
       const version=fs.readFileSync(`plugins/${plugin}/Cargo.toml`,'utf8').match(/^version = "([^"]+)"/m)[1];
       const target=spawnSync('rustc',['-vV'],{encoding:'utf8'}).stdout.match(/^host: (.+)$/m)[1];
-      env[`SODECK_TEST_${plugin.toUpperCase()}_PLUGIN`]=path.resolve(`artifacts/plugins/sodeck-${plugin}_${version}_${target}`);
+      env[`SODECK_TEST_${(plugin==='network-proxy'?'NETWORK':plugin.toUpperCase())}_PLUGIN`]=path.resolve(`artifacts/plugins/sodeck-${plugin}_${version}_${target}`);
     }
     const result = await new Promise((resolve, reject) => {
-    const test = spawn("cargo", ["test", "--manifest-path", "src-tauri/Cargo.toml", "--features", "test-fixtures", "--locked", "--test", "connections", files?'openssh_files_plugin':terminal?'openssh_terminal_plugin':'openssh_interop', "--", "--ignored", "--exact", "--nocapture"], {
+    const test = spawn("cargo", ["test", "--manifest-path", "src-tauri/Cargo.toml", "--features", "test-fixtures", "--locked", "--test", "connections", network?'network_proxy_plugin':files?'openssh_files_plugin':terminal?'openssh_terminal_plugin':'openssh_interop', "--", "--ignored", "--exact", "--nocapture"], {
       windowsHide: true, stdio: "inherit", env,
     }); test.on("error", reject); test.on("exit", resolve);
   });
   if (result !== 0) throw new Error(`OpenSSH interoperability failed (${result}): ${diagnostic}`);
+  if(network){const result=await new Promise((resolve,reject)=>{const test=spawn('cargo',['test','--manifest-path','src-tauri/Cargo.toml','--features','test-fixtures','--locked','--test','connections','openssh_network_plugin','--','--ignored','--exact','--nocapture'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('OpenSSH network plugin failed: '+diagnostic);}
+  if(network){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-network-ui.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('Network UI failed');}
   if(terminal){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-terminal-ui.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('Terminal UI failed');}
   if(files){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-files-ui.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('File UI failed');}
   }

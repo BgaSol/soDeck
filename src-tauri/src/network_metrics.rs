@@ -1,5 +1,5 @@
 //! In-memory plugin payload totals. Local view replay never passes this boundary.
-use crate::{terminal::Owner, AppCore};
+use crate::{resource_owner::Owner, AppCore};
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
@@ -150,6 +150,6 @@ impl AppCore {
                 server["name"] = json!(name);
             }
         }
-        json!({"servers":servers,"plugins":plugins,"connections":self.connection_views(),"windowSeconds":3,"allocationQuality":"unavailable","note":"连接传输包含 SSH/SOCKS 封装；插件明细仅计算文件内容和 PTY 有效载荷。目录与协议流量保留为核心/未归属，不按 JSON 大小推算。"})
+        json!({"servers":servers,"plugins":plugins,"connections":self.connection_views(),"windowSeconds":3,"allocationQuality":"unavailable","note":"连接传输包含 SSH/SOCKS 封装；插件明细仅计算文件内容、PTY 和网络隧道有效载荷。目录与协议流量保留为核心/未归属，不按 JSON 大小推算。"})
     }
 }

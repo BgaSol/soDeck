@@ -4,6 +4,7 @@ pub mod desktop;
 mod host_keys;
 pub(crate) mod io;
 mod route;
+pub(crate) use route::Session;
 mod socks5;
 mod ssh;
 mod validation;

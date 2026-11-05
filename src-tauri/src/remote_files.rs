@@ -1,5 +1,5 @@
 //! Session-scoped SFTP primitives. Navigation, encoding and editor decisions live in plugins.
-use crate::{terminal::Owner, workspaces::Context, AppCore};
+use crate::{resource_owner::Owner, workspaces::Context, AppCore};
 use russh_sftp::{
     client::{error::Error, RawSftpSession},
     protocol::{FileAttributes, OpenFlags, Packet, StatusCode},

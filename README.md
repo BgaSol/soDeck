@@ -47,6 +47,7 @@ npm run scripts:test
 npm run test
 npx playwright install chromium
 npm run ui:test
+npm run terminal:input:test
 # 本机需 OpenSSH 服务端与 ssh-keygen；脚本仅启动临时回环测试端
 npm run ssh:test
 npm run terminal:test
@@ -78,6 +79,9 @@ node scripts/package-plugin.mjs --plugin files
 - [组件与核心 UI 交互设计（提案）](docs/plan-component-ui.md)
 - [远程工作台：混合跳板、终端、文件与带宽统计（提案）](docs/plan-remote-workbench.md)
 - [远程工作台代码整改方案（提案）](docs/plan-code-reorganization.md)
+- [网络隧道插件设计与实施范围](docs/plan-network-proxy.md)
+- [工作台统一样式与终端剪贴板设计](docs/plan-workbench-design.md)
+- [工作台样式与剪贴板实施、验证边界](docs/implementation-workbench-design.md)
 - [插件 API v1](docs/plugin-api.md)
 - [在线更新实施与验收](docs/plan-online-updates.md)
 - [上一阶段实施计划](docs/plan-plugin-foundation.md)

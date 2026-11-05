@@ -1,0 +1,7 @@
+{
+  "id": "sodeck.network-proxy", "name": "网络隧道", "apiVersion": "1", "binary": "sodeck-network-proxy", "tagPrefix": "plugin-network-proxy-v",
+  "ui": { "apiVersion": "1", "entry": "ui/index.html", "views": [
+    { "id": "manager", "title": "网络隧道", "icon": "network", "container": "sidebar", "instancePolicy": "perWorkspace", "defaultSide": "right", "defaultPinned": true, "openOnWorkspace": "none", "startupOrder": 30 },
+    { "id": "rule-editor", "title": "编辑网络隧道", "icon": "network", "container": "dialog", "instancePolicy": "perWorkspace", "openOnWorkspace": "none" }
+  ] }
+}

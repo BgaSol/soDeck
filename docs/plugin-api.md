@@ -1,5 +1,7 @@
 # 外置插件 API v1
 
+通用 TCP 与弹窗扩展已实现，见本文末尾接口和 [网络隧道设计](plan-network-proxy.md)。插件须先检查 `net.tcp.v1` 和 `ui.dialog.v1`，旧核心仍可加载不使用新能力的旧插件。
+
 插件是独立原生程序，核心不需要识别具体插件 ID。插件按可信扩展使用，没有权限清单、授权或签名流程。
 
 当前源码为 API v1 增加可选 UI v1，旧无 UI 插件无需修改；已发行 v0.4.0 不支持该扩展。界面方案与验收见 [组件 UI 设计](plan-component-ui.md)，实际协议如下。
@@ -106,6 +108,46 @@ API v1 通过 capabilities 扩展真实 PTY、SFTP 与正文桥。插件检查 t
 - `closeDirectory({cursor})` 主动释放未完成的独立游标。每个文件资源最多保留 32 个独立游标，超出时释放最早打开的游标；已失效的游标需要重新刷新。读完、关闭页面、连接更换或失效时也会释放。
 
 界面挂载及 `themeChanged` 的 `tokens` 增加 `color-scheme`、`good`、`error`、`shadow`、`file-tree-bg`、`status-bg`、`folder-color`、`folder-fill`、`tree-selection-border`。旧插件可忽略新增字段，新插件提供基础色回退。文件导航状态由插件进程按视图保存，只保存有界路径、选择和滚动元数据，目录内容不进入控制 RPC。
+
+### 工作台外观与文本剪贴板（增量能力，尚未发布）
+
+UI v1 的 `mount.capabilities.clipboard === 1` 表示宿主提供原生文本剪贴板。它是 UI 桥能力，不是插件权限声明。插件 UI 通过 `sodeck.request("clipboard", params)` 使用：
+
+| op | 参数与返回 |
+| --- | --- |
+| `read` | 原生读取一次，返回 `{id,length}`，length 为 UTF-16 代码单元数 |
+| `chunk` | `{id,offset}`，返回 `{text}`；最多 2048 个代码单元，读到末尾释放 |
+| `beginWrite` | `{length}`，返回 `{id}`，尚不修改系统剪贴板 |
+| `writeChunk` | `{id,offset,text}`，必须按顺序且每块不超过 2048 个代码单元 |
+| `commitWrite` | `{id}`，校验完整 UTF-8 文本后一次原生写入并释放 |
+
+每个 surface 最多一个传输，15 秒过期；总上限 256 KiB UTF-8，单请求预留 24000 字节。宿主检查当前可见 surface、焦点和 Context；隐藏、移除和更换 Context 时使旧操作失效。共享 `clipboard-bridge.js` 负责分块与能力检查；旧核心缺少能力时明确提示升级。剪贴板正文不经插件进程或普通控制事件，也不记录和持久化。
+
+`tokens` 保留原颜色字段，新增 `sd-stroke-structure/control`、`sd-icon-stroke`、`sd-control-weight`、`sd-title-weight`、`sd-radius-control`、`sd-tab-height`、`sd-status-height`、`sd-hit-size` 及导航、工具栏、主操作和反馈状态语义色；具体名称以 `src/theme.ts` 为准。终端提供 `terminal-background/foreground/cursor/selection` 与 ANSI16（`terminal-black` 至 `terminal-brightWhite`）。插件将字段设置为同名 `--` CSS 变量，配合打包的 `shared.css` 使用；旧插件可忽略新增项，新插件保留基础色回退。主题变更不重建视图或会话。
+
+## 通用 TCP 与弹窗（新增能力，尚未发布）
+
+核心通过 `initialize.capabilities` 声明 `net.tcp.v1` 和 `ui.dialog.v1`，API 主版本保持 1。`net.*` 仅供插件进程调用；业务协议及规则由插件实现。监听持有创建时的已认证会话，域名原样交给最终远端解析，断线后不会自动接到新会话。
+
+| 方法 | 参数 | 返回与行为 |
+| --- | --- | --- |
+| `net.listener.open` | `viewId,operationId,bind:{host,port}` | `{listenerId}`；后台绑定，`port:0` 自动分配，host 必须是本机 IP |
+| `net.poll` | `viewId` | `{items:[{listenerId,streamId}]}`；每次最多领取 16 个本地客户端，不等待 I/O |
+| `net.tcp.open` | `listenerId,clientStreamId,operationId,host,port` | `{streamId}`；后台建立远端 TCP，同一本地客户端只允许一个目标 |
+| `net.stream.status` | `streamId` | `{state,error}`；connecting/ready/relaying/closed/failed，error 为字符串或 null |
+| `net.stream.read` | `streamId,maxBytes` | `{pending:true}` 或 `{data:[字节],eof}`；非阻塞轮询，最多 512 字节，不预读后续正文 |
+| `net.stream.write` | `streamId,bytes` | `{queued:true}`；最多 512 字节，按序入队，错误通过状态呈现 |
+| `net.stream.finish` | `streamId` | `{}`；排空已排队响应后关闭，用于协议拒绝 |
+| `net.stream.splice` | `listenerId,leftId,rightId,operationId` | `{}`；将该客户端及其目标移交原生双向复制，保留半关闭；同一配对重复调用成功 |
+| `net.listener.snapshot` | `listenerId` | 监听状态、实际 address、path、error、连接数、sent/received、约 3 秒速率、clients 控制摘要 |
+| `net.listener.probe` | `listenerId,operationId` | `{probeId}`；以真实本机入口连接，接受端按预登记端点关联；clients 含对应 probeId |
+| `net.close` | `id` | `{}`；取消监听及全部子资源，或指定流；本地流连带其目标，重复关闭成功 |
+
+协商读写合计最多 1024 字节，控制队列 8 项；正常正文只经原生流。每监听最多 64 活动连接、16 待协商连接，每插件实例最多 32 监听，核心最多 256 本地客户端；协商期限约 15 秒，远端连接 10 秒。probe 最多 4 个并发、10 秒期限，检查完成应关闭匹配的客户端流。监听 open 的 operationId 在同实例内保留 60 秒，最多 4096 项；窗口重挂载应复用 listenerId，不重复创建。tcp open 以本地客户端及 operationId 去重，参数变化拒绝。
+
+`snapshot.error` 为 `{stage,message}`（listen/sessionLost）；单流失败不使整条监听失败。累计量为 u64 十进制字符串，计入远端有效载荷，并归属原有服务器/插件统计；不含本地 SOCKS 协商，不将 SSH 加密开销重复归属插件。关闭视图、服务器断开、插件进程退出或应用退出会清理资源，收起及移窗保持原资源。
+
+清单的视图可声明 `container:"dialog",instancePolicy:"perWorkspace"`，禁止 startup/pin/create/locate 组合。宿主提供标题、关闭、三主题和可滚动容器；按原有 ui.mount/event/beforeClose/save/disposeView 协议工作。iframe 的 `sodeck.request("closeView",{})` 请求关闭当前逻辑视图，仍经过 flush 和保存/放弃/取消；关闭编辑弹窗不关闭同插件的管理侧栏资源。
 
 ## 本地构建 Hello
 

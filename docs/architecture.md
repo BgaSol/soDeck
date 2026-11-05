@@ -5,6 +5,8 @@
 
 具体代码落点、现有模块的保留/拆分、资源与锁边界、异步 RPC 和分批迁移见 [代码整改方案](plan-code-reorganization.md)。第一批插件控制通信与第二批连接服务已进入源码，真实插件业务继续按批实施。
 
+网络隧道按 [网络隧道设计](plan-network-proxy.md) 实现：核心 `network/` 提供通用 TCP 监听、远端流、原生双向复制、取消和计量，`plugins/network-proxy` 独立进程提供固定转发、SOCKS5 协商、规则持久化和业务界面。`resource_owner.rs` 统一复用现有资源归属校验；通用 dialog 容器通过原有视图挂载和关闭协调。正文不经过 JSON RPC，目标域名交给最终 SSH 服务器解析。
+
 当前实现 Tauri 桌面壳、原生 DOM/TypeScript 前端、外置进程插件、日志、重要消息、主题存储、独立在线更新和本机服务器/代理目录。源码已实现 SSH/SOCKS5 混合连接、PTY、SFTP 文件原语、有界视图数据桥及网络统计；终端和文件分别由独立插件提供。核心升级复用 Tauri 官方 updater；不引入 React 或数据库。当前范围、依赖和验证边界见 [真实插件实施记录](implementation-remote-plugins.md)。
 
 当前代码职责：`main.rs` 组合窗口、命令桥和有界退出；`core.rs` 持有真实状态；`plugins/manifest.rs` 负责清单，`plugins/process.rs` 监督进程，`plugins/rpc.rs` 处理有界控制帧/读写，`plugins/dispatch.rs` 有界分派插件对核心的调用，`plugins/mod.rs` 保留内部入口；`platform.rs` 管理 Windows Job/Unix 进程组；`storage.rs` 保存配置、消息和轮转日志。前端 `main.ts` 管理窗口与浮层，`views.ts` 展示核心数据，`core.ts` 统一调用边界。界面不直接启动插件，不另存运行状态。
@@ -133,6 +135,8 @@
 文件树由文件插件管理排序、展开、选择、路径定位及导航恢复。核心只增加向后兼容的独立目录分页游标，每个资源最多 32 个未完成游标，结束或资源销毁时释放。通过 `files.directoryCursors.v1` 发现能力，避免新插件静默依赖旧核心没有的行为；详见 [文件树设计](plan-file-tree.md) 和 [插件接口](plugin-api.md)。
 
 ## 构建与分发边界
+
+核心通用剪贴板适配使用 Tauri 官方 clipboard-manager，在阻塞任务中执行原生文本读写；插件 UI 经有界分块桥复用，文本不进入日志或持久化。终端快捷键、选区和粘贴目标策略仍由终端插件负责。主题色板集中在 `src/themes.css`，共享外观规则在 `src/ui.css`，以 UI v1 增量 tokens 传入独立打包的插件；组件保留布局。实现与兼容说明见 [工作台实施记录](implementation-workbench-design.md)。
 
 核心、插件 SDK 和业务插件可以放在同一仓库，保持依赖边界；插件版本和打包不绑定核心。核心构建与安装不依赖任何业务插件，插件也可以使用独立仓库。
 

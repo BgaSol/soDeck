@@ -138,6 +138,7 @@ impl AppCore {
                     );
                 }
                 self.terminals.cancel(|owner| owner.view == v.id);
+                self.network.cancel(|owner| owner.view == v.id);
                 self.files.cancel(|owner| owner.view == v.id);
             }
             let mut ui = self.component_ui.lock().unwrap();

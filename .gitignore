@@ -11,3 +11,5 @@
 /crates/plugin-client/target/
 *.log
 /artifacts/
+
+/plugins/network-proxy/target/
