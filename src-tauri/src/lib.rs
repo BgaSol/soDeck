@@ -7,6 +7,8 @@ pub mod servers;
 mod storage;
 pub mod updates;
 pub mod validation;
+pub mod windows;
+pub mod workspaces;
 
 pub use core::AppCore;
 

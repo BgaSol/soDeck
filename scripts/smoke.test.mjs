@@ -22,7 +22,7 @@ test("package validation paths survive a launcher changing its working directory
       const value = flag => args[args.indexOf(flag) + 1];
       process.chdir(path.dirname(fileURLToPath(import.meta.url)));
       assert.equal(fs.readFileSync(value("--update-bundle-test"), "utf8"), "signed package");
-      fs.writeFileSync(path.join(value("--test-data-dir"), "smoke-result.json"), '{"completed":true}');
+      fs.writeFileSync(path.join(value("--test-data-dir"), "smoke-result.json"), '{"completed":true,"workspaceNative":true}');
     `);
     const env = { ...process.env, SODECK_TEST_UPDATE_BUNDLE: "update.AppImage" };
     delete env.SODECK_TEST_PLUGIN;

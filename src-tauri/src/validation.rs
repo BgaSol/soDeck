@@ -7,6 +7,151 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Isolated --smoke-test data only. Exercises actual native webviews, not SSH.
+pub fn workspace_roundtrip(handle: &tauri::AppHandle, core: &AppCore) -> Result<(), String> {
+    use crate::{
+        windows::DesktopWindows,
+        workspaces::{ConnectedSession, Layout},
+    };
+    use tauri::Manager;
+    let catalog = core.server_catalog();
+    let records = catalog["servers"].as_array().ok_or("测试目录缺失")?;
+    let desktop = handle.state::<DesktopWindows>();
+    let mut opened = vec![];
+    for name in ["Package gateway", "Package target"] {
+        let record = records
+            .iter()
+            .find(|s| s["name"] == name)
+            .ok_or("工作区测试档案缺失")?;
+        opened.push(desktop.accept_session(
+            handle,
+            ConnectedSession {
+                server_id: record["id"].as_str().unwrap().into(),
+                connection_id: format!("smoke-{name}"),
+                endpoint: format!("ops@{}.invalid:22", name.replace(' ', "-")),
+            },
+        )?);
+    }
+    let a = &opened[0];
+    let b = &opened[1];
+    let layout = Layout {
+        left_open: false,
+        right_open: true,
+        left_width: 280,
+        right_width: 250,
+    };
+    core.workspaces
+        .lock()
+        .unwrap()
+        .layout("main", &a.context.workspace_id, layout.clone())?;
+    desktop.move_to(handle, "main", &a.context.workspace_id, None, 0, None)?;
+    let child = core
+        .workspaces
+        .lock()
+        .unwrap()
+        .owner(&a.context.workspace_id)
+        .ok_or("移窗丢失工作区")?;
+    if child == "main" || handle.get_webview_window(&child).is_none() {
+        return Err("未创建原生独立窗口".into());
+    }
+    desktop.move_to(
+        handle,
+        "main",
+        &b.context.workspace_id,
+        Some(child.clone()),
+        0,
+        None,
+    )?;
+    desktop.verify_native_geometry(handle, &child, &a.context.workspace_id)?;
+    let projection = core.workspace_projection(&child)?;
+    if projection.window.workspace_ids
+        != [
+            b.context.workspace_id.clone(),
+            a.context.workspace_id.clone(),
+        ]
+        || projection.workspaces[1].context != a.context
+        || projection.workspaces[1].layout != layout
+    {
+        return Err("原生移窗改变了上下文、布局或顺序".into());
+    }
+    let again = desktop.accept_session(
+        handle,
+        ConnectedSession {
+            server_id: a.context.server_id.clone(),
+            connection_id: "unused".into(),
+            endpoint: "unused".into(),
+        },
+    )?;
+    if again.context != a.context || again.window_id != child {
+        return Err("重复打开没有定位已有工作区".into());
+    }
+    desktop.move_to(
+        handle,
+        &child,
+        &a.context.workspace_id,
+        Some("main".into()),
+        0,
+        None,
+    )?;
+    // Native close event must close B alone; main must stay alive.
+    handle
+        .get_webview_window(&child)
+        .ok_or("子窗口提前关闭")?
+        .close()
+        .map_err(|e| e.to_string())?;
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while handle.get_webview_window(&child).is_some() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(20));
+    }
+    if handle.get_webview_window(&child).is_some() || handle.get_webview_window("main").is_none() {
+        return Err("关闭子窗口影响了应用生命周期".into());
+    }
+    core.workspaces
+        .lock()
+        .unwrap()
+        .validate_context(&a.context)?;
+    if core
+        .workspaces
+        .lock()
+        .unwrap()
+        .validate_context(&b.context)
+        .is_ok()
+    {
+        return Err("已关闭子窗口仍保留会话上下文".into());
+    }
+    desktop.move_to(handle, "main", &a.context.workspace_id, None, 0, None)?;
+    let last = core
+        .workspaces
+        .lock()
+        .unwrap()
+        .owner(&a.context.workspace_id)
+        .unwrap();
+    desktop.move_to(
+        handle,
+        &last,
+        &a.context.workspace_id,
+        Some("main".into()),
+        0,
+        None,
+    )?;
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while handle.get_webview_window(&last).is_some() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(20));
+    }
+    if handle.get_webview_window(&last).is_some() {
+        return Err("最后一个 Tab 返回后空窗口没有回收".into());
+    }
+    core.workspaces
+        .lock()
+        .unwrap()
+        .close("main", &a.context.workspace_id)?;
+    if !core.workspace_projection("main")?.workspaces.is_empty() {
+        return Err("工作区未清理".into());
+    }
+    core.workspace_changed();
+    Ok(())
+}
+
 pub fn server_roundtrip(core: &AppCore, persisted: bool) -> Result<(), String> {
     use serde_json::{json, Value};
     let catalog = core.server_catalog();

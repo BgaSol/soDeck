@@ -1,6 +1,8 @@
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
+import { Workspaces, type DropTarget } from "./workspaces";
 import { core, type Snapshot, type Message } from "./core";
 import * as views from "./views";
 import { button as b, escape as e, icon, replace } from "./ui";
@@ -9,8 +11,13 @@ import { ServerManager } from "./servers";
 
 const win = getCurrentWindow();
 const root = document.querySelector<HTMLDivElement>("#app")!;
-root.innerHTML = `<header class="topbar"><div class="app-tab">${icon("grid")}<span>服务器</span></div><div id="drag-region" class="drag-region" aria-hidden="true"></div><nav class="global-tools" aria-label="应用工具"><button data-action="status" id="status-button" aria-label="应用状态" aria-expanded="false"><span class="health-dot"></span><span id="health">正在连接</span></button>${b("messages", '<span id="message-count">消息</span>', "bell", "icon-label", 'id="messages-button" aria-label="消息中心"')}${b("settings", "设置", "settings", "icon-label", 'id="settings-button"')}</nav><div id="window-controls" class="window-controls">${b("minimize", "", "minus", "", 'aria-label="最小化"')}${b("maximize", "", "maximize", "", 'id="maximize-button" aria-label="最大化或还原"')}${b("close-window", "", "close", "close-window", 'aria-label="关闭窗口"')}</div></header><main class="workspace" id="server-workspace"></main><div id="overlay" hidden></div><div id="toasts" class="toasts" aria-live="polite"></div>`;
-const servers = new ServerManager(document.querySelector<HTMLElement>("#server-workspace")!, text => toast(text));
+root.innerHTML = `<header class="topbar"><button id="catalog-tab" role="tab" aria-selected="true">${icon("grid")}<span>服务器管理</span></button><div class="server-tabs" id="server-tabs" role="tablist" aria-label="服务器工作区"></div><div id="drag-region" class="drag-region" aria-hidden="true"></div><nav class="global-tools" aria-label="应用工具"><button data-action="status" id="status-button" aria-label="应用状态" aria-expanded="false"><span class="health-dot"></span><span id="health">正在启动</span></button>${b("messages", '<span id="message-count">消息</span>', "bell", "icon-label", 'id="messages-button" aria-label="消息中心"')}${b("settings", "设置", "settings", "icon-label", 'id="settings-button"')}</nav><div id="window-controls" class="window-controls">${b("minimize", "", "minus", "", 'aria-label="最小化"')}${b("maximize", "", "maximize", "", 'id="maximize-button" aria-label="最大化或还原"')}${b("close-window", "", "close", "close-window", 'aria-label="关闭窗口"')}</div></header><main class="workspace" id="server-workspace"><div id="server-catalog"></div><div id="workspace-content" hidden></div></main><div id="overlay" hidden></div><div id="toasts" class="toasts" aria-live="polite"></div>`;
+const servers = win.label === "main" ? new ServerManager(document.querySelector<HTMLElement>("#server-catalog")!, text => toast(text)) : undefined;
+const workspaces = new Workspaces(document.querySelector("#server-tabs")!, document.querySelector("#workspace-content")!, document.querySelector("#server-catalog")!, text => toast(text, undefined, true));
+async function restart(install: boolean) {
+  if (!servers) { await invoke("request_main_action", { action: install ? "install" : "restart" }); return; }
+  if (await servers.allowExit()) await core.restart(install);
+}
 const overlay = document.querySelector<HTMLDivElement>("#overlay")!;
 let snapshot: Snapshot | undefined;
 let layer = "";
@@ -237,6 +244,7 @@ async function pluginAction(key: string, run: () => Promise<unknown>) {
     await refresh();
   }
 }
+const restartFromUpdate = () => restart(state.updates["sodeck.core"]?.phase === "ready");
 const copy = (text: string) =>
   navigator.clipboard.writeText(text).then(() => toast("已复制"));
 
@@ -300,14 +308,14 @@ root.addEventListener("click", (event) => {
       case "update-restart":
         await pluginAction(`update:${id}`, async () => {
           const restart = await core.download(id);
-          if (name === "update-restart" && restart && await servers.allowExit()) await core.restart(state.updates["sodeck.core"]?.phase === "ready");
+          if (name === "update-restart" && restart) await restartFromUpdate();
         });
         break;
       case "restart-app":
-        await pluginAction("restart", async () => { if (await servers.allowExit()) await core.restart(state.updates["sodeck.core"]?.phase === "ready"); });
+        await pluginAction("restart", async () => { await restartFromUpdate(); });
         break;
       case "install-core":
-        await pluginAction("restart", async () => { if (await servers.allowExit()) await core.restart(true); });
+        await pluginAction("restart", async () => { await restart(true); });
         break;
       case "save-update-source": {
         const p = snapshot?.plugins.find((p) => p.manifest.id === id);
@@ -422,11 +430,14 @@ document
 
 async function start() {
   await listen("core-changed", scheduleRefresh);
+  await listen("workspaces-changed", () => void workspaces.refresh().catch(error => toast(String(error), undefined, true)));
+  await listen<DropTarget>("workspace-drop-preview", event => workspaces.previewDrop(event.payload));
+  await listen<string>("core-main-action", event => { if (servers) void action(() => restart(event.payload === "install")); });
   await listen("core-request-close", () => {
     if (exitPrompt) return;
     exitPrompt = true;
     void action(async () => {
-      try { if (await servers.allowExit()) await core.close(); }
+      try { if (servers && await servers.allowExit()) await core.close(); }
       finally { exitPrompt = false; }
     });
   });
@@ -442,7 +453,7 @@ async function start() {
       (await win.isMaximized()) ? "restore" : "maximize",
     );
   });
-  const [, catalogReady] = await Promise.all([refresh(), servers.start()]);
+  const [, catalogReady] = await Promise.all([refresh(), servers?.start() ?? Promise.resolve(true), workspaces.start()]);
   if (snapshot && catalogReady) await core.ready();
   setInterval(() => {
     if (layer === "status") scheduleRefresh();

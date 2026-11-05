@@ -10,7 +10,7 @@
     "plugin:check": "cargo fmt --manifest-path plugins/hello/Cargo.toml -- --check",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml --features test-fixtures --locked",
     "scripts:test": "node --test scripts/*.test.mjs",
-    "ui:test": "node scripts/test-server-ui.mjs",
+    "ui:test": "node scripts/test-server-ui.mjs && node scripts/test-workspace-ui.mjs",
     "plugin:build": "node scripts/package-plugin.mjs"
   },
   "devDependencies": {

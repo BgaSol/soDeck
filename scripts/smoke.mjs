@@ -31,7 +31,7 @@ function launch(persisted = false) {
     );
   if (
     !fs.existsSync(report) ||
-    !JSON.parse(fs.readFileSync(report, "utf8")).completed
+    !JSON.parse(fs.readFileSync(report, "utf8")).completed || !JSON.parse(fs.readFileSync(report, "utf8")).workspaceNative
   )
     throw new Error(
       "Packaged application did not complete the current smoke-test protocol",
@@ -43,7 +43,7 @@ try {
   console.log(
     plugin
       ? "Packaged core loaded/stopped/reloaded plugin; logs, messages and preferences survived restart."
-      : "Packaged app rendered, saved server/proxy/group records and a mixed route, then reopened with persisted data and exited successfully.",
+      : "Packaged app rendered, moved workspaces between native windows, closed secondary windows, saved catalog records, reopened persisted data and exited successfully.",
   );
 } finally {
   // This path was created by mkdtemp in this process, never supplied by the user.

@@ -18,6 +18,7 @@ use std::{
 type Listener = Arc<dyn Fn(&str, Value) + Send + Sync>;
 
 pub struct AppCore {
+    pub workspaces: Mutex<crate::workspaces::Runtime>,
     pub(crate) servers: Mutex<crate::servers::ServerStore>,
     pub(crate) store: Mutex<Store>,
     pub(crate) updates: Mutex<crate::updates::UpdateState>,
@@ -52,6 +53,7 @@ impl AppCore {
             .map(|p| p.manifest.id.clone())
             .collect();
         let core = Arc::new(Self {
+            workspaces: Mutex::new(crate::workspaces::Runtime::default()),
             servers: Mutex::new(servers),
             store: Mutex::new(store),
             updates: Mutex::new(crate::updates::UpdateState::default()),
@@ -279,6 +281,7 @@ impl AppCore {
             }
         }
         if errors.is_empty() {
+            self.workspaces.lock().unwrap().clear();
             Ok(())
         } else {
             self.closing.store(false, Ordering::Release);

@@ -1,8 +1,8 @@
 # SoDeck
 
-面向运维人员的远程服务器工作台。v0.3.0 实现服务器、SOCKS5 代理和分组的增删改查、搜索、复制与混合多层路径配置。此版只保存资料，不建立连接。保留多巴胺主题、核心与插件独立更新、插件启停重启生效。可通过应用更新升级到 v0.3.0，或从 GitHub Releases 下载对应安装包。
+面向运维人员的远程服务器工作台。v0.4.0 在服务器资料管理基础上加入服务器工作区壳、原生多窗口归属、Tab 排序和拆合。SSH 与业务组件尚未接入，普通启动仍显示服务器管理，连接成功后才会产生工作区。测试使用隔离会话验证，不伪造真实连接。
 
-核心与插件独立版本、独立打包，从公开的 [GitHub Releases](https://github.com/BgaSol/soDeck/releases) 分发。核心安装包不含业务插件。版本与验收记录见 [v0.1.1](docs/releases/v0.1.1.md)、[v0.2.0](docs/releases/v0.2.0.md)、[v0.2.1](docs/releases/v0.2.1.md) 和 [v0.3.0](docs/releases/v0.3.0.md)。
+核心与插件独立版本、独立打包，从公开的 [GitHub Releases](https://github.com/BgaSol/soDeck/releases) 分发。核心安装包不含业务插件。版本与验收记录见 [v0.1.1](docs/releases/v0.1.1.md)、[v0.2.0](docs/releases/v0.2.0.md)、[v0.2.1](docs/releases/v0.2.1.md) 、[v0.3.0](docs/releases/v0.3.0.md) 和 [v0.4.0](docs/releases/v0.4.0.md)。
 
 ## 使用
 
@@ -42,7 +42,7 @@ npm run plugin:build
 | 工作流 | 用途 |
 | --- | --- |
 | Check | 类型、Rust 格式、发布脚本测试及前端构建 |
-| Package SoDeck | 五目标原生核心安装包、目录保存重开烟测、更新签名；标签发布时生成 core-update.json |
+| Package SoDeck | 五目标原生核心安装包、目录保存重开、原生工作区移窗/关闭烟测、更新签名；标签发布时生成 core-update.json |
 | Package plugin | 按插件目录独立打包、生成 plugin-update.json |
 | Verify packaged core and plugin | 五目标实际包的插件、日志、消息与重启保留 |
 

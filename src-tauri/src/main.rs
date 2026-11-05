@@ -4,6 +4,7 @@ use sodeck::{
     desktop_updates::CoreUpdater,
     model::*,
     updates::{ReleaseClient, UpdateView},
+    windows::{self, DesktopWindows},
     AppCore,
 };
 use std::{
@@ -32,6 +33,17 @@ fn snapshot(app: State<Application>) -> Snapshot {
 #[tauri::command]
 fn close_app(handle: tauri::AppHandle) {
     begin_exit(&handle);
+}
+
+#[tauri::command]
+fn request_main_action(handle: tauri::AppHandle, action: String) -> Result<(), String> {
+    if !matches!(action.as_str(), "restart" | "install") {
+        return Err("未知应用操作".into());
+    }
+    let main = handle.get_webview_window("main").ok_or("主窗口不可用")?;
+    let _ = main.set_focus();
+    main.emit("core-main-action", action)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -190,7 +202,10 @@ fn mark_read(app: State<Application>, id: Option<String>) -> Result<(), String> 
 }
 
 #[tauri::command]
-fn frontend_ready(handle: tauri::AppHandle, app: State<Application>) {
+fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: State<Application>) {
+    if window.label() != "main" {
+        return;
+    }
     app.frontend_loaded.store(true, Ordering::Release);
     if !app.smoke
         || app
@@ -207,6 +222,7 @@ fn frontend_ready(handle: tauri::AppHandle, app: State<Application>) {
     std::thread::spawn(move || {
         let validation = (|| {
             sodeck::validation::server_roundtrip(&core, persisted)?;
+            sodeck::validation::workspace_roundtrip(&handle, &core)?;
             if let Some(bundle) = update_bundle {
                 sodeck::validation::core_update_bundle(&handle, &bundle)?;
             }
@@ -219,7 +235,7 @@ fn frontend_ready(handle: tauri::AppHandle, app: State<Application>) {
         let result = validation.and(stopped);
         if result.is_ok() {
             let status = core.snapshot();
-            let report = serde_json::json!({"completed":true,"version":status.version,"target":status.target});
+            let report = serde_json::json!({"completed":true,"workspaceNative":true,"version":status.version,"target":status.target});
             let _ = std::fs::write(
                 status.data_directory.join("smoke-result.json"),
                 report.to_string(),
@@ -250,7 +266,10 @@ fn argument(name: &str) -> Option<PathBuf> {
 fn request_exit(handle: &tauri::AppHandle) {
     let app = handle.state::<Application>();
     if app.frontend_loaded.load(Ordering::Acquire) && !app.smoke {
-        let _ = handle.emit("core-request-close", ());
+        if let Some(main) = handle.get_webview_window("main") {
+            let _ = main.set_focus();
+            let _ = main.emit("core-request-close", ());
+        }
     } else {
         begin_exit(handle);
     }
@@ -312,6 +331,7 @@ fn main() {
                 verify_persisted: smoke && std::env::args().any(|a| a == "--verify-persisted"),
                 frontend_loaded: AtomicBool::new(false),
             });
+            app.manage(DesktopWindows::new(core.clone()));
             if !smoke {
                 std::thread::spawn(move || core.start_enabled());
             }
@@ -332,8 +352,38 @@ fn main() {
                     != 2
                 {
                     api.prevent_close();
-                    request_exit(window.app_handle());
+                    if window.label() == "main" {
+                        request_exit(window.app_handle());
+                    } else {
+                        let handle = window.app_handle().clone();
+                        let label = window.label().to_owned();
+                        // Destroy from the event loop after the close event has returned.
+                        tauri::async_runtime::spawn_blocking(move || {
+                            if let Err(error) = handle
+                                .state::<DesktopWindows>()
+                                .close_secondary(&handle, &label)
+                            {
+                                if let Some(w) = handle.get_webview_window(&label) {
+                                    let _ = w.emit("core-exit-error", error);
+                                }
+                            }
+                        });
+                    }
                 }
+            }
+            if let tauri::WindowEvent::Focused(true) = event {
+                window.state::<DesktopWindows>().focused(window.label());
+            }
+            if let tauri::WindowEvent::Destroyed = event {
+                let desktop = window.state::<DesktopWindows>();
+                desktop
+                    .core
+                    .workspaces
+                    .lock()
+                    .unwrap()
+                    .lost_window(window.label());
+                desktop.remove_surface(window.label());
+                desktop.core.workspace_changed();
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -354,7 +404,19 @@ fn main() {
             read_logs,
             read_messages,
             mark_read,
-            frontend_ready
+            frontend_ready,
+            request_main_action,
+            windows::workspace_snapshot,
+            windows::workspace_ready,
+            windows::workspace_surface,
+            windows::workspace_activate,
+            windows::workspace_layout,
+            windows::workspace_move,
+            windows::workspace_cancel_move,
+            windows::workspace_close,
+            windows::workspace_drag_start,
+            windows::workspace_drag_sample,
+            windows::workspace_drag_finish
         ])
         .build(tauri::generate_context!())
         .expect("failed to start SoDeck");

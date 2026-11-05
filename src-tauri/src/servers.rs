@@ -197,6 +197,15 @@ pub(crate) struct ServerStore {
     sessions: HashMap<String, String>,
     pub error: Option<String>,
 }
+impl ServerStore {
+    pub(crate) fn workspace_names(&self) -> HashMap<String, String> {
+        self.catalog
+            .servers
+            .iter()
+            .map(|s| (s.id.clone(), s.name.clone()))
+            .collect()
+    }
+}
 fn read(path: &std::path::Path) -> Result<Catalog, String> {
     let bytes = fs::read(path).map_err(|_| "无法读取服务器目录文件".to_string())?;
     let c: Catalog =
@@ -543,6 +552,9 @@ impl AppCore {
                 selected = Some(id);
             }
             CatalogChange::DeleteServer { id } | CatalogChange::DeleteProxy { id } => {
+                if !deleting_proxy && self.workspaces.lock().unwrap().server_open(&id) {
+                    return Err("请先关闭此服务器的工作区，再删除档案".into());
+                }
                 if if deleting_proxy {
                     !c.proxies.iter().any(|p| p.id == id)
                 } else {
@@ -635,9 +647,14 @@ impl AppCore {
             }
         }
         store.commit(c, sessions)?;
+        self.workspaces
+            .lock()
+            .unwrap()
+            .rename(&store.workspace_names());
         let view = store.view();
         drop(store);
         self.changed();
+        self.workspace_changed();
         Ok(json!({"catalog":view,"selectedId":selected}))
     }
     pub fn recover_catalog(&self) -> Result<Value, String> {
