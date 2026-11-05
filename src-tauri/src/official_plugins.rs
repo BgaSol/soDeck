@@ -13,6 +13,18 @@ pub struct OfficialPlugin {
 
 pub const OFFICIAL_PLUGINS: &[OfficialPlugin] = &[
     OfficialPlugin {
+        id: "sodeck.terminal",
+        name: "终端",
+        description: "通过当前服务器连接打开真实终端，支持多个终端页和跨窗口接续。",
+        tag_prefix: "plugin-terminal-v",
+    },
+    OfficialPlugin {
+        id: "sodeck.files",
+        name: "文件",
+        description: "浏览服务器目录、编辑 UTF-8 小文件、下载文件和导出未保存的草稿。",
+        tag_prefix: "plugin-files-v",
+    },
+    OfficialPlugin {
         id: "sodeck.hello",
         name: "Hello 插件",
         description: "验证独立插件的启动、日志和重要消息。",
