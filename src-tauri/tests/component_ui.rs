@@ -36,6 +36,49 @@ fn separately_registered_plugins_keep_their_own_recommended_defaults() {
     assert_eq!(p["pinned"], true);
     assert_eq!(p["startup"], "reveal");
 }
+#[test]
+fn default_creation_type_is_validated_and_persisted_across_restart() {
+    let f = Fixture::new();
+    f.load().unwrap();
+    let w = f.open("default-create");
+    f.core.ui_snapshot("main").unwrap();
+    f.core
+        .ui_action(
+            "main",
+            &w.context,
+            json!({"op":"defaultCreate","key":"test.ui:terminal"}),
+        )
+        .unwrap();
+    for key in ["test.ui:browser", "test.ui:editor", "missing:terminal"] {
+        assert!(f
+            .core
+            .ui_action("main", &w.context, json!({"op":"defaultCreate","key":key}))
+            .is_err());
+    }
+    assert_eq!(
+        f.core.ui_snapshot("main").unwrap()["defaultCreate"],
+        "test.ui:terminal"
+    );
+    let plan = f
+        .core
+        .ui_close_prepare("main", vec![w.context.workspace_id], None)
+        .unwrap();
+    f.finish(&plan, "discard").unwrap();
+    f.core.shutdown().unwrap();
+    let reopened_root = f.root.join("reopened");
+    fs::create_dir_all(&reopened_root).unwrap();
+    fs::copy(
+        f.root.join("data/ui-layout.json"),
+        reopened_root.join("ui-layout.json"),
+    )
+    .unwrap();
+    let reopened = AppCore::open(reopened_root, "test".into()).unwrap();
+    assert_eq!(
+        reopened.ui_snapshot("main").unwrap()["defaultCreate"],
+        "test.ui:terminal"
+    );
+    reopened.shutdown().unwrap();
+}
 struct Fixture {
     root: PathBuf,
     plugin: PathBuf,
@@ -59,7 +102,7 @@ impl Fixture {
         fs::write(plugin.join("ui/index.html"), "<p>fixture</p>").unwrap();
         fs::write(plugin.join("plugin.json"),json!({"id":"test.ui","name":"UI fixture","version":"0.1.0","apiVersion":"1","target":TARGET,"entry":binary,"ui":{"apiVersion":"1","entry":"ui/index.html","views":[
             {"id":"browser","title":"Files","icon":"folder","container":"sidebar","instancePolicy":"perWorkspace","defaultPinned":true,"openOnWorkspace":"reveal"},
-            {"id":"terminal","title":"Terminal","icon":"terminal","container":"editor","instancePolicy":"multiple","openOnWorkspace":"createOne","startupOrder":20},
+            {"id":"terminal","title":"Terminal","icon":"terminal","container":"editor","instancePolicy":"multiple","createAction":"New terminal","openOnWorkspace":"createOne","startupOrder":20},
             {"id":"editor","title":"Editor","icon":"log","container":"editor","instancePolicy":"perResource"}
         ]}}).to_string()).unwrap();
         let core = AppCore::open(root.join("data"), "test".into()).unwrap();

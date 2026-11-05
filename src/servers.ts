@@ -34,6 +34,12 @@ export class ServerManager {
     try { this.catalog = await this.api.read(); this.render(); return true; }
     catch (error) { this.host.innerHTML = `<div class="error-box">无法读取服务器目录：${e(error)} ${action("reload", "重试")}</div>`; return false; }
   }
+  async createServer() {
+    if (this.frames.length) return;
+    this.catalog = await this.api.read();
+    if (this.catalog.error) throw new Error(this.catalog.error);
+    this.state.tab = "servers"; this.render(); this.openEditor(false);
+  }
   private render() { if (this.catalog) replace(this.host, page(this.catalog, this.state, this.connections)); }
   private top() { return this.frames.at(-1); }
   private frame(kind: Frame["kind"]): Frame {

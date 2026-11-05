@@ -9,7 +9,9 @@
   .workbench-panel header > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .workbench-panel header > div { display: flex; flex-shrink: 0; }
   .component-slot { flex: 1; min-height: 0; min-width: 0; }
-  .component-tab-list { display: flex; overflow-x: auto; scrollbar-width: thin; flex: 1; min-width: 0; height: 100%; }
+  .component-tab-list { display: flex; overflow-x: auto; scrollbar-width: thin; flex: 0 1 auto; min-width: 0; height: 100%; }
+  .component-create-tools { display: flex; flex-shrink: 0; }
+  .component-tabs > [data-component-action="pages"] { margin-inline-start: auto; }
   .component-tab-list { align-items: end; gap: 4px; padding-top: 6px; }
   .component-tab { height: 30px; max-width: 210px; }
   .component-tab [role="tab"] { min-width: 76px; max-width: 180px; }
@@ -23,8 +25,7 @@
   .workbench-rail button[aria-expanded="true"] { background: var(--sd-tools); color: var(--text); }
   .workspace-status { grid-column: 1 / -1; }
   .workspace-status-spacer { flex: 1; min-width: 0; }
-  .workspace-connection { min-width: 0; max-width: 65%; justify-content: start; flex-shrink: 1; }
-  .workspace-connection svg { width: 12px; height: 12px; }
+  .workspace-connection { display: inline-flex; align-items: center; gap: 6px; padding: 3px 7px; min-width: 0; max-width: 65%; flex-shrink: 1; white-space: nowrap; }
   .workspace-network { font-variant-numeric: tabular-nums; min-width: 180px; font-weight: 400; }
   @media (max-width: 760px) { .workspace-network { display: none; } .workspace-connection { max-width: 75%; } }
   .component-tab [role="tab"] { justify-content: start; font-size: 12px; }

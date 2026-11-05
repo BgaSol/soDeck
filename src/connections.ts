@@ -40,6 +40,12 @@ export class ConnectionsUi {
     // Query again after the command so a racing progress event cannot leave stale state.
     await this.call<ConnectionView[]>("connection", { command }); await this.refresh();
   }
+  async connect(serverId: string) {
+    await this.refresh();
+    const v = this.views.find(v => v.serverId === serverId);
+    if (v?.state === "connected" && v.context) await this.send({ op: "focus", context: v.context });
+    else await this.send({ op: "start", serverId });
+  }
   private apply(views: ConnectionView[]) {
     this.dismissed = new Set([...this.dismissed].filter(id => views.some(v => v.question?.id === id)));
     this.views = views; this.update(views);
@@ -52,9 +58,7 @@ export class ConnectionsUi {
   private async action(b: HTMLElement) {
     const server = b.dataset.connectServer ?? b.dataset.reconnectServer;
     if (server) {
-      const v = this.views.find(v => v.serverId === server);
-      if (v?.state === "connected" && v.context) await this.send({ op: "focus", context: v.context });
-      else await this.send({ op: "start", serverId: server });
+      await this.connect(server);
     } else if (b.dataset.connectionCancel) await this.send({ op: "cancel", attemptId: b.dataset.connectionCancel });
     else if (b.dataset.connectionPrompt) { const v = this.views.find(v => v.attemptId === b.dataset.connectionPrompt); if (v) this.prompt(v); }
     else if (b.dataset.disconnectContext) await this.send({ op: "disconnect", context: JSON.parse(b.dataset.disconnectContext) });

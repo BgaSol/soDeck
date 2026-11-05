@@ -44,6 +44,7 @@ fn dispatch(
                 .as_str()
                 .unwrap_or("夹具文件")
                 .to_string(),
+            "scratch" => "便笺".into(),
             _ => return Err("未知夹具视图".into()),
         };
         let text = if kind == "editor" {
