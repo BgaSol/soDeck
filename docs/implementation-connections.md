@@ -48,10 +48,10 @@
 
 凭据保存回归先复现旧保存密码失败直接结束的问题，再覆盖重新补填成功后替换及重连复用、连续输错不保存、取消勾选仅本次有效、拒绝主机/取消不保存、混合 SSH/SOCKS5 各自写回与整链提交、并发编辑保护、写入失败后重试，以及私钥路径/口令补填与错误口令重试。连接 DOM 测试验证默认勾选、取消勾选的真实提交、取消握手不落盘及空白密码重试。
 
-本次凭据改动在 Windows x86_64 本机通过 `npm run check`、`npm run scripts:test`、`npm run test`、`npm run ui:test`、`npm run ssh:test` 和 `npm run build -- --bundles nsis -- --locked`；另以 `npm run ssh:test -- --packaged src-tauri/target/release/sodeck.exe` 验证构建出的程序在原生窗口连接、移窗、保存重开及退出。NSIS 安装包已生成，未执行该安装器；其余四个目标的原生构建及实际包验证本轮未执行。
+本次凭据改动在 Windows x86_64 本机通过 `npm run check`、`npm run scripts:test`、`npm run test`、`npm run ui:test`、`npm run ssh:test` 和 `npm run build -- --bundles nsis -- --locked`；另以 `npm run ssh:test -- --packaged src-tauri/target/release/sodeck.exe` 验证构建出的程序在原生窗口连接、移窗、保存重开及退出。随后实际安装 v0.8.1 候选 NSIS，验证包内启动/退出、原生移窗、目录重开、真实 OpenSSH，以及终端/SFTP/TCP/SOCKS5 组合；报告保存在 `artifacts/native-v0.8.1-smoke/`、`artifacts/native-v0.8.1-ssh/` 与 `artifacts/native-v0.8.1-combination/`。v0.8.2 候选五目标原生构建和包内启动通过，但组合验收未全部通过；按用户要求停止发行并回退两级 Tab 方案，凭据改动保留。候选状态见 [v0.8.2](releases/v0.8.2.md)。
 
 `npm run ssh:test` 需要本机 OpenSSH 服务端与 ssh-keygen；脚本生成临时主机/用户密钥，用当前测试用户运行独立高端口服务，不修改系统 sshd 配置。普通 Rust 测试将此环境用例标记 ignored，独立入口实际执行；Windows x86_64 构建工作流声明安装 OpenSSH Server 系统能力，再执行源码和包内两层验证。`npm run ssh:test -- --packaged <已安装程序路径>` 还会验证实际包的 SSH、原生移窗、断开与重开退出。其他四个平台沿用五目标原生构建矩阵，但本次本机不能宣称它们已验证。
 
-主机证书、SSH agent、读取系统 SSH config、交互式 MFA、自动重连、PTY、SFTP、正式终端/文件插件、数据通道和插件细分带宽尚未实现。独立 OpenSSH 验证目前为直连；混合链自动用例使用隔离 SSH/SOCKS 测试端。没有使用用户生产服务器或凭据。
+本节最初的连接阶段未包含 PTY、SFTP、正式终端/文件插件和数据通道；这些已由后续独立插件实现，见 [真实插件实施记录](implementation-remote-plugins.md)。主机证书、SSH agent、读取系统 SSH config、交互式 MFA、自动重连和插件细分带宽仍未实现。独立 OpenSSH 验证目前为直连；混合链自动用例使用隔离 SSH/SOCKS 测试端。没有使用用户生产服务器或凭据。
 
 本次完整检查及实际包结果在 [整改记录](plan-code-reorganization.md) 第 15 节记录。

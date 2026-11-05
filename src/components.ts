@@ -11,7 +11,7 @@ interface Definition { key: string; id: string; pluginId: string; pluginName: st
 interface Preference { side: string; pinned: boolean; startup: string; order: number }
 interface View { id: string; definitionKey: string; pluginInstanceId: string; context: Context; title: string; dirty: boolean; busy: boolean; error?: string; lastUsed: number }
 interface UiWorkspace { views: View[]; preferences: Record<string, Preference>; left: string | null; right: string | null; editor: string | null }
-export interface UiProjection { definitions: Record<string, Definition>; workspaces: Record<string, UiWorkspace>; defaultCreate?: string | null; error?: string }
+export interface UiProjection { definitions: Record<string, Definition>; workspaces: Record<string, UiWorkspace>; error?: string }
 interface Surface { node: HTMLDivElement; frame: HTMLIFrameElement; view: View; token?: string; chain: Promise<unknown>; visible: boolean; initialized: boolean; focusPending?: number; flushable?: boolean; flushing?: {id: string; done: (error?: string) => void}; timeout: ReturnType<typeof setTimeout> }
 interface Shell { node: HTMLElement; surfaces: Map<string, Surface>; observer: ResizeObserver; workspace: Workspace; ui: UiWorkspace; railCapacity?: number }
 interface ClosePlan { token: string; views: string[]; dirty: { id: string; title: string; serverName: string; dirty: boolean; busy: boolean; error?: string }[] }
@@ -23,7 +23,7 @@ export class Components {
   private data: ComponentData;
   private shells = new Map<string, Shell>();
   private definitions: Record<string, Definition> = {};
-  private defaultCreate?: string | null;
+  private state?: Projection;
   private menu?: HTMLElement;
   private dialog?: HTMLDialogElement;
   private disposed = false;
@@ -51,7 +51,7 @@ export class Components {
   async sync(state: Projection) {
     const ui = await this.invoke<UiProjection>("snapshot");
     if (this.disposed) return;
-    this.definitions = ui.definitions; this.defaultCreate = ui.defaultCreate;
+    this.state = state; this.definitions = ui.definitions;
     if (ui.error && ui.error !== this.layoutError) { this.layoutError = ui.error; this.notify(ui.error); }
     const wanted = [...state.workspaces, ...(state.incoming ? [state.incoming] : [])];
     for (const [id, shell] of this.shells) if (!wanted.some(w => w.context.workspaceId === id)) { this.destroy(shell); this.shells.delete(id); }
@@ -90,9 +90,8 @@ export class Components {
       replace(node.querySelector(`.${side}-panel header`)!, view ? `<span title="${e(this.definitions[view.definitionKey]?.pluginName)}">${e(view.title)}</span><div><button class="sd-icon" data-component-action="panel-menu" data-key="${e(view.definitionKey)}" aria-label="${e(view.title)} 面板菜单">${icon("more")}</button><button class="sd-icon" data-component-action="collapse" data-key="${side}" aria-label="收起${e(view.title)}">${icon("minus")}</button></div>` : "");
     }
     const editors = w.views.filter(v => this.definitions[v.definitionKey]?.container === "editor");
-    const defaultCreate = this.creationDefault();
     const tabScroll=node.querySelector(".component-tab-list")?.scrollLeft??0;
-    replace(node.querySelector(".component-tabs")!, `<div class="component-tab-list" role="tablist" aria-label="组件页面">${editors.map(v => `<div class="component-tab sd-tab ${w.editor === v.id ? "selected" : ""}" draggable="true" data-view="${e(v.id)}"><button role="tab" aria-selected="${w.editor === v.id}" data-component-action="select" data-key="${e(v.id)}" title="${e(v.title)}">${icon(this.definitions[v.definitionKey]?.icon)}<span>${e(v.title)}${v.dirty ? " ●" : ""}</span></button><button class="sd-icon" data-component-action="close" data-key="${e(v.id)}" aria-label="关闭 ${e(v.title)}">${icon("close")}</button></div>`).join("")}</div><div class="component-create-tools"><button class="sd-icon" data-component-action="create" aria-label="新建组件页面" title="${e(defaultCreate?.createAction ?? "暂无可新建的页面，请先启用带页面的插件")}" ${defaultCreate ? "" : "disabled"}>${icon("plus")}</button><button class="sd-icon" data-component-action="create-type" aria-label="选择新建页面类型" title="选择类型并新建；下次点击加号沿用该类型" aria-haspopup="menu" ${defaultCreate ? "" : "disabled"}>${icon("chevron")}</button></div><button class="sd-icon" data-component-action="pages" aria-label="全部组件页面" title="全部已打开的组件页面">${icon("list")}</button>`);
+    replace(node.querySelector(".component-tabs")!, `<div class="component-tab-list" role="tablist" aria-label="组件页面">${editors.map(v => `<div class="component-tab sd-tab ${w.editor === v.id ? "selected" : ""}" draggable="true" data-view="${e(v.id)}"><button role="tab" aria-selected="${w.editor === v.id}" data-component-action="select" data-key="${e(v.id)}" title="${e(v.title)}">${icon(this.definitions[v.definitionKey]?.icon)}<span>${e(v.title)}${v.dirty ? " ●" : ""}</span></button><button class="sd-icon" data-component-action="close" data-key="${e(v.id)}" aria-label="关闭 ${e(v.title)}">${icon("close")}</button></div>`).join("")}</div><button class="sd-icon" data-component-action="create" aria-label="新建组件页面" title="新建组件页面">${icon("plus")}</button><button class="sd-icon" data-component-action="pages" aria-label="全部组件页面" title="全部组件页面">${icon("chevron")}</button>`);
     const list = node.querySelector(".component-tab-list")!;
     list.scrollLeft=tabScroll;
     list.addEventListener("dragstart", event => { const ev = event as DragEvent; const id = (ev.target as Element).closest<HTMLElement>("[data-view]")?.dataset.view; if (id) ev.dataTransfer?.setData("text/sodeck-view", id); });
@@ -232,11 +231,6 @@ export class Components {
     const result = await this.invoke("action", { context: shell.workspace.context, action: { requestId: crypto.randomUUID(), ...action } });
     await this.refresh(); return result;
   }
-  private creationActions() { return Object.values(this.definitions).filter(d => d.available && d.container === "editor" && d.instancePolicy !== "perResource" && d.createAction); }
-  private creationDefault() {
-    const actions = this.creationActions();
-    return actions.find(d => d.key === this.defaultCreate) ?? actions.find(d => d.id === "terminal") ?? actions[0];
-  }
   private async action(id: string, action: string, key: string, anchor: HTMLElement) {
     const shell = this.shells.get(id)!;
     if (["toggle", "locate", "collapse"].includes(action)) { await this.perform(shell, { op: action, key, side: key }); this.focus(shell, action === "collapse" ? undefined : key); return; }
@@ -255,14 +249,9 @@ export class Components {
       ]); return;
     }
     if (action === "pages") { this.showMenu(anchor, shell.ui.views.filter(v => this.definitions[v.definitionKey]?.container === "editor").map(v => ({ label: v.title, action: () => this.perform(shell, { op: "select", viewId: v.id }) })), true); return; }
-    if (action === "create-type") {
-      const selected = this.creationDefault()?.key;
-      this.showMenu(anchor, this.creationActions().map(d => ({ label: `${d.pluginName} · ${d.createAction}${d.key === selected ? "（默认）" : ""}`, action: async () => {
-        await this.perform(shell, {op: "defaultCreate", key: d.key});
-        await this.perform(shell, {op: "open", key: d.key}); this.focus(shell, d.key);
-      } }))); return;
-    }
-    if (action === "create") { const d = this.creationDefault(); if (d) { await this.perform(shell, {op: "open", key: d.key}); this.focus(shell, d.key); } }
+    const actions = Object.values(this.definitions).filter(d => d.available && d.container === "editor" && d.createAction);
+    if (actions.length === 1) { await this.perform(shell, { op: "open", key: actions[0].key }); this.focus(shell, actions[0].key); }
+    else this.showMenu(anchor, actions.map(d => ({ label: `${d.pluginName} · ${d.createAction}`, action: () => this.perform(shell, { op: "open", key: d.key }) })));
   }
   private focus(shell: Shell, key?: string) {
     const selected = shell.ui.views.find(v => v.definitionKey === key && (this.definitions[v.definitionKey]?.container === "dialog" || [shell.ui.left, shell.ui.right, shell.ui.editor].includes(v.id)));
@@ -270,9 +259,10 @@ export class Components {
     else shell.node.querySelector<HTMLElement>(`[data-key="${CSS.escape(key ?? "")}"]`)?.focus();
   }
   private focusSurface(surface: Surface) { if (!surface.token) { surface.focusPending = this.focusEpoch; return; } surface.focusPending = undefined; surface.frame.focus(); this.post(surface, { type: "focus" }); }
-  private showMenu(anchor: HTMLElement, entries: { label: string; action: () => Promise<unknown>; extra?: { label: string; action: () => Promise<unknown> } }[], searchable = false) {
+  private showMenu(anchor: HTMLElement, entries: { label: string; action: () => Promise<unknown>; extra?: { label: string; action: () => Promise<unknown> } }[], searchable = false, detail?: string) {
     this.closeMenu(); const node = document.createElement("div"); node.className = "workspace-menu component-menu sd-menu";
     node.setAttribute("role", "menu");
+    if (detail) { const text=document.createElement("p");text.textContent=detail;node.append(text); }
     if (searchable) { const input = document.createElement("input"); input.placeholder = "查找组件或页面"; input.setAttribute("aria-label", "查找组件或页面"); input.addEventListener("input", () => node.querySelectorAll<HTMLElement>(".component-menu-row").forEach(r => r.hidden = !r.textContent!.toLowerCase().includes(input.value.toLowerCase()))); node.append(input); }
     for (const item of entries) { const row = document.createElement("div"); row.className = "component-menu-row"; for (const entry of [item, item.extra].filter(Boolean) as { label: string; action: () => Promise<unknown> }[]) { const b = document.createElement("button"); b.setAttribute("role", "menuitem"); b.textContent = entry.label; b.addEventListener("click", () => { this.closeMenu(); void this.run(entry.action); }); row.append(b); } node.append(row); }
     if (!entries.length) { const text = document.createElement("p"); text.textContent = "暂无可用组件"; node.append(text); }

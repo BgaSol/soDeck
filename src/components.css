@@ -9,9 +9,7 @@
   .workbench-panel header > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .workbench-panel header > div { display: flex; flex-shrink: 0; }
   .component-slot { flex: 1; min-height: 0; min-width: 0; }
-  .component-tab-list { display: flex; overflow-x: auto; scrollbar-width: thin; flex: 0 1 auto; min-width: 0; height: 100%; }
-  .component-create-tools { display: flex; flex-shrink: 0; }
-  .component-tabs > [data-component-action="pages"] { margin-inline-start: auto; }
+  .component-tab-list { display: flex; overflow-x: auto; scrollbar-width: thin; flex: 1; min-width: 0; height: 100%; }
   .component-tab-list { align-items: end; gap: 4px; padding-top: 6px; }
   .component-tab { height: 30px; max-width: 210px; }
   .component-tab [role="tab"] { min-width: 76px; max-width: 180px; }

@@ -2,17 +2,6 @@
   .topbar { gap: 0; }
   #catalog-tab { flex: 0 0 auto; height: 35px; margin-top: 8px; padding: 0 14px; background: transparent; border: 0; border-radius: 6px 6px 0 0; font-size: 12px; }
   .server-tabs { display: flex; align-items: end; position: relative; flex: 0 1 auto; min-width: 60px; height: 44px; overflow: auto hidden; scrollbar-width: none; padding: 0 2px; }
-  .server-tabs:empty { min-width: 0; padding: 0; }
-  #new-workspace { margin-inline: 2px 6px; }
-  .server-picker.sd-menu { position: fixed; z-index: 80; width: min(360px, calc(100vw - 16px)); max-height: calc(100dvh - 62px); display: flex; flex-direction: column; }
-  .server-picker > input { width: 100%; flex-shrink: 0; }
-  .server-picker-list { min-height: 0; overflow-y: auto; margin-top: 4px; }
-  .server-picker-list button { gap: 12px; }
-  .server-picker-record { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .server-picker-record > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .server-picker-address, .server-picker-state { color: var(--muted); font-size: 11px; font-weight: 400; }
-  .server-picker-state { flex-shrink: 0; }
-  .server-picker > [data-new-server] { justify-content: start; gap: 8px; flex-shrink: 0; }
   .server-tab { display: flex; align-items: center; flex: 0 0 auto; height: 35px; max-width: 230px; min-width: 130px; margin-right: 3px; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; touch-action: none; }
   .server-tab.selected { background: var(--sd-server-selected); border-color: transparent; box-shadow: none; }
   .server-tab button { border: 0; border-radius: 3px; background: transparent; min-height: 26px; padding: 3px; }
@@ -48,8 +37,7 @@
   .workspace-empty > span { font-size: 11px; }
   .workspace-context { font-family: ui-monospace, monospace; font-size: 11px; margin-top: 22px; max-width: 100%; overflow-wrap: anywhere; }
   .workspace-endpoint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .workspace-menu { z-index: 80; width: 184px; }
-  .workspace-menu.sd-menu { position: fixed; }
+  .workspace-menu { position: fixed; z-index: 80; width: 184px; }
   .tab-insertion { position: absolute; top: 9px; bottom: 3px; width: 3px; border-radius: 2px; background: var(--accent); pointer-events: none; z-index: 2; }
   .workspace-drag-ghost { position: fixed; z-index: 100; pointer-events: none; padding: 9px 16px; max-width: 230px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); color: var(--text); box-shadow: var(--shadow); opacity: .85; }
   .workspace-drag-ghost[data-drop="invalid"] { border-style: dashed; }

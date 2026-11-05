@@ -50,22 +50,14 @@ const browser = await chromium.launch({ headless: true, ...(process.env.SODECK_B
 const page = await browser.newPage({ viewport: { width: 1100, height: 720 } });
 const errors = [], checks = [];
 page.on("pageerror", error => errors.push(String(error)));
-let suppressConnectionQuestions = false;
-await page.exposeBinding("desktopInvoke", async (_, command, args) => {
-  const value = await call(command, { ...args, window: "main" });
-  // A progress event can arrive after the start response; exercise that order deterministically.
-  if (suppressConnectionQuestions && command === 'connection') return value.map(v => ({...v, question: null}));
-  return value;
-});
+await page.exposeBinding("desktopInvoke", (_, command, args) => call(command, { ...args, window: "main" }));
 await page.addInitScript(() => {
   let id = 0;
-  const callbacks = new Map(), listeners = new Map();
-  window.emitTestEvent = (event, payload = null) => { for (const [eventId, item] of listeners) if (item.event === event) callbacks.get(item.handler)?.({event, id:eventId, payload}); };
   window.__TAURI_INTERNALS__ = {
     metadata: { currentWindow: { label: "main" } },
-    transformCallback: callback => { const token = ++id; callbacks.set(token, callback); return token; },
+    transformCallback: () => ++id,
     invoke: (command, args) => {
-      if (command === "plugin:event|listen") { const eventId = ++id; listeners.set(eventId, args); return Promise.resolve(eventId); }
+      if (command === "plugin:event|listen") return Promise.resolve(++id);
       if (command === "plugin:event|unlisten" || command === "workspace_surface") return Promise.resolve();
       return window.desktopInvoke(command, args);
     },
@@ -96,12 +88,6 @@ try {
   assert.equal(before.alignItems, "stretch", "Form labels must use component layout");
   await close();
 
-  await page.locator('#new-workspace').click();
-  const picker=page.getByRole('dialog',{name:'连接服务器',exact:true});
-  await picker.getByRole('status').filter({hasText:'暂无服务器'}).waitFor();
-  await picker.getByRole('button',{name:'新建服务器',exact:true}).click();
-  assert.equal(await field('port').inputValue(),'22');await close();
-
   const palettes = { light: "#f6f7f9", dark: "#191b22", dopamine: "#fbf1e8" };
   for (const [theme, canvas] of Object.entries(palettes)) {
     await call("set_theme", { theme }); await page.reload();
@@ -109,10 +95,6 @@ try {
     assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--canvas").trim()), canvas);
     for (const [width, height] of [[1100, 720], [720, 480]]) {
       await page.setViewportSize({ width, height });
-      await page.locator('#new-workspace').click();await picker.waitFor();
-      assert.equal(await page.locator('#new-workspace').evaluate(el=>getComputedStyle(el).borderTopWidth),'0px');
-      assert(await picker.evaluate(el=>{const r=el.getBoundingClientRect();return getComputedStyle(el).position==='fixed'&&r.left>=0&&r.right<=innerWidth&&r.bottom<=innerHeight;}));
-      await page.keyboard.press('Escape');assert.equal(await page.locator('#new-workspace').evaluate(el=>el===document.activeElement),true);
       for (const kind of ["servers", "proxies"]) {
         await page.locator(`[data-tab="${kind}"]`).click();
         await page.locator('[data-server-action="new"]').click();
@@ -149,29 +131,6 @@ try {
   }
 
   await page.setViewportSize({ width: 1100, height: 720 });
-  const cat=await call('server_catalog');
-  await call('change_catalog',{revision:cat.revision,change:{op:'saveServer',draft:{name:'生产入口',host:'127.0.0.1',port:22,username:'ops',authentication:{type:'password',secret:{action:'clear'}},route:[]}}});
-  await page.locator('#new-workspace').click();
-  await picker.getByRole('searchbox',{name:'搜索服务器'}).fill('没有这个名称');
-  await picker.getByRole('status').filter({hasText:'没有匹配'}).waitFor();await page.keyboard.press('Enter');
-  assert.equal(await page.locator('.catalog-dialog[open]').count(),0);
-  await picker.getByRole('searchbox',{name:'搜索服务器'}).fill('127.0.0.1');
-  await picker.getByRole('button',{name:/生产入口/}).waitFor();
-  await page.screenshot({path:'artifacts/production-ui/server-picker.png'});
-  await page.keyboard.press('ArrowUp');
-  assert.equal(await page.evaluate(()=>document.activeElement?.textContent),'新建服务器');
-  suppressConnectionQuestions = true;
-  await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');
-  for(let i=0;i<100;i++) {
-    if ((await call('connection',{command:{op:'snapshot'}})).some(v=>v.question?.kind==='credentials')) break;
-    if(i===99)throw new Error('Connection did not reach its credential question');
-    await new Promise(resolve=>setTimeout(resolve,10));
-  }
-  suppressConnectionQuestions = false;
-  await page.evaluate(()=>window.emitTestEvent('connections-changed'));
-  await page.getByRole('dialog',{name:'补充连接凭据'}).waitFor();assert.equal(await page.locator('.server-tab').count(),0);
-  await page.keyboard.press('Escape');await page.locator('.connection-dialog').waitFor({state:'detached'});
-  checks.push('一级加号：空目录新建服务器、三主题窄窗固定浮层、搜索无结果不误新建、键盘选择进入真实连接凭据流程且不伪造工作区');
   await page.locator("#settings-button").click();
   const terminal = page.locator('[data-official-plugin="sodeck.terminal"]');
   const install = () => terminal.locator('[data-action="install-official-plugin"]');

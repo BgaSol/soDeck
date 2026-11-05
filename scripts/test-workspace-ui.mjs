@@ -16,7 +16,6 @@ const suffix = process.platform === "win32" ? ".exe" : "";
 fs.copyFileSync(`src-tauri/target/debug/workspace-ui-fixture${suffix}`, path.join(pluginRoot, `workspace-ui-fixture${suffix}`));
 fs.cpSync("scripts/fixtures/workspace-ui/ui", path.join(pluginRoot,"ui"), {recursive:true});
 const metadata = JSON.parse(fs.readFileSync("scripts/fixtures/workspace-ui/manifest.json","utf8"));
-metadata.ui.views.push({id:'scratch',title:'便笺',icon:'log',container:'editor',instancePolicy:'multiple',createAction:'新建便笺'});
 for(let index=0;index<20;index++)metadata.ui.views.push({id:`extra${index}`,title:`扩展测试组件 ${index}`,icon:'plug',container:'sidebar',instancePolicy:'perWorkspace',defaultSide:'left'});
 const target = spawnSync("rustc",["-vV"],{encoding:"utf8"}).stdout.match(/^host: (.+)$/m)[1];
 fs.writeFileSync(path.join(pluginRoot,"plugin.json"),JSON.stringify({...metadata,target,entry:`workspace-ui-fixture${suffix}`}));
@@ -71,10 +70,6 @@ async function open(name,index) {
 try {
   const main=await makePage("main");
   assert.equal(await main.locator(".server-tab").count(),0); assert.equal(await main.locator("#catalog-draft").inputValue(),"draft retained");
-  const uninstalled=await open("无插件",0);await refresh();
-  assert.equal(await main.locator('.server-workbench:visible [data-component-action="create"]').isDisabled(),true);
-  await main.locator(`.tab-close-button[data-id="${uninstalled.context.workspaceId}"]`).click();await refresh();
-  await call('change_catalog',{revision:(await call('server_catalog')).revision,change:{op:'deleteServer',id:uninstalled.context.serverId}});
   checks.push("普通启动只显示目录，不伪造连接");
   await call("fixture_load_plugin",{directory:pluginRoot});
   const a=await open("生产 Web",1),b=await open("测试环境",2),c=await open("长名称服务器-".repeat(12),3);
@@ -209,7 +204,6 @@ try {
     if(theme==='dopamine')assert.equal(chrome.tools,'rgb(66, 198, 155)');
     assert.equal(await main.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     assert.equal(await main.locator(".window-controls").evaluate(el=>el.getBoundingClientRect().right<=innerWidth),true);
-    for(const action of ['create','create-type','pages'])assert(await main.locator(`.server-workbench:visible [data-component-action="${action}"]`).evaluate(el=>{const r=el.getBoundingClientRect(),s=el.closest('.component-tabs').getBoundingClientRect();return r.left>=s.left&&r.right<=s.right;}));
     const footer=main.locator('.server-workbench:visible .workspace-status');
     const status=footer.getByRole('status',{name:'连接状态'});
     assert.match(await status.innerText(),/已连接/);
@@ -220,10 +214,6 @@ try {
     assert.equal(await main.getByRole('menu').count(),0);
     assert.equal(await footer.locator('[data-component-action="connection-menu"], [aria-label="工作区更多操作"]').count(),0);
     assert.equal(await footer.locator('[data-reconnect-server]').isVisible(),false);
-    await main.locator('.server-workbench:visible [data-component-action="create-type"]').click();
-    const types=main.getByRole('menu');
-    assert(await types.evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&r.left>=0&&r.right<=innerWidth;}));
-    await main.keyboard.press('Escape');await types.waitFor({state:'detached'});
     if(width===1100){fs.mkdirSync('artifacts/workbench-design',{recursive:true});await main.screenshot({path:`artifacts/workbench-design/workbench-${theme}.png`});}
   }
   await main.setViewportSize({width:1100,height:720});
@@ -238,23 +228,6 @@ try {
   await main.screenshot({path:path.join(directory,"workspace.png")});
   const output=path.resolve("artifacts/workspace-ui.png");fs.mkdirSync(path.dirname(output),{recursive:true});fs.copyFileSync(path.join(directory,"workspace.png"),output);
   checks.push("长名称、多主题、720×480 和减少动态下布局可用；连接状态仅展示，点击无弹出菜单");
-  const current=main.locator('.server-workbench:visible');
-  const beforeTypes=(await componentState('main')).workspaces[bid].views.length;
-  const beforePages=await current.locator('.component-tab').count();
-  await current.getByRole('button',{name:'选择新建页面类型',exact:true}).click();
-  await main.getByRole('menuitem',{name:/新建便笺/}).click();
-  await main.waitForFunction(count=>document.querySelector('.server-workbench:not([hidden]) .component-tab-list').childElementCount===count,beforePages+1);
-  assert.equal((await componentState('main')).defaultCreate,'test.workspace-ui:scratch');
-  assert.equal((await componentState('main')).workspaces[bid].views.length,beforeTypes+1);
-  await current.getByRole('button',{name:'新建组件页面',exact:true}).click();
-  await main.waitForFunction(count=>document.querySelector('.server-workbench:not([hidden]) .component-tab-list').childElementCount===count,beforePages+2);
-  assert.equal((await componentState('main')).workspaces[bid].views.length,beforeTypes+2);
-  assert.equal(JSON.parse(fs.readFileSync(path.join(directory,'ui-layout.json'),'utf8')).defaultCreate,'test.workspace-ui:scratch');
-  await main.reload();await main.waitForFunction(()=>window.ready);
-  assert.equal(await main.locator('.server-workbench:visible [data-component-action="create"]').getAttribute('title'),'新建便笺');
-  await main.locator('.server-workbench:visible [data-component-action="pages"]').click();
-  await main.getByRole('textbox',{name:'查找组件或页面'}).waitFor();await main.keyboard.press('Escape');
-  checks.push('存在多个创建类型时加号仍直接创建默认页面，箭头选择并记住类型，重建界面恢复，全部页面入口独立');
   for (const id of [bid,cid]) { await main.locator(`.tab-close-button[data-id="${id}"]`).click(); await refresh(); }
   await main.locator("#catalog-draft").waitFor({state:"visible"}); assert.equal((await projection("main")).window.activeWorkspace,null);
   checks.push("最后一个服务器关闭后返回固定管理页");

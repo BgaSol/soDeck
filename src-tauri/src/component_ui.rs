@@ -126,8 +126,6 @@ pub struct Preference {
 struct Preferences {
     schema_version: u32,
     definitions: BTreeMap<String, Preference>,
-    #[serde(default)]
-    default_create: Option<String>,
     #[serde(default = "default_width")]
     left_width: u16,
     #[serde(default = "default_width")]
@@ -141,7 +139,6 @@ impl Default for Preferences {
         Self {
             schema_version: 1,
             definitions: BTreeMap::new(),
-            default_create: None,
             left_width: default_width(),
             right_width: default_width(),
         }

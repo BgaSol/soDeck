@@ -171,7 +171,7 @@ fn close_app(handle: tauri::AppHandle) {
 
 #[tauri::command]
 fn request_main_action(handle: tauri::AppHandle, action: String) -> Result<(), String> {
-    if !matches!(action.as_str(), "restart" | "install" | "new-server") {
+    if !matches!(action.as_str(), "restart" | "install") {
         return Err("未知应用操作".into());
     }
     let main = handle.get_webview_window("main").ok_or("主窗口不可用")?;

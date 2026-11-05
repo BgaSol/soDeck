@@ -283,22 +283,13 @@ impl DesktopWindows {
         let origin = window.inner_position().map_err(|e| e.to_string())?;
         let size = window.inner_size().map_err(|e| e.to_string())?;
         let scale = window.scale_factor().map_err(|e| e.to_string())?;
-        // A move commits before the WebView processes its change event. Check
-        // the rendered committed tabs, rather than the empty receiving strip.
-        let expected = self.core.workspace_projection(label)?.window.workspace_ids;
-        let started = Instant::now();
-        let surface = loop {
-            let reported = self.surfaces.lock().unwrap().get(label).cloned();
-            if let Some(surface) = reported
-                .filter(|s| s.width > 0. && s.tabs.iter().map(|t| &t.id).eq(expected.iter()))
-            {
-                break surface;
-            }
-            if started.elapsed() > Duration::from_secs(8) {
-                return Err("移窗后的 Tab 区域尚未完成上报".into());
-            }
-            std::thread::sleep(Duration::from_millis(20));
-        };
+        let surface = self
+            .surfaces
+            .lock()
+            .unwrap()
+            .get(label)
+            .cloned()
+            .ok_or("Tab 区域尚未上报")?;
         self.focused(label);
         let x = origin.x as f64 + (surface.x + surface.width / 2.) * scale;
         let y = origin.y as f64 + (surface.y + surface.height / 2.) * scale;

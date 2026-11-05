@@ -315,7 +315,7 @@ impl AppCore {
             .map(|w| &w.context.workspace_id)
             .collect();
         Ok(
-            json!({"definitions":ui.definitions, "workspaces":ui.workspaces.iter().filter(|(id,_)| ids.contains(id)).collect::<HashMap<_,_>>(), "defaultCreate":ui.preferences.default_create, "error":ui.error}),
+            json!({"definitions":ui.definitions, "workspaces":ui.workspaces.iter().filter(|(id,_)| ids.contains(id)).collect::<HashMap<_,_>>(), "error":ui.error}),
         )
     }
     pub fn ui_action(
@@ -341,23 +341,6 @@ impl AppCore {
         let op = action["op"].as_str().ok_or("缺少组件操作")?;
         let mut result = Value::Null;
         match op {
-            "defaultCreate" => {
-                if ui.error.is_some() {
-                    return Err("布局原文件异常，请先修复 ui-layout.json".into());
-                }
-                let d = ui.definitions.get(key).ok_or("组件未登记")?;
-                if !d.available
-                    || d.definition.container != "editor"
-                    || d.definition.instance_policy == "perResource"
-                    || d.definition.create_action.is_none()
-                {
-                    return Err("此组件不能直接新建页面".into());
-                }
-                let mut prefs = ui.preferences.clone();
-                prefs.default_create = Some(key.into());
-                storage::write_json(&ui.root.join("ui-layout.json"), &prefs)?;
-                ui.preferences = prefs;
-            }
             "open" | "toggle" | "locate" => {
                 let request = action["requestId"].as_str().ok_or("缺少 requestId")?;
                 if request.len() > 128 {
