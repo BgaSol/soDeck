@@ -84,6 +84,8 @@ jobs:
       - name: Windows installed package with independent plugins
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          SODECK_SSHD_LOG_LEVEL: ${{ matrix.name == 'windows-aarch64' && 'DEBUG3' || 'ERROR' }}
         run: |
           foreach ($plugin in @('terminal','files')) {
             $archive = Get-ChildItem "packages/$plugin" -Filter '*.zip' | Select-Object -First 1
