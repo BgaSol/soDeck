@@ -5,7 +5,7 @@
  const request=(method,params)=>sodeck.request(method,params);
  const data=(action,args={})=>request('data',{op:'files',id,action,...args});
  const event=args=>request('event',args);
- function message(text,error=false){if(status){status.textContent=text;status.classList.toggle('error',error);}}
+ function message(text,error=false){if(status){status.textContent=text;status.classList.toggle('error',error);}if(error)void event({action:'error',message:String(text).slice(0,2048)}).catch(()=>{});}
  function perform(fn){return Promise.resolve().then(fn).catch(e=>message(e.message,true));}
  const join=(a,b)=>a.replace(/\/$/,'')+'/'+b;
  const size=n=>n==null?'':Number(n)<1024?`${n} B`:`${(Number(n)/1024).toFixed(1)} KiB`;

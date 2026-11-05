@@ -25,7 +25,18 @@ function launch(persisted = false) {
     timeout: process.env.SODECK_TEST_TERMINAL_PLUGIN ? 90_000 : 30_000,
   });
   const failure = path.join(directory, "smoke-error.txt");
-  if (fs.existsSync(failure)) throw new Error(fs.readFileSync(failure, "utf8"));
+  if (fs.existsSync(failure)) {
+    const log = path.join(directory, 'logs/current.jsonl');
+    if (fs.existsSync(log)) {
+      // Isolated smoke data only. Include the plugin's real error, not just the
+      // host-side wait that noticed it, before the temporary directory is removed.
+      const failures = fs.readFileSync(log, 'utf8').split('\n').filter(line => {
+        try { const record = JSON.parse(line); return record.level === 'error' || record.level === 'warn'; } catch { return false; }
+      });
+      console.error(failures.slice(-10).join('\n'));
+    }
+    throw new Error(fs.readFileSync(failure, "utf8"));
+  }
   if (result.error) throw result.error;
   if (result.status !== 0)
     throw new Error(

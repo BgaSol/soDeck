@@ -77,6 +77,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else if method == "ui.event" {
             let d = &p["data"];
             match d["action"].as_str() {
+                Some("error") => {
+                    client.call("logging.write", json!({
+                        "level":"error", "message":d["message"].as_str().unwrap_or("文件操作失败"),
+                        "fields":{"viewId":view}
+                    }))?;
+                }
                 Some("dirty") => {
                     v.dirty = true;
                     v.revision = d["revision"].as_u64().unwrap_or(v.revision);
