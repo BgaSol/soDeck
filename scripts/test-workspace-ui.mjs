@@ -179,10 +179,15 @@ try {
   await main.waitForFunction(()=>document.querySelector('.server-workbench:not([hidden]) .left-rail [data-key="sodeck.ui-example:files"]').getAttribute('aria-expanded')==='false');
   await panel(main,"left").click();
   await main.waitForFunction(()=>document.querySelector('.server-workbench:not([hidden]) .left-rail [data-key="sodeck.ui-example:files"]').getAttribute('aria-expanded')==='true');
-  const separator=main.locator('.server-workbench:visible [data-resize="left"]'); await separator.focus(); await main.keyboard.press("ArrowRight");
-  await main.waitForFunction(()=>document.querySelector("#workspace-content").style.getPropertyValue("--left-width")==="236px");
-  const box=await separator.boundingBox(); await main.mouse.move(box.x+3,box.y+30); await main.mouse.down(); await main.mouse.move(box.x+53,box.y+30); await main.mouse.up();
-  await main.waitForFunction(()=>document.querySelector("#workspace-content").style.getPropertyValue("--left-width")==="286px");
+  const separator=main.locator('.server-workbench:visible [data-resize="left"]');
+  const initialWidth=await main.locator('.server-workbench:visible').evaluate(el=>parseFloat(el.style.getPropertyValue('--left-width')));
+  await separator.focus(); await main.keyboard.press("ArrowRight");
+  await main.waitForFunction(width=>document.querySelector("#workspace-content").style.getPropertyValue("--left-width")===`${width+16}px`,initialWidth);
+  const box=await separator.boundingBox(); await main.mouse.move(box.x+3,box.y+30); await main.mouse.down(); await main.mouse.move(box.x+53,box.y+30);
+  // Live drag updates the effective iframe width before pointerup persists the preference.
+  await main.waitForFunction(width=>document.querySelector('.server-workbench:not([hidden])').style.getPropertyValue('--effective-left-width')===`${width+66}px`,initialWidth);
+  await main.mouse.up();
+  await main.waitForFunction(width=>document.querySelector("#workspace-content").style.getPropertyValue("--left-width")===`${width+66}px`,initialWidth);
   checks.push("面板宽度支持拖动和键盘，写回核心布局");
   await main.evaluate(()=>{const d=document.createElement('dialog');d.id='blocking';document.body.append(d);d.showModal();});
   // Modal captures input: fixed catalog and server tabs cannot steal the draft's focus.

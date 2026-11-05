@@ -196,7 +196,7 @@ export class Workspaces {
     if (!handle || !w || event.button !== 0) return; event.preventDefault();
     const side = handle.dataset.resize!, key = side === "left" ? "leftWidth" : "rightWidth", x = event.clientX, initial = w.layout[key];
     let width = initial; handle.setPointerCapture(event.pointerId);
-    const move = (ev: PointerEvent) => { width = Math.max(160, Math.min(480, Math.round(initial + (ev.clientX - x) * (side === "left" ? 1 : -1)))); this.content.querySelector<HTMLElement>(`.server-workbench[data-id="${CSS.escape(w.context.workspaceId)}"]`)?.style.setProperty(`--${side}-width`, `${width}px`); };
+    const move = (ev: PointerEvent) => { width = Math.max(160, Math.min(480, Math.round(initial + (ev.clientX - x) * (side === "left" ? 1 : -1)))); this.content.querySelector<HTMLElement>(`.server-workbench[data-id="${CSS.escape(w.context.workspaceId)}"]`)?.style.setProperty(`--${side}-width`, `${width}px`); this.components.resizePanels(); };
     const end = (ev: PointerEvent) => { handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", end); handle.removeEventListener("pointercancel", end); if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId); void this.run(() => this.call("workspace_layout", { id: w.context.workspaceId, layout: { ...w.layout, [key]: ev.type === "pointercancel" ? initial : width } })); };
     handle.addEventListener("pointermove", move); handle.addEventListener("pointerup", end); handle.addEventListener("pointercancel", end);
   }

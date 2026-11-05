@@ -20,6 +20,11 @@
     --warning: #b77922;
     --error: #c24c5b;
     --shadow: 0 18px 70px #22283e21;
+    --file-tree-bg: #f8f9fb;
+    --status-bg: #f8f9fb;
+    --folder-color: #99762e;
+    --folder-fill: #f6d98a;
+    --tree-selection-border: transparent;
     color-scheme: light;
   }
   :root[data-theme="dark"] {
@@ -36,6 +41,10 @@
     --warning: #e4b36c;
     --error: #ec8e9e;
     --shadow: 0 18px 70px #0006;
+    --file-tree-bg: #1e2028;
+    --status-bg: #1e2028;
+    --folder-color: #d6b768;
+    --folder-fill: #51452c;
     color-scheme: dark;
   }
   * {
@@ -1144,6 +1153,11 @@
     --warning: #7a4a08;
     --error: #a12c38;
     --shadow: none;
+    --file-tree-bg: #fff5ed;
+    --status-bg: #d5f1e5;
+    --folder-color: #66522d;
+    --folder-fill: #ffde75;
+    --tree-selection-border: #20211f;
     color-scheme: light;
   }
   :root[data-theme="dopamine"] {

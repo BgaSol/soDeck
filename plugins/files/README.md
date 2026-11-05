@@ -4,4 +4,6 @@
 
 保存校验远端内容摘要、属性和链接目标，先写同目录临时文件，服务器支持 OpenSSH 原子替换才提交。外部修改拒绝覆盖；提交时失联提示结果未知。草稿和终端不随隐藏、断线或移窗而重建；进程崩溃后不承诺草稿恢复。
 
-`node scripts/package-plugin.mjs --plugin files` 独立打包，设置中添加产物目录后重启。需要核心 `files.v1` / `viewData.v1`；v0.5.2 不支持。`npm run files:test` 使用隔离 OpenSSH 与实际插件 UI 验证。版本在 Cargo.toml，标签 `plugin-files-v0.1.0`。
+0.2.0 提供紧凑目录树：多分支展开、路径定位、独立分页、右键下载/复制路径/刷新和键盘导航。单击选中、双击文件打开中央编辑器；移窗和重挂载恢复展开、选中和滚动元数据。保持原有 UTF-8/BOM/换行、保存冲突、草稿与下载能力。
+
+`node scripts/package-plugin.mjs --plugin files` 独立打包，设置中添加产物目录后重启。需要核心 `files.v1` / `files.directoryCursors.v1` / `viewData.v1`（核心 0.6.1 起）；旧核心会明确提示升级。`npm run files:test` 使用隔离 OpenSSH 与实际插件 UI 验证。版本在 Cargo.toml，标签 `plugin-files-v0.2.0`。

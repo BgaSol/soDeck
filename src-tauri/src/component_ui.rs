@@ -126,7 +126,7 @@ struct Preferences {
     right_width: u16,
 }
 fn default_width() -> u16 {
-    220
+    280
 }
 impl Default for Preferences {
     fn default() -> Self {

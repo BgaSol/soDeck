@@ -59,7 +59,7 @@ pub(crate) fn supervise(
     let mut failure = core.plugin_data(id).and_then(|path| queue_frame(&writer, json!({
         "jsonrpc":"2.0", "id":"initialize", "method":"initialize", "params":{
             "coreApiVersion":API_VERSION, "coreVersion":core.version(), "dataDirectory":path,
-              "capabilities":["logging.write","messages.publish","ui.v1","rpc.concurrent","terminal.v1","viewData.v1","files.v1"]
+              "capabilities":["logging.write","messages.publish","ui.v1","rpc.concurrent","terminal.v1","viewData.v1","files.v1","files.directoryCursors.v1"]
         }
     }))).err();
     let mut ready = Some(ready);

@@ -32,8 +32,8 @@ impl Default for Layout {
         Self {
             left_open: true,
             right_open: false,
-            left_width: 220,
-            right_width: 220,
+            left_width: 280,
+            right_width: 280,
         }
     }
 }

@@ -10,12 +10,13 @@ struct View {
     saved: u64,
     cursor: u64,
     scroll: u64,
+    navigation: serde_json::Value,
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let views = Mutex::new(HashMap::<String, View>::new());
     sodeck_plugin_client::run(move |client, method, p| {
         if method == "initialize" {
-            for capability in ["files.v1", "viewData.v1"] {
+            for capability in ["files.v1", "files.directoryCursors.v1", "viewData.v1"] {
                 if !p["capabilities"]
                     .as_array()
                     .is_some_and(|c| c.iter().any(|v| v == capability))
@@ -50,6 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 saved: 0,
                 cursor: 0,
                 scroll: 0,
+                navigation: serde_json::Value::Null,
             });
         }
         let mut all = views.lock().unwrap();
@@ -102,13 +104,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     v.scroll = d["scroll"].as_u64().unwrap_or(0);
                 }
                 Some("directory") => v.path = d["path"].as_str().ok_or("缺少 path")?.into(),
+                Some("navigation") => {
+                    let state = &d["state"];
+                    if state.to_string().len() > 12000
+                        || !state["expanded"].as_array().is_some_and(|a| {
+                            a.len() <= 128
+                                && a.iter()
+                                    .all(|p| p.as_str().is_some_and(|s| s.len() <= 4096))
+                        })
+                        || !state["root"].is_string()
+                        || !state["selected"].is_string()
+                    {
+                        return Err("文件导航状态无效或过大".into());
+                    }
+                    v.path = state["selected"].as_str().unwrap().into();
+                    v.navigation = state.clone();
+                }
                 _ => return Err("未知文件交互".into()),
             }
         } else if method != "ui.mount" {
             return Err("未知文件插件方法".into());
         }
         Ok(
-            json!({"data":{"fileId":v.id,"path":v.path,"cursor":v.cursor,"scroll":v.scroll,"revision":v.revision},"metadata":{"title":v.title,"dirty":v.dirty,"busy":v.busy}}),
+            json!({"data":{"fileId":v.id,"path":v.path,"cursor":v.cursor,"scroll":v.scroll,"revision":v.revision,"navigation":v.navigation},"metadata":{"title":v.title,"dirty":v.dirty,"busy":v.busy}}),
         )
     })
 }

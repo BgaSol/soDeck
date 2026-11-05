@@ -97,6 +97,16 @@ API v1 通过 capabilities 扩展真实 PTY、SFTP 与正文桥。插件检查 t
 
 所有权、缓冲、保存与下载约束见 [实施记录](implementation-remote-plugins.md)。不引入跨插件直调或插件授权流程。
 
+### 目录树扩展（核心 0.6.1）
+
+新增能力 `files.directoryCursors.v1`。旧版 `list({path})` / `list({next:true})` 保持单目录游标行为；新版文件插件先检查该能力，再使用以下可选参数：
+
+- `list({path,independent:true})` 返回 `{path,entries,more,cursor}`，每页最多 100 项。多个目录可以同时分页，`cursor` 仅在还有后续页时返回。
+- `list({independent:true,next:true,cursor})` 继续指定目录，`path` 不参与选择。刷新传 `path,independent:true,cursor` 并省略 `next`，先释放旧游标再读取首屏。
+- `closeDirectory({cursor})` 主动释放未完成的独立游标。每个文件资源最多保留 32 个独立游标，超出时释放最早打开的游标；已失效的游标需要重新刷新。读完、关闭页面、连接更换或失效时也会释放。
+
+界面挂载及 `themeChanged` 的 `tokens` 增加 `color-scheme`、`good`、`error`、`shadow`、`file-tree-bg`、`status-bg`、`folder-color`、`folder-fill`、`tree-selection-border`。旧插件可忽略新增字段，新插件提供基础色回退。文件导航状态由插件进程按视图保存，只保存有界路径、选择和滚动元数据，目录内容不进入控制 RPC。
+
 ## 本地构建 Hello
 
 ```sh

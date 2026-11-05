@@ -106,6 +106,7 @@ export class Components {
       if (!surface) {
         const host = document.createElement("div"); host.className = "component-surface"; host.dataset.viewId = v.id;
         const frame = document.createElement("iframe"); frame.title = `${v.title} · ${shell.workspace.name}`;
+        frame.allow = "clipboard-write";
         frame.src = new URL(`${d.pluginId}/${d.entry}`, convertFileSrc("", "sodeck-plugin")).href;
         host.append(frame); node.querySelector(".component-surfaces")!.append(host);
         surface = { node: host, frame, view: v, chain: Promise.resolve(), visible: false, initialized: false, timeout: setTimeout(() => this.surfaceError(surface!, "组件界面未在 8 秒内就绪"), 8000) };
@@ -120,8 +121,8 @@ export class Components {
   private position(shell: Shell) {
     const r = shell.node.getBoundingClientRect(), w = shell.ui;
     if (r.height > 0) { const capacity = Math.max(1, Math.floor((r.height - 80) / 38)); if (shell.railCapacity !== capacity) { shell.railCapacity = capacity; queueMicrotask(() => this.paint(shell)); return; } }
-    const preferredLeft = Number.parseFloat(shell.node.style.getPropertyValue("--left-width")) || 220;
-    const preferredRight = Number.parseFloat(shell.node.style.getPropertyValue("--right-width")) || 220;
+    const preferredLeft = Number.parseFloat(shell.node.style.getPropertyValue("--left-width")) || 280;
+    const preferredRight = Number.parseFloat(shell.node.style.getPropertyValue("--right-width")) || 280;
     let left = Boolean(w.left), right = Boolean(w.right);
     const room = Math.max(0, r.width - 84 - 320);
     if (left && right && preferredLeft + preferredRight > room) {
@@ -143,9 +144,10 @@ export class Components {
       if (surface.visible !== visible) { surface.visible = visible; this.post(surface, { type: "visibilityChanged", visible }); }
     }
   }
+  resizePanels() { for (const shell of this.shells.values()) this.position(shell); }
   private tokens() {
-    const css = getComputedStyle(document.documentElement), names = ["canvas", "panel", "subtle", "text", "muted", "border", "accent", "accent-bg", "hover"];
-    return Object.fromEntries(names.map(name => [name, css.getPropertyValue(`--${name}`).trim()]));
+    const css = getComputedStyle(document.documentElement), names = ["canvas", "panel", "subtle", "text", "muted", "border", "accent", "accent-bg", "hover", "good", "error", "shadow", "file-tree-bg", "status-bg", "folder-color", "folder-fill", "tree-selection-border"];
+    return { ...Object.fromEntries(names.map(name => [name, css.getPropertyValue(`--${name}`).trim()])), "color-scheme": css.colorScheme };
   }
   private post(surface: Surface, message: Record<string, unknown>) { surface.frame.contentWindow?.postMessage({ channel: "sodeck-ui-v1", surfaceId: surface.token, ...message }, new URL(surface.frame.src).origin === "null" ? "*" : new URL(surface.frame.src).origin); }
   private broadcast() { for (const s of this.shells.values()) for (const f of s.surfaces.values()) this.post(f, { type: "themeChanged", tokens: this.tokens() }); }

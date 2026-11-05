@@ -32,6 +32,8 @@ struct Resource {
 struct State {
     session: Option<Arc<Sftp>>,
     directory: Option<Directory>,
+    directories: HashMap<String, Directory>,
+    directory_order: VecDeque<String>,
     document: Option<Document>,
     upload: Option<Vec<u8>>,
 }
@@ -317,31 +319,72 @@ impl AppCore {
                     Ok(json!({"path":canonical(&f.raw,".").await?}))
                 }
                 "list" => {
+                    let independent = p["independent"] == true || p["cursor"].is_string();
+                    let mut cursor = p["cursor"].as_str().unwrap_or("").to_string();
                     if p["next"] != true {
                         let target = path(&p)?.to_string();
-                        if let Some(old) = s.directory.take() {
+                        let old = if independent {
+                            s.directories.remove(&cursor)
+                        } else {
+                            s.directory.take()
+                        };
+                        if let Some(old) = old {
                             if let Some(f) = &s.session {
-                                let _ = f.raw.close(old.handle).await;
+                                if !old.eof {
+                                    let _ = f.raw.close(old.handle).await;
+                                }
                             }
                         }
                         let f = sftp(self, &mut s, &view.context).await?;
+                        if independent {
+                            let State {
+                                directory_order,
+                                directories,
+                                ..
+                            } = &mut *s;
+                            directory_order.retain(|id| directories.contains_key(id));
+                            if s.directories.len() >= 32 {
+                                if let Some(id) = s.directory_order.pop_front() {
+                                    if let Some(old) = s.directories.remove(&id) {
+                                        if !old.eof {
+                                            let _ = f.raw.close(old.handle).await;
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         let resolved = canonical(&f.raw, &target).await?;
                         let handle = f.raw.opendir(resolved.clone()).await.map_err(err)?.handle;
-                        s.directory = Some(Directory {
+                        let directory = Directory {
                             path: resolved,
                             handle,
                             pending: VecDeque::new(),
                             eof: false,
-                        });
+                        };
+                        if independent {
+                            cursor = self.next_id();
+                            s.directories.insert(cursor.clone(), directory);
+                            s.directory_order.push_back(cursor.clone());
+                        } else {
+                            s.directory = Some(directory);
+                        }
                     }
                     let State {
-                        session, directory, ..
+                        session,
+                        directory,
+                        directories,
+                        ..
                     } = &mut *s;
                     let f = session.as_ref().ok_or("文件会话已失效，请刷新目录")?;
                     if f.context != view.context {
                         return Err("连接已更换，请刷新目录".into());
                     }
-                    let d = directory.as_mut().ok_or("目录游标已失效")?;
+                    let d = if independent {
+                        directories.get_mut(&cursor)
+                    } else {
+                        directory.as_mut()
+                    }
+                    .ok_or("目录游标已失效，请刷新此目录")?;
                     let mut entries = Vec::new();
                     while entries.len() < 100 {
                         if let Some(v) = d.pending.pop_front() {
@@ -366,9 +409,22 @@ impl AppCore {
                             Err(e) => return Err(err(e)),
                         }
                     }
-                    Ok(
-                        json!({"path":d.path,"entries":entries,"more":!d.eof||!d.pending.is_empty()}),
-                    )
+                    let more = !d.eof || !d.pending.is_empty();
+                    let result = json!({"path":d.path,"entries":entries,"more":more,"cursor":if independent && more {Some(cursor.as_str())}else{None}});
+                    if independent && !more {
+                        directories.remove(&cursor);
+                    }
+                    Ok(result)
+                }
+                "closeDirectory" => {
+                    if let Some(old) = s.directories.remove(string(&p, "cursor")?) {
+                        if !old.eof {
+                            if let Some(f) = &s.session {
+                                let _ = f.raw.close(old.handle).await;
+                            }
+                        }
+                    }
+                    Ok(json!({}))
                 }
                 "stat" => {
                     let f = sftp(self, &mut s, &view.context).await?;
@@ -413,6 +469,8 @@ impl AppCore {
                 let _ = session.raw.close_session();
             }
             state.directory = None;
+            state.directories.clear();
+            state.directory_order.clear();
         }
         result
     }
@@ -469,6 +527,8 @@ async fn sftp(core: &AppCore, s: &mut State, context: &Context) -> Result<Arc<Sf
     if s.session.as_ref().is_none_or(|f| f.context != *context) {
         s.session = None;
         s.directory = None;
+        s.directories.clear();
+        s.directory_order.clear();
         let session = core.connection_session(context)?;
         let channel = session.open_channel().await?;
         channel.request_subsystem(true, "sftp").await.map_err(err)?;
@@ -786,6 +846,8 @@ async fn download_file(
         {
             state.session = None;
             state.directory = None;
+            state.directories.clear();
+            state.directory_order.clear();
         }
     }
     result
