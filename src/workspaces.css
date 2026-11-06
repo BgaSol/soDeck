@@ -47,7 +47,9 @@
   .workspace-empty > span { font-size: 11px; }
   .workspace-context { font-family: ui-monospace, monospace; font-size: 11px; margin-top: 22px; max-width: 100%; overflow-wrap: anywhere; }
   .workspace-endpoint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .workspace-menu { position: fixed; z-index: 80; width: 184px; }
+  /* Shared menu decoration uses relative positioning; workspace menus stay in the viewport. */
+  .workspace-menu.sd-menu { position: fixed; }
+  .workspace-menu { z-index: 80; width: 184px; }
   .tab-insertion { position: absolute; top: 9px; bottom: 3px; width: 3px; border-radius: 2px; background: var(--accent); pointer-events: none; z-index: 2; }
   .workspace-drag-ghost { position: fixed; z-index: 100; pointer-events: none; padding: 9px 16px; max-width: 230px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); color: var(--text); box-shadow: var(--shadow); opacity: .85; }
   .workspace-drag-ghost[data-drop="invalid"] { border-style: dashed; }

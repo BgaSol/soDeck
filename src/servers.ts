@@ -16,16 +16,27 @@ export class ServerManager {
   private state: PageState = { tab: "servers", query: "", group: "all", selected: "" };
   private frames: Frame[] = [];
   private busy = false;
+  private selectionTimer?: ReturnType<typeof setTimeout>;
   constructor(private host: HTMLElement, private notify: (message: string) => void, private api: ServerApi = serverApi) {
+    host.addEventListener("mousedown", event => {
+      if (event.detail === 2 && (event.target as Element).closest("[data-connect-server-on-double-click]")) clearTimeout(this.selectionTimer);
+    });
     host.addEventListener("click", event => {
+      clearTimeout(this.selectionTimer);
       const b = (event.target as Element).closest<HTMLButtonElement>("[data-server-action]");
-      if (b && !b.disabled) void this.perform(b).catch(error => notify(String(error)));
+      if (!b || b.disabled) return;
+      const perform = () => { void this.perform(b).catch(error => notify(String(error))); };
+      // Narrow layouts hide the list on selection; allow the second click to reach its row first.
+      if (b.hasAttribute("data-connect-server-on-double-click") && event.detail === 1 && matchMedia("(max-width: 760px)").matches) this.selectionTimer = setTimeout(perform, 500);
+      else perform();
     });
     host.addEventListener("input", event => {
+      clearTimeout(this.selectionTimer);
       const input = event.target as HTMLInputElement;
       if (input.id === "catalog-query") { this.state.query = input.value; this.render(); }
     });
     host.addEventListener("change", event => {
+      clearTimeout(this.selectionTimer);
       const input = event.target as HTMLSelectElement;
       if (input.id === "catalog-group") { this.state.group = input.value; this.render(); }
     });

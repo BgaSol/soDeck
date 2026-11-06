@@ -306,12 +306,21 @@ export class Components {
   private showMenu(anchor: HTMLElement, entries: { label: string; action: () => Promise<unknown>; extra?: { label: string; action: () => Promise<unknown> } }[], searchable = false, detail?: string) {
     this.closeMenu(); const node = document.createElement("div"); node.className = "workspace-menu component-menu sd-menu";
     node.setAttribute("role", "menu");
+    const position = () => {
+      const r = anchor.getBoundingClientRect(), bounds = node.getBoundingClientRect();
+      const below = r.bottom + 4, above = r.top - bounds.height - 4;
+      const top = below + bounds.height <= innerHeight - 4 ? below : above;
+      Object.assign(node.style, {
+        left: `${Math.max(4, Math.min(r.left, innerWidth - bounds.width - 4))}px`,
+        top: `${Math.max(4, Math.min(top, innerHeight - bounds.height - 4))}px`,
+      });
+    };
     if (detail) { const text=document.createElement("p");text.textContent=detail;node.append(text); }
-    if (searchable) { const input = document.createElement("input"); input.placeholder = "查找组件或页面"; input.setAttribute("aria-label", "查找组件或页面"); input.addEventListener("input", () => node.querySelectorAll<HTMLElement>(".component-menu-row").forEach(r => r.hidden = !r.textContent!.toLowerCase().includes(input.value.toLowerCase()))); node.append(input); }
-    for (const item of entries) { const row = document.createElement("div"); row.className = "component-menu-row"; for (const entry of [item, item.extra].filter(Boolean) as { label: string; action: () => Promise<unknown> }[]) { const b = document.createElement("button"); b.setAttribute("role", "menuitem"); b.textContent = entry.label; b.addEventListener("click", () => { this.closeMenu(); void this.run(entry.action); }); row.append(b); } node.append(row); }
+    if (searchable) { const input = document.createElement("input"); input.placeholder = "查找组件或页面"; input.setAttribute("aria-label", "查找组件或页面"); input.addEventListener("input", () => { node.querySelectorAll<HTMLElement>(".component-menu-row").forEach(r => r.hidden = !r.textContent!.toLowerCase().includes(input.value.toLowerCase())); position(); }); node.append(input); }
+    const list = document.createElement("div"); list.className = "component-menu-list"; node.append(list);
+    for (const item of entries) { const row = document.createElement("div"); row.className = "component-menu-row"; for (const entry of [item, item.extra].filter(Boolean) as { label: string; action: () => Promise<unknown> }[]) { const b = document.createElement("button"); b.setAttribute("role", "menuitem"); b.textContent = entry.label; b.addEventListener("click", () => { this.closeMenu(); void this.run(entry.action); }); row.append(b); } list.append(row); }
     if (!entries.length) { const text = document.createElement("p"); text.textContent = "暂无可用组件"; node.append(text); }
-    const r = anchor.getBoundingClientRect(); Object.assign(node.style, { left: `${Math.max(4, Math.min(r.left, innerWidth-280))}px`, top: `${Math.min(r.bottom+4, innerHeight-260)}px` });
-    node.addEventListener("keydown", event => { if (event.key === "Escape") { this.closeMenu(); anchor.focus(); } }); document.body.append(node); const bounds=node.getBoundingClientRect();node.style.top=`${Math.max(4, Math.min(r.bottom+4, innerHeight-bounds.height-4))}px`; this.menu = node; node.querySelector<HTMLElement>("input,button")?.focus();
+    node.addEventListener("keydown", event => { if (event.key === "Escape") { this.closeMenu(); anchor.focus(); } }); document.body.append(node); position(); this.menu = node; node.querySelector<HTMLElement>("input,button")?.focus({ preventScroll: true });
   }
   private closeMenu() { this.menu?.remove(); this.menu = undefined; }
   async flush() {

@@ -36,10 +36,12 @@
   .workbench-rail { min-height: 0; overflow-y: auto; scrollbar-width: none; gap: 4px; }
   .workbench-rail .component-more { margin-top: auto; flex-shrink: 0; }
   .workbench-rail > button { flex-shrink: 0; }
-  .component-menu { width: 272px; max-height: min(420px, 70vh); overflow: auto; }
-  .component-menu input { width: 100%; margin-bottom: 5px; }
+  .component-menu { display: flex; flex-direction: column; width: min(272px, calc(100vw - 8px)); max-height: min(420px, 70dvh); }
+  .component-menu input { width: 100%; margin-bottom: 5px; flex-shrink: 0; }
+  /* Keep the outer menu's decorative border out of the scroll range. */
+  .component-menu-list { min-height: 0; overflow: hidden auto; }
   .component-menu-row { display: flex; min-width: 0; }
-  .component-menu-row > button:first-child { flex: 1; overflow: hidden; }
+  .component-menu-row > button:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .component-menu-row > button + button { width: auto; flex-shrink: 0; color: var(--muted); }
   .component-close-dialog { width: min(440px, calc(100% - 32px)); padding: 24px; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
   .component-close-dialog::backdrop { background: #0006; }

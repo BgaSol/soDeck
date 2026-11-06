@@ -7,6 +7,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { createServer } from "vite";
 import { chromium } from "playwright";
+import { assertMenuLayout } from "./menu-layout.mjs";
 
 const build = spawnSync("cargo", ["build", "--manifest-path", "src-tauri/Cargo.toml", "--features", "test-fixtures", "--bin", "catalog-fixture", "--bin", "workspace-ui-fixture", "--locked"], { stdio: "inherit" });
 if (build.status !== 0) throw new Error("Catalog test bridge build failed");
@@ -90,6 +91,33 @@ try {
   assert((await main.locator(".server-workbench:visible .workspace-endpoint").innerText()).includes("1.invalid"));
   checks.push("固定上下文、服务器切换与侧栏状态各自保持");
   const board=main.locator(`.server-workbench[data-id="${aid}"]`);
+  fs.mkdirSync('artifacts/menu-layout',{recursive:true});
+  for(const theme of ['light','dark','dopamine'])for(const [width,height]of [[1100,720],[720,480]]){
+    await main.setViewportSize({width,height});
+    await main.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+    const tabMenu=main.locator(`.tab-menu-button[data-id="${aid}"]`);
+    const tabBounds=await main.locator(`.server-tab[data-id="${aid}"]`).boundingBox();
+    await tabMenu.click();await assertMenuLayout(main,tabBounds);await main.keyboard.press('Escape');
+    const panelMenu=board.getByRole('button',{name:'网络转发 面板菜单',exact:true});
+    const panelBounds=await panelMenu.boundingBox();
+    await panelMenu.click();await assertMenuLayout(main,panelBounds);
+    if(theme==='dopamine'&&width===1100)await main.screenshot({path:'artifacts/menu-layout/panel-menu.png'});
+    await main.keyboard.press('Escape');assert(await panelMenu.evaluate(el=>el===document.activeElement));
+    const more=board.getByRole('button',{name:'左侧更多组件',exact:true});
+    const moreBounds=await more.boundingBox();
+    await more.click();const popup=await assertMenuLayout(main,moreBounds,{long:true});
+    await popup.getByRole('textbox').fill('扩展测试组件 19');
+    assert.equal(await popup.locator('.component-menu-row:visible').count(),1);
+    assert.equal(await popup.locator('.component-menu-list').evaluate(el=>el.scrollHeight>el.clientHeight),false);
+    if(theme==='dopamine'&&width===1100)await main.screenshot({path:'artifacts/menu-layout/filtered-menu.png'});
+    await main.keyboard.press('Escape');assert(await more.evaluate(el=>el===document.activeElement));
+    const rightMore=board.getByRole('button',{name:'右侧更多组件',exact:true});
+    const rightBounds=await rightMore.boundingBox();
+    await rightMore.click();await assertMenuLayout(main,rightBounds);
+    await board.locator('.workspace-status').click();assert.equal(await main.getByRole('menu').count(),0);
+  }
+  await main.setViewportSize({width:1100,height:720});
+  checks.push('三主题及窄窗口：页签、面板和两侧更多菜单紧邻入口且不遮挡入口；短菜单无滚动条，长列表仅纵向滚动，搜索后消除滚动，Esc 返回焦点及外部关闭');
   const viewFrame=(page,wid,vid)=>page.frameLocator(`.server-workbench[data-id="${wid}"] .component-surface[data-view-id="${vid}"] iframe`);
   const flush=page=>page.evaluate(()=>window.manager.flush());
   let aw=(await componentState("main")).workspaces[aid];
@@ -277,6 +305,7 @@ try {
   checks.push("最后一个服务器关闭后返回固定管理页");
   assert.deepEqual(errors,[]); console.log(JSON.stringify({passed:checks.length,checks,pageErrors:errors,screenshot:output},null,2));
 } catch(error) {
+  fs.mkdirSync('artifacts/menu-layout',{recursive:true});await pages[0]?.screenshot({path:'artifacts/menu-layout/failure.png'});
   for(const page of pages) console.error(await page.evaluate(()=>({focus:document.activeElement?.tagName,notice:document.querySelector('#notice')?.textContent,content:document.querySelector('#workspace-content')?.style.cssText,board:document.querySelector('.server-workbench:not([hidden])')?.style.cssText})));
   throw error;
 } finally {

@@ -34,10 +34,18 @@ await page.route(url, route => route.fulfill({ contentType: "text/html", body: `
 async function settle(predicate) { for (let i = 0; i < 100; i++) { const v = await call("connection", { command: { op: "snapshot" } }); if (predicate(v)) { await page.evaluate(() => window.connections.refresh()); return v; } await new Promise(resolve => setTimeout(resolve, 25)); } throw new Error("Connection state did not settle"); }
 try {
   const saved = await call("change_catalog", { revision: 0, change: { op: "saveServer", draft: { name: "隔离测试服务器", host: "127.0.0.1", port: server.address().port, username: "ops", authentication: { type: "password", secret: { action: "clear" } }, route: [] } } });
+  await call("change_catalog", { revision: saved.catalog.revision, change: { op: "saveProxy", draft: { name: "隔离代理资料", host: "127.0.0.1", port: 1080, authentication: { type: "none", secret: { action: "clear" } } } } });
   await page.goto(url); await page.waitForFunction(() => window.testReady === true); await page.locator(".catalog-row").click();
+  assert.equal(starts.length, 0, "Single click only shows server details");
+  await page.locator('[data-tab="proxies"]').click();
+  await page.locator(".catalog-row strong").dblclick({ delay: 100 });
+  assert.equal(await page.locator("[data-connect-server-on-double-click]").count(), 0);
+  assert.equal(starts.length, 0, "Double clicking a proxy only shows its details");
+  await page.goto(url); await page.waitForFunction(() => window.testReady === true);
   const picker=page.getByRole('dialog',{name:'选择服务器',exact:true}),progress=page.getByRole('status',{name:'连接进度',exact:true});
   const choose=async()=>{await page.getByRole('button',{name:'选择服务器',exact:true}).click();await picker.getByRole('button',{name:/隔离测试服务器/}).click();await picker.waitFor({state:'hidden'});};
-  await choose(); await settle(v => v[0]?.question?.kind === "credentials");
+  await page.locator(".catalog-row strong").dblclick({ delay: 100 });
+  await settle(v => v[0]?.question?.kind === "credentials");
   const dialog = page.getByRole("dialog", { name: "补充连接凭据" }); await dialog.waitFor({ state: "visible" });
   assert.equal(await dialog.locator('[name="remember"]').isChecked(), true);
   fs.mkdirSync("artifacts/connection-ui", { recursive: true }); await page.screenshot({ path: "artifacts/connection-ui/credentials.png" });
@@ -50,6 +58,10 @@ try {
   assert(await picker.getByRole('button',{name:/隔离测试服务器/}).isDisabled());
   await page.evaluate(id=>Promise.all([window.connections.connect(id),window.connections.connect(id)]),saved.selectedId);
   assert.equal(starts.length,1);await page.keyboard.press('Escape');
+  await page.locator(".catalog-row small").first().dblclick({ delay: 100 });
+  await page.evaluate(() => window.connections.refresh());
+  assert.equal(starts.length, 1, "Double clicking a connecting server reuses its attempt");
+  assert.equal(sockets.size, 1);
   await page.screenshot({ path: "artifacts/connection-ui/progress.png" });
   assert(!JSON.stringify(await call("connection", { command: { op: "snapshot" } })).includes("ui-ephemeral-secret"));
   await progress.locator("[data-connection-cancel]").click(); await settle(v => v[0]?.state === "cancelled");
@@ -71,8 +83,21 @@ try {
   assert(!fs.readFileSync(path.join(directory, "servers.json"), "utf8").includes("ui-unsaved-secret"));
   await choose(); await settle(v => v[0]?.question?.kind === "credentials"); await dialog.waitFor({ state: "visible" });
   await page.keyboard.press("Escape"); await settle(v => v[0]?.state === "cancelled");
+  await dialog.waitFor({ state: "hidden" });
+  const previousStarts = starts.length;
+  await page.setViewportSize({ width: 720, height: 480 });
+  await page.goto(url); await page.waitForFunction(() => window.testReady === true);
+  await page.locator(".catalog-row").click();
+  await page.locator(".connection-card").waitFor({ state: "visible" });
+  assert.equal(starts.length, previousStarts, "Narrow-layout single click still only shows details");
+  await page.locator('[data-server-action="back"]').click();
+  await page.locator(".catalog-row strong").dblclick({ delay: 300 });
+  await settle(v => v[0]?.question?.kind === "credentials");
+  await dialog.waitFor({ state: "visible" });
+  assert.equal(starts.length, previousStarts + 1, "An unselected row connects on the first double click at 720px");
+  await page.keyboard.press("Escape"); await settle(v => v[0]?.state === "cancelled");
   await dialog.waitFor({ state: "hidden" }); assert.deepEqual(errors, []);
-  console.log("Connection UI: server picker and catalog share credentials, busy deduplication, progress, cancellation, actual failure, retry, Escape and redaction; no empty workspace or page errors.");
+  console.log("Connection UI: catalog single/double click at 1100px and 720px, proxy exclusion, picker, credentials, busy deduplication, progress, cancellation, actual failure, retry, Escape and redaction; no empty workspace or page errors.");
 } finally {
   await browser.close(); await vite.close();
   for (const socket of sockets) socket.destroy(); await new Promise(resolve => server.close(resolve));

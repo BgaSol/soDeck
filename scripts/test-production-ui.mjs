@@ -9,13 +9,27 @@ import http from "node:http";
 import { createHash } from "node:crypto";
 import { preview } from "vite";
 import { chromium } from "playwright";
+import { assertMenuLayout } from "./menu-layout.mjs";
 
-const build = spawnSync("cargo", ["build", "--manifest-path", "src-tauri/Cargo.toml", "--features", "test-fixtures", "--bin", "catalog-fixture", "--bin", "plugin-fixture", "--locked"], { stdio: "inherit" });
+const build = spawnSync("cargo", ["build", "--manifest-path", "src-tauri/Cargo.toml", "--features", "test-fixtures", "--bin", "catalog-fixture", "--bin", "plugin-fixture", "--bin", "workspace-ui-fixture", "--locked"], { stdio: "inherit" });
 if (build.status !== 0) throw new Error("Catalog test bridge build failed");
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-production-ui-"));
 const suffix = process.platform === "win32" ? ".exe" : "";
 const target = spawnSync("rustc", ["-vV"], { encoding: "utf8" }).stdout.match(/^host: (.+)$/m)[1];
+// Run the title-bar driver injected by the locked Tauri crate, rather than copying it.
+const metadata = spawnSync("cargo", ["metadata", "--manifest-path", "src-tauri/Cargo.toml", "--format-version", "1", "--locked", "--filter-platform", target], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+assert.equal(metadata.status, 0, metadata.error?.message || metadata.stderr);
+const tauri = JSON.parse(metadata.stdout).packages.find(item => item.name === "tauri");
+const nativeDragScript = fs.readFileSync(path.join(path.dirname(tauri.manifest_path), "src/window/scripts/drag.js"), "utf8")
+  .replace("__TEMPLATE_os_name__", JSON.stringify(process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux"));
 const fixture = path.join(directory, "fixture"); fs.mkdirSync(fixture);
+const uiFixture=path.join(directory,'workspace-ui');fs.mkdirSync(uiFixture);
+fs.copyFileSync(`src-tauri/target/debug/workspace-ui-fixture${suffix}`,path.join(uiFixture,`workspace-ui-fixture${suffix}`));
+if(process.platform!=='win32')fs.chmodSync(path.join(uiFixture,`workspace-ui-fixture${suffix}`),0o755);
+fs.cpSync('scripts/fixtures/workspace-ui/ui',path.join(uiFixture,'ui'),{recursive:true});
+const uiMetadata=JSON.parse(fs.readFileSync('scripts/fixtures/workspace-ui/manifest.json','utf8'));
+for(let index=0;index<20;index++)uiMetadata.ui.views.push({id:`extra${index}`,title:`扩展测试组件 ${index}`,icon:'plug',container:'sidebar',instancePolicy:'perWorkspace',defaultSide:'left'});
+fs.writeFileSync(path.join(uiFixture,'plugin.json'),JSON.stringify({...uiMetadata,target,entry:`workspace-ui-fixture${suffix}`}));
 fs.copyFileSync(`src-tauri/target/debug/plugin-fixture${suffix}`, path.join(fixture, `plugin-fixture${suffix}`));
 if (process.platform !== "win32") fs.chmodSync(path.join(fixture, `plugin-fixture${suffix}`), 0o755);
 fs.writeFileSync(path.join(fixture, "plugin.json"), JSON.stringify({ id: "sodeck.terminal", name: "Loopback terminal fixture", version: "0.1.1", apiVersion: "1", target, entry: `plugin-fixture${suffix}` }));
@@ -48,27 +62,79 @@ const call = (command, args = {}) => new Promise((resolve, reject) => {
 const server = await preview({ preview: { host: "127.0.0.1", port: 0 } });
 const browser = await chromium.launch({ headless: true, ...(process.env.SODECK_BROWSER_CHANNEL ? { channel: process.env.SODECK_BROWSER_CHANNEL } : {}) });
 const page = await browser.newPage({ viewport: { width: 1100, height: 720 } });
+await page.route('**/__plugin__/**',route=>{
+  const relative=decodeURIComponent(new URL(route.request().url()).pathname).split('/').slice(3).join('/');
+  const file=path.join(uiFixture,relative),types={'.html':'text/html','.js':'text/javascript','.css':'text/css'};
+  return route.fulfill({contentType:types[path.extname(file)]||'application/octet-stream',body:fs.readFileSync(file)});
+});
 const errors = [], checks = [];
-let failCatalog = false;
+let failCatalog = false, testWindow = "main";
 page.on("pageerror", error => errors.push(String(error)));
 await page.exposeBinding("desktopInvoke", (_, command, args) => {
   if (command === 'server_catalog' && failCatalog) throw new Error('隔离测试：目录暂时不可读');
-  return call(command, { ...args, window: "main" });
+  return call(command, { ...args, window: testWindow });
 });
 await page.addInitScript(() => {
   let id = 0;
   const callbacks = new Map(), listeners = new Map();
+  window.nativeWindowCalls = [];
+  window.nativeMaximized = false;
   window.emitTestEvent = (event, payload = null) => { for (const [eventId, item] of listeners) if (item.event === event) callbacks.get(item.handler)?.({event, id:eventId, payload}); };
   window.__TAURI_INTERNALS__ = {
-    metadata: { currentWindow: { label: "main" } },
+    metadata: { currentWindow: { label: sessionStorage.getItem("test-window") || "main" } },
+    convertFileSrc: path => new URL('/__plugin__/'+path,location.href).href,
     transformCallback: callback => { const token = ++id; callbacks.set(token, callback); return token; },
     invoke: (command, args) => {
       if (command === "plugin:event|listen") { const eventId = ++id; listeners.set(eventId, args); return Promise.resolve(eventId); }
       if (command === "plugin:event|unlisten" || command === "workspace_surface") return Promise.resolve();
+      if (command.startsWith("plugin:window|")) {
+        const action = command.split("|")[1];
+        if (action === "is_maximized") return Promise.resolve(window.nativeMaximized);
+        window.nativeWindowCalls.push(action);
+        if (action === "toggle_maximize" || action === "internal_toggle_maximize") window.nativeMaximized = !window.nativeMaximized;
+        return Promise.resolve();
+      }
       return window.desktopInvoke(command, args);
     },
   };
 });
+await page.addInitScript({ content: nativeDragScript });
+async function checkTitlebar() {
+  const result = await page.evaluate(() => {
+    // Native dragging can consume click/dblclick. The mouse-down sequence must suffice.
+    const press = (node, detail, button = 0) => {
+      for (const type of ["mousedown", "mouseup"]) node.dispatchEvent(new MouseEvent(type, { bubbles: true, composed: true, button, detail, clientX: 20, clientY: 20 }));
+    };
+    const check = selector => {
+      const node = document.querySelector(selector);
+      if (!node) throw new Error(`Missing title-bar target: ${selector}`);
+      window.nativeWindowCalls.length = 0;
+      press(node, 1); press(node, 2);
+      const maximized = window.nativeMaximized;
+      press(node, 1); press(node, 2);
+      return { selector, maximized, restored: !window.nativeMaximized, calls: [...window.nativeWindowCalls] };
+    };
+    const blank = ["#drag-region", ".topbar", "#server-tabs", ".global-tools"].map(check);
+    const interactive = ["#catalog-tab span", "#new-workspace svg", "#status-button .health-dot", "#messages-button svg", "#settings-button svg", "#window-controls button svg", "#server-workspace"];
+    if (document.querySelector(".server-tab")) interactive.push(".server-tab", ".server-tab .tab-name", ".tab-menu-button svg", ".tab-close-button svg");
+    const excluded = interactive.map(check);
+    window.nativeWindowCalls.length = 0;
+    press(document.querySelector("#drag-region"), 1, 2);
+    press(document.querySelector("#drag-region"), 2, 2);
+    return { blank, excluded, rightClick: [...window.nativeWindowCalls] };
+  });
+  for (const item of result.blank) {
+    assert.equal(item.maximized, true, `${testWindow} ${item.selector} must maximize without a DOM dblclick`);
+    assert.equal(item.restored, true, `${testWindow} ${item.selector} must restore`);
+    assert.deepEqual(item.calls, ["start_dragging", "internal_toggle_maximize", "start_dragging", "internal_toggle_maximize"], `${testWindow} ${item.selector}: exactly one toggle per double click`);
+  }
+  for (const item of result.excluded) assert.deepEqual(item.calls, [], `${testWindow} ${item.selector} must keep its own interaction`);
+  assert.deepEqual(result.rightClick, []);
+  await page.locator("#drag-region").dblclick();
+  assert.equal(await page.evaluate(() => window.nativeMaximized), true, "A real DOM double click must toggle only once");
+  await page.locator("#drag-region").dblclick();
+  assert.equal(await page.evaluate(() => window.nativeMaximized), false);
+}
 const dialog = () => page.locator("dialog[open]").last();
 const field = name => dialog().locator(`[data-field="${name}"]`);
 const close = async () => {
@@ -81,6 +147,8 @@ try {
   await call("set_theme", { theme: "dopamine" });
   await page.goto(server.resolvedUrls.local[0]);
   await page.waitForFunction(() => document.documentElement.dataset.theme === "dopamine");
+  await checkTitlebar();
+  checks.push("Main title bar: blank areas maximize/restore without DOM dblclick; buttons, nested icons, content and right clicks stay independent");
   await page.locator('[data-server-action="new"]').click();
   const before = await page.evaluate(() => {
     const root = getComputedStyle(document.documentElement), field = getComputedStyle(document.querySelector(".catalog-field"));
@@ -203,6 +271,44 @@ try {
   assert.equal((await call("snapshot")).plugins.length, 1);
   await page.screenshot({ path: "artifacts/production-ui/official-plugins.png", animations: "disabled" });
   checks.push("Official plugin first install: no background downloads, unpublished release and corrupt archive retries, native package selection, pending restart and persisted record after reload");
+  await call('fixture_load_plugin',{directory:uiFixture});
+  const workspace=await call('workspace_fixture_open',{serverId:serverIds[0],connectionId:'bundled-menu-test',endpoint:'root@192.0.2.10:22'});
+  await page.reload();
+  const board=page.locator(`.server-workbench[data-id="${workspace.context.workspaceId}"]`);
+  await board.waitFor();
+  await checkTitlebar();
+  for(const theme of ['light','dark','dopamine'])for(const [width,height]of [[1100,720],[720,480]]){
+    await page.setViewportSize({width,height});
+    await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+    const tabMenu=page.locator(`.tab-menu-button[data-id="${workspace.context.workspaceId}"]`);
+    const tabBounds=await page.locator(`.server-tab[data-id="${workspace.context.workspaceId}"]`).boundingBox();
+    await tabMenu.click();await assertMenuLayout(page,tabBounds);await page.keyboard.press('Escape');
+    const panelMenu=board.getByRole('button',{name:'文件 面板菜单',exact:true});
+    const panelBounds=await panelMenu.boundingBox();
+    await panelMenu.click();await assertMenuLayout(page,panelBounds);
+    if(theme==='dopamine'&&width===1100)await page.screenshot({path:'artifacts/production-ui/panel-menu.png'});
+    await page.keyboard.press('Escape');
+    const more=board.getByRole('button',{name:'左侧更多组件',exact:true});
+    const moreBounds=await more.boundingBox();
+    await more.click();const popup=await assertMenuLayout(page,moreBounds,{long:true});
+    if(theme==='dopamine'&&width===1100)await page.screenshot({path:'artifacts/production-ui/long-component-menu.png'});
+    const search=popup.getByRole('textbox'),searchTop=await search.evaluate(el=>el.getBoundingClientRect().top);
+    await popup.locator('.component-menu-list').hover();await page.mouse.wheel(0,10000);
+    await page.waitForFunction(()=>{const list=document.querySelector('.component-menu-list');return list.scrollTop>0&&list.scrollTop+list.clientHeight>=list.scrollHeight-1;});
+    assert.equal(await search.evaluate(el=>el.getBoundingClientRect().top),searchTop);
+    await popup.getByRole('textbox').fill('扩展测试组件 19');
+    await assertMenuLayout(page,moreBounds);
+    assert.equal(await popup.locator('.component-menu-row:visible').count(),1);
+    await page.keyboard.press('Escape');assert(await more.evaluate(el=>el===document.activeElement));
+  }
+  checks.push('Bundled workspace menus: fixed placement, no short-menu scrollbars, vertical-only long lists, search and Escape across all three themes at 1100×720 and 720×480');
+  await call("workspace_move", { window: "main", id: workspace.context.workspaceId, target: "workspace-titlebar", index: 0 });
+  testWindow = "workspace-titlebar";
+  await page.evaluate(() => sessionStorage.setItem("test-window", "workspace-titlebar"));
+  await page.reload();
+  await board.waitFor();
+  await checkTitlebar();
+  checks.push("Pop-out title bar: same maximize/restore behavior; server tabs and their controls retain their own interactions");
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: checks.length, checks, pageErrors: errors }, null, 2));
 } catch (error) {
