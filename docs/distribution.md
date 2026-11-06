@@ -91,11 +91,19 @@ npm run plugin:build -- --plugin network-proxy --out-dir artifacts/another-build
 
 真实业务插件使用独立入口 `npm run plugin:build -- --plugin terminal` 和 `--plugin files`，版本分别来自自己的 Cargo.toml，标签为 `plugin-terminal-v<版本>` / `plugin-files-v<版本>`。终端打包在插件目录内执行锁定的 npm 安装和静态资源构建；核心打包不调用这些步骤。普通构建不创建发行版本，官方列表登记来源后仍需发布对应的独立 Release 才能下载。
 
-`Verify native remote plugins` 手动输入核心、终端、文件三个成功打包运行的 ID，在五个原生 runner 下载实际包。它安装/解包核心、加载两个独立插件、连接隔离 OpenSSH，验证实际 WebView/Channel/xterm 的 PTY 往返、文件读取/保存/下载、窗口移动以及重开退出。它独立于核心打包，不阻塞无插件核心的构建与启动。源码侧 `npm run terminal:test` / `npm run files:test` 另验证多 Tab、草稿、保存关闭、冲突、大小边界、取消和重试。
+`Verify native remote plugins` 常用入口填写 `core_version`、`terminal_version`、`files_version`，可选 `network_version`，版本使用 `major.minor.patch`。各组件分别定位来源，允许来自不同提交；已有正式版本读取精确标签的正式 Release，未发布版本在标签源码约束下选择唯一完整的打包 Artifact。多个候选会列出 run ID 并失败，不取全仓库 latest 或最近一次构建代替选择。已有正式 Release 缺包、清单错误或不可访问时同样失败，不改取实验包。
 
-网络插件另用 `npm run plugin:build -- --plugin network-proxy` 打包，标签 `plugin-network-proxy-v<版本>`；没有发布独立 Release 前，官方来源无法下载安装。原生远程验收可额外填写 `network_run_id`，验证实际包的侧栏、编辑弹窗、TCP/SOCKS5 正文、移窗和端口释放。`npm run network:test` 提供源码侧真实插件与混合跳板、OpenSSH 和页面验证。当前完成范围与尚未运行的平台见 [网络实施记录](implementation-network.md)。
+测试明确候选仍可填写 `core_run_id`、`terminal_run_id`、`files_run_id`、`network_run_id`；保留原来的只填 run ID 方式，版本同时填写必须与该运行匹配。每个候选须来自本仓库对应工作流、已结束、五个平台 package job 成功且 Artifact 有效；只因发布汇总失败的运行仍可使用已验证包。网络版本和 run ID 都为空时不加载网络，结果明确记为未参与。
+
+工作流先解析并保存 `native-inputs.json`，再在五个原生 runner 下载固定 Artifact/附件 ID，核对来源、清单、大小/摘要和架构后安装或解包。它加载独立插件、连接隔离 OpenSSH，验证实际 WebView/Channel/xterm 的 PTY 往返、文件读取/保存/下载、网络正文、窗口移动以及重开退出，实际核心报告的版本/平台也须匹配。它独立于核心打包，不阻塞无插件核心的构建与启动。源码侧 `npm run terminal:test` / `npm run files:test` 另验证多 Tab、草稿、保存关闭、冲突、大小边界、取消和重试。
+
+失败平台直接重跑使用已固定的输入；重跑整个同一 run 也复用输入快照。新建验收运行要重放原来的包，可填写 `verification_run_id`，其余版本和 run 输入留空；引用的验收 run 必须已结束并保有唯一有效输入快照，业务失败的 run 也可重放其固定包。输入快照、平台结果及汇总保留 30 天，结果含各组件版本、源码、来源、包摘要与平台失败阶段。源包过期、删除或摘要变化时明确失败，不自动换包；原始构建 Artifact 和 Release 附件不会被验收修改。
+
+网络插件另用 `npm run plugin:build -- --plugin network-proxy` 打包，标签 `plugin-network-proxy-v<版本>`；没有发布独立 Release 前，官方来源无法下载安装。原生远程验收可额外填写 `network_version` 或 `network_run_id`，验证实际包的侧栏、编辑弹窗、TCP/SOCKS5 正文、移窗和端口释放。`npm run network:test` 提供源码侧真实插件与混合跳板、OpenSSH 和页面验证。当前完成范围与尚未运行的平台见 [网络实施记录](implementation-network.md)。
 
 Windows ARM64 runner 的 OpenSSH 系统可选组件安装曾持续等待十余分钟；该测试在缺少 sshd 时使用微软 Win32-OpenSSH 的固定版本 ARM64 便携包并校验 SHA-256，仅启动隔离回环服务，不安装系统服务，也不随产品分发。其他平台使用 runner 系统包提供的 OpenSSH。
+
+原生远程验收的 Linux 运行依赖安装前使用 `configure-ubuntu-mirror.mjs` 切换到官方 `archive.ubuntu.com`，兼容传统 `.list`、Deb822 `.sources` 和 hosted runner 的 `mirror+file` 入口；ARM64 ports 和第三方源保持原地址。Check 复用该入口，依赖列表、有限下载重试和任务超时继续生效。
 
 服务器管理验收：`npx playwright install chromium` 后运行 `npm run ui:test`，以无头浏览器调用真实目录核心，测试数据保存在临时目录，不连接服务器。核心打包工作流在 Windows x86_64 执行此检查；所有五目标的 `scripts/smoke.mjs` 都会在实际包中保存服务器、分组、代理及混合路径，再重开验证持久资料与临时秘密生命周期。
 

@@ -19,7 +19,7 @@ npm run dev
 | --- | --- |
 | `npm run check` | TypeScript 类型与核心 Rust 格式 |
 | `npm run plugin:check` | 三个官方插件的 Rust 格式 |
-| `npm run scripts:test` | 构建、打包和更新脚本测试 |
+| `npm run scripts:test` | 构建、打包、更新、原生验收和 CI 软件源配置回归 |
 | `npm run test` | 核心 Rust 测试，包含仅测试使用的宿主夹具 |
 | `npm run web:build` | TypeScript 检查与正式前端构建 |
 | `npm run interactions:test` | 浏览器真实按压刷新、文件菜单可用状态、子菜单与溢出回归；需要 Playwright Chromium |
@@ -78,7 +78,7 @@ npm run plugin:build -- --plugin network-proxy
 | [Check](../.github/workflows/check.yml) | 类型、格式、脚本、核心常规 Rust 与现有插件测试、前端构建和相关界面回归；同一分支/PR 只保留最新运行 |
 | [Package SoDeck](../.github/workflows/build.yml) | 五目标原生核心构建、打包、包内验证及更新签名 |
 | [Package plugin](../.github/workflows/plugin.yml) | 按插件目录独立打包，生成插件更新清单 |
-| [Verify native remote plugins](../.github/workflows/remote-integration.yml) | 验证实际核心和业务插件包的原生界面与远程业务 |
+| [Verify native remote plugins](../.github/workflows/remote-integration.yml) | 按组件版本或明确 run 定位实际包，校验来源后执行五平台原生界面/远程业务验收，支持输入快照重放 |
 
 五个系统与架构组合分别使用原生构建和实际包验证。已完成的验收、未完成项和已知风险记录在对应实施记录或版本说明中。
 
