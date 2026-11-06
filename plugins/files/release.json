@@ -1,7 +1,192 @@
 {
-  "id": "sodeck.files", "name": "文件", "apiVersion": "1", "binary": "sodeck-files", "tagPrefix": "plugin-files-v",
-  "ui": { "apiVersion": "1", "entry": "ui/index.html", "views": [
-    { "id": "files", "title": "文件", "icon": "folder", "container": "sidebar", "instancePolicy": "perWorkspace", "defaultSide": "left", "defaultPinned": true, "openOnWorkspace": "reveal", "startupOrder": 10 },
-    { "id": "editor", "title": "文件编辑器", "icon": "log", "container": "editor", "instancePolicy": "perResource" }
-  ] }
+  "id": "sodeck.files",
+  "name": "文件",
+  "apiVersion": "1",
+  "binary": "sodeck-files",
+  "tagPrefix": "plugin-files-v",
+  "ui": {
+    "apiVersion": "1",
+    "entry": "ui/index.html",
+    "views": [
+      {
+        "id": "files",
+        "title": "文件",
+        "icon": "folder",
+        "container": "sidebar",
+        "instancePolicy": "perWorkspace",
+        "defaultSide": "left",
+        "defaultPinned": true,
+        "openOnWorkspace": "reveal",
+        "startupOrder": 10
+      },
+      {
+        "id": "editor",
+        "title": "文件编辑器",
+        "icon": "log",
+        "container": "editor",
+        "instancePolicy": "perResource"
+      }
+    ]
+  },
+  "settings": {
+    "apiVersion": "1",
+    "schemaVersion": 1,
+    "pages": [
+      {
+        "id": "browser",
+        "title": "文件列表",
+        "icon": "folder",
+        "viewTypes": [
+          "files"
+        ],
+        "order": 200,
+        "groups": [
+          {
+            "id": "display",
+            "title": "列表显示",
+            "fields": [
+              {
+                "key": "showHidden",
+                "title": "显示隐藏条目",
+                "type": "boolean",
+                "default": true,
+                "apply": "live"
+              },
+              {
+                "key": "density",
+                "title": "列表密度",
+                "type": "select",
+                "default": "compact",
+                "options": [
+                  {
+                    "value": "compact",
+                    "title": "紧凑"
+                  },
+                  {
+                    "value": "comfortable",
+                    "title": "舒适"
+                  }
+                ],
+                "apply": "live"
+              },
+              {
+                "key": "fontSize",
+                "title": "名称字号",
+                "type": "number",
+                "default": 12,
+                "min": 11,
+                "max": 18,
+                "step": 1,
+                "unit": "px",
+                "apply": "live"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "editor",
+        "title": "文件编辑器",
+        "icon": "log",
+        "viewTypes": [
+          "editor"
+        ],
+        "order": 210,
+        "groups": [
+          {
+            "id": "text",
+            "title": "文字",
+            "fields": [
+              {
+                "key": "font",
+                "title": "字体",
+                "type": "font",
+                "default": {
+                  "source": "preset",
+                  "id": "jetbrains-mono"
+                },
+                "presets": [
+                  {
+                    "id": "jetbrains-mono",
+                    "title": "JetBrains Mono",
+                    "regular": "ui/fonts/jetbrains-mono-regular.woff2",
+                    "bold": "ui/fonts/jetbrains-mono-bold.woff2"
+                  },
+                  {
+                    "id": "source-code-pro",
+                    "title": "Source Code Pro",
+                    "regular": "ui/fonts/source-code-pro-regular.woff2",
+                    "bold": "ui/fonts/source-code-pro-bold.woff2"
+                  },
+                  {
+                    "id": "ibm-plex-mono",
+                    "title": "IBM Plex Mono",
+                    "regular": "ui/fonts/ibm-plex-mono-regular.woff2",
+                    "bold": "ui/fonts/ibm-plex-mono-bold.woff2"
+                  }
+                ],
+                "apply": "live"
+              },
+              {
+                "key": "fontSize",
+                "title": "字号",
+                "type": "number",
+                "default": 14,
+                "min": 11,
+                "max": 24,
+                "step": 1,
+                "unit": "px",
+                "apply": "live"
+              },
+              {
+                "key": "lineHeight",
+                "title": "行高",
+                "type": "number",
+                "default": 1.5,
+                "min": 1.2,
+                "max": 1.8,
+                "step": 0.05,
+                "unit": "倍",
+                "apply": "live"
+              }
+            ]
+          },
+          {
+            "id": "editing",
+            "title": "编辑显示",
+            "fields": [
+              {
+                "key": "wordWrap",
+                "title": "自动换行",
+                "type": "boolean",
+                "default": false,
+                "apply": "live"
+              },
+              {
+                "key": "tabSize",
+                "title": "Tab 显示宽度",
+                "type": "select",
+                "default": 4,
+                "options": [
+                  {
+                    "value": 2,
+                    "title": "2 列"
+                  },
+                  {
+                    "value": 4,
+                    "title": "4 列"
+                  },
+                  {
+                    "value": 8,
+                    "title": "8 列"
+                  }
+                ],
+                "apply": "live"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
 }

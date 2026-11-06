@@ -25,6 +25,10 @@ fn platform_title_bars_preserve_shared_window_settings_and_app_version() {
         assert_eq!(value["version"], sodeck::app_version());
         assert_eq!(value["app"]["windows"].as_array().unwrap().len(), 1);
         let window = &mut value["app"]["windows"][0];
+        assert_eq!(
+            window["devtools"], false,
+            "Normal windows must not expose browser developer tools"
+        );
         if target == Target::MacOS {
             // JSON Merge Patch replaces the window array, so its shared settings must be retained.
             window["decorations"] = false.into();

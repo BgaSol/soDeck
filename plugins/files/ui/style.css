@@ -19,8 +19,8 @@ button { cursor: pointer; border: 0; background: transparent; padding: 4px 8px; 
 .tree-toolbar > span { flex: 1; min-width: 0; margin-left: 5px; color: var(--muted, #777); font-size: 11px; white-space: nowrap; overflow: hidden; }
 .tree-toolbar .sd-icon { width: 24px; min-width: 24px; padding: 4px; }
 .tree-columns { display: flex; justify-content: space-between; height: 25px; align-items: center; flex-shrink: 0; padding: 0 12px 0 30px; font-size: 11px; color: var(--muted, #777);  }
-.file-tree { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 4px 5px 12px; outline: none; }
-.tree-row { display: flex; align-items: center; gap: 5px; height: 28px; padding: 0 6px 0 calc(2px + var(--depth) * var(--tree-indent, 15px)); border-radius: 4px; cursor: default; user-select: none; }
+.file-tree { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 4px 5px 12px; outline: none; }
+.tree-row { display: flex; align-items: center; gap: 5px; height: var(--file-row-height, 24px); padding: 0 6px 0 calc(2px + var(--depth) * var(--tree-indent, 15px)); border-radius: 4px; cursor: default; user-select: none; }
 .tree-row:hover { background: var(--hover, #eee); }
 .tree-row[aria-selected="true"] { background: var(--accent-bg, #e5ecff); color: var(--text, #263044); outline: var(--sd-stroke-control) solid var(--tree-selection-border, transparent); outline-offset: calc(-1 * var(--sd-stroke-control)); }
 .file-tree:focus-visible .tree-row[aria-selected="true"] { outline: 1px solid var(--accent, #7661d1); outline-offset: -1px; }
@@ -30,7 +30,7 @@ button { cursor: pointer; border: 0; background: transparent; padding: 4px 8px; 
 .tree-row > .folder { color: var(--folder-color, var(--accent, #7661d1)); }
 .tree-row > .folder svg { fill: var(--folder-fill, transparent); }
 .tree-row > .file, .tree-row > .link { color: var(--muted, #777); }
-.tree-name { flex: 1; min-width: 26px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.tree-name { font-size: var(--file-name-size, 12px); flex: 1; min-width: 26px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .tree-size { color: var(--muted, #777); font-size: 11px; font-variant-numeric: tabular-nums; flex-shrink: 0; margin-left: 4px; }
 .branch-state { min-height: 28px; display: flex; align-items: center; padding-left: calc(24px + var(--depth) * var(--tree-indent, 15px)); font-size: 11px; color: var(--muted, #777); }
 .branch-state button { font-size: 11px; padding: 3px 6px; border: 0; color: var(--accent, #7661d1); }
@@ -41,7 +41,7 @@ footer button { font-size: 11px; padding: 1px 4px; }
 .editor-toolbar { display: flex; align-items: center; gap: 5px; min-height: 38px; padding: 5px 10px; border-bottom: var(--sd-stroke-structure) solid var(--border); background: var(--subtle, #f8f9fb); }
 .editor-toolbar .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted, #777); font-size: 12px; }
 .editor-toolbar button { font-size: 12px; flex-shrink: 0; }
-textarea { resize: none; width: 100%; flex: 1; min-height: 0; padding: 12px 16px; border: 0; outline: none; background: var(--panel, #fff); tab-size: 4; white-space: pre; overflow: auto; font: 13px/1.7 Consolas, "SFMono-Regular", monospace; }
+textarea { resize: none; width: 100%; flex: 1; min-height: 0; padding: 12px 16px; border: 0; outline: none; background: var(--panel, #fff); tab-size: 4; white-space: pre; overflow: auto; font: 14px/1.5 Consolas, "SFMono-Regular", monospace; }
 @media (max-width: 230px) { .tree-size, .tree-columns > span:last-child { display: none; } .pathbar { margin-left: 5px; margin-right: 5px; } .tree-name { min-width: 0; } }
 @media (prefers-contrast: more) { .tree-row[aria-selected="true"] { outline: 1px solid currentColor; outline-offset: -1px; } }
 .tree-menu { position: fixed; z-index: 10; width: min(200px, calc(100vw - 8px)); }

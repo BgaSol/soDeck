@@ -122,6 +122,12 @@ fn main() {
                 if mode == "timeout" {
                     continue;
                 }
+                if mode == "settings-init" {
+                    send(
+                        json!({"jsonrpc":"2.0","id":"settings-init","method":"settings.get","params":{"pageId":"appearance"}}),
+                    );
+                    continue;
+                }
                 if mode == "init-error" {
                     send(
                         json!({"jsonrpc":"2.0","id":frame["id"],"error":{"code":-1,"message":"fixture init failure"}}),
@@ -164,12 +170,30 @@ fn main() {
                     }
                 }
             }
+            Some("settings.changed") => {
+                fs::write(
+                    format!("{}/settings-changed.json", data.as_ref().unwrap()),
+                    frame["params"].to_string(),
+                )
+                .unwrap();
+                send(json!({"jsonrpc":"2.0","id":frame["id"],"result":{"accepted":true}}));
+            }
             Some("shutdown") => {
                 if mode == "ignore-stop" || mode == "child" {
                     continue;
                 }
                 send(
                     json!({"jsonrpc":"2.0","id":3,"method":"logging.write","params":{"level":"info","message":"fixture stopping"}}),
+                );
+            }
+            _ if frame["id"] == "settings-init" => {
+                fs::write(
+                    format!("{}/settings-init.json", data.as_ref().unwrap()),
+                    frame.to_string(),
+                )
+                .unwrap();
+                send(
+                    json!({"jsonrpc":"2.0","id":"initialize","result":{"apiVersion":"1","settingsApiVersion":"1"}}),
                 );
             }
             _ if frame["id"] == "fixture-terminal" => {

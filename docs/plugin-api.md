@@ -125,6 +125,12 @@ UI v1 的 `mount.capabilities.clipboard === 1` 表示宿主提供原生文本剪
 
 `tokens` 保留原颜色字段，新增 `sd-stroke-structure/control`、`sd-icon-stroke`、`sd-control-weight`、`sd-title-weight`、`sd-radius-control`、`sd-tab-height`、`sd-status-height`、`sd-hit-size` 及导航、工具栏、主操作和反馈状态语义色；具体名称以 `src/theme.ts` 为准。终端提供 `terminal-background/foreground/cursor/selection` 与 ANSI16（`terminal-black` 至 `terminal-brightWhite`）。插件将字段设置为同名 `--` CSS 变量，配合打包的 `shared.css` 使用；旧插件可忽略新增项，新插件保留基础色回退。主题变更不重建视图或会话。
 
+### 统一桌面行为和滚动条（增量能力，尚未发布）
+
+桌面一致性改动向 UI v1 增量提供 `sd-scrollbar-thumb`、`sd-scrollbar-hover`、`sd-scrollbar-active`，分别表示滑块默认、悬停及拖动颜色。DOM 页面使用随插件打包的 `shared.css`；终端使用 xterm 的 `scrollbarSlider*Background`，无需替换滚动机制。旧插件可忽略这些字段，自绘滚动条的插件需要主动适配。
+
+核心在所有 WebView frame 中取消浏览器默认动作，保持事件传播；插件应继续处理自己的业务快捷键和菜单，不能将 `defaultPrevented` 自动解释为业务事件已处理。文件与网络插件在 `clipboard-bridge.js` 前加载共享的 `text-menu.js`，通过既有剪贴板能力提供文本菜单；终端沿用自己的菜单。新增字段和共享资源不改变 API/UI 主版本，不改变核心与插件的独立打包边界。
+
 ## 通用 TCP 与弹窗（核心 0.7.0 新增）
 
 核心通过 `initialize.capabilities` 声明 `net.tcp.v1` 和 `ui.dialog.v1`，API 主版本保持 1。`net.*` 仅供插件进程调用；业务协议及规则由插件实现。监听持有创建时的已认证会话，域名原样交给最终远端解析，断线后不会自动接到新会话。
@@ -165,7 +171,32 @@ UI v1 的 `mount.capabilities.clipboard === 1` 表示宿主提供原生文本剪
 - mount.capabilities.localFiles 为 1。页面以 `mounted` 消息 `localFiles:true` 声明接收原生拖入；宿主向可见页面发送 localFileDrop（dropType/dropId/x/y，坐标为 iframe CSS 像素），页面领取 drop 后决定业务。此声明不构成插件权限。
 - iframe `request("closeViews",{viewIds})` 立即返回 ticket，宿主异步发送 viewsClosed（ticket/accepted/error）。只允许同插件同工作区页面，逐页复用原保存/放弃/取消关闭流程。
 
-旧 files.v1、旧目录游标和文本剪贴板协议保持兼容。新文件插件尚未发行，原生系统粘贴/拖入的五目标互操作待验收。
+旧 files.v1、旧目录游标和文本剪贴板协议保持兼容。文件插件 0.3.0 需要核心 0.8.4；五目标原生包构建和既有远程业务组合烟测通过，原生系统粘贴/拖入的设备互操作待验收。
+
+## 组件设置（可选 settings.v1）
+
+此扩展已进入源码，尚未作为新版本发行。插件在清单增加可选 `settings: {apiVersion:"1", schemaVersion:1, pages:[...]}`，一个插件可声明多个组件页，一个页可关联多个 `viewTypes`。同一视图最多关联一个页；稳定身份为 pluginId/pageId/key，不含服务器、Tab 或程序版本。字段、默认值和生效方式由插件声明，核心提供基础校验、存储、版本选择、通用表单和变化通知。正式示例见各插件的 `release.json`，实现范围见 [组件设置记录](implementation-component-settings.md)。
+
+页面包含 id/title/icon/order/viewTypes/groups；分组包含 id/title/fields。字段为 key/type/title/default/apply，可带 description。首版类型为 boolean、number（min/max/step/unit）、string（maxLength）、select（options 的 value/title）、font（presets 的 id/title/regular/bold）；apply 为 live 或 newInstance。`visibleWhen:{key,equals}` 只引用同页无条件的 boolean/select 字段。隐藏字段仍需完整保存并校验。
+
+font 值为 `{source:"preset",id:"jetbrains-mono"}` 或 `{source:"local",family:"Consolas"}`。预置字体路径相对插件安装目录，要求包内 WOFF2；核心只按当前页声明读取对应资源。本机字体按名称加载，失败显示说明并回退；不传字体文件、CSS 表达式或安装绝对路径。
+
+initialize 的 capabilities 含 `settings.v1`，settings 数组只列 pageId/definitionToken/revision。插件返回 `settingsApiVersion:"1"` 后核心才向其发送变化请求；没有该声明的旧插件不接收新方法。初始化期间也可读取设置，读取不等待插件生命周期锁。
+
+| 方向与方法 | 参数 | 结果与语义 |
+| --- | --- | --- |
+| 插件 → 核心 `settings.get` | `{pageId}` | `{pluginId,pageId,definitionToken,revision,values}`；限所属当前实例，返回有效值 |
+| 核心 → 插件 `settings.changed` | `{pageId,definitionToken,revision,values}` | 使用带 ID 的普通 RPC 请求并等待回复；插件通过标准 RPC error 报告应用失败 |
+| UI mount/settingsChanged | settings 单页快照、`capabilities.settings:1` | 宿主转发当前 surface 对应的页，隐藏组件可在显示时应用 |
+| UI → 宿主 `sodeck.request("settings",...)` | `{op:"get"}` 或 `{op:"applied",pageId,definitionToken,revision,error?}` | 当前 surface 读取或回报；窗口、view、插件实例、token、revision 不匹配均拒绝 |
+
+revision 为十进制字符串，definitionToken 为插件当前程序版本、schemaVersion 和规范化页面声明的稳定摘要。核心保存命令接受 definitionToken/baseRevision/requestId/完整 values；旧页面返回冲突及最新快照，相同请求 ID 与正文的近期重投不会重复保存。保存成功与运行应用分别报告；应用失败可重投当前修订，插件应允许同修订重试并忽略过期更新。
+
+每插件最多 8 页，每页 8 组/64 字段，每字段最多 32 个选项或字体。单页保存值和运行快照各限 24 KiB，RPC 帧继续限 64 KiB；设置文件限 4 MiB。用户保存严格校验，载入旧非法值则保留原值、提供有效默认和提示。存储独立于业务规则、凭据和工作区；临时文件原子替换、备份与失败保留沿用核心存储机制。
+
+升级待重启时继续使用旧进程的声明及资源，实际激活新版后才更新；新增字段补默认，兼容的用户值保留，结构变更历史最多保留两份。新版启动失败恢复旧程序时设置随之恢复适用定义，修订不倒退。首版不提供任意迁移脚本；插件作者改变 key/type/单位含义时需单独设计兼容迁移。
+
+## 独立插件打包
 
 ```sh
 npm run plugin:build -- --plugin terminal

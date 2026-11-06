@@ -14,6 +14,44 @@ static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 // Calls inside each fixture remain concurrent in the RPC integration tests.
 static STARTUP: Mutex<()> = Mutex::new(());
 #[test]
+fn component_settings_bind_reports_to_current_window_surface_and_revision() {
+    let f = Fixture::new();
+    let path = f.plugin.join("plugin.json");
+    let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    manifest["settings"] = json!({"apiVersion":"1","schemaVersion":1,"pages":[{"id":"browser","title":"列表","viewTypes":["browser"],"groups":[{"id":"display","title":"显示","fields":[{"key":"hidden","type":"boolean","title":"隐藏条目","default":true,"apply":"live"}]}]}]});
+    fs::write(path, manifest.to_string()).unwrap();
+    let token = f.surface();
+    let snapshot = f.core.settings_for_surface("main", &token).unwrap();
+    assert_eq!(snapshot["values"]["hidden"], true);
+    assert!(f.core.settings_for_surface("wrong-window", &token).is_err());
+    let report = json!({"pageId":snapshot["pageId"],"definitionToken":snapshot["definitionToken"],"revision":snapshot["revision"]});
+    assert!(f
+        .core
+        .settings_applied("wrong-window", &token, report.clone())
+        .is_err());
+    assert!(f
+        .core
+        .settings_applied("main", &token, report.clone())
+        .is_ok());
+    assert_eq!(
+        f.core.settings_page("test.ui", "browser").unwrap()["applications"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let saved=f.core.save_settings("test.ui","browser",json!({"definitionToken":snapshot["definitionToken"],"baseRevision":snapshot["revision"],"requestId":"settings-report","values":{"hidden":false}})).unwrap();
+    assert_eq!(saved["snapshot"]["values"]["hidden"], false);
+    assert!(f.core.settings_applied("main", &token, report).is_err());
+    assert_eq!(
+        f.core.settings_page("test.ui", "browser").unwrap()["applications"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+}
+#[test]
 fn separately_registered_plugins_keep_their_own_recommended_defaults() {
     let f = Fixture::new();
     f.load().unwrap();

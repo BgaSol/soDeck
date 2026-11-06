@@ -159,6 +159,7 @@ impl DesktopWindows {
                 .inner_size(1100., 720.)
                 .min_inner_size(720., 480.)
                 .decorations(false)
+                .devtools(false)
                 .visible(false);
                 #[cfg(target_os = "macos")]
                 let builder = builder

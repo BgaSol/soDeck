@@ -1,6 +1,151 @@
 {
-  "id": "sodeck.terminal", "name": "终端", "apiVersion": "1", "binary": "sodeck-terminal", "tagPrefix": "plugin-terminal-v",
-  "ui": { "apiVersion": "1", "entry": "ui/index.html", "views": [
-    { "id": "terminal", "title": "终端", "icon": "terminal", "container": "editor", "instancePolicy": "multiple", "defaultPinned": true, "locateEntry": true, "createAction": "新建终端", "openOnWorkspace": "createOne", "startupOrder": 20 }
-  ] }
+  "id": "sodeck.terminal",
+  "name": "终端",
+  "apiVersion": "1",
+  "binary": "sodeck-terminal",
+  "tagPrefix": "plugin-terminal-v",
+  "ui": {
+    "apiVersion": "1",
+    "entry": "ui/index.html",
+    "views": [
+      {
+        "id": "terminal",
+        "title": "终端",
+        "icon": "terminal",
+        "container": "editor",
+        "instancePolicy": "multiple",
+        "defaultPinned": true,
+        "locateEntry": true,
+        "createAction": "新建终端",
+        "openOnWorkspace": "createOne",
+        "startupOrder": 20
+      }
+    ]
+  },
+  "settings": {
+    "apiVersion": "1",
+    "schemaVersion": 1,
+    "pages": [
+      {
+        "id": "appearance",
+        "title": "终端",
+        "icon": "terminal",
+        "viewTypes": [
+          "terminal"
+        ],
+        "order": 100,
+        "groups": [
+          {
+            "id": "text",
+            "title": "文字",
+            "fields": [
+              {
+                "key": "font",
+                "title": "字体",
+                "type": "font",
+                "default": {
+                  "source": "preset",
+                  "id": "jetbrains-mono"
+                },
+                "presets": [
+                  {
+                    "id": "jetbrains-mono",
+                    "title": "JetBrains Mono",
+                    "regular": "ui/fonts/jetbrains-mono-regular.woff2",
+                    "bold": "ui/fonts/jetbrains-mono-bold.woff2"
+                  },
+                  {
+                    "id": "source-code-pro",
+                    "title": "Source Code Pro",
+                    "regular": "ui/fonts/source-code-pro-regular.woff2",
+                    "bold": "ui/fonts/source-code-pro-bold.woff2"
+                  },
+                  {
+                    "id": "ibm-plex-mono",
+                    "title": "IBM Plex Mono",
+                    "regular": "ui/fonts/ibm-plex-mono-regular.woff2",
+                    "bold": "ui/fonts/ibm-plex-mono-bold.woff2"
+                  }
+                ],
+                "apply": "live"
+              },
+              {
+                "key": "fontSize",
+                "title": "字号",
+                "type": "number",
+                "default": 14,
+                "min": 11,
+                "max": 24,
+                "step": 1,
+                "unit": "px",
+                "apply": "live"
+              },
+              {
+                "key": "lineHeight",
+                "title": "行高",
+                "type": "number",
+                "default": 1.2,
+                "min": 1,
+                "max": 1.6,
+                "step": 0.05,
+                "unit": "倍",
+                "apply": "live"
+              }
+            ]
+          },
+          {
+            "id": "spacing",
+            "title": "间距",
+            "fields": [
+              {
+                "key": "paddingBottom",
+                "title": "底部留白",
+                "type": "number",
+                "default": 24,
+                "min": 8,
+                "max": 48,
+                "step": 4,
+                "unit": "px",
+                "apply": "live"
+              }
+            ]
+          },
+          {
+            "id": "cursor",
+            "title": "光标",
+            "fields": [
+              {
+                "key": "cursorStyle",
+                "title": "光标样式",
+                "type": "select",
+                "default": "block",
+                "options": [
+                  {
+                    "value": "block",
+                    "title": "方块"
+                  },
+                  {
+                    "value": "bar",
+                    "title": "竖线"
+                  },
+                  {
+                    "value": "underline",
+                    "title": "下划线"
+                  }
+                ],
+                "apply": "live"
+              },
+              {
+                "key": "cursorBlink",
+                "title": "光标闪烁",
+                "type": "boolean",
+                "default": true,
+                "apply": "live"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
 }

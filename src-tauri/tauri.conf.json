@@ -18,11 +18,12 @@
         "minWidth": 720,
         "minHeight": 480,
         "decorations": false,
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "devtools": false
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; frame-src 'self' sodeck-plugin: http://sodeck-plugin.localhost https://sodeck-plugin.localhost"
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; frame-src 'self' sodeck-plugin: http://sodeck-plugin.localhost https://sodeck-plugin.localhost; font-src 'self' sodeck-plugin: http://sodeck-plugin.localhost https://sodeck-plugin.localhost"
     }
   },
   "bundle": {

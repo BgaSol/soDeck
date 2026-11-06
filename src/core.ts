@@ -6,6 +6,7 @@ export interface Manifest {
   apiVersion: string;
   target: string;
   entry: string;
+  settings?: unknown;
   updateSource?: { repository: string; tagPrefix: string };
 }
 export interface OfficialPlugin { id: string; name: string; description: string; tagPrefix: string }
@@ -35,7 +36,7 @@ export interface Snapshot {
   uptimeMs: number;
   dataDirectory: string;
   logDirectory: string;
-  preferences: { theme: string };
+  preferences: { theme: string; automaticUpdates: boolean };
   plugins: Plugin[];
   unreadCount: number;
   storageErrors: string[];
@@ -51,7 +52,10 @@ export interface Update {
   downloadedBytes: number;
   totalBytes: number | null;
   error: string | null;
+  errorStage?: string | null;
+  checkedAt?: number | null;
 }
+export interface UpdateOverview { checking: boolean; busy: boolean; lastCheckedAt: number; nextCheckAt: number }
 export interface Log {
   id: string;
   receivedAt: number;
@@ -91,6 +95,10 @@ export const core = {
   enabled: (id: string, enabled: boolean) => invoke<void>("set_plugin_enabled", { id, enabled }),
   updateSource: (id: string, source: Manifest["updateSource"] | null) => invoke<void>("set_plugin_update_source", { id, source }),
   updates: () => invoke<Record<string, Update>>("update_status"),
+  updateOverview: () => invoke<UpdateOverview>("update_overview"),
+  checkUpdates: (automatic = false) => invoke<void>("check_updates", { automatic }),
+  downloadUpdates: (ids: string[]) => invoke<void>("download_updates", { ids }),
+  automaticUpdates: (enabled: boolean) => invoke<void>("set_automatic_updates", { enabled }),
   checkUpdate: (id: string) => invoke<void>("check_update", { id }),
   download: (id: string) => invoke<boolean>("download_update", { id }),
   restart: (installCore = false) => invoke<void>("restart_app", { installCore }),

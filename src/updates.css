@@ -1,0 +1,70 @@
+@layer components {
+  .settings-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .settings-nav > .nav-item { display: block; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .settings-nav > .nav-item svg { display: inline-block; vertical-align: middle; margin-right: 8px; }
+  .settings-main > .settings-page { flex: 1; min-height: 0; padding: 24px; overflow: auto; }
+  .settings-main > .maintenance-pending { flex: none; margin: 0 24px 20px; }
+  .maintenance-pending details[open] ul { max-height: 100px; overflow: auto; }
+  .maintenance-heading { align-items: flex-start; gap: 18px; flex-wrap: wrap; }
+  .maintenance-heading > .actions { margin: 0; flex-wrap: wrap; }
+  .maintenance-heading h2 { font-size: 22px; }
+  .maintenance-group-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 0 10px; border-bottom: var(--sd-stroke-structure) solid var(--border); color: var(--muted); }
+  .maintenance-group-heading h3 { font-size: 12px; font-weight: 500; }
+  .maintenance-group-heading > span { font-size: 11px; }
+  .update-group + .update-group { margin-top: 24px; }
+  .update-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px 12px; align-items: center; padding: 16px 0; border-bottom: var(--sd-stroke-structure) solid var(--border); }
+  .update-row:has(.update-select) { grid-template-columns: 18px 34px minmax(0, 1fr) auto; }
+  .maintenance-symbol { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 8px; color: var(--text); background: var(--sd-symbol); }
+  .maintenance-symbol svg { width: 17px; height: 17px; }
+  .maintenance-name { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+  .maintenance-name > span { color: var(--muted); font-size: 11px; }
+  .maintenance-meta { margin: 4px 0 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .maintenance-meta strong { color: var(--text); font-weight: 500; }
+  .update-content { min-width: 0; }
+  .update-select { display: flex; align-items: center; justify-content: center; min-height: 32px; }
+  .update-select input, .automatic-updates input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+  .update-row-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .update-progress { margin-top: 8px; display: grid; gap: 4px; }
+  .update-progress progress { width: 100%; height: 5px; accent-color: var(--accent); }
+  .update-progress span { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .update-release-notes { grid-column: 2 / -1; color: var(--muted); font-size: 12px; }
+  .update-row:has(.update-select) .update-release-notes { grid-column: 3 / -1; }
+  .update-release-notes summary, .update-error-detail summary { width: fit-content; padding: 3px 0; }
+  .update-release-notes div { padding-top: 8px; }
+  .update-release-notes p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 10px; line-height: 1.7; }
+  .update-error-detail { margin-top: 6px; color: var(--error); font-size: 12px; }
+  .update-error-detail p { margin-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .update-error { color: var(--error); }
+  .update-good { color: var(--good); }
+  .maintenance-footer { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 12px; border-top: var(--sd-stroke-structure) solid var(--border); padding-top: 18px; margin-top: 28px; font-size: 12px; color: var(--muted); }
+  .automatic-updates { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+  .maintenance-pending { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 16px; margin-top: 24px; border-radius: 8px; background: var(--accent-bg); }
+  .maintenance-pending > div { flex: 1; min-width: min(240px, 100%); }
+  .maintenance-pending p { margin-top: 5px; font-size: 12px; color: var(--muted); }
+  .maintenance-pending details { margin-top: 8px; font-size: 12px; }
+  .maintenance-pending ul { padding-left: 20px; margin: 8px 0 0; }
+  .maintenance-plugin-row { display: grid; grid-template-columns: 34px minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 16px 0; border-bottom: var(--sd-stroke-structure) solid var(--border); }
+  .maintenance-plugin-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+  .maintenance-plugin-actions > .actions { margin: 0; gap: 8px; }
+  .maintenance-plugin-actions .plugin-switch { border: 0; padding: 5px; background: transparent; }
+  .maintenance-details { margin: 24px 0; padding-top: 14px; border-top: var(--sd-stroke-structure) solid var(--border); }
+  .maintenance-details summary { font-size: 13px; }
+  .maintenance-details .update-source { margin-top: 0; padding-top: 0; border-top: 0; }
+  .maintenance-detail-actions { display: flex; gap: 8px; margin: 12px 0; }
+  .maintenance-local { margin-top: 24px; border-top: var(--sd-stroke-structure) solid var(--border); padding-top: 20px; }
+  .maintenance-local p { color: var(--muted); font-size: 12px; margin: 8px 0 14px; }
+  .settings-update-count, .settings-update-pending { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--accent); }
+  @media (max-width: 800px) {
+    .settings-main > .settings-page { padding: 18px; }
+    .settings-main > .maintenance-pending { margin: 0 18px 16px; padding: 12px; gap: 10px; }
+    .maintenance-heading h2 { font-size: 20px; }
+    .update-row-actions { grid-column: 2 / -1; justify-content: flex-start; }
+    .update-row:has(.update-select) .update-row-actions { grid-column: 3 / -1; }
+    .update-row, .update-row:has(.update-select) { grid-template-columns: 34px minmax(0, 1fr); }
+    .update-row:has(.update-select) { grid-template-columns: 18px 34px minmax(0, 1fr); }
+    .maintenance-group-heading { flex-wrap: wrap; }
+    .maintenance-plugin-row { grid-template-columns: 34px minmax(0, 1fr); }
+    .maintenance-plugin-actions { grid-column: 2; flex-direction: row; flex-wrap: wrap; justify-content: space-between; align-items: center; }
+    .maintenance-pending > button { align-self: flex-start; }
+  }
+}

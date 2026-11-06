@@ -18,8 +18,39 @@ pub const REPOSITORY: &str = "BgaSol/soDeck";
 const MAX_PACKAGE: u64 = 512 * 1024 * 1024;
 const MAX_EXPANDED: u64 = 2 * 1024 * 1024 * 1024;
 
-#[derive(Clone, Debug, Default, Serialize)]
-#[serde(rename_all = "camelCase")]
+pub fn open_release_page() -> Result<(), String> {
+    let url = "https://github.com/BgaSol/soDeck/releases";
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        use std::os::windows::process::CommandExt;
+        let mut c = std::process::Command::new("rundll32.exe");
+        c.args(["url.dll,FileProtocolHandler", url])
+            .creation_flags(0x08000000);
+        c
+    };
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut c = std::process::Command::new("open");
+        c.arg(url);
+        c
+    };
+    #[cfg(target_os = "linux")]
+    let mut command = {
+        let mut c = std::process::Command::new("xdg-open");
+        c.arg(url);
+        c
+    };
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("无法打开发行页面：{e}"))?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct UpdateView {
     pub id: String,
     pub phase: String,
@@ -28,6 +59,8 @@ pub struct UpdateView {
     pub downloaded_bytes: u64,
     pub total_bytes: Option<u64>,
     pub error: Option<String>,
+    pub error_stage: Option<String>,
+    pub checked_at: Option<u64>,
 }
 
 #[cfg(test)]
@@ -91,6 +124,60 @@ pub struct UpdateState {
     pub items: HashMap<String, UpdateView>,
     candidates: HashMap<String, UpdateManifest>,
     pub(crate) busy: HashSet<String>,
+    checking_all: bool,
+    last_checked_at: u64,
+    next_check_at: u64,
+}
+
+#[derive(Default, Deserialize, Serialize)]
+#[serde(default)]
+struct UpdateCache {
+    items: HashMap<String, UpdateView>,
+    candidates: HashMap<String, UpdateManifest>,
+    last_checked_at: u64,
+    next_check_at: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateOverview {
+    pub checking: bool,
+    pub busy: bool,
+    pub last_checked_at: u64,
+    pub next_check_at: u64,
+}
+
+pub struct CheckBatch {
+    core: Arc<AppCore>,
+    successes: usize,
+}
+impl CheckBatch {
+    pub fn succeeded(&mut self) {
+        self.successes += 1;
+    }
+}
+impl Drop for CheckBatch {
+    fn drop(&mut self) {
+        let mut state = self.core.updates.lock().unwrap();
+        state.checking_all = false;
+        let time = crate::core::now();
+        if self.successes > 0 {
+            state.last_checked_at = time;
+        }
+        let failed = state
+            .items
+            .values()
+            .any(|v| v.error_stage.as_deref() == Some("check"));
+        state.next_check_at = time
+            + if failed {
+                15 * 60 * 1000
+            } else {
+                24 * 60 * 60 * 1000
+            };
+        drop(state);
+        self.core.persist_update_cache();
+        self.core.changed();
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -112,20 +199,20 @@ pub struct UpdateManifest {
     #[serde(default)]
     pub notes: String,
     pub platforms: HashMap<String, PackageAsset>,
-    #[serde(skip)]
+    #[serde(default)]
     pub manifest_url: String,
-    #[serde(skip)]
+    #[serde(default)]
     pub source: Option<UpdateSource>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct Release {
     tag_name: String,
     draft: bool,
     prerelease: bool,
     assets: Vec<ReleaseAsset>,
 }
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct ReleaseAsset {
     name: String,
     browser_download_url: String,
@@ -169,6 +256,7 @@ pub struct ReleaseClient {
     client: Client,
     api_base: String,
     test_http: bool,
+    releases: std::sync::Mutex<HashMap<String, Result<Vec<Release>, String>>>,
 }
 
 impl ReleaseClient {
@@ -190,6 +278,7 @@ impl ReleaseClient {
             client,
             api_base,
             test_http,
+            releases: std::sync::Mutex::new(HashMap::new()),
         })
     }
     #[cfg(feature = "test-fixtures")]
@@ -255,32 +344,20 @@ impl ReleaseClient {
     ) -> Result<Option<UpdateManifest>, String> {
         validate_source(source)?;
         let current = stable_version(current)?;
+        let all = self.repository_releases(&source.repository)?;
         let mut releases = Vec::new();
-        for page in 1..=10 {
-            let batch: Vec<Release> = self.json(&format!(
-                "{}/repos/{}/releases?per_page=100&page={page}",
-                self.api_base, source.repository
-            ))?;
-            let done = batch.len() < 100;
-            for release in batch {
-                if release.draft || release.prerelease {
-                    continue;
-                }
-                if let Some(version) = release
-                    .tag_name
-                    .strip_prefix(&source.tag_prefix)
-                    .and_then(|v| stable_version(v).ok())
-                {
-                    if version > current {
-                        releases.push((version, release));
-                    }
-                }
+        for release in all {
+            if release.draft || release.prerelease {
+                continue;
             }
-            if done {
-                break;
-            }
-            if page == 10 {
-                return Err("发行记录超过 1000 条，请收窄更新仓库".into());
+            if let Some(version) = release
+                .tag_name
+                .strip_prefix(&source.tag_prefix)
+                .and_then(|v| stable_version(v).ok())
+            {
+                if version > current {
+                    releases.push((version, release));
+                }
             }
         }
         releases.sort_by(|a, b| b.0.cmp(&a.0));
@@ -321,6 +398,46 @@ impl ReleaseClient {
             return Err(error);
         }
         Ok(None)
+    }
+
+    fn repository_releases(&self, repository: &str) -> Result<Vec<Release>, String> {
+        let mut cache = self.releases.lock().unwrap();
+        if let Some(releases) = cache.get(repository) {
+            return releases.clone();
+        }
+        let result = (|| {
+            let mut releases = Vec::new();
+            for page in 1..=10 {
+                let batch: Vec<Release> = self.json(&format!(
+                    "{}/repos/{}/releases?per_page=100&page={page}",
+                    self.api_base, repository
+                ))?;
+                let done = batch.len() < 100;
+                releases.extend(batch);
+                if done {
+                    break;
+                }
+                if page == 10 {
+                    return Err("发行记录超过 1000 条，请收窄更新仓库".into());
+                }
+            }
+            Ok(releases)
+        })();
+        cache.insert(repository.into(), result.clone());
+        result
+    }
+
+    fn validate_candidate(&self, cached: &UpdateManifest) -> Result<(), String> {
+        let fresh: UpdateManifest = self.json(&cached.manifest_url)?;
+        if fresh.id != cached.id
+            || fresh.version != cached.version
+            || fresh.api_version != cached.api_version
+            || serde_json::to_value(&fresh.platforms).ok()
+                != serde_json::to_value(&cached.platforms).ok()
+        {
+            return Err("发行信息已改变，请重新检查更新".into());
+        }
+        Ok(())
     }
 
     fn download(
@@ -470,22 +587,232 @@ fn unpack(archive: &Path, output: &Path, zip_format: bool) -> Result<PathBuf, St
     Ok(root)
 }
 
-pub(crate) struct Operation {
+pub struct Operation {
     core: Arc<AppCore>,
     id: String,
 }
 impl Drop for Operation {
     fn drop(&mut self) {
-        self.core.updates.lock().unwrap().busy.remove(&self.id);
+        let mut state = self.core.updates.lock().unwrap();
+        state.busy.remove(&self.id);
+        if let Some(view) = state.items.get_mut(&self.id) {
+            if ["waiting", "downloading", "preparing", "checking"].contains(&view.phase.as_str()) {
+                view.error_stage = Some(
+                    if view.phase == "checking" {
+                        "check"
+                    } else {
+                        "download"
+                    }
+                    .into(),
+                );
+                view.phase = "error".into();
+                view.error = Some("更新任务已中断，请重试".into());
+            }
+        }
+        drop(state);
+        self.core.changed();
     }
 }
 
 impl AppCore {
+    pub(crate) fn invalidate_update(&self, id: &str) {
+        let mut state = self.updates.lock().unwrap();
+        state.items.remove(id);
+        state.candidates.remove(id);
+        state.next_check_at = 0;
+        drop(state);
+        self.persist_update_cache();
+    }
+    pub fn fail_update(&self, id: &str, error: String) {
+        self.update_phase(id, "error", Some(error));
+        self.changed();
+    }
+    pub fn failed_core_install(&self, error: String) {
+        if let Some(view) = self.updates.lock().unwrap().items.get_mut(CORE_ID) {
+            view.phase = "ready".into();
+            view.error_stage = Some("install".into());
+            view.error = Some(error);
+        }
+        self.changed();
+    }
     pub fn updates_busy(&self) -> bool {
-        !self.updates.lock().unwrap().busy.is_empty()
+        let state = self.updates.lock().unwrap();
+        state.checking_all || !state.busy.is_empty()
     }
     pub fn update_views(&self) -> HashMap<String, UpdateView> {
-        self.updates.lock().unwrap().items.clone()
+        let snapshot = self.snapshot();
+        let mut items = self.updates.lock().unwrap().items.clone();
+        for p in snapshot.plugins {
+            if let Some(version) = p.pending_version {
+                let view = items
+                    .entry(p.manifest.id.clone())
+                    .or_insert_with(|| UpdateView {
+                        id: p.manifest.id,
+                        ..Default::default()
+                    });
+                view.phase = "ready".into();
+                view.version = Some(version);
+                view.error = None;
+                view.error_stage = None;
+            }
+        }
+        items
+    }
+
+    pub fn update_overview(&self) -> UpdateOverview {
+        let state = self.updates.lock().unwrap();
+        UpdateOverview {
+            checking: state.checking_all,
+            busy: !state.busy.is_empty(),
+            last_checked_at: state.last_checked_at,
+            next_check_at: state.next_check_at,
+        }
+    }
+
+    pub fn begin_update_check(self: &Arc<Self>, automatic: bool) -> Option<CheckBatch> {
+        let enabled = self.store.lock().unwrap().preferences.automatic_updates;
+        let mut state = self.updates.lock().unwrap();
+        if self.is_closing()
+            || state.checking_all
+            || !state.busy.is_empty()
+            || (automatic && (!enabled || state.next_check_at > crate::core::now()))
+        {
+            return None;
+        }
+        state.checking_all = true;
+        drop(state);
+        self.changed();
+        Some(CheckBatch {
+            core: self.clone(),
+            successes: 0,
+        })
+    }
+
+    pub fn update_check_ids(&self) -> Vec<String> {
+        let mut ids = vec![CORE_ID.to_string()];
+        ids.extend(
+            self.snapshot()
+                .plugins
+                .into_iter()
+                .filter(|p| p.manifest.update_source.is_some() && p.pending_version.is_none())
+                .map(|p| p.manifest.id),
+        );
+        ids
+    }
+
+    pub fn reserve_update_downloads(
+        self: &Arc<Self>,
+        ids: &[String],
+    ) -> Result<Vec<(String, Operation)>, String> {
+        if ids.is_empty() || ids.len() > 200 {
+            return Err("请选择要下载的更新".into());
+        }
+        let snapshot = self.snapshot();
+        let mut state = self.updates.lock().unwrap();
+        if state.checking_all || !state.busy.is_empty() {
+            return Err("已有更新任务在处理中，请完成后继续".into());
+        }
+        let mut unique = HashSet::new();
+        for id in ids {
+            if self.is_closing() || !unique.insert(id) || state.busy.contains(id) {
+                return Err("更新任务已在处理中".into());
+            }
+            let view = state.items.get(id).ok_or("请先检查更新")?;
+            if !["available", "error"].contains(&view.phase.as_str())
+                || view.version.is_none()
+                || view.error_stage.as_deref() == Some("check")
+                || snapshot
+                    .plugins
+                    .iter()
+                    .any(|p| p.manifest.id == *id && p.pending_version.is_some())
+            {
+                return Err("所选更新的状态已改变，请刷新后重试".into());
+            }
+        }
+        let mut tasks = Vec::new();
+        for id in ids {
+            state.busy.insert(id.clone());
+            let view = state.items.get_mut(id).unwrap();
+            view.phase = "waiting".into();
+            view.error = None;
+            view.error_stage = None;
+            tasks.push((
+                id.clone(),
+                Operation {
+                    core: self.clone(),
+                    id: id.clone(),
+                },
+            ));
+        }
+        drop(state);
+        self.changed();
+        Ok(tasks)
+    }
+
+    pub(crate) fn persist_update_cache(&self) {
+        let _io = self.update_cache_io.lock().unwrap();
+        let root = self.store.lock().unwrap().root.clone();
+        let state = self.updates.lock().unwrap();
+        let cache = UpdateCache {
+            items: state
+                .items
+                .iter()
+                .filter(|(_, v)| {
+                    !["checking", "downloading", "preparing", "waiting"].contains(&v.phase.as_str())
+                })
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+            candidates: state.candidates.clone(),
+            last_checked_at: state.last_checked_at,
+            next_check_at: state.next_check_at,
+        };
+        drop(state);
+        if let Err(error) = crate::storage::write_json(&root.join("updates-cache.json"), &cache) {
+            self.log(None, "warn", &error, None);
+        }
+    }
+
+    pub(crate) fn restore_update_cache(&self) {
+        let snapshot = self.snapshot();
+        let path = snapshot.data_directory.join("updates-cache.json");
+        let Ok(bytes) = fs::read(path) else {
+            return;
+        };
+        let Ok(mut cache) = serde_json::from_slice::<UpdateCache>(&bytes) else {
+            return;
+        };
+        cache.candidates.retain(|id, m| {
+            id != CORE_ID
+                && snapshot.plugins.iter().any(|p| {
+                    p.manifest.id == *id
+                        && p.manifest.update_source == m.source
+                        && p.pending_version.is_none()
+                        && stable_version(&p.manifest.version)
+                            .ok()
+                            .zip(stable_version(&m.version).ok())
+                            .is_some_and(|(old, new)| new > old)
+                        && m.platforms.contains_key(TARGET)
+                        && m.api_version.split('.').next() == Some(API_VERSION)
+                })
+        });
+        cache.items.retain(|id, v| {
+            id != CORE_ID
+                && snapshot
+                    .plugins
+                    .iter()
+                    .any(|p| p.manifest.id == *id && p.manifest.update_source.is_some())
+                && (v.phase == "current"
+                    || (v.error_stage.as_deref() == Some("check")
+                        && ["error", "incompatible"].contains(&v.phase.as_str()))
+                    || cache.candidates.contains_key(id))
+        });
+        let mut state = self.updates.lock().unwrap();
+        state.items = cache.items;
+        state.candidates = cache.candidates;
+        state.last_checked_at = cache.last_checked_at;
+        state.next_check_at = cache
+            .next_check_at
+            .min(crate::core::now() + 24 * 60 * 60 * 1000);
     }
 
     pub(crate) fn update_progress(&self, id: &str, downloaded: u64, total: Option<u64>) {
@@ -504,7 +831,24 @@ impl AppCore {
                 id: id.into(),
                 ..Default::default()
             });
-        view.phase = phase.into();
+        view.error_stage = error.as_ref().map(|_| {
+            if view.phase == "checking" {
+                "check"
+            } else {
+                "download"
+            }
+            .into()
+        });
+        view.phase = if phase == "error"
+            && error
+                .as_ref()
+                .is_some_and(|e| e.contains("要求核心 API") || e.contains("尚未提供本机平台"))
+        {
+            "incompatible"
+        } else {
+            phase
+        }
+        .into();
         view.error = error.clone();
         drop(updates);
         if let Some(error) = error {
@@ -531,7 +875,22 @@ impl AppCore {
         client: &ReleaseClient,
     ) -> Result<Option<UpdateManifest>, String> {
         let _operation = self.update_operation(id)?;
+        if self
+            .snapshot()
+            .plugins
+            .iter()
+            .any(|p| p.manifest.id == id && p.pending_version.is_some())
+        {
+            return Ok(None);
+        }
         self.update_phase(id, "checking", None);
+        let previous_version = self
+            .updates
+            .lock()
+            .unwrap()
+            .items
+            .get(id)
+            .and_then(|v| v.version.clone());
         let result = (|| {
             let (source, current) = if id == CORE_ID {
                 (
@@ -580,6 +939,7 @@ impl AppCore {
                             .as_ref()
                             .map(|m| m.notes.clone())
                             .unwrap_or_default(),
+                        checked_at: Some(crate::core::now()),
                         ..Default::default()
                     },
                 );
@@ -588,7 +948,10 @@ impl AppCore {
                     updates.candidates.insert(id.into(), candidate.clone());
                 }
                 drop(updates);
-                if let Some(candidate) = candidate {
+                if let Some(candidate) = candidate
+                    .as_ref()
+                    .filter(|c| previous_version.as_ref() != Some(&c.version))
+                {
                     let _ = self.publish(
                         None,
                         PublishMessage {
@@ -604,6 +967,7 @@ impl AppCore {
             }
             Err(error) => self.update_phase(id, "error", Some(error.clone())),
         }
+        self.persist_update_cache();
         result
     }
     pub fn download_plugin(
@@ -615,6 +979,15 @@ impl AppCore {
             return Err("核心更新请使用应用更新入口".into());
         }
         let _operation = self.update_operation(id)?;
+        self.download_plugin_reserved(id, client, _operation)
+    }
+
+    pub fn download_plugin_reserved(
+        self: &Arc<Self>,
+        id: &str,
+        client: &ReleaseClient,
+        _operation: Operation,
+    ) -> Result<bool, String> {
         let candidate = self
             .updates
             .lock()
@@ -626,9 +999,10 @@ impl AppCore {
         self.update_phase(id, "downloading", None);
         let result = self.prepare_plugin(id, &candidate, client, false);
         match &result {
-            Ok(_) => self.update_phase(id, "ready", None),
+            Ok(restart) => self.update_phase(id, if *restart { "ready" } else { "current" }, None),
             Err(error) => self.update_phase(id, "error", Some(error.clone())),
         }
+        self.persist_update_cache();
         result
     }
     fn prepare_plugin(
@@ -645,6 +1019,7 @@ impl AppCore {
                 .join(id)
                 .join(format!("{}-{}", candidate.version, self.next_id()));
         let result = (|| {
+            client.validate_candidate(candidate)?;
             let asset = candidate
                 .platforms
                 .get(TARGET)
@@ -652,6 +1027,7 @@ impl AppCore {
             client.download(asset, &archive, |n, total| {
                 self.update_progress(id, n, total)
             })?;
+            self.update_phase(id, "preparing", None);
             let zip_format = reqwest::Url::parse(&asset.url)
                 .map_err(|e| e.to_string())?
                 .path()

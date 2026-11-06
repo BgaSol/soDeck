@@ -8,8 +8,13 @@
 }
 @layer components {
   #status { order: 2; flex: none; max-height: 80px; overflow: auto; }
-  #terminal { flex: 1; min-height: 0; padding: 12px 12px 8px; }
+  #terminal { flex: 1; min-height: 0; padding: 12px 16px 24px; }
   .xterm { height: 100%; }
   .xterm-viewport { overscroll-behavior: contain; }
+  /* Keep xterm's 14px hit area and geometry, with the shared 6px visible thumb. */
+  .xterm .xterm-scrollable-element > .scrollbar > .slider {
+    box-sizing: border-box; border: 2px solid transparent; border-inline-width: 4px;
+    background-clip: padding-box !important; border-radius: 10px;
+  }
   .terminal-menu { position: fixed; z-index: 10; width: min(240px, calc(100vw - 8px)); }
 }

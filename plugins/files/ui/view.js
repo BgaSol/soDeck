@@ -1,8 +1,30 @@
 /* File business UI. Remote/local IO stays behind the core's scoped data endpoint. */
+import {loadFont} from './font-loader.js';
+import {fontPresets,fontAsset} from './font-presets.js';
 (() => {
  const root=document.querySelector('#root'),encoder=new TextEncoder();
  let id,textarea,status,tree,transfers,cancelButton,jobTimer,jobId,busy=false,queue=Promise.resolve(),localRevision=0,eol='\n',bom=false,loaded=false,pumping=false,pendingDraft=false;
  const request=(method,params)=>sodeck.request(method,params);
+ let settingsSnapshot,settingsEpoch=0,disposed=false;
+ async function applySettings(snapshot,force=false){
+  if(!snapshot||disposed)return;
+  if(settingsSnapshot&&settingsSnapshot.definitionToken===snapshot.definitionToken&&BigInt(settingsSnapshot.revision)>BigInt(snapshot.revision))return;
+  if(!force&&settingsSnapshot?.definitionToken===snapshot.definitionToken&&settingsSnapshot.revision===snapshot.revision)return;
+  settingsSnapshot=snapshot;const ticket=++settingsEpoch,v=snapshot.values;
+  let error;
+  if(snapshot.pageId==='browser')tree?.preferences(v);
+  if(snapshot.pageId==='editor'&&textarea){
+   let family;
+   try{family=await loadFont(v.font,fontPresets,fontAsset);}catch(e){error=e.message;try{family=await loadFont({source:'preset',id:'jetbrains-mono'},fontPresets,fontAsset);}catch{family='monospace';}}
+   if(disposed||ticket!==settingsEpoch)return;
+   const start=textarea.selectionStart,end=textarea.selectionEnd,direction=textarea.selectionDirection,top=textarea.scrollTop,left=textarea.scrollLeft;
+   textarea.style.fontFamily=family;textarea.style.fontSize=v.fontSize+'px';textarea.style.lineHeight=String(v.lineHeight);textarea.style.tabSize=String(v.tabSize);
+   textarea.wrap=v.wordWrap?'soft':'off';textarea.style.whiteSpace=v.wordWrap?'pre-wrap':'pre';textarea.style.overflowWrap=v.wordWrap?'anywhere':'normal';
+   textarea.setSelectionRange(start,end,direction);textarea.scrollTop=top;textarea.scrollLeft=left;
+  }
+  if(disposed||ticket!==settingsEpoch)return;
+  if(snapshot.revision)await request('settings',{op:'applied',pageId:snapshot.pageId,definitionToken:snapshot.definitionToken,revision:snapshot.revision,...(error?{error}:{})}).catch(()=>{});
+ }
  const data=(action,args={})=>request('data',{op:'files',id,action,...args});
  const event=args=>request('event',args);
  function message(text,error=false){if(status){status.textContent=text;status.classList.toggle('error',error);}if(error)void event({action:'error',message:String(text).slice(0,2048)}).catch(()=>{});}
@@ -42,6 +64,7 @@
  async function save(){if(!loaded)throw new Error('文件尚未准备好编辑');await queue;if(busy)throw new Error('保存或下载正在进行');await watchJob(await event({action:'save'}));}
  function theme(tokens){for(const [name,value]of Object.entries(tokens||{}))document.documentElement.style.setProperty('--'+name,value);}
  async function init(m){
+  settingsSnapshot=m.settings;
   id=m.data.fileId;theme(m.tokens);root.replaceChildren();
   status=document.createElement('div');status.className='status';status.setAttribute('role','status');
   const footer=document.createElement('footer');footer.className='sd-edge-top';footer.append(status);
@@ -51,12 +74,14 @@
    root.className='browser-root';const host=document.createElement('section');root.append(host);
    cancelButton=button('取消下载',()=>data('cancel'));cancelButton.hidden=true;footer.append(cancelButton);root.append(footer);
    transfers=new FileTransfers({fileId:id,data,event,request,message,host:root,target:()=>tree.targetDirectory(),ambiguous:()=>tree.ambiguousTarget(),refresh:()=>tree.refresh()});
-   tree=new FileTree(host,{data,event,request,download:path=>transfers.download([path]),message,state:m.data.navigation,transfers});await tree.start();
+   tree=new FileTree(host,{data,event,request,download:path=>transfers.download([path]),message,state:m.data.navigation,transfers});tree.preferences(settingsSnapshot?.values||{showHidden:true,density:'compact',fontSize:12});await tree.start();
+   void applySettings(settingsSnapshot,true);
   }else{
    root.className='editor-root';const header=document.createElement('header');header.className='editor-toolbar';root.append(header);
    const title=document.createElement('span');title.className='path';title.textContent=m.data.path;title.title=m.data.path;header.append(title,button('保存',save,'primary'),button('下载远端',()=>download(m.data.path)),button('导出草稿',async()=>{await queue;const result=await data('exportDraft',{path:m.data.path});if(!result.cancelled)message('草稿已导出：'+result.path);}));
    transfers=new FileTransfers({fileId:id,data,event,request,message,host:root,target:()=>m.data.path.slice(0,m.data.path.lastIndexOf('/'))||'/',refresh:async()=>{}});
    textarea=document.createElement('textarea');textarea.spellcheck=false;textarea.disabled=true;textarea.setAttribute('aria-label','远端文件编辑器');root.append(textarea,footer);
+   await applySettings(settingsSnapshot||{pageId:'editor',values:{font:{source:'preset',id:'jetbrains-mono'},fontSize:14,lineHeight:1.5,wordWrap:false,tabSize:4}},true);
    let info=await data('describe');if(!info.path)info=await data('read',{path:m.data.path});
    const bytes=new Uint8Array(info.size);for(let offset=0;offset<bytes.length;offset+=16384){const block=await data('chunk',{offset});bytes.set(block.data,offset);}
    let text;try{text=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(bytes);}catch{throw new Error('此文件不是有效 UTF-8 文本，请下载后查看');}
@@ -74,11 +99,13 @@
  }
  addEventListener('sodeck:mount',e=>void perform(()=>init(e.detail)));
  addEventListener('sodeck:themeChanged',e=>theme(e.detail.tokens));
+ addEventListener('sodeck:settingsChanged',e=>void applySettings(e.detail.settings,true));
+ addEventListener('sodeck:textMenuError',e=>message(e.detail,true));
  addEventListener('sodeck:focus',()=>tree?tree.focus():textarea?.focus());
  addEventListener('sodeck:visibilityChanged',e=>{transfers?.visibility(e.detail.visible);if(!e.detail.visible)tree?.closeMenu();});
  addEventListener('sodeck:localFileDrop',e=>tree?.nativeDrop(e.detail));
  addEventListener('sodeck:contextChanged',()=>{transfers?.invalidate();tree?.contextChanged();message(tree?'连接已更换，刷新目录以读取最新文件':'服务器连接已更换；草稿保留，保存前将重新检查远端版本');});
  addEventListener('sodeck:flush',async e=>{try{await queue;await tree?.flush();parent.postMessage({channel:'sodeck-ui-v1',type:'flushed',surfaceId:e.detail.surfaceId,id:e.detail.id},'*');}catch(error){parent.postMessage({channel:'sodeck-ui-v1',type:'flushed',surfaceId:e.detail.surfaceId,id:e.detail.id,error:error.message},'*');}});
- addEventListener('sodeck:unmount',()=>transfers?.dispose());
+ addEventListener('sodeck:unmount',()=>{disposed=true;settingsEpoch++;transfers?.dispose();});
  addEventListener('unload',()=>{clearTimeout(jobTimer);transfers?.dispose();});
 })();

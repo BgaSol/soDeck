@@ -9,6 +9,8 @@ const build=spawnSync(process.execPath,['build.mjs'],{cwd:'plugins/terminal',std
 if(build.status!==0)throw new Error('Terminal UI build failed; install its locked dependencies first');
 const vite=await createServer({server:{host:'127.0.0.1',port:0}});await vite.listen();const url=vite.resolvedUrls.local[0];
 const browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:1024,height:700}});
+const desktopArg=process.argv.indexOf('--desktop-script');
+if(desktopArg!==-1)await page.addInitScript({content:fs.readFileSync(process.argv[desktopArg+1],'utf8')});
 const errors=[];page.on('pageerror',error=>errors.push(String(error)));
 let requestedPlatform='Win32';
 const harness=`<!doctype html><html data-theme="dopamine"><head><meta charset="utf-8"></head><body><button id="outside">外部焦点</button><iframe id="terminal" style="width:900px;height:480px;border:0"></iframe><script type="module">
@@ -27,6 +29,7 @@ window.addEventListener('message',async event=>{
  try{
   let data={};
   if(message.method==='clipboard'){const revision=generation;data=await host.request(token,message.params,()=>visible&&generation===revision&&document.hasFocus()&&document.activeElement===frame);}
+  if(message.method==="settings"){window.appearanceReports?.push(message.params);}
   if(message.method==='data'){
    const p=message.params;
    if(p.op==='write')window.writes.push(p.data);
@@ -40,8 +43,10 @@ window.hideTerminal=()=>{visible=false;generation++;host.discard(token);post({ty
 window.showTerminal=()=>{visible=true;post({type:'visibilityChanged',visible:true});};
 </script></body></html>`;
 await page.route(url,route=>route.fulfill({contentType:'text/html',body:harness}));
+let rejectSourceCodeFont=false;
 await page.route(url+'__terminal__/**',route=>{
  const relative=new URL(route.request().url()).pathname.replace('/__terminal__/','');const filename=path.join('plugins/terminal/ui',relative);
+ if(rejectSourceCodeFont&&relative.startsWith('fonts/source-code-pro-'))return route.abort();
  let body=fs.readFileSync(filename);if(relative==='vendor/xterm.js')body=Buffer.concat([body,Buffer.from('\n;window.RealTerminal=window.Terminal;window.Terminal=class extends window.RealTerminal{constructor(options){super(options);window.testTerminal=this;}};')]);
  if(relative==='index.html')body=Buffer.from(body.toString().replace('<body>',`<body><script>Object.defineProperty(navigator,'platform',{configurable:true,value:'${requestedPlatform}'});Object.defineProperty(navigator,'userAgentData',{configurable:true,value:undefined});</script>`));
  return route.fulfill({contentType:{'.js':'text/javascript','.css':'text/css','.html':'text/html'}[path.extname(filename)],body});
@@ -53,6 +58,9 @@ const focus=()=>frame.locator('.xterm-helper-textarea').focus();
 const term=async code=>{const child=page.frames().find(f=>f.url().includes('/__terminal__/index.html'));return child.evaluate(code);};
 try{
  await page.goto(url);await page.waitForFunction(()=>window.ready);await focus();
+ for(const [key,expected]of [['Control+r','\x12'],['Control+u','\x15'],['Control+p','\x10'],['F5','\x1b[15~'],['F12','\x1b[24~'],['Shift+Tab','\x1b[Z']]){
+  await page.keyboard.press(key);await page.waitForFunction(()=>window.writes.length>0);assert.equal(await bytes(),expected,`${key} still reaches the terminal`);await reset();
+ }
  // Composition is owned by the IME; local clipboard shortcuts must not intervene.
  await frame.locator('.xterm-helper-textarea').dispatchEvent('compositionstart');
  await page.keyboard.press('Control+v');await page.waitForFunction(()=>window.writes.length>0);assert.equal(await page.evaluate(()=>window.reads),0);
@@ -75,11 +83,37 @@ try{
  await page.evaluate(()=>{window.finishRead('single-flight');window.finishRead=null;});await page.waitForFunction(()=>window.writes.length>0);assert.equal(await bytes(),'\x1b[200~single-flight\x1b[201~');await reset();
  // A late native clipboard response must never cross a visibility/context change.
  await focus();await page.evaluate(()=>window.delayRead=true);await page.keyboard.press('Control+v');await page.waitForFunction(()=>Boolean(window.finishRead));await page.evaluate(()=>{window.hideTerminal();window.finishRead('must-not-send');});await page.waitForTimeout(80);assert.equal(await bytes(),'');await page.evaluate(()=>window.showTerminal());await reset();await focus();
+ await term(()=>new Promise(resolve=>window.testTerminal.write(Array.from({length:80},(_,i)=>`scrollback ${i}\r\n`).join(''),resolve)));
+ await frame.locator('.xterm-screen').hover();await page.mouse.wheel(0,-300);
+ const child=page.frames().find(f=>f.url().includes('/__terminal__/index.html'));
+ await child.waitForFunction(()=>window.testTerminal.buffer.active.viewportY<window.testTerminal.buffer.active.baseY);
+ const slider=await frame.locator('.xterm-scrollable-element > .scrollbar.vertical > .slider').evaluate(node=>{const css=getComputedStyle(node);return{visibleWidth:parseFloat(css.width)-parseFloat(css.borderLeftWidth)-parseFloat(css.borderRightWidth),radius:css.borderRadius,clip:css.backgroundClip};});
+ assert.deepEqual(slider,{visibleWidth:6,radius:'10px',clip:'padding-box'});
  await term(()=>window.testTerminal.select(0,0,5));
  const geometry=()=>({cols:window.testTerminal.cols,rows:window.testTerminal.rows,selection:window.testTerminal.getSelection(),scroll:window.testTerminal.buffer.active.viewportY});
  const before=await term(geometry);
  for(const theme of ['light','dark','dopamine']){await page.evaluate(theme=>window.setTheme(theme),theme);await page.waitForTimeout(20);assert.deepEqual(await term(geometry),before);}
- assert.equal(await term(()=>window.testTerminal.options.theme.selectionBackground),'#c8bdf4');assert.deepEqual(errors,[]);
+ assert.equal(await term(()=>window.testTerminal.options.theme.selectionBackground),'#c8bdf4');
+ assert.equal(await term(()=>window.testTerminal.options.theme.scrollbarSliderBackground),'#92907b');
+ assert.equal(await term(()=>window.testTerminal.options.theme.scrollbarSliderHoverBackground),'#6f715e');
+ assert.equal(await term(()=>window.testTerminal.options.theme.scrollbarSliderActiveBackground),'#5346a6');assert.deepEqual(errors,[]);
+ await page.evaluate(()=>window.appearanceReports=[]);
+ const settings={pageId:'appearance',definitionToken:'test-appearance',revision:'1',values:{font:{source:'preset',id:'ibm-plex-mono'},fontSize:18,lineHeight:1.3,paddingBottom:40,cursorStyle:'bar',cursorBlink:false}};
+ await page.evaluate(settings=>window.testPost({type:'settingsChanged',settings}),settings);
+ await page.waitForFunction(()=>window.appearanceReports.some(r=>r.revision==='1'));
+ const appearance=await term(()=>({size:window.testTerminal.options.fontSize,lineHeight:window.testTerminal.options.lineHeight,family:window.testTerminal.options.fontFamily,padding:document.querySelector('#terminal').style.paddingBottom,cursor:window.testTerminal.options.cursorStyle}));
+ assert.equal(appearance.size,18);assert.equal(appearance.lineHeight,1.3);assert.equal(appearance.padding,'40px');assert.equal(appearance.cursor,'bar');assert(appearance.family.includes('SoDeckFont'));
+ assert((await term(geometry)).rows<before.rows);assert.equal(await bytes(),'');
+ await page.evaluate(settings=>window.testPost({type:'settingsChanged',settings:{...settings,revision:'0',values:{...settings.values,fontSize:12}}}),settings);
+ assert.equal(await term(()=>window.testTerminal.options.fontSize),18);
+ // A transient resource failure can be retried without saving another revision.
+ rejectSourceCodeFont=true;
+ const retrySettings={...settings,revision:'2',values:{...settings.values,font:{source:'preset',id:'source-code-pro'}}};
+ await page.evaluate(settings=>window.testPost({type:'settingsChanged',settings}),retrySettings);
+ await page.waitForFunction(()=>window.appearanceReports.some(r=>r.revision==='2'&&r.error));
+ rejectSourceCodeFont=false;
+ await page.evaluate(settings=>window.testPost({type:'settingsChanged',settings}),retrySettings);
+ await page.waitForFunction(()=>window.appearanceReports.some(r=>r.revision==='2'&&!r.error));
  for(const [platform,key]of [['Linux','Control+Shift+v'],['MacIntel','Meta+v']]){
    requestedPlatform=platform;await page.reload();await page.waitForFunction(()=>window.ready);await focus();await page.keyboard.press(key);await page.waitForFunction(()=>window.writes.length>0);assert.equal(await page.evaluate(()=>window.reads),1);await reset();
    if(platform==='Linux'){await page.keyboard.press('Control+v');await page.waitForFunction(()=>window.writes.length>0);assert.equal(await bytes(),'\x16');assert.equal(await page.evaluate(()=>window.reads),0);}

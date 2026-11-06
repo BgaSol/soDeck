@@ -1,7 +1,105 @@
 {
-  "id": "sodeck.network-proxy", "name": "网络隧道", "apiVersion": "1", "binary": "sodeck-network-proxy", "tagPrefix": "plugin-network-proxy-v",
-  "ui": { "apiVersion": "1", "entry": "ui/index.html", "views": [
-    { "id": "manager", "title": "网络隧道", "icon": "network", "container": "sidebar", "instancePolicy": "perWorkspace", "defaultSide": "right", "defaultPinned": true, "openOnWorkspace": "none", "startupOrder": 30 },
-    { "id": "rule-editor", "title": "编辑网络隧道", "icon": "network", "container": "dialog", "instancePolicy": "perWorkspace", "openOnWorkspace": "none" }
-  ] }
+  "id": "sodeck.network-proxy",
+  "name": "网络隧道",
+  "apiVersion": "1",
+  "binary": "sodeck-network-proxy",
+  "tagPrefix": "plugin-network-proxy-v",
+  "ui": {
+    "apiVersion": "1",
+    "entry": "ui/index.html",
+    "views": [
+      {
+        "id": "manager",
+        "title": "网络隧道",
+        "icon": "network",
+        "container": "sidebar",
+        "instancePolicy": "perWorkspace",
+        "defaultSide": "right",
+        "defaultPinned": true,
+        "openOnWorkspace": "none",
+        "startupOrder": 30
+      },
+      {
+        "id": "rule-editor",
+        "title": "编辑网络隧道",
+        "icon": "network",
+        "container": "dialog",
+        "instancePolicy": "perWorkspace",
+        "openOnWorkspace": "none"
+      }
+    ]
+  },
+  "settings": {
+    "apiVersion": "1",
+    "schemaVersion": 1,
+    "pages": [
+      {
+        "id": "defaults",
+        "title": "网络隧道",
+        "icon": "network",
+        "viewTypes": [
+          "manager",
+          "rule-editor"
+        ],
+        "order": 300,
+        "groups": [
+          {
+            "id": "new",
+            "title": "新建规则默认值",
+            "fields": [
+              {
+                "key": "defaultType",
+                "title": "规则类型",
+                "type": "select",
+                "default": "tcpForward",
+                "options": [
+                  {
+                    "value": "tcpForward",
+                    "title": "TCP 转发"
+                  },
+                  {
+                    "value": "socks5",
+                    "title": "SOCKS5 代理"
+                  }
+                ],
+                "apply": "newInstance"
+              },
+              {
+                "key": "portMode",
+                "title": "本机端口",
+                "type": "select",
+                "default": "auto",
+                "options": [
+                  {
+                    "value": "auto",
+                    "title": "自动分配"
+                  },
+                  {
+                    "value": "fixed",
+                    "title": "固定端口"
+                  }
+                ],
+                "apply": "newInstance"
+              },
+              {
+                "key": "fixedPort",
+                "title": "固定端口",
+                "type": "number",
+                "default": 1080,
+                "min": 1,
+                "max": 65535,
+                "step": 1,
+                "unit": "",
+                "apply": "newInstance",
+                "visibleWhen": {
+                  "key": "portMode",
+                  "equals": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
 }

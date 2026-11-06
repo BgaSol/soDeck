@@ -59,6 +59,9 @@ export function replace(element: HTMLElement, html: string) {
   if (element.innerHTML === html) return;
   const active = document.activeElement as HTMLInputElement | null;
   const id = active && element.contains(active) ? active.id : "";
+  const focusedDetails = active?.matches("summary") && element.contains(active)
+    ? active.closest<HTMLDetailsElement>("details[data-persist]")?.dataset.persist
+    : undefined;
   const selection =
     active && "selectionStart" in active
       ? [active.selectionStart, active.selectionEnd]
@@ -66,11 +69,15 @@ export function replace(element: HTMLElement, html: string) {
   const scroll = [
     ...element.querySelectorAll<HTMLElement>("[data-scroll]"),
   ].map((e) => [e.dataset.scroll, e.scrollTop] as const);
+  const expanded = [...element.querySelectorAll<HTMLDetailsElement>('details[data-persist][open]')].map(d => d.dataset.persist!);
   element.innerHTML = html;
+  for (const key of expanded) element.querySelector(`details[data-persist="${CSS.escape(key)}"]`)?.setAttribute("open", "");
   for (const [key, top] of scroll)
     element
       .querySelector<HTMLElement>(`[data-scroll="${key}"]`)
       ?.scrollTo(0, top);
+  if (focusedDetails)
+    element.querySelector<HTMLElement>(`details[data-persist="${CSS.escape(focusedDetails)}"] > summary`)?.focus({ preventScroll: true });
   if (id) {
     const target = document.getElementById(id) as HTMLInputElement | null;
     target?.focus({ preventScroll: true });

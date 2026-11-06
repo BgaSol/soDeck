@@ -38,6 +38,7 @@ enum Output {
 }
 
 pub(crate) struct Instance {
+    pub(crate) settings_api: std::sync::atomic::AtomicBool,
     view: Mutex<PluginView>,
     calls: SyncSender<Call>,
     stops: SyncSender<Sender<Result<(), String>>>,
@@ -83,6 +84,7 @@ impl Instance {
         let (ready, ready_rx) = mpsc::channel();
         (
             Arc::new(Self {
+                settings_api: std::sync::atomic::AtomicBool::new(false),
                 view: Mutex::new(PluginView {
                     directory: record.directory,
                     manifest: record.manifest,

@@ -1,0 +1,31 @@
+import type { Plugin, Snapshot } from "./core";
+import type { ViewState } from "./views";
+import { button as b, date, empty, escape as e, icon, statusText } from "./ui";
+import { canDownload, pluginUpdate, updateAction, updateNotes, updateStatus, updateWorking } from "./updates";
+
+const attrs = (id: string) => `data-id="${e(id)}"`;
+function toggle(p: Plugin, v: ViewState) {
+  const busy=v.busy.has(p.manifest.id) || ["starting","stopping"].includes(p.status);
+  return b("toggle-plugin", p.enabled ? "已启用" : "已关闭", undefined, `plugin-switch ${p.enabled ? "on" : ""}`, `${attrs(p.manifest.id)} id="plugin-toggle-${e(p.manifest.id)}" role="switch" aria-checked="${p.enabled}" aria-label="启用 ${e(p.manifest.name)}" ${busy ? "disabled" : ""}`);
+}
+function official(s: Snapshot, v: ViewState) {
+  return `<div class="section-heading maintenance-heading"><div><h2>添加插件</h2><p>安装官方插件，或添加已解压的本地插件目录。</p></div>${b("back-plugins", "返回插件", undefined, "text-button")}</div><section class="official-plugins"><h3>官方插件</h3><div class="official-plugin-list">${v.officialPlugins.map(p=>{
+    const installed=s.plugins.find(x=>x.manifest.id===p.id),u=v.updates[p.id],busy=v.busy.has(`install:${p.id}`)||updateWorking(u);
+    return `<article class="official-plugin" data-official-plugin="${e(p.id)}"><div><h3>${e(p.name)}</h3><p>${e(p.description)}</p></div>${installed ? b("select-plugin","已安装 · 查看",undefined,"quiet",attrs(p.id)) : b("install-official-plugin",busy ? updateStatus(u) : u?.phase==="error" ? "重试安装" : "安装并启用","download","quiet",`${attrs(p.id)} ${busy ? "disabled" : ""}`)}${u?.phase==="downloading"&&!installed ? `<progress aria-label="${e(p.name)}下载进度" ${u.totalBytes ? `value="${u.downloadedBytes}" max="${u.totalBytes}"` : ""}></progress>` : ""}${u?.error&&!installed ? `<p class="error-box" role="alert">${e(u.error)}</p>` : ""}</article>`;
+  }).join("")}</div></section><div class="maintenance-local"><h3>本地插件</h3><p>选择包含 plugin.json 的已解压目录。</p>${b("choose-plugin","添加插件目录","folder","quiet",v.busy.has("choose") ? "disabled" : "")}</div>`;
+}
+function detail(p: Plugin, v: ViewState) {
+  const u=pluginUpdate(p,v), source=v.sourceDrafts[p.manifest.id]??p.manifest.updateSource;
+  const pair=(name:string,value:unknown)=>`<div class="pair"><dt>${name}</dt><dd>${e(value)}</dd></div>`;
+  return `${b("back-plugins","← 返回插件列表",undefined,"text-button")}<div class="section-heading maintenance-heading"><div><h2>${e(p.manifest.name)}</h2><p>${e(p.manifest.version)} · ${statusText[p.status]}${p.pendingRestart ? ` · 重启后${p.enabled ? "启用" : "关闭"}` : ""}</p></div>${toggle(p,v)}</div><div class="maintenance-detail-actions">${!updateWorking(u)&&p.manifest.updateSource ? updateAction(p.manifest.id,u,v.updateOverview.busy||v.updateOverview.checking) : ""}${b("plugin-component-settings","组件设置","settings","quiet",attrs(p.manifest.id))}${b("plugin-logs","查看日志","log","quiet",attrs(p.manifest.id))}</div><p class="maintenance-meta">${updateStatus(u)}${p.pendingVersion ? ` · ${e(p.pendingVersion)}` : ""}</p>${p.error||p.updateError||u.error ? `<p class="error-box" role="alert">${e(p.updateError??p.error??u.error)}</p>` : ""}${updateNotes(p.manifest.id,u)}<details class="maintenance-details" data-persist="source-${e(p.manifest.id)}"><summary>更新来源 · ${e(p.manifest.updateSource?.repository??"手动管理")}</summary><div class="update-source"><label>GitHub 仓库<input id="update-repository" data-source="repository" value="${e(source?.repository??"")}" placeholder="owner/repository" autocomplete="off"></label><label>插件标签前缀<input id="update-prefix" data-source="tagPrefix" value="${e(source?.tagPrefix??"")}" placeholder="plugin-terminal-v" autocomplete="off"></label><div class="actions">${b("save-update-source","保存来源",undefined,"quiet",attrs(p.manifest.id))}${p.manifest.updateSource ? b("clear-update-source","改为手动管理",undefined,"text-button",attrs(p.manifest.id)) : ""}</div><p class="hint">从你信任的仓库更新；来源不影响插件启用。</p></div></details><details class="maintenance-details" data-persist="technical-${e(p.manifest.id)}"><summary>技术信息</summary><dl>${pair("插件 ID",p.manifest.id)}${pair("核心 API",p.manifest.apiVersion)}${pair("适用平台",p.manifest.target)}${pair("插件目录",p.directory)}${pair("入口",p.manifest.entry)}${p.pid ? pair("进程",p.pid) : ""}${p.startedAt ? pair("启动时间",date(p.startedAt)) : ""}${p.instanceId ? pair("实例",p.instanceId) : ""}</dl></details><div class="detail-bottom">${b("forget-plugin","移除记录",undefined,"quiet danger",`${attrs(p.manifest.id)} ${p.enabled||!p.cleanupComplete||v.busy.has(p.manifest.id) ? "disabled" : ""}`)}<span class="hint">关闭并重启后可移除，不删除程序与数据。</span></div>`;
+}
+export function pluginsPage(s:Snapshot,v:ViewState) {
+  const p=s.plugins.find(p=>p.manifest.id===v.plugin);
+  const error=v.error ? `<div role="alert" class="error-box">${e(v.error)}</div>` : "";
+  if(p) return error+detail(p,v);
+  if(v.addingPlugin) return error+official(s,v);
+  return `<div class="section-heading maintenance-heading"><div><h2>插件</h2><p>${s.plugins.length} 个已安装 · 启用和关闭在重启后生效</p></div>${b("add-plugin","添加插件","plus","quiet")}</div>${error}${s.plugins.length ? `<div class="maintenance-plugin-list">${s.plugins.map(p=>{
+    const u=pluginUpdate(p,v),description=v.officialPlugins.find(x=>x.id===p.manifest.id)?.description;
+    return `<article class="maintenance-plugin-row" data-plugin-id="${e(p.manifest.id)}"><div class="maintenance-symbol">${icon("plug")}</div><div class="update-content"><b>${e(p.manifest.name)}</b>${description ? `<p class="maintenance-meta">${e(description)}</p>` : ""}<p class="maintenance-meta">${e(p.manifest.version)} · ${statusText[p.status]}${p.pendingRestart ? ` · 重启后${p.enabled ? "启用" : "关闭"}` : ""}${canDownload(u) ? ` · 可更新至 ${e(u.version)}` : u.phase==="ready" ? ` · 新版 ${e(u.version)} 重启后应用` : ""}</p></div><div class="maintenance-plugin-actions">${toggle(p,v)}<div class="actions">${canDownload(u) ? b("download-update","更新",undefined,"text-button",`${attrs(p.manifest.id)} ${v.updateOverview.busy||v.updateOverview.checking ? "disabled" : ""}`) : updateWorking(u) ? `<span class="hint" role="status">${updateStatus(u)}</span>` : ""}${b("select-plugin","详情",undefined,"text-button",attrs(p.manifest.id))}</div></div></article>`;
+  }).join("")}</div>` : empty("尚未安装插件","从“添加插件”安装官方插件，或选择本地插件目录。")}`;
+}

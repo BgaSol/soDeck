@@ -42,6 +42,7 @@ fn selection_parameters(
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let views = Mutex::new(HashMap::<String, View>::new());
+    let settings = sodeck_plugin_client::settings::SettingsCache::default();
     let clipboard = Mutex::new(serde_json::Value::Null);
     let selections = Mutex::new(HashMap::<String, Selection>::new());
     let task_manager: Arc<Mutex<Option<tasks::Tasks>>> = Arc::new(Mutex::new(None));
@@ -68,7 +69,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or_else(|| std::env::temp_dir().join("sodeck-files"));
             let manager = tasks::Tasks::new(client.clone(), directory)?;
             *task_manager_for_handler.lock().unwrap() = Some(manager);
-            return Ok(json!({"apiVersion":"1"}));
+            return Ok(json!({"apiVersion":"1","settingsApiVersion":"1"}));
+        }
+        if method == "settings.changed" {
+            return settings.changed(&p, &["browser", "editor"]);
         }
         let manager = task_manager_for_handler.lock().unwrap();
         let tasks = manager.as_ref().ok_or("文件任务尚未初始化")?;

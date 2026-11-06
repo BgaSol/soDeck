@@ -19,6 +19,15 @@ pub(super) fn plugin_request(
     frame: &Value,
 ) -> Result<Value, RpcError> {
     match frame["method"].as_str().unwrap_or_default() {
+        "settings.get" => core
+            .settings_plugin_get(
+                id,
+                instance,
+                frame["params"]["pageId"]
+                    .as_str()
+                    .ok_or_else(|| RpcError::invalid("缺少 pageId"))?,
+            )
+            .map_err(RpcError::execution),
         method if method.starts_with("net.") => core
             .network_request(id, instance, method, &frame["params"])
             .map_err(RpcError::execution),

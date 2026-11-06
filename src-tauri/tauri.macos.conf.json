@@ -10,6 +10,7 @@
         "minHeight": 480,
         "decorations": true,
         "hiddenTitle": true,
+        "devtools": false,
         "titleBarStyle": "Overlay"
       }
     ]

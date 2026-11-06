@@ -1,0 +1,22 @@
+@layer components {
+  .settings-nav-hint { padding: 8px 12px; font-size: 11px; }
+  .settings-draft-dot { color: var(--accent); font-size: 9px; margin-left: auto; }
+  .component-settings-form { display: flex; flex-direction: column; gap: 24px; }
+  .component-settings-form fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+  .component-settings-form legend { font-weight: 650; padding: 0 0 12px; }
+  .setting-row { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(150px, 220px); align-items: start; gap: 20px; padding: 14px 0; border-top: 1px solid var(--border); }
+  .setting-row label { font-weight: 550; line-height: 30px; }
+  .setting-row p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+  .setting-row input, .setting-row select { min-width: 0; width: 100%; }
+  .setting-row input[type="checkbox"] { width: 18px; height: 18px; justify-self: end; margin: 6px 0; accent-color: var(--accent); }
+  .setting-number { display: flex; align-items: center; gap: 8px; }
+  .setting-number span { font-size: 12px; color: var(--muted); }
+  .setting-font { display: grid; gap: 8px; }
+  .setting-font .setting-font-sample { color: var(--text); font-size: 15px; padding: 12px; background: var(--subtle); border-radius: 8px; line-height: 1.6; overflow: hidden; }
+  .setting-font small { color: var(--muted); font-size: 11px; }
+  .settings-warnings { color: var(--muted); font-size: 12px; }
+  .settings-feedback { font-size: 12px; min-height: 24px; line-height: 1.6; }
+  .settings-save-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 16px 0 4px; border-top: 1px solid var(--border); }
+  .settings-save-bar > :first-child { margin-right: auto; }
+  @media (max-width: 760px) { .setting-row { grid-template-columns: minmax(90px,1fr) minmax(130px, 1.3fr); gap: 12px; } }
+}

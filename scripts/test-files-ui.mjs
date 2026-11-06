@@ -96,7 +96,7 @@ try{
  await sidebar.getByRole('status').filter({hasText:'文件任务完成'}).waitFor();
  await tasksIdle();fs.writeFileSync(path.join(remote,'drag-source.txt'),'pointer transfer');await locate(remote);await sidebar.getByRole('button',{name:'刷新选中目录',exact:true}).click();await row('drag-source.txt').waitFor();await tasksIdle();
  await sidebar.locator('.transfer-panel').evaluate(el=>el.open=false);
- const pointerDrag=async(source,target,copy=false)=>{await tasksIdle();await sidebar.locator('.transfer-panel').evaluate(el=>el.open=false);await source.scrollIntoViewIfNeeded();const a=await source.boundingBox();const modifier=process.platform==='darwin'?'Alt':'Control';if(copy)await main.keyboard.down(modifier);await main.mouse.move(a.x+a.width/2,a.y+a.height/2);await main.mouse.down();await main.mouse.move(a.x+a.width/2+10,a.y+a.height/2,{steps:2});await target.scrollIntoViewIfNeeded();const b=await target.boundingBox();await main.mouse.move(b.x+b.width/2,b.y+b.height/2,{steps:6});await main.mouse.up();if(copy)await main.keyboard.up(modifier);};
+ const pointerDrag=async(source,target,copy=false)=>{await tasksIdle();await sidebar.locator('.transfer-panel').evaluate(el=>el.open=false);await source.scrollIntoViewIfNeeded();const a=await source.boundingBox();const modifier=process.platform==='darwin'?'Alt':'Control';if(copy)await main.keyboard.down(modifier);await main.mouse.move(a.x+a.width/2,a.y+a.height/2);await main.mouse.down();await main.mouse.move(a.x+a.width/2+10,a.y+a.height/2,{steps:2});await target.scrollIntoViewIfNeeded();await target.evaluate(el=>{const tree=el.closest('.file-tree');tree.scrollTop=Math.max(0,el.offsetTop-tree.offsetTop-tree.clientHeight/2);});const b=await target.boundingBox();await main.mouse.move(b.x+b.width/2,b.y+b.height/2,{steps:6});await main.mouse.up();if(copy)await main.keyboard.up(modifier);};
  await pointerDrag(row('drag-source.txt'),sidebar.locator('.tree-row[data-path$="/remote 中文/ui-target"]'));
  await wait(()=>!fs.existsSync(path.join(remote,'drag-source.txt'))&&fs.existsSync(path.join(remote,'ui-target','drag-source.txt')));
  await sidebar.getByRole('status').filter({hasText:'文件任务完成'}).waitFor();await locate(path.join(remote,'ui-target','drag-source.txt'));
@@ -122,6 +122,15 @@ try{
  await row('设置 file.txt').dblclick();
  editor=main.frameLocator('iframe[title^="设置 file.txt"]');text=editor.locator('textarea');await wait(()=>text.isEnabled());assert.equal(await text.inputValue(),'saved by close\n中文\n');
  await text.fill('draft survives move\n中文');await main.evaluate(()=>window.manager.flush());
+ const remoteBeforeSettings=fs.readFileSync(filename);
+ await text.evaluate(el=>{window.settingsEditor=el;el.setSelectionRange(2,9,'backward');});
+ const preference=await call('settings_page',{pluginId:'sodeck.files',pageId:'editor'});
+ const savedPreference=(await call('save_settings',{pluginId:'sodeck.files',pageId:'editor',input:{definitionToken:preference.definitionToken,baseRevision:preference.revision,requestId:'editor-display',values:{...preference.values,fontSize:18,lineHeight:1.6,wordWrap:true,tabSize:8,font:{source:'preset',id:'source-code-pro'}}}})).snapshot;
+ await main.evaluate(snapshot=>{const frame=document.querySelector('iframe[title^="设置 file.txt"]');frame.contentWindow.postMessage({channel:'sodeck-ui-v1',surfaceId:frame.dataset.surfaceId,type:'settingsChanged',settings:snapshot},new URL(frame.src).origin);},savedPreference);
+ await wait(()=>text.evaluate(el=>el.style.fontSize==='18px'&&el.style.fontFamily.includes('SoDeckFont')));
+ assert.equal(await text.inputValue(),'draft survives move\n中文');assert.deepEqual(fs.readFileSync(filename),remoteBeforeSettings);
+ assert(await text.evaluate(el=>el===window.settingsEditor));assert.deepEqual(await text.evaluate(el=>[el.selectionStart,el.selectionEnd,el.selectionDirection]),[2,9,'backward']);
+ await main.evaluate(()=>window.manager.flush());assert.deepEqual(fs.readFileSync(filename),remoteBeforeSettings);
  const savedScroll=await sidebar.getByRole('tree').evaluate(el=>el.scrollTop);
  // Destruction/remount must recover the staged draft, with no remote read replacing it.
  await main.reload();await main.waitForFunction(()=>window.ready);editor=main.frameLocator('iframe[title^="设置 file.txt"]');text=editor.locator('textarea');await wait(async()=>await text.inputValue()==='draft survives move\n中文');

@@ -5,13 +5,21 @@ import { invoke } from "@tauri-apps/api/core";
 import { Workspaces, type DropTarget } from "./workspaces";
 import { core, type Snapshot, type Message } from "./core";
 import * as views from "./views";
+import { selectedUpdates, updateCount, CORE_ID } from "./updates";
 import { button as b, escape as e, icon, replace } from "./ui";
 import "./style.css";
+import "./text-menu.js";
 import { ServerManager } from "./servers";
 import { ConnectionsUi } from "./connections";
 import { ServerPicker } from "./server-picker";
+import { ComponentSettings, type SettingsSnapshot } from "./settings";
 
 const win = getCurrentWindow();
+window.installTextMenu({
+  read: async valid => { const text = await invoke<string>("clipboard_text", { operation: "read" }); return valid() ? text : null; },
+  write: async (text, valid) => { if (!valid()) return false; await invoke("clipboard_text", { operation: "write", text }); return valid(); },
+  notify: error => toast(error, undefined, true),
+});
 const root = document.querySelector<HTMLDivElement>("#app")!;
 root.innerHTML = `<header class="topbar" data-tauri-drag-region="deep"><button id="catalog-tab" role="tab" aria-selected="true">${icon("grid")}<span>服务器管理</span></button><div class="server-tabs" id="server-tabs" role="tablist" aria-label="服务器工作区"></div><button id="new-workspace" class="sd-icon" aria-label="选择服务器" title="选择服务器" aria-haspopup="dialog" aria-expanded="false">${icon("plus")}</button><div id="drag-region" class="drag-region" aria-hidden="true"></div><nav class="global-tools" aria-label="应用工具"><button data-action="status" id="status-button" aria-label="应用状态" aria-expanded="false"><span class="health-dot"></span><span id="health">正在启动</span></button>${b("messages", '<span id="message-count">消息</span>', "bell", "icon-label", 'id="messages-button" aria-label="消息中心"')}${b("settings", "设置", "settings", "icon-label", 'id="settings-button"')}</nav><div id="window-controls" class="window-controls">${b("minimize", "", "minus", "", 'aria-label="最小化"')}${b("maximize", "", "maximize", "", 'id="maximize-button" aria-label="最大化或还原"')}${b("close-window", "", "close", "close-window", 'aria-label="关闭窗口"')}</div></header><main class="workspace" id="server-workspace"><div id="server-catalog"></div><div id="workspace-content" hidden></div></main><div id="overlay" hidden></div><div id="toasts" class="toasts" aria-live="polite"></div>`;
 const servers = win.label === "main" ? new ServerManager(document.querySelector<HTMLElement>("#server-catalog")!, text => toast(text)) : undefined;
@@ -23,6 +31,7 @@ async function restart(install: boolean) {
   if (await servers.allowExit() && await workspaces.allowExit()) await core.restart(install);
 }
 const overlay = document.querySelector<HTMLDivElement>("#overlay")!;
+const componentSettings = new ComponentSettings(() => { if (layer === "settings") renderLayer(); });
 let snapshot: Snapshot | undefined;
 let layer = "";
 let returnFocus: HTMLElement | null = null;
@@ -45,6 +54,9 @@ const state: views.ViewState = {
   error: "",
   busy: new Set(),
   updates: {},
+  updateOverview: { checking: false, busy: false, lastCheckedAt: 0, nextCheckAt: 0 },
+  excludedUpdates: new Set(),
+  addingPlugin: false,
   sourceDrafts: {},
 };
 
@@ -63,6 +75,10 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener(
 );
 
 function renderTop() {
+  const count = snapshot ? updateCount(snapshot, state) : 0;
+  const pending = snapshot?.restartRequired || state.updates[CORE_ID]?.phase === "ready";
+  const settingsButton = document.querySelector<HTMLButtonElement>("#settings-button")!;
+  settingsButton.innerHTML = `${icon("settings")}设置${count ? `<span class="settings-update-count">${count}</span>` : pending ? '<span class="settings-update-pending">待重启</span>' : ""}`;
   const label = snapshot ? views.health(snapshot) : "状态不可用";
   document.querySelector("#health")!.textContent = label;
   document.querySelector("#status-button .health-dot")!.className =
@@ -81,15 +97,19 @@ function content() {
   if (!snapshot)
     return `<div class="error-box">无法读取应用状态：${e(lastError)}<br>${b("refresh", "重新读取")}</div>`;
   if (layer === "status") return views.status(snapshot);
-  if (layer === "settings") return views.settings(snapshot, state);
+  if (layer === "settings") return views.settings(snapshot, state, componentSettings.navigation());
   if (layer === "logs") return views.logs(snapshot, state);
   return views.messages(state);
 }
 function renderLayer() {
   const target = document.querySelector<HTMLElement>("#layer-content");
   if (target) {
+    const retained = layer === "settings" && state.section === "components" ? target.querySelector<HTMLElement>("#component-settings-page") : null;
     const expanded=[...target.querySelectorAll<HTMLDetailsElement>('details[data-network-server][open]')].map(d=>d.dataset.networkServer);
     replace(target, content());
+    const placeholder = target.querySelector<HTMLElement>("#component-settings-page");
+    if (retained && placeholder && retained !== placeholder) placeholder.replaceWith(retained);
+    componentSettings.mount(target.querySelector("#component-settings-page"), layer === "settings" && state.section === "components");
     for(const key of expanded)target.querySelector<HTMLDetailsElement>(`details[data-network-server="${CSS.escape(key!)}"]`)?.setAttribute('open','');
   }
 }
@@ -122,9 +142,12 @@ async function showLayer(next: string) {
     state.paused = false;
     await refreshLogs();
   }
+  if (next === "settings" && state.section === "updates") void core.checkUpdates(true).catch(() => {});
+  if (next === "settings") void componentSettings.catalog();
   scheduleRefresh();
 }
 function closeLayer() {
+  componentSettings.mount(null, false);
   layer = "";
   overlay.hidden = true;
   overlay.innerHTML = "";
@@ -186,11 +209,12 @@ async function refresh() {
   }
   refreshing = true;
   try {
-    [snapshot, state.updates] = await Promise.all([core.snapshot(), core.updates()]);
+    [snapshot, state.updates, state.updateOverview] = await Promise.all([core.snapshot(), core.updates(), core.updateOverview()]);
     snapshot.network=await core.network();
     lastError = "";
     applyTheme();
     renderTop();
+    if (layer === "settings") void componentSettings.catalog();
     if (layer === "status" || layer === "settings") renderLayer();
     if (layer === "logs" && !state.paused) await refreshLogs();
     if (layer === "messages") await refreshMessages();
@@ -285,13 +309,38 @@ root.addEventListener("click", (event) => {
       case "section":
         state.section = id;
         renderLayer();
+        if (id === "updates") void core.checkUpdates(true).catch(() => {});
+        break;
+      case "component-settings":
+        state.section = "components";
+        componentSettings.select(id);
+        break;
+      case "plugin-component-settings": {
+        await componentSettings.catalog();
+        const entry = componentSettings.entries.find(p => p.pluginId === id);
+        if (entry) { state.section = "components"; componentSettings.select(`${entry.pluginId}/${entry.pageId}`); }
+        break;
+      }
+      case "save-component-settings":
+      case "defaults-component-settings":
+      case "discard-component-settings":
+      case "reload-component-settings":
+      case "retry-component-settings":
+        await componentSettings.action(target.dataset.action!);
+        break;
+      case "add-plugin":
+        state.addingPlugin = true;
+        state.plugin = "";
+        renderLayer();
         break;
       case "select-plugin":
         state.plugin = id;
+        state.addingPlugin = false;
         renderLayer();
         break;
       case "back-plugins":
         state.plugin = "";
+        state.addingPlugin = false;
         renderLayer();
         break;
       case "choose-plugin": {
@@ -318,11 +367,16 @@ root.addEventListener("click", (event) => {
         await pluginAction(`update:${id}`, () => core.checkUpdate(id));
         break;
       case "download-update":
-      case "update-restart":
-        await pluginAction(`update:${id}`, async () => {
-          const restart = await core.download(id);
-          if (name === "update-restart" && restart) await restartFromUpdate();
-        });
+        await pluginAction(`update:${id}`, () => core.downloadUpdates([id]));
+        break;
+      case "check-all-updates":
+        await pluginAction("updates", () => core.checkUpdates());
+        break;
+      case "download-all-updates":
+        if (snapshot) await pluginAction("downloads", () => core.downloadUpdates(selectedUpdates(snapshot!, state)));
+        break;
+      case "open-update-release":
+        await invoke("open_update_release");
         break;
       case "restart-app":
         await pluginAction("restart", async () => { await restartFromUpdate(); });
@@ -418,6 +472,8 @@ root.addEventListener("input", (event) => {
 });
 root.addEventListener("change", (event) => {
   const input = event.target as HTMLInputElement;
+  if (input.dataset.updateSelect) { input.checked ? state.excludedUpdates.delete(input.dataset.updateSelect) : state.excludedUpdates.add(input.dataset.updateSelect); renderLayer(); return; }
+  if (input.id === "automatic-updates") { void action(() => core.automaticUpdates(input.checked)); return; }
   if (input.id === "log-source") state.filter.pluginId = input.value;
   else if (input.id === "log-level") state.filter.level = input.value;
   else if (input.id === "log-since")
@@ -434,6 +490,8 @@ root.addEventListener("change", (event) => {
 async function start() {
   state.officialPlugins = await core.officialPlugins();
   await listen("core-changed", scheduleRefresh);
+  await listen<SettingsSnapshot>("core-settings-changed", event => componentSettings.changed(event.payload));
+  await listen<Parameters<ComponentSettings["applied"]>[0]>("core-settings-application", event => componentSettings.applied(event.payload));
   await listen("server-catalog-changed", () => { void servers?.start(); void picker.refresh(); });
   await listen("connections-changed", () => { void connections.refresh().catch(error => toast(String(error), undefined, true)); scheduleRefresh(); });
   await listen("workspaces-changed", () => void workspaces.refresh().catch(error => toast(String(error), undefined, true)));

@@ -12,6 +12,7 @@ use std::{
 };
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = Arc::new(Mutex::new(None::<App>));
+    let settings = sodeck_plugin_client::settings::SettingsCache::default();
     sodeck_plugin_client::run(move |c, method, p| {
         if method == "initialize" {
             for capability in ["net.tcp.v1", "ui.dialog.v1"] {
@@ -41,7 +42,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     a.tick(&client)
                 }
             });
-            return Ok(json!({"apiVersion":"1"}));
+            return Ok(json!({"apiVersion":"1","settingsApiVersion":"1"}));
+        }
+        if method == "settings.changed" {
+            return settings.changed(&p, &["defaults"]);
         }
         let id = p["viewId"].as_str().ok_or("缺少 viewId")?;
         let mut state = app.lock().unwrap();

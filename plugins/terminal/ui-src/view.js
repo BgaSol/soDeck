@@ -1,12 +1,16 @@
+import {createAppearance} from './appearance.js';
 (() => {
   const host=document.querySelector('#terminal'),status=document.querySelector('#status');
-  const terminal=new Terminal({allowProposedApi:true,cursorBlink:true,fontSize:13,scrollback:1000,convertEol:false});
+  const terminal=new Terminal({allowProposedApi:true,cursorBlink:true,fontSize:14,lineHeight:1.2,scrollback:1000,convertEol:false});
   const fit=new FitAddon.FitAddon(),serialize=new SerializeAddon.SerializeAddon();terminal.loadAddon(fit);terminal.loadAddon(serialize);terminal.open(host);
   let id,offset=0,inputSequence=0,chain=Promise.resolve(),inputChain=Promise.resolve(),disposed=false,caughtUp=false,restoring=false,visible=false,enabled=false;
   let savedOffset=0,lastSave=0,escape='normal',utf8=0,inputPending=0,mountKey='';
   const encoder=new TextEncoder();
   const fail=error=>{status.hidden=false;status.textContent=String(error);status.classList.add('error');};
   const controls=installTerminalInput(terminal,host,()=>({key:mountKey,canCopy:!disposed&&!restoring,canPaste:enabled&&!restoring&&!disposed&&visible}),fail);
+  const enqueueSize=()=>{const resize=inputChain.then(size);inputChain=resize.catch(()=>{});return resize;};
+  const appearance=createAppearance(terminal,host,()=>caughtUp&&!restoring&&visible&&!disposed,enqueueSize,()=>controls.invalidate());
+  let lastCols=0,lastRows=0;
   const request=p=>sodeck.request('data',{id,...p});
   const write=bytes=>new Promise(resolve=>terminal.write(bytes,resolve));
   function scan(bytes){for(const b of bytes){
@@ -30,17 +34,21 @@
   }
   async function size(){
     if(!visible||!enabled||disposed||host.clientWidth<20||host.clientHeight<20)return;
-    fit.fit();await request({op:'resize',cols:Math.min(1000,terminal.cols),rows:Math.min(500,terminal.rows)});
+    fit.fit();const cols=Math.min(1000,terminal.cols),rows=Math.min(500,terminal.rows);if(cols===lastCols&&rows===lastRows)return;await request({op:'resize',cols,rows});lastCols=cols;lastRows=rows;
   }
-  const observer=new ResizeObserver(()=>{if(enabled)void inputChain.then(size).catch(()=>{});});observer.observe(host);
+  const observer=new ResizeObserver(()=>{if(enabled)void enqueueSize().catch(()=>{});});observer.observe(host);
   function theme(tokens){
     Object.entries(tokens||{}).forEach(([k,v])=>document.documentElement.style.setProperty('--'+k,v));
     const palette={background:tokens?.['terminal-background']||tokens?.panel||'#fff',foreground:tokens?.['terminal-foreground']||tokens?.text||'#222',cursor:tokens?.['terminal-cursor']||tokens?.accent||'#5346a6',selectionBackground:tokens?.['terminal-selection']||tokens?.['accent-bg']||'#dad3f3',selectionForeground:tokens?.['terminal-foreground']||tokens?.text||'#222'};
     for(const name of ['black','red','green','yellow','blue','magenta','cyan','white','brightBlack','brightRed','brightGreen','brightYellow','brightBlue','brightMagenta','brightCyan','brightWhite'])if(tokens?.['terminal-'+name])palette[name]=tokens['terminal-'+name];
+    palette.scrollbarSliderBackground=tokens?.['sd-scrollbar-thumb']||'#a7adbb';
+    palette.scrollbarSliderHoverBackground=tokens?.['sd-scrollbar-hover']||'#818a9b';
+    palette.scrollbarSliderActiveBackground=tokens?.['sd-scrollbar-active']||tokens?.accent||'#7661d1';
     terminal.options.theme=palette;controls.themeChanged();
   }
   addEventListener('sodeck:mount',event=>{
     const mount=event.detail;id=mount.data.streamId;mountKey=mount.surfaceId+':'+JSON.stringify(mount.context);visible=mount.visible;theme(mount.tokens);
+    appearance.receive(mount.settings);
     status.textContent=`${mount.serverName||'服务器'} · 正在接续终端…`;
     void request({op:'attach'}).catch(fail);
   });
@@ -57,7 +65,7 @@
       if(frame.kind==='caughtUp'){
         caughtUp=true;enabled=true;status.textContent='远程终端 · 已连接';status.hidden=true;status.classList.remove('error');document.body.dataset.ready='true';
         // Incoming windows may render before ownership commits. Only the owner saves a checkpoint.
-        await checkpoint(true).catch(()=>{});sodeck.mounted();void size().catch(()=>{});
+        await checkpoint(true).catch(()=>{});sodeck.mounted();void appearance.apply();void enqueueSize().catch(()=>{});
       }
       if(frame.kind==='end'){controls.invalidate();enabled=false;status.hidden=false;status.textContent=frame.metadata?.error||`终端已退出${frame.metadata?.exitCode==null?'':` · ${frame.metadata.exitCode}`}`;}
       if(frame.kind==='data')await checkpoint().catch(error=>{if(!String(error).includes('窗口'))throw error;});
@@ -65,11 +73,12 @@
   });
   function input(text){if(!enabled||restoring||disposed)return;const bytes=encoder.encode(text);if(inputPending+bytes.length>256*1024){fail('输入待发送内容超过 256 KiB，请稍后分段粘贴；本次输入未发送');return;}inputPending+=bytes.length;inputChain=inputChain.then(async()=>{for(let i=0;i<bytes.length;i+=16384){await request({op:'write',sequence:inputSequence,data:Array.from(bytes.subarray(i,i+16384))});inputSequence++;}}).catch(error=>{enabled=false;fail(error);}).finally(()=>{inputPending-=bytes.length;});}
   terminal.onData(input);
-  addEventListener('sodeck:visibilityChanged',event=>{visible=event.detail.visible;if(!visible)controls.invalidate();if(visible)void size().catch(()=>{});});
+  addEventListener('sodeck:visibilityChanged',event=>{visible=event.detail.visible;if(!visible)controls.invalidate();if(visible){void appearance.apply();void enqueueSize().catch(()=>{});}});
+  addEventListener('sodeck:settingsChanged',event=>appearance.receive({...event.detail.settings,retry:true}));
   addEventListener('sodeck:contextChanged',()=>{controls.invalidate();enabled=false;});
   addEventListener('sodeck:themeChanged',event=>theme(event.detail.tokens));
-  addEventListener('sodeck:focus',()=>{terminal.focus();void size().catch(()=>{});});
-  addEventListener('sodeck:unmount',()=>{disposed=true;controls.dispose();observer.disconnect();terminal.dispose();});
+  addEventListener('sodeck:focus',()=>{terminal.focus();void enqueueSize().catch(()=>{});});
+  addEventListener('sodeck:unmount',()=>{disposed=true;appearance.dispose();controls.dispose();observer.disconnect();terminal.dispose();});
   // The final output chunk may arrive without another chunk to trigger a checkpoint.
   const timer=setInterval(()=>{if(disposed){clearInterval(timer);return;}chain=chain.then(()=>checkpoint()).catch(()=>{});},500);
 })();

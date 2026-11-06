@@ -3,8 +3,12 @@
   const e=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let context,kind,catalog={rules:[]},draft,selected,offset=0,visible=true,pending=false,timer,dirty=false,sync=Promise.resolve(),deleteConfirm,checkTarget={host:'',port:443};
   const stateNames={starting:'正在启动',running:'运行中',stopping:'正在停止',closed:'已停止',failed:'运行失败'};
+  let settingsSnapshot,defaults={defaultType:'tcpForward',portMode:'auto',fixedPort:1080};
+  function settings(snapshot){if(!snapshot)return;if(settingsSnapshot?.definitionToken===snapshot.definitionToken&&BigInt(settingsSnapshot.revision)>BigInt(snapshot.revision))return;settingsSnapshot=snapshot;defaults={...defaults,...snapshot.values};void sodeck.request('settings',{op:'applied',pageId:snapshot.pageId,definitionToken:snapshot.definitionToken,revision:snapshot.revision}).catch(()=>{});}
   const event=data=>sodeck.request('event',data);
   const fail=err=>{error.textContent=String(err);error.hidden=false;};error.onclick=()=>error.hidden=true;
+  addEventListener('sodeck:textMenuError',ev=>fail(ev.detail));
+  addEventListener('sodeck:settingsChanged',ev=>settings(ev.detail.settings));
   const bytes=v=>{v=Number(v||0);return v<1024?`${v.toFixed(0)} B`:v<1048576?`${(v/1024).toFixed(1)} KiB`:`${(v/1048576).toFixed(1)} MiB`;};
   const address=a=>a?`${a.host.includes(':')?'['+a.host+']':a.host}:${a.port}`:'';
   const state=row=>row.run?.snapshot?.state||'closed';
@@ -47,12 +51,12 @@
     if(action==='save'){await submit(false);return;}
     if(action==='back'){selected=null;deleteConfirm=null;await saveNavigation();renderManager();return;}
     if(action==='previous'||action==='next'){offset=Math.max(0,offset+(action==='next'?20:-20));selected=null;await saveNavigation();await refresh();return;}
-    if(action==='create'||action==='edit'){const rule=action==='edit'?row.rule:{id:crypto.randomUUID(),serverId:context.serverId,revision:0,name:'',type:'tcpForward',bind:{host:'127.0.0.1',port:0},target:{host:'',port:0}};await sodeck.request('openView',{viewType:'rule-editor',params:{rule}});return;}
+    if(action==='create'||action==='edit'){if(action==='create')settings(await sodeck.request('settings',{op:'get'}).catch(()=>null));const rule=action==='edit'?row.rule:{id:crypto.randomUUID(),serverId:context.serverId,revision:0,name:'',type:defaults.defaultType,bind:{host:'127.0.0.1',port:defaults.portMode==='fixed'?defaults.fixedPort:0},...(defaults.defaultType==='tcpForward'?{target:{host:'',port:0}}:{})};await sodeck.request('openView',{viewType:'rule-editor',params:{rule}});return;}
     if(action==='copy'){const r=catalog.rules.find(r=>r.rule.id===selected);if(r&&ready(r))await sodeckClipboard.writeText(address(r.run.snapshot.address));return;}
     if(action==='delete'&&deleteConfirm!==id){deleteConfirm=id;renderManager();return;}
     update(await event({action,id,revision:row?.rule.revision,target:checkTarget}));await refresh();
   })().catch(fail);});
-  addEventListener('sodeck:mount',ev=>{const m=ev.detail;context=m.context;kind=m.data.kind;update(m.data);applyTokens(m.tokens);visible=m.visible;dirty=m.data.dirty;selected=m.data.navigation?.selected;offset=m.data.navigation?.offset||0;if(kind==='rule-editor')renderForm();else{renderManager();clearInterval(timer);timer=setInterval(refresh,800);}sodeck.mounted(true);});
+  addEventListener('sodeck:mount',ev=>{const m=ev.detail;context=m.context;kind=m.data.kind;update(m.data);applyTokens(m.tokens);visible=m.visible;settings(m.settings);dirty=m.data.dirty;selected=m.data.navigation?.selected;offset=m.data.navigation?.offset||0;if(kind==='rule-editor')renderForm();else{renderManager();clearInterval(timer);timer=setInterval(refresh,800);}sodeck.mounted(true);});
   addEventListener('sodeck:themeChanged',ev=>applyTokens(ev.detail.tokens));
   addEventListener('sodeck:visibilityChanged',ev=>{visible=ev.detail.visible;if(visible)void refresh();});
   addEventListener('sodeck:flush',ev=>{const m=ev.detail;Promise.resolve(kind==='rule-editor'&&dirty?syncDraft():sync).then(()=>parent.postMessage({channel:'sodeck-ui-v1',type:'flushed',surfaceId:m.surfaceId,id:m.id},'*')).catch(err=>parent.postMessage({channel:'sodeck-ui-v1',type:'flushed',surfaceId:m.surfaceId,id:m.id,error:String(err)},'*'));});

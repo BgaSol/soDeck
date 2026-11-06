@@ -1,5 +1,7 @@
 # SoDeck 安装、升级与插件分发
 
+组件设置已进入源码，尚未发行。清单中的 `settings` 与插件一起分发；终端和文件插件分别携带三款字体的 Regular/Bold、来源校验元数据和许可证，安装后无需联网下载字体。普通构建只校验并复制已提交的资产，维护时才显式运行 `node scripts/prepare-font-assets.mjs`。核心包仍不依赖业务插件构建或包含字体文件。Check 增加通用设置界面回归，原生实际包组合烟测验证终端设置、字体加载、保存重开和 PTY 保留；已执行的平台范围见 [组件设置实施记录](implementation-component-settings.md)。
+
 v0.6.0 增加 terminal/files 两个独立目录，沿用 Package plugin 的 `--plugin` 和 `plugin-terminal-v*` / `plugin-files-v*` 标签。核心构建不依赖它们。新增 Verify native remote plugins 工作流，接收同一提交的三个独立打包 run ID，在五个原生 runner 安装/解包实际产物，启动隔离 OpenSSH，验证 PTY 经原生 Channel 到 xterm 再回传显示快照，以及文件读取、原子保存和下载。工作流定义不等于已运行；实际结果见 [实施记录](implementation-remote-plugins.md)。
 
 ## 原则
@@ -16,7 +18,7 @@ v0.6.0 增加 terminal/files 两个独立目录，沿用 Package plugin 的 `--p
 | Linux ARM64 | `aarch64-unknown-linux-gnu` | 原生 ARM64 DEB 与 AppImage；同上 |
 | macOS ARM64 | `aarch64-apple-darwin` | DMG 首次安装；app.tar.gz 用于应用内更新 |
 
-核心版本唯一来源为 `src-tauri/tauri.conf.json`。设置 → 应用更新提供手动检查、版本说明、下载进度、安装并重启。下载安装前不会主动停止插件；安装前正常退出全部插件，数据保持在系统应用数据目录。v0.1.1 没有更新模块，需要手动安装一次 v0.2.0。
+核心版本唯一来源为 `src-tauri/tauri.conf.json`。设置 → 更新集中检查核心与已安装插件，默认每日自动检查，支持选择与批量下载、逐项重试，准备完成后统一重启并应用。下载期间不会主动停止插件；安装前正常退出全部插件，数据保持在系统应用数据目录。核心包落盘后重开可通过官方 updater 离线验签恢复。当前实现与平台验证边界见 [更新体验实施记录](implementation-update-experience.md)。v0.1.1 没有更新模块，需要手动安装一次 v0.2.0。
 
 更新使用固定版本的 Tauri 官方 updater，它要求更新包签名。公钥提交到 Tauri 配置；私钥保存在维护者用户目录 `.sodeck-signing/updater.key` 并配置为 Actions 的 `TAURI_SIGNING_PRIVATE_KEY` Secret，绝不提交私钥。密码可用 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` Secret；本项目初始私钥无密码，Secret 留空即可。此签名与 Windows/macOS 商业代码签名、插件权限无关。必须备份原私钥，随意换公钥会使旧客户端无法升级。
 
@@ -35,7 +37,7 @@ npm run build -- --bundles nsis -- --locked
 ## 插件生命周期与更新
 
 - v0.5.2 起，设置 → 插件管理列出核心声明的官方来源。点击“下载并启用”从正式插件 Release 取得本机原生归档，复用更新器的 API/平台、SHA-256、解包和清单检查后注册为启用；安装期间不启动程序，重启生效。首次安装失败不登记半成品，可重试；同 ID 已安装时转到详情管理，不覆盖本地记录或更改其来源。列表不在后台自动下载，不建立插件市场。
-- 设置 → 插件管理 → 添加插件目录，选择带 `plugin.json` 的外部目录，保存为启用但等待重启。旧记录缺少 enabled 字段时按关闭迁移。
+- 设置 → 插件 → 添加插件提供官方“安装并启用”和本地目录入口。已安装插件只在主列表出现一次，官方安装页显示已安装状态。选择带 `plugin.json` 的外部目录后保存为启用但等待重启。旧记录缺少 enabled 字段时按关闭迁移。
 - 启用/关闭只改期望状态，当前进程继续运行；重启统一生效，启动自动加载启用项。可以连续修改多个插件再重启一次。
 - 下载先完成校验和解压，再保存新目录记录；已启用或本次启动已加载的插件在下次启动切换。完全关闭的插件立即更新记录，仍不启动。
 - 在线程序位于 `<应用数据>/plugins/<插件ID>/<版本-唯一标识>/`。原外部目录保留；数据始终在 `plugin-data/<插件ID>/`。旧程序保留用于新版初始化失败后的恢复；不承诺数据迁移回退，不建立多级版本事务框架。

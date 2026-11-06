@@ -53,10 +53,11 @@ try {
     const network=process.argv.includes('--network');
     const env={ ...process.env, SODECK_TEST_SSH_PORT: String(port), SODECK_TEST_SSH_USER: username, SODECK_TEST_SSH_KEY: path.join(directory, "user") };
     for(const plugin of [terminal?'terminal':null,files?'files':null,network?'network-proxy':null].filter(Boolean)){
-      const build=spawnSync(process.execPath,['scripts/package-plugin.mjs','--plugin',plugin],{stdio:'inherit',windowsHide:true});if(build.status!==0)throw new Error(`${plugin} package failed`);
+      const output=path.join(directory,'plugins');
+      const build=spawnSync(process.execPath,['scripts/package-plugin.mjs','--plugin',plugin,'--out-dir',output],{stdio:'inherit',windowsHide:true});if(build.status!==0)throw new Error(`${plugin} package failed`);
       const version=fs.readFileSync(`plugins/${plugin}/Cargo.toml`,'utf8').match(/^version = "([^"]+)"/m)[1];
       const target=spawnSync('rustc',['-vV'],{encoding:'utf8'}).stdout.match(/^host: (.+)$/m)[1];
-      env[`SODECK_TEST_${(plugin==='network-proxy'?'NETWORK':plugin.toUpperCase())}_PLUGIN`]=path.resolve(`artifacts/plugins/sodeck-${plugin}_${version}_${target}`);
+      env[`SODECK_TEST_${(plugin==='network-proxy'?'NETWORK':plugin.toUpperCase())}_PLUGIN`]=path.join(output,`sodeck-${plugin}_${version}_${target}`);
     }
       const result = files && process.argv.includes('--files-ui-only') ? 0 : await new Promise((resolve, reject) => {
     const test = spawn("cargo", ["test", "--manifest-path", "src-tauri/Cargo.toml", "--features", "test-fixtures", "--locked", "--test", "connections", network?'network_proxy_plugin':files?'openssh_files_plugin':terminal?'openssh_terminal_plugin':'openssh_interop', "--", "--ignored", "--exact", "--nocapture"], {

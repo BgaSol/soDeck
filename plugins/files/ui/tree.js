@@ -33,6 +33,7 @@
       this.nodes = new Map(); this.expanded = new Set(); this.selected = ''; this.rootPath = '/';
       this.persistQueue = Promise.resolve(); this.pending = new Set(); this.counter = 0; this.restoring = true;
       this.saved = state; this.home = '';
+      this.showHidden = true;
       host.className = 'file-browser';
       const pathbar = document.createElement('div'); pathbar.className = 'pathbar';
       this.input = document.createElement('input'); this.input.setAttribute('aria-label', '远端路径'); this.input.placeholder = '输入路径并回车定位'; this.input.disabled = true;
@@ -158,6 +159,7 @@
       return current;
     }
     async locate(target, focus = true) {
+      this.navigationPath=target;
       const info = await this.data('stat', { path: target });
       const path = info.path.replace(/\/$/, '') || '/';
       const volume = /^\/[A-Za-z]:/.exec(path)?.[0] || '/';
@@ -185,7 +187,16 @@
       this.tree.setAttribute('aria-activedescendant', n.key);
       if (scroll) this.row(n.path)?.scrollIntoView({ block: 'nearest' }); this.persist();
     }
-    selectedPaths() { return [...this.selection].filter(path => this.nodes.has(path)); }
+    selectedPaths() { const visible=new Set((this.visible||[]).map(n=>n.path)); return [...this.selection].filter(path => this.nodes.has(path)&&visible.has(path)); }
+    children(n) { return n.children.filter(path=>this.showHidden||!this.nodes.get(path)?.name.startsWith('.')||this.navigationPath===path||this.navigationPath?.startsWith(path+'/')); }
+    preferences(values) {
+      const key=JSON.stringify([values.showHidden!==false,values.density,values.fontSize]);
+      if(this.preferenceKey===key)return;this.preferenceKey=key;
+      this.showHidden=values.showHidden!==false;
+      this.tree.style.setProperty('--file-row-height',values.density==='comfortable'?'28px':'24px');
+      this.tree.style.setProperty('--file-name-size',(values.fontSize||12)+'px');
+      this.closeMenu();this.pointerEnd(null);this.render();
+    }
     ambiguousTarget() {return new Set(this.selectedPaths().map(path=>this.nodes.get(path).attrs.kind==='directory'?path:parentOf(path))).size>1;}
     targetDirectory() {
       const node = this.nodes.get(this.selected) || this.nodes.get(this.rootPath);
@@ -277,20 +288,22 @@
         row.addEventListener('contextmenu', e => { e.preventDefault(); if (!this.selection.has(n.path)) this.select(n, false); this.showMenu(n, e.clientX, e.clientY); });
         this.visible.push(n); fragment.append(row);
         if (!directory || !expanded) return;
-        for (const [index, child] of n.children.entries()) visit(this.nodes.get(child), level + 1, index + 1, n.children.length);
-        if (n.loading || n.error || n.more || !n.children.length) {
+        const children=this.children(n);
+        for (const [index, child] of children.entries()) visit(this.nodes.get(child), level + 1, index + 1, children.length);
+        if (n.loading || n.error || n.more || !children.length) {
           const item = document.createElement('div'); item.className = 'branch-state'; item.style.setProperty('--depth', level);
           if (n.loading) item.textContent = '读取目录…';
           else if (n.error || n.more) {
-            const b = document.createElement('button'); b.dataset.directory = n.path; b.textContent = n.error ? '读取失败 · 重试' : '加载更多'; b.title = n.error || '继续读取此目录';
+            const b = document.createElement('button'); b.dataset.directory = n.path; b.textContent = n.error ? '读取失败 · 重试' : !children.length?'暂无可见条目 · 加载更多':'加载更多'; b.title = n.error || '继续读取此目录';
             b.addEventListener('click', () => void this.run(() => this.load(n, !n.error))); item.append(b);
-          } else item.textContent = '空目录';
+          } else item.textContent = n.children.length?'暂无可见条目':'空目录';
           fragment.append(item);
         }
       };
       const root = this.nodes.get(this.rootPath); if (root) visit(root, 1, 1, 1);
       const scroll = this.tree.scrollTop;
       this.tree.replaceChildren(fragment); this.tree.scrollTop = scroll;
+      const visible=new Set(this.visible.map(n=>n.path));this.selection=new Set([...this.selection].filter(path=>visible.has(path)));if(!visible.has(this.anchor))this.anchor='';
       this.indent();
       if (this.selected && !this.visible.some(n => n.path === this.selected)) {
         let path = parentOf(this.selected);
@@ -321,7 +334,7 @@
       else if (e.key === 'ArrowUp') choose(index - 1);
       else if (e.key === 'Home') choose(0);
       else if (e.key === 'End') choose(this.visible.length - 1);
-      else if (e.key === 'ArrowRight' && n.attrs.kind === 'directory') { if (!this.expanded.has(n.path)) void this.run(() => this.toggle(n)); else if (n.children.length) this.select(this.nodes.get(n.children[0])); }
+      else if (e.key === 'ArrowRight' && n.attrs.kind === 'directory') { if (!this.expanded.has(n.path)) void this.run(() => this.toggle(n)); else if (this.children(n).length) this.select(this.nodes.get(this.children(n)[0])); }
       else if (e.key === 'ArrowLeft') { if (this.expanded.has(n.path)) void this.run(() => this.toggle(n)); else if (n.path !== this.rootPath) this.select(this.nodes.get(parentOf(n.path))); }
       else if (e.key === 'Enter') void this.run(() => this.open(n));
       else if (e.key === 'F5') void this.run(() => this.refresh());

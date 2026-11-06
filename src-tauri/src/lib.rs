@@ -1,6 +1,7 @@
 pub mod component_ui;
 pub mod connections;
 pub mod core;
+pub mod desktop_behavior;
 pub mod desktop_files;
 pub mod desktop_updates;
 pub mod model;
@@ -12,6 +13,7 @@ mod plugins;
 pub mod remote_files;
 mod resource_owner;
 pub mod servers;
+pub mod settings;
 mod storage;
 pub mod streams;
 pub mod terminal;

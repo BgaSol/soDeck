@@ -2,6 +2,16 @@
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--desktop-script") {
+        use tauri::plugin::Plugin;
+        let plugin = sodeck::desktop_behavior::plugin::<tauri::Wry>();
+        let script = plugin.initialization_script_2().unwrap();
+        println!(
+            "{}",
+            json!({"script": script.script, "allFrames": !script.for_main_frame_only})
+        );
+        return;
+    }
     let core =
         sodeck::AppCore::open(std::env::args().nth(1).unwrap().into(), "test".into()).unwrap();
     for line in io::stdin().lock().lines() {
@@ -19,6 +29,37 @@ fn main() {
                 .map(|id| json!(id))
             }
             "snapshot" => Ok(json!(core.snapshot())),
+            "settings_catalog" => Ok(core.settings_catalog()),
+            "settings_resource" => core
+                .settings_resource(
+                    args["pluginId"].as_str().unwrap(),
+                    args["definitionToken"].as_str().unwrap(),
+                    args["relative"].as_str().unwrap(),
+                )
+                .map(|(bytes, mime)| json!({"bytes":bytes,"mime":mime})),
+            "settings_page" => core.settings_page(
+                args["pluginId"].as_str().unwrap(),
+                args["pageId"].as_str().unwrap(),
+            ),
+            "save_settings" => core.save_settings(
+                args["pluginId"].as_str().unwrap(),
+                args["pageId"].as_str().unwrap(),
+                args["input"].clone(),
+            ),
+            "retry_settings_apply" => core.retry_settings_apply(
+                args["pluginId"].as_str().unwrap(),
+                args["pageId"].as_str().unwrap(),
+                args["revision"].as_str().unwrap(),
+            ),
+            "settings_for_surface" => core.settings_for_surface(
+                args["window"].as_str().unwrap_or("main"),
+                args["surfaceId"].as_str().unwrap(),
+            ),
+            "settings_applied" => core.settings_applied(
+                args["window"].as_str().unwrap_or("main"),
+                args["surfaceId"].as_str().unwrap(),
+                args["input"].clone(),
+            ),
             "network_snapshot" => Ok(core.network_snapshot()),
             "component_data" => {
                 if args["request"]["op"] == "files" {
@@ -105,6 +146,65 @@ fn main() {
                 .map(|_| Value::Null)
             }
             "update_status" => Ok(json!(core.update_views())),
+            "update_overview" => Ok(json!(core.update_overview())),
+            "set_automatic_updates" => core
+                .set_automatic_updates(args["enabled"].as_bool().unwrap())
+                .map(|_| Value::Null),
+            "add_plugin" => core
+                .add_plugin(std::path::Path::new(args["directory"].as_str().unwrap()))
+                .map(|id| json!(id)),
+            "set_plugin_enabled" => core
+                .set_enabled(
+                    args["id"].as_str().unwrap(),
+                    args["enabled"].as_bool().unwrap(),
+                )
+                .map(|_| Value::Null),
+            "set_plugin_update_source" => core
+                .set_update_source(
+                    args["id"].as_str().unwrap(),
+                    serde_json::from_value(args["source"].clone()).unwrap(),
+                )
+                .map(|_| Value::Null),
+            "check_update" => {
+                let base = std::env::var("SODECK_TEST_PLUGIN_API").unwrap();
+                core.check_component(
+                    args["id"].as_str().unwrap(),
+                    &sodeck::updates::ReleaseClient::test_server(&base),
+                )
+                .map(|_| Value::Null)
+            }
+            "check_updates" => {
+                if let Some(mut batch) =
+                    core.begin_update_check(args["automatic"].as_bool().unwrap_or(false))
+                {
+                    let base = std::env::var("SODECK_TEST_PLUGIN_API").unwrap();
+                    let client = sodeck::updates::ReleaseClient::test_server(&base);
+                    for id in core
+                        .update_check_ids()
+                        .into_iter()
+                        .filter(|id| id != sodeck::updates::CORE_ID)
+                    {
+                        if core.check_component(&id, &client).is_ok() {
+                            batch.succeeded();
+                        }
+                    }
+                }
+                Ok(Value::Null)
+            }
+            "download_updates" => {
+                let ids: Vec<String> = serde_json::from_value(args["ids"].clone()).unwrap();
+                core.reserve_update_downloads(&ids).map(|tasks| {
+                    let base = std::env::var("SODECK_TEST_PLUGIN_API").unwrap();
+                    for (id, operation) in tasks {
+                        let _ = core.download_plugin_reserved(
+                            &id,
+                            &sodeck::updates::ReleaseClient::test_server(&base),
+                            operation,
+                        );
+                    }
+                    Value::Null
+                })
+            }
             "set_theme" => core
                 .set_theme(args["theme"].as_str().unwrap())
                 .map(|_| Value::Null),

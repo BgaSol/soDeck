@@ -59,7 +59,8 @@ pub(crate) fn supervise(
     let mut failure = core.plugin_data(id).and_then(|path| queue_frame(&writer, json!({
         "jsonrpc":"2.0", "id":"initialize", "method":"initialize", "params":{
             "coreApiVersion":API_VERSION, "coreVersion":core.version(), "dataDirectory":path,
-              "capabilities":["logging.write","messages.publish","ui.v1","rpc.concurrent","terminal.v1","viewData.v1","files.v1","files.directoryCursors.v1","files.operations.v1","files.localInputs.v1","net.tcp.v1","ui.dialog.v1"]
+            "settings":core.settings_index(id),
+              "capabilities":["logging.write","messages.publish","ui.v1","rpc.concurrent","terminal.v1","viewData.v1","files.v1","files.directoryCursors.v1","files.operations.v1","files.localInputs.v1","net.tcp.v1","ui.dialog.v1","settings.v1"]
         }
     }))).err();
     let mut ready = Some(ready);
@@ -273,7 +274,7 @@ pub(crate) fn supervise(
                         continue;
                     }
                     let request_id = frame.get("id").cloned();
-                    let result = if initialized {
+                    let result = if initialized || frame["method"] == "settings.get" {
                         dispatcher.submit(frame)
                     } else {
                         Err(RpcError::execution("插件尚未完成初始化"))
@@ -301,6 +302,10 @@ pub(crate) fn supervise(
                         failure = Some("插件初始化响应的 API 版本不匹配".into());
                     } else {
                         initialized = true;
+                        instance.settings_api.store(
+                            frame["result"]["settingsApiVersion"] == "1",
+                            std::sync::atomic::Ordering::Release,
+                        );
                         if stop_deadline.is_none() {
                             instance.update(&core, |v| v.status = PluginStatus::Running);
                         }

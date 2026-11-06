@@ -2,6 +2,7 @@ use serde_json::json;
 use std::{collections::HashMap, sync::Mutex};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let terminals = Mutex::new(HashMap::<String, (String, String)>::new());
+    let settings = sodeck_plugin_client::settings::SettingsCache::default();
     sodeck_plugin_client::run(move |client, method, p| {
         if method == "initialize" {
             for capability in ["terminal.v1", "viewData.v1"] {
@@ -12,7 +13,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     return Err(format!("核心缺少 {capability}，请先升级 SoDeck"));
                 }
             }
-            return Ok(json!({"apiVersion":"1"}));
+            return Ok(json!({"apiVersion":"1","settingsApiVersion":"1"}));
+        }
+        if method == "settings.changed" {
+            return settings.changed(&p, &["appearance"]);
         }
         let view = p["viewId"].as_str().ok_or("缺少 viewId")?;
         if method == "ui.disposeView" {

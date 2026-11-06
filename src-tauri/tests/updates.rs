@@ -23,6 +23,7 @@ static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 struct Server {
     base: String,
     routes: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    requests: Arc<Mutex<Vec<String>>>,
     stopped: Arc<AtomicBool>,
     thread: Option<thread::JoinHandle<()>>,
 }
@@ -33,6 +34,8 @@ impl Server {
         let base = format!("http://{}", listener.local_addr().unwrap());
         let routes = Arc::new(Mutex::new(HashMap::<String, Vec<u8>>::new()));
         let stopped = Arc::new(AtomicBool::new(false));
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let recorded = requests.clone();
         let (map, done) = (routes.clone(), stopped.clone());
         let thread = thread::spawn(move || {
             while !done.load(Ordering::Acquire) {
@@ -62,6 +65,7 @@ impl Server {
                         .next()
                         .unwrap_or("");
                     let content = map.lock().unwrap().get(path).cloned();
+                    recorded.lock().unwrap().push(path.to_string());
                     let status = if content.is_some() {
                         "200 OK"
                     } else {
@@ -82,6 +86,7 @@ impl Server {
         Self {
             base,
             routes,
+            requests,
             stopped,
             thread: Some(thread),
         }
@@ -159,7 +164,18 @@ impl Fixture {
         self.package_for("test.fixture", mode)
     }
     fn package_for(&self, id: &str, mode: &str) -> Vec<u8> {
-        let mut metadata = manifest("0.1.1");
+        let mut metadata = if mode.starts_with("settings-") {
+            settings_manifest("0.1.1")
+        } else {
+            manifest("0.1.1")
+        };
+        let mode = if mode == "settings-error" {
+            "init-error"
+        } else if mode == "settings-upgrade" {
+            ""
+        } else {
+            mode
+        };
         metadata["id"] = json!(id);
         // The core must keep its selected source, not a source supplied by the archive.
         metadata["updateSource"] =
@@ -175,6 +191,7 @@ impl Fixture {
                 fs::read(env!("CARGO_BIN_EXE_plugin-fixture")).unwrap(),
             ),
             ("plugin/mode".into(), mode.as_bytes().to_vec()),
+            ("plugin/ui.html".into(), b"settings fixture".to_vec()),
         ] {
             writer
                 .start_file(
@@ -195,6 +212,71 @@ impl Drop for Fixture {
 }
 fn manifest(version: &str) -> serde_json::Value {
     json!({"id":"test.fixture","name":"Update Fixture","version":version,"apiVersion":"1","target":TARGET,"entry":format!("fixture{}",std::env::consts::EXE_SUFFIX)})
+}
+fn settings_manifest(version: &str) -> serde_json::Value {
+    let mut m = manifest(version);
+    m["ui"] = json!({"apiVersion":"1","entry":"ui.html","views":[{"id":"test","title":"Test","icon":"info","container":"editor","instancePolicy":"multiple"}]});
+    let mut fields = vec![
+        json!({"key":"size","title":"字号","type":"number","default":if version=="0.1.0"{14}else{16},"min":11,"max":24,"step":1,"unit":"px","apply":"live"}),
+    ];
+    if version != "0.1.0" {
+        fields.push(
+            json!({"key":"blink","title":"闪烁","type":"boolean","default":true,"apply":"live"}),
+        );
+    }
+    m["settings"] = json!({"apiVersion":"1","schemaVersion":1,"pages":[{"id":"appearance","title":"外观","viewTypes":["test"],"groups":[{"id":"text","title":"文字","fields":fields}]}]});
+    m
+}
+
+#[test]
+fn settings_follow_pending_activation_and_program_rollback() {
+    for failed in [false, true] {
+        let f = Fixture::new();
+        fs::write(
+            f.external.join("plugin.json"),
+            settings_manifest("0.1.0").to_string(),
+        )
+        .unwrap();
+        fs::write(f.external.join("ui.html"), "old UI").unwrap();
+        f.add();
+        let core = f.open();
+        core.start_enabled();
+        let old = core.settings_page("test.fixture", "appearance").unwrap();
+        let saved=core.save_settings("test.fixture","appearance",json!({"definitionToken":old["definitionToken"],"baseRevision":old["revision"],"requestId":"before-upgrade","values":{"size":18}})).unwrap()["snapshot"].clone();
+        let server = Server::new();
+        server.release(
+            f.package(if failed {
+                "settings-error"
+            } else {
+                "settings-upgrade"
+            }),
+            "1",
+            TARGET,
+        );
+        core.check_component("test.fixture", &server.client())
+            .unwrap();
+        core.download_plugin("test.fixture", &server.client())
+            .unwrap();
+        let pending = core.settings_page("test.fixture", "appearance").unwrap();
+        assert_eq!(pending["definitionToken"], old["definitionToken"]);
+        assert_eq!(pending["values"]["size"], 18);
+        assert!(pending["values"].get("blink").is_none());
+        core.shutdown().unwrap();
+        drop(core);
+        let core = f.open();
+        core.start_enabled();
+        let active = core.settings_page("test.fixture", "appearance").unwrap();
+        assert_eq!(active["values"]["size"], 18);
+        assert_eq!(active["version"], if failed { "0.1.0" } else { "0.1.1" });
+        if failed {
+            assert!(active["values"].get("blink").is_none());
+        } else {
+            assert_eq!(active["values"]["blink"], true);
+        }
+        let values = active["values"].clone();
+        assert_eq!(core.save_settings("test.fixture","appearance",json!({"definitionToken":saved["definitionToken"],"baseRevision":saved["revision"],"requestId":"stale","values":values})).unwrap()["conflict"],true);
+        core.shutdown().unwrap();
+    }
 }
 
 #[test]
@@ -378,6 +460,220 @@ fn enabled_update_keeps_old_process_until_restart_then_runs_new_program() {
     assert_ne!(plugin.directory, f.external);
     assert!(f.external.join("plugin.json").exists());
     core.shutdown().unwrap();
+}
+
+#[test]
+fn checking_prepared_plugin_keeps_ready_state() {
+    let f = Fixture::new();
+    f.add();
+    let server = Server::new();
+    server.release(f.package(""), "1", TARGET);
+    let core = f.open();
+    core.check_component("test.fixture", &server.client())
+        .unwrap();
+    assert!(core
+        .download_plugin("test.fixture", &server.client())
+        .unwrap());
+    assert!(core
+        .check_component("test.fixture", &server.client())
+        .unwrap()
+        .is_none());
+    assert_eq!(core.update_views()["test.fixture"].phase, "ready");
+    assert_eq!(
+        core.snapshot().plugins[0].pending_version.as_deref(),
+        Some("0.1.1")
+    );
+}
+
+#[test]
+fn batch_reservations_preserve_other_results_and_interrupted_tasks_can_retry() {
+    let f = Fixture::new();
+    f.add();
+    let server = Server::new();
+    server.release(f.package(""), "1", TARGET);
+    let core = f.open();
+    core.check_component("test.fixture", &server.client())
+        .unwrap();
+    let ids = vec!["test.fixture".to_string()];
+    let tasks = core.reserve_update_downloads(&ids).unwrap();
+    assert_eq!(core.update_views()["test.fixture"].phase, "waiting");
+    assert!(core.reserve_update_downloads(&ids).is_err());
+    assert!(core.begin_update_check(true).is_none());
+    assert!(core.begin_update_check(false).is_none());
+    assert!(core.prepare_restart().is_err());
+    drop(tasks);
+    assert!(!core.update_overview().busy);
+    assert_eq!(
+        core.update_views()["test.fixture"].error_stage.as_deref(),
+        Some("download")
+    );
+    let tasks = core.reserve_update_downloads(&ids).unwrap();
+    for (id, op) in tasks {
+        core.download_plugin_reserved(&id, &server.client(), op)
+            .unwrap();
+    }
+    assert_eq!(core.update_views()["test.fixture"].phase, "ready");
+}
+
+#[test]
+fn automatic_check_preferences_and_candidates_survive_restart() {
+    let f = Fixture::new();
+    f.add();
+    let server = Server::new();
+    server.release(f.package(""), "1", TARGET);
+    let core = f.open();
+    let mut batch = core.begin_update_check(false).unwrap();
+    assert!(core.begin_update_check(false).is_none());
+    core.check_component("test.fixture", &server.client())
+        .unwrap();
+    batch.succeeded();
+    drop(batch);
+    assert!(core.begin_update_check(true).is_none());
+    core.check_component("test.fixture", &server.client())
+        .unwrap();
+    assert_eq!(
+        core.messages().len(),
+        1,
+        "Repeated checks do not create duplicate update messages"
+    );
+    core.set_automatic_updates(false).unwrap();
+    core.set_theme("dark").unwrap();
+    drop(core);
+    let core = f.open();
+    assert!(!core.snapshot().preferences.automatic_updates);
+    assert!(core.begin_update_check(true).is_none());
+    assert_eq!(core.update_views()["test.fixture"].phase, "available");
+    core.download_plugin("test.fixture", &server.client())
+        .unwrap();
+    core.check_component("test.fixture", &server.client())
+        .unwrap();
+    assert_eq!(core.update_views()["test.fixture"].phase, "ready");
+}
+
+#[test]
+fn failed_checks_remain_visible_after_reopening_without_a_candidate() {
+    let f = Fixture::new();
+    f.add();
+    let server = Server::new();
+    let core = f.open();
+    let batch = core.begin_update_check(false).unwrap();
+    assert!(core
+        .check_component("test.fixture", &server.client())
+        .is_err());
+    drop(batch);
+    let retry_at = core.update_overview().next_check_at;
+    assert_eq!(core.update_overview().last_checked_at, 0);
+    drop(core);
+    let core = f.open();
+    let view = &core.update_views()["test.fixture"];
+    assert_eq!(view.phase, "error");
+    assert_eq!(view.error_stage.as_deref(), Some("check"));
+    assert!(view.version.is_none());
+    assert_eq!(core.update_overview().next_check_at, retry_at);
+    assert!(core.begin_update_check(true).is_none());
+    server.release(f.package(""), "1", TARGET);
+    core.check_component("test.fixture", &server.client())
+        .unwrap();
+    assert_eq!(core.update_views()["test.fixture"].phase, "available");
+}
+
+#[test]
+fn unavailable_repository_is_requested_once_per_check_batch() {
+    let server = Server::new();
+    let client = server.client();
+    for (id, prefix) in [("sodeck.core", "v"), ("test.fixture", "plugin-fixture-v")] {
+        assert!(client
+            .discover(
+                &UpdateSource {
+                    repository: "test/repo".into(),
+                    tag_prefix: prefix.into(),
+                },
+                id,
+                "0.1.0",
+            )
+            .is_err());
+    }
+    assert_eq!(server.requests.lock().unwrap().len(), 1);
+    // An explicit new batch can retry the source.
+    assert!(server
+        .client()
+        .discover(
+            &UpdateSource {
+                repository: "test/repo".into(),
+                tag_prefix: "v".into(),
+            },
+            "sodeck.core",
+            "0.1.0",
+        )
+        .is_err());
+    assert_eq!(server.requests.lock().unwrap().len(), 2);
+}
+
+#[test]
+fn core_and_plugin_discovery_share_repository_requests() {
+    let server = Server::new();
+    let f = Fixture::new();
+    server.release(f.package(""), "1", TARGET);
+    let releases: serde_json::Value =
+        serde_json::from_slice(&server.routes.lock().unwrap()["/repos/test/repo/releases"])
+            .unwrap();
+    let mut releases = releases.as_array().unwrap().clone();
+    releases.push(json!({"tag_name":"v0.2.1","draft":false,"prerelease":false,"assets":[{"name":"core-update.json","browser_download_url":format!("{}/core.json",server.base)}]}));
+    server.put(
+        "/repos/test/repo/releases",
+        serde_json::to_vec(&releases).unwrap(),
+    );
+    server.put("/core.json",json!({"id":"sodeck.core","version":"0.2.1","platforms":{TARGET:{"url":format!("{}/core.zip",server.base)}}}).to_string());
+    let client = server.client();
+    for (id, prefix, old, new) in [
+        ("test.fixture", "plugin-fixture-v", "0.1.0", "0.1.1"),
+        ("sodeck.core", "v", "0.2.0", "0.2.1"),
+    ] {
+        assert_eq!(
+            client
+                .discover(
+                    &UpdateSource {
+                        repository: "test/repo".into(),
+                        tag_prefix: prefix.into()
+                    },
+                    id,
+                    old
+                )
+                .unwrap()
+                .unwrap()
+                .version,
+            new
+        );
+    }
+    assert_eq!(
+        server
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|p| p.as_str() == "/repos/test/repo/releases")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn completely_disabled_plugin_updates_without_restart_status() {
+    let f = Fixture::new();
+    f.add();
+    let core = f.open();
+    core.set_enabled("test.fixture", false).unwrap();
+    drop(core);
+    let core = f.open();
+    let server = Server::new();
+    server.release(f.package(""), "1", TARGET);
+    core.check_component("test.fixture", &server.client())
+        .unwrap();
+    assert!(!core
+        .download_plugin("test.fixture", &server.client())
+        .unwrap());
+    assert_eq!(core.update_views()["test.fixture"].phase, "current");
+    assert!(!core.snapshot().restart_required);
 }
 
 #[test]

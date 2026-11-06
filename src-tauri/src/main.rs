@@ -26,6 +26,76 @@ struct Application {
 }
 
 #[tauri::command]
+async fn settings_catalog(app: State<'_, Application>) -> Result<serde_json::Value, String> {
+    let core = app.core.clone();
+    tauri::async_runtime::spawn_blocking(move || core.settings_catalog())
+        .await
+        .map_err(|e| e.to_string())
+}
+#[tauri::command]
+async fn settings_page(
+    app: State<'_, Application>,
+    plugin_id: String,
+    page_id: String,
+) -> Result<serde_json::Value, String> {
+    let core = app.core.clone();
+    tauri::async_runtime::spawn_blocking(move || core.settings_page(&plugin_id, &page_id))
+        .await
+        .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn save_settings(
+    app: State<'_, Application>,
+    plugin_id: String,
+    page_id: String,
+    input: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let core = app.core.clone();
+    tauri::async_runtime::spawn_blocking(move || core.save_settings(&plugin_id, &page_id, input))
+        .await
+        .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn retry_settings_apply(
+    app: State<'_, Application>,
+    plugin_id: String,
+    page_id: String,
+    revision: String,
+) -> Result<serde_json::Value, String> {
+    let core = app.core.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        core.retry_settings_apply(&plugin_id, &page_id, &revision)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn settings_for_surface(
+    app: State<'_, Application>,
+    window: tauri::WebviewWindow,
+    surface_id: String,
+) -> Result<serde_json::Value, String> {
+    let core = app.core.clone();
+    let label = window.label().to_owned();
+    tauri::async_runtime::spawn_blocking(move || core.settings_for_surface(&label, &surface_id))
+        .await
+        .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn settings_applied(
+    app: State<'_, Application>,
+    window: tauri::WebviewWindow,
+    surface_id: String,
+    input: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let core = app.core.clone();
+    let label = window.label().to_owned();
+    tauri::async_runtime::spawn_blocking(move || core.settings_applied(&label, &surface_id, input))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 async fn clipboard_text(
     handle: tauri::AppHandle,
     operation: String,
@@ -338,6 +408,112 @@ fn update_status(app: State<Application>) -> std::collections::HashMap<String, U
 }
 
 #[tauri::command]
+fn update_overview(app: State<Application>) -> sodeck::updates::UpdateOverview {
+    app.core.update_overview()
+}
+
+#[tauri::command]
+fn set_automatic_updates(app: State<Application>, enabled: bool) -> Result<(), String> {
+    app.core.set_automatic_updates(enabled)
+}
+
+#[tauri::command]
+fn open_update_release() -> Result<(), String> {
+    sodeck::updates::open_release_page()
+}
+
+async fn check_all(handle: tauri::AppHandle, automatic: bool) -> Result<(), String> {
+    let app = handle.state::<Application>();
+    let Some(mut batch) = app.core.begin_update_check(automatic) else {
+        return Ok(());
+    };
+    let client = Arc::new(ReleaseClient::github()?);
+    for id in app.core.update_check_ids() {
+        let result = if id == sodeck::updates::CORE_ID {
+            app.updater
+                .check_with_client(&handle, &app.core, client.clone())
+                .await
+        } else {
+            let core = app.core.clone();
+            let client = client.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                core.check_component(&id, &client).map(|_| ())
+            })
+            .await
+            .map_err(|e| e.to_string())?
+        };
+        if result.is_ok() {
+            batch.succeeded();
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn check_updates(handle: tauri::AppHandle, automatic: bool) -> Result<(), String> {
+    check_all(handle, automatic).await
+}
+
+async fn download_reserved(handle: tauri::AppHandle, task: (String, sodeck::updates::Operation)) {
+    let (id, operation) = task;
+    let app = handle.state::<Application>();
+    let result = if id == sodeck::updates::CORE_ID {
+        app.updater.download_reserved(&app.core, operation).await
+    } else {
+        let core = app.core.clone();
+        let plugin_id = id.clone();
+        match tauri::async_runtime::spawn_blocking(move || {
+            core.download_plugin_reserved(&plugin_id, &ReleaseClient::github()?, operation)
+                .map(|_| ())
+        })
+        .await
+        {
+            Ok(result) => result,
+            Err(error) => Err(error.to_string()),
+        }
+    };
+    if let Err(error) = result {
+        app.core.fail_update(&id, error);
+    }
+}
+
+#[tauri::command]
+async fn download_updates(handle: tauri::AppHandle, ids: Vec<String>) -> Result<(), String> {
+    let tasks = handle
+        .state::<Application>()
+        .core
+        .reserve_update_downloads(&ids)?;
+    let mut tasks = std::collections::VecDeque::from(tasks);
+    while let Some(first) = tasks.pop_front() {
+        let second = tasks.pop_front();
+        let other = handle.clone();
+        tokio::join!(download_reserved(handle.clone(), first), async move {
+            if let Some(task) = second {
+                download_reserved(other, task).await;
+            }
+        });
+    }
+    Ok(())
+}
+
+async fn background_updates(handle: tauri::AppHandle) {
+    let copy = handle.clone();
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        let app = copy.state::<Application>();
+        app.updater.restore(&copy, &app.core)
+    })
+    .await;
+    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+    loop {
+        if handle.state::<Application>().core.is_closing() {
+            break;
+        }
+        let _ = check_all(handle.clone(), true).await;
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+    }
+}
+
+#[tauri::command]
 async fn set_plugin_update_source(
     app: State<'_, Application>,
     id: String,
@@ -390,6 +566,20 @@ async fn restart_app(
     if install_core && !app.updater.ready() {
         return Err("请先下载核心更新".into());
     }
+    if install_core {
+        let verify_handle = handle.clone();
+        let verified = tauri::async_runtime::spawn_blocking(move || {
+            verify_handle.state::<Application>().updater.verify_ready()
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+        if let Err(error) = verified {
+            app.updater.discard_prepared();
+            app.core
+                .fail_update(sodeck::updates::CORE_ID, error.clone());
+            return Err(error);
+        }
+    }
     app.exiting
         .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
         .map_err(|_| "应用正在退出或重启")?;
@@ -410,6 +600,7 @@ async fn restart_app(
         if let Err(error) = app.updater.install() {
             app.exiting.store(0, Ordering::Release);
             app.core.resume_after_failed_install();
+            app.core.failed_core_install(error.clone());
             return Err(format!("安装未完成，更新包已保留，可重试：{error}"));
         }
     }
@@ -449,7 +640,10 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
     if window.label() != "main" {
         return;
     }
-    app.frontend_loaded.store(true, Ordering::Release);
+    let first = !app.frontend_loaded.swap(true, Ordering::AcqRel);
+    if first && !app.smoke {
+        tauri::async_runtime::spawn(background_updates(handle.clone()));
+    }
     if !app.smoke
         || app
             .exiting
@@ -557,10 +751,15 @@ fn begin_exit(handle: &tauri::AppHandle) {
 fn main() {
     let smoke = std::env::args().any(|arg| arg == "--smoke-test");
     let app = tauri::Builder::default()
+        .plugin(sodeck::desktop_behavior::plugin())
         .register_uri_scheme_protocol("sodeck-plugin", |context, request| {
             let path = request.uri().path().trim_start_matches('/');
             let result = path.split_once('/').ok_or("缺少插件资源路径".to_string()).and_then(|(plugin, relative)| {
-                context.app_handle().state::<Application>().core.ui_resource(plugin, relative)
+                let core = &context.app_handle().state::<Application>().core;
+                if let Some(path) = relative.strip_prefix("settings/") {
+                    let (token, asset) = path.split_once('/').ok_or("缺少设置资源版本")?;
+                    core.settings_resource(plugin, token, asset)
+                } else { core.ui_resource(plugin, relative) }
             });
             let (status, bytes, mime) = match result {
                 Ok((bytes, mime)) => (200, bytes, mime),
@@ -651,6 +850,12 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             clipboard_text,
+            settings_catalog,
+            settings_page,
+            save_settings,
+            retry_settings_apply,
+            settings_for_surface,
+            settings_applied,
             component_data,
             network_snapshot,
             sodeck::connections::desktop::connection,
@@ -665,6 +870,11 @@ fn main() {
             set_plugin_enabled,
             set_plugin_update_source,
             update_status,
+            update_overview,
+            check_updates,
+            download_updates,
+            set_automatic_updates,
+            open_update_release,
             check_update,
             download_update,
             restart_app,

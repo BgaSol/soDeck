@@ -22,5 +22,6 @@
     if(message.type==='response') { const p=pending.get(message.id); if(!p)return; clearTimeout(p.timeout);pending.delete(message.id);message.error?p.reject(new Error(message.error)):p.resolve(message.data); }
     else dispatchEvent(new CustomEvent('sodeck:'+message.type,{detail:message}));
   });
-  parent.postMessage({channel:'sodeck-ui-v1',type:'ready'},'*');
+  const ready=()=>parent.postMessage({channel:'sodeck-ui-v1',type:'ready'},'*');
+  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",ready,{once:true});else ready();
 })();

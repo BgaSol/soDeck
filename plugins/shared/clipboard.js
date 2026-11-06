@@ -18,4 +18,11 @@
       await request({op:'commitWrite',id:result.id});return true;
     }
   };
+  const menu = window.installTextMenu?.({
+    read: valid => sodeckClipboard.readText(valid),
+    write: (text, valid) => sodeckClipboard.writeText(text, valid),
+    notify: error => dispatchEvent(new CustomEvent('sodeck:textMenuError', { detail: error })),
+  });
+  for (const name of ['mount', 'contextChanged', 'themeChanged', 'visibilityChanged']) addEventListener('sodeck:' + name, () => menu?.close());
+  addEventListener('sodeck:unmount', () => menu?.dispose());
 })();

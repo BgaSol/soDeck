@@ -139,9 +139,19 @@ impl Store {
         if self.blocked[2] {
             return Err(self.errors[2].clone().unwrap());
         }
-        let preferences = Preferences {
-            theme: theme.into(),
-        };
+        let mut preferences = self.preferences.clone();
+        preferences.theme = theme.into();
+        self.save(2, "preferences.json", &preferences)?;
+        self.preferences = preferences;
+        Ok(())
+    }
+
+    pub fn set_automatic_updates(&mut self, enabled: bool) -> Result<(), String> {
+        if self.blocked[2] {
+            return Err(self.errors[2].clone().unwrap());
+        }
+        let mut preferences = self.preferences.clone();
+        preferences.automatic_updates = enabled;
         self.save(2, "preferences.json", &preferences)?;
         self.preferences = preferences;
         Ok(())

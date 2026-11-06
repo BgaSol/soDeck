@@ -10,14 +10,16 @@
     "plugin:check": "cargo fmt --manifest-path plugins/terminal/Cargo.toml -- --check && cargo fmt --manifest-path plugins/files/Cargo.toml -- --check && cargo fmt --manifest-path plugins/network-proxy/Cargo.toml -- --check",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml --features test-fixtures --locked",
     "scripts:test": "node --test scripts/*.test.mjs",
-    "ui:test": "node scripts/test-server-ui.mjs && node scripts/test-workspace-ui.mjs && node scripts/test-connection-ui.mjs && npm run ui:production:test",
+    "ui:test": "node scripts/test-server-ui.mjs && node scripts/test-workspace-ui.mjs && node scripts/test-connection-ui.mjs && npm run ui:production:test && npm run desktop:test && npm run settings:test",
+    "desktop:test": "npm ci --prefix plugins/terminal --ignore-scripts && node scripts/test-desktop-ui.mjs",
     "ui:production:test": "npm run web:build && node scripts/test-production-ui.mjs",
     "ssh:test": "node scripts/test-openssh.mjs",
     "terminal:test": "node scripts/test-openssh.mjs --terminal",
     "terminal:input:test": "npm ci --prefix plugins/terminal --ignore-scripts && node scripts/test-terminal-input.mjs",
     "network:test": "node scripts/test-openssh.mjs --network",
     "files:test": "node scripts/test-openssh.mjs --files",
-    "plugin:build": "node scripts/package-plugin.mjs"
+    "plugin:build": "node scripts/package-plugin.mjs",
+    "settings:test": "node scripts/test-settings-ui.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.12.4",

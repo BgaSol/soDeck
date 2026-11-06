@@ -1,4 +1,6 @@
-import type { Snapshot, Plugin, Log, Message, Filter, Update, Manifest, OfficialPlugin } from "./core";
+import type { Snapshot, Log, Message, Filter, Update, UpdateOverview, Manifest, OfficialPlugin } from "./core";
+import { updatesPage, pendingUpdates, updateCount } from "./updates";
+import { pluginsPage } from "./plugin-settings";
 import { button as b, date, empty, escape as e, icon, statusText } from "./ui";
 
 export interface ViewState {
@@ -14,6 +16,9 @@ export interface ViewState {
   error: string;
   busy: Set<string>;
   updates: Record<string, Update>;
+  updateOverview: UpdateOverview;
+  excludedUpdates: Set<string>;
+  addingPlugin: boolean;
   sourceDrafts: Record<string, NonNullable<Manifest["updateSource"]>>;
 }
 const pair = (name: string, value: unknown) =>
@@ -38,64 +43,10 @@ function networkStatus(s: Snapshot) {
   return `<section class="network-status"><h3>服务器网络</h3>${s.network.servers.map(t=>`<details data-network-server="${e(t.serverId)}"><summary>${e(t.name||t.serverId)} · ↓ ${byteSize(t.receivedPerSecond)}/s ↑ ${byteSize(t.sentPerSecond)}/s</summary><p>本次运行传输：↓ ${byteSize(t.received)} ↑ ${byteSize(t.sent)}</p>${s.network!.plugins.filter(p=>p.serverId===t.serverId).map(p=>`<div class="pair"><span>${e(s.plugins.find(v=>v.manifest.id===p.pluginId)?.manifest.name||p.pluginId)}</span><span>业务量 ↓ ${byteSize(p.received)} ↑ ${byteSize(p.sent)}<br>↓ ${byteSize(p.receivedPerSecond)}/s ↑ ${byteSize(p.sentPerSecond)}/s</span></div>`).join("")}</details>`).join("")}<p class="hint">${e(s.network.note)}</p></section>`;
 }
 
-export function settings(s: Snapshot, v: ViewState) {
-  const nav = [
-    ["plugins", "插件管理", "plug"],
-    ["appearance", "外观", "sun"],
-    ["updates", "应用更新", "download"],
-    ["about", "应用与数据", "info"],
-  ];
-  const pending = s.restartRequired || v.updates["sodeck.core"]?.phase === "ready";
-  return `<aside class="settings-nav"><div class="nav-label">偏好设置</div>${nav.map(([id, label, i]) => b("section", label, i, id === v.section ? "nav-item active" : "nav-item", `data-id="${id}" aria-current="${id === v.section ? "page" : "false"}"`)).join("")}<div class="nav-bottom">SoDeck <span>v${e(s.version)}</span></div></aside><section class="settings-page" data-scroll="settings">${pending ? `<div class="restart-banner" role="status"><div><b>有变更等待重启</b><p>可继续调整插件，最后统一重启。当前连接和任务会结束。</p></div>${b("restart-app", "重启并应用", "restart", "primary", v.busy.has("restart") ? "disabled" : "")}</div>` : ""}${v.section === "plugins" ? plugins(s, v) : v.section === "appearance" ? appearance(s) : v.section === "updates" ? appUpdates(s, v) : about(s)}</section>`;
-}
-
-function plugins(s: Snapshot, v: ViewState) {
-  const p = s.plugins.find((p) => p.manifest.id === v.plugin);
-  return `<div class="section-heading"><div><h2>插件管理</h2><p>启用和关闭在重启后生效。</p></div>${b("choose-plugin", "添加插件目录", "folder", "primary", v.busy.has("choose") ? "disabled" : "")}</div>${v.error ? `<div role="alert" class="error-box">${e(v.error)}</div>` : ""}
-    ${officialPlugins(s, v)}${s.plugins.length ? `<div class="plugin-layout ${p ? "has-selection" : ""}"><div class="plugin-list" data-scroll="plugin-list">${s.plugins.map((p) => pluginRow(p, v)).join("")}</div><div class="plugin-detail" data-scroll="plugin-detail">${p ? detail(p, v) : empty("选择一个插件", "在左侧查看运行状态、路径和日志。")}</div></div>` : empty("尚未安装插件", "从上方下载官方插件，或添加已解压的本地插件目录。")}`;
-}
-function officialPlugins(s: Snapshot, v: ViewState) {
-  return `<section class="official-plugins" aria-label="官方插件"><h3>官方插件</h3><p class="hint">从 GitHub 下载适合本机的版本，安装后重启启用。插件程序独立于核心安装包。</p><div class="official-plugin-list">${v.officialPlugins.map(plugin => {
-    const installed = s.plugins.find(p => p.manifest.id === plugin.id);
-    const u = v.updates[plugin.id];
-    const busy = v.busy.has(`install:${plugin.id}`) || ["checking", "downloading"].includes(u?.phase ?? "");
-    const attrs = `data-id="${e(plugin.id)}" ${busy ? "disabled" : ""}`;
-    return `<article class="official-plugin" data-official-plugin="${e(plugin.id)}"><div><h3>${e(plugin.name)}</h3><p>${e(plugin.description)}</p>${installed ? `<small>${e(installed.manifest.version)} · ${installed.pendingRestart ? "待重启" : installed.enabled ? "已启用" : "已关闭"}</small>` : ""}</div>${installed ? b("select-plugin", "管理", undefined, "quiet", attrs) : b("install-official-plugin", busy ? u?.phase === "downloading" ? "正在下载…" : "正在查找版本…" : u?.phase === "error" ? "重试安装" : "下载并启用", "download", "primary", attrs)}${!installed && u?.phase === "downloading" ? `<progress aria-label="${e(plugin.name)}下载进度" ${u.totalBytes ? `value="${u.downloadedBytes}" max="${u.totalBytes}"` : ""}></progress><small>已下载 ${(u.downloadedBytes / 1048576).toFixed(1)} MiB</small>` : ""}${!installed && u?.error ? `<p class="error-box" role="alert">${e(u.error)}</p>` : ""}</article>`;
-  }).join("")}</div></section>`;
-}
-function pluginRow(p: Plugin, v: ViewState) {
-  return `<button data-action="select-plugin" data-id="${e(p.manifest.id)}" class="plugin-row ${p.manifest.id === v.plugin ? "selected" : ""}"><div class="plugin-symbol">${icon("plug")}</div><div><b>${e(p.manifest.name)}</b><small>${e(p.manifest.id)}</small><span class="badge ${p.status}">${statusText[p.status]}</span>${p.pendingRestart ? '<span class="badge warning">待重启</span>' : ""}</div><span class="plugin-version">${e(p.manifest.version)}</span></button>`;
-}
-function detail(p: Plugin, v: ViewState) {
-  const active = !p.cleanupComplete;
-  const busy =
-    v.busy.has(p.manifest.id) || ["starting", "stopping"].includes(p.status);
-  return `${b("back-plugins", "返回列表", undefined, "text-button back-plugins")}<div class="detail-heading"><div class="plugin-symbol large">${icon("plug")}</div><h3>${e(p.manifest.name)}</h3><span class="badge ${p.status}">${statusText[p.status]}</span></div>
-    <div class="actions">${b("toggle-plugin", p.enabled ? "已启用" : "已关闭", undefined, `plugin-switch ${p.enabled ? "on" : ""}`, `role="switch" aria-checked="${p.enabled}" aria-label="启用 ${e(p.manifest.name)}" ${busy ? "disabled" : ""} data-id="${e(p.manifest.id)}"`)}${b("plugin-logs", "查看日志", "log", "quiet", `data-id="${e(p.manifest.id)}"`)}</div><p class="hint">${p.pendingRestart ? `重启后${p.enabled ? "启用" : "关闭"}${p.pendingVersion ? `，切换至 ${e(p.pendingVersion)}` : ""}。` : "按启用状态在应用启动时加载。"} 文件和数据会保留。</p>
-    ${p.error || p.updateError ? `<div class="error-box" role="alert">${e(p.updateError ?? p.error)}</div>` : ""}
-    <div class="update-card"><h3>插件更新</h3>${p.pendingVersion ? `<p>版本 ${e(p.pendingVersion)} 已准备好，重启后生效。</p>` : updateControls(p.manifest.id, v, !p.manifest.updateSource, p.enabled || active)}</div>
-    <dl>${pair("插件 ID", p.manifest.id)}${pair("版本", p.manifest.version)}${pair("核心 API", p.manifest.apiVersion)}${pair("适用平台", p.manifest.target)}${pair("插件目录", p.directory)}${pair("入口", p.manifest.entry)}${p.pid ? pair("进程", p.pid) : ""}${p.startedAt ? pair("启动时间", date(p.startedAt)) : ""}${p.instanceId ? pair("实例", p.instanceId) : ""}</dl>
-    ${sourceFields(p, v)}<div class="detail-bottom">${b("forget-plugin", "移除记录", undefined, "quiet danger", `${p.enabled || active || busy ? "disabled" : ""} data-id="${e(p.manifest.id)}"`)}<span class="hint">关闭并重启后可移除，不删除磁盘文件</span></div>`;
-}
-
-function sourceFields(p: Plugin, v: ViewState) {
-  const source = v.sourceDrafts[p.manifest.id] ?? p.manifest.updateSource;
-  return `<div class="update-source"><h3>更新来源</h3><label>GitHub 仓库<input id="update-repository" data-source="repository" value="${e(source?.repository ?? "")}" placeholder="owner/repository" autocomplete="off"></label><label>插件标签前缀<input id="update-prefix" data-source="tagPrefix" value="${e(source?.tagPrefix ?? "")}" placeholder="plugin-terminal-v" autocomplete="off"></label><div class="actions">${b("save-update-source", "保存来源", undefined, "quiet", `data-id="${e(p.manifest.id)}"`)}${p.manifest.updateSource ? b("clear-update-source", "改为手动更新", undefined, "text-button", `data-id="${e(p.manifest.id)}"`) : ""}</div><p class="hint">只从你信任的仓库更新。未配置来源时可继续手动管理。</p></div>`;
-}
-
-function updateControls(id: string, v: ViewState, local = false, restart = false) {
-  const u = v.updates[id];
-  if (local) return '<p class="hint">本地插件，配置更新来源后可检查在线版本。</p>';
-  const busy = v.busy.has(`update:${id}`) || ["checking", "downloading"].includes(u?.phase ?? "");
-  const attrs = `data-id="${e(id)}" ${busy ? "disabled" : ""}`;
-  const labels: Record<string, string> = { checking: "正在检查更新…", current: "当前已是最新正式版本", available: `发现新版本 ${u?.version ?? ""}`, downloading: "正在下载…", ready: id === "sodeck.core" ? "更新已下载，安装后重启" : "新版已下载", error: "更新未完成，可重试", unsupported: "当前安装形式使用系统升级" };
-  const available = u?.version && ["available", "error"].includes(u.phase);
-  const progress = u?.phase === "downloading" ? `<progress aria-label="更新下载进度" ${u.totalBytes ? `value="${u.downloadedBytes}" max="${u.totalBytes}"` : ""}></progress><p class="hint">已下载 ${(u.downloadedBytes / 1048576).toFixed(1)} MiB${u.totalBytes ? ` / ${(u.totalBytes / 1048576).toFixed(1)} MiB` : ""}</p>` : "";
-  return `<p role="status">${e(labels[u?.phase ?? ""] ?? "检查 GitHub Releases 中的正式版本。")}</p>${progress}${u?.error ? `<p class="error-box">${e(u.error)}</p>` : ""}${u?.notes ? `<pre class="update-notes">${e(u.notes)}</pre>` : ""}<div class="actions">${b("check-update", busy ? "处理中…" : "检查更新", "download", "quiet", attrs)}${available ? b(restart ? "update-restart" : "download-update", restart ? "更新并重启" : "下载更新", undefined, "primary", attrs) : ""}${available && restart ? b("download-update", "仅下载，稍后重启", undefined, "text-button", attrs) : ""}${id === "sodeck.core" && u?.phase === "ready" ? b("install-core", "安装并重启", "restart", "primary", v.busy.has("restart") ? "disabled" : "") : ""}</div>`;
-}
-
-function appUpdates(s: Snapshot, v: ViewState) {
-  return `<div class="section-heading"><div><h2>应用更新</h2><p>核心独立升级，保留插件、设置和本地数据。</p></div><span class="version">v${e(s.version)}</span></div>${v.error ? `<p class="error-box">${e(v.error)}</p>` : ""}<div class="update-card">${updateControls("sodeck.core", v)}</div><p class="hint">下载期间可继续使用。安装并重启会结束当前连接和任务。更新包从 BgaSol/soDeck 的 GitHub Releases 下载。</p>${s.os === "linux" ? '<p class="hint">AppImage 支持应用内升级；DEB 安装使用系统包管理器。</p>' : ""}`;
+export function settings(s: Snapshot, v: ViewState, componentNavigation = "") {
+  const count = updateCount(s, v);
+  const nav = [["plugins", "插件", "plug"], ["updates", `更新${count ? ` ${count}` : ""}`, "download"], ["appearance", "外观", "sun"], ["about", "应用与数据", "info"]];
+  return `<aside class="settings-nav"><div class="nav-label">应用</div>${nav.map(([id,label,i]) => b("section",label,i,id === v.section ? "nav-item active" : "nav-item",`data-id="${id}" aria-current="${id === v.section ? "page" : "false"}"`)).join("")}${componentNavigation}<div class="nav-bottom">SoDeck <span>v${e(s.version)}</span></div></aside><div class="settings-main"><section class="settings-page" data-scroll="settings" ${v.section === "components" ? 'id="component-settings-page"' : ""}>${v.section === "components" ? "" : v.section === "plugins" ? pluginsPage(s,v) : v.section === "appearance" ? appearance(s) : v.section === "updates" ? updatesPage(s,v) : about(s)}</section>${v.section === "components" ? "" : pendingUpdates(s,v)}</div>`;
 }
 function appearance(s: Snapshot) {
   return `<div class="section-heading"><div><h2>外观</h2><p>选择适合当前环境的显示主题。</p></div></div><h3 class="field-title">应用主题</h3><div class="themes">${[

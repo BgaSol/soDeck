@@ -1,6 +1,6 @@
 # 文件管理实施记录
 
-2026-11-06。本次按核心 0.8.4、文件插件 0.3.0 独立发行，五目标原生包验证结果在发行流程结束后补记。功能范围见 [需求](plan-file-management.md)，分层及目标验收见 [编码方案](plan-file-management-coding.md)，发行说明见 [v0.8.4](releases/v0.8.4.md)。
+2026-11-06。本次按核心 0.8.4、文件插件 0.3.0 独立发行，五目标原生包构建与组合烟测均通过，系统文件管理器互操作仍有待设备验收。功能范围见 [需求](plan-file-management.md)，分层及目标验收见 [编码方案](plan-file-management-coding.md)，发行说明见 [v0.8.4](releases/v0.8.4.md)。
 
 ## 已进入源码的行为
 
@@ -41,19 +41,23 @@
 | npm run terminal:input:test | 实际 xterm 文本剪贴板回归通过 |
 | ui:test 对应四个脚本 | 服务器、工作区、连接和正式产物 UI 分别通过；保存失败保持关闭对话框并可返回 |
 | npm run files:test | 真实 OpenSSH 核心集成和完整插件界面通过，包括覆盖移动、冲突等待时放弃关闭、内部指针复制/移动 |
-| npm run build -- --bundles nsis -- --locked | Windows x86_64 核心 EXE/NSIS 生成通过，未改版本号、未签发更新包或 Release |
+| npm run build -- --bundles nsis -- --locked | 实施阶段 Windows x86_64 核心 EXE/NSIS 生成通过；正式发行另由 Actions 构建和签名 |
 | plugin:build -- --plugin files | 独立 Windows x86_64 文件插件及归档生成通过 |
 | smoke.mjs / test-openssh --packaged | 本机生成的核心 EXE 启动、跨原生窗口、重开、退出和独立终端/文件插件的 SFTP 保存下载通过；未用本次 NSIS 安装覆盖用户安装 |
 
 快速调试可用 `npm run files:test -- --files-ui-only` 只跑同一隔离 OpenSSH 下的界面部分；正常 `npm run files:test` 仍先运行核心集成，不能用快捷入口替代它。
 
+发行提交 `430fc3530acdd333962bc886cb6ed5615011ac02` 的 [核心五目标构建及包内启动退出](https://github.com/BgaSol/soDeck/actions/runs/42178755288)、[文件插件五目标独立构建](https://github.com/BgaSol/soDeck/actions/runs/42178756002) 与 [五目标实际包组合验收](https://github.com/BgaSol/soDeck/actions/runs/42180281189) 全部通过。组合烟测验证独立终端、文件、网络插件的既有 PTY、SFTP 保存下载和转发流程，不能代替新批量管理的全部平台交互与故障场景。
+
+核心 16 个、文件插件 6 个发行附件已下载核对大小和 SHA-256，更新清单覆盖五目标且与签名/归档一致。核心 0.8.4 作为 Latest，文件插件 0.3.0 独立正式分发。
+
 ## 未完成的交付验证与已知边界
 
-- macOS ARM64、Linux x86_64/ARM64、Windows ARM64 原生编译和实际包互操作尚未执行。Windows 本地系统文件管理器复制后粘贴、原生拖入主/独立窗口、混合 DPI、页签拖动共存也仍需真实桌面验收；浏览器夹具不能替代。
+- 五目标原生编译、实际包启动退出与既有远程业务组合烟测已通过。系统文件管理器复制后粘贴、原生拖入主/独立窗口、混合 DPI、页签拖动共存仍需真实桌面验收；浏览器夹具不能替代。
 - Linux 尚未明确验收 GNOME/KDE、X11/Wayland 组合；GTK 原生适配不能据此宣称所有 Linux 文件管理器兼容。
 - 普通 SFTP 没有文件系统级条件替换/CAS。版本和父目录检查能发现可观察变化，不能消除检查与提交之间的全部外部竞态；同大小同秒修改可能不被 SFTP 属性 stamp 区分。源码未承诺事务目录复制。
 - 断网后清理 .part 可能失败，任务显示归属名称及清理原因；没有远程后台垃圾回收器。底层本地网络文件系统卡住时也不能承诺即时取消。
 - 尚未完整注入空间不足、权限拒绝、提交确认丢失、目录枚举中断、文件系统大小写/Unicode 规范化冲突等全部故障组合；不把当前通过场景扩大为这些已验证。
 - 当前不提供暂停、断点续传、跨服务器复制、重启恢复或远程到系统剪贴板/拖出的功能。
 
-五目标正式包验收完成前，本记录状态保持“源码实施，尚未发行”。
+本轮发布不扩大上述验证范围，设备互操作和完整故障注入仍按待验收项记录。

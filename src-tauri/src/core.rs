@@ -28,7 +28,9 @@ pub struct AppCore {
     pub workspaces: Mutex<crate::workspaces::Runtime>,
     pub(crate) servers: Mutex<crate::servers::ServerStore>,
     pub(crate) store: Mutex<Store>,
+    pub(crate) settings: Mutex<crate::settings::store::SettingsStore>,
     pub(crate) updates: Mutex<crate::updates::UpdateState>,
+    pub(crate) update_cache_io: Mutex<()>,
     pub(crate) mutations: Mutex<()>,
     startup_enabled: HashSet<String>,
     pub(crate) instances: Mutex<HashMap<String, Arc<Instance>>>,
@@ -74,7 +76,9 @@ impl AppCore {
             workspaces: Mutex::new(crate::workspaces::Runtime::default()),
             servers: Mutex::new(servers),
             store: Mutex::new(store),
+            settings: Mutex::new(crate::settings::store::SettingsStore::open(&directory)),
             updates: Mutex::new(crate::updates::UpdateState::default()),
+            update_cache_io: Mutex::new(()),
             mutations: Mutex::new(()),
             startup_enabled,
             instances: Mutex::new(HashMap::new()),
@@ -87,6 +91,7 @@ impl AppCore {
             restart_after_error: AtomicBool::new(false),
             log_rate: Mutex::new((Instant::now(), 0, 0)),
         });
+        core.restore_update_cache();
         core.log(None, "info", "SoDeck 已启动", None);
         Ok(core)
     }
@@ -143,6 +148,9 @@ impl AppCore {
             restart_required: self.restart_after_error.load(Ordering::Acquire),
         };
         drop(store);
+        if let Some(error) = &self.settings.lock().unwrap().error {
+            snapshot.storage_errors.push(error.clone());
+        }
         if let Some(error) = &self.servers.lock().unwrap().error {
             snapshot.storage_errors.push(error.clone());
         }
@@ -369,6 +377,9 @@ impl AppCore {
     }
 
     pub fn set_update_source(&self, id: &str, source: Option<UpdateSource>) -> Result<(), String> {
+        if self.updates.lock().unwrap().busy.contains(id) {
+            return Err("该插件正在检查或下载，请完成后修改来源".into());
+        }
         if let Some(source) = &source {
             crate::updates::validate_source(source)?;
         }
@@ -390,7 +401,7 @@ impl AppCore {
         }
         store.register(record)?;
         drop(store);
-        self.updates.lock().unwrap().items.remove(id);
+        self.invalidate_update(id);
         self.changed();
         Ok(())
     }
@@ -500,6 +511,12 @@ impl AppCore {
         let result = self.store.lock().unwrap().set_theme(theme);
         self.changed();
         result
+    }
+
+    pub fn set_automatic_updates(&self, enabled: bool) -> Result<(), String> {
+        self.store.lock().unwrap().set_automatic_updates(enabled)?;
+        self.changed();
+        Ok(())
     }
 
     pub fn logs(&self, filter: &LogFilter) -> Vec<LogRecord> {

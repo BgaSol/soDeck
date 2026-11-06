@@ -1,5 +1,11 @@
 # SoDeck 架构草案
 
+更新体验改版已实现主进程集中检查与下载调度、同仓库同批次 Releases 复用、偏好与检查结果缓存。`updates.rs` 管理组件状态、排队、逐项失败和插件准备；`desktop_updates.rs` 通过官方 updater 恢复、验签和安装核心落盘包。前端 `updates.ts` 与 `plugin-settings.ts` 共用核心状态，下载任务独立于设置页面；现有退出检查与插件回退继续复用。实现、测试及平台边界见 [更新体验记录](implementation-update-experience.md)。
+
+组件设置已按 [整体设计](plan-component-settings.md) 实现。`settings.rs` 与 `settings/declaration.rs` 根据实际运行/安装版本解析可选声明，`settings/store.rs` 独立保存修订、原值、结构历史和备份；前端 `settings.ts` 管理通用表单、草稿、字体示例及应用反馈。插件经可选 `settings.v1` RPC 和组件宿主的单页快照接收设置，业务效果留在插件。字体随需要它的插件独立打包，核心只提供通用加载与静态资源读取，不识别业务插件 ID。首批未引入业务校验脚本或特殊预览 iframe；实际接口和验证见 [实施记录](implementation-component-settings.md)。
+
+对应模块、单页快照、声明生效版本、保存/应用反馈及逐批验收见 [代码修改方案](plan-component-settings-coding.md)。首批支持兼容的声明增量，不预建业务校验/破坏性迁移脚本引擎。
+
 文件管理扩展方案由 [文件管理编码方案](plan-file-management-coding.md) 约定：文件插件进程编排批次、递归、冲突和重试，核心提供系统本地文件输入、可取消的单项文件操作与流式 IO，文件正文不经控制 RPC。新增能力按增量 API 发现，沿用实例/view/Context 归属和退出清理；远程到本地使用显式下载，不实现系统粘贴下载或远程拖出。该分层已进入源码，实际接口、资源约束及原生平台待验证范围见 [文件管理实施记录](implementation-file-management.md)。
 
 官方插件入口由核心的 `official_plugins.rs` 维护小型固定来源列表；安装复用更新模块的 Release 发现、下载、解包与持久登记，不在核心包中加入插件程序。已安装记录始终走原有详情与升级流程，首次安装只在成功登记后产生待重启状态。
@@ -148,6 +154,8 @@ macOS 主窗口通过 Tauri 自动合并的 `src-tauri/tauri.macos.conf.json` �
 文件树由文件插件管理排序、展开、选择、路径定位及导航恢复。核心只增加向后兼容的独立目录分页游标，每个资源最多 32 个未完成游标，结束或资源销毁时释放。通过 `files.directoryCursors.v1` 发现能力，避免新插件静默依赖旧核心没有的行为；详见 [文件树设计](plan-file-tree.md) 和 [插件接口](plugin-api.md)。
 
 ## 构建与分发边界
+
+浏览器默认行为由核心的 `desktop_behavior.rs` 统一管理，固定使用 `tauri-plugin-prevent-default` 6.0.1。适配复用上游公开 API 的初始化脚本与 WebView 创建回调，以 all-frames 注入覆盖插件 iframe；Windows 同时关闭 WebView2 原生浏览器加速键、菜单、开发者工具、缩放和导航手势。主窗口配置和动态窗口均关闭 devtools。共享 CSS 管理 DOM 滚动条，xterm 使用自己的主题接口和滑块样式；通用文本菜单随核心及需要它的插件分别打包，剪贴板仍由核心提供。决策与验收见 [桌面一致性实施记录](implementation-desktop-consistency.md)。
 
 核心通用剪贴板适配使用 Tauri 官方 clipboard-manager，在阻塞任务中执行原生文本读写；插件 UI 经有界分块桥复用，文本不进入日志或持久化。终端快捷键、选区和粘贴目标策略仍由终端插件负责。主题色板集中在 `src/themes.css`，共享外观规则在 `src/ui.css`，以 UI v1 增量 tokens 传入独立打包的插件；组件保留布局。实现与兼容说明见 [工作台实施记录](implementation-workbench-design.md)。
 

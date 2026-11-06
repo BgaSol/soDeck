@@ -212,6 +212,12 @@ pub fn workspace_roundtrip(handle: &tauri::AppHandle, core: &AppCore) -> Result<
         None,
     )?;
     desktop.verify_native_geometry(handle, &child, &a.context.workspace_id)?;
+    #[cfg(target_os = "windows")]
+    for label in ["main", child.as_str()] {
+        crate::desktop_behavior::verify_native_settings(
+            &handle.get_webview_window(label).ok_or("烟测窗口不存在")?,
+        )?;
+    }
     let projection = core.workspace_projection(&child)?;
     if projection.window.workspace_ids
         != [

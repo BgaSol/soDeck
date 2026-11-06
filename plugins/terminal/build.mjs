@@ -1,8 +1,10 @@
 import fs from 'node:fs';
+import {packageSettingsAssets} from '../../scripts/plugin-settings-assets.mjs';
 fs.mkdirSync('ui/vendor',{recursive:true});
 fs.cpSync('ui-src','ui',{recursive:true});
 fs.copyFileSync('../../src/ui.css','ui/shared.css');
 fs.copyFileSync('../shared/clipboard.js','ui/clipboard-bridge.js');
+packageSettingsAssets(JSON.parse(fs.readFileSync('release.json','utf8')),'.');
 for(const [pkg,file,name] of [
   ['@xterm/xterm','lib/xterm.js','xterm.js'], ['@xterm/xterm','css/xterm.css','xterm.css'],
   ['@xterm/addon-fit','lib/addon-fit.js','fit.js'], ['@xterm/addon-serialize','lib/addon-serialize.js','serialize.js']

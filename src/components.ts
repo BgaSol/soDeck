@@ -1,4 +1,5 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { themeTokens } from "./theme";
 import { ClipboardBridge } from "./clipboard";
 import { LocalFileDrop } from "./local-files";
@@ -46,8 +47,12 @@ export class Components {
   private theme = new MutationObserver(() => this.broadcast());
   private networkTimer = setInterval(() => { void this.updateNetwork(); }, 1000);
   private networkPending = false;
+  private settingsListener?: UnlistenFn;
   constructor(private content: HTMLElement, private call: Call, private notify: (message: string) => void, private refresh: () => Promise<void>) {
     this.data = new ComponentData(call);
+    void listen<{pluginId:string}>("core-settings-changed", event => {
+      for (const shell of this.shells.values()) for (const surface of shell.surfaces.values()) if (surface.token && this.definitions[surface.view.definitionKey]?.pluginId === event.payload.pluginId) void this.refreshSettings(surface);
+    }).then(unlisten => {if(this.disposed)unlisten();else this.settingsListener=unlisten;}).catch(()=>{});
     window.addEventListener("message", this.message);
     this.theme.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "style"] });
     window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", this.systemTheme);
@@ -176,7 +181,7 @@ export class Components {
       const visible = Boolean(slot && !shell.node.hidden && !shell.node.classList.contains("incoming-component-workspace"));
       surface.node.hidden = !slot;
       if (slot) { const s = slot.getBoundingClientRect(); Object.assign(surface.node.style, { left: `${s.left-r.left}px`, top: `${s.top-r.top}px`, width: `${s.width}px`, height: `${s.height}px` }); }
-      if (surface.visible !== visible) { if(!visible&&surface.token)this.clipboard.discard(surface.token); surface.visible = visible; this.post(surface, { type: "visibilityChanged", visible }); }
+      if (surface.visible !== visible) { if(visible)void this.refreshSettings(surface); if(!visible&&surface.token)this.clipboard.discard(surface.token); surface.visible = visible; this.post(surface, { type: "visibilityChanged", visible }); }
       if (visible && surface.focusPending === this.focusEpoch) this.focusSurface(surface);
     }
   }
@@ -185,6 +190,11 @@ export class Components {
   private post(surface: Surface, message: Record<string, unknown>) { surface.frame.contentWindow?.postMessage({ channel: "sodeck-ui-v1", surfaceId: surface.token, ...message }, new URL(surface.frame.src).origin === "null" ? "*" : new URL(surface.frame.src).origin); }
   private broadcast() { for (const s of this.shells.values()) for (const f of s.surfaces.values()) this.post(f, { type: "themeChanged", tokens: this.tokens() }); }
   private systemTheme = () => this.broadcast();
+  private async refreshSettings(surface: Surface) {
+    const token = surface.token; if (!token || this.disposed) return;
+    try { const settings = await this.call("settings_for_surface", {surfaceId: token}); if(surface.token===token && !this.disposed && settings) this.post(surface,{type:"settingsChanged",settings}); }
+    catch { /* Older plugins and cores continue with their defaults. */ }
+  }
   private outside = (event: PointerEvent) => { if (this.menu && !this.menu.contains(event.target as Node)) this.closeMenu(); };
   private message = (event: MessageEvent) => {
     if (!event.data || event.data.channel !== "sodeck-ui-v1") return;
@@ -195,17 +205,27 @@ export class Components {
     const message = event.data;
     if (message.type === "ready") {
       if (surface.initialized) return; surface.initialized = true;
-      surface.chain = this.invoke<{ surfaceId: string; data: unknown; view: View }>("attach", { viewId: surface.view.id }).then(result => {
-        surface.token = result.surfaceId; this.post(surface, { type: "mount", context: result.view.context, serverName: this.shells.get(surface.view.context.workspaceId)?.workspace.name, viewId: surface.view.id, viewType: surface.view.definitionKey.split(":")[1], data: result.data, tokens: this.tokens(), capabilities: {clipboard:1,localFiles:1}, visible: surface.visible });
+      surface.chain = this.invoke<{ surfaceId: string; data: unknown; view: View }>("attach", { viewId: surface.view.id }).then(async result => {
+        surface.token = result.surfaceId;
+        const settings = await this.call("settings_for_surface", {surfaceId: result.surfaceId}).catch(() => null);
+        this.post(surface, { type: "mount", context: result.view.context, serverName: this.shells.get(surface.view.context.workspaceId)?.workspace.name, viewId: surface.view.id, viewType: surface.view.definitionKey.split(":")[1], data: result.data, tokens: this.tokens(), settings, capabilities: {clipboard:1,localFiles:1,settings:1}, visible: surface.visible });
         surface.frame.dataset.surfaceId = result.surfaceId;
       }).catch(error => this.surfaceError(surface, String(error)));
       return;
     }
     if (!surface.token || message.surfaceId !== surface.token) return;
-    if (message.type === "mounted") { surface.flushable = message.flush === true; surface.acceptsLocalFiles = message.localFiles === true; clearTimeout(surface.timeout); void this.invoke("ready", { surfaceId: surface.token }).then(async () => { surface.mounted = true; await this.refresh(); if (surface.focusPending === this.focusEpoch && surface.visible) this.focusSurface(surface); }).catch(error => this.surfaceError(surface, String(error))); return; }
+    if (message.type === "mounted") { surface.flushable = message.flush === true; surface.acceptsLocalFiles = message.localFiles === true; clearTimeout(surface.timeout); void this.invoke("ready", { surfaceId: surface.token }).then(async () => { surface.mounted = true; await this.refreshSettings(surface); await this.refresh(); if (surface.focusPending === this.focusEpoch && surface.visible) this.focusSurface(surface); }).catch(error => this.surfaceError(surface, String(error))); return; }
     if (message.type === "flushed" && surface.flushing && surface.flushing.id === message.id) { surface.flushing.done(message.error); return; }
     if (message.type !== "request" || typeof message.id !== "string") return;
     const requestId = message.id;
+    if (message.method === "settings") {
+      const params = message.params ?? {};
+      const command = params.op === "get" ? "settings_for_surface" : params.op === "applied" ? "settings_applied" : "";
+      void (command ? this.call(command, {surfaceId:surface.token,input:params}) : Promise.reject(new Error("未知设置操作")))
+        .then(data=>this.post(surface,{type:"response",id:requestId,data}))
+        .catch(error=>this.post(surface,{type:"response",id:requestId,error:String(error)}));
+      return;
+    }
     if (message.method === "clipboard") {
       const token=surface.token,context=JSON.stringify(surface.view.context),epoch=this.focusEpoch;
       const valid=()=>!this.disposed&&surface.token===token&&surface.visible&&document.hasFocus()&&document.activeElement===surface.frame&&JSON.stringify(surface.view.context)===context&&this.focusEpoch===epoch;
@@ -377,5 +397,5 @@ export class Components {
   private async run(action: () => Promise<unknown>) { try { await action(); } catch (error) { this.notify(String(error)); } }
   private removeSurface(s: Surface) { clearTimeout(s.timeout); if(s.token)this.clipboard.discard(s.token); this.data.detach(s.token); this.post(s, { type: "unmount" }); s.node.remove(); }
   private destroy(shell: Shell) { shell.observer.disconnect(); for (const f of shell.surfaces.values()) this.removeSurface(f); shell.node.remove(); }
-  dispose() { this.fileDrop.dispose(); this.disposed = true; clearInterval(this.networkTimer); this.closeMenu(); window.removeEventListener("message", this.message); document.removeEventListener("pointerdown", this.outside); document.removeEventListener("pointerdown", this.interaction, true); document.removeEventListener("keydown", this.interaction, true); this.theme.disconnect(); window.matchMedia("(prefers-color-scheme: dark)").removeEventListener("change", this.systemTheme); for (const shell of this.shells.values()) this.destroy(shell); }
+  dispose() { this.settingsListener?.(); this.fileDrop.dispose(); this.disposed = true; clearInterval(this.networkTimer); this.closeMenu(); window.removeEventListener("message", this.message); document.removeEventListener("pointerdown", this.outside); document.removeEventListener("pointerdown", this.interaction, true); document.removeEventListener("keydown", this.interaction, true); this.theme.disconnect(); window.matchMedia("(prefers-color-scheme: dark)").removeEventListener("change", this.systemTheme); for (const shell of this.shells.values()) this.destroy(shell); }
 }

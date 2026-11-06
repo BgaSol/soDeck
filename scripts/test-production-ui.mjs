@@ -28,6 +28,7 @@ fs.copyFileSync(`src-tauri/target/debug/workspace-ui-fixture${suffix}`,path.join
 if(process.platform!=='win32')fs.chmodSync(path.join(uiFixture,`workspace-ui-fixture${suffix}`),0o755);
 fs.cpSync('scripts/fixtures/workspace-ui/ui',path.join(uiFixture,'ui'),{recursive:true});
 const uiMetadata=JSON.parse(fs.readFileSync('scripts/fixtures/workspace-ui/manifest.json','utf8'));
+uiMetadata.settings={apiVersion:'1',schemaVersion:1,pages:[{id:'display',title:'显示偏好验收',viewTypes:['files'],groups:[{id:'text',title:'文字',fields:[{key:'fontSize',type:'number',title:'名称字号',default:12,min:11,max:18,step:1,unit:'px',apply:'live'}]}]}]};
 for(let index=0;index<20;index++)uiMetadata.ui.views.push({id:`extra${index}`,title:`扩展测试组件 ${index}`,icon:'plug',container:'sidebar',instancePolicy:'perWorkspace',defaultSide:'left'});
 fs.writeFileSync(path.join(uiFixture,'plugin.json'),JSON.stringify({...uiMetadata,target,entry:`workspace-ui-fixture${suffix}`}));
 fs.copyFileSync(`src-tauri/target/debug/plugin-fixture${suffix}`, path.join(fixture, `plugin-fixture${suffix}`));
@@ -38,11 +39,15 @@ const tar = process.platform === "win32" ? path.join(process.env.SystemRoot, "Sy
 if (spawnSync(tar, ["-czf", archive, "-C", directory, "fixture"], { windowsHide: true, stdio: "inherit" }).status !== 0) throw new Error("Failed to package test fixture");
 const archiveBytes = fs.readFileSync(archive), requests = [];
 let published = false, corrupt = false;
+let extraCorrupt = true;
+const extraPackages = new Map(), extraManifests = new Map(), extraReleases = [];
 const downloads = http.createServer((request, response) => {
   requests.push(request.url);
   const base = `http://127.0.0.1:${downloads.address().port}`;
   let data;
-  if (request.url.startsWith("/repos/BgaSol/soDeck/releases")) data = JSON.stringify(published ? [{ tag_name: "plugin-terminal-v0.1.1", draft: false, prerelease: false, assets: [{ name: "plugin-update.json", browser_download_url: `${base}/manifest.json` }] }] : []);
+  if (request.url.startsWith("/repos/BgaSol/soDeck/releases")) data = JSON.stringify(published ? [{ tag_name: "plugin-terminal-v0.1.1", draft: false, prerelease: false, assets: [{ name: "plugin-update.json", browser_download_url: `${base}/manifest.json` }] }, ...extraReleases] : []);
+  else if (extraManifests.has(request.url)) data = JSON.stringify(extraManifests.get(request.url));
+  else if (extraPackages.has(request.url)) data = extraCorrupt && request.url.includes('update-two') ? Buffer.from('broken archive') : extraPackages.get(request.url);
   else if (request.url === "/manifest.json") data = JSON.stringify({ id: "sodeck.terminal", version: "0.1.1", apiVersion: "1", platforms: { [target]: { url: `${base}/fixture.tar.gz`, sha256: createHash("sha256").update(archiveBytes).digest("hex") } } });
   else if (request.url === "/fixture.tar.gz") data = corrupt ? Buffer.from("interrupted download") : archiveBytes;
   else { response.writeHead(404).end(); return; }
@@ -246,6 +251,7 @@ try {
 
   await page.setViewportSize({ width: 1100, height: 720 });
   await page.locator("#settings-button").click();
+  await page.locator('[data-action="add-plugin"]').click();
   const terminal = page.locator('[data-official-plugin="sodeck.terminal"]');
   const install = () => terminal.locator('[data-action="install-official-plugin"]');
   assert.deepEqual(await page.locator('[data-official-plugin]').evaluateAll(nodes => nodes.map(node => node.dataset.officialPlugin).sort()), ['sodeck.files','sodeck.network-proxy','sodeck.terminal']);
@@ -259,18 +265,93 @@ try {
   await install().click(); await page.waitForFunction(() => document.querySelector('[data-official-plugin="sodeck.terminal"] [role="alert"]')?.textContent.includes("SHA-256"));
   assert.equal((await call("snapshot")).plugins.length, 0);
   corrupt = false; await install().click();
-  await terminal.locator('[data-action="select-plugin"]').waitFor();
-  assert.match(await terminal.textContent(), /待重启/);
-  assert.equal(await install().count(), 0);
+  await page.locator('.maintenance-pending').waitFor();
+  assert.match(await page.locator('.maintenance-pending').textContent(), /等待重启/);
+  assert.equal(await page.locator('[data-official-plugin]').count(), 0, 'Installed plugins leave the add screen');
   const installed = (await call("snapshot")).plugins[0];
   assert(installed.enabled && installed.pendingRestart);
   assert.equal(installed.status, "unloaded");
   assert.equal(installed.manifest.updateSource.repository, "BgaSol/soDeck");
   await page.reload(); await page.locator("#settings-button").click();
-  await terminal.locator('[data-action="select-plugin"]').waitFor();
+  await page.locator('[data-plugin-id="sodeck.terminal"]').waitFor();
+  assert.equal(await page.locator('[data-plugin-id="sodeck.terminal"]').count(),1);
   assert.equal((await call("snapshot")).plugins.length, 1);
   await page.screenshot({ path: "artifacts/production-ui/official-plugins.png", animations: "disabled" });
   checks.push("Official plugin first install: no background downloads, unpublished release and corrupt archive retries, native package selection, pending restart and persisted record after reload");
+  const base=`http://127.0.0.1:${downloads.address().port}`;
+  for (const name of ['update-one','update-two']) {
+    const pluginDirectory=path.join(directory,name);fs.mkdirSync(pluginDirectory);
+    fs.copyFileSync(`src-tauri/target/debug/plugin-fixture${suffix}`,path.join(pluginDirectory,`plugin-fixture${suffix}`));
+    if(process.platform!=='win32')fs.chmodSync(path.join(pluginDirectory,`plugin-fixture${suffix}`),0o755);
+    const metadata={id:`test.${name}`,name:`更新测试 ${name}`,version:'0.1.1',apiVersion:'1',target,entry:`plugin-fixture${suffix}`,updateSource:{repository:'BgaSol/soDeck',tagPrefix:`plugin-${name}-v`}};
+    fs.writeFileSync(path.join(pluginDirectory,'plugin.json'),JSON.stringify(metadata));
+    const packed=path.join(directory,`${name}.tar.gz`);
+    assert.equal(spawnSync(tar,['-czf',packed,'-C',directory,name],{windowsHide:true}).status,0);
+    const bytes=fs.readFileSync(packed);extraPackages.set(`/${name}.tar.gz`,bytes);
+    extraManifests.set(`/${name}.json`,{id:metadata.id,version:'0.1.1',apiVersion:'1',notes:'改进更新体验\n\n保留当前工作。',platforms:{[target]:{url:`${base}/${name}.tar.gz`,sha256:createHash('sha256').update(bytes).digest('hex')}}});
+    extraReleases.push({tag_name:`plugin-${name}-v0.1.1`,draft:false,prerelease:false,assets:[{name:'plugin-update.json',browser_download_url:`${base}/${name}.json`}]});
+    fs.writeFileSync(path.join(pluginDirectory,'plugin.json'),JSON.stringify({...metadata,version:'0.1.0'}));
+    await call('add_plugin',{directory:pluginDirectory});
+  }
+  await page.reload();await page.locator('#settings-button').click();
+  await page.locator('[data-action="section"][data-id="updates"]').click();
+  await page.locator('[data-action="check-all-updates"]').click();
+  const firstUpdate=page.locator('[data-update-id="test.update-one"]'),secondUpdate=page.locator('[data-update-id="test.update-two"]');
+  await firstUpdate.locator('[data-action="download-update"]').waitFor();
+  await secondUpdate.locator('[data-update-select]').focus();
+  await page.keyboard.press('Space');
+  assert.match(await page.locator('[data-action="download-all-updates"]').textContent(),/所选（1）/);
+  await secondUpdate.locator('[data-update-select]').check();
+  await firstUpdate.locator('.update-release-notes summary').click();
+  await page.locator('.settings-page').evaluate(el=>el.scrollTo(0,0));
+  await page.screenshot({path:'artifacts/production-ui/updates-available.png'});
+  await page.locator('#automatic-updates').uncheck();
+  await page.waitForFunction(()=>!document.querySelector('#automatic-updates').checked);
+  assert.equal(await firstUpdate.locator('details.update-release-notes').getAttribute('open'),'');
+  await page.locator('[data-action="download-all-updates"]').click();
+  await firstUpdate.locator('.update-state').filter({hasText:'重启后应用'}).waitFor();
+  await secondUpdate.locator('[data-action="download-update"]').filter({hasText:'重试下载'}).waitFor();
+  await page.screenshot({path:'artifacts/production-ui/updates-partial-failure.png'});
+  assert.equal((await call('snapshot')).plugins.find(p=>p.manifest.id==='test.update-one').manifest.version,'0.1.0');
+  extraCorrupt=false;
+  await secondUpdate.locator('[data-action="download-update"]').click();
+  await secondUpdate.locator('.update-state').filter({hasText:'重启后应用'}).waitFor();
+  await page.locator('[data-action="check-all-updates"]').click();
+  await firstUpdate.locator('.update-state').filter({hasText:'重启后应用'}).waitFor();
+  assert.equal(await page.locator('[data-action="download-all-updates"]').count(),0);
+  await page.screenshot({path:'artifacts/production-ui/updates-ready.png'});
+  await page.locator('[data-action="section"][data-id="plugins"]').click();
+  assert.equal(await page.locator('[data-plugin-id]').count(),3);
+  assert.equal(await page.locator('#update-repository').count(),0,'Technical source fields are not in the overview');
+  await page.locator('[data-plugin-id="test.update-one"] [data-action="select-plugin"]').click();
+  await page.locator('details[data-persist="source-test.update-one"] summary').click();
+  await page.locator('#update-repository').fill('draft/source');
+  await page.evaluate(()=>window.emitTestEvent('core-changed'));await page.waitForTimeout(300);
+  assert.equal(await page.locator('#update-repository').inputValue(),'draft/source');
+  assert.equal(await page.locator('#update-repository').evaluate(el=>el===document.activeElement),true);
+  assert.equal(await page.locator('details[data-persist="source-test.update-one"]').getAttribute('open'),'');
+  await page.locator('[data-action="back-plugins"]').click();
+  for (const theme of ['light','dark','dopamine']) {
+    await page.locator('[data-action="section"][data-id="appearance"]').click();
+    await page.locator(`[data-action="theme"][data-id="${theme}"]`).click();
+    await page.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme);
+    await page.locator('[data-action="section"][data-id="updates"]').click();
+    for(const [width,height] of [[1100,720],[880,576],[734,480],[720,480]]) {
+      await page.setViewportSize({width,height});
+      await page.locator('.settings-page').evaluate(el=>el.scrollTo(0,0));
+      assert.equal(await page.locator('.settings-page').evaluate(el=>el.scrollWidth>el.clientWidth+1),false,`${theme}/${width} settings overflow`);
+      assert(await page.locator('[data-action="restart-app"]').evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&r.left>=0&&r.right<=innerWidth;}),`${theme}/${width} restart action remains visible`);
+      await page.screenshot({path:`artifacts/production-ui/updates-${theme}-${width}.png`});
+      await page.locator('.maintenance-pending summary').focus();
+      await page.keyboard.press('Enter');
+      await page.evaluate(()=>window.emitTestEvent('core-changed'));await page.waitForTimeout(300);
+      assert.equal(await page.locator('.maintenance-pending summary').evaluate(el=>el===document.activeElement),true);
+      assert(await page.locator('[data-action="restart-app"]').isEnabled());
+      await page.keyboard.press('Enter');
+    }
+  }
+  await page.locator('[data-action="close-layer"]').click();
+  checks.push('Unified updates: real plugin batch checks/downloads and independent failure/retry, keyboard selection, preserved prepared versions, source drafts/disclosures/focus, deduplicated plugin overview and three themes at 1100x720, 880x576, 734x480 and 720x480');
   await call('fixture_load_plugin',{directory:uiFixture});
   const workspace=await call('workspace_fixture_open',{serverId:serverIds[0],connectionId:'bundled-menu-test',endpoint:'root@192.0.2.10:22'});
   await page.reload();
@@ -302,6 +383,14 @@ try {
     await page.keyboard.press('Escape');assert(await more.evaluate(el=>el===document.activeElement));
   }
   checks.push('Bundled workspace menus: fixed placement, no short-menu scrollbars, vertical-only long lists, search and Escape across all three themes at 1100×720 and 720×480');
+  await page.setViewportSize({width:1100,height:720});await page.locator('#settings-button').click();
+  await page.locator('.settings-nav').getByRole('button',{name:'显示偏好验收',exact:true}).click();const preference=page.locator('#component-settings-page').getByLabel('名称字号');await preference.fill('17');
+  await preference.evaluate(el=>window.componentPreferenceInput=el);await page.evaluate(()=>window.emitTestEvent('core-changed'));await page.waitForTimeout(150);
+  assert(await preference.evaluate(el=>el===window.componentPreferenceInput));assert.equal(await preference.inputValue(),'17');
+  await page.locator('[data-action="close-layer"]').click();await page.locator('#settings-button').click();assert.equal(await preference.inputValue(),'17');
+  await page.locator('#component-settings-page').getByRole('button',{name:'保存',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.settings-feedback')?.textContent.includes('设置已保存'));
+  const preferenceValue=await call('settings_page',{pluginId:uiMetadata.id,pageId:'display'});assert.equal(preferenceValue.values.fontSize,17);
+  await page.locator('[data-action="close-layer"]').click();checks.push('Bundled component settings: existing navigation, core save, global refresh preserves input DOM, closing/reopening keeps drafts');
   await call("workspace_move", { window: "main", id: workspace.context.workspaceId, target: "workspace-titlebar", index: 0 });
   testWindow = "workspace-titlebar";
   await page.evaluate(() => sessionStorage.setItem("test-window", "workspace-titlebar"));

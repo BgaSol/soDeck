@@ -22,6 +22,8 @@ pub struct Manifest {
     pub update_source: Option<UpdateSource>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ui: Option<crate::component_ui::Declaration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings: Option<Value>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -140,14 +142,22 @@ pub struct PublishMessage {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Preferences {
     pub theme: String,
+    #[serde(default = "automatic_updates_default")]
+    pub automatic_updates: bool,
+}
+
+fn automatic_updates_default() -> bool {
+    true
 }
 
 impl Default for Preferences {
     fn default() -> Self {
         Self {
             theme: "system".into(),
+            automatic_updates: true,
         }
     }
 }

@@ -38,6 +38,84 @@ async fn file_job(core: &Arc<AppCore>, token: &str, id: &str) -> Result<Value, S
     .await
     .map_err(|_| "原生文件任务超时".to_string())?
 }
+async fn terminal_settings(
+    core: &Arc<AppCore>,
+    view_id: &str,
+    surface: &str,
+) -> Result<(), String> {
+    // Older independently released plugins retain the original smoke protocol.
+    if !core
+        .snapshot()
+        .plugins
+        .iter()
+        .any(|p| p.manifest.id == "sodeck.terminal" && p.manifest.settings.is_some())
+    {
+        return Ok(());
+    }
+    let initial = core.settings_page("sodeck.terminal", "appearance")?;
+    if std::env::args().any(|a| a == "--verify-persisted")
+        && (initial["values"]["fontSize"] != 18
+            || initial["values"]["paddingBottom"] != 40
+            || initial["values"]["font"]["id"] != "ibm-plex-mono")
+    {
+        return Err("实际包重开后未恢复终端外观设置".into());
+    }
+    let terminal_id = core
+        .terminals
+        .validation_surface(view_id, surface)
+        .ok_or("设置修改前终端不存在")?
+        .0;
+    let mut fonts = vec![
+        json!({"source":"preset","id":"jetbrains-mono"}),
+        json!({"source":"preset","id":"source-code-pro"}),
+    ];
+    if cfg!(windows) {
+        fonts.push(json!({"source":"local","family":"Consolas"}));
+    }
+    fonts.push(json!({"source":"preset","id":"ibm-plex-mono"}));
+    for font_value in fonts {
+        let font = font_value["id"]
+            .as_str()
+            .or_else(|| font_value["family"].as_str())
+            .unwrap();
+        let current = core.settings_page("sodeck.terminal", "appearance")?;
+        let mut values = current["values"].clone();
+        values["font"] = font_value.clone();
+        values["fontSize"] = json!(18);
+        values["paddingBottom"] = json!(40);
+        let saved = core.save_settings(
+            "sodeck.terminal",
+            "appearance",
+            json!({"definitionToken":current["definitionToken"],"baseRevision":current["revision"],"requestId":format!("native-font-{font}"),"values":values}),
+        )?;
+        if saved["persisted"] != true {
+            return Err("实际包终端设置保存冲突".into());
+        }
+        // This report comes from the shipped iframe after native FontFace.load and PTY resize.
+        // No injected browser transport or font mock participates in this validation.
+        wait(|| {
+            core.settings_page("sodeck.terminal", "appearance").ok()?["applications"]
+                .as_array()?
+                .iter()
+                .find(|a| {
+                    a["surfaceId"] == surface && a["revision"] == saved["snapshot"]["revision"]
+                })
+                .map(|a| match a["error"].as_str() {
+                    Some(error) => Err(format!("实际包字体 {font} 应用失败：{error}")),
+                    None => Ok(()),
+                })
+        })
+        .await??;
+        if core
+            .terminals
+            .validation_surface(view_id, surface)
+            .is_none_or(|(id, _, _)| id != terminal_id)
+        {
+            return Err("修改外观重新创建了 PTY".into());
+        }
+    }
+    Ok(())
+}
 pub(super) async fn roundtrip(
     core: &Arc<AppCore>,
     context: &Context,
@@ -79,6 +157,7 @@ pub(super) async fn roundtrip(
         .terminals
         .validation_surface(&tv, &token)
         .ok_or("终端原语未创建")?;
+    terminal_settings(core, &tv, &token).await?;
     let command = if cfg!(windows) {
         b"echo sodeck-native-pty-ok\r".to_vec()
     } else {
