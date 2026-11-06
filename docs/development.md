@@ -52,6 +52,8 @@ npm run terminal:input:test
 
 原生包验收步骤和各类测试的边界见 [分发文档](distribution.md)。
 
+`Verify published release upgrade` 手动工作流验证本轮正式核心 0.9.0 → 0.9.2、终端 0.2.0 → 0.2.1、文件 0.4.0 → 0.4.1、网络隧道 0.2.0 → 0.2.1。五个原生 runner 执行 `node scripts/test-release-upgrade.mjs`（`SODECK_UPGRADE_TARGET` 指定本机 Rust target），下载真实正式包并核对 GitHub SHA-256，使用仅测试的 `release-upgrade-fixture` 调用生产插件更新服务与官方 Tauri updater 安装，随后核对安装字节、实际新程序、设置及服务器资料，再验证远程业务。Linux 另执行 DEB 系统安装升级。夹具不发行；此入口验证安装和持久化，完整更新页面点击流程由本机桌面验收另行记录。后续发布新版本后，严格版本预期会拒绝误用该历史版本对。
+
 ## 打包
 
 核心与插件各自打包。核心打包只依赖核心和自身运行资源，不需要构建业务插件。

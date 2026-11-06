@@ -85,6 +85,8 @@ npm run plugin:build -- --plugin network-proxy --out-dir artifacts/another-build
 
 ## 验证
 
+本轮另用手动 `Verify published release upgrade` 在五个原生目标验证正式旧包到新包的安装切换：测试夹具调用生产插件更新服务和官方 Tauri updater，核对公开包摘要、实际安装字节、插件旧进程保留/正常停止、设置及服务器资料，随后启动更新后的实际程序验证远程业务；Linux 同时验证 DEB 系统安装升级。该夹具不随核心分发，完整更新页面操作仍需桌面验收。固定版本对和运行入口见 [开发指南](development.md)，执行结果统一维护在 [打包实施记录](implementation-packaging-workflows.md)。
+
 工作台样式与原生剪贴板的实施和平台边界见 [实施记录](implementation-workbench-design.md)。`npm run terminal:input:test` 安装终端锁定的前端依赖后验证实际 xterm 与剪贴板桥，无需 OpenSSH；Check 工作流执行该回归。真实远端仍由 `terminal:test` / `files:test` 及原生实际包工作流验证。原生剪贴板为显式 `SODECK_TEST_CLIPBOARD=1` 烟测，普通包烟测不改测试桌面的剪贴板。
 
 真实连接的新增依赖与本机验证范围见 [连接实施记录](implementation-connections.md)。`npm run ssh:test` 使用临时回环 OpenSSH 服务验证实际客户端，`npm run ssh:test -- --packaged <安装后的程序>` 进一步验证包内连接与原生窗口移动。Windows x86_64 工作流执行这两层；其他目标继续原生构建/隔离 Rust 连接测试及包内启动，不将本机结果外推为五平台已通过。

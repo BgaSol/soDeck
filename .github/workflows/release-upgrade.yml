@@ -1,0 +1,80 @@
+name: Verify published release upgrade
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upgrade:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: windows-x86_64, runner: windows-2025, target: x86_64-pc-windows-msvc}
+          - {name: windows-aarch64, runner: windows-11-arm, target: aarch64-pc-windows-msvc}
+          - {name: linux-x86_64, runner: ubuntu-22.04, target: x86_64-unknown-linux-gnu}
+          - {name: linux-aarch64, runner: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu}
+          - {name: macos-aarch64, runner: macos-15, target: aarch64-apple-darwin}
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.1
+          components: rustfmt
+      - name: Install native Linux build and runtime dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo "$(command -v node)" scripts/configure-ubuntu-mirror.mjs
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev patchelf xvfb dbus-x11 openssh-server libfuse2
+          sudo mkdir -p /run/sshd
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          shared-key: core-package
+          workspaces: src-tauri -> target
+          save-if: false
+      - name: Build the verification fixture
+        run: |
+          npm ci
+          npm run check
+          cargo build --manifest-path src-tauri/Cargo.toml --features test-fixtures --bin release-upgrade-fixture --locked
+      - name: Install Windows test server
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "$env:WINDIR/System32/OpenSSH/sshd.exe")) {
+            if ('${{ matrix.name }}' -eq 'windows-aarch64') {
+              $archive = Join-Path $env:RUNNER_TEMP 'OpenSSH-ARM64.zip'
+              Invoke-WebRequest 'https://github.com/PowerShell/Win32-OpenSSH/releases/download/10.4.0.0p1-Preview/OpenSSH-ARM64.zip' -OutFile $archive
+              if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne 'D2B1928225479FEC9E0C938F527FDB5ED676446CCA1BBCC5AF84ACA1F272842E') { throw 'OpenSSH test archive hash mismatch' }
+              $directory = Join-Path $env:RUNNER_TEMP 'OpenSSH-test'
+              Expand-Archive -LiteralPath $archive -DestinationPath $directory
+              $server = (Get-ChildItem $directory -Recurse -Filter sshd.exe | Select-Object -First 1).FullName
+              if (-not $server) { throw 'OpenSSH server is missing' }
+              "SODECK_SSHD=$server" >> $env:GITHUB_ENV
+              "SODECK_SFTP_SERVER=$(Join-Path (Split-Path $server) 'sftp-server.exe')" >> $env:GITHUB_ENV
+            } else {
+              $capability = Get-WindowsCapability -Online -Name 'OpenSSH.Server*' | Select-Object -First 1
+              Add-WindowsCapability -Online -Name $capability.Name
+            }
+          }
+      - name: Upgrade real published core and plugin packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SODECK_UPGRADE_TARGET: ${{ matrix.target }}
+        run: node scripts/test-release-upgrade.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Release-upgrade-${{ matrix.name }}
+          path: artifacts/release-upgrade/
+          if-no-files-found: warn
+          retention-days: 30
