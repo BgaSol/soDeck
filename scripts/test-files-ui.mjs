@@ -34,7 +34,11 @@ try{
  // The iframe is hosted in shared surface slots; select by its accessible title.
  sidebar=main.frameLocator('iframe[title^="文件 ·"]');
  const locate=async target=>{const normalized=target.replaceAll('\\','/');await sidebar.getByRole('textbox',{name:'远端路径'}).fill(normalized);await sidebar.getByRole('textbox',{name:'远端路径'}).press('Enter');await wait(()=>sidebar.locator('.tree-row[aria-selected="true"]').evaluateAll((rows,target)=>rows.some(row=>row.dataset.path.endsWith(target)),normalized));};
- const row=name=>sidebar.getByRole('treeitem',{name,exact:true});
+ // The expanded ancestor tree also contains real /etc and /home on Linux.
+ // Match names only inside this test's remote directory, including its root.
+ const remotePath=remote.replaceAll('\\','/');
+ const testRows=()=>sidebar.locator(`[data-path=${JSON.stringify(remotePath)}],[data-path^=${JSON.stringify(remotePath+'/')}]`);
+ const row=name=>sidebar.getByRole('treeitem',{name,exact:true}).and(testRows());
  const expanded=async name=>await row(name).getAttribute('aria-expanded')==='true';
  const tasksIdle=async()=>{await wait(()=>sidebar.locator('.transfer-panel summary').textContent().then(text=>!text.includes('进行中')));await wait(()=>sidebar.locator('.tree-row[aria-busy="true"]').count().then(count=>count===0));};
  const lists=()=>requests.filter(r=>r.command==='component_data'&&r.args.request?.action==='list').length;
@@ -141,7 +145,10 @@ try{
  fs.writeFileSync(filename,'external');await editor.getByRole('button',{name:'保存',exact:true}).click();await editor.getByRole('status').filter({hasText:'已被修改'}).waitFor();assert.equal(fs.readFileSync(filename,'utf8'),'external');
  sidebar=main.frameLocator('iframe[title^="文件 ·"]');await wait(()=>sidebar.getByRole('textbox',{name:'远端路径'}).isEnabled());
  assert(await expanded('home'));assert(await expanded('nginx'));assert.equal(await row('设置 file.txt').getAttribute('aria-selected'),'true');
- assert.equal(await sidebar.getByRole('tree').evaluate(el=>el.scrollTop),savedScroll);
+ // Ancestor directories can lose temporary entries while the view is closed.
+ // Browsers clamp a restored scroll offset to the remaining content's range.
+ const restoredScroll=await sidebar.getByRole('tree').evaluate(el=>({top:el.scrollTop,max:Math.max(0,el.scrollHeight-el.clientHeight)}));
+ assert.equal(restoredScroll.top,Math.min(savedScroll,restoredScroll.max));
  // Theme colors reach the real iframe; narrow sidebars stay inside their bounds.
  fs.mkdirSync('artifacts/files-ui',{recursive:true});
  await main.mouse.move(500,20);
