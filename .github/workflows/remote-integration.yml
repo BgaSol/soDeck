@@ -2,36 +2,71 @@ name: Verify native remote plugins
 on:
   workflow_dispatch:
     inputs:
+      core_version:
+        description: Exact core version (or specify core_run_id)
+        type: string
+      terminal_version:
+        description: Exact terminal version (or specify terminal_run_id)
+        type: string
+      files_version:
+        description: Exact files version (or specify files_run_id)
+        type: string
+      network_version:
+        description: Optional exact network-proxy version
+        type: string
       core_run_id:
-        description: Successful core package run from this commit
+        description: Optional exact core candidate package run
         type: string
-        required: true
       terminal_run_id:
-        description: Successful terminal plugin package run from this commit
+        description: Optional exact terminal candidate package run
         type: string
-        required: true
       files_run_id:
-        description: Successful files plugin package run from this commit
+        description: Optional exact files candidate package run
         type: string
-        required: true
       network_run_id:
-        description: Optional network-proxy plugin package run from this commit
+        description: Optional exact network-proxy candidate package run
         type: string
-        required: false
+      verification_run_id:
+        description: Replay an earlier verification snapshot (leave other inputs empty)
+        type: string
 permissions:
   contents: read
   actions: read
 jobs:
+  resolve:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    outputs:
+      snapshot_id: ${{ steps.saved.outputs.artifact-id || steps.selection.outputs.snapshot_artifact_id }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+      - id: selection
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NATIVE_INPUTS: ${{ toJSON(inputs) }}
+        run: node scripts/resolve-native-inputs.mjs
+      - id: saved
+        if: steps.selection.outputs.upload_snapshot == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Native-verification-inputs
+          path: native-inputs.json
+          if-no-files-found: error
+          retention-days: 30
   verify:
+    needs: resolve
     strategy:
       fail-fast: false
       matrix:
         include:
-          - {name: windows-x86_64, runner: windows-2025}
-          - {name: windows-aarch64, runner: windows-11-arm}
-          - {name: linux-x86_64, runner: ubuntu-22.04}
-          - {name: linux-aarch64, runner: ubuntu-22.04-arm}
-          - {name: macos-aarch64, runner: macos-15}
+          - {name: windows-x86_64, runner: windows-2025, target: x86_64-pc-windows-msvc}
+          - {name: windows-aarch64, runner: windows-11-arm, target: aarch64-pc-windows-msvc}
+          - {name: linux-x86_64, runner: ubuntu-22.04, target: x86_64-unknown-linux-gnu}
+          - {name: linux-aarch64, runner: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu}
+          - {name: macos-aarch64, runner: macos-15, target: aarch64-apple-darwin}
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
@@ -42,34 +77,52 @@ jobs:
           node-version-file: .node-version
       - uses: actions/download-artifact@v5
         with:
-          name: SoDeck-${{ matrix.name }}
-          run-id: ${{ inputs.core_run_id }}
+          artifact-ids: ${{ needs.resolve.outputs.snapshot_id }}
+          merge-multiple: true
+      - id: selected
+        run: node scripts/prepare-native-packages.mjs platform '${{ matrix.target }}'
+      - uses: actions/download-artifact@v5
+        if: steps.selected.outputs.core_kind == 'artifact'
+        with:
+          artifact-ids: ${{ steps.selected.outputs.core_artifact_id }}
+          run-id: ${{ steps.selected.outputs.core_run_id }}
           github-token: ${{ github.token }}
+          merge-multiple: true
           path: packages/core
       - uses: actions/download-artifact@v5
+        if: steps.selected.outputs.terminal_kind == 'artifact'
         with:
-          name: Plugin-terminal-${{ matrix.name }}
-          run-id: ${{ inputs.terminal_run_id }}
+          artifact-ids: ${{ steps.selected.outputs.terminal_artifact_id }}
+          run-id: ${{ steps.selected.outputs.terminal_run_id }}
           github-token: ${{ github.token }}
+          merge-multiple: true
           path: packages/terminal
       - uses: actions/download-artifact@v5
+        if: steps.selected.outputs.files_kind == 'artifact'
         with:
-          name: Plugin-files-${{ matrix.name }}
-          run-id: ${{ inputs.files_run_id }}
+          artifact-ids: ${{ steps.selected.outputs.files_artifact_id }}
+          run-id: ${{ steps.selected.outputs.files_run_id }}
           github-token: ${{ github.token }}
+          merge-multiple: true
           path: packages/files
       - uses: actions/download-artifact@v5
-        if: inputs.network_run_id != ''
+        if: steps.selected.outputs.network_kind == 'artifact'
         with:
-          name: Plugin-network-proxy-${{ matrix.name }}
-          run-id: ${{ inputs.network_run_id }}
+          artifact-ids: ${{ steps.selected.outputs.network_artifact_id }}
+          run-id: ${{ steps.selected.outputs.network_run_id }}
           github-token: ${{ github.token }}
-          path: packages/network-proxy
+          merge-multiple: true
+          path: packages/network
+      - name: Validate and prepare exact native packages
+        id: prepared
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/prepare-native-packages.mjs prepare '${{ matrix.target }}'
       - name: Install Linux runtime and test server
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-0 xvfb dbus-x11 openssh-server
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-0 xvfb dbus-x11 openssh-server
           sudo mkdir -p /run/sshd
       - name: Install Windows test server
         if: runner.os == 'Windows'
@@ -96,52 +149,30 @@ jobs:
             }
           }
       - name: Windows installed package with independent plugins
+        id: windows_test
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          foreach ($plugin in @('terminal','files')) {
-            $archive = Get-ChildItem "packages/$plugin" -Filter '*.zip' | Select-Object -First 1
-            tar -xf $archive.FullName -C "packages/$plugin"
-          }
-          $env:SODECK_TEST_TERMINAL_PLUGIN = (Get-ChildItem packages/terminal -Directory | Select-Object -First 1).FullName
-          $env:SODECK_TEST_FILES_PLUGIN = (Get-ChildItem packages/files -Directory | Select-Object -First 1).FullName
-          if ('${{ inputs.network_run_id }}' -ne '') {
-            $archive = Get-ChildItem packages/network-proxy -Filter '*.zip' | Select-Object -First 1
-            tar -xf $archive.FullName -C packages/network-proxy
-            if ($LASTEXITCODE -ne 0) { throw 'Network plugin extraction failed' }
-            $env:SODECK_TEST_NETWORK_PLUGIN = (Get-ChildItem packages/network-proxy -Directory | Select-Object -First 1).FullName
-          }
-          $installer = Get-ChildItem packages/core -Filter '*-setup.exe' -Recurse | Select-Object -First 1
           $installDir = Join-Path $env:RUNNER_TEMP 'SoDeck-remote'
-          $installed = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDir" -WindowStyle Hidden -Wait -PassThru
+          $installed = Start-Process -FilePath $env:SODECK_CORE_PACKAGE -ArgumentList '/S', "/D=$installDir" -WindowStyle Hidden -Wait -PassThru
           if ($installed.ExitCode -ne 0) { throw 'Install failed' }
+          node scripts/verify-binary.mjs "$installDir/sodeck.exe" '${{ matrix.target }}'
+          if ($LASTEXITCODE -ne 0) { throw 'Installed core architecture mismatch' }
           node scripts/test-openssh.mjs --packaged "$installDir/sodeck.exe"
       - name: Linux extracted package with independent plugins
+        id: linux_test
         if: runner.os == 'Linux'
         env:
           WEBKIT_DISABLE_DMABUF_RENDERER: "1"
         run: |
-          tar -xzf packages/terminal/*.tar.gz -C packages/terminal
-          tar -xzf packages/files/*.tar.gz -C packages/files
-          export SODECK_TEST_TERMINAL_PLUGIN="$(find "$PWD/packages/terminal" -mindepth 1 -maxdepth 1 -type d | head -1)"
-          export SODECK_TEST_FILES_PLUGIN="$(find "$PWD/packages/files" -mindepth 1 -maxdepth 1 -type d | head -1)"
-          if [ -n '${{ inputs.network_run_id }}' ]; then
-            tar -xzf packages/network-proxy/*.tar.gz -C packages/network-proxy
-            export SODECK_TEST_NETWORK_PLUGIN="$(find "$PWD/packages/network-proxy" -mindepth 1 -maxdepth 1 -type d | head -1)"
-          fi
-          dpkg-deb -x $(find packages/core -name '*.deb' | head -1) "$RUNNER_TEMP/SoDeck-remote"
+          dpkg-deb -x "$SODECK_CORE_PACKAGE" "$RUNNER_TEMP/SoDeck-remote"
+          node scripts/verify-binary.mjs "$RUNNER_TEMP/SoDeck-remote/usr/bin/sodeck" '${{ matrix.target }}'
           node scripts/test-openssh.mjs --packaged dbus-run-session -- xvfb-run -a "$RUNNER_TEMP/SoDeck-remote/usr/bin/sodeck"
       - name: macOS mounted package with independent plugins
+        id: macos_test
         if: runner.os == 'macOS'
         run: |
-          tar -xzf packages/terminal/*.tar.gz -C packages/terminal
-          tar -xzf packages/files/*.tar.gz -C packages/files
-          export SODECK_TEST_TERMINAL_PLUGIN="$(find "$PWD/packages/terminal" -mindepth 1 -maxdepth 1 -type d | head -1)"
-          export SODECK_TEST_FILES_PLUGIN="$(find "$PWD/packages/files" -mindepth 1 -maxdepth 1 -type d | head -1)"
-          if [ -n '${{ inputs.network_run_id }}' ]; then
-            tar -xzf packages/network-proxy/*.tar.gz -C packages/network-proxy
-            export SODECK_TEST_NETWORK_PLUGIN="$(find "$PWD/packages/network-proxy" -mindepth 1 -maxdepth 1 -type d | head -1)"
-          fi
-          hdiutil attach $(find packages/core -name '*.dmg' | head -1) -nobrowse -readonly -mountpoint "$RUNNER_TEMP/SoDeck-remote"
+          hdiutil attach "$SODECK_CORE_PACKAGE" -nobrowse -readonly -mountpoint "$RUNNER_TEMP/SoDeck-remote"
           trap 'hdiutil detach "$RUNNER_TEMP/SoDeck-remote"' EXIT
+          node scripts/verify-binary.mjs "$RUNNER_TEMP/SoDeck-remote/SoDeck.app/Contents/MacOS/sodeck" '${{ matrix.target }}'
           node scripts/test-openssh.mjs --packaged "$RUNNER_TEMP/SoDeck-remote/SoDeck.app/Contents/MacOS/sodeck"

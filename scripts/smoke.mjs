@@ -53,6 +53,10 @@ function launch(persisted = false) {
     throw new Error(
       "Packaged application did not complete the current smoke-test protocol",
     );
+  const actual = JSON.parse(fs.readFileSync(report, "utf8"));
+  if ((process.env.SODECK_EXPECT_CORE_VERSION && actual.version !== process.env.SODECK_EXPECT_CORE_VERSION)
+      || (process.env.SODECK_EXPECT_TARGET && actual.target !== process.env.SODECK_EXPECT_TARGET))
+    throw new Error(`Packaged application version/target mismatch: ${actual.version ?? "missing"} ${actual.target ?? "missing"}`);
 }
 try {
   launch(process.env.SODECK_VERIFY_PERSISTED === "1");

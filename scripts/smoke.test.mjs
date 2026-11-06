@@ -57,3 +57,24 @@ test("network package validation rejects a generic report and clears stale failu
     assert.equal(fs.existsSync(path.join(data,'smoke-error.txt')),false);
   } finally {fs.rmSync(root,{recursive:true,force:true});}
 });
+
+test("native package validation requires the selected runtime version and target, including after reopening", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-native-identity-test-"));
+  try {
+    const launcher = path.join(root, "launcher.mjs");
+    fs.writeFileSync(launcher, `
+      import fs from 'node:fs';import path from 'node:path';
+      const args=process.argv.slice(2),data=args[args.indexOf('--test-data-dir')+1];
+      const version=args.includes('--verify-persisted')&&process.env.WRONG_REOPEN==='1'?'0.9.2':process.env.ACTUAL_VERSION;
+      fs.writeFileSync(path.join(data,'smoke-result.json'),JSON.stringify({completed:true,workspaceNative:true,version,target:process.env.ACTUAL_TARGET}));
+    `);
+    const env = { ...process.env, SODECK_EXPECT_CORE_VERSION: '0.9.1', SODECK_EXPECT_TARGET: 'x86_64-unknown-linux-gnu', ACTUAL_VERSION: '0.9.1', ACTUAL_TARGET: 'x86_64-unknown-linux-gnu' };
+    for (const name of ['SODECK_TEST_DATA_DIR','SODECK_VERIFY_PERSISTED','SODECK_TEST_SSH_CONFIG','SODECK_TEST_UPDATE_BUNDLE','SODECK_TEST_CLIPBOARD','SODECK_TEST_NETWORK_PLUGIN']) delete env[name];
+    const run = () => spawnSync(process.execPath, [fileURLToPath(new URL('./smoke.mjs', import.meta.url)), process.execPath, launcher], {env, encoding:'utf8'});
+    assert.equal(run().status, 0);
+    for (const [key,value] of [['ACTUAL_VERSION','0.9.2'],['ACTUAL_VERSION',''],['ACTUAL_TARGET','aarch64-unknown-linux-gnu'],['WRONG_REOPEN','1']]) {
+      const saved=env[key];env[key]=value;const result=run();assert.notEqual(result.status,0);assert.match(result.stderr,/version\/target mismatch/);
+      if(saved===undefined)delete env[key];else env[key]=saved;
+    }
+  } finally { fs.rmSync(root, { recursive:true, force:true }); }
+});
