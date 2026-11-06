@@ -48,6 +48,10 @@ npm run build -- --bundles nsis -- --locked
 
 每个 Rust 插件在 `plugins/<名称>/` 包含：Cargo.toml（唯一版本来源）、Cargo.lock、release.json（ID、名称、API、二进制名、标签前缀）、CHANGELOG.md 和 src/。现有业务目录为 terminal、files 和 network-proxy。新增其他语言插件时再扩展构建适配，不提前建立通用构建框架。
 
+插件包与更新清单使用同一 Cargo 元数据读取函数，按插件 `Cargo.toml` 路径选择包版本，不依赖 TOML 表的顺序或空格写法。`Package plugin` 的选择、打包和 Release 汇总任务均显式安装固定 Rust 工具链；发布标签仍须匹配插件自己的正式版本。
+
+UI 插件打包前在仓库根目录执行 `npm ci`；打包工作流已声明此步骤。`scripts/plugin-menu-assets.mjs` 使用锁定的 Vite 将共享文本菜单与 Floating UI 打成独立 `ui/text-menu.js`，附带依赖许可证，不使用 CDN 或运行时 npm 导入。终端自身 UI 构建也调用同一入口。每个插件各自携带资源，核心打包仍不依赖插件构建。
+
 Hello 和组件交互示例已退役，删除了独立工程、官方来源和示例包验收工作流。升级启动前移除这两个 ID 的旧登记，按既有移除规则保留原程序目录和数据。历史 Release 和版本说明保留。宿主交互回归使用 `scripts/fixtures/workspace-ui/` 与仅在 `test-fixtures` 下构建的 `workspace-ui-fixture`，不作为产品插件打包、安装或发行。实际包继续由 `Verify native remote plugins` 验证。
 
 ```sh
@@ -100,6 +104,8 @@ npm run plugin:build -- --plugin network-proxy --out-dir artifacts/another-build
 失败平台直接重跑使用已固定的输入；重跑整个同一 run 也复用输入快照。新建验收运行要重放原来的包，可填写 `verification_run_id`，其余版本和 run 输入留空；引用的验收 run 必须已结束并保有唯一有效输入快照，业务失败的 run 也可重放其固定包。输入快照、平台结果及汇总保留 30 天，结果含各组件版本、源码、来源、包摘要与平台失败阶段。源包过期、删除或摘要变化时明确失败，不自动换包；原始构建 Artifact 和 Release 附件不会被验收修改。
 
 网络插件另用 `npm run plugin:build -- --plugin network-proxy` 打包，标签 `plugin-network-proxy-v<版本>`；没有发布独立 Release 前，官方来源无法下载安装。原生远程验收可额外填写 `network_version` 或 `network_run_id`，验证实际包的侧栏、编辑弹窗、TCP/SOCKS5 正文、移窗和端口释放。`npm run network:test` 提供源码侧真实插件与混合跳板、OpenSSH 和页面验证。当前完成范围与尚未运行的平台见 [网络实施记录](implementation-network.md)。
+
+SOCKS5 报文库接入后的边界、独立互操作与实际包证据见[库复用实施记录](implementation-standard-library-adoption.md#第六阶段socks5-报文库接入)。Check 的 Linux 原生网络任务另执行 curl 互操作和私有 namespace 内的 `network:netem`，工具前提见[开发指南](development.md)；这些测试工具不进入发行包，核心发行构建仍独立于业务插件打包。工作流定义不能替代本次提交的实际运行结果。
 
 Windows ARM64 runner 的 OpenSSH 系统可选组件安装曾持续等待十余分钟；该测试在缺少 sshd 时使用微软 Win32-OpenSSH 的固定版本 ARM64 便携包并校验 SHA-256，仅启动隔离回环服务，不安装系统服务，也不随产品分发。其他平台使用 runner 系统包提供的 OpenSSH。
 

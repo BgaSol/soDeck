@@ -1,8 +1,9 @@
 use crate::{
     rules::Rules,
-    socks5::{self, Action, Socks},
+    socks5::{Action, Socks},
 };
 use serde_json::{json, Value};
+use socker::socks5::Reply;
 use sodeck_plugin_client::Client;
 use std::{
     collections::HashMap,
@@ -194,7 +195,8 @@ impl App {
             run.clients.retain(|id,peer|{
                 let result=advance(c,&run.listener,&run.rule,id,peer);
                 match result {Ok(done)=>!done,Err(e)=>{
-                    if peer.socks.is_some(){let code=if e.contains("超时"){6}else if e.to_lowercase().contains("refused"){5}else{1};let _=c.call("net.stream.write",json!({"streamId":id,"bytes":socks5::reply(code)}));let _=c.call("net.stream.finish",json!({"streamId":id}));}else{let _=c.call("net.close",json!({"id":id}));}
+                    let response=peer.socks.as_mut().and_then(|s|s.failure_reply(if e.contains("超时"){Reply::TTL_EXPIRED}else if e.to_lowercase().contains("refused"){Reply::CONNECTION_REFUSED}else{Reply::GENERAL_FAILURE}));
+                    if let Some(bytes)=response{let _=c.call("net.stream.write",json!({"streamId":id,"bytes":bytes}));let _=c.call("net.stream.finish",json!({"streamId":id}));}else{let _=c.call("net.close",json!({"id":id}));}
                     if let Some(remote)=&peer.remote{let _=c.call("net.close",json!({"id":remote}));}
                     let stage=if peer.remote.is_some(){"targetConnect"}else{"protocol"};
                     run.last_error=Some(json!({"stage":stage,"message":e}));
@@ -266,10 +268,10 @@ fn advance(
         let status = c.call("net.stream.status", json!({"streamId":remote}))?;
         return match status["state"].as_str() {
             Some("ready") => {
-                if p.socks.is_some() {
+                if let Some(socks) = &mut p.socks {
                     c.call(
                         "net.stream.write",
-                        json!({"streamId":id,"bytes":socks5::reply(0)}),
+                        json!({"streamId":id,"bytes":socks.succeeded()}),
                     )?;
                 }
                 c.call("net.stream.splice",json!({"listenerId":listener,"leftId":id,"rightId":remote,"operationId":"relay"}))?;

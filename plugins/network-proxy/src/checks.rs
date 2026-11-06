@@ -1,4 +1,9 @@
+use crate::socks5;
 use serde_json::{json, Value};
+use socker::socks5::{
+    Address, AuthenticationMethod, ClientGreeting, CommandType, Request, Response, ServerChoice,
+    VERSION,
+};
 use sodeck_plugin_client::Client;
 use std::{
     io::{Read, Write},
@@ -83,25 +88,161 @@ pub fn check(
     let mut socket = TcpStream::connect_timeout(&SocketAddr::new(ip, port), Duration::from_secs(2))
         .map_err(|e| e.to_string())?;
     socket
-        .set_read_timeout(Some(Duration::from_secs(12)))
-        .map_err(|e| e.to_string())?;
-    socket
         .set_write_timeout(Some(Duration::from_secs(2)))
         .map_err(|e| e.to_string())?;
-    socket.write_all(&[5, 1, 0]).map_err(|e| e.to_string())?;
-    let mut method = [0; 2];
-    socket.read_exact(&mut method).map_err(|e| e.to_string())?;
-    if method != [5, 0] {
+    negotiate(&mut socket, host, target_port, Duration::from_secs(12))?;
+    Ok(json!({"ok":true,"message":"SOCKS5 入口与目标 TCP 可达","listenerId":listener}))
+}
+fn read_frame(
+    socket: &mut TcpStream,
+    bytes: &mut Vec<u8>,
+    total: usize,
+    deadline: Instant,
+) -> Result<(), String> {
+    let mut offset = bytes.len();
+    bytes.resize(total, 0);
+    while offset < total {
+        let remaining = deadline
+            .checked_duration_since(Instant::now())
+            .filter(|d| !d.is_zero())
+            .ok_or("SOCKS5 检查超时")?;
+        socket
+            .set_read_timeout(Some(remaining))
+            .map_err(|e| e.to_string())?;
+        match socket.read(&mut bytes[offset..]) {
+            Ok(0) => return Err("SOCKS5 响应提前结束".into()),
+            Ok(n) => offset += n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                ) =>
+            {
+                return Err("SOCKS5 检查超时".into())
+            }
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn serve(reply: Vec<u8>, interval: Duration) -> (TcpStream, std::thread::JoinHandle<()>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let socket = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let task = std::thread::spawn(move || {
+            let (mut peer, _) = listener.accept().unwrap();
+            let mut greeting = [0; 3];
+            peer.read_exact(&mut greeting).unwrap();
+            assert_eq!(greeting, [5, 1, 0]);
+            peer.write_all(&[5, 0]).unwrap();
+            let mut request = [0; 12];
+            peer.read_exact(&mut request).unwrap();
+            assert_eq!(&request, b"\x05\x01\x00\x03\x05probe\x00\x50");
+            for byte in reply {
+                if !interval.is_zero() {
+                    std::thread::sleep(interval);
+                }
+                if peer.write_all(&[byte]).is_err() {
+                    break;
+                }
+            }
+        });
+        (socket, task)
+    }
+    #[test]
+    fn reads_variable_binding_frames_without_consuming_body() {
+        for frame in [
+            vec![5, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+            [vec![5, 0, 0, 4], vec![0; 18]].concat(),
+            vec![5, 0, 0, 3, 3, b'b', b'n', b'd', 0, 0],
+        ] {
+            let (mut socket, task) = serve([frame, b"tail".to_vec()].concat(), Duration::ZERO);
+            negotiate(&mut socket, "probe", 80, Duration::from_secs(1)).unwrap();
+            let mut tail = [0; 4];
+            socket.read_exact(&mut tail).unwrap();
+            assert_eq!(&tail, b"tail");
+            task.join().unwrap();
+        }
+    }
+    #[test]
+    fn rejects_malformed_refused_and_truncated_responses() {
+        for frame in [
+            vec![4, 0, 0, 1],
+            vec![5, 0, 1, 1],
+            vec![5, 0, 0, 9],
+            vec![5, 0, 0, 4, 0],
+            vec![5, 5, 0, 1],
+        ] {
+            let (mut socket, task) = serve(frame.clone(), Duration::ZERO);
+            let error = negotiate(&mut socket, "probe", 80, Duration::from_secs(1)).unwrap_err();
+            if frame[1] == 5 {
+                assert!(error.contains("状态 5"));
+            }
+            task.join().unwrap();
+        }
+    }
+    #[test]
+    fn drip_feed_does_not_reset_the_logical_response_deadline() {
+        let (mut socket, task) = serve(
+            [vec![5, 0, 0, 4], vec![0; 18]].concat(),
+            Duration::from_millis(30),
+        );
+        let start = Instant::now();
+        let error = negotiate(&mut socket, "probe", 80, Duration::from_millis(180)).unwrap_err();
+        assert!(error.contains("超时"));
+        assert!(
+            start.elapsed() < Duration::from_millis(450),
+            "deadline reset on partial read"
+        );
+        drop(socket);
+        task.join().unwrap();
+    }
+}
+fn negotiate(
+    socket: &mut TcpStream,
+    host: &str,
+    port: u16,
+    timeout: Duration,
+) -> Result<(), String> {
+    let method = AuthenticationMethod::NO_AUTHENTICATION;
+    socket
+        .write_all(&socks5::encode(ClientGreeting {
+            methods: vec![method].into_boxed_slice(),
+        })?)
+        .map_err(|e| e.to_string())?;
+    let mut bytes = Vec::new();
+    read_frame(socket, &mut bytes, 2, Instant::now() + timeout)?;
+    if socks5::decode::<ServerChoice>(&bytes)?.method != method {
         return Err("SOCKS5 协商失败".into());
     }
-    let mut request = vec![5, 1, 0, 3, host.len() as u8];
-    request.extend_from_slice(host.as_bytes());
-    request.extend_from_slice(&target_port.to_be_bytes());
-    socket.write_all(&request).map_err(|e| e.to_string())?;
-    let mut reply = [0; 10];
-    socket.read_exact(&mut reply).map_err(|e| e.to_string())?;
-    if reply[0] != 5 || reply[1] != 0 {
-        return Err(format!("目标连接失败，SOCKS5 状态 {}", reply[1]));
+    let address = host
+        .parse::<std::net::IpAddr>()
+        .map(Address::from)
+        .unwrap_or_else(|_| Address::from(host));
+    socket
+        .write_all(&socks5::encode(Request {
+            command: CommandType::CONNECT,
+            address,
+            port,
+        })?)
+        .map_err(|e| e.to_string())?;
+    bytes.clear();
+    let deadline = Instant::now() + timeout;
+    read_frame(socket, &mut bytes, 4, deadline)?;
+    if bytes[0] != VERSION || bytes[2] != 0 {
+        return Err("SOCKS5 代理响应无效".into());
     }
-    Ok(json!({"ok":true,"message":"SOCKS5 入口与目标 TCP 可达","listenerId":listener}))
+    if bytes[1] != 0 {
+        return Err(format!("目标连接失败，SOCKS5 状态 {}", bytes[1]));
+    }
+    let first = socks5::frame_len(&bytes)?;
+    read_frame(socket, &mut bytes, first, deadline)?;
+    let total = socks5::frame_len(&bytes)?;
+    read_frame(socket, &mut bytes, total, deadline)?;
+    socks5::decode::<Response>(&bytes)?;
+    Ok(())
 }

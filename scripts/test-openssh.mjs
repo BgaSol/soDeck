@@ -6,6 +6,7 @@ import net from "node:net";
 import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { cargoPackageVersion } from "./cargo-package.mjs";
+import { testCurl } from "./network-tools.mjs";
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-openssh-"));
 const sshd = process.env.SODECK_SSHD ?? (process.platform === "win32" ? path.join(process.env.WINDIR, "System32/OpenSSH/sshd.exe") : "/usr/sbin/sshd");
@@ -53,6 +54,7 @@ try {
     const files=process.argv.includes('--files');
     const network=process.argv.includes('--network');
     const env={ ...process.env, SODECK_TEST_SSH_PORT: String(port), SODECK_TEST_SSH_USER: username, SODECK_TEST_SSH_KEY: path.join(directory, "user") };
+    if(network) env.SODECK_TEST_CURL=await testCurl();
     for(const plugin of [terminal?'terminal':null,files?'files':null,network?'network-proxy':null].filter(Boolean)){
       const output=path.join(directory,'plugins');
       const build=spawnSync(process.execPath,['scripts/package-plugin.mjs','--plugin',plugin,'--out-dir',output],{stdio:'inherit',windowsHide:true});if(build.status!==0)throw new Error(`${plugin} package failed`);
@@ -67,6 +69,7 @@ try {
   });
   if (result !== 0) throw new Error(`OpenSSH interoperability failed (${result}): ${diagnostic}`);
   if(network){const result=await new Promise((resolve,reject)=>{const test=spawn('cargo',['test','--manifest-path','src-tauri/Cargo.toml','--features','test-fixtures','--locked','--test','connections','openssh_network_plugin','--','--ignored','--exact','--nocapture'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('OpenSSH network plugin failed: '+diagnostic);}
+  if(network){for(const name of ['network_socks_protocol','network_socks_lifecycle']){const result=await new Promise((resolve,reject)=>{const test=spawn('cargo',['test','--manifest-path','src-tauri/Cargo.toml','--features','test-fixtures','--locked','--test','connections',name,'--','--ignored','--exact','--nocapture'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error(name+' failed');}}
   if(network){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-network-ui.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('Network UI failed');}
   if(terminal){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-terminal-ui.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('Terminal UI failed');}
   if(files){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-files-ui.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('File UI failed');}

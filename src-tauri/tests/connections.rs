@@ -224,6 +224,39 @@ struct Socks {
     stop: CancellationToken,
 }
 impl Socks {
+    async fn independent(destination: SocketAddr, auth: bool) -> Self {
+        use fast_socks5::server::Socks5ServerProtocol;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let hosts = Arc::new(Mutex::new(vec![]));
+        let stop = CancellationToken::new();
+        let stopped = stop.clone();
+        let h = hosts.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! { _=stopped.cancelled()=>break, accepted=listener.accept()=>{
+                    let (socket, _) = accepted.unwrap();
+                    let h = h.clone(); let stopped = stopped.clone();
+                    tokio::spawn(async move {
+                        let work = async {
+                            let protocol = if auth {
+                                Socks5ServerProtocol::accept_password_auth(socket, |user, pass| user == "proxy" && pass == "proxy-secret").await?.0
+                            } else { Socks5ServerProtocol::accept_no_auth(socket).await? };
+                            let (protocol, command, address) = protocol.read_command().await?;
+                            assert_eq!(command, fast_socks5::Socks5Command::TCPConnect);
+                            h.lock().unwrap().push(address.to_string());
+                            let mut remote = TcpStream::connect(destination).await?;
+                            let mut socket = protocol.reply_success(remote.local_addr()?).await?;
+                            tokio::io::copy_bidirectional(&mut socket, &mut remote).await?;
+                            Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
+                        };
+                        tokio::select! { _=stopped.cancelled()=>{}, _=work=>{} }
+                    });
+                }}
+            }
+        });
+        Self { addr, hosts, stop }
+    }
     async fn new(destination: SocketAddr, auth: bool) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -917,6 +950,58 @@ async fn cancelled_handshake_and_profile_edit_release_the_real_socket() {
         .unwrap()
         .unwrap();
     until(|| f.core.connection_views()[0].state == "cancelled").await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancelled_socks_negotiation_releases_the_socket_at_each_stage() {
+    for stage in 0..3 {
+        let f = Fixture::new();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy = f.proxy("127.0.0.1", listener.local_addr().unwrap().port(), true);
+        let id = f.server(
+            "ssh.only.remote.invalid",
+            22,
+            json!([{"kind":"socks5","id":"","proxyId":proxy}]),
+        );
+        let view = f.core.start_connection("main", &id).unwrap();
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut greeting = [0; 3];
+        socket.read_exact(&mut greeting).await.unwrap();
+        assert_eq!(greeting, [5, 1, 2]);
+        if stage > 0 {
+            socket.write_all(&[5, 2]).await.unwrap();
+            let mut auth = [0; 20];
+            socket.read_exact(&mut auth).await.unwrap();
+            assert_eq!(&auth, b"\x01\x05proxy\x0cproxy-secret");
+        }
+        if stage > 1 {
+            socket.write_all(&[1, 0]).await.unwrap();
+            let mut prefix = [0; 5];
+            socket.read_exact(&mut prefix).await.unwrap();
+            assert_eq!(&prefix[..4], &[5, 1, 0, 3]);
+            let mut target = vec![0; usize::from(prefix[4]) + 2];
+            socket.read_exact(&mut target).await.unwrap();
+            // Suspend while the core is reading a successful binding frame.
+            socket.write_all(&[5, 0, 0, 4, 0]).await.unwrap();
+        }
+        f.core.cancel_connection("main", &view.attempt_id).unwrap();
+        let mut rest = Vec::new();
+        let closed = tokio::time::timeout(Duration::from_secs(5), socket.read_to_end(&mut rest))
+            .await
+            .expect("cancelled SOCKS socket remained open");
+        assert!(
+            closed.is_ok()
+                || closed.is_err_and(|e| e.kind() == std::io::ErrorKind::ConnectionReset)
+        );
+        assert!(rest.is_empty(), "negotiation continued after cancellation");
+        until(|| f.core.connection_views()[0].state == "cancelled").await;
+        assert!(f
+            .core
+            .workspace_projection("main")
+            .unwrap()
+            .workspaces
+            .is_empty());
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

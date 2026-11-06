@@ -3,6 +3,12 @@
 version = 4
 
 [[package]]
+name = "caret"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23a6f83e57018d15e7615a6f8e5e2c6b6b0226e24a1c562cd705f855a2bc751a"
+
+[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -75,10 +81,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "socker"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f992595d2d2696d58db70021ee1d3abc8810dcba3b76132555efcb0b434d3a11"
+dependencies = [
+ "caret",
+]
+
+[[package]]
 name = "sodeck-network-proxy"
 version = "0.2.0"
 dependencies = [
  "serde_json",
+ "socker",
  "sodeck-plugin-client",
 ]
 
