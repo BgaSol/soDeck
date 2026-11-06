@@ -85,7 +85,7 @@ impl AppCore {
                 endpoint,
                 connected: true,
                 target_identity: Some(identity),
-                window_id: "main".into(),
+                window_id: a.source_window.clone(),
                 layout: Layout {
                     left_width,
                     right_width,
@@ -94,7 +94,7 @@ impl AppCore {
                 view_ids: vec![],
                 active_view_id: None,
             });
-            a.state.lock().unwrap().view.window_id = "main".into();
+            a.state.lock().unwrap().view.window_id = a.source_window.clone();
             context
         };
         *a.session.lock().unwrap() = Some(session);

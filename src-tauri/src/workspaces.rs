@@ -133,9 +133,9 @@ impl Runtime {
     }
     pub(crate) fn adopt(&mut self, workspace: Workspace) {
         let id = workspace.context.workspace_id.clone();
-        let main = self.windows.get_mut("main").unwrap();
-        main.workspace_ids.push(id.clone());
-        main.active_workspace = Some(id.clone());
+        let owner = self.windows.get_mut(&workspace.window_id).unwrap();
+        owner.workspace_ids.push(id.clone());
+        owner.active_workspace = Some(id.clone());
         self.workspaces.insert(id, workspace);
         self.revision += 1;
     }

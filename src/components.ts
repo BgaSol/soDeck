@@ -12,10 +12,11 @@ interface Preference { side: string; pinned: boolean; startup: string; order: nu
 interface View { id: string; definitionKey: string; pluginInstanceId: string; context: Context; title: string; dirty: boolean; busy: boolean; error?: string; lastUsed: number }
 interface UiWorkspace { views: View[]; preferences: Record<string, Preference>; left: string | null; right: string | null; editor: string | null }
 export interface UiProjection { definitions: Record<string, Definition>; workspaces: Record<string, UiWorkspace>; error?: string }
-interface Surface { node: HTMLDivElement; frame: HTMLIFrameElement; view: View; token?: string; chain: Promise<unknown>; visible: boolean; initialized: boolean; focusPending?: number; flushable?: boolean; flushing?: {id: string; done: (error?: string) => void}; timeout: ReturnType<typeof setTimeout> }
+interface Surface { node: HTMLDivElement; frame: HTMLIFrameElement; view: View; token?: string; chain: Promise<unknown>; visible: boolean; initialized: boolean; mounted?: boolean; focusPending?: number; flushable?: boolean; flushing?: {id: string; done: (error?: string) => void}; timeout: ReturnType<typeof setTimeout> }
 interface Shell { node: HTMLElement; surfaces: Map<string, Surface>; observer: ResizeObserver; workspace: Workspace; ui: UiWorkspace; railCapacity?: number }
 interface ClosePlan { token: string; views: string[]; dirty: { id: string; title: string; serverName: string; dirty: boolean; busy: boolean; error?: string }[] }
 const empty = (): UiWorkspace => ({ views: [], preferences: {}, left: null, right: null, editor: null });
+const defaultEditor = { pluginId: "sodeck.terminal", id: "terminal" };
 
 /** Shell and frames have different lifetimes. Rendering chrome never reconstructs a mounted iframe. */
 export class Components {
@@ -27,6 +28,7 @@ export class Components {
   private menu?: HTMLElement;
   private dialog?: HTMLDialogElement;
   private disposed = false;
+  private creating = new Set<string>();
   private layoutError?: string;
   private focusEpoch = 0;
   private interaction = () => { this.focusEpoch++; };
@@ -90,8 +92,10 @@ export class Components {
       replace(node.querySelector(`.${side}-panel header`)!, view ? `<span title="${e(this.definitions[view.definitionKey]?.pluginName)}">${e(view.title)}</span><div><button class="sd-icon" data-component-action="panel-menu" data-key="${e(view.definitionKey)}" aria-label="${e(view.title)} 面板菜单">${icon("more")}</button><button class="sd-icon" data-component-action="collapse" data-key="${side}" aria-label="收起${e(view.title)}">${icon("minus")}</button></div>` : "");
     }
     const editors = w.views.filter(v => this.definitions[v.definitionKey]?.container === "editor");
+    const defaultView = this.defaultView();
+    const createHint = !shell.workspace.connected ? "连接已断开，请先重新连接" : !defaultView ? "终端不可用，请在插件管理中安装并启用后重启" : this.creating.has(shell.workspace.context.workspaceId) ? "正在新建终端…" : "新建终端";
     const tabScroll=node.querySelector(".component-tab-list")?.scrollLeft??0;
-    replace(node.querySelector(".component-tabs")!, `<div class="component-tab-list" role="tablist" aria-label="组件页面">${editors.map(v => `<div class="component-tab sd-tab ${w.editor === v.id ? "selected" : ""}" draggable="true" data-view="${e(v.id)}"><button role="tab" aria-selected="${w.editor === v.id}" data-component-action="select" data-key="${e(v.id)}" title="${e(v.title)}">${icon(this.definitions[v.definitionKey]?.icon)}<span>${e(v.title)}${v.dirty ? " ●" : ""}</span></button><button class="sd-icon" data-component-action="close" data-key="${e(v.id)}" aria-label="关闭 ${e(v.title)}">${icon("close")}</button></div>`).join("")}</div><button class="sd-icon" data-component-action="create" aria-label="新建组件页面" title="新建组件页面">${icon("plus")}</button><button class="sd-icon" data-component-action="pages" aria-label="全部组件页面" title="全部组件页面">${icon("chevron")}</button>`);
+    replace(node.querySelector(".component-tabs")!, `<div class="component-tab-list" role="tablist" aria-label="组件页面">${editors.map(v => `<div class="component-tab sd-tab ${w.editor === v.id ? "selected" : ""}" draggable="true" data-view="${e(v.id)}"><button role="tab" aria-selected="${w.editor === v.id}" data-component-action="select" data-key="${e(v.id)}" title="${e(v.title)}">${icon(this.definitions[v.definitionKey]?.icon)}<span>${e(v.title)}${v.dirty ? " ●" : ""}</span></button><button class="sd-icon" data-component-action="close" data-key="${e(v.id)}" aria-label="关闭 ${e(v.title)}">${icon("close")}</button></div>`).join("")}</div><button class="sd-icon" data-component-action="create" aria-label="新建终端" title="${e(createHint)}" ${createHint === "新建终端" ? "" : "disabled"}>${icon("plus")}</button><button class="sd-icon" data-component-action="pages" aria-label="全部组件页面" title="全部组件页面">${icon("chevron")}</button>`);
     const list = node.querySelector(".component-tab-list")!;
     list.scrollLeft=tabScroll;
     list.addEventListener("dragstart", event => { const ev = event as DragEvent; const id = (ev.target as Element).closest<HTMLElement>("[data-view]")?.dataset.view; if (id) ev.dataTransfer?.setData("text/sodeck-view", id); });
@@ -151,6 +155,7 @@ export class Components {
         surface.node.hidden=false;
         if(visible&&!modal.open)modal.showModal();else if(!visible&&modal.open)modal.close();
         if(surface.visible!==visible){surface.visible=visible;this.post(surface,{type:"visibilityChanged",visible});}
+        if (visible && surface.focusPending === this.focusEpoch) this.focusSurface(surface);
         continue;
       }
       let slot: HTMLElement | null = null;
@@ -161,6 +166,7 @@ export class Components {
       surface.node.hidden = !slot;
       if (slot) { const s = slot.getBoundingClientRect(); Object.assign(surface.node.style, { left: `${s.left-r.left}px`, top: `${s.top-r.top}px`, width: `${s.width}px`, height: `${s.height}px` }); }
       if (surface.visible !== visible) { if(!visible&&surface.token)this.clipboard.discard(surface.token); surface.visible = visible; this.post(surface, { type: "visibilityChanged", visible }); }
+      if (visible && surface.focusPending === this.focusEpoch) this.focusSurface(surface);
     }
   }
   resizePanels() { for (const shell of this.shells.values()) this.position(shell); }
@@ -185,7 +191,7 @@ export class Components {
       return;
     }
     if (!surface.token || message.surfaceId !== surface.token) return;
-    if (message.type === "mounted") { surface.flushable = message.flush === true; clearTimeout(surface.timeout); void this.invoke("ready", { surfaceId: surface.token }).then(async () => { await this.refresh(); if (surface.focusPending === this.focusEpoch && surface.visible) this.focusSurface(surface); }).catch(error => this.surfaceError(surface, String(error))); return; }
+    if (message.type === "mounted") { surface.flushable = message.flush === true; clearTimeout(surface.timeout); void this.invoke("ready", { surfaceId: surface.token }).then(async () => { surface.mounted = true; await this.refresh(); if (surface.focusPending === this.focusEpoch && surface.visible) this.focusSurface(surface); }).catch(error => this.surfaceError(surface, String(error))); return; }
     if (message.type === "flushed" && surface.flushing && surface.flushing.id === message.id) { surface.flushing.done(message.error); return; }
     if (message.type !== "request" || typeof message.id !== "string") return;
     const requestId = message.id;
@@ -249,16 +255,28 @@ export class Components {
       ]); return;
     }
     if (action === "pages") { this.showMenu(anchor, shell.ui.views.filter(v => this.definitions[v.definitionKey]?.container === "editor").map(v => ({ label: v.title, action: () => this.perform(shell, { op: "select", viewId: v.id }) })), true); return; }
-    const actions = Object.values(this.definitions).filter(d => d.available && d.container === "editor" && d.createAction);
-    if (actions.length === 1) { await this.perform(shell, { op: "open", key: actions[0].key }); this.focus(shell, actions[0].key); }
-    else this.showMenu(anchor, actions.map(d => ({ label: `${d.pluginName} · ${d.createAction}`, action: () => this.perform(shell, { op: "open", key: d.key }) })));
+    if (action === "create") {
+      const d = this.defaultView();
+      if (!d || !shell.workspace.connected || this.creating.has(id)) return;
+      const focusEpoch = this.focusEpoch;
+      this.creating.add(id); this.paint(shell);
+      try {
+        const result = await this.perform(shell, { op: "open", key: d.key }) as { viewId: string };
+        const surface = shell.surfaces.get(result.viewId);
+        if (surface && this.state?.window.activeWorkspace === id && this.focusEpoch === focusEpoch) {
+          shell.node.querySelector<HTMLElement>(`[data-component-action="select"][data-key="${CSS.escape(result.viewId)}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+          this.focusSurface(surface);
+        }
+      } finally { this.creating.delete(id); if (this.shells.has(id)) this.paint(shell); }
+    }
   }
+  private defaultView() { return Object.values(this.definitions).find(d => d.pluginId === defaultEditor.pluginId && d.id === defaultEditor.id && d.available && d.container === "editor" && d.instancePolicy === "multiple" && d.createAction); }
   private focus(shell: Shell, key?: string) {
     const selected = shell.ui.views.find(v => v.definitionKey === key && (this.definitions[v.definitionKey]?.container === "dialog" || [shell.ui.left, shell.ui.right, shell.ui.editor].includes(v.id)));
     if (selected) { const surface = shell.surfaces.get(selected.id); if (surface) this.focusSurface(surface); }
     else shell.node.querySelector<HTMLElement>(`[data-key="${CSS.escape(key ?? "")}"]`)?.focus();
   }
-  private focusSurface(surface: Surface) { if (!surface.token) { surface.focusPending = this.focusEpoch; return; } surface.focusPending = undefined; surface.frame.focus(); this.post(surface, { type: "focus" }); }
+  private focusSurface(surface: Surface) { if (!surface.mounted || !surface.visible) { surface.focusPending = this.focusEpoch; return; } surface.focusPending = undefined; surface.frame.focus(); this.post(surface, { type: "focus" }); }
   private showMenu(anchor: HTMLElement, entries: { label: string; action: () => Promise<unknown>; extra?: { label: string; action: () => Promise<unknown> } }[], searchable = false, detail?: string) {
     this.closeMenu(); const node = document.createElement("div"); node.className = "workspace-menu component-menu sd-menu";
     node.setAttribute("role", "menu");

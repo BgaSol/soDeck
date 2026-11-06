@@ -329,7 +329,11 @@ async fn until(mut check: impl FnMut() -> bool) {
     .expect("condition did not settle");
 }
 async fn connected(f: &Fixture, id: &str) -> View {
-    let start = f.core.start_connection("main", id).unwrap();
+    connected_in(f, id, "main").await
+}
+async fn connected_in(f: &Fixture, id: &str, window: &str) -> View {
+    let start = f.core.start_connection(window, id).unwrap();
+    let mut answered = HashSet::new();
     until(|| {
         let v = f
             .core
@@ -338,9 +342,11 @@ async fn connected(f: &Fixture, id: &str) -> View {
             .find(|v| v.attempt_id == start.attempt_id)
             .unwrap();
         if let Some(Question::HostKey { id, .. }) = v.question {
-            f.core
-                .answer_connection("main", &v.attempt_id, &id, Answer::HostKey { accept: true })
-                .unwrap();
+            if answered.insert(id.clone()) {
+                f.core
+                    .answer_connection(window, &v.attempt_id, &id, Answer::HostKey { accept: true })
+                    .unwrap();
+            }
         }
         assert!(v.state != "failed", "{:?}", v.error);
         v.state == "connected"
@@ -351,6 +357,87 @@ async fn connected(f: &Fixture, id: &str) -> View {
         .into_iter()
         .find(|v| v.server_id == id)
         .unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn new_connection_belongs_to_initiating_window_and_reconnect_keeps_owner() {
+    let f = Fixture::new();
+    let target = SshServer::new().await;
+    let id = f.server("127.0.0.1", target.addr.port(), json!([]));
+    f.core
+        .workspaces
+        .lock()
+        .unwrap()
+        .register("secondary")
+        .unwrap();
+    let first = connected_in(&f, &id, "secondary").await.context.unwrap();
+    assert!(f
+        .core
+        .workspace_projection("main")
+        .unwrap()
+        .workspaces
+        .is_empty());
+    let secondary = f.core.workspace_projection("secondary").unwrap();
+    assert_eq!(
+        secondary.window.active_workspace.as_ref(),
+        Some(&first.workspace_id)
+    );
+    assert_eq!(secondary.workspaces[0].window_id, "secondary");
+    assert_eq!(
+        f.core
+            .start_connection("main", &id)
+            .unwrap()
+            .context
+            .as_ref(),
+        Some(&first)
+    );
+    assert_eq!(target.state.auth.load(Ordering::Relaxed), 1);
+    f.core.disconnect_connection("secondary", &first).unwrap();
+    until(|| f.core.connection_views()[0].state == "disconnected").await;
+    let second = connected(&f, &id).await.context.unwrap();
+    assert_eq!(second.workspace_id, first.workspace_id);
+    assert_eq!(second.generation, 2);
+    assert_eq!(
+        f.core.workspace_projection("secondary").unwrap().workspaces[0].context,
+        second
+    );
+    assert!(f
+        .core
+        .workspace_projection("main")
+        .unwrap()
+        .workspaces
+        .is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn closing_initiating_window_cancels_pending_connection_without_a_workspace() {
+    let f = Fixture::new();
+    let target = SshServer::new().await;
+    let id = f.server("127.0.0.1", target.addr.port(), json!([]));
+    f.core
+        .workspaces
+        .lock()
+        .unwrap()
+        .register("secondary")
+        .unwrap();
+    let attempt = f.core.start_connection("secondary", &id).unwrap();
+    until(|| f.core.connection_views()[0].question.is_some()).await;
+    f.core.cancel_window_connections("secondary");
+    f.core
+        .workspaces
+        .lock()
+        .unwrap()
+        .close_window("secondary")
+        .unwrap();
+    until(|| f.core.connection_views()[0].state == "cancelled").await;
+    assert!(f
+        .core
+        .workspace_projection("main")
+        .unwrap()
+        .workspaces
+        .is_empty());
+    assert_eq!(f.core.connection_views()[0].attempt_id, attempt.attempt_id);
+    assert_eq!(target.state.auth.load(Ordering::Relaxed), 0);
 }
 
 async fn credential_prompt(f: &Fixture) -> View {

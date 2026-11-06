@@ -11,4 +11,8 @@
 .connection-prompt-body code { padding: 12px; background: var(--subtle); border: 1px solid var(--border); border-radius: 8px; user-select: text; }
 .connection-key-path { display: flex; gap: 8px; }
 .connection-key-path input { min-width: 0; flex: 1; }
+.connection-progress { position: fixed; right: 12px; top: 56px; z-index: 40; max-width: min(460px, calc(100vw - 24px)); max-height: calc(100dvh - 100px); overflow-y: auto; }
+.connection-progress > div { display: flex; align-items: center; gap: 12px; }
+.connection-progress span { min-width: 0; overflow-wrap: anywhere; }
+.connection-progress button { flex-shrink: 0; }
 }

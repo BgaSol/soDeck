@@ -40,6 +40,7 @@
   .sd-primary, .primary { background: var(--sd-primary); color: var(--sd-primary-text); }
   .sd-primary:hover, .primary:hover { background: var(--sd-primary-hover); filter: none; }
   .sd-menu { background: var(--panel); box-shadow: var(--shadow); padding: 5px; border-radius: 10px; }
+  .sd-menu[popover] { overflow: visible; }
   .sd-menu button { width: 100%; min-height: 32px; border: 0; background: transparent; text-align: left; justify-content: space-between; font-size: 12px; padding: 5px 9px; font-weight: var(--sd-control-weight); }
   .sd-menu button:hover:not(:disabled) { background: var(--hover); }
   .sd-menu button:active:not(:disabled) { background: var(--sd-pressed, var(--accent-bg)); }

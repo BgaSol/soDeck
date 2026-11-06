@@ -49,15 +49,21 @@ const server = await preview({ preview: { host: "127.0.0.1", port: 0 } });
 const browser = await chromium.launch({ headless: true, ...(process.env.SODECK_BROWSER_CHANNEL ? { channel: process.env.SODECK_BROWSER_CHANNEL } : {}) });
 const page = await browser.newPage({ viewport: { width: 1100, height: 720 } });
 const errors = [], checks = [];
+let failCatalog = false;
 page.on("pageerror", error => errors.push(String(error)));
-await page.exposeBinding("desktopInvoke", (_, command, args) => call(command, { ...args, window: "main" }));
+await page.exposeBinding("desktopInvoke", (_, command, args) => {
+  if (command === 'server_catalog' && failCatalog) throw new Error('隔离测试：目录暂时不可读');
+  return call(command, { ...args, window: "main" });
+});
 await page.addInitScript(() => {
   let id = 0;
+  const callbacks = new Map(), listeners = new Map();
+  window.emitTestEvent = (event, payload = null) => { for (const [eventId, item] of listeners) if (item.event === event) callbacks.get(item.handler)?.({event, id:eventId, payload}); };
   window.__TAURI_INTERNALS__ = {
     metadata: { currentWindow: { label: "main" } },
-    transformCallback: () => ++id,
+    transformCallback: callback => { const token = ++id; callbacks.set(token, callback); return token; },
     invoke: (command, args) => {
-      if (command === "plugin:event|listen") return Promise.resolve(++id);
+      if (command === "plugin:event|listen") { const eventId = ++id; listeners.set(eventId, args); return Promise.resolve(eventId); }
       if (command === "plugin:event|unlisten" || command === "workspace_surface") return Promise.resolve();
       return window.desktopInvoke(command, args);
     },
@@ -88,6 +94,39 @@ try {
   assert.equal(before.alignItems, "stretch", "Form labels must use component layout");
   await close();
 
+  const plus=page.locator('#new-workspace'),picker=page.getByRole('dialog',{name:'选择服务器',exact:true});
+  await plus.click();await picker.getByRole('status').filter({hasText:'暂无服务器'}).waitFor();
+  await plus.click();await picker.waitFor({state:'hidden',timeout:2000});
+  await plus.click();await picker.getByRole('status').filter({hasText:'暂无服务器'}).waitFor();
+  await page.keyboard.press('Escape');assert.equal(await plus.evaluate(el=>el===document.activeElement),true);
+  let saved=await call('change_catalog',{revision:(await call('server_catalog')).revision,change:{op:'saveGroup',id:null,name:'生产组'}});
+  const groupId=saved.catalog.groups[0].id;
+  const serverIds=[];
+  for (const [name,host,username] of [['生产入口','192.0.2.10','root'],['测试环境','192.0.2.20','ops']]) {
+    saved=await call('change_catalog',{revision:(await call('server_catalog')).revision,change:{op:'saveServer',draft:{name,host,port:22,username,groupId,authentication:{type:'password',secret:{action:'clear'}},route:[]}}});serverIds.push(saved.selectedId);
+  }
+  await plus.click();
+  const search=picker.getByRole('searchbox',{name:'搜索服务器'});
+  for(const query of ['生产入口','192.0.2.10','root','生产组']) { await search.fill(query);await picker.getByRole('button',{name:/生产入口/}).waitFor(); }
+  await search.fill('没有这个服务器');await picker.getByRole('status').filter({hasText:'没有匹配'}).waitFor();
+  await page.keyboard.press('Enter');assert.equal(await picker.isVisible(),true);
+  await search.fill('');await page.keyboard.press('ArrowUp');
+  assert.equal(await page.evaluate(()=>document.activeElement.dataset.serverId),await picker.locator('[data-server-id]').last().getAttribute('data-server-id'));
+  await search.focus();await page.keyboard.press('ArrowDown');assert.match(await page.evaluate(()=>document.activeElement.textContent),/生产入口|测试环境/);
+  await page.keyboard.press('Escape');
+  failCatalog=true;await plus.click();await picker.getByRole('alert').filter({hasText:'目录暂时不可读'}).waitFor();
+  failCatalog=false;await picker.getByRole('button',{name:'重新读取',exact:true}).click();await picker.getByRole('button',{name:/生产入口/}).waitFor();
+  // A catalog event refreshes only the list and preserves the user's search.
+  await search.fill('生产');
+  const record=(await call('server_catalog')).servers.find(s=>s.id===serverIds[0]);
+  await call('change_catalog',{revision:(await call('server_catalog')).revision,change:{op:'saveServer',draft:{...record,name:'生产入口-已更新',authentication:{type:'password',secret:{action:'keep',remember:false}}}}});
+  await picker.getByRole('button',{name:/生产入口/}).focus();
+  await page.evaluate(()=>window.emitTestEvent('server-catalog-changed'));
+  await picker.getByRole('button',{name:/生产入口-已更新/}).waitFor();assert.equal(await search.inputValue(),'生产');
+  assert.equal(await page.evaluate(()=>document.activeElement.dataset.serverId),serverIds[0]);
+  await page.locator('#catalog-tab').click();await picker.waitFor({state:'hidden'});
+  checks.push('一级加号：重复点击开关、空目录、搜索名称/地址/账号/分组、无结果 Enter 不误操作、读取失败重试、实时更新保留搜索与焦点、Esc 和外部关闭');
+
   const palettes = { light: "#f6f7f9", dark: "#191b22", dopamine: "#fbf1e8" };
   for (const [theme, canvas] of Object.entries(palettes)) {
     await call("set_theme", { theme }); await page.reload();
@@ -95,6 +134,13 @@ try {
     assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--canvas").trim()), canvas);
     for (const [width, height] of [[1100, 720], [720, 480]]) {
       await page.setViewportSize({ width, height });
+      await plus.click();await picker.getByRole('button',{name:/生产入口-已更新/}).waitFor();
+      assert.equal(await plus.evaluate(el=>getComputedStyle(el).borderTopWidth),'0px');
+      assert.equal(await picker.evaluate(el=>getComputedStyle(el).overflow),'visible');
+      assert.equal(await picker.evaluate(el=>getComputedStyle(el,'::before').borderTopWidth),theme==='dopamine'?'2px':'1px');
+      assert(await picker.evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.bottom<=innerHeight;}));
+      if(width===1100){fs.mkdirSync('artifacts/tab-creation',{recursive:true});await page.screenshot({path:`artifacts/tab-creation/server-picker-${theme}.png`});}
+      await page.keyboard.press('Escape');
       for (const kind of ["servers", "proxies"]) {
         await page.locator(`[data-tab="${kind}"]`).click();
         await page.locator('[data-server-action="new"]').click();

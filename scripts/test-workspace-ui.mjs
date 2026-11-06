@@ -16,6 +16,9 @@ const suffix = process.platform === "win32" ? ".exe" : "";
 fs.copyFileSync(`src-tauri/target/debug/workspace-ui-fixture${suffix}`, path.join(pluginRoot, `workspace-ui-fixture${suffix}`));
 fs.cpSync("scripts/fixtures/workspace-ui/ui", path.join(pluginRoot,"ui"), {recursive:true});
 const metadata = JSON.parse(fs.readFileSync("scripts/fixtures/workspace-ui/manifest.json","utf8"));
+// Exercise the product's default target with a test process, never a distributed plugin.
+metadata.id = 'sodeck.terminal';
+metadata.ui.views.push({id:'alternative',title:'其他工具',icon:'plug',container:'editor',instancePolicy:'multiple',createAction:'新建其他工具'});
 for(let index=0;index<20;index++)metadata.ui.views.push({id:`extra${index}`,title:`扩展测试组件 ${index}`,icon:'plug',container:'sidebar',instancePolicy:'perWorkspace',defaultSide:'left'});
 const target = spawnSync("rustc",["-vV"],{encoding:"utf8"}).stdout.match(/^host: (.+)$/m)[1];
 fs.writeFileSync(path.join(pluginRoot,"plugin.json"),JSON.stringify({...metadata,target,entry:`workspace-ui-fixture${suffix}`}));
@@ -39,12 +42,14 @@ const url = vite.resolvedUrls.local[0];
 const browser = await chromium.launch({ headless: true, ...(process.env.SODECK_BROWSER_CHANNEL ? { channel: process.env.SODECK_BROWSER_CHANNEL } : {}) });
 const pages = [], errors = [], checks = [], dragCalls = [], dropTargets = new Map(), drags = new Map();
 const call = (command, args={}) => bridge.call(command,args);
+let createGate;
 const projection = window => call("workspace_snapshot",{window});
 const componentState = window => call("component_ui",{window,operation:"snapshot",args:{}});
 async function makePage(window) {
   const page = await browser.newPage({ viewport: {width:1100,height:720} }); pages.push(page);
   page.on("pageerror", error=>errors.push(String(error)));
   await page.exposeBinding("workspaceInvoke",async (_,command,args={})=>{
+    if(command==='component_ui'&&args.operation==='action'&&args.args?.action?.op==='open'&&args.args.action.key==='sodeck.terminal:terminal'&&createGate) await createGate();
     if(command==="workspace_drag_start") { dragCalls.push({command,args}); drags.set(window,args.id);return `browser-${window}`; }
     if(command==="workspace_drag_sample") return dropTargets.get(window)??{kind:"invalid"};
     if(command==="workspace_drag_finish") { dragCalls.push({command,args}); const target=dropTargets.get(window); const id=drags.get(window);drags.delete(window); if(!args.cancel&&target?.kind==="strip")return call("workspace_move",{window,id,target:target.windowId,index:target.index});return null; }
@@ -62,7 +67,7 @@ async function makePage(window) {
 async function refresh() { for (const page of pages) await page.evaluate(()=>window.manager.refresh()); }
 const select = async (page,id)=>{ await page.locator(`.server-tab-select[data-id="${id}"]`).click(); await page.waitForFunction(id=>document.querySelector(`.server-tab-select[data-id="${id}"]`)?.getAttribute("aria-selected")==="true",id); };
 const menu = (page,id)=>page.locator(`.tab-menu-button[data-id="${id}"]`).click();
-const panel = (page,side)=>page.locator(`.server-workbench:visible [data-component-action="toggle"][data-key="test.workspace-ui:${side==='left'?'files':'forwarding'}"]`);
+const panel = (page,side)=>page.locator(`.server-workbench:visible [data-component-action="toggle"][data-key="sodeck.terminal:${side==='left'?'files':'forwarding'}"]`);
 async function open(name,index) {
   const changed=await call("change_catalog",{revision:(await call("server_catalog")).revision,change:{op:"saveServer",draft:{name,host:"same.invalid",port:22,username:"ops",authentication:{type:"password",secret:{action:"clear"}},route:[]}}});
   return call("workspace_fixture_open",{serverId:changed.selectedId,connectionId:`fixture-${index}`,endpoint:`ops@${index}.invalid:22`});
@@ -71,10 +76,15 @@ try {
   const main=await makePage("main");
   assert.equal(await main.locator(".server-tab").count(),0); assert.equal(await main.locator("#catalog-draft").inputValue(),"draft retained");
   checks.push("普通启动只显示目录，不伪造连接");
+  const unavailable=await open('无插件',0);await refresh();
+  const unavailableButton=main.locator('.server-workbench:visible [data-component-action="create"]');
+  assert(await unavailableButton.isDisabled());assert.match(await unavailableButton.getAttribute('title'),/终端不可用/);
+  await main.locator(`.tab-close-button[data-id="${unavailable.context.workspaceId}"]`).click();await refresh();
+  await call('change_catalog',{revision:(await call('server_catalog')).revision,change:{op:'deleteServer',id:unavailable.context.serverId}});
   await call("fixture_load_plugin",{directory:pluginRoot});
   const a=await open("生产 Web",1),b=await open("测试环境",2),c=await open("长名称服务器-".repeat(12),3);
   const aid=a.context.workspaceId,bid=b.context.workspaceId,cid=c.context.workspaceId; await refresh();
-  await select(main,aid); await panel(main,"left").click(); await main.waitForFunction(()=>document.querySelector('.server-workbench:not([hidden]) [data-component-action="toggle"][data-key="test.workspace-ui:files"]').getAttribute('aria-expanded')==='false'); await panel(main,"right").click(); await main.waitForFunction(()=>document.querySelector('.server-workbench:not([hidden]) [data-component-action="toggle"][data-key="test.workspace-ui:forwarding"]').getAttribute('aria-expanded')==='true');
+  await select(main,aid); await panel(main,"left").click(); await main.waitForFunction(()=>document.querySelector('.server-workbench:not([hidden]) [data-component-action="toggle"][data-key="sodeck.terminal:files"]').getAttribute('aria-expanded')==='false'); await panel(main,"right").click(); await main.waitForFunction(()=>document.querySelector('.server-workbench:not([hidden]) [data-component-action="toggle"][data-key="sodeck.terminal:forwarding"]').getAttribute('aria-expanded')==='true');
   await select(main,bid); assert.equal(await panel(main,"left").getAttribute("aria-expanded"),"true"); assert.equal(await panel(main,"right").getAttribute("aria-expanded"),"false");
   await select(main,aid); assert.equal(await panel(main,"left").getAttribute("aria-expanded"),"false"); assert.equal(await panel(main,"right").getAttribute("aria-expanded"),"true");
   assert((await main.locator(".server-workbench:visible .workspace-endpoint").innerText()).includes("1.invalid"));
@@ -105,6 +115,39 @@ try {
   aw=(await componentState("main")).workspaces[aid];const editorId=aw.views.find(v=>v.definitionKey.endsWith(':editor')).id;
   const editorFrame=viewFrame(main,aid,editorId),editor=editorFrame.getByRole('textbox',{name:'文件编辑草稿'});
   await editor.fill('draft for server A');await flush(main);
+  const beforeCreate=(await componentState('main')).workspaces[aid].views.length;
+  await board.locator('[data-component-action="create"]').click();
+  await main.waitForFunction(({id,count})=>document.querySelector(`.server-workbench[data-id="${id}"] .component-tab-list`).childElementCount===count,{id:aid,count:4});
+  aw=(await componentState('main')).workspaces[aid];
+  assert.equal(aw.views.length,beforeCreate+1);
+  const added=aw.views.find(v=>v.id===aw.editor);assert.equal(added.definitionKey,'sodeck.terminal:terminal');
+  assert.equal(await main.getByRole('menu').count(),0);
+  assert.equal(await editorFrame.locator('textarea').inputValue(),'draft for server A');
+  await viewFrame(main,aid,added.id).locator('textarea:focus').waitFor({timeout:5000});
+  await board.locator(`[data-component-action="close"][data-key="${added.id}"]`).click();
+  await board.locator(`[data-component-action="select"][data-key="${editorId}"]`).click();
+  checks.push('默认终端未加载时禁用；多个创建类型或正在编辑文件时，加号仍只新建一个独立终端并聚焦，保留文件草稿');
+  let releaseCreate,createRequests=0;
+  const failedCreate=new Promise((_,reject)=>{releaseCreate=()=>reject(new Error('隔离测试：终端创建失败'));});
+  createGate=()=>{createRequests++;return failedCreate;};
+  await board.locator('[data-component-action="create"]').click();
+  assert(await board.locator('[data-component-action="create"]').isDisabled());
+  await board.locator('[data-component-action="create"]').dispatchEvent('click');
+  releaseCreate();
+  await main.waitForFunction(()=>document.querySelector('#notice').textContent.includes('终端创建失败'));
+  assert.equal(createRequests,1);assert.equal((await componentState('main')).workspaces[aid].views.length,beforeCreate);
+  assert(await board.locator('[data-component-action="create"]').isEnabled());
+  const lateCreate=new Promise(resolve=>{releaseCreate=resolve;});createGate=()=>lateCreate;
+  await board.locator('[data-component-action="create"]').click();
+  await select(main,bid);
+  releaseCreate();createGate=undefined;
+  await main.waitForFunction(id=>document.querySelector(`.server-workbench[data-id="${id}"] .component-tab-list`).childElementCount===4,aid);
+  const late=(await componentState('main')).workspaces[aid];
+  assert.equal((await projection('main')).window.activeWorkspace,bid);
+  assert.equal(await board.locator(`.component-surface[data-view-id="${late.editor}"] iframe`).evaluate(el=>el===document.activeElement),false);
+  await select(main,aid);await board.locator(`[data-component-action="close"][data-key="${late.editor}"]`).click();
+  await board.locator(`[data-component-action="select"][data-key="${editorId}"]`).click();
+  checks.push('创建中禁用且防重复，失败可重试；创建期间切换服务器，迟到结果不抢工作区和焦点');
   await fileBrowser.getByRole('button',{name:'nginx.conf',exact:true}).dblclick();await flush(main);
   assert.equal((await componentState("main")).workspaces[aid].views.filter(v=>v.definitionKey.endsWith(':editor')).length,1);
   await editorFrame.locator('body').evaluate(el=>el.dataset.retained='same iframe');
@@ -114,7 +157,7 @@ try {
   await board.getByRole('button',{name:'左侧更多组件',exact:true}).click();
   await main.getByRole('textbox',{name:'查找组件或页面'}).fill('扩展测试组件 19');
   await main.locator('.component-menu-row:visible').getByRole('menuitem',{name:'固定',exact:true}).click();
-  assert.equal((await componentState('main')).workspaces[aid].preferences['test.workspace-ui:extra19'].pinned,true);
+  assert.equal((await componentState('main')).workspaces[aid].preferences['sodeck.terminal:extra19'].pinned,true);
   await board.getByRole('button',{name:'左侧更多组件',exact:true}).click();await main.getByRole('textbox',{name:'查找组件或页面'}).fill('扩展测试组件 19');
   await main.locator('.component-menu-row:visible').getByRole('menuitem',{name:'取消固定',exact:true}).click();
   checks.push('20 个扩展视图通过更多入口查找、固定和取消固定');
@@ -174,9 +217,9 @@ try {
   assert.deepEqual((await projection("main")).window.workspaceIds,[cid,bid]);
   checks.push("指针门槛、拖动排序、Esc 和无效落点；原生命中由独立测试验证");
   await select(main,bid); await panel(main,"left").click();
-  await main.waitForFunction(()=>document.querySelector('.server-workbench:not([hidden]) .left-rail [data-key="test.workspace-ui:files"]').getAttribute('aria-expanded')==='false');
+  await main.waitForFunction(()=>document.querySelector('.server-workbench:not([hidden]) .left-rail [data-key="sodeck.terminal:files"]').getAttribute('aria-expanded')==='false');
   await panel(main,"left").click();
-  await main.waitForFunction(()=>document.querySelector('.server-workbench:not([hidden]) .left-rail [data-key="test.workspace-ui:files"]').getAttribute('aria-expanded')==='true');
+  await main.waitForFunction(()=>document.querySelector('.server-workbench:not([hidden]) .left-rail [data-key="sodeck.terminal:files"]').getAttribute('aria-expanded')==='true');
   const separator=main.locator('.server-workbench:visible [data-resize="left"]');
   const initialWidth=await main.locator('.server-workbench:visible').evaluate(el=>parseFloat(el.style.getPropertyValue('--left-width')));
   await separator.focus(); await main.keyboard.press("ArrowRight");

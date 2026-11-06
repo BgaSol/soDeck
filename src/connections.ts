@@ -25,7 +25,12 @@ export class ConnectionsUi {
   private again = false;
   private dialog?: { node: HTMLDialogElement; id: string; attempt: string; submitted: boolean };
   private dismissed = new Set<string>();
+  private starting = new Set<string>();
+  private progress = document.createElement("div");
   constructor(private windowId: string, private update: (views: ConnectionView[]) => void, private notify: (text: string) => void, private call: Call = invoke) {
+    this.progress.className = "connection-progress sd-notice";
+    this.progress.setAttribute("role", "status"); this.progress.setAttribute("aria-label", "连接进度");
+    this.progress.hidden = true; document.body.append(this.progress);
     document.addEventListener("click", event => {
       const b = (event.target as Element).closest<HTMLElement>("[data-connect-server],[data-connection-cancel],[data-connection-prompt],[data-disconnect-context],[data-reconnect-server]");
       if (b) void this.action(b).catch(error => notify(String(error)));
@@ -40,9 +45,30 @@ export class ConnectionsUi {
     // Query again after the command so a racing progress event cannot leave stale state.
     await this.call<ConnectionView[]>("connection", { command }); await this.refresh();
   }
+  async connect(serverId: string) {
+    if (this.starting.has(serverId)) return;
+    this.starting.add(serverId);
+    try {
+      await this.refresh();
+      const v = this.views.find(v => v.serverId === serverId);
+      if (v?.state === "connected" && v.context) await this.send({ op: "focus", context: v.context });
+      else if (v?.state !== "connecting") await this.send({ op: "start", serverId });
+    } finally { this.starting.delete(serverId); }
+  }
   private apply(views: ConnectionView[]) {
+    const previous = this.views;
     this.dismissed = new Set([...this.dismissed].filter(id => views.some(v => v.question?.id === id)));
     this.views = views; this.update(views);
+    const pending = views.filter(v => v.windowId === this.windowId && v.state === "connecting");
+    this.progress.innerHTML = pending.map(v => `<div><span>${e(v.endpoint)} · ${e(connectionSummary(v))}</span><button class="sd-quiet" data-connection-cancel="${e(v.attemptId)}">取消连接</button></div>`).join("");
+    this.progress.hidden = pending.length === 0;
+    for (const v of views) {
+      const old = previous.find(old => old.attemptId === v.attemptId);
+      if (old?.state === "connecting" && old.windowId === this.windowId) {
+        if (v.state === "failed") this.notify(v.error?.message ?? "连接失败，请重试");
+        if (v.state === "connected" && v.context) void this.call("connection", { command: { op: "focus", context: v.context } }).catch(error => this.notify(String(error)));
+      }
+    }
     if (this.dialog && !views.some(v => v.attemptId === this.dialog!.attempt && v.question?.id === this.dialog!.id)) this.closePrompt();
     if (!this.dialog) {
       const v = views.find(v => v.windowId === this.windowId && v.state === "connecting" && v.question && !this.dismissed.has(v.question.id));
@@ -52,9 +78,7 @@ export class ConnectionsUi {
   private async action(b: HTMLElement) {
     const server = b.dataset.connectServer ?? b.dataset.reconnectServer;
     if (server) {
-      const v = this.views.find(v => v.serverId === server);
-      if (v?.state === "connected" && v.context) await this.send({ op: "focus", context: v.context });
-      else await this.send({ op: "start", serverId: server });
+      await this.connect(server);
     } else if (b.dataset.connectionCancel) await this.send({ op: "cancel", attemptId: b.dataset.connectionCancel });
     else if (b.dataset.connectionPrompt) { const v = this.views.find(v => v.attemptId === b.dataset.connectionPrompt); if (v) this.prompt(v); }
     else if (b.dataset.disconnectContext) await this.send({ op: "disconnect", context: JSON.parse(b.dataset.disconnectContext) });

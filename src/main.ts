@@ -9,13 +9,15 @@ import { button as b, escape as e, icon, replace } from "./ui";
 import "./style.css";
 import { ServerManager } from "./servers";
 import { ConnectionsUi } from "./connections";
+import { ServerPicker } from "./server-picker";
 
 const win = getCurrentWindow();
 const root = document.querySelector<HTMLDivElement>("#app")!;
-root.innerHTML = `<header class="topbar"><button id="catalog-tab" role="tab" aria-selected="true">${icon("grid")}<span>服务器管理</span></button><div class="server-tabs" id="server-tabs" role="tablist" aria-label="服务器工作区"></div><div id="drag-region" class="drag-region" aria-hidden="true"></div><nav class="global-tools" aria-label="应用工具"><button data-action="status" id="status-button" aria-label="应用状态" aria-expanded="false"><span class="health-dot"></span><span id="health">正在启动</span></button>${b("messages", '<span id="message-count">消息</span>', "bell", "icon-label", 'id="messages-button" aria-label="消息中心"')}${b("settings", "设置", "settings", "icon-label", 'id="settings-button"')}</nav><div id="window-controls" class="window-controls">${b("minimize", "", "minus", "", 'aria-label="最小化"')}${b("maximize", "", "maximize", "", 'id="maximize-button" aria-label="最大化或还原"')}${b("close-window", "", "close", "close-window", 'aria-label="关闭窗口"')}</div></header><main class="workspace" id="server-workspace"><div id="server-catalog"></div><div id="workspace-content" hidden></div></main><div id="overlay" hidden></div><div id="toasts" class="toasts" aria-live="polite"></div>`;
+root.innerHTML = `<header class="topbar"><button id="catalog-tab" role="tab" aria-selected="true">${icon("grid")}<span>服务器管理</span></button><div class="server-tabs" id="server-tabs" role="tablist" aria-label="服务器工作区"></div><button id="new-workspace" class="sd-icon" aria-label="选择服务器" title="选择服务器" aria-haspopup="dialog" aria-expanded="false">${icon("plus")}</button><div id="drag-region" class="drag-region" aria-hidden="true"></div><nav class="global-tools" aria-label="应用工具"><button data-action="status" id="status-button" aria-label="应用状态" aria-expanded="false"><span class="health-dot"></span><span id="health">正在启动</span></button>${b("messages", '<span id="message-count">消息</span>', "bell", "icon-label", 'id="messages-button" aria-label="消息中心"')}${b("settings", "设置", "settings", "icon-label", 'id="settings-button"')}</nav><div id="window-controls" class="window-controls">${b("minimize", "", "minus", "", 'aria-label="最小化"')}${b("maximize", "", "maximize", "", 'id="maximize-button" aria-label="最大化或还原"')}${b("close-window", "", "close", "close-window", 'aria-label="关闭窗口"')}</div></header><main class="workspace" id="server-workspace"><div id="server-catalog"></div><div id="workspace-content" hidden></div></main><div id="overlay" hidden></div><div id="toasts" class="toasts" aria-live="polite"></div>`;
 const servers = win.label === "main" ? new ServerManager(document.querySelector<HTMLElement>("#server-catalog")!, text => toast(text)) : undefined;
 const workspaces = new Workspaces(document.querySelector("#server-tabs")!, document.querySelector("#workspace-content")!, document.querySelector("#server-catalog")!, text => toast(text, undefined, true));
-const connections = new ConnectionsUi(win.label, views => { servers?.setConnections(views); }, text => toast(text, undefined, true));
+const connections = new ConnectionsUi(win.label, views => { servers?.setConnections(views); picker.setConnections(views); }, text => toast(text, undefined, true));
+const picker = new ServerPicker(document.querySelector<HTMLButtonElement>("#new-workspace")!, id => connections.connect(id), text => toast(text, undefined, true));
 async function restart(install: boolean) {
   if (!servers) { await invoke("request_main_action", { action: install ? "install" : "restart" }); return; }
   if (await servers.allowExit() && await workspaces.allowExit()) await core.restart(install);
@@ -442,7 +444,7 @@ document
 async function start() {
   state.officialPlugins = await core.officialPlugins();
   await listen("core-changed", scheduleRefresh);
-  await listen("server-catalog-changed", () => { void servers?.start(); });
+  await listen("server-catalog-changed", () => { void servers?.start(); void picker.refresh(); });
   await listen("connections-changed", () => { void connections.refresh().catch(error => toast(String(error), undefined, true)); scheduleRefresh(); });
   await listen("workspaces-changed", () => void workspaces.refresh().catch(error => toast(String(error), undefined, true)));
   await listen("workspace-request-close", () => void action(() => workspaces.closeWindow()));

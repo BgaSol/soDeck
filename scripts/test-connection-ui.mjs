@@ -23,18 +23,21 @@ await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 const vite = await createServer({ server: { host: "127.0.0.1", port: 0 } }); await vite.listen(); const url = vite.resolvedUrls.local[0];
 const browser = await chromium.launch({ headless: true }); const page = await browser.newPage({ viewport: { width: 1100, height: 720 } });
 const errors = []; page.on("pageerror", error => errors.push(String(error)));
-const credentialAnswers = [];
+const credentialAnswers = [], starts = [];
 await page.exposeBinding("testInvoke", (_, command, args) => {
   if (command === "connection" && args?.command?.answer?.kind === "credentials") credentialAnswers.push(args.command.answer);
+  if (command === "connection" && args?.command?.op === "start") starts.push(args.command.serverId);
   return call(command, args);
 });
 await page.addInitScript(() => { window.__TAURI_INTERNALS__ = { invoke: (command, args) => window.testInvoke(command, args) }; });
-await page.route(url, route => route.fulfill({ contentType: "text/html", body: `<html lang="zh-CN"><head><meta charset="UTF-8"></head><body><main class="workspace"></main><script type="module">import '/style.css';import {ServerManager} from '/servers.ts';import {ConnectionsUi} from '/connections.ts';const manager=new ServerManager(document.querySelector('main'),console.error);window.connections=new ConnectionsUi('main',v=>manager.setConnections(v),console.error);await manager.start();window.testReady=true;</script></body></html>` }));
+await page.route(url, route => route.fulfill({ contentType: "text/html", body: `<html lang="zh-CN"><head><meta charset="UTF-8"></head><body><button id="new-workspace" class="sd-icon" aria-label="选择服务器">＋</button><main class="workspace"></main><script type="module">import '/style.css';import {ServerManager} from '/servers.ts';import {ConnectionsUi} from '/connections.ts';import {ServerPicker} from '/server-picker.ts';window.notices=[];const notify=text=>window.notices.push(text);const manager=new ServerManager(document.querySelector('main'),notify);window.connections=new ConnectionsUi('main',v=>{manager.setConnections(v);picker.setConnections(v);},notify);const picker=new ServerPicker(document.querySelector('#new-workspace'),id=>window.connections.connect(id),notify);await manager.start();window.testReady=true;</script></body></html>` }));
 async function settle(predicate) { for (let i = 0; i < 100; i++) { const v = await call("connection", { command: { op: "snapshot" } }); if (predicate(v)) { await page.evaluate(() => window.connections.refresh()); return v; } await new Promise(resolve => setTimeout(resolve, 25)); } throw new Error("Connection state did not settle"); }
 try {
-  await call("change_catalog", { revision: 0, change: { op: "saveServer", draft: { name: "隔离测试服务器", host: "127.0.0.1", port: server.address().port, username: "ops", authentication: { type: "password", secret: { action: "clear" } }, route: [] } } });
+  const saved = await call("change_catalog", { revision: 0, change: { op: "saveServer", draft: { name: "隔离测试服务器", host: "127.0.0.1", port: server.address().port, username: "ops", authentication: { type: "password", secret: { action: "clear" } }, route: [] } } });
   await page.goto(url); await page.waitForFunction(() => window.testReady === true); await page.locator(".catalog-row").click();
-  await page.locator("[data-connect-server]").click(); await settle(v => v[0]?.question?.kind === "credentials");
+  const picker=page.getByRole('dialog',{name:'选择服务器',exact:true}),progress=page.getByRole('status',{name:'连接进度',exact:true});
+  const choose=async()=>{await page.getByRole('button',{name:'选择服务器',exact:true}).click();await picker.getByRole('button',{name:/隔离测试服务器/}).click();await picker.waitFor({state:'hidden'});};
+  await choose(); await settle(v => v[0]?.question?.kind === "credentials");
   const dialog = page.getByRole("dialog", { name: "补充连接凭据" }); await dialog.waitFor({ state: "visible" });
   assert.equal(await dialog.locator('[name="remember"]').isChecked(), true);
   fs.mkdirSync("artifacts/connection-ui", { recursive: true }); await page.screenshot({ path: "artifacts/connection-ui/credentials.png" });
@@ -42,9 +45,15 @@ try {
   await settle(v => v[0]?.stage === "sshHandshake"); await dialog.waitFor({ state: "hidden" });
   assert.equal(credentialAnswers.at(-1).remember, true);
   assert.equal(sockets.size, 1); assert.match(await page.locator(".connection-card").textContent(), /SSH 握手/);
+  await progress.waitFor({state:'visible'});assert.match(await progress.textContent(),/SSH 握手/);
+  await page.getByRole('button',{name:'选择服务器',exact:true}).click();
+  assert(await picker.getByRole('button',{name:/隔离测试服务器/}).isDisabled());
+  await page.evaluate(id=>Promise.all([window.connections.connect(id),window.connections.connect(id)]),saved.selectedId);
+  assert.equal(starts.length,1);await page.keyboard.press('Escape');
   await page.screenshot({ path: "artifacts/connection-ui/progress.png" });
   assert(!JSON.stringify(await call("connection", { command: { op: "snapshot" } })).includes("ui-ephemeral-secret"));
-  await page.locator("[data-connection-cancel]").click(); await settle(v => v[0]?.state === "cancelled");
+  await progress.locator("[data-connection-cancel]").click(); await settle(v => v[0]?.state === "cancelled");
+  await progress.waitFor({state:'hidden'});
   for (let i = 0; sockets.size && i < 100; i++) await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(sockets.size, 0); assert.equal((await call("workspace_snapshot", { window: "main" })).workspaces.length, 0);
   assert(!fs.readFileSync(path.join(directory, "servers.json"), "utf8").includes("ui-ephemeral-secret"));
@@ -54,12 +63,16 @@ try {
   await dialog.locator('[name="remember"]').uncheck(); await dialog.locator('[name="secret"]').fill("ui-unsaved-secret");
   await dialog.locator("[data-prompt-accept]").click(); await settle(v => v[0]?.stage === "sshHandshake");
   assert.equal(credentialAnswers.at(-1).remember, false);
-  await page.locator("[data-connection-cancel]").click(); await settle(v => v[0]?.state === "cancelled");
+  for(const socket of sockets) socket.destroy();
+  const failed=await settle(v => v[0]?.state === "failed");
+  await page.waitForFunction(message=>window.notices.includes(message),failed[0].error.message);
+  await progress.waitFor({state:'hidden'});
+  assert.equal((await call("workspace_snapshot", { window: "main" })).workspaces.length,0);
   assert(!fs.readFileSync(path.join(directory, "servers.json"), "utf8").includes("ui-unsaved-secret"));
-  await page.locator("[data-connect-server]").click(); await settle(v => v[0]?.question?.kind === "credentials"); await dialog.waitFor({ state: "visible" });
+  await choose(); await settle(v => v[0]?.question?.kind === "credentials"); await dialog.waitFor({ state: "visible" });
   await page.keyboard.press("Escape"); await settle(v => v[0]?.state === "cancelled");
   await dialog.waitFor({ state: "hidden" }); assert.deepEqual(errors, []);
-  console.log("Connection UI: default credential saving, opt-out, save-after-success, progress, cancellation, retry, Escape and redaction passed; no page errors.");
+  console.log("Connection UI: server picker and catalog share credentials, busy deduplication, progress, cancellation, actual failure, retry, Escape and redaction; no empty workspace or page errors.");
 } finally {
   await browser.close(); await vite.close();
   for (const socket of sockets) socket.destroy(); await new Promise(resolve => server.close(resolve));

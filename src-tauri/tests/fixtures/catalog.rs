@@ -101,6 +101,13 @@ fn main() {
                         window,
                         &serde_json::from_value(c["context"].clone()).unwrap(),
                     ),
+                    "focus" => (|| {
+                        let context = serde_json::from_value(c["context"].clone()).unwrap();
+                        let mut state = core.workspaces.lock().unwrap();
+                        state.validate_identity(&context)?;
+                        let owner = state.owner(&context.workspace_id).ok_or("工作区已关闭")?;
+                        state.activate(&owner, Some(&context.workspace_id))
+                    })(),
                     _ => Err("未知测试连接操作".into()),
                 };
                 result.map(|_| json!(core.connection_views()))
