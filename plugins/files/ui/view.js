@@ -1,7 +1,7 @@
 /* File business UI. Remote/local IO stays behind the core's scoped data endpoint. */
 (() => {
  const root=document.querySelector('#root'),encoder=new TextEncoder();
- let id,textarea,status,tree,cancelButton,jobTimer,jobId,busy=false,queue=Promise.resolve(),localRevision=0,eol='\n',bom=false,loaded=false,pumping=false,pendingDraft=false;
+ let id,textarea,status,tree,transfers,cancelButton,jobTimer,jobId,busy=false,queue=Promise.resolve(),localRevision=0,eol='\n',bom=false,loaded=false,pumping=false,pendingDraft=false;
  const request=(method,params)=>sodeck.request(method,params);
  const data=(action,args={})=>request('data',{op:'files',id,action,...args});
  const event=args=>request('event',args);
@@ -22,7 +22,7 @@
    }catch(e){busy=false;if(cancelButton)cancelButton.hidden=true;message(e.message,true);}
   };await poll();
  }
- async function download(target){if(busy)throw new Error('请先等待当前文件任务结束');await watchJob(await data('download',{path:target}));}
+ async function download(target){await transfers.download([target]);}
  function encoded(){let text=textarea.value;if(eol==='\r\n')text=text.replaceAll('\n','\r\n');return encoder.encode((bom?'\uFEFF':'')+text);}
  function stage(){
   ++localRevision;pendingDraft=true;if(pumping)return;pumping=true;
@@ -39,21 +39,23 @@
   }}).finally(()=>{pumping=false;});
   queue.catch(e=>message(e.message,true));
  }
- async function save(){if(!loaded)throw new Error('文件尚未准备好编辑');await queue;if(busy)throw new Error('保存或下载正在进行');await watchJob(await data('save'));}
+ async function save(){if(!loaded)throw new Error('文件尚未准备好编辑');await queue;if(busy)throw new Error('保存或下载正在进行');await watchJob(await event({action:'save'}));}
  function theme(tokens){for(const [name,value]of Object.entries(tokens||{}))document.documentElement.style.setProperty('--'+name,value);}
  async function init(m){
   id=m.data.fileId;theme(m.tokens);root.replaceChildren();
   status=document.createElement('div');status.className='status';status.setAttribute('role','status');
   const footer=document.createElement('footer');footer.className='sd-edge-top';footer.append(status);
   // Ready precedes remote operations; describe/chunk may also be used by an incoming window.
-  sodeck.mounted(true);
+  sodeck.mounted(true,m.viewType==='files');
   if(m.viewType==='files'){
    root.className='browser-root';const host=document.createElement('section');root.append(host);
    cancelButton=button('取消下载',()=>data('cancel'));cancelButton.hidden=true;footer.append(cancelButton);root.append(footer);
-   tree=new FileTree(host,{data,event,request,download,message,state:m.data.navigation});await tree.start();
+   transfers=new FileTransfers({fileId:id,data,event,request,message,host:root,target:()=>tree.targetDirectory(),ambiguous:()=>tree.ambiguousTarget(),refresh:()=>tree.refresh()});
+   tree=new FileTree(host,{data,event,request,download:path=>transfers.download([path]),message,state:m.data.navigation,transfers});await tree.start();
   }else{
    root.className='editor-root';const header=document.createElement('header');header.className='editor-toolbar';root.append(header);
    const title=document.createElement('span');title.className='path';title.textContent=m.data.path;title.title=m.data.path;header.append(title,button('保存',save,'primary'),button('下载远端',()=>download(m.data.path)),button('导出草稿',async()=>{await queue;const result=await data('exportDraft',{path:m.data.path});if(!result.cancelled)message('草稿已导出：'+result.path);}));
+   transfers=new FileTransfers({fileId:id,data,event,request,message,host:root,target:()=>m.data.path.slice(0,m.data.path.lastIndexOf('/'))||'/',refresh:async()=>{}});
    textarea=document.createElement('textarea');textarea.spellcheck=false;textarea.disabled=true;textarea.setAttribute('aria-label','远端文件编辑器');root.append(textarea,footer);
    let info=await data('describe');if(!info.path)info=await data('read',{path:m.data.path});
    const bytes=new Uint8Array(info.size);for(let offset=0;offset<bytes.length;offset+=16384){const block=await data('chunk',{offset});bytes.set(block.data,offset);}
@@ -73,8 +75,10 @@
  addEventListener('sodeck:mount',e=>void perform(()=>init(e.detail)));
  addEventListener('sodeck:themeChanged',e=>theme(e.detail.tokens));
  addEventListener('sodeck:focus',()=>tree?tree.focus():textarea?.focus());
- addEventListener('sodeck:visibilityChanged',e=>{if(!e.detail.visible)tree?.closeMenu();});
- addEventListener('sodeck:contextChanged',()=>{tree?.contextChanged();message(tree?'连接已更换，刷新目录以读取最新文件':'服务器连接已更换；草稿保留，保存前将重新检查远端版本');});
+ addEventListener('sodeck:visibilityChanged',e=>{transfers?.visibility(e.detail.visible);if(!e.detail.visible)tree?.closeMenu();});
+ addEventListener('sodeck:localFileDrop',e=>tree?.nativeDrop(e.detail));
+ addEventListener('sodeck:contextChanged',()=>{transfers?.invalidate();tree?.contextChanged();message(tree?'连接已更换，刷新目录以读取最新文件':'服务器连接已更换；草稿保留，保存前将重新检查远端版本');});
  addEventListener('sodeck:flush',async e=>{try{await queue;await tree?.flush();parent.postMessage({channel:'sodeck-ui-v1',type:'flushed',surfaceId:e.detail.surfaceId,id:e.detail.id},'*');}catch(error){parent.postMessage({channel:'sodeck-ui-v1',type:'flushed',surfaceId:e.detail.surfaceId,id:e.detail.id,error:error.message},'*');}});
- addEventListener('unload',()=>clearTimeout(jobTimer));
+ addEventListener('sodeck:unmount',()=>transfers?.dispose());
+ addEventListener('unload',()=>{clearTimeout(jobTimer);transfers?.dispose();});
 })();

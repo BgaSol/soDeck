@@ -1,6 +1,7 @@
 pub mod component_ui;
 pub mod connections;
 pub mod core;
+pub mod desktop_files;
 pub mod desktop_updates;
 pub mod model;
 pub mod network;

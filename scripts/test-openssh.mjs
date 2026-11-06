@@ -58,7 +58,7 @@ try {
       const target=spawnSync('rustc',['-vV'],{encoding:'utf8'}).stdout.match(/^host: (.+)$/m)[1];
       env[`SODECK_TEST_${(plugin==='network-proxy'?'NETWORK':plugin.toUpperCase())}_PLUGIN`]=path.resolve(`artifacts/plugins/sodeck-${plugin}_${version}_${target}`);
     }
-    const result = await new Promise((resolve, reject) => {
+      const result = files && process.argv.includes('--files-ui-only') ? 0 : await new Promise((resolve, reject) => {
     const test = spawn("cargo", ["test", "--manifest-path", "src-tauri/Cargo.toml", "--features", "test-fixtures", "--locked", "--test", "connections", network?'network_proxy_plugin':files?'openssh_files_plugin':terminal?'openssh_terminal_plugin':'openssh_interop', "--", "--ignored", "--exact", "--nocapture"], {
       windowsHide: true, stdio: "inherit", env,
     }); test.on("error", reject); test.on("exit", resolve);

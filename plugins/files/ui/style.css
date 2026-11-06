@@ -17,6 +17,7 @@ button { cursor: pointer; border: 0; background: transparent; padding: 4px 8px; 
 .pathbar input { height: 100%; flex: 1; width: 0; min-width: 0; padding: 3px 6px 3px 0; border: 0; border-radius: 4px; background: transparent; font-size: 12px; }
 .tree-toolbar { display: flex; align-items: center; gap: 1px; padding: 0 5px; height: 30px; flex-shrink: 0; }
 .tree-toolbar > span { flex: 1; min-width: 0; margin-left: 5px; color: var(--muted, #777); font-size: 11px; white-space: nowrap; overflow: hidden; }
+.tree-toolbar .sd-icon { width: 24px; min-width: 24px; padding: 4px; }
 .tree-columns { display: flex; justify-content: space-between; height: 25px; align-items: center; flex-shrink: 0; padding: 0 12px 0 30px; font-size: 11px; color: var(--muted, #777);  }
 .file-tree { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 4px 5px 12px; outline: none; }
 .tree-row { display: flex; align-items: center; gap: 5px; height: 28px; padding: 0 6px 0 calc(2px + var(--depth) * var(--tree-indent, 15px)); border-radius: 4px; cursor: default; user-select: none; }
@@ -46,4 +47,16 @@ textarea { resize: none; width: 100%; flex: 1; min-height: 0; padding: 12px 16px
 .tree-menu { position: fixed; z-index: 10; width: min(200px, calc(100vw - 8px)); }
 .tree-menu button { display: flex; gap: 8px; justify-content: start; align-items: center; }
 .tree-menu .glyph { flex-shrink: 0; }
+.tree-menu { max-height: calc(100vh - 8px); overflow-y: auto; }
+.drop-target { outline: 2px solid var(--accent, #7661d1) !important; background: var(--accent-bg, #e5ecff); }
+.transfer-panel { flex: 0 0 auto; max-height: 40vh; overflow: auto; font-size: 11px; border-top: 1px solid var(--border, #ddd); background: var(--panel, #fff); }
+.transfer-panel summary { padding: 6px 9px; cursor: pointer; }
+.transfer-item { padding: 8px; border-top: 1px solid var(--border, #ddd); overflow-wrap: anywhere; }
+.transfer-detail { color: var(--muted); margin: 4px 0; }
+.transfer-error { color: var(--error, #b32929); }
+.transfer-item button { margin: 3px 4px 0 0; font-size: 11px; }
+.transfer-item label { display: block; }
+.file-dialog { width: min(360px, calc(100vw - 16px)); color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow-wrap: anywhere; }
+.file-dialog input { width: 100%; min-width: 0; color: var(--text); background: var(--panel); border: 1px solid var(--border); padding: 5px; }
+.file-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 }

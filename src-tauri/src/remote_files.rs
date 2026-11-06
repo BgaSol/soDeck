@@ -15,11 +15,21 @@ use std::{
 use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
 
+mod operations;
+
 pub const LIMIT: usize = 1024 * 1024;
 const BLOCK: usize = 16 * 1024;
-#[derive(Default)]
 pub struct Files {
     entries: Mutex<HashMap<String, Arc<Resource>>>,
+    operation_slots: Arc<tokio::sync::Semaphore>,
+}
+impl Default for Files {
+    fn default() -> Self {
+        Self {
+            entries: Mutex::new(HashMap::new()),
+            operation_slots: Arc::new(tokio::sync::Semaphore::new(128)),
+        }
+    }
 }
 struct Resource {
     owner: Owner,
@@ -27,6 +37,7 @@ struct Resource {
     state: tokio::sync::Mutex<State>,
     job: Mutex<Value>,
     job_cancel: Mutex<CancellationToken>,
+    operations: operations::Operations,
 }
 #[derive(Default)]
 struct State {
@@ -41,6 +52,11 @@ struct Sftp {
     raw: RawSftpSession,
     context: Context,
     atomic: bool,
+}
+impl Drop for Sftp {
+    fn drop(&mut self) {
+        let _ = self.raw.close_session();
+    }
 }
 struct Directory {
     path: String,
@@ -58,6 +74,21 @@ struct Document {
     revision: u64,
 }
 impl Files {
+    pub(crate) fn cancel_pending(&self, view: &str) -> bool {
+        let mut pending = false;
+        for resource in self
+            .entries
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|r| r.owner.view == view)
+        {
+            resource.job_cancel.lock().unwrap().cancel();
+            pending |= resource.operations.cancel_pending()
+                || resource.job.lock().unwrap()["state"] == "running";
+        }
+        pending
+    }
     pub(crate) fn validation_handle(&self, view: &str) -> Option<String> {
         self.entries
             .lock()
@@ -188,6 +219,7 @@ impl AppCore {
                 state: tokio::sync::Mutex::new(State::default()),
                 job: Mutex::new(json!({"state":"idle"})),
                 job_cancel: Mutex::new(CancellationToken::new()),
+                operations: operations::Operations::default(),
             }),
         );
         drop(all);
@@ -224,6 +256,11 @@ impl AppCore {
         }
         let id = string(p, "id")?;
         let r = self.file_resource(plugin, instance, id)?;
+        if p["action"].as_str().is_some_and(|a| {
+            a.starts_with("op.") || a.starts_with("input.") || a.starts_with("batch.")
+        }) {
+            return self.file_operation_control(r, p);
+        }
         match p["action"].as_str() {
             Some("close") => {
                 r.cancel.cancel();
@@ -257,6 +294,10 @@ impl AppCore {
             return Err("文件资源不属于此页面".into());
         }
         let action = string(&p, "action")?;
+        if action.starts_with("op.") || action.starts_with("input.") {
+            self.ui_data_writable(window, token)?;
+            return self.file_operation_control(r, &p);
+        }
         if action == "status" {
             return Ok(r.job.lock().unwrap().clone());
         }

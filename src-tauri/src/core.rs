@@ -18,6 +18,7 @@ use std::{
 type Listener = Arc<dyn Fn(&str, Value) + Send + Sync>;
 
 pub struct AppCore {
+    pub desktop_files: crate::desktop_files::DesktopFiles,
     pub(crate) network: crate::network::Network,
     pub(crate) files: crate::remote_files::Files,
     pub(crate) network_metrics: crate::network_metrics::Metrics,
@@ -63,6 +64,7 @@ impl AppCore {
             .map(|p| p.manifest.id.clone())
             .collect();
         let core = Arc::new(Self {
+            desktop_files: crate::desktop_files::DesktopFiles::default(),
             network: crate::network::Network::default(),
             files: crate::remote_files::Files::default(),
             network_metrics: crate::network_metrics::Metrics::default(),

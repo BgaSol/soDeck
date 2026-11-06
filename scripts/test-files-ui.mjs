@@ -10,7 +10,8 @@ fs.mkdirSync(path.join(remote,'etc','nginx'));fs.writeFileSync(path.join(remote,
 fs.writeFileSync(path.join(remote,'home','.env'),'TEST=1');
 fs.writeFileSync(path.join(remote,'gone.txt'),'temporary');
 for(const directory of ['many-a','many-b']){fs.mkdirSync(path.join(remote,directory));for(let i=0;i<215;i++)fs.writeFileSync(path.join(remote,directory,`item-${String(i).padStart(3,'0')}.txt`),'test');}
-const child=spawn(path.resolve(`src-tauri/target/debug/catalog-fixture${process.platform==='win32'?'.exe':''}`),[path.join(data,'app')],{stdio:['pipe','pipe','inherit'],windowsHide:true,env:{...process.env,SODECK_TEST_DOWNLOAD_PATH:local}});
+const upload=path.join(data,'上传 中文'),downloads=path.join(data,'downloads');fs.mkdirSync(upload);fs.mkdirSync(downloads);fs.mkdirSync(path.join(upload,'空目录'));fs.writeFileSync(path.join(upload,'.hidden'),'ui upload');fs.writeFileSync(path.join(upload,'zero.bin'),Buffer.alloc(0));
+const child=spawn(path.resolve(`src-tauri/target/debug/catalog-fixture${process.platform==='win32'?'.exe':''}`),[path.join(data,'app')],{stdio:['pipe','pipe','inherit'],windowsHide:true,env:{...process.env,SODECK_TEST_UPLOAD_PATH:upload,SODECK_TEST_DOWNLOAD_PATH:local,SODECK_TEST_DOWNLOAD_DIRECTORY:downloads}});
 const pending=[],pages=[],errors=[],requests=[];child.on('exit',()=>{for(const p of pending.splice(0))p.reject(new Error('Core fixture exited'));});
 let clipboard='';
 readline.createInterface({input:child.stdout}).on('line',line=>{const r=JSON.parse(line);const p=pending.shift();if(!p)throw new Error('Unexpected fixture response');r.error?p.reject(new Error(r.error)):p.resolve(r.value);});
@@ -18,7 +19,7 @@ const call=(command,args={})=>new Promise((resolve,reject)=>{pending.push({resol
 const vite=await createServer({server:{host:'127.0.0.1',port:0}});await vite.listen();const url=vite.resolvedUrls.local[0];const browser=await chromium.launch({headless:true});
 async function pageFor(window){
  const page=await browser.newPage({viewport:{width:1180,height:760}});pages.push(page);page.on('pageerror',e=>errors.push(String(e)));
- await page.exposeBinding('testInvoke',(_,command,args={})=>{requests.push({command,args});if(command==='clipboard_text'){if(args.operation==='read')return clipboard;clipboard=args.text;return null;}return call(command,{...args,window});});
+ await page.exposeBinding('testInvoke',(_,command,args={})=>{requests.push({command,args});if(command==='component_data'&&args.request?.action==='input.revision')return {revision:'file-ui-fixture'};if(command==='clipboard_text'){if(args.operation==='read')return clipboard;clipboard=args.text;return null;}return call(command,{...args,window});});
  await page.route(url+'__plugin__/**',route=>{const relative=new URL(route.request().url()).pathname.split('/').slice(3).join('/');const filename=path.join(process.env.SODECK_TEST_FILES_PLUGIN,relative);return route.fulfill({contentType:{'.js':'text/javascript','.css':'text/css','.html':'text/html'}[path.extname(filename)]||'application/octet-stream',body:fs.readFileSync(filename)});});
  await page.route(url,route=>route.fulfill({contentType:'text/html',body:`<!doctype html><html lang="zh-CN" data-theme="dopamine"><head><meta charset="utf-8"></head><body><header class="topbar"><button id="catalog-tab">服务器管理</button><div id="server-tabs" class="server-tabs"></div></header><main class="workspace"><div id="server-catalog"></div><div id="workspace-content"></div></main><div id="notice"></div><script type="module">import '/style.css';import {Workspaces} from '/workspaces.ts';window.__TAURI_INTERNALS__={convertFileSrc:p=>new URL('/__plugin__/'+p,location.href).href,transformCallback:()=>1};window.adapter=(command,args={})=>{if(args.channel){args={...args};delete args.channel;}return window.testInvoke(command,args);};window.manager=new Workspaces(document.querySelector('#server-tabs'),document.querySelector('#workspace-content'),document.querySelector('#server-catalog'),m=>document.querySelector('#notice').textContent=m,window.adapter);await window.manager.start();window.ready=true;</script></body></html>`}));
  await page.goto(url);await page.waitForFunction(()=>window.ready);return page;
@@ -32,11 +33,12 @@ try{
  const main=await pageFor('main');let sidebar=main.frameLocator('.component-panel.left iframe');
  // The iframe is hosted in shared surface slots; select by its accessible title.
  sidebar=main.frameLocator('iframe[title^="文件 ·"]');
- const locate=async target=>{await sidebar.getByRole('textbox',{name:'远端路径'}).fill(target.replaceAll('\\','/'));await sidebar.locator('input').press('Enter');};
+ const locate=async target=>{const normalized=target.replaceAll('\\','/');await sidebar.getByRole('textbox',{name:'远端路径'}).fill(normalized);await sidebar.getByRole('textbox',{name:'远端路径'}).press('Enter');await wait(()=>sidebar.locator('.tree-row[aria-selected="true"]').evaluateAll((rows,target)=>rows.some(row=>row.dataset.path.endsWith(target)),normalized));};
  const row=name=>sidebar.getByRole('treeitem',{name,exact:true});
  const expanded=async name=>await row(name).getAttribute('aria-expanded')==='true';
+ const tasksIdle=async()=>{await wait(()=>sidebar.locator('.transfer-panel summary').textContent().then(text=>!text.includes('进行中')));await wait(()=>sidebar.locator('.tree-row[aria-busy="true"]').count().then(count=>count===0));};
  const lists=()=>requests.filter(r=>r.command==='component_data'&&r.args.request?.action==='list').length;
- await wait(()=>sidebar.locator('input').isEnabled());await locate(remote);await row('设置 file.txt').waitFor();
+ await wait(()=>sidebar.getByRole('textbox',{name:'远端路径'}).isEnabled());await locate(remote);await row('设置 file.txt').waitFor();
  // More than one directory stays expanded; folding cached branches does not read remotely.
  await row('etc').locator('.tree-arrow').click();await row('nginx').waitFor();
  await row('home').locator('.tree-arrow').click();await row('.env').waitFor();assert(await expanded('etc'));
@@ -53,7 +55,7 @@ try{
  await wait(()=>sidebar.locator('.tree-row[data-path*="/many-b/"]').count().then(n=>n===200));
  for(const name of ['many-a','many-b']){await sidebar.locator(`button[data-directory$="/${name}"]`).click();await wait(()=>sidebar.locator(`.tree-row[data-path*="/${name}/"]`).count().then(n=>n===215));}
  await locate(path.join(remote,'many-a','item-214.txt'));await wait(()=>sidebar.locator('.tree-row[data-path$="/many-a/item-214.txt"]').getAttribute('aria-selected').then(v=>v==='true'));
- await main.evaluate(()=>window.manager.flush());const pagedScroll=await sidebar.getByRole('tree').evaluate(el=>el.scrollTop);await main.reload();await main.waitForFunction(()=>window.ready);await wait(()=>sidebar.locator('input').isEnabled());
+ await main.evaluate(()=>window.manager.flush());const pagedScroll=await sidebar.getByRole('tree').evaluate(el=>el.scrollTop);await main.reload();await main.waitForFunction(()=>window.ready);await wait(()=>sidebar.getByRole('textbox',{name:'远端路径'}).isEnabled());
  for(const name of ['many-a','many-b'])assert.equal(await sidebar.locator(`.tree-row[data-path*="/${name}/"]`).count(),215);
  assert.equal(await sidebar.getByRole('tree').evaluate(el=>el.scrollTop),pagedScroll);
  // A failed branch retries locally after the remote directory becomes readable again.
@@ -65,6 +67,44 @@ try{
  await sidebar.getByRole('status').filter({hasText:'路径已复制'}).waitFor();
  assert(clipboard.endsWith('/设置 file.txt'));
  await row('设置 file.txt').click();await sidebar.getByRole('tree').press('Shift+F10');await sidebar.getByRole('menu').waitFor();await main.keyboard.press('Escape');await sidebar.getByRole('menu').waitFor({state:'detached'});
+ // A selection spanning destinations confirms the remote target before opening a native picker.
+ await row('etc').click({modifiers:[process.platform==='darwin'?'Meta':'Control']});
+ assert.equal(await sidebar.locator('.tree-row[aria-selected="true"]').count(),2);
+ const choices=()=>requests.filter(r=>r.command==='component_data'&&r.args.request?.action==='input.chooseUpload').length;
+ const beforeChoice=choices();await sidebar.getByRole('button',{name:'上传文件',exact:true}).click();
+ await sidebar.getByRole('dialog').getByRole('heading',{name:'确认目标目录',exact:true}).waitFor();assert.equal(choices(),beforeChoice);
+ await sidebar.getByRole('dialog').getByRole('button',{name:'取消',exact:true}).click();assert.equal(choices(),beforeChoice);
+ // Actual plugin task UI: folders, conflicts, remote clipboard, rename and deletion.
+ await row('remote 中文').click({button:'right'});await sidebar.getByRole('menuitem',{name:'上传文件夹',exact:true}).click();
+ await wait(()=>fs.existsSync(path.join(remote,'上传 中文','空目录'))&&fs.existsSync(path.join(remote,'上传 中文','zero.bin')));
+ await sidebar.getByRole('status').filter({hasText:'上传完成'}).waitFor();assert.equal(fs.readFileSync(path.join(remote,'上传 中文','.hidden'),'utf8'),'ui upload');
+ await row('remote 中文').click({button:'right'});await sidebar.getByRole('menuitem',{name:'上传文件夹',exact:true}).click();
+ await sidebar.locator('.transfer-item').filter({hasText:'等待处理同名'}).getByRole('button',{name:'跳过',exact:true}).waitFor();
+ await sidebar.locator('.transfer-item').filter({hasText:'等待处理同名'}).getByRole('checkbox').check();
+ await new Promise(resolve=>setTimeout(resolve,500));assert(await sidebar.locator('.transfer-item').filter({hasText:'等待处理同名'}).getByRole('checkbox').isChecked());
+ await sidebar.locator('.transfer-item').filter({hasText:'等待处理同名'}).getByRole('button',{name:'跳过',exact:true}).click();
+ await sidebar.getByRole('status').filter({hasText:'上传完成'}).waitFor();
+ await locate(path.join(remote,'上传 中文'));await sidebar.locator('.tree-row[data-path$="/remote 中文/上传 中文"]').click({button:'right'});await sidebar.getByRole('menuitem',{name:'下载文件夹',exact:true}).click();
+ await sidebar.getByRole('status').filter({hasText:'下载完成'}).waitFor();
+ assert(fs.existsSync(path.join(downloads,'上传 中文','zero.bin')));assert(fs.statSync(path.join(downloads,'上传 中文','空目录')).isDirectory());
+ await row('remote 中文').click({button:'right'});await sidebar.getByRole('menuitem',{name:'新建文件夹',exact:true}).click();
+ await sidebar.getByRole('dialog').getByRole('textbox').fill('ui-target');await sidebar.getByRole('dialog').getByRole('button',{name:'确定',exact:true}).click();await wait(()=>fs.existsSync(path.join(remote,'ui-target')));await sidebar.getByRole('status').filter({hasText:'文件任务完成'}).waitFor();
+ await locate(path.join(remote,'上传 中文','.hidden'));await sidebar.getByRole('tree').press(process.platform==='darwin'?'Meta+c':'Control+c');await sidebar.getByRole('status').filter({hasText:'已复制'}).waitFor();
+ await locate(path.join(remote,'ui-target'));await sidebar.getByRole('tree').focus();await sidebar.getByRole('tree').press(process.platform==='darwin'?'Meta+v':'Control+v');await wait(()=>fs.existsSync(path.join(remote,'ui-target','.hidden')));
+ await locate(path.join(remote,'ui-target','.hidden'));await sidebar.getByRole('tree').press('F2');await sidebar.getByRole('dialog').getByRole('textbox').fill('renamed.txt');await sidebar.getByRole('dialog').getByRole('button',{name:'确定',exact:true}).click();await wait(()=>fs.existsSync(path.join(remote,'ui-target','renamed.txt'))&&!fs.existsSync(path.join(remote,'ui-target','.hidden')));
+ // Pointer gestures remain inside the file surface; Ctrl/Option requests a copy.
+ await sidebar.getByRole('status').filter({hasText:'文件任务完成'}).waitFor();
+ await tasksIdle();fs.writeFileSync(path.join(remote,'drag-source.txt'),'pointer transfer');await locate(remote);await sidebar.getByRole('button',{name:'刷新选中目录',exact:true}).click();await row('drag-source.txt').waitFor();await tasksIdle();
+ await sidebar.locator('.transfer-panel').evaluate(el=>el.open=false);
+ const pointerDrag=async(source,target,copy=false)=>{await tasksIdle();await sidebar.locator('.transfer-panel').evaluate(el=>el.open=false);await source.scrollIntoViewIfNeeded();const a=await source.boundingBox();const modifier=process.platform==='darwin'?'Alt':'Control';if(copy)await main.keyboard.down(modifier);await main.mouse.move(a.x+a.width/2,a.y+a.height/2);await main.mouse.down();await main.mouse.move(a.x+a.width/2+10,a.y+a.height/2,{steps:2});await target.scrollIntoViewIfNeeded();const b=await target.boundingBox();await main.mouse.move(b.x+b.width/2,b.y+b.height/2,{steps:6});await main.mouse.up();if(copy)await main.keyboard.up(modifier);};
+ await pointerDrag(row('drag-source.txt'),sidebar.locator('.tree-row[data-path$="/remote 中文/ui-target"]'));
+ await wait(()=>!fs.existsSync(path.join(remote,'drag-source.txt'))&&fs.existsSync(path.join(remote,'ui-target','drag-source.txt')));
+ await sidebar.getByRole('status').filter({hasText:'文件任务完成'}).waitFor();await locate(path.join(remote,'ui-target','drag-source.txt'));
+ await pointerDrag(sidebar.locator('.tree-row[data-path$="/ui-target/drag-source.txt"]'),row('remote 中文'),true);
+ await wait(()=>fs.existsSync(path.join(remote,'drag-source.txt'))&&fs.existsSync(path.join(remote,'ui-target','drag-source.txt')));
+ await sidebar.getByRole('status').filter({hasText:'文件任务完成'}).waitFor();
+ await locate(path.join(remote,'ui-target'));await sidebar.getByRole('tree').press('Delete');await sidebar.getByRole('dialog').getByRole('button',{name:'确定',exact:true}).click();await wait(()=>!fs.existsSync(path.join(remote,'ui-target')));
+ await locate(filename);
  await row('设置 file.txt').click();assert.equal(await main.locator('iframe[title^="设置 file.txt"]').count(),0);
  await row('设置 file.txt').dblclick();
  let editor=main.frameLocator('iframe[title^="设置 file.txt"]');let text=editor.locator('textarea');await text.waitFor();await wait(()=>text.isEnabled());assert.equal(await text.inputValue(),'before\n中文\n');
@@ -86,7 +126,7 @@ try{
  // Destruction/remount must recover the staged draft, with no remote read replacing it.
  await main.reload();await main.waitForFunction(()=>window.ready);editor=main.frameLocator('iframe[title^="设置 file.txt"]');text=editor.locator('textarea');await wait(async()=>await text.inputValue()==='draft survives move\n中文');
  fs.writeFileSync(filename,'external');await editor.getByRole('button',{name:'保存',exact:true}).click();await editor.getByRole('status').filter({hasText:'已被修改'}).waitFor();assert.equal(fs.readFileSync(filename,'utf8'),'external');
- sidebar=main.frameLocator('iframe[title^="文件 ·"]');await wait(()=>sidebar.locator('input').isEnabled());
+ sidebar=main.frameLocator('iframe[title^="文件 ·"]');await wait(()=>sidebar.getByRole('textbox',{name:'远端路径'}).isEnabled());
  assert(await expanded('home'));assert(await expanded('nginx'));assert.equal(await row('设置 file.txt').getAttribute('aria-selected'),'true');
  assert.equal(await sidebar.getByRole('tree').evaluate(el=>el.scrollTop),savedScroll);
  // Theme colors reach the real iframe; narrow sidebars stay inside their bounds.
@@ -114,16 +154,16 @@ try{
  const narrow=await handle.boundingBox();await main.mouse.move(narrow.x+3,narrow.y+100);await main.mouse.down();await main.mouse.move(narrow.x+123,narrow.y+100);await main.mouse.up();
  // Moving the entire connected workspace restores file navigation and the editor draft.
  await main.evaluate(()=>window.manager.flush());await call('workspace_move',{window:'main',id:board,target:'workspace-browser',index:0});await main.evaluate(()=>window.manager.refresh());
- const moved=await pageFor('workspace-browser');const movedSidebar=moved.frameLocator('iframe[title^="文件 ·"]');await wait(()=>movedSidebar.locator('input').isEnabled());
+ const moved=await pageFor('workspace-browser');const movedSidebar=moved.frameLocator('iframe[title^="文件 ·"]');await wait(()=>movedSidebar.getByRole('textbox',{name:'远端路径'}).isEnabled());
  assert.equal(await movedSidebar.getByRole('treeitem',{name:'nginx',exact:true}).getAttribute('aria-expanded'),'true');
  assert.equal(await movedSidebar.getByRole('treeitem',{name:'设置 file.txt',exact:true}).getAttribute('aria-selected'),'true');
  assert.equal(await moved.frameLocator('iframe[title^="设置 file.txt"]').locator('textarea').inputValue(),'draft survives move\n中文');
  await moved.evaluate(()=>window.manager.flush());await call('workspace_move',{window:'workspace-browser',id:board,target:'main',index:0});await moved.evaluate(()=>window.manager.refresh());await main.evaluate(()=>window.manager.refresh());
- sidebar=main.frameLocator('iframe[title^="文件 ·"]');await wait(()=>sidebar.locator('input').isEnabled());editor=main.frameLocator('iframe[title^="设置 file.txt"]');text=editor.locator('textarea');await wait(()=>text.isEnabled());
+ sidebar=main.frameLocator('iframe[title^="文件 ·"]');await wait(()=>sidebar.getByRole('textbox',{name:'远端路径'}).isEnabled());editor=main.frameLocator('iframe[title^="设置 file.txt"]');text=editor.locator('textarea');await wait(()=>text.isEnabled());
  await row('large.bin').click({button:'right'});await sidebar.getByRole('menuitem',{name:'下载文件',exact:true}).click();await sidebar.getByRole('status').filter({hasText:'下载完成'}).waitFor();assert.deepEqual(fs.readFileSync(local),Buffer.alloc(2*1024*1024,42));
  const [v]=await call('connection',{command:{op:'snapshot'}});await call('connection',{command:{op:'disconnect',context:v.context}});await main.evaluate(()=>window.manager.refresh());assert.equal(await text.inputValue(),'draft survives move\n中文');
  await editor.getByRole('button',{name:'导出草稿',exact:true}).click();await editor.getByRole('status').filter({hasText:'草稿已导出'}).waitFor();assert.equal(fs.readFileSync(local,'utf8'),'\uFEFFdraft survives move\r\n中文');
  assert.deepEqual(errors,[]);fs.mkdirSync('artifacts/files-ui',{recursive:true});await main.screenshot({path:'artifacts/files-ui/real-files.png'});
- console.log('Actual files UI passed: multi-branch tree, cached folding, locate/keyboard/menu/copy, interleaved pagination, branch retry, refresh selection, single selection/double open, themes/narrow layout, cross-window navigation/scroll/draft, BOM/CRLF save, save-and-close, conflict, streamed download, offline export');
+ console.log('Actual files UI passed: folder upload/download, conflict apply-all, remote clipboard, create/rename/delete, pointer move/copy, multi-branch tree, pagination, themes/narrow layout, cross-window draft, BOM/CRLF save, save-and-close, conflict, streamed download and offline export');
 }catch(error){for(const page of pages){console.error(await page.locator('#notice').textContent());for(const frame of page.frames().slice(1))console.error(await frame.locator('[role="status"]').allTextContents());fs.mkdirSync('artifacts/files-ui',{recursive:true});await page.screenshot({path:'artifacts/files-ui/failure.png'});}throw error;
 }finally{await browser.close();await vite.close();if(child.exitCode===null){child.stdin.end();await new Promise(resolve=>child.once('exit',resolve));}if(path.dirname(path.resolve(data))!==path.resolve(os.tmpdir())||!path.basename(data).startsWith('sodeck-files-ui-'))throw new Error('Unexpected cleanup');fs.rmSync(data,{recursive:true,force:true});}

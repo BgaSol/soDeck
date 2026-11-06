@@ -27,8 +27,9 @@
     return span;
   }
   window.FileTree = class FileTree {
-    constructor(host, { data, event, request, download, message, state }) {
-      Object.assign(this, { data, event, request, download, message });
+    constructor(host, { data, event, request, download, message, state, transfers }) {
+      Object.assign(this, { data, event, request, download, message, transfers });
+      this.selection = new Set(); this.anchor = ''; this.dropPath = '';
       this.nodes = new Map(); this.expanded = new Set(); this.selected = ''; this.rootPath = '/';
       this.persistQueue = Promise.resolve(); this.pending = new Set(); this.counter = 0; this.restoring = true;
       this.saved = state; this.home = '';
@@ -40,15 +41,25 @@
       const toolbar = document.createElement('div'); toolbar.className = 'tree-toolbar';
       this.caption = document.createElement('span'); this.caption.textContent = '服务器文件'; this.caption.title = '当前已展开并加载的条目数';
       toolbar.append(this.caption, this.tool('home', '主目录', () => this.locate(this.home)), this.tool('up', '上一级', () => this.locate(this.selected === this.rootPath ? this.rootPath : parentOf(this.selected))), this.tool('refresh', '刷新选中目录', () => this.refresh()), this.tool('collapse', '全部折叠', () => this.collapseAll()));
+      if (transfers) {
+        const upload = this.tool('up', '上传文件', () => transfers.upload());
+        toolbar.append(upload, this.tool('download', '下载选中条目', () => transfers.download(this.selectedPaths())));
+        upload.addEventListener('contextmenu', e => { e.preventDefault(); void this.run(() => transfers.upload(true)); });
+      }
       const columns = document.createElement('div'); columns.className = 'tree-columns';
       columns.innerHTML = '<span>名称</span><span>大小</span>';
       this.tree = document.createElement('div'); this.tree.className = 'file-tree'; this.tree.tabIndex = 0; this.tree.setAttribute('role', 'tree'); this.tree.setAttribute('aria-label', '服务器文件');
       this.tree.addEventListener('keydown', e => this.key(e));
       this.tree.addEventListener('scroll', () => { if (!this.restoring) this.persist(); });
+      this.tree.addEventListener('pointerdown',e=>this.pointerStart(e));
+      this.tree.addEventListener('click',e=>{if(Date.now()<(this.suppressClick||0)){e.preventDefault();e.stopImmediatePropagation();}},true);
+      document.addEventListener('pointermove',e=>this.pointerMove(e));
+      document.addEventListener('pointerup',e=>this.pointerEnd(e));
+      document.addEventListener('pointercancel',()=>this.pointerEnd(null));
       new ResizeObserver(() => this.indent()).observe(this.tree);
       host.append(pathbar, toolbar, columns, this.tree);
       document.addEventListener('pointerdown', e => { if (!this.menu?.contains(e.target)) this.closeMenu(); });
-      document.addEventListener('keydown', e => { if (e.key === 'Escape') this.closeMenu(true); });
+      document.addEventListener('keydown', e => { if (e.key === 'Escape') {this.closeMenu(true);this.pointerEnd(null);this.clearDrop();} });
     }
     tool(name, label, fn) {
       const b = document.createElement('button'); b.className='sd-icon'; b.type = 'button'; b.title = label; b.setAttribute('aria-label', label); b.append(icon(name)); b.addEventListener('click', () => void this.run(fn)); return b;
@@ -90,6 +101,7 @@
           }
         }
         await this.locate(target, false);
+        if(this.saved?.selection){this.selection=new Set(this.saved.selection.filter(path=>this.nodes.has(path)));this.render();}
         if (this.saved) this.tree.scrollTop = this.saved.scroll || 0;
       } catch (error) {
         this.message(error.message, true);
@@ -158,12 +170,72 @@
       this.select(n, false); this.render(); this.row(path)?.scrollIntoView({ block: 'nearest' });
       if (focus) this.tree.focus(); this.persist();
     }
-    select(n, scroll = true) {
+    select(n, scroll = true, modifiers = null) {
+      if (modifiers?.shiftKey && this.anchor && this.visible) {
+        const from = this.visible.findIndex(v => v.path === this.anchor), to = this.visible.indexOf(n);
+        if (!modifiers.ctrlKey && !modifiers.metaKey) this.selection.clear();
+        for (const node of this.visible.slice(Math.min(from, to), Math.max(from, to) + 1)) this.selection.add(node.path);
+      } else if (modifiers?.ctrlKey || modifiers?.metaKey) {
+        if (this.selection.has(n.path)) this.selection.delete(n.path); else this.selection.add(n.path);
+        this.anchor = n.path;
+      } else { this.selection = new Set([n.path]); this.anchor = n.path; }
       this.selected = n.path; this.input.value = n.path; this.input.title = n.path;
       this.message(n.attrs.kind === 'directory' ? n.path : `${n.path} · ${bytes(n.attrs.size)}`);
-      for (const row of this.tree.querySelectorAll('[role="treeitem"]')) row.setAttribute('aria-selected', String(row.id === n.key));
+      for (const row of this.tree.querySelectorAll('[role="treeitem"]')) row.setAttribute('aria-selected', String(this.selection.has(row.dataset.path)));
       this.tree.setAttribute('aria-activedescendant', n.key);
       if (scroll) this.row(n.path)?.scrollIntoView({ block: 'nearest' }); this.persist();
+    }
+    selectedPaths() { return [...this.selection].filter(path => this.nodes.has(path)); }
+    ambiguousTarget() {return new Set(this.selectedPaths().map(path=>this.nodes.get(path).attrs.kind==='directory'?path:parentOf(path))).size>1;}
+    targetDirectory() {
+      const node = this.nodes.get(this.selected) || this.nodes.get(this.rootPath);
+      return node?.attrs.kind === 'directory' ? node.path : parentOf(node?.path || this.rootPath);
+    }
+    clearDrop() {
+      clearTimeout(this.dropTimer);clearInterval(this.dropScroll);this.dropScroll=null;this.dropPath='';
+      this.tree.querySelectorAll('.drop-target').forEach(row => row.classList.remove('drop-target'));
+      this.tree.classList.remove('drop-target');
+    }
+    markDrop(event) {
+      this.tree.querySelectorAll('.drop-target').forEach(row=>row.classList.remove('drop-target'));this.tree.classList.remove('drop-target');
+      const hit = document.elementFromPoint(event.x, event.y), row = hit?.closest('.tree-row');
+      const rect = this.tree.getBoundingClientRect();
+      if (!hit || !this.tree.contains(hit) || (row && row.dataset.kind !== 'directory')) {this.clearDrop();return null;}
+      const path = row?.dataset.path || this.targetDirectory();
+      (row||this.tree).classList.add('drop-target');
+      this.dropY=event.y;
+      if(!this.dropScroll)this.dropScroll=setInterval(()=>{const r=this.tree.getBoundingClientRect();if(this.dropY<r.top+25)this.tree.scrollTop-=15;if(this.dropY>r.bottom-25)this.tree.scrollTop+=15;},40);
+      const node = this.nodes.get(path);
+      if(this.dropPath!==path){clearTimeout(this.dropTimer);if(node&&!this.expanded.has(path))this.dropTimer=setTimeout(()=>void this.run(()=>this.toggle(node)),650);}
+      this.dropPath=path;return path;
+    }
+    nativeDrop(event) {
+      if (event.dropType === 'leave') {this.clearDrop();return;}
+      const path=this.markDrop(event);if(!path)return;
+      this.message(`上传到 ${path}`);
+      if (event.dropType === 'drop') void this.run(async () => {
+        this.clearDrop();
+        const input = await this.transfers.input('input.drop', { dropId: event.dropId });
+        await this.transfers.upload(false, input, path);
+      });
+    }
+    pointerStart(e) {
+      const row=e.target.closest('.tree-row');
+      if(!this.transfers || e.button!==0 || !row || e.target.closest('button') || row.dataset.path===this.rootPath)return;
+      this.drag={x:e.clientX,y:e.clientY,path:row.dataset.path,active:false};
+    }
+    pointerMove(e) {
+      const drag=this.drag;if(!drag)return;
+      if(!drag.active){if(Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<7)return;drag.active=true;if(!this.selection.has(drag.path))this.select(this.nodes.get(drag.path),false);drag.roots=this.selectedPaths();}
+      e.preventDefault();this.suppressClick=Date.now()+300;
+      const path=this.markDrop({x:e.clientX,y:e.clientY});
+      const copy=/Mac/.test(navigator.platform)?e.altKey:e.ctrlKey;
+      this.message(path?`${copy?'复制':'移动'} ${drag.roots.length} 项到 ${path}`:'请选择目标文件夹');
+    }
+    pointerEnd(e) {
+      const drag=this.drag;this.drag=null;
+      if(drag?.active){const targetPath=e?this.markDrop({x:e.clientX,y:e.clientY}):null;this.suppressClick=Date.now()+300;if(targetPath){const copy=/Mac/.test(navigator.platform)?e.altKey:e.ctrlKey;void this.run(()=>this.transfers.start({kind:copy?'copy':'move',roots:drag.roots,targetPath}));}}
+      this.clearDrop();
     }
     row(path) { return document.getElementById(this.nodes.get(path)?.key); }
     async open(n) {
@@ -191,7 +263,7 @@
         this.maxDepth = Math.max(this.maxDepth, level);
         const row = document.createElement('div'); row.className = 'tree-row'; row.id = n.key; row.dataset.path = n.path; row.dataset.kind = n.attrs.kind;
         row.setAttribute('role', 'treeitem'); row.setAttribute('aria-level', level); row.setAttribute('aria-posinset', pos); row.setAttribute('aria-setsize', count); row.setAttribute('aria-label', n.name);
-        row.setAttribute('aria-selected', String(n.path === this.selected)); row.style.setProperty('--depth', level - 1); row.title = n.path;
+        row.setAttribute('aria-selected', String(this.selection.has(n.path))); row.style.setProperty('--depth', level - 1); row.title = n.path;
         const directory = n.attrs.kind === 'directory', expanded = this.expanded.has(n.path);
         if (directory) row.setAttribute('aria-expanded', String(expanded));
         if (n.loading) row.setAttribute('aria-busy', 'true');
@@ -200,9 +272,9 @@
         const name = document.createElement('span'); name.className = 'tree-name'; name.textContent = n.name;
         const size = document.createElement('span'); size.className = 'tree-size'; size.textContent = directory ? '' : bytes(n.attrs.size);
         row.append(arrow, icon(directory ? 'folder' : n.attrs.kind === 'link' ? 'link' : 'file'), name, size);
-        row.addEventListener('click', () => { this.tree.focus(); this.select(n, false); });
+        row.addEventListener('click', e => { this.tree.focus(); this.select(n, false, e); });
         row.addEventListener('dblclick', e => { if (!e.target.closest('.tree-arrow')) void this.run(() => this.open(n)); });
-        row.addEventListener('contextmenu', e => { e.preventDefault(); this.select(n, false); this.showMenu(n, e.clientX, e.clientY); });
+        row.addEventListener('contextmenu', e => { e.preventDefault(); if (!this.selection.has(n.path)) this.select(n, false); this.showMenu(n, e.clientX, e.clientY); });
         this.visible.push(n); fragment.append(row);
         if (!directory || !expanded) return;
         for (const [index, child] of n.children.entries()) visit(this.nodes.get(child), level + 1, index + 1, n.children.length);
@@ -237,7 +309,14 @@
       if (e.target !== this.tree) return;
       const n = this.nodes.get(this.selected) || this.nodes.get(this.rootPath), index = this.visible.indexOf(n);
       if (!n) return;
-      const choose = i => { const target = this.visible[Math.max(0, Math.min(this.visible.length - 1, i))]; if (target) this.select(target); };
+      if (this.transfers && !e.isComposing && (e.ctrlKey || e.metaKey)) {
+        if (['c','x'].includes(e.key.toLowerCase())) { e.preventDefault(); void this.run(() => this.transfers.copy(this.selectedPaths(),e.key.toLowerCase()==='x')); return; }
+        if (e.key.toLowerCase() === 'v') { e.preventDefault(); void this.run(() => this.transfers.paste()); return; }
+        if (e.key.toLowerCase() === 'a') { e.preventDefault(); this.selection = new Set(this.visible.filter(v=>v.path!==this.rootPath).map(v => v.path)); this.render(); this.message(`已选择当前已加载可见的 ${this.selection.size} 项`); return; }
+      }
+      if (this.transfers && e.key === 'Delete') { e.preventDefault(); void this.run(() => this.transfers.mutate('delete', this.selectedPaths())); return; }
+      if (this.transfers && e.key === 'F2') { e.preventDefault(); void this.run(() => this.transfers.mutate('rename', [n.path])); return; }
+      const choose = i => { const target = this.visible[Math.max(0, Math.min(this.visible.length - 1, i))]; if (target) this.select(target, true, e); };
       if (e.key === 'ArrowDown') choose(index + 1);
       else if (e.key === 'ArrowUp') choose(index - 1);
       else if (e.key === 'Home') choose(0);
@@ -254,9 +333,10 @@
     showMenu(n, x, y) {
       this.closeMenu();
       const menu = document.createElement('div'); menu.className = 'tree-menu sd-menu'; menu.setAttribute('role', 'menu');
-      const actions = [[n.attrs.kind === 'directory' ? 'folder' : 'file', n.attrs.kind === 'directory' ? '展开 / 折叠' : '打开文件', () => this.open(n)], ['download', '下载文件', () => this.download(n.path)], ['copy', '复制完整路径', async () => { await sodeckClipboard.writeText(n.path); this.message('路径已复制'); }], ['refresh', '刷新所在目录', () => this.refresh()]];
+      const actions = [[n.attrs.kind === 'directory' ? 'folder' : 'file', n.attrs.kind === 'directory' ? '展开 / 折叠' : '打开文件', () => this.open(n)], ['download', n.attrs.kind === 'directory' ? '下载文件夹' : '下载文件', () => this.transfers ? this.transfers.download(this.selectedPaths()) : this.download(n.path)], ['copy', '复制完整路径', async () => { await sodeckClipboard.writeText(n.path); this.message('路径已复制'); }], ['refresh', '刷新所在目录', () => this.refresh()]];
+      if (this.transfers) actions.push(['up', '上传文件', () => this.transfers.upload()], ['folder', '上传文件夹', () => this.transfers.upload(true)], ['copy','复制文件条目',()=>this.transfers.copy(this.selectedPaths())], ['copy','剪切文件条目',()=>this.transfers.copy(this.selectedPaths(),true)], ['copy','粘贴文件条目',()=>this.transfers.paste()], ['file', '新建文件', () => this.transfers.mutate('createEmpty', [])], ['folder', '新建文件夹', () => this.transfers.mutate('mkdir', [])], ['file', '重命名', () => this.transfers.mutate('rename', [n.path])], ['file', '删除选中条目', () => this.transfers.mutate('delete', this.selectedPaths())]);
       for (const [name, label, action] of actions) {
-        if (name === 'download' && n.attrs.kind === 'directory') continue;
+        if (name === 'download' && n.attrs.kind === 'directory' && !this.transfers) continue;
         const b = document.createElement('button'); b.setAttribute('role', 'menuitem'); b.append(icon(name), document.createTextNode(label));
         b.addEventListener('click', () => { this.closeMenu(true); void this.run(action); }); menu.append(b);
       }
@@ -277,6 +357,8 @@
         if (this.nodes.get(path)?.pages > 1) state.pages[path] = this.nodes.get(path).pages;
         if (state.expanded.length > 128 || new TextEncoder().encode(JSON.stringify(state)).length > 11800) { state.expanded.pop(); delete state.pages[path]; break; }
       }
+      state.selection=[];
+      for(const path of this.selectedPaths()){state.selection.push(path);if(new TextEncoder().encode(JSON.stringify(state)).length>11800){state.selection.pop();break;}}
       return state;
     }
     persist() {
@@ -296,6 +378,7 @@
     async flush() { await Promise.all([...this.pending]); this.persist(); clearTimeout(this.persistTimer); this.writeState(); await this.persistQueue; }
     focus() { this.tree.focus(); }
     contextChanged() {
+      this.pointerEnd(null);
       // Loaded rows are useful while offline; refresh reopens cursors on the new session.
       for (const n of this.nodes.values()) { n.cursor = null; if (n.more) n.error = '连接已更换，请刷新目录'; }
       this.render();

@@ -22,7 +22,34 @@ fn main() {
             "network_snapshot" => Ok(core.network_snapshot()),
             "component_data" => {
                 if args["request"]["op"] == "files" {
-                    let result = if args["request"]["action"] == "exportDraft" {
+                    let result = if ["input.chooseUpload", "input.chooseDownload"]
+                        .contains(&args["request"]["action"].as_str().unwrap_or(""))
+                    {
+                        let local =
+                            std::env::var(if args["request"]["action"] == "input.chooseUpload" {
+                                "SODECK_TEST_UPLOAD_PATH"
+                            } else {
+                                "SODECK_TEST_DOWNLOAD_PATH"
+                            })
+                            .expect("test local file source");
+                        let local = std::path::PathBuf::from(local);
+                        let local = if args["request"]["action"] == "input.chooseDownload"
+                            && args["request"]["single"] != true
+                        {
+                            std::env::var_os("SODECK_TEST_DOWNLOAD_DIRECTORY")
+                                .map(std::path::PathBuf::from)
+                                .unwrap_or_else(|| local.parent().unwrap().to_path_buf())
+                        } else {
+                            local
+                        };
+                        core.files_register_input(
+                            args["window"].as_str().unwrap_or("main"),
+                            args["surfaceId"].as_str().unwrap(),
+                            args["request"]["id"].as_str().unwrap(),
+                            vec![local],
+                            args["request"]["action"] == "input.chooseDownload",
+                        )
+                    } else if args["request"]["action"] == "exportDraft" {
                         let local = std::env::var("SODECK_TEST_DOWNLOAD_PATH")
                             .expect("test export destination");
                         tauri::async_runtime::block_on(core.files_export(

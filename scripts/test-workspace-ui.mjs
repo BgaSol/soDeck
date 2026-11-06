@@ -176,7 +176,8 @@ try {
   await closeEditor();await main.locator('.component-close-dialog').waitFor();await main.getByRole('button',{name:'取消',exact:true}).click();
   assert.equal(await editor.inputValue(),'draft for server A');
   await editor.fill('SODECK_TEST_SAVE_FAILURE');await flush(main);await closeEditor();await main.getByRole('button',{name:'保存并关闭',exact:true}).click();
-  await main.waitForFunction(()=>document.querySelector('#notice').textContent.includes('保存失败'));
+  await main.locator('.component-close-dialog').getByText(/保存失败/).waitFor();
+  await main.getByRole('button',{name:'取消',exact:true}).click();
   assert.equal(await editor.inputValue(),'SODECK_TEST_SAVE_FAILURE');
   await editor.fill('draft for server A');await flush(main);
   checks.push('关闭取消及保存失败保留草稿，不提前释放页面');

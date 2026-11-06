@@ -7,3 +7,5 @@
 0.2.0 提供紧凑目录树：多分支展开、路径定位、独立分页、右键下载/复制路径/刷新和键盘导航。单击选中、双击文件打开中央编辑器；移窗和重挂载恢复展开、选中和滚动元数据。保持原有 UTF-8/BOM/换行、保存冲突、草稿与下载能力。
 
 `node scripts/package-plugin.mjs --plugin files` 独立打包，设置中添加产物目录后重启。需要核心 `files.v1` / `files.directoryCursors.v1` / `viewData.v1`（核心 0.6.1 起）；旧核心会明确提示升级。`npm run files:test` 使用隔离 OpenSSH 与实际插件 UI 验证。版本在 Cargo.toml，标签 `plugin-files-v0.2.0`。
+
+当前工作区增加文件/文件夹批量上传下载、同名处理、取消和失败项重试，支持远程创建/改名/删除/同机复制移动。本地文件粘贴与拖入共用上传流程；不支持远程系统粘贴或拖出。新源码需要 `files.operations.v1` 与 `files.localInputs.v1`，尚未发行，五目标原生桌面验证待完成。接口、验证和限制见 [实施记录](../../docs/implementation-file-management.md)。

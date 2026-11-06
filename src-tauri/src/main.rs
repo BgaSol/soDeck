@@ -105,6 +105,97 @@ async fn component_data(
     channel: tauri::ipc::Channel<sodeck::streams::Frame>,
 ) -> Result<serde_json::Value, String> {
     if request["op"] == "files" {
+        let action = request["action"].as_str().unwrap_or("");
+        let file = request["id"].as_str().unwrap_or("").to_string();
+        if action == "input.reveal" {
+            let path = app.core.files_local_directory(
+                window.label(),
+                &surface_id,
+                &file,
+                request["inputId"].as_str().ok_or("缺少下载目标")?,
+            )?;
+            sodeck::desktop_files::reveal_directory(window.app_handle().clone(), path).await?;
+            return Ok(serde_json::json!({}));
+        }
+        if action == "input.revision" || action == "input.clipboard" {
+            app.core.validate_file_download(
+                window.label(),
+                &surface_id,
+                &serde_json::json!({"id":file,"path":"/"}),
+            )?;
+            let snapshot = sodeck::desktop_files::clipboard(
+                window.app_handle().clone(),
+                action == "input.clipboard",
+            )
+            .await?;
+            if action == "input.revision" {
+                return Ok(sodeck::desktop_files::clipboard_info(&snapshot));
+            }
+            if snapshot.paths.is_empty() {
+                return Ok(serde_json::json!({"empty":true,"revision":snapshot.revision}));
+            }
+            let mut value = app.core.files_register_input(
+                window.label(),
+                &surface_id,
+                &file,
+                snapshot.paths,
+                false,
+            )?;
+            value["revision"] = serde_json::json!(snapshot.revision);
+            return Ok(value);
+        }
+        if action == "input.drop" {
+            app.core.validate_file_download(
+                window.label(),
+                &surface_id,
+                &serde_json::json!({"id":file,"path":"/"}),
+            )?;
+            let paths = app.core.desktop_files.claim(
+                window.label(),
+                request["dropId"].as_str().ok_or("缺少拖入来源")?,
+            )?;
+            return app
+                .core
+                .files_register_input(window.label(), &surface_id, &file, paths, false);
+        }
+        if action == "input.chooseUpload" || action == "input.chooseDownload" {
+            use tauri_plugin_dialog::DialogExt;
+            let started = app.core.files_begin_input(
+                window.label(),
+                &surface_id,
+                &file,
+                request["action"] == "input.chooseDownload",
+            )?;
+            let operation = started["id"].as_str().unwrap().to_owned();
+            let core = app.core.clone();
+            let window = window.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let dialog = window.dialog().file();
+                let result = (|| {
+                    let paths = if request["action"] == "input.chooseUpload" {
+                        if request["directory"] == true {
+                            dialog.blocking_pick_folders()
+                        } else {
+                            dialog.blocking_pick_files()
+                        }
+                    } else if request["single"] == true {
+                        dialog
+                            .set_file_name(request["name"].as_str().unwrap_or("download"))
+                            .blocking_save_file()
+                            .map(|p| vec![p])
+                    } else {
+                        dialog.blocking_pick_folder().map(|p| vec![p])
+                    };
+                    paths
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|p| p.into_path().map_err(|e| e.to_string()))
+                        .collect::<Result<Vec<_>, _>>()
+                })();
+                core.files_finish_input(window.label(), &surface_id, &file, &operation, result);
+            });
+            return Ok(started);
+        }
         if request["action"] == "download" || request["action"] == "exportDraft" {
             use tauri_plugin_dialog::DialogExt;
             app.core
@@ -484,6 +575,11 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .on_webview_event(|webview,event| {
+            if let tauri::WebviewEvent::DragDrop(event)=event {
+                if let Some(app)=webview.try_state::<Application>() {app.core.desktop_files.event(webview,event);}
+            }
+        })
         .setup(move |app| {
             let directory = if smoke {
                 argument("--test-data-dir").unwrap_or_else(|| {

@@ -191,6 +191,7 @@ pub struct Runtime {
     clock: u64,
 }
 mod close;
+mod close_poll;
 mod host;
 mod layout;
 
@@ -231,6 +232,7 @@ pub fn dispatch(
             serde_json::from_value(args["workspaceIds"].clone()).map_err(|e| e.to_string())?,
             args["viewId"].as_str().map(str::to_owned),
         ),
+        "pollClose" => core.ui_close_poll(window, text("token")?, args["save"] == true),
         "finishClose" => core
             .component_close_owner(window, text("token")?)
             .and_then(|_| {
