@@ -164,3 +164,13 @@ test("GitHub read errors distinguish absent resources, refuse unauthorized fallb
   const paged = nativeGithub("test/repo", "test-token", async () => Response.json(Array.from({ length: 100 }, () => ({}))));
   await assert.rejects(paged.list("/items"), /pagination limit.*incomplete/);
 });
+
+test("snapshot ZIP downloads use the Artifact API media type while Release assets use octet-stream", async () => {
+  const body = Buffer.from("snapshot ZIP"), expected = { size: body.length, sha256: digest(body) };
+  const api = nativeGithub("test/repo", "test-token", async (url, options) => {
+    const wanted = url.includes("/actions/artifacts/") ? "application/vnd.github+json" : "application/octet-stream";
+    return options.headers.Accept === wanted ? new Response(body) : new Response("", { status: 415 });
+  });
+  assert.deepEqual(await api.bytes("/actions/artifacts/1/zip", expected), body);
+  assert.deepEqual(await api.bytes("/releases/assets/1", expected), body);
+});

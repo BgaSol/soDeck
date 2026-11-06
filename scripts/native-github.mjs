@@ -61,7 +61,9 @@ export function nativeGithub(repository, token, request = fetch, wait = delay) {
       return Buffer.from(item.content, "base64").toString("utf8");
     },
     async bytes(route, expected, limit = 128 * 1024) {
-      const result = await response(route, "application/octet-stream");
+      // Artifact ZIP endpoints require the GitHub API media type; Release assets
+      // require octet-stream. Both redirect to the actual binary download.
+      const result = await response(route, route.startsWith("/actions/artifacts/") ? "application/vnd.github+json" : "application/octet-stream");
       const chunks = []; let size = 0;
       for await (const chunk of Readable.fromWeb(result.body)) {
         size += chunk.length;
