@@ -16,7 +16,9 @@ test("macOS collected archives use the same versioned asset names as tauri-actio
     fs.writeFileSync(path.join(root, "src-tauri/tauri.conf.json"), '{"version":"0.2.0"}');
     fs.writeFileSync(path.join(source, "SoDeck.app.tar.gz"), "app");
     fs.writeFileSync(path.join(source, "SoDeck.app.tar.gz.sig"), "signature");
-    const result = spawnSync(process.execPath, [fileURLToPath(new URL("./collect-core.mjs", import.meta.url)), target], { cwd: root, encoding: "utf8" });
+    const dmg = path.join(root, `src-tauri/target/${target}/release/bundle/dmg`);
+    fs.mkdirSync(dmg); fs.writeFileSync(path.join(dmg, "SoDeck_0.2.0_aarch64.dmg"), "installer");
+    const result = spawnSync(process.execPath, [fileURLToPath(new URL("./collect-core.mjs", import.meta.url)), target], { cwd: root, encoding: "utf8", env: { ...process.env, GITHUB_SHA: "a".repeat(40) } });
     assert.equal(result.status, 0, result.stderr);
     const manifest = generate("core", { id: "sodeck.core", version: "0.2.0", tag: "v0.2.0", notes: "" }, path.join(root, "artifacts/core"));
     assert.match(manifest.platforms[target].url, /SoDeck_0.2.0_aarch64.app.tar.gz$/);

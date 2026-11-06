@@ -3,7 +3,8 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
-export const targets = ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc", "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "aarch64-apple-darwin"];
+import { targets, validateCoreArtifacts } from "./core-artifacts.mjs";
+export { targets };
 export function pluginConfig(plugin, root = ".") {
   if (typeof plugin !== "string" || !/^[a-z][a-z0-9-]*$/.test(plugin)) throw new Error("Invalid plugin name");
   const directory = path.join(root, "plugins", plugin);
@@ -14,7 +15,10 @@ export function pluginConfig(plugin, root = ".") {
 }
 export function coreConfig(root = ".") {
   const { version } = JSON.parse(fs.readFileSync(path.join(root, "src-tauri/tauri.conf.json"), "utf8"));
-  return { id: "sodeck.core", version, tag: `v${version}`, notes: fs.readFileSync(path.join(root, `docs/releases/v${version}.md`), "utf8") };
+  if (!/^\d+\.\d+\.\d+$/.test(version ?? "")) throw new Error("Invalid core release version");
+  const notes = fs.readFileSync(path.join(root, `docs/releases/v${version}.md`), "utf8");
+  if (!notes.trim()) throw new Error("Missing core release notes");
+  return { id: "sodeck.core", version, tag: `v${version}`, notes };
 }
 export function checkTag(config, tag) {
   if (tag !== config.tag) throw new Error(`Tag ${tag} must match ${config.tag}`);
@@ -67,6 +71,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   if (arg("tag") || process.env.GITHUB_REF_TYPE === "tag") checkTag(config, tag);
   if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${kind === "plugin" ? `plugin=${plugin}\n` : ""}tag=${config.tag}\n`);
   if (arg("input")) {
+    if (kind === "core") {
+      validateCoreArtifacts(arg("input"), config, process.env.GITHUB_SHA);
+    }
     const manifest = generate(kind, config, arg("input"));
     fs.writeFileSync(path.join(arg("input"), `${kind}-update.json`), JSON.stringify(manifest, null, 2) + "\n");
   }

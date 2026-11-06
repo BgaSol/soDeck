@@ -1,0 +1,102 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { checkTag, coreConfig, generate } from "./release-metadata.mjs";
+import { sha256, validateCoreArtifacts } from "./core-artifacts.mjs";
+
+export function githubClient(repository, token, request = fetch) {
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repository ?? "")) throw new Error("Invalid repository");
+  if (!token) throw new Error("GitHub token is required");
+  return async (method, route, body, binary = false, optional = false) => {
+    const url = route.startsWith("https://uploads.github.com/") ? route : `https://api.github.com/repos/${repository}${route}`;
+    const response = await request(url, {
+      method, signal: AbortSignal.timeout(120_000),
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", ...(body === undefined ? {} : { "Content-Type": binary ? "application/octet-stream" : "application/json" }) },
+      ...(body === undefined ? {} : { body: binary ? body : JSON.stringify(body) }),
+    });
+    if (optional && response.status === 404) return null;
+    if (!response.ok) throw new Error(`GitHub ${method} ${route.split("?")[0]} failed: HTTP ${response.status}`);
+    return response.status === 204 ? null : response.json();
+  };
+}
+export async function releaseState(api, config, commit) {
+  // Check repository access first; only a genuine missing tag/release is optional.
+  await api("GET", "");
+  const release = await api("GET", `/releases/tags/${encodeURIComponent(config.tag)}`, undefined, false, true);
+  if (release && !release.draft) throw new Error("Published core versions are immutable; bump the version");
+  let ref = await api("GET", `/git/ref/tags/${encodeURIComponent(config.tag)}`, undefined, false, true);
+  let object = ref?.object;
+  for (let depth = 0; object?.type === "tag" && depth < 5; depth++) object = (await api("GET", `/git/tags/${object.sha}`)).object;
+  if (object && (object.type !== "commit" || object.sha !== commit)) throw new Error("Core release tag points to another source commit");
+  if (release && !object) throw new Error("Existing core draft has no source tag");
+  return release;
+}
+async function releaseAssets(api, id) {
+  const assets = [];
+  for (let page = 1; ; page++) {
+    const items = await api("GET", `/releases/${id}/assets?per_page=100&page=${page}`);
+    assets.push(...items);
+    if (items.length < 100) return assets;
+  }
+}
+export async function prepareCoreRelease(api, config, input, commit, repository) {
+  const verified = validateCoreArtifacts(input, config, commit);
+  const manifest = generate("core", config, input, repository);
+  const manifestFile = path.join(input, "core-update.json");
+  fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2) + "\n");
+  let release = await releaseState(api, config, commit);
+  const desired = [...verified.assets, manifestFile];
+  let existing = release ? await releaseAssets(api, release.id) : [];
+  const names = desired.map(file => path.basename(file));
+  if (existing.some(asset => !names.includes(asset.name)) || new Set(existing.map(asset => asset.name)).size !== existing.length) throw new Error("Core draft contains unexpected or duplicate assets; do not mix build inputs");
+  // Verify all existing package bytes before changing the draft at all.
+  for (const asset of existing.filter(asset => asset.name !== "core-update.json" && asset.state === "uploaded")) {
+    const file = desired.find(file => path.basename(file) === asset.name);
+    if (asset.size !== fs.statSync(file).size || asset.digest !== `sha256:${sha256(file)}`) throw new Error(`Existing core draft asset differs: ${asset.name}`);
+  }
+  if (!release) {
+    const ref = await api("GET", `/git/ref/tags/${encodeURIComponent(config.tag)}`, undefined, false, true);
+    if (!ref) await api("POST", "/git/refs", { ref: `refs/tags/${config.tag}`, sha: commit });
+    release = await api("POST", "/releases", { tag_name: config.tag, target_commitish: commit, name: `SoDeck ${config.tag}`, body: config.notes, draft: true, make_latest: "false" });
+  }
+  for (const file of desired) {
+    const name = path.basename(file), digest = `sha256:${sha256(file)}`, asset = existing.find(asset => asset.name === name);
+    if (asset?.state === "uploaded" && asset.digest === digest && asset.size === fs.statSync(file).size) continue;
+    const current = await releaseState(api, config, commit);
+    if (!current || current.id !== release.id) throw new Error("Core release changed while uploading");
+    if (asset) {
+      if (name !== "core-update.json" && asset.state === "uploaded") throw new Error(`Existing core draft asset differs: ${name}`);
+      await api("DELETE", `/releases/assets/${asset.id}`);
+    }
+    const uploaded = await api("POST", `${release.upload_url.split("{")[0]}?name=${encodeURIComponent(name)}`, fs.readFileSync(file), true);
+    if (uploaded.digest !== digest || uploaded.size !== fs.statSync(file).size || uploaded.state !== "uploaded") throw new Error(`Uploaded core asset hash mismatch: ${name}`);
+  }
+  const current = await releaseState(api, config, commit);
+  if (!current || current.id !== release.id) throw new Error("Core release changed while uploading");
+  await api("PATCH", `/releases/${release.id}`, { name: `SoDeck ${config.tag}`, body: config.notes });
+  existing = await releaseAssets(api, release.id);
+  if (existing.length !== desired.length || desired.some(file => !existing.some(asset => asset.name === path.basename(file) && asset.digest === `sha256:${sha256(file)}` && asset.state === "uploaded"))) throw new Error("Core draft asset verification failed");
+  return { ...verified, url: release.html_url };
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const mode = process.argv[2], config = coreConfig();
+  const commit = process.env.GITHUB_SHA, repository = process.env.GITHUB_REPOSITORY ?? "BgaSol/soDeck";
+  if (!/^[a-f0-9]{40}$/.test(commit ?? "")) throw new Error("Provide GITHUB_SHA for the exact build source");
+  const publish = process.env.CORE_PUBLISH === "true" || process.env.GITHUB_REF_TYPE === "tag";
+  if (process.env.GITHUB_REF_TYPE === "tag") checkTag(config, process.env.GITHUB_REF_NAME);
+  if (mode === "preflight") {
+    if (publish) await releaseState(githubClient(repository, process.env.GH_TOKEN), config, commit);
+    if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `tag=${config.tag}\nversion=${config.version}\npublish=${publish}\n`);
+    console.log(`Core ${config.tag}: ${publish ? "prepare draft" : "Artifact only"}`);
+  } else if (mode === "prepare") {
+    const input = process.argv[3];
+    const verified = validateCoreArtifacts(input, config, commit);
+    const manifest = generate("core", config, input, repository);
+    fs.writeFileSync(path.join(input, "core-update.json"), JSON.stringify(manifest, null, 2) + "\n");
+    const result = publish ? await prepareCoreRelease(githubClient(repository, process.env.GH_TOKEN), config, input, commit, repository) : verified;
+    const summary = `Core ${config.tag} · source ${commit}\n\nVerified: ${result.present.join(", ")}\n\nMissing/failed: ${result.missing.join(", ") || "none"}\n\n${result.url ? `Draft: ${result.url}` : "Artifact only; no Release created."}\n`;
+    if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+    console.log(summary);
+  } else throw new Error("Use core-release.mjs preflight or prepare <artifact directory>");
+}

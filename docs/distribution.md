@@ -65,7 +65,11 @@ npm run plugin:build -- --plugin network-proxy --out-dir artifacts/another-build
  git push origin plugin-terminal-v0.1.2
 ```
 
-普通提交只运行相关检查。`Package SoDeck` 匹配 `v*`，`Package plugin` 匹配 `plugin-*-v*`；两者也支持手动生成 Artifact。插件手动入口可选 plugin 和 publish（生成独立草稿）。标签必须匹配对应唯一版本来源。
+普通提交只运行相关检查。`Package SoDeck` 匹配 `v*`，`Package plugin` 匹配 `plugin-*-v*`；两者也支持手动生成 Artifact。核心与插件手动入口的 publish 默认关闭，开启后准备对应组件草稿；插件还需选择 plugin。标签必须匹配对应唯一版本来源。
+
+核心在轻量前置任务检查版本、发布说明、草稿状态和标签提交；原生平台任务仅构建、签名和验证实际包，成功后才上传含提交/版本/平台/摘要的 Artifact。汇总读取同一运行的已验证包，生成清单并集中准备草稿；同版本写入串行，重试先核对已有附件摘要，正式版本拒绝覆盖。分支默认只输出 Artifact 与清单，不创建 Release。当前实测及边界见 [打包实施记录](implementation-packaging-workflows.md)。
+
+发布收尾失败且 Artifact 未过期时，在 Actions 重跑失败的 metadata job，复用同一 run 的已验证包；不重新运行已成功的平台。某平台失败时重跑失败目标和汇总。已有草稿的同名包必须与当前输入一致，不以覆盖旧附件解决提交或摘要冲突；过期/缺失产物需要重新构建固定版本与源码。
 
 各目标使用原生 Runner 构建和上传，某目标失败不阻塞其他成功产物下载，更新清单只列实际成功产物。五目标都是正式支持目标，未完成项必须在交付记录明确列出。草稿附件允许重试构建后补齐；发布后的同版本附件不覆盖，修正升补丁版本。检查附件和结果后将草稿正式发布，应用才能发现它。
 

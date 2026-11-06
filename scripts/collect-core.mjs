@@ -1,20 +1,19 @@
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { artifactMetadata, coreNames } from "./core-artifacts.mjs";
 const target = process.argv[2];
-if (!/^(x86_64|aarch64)-(pc-windows-msvc|unknown-linux-gnu|apple-darwin)$/.test(target ?? "")) throw new Error("Invalid target");
 const { version } = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
+const names = coreNames(version, target);
+const commit = process.env.GITHUB_SHA ?? spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8", windowsHide: true }).stdout?.trim();
 const root = `src-tauri/target/${target}/release/bundle`;
 const output = `artifacts/core/${target}`;
+if (fs.existsSync(output)) throw new Error(`Core artifact output already exists: ${output}`);
 fs.mkdirSync(output, { recursive: true });
-let count = 0;
-for (const kind of ["nsis", "deb", "dmg", "macos", "appimage"]) {
-  const directory = path.join(root, kind);
-  if (!fs.existsSync(directory)) continue;
-  for (const file of fs.readdirSync(directory)) {
-    if (!/\.(exe|deb|dmg|AppImage|app\.tar\.gz)(\.sig)?$/.test(file)) continue;
-    // tauri-action versions macOS updater asset names when uploading to Releases.
-    const name = kind === "macos" ? file.replace(/\.app\.tar\.gz(\.sig)?$/, `_${version}_${target.split("-")[0]}.app.tar.gz$1`) : file;
-    fs.copyFileSync(path.join(directory, file), path.join(output, name)); count++;
+for (const [kind, files] of Object.entries(names)) {
+  for (const name of files) {
+    const sourceName = kind === "macos" ? name.replace(`_${version}_aarch64.app.tar.gz`, ".app.tar.gz") : name;
+    fs.copyFileSync(path.join(root, kind, sourceName), path.join(output, name));
   }
 }
-if (!count) throw new Error("No core packages found");
+fs.writeFileSync(path.join(output, "core-artifact.json"), JSON.stringify(artifactMetadata(output, version, target, commit), null, 2) + "\n");

@@ -34,6 +34,7 @@
 | 桌面一致性 | [滚动条与默认行为](plan-desktop-consistency.md) | [桌面一致性](implementation-desktop-consistency.md) |
 | 组件设置与终端外观 | [功能设计](plan-component-settings.md)、[编码方案](plan-component-settings-coding.md) | [组件设置](implementation-component-settings.md) |
 | 在线更新 | [基础方案](plan-online-updates.md)、[体验改版](plan-update-experience.md) | [更新体验](implementation-update-experience.md) |
+| 打包与发布工作流 | [分步优化计划](plan-packaging-workflows.md) | [实施与验收](implementation-packaging-workflows.md) |
 
 ## 版本与历史资料
 

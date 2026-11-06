@@ -2,6 +2,11 @@ name: Package SoDeck
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Prepare a core Release draft after package verification
+        type: boolean
+        default: false
   push:
     tags: ["v*"]
 
@@ -9,7 +14,27 @@ permissions:
   contents: read
 
 jobs:
+  preflight:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.config.outputs.tag }}
+      version: ${{ steps.config.outputs.version }}
+      publish: ${{ steps.config.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+      - id: config
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CORE_PUBLISH: ${{ inputs.publish || false }}
+        run: node scripts/core-release.mjs preflight
+      - run: npm ci
+      - run: npm run scripts:test
   package:
+    needs: preflight
     strategy:
       fail-fast: false
       matrix:
@@ -37,8 +62,6 @@ jobs:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
@@ -79,31 +102,15 @@ jobs:
         run: |
           npx playwright install chromium
           npm run ui:test
-      - name: Check release version
-        if: startsWith(github.ref, 'refs/tags/')
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          node scripts/release-metadata.mjs --kind core
-          if gh release view "$GITHUB_REF_NAME" --json isDraft > release.json; then
-            node -e 'if (!JSON.parse(require("fs").readFileSync("release.json")).isDraft) throw new Error("Published versions are immutable; bump the version")'
-          fi
       - name: Build installer
         uses: tauri-apps/tauri-action@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPIMAGE_EXTRACT_AND_RUN: "1"
         with:
-          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
-          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('SoDeck {0}', github.ref_name) || '' }}
-          releaseBody: SoDeck core. Plugins are distributed separately; see the release notes for loading instructions.
-          releaseDraft: true
           uploadUpdaterJson: false
           args: --config src-tauri/tauri.release.conf.json --target ${{ matrix.target }} --bundles ${{ matrix.bundle }} -- --locked
-      - run: node scripts/collect-core.mjs ${{ matrix.target }}
       - name: Install and launch Windows package
         if: runner.os == 'Windows'
         shell: pwsh
@@ -136,15 +143,21 @@ jobs:
           export SODECK_TEST_UPDATE_BUNDLE="$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name '*.app.tar.gz' | head -1)"
           test -n "$SODECK_TEST_UPDATE_BUNDLE"
           node scripts/smoke.mjs "$RUNNER_TEMP/SoDeck/SoDeck.app/Contents/MacOS/sodeck"
+      - name: Collect verified packages
+        run: node scripts/collect-core.mjs ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
           name: SoDeck-${{ matrix.name }}
           path: artifacts/core/
           if-no-files-found: error
   metadata:
-    needs: package
-    if: always() && !cancelled() && startsWith(github.ref, 'refs/tags/')
+    needs: [preflight, package]
+    if: always() && !cancelled() && needs.preflight.result == 'success'
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    concurrency:
+      group: core-release-${{ needs.preflight.outputs.tag }}
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
@@ -157,11 +170,13 @@ jobs:
           pattern: SoDeck-*
           merge-multiple: true
           path: artifacts/core
-      - env:
+      - name: Prepare verified manifest and optional draft
+        env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          node scripts/release-metadata.mjs --kind core --input artifacts/core
-          gh release view "$GITHUB_REF_NAME" --json isDraft > release.json
-          node -e 'if (!JSON.parse(require("fs").readFileSync("release.json")).isDraft) throw new Error("Published core versions are immutable")'
-          gh release upload "$GITHUB_REF_NAME" artifacts/core/core-update.json --clobber
-          gh release edit "$GITHUB_REF_NAME" --notes-file "docs/releases/$GITHUB_REF_NAME.md"
+          CORE_PUBLISH: ${{ needs.preflight.outputs.publish }}
+        run: node scripts/core-release.mjs prepare artifacts/core
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Core-update-manifest
+          path: artifacts/core/core-update.json
+          if-no-files-found: error
