@@ -55,8 +55,10 @@ export const button = (
   `<button type="button" data-action="${action}" class="${cls}" ${attrs}>${name ? icon(name) : ""}${label}</button>`;
 export const empty = (title: string, body: string, name = "plug") =>
   `<div class="empty"><div class="empty-icon">${icon(name)}</div><h3>${title}</h3><p>${body}</p></div>`;
+const rendered = new WeakMap<HTMLElement, { input: string; output: string }>();
 export function replace(element: HTMLElement, html: string) {
-  if (element.innerHTML === html) return;
+  const previous = rendered.get(element);
+  if (element.innerHTML === html || (previous?.input === html && previous.output === element.innerHTML)) return;
   const active = document.activeElement as HTMLInputElement | null;
   const id = active && element.contains(active) ? active.id : "";
   const focusedDetails = active?.matches("summary") && element.contains(active)
@@ -84,4 +86,63 @@ export function replace(element: HTMLElement, html: string) {
     if (selection && target && ["text", "search"].includes(target.type))
       target.setSelectionRange(selection[0], selection[1]);
   }
+  rendered.set(element, { input: html, output: element.innerHTML });
+}
+
+// Workspace chrome has stable nodes; plugin frames and editable content keep
+// their separate lifetime and rendering rules.
+function chromeKey(node: Node): string | null {
+  if (!(node instanceof Element)) return null;
+  for (const attr of ["data-view", "data-component-action", "data-workspace-action", "data-id"]) {
+    if (node.hasAttribute(attr)) return `${attr}:${node.getAttribute(attr)}:${node.getAttribute("data-key") ?? node.getAttribute("data-id") ?? ""}`;
+  }
+  return null;
+}
+function patchChildren(parent: Node, source: Node) {
+  const old = [...parent.childNodes], used = new Set<Node>();
+  [...source.childNodes].forEach((next, index) => {
+    const key = chromeKey(next);
+    let current: Node | undefined = key ? old.find(node => !used.has(node) && chromeKey(node) === key) : old[index];
+    if (!current || used.has(current) || (!key && chromeKey(current)) || current.nodeType !== next.nodeType || current.nodeName !== next.nodeName) current = next.cloneNode(true);
+    else if (current instanceof Element && next instanceof Element) {
+      for (const attr of [...current.attributes]) if (!next.hasAttribute(attr.name)) current.removeAttribute(attr.name);
+      for (const attr of [...next.attributes]) if (current.getAttribute(attr.name) !== attr.value) current.setAttribute(attr.name, attr.value);
+      patchChildren(current, next);
+    } else if (current.nodeValue !== next.nodeValue) current.nodeValue = next.nodeValue;
+    used.add(current);
+    if (parent.childNodes[index] !== current) parent.insertBefore(current, parent.childNodes[index] ?? null);
+  });
+  for (const node of old) if (!used.has(node)) parent.removeChild(node);
+}
+let chromePress: { button: Element; pointerId: number } | undefined;
+const pendingChrome = new Map<HTMLElement, string>();
+document.addEventListener("pointerdown", event => {
+  const button = (event.target as Element).closest?.("[data-component-action], [data-workspace-action]");
+  if (event.button === 0 && button) chromePress = { button, pointerId: event.pointerId };
+}, true);
+// The browser has committed the click target; action handlers may now update
+// disabled/selected state immediately without interrupting the press.
+document.addEventListener("click", () => { chromePress = undefined; }, true);
+const releaseChrome = (event?: PointerEvent) => {
+  if (!chromePress || (event && event.pointerId !== chromePress.pointerId)) return;
+  const press = chromePress;
+  // Complete pointerup and click before a queued layout moves the target.
+  setTimeout(() => {
+    if (chromePress && chromePress !== press) return;
+    chromePress = undefined;
+    const pending = [...pendingChrome]; pendingChrome.clear();
+    for (const [element, html] of pending) if (element.isConnected) patchChrome(element, html);
+  }, 0);
+};
+document.addEventListener("pointerup", releaseChrome, true);
+document.addEventListener("pointercancel", releaseChrome, true);
+window.addEventListener("blur", () => releaseChrome());
+export function patchChrome(element: HTMLElement, html: string) {
+  if (chromePress && element.contains(chromePress.button)) { pendingChrome.set(element, html); return; }
+  pendingChrome.delete(element);
+  const template = document.createElement("template"); template.innerHTML = html;
+  const active = document.activeElement as HTMLElement | null;
+  const hadFocus = active && element.contains(active);
+  patchChildren(element, template.content);
+  if (hadFocus && active.isConnected && document.activeElement !== active) active.focus({ preventScroll: true });
 }

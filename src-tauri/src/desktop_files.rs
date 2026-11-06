@@ -61,6 +61,7 @@ impl DesktopFiles {
 pub struct Clipboard {
     pub paths: Vec<PathBuf>,
     pub revision: String,
+    pub has_files: bool,
 }
 pub async fn reveal_directory(handle: tauri::AppHandle, path: PathBuf) -> Result<(), String> {
     #[cfg(windows)]
@@ -171,7 +172,7 @@ pub(crate) fn uri_paths(data: &[u8]) -> Result<Vec<PathBuf>, String> {
     Ok(paths)
 }
 pub fn clipboard_info(value: &Clipboard) -> Value {
-    json!({"revision":value.revision,"count":value.paths.len()})
+    json!({"revision":value.revision,"count":value.paths.len(),"hasFiles":value.has_files})
 }
 #[cfg(test)]
 mod tests {

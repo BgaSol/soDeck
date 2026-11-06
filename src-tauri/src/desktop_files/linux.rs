@@ -23,6 +23,11 @@ unsafe extern "C" {
         error: *mut Ptr,
     ) -> c_int;
     fn gtk_clipboard_get(selection: Ptr) -> Ptr;
+    fn gtk_clipboard_request_targets(
+        clipboard: Ptr,
+        callback: unsafe extern "C" fn(Ptr, *mut Ptr, c_int, Ptr),
+        data: Ptr,
+    );
     fn gtk_clipboard_request_contents(
         clipboard: Ptr,
         target: Ptr,
@@ -82,6 +87,34 @@ struct Request {
 unsafe extern "C" fn changed(_: Ptr, _: Ptr, _: Ptr) {
     REVISION.fetch_add(1, Ordering::SeqCst);
 }
+unsafe extern "C" fn targets_received(_: Ptr, targets: *mut Ptr, count: c_int, userdata: Ptr) {
+    unsafe {
+        let Some(mut request) = requests().lock().unwrap().remove(&(userdata as usize)) else {
+            return;
+        };
+        let supported = [
+            gdk_atom_intern_static_string(c"text/uri-list".as_ptr()),
+            gdk_atom_intern_static_string(c"x-special/gnome-copied-files".as_ptr()),
+        ];
+        let has_files = count > 0
+            && !targets.is_null()
+            && std::slice::from_raw_parts(targets, count as usize)
+                .iter()
+                .any(|atom| supported.contains(atom));
+        let result = if request.revision != REVISION.load(Ordering::SeqCst).to_string() {
+            Err("系统文件剪贴板在读取期间变化".into())
+        } else {
+            Ok(Clipboard {
+                paths: vec![],
+                revision: request.revision,
+                has_files,
+            })
+        };
+        if let Some(sender) = request.sender.take() {
+            let _ = sender.send(result);
+        }
+    }
+}
 unsafe extern "C" fn received(clipboard: Ptr, data: Ptr, userdata: Ptr) {
     unsafe {
         let Some(mut request) = requests().lock().unwrap().remove(&(userdata as usize)) else {
@@ -106,6 +139,7 @@ unsafe extern "C" fn received(clipboard: Ptr, data: Ptr, userdata: Ptr) {
             Ok(Clipboard {
                 paths: vec![],
                 revision: request.revision.clone(),
+                has_files: false,
             })
         } else if length > 4 * 1024 * 1024 {
             Err("文件剪贴板内容过大".into())
@@ -123,6 +157,7 @@ unsafe extern "C" fn received(clipboard: Ptr, data: Ptr, userdata: Ptr) {
                 std::slice::from_raw_parts(pointer, length as usize)
             };
             super::uri_paths(bytes).map(|paths| Clipboard {
+                has_files: !paths.is_empty(),
                 paths,
                 revision: request.revision.clone(),
             })
@@ -155,13 +190,6 @@ pub(super) fn read(files: bool, sender: tokio::sync::oneshot::Sender<Result<Clip
             );
         });
         let revision = REVISION.load(Ordering::SeqCst).to_string();
-        if !files {
-            let _ = sender.send(Ok(Clipboard {
-                paths: vec![],
-                revision,
-            }));
-            return;
-        }
         let request = Request {
             sender: Some(sender),
             revision,
@@ -178,6 +206,10 @@ pub(super) fn read(files: bool, sender: tokio::sync::oneshot::Sender<Result<Clip
         let id = REQUEST_ID.fetch_add(1, Ordering::Relaxed) as usize;
         pending.insert(id, request);
         drop(pending);
+        if !files {
+            gtk_clipboard_request_targets(clipboard, targets_received, id as Ptr);
+            return;
+        }
         gtk_clipboard_request_contents(
             clipboard,
             gdk_atom_intern_static_string(c"text/uri-list".as_ptr()),

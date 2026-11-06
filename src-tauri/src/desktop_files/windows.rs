@@ -28,16 +28,22 @@ pub(super) fn reveal(path: PathBuf) -> Result<(), String> {
 }
 pub(super) fn read(files: bool) -> Result<Clipboard, String> {
     let revision = unsafe { GetClipboardSequenceNumber() }.to_string();
+    let has_files = unsafe { IsClipboardFormatAvailable(15) } != 0;
+    if revision != unsafe { GetClipboardSequenceNumber() }.to_string() {
+        return Err("系统文件剪贴板在读取期间变化，请重试".into());
+    }
     if !files {
         return Ok(Clipboard {
             paths: vec![],
             revision,
+            has_files,
         });
     }
     if unsafe { IsClipboardFormatAvailable(15) } == 0 {
         return Ok(Clipboard {
             paths: vec![],
             revision,
+            has_files: false,
         });
     }
     let mut opened = false;
@@ -90,6 +96,7 @@ pub(super) fn read(files: bool) -> Result<Clipboard, String> {
         return Err("系统文件剪贴板在读取期间变化，请重试".into());
     }
     Ok(Clipboard {
+        has_files: !paths.is_empty(),
         paths,
         revision: end.to_string(),
     })

@@ -30,6 +30,7 @@
 | 工作台样式与剪贴板 | [设计方案](plan-workbench-design.md) | [样式与剪贴板](implementation-workbench-design.md) |
 | Tab 新建入口 | [交互方案](plan-tab-creation.md) | [两级 Tab](implementation-tab-creation.md) |
 | 工作区菜单 | — | [菜单修复](implementation-component-menus.md) |
+| 工作台按钮与文件菜单 | [整改设计](plan-workbench-interactions.md) | [实施与验收](implementation-workbench-interactions.md) |
 | 桌面一致性 | [滚动条与默认行为](plan-desktop-consistency.md) | [桌面一致性](implementation-desktop-consistency.md) |
 | 组件设置与终端外观 | [功能设计](plan-component-settings.md)、[编码方案](plan-component-settings-coding.md) | [组件设置](implementation-component-settings.md) |
 | 在线更新 | [基础方案](plan-online-updates.md)、[体验改版](plan-update-experience.md) | [更新体验](implementation-update-experience.md) |

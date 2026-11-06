@@ -1,7 +1,10 @@
 /* UI v1 bounded clipboard transport. No terminal behavior belongs in the host. */
 (() => {
-  let available=false;
-  addEventListener('sodeck:mount',event=>{available=event.detail.capabilities?.clipboard===1;});
+  let available=false,surface;
+  addEventListener('sodeck:mount',event=>{available=event.detail.capabilities?.clipboard===1;surface=event.detail.surfaceId;});
+  const interaction=()=>{if(surface)parent.postMessage({channel:'sodeck-ui-v1',type:'interaction',surfaceId:surface},'*');};
+  document.addEventListener('pointerdown',interaction,true);
+  document.addEventListener('keydown',interaction,true);
   const request = params => available?sodeck.request('clipboard',params):Promise.reject(new Error('当前核心不支持原生剪贴板服务，请先升级核心'));
   window.sodeckClipboard = {
     async readText(valid=()=>true) {
@@ -24,5 +27,5 @@
     notify: error => dispatchEvent(new CustomEvent('sodeck:textMenuError', { detail: error })),
   });
   for (const name of ['mount', 'contextChanged', 'themeChanged', 'visibilityChanged']) addEventListener('sodeck:' + name, () => menu?.close());
-  addEventListener('sodeck:unmount', () => menu?.dispose());
+  addEventListener('sodeck:unmount', () => {surface=null;menu?.dispose();});
 })();

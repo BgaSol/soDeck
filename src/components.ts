@@ -4,7 +4,7 @@ import { themeTokens } from "./theme";
 import { ClipboardBridge } from "./clipboard";
 import { LocalFileDrop } from "./local-files";
 import { ComponentData } from "./component-data";
-import { escape as e, icon, replace } from "./ui";
+import { escape as e, icon, replace, patchChrome } from "./ui";
 import type { Context, Projection, Workspace } from "./workspaces";
 import type { NetworkSnapshot } from "./core";
 
@@ -17,6 +17,7 @@ export interface UiProjection { definitions: Record<string, Definition>; workspa
 interface Surface { node: HTMLDivElement; frame: HTMLIFrameElement; view: View; token?: string; chain: Promise<unknown>; visible: boolean; initialized: boolean; mounted?: boolean; acceptsLocalFiles?: boolean; focusPending?: number; flushable?: boolean; flushing?: {id: string; done: (error?: string) => void}; timeout: ReturnType<typeof setTimeout> }
 interface Shell { node: HTMLElement; surfaces: Map<string, Surface>; observer: ResizeObserver; workspace: Workspace; ui: UiWorkspace; railCapacity?: number }
 interface ClosePlan { token: string; views: string[]; dirty: { id: string; title: string; serverName: string; dirty: boolean; busy: boolean; error?: string }[] }
+interface MenuEntry { label: string; action: () => Promise<unknown>; extra?: MenuEntry; checked?: boolean; disabled?: boolean; separatorBefore?: boolean }
 const empty = (): UiWorkspace => ({ views: [], preferences: {}, left: null, right: null, editor: null });
 const defaultEditor = { pluginId: "sodeck.terminal", id: "terminal" };
 
@@ -38,6 +39,9 @@ export class Components {
   private definitions: Record<string, Definition> = {};
   private state?: Projection;
   private menu?: HTMLElement;
+  private menuAnchor?: HTMLElement;
+  private menuObserver?: ResizeObserver;
+  private boundTabs = new WeakSet<Element>();
   private dialog?: HTMLDialogElement;
   private disposed = false;
   private creating = new Set<string>();
@@ -59,7 +63,7 @@ export class Components {
     content.addEventListener("click", event => {
       const button = (event.target as Element).closest<HTMLElement>("[data-component-action]");
       const shell = button?.closest<HTMLElement>(".server-workbench");
-      if (button && shell) void this.run(() => this.action(shell.dataset.id!, button.dataset.componentAction!, button.dataset.key ?? "", button));
+      if (button && shell) void this.run(() => this.action(shell.dataset.id!, button.dataset.componentAction!, button.dataset.key ?? "", button, (event as MouseEvent).detail === 0));
     });
     document.addEventListener("pointerdown", this.outside);
     document.addEventListener("pointerdown", this.interaction, true);
@@ -100,26 +104,29 @@ export class Components {
     for (const side of ["left", "right"]) {
       const selected = side === "left" ? w.left : w.right;
       const entries = Object.values(this.definitions).filter(d => w.preferences[d.key]?.side === side && (d.container === "sidebar" || d.locateEntry)).sort((a,b) => (w.preferences[a.key].order - w.preferences[b.key].order) || a.key.localeCompare(b.key));
-      replace(node.querySelector(`.${side}-rail`)!, entries.filter(d => w.preferences[d.key].pinned).slice(0, shell.railCapacity ?? 20).map(d => {
+      patchChrome(node.querySelector(`.${side}-rail`)!, entries.filter(d => w.preferences[d.key].pinned).slice(0, shell.railCapacity ?? 20).map(d => {
         const active = d.container === "sidebar" ? w.views.some(v => v.id === selected && v.definitionKey === d.key) : w.views.some(v => v.id === w.editor && v.definitionKey === d.key);
         return `<button class="sd-icon" data-component-action="${d.container === "sidebar" ? "toggle" : "locate"}" data-key="${e(d.key)}" aria-label="${e(d.container === "sidebar" ? d.title : `定位${d.title}`)}" aria-expanded="${active}" title="${e(d.title)} · ${e(d.pluginName)}" ${!d.available ? "disabled" : ""}>${icon(d.icon)}</button>`;
       }).join("") + `<button class="component-more sd-icon" data-component-action="more" data-key="${side}" aria-label="${side === "left" ? "左" : "右"}侧更多组件">${icon("more")}</button>`);
       const view = w.views.find(v => v.id === selected);
-      replace(node.querySelector(`.${side}-panel header`)!, view ? `<span title="${e(this.definitions[view.definitionKey]?.pluginName)}">${e(view.title)}</span><div><button class="sd-icon" data-component-action="panel-menu" data-key="${e(view.definitionKey)}" aria-label="${e(view.title)} 面板菜单">${icon("more")}</button><button class="sd-icon" data-component-action="collapse" data-key="${side}" aria-label="收起${e(view.title)}">${icon("minus")}</button></div>` : "");
+      patchChrome(node.querySelector(`.${side}-panel header`)!, view ? `<span title="${e(this.definitions[view.definitionKey]?.pluginName)}">${e(view.title)}</span><div><button class="sd-icon" data-component-action="panel-menu" data-key="${e(view.definitionKey)}" aria-label="${e(view.title)} 面板菜单">${icon("more")}</button><button class="sd-icon" data-component-action="collapse" data-key="${side}" aria-label="收起${e(view.title)}">${icon("minus")}</button></div>` : "");
     }
     const editors = w.views.filter(v => this.definitions[v.definitionKey]?.container === "editor");
     const defaultView = this.defaultView();
     const createHint = !shell.workspace.connected ? "连接已断开，请先重新连接" : !defaultView ? "终端不可用，请在插件管理中安装并启用后重启" : this.creating.has(shell.workspace.context.workspaceId) ? "正在新建终端…" : "新建终端";
     const tabScroll=node.querySelector(".component-tab-list")?.scrollLeft??0;
-    replace(node.querySelector(".component-tabs")!, `<div class="component-tab-list" role="tablist" aria-label="组件页面">${editors.map(v => `<div class="component-tab sd-tab ${w.editor === v.id ? "selected" : ""}" draggable="true" data-view="${e(v.id)}"><button role="tab" aria-selected="${w.editor === v.id}" data-component-action="select" data-key="${e(v.id)}" title="${e(v.title)}">${icon(this.definitions[v.definitionKey]?.icon)}<span>${e(v.title)}${v.dirty ? " ●" : ""}</span></button><button class="sd-icon" data-component-action="close" data-key="${e(v.id)}" aria-label="关闭 ${e(v.title)}">${icon("close")}</button></div>`).join("")}</div><button class="sd-icon" data-component-action="create" aria-label="新建终端" title="${e(createHint)}" ${createHint === "新建终端" ? "" : "disabled"}>${icon("plus")}</button><button class="sd-icon" data-component-action="pages" aria-label="全部组件页面" title="全部组件页面">${icon("chevron")}</button>`);
+    patchChrome(node.querySelector(".component-tabs")!, `<div class="component-tab-list" role="tablist" aria-label="组件页面">${editors.map(v => `<div class="component-tab sd-tab ${w.editor === v.id ? "selected" : ""}" draggable="true" data-view="${e(v.id)}"><button role="tab" aria-selected="${w.editor === v.id}" data-component-action="select" data-key="${e(v.id)}" title="${e(v.title)}">${icon(this.definitions[v.definitionKey]?.icon)}<span>${e(v.title)}${v.dirty ? " ●" : ""}</span></button><button class="sd-icon" data-component-action="close" data-key="${e(v.id)}" aria-label="关闭 ${e(v.title)}">${icon("close")}</button></div>`).join("")}</div><button class="sd-icon" data-component-action="create" aria-label="新建终端" title="${e(createHint)}" ${createHint === "新建终端" ? "" : "disabled"}>${icon("plus")}</button><button class="sd-icon" data-component-action="pages" aria-label="全部组件页面" title="全部组件页面">${icon("chevron")}</button>`);
     const list = node.querySelector(".component-tab-list")!;
     list.scrollLeft=tabScroll;
-    list.addEventListener("dragstart", event => { const ev = event as DragEvent; const id = (ev.target as Element).closest<HTMLElement>("[data-view]")?.dataset.view; if (id) ev.dataTransfer?.setData("text/sodeck-view", id); });
-    list.addEventListener("dragover", event => event.preventDefault());
-    list.addEventListener("drop", event => { event.preventDefault(); const ev = event as DragEvent, id = ev.dataTransfer?.getData("text/sodeck-view"), target = (ev.target as Element).closest<HTMLElement>("[data-view]")?.dataset.view; if (id && target) void this.run(() => this.perform(shell, { op: "reorder", viewId: id, index: w.views.findIndex(v => v.id === target) })); });
+    if (!this.boundTabs.has(list)) {
+      this.boundTabs.add(list);
+      list.addEventListener("dragstart", event => { const ev = event as DragEvent; const id = (ev.target as Element).closest<HTMLElement>("[data-view]")?.dataset.view; if (id) ev.dataTransfer?.setData("text/sodeck-view", id); });
+      list.addEventListener("dragover", event => event.preventDefault());
+      list.addEventListener("drop", event => { event.preventDefault(); const ev = event as DragEvent, id = ev.dataTransfer?.getData("text/sodeck-view"), target = (ev.target as Element).closest<HTMLElement>("[data-view]")?.dataset.view; if (id && target) void this.run(() => this.perform(shell, { op: "reorder", viewId: id, index: shell.ui.views.findIndex(v => v.id === target) })); });
+    }
     const slot = node.querySelector<HTMLElement>(".central-slot")!;
     if (!editors.length) replace(slot, `<div class="workspace-empty"><div class="empty-icon">${icon("plug")}</div><h2>${e(shell.workspace.name)}</h2><p>${Object.keys(this.definitions).length ? "从侧栏打开组件，或点击＋新建页面" : "安装并启用带界面的插件后，可在这里使用组件"}</p><div class="workspace-context">${e(shell.workspace.endpoint)}</div></div>`); else replace(slot, "");
-    replace(node.querySelector(".workspace-status")!, `<div class="workspace-connection" role="status" aria-label="连接状态" title="${e(shell.workspace.endpoint)}"><span class="health-dot ${shell.workspace.connected ? "good" : "warning"}"></span><span>${shell.workspace.connected ? "已连接" : "连接已断开"}</span><span class="workspace-endpoint">${e(shell.workspace.endpoint)}</span></div><button class="sd-status-action" data-reconnect-server="${e(shell.workspace.context.serverId)}" ${shell.workspace.connected ? "hidden" : ""}>重新连接</button><span class="workspace-status-spacer"></span><button class="workspace-network sd-status-action" data-action="status" title="服务器连接传输速率；点击查看应用状态与插件业务量">↓ 0 B/s ↑ 0 B/s</button>`);
+    patchChrome(node.querySelector(".workspace-status")!, `<div class="workspace-connection" role="status" aria-label="连接状态" title="${e(shell.workspace.endpoint)}"><span class="health-dot ${shell.workspace.connected ? "good" : "warning"}"></span><span>${shell.workspace.connected ? "已连接" : "连接已断开"}</span><span class="workspace-endpoint">${e(shell.workspace.endpoint)}</span></div><button class="sd-status-action" data-reconnect-server="${e(shell.workspace.context.serverId)}" ${shell.workspace.connected ? "hidden" : ""}>重新连接</button><span class="workspace-status-spacer"></span><button class="workspace-network sd-status-action" data-action="status" title="服务器连接传输速率；点击查看应用状态与插件业务量">↓ 0 B/s ↑ 0 B/s</button>`);
     for (const [id, surface] of shell.surfaces) if (!w.views.some(v => v.id === id)) { this.removeSurface(surface); shell.surfaces.delete(id); }
     for (const v of w.views) {
       const d = this.definitions[v.definitionKey]; if (!d) continue;
@@ -195,7 +202,7 @@ export class Components {
     try { const settings = await this.call("settings_for_surface", {surfaceId: token}); if(surface.token===token && !this.disposed && settings) this.post(surface,{type:"settingsChanged",settings}); }
     catch { /* Older plugins and cores continue with their defaults. */ }
   }
-  private outside = (event: PointerEvent) => { if (this.menu && !this.menu.contains(event.target as Node)) this.closeMenu(); };
+  private outside = (event: PointerEvent) => { if (this.menu && !this.menu.contains(event.target as Node) && !this.menuAnchor?.contains(event.target as Node)) this.closeMenu(); };
   private message = (event: MessageEvent) => {
     if (!event.data || event.data.channel !== "sodeck-ui-v1") return;
     const surface = [...this.shells.values()].flatMap(s => [...s.surfaces.values()]).find(s => s.frame.contentWindow === event.source);
@@ -214,6 +221,7 @@ export class Components {
       return;
     }
     if (!surface.token || message.surfaceId !== surface.token) return;
+    if (message.type === "interaction") { if (surface.visible) { this.interaction(); this.closeMenu(); this.content.dispatchEvent(new Event("surface-interaction")); } return; }
     if (message.type === "mounted") { surface.flushable = message.flush === true; surface.acceptsLocalFiles = message.localFiles === true; clearTimeout(surface.timeout); void this.invoke("ready", { surfaceId: surface.token }).then(async () => { surface.mounted = true; await this.refreshSettings(surface); await this.refresh(); if (surface.focusPending === this.focusEpoch && surface.visible) this.focusSurface(surface); }).catch(error => this.surfaceError(surface, String(error))); return; }
     if (message.type === "flushed" && surface.flushing && surface.flushing.id === message.id) { surface.flushing.done(message.error); return; }
     if (message.type !== "request" || typeof message.id !== "string") return;
@@ -261,11 +269,12 @@ export class Components {
         .catch(error => this.post(surface, {type: "response", id: requestId, error: String(error)}));
       return;
     }
+    const requestFocusEpoch = this.focusEpoch;
     const task = async () => {
       try {
         let data: unknown;
         const shell = this.shells.get(surface.view.context.workspaceId)!;
-        if (message.method === "openView") { const key = `${this.definitions[surface.view.definitionKey].pluginId}:${message.params.viewType}`; data = await this.perform(shell, { op: "open", key, params: message.params.params, resourceKey: message.params.resourceKey }); this.focus(shell,key); }
+        if (message.method === "openView") { const key = `${this.definitions[surface.view.definitionKey].pluginId}:${message.params.viewType}`; data = await this.perform(shell, { op: "open", key, params: message.params.params, resourceKey: message.params.resourceKey }); if (this.focusEpoch === requestFocusEpoch && this.state?.window.activeWorkspace === shell.workspace.context.workspaceId) this.focus(shell,key); }
         else if (message.method === "event") { data = await this.invoke("event", { surfaceId: surface.token, event: message.params }); await this.refresh(); }
         else throw new Error("未知插件 UI bridge 方法");
         this.post(surface, { type: "response", id: requestId, data });
@@ -283,22 +292,26 @@ export class Components {
     const result = await this.invoke("action", { context: shell.workspace.context, action: { requestId: crypto.randomUUID(), ...action } });
     await this.refresh(); return result;
   }
-  private async action(id: string, action: string, key: string, anchor: HTMLElement) {
-    const shell = this.shells.get(id)!;
-    if (["toggle", "locate", "collapse"].includes(action)) { await this.perform(shell, { op: action, key, side: key }); this.focus(shell, action === "collapse" ? undefined : key); return; }
-    if (action === "select") { await this.perform(shell, { op: "select", viewId: key }); const surface = shell.surfaces.get(key); if (surface) this.focusSurface(surface); return; }
+  private async action(id: string, action: string, key: string, anchor: HTMLElement, keyboard = false) {
+    const shell = this.shells.get(id);
+    if (!shell) return;
+    const focusEpoch = this.focusEpoch;
+    if (["toggle", "locate", "panel-menu"].includes(action) && !this.definitions[key]?.available) { this.notify("组件不可用，请查看应用状态"); return; }
+    if (["toggle", "locate", "collapse"].includes(action)) { await this.perform(shell, { op: action, key, side: key }); if (this.focusEpoch === focusEpoch && this.state?.window.activeWorkspace === id) this.focus(shell, action === "collapse" ? undefined : key); return; }
+    if (action === "select") { if (!shell.ui.views.some(v => v.id === key)) return; await this.perform(shell, { op: "select", viewId: key }); const surface = shell.surfaces.get(key); if (surface && this.focusEpoch === focusEpoch && this.state?.window.activeWorkspace === id) this.focusSurface(surface); return; }
     if (action === "close") { await this.close([id], key); return; }
     if (action === "more") { this.showMenu(anchor, Object.values(this.definitions).filter(d => shell.ui.preferences[d.key]?.side === key && (d.container === "sidebar" || d.locateEntry)).map(d => ({ label: d.title, action: () => this.perform(shell, { op: d.container === "sidebar" ? "open" : "locate", key: d.key }), extra: { label: shell.ui.preferences[d.key].pinned ? "取消固定" : "固定", action: () => this.perform(shell, { op: "preference", key: d.key, pinned: !shell.ui.preferences[d.key].pinned }) } })), true); return; }
     if (action === "panel-menu") {
       const p = shell.ui.preferences[key];
+      if (!p) return;
       const sideKeys = Object.keys(shell.ui.preferences).filter(k => shell.ui.preferences[k].side === p.side).sort((a,b) => shell.ui.preferences[a].order-shell.ui.preferences[b].order);
       this.showMenu(anchor, [
         { label: p.side === "left" ? "移到右侧" : "移到左侧", action: () => this.perform(shell, { op: "preference", key, side: p.side === "left" ? "right" : "left" }) },
-        { label: p.pinned ? "从工具条隐藏" : "固定到工具条", action: () => this.perform(shell, { op: "preference", key, pinned: !p.pinned }) },
-        { label: "入口移到最前", action: () => this.perform(shell, { op: "preference", key, order: Math.max(0, Math.min(...sideKeys.map(k => shell.ui.preferences[k].order)) - 1) }) },
-        { label: p.startup === "none" ? "新工作区默认展开" : "新工作区默认隐藏", action: () => this.perform(shell, { op: "preference", key, startup: p.startup === "none" ? "reveal" : "none" }) },
-        { label: "采用推荐布局", action: () => this.perform(shell, { op: "recommend", key }) },
-      ]); return;
+        { label: p.pinned ? "隐藏入口" : "固定入口", action: () => this.perform(shell, { op: "preference", key, pinned: !p.pinned }) },
+        { label: "入口置顶", action: () => this.perform(shell, { op: "preference", key, order: Math.max(0, Math.min(...sideKeys.map(k => shell.ui.preferences[k].order)) - 1) }) },
+        { label: "新工作区自动展开", checked: p.startup !== "none", separatorBefore: true, action: () => this.perform(shell, { op: "preference", key, startup: p.startup === "none" ? "reveal" : "none" }) },
+        { label: "恢复推荐布局", action: () => this.perform(shell, { op: "recommend", key }) },
+      ], false, undefined, keyboard); return;
     }
     if (action === "pages") { this.showMenu(anchor, shell.ui.views.filter(v => this.definitions[v.definitionKey]?.container === "editor").map(v => ({ label: v.title, action: () => this.perform(shell, { op: "select", viewId: v.id }) })), true); return; }
     if (action === "create") {
@@ -323,11 +336,14 @@ export class Components {
     else shell.node.querySelector<HTMLElement>(`[data-key="${CSS.escape(key ?? "")}"]`)?.focus();
   }
   private focusSurface(surface: Surface) { if (!surface.mounted || !surface.visible) { surface.focusPending = this.focusEpoch; return; } surface.focusPending = undefined; surface.frame.focus(); this.post(surface, { type: "focus" }); }
-  private showMenu(anchor: HTMLElement, entries: { label: string; action: () => Promise<unknown>; extra?: { label: string; action: () => Promise<unknown> } }[], searchable = false, detail?: string) {
-    this.closeMenu(); const node = document.createElement("div"); node.className = "workspace-menu component-menu sd-menu";
+  private showMenu(anchor: HTMLElement, entries: MenuEntry[], searchable = false, detail?: string, keyboard = false) {
+    if (this.menu && this.menuAnchor === anchor) { this.closeMenu(); return; }
+    this.closeMenu(); const node = document.createElement("div"); node.className = "workspace-menu component-menu sd-menu"; node.tabIndex = -1;
     node.setAttribute("role", "menu");
     const position = () => {
+      if (!anchor.isConnected || anchor.closest<HTMLElement>(".server-workbench")?.hidden) { this.closeMenu(); return; }
       const r = anchor.getBoundingClientRect(), bounds = node.getBoundingClientRect();
+      if (!r.width || !r.height) { this.closeMenu(); return; }
       const below = r.bottom + 4, above = r.top - bounds.height - 4;
       const top = below + bounds.height <= innerHeight - 4 ? below : above;
       Object.assign(node.style, {
@@ -338,11 +354,19 @@ export class Components {
     if (detail) { const text=document.createElement("p");text.textContent=detail;node.append(text); }
     if (searchable) { const input = document.createElement("input"); input.placeholder = "查找组件或页面"; input.setAttribute("aria-label", "查找组件或页面"); input.addEventListener("input", () => { node.querySelectorAll<HTMLElement>(".component-menu-row").forEach(r => r.hidden = !r.textContent!.toLowerCase().includes(input.value.toLowerCase())); position(); }); node.append(input); }
     const list = document.createElement("div"); list.className = "component-menu-list"; node.append(list);
-    for (const item of entries) { const row = document.createElement("div"); row.className = "component-menu-row"; for (const entry of [item, item.extra].filter(Boolean) as { label: string; action: () => Promise<unknown> }[]) { const b = document.createElement("button"); b.setAttribute("role", "menuitem"); b.textContent = entry.label; b.addEventListener("click", () => { this.closeMenu(); void this.run(entry.action); }); row.append(b); } list.append(row); }
+    for (const item of entries) { if (item.separatorBefore) list.append(document.createElement("hr")); const row = document.createElement("div"); row.className = "component-menu-row"; for (const entry of [item, item.extra].filter(Boolean) as MenuEntry[]) { const b = document.createElement("button"); b.setAttribute("role", entry.checked === undefined ? "menuitem" : "menuitemcheckbox"); if (entry.checked !== undefined) { b.setAttribute("aria-checked", String(entry.checked)); b.classList.add("menu-check"); } b.textContent = entry.label; b.disabled = entry.disabled === true; b.addEventListener("click", () => { this.closeMenu(); void this.run(entry.action); }); row.append(b); } list.append(row); }
     if (!entries.length) { const text = document.createElement("p"); text.textContent = "暂无可用组件"; node.append(text); }
-    node.addEventListener("keydown", event => { if (event.key === "Escape") { this.closeMenu(); anchor.focus(); } }); document.body.append(node); position(); this.menu = node; node.querySelector<HTMLElement>("input,button")?.focus({ preventScroll: true });
+    node.addEventListener("keydown", event => {
+      if (event.key === "Escape") { event.preventDefault(); this.closeMenu(); if (anchor.isConnected) anchor.focus({ preventScroll: true }); else this.content.querySelector<HTMLElement>(".server-workbench:not([hidden]) .workbench-rail button")?.focus(); return; }
+      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) || (event.target instanceof HTMLInputElement && !["ArrowDown", "ArrowUp"].includes(event.key))) return;
+      event.preventDefault(); const buttons = [...node.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")].filter(b => !b.closest("[hidden]")); const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+      buttons[event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : index < 0 ? (event.key === "ArrowUp" ? buttons.length - 1 : 0) : (index + (event.key === "ArrowUp" ? -1 : 1) + buttons.length) % buttons.length]?.focus();
+    });
+    document.body.append(node); this.menu = node; this.menuAnchor = anchor; position();
+    this.menuObserver = new ResizeObserver(position); this.menuObserver.observe(anchor); this.menuObserver.observe(this.content);
+    (searchable ? node.querySelector<HTMLElement>("input") : keyboard ? node.querySelector<HTMLElement>("button:not(:disabled)") : node)?.focus({ preventScroll: true });
   }
-  private closeMenu() { this.menu?.remove(); this.menu = undefined; }
+  private closeMenu() { this.menuObserver?.disconnect(); this.menuObserver = undefined; this.menu?.remove(); this.menu = undefined; this.menuAnchor = undefined; }
   async flush() {
     const surfaces = [...this.shells.values()].flatMap(s => [...s.surfaces.values()]);
     await Promise.all(surfaces.filter(s => s.flushable && s.token).map(s => new Promise<void>((resolve,reject) => {

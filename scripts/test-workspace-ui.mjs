@@ -43,7 +43,7 @@ const url = vite.resolvedUrls.local[0];
 const browser = await chromium.launch({ headless: true, ...(process.env.SODECK_BROWSER_CHANNEL ? { channel: process.env.SODECK_BROWSER_CHANNEL } : {}) });
 const pages = [], errors = [], checks = [], dragCalls = [], dropTargets = new Map(), drags = new Map();
 const call = (command, args={}) => bridge.call(command,args);
-let createGate;
+let createGate,openEditorGate;
 const projection = window => call("workspace_snapshot",{window});
 const componentState = window => call("component_ui",{window,operation:"snapshot",args:{}});
 async function makePage(window) {
@@ -51,6 +51,7 @@ async function makePage(window) {
   page.on("pageerror", error=>errors.push(String(error)));
   await page.exposeBinding("workspaceInvoke",async (_,command,args={})=>{
     if(command==='component_ui'&&args.operation==='action'&&args.args?.action?.op==='open'&&args.args.action.key==='sodeck.terminal:terminal'&&createGate) await createGate();
+    if(command==='component_ui'&&args.operation==='action'&&args.args?.action?.op==='open'&&args.args.action.key==='sodeck.terminal:editor'&&openEditorGate) await openEditorGate();
     if(command==="workspace_drag_start") { dragCalls.push({command,args}); drags.set(window,args.id);return `browser-${window}`; }
     if(command==="workspace_drag_sample") return dropTargets.get(window)??{kind:"invalid"};
     if(command==="workspace_drag_finish") { dragCalls.push({command,args}); const target=dropTargets.get(window); const id=drags.get(window);drags.delete(window); if(!args.cancel&&target?.kind==="strip")return call("workspace_move",{window,id,target:target.windowId,index:target.index});return null; }
@@ -91,6 +92,13 @@ try {
   assert((await main.locator(".server-workbench:visible .workspace-endpoint").innerText()).includes("1.invalid"));
   checks.push("固定上下文、服务器切换与侧栏状态各自保持");
   const board=main.locator(`.server-workbench[data-id="${aid}"]`);
+  const wait=async predicate=>{const deadline=Date.now()+10000;while(!await predicate()){if(Date.now()>deadline)throw new Error('Pressed-control state did not settle');await new Promise(resolve=>setTimeout(resolve,20));}};
+  const pressRefresh=async locator=>{const rect=await locator.boundingBox();await locator.evaluate(el=>window.pressedChrome=el);await main.mouse.move(rect.x+rect.width/2,rect.y+rect.height/2);await main.mouse.down();await main.evaluate(()=>window.manager.refresh());assert.equal(await locator.evaluate(el=>el===window.pressedChrome&&el.isConnected),true);await main.mouse.up();};
+  for(const side of ['left','right']){const toggle=panel(main,side),before=await toggle.getAttribute('aria-expanded');await pressRefresh(toggle);await wait(async()=>await toggle.getAttribute('aria-expanded')!==before);await toggle.click();await wait(async()=>await toggle.getAttribute('aria-expanded')===before);}
+  const stableMenu=board.getByRole('button',{name:'网络转发 面板菜单',exact:true});
+  await pressRefresh(stableMenu);await main.getByRole('menu').waitFor();await stableMenu.click();assert.equal(await main.getByRole('menu').count(),0);
+  const serverMenu=main.locator(`.tab-menu-button[data-id="${aid}"]`);await pressRefresh(serverMenu);await main.getByRole('menu').waitFor();await serverMenu.click();assert.equal(await main.getByRole('menu').count(),0);
+  checks.push('真实按压跨工作台刷新仍触发一次，两侧入口与核心菜单按钮节点稳定，同入口再次点击关闭菜单');
   fs.mkdirSync('artifacts/menu-layout',{recursive:true});
   for(const theme of ['light','dark','dopamine'])for(const [width,height]of [[1100,720],[720,480]]){
     await main.setViewportSize({width,height});
@@ -143,6 +151,14 @@ try {
   aw=(await componentState("main")).workspaces[aid];const editorId=aw.views.find(v=>v.definitionKey.endsWith(':editor')).id;
   const editorFrame=viewFrame(main,aid,editorId),editor=editorFrame.getByRole('textbox',{name:'文件编辑草稿'});
   await editor.fill('draft for server A');await flush(main);
+  let releaseEditor;
+  openEditorGate=()=>new Promise(resolve=>{releaseEditor=resolve;});
+  await fileBrowser.locator('body').evaluate(()=>{const request=sodeck.request.bind(sodeck);sodeck.request=(method,params)=>{const response=request(method,params);if(method==='openView')window.editorOpenResponse=response;return response;};});
+  await fileBrowser.getByRole('button',{name:'nginx.conf',exact:true}).dblclick();await wait(()=>Boolean(releaseEditor));
+  await select(main,bid);releaseEditor();openEditorGate=undefined;await fileBrowser.locator('body').evaluate(()=>window.editorOpenResponse);
+  await main.evaluate(()=>window.manager.refresh());assert.equal((await projection('main')).window.activeWorkspace,bid);
+  assert.equal(await editorFrame.locator('textarea:focus').count(),0);await select(main,aid);
+  checks.push('插件请求打开文件期间切换工作区，迟到的打开结果不抢焦点');
   const beforeCreate=(await componentState('main')).workspaces[aid].views.length;
   await board.locator('[data-component-action="create"]').click();
   await main.waitForFunction(({id,count})=>document.querySelector(`.server-workbench[data-id="${id}"] .component-tab-list`).childElementCount===count,{id:aid,count:4});

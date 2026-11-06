@@ -110,6 +110,6 @@ import {readDocument} from './read-document.js';
  addEventListener('sodeck:localFileDrop',e=>tree?.nativeDrop(e.detail));
  addEventListener('sodeck:contextChanged',()=>{transfers?.invalidate();tree?.contextChanged();message(tree?'连接已更换，刷新目录以读取最新文件':'服务器连接已更换；草稿保留，保存前将重新检查远端版本');});
  addEventListener('sodeck:flush',async e=>{try{await queue;await tree?.flush();parent.postMessage({channel:'sodeck-ui-v1',type:'flushed',surfaceId:e.detail.surfaceId,id:e.detail.id},'*');}catch(error){parent.postMessage({channel:'sodeck-ui-v1',type:'flushed',surfaceId:e.detail.surfaceId,id:e.detail.id,error:error.message},'*');}});
- addEventListener('sodeck:unmount',()=>{disposed=true;settingsEpoch++;transfers?.dispose();});
- addEventListener('unload',()=>{clearTimeout(jobTimer);transfers?.dispose();});
+ addEventListener('sodeck:unmount',()=>{disposed=true;settingsEpoch++;transfers?.dispose();tree?.dispose();});
+ addEventListener('unload',()=>{clearTimeout(jobTimer);transfers?.dispose();tree?.dispose();});
 })();

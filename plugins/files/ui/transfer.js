@@ -65,47 +65,78 @@
     }
     async destination() {return this.ambiguous?.()?this.ask('确认目标目录','远程目录',true,this.target()):this.target();}
     async upload(directory = false, source = null, targetPath = null) {
+      const epoch=this.contextEpoch;
       if(targetPath==null)targetPath=await this.destination();if(targetPath==null)return;
       const input = source || await this.input('input.chooseUpload', { directory });
       if (input.cancelled || input.empty) return;
+      if(epoch!==this.contextEpoch||this.disposed){await this.data('input.release',{inputId:input.inputId}).catch(()=>{});throw new Error('目标连接已变化，请重新上传');}
       await this.start({ kind: 'upload', inputId: input.inputId, targetPath });
     }
     async download(roots) {
       if (!roots.length) return;
+      const epoch=this.contextEpoch;
       const info = roots.length === 1 ? await this.data('stat', { path: roots[0] }) : null;
       const single = info?.attrs.kind === 'file';
       const input = await this.input('input.chooseDownload', { single, name: roots[0].split('/').pop() });
       if (input.cancelled) return;
+      if(epoch!==this.contextEpoch||this.disposed){await this.data('input.release',{inputId:input.inputId}).catch(()=>{});throw new Error('来源连接已变化，请重新下载');}
       await this.start({ kind: 'download', roots, inputId: input.inputId, single });
     }
-    async paste() {
-      const targetPath=await this.destination();if(targetPath==null)return;
-      const originalTarget=this.target(),focus=document.activeElement, epoch=this.contextEpoch;
-      const revision=await this.input('input.revision');
-      const remote=await this.event({action:'pasteEntries',revision:revision.revision,selectionId:crypto.randomUUID()});
+    async pasteState(targetPath, validateTarget = false) {
+      const epoch=this.contextEpoch;
+      const [revision,info]=await Promise.all([this.input('input.revision'),validateTarget?this.data('stat',{path:targetPath}):Promise.resolve(null)]);
+      if(info&&info.attrs.kind!=='directory')throw new Error('目标不是目录');
+      const remote=await this.event({action:'clipboardStatus',revision:revision.revision,targetPath});
+      if(epoch!==this.contextEpoch||this.disposed)throw new Error('目标连接已变化');
+      return {revision:revision.revision,clipboardId:remote.clipboardId,source:remote.remote?'remote':revision.hasFiles===true?'local':revision.hasFiles===false?'none':'unknown',canPaste:remote.remote===true||revision.hasFiles===true,reason:remote.reason||'没有可粘贴的文件'};
+    }
+    async paste(targetPath = null, expected = null) {
+      const epoch=this.contextEpoch;
+      if(targetPath==null)targetPath=await this.destination();if(targetPath==null)return;
+      if(epoch!==this.contextEpoch||this.disposed)throw new Error('目标连接已变化，请重新粘贴');
+      const originalTarget=this.target(),focus=document.activeElement;
+      const state=await this.pasteState(targetPath,true);
+      if(expected&&(state.revision!==expected.revision||state.clipboardId!==expected.clipboardId||state.source!==expected.source))throw new Error('剪贴板已变化，请重新粘贴');
       if(!document.hasFocus() || document.activeElement!==focus || epoch!==this.contextEpoch || this.target()!==originalTarget)throw new Error('粘贴目标已变化，请重新粘贴');
-      if(remote.selectionId){await this.start({kind:remote.kind,selectionId:remote.selectionId,targetPath,clipboard:true});return;}
+      if(state.source==='remote'){
+        const selectionId=crypto.randomUUID();
+        const remote=await this.event({action:'pasteEntries',revision:state.revision,clipboardId:state.clipboardId,selectionId});
+        if(!remote.selectionId)throw new Error('剪贴板已变化，请重新粘贴');
+        try {
+          const current=await this.input('input.revision');
+          if(current.revision!==state.revision||!document.hasFocus()||document.activeElement!==focus||epoch!==this.contextEpoch||this.target()!==originalTarget)throw new Error('粘贴目标或剪贴板已变化，请重新粘贴');
+          await this.start({kind:remote.kind,selectionId:remote.selectionId,targetPath,clipboard:true});
+        } finally {await this.event({action:'selection.release',selectionId}).catch(()=>{});}
+        return;
+      }
+      if(state.source==='none'||(expected&&!state.canPaste))throw new Error(state.reason);
       const input = await this.input('input.clipboard');
       if (input.empty) { this.message('系统剪贴板中没有本地文件或文件夹'); return; }
-      if(!document.hasFocus() || document.activeElement!==focus || epoch!==this.contextEpoch || this.target()!==originalTarget){await this.data('input.release',{inputId:input.inputId}).catch(()=>{});throw new Error('粘贴目标已变化，请重新粘贴');}
+      if(input.revision!==state.revision||!document.hasFocus() || document.activeElement!==focus || epoch!==this.contextEpoch || this.target()!==originalTarget){await this.data('input.release',{inputId:input.inputId}).catch(()=>{});throw new Error('粘贴目标或剪贴板已变化，请重新粘贴');}
       await this.upload(false, input,targetPath);
     }
     async copy(roots,cut=false) {
+      if(!roots.length)return;
+      const epoch=this.contextEpoch;
       const revision=await this.input('input.revision');
       const selectionId=await this.selection(roots);
-      try {await this.event({action:'copyEntries',selectionId,cut,revision:revision.revision});}
+      try {if(epoch!==this.contextEpoch||this.disposed)throw new Error('来源连接已变化，请重新复制');await this.event({action:'copyEntries',selectionId,cut,revision:revision.revision});}
       finally {await this.event({action:'selection.release',selectionId}).catch(()=>{});}
       this.message(`${roots.length} 项已${cut?'剪切':'复制'}，可在本服务器其他目录粘贴`);
+      dispatchEvent(new Event('sodeck:fileClipboardChanged'));
     }
-    async mutate(kind, roots) {
+    async mutate(kind, roots, targetPath = null) {
+      const epoch=this.contextEpoch;
       if (kind === 'delete') {
         if (!await this.ask(`直接删除 ${roots.length} 个选中条目？`, '文件夹会递归删除，远程没有回收站。', false)) return;
+        if(epoch!==this.contextEpoch||this.disposed)throw new Error('目标连接已变化，请重新操作');
         await this.start({ kind, roots }); return;
       }
-      const base = kind === 'rename' ? roots[0].slice(0, roots[0].lastIndexOf('/')) || '/' : await this.destination();
+      const base = kind === 'rename' ? roots[0].slice(0, roots[0].lastIndexOf('/')) || '/' : targetPath ?? await this.destination();
       if(base==null)return;
       const name = await this.ask(kind === 'mkdir' ? '新建文件夹' : kind === 'createEmpty' ? '新建文件' : '重命名', '名称', true, kind === 'rename' ? roots[0].split('/').pop() : '');
       if (name == null) return;
+      if(epoch!==this.contextEpoch||this.disposed)throw new Error('目标连接已变化，请重新操作');
       if (!name || name === '.' || name === '..' || name.includes('/') || name.includes('\0')) throw new Error('文件名无效');
       const path = base.replace(/\/$/, '') + '/' + name;
       await this.start(kind === 'rename' ? { kind, path: roots[0], destination: path } : { kind, path });

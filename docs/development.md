@@ -22,6 +22,7 @@ npm run dev
 | `npm run scripts:test` | 构建、打包和更新脚本测试 |
 | `npm run test` | 核心 Rust 测试，包含仅测试使用的宿主夹具 |
 | `npm run web:build` | TypeScript 检查与正式前端构建 |
+| `npm run interactions:test` | 浏览器真实按压刷新、文件菜单可用状态、子菜单与溢出回归；需要 Playwright Chromium |
 
 界面测试需要 Playwright Chromium：
 

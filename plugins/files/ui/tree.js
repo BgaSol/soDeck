@@ -19,6 +19,10 @@
     collapse: '<path d="M4 5h16M4 19h16m5-10 3 3 3-3m-6 6 3-3 3 3"/>',
     download: '<path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/>',
     copy: '<path d="M8 8h13v13H8zM16 8V3H3v13h5"/>',
+    cut: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="m8 8 12 12M8 16 20 4"/>',
+    paste: '<path d="M8 5H5v16h14V5h-3M8 3h8v5H8z"/>',
+    rename: '<path d="m4 16 12-12 4 4L8 20H4z"/>',
+    delete: '<path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7"/>',
   };
   function icon(name) {
     const span = document.createElement('span');
@@ -53,6 +57,7 @@
       this.tree.addEventListener('keydown', e => this.key(e));
       this.tree.addEventListener('scroll', () => { if (!this.restoring) this.persist(); });
       this.tree.addEventListener('pointerdown',e=>this.pointerStart(e));
+      this.tree.addEventListener('contextmenu',e=>{if(!e.target.closest('.tree-row')){e.preventDefault();this.showMenu(null,e.clientX,e.clientY);}});
       this.tree.addEventListener('click',e=>{if(Date.now()<(this.suppressClick||0)){e.preventDefault();e.stopImmediatePropagation();}},true);
       document.addEventListener('pointermove',e=>this.pointerMove(e));
       document.addEventListener('pointerup',e=>this.pointerEnd(e));
@@ -61,6 +66,9 @@
       host.append(pathbar, toolbar, columns, this.tree);
       document.addEventListener('pointerdown', e => { if (!this.menu?.contains(e.target)) this.closeMenu(); });
       document.addEventListener('keydown', e => { if (e.key === 'Escape') {this.closeMenu(true);this.pointerEnd(null);this.clearDrop();} });
+      this.menuRefresh=()=>this.readMenuState?.();
+      addEventListener('focus',this.menuRefresh);
+      addEventListener('sodeck:fileClipboardChanged',this.menuRefresh);
     }
     tool(name, label, fn) {
       const b = document.createElement('button'); b.className='sd-icon'; b.type = 'button'; b.title = label; b.setAttribute('aria-label', label); b.append(icon(name)); b.addEventListener('click', () => void this.run(fn)); return b;
@@ -259,8 +267,9 @@
       if (info.attrs.kind !== 'file') throw new Error('此条目不是普通文件或目录');
       await this.request('openView', { viewType: 'editor', resourceKey: info.path, params: { path: info.path } });
     }
-    async refresh() {
-      let n = this.nodes.get(this.selected) || this.nodes.get(this.rootPath);
+    async refresh(path = this.selected) {
+      let n = this.nodes.get(path) || this.nodes.get(this.rootPath);
+      if (!n) return;
       if (n.attrs.kind !== 'directory') n = this.nodes.get(parentOf(n.path));
       if (!n || n.loading) return;
       this.expand(n.path); await this.load(n); this.persist();
@@ -312,6 +321,7 @@
       }
       if (this.nodes.has(this.selected)) this.tree.setAttribute('aria-activedescendant', this.nodes.get(this.selected).key);
       this.caption.textContent = `${this.visible.length} 项`;
+      if(this.menu?.dataset.path&&!visible.has(this.menu.dataset.path))this.closeMenu(this.menu.contains(document.activeElement));
     }
     indent() {
       // Preserve every nesting level even for a deep Windows home path in a narrow sidebar.
@@ -338,29 +348,95 @@
       else if (e.key === 'ArrowLeft') { if (this.expanded.has(n.path)) void this.run(() => this.toggle(n)); else if (n.path !== this.rootPath) this.select(this.nodes.get(parentOf(n.path))); }
       else if (e.key === 'Enter') void this.run(() => this.open(n));
       else if (e.key === 'F5') void this.run(() => this.refresh());
-      else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) { const r = this.row(n.path).getBoundingClientRect(); this.showMenu(n, r.x + 30, r.bottom); }
+      else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) { const r = this.row(n.path).getBoundingClientRect(); this.showMenu(n, r.x + 30, r.bottom, true); }
       else return;
       e.preventDefault();
     }
-    closeMenu(focus = false) { this.menu?.remove(); this.menu = null; if (focus) this.tree.focus(); }
-    showMenu(n, x, y) {
+    closeMenu(focus = false) { clearTimeout(this.menuTimer);this.menuObserver?.disconnect();this.readMenuState=null;this.menu?.remove();this.menu = null; if (focus) this.tree.focus(); }
+    showMenu(n, x, y, keyboard = false) {
       this.closeMenu();
-      const menu = document.createElement('div'); menu.className = 'tree-menu sd-menu'; menu.setAttribute('role', 'menu');
-      const actions = [[n.attrs.kind === 'directory' ? 'folder' : 'file', n.attrs.kind === 'directory' ? '展开 / 折叠' : '打开文件', () => this.open(n)], ['download', n.attrs.kind === 'directory' ? '下载文件夹' : '下载文件', () => this.transfers ? this.transfers.download(this.selectedPaths()) : this.download(n.path)], ['copy', '复制完整路径', async () => { await sodeckClipboard.writeText(n.path); this.message('路径已复制'); }], ['refresh', '刷新所在目录', () => this.refresh()]];
-      if (this.transfers) actions.push(['up', '上传文件', () => this.transfers.upload()], ['folder', '上传文件夹', () => this.transfers.upload(true)], ['copy','复制文件条目',()=>this.transfers.copy(this.selectedPaths())], ['copy','剪切文件条目',()=>this.transfers.copy(this.selectedPaths(),true)], ['copy','粘贴文件条目',()=>this.transfers.paste()], ['file', '新建文件', () => this.transfers.mutate('createEmpty', [])], ['folder', '新建文件夹', () => this.transfers.mutate('mkdir', [])], ['file', '重命名', () => this.transfers.mutate('rename', [n.path])], ['file', '删除选中条目', () => this.transfers.mutate('delete', this.selectedPaths())]);
-      for (const [name, label, action] of actions) {
-        if (name === 'download' && n.attrs.kind === 'directory' && !this.transfers) continue;
-        const b = document.createElement('button'); b.setAttribute('role', 'menuitem'); b.append(icon(name), document.createTextNode(label));
-        b.addEventListener('click', () => { this.closeMenu(true); void this.run(action); }); menu.append(b);
+      const paths=n?[...this.selectedPaths()]:[],multiple=paths.length>1,directory=n?.attrs.kind==='directory';
+      const target=!n?this.rootPath:directory&&!multiple?n.path:null;
+      const mutable=paths.length>0&&paths.every(path=>path!=='/'&&path!==this.rootPath);
+      const menu = document.createElement('div'); menu.className = 'tree-menu sd-menu'+(keyboard?'':' pointer-pending'); menu.setAttribute('role', 'menu');menu.setAttribute('aria-label','文件操作');menu.tabIndex=-1;
+      if(n)menu.dataset.path=n.path;
+      const list=document.createElement('div');list.className='tree-menu-list';menu.append(list);
+      let submenu,submenuAnchor,paste,pasteState,reading=false,validateTarget=true;
+      const hideSub=()=>{if(submenu){submenu.hidden=true;submenuAnchor.setAttribute('aria-expanded','false');submenu=null;submenuAnchor=null;}};
+      const placeSub=()=>{
+        if(!submenu)return;
+        submenu.style.maxHeight='';
+        const r=submenuAnchor.getBoundingClientRect(),w=submenu.offsetWidth,h=submenu.offsetHeight;
+        const right=r.right+7;
+        let left=right,top=r.top;
+        if(right+w>innerWidth-8){
+          left=r.left-w-7;
+          if(left<8){
+            left=r.left;
+            const below=innerHeight-r.bottom-15,above=r.top-15,useBelow=below>=above;
+            const room=Math.max(32,useBelow?below:above);
+            submenu.style.maxHeight=room+'px';
+            top=useBelow?r.bottom+7:r.top-Math.min(h,room)-7;
+          }
+        }
+        submenu.style.left=Math.max(8,Math.min(left,innerWidth-w-8))+'px';
+        submenu.style.top=Math.max(8,Math.min(top,innerHeight-submenu.offsetHeight-8))+'px';
+      };
+      const position=()=>{if(this.menu!==menu)return;menu.style.left=Math.max(8,Math.min(x,innerWidth-menu.offsetWidth-8))+'px';menu.style.top=Math.max(8,Math.min(y,innerHeight-menu.offsetHeight-8))+'px';placeSub();};
+      const add=(name,label,action,parent=list)=>{
+        const b=document.createElement('button');b.type='button';b.setAttribute('role','menuitem');b.append(icon(name),document.createTextNode(label));
+        b.addEventListener('click',()=>{if(b.disabled)return;this.closeMenu(true);void this.run(action);});
+        b.addEventListener('pointerenter',e=>{if(e.pointerType==='mouse'&&parent===list)hideSub();});parent.append(b);return b;
+      };
+      const separator=()=>{if(list.childNodes.length&&list.lastChild.tagName!=='HR')list.append(document.createElement('hr'));};
+      const addSub=(name,label,entries)=>{
+        const b=document.createElement('button');b.type='button';b.setAttribute('role','menuitem');b.setAttribute('aria-haspopup','menu');b.setAttribute('aria-expanded','false');b.append(icon(name),document.createTextNode(label));
+        const arrow=icon('chevron');arrow.classList.add('submenu-arrow');b.append(arrow);list.append(b);
+        const sub=document.createElement('div');sub.className='tree-submenu sd-menu';sub.setAttribute('role','menu');sub.setAttribute('aria-label',label);sub.hidden=true;
+        const subList=document.createElement('div');subList.className='tree-menu-list';sub.append(subList);menu.append(sub);
+        for(const [glyph,text,action]of entries)add(glyph,text,action,subList);
+        const open=()=>{hideSub();submenu=sub;submenuAnchor=b;sub.hidden=false;b.setAttribute('aria-expanded','true');placeSub();};
+        b.addEventListener('click',open);b.addEventListener('pointerenter',e=>{if(e.pointerType==='mouse')open();});
+        b.addEventListener('keydown',e=>{if(e.key==='ArrowRight'){e.preventDefault();e.stopPropagation();open();sub.querySelector('button:not(:disabled)')?.focus();}});
+      };
+      if(n&&!multiple&&!directory)add('file','打开',()=>this.open(n));
+      if(n&&(this.transfers||!directory))add('download','下载',()=>this.transfers?this.transfers.download(paths):this.download(n.path));
+      separator();
+      if(this.transfers&&mutable){add('cut','剪切',()=>this.transfers.copy(paths,true));add('copy','复制',()=>this.transfers.copy(paths));}
+      if(this.transfers&&target){paste=add('paste','粘贴',()=>this.transfers.paste(target,pasteState));paste.disabled=true;paste.title='正在读取剪贴板';}
+      if(n)add('copy','复制路径',async()=>{await sodeckClipboard.writeText(paths.join('\n'));this.message('路径已复制');dispatchEvent(new Event('sodeck:fileClipboardChanged'));});
+      separator();
+      if(this.transfers&&target){
+        addSub('file','新建',[['file','文件…',()=>this.transfers.mutate('createEmpty',[],target)],['folder','文件夹…',()=>this.transfers.mutate('mkdir',[],target)]]);
+        addSub('up','上传',[['file','文件…',()=>this.transfers.upload(false,null,target)],['folder','文件夹…',()=>this.transfers.upload(true,null,target)]]);
       }
+      if(!multiple)add('refresh','刷新',()=>this.refresh(n?(directory?n.path:parentOf(n.path)):this.rootPath));
+      if(this.transfers&&mutable){separator();if(!multiple)add('rename','重命名…',()=>this.transfers.mutate('rename',paths));add('delete','删除',()=>this.transfers.mutate('delete',paths)).classList.add('danger');}
       menu.addEventListener('keydown', e => {
-        if (!['ArrowDown', 'ArrowUp', 'Tab'].includes(e.key)) return;
-        e.preventDefault(); const buttons = [...menu.children], i = buttons.indexOf(document.activeElement);
-        buttons[(i + (e.key === 'ArrowUp' ? buttons.length - 1 : 1)) % buttons.length].focus();
+        if(e.key==='Escape'||e.key==='ArrowLeft'){
+          if(submenu){e.preventDefault();e.stopPropagation();const anchor=submenuAnchor;hideSub();anchor.focus();}
+          else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();this.closeMenu(true);}return;
+        }
+        if(e.key==='Tab'){e.preventDefault();this.closeMenu(true);return;}
+        if(!['ArrowDown','ArrowUp','Home','End'].includes(e.key))return;
+        e.preventDefault();const scope=e.target.closest('.tree-submenu')?.querySelector('.tree-menu-list')||list;
+        const buttons=[...scope.querySelectorAll('button:not(:disabled)')],i=buttons.indexOf(document.activeElement);
+        buttons[e.key==='Home'?0:e.key==='End'?buttons.length-1:i<0?(e.key==='ArrowUp'?buttons.length-1:0):(i+(e.key==='ArrowUp'?-1:1)+buttons.length)%buttons.length]?.focus();
       });
+      menu.addEventListener('pointermove',()=>menu.classList.remove('pointer-pending'));
+      list.addEventListener('scroll',hideSub);
       document.body.append(menu); this.menu = menu;
-      menu.style.left = Math.max(4, Math.min(x, innerWidth - menu.offsetWidth - 4)) + 'px';
-      menu.style.top = Math.max(4, Math.min(y, innerHeight - menu.offsetHeight - 4)) + 'px'; menu.firstElementChild.focus();
+      position();this.menuObserver=new ResizeObserver(position);this.menuObserver.observe(document.documentElement);this.menuObserver.observe(menu);
+      (keyboard?list.querySelector('button:not(:disabled)'):menu)?.focus({preventScroll:true});
+      if(paste){
+        const read=async()=>{
+          if(this.menu!==menu||reading)return;reading=true;clearTimeout(this.menuTimer);
+          try{const state=await this.transfers.pasteState(target,validateTarget);if(this.menu!==menu)return;validateTarget=false;pasteState=state;paste.disabled=!state.canPaste;paste.title=state.canPaste?'':state.reason;}
+          catch(error){if(this.menu===menu){paste.disabled=true;paste.title=error.message||'无法读取剪贴板';}}
+          finally{reading=false;if(this.menu===menu)this.menuTimer=setTimeout(read,1000);}
+        };
+        this.readMenuState=read;void read();
+      }
     }
     snapshot() {
       const state = { root: this.rootPath, selected: this.selected || this.rootPath, expanded: [], pages: {}, scroll: Math.round(this.tree.scrollTop) };
@@ -391,10 +467,12 @@
     async flush() { await Promise.all([...this.pending]); this.persist(); clearTimeout(this.persistTimer); this.writeState(); await this.persistQueue; }
     focus() { this.tree.focus(); }
     contextChanged() {
+      this.closeMenu();
       this.pointerEnd(null);
       // Loaded rows are useful while offline; refresh reopens cursors on the new session.
       for (const n of this.nodes.values()) { n.cursor = null; if (n.more) n.error = '连接已更换，请刷新目录'; }
       this.render();
     }
+    dispose(){this.closeMenu();removeEventListener('focus',this.menuRefresh);removeEventListener('sodeck:fileClipboardChanged',this.menuRefresh);}
   };
 })();

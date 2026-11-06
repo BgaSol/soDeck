@@ -43,6 +43,8 @@
   .component-menu-row { display: flex; min-width: 0; }
   .component-menu-row > button:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .component-menu-row > button + button { width: auto; flex-shrink: 0; color: var(--muted); }
+  .component-menu .menu-check { position: relative; padding-left: 25px; }
+  .component-menu .menu-check[aria-checked="true"]::after { content: "✓"; position: absolute; left: 8px; }
   .component-close-dialog { width: min(440px, calc(100% - 32px)); padding: 24px; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
   .component-close-dialog::backdrop { background: #0006; }
   .plugin-view-dialog { width: min(580px, calc(100vw - 40px)); height: min(640px, calc(100dvh - 48px)); padding: 0; border: 2px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--text); overflow: hidden; pointer-events: auto; }

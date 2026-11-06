@@ -80,17 +80,24 @@ pub(super) fn read(files: bool) -> Result<Clipboard, String> {
         );
         let revision = number(board, c"changeCount").to_string();
         let mut paths = Vec::new();
+        let file_type = arg(
+            objc_getClass(c"NSString".as_ptr()),
+            c"stringWithUTF8String:",
+            c"public.file-url".as_ptr() as Obj,
+        );
+        let contains: unsafe extern "C" fn(Obj, Obj, Obj) -> bool =
+            std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        let has_files = contains(
+            msg(board, c"types"),
+            sel_registerName(c"containsObject:".as_ptr()),
+            file_type,
+        );
         if files {
             let list = msg(board, c"pasteboardItems");
             let count = number(list, c"count");
             if count > 4096 {
                 return Err("复制条目超过 4096 项".into());
             }
-            let file_type = arg(
-                objc_getClass(c"NSString".as_ptr()),
-                c"stringWithUTF8String:",
-                c"public.file-url".as_ptr() as Obj,
-            );
             let at: unsafe extern "C" fn(Obj, Obj, usize) -> Obj =
                 std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
             for index in 0..count {
@@ -115,6 +122,10 @@ pub(super) fn read(files: bool) -> Result<Clipboard, String> {
         if revision != number(board, c"changeCount").to_string() {
             return Err("系统文件剪贴板在读取期间变化".into());
         }
-        Ok(Clipboard { paths, revision })
+        Ok(Clipboard {
+            has_files: if files { !paths.is_empty() } else { has_files },
+            paths,
+            revision,
+        })
     }
 }

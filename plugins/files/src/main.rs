@@ -3,6 +3,7 @@ use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
+mod file_clipboard;
 mod tasks;
 struct View {
     id: String,
@@ -244,11 +245,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     {
                         return Err("复制选择无效".into());
                     }
-                    *clipboard.lock().unwrap() = json!({"roots":copied["roots"],"context":p["context"],"revision":d["revision"],"cut":d["cut"]==true});
+                    *clipboard.lock().unwrap() = json!({"id":d["selectionId"],"roots":copied["roots"],"context":p["context"],"revision":d["revision"],"cut":d["cut"]==true});
                     Some(json!({"copied":true}))
+                }
+                Some("clipboardStatus") => {
+                    let copied = clipboard.lock().unwrap();
+                    let consumed = copied["batchId"]
+                        .as_str()
+                        .is_some_and(|id| tasks.succeeded(id));
+                    Some(file_clipboard::status(
+                        &copied,
+                        &p["context"],
+                        &d["revision"],
+                        d["targetPath"].as_str().ok_or("缺少粘贴目标")?,
+                        consumed,
+                    ))
                 }
                 Some("pasteEntries") => {
                     let mut copied = clipboard.lock().unwrap();
+                    if let Some(expected) = d["clipboardId"].as_str() {
+                        if copied["id"] != expected {
+                            return Err("剪贴板已变化，请重新粘贴".into());
+                        }
+                    }
                     if copied["batchId"]
                         .as_str()
                         .is_some_and(|id| tasks.succeeded(id))

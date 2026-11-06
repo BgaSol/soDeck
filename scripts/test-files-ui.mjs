@@ -19,7 +19,7 @@ const call=(command,args={})=>new Promise((resolve,reject)=>{pending.push({resol
 const vite=await createServer({server:{host:'127.0.0.1',port:0}});await vite.listen();const url=vite.resolvedUrls.local[0];const browser=await chromium.launch({headless:true});
 async function pageFor(window){
  const page=await browser.newPage({viewport:{width:1180,height:760}});pages.push(page);page.on('pageerror',e=>errors.push(String(e)));
- await page.exposeBinding('testInvoke',async(_,command,args={})=>{requests.push({command,args});if(command==='component_data'&&args.request?.action==='input.revision')return {revision:'file-ui-fixture'};if(command==='clipboard_text'){if(args.operation==='read')return clipboard;clipboard=args.text;return null;}if(command==='component_data'&&args.request?.action==='chunk'&&pauseRead){pauseRead=false;const result=await call(command,{...args,window});await new Promise(resolve=>readRelease=resolve);return result;}return call(command,{...args,window});});
+ await page.exposeBinding('testInvoke',async(_,command,args={})=>{requests.push({command,args});if(command==='component_data'&&args.request?.action==='input.revision')return {revision:'file-ui-fixture',hasFiles:false};if(command==='clipboard_text'){if(args.operation==='read')return clipboard;clipboard=args.text;return null;}if(command==='component_data'&&args.request?.action==='chunk'&&pauseRead){pauseRead=false;const result=await call(command,{...args,window});await new Promise(resolve=>readRelease=resolve);return result;}return call(command,{...args,window});});
  await page.route(url+'__plugin__/**',route=>{const relative=new URL(route.request().url()).pathname.split('/').slice(3).join('/');const filename=path.join(process.env.SODECK_TEST_FILES_PLUGIN,relative);return route.fulfill({contentType:{'.js':'text/javascript','.css':'text/css','.html':'text/html'}[path.extname(filename)]||'application/octet-stream',body:fs.readFileSync(filename)});});
  await page.route(url,route=>route.fulfill({contentType:'text/html',body:`<!doctype html><html lang="zh-CN" data-theme="dopamine"><head><meta charset="utf-8"></head><body><header class="topbar"><button id="catalog-tab">服务器管理</button><div id="server-tabs" class="server-tabs"></div></header><main class="workspace"><div id="server-catalog"></div><div id="workspace-content"></div></main><div id="notice"></div><script type="module">import '/style.css';import {Workspaces} from '/workspaces.ts';window.__TAURI_INTERNALS__={convertFileSrc:p=>new URL('/__plugin__/'+p,location.href).href,transformCallback:()=>1};window.adapter=(command,args={})=>{if(args.channel){args={...args};delete args.channel;}return window.testInvoke(command,args);};window.manager=new Workspaces(document.querySelector('#server-tabs'),document.querySelector('#workspace-content'),document.querySelector('#server-catalog'),m=>document.querySelector('#notice').textContent=m,window.adapter);await window.manager.start();window.ready=true;</script></body></html>`}));
  await page.goto(url);await page.waitForFunction(()=>window.ready);return page;
@@ -63,7 +63,7 @@ try{
  fs.mkdirSync(path.join(remote,'empty'));await sidebar.getByRole('button',{name:'读取失败 · 重试'}).click();await wait(()=>sidebar.getByRole('button',{name:'读取失败 · 重试'}).count().then(n=>n===0));
  for(const name of ['many-a','many-b','empty'])await row(name).locator('.tree-arrow').click();
  await row('gone.txt').click();fs.unlinkSync(path.join(remote,'gone.txt'));await sidebar.getByRole('button',{name:'刷新选中目录',exact:true}).click();await row('gone.txt').waitFor({state:'detached'});assert.equal(await row('remote 中文').getAttribute('aria-selected'),'true');
- await row('设置 file.txt').click({button:'right'});await sidebar.getByRole('menuitem',{name:'复制完整路径',exact:true}).click();
+ await row('设置 file.txt').click({button:'right'});await sidebar.getByRole('menuitem',{name:'复制路径',exact:true}).click();
  await sidebar.getByRole('status').filter({hasText:'路径已复制'}).waitFor();
  assert(clipboard.endsWith('/设置 file.txt'));
  await row('设置 file.txt').click();await sidebar.getByRole('tree').press('Shift+F10');await sidebar.getByRole('menu').waitFor();await main.keyboard.press('Escape');await sidebar.getByRole('menu').waitFor({state:'detached'});
@@ -75,19 +75,19 @@ try{
  await sidebar.getByRole('dialog').getByRole('heading',{name:'确认目标目录',exact:true}).waitFor();assert.equal(choices(),beforeChoice);
  await sidebar.getByRole('dialog').getByRole('button',{name:'取消',exact:true}).click();assert.equal(choices(),beforeChoice);
  // Actual plugin task UI: folders, conflicts, remote clipboard, rename and deletion.
- await row('remote 中文').click({button:'right'});await sidebar.getByRole('menuitem',{name:'上传文件夹',exact:true}).click();
+ await row('remote 中文').click({button:'right'});await sidebar.getByRole('menuitem',{name:'上传',exact:true}).click();await sidebar.getByRole('menu',{name:'上传',exact:true}).getByRole('menuitem',{name:'文件夹…',exact:true}).click();
  await wait(()=>fs.existsSync(path.join(remote,'上传 中文','空目录'))&&fs.existsSync(path.join(remote,'上传 中文','zero.bin')));
  await sidebar.getByRole('status').filter({hasText:'上传完成'}).waitFor();assert.equal(fs.readFileSync(path.join(remote,'上传 中文','.hidden'),'utf8'),'ui upload');
- await row('remote 中文').click({button:'right'});await sidebar.getByRole('menuitem',{name:'上传文件夹',exact:true}).click();
+ await row('remote 中文').click({button:'right'});await sidebar.getByRole('menuitem',{name:'上传',exact:true}).click();await sidebar.getByRole('menu',{name:'上传',exact:true}).getByRole('menuitem',{name:'文件夹…',exact:true}).click();
  await sidebar.locator('.transfer-item').filter({hasText:'等待处理同名'}).getByRole('button',{name:'跳过',exact:true}).waitFor();
  await sidebar.locator('.transfer-item').filter({hasText:'等待处理同名'}).getByRole('checkbox').check();
  await new Promise(resolve=>setTimeout(resolve,500));assert(await sidebar.locator('.transfer-item').filter({hasText:'等待处理同名'}).getByRole('checkbox').isChecked());
  await sidebar.locator('.transfer-item').filter({hasText:'等待处理同名'}).getByRole('button',{name:'跳过',exact:true}).click();
  await sidebar.getByRole('status').filter({hasText:'上传完成'}).waitFor();
- await locate(path.join(remote,'上传 中文'));await sidebar.locator('.tree-row[data-path$="/remote 中文/上传 中文"]').click({button:'right'});await sidebar.getByRole('menuitem',{name:'下载文件夹',exact:true}).click();
+ await locate(path.join(remote,'上传 中文'));await sidebar.locator('.tree-row[data-path$="/remote 中文/上传 中文"]').click({button:'right'});await sidebar.getByRole('menuitem',{name:'下载',exact:true}).click();
  await sidebar.getByRole('status').filter({hasText:'下载完成'}).waitFor();
  assert(fs.existsSync(path.join(downloads,'上传 中文','zero.bin')));assert(fs.statSync(path.join(downloads,'上传 中文','空目录')).isDirectory());
- await row('remote 中文').click({button:'right'});await sidebar.getByRole('menuitem',{name:'新建文件夹',exact:true}).click();
+ await row('remote 中文').click({button:'right'});await sidebar.getByRole('menuitem',{name:'新建',exact:true}).click();await sidebar.getByRole('menu',{name:'新建',exact:true}).getByRole('menuitem',{name:'文件夹…',exact:true}).click();
  await sidebar.getByRole('dialog').getByRole('textbox').fill('ui-target');await sidebar.getByRole('dialog').getByRole('button',{name:'确定',exact:true}).click();await wait(()=>fs.existsSync(path.join(remote,'ui-target')));await sidebar.getByRole('status').filter({hasText:'文件任务完成'}).waitFor();
  await locate(path.join(remote,'上传 中文','.hidden'));await sidebar.getByRole('tree').press(process.platform==='darwin'?'Meta+c':'Control+c');await sidebar.getByRole('status').filter({hasText:'已复制'}).waitFor();
  await locate(path.join(remote,'ui-target'));await sidebar.getByRole('tree').focus();await sidebar.getByRole('tree').press(process.platform==='darwin'?'Meta+v':'Control+v');await wait(()=>fs.existsSync(path.join(remote,'ui-target','.hidden')));
@@ -173,7 +173,7 @@ try{
  assert.equal(await moved.frameLocator('iframe[title^="设置 file.txt"]').locator('textarea').inputValue(),'draft survives move\n中文');
  await moved.evaluate(()=>window.manager.flush());await call('workspace_move',{window:'workspace-browser',id:board,target:'main',index:0});await moved.evaluate(()=>window.manager.refresh());await main.evaluate(()=>window.manager.refresh());
  sidebar=main.frameLocator('iframe[title^="文件 ·"]');await wait(()=>sidebar.getByRole('textbox',{name:'远端路径'}).isEnabled());editor=main.frameLocator('iframe[title^="设置 file.txt"]');text=editor.locator('textarea');await wait(()=>text.isEnabled());
- await row('large.bin').click({button:'right'});await sidebar.getByRole('menuitem',{name:'下载文件',exact:true}).click();await sidebar.getByRole('status').filter({hasText:'下载完成'}).waitFor();assert.deepEqual(fs.readFileSync(local),Buffer.alloc(2*1024*1024,42));
+ await row('large.bin').click({button:'right'});await sidebar.getByRole('menuitem',{name:'下载',exact:true}).click();await sidebar.getByRole('status').filter({hasText:'下载完成'}).waitFor();assert.deepEqual(fs.readFileSync(local),Buffer.alloc(2*1024*1024,42));
  const [v]=await call('connection',{command:{op:'snapshot'}});await call('connection',{command:{op:'disconnect',context:v.context}});await main.evaluate(()=>window.manager.refresh());assert.equal(await text.inputValue(),'draft survives move\n中文');
  await editor.getByRole('button',{name:'导出草稿',exact:true}).click();await editor.getByRole('status').filter({hasText:'草稿已导出'}).waitFor();assert.equal(fs.readFileSync(local,'utf8'),'\uFEFFdraft survives move\r\n中文');
  assert.deepEqual(errors,[]);fs.mkdirSync('artifacts/files-ui',{recursive:true});await main.screenshot({path:'artifacts/files-ui/real-files.png'});

@@ -167,8 +167,10 @@ UI v1 的 `mount.capabilities.clipboard === 1` 表示宿主提供原生文本剪
 - list 返回 `{entries,more,cursor?}`，next/closeCursor 传 cursor。inspect 返回 `{attrs}`，不存在为 null；attrs 含 kind、十进制 size、mtime、stamp，远程目录含 resolved。copyFile 传 source/destination/sourceStamp/destinationGuard，成功返回目标 stamp；guard 为 `{kind:"absent"}` 或 `{kind:"match",stamp}`；其他变更用 endpoint、可选 sourceStamp、guard，rename 另传 destination 且要求目标不存在。
 - 状态为 running/committing/completed/failed/cancelled/unknown。completed 的 result 为元数据，失败的 error 为 `{code,message,retryable}`。unknown 表示远程未确认变更结果，不可自动重试。received/total 为十进制字符串。每资源 16 项、核心全局 128 项，结果页最多 100 条且不超过 16 KiB。
 - iframe 的文件 data 桥增加 `input.revision/clipboard/drop/chooseUpload/chooseDownload/release/reveal`。chooseUpload 传 directory，chooseDownload 传 single/name；立即返回 waitingInput 操作票据，以 op.poll 等待 inputId 或 cancelled，再 op.release。clipboard 仅解析原生文件格式，drop 传宿主事件 dropId。input.release 传 inputId，reveal 只打开已登记下载目录。
+- `input.revision` 兼容增加 `hasFiles:boolean`，返回 `{revision,count,hasFiles}`。该查询只检查本地剪贴板的受支持文件格式，不枚举路径或登记 input；因此此时 count 仍可能为 0，不能据此判断有无文件。缺少 hasFiles 的旧核心按状态未知处理，显式 `input.clipboard` 仍沿用既有行为。远程复制/剪切来源及其可用性由文件插件维护。
 - 插件进程用 `input.claim/list/release` 领取/分页读取/释放输入。list 返回 rootId、name、next，最多 4096 顶层项。claim 的 renew:true 仅允许同工作区已领取输入在用户明确重试失败项时重新绑定当前 Context。本地 PathBuf 留在核心，普通文本路径不是上传源。
 - mount.capabilities.localFiles 为 1。页面以 `mounted` 消息 `localFiles:true` 声明接收原生拖入；宿主向可见页面发送 localFileDrop（dropType/dropId/x/y，坐标为 iframe CSS 像素），页面领取 drop 后决定业务。此声明不构成插件权限。
+- UI 可向宿主发送 `{channel:"sodeck-ui-v1",type:"interaction",surfaceId}` 通知实际指针/键盘交互，供宿主关闭旧菜单和取消过期的自动聚焦。宿主按已有 iframe 来源、origin 与 surface token 绑定核对；不携带按键、文件或终端输入内容。旧宿主忽略此增量消息，旧 UI 仍按原协议加载。
 - iframe `request("closeViews",{viewIds})` 立即返回 ticket，宿主异步发送 viewsClosed（ticket/accepted/error）。只允许同插件同工作区页面，逐页复用原保存/放弃/取消关闭流程。
 
 旧 files.v1、旧目录游标和文本剪贴板协议保持兼容。文件插件 0.3.0 需要核心 0.8.4；五目标原生包构建和既有远程业务组合烟测通过，原生系统粘贴/拖入的设备互操作待验收。
