@@ -37,6 +37,8 @@ pub async fn ssh_roundtrip(
     let saved=core.change_catalog(catalog["revision"].as_u64().unwrap(),serde_json::from_value(json!({"op":"saveServer","draft":{"id":previous.map(|s|&s["id"]),"name":"Package OpenSSH","host":"127.0.0.1","port":config.port,"username":config.username,"authentication":{"type":"privateKey","privateKeyPath":config.private_key_path,"secret":{"action":"clear"}},"route":[]}})).map_err(|e|e.to_string())?)?;
     let id = saved["selectedId"].as_str().unwrap();
     let attempt = core.start_connection("main", id)?;
+    let mut answered = std::collections::HashSet::new();
+    let mut last_stage = String::from("准备连接");
     let context = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             let v = core
@@ -44,13 +46,20 @@ pub async fn ssh_roundtrip(
                 .into_iter()
                 .find(|v| v.attempt_id == attempt.attempt_id)
                 .ok_or("连接尝试丢失")?;
+            last_stage = format!(
+                "state={}, stage={}, question={:?}",
+                v.state, v.stage, v.question
+            );
             if let Some(Question::HostKey { id, .. }) = v.question {
-                core.answer_connection(
-                    "main",
-                    &v.attempt_id,
-                    &id,
-                    Answer::HostKey { accept: true },
-                )?;
+                // The snapshot can retain the answered question until the SSH task resumes.
+                if answered.insert(id.clone()) {
+                    core.answer_connection(
+                        "main",
+                        &v.attempt_id,
+                        &id,
+                        Answer::HostKey { accept: true },
+                    )?;
+                }
             }
             if v.state == "failed" {
                 return Err(v.error.map(|e| e.message).unwrap_or("SSH 验证失败".into()));
@@ -62,7 +71,7 @@ pub async fn ssh_roundtrip(
         }
     })
     .await
-    .map_err(|_| "包内 SSH 连接超过 10 秒")??;
+    .map_err(|_| format!("包内 SSH 连接超过 10 秒：{last_stage}"))??;
     let command = if cfg!(windows) {
         "cmd /c echo sodeck-openssh-ok"
     } else {
