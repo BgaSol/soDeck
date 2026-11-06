@@ -13,13 +13,13 @@ for(const directory of ['many-a','many-b']){fs.mkdirSync(path.join(remote,direct
 const upload=path.join(data,'上传 中文'),downloads=path.join(data,'downloads');fs.mkdirSync(upload);fs.mkdirSync(downloads);fs.mkdirSync(path.join(upload,'空目录'));fs.writeFileSync(path.join(upload,'.hidden'),'ui upload');fs.writeFileSync(path.join(upload,'zero.bin'),Buffer.alloc(0));
 const child=spawn(path.resolve(`src-tauri/target/debug/catalog-fixture${process.platform==='win32'?'.exe':''}`),[path.join(data,'app')],{stdio:['pipe','pipe','inherit'],windowsHide:true,env:{...process.env,SODECK_TEST_UPLOAD_PATH:upload,SODECK_TEST_DOWNLOAD_PATH:local,SODECK_TEST_DOWNLOAD_DIRECTORY:downloads}});
 const pending=[],pages=[],errors=[],requests=[];child.on('exit',()=>{for(const p of pending.splice(0))p.reject(new Error('Core fixture exited'));});
-let clipboard='';
+let clipboard='',pauseRead=false,readRelease;
 readline.createInterface({input:child.stdout}).on('line',line=>{const r=JSON.parse(line);const p=pending.shift();if(!p)throw new Error('Unexpected fixture response');r.error?p.reject(new Error(r.error)):p.resolve(r.value);});
 const call=(command,args={})=>new Promise((resolve,reject)=>{pending.push({resolve,reject});child.stdin.write(JSON.stringify({command,args})+'\n');});
 const vite=await createServer({server:{host:'127.0.0.1',port:0}});await vite.listen();const url=vite.resolvedUrls.local[0];const browser=await chromium.launch({headless:true});
 async function pageFor(window){
  const page=await browser.newPage({viewport:{width:1180,height:760}});pages.push(page);page.on('pageerror',e=>errors.push(String(e)));
- await page.exposeBinding('testInvoke',(_,command,args={})=>{requests.push({command,args});if(command==='component_data'&&args.request?.action==='input.revision')return {revision:'file-ui-fixture'};if(command==='clipboard_text'){if(args.operation==='read')return clipboard;clipboard=args.text;return null;}return call(command,{...args,window});});
+ await page.exposeBinding('testInvoke',async(_,command,args={})=>{requests.push({command,args});if(command==='component_data'&&args.request?.action==='input.revision')return {revision:'file-ui-fixture'};if(command==='clipboard_text'){if(args.operation==='read')return clipboard;clipboard=args.text;return null;}if(command==='component_data'&&args.request?.action==='chunk'&&pauseRead){pauseRead=false;const result=await call(command,{...args,window});await new Promise(resolve=>readRelease=resolve);return result;}return call(command,{...args,window});});
  await page.route(url+'__plugin__/**',route=>{const relative=new URL(route.request().url()).pathname.split('/').slice(3).join('/');const filename=path.join(process.env.SODECK_TEST_FILES_PLUGIN,relative);return route.fulfill({contentType:{'.js':'text/javascript','.css':'text/css','.html':'text/html'}[path.extname(filename)]||'application/octet-stream',body:fs.readFileSync(filename)});});
  await page.route(url,route=>route.fulfill({contentType:'text/html',body:`<!doctype html><html lang="zh-CN" data-theme="dopamine"><head><meta charset="utf-8"></head><body><header class="topbar"><button id="catalog-tab">服务器管理</button><div id="server-tabs" class="server-tabs"></div></header><main class="workspace"><div id="server-catalog"></div><div id="workspace-content"></div></main><div id="notice"></div><script type="module">import '/style.css';import {Workspaces} from '/workspaces.ts';window.__TAURI_INTERNALS__={convertFileSrc:p=>new URL('/__plugin__/'+p,location.href).href,transformCallback:()=>1};window.adapter=(command,args={})=>{if(args.channel){args={...args};delete args.channel;}return window.testInvoke(command,args);};window.manager=new Workspaces(document.querySelector('#server-tabs'),document.querySelector('#workspace-content'),document.querySelector('#server-catalog'),m=>document.querySelector('#notice').textContent=m,window.adapter);await window.manager.start();window.ready=true;</script></body></html>`}));
  await page.goto(url);await page.waitForFunction(()=>window.ready);return page;
@@ -106,8 +106,12 @@ try{
  await locate(path.join(remote,'ui-target'));await sidebar.getByRole('tree').press('Delete');await sidebar.getByRole('dialog').getByRole('button',{name:'确定',exact:true}).click();await wait(()=>!fs.existsSync(path.join(remote,'ui-target')));
  await locate(filename);
  await row('设置 file.txt').click();assert.equal(await main.locator('iframe[title^="设置 file.txt"]').count(),0);
- await row('设置 file.txt').dblclick();
- let editor=main.frameLocator('iframe[title^="设置 file.txt"]');let text=editor.locator('textarea');await text.waitFor();await wait(()=>text.isEnabled());assert.equal(await text.inputValue(),'before\n中文\n');
+ pauseRead=true;await row('设置 file.txt').dblclick();
+ let editor=main.frameLocator('iframe[title^="设置 file.txt"]');let text=editor.locator('textarea');await text.waitFor();await wait(()=>typeof readRelease==='function');
+ assert.equal(await text.isEnabled(),false);
+ const loadingSettings=await call('settings_page',{pluginId:'sodeck.files',pageId:'editor'});
+ assert.equal(loadingSettings.applications.filter(a=>a.target==='surface').length,0,'Reading a descriptor must not report an editor with applied preferences');
+ readRelease();readRelease=undefined;await wait(()=>text.isEnabled());assert.equal(await text.inputValue(),'before\n中文\n');
  await text.fill('after\n中文\n');await editor.getByRole('button',{name:'保存',exact:true}).click();await editor.getByRole('status').filter({hasText:'已保存到服务器'}).waitFor();assert.equal(fs.readFileSync(filename,'utf8'),'\uFEFFafter\r\n中文\r\n');
  fs.mkdirSync('artifacts/files-ui',{recursive:true});
  await row('remote 中文').evaluate(el=>{const tree=el.closest('.file-tree');tree.scrollTop=el.offsetTop-tree.offsetTop-16;});

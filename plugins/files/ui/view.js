@@ -1,6 +1,7 @@
 /* File business UI. Remote/local IO stays behind the core's scoped data endpoint. */
 import {loadFont} from './font-loader.js';
 import {fontPresets,fontAsset} from './font-presets.js';
+import {readDocument} from './read-document.js';
 (() => {
  const root=document.querySelector('#root'),encoder=new TextEncoder();
  let id,textarea,status,tree,transfers,cancelButton,jobTimer,jobId,busy=false,queue=Promise.resolve(),localRevision=0,eol='\n',bom=false,loaded=false,pumping=false,pendingDraft=false;
@@ -11,6 +12,8 @@ import {fontPresets,fontAsset} from './font-presets.js';
   if(settingsSnapshot&&settingsSnapshot.definitionToken===snapshot.definitionToken&&BigInt(settingsSnapshot.revision)>BigInt(snapshot.revision))return;
   if(!force&&settingsSnapshot?.definitionToken===snapshot.definitionToken&&settingsSnapshot.revision===snapshot.revision)return;
   settingsSnapshot=snapshot;const ticket=++settingsEpoch,v=snapshot.values;
+  // Cache preferences while the first document snapshot is still being read.
+  if(snapshot.pageId==='editor'&&!loaded)return;
   let error;
   if(snapshot.pageId==='browser')tree?.preferences(v);
   if(snapshot.pageId==='editor'&&textarea){
@@ -64,6 +67,7 @@ import {fontPresets,fontAsset} from './font-presets.js';
  async function save(){if(!loaded)throw new Error('文件尚未准备好编辑');await queue;if(busy)throw new Error('保存或下载正在进行');await watchJob(await event({action:'save'}));}
  function theme(tokens){for(const [name,value]of Object.entries(tokens||{}))document.documentElement.style.setProperty('--'+name,value);}
  async function init(m){
+  loaded=false;
   settingsSnapshot=m.settings;
   id=m.data.fileId;theme(m.tokens);root.replaceChildren();
   status=document.createElement('div');status.className='status';status.setAttribute('role','status');
@@ -81,16 +85,16 @@ import {fontPresets,fontAsset} from './font-presets.js';
    const title=document.createElement('span');title.className='path';title.textContent=m.data.path;title.title=m.data.path;header.append(title,button('保存',save,'primary'),button('下载远端',()=>download(m.data.path)),button('导出草稿',async()=>{await queue;const result=await data('exportDraft',{path:m.data.path});if(!result.cancelled)message('草稿已导出：'+result.path);}));
    transfers=new FileTransfers({fileId:id,data,event,request,message,host:root,target:()=>m.data.path.slice(0,m.data.path.lastIndexOf('/'))||'/',refresh:async()=>{}});
    textarea=document.createElement('textarea');textarea.spellcheck=false;textarea.disabled=true;textarea.setAttribute('aria-label','远端文件编辑器');root.append(textarea,footer);
-   await applySettings(settingsSnapshot||{pageId:'editor',values:{font:{source:'preset',id:'jetbrains-mono'},fontSize:14,lineHeight:1.5,wordWrap:false,tabSize:4}},true);
-   let info=await data('describe');if(!info.path)info=await data('read',{path:m.data.path});
-   const bytes=new Uint8Array(info.size);for(let offset=0;offset<bytes.length;offset+=16384){const block=await data('chunk',{offset});bytes.set(block.data,offset);}
+   const {info,bytes}=await readDocument(data,m.data.path);
    let text;try{text=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(bytes);}catch{throw new Error('此文件不是有效 UTF-8 文本，请下载后查看');}
    if(text.includes('\0'))throw new Error('检测到二进制内容，请下载后查看');
    bom=text.startsWith('\uFEFF');if(bom)text=text.slice(1);
    const crlf=(text.match(/\r\n/g)||[]).length,lf=(text.match(/\n/g)||[]).length;
    if(text.replaceAll('\r\n','').includes('\r')||(crlf>0&&crlf!==lf))throw new Error('文件包含混合换行，为避免改变原文，请下载后编辑');
-   eol=crlf?'\r\n':'\n';textarea.value=text.replaceAll('\r\n','\n');textarea.disabled=false;loaded=true;
+   eol=crlf?'\r\n':'\n';textarea.value=text.replaceAll('\r\n','\n');loaded=true;
    textarea.setSelectionRange(m.data.cursor||0,m.data.cursor||0);textarea.scrollTop=m.data.scroll||0;
+   await applySettings(settingsSnapshot||{pageId:'editor',values:{font:{source:'preset',id:'jetbrains-mono'},fontSize:14,lineHeight:1.5,wordWrap:false,tabSize:4}},true);
+   textarea.disabled=false;
    textarea.addEventListener('input',stage);textarea.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();void perform(save);}});
    textarea.addEventListener('select',()=>void event({action:'position',cursor:textarea.selectionStart,scroll:textarea.scrollTop}).catch(()=>{}));
    message('UTF-8'+(bom?' BOM':'')+(eol==='\r\n'?' · CRLF':' · LF')+' · '+size(info.size));

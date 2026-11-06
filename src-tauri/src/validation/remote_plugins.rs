@@ -203,6 +203,27 @@ pub(super) async fn roundtrip(
     })
     .await
     .map_err(|_| "原生文件正文没有读入".to_string())??;
+    if core
+        .snapshot()
+        .plugins
+        .iter()
+        .any(|p| p.manifest.id == "sodeck.files" && p.manifest.settings.is_some())
+    {
+        let settings = core.settings_page("sodeck.files", "editor")?;
+        // Mounting and describe do not prove that the iframe consumed all chunks.
+        // The current editor reports its applied preferences after reading the document.
+        wait(|| {
+            core.settings_page("sodeck.files", "editor").ok()?["applications"]
+                .as_array()?
+                .iter()
+                .find(|a| a["surfaceId"] == token && a["revision"] == settings["revision"])
+                .map(|a| match a["error"].as_str() {
+                    Some(error) => Err(format!("实际包文件编辑器应用设置失败：{error}")),
+                    None => Ok(()),
+                })
+        })
+        .await??;
+    }
     let bytes = b"sodeck-native-file-save\n";
     core.files_data(
         "main",
