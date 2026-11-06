@@ -33,6 +33,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
       - id: config
         env:
           GH_TOKEN: ${{ github.token }}
@@ -79,9 +81,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
+        if: matrix.name != 'windows-x86_64'
         with:
           node-version-file: .node-version
           cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: actions/setup-node@v6
+        if: matrix.name == 'windows-x86_64'
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            plugins/terminal/package-lock.json
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: |
@@ -94,7 +106,9 @@ jobs:
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
+          shared-key: core-package
           workspaces: src-tauri -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
       - run: npm run test
       - name: Install OpenSSH test server
