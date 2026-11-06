@@ -11,6 +11,8 @@
 
 当前代码职责：`main.rs` 组合窗口、命令桥和有界退出；`core.rs` 持有真实状态；`plugins/manifest.rs` 负责清单，`plugins/process.rs` 监督进程，`plugins/rpc.rs` 处理有界控制帧/读写，`plugins/dispatch.rs` 有界分派插件对核心的调用，`plugins/mod.rs` 保留内部入口；`platform.rs` 管理 Windows Job/Unix 进程组；`storage.rs` 保存配置、消息和轮转日志。前端 `main.ts` 管理窗口与浮层，`views.ts` 展示核心数据，`core.ts` 统一调用边界。界面不直接启动插件，不另存运行状态。
 
+macOS 主窗口通过 Tauri 自动合并的 `src-tauri/tauri.macos.conf.json` 在创建时启用原生窗口装饰、隐藏标题和 `Overlay` 标题栏，与 `windows.rs` 创建的独立窗口保持一致。系统窗口按钮与 44px 服务器标签条共用一行，前端保留 86px 按钮区域。避免在 `setup` 中依次切换装饰与标题栏样式：底层装饰变更异步重设窗口样式，可能覆盖 Overlay 的全尺寸内容标志，使系统按钮回到独立标题栏并留下重复空白。平台配置按 JSON Merge Patch 替换窗口数组，因此完整保留共享窗口尺寸；版本继续仅从主配置继承。`window_config` 回归使用 Tauri 实际配置解析器检查 macOS 创建参数和其他桌面平台配置，原生 macOS 实际包显示仍需在目标系统验证。
+
 控制通信整改已在 v0.5.0 发行：双向请求按 ID 匹配，处理不阻塞接收循环，停止优先，等待和队列有界；进程退出结束在途请求、作废排队工作。回归用真实插件进程复现并修复嵌套请求超时。v0.6.0 在此基础上增加每视图 Tauri Channel 正文桥及真实业务插件，控制通信的边界保持不变。
 
 `servers.rs` 已实现服务器与 SOCKS5 代理目录管理，以及两者混合的有序多层路径，目录模块不自行建连，见 [服务器管理方案](plan-server-management.md)。用户已明确选择密码与私钥口令直接在本机文件保存、不加密，不接系统凭据库；下一段地址固定由当前中转逐站解析。目录使用单实例锁、修订检查、串行提交和上一份有效备份。磁盘认证与界面投影分开；`server-api.ts`、`server-views.ts`、`servers.ts` 分别维护桌面调用、展示和交互草稿。桌面退出与更新重启先询问未保存表单。

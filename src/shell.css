@@ -193,6 +193,7 @@
     color: white;
   }
   .macos .topbar {
+    /* Native window buttons share this row through the macOS overlay title bar. */
     padding-left: 86px;
   }
   .workspace {

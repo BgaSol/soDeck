@@ -509,12 +509,6 @@ fn main() {
             if !smoke {
                 std::thread::spawn(move || core.start_enabled());
             }
-            #[cfg(target_os = "macos")]
-            {
-                let window = app.get_webview_window("main").unwrap();
-                window.set_decorations(true)?;
-                window.set_title_bar_style(tauri::TitleBarStyle::Overlay)?;
-            }
             Ok(())
         })
         .on_window_event(|window, event| {
