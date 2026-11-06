@@ -122,49 +122,32 @@ pub(crate) fn uri_paths(data: &[u8]) -> Result<Vec<PathBuf>, String> {
         if line.is_empty() || line.starts_with(b"#") || line == b"copy" || line == b"cut" {
             continue;
         }
-        let rest = line
-            .strip_prefix(b"file://")
-            .ok_or("剪贴板包含非本地文件 URL")?;
-        let path = if rest.starts_with(b"/") {
-            rest
-        } else {
-            rest.strip_prefix(b"localhost")
-                .filter(|s| s.starts_with(b"/"))
-                .ok_or("剪贴板包含非本地文件来源")?
-        };
-        if path.contains(&0) {
+        let line = std::str::from_utf8(line).map_err(|_| "文件 URL 编码无效")?;
+        // Check before URL normalization can discard an invalid path segment.
+        if line.contains('\0') || line.contains("%00") {
             return Err("文件 URL 含 NUL".into());
         }
-        let mut decoded = Vec::new();
-        let mut i = 0;
-        while i < path.len() {
-            if path[i] == b'%' {
-                if i + 2 >= path.len() {
-                    return Err("文件 URL 编码无效".into());
-                }
-                let digits =
-                    std::str::from_utf8(&path[i + 1..i + 3]).map_err(|_| "文件 URL 编码无效")?;
-                let b = u8::from_str_radix(digits, 16).map_err(|_| "文件 URL 编码无效")?;
-                if b == 0 {
-                    return Err("文件 URL 含 NUL".into());
-                }
-                decoded.push(b);
-                i += 3;
-            } else {
-                decoded.push(path[i]);
-                i += 1;
-            }
+        // URL parsing is forgiving by default. Keep malformed escapes and
+        // ignored whitespace invalid without maintaining our own decoder.
+        let invalid = std::cell::Cell::new(false);
+        let url = reqwest::Url::options()
+            .syntax_violation_callback(Some(&|_| invalid.set(true)))
+            .parse(line)
+            .map_err(|_| "文件 URL 无效")?;
+        if invalid.get() {
+            return Err("文件 URL 编码无效".into());
         }
-        #[cfg(unix)]
-        {
-            use std::os::unix::ffi::OsStringExt;
-            paths.push(PathBuf::from(std::ffi::OsString::from_vec(decoded)));
+        if url.scheme() != "file" {
+            return Err("剪贴板包含非本地文件 URL".into());
         }
-        #[cfg(windows)]
-        {
-            let text = String::from_utf8(decoded).map_err(|_| "文件 URL 编码无效")?;
-            paths.push(PathBuf::from(text.trim_start_matches('/')));
+        if url.host_str().is_some_and(|host| host != "localhost") {
+            return Err("剪贴板包含非本地文件来源".into());
         }
+        if url.query().is_some() || url.fragment().is_some() {
+            return Err("文件 URL 不应包含查询或片段".into());
+        }
+        let path = url.to_file_path().map_err(|_| "无法读取本地文件 URL")?;
+        paths.push(path);
         if paths.len() > 4096 {
             return Err("复制条目超过 4096 项".into());
         }
@@ -177,17 +160,90 @@ pub fn clipboard_info(value: &Clipboard) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    const FILE_ROOT: &str = "file:///C:/tmp";
+    #[cfg(unix)]
+    const FILE_ROOT: &str = "file:///tmp";
+
+    #[test]
+    fn file_uri_scheme_and_localhost_are_case_insensitive() {
+        let local = format!("{FILE_ROOT}/a%20b%25.txt");
+        let expected = uri_paths(local.as_bytes()).unwrap();
+        let upper_scheme = local.replacen("file:", "FILE:", 1);
+        let upper_host = local.replacen("file:///", "file://LOCALHOST/", 1);
+        assert_eq!(uri_paths(upper_scheme.as_bytes()).unwrap(), expected);
+        assert_eq!(uri_paths(upper_host.as_bytes()).unwrap(), expected);
+    }
+
     #[test]
     fn uri_list_is_file_only_and_preserves_encoded_separators() {
-        let paths = uri_paths(
-            b"copy\n#ignore\nfile:///tmp/a%20b%25.txt\r\nfile:///tmp/%E4%B8%AD%E6%96%87\n",
-        )
-        .unwrap();
+        let input =
+            format!("copy\n#ignore\n{FILE_ROOT}/a%20b%25.txt\r\n{FILE_ROOT}/%E4%B8%AD%E6%96%87\n");
+        let paths = uri_paths(input.as_bytes()).unwrap();
         assert_eq!(paths.len(), 2);
         assert!(paths[0].to_string_lossy().ends_with("a b%.txt"));
+        assert!(paths[1].to_string_lossy().ends_with("中文"));
         assert!(uri_paths(b"https://example.com/file").is_err());
         assert!(uri_paths(b"file://other/tmp/a").is_err());
         assert!(uri_paths(b"file:///tmp/%00").is_err());
         assert!(uri_paths(b"file:///tmp/%xx").is_err());
+    }
+
+    #[test]
+    fn file_uri_encoding_does_not_lose_or_double_decode_file_names() {
+        let input = format!(
+            "{FILE_ROOT}/a%2520%23%3F.txt\n{FILE_ROOT}/中文\n{FILE_ROOT}/%E4%B8%AD%E6%96%87"
+        );
+        let paths = uri_paths(input.as_bytes()).unwrap();
+        assert!(paths[0].to_string_lossy().ends_with("a%20#?.txt"));
+        assert_eq!(paths[1], paths[2]);
+        let mut invalid_utf8 = format!("{FILE_ROOT}/").into_bytes();
+        invalid_utf8.push(0xff);
+        assert!(uri_paths(&invalid_utf8).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn file_uri_preserves_non_utf8_unix_path_bytes() {
+        use std::os::unix::ffi::OsStrExt;
+        let paths = uri_paths(b"file:///tmp/%FF%FE%25").unwrap();
+        assert_eq!(paths[0].as_os_str().as_bytes(), b"/tmp/\xff\xfe%");
+    }
+
+    #[test]
+    fn file_uri_rejects_invalid_input_before_url_normalization() {
+        for suffix in [
+            "%",
+            "%0",
+            "%xx",
+            "%00",
+            "%00/..",
+            "%xx/..",
+            "a\0b",
+            "a\tb",
+            "a ",
+            "a?query",
+            "a#fragment",
+        ] {
+            let input = format!("{FILE_ROOT}/{suffix}");
+            assert!(uri_paths(input.as_bytes()).is_err(), "{input:?}");
+        }
+        for input in [
+            "/tmp/a",
+            "file://other/tmp/a",
+            "file://127.0.0.1/tmp/a",
+            "https://localhost/a",
+        ] {
+            assert!(uri_paths(input.as_bytes()).is_err(), "{input}");
+        }
+        assert!(uri_paths(format!("{FILE_ROOT}/valid\nfile://other/tmp/a").as_bytes()).is_err());
+    }
+
+    #[test]
+    fn uri_list_keeps_clipboard_markers_and_the_entry_limit() {
+        assert!(uri_paths(b"copy\ncut\n#comment\r\n\n").unwrap().is_empty());
+        let input = format!("{FILE_ROOT}/a\r\n").repeat(4096);
+        assert_eq!(uri_paths(input.as_bytes()).unwrap().len(), 4096);
+        assert!(uri_paths(format!("{input}{FILE_ROOT}/extra").as_bytes()).is_err());
     }
 }
