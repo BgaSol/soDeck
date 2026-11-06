@@ -1,3 +1,4 @@
+/* phase2-artifact-resource-probe */
 @layer base, components;
 @layer base {
   :root { color-scheme: var(--color-scheme, light); font: 13px system-ui; color: var(--text, #242936); background: var(--terminal-background, var(--panel, #fff)); }
