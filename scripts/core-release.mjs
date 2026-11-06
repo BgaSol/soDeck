@@ -90,7 +90,7 @@ export async function prepareCoreRelease(api, config, input, commit, repository)
   }
   const current = await releaseState(api, config, commit);
   if (!current || current.id !== release.id) throw new Error("Core release changed while uploading");
-  await api("PATCH", `/releases/${release.id}`, { name: `SoDeck ${config.tag}`, body: config.notes });
+  await api("PATCH", `/releases/${release.id}`, { tag_name: config.tag, name: `SoDeck ${config.tag}`, body: config.notes });
   existing = await releaseAssets(api, release.id);
   if (existing.length !== desired.length || desired.some(file => !existing.some(asset => asset.name === path.basename(file) && asset.digest === `sha256:${sha256(file)}` && asset.state === "uploaded"))) throw new Error("Core draft asset verification failed");
   return { ...verified, url: release.html_url };

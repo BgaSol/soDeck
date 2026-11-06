@@ -45,7 +45,7 @@ function fakeGithub() {
       return asset;
     }
     if (method === "DELETE" && route.startsWith("/releases/assets/")) { state.assets = state.assets.filter(asset => asset.id !== Number(route.split("/").at(-1))); return null; }
-    if (method === "PATCH") return state.release;
+    if (method === "PATCH") { state.release.tag_name = body.tag_name ?? "untagged-fixture"; return state.release; }
     throw new Error(`Unexpected API call ${method} ${route}`);
   };
   return { api, state };
@@ -151,6 +151,13 @@ test("published drafts and old extra platform assets cannot be overwritten durin
   await assert.rejects(prepareCoreRelease(api, config, input, commit, "test/repo"), /unexpected or duplicate assets/);
   state.release.draft = false;
   await assert.rejects(prepareCoreRelease(api, config, input, commit, "test/repo"), /immutable/);
+});
+test("updating draft notes explicitly retains its version tag on repeated preparation", async t => {
+  const input = fixture(t, [targets[0]]), { api, state } = fakeGithub();
+  await prepareCoreRelease(api, config, input, commit, "test/repo");
+  assert.equal(state.release.tag_name, config.tag);
+  await prepareCoreRelease(api, config, input, commit, "test/repo");
+  assert.equal(state.release.tag_name, config.tag);
 });
 test("branch manual runs generate a manifest without contacting GitHub or creating Releases", t => {
   const root = fixture(t, [targets[0]]); fs.mkdirSync(path.join(root, "src-tauri")); fs.mkdirSync(path.join(root, "docs/releases"), { recursive: true });
