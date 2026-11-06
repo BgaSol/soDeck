@@ -1,107 +1,56 @@
 # SoDeck
 
-源码已实现组件独立设置：在现有设置页面配置终端、文件列表、文件编辑器和网络隧道。插件声明字段，核心统一保存和通知；终端默认 14px、1.2 倍行高和 24px 底部留白，支持三款离线预置字体及本机字体。设置随实际插件版本切换，并保留兼容的用户值；本项尚未发行。实现与验收边界见 [组件设置实施记录](docs/implementation-component-settings.md)。
+面向运维人员的远程服务器桌面工具，在一个工作台中管理服务器连接、终端、文件和网络隧道。
 
-源码已接入统一桌面行为：核心、文件和网络页面共享三主题滚动条，终端使用同色同形的 xterm 滑块；主窗口、拆出窗口和插件 iframe 统一取消浏览器右键、刷新、打印、缩放、导航及开发者工具的默认动作，保留文本编辑和终端操作。此改动尚未发行，选型、验证及平台边界见 [桌面一致性实施记录](docs/implementation-desktop-consistency.md)。
+核心负责桌面工作台、连接会话和插件管理；终端、文件、网络隧道通过外置插件提供。核心与插件独立安装、独立更新，核心安装包不包含业务插件。
 
-源码已完成更新体验改版：设置 → 更新统一维护核心与已安装插件，默认每日检查，支持批量下载、逐项重试和统一重启；插件安装移入“添加插件”，来源与技术信息收进详情。核心完整下载包重开后可离线验签恢复。实际检查结果、包内验证及尚未验收的平台见 [实施记录](docs/implementation-update-experience.md)，本项尚未发布新版本。
+## 主要能力
 
-面向运维人员的远程服务器工作台。v0.8.4 与文件插件 0.3.0 提供文件/文件夹批量上传下载、系统文件粘贴与拖入、任务管理及远程日常文件操作，并修复工作台菜单、窗口手势和服务器双击连接。发行与验证范围见 [v0.8.4](docs/releases/v0.8.4.md)，核心下载见 [Latest](https://github.com/BgaSol/soDeck/releases/latest)。请先升级核心，再升级文件插件并重启。核心与业务插件独立分发，核心包不包含业务插件。官方插件仅保留终端、文件和网络隧道；升级启动前自动移除已退役的 Hello 和组件交互示例登记。
+- **服务器管理**：管理、搜索和分组服务器，使用密码或私钥连接 SSH，支持 SSH 与 SOCKS5 混合跳板。
+- **多窗口工作台**：按服务器组织工作区，支持多 Tab、两侧组件栏和工作区拆出、合并。
+- **插件管理**：下载官方插件或添加本地插件目录，统一管理启用状态、更新、日志和重要消息。
+- **外观设置**：支持跟随系统、浅色、深色和多巴胺主题。
 
-外置插件声明侧栏、中央页面及编辑弹窗，核心统一管理两侧入口、混合 Tab、布局偏好、关闭确认和跨窗重挂载。`plugins/terminal` 提供真实多 Tab 终端；`plugins/files` 提供目录、批量上传下载、远程文件管理、1 MiB 内 UTF-8 文件编辑和保存冲突检查；`plugins/network-proxy` 提供按服务器管理的 TCP 转发与 SOCKS5 代理，复用现有混合跳板，域名由最终远端解析。核心包不包含这些插件。
+| 官方插件 | 用途 |
+| --- | --- |
+| 终端 | 复用服务器连接，打开多个远程终端 |
+| 文件 | 浏览远程目录、上传下载文件与文件夹、管理文件和编辑小文本文件 |
+| 网络隧道 | 按服务器管理 TCP 转发和 SOCKS5 代理 |
 
-v0.8.4 修正工作区菜单落到窗口底部和短菜单出现双向滚动条的问题；长组件列表仅纵向滚动，搜索后保持贴近入口。原因、回归与交付边界见 [菜单修复记录](docs/implementation-component-menus.md)。
+## 下载与使用
 
-当前版本沿用旧版紧凑工作台：文件侧栏提供真正的多分支目录树、路径定位、独立分页、右键操作和键盘导航；单击选中、双击文件打开中央编辑器。隐藏、重挂载和移窗保留导航状态。多巴胺、浅色、深色主题同步到文件与终端。新版文件插件 0.2.0 需要核心 0.6.1 的目录游标能力，旧版文件插件仍可使用原来的接口。范围见 [文件树设计](docs/plan-file-tree.md)，验证和限制见 [实施记录](docs/implementation-file-tree.md)，发行说明见 [v0.6.1](docs/releases/v0.6.1.md)。
+从 [GitHub Releases 下载核心安装包](https://github.com/BgaSol/soDeck/releases/latest)。
 
-核心支持主机指纹、密码和私钥认证，以及工作台断开/原位重连；插件控制通信支持有界并发和退出取消。正文数据桥使用 16 KiB 分块；终端有确认、背压与跨窗显示恢复。实现与验收边界见 [真实插件实施记录](docs/implementation-remote-plugins.md)，本版说明见 [v0.6.0](docs/releases/v0.6.0.md)。
+| 系统 | 架构 | 安装包 |
+| --- | --- | --- |
+| Windows | x86_64、ARM64 | EXE |
+| Linux | x86_64、ARM64 | DEB、AppImage |
+| macOS | Apple Silicon ARM64 | DMG |
 
-v0.5.1 修复正式构建中服务器表单无法滚动、布局错位及多巴胺配色不完整的问题，保留已保存的主题。修复范围及验证见 [v0.5.1](docs/releases/v0.5.1.md)。
+1. 安装并启动对应系统和架构的核心程序。
+2. 在应用设置中下载并启用需要的官方插件，然后重启。
+3. 添加服务器，填写地址、用户名和 SSH 认证资料，连接后进入工作台。
+4. 在工作台中打开终端、文件或网络隧道组件。
 
-v0.5.2 补齐设置中的官方插件下载安装入口，并独立发行组件交互示例。该已发行版本的两个官方插件均为示例；真实终端与文件插件从 v0.6.0 开发版本提供。发行及验证见 [v0.5.2](docs/releases/v0.5.2.md)。
+插件启用、关闭及已启用插件升级在重启后生效。核心与插件可分别更新；Linux 的应用内升级使用 AppImage，DEB 使用系统包管理器。
 
-核心与插件独立版本、独立打包，从公开的 [GitHub Releases](https://github.com/BgaSol/soDeck/releases) 分发。核心安装包不含业务插件。版本与验收记录见 [v0.1.1](docs/releases/v0.1.1.md)、[v0.2.0](docs/releases/v0.2.0.md)、[v0.2.1](docs/releases/v0.2.1.md)、[v0.3.0](docs/releases/v0.3.0.md)、[v0.4.0](docs/releases/v0.4.0.md) 和 [v0.5.0](docs/releases/v0.5.0.md)。
+选择记住的密码和私钥口令以明文保存在本机应用数据目录，私钥仅保存路径。详细操作与数据存储说明见 [使用指南](docs/usage.md)。
 
-## 使用
+## 本地开发
 
-工作台直接管理服务器与 SOCKS5 代理：新增、编辑、复制、删除、搜索和分组；SSH 与 SOCKS5 路径可混合排序。记住的密码和私钥口令按选择明文保存到应用数据目录的 `servers.json`，私钥只保存路径。未记住的秘密仅当前进程有效。数据异常时保留原文件，可从上一份有效备份恢复。
-
-1. 下载对应系统和架构的核心安装包，或从旧版的应用更新入口升级。
-2. 先更新核心，再在 **设置 → 插件管理 → 官方插件** 点击“下载并启用”，客户端下载对应正式 Release 的本机版本。v0.7.0 配套终端 0.1.2、文件 0.2.1 和网络隧道 0.1.0，均已正式发布并可独立下载。官方列表仅保留终端、文件和网络隧道；其他本地插件仍通过“添加插件目录”选择包含 plugin.json 的目录。
-3. 重启后自动加载启用插件；启用、关闭和已启用插件更新都在重启后生效。多项修改可统一重启一次。
-4. 插件详情检查与下载其独立更新；核心更新位于 **设置 → 应用更新**。
-5. **设置 → 外观**可选多巴胺、跟随系统、浅色和深色，即选即保存。多巴胺沿用旧版奶油底、粉色导航、黄色选中、薄荷绿点缀与深色粗描边，无装饰阴影；升级保留当前偏好。
-
-终端和文件使用独立 Release。开发验收也可以独立打包后添加 `artifacts/plugins/sodeck-terminal_<版本>_<target>` 和 `sodeck-files_<版本>_<target>` 目录。核心安装包保持不含插件。
-
-Hello 与组件交互示例已退役：源码、官方安装来源和发行配置已删除，升级后自动移除旧登记。原外部程序、数据、消息和日志按移除记录规则保留。宿主回归使用仅测试的夹具，不再发行示例插件；历史版本记录仍可查阅。没有更新来源的其他插件继续手动维护。
-
-Windows x86_64/ARM64 使用 EXE，Linux x86_64/ARM64 提供 DEB 与 AppImage，Apple Silicon macOS 使用 DMG。Linux 的应用内升级使用 AppImage；DEB 继续使用系统包管理器。
-
-应用无独立标题栏，状态、设置、消息位于右上角浮层。插件日志和重要消息独立；普通错误日志不自动弹通知。设置、消息、日志和插件数据存于系统应用数据目录，独立于安装目录。
-
-主窗口和拆出窗口的顶部空白区域均可拖动，双击在最大化（当前显示器可用区域）与原窗口大小、位置之间切换；服务器标签和顶部按钮保留各自操作。
-
-macOS 的系统窗口按钮与服务器标签共用顶部一行。0.8.4 修正主窗口启动时出现独立标题栏、标签左侧重复留白的问题，macOS ARM64 原生包启动和退出验证通过。
-
-源码已支持在服务器管理首页单击查看详情、双击连接并进入工作台，也可从详情点击“连接服务器”。已连接时双击切回现有工作台，连接中复用同一尝试，断线或失败后可双击重试；每站指纹确认后才提交该站凭据。SSH 认证失败可重新补填密码或私钥口令，补填表单默认勾选记住；整条连接成功后保存到对应资料并替换旧凭据，取消勾选则仅本次连接有效。输错、取消或连接失败不覆盖原凭据。新建资料和切换认证方式时也默认勾选记住，密码仍以明文保存在本机文件。工作台底部仅展示连接状态和地址，断线后显示“重新连接”，右上角应用状态显示连接数量。
-
-已按 [Tab 新建交互方案](docs/plan-tab-creation.md) 实现并随 v0.8.3 发布：一级加号展开可搜索的服务器选择层，二级加号直接新建并聚焦官方终端；在文件页点击同样新建终端。新连接留在发起窗口，已有工作区保持原窗口归属。验证和边界见 [实施记录](docs/implementation-tab-creation.md)。底栏简化与凭据重试改动一并保留。
-
-## 开发与发布
-
-固定 Node.js 24.22.0、Rust 1.99.1，需要 [Tauri 系统构建依赖](https://v2.tauri.app/start/prerequisites/)。
+按仓库的 [.node-version](.node-version)、[rust-toolchain.toml](rust-toolchain.toml) 安装工具链，并准备 [Tauri 系统构建依赖](https://v2.tauri.app/start/prerequisites/)。
 
 ```sh
 npm ci
 npm run dev
-npm run check
-npm run plugin:check
-npm run scripts:test
-npm run test
-npx playwright install chromium
-npm run ui:test
-npm run terminal:input:test
-# 本机需 OpenSSH 服务端与 ssh-keygen；脚本仅启动临时回环测试端
-npm run ssh:test
-npm run terminal:test
-npm run files:test
-npm run network:test
-npm run build -- --bundles nsis -- --locked
-npm run plugin:build -- --plugin terminal
-npm run plugin:build -- --plugin files
-npm run plugin:build -- --plugin network-proxy
 ```
 
-核心版本只修改 `src-tauri/tauri.conf.json`，插件版本只修改各自的 `plugins/<名称>/Cargo.toml`。核心标签 `v<版本>` 和插件标签 `plugin-terminal-v<版本>`、`plugin-files-v<版本>`、`plugin-network-proxy-v<版本>` 分别触发五目标独立构建及 Release 草稿；更新清单自动生成，检查后正式发布。普通本地打包不需要更新签名密钥。
+检查、测试与独立打包入口见 [开发指南](docs/development.md)。
 
-| 工作流 | 用途 |
-| --- | --- |
-| Check | 类型、Rust 格式、发布脚本测试及前端构建 |
-| Package SoDeck | 五目标原生核心安装包、目录保存重开、原生工作区移窗/关闭烟测、更新签名；标签发布时生成 core-update.json |
-| Package plugin | 按插件目录独立打包、生成 plugin-update.json |
-| Verify native remote plugins | 独立打包的实际核心和终端/文件/网络隧道包，验证原生数据桥、OpenSSH 与网络业务 |
+## 文档
 
-详细步骤、签名密钥与验证边界见 [分发文档](docs/distribution.md)。Windows 未配置商业代码签名，macOS 使用 ad-hoc 签名；更新包签名由 Tauri updater 单独处理。插件按可信扩展使用，没有权限清单和逐项授权。
-
-## 设计与验收
-
-- [组件独立设置与终端字体、留白设计](docs/plan-component-settings.md)
-- [组件设置代码修改方案：核心存储、插件声明、升级兼容与验收](docs/plan-component-settings-coding.md)
-- [产品范围](docs/product.md)
-- [架构与边界](docs/architecture.md)
-- [文件管理：本地粘贴与拖入、文件和文件夹上传下载（提案）](docs/plan-file-management.md)
-- [文件管理编码方案：接口、任务、系统适配与验收](docs/plan-file-management-coding.md)
-- [文件管理实施与平台验收记录](docs/implementation-file-management.md)
-- [服务器管理设计（暂不建连）](docs/plan-server-management.md)
-- [服务器 Tab 与可拆合工作区设计](docs/plan-server-workspaces.md)
-- [组件与核心 UI 交互设计（提案）](docs/plan-component-ui.md)
-- [远程工作台：混合跳板、终端、文件与带宽统计（提案）](docs/plan-remote-workbench.md)
-- [远程工作台代码整改方案（提案）](docs/plan-code-reorganization.md)
-- [网络隧道插件设计与实施范围](docs/plan-network-proxy.md)
-- [工作台统一样式与终端剪贴板设计](docs/plan-workbench-design.md)
-- [工作台样式与剪贴板实施、验证边界](docs/implementation-workbench-design.md)
-- [插件 API v1](docs/plugin-api.md)
-- [在线更新实施与验收](docs/plan-online-updates.md)
-- [上一阶段实施计划](docs/plan-plugin-foundation.md)
-- [旧版功能和界面提取](docs/legacy-review.md)
+- [使用指南](docs/usage.md)：安装插件、连接服务器、工作台操作和数据存储。
+- [开发指南](docs/development.md)：开发环境、检查、测试和打包。
+- [插件 API](docs/plugin-api.md)：核心能力、插件协议和兼容要求。
+- [分发文档](docs/distribution.md)：平台产物、在线更新和发布流程。
+- [文档索引](docs/README.md)：产品定义、架构、功能方案、实施记录和历史版本说明。

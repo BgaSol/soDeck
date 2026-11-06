@@ -1,6 +1,6 @@
 # SoDeck 安装、升级与插件分发
 
-组件设置已进入源码，尚未发行。清单中的 `settings` 与插件一起分发；终端和文件插件分别携带三款字体的 Regular/Bold、来源校验元数据和许可证，安装后无需联网下载字体。普通构建只校验并复制已提交的资产，维护时才显式运行 `node scripts/prepare-font-assets.mjs`。核心包仍不依赖业务插件构建或包含字体文件。Check 增加通用设置界面回归，原生实际包组合烟测验证终端设置、字体加载、保存重开和 PTY 保留；已执行的平台范围见 [组件设置实施记录](implementation-component-settings.md)。
+组件设置将随核心 0.9.0、终端 0.2.0、文件 0.4.0 和网络隧道 0.2.0 独立发行，结果见 [v0.9.0](releases/v0.9.0.md)。清单中的 `settings` 与插件一起分发；终端和文件插件分别携带三款字体的 Regular/Bold、来源校验元数据和许可证，安装后无需联网下载字体。普通构建只校验并复制已提交的资产，维护时才显式运行 `node scripts/prepare-font-assets.mjs`。核心包仍不依赖业务插件构建或包含字体文件。Check 增加通用设置界面回归，原生实际包组合烟测验证终端设置、字体加载、保存重开和 PTY 保留；已执行的平台范围见 [组件设置实施记录](implementation-component-settings.md)。
 
 v0.6.0 增加 terminal/files 两个独立目录，沿用 Package plugin 的 `--plugin` 和 `plugin-terminal-v*` / `plugin-files-v*` 标签。核心构建不依赖它们。新增 Verify native remote plugins 工作流，接收同一提交的三个独立打包 run ID，在五个原生 runner 安装/解包实际产物，启动隔离 OpenSSH，验证 PTY 经原生 Channel 到 xterm 再回传显示快照，以及文件读取、原子保存和下载。工作流定义不等于已运行；实际结果见 [实施记录](implementation-remote-plugins.md)。
 

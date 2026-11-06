@@ -34,7 +34,9 @@ SoDeck 是面向运维人员的远程服务器桌面工具。核心负责桌面�
 
 ## 交付规则
 
-- 保持 README、产品需求和架构决策与代码同步。
+- 文档按职责与代码同步，仅更新受改动影响的文档。README 作为稳定的项目首页，只在项目定位、主要能力、支持平台、安装方式、快速开始或固定文档入口变化时更新；普通功能细节、缺陷修复、开发进度和验收结果不追加到 README，也不因普通版本发布而替换首页介绍。
+- 详细操作维护在 `docs/usage.md`，开发命令维护在 `docs/development.md`，发布流程维护在 `docs/distribution.md`；产品需求与架构决策更新对应文档，方案与实施验收写入对应的 `docs/plan-*.md` 和 `docs/implementation-*.md`，版本变化写入 `docs/releases/` 或插件 CHANGELOG。避免在多个文档重复维护同一份进度或验收记录。
+- 新增文档时更新 `docs/README.md` 索引；根 README 保留固定入口，不逐项追加功能方案、实施记录和历史版本链接。
 - GitHub Actions 构建和 GitHub Releases 分发是交付要求，详见 `docs/distribution.md`。构建入口必须能在干净环境运行，不依赖开发者绝对路径、手工复制文件或本机未声明的工具。
 - 工程初始化时同时提供检查、构建和打包入口，以及执行这些入口的 GitHub 工作流；当前文档阶段不添加调用不存在命令的工作流。
 - 当前阶段在工作台和外置插件基础上实现在线更新；入口为 `npm run dev`、`npm run check`、`npm run scripts:test`、`npm run test`、`npm run build`；应用版本只修改 `src-tauri/tauri.conf.json`。终端、文件和网络隧道通过 `npm run plugin:build -- --plugin <名称>` 各自独立打包；宿主测试夹具不发行。

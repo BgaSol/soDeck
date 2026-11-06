@@ -1,6 +1,6 @@
 # 组件设置与终端外观设计
 
-状态：2026-11-06 已进入源码，尚未发行。本文保留目标行为；实际完成范围与待验收项见 [实施记录](implementation-component-settings.md)。
+状态：2026-11-06 已进入源码，随 0.9.0 发行，结果见 [发行说明](releases/v0.9.0.md)。本文保留目标行为；实际完成范围与待验收项见 [实施记录](implementation-component-settings.md)。
 
 完整的模块、数据结构、RPC/界面桥、实施批次及测试方案见 [代码修改方案](plan-component-settings-coding.md)。本文件以用户行为为准，具体接口以实施后同步的 API 文档为准。
 

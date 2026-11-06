@@ -1,6 +1,6 @@
 # 组件独立设置与终端外观实施记录
 
-2026-11-06，已进入源码，尚未发行。依据 [功能设计](plan-component-settings.md) 和 [代码修改方案](plan-component-settings-coding.md) 实施。核心及插件版本沿用当前工作区，未创建标签、提交或 Release；工作区还包含此前的桌面一致性和更新体验修改。
+2026-11-06，依据 [功能设计](plan-component-settings.md) 和 [代码修改方案](plan-component-settings-coding.md) 实施，已与桌面一致性、更新体验一并提交。本轮核心 0.9.0、终端 0.2.0、文件 0.4.0、网络隧道 0.2.0 独立发行；五目标结果见 [发行说明](releases/v0.9.0.md)，下文保留源码实施时的本机验证范围。
 
 ## 用户可见行为
 
