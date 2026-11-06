@@ -1,5 +1,17 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
 import {packageSettingsAssets} from './plugin-settings-assets.mjs';
+import {execFileSync} from 'node:child_process';
+test('Git preserves pinned font asset bytes with either checkout newline policy',()=>{
+  const sources=JSON.parse(fs.readFileSync('plugins/shared/fonts/sources.json','utf8'));
+  for(const asset of sources.files){
+    const file=`plugins/shared/fonts/${asset.file}`,bytes=fs.readFileSync(file);
+    const raw=execFileSync('git',['hash-object','--no-filters','--stdin'],{input:bytes,encoding:'utf8',windowsHide:true}).trim();
+    for(const autocrlf of ['false','true']){
+      const filtered=execFileSync('git',['-c',`core.autocrlf=${autocrlf}`,'hash-object',`--path=${file}`,'--stdin'],{input:bytes,encoding:'utf8',windowsHide:true}).trim();
+      assert.equal(filtered,raw,`${asset.file} must retain upstream bytes with core.autocrlf=${autocrlf}`);
+    }
+  }
+});
 test('font-consuming plugins independently package complete fonts, metadata and licenses',()=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-font-package-'));
   try{
