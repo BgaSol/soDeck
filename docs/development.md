@@ -75,7 +75,7 @@ npm run plugin:build -- --plugin network-proxy
 
 | 工作流 | 用途 |
 | --- | --- |
-| [Check](../.github/workflows/check.yml) | 类型、格式、脚本测试、前端构建与相关界面回归 |
+| [Check](../.github/workflows/check.yml) | 类型、格式、脚本、核心常规 Rust 与现有插件测试、前端构建和相关界面回归；同一分支/PR 只保留最新运行 |
 | [Package SoDeck](../.github/workflows/build.yml) | 五目标原生核心构建、打包、包内验证及更新签名 |
 | [Package plugin](../.github/workflows/plugin.yml) | 按插件目录独立打包，生成插件更新清单 |
 | [Verify native remote plugins](../.github/workflows/remote-integration.yml) | 验证实际核心和业务插件包的原生界面与远程业务 |
