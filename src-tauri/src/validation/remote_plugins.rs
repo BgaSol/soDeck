@@ -2,7 +2,7 @@
 use crate::{workspaces::Context, AppCore};
 use serde_json::{json, Value};
 use std::{sync::Arc, time::Duration};
-async fn wait<T>(mut read: impl FnMut() -> Option<T>) -> Result<T, String> {
+async fn wait<T>(stage: &str, mut read: impl FnMut() -> Option<T>) -> Result<T, String> {
     tokio::time::timeout(Duration::from_secs(15), async {
         loop {
             if let Some(v) = read() {
@@ -12,7 +12,7 @@ async fn wait<T>(mut read: impl FnMut() -> Option<T>) -> Result<T, String> {
         }
     })
     .await
-    .map_err(|_| "原生插件界面未完成挂载或数据回传".into())
+    .map_err(|_| format!("原生插件等待超时（{stage}，15 秒）"))
 }
 fn view(core: &AppCore, context: &Context, key: &str) -> Option<String> {
     core.ui_snapshot("main").ok()?["workspaces"][&context.workspace_id]["views"]
@@ -62,7 +62,7 @@ async fn terminal_settings(
     }
     let terminal_id = core
         .terminals
-        .validation_surface(view_id, surface)
+        .validation_surface(view_id)
         .ok_or("设置修改前终端不存在")?
         .0;
     let mut fonts = vec![
@@ -93,7 +93,7 @@ async fn terminal_settings(
         }
         // This report comes from the shipped iframe after native FontFace.load and PTY resize.
         // No injected browser transport or font mock participates in this validation.
-        wait(|| {
+        wait(&format!("终端字体 {font} 应用"), || {
             core.settings_page("sodeck.terminal", "appearance").ok()?["applications"]
                 .as_array()?
                 .iter()
@@ -108,8 +108,8 @@ async fn terminal_settings(
         .await??;
         if core
             .terminals
-            .validation_surface(view_id, surface)
-            .is_none_or(|(id, _, _)| id != terminal_id)
+            .validation_surface(view_id)
+            .is_none_or(|(id, _)| id != terminal_id)
         {
             return Err("修改外观重新创建了 PTY".into());
         }
@@ -144,18 +144,22 @@ pub(super) async fn roundtrip(
         json!({"op":"open","key":"sodeck.terminal:terminal","requestId":"native-terminal-open"}),
     )?;
     core.workspace_changed();
-    let tv = wait(|| view(core, context, "sodeck.terminal:terminal"))
+    let tv = wait("终端视图创建", || {
+        view(core, context, "sodeck.terminal:terminal")
+    })
+    .await
+    .map_err(|e| format!("terminal view: {e}"))?;
+    let (window, token) = wait("终端界面挂载", || core.ui_ready_surface(&tv))
         .await
-        .map_err(|e| format!("terminal view: {e}"))?;
-    let (window, token) = wait(|| core.ui_ready_surface(&tv)).await.map_err(|e| {
-        format!(
-            "terminal surface: {e}; {}",
-            core.ui_snapshot("main").unwrap_or_default()
-        )
-    })?;
-    let (id, output, sequence) = core
+        .map_err(|e| {
+            format!(
+                "terminal surface: {e}; {}",
+                core.ui_snapshot("main").unwrap_or_default()
+            )
+        })?;
+    let (id, output) = core
         .terminals
-        .validation_surface(&tv, &token)
+        .validation_surface(&tv)
         .ok_or("终端原语未创建")?;
     terminal_settings(core, &tv, &token).await?;
     let command = if cfg!(windows) {
@@ -163,21 +167,12 @@ pub(super) async fn roundtrip(
     } else {
         b"printf 'sodeck-native-pty-ok\\n'\r".to_vec()
     };
-    core.terminal_data(
-        &window,
-        &token,
-        crate::terminal::DataRequest::Write {
-            id,
-            sequence,
-            data: command,
-        },
-        None,
-    )
-    .await
-    .map_err(|e| format!("terminal native checkpoint: {e}"))?;
+    core.terminal_validation_write(&window, &token, &id, command)
+        .await
+        .map_err(|e| format!("terminal native checkpoint: {e}"))?;
     // Only the shipped xterm UI can create this checkpoint: PTY -> Tauri Channel ->
     // iframe -> xterm -> serialized display -> native IPC. No browser transport mock.
-    wait(|| {
+    wait("终端显示检查点", || {
         output
             .checkpoint_bytes()
             .windows(b"sodeck-native-pty-ok".len())
@@ -187,7 +182,7 @@ pub(super) async fn roundtrip(
     .await?;
     let opened=core.ui_action("main",context,json!({"op":"open","key":"sodeck.files:editor","requestId":"native-file-open","resourceKey":remote,"params":{"path":remote}}))?;
     let fv = opened["viewId"].as_str().ok_or("没有编辑器视图")?;
-    let (_, token) = wait(|| core.ui_ready_surface(fv)).await?;
+    let (_, token) = wait("文件编辑器界面挂载", || core.ui_ready_surface(fv)).await?;
     let id = core.files.validation_handle(fv).ok_or("文件原语未创建")?;
     // The iframe reads its document itself over the real native data endpoint.
     tokio::time::timeout(Duration::from_secs(15), async {
@@ -212,7 +207,7 @@ pub(super) async fn roundtrip(
         let settings = core.settings_page("sodeck.files", "editor")?;
         // Mounting and describe do not prove that the iframe consumed all chunks.
         // The current editor reports its applied preferences after reading the document.
-        wait(|| {
+        wait("文件编辑器设置应用", || {
             core.settings_page("sodeck.files", "editor").ok()?["applications"]
                 .as_array()?
                 .iter()

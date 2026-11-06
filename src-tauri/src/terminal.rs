@@ -29,28 +29,49 @@ pub(crate) struct Terminal {
     pub sent: AtomicU64,
     pub received: AtomicU64,
 }
+impl Terminal {
+    fn enqueue_write(
+        &self,
+        data: Vec<u8>,
+    ) -> Result<oneshot::Receiver<Result<(), String>>, String> {
+        if data.len() > BLOCK {
+            return Err("终端输入块超过 16 KiB".into());
+        }
+        let (tx, rx) = oneshot::channel();
+        self.input
+            .try_send(Input::Write(data, tx))
+            .map_err(|_| "终端输入队列已满".to_string())?;
+        Ok(rx)
+    }
+
+    fn enqueue_surface_write(
+        &self,
+        token: &str,
+        sequence: u64,
+        data: Vec<u8>,
+    ) -> Result<oneshot::Receiver<Result<(), String>>, String> {
+        let mut next = self.next_input.lock().unwrap();
+        let n = next.entry(token.into()).or_insert(0);
+        if sequence != *n {
+            return Err("终端输入序号无效，不自动重放输入".into());
+        }
+        let rx = self.enqueue_write(data)?;
+        *n += 1;
+        Ok(rx)
+    }
+}
 #[derive(Default)]
 pub struct Terminals {
     entries: Mutex<HashMap<String, Arc<Terminal>>>,
 }
 impl Terminals {
-    pub(crate) fn validation_surface(
-        &self,
-        view: &str,
-        token: &str,
-    ) -> Option<(String, Arc<Replay>, u64)> {
+    pub(crate) fn validation_surface(&self, view: &str) -> Option<(String, Arc<Replay>)> {
         self.entries
             .lock()
             .unwrap()
             .iter()
             .find(|(_, t)| t.owner.view == view)
-            .map(|(id, t)| {
-                (
-                    id.clone(),
-                    t.output.clone(),
-                    *t.next_input.lock().unwrap().get(token).unwrap_or(&0),
-                )
-            })
+            .map(|(id, t)| (id.clone(), t.output.clone()))
     }
     pub(crate) fn cancel(&self, matches: impl Fn(&Owner) -> bool) {
         let mut entries = self.entries.lock().unwrap();
@@ -111,6 +132,42 @@ impl DataRequest {
 }
 
 impl AppCore {
+    // Package smoke commands use the real owned PTY queue, independently of the
+    // iframe's sequenced input. This crate-private entry is never an RPC operation.
+    pub(crate) async fn terminal_validation_write(
+        &self,
+        window: &str,
+        token: &str,
+        id: &str,
+        data: Vec<u8>,
+    ) -> Result<(), String> {
+        let view = self.ui_data_writable(window, token)?;
+        let terminal = self
+            .terminals
+            .entries
+            .lock()
+            .unwrap()
+            .get(id)
+            .cloned()
+            .ok_or("终端已关闭")?;
+        if terminal.owner.view != view.id
+            || terminal.owner.plugin != view.plugin_id
+            || terminal.owner.instance != view.plugin_instance_id
+        {
+            return Err("终端不属于此页面".into());
+        }
+        self.workspaces
+            .lock()
+            .unwrap()
+            .validate_owned(window, &terminal.owner.context)?;
+        self.workspaces
+            .lock()
+            .unwrap()
+            .validate_context(&terminal.owner.context)?;
+        let rx = terminal.enqueue_write(data)?;
+        rx.await.map_err(|_| "终端已结束".to_string())?
+    }
+
     pub(crate) fn terminal_open(
         self: &Arc<Self>,
         plugin: &str,
@@ -271,19 +328,7 @@ impl AppCore {
                     .lock()
                     .unwrap()
                     .validate_context(&terminal.owner.context)?;
-                let (tx, rx) = oneshot::channel();
-                {
-                    let mut next = terminal.next_input.lock().unwrap();
-                    let n = next.entry(token.into()).or_insert(0);
-                    if sequence != *n {
-                        return Err("终端输入序号无效，不自动重放输入".into());
-                    }
-                    terminal
-                        .input
-                        .try_send(Input::Write(data, tx))
-                        .map_err(|_| "终端输入队列已满".to_string())?;
-                    *n += 1;
-                }
+                let rx = terminal.enqueue_surface_write(token, sequence, data)?;
                 rx.await.map_err(|_| "终端已结束".to_string())?
             }
         }
@@ -294,6 +339,100 @@ fn dimensions(cols: u32, rows: u32) -> Result<(), String> {
         Err("终端尺寸超出范围".into())
     } else {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn terminal() -> (Terminal, mpsc::Receiver<Input>) {
+        let (input, rx) = mpsc::channel(32);
+        (
+            Terminal {
+                owner: Owner {
+                    plugin: "test.terminal".into(),
+                    instance: "instance".into(),
+                    view: "view".into(),
+                    context: crate::workspaces::Context {
+                        workspace_id: "workspace".into(),
+                        server_id: "server".into(),
+                        connection_id: "connection".into(),
+                        generation: 1,
+                    },
+                },
+                output: Arc::new(Replay::default()),
+                input,
+                cancel: CancellationToken::new(),
+                next_input: Mutex::new(HashMap::new()),
+                sent: AtomicU64::new(0),
+                received: AtomicU64::new(0),
+            },
+            rx,
+        )
+    }
+
+    fn receive(rx: &mut mpsc::Receiver<Input>) -> Vec<u8> {
+        match rx.try_recv().unwrap() {
+            Input::Write(bytes, _) => bytes,
+            Input::Resize(..) => panic!("unexpected resize"),
+        }
+    }
+
+    #[test]
+    fn validation_write_survives_surface_input_after_a_sequence_snapshot() {
+        let (terminal, mut rx) = terminal();
+        let snapshot = 0;
+        terminal
+            .enqueue_surface_write("surface", 0, b"reply".to_vec())
+            .unwrap();
+        // This is the previous package smoke race: the real iframe advances the
+        // sequence while the smoke test awaits font application and PTY resize.
+        assert!(terminal
+            .enqueue_surface_write("surface", snapshot, b"smoke".to_vec())
+            .is_err());
+        terminal.enqueue_write(b"smoke".to_vec()).unwrap();
+        terminal
+            .enqueue_surface_write("surface", 1, b"next reply".to_vec())
+            .unwrap();
+        assert_eq!(receive(&mut rx), b"reply");
+        assert_eq!(receive(&mut rx), b"smoke");
+        assert_eq!(receive(&mut rx), b"next reply");
+    }
+
+    #[test]
+    fn validation_write_does_not_consume_the_iframes_first_input_sequence() {
+        let (terminal, mut rx) = terminal();
+        terminal.enqueue_write(b"smoke".to_vec()).unwrap();
+        terminal
+            .enqueue_surface_write("surface", 0, b"first reply".to_vec())
+            .unwrap();
+        assert!(terminal
+            .enqueue_surface_write("surface", 0, b"duplicate".to_vec())
+            .is_err());
+        assert_eq!(receive(&mut rx), b"smoke");
+        assert_eq!(receive(&mut rx), b"first reply");
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn failed_queue_writes_keep_the_surface_sequence_and_input_bounds() {
+        let (terminal, mut rx) = terminal();
+        assert!(terminal.enqueue_write(vec![0; BLOCK + 1]).is_err());
+        for _ in 0..32 {
+            terminal.enqueue_write(b"smoke".to_vec()).unwrap();
+        }
+        assert!(terminal
+            .enqueue_surface_write("surface", 0, b"reply".to_vec())
+            .is_err());
+        assert!(terminal.enqueue_write(b"overflow".to_vec()).is_err());
+        assert_eq!(receive(&mut rx), b"smoke");
+        terminal
+            .enqueue_surface_write("surface", 0, b"reply".to_vec())
+            .unwrap();
+        assert!(terminal
+            .enqueue_surface_write("surface", 0, b"duplicate".to_vec())
+            .is_err());
     }
 }
 async fn run(
