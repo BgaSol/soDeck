@@ -179,6 +179,7 @@ jobs:
           name: SoDeck-${{ matrix.name }}
           path: artifacts/core/
           if-no-files-found: error
+          retention-days: 30
   metadata:
     needs: [preflight, package]
     if: always() && !cancelled() && needs.preflight.result == 'success'
@@ -213,3 +214,4 @@ jobs:
           name: Core-update-manifest
           path: artifacts/core/core-update.json
           if-no-files-found: error
+          retention-days: 30
