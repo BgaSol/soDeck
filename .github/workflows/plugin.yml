@@ -28,9 +28,11 @@ jobs:
           save-if: false
       - name: Base terminal
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        env:
+          SODECK_PLUGIN_CLIENT_MANIFEST_HASH: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
         with:
           shared-key: plugin-terminal
-          key: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
+          env-vars: SODECK_PLUGIN_CLIENT_MANIFEST_HASH
           workspaces: plugins/terminal -> target
           lookup-only: true
           save-if: false
@@ -45,9 +47,11 @@ jobs:
           save-if: false
       - name: Unrelated change terminal
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        env:
+          SODECK_PLUGIN_CLIENT_MANIFEST_HASH: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
         with:
           shared-key: plugin-terminal
-          key: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
+          env-vars: SODECK_PLUGIN_CLIENT_MANIFEST_HASH
           workspaces: plugins/terminal -> target
           lookup-only: true
           save-if: false
@@ -62,9 +66,11 @@ jobs:
           save-if: false
       - name: Shared change terminal
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        env:
+          SODECK_PLUGIN_CLIENT_MANIFEST_HASH: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
         with:
           shared-key: plugin-terminal
-          key: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
+          env-vars: SODECK_PLUGIN_CLIENT_MANIFEST_HASH
           workspaces: plugins/terminal -> target
           lookup-only: true
           save-if: false
@@ -72,19 +78,22 @@ jobs:
         run: printf '\n[profile.dev]\ndebug = 1\n' >> plugins/terminal/Cargo.toml
       - name: Profile change terminal
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        env:
+          SODECK_PLUGIN_CLIENT_MANIFEST_HASH: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
         with:
           shared-key: plugin-terminal
-          key: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
+          env-vars: SODECK_PLUGIN_CLIENT_MANIFEST_HASH
           workspaces: plugins/terminal -> target
           lookup-only: true
           save-if: false
       - name: Environment change terminal
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
         env:
+          SODECK_PLUGIN_CLIENT_MANIFEST_HASH: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
           RUSTFLAGS: -C debuginfo=1
         with:
           shared-key: plugin-terminal
-          key: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
+          env-vars: SODECK_PLUGIN_CLIENT_MANIFEST_HASH
           workspaces: plugins/terminal -> target
           lookup-only: true
           save-if: false
