@@ -1,123 +1,90 @@
-name: Package plugin
-
+name: Temporary cache boundary probe
 on:
-  push:
-    tags: ["plugin-*-v*"]
   workflow_dispatch:
     inputs:
       plugin:
-        description: Plugin directory under plugins/
-        default: terminal
-        required: true
         type: string
+        default: terminal
       publish:
-        description: Create a draft independent plugin Release
-        default: false
         type: boolean
-
+        default: false
 permissions:
   contents: read
-
 jobs:
-  select:
+  probe:
     runs-on: ubuntu-22.04
     timeout-minutes: 10
-    outputs:
-      plugin: ${{ steps.config.outputs.plugin }}
-      tag: ${{ steps.config.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
-        with:
-          node-version-file: .node-version
-      - id: config
-        env:
-          PLUGIN: ${{ inputs.plugin || 'terminal' }}
-        run: node scripts/release-metadata.mjs --kind plugin --plugin "$PLUGIN"
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.99.1
-          components: rustfmt
-      - env:
-          PLUGIN: ${{ steps.config.outputs.plugin }}
-        run: cargo fmt --manifest-path "plugins/$PLUGIN/Cargo.toml" -- --check
-  package:
-    needs: select
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: linux-x86_64
-            runner: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-    name: ${{ matrix.name }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
-        if: needs.select.outputs.plugin != 'terminal'
+      - name: Base core
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
         with:
-          node-version-file: .node-version
-      - uses: actions/setup-node@v6
-        if: needs.select.outputs.plugin == 'terminal'
+          shared-key: core-package
+          workspaces: src-tauri -> target
+          lookup-only: true
+          save-if: false
+      - name: Base terminal
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
         with:
-          node-version-file: .node-version
-          cache: npm
-          cache-dependency-path: plugins/terminal/package-lock.json
-      - uses: dtolnay/rust-toolchain@master
+          shared-key: plugin-terminal
+          key: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
+          workspaces: plugins/terminal -> target
+          lookup-only: true
+          save-if: false
+      - name: Change unrelated files plugin profile
+        run: printf '\n[profile.dev]\ndebug = 1\n' >> plugins/files/Cargo.toml
+      - name: Unrelated change core
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
         with:
-          toolchain: 1.99.1
-          targets: ${{ matrix.target }}
-          components: rustfmt
-      - uses: Swatinem/rust-cache@v2
+          shared-key: core-package
+          workspaces: src-tauri -> target
+          lookup-only: true
+          save-if: false
+      - name: Unrelated change terminal
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
         with:
-          shared-key: plugin-${{ needs.select.outputs.plugin }}
-          workspaces: plugins/${{ needs.select.outputs.plugin }} -> target
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - shell: bash
+          shared-key: plugin-terminal
+          key: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
+          workspaces: plugins/terminal -> target
+          lookup-only: true
+          save-if: false
+      - name: Change shared client manifest
+        run: printf '\n[features]\ncache_probe = []\n' >> crates/plugin-client/Cargo.toml
+      - name: Shared change core
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        with:
+          shared-key: core-package
+          workspaces: src-tauri -> target
+          lookup-only: true
+          save-if: false
+      - name: Shared change terminal
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        with:
+          shared-key: plugin-terminal
+          key: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
+          workspaces: plugins/terminal -> target
+          lookup-only: true
+          save-if: false
+      - name: Change terminal compile profile
+        run: printf '\n[profile.dev]\ndebug = 1\n' >> plugins/terminal/Cargo.toml
+      - name: Profile change terminal
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        with:
+          shared-key: plugin-terminal
+          key: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
+          workspaces: plugins/terminal -> target
+          lookup-only: true
+          save-if: false
+      - name: Environment change terminal
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
         env:
-          PLUGIN: ${{ needs.select.outputs.plugin }}
-        run: |
-          node scripts/package-plugin.mjs --plugin "$PLUGIN" --target '${{ matrix.target }}'
-      - uses: actions/upload-artifact@v4
+          RUSTFLAGS: -C debuginfo=1
         with:
-          name: Plugin-${{ needs.select.outputs.plugin }}-${{ matrix.name }}
-          path: |
-            artifacts/plugins/*.zip
-            artifacts/plugins/*.tar.gz
-            artifacts/plugins/plugin-*.json
-          if-no-files-found: error
-          retention-days: 30
-  release:
-    needs: [select, package]
-    if: always() && !cancelled() && needs.select.result == 'success' && (startsWith(github.ref, 'refs/tags/') || inputs.publish)
-    runs-on: ubuntu-22.04
-    timeout-minutes: 10
-    concurrency:
-      group: plugin-release-${{ needs.select.outputs.tag }}
-      cancel-in-progress: false
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
-        with:
-          node-version-file: .node-version
-      - uses: actions/download-artifact@v5
-        with:
-          pattern: Plugin-${{ needs.select.outputs.plugin }}-*
-          merge-multiple: true
-          path: artifacts/plugins
-      - env:
-          PLUGIN: ${{ needs.select.outputs.plugin }}
-          TAG: ${{ needs.select.outputs.tag }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          node scripts/release-metadata.mjs --kind plugin --plugin "$PLUGIN" --tag "$TAG" --input artifacts/plugins
-          if gh release view "$TAG" --json isDraft > release.json; then
-            node -e 'if (!JSON.parse(require("fs").readFileSync("release.json")).isDraft) throw new Error("Published versions are immutable; bump the version")'
-          else
-            gh release create "$TAG" --target "$GITHUB_SHA" --draft --latest=false --title "$PLUGIN ${TAG##*-v}" --notes-file "plugins/$PLUGIN/CHANGELOG.md"
-          fi
-          find artifacts/plugins -maxdepth 1 -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name 'plugin-update.json' \) -exec gh release upload "$TAG" --clobber {} +
+          shared-key: plugin-terminal
+          key: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
+          workspaces: plugins/terminal -> target
+          lookup-only: true
+          save-if: false
