@@ -1,6 +1,6 @@
 # 文件管理实施记录
 
-2026-11-06，工作区源码实现，未提交发行版本。功能范围见 [需求](plan-file-management.md)，分层及目标验收见 [编码方案](plan-file-management-coding.md)。
+2026-11-06。本次按核心 0.8.4、文件插件 0.3.0 独立发行，五目标原生包验证结果在发行流程结束后补记。功能范围见 [需求](plan-file-management.md)，分层及目标验收见 [编码方案](plan-file-management-coding.md)，发行说明见 [v0.8.4](releases/v0.8.4.md)。
 
 ## 已进入源码的行为
 

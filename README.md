@@ -1,10 +1,10 @@
 # SoDeck
 
-面向运维人员的远程服务器工作台。v0.8.3 提供一级加号选择服务器、二级加号直接新建终端，并简化工作台底栏和补齐凭据重试。五目标原生构建、实际包启动和三个业务插件的组合验收均通过，范围见 [v0.8.3](docs/releases/v0.8.3.md)。核心已正式发布为 [Latest v0.8.3](https://github.com/BgaSol/soDeck/releases/latest)，可直接下载或从应用内升级。核心与业务插件独立分发，核心包不包含业务插件。官方插件仅保留终端、文件和网络隧道；升级启动前自动移除已退役的 Hello 和组件交互示例登记。
+面向运维人员的远程服务器工作台。v0.8.4 与文件插件 0.3.0 提供文件/文件夹批量上传下载、系统文件粘贴与拖入、任务管理及远程日常文件操作，并修复工作台菜单、窗口手势和服务器双击连接。发行与验证范围见 [v0.8.4](docs/releases/v0.8.4.md)，核心下载见 [Latest](https://github.com/BgaSol/soDeck/releases/latest)。请先升级核心，再升级文件插件并重启。核心与业务插件独立分发，核心包不包含业务插件。官方插件仅保留终端、文件和网络隧道；升级启动前自动移除已退役的 Hello 和组件交互示例登记。
 
-外置插件声明侧栏、中央页面及编辑弹窗，核心统一管理两侧入口、混合 Tab、布局偏好、关闭确认和跨窗重挂载。`plugins/terminal` 提供真实多 Tab 终端；`plugins/files` 提供目录、1 MiB 内 UTF-8 文件编辑、保存冲突检查和单文件下载；`plugins/network-proxy` 提供按服务器管理的 TCP 转发与 SOCKS5 代理，复用现有混合跳板，域名由最终远端解析。核心包不包含这些插件。
+外置插件声明侧栏、中央页面及编辑弹窗，核心统一管理两侧入口、混合 Tab、布局偏好、关闭确认和跨窗重挂载。`plugins/terminal` 提供真实多 Tab 终端；`plugins/files` 提供目录、批量上传下载、远程文件管理、1 MiB 内 UTF-8 文件编辑和保存冲突检查；`plugins/network-proxy` 提供按服务器管理的 TCP 转发与 SOCKS5 代理，复用现有混合跳板，域名由最终远端解析。核心包不包含这些插件。
 
-源码已修正工作区菜单落到窗口底部和短菜单出现双向滚动条的问题；长组件列表仅纵向滚动，搜索后保持贴近入口。原因、回归与交付边界见 [菜单修复记录](docs/implementation-component-menus.md)，尚未更新已安装应用。
+v0.8.4 修正工作区菜单落到窗口底部和短菜单出现双向滚动条的问题；长组件列表仅纵向滚动，搜索后保持贴近入口。原因、回归与交付边界见 [菜单修复记录](docs/implementation-component-menus.md)。
 
 当前版本沿用旧版紧凑工作台：文件侧栏提供真正的多分支目录树、路径定位、独立分页、右键操作和键盘导航；单击选中、双击文件打开中央编辑器。隐藏、重挂载和移窗保留导航状态。多巴胺、浅色、深色主题同步到文件与终端。新版文件插件 0.2.0 需要核心 0.6.1 的目录游标能力，旧版文件插件仍可使用原来的接口。范围见 [文件树设计](docs/plan-file-tree.md)，验证和限制见 [实施记录](docs/implementation-file-tree.md)，发行说明见 [v0.6.1](docs/releases/v0.6.1.md)。
 
@@ -84,7 +84,7 @@ npm run plugin:build -- --plugin network-proxy
 - [架构与边界](docs/architecture.md)
 - [文件管理：本地粘贴与拖入、文件和文件夹上传下载（提案）](docs/plan-file-management.md)
 - [文件管理编码方案：接口、任务、系统适配与验收](docs/plan-file-management-coding.md)
-- [文件管理源码实施与平台待验收项（尚未发行）](docs/implementation-file-management.md)
+- [文件管理实施与平台验收记录](docs/implementation-file-management.md)
 - [服务器管理设计（暂不建连）](docs/plan-server-management.md)
 - [服务器 Tab 与可拆合工作区设计](docs/plan-server-workspaces.md)
 - [组件与核心 UI 交互设计（提案）](docs/plan-component-ui.md)
