@@ -32,6 +32,23 @@ test("official Ubuntu mirror covers legacy and Deb822 files, preserves ports/ven
   }
 });
 
+test("hosted runner mirror lists select the official archive directly and preserve independent mirror lists", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-apt-test-"));
+  try {
+    fs.mkdirSync(path.join(directory, "sources.list.d"));
+    const legacy = path.join(directory, "sources.list"), deb822 = path.join(directory, "sources.list.d/ubuntu.sources");
+    fs.writeFileSync(legacy, "deb mirror+file:/etc/apt/apt-mirrors.txt jammy main\ndeb mirror+file:/etc/apt/vendor-mirrors.txt stable main\n");
+    fs.writeFileSync(deb822, "Types: deb\nURIs: mirror+file:/etc/apt/apt-mirrors.txt\nSuites: jammy-updates\n");
+    assert.equal(configureUbuntuMirror(directory).length, 2);
+    assert.equal(fs.readFileSync(legacy, "utf8"), "deb https://archive.ubuntu.com/ubuntu/ jammy main\ndeb mirror+file:/etc/apt/vendor-mirrors.txt stable main\n");
+    assert.equal(fs.readFileSync(deb822, "utf8"), "Types: deb\nURIs: https://archive.ubuntu.com/ubuntu/\nSuites: jammy-updates\n");
+    assert.deepEqual(configureUbuntuMirror(directory), []);
+  } finally {
+    assert.equal(path.dirname(directory), path.resolve(os.tmpdir()));
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("missing APT source files are harmless and relative configuration paths are refused", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-apt-test-"));
   try {

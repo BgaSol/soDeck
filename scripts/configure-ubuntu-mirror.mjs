@@ -11,7 +11,9 @@ export function configureUbuntuMirror(directory = "/etc/apt") {
   for (const file of files) {
     if (!fs.existsSync(file) || !fs.statSync(file).isFile()) continue;
     const original = fs.readFileSync(file, "utf8");
-    const configured = original.replace(/https?:\/\/azure\.archive\.ubuntu\.com\/ubuntu/g, "https://archive.ubuntu.com/ubuntu");
+    const configured = original
+      .replace(/https?:\/\/azure\.archive\.ubuntu\.com\/ubuntu/g, "https://archive.ubuntu.com/ubuntu")
+      .replace(/mirror\+file:\/etc\/apt\/apt-mirrors\.txt/g, "https://archive.ubuntu.com/ubuntu/");
     if (configured !== original) { fs.writeFileSync(file, configured); changed.push(file); }
   }
   return changed;
