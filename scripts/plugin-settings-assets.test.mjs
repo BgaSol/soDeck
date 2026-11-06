@@ -4,10 +4,11 @@ import {execFileSync} from 'node:child_process';
 test('Git preserves pinned font asset bytes with either checkout newline policy',()=>{
   const sources=JSON.parse(fs.readFileSync('plugins/shared/fonts/sources.json','utf8'));
   for(const asset of sources.files){
-    const file=`plugins/shared/fonts/${asset.file}`,bytes=fs.readFileSync(file);
-    const raw=execFileSync('git',['hash-object','--no-filters','--stdin'],{input:bytes,encoding:'utf8',windowsHide:true}).trim();
+    const file=`plugins/shared/fonts/${asset.file}`;
+    const options={encoding:'utf8',windowsHide:true,timeout:10_000};
+    const raw=execFileSync('git',['hash-object','--no-filters','--',file],options).trim();
     for(const autocrlf of ['false','true']){
-      const filtered=execFileSync('git',['-c',`core.autocrlf=${autocrlf}`,'hash-object',`--path=${file}`,'--stdin'],{input:bytes,encoding:'utf8',windowsHide:true}).trim();
+      const filtered=execFileSync('git',['-c',`core.autocrlf=${autocrlf}`,'hash-object',`--path=${file}`,'--',file],options).trim();
       assert.equal(filtered,raw,`${asset.file} must retain upstream bytes with core.autocrlf=${autocrlf}`);
     }
   }
