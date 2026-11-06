@@ -145,9 +145,11 @@ jobs:
         shell: pwsh
         run: |
           $installer = Get-ChildItem 'src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe' | Select-Object -First 1
-          $installDir = Join-Path $env:RUNNER_TEMP 'SoDeck'
-          $install = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDir" -WindowStyle Hidden -PassThru -Wait
+          $installDir = Join-Path $env:ProgramW6432 'SoDeck'
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList '/S' -WindowStyle Hidden -PassThru -Wait
           if ($install.ExitCode -ne 0) { throw "Installer failed: $($install.ExitCode)" }
+          $registration = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\SoDeck'
+          if ($registration.InstallLocation.Trim('"') -ne $installDir) { throw 'System installation location mismatch' }
           node scripts/verify-binary.mjs "$installDir/sodeck.exe" '${{ matrix.target }}'
           $env:SODECK_TEST_UPDATE_BUNDLE = $installer.FullName
           node scripts/smoke.mjs "$installDir/sodeck.exe"

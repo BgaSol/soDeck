@@ -34,6 +34,14 @@ npm run build -- --bundles nsis -- --locked
 
 正式更新包添加 `--config src-tauri/tauri.release.conf.json` 并通过环境提供签名私钥。Linux 使用 `--bundles deb,appimage`，macOS 使用 `--bundles dmg,app`，显式生成安装盘和签名更新归档。Node 24.22.0、Rust 1.99.1 与锁文件固定；Linux 运行基线仍为 Ubuntu 22.04/24.04 LTS。
 
+### Windows 安装范围与图标
+
+Windows x86_64 与 ARM64 的 NSIS 新安装统一使用 `perMachine`，默认目录为 `Program Files\SoDeck`，安装登记写入 HKLM，供所有用户启动。安装、卸载和核心在线更新需要管理员确认；应用自身仍以普通用户身份运行，服务器资料、凭据、设置和在线插件保存在各用户的应用数据目录，不改为全机共享。插件更新不写核心安装目录。
+
+已有用户安装切换为系统安装时，先退出 SoDeck，卸载旧用户安装，**不要勾选删除应用数据**，再运行新安装包。同一 Windows 用户重新启动后继续使用原资料和插件。新系统安装器只读取系统安装登记，不自动清理旧用户安装；仅执行在线更新可能保留旧程序和旧安装登记。切换安装范围按上述手动重装步骤完成。
+
+应用、快捷方式、安装程序和卸载程序共用 `src-tauri/icons/icon.ico`。安装向导的页眉与欢迎/完成页侧图复用现有 `icon.png` 的 SoDeck 标识，分别提交为 `installer-header.bmp`（150 × 57）与 `installer-sidebar.bmp`（164 × 314），均为 24 位 BMP。后续更换品牌时同步这些图片及已有各平台图标；正常构建直接使用仓库资产，无需额外图片工具。NSIS 配置位于 `src-tauri/tauri.conf.json`；官方 updater 的 `passive` 设置控制更新界面的交互方式，与安装范围不同。
+
 ## 插件生命周期与更新
 
 - v0.5.2 起，设置 → 插件管理列出核心声明的官方来源。点击“下载并启用”从正式插件 Release 取得本机原生归档，复用更新器的 API/平台、SHA-256、解包和清单检查后注册为启用；安装期间不启动程序，重启生效。首次安装失败不登记半成品，可重试；同 ID 已安装时转到详情管理，不覆盖本地记录或更改其来源。列表不在后台自动下载，不建立插件市场。
