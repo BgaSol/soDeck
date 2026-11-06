@@ -352,7 +352,7 @@
       else return;
       e.preventDefault();
     }
-    closeMenu(focus = false) { clearTimeout(this.menuTimer);this.menuObserver?.disconnect();this.readMenuState=null;this.menu?.remove();this.menu = null; if (focus) this.tree.focus(); }
+    closeMenu(focus = false) { clearTimeout(this.menuTimer);this.menuCleanup?.();this.menuCleanup=null;this.readMenuState=null;this.menu?.remove();this.menu = null; if (focus) this.tree.focus(); }
     showMenu(n, x, y, keyboard = false) {
       this.closeMenu();
       const paths=n?[...this.selectedPaths()]:[],multiple=paths.length>1,directory=n?.attrs.kind==='directory';
@@ -360,44 +360,29 @@
       const mutable=paths.length>0&&paths.every(path=>path!=='/'&&path!==this.rootPath);
       const menu = document.createElement('div'); menu.className = 'tree-menu sd-menu'+(keyboard?'':' pointer-pending'); menu.setAttribute('role', 'menu');menu.setAttribute('aria-label','文件操作');menu.tabIndex=-1;
       if(n)menu.dataset.path=n.path;
-      const list=document.createElement('div');list.className='tree-menu-list';menu.append(list);
-      let submenu,submenuAnchor,paste,pasteState,reading=false,validateTarget=true;
-      const hideSub=()=>{if(submenu){submenu.hidden=true;submenuAnchor.setAttribute('aria-expanded','false');submenu=null;submenuAnchor=null;}};
-      const placeSub=()=>{
-        if(!submenu)return;
-        submenu.style.maxHeight='';
-        const r=submenuAnchor.getBoundingClientRect(),w=submenu.offsetWidth,h=submenu.offsetHeight;
-        const right=r.right+7;
-        let left=right,top=r.top;
-        if(right+w>innerWidth-8){
-          left=r.left-w-7;
-          if(left<8){
-            left=r.left;
-            const below=innerHeight-r.bottom-15,above=r.top-15,useBelow=below>=above;
-            const room=Math.max(32,useBelow?below:above);
-            submenu.style.maxHeight=room+'px';
-            top=useBelow?r.bottom+7:r.top-Math.min(h,room)-7;
-          }
-        }
-        submenu.style.left=Math.max(8,Math.min(left,innerWidth-w-8))+'px';
-        submenu.style.top=Math.max(8,Math.min(top,innerHeight-submenu.offsetHeight-8))+'px';
-      };
-      const position=()=>{if(this.menu!==menu)return;menu.style.left=Math.max(8,Math.min(x,innerWidth-menu.offsetWidth-8))+'px';menu.style.top=Math.max(8,Math.min(y,innerHeight-menu.offsetHeight-8))+'px';placeSub();};
+      const list=document.createElement('div');list.className='tree-menu-list sd-menu-list';menu.append(list);
+      let submenu,submenuAnchor,subPosition,hoverTimer,paste,pasteState,reading=false,validateTarget=true;
+      const cancelHover=()=>clearTimeout(hoverTimer);
+      const hideSub=()=>{cancelHover();subPosition?.dispose();subPosition=null;if(submenu){submenu.hidden=true;submenuAnchor.setAttribute('aria-expanded','false');submenu=null;submenuAnchor=null;}};
+      const later=action=>{cancelHover();hoverTimer=setTimeout(()=>{if(this.menu===menu)action();},180);};
       const add=(name,label,action,parent=list)=>{
         const b=document.createElement('button');b.type='button';b.setAttribute('role','menuitem');b.append(icon(name),document.createTextNode(label));
         b.addEventListener('click',()=>{if(b.disabled)return;this.closeMenu(true);void this.run(action);});
-        b.addEventListener('pointerenter',e=>{if(e.pointerType==='mouse'&&parent===list)hideSub();});parent.append(b);return b;
+        b.addEventListener('pointerenter',e=>{if(e.pointerType==='mouse'&&parent===list)later(hideSub);});parent.append(b);return b;
       };
       const separator=()=>{if(list.childNodes.length&&list.lastChild.tagName!=='HR')list.append(document.createElement('hr'));};
       const addSub=(name,label,entries)=>{
         const b=document.createElement('button');b.type='button';b.setAttribute('role','menuitem');b.setAttribute('aria-haspopup','menu');b.setAttribute('aria-expanded','false');b.append(icon(name),document.createTextNode(label));
         const arrow=icon('chevron');arrow.classList.add('submenu-arrow');b.append(arrow);list.append(b);
         const sub=document.createElement('div');sub.className='tree-submenu sd-menu';sub.setAttribute('role','menu');sub.setAttribute('aria-label',label);sub.hidden=true;
-        const subList=document.createElement('div');subList.className='tree-menu-list';sub.append(subList);menu.append(sub);
+        const subList=document.createElement('div');subList.className='tree-menu-list sd-menu-list';sub.append(subList);menu.append(sub);
         for(const [glyph,text,action]of entries)add(glyph,text,action,subList);
-        const open=()=>{hideSub();submenu=sub;submenuAnchor=b;sub.hidden=false;b.setAttribute('aria-expanded','true');placeSub();};
-        b.addEventListener('click',open);b.addEventListener('pointerenter',e=>{if(e.pointerType==='mouse')open();});
-        b.addEventListener('keydown',e=>{if(e.key==='ArrowRight'){e.preventDefault();e.stopPropagation();open();sub.querySelector('button:not(:disabled)')?.focus();}});
+        const open=()=>{cancelHover();if(submenu===sub)return subPosition;hideSub();submenu=sub;submenuAnchor=b;sub.hidden=false;b.setAttribute('aria-expanded','true');subPosition=window.SoDeckMenuPosition.attachMenuPosition(sub,b,{kind:'submenu',isValid:()=>this.menu===menu&&submenu===sub,onInvalid:hideSub});return subPosition;};
+        b.addEventListener('click',open);
+        b.addEventListener('pointerenter',e=>{if(e.pointerType==='mouse'){if(submenu&&submenu!==sub)later(open);else open();}});
+        b.addEventListener('pointerleave',e=>{if(e.pointerType==='mouse')later(hideSub);});
+        sub.addEventListener('pointerenter',cancelHover);sub.addEventListener('pointerleave',e=>{if(e.pointerType==='mouse')later(hideSub);});
+        b.addEventListener('keydown',e=>{if(e.key==='ArrowRight'){e.preventDefault();e.stopPropagation();const position=open();void position.ready.then(ready=>{if(ready&&this.menu===menu&&submenu===sub)sub.querySelector('button:not(:disabled)')?.focus();});}});
       };
       if(n&&!multiple&&!directory)add('file','打开',()=>this.open(n));
       if(n&&(this.transfers||!directory))add('download','下载',()=>this.transfers?this.transfers.download(paths):this.download(n.path));
@@ -424,10 +409,11 @@
         buttons[e.key==='Home'?0:e.key==='End'?buttons.length-1:i<0?(e.key==='ArrowUp'?buttons.length-1:0):(i+(e.key==='ArrowUp'?-1:1)+buttons.length)%buttons.length]?.focus();
       });
       menu.addEventListener('pointermove',()=>menu.classList.remove('pointer-pending'));
-      list.addEventListener('scroll',hideSub);
       document.body.append(menu); this.menu = menu;
-      position();this.menuObserver=new ResizeObserver(position);this.menuObserver.observe(document.documentElement);this.menuObserver.observe(menu);
-      (keyboard?list.querySelector('button:not(:disabled)'):menu)?.focus({preventScroll:true});
+      const rootPath=this.rootPath;
+      const position=window.SoDeckMenuPosition.attachMenuPosition(menu,keyboard?this.row(n.path):{x,y,contextElement:this.tree},{isValid:()=>this.menu===menu&&this.rootPath===rootPath,onInvalid:()=>{if(this.menu===menu)this.closeMenu();}});
+      this.menuCleanup=()=>{position.dispose();hideSub();};
+      void position.ready.then(ready=>{if(ready&&this.menu===menu)(keyboard?list.querySelector('button:not(:disabled)'):menu)?.focus({preventScroll:true});});
       if(paste){
         const read=async()=>{
           if(this.menu!==menu||reading)return;reading=true;clearTimeout(this.menuTimer);

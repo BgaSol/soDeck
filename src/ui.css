@@ -61,9 +61,12 @@
   .sd-primary, .primary { background: var(--sd-primary); color: var(--sd-primary-text); }
   .sd-primary:hover, .primary:hover { background: var(--sd-primary-hover); filter: none; }
   .sd-menu { background: var(--panel); box-shadow: var(--shadow); padding: 5px; border-radius: 10px; }
-  .sd-menu[popover] { overflow: visible; }
-  .sd-menu.sd-text-menu { position: fixed; margin: 0; inset: auto; width: 190px; max-width: calc(100vw - 8px); z-index: 100; }
-  .sd-menu button { width: 100%; min-height: 32px; border: 0; background: transparent; text-align: left; justify-content: space-between; font-size: 12px; padding: 5px 9px; font-weight: var(--sd-control-weight); }
+  .sd-menu { box-sizing: border-box; display: flex; flex-direction: column; overflow: visible; min-width: 0; }
+  .sd-menu[hidden] { display: none; }
+  .sd-menu[popover]:not(:popover-open) { display: none; }
+  .sd-menu-list { min-height: 0; overflow: hidden auto; }
+  .sd-menu.sd-text-menu { position: fixed; margin: 0; inset: auto; width: 190px; z-index: 100; }
+  .sd-menu button { width: 100%; min-width: 0; min-height: 32px; border: 0; background: transparent; text-align: left; justify-content: space-between; font-size: 12px; padding: 5px 9px; font-weight: var(--sd-control-weight); overflow-wrap: anywhere; }
   .sd-menu button:hover:not(:disabled) { background: var(--hover); }
   .sd-menu button:active:not(:disabled) { background: var(--sd-pressed, var(--accent-bg)); }
   .sd-menu button:disabled { background: transparent; }

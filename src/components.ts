@@ -4,6 +4,7 @@ import { themeTokens } from "./theme";
 import { ClipboardBridge } from "./clipboard";
 import { LocalFileDrop } from "./local-files";
 import { ComponentData } from "./component-data";
+import { attachMenuPosition, type MenuPosition } from "./menu-position.js";
 import { escape as e, icon, replace, patchChrome } from "./ui";
 import type { Context, Projection, Workspace } from "./workspaces";
 import type { NetworkSnapshot } from "./core";
@@ -40,7 +41,7 @@ export class Components {
   private state?: Projection;
   private menu?: HTMLElement;
   private menuAnchor?: HTMLElement;
-  private menuObserver?: ResizeObserver;
+  private menuPosition?: MenuPosition;
   private boundTabs = new WeakSet<Element>();
   private dialog?: HTMLDialogElement;
   private disposed = false;
@@ -340,20 +341,9 @@ export class Components {
     if (this.menu && this.menuAnchor === anchor) { this.closeMenu(); return; }
     this.closeMenu(); const node = document.createElement("div"); node.className = "workspace-menu component-menu sd-menu"; node.tabIndex = -1;
     node.setAttribute("role", "menu");
-    const position = () => {
-      if (!anchor.isConnected || anchor.closest<HTMLElement>(".server-workbench")?.hidden) { this.closeMenu(); return; }
-      const r = anchor.getBoundingClientRect(), bounds = node.getBoundingClientRect();
-      if (!r.width || !r.height) { this.closeMenu(); return; }
-      const below = r.bottom + 4, above = r.top - bounds.height - 4;
-      const top = below + bounds.height <= innerHeight - 4 ? below : above;
-      Object.assign(node.style, {
-        left: `${Math.max(4, Math.min(r.left, innerWidth - bounds.width - 4))}px`,
-        top: `${Math.max(4, Math.min(top, innerHeight - bounds.height - 4))}px`,
-      });
-    };
     if (detail) { const text=document.createElement("p");text.textContent=detail;node.append(text); }
-    if (searchable) { const input = document.createElement("input"); input.placeholder = "查找组件或页面"; input.setAttribute("aria-label", "查找组件或页面"); input.addEventListener("input", () => { node.querySelectorAll<HTMLElement>(".component-menu-row").forEach(r => r.hidden = !r.textContent!.toLowerCase().includes(input.value.toLowerCase())); position(); }); node.append(input); }
-    const list = document.createElement("div"); list.className = "component-menu-list"; node.append(list);
+    if (searchable) { const input = document.createElement("input"); input.placeholder = "查找组件或页面"; input.setAttribute("aria-label", "查找组件或页面"); input.addEventListener("input", () => { node.querySelectorAll<HTMLElement>(".component-menu-row").forEach(r => r.hidden = !r.textContent!.toLowerCase().includes(input.value.toLowerCase())); void this.menuPosition?.update(); }); node.append(input); }
+    const list = document.createElement("div"); list.className = "component-menu-list sd-menu-list"; node.append(list);
     for (const item of entries) { if (item.separatorBefore) list.append(document.createElement("hr")); const row = document.createElement("div"); row.className = "component-menu-row"; for (const entry of [item, item.extra].filter(Boolean) as MenuEntry[]) { const b = document.createElement("button"); b.setAttribute("role", entry.checked === undefined ? "menuitem" : "menuitemcheckbox"); if (entry.checked !== undefined) { b.setAttribute("aria-checked", String(entry.checked)); b.classList.add("menu-check"); } b.textContent = entry.label; b.disabled = entry.disabled === true; b.addEventListener("click", () => { this.closeMenu(); void this.run(entry.action); }); row.append(b); } list.append(row); }
     if (!entries.length) { const text = document.createElement("p"); text.textContent = "暂无可用组件"; node.append(text); }
     node.addEventListener("keydown", event => {
@@ -362,11 +352,11 @@ export class Components {
       event.preventDefault(); const buttons = [...node.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")].filter(b => !b.closest("[hidden]")); const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
       buttons[event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : index < 0 ? (event.key === "ArrowUp" ? buttons.length - 1 : 0) : (index + (event.key === "ArrowUp" ? -1 : 1) + buttons.length) % buttons.length]?.focus();
     });
-    document.body.append(node); this.menu = node; this.menuAnchor = anchor; position();
-    this.menuObserver = new ResizeObserver(position); this.menuObserver.observe(anchor); this.menuObserver.observe(this.content);
-    (searchable ? node.querySelector<HTMLElement>("input") : keyboard ? node.querySelector<HTMLElement>("button:not(:disabled)") : node)?.focus({ preventScroll: true });
+    document.body.append(node); this.menu = node; this.menuAnchor = anchor;
+    this.menuPosition = attachMenuPosition(node, anchor, { isValid: () => this.menu === node, onInvalid: () => { if (this.menu === node) this.closeMenu(); } });
+    void this.menuPosition.ready.then(ready => { if (ready && this.menu === node) (searchable ? node.querySelector<HTMLElement>("input") : keyboard ? node.querySelector<HTMLElement>("button:not(:disabled)") : node)?.focus({ preventScroll: true }); });
   }
-  private closeMenu() { this.menuObserver?.disconnect(); this.menuObserver = undefined; this.menu?.remove(); this.menu = undefined; this.menuAnchor = undefined; }
+  private closeMenu() { this.menuPosition?.dispose(); this.menuPosition = undefined; this.menu?.remove(); this.menu = undefined; this.menuAnchor = undefined; }
   async flush() {
     const surfaces = [...this.shells.values()].flatMap(s => [...s.surfaces.values()]);
     await Promise.all(surfaces.filter(s => s.flushable && s.token).map(s => new Promise<void>((resolve,reject) => {

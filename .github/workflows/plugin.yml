@@ -71,12 +71,16 @@ jobs:
         if: needs.select.outputs.plugin != 'terminal'
         with:
           node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
       - uses: actions/setup-node@v6
         if: needs.select.outputs.plugin == 'terminal'
         with:
           node-version-file: .node-version
           cache: npm
-          cache-dependency-path: plugins/terminal/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            plugins/terminal/package-lock.json
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.99.1
@@ -90,6 +94,7 @@ jobs:
           env-vars: SODECK_PLUGIN_CLIENT_MANIFEST_HASH
           workspaces: plugins/${{ needs.select.outputs.plugin }} -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: npm ci
       - shell: bash
         env:
           PLUGIN: ${{ needs.select.outputs.plugin }}

@@ -74,6 +74,23 @@ try {
   await page.locator('#modal-input').evaluate(node => node.setSelectionRange(5, 5));
   await open(page.locator('#modal-input')); assert.equal(await page.locator('dialog .sd-text-menu').count(), 1);
   await page.getByRole('menuitem', { name: /^粘贴/ }).click(); assert.equal(await page.locator('#modal-input').inputValue(), 'modalpaste'); await page.evaluate(() => document.querySelector('#dialog').close());
+  for (const popover of [true, false]) {
+    await page.setViewportSize({width:320,height:240});
+    await page.evaluate(popover => {
+      window.savedPopover=Object.getOwnPropertyDescriptor(HTMLElement.prototype,'showPopover');
+      if(!popover)Object.defineProperty(HTMLElement.prototype,'showPopover',{configurable:true,value:undefined});
+      const dialog=document.querySelector('#dialog');dialog.style.transform='translateY(0)';dialog.showModal();
+      document.querySelector('#modal-input').value='selected';document.querySelector('#modal-input').setSelectionRange(1,5);
+    },popover);
+    await page.locator('#modal-input').focus();await page.keyboard.press('Shift+F10');
+    const menu=page.locator('dialog .sd-text-menu');await menu.waitFor();
+    const r=await menu.boundingBox();assert.ok(r.x>=7&&r.y>=7&&r.x+r.width<=313&&r.y+r.height<=233,JSON.stringify({popover,r,details:await menu.evaluate(node=>({style:node.style.cssText,placement:node.dataset.placement,dialog:node.parentElement.getBoundingClientRect().toJSON(),topLayer:node.matches(':popover-open'),input:document.querySelector('#modal-input').getBoundingClientRect().toJSON(),visual:visualViewport.height}))}));
+    assert.equal(await menu.evaluate(node=>node.hasAttribute('popover')),popover);
+    await page.keyboard.press('Escape');assert.deepEqual(await page.locator('#modal-input').evaluate(node=>[node===document.activeElement,node.selectionStart,node.selectionEnd]),[true,1,5]);
+    await open(page.locator('#modal-input'));await page.getByRole('menuitem',{name:/^复制/}).click();assert.equal(await page.evaluate(()=>copies.at(-1)),'elec');
+    await page.evaluate(()=>{document.querySelector('#dialog').close();document.querySelector('#dialog').style.transform='';if(savedPopover)Object.defineProperty(HTMLElement.prototype,'showPopover',savedPopover);});
+  }
+  await page.setViewportSize({width:1100,height:720});
   // Re-enter the plugin through an editable field, as in a normal focus handoff.
   await child.locator('#input').click(); assert(await child.locator('#input').evaluate(node => node === document.activeElement));
   for (const [theme, color] of [['light', 'rgb(167, 173, 187)'], ['dark', 'rgb(89, 101, 124)'], ['dopamine', 'rgb(146, 144, 123)']]) {

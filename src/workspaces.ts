@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { escape as e, icon, patchChrome } from "./ui";
 import { Components } from "./components";
+import { attachMenuPosition, type MenuPosition } from "./menu-position.js";
 
 export interface Context { workspaceId: string; serverId: string; connectionId: string; generation: number }
 export interface Layout { leftOpen: boolean; rightOpen: boolean; leftWidth: number; rightWidth: number }
@@ -18,6 +19,7 @@ export class Workspaces {
   private again = false;
   private menu?: HTMLElement;
   private menuAnchor?: HTMLElement;
+  private menuPosition?: MenuPosition;
   private gesture?: Gesture;
   private moving = new Set<string>();
   private disposed = false;
@@ -91,7 +93,7 @@ export class Workspaces {
       this.content.style.setProperty("--left-width", `${layout.leftWidth}px`);
       this.content.style.setProperty("--right-width", `${layout.rightWidth}px`);
     }
-    this.paintPreview(); this.report();
+    void this.menuPosition?.update(); this.paintPreview(); this.report();
   }
   private async action(action: string, id: string) {
     if (!this.state?.workspaces.some(w => w.context.workspaceId === id)) return;
@@ -110,17 +112,22 @@ export class Workspaces {
     this.closeMenu();
     if (!anchor || !this.state?.workspaces.some(w => w.context.workspaceId === id)) return;
     const node = document.createElement("div"); node.className = "workspace-menu sd-menu"; node.setAttribute("role", "menu");
-    node.innerHTML = `<button role="menuitem" data-choice="detach">${icon("maximize")}移至新窗口</button>${this.state.window.id !== "main" ? `<button role="menuitem" data-choice="return">${icon("arrow")}返回主窗口</button>` : ""}<button role="menuitem" data-choice="close">${icon("close")}关闭工作区</button>`;
-    const rect = (anchor.closest(".server-tab") ?? anchor).getBoundingClientRect(); node.style.left = `${Math.max(4, Math.min(rect.left, innerWidth - 190))}px`; node.style.top = `${rect.bottom + 4}px`;
+    node.innerHTML = `<div class="sd-menu-list"><button role="menuitem" data-choice="detach">${icon("maximize")}移至新窗口</button>${this.state.window.id !== "main" ? `<button role="menuitem" data-choice="return">${icon("arrow")}返回主窗口</button>` : ""}<button role="menuitem" data-choice="close">${icon("close")}关闭工作区</button></div>`;
     node.addEventListener("click", event => { const action = (event.target as Element).closest<HTMLElement>("[data-choice]")?.dataset.choice; if (action) void this.run(() => this.action(action, id)); });
     node.addEventListener("keydown", event => {
       if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return; event.preventDefault();
       const buttons = [...node.querySelectorAll("button")]; const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
       buttons[event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (index + (event.key === "ArrowUp" ? -1 : 1) + buttons.length) % buttons.length]?.focus();
     });
-    document.body.append(node); this.menu = node; this.menuAnchor = anchor; node.querySelector("button")?.focus();
+    document.body.append(node); this.menu = node; this.menuAnchor = anchor;
+    const active = this.state.window.activeWorkspace;
+    this.menuPosition = attachMenuPosition(node, anchor, {
+      isValid: () => this.menu === node && this.state?.window.activeWorkspace === active && Boolean(this.state.workspaces.some(w => w.context.workspaceId === id)),
+      onInvalid: () => { if (this.menu === node) this.closeMenu(); },
+    });
+    void this.menuPosition.ready.then(ready => { if (ready && this.menu === node) node.querySelector("button")?.focus(); });
   }
-  private closeMenu() { this.menu?.remove(); this.menu = undefined; this.menuAnchor = undefined; }
+  private closeMenu() { this.menuPosition?.dispose(); this.menuPosition = undefined; this.menu?.remove(); this.menu = undefined; this.menuAnchor = undefined; }
   private key(event: KeyboardEvent) {
     if (event.key === "Escape") {
       if (this.gesture) { event.preventDefault(); void this.finish(true); }

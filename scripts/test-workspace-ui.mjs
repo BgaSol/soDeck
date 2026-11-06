@@ -104,7 +104,7 @@ try {
     await main.setViewportSize({width,height});
     await main.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
     const tabMenu=main.locator(`.tab-menu-button[data-id="${aid}"]`);
-    const tabBounds=await main.locator(`.server-tab[data-id="${aid}"]`).boundingBox();
+    const tabBounds=await tabMenu.boundingBox();
     await tabMenu.click();await assertMenuLayout(main,tabBounds);await main.keyboard.press('Escape');
     const panelMenu=board.getByRole('button',{name:'网络转发 面板菜单',exact:true});
     const panelBounds=await panelMenu.boundingBox();

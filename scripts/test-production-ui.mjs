@@ -312,7 +312,10 @@ try {
   assert.equal(await notes.locator('strong').textContent(),'保留工作');
   assert.equal((await notes.locator('blockquote').textContent()).trim(),'完成工作后再重启。');
   assert.equal(await notes.locator('table tbody tr').count(),2);
-  await page.screenshot({path:'artifacts/production-ui/update-notes-markdown.png'});
+  // The status ticker can replace a notes node while Playwright captures it.
+  // Capture its current page region after the content assertions above.
+  await notes.evaluate(node=>node.scrollIntoView({block:'start'}));
+  await page.screenshot({path:'artifacts/production-ui/update-notes-markdown.png',clip:await notes.boundingBox()});
   const updatePageUrl=page.url();
   await notes.getByRole('link',{name:'发行说明'}).focus();await page.keyboard.press('Enter');
   await page.waitForFunction(()=>window.openedUpdateLinks?.length===1);
@@ -383,7 +386,7 @@ try {
     await page.setViewportSize({width,height});
     await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
     const tabMenu=page.locator(`.tab-menu-button[data-id="${workspace.context.workspaceId}"]`);
-    const tabBounds=await page.locator(`.server-tab[data-id="${workspace.context.workspaceId}"]`).boundingBox();
+    const tabBounds=await tabMenu.boundingBox();
     await tabMenu.click();await assertMenuLayout(page,tabBounds);await page.keyboard.press('Escape');
     const panelMenu=board.getByRole('button',{name:'文件 面板菜单',exact:true});
     const panelBounds=await panelMenu.boundingBox();

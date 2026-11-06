@@ -36,7 +36,7 @@
   .workbench-rail { min-height: 0; overflow-y: auto; scrollbar-width: none; gap: 4px; }
   .workbench-rail .component-more { margin-top: auto; flex-shrink: 0; }
   .workbench-rail > button { flex-shrink: 0; }
-  .component-menu { display: flex; flex-direction: column; width: min(272px, calc(100vw - 8px)); max-height: min(420px, 70dvh); }
+  .component-menu { width: 272px; --sd-menu-height-limit: min(420px, 70dvh); }
   .component-menu input { width: 100%; margin-bottom: 5px; flex-shrink: 0; }
   /* Keep the outer menu's decorative border out of the scroll range. */
   .component-menu-list { min-height: 0; overflow: hidden auto; }

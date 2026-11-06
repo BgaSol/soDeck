@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { verifyBinary } from "./verify-binary.mjs";
 import { packageSettingsAssets } from "./plugin-settings-assets.mjs";
 import { cargoPackageVersion } from "./cargo-package.mjs";
+import { packageMenuAssets } from "./plugin-menu-assets.mjs";
 // Git Bash's GNU tar treats C: as a remote host; Windows ships a native bsdtar.
 const tar = process.platform === "win32" ? path.join(process.env.SystemRoot, "System32", "tar.exe") : "tar";
 
@@ -63,7 +64,7 @@ const destination = path.join(directory, "bin", executable);
 if (fs.existsSync(`${pluginRoot}/ui`)) fs.cpSync(`${pluginRoot}/ui`, path.join(directory, "ui"), { recursive: true });
 if (metadata.ui) fs.copyFileSync("src/ui.css", path.join(directory, "ui/shared.css"));
 if (metadata.ui) fs.copyFileSync("plugins/shared/clipboard.js", path.join(directory, "ui/clipboard-bridge.js"));
-if (metadata.ui) fs.copyFileSync("src/text-menu.js", path.join(directory, "ui/text-menu.js"));
+if (metadata.ui) await packageMenuAssets(directory);
 packageSettingsAssets(metadata, directory);
 fs.copyFileSync(
   `${pluginRoot}/target/${target}/release/${executable}`,
