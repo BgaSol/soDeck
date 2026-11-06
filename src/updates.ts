@@ -1,6 +1,7 @@
 import type { Plugin, Snapshot, Update } from "./core";
 import type { ViewState } from "./views";
 import { button as b, date, escape as e, icon } from "./ui";
+import { renderReleaseNotes } from "./release-notes";
 
 export const CORE_ID = "sodeck.core";
 export const updateWorking = (u?: Update) => !!u && ["checking", "waiting", "downloading", "preparing"].includes(u.phase);
@@ -29,8 +30,8 @@ export function updateStatus(u?: Update) {
   return labels[u?.phase ?? "idle"] ?? "尚未检查";
 }
 export function updateNotes(id: string, u?: Update) {
-  if (!u?.notes) return "";
-  return `<details class="update-release-notes" data-persist="notes-${e(id)}"><summary id="update-notes-${e(id)}">更新说明</summary><div>${u.notes.split(/\n\s*\n/).map(p => `<p>${e(p)}</p>`).join("")}</div></details>`;
+  if (!u?.notes.trim()) return "";
+  return `<details class="update-release-notes" data-persist="notes-${e(id)}"><summary id="update-notes-${e(id)}">更新说明</summary><div class="release-notes-markdown">${renderReleaseNotes(u.notes)}</div></details>`;
 }
 function updateRow(p: ReturnType<typeof items>[number], selectable: boolean, v: ViewState) {
   const u = p.update, downloading = u?.phase === "downloading", busy = updateWorking(u);

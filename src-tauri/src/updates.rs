@@ -19,7 +19,20 @@ const MAX_PACKAGE: u64 = 512 * 1024 * 1024;
 const MAX_EXPANDED: u64 = 2 * 1024 * 1024 * 1024;
 
 pub fn open_release_page() -> Result<(), String> {
-    let url = "https://github.com/BgaSol/soDeck/releases";
+    open_web_page("https://github.com/BgaSol/soDeck/releases")
+}
+
+fn web_page_url(value: &str) -> Result<reqwest::Url, String> {
+    let url = reqwest::Url::parse(value).map_err(|_| "更新说明链接无效".to_string())?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+        return Err("更新说明仅支持 HTTP/HTTPS 链接".into());
+    }
+    Ok(url)
+}
+
+pub fn open_web_page(value: &str) -> Result<(), String> {
+    let url = web_page_url(value)?;
+    let url = url.as_str();
     #[cfg(target_os = "windows")]
     let mut command = {
         use std::os::windows::process::CommandExt;
@@ -40,13 +53,36 @@ pub fn open_release_page() -> Result<(), String> {
         c.arg(url);
         c
     };
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("无法打开发行页面：{e}"))?;
+    let mut child = command.spawn().map_err(|e| format!("无法打开网页：{e}"))?;
     std::thread::spawn(move || {
         let _ = child.wait();
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod web_page_tests {
+    use super::web_page_url;
+
+    #[test]
+    fn update_links_only_accept_absolute_web_urls() {
+        for value in [
+            "https://github.com/BgaSol/soDeck/releases",
+            "http://example.com/notes?q=中文&version=1#changes",
+        ] {
+            assert!(web_page_url(value).is_ok(), "{value}");
+        }
+        for value in [
+            "javascript:alert(1)",
+            "data:text/html,<script>alert(1)</script>",
+            "file:///etc/passwd",
+            "releases/v0.9.0.md",
+            "--help",
+            "https://",
+        ] {
+            assert!(web_page_url(value).is_err(), "{value}");
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

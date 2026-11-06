@@ -422,6 +422,11 @@ fn open_update_release() -> Result<(), String> {
     sodeck::updates::open_release_page()
 }
 
+#[tauri::command]
+fn open_update_link(url: String) -> Result<(), String> {
+    sodeck::updates::open_web_page(&url)
+}
+
 async fn check_all(handle: tauri::AppHandle, automatic: bool) -> Result<(), String> {
     let app = handle.state::<Application>();
     let Some(mut batch) = app.core.begin_update_check(automatic) else {
@@ -875,6 +880,7 @@ fn main() {
             download_updates,
             set_automatic_updates,
             open_update_release,
+            open_update_link,
             check_update,
             download_update,
             restart_app,

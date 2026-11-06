@@ -41,6 +41,7 @@ const archiveBytes = fs.readFileSync(archive), requests = [];
 let published = false, corrupt = false;
 let extraCorrupt = true;
 const extraPackages = new Map(), extraManifests = new Map(), extraReleases = [];
+const markdownNotes = '# 更新测试\n\n## 改进\n\n- **保留工作**并支持*重试*\n  - 使用 `npm run check` 验证\n- 下载后继续使用\n\n> 完成工作后再重启。\n\n[发行说明](https://github.com/BgaSol/soDeck/releases)\n\n```sh\nnpm run check\n' + 'a'.repeat(180) + '\n```\n\n| 项目 | 结果 |\n| --- | --- |\n| 核心 | 可更新 |\n| 插件 | 独立下载 |';
 const downloads = http.createServer((request, response) => {
   requests.push(request.url);
   const base = `http://127.0.0.1:${downloads.address().port}`;
@@ -90,6 +91,7 @@ await page.addInitScript(() => {
     convertFileSrc: path => new URL('/__plugin__/'+path,location.href).href,
     transformCallback: callback => { const token = ++id; callbacks.set(token, callback); return token; },
     invoke: (command, args) => {
+      if (command === 'open_update_link') { (window.openedUpdateLinks ??= []).push(args.url); return Promise.resolve(); }
       if (command === "plugin:event|listen") { const eventId = ++id; listeners.set(eventId, args); return Promise.resolve(eventId); }
       if (command === "plugin:event|unlisten" || command === "workspace_surface") return Promise.resolve();
       if (command.startsWith("plugin:window|")) {
@@ -288,7 +290,7 @@ try {
     const packed=path.join(directory,`${name}.tar.gz`);
     assert.equal(spawnSync(tar,['-czf',packed,'-C',directory,name],{windowsHide:true}).status,0);
     const bytes=fs.readFileSync(packed);extraPackages.set(`/${name}.tar.gz`,bytes);
-    extraManifests.set(`/${name}.json`,{id:metadata.id,version:'0.1.1',apiVersion:'1',notes:'改进更新体验\n\n保留当前工作。',platforms:{[target]:{url:`${base}/${name}.tar.gz`,sha256:createHash('sha256').update(bytes).digest('hex')}}});
+    extraManifests.set(`/${name}.json`,{id:metadata.id,version:'0.1.1',apiVersion:'1',notes:markdownNotes,platforms:{[target]:{url:`${base}/${name}.tar.gz`,sha256:createHash('sha256').update(bytes).digest('hex')}}});
     extraReleases.push({tag_name:`plugin-${name}-v0.1.1`,draft:false,prerelease:false,assets:[{name:'plugin-update.json',browser_download_url:`${base}/${name}.json`}]});
     fs.writeFileSync(path.join(pluginDirectory,'plugin.json'),JSON.stringify({...metadata,version:'0.1.0'}));
     await call('add_plugin',{directory:pluginDirectory});
@@ -303,6 +305,19 @@ try {
   assert.match(await page.locator('[data-action="download-all-updates"]').textContent(),/所选（1）/);
   await secondUpdate.locator('[data-update-select]').check();
   await firstUpdate.locator('.update-release-notes summary').click();
+  const notes=firstUpdate.locator('.release-notes-markdown');
+  assert.equal(await notes.getByRole('heading',{name:'更新测试',level:1}).count(),1);
+  assert.equal(await notes.getByRole('heading',{name:'改进',level:2}).count(),1);
+  assert.equal((await notes.locator('ul ul li').textContent()).trim(),'使用 npm run check 验证');
+  assert.equal(await notes.locator('strong').textContent(),'保留工作');
+  assert.equal((await notes.locator('blockquote').textContent()).trim(),'完成工作后再重启。');
+  assert.equal(await notes.locator('table tbody tr').count(),2);
+  await page.screenshot({path:'artifacts/production-ui/update-notes-markdown.png'});
+  const updatePageUrl=page.url();
+  await notes.getByRole('link',{name:'发行说明'}).focus();await page.keyboard.press('Enter');
+  await page.waitForFunction(()=>window.openedUpdateLinks?.length===1);
+  assert.deepEqual(await page.evaluate(()=>window.openedUpdateLinks),['https://github.com/BgaSol/soDeck/releases']);
+  assert.equal(page.url(),updatePageUrl,'Release-note links leave the workbench in place');
   await page.locator('.settings-page').evaluate(el=>el.scrollTo(0,0));
   await page.screenshot({path:'artifacts/production-ui/updates-available.png'});
   await page.locator('#automatic-updates').uncheck();
@@ -336,10 +351,15 @@ try {
     await page.locator(`[data-action="theme"][data-id="${theme}"]`).click();
     await page.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme);
     await page.locator('[data-action="section"][data-id="updates"]').click();
+    if (await firstUpdate.locator('.update-release-notes').getAttribute('open') === null)
+      await firstUpdate.locator('.update-release-notes summary').click();
     for(const [width,height] of [[1100,720],[880,576],[734,480],[720,480]]) {
       await page.setViewportSize({width,height});
       await page.locator('.settings-page').evaluate(el=>el.scrollTo(0,0));
       assert.equal(await page.locator('.settings-page').evaluate(el=>el.scrollWidth>el.clientWidth+1),false,`${theme}/${width} settings overflow`);
+      assert.equal(await notes.getByRole('heading',{name:'更新测试',level:1}).count(),1);
+      assert(await notes.locator('pre').evaluate(el=>el.scrollWidth>el.clientWidth),'Long code scrolls within the notes');
+      assert(await notes.locator('h1').evaluate(el=>parseFloat(getComputedStyle(el).fontSize)>parseFloat(getComputedStyle(el.parentElement).fontSize)),'Markdown titles retain hierarchy');
       assert(await page.locator('[data-action="restart-app"]').evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&r.left>=0&&r.right<=innerWidth;}),`${theme}/${width} restart action remains visible`);
       await page.screenshot({path:`artifacts/production-ui/updates-${theme}-${width}.png`});
       await page.locator('.maintenance-pending summary').focus();
@@ -351,7 +371,8 @@ try {
     }
   }
   await page.locator('[data-action="close-layer"]').click();
-  checks.push('Unified updates: real plugin batch checks/downloads and independent failure/retry, keyboard selection, preserved prepared versions, source drafts/disclosures/focus, deduplicated plugin overview and three themes at 1100x720, 880x576, 734x480 and 720x480');
+  checks.push('Unified updates: Markdown headings/lists/code/tables and external-link dispatch, real plugin batch checks/downloads and independent failure/retry, keyboard selection, preserved prepared versions, source drafts/disclosures/focus, deduplicated plugin overview and three themes at 1100x720, 880x576, 734x480 and 720x480');
+  if (!process.argv.includes('--updates-only')) {
   await call('fixture_load_plugin',{directory:uiFixture});
   const workspace=await call('workspace_fixture_open',{serverId:serverIds[0],connectionId:'bundled-menu-test',endpoint:'root@192.0.2.10:22'});
   await page.reload();
@@ -398,6 +419,7 @@ try {
   await board.waitFor();
   await checkTitlebar();
   checks.push("Pop-out title bar: same maximize/restore behavior; server tabs and their controls retain their own interactions");
+  }
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: checks.length, checks, pageErrors: errors }, null, 2));
 } catch (error) {

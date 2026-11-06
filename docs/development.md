@@ -33,6 +33,8 @@ npm run terminal:input:test
 
 `ui:test` 包含服务器、工作区、连接界面、正式前端产物、桌面一致性和组件设置回归。`terminal:input:test` 验证实际 xterm 输入与剪贴板桥，无需 OpenSSH。
 
+`npm run ui:production:test -- --updates-only` 验证正式前端的更新说明 Markdown、链接分发、批量更新和三主题小窗口布局，不运行后续工作区菜单与拆窗专项。
+
 真实远程业务测试还需要本机 OpenSSH 服务端与 `ssh-keygen`，并启动隔离的临时回环服务：
 
 | 命令 | 验证内容 |

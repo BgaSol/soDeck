@@ -283,6 +283,12 @@ const copy = (text: string) =>
   navigator.clipboard.writeText(text).then(() => toast("已复制"));
 
 root.addEventListener("click", (event) => {
+  const link = (event.target as Element).closest<HTMLAnchorElement>("a[data-update-link]");
+  if (link) {
+    event.preventDefault();
+    void action(() => invoke("open_update_link", { url: link.href }));
+    return;
+  }
   const target = (event.target as Element).closest<HTMLButtonElement>(
     "button[data-action]",
   );
