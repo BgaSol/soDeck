@@ -22,7 +22,15 @@ export function githubClient(repository, token, request = fetch) {
 export async function releaseState(api, config, commit) {
   // Check repository access first; only a genuine missing tag/release is optional.
   await api("GET", "");
-  const release = await api("GET", `/releases/tags/${encodeURIComponent(config.tag)}`, undefined, false, true);
+  let release = await api("GET", `/releases/tags/${encodeURIComponent(config.tag)}`, undefined, false, true);
+  // GitHub's by-tag endpoint returns 404 for drafts, even with write access.
+  if (!release) {
+    for (let page = 1; ; page++) {
+      const items = await api("GET", `/releases?per_page=100&page=${page}`);
+      release = items.find(item => item.tag_name === config.tag);
+      if (release || items.length < 100) break;
+    }
+  }
   if (release && !release.draft) throw new Error("Published core versions are immutable; bump the version");
   let ref = await api("GET", `/git/ref/tags/${encodeURIComponent(config.tag)}`, undefined, false, true);
   let object = ref?.object;
@@ -30,6 +38,15 @@ export async function releaseState(api, config, commit) {
   if (object && (object.type !== "commit" || object.sha !== commit)) throw new Error("Core release tag points to another source commit");
   if (release && !object) throw new Error("Existing core draft has no source tag");
   return release;
+}
+export async function artifactRun(api, id) {
+  if (!/^[1-9]\d*$/.test(id ?? "")) throw new Error("Invalid core Artifact run ID");
+  const run = await api("GET", `/actions/runs/${id}`);
+  if (run.path !== ".github/workflows/build.yml" || run.status !== "completed" || !/^[a-f0-9]{40}$/.test(run.head_sha ?? "")) throw new Error("Use a completed core package run from this repository");
+  const artifacts = await api("GET", `/actions/runs/${id}/artifacts?per_page=100`);
+  const core = artifacts.artifacts.filter(item => item.name.startsWith("SoDeck-"));
+  if (!core.length || core.some(item => item.expired)) throw new Error("Core Artifacts are missing or expired; rebuild the fixed source");
+  return run.head_sha;
 }
 async function releaseAssets(api, id) {
   const assets = [];
@@ -81,13 +98,15 @@ export async function prepareCoreRelease(api, config, input, commit, repository)
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const mode = process.argv[2], config = coreConfig();
-  const commit = process.env.GITHUB_SHA, repository = process.env.GITHUB_REPOSITORY ?? "BgaSol/soDeck";
+  let commit = process.env.CORE_SOURCE_SHA || process.env.GITHUB_SHA;
+  const repository = process.env.GITHUB_REPOSITORY ?? "BgaSol/soDeck";
   if (!/^[a-f0-9]{40}$/.test(commit ?? "")) throw new Error("Provide GITHUB_SHA for the exact build source");
   const publish = process.env.CORE_PUBLISH === "true" || process.env.GITHUB_REF_TYPE === "tag";
   if (process.env.GITHUB_REF_TYPE === "tag") checkTag(config, process.env.GITHUB_REF_NAME);
   if (mode === "preflight") {
+    if (process.env.CORE_RUN_ID) commit = await artifactRun(githubClient(repository, process.env.GH_TOKEN), process.env.CORE_RUN_ID);
     if (publish) await releaseState(githubClient(repository, process.env.GH_TOKEN), config, commit);
-    if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `tag=${config.tag}\nversion=${config.version}\npublish=${publish}\n`);
+    if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `tag=${config.tag}\nversion=${config.version}\npublish=${publish}\nsource_sha=${commit}\nrun_id=${process.env.CORE_RUN_ID || process.env.GITHUB_RUN_ID || ""}\n`);
     console.log(`Core ${config.tag}: ${publish ? "prepare draft" : "Artifact only"}`);
   } else if (mode === "prepare") {
     const input = process.argv[3];

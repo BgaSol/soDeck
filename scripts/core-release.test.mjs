@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { artifactMetadata, coreNames, targets, validateCoreArtifacts } from "./core-artifacts.mjs";
 import { coreConfig, generate } from "./release-metadata.mjs";
-import { githubClient, prepareCoreRelease, releaseState } from "./core-release.mjs";
+import { artifactRun, githubClient, prepareCoreRelease, releaseState } from "./core-release.mjs";
 
 const commit = "a".repeat(40), config = { id: "sodeck.core", version: "1.2.3", tag: "v1.2.3", notes: "Release notes" };
 function fixture(t, selected = targets) {
@@ -25,7 +25,8 @@ function fakeGithub() {
   const state = { release: null, assets: [], writes: [], tagCommit: commit, tagExists: false, failUpload: false, uploaded: [] };
   const api = async (method, route, body) => {
     if (method === "GET" && route === "") return {};
-    if (method === "GET" && route.startsWith("/releases/tags/")) return state.release;
+    if (method === "GET" && route.startsWith("/releases/tags/")) return state.release?.draft ? null : state.release;
+    if (method === "GET" && route.startsWith("/releases?")) return state.release ? [{ tag_name: config.tag, ...state.release }] : [];
     if (method === "GET" && route.startsWith("/git/ref/tags/")) return state.release || state.tagExists ? { object: { type: "commit", sha: state.tagCommit } } : null;
     if (method === "GET" && route.startsWith("/releases/1/assets?")) return state.assets;
     state.writes.push({ method, route });
@@ -111,6 +112,23 @@ test("published versions and tags on other commits are refused before any mutati
   state.release.draft = true; state.tagCommit = "b".repeat(40);
   await assert.rejects(releaseState(api, config, commit), /another source commit/);
   assert.deepEqual(state.writes, []);
+});
+test("GitHub draft by-tag 404 falls back to the authenticated release list, including older pages", async () => {
+  const { api, state } = fakeGithub(); state.release = { id: 1, draft: true };
+  const paged = async (...args) => args[1] === "/releases?per_page=100&page=1" ? Array.from({ length: 100 }, () => ({ tag_name: "another-component" })) : api(...args);
+  assert.equal((await releaseState(paged, config, commit)).id, 1);
+  assert.deepEqual(state.writes, []);
+});
+test("release recovery selects only completed core runs with available Artifacts and their exact source", async () => {
+  const run = { path: ".github/workflows/build.yml", status: "completed", head_sha: commit, conclusion: "failure" };
+  const item = { name: "SoDeck-windows-x86_64", expired: false };
+  const api = async (_method, route) => route.includes("/artifacts?") ? { artifacts: [item] } : run;
+  assert.equal(await artifactRun(api, "123"), commit);
+  for (const id of ["", "wrong", "../123"]) await assert.rejects(artifactRun(api, id), /Invalid core Artifact/);
+  run.path = ".github/workflows/plugin.yml";
+  await assert.rejects(artifactRun(api, "123"), /completed core package run/);
+  run.path = ".github/workflows/build.yml"; item.expired = true;
+  await assert.rejects(artifactRun(api, "123"), /missing or expired/);
 });
 test("draft upload retries use the same verified input and skip already uploaded identical bytes", async t => {
   const input = fixture(t), { api, state } = fakeGithub(); state.failUpload = true;

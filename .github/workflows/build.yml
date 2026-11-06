@@ -7,11 +7,16 @@ on:
         description: Prepare a core Release draft after package verification
         type: boolean
         default: false
+      core_run_id:
+        description: Optional completed core run to reuse verified Artifacts without rebuilding
+        type: string
+        default: ""
   push:
     tags: ["v*"]
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   preflight:
@@ -21,6 +26,8 @@ jobs:
       tag: ${{ steps.config.outputs.tag }}
       version: ${{ steps.config.outputs.version }}
       publish: ${{ steps.config.outputs.publish }}
+      source_sha: ${{ steps.config.outputs.source_sha }}
+      run_id: ${{ steps.config.outputs.run_id }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
@@ -30,11 +37,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CORE_PUBLISH: ${{ inputs.publish || false }}
+          CORE_RUN_ID: ${{ inputs.core_run_id }}
         run: node scripts/core-release.mjs preflight
       - run: npm ci
       - run: npm run scripts:test
   package:
     needs: preflight
+    if: ${{ !inputs.core_run_id }}
     strategy:
       fail-fast: false
       matrix:
@@ -168,12 +177,15 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           pattern: SoDeck-*
+          run-id: ${{ needs.preflight.outputs.run_id }}
+          github-token: ${{ github.token }}
           merge-multiple: true
           path: artifacts/core
       - name: Prepare verified manifest and optional draft
         env:
           GH_TOKEN: ${{ github.token }}
           CORE_PUBLISH: ${{ needs.preflight.outputs.publish }}
+          CORE_SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
         run: node scripts/core-release.mjs prepare artifacts/core
       - uses: actions/upload-artifact@v4
         with:
