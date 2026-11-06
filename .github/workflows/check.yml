@@ -1,3 +1,4 @@
+# Temporary PR cache comparison; do not merge this workflow configuration.
 name: Check
 
 on:
