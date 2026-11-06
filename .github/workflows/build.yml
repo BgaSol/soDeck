@@ -21,7 +21,7 @@ permissions:
 jobs:
   preflight:
     runs-on: ubuntu-22.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     outputs:
       tag: ${{ steps.config.outputs.tag }}
       version: ${{ steps.config.outputs.version }}
@@ -39,7 +39,12 @@ jobs:
           CORE_PUBLISH: ${{ inputs.publish || false }}
           CORE_RUN_ID: ${{ inputs.core_run_id }}
         run: node scripts/core-release.mjs preflight
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.1
+          components: rustfmt
       - run: npm ci
+      - run: npm run check
       - run: npm run scripts:test
   package:
     needs: preflight
@@ -91,7 +96,6 @@ jobs:
         with:
           workspaces: src-tauri -> target
       - run: npm ci
-      - run: npm run check
       - run: npm run test
       - name: Install OpenSSH test server
         if: matrix.name == 'windows-x86_64'
@@ -105,7 +109,9 @@ jobs:
       - name: Verify against isolated OpenSSH
         if: matrix.name == 'windows-x86_64'
         run: npm run ssh:test
-      - run: npm run scripts:test
+      - name: Verify scripts on native host
+        if: matrix.name == 'windows-x86_64' || matrix.name == 'linux-x86_64' || matrix.name == 'macos-aarch64'
+        run: node --test scripts/collect-core.test.mjs scripts/core-release.test.mjs scripts/plugin-settings-assets.test.mjs scripts/release-metadata.test.mjs scripts/smoke.test.mjs
       - name: Verify server forms with actual core
         if: matrix.name == 'windows-x86_64'
         run: |
