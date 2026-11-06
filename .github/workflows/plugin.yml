@@ -27,6 +27,10 @@ jobs:
       tag: ${{ steps.config.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.1
+          components: rustfmt
       - uses: actions/setup-node@v6
         with:
           node-version-file: .node-version
@@ -34,10 +38,6 @@ jobs:
         env:
           PLUGIN: ${{ inputs.plugin || 'terminal' }}
         run: node scripts/release-metadata.mjs --kind plugin --plugin "$PLUGIN"
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.99.1
-          components: rustfmt
       - env:
           PLUGIN: ${{ steps.config.outputs.plugin }}
         run: cargo fmt --manifest-path "plugins/$PLUGIN/Cargo.toml" -- --check
@@ -116,6 +116,9 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.1
       - uses: actions/setup-node@v6
         with:
           node-version-file: .node-version

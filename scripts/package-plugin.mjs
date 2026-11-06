@@ -4,6 +4,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { verifyBinary } from "./verify-binary.mjs";
 import { packageSettingsAssets } from "./plugin-settings-assets.mjs";
+import { cargoPackageVersion } from "./cargo-package.mjs";
 // Git Bash's GNU tar treats C: as a remote host; Windows ships a native bsdtar.
 const tar = process.platform === "win32" ? path.join(process.env.SystemRoot, "System32", "tar.exe") : "tar";
 
@@ -19,6 +20,7 @@ if (!plugin) throw new Error("Specify a plugin with --plugin terminal, --plugin 
 if (!/^[a-z][a-z0-9-]*$/.test(plugin ?? "")) throw new Error("Invalid plugin directory name");
 const pluginRoot = `plugins/${plugin}`;
 const metadata = JSON.parse(fs.readFileSync(`${pluginRoot}/release.json`, "utf8"));
+const version = cargoPackageVersion(`${pluginRoot}/Cargo.toml`);
 if (fs.existsSync(`${pluginRoot}/package.json`)) {
   // Explicit UI build, isolated from the core and other plugins; no arbitrary release hooks.
   let npmCli=process.env.npm_execpath;
@@ -49,8 +51,6 @@ if (!targets.includes(target)) throw new Error(`Unsupported target: ${target}`);
 run("cargo", ["build", "--release", "--locked", "--target", target], {
   cwd: pluginRoot,
 });
-const cargo = fs.readFileSync(`${pluginRoot}/Cargo.toml`, "utf8");
-const version = cargo.match(/^version = "([^"]+)"/m)[1];
 const stem = `${metadata.binary}_${version}_${target}`;
 const outputArg = process.argv.indexOf("--out-dir");
 const output =

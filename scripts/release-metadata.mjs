@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { cargoPackageVersion } from "./cargo-package.mjs";
 
 import { targets, validateCoreArtifacts } from "./core-artifacts.mjs";
 export { targets };
@@ -9,8 +10,7 @@ export function pluginConfig(plugin, root = ".") {
   if (typeof plugin !== "string" || !/^[a-z][a-z0-9-]*$/.test(plugin)) throw new Error("Invalid plugin name");
   const directory = path.join(root, "plugins", plugin);
   const metadata = JSON.parse(fs.readFileSync(path.join(directory, "release.json"), "utf8"));
-  const version = fs.readFileSync(path.join(directory, "Cargo.toml"), "utf8").match(/^version = "(\d+\.\d+\.\d+)"/m)?.[1];
-  if (!version) throw new Error("Missing plugin version");
+  const version = cargoPackageVersion(path.join(directory, "Cargo.toml"));
   return { ...metadata, version, tag: `${metadata.tagPrefix}${version}`, notes: fs.readFileSync(path.join(directory, "CHANGELOG.md"), "utf8") };
 }
 export function coreConfig(root = ".") {

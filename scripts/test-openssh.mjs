@@ -5,6 +5,7 @@ import path from "node:path";
 import net from "node:net";
 import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
+import { cargoPackageVersion } from "./cargo-package.mjs";
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-openssh-"));
 const sshd = process.env.SODECK_SSHD ?? (process.platform === "win32" ? path.join(process.env.WINDIR, "System32/OpenSSH/sshd.exe") : "/usr/sbin/sshd");
@@ -55,7 +56,7 @@ try {
     for(const plugin of [terminal?'terminal':null,files?'files':null,network?'network-proxy':null].filter(Boolean)){
       const output=path.join(directory,'plugins');
       const build=spawnSync(process.execPath,['scripts/package-plugin.mjs','--plugin',plugin,'--out-dir',output],{stdio:'inherit',windowsHide:true});if(build.status!==0)throw new Error(`${plugin} package failed`);
-      const version=fs.readFileSync(`plugins/${plugin}/Cargo.toml`,'utf8').match(/^version = "([^"]+)"/m)[1];
+      const version=cargoPackageVersion(`plugins/${plugin}/Cargo.toml`);
       const target=spawnSync('rustc',['-vV'],{encoding:'utf8'}).stdout.match(/^host: (.+)$/m)[1];
       env[`SODECK_TEST_${(plugin==='network-proxy'?'NETWORK':plugin.toUpperCase())}_PLUGIN`]=path.join(output,`sodeck-${plugin}_${version}_${target}`);
     }
