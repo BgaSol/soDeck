@@ -38,12 +38,38 @@ Check 新增 `suite` 手动选择，不让每次 main/PR 自动跑五平台全�
 
 本地日志、安装包、包内报告和结构核对保存在已忽略的 `artifacts/release-performance-step1/`。本机核心构建使用已存在的 release 依赖，耗时约 39 秒；它不是 GitHub runner、冷缓存或工作流对照结果。构建日志未包含 `test-fixtures` 编译。包烟测有 WebView2 窗口类注销错误 1412 输出，验收完成且进程均以 0 退出。
 
-历史 Windows x86_64 package 样本中，Rust 测试/编译 328 秒、完整 UI 217 秒，合计约 9 分钟已移出串行定义；新的端到端提速仍待 GitHub 候选运行测量。
+历史 Windows x86_64 package 样本中，Rust 测试/编译 328 秒、完整 UI 217 秒，合计约 9 分钟已移出串行定义；本轮 GitHub 候选实测见下一节。
+
+## 提交与 GitHub 验收
+
+实施提交 [`1febe73`](https://github.com/BgaSol/soDeck/commit/1febe734f678ae9ba2755353cb6adb2eff97f381) 已推送 main。以下运行均验证该提交；测试沿用核心 0.9.4 与网络插件 0.2.2，`publish=false`，只保留 Artifact，没有创建或覆盖 Release。
+
+| 运行 | 结果 |
+| --- | --- |
+| [核心候选打包 42401346197](https://github.com/BgaSol/soDeck/actions/runs/42401346197) | 五目标正式构建、updater 签名、实际包安装/解包、架构、启动、重开、退出和汇总全部通过；Windows x86_64 包内 SSH 通过；五平台 Artifact 与更新清单齐全 |
+| [网络插件打包 42401354278](https://github.com/BgaSol/soDeck/actions/runs/42401354278) | 五目标独立打包与架构检查全部通过，最长平台任务 107 秒；日志没有 `cargo test` 或测试夹具编译 |
+| [Check all 42401358838](https://github.com/BgaSol/soDeck/actions/runs/42401358838) | `format`、五目标 `native`、Windows `desktop` 七个相关 job 全部通过；五目标核心和网络插件源码测试、三系统宿主脚本、源码 SSH 与完整 UI 入口已实际执行。记录时两目标普通网络互操作已通过，原 netem 仍在运行，不能记为整个 Check 已通过 |
+
+同一提交自动触发的 Check `42401292788` 已取消，避免与手动 `all` 重复执行。核心候选从触发（18:27:01 UTC）到更新清单完成（18:35:58 UTC）共 **537 秒，即 8 分 57 秒**；前置任务 10 秒，汇总 13 秒，最慢平台为 Windows ARM64。
+
+| 核心平台 job | 优化前历史样本 | 本轮 | 本轮正式构建步骤 |
+| --- | --- | --- | --- |
+| Windows x86_64 | 18 分 33 秒 | 6 分 17 秒 | 304 秒 |
+| Windows ARM64 | 11 分 03 秒 | 8 分 24 秒 | 375 秒 |
+| Linux x86_64 | 5 分 49 秒 | 4 分 17 秒 | 155 秒 |
+| Linux ARM64 | 5 分 57 秒 | 4 分 35 秒 | 141 秒 |
+| macOS ARM64 | 10 分 31 秒 | 8 分 05 秒 | 383 秒 |
+
+历史样本为[核心运行 42355132557](https://github.com/BgaSol/soDeck/actions/runs/42355132557)。本轮与历史的 runner、缓存恢复和保存成本可能不同，这不是严格冷/热对照；不能把 Windows 全部差值都归因于移出测试。日志确认本轮五个平台 package 均未编译 `test-fixtures`，签名与实际包检查继续执行。
+
+本轮 Windows 两目标和 macOS 没有找到 Rust 缓存；Linux 两目标从旧 `core-package` 回退键恢复成功，恢复分别耗时 22/35 秒。五目标均已按原配置保存 main 缓存，保存步骤分别约 18～47 秒。记录时仓库缓存为 51 条、约 13.81 GiB；Linux 保存的缓存每份约 1.4 GiB，仍可能携带旧混合缓存内容。本次只读取容量与日志，未迁移缓存族或删除条目，下一步再评估发行缓存容量和复用。
+
+GitHub job 日志、候选清单、缓存快照及逐步耗时同样保存于 `artifacts/release-performance-step1/`；候选 Artifact 保留 30 天。此次验证的是明确提交的测试产物，不改变现有正式 0.9.4 的附件或发布结论。
 
 ## 未完成项与风险
 
-- 本轮尚未在 GitHub runner 执行修改后的工作流，五平台与新的端到端耗时仍需候选构建验证；历史结果不能代替本次提交。
-- 本机使用普通本地 NSIS 配置，未生成正式 updater 签名，也未执行系统安装/UAC/HKLM 验证；GitHub 原正式签名与安装断言保持原样，后续原生候选运行仍需验证。未推送提交或创建 Release。
+- 记录时独立 Check 的原 netem 仍在执行，整个 Check 尚无最终结论；打包和本次迁出的七个相关检查 job 已通过，netem 不在核心打包依赖链中。
+- GitHub 五平台实际包与 Windows 系统安装登记已验证；真实设备的交互式 UAC、窗口拖动、混合 DPI 和安装升级仍需对应设备验收。
 - 平台源码、完整 UI/SSH 和网络插件原生检查现在需要按改动选择手动入口；正式发布前确认相同提交的必要结果。自动按路径/模块选择留在第三步。
 - `core-package` 缓存键、保存条件和远端条目本轮未迁移；可能仍恢复包含 debug/test 依赖的旧缓存，第二步再优化。
 - Check 原 `network`/netem、真实包组合和跨版本升级入口保持现有行为；普通发布是否需要相关专项按实际改动判断。
