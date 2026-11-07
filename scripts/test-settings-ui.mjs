@@ -27,7 +27,7 @@ const harness=`<!doctype html><html lang="zh-CN" data-theme="dopamine"><head><me
 import '/style.css';import {ComponentSettings} from '/settings.ts';
 window.__TAURI_INTERNALS__={invoke:window.settingsInvoke,convertFileSrc:p=>new URL('/fonts/'+p,location.href).href};
 const body=document.querySelector('#body');let hidden=false;const app=window.settingsApp=new ComponentSettings(render);
-function render(){if(hidden)return;const old=body.querySelector('#component-settings-page');body.innerHTML='<aside class="settings-nav"><div class="nav-label">应用</div><button class="nav-item">外观</button>'+app.navigation()+'</aside><section class="settings-page" id="component-settings-page"></section>';if(old)body.querySelector('#component-settings-page').replaceWith(old);app.mount(body.querySelector('#component-settings-page'),true);}
+function render(){if(hidden)return;const old=body.querySelector('#component-settings-page');body.innerHTML='<aside class="settings-nav"><div class="nav-label">应用</div><button class="nav-item">插件</button><button class="nav-item">更新</button><button class="nav-item">外观</button><button class="nav-item">应用与数据</button>'+app.navigation()+'</aside><section class="settings-page" id="component-settings-page"></section>';if(old)body.querySelector('#component-settings-page').replaceWith(old);app.mount(body.querySelector('#component-settings-page'),true);}
 document.addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b)return;if(b.dataset.action==='component-settings')app.select(b.dataset.id);else void app.action(b.dataset.action);});
 document.querySelector('#close').onclick=()=>{hidden=true;app.mount(null,false);body.replaceChildren();};window.reopen=()=>{hidden=false;render();};
 await app.catalog();app.select(app.entries[0].pluginId+'/'+app.entries[0].pageId);window.ready=true;
@@ -77,9 +77,18 @@ try{
   await section().getByLabel('固定端口').fill('2080');await save();await page.waitForFunction(()=>document.querySelector('.settings-feedback')?.textContent.includes('已保存，用于新建规则'));
   for(const theme of ['light','dark','dopamine'])for(const [width,height,scale]of [[1000,760,1],[720,480,1],[900,600,1.25],[1080,720,1.5]]){
     await page.setViewportSize({width,height});await page.evaluate(({theme,scale})=>{document.documentElement.dataset.theme=theme;document.documentElement.style.zoom=String(scale);},{theme,scale});
+    await choose('网络隧道');
+    assert.equal(await page.locator('.settings-content').evaluate(el=>el.scrollTop),0,'Focusing the last navigation item must scroll only the navigation');
+    assert(await section().locator('.section-heading').evaluate(el=>el.getBoundingClientRect().top>=document.querySelector('.settings-content').getBoundingClientRect().top),'The settings title must remain inside the content area');
     const overflow=await page.locator('.settings-dialog').evaluate(el=>({width:el.scrollWidth,client:el.clientWidth}));assert(overflow.width<=overflow.client+2,JSON.stringify({theme,width,height,scale,overflow}));
     await section().locator('.settings-fields').evaluate(el=>el.scrollTop=0);
     assert(await section().getByRole('button',{name:'保存',exact:true}).evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&r.right<=innerWidth;}),`Save stays visible at ${theme}/${width}/${scale}`);
+    if(width===720&&scale===1){
+      await choose('终端 ●');await section().locator('.settings-fields').evaluate(el=>el.scrollTop=0);
+      const visible=await section().getByLabel('字号',{exact:true}).evaluate(el=>{const r=el.getBoundingClientRect(),pane=document.querySelector('.settings-fields').getBoundingClientRect();return {visible:r.top>=pane.top&&r.bottom<=pane.bottom,available:pane.height};});
+      assert(visible.visible,`Font and font size controls must both fit without scrolling: ${JSON.stringify({theme,...visible})}`);
+      fs.mkdirSync('artifacts/settings-ui',{recursive:true});await page.screenshot({path:`artifacts/settings-ui/terminal-${theme}-720.png`});
+    }
   }
   await page.setViewportSize({width:1000,height:760});await page.evaluate(()=>document.documentElement.style.zoom='1');await choose('终端 ●');
   fs.mkdirSync('artifacts/settings-ui',{recursive:true});await page.screenshot({path:'artifacts/settings-ui/terminal.png'});

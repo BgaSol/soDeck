@@ -22,4 +22,13 @@
   .settings-save-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 16px 0 4px; border-top: 1px solid var(--border); }
   .settings-save-bar > :first-child { margin-right: auto; }
   @media (max-width: 760px) { .setting-row { grid-template-columns: minmax(90px,1fr) minmax(130px, 1.3fr); gap: 12px; } }
+  @media (max-height: 600px) {
+    #component-settings-page { padding: 12px; }
+    #component-settings-page > .section-heading { flex-direction: row; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+    .settings-commit { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+    .settings-feedback { flex: 1 1 160px; min-height: 20px; }
+    .settings-save-bar { flex: 0 0 auto; padding: 0; border: 0; }
+    .setting-row { padding: 8px 0; }
+    .setting-font .setting-font-sample { padding: 8px; }
+  }
 }
