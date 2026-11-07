@@ -20,6 +20,7 @@
 
 | 主题 | 功能与代码方案 | 实施与验收 |
 | --- | --- | --- |
+| 全页面体验修复 | [逐项修复与验收方案](plan-ui-remediation.md) | [实施与验收](implementation-ui-remediation.md) |
 | 服务器管理 | [资料管理](plan-server-management.md) | — |
 | SSH 与混合连接 | [SSH 直连](plan-ssh-direct.md)、[远程工作台](plan-remote-workbench.md) | [混合连接](implementation-connections.md) |
 | 工作区与组件宿主 | [多窗口工作区](plan-server-workspaces.md)、[组件 UI](plan-component-ui.md) | — |
@@ -42,7 +43,8 @@
 
 - [GitHub Releases](https://github.com/BgaSol/soDeck/releases)：已发布的核心和插件版本、下载附件与发布说明。
 - [核心版本记录](releases/)：各版本的功能变化、验收与交付边界，包含历史候选版本记录。
-- [v0.9.2](releases/v0.9.2.md)：本轮核心改进及独立插件升级说明。
+- [v0.9.3](releases/v0.9.3.md)：本轮全页面体验修复及独立插件升级说明，验收状态见实施记录。
+- [v0.9.2](releases/v0.9.2.md)：工作台交互、协议库复用及独立插件升级说明。
 - 插件变更记录：[终端](../plugins/terminal/CHANGELOG.md)、[文件](../plugins/files/CHANGELOG.md)、[网络隧道](../plugins/network-proxy/CHANGELOG.md)。
 - [外置插件基础实施计划](plan-plugin-foundation.md)、[代码整改方案](plan-code-reorganization.md) 与 [旧版功能和界面提取](legacy-review.md)：早期规划和演进背景。
 
