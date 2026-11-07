@@ -99,7 +99,7 @@ npm run plugin:build -- --plugin network-proxy --out-dir artifacts/another-build
 
 工作台样式与原生剪贴板的实施和平台边界见 [实施记录](implementation-workbench-design.md)。`npm run terminal:input:test` 安装终端锁定的前端依赖后验证实际 xterm 与剪贴板桥，无需 OpenSSH；Check 工作流执行该回归。真实远端仍由 `terminal:test` / `files:test` 及原生实际包工作流验证。原生剪贴板为显式 `SODECK_TEST_CLIPBOARD=1` 烟测，普通包烟测不改测试桌面的剪贴板。
 
-真实连接的新增依赖与本机验证范围见 [连接实施记录](implementation-connections.md)。`npm run ssh:test` 使用临时回环 OpenSSH 服务验证实际客户端，归属 Check 手动 `desktop` 套件；`npm run ssh:test -- --packaged <安装后的程序>` 验证包内连接与原生窗口移动，继续由 Windows x86_64 核心打包执行。其他目标保留原生打包与实际包启动，平台相关源码测试使用 Check `native-core`；不将本机结果外推为五平台已通过。
+真实连接的新增依赖与本机验证范围见 [连接实施记录](implementation-connections.md)。`npm run ssh:test` 使用临时回环 OpenSSH 服务验证实际客户端，Check 在连接/生命周期相关改动或手动 `desktop`/`all` 时执行；`npm run ssh:test -- --packaged <安装后的程序>` 验证包内连接与原生窗口移动，继续由 Windows x86_64 核心打包执行。其他目标保留原生打包与实际包启动，平台相关源码测试按改动选择或手动 `native-core` 补测；不将本机结果外推为五平台已通过。
 
 本机执行类型、格式、脚本测试、Rust 集成测试、前端构建和本机安装包烟测。Rust 测试使用本机 HTTP 服务器验证下载、哈希、平台/API 不兼容、重启切换和启动失败恢复；正式更新来源只允许 HTTPS。
 
@@ -117,13 +117,13 @@ npm run plugin:build -- --plugin network-proxy --out-dir artifacts/another-build
 
 网络插件另用 `npm run plugin:build -- --plugin network-proxy` 打包，标签 `plugin-network-proxy-v<版本>`；没有发布独立 Release 前，官方来源无法下载安装。原生远程验收可额外填写 `network_version` 或 `network_run_id`，验证实际包的侧栏、编辑弹窗、TCP/SOCKS5 正文、移窗和端口释放。`npm run network:test` 提供源码侧真实插件与混合跳板、OpenSSH 和页面验证。当前完成范围与尚未运行的平台见 [网络实施记录](implementation-network.md)。
 
-SOCKS5 报文库接入后的边界、独立互操作与实际包证据见[库复用实施记录](implementation-standard-library-adoption.md#第六阶段socks5-报文库接入)。Check 的 Linux 原生网络任务另执行 curl 互操作和私有 namespace 内的 `network:netem`，工具前提见[开发指南](development.md)；这些测试工具不进入发行包，核心发行构建仍独立于业务插件打包。工作流定义不能替代本次提交的实际运行结果。
+SOCKS5 报文库接入后的边界、独立互操作与实际包证据见[库复用实施记录](implementation-standard-library-adoption.md#第六阶段socks5-报文库接入)。Check 按相关改动执行 Linux 普通网络/curl 互操作，私有 namespace 的 `network:netem` 仅在手动选择 `netem` 时执行，普通 `standard`/`all` 不包含弱网矩阵。工具前提与详细范围见[开发指南](development.md)；这些测试工具不进入发行包，核心发行构建仍独立于业务插件打包。工作流定义不能替代本次提交的实际运行结果。
 
 Windows ARM64 runner 的 OpenSSH 系统可选组件安装曾持续等待十余分钟；该测试在缺少 sshd 时使用微软 Win32-OpenSSH 的固定版本 ARM64 便携包并校验 SHA-256，仅启动隔离回环服务，不安装系统服务，也不随产品分发。其他平台使用 runner 系统包提供的 OpenSSH。
 
 原生远程验收的 Linux 运行依赖安装前使用 `configure-ubuntu-mirror.mjs` 切换到官方 `archive.ubuntu.com`，兼容传统 `.list`、Deb822 `.sources` 和 hosted runner 的 `mirror+file` 入口；ARM64 ports 和第三方源保持原地址。Check 复用该入口，依赖列表、有限下载重试和任务超时继续生效。
 
-服务器管理验收：`npx playwright install chromium` 后运行 `npm run ui:test`，以无头浏览器调用真实目录核心，测试数据保存在临时目录，不连接服务器。Check 手动 `desktop` 套件在 Windows x86_64 执行完整回归；核心打包不安装 Chromium 或终端 UI 测试依赖。所有五目标的 `scripts/smoke.mjs` 都会在实际包中保存服务器、分组、代理及混合路径，再重开验证持久资料与临时秘密生命周期。
+服务器管理验收：`npx playwright install chromium` 后运行 `npm run ui:test`，以无头浏览器调用真实目录核心，测试数据保存在临时目录，不连接服务器。Check 在相关核心/UI 改动或手动 `desktop`/`all` 时于 Windows x86_64 执行完整回归；核心打包不安装 Chromium 或终端 UI 测试依赖。所有五目标的 `scripts/smoke.mjs` 都会在实际包中保存服务器、分组、代理及混合路径，再重开验证持久资料与临时秘密生命周期。
 
 `npm run ui:test` 还会运行 `npm run ui:production:test`：先生成正式前端产物，再直接加载 dist 中的 HTML/JS/CSS，配合隔离的真实目录核心检查保存主题、服务器/代理表单、滚轮、底部字段、焦点和固定页脚；覆盖浅色、深色、多巴胺及 1100×720 / 720×480。此检查用于发现开发模块样式加载顺序与正式打包顺序不同造成的回归，不以开发服务器的截图代替正式产物。
 

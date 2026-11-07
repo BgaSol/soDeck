@@ -86,24 +86,42 @@ npm run plugin:build -- --plugin network-proxy
 
 | 工作流 | 用途 |
 | --- | --- |
-| [Check](../.github/workflows/check.yml) | main/PR 保持现有常规检查；手动选择完整 Windows UI/SSH、原生核心或网络插件测试；同一引用和套件只保留最新运行 |
+| [Check](../.github/workflows/check.yml) | main/PR 按实际改动选择源码和业务回归，汇总执行/跳过状态；手动补测同一引用，netem 单独按需 |
 | [Package SoDeck](../.github/workflows/build.yml) | 五目标原生核心构建、打包、包内验证及更新签名 |
 | [Package plugin](../.github/workflows/plugin.yml) | 按插件目录独立打包，生成插件更新清单 |
 | [Verify native remote plugins](../.github/workflows/remote-integration.yml) | 按组件版本或明确 run 定位实际包，校验来源后执行五平台原生界面/远程业务验收，支持输入快照重放 |
 
 五个系统与架构组合分别使用原生构建和实际包验证。已完成的验收、未完成项和已知风险记录在对应实施记录或版本说明中。
 
-Check 的 **Run workflow** 先选择需要验证的分支或标签，再选择 `suite`。检查结果只适用于该次运行的确切提交；打包工作流不等待 Check。main/PR 的自动检查保持原有范围，新增的五平台和完整 UI 套件仅手动运行。
+Check 始终响应 main push/PR，不使用 workflow 级 `paths` 跳过。`select` 使用 push 的 before/after，PR 使用 base/head 的 merge-base；删除和重命名同时计入原路径。取不到完整差异、新分支零 before、未知路径、共享客户端、工具链和构建输入按扩大范围验证。选择规则集中在 [select-checks.mjs](../scripts/select-checks.mjs)，不维护依赖图。
+
+文档检查只用 Node，运行 `node scripts/check-docs.mjs` 校验全部已提交 Markdown 的结尾换行、冲突标记和本地文件链接（含图片和引用式链接）；不访问外部网址或校验标题锚点。删除/重命名文档也会检查其他文档留下的链接。`format` 保留为最终汇总状态：选中的任务失败、取消或缺失会失败；未选中的任务显示 skipped，不代表测试通过。分支保护若单独要求旧 `network (ubuntu-22.04...)` 状态，需要改用始终出现的 `format`，本轮不修改仓库保护设置。
+
+| 自动改动范围 | 实际选择 |
+| --- | --- |
+| Markdown、docs 下的说明/配图 | 仅文档检查；不安装 npm/Rust，不构建产品 |
+| 核心前端 | 正式前端构建（含 tsc）、脚本、Linux interactions/settings、Windows 完整 UI；不因此运行 SSH、网络或原生 Rust 矩阵 |
+| 单插件 UI/发行元数据 | 脚本和该插件普通业务验收；终端额外验证输入，网络使用 Linux 两架构，文件/终端使用 Linux x86_64 |
+| 单插件 Rust/清单/锁文件/构建输入 | 该插件格式与五平台原生 Rust 测试、该插件普通业务验收；其他插件不跟随 |
+| desktop_files 的 windows/linux/macos.rs | 对应系统两架构/一个 macOS 架构的核心测试、文件业务；Windows 另有完整 UI |
+| network_metrics.rs、settings/declaration.rs | 一次 Linux x86_64 完整核心套件；声明变化另走前端相关回归 |
+| 其他已映射核心系统/更新模块 | 五平台原生核心和相关 UI；网络、文件、终端服务分别追加自己的普通业务验收 |
+| 连接、流、生命周期/RPC、平台进程、服务器路由 | 五平台原生核心、Windows UI/SSH、三插件普通业务验收 |
+| 共享 UI/字体/菜单 | 扩大至核心与三插件 UI/普通业务验收；不因此运行 netem 或旧版升级 |
+| 共享 plugin-client、根工具链/锁文件/构建脚本、未知输入 | 五平台核心与三插件源码、相关 UI、普通业务和宿主脚本；仍排除 netem |
+
+Check 的 **Run workflow** 先选择需要验证的分支或标签，再选择 `suite`，手动选择覆盖自动判定。检查结果只适用于该次运行的确切提交；打包工作流不等待 Check。
 
 | suite | 执行范围 |
 | --- | --- |
-| `standard`（默认） | 原有 `format` 检查及 Linux x86_64/ARM64 `network`，当前仍包含 netem |
+| `standard`（默认） | 公共 Linux 核心/三插件格式和源码、前端/脚本/输入/设置回归及 Linux x86_64/ARM64 普通网络；排除 netem、完整 Windows UI |
 | `desktop` | Windows x86_64 顺序执行源码 `ssh:test` 和完整 `ui:test`，包含 Chromium 与终端 UI 依赖 |
 | `native-core` | 五个原生目标各执行 `npm run test`；Windows x86_64、Linux x86_64、macOS ARM64 另执行原宿主脚本回归 |
-| `network-plugin` | 五个原生目标仅执行网络插件 `cargo test --manifest-path plugins/network-proxy/Cargo.toml --locked`，不构建核心测试夹具 |
-| `all` | 上述所有 job；同一 job 内顺序执行，原生矩阵并行 |
+| `network-plugin` | 网络插件格式、五个原生目标的 `cargo test --manifest-path plugins/network-proxy/Cargo.toml --locked`，不构建核心测试夹具 |
+| `all` | 核心与三插件五平台源码、完整 Windows UI/SSH、普通网络/文件/终端和脚本回归；同一 job 顺序执行，矩阵并行；排除 netem |
+| `netem` | 单独运行 Linux x86_64/ARM64 私有 namespace 弱网矩阵；成功/失败报告 Artifact 保留 14 天，不安装 Chromium 或 OpenSSH |
 
-原宿主脚本回归为 `collect-core.test.mjs`、`core-release.test.mjs`、`plugin-settings-assets.test.mjs`、`release-metadata.test.mjs` 和 `smoke.test.mjs`。常规 Check 在 Linux 执行完整 `scripts:test`。公共核心逻辑沿用常规 Linux Rust 测试；本地路径、进程、凭据、窗口及平台适配变化需要补做 `native-core`，网络插件或共享客户端变化需要补做 `network-plugin`，核心 UI/SSH 变化需要补做 `desktop`。当前手动入口以既有整套测试为单位，按文件或模块自动选择留待后续优化。
+原宿主脚本回归为 `collect-core.test.mjs`、`core-release.test.mjs`、`plugin-settings-assets.test.mjs`、`release-metadata.test.mjs` 和 `smoke.test.mjs`；在 `native-core`/`all` 和共享未知输入下于 Windows x86_64、Linux x86_64、macOS ARM64 执行。自动选择仍以既有套件为单位，不能独立切分时运行较大范围；需要额外验证时可对同一 ref 补做手动套件。真实包组合与升级保持原入口，不把工作流选择当作已验收。
 
 `native-core` 覆盖当前核心单元测试及 `tests/lifecycle.rs`、`updates.rs`、`connections.rs`、`component_ui.rs`、`settings.rs`、`servers.rs`、`streams.rs`、`window_config.rs`、`workspaces.rs`；Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 都在对应原生 runner 执行。`platform`、`desktop_files`、桌面行为及更新等系统分支随原生测试验证。标记为 ignored 的真实远端用例仍由对应 SSH/终端/文件/网络专项提供环境后显式运行，不能把 `native-core` 通过当作这些专项已通过。
 

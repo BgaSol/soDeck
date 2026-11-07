@@ -7,28 +7,45 @@ on:
   workflow_dispatch:
     inputs:
       suite:
-        description: Checks to run on the selected branch or tag
+        description: Checks on the selected ref (all excludes netem)
         type: choice
         default: standard
-        options:
-          - standard
-          - desktop
-          - native-core
-          - network-plugin
-          - all
+        options: [standard, desktop, native-core, network-plugin, all, netem]
 
 permissions:
   contents: read
 
 concurrency:
-  group: check-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.suite || 'standard' }}
+  group: check-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.suite || 'automatic' }}
   cancel-in-progress: true
 
 jobs:
-  format:
-    if: github.event_name != 'workflow_dispatch' || inputs.suite == 'standard' || inputs.suite == 'all'
+  select:
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 5
+    outputs:
+      plan: ${{ steps.scope.outputs.plan }}
+      native_matrix: ${{ steps.scope.outputs.native_matrix }}
+      integration_matrix: ${{ steps.scope.outputs.integration_matrix }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+      - id: scope
+        run: node scripts/select-checks.mjs
+      - name: Check documentation structure and local file links
+        run: node scripts/check-docs.mjs
+
+  checks:
+    needs: select
+    if: fromJSON(needs.select.outputs.plan).checks
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    env:
+      CHECK_PLAN: ${{ needs.select.outputs.plan }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
@@ -43,42 +60,39 @@ jobs:
             package-lock.json
             plugins/terminal/package-lock.json
       - run: npm ci
-      - run: npm run check
-      - run: npm run plugin:check
-      - run: cargo fmt --manifest-path crates/plugin-client/Cargo.toml -- --check
-      - run: npm run web:build
-      - run: npm run scripts:test
-      - name: Install core fixture build dependencies
+      - name: Format affected Rust components
         run: |
-          sudo "$(command -v node)" scripts/configure-ubuntu-mirror.mjs
-          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
-          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev patchelf
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        env:
-          SODECK_PLUGIN_CLIENT_MANIFEST_HASH: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
-        with:
-          shared-key: check-tests
-          env-vars: SODECK_PLUGIN_CLIENT_MANIFEST_HASH
-          workspaces: |
-            src-tauri -> target
-            plugins/network-proxy -> target
-            plugins/files -> target
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: npm run test
-      - run: cargo test --manifest-path plugins/network-proxy/Cargo.toml --locked
-      - run: cargo test --manifest-path plugins/files/Cargo.toml --locked
+          node --input-type=module <<'NODE'
+          import { spawnSync } from 'node:child_process';
+          const p = JSON.parse(process.env.CHECK_PLAN);
+          const manifests = [p.core && 'src-tauri/Cargo.toml', p.sharedClient && 'crates/plugin-client/Cargo.toml', ...p.plugins.map(name => 'plugins/' + name + '/Cargo.toml')].filter(Boolean);
+          for (const manifest of manifests) {
+            const result = spawnSync('cargo', ['fmt', '--manifest-path', manifest, '--', '--check'], { stdio: 'inherit' });
+            if (result.status !== 0) process.exit(result.status || 1);
+          }
+          NODE
+      - run: npm run web:build
+        if: fromJSON(needs.select.outputs.plan).web
+      - run: npm run scripts:test
+        if: fromJSON(needs.select.outputs.plan).scripts
       - run: npx playwright install --with-deps chromium
+        if: fromJSON(needs.select.outputs.plan).web || fromJSON(needs.select.outputs.plan).terminalInput
       - run: npm run interactions:test
-      - run: npm run terminal:input:test
+        if: fromJSON(needs.select.outputs.plan).web
       - run: npm run settings:test
+        if: fromJSON(needs.select.outputs.plan).web
+      - run: npm run terminal:input:test
+        if: fromJSON(needs.select.outputs.plan).terminalInput
+
   network:
-    if: github.event_name != 'workflow_dispatch' || inputs.suite == 'standard' || inputs.suite == 'all'
+    needs: select
+    if: fromJSON(needs.select.outputs.plan).integration[0] != null
     strategy:
       fail-fast: false
-      matrix:
-        runner: [ubuntu-22.04, ubuntu-22.04-arm]
+      matrix: ${{ fromJSON(needs.select.outputs.integration_matrix) }}
+    name: integration-${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
@@ -87,34 +101,43 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version-file: .node-version
-      - name: Install native fixture and netem dependencies
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            plugins/terminal/package-lock.json
+      - name: Install native fixture and OpenSSH dependencies
         run: |
           sudo "$(command -v node)" scripts/configure-ubuntu-mirror.mjs
           sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
-          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev patchelf iproute2 cmake openssh-server
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev patchelf cmake openssh-server
           sudo mkdir -p /run/sshd
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        env:
+          SODECK_PLUGIN_CLIENT_MANIFEST_HASH: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
         with:
           shared-key: network-tests
+          env-vars: SODECK_PLUGIN_CLIENT_MANIFEST_HASH
           workspaces: |
             src-tauri -> target
             plugins/network-proxy -> target
+            plugins/files -> target
+            plugins/terminal -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
-      - name: Real plugin, independent SOCKS server and curl
-        run: |
-          npx playwright install --with-deps chromium
-          npm run network:test
-      - name: Private namespace packet loss and recovery
-        run: npm run network:netem
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: network-netem-${{ matrix.runner }}
-          path: artifacts/network-netem/report.json
-          if-no-files-found: warn
+      - run: npx playwright install --with-deps chromium
+      - name: Real network plugin, independent SOCKS server and curl
+        if: matrix.network
+        run: npm run network:test
+      - name: Real files plugin and SFTP
+        if: matrix.files
+        run: npm run files:test
+      - name: Real terminal plugin and PTY
+        if: matrix.terminal
+        run: npm run terminal:test
+
   desktop:
-    if: github.event_name == 'workflow_dispatch' && (inputs.suite == 'desktop' || inputs.suite == 'all')
+    needs: select
+    if: fromJSON(needs.select.outputs.plan).desktop
     runs-on: windows-2025
     timeout-minutes: 30
     steps:
@@ -136,6 +159,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
       - name: Install OpenSSH test server
+        if: fromJSON(needs.select.outputs.plan).ssh
         shell: pwsh
         run: |
           if (-not (Test-Path "$env:WINDIR/System32/OpenSSH/sshd.exe")) {
@@ -144,29 +168,16 @@ jobs:
             Add-WindowsCapability -Online -Name $capability.Name
           }
       - run: npm run ssh:test
+        if: fromJSON(needs.select.outputs.plan).ssh
       - run: npx playwright install chromium
       - run: npm run ui:test
+
   native:
-    if: github.event_name == 'workflow_dispatch' && (inputs.suite == 'native-core' || inputs.suite == 'network-plugin' || inputs.suite == 'all')
+    needs: select
+    if: fromJSON(needs.select.outputs.plan).native[0] != null
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - name: windows-x86_64
-            runner: windows-2025
-            target: x86_64-pc-windows-msvc
-          - name: windows-aarch64
-            runner: windows-11-arm
-            target: aarch64-pc-windows-msvc
-          - name: linux-x86_64
-            runner: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-          - name: linux-aarch64
-            runner: ubuntu-22.04-arm
-            target: aarch64-unknown-linux-gnu
-          - name: macos-aarch64
-            runner: macos-15
-            target: aarch64-apple-darwin
+      matrix: ${{ fromJSON(needs.select.outputs.native_matrix) }}
     name: native-${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
@@ -181,10 +192,12 @@ jobs:
         with:
           toolchain: 1.99.1
       - name: Verify native Rust host
+        env:
+          EXPECTED_RUST_TARGET: ${{ matrix.target }}
         run: |
-          node -e "const {spawnSync}=require('node:child_process'); const host=spawnSync('rustc',['-vV'],{encoding:'utf8'}).stdout.match(/^host: (.+)$/m)?.[1]; if(host!=='${{ matrix.target }}') throw new Error('Native Rust host mismatch: '+host)"
+          node -e "const {spawnSync}=require('node:child_process'); const host=spawnSync('rustc',['-vV'],{encoding:'utf8'}).stdout.match(/^host: (.+)$/m)?.[1]; if(host!==process.env.EXPECTED_RUST_TARGET) throw new Error('Native Rust host mismatch: '+host)"
       - name: Install core fixture build dependencies
-        if: runner.os == 'Linux' && inputs.suite != 'network-plugin'
+        if: runner.os == 'Linux' && matrix.core
         run: |
           sudo "$(command -v node)" scripts/configure-ubuntu-mirror.mjs
           sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
@@ -195,18 +208,83 @@ jobs:
         with:
           shared-key: check-tests
           env-vars: SODECK_PLUGIN_CLIENT_MANIFEST_HASH
+          workspaces: ${{ matrix.workspaces }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: npm ci
+        if: matrix.core || matrix.scripts
+      - name: Native core source tests
+        if: matrix.core
+        run: npm run test
+      - name: Scripts on native host
+        if: matrix.scripts
+        run: node --test scripts/collect-core.test.mjs scripts/core-release.test.mjs scripts/plugin-settings-assets.test.mjs scripts/release-metadata.test.mjs scripts/smoke.test.mjs
+      - name: Native network plugin source tests
+        if: matrix.network
+        run: cargo test --manifest-path plugins/network-proxy/Cargo.toml --locked
+      - name: Native files plugin source tests
+        if: matrix.files
+        run: cargo test --manifest-path plugins/files/Cargo.toml --locked
+      - name: Native terminal plugin source tests
+        if: matrix.terminal
+        run: cargo test --manifest-path plugins/terminal/Cargo.toml --locked
+
+  netem:
+    needs: select
+    if: github.event_name == 'workflow_dispatch' && fromJSON(needs.select.outputs.plan).netem
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, ubuntu-22.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.1
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install native fixture and namespace dependencies
+        run: |
+          sudo "$(command -v node)" scripts/configure-ubuntu-mirror.mjs
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev patchelf iproute2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        env:
+          SODECK_PLUGIN_CLIENT_MANIFEST_HASH: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
+        with:
+          shared-key: network-tests
+          env-vars: SODECK_PLUGIN_CLIENT_MANIFEST_HASH
           workspaces: |
             src-tauri -> target
             plugins/network-proxy -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
-        if: inputs.suite != 'network-plugin'
-      - name: Native core source tests
-        if: inputs.suite != 'network-plugin'
-        run: npm run test
-      - name: Scripts on native host
-        if: inputs.suite != 'network-plugin' && (matrix.name == 'windows-x86_64' || matrix.name == 'linux-x86_64' || matrix.name == 'macos-aarch64')
-        run: node --test scripts/collect-core.test.mjs scripts/core-release.test.mjs scripts/plugin-settings-assets.test.mjs scripts/release-metadata.test.mjs scripts/smoke.test.mjs
-      - name: Native network plugin source tests
-        if: inputs.suite == 'network-plugin' || inputs.suite == 'all'
-        run: cargo test --manifest-path plugins/network-proxy/Cargo.toml --locked
+      - name: Private namespace packet loss and recovery
+        run: npm run network:netem
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: network-netem-${{ matrix.runner }}
+          path: artifacts/network-netem/report.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  # Preserve the existing common status name for branch protection.
+  format:
+    needs: [select, checks, network, desktop, native, netem]
+    if: always()
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+      - name: Report executed and skipped checks; reject failed or missing selected jobs
+        env:
+          CHECK_RESULTS: ${{ toJSON(needs) }}
+        run: node scripts/select-checks.mjs report
