@@ -131,6 +131,30 @@ netem 单独保留为手动 `suite=netem`：Linux 两架构、原六组弱网配
 
 首轮 GitHub 自动检查暴露了拆分时遗漏的隐式依赖：`settings:test` 构建 catalog 核心夹具，新 Linux checks 没有 GTK/WebKit 开发库，报 `gdk-3.0.pc` 缺失。完整 Windows `ui:test` 已包含该回归；修正为选中 desktop 时不在 Linux 重复，只有不含 desktop 的公共套件在 Linux 单跑，并保留系统库与 `check-tests` 依赖缓存。新增回归核对设置测试只执行一次及其必要环境，脚本总计 76 项。
 
-首轮还发现此前未在常规 Check 运行的 Linux 终端 UI 夹具存在回调复用：HTTP 页面 reload 后 `transformCallback` 编号重置，旧 surface 的结束消息可能被送入新 Channel，状态变成“界面已关闭”，`exit` 后等不到恢复按钮。单独 Linux 诊断稳定复现；修复仅在测试页面用 sessionStorage 保留递增编号，回归断言新旧回调编号不重叠，原真实 PTY、退出和恢复验证继续执行。本机 Windows 修复后通过，Linux 与最终工作流结果待下述运行确认；没有修改生产核心/插件。
+首轮还发现此前未在常规 Check 运行的 Linux 终端 UI 夹具存在回调复用：HTTP 页面 reload 后 `transformCallback` 编号重置，旧 surface 的结束消息可能被送入新 Channel，状态变成“界面已关闭”，`exit` 后等不到恢复按钮。[单独 Linux 诊断 42410674327](https://github.com/BgaSol/soDeck/actions/runs/42410674327) 稳定复现；修复仅在测试页面用 sessionStorage 保留递增编号，回归断言新旧回调编号不重叠，原真实 PTY、退出和恢复验证继续执行。本机 Windows 和[修复后的 Linux 诊断 42411239926](https://github.com/BgaSol/soDeck/actions/runs/42411239926) 均通过；诊断分支已清理，没有修改生产核心/插件。
 
-GitHub 运行与最终验收记录待本轮修正后补充。第四步同包发布收尾仍未实施；第三步减少的是无关测试和等待，不能把 netem 的约 25 分钟直接计为安装包编译提速。
+### GitHub 验收
+
+初次提交 [`40dcead`](https://github.com/BgaSol/soDeck/commit/40dcead1d16ad369ac996b60f4da73a1285175cb) 的[自动检查 42409266056](https://github.com/BgaSol/soDeck/actions/runs/42409266056) 正确选择扩大范围，并跳过 netem；五平台源码、Windows UI/SSH、普通网络和文件均通过，但上述两个问题使 checks/terminal 及 `format` 明确失败，没有把失败计为成功。
+
+终端夹具修复为 `119fdf9`；配置/范围修正提交 [`c497d40`](https://github.com/BgaSol/soDeck/commit/c497d403b34e374e8c2c0f35c08be41a7c82daf9) 已推送 main。本机最终 76 项脚本回归通过；额外直接运行选择脚本 CLI，5 个文档/UI/单插件/Windows/共享输入场景和全部 6 个手动选项通过，动态矩阵即使未选中也提供合法占位。四个核心/插件打包、实际包组合和升级工作流与第二步结束时逐字相同，actionlint 通过。
+
+| 运行 | 源码与结果 | 从触发到最后任务完成 |
+| --- | --- | --- |
+| [自动 Check 42411321108](https://github.com/BgaSol/soDeck/actions/runs/42411321108) | c497d40；五平台核心/三插件源码，完整 Windows UI/SSH，Linux 两架构普通网络，x86_64 文件/终端，以及汇总全部成功；netem skipped | 11 分 56 秒 |
+| [手动 standard 42411426706](https://github.com/BgaSol/soDeck/actions/runs/42411426706) | 同一 c497d40；Linux 公共核心/三插件、前端/脚本/输入/设置、普通网络与汇总全部成功；desktop/netem skipped | 9 分 26 秒 |
+| [手动 network-plugin 42409406146](https://github.com/BgaSol/soDeck/actions/runs/42409406146) | 40dcead 时验证独立补测路由；五平台各 13 项网络插件测试成功，不编译核心夹具，其他业务/desktop/netem skipped | 1 分 40 秒 |
+
+自动运行的 checks 仅 58 秒，settings 在 Windows 完整 UI 内验证，不在 Linux 重复编译夹具；`standard` 的 checks 201 秒，独立 settings 环境和回归通过。原生核心/插件任务分别 133～255 秒；本轮完整配置验证的最长路径为 x86_64 三插件普通业务（682 秒）。这些是开发检查时间，不是安装包时间；不能与核心热出包的 4 分 58 秒混为同一指标。网络普通协议/生命周期覆盖仍保留，未用跳过这些回归制造提速。
+
+一次误启动的[重复 all 42411381016](https://github.com/BgaSol/soDeck/actions/runs/42411381016) 在约十几秒环境准备阶段取消；其已选任务为 cancelled，汇总拒绝通过，不计入验收。全部正式校验仍使用明确提交，无 Release/版本变更。
+
+### 缓存与剩余范围
+
+本轮只在成功的新原生测试缓存写入后，按 ID 清理同系统/工具链、相同 main 来源的旧副本：`10170113222`、`10170107586`、`10145446472`、`10170084396`、`10170173443`、`10170146404`，合计约 4.11 GiB。没有删除五份已验证的 `core-release-v2`；其 ID、键和约 2.42 GiB 总大小与第二步热构建一致。
+
+最终快照 30 条、约 9.39 GiB；新增范围所需 debug/普通业务缓存补齐后，容量高于第二步快照，但仍保留发行缓存。约 8 GiB 是初始管理目标，不是发布门禁；当前余量有限，后续输入换代仍需检查淘汰和过时副本，不能把测试/发行缓存都当作永久资源。本轮没有增加缓存服务、预热、调试 profile 或 workspace crate 缓存。
+
+运行状态、job 日志、真实 CLI 路由、诊断和按 ID 清理记录保存在 `artifacts/release-performance-step3/`。文档专用 main push 将随本次验收记录提交再验证；未建立真实 PR/fork 探针，PR merge-base、缺失提交、删除/重命名与换行文件名由实际 Git 临时仓库回归覆盖（Linux CI 执行换行路径用例）。六组 netem 没有重复跑，前一步完成的历史结果不能冒充新提交验收；新手动入口的命令/原生目标/报告由 actionlint、路由回归和原有诊断逻辑检查。
+
+第三步完成。第四步同包发布收尾仍未实施；第三步减少的是无关测试和等待，不能把 netem 的约 25 分钟直接计为安装包编译提速。
