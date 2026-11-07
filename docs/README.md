@@ -7,7 +7,7 @@
 - [分发文档](distribution.md)：平台产物、在线更新和 GitHub Releases 发布流程。
 - [优化前工作流全景图](workflows-current.md)：五个 Actions 工作流、平台步骤、缓存、产物流转、重试和历史耗时。
 - [插件 API v1](plugin-api.md)：核心能力、RPC、生命周期和兼容要求。
-- 插件说明：[终端](../plugins/terminal/README.md)、[文件](../plugins/files/README.md)、[网络隧道](../plugins/network-proxy/README.md)、[系统状态（待发布）](../plugins/system-status/README.md)。
+- 插件说明：[终端](../plugins/terminal/README.md)、[文件](../plugins/files/README.md)、[网络隧道](../plugins/network-proxy/README.md)、[系统状态](../plugins/system-status/README.md)。
 
 ## 产品与架构
 
@@ -45,6 +45,7 @@
 
 - [GitHub Releases](https://github.com/BgaSol/soDeck/releases)：已发布的核心和插件版本、下载附件与发布说明。
 - [核心版本记录](releases/)：各版本的功能变化、验收与交付边界，包含历史候选版本记录。
+- [v0.10.0](releases/v0.10.0.md)：系统状态插件官方安装、后台采集和有界短命令支持。
 - [v0.9.4](releases/v0.9.4.md)：标题栏加号位置修复及验证范围。
 - [v0.9.3](releases/v0.9.3.md)：本轮全页面体验修复及独立插件升级说明，验收状态见实施记录。
 - [v0.9.2](releases/v0.9.2.md)：工作台交互、协议库复用及独立插件升级说明。

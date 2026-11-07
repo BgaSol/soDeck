@@ -1,6 +1,6 @@
 # 系统状态插件实施记录
 
-日期：2026-11-08。基线：`main` 的 `455a55c`。本次在原仓库实现，没有创建分支、工作树或 PR；尚未发行核心或插件。
+日期：2026-11-08。基线：`main` 的 `455a55c`。本次在原仓库实现，没有创建分支、工作树或 PR。系统状态 0.1.0 独立发行；核心 0.10.0 的发布与实际包记录维护在[版本说明](releases/v0.10.0.md)。
 
 ## 实现行为
 
@@ -32,7 +32,7 @@ Linux/OpenWrt 使用 procfs 和 POSIX sh，不 source os-release、不依赖 Pyt
 
 复用 `npm run plugin:build -- --plugin system-status` 和 Package plugin 的五个原生 runner。该插件打包工作流额外解开实际归档验证包内程序/资源，Check 的源码与普通业务矩阵已经加入 system-status；核心仍可独立打包。
 
-尚未运行五目标 GitHub 原生包构建/验收，没有原始打包 run 或 Release 链接，也未开放尚无发行包的官方在线来源。当前本地包需在新版核心中从目录添加，正式来源在首次 Release 可下载安装后登记。
+系统状态 0.1.0 的五目标 GitHub 原生归档均已完成构建和包内程序/资源验收；发布前另下载真实 GitHub Windows x86_64 归档核对摘要并重复生命周期验证。包来源提交、原始打包 run、Release 及平台验证边界统一维护在[插件 CHANGELOG](../plugins/system-status/CHANGELOG.md)。核心 0.10.0 登记官方安装入口；核心源码和实际包验证结果维护在对应[版本说明](releases/v0.10.0.md)。
 
 OpenWrt/Dropbear、Windows Server/不同默认 SSH shell、真实 macOS/FreeBSD/OpenBSD/NetBSD 及其他 Unix 尚待设备验证。macOS/BSD 总内存百分比与部分磁盘 I/O 未提供，Windows 网卡身份映射待补；不能把编入采集器等同已验证兼容。慢容量/CIM 任务会使动态采样延迟，界面展示实际观察窗口；本轮没有远端成本 p50/p95 或一小时真实运行报告。
 

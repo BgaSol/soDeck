@@ -9,6 +9,6 @@ npm run plugin:build -- --plugin system-status
 npm run system-status:test
 ```
 
-将产物目录从设置 → 插件 → 添加插件导入并重启。核心须提供 `session.exec.v1` 和 `ui.background.v1`，旧核心会明确提示升级。
+核心 0.10.0 起，在设置 → 插件 → 添加插件选择官方「系统状态」，安装并启用后重启。也可导入上述命令生成的产物目录。插件需要 `session.exec.v1` 和 `ui.background.v1`，旧核心会明确提示升级。独立发行包与验证范围见[变更记录](CHANGELOG.md)。
 
 采集器包含 Linux/OpenWrt procfs、Windows CIM、macOS 和 BSD 命令路径；其他 Unix 提供基础回退。Windows 网络速率以性能计数器实例显示，未映射到物理网卡；macOS/BSD 缺少可靠的可用内存口径时不显示总使用率。Linux 容量只查询明确识别的本地文件系统，NFS/CIFS 排除。实际验证范围见[实施记录](../../docs/implementation-system-status.md)，代码路径不代表对应系统已完成实测。

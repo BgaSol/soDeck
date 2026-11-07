@@ -286,7 +286,12 @@ fn official_sources_only_include_supported_business_plugins() {
             .iter()
             .map(|p| p.id)
             .collect::<Vec<_>>(),
-        ["sodeck.network-proxy", "sodeck.terminal", "sodeck.files"]
+        [
+            "sodeck.network-proxy",
+            "sodeck.terminal",
+            "sodeck.files",
+            "sodeck.system-status"
+        ]
     );
     for id in ["sodeck.hello", "sodeck.ui-example"] {
         assert!(sodeck::official_plugins::source(id).is_err());

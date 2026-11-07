@@ -30,6 +30,12 @@ pub const OFFICIAL_PLUGINS: &[OfficialPlugin] = &[
         description: "浏览服务器目录、上传下载、管理文件，支持 UTF-8 小文本编辑和草稿导出。",
         tag_prefix: "plugin-files-v",
     },
+    OfficialPlugin {
+        id: "sodeck.system-status",
+        name: "系统状态",
+        description: "读取服务器设备信息、CPU、内存、磁盘和网络状态，隐藏面板继续采集。",
+        tag_prefix: "plugin-system-status-v",
+    },
 ];
 
 pub fn source(id: &str) -> Result<UpdateSource, String> {
