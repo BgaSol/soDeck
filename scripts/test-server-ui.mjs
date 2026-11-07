@@ -155,6 +155,7 @@ try {
       const row=work().locator(`[data-server-action="select"][data-id="${target}"]`);
       await row.focus();await page.keyboard.press('Enter');
       assert.equal(await page.evaluate(()=>document.activeElement===document.body),false,`${theme}/${width} selecting a server keeps contextual focus`);
+      if(width===1100){const ratios=await row.evaluate(row=>{const l=color=>{const c=color.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722;};const b=l(getComputedStyle(row).backgroundColor);return [...row.querySelectorAll('small')].map(node=>{const a=l(getComputedStyle(node).color);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);});});assert(ratios.every(r=>r>=4.5),`${theme} selected server contrast: ${ratios}`);}
       if(width===720){await action('back',work()).focus();await page.keyboard.press('Enter');assert.equal(await row.evaluate(el=>el===document.activeElement),true,'Returning to the list focuses the original server');}
       await action("new", work()).click();
       await field("routed").selectOption("true"); await action("add-socks").click();

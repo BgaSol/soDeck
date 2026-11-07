@@ -1,4 +1,5 @@
 @layer components {
+  .settings-nav .nav-label, .settings-nav .nav-bottom, .settings-nav .settings-nav-hint { color: var(--text); }
   .settings-nav-hint { padding: 8px 12px; font-size: 11px; }
   .settings-draft-dot { color: var(--accent); font-size: 9px; margin-left: auto; }
   #component-settings-page { display: flex; flex-direction: column; overflow: hidden; }

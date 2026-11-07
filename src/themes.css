@@ -57,7 +57,7 @@
   }
   :root[data-theme="dopamine"] {
     --canvas: #fbf1e8; --panel: #fffbe6; --subtle: #fffef5;
-    --text: #20211f; --muted: #62665c; --border: #20211f;
+    --text: #20211f; --muted: #585c52; --border: #20211f;
     --accent: #5346a6; --accent-bg: #ffde75; --hover: #fff0bc;
     --good: #176b4f; --warning: #7a4a08; --error: #a12c38; --shadow: none;
     --file-tree-bg: #fffbe6; --status-bg: #d5f1e5;

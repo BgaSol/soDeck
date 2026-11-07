@@ -395,6 +395,12 @@ try {
     await page.locator('[data-action="section"][data-id="appearance"]').click();
     await page.locator(`[data-action="theme"][data-id="${theme}"]`).click();
     await page.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme);
+    const navigationContrasts=await page.locator('.settings-nav').evaluate(nav=>{
+      const luminance=color=>{const c=color.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722;};
+      const background=luminance(getComputedStyle(nav).backgroundColor);
+      return [...nav.querySelectorAll('.nav-label,.nav-bottom,.settings-nav-hint')].map(node=>{const foreground=luminance(getComputedStyle(node).color);return {text:node.textContent,ratio:(Math.max(foreground,background)+.05)/(Math.min(foreground,background)+.05)};});
+    });
+    assert(navigationContrasts.length>=2&&navigationContrasts.every(item=>item.ratio>=4.5),`${theme} navigation small text contrast: ${JSON.stringify(navigationContrasts)}`);
     await page.locator('[data-action="section"][data-id="updates"]').click();
     if (await firstUpdate.locator('.update-release-notes').getAttribute('open') === null)
       await firstUpdate.locator('.update-release-notes summary').click();
