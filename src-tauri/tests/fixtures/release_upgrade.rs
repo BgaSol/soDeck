@@ -204,6 +204,7 @@ fn main() {
                     std::thread::spawn(move || match prepare_install(handle, input) {
                         Ok(()) => finished.exit(0),
                         Err(error) => {
+                            eprintln!("Release upgrade failed: {error}");
                             let _ = fs::write(root.join("upgrade-error.txt"), error);
                             finished.exit(1);
                         }

@@ -34,6 +34,8 @@ npm run terminal:input:test
 
 `ui:test` 包含服务器、工作区、连接界面、正式前端产物、桌面一致性和组件设置回归。`terminal:input:test` 验证实际 xterm 输入与剪贴板桥，无需 OpenSSH。
 
+Windows 对运行中的测试程序有文件锁，使用同一 Rust target 目录的核心/插件集成与界面测试应顺序运行。修改网络 UI 后可用 `npm run network:test -- --network-ui-only` 重新独立打包并只复验实际插件界面与隧道，不重复协议压力测试；完整网络验证仍使用 `npm run network:test`。
+
 `npm run ui:production:test -- --updates-only` 验证正式前端的更新说明 Markdown、链接分发、批量更新和三主题小窗口布局，不运行后续工作区菜单与拆窗专项。
 
 真实远程业务测试还需要本机 OpenSSH 服务端与 `ssh-keygen`，并启动隔离的临时回环服务：
@@ -52,7 +54,7 @@ npm run terminal:input:test
 
 原生包验收步骤和各类测试的边界见 [分发文档](distribution.md)。
 
-`Verify published release upgrade` 手动工作流验证本轮正式核心 0.9.0 → 0.9.2、终端 0.2.0 → 0.2.1、文件 0.4.0 → 0.4.1、网络隧道 0.2.0 → 0.2.1。五个原生 runner 执行 `node scripts/test-release-upgrade.mjs`（`SODECK_UPGRADE_TARGET` 指定本机 Rust target），下载真实正式包并核对 GitHub SHA-256，使用仅测试的 `release-upgrade-fixture` 调用生产插件更新服务与官方 Tauri updater 安装，随后核对安装字节、实际新程序、设置及服务器资料，再验证远程业务。Linux 另执行 DEB 系统安装升级。夹具不发行；此入口验证安装和持久化，完整更新页面点击流程由本机桌面验收另行记录。后续发布新版本后，严格版本预期会拒绝误用该历史版本对。
+`Verify published release upgrade` 手动工作流验证本轮正式核心 0.9.2 → 0.9.3、终端 0.2.1 → 0.2.2、文件 0.4.1 → 0.4.2、网络隧道 0.2.1 → 0.2.2。五个原生 runner 执行 `node scripts/test-release-upgrade.mjs`（`SODECK_UPGRADE_TARGET` 指定本机 Rust target），下载真实正式包并核对 GitHub SHA-256，使用仅测试的 `release-upgrade-fixture` 调用生产插件更新服务与官方 Tauri updater 安装，随后核对安装字节、实际新程序、设置及服务器资料，再验证远程业务。Linux 另执行 DEB 系统安装升级。夹具不发行；此入口验证安装和持久化，完整更新页面点击流程由本机桌面验收另行记录。后续发布新版本后，严格版本预期会拒绝误用该历史版本对。
 
 ## 打包
 

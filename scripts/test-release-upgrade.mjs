@@ -17,11 +17,11 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-release-upgrade-"));
 const data = path.join(root, "data");
 const suffix = process.platform === "win32" ? ".exe" : "";
 const driver = path.resolve(`src-tauri/target/debug/release-upgrade-fixture${suffix}`);
-const current = "0.9.0", version = "0.9.2";
+const current = "0.9.2", version = "0.9.3";
 const plugins = [
-  { name: "terminal", id: "sodeck.terminal", current: "0.2.0", version: "0.2.1" },
-  { name: "files", id: "sodeck.files", current: "0.4.0", version: "0.4.1" },
-  { name: "network-proxy", id: "sodeck.network-proxy", current: "0.2.0", version: "0.2.1" },
+  { name: "terminal", id: "sodeck.terminal", current: "0.2.1", version: "0.2.2" },
+  { name: "files", id: "sodeck.files", current: "0.4.1", version: "0.4.2" },
+  { name: "network-proxy", id: "sodeck.network-proxy", current: "0.2.1", version: "0.2.2" },
 ];
 const digest = filename => createHash("sha256").update(fs.readFileSync(filename)).digest("hex");
 function run(command, args, env = {}) {
