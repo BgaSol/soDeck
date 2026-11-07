@@ -316,7 +316,7 @@ try {
   assert.equal(await page.locator('[data-action="back-plugins"]').evaluate(el=>el===document.activeElement),true,'Adding a plugin moves keyboard focus into the new page');
   const terminal = page.locator('[data-official-plugin="sodeck.terminal"]');
   const install = () => terminal.locator('[data-action="install-official-plugin"]');
-  assert.deepEqual(await page.locator('[data-official-plugin]').evaluateAll(nodes => nodes.map(node => node.dataset.officialPlugin).sort()), ['sodeck.files','sodeck.network-proxy','sodeck.terminal']);
+  assert.deepEqual(await page.locator('[data-official-plugin]').evaluateAll(nodes => nodes.map(node => node.dataset.officialPlugin).sort()), ['sodeck.files','sodeck.network-proxy','sodeck.system-status','sodeck.terminal']);
   assert.match(await page.locator('[data-official-plugin="sodeck.terminal"]').textContent(), /真实终端/);
   assert.match(await page.locator('[data-official-plugin="sodeck.files"]').textContent(), /上传下载、管理文件/);
   assert.deepEqual(requests, [], "Opening settings must not download plugins automatically");
