@@ -85,6 +85,10 @@ export function selectChecks(files, { suite, fallback } = {}) {
         continue;
       }
       if (file.startsWith('plugins/shared/')) { sharedUi(); continue; }
+      if (/^src-tauri\/(tauri(?:\.[a-z-]+)?\.conf\.json|capabilities\/.+\.json)$/.test(file)) {
+        core(); ui();
+        continue;
+      }
       const match = file.match(/^plugins\/(terminal|files|network-proxy)\/(.+)$/);
       if (match) {
         const [, name, relative] = match;
@@ -140,8 +144,9 @@ export function selectChecks(files, { suite, fallback } = {}) {
     .map(t => {
       const row = { ...t, core: coreTargets.has(t.name), scripts: scriptTargets.has(t.name) };
       for (const name of pluginNames) row[name === 'network-proxy' ? 'network' : name] = pluginTargets[name].has(t.name);
+      // Core scopes share the existing full-core key; plugin-only jobs keep their small cache.
       row.workspaces = [row.core ? 'src-tauri -> target' : null,
-        ...pluginNames.filter(p => pluginTargets[p].has(t.name)).map(p => `plugins/${p} -> target`)].filter(Boolean).join('\n');
+        ...pluginNames.filter(p => row.core || pluginTargets[p].has(t.name)).map(p => `plugins/${p} -> target`)].filter(Boolean).join('\n');
       return row;
     });
   plan.integration = targets.filter(t => t.name.startsWith('linux-') && (integration.has('network-proxy') || (t.name === 'linux-x86_64' && integration.size)))

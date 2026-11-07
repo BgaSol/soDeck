@@ -58,6 +58,16 @@ test('native adapter scopes both architectures of the affected system; common lo
   for (const file of ['src-tauri/src/platform.rs', 'src-tauri/src/updates.rs', 'src-tauri/src/storage.rs']) {
     assert.equal(selectChecks([file]).native.length, 5, file);
   }
+  const full = selectChecks([], { suite: 'all' });
+  for (const file of ['src-tauri/tauri.conf.json', 'src-tauri/tauri.macos.conf.json', 'src-tauri/tauri.release.conf.json', 'src-tauri/capabilities/main.json']) {
+    const config = selectChecks([file]);
+    assert(config.web && config.desktop && !config.ssh);
+    assert.deepEqual(config.integration, []);
+    assert.deepEqual(config.plugins, []);
+    assert.equal(config.native.length, 5);
+    assert(config.native.every(t => t.core && !t.terminal && !t.files && !t.network));
+    assert.deepEqual(config.native.map(t => t.workspaces), full.native.map(t => t.workspaces), 'Core scopes must reuse the same cache inputs');
+  }
 });
 
 test('transport/lifecycle changes retain real integrations and shared inputs/unknown paths expand conservatively', () => {

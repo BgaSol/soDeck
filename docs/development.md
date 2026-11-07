@@ -101,6 +101,7 @@ Check 始终响应 main push/PR，不使用 workflow 级 `paths` 跳过。`selec
 | --- | --- |
 | Markdown、docs 下的说明/配图 | 仅文档检查；不安装 npm/Rust，不构建产品 |
 | 核心前端 | 正式前端构建（含 tsc）、脚本、Linux interactions、Windows 完整 UI（含 settings）；不因此运行 SSH、网络或原生 Rust 矩阵 |
+| Tauri 版本/核心配置、capabilities | 核心格式/前端/脚本、五平台原生核心和 Windows UI；不追加插件源码和普通网络/文件/终端业务 |
 | 单插件 UI/发行元数据 | 脚本和该插件普通业务验收；终端额外验证输入，网络使用 Linux 两架构，文件/终端使用 Linux x86_64 |
 | 单插件 Rust/清单/锁文件/构建输入 | 该插件格式与五平台原生 Rust 测试、该插件普通业务验收；其他插件不跟随 |
 | desktop_files 的 windows/linux/macos.rs | 对应系统两架构/一个 macOS 架构的核心测试、文件业务；Windows 另有完整 UI |
@@ -132,6 +133,8 @@ Check 的 **Run workflow** 先选择需要验证的分支或标签，再选择 `
 核心与插件打包中的源码测试已经移到 Check；核心 preflight 只使用 Node 检查发行输入，正式前端构建仍执行 TypeScript 检查。实际包的架构、更新签名、启动、持久资料重开和退出验证继续执行，Windows x86_64 另保留包内 SSH 烟测。
 
 CI 的 npm 下载缓存按任务实际使用的锁文件配置；核心打包只使用根锁文件，终端 UI 测试同时使用终端锁文件。Rust 缓存区分日常 `check-tests`、正式核心 `core-release-v2` 和各插件，只有成功的 main 运行保存，其他引用尝试恢复；插件及其原生测试显式覆盖共享 plugin-client 清单。升级验收夹具使用 `check-tests`，不恢复发行缓存。
+
+包含核心的原生测试统一声明现有核心/三插件 workspace 输入，复用同一稳定 `check-tests` 键，避免每个组件/平台范围生成大份重复核心依赖。声明缓存目录不启动对应插件测试；实际执行仍由所选范围控制。仅插件的原生 job 保留小范围 workspace，不恢复核心 target。发行缓存仍只有核心自身输入。
 
 `core-release-v2` 是一次性的缓存迁移标识，不随提交、版本或 run ID 变化。它保留固定 action 的默认工具链/环境/Cargo 输入隔离，只缓存依赖编译结果；宿主构建依赖与目标架构 release 依赖一并保留，不开启 workspace crate 或 incremental 缓存。恢复后仍执行 `npm ci`、当前前端及当前核心的正式构建。main 手动打包会保存依赖，后续适用分支和标签可恢复默认分支缓存；详见[分发文档](distribution.md)。Linux 打包依赖安装复用官方软件源修正与有限重试，不缓存系统安装状态。
 
