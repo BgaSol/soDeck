@@ -27,7 +27,7 @@ const harness=`<!doctype html><html lang="zh-CN" data-theme="dopamine"><head><me
 import '/style.css';import {ComponentSettings} from '/settings.ts';
 window.__TAURI_INTERNALS__={invoke:window.settingsInvoke,convertFileSrc:p=>new URL('/fonts/'+p,location.href).href};
 const body=document.querySelector('#body');let hidden=false;const app=window.settingsApp=new ComponentSettings(render);
-function render(){if(hidden)return;const old=body.querySelector('#component-settings-page');body.innerHTML='<aside class="settings-nav"><div class="nav-label">应用</div><button class="nav-item">插件</button><button class="nav-item">更新</button><button class="nav-item">外观</button><button class="nav-item">应用与数据</button>'+app.navigation()+'</aside><section class="settings-page" id="component-settings-page"></section>';if(old)body.querySelector('#component-settings-page').replaceWith(old);app.mount(body.querySelector('#component-settings-page'),true);}
+function render(){if(hidden)return;const old=body.querySelector('#component-settings-page'),active=old?.contains(document.activeElement)?document.activeElement:null;body.innerHTML='<aside class="settings-nav"><div class="nav-label">应用</div><button class="nav-item">插件</button><button class="nav-item">更新</button><button class="nav-item">外观</button><button class="nav-item">应用与数据</button>'+app.navigation()+'</aside><section class="settings-page" id="component-settings-page"></section>';if(old)body.querySelector('#component-settings-page').replaceWith(old);if(active?.isConnected)active.focus({preventScroll:true});app.mount(body.querySelector('#component-settings-page'),true);}
 document.addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b)return;if(b.dataset.action==='component-settings')app.select(b.dataset.id);else void app.action(b.dataset.action);});
 document.querySelector('#close').onclick=()=>{hidden=true;app.mount(null,false);body.replaceChildren();};window.reopen=()=>{hidden=false;render();};
 await app.catalog();app.select(app.entries[0].pluginId+'/'+app.entries[0].pageId);window.ready=true;
@@ -56,7 +56,8 @@ try{
   await input.evaluate(el=>window.preservedInput=el);await page.evaluate(()=>window.settingsApp.catalog());assert(await input.evaluate(el=>el===window.preservedInput));
   await choose('文件列表');await section().getByLabel('名称字号').waitFor();await choose('终端 ●');
   assert.equal(await input.inputValue(),'18');await page.locator('#close').click();await page.evaluate(()=>window.reopen());assert.equal(await input.inputValue(),'18');
-  await save();await page.waitForFunction(()=>document.querySelector('.settings-feedback')?.textContent.includes('已保存'));
+  await section().getByRole('button',{name:'保存',exact:true}).focus();await page.keyboard.press('Enter');await page.waitForFunction(()=>document.querySelector('.settings-feedback')?.textContent.includes('已保存'));
+  assert.equal(await section().locator('.settings-feedback').evaluate(el=>el===document.activeElement),true,'Saving moves focus to the result when the save button becomes disabled');
   const saved=await call('settings_page',{pluginId:'sodeck.terminal',pageId:'appearance'});assert.equal(saved.values.fontSize,18);
   await section().getByLabel('字号',{exact:true}).fill('20');
   await call('save_settings',{pluginId:'sodeck.terminal',pageId:'appearance',input:{definitionToken:saved.definitionToken,baseRevision:saved.revision,requestId:'second-window',values:{...saved.values,fontSize:16}}});
@@ -66,7 +67,10 @@ try{
   await section().getByLabel('字体',{exact:true}).selectOption('local');await section().getByLabel('本机字体名称').fill('SoDeck Definitely Missing Font 98765');
   await page.waitForFunction(()=>document.querySelector('[data-font-status]')?.textContent.includes('找不到本机字体'));
   assert(await section().getByRole('button',{name:'保存',exact:true}).isDisabled());
-  await section().getByRole('button',{name:'放弃更改'}).click();
+  const discard=section().getByRole('button',{name:'放弃更改'}),defaults=section().getByRole('button',{name:'恢复默认'});
+  await discard.focus();await page.keyboard.press('Enter');assert.equal(await discard.evaluate(el=>el===document.activeElement),true,'Discarding preserves footer focus');
+  await defaults.focus();await page.keyboard.press('Enter');assert.equal(await defaults.evaluate(el=>el===document.activeElement),true,'Restoring defaults preserves footer focus');
+  assert.equal(await input.inputValue(),'14');await discard.focus();await page.keyboard.press('Enter');assert.equal(await input.inputValue(),'16');
   for(const id of ['jetbrains-mono','source-code-pro','ibm-plex-mono']){
     await section().getByLabel('字体',{exact:true}).selectOption(id);
     await page.waitForFunction(()=>document.querySelector('[data-font-status]')?.textContent.includes('字体已加载'));

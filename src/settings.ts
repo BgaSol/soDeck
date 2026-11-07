@@ -1,6 +1,6 @@
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { loadFont, type FontValue, type FontPreset } from "./font-loader.js";
-import { escape as e, button as b, icon } from "./ui";
+import { escape as e, button as b, icon, replace } from "./ui";
 
 export interface SettingsEntry { pluginId: string; pluginName: string; pageId: string; title: string; icon?: string; order: number; enabled: boolean; available: boolean; error?: string }
 interface Field { key: string; type: string; title: string; description: string; default: unknown; apply: string; min?: number; max?: number; step?: number; unit?: string; maxLength?: number; options: {value: unknown; title: string}[]; presets: FontPreset[]; visibleWhen?: {key: string; equals: unknown} }
@@ -86,15 +86,20 @@ export class ComponentSettings {
     } else control = `<input ${attrs} value="${e(value)}" maxlength="${f.maxLength ?? 1024}">`;
     return `<div class="setting-row" data-setting-row="${e(f.key)}" ${f.visibleWhen && !same(d.values[f.visibleWhen.key], f.visibleWhen.equals) ? "hidden" : ""}><div><label for="${id}">${e(f.title)}</label>${f.description ? `<p>${e(f.description)}</p>` : ""}</div>${control}</div>`;
   }
-  private paint(d: Draft) {
+  private paint(d: Draft, focusId?: string) {
     const host = this.host; if (!host) return;
+    const focused = focusId ?? (host.contains(document.activeElement) ? (document.activeElement as HTMLElement).id : "");
     const entry = this.entries.find(p => `${p.pluginId}/${p.pageId}` === this.selected);
-    host.innerHTML = `<div class="section-heading"><div><h2>${e(d.snapshot.declaration.title)}</h2><p>同类组件在所有服务器和窗口共享${entry?.enabled ? "" : " · 插件关闭时也可配置"}</p></div><span class="hint">${e(d.snapshot.version)}</span></div><form class="component-settings-form"><div class="settings-fields" data-scroll="settings-fields">${d.snapshot.declaration.groups.map(g => `<fieldset><legend>${e(g.title)}</legend>${g.fields.map(f => this.field(f,d)).join("")}</fieldset>`).join("")}<div class="settings-warnings">${d.snapshot.warnings.map(w => `<p>${e(w)}</p>`).join("")}</div></div><footer class="settings-commit"><div class="settings-feedback" role="status"></div><div class="settings-save-bar">${b("defaults-component-settings","恢复默认",undefined,"text-button")}${b("discard-component-settings","放弃更改",undefined,"quiet")}${b("save-component-settings","保存",undefined,"")}</div></footer></form>`;
+    host.innerHTML = `<div class="section-heading"><div><h2>${e(d.snapshot.declaration.title)}</h2><p>同类组件在所有服务器和窗口共享${entry?.enabled ? "" : " · 插件关闭时也可配置"}</p></div><span class="hint">${e(d.snapshot.version)}</span></div><form class="component-settings-form"><div class="settings-fields" data-scroll="settings-fields">${d.snapshot.declaration.groups.map(g => `<fieldset><legend>${e(g.title)}</legend>${g.fields.map(f => this.field(f,d)).join("")}</fieldset>`).join("")}<div class="settings-warnings">${d.snapshot.warnings.map(w => `<p>${e(w)}</p>`).join("")}</div></div><footer class="settings-commit"><div class="settings-feedback" id="settings-feedback" role="status" tabindex="-1"></div><div class="settings-save-bar">${b("defaults-component-settings","恢复默认",undefined,"text-button",'id="settings-defaults"')}${b("discard-component-settings","放弃更改",undefined,"quiet",'id="settings-discard"')}${b("save-component-settings","保存",undefined,"",'id="settings-save"')}</div></footer></form>`;
     host.oninput = event => this.input(event, d);
     host.onchange = event => this.input(event, d);
     host.querySelector("form")!.onsubmit = event => {event.preventDefault(); void this.save();};
     d.snapshot.declaration.groups.flatMap(g => g.fields).filter(f => f.type === "font").forEach(f => void this.preview(f,d));
     this.feedback(d);
+    if (focused) {
+      const target = host.querySelector<HTMLElement>(`#${CSS.escape(focused)}`);
+      (target && !target.matches(":disabled") ? target : host.querySelector<HTMLElement>(".settings-feedback"))?.focus({preventScroll:true});
+    }
   }
   private input(event: Event, d: Draft) {
     const input = event.target as HTMLInputElement | HTMLSelectElement;
@@ -143,8 +148,8 @@ export class ComponentSettings {
     if (!this.host || this.drafts.get(this.selected) !== d) return;
     const node = this.host.querySelector<HTMLElement>(".settings-feedback"); if (!node) return;
     node.classList.toggle("error-box",Boolean(d.error));
-    node.innerHTML = d.conflict ? `其他窗口或插件版本已更新，草稿已保留。${b("reload-component-settings","载入最新值",undefined,"text-button")}` : e(d.error || d.message || (d.dirty ? "有未保存的更改" : d.snapshot.application === "newInstance" ? "用于之后新建的规则" : "保存后应用于组件"));
-    if(d.error.startsWith("设置已保存，部分组件未应用"))node.insertAdjacentHTML("beforeend",b("retry-component-settings","重试应用",undefined,"text-button"));
+    const text = d.conflict ? `其他窗口或插件版本已更新，草稿已保留。${b("reload-component-settings","载入最新值",undefined,"text-button",'id="settings-reload"')}` : e(d.error || d.message || (d.dirty ? "有未保存的更改" : d.snapshot.application === "newInstance" ? "用于之后新建的规则" : "保存后应用于组件"));
+    replace(node,text+(d.error.startsWith("设置已保存，部分组件未应用") ? b("retry-component-settings","重试应用",undefined,"text-button",'id="settings-retry"') : ""));
     for(const input of this.host.querySelectorAll<HTMLInputElement|HTMLSelectElement>("input,select"))input.disabled=d.saving;
     const save = this.host.querySelector<HTMLButtonElement>('[data-action="save-component-settings"]')!;
     save.disabled = d.saving || !d.dirty || d.conflict || d.fontPending.size > 0 || Object.keys(d.fontErrors).some(key => !same(d.values[key],d.snapshot.values[key]));
@@ -163,6 +168,7 @@ export class ComponentSettings {
   }
   private async save() {
     const key=this.selected,d=this.drafts.get(key);if(!d||d.saving||d.conflict||d.fontPending.size>0||Object.keys(d.fontErrors).some(k=>!same(d.values[k],d.snapshot.values[k]))||!this.host?.querySelector<HTMLFormElement>("form")?.reportValidity())return;
+    const focusId=this.host?.contains(document.activeElement)?(document.activeElement as HTMLElement).id:"";
     const values=JSON.stringify(d.values);
     d.request ??= {values,input:{definitionToken:d.snapshot.definitionToken,baseRevision:d.snapshot.revision,requestId:crypto.randomUUID(),values:copy(d.values)}};
     d.saving=true;d.error="";this.feedback(d);
@@ -171,7 +177,7 @@ export class ComponentSettings {
       if(result.conflict){d.conflict=true;d.message="保存冲突，草稿已保留";return;}
       d.snapshot=result.snapshot;d.values=copy(result.snapshot.values);d.dirty=false;d.request=undefined;d.message=result.snapshot.application==="newInstance"?"已保存，用于新建规则":result.snapshot.application==="nextInstance"?"已保存，组件启动后使用":"设置已保存，正在应用…";
     }catch(error){d.error=String(error);}
-    finally{d.saving=false;if(this.selected===key&&this.host)this.paint(d);for(const report of this.reports.get(key)??[])this.applied(report);this.render();}
+    finally{d.saving=false;if(this.selected===key&&this.host)this.paint(d,focusId);for(const report of this.reports.get(key)??[])this.applied(report);this.render();}
   }
   changed(snapshot: SettingsSnapshot) {
     const key=`${snapshot.pluginId}/${snapshot.pageId}`, d=this.drafts.get(key);if(!d||d.saving)return;
