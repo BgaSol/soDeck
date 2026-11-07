@@ -44,11 +44,12 @@ impl AppCore {
         let checked = (|| {
             for v in &views {
                 match self.ui_plugin_call(v, "ui.beforeClose", Value::Null) {
-                    Ok(reply) => self
-                        .component_ui
-                        .lock()
-                        .unwrap()
-                        .update_metadata(&v.id, &reply["metadata"])?,
+                    Ok(reply) => {
+                        self.component_ui
+                            .lock()
+                            .unwrap()
+                            .update_metadata(&v.id, &reply["metadata"])?;
+                    }
                     Err(e) => {
                         let mut ui = self.component_ui.lock().unwrap();
                         if let Some(v) = ui
@@ -138,6 +139,7 @@ impl AppCore {
                     );
                 }
                 self.terminals.cancel(|owner| owner.view == v.id);
+                self.executions.cancel(|owner| owner.view == v.id);
                 self.network.cancel(|owner| owner.view == v.id);
                 self.files.cancel(|owner| owner.view == v.id);
             }

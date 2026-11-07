@@ -14,6 +14,63 @@ static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 // Calls inside each fixture remain concurrent in the RPC integration tests.
 static STARTUP: Mutex<()> = Mutex::new(());
 #[test]
+fn hidden_background_mount_has_no_surface_and_does_not_block_a_move() {
+    let f = Fixture::new();
+    let path = f.plugin.join("plugin.json");
+    let mut m: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    m["ui"]["views"] = json!([{"id":"status","title":"状态","icon":"activity","container":"sidebar","instancePolicy":"perWorkspace","defaultSide":"right","defaultPinned":true,"openOnWorkspace":"none","backgroundOnWorkspace":true}]);
+    fs::write(path, m.to_string()).unwrap();
+    f.load().unwrap();
+    let w = f.open("background");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(6);
+    let view = loop {
+        let ids: Vec<_> = f
+            .core
+            .component_ui
+            .lock()
+            .unwrap()
+            .workspaces
+            .get(&w.context.workspace_id)
+            .map(|w| w.views.iter().map(|v| v.id.clone()).collect())
+            .unwrap_or_default();
+        if let Some(id) = ids.first().filter(|id| {
+            f.root
+                .join(format!("data/plugin-data/test.ui/mounted-{id}"))
+                .is_file()
+        }) {
+            break id.clone();
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "background mount never ran without ui_snapshot"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(30));
+    };
+    let ui = f.core.component_ui.lock().unwrap();
+    let state = &ui.workspaces[&w.context.workspace_id];
+    assert!(state.right.is_none());
+    assert!(!state.views[0].ui_requested);
+    assert_eq!(state.views.len(), 1);
+    assert!(ui.target_ready(&w.context.workspace_id, "secondary"));
+    drop(ui);
+    f.core.ui_snapshot("main").unwrap();
+    assert_eq!(
+        f.core.component_ui.lock().unwrap().workspaces[&w.context.workspace_id].views[0].id,
+        view
+    );
+    f.core
+        .ui_action(
+            "main",
+            &w.context,
+            json!({"op":"open","key":"test.ui:status","requestId":"reveal"}),
+        )
+        .unwrap();
+    assert!(
+        f.core.component_ui.lock().unwrap().workspaces[&w.context.workspace_id].views[0]
+            .ui_requested
+    );
+}
+#[test]
 fn component_settings_bind_reports_to_current_window_surface_and_revision() {
     let f = Fixture::new();
     let path = f.plugin.join("plugin.json");

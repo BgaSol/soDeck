@@ -17,7 +17,7 @@ pub struct Client {
 struct Inner {
     closed: AtomicBool,
     writer: Mutex<io::Stdout>,
-    pending: Mutex<HashMap<String, mpsc::SyncSender<Result<Value, String>>>>,
+    pending: Mutex<HashMap<String, mpsc::SyncSender<Result<Value, RpcError>>>>,
     sequence: AtomicU64,
 }
 impl Client {
@@ -39,6 +39,9 @@ impl Client {
             .map_err(|e| e.to_string())
     }
     pub fn call(&self, method: &str, params: Value) -> Result<Value, String> {
+        self.call_detailed(method, params).map_err(|e| e.message)
+    }
+    pub fn call_detailed(&self, method: &str, params: Value) -> Result<Value, RpcError> {
         let id = format!(
             "plugin-{}",
             self.inner.sequence.fetch_add(1, Ordering::Relaxed)
@@ -47,15 +50,16 @@ impl Client {
         {
             let mut pending = self.inner.pending.lock().unwrap();
             if pending.len() >= 32 {
-                return Err("插件请求已满".into());
+                return Err(RpcError::local("插件请求已满"));
             }
             pending.insert(id.clone(), tx);
         }
         let result = self
             .send(json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}))
+            .map_err(RpcError::local)
             .and_then(|_| {
                 rx.recv_timeout(Duration::from_secs(4))
-                    .map_err(|_| "核心请求超时".to_string())?
+                    .map_err(|_| RpcError::local("核心请求超时"))?
             });
         self.inner.pending.lock().unwrap().remove(&id);
         result
@@ -139,10 +143,7 @@ pub fn run(
         } else if let Some(id) = frame["id"].as_str() {
             if let Some(reply) = client.inner.pending.lock().unwrap().remove(id) {
                 let result = if frame.get("error").is_some() {
-                    Err(frame["error"]["message"]
-                        .as_str()
-                        .unwrap_or("核心调用失败")
-                        .into())
+                    Err(RpcError::from_frame(&frame["error"]))
                 } else {
                     Ok(frame["result"].clone())
                 };
@@ -152,8 +153,45 @@ pub fn run(
     }
     client.inner.closed.store(true, Ordering::Release);
     for (_, reply) in client.inner.pending.lock().unwrap().drain() {
-        let _ = reply.send(Err("核心通信已结束".into()));
+        let _ = reply.send(Err(RpcError::local("核心通信已结束")));
     }
     Ok(())
 }
+pub mod encoding;
 pub mod settings;
+
+#[derive(Debug, Clone)]
+pub struct RpcError {
+    pub code: i64,
+    pub message: String,
+    pub data: Value,
+}
+impl RpcError {
+    fn local(message: impl Into<String>) -> Self {
+        Self {
+            code: -32003,
+            message: message.into(),
+            data: Value::Null,
+        }
+    }
+    fn from_frame(error: &Value) -> Self {
+        Self {
+            code: error["code"].as_i64().unwrap_or(-32000),
+            message: error["message"].as_str().unwrap_or("核心调用失败").into(),
+            data: error["data"].clone(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn structured_errors_keep_recovery_code_and_legacy_message() {
+        let e = RpcError::from_frame(
+            &json!({"code":-32000,"message":"过期","data":{"code":"staleContext"}}),
+        );
+        assert_eq!(e.data["code"], "staleContext");
+        assert_eq!(e.message, "过期");
+    }
+}

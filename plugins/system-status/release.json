@@ -1,0 +1,9 @@
+{
+  "id":"sodeck.system-status",
+  "name":"系统状态",
+  "apiVersion":"1",
+  "binary":"sodeck-system-status",
+  "tagPrefix":"plugin-system-status-v",
+  "ui":{"apiVersion":"1","entry":"ui/index.html","views":[{"id":"overview","title":"系统状态","icon":"activity","container":"sidebar","instancePolicy":"perWorkspace","defaultSide":"right","defaultPinned":true,"openOnWorkspace":"reveal","startupOrder":40,"backgroundOnWorkspace":true}]},
+  "settings":{"apiVersion":"1","schemaVersion":1,"pages":[{"id":"sampling","title":"系统状态","icon":"activity","viewTypes":["overview"],"order":400,"groups":[{"id":"sampling","title":"动态指标采样","fields":[{"key":"dynamicIntervalSeconds","title":"采样间隔","type":"select","default":"5","options":[{"value":"3","title":"3 秒"},{"value":"5","title":"5 秒"},{"value":"10","title":"10 秒"},{"value":"30","title":"30 秒"}],"apply":"live"}]}]}]}
+}

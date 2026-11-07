@@ -146,11 +146,14 @@ impl AppCore {
             .unwrap()
             .validate_owned(window, &view.context)?;
         let response = self.ui_plugin_call(&view, "ui.event", event)?;
-        self.component_ui
+        let changed = self
+            .component_ui
             .lock()
             .unwrap()
             .update_metadata(&view.id, &response["metadata"])?;
-        self.workspace_changed();
+        if changed {
+            self.workspace_changed();
+        }
         Ok(response["data"].clone())
     }
     pub fn ui_resource(

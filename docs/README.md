@@ -7,7 +7,7 @@
 - [分发文档](distribution.md)：平台产物、在线更新和 GitHub Releases 发布流程。
 - [优化前工作流全景图](workflows-current.md)：五个 Actions 工作流、平台步骤、缓存、产物流转、重试和历史耗时。
 - [插件 API v1](plugin-api.md)：核心能力、RPC、生命周期和兼容要求。
-- 官方插件说明：[终端](../plugins/terminal/README.md)、[文件](../plugins/files/README.md)、[网络隧道](../plugins/network-proxy/README.md)。
+- 插件说明：[终端](../plugins/terminal/README.md)、[文件](../plugins/files/README.md)、[网络隧道](../plugins/network-proxy/README.md)、[系统状态（待发布）](../plugins/system-status/README.md)。
 
 ## 产品与架构
 
@@ -29,6 +29,7 @@
 | 文件目录树 | [文件树设计](plan-file-tree.md) | [文件树](implementation-file-tree.md) |
 | 文件管理与传输 | [功能范围](plan-file-management.md)、[编码方案](plan-file-management-coding.md) | [文件管理](implementation-file-management.md) |
 | 网络隧道 | [插件方案](plan-network-proxy.md) | [网络隧道](implementation-network.md) |
+| 系统状态 | [功能设计](plan-system-status.md)、[编码方案](plan-system-status-coding.md) | [实现、验证与平台限制](implementation-system-status.md) |
 | 工作台样式与剪贴板 | [设计方案](plan-workbench-design.md) | [样式与剪贴板](implementation-workbench-design.md) |
 | Tab 新建入口 | [交互方案](plan-tab-creation.md) | [两级 Tab](implementation-tab-creation.md) |
 | 工作区菜单 | — | [菜单修复](implementation-component-menus.md) |
@@ -47,7 +48,7 @@
 - [v0.9.4](releases/v0.9.4.md)：标题栏加号位置修复及验证范围。
 - [v0.9.3](releases/v0.9.3.md)：本轮全页面体验修复及独立插件升级说明，验收状态见实施记录。
 - [v0.9.2](releases/v0.9.2.md)：工作台交互、协议库复用及独立插件升级说明。
-- 插件变更记录：[终端](../plugins/terminal/CHANGELOG.md)、[文件](../plugins/files/CHANGELOG.md)、[网络隧道](../plugins/network-proxy/CHANGELOG.md)。
+- 插件变更记录：[终端](../plugins/terminal/CHANGELOG.md)、[文件](../plugins/files/CHANGELOG.md)、[网络隧道](../plugins/network-proxy/CHANGELOG.md)、[系统状态](../plugins/system-status/CHANGELOG.md)。
 - [外置插件基础实施计划](plan-plugin-foundation.md)、[代码整改方案](plan-code-reorganization.md) 与 [旧版功能和界面提取](legacy-review.md)：早期规划和演进背景。
 
 ## 文档分工

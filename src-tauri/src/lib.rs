@@ -13,6 +13,7 @@ mod plugins;
 pub mod remote_files;
 mod resource_owner;
 pub mod servers;
+mod session_exec;
 pub mod settings;
 mod storage;
 pub mod streams;

@@ -18,7 +18,7 @@ npm run dev
 | 命令 | 验证内容 |
 | --- | --- |
 | `npm run check` | TypeScript 类型与核心 Rust 格式 |
-| `npm run plugin:check` | 三个官方插件的 Rust 格式 |
+| `npm run plugin:check` | 终端、文件、网络隧道和系统状态的 Rust 格式 |
 | `npm run scripts:test` | 构建、打包、更新、原生验收和 CI 软件源配置回归 |
 | `npm run test` | 核心 Rust 测试，包含仅测试使用的宿主夹具 |
 | `npm run web:build` | TypeScript 检查与正式前端构建 |
@@ -47,6 +47,8 @@ Windows 对运行中的测试程序有文件锁，使用同一 Rust target 目�
 | `npm run files:test` | SFTP 与文件业务 |
 | `npm run network:test` | TCP 转发、实际插件、独立 SOCKS 服务端、curl 互操作及资源限额 |
 | `npm run network:netem` | Linux 私有 network namespace 内的真实延迟、丢包及资源清理 |
+| `npm run system-status:test` | 独立插件包、真实 OpenSSH 采集/隐藏/暂停/关闭和三主题侧栏 |
+| `npm run system-status:ui:test` | 固定数据 UI 与 160/280/480px 布局；`SODECK_TEST_SYSTEM_STATUS_PLUGIN` 可指向实际包 |
 
 `network:test` 使用测试依赖 `fast-socks5 1.0.0` 和固定 curl 8.21.0。`scripts/network-tools.mjs` 优先复用匹配版本的 curl；缺少时从 curl 官方下载源码，经 SHA-256 核验后用 CMake 和本机 C 工具链编译测试工具。Windows 源码编译还需要 Visual Studio C++ 构建工具，Linux/macOS 需要 `cmake`、`tar` 和 C 编译器；可用 `SODECK_TEST_CURL` 指向已安装的对应版本。工具缓存于 `artifacts/network-tools/`，不进入核心或插件发行包。
 
@@ -74,6 +76,7 @@ Windows 对运行中的测试程序有文件锁，使用同一 Rust target 目�
 npm run plugin:build -- --plugin terminal
 npm run plugin:build -- --plugin files
 npm run plugin:build -- --plugin network-proxy
+npm run plugin:build -- --plugin system-status
 ```
 
 产物位于 `artifacts/plugins/sodeck-<插件名>_<版本>_<target>`。在应用设置中添加对应目录并重启；正在运行的插件不能原位覆盖，需要关闭并重启后构建，或指定其他输出目录。宿主测试夹具只用于回归，不发行。

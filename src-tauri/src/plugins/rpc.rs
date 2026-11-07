@@ -14,40 +14,53 @@ pub(super) const FRAME_LIMIT: usize = 64 * 1024;
 pub(super) struct RpcError {
     pub code: i32,
     pub message: String,
+    pub data: Value,
 }
 impl RpcError {
     pub fn invalid(message: impl Into<String>) -> Self {
         Self {
             code: -32602,
             message: message.into(),
+            data: Value::Null,
         }
     }
     pub fn execution(message: impl Into<String>) -> Self {
         Self {
             code: -32000,
             message: message.into(),
+            data: Value::Null,
         }
     }
     pub fn method_not_found() -> Self {
         Self {
             code: -32601,
             message: "未知核心 API 方法".into(),
+            data: Value::Null,
         }
     }
     pub fn busy() -> Self {
         Self {
             code: -32001,
             message: "插件核心请求队列已满，请稍后重试".into(),
+            data: Value::Null,
         }
     }
     pub fn timeout() -> Self {
         Self {
             code: -32003,
             message: "核心请求执行超时".into(),
+            data: Value::Null,
         }
     }
     pub fn response(self, id: Value) -> Value {
-        json!({"jsonrpc":"2.0","id":id,"error":{"code":self.code,"message":self.message}})
+        json!({"jsonrpc":"2.0","id":id,"error":{"code":self.code,"message":self.message,"data":self.data}})
+    }
+    pub fn session(code: &str, message: String) -> Self {
+        Self {
+            code: -32000,
+            message,
+            data: json!({"code":code}),
+        }
     }
 }
 

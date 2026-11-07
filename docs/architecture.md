@@ -65,6 +65,8 @@ macOS 主窗口通过 Tauri 自动合并的 `src-tauri/tauri.macos.conf.json` �
 
 ## 插件模型
 
+系统状态插件通过通用会话状态/有界短命令任务与核心交互，采集器、采样周期、指标计算和趋势均留在外置插件。核心提供可选的工作区后台 view 初始化，将逻辑实例与 iframe 展示分开，复用当前 Owner/Context、关闭与进程清理机制；接口见[插件 API](plugin-api.md)，实现与验证边界见[实施记录](implementation-system-status.md)。这些能力需要本次源码构建的核心，旧发行包尚未提供。
+
 每个插件包含清单和独立进程。当前采用逐行 UTF-8 JSON-RPC 2.0 stdin/stdout，协议见 [插件 API v1](plugin-api.md)。可选 UI v1 中，`component_ui.rs` 定义声明与数据，`component_ui/layout.rs` 负责登记/布局，`host.rs` 负责资源/挂载/RPC，`close.rs` 负责汇总关闭。前端 `components.ts` 保留 iframe，`workspaces.ts` 继续管理服务器级页签与手势。当前业务插件为 `plugins/terminal`、`plugins/files` 和 `plugins/network-proxy`，不在核心根据插件 ID 硬编码视图。旧 Hello 和组件交互示例已退役；宿主布局与草稿行为由仅测试夹具覆盖。详见 [组件与核心 UI 交互设计](plan-component-ui.md)。
 
 插件按可信扩展运行，不实现插件权限清单、授权审批或沙箱。进程分离用于生命周期管理和故障恢复，插件仍可能直接使用操作系统允许的本机和网络能力。核心 API 保留版本、参数有效性和资源状态检查。SSH 认证不属于插件权限系统，仍由连接服务完成。

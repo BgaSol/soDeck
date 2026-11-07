@@ -7,7 +7,7 @@
     "web:dev": "vite",
     "web:build": "tsc && vite build",
     "check": "tsc && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
-    "plugin:check": "cargo fmt --manifest-path plugins/terminal/Cargo.toml -- --check && cargo fmt --manifest-path plugins/files/Cargo.toml -- --check && cargo fmt --manifest-path plugins/network-proxy/Cargo.toml -- --check",
+    "plugin:check": "cargo fmt --manifest-path plugins/terminal/Cargo.toml -- --check && cargo fmt --manifest-path plugins/files/Cargo.toml -- --check && cargo fmt --manifest-path plugins/network-proxy/Cargo.toml -- --check && cargo fmt --manifest-path plugins/system-status/Cargo.toml -- --check",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml --features test-fixtures --locked",
     "scripts:test": "node --test scripts/*.test.mjs",
     "ui:test": "node scripts/test-server-ui.mjs && node scripts/test-workspace-ui.mjs && node scripts/test-connection-ui.mjs && npm run interactions:test && npm run ui:production:test && npm run desktop:test && npm run settings:test",
@@ -21,7 +21,9 @@
     "network:netem": "node scripts/test-network-netem.mjs",
     "files:test": "node scripts/test-openssh.mjs --files",
     "plugin:build": "node scripts/package-plugin.mjs",
-    "settings:test": "node scripts/test-settings-ui.mjs"
+    "settings:test": "node scripts/test-settings-ui.mjs",
+    "system-status:test": "node scripts/test-openssh.mjs --system-status",
+    "system-status:ui:test": "node scripts/test-system-status-ui.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.12.4",

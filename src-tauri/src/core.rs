@@ -18,6 +18,8 @@ use std::{
 type Listener = Arc<dyn Fn(&str, Value) + Send + Sync>;
 
 pub struct AppCore {
+    pub(crate) executions: crate::session_exec::Executions,
+    pub(crate) background_wake: Mutex<Option<std::sync::mpsc::SyncSender<()>>>,
     pub desktop_files: crate::desktop_files::DesktopFiles,
     pub(crate) network: crate::network::Network,
     pub(crate) files: crate::remote_files::Files,
@@ -66,6 +68,8 @@ impl AppCore {
             .map(|p| p.manifest.id.clone())
             .collect();
         let core = Arc::new(Self {
+            executions: crate::session_exec::Executions::default(),
+            background_wake: Mutex::new(None),
             desktop_files: crate::desktop_files::DesktopFiles::default(),
             network: crate::network::Network::default(),
             files: crate::remote_files::Files::default(),
@@ -92,6 +96,7 @@ impl AppCore {
             log_rate: Mutex::new((Instant::now(), 0, 0)),
         });
         core.restore_update_cache();
+        crate::component_ui::start_background(&core);
         core.log(None, "info", "SoDeck 已启动", None);
         Ok(core)
     }
@@ -108,6 +113,7 @@ impl AppCore {
     }
 
     pub(crate) fn changed(&self) {
+        self.wake_background();
         self.event("core-changed", json!(null));
     }
 
@@ -305,6 +311,7 @@ impl AppCore {
         self.component_ui.lock().unwrap().require_closed(&ids)?;
         self.closing.store(true, Ordering::Release);
         self.terminals.cancel(|_| true);
+        self.executions.cancel(|_| true);
         self.network.cancel(|_| true);
         self.files.cancel(|_| true);
         let instances: Vec<_> = self.instances.lock().unwrap().values().cloned().collect();

@@ -35,6 +35,8 @@ pub struct Definition {
     pub create_action: Option<String>,
     #[serde(default)]
     pub locate_entry: bool,
+    #[serde(default)]
+    pub background_on_workspace: bool,
 }
 fn left() -> String {
     "left".into()
@@ -91,6 +93,8 @@ impl Declaration {
                         || d.create_action.is_some()))
                 || (d.instance_policy == "perResource" && d.open_on_workspace != "none")
                 || (d.locate_entry && d.container != "editor")
+                || (d.background_on_workspace
+                    && (d.container != "sidebar" || d.instance_policy != "perWorkspace"))
                 || d.create_action
                     .as_ref()
                     .is_some_and(|s| s.trim().is_empty() || s.len() > 256)
@@ -159,6 +163,7 @@ pub struct View {
     pub busy: bool,
     pub error: Option<String>,
     pub last_used: u64,
+    pub ui_requested: bool,
 }
 #[derive(Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -190,10 +195,12 @@ pub struct Runtime {
     requests: HashMap<String, String>,
     clock: u64,
 }
+mod background;
 mod close;
 mod close_poll;
 mod host;
 mod layout;
+pub(crate) use background::start_background;
 
 #[tauri::command]
 pub async fn component_ui(

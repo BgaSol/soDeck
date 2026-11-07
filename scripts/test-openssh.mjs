@@ -53,18 +53,19 @@ try {
     const terminal=process.argv.includes('--terminal');
     const files=process.argv.includes('--files');
     const network=process.argv.includes('--network');
+    const status=process.argv.includes('--system-status');
     const uiOnly=(files&&process.argv.includes('--files-ui-only'))||(network&&process.argv.includes('--network-ui-only'));
     const env={ ...process.env, SODECK_TEST_SSH_PORT: String(port), SODECK_TEST_SSH_USER: username, SODECK_TEST_SSH_KEY: path.join(directory, "user") };
     if(network) env.SODECK_TEST_CURL=await testCurl();
-    for(const plugin of [terminal?'terminal':null,files?'files':null,network?'network-proxy':null].filter(Boolean)){
+    for(const plugin of [terminal?'terminal':null,files?'files':null,network?'network-proxy':null,status?'system-status':null].filter(Boolean)){
       const output=path.join(directory,'plugins');
       const build=spawnSync(process.execPath,['scripts/package-plugin.mjs','--plugin',plugin,'--out-dir',output],{stdio:'inherit',windowsHide:true});if(build.status!==0)throw new Error(`${plugin} package failed`);
       const version=cargoPackageVersion(`plugins/${plugin}/Cargo.toml`);
       const target=spawnSync('rustc',['-vV'],{encoding:'utf8'}).stdout.match(/^host: (.+)$/m)[1];
-      env[`SODECK_TEST_${(plugin==='network-proxy'?'NETWORK':plugin.toUpperCase())}_PLUGIN`]=path.join(output,`sodeck-${plugin}_${version}_${target}`);
+      env[`SODECK_TEST_${(plugin==='network-proxy'?'NETWORK':plugin.toUpperCase().replaceAll('-','_'))}_PLUGIN`]=path.join(output,`sodeck-${plugin}_${version}_${target}`);
     }
       const result = uiOnly ? 0 : await new Promise((resolve, reject) => {
-    const test = spawn("cargo", ["test", "--manifest-path", "src-tauri/Cargo.toml", "--features", "test-fixtures", "--locked", "--test", "connections", network?'network_proxy_plugin':files?'openssh_files_plugin':terminal?'openssh_terminal_plugin':'openssh_interop', "--", "--ignored", "--exact", "--nocapture"], {
+    const test = spawn("cargo", ["test", "--manifest-path", "src-tauri/Cargo.toml", "--features", "test-fixtures", "--locked", "--test", "connections", status?'openssh_system_status_plugin':network?'network_proxy_plugin':files?'openssh_files_plugin':terminal?'openssh_terminal_plugin':'openssh_interop', "--", "--ignored", "--exact", "--nocapture"], {
       windowsHide: true, stdio: "inherit", env,
     }); test.on("error", reject); test.on("exit", resolve);
   });
@@ -72,6 +73,7 @@ try {
   if(network&&!uiOnly){const result=await new Promise((resolve,reject)=>{const test=spawn('cargo',['test','--manifest-path','src-tauri/Cargo.toml','--features','test-fixtures','--locked','--test','connections','openssh_network_plugin','--','--ignored','--exact','--nocapture'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('OpenSSH network plugin failed: '+diagnostic);}
   if(network&&!uiOnly){for(const name of ['network_socks_protocol','network_socks_lifecycle']){const result=await new Promise((resolve,reject)=>{const test=spawn('cargo',['test','--manifest-path','src-tauri/Cargo.toml','--features','test-fixtures','--locked','--test','connections',name,'--','--ignored','--exact','--nocapture'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error(name+' failed');}}
   if(network){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-network-ui.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('Network UI failed');}
+  if(status){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-system-status-ui.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('Status UI failed');}
   if(terminal){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-terminal-ui.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('Terminal UI failed');}
   if(files){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-files-ui.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('File UI failed');}
   }

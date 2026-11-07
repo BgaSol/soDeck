@@ -60,7 +60,7 @@ pub(crate) fn supervise(
         "jsonrpc":"2.0", "id":"initialize", "method":"initialize", "params":{
             "coreApiVersion":API_VERSION, "coreVersion":core.version(), "dataDirectory":path,
             "settings":core.settings_index(id),
-              "capabilities":["logging.write","messages.publish","ui.v1","rpc.concurrent","terminal.v1","viewData.v1","files.v1","files.directoryCursors.v1","files.operations.v1","files.localInputs.v1","net.tcp.v1","ui.dialog.v1","settings.v1"]
+              "capabilities":["logging.write","messages.publish","ui.v1","rpc.concurrent","terminal.v1","viewData.v1","files.v1","files.directoryCursors.v1","files.operations.v1","files.localInputs.v1","net.tcp.v1","ui.dialog.v1","settings.v1","ui.background.v1","session.exec.v1"]
         }
     }))).err();
     let mut ready = Some(ready);
@@ -158,6 +158,8 @@ pub(crate) fn supervise(
                 .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
             core.files
                 .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
+            core.executions
+                .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
             for (_, (_, reply)) in requests.drain() {
                 let _ = reply.send(Err("插件通信已停止，请求已取消".into()));
             }
@@ -208,6 +210,8 @@ pub(crate) fn supervise(
                 core.terminals
                     .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
                 core.files
+                    .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
+                core.executions
                     .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
                 if let Some(sender) = ready.take() {
                     let _ =

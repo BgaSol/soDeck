@@ -133,8 +133,24 @@ impl server::Handler for Ssh {
         session: &mut Session,
     ) -> Result<(), Self::Error> {
         session.channel_success(id)?;
+        if command == b"status-test:hang" {
+            return Ok(());
+        }
+        if command == b"status-test:mixed" {
+            session.data(id, vec![b'x'; 9000])?;
+            session.extended_data(id, 1, b"err\n".to_vec())?;
+            session.exit_status_request(id, 7)?;
+            session.eof(id)?;
+            session.close(id)?;
+            return Ok(());
+        }
+        if command == b"status-test:limit" {
+            session.data(id, vec![b'x'; 512])?;
+        }
         session.data(id, command.to_vec())?;
-        session.exit_status_request(id, 0)?;
+        if command != b"status-test:missing-exit" {
+            session.exit_status_request(id, 0)?;
+        }
         session.eof(id)?;
         session.close(id)?;
         Ok(())
@@ -298,6 +314,7 @@ static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 include!("fixtures/terminal_flow.rs");
 include!("fixtures/files_flow.rs");
 include!("fixtures/network_flow.rs");
+include!("fixtures/system_status_flow.rs");
 struct Fixture {
     core: Arc<AppCore>,
     path: PathBuf,

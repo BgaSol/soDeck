@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { changedFiles, selectChecks, checkResults, targets } from './select-checks.mjs';
+import { changedFiles, selectChecks, checkResults, targets, selectionSummary } from './select-checks.mjs';
 
 test('documentation produces an explicit lightweight check without product suites', () => {
   const p = selectChecks(['docs/usage.md', 'docs/reference-v2/files-panel.png', 'README.md', 'plugins/files/CHANGELOG.md']);
@@ -24,6 +24,11 @@ test('frontend layout keeps UI verification without SSH/network/native source su
 });
 
 test('a plugin only selects its own source and normal business tests', () => {
+  const status = selectChecks(['plugins/system-status/src/scheduler.rs']);
+  assert.deepEqual(status.plugins, ['system-status']);
+  assert(status.native.length === 5 && status.native.every(t => t.status && !t.core));
+  assert(status.integration.length === 1 && status.integration[0].status);
+  assert(selectionSummary(status).includes('linux-x86_64: system-status'));
   for (const [name, field] of [['terminal', 'terminal'], ['files', 'files'], ['network-proxy', 'network']]) {
     const p = selectChecks([`plugins/${name}/src/main.rs`]);
     assert.deepEqual(p.plugins, [name]);
@@ -71,7 +76,7 @@ test('native adapter scopes both architectures of the affected system; common lo
 });
 
 test('transport/lifecycle changes retain real integrations and shared inputs/unknown paths expand conservatively', () => {
-  for (const file of ['src-tauri/src/connections/ssh.rs', 'src-tauri/src/plugins/rpc.rs', 'src-tauri/tests/lifecycle.rs']) {
+  for (const file of ['src-tauri/src/connections/ssh.rs', 'src-tauri/src/plugins/rpc.rs', 'src-tauri/src/session_exec.rs', 'src-tauri/tests/lifecycle.rs']) {
     const p = selectChecks([file]);
     assert(p.ssh && p.desktop);
     assert.equal(p.native.filter(t => t.core).length, 5);

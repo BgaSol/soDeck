@@ -19,6 +19,7 @@ fs.cpSync("scripts/fixtures/workspace-ui/ui", path.join(pluginRoot,"ui"), {recur
 const metadata = JSON.parse(fs.readFileSync("scripts/fixtures/workspace-ui/manifest.json","utf8"));
 // Exercise the product's default target with a test process, never a distributed plugin.
 metadata.id = 'sodeck.terminal';
+metadata.ui.views.find(v=>v.id==='forwarding').backgroundOnWorkspace=true;
 metadata.ui.views.push({id:'alternative',title:'其他工具',icon:'plug',container:'editor',instancePolicy:'multiple',createAction:'新建其他工具'});
 for(let index=0;index<20;index++)metadata.ui.views.push({id:`extra${index}`,title:`扩展测试组件 ${index}`,icon:'plug',container:'sidebar',instancePolicy:'perWorkspace',defaultSide:'left'});
 const target = spawnSync("rustc",["-vV"],{encoding:"utf8"}).stdout.match(/^host: (.+)$/m)[1];
@@ -97,6 +98,7 @@ try {
   await call("fixture_load_plugin",{directory:pluginRoot});
   const a=await open("生产 Web",1),b=await open("测试环境",2),c=await open("长名称服务器-".repeat(12),3);
   const aid=a.context.workspaceId,bid=b.context.workspaceId,cid=c.context.workspaceId; await refresh();
+  assert.equal(await main.locator('.component-surface iframe[title^="网络转发"]').count(),0,'Unrevealed background views must not create an iframe');
   await main.waitForFunction(() => document.querySelectorAll('.server-tab').length === 3);
   const strip = await main.locator('#server-tabs').boundingBox();
   await wait(() => surfaces.get('main')?.width === strip.width);

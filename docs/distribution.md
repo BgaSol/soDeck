@@ -54,7 +54,9 @@ Windows x86_64 与 ARM64 的 NSIS 新安装统一使用 `perMachine`，默认目
 
 ## 仓库维护
 
-每个 Rust 插件在 `plugins/<名称>/` 包含：Cargo.toml（唯一版本来源）、Cargo.lock、release.json（ID、名称、API、二进制名、标签前缀）、CHANGELOG.md 和 src/。现有业务目录为 terminal、files 和 network-proxy。新增其他语言插件时再扩展构建适配，不提前建立通用构建框架。
+每个 Rust 插件在 `plugins/<名称>/` 包含：Cargo.toml（唯一版本来源）、Cargo.lock、release.json（ID、名称、API、二进制名、标签前缀）、CHANGELOG.md 和 src/。现有业务目录为 terminal、files、network-proxy 和 system-status。新增其他语言插件时再扩展构建适配，不提前建立通用构建框架。
+
+系统状态沿用独立 `Package plugin` 和 `plugin-system-status-v` 标签。五个原生打包任务解开本次归档，验证包内程序的 initialize、重复 mount、pause、dispose 和 shutdown 及 UI 资源；远端采集另外通过 `npm run system-status:test` 验证，归档烟测不能代替各远端系统验收。首版尚无正式 Release，官方下载来源在包可正常下载安装后登记，当前使用本地目录入口；结果见[实施记录](implementation-system-status.md)。
 
 插件包与更新清单使用同一 Cargo 元数据读取函数，按插件 `Cargo.toml` 路径选择包版本，不依赖 TOML 表的顺序或空格写法。`Package plugin` 的选择、打包和 Release 汇总任务均显式安装固定 Rust 工具链；发布标签仍须匹配插件自己的正式版本。
 
@@ -66,6 +68,7 @@ Hello 和组件交互示例已退役，删除了独立工程、官方来源和�
 # 本地插件打包，必须明确插件目录
 npm run plugin:build -- --plugin terminal
 npm run plugin:build -- --plugin files
+npm run plugin:build -- --plugin system-status
 npm run plugin:build -- --plugin network-proxy --out-dir artifacts/another-build
 # 发布核心
 # 修改 tauri.conf.json 版本及 docs/releases/v<版本>.md 后提交

@@ -147,6 +147,9 @@ jobs:
       - name: Real terminal plugin and PTY
         if: matrix.terminal
         run: npm run terminal:test
+      - name: Real system status plugin and background sampling
+        if: matrix.status
+        run: npm run system-status:test
 
   desktop:
     needs: select
@@ -240,6 +243,9 @@ jobs:
       - name: Native terminal plugin source tests
         if: matrix.terminal
         run: cargo test --manifest-path plugins/terminal/Cargo.toml --locked
+      - name: Native system status plugin source tests
+        if: matrix.status
+        run: cargo test --manifest-path plugins/system-status/Cargo.toml --locked
 
   netem:
     needs: select

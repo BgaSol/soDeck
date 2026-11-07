@@ -13,7 +13,8 @@
 清单可添加 `ui: { apiVersion: "1", entry: "ui/index.html", views: [...] }`，完整示例见 `plugins/files/release.json`。视图 ID 在插件内稳定，核心用 `pluginId:localId` 标识定义、另分配 viewId 标识实例。每个视图必须声明 `id/title/icon/container/instancePolicy`：
 
 - `container`：`sidebar` 或 `editor`。侧栏第一版只支持 `perWorkspace` 单例；中央还支持 `multiple` 和 `perResource`。资源标识按远程文件系统语义由插件提供，不按本机 Windows 路径转换。
-- `defaultSide`：left/right，默认 left；`defaultPinned`：初始固定入口，默认 false；`openOnWorkspace`：none/reveal/createOne，默认 none；`startupOrder`：初始动作顺序。首次布局采用当前插件推荐值，以后新增插件进更多入口，不覆盖已有偏好。
+- `defaultSide`：left/right，默认 left；`defaultPinned`：初始固定入口，默认 false；`openOnWorkspace`：none/reveal/createOne，默认 none；`startupOrder`：初始动作顺序。首次出现的定义保存推荐值，已有偏好保持；新工作区按这些偏好选择未占用的栏位。
+- `backgroundOnWorkspace: true`：可选，仅适用于 sidebar + perWorkspace。需要 `ui.background.v1`。核心在工作区存在时确保逻辑 view 并幂等调用 ui.mount，无需 iframe；`uiRequested=false` 的 view 不创建页面，也不阻塞移窗。显示后沿用普通页面生命周期。隐藏只影响页面，采集和 disposeView 仍由插件进程处理。
 - `createAction`：中央“＋”中的创建动作名称；目标就是本视图。`locateEntry: true`：可固定的中央定位入口，优先定位最近使用的实例，没有时创建一个。文件编辑器需要 resourceKey，不声明空页面创建动作。
 
 插件包附带已构建的 HTML/JS/CSS，核心通过本地 `sodeck-plugin` 协议加载，不依赖开发服务器或用户 Node 环境。打包脚本自动复制插件的 `ui/`，核心安装包不包含它们。
@@ -30,6 +31,26 @@
 宿主还通知 `visibilityChanged/themeChanged/focus/unmount`。`mount.connected` 可选布尔值表示工作区当前连接状态；连接状态变化时通知 `connectionChanged`，携带 `connected`。旧 UI 可忽略这两个增量字段；它们不恢复原终端或自动启动业务任务。核心校验真实页面 sender、挂载 token、插件进程实例与工作区 Context。移窗时先等目标页面 mounted，再提交窗口归属；旧表面事件因此失效。同窗切换只隐藏已挂载页面，不能重写其 DOM。示例 bridge 位于 `plugins/files/ui/bridge.js`。
 
 UI 事件最多 24 KiB，是控制交互接口，不能用来传终端输出或文件内容流。RPC 保留 64 KiB 帧上限和 5 秒等待期限；v0.6.0 的真实业务正文另走下述有界视图数据桥。可信插件不增加权限表或授权流程。
+
+## 会话状态与有界短命令（当前源码）
+
+可选能力 `session.exec.v1`。系统识别、命令文本、指标和调度由插件负责；核心提供当前认证会话上的非交互任务，不暴露凭据或传输类型。
+
+| 方法 | 参数及结果 |
+| --- | --- |
+| `session.state` | `{viewId}` → `{context,state,closing,capabilities}`；断线/关闭冻结仍可查询，在线 capabilities 包含 `exec` |
+| `session.exec.start` | `{viewId,expectedContext,operationId,sequence,command,timeoutMs,maxOutputBytes?}` → `{taskId,state}` |
+| `session.exec.poll` | `{taskId,stdoutOffset,stderrOffset}` → 两路 `{dataBase64,nextOffset}`，以及 state/outputComplete/exitCode/exitSignal/error/remoteExitConfirmed/execSent/elapsedMs |
+| `session.exec.cancel` | `{taskId}` → `{state}`；取消本任务，不关闭共享连接 |
+| `session.exec.release` | `{taskId}` → `{released:true}`；丢弃结果，运行中同时取消 |
+
+Context 使用完整 `workspaceId/serverId/connectionId/generation`。command 最大 16 KiB、不得包含 NUL，无 PTY、无 stdin；timeoutMs 为 1,000–30,000，输出两路合计默认 256 KiB、最大 1 MiB。全局最多 8 个在途任务，每插件进程最多 4 个、64 项记录；按请求预留输出额度，核心 16 MiB、单插件 8 MiB。poll 每路最多 8 KiB；偏移、sequence 使用十进制字符串，同偏移可重读，不重复计量。
+
+同 view/Context 的 sequence 严格递增。相同 operationId 和参数重试返回原任务，参数改变返回 operationConflict；输出回收后旧序号返回 operationExpired，不能重新执行。终态结果 30 秒后回收，正常插件读完即 release。关闭 view、进程退出及应用退出主动回收；重连后旧结果仍可由所属实例清理，不能启动旧 Context 的新任务。
+
+completed 表示收到远端退出状态，非零退出码仍可能 completed。EOF 缺少退出状态为 failed/missingExitStatus，超时为 timedOut，取消为 cancelled。取消尽力终止并关闭自身通道，额外等待最多 1 秒；remoteExitConfirmed 仅表示收到了远端退出确认，不保证已经脱离的子进程结束。
+
+方法错误沿用 JSON-RPC error，`error.data.code` 区分 invalidParams/staleContext/workspaceClosing/resourceBusy/operationConflict/operationExpired/taskExpired/invalidOffset/unsupported。任务错误位于 poll.error。SDK `call_detailed` 保留 code/message/data，原 `call` 的字符串错误接口不变。使用前检查能力，旧插件继续使用原有 API。
 
 ## 目录与清单
 

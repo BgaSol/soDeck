@@ -29,6 +29,7 @@ fn main() {
     let mut ui_views: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
     let mut pending_reentry = None;
     let mut pending_terminal = None;
+    let mut pending_sessions = std::collections::HashMap::<String, Value>::new();
     let mut deferred = None;
     let mut probes: Option<(Value, std::collections::HashMap<String, Value>)> = None;
     for line in io::stdin().lock().lines() {
@@ -45,6 +46,19 @@ fn main() {
                     continue;
                 }
                 if method == "ui.event" {
+                    if let Some(rpc) = p["data"]["rpc"]
+                        .as_str()
+                        .filter(|s| s.starts_with("session."))
+                    {
+                        let request = format!("session-{}", pending_sessions.len());
+                        pending_sessions.insert(request.clone(), frame["id"].clone());
+                        let mut params = p["data"]["params"].clone();
+                        if rpc == "session.state" || rpc == "session.exec.start" {
+                            params["viewId"] = json!(id);
+                        }
+                        send(json!({"jsonrpc":"2.0","id":request,"method":rpc,"params":params}));
+                        continue;
+                    }
                     if p["data"]["rpc"] == "terminal.open" {
                         pending_terminal = Some(frame["id"].clone());
                         send(
@@ -101,6 +115,13 @@ fn main() {
                     _ => (),
                 }
                 let result = json!({"data":v,"metadata":{"dirty":v["dirty"],"busy":false}});
+                if method == "ui.mount" {
+                    fs::write(
+                        format!("{}/mounted-{}", data.as_ref().unwrap(), id),
+                        p.to_string(),
+                    )
+                    .unwrap();
+                }
                 if method == "ui.disposeView" {
                     ui_views.remove(id);
                 }
@@ -195,6 +216,20 @@ fn main() {
                 send(
                     json!({"jsonrpc":"2.0","id":"initialize","result":{"apiVersion":"1","settingsApiVersion":"1"}}),
                 );
+            }
+            _ if frame["id"]
+                .as_str()
+                .is_some_and(|id| pending_sessions.contains_key(id)) =>
+            {
+                let id = pending_sessions
+                    .remove(frame["id"].as_str().unwrap())
+                    .unwrap();
+                let data = if frame.get("error").is_some() {
+                    json!({"rpcError":frame["error"]})
+                } else {
+                    frame["result"].clone()
+                };
+                send(json!({"jsonrpc":"2.0","id":id,"result":{"data":data}}));
             }
             _ if frame["id"] == "fixture-terminal" => {
                 if let Some(id) = pending_terminal.take() {

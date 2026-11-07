@@ -99,6 +99,9 @@ jobs:
         env:
           PLUGIN: ${{ needs.select.outputs.plugin }}
         run: node scripts/package-plugin.mjs --plugin "$PLUGIN" --target '${{ matrix.target }}'
+      - name: Verify actual system status archive
+        if: needs.select.outputs.plugin == 'system-status'
+        run: node scripts/test-system-status-package.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: Plugin-${{ needs.select.outputs.plugin }}-${{ matrix.name }}

@@ -80,13 +80,14 @@ impl Runtime {
     pub(crate) fn resource_view(&self, id: &str) -> Result<&View, String> {
         self.view(id)
     }
-    pub(super) fn update_metadata(&mut self, id: &str, metadata: &Value) -> Result<(), String> {
+    pub(super) fn update_metadata(&mut self, id: &str, metadata: &Value) -> Result<bool, String> {
         let v = self
             .workspaces
             .values_mut()
             .flat_map(|w| &mut w.views)
             .find(|v| v.id == id)
             .ok_or("组件页面已关闭")?;
+        let before = (v.title.clone(), v.dirty, v.busy);
         if let Some(title) = metadata["title"].as_str() {
             if title.is_empty() || title.len() > 256 {
                 return Err("组件标题无效".into());
@@ -99,7 +100,7 @@ impl Runtime {
         if let Some(busy) = metadata["busy"].as_bool() {
             v.busy = busy;
         }
-        Ok(())
+        Ok(before != (v.title.clone(), v.dirty, v.busy))
     }
     pub(super) fn open_view(
         &mut self,
@@ -144,6 +145,7 @@ impl Runtime {
             .max_by_key(|v| v.last_used);
         let selected = if let Some(v) = existing {
             v.last_used = self.clock;
+            v.ui_requested = true;
             v.id.clone()
         } else {
             w.views.push(View {
@@ -159,6 +161,7 @@ impl Runtime {
                 busy: false,
                 error: None,
                 last_used: self.clock,
+                ui_requested: true,
             });
             id
         };
@@ -176,7 +179,7 @@ impl Runtime {
     }
     pub fn target_ready(&self, workspace: &str, window: &str) -> bool {
         self.workspaces.get(workspace).is_none_or(|w| {
-            w.views.iter().all(|v| {
+            w.views.iter().filter(|v| v.ui_requested).all(|v| {
                 self.surfaces
                     .values()
                     .any(|s| s.view == v.id && s.window == window && s.ready)
@@ -200,8 +203,8 @@ impl Runtime {
     }
 }
 impl AppCore {
-    pub fn ui_snapshot(&self, window: &str) -> Result<Value, String> {
-        let projection = self.workspace_projection(window)?;
+    pub(crate) fn reconcile_ui(&self) -> Result<(), String> {
+        let contexts = self.workspaces.lock().unwrap().contexts();
         let live = self.workspaces.lock().unwrap().ids();
         let plugins = self.snapshot().plugins;
         let initializing = plugins.iter().any(|p| p.status == PluginStatus::Starting);
@@ -253,12 +256,8 @@ impl AppCore {
             storage::write_json(&ui.root.join("ui-layout.json"), &preferences)?;
             ui.preferences = preferences;
         }
-        for w in projection
-            .workspaces
-            .iter()
-            .chain(projection.incoming.iter())
-        {
-            let id = &w.context.workspace_id;
+        for context in &contexts {
+            let id = &context.workspace_id;
             if !initializing && !ui.workspaces.contains_key(id) {
                 let prefs = ui.preferences.definitions.clone();
                 ui.workspaces.insert(
@@ -295,7 +294,7 @@ impl AppCore {
                         state.right.is_some()
                     };
                     if policy != "none" && !occupied {
-                        ui.open_view(&w.context, &d.key, None, Value::Null, self.next_id(), false)?;
+                        ui.open_view(context, &d.key, None, Value::Null, self.next_id(), false)?;
                     }
                 }
             }
@@ -308,6 +307,50 @@ impl AppCore {
                     .or_insert_with(|| p.clone());
             }
         }
+        for context in contexts {
+            if ui.frozen(&context.workspace_id)
+                || !ui.workspaces.contains_key(&context.workspace_id)
+            {
+                continue;
+            }
+            let defs: Vec<_> = ui
+                .definitions
+                .values()
+                .filter(|d| d.available && d.definition.background_on_workspace)
+                .cloned()
+                .collect();
+            for d in defs {
+                let w = ui.workspaces.get_mut(&context.workspace_id).unwrap();
+                if let Some(v) = w.views.iter_mut().find(|v| v.definition_key == d.key) {
+                    if v.plugin_instance_id != d.plugin_instance_id {
+                        v.plugin_instance_id = d.plugin_instance_id.clone();
+                        v.error = None;
+                    }
+                } else {
+                    w.views.push(View {
+                        id: self.next_id(),
+                        definition_key: d.key,
+                        plugin_id: d.plugin_id,
+                        plugin_instance_id: d.plugin_instance_id,
+                        context: context.clone(),
+                        resource_key: None,
+                        params: Value::Null,
+                        title: d.definition.title,
+                        dirty: false,
+                        busy: false,
+                        error: None,
+                        last_used: 0,
+                        ui_requested: false,
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+    pub fn ui_snapshot(&self, window: &str) -> Result<Value, String> {
+        self.reconcile_ui()?;
+        let projection = self.workspace_projection(window)?;
+        let ui = self.component_ui.lock().unwrap();
         let ids: HashSet<_> = projection
             .workspaces
             .iter()
