@@ -107,14 +107,17 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     if (process.env.CORE_RUN_ID) commit = await artifactRun(githubClient(repository, process.env.GH_TOKEN), process.env.CORE_RUN_ID);
     if (publish) await releaseState(githubClient(repository, process.env.GH_TOKEN), config, commit);
     if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `tag=${config.tag}\nversion=${config.version}\npublish=${publish}\nsource_sha=${commit}\nrun_id=${process.env.CORE_RUN_ID || process.env.GITHUB_RUN_ID || ""}\n`);
-    console.log(`Core ${config.tag}: ${publish ? "prepare draft" : "Artifact only"}`);
+    console.log(`Core ${config.tag}: ${publish ? "prepare draft" : "Artifact only"}\nPackage source: run ${process.env.CORE_RUN_ID || process.env.GITHUB_RUN_ID || "local"} · commit ${commit}`);
   } else if (mode === "prepare") {
+    const runId = process.env.CORE_RUN_ID || process.env.GITHUB_RUN_ID;
+    if (runId && !/^[1-9]\d*$/.test(runId)) throw new Error("Invalid core Artifact run ID");
     const input = process.argv[3];
     const verified = validateCoreArtifacts(input, config, commit);
     const manifest = generate("core", config, input, repository);
     fs.writeFileSync(path.join(input, "core-update.json"), JSON.stringify(manifest, null, 2) + "\n");
     const result = publish ? await prepareCoreRelease(githubClient(repository, process.env.GH_TOKEN), config, input, commit, repository) : verified;
-    const summary = `Core ${config.tag} · source ${commit}\n\nVerified: ${result.present.join(", ")}\n\nMissing/failed: ${result.missing.join(", ") || "none"}\n\n${result.url ? `Draft: ${result.url}` : "Artifact only; no Release created."}\n`;
+    const source = runId ? `[run ${runId}](https://github.com/${repository}/actions/runs/${runId})` : "local packages";
+    const summary = `Core ${config.tag}\n\nPackage source: ${source} · [commit ${commit}](https://github.com/${repository}/commit/${commit})\n\nVerified: ${result.present.join(", ")}\n\nMissing/failed: ${result.missing.join(", ") || "none"}\n\n${result.url ? `Draft: ${result.url}\n\nConfirm the relevant checks for the package source commit, then publish these draft assets without rebuilding.` : "Artifact only; no Release created.\n\nTo prepare a draft later, run Package SoDeck with publish=true and core_run_id set to the original package run above."}\n`;
     if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
     console.log(summary);
   } else throw new Error("Use core-release.mjs preflight or prepare <artifact directory>");

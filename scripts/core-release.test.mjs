@@ -176,3 +176,29 @@ test("branch manual runs generate a manifest without contacting GitHub or creati
   const wrong = spawnSync(process.execPath, [script, "preflight"], { cwd: root, env, encoding: "utf8" });
   assert.notEqual(wrong.status, 0); assert.match(wrong.stderr, /must match/);
 });
+
+test("reusing a candidate binds outputs and summary to the original package run and source", t => {
+  const root = fixture(t);
+  fs.mkdirSync(path.join(root, "src-tauri"));
+  fs.mkdirSync(path.join(root, "docs/releases"), { recursive: true });
+  fs.writeFileSync(path.join(root, "src-tauri/tauri.conf.json"), JSON.stringify({ version: config.version }));
+  fs.writeFileSync(path.join(root, `docs/releases/${config.tag}.md`), config.notes);
+  const output = path.join(root, "github-output"), script = fileURLToPath(new URL("core-release.mjs", import.meta.url));
+  const env = { ...process.env, GITHUB_SHA: "b".repeat(40), GITHUB_REF_TYPE: "branch", GITHUB_REPOSITORY: "test/repo", GITHUB_RUN_ID: "456", GITHUB_OUTPUT: output, CORE_PUBLISH: "false", CORE_RUN_ID: "123", CORE_SOURCE_SHA: "", GH_TOKEN: "test-token" };
+  const preload = `globalThis.fetch = async url => new Response(JSON.stringify(String(url).includes('/artifacts?') ? { artifacts: [{ name: 'SoDeck-windows-x86_64', expired: false }] } : { path: '.github/workflows/build.yml', status: 'completed', head_sha: '${commit}', conclusion: 'failure' }));`;
+  const preflight = spawnSync(process.execPath, [`--import=data:text/javascript,${encodeURIComponent(preload)}`, script, "preflight"], { cwd: root, env, encoding: "utf8" });
+  assert.equal(preflight.status, 0, preflight.stderr);
+  assert.match(fs.readFileSync(output, "utf8"), new RegExp(`source_sha=${commit}\\nrun_id=123\\n`));
+  assert.match(preflight.stdout, new RegExp(`run 123 · commit ${commit}`));
+  const input = path.join(root, "input"); fs.mkdirSync(input);
+  for (const target of targets) fs.renameSync(path.join(root, target), path.join(input, target));
+  env.CORE_SOURCE_SHA = commit;
+  const prepare = spawnSync(process.execPath, [script, "prepare", input], { cwd: root, env, encoding: "utf8" });
+  assert.equal(prepare.status, 0, prepare.stderr);
+  assert.match(prepare.stdout, /https:\/\/github\.com\/test\/repo\/actions\/runs\/123/);
+  assert.match(prepare.stdout, new RegExp(`https://github.com/test/repo/commit/${commit}`));
+  assert.doesNotMatch(prepare.stdout, /actions\/runs\/456|b{40}/);
+  env.CORE_SOURCE_SHA = env.GITHUB_SHA;
+  const mismatch = spawnSync(process.execPath, [script, "prepare", input], { cwd: root, env, encoding: "utf8" });
+  assert.notEqual(mismatch.status, 0); assert.match(mismatch.stderr, /metadata mismatch/);
+});

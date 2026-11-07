@@ -1,4 +1,5 @@
 name: Package SoDeck
+run-name: "${{ inputs.core_run_id && format('Reuse core #{0}', inputs.core_run_id) || format('Package core from {0}', github.ref_name) }} · ${{ (inputs.publish || github.ref_type == 'tag') && 'draft' || 'Artifacts' }}"
 
 on:
   workflow_dispatch:
@@ -8,7 +9,7 @@ on:
         type: boolean
         default: false
       core_run_id:
-        description: Optional completed core run to reuse verified Artifacts without rebuilding
+        description: Original package run ID; reuse its verified Artifacts and skip all builds
         type: string
         default: ""
   push:
@@ -180,6 +181,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CORE_PUBLISH: ${{ needs.preflight.outputs.publish }}
           CORE_SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
+          CORE_RUN_ID: ${{ needs.preflight.outputs.run_id }}
         run: node scripts/core-release.mjs prepare artifacts/core
       - uses: actions/upload-artifact@v4
         with:
