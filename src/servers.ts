@@ -49,6 +49,7 @@ export class ServerManager {
   private top() { return this.frames.at(-1); }
   private frame(kind: Frame["kind"]): Frame {
     const dialog = document.createElement("dialog");
+    dialog.id = `catalog-dialog-${crypto.randomUUID()}`;
     dialog.className = `catalog-dialog ${kind === "editor" ? "endpoint-dialog" : "small-dialog"}`;
     dialog.setAttribute("aria-label", kind === "editor" ? "编辑资料" : kind === "groups" ? "管理分组" : kind === "group" ? "编辑分组" : "确认操作");
     const frame: Frame = { dialog, kind, revision: this.catalog!.revision, busy: false, error: "" };
@@ -70,7 +71,7 @@ export class ServerManager {
     if (f.draft) f.draft.password = "";
   }
   private renderEditor(f: Frame) {
-    replace(f.dialog, editor(this.catalog!, f.draft!, !!f.proxy, f.error, f.busy));
+    replace(f.dialog, editor(this.catalog!, f.draft!, !!f.proxy, f.error, f.busy, f.dialog.id));
   }
   private openEditor(proxy: boolean, id?: string, inline = false) {
     const record = id ? (proxy ? this.catalog!.proxies : this.catalog!.servers).find(r => r.id === id) : undefined;
@@ -79,7 +80,7 @@ export class ServerManager {
     if (proxy && !record) { f.draft.port = "1080"; f.draft.authType = "none"; }
     if (!proxy && !record && this.catalog!.groups.some(g => g.id === this.state.group)) f.draft.groupId = this.state.group;
     f.initial = JSON.stringify(f.draft); this.renderEditor(f); f.dialog.showModal();
-    f.dialog.querySelector<HTMLInputElement>("#draft-host")?.focus();
+    f.dialog.querySelector<HTMLInputElement>('[data-field="host"]')?.focus();
   }
   private editField(f: Frame, input: HTMLInputElement) {
     if (!f.draft || f.busy) return;

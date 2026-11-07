@@ -108,7 +108,13 @@ try {
     // Inline creation is inside the routed section.
     if (!n) await field("routed").selectOption("true");
   });
-  await action("inline-proxy").click(); await field("host").fill("proxy.internal"); await field("name").fill("单独保留代理");
+  await action("inline-proxy").click();
+  const nestedLabels=await dialogs().locator('[data-field]').evaluateAll(nodes=>nodes.filter(node=>node.type!=='checkbox').map(node=>({field:node.dataset.field,labels:[...node.labels].map(label=>({text:label.textContent,owns:label.control===node&&label.closest('dialog')===node.closest('dialog')}))})));
+  assert(nestedLabels.every(item=>item.labels.length===1&&item.labels[0].owns),`Nested proxy fields own their labels: ${JSON.stringify(nestedLabels)}`);
+  assert.equal(await page.locator('[id]').evaluateAll(nodes=>new Set(nodes.map(node=>node.id)).size===nodes.length),true,'Nested editors have unique DOM IDs');
+  await field("authType").selectOption("usernamePassword");
+  await field("username").fill("proxy-ops");
+  await field("host").fill("proxy.internal"); await field("name").fill("单独保留代理");
   await save(); await expectDialogs(1); assert.equal(await dialogs().locator("[data-step]").count(), 1);
   await closeDirty(); assert.equal((await read()).proxies.length, 2);
   checks.push("内联代理保存后取消服务器仍保留");
