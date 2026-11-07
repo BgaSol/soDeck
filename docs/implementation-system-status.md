@@ -25,6 +25,7 @@ Linux/OpenWrt 使用 procfs 和 POSIX sh，不 source os-release、不依赖 Pyt
 - `npm run check`、`npm run plugin:check`、SDK 格式检查、77 项脚本测试及已跟踪/新增 Markdown 和 JSON 示例检查通过。
 - `npm run build -- --bundles nsis -- --locked` 生成 Windows x86_64 本地核心安装包；从该 NSIS 解开包内 `sodeck.exe` 后，通过原生架构、启动/退出、多窗口移动、持久化重开及隔离 OpenSSH 验证。未执行系统安装登记或正式更新签名验收；应用版本仍为 0.9.4 的本地源码构建，不是新的正式发行。
 - 共享 SDK/宿主回归另外运行 `npm run terminal:test`、`npm run files:test`、`npm run network:test`，真实包的 OpenSSH 业务、终端和文件界面、SOCKS 协议/连接清理及网络界面均通过。
+- 实现提交的 GitHub Check 完成五目标原生源码、Windows 完整界面及 Linux 普通业务回归；Linux x86_64 另运行实际系统状态进程与隔离 OpenSSH，后台采集通过。Linux ARM64 的该系统状态专项未选择，不以其其他插件业务通过代替系统状态验收；运行链接维护在[插件 CHANGELOG](../plugins/system-status/CHANGELOG.md)。
 
 以上结果对应此次工作区源码与本地包，不复用历史发行验收。独立插件包位于 `artifacts/plugins/sodeck-system-status_0.1.0_x86_64-pc-windows-msvc.zip`；核心本地包位于 `src-tauri/target/release/bundle/nsis/SoDeck_0.9.4_x64-setup.exe`。
 
