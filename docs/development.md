@@ -100,7 +100,7 @@ Check 始终响应 main push/PR，不使用 workflow 级 `paths` 跳过。`selec
 | 自动改动范围 | 实际选择 |
 | --- | --- |
 | Markdown、docs 下的说明/配图 | 仅文档检查；不安装 npm/Rust，不构建产品 |
-| 核心前端 | 正式前端构建（含 tsc）、脚本、Linux interactions/settings、Windows 完整 UI；不因此运行 SSH、网络或原生 Rust 矩阵 |
+| 核心前端 | 正式前端构建（含 tsc）、脚本、Linux interactions、Windows 完整 UI（含 settings）；不因此运行 SSH、网络或原生 Rust 矩阵 |
 | 单插件 UI/发行元数据 | 脚本和该插件普通业务验收；终端额外验证输入，网络使用 Linux 两架构，文件/终端使用 Linux x86_64 |
 | 单插件 Rust/清单/锁文件/构建输入 | 该插件格式与五平台原生 Rust 测试、该插件普通业务验收；其他插件不跟随 |
 | desktop_files 的 windows/linux/macos.rs | 对应系统两架构/一个 macOS 架构的核心测试、文件业务；Windows 另有完整 UI |
@@ -109,6 +109,8 @@ Check 始终响应 main push/PR，不使用 workflow 级 `paths` 跳过。`selec
 | 连接、流、生命周期/RPC、平台进程、服务器路由 | 五平台原生核心、Windows UI/SSH、三插件普通业务验收 |
 | 共享 UI/字体/菜单 | 扩大至核心与三插件 UI/普通业务验收；不因此运行 netem 或旧版升级 |
 | 共享 plugin-client、根工具链/锁文件/构建脚本、未知输入 | 五平台核心与三插件源码、相关 UI、普通业务和宿主脚本；仍排除 netem |
+
+已知 UI 测试入口也按组件路由：`test-terminal-ui`/`test-files-ui` 仅运行对应普通业务，`test-terminal-input` 仅输入/脚本，核心 UI 测试脚本走前端和完整 desktop。共享 OpenSSH/打包脚本和未映射脚本继续扩大范围。
 
 Check 的 **Run workflow** 先选择需要验证的分支或标签，再选择 `suite`，手动选择覆盖自动判定。检查结果只适用于该次运行的确切提交；打包工作流不等待 Check。
 
@@ -122,6 +124,8 @@ Check 的 **Run workflow** 先选择需要验证的分支或标签，再选择 `
 | `netem` | 单独运行 Linux x86_64/ARM64 私有 namespace 弱网矩阵；成功/失败报告 Artifact 保留 14 天，不安装 Chromium 或 OpenSSH |
 
 原宿主脚本回归为 `collect-core.test.mjs`、`core-release.test.mjs`、`plugin-settings-assets.test.mjs`、`release-metadata.test.mjs` 和 `smoke.test.mjs`；在 `native-core`/`all` 和共享未知输入下于 Windows x86_64、Linux x86_64、macOS ARM64 执行。自动选择仍以既有套件为单位，不能独立切分时运行较大范围；需要额外验证时可对同一 ref 补做手动套件。真实包组合与升级保持原入口，不把工作流选择当作已验收。
+
+完整 Windows `ui:test` 已包含 settings 回归，选中 desktop 时不再在 Linux 重复。手动 `standard` 没有 desktop，Linux 单独执行 `settings:test`，为其真实 catalog 核心夹具安装 WebKit/GTK 构建库并恢复 `check-tests` 依赖缓存。
 
 `native-core` 覆盖当前核心单元测试及 `tests/lifecycle.rs`、`updates.rs`、`connections.rs`、`component_ui.rs`、`settings.rs`、`servers.rs`、`streams.rs`、`window_config.rs`、`workspaces.rs`；Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 都在对应原生 runner 执行。`platform`、`desktop_files`、桌面行为及更新等系统分支随原生测试验证。标记为 ignored 的真实远端用例仍由对应 SSH/终端/文件/网络专项提供环境后显式运行，不能把 `native-core` 通过当作这些专项已通过。
 

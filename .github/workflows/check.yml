@@ -79,8 +79,21 @@ jobs:
         if: fromJSON(needs.select.outputs.plan).web || fromJSON(needs.select.outputs.plan).terminalInput
       - run: npm run interactions:test
         if: fromJSON(needs.select.outputs.plan).web
+      - name: Install standalone settings fixture dependencies
+        if: fromJSON(needs.select.outputs.plan).web && !fromJSON(needs.select.outputs.plan).desktop
+        run: |
+          sudo "$(command -v node)" scripts/configure-ubuntu-mirror.mjs
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev patchelf
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        if: fromJSON(needs.select.outputs.plan).web && !fromJSON(needs.select.outputs.plan).desktop
+        with:
+          shared-key: check-tests
+          workspaces: src-tauri -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Full Windows UI already includes this core-backed settings regression.
       - run: npm run settings:test
-        if: fromJSON(needs.select.outputs.plan).web
+        if: fromJSON(needs.select.outputs.plan).web && !fromJSON(needs.select.outputs.plan).desktop
       - run: npm run terminal:input:test
         if: fromJSON(needs.select.outputs.plan).terminalInput
 

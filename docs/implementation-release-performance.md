@@ -129,4 +129,8 @@ netem 单独保留为手动 `suite=netem`：Linux 两架构、原六组弱网配
 
 本机已通过核心/三插件/共享客户端格式、TypeScript 与前端构建，75 项脚本回归（原 65 项 + 新 10 项），以及当前 80 份已提交 Markdown 的本地文件链接/基本结构检查。新增回归涵盖纯文档、单插件/系统、共享/未知输入、手动覆盖、PR 上游分离、删除/重命名、新分支/缺失 base 和汇总失败传播；Windows 不支持换行文件名，相关实际 Git 路径用例在 Linux CI 执行。
 
-GitHub 运行与最终验收记录待本轮提交后补充。第四步同包发布收尾仍未实施；第三步减少的是无关测试和等待，不能把 netem 的约 25 分钟直接计为安装包编译提速。
+首轮 GitHub 自动检查暴露了拆分时遗漏的隐式依赖：`settings:test` 构建 catalog 核心夹具，新 Linux checks 没有 GTK/WebKit 开发库，报 `gdk-3.0.pc` 缺失。完整 Windows `ui:test` 已包含该回归；修正为选中 desktop 时不在 Linux 重复，只有不含 desktop 的公共套件在 Linux 单跑，并保留系统库与 `check-tests` 依赖缓存。新增回归核对设置测试只执行一次及其必要环境，脚本总计 76 项。
+
+首轮还发现此前未在常规 Check 运行的 Linux 终端 UI 夹具存在回调复用：HTTP 页面 reload 后 `transformCallback` 编号重置，旧 surface 的结束消息可能被送入新 Channel，状态变成“界面已关闭”，`exit` 后等不到恢复按钮。单独 Linux 诊断稳定复现；修复仅在测试页面用 sessionStorage 保留递增编号，回归断言新旧回调编号不重叠，原真实 PTY、退出和恢复验证继续执行。本机 Windows 修复后通过，Linux 与最终工作流结果待下述运行确认；没有修改生产核心/插件。
+
+GitHub 运行与最终验收记录待本轮修正后补充。第四步同包发布收尾仍未实施；第三步减少的是无关测试和等待，不能把 netem 的约 25 分钟直接计为安装包编译提速。

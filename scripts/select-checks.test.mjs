@@ -36,6 +36,14 @@ test('a plugin only selects its own source and normal business tests', () => {
   const ui = selectChecks(['plugins/files/ui/tree.js']);
   assert.deepEqual(ui.native, []);
   assert(ui.integration[0].files);
+  for (const name of ['terminal', 'files']) {
+    const regression = selectChecks([`scripts/test-${name}-ui.mjs`]);
+    assert.deepEqual(regression.native, []);
+    assert.equal(regression.integration.length, 1);
+    assert(regression.integration[0][name]);
+  }
+  const input = selectChecks(['scripts/test-terminal-input.mjs']);
+  assert(input.terminalInput && !input.web && !input.integration.length && !input.native.length);
 });
 
 test('native adapter scopes both architectures of the affected system; common logic stays on Linux', () => {
@@ -134,4 +142,23 @@ test('summary rejects failed, cancelled or skipped selected jobs rather than rep
   assert(checkResults({ ...needs, netem: { result: 'success' } }).failures.includes('netem'));
   assert.match(checkResults(needs).summary, /skipped \(not selected\)/);
   assert.equal(new Set(targets.map(t => t.target)).size, 5);
+});
+
+test('core-backed settings runs once with its Linux build environment or inside full desktop UI', () => {
+  const workflow = fs.readFileSync('.github/workflows/check.yml', 'utf8').replaceAll('\r\n', '\n');
+  const common = workflow.split('\n  checks:\n')[1].split('\n  network:\n')[0];
+  const settingsCondition = common.match(/- run: npm run settings:test\n\s+if: (.+)/)[1];
+  const dependenciesCondition = common.match(/- name: Install standalone settings fixture dependencies\n\s+if: (.+)/)[1];
+  const cacheCondition = common.match(/- uses: Swatinem\/rust-cache[^\n]+\n\s+if: (.+)/)[1];
+  const enabled = (condition, plan) => Function('plan', `return (${condition.replaceAll('fromJSON(needs.select.outputs.plan)', 'plan')})`)(plan);
+  assert(fs.readFileSync('scripts/test-settings-ui.mjs', 'utf8').includes("'catalog-fixture'"));
+  assert(JSON.parse(fs.readFileSync('package.json', 'utf8')).scripts['ui:test'].includes('npm run settings:test'));
+  assert(common.includes('libwebkit2gtk-4.1-dev'));
+  assert(common.indexOf('Install standalone settings fixture dependencies') < common.indexOf('npm run settings:test'));
+  for (const plan of [selectChecks(['src/settings.css']), selectChecks(['src-tauri/src/desktop_files/windows.rs']),
+    selectChecks([], { suite: 'standard' }), selectChecks([], { suite: 'desktop' }), selectChecks([], { suite: 'all' }), selectChecks(['docs/usage.md'])]) {
+    const standalone = enabled(settingsCondition, plan);
+    assert.equal(Number(standalone) + Number(plan.desktop), Number(plan.web || plan.desktop));
+    if (standalone) assert(enabled(dependenciesCondition, plan) && enabled(cacheCondition, plan));
+  }
 });

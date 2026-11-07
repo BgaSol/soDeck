@@ -125,6 +125,10 @@ export function selectChecks(files, { suite, fallback } = {}) {
       if (/^scripts\/(select-checks|check-docs)(\.test)?\.mjs$/.test(file)) { plan.scripts = true; continue; }
       if (/^scripts\/test-network-netem\.mjs$/.test(file)) { plan.scripts = true; integration.add('network-proxy'); continue; }
       if (/^scripts\/(network-tools|test-network-ui)\.mjs$/.test(file)) { plan.scripts = true; integration.add('network-proxy'); continue; }
+      const pluginUiTest = file.match(/^scripts\/test-(terminal|files)-ui\.mjs$/);
+      if (pluginUiTest) { plan.scripts = true; integration.add(pluginUiTest[1]); continue; }
+      if (file === 'scripts/test-terminal-input.mjs') { plan.scripts = plan.terminalInput = true; continue; }
+      if (/^scripts\/test-(connection-ui|desktop-ui|production-ui|server-ui|settings-ui|workspace-ui|workbench-interactions)\.mjs$/.test(file)) { ui(); continue; }
       plan.reasons.push(`Shared build input or unmapped path: ${file.replace(/[\r\n|`]/g, ' ')}`);
       full();
     }
@@ -152,7 +156,7 @@ export function selectionSummary(plan) {
   return ['## Selected checks', '', ...plan.reasons.map(reason => `- ${reason}`), '',
     '| Scope | Selection |', '| --- | --- |',
     '| Documentation | Always: tracked Markdown structure and local file links |',
-    `| Frontend / browser / scripts | ${[plan.web && 'frontend + interactions/settings', plan.terminalInput && 'terminal input', plan.scripts && 'script tests'].filter(Boolean).join(', ') || 'Skipped'} |`,
+    `| Frontend / browser / scripts | ${[plan.web && 'frontend + interactions', plan.web && !plan.desktop && 'standalone settings', plan.terminalInput && 'terminal input', plan.scripts && 'script tests'].filter(Boolean).join(', ') || 'Skipped'} |`,
     `| Plugin format | ${plan.plugins.join(', ') || 'Skipped'} |`,
     `| Native source tests | ${plan.native.map(t => `${t.name}: ${[t.core && 'core', t.terminal && 'terminal', t.files && 'files', t.network && 'network', t.scripts && 'scripts'].filter(Boolean).join(', ')}`).join('<br>') || 'Skipped'} |`,
     `| Normal integration | ${plan.integration.map(t => `${t.name}: ${[t.network && 'network', t.terminal && 'terminal', t.files && 'files'].filter(Boolean).join(', ')}`).join('<br>') || 'Skipped'} |`,
