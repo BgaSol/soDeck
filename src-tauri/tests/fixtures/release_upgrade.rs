@@ -120,7 +120,10 @@ fn prepare_install(handle: tauri::AppHandle, input: Input) -> Result<(), String>
     let core = AppCore::open(input.root.clone(), input.current.clone())?;
     core.start_enabled();
     check_plugins(&core, &input, false)?;
-    let client = ReleaseClient::github()?;
+    let client = match std::env::var("GH_TOKEN") {
+        Ok(token) => ReleaseClient::test_github(token)?,
+        Err(_) => ReleaseClient::github()?,
+    };
     let manifest = client
         .discover(
             &UpdateSource {

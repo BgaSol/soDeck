@@ -292,6 +292,8 @@ pub struct ReleaseClient {
     client: Client,
     api_base: String,
     test_http: bool,
+    #[cfg(feature = "test-fixtures")]
+    test_github_token: Option<String>,
     releases: std::sync::Mutex<HashMap<String, Result<Vec<Release>, String>>>,
 }
 
@@ -314,8 +316,27 @@ impl ReleaseClient {
             client,
             api_base,
             test_http,
+            #[cfg(feature = "test-fixtures")]
+            test_github_token: None,
             releases: std::sync::Mutex::new(HashMap::new()),
         })
+    }
+    #[cfg(feature = "test-fixtures")]
+    pub fn test_github(token: String) -> Result<Self, String> {
+        let mut client = Self::github()?;
+        client.test_github_token = Some(token);
+        Ok(client)
+    }
+    #[cfg(feature = "test-fixtures")]
+    fn test_authorize(
+        &self,
+        url: &reqwest::Url,
+        request: reqwest::blocking::RequestBuilder,
+    ) -> reqwest::blocking::RequestBuilder {
+        match (&self.test_github_token, url.host_str()) {
+            (Some(token), Some("api.github.com")) => request.bearer_auth(token),
+            _ => request,
+        }
     }
     #[cfg(feature = "test-fixtures")]
     pub fn test_server(base: &str) -> Self {
@@ -336,12 +357,13 @@ impl ReleaseClient {
         let url = self.url(url)?;
         let mut response = None;
         for attempt in 0..3 {
-            match self
+            let request = self
                 .client
                 .get(url.clone())
-                .timeout(Duration::from_secs(30))
-                .send()
-            {
+                .timeout(Duration::from_secs(30));
+            #[cfg(feature = "test-fixtures")]
+            let request = self.test_authorize(&url, request);
+            match request.send() {
                 Ok(value) => {
                     response = Some(value);
                     break;
@@ -530,6 +552,33 @@ impl ReleaseClient {
         }
         progress(count, total);
         Ok(())
+    }
+}
+
+#[cfg(all(test, feature = "test-fixtures"))]
+mod fixture_tests {
+    use super::*;
+
+    #[test]
+    fn fixture_token_is_sent_only_to_the_github_api() {
+        let client = ReleaseClient::test_github("fixture-token".into()).unwrap();
+        for (url, expected) in [
+            ("https://api.github.com/repos/BgaSol/soDeck/releases", true),
+            (
+                "https://github.com/BgaSol/soDeck/releases/download/file",
+                false,
+            ),
+            ("https://example.com/manifest.json", false),
+        ] {
+            let url = reqwest::Url::parse(url).unwrap();
+            let request = client
+                .test_authorize(&url, client.client.get(url.clone()))
+                .build()
+                .unwrap();
+            assert_eq!(request.headers().contains_key("authorization"), expected);
+        }
+        let normal = ReleaseClient::github().unwrap();
+        assert!(normal.test_github_token.is_none());
     }
 }
 

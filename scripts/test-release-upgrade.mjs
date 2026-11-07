@@ -130,7 +130,8 @@ try {
   }
   const installed = JSON.parse(fs.readFileSync(path.join(data, "plugins.json"), "utf8"));
   const businessData = path.join(root, "business-data"); fs.cpSync(data, businessData, { recursive: true });
-  const businessEnv = { SODECK_TEST_DATA_DIR: businessData, SODECK_EXPECT_CORE_VERSION: version, SODECK_EXPECT_TARGET: target, SODECK_VERIFY_PERSISTED: "0" };
+  // This catalog was already seeded and verified before the upgrade.
+  const businessEnv = { SODECK_TEST_DATA_DIR: businessData, SODECK_EXPECT_CORE_VERSION: version, SODECK_EXPECT_TARGET: target, SODECK_VERIFY_PERSISTED: "1" };
   for (const plugin of plugins) businessEnv[`SODECK_TEST_${plugin.name === "network-proxy" ? "NETWORK" : plugin.name.toUpperCase()}_PLUGIN`] = installed.find(p => p.manifest.id === plugin.id).directory;
   native(process.execPath, ["scripts/test-openssh.mjs", "--packaged", executable], businessEnv);
   report.coreDigest = expectedDigest;
