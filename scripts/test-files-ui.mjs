@@ -36,13 +36,20 @@ try{
  const locate=async target=>{const normalized=target.replaceAll('\\','/');await sidebar.getByRole('textbox',{name:'远端路径'}).fill(normalized);await sidebar.getByRole('textbox',{name:'远端路径'}).press('Enter');await wait(()=>sidebar.locator('.tree-row[aria-selected="true"]').evaluateAll((rows,target)=>rows.some(row=>row.dataset.path.endsWith(target)),normalized));};
  // The expanded ancestor tree also contains real /etc and /home on Linux.
  // Match names only inside this test's remote directory, including its root.
- const remotePath=remote.replaceAll('\\','/');
+ let remotePath=remote.replaceAll('\\','/');
  const testRows=()=>sidebar.locator(`[data-path=${JSON.stringify(remotePath)}],[data-path^=${JSON.stringify(remotePath+'/')}]`);
  const row=name=>sidebar.getByRole('treeitem',{name,exact:true}).and(testRows());
  const expanded=async name=>await row(name).getAttribute('aria-expanded')==='true';
- const tasksIdle=async()=>{await wait(()=>sidebar.locator('.transfer-panel summary').textContent().then(text=>!text.includes('进行中')));await wait(()=>sidebar.locator('.tree-row[aria-busy="true"]').count().then(count=>count===0));};
+ const tasksIdle=async()=>{await wait(()=>sidebar.locator('.transfer-panel > summary').textContent().then(text=>!text.includes('进行中')));await wait(()=>sidebar.locator('.tree-row[aria-busy="true"]').count().then(count=>count===0));};
  const lists=()=>requests.filter(r=>r.command==='component_data'&&r.args.request?.action==='list').length;
- await wait(()=>sidebar.getByRole('textbox',{name:'远端路径'}).isEnabled());await locate(remote);await row('设置 file.txt').waitFor();
+ await wait(()=>sidebar.getByRole('textbox',{name:'远端路径'}).isEnabled());await locate(remote);remotePath=await sidebar.getByRole('treeitem',{name:path.basename(remote),exact:true}).getAttribute('data-path');await row('设置 file.txt').waitFor();
+ for(const density of ['compact','comfortable'])for(const fontSize of [11,12,18]){
+   const preference=await call('settings_page',{pluginId:'sodeck.files',pageId:'browser'});
+   const snapshot=(await call('save_settings',{pluginId:'sodeck.files',pageId:'browser',input:{definitionToken:preference.definitionToken,baseRevision:preference.revision,requestId:`tree-${density}-${fontSize}`,values:{...preference.values,density,fontSize}}})).snapshot;
+   await main.evaluate(snapshot=>{const frame=document.querySelector('iframe[title^="文件 ·"]');frame.contentWindow.postMessage({channel:'sodeck-ui-v1',surfaceId:frame.dataset.surfaceId,type:'settingsChanged',settings:snapshot},new URL(frame.src).origin);},snapshot);
+   await wait(()=>row('设置 file.txt').locator('.tree-name').evaluate((el,size)=>parseFloat(getComputedStyle(el).fontSize)===size,fontSize));
+   assert(await row('设置 file.txt').evaluate(el=>el.querySelector('.tree-name').getBoundingClientRect().height<=el.getBoundingClientRect().height),`Tree text fits ${fontSize}/${density}`);
+ }
  // More than one directory stays expanded; folding cached branches does not read remotely.
  await row('etc').locator('.tree-arrow').click();await row('nginx').waitFor();
  await row('home').locator('.tree-arrow').click();await row('.env').waitFor();assert(await expanded('etc'));
@@ -82,10 +89,15 @@ try{
  await row('remote 中文').click({button:'right'});await sidebar.getByRole('menuitem',{name:'上传',exact:true}).click();await sidebar.getByRole('menu',{name:'上传',exact:true}).getByRole('menuitem',{name:'文件夹…',exact:true}).click();
  await wait(()=>fs.existsSync(path.join(remote,'上传 中文','空目录'))&&fs.existsSync(path.join(remote,'上传 中文','zero.bin')));
  await sidebar.getByRole('status').filter({hasText:'上传完成'}).waitFor();assert.equal(fs.readFileSync(path.join(remote,'上传 中文','.hidden'),'utf8'),'ui upload');
+ const completed=sidebar.locator('.transfer-group').filter({has:sidebar.locator('summary')});
+ assert.equal(await completed.getAttribute('open'),null,'Successful tasks default to collapsed summary');
+ await completed.locator('summary').click();await new Promise(resolve=>setTimeout(resolve,800));assert.equal(await completed.getAttribute('open'),'','Manual task expansion survives polling');
  await row('remote 中文').click({button:'right'});await sidebar.getByRole('menuitem',{name:'上传',exact:true}).click();await sidebar.getByRole('menu',{name:'上传',exact:true}).getByRole('menuitem',{name:'文件夹…',exact:true}).click();
  await sidebar.locator('.transfer-item').filter({hasText:'等待处理同名'}).getByRole('button',{name:'跳过',exact:true}).waitFor();
  await sidebar.locator('.transfer-item').filter({hasText:'等待处理同名'}).getByRole('checkbox').check();
+ await sidebar.locator('.transfer-item').filter({hasText:'等待处理同名'}).getByRole('checkbox').focus();
  await new Promise(resolve=>setTimeout(resolve,500));assert(await sidebar.locator('.transfer-item').filter({hasText:'等待处理同名'}).getByRole('checkbox').isChecked());
+ assert(await sidebar.locator('.transfer-item').filter({hasText:'等待处理同名'}).getByRole('checkbox').evaluate(el=>el===document.activeElement));
  await sidebar.locator('.transfer-item').filter({hasText:'等待处理同名'}).getByRole('button',{name:'跳过',exact:true}).click();
  await sidebar.getByRole('status').filter({hasText:'上传完成'}).waitFor();
  await locate(path.join(remote,'上传 中文'));await sidebar.locator('.tree-row[data-path$="/remote 中文/上传 中文"]').click({button:'right'});await sidebar.getByRole('menuitem',{name:'下载',exact:true}).click();
@@ -130,6 +142,8 @@ try{
  await row('设置 file.txt').dblclick();
  editor=main.frameLocator('iframe[title^="设置 file.txt"]');text=editor.locator('textarea');await wait(()=>text.isEnabled());assert.equal(await text.inputValue(),'saved by close\n中文\n');
  await text.fill('draft survives move\n中文');await main.evaluate(()=>window.manager.flush());
+ await editor.getByRole('button',{name:'下载远端',exact:true}).click();await editor.getByRole('status').filter({hasText:'下载完成'}).waitFor();
+ assert.equal(fs.readFileSync(local,'utf8'),'\uFEFFsaved by close\r\n中文\r\n','Remote download excludes current draft');
  const remoteBeforeSettings=fs.readFileSync(filename);
  await text.evaluate(el=>{window.settingsEditor=el;el.setSelectionRange(2,9,'backward');});
  const preference=await call('settings_page',{pluginId:'sodeck.files',pageId:'editor'});
@@ -180,10 +194,10 @@ try{
  assert.equal(await moved.frameLocator('iframe[title^="设置 file.txt"]').locator('textarea').inputValue(),'draft survives move\n中文');
  await moved.evaluate(()=>window.manager.flush());await call('workspace_move',{window:'workspace-browser',id:board,target:'main',index:0});await moved.evaluate(()=>window.manager.refresh());await main.evaluate(()=>window.manager.refresh());
  sidebar=main.frameLocator('iframe[title^="文件 ·"]');await wait(()=>sidebar.getByRole('textbox',{name:'远端路径'}).isEnabled());editor=main.frameLocator('iframe[title^="设置 file.txt"]');text=editor.locator('textarea');await wait(()=>text.isEnabled());
- await row('large.bin').click({button:'right'});await sidebar.getByRole('menuitem',{name:'下载',exact:true}).click();await sidebar.getByRole('status').filter({hasText:'下载完成'}).waitFor();assert.deepEqual(fs.readFileSync(local),Buffer.alloc(2*1024*1024,42));
+ await row('large.bin').click({button:'right'});await sidebar.getByRole('menuitem',{name:'下载',exact:true}).click();await sidebar.locator('.transfer-item').filter({hasText:'等待处理同名 · 下载 · large.bin'}).getByRole('button',{name:'覆盖',exact:true}).click();await wait(()=>fs.existsSync(local)&&fs.statSync(local).size===2*1024*1024);assert.deepEqual(fs.readFileSync(local),Buffer.alloc(2*1024*1024,42));
  const [v]=await call('connection',{command:{op:'snapshot'}});await call('connection',{command:{op:'disconnect',context:v.context}});await main.evaluate(()=>window.manager.refresh());assert.equal(await text.inputValue(),'draft survives move\n中文');
  await editor.getByRole('button',{name:'导出草稿',exact:true}).click();await editor.getByRole('status').filter({hasText:'草稿已导出'}).waitFor();assert.equal(fs.readFileSync(local,'utf8'),'\uFEFFdraft survives move\r\n中文');
  assert.deepEqual(errors,[]);fs.mkdirSync('artifacts/files-ui',{recursive:true});await main.screenshot({path:'artifacts/files-ui/real-files.png'});
  console.log('Actual files UI passed: folder upload/download, conflict apply-all, remote clipboard, create/rename/delete, pointer move/copy, multi-branch tree, pagination, themes/narrow layout, cross-window draft, BOM/CRLF save, save-and-close, conflict, streamed download and offline export');
-}catch(error){for(const page of pages){console.error(await page.locator('#notice').textContent());for(const frame of page.frames().slice(1))console.error(await frame.locator('[role="status"]').allTextContents());fs.mkdirSync('artifacts/files-ui',{recursive:true});await page.screenshot({path:'artifacts/files-ui/failure.png'});}throw error;
+}catch(error){for(const page of pages){console.error(await page.locator('#notice').textContent());for(const frame of page.frames().slice(1)){console.error(await frame.locator('[role="status"]').allTextContents());console.error(await frame.locator('.transfer-item').allTextContents());}fs.mkdirSync('artifacts/files-ui',{recursive:true});await page.screenshot({path:'artifacts/files-ui/failure.png'});}throw error;
 }finally{await browser.close();await vite.close();if(child.exitCode===null){child.stdin.end();await new Promise(resolve=>child.once('exit',resolve));}if(path.dirname(path.resolve(data))!==path.resolve(os.tmpdir())||!path.basename(data).startsWith('sodeck-files-ui-'))throw new Error('Unexpected cleanup');fs.rmSync(data,{recursive:true,force:true});}

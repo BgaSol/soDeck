@@ -13,6 +13,7 @@
     file: '<path d="M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 16h6"/>',
     link: '<path d="M10 14l4-4M8 16l-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0M16 8l1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0"/>',
     chevron: '<path d="m9 5 7 7-7 7"/>',
+    upload: '<path d="M12 3v12m-5-7 5-5 5 5M4 16v5h16v-5"/>',
     up: '<path d="m6 10 6-6 6 6M12 4v16"/>',
     home: '<path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8"/>',
     refresh: '<path d="M20 7v5h-5M4 17v-5h5M6 6a8 8 0 0 1 14 6M4 12a8 8 0 0 0 14 6"/>',
@@ -47,7 +48,7 @@
       this.caption = document.createElement('span'); this.caption.textContent = '服务器文件'; this.caption.title = '当前已展开并加载的条目数';
       toolbar.append(this.caption, this.tool('home', '主目录', () => this.locate(this.home)), this.tool('up', '上一级', () => this.locate(this.selected === this.rootPath ? this.rootPath : parentOf(this.selected))), this.tool('refresh', '刷新选中目录', () => this.refresh()), this.tool('collapse', '全部折叠', () => this.collapseAll()));
       if (transfers) {
-        const upload = this.tool('up', '上传文件', () => transfers.upload());
+        const upload = this.tool('upload', '上传文件', () => transfers.upload());
         toolbar.append(upload, this.tool('download', '下载选中条目', () => transfers.download(this.selectedPaths())));
         upload.addEventListener('contextmenu', e => { e.preventDefault(); void this.run(() => transfers.upload(true)); });
       }
@@ -393,7 +394,7 @@
       separator();
       if(this.transfers&&target){
         addSub('file','新建',[['file','文件…',()=>this.transfers.mutate('createEmpty',[],target)],['folder','文件夹…',()=>this.transfers.mutate('mkdir',[],target)]]);
-        addSub('up','上传',[['file','文件…',()=>this.transfers.upload(false,null,target)],['folder','文件夹…',()=>this.transfers.upload(true,null,target)]]);
+        addSub('upload','上传',[['file','文件…',()=>this.transfers.upload(false,null,target)],['folder','文件夹…',()=>this.transfers.upload(true,null,target)]]);
       }
       if(!multiple)add('refresh','刷新',()=>this.refresh(n?(directory?n.path:parentOf(n.path)):this.rootPath));
       if(this.transfers&&mutable){separator();if(!multiple)add('rename','重命名…',()=>this.transfers.mutate('rename',paths));add('delete','删除',()=>this.transfers.mutate('delete',paths)).classList.add('danger');}

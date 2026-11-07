@@ -16,6 +16,12 @@
       this.panel = document.createElement('details'); this.panel.className = 'transfer-panel';
       this.summary = document.createElement('summary'); this.summary.textContent = '文件任务';
       this.body = document.createElement('div'); this.body.className = 'transfer-list';
+      this.groups = {};
+      for (const [key,label] of [['attention','需要处理'],['active','进行中'],['completed','已完成']]) {
+        const group=document.createElement(key==='completed'?'details':'section');group.className='transfer-group';
+        const heading=document.createElement(key==='completed'?'summary':'h4');heading.textContent=label;
+        const list=document.createElement('div');group.append(heading,list);this.body.append(group);this.groups[key]={group,heading,list,label};
+      }
       this.panel.append(this.summary, this.body); host.append(this.panel); this.timer = setTimeout(() => this.poll(), 350);
     }
     async input(action, args = {}) {
@@ -165,7 +171,7 @@
         while(result.next!=null){result=await this.event({action:'readTasks',offset:result.next});tasks.push(...result.tasks);}
         const active = tasks.filter(t => !terminal(t.state));
         this.summary.textContent = active.length ? `文件任务 · ${active.length} 项进行中` : `文件任务 · ${tasks.length} 项`;
-        const fragment = document.createDocumentFragment();
+        const fragments = Object.fromEntries(Object.keys(this.groups).map(key=>[key,document.createDocumentFragment()]));
         for (const task of tasks) {
           const row = document.createElement('section'); row.className = 'transfer-item';
           const title = document.createElement('div'); title.textContent = `${labels[task.state] || task.state} · ${kinds[task.kind]||task.kind}${task.current?' · '+task.current:''}`;
@@ -194,7 +200,9 @@
             if(task.kind==='download'&&task.fileId===this.fileId)button('打开所在目录',()=>this.data('input.reveal',{inputId:task.inputId}));
             button('清除记录',()=>command({action:'clearBatch'}));
           }
-          fragment.append(row);
+          const group=task.state==='completed'?'completed':['awaitingConflict','needsReview','failed','partial','cancelled'].includes(task.state)?'attention':'active';
+          fragments[group].append(row);
+          if(group==='attention'&&this.last.get(task.id)!==task.state)this.panel.open=true;
           if (terminal(task.state) && this.last.get(task.id) && !terminal(this.last.get(task.id))) {
             const epoch=this.contextEpoch;
             void this.refresh().catch(() => {}).then(()=>{if(!this.disposed&&epoch===this.contextEpoch)this.message(task.state==='completed' ? (task.kind==='download'?'下载完成':task.kind==='upload'?'上传完成':'文件任务完成') : (task.error||task.lastError||labels[task.state]),task.state!=='completed');});
@@ -202,8 +210,12 @@
           this.last.set(task.id, task.state);
         }
         const focused=document.activeElement?.dataset.control;
-        this.body.replaceChildren(fragment);
-        if(focused)[...this.body.querySelectorAll('[data-control]')].find(e=>e.dataset.control===focused)?.focus({preventScroll:true});
+        const scroll=this.body.scrollTop;
+        for(const [key,{group,heading,list,label}] of Object.entries(this.groups)){
+          const count=fragments[key].childElementCount;group.hidden=!count;heading.textContent=`${label} · ${count} 项`;list.replaceChildren(fragments[key]);
+        }
+        if(focused)([...this.body.querySelectorAll('[data-control]')].find(e=>e.dataset.control===focused)||this.summary)?.focus({preventScroll:true});
+        this.body.scrollTop=scroll;
       } catch (error) { if (!this.disposed) this.message(error.message, true); }
       finally { this.running = false; clearTimeout(this.timer); if (!this.disposed) this.timer = setTimeout(() => this.poll(), 350); }
     }

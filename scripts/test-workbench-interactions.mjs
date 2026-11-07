@@ -65,6 +65,15 @@ const fileFixture=async(inFrame=false)=>{
   await surface.addScriptTag({content:menuAsset});
   await surface.addScriptTag({content:fs.readFileSync('plugins/files/ui/tree.js','utf8')});
   await surface.addScriptTag({content:fs.readFileSync('plugins/files/ui/transfer.js','utf8')});
+  const taskGroups=await surface.evaluate(async()=>{
+    const host=document.createElement('div');document.body.append(host);
+    const tasks=['completed','failed','partial','needsReview','awaitingConflict','running'].map((state,index)=>({id:String(index),state,kind:'upload',completed:1,failed:state==='failed'?1:0,skipped:0,bytes:0}));
+    const panel=new FileTransfers({host,event:async()=>({tasks}),refresh:async()=>{},message:()=>{}});await panel.poll();
+    const first={attention:panel.groups.attention.list.childElementCount,active:panel.groups.active.list.childElementCount,completed:panel.groups.completed.list.childElementCount,collapsed:!panel.groups.completed.group.open};
+    panel.groups.completed.group.open=true;await panel.poll();first.expanded=panel.groups.completed.group.open;
+    panel.dispose();host.remove();return first;
+  });
+  assert.deepEqual(taskGroups,{attention:4,active:1,completed:1,collapsed:true,expanded:true},'Only successful tasks collapse; review/failure/conflict stay visible');
   await surface.evaluate(()=>{
     window.operations=[];window.clipboard={revision:'1',hasFiles:false};window.remote={remote:false,reason:'没有可粘贴的文件'};
     window.sodeckClipboard={writeText:async text=>{clipboard={revision:String(Number(clipboard.revision)+1),hasFiles:false};operations.push(['path',text]);}};

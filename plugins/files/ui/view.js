@@ -84,6 +84,7 @@ import {readDocument} from './read-document.js';
    root.className='editor-root';const header=document.createElement('header');header.className='editor-toolbar';root.append(header);
    const title=document.createElement('span');title.className='path';title.textContent=m.data.path;title.title=m.data.path;header.append(title,button('保存',save,'primary'),button('下载远端',()=>download(m.data.path)),button('导出草稿',async()=>{await queue;const result=await data('exportDraft',{path:m.data.path});if(!result.cancelled)message('草稿已导出：'+result.path);}));
    transfers=new FileTransfers({fileId:id,data,event,request,message,host:root,target:()=>m.data.path.slice(0,m.data.path.lastIndexOf('/'))||'/',refresh:async()=>{}});
+   const exportHint=document.createElement('p');exportHint.className='editor-export-hint';exportHint.textContent='下载远端：服务器当前版本 · 导出草稿：此页当前内容（含未保存更改）';root.append(exportHint);
    textarea=document.createElement('textarea');textarea.spellcheck=false;textarea.disabled=true;textarea.setAttribute('aria-label','远端文件编辑器');root.append(textarea,footer);
    const {info,bytes}=await readDocument(data,m.data.path);
    let text;try{text=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(bytes);}catch{throw new Error('此文件不是有效 UTF-8 文本，请下载后查看');}
