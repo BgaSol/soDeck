@@ -38,7 +38,7 @@ jobs:
           sudo mkdir -p /run/sshd
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
-          shared-key: core-package
+          shared-key: check-tests
           workspaces: src-tauri -> target
           save-if: false
       - name: Build the verification fixture
