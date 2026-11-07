@@ -179,9 +179,16 @@ export class ServerManager {
     if (this.busy || f?.busy) return;
     if (name === "confirm-no" || name === "confirm-yes") return;
     switch (name) {
-      case "tab": this.state.tab = button.dataset.tab as PageState["tab"]; this.state.selected = ""; this.state.query = ""; this.render(); break;
-      case "select": this.state.selected = id; this.render(); break;
-      case "back": this.state.selected = ""; this.render(); break;
+      case "tab": this.state.tab = button.dataset.tab as PageState["tab"]; this.state.selected = ""; this.state.query = ""; this.render(); this.host.querySelector<HTMLElement>(`[data-tab="${this.state.tab}"]`)?.focus(); break;
+      case "select":
+        this.state.selected = id; this.render();
+        this.host.querySelector<HTMLElement>(matchMedia("(max-width: 760px)").matches ? '.catalog-detail [data-connect-server], .catalog-detail [data-server-action="edit"]' : `#catalog-row-${CSS.escape(id)}`)?.focus();
+        break;
+      case "back": {
+        const selected = this.state.selected; this.state.selected = ""; this.render();
+        this.host.querySelector<HTMLElement>(`#catalog-row-${CSS.escape(selected)}`)?.focus();
+        break;
+      }
       case "new": this.openEditor(this.state.tab === "proxies"); break;
       case "edit": this.openEditor(this.state.tab === "proxies", id); break;
       case "cancel": if (f) await this.cancel(f); break;
@@ -219,8 +226,12 @@ export class ServerManager {
           this.renderGroups(f!); this.render();
         } break;
       case "inline-proxy": this.openEditor(true, undefined, true); if (f) this.top()!.revision = f.revision; break;
-      case "add-ssh": if (d) { d.route.push({ id: "", kind: "ssh", serverId: "" }); this.renderEditor(f!); } break;
-      case "add-socks": if (d) { d.route.push({ id: "", kind: "socks5", proxyId: "" }); this.renderEditor(f!); } break;
+      case "add-ssh": case "add-socks":
+        if (d) {
+          d.route.push(name === "add-ssh" ? { id: "", kind: "ssh", serverId: "" } : { id: "", kind: "socks5", proxyId: "" });
+          this.renderEditor(f!); f!.dialog.querySelector<HTMLElement>(`[data-step="${d.route.length - 1}"]`)?.focus();
+        }
+        break;
       case "step-up": case "step-down": case "step-remove": {
         if (!d) break;
         const i = Number(button.dataset.index); const j = i + (name === "step-up" ? -1 : 1);

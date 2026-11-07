@@ -286,7 +286,8 @@ try {
   await page.keyboard.press('Shift+Tab');assert.equal(await page.getByRole('button',{name:'复制日志路径',exact:true}).evaluate(el=>el===document.activeElement),true);
   await page.keyboard.press('Escape');assert.equal(await page.locator('#settings-button').evaluate(el=>el===document.activeElement),true);
   await page.locator('#settings-button').click();await page.locator('[data-action="section"][data-id="plugins"]').click();
-  await page.locator('[data-action="add-plugin"]').click();
+  await page.locator('[data-action="add-plugin"]').focus();await page.keyboard.press('Enter');
+  assert.equal(await page.locator('[data-action="back-plugins"]').evaluate(el=>el===document.activeElement),true,'Adding a plugin moves keyboard focus into the new page');
   const terminal = page.locator('[data-official-plugin="sodeck.terminal"]');
   const install = () => terminal.locator('[data-action="install-official-plugin"]');
   assert.deepEqual(await page.locator('[data-official-plugin]').evaluateAll(nodes => nodes.map(node => node.dataset.officialPlugin).sort()), ['sodeck.files','sodeck.network-proxy','sodeck.terminal']);
@@ -374,7 +375,8 @@ try {
   await page.locator('[data-action="section"][data-id="plugins"]').click();
   assert.equal(await page.locator('[data-plugin-id]').count(),3);
   assert.equal(await page.locator('#update-repository').count(),0,'Technical source fields are not in the overview');
-  await page.locator('[data-plugin-id="test.update-one"] [data-action="select-plugin"]').click();
+  await page.locator('[data-plugin-id="test.update-one"] [data-action="select-plugin"]').focus();await page.keyboard.press('Enter');
+  assert.equal(await page.locator('[data-action="back-plugins"]').evaluate(el=>el===document.activeElement),true,'Plugin details move keyboard focus into the new page');
   await page.locator('details[data-persist="source-test.update-one"] summary').click();
   const sourceSummary = page.locator('details[data-persist="source-test.update-one"] summary');
   await sourceSummary.focus(); await page.keyboard.press('Tab');

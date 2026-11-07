@@ -354,11 +354,13 @@ root.addEventListener("click", (event) => {
         state.addingPlugin = true;
         state.plugin = "";
         renderLayer();
+        overlay.querySelector<HTMLElement>('[data-action="back-plugins"]')?.focus();
         break;
       case "select-plugin":
         state.plugin = id;
         state.addingPlugin = false;
         renderLayer();
+        overlay.querySelector<HTMLElement>('[data-action="back-plugins"]')?.focus();
         break;
       case "back-plugins":
         state.plugin = "";

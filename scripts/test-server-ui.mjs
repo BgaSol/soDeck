@@ -71,7 +71,9 @@ try {
   await closeDirty(); catalog = await read(); assert.equal(catalog.groups.length, 1); assert.equal(catalog.servers[0].groupId, null);
   checks.push("独立保存分组，取消父表单仍保留");
 
-  await work().locator('[data-tab="proxies"]').click(); await action("new", work()).click();
+  const proxyTab=work().locator('[data-tab="proxies"]');await proxyTab.focus();await page.keyboard.press('Enter');
+  assert.equal(await proxyTab.evaluate(el=>el===document.activeElement),true,'Switching catalog tabs retains keyboard focus');
+  await action("new", work()).click();
   await field("host").fill("127.0.0.1"); await field("authType").selectOption("usernamePassword");
   assert.equal(await field("remember").isChecked(), true);
   await field("username").fill("proxy-ops"); await field("password").fill("ui-proxy-secret"); await field("remember").check();
@@ -85,8 +87,12 @@ try {
   await work().locator('[data-tab="servers"]').click(); await action("new", work()).click();
   await field("host").fill("db.internal"); await field("username").fill("deploy"); await field("name").fill("生产数据库");
   await field("groupId").selectOption(catalog.groups[0].id); await field("routed").selectOption("true");
-  await action("add-ssh").click(); await dialogs().locator('[data-step="0"]').selectOption(gateway);
-  await action("add-socks").click(); await dialogs().locator('[data-step="1"]').selectOption(proxy);
+  await action("add-ssh").focus();await page.keyboard.press('Enter');
+  assert.equal(await dialogs().locator('[data-step="0"]').evaluate(el=>el===document.activeElement),true,'New SSH hop focuses its source selector');
+  await dialogs().locator('[data-step="0"]').selectOption(gateway);
+  await action("add-socks").focus();await page.keyboard.press('Enter');
+  assert.equal(await dialogs().locator('[data-step="1"]').evaluate(el=>el===document.activeElement),true,'New SOCKS hop focuses its source selector');
+  await dialogs().locator('[data-step="1"]').selectOption(proxy);
   await action("add-socks").click(); await dialogs().locator('[data-step="2"]').selectOption(proxy);
   assert((await dialogs().locator(".route-preview").innerText()).includes("公网入口 的回环地址"));
   await dialogs().locator('[data-server-action="step-up"][data-index="2"]').click();
@@ -144,7 +150,13 @@ try {
   for (const theme of ["system", "light", "dark", "dopamine"]) {
     await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
     for (const [width, height] of [[1100, 720], [720, 480]]) {
-      await page.setViewportSize({ width, height }); await action("new", work()).click();
+      await page.setViewportSize({ width, height });
+      if(width===720&&await action('back',work()).isVisible())await action('back',work()).click();
+      const row=work().locator(`[data-server-action="select"][data-id="${target}"]`);
+      await row.focus();await page.keyboard.press('Enter');
+      assert.equal(await page.evaluate(()=>document.activeElement===document.body),false,`${theme}/${width} selecting a server keeps contextual focus`);
+      if(width===720){await action('back',work()).focus();await page.keyboard.press('Enter');assert.equal(await row.evaluate(el=>el===document.activeElement),true,'Returning to the list focuses the original server');}
+      await action("new", work()).click();
       await field("routed").selectOption("true"); await action("add-socks").click();
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       assert(await dialogs().evaluate(d => d.scrollWidth <= d.clientWidth + 1));
