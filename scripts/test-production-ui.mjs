@@ -479,6 +479,28 @@ try {
   await page.getByRole('button',{name:'继续显示',exact:true}).click();await page.locator('.log-row').first().waitFor();
   assert.equal(await page.locator('.log-meta').first().evaluate(el=>getComputedStyle(el).fontSize),'12px');
   await page.keyboard.press('Escape');
+  const messageFixture=path.join(directory,'messages');fs.cpSync(fixture,messageFixture,{recursive:true});
+  const messageManifest=JSON.parse(fs.readFileSync(path.join(messageFixture,'plugin.json'),'utf8'));messageManifest.id='test.messages';
+  fs.writeFileSync(path.join(messageFixture,'plugin.json'),JSON.stringify(messageManifest));
+  await call('fixture_load_plugin',{directory:messageFixture});
+  await page.locator('#messages-button').click();
+  const allMessages=page.locator('[data-action="all-messages"]'),unreadMessages=page.locator('[data-action="unread-messages"]');
+  assert.equal(await allMessages.getAttribute('aria-pressed'),'true','Message filters expose their selected state');
+  await unreadMessages.focus();await page.keyboard.press('Enter');
+  assert.equal(await unreadMessages.getAttribute('aria-pressed'),'true');assert.equal(await allMessages.getAttribute('aria-pressed'),'false');
+  assert.equal(await unreadMessages.evaluate(el=>el===document.activeElement),true);
+  await allMessages.focus();await page.keyboard.press('Enter');
+  await page.locator('.message-row').first().focus();await page.keyboard.press('Enter');
+  await page.locator('.message-row.selected').waitFor();
+  const messageContrasts=await page.locator('.message-row.selected').evaluate(row=>{
+    const luminance=color=>{const c=color.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722;};
+    const background=luminance(getComputedStyle(row).backgroundColor);
+    return [...row.querySelectorAll('time,p,small')].map(node=>{const foreground=luminance(getComputedStyle(node).color);return (Math.max(foreground,background)+.05)/(Math.min(foreground,background)+.05);});
+  });
+  assert(messageContrasts.length&&messageContrasts.every(ratio=>ratio>=4.5),`Selected message small text contrast: ${messageContrasts}`);
+  assert.equal(await page.locator('.message-row.selected').evaluate(el=>el===document.activeElement),true,'Reading a message retains row focus');
+  await page.keyboard.press('Escape');
+  checks.push('Messages: real fixture publication, accessible filter selection and keyboard focus, selected-row contrast and focus after marking read');
   await call("workspace_move", { window: "main", id: workspace.context.workspaceId, target: "workspace-titlebar", index: 0 });
   testWindow = "workspace-titlebar";
   await page.evaluate(() => sessionStorage.setItem("test-window", "workspace-titlebar"));
