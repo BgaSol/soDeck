@@ -4,16 +4,29 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Checks to run on the selected branch or tag
+        type: choice
+        default: standard
+        options:
+          - standard
+          - desktop
+          - native-core
+          - network-plugin
+          - all
 
 permissions:
   contents: read
 
 concurrency:
-  group: check-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: check-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.suite || 'standard' }}
   cancel-in-progress: true
 
 jobs:
   format:
+    if: github.event_name != 'workflow_dispatch' || inputs.suite == 'standard' || inputs.suite == 'all'
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
@@ -59,6 +72,7 @@ jobs:
       - run: npm run terminal:input:test
       - run: npm run settings:test
   network:
+    if: github.event_name != 'workflow_dispatch' || inputs.suite == 'standard' || inputs.suite == 'all'
     strategy:
       fail-fast: false
       matrix:
@@ -99,3 +113,100 @@ jobs:
           name: network-netem-${{ matrix.runner }}
           path: artifacts/network-netem/report.json
           if-no-files-found: warn
+  desktop:
+    if: github.event_name == 'workflow_dispatch' && (inputs.suite == 'desktop' || inputs.suite == 'all')
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            plugins/terminal/package-lock.json
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.1
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          shared-key: check-tests
+          workspaces: src-tauri -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: npm ci
+      - name: Install OpenSSH test server
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "$env:WINDIR/System32/OpenSSH/sshd.exe")) {
+            $capability = Get-WindowsCapability -Online -Name 'OpenSSH.Server*' | Select-Object -First 1
+            if (-not $capability) { throw 'OpenSSH Server capability is unavailable' }
+            Add-WindowsCapability -Online -Name $capability.Name
+          }
+      - run: npm run ssh:test
+      - run: npx playwright install chromium
+      - run: npm run ui:test
+  native:
+    if: github.event_name == 'workflow_dispatch' && (inputs.suite == 'native-core' || inputs.suite == 'network-plugin' || inputs.suite == 'all')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x86_64
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+          - name: windows-aarch64
+            runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+          - name: linux-x86_64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - name: linux-aarch64
+            runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+          - name: macos-aarch64
+            runner: macos-15
+            target: aarch64-apple-darwin
+    name: native-${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.1
+      - name: Verify native Rust host
+        run: |
+          node -e "const {spawnSync}=require('node:child_process'); const host=spawnSync('rustc',['-vV'],{encoding:'utf8'}).stdout.match(/^host: (.+)$/m)?.[1]; if(host!=='${{ matrix.target }}') throw new Error('Native Rust host mismatch: '+host)"
+      - name: Install core fixture build dependencies
+        if: runner.os == 'Linux' && inputs.suite != 'network-plugin'
+        run: |
+          sudo "$(command -v node)" scripts/configure-ubuntu-mirror.mjs
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev patchelf
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        env:
+          SODECK_PLUGIN_CLIENT_MANIFEST_HASH: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
+        with:
+          shared-key: check-tests
+          env-vars: SODECK_PLUGIN_CLIENT_MANIFEST_HASH
+          workspaces: |
+            src-tauri -> target
+            plugins/network-proxy -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: npm ci
+        if: inputs.suite != 'network-plugin'
+      - name: Native core source tests
+        if: inputs.suite != 'network-plugin'
+        run: npm run test
+      - name: Scripts on native host
+        if: inputs.suite != 'network-plugin' && (matrix.name == 'windows-x86_64' || matrix.name == 'linux-x86_64' || matrix.name == 'macos-aarch64')
+        run: node --test scripts/collect-core.test.mjs scripts/core-release.test.mjs scripts/plugin-settings-assets.test.mjs scripts/release-metadata.test.mjs scripts/smoke.test.mjs
+      - name: Native network plugin source tests
+        if: inputs.suite == 'network-plugin' || inputs.suite == 'all'
+        run: cargo test --manifest-path plugins/network-proxy/Cargo.toml --locked

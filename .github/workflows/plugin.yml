@@ -98,11 +98,7 @@ jobs:
       - shell: bash
         env:
           PLUGIN: ${{ needs.select.outputs.plugin }}
-        run: |
-          if [ "$PLUGIN" = 'network-proxy' ]; then
-            cargo test --manifest-path "plugins/$PLUGIN/Cargo.toml" --locked
-          fi
-          node scripts/package-plugin.mjs --plugin "$PLUGIN" --target '${{ matrix.target }}'
+        run: node scripts/package-plugin.mjs --plugin "$PLUGIN" --target '${{ matrix.target }}'
       - uses: actions/upload-artifact@v4
         with:
           name: Plugin-${{ needs.select.outputs.plugin }}-${{ matrix.name }}

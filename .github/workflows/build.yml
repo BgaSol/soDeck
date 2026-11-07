@@ -33,21 +33,12 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version-file: .node-version
-          cache: npm
-          cache-dependency-path: package-lock.json
       - id: config
         env:
           GH_TOKEN: ${{ github.token }}
           CORE_PUBLISH: ${{ inputs.publish || false }}
           CORE_RUN_ID: ${{ inputs.core_run_id }}
         run: node scripts/core-release.mjs preflight
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.99.1
-          components: rustfmt
-      - run: npm ci
-      - run: npm run check
-      - run: npm run scripts:test
   package:
     needs: preflight
     if: ${{ !inputs.core_run_id }}
@@ -81,19 +72,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
-        if: matrix.name != 'windows-x86_64'
         with:
           node-version-file: .node-version
           cache: npm
           cache-dependency-path: package-lock.json
-      - uses: actions/setup-node@v6
-        if: matrix.name == 'windows-x86_64'
-        with:
-          node-version-file: .node-version
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            plugins/terminal/package-lock.json
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: |
@@ -103,15 +85,13 @@ jobs:
         with:
           toolchain: 1.99.1
           targets: ${{ matrix.target }}
-          components: rustfmt
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: core-package
           workspaces: src-tauri -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
-      - run: npm run test
-      - name: Install OpenSSH test server
+      - name: Install OpenSSH for packaged SSH verification
         if: matrix.name == 'windows-x86_64'
         shell: pwsh
         run: |
@@ -120,17 +100,6 @@ jobs:
             if (-not $capability) { throw 'OpenSSH Server capability is unavailable' }
             Add-WindowsCapability -Online -Name $capability.Name
           }
-      - name: Verify against isolated OpenSSH
-        if: matrix.name == 'windows-x86_64'
-        run: npm run ssh:test
-      - name: Verify scripts on native host
-        if: matrix.name == 'windows-x86_64' || matrix.name == 'linux-x86_64' || matrix.name == 'macos-aarch64'
-        run: node --test scripts/collect-core.test.mjs scripts/core-release.test.mjs scripts/plugin-settings-assets.test.mjs scripts/release-metadata.test.mjs scripts/smoke.test.mjs
-      - name: Verify server forms with actual core
-        if: matrix.name == 'windows-x86_64'
-        run: |
-          npx playwright install chromium
-          npm run ui:test
       - name: Build installer
         uses: tauri-apps/tauri-action@v1
         env:

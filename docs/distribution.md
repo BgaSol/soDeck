@@ -97,11 +97,11 @@ npm run plugin:build -- --plugin network-proxy --out-dir artifacts/another-build
 
 工作台样式与原生剪贴板的实施和平台边界见 [实施记录](implementation-workbench-design.md)。`npm run terminal:input:test` 安装终端锁定的前端依赖后验证实际 xterm 与剪贴板桥，无需 OpenSSH；Check 工作流执行该回归。真实远端仍由 `terminal:test` / `files:test` 及原生实际包工作流验证。原生剪贴板为显式 `SODECK_TEST_CLIPBOARD=1` 烟测，普通包烟测不改测试桌面的剪贴板。
 
-真实连接的新增依赖与本机验证范围见 [连接实施记录](implementation-connections.md)。`npm run ssh:test` 使用临时回环 OpenSSH 服务验证实际客户端，`npm run ssh:test -- --packaged <安装后的程序>` 进一步验证包内连接与原生窗口移动。Windows x86_64 工作流执行这两层；其他目标继续原生构建/隔离 Rust 连接测试及包内启动，不将本机结果外推为五平台已通过。
+真实连接的新增依赖与本机验证范围见 [连接实施记录](implementation-connections.md)。`npm run ssh:test` 使用临时回环 OpenSSH 服务验证实际客户端，归属 Check 手动 `desktop` 套件；`npm run ssh:test -- --packaged <安装后的程序>` 验证包内连接与原生窗口移动，继续由 Windows x86_64 核心打包执行。其他目标保留原生打包与实际包启动，平台相关源码测试使用 Check `native-core`；不将本机结果外推为五平台已通过。
 
 本机执行类型、格式、脚本测试、Rust 集成测试、前端构建和本机安装包烟测。Rust 测试使用本机 HTTP 服务器验证下载、哈希、平台/API 不兼容、重启切换和启动失败恢复；正式更新来源只允许 HTTPS。
 
-核心工作流在五个原生目标运行 Rust 测试，再安装/解包 EXE、DEB、DMG 后启动包内程序；AppImage 另检查启动和退出。`Verify native remote plugins` 下载实际核心与业务插件产物验证原生界面、实际远程业务、移窗与重开退出；插件生命周期、日志、消息和重启持久化另由通用集成夹具覆盖。CI 包内启动不等价于真实设备的交互式安装升级，实际完成范围记录在对应版本说明。
+核心工作流在五个原生目标正式构建、签名，再安装/解包 EXE、DEB、DMG 后启动包内程序；AppImage 另检查启动和退出。打包不再执行源码 Rust 测试、完整 UI 或宿主脚本回归，也不构建 `test-fixtures`；相关检查沿用 Check 常规 Linux 测试及手动原生/桌面套件。网络插件 package 的源码测试同样移到 Check 常规 Linux 检查及 `network-plugin` 原生套件。必要检查可与打包并行，维护者在正式发布前确认同一提交的相关结果；不增加跨工作流等待。`Verify native remote plugins` 下载实际核心与业务插件产物验证原生界面、实际远程业务、移窗与重开退出；插件生命周期、日志、消息和重启持久化另由通用集成夹具覆盖。CI 包内启动不等价于真实设备的交互式安装升级，实际完成范围记录在对应版本说明。
 
 真实业务插件使用独立入口 `npm run plugin:build -- --plugin terminal` 和 `--plugin files`，版本分别来自自己的 Cargo.toml，标签为 `plugin-terminal-v<版本>` / `plugin-files-v<版本>`。终端打包在插件目录内执行锁定的 npm 安装和静态资源构建；核心打包不调用这些步骤。普通构建不创建发行版本，官方列表登记来源后仍需发布对应的独立 Release 才能下载。
 
@@ -121,7 +121,7 @@ Windows ARM64 runner 的 OpenSSH 系统可选组件安装曾持续等待十余�
 
 原生远程验收的 Linux 运行依赖安装前使用 `configure-ubuntu-mirror.mjs` 切换到官方 `archive.ubuntu.com`，兼容传统 `.list`、Deb822 `.sources` 和 hosted runner 的 `mirror+file` 入口；ARM64 ports 和第三方源保持原地址。Check 复用该入口，依赖列表、有限下载重试和任务超时继续生效。
 
-服务器管理验收：`npx playwright install chromium` 后运行 `npm run ui:test`，以无头浏览器调用真实目录核心，测试数据保存在临时目录，不连接服务器。核心打包工作流在 Windows x86_64 执行此检查；所有五目标的 `scripts/smoke.mjs` 都会在实际包中保存服务器、分组、代理及混合路径，再重开验证持久资料与临时秘密生命周期。
+服务器管理验收：`npx playwright install chromium` 后运行 `npm run ui:test`，以无头浏览器调用真实目录核心，测试数据保存在临时目录，不连接服务器。Check 手动 `desktop` 套件在 Windows x86_64 执行完整回归；核心打包不安装 Chromium 或终端 UI 测试依赖。所有五目标的 `scripts/smoke.mjs` 都会在实际包中保存服务器、分组、代理及混合路径，再重开验证持久资料与临时秘密生命周期。
 
 `npm run ui:test` 还会运行 `npm run ui:production:test`：先生成正式前端产物，再直接加载 dist 中的 HTML/JS/CSS，配合隔离的真实目录核心检查保存主题、服务器/代理表单、滚轮、底部字段、焦点和固定页脚；覆盖浅色、深色、多巴胺及 1100×720 / 720×480。此检查用于发现开发模块样式加载顺序与正式打包顺序不同造成的回归，不以开发服务器的截图代替正式产物。
 

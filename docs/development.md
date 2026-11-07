@@ -86,13 +86,29 @@ npm run plugin:build -- --plugin network-proxy
 
 | 工作流 | 用途 |
 | --- | --- |
-| [Check](../.github/workflows/check.yml) | 类型、格式、脚本、核心常规 Rust 与现有插件测试、前端构建和相关界面回归；同一分支/PR 只保留最新运行 |
+| [Check](../.github/workflows/check.yml) | main/PR 保持现有常规检查；手动选择完整 Windows UI/SSH、原生核心或网络插件测试；同一引用和套件只保留最新运行 |
 | [Package SoDeck](../.github/workflows/build.yml) | 五目标原生核心构建、打包、包内验证及更新签名 |
 | [Package plugin](../.github/workflows/plugin.yml) | 按插件目录独立打包，生成插件更新清单 |
 | [Verify native remote plugins](../.github/workflows/remote-integration.yml) | 按组件版本或明确 run 定位实际包，校验来源后执行五平台原生界面/远程业务验收，支持输入快照重放 |
 
 五个系统与架构组合分别使用原生构建和实际包验证。已完成的验收、未完成项和已知风险记录在对应实施记录或版本说明中。
 
-CI 的 npm 下载缓存按任务实际使用的锁文件配置；终端 UI 测试同时使用终端锁文件。Rust 缓存区分日常检查、核心打包和各插件，只有成功的 main 运行保存，其他引用尝试恢复。Check 和原生打包复用依赖编译结果，插件及其测试显式覆盖共享 plugin-client 清单；缓存失效时仍执行完整安装、测试和构建。
+Check 的 **Run workflow** 先选择需要验证的分支或标签，再选择 `suite`。检查结果只适用于该次运行的确切提交；打包工作流不等待 Check。main/PR 的自动检查保持原有范围，新增的五平台和完整 UI 套件仅手动运行。
+
+| suite | 执行范围 |
+| --- | --- |
+| `standard`（默认） | 原有 `format` 检查及 Linux x86_64/ARM64 `network`，当前仍包含 netem |
+| `desktop` | Windows x86_64 顺序执行源码 `ssh:test` 和完整 `ui:test`，包含 Chromium 与终端 UI 依赖 |
+| `native-core` | 五个原生目标各执行 `npm run test`；Windows x86_64、Linux x86_64、macOS ARM64 另执行原宿主脚本回归 |
+| `network-plugin` | 五个原生目标仅执行网络插件 `cargo test --manifest-path plugins/network-proxy/Cargo.toml --locked`，不构建核心测试夹具 |
+| `all` | 上述所有 job；同一 job 内顺序执行，原生矩阵并行 |
+
+原宿主脚本回归为 `collect-core.test.mjs`、`core-release.test.mjs`、`plugin-settings-assets.test.mjs`、`release-metadata.test.mjs` 和 `smoke.test.mjs`。常规 Check 在 Linux 执行完整 `scripts:test`。公共核心逻辑沿用常规 Linux Rust 测试；本地路径、进程、凭据、窗口及平台适配变化需要补做 `native-core`，网络插件或共享客户端变化需要补做 `network-plugin`，核心 UI/SSH 变化需要补做 `desktop`。当前手动入口以既有整套测试为单位，按文件或模块自动选择留待后续优化。
+
+`native-core` 覆盖当前核心单元测试及 `tests/lifecycle.rs`、`updates.rs`、`connections.rs`、`component_ui.rs`、`settings.rs`、`servers.rs`、`streams.rs`、`window_config.rs`、`workspaces.rs`；Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 都在对应原生 runner 执行。`platform`、`desktop_files`、桌面行为及更新等系统分支随原生测试验证。标记为 ignored 的真实远端用例仍由对应 SSH/终端/文件/网络专项提供环境后显式运行，不能把 `native-core` 通过当作这些专项已通过。
+
+核心与插件打包中的源码测试已经移到 Check；核心 preflight 只使用 Node 检查发行输入，正式前端构建仍执行 TypeScript 检查。实际包的架构、更新签名、启动、持久资料重开和退出验证继续执行，Windows x86_64 另保留包内 SSH 烟测。
+
+CI 的 npm 下载缓存按任务实际使用的锁文件配置；核心打包只使用根锁文件，终端 UI 测试同时使用终端锁文件。Rust 缓存区分日常检查、核心打包和各插件，只有成功的 main 运行保存，其他引用尝试恢复；插件及其原生测试显式覆盖共享 plugin-client 清单。恢复缓存后仍执行当前输入的安装、测试或正式构建；此次未迁移 `core-package` 缓存族，发行缓存优化留在提速方案第二步。
 
 返回 [项目首页](../README.md) · [文档索引](README.md)
