@@ -5,6 +5,13 @@ import {createAppearance} from './appearance.js';
   const fit=new FitAddon.FitAddon(),serialize=new SerializeAddon.SerializeAddon();terminal.loadAddon(fit);terminal.loadAddon(serialize);terminal.open(host);
   let id,offset=0,inputSequence=0,chain=Promise.resolve(),inputChain=Promise.resolve(),disposed=false,caughtUp=false,restoring=false,visible=false,enabled=false;
   let savedOffset=0,lastSave=0,escape='normal',utf8=0,inputPending=0,mountKey='';
+  let ended=false,disconnected=false,opening=false;
+  const newTerminal=document.createElement('button');newTerminal.textContent='新建终端';newTerminal.hidden=true;newTerminal.className='sd-control';status.after(newTerminal);
+  newTerminal.onclick=()=>{
+    if(opening||disposed||disconnected||!ended)return;
+    opening=true;newTerminal.disabled=true;
+    void sodeck.request('openView',{viewType:'terminal'}).catch(fail).finally(()=>{opening=false;newTerminal.disabled=disconnected;});
+  };
   const encoder=new TextEncoder();
   const fail=error=>{status.hidden=false;status.textContent=String(error);status.classList.add('error');};
   const controls=installTerminalInput(terminal,host,()=>({key:mountKey,canCopy:!disposed&&!restoring,canPaste:enabled&&!restoring&&!disposed&&visible}),fail);
@@ -47,7 +54,7 @@ import {createAppearance} from './appearance.js';
     terminal.options.theme=palette;controls.themeChanged();
   }
   addEventListener('sodeck:mount',event=>{
-    const mount=event.detail;id=mount.data.streamId;mountKey=mount.surfaceId+':'+JSON.stringify(mount.context);visible=mount.visible;theme(mount.tokens);
+    const mount=event.detail;id=mount.data.streamId;mountKey=mount.surfaceId+':'+JSON.stringify(mount.context);disconnected=mount.connected===false;visible=mount.visible;theme(mount.tokens);
     appearance.receive(mount.settings);
     status.textContent=`${mount.serverName||'服务器'} · 正在接续终端…`;
     void request({op:'attach'}).catch(fail);
@@ -67,7 +74,7 @@ import {createAppearance} from './appearance.js';
         // Incoming windows may render before ownership commits. Only the owner saves a checkpoint.
         await checkpoint(true).catch(()=>{});sodeck.mounted();void appearance.apply();void enqueueSize().catch(()=>{});
       }
-      if(frame.kind==='end'){controls.invalidate();enabled=false;status.hidden=false;status.textContent=frame.metadata?.error||`终端已退出${frame.metadata?.exitCode==null?'':` · ${frame.metadata.exitCode}`}`;}
+      if(frame.kind==='end'){controls.invalidate();enabled=false;ended=true;status.hidden=false;status.textContent=disconnected?'连接已断开，请在工作台重新连接后新建终端。':frame.metadata?.error||`终端已退出${frame.metadata?.exitCode==null?'':` · ${frame.metadata.exitCode}`}`;newTerminal.hidden=disconnected;}
       if(frame.kind==='data')await checkpoint().catch(error=>{if(!String(error).includes('窗口'))throw error;});
     }).catch(fail);
   });
@@ -75,7 +82,8 @@ import {createAppearance} from './appearance.js';
   terminal.onData(input);
   addEventListener('sodeck:visibilityChanged',event=>{visible=event.detail.visible;if(!visible)controls.invalidate();if(visible){void appearance.apply();void enqueueSize().catch(()=>{});}});
   addEventListener('sodeck:settingsChanged',event=>appearance.receive({...event.detail.settings,retry:true}));
-  addEventListener('sodeck:contextChanged',()=>{controls.invalidate();enabled=false;});
+  addEventListener('sodeck:contextChanged',()=>{controls.invalidate();enabled=false;newTerminal.hidden=disconnected||!ended;status.hidden=false;status.textContent='连接已更换，请在工作台新建终端；此页保留原输出。';});
+  addEventListener('sodeck:connectionChanged',event=>{disconnected=!event.detail.connected;if(disconnected){controls.invalidate();enabled=false;newTerminal.hidden=true;status.hidden=false;status.textContent='连接已断开，请在工作台重新连接；此页保留原输出。';}else if(ended){newTerminal.hidden=false;newTerminal.disabled=opening;}});
   addEventListener('sodeck:themeChanged',event=>theme(event.detail.tokens));
   addEventListener('sodeck:focus',()=>{terminal.focus();void enqueueSize().catch(()=>{});});
   addEventListener('sodeck:unmount',()=>{disposed=true;appearance.dispose();controls.dispose();observer.disconnect();terminal.dispose();});

@@ -46,5 +46,15 @@ try{
   await selected.locator('.xterm-rows').filter({hasText:'sodeck-ui-command-ok'}).waitFor();
   await main.screenshot({path:`artifacts/terminal-ui/real-terminal-${theme}.png`});
  }
+ const oldFrame=main.frameLocator(`.component-surface[data-view-id="${first}"] iframe`);
+ await oldFrame.locator('.xterm-helper-textarea').focus();await main.keyboard.type('exit');await main.keyboard.press('Enter');
+ const newTerminal=oldFrame.getByRole('button',{name:'新建终端',exact:true});await newTerminal.waitFor();
+ await newTerminal.evaluate(el=>{el.click();el.click();});await board.locator('.component-tab').nth(2).waitFor();
+ assert.equal(Object.values((await call('component_ui',{window:'main',operation:'snapshot',args:{}})).workspaces)[0].views.length,3,'Repeated exit recovery creates one new PTY');
+ assert.match(await oldFrame.locator('.xterm-rows').textContent(),/sodeck-ui-command-ok/,'Exited terminal retains output');
+ const connection=(await call('connection',{command:{op:'snapshot'}}))[0];await call('connection',{command:{op:'disconnect',context:connection.context}});await main.evaluate(()=>window.manager.refresh());
+  await wait(()=>oldFrame.locator('#status + button').evaluate(el=>el.hidden));await oldFrame.locator('#status + button').evaluate(el=>el.click());
+ assert.equal(Object.values((await call('component_ui',{window:'main',operation:'snapshot',args:{}})).workspaces)[0].views.length,3,'Disconnected recovery sends no new create');
+ assert.deepEqual(errors,[]);
  console.log('Actual terminal UI passed: OpenSSH PTY, xterm input/output, multiple tabs, WebView remount replay, no page errors');
 }finally{await browser.close();await vite.close();if(child.exitCode===null){child.stdin.end();await new Promise(resolve=>child.once('exit',resolve));}if(path.dirname(path.resolve(data))!==path.resolve(os.tmpdir())||!path.basename(data).startsWith('sodeck-terminal-ui-'))throw new Error('Unexpected cleanup');fs.rmSync(data,{recursive:true,force:true});}
