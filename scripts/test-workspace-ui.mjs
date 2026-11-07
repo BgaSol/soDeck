@@ -42,6 +42,7 @@ const vite = await createServer({ server: { host: "127.0.0.1", port: 0 } }); awa
 const url = vite.resolvedUrls.local[0];
 const browser = await chromium.launch({ headless: true, ...(process.env.SODECK_BROWSER_CHANNEL ? { channel: process.env.SODECK_BROWSER_CHANNEL } : {}) });
 const pages = [], errors = [], checks = [], dragCalls = [], dropTargets = new Map(), drags = new Map();
+const surfaces = new Map();
 const call = (command, args={}) => bridge.call(command,args);
 let createGate,openEditorGate;
 const projection = window => call("workspace_snapshot",{window});
@@ -50,6 +51,7 @@ async function makePage(window) {
   const page = await browser.newPage({ viewport: {width:1100,height:720} }); pages.push(page);
   page.on("pageerror", error=>errors.push(String(error)));
   await page.exposeBinding("workspaceInvoke",async (_,command,args={})=>{
+    if(command==='workspace_surface')surfaces.set(window,args.surface);
     if(command==='component_ui'&&args.operation==='action'&&args.args?.action?.op==='open'&&args.args.action.key==='sodeck.terminal:terminal'&&createGate) await createGate();
     if(command==='component_ui'&&args.operation==='action'&&args.args?.action?.op==='open'&&args.args.action.key==='sodeck.terminal:editor'&&openEditorGate) await openEditorGate();
     if(command==="workspace_drag_start") { dragCalls.push({command,args}); drags.set(window,args.id);return `browser-${window}`; }
@@ -74,9 +76,18 @@ async function open(name,index) {
   const changed=await call("change_catalog",{revision:(await call("server_catalog")).revision,change:{op:"saveServer",draft:{name,host:"same.invalid",port:22,username:"ops",authentication:{type:"password",secret:{action:"clear"}},route:[]}}});
   return call("workspace_fixture_open",{serverId:changed.selectedId,connectionId:`fixture-${index}`,endpoint:`ops@${index}.invalid:22`});
 }
+const wait=async predicate=>{const deadline=Date.now()+10000;while(!await predicate()){if(Date.now()>deadline)throw new Error('Pressed-control state did not settle');await new Promise(resolve=>setTimeout(resolve,20));}};
 try {
   const main=await makePage("main");
   assert.equal(await main.locator(".server-tab").count(),0); assert.equal(await main.locator("#catalog-draft").inputValue(),"draft retained");
+  const blank = await main.locator('.drag-region').boundingBox();
+  assert.deepEqual({ x: surfaces.get('main').x, y: surfaces.get('main').y, width: surfaces.get('main').width, height: surfaces.get('main').height }, blank, 'Empty main window reports its title-bar blank area as the native tab drop target');
+  assert(blank.width >= 32, 'Empty-window drop target remains usable without visible tab spacing');
+  await main.setViewportSize({ width: 720, height: 480 });
+  const narrowBlank = await main.locator('.drag-region').boundingBox();
+  await wait(() => surfaces.get('main')?.width === narrowBlank.width);
+  assert.deepEqual({ x: surfaces.get('main').x, y: surfaces.get('main').y, width: surfaces.get('main').width, height: surfaces.get('main').height }, narrowBlank, 'Resizing an empty window updates its native drop target');
+  await main.setViewportSize({ width: 1100, height: 720 });
   checks.push("普通启动只显示目录，不伪造连接");
   const unavailable=await open('无插件',0);await refresh();
   const unavailableButton=main.locator('.server-workbench:visible [data-component-action="create"]');
@@ -86,13 +97,16 @@ try {
   await call("fixture_load_plugin",{directory:pluginRoot});
   const a=await open("生产 Web",1),b=await open("测试环境",2),c=await open("长名称服务器-".repeat(12),3);
   const aid=a.context.workspaceId,bid=b.context.workspaceId,cid=c.context.workspaceId; await refresh();
+  await main.waitForFunction(() => document.querySelectorAll('.server-tab').length === 3);
+  const strip = await main.locator('#server-tabs').boundingBox();
+  await wait(() => surfaces.get('main')?.width === strip.width);
+  assert.deepEqual({ x: surfaces.get('main').x, y: surfaces.get('main').y, width: surfaces.get('main').width, height: surfaces.get('main').height }, strip, 'Populated windows keep the actual tab strip as their native drop target');
   await select(main,aid); await panel(main,"left").click(); await main.waitForFunction(()=>document.querySelector('.server-workbench:not([hidden]) [data-component-action="toggle"][data-key="sodeck.terminal:files"]').getAttribute('aria-expanded')==='false'); await panel(main,"right").click(); await main.waitForFunction(()=>document.querySelector('.server-workbench:not([hidden]) [data-component-action="toggle"][data-key="sodeck.terminal:forwarding"]').getAttribute('aria-expanded')==='true');
   await select(main,bid); assert.equal(await panel(main,"left").getAttribute("aria-expanded"),"true"); assert.equal(await panel(main,"right").getAttribute("aria-expanded"),"false");
   await select(main,aid); assert.equal(await panel(main,"left").getAttribute("aria-expanded"),"false"); assert.equal(await panel(main,"right").getAttribute("aria-expanded"),"true");
   assert((await main.locator(".server-workbench:visible .workspace-endpoint").innerText()).includes("1.invalid"));
   checks.push("固定上下文、服务器切换与侧栏状态各自保持");
   const board=main.locator(`.server-workbench[data-id="${aid}"]`);
-  const wait=async predicate=>{const deadline=Date.now()+10000;while(!await predicate()){if(Date.now()>deadline)throw new Error('Pressed-control state did not settle');await new Promise(resolve=>setTimeout(resolve,20));}};
   const pressRefresh=async locator=>{const rect=await locator.boundingBox();await locator.evaluate(el=>window.pressedChrome=el);await main.mouse.move(rect.x+rect.width/2,rect.y+rect.height/2);await main.mouse.down();await main.evaluate(()=>window.manager.refresh());assert.equal(await locator.evaluate(el=>el===window.pressedChrome&&el.isConnected),true);await main.mouse.up();};
   for(const side of ['left','right']){const toggle=panel(main,side),before=await toggle.getAttribute('aria-expanded');await pressRefresh(toggle);await wait(async()=>await toggle.getAttribute('aria-expanded')!==before);await toggle.click();await wait(async()=>await toggle.getAttribute('aria-expanded')===before);}
   const stableMenu=board.getByRole('button',{name:'网络转发 面板菜单',exact:true});

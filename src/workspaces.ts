@@ -53,6 +53,7 @@ export class Workspaces {
     this.observer = new MutationObserver(() => this.report());
     this.observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["open", "hidden", "inert"] });
     this.resizeObserver = new ResizeObserver(() => this.report()); this.resizeObserver.observe(tabs);
+    const blank = tabs.parentElement?.querySelector('.drag-region'); if (blank) this.resizeObserver.observe(blank);
   }
   async start() { await this.refresh(); await this.reportNow(); await this.call("workspace_ready"); }
   refresh(): Promise<void> {
@@ -200,7 +201,9 @@ export class Workspaces {
   }
   private report() { if (!this.reportTimer) this.reportTimer = setTimeout(() => { this.reportTimer = undefined; void this.reportNow().catch(() => {}); }, 30); }
   private async reportNow() {
-    const rect = this.tabs.getBoundingClientRect();
+    // An empty strip takes no visible space; the title-bar blank area still accepts dragged tabs.
+    const target = this.tabs.querySelector('.server-tab') ? this.tabs : this.tabs.parentElement?.querySelector('.drag-region') ?? this.tabs;
+    const rect = target.getBoundingClientRect();
     await this.call("workspace_surface", { surface: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, blocked: Boolean(document.querySelector('dialog[open], #overlay:not([hidden])')), tabs: [...this.tabs.querySelectorAll<HTMLElement>(".server-tab")].map(tab => { const r = tab.getBoundingClientRect(); return { id: tab.dataset.id!, center: r.x + r.width / 2 }; }) } });
   }
   private resize(event: PointerEvent) {

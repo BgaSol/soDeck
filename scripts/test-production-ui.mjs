@@ -145,6 +145,31 @@ async function checkTitlebar() {
   await page.locator("#drag-region").dblclick();
   assert.equal(await page.evaluate(() => window.nativeMaximized), false);
 }
+async function checkTitlebarPosition(state) {
+  const viewport = page.viewportSize();
+  const original = await page.evaluate(() => ({ theme: document.documentElement.dataset.theme, macos: document.documentElement.classList.contains('macos') }));
+  for (const theme of ['light', 'dark', 'dopamine']) for (const width of [1100, 720]) for (const macos of [false, true]) {
+    await page.setViewportSize({ width, height: 720 });
+    const layout = await page.evaluate(({ theme, macos }) => {
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.classList.toggle('macos', macos);
+      const strip = document.querySelector('#server-tabs').getBoundingClientRect();
+      const last = (document.querySelector('.server-tab:last-child') || document.querySelector('#catalog-tab')).getBoundingClientRect();
+      const plus = document.querySelector('#new-workspace').getBoundingClientRect();
+      const tools = document.querySelector('.global-tools').getBoundingClientRect();
+      return { gap: plus.left - Math.min(last.right, strip.right), offset: plus.y + plus.height / 2 - last.y - last.height / 2, width: plus.width, visible: plus.left >= strip.right && plus.right <= tools.left };
+    }, { theme, macos });
+    fs.mkdirSync('artifacts/titlebar-position', { recursive: true });
+    if (width === 1100 && !macos) await page.screenshot({ path: `artifacts/titlebar-position/${state}-${theme}.png`, clip: { x: 0, y: 0, width, height: 80 } });
+    const label = `${state}/${theme}/${width}/${macos ? 'macos' : 'windows-linux'}: ${JSON.stringify(layout)}`;
+    assert(layout.gap >= 0 && layout.gap <= 8, `Plus follows the last visible tab: ${label}`);
+    assert(Math.abs(layout.offset) <= 1, `Plus aligns with the tab center: ${label}`);
+    assert.equal(layout.width, 28, label);
+    assert(layout.visible, `Plus remains outside the scrolling tabs: ${label}`);
+  }
+  await page.setViewportSize(viewport);
+  await page.evaluate(({ theme, macos }) => { document.documentElement.dataset.theme = theme; document.documentElement.classList.toggle('macos', macos); }, original);
+}
 const dialog = () => page.locator("dialog[open]").last();
 const field = name => dialog().locator(`[data-field="${name}"]`);
 const close = async () => {
@@ -157,6 +182,7 @@ try {
   await call("set_theme", { theme: "dopamine" });
   await page.goto(server.resolvedUrls.local[0]);
   await page.waitForFunction(() => document.documentElement.dataset.theme === "dopamine");
+  await checkTitlebarPosition('empty');
   await checkTitlebar();
   assert.equal(await page.locator('.catalog-empty').count(),1,'First use has one empty state');
   assert.equal(await page.locator('.catalog-detail').count(),0);
@@ -429,6 +455,7 @@ try {
   await page.reload();
   const board=page.locator(`.server-workbench[data-id="${workspace.context.workspaceId}"]`);
   await board.waitFor();
+  await checkTitlebarPosition('single');
   await checkTitlebar();
   for(const theme of ['light','dark','dopamine'])for(const [width,height]of [[1100,720],[720,480]]){
     await page.setViewportSize({width,height});
@@ -501,11 +528,23 @@ try {
   assert.equal(await page.locator('.message-row.selected').evaluate(el=>el===document.activeElement),true,'Reading a message retains row focus');
   await page.keyboard.press('Escape');
   checks.push('Messages: real fixture publication, accessible filter selection and keyboard focus, selected-row contrast and focus after marking read');
+  for (let index = 0; index < 7; index++) {
+    const saved = await call('change_catalog', { revision: (await call('server_catalog')).revision, change: { op: 'saveServer', draft: { name: '标题栏溢出验收-' + '长标题'.repeat(8) + index, host: `overflow-${index}.invalid`, port: 22, username: 'ops', authentication: { type: 'password', secret: { action: 'clear' } }, route: [] } } });
+    await call('workspace_fixture_open', { serverId: saved.selectedId, connectionId: `titlebar-${index}`, endpoint: `ops@overflow-${index}.invalid:22` });
+  }
+  await page.reload();
+  await page.waitForFunction(() => document.querySelectorAll('.server-tab').length === 8);
+  assert(await page.locator('#server-tabs').evaluate(el => el.scrollWidth > el.clientWidth), 'Long server tabs overflow');
+  await checkTitlebarPosition('overflow');
+  await plus.click(); await picker.waitFor({ state: 'visible' }); await page.keyboard.press('Escape');
+  assert.equal(await plus.evaluate(el => el === document.activeElement), true);
+  checks.push('Title-bar plus: adjacent and vertically aligned in empty, single and overflowing long-tab states, three themes, 1100/720 widths and macOS inset; overflow picker remains clickable');
   await call("workspace_move", { window: "main", id: workspace.context.workspaceId, target: "workspace-titlebar", index: 0 });
   testWindow = "workspace-titlebar";
   await page.evaluate(() => sessionStorage.setItem("test-window", "workspace-titlebar"));
   await page.reload();
   await board.waitFor();
+  await checkTitlebarPosition('popout');
   await checkTitlebar();
   checks.push("Pop-out title bar: same maximize/restore behavior; server tabs and their controls retain their own interactions");
   }

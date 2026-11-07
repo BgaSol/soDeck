@@ -43,6 +43,7 @@
 
 - [GitHub Releases](https://github.com/BgaSol/soDeck/releases)：已发布的核心和插件版本、下载附件与发布说明。
 - [核心版本记录](releases/)：各版本的功能变化、验收与交付边界，包含历史候选版本记录。
+- [v0.9.4](releases/v0.9.4.md)：标题栏加号位置修复及验证范围。
 - [v0.9.3](releases/v0.9.3.md)：本轮全页面体验修复及独立插件升级说明，验收状态见实施记录。
 - [v0.9.2](releases/v0.9.2.md)：工作台交互、协议库复用及独立插件升级说明。
 - 插件变更记录：[终端](../plugins/terminal/CHANGELOG.md)、[文件](../plugins/files/CHANGELOG.md)、[网络隧道](../plugins/network-proxy/CHANGELOG.md)。
