@@ -29,6 +29,11 @@ fn main() {
                 .map(|id| json!(id))
             }
             "snapshot" => Ok(json!(core.snapshot())),
+            "read_logs" => Ok(json!(
+                core.logs(&serde_json::from_value(args["filter"].clone()).unwrap())
+            )),
+            "read_messages" => Ok(json!(core.messages())),
+            "mark_read" => core.mark_read(args["id"].as_str()).map(|_| Value::Null),
             "settings_catalog" => Ok(core.settings_catalog()),
             "settings_resource" => core
                 .settings_resource(

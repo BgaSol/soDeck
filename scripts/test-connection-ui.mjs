@@ -23,8 +23,9 @@ await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 const vite = await createServer({ server: { host: "127.0.0.1", port: 0 } }); await vite.listen(); const url = vite.resolvedUrls.local[0];
 const browser = await chromium.launch({ headless: true }); const page = await browser.newPage({ viewport: { width: 1100, height: 720 } });
 const errors = []; page.on("pageerror", error => errors.push(String(error)));
-const credentialAnswers = [], starts = [];
+const credentialAnswers = [], starts = [];let clipboard='';
 await page.exposeBinding("testInvoke", (_, command, args) => {
+  if(command==='clipboard_text'){clipboard=args.text;return null;}
   if (command === "connection" && args?.command?.answer?.kind === "credentials") credentialAnswers.push(args.command.answer);
   if (command === "connection" && args?.command?.op === "start") starts.push(args.command.serverId);
   return call(command, args);
@@ -79,6 +80,11 @@ try {
   const failed=await settle(v => v[0]?.state === "failed");
   await page.waitForFunction(message=>window.notices.includes(message),failed[0].error.message);
   await progress.waitFor({state:'hidden'});
+  await page.waitForTimeout(5100);
+  assert.match(await page.locator('.connection-card').textContent(),/SSH 握手与主机检查失败/);
+  assert.match(await page.locator('.connection-card').textContent(),new RegExp(String(server.address().port)));
+  assert.equal(await page.getByRole('button',{name:'编辑连接资料',exact:true}).count(),1);
+
   assert.equal((await call("workspace_snapshot", { window: "main" })).workspaces.length,0);
   assert(!fs.readFileSync(path.join(directory, "servers.json"), "utf8").includes("ui-unsaved-secret"));
   await choose(); await settle(v => v[0]?.question?.kind === "credentials"); await dialog.waitFor({ state: "visible" });
@@ -97,6 +103,12 @@ try {
   assert.equal(starts.length, previousStarts + 1, "An unselected row connects on the first double click at 720px");
   await page.keyboard.press("Escape"); await settle(v => v[0]?.state === "cancelled");
   await dialog.waitFor({ state: "hidden" }); assert.deepEqual(errors, []);
+  await page.evaluate(()=>window.connections.prompt({attemptId:'fingerprint-review',question:{kind:'hostKey',id:'fingerprint-review',nodeIndex:1,name:'跳板',endpoint:'example:22',algorithm:'ssh-ed25519',fingerprint:'SHA256:new-test-key',previousFingerprint:'SHA256:old-test-key'}}));
+  const keyDialog=page.getByRole('dialog',{name:'SSH 主机密钥已变化',exact:true});
+  await keyDialog.getByRole('button',{name:'复制原指纹',exact:true}).click();assert.equal(clipboard,'SHA256:old-test-key');
+  await keyDialog.getByRole('button',{name:'复制新指纹',exact:true}).focus();await page.keyboard.press('Enter');assert.equal(clipboard,'SHA256:new-test-key');
+  assert(await keyDialog.getByRole('button',{name:'更新指纹并继续',exact:true}).isEnabled(),'Copying does not submit trust');
+  await page.evaluate(()=>window.connections.closePrompt());
   console.log("Connection UI: catalog single/double click at 1100px and 720px, proxy exclusion, picker, credentials, busy deduplication, progress, cancellation, actual failure, retry, Escape and redaction; no empty workspace or page errors.");
 } finally {
   await browser.close(); await vite.close();

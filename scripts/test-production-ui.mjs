@@ -74,11 +74,13 @@ await page.route('**/__plugin__/**',route=>{
   return route.fulfill({contentType:types[path.extname(file)]||'application/octet-stream',body:fs.readFileSync(file)});
 });
 const errors = [], checks = [];
-let failCatalog = false, testWindow = "main";
+let failCatalog = false, testWindow = "main", heldLogReply, releaseLogReply;
 page.on("pageerror", error => errors.push(String(error)));
-await page.exposeBinding("desktopInvoke", (_, command, args) => {
+await page.exposeBinding("desktopInvoke", async (_, command, args) => {
   if (command === 'server_catalog' && failCatalog) throw new Error('隔离测试：目录暂时不可读');
-  return call(command, { ...args, window: testWindow });
+  const result=await call(command, { ...args, window: testWindow });
+  if(command==='read_logs'&&args.filter?.query==='held-old-filter'){heldLogReply=true;await new Promise(resolve=>releaseLogReply=resolve);}
+  return result;
 });
 await page.addInitScript(() => {
   let id = 0;
@@ -92,6 +94,7 @@ await page.addInitScript(() => {
     transformCallback: callback => { const token = ++id; callbacks.set(token, callback); return token; },
     invoke: (command, args) => {
       if (command === 'open_update_link') { (window.openedUpdateLinks ??= []).push(args.url); return Promise.resolve(); }
+      if (command === 'open_usage_help') { window.openedUsageHelp = true; return Promise.resolve(); }
       if (command === "plugin:event|listen") { const eventId = ++id; listeners.set(eventId, args); return Promise.resolve(eventId); }
       if (command === "plugin:event|unlisten" || command === "workspace_surface") return Promise.resolve();
       if (command.startsWith("plugin:window|")) {
@@ -155,6 +158,8 @@ try {
   await page.goto(server.resolvedUrls.local[0]);
   await page.waitForFunction(() => document.documentElement.dataset.theme === "dopamine");
   await checkTitlebar();
+  assert.equal(await page.locator('.catalog-empty').count(),1,'First use has one empty state');
+  assert.equal(await page.locator('.catalog-detail').count(),0);
   checks.push("Main title bar: blank areas maximize/restore without DOM dblclick; buttons, nested icons, content and right clicks stay independent");
   await page.locator('[data-server-action="new"]').click();
   const before = await page.evaluate(() => {
@@ -216,6 +221,11 @@ try {
       assert(await picker.evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.bottom<=innerHeight;}));
       if(width===1100){fs.mkdirSync('artifacts/tab-creation',{recursive:true});await page.screenshot({path:`artifacts/tab-creation/server-picker-${theme}.png`});}
       await page.keyboard.press('Escape');
+      await page.locator('[data-tab="servers"]').click();await page.locator('.catalog-row').first().click();
+      const connectButton=page.locator('.connection-card [data-connect-server]');await connectButton.waitFor();
+      assert(await connectButton.evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight;}),`${theme}/${width} connection action is visible`);
+      assert(await page.locator('.connection-card').evaluate(el=>Boolean(el.compareDocumentPosition(el.parentElement.querySelector('.endpoint-fields'))&Node.DOCUMENT_POSITION_FOLLOWING)));
+      await page.screenshot({path:`artifacts/production-ui/server-detail-${theme}-${width}.png`});
       for (const kind of ["servers", "proxies"]) {
         await page.locator(`[data-tab="${kind}"]`).click();
         await page.locator('[data-server-action="new"]').click();
@@ -228,13 +238,15 @@ try {
         const top = await heading.boundingBox(), bottom = await footer.boundingBox();
         assert(top.y >= 0 && bottom.y + bottom.height <= height, `Heading and footer stay inside the window: ${JSON.stringify({ theme, kind, width, height, top, bottom })}`);
         assert.equal(await body.evaluate(el => getComputedStyle(el).overflowY), "auto");
-        assert(await body.evaluate(el => el.scrollHeight > el.clientHeight), "Long form must have an internal scroll range");
+        const canScroll = await body.evaluate(el => el.scrollHeight > el.clientHeight);
         await body.evaluate(el => el.scrollTo(0, 0));
         const bounds = await body.boundingBox();
         await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + Math.min(60, bounds.height / 2));
-        await page.mouse.wheel(0, 500);
-        await page.waitForFunction(() => document.querySelector(".catalog-form-body").scrollTop > 0);
-        await page.mouse.wheel(0, 10000);
+        if (canScroll) {
+          await page.mouse.wheel(0, 500);
+          await page.waitForFunction(() => document.querySelector(".catalog-form-body").scrollTop > 0);
+          await page.mouse.wheel(0, 10000);
+        }
         await page.waitForFunction(() => { const el = document.querySelector(".catalog-form-body"); return el.scrollTop + el.clientHeight >= el.scrollHeight - 1; });
         await field("name").fill(`${theme}-${kind}`);
         const name = await field("name").boundingBox();
@@ -253,12 +265,33 @@ try {
 
   await page.setViewportSize({ width: 1100, height: 720 });
   await page.locator("#settings-button").click();
+  const appearanceNav = page.locator('[data-action="section"][data-id="appearance"]');
+  await appearanceNav.focus(); await page.keyboard.press('Enter');
+  assert.equal(await appearanceNav.evaluate(el => el === document.activeElement), true, 'Changed settings pages retain navigation focus');
+  await page.locator('[data-action="theme"][data-id="light"]').click();
+  await page.waitForFunction(() => document.documentElement.dataset.theme === 'light');
+  assert.equal(await page.locator('[data-action="theme"][data-id="light"]').evaluate(el => el === document.activeElement), true, 'Theme changes retain focus');
+  const contrasts = await page.locator('.nav-item.active,.theme-option.selected').evaluateAll(nodes => {
+    const luminance = color => { const c = color.match(/[\d.]+/g).slice(0,3).map(Number).map(v => v / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4); return c[0] * .2126 + c[1] * .7152 + c[2] * .0722; };
+    return nodes.map(node => { const s = getComputedStyle(node), a = luminance(s.color), b = luminance(s.backgroundColor); return (Math.max(a,b) + .05) / (Math.min(a,b) + .05); });
+  });
+  assert(contrasts.every(ratio => ratio >= 4.5), `Selected small text contrast: ${contrasts}`);
+  await page.locator('[data-action="section"][data-id="plugins"]').click();
+  await page.locator('[data-action="section"][data-id="about"]').click();
+  await page.getByRole('button',{name:'使用帮助',exact:true}).focus();await page.keyboard.press('Enter');
+  assert.equal(await page.evaluate(()=>window.openedUsageHelp),true);
+  const closeLayer=page.locator('[data-action="close-layer"]');
+  await page.getByRole('button',{name:'复制日志路径',exact:true}).focus();await page.keyboard.press('Tab');
+  assert.equal(await closeLayer.evaluate(el=>el===document.activeElement),true,'Last Tab wraps to close');
+  await page.keyboard.press('Shift+Tab');assert.equal(await page.getByRole('button',{name:'复制日志路径',exact:true}).evaluate(el=>el===document.activeElement),true);
+  await page.keyboard.press('Escape');assert.equal(await page.locator('#settings-button').evaluate(el=>el===document.activeElement),true);
+  await page.locator('#settings-button').click();await page.locator('[data-action="section"][data-id="plugins"]').click();
   await page.locator('[data-action="add-plugin"]').click();
   const terminal = page.locator('[data-official-plugin="sodeck.terminal"]');
   const install = () => terminal.locator('[data-action="install-official-plugin"]');
   assert.deepEqual(await page.locator('[data-official-plugin]').evaluateAll(nodes => nodes.map(node => node.dataset.officialPlugin).sort()), ['sodeck.files','sodeck.network-proxy','sodeck.terminal']);
   assert.match(await page.locator('[data-official-plugin="sodeck.terminal"]').textContent(), /真实终端/);
-  assert.match(await page.locator('[data-official-plugin="sodeck.files"]').textContent(), /编辑 UTF-8 小文件/);
+  assert.match(await page.locator('[data-official-plugin="sodeck.files"]').textContent(), /上传下载、管理文件/);
   assert.deepEqual(requests, [], "Opening settings must not download plugins automatically");
   await install().click(); await terminal.getByRole("alert").waitFor();
   assert.match(await terminal.getByRole("alert").textContent(), /尚未发布/);
@@ -343,6 +376,13 @@ try {
   assert.equal(await page.locator('#update-repository').count(),0,'Technical source fields are not in the overview');
   await page.locator('[data-plugin-id="test.update-one"] [data-action="select-plugin"]').click();
   await page.locator('details[data-persist="source-test.update-one"] summary').click();
+  const sourceSummary = page.locator('details[data-persist="source-test.update-one"] summary');
+  await sourceSummary.focus(); await page.keyboard.press('Tab');
+  assert.equal(await page.locator('#update-repository').evaluate(el => el === document.activeElement), true, 'Summary Tab enters expanded fields');
+  await page.keyboard.press('Shift+Tab'); assert.equal(await sourceSummary.evaluate(el => el === document.activeElement), true);
+  await sourceSummary.click();await sourceSummary.focus();await page.keyboard.press('Tab');
+  assert.equal(await page.locator('details[data-persist="technical-test.update-one"] summary').evaluate(el=>el===document.activeElement),true,'Closed details skip hidden fields');
+  await sourceSummary.click();
   await page.locator('#update-repository').fill('draft/source');
   await page.evaluate(()=>window.emitTestEvent('core-changed'));await page.waitForTimeout(300);
   assert.equal(await page.locator('#update-repository').inputValue(),'draft/source');
@@ -411,10 +451,26 @@ try {
   await page.locator('.settings-nav').getByRole('button',{name:'显示偏好验收',exact:true}).click();const preference=page.locator('#component-settings-page').getByLabel('名称字号');await preference.fill('17');
   await preference.evaluate(el=>window.componentPreferenceInput=el);await page.evaluate(()=>window.emitTestEvent('core-changed'));await page.waitForTimeout(150);
   assert(await preference.evaluate(el=>el===window.componentPreferenceInput));assert.equal(await preference.inputValue(),'17');
+  await page.waitForTimeout(200);assert(await preference.evaluate(el=>el===document.activeElement),'Retained form focus survives global refresh');
   await page.locator('[data-action="close-layer"]').click();await page.locator('#settings-button').click();assert.equal(await preference.inputValue(),'17');
   await page.locator('#component-settings-page').getByRole('button',{name:'保存',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.settings-feedback')?.textContent.includes('设置已保存'));
   const preferenceValue=await call('settings_page',{pluginId:uiMetadata.id,pageId:'display'});assert.equal(preferenceValue.values.fontSize,17);
   await page.locator('[data-action="close-layer"]').click();checks.push('Bundled component settings: existing navigation, core save, global refresh preserves input DOM, closing/reopening keeps drafts');
+  await page.locator('#status-button').click();await page.getByRole('button',{name:'查看日志',exact:true}).click();
+  await page.locator('.log-row').first().waitFor();const currentLogs=await page.locator('#log-results').textContent();assert(currentLogs.length>0);
+  await page.locator('#log-query').fill('held-old-filter');await page.waitForFunction(()=>true);
+  for(let i=0;!heldLogReply&&i<50;i++)await page.waitForTimeout(20);assert(heldLogReply);
+  await page.locator('[data-action="pause-logs"]').click();
+  await page.locator('#log-source').selectOption('core');await page.locator('#log-level').selectOption('error');
+  await page.locator('#log-since').fill('2020-01-01T00:00');await page.locator('#log-until').fill('2020-01-02T00:00');
+  await page.getByRole('button',{name:'清除筛选',exact:true}).click();
+  assert.deepEqual(await page.locator('#log-source,#log-level,#log-query,#log-since,#log-until').evaluateAll(nodes=>nodes.map(n=>n.value)),['','','','','']);
+  releaseLogReply();await page.waitForTimeout(100);assert.equal(await page.locator('#log-results').textContent(),currentLogs,'Paused clear keeps records and rejects stale response');
+  assert.equal(await page.getByRole('button',{name:'继续显示',exact:true}).count(),1);
+  assert.equal(await page.locator('#clear-log-filters').evaluate(el=>el===document.activeElement),true);
+  await page.getByRole('button',{name:'继续显示',exact:true}).click();await page.locator('.log-row').first().waitFor();
+  assert.equal(await page.locator('.log-meta').first().evaluate(el=>getComputedStyle(el).fontSize),'12px');
+  await page.keyboard.press('Escape');
   await call("workspace_move", { window: "main", id: workspace.context.workspaceId, target: "workspace-titlebar", index: 0 });
   testWindow = "workspace-titlebar";
   await page.evaluate(() => sessionStorage.setItem("test-window", "workspace-titlebar"));

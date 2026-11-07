@@ -27,7 +27,7 @@
 - `event`：交给所属插件进程的 ui.event，结果更新页面元数据。
 - `openView`：`{viewType,resourceKey?,params?}`，只打开本插件在同一工作区中声明的视图。核心分配动作 requestId，IPC 重试复用，真实多次新建允许多个实例。
 
-宿主还通知 `visibilityChanged/themeChanged/focus/unmount`。核心校验真实页面 sender、挂载 token、插件进程实例与工作区 Context。移窗时先等目标页面 mounted，再提交窗口归属；旧表面事件因此失效。同窗切换只隐藏已挂载页面，不能重写其 DOM。示例 bridge 位于 `plugins/files/ui/bridge.js`。
+宿主还通知 `visibilityChanged/themeChanged/focus/unmount`。`mount.connected` 可选布尔值表示工作区当前连接状态；连接状态变化时通知 `connectionChanged`，携带 `connected`。旧 UI 可忽略这两个增量字段；它们不恢复原终端或自动启动业务任务。核心校验真实页面 sender、挂载 token、插件进程实例与工作区 Context。移窗时先等目标页面 mounted，再提交窗口归属；旧表面事件因此失效。同窗切换只隐藏已挂载页面，不能重写其 DOM。示例 bridge 位于 `plugins/files/ui/bridge.js`。
 
 UI 事件最多 24 KiB，是控制交互接口，不能用来传终端输出或文件内容流。RPC 保留 64 KiB 帧上限和 5 秒等待期限；v0.6.0 的真实业务正文另走下述有界视图数据桥。可信插件不增加权限表或授权流程。
 

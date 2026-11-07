@@ -106,7 +106,7 @@ export class ServerManager {
   }
   private confirm(title: string, text: string, accept = "确定"): Promise<boolean> {
     const f = this.frame("confirm");
-    f.dialog.innerHTML = `<header class="catalog-dialog-heading"><h2>${e(title)}</h2></header><div class="confirmation-body"><p>${e(text)}</p></div><footer class="catalog-dialog-footer">${action("confirm-no", "继续返回")}${action("confirm-yes", e(accept), "", "primary")}</footer>`;
+    f.dialog.innerHTML = `<header class="catalog-dialog-heading"><h2>${e(title)}</h2></header><div class="confirmation-body"><p>${e(text)}</p></div><footer class="catalog-dialog-footer">${action("confirm-no", "取消")}${action("confirm-yes", e(accept), "", "primary")}</footer>`;
     return new Promise(resolve => {
       const finish = (value: boolean) => { this.dismiss(f); resolve(value); };
       f.dialog.addEventListener("click", event => {
@@ -185,6 +185,7 @@ export class ServerManager {
       case "edit": this.openEditor(this.state.tab === "proxies", id); break;
       case "cancel": if (f) await this.cancel(f); break;
       case "reload": await this.start(); break;
+      case "clear-filters": this.state.query = ""; this.state.group = "all"; this.render(); this.host.querySelector<HTMLElement>("#catalog-query")?.focus(); break;
       case "reload-editor": {
         if (!f || !await this.confirm("重新读取表单？", "当前输入将被目录中最新保存的资料替换。", "重新读取")) break;
         this.catalog = await this.api.read();

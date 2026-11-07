@@ -27,7 +27,7 @@ pub const OFFICIAL_PLUGINS: &[OfficialPlugin] = &[
     OfficialPlugin {
         id: "sodeck.files",
         name: "文件",
-        description: "浏览服务器目录、编辑 UTF-8 小文件、下载文件和导出未保存的草稿。",
+        description: "浏览服务器目录、上传下载、管理文件，支持 UTF-8 小文本编辑和草稿导出。",
         tag_prefix: "plugin-files-v",
     },
 ];

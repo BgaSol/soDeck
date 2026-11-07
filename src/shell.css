@@ -362,7 +362,7 @@
   }
   .nav-item.active {
     background: var(--accent-bg);
-    color: var(--accent);
+    color: var(--text);
   }
   .nav-bottom {
     margin-top: auto;
@@ -636,7 +636,7 @@
   }
   .theme-option.selected {
     border-color: var(--accent);
-    color: var(--accent);
+    color: var(--text);
     background: var(--accent-bg);
   }
   .theme-option > svg {
@@ -848,7 +848,7 @@
     border-bottom: var(--sd-stroke-structure) solid var(--border);
     padding: 12px;
     font:
-      11px ui-monospace,
+      12px ui-monospace,
       SFMono-Regular,
       Consolas,
       monospace;
@@ -859,7 +859,7 @@
   }
   .log-meta {
     color: var(--muted);
-    font-size: 10px;
+    font-size: 12px;
     margin-bottom: 5px;
     overflow-wrap: anywhere;
   }

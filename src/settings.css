@@ -1,7 +1,10 @@
 @layer components {
   .settings-nav-hint { padding: 8px 12px; font-size: 11px; }
   .settings-draft-dot { color: var(--accent); font-size: 9px; margin-left: auto; }
-  .component-settings-form { display: flex; flex-direction: column; gap: 24px; }
+  #component-settings-page { display: flex; flex-direction: column; overflow: hidden; }
+  .component-settings-form { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+  .settings-fields { overflow-y: auto; min-height: 0; flex: 1; display: flex; flex-direction: column; gap: 24px; }
+  .settings-commit { flex-shrink: 0; padding-top: 12px; background: var(--panel); }
   .component-settings-form fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
   .component-settings-form legend { font-weight: 650; padding: 0 0 12px; }
   .setting-row { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(150px, 220px); align-items: start; gap: 20px; padding: 14px 0; border-top: 1px solid var(--border); }

@@ -105,10 +105,12 @@ function renderLayer() {
   const target = document.querySelector<HTMLElement>("#layer-content");
   if (target) {
     const retained = layer === "settings" && state.section === "components" ? target.querySelector<HTMLElement>("#component-settings-page") : null;
+    const retainedFocus = retained?.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
     const expanded=[...target.querySelectorAll<HTMLDetailsElement>('details[data-network-server][open]')].map(d=>d.dataset.networkServer);
     replace(target, content());
     const placeholder = target.querySelector<HTMLElement>("#component-settings-page");
     if (retained && placeholder && retained !== placeholder) placeholder.replaceWith(retained);
+    if (retainedFocus?.isConnected) retainedFocus.focus({preventScroll: true});
     componentSettings.mount(target.querySelector("#component-settings-page"), layer === "settings" && state.section === "components");
     for(const key of expanded)target.querySelector<HTMLDetailsElement>(`details[data-network-server="${CSS.escape(key!)}"]`)?.setAttribute('open','');
   }
@@ -155,7 +157,7 @@ function closeLayer() {
   document
     .querySelector("#status-button")!
     .setAttribute("aria-expanded", "false");
-  returnFocus?.focus();
+  (returnFocus?.isConnected ? returnFocus : document.querySelector<HTMLElement>("#settings-button"))?.focus();
   returnFocus = null;
 }
 overlay.addEventListener("click", (event) => {
@@ -171,9 +173,17 @@ document.addEventListener("keydown", (event) => {
   if (event.key !== "Tab" || layer === "status") return;
   const nodes = [
     ...overlay.querySelectorAll<HTMLElement>(
-      'button:not(:disabled),input:not(:disabled),select:not(:disabled),[tabindex="0"]',
+      'button,input,select,textarea,a[href],summary,[tabindex]',
     ),
-  ].filter((n) => n.getClientRects().length);
+  ].filter((n) => n.tabIndex >= 0 && !n.matches(":disabled") && !n.closest("[inert]") && n.getClientRects().length && getComputedStyle(n).visibility !== "hidden")
+    .sort((a, b) => (a.tabIndex || Infinity) - (b.tabIndex || Infinity));
+  if (!nodes.length) {
+    event.preventDefault();
+    const dialog = overlay.querySelector<HTMLElement>('[role="dialog"]')!;
+    dialog.tabIndex = -1;
+    dialog.focus();
+    return;
+  }
   const index = nodes.indexOf(document.activeElement as HTMLElement);
   if (
     (event.shiftKey && index <= 0) ||
@@ -317,6 +327,12 @@ root.addEventListener("click", (event) => {
         renderLayer();
         if (id === "updates") void core.checkUpdates(true).catch(() => {});
         break;
+      case "manage-plugins":
+        state.section = "plugins";
+        state.plugin = "";
+        state.addingPlugin = false;
+        await showLayer("settings");
+        break;
       case "component-settings":
         state.section = "components";
         componentSettings.select(id);
@@ -348,6 +364,7 @@ root.addEventListener("click", (event) => {
         state.plugin = "";
         state.addingPlugin = false;
         renderLayer();
+        overlay.querySelector<HTMLElement>('[data-action="select-plugin"], [data-action="add-plugin"]')?.focus();
         break;
       case "choose-plugin": {
         const directory = await open({
@@ -384,6 +401,9 @@ root.addEventListener("click", (event) => {
       case "open-update-release":
         await invoke("open_update_release");
         break;
+      case "usage-help":
+        await invoke("open_usage_help");
+        break;
       case "restart-app":
         await pluginAction("restart", async () => { await restartFromUpdate(); });
         break;
@@ -419,6 +439,14 @@ root.addEventListener("click", (event) => {
         break;
       case "pause-logs":
         state.paused = !state.paused;
+        if (state.paused) ++logGeneration;
+        renderLayer();
+        if (!state.paused) await refreshLogs();
+        break;
+      case "clear-log-filters":
+        clearTimeout(queryTimer);
+        ++logGeneration;
+        state.filter = { pluginId: "", level: "", query: "" };
         renderLayer();
         if (!state.paused) await refreshLogs();
         break;
@@ -472,9 +500,10 @@ root.addEventListener("input", (event) => {
     return;
   }
   if (input.id !== "log-query") return;
+  ++logGeneration;
   state.filter.query = input.value;
   clearTimeout(queryTimer);
-  queryTimer = setTimeout(() => void action(refreshLogs), 250);
+  queryTimer = setTimeout(() => { if (!state.paused) void action(refreshLogs); }, 250);
 });
 root.addEventListener("change", (event) => {
   const input = event.target as HTMLInputElement;
@@ -491,7 +520,8 @@ root.addEventListener("change", (event) => {
       ? new Date(input.value).getTime()
       : undefined;
   else return;
-  void action(refreshLogs);
+  ++logGeneration;
+  if (!state.paused) void action(refreshLogs);
 });
 async function start() {
   state.officialPlugins = await core.officialPlugins();

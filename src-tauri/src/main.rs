@@ -427,6 +427,11 @@ fn open_update_link(url: String) -> Result<(), String> {
     sodeck::updates::open_web_page(&url)
 }
 
+#[tauri::command]
+fn open_usage_help() -> Result<(), String> {
+    sodeck::updates::open_web_page("https://github.com/BgaSol/soDeck/blob/main/docs/usage.md")
+}
+
 async fn check_all(handle: tauri::AppHandle, automatic: bool) -> Result<(), String> {
     let app = handle.state::<Application>();
     let Some(mut batch) = app.core.begin_update_check(automatic) else {
@@ -881,6 +886,7 @@ fn main() {
             set_automatic_updates,
             open_update_release,
             open_update_link,
+            open_usage_help,
             check_update,
             download_update,
             restart_app,

@@ -12,11 +12,12 @@ export interface ConnectionView {
 }
 const stages: Record<string, string> = { preparing: "准备连接资料", credentials: "补充连接凭据", dns: "解析第一站地址", tcp: "访问第一站", sshHandshake: "SSH 握手与主机检查", authentication: "SSH 认证", privateKey: "读取私钥", sshTunnel: "建立 SSH 隧道", socks5: "通过 SOCKS5 访问下一站", connected: "已连接" };
 export function connectionSummary(v: ConnectionView) {
-  return v.state === "connecting" ? `第 ${v.nodeIndex + 1} / ${v.nodeCount} 站 · ${v.question ? "等待确认" : stages[v.stage] ?? v.stage}` : v.state === "connected" ? "已连接" : v.error?.message ?? (v.state === "cancelled" ? "已取消" : "已断开");
+  const node = v.nodeCount > 0 ? `第 ${v.nodeIndex + 1} / ${v.nodeCount} 站 · ` : "";
+  return v.state === "connecting" ? `${node}${v.question ? "等待确认" : stages[v.stage] ?? v.stage}` : v.state === "connected" ? "已连接" : v.state === "cancelled" ? "已取消" : v.error ? `${node}${stages[v.error.stage] ?? v.error.stage}失败 · ${v.endpoint}：${v.error.message}` : "已断开";
 }
 export function connectionCard(id: string, v?: ConnectionView) {
   const busy = v?.state === "connecting", online = v?.state === "connected";
-  return `<section class="connection-card" aria-label="服务器连接"><div><strong>${online ? "远程会话已就绪" : busy ? "正在连接" : "远程连接"}</strong><p role="status">${v ? e(connectionSummary(v)) : "通过保存的访问路径连接 SSH 服务器"}</p></div><div class="actions">${busy ? `<button data-connection-cancel="${e(v.attemptId)}">取消连接</button>${v.question ? `<button data-connection-prompt="${e(v.attemptId)}" class="primary">继续确认</button>` : ""}` : `<button data-connect-server="${e(id)}" class="primary">${online ? "前往工作台" : v ? "重新连接" : "连接服务器"}</button>`}</div></section>`;
+  return `<section class="connection-card" aria-label="服务器连接"><div><strong>${online ? "远程会话已就绪" : busy ? "正在连接" : "远程连接"}</strong><p role="status">${v ? e(connectionSummary(v)) : "通过保存的访问路径连接 SSH 服务器"}</p></div><div class="actions">${busy ? `<button data-connection-cancel="${e(v.attemptId)}">取消连接</button>${v.question ? `<button data-connection-prompt="${e(v.attemptId)}" class="primary">继续确认</button>` : ""}` : `<button data-connect-server="${e(id)}" class="primary">${online ? "前往工作台" : v ? "重新连接" : "连接服务器"}</button>${v?.state === "failed" ? `<button data-server-action="edit" data-id="${e(id)}">编辑连接资料</button>` : ""}`}</div></section>`;
 }
 type Call = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 export class ConnectionsUi {
@@ -98,7 +99,7 @@ export class ConnectionsUi {
     node.setAttribute("aria-label", title);
     const content = q.kind === "credentials" ? `<p>第 ${q.nodeIndex + 1} 站 · ${e(q.name)} · ${e(q.endpoint)}</p><p class="hint">账号 ${e(q.username)}</p>${q.message ? `<p class="error-box" role="alert">${e(q.message)}</p>` : ""}<form id="connection-auth">${q.authentication === "privateKey" ? `<label>私钥文件<div class="connection-key-path"><input name="path" value="${e(q.privateKeyPath ?? "")}" required><button type="button" data-key-picker>选择文件</button></div></label>` : ""}<label>${q.authentication === "privateKey" ? "私钥口令" : "密码"}<input name="secret" type="password" autocomplete="new-password" ${q.authentication === "privateKey" ? "" : "required"}></label><label class="connection-remember"><input name="remember" type="checkbox" ${q.remember ? "checked" : ""}>在此设备上记住${q.authentication === "privateKey" ? "口令" : "密码"}</label><p class="hint">连接成功后保存到对应资料，替换原凭据；以明文保存在本机文件。取消勾选则仅用于本次连接。</p></form>`
       : q.kind === "targetChange" ? `<p>服务器的地址、账号、认证方式或访问路径已修改。</p><dl><dt>原连接</dt><dd>${e(q.previousEndpoint)}</dd><dt>当前目标</dt><dd>${e(q.endpoint)}</dd></dl><p>按新资料重连后，旧会话资源仍会失效。</p>`
-      : `<p>第 ${q.nodeIndex + 1} 站 · ${e(q.name)} · ${e(q.endpoint)}</p>${q.previousFingerprint ? `<p class="error-box">已记录的主机密钥与本次不同，请核对服务器身份后再更新。</p><label>原指纹<code>${e(q.previousFingerprint)}</code></label>` : "<p>请核对该服务器的主机指纹。信任后才会提交此节点的认证凭据。</p>"}<label>${e(q.algorithm)}<code>${e(q.fingerprint)}</code></label>`;
+      : `<p>第 ${q.nodeIndex + 1} 站 · ${e(q.name)} · ${e(q.endpoint)}</p>${q.previousFingerprint ? `<p class="error-box">已记录的主机密钥与本次不同，请核对服务器身份后再更新。</p><div class="connection-fingerprint"><span>原指纹</span><code>${e(q.previousFingerprint)}</code><button data-copy-fingerprint="${e(q.previousFingerprint)}" aria-label="复制原指纹">复制原指纹</button></div>` : "<p>请核对该服务器的主机指纹。信任后才会提交此节点的认证凭据。</p>"}<div class="connection-fingerprint"><span>新指纹 · ${e(q.algorithm)}</span><code>${e(q.fingerprint)}</code><button data-copy-fingerprint="${e(q.fingerprint)}" aria-label="复制新指纹">复制新指纹</button></div>`;
     node.innerHTML = `<header class="catalog-dialog-heading"><h2>${title}</h2></header><section class="connection-prompt-body">${content}<p class="connection-prompt-error error-box" role="alert" hidden></p></section><footer class="catalog-dialog-footer"><button data-prompt-cancel>取消连接</button><button class="primary" data-prompt-accept>${q.kind === "credentials" ? "继续连接" : q.kind === "targetChange" ? "按新资料重连" : q.previousFingerprint ? "更新指纹并继续" : "信任并继续"}</button></footer>`;
     const current = { node, id: q.id, attempt: v.attemptId, submitted: false }; this.dialog = current;
     const submit = async (cancel: boolean) => {
@@ -128,6 +129,11 @@ export class ConnectionsUi {
     node.querySelector("[data-prompt-accept]")!.addEventListener("click", () => void submit(false));
     node.querySelector("form")?.addEventListener("submit", event => { event.preventDefault(); void submit(false); });
     node.querySelector("[data-key-picker]")?.addEventListener("click", () => { void open({ multiple: false }).then(path => { if (typeof path === "string" && this.dialog === current) node.querySelector<HTMLInputElement>('[name="path"]')!.value = path; }).catch(error => this.notify(String(error))); });
+    node.querySelectorAll<HTMLButtonElement>("[data-copy-fingerprint]").forEach(button => button.addEventListener("click", () => {
+      void this.call("clipboard_text", { operation: "write", text: button.dataset.copyFingerprint }).then(() => { button.textContent = "已复制"; }).catch(error => {
+        const target = node.querySelector<HTMLElement>(".connection-prompt-error")!; target.hidden = false; target.textContent = `复制失败：${error}`;
+      });
+    }));
     document.body.append(node); node.showModal(); node.querySelector<HTMLElement>("input,button")?.focus();
   }
 }

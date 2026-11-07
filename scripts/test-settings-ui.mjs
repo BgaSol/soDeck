@@ -50,6 +50,9 @@ try{
   assert.equal(await page.locator('.settings-nav [data-action="component-settings"]').count(),4);
   assert.equal(await section().getByLabel('字号',{exact:true}).inputValue(),'14');
   const input=section().getByLabel('字号',{exact:true});await input.fill('18');
+  assert.equal(await section().locator('[data-font-sample]').evaluate(el=>getComputedStyle(el).fontSize),'18px');
+  await section().getByLabel('行高',{exact:true}).fill('1.6');
+  assert.equal(await section().locator('[data-font-sample]').evaluate(el=>getComputedStyle(el).lineHeight),'28.8px');
   await input.evaluate(el=>window.preservedInput=el);await page.evaluate(()=>window.settingsApp.catalog());assert(await input.evaluate(el=>el===window.preservedInput));
   await choose('文件列表');await section().getByLabel('名称字号').waitFor();await choose('终端 ●');
   assert.equal(await input.inputValue(),'18');await page.locator('#close').click();await page.evaluate(()=>window.reopen());assert.equal(await input.inputValue(),'18');
@@ -75,7 +78,8 @@ try{
   for(const theme of ['light','dark','dopamine'])for(const [width,height,scale]of [[1000,760,1],[720,480,1],[900,600,1.25],[1080,720,1.5]]){
     await page.setViewportSize({width,height});await page.evaluate(({theme,scale})=>{document.documentElement.dataset.theme=theme;document.documentElement.style.zoom=String(scale);},{theme,scale});
     const overflow=await page.locator('.settings-dialog').evaluate(el=>({width:el.scrollWidth,client:el.clientWidth}));assert(overflow.width<=overflow.client+2,JSON.stringify({theme,width,height,scale,overflow}));
-    await section().getByRole('button',{name:'保存',exact:true}).scrollIntoViewIfNeeded();
+    await section().locator('.settings-fields').evaluate(el=>el.scrollTop=0);
+    assert(await section().getByRole('button',{name:'保存',exact:true}).evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&r.right<=innerWidth;}),`Save stays visible at ${theme}/${width}/${scale}`);
   }
   await page.setViewportSize({width:1000,height:760});await page.evaluate(()=>document.documentElement.style.zoom='1');await choose('终端 ●');
   fs.mkdirSync('artifacts/settings-ui',{recursive:true});await page.screenshot({path:'artifacts/settings-ui/terminal.png'});

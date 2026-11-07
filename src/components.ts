@@ -89,6 +89,7 @@ export class Components {
         node.querySelectorAll(".component-slot").forEach(slot => observer.observe(slot));
         shell = { node, surfaces: new Map(), observer, workspace: w, ui: empty() }; this.shells.set(id, shell); this.content.append(node);
       }
+      if (shell.workspace.connected !== w.connected) for (const surface of shell.surfaces.values()) this.post(surface, {type: "connectionChanged", connected: w.connected});
       shell.workspace = w; shell.ui = ui.workspaces[id] ?? empty();
       const incoming = state.incoming?.context.workspaceId === id;
       shell.node.hidden = !incoming && state.window.activeWorkspace !== id;
@@ -116,7 +117,7 @@ export class Components {
     const defaultView = this.defaultView();
     const createHint = !shell.workspace.connected ? "连接已断开，请先重新连接" : !defaultView ? "终端不可用，请在插件管理中安装并启用后重启" : this.creating.has(shell.workspace.context.workspaceId) ? "正在新建终端…" : "新建终端";
     const tabScroll=node.querySelector(".component-tab-list")?.scrollLeft??0;
-    patchChrome(node.querySelector(".component-tabs")!, `<div class="component-tab-list" role="tablist" aria-label="组件页面">${editors.map(v => `<div class="component-tab sd-tab ${w.editor === v.id ? "selected" : ""}" draggable="true" data-view="${e(v.id)}"><button role="tab" aria-selected="${w.editor === v.id}" data-component-action="select" data-key="${e(v.id)}" title="${e(v.title)}">${icon(this.definitions[v.definitionKey]?.icon)}<span>${e(v.title)}${v.dirty ? " ●" : ""}</span></button><button class="sd-icon" data-component-action="close" data-key="${e(v.id)}" aria-label="关闭 ${e(v.title)}">${icon("close")}</button></div>`).join("")}</div><button class="sd-icon" data-component-action="create" aria-label="新建终端" title="${e(createHint)}" ${createHint === "新建终端" ? "" : "disabled"}>${icon("plus")}</button><button class="sd-icon" data-component-action="pages" aria-label="全部组件页面" title="全部组件页面">${icon("chevron")}</button>`);
+    patchChrome(node.querySelector(".component-tabs")!, `<div class="component-tab-list" role="tablist" aria-label="组件页面">${editors.map(v => `<div class="component-tab sd-tab ${w.editor === v.id ? "selected" : ""}" draggable="true" data-view="${e(v.id)}"><button role="tab" aria-selected="${w.editor === v.id}" data-component-action="select" data-key="${e(v.id)}" title="${e(v.title)}">${icon(this.definitions[v.definitionKey]?.icon)}<span>${e(v.title)}${v.dirty ? " ●" : ""}</span></button><button class="sd-icon" data-component-action="close" data-key="${e(v.id)}" aria-label="关闭 ${e(v.title)}">${icon("close")}</button></div>`).join("")}</div><button class="sd-icon" data-component-action="create" aria-label="新建终端" title="${e(createHint)}" ${createHint === "新建终端" ? "" : "disabled"}>${icon("plus")}</button>${shell.workspace.connected && !defaultView ? `<button class="sd-icon" data-action="manage-plugins" aria-label="打开插件管理" title="终端不可用 · 打开插件管理">${icon("plug")}</button>` : ""}<button class="sd-icon" data-component-action="pages" aria-label="全部组件页面" title="全部组件页面">${icon("chevron")}</button>`);
     const list = node.querySelector(".component-tab-list")!;
     list.scrollLeft=tabScroll;
     if (!this.boundTabs.has(list)) {
@@ -126,7 +127,7 @@ export class Components {
       list.addEventListener("drop", event => { event.preventDefault(); const ev = event as DragEvent, id = ev.dataTransfer?.getData("text/sodeck-view"), target = (ev.target as Element).closest<HTMLElement>("[data-view]")?.dataset.view; if (id && target) void this.run(() => this.perform(shell, { op: "reorder", viewId: id, index: shell.ui.views.findIndex(v => v.id === target) })); });
     }
     const slot = node.querySelector<HTMLElement>(".central-slot")!;
-    if (!editors.length) replace(slot, `<div class="workspace-empty"><div class="empty-icon">${icon("plug")}</div><h2>${e(shell.workspace.name)}</h2><p>${Object.keys(this.definitions).length ? "从侧栏打开组件，或点击＋新建页面" : "安装并启用带界面的插件后，可在这里使用组件"}</p><div class="workspace-context">${e(shell.workspace.endpoint)}</div></div>`); else replace(slot, "");
+    if (!editors.length) replace(slot, `<div class="workspace-empty"><div class="empty-icon">${icon("plug")}</div><h2>${e(shell.workspace.name)}</h2><p>${!shell.workspace.connected ? "连接已断开，请先重新连接。" : !defaultView ? "终端不可用，请在插件管理中安装或启用，重启后生效。" : "从侧栏打开组件，或点击＋新建终端。"}</p>${!shell.workspace.connected ? `<button data-reconnect-server="${e(shell.workspace.context.serverId)}">重新连接</button>` : !defaultView ? '<button data-action="manage-plugins">打开插件管理</button>' : ""}<div class="workspace-context">${e(shell.workspace.endpoint)}</div></div>`); else replace(slot, "");
     patchChrome(node.querySelector(".workspace-status")!, `<div class="workspace-connection" role="status" aria-label="连接状态" title="${e(shell.workspace.endpoint)}"><span class="health-dot ${shell.workspace.connected ? "good" : "warning"}"></span><span>${shell.workspace.connected ? "已连接" : "连接已断开"}</span><span class="workspace-endpoint">${e(shell.workspace.endpoint)}</span></div><button class="sd-status-action" data-reconnect-server="${e(shell.workspace.context.serverId)}" ${shell.workspace.connected ? "hidden" : ""}>重新连接</button><span class="workspace-status-spacer"></span><button class="workspace-network sd-status-action" data-action="status" title="服务器连接传输速率；点击查看应用状态与插件业务量">↓ 0 B/s ↑ 0 B/s</button>`);
     for (const [id, surface] of shell.surfaces) if (!w.views.some(v => v.id === id)) { this.removeSurface(surface); shell.surfaces.delete(id); }
     for (const v of w.views) {
@@ -216,7 +217,7 @@ export class Components {
       surface.chain = this.invoke<{ surfaceId: string; data: unknown; view: View }>("attach", { viewId: surface.view.id }).then(async result => {
         surface.token = result.surfaceId;
         const settings = await this.call("settings_for_surface", {surfaceId: result.surfaceId}).catch(() => null);
-        this.post(surface, { type: "mount", context: result.view.context, serverName: this.shells.get(surface.view.context.workspaceId)?.workspace.name, viewId: surface.view.id, viewType: surface.view.definitionKey.split(":")[1], data: result.data, tokens: this.tokens(), settings, capabilities: {clipboard:1,localFiles:1,settings:1}, visible: surface.visible });
+        this.post(surface, { type: "mount", connected: this.shells.get(surface.view.context.workspaceId)?.workspace.connected, context: result.view.context, serverName: this.shells.get(surface.view.context.workspaceId)?.workspace.name, viewId: surface.view.id, viewType: surface.view.definitionKey.split(":")[1], data: result.data, tokens: this.tokens(), settings, capabilities: {clipboard:1,localFiles:1,settings:1}, visible: surface.visible });
         surface.frame.dataset.surfaceId = result.surfaceId;
       }).catch(error => this.surfaceError(surface, String(error)));
       return;
@@ -287,7 +288,8 @@ export class Components {
     clearTimeout(s.timeout);
     let error = s.node.querySelector<HTMLElement>(".component-error");
     if (!error) { error = document.createElement("div"); error.className = "component-error"; error.setAttribute("role", "alert"); s.node.append(error); }
-    error.textContent = message;
+    const definition = this.definitions[s.view.definitionKey];
+    error.innerHTML = `<p>${e(message)}</p>${definition ? `<button data-action="locate-plugin" data-id="${e(definition.pluginId)}">查看插件</button><button data-action="plugin-logs" data-id="${e(definition.pluginId)}">查看日志</button>` : '<button data-action="manage-plugins">打开插件管理</button>'}`;
   }
   private async perform(shell: Shell, action: Record<string, unknown>) {
     const result = await this.invoke("action", { context: shell.workspace.context, action: { requestId: crypto.randomUUID(), ...action } });

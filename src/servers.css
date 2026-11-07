@@ -1,4 +1,7 @@
 @layer components {
+  .connection-fingerprint { display: grid; gap: 8px; margin: 16px 0; }
+  .connection-fingerprint code { overflow-wrap: anywhere; }
+  .connection-fingerprint button { justify-self: start; }
   .workspace:has(.catalog-page) { display: block; place-items: normal; padding: 0; }
   .catalog-page { width: 100%; height: calc(100dvh - 44px); display: flex; flex-direction: column; padding: 30px 32px 12px; max-width: 1600px; margin: auto; }
   .catalog-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 24px; }
@@ -13,6 +16,10 @@
   .catalog-search svg { position: absolute; left: 12px; }
   .catalog-search input { width: 100%; padding-left: 36px; }
   .catalog-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(285px, 34%); border: 1px solid var(--border); border-radius: 12px; background: var(--panel); overflow: hidden; }
+  .catalog-layout.first-use { grid-template-columns: minmax(0, 1fr); }
+  .catalog-layout.first-use .catalog-list { border-right: 0; }
+  .catalog-layout.first-use .catalog-list-heading { display: none; }
+  .catalog-row .catalog-session { margin-top: 4px; color: var(--text); }
   .catalog-list { min-width: 0; overflow: auto; border-right: var(--sd-stroke-structure) solid var(--border); }
   .catalog-list-heading { display: flex; justify-content: space-between; padding: 13px 20px; font-size: 11px; color: var(--muted); background: var(--subtle); border-bottom: var(--sd-stroke-structure) solid var(--border); }
   .catalog-row { display: flex; gap: 12px; width: 100%; text-align: left; white-space: normal; justify-content: flex-start; padding: 17px 18px; border: 0; border-bottom: var(--sd-stroke-structure) solid var(--border); border-radius: 0; background: transparent; }
@@ -96,6 +103,7 @@
     .catalog-heading { margin-bottom: 16px; }
   }
   @media (max-width: 760px) {
+    .catalog-page:has(.catalog-layout.has-detail) .catalog-toolbar { display: none; }
     .catalog-layout { grid-template-columns: minmax(0,1fr); }
     .catalog-layout:not(.has-detail) .catalog-detail, .catalog-layout.has-detail .catalog-list { display: none; }
     .catalog-back { display: inline-flex; margin-bottom: 18px; }

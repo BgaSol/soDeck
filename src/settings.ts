@@ -40,7 +40,7 @@ export class ComponentSettings {
   navigation() {
     return `<div class="nav-label">组件</div>${this.entries.length ? this.entries.map(p => {
       const key = `${p.pluginId}/${p.pageId}`, draft = this.drafts.get(key);
-      return b("component-settings", `${e(p.title)}${draft?.dirty ? ' <span class="settings-draft-dot" title="未保存">●</span>' : ""}`, p.icon || "settings", `nav-item ${this.selected === key ? "active" : ""}`, `data-id="${e(key)}" aria-current="${this.selected === key ? "page" : "false"}"`);
+      return b("component-settings", `${e(p.title)}${draft?.dirty ? ' <span class="settings-draft-dot" title="未保存">●</span>' : ""}`, p.icon || "settings", `nav-item ${this.selected === key ? "active" : ""}`, `id="component-nav-${e(key)}" data-id="${e(key)}" aria-current="${this.selected === key ? "page" : "false"}"`);
     }).join("") : `<p class="hint settings-nav-hint">安装插件后可配置组件</p>`}`;
   }
   select(key: string) { this.selected = key; this.active = ""; this.render(); }
@@ -89,7 +89,7 @@ export class ComponentSettings {
   private paint(d: Draft) {
     const host = this.host; if (!host) return;
     const entry = this.entries.find(p => `${p.pluginId}/${p.pageId}` === this.selected);
-    host.innerHTML = `<div class="section-heading"><div><h2>${e(d.snapshot.declaration.title)}</h2><p>同类组件在所有服务器和窗口共享${entry?.enabled ? "" : " · 插件关闭时也可配置"}</p></div><span class="hint">${e(d.snapshot.version)}</span></div><form class="component-settings-form">${d.snapshot.declaration.groups.map(g => `<fieldset><legend>${e(g.title)}</legend>${g.fields.map(f => this.field(f,d)).join("")}</fieldset>`).join("")}<div class="settings-warnings">${d.snapshot.warnings.map(w => `<p>${e(w)}</p>`).join("")}</div><div class="settings-feedback" role="status"></div><div class="settings-save-bar">${b("defaults-component-settings","恢复默认",undefined,"text-button")}${b("discard-component-settings","放弃更改",undefined,"quiet")}${b("save-component-settings","保存",undefined,"")}</div></form>`;
+    host.innerHTML = `<div class="section-heading"><div><h2>${e(d.snapshot.declaration.title)}</h2><p>同类组件在所有服务器和窗口共享${entry?.enabled ? "" : " · 插件关闭时也可配置"}</p></div><span class="hint">${e(d.snapshot.version)}</span></div><form class="component-settings-form"><div class="settings-fields" data-scroll="settings-fields">${d.snapshot.declaration.groups.map(g => `<fieldset><legend>${e(g.title)}</legend>${g.fields.map(f => this.field(f,d)).join("")}</fieldset>`).join("")}<div class="settings-warnings">${d.snapshot.warnings.map(w => `<p>${e(w)}</p>`).join("")}</div></div><footer class="settings-commit"><div class="settings-feedback" role="status"></div><div class="settings-save-bar">${b("defaults-component-settings","恢复默认",undefined,"text-button")}${b("discard-component-settings","放弃更改",undefined,"quiet")}${b("save-component-settings","保存",undefined,"")}</div></footer></form>`;
     host.oninput = event => this.input(event, d);
     host.onchange = event => this.input(event, d);
     host.querySelector("form")!.onsubmit = event => {event.preventDefault(); void this.save();};
@@ -111,10 +111,12 @@ export class ComponentSettings {
       const local = this.host?.querySelector<HTMLInputElement>(`[data-local-font="${CSS.escape(key)}"]`); if (local) {local.hidden = (d.values[key] as FontValue).source !== "local"; if (!input.dataset.localFont) local.value = "";}
       void this.preview(field,d);
     }
+    this.previewMetrics(d);
     for (const f of d.snapshot.declaration.groups.flatMap(g => g.fields)) if (f.visibleWhen) this.host?.querySelector<HTMLElement>(`[data-setting-row="${CSS.escape(f.key)}"]`)?.toggleAttribute("hidden", !same(d.values[f.visibleWhen.key],f.visibleWhen.equals));
     this.feedback(d); this.render();
   }
   private async preview(f: Field, d: Draft) {
+    this.previewMetrics(d);
     const value = copy(d.values[f.key] as FontValue), generation = d.generation;
     const valid = () => d.generation === generation && same(d.values[f.key],value);
     d.fontPending.add(f.key); delete d.fontErrors[f.key]; this.feedback(d);
@@ -126,6 +128,16 @@ export class ComponentSettings {
       const sample = this.host?.querySelector<HTMLElement>(`[data-font-sample="${CSS.escape(f.key)}"]`); if (this.drafts.get(this.selected) === d && sample) sample.style.fontFamily = family;
     } catch (error) { if (valid()) d.fontErrors[f.key] = String(error); }
     finally { if (valid()) {d.fontPending.delete(f.key); if (this.drafts.get(this.selected) === d) {const status = this.host?.querySelector(`[data-font-status="${CSS.escape(f.key)}"]`); if (status) status.textContent = d.fontErrors[f.key] ?? "字体已加载 · 预置字体离线可用"; this.feedback(d);} } }
+  }
+  private previewMetrics(d: Draft) {
+    if (this.drafts.get(this.selected) !== d || !((d.snapshot.pluginId === "sodeck.terminal" && d.snapshot.pageId === "appearance") || (d.snapshot.pluginId === "sodeck.files" && d.snapshot.pageId === "editor"))) return;
+    for (const key of ["fontSize", "lineHeight"]) {
+      const field = d.snapshot.declaration.groups.flatMap(g => g.fields).find(f => f.key === key);
+      if (!field) continue;
+      const value = d.values[key];
+      const valid = typeof value === "number" && Number.isFinite(value) && value >= field.min! && value <= field.max!;
+      for (const sample of this.host?.querySelectorAll<HTMLElement>("[data-font-sample]") ?? []) sample.style[key as "fontSize" | "lineHeight"] = valid ? `${value}${key === "fontSize" ? "px" : ""}` : "";
+    }
   }
   private feedback(d: Draft) {
     if (!this.host || this.drafts.get(this.selected) !== d) return;
