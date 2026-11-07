@@ -36,7 +36,13 @@ npm run terminal:input:test
 
 Windows 对运行中的测试程序有文件锁，使用同一 Rust target 目录的核心/插件集成与界面测试应顺序运行。修改网络 UI 后可用 `npm run network:test -- --network-ui-only` 重新独立打包并只复验实际插件界面与隧道，不重复协议压力测试；完整网络验证仍使用 `npm run network:test`。
 
-`npm run ui:production:test -- --updates-only` 验证正式前端的更新说明 Markdown、链接分发、批量更新和三主题小窗口布局，不运行后续工作区菜单与拆窗专项。
+`npm run ui:production:test -- --updates-only` 验证正式前端的官方插件发现、安装和统一更新：仓库列表延迟加载、失败重试、运行中新插件出现与移除、离线缓存、连续安装、更新说明 Markdown、链接分发、批量更新和三主题小窗口布局，不运行后续工作区菜单与拆窗专项。列表与安装回归使用真实核心及隔离回环 HTTP，不依赖公网。
+
+需要核对实际 GitHub Trees/Blobs 接口时，显式执行以下烟测；它只读取官方仓库列表，不安装插件，依赖网络及 GitHub API 可用额度，默认核心测试不运行：
+
+```sh
+cargo test --manifest-path src-tauri/Cargo.toml --features test-fixtures --test updates --locked official_catalog_live_repository -- --ignored --nocapture
+```
 
 真实远程业务测试还需要本机 OpenSSH 服务端与 `ssh-keygen`，并启动隔离的临时回环服务：
 

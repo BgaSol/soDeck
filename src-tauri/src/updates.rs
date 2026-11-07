@@ -354,12 +354,36 @@ impl ReleaseClient {
         Ok(url)
     }
     fn json<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T, String> {
+        self.json_with_accept(url, "application/json")
+    }
+
+    pub(crate) fn official_repository_json<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        raw: bool,
+    ) -> Result<T, String> {
+        self.json_with_accept(
+            &format!("{}/repos/{REPOSITORY}/{path}", self.api_base),
+            if raw {
+                "application/vnd.github.raw+json"
+            } else {
+                "application/vnd.github+json"
+            },
+        )
+    }
+
+    fn json_with_accept<T: serde::de::DeserializeOwned>(
+        &self,
+        url: &str,
+        accept: &str,
+    ) -> Result<T, String> {
         let url = self.url(url)?;
         let mut response = None;
         for attempt in 0..3 {
             let request = self
                 .client
                 .get(url.clone())
+                .header(reqwest::header::ACCEPT, accept)
                 .timeout(Duration::from_secs(30));
             #[cfg(feature = "test-fixtures")]
             let request = self.test_authorize(&url, request);
@@ -1209,7 +1233,13 @@ impl AppCore {
         id: &str,
         client: &ReleaseClient,
     ) -> Result<String, String> {
-        let source = crate::official_plugins::source(id)?;
+        let catalog = self.official_plugins(client, false)?;
+        let source = catalog
+            .plugins
+            .iter()
+            .find(|p| p.id == id)
+            .ok_or("该插件不在官方列表中，请刷新列表后重试")?
+            .source();
         let _operation = self.update_operation(id)?;
         self.update_phase(id, "checking", None);
         let result: Result<String, String> = (|| {

@@ -111,13 +111,36 @@ impl Server {
         ReleaseClient::test_server(&self.base)
     }
     fn official_release(&self, bytes: Vec<u8>, api: &str, target: &str) {
+        self.official_release_for("sodeck.terminal", "plugin-terminal-v", bytes, api, target);
+    }
+    fn catalog(&self, plugins: Vec<serde_json::Value>) {
+        let tree: Vec<_> = plugins.into_iter().enumerate().map(|(index, plugin)| {
+            let content = plugin.to_string();
+            let sha = format!("{:x}", Sha256::digest(content.as_bytes()))[..40].to_string();
+            self.put(&format!("/repos/BgaSol/soDeck/git/blobs/{sha}"), content);
+            json!({"path":format!("plugins/plugin-{index}/release.json"),"type":"blob","sha":sha})
+        }).collect();
+        self.put(
+            "/repos/BgaSol/soDeck/git/trees/main",
+            json!({"tree":tree,"truncated":false}).to_string(),
+        );
+    }
+    fn official_release_for(
+        &self,
+        id: &str,
+        prefix: &str,
+        bytes: Vec<u8>,
+        api: &str,
+        target: &str,
+    ) {
+        self.catalog(vec![json!({"id":id,"name":"仓库插件","description":"来自仓库的发行配置","tagPrefix":prefix})]);
         self.release(bytes, api, target);
         let mut manifest: serde_json::Value =
             serde_json::from_slice(&self.routes.lock().unwrap()["/manifest.json"]).unwrap();
-        manifest["id"] = json!("sodeck.terminal");
+        manifest["id"] = json!(id);
         self.put("/manifest.json", manifest.to_string());
         self.put("/repos/BgaSol/soDeck/releases", json!([
-            {"tag_name":"plugin-terminal-v0.1.1","draft":false,"prerelease":false,"assets":[{"name":"plugin-update.json","browser_download_url":format!("{}/manifest.json",self.base)}]}
+            {"tag_name":format!("{prefix}0.1.1"),"draft":false,"prerelease":false,"assets":[{"name":"plugin-update.json","browser_download_url":format!("{}/manifest.json",self.base)}]}
         ]).to_string());
     }
 }
@@ -280,22 +303,213 @@ fn settings_follow_pending_activation_and_program_rollback() {
 }
 
 #[test]
-fn official_sources_only_include_supported_business_plugins() {
+fn official_catalog_discovers_new_plugins_and_removals_without_core_changes() {
+    let f = Fixture::new();
+    let core = f.open();
+    let server = Server::new();
+    let first = json!({"id":"example.new-tool","name":"新工具","tagPrefix":"new-tool-v","order":20,"icon":"terminal"});
+    let second = json!({"id":"example.another","name":"另一款","tagPrefix":"another-v","order":10,"description":"从仓库读取的说明"});
+    server.catalog(vec![first.clone()]);
+    let initial = core.official_plugins(&server.client(), false).unwrap();
+    assert_eq!(initial.plugins[0].id, "example.new-tool");
+    assert_eq!(initial.plugins[0].source().repository, "BgaSol/soDeck");
+    assert!(initial.error.is_none());
+    server.requests.lock().unwrap().clear();
+    server.catalog(vec![first, second]);
     assert_eq!(
-        sodeck::official_plugins::OFFICIAL_PLUGINS
-            .iter()
-            .map(|p| p.id)
-            .collect::<Vec<_>>(),
-        [
-            "sodeck.network-proxy",
-            "sodeck.terminal",
-            "sodeck.files",
-            "sodeck.system-status"
-        ]
+        core.official_plugins(&server.client(), false)
+            .unwrap()
+            .plugins
+            .len(),
+        1
     );
-    for id in ["sodeck.hello", "sodeck.ui-example"] {
-        assert!(sodeck::official_plugins::source(id).is_err());
+    assert!(
+        server.requests.lock().unwrap().is_empty(),
+        "Fresh cache avoids GitHub rate limits"
+    );
+    let updated = core.official_plugins(&server.client(), true).unwrap();
+    assert_eq!(updated.plugins.len(), 2);
+    assert_eq!(updated.plugins[0].id, "example.another");
+    assert_eq!(updated.plugins[0].description, "从仓库读取的说明");
+    drop(core);
+    let core = f.open();
+    server.requests.lock().unwrap().clear();
+    assert_eq!(
+        core.official_plugins(&server.client(), false)
+            .unwrap()
+            .plugins
+            .len(),
+        2
+    );
+    assert!(
+        server.requests.lock().unwrap().is_empty(),
+        "Cache survives restarting the core"
+    );
+    server.catalog(vec![]);
+    assert!(core
+        .official_plugins(&server.client(), true)
+        .unwrap()
+        .plugins
+        .is_empty());
+}
+
+#[test]
+fn official_catalog_errors_preserve_last_complete_list_and_installed_records() {
+    let f = Fixture::new();
+    let core = f.open();
+    let server = Server::new();
+    assert!(core
+        .official_plugins(&server.client(), false)
+        .unwrap_err()
+        .contains("无法获取"));
+    core.add_plugin(&f.external).unwrap();
+    server.catalog(vec![
+        json!({"id":"example.tool","name":"工具","tagPrefix":"tool-v"}),
+    ]);
+    let good = core.official_plugins(&server.client(), true).unwrap();
+    let disk = fs::read(f.root.join("data/official-plugins.json")).unwrap();
+    for invalid in ["not json", r#"{"tree":[],"truncated":true}"#] {
+        server.put(
+            "/repos/BgaSol/soDeck/git/trees/main",
+            invalid.as_bytes().to_vec(),
+        );
+        let fallback = core.official_plugins(&server.client(), true).unwrap();
+        assert_eq!(fallback.fetched_at, good.fetched_at);
+        assert_eq!(fallback.plugins[0].id, "example.tool");
+        assert!(fallback.error.unwrap().contains("上次成功"));
+        assert_eq!(
+            fs::read(f.root.join("data/official-plugins.json")).unwrap(),
+            disk
+        );
+        assert_eq!(core.snapshot().plugins[0].manifest.id, "test.fixture");
     }
+    server.catalog(vec![]);
+    let empty = core.official_plugins(&server.client(), true).unwrap();
+    assert!(empty.error.is_none() && empty.plugins.is_empty());
+}
+
+#[test]
+fn official_catalog_rejects_invalid_metadata_and_ignores_non_plugin_files() {
+    let f = Fixture::new();
+    let core = f.open();
+    let server = Server::new();
+    let valid = json!({"id":"example.tool","name":"工具","tagPrefix":"tool-v"});
+    for invalid in [
+        json!({"id":"../../escape","name":"工具","tagPrefix":"tool-v"}),
+        json!({"id":"sodeck.core","name":"核心","tagPrefix":"v"}),
+        json!({"id":"example.tool","name":" ","tagPrefix":"tool-v"}),
+        json!({"id":"example.tool","name":"工具","tagPrefix":"../../v"}),
+        json!({"id":"example.tool","name":"工具","tagPrefix":"tool-v","icon":"<svg>"}),
+    ] {
+        server.catalog(vec![invalid]);
+        assert!(core.official_plugins(&server.client(), true).is_err());
+    }
+    for duplicate in [
+        valid.clone(),
+        json!({"id":"example.other","name":"其他","tagPrefix":"tool-v"}),
+    ] {
+        server.catalog(vec![valid.clone(), duplicate]);
+        assert!(core
+            .official_plugins(&server.client(), true)
+            .unwrap_err()
+            .contains("重复"));
+    }
+    server.put(
+        "/repos/BgaSol/soDeck/git/trees/main",
+        json!({"tree":[
+        {"path":"scripts/fixtures/example/release.json","type":"blob","sha":"bad"},
+        {"path":"plugins/test/ui/release.json","type":"blob","sha":"bad"},
+        {"path":"plugins/retired/release.json","type":"tree","sha":"bad"}
+    ],"truncated":false})
+        .to_string(),
+    );
+    assert!(core
+        .official_plugins(&server.client(), true)
+        .unwrap()
+        .plugins
+        .is_empty());
+}
+
+#[test]
+fn a_new_repository_plugin_can_be_installed_without_a_compiled_in_id() {
+    let f = Fixture::new();
+    let core = f.open();
+    let server = Server::new();
+    let id = "example.future-plugin";
+    server.official_release_for(id, "future-release-v", f.package_for(id, ""), "1", TARGET);
+    assert_eq!(
+        core.install_official_plugin(id, &server.client()).unwrap(),
+        id
+    );
+    let plugin = &core.snapshot().plugins[0];
+    assert_eq!(
+        plugin.manifest.update_source.as_ref().unwrap().tag_prefix,
+        "future-release-v"
+    );
+    assert!(plugin.enabled && plugin.pending_restart);
+}
+
+#[test]
+fn expired_catalog_cache_is_refreshed_and_partial_metadata_never_replaces_it() {
+    let f = Fixture::new();
+    let core = f.open();
+    let server = Server::new();
+    let original = json!({"id":"example.original","name":"原插件","tagPrefix":"original-v"});
+    server.catalog(vec![original.clone()]);
+    let mut catalog = core.official_plugins(&server.client(), false).unwrap();
+    catalog.fetched_at = 0;
+    let path = f.root.join("data/official-plugins.json");
+    drop(core);
+    fs::write(&path, serde_json::to_vec(&catalog).unwrap()).unwrap();
+    let core = f.open();
+    let new = json!({"id":"example.new","name":"新插件","tagPrefix":"new-v"});
+    server.catalog(vec![original.clone(), new]);
+    assert_eq!(
+        core.official_plugins(&server.client(), false)
+            .unwrap()
+            .plugins
+            .len(),
+        2
+    );
+    let disk = fs::read(&path).unwrap();
+    server.catalog(vec![
+        original,
+        json!({"id":"example.broken","name":"坏配置","tagPrefix":"broken-v"}),
+    ]);
+    let tree: serde_json::Value = serde_json::from_slice(
+        &server.routes.lock().unwrap()["/repos/BgaSol/soDeck/git/trees/main"],
+    )
+    .unwrap();
+    let missing = format!(
+        "/repos/BgaSol/soDeck/git/blobs/{}",
+        tree["tree"][1]["sha"].as_str().unwrap()
+    );
+    server.routes.lock().unwrap().remove(&missing);
+    let fallback = core.official_plugins(&server.client(), true).unwrap();
+    assert!(fallback.error.is_some());
+    assert_eq!(fallback.plugins.len(), 2);
+    assert_eq!(fs::read(&path).unwrap(), disk);
+    assert!(core.snapshot().plugins.is_empty());
+}
+
+#[test]
+#[ignore = "Explicit smoke test against the live public GitHub repository"]
+fn official_catalog_live_repository() {
+    let f = Fixture::new();
+    let core = f.open();
+    let catalog = core
+        .official_plugins(&ReleaseClient::github().unwrap(), true)
+        .unwrap();
+    assert!(!catalog.plugins.is_empty());
+    assert!(catalog.error.is_none());
+    println!(
+        "Live official catalog: {:?}",
+        catalog.plugins.iter().map(|p| &p.id).collect::<Vec<_>>()
+    );
+    assert!(
+        core.snapshot().plugins.is_empty(),
+        "Reading the catalog never installs programs"
+    );
 }
 
 #[test]

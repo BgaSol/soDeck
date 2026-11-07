@@ -18,7 +18,15 @@ fn main() {
         let request: Value = serde_json::from_str(&line.unwrap()).unwrap();
         let args = &request["args"];
         let result = match request["command"].as_str().unwrap() {
-            "official_plugins" => Ok(json!(sodeck::official_plugins::OFFICIAL_PLUGINS)),
+            "official_plugins" => {
+                let base = std::env::var("SODECK_TEST_PLUGIN_API")
+                    .expect("catalog fixture requires a loopback test API");
+                core.official_plugins(
+                    &sodeck::updates::ReleaseClient::test_server(&base),
+                    args["refresh"].as_bool().unwrap_or(false),
+                )
+                .map(|catalog| json!(catalog))
+            }
             "install_official_plugin" => {
                 let base = std::env::var("SODECK_TEST_PLUGIN_API")
                     .expect("installer fixture requires a loopback test API");

@@ -101,14 +101,6 @@
   }
 }
 @layer components {
-  .official-plugins { margin-bottom: 24px; }
-  .official-plugins > .hint { margin: 8px 0 12px; }
-  .official-plugin-list { display: grid; gap: 10px; }
-  .official-plugin { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; border: var(--sd-stroke-control) solid var(--border); border-radius: 10px; padding: 14px; background: var(--subtle); }
-  .official-plugin > div { flex: 1; min-width: min(220px, 100%); }
-  .official-plugin p { color: var(--muted); font-size: 12px; margin-top: 5px; }
-  .official-plugin small { color: var(--muted); }
-  .official-plugin progress, .official-plugin > .error-box { width: 100%; }
   .topbar {
     height: 44px;
     display: flex;

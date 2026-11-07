@@ -365,8 +365,16 @@ async fn recover_catalog(app: State<'_, Application>) -> Result<serde_json::Valu
 }
 
 #[tauri::command]
-fn official_plugins() -> &'static [sodeck::official_plugins::OfficialPlugin] {
-    sodeck::official_plugins::OFFICIAL_PLUGINS
+async fn official_plugins(
+    app: State<'_, Application>,
+    refresh: bool,
+) -> Result<sodeck::official_plugins::OfficialCatalog, String> {
+    let core = app.core.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        core.official_plugins(&ReleaseClient::github()?, refresh)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

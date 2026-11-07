@@ -41,12 +41,35 @@ const archiveBytes = fs.readFileSync(archive), requests = [];
 let published = false, corrupt = false;
 let extraCorrupt = true;
 const extraPackages = new Map(), extraManifests = new Map(), extraReleases = [];
+const filesFixture = path.join(directory, 'files-fixture'); fs.mkdirSync(filesFixture);
+fs.copyFileSync(path.join(fixture, `plugin-fixture${suffix}`), path.join(filesFixture, `plugin-fixture${suffix}`));
+if (process.platform !== 'win32') fs.chmodSync(path.join(filesFixture, `plugin-fixture${suffix}`), 0o755);
+fs.writeFileSync(path.join(filesFixture, 'plugin.json'), JSON.stringify({ id:'sodeck.files', name:'文件安装验收', version:'0.1.1', apiVersion:'1', target, entry:`plugin-fixture${suffix}` }));
+const filesArchive = path.join(directory, 'files.tar.gz');
+assert.equal(spawnSync(tar, ['-czf', filesArchive, '-C', directory, 'files-fixture'], { windowsHide:true }).status, 0);
+const filesBytes = fs.readFileSync(filesArchive);
+const catalogFiles = new Map(fs.readdirSync('plugins').filter(name=>fs.existsSync(`plugins/${name}/release.json`)).map(name=>[name, JSON.parse(fs.readFileSync(`plugins/${name}/release.json`,'utf8'))]));
+let catalogUnavailable = true, holdCatalog = false, releaseCatalog;
 const markdownNotes = '# 更新测试\n\n## 改进\n\n- **保留工作**并支持*重试*\n  - 使用 `npm run check` 验证\n- 下载后继续使用\n\n> 完成工作后再重启。\n\n[发行说明](https://github.com/BgaSol/soDeck/releases)\n\n```sh\nnpm run check\n' + 'a'.repeat(180) + '\n```\n\n| 项目 | 结果 |\n| --- | --- |\n| 核心 | 可更新 |\n| 插件 | 独立下载 |';
-const downloads = http.createServer((request, response) => {
+const downloads = http.createServer(async (request, response) => {
   requests.push(request.url);
   const base = `http://127.0.0.1:${downloads.address().port}`;
+  const blobs = [...catalogFiles].map(([name,config])=>({path:`plugins/${name}/release.json`,type:'blob',sha:createHash('sha256').update(JSON.stringify(config)).digest('hex').slice(0,40),config}));
   let data;
-  if (request.url.startsWith("/repos/BgaSol/soDeck/releases")) data = JSON.stringify(published ? [{ tag_name: "plugin-terminal-v0.1.1", draft: false, prerelease: false, assets: [{ name: "plugin-update.json", browser_download_url: `${base}/manifest.json` }] }, ...extraReleases] : []);
+  if (request.url.startsWith('/repos/BgaSol/soDeck/git/trees/main')) {
+    if (holdCatalog) await new Promise(resolve=>releaseCatalog=resolve);
+    if (catalogUnavailable) { response.writeHead(503).end(); return; }
+    data = JSON.stringify({truncated:false,tree:blobs.map(({config,...entry})=>entry)});
+  }
+  else if (request.url.startsWith('/repos/BgaSol/soDeck/git/blobs/')) {
+    assert.equal(request.headers.accept,'application/vnd.github.raw+json');
+    const item=blobs.find(item=>request.url.endsWith(item.sha));
+    if(!item){response.writeHead(404).end();return;}
+    data=JSON.stringify(item.config);
+  }
+  else if (request.url.startsWith("/repos/BgaSol/soDeck/releases")) data = JSON.stringify(published ? [{ tag_name: "plugin-terminal-v0.1.1", draft: false, prerelease: false, assets: [{ name: "plugin-update.json", browser_download_url: `${base}/manifest.json` }] }, { tag_name:'plugin-files-v0.1.1', draft:false, prerelease:false, assets:[{name:'plugin-update.json',browser_download_url:`${base}/files.json`}] }, ...extraReleases] : []);
+  else if (request.url === '/files.json') data = JSON.stringify({ id:'sodeck.files', version:'0.1.1', apiVersion:'1', platforms:{[target]:{url:`${base}/files.tar.gz`,sha256:createHash('sha256').update(filesBytes).digest('hex')}} });
+  else if (request.url === '/files.tar.gz') data = filesBytes;
   else if (extraManifests.has(request.url)) data = JSON.stringify(extraManifests.get(request.url));
   else if (extraPackages.has(request.url)) data = extraCorrupt && request.url.includes('update-two') ? Buffer.from('broken archive') : extraPackages.get(request.url);
   else if (request.url === "/manifest.json") data = JSON.stringify({ id: "sodeck.terminal", version: "0.1.1", apiVersion: "1", platforms: { [target]: { url: `${base}/fixture.tar.gz`, sha256: createHash("sha256").update(archiveBytes).digest("hex") } } });
@@ -74,9 +97,10 @@ await page.route('**/__plugin__/**',route=>{
   return route.fulfill({contentType:types[path.extname(file)]||'application/octet-stream',body:fs.readFileSync(file)});
 });
 const errors = [], checks = [];
-let failCatalog = false, testWindow = "main", heldLogReply, releaseLogReply;
+let failCatalog = false, testWindow = "main", heldLogReply, releaseLogReply, chosenPluginDirectory = null;
 page.on("pageerror", error => errors.push(String(error)));
 await page.exposeBinding("desktopInvoke", async (_, command, args) => {
+  if (command === 'plugin:dialog|open') return chosenPluginDirectory;
   if (command === 'server_catalog' && failCatalog) throw new Error('隔离测试：目录暂时不可读');
   const result=await call(command, { ...args, window: testWindow });
   if(command==='read_logs'&&args.filter?.query==='held-old-filter'){heldLogReply=true;await new Promise(resolve=>releaseLogReply=resolve);}
@@ -182,6 +206,7 @@ try {
   await call("set_theme", { theme: "dopamine" });
   await page.goto(server.resolvedUrls.local[0]);
   await page.waitForFunction(() => document.documentElement.dataset.theme === "dopamine");
+  assert.deepEqual(requests, [], 'Starting the application does not depend on the official plugin network catalog');
   await checkTitlebarPosition('empty');
   await checkTitlebar();
   assert.equal(await page.locator('.catalog-empty').count(),1,'First use has one empty state');
@@ -291,6 +316,8 @@ try {
 
   await page.setViewportSize({ width: 1100, height: 720 });
   await page.locator("#settings-button").click();
+  assert.equal(await page.locator('#settings-nav-appearance').getAttribute('aria-current'), 'page', 'Settings initially opens preferences');
+  assert.deepEqual(await page.locator('.settings-nav .nav-label').allTextContents(), ['偏好设置','应用管理']);
   const appearanceNav = page.locator('[data-action="section"][data-id="appearance"]');
   await appearanceNav.focus(); await page.keyboard.press('Enter');
   assert.equal(await appearanceNav.evaluate(el => el === document.activeElement), true, 'Changed settings pages retain navigation focus');
@@ -303,7 +330,16 @@ try {
   });
   assert(contrasts.every(ratio => ratio >= 4.5), `Selected small text contrast: ${contrasts}`);
   await page.locator('[data-action="section"][data-id="plugins"]').click();
+  await page.getByRole('alert').filter({hasText:'无法获取官方插件列表'}).waitFor();
+  assert.equal(await page.locator('[data-official-plugin]').count(),0,'An unavailable catalog is not presented as an empty successful list');
+  assert(await page.locator('#choose-plugin').isEnabled(),'Local plugins remain available when the repository cannot be reached');
+  catalogUnavailable = false; holdCatalog = true;
+  await page.locator('#refresh-official-plugins').click();
+  await page.getByRole('status').filter({hasText:'正在从官方仓库获取插件'}).waitFor();
   await page.locator('[data-action="section"][data-id="about"]').click();
+  assert.equal(await page.getByRole('heading',{name:'应用与数据',exact:true}).count(),1,'A pending catalog request does not block settings navigation');
+  for(let i=0;!releaseCatalog&&i<50;i++)await page.waitForTimeout(20);
+  assert(releaseCatalog);holdCatalog=false;releaseCatalog();
   await page.getByRole('button',{name:'使用帮助',exact:true}).focus();await page.keyboard.press('Enter');
   assert.equal(await page.evaluate(()=>window.openedUsageHelp),true);
   const closeLayer=page.locator('[data-action="close-layer"]');
@@ -312,14 +348,34 @@ try {
   await page.keyboard.press('Shift+Tab');assert.equal(await page.getByRole('button',{name:'复制日志路径',exact:true}).evaluate(el=>el===document.activeElement),true);
   await page.keyboard.press('Escape');assert.equal(await page.locator('#settings-button').evaluate(el=>el===document.activeElement),true);
   await page.locator('#settings-button').click();await page.locator('[data-action="section"][data-id="plugins"]').click();
-  await page.locator('[data-action="add-plugin"]').focus();await page.keyboard.press('Enter');
-  assert.equal(await page.locator('[data-action="back-plugins"]').evaluate(el=>el===document.activeElement),true,'Adding a plugin moves keyboard focus into the new page');
+  assert.equal(await page.locator('#plugins-official').getAttribute('aria-pressed'),'true','An empty installation opens official plugins directly');
+  await page.locator('#plugins-installed').focus();await page.keyboard.press('Enter');
+  await page.getByRole('heading',{name:'还没有安装插件'}).waitFor();
+  await page.locator('#plugins-official').focus();await page.keyboard.press('Enter');
+  assert.equal(await page.locator('#plugins-official').evaluate(el=>el===document.activeElement),true,'Switching lists retains keyboard focus');
   const terminal = page.locator('[data-official-plugin="sodeck.terminal"]');
   const install = () => terminal.locator('[data-action="install-official-plugin"]');
+  await install().waitFor();
   assert.deepEqual(await page.locator('[data-official-plugin]').evaluateAll(nodes => nodes.map(node => node.dataset.officialPlugin).sort()), ['sodeck.files','sodeck.network-proxy','sodeck.system-status','sodeck.terminal']);
   assert.match(await page.locator('[data-official-plugin="sodeck.terminal"]').textContent(), /真实终端/);
   assert.match(await page.locator('[data-official-plugin="sodeck.files"]').textContent(), /上传下载、管理文件/);
-  assert.deepEqual(requests, [], "Opening settings must not download plugins automatically");
+  assert(requests.every(url=>url.startsWith('/repos/BgaSol/soDeck/git/')), "Opening settings reads catalog metadata without checking releases or downloading packages");
+  await page.locator('#choose-plugin').click();
+  assert.equal(await page.locator('#plugins-official').getAttribute('aria-pressed'),'true','Cancelling the directory picker leaves the official list in place');
+  assert.equal((await call('snapshot')).plugins.length,0);
+  await page.screenshot({path:'artifacts/production-ui/plugins-discover.png'});
+  catalogFiles.set('new-tool',{id:'example.catalog-new',name:'仓库新增插件',description:'无需升级核心即可发现',tagPrefix:'new-tool-v',icon:'plug',order:50});
+  await page.locator('#refresh-official-plugins').click();
+  await page.locator('[data-official-plugin="example.catalog-new"]').waitFor();
+  assert.equal(await page.locator('[data-official-plugin]').count(),5,'A repository addition appears in the running core');
+  catalogUnavailable=true;
+  await page.locator('#refresh-official-plugins').click();
+  await page.getByRole('alert').filter({hasText:'上次成功获取'}).waitFor();
+  assert.equal(await page.locator('[data-official-plugin]').count(),5,'Refresh failure preserves the last complete catalog');
+  catalogUnavailable=false;catalogFiles.delete('new-tool');
+  await page.locator('#refresh-official-plugins').click();
+  await page.locator('[data-official-plugin="example.catalog-new"]').waitFor({state:'detached'});
+  assert.equal(await page.locator('.official-catalog-status + [role="alert"]').count(),0,'A successful refresh clears the cache warning');
   await install().click(); await terminal.getByRole("alert").waitFor();
   assert.match(await terminal.getByRole("alert").textContent(), /尚未发布/);
   assert.equal((await call("snapshot")).plugins.length, 0);
@@ -329,17 +385,47 @@ try {
   corrupt = false; await install().click();
   await page.locator('.maintenance-pending').waitFor();
   assert.match(await page.locator('.maintenance-pending').textContent(), /等待重启/);
-  assert.equal(await page.locator('[data-official-plugin]').count(), 0, 'Installed plugins leave the add screen');
+  assert.equal(await page.locator('[data-official-plugin]').count(), 4, 'Installation stays in the official list for the next plugin');
+  assert.equal(await terminal.locator('[data-action="install-official-plugin"]').count(), 0, 'An installed plugin cannot be installed twice');
+  assert.match(await terminal.locator('[role="status"]').textContent(), /已安装 · 重启后启用/);
   const installed = (await call("snapshot")).plugins[0];
   assert(installed.enabled && installed.pendingRestart);
   assert.equal(installed.status, "unloaded");
   assert.equal(installed.manifest.updateSource.repository, "BgaSol/soDeck");
+  const files = page.locator('[data-official-plugin="sodeck.files"]');
+  await files.locator('[data-action="install-official-plugin"]').click();
+  await files.locator('[data-action="select-plugin"]').waitFor();
+  assert.equal((await call('snapshot')).plugins.length, 2, 'A second official plugin installs without leaving the list');
+  await terminal.locator('[data-action="select-plugin"]').click();
+  assert.equal(await page.locator('[data-action="download-update"],[data-action="check-update"]').count(),0,'Plugin details route upgrades to software updates');
+  await page.locator('[data-action="back-plugins"]').click();
+  assert.equal(await page.locator('#plugins-official').getAttribute('aria-pressed'),'true','Back returns to the same plugin list');
+  assert.equal(await terminal.locator('[data-action="select-plugin"]').evaluate(el=>el===document.activeElement),true,'Back restores focus to the plugin');
+  await page.locator('.toast-error').last().waitFor({state:'hidden'});
+  for (const theme of ['light','dark','dopamine']) {
+    await page.locator('#settings-nav-appearance').click();
+    await page.locator(`#theme-${theme}`).click();
+    await page.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme);
+    await page.locator('#settings-nav-plugins').click();
+    for (const [width,height] of [[1100,720],[720,480]]) {
+      await page.setViewportSize({width,height});
+      assert.equal(await page.locator('.settings-page').evaluate(el=>el.scrollWidth>el.clientWidth+1),false,`${theme}/${width} official plugins fit`);
+      await page.locator('[data-official-plugin="sodeck.system-status"] button').scrollIntoViewIfNeeded();
+      assert(await page.locator('[data-official-plugin="sodeck.system-status"] button').isEnabled());
+      await page.locator('.settings-page').evaluate(el=>el.scrollTo(0,0));
+      const firstAction = await terminal.locator('button').boundingBox(), pendingBar = await page.locator('.maintenance-pending').boundingBox();
+      assert(firstAction.y + firstAction.height <= pendingBar.y, `${theme}/${width} first plugin action is visible without scrolling`);
+      await page.screenshot({path:`artifacts/production-ui/plugins-official-${theme}-${width}.png`});
+    }
+  }
+  await page.setViewportSize({width:1100,height:720});
   await page.reload(); await page.locator("#settings-button").click();
+  await page.locator('#settings-nav-plugins').click();
   await page.locator('[data-plugin-id="sodeck.terminal"]').waitFor();
   assert.equal(await page.locator('[data-plugin-id="sodeck.terminal"]').count(),1);
-  assert.equal((await call("snapshot")).plugins.length, 1);
+  assert.equal((await call("snapshot")).plugins.length, 2);
   await page.screenshot({ path: "artifacts/production-ui/official-plugins.png", animations: "disabled" });
-  checks.push("Official plugin first install: no background downloads, unpublished release and corrupt archive retries, native package selection, pending restart and persisted record after reload");
+  checks.push("Plugin management: empty install opens official list, keyboard list switching, no background downloads, unpublished/corrupt retries, two consecutive native package installs without leaving the list, no duplicate install, back restores list/focus, persisted installed default, three themes at 1100x720 and 720x480");
   const base=`http://127.0.0.1:${downloads.address().port}`;
   for (const name of ['update-one','update-two']) {
     const pluginDirectory=path.join(directory,name);fs.mkdirSync(pluginDirectory);
@@ -353,7 +439,17 @@ try {
     extraManifests.set(`/${name}.json`,{id:metadata.id,version:'0.1.1',apiVersion:'1',notes:markdownNotes,platforms:{[target]:{url:`${base}/${name}.tar.gz`,sha256:createHash('sha256').update(bytes).digest('hex')}}});
     extraReleases.push({tag_name:`plugin-${name}-v0.1.1`,draft:false,prerelease:false,assets:[{name:'plugin-update.json',browser_download_url:`${base}/${name}.json`}]});
     fs.writeFileSync(path.join(pluginDirectory,'plugin.json'),JSON.stringify({...metadata,version:'0.1.0'}));
-    await call('add_plugin',{directory:pluginDirectory});
+    if (name === 'update-one') {
+      await page.locator('#plugins-official').click();
+      chosenPluginDirectory = pluginDirectory;
+      await page.locator('#choose-plugin').click();
+      await page.locator('#back-plugins').waitFor();
+      assert.equal(await page.locator('#back-plugins').evaluate(el=>el===document.activeElement),true,'Local registration focuses plugin details');
+      await page.locator('#back-plugins').click();
+      assert.equal(await page.locator('#plugins-installed').getAttribute('aria-pressed'),'true','A local plugin returns to the installed list');
+      await page.locator('[data-plugin-id="test.update-one"]').waitFor();
+      chosenPluginDirectory = null;
+    } else await call('add_plugin',{directory:pluginDirectory});
   }
   await page.reload();await page.locator('#settings-button').click();
   await page.locator('[data-action="section"][data-id="updates"]').click();
@@ -364,6 +460,13 @@ try {
   await page.keyboard.press('Space');
   assert.match(await page.locator('[data-action="download-all-updates"]').textContent(),/所选（1）/);
   await secondUpdate.locator('[data-update-select]').check();
+  await page.locator('#settings-nav-plugins').click();
+  const updateShortcut = page.locator('[data-plugin-id="test.update-one"] [data-action="plugin-updates"]');
+  await updateShortcut.click();
+  assert.equal(await firstUpdate.evaluate(el=>el===document.activeElement),true,'A plugin update shortcut locates and focuses its software update row');
+  assert.equal(await page.locator('.update-group').first().getAttribute('aria-label'),'SoDeck 应用');
+  assert.equal(await firstUpdate.evaluate(el=>el.closest('.update-group').getAttribute('aria-label')),'插件更新');
+  assert.equal(await page.locator('[aria-label="插件更新"] .update-row').first().getAttribute('data-update-id'),'test.update-one','Actionable plugins precede current versions');
   await firstUpdate.locator('.update-release-notes summary').click();
   const notes=firstUpdate.locator('.release-notes-markdown');
   assert.equal(await notes.getByRole('heading',{name:'更新测试',level:1}).count(),1);
@@ -399,7 +502,7 @@ try {
   assert.equal(await page.locator('[data-action="download-all-updates"]').count(),0);
   await page.screenshot({path:'artifacts/production-ui/updates-ready.png'});
   await page.locator('[data-action="section"][data-id="plugins"]').click();
-  assert.equal(await page.locator('[data-plugin-id]').count(),3);
+  assert.equal(await page.locator('[data-plugin-id]').count(),4);
   assert.equal(await page.locator('#update-repository').count(),0,'Technical source fields are not in the overview');
   await page.locator('[data-plugin-id="test.update-one"] [data-action="select-plugin"]').focus();await page.keyboard.press('Enter');
   assert.equal(await page.locator('[data-action="back-plugins"]').evaluate(el=>el===document.activeElement),true,'Plugin details move keyboard focus into the new page');
@@ -490,6 +593,14 @@ try {
   await page.locator('[data-action="close-layer"]').click();await page.locator('#settings-button').click();assert.equal(await preference.inputValue(),'17');
   await page.locator('#component-settings-page').getByRole('button',{name:'保存',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.settings-feedback')?.textContent.includes('设置已保存'));
   const preferenceValue=await call('settings_page',{pluginId:uiMetadata.id,pageId:'display'});assert.equal(preferenceValue.values.fontSize,17);
+  for (const destination of ['appearance','plugins','updates']) {
+    await page.locator(`#settings-nav-${destination}`).click();
+    assert.equal(await page.locator('.settings-nav [aria-current="page"]').count(),1,'Only the visible settings page is selected');
+    assert.equal(await page.locator('.settings-nav .nav-item.active').count(),1,'Previous component settings do not stay highlighted');
+    await page.locator('.settings-nav').getByRole('button',{name:'显示偏好验收',exact:true}).click();
+    assert.equal(await preference.inputValue(),'17','Returning to component preferences preserves their values');
+    assert.equal(await page.locator('.settings-nav [aria-current="page"]').count(),1);
+  }
   await page.locator('[data-action="close-layer"]').click();checks.push('Bundled component settings: existing navigation, core save, global refresh preserves input DOM, closing/reopening keeps drafts');
   await page.locator('#status-button').click();await page.getByRole('button',{name:'查看日志',exact:true}).click();
   await page.locator('.log-row').first().waitFor();const currentLogs=await page.locator('#log-results').textContent();assert(currentLogs.length>0);
@@ -555,6 +666,7 @@ try {
   if (await dialog().count()) console.error(await dialog().evaluate(el => [...el.querySelectorAll("form,fieldset,header,footer")].map(node => ({ tag: node.tagName, css: node.className, height: node.getBoundingClientRect().height, scroll: node.scrollHeight, client: node.clientHeight, min: getComputedStyle(node).minHeight, flex: getComputedStyle(node).flex }))));
   throw error;
 } finally {
+  holdCatalog = false; releaseCatalog?.();
   await browser.close(); await new Promise(resolve => server.httpServer.close(resolve));
   if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.stdin.end(); await exited; }
   await new Promise(resolve => downloads.close(resolve));

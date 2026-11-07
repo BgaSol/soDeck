@@ -1,6 +1,9 @@
 {
   "id": "sodeck.files",
   "name": "文件",
+  "description": "浏览服务器目录、上传下载、管理文件，支持 UTF-8 小文本编辑和草稿导出。",
+  "icon": "folder",
+  "order": 20,
   "apiVersion": "1",
   "binary": "sodeck-files",
   "tagPrefix": "plugin-files-v",

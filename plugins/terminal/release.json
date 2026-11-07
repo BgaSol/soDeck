@@ -1,6 +1,9 @@
 {
   "id": "sodeck.terminal",
   "name": "终端",
+  "description": "通过当前服务器连接打开真实终端，支持多个终端页和跨窗口接续。",
+  "icon": "terminal",
+  "order": 10,
   "apiVersion": "1",
   "binary": "sodeck-terminal",
   "tagPrefix": "plugin-terminal-v",

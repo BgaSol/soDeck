@@ -37,11 +37,11 @@ export class ComponentSettings {
     catch (error) { this.catalogError = String(error); }
     finally { this.catalogPending = false; }
   }
-  navigation() {
-    return `<div class="nav-label">组件</div>${this.entries.length ? this.entries.map(p => {
+  navigation(active = true) {
+    return this.entries.map(p => {
       const key = `${p.pluginId}/${p.pageId}`, draft = this.drafts.get(key);
-      return b("component-settings", `${e(p.title)}${draft?.dirty ? ' <span class="settings-draft-dot" title="未保存">●</span>' : ""}`, p.icon || "settings", `nav-item ${this.selected === key ? "active" : ""}`, `id="component-nav-${e(key)}" data-id="${e(key)}" aria-current="${this.selected === key ? "page" : "false"}"`);
-    }).join("") : `<p class="hint settings-nav-hint">安装插件后可配置组件</p>`}`;
+      return b("component-settings", `${e(p.title)}${draft?.dirty ? ' <span class="settings-draft-dot" title="未保存">●</span>' : ""}`, p.icon || "settings", `nav-item ${active && this.selected === key ? "active" : ""}`, `id="component-nav-${e(key)}" data-id="${e(key)}" title="${e(p.title)}" aria-current="${active && this.selected === key ? "page" : "false"}"`);
+    }).join("");
   }
   select(key: string) { this.selected = key; this.active = ""; this.render(); }
   mount(host: HTMLElement | null, visible: boolean) {

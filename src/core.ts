@@ -9,7 +9,8 @@ export interface Manifest {
   settings?: unknown;
   updateSource?: { repository: string; tagPrefix: string };
 }
-export interface OfficialPlugin { id: string; name: string; description: string; tagPrefix: string }
+export interface OfficialPlugin { id: string; name: string; description: string; tagPrefix: string; icon: string; order: number }
+export interface OfficialCatalog { plugins: OfficialPlugin[]; fetchedAt: number; error: string | null }
 export interface Plugin {
   directory: string;
   manifest: Manifest;
@@ -90,7 +91,7 @@ export const core = {
   close: () => invoke<void>("close_app"),
   snapshot: () => invoke<Snapshot>("snapshot"),
   add: (directory: string) => invoke<string>("add_plugin", { directory }),
-  officialPlugins: () => invoke<OfficialPlugin[]>("official_plugins"),
+  officialPlugins: (refresh = false) => invoke<OfficialCatalog>("official_plugins", { refresh }),
   installOfficial: (id: string) => invoke<string>("install_official_plugin", { id }),
   enabled: (id: string, enabled: boolean) => invoke<void>("set_plugin_enabled", { id, enabled }),
   updateSource: (id: string, source: Manifest["updateSource"] | null) => invoke<void>("set_plugin_update_source", { id, source }),

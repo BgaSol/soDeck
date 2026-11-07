@@ -1,6 +1,9 @@
 {
   "id": "sodeck.network-proxy",
   "name": "网络隧道",
+  "description": "通过当前服务器建立本地 TCP 转发和 SOCKS5 代理，按规则查看连接与流量。",
+  "icon": "network",
+  "order": 30,
   "apiVersion": "1",
   "binary": "sodeck-network-proxy",
   "tagPrefix": "plugin-network-proxy-v",

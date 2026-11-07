@@ -43,7 +43,10 @@ let exitPrompt = false;
 let logGeneration = 0;
 const state: views.ViewState = {
   officialPlugins: [],
-  section: "plugins",
+  officialFetchedAt: 0,
+  officialLoading: false,
+  officialError: "",
+  section: "appearance",
   plugin: "",
   messages: [],
   unread: false,
@@ -56,7 +59,7 @@ const state: views.ViewState = {
   updates: {},
   updateOverview: { checking: false, busy: false, lastCheckedAt: 0, nextCheckAt: 0 },
   excludedUpdates: new Set(),
-  addingPlugin: false,
+  pluginTab: null,
   sourceDrafts: {},
 };
 
@@ -97,7 +100,7 @@ function content() {
   if (!snapshot)
     return `<div class="error-box">无法读取应用状态：${e(lastError)}<br>${b("refresh", "重新读取")}</div>`;
   if (layer === "status") return views.status(snapshot);
-  if (layer === "settings") return views.settings(snapshot, state, componentSettings.navigation());
+  if (layer === "settings") return views.settings(snapshot, state, componentSettings.navigation(state.section === "components"));
   if (layer === "logs") return views.logs(snapshot, state);
   return views.messages(state);
 }
@@ -146,6 +149,7 @@ async function showLayer(next: string) {
   }
   if (next === "settings" && state.section === "updates") void core.checkUpdates(true).catch(() => {});
   if (next === "settings") void componentSettings.catalog();
+  if (next === "settings" && state.section === "plugins") void loadOfficialPlugins();
   scheduleRefresh();
 }
 function closeLayer() {
@@ -288,6 +292,23 @@ async function pluginAction(key: string, run: () => Promise<unknown>) {
     await refresh();
   }
 }
+async function loadOfficialPlugins(force = false) {
+  if (state.officialLoading || (!force && state.officialFetchedAt && Date.now() - state.officialFetchedAt < 60 * 60 * 1000)) return;
+  state.officialLoading = true;
+  state.officialError = "";
+  if (layer === "settings") renderLayer();
+  try {
+    const catalog = await core.officialPlugins(force);
+    state.officialPlugins = catalog.plugins;
+    state.officialFetchedAt = catalog.fetchedAt;
+    state.officialError = catalog.error ?? "";
+  } catch (error) {
+    state.officialError = String(error);
+  } finally {
+    state.officialLoading = false;
+    if (layer === "settings") renderLayer();
+  }
+}
 const restartFromUpdate = () => restart(state.updates["sodeck.core"]?.phase === "ready");
 const copy = (text: string) =>
   navigator.clipboard.writeText(text).then(() => toast("已复制"));
@@ -324,13 +345,15 @@ root.addEventListener("click", (event) => {
         break;
       case "section":
         state.section = id;
+        if (id === "plugins") state.plugin = "";
         renderLayer();
         if (id === "updates") void core.checkUpdates(true).catch(() => {});
+        if (id === "plugins") void loadOfficialPlugins();
         break;
       case "manage-plugins":
         state.section = "plugins";
         state.plugin = "";
-        state.addingPlugin = false;
+        state.pluginTab = null;
         await showLayer("settings");
         break;
       case "component-settings":
@@ -350,24 +373,34 @@ root.addEventListener("click", (event) => {
       case "retry-component-settings":
         await componentSettings.action(target.dataset.action!);
         break;
-      case "add-plugin":
-        state.addingPlugin = true;
+      case "plugin-tab":
+        state.pluginTab = id === "official" ? "official" : "installed";
         state.plugin = "";
         renderLayer();
-        overlay.querySelector<HTMLElement>('[data-action="back-plugins"]')?.focus();
+        document.getElementById(`plugins-${state.pluginTab}`)?.focus();
+        if (state.pluginTab === "official") void loadOfficialPlugins();
+        break;
+      case "refresh-official-plugins":
+        await loadOfficialPlugins(true);
+        break;
+      case "plugin-updates":
+        state.section = "updates";
+        renderLayer();
+        overlay.querySelector<HTMLElement>(`[data-update-id="${CSS.escape(id)}"]`)?.focus();
+        void core.checkUpdates(true).catch(() => {});
         break;
       case "select-plugin":
         state.plugin = id;
-        state.addingPlugin = false;
         renderLayer();
         overlay.querySelector<HTMLElement>('[data-action="back-plugins"]')?.focus();
         break;
-      case "back-plugins":
+      case "back-plugins": {
+        const previous = state.plugin;
         state.plugin = "";
-        state.addingPlugin = false;
         renderLayer();
-        overlay.querySelector<HTMLElement>('[data-action="select-plugin"], [data-action="add-plugin"]')?.focus();
+        (overlay.querySelector<HTMLElement>(`[data-action="select-plugin"][data-id="${CSS.escape(previous)}"]`) ?? overlay.querySelector<HTMLElement>('.plugin-tabs [aria-pressed="true"]'))?.focus();
         break;
+      }
       case "choose-plugin": {
         const directory = await open({
           directory: true,
@@ -377,7 +410,9 @@ root.addEventListener("click", (event) => {
         if (typeof directory === "string")
           await pluginAction("choose", async () => {
             state.plugin = await core.add(directory);
+            state.pluginTab = "installed";
           });
+        if (typeof directory === "string") overlay.querySelector<HTMLElement>('#back-plugins')?.focus();
         break;
       }
       case "toggle-plugin": {
@@ -386,7 +421,10 @@ root.addEventListener("click", (event) => {
         break;
       }
       case "install-official-plugin":
-        await pluginAction(`install:${id}`, async () => { state.plugin = await core.installOfficial(id); });
+        state.pluginTab = "official";
+        await pluginAction(`install:${id}`, () => core.installOfficial(id));
+        if (layer === "settings" && state.section === "plugins" && !state.plugin && state.pluginTab === "official" && document.activeElement === document.body)
+          document.getElementById(`official-action-${id}`)?.focus({preventScroll: true});
         break;
       case "check-update":
         await pluginAction(`update:${id}`, () => core.checkUpdate(id));
@@ -433,6 +471,7 @@ root.addEventListener("click", (event) => {
         break;
       case "locate-plugin":
         state.plugin = id;
+        state.pluginTab = "installed";
         state.section = "plugins";
         await showLayer("settings");
         break;
@@ -526,7 +565,6 @@ root.addEventListener("change", (event) => {
   if (!state.paused) void action(refreshLogs);
 });
 async function start() {
-  state.officialPlugins = await core.officialPlugins();
   await listen("core-changed", scheduleRefresh);
   await listen<SettingsSnapshot>("core-settings-changed", event => componentSettings.changed(event.payload));
   await listen<Parameters<ComponentSettings["applied"]>[0]>("core-settings-application", event => componentSettings.applied(event.payload));
