@@ -155,7 +155,9 @@ netem 单独保留为手动 `suite=netem`：Linux 两架构、原六组弱网配
 
 最终快照 30 条、约 9.39 GiB；新增范围所需 debug/普通业务缓存补齐后，容量高于第二步快照，但仍保留发行缓存。约 8 GiB 是初始管理目标，不是发布门禁；当前余量有限，后续输入换代仍需检查淘汰和过时副本，不能把测试/发行缓存都当作永久资源。本轮没有增加缓存服务、预热、调试 profile 或 workspace crate 缓存。
 
-[纯文档 main push 42412526086](https://github.com/BgaSol/soDeck/actions/runs/42412526086) 已通过：仅 select 文档检查和 format 汇总执行，其余 checks/native/desktop/integration/netem 全部 skipped；没有 npm ci、Rust 安装或产品构建。收尾补明确 Tauri 版本/核心配置的核心范围，避免仅配置变化触发插件业务；含核心的 native 范围保持现有全核心 workspace 缓存输入，组件选项改变不产生新的大份核心缓存键，仅插件任务仍隔离小缓存。两项范围/缓存契约由选择脚本回归验证，没有修改实际版本或配置做探针。
+[纯文档 main push 42412526086](https://github.com/BgaSol/soDeck/actions/runs/42412526086) 已通过，触发到完成 **25 秒**：仅 select 文档检查和 format 汇总执行，其余 checks/native/desktop/integration/netem 全部 skipped；没有 npm ci、Rust 安装或产品构建。收尾补明确 Tauri 版本/核心配置的核心范围，避免仅配置变化触发插件业务；含核心的 native 范围保持现有全核心 workspace 缓存输入，组件选项改变不产生新的大份核心缓存键，仅插件任务仍隔离小缓存。两项范围/缓存契约由选择脚本回归验证，没有修改实际版本或配置做探针。
+
+该补充提交 [`7ffa281`](https://github.com/BgaSol/soDeck/commit/7ffa281cd13ef0530c9d5c87042913e99eb6e8b2) 的[自动检查 42412867717](https://github.com/BgaSol/soDeck/actions/runs/42412867717) 成功，只选择文档和脚本回归；76 项脚本测试、范围/缓存契约与汇总通过，native/desktop/integration/netem 全部 skipped，验证修改选择脚本也不会无条件启动产品/业务套件。原生和业务完整配置证据仍绑定上述 c497d40，不将补充提交的 skipped 当作重新执行。
 
 运行状态、job 日志、真实 CLI 路由、诊断和按 ID 清理记录保存在 `artifacts/release-performance-step3/`。未建立真实 PR/fork 探针，PR merge-base、缺失提交、删除/重命名与换行文件名由实际 Git 临时仓库回归覆盖（Linux CI 执行换行路径用例）。六组 netem 没有重复跑，前一步完成的历史结果不能冒充新提交验收；新手动入口的命令/原生目标/报告由 actionlint、路由回归和原有诊断逻辑检查。
 
