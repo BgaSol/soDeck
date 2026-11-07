@@ -1,6 +1,6 @@
 # 全页面体验修复实施记录
 
-日期：2026-11-07。对应 [修复方案](plan-ui-remediation.md)、[原始逐页评审](../.impeccable/critique/2026-11-06T22-06-41Z__src-main-ts.md) 与 [最终独立复查](../.impeccable/critique/2026-11-07T02-19-48Z__src-main-ts.md)。R01–R22 及末轮独立复查发现的问题均已修复并复验，设计评分 30/40、技术评分 15/20。最终候选源码为 `b441827852cc5c06454e99338e2a60dff4de399d`，核心 0.9.3、终端 0.2.2、文件 0.4.2、网络隧道 0.2.2；五平台实际包、发布与升级验收仍在收尾，当前尚未正式发行。R23 继续暂缓。
+日期：2026-11-07。对应 [修复方案](plan-ui-remediation.md)、[原始逐页评审](../.impeccable/critique/2026-11-06T22-06-41Z__src-main-ts.md) 与 [最终独立复查](../.impeccable/critique/2026-11-07T02-19-48Z__src-main-ts.md)。R01–R22 及末轮独立复查发现的问题均已修复并复验，设计评分 30/40、技术评分 15/20。发行源码为 `b441827852cc5c06454e99338e2a60dff4de399d`，核心 0.9.3、终端 0.2.2、文件 0.4.2、网络隧道 0.2.2；四组件已独立正式发行，五平台原生包、真实业务及正式升级验收全部通过。本轮代码与自动化发行验收完成，设备人工验收缺口见交付边界，R23 继续暂缓。
 
 ## 改动范围
 
@@ -50,7 +50,7 @@ R05 的新增 720×480 正式前端断言暴露连接按钮低于视口；原因
 | --- | --- |
 | `npm run check`、`npm run plugin:check` | 通过：TypeScript 类型与核心/三个插件 Rust 格式 |
 | `npm run scripts:test` | 65/65 通过；本机 Cargo 需位于 PATH，一次遗漏 PATH 的执行已修正后重跑 |
-| `npm run test` | 106 项通过、8 项显式 ignored；隔离 OpenSSH、插件包和 Linux netem 等专项不由此命令代替 |
+| `npm run test` | 最终 107 项通过、8 项显式 ignored，包含测试凭据仅发送给 GitHub API 的回归；隔离 OpenSSH、插件包和 Linux netem 等专项不由此命令代替 |
 | `npm run ui:test` | 全部通过：服务器 12 项、工作区 18 项、连接、交互 8 项、正式前端 11 项、桌面一致性及设置；无页面异常。最终设置 footer 修改后，设置与正式前端分别再次通过 |
 | `npm run settings:test` | 已在整合入口通过：4 类设置、实际离线字体、18px/1.6 草稿预览、保存/关闭/重开、冲突和 12 组主题/窗口/zoom 布局，底部保存操作始终可见 |
 | `npm run terminal:input:test` | 通过：实际 xterm 复制、Ctrl+C、中断、粘贴、bracketed paste、菜单、迟到粘贴取消和主题几何 |
@@ -99,11 +99,38 @@ R05 的新增 720×480 正式前端断言暴露连接按钮低于视口；原因
 
 macOS 首次失败发生在未修改的 `missing_plugin_reply_times_out_without_preventing_further_requests`：断言得到的错误包含“超时”失败，日志没有打印实际错误内容；同一版本此前 macOS 运行和本机精确测试通过。仅重跑失败目标后通过，未稳定复现，不据此声称原因已查明或产品缺陷已修复。
 
-最终代码检查 [42327323134](https://github.com/BgaSol/soDeck/actions/runs/42327323134) 全部通过，包含 Linux x86_64/ARM64 两种架构的真实 SOCKS 与弱网恢复测试。
+发行运行时代码检查 [42327323134](https://github.com/BgaSol/soDeck/actions/runs/42327323134) 全部通过，包含 Linux x86_64/ARM64 两种架构的真实 SOCKS 与弱网恢复测试。后续只修正升级测试夹具及文档，未改变已发行程序的运行时行为。
 
-实际包远程业务验收 [42330354260](https://github.com/BgaSol/soDeck/actions/runs/42330354260) 使用以上四个固定 run ID。首轮 Linux x86_64/ARM64、Windows ARM64、macOS ARM64 通过；Windows x64 等待终端字体 `jetbrains-mono` 应用超时（15 秒），已仅重跑失败目标，尚未确认结果。核心草稿准备 [42330358568](https://github.com/BgaSol/soDeck/actions/runs/42330358568) 首轮在新建草稿后的状态核对返回 `Core release changed while uploading`；现有草稿源码与候选一致、附件为空，已仅重跑失败的 metadata 任务。
+实际包远程业务验收 [42330354260](https://github.com/BgaSol/soDeck/actions/runs/42330354260) 使用以上四个固定 run ID，五平台全部通过。下载的 `Native-verification-summary` 确认 `success=true`、测试源码为 `b441827`，五目标的核心版本、原生窗口、SSH 与网络结果均为成功。包含真实 SSH PTY、文件操作、TCP/SOCKS、窗口移转、重开与退出。
 
-正式旧包到新包的升级验收另运行 `release-upgrade.yml`，固定核心 0.9.2→0.9.3、终端 0.2.1→0.2.2、文件 0.4.1→0.4.2、网络 0.2.1→0.2.2。历史失败运行 `42305022669` 不计为本轮通过；夹具已将失败原因同时写到标准错误及 `upgrade-error.txt`。
+首轮 Linux x86_64/ARM64、Windows ARM64、macOS ARM64 通过；Windows x64 等待终端字体 `jetbrains-mono` 应用超时（15 秒），仅重跑失败目标后通过，根因未稳定复现。核心草稿准备 [42330358568](https://github.com/BgaSol/soDeck/actions/runs/42330358568) 首轮在新建草稿后的状态核对返回 `Core release changed while uploading`；现有草稿源码与候选一致、附件为空，仅重跑失败的 metadata 后通过。没有修改测试门槛或覆盖发行版本。
+
+正式旧包到新包的升级验收 [42332446409](https://github.com/BgaSol/soDeck/actions/runs/42332446409) 五平台全部通过，固定核心 0.9.2→0.9.3、终端 0.2.1→0.2.2、文件 0.4.1→0.4.2、网络 0.2.1→0.2.2；验收夹具源码为 `1dfdc05`，包为上表正式版本。下载五份实际结果，逐项核对原目录和四类自定义设置一致、准备更新时旧插件版本继续运行、重启后新版本运行、安装后核心字节摘要与下载包一致、业务报告的版本/架构/SSH/窗口结果成功；两个 Linux 目标的 DEB 系统升级也成功。
+
+| 原生目标 | 四组件编译打包 | 真实包远程业务 | 正式旧包到新包升级 |
+| --- | --- | --- | --- |
+| Windows x86_64 | 通过 | 通过 | 通过：原生 NSIS 更新 |
+| Windows ARM64 | 通过 | 通过 | 通过：原生 NSIS 更新 |
+| Linux x86_64 | 通过 | 通过 | 通过：AppImage 更新及 DEB 系统升级 |
+| Linux ARM64 | 通过 | 通过 | 通过：AppImage 更新及 DEB 系统升级 |
+| macOS ARM64 | 通过 | 通过 | 通过：原生应用更新 |
+
+首轮 [42331056439](https://github.com/BgaSol/soDeck/actions/runs/42331056439) 五目标失败：Windows 和 Linux 已完成原生升级与持久化检查，但后续远程业务夹具复制了原数据又走首次冒烟，重复创建 `Package test` 分组；两个 Linux 目标的 DEB 系统升级也已通过。macOS 在核心更新发现时遇到 GitHub 匿名 API HTTP 403 限流；测试功能编译开关内增加 CI 凭据支持，只对 `api.github.com` 的 JSON 请求附加认证。回归核对 GitHub 下载站与其他域名没有认证头、普通客户端未启用测试凭据。
+
+第二轮 [42331957507](https://github.com/BgaSol/soDeck/actions/runs/42331957507) 五目标失败：将复制目录改为持久化标记消除了分组重复，随后远程业务冒烟要求其固定的 18px/IBM Plex Mono 外观基准，与升级夹具保留的自定义设置不同，触发“实际包重开后未恢复终端外观设置”。最终修正为原数据完成升级前后比较，业务冒烟使用独立目录并引用已经升级、验证版本的插件程序；执行自身首次设置保存与重开检查，不改升级数据和比较断言。该修正为普通提交 `1dfdc05`。
+
+两次夹具修复均已推送 `main`。本机重新执行 65 项脚本测试、107 项核心测试、类型/格式检查、前端构建、升级夹具构建以及未启用测试功能的核心编译检查，均通过。以最终原生程序直接复现已有目录的旧标记失败，并完成最终独立业务目录的真实 SSH、文件、TCP/SOCKS、窗口、设置保存/重开和退出回归。发行包及版本未改，历史失败运行 `42305022669` 不计为本轮通过；夹具失败原因写到标准错误及 `upgrade-error.txt`。
+
+### 独立发行
+
+| 组件 | 正式版本 | 核验 |
+| --- | --- | --- |
+| 核心 | [0.9.3](https://github.com/BgaSol/soDeck/releases/tag/v0.9.3) | Latest；五目标共 16 个安装/更新包、签名和更新清单；清单签名与对应附件一致 |
+| 终端 | [0.2.2](https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.2.2) | 五个原生包和独立更新清单，SHA-256 一致 |
+| 文件 | [0.4.2](https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.4.2) | 五个原生包和独立更新清单，SHA-256 一致 |
+| 网络隧道 | [0.2.2](https://github.com/BgaSol/soDeck/releases/tag/plugin-network-proxy-v0.2.2) | 五个原生包和独立更新清单，SHA-256 一致 |
+
+四个正式标签均指向实际构建的完整源码 `b441827852cc5c06454e99338e2a60dff4de399d`。正式发布后再次核对 Release ID、源码、标签、附件数量/大小/摘要，与发布前验证记录一致；Latest 为核心。后续文档提交未替换发行标签或包，不覆盖任何旧正式版本。
 
 ### 渲染与 impeccable 复查
 
@@ -125,4 +152,6 @@ macOS 首次失败发生在未修改的 `missing_plugin_reply_times_out_without_
 
 本机是 Windows x86_64。GitHub 原生 runner 的包内验证单独记录在上表；真实 125%/150%/200% 混合 DPI、系统屏幕阅读器、原生高对比及输入法设备验收尚未完成，浏览器 viewport/CSS zoom 仅证明对应的浏览器布局，CI 包内启动也不能代替这些设备证据。
 
-修复已按核心、三个插件、升级诊断及短窗设置分别提交。按用户最新要求，先前 PR #2 已关闭且未合并，并移除会话关联；后续使用普通 Git 提交与推送，不再创建或合并 PR。工作区中的其他规划保持原样，本文只记录本轮 UI 整改及其交付证据。实际包与升级验收、独立发行仍需闭环。
+修复已按核心、三个插件、升级诊断及短窗设置分别提交。按用户最新要求，先前 PR #2 已关闭且未合并，并移除会话关联；通过普通 Git 提交将 11 个主题提交、复查文档及后续夹具修正直接推送至 `main`。后续不创建或合并 PR。工作区中的其他规划保持原样，本文只记录本轮 UI 整改及其交付证据。
+
+下一步为设备人工验收：原生 DPI、系统读屏/高对比、输入法与触控，以及既有 WebView2 退出警告的稳定复现。R23 按方案条件另行启动，当前没有把消息跳转业务功能算作已完成。自动推送触发的全量检查单独见 Actions；发行源码的全量检查及本轮必要的夹具检查、五平台正式包和升级验收结果如上，不用文档提交替换实际包源码。
