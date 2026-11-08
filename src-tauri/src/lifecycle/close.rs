@@ -39,6 +39,7 @@ impl AppCore {
                 });
                 self.set_closing(active);
             }
+            self.sync_shared_ui_locked(&ui);
             progress
         };
         if let Some(progress) = progress {
@@ -494,7 +495,11 @@ impl AppCore {
                     scope_changed = true;
                     return Ok(());
                 }
-                self.component_ui.lock().unwrap().remove_views(&ids);
+                {
+                    let mut ui = self.component_ui.lock().unwrap();
+                    ui.remove_views(&ids);
+                    self.sync_shared_ui_locked(&ui);
+                }
                 self.close_mutate(id, |o| o.phase = Phase::Finalizing);
             }
             if self.operation(id).phase == Phase::Finalizing {
@@ -513,6 +518,11 @@ impl AppCore {
                         self.workspaces.lock().unwrap().clear();
                     }
                     Target::Views { .. } => {}
+                }
+                if !matches!(op.target, Target::Views { .. }) {
+                    for workspace in &op.workspaces {
+                        self.shared_state.remove_scope(workspace, Instant::now());
+                    }
                 }
                 let finalizer = self.finalizer.lock().unwrap().clone();
                 if let Some(finalizer) = finalizer {

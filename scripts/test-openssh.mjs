@@ -50,11 +50,12 @@ try {
     });
     if (result!==0) throw new Error(`Packaged OpenSSH validation failed (${result}): ${diagnostic}`);
   } else {
-    const terminal=process.argv.includes('--terminal');
-    const files=process.argv.includes('--files');
+    const communication=process.argv.includes('--communication');
+    const terminal=process.argv.includes('--terminal')||communication;
+    const files=process.argv.includes('--files')||communication;
     const network=process.argv.includes('--network');
-    const status=process.argv.includes('--system-status');
-    const uiOnly=(files&&process.argv.includes('--files-ui-only'))||(network&&process.argv.includes('--network-ui-only'));
+    const status=process.argv.includes('--system-status')||communication;
+    const uiOnly=communication||(files&&process.argv.includes('--files-ui-only'))||(network&&process.argv.includes('--network-ui-only'));
     const env={ ...process.env, SODECK_TEST_SSH_PORT: String(port), SODECK_TEST_SSH_USER: username, SODECK_TEST_SSH_KEY: path.join(directory, "user") };
     if(network) env.SODECK_TEST_CURL=await testCurl();
     for(const plugin of [terminal?'terminal':null,files?'files':null,network?'network-proxy':null,status?'system-status':null].filter(Boolean)){
@@ -73,9 +74,10 @@ try {
   if(network&&!uiOnly){const result=await new Promise((resolve,reject)=>{const test=spawn('cargo',['test','--manifest-path','src-tauri/Cargo.toml','--features','test-fixtures','--locked','--test','connections','openssh_network_plugin','--','--ignored','--exact','--nocapture'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('OpenSSH network plugin failed: '+diagnostic);}
   if(network&&!uiOnly){for(const name of ['network_socks_protocol','network_socks_lifecycle']){const result=await new Promise((resolve,reject)=>{const test=spawn('cargo',['test','--manifest-path','src-tauri/Cargo.toml','--features','test-fixtures','--locked','--test','connections',name,'--','--ignored','--exact','--nocapture'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error(name+' failed');}}
   if(network){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-network-ui.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('Network UI failed');}
-  if(status){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-system-status-ui.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('Status UI failed');}
-  if(terminal){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-terminal-ui.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('Terminal UI failed');}
-  if(files){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-files-ui.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('File UI failed');}
+  if(status&&!communication){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-system-status-ui.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('Status UI failed');}
+  if(terminal&&!communication){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-terminal-ui.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('Terminal UI failed');}
+  if(files&&!communication){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-files-ui.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('File UI failed');}
+  if(communication){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-component-communication.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('Component communication failed');}
   }
 } finally {
   if (daemon && daemon.exitCode === null) { const exited = new Promise(resolve => daemon.once("exit", resolve)); daemon.kill(); await exited; }

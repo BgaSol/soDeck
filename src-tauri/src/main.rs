@@ -106,6 +106,21 @@ async fn settings_applied(
         .await
         .map_err(|e| e.to_string())?
 }
+#[tauri::command]
+async fn save_settings_for_surface(
+    app: State<'_, Application>,
+    window: tauri::WebviewWindow,
+    surface_id: String,
+    input: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let core = app.core.clone();
+    let label = window.label().to_owned();
+    tauri::async_runtime::spawn_blocking(move || {
+        core.save_settings_for_surface(&label, &surface_id, input)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 
 #[tauri::command]
 async fn clipboard_text(
@@ -900,7 +915,9 @@ fn main() {
             let core = AppCore::open(directory, sodeck::app_version())?;
             let handle = app.handle().clone();
             core.set_listener(Arc::new(move |name, value| {
-                let _ = handle.emit(name, value);
+                if name == "component-state-changed" {
+                    if let Some(window)=value["windowId"].as_str() {let _=handle.emit_to(window,name,value.clone());}
+                } else {let _ = handle.emit(name, value);}
             }));
             app.manage(Application {
                 core: core.clone(),
@@ -952,6 +969,7 @@ fn main() {
             retry_settings_apply,
             settings_for_surface,
             settings_applied,
+            save_settings_for_surface,
             component_data,
             network_snapshot,
             sodeck::connections::desktop::connection,

@@ -41,7 +41,7 @@ export function changedFiles(eventName, event, cwd = process.cwd()) {
 
 export function selectChecks(files, { suite, fallback } = {}) {
   const plan = { web: false, scripts: false, terminalInput: false, desktop: false, ssh: false,
-    sharedClient: false, netem: false, plugins: [], native: [], integration: [], reasons: [] };
+    sharedClient: false, communication:false, netem: false, plugins: [], native: [], integration: [], reasons: [] };
   const coreTargets = new Set(), scriptTargets = new Set(), plugins = new Set(), integration = new Set();
   const pluginTargets = Object.fromEntries(pluginNames.map(name => [name, new Set()]));
   const allTargets = targets.map(t => t.name);
@@ -49,8 +49,9 @@ export function selectChecks(files, { suite, fallback } = {}) {
   const plugin = name => { plugins.add(name); allTargets.forEach(t => pluginTargets[name].add(t)); };
   const ui = () => { plan.web = plan.scripts = plan.desktop = true; };
   const sharedUi = () => { ui(); plan.terminalInput = true; pluginNames.forEach(name => integration.add(name)); };
+  const communication=()=>{plan.communication=true;ui();['terminal','files','system-status'].forEach(name=>integration.add(name));};
   const full = () => {
-    sharedUi(); core(); plan.ssh = plan.sharedClient = true;
+    sharedUi(); communication(); core(); plan.ssh = plan.sharedClient = true;
     pluginNames.forEach(plugin);
     ['windows-x86_64', 'linux-x86_64', 'macos-aarch64'].forEach(t => scriptTargets.add(t));
   };
@@ -78,6 +79,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
   } else {
     for (const file of files) {
       if (file.endsWith('.md') || file.startsWith('docs/')) continue;
+      if (/^(src\/component-state\.ts|src-tauri\/src\/shared_state(\/|\.)|plugins\/shared\/state\.js|scripts\/(test-component-communication\.mjs|component-state\.test\.mjs|fixtures\/shared-state\.json))$/.test(file)||file==='src-tauri/src/shared_state.rs'||file.startsWith('src-tauri/src/shared_state/')){communication();core();plan.sharedClient=true;['terminal','files','system-status'].forEach(plugin);continue;}
       if (file.startsWith('src/')) {
         if (/^src\/(ui\.css|themes\.css|text-menu\.|menu-position\.|font-loader\.)/.test(file)) sharedUi();
         else ui();
@@ -92,6 +94,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
       const match = file.match(/^plugins\/(terminal|files|network-proxy|system-status)\/(.+)$/);
       if (match) {
         const [, name, relative] = match;
+        if(['terminal','files','system-status'].includes(name))plan.communication=true;
         plan.scripts = true;
         integration.add(name);
         if (name === 'terminal') plan.terminalInput = true;
@@ -152,9 +155,9 @@ export function selectChecks(files, { suite, fallback } = {}) {
         ...pluginNames.filter(p => row.core || pluginTargets[p].has(t.name)).map(p => `plugins/${p} -> target`)].filter(Boolean).join('\n');
       return row;
     });
-  plan.integration = targets.filter(t => t.name.startsWith('linux-') && (integration.has('network-proxy') || (t.name === 'linux-x86_64' && integration.size)))
+  plan.integration = targets.filter(t => t.name.startsWith('linux-') && (integration.has('network-proxy') || (t.name === 'linux-x86_64' && (integration.size||plan.communication))))
     .map(t => ({ ...t, network: integration.has('network-proxy'),
-      terminal: t.name === 'linux-x86_64' && integration.has('terminal'), files: t.name === 'linux-x86_64' && integration.has('files'), status: t.name === 'linux-x86_64' && integration.has('system-status') }));
+      communication:t.name==='linux-x86_64'&&plan.communication,terminal: t.name === 'linux-x86_64' && integration.has('terminal'), files: t.name === 'linux-x86_64' && integration.has('files'), status: t.name === 'linux-x86_64' && integration.has('system-status') }));
   plan.core = coreTargets.size > 0;
   plan.checks = plan.web || plan.scripts || plan.terminalInput || plan.sharedClient || plan.plugins.length > 0 || plan.core;
   return plan;
@@ -167,7 +170,7 @@ export function selectionSummary(plan) {
     `| Frontend / browser / scripts | ${[plan.web && 'frontend + interactions', plan.web && !plan.desktop && 'standalone settings', plan.terminalInput && 'terminal input', plan.scripts && 'script tests'].filter(Boolean).join(', ') || 'Skipped'} |`,
     `| Plugin format | ${plan.plugins.join(', ') || 'Skipped'} |`,
     `| Native source tests | ${plan.native.map(t => `${t.name}: ${[t.core && 'core', t.terminal && 'terminal', t.files && 'files', t.network && 'network', t.status && 'system-status', t.scripts && 'scripts'].filter(Boolean).join(', ')}`).join('<br>') || 'Skipped'} |`,
-    `| Normal integration | ${plan.integration.map(t => `${t.name}: ${[t.network && 'network', t.terminal && 'terminal', t.files && 'files', t.status && 'system-status'].filter(Boolean).join(', ')}`).join('<br>') || 'Skipped'} |`,
+    `| Normal integration | ${plan.integration.map(t => `${t.name}: ${[t.network && 'network', t.terminal && 'terminal', t.files && 'files', t.status && 'system-status',t.communication&&'component communication'].filter(Boolean).join(', ')}`).join('<br>') || 'Skipped'} |`,
     `| Windows desktop | ${plan.desktop ? `Full UI${plan.ssh ? ' + SSH' : ''}` : 'Skipped'} |`,
     `| Weak network | ${plan.netem ? 'Explicit manual netem: both native Linux targets' : 'Skipped; manual netem only, including for all'} |`, '',
     'Selections are not test results. Installed-package checks and published-package/upgrade verification remain independent.', ''].join('\n');

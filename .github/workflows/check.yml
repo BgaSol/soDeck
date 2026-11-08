@@ -135,6 +135,7 @@ jobs:
             plugins/network-proxy -> target
             plugins/files -> target
             plugins/terminal -> target
+            plugins/system-status -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
       - run: npx playwright install --with-deps chromium
@@ -150,6 +151,9 @@ jobs:
       - name: Real system status plugin and background sampling
         if: matrix.status
         run: npm run system-status:test
+      - name: Three real plugins and shared state communication
+        if: matrix.communication
+        run: npm run communication:test
 
   desktop:
     needs: select

@@ -471,7 +471,7 @@ impl AppCore {
     }
     pub fn commit_workspace_move(&self, m: &Move) -> Result<(), String> {
         let mut state = self.workspaces.lock().unwrap();
-        let ui = self.component_ui.lock().unwrap();
+        let mut ui = self.component_ui.lock().unwrap();
         if self.is_closing()
             || ui.frozen(&m.workspace_id)
             || ui.lifecycle.window_closing(&m.source)
@@ -479,7 +479,26 @@ impl AppCore {
         {
             return Err("关闭操作已保留目标，移动不能提交".into());
         }
-        state.commit(m)
+        state.commit(m)?;
+        if m.source == m.target {
+            return Ok(());
+        }
+        let mut retired = Vec::new();
+        for (token, surface) in &ui.surfaces {
+            if ui
+                .resource_view(&surface.view)
+                .is_ok_and(|v| v.context.workspace_id == m.workspace_id)
+                && surface.window == m.source
+            {
+                self.shared_state
+                    .remove_surface(&surface.window, token, std::time::Instant::now());
+                retired.push(token.clone());
+            }
+        }
+        for token in retired {
+            ui.surfaces.remove(&token);
+        }
+        Ok(())
     }
     pub fn workspace_projection(&self, window: &str) -> Result<Projection, String> {
         self.workspaces.lock().unwrap().projection(window)
@@ -609,6 +628,10 @@ impl AppCore {
         main.workspace_ids.push(id.clone());
         main.active_workspace = Some(id);
         state.revision += 1;
+        self.shared_state
+            .adopt_scope(workspace.context.clone(), std::time::Instant::now())
+            .map_err(|e| e.to_string())?;
+        self.sync_shared_ui_locked(&ui);
         drop(ui);
         drop(state);
         drop(servers);

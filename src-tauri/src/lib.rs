@@ -17,6 +17,7 @@ mod resource_tasks;
 pub mod servers;
 mod session_exec;
 pub mod settings;
+pub mod shared_state;
 mod storage;
 pub mod streams;
 pub mod terminal;

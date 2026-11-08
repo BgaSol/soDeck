@@ -14,6 +14,15 @@ fn main() {
     }
     let core =
         sodeck::AppCore::open(std::env::args().nth(1).unwrap().into(), "test".into()).unwrap();
+    if std::env::var_os("SODECK_TEST_SHARED_EVENTS").is_some() {
+        core.set_listener(std::sync::Arc::new(|name, payload| {
+            if name == "component-state-changed" {
+                let mut stdout = io::stdout().lock();
+                writeln!(stdout, "{}", json!({"event":"state","payload":payload})).unwrap();
+                stdout.flush().unwrap();
+            }
+        }));
+    }
     for line in io::stdin().lock().lines() {
         let request: Value = serde_json::from_str(&line.unwrap()).unwrap();
         let args = &request["args"];
@@ -120,6 +129,11 @@ fn main() {
                 args["surfaceId"].as_str().unwrap(),
             ),
             "settings_applied" => core.settings_applied(
+                args["window"].as_str().unwrap_or("main"),
+                args["surfaceId"].as_str().unwrap(),
+                args["input"].clone(),
+            ),
+            "save_settings_for_surface" => core.save_settings_for_surface(
                 args["window"].as_str().unwrap_or("main"),
                 args["surfaceId"].as_str().unwrap(),
                 args["input"].clone(),

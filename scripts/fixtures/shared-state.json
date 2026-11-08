@@ -1,0 +1,9 @@
+{
+  "context":{"workspaceId":"w","serverId":"s","connectionId":"c","generation":1},
+  "initialRevision":"9007199254740993",
+  "record":{"topic":"test.v1","key":"current","producer":{"kind":"core"},"revision":"9007199254740994","present":true,"value":null},
+  "frames":[
+    {"batchId":"batch","fromRevision":"9007199254740993","toRevision":"9007199254740995","part":0,"parts":2,"changes":[{"op":"put","record":{"topic":"test.v1","key":"current","producer":{"kind":"core"},"revision":"9007199254740994","present":true,"value":null}}]},
+    {"batchId":"batch","fromRevision":"9007199254740993","toRevision":"9007199254740995","part":1,"parts":2,"changes":[{"op":"remove","record":{"topic":"test.v1","key":"current","producer":{"kind":"core"},"revision":"9007199254740995","present":false}}]}
+  ]
+}

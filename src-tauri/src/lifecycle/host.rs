@@ -47,6 +47,7 @@ impl AppCore {
                 let mut ui = self.component_ui.lock().unwrap();
                 ui.lifecycle.hosts.remove(window);
                 ui.remove_window_surfaces(window);
+                self.sync_shared_ui_locked(&ui);
                 return;
             };
             if window == "main" {
@@ -104,6 +105,7 @@ impl AppCore {
             ui.lifecycle.hosts.remove(window);
             ui.lifecycle.lost_hosts.insert(window.into());
             ui.remove_window_surfaces(window);
+            self.sync_shared_ui_locked(&ui);
             let op = &ui.lifecycle.operations[&id];
             // Normal destroy occurs after the parent registry has been finalized.
             if op.phase == Phase::Finalizing

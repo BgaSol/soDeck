@@ -21,6 +21,7 @@ pub struct Group {
     quarantined: bool,
 }
 pub struct View {
+    publisher: crate::shared_state::Publisher,
     pub context: Value,
     pub paused: bool,
     pub connected: bool,
@@ -58,6 +59,7 @@ struct Ticket {
     poll_due: Instant,
 }
 pub struct App {
+    pub shared_enabled: bool,
     pub views: BTreeMap<String, View>,
     pub interval: u64,
     pub settings_revision: u64,
@@ -74,6 +76,9 @@ struct Work {
 }
 #[derive(Clone, Copy)]
 enum Kind {
+    SharedGet,
+    SharedPut,
+    SharedRemove,
     State,
     Start,
     Poll,
@@ -93,6 +98,7 @@ pub fn timestamp() -> u64 {
 impl App {
     pub fn new(interval: u64) -> Self {
         Self {
+            shared_enabled: false,
             views: BTreeMap::new(),
             interval,
             settings_revision: 0,
@@ -128,7 +134,7 @@ impl App {
             if self.views.len() >= 128 {
                 return Err("系统状态工作区已达上限".into());
             }
-            self.views.insert(id.into(),View{context:context.clone(),paused:false,connected:false,revision:1,data:json!({"identity":{},"cpu":{"value":null,"state":"warmingUp"},"memory":{"value":null,"state":"unsupported"},"rates":{},"interfaces":[],"disks":[],"filesystems":[],"mountPaths":[]}),navigation:json!({}),groups:groups(),history:BTreeMap::new(),family:None,epoch:1,sequence:0,state_due:Instant::now(),pending:false,ticket:None,probe:0,baseline:Baseline::default(),manual:false,capacity_page:0});
+            self.views.insert(id.into(),View{publisher:crate::shared_state::Publisher::default(),context:context.clone(),paused:false,connected:false,revision:1,data:json!({"identity":{},"cpu":{"value":null,"state":"warmingUp"},"memory":{"value":null,"state":"unsupported"},"rates":{},"interfaces":[],"disks":[],"filesystems":[],"mountPaths":[]}),navigation:json!({}),groups:groups(),history:BTreeMap::new(),family:None,epoch:1,sequence:0,state_due:Instant::now(),pending:false,ticket:None,probe:0,baseline:Baseline::default(),manual:false,capacity_page:0});
         }
         Ok(())
     }
@@ -146,6 +152,7 @@ impl App {
             "disks",
             "filesystems",
             "mountPaths",
+            "mountTopology",
             "rates",
         ] {
             data.as_object_mut().unwrap().remove(key);
@@ -256,6 +263,10 @@ impl App {
             _ => return Err("未知系统状态操作".into()),
         }
         v.revision += 1;
+        if self.shared_enabled && ["pause", "resume"].contains(&action) {
+            v.publisher
+                .observe(&v.data, timestamp(), v.groups[2].error.as_deref(), v.paused);
+        }
         Ok(json!({"accepted":true,"revision":v.revision}))
     }
     pub fn list(&self, id: &str, p: &Value) -> std::result::Result<Value, String> {
@@ -352,6 +363,26 @@ impl App {
                 } else {
                     make(v, Kind::Start, "session.exec.start", t.params.clone())
                 });
+            }
+            if self.shared_enabled
+                && v.connected
+                && (v.paused
+                    || !v
+                        .groups
+                        .iter()
+                        .any(|g| g.due.is_some_and(|at| at <= now) || g.manual_pending))
+            {
+                if let Some(job) = v.publisher.next() {
+                    let (kind, method) = if job.revision.is_none() {
+                        (Kind::SharedGet, "state.get")
+                    } else if job.value.is_some() {
+                        (Kind::SharedPut, "state.put")
+                    } else {
+                        (Kind::SharedRemove, "state.remove")
+                    };
+                    let params = json!({"viewId":id,"expectedContext":v.context,"topic":job.key.0,"key":job.key.1,"expectedRevision":job.revision,"value":job.value});
+                    return Some(make(v, kind, method, params));
+                }
             }
             if !v.connected || (v.paused && !v.manual) {
                 continue;
@@ -466,6 +497,24 @@ impl App {
             return;
         }
         match work.kind {
+            Kind::SharedGet | Kind::SharedPut | Kind::SharedRemove => {
+                let p = &work.params;
+                v.publisher.complete(
+                    crate::shared_state::Job {
+                        key: (
+                            p["topic"].as_str().unwrap().into(),
+                            p["key"].as_str().unwrap().into(),
+                        ),
+                        revision: p["expectedRevision"].as_str().map(str::to_string),
+                        value: if matches!(work.kind, Kind::SharedRemove) {
+                            None
+                        } else {
+                            Some(p["value"].clone())
+                        },
+                    },
+                    result,
+                );
+            }
             Kind::Release | Kind::Cancel => {}
             Kind::State => {
                 if let Ok(r) = result {
@@ -477,6 +526,9 @@ impl App {
                             }
                         }
                         v.context = r["context"].clone();
+                        v.publisher = crate::shared_state::Publisher::default();
+                        v.data["mountTopology"] = Value::Null;
+                        v.data["filesystems"] = json!([]);
                         v.epoch += 1;
                         v.family = None;
                         v.probe = 0;
@@ -651,6 +703,14 @@ impl App {
                             };
                         }
                     }
+                    if self.shared_enabled && [2, 3].contains(&t.group) {
+                        v.publisher.observe(
+                            &v.data,
+                            observed,
+                            v.groups[2].error.as_deref(),
+                            v.paused,
+                        );
+                    }
                     v.revision += 1;
                 }
             },
@@ -759,7 +819,8 @@ fn value_size(v: &Value) -> usize {
         }
 }
 fn cache_size(v: &View) -> usize {
-    value_size(&v.data)
+    v.publisher.bytes()
+        + value_size(&v.data)
         + value_size(&v.navigation)
         + v.baseline.memory_usage()
         + v.history

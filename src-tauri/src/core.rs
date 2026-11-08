@@ -28,6 +28,7 @@ pub struct AppCore {
     pub(crate) network_metrics: crate::network_metrics::Metrics,
     pub(crate) terminals: crate::terminal::Terminals,
     pub(crate) connections: crate::connections::Connections,
+    pub(crate) shared_state: Arc<crate::shared_state::StateHub>,
     pub component_ui: Mutex<crate::component_ui::Runtime>,
     pub workspaces: Mutex<crate::workspaces::Runtime>,
     pub(crate) servers: Mutex<crate::servers::ServerStore>,
@@ -69,6 +70,7 @@ impl AppCore {
             .filter(|p| p.enabled)
             .map(|p| p.manifest.id.clone())
             .collect();
+        let (shared_state, state_wake) = crate::shared_state::StateHub::new();
         let core = Arc::new(Self {
             finalizer: Mutex::new(None),
             executions: crate::session_exec::Executions::default(),
@@ -79,6 +81,7 @@ impl AppCore {
             network_metrics: crate::network_metrics::Metrics::default(),
             terminals: crate::terminal::Terminals::default(),
             connections: crate::connections::Connections::open(&directory),
+            shared_state: Arc::new(shared_state),
             component_ui: Mutex::new(crate::component_ui::Runtime::open(&directory)?),
             workspaces: Mutex::new(crate::workspaces::Runtime::default()),
             servers: Mutex::new(servers),
@@ -100,6 +103,7 @@ impl AppCore {
         });
         core.restore_update_cache();
         crate::component_ui::start_background(&core);
+        crate::shared_state::delivery::start(&core, state_wake);
         core.log(None, "info", "SoDeck 已启动", None);
         Ok(core)
     }

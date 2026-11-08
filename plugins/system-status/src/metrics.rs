@@ -438,6 +438,7 @@ pub fn apply(
                 let rows:Vec<_>=get("interfaces").lines().filter_map(|l|{let n:Vec<_>=l.split('|').collect();if n.len()<4 {return None;}let addresses:Vec<_>=get("addresses").lines().filter(|l|l.split_whitespace().nth(1).is_some_and(|s|s.trim_end_matches(':')==n[0])).filter_map(|l|l.split_whitespace().nth(3)).map(|s|limited(s,128)).collect();Some(json!({"id":format!("{}:{}:{}",n[0],n[1],n[2]),"name":limited(n[0],256),"state":n[3],"addresses":addresses}))}).take(256).collect();
                 snapshot["interfaces"] = json!(rows);
                 let mounts = collectors::mount_paths(get("mounts"));
+                snapshot["mountTopology"] = crate::shared_state::linux_mounts(get("mounts"));
                 if let Some(rows) = snapshot["filesystems"].as_array_mut() {
                     rows.retain(|r| {
                         r["path"]
@@ -452,6 +453,8 @@ pub fn apply(
                     .map(str::to_owned)
                     .collect::<Vec<_>>());
             } else if family == Family::Windows {
+                let rows:Vec<_>=win["mounts"].as_array().into_iter().flatten().take(512).map(|r|json!({"identity":[r["id"],r["path"]],"capacityIdentity":r["id"],"path":r["path"],"pathStyle":"windows","device":r["id"],"filesystemType":r["kind"],"readOnly":null})).collect();
+                snapshot["mountTopology"] = json!({"mounts":rows,"coverage":"partial","reason":"本地固定卷的主挂载路径；不包含网络卷及所有附加挂载点","observedAt":crate::scheduler::timestamp()});
                 snapshot["interfaces"] = json!(win["interfaces"]
                     .as_array()
                     .into_iter()
@@ -460,6 +463,8 @@ pub fn apply(
                     .cloned()
                     .collect::<Vec<_>>());
             } else {
+                let rows:Vec<_>=df_all(get("filesystems")).iter().map(|r|json!({"identity":[r["id"],r["path"]],"path":r["path"],"pathStyle":"posix","device":r["id"],"filesystemType":null,"readOnly":null})).collect();
+                snapshot["mountTopology"] = json!({"mounts":rows,"coverage":"partial","reason":"df 提供的本地挂载路径，不能确认完整拓扑及只读属性","observedAt":crate::scheduler::timestamp()});
                 snapshot["loadText"] = json!(limited(get("load").trim(), 512));
                 let names: Vec<_> = get("interfaces")
                     .lines()

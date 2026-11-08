@@ -672,7 +672,11 @@ async fn run(a: Arc<Attempt>, profile: Profile, keys: Arc<host_keys::HostKeys>) 
     // Otherwise a fast retry can observe "cancelled" while start still returns the old attempt.
     if let Some(core) = a.core.upgrade() {
         if let Some(context) = a.view().context {
-            let _ = core.workspaces.lock().unwrap().disconnected(&context);
+            let mut workspaces = core.workspaces.lock().unwrap();
+            let _ = workspaces.disconnected(&context);
+            let _ = core
+                .shared_state
+                .set_scope_status(&context, Some(false), None, Instant::now());
         }
     }
     let view = {

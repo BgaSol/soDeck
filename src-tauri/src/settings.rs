@@ -408,6 +408,18 @@ impl AppCore {
             None => Ok(Value::Null),
         }
     }
+    pub fn save_settings_for_surface(
+        self: &Arc<Self>,
+        window: &str,
+        surface: &str,
+        input: Value,
+    ) -> Result<Value, String> {
+        let view = self.ui_data_writable(window, surface)?;
+        let _call = view.calls.enter()?;
+        let snapshot = self.settings_for_surface(window, surface)?;
+        let page = snapshot["pageId"].as_str().ok_or("此页面没有关联设置")?;
+        self.save_settings_impl(Some(window), &view.plugin_id, page, input)
+    }
     pub fn settings_applied(
         &self,
         window: &str,

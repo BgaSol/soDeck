@@ -16,10 +16,11 @@ switch ('__GROUP__') {
   Source disks {@(Get-CimInstance Win32_PerfRawData_PerfDisk_PhysicalDisk -OperationTimeoutSec 3 | Where-Object {$_.Name -ne '_Total'} | ForEach-Object {@{id=$_.Name;name=$_.Name;read=(Num $_.DiskReadBytesPersec);write=(Num $_.DiskWriteBytesPersec);time=(Num $_.Timestamp_PerfTime);frequency=(Num $_.Frequency_PerfTime)}})}
  }
  'topology' {
+  Source mounts {,@(Get-CimInstance Win32_Volume -Filter 'DriveType=3' -OperationTimeoutSec 3 | Where-Object {$_.Name -match '^[A-Za-z]:\\'} | ForEach-Object {@{id=$_.DeviceID;path=if ($_.Name.Length -le 3) {$_.Name} else {$_.Name.TrimEnd('\')};kind=$_.FileSystem}})}
   Source interfaces {@(Get-CimInstance Win32_NetworkAdapterConfiguration -OperationTimeoutSec 3 | ForEach-Object {@{id=$_.SettingID;name=$_.Description;index=$_.InterfaceIndex;addresses=@($_.IPAddress);mac=$_.MACAddress;enabled=$_.IPEnabled}})}
  }
  'capacity' {
-  Source filesystems {@(Get-CimInstance Win32_Volume -Filter 'DriveType=3' -OperationTimeoutSec 3 | ForEach-Object {@{id=$_.DeviceID;path=$_.Name;name=$_.Label;kind=$_.FileSystem;total=(Num $_.Capacity);available=(Num $_.FreeSpace)}})}
+  Source filesystems {,@(Get-CimInstance Win32_Volume -Filter 'DriveType=3' -OperationTimeoutSec 3 | Where-Object {$_.Name -match '^[A-Za-z]:\\'} | ForEach-Object {@{id=$_.DeviceID;path=if ($_.Name.Length -le 3) {$_.Name} else {$_.Name.TrimEnd('\')};name=$_.Label;kind=$_.FileSystem;total=(Num $_.Capacity);available=(Num $_.FreeSpace)}})}
  }
  'uptime' {
   Source uptime {$o=Get-CimInstance Win32_PerfFormattedData_PerfOS_System -OperationTimeoutSec 3; @{seconds=(Num $o.SystemUpTime)}}

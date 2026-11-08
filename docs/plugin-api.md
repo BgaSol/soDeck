@@ -215,13 +215,48 @@ initialize 的 capabilities 含 `settings.v1`，settings 数组只列 pageId/def
 | 插件 → 核心 `settings.get` | `{pageId}` | `{pluginId,pageId,definitionToken,revision,values}`；限所属当前实例，返回有效值 |
 | 核心 → 插件 `settings.changed` | `{pageId,definitionToken,revision,values}` | 使用带 ID 的普通 RPC 请求并等待回复；插件通过标准 RPC error 报告应用失败 |
 | UI mount/settingsChanged | settings 单页快照、`capabilities.settings:1` | 宿主转发当前 surface 对应的页，隐藏组件可在显示时应用 |
-| UI → 宿主 `sodeck.request("settings",...)` | `{op:"get"}` 或 `{op:"applied",pageId,definitionToken,revision,error?}` | 当前 surface 读取或回报；窗口、view、插件实例、token、revision 不匹配均拒绝 |
+| UI → 宿主 `sodeck.request("settings",...)` | `{op:"get"}`、`{op:"applied",pageId,definitionToken,revision,error?}` 或 `{op:"save",requestId,definitionToken,baseRevision,values}` | 当前 surface 读取、回报或保存其唯一关联页；保存不接受页面自报的插件身份，返回 persisted/conflict/snapshot |
 
 revision 为十进制字符串，definitionToken 为插件当前程序版本、schemaVersion 和规范化页面声明的稳定摘要。核心保存命令接受 definitionToken/baseRevision/requestId/完整 values；旧页面返回冲突及最新快照，相同请求 ID 与正文的近期重投不会重复保存。保存成功与运行应用分别报告；应用失败可重投当前修订，插件应允许同修订重试并忽略过期更新。
 
 每插件最多 8 页，每页 8 组/64 字段，每字段最多 32 个选项或字体。单页保存值和运行快照各限 24 KiB，RPC 帧继续限 64 KiB；设置文件限 4 MiB。用户保存严格校验，载入旧非法值则保留原值、提供有效默认和提示。存储独立于业务规则、凭据和工作区；临时文件原子替换、备份与失败保留沿用核心存储机制。
 
 升级待重启时继续使用旧进程的声明及资源，实际激活新版后才更新；新增字段补默认，兼容的用户值保留，结构变更历史最多保留两份。新版启动失败恢复旧程序时设置随之恢复适用定义，修订不倒退。首版不提供任意迁移脚本；插件作者改变 key/type/单位含义时需单独设计兼容迁移。
+
+## 共享运行状态（可选 sharedState.v1）
+
+已进入源码，尚未发行。initialize 的 capabilities 含 `sharedState.v1`；页面 mount 的 `capabilities.sharedState` 为 1。旧核心没有能力时保留原业务并禁用联动。核心保存内存中的当前事实，进程与页面经接口访问；不持久化，不提供插件之间直接调用或历史事件日志。
+
+每条记录由完整 Context、topic、producer、key 标识。Context 包含 workspaceId/serverId/connectionId/generation；producer 为 `{kind:"core"}` 或 `{kind:"plugin",pluginId,pluginInstanceId,viewId}`。核心推导调用者身份，put/remove 只能修改自己的来源。修订号为规范 u64 十进制字符串；JSON null 是存在的值，删除用 `present:false` 墓碑，读取未存在的版本为 `"0"`。
+
+进程参数必须带 viewId/expectedContext，页面使用 `sodeck.request("state",{op,...})`，宿主绑定真实 surface。页面返回 `{result}` 或 `{error:{code,message,data?}}`；进程沿用 JSON-RPC error，恢复代码在 error.data.code。
+
+| 方法 | 参数（省略公共身份） | 结果 |
+| --- | --- | --- |
+| `state.get` | topic/key、可选 producer（默认自己） | scope 与 record；record 含 present/revision/value?/receivedAt? |
+| `state.put` | topic/key/expectedRevision/value | revision/changed；整条替换，重复相同值不刷新时间 |
+| `state.remove` | topic/key/expectedRevision | revision/changed；CAS 删除 |
+| `state.list` | filter，或 cursor/release? | 固定 snapshotId/scope/revision/records/nextCursor |
+| `state.subscribe` | clientSubscriptionId/filter | 初始快照页、subscriptionId/leaseMs |
+| `state.subscribe` | clientSubscriptionId/filter/acknowledgedRevision | 完整读完后确认初始快照，或续订；返回 confirmedRevision/leaseMs |
+| `state.unsubscribe` | subscriptionId 或 clientSubscriptionId | 幂等释放；先取消再迟到初始化也不能重建同 ID |
+| 页面 `state.ack` | subscriptionId/batchId/part/appliedRevision? | 中间帧确认不推进游标，最终帧必须确认完整 toRevision |
+
+filter 为 `{topics:[...] ,producer?,key?}`，需要 1–8 个明确主题。快照页可重读，包括最后一页；游标绑定原来源和 Context，空闲 30 秒到期。初始快照确认前缓存增量，确认后才开始投递。订阅租约 60 秒，客户端应每 30 秒续订。
+
+核心发送带 ID 的 `state.changed` 请求，或向目标页面发送 `sodeck:stateChanged`。帧含 subscriptionId/clientSubscriptionId/context/batchId/fromRevision/toRevision/part/parts/changes。change 为 `{op:"put"|"remove",record}` 或 `{op:"scope",scope}`；part 从 0 开始，全部帧原子应用后推进 toRevision。进程回复 `{accepted:true,batchId,part,appliedRevision?}`；同一帧重试内容不变，最近一批重复确认幂等。未确认的进程投递最多重试三次，通知等待按到期回收；不会阻塞生产者或保留无限 RPC。
+
+错误代码包含 invalidParams/revisionConflict/workspaceClosing/staleContext/sourceStopped/scopeClosed/resourceLimit/snapshotExpired/subscriptionExpired/resetRequired。冲突需重新读取并判断最新意图；不得拿新版本重放旧目标。收到 resetRequired，或本地租约到期，应弃用投影并用新客户端 ID 重同步。旧 Context/source 停止不自动恢复。冻结或断线后既有读取/续订/ACK/释放仍可执行，写入拒绝；scope.connected/frozen 独立。
+
+额度：记录 16 KiB，进程帧 32 KiB、页面帧 24 KiB（含路由余量）；范围数据 4 MiB，全局当前与临时数据各 32 MiB，每范围 4096 个记录/墓碑，每实例 32 个订阅，单订阅待发与在途共 1 MiB。超限保留旧事实或要求重新同步。view/实例停止清理其事实，surface 销毁只释放页面订阅，移窗保留逻辑事实，重连创建空的新 Context。
+
+页面使用随插件打包的 [state.js](../plugins/shared/state.js)：`new SharedState(mount)`，`request(op,params)`，`watch(filter,onProjection)`，最终 `dispose()`。watch 会分页、原子拼批、确认、续订及重同步；onProjection 收到 null 表示当前不可用。Rust 使用 [plugin-client::shared_state](../crates/plugin-client/src/shared_state.rs) 的 request/Watch::open/snapshot/renew，持有 Watch 时每 30 秒调用 renew；snapshot 为 None 或 renew 失败时由调用者在有效 Context 内重建。两者使用同一组线协议样例测试。
+
+首批业务契约：Core 发布 `workspace.presentation.v1/current` 的 activeEditorViewId；终端发布 `terminal.location.v1/current` 的 state/path/pathStyle/filesystemView/terminalId/outputOffset/observedAt；系统状态发布 `filesystem.mounts.v1` 的 mount 与 scan-status，以及同源同 mountId 的 `filesystem.capacity.v1`。容量字节数使用十进制字符串，业务新鲜度由 observedAt/staleAfterMs 表达。扫描 coverage 与 publishState 分开：complete/partial/unsupported 描述采集覆盖，publishing/synced/limited 描述共享副本。没有跨记录事务。
+
+## 远程位置解析（可选 files.location.v1）
+
+initialize 宣告 `files.location.v1`，页面 `capabilities.fileLocation:1`。现有 files 数据通路增加 `action:"resolveLocation"`，传入 path/pathStyle（posix 或 windows）/filesystemView（当前只支持 session-default），返回经当前文件服务 realpath/stat 验证的 path/attrs。原生 Windows 盘符绝对路径转换后仍需服务端验证；UNC、相对路径、容器或未知视角返回 unsupportedLocation，不用客户端 OS 猜测。返回和应用前继续校验 Context。
 
 ## 独立插件打包
 

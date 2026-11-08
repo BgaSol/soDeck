@@ -59,7 +59,7 @@ pub fn command(family: Family, group: &str, nonce: &str, paths: &[String]) -> St
         (Family::NetBsd,"identity")=>"s system uname -srm; s architecture uname -m; s hostname hostname; s model sysctl -n machdep.cpu_brand; s cores sysctl -n hw.ncpu; s total sysctl -n hw.physmem64".into(),
         (Family::OpenBsd|Family::NetBsd,"dynamic")=>"s cpu sysctl -n kern.cp_time; s network netstat -ibn".into(),
         (_,"identity")=>"s system uname -srm; s architecture uname -m; s hostname hostname".into(),
-        (_,"topology")=>"s load uptime; s interfaces ifconfig -a".into(),
+        (_,"topology")=>"s load uptime; s interfaces ifconfig -a; s filesystems df -Pkl".into(),
         (_,"uptime")=>"s boottime sysctl -n kern.boottime; s now date +%s; s uptime uptime".into(),
         (Family::Darwin|Family::FreeBsd|Family::OpenBsd|Family::NetBsd,"capacity")=>"s filesystems df -Pkl".into(),
         _=>"s unsupported false".into(),
@@ -68,9 +68,36 @@ pub fn command(family: Family, group: &str, nonce: &str, paths: &[String]) -> St
     format!("sh -c {}", quote(&script))
 }
 fn windows(group: &str, nonce: &str) -> String {
-    let script = include_str!("../scripts/windows.ps1")
-        .replace("__GROUP__", group)
-        .replace("__NONCE__", nonce);
+    // OpenSSH may invoke cmd.exe, whose command line is limited to 8191 characters.
+    let mut script = String::new();
+    let mut in_switch = false;
+    let mut selected = false;
+    for line in include_str!("../scripts/windows.ps1").lines() {
+        if line.starts_with("switch (") {
+            in_switch = true;
+            continue;
+        }
+        if in_switch {
+            if line == " }" {
+                selected = false;
+                continue;
+            }
+            if line == "}" {
+                in_switch = false;
+                continue;
+            }
+            if line.starts_with(" '") {
+                selected = line.trim() == format!("'{group}' {{");
+                continue;
+            }
+            if !selected {
+                continue;
+            }
+        }
+        script.push_str(line);
+        script.push('\n');
+    }
+    let script = script.replace("__NONCE__", nonce);
     let utf16: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
     format!(
         "powershell.exe -NoProfile -NonInteractive -EncodedCommand {}",
@@ -79,6 +106,19 @@ fn windows(group: &str, nonce: &str) -> String {
 }
 pub fn windows_probe() -> &'static str {
     "powershell.exe -NoProfile -NonInteractive -Command \"[Console]::WriteLine('SODECK_WINDOWS_1')\""
+}
+#[cfg(test)]
+mod command_tests {
+    use super::*;
+    #[test]
+    fn every_windows_group_fits_cmd_exe_command_limit() {
+        for group in ["identity", "dynamic", "topology", "capacity", "uptime"] {
+            assert!(
+                command(Family::Windows, group, &"n".repeat(128), &[]).len() < 8191,
+                "{group}"
+            );
+        }
+    }
 }
 pub fn sections(text: &str, nonce: &str) -> Result<BTreeMap<String, String>, String> {
     if text.len() > 1024 * 1024 || nonce.len() > 128 {

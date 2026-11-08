@@ -23,6 +23,7 @@
     "plugin:build": "node scripts/package-plugin.mjs",
     "settings:test": "node scripts/test-settings-ui.mjs",
     "system-status:test": "node scripts/test-openssh.mjs --system-status",
+    "communication:test": "node scripts/test-component-communication.mjs",
     "system-status:ui:test": "node scripts/test-system-status-ui.mjs"
   },
   "devDependencies": {

@@ -22,6 +22,7 @@ npm run dev
 | `npm run scripts:test` | 构建、打包、更新、原生验收和 CI 软件源配置回归 |
 | `npm run test` | 核心 Rust 测试，包含仅测试使用的宿主夹具 |
 | `npm run web:build` | TypeScript 检查与正式前端构建 |
+| `npm run communication:test` | 独立打包终端、文件、系统状态，在隔离 OpenSSH 上验证共享状态、目录跟随、挂载容量和页面恢复；需要 SSH 服务与 Playwright Chromium |
 | `npm run interactions:test` | 浏览器真实按压刷新、文件菜单可用状态、子菜单与溢出回归；需要 Playwright Chromium |
 
 界面测试需要 Playwright Chromium：

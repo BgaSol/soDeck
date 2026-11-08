@@ -1,6 +1,7 @@
 mod collectors;
 mod metrics;
 mod scheduler;
+mod shared_state;
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -18,6 +19,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let settings = client.call("settings.get", json!({"pageId":"sampling"}))?;
             let interval = interval(&settings["values"]["dynamicIntervalSeconds"])?;
             let state = Arc::new(Mutex::new(scheduler::App::new(interval)));
+            state.lock().unwrap().shared_enabled = p["capabilities"]
+                .as_array()
+                .is_some_and(|a| a.iter().any(|v| v == "sharedState.v1"));
             scheduler::start(state.clone(), client.clone());
             *app.lock().unwrap() = Some(state);
             return Ok(json!({"apiVersion":"1","settingsApiVersion":"1"}));

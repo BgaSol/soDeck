@@ -1,4 +1,5 @@
 import {createAppearance} from './appearance.js';
+import {createLocation} from './location.js';
 (() => {
   const host=document.querySelector('#terminal'),status=document.querySelector('#status');
   const terminal=new Terminal({allowProposedApi:true,cursorBlink:true,fontSize:14,lineHeight:1.2,scrollback:1000,convertEol:false});
@@ -16,6 +17,7 @@ import {createAppearance} from './appearance.js';
   const fail=error=>{status.hidden=false;status.textContent=String(error);status.classList.add('error');};
   const controls=installTerminalInput(terminal,host,()=>({key:mountKey,canCopy:!disposed&&!restoring,canPaste:enabled&&!restoring&&!disposed&&visible}),fail);
   const appearance=createAppearance(terminal,host,()=>caughtUp&&!restoring&&visible&&!disposed,()=>enqueueSize(true),()=>controls.invalidate());
+  const location=createLocation(terminal);
   let lastCols=0,lastRows=0;
   let sizeFrame,sizeJob,sizeDone,sizeReject,desiredSize,resizeQueued=false,sizeEpoch=0,resizeFailed=false,resizeRetries=0,retryTimer;
   const request=p=>sodeck.request('data',{id,...p});
@@ -95,6 +97,7 @@ import {createAppearance} from './appearance.js';
   addEventListener('sodeck:mount',event=>{
     const mount=event.detail;id=mount.data.streamId;mountKey=mount.surfaceId+':'+JSON.stringify(mount.context);disconnected=mount.connected===false;visible=mount.visible;theme(mount.tokens);
     appearance.receive(mount.settings);
+    location.mount(mount);
     status.textContent=`${mount.serverName||'服务器'} · 正在接续终端…`;
     void request({op:'attach'}).catch(fail);
   });
@@ -102,30 +105,34 @@ import {createAppearance} from './appearance.js';
     chain=chain.then(async()=>{
       if(disposed)return;
       const frame=event.detail.data;
-      if(frame.kind==='error'){fail(frame.metadata);return;}
-      if(frame.kind==='reset'){controls.invalidate();stopSize();restoring=true;enabled=false;terminal.reset();offset=frame.offset;savedOffset=offset;const d=frame.metadata;if(d?.cols&&d?.rows)terminal.resize(d.cols,d.rows);}
+      location.frame(frame.kind,frame.offset);
+      if(frame.kind==='error'){location.unknown(offset,'终端输出不可用');fail(frame.metadata);return;}
+      if(frame.kind==='reset'){location.invalidate();controls.invalidate();stopSize();restoring=true;enabled=false;terminal.reset();offset=frame.offset;savedOffset=offset;const d=frame.metadata;if(d?.cols&&d?.rows)terminal.resize(d.cols,d.rows);}
       if(frame.kind==='snapshot')await write(Uint8Array.from(frame.data));
       if(frame.kind==='restore')restoring=false;
-      if(frame.kind==='data'){const bytes=Uint8Array.from(frame.data);await write(bytes);scan(bytes);offset=frame.offset;}
+      if(frame.kind==='data'){const bytes=Uint8Array.from(frame.data);await write(bytes);scan(bytes);offset=frame.offset;location.completed();}
       await request({op:'ack',packet:frame.packet});
       if(frame.kind==='caughtUp'){
         caughtUp=true;enabled=true;status.textContent='远程终端 · 已连接';status.hidden=true;status.classList.remove('error');document.body.dataset.ready='true';
         // Incoming windows may render before ownership commits. Only the owner saves a checkpoint.
         await checkpoint(true).catch(()=>{});sodeck.mounted();void appearance.apply();void enqueueSize().catch(()=>{});
+        if(!disconnected&&!ended)location.ready();
       }
-      if(frame.kind==='end'){controls.invalidate();enabled=false;ended=true;stopSize();void enqueueSize().catch(()=>{});status.hidden=false;status.textContent=disconnected?'连接已断开，请在工作台重新连接后新建终端。':frame.metadata?.error||`终端已退出${frame.metadata?.exitCode==null?'':` · ${frame.metadata.exitCode}`}`;newTerminal.hidden=disconnected;}
+      if(frame.kind==='end'){location.unknown(offset,'终端已退出');controls.invalidate();enabled=false;ended=true;stopSize();void enqueueSize().catch(()=>{});status.hidden=false;status.textContent=disconnected?'连接已断开，请在工作台重新连接后新建终端。':frame.metadata?.error||`终端已退出${frame.metadata?.exitCode==null?'':` · ${frame.metadata.exitCode}`}`;newTerminal.hidden=disconnected;}
       if(frame.kind==='data')await checkpoint().catch(error=>{if(!String(error).includes('窗口'))throw error;});
     }).catch(fail);
   });
   function input(text){if(!enabled||restoring||disposed)return;const key=mountKey,bytes=encoder.encode(text);if(inputPending+bytes.length>256*1024){fail('输入待发送内容超过 256 KiB，请稍后分段粘贴；本次输入未发送');return;}inputPending+=bytes.length;inputChain=inputChain.then(async()=>{for(let i=0;i<bytes.length;i+=16384){if(disposed||!enabled||restoring||mountKey!==key)return;await request({op:'write',sequence:inputSequence,data:Array.from(bytes.subarray(i,i+16384))});inputSequence++;}}).catch(error=>{if(!disposed&&mountKey===key){enabled=false;fail(error);}}).finally(()=>{inputPending-=bytes.length;});}
   terminal.onData(input);
   addEventListener('sodeck:visibilityChanged',event=>{visible=event.detail.visible;if(!visible){controls.invalidate();stopSize();}if(visible){void appearance.apply();void enqueueSize(true).catch(()=>{});}});
-  addEventListener('sodeck:settingsChanged',event=>appearance.receive({...event.detail.settings,retry:true}));
+  addEventListener('sodeck:settingsChanged',event=>{appearance.receive({...event.detail.settings,retry:true});location.settings(event.detail.settings);});
+  addEventListener('sodeck:contextChanged',()=>location.invalidate());
+  addEventListener('sodeck:connectionChanged',event=>{if(!event.detail.connected)location.invalidate();});
   addEventListener('sodeck:contextChanged',()=>{controls.invalidate();enabled=false;stopSize();newTerminal.hidden=disconnected||!ended;status.hidden=false;status.textContent='连接已更换，请在工作台新建终端；此页保留原输出。';});
   addEventListener('sodeck:connectionChanged',event=>{disconnected=!event.detail.connected;if(disconnected){controls.invalidate();enabled=false;stopSize();newTerminal.hidden=true;status.hidden=false;status.textContent='连接已断开，请在工作台重新连接；此页保留原输出。';}else if(ended){newTerminal.hidden=false;newTerminal.disabled=opening;}});
   addEventListener('sodeck:themeChanged',event=>theme(event.detail.tokens));
   addEventListener('sodeck:focus',()=>{terminal.focus();void enqueueSize(true).catch(()=>{});});
-  addEventListener('sodeck:unmount',()=>{disposed=true;stopSize();appearance.dispose();controls.dispose();observer.disconnect();terminal.dispose();});
+  addEventListener('sodeck:unmount',()=>{disposed=true;stopSize();location.dispose();appearance.dispose();controls.dispose();observer.disconnect();terminal.dispose();});
   // The final output chunk may arrive without another chunk to trigger a checkpoint.
   const timer=setInterval(()=>{if(disposed){clearInterval(timer);return;}chain=chain.then(()=>checkpoint()).catch(()=>{});},500);
 })();

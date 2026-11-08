@@ -5,6 +5,7 @@ fs.mkdirSync('ui/vendor',{recursive:true});
 fs.cpSync('ui-src','ui',{recursive:true});
 fs.copyFileSync('../../src/ui.css','ui/shared.css');
 fs.copyFileSync('../shared/clipboard.js','ui/clipboard-bridge.js');
+fs.copyFileSync('../shared/state.js','ui/state.js');
 await packageMenuAssets('.');
 packageSettingsAssets(JSON.parse(fs.readFileSync('release.json','utf8')),'.');
 for(const [pkg,file,name] of [

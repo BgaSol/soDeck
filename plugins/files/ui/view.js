@@ -2,11 +2,12 @@
 import {loadFont} from './font-loader.js';
 import {fontPresets,fontAsset} from './font-presets.js';
 import {readDocument} from './read-document.js';
+import {connectFileState} from './shared-state.js';
 (() => {
  const root=document.querySelector('#root'),encoder=new TextEncoder();
  let id,textarea,status,tree,transfers,cancelButton,jobTimer,jobId,busy=false,queue=Promise.resolve(),localRevision=0,eol='\n',bom=false,loaded=false,pumping=false,pendingDraft=false;
  const request=(method,params)=>sodeck.request(method,params);
- let settingsSnapshot,settingsEpoch=0,disposed=false;
+ let settingsSnapshot,settingsEpoch=0,disposed=false,shared;
  async function applySettings(snapshot,force=false){
   if(!snapshot||disposed)return;
   if(settingsSnapshot&&settingsSnapshot.definitionToken===snapshot.definitionToken&&BigInt(settingsSnapshot.revision)>BigInt(snapshot.revision))return;
@@ -15,7 +16,7 @@ import {readDocument} from './read-document.js';
   // Cache preferences while the first document snapshot is still being read.
   if(snapshot.pageId==='editor'&&!loaded)return;
   let error;
-  if(snapshot.pageId==='browser')tree?.preferences(v);
+  if(snapshot.pageId==='browser'){tree?.preferences(v);shared?.settings(snapshot);}
   if(snapshot.pageId==='editor'&&textarea){
    let family;
    try{family=await loadFont(v.font,fontPresets,fontAsset);}catch(e){error=e.message;try{family=await loadFont({source:'preset',id:'jetbrains-mono'},fontPresets,fontAsset);}catch{family='monospace';}}
@@ -79,6 +80,7 @@ import {readDocument} from './read-document.js';
    cancelButton=button('取消下载',()=>data('cancel'));cancelButton.hidden=true;footer.append(cancelButton);root.append(footer);
    transfers=new FileTransfers({fileId:id,data,event,request,message,host:root,target:()=>tree.targetDirectory(),ambiguous:()=>tree.ambiguousTarget(),refresh:()=>tree.refresh()});
    tree=new FileTree(host,{data,event,request,download:path=>transfers.download([path]),message,state:m.data.navigation,transfers});tree.preferences(settingsSnapshot?.values||{showHidden:true,density:'compact',fontSize:12});await tree.start();
+   shared=connectFileState(tree,m,data,async followTerminal=>{const snapshot=await request('settings',{op:'get'});const result=await request('settings',{op:'save',requestId:crypto.randomUUID(),definitionToken:snapshot.definitionToken,baseRevision:snapshot.revision,values:{...snapshot.values,followTerminal}});await applySettings(result.snapshot,true);});
    void applySettings(settingsSnapshot,true);
   }else{
    root.className='editor-root';const header=document.createElement('header');header.className='editor-toolbar';root.append(header);
@@ -107,10 +109,10 @@ import {readDocument} from './read-document.js';
  addEventListener('sodeck:settingsChanged',e=>void applySettings(e.detail.settings,true));
  addEventListener('sodeck:textMenuError',e=>message(e.detail,true));
  addEventListener('sodeck:focus',()=>tree?tree.focus():textarea?.focus());
- addEventListener('sodeck:visibilityChanged',e=>{transfers?.visibility(e.detail.visible);if(!e.detail.visible)tree?.closeMenu();});
+ addEventListener('sodeck:visibilityChanged',e=>{shared?.visibility(e.detail.visible);transfers?.visibility(e.detail.visible);if(!e.detail.visible)tree?.closeMenu();});
  addEventListener('sodeck:localFileDrop',e=>tree?.nativeDrop(e.detail));
- addEventListener('sodeck:contextChanged',()=>{transfers?.invalidate();tree?.contextChanged();message(tree?'连接已更换，刷新目录以读取最新文件':'服务器连接已更换；草稿保留，保存前将重新检查远端版本');});
+ addEventListener('sodeck:contextChanged',()=>{shared?.invalidate();transfers?.invalidate();tree?.contextChanged();message(tree?'连接已更换，刷新目录以读取最新文件':'服务器连接已更换；草稿保留，保存前将重新检查远端版本');});
  addEventListener('sodeck:flush',async e=>{try{await queue;await tree?.flush();parent.postMessage({channel:'sodeck-ui-v1',type:'flushed',surfaceId:e.detail.surfaceId,id:e.detail.id},'*');}catch(error){parent.postMessage({channel:'sodeck-ui-v1',type:'flushed',surfaceId:e.detail.surfaceId,id:e.detail.id,error:error.message},'*');}});
- addEventListener('sodeck:unmount',()=>{disposed=true;settingsEpoch++;transfers?.dispose();tree?.dispose();});
+ addEventListener('sodeck:unmount',()=>{disposed=true;settingsEpoch++;shared?.dispose();transfers?.dispose();tree?.dispose();});
  addEventListener('unload',()=>{clearTimeout(jobTimer);transfers?.dispose();tree?.dispose();});
 })();

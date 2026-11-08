@@ -13,6 +13,88 @@ static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 // Keep native process launch pressure out of the five-second initialization budget.
 // Calls inside each fixture remain concurrent in the RPC integration tests.
 static STARTUP: Mutex<()> = Mutex::new(());
+#[test]
+fn shared_state_crosses_two_real_plugin_processes_and_cleans_stopped_sources() {
+    let f = Fixture::new();
+    f.load().unwrap();
+    let second = f.root.join("consumer");
+    fs::create_dir_all(second.join("ui")).unwrap();
+    fs::copy(
+        env!("CARGO_BIN_EXE_plugin-fixture"),
+        second.join(format!("fixture{}", std::env::consts::EXE_SUFFIX)),
+    )
+    .unwrap();
+    fs::write(second.join("ui/index.html"), "fixture").unwrap();
+    let mut manifest: Value =
+        serde_json::from_slice(&fs::read(f.plugin.join("plugin.json")).unwrap()).unwrap();
+    manifest["id"] = json!("test.consumer");
+    fs::write(second.join("plugin.json"), manifest.to_string()).unwrap();
+    {
+        let _startup = STARTUP.lock().unwrap();
+        f.core.load(&second).unwrap();
+    }
+    let w = f.open("shared");
+    f.core.ui_snapshot("main").unwrap();
+    let mut surfaces = std::collections::HashMap::new();
+    for plugin in ["test.ui", "test.consumer"] {
+        let opened=f.core.ui_action("main",&w.context,json!({"op":"open","key":format!("{plugin}:browser"),"requestId":format!("open-{plugin}")})).unwrap();
+        let mount = f
+            .core
+            .ui_attach("main", opened["viewId"].as_str().unwrap())
+            .unwrap();
+        let surface = mount["surfaceId"].as_str().unwrap().to_string();
+        f.core.ui_surface_ready("main", &surface).unwrap();
+        surfaces.insert(plugin, surface);
+    }
+    let invoke = |plugin: &str, method: &str, params: Value| {
+        f.core
+            .ui_event(
+                "main",
+                &surfaces[plugin],
+                json!({"rpc":method,"params":params}),
+            )
+            .unwrap()
+    };
+    let initial = invoke(
+        "test.consumer",
+        "state.subscribe",
+        json!({"clientSubscriptionId":"consumer","filter":{"topics":["test.shared.v1"]}}),
+    );
+    assert!(initial["records"].as_array().unwrap().is_empty());
+    invoke(
+        "test.consumer",
+        "state.subscribe",
+        json!({"clientSubscriptionId":"consumer","filter":{"topics":["test.shared.v1"]},"acknowledgedRevision":initial["revision"]}),
+    );
+    assert_eq!(
+        invoke(
+            "test.ui",
+            "state.put",
+            json!({"topic":"test.shared.v1","key":"current","expectedRevision":"0","value":{"path":"/shared"}})
+        )["changed"],
+        true
+    );
+    let frame = f.root.join("data/plugin-data/test.consumer/shared-frame");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    loop {
+        if let Ok(bytes) = fs::read(&frame) {
+            let received: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(received["changes"][0]["record"]["value"]["path"], "/shared");
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    f.core.unload("test.ui").unwrap();
+    assert!(invoke(
+        "test.consumer",
+        "state.list",
+        json!({"filter":{"topics":["test.shared.v1"]}})
+    )["records"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
 fn wait_close(
     core: &AppCore,
     id: &str,

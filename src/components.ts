@@ -4,6 +4,7 @@ import { themeTokens } from "./theme";
 import { ClipboardBridge } from "./clipboard";
 import { LocalFileDrop } from "./local-files";
 import { ComponentData } from "./component-data";
+import { ComponentState } from "./component-state";
 import { attachMenuPosition, type MenuPosition } from "./menu-position.js";
 import { escape as e, icon, replace, patchChrome } from "./ui";
 import type { Context, Projection, Workspace } from "./workspaces";
@@ -37,6 +38,7 @@ export class Components {
   });
   private clipboard = new ClipboardBridge(() => this.call<string>("clipboard_text", {operation:"read"}), text => this.call<void>("clipboard_text", {operation:"write",text}));
   private data: ComponentData;
+  private shared: ComponentState;
   private shells = new Map<string, Shell>();
   private definitions: Record<string, Definition> = {};
   private state?: Projection;
@@ -55,6 +57,7 @@ export class Components {
   private settingsListener?: UnlistenFn;
   constructor(private content: HTMLElement, private call: Call, private notify: (message: string) => void, private refresh: () => Promise<void>, private requestClose: (target: CloseTarget) => Promise<boolean>, private widths: (workspace: Workspace) => PanelWidths, private cancelResize: () => void) {
     this.data = new ComponentData(call);
+    this.shared = new ComponentState(call);
     void listen<{pluginId:string}>("core-settings-changed", event => {
       for (const shell of this.shells.values()) for (const surface of shell.surfaces.values()) if (surface.token && this.definitions[surface.view.definitionKey]?.pluginId === event.payload.pluginId) void this.refreshSettings(surface);
     }).then(unlisten => {if(this.disposed)unlisten();else this.settingsListener=unlisten;}).catch(()=>{});
@@ -137,6 +140,7 @@ export class Components {
       if (surface && (surface.view.context.connectionId !== v.context.connectionId || surface.view.context.generation !== v.context.generation)) {
         if(surface.token)this.clipboard.discard(surface.token);
         this.post(surface, {type: "contextChanged", context: v.context});
+        this.removeSurface(surface);shell.surfaces.delete(v.id);surface=undefined;
       }
       if (!surface) {
         const host = document.createElement("div"); host.className = "component-surface"; host.dataset.viewId = v.id;
@@ -190,6 +194,9 @@ export class Components {
     }
     const placements = new Map<Surface, DOMRect>();
     for (const surface of shell.surfaces.values()) {
+      if(surface.mounted && !surface.frame.dataset.stateReady && this.state?.workspaces.some(w=>w.context.workspaceId===surface.view.context.workspaceId)) {
+        surface.frame.dataset.stateReady='true';this.post(surface,{type:'surfaceReady'});
+      }
       const id = surface.view.id;
       const slot = id === w.editor ? shell.node.querySelector(".central-slot") : id === w.left && left ? shell.node.querySelector(".left-panel .component-slot") : id === w.right && right ? shell.node.querySelector(".right-panel .component-slot") : null;
       if (slot) placements.set(surface, slot.getBoundingClientRect());
@@ -231,20 +238,27 @@ export class Components {
     const message = event.data;
     if (message.type === "ready") {
       if (surface.initialized) return; surface.initialized = true;
-      surface.chain = this.invoke<{ surfaceId: string; data: unknown; view: View }>("attach", { viewId: surface.view.id }).then(async result => {
+      surface.chain = this.invoke<{ surfaceId: string; data: unknown; view: View; capabilities?:{sharedState?:number;fileLocation?:number} }>("attach", { viewId: surface.view.id }).then(async result => {
         surface.token = result.surfaceId;
+        this.shared.attach(result.surfaceId,result.view.context,message=>this.post(surface,message));
         const settings = await this.call("settings_for_surface", {surfaceId: result.surfaceId}).catch(() => null);
-        this.post(surface, { type: "mount", connected: this.shells.get(surface.view.context.workspaceId)?.workspace.connected, context: result.view.context, serverName: this.shells.get(surface.view.context.workspaceId)?.workspace.name, viewId: surface.view.id, viewType: surface.view.definitionKey.split(":")[1], data: result.data, tokens: this.tokens(), settings, capabilities: {clipboard:1,localFiles:1,settings:1}, visible: surface.visible });
+        this.post(surface, { type: "mount", connected: this.shells.get(surface.view.context.workspaceId)?.workspace.connected, context: result.view.context, serverName: this.shells.get(surface.view.context.workspaceId)?.workspace.name, viewId: surface.view.id, viewType: surface.view.definitionKey.split(":")[1], data: result.data, tokens: this.tokens(), settings, capabilities: {clipboard:1,localFiles:1,settings:1,sharedState:result.capabilities?.sharedState,fileLocation:result.capabilities?.fileLocation}, visible: surface.visible });
         surface.frame.dataset.surfaceId = result.surfaceId;
       }).catch(error => this.surfaceError(surface, String(error)));
       return;
     }
     if (!surface.token || message.surfaceId !== surface.token) return;
     if (message.type === "interaction") { if (surface.visible) { this.interaction(); this.closeMenu(); this.content.dispatchEvent(new Event("surface-interaction")); } return; }
-    if (message.type === "mounted") { surface.flushable = message.flush === true; surface.acceptsLocalFiles = message.localFiles === true; clearTimeout(surface.timeout); void this.invoke("ready", { surfaceId: surface.token }).then(async () => { surface.mounted = true; await this.refreshSettings(surface); await this.refresh(); if (surface.focusPending === this.focusEpoch && surface.visible) this.focusSurface(surface); }).catch(error => this.surfaceError(surface, String(error))); return; }
+    if (message.type === "mounted") { surface.flushable = message.flush === true; surface.acceptsLocalFiles = message.localFiles === true; clearTimeout(surface.timeout); void this.invoke("ready", { surfaceId: surface.token }).then(async () => { surface.mounted = true; this.scheduleLayout(surface.view.context.workspaceId); await this.refreshSettings(surface); await this.refresh(); if (surface.focusPending === this.focusEpoch && surface.visible) this.focusSurface(surface); }).catch(error => this.surfaceError(surface, String(error))); return; }
     if (message.type === "flushed" && surface.flushing && surface.flushing.id === message.id) { surface.flushing.done(message.error); return; }
     if (message.type !== "request" || typeof message.id !== "string") return;
     const requestId = message.id;
+    if(message.method === 'state'){
+      const token=surface.token,context=JSON.stringify(surface.view.context);
+      void this.shared.request(token,message.params??{}).then(data=>{if(surface.token===token && JSON.stringify(surface.view.context)===context)this.post(surface,{type:'response',id:requestId,data});})
+        .catch(error=>{if(surface.token===token)this.post(surface,{type:'response',id:requestId,error:String(error)});});
+      return;
+    }
     if(this.closeBlocked.has(surface.view.context.workspaceId)&&!surface.flushing) {
       if(surface.deferred.size>=64&&!surface.deferred.has(requestId))this.post(surface,{type:"response",id:requestId,error:"组件等待请求已满，请在关闭决定后重试"});
       else surface.deferred.set(requestId,event);
@@ -252,8 +266,9 @@ export class Components {
     }
     if (message.method === "settings") {
       const params = message.params ?? {};
-      const command = params.op === "get" ? "settings_for_surface" : params.op === "applied" ? "settings_applied" : "";
-      void (command ? this.call(command, {surfaceId:surface.token,input:params}) : Promise.reject(new Error("未知设置操作")))
+      const command = params.op === "get" ? "settings_for_surface" : params.op === "applied" ? "settings_applied" : params.op === "save" ? "save_settings_for_surface" : "";
+      const {op:_,...input}=params;
+      void (command ? this.call(command, {surfaceId:surface.token,input}) : Promise.reject(new Error("未知设置操作")))
         .then(data=>this.post(surface,{type:"response",id:requestId,data}))
         .catch(error=>this.post(surface,{type:"response",id:requestId,error:String(error)}));
       return;
@@ -424,7 +439,7 @@ export class Components {
     }} catch { /* A diagnostic endpoint must not interrupt the workbench. */ }finally{this.networkPending=false;}
   }
   private async run(action: () => Promise<unknown>) { try { await action(); } catch (error) { this.notify(String(error)); } }
-  private removeSurface(s: Surface) { s.deferred.clear();s.flushing?.done("原有界面已卸载，输入无法确认");clearTimeout(s.timeout); if(s.token)this.clipboard.discard(s.token); this.data.detach(s.token); this.post(s, { type: "unmount" }); s.node.remove(); }
+  private removeSurface(s: Surface) { s.deferred.clear();s.flushing?.done("原有界面已卸载，输入无法确认");clearTimeout(s.timeout); if(s.token)this.clipboard.discard(s.token); this.shared.detach(s.token); this.data.detach(s.token); this.post(s, { type: "unmount" }); s.node.remove(); }
   private destroy(shell: Shell) { if (shell.layoutFrame !== undefined) cancelAnimationFrame(shell.layoutFrame); shell.observer.disconnect(); for (const f of shell.surfaces.values()) this.removeSurface(f); shell.node.remove(); }
-  dispose() { this.settingsListener?.(); this.fileDrop.dispose(); this.disposed = true; clearInterval(this.networkTimer); this.closeMenu(); window.removeEventListener("message", this.message); document.removeEventListener("pointerdown", this.outside); document.removeEventListener("pointerdown", this.interaction, true); document.removeEventListener("keydown", this.interaction, true); this.theme.disconnect(); window.matchMedia("(prefers-color-scheme: dark)").removeEventListener("change", this.systemTheme); for (const shell of this.shells.values()) this.destroy(shell); }
+  dispose() { this.shared.dispose(); this.settingsListener?.(); this.fileDrop.dispose(); this.disposed = true; clearInterval(this.networkTimer); this.closeMenu(); window.removeEventListener("message", this.message); document.removeEventListener("pointerdown", this.outside); document.removeEventListener("pointerdown", this.interaction, true); document.removeEventListener("keydown", this.interaction, true); this.theme.disconnect(); window.matchMedia("(prefers-color-scheme: dark)").removeEventListener("change", this.systemTheme); for (const shell of this.shells.values()) this.destroy(shell); }
 }

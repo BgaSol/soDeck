@@ -35,6 +35,17 @@ fn main() {
     for line in io::stdin().lock().lines() {
         let frame: Value = serde_json::from_str(&line.unwrap()).unwrap();
         match frame["method"].as_str() {
+            Some("state.changed") => {
+                let p = &frame["params"];
+                fs::write(
+                    format!("{}/shared-frame", data.as_ref().unwrap()),
+                    p.to_string(),
+                )
+                .unwrap();
+                send(
+                    json!({"jsonrpc":"2.0","id":frame["id"],"result":{"accepted":true,"batchId":p["batchId"],"part":p["part"],"appliedRevision":p["toRevision"]}}),
+                );
+            }
             Some(method) if method.starts_with("ui.") => {
                 let p = &frame["params"];
                 let id = p["viewId"].as_str().unwrap();
@@ -48,11 +59,15 @@ fn main() {
                 if method == "ui.event" {
                     if let Some(rpc) = p["data"]["rpc"]
                         .as_str()
-                        .filter(|s| s.starts_with("session."))
+                        .filter(|s| s.starts_with("session.") || s.starts_with("state."))
                     {
                         let request = format!("session-{}", pending_sessions.len());
                         pending_sessions.insert(request.clone(), frame["id"].clone());
                         let mut params = p["data"]["params"].clone();
+                        if rpc.starts_with("state.") {
+                            params["viewId"] = json!(id);
+                            params["expectedContext"] = p["context"].clone();
+                        }
                         if rpc == "session.state" || rpc == "session.exec.start" {
                             params["viewId"] = json!(id);
                         }

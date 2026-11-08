@@ -101,6 +101,10 @@ impl AppCore {
             context
         };
         *a.session.lock().unwrap() = Some(session);
+        self.shared_state
+            .adopt_scope(context.clone(), Instant::now())
+            .map_err(|e| Error::new(e.code, e.message))?;
+        self.sync_shared_ui_locked(&ui);
         {
             let mut s = a.state.lock().unwrap();
             s.view.context = Some(context.clone());

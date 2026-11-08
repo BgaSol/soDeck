@@ -19,6 +19,17 @@ pub(super) fn plugin_request(
     frame: &Value,
 ) -> Result<Value, RpcError> {
     match frame["method"].as_str().unwrap_or_default() {
+        method if method.starts_with("state.") => core
+            .state_process_request(id, instance, method, &frame["params"])
+            .map_err(|e| RpcError {
+                code: if e.code == "invalidParams" {
+                    -32602
+                } else {
+                    -32000
+                },
+                message: e.message,
+                data: json!({"code":e.code,"details":e.data}),
+            }),
         method if method.starts_with("session.") => core
             .session_request(id, instance, method, &frame["params"])
             .map_err(|e| RpcError::session(e.code, e.message)),

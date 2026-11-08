@@ -39,6 +39,7 @@
       this.persistQueue = Promise.resolve(); this.pending = new Set(); this.counter = 0; this.restoring = true;
       this.saved = state; this.home = '';
       this.showHidden = true;
+      this.navigationEpoch=0;this.contextEpoch=0;this.mounts=new Map();this.disposed=false;
       host.className = 'file-browser';
       const pathbar = document.createElement('div'); pathbar.className = 'pathbar';
       this.input = document.createElement('input'); this.input.setAttribute('aria-label', '远端路径'); this.input.placeholder = '输入路径并回车定位'; this.input.disabled = true;
@@ -47,6 +48,7 @@
       const toolbar = document.createElement('div'); toolbar.className = 'tree-toolbar';
       this.caption = document.createElement('span'); this.caption.textContent = '服务器文件'; this.caption.title = '当前已展开并加载的条目数';
       toolbar.append(this.caption, this.tool('home', '主目录', () => this.locate(this.home)), this.tool('up', '上一级', () => this.locate(this.selected === this.rootPath ? this.rootPath : parentOf(this.selected))), this.tool('refresh', '刷新选中目录', () => this.refresh()), this.tool('collapse', '全部折叠', () => this.collapseAll()));
+      this.toolbar=toolbar;
       if (transfers) {
         const upload = this.tool('upload', '上传文件', () => transfers.upload());
         toolbar.append(upload, this.tool('download', '下载选中条目', () => transfers.download(this.selectedPaths())));
@@ -74,7 +76,10 @@
     tool(name, label, fn) {
       const b = document.createElement('button'); b.className='sd-icon'; b.type = 'button'; b.title = label; b.setAttribute('aria-label', label); b.append(icon(name)); b.addEventListener('click', () => void this.run(fn)); return b;
     }
-    async run(fn) { try { await fn(); } catch (error) { this.message(error.message, true); } }
+    async run(fn) { try { await fn(); } catch (error) { if(error.code!=='cancelled')this.message(error.message, true); } }
+    cancelFollow(manual=false){++this.navigationEpoch;if(manual)this.onManual?.();}
+    navigation(){const navigation=this.navigationEpoch,context=this.contextEpoch;return()=>{if(this.disposed||navigation!==this.navigationEpoch||context!==this.contextEpoch)throw Object.assign(new Error('定位已取消'),{code:'cancelled'});};}
+    async followLocation(location){this.cancelFollow();const check=this.navigation();const resolved=await this.data('resolveLocation',location);check();await this.locate(resolved.path,{follow:true,check});}
     node(path, attrs = { kind: 'directory' }, name = path.split('/').pop() || path) {
       let n = this.nodes.get(path);
       if (!n) { n = { path, name, attrs, children: [], pages: 0, loaded: false, more: false, cursor: null, error: '', loading: null, key: 'node-' + ++this.counter }; this.nodes.set(path, n); }
@@ -122,9 +127,11 @@
     load(n, next = false) {
       if (n.loading) return n.loading;
       n.error = '';
+      const context=this.contextEpoch;
       const work = (async () => {
         try {
           const result = await this.data('list', { path: n.path, independent: true, next, ...(n.cursor ? { cursor: n.cursor } : {}) });
+          if(context!==this.contextEpoch||this.disposed){if(result.cursor)void this.data('closeDirectory',{cursor:result.cursor}).catch(()=>{});return;}
           if (!next) n.children = [];
           for (const entry of result.entries) {
             const path = join(n.path, entry.name); this.node(path, entry.attrs, entry.name);
@@ -132,12 +139,13 @@
           }
           this.sort(n);
           n.loaded = true; n.pages = next ? n.pages + 1 : 1; n.more = result.more; n.cursor = result.cursor;
-        } catch (error) { n.error = error.message; n.cursor = null; this.message(error.message, true); }
-        finally { n.loading = null; this.pending.delete(work); this.render(); }
+        } catch (error) { if(context===this.contextEpoch&&!this.disposed){n.error = error.message; n.cursor = null; this.message(error.message, true);} }
+        finally { n.loading = null; this.pending.delete(work); if(context===this.contextEpoch&&!this.disposed)this.render(); }
       })();
       n.loading = work; this.pending.add(work); this.render(); return work;
     }
     async toggle(n) {
+      this.cancelFollow(true);
       if (this.expanded.has(n.path)) {
         this.expanded.delete(n.path);
         if (this.selected.startsWith(n.path.replace(/\/$/, '') + '/')) this.select(n, false);
@@ -149,39 +157,48 @@
       }
       this.render(); this.persist();
     }
-    async reveal(path, expandTarget = false) {
+    async reveal(path, expandTarget = false, check=()=>{}) {
+      check();
       if (path !== this.rootPath && !path.startsWith(this.rootPath.replace(/\/$/, '') + '/')) throw new Error('路径不在当前根目录中');
       const relative = path.slice(this.rootPath === '/' ? 1 : this.rootPath.length + 1);
       let current = this.nodes.get(this.rootPath);
       const parts = path === this.rootPath ? [] : relative.split('/').filter(Boolean);
       for (const part of parts) {
+        check();
         this.expand(current.path);
         if (!current.loaded) await this.load(current);
+        check();
         if (current.error) throw new Error(current.error);
         const child = join(current.path, part);
         // A located entry may live on a later page; stat it without reading all pages.
-        if (!this.nodes.has(child)) { const info = await this.data('stat', { path: child }); this.node(child, info.attrs, part); }
+        if (!this.nodes.has(child)) { const info = await this.data('stat', { path: child });check();this.node(child, info.attrs, part); }
         if (!current.children.includes(child)) { current.children.push(child); this.sort(current); }
         current = this.nodes.get(child);
       }
       if (expandTarget && current.attrs.kind === 'directory') { this.expand(path); if (!current.loaded) await this.load(current); }
+      check();
       return current;
     }
     async locate(target, focus = true) {
+      const options=typeof focus==='object'?focus:{};
+      if(!options.follow)this.cancelFollow(!this.restoring);
+      const check=options.check||this.navigation();check();
       this.navigationPath=target;
       const info = await this.data('stat', { path: target });
+      check();
       const path = info.path.replace(/\/$/, '') || '/';
       const volume = /^\/[A-Za-z]:/.exec(path)?.[0] || '/';
       if (volume !== this.rootPath) {
-        for (const n of this.nodes.values()) if (n.cursor) await this.data('closeDirectory', { cursor: n.cursor });
+        for (const n of this.nodes.values()) if (n.cursor) {await this.data('closeDirectory', { cursor: n.cursor });check();}
         this.nodes.clear(); this.expanded.clear(); this.rootPath = volume;
         this.node(volume, { kind: 'directory' }, volume);
       }
-      const n = await this.reveal(path, info.attrs.kind === 'directory');
-      this.select(n, false); this.render(); this.row(path)?.scrollIntoView({ block: 'nearest' });
-      if (focus) this.tree.focus(); this.persist();
+      const n = await this.reveal(path, info.attrs.kind === 'directory',check);check();
+      this.select(n, false,null,true); this.render(); this.row(path)?.scrollIntoView({ block: 'nearest' });
+      if (focus===true) this.tree.focus(); this.persist();
     }
-    select(n, scroll = true, modifiers = null) {
+    select(n, scroll = true, modifiers = null, automatic=false) {
+      if(!automatic&&!this.restoring)this.cancelFollow(true);
       if (modifiers?.shiftKey && this.anchor && this.visible) {
         const from = this.visible.findIndex(v => v.path === this.anchor), to = this.visible.indexOf(n);
         if (!modifiers.ctrlKey && !modifiers.metaKey) this.selection.clear();
@@ -276,6 +293,7 @@
       this.expand(n.path); await this.load(n); this.persist();
     }
     collapseAll() {
+      this.cancelFollow(true);
       this.expanded.clear(); this.selected = this.rootPath; this.input.value = this.rootPath; this.render(); this.persist();
     }
     render() {
@@ -293,6 +311,7 @@
         const name = document.createElement('span'); name.className = 'tree-name'; name.textContent = n.name;
         const size = document.createElement('span'); size.className = 'tree-size'; size.textContent = directory ? '' : bytes(n.attrs.size);
         row.append(arrow, icon(directory ? 'folder' : n.attrs.kind === 'link' ? 'link' : 'file'), name, size);
+        this.decorateMount(row);
         row.addEventListener('click', e => { this.tree.focus(); this.select(n, false, e); });
         row.addEventListener('dblclick', e => { if (!e.target.closest('.tree-arrow')) void this.run(() => this.open(n)); });
         row.addEventListener('contextmenu', e => { e.preventDefault(); if (!this.selection.has(n.path)) this.select(n, false); this.showMenu(n, e.clientX, e.clientY); });
@@ -318,7 +337,7 @@
       if (this.selected && !this.visible.some(n => n.path === this.selected)) {
         let path = parentOf(this.selected);
         while (path !== this.rootPath && path !== '/' && !this.visible.some(n => n.path === path)) path = parentOf(path);
-        this.select(this.visible.find(n => n.path === path) || root, false);
+        this.select(this.visible.find(n => n.path === path) || root, false,null,true);
       }
       if (this.nodes.has(this.selected)) this.tree.setAttribute('aria-activedescendant', this.nodes.get(this.selected).key);
       this.caption.textContent = `${this.visible.length} 项`;
@@ -453,13 +472,16 @@
     }
     async flush() { await Promise.all([...this.pending]); this.persist(); clearTimeout(this.persistTimer); this.writeState(); await this.persistQueue; }
     focus() { this.tree.focus(); }
+    setMounts(mounts){this.mounts=mounts;for(const row of this.tree.querySelectorAll('.tree-row'))this.decorateMount(row);}
+    decorateMount(row){let detail=row.querySelector('.mount-detail');const mount=this.mounts.get(row.dataset.path);if(!mount){detail?.remove();row.classList.remove('mount-row');row.title=row.dataset.path;return;}if(!detail){detail=document.createElement('span');detail.className='mount-detail';row.append(detail);}detail.textContent=mount.label;row.title=row.dataset.path+' · '+mount.detail;row.classList.add('mount-row');}
     contextChanged() {
+      ++this.contextEpoch;this.cancelFollow();this.setMounts(new Map());
       this.closeMenu();
       this.pointerEnd(null);
       // Loaded rows are useful while offline; refresh reopens cursors on the new session.
       for (const n of this.nodes.values()) { n.cursor = null; if (n.more) n.error = '连接已更换，请刷新目录'; }
       this.render();
     }
-    dispose(){this.closeMenu();removeEventListener('focus',this.menuRefresh);removeEventListener('sodeck:fileClipboardChanged',this.menuRefresh);}
+    dispose(){this.disposed=true;++this.contextEpoch;this.cancelFollow();this.closeMenu();removeEventListener('focus',this.menuRefresh);removeEventListener('sodeck:fileClipboardChanged',this.menuRefresh);}
   };
 })();

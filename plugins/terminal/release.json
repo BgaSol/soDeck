@@ -146,6 +146,21 @@
                 "apply": "live"
               }
             ]
+          },
+          {
+            "id": "directory",
+            "title": "目录联动",
+            "fields": [
+              {
+                "key": "directoryReportHost",
+                "title": "目录报告主机名",
+                "description": "仅为与文件浏览使用同一文件系统的 shell 填写 OSC 7 主机名；留空时关闭目录上报。进入容器、chroot 或嵌套 SSH 前关闭跟随。",
+                "type": "string",
+                "default": "",
+                "maxLength": 128,
+                "apply": "live"
+              }
+            ]
           }
         ]
       }

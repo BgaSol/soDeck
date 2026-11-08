@@ -1,7 +1,7 @@
-use serde_json::json;
+use serde_json::{json, Value};
 use std::{collections::HashMap, sync::Mutex};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let terminals = Mutex::new(HashMap::<String, (String, String)>::new());
+    let terminals = Mutex::new(HashMap::<String, TerminalView>::new());
     let settings = sodeck_plugin_client::settings::SettingsCache::default();
     sodeck_plugin_client::run(move |client, method, p| {
         if method == "initialize" {
@@ -21,14 +21,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let view = p["viewId"].as_str().ok_or("缺少 viewId")?;
         if method == "ui.disposeView" {
             let terminal = terminals.lock().unwrap().remove(view);
-            if let Some((id, _)) = terminal {
-                client.call("terminal.close", json!({"id":id}))?;
+            if let Some(terminal) = terminal {
+                client.call("terminal.close", json!({"id":terminal.id}))?;
             }
             return Ok(json!({}));
         }
         if method == "ui.mount" {
             let existing = terminals.lock().unwrap().get(view).cloned();
-            let (id, title) = if let Some(existing) = existing {
+            let terminal = if let Some(existing) = existing {
                 existing
             } else {
                 let result =
@@ -40,11 +40,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut all = terminals.lock().unwrap();
                 let next = all.len() + 1;
                 all.entry(view.into())
-                    .or_insert_with(|| (id, format!("终端 {next}")))
+                    .or_insert_with(|| TerminalView {
+                        id,
+                        title: format!("终端 {next}"),
+                        context: p["context"].clone(),
+                    })
                     .clone()
             };
             return Ok(
-                json!({"data":{"streamId":id,"title":title},"metadata":{"title":title,"dirty":false,"busy":false}}),
+                json!({"data":{"streamId":terminal.id,"title":terminal.title,"openedContext":terminal.context},"metadata":{"title":terminal.title,"dirty":false,"busy":false}}),
             );
         }
         match method {
@@ -52,4 +56,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             _ => Err("未知终端插件方法".into()),
         }
     })
+}
+#[derive(Clone)]
+struct TerminalView {
+    id: String,
+    title: String,
+    context: Value,
 }

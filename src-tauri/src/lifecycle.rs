@@ -531,6 +531,7 @@ impl AppCore {
         if matches!(target, Target::Application { .. }) {
             self.set_closing(true);
         }
+        self.sync_shared_ui_locked(&ui);
         drop(ui);
         drop(workspaces);
         drop(updates);

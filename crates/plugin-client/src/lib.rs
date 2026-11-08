@@ -15,6 +15,7 @@ pub struct Client {
     inner: Arc<Inner>,
 }
 struct Inner {
+    state: shared_state::Inbox,
     closed: AtomicBool,
     writer: Mutex<io::Stdout>,
     pending: Mutex<HashMap<String, mpsc::SyncSender<Result<Value, RpcError>>>>,
@@ -74,6 +75,7 @@ pub fn run(
             writer: Mutex::new(io::stdout()),
             pending: Mutex::new(HashMap::new()),
             sequence: AtomicU64::new(0),
+            state: shared_state::Inbox::default(),
         }),
     });
     let handler = Arc::new(handler);
@@ -137,6 +139,14 @@ pub fn run(
             break;
         }
         if frame.get("method").is_some() {
+            if frame["method"] == "state.changed" {
+                let result = client.inner.state.receive(&frame["params"]);
+                client.send(match result {
+                    Ok(value)=>json!({"jsonrpc":"2.0","id":frame["id"],"result":value}),
+                    Err(message)=>json!({"jsonrpc":"2.0","id":frame["id"],"error":{"code":-32000,"message":message}}),
+                })?;
+                continue;
+            }
             if let Err(mpsc::TrySendError::Full(frame)) = tx.try_send(frame) {
                 client.send(json!({"jsonrpc":"2.0","id":frame["id"],"error":{"code":-32001,"message":"插件队列已满"}}))?;
             }
@@ -159,6 +169,7 @@ pub fn run(
 }
 pub mod encoding;
 pub mod settings;
+pub mod shared_state;
 
 #[derive(Debug, Clone)]
 pub struct RpcError {

@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { changedFiles, selectChecks, checkResults, targets, selectionSummary } from './select-checks.mjs';
+test('shared state selects its native source, SDK and actual three-plugin communication',()=>{for(const file of ['src/component-state.ts','src-tauri/src/shared_state.rs','src-tauri/src/shared_state/delivery.rs','plugins/shared/state.js']){const p=selectChecks([file]);assert(p.communication&&p.sharedClient&&p.core);assert(p.integration.some(t=>t.communication&&t.terminal&&t.files&&t.status));assert.deepEqual(p.plugins,['terminal','files','system-status']);}assert(selectChecks(['plugins/files/ui/tree.js']).communication);});
 
 test('documentation produces an explicit lightweight check without product suites', () => {
   const p = selectChecks(['docs/usage.md', 'docs/reference-v2/files-panel.png', 'README.md', 'plugins/files/CHANGELOG.md']);

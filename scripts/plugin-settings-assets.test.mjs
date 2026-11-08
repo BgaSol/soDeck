@@ -24,7 +24,7 @@ test('font-consuming plugins independently package complete fonts, metadata and 
       assert(fs.readFileSync(path.join(directory,'ui/font-loader.js'),'utf8').includes('FontFace'));
       for(const font of files.filter(f=>f.endsWith('.woff2')))assert.equal(fs.readFileSync(path.join(directory,'ui/fonts',font)).subarray(0,4).toString(),'wOF2');
     }
-    const metadata=JSON.parse(fs.readFileSync('plugins/terminal/release.json','utf8'));metadata.settings.pages[0].groups[0].fields[0].presets[0].regular='../outside.woff2';
+    const metadata=JSON.parse(fs.readFileSync('plugins/terminal/release.json','utf8'));metadata.settings.pages.flatMap(p=>p.groups).flatMap(g=>g.fields).find(f=>f.type==='font').presets[0].regular='../outside.woff2';
     assert.throws(()=>packageSettingsAssets(metadata,root),/Invalid font asset/);
   }finally{fs.rmSync(root,{recursive:true,force:true});}
 });

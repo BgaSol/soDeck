@@ -176,10 +176,10 @@ pub struct WorkspaceUi {
     pub right: Option<String>,
     pub editor: Option<String>,
 }
-struct Surface {
-    window: String,
-    view: String,
-    ready: bool,
+pub(crate) struct Surface {
+    pub(crate) window: String,
+    pub(crate) view: String,
+    pub(crate) ready: bool,
 }
 pub struct Runtime {
     root: PathBuf,
@@ -187,7 +187,7 @@ pub struct Runtime {
     error: Option<String>,
     pub definitions: BTreeMap<String, Registered>,
     pub workspaces: HashMap<String, WorkspaceUi>,
-    surfaces: HashMap<String, Surface>,
+    pub(crate) surfaces: HashMap<String, Surface>,
     pub(crate) lifecycle: crate::lifecycle::Lifecycle,
     requests: HashMap<String, String>,
     clock: u64,
@@ -231,6 +231,12 @@ pub fn dispatch(
             .ui_surface_ready(window, text("surfaceId")?)
             .map(|_| Value::Null),
         "event" => core.ui_event(window, text("surfaceId")?, args["event"].clone()),
+        "state" => Ok(
+            match core.state_surface_request(window, text("surfaceId")?, &args["input"]) {
+                Ok(result) => json!({"result":result}),
+                Err(error) => json!({"error":error}),
+            },
+        ),
         #[cfg(feature = "test-fixtures")]
         "prepareClose" => core.ui_close_prepare(
             window,

@@ -427,6 +427,7 @@ impl AppCore {
                 }
             }
         }
+        self.sync_shared_ui_locked(&ui);
         Ok(())
     }
     pub fn ui_snapshot(&self, window: &str) -> Result<Value, String> {
@@ -636,6 +637,7 @@ impl AppCore {
             }
             _ => return Err("未知组件 UI 操作".into()),
         }
+        self.sync_shared_ui_locked(&ui);
         drop(ui);
         drop(workspaces);
         self.workspace_changed();

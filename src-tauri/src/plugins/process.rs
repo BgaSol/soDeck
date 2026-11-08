@@ -60,7 +60,7 @@ pub(crate) fn supervise(
         "jsonrpc":"2.0", "id":"initialize", "method":"initialize", "params":{
             "coreApiVersion":API_VERSION, "coreVersion":core.version(), "dataDirectory":path,
             "settings":core.settings_index(id),
-              "capabilities":["logging.write","messages.publish","ui.v1","rpc.concurrent","terminal.v1","viewData.v1","files.v1","files.directoryCursors.v1","files.operations.v1","files.localInputs.v1","net.tcp.v1","ui.dialog.v1","settings.v1","ui.background.v1","session.exec.v1"]
+              "capabilities":["logging.write","messages.publish","ui.v1","rpc.concurrent","terminal.v1","viewData.v1","files.v1","files.directoryCursors.v1","files.operations.v1","files.localInputs.v1","net.tcp.v1","ui.dialog.v1","settings.v1","ui.background.v1","session.exec.v1","sharedState.v1","files.location.v1"]
         }
     }))).err();
     let mut ready = Some(ready);
@@ -77,6 +77,7 @@ pub(crate) fn supervise(
             Option<Sender<Result<Value, String>>>,
             Option<crate::resource_tasks::Task>,
             super::Observation,
+            bool,
         ),
     > = std::collections::HashMap::new();
     loop {
@@ -84,7 +85,9 @@ pub(crate) fn supervise(
             stop_waiters.push(waiter);
             if stop_deadline.is_none() {
                 stop_deadline = Some(Instant::now() + Duration::from_secs(3));
-                for (_, reply, _, _) in requests.values_mut() {
+                core.shared_state
+                    .stop_instance(id, instance_id, now(), Instant::now());
+                for (_, reply, _, _, _) in requests.values_mut() {
                     if let Some(reply) = reply.take() {
                         let _ = reply.send(Err("插件正在停止，请求已取消".into()));
                     }
@@ -109,6 +112,7 @@ pub(crate) fn supervise(
                 deadline,
                 task,
                 observation,
+                expire_at_deadline,
             } = call;
             if Instant::now() >= deadline {
                 let _ = reply.send(Err("插件请求已超时".into()));
@@ -122,7 +126,10 @@ pub(crate) fn supervise(
                     json!({"jsonrpc":"2.0","id":key,"method":method,"params":params}),
                 ) {
                     Ok(()) => {
-                        requests.insert(key, (deadline, Some(reply), task, observation));
+                        requests.insert(
+                            key,
+                            (deadline, Some(reply), task, observation, expire_at_deadline),
+                        );
                     }
                     Err(e) => {
                         let _ = reply.send(Err(e));
@@ -135,13 +142,14 @@ pub(crate) fn supervise(
                 failure = Some(error);
             }
         }
-        for (deadline, reply, _, _) in requests.values_mut() {
+        for (deadline, reply, _, _, _) in requests.values_mut() {
             if Instant::now() >= *deadline {
                 if let Some(reply) = reply.take() {
                     let _ = reply.send(Err("插件界面请求超时；结果尚未确认".into()));
                 }
             }
         }
+        requests.retain(|_, (deadline, _, _, _, expire)| !*expire || Instant::now() < *deadline);
         if !initialized && stop_deadline.is_none() && Instant::now() >= init_deadline {
             failure = Some("插件初始化超过 5 秒".into());
         }
@@ -170,7 +178,9 @@ pub(crate) fn supervise(
                 .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
             core.executions
                 .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
-            for (_, reply, _, _) in requests.values_mut() {
+            core.shared_state
+                .stop_instance(id, instance_id, now(), Instant::now());
+            for (_, reply, _, _, _) in requests.values_mut() {
                 if let Some(reply) = reply.take() {
                     let _ = reply.send(Err("插件通信已停止，请求已取消".into()));
                 }
@@ -303,7 +313,7 @@ pub(crate) fn supervise(
                             }
                         }
                     }
-                } else if let Some((_, reply, _task, observation)) =
+                } else if let Some((_, reply, _task, observation, _)) =
                     frame["id"].as_str().and_then(|key| requests.remove(key))
                 {
                     let result = if frame.get("error").is_some() {
@@ -327,6 +337,11 @@ pub(crate) fn supervise(
                             std::sync::atomic::Ordering::Release,
                         );
                         if stop_deadline.is_none() {
+                            if let Err(error) = core.shared_state.activate_instance(id, instance_id)
+                            {
+                                failure = Some(error.to_string());
+                                continue;
+                            }
                             instance.update(&core, |v| v.status = PluginStatus::Running);
                         }
                         core.log(Some((id, instance_id)), "info", "插件初始化完成", None);

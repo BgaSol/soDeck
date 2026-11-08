@@ -15,6 +15,7 @@ use std::{
 use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
 
+mod location;
 mod operations;
 
 pub const LIMIT: usize = 1024 * 1024;
@@ -533,6 +534,17 @@ impl AppCore {
                     let target = path(&p)?;
                     let a = f.raw.stat(target).await.map_err(err)?.attrs;
                     Ok(json!({"path":canonical(&f.raw,target).await?,"attrs":attrs(&a)}))
+                }
+                "resolveLocation" => {
+                    let target = location::normalize(&p)?;
+                    let f = sftp(self, &mut s, &view.context).await?;
+                    let resolved = canonical(&f.raw, &target).await?;
+                    let a = f.raw.stat(resolved.clone()).await.map_err(err)?.attrs;
+                    self.workspaces
+                        .lock()
+                        .unwrap()
+                        .validate_identity(&view.context)?;
+                    Ok(json!({"path":resolved,"attrs":attrs(&a)}))
                 }
                 "read" => {
                     if s.document.is_some() {

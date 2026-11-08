@@ -28,6 +28,7 @@ pub(crate) struct Call {
     deadline: Instant,
     task: Option<crate::resource_tasks::Task>,
     observation: Observation,
+    expire_at_deadline: bool,
 }
 pub(crate) type Receipt = Arc<Mutex<Option<Result<Value, String>>>>;
 /// A timed-out caller keeps its receipt until the real reply or process cleanup.
@@ -86,6 +87,35 @@ impl Instance {
         receipt: Option<Receipt>,
         timeout: Duration,
     ) -> Result<Value, String> {
+        let rx = self.enqueue_request(method, params, task, receipt, timeout, false)?;
+        rx.recv_timeout(timeout + Duration::from_millis(100))
+            .map_err(|error| match error {
+                mpsc::RecvTimeoutError::Timeout => "插件界面请求超过 5 秒",
+                mpsc::RecvTimeoutError::Disconnected => "插件通信已停止",
+            })?
+    }
+    pub(crate) fn enqueue_state(
+        &self,
+        params: Value,
+    ) -> Result<Receiver<Result<Value, String>>, String> {
+        self.enqueue_request(
+            "state.changed",
+            params,
+            None,
+            None,
+            rpc::REQUEST_TIMEOUT,
+            true,
+        )
+    }
+    fn enqueue_request(
+        &self,
+        method: &str,
+        params: Value,
+        task: Option<crate::resource_tasks::Task>,
+        receipt: Option<Receipt>,
+        timeout: Duration,
+        expire_at_deadline: bool,
+    ) -> Result<Receiver<Result<Value, String>>, String> {
         let observation = Observation(receipt);
         if self.view().status != PluginStatus::Running {
             return Err("插件当前不可用".into());
@@ -102,16 +132,13 @@ impl Instance {
                 deadline: Instant::now() + timeout,
                 task,
                 observation,
+                expire_at_deadline,
             })
             .map_err(|error| match error {
                 mpsc::TrySendError::Full(_) => "插件请求队列已满，请稍后重试",
                 mpsc::TrySendError::Disconnected(_) => "插件通信已停止",
             })?;
-        rx.recv_timeout(timeout + Duration::from_millis(100))
-            .map_err(|error| match error {
-                mpsc::RecvTimeoutError::Timeout => "插件界面请求超过 5 秒",
-                mpsc::RecvTimeoutError::Disconnected => "插件通信已停止",
-            })?
+        Ok(rx)
     }
     pub fn new(
         record: PluginRecord,
