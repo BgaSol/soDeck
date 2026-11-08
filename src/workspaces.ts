@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { escape as e, icon, patchChrome } from "./ui";
 import { Components } from "./components";
+import { CloseCoordinator, type HostInputs } from "./close";
 import { attachMenuPosition, type MenuPosition } from "./menu-position.js";
 
 export interface Context { workspaceId: string; serverId: string; connectionId: string; generation: number }
@@ -14,6 +15,7 @@ interface Gesture { id: string; pointer: number; x: number; y: number; grabX: nu
 /** Each view is rendered from its own immutable context; no global active server API. */
 export class Workspaces {
   private components: Components;
+  private closer: CloseCoordinator;
   private state?: Projection;
   private refreshing?: Promise<void>;
   private again = false;
@@ -23,45 +25,57 @@ export class Workspaces {
   private gesture?: Gesture;
   private moving = new Set<string>();
   private disposed = false;
+  private events = new AbortController();
   private reportTimer?: ReturnType<typeof setTimeout>;
   private preview?: DropTarget;
   private observer: MutationObserver;
   private resizeObserver: ResizeObserver;
 
   constructor(private tabs: HTMLElement, private content: HTMLElement, private catalog: HTMLElement, private notify: (message: string) => void, private call: Invoke = invoke) {
-    this.components = new Components(content, call, notify, () => this.refresh());
+    this.closer = new CloseCoordinator(call,()=>this.state?.window.id??"main",ids=>this.components.flush(ids),(ids,blocked,host)=>{
+      this.components.setCloseBlocked(blocked?ids:[]);
+      if(this.state?.window.id==="main")for(const id of ["server-catalog","overlay"]) {const node=document.getElementById(id);if(node)node.inert=host;}
+      this.hostBlock?.(host);
+    },notify);
+    this.components = new Components(content, call, notify, () => this.refresh(),async target=>{
+      const accepted=await this.closer.request(target);
+      await this.refresh();
+      return accepted;
+    });
     tabs.addEventListener("click", event => {
       if (this.gesture?.token) return;
       const button = (event.target as Element).closest<HTMLElement>("[data-workspace-action]");
       if (button) void this.run(() => this.action(button.dataset.workspaceAction!, button.dataset.id!));
-    });
+    }, {signal: this.events.signal});
     tabs.addEventListener("contextmenu", event => {
       const tab = (event.target as Element).closest<HTMLElement>(".server-tab");
       if (!tab) return; event.preventDefault(); this.openMenu(tab.dataset.id!, tab);
-    });
-    tabs.addEventListener("pointerdown", event => this.down(event));
-    tabs.addEventListener("pointermove", event => this.pointerMove(event));
-    tabs.addEventListener("pointerup", event => { if (event.pointerId === this.gesture?.pointer) void this.finish(false); });
-    tabs.addEventListener("pointercancel", () => void this.finish(true));
-    tabs.addEventListener("lostpointercapture", () => { if (this.gesture && !this.gesture.released) void this.finish(true); });
-    tabs.addEventListener("scroll", () => this.report(), { passive: true });
-    document.querySelector("#catalog-tab")?.addEventListener("click", () => void this.run(() => this.call("workspace_activate", { id: null })));
-    document.addEventListener("pointerdown", event => { if (!this.menu?.contains(event.target as Node) && !this.menuAnchor?.contains(event.target as Node)) this.closeMenu(); });
-    content.addEventListener("surface-interaction", () => this.closeMenu());
-    document.addEventListener("keydown", event => this.key(event));
-    content.addEventListener("pointerdown", event => this.resize(event));
+    }, {signal: this.events.signal});
+    tabs.addEventListener("pointerdown", event => this.down(event), {signal: this.events.signal});
+    tabs.addEventListener("pointermove", event => this.pointerMove(event), {signal: this.events.signal});
+    tabs.addEventListener("pointerup", event => { if (event.pointerId === this.gesture?.pointer) void this.finish(false); }, {signal: this.events.signal});
+    tabs.addEventListener("pointercancel", () => void this.finish(true), {signal: this.events.signal});
+    tabs.addEventListener("lostpointercapture", () => { if (this.gesture && !this.gesture.released) void this.finish(true); }, {signal: this.events.signal});
+    tabs.addEventListener("scroll", () => this.report(), { passive: true, signal: this.events.signal});
+    document.querySelector("#catalog-tab")?.addEventListener("click", () => void this.run(() => this.call("workspace_activate", { id: null })), {signal: this.events.signal});
+    document.addEventListener("pointerdown", event => { if (!this.menu?.contains(event.target as Node) && !this.menuAnchor?.contains(event.target as Node)) this.closeMenu(); }, {signal: this.events.signal});
+    content.addEventListener("surface-interaction", () => this.closeMenu(), {signal: this.events.signal});
+    document.addEventListener("keydown", event => this.key(event), {signal: this.events.signal});
+    content.addEventListener("pointerdown", event => this.resize(event), {signal: this.events.signal});
     this.observer = new MutationObserver(() => this.report());
     this.observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["open", "hidden", "inert"] });
     this.resizeObserver = new ResizeObserver(() => this.report()); this.resizeObserver.observe(tabs);
     const blank = tabs.parentElement?.querySelector('.drag-region'); if (blank) this.resizeObserver.observe(blank);
   }
-  async start() { await this.refresh(); await this.reportNow(); await this.call("workspace_ready"); }
+  async start() { await this.refresh(); await this.closer.start(); await this.reportNow(); await this.call("workspace_ready"); }
   refresh(): Promise<void> {
+    if(this.disposed)return Promise.resolve();
     if (this.refreshing) { this.again = true; return this.refreshing; }
     this.refreshing = (async () => {
       do {
         this.again = false;
         const state = await this.call<Projection>("workspace_snapshot");
+        if(this.disposed)return;
         if (!this.state || state.revision >= this.state.revision) { this.state = state; await this.components.sync(state); this.render(); }
       } while (this.again);
     })().finally(() => { this.refreshing = undefined; });
@@ -101,7 +115,7 @@ export class Workspaces {
     if (action === "menu") { this.openMenu(id, this.tabs.querySelector<HTMLElement>(`.tab-menu-button[data-id="${CSS.escape(id)}"]`)!); return; }
     this.closeMenu();
     if (action === "select") { await this.call("workspace_activate", { id }); return; }
-    if (action === "close") { if (await this.components.close([id])) await this.call("workspace_close", { id }); return; }
+    if (action === "close") { await this.closer.request({kind:"workspace",id}); return; }
     if (this.moving.has(id)) return;
     this.moving.add(id); this.render();
     try { await this.components.flush(); await this.call("workspace_move", { id, target: action === "return" ? "main" : null, index: Number.MAX_SAFE_INTEGER }); }
@@ -215,7 +229,16 @@ export class Workspaces {
     const end = (ev: PointerEvent) => { handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", end); handle.removeEventListener("pointercancel", end); if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId); void this.run(() => this.call("workspace_layout", { id: w.context.workspaceId, layout: { ...w.layout, [key]: ev.type === "pointercancel" ? initial : width } })); };
     handle.addEventListener("pointermove", move); handle.addEventListener("pointerup", end); handle.addEventListener("pointercancel", end);
   }
-  allowExit() { return this.components.allowExit(); }
+  dispose() {
+    if(this.disposed)return;
+    this.disposed=true;this.events.abort();clearTimeout(this.reportTimer);
+    this.observer.disconnect();this.resizeObserver.disconnect();this.closeMenu();
+    this.closer.dispose();this.components.dispose();
+  }
+  private hostBlock?: (blocked:boolean)=>void;
+  setCloseParticipants(inputs:HostInputs,block:(blocked:boolean)=>void){this.closer.hostInputs=inputs;this.hostBlock=block;}
+  exit() { return this.closer.request({kind:"application",action:"exit"}); }
+  restart(install:boolean) { return this.closer.request({kind:"application",action:install?"installAndRestart":"restart"}); }
   flush() { return this.components.flush(); }
-  async closeWindow() { if (await this.components.close(this.state?.workspaces.map(w => w.context.workspaceId) ?? [])) await this.call("workspace_close_window"); }
+  closeWindow() { return this.closer.request({kind:"window",id:this.state?.window.id??"main"}); }
 }

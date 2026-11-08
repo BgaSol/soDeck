@@ -110,7 +110,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
         if (file.includes('settings')) ui();
         continue;
       }
-      if (/^src-tauri\/(src|tests)\/(connections|streams|plugins|session_exec|core|lib|main|model|lifecycle|resource_owner|platform|servers)(\/|\.|_)/.test(file)) {
+      if (/^src-tauri\/(src|tests)\/(connections|streams|plugins|session_exec|core|lib|main|model|lifecycle|close_lifecycle|resource_tasks|resource_owner|platform|servers)(\/|\.|_)/.test(file)) {
         core(); ui();
         plan.ssh = plan.sharedClient = true;
         pluginNames.forEach(name => integration.add(name));
@@ -127,6 +127,8 @@ export function selectChecks(files, { suite, fallback } = {}) {
         continue;
       }
       if (/^scripts\/(select-checks|check-docs)(\.test)?\.mjs$/.test(file)) { plan.scripts = true; continue; }
+      if (file === 'scripts/fixtures/events.js') { plan.scripts = true; ['terminal', 'files', 'network-proxy'].forEach(name => integration.add(name)); continue; }
+      if (file === 'scripts/test-close-native.mjs') { core(); ui(); plan.ssh = true; continue; }
       if (/^scripts\/test-network-netem\.mjs$/.test(file)) { plan.scripts = true; integration.add('network-proxy'); continue; }
       if (/^scripts\/(network-tools|test-network-ui)\.mjs$/.test(file)) { plan.scripts = true; integration.add('network-proxy'); continue; }
       if (/^scripts\/test-system-status-(ui|package)\.mjs$/.test(file)) { plan.scripts = true; integration.add('system-status'); continue; }

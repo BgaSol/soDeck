@@ -18,6 +18,23 @@ pub(super) struct Operations {
     cursors: Mutex<HashMap<String, Arc<tokio::sync::Mutex<cursors::Cursor>>>>,
 }
 impl Operations {
+    pub(super) fn new(transports: Arc<crate::resource_tasks::Tasks>) -> Self {
+        Self {
+            session: tokio::sync::Mutex::new(State {
+                transports,
+                ..State::default()
+            }),
+            ..Self::default()
+        }
+    }
+    pub(super) async fn clear(&self) {
+        *self.session.lock().await = State::default();
+        self.registry.lock().unwrap().entries.clear();
+        self.inputs.lock().unwrap().clear();
+        self.batches.lock().unwrap().clear();
+        self.cancelled_batches.lock().unwrap().clear();
+        self.cursors.lock().unwrap().clear();
+    }
     pub(super) fn cancel_pending(&self) -> bool {
         let mut cancelled = self.cancelled_batches.lock().unwrap();
         cancelled.extend(self.batches.lock().unwrap().keys().cloned());
@@ -42,6 +59,7 @@ struct Registry {
     last: u64,
 }
 struct Operation {
+    input_task: Mutex<Option<crate::resource_tasks::Task>>,
     _slot: tokio::sync::OwnedSemaphorePermit,
     id: String,
     request: Value,
@@ -199,6 +217,7 @@ impl AppCore {
     ) -> Result<Value, String> {
         let view = self.ui_data_writable(window, token)?;
         let r = self.file_resource(&view.plugin_id, &view.plugin_instance_id, file)?;
+        let _task = r.tasks.enter()?;
         if r.owner.view != view.id || roots.is_empty() || roots.len() > 4096 {
             return Err(failure("invalid", "本地选择无效或超过 4096 项"));
         }
@@ -239,6 +258,7 @@ impl AppCore {
     ) -> Result<Value, String> {
         let view = self.ui_data_writable(window, token)?;
         let r = self.file_resource(&view.plugin_id, &view.plugin_instance_id, file)?;
+        let _task = r.tasks.enter()?;
         if r.owner.view != view.id {
             return Err("文件资源不属于此页面".into());
         }
@@ -250,6 +270,7 @@ impl AppCore {
         registry.entries.insert(
             id.clone(),
             Arc::new(Operation {
+                input_task: Mutex::new(Some(r.tasks.enter()?)),
                 _slot: self
                     .files
                     .operation_slots
@@ -288,6 +309,14 @@ impl AppCore {
         let Some(op) = op else {
             return;
         };
+        let input_task = op.input_task.lock().unwrap().take();
+        let _task = match r.tasks.enter() {
+            Ok(task) => task,
+            Err(_) => {
+                drop(input_task);
+                return;
+            }
+        };
         let result = paths.and_then(|paths| {
             let view = self.ui_data_writable(window, token)?;
             if view.context != op.context || op.cancel.is_cancelled() {
@@ -316,6 +345,11 @@ impl AppCore {
         p: &Value,
     ) -> Result<Value, String> {
         let action = string(p, "action")?;
+        let _task = if matches!(action, "op.start" | "batch.begin") {
+            Some(r.tasks.enter()?)
+        } else {
+            None
+        };
         if action == "batch.begin" {
             let owner = self.resource_owner(&r.owner.plugin, &r.owner.instance, &r.owner.view)?;
             if serde_json::to_value(&owner.context).map_err(err)? != p["context"] {
@@ -453,6 +487,7 @@ impl AppCore {
                 let view = ui.resource_view(&r.owner.view)?;
                 if context.as_ref() != Some(&view.context)
                     || !ui.frozen(&view.context.workspace_id)
+                    || !ui.lifecycle.input_work_allowed(&view.context.workspace_id)
                     || view.plugin_instance_id != r.owner.instance
                     || r.cancel.is_cancelled()
                 {
@@ -506,6 +541,7 @@ impl AppCore {
         registry.last = sequence;
         let id = self.next_id();
         let operation = Arc::new(Operation {
+            input_task: Mutex::new(None),
             _slot: self
                 .files
                 .operation_slots
@@ -522,8 +558,13 @@ impl AppCore {
         drop(registry);
         drop(cancellation_guard);
         let core = self.clone();
+        let task = r.tasks.enter()?;
         tauri::async_runtime::spawn(async move {
-            let mut state = State::default();
+            let _task = task;
+            let mut state = State {
+                transports: r.transports.clone(),
+                ..State::default()
+            };
             let result = async {
                 let session = if operation.request["operation"]["kind"] == "list" {
                     sftp(&core, &mut state, &owner.context).await?

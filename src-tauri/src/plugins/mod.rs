@@ -26,6 +26,28 @@ pub(crate) struct Call {
     params: Value,
     reply: Sender<Result<Value, String>>,
     deadline: Instant,
+    task: Option<crate::resource_tasks::Task>,
+    observation: Observation,
+}
+pub(crate) type Receipt = Arc<Mutex<Option<Result<Value, String>>>>;
+/// A timed-out caller keeps its receipt until the real reply or process cleanup.
+struct Observation(Option<Receipt>);
+impl Observation {
+    fn complete(&self, result: &Result<Value, String>) {
+        if let Some(receipt) = &self.0 {
+            *receipt.lock().unwrap() = Some(result.clone());
+        }
+    }
+}
+impl Drop for Observation {
+    fn drop(&mut self) {
+        if let Some(receipt) = &self.0 {
+            receipt
+                .lock()
+                .unwrap()
+                .get_or_insert_with(|| Err("请求未发送或插件进程已结束".into()));
+        }
+    }
 }
 pub(crate) struct Control {
     calls: Receiver<Call>,
@@ -46,6 +68,25 @@ pub(crate) struct Instance {
 
 impl Instance {
     pub fn request(&self, method: &str, params: Value) -> Result<Value, String> {
+        self.request_tracked(method, params, None)
+    }
+    pub(crate) fn request_tracked(
+        &self,
+        method: &str,
+        params: Value,
+        task: Option<crate::resource_tasks::Task>,
+    ) -> Result<Value, String> {
+        self.request_observed(method, params, task, None, rpc::REQUEST_TIMEOUT)
+    }
+    pub(crate) fn request_observed(
+        &self,
+        method: &str,
+        params: Value,
+        task: Option<crate::resource_tasks::Task>,
+        receipt: Option<Receipt>,
+        timeout: Duration,
+    ) -> Result<Value, String> {
+        let observation = Observation(receipt);
         if self.view().status != PluginStatus::Running {
             return Err("插件当前不可用".into());
         }
@@ -58,13 +99,15 @@ impl Instance {
                 method: method.into(),
                 params,
                 reply: tx,
-                deadline: Instant::now() + rpc::REQUEST_TIMEOUT,
+                deadline: Instant::now() + timeout,
+                task,
+                observation,
             })
             .map_err(|error| match error {
                 mpsc::TrySendError::Full(_) => "插件请求队列已满，请稍后重试",
                 mpsc::TrySendError::Disconnected(_) => "插件通信已停止",
             })?;
-        rx.recv_timeout(rpc::REQUEST_TIMEOUT + Duration::from_millis(100))
+        rx.recv_timeout(timeout + Duration::from_millis(100))
             .map_err(|error| match error {
                 mpsc::RecvTimeoutError::Timeout => "插件界面请求超过 5 秒",
                 mpsc::RecvTimeoutError::Disconnected => "插件通信已停止",

@@ -719,7 +719,16 @@ fn batch_reservations_preserve_other_results_and_interrupted_tasks_can_retry() {
     assert!(core.reserve_update_downloads(&ids).is_err());
     assert!(core.begin_update_check(true).is_none());
     assert!(core.begin_update_check(false).is_none());
-    assert!(core.prepare_restart().is_err());
+    assert!(core
+        .close_prepare(
+            "main",
+            "busy-restart",
+            sodeck::lifecycle::Target::Application {
+                action: sodeck::lifecycle::Action::Restart,
+            }
+        )
+        .is_err());
+    assert!(!core.is_closing());
     drop(tasks);
     assert!(!core.update_overview().busy);
     assert_eq!(

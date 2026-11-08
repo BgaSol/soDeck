@@ -122,9 +122,13 @@ export class ServerManager {
     if (f.busy || f.kind === "confirm") return;
     if (!this.dirty(f) || await this.confirm("放弃未保存的修改？", "当前表单的修改尚未保存。已经单独保存的代理和分组会保留。", "放弃修改")) this.dismiss(f);
   }
-  async allowExit() {
-    if (this.busy || this.frames.some(f => f.busy)) { this.notify("资料正在保存，请稍后退出"); return false; }
-    return !this.frames.some(f => this.dirty(f)) || this.confirm("退出并放弃修改？", "表单中尚未保存的修改会丢失。", "退出并放弃");
+  setCloseBlocked(blocked:boolean) {for(const frame of this.frames)frame.dialog.inert=blocked;}
+  async closeInputs(decision:"collect"|"save"|"discard") {
+    if(decision!=="collect"&&(this.busy||this.frames.some(f=>f.busy)))throw new Error("服务器资料正在保存，请等待原操作结束");
+    const drafts=this.frames.filter(f=>this.dirty(f)||f.busy).map((f,index)=>({id:`server:${index}`,title:"服务器资料表单",dirty:this.dirty(f),busy:f.busy}));
+    if(decision==="save"&&drafts.length)throw new Error("请返回服务器资料表单保存，然后重新关闭");
+    if(decision==="discard")while(this.frames.length)this.dismiss(this.frames[this.frames.length-1]);
+    return decision==="discard"?[]:drafts;
   }
   private async mutate(change: Change, revision = this.catalog!.revision) {
     const result = await this.api.change(revision, change);

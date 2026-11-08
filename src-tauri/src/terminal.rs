@@ -25,6 +25,7 @@ pub(crate) struct Terminal {
     pub output: Arc<Replay>,
     input: mpsc::Sender<Input>,
     cancel: CancellationToken,
+    tasks: Arc<crate::resource_tasks::Tasks>,
     next_input: Mutex<HashMap<String, u64>>,
     pub sent: AtomicU64,
     pub received: AtomicU64,
@@ -77,12 +78,18 @@ impl Terminals {
         let mut entries = self.entries.lock().unwrap();
         entries.retain(|_, t| {
             if matches(&t.owner) {
+                t.tasks.close();
                 t.cancel.cancel();
-                false
+                !t.tasks.finished()
             } else {
                 true
             }
         });
+    }
+    pub(crate) fn pending(&self, matches: impl Fn(&Owner) -> bool) -> usize {
+        let mut entries = self.entries.lock().unwrap();
+        entries.retain(|_, t| !t.tasks.finished());
+        entries.values().filter(|t| matches(&t.owner)).count()
     }
 }
 #[derive(Deserialize)]
@@ -182,7 +189,9 @@ impl AppCore {
             .lock()
             .unwrap()
             .validate_context(&owner.context)?;
+        let admission = self.resource_admission(&owner)?;
         let mut entries = self.terminals.entries.lock().unwrap();
+        entries.retain(|_, terminal| !terminal.tasks.finished());
         if let Some((id, _)) = entries
             .iter()
             .find(|(_, t)| t.owner.view == view && t.owner.instance == instance)
@@ -199,12 +208,15 @@ impl AppCore {
             output: Arc::new(Replay::default()),
             input,
             cancel: CancellationToken::new(),
+            tasks: Arc::new(crate::resource_tasks::Tasks::default()),
             next_input: Mutex::new(HashMap::new()),
             sent: AtomicU64::new(0),
             received: AtomicU64::new(0),
         });
+        let task = terminal.tasks.enter()?;
         entries.insert(id.clone(), terminal.clone());
         drop(entries);
+        drop(admission);
         if let Err(error) = self.resource_owner(plugin, instance, view) {
             terminal.cancel.cancel();
             self.terminals.entries.lock().unwrap().remove(&id);
@@ -212,6 +224,7 @@ impl AppCore {
         }
         let core = Arc::downgrade(self);
         tauri::async_runtime::spawn(async move {
+            let _task = task;
             let result = run(core, terminal.clone(), rx, cols, rows).await;
             terminal.output.finish(match result {
                 Ok(code) => json!({"exitCode":code}),
@@ -226,13 +239,13 @@ impl AppCore {
         instance: &str,
         id: &str,
     ) -> Result<Value, String> {
-        let mut entries = self.terminals.entries.lock().unwrap();
+        let entries = self.terminals.entries.lock().unwrap();
         if let Some(t) = entries.get(id) {
             if t.owner.plugin != plugin || t.owner.instance != instance {
                 return Err("终端不属于此插件实例".into());
             }
             t.cancel.cancel();
-            entries.remove(id);
+            t.tasks.close();
         }
         Ok(json!({}))
     }
@@ -272,10 +285,14 @@ impl AppCore {
                 let window = window.to_string();
                 let token = token.to_string();
                 let check = token.clone();
-                tauri::async_runtime::spawn(output.subscribe(token, sink, move || {
-                    core.upgrade()
-                        .is_some_and(|c| c.ui_data_view(&window, &check).is_ok())
-                }));
+                let task = terminal.tasks.enter()?;
+                let cancel = terminal.cancel.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _task = task;
+                    tokio::select! {biased; _=cancel.cancelled()=>{}, _=output.subscribe(token, sink, move || {
+                        core.upgrade().is_some_and(|c| c.ui_data_view(&window, &check).is_ok())
+                    })=>{}}
+                });
                 Ok(())
             }
             DataRequest::Ack { packet, .. } => terminal.output.ack(token, packet),
@@ -364,6 +381,7 @@ mod tests {
                 output: Arc::new(Replay::default()),
                 input,
                 cancel: CancellationToken::new(),
+                tasks: Arc::new(crate::resource_tasks::Tasks::default()),
                 next_input: Mutex::new(HashMap::new()),
                 sent: AtomicU64::new(0),
                 received: AtomicU64::new(0),

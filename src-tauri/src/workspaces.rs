@@ -261,6 +261,22 @@ impl Runtime {
     pub fn pending_move(&self, id: &str, source: &str) -> Option<Move> {
         self.pending.get(id).filter(|m| m.source == source).cloned()
     }
+    pub(crate) fn cancel_moves_for_close(
+        &mut self,
+        scope: &[String],
+        window: Option<&str>,
+        global: bool,
+    ) {
+        let before = self.pending.len();
+        self.pending.retain(|id, m| {
+            !global
+                && !scope.contains(id)
+                && !window.is_some_and(|w| m.source == w || m.target == w)
+        });
+        if before != self.pending.len() {
+            self.revision += 1;
+        }
+    }
     pub fn owner(&self, id: &str) -> Option<String> {
         self.workspaces.get(id).map(|w| w.window_id.clone())
     }
@@ -330,6 +346,13 @@ impl Runtime {
                 .windows
                 .get(window)
                 .is_some_and(|w| w.workspace_ids.is_empty())
+            && !self.pending.values().any(|m| m.target == window)
+    }
+    pub(crate) fn closing_last_secondary(&self, window: &str, id: &str) -> bool {
+        window != "main"
+            && self.windows.get(window).is_some_and(|w| {
+                w.workspace_ids.len() == 1 && w.workspace_ids.first().is_some_and(|only| only == id)
+            })
             && !self.pending.values().any(|m| m.target == window)
     }
     pub fn server_open(&self, server: &str) -> bool {
@@ -409,22 +432,76 @@ impl Runtime {
 }
 
 impl AppCore {
+    pub fn prepare_workspace_move(
+        &self,
+        source: &str,
+        id: &str,
+        target: &str,
+        index: usize,
+        token: String,
+        register: bool,
+    ) -> Result<Move, String> {
+        let mut state = self.workspaces.lock().unwrap();
+        let ui = self.component_ui.lock().unwrap();
+        if self.is_closing()
+            || ui.frozen(id)
+            || ui.lifecycle.window_closing(source)
+            || ui.lifecycle.window_closing(target)
+        {
+            return Err("目标正在关闭，不能移动工作区".into());
+        }
+        if register {
+            state.register(target)?;
+        }
+        match state.prepare(source, id, target, index, token) {
+            Ok(m) => Ok(m),
+            Err(error) => {
+                if register {
+                    let _ = state.close_window(target);
+                }
+                Err(error)
+            }
+        }
+    }
+    pub fn commit_workspace_move(&self, m: &Move) -> Result<(), String> {
+        let mut state = self.workspaces.lock().unwrap();
+        let ui = self.component_ui.lock().unwrap();
+        if self.is_closing()
+            || ui.frozen(&m.workspace_id)
+            || ui.lifecycle.window_closing(&m.source)
+            || ui.lifecycle.window_closing(&m.target)
+        {
+            return Err("关闭操作已保留目标，移动不能提交".into());
+        }
+        state.commit(m)
+    }
     pub fn workspace_projection(&self, window: &str) -> Result<Projection, String> {
         self.workspaces.lock().unwrap().projection(window)
     }
     pub fn workspace_changed(&self) {
+        if let Err(error) = self.reconcile_ui() {
+            self.log(
+                None,
+                "warn",
+                "组件工作区初始化未完成",
+                Some(serde_json::json!({"error":error})),
+            );
+        }
         self.wake_background();
-        let live: std::collections::HashSet<_> = self
-            .component_ui
-            .lock()
-            .unwrap()
+        let ui = self.component_ui.lock().unwrap();
+        let live: std::collections::HashMap<_, _> = ui
             .workspaces
             .values()
-            .flat_map(|w| w.views.iter().map(|v| v.id.clone()))
+            .flat_map(|w| w.views.iter().map(|v| (v.id.clone(), v.context.clone())))
             .collect();
-        self.terminals.cancel(|owner| !live.contains(&owner.view));
-        self.executions.cancel(|owner| !live.contains(&owner.view));
-        self.files.cancel(|owner| !live.contains(&owner.view));
+        self.terminals
+            .cancel(|owner| live.get(&owner.view) != Some(&owner.context));
+        self.executions
+            .cancel(|owner| live.get(&owner.view) != Some(&owner.context));
+        self.files.cancel(|owner| !live.contains_key(&owner.view));
+        self.network
+            .cancel(|owner| live.get(&owner.view) != Some(&owner.context));
+        drop(ui);
         self.event("workspaces-changed", serde_json::Value::Null);
     }
 
@@ -441,20 +518,28 @@ impl AppCore {
             .ok_or("服务器档案已不存在")?
             .clone();
         let mut state = self.workspaces.lock().unwrap();
+        let ui = self.component_ui.lock().unwrap();
+        if self.is_closing() || ui.lifecycle.window_closing("main") {
+            return Err("应用正在关闭".into());
+        }
         if let Some(w) = state
             .workspaces
             .values()
             .find(|w| w.context.server_id == session.server_id)
             .cloned()
         {
+            if ui.frozen(&w.context.workspace_id) {
+                return Err("工作区正在关闭".into());
+            }
             state.activate(&w.window_id, Some(&w.context.workspace_id))?;
+            drop(ui);
             drop(state);
             drop(servers);
             self.workspace_changed();
             return Ok(w);
         }
         let id = self.next_id();
-        let (left_width, right_width) = self.component_ui.lock().unwrap().widths();
+        let (left_width, right_width) = ui.widths();
         let workspace = Workspace {
             context: Context {
                 workspace_id: id.clone(),
@@ -480,6 +565,7 @@ impl AppCore {
         main.workspace_ids.push(id.clone());
         main.active_workspace = Some(id);
         state.revision += 1;
+        drop(ui);
         drop(state);
         drop(servers);
         self.workspace_changed();

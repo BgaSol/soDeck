@@ -66,12 +66,13 @@ pub(super) async fn listen(
                     let probe=l.probes.lock().unwrap().remove(&peer);
                     let id=format!("{}{}",core.next_id(),probe.map(|id|format!("@probe:{id}")).unwrap_or_default());
                     let (s,rx)=new_stream(id,&l,false,None);all.insert(s.id.clone(),s.clone());(s,rx)};
-                tokio::spawn(serve(s,rx,Box::new(socket),Some(permit)));
+                let Ok(task)=l.tasks.enter() else {drop(socket);break};
+                tokio::spawn(async move {let _task=task;serve(s,rx,Box::new(socket),Some(permit)).await;});
             }
         }}
         Ok::<(),String>(())
     }.await;
-    l.cancel.cancel();
+    l.close();
     l.probe_clients.lock().unwrap().clear();
     let mut status = l.status.lock().unwrap();
     status.state = if result.is_ok() { "closed" } else { "failed" };

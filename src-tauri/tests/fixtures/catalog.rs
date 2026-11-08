@@ -18,6 +18,56 @@ fn main() {
         let request: Value = serde_json::from_str(&line.unwrap()).unwrap();
         let args = &request["args"];
         let result = match request["command"].as_str().unwrap() {
+            "close_register_host" => core
+                .register_close_host(args["window"].as_str().unwrap_or("main"))
+                .map(|_| Value::Null),
+            "close_prepare" => serde_json::from_value(args["target"].clone())
+                .map_err(|e| e.to_string())
+                .and_then(|target| {
+                    core.close_prepare(
+                        args["window"].as_str().unwrap_or("main"),
+                        args["requestId"].as_str().unwrap(),
+                        target,
+                    )
+                })
+                .map(|o| json!(o)),
+            "close_status" => core
+                .close_status(
+                    args["window"].as_str().unwrap_or("main"),
+                    args["operationId"].as_str().unwrap(),
+                )
+                .map(|o| json!(o)),
+            "close_operations" => Ok(json!(
+                core.close_operations(args["window"].as_str().unwrap_or("main"))
+            )),
+            "close_report_inputs" => core
+                .close_report_inputs(
+                    args["window"].as_str().unwrap_or("main"),
+                    args["operationId"].as_str().unwrap(),
+                    args["inputRound"].as_u64().unwrap(),
+                    args["report"].clone(),
+                )
+                .map(|o| json!(o)),
+            "close_decide" => core
+                .close_decide(
+                    args["window"].as_str().unwrap_or("main"),
+                    args["operationId"].as_str().unwrap(),
+                    args["decisionRevision"].as_u64().unwrap(),
+                    args["decision"].as_str().unwrap(),
+                )
+                .map(|o| json!(o)),
+            "close_retry" => core
+                .close_retry(
+                    args["window"].as_str().unwrap_or("main"),
+                    args["operationId"].as_str().unwrap(),
+                )
+                .map(|o| json!(o)),
+            "close_exit_after_failure" => core
+                .close_exit_after_failure(
+                    args["window"].as_str().unwrap_or("main"),
+                    args["operationId"].as_str().unwrap(),
+                )
+                .map(|o| json!(o)),
             "official_plugins" => {
                 let base = std::env::var("SODECK_TEST_PLUGIN_API")
                     .expect("catalog fixture requires a loopback test API");
@@ -54,7 +104,8 @@ fn main() {
                 args["pluginId"].as_str().unwrap(),
                 args["pageId"].as_str().unwrap(),
             ),
-            "save_settings" => core.save_settings(
+            "save_settings" => core.save_settings_for_window(
+                args["window"].as_str().unwrap_or("main"),
                 args["pluginId"].as_str().unwrap(),
                 args["pageId"].as_str().unwrap(),
                 args["input"].clone(),
@@ -302,29 +353,30 @@ fn main() {
                 )
                 .map(|_| Value::Null),
             "workspace_close" => core
-                .workspaces
-                .lock()
-                .unwrap()
-                .close(
+                .close_prepare(
                     args["window"].as_str().unwrap(),
-                    args["id"].as_str().unwrap(),
+                    "fixture-workspace-close",
+                    sodeck::lifecycle::Target::Workspace {
+                        id: args["id"].as_str().unwrap().into(),
+                    },
                 )
                 .map(|_| Value::Null),
             "workspace_move" => (|| {
                 let target = args["target"].as_str().unwrap_or("workspace-browser");
-                let mut state = core.workspaces.lock().unwrap();
-                if state.projection(target).is_err() {
-                    state.register(target)?;
-                    state.ready(target)?;
-                }
-                let m = state.prepare(
+                let register = core.workspace_projection(target).is_err();
+                let m = core.prepare_workspace_move(
                     args["window"].as_str().unwrap(),
                     args["id"].as_str().unwrap(),
                     target,
                     args["index"].as_u64().unwrap() as usize,
                     "browser-move".into(),
+                    register,
                 )?;
-                state.commit(&m)?;
+                if register {
+                    core.workspaces.lock().unwrap().ready(target)?;
+                }
+                core.commit_workspace_move(&m)?;
+                core.workspace_changed();
                 Ok(Value::Null)
             })(),
             _ => Err("Unsupported test command".into()),
@@ -337,17 +389,29 @@ fn main() {
         io::stdout().flush().unwrap();
     }
     // UI integration tests may stop early; explicitly release process groups.
-    let ids = core
-        .component_ui
-        .lock()
-        .unwrap()
-        .workspaces
-        .keys()
-        .cloned()
-        .collect();
-    if let Ok(plan) = core.ui_close_prepare("main", ids, None) {
-        let views = serde_json::from_value(plan["views"].clone()).unwrap();
-        let _ = core.ui_close_finish(plan["token"].as_str().unwrap(), views, "discard");
-    }
-    let _ = core.shutdown();
+    let preparation = core.close_fixture_prepare(
+        "main",
+        sodeck::lifecycle::Target::Application {
+            action: sodeck::lifecycle::Action::Exit,
+        },
+    );
+    let plan = match preparation {
+        Ok(plan) => plan,
+        Err(error) => {
+            eprintln!("Test aborted before close decisions: {error}");
+            for plugin in core.snapshot().plugins {
+                if !plugin.cleanup_complete {
+                    core.unload(&plugin.manifest.id)
+                        .expect("aborted fixture process cleanup");
+                }
+            }
+            std::process::exit(1);
+        }
+    };
+    core.ui_close_finish(
+        plan["token"].as_str().unwrap(),
+        serde_json::from_value(plan["views"].clone()).unwrap(),
+        "discard",
+    )
+    .expect("fixture process/resource cleanup");
 }

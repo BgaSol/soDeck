@@ -38,7 +38,9 @@ impl AppCore {
                 .filter(|s| s.window == window && s.ready)
                 .ok_or("界面尚未就绪或挂载已失效")?;
             let v = ui.view(&s.view)?;
-            if ui.frozen(&v.context.workspace_id) {
+            if ui.frozen(&v.context.workspace_id)
+                && !ui.lifecycle.input_allowed(&v.context.workspace_id, window)
+            {
                 return Err("工作区正在确认关闭".into());
             }
             v.clone()
@@ -69,11 +71,21 @@ impl AppCore {
         self.workspace_changed();
         Ok(json!({"accepted":true}))
     }
-    pub(super) fn ui_plugin_call(
+    pub(crate) fn ui_plugin_call(
         &self,
         view: &View,
         method: &str,
         data: Value,
+    ) -> Result<Value, String> {
+        self.ui_plugin_call_observed(view, method, data, None, std::time::Duration::from_secs(5))
+    }
+    pub(crate) fn ui_plugin_call_observed(
+        &self,
+        view: &View,
+        method: &str,
+        data: Value,
+        receipt: Option<crate::plugins::Receipt>,
+        timeout: std::time::Duration,
     ) -> Result<Value, String> {
         let instance = self
             .instances
@@ -85,7 +97,29 @@ impl AppCore {
         if instance.view().instance_id.as_ref() != Some(&view.plugin_instance_id) {
             return Err("插件实例已更换，请重新打开组件".into());
         }
-        instance.request(method, json!({"viewId":view.id,"viewType":view.definition_key.split(':').nth(1),"context":view.context,"resourceKey":view.resource_key,"params":view.params,"data":data}))
+        let task = {
+            let ui = self.component_ui.lock().unwrap();
+            let current = ui.resource_view(&view.id)?;
+            if current.context != view.context
+                || current.plugin_instance_id != view.plugin_instance_id
+            {
+                return Err("组件上下文已改变".into());
+            }
+            if matches!(method, "ui.mount" | "ui.event") && ui.frozen(&view.context.workspace_id) {
+                let input = method == "ui.event"
+                    && ui.surfaces.values().any(|s| {
+                        s.view == view.id
+                            && ui
+                                .lifecycle
+                                .input_allowed(&view.context.workspace_id, &s.window)
+                    });
+                if !input {
+                    return Err("组件正在关闭".into());
+                }
+            }
+            view.calls.enter()?
+        };
+        instance.request_observed(method, json!({"viewId":view.id,"viewType":view.definition_key.split(':').nth(1),"context":view.context,"resourceKey":view.resource_key,"params":view.params,"data":data}),Some(task),receipt, timeout)
     }
     pub fn ui_attach(&self, window: &str, id: &str) -> Result<Value, String> {
         let projection = self.workspace_projection(window)?;
@@ -100,7 +134,26 @@ impl AppCore {
         }
         let token = self.next_id();
         let data = self.ui_plugin_call(&view, "ui.mount", Value::Null)?;
+        let workspaces = self.workspaces.lock().unwrap();
+        let projection = workspaces.projection(window)?;
+        if !projection
+            .workspaces
+            .iter()
+            .chain(projection.incoming.iter())
+            .any(|w| w.context == view.context)
+        {
+            return Err("挂载期间工作区已移动或关闭".into());
+        }
         let mut ui = self.component_ui.lock().unwrap();
+        if self.is_closing()
+            || ui.lifecycle.window_closing(window)
+            || ui.frozen(&view.context.workspace_id)
+            || !ui.resource_view(id).is_ok_and(|v| {
+                v.context == view.context && v.plugin_instance_id == view.plugin_instance_id
+            })
+        {
+            return Err("组件已关闭或上下文已改变".into());
+        }
         ui.update_metadata(id, &data["metadata"])?;
         ui.surfaces
             .retain(|_, s| s.window != window || s.view != id);
@@ -136,7 +189,9 @@ impl AppCore {
                 .filter(|s| s.window == window && s.ready)
                 .ok_or("界面挂载已失效")?;
             let v = ui.view(&s.view)?;
-            if ui.frozen(&v.context.workspace_id) {
+            if ui.frozen(&v.context.workspace_id)
+                && !ui.lifecycle.input_allowed(&v.context.workspace_id, window)
+            {
                 return Err("工作区正在确认关闭".into());
             }
             v.clone()

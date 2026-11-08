@@ -10,6 +10,10 @@
 
 ## 可选 UI v1（当前源码）
 
+关闭的准备、决定、清理和原生收尾由核心统一管理。宿主快照查询不会创建 view；后台 view 只由工作区/插件状态变化触发，关闭保留期间暂停创建，取消恢复原身份。关闭页面集合、工作区、窗口和应用共用同一操作。插件仍使用已有 `ui.*` 方法，无需增加权限声明或生命周期专用必填字段。
+
+`ui.save` 已接受后，重复关闭决定只查询原保存结果，不自动再发保存。`ui.disposeView` 的超时表示真实结果尚未确认；核心继续跟踪同一请求，迟到成功可以完成该步骤，明确失败后才由用户重试。全局关闭通过进程监督器停止全部受管插件，再确认核心原生资源与连接结束。`files.close`、`net.close` 等取消接口仍快速接受；接受取消不代表实际端口、句柄或 worker 已释放。
+
 清单可添加 `ui: { apiVersion: "1", entry: "ui/index.html", views: [...] }`，完整示例见 `plugins/files/release.json`。视图 ID 在插件内稳定，核心用 `pluginId:localId` 标识定义、另分配 viewId 标识实例。每个视图必须声明 `id/title/icon/container/instancePolicy`：
 
 - `container`：`sidebar` 或 `editor`。侧栏第一版只支持 `perWorkspace` 单例；中央还支持 `multiple` 和 `perResource`。资源标识按远程文件系统语义由插件提供，不按本机 Windows 路径转换。
@@ -192,7 +196,7 @@ UI v1 的 `mount.capabilities.clipboard === 1` 表示宿主提供原生文本剪
 - 插件进程用 `input.claim/list/release` 领取/分页读取/释放输入。list 返回 rootId、name、next，最多 4096 顶层项。claim 的 renew:true 仅允许同工作区已领取输入在用户明确重试失败项时重新绑定当前 Context。本地 PathBuf 留在核心，普通文本路径不是上传源。
 - mount.capabilities.localFiles 为 1。页面以 `mounted` 消息 `localFiles:true` 声明接收原生拖入；宿主向可见页面发送 localFileDrop（dropType/dropId/x/y，坐标为 iframe CSS 像素），页面领取 drop 后决定业务。此声明不构成插件权限。
 - UI 可向宿主发送 `{channel:"sodeck-ui-v1",type:"interaction",surfaceId}` 通知实际指针/键盘交互，供宿主关闭旧菜单和取消过期的自动聚焦。宿主按已有 iframe 来源、origin 与 surface token 绑定核对；不携带按键、文件或终端输入内容。旧宿主忽略此增量消息，旧 UI 仍按原协议加载。
-- iframe `request("closeViews",{viewIds})` 立即返回 ticket，宿主异步发送 viewsClosed（ticket/accepted/error）。只允许同插件同工作区页面，逐页复用原保存/放弃/取消关闭流程。
+- iframe `request("closeViews",{viewIds})` 立即返回 ticket，宿主异步发送 viewsClosed（ticket/accepted/error）。只允许同插件同工作区页面，将整个集合交给一次核心关闭操作，统一同步输入并决定保存/放弃/取消，全部决定后才释放页面。
 
 旧 files.v1、旧目录游标和文本剪贴板协议保持兼容。文件插件 0.3.0 需要核心 0.8.4；五目标原生包构建和既有远程业务组合烟测通过，原生系统粘贴/拖入的设备互操作待验收。
 

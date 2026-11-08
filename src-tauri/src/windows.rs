@@ -90,21 +90,28 @@ impl DesktopWindows {
         }
     }
     pub fn close_secondary(&self, handle: &tauri::AppHandle, window: &str) -> Result<(), String> {
-        let ids = self.core.workspace_projection(window)?.window.workspace_ids;
-        self.core
-            .component_ui
-            .lock()
-            .unwrap()
-            .require_closed(&ids)?;
-        self.core.workspaces.lock().unwrap().close_window(window)?;
-        for id in &ids {
-            self.core.connections.cancel_workspace(id);
+        let op = self.core.close_native_prepare(
+            window,
+            crate::lifecycle::Target::Window { id: window.into() },
+        )?;
+        self.core.close_unhosted(&op.id);
+        if let Some(w) = handle.get_webview_window(window) {
+            let _ = w.set_focus();
         }
-        self.core.connections.cancel_window(window);
+        Ok(())
+    }
+    pub fn finish_window(&self, handle: &tauri::AppHandle, window: &str) -> Result<(), String> {
         self.remove_surface(window);
         let _ = handle.emit("workspace-drop-preview", DropTarget::Invalid);
         if let Some(w) = handle.get_webview_window(window) {
             w.destroy().map_err(|e| e.to_string())?;
+        }
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while handle.get_webview_window(window).is_some() {
+            if Instant::now() >= deadline {
+                return Err("原生窗口尚未确认销毁，请继续完成关闭".into());
+            }
+            std::thread::sleep(Duration::from_millis(10));
         }
         self.core.workspace_changed();
         Ok(())
@@ -132,21 +139,14 @@ impl DesktopWindows {
         }
         let new_window = target.is_none();
         let target = target.unwrap_or_else(|| format!("workspace-{}", self.core.next_id()));
-        let m = {
-            let mut state = self.core.workspaces.lock().unwrap();
-            if new_window {
-                state.register(&target)?;
-            }
-            match state.prepare(source, id, &target, index, self.core.next_id()) {
-                Ok(m) => m,
-                Err(e) => {
-                    if new_window {
-                        let _ = state.close_window(&target);
-                    }
-                    return Err(e);
-                }
-            }
-        };
+        let m = self.core.prepare_workspace_move(
+            source,
+            id,
+            &target,
+            index,
+            self.core.next_id(),
+            new_window,
+        )?;
         self.core.workspace_changed();
         let result = (|| {
             if new_window {
@@ -201,7 +201,7 @@ impl DesktopWindows {
             }
             let window = handle.get_webview_window(&target).ok_or("目标窗口已关闭")?;
             window.show().map_err(|e| e.to_string())?;
-            self.core.workspaces.lock().unwrap().commit(&m)?;
+            self.core.commit_workspace_move(&m)?;
             self.core.workspace_changed();
             let _ = window.set_focus();
             Ok(())
@@ -465,19 +465,8 @@ pub fn workspace_close(
 ) -> Result<(), String> {
     desktop
         .core
-        .component_ui
-        .lock()
-        .unwrap()
-        .require_closed(std::slice::from_ref(&id))?;
-    desktop
-        .core
-        .workspaces
-        .lock()
-        .unwrap()
-        .close(window.label(), &id)?;
-    desktop.core.connections.cancel_workspace(&id);
-    desktop.core.workspace_changed();
-    desktop.cleanup_empty(&handle, window.label());
+        .close_native_prepare(window.label(), crate::lifecycle::Target::Workspace { id })?;
+    let _ = handle;
     Ok(())
 }
 #[tauri::command]

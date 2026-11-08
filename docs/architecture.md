@@ -29,6 +29,12 @@ macOS 主窗口通过 Tauri 自动合并的 `src-tauri/tauri.macos.conf.json` �
 
 ## 分层
 
+关闭生命周期由 `lifecycle.rs`、`lifecycle/close.rs` 和 `lifecycle/host.rs` 统一负责。页面、工作区、窗口、应用退出及重启先保留范围，再收集输入与决定，随后清理资源并执行原生收尾。状态与组件登记共用 `component_ui::Runtime` 的互斥锁；工作区归属与移动按 `workspaces → component_ui` 锁序核对，避免关闭保留和迟到提交交错。`core.rs` 中的 closing 原子值只供跨线程快速拒绝应用级新工作，关闭阶段与范围以生命周期操作为准。
+
+`ui_snapshot` 只读取状态。默认布局和后台 view 在工作区、插件状态变化时同步，关闭中暂停创建；取消时恢复原 view，完成时先移除父级归属再解除范围。终端、执行、文件和网络用实际 worker/transport 的结束记录证明清理完成，取消 ACK 与注册表删除不能代替结束。超时 RPC 继续保留原请求与真实结果，保存和未知释放不会自动重放。
+
+前端 `close.ts` 负责跨窗口输入同步、宿主草稿和关闭反馈，执行权在核心；`main.rs` 注册原生 finalizer 执行窗口销毁、官方 updater 安装和退出/重启交接。清理失败保留已停止事实，重试继续未完成步骤；窗口意外消失按实际归属中断并收尾，无法恢复的输入明确记录。详细设计、回归及平台验收范围见 [关闭生命周期实施记录](implementation-close-lifecycle.md)。
+
 [服务器 Tab 与可拆合工作区](plan-server-workspaces.md) 已实现到 v0.4.0。`workspaces.rs` 管理内存窗口、工作区、固定 Context 和布局；`windows.rs` 管理原生窗口、先准备后提交的移动和屏幕物理坐标命中；`workspaces.ts` 渲染窗口投影、手势和组件空槽。没有新增生产依赖、持久布局、数据库或 Dock 框架。
 
 只有核心连接服务可交入 `ConnectedSession`；没有前端“创建已连接工作区”命令。正常连接由 connections 服务完成资料快照、逐站身份验证、认证和取消；成功接纳时短锁核对配置身份及尝试 token。连接计数、私钥边界与原生验证见 [连接实施记录](implementation-connections.md)。测试仍可由独立 fixture 或显式 `--smoke-test --test-data-dir` 入口使用隔离档案注入会话。服务器档案修改只更新运行工作区的名称，endpoint 和 connectionId 保留；删除打开档案被拒绝。断线保留工作区，重连递增 generation，旧 Context 被拒绝。
@@ -67,7 +73,7 @@ macOS 主窗口通过 Tauri 自动合并的 `src-tauri/tauri.macos.conf.json` �
 
 系统状态插件通过通用会话状态/有界短命令任务与核心交互，采集器、采样周期、指标计算和趋势均留在外置插件。核心提供可选的工作区后台 view 初始化，将逻辑实例与 iframe 展示分开，复用当前 Owner/Context、关闭与进程清理机制；接口见[插件 API](plugin-api.md)，实现与验证边界见[实施记录](implementation-system-status.md)。这些能力从核心 0.10.0 提供。
 
-每个插件包含清单和独立进程。当前采用逐行 UTF-8 JSON-RPC 2.0 stdin/stdout，协议见 [插件 API v1](plugin-api.md)。可选 UI v1 中，`component_ui.rs` 定义声明与数据，`component_ui/layout.rs` 负责登记/布局，`host.rs` 负责资源/挂载/RPC，`close.rs` 负责汇总关闭。前端 `components.ts` 保留 iframe，`workspaces.ts` 继续管理服务器级页签与手势。当前业务插件为 `plugins/terminal`、`plugins/files`、`plugins/network-proxy` 和 `plugins/system-status`，不在核心根据插件 ID 硬编码视图。旧 Hello 和组件交互示例已退役；宿主布局与草稿行为由仅测试夹具覆盖。详见 [组件与核心 UI 交互设计](plan-component-ui.md)。
+每个插件包含清单和独立进程。当前采用逐行 UTF-8 JSON-RPC 2.0 stdin/stdout，协议见 [插件 API v1](plugin-api.md)。可选 UI v1 中，`component_ui.rs` 定义声明与数据，`component_ui/layout.rs` 负责登记/布局，`host.rs` 负责资源/挂载/RPC，`lifecycle/` 统一执行关闭，`component_ui/close.rs` 保留测试与包验收适配。前端 `components.ts` 保留 iframe，`workspaces.ts` 继续管理服务器级页签与手势。当前业务插件为 `plugins/terminal`、`plugins/files`、`plugins/network-proxy` 和 `plugins/system-status`，不在核心根据插件 ID 硬编码视图。旧 Hello 和组件交互示例已退役；宿主布局与草稿行为由仅测试夹具覆盖。详见 [组件与核心 UI 交互设计](plan-component-ui.md)。
 
 插件按可信扩展运行，不实现插件权限清单、授权审批或沙箱。进程分离用于生命周期管理和故障恢复，插件仍可能直接使用操作系统允许的本机和网络能力。核心 API 保留版本、参数有效性和资源状态检查。SSH 认证不属于插件权限系统，仍由连接服务完成。
 

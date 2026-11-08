@@ -55,6 +55,7 @@ pub(crate) struct Listener {
     streams: Mutex<HashMap<String, Arc<TcpStream>>>,
     cancel: CancellationToken,
     sent: AtomicU64,
+    tasks: Arc<crate::resource_tasks::Tasks>,
     received: AtomicU64,
     samples: Mutex<VecDeque<(Instant, u64, u64)>>,
     path: Value,
@@ -85,12 +86,17 @@ impl Network {
     pub(crate) fn cancel(&self, matches: impl Fn(&Owner) -> bool) {
         self.listeners.lock().unwrap().retain(|_, l| {
             if matches(&l.owner) {
-                l.cancel.cancel();
-                false
+                l.close();
+                !l.tasks.finished()
             } else {
                 true
             }
         });
+    }
+    pub(crate) fn pending(&self, matches: impl Fn(&Owner) -> bool) -> usize {
+        let mut listeners = self.listeners.lock().unwrap();
+        listeners.retain(|_, l| !l.tasks.finished());
+        listeners.values().filter(|l| matches(&l.owner)).count()
     }
 }
 fn text<'a>(p: &'a Value, key: &str) -> Result<&'a str, String> {
@@ -127,6 +133,13 @@ impl AppCore {
             let key = (instance.to_owned(), text(p, "operationId")?.to_owned());
             let fingerprint =
                 json!([method, owner.view, owner.context, host.to_string(), port]).to_string();
+            let path = self
+                .connection_views()
+                .into_iter()
+                .find(|v| v.context.as_ref() == Some(&owner.context))
+                .map(|v| json!({"endpoint":v.endpoint,"nodeCount":v.node_count}))
+                .unwrap_or(Value::Null);
+            let admission = self.resource_admission(&owner)?;
             let mut ops = self.network.operations.lock().unwrap();
             ops.retain(|_, v| v.at.elapsed() < Duration::from_secs(60));
             if let Some(op) = ops.get(&key) {
@@ -139,10 +152,7 @@ impl AppCore {
                 return Err("网络操作过多，请稍后再试".into());
             }
             let mut all = self.network.listeners.lock().unwrap();
-            all.retain(|_, l| {
-                l.owner.instance != instance
-                    || !matches!(l.status.lock().unwrap().state, "closed" | "failed")
-            });
+            all.retain(|_, l| l.owner.instance != instance || !l.tasks.finished());
             if all
                 .values()
                 .filter(|l| l.owner.instance == instance)
@@ -152,12 +162,6 @@ impl AppCore {
                 return Err("插件监听数量达到上限 32".into());
             }
             let id = self.next_id();
-            let path = self
-                .connection_views()
-                .into_iter()
-                .find(|v| v.context.as_ref() == Some(&owner.context))
-                .map(|v| json!({"endpoint":v.endpoint,"nodeCount":v.node_count}))
-                .unwrap_or(Value::Null);
             let l_path = json!({"nodes":session.path,"summary":path});
             let l = Arc::new(Listener {
                 id: id.clone(),
@@ -171,6 +175,7 @@ impl AppCore {
                 }),
                 streams: Mutex::new(HashMap::new()),
                 cancel: CancellationToken::new(),
+                tasks: Arc::new(crate::resource_tasks::Tasks::default()),
                 sent: AtomicU64::new(0),
                 received: AtomicU64::new(0),
                 samples: Mutex::new(VecDeque::from([(Instant::now(), 0, 0)])),
@@ -179,6 +184,7 @@ impl AppCore {
                 probe_clients: Mutex::new(HashMap::new()),
                 probe_operations: Mutex::new(HashSet::new()),
             });
+            let task = l.tasks.enter()?;
             all.insert(id.clone(), l.clone());
             ops.insert(
                 key,
@@ -190,13 +196,17 @@ impl AppCore {
             );
             drop(all);
             drop(ops);
+            drop(admission);
             if let Err(e) = self.resource_owner(plugin, instance, &l.owner.view) {
                 l.cancel.cancel();
                 self.network.listeners.lock().unwrap().remove(&id);
                 return Err(e);
             }
             let slots = self.network.slots.clone();
-            tauri::async_runtime::spawn(runtime::listen(l, host, port, slots));
+            tauri::async_runtime::spawn(async move {
+                let _task = task;
+                runtime::listen(l, host, port, slots).await;
+            });
             return Ok(json!({"listenerId":id}));
         }
         if method == "net.poll" {
@@ -256,7 +266,7 @@ impl AppCore {
                     }
                 }
             } else {
-                l.cancel.cancel();
+                l.close();
             }
             return Ok(json!({}));
         }
@@ -294,7 +304,9 @@ impl AppCore {
             probes.insert(operation.clone());
             drop(probes);
             let listener = l.clone();
+            let task = l.tasks.enter()?;
             tauri::async_runtime::spawn(async move {
+                let _task = task;
                 runtime::probe(listener, host, port, operation).await;
             });
             return Ok(json!({"probeId":p["operationId"]}));
@@ -336,12 +348,15 @@ impl AppCore {
             streams.insert(remote_id.clone(), s.clone());
             drop(streams);
             let listener = l.clone();
+            let task = l.tasks.enter()?;
             tauri::async_runtime::spawn(async move {
+                let _task = task;
                 runtime::connect(listener, s, rx, host, port).await;
             });
             return Ok(json!({"streamId":remote_id}));
         }
         if method == "net.stream.splice" {
+            let task = l.tasks.enter()?;
             let left = text(p, "leftId")?;
             let right = text(p, "rightId")?;
             let streams = l.streams.lock().unwrap();
@@ -371,7 +386,10 @@ impl AppCore {
             drop(x);
             drop(y);
             drop(streams);
-            tauri::async_runtime::spawn(runtime::splice(l, a, b));
+            tauri::async_runtime::spawn(async move {
+                let _task = task;
+                runtime::splice(l, a, b).await;
+            });
             return Ok(json!({}));
         }
         let s = stream.ok_or("需要 streamId")?;
@@ -436,6 +454,10 @@ impl AppCore {
     }
 }
 impl Listener {
+    fn close(&self) {
+        self.tasks.close();
+        self.cancel.cancel();
+    }
     fn snapshot(&self) -> Value {
         let st = self.status.lock().unwrap();
         let streams = self.streams.lock().unwrap();

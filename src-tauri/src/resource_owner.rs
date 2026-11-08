@@ -8,6 +8,21 @@ pub(crate) struct Owner {
     pub context: Context,
 }
 impl AppCore {
+    pub(crate) fn resource_admission(
+        &self,
+        owner: &Owner,
+    ) -> Result<std::sync::MutexGuard<'_, crate::component_ui::Runtime>, String> {
+        let ui = self.component_ui.lock().unwrap();
+        let view = ui.resource_view(&owner.view)?;
+        if self.is_closing()
+            || ui.frozen(&owner.context.workspace_id)
+            || view.context != owner.context
+            || view.plugin_instance_id != owner.instance
+        {
+            return Err("资源目标正在关闭或上下文已改变".into());
+        }
+        Ok(ui)
+    }
     pub(crate) fn resource_owner(
         &self,
         plugin: &str,

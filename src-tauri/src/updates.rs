@@ -160,7 +160,7 @@ pub struct UpdateState {
     pub items: HashMap<String, UpdateView>,
     candidates: HashMap<String, UpdateManifest>,
     pub(crate) busy: HashSet<String>,
-    checking_all: bool,
+    pub(crate) checking_all: bool,
     last_checked_at: u64,
     next_check_at: u64,
 }

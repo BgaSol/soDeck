@@ -1,4 +1,4 @@
-import { listen } from "@tauri-apps/api/event";
+import { listen, type UnlistenFn, type EventCallback } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
@@ -15,6 +15,7 @@ import { ServerPicker } from "./server-picker";
 import { ComponentSettings, type SettingsSnapshot } from "./settings";
 
 const win = getCurrentWindow();
+await invoke("close_register_host");
 window.installTextMenu({
   read: async valid => { const text = await invoke<string>("clipboard_text", { operation: "read" }); return valid() ? text : null; },
   write: async (text, valid) => { if (!valid()) return false; await invoke("clipboard_text", { operation: "write", text }); return valid(); },
@@ -28,10 +29,11 @@ const connections = new ConnectionsUi(win.label, views => { servers?.setConnecti
 const picker = new ServerPicker(document.querySelector<HTMLButtonElement>("#new-workspace")!, id => connections.connect(id), text => toast(text, undefined, true));
 async function restart(install: boolean) {
   if (!servers) { await invoke("request_main_action", { action: install ? "install" : "restart" }); return; }
-  if (await servers.allowExit() && await workspaces.allowExit()) await core.restart(install);
+  await workspaces.restart(install);
 }
 const overlay = document.querySelector<HTMLDivElement>("#overlay")!;
 const componentSettings = new ComponentSettings(() => { if (layer === "settings") renderLayer(); });
+workspaces.setCloseParticipants(async (decision,operationId)=>[...await (servers?.closeInputs(decision)??Promise.resolve([])),...await componentSettings.closeInputs(decision,operationId)],blocked=>servers?.setCloseBlocked(blocked));
 let snapshot: Snapshot | undefined;
 let layer = "";
 let returnFocus: HTMLElement | null = null;
@@ -39,7 +41,6 @@ let lastError = "";
 let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 let refreshing = false;
 let refreshAgain = false;
-let exitPrompt = false;
 let logGeneration = 0;
 const state: views.ViewState = {
   officialPlugins: [],
@@ -564,39 +565,44 @@ root.addEventListener("change", (event) => {
   ++logGeneration;
   if (!state.paused) void action(refreshLogs);
 });
+let hostDisposed=false;
+let statusTimer:ReturnType<typeof setInterval>|undefined;
+const hostListeners:UnlistenFn[]=[];
+async function subscribe<T>(name:string,callback:EventCallback<T>) {
+  const unlisten=await listen<T>(name,callback);
+  if(hostDisposed)unlisten();else hostListeners.push(unlisten);
+}
+window.addEventListener("pagehide",()=>{hostDisposed=true;clearInterval(statusTimer);hostListeners.forEach(fn=>fn());workspaces.dispose();},{once:true});
 async function start() {
-  await listen("core-changed", scheduleRefresh);
-  await listen<SettingsSnapshot>("core-settings-changed", event => componentSettings.changed(event.payload));
-  await listen<Parameters<ComponentSettings["applied"]>[0]>("core-settings-application", event => componentSettings.applied(event.payload));
-  await listen("server-catalog-changed", () => { void servers?.start(); void picker.refresh(); });
-  await listen("connections-changed", () => { void connections.refresh().catch(error => toast(String(error), undefined, true)); scheduleRefresh(); });
-  await listen("workspaces-changed", () => void workspaces.refresh().catch(error => toast(String(error), undefined, true)));
-  await listen("workspace-request-close", () => void action(() => workspaces.closeWindow()));
-  await listen<DropTarget>("workspace-drop-preview", event => workspaces.previewDrop(event.payload));
-  await listen<string>("core-main-action", event => { if (servers) void action(() => restart(event.payload === "install")); });
-  await listen("core-request-close", () => {
-    if (exitPrompt) return;
-    exitPrompt = true;
-    void action(async () => {
-      try { if (servers && await servers.allowExit() && await workspaces.allowExit()) await core.close(); }
-      finally { exitPrompt = false; }
-    });
+  await subscribe("core-changed", scheduleRefresh);
+  await subscribe<SettingsSnapshot>("core-settings-changed", event => componentSettings.changed(event.payload));
+  await subscribe<Parameters<ComponentSettings["applied"]>[0]>("core-settings-application", event => componentSettings.applied(event.payload));
+  await subscribe("server-catalog-changed", () => { void servers?.start(); void picker.refresh(); });
+  await subscribe("connections-changed", () => { void connections.refresh().catch(error => toast(String(error), undefined, true)); scheduleRefresh(); });
+  await subscribe("workspaces-changed", () => void workspaces.refresh().catch(error => toast(String(error), undefined, true)));
+  await subscribe("workspace-request-close", () => void action(() => workspaces.closeWindow()));
+  await subscribe<DropTarget>("workspace-drop-preview", event => workspaces.previewDrop(event.payload));
+  await subscribe<string>("core-main-action", event => { if (servers) void action(() => event.payload==="exit"?workspaces.exit():restart(event.payload === "install")); });
+  await subscribe("core-request-close", () => {
+    void action(()=>workspaces.exit());
   });
-  await listen<Message>("core-message", (event) => {
+  await subscribe<Message>("core-message", (event) => {
     toast(event.payload.title, event.payload);
     scheduleRefresh();
   });
-  await listen<string>("core-exit-error", (event) =>
+  await subscribe<string>("core-exit-error", (event) =>
     toast(`退出未完成：${event.payload}`, undefined, true),
   );
-  await win.onResized(async () => {
+  const unresize=await win.onResized(async () => {
     document.querySelector("#maximize-button")!.innerHTML = icon(
       (await win.isMaximized()) ? "restore" : "maximize",
     );
   });
+  if(hostDisposed)unresize();else hostListeners.push(unresize);
   const [, catalogReady] = await Promise.all([refresh(), servers?.start() ?? Promise.resolve(true), workspaces.start(), connections.refresh()]);
   if (snapshot && catalogReady) await core.ready();
-  setInterval(() => {
+  if(hostDisposed)return;
+  statusTimer=setInterval(() => {
     if (layer === "status") scheduleRefresh();
   }, 1000);
 }

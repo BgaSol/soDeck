@@ -191,16 +191,40 @@ impl AppCore {
         page_id: &str,
         input: Value,
     ) -> Result<Value, String> {
+        self.save_settings_impl(None, plugin, page_id, input)
+    }
+    pub fn save_settings_for_window(
+        self: &Arc<Self>,
+        window: &str,
+        plugin: &str,
+        page_id: &str,
+        input: Value,
+    ) -> Result<Value, String> {
+        self.save_settings_impl(Some(window), plugin, page_id, input)
+    }
+    fn save_settings_impl(
+        self: &Arc<Self>,
+        window: Option<&str>,
+        plugin: &str,
+        page_id: &str,
+        mut input: Value,
+    ) -> Result<Value, String> {
         let operation = self.mutations.lock().unwrap();
-        let (_, page, token) = self.settings_definition(plugin, page_id)?;
+        let close_operation = input.get("closeOperationId").cloned();
+        if let Some(input) = input.as_object_mut() {
+            input.remove("closeOperationId");
+        }
         let key = format!("{plugin}/{page_id}");
         let request = input["requestId"]
             .as_str()
             .filter(|s| !s.is_empty() && s.len() <= 128)
             .ok_or("保存请求 ID 无效")?;
-        let values: Map<String, Value> = input["values"].as_object().ok_or("缺少设置值")?.clone();
-        let mut s = self.settings.lock().unwrap();
-        if let Some(receipt) = s
+        // A completed write can be acknowledged during closing without
+        // admitting a new write or replaying its side effects.
+        if let Some(receipt) = self
+            .settings
+            .lock()
+            .unwrap()
             .receipts
             .iter()
             .find(|r| r.key == key && r.request == request)
@@ -211,6 +235,38 @@ impl AppCore {
                 Err("相同请求 ID 的正文不同".into())
             };
         }
+        if self.is_closing()
+            || window.is_some_and(|w| {
+                self.component_ui
+                    .lock()
+                    .unwrap()
+                    .lifecycle
+                    .window_closing(w)
+            })
+        {
+            let ui = self.component_ui.lock().unwrap();
+            let allowed = close_operation
+                .as_ref()
+                .and_then(Value::as_str)
+                .and_then(|id| ui.lifecycle.operations.get(id))
+                .is_some_and(|o| {
+                    o.phase == crate::lifecycle::Phase::Deciding
+                        && o.decision.as_deref() == Some("save")
+                        && o.adopted_by.is_none()
+                        && !o.cancel
+                        && window.is_none_or(|w| o.inputs.contains_key(w))
+                        && o.dirty.iter().any(|d| {
+                            d["id"] == format!("settings:{plugin}/{page_id}")
+                                && window.is_none_or(|w| d["windowId"] == w)
+                        })
+                });
+            if !allowed {
+                return Err("应用正在关闭，不能开始新的设置保存".into());
+            }
+        }
+        let (_, page, token) = self.settings_definition(plugin, page_id)?;
+        let values: Map<String, Value> = input["values"].as_object().ok_or("缺少设置值")?.clone();
+        let mut s = self.settings.lock().unwrap();
         page.validate_values(&values)?;
         runtime_snapshot(plugin, page_id, &token, u64::MAX, &values)?;
         let mut saved = s.reconcile(&key, &page, &token)?;

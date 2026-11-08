@@ -115,6 +115,39 @@ fn main() {
                     _ => (),
                 }
                 let result = json!({"data":v,"metadata":{"dirty":v["dirty"],"busy":false}});
+                if method == "ui.disposeView"
+                    && matches!(
+                        v["text"].as_str(),
+                        Some("dispose-late" | "dispose-fail-once")
+                    )
+                {
+                    let directory = data.as_ref().unwrap();
+                    let count_path = format!("{directory}/dispose-count-{id}");
+                    let count = fs::read_to_string(&count_path)
+                        .ok()
+                        .and_then(|v| v.parse::<usize>().ok())
+                        .unwrap_or(0)
+                        + 1;
+                    fs::write(count_path, count.to_string()).unwrap();
+                    if v["text"] == "dispose-fail-once" && count == 1 {
+                        send(
+                            json!({"jsonrpc":"2.0","id":frame["id"],"error":{"code":-1,"message":"dispose failed once"}}),
+                        );
+                        continue;
+                    }
+                    if v["text"] == "dispose-late" {
+                        let release = format!("{directory}/dispose-release-{id}");
+                        let request = frame["id"].clone();
+                        ui_views.remove(id);
+                        thread::spawn(move || {
+                            while !std::path::Path::new(&release).exists() {
+                                thread::sleep(Duration::from_millis(10));
+                            }
+                            send(json!({"jsonrpc":"2.0","id":request,"result":result}));
+                        });
+                        continue;
+                    }
+                }
                 if method == "ui.mount" {
                     fs::write(
                         format!("{}/mounted-{}", data.as_ref().unwrap(), id),

@@ -28,6 +28,9 @@ impl AppCore {
         }
         let mut workspaces = self.workspaces.lock().unwrap();
         let mut ui = self.component_ui.lock().unwrap();
+        if ui.lifecycle.window_closing(&a.source_window) {
+            return Err(Error::cancelled());
+        }
         let existing = workspaces.by_server(&profile.server_id).cloned();
         if existing.as_ref().map(|w| &w.context) != a.expected_context.as_ref() {
             return Err(Error::new("workspaceChanged", "工作区已关闭或会话已改变"));

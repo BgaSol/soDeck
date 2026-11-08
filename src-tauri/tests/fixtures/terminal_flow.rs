@@ -19,6 +19,7 @@ async fn openssh_terminal_plugin() {
             &std::env::var("SODECK_TEST_TERMINAL_PLUGIN").unwrap(),
         ))
         .unwrap();
+    f.core.ui_action("main", &context, json!({"op":"open","key":"sodeck.terminal:terminal","requestId":"terminal-test"})).unwrap();
     let state = f.core.ui_snapshot("main").unwrap();
     let view = state["workspaces"][&context.workspace_id]["editor"]
         .as_str()
@@ -67,6 +68,8 @@ fn terminal_fixture(f: &Fixture) -> (String, String, String) {
     std::fs::write(plugin.join("ui/index.html"), "<p>terminal</p>").unwrap();
     std::fs::write(plugin.join("plugin.json"),json!({"id":"test.terminal","name":"PTY test","version":"0.1.0","apiVersion":"1","target":sodeck::TARGET,"entry":binary,"ui":{"apiVersion":"1","entry":"ui/index.html","views":[{"id":"terminal","title":"终端","icon":"terminal","container":"editor","instancePolicy":"multiple","openOnWorkspace":"createOne"}]}}).to_string()).unwrap();
     f.core.load(&plugin).unwrap();
+    let context = f.core.workspace_projection("main").unwrap().workspaces[0].context.clone();
+    f.core.ui_action("main", &context, json!({"op":"open","key":"test.terminal:terminal","requestId":"terminal-fixture"})).unwrap();
     let state = f.core.ui_snapshot("main").unwrap();
     let workspace = state["workspaces"]
         .as_object()
@@ -156,15 +159,20 @@ async fn data_until(
     }
 }
 fn close_terminal_views(f: &Fixture) {
-    let ids = f.core.workspaces.lock().unwrap().ids();
-    let plan = f.core.ui_close_prepare("main", ids, None).unwrap();
-    f.core
+    let windows={let state=f.core.workspaces.lock().unwrap();state.ids().iter().filter_map(|id|state.owner(id)).collect::<std::collections::HashSet<_>>()};
+    for window in windows {
+        let workspaces=f.core.workspace_projection(&window).unwrap().window.workspace_ids;
+        let ids=f.core.component_ui.lock().unwrap().workspaces.iter().filter(|(id,_)|workspaces.contains(id)).flat_map(|(_,w)|w.views.iter().map(|v|v.id.clone())).collect::<Vec<_>>();
+        if ids.is_empty(){continue;}
+        let plan=f.core.close_fixture_prepare(&window,sodeck::lifecycle::Target::Views{ids}).unwrap();
+        f.core
         .ui_close_finish(
             plan["token"].as_str().unwrap(),
             serde_json::from_value(plan["views"].clone()).unwrap(),
             "discard",
         )
         .unwrap();
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

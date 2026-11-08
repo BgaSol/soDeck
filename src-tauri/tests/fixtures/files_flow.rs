@@ -185,6 +185,7 @@ async fn openssh_files_plugin() {
             &std::env::var("SODECK_TEST_FILES_PLUGIN").unwrap(),
         ))
         .unwrap();
+    f.core.ui_action("main", &context, json!({"op":"open","key":"sodeck.files:files","requestId":"files-fixture"})).unwrap();
     let state = f.core.ui_snapshot("main").unwrap();
     let browser = state["workspaces"][&context.workspace_id]["left"]
         .as_str()

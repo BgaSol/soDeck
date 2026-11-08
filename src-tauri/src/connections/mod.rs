@@ -364,6 +364,25 @@ impl Connections {
             })
             .collect()
     }
+    pub(crate) fn pending_close(&self, workspaces: &[String], window: Option<&str>) -> usize {
+        self.entries
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|a| {
+                !a.done.is_cancelled()
+                    && (a
+                        .view()
+                        .context
+                        .is_some_and(|c| workspaces.contains(&c.workspace_id))
+                        || a.expected_context
+                            .as_ref()
+                            .is_some_and(|c| workspaces.contains(&c.workspace_id))
+                        || window
+                            .is_some_and(|w| w == a.source_window && a.view().context.is_none()))
+            })
+            .count()
+    }
 }
 impl Drop for Connections {
     fn drop(&mut self) {
@@ -412,6 +431,15 @@ impl AppCore {
         let mut entries = self.connections.entries.lock().unwrap();
         if self.is_closing() {
             return Err("应用正在退出".into());
+        }
+        if self
+            .component_ui
+            .lock()
+            .unwrap()
+            .lifecycle
+            .window_closing(window)
+        {
+            return Err("窗口正在关闭".into());
         }
         if let Some(a) = entries.get(server) {
             if !a.done.is_cancelled() {

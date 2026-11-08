@@ -2,6 +2,54 @@
 use super::*;
 
 impl Runtime {
+    pub(crate) fn remove_window_surfaces(&mut self, window: &str) {
+        self.surfaces.retain(|_, s| s.window != window);
+    }
+    pub(crate) fn close_surfaces(&self, ids: &[String]) -> HashMap<String, Vec<String>> {
+        let mut windows: HashMap<String, Vec<String>> = HashMap::new();
+        for (id, surface) in &self.surfaces {
+            if ids.contains(&surface.view) {
+                windows
+                    .entry(surface.window.clone())
+                    .or_default()
+                    .push(id.clone());
+            }
+        }
+        windows
+    }
+    pub(crate) fn remove_views(&mut self, ids: &[String]) {
+        let editors: HashSet<_> = self
+            .definitions
+            .iter()
+            .filter(|(_, d)| d.definition.container == "editor")
+            .map(|(key, _)| key.clone())
+            .collect();
+        for w in self.workspaces.values_mut() {
+            let old = w
+                .editor
+                .as_ref()
+                .and_then(|id| w.views.iter().position(|v| &v.id == id))
+                .unwrap_or(0);
+            w.views.retain(|v| !ids.contains(&v.id));
+            if w.left.as_ref().is_some_and(|id| ids.contains(id)) {
+                w.left = None;
+            }
+            if w.right.as_ref().is_some_and(|id| ids.contains(id)) {
+                w.right = None;
+            }
+            if w.editor.as_ref().is_some_and(|id| ids.contains(id)) {
+                let remaining: Vec<_> = w
+                    .views
+                    .iter()
+                    .filter(|v| editors.contains(&v.definition_key))
+                    .collect();
+                w.editor = remaining
+                    .get(old.min(remaining.len().saturating_sub(1)))
+                    .map(|v| v.id.clone());
+            }
+        }
+        self.surfaces.retain(|_, s| !ids.contains(&s.view));
+    }
     pub(crate) fn rebind_context(&mut self, context: &Context) {
         if let Some(w) = self.workspaces.get_mut(&context.workspace_id) {
             let ids: HashSet<_> = w.views.iter().map(|v| v.id.clone()).collect();
@@ -43,15 +91,13 @@ impl Runtime {
             definitions: BTreeMap::new(),
             workspaces: HashMap::new(),
             surfaces: HashMap::new(),
-            plans: HashMap::new(),
+            lifecycle: crate::lifecycle::Lifecycle::default(),
             requests: HashMap::new(),
             clock: 0,
         })
     }
     pub fn frozen(&self, workspace: &str) -> bool {
-        self.plans
-            .values()
-            .any(|plan| plan.workspaces.iter().any(|id| id == workspace))
+        self.lifecycle.frozen(workspace)
     }
     pub fn widths(&self) -> (u16, u16) {
         (self.preferences.left_width, self.preferences.right_width)
@@ -80,7 +126,7 @@ impl Runtime {
     pub(crate) fn resource_view(&self, id: &str) -> Result<&View, String> {
         self.view(id)
     }
-    pub(super) fn update_metadata(&mut self, id: &str, metadata: &Value) -> Result<bool, String> {
+    pub(crate) fn update_metadata(&mut self, id: &str, metadata: &Value) -> Result<bool, String> {
         let v = self
             .workspaces
             .values_mut()
@@ -149,6 +195,7 @@ impl Runtime {
             v.id.clone()
         } else {
             w.views.push(View {
+                calls: std::sync::Arc::new(crate::resource_tasks::Tasks::default()),
                 id: id.clone(),
                 definition_key: key.into(),
                 plugin_id: d.plugin_id,
@@ -204,9 +251,10 @@ impl Runtime {
 }
 impl AppCore {
     pub(crate) fn reconcile_ui(&self) -> Result<(), String> {
-        let contexts = self.workspaces.lock().unwrap().contexts();
-        let live = self.workspaces.lock().unwrap().ids();
         let plugins = self.snapshot().plugins;
+        let workspaces = self.workspaces.lock().unwrap();
+        let contexts = workspaces.contexts();
+        let live = workspaces.ids();
         let initializing = plugins.iter().any(|p| p.status == PluginStatus::Starting);
         let mut ui = self.component_ui.lock().unwrap();
         ui.workspaces.retain(|id, _| live.contains(id));
@@ -216,6 +264,25 @@ impl AppCore {
             .flat_map(|w| w.views.iter().map(|v| v.id.clone()))
             .collect();
         ui.surfaces.retain(|_, s| live_views.contains(&s.view));
+        let owners: HashMap<_, _> = ui
+            .workspaces
+            .iter()
+            .flat_map(|(workspace, w)| {
+                let owner = workspaces.owner(workspace);
+                let target = owner
+                    .as_ref()
+                    .and_then(|owner| workspaces.pending_move(workspace, owner))
+                    .map(|m| m.target);
+                w.views
+                    .iter()
+                    .map(move |v| (v.id.clone(), (owner.clone(), target.clone())))
+            })
+            .collect();
+        ui.surfaces.retain(|_, s| {
+            owners.get(&s.view).is_some_and(|(owner, target)| {
+                owner.as_deref() == Some(&s.window) || target.as_deref() == Some(&s.window)
+            })
+        });
         for d in ui.definitions.values_mut() {
             d.available = false;
         }
@@ -258,7 +325,13 @@ impl AppCore {
         }
         for context in &contexts {
             let id = &context.workspace_id;
-            if !initializing && !ui.workspaces.contains_key(id) {
+            if ui.frozen(id) || self.is_closing() {
+                continue;
+            }
+            if initializing {
+                continue;
+            }
+            if !ui.workspaces.contains_key(id) {
                 let prefs = ui.preferences.definitions.clone();
                 ui.workspaces.insert(
                     id.clone(),
@@ -275,6 +348,14 @@ impl AppCore {
                     .collect();
                 defs.sort_by_key(|d| (d.definition.startup_order, d.key.clone()));
                 for d in defs {
+                    if let Some(preference) = ui.preferences.definitions.get(&d.key).cloned() {
+                        ui.workspaces
+                            .get_mut(id)
+                            .unwrap()
+                            .preferences
+                            .entry(d.key.clone())
+                            .or_insert(preference);
+                    }
                     let policy = ui.workspaces[id]
                         .preferences
                         .get(&d.key)
@@ -328,6 +409,7 @@ impl AppCore {
                     }
                 } else {
                     w.views.push(View {
+                        calls: std::sync::Arc::new(crate::resource_tasks::Tasks::default()),
                         id: self.next_id(),
                         definition_key: d.key,
                         plugin_id: d.plugin_id,
@@ -348,7 +430,6 @@ impl AppCore {
         Ok(())
     }
     pub fn ui_snapshot(&self, window: &str) -> Result<Value, String> {
-        self.reconcile_ui()?;
         let projection = self.workspace_projection(window)?;
         let ui = self.component_ui.lock().unwrap();
         let ids: HashSet<_> = projection

@@ -18,8 +18,11 @@ pub(crate) fn start_background(core: &Arc<AppCore>) {
         loop {
             let _ = rx.recv_timeout(Duration::from_secs(1));
             let Some(core) = weak.upgrade() else { break };
+            // One existing monitor handles all close deadlines, including global
+            // closing. Repeated closes must not create sleeping watchdog threads.
+            core.expire_close_inputs(Instant::now());
             if core.is_closing() {
-                break;
+                continue;
             }
             core.executions.reap();
             if !core.snapshot().plugins.iter().any(|p| {
@@ -29,9 +32,6 @@ pub(crate) fn start_background(core: &Arc<AppCore>) {
                         .as_ref()
                         .is_some_and(|u| u.views.iter().any(|v| v.background_on_workspace))
             }) {
-                continue;
-            }
-            if core.reconcile_ui().is_err() {
                 continue;
             }
             while let Ok((key, ok)) = completed.try_recv() {

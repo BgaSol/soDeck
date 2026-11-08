@@ -139,11 +139,15 @@ pub async fn ssh_roundtrip(
         serde_json::from_value(plan["views"].clone()).map_err(|e| e.to_string())?,
         "discard",
     )?;
-    core.workspaces
+    if core
+        .workspaces
         .lock()
         .unwrap()
-        .close("main", &context.workspace_id)?;
-    core.workspace_changed();
+        .validate_context(&context)
+        .is_ok()
+    {
+        return Err("关闭完成后仍保留 SSH 工作区".into());
+    }
     if network.is_some() {
         std::fs::write(
             core.snapshot()
@@ -157,7 +161,10 @@ pub async fn ssh_roundtrip(
     Ok(())
 }
 
-pub fn workspace_roundtrip(handle: &tauri::AppHandle, core: &AppCore) -> Result<(), String> {
+pub fn workspace_roundtrip(
+    handle: &tauri::AppHandle,
+    core: &std::sync::Arc<AppCore>,
+) -> Result<(), String> {
     use crate::{
         windows::DesktopWindows,
         workspaces::{ConnectedSession, Layout},
@@ -296,10 +303,17 @@ pub fn workspace_roundtrip(handle: &tauri::AppHandle, core: &AppCore) -> Result<
     if handle.get_webview_window(&last).is_some() {
         return Err("最后一个 Tab 返回后空窗口没有回收".into());
     }
-    core.workspaces
-        .lock()
-        .unwrap()
-        .close("main", &a.context.workspace_id)?;
+    let plan = core.close_fixture_prepare(
+        "main",
+        crate::lifecycle::Target::Workspace {
+            id: a.context.workspace_id.clone(),
+        },
+    )?;
+    core.ui_close_finish(
+        plan["token"].as_str().ok_or("缺少关闭 token")?,
+        serde_json::from_value(plan["views"].clone()).map_err(|e| e.to_string())?,
+        "discard",
+    )?;
     if !core.workspace_projection("main")?.workspaces.is_empty() {
         return Err("工作区未清理".into());
     }

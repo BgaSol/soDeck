@@ -8,6 +8,7 @@ import { attachMenuPosition, type MenuPosition } from "./menu-position.js";
 import { escape as e, icon, replace, patchChrome } from "./ui";
 import type { Context, Projection, Workspace } from "./workspaces";
 import type { NetworkSnapshot } from "./core";
+import type { CloseTarget } from "./close";
 
 type Call = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 interface Definition { key: string; id: string; pluginId: string; pluginName: string; pluginInstanceId: string; title: string; icon: string; container: string; instancePolicy: string; entry: string; available: boolean; createAction?: string; locateEntry: boolean }
@@ -15,9 +16,8 @@ interface Preference { side: string; pinned: boolean; startup: string; order: nu
 interface View { id: string; definitionKey: string; pluginInstanceId: string; context: Context; title: string; dirty: boolean; busy: boolean; error?: string; lastUsed: number; uiRequested?: boolean }
 interface UiWorkspace { views: View[]; preferences: Record<string, Preference>; left: string | null; right: string | null; editor: string | null }
 export interface UiProjection { definitions: Record<string, Definition>; workspaces: Record<string, UiWorkspace>; error?: string }
-interface Surface { node: HTMLDivElement; frame: HTMLIFrameElement; view: View; token?: string; chain: Promise<unknown>; visible: boolean; initialized: boolean; mounted?: boolean; acceptsLocalFiles?: boolean; focusPending?: number; flushable?: boolean; flushing?: {id: string; done: (error?: string) => void}; timeout: ReturnType<typeof setTimeout> }
+interface Surface { node: HTMLDivElement; frame: HTMLIFrameElement; view: View; token?: string; chain: Promise<unknown>; deferred: Map<string,MessageEvent>; visible: boolean; initialized: boolean; mounted?: boolean; acceptsLocalFiles?: boolean; focusPending?: number; flushable?: boolean; flushing?: {id: string; done: (error?: string) => void}; timeout: ReturnType<typeof setTimeout> }
 interface Shell { node: HTMLElement; surfaces: Map<string, Surface>; observer: ResizeObserver; workspace: Workspace; ui: UiWorkspace; railCapacity?: number }
-interface ClosePlan { token: string; views: string[]; dirty: { id: string; title: string; serverName: string; dirty: boolean; busy: boolean; error?: string }[] }
 interface MenuEntry { label: string; action: () => Promise<unknown>; extra?: MenuEntry; checked?: boolean; disabled?: boolean; separatorBefore?: boolean }
 const empty = (): UiWorkspace => ({ views: [], preferences: {}, left: null, right: null, editor: null });
 const defaultEditor = { pluginId: "sodeck.terminal", id: "terminal" };
@@ -43,7 +43,6 @@ export class Components {
   private menuAnchor?: HTMLElement;
   private menuPosition?: MenuPosition;
   private boundTabs = new WeakSet<Element>();
-  private dialog?: HTMLDialogElement;
   private disposed = false;
   private creating = new Set<string>();
   private layoutError?: string;
@@ -53,7 +52,7 @@ export class Components {
   private networkTimer = setInterval(() => { void this.updateNetwork(); }, 1000);
   private networkPending = false;
   private settingsListener?: UnlistenFn;
-  constructor(private content: HTMLElement, private call: Call, private notify: (message: string) => void, private refresh: () => Promise<void>) {
+  constructor(private content: HTMLElement, private call: Call, private notify: (message: string) => void, private refresh: () => Promise<void>, private requestClose: (target: CloseTarget) => Promise<boolean>) {
     this.data = new ComponentData(call);
     void listen<{pluginId:string}>("core-settings-changed", event => {
       for (const shell of this.shells.values()) for (const surface of shell.surfaces.values()) if (surface.token && this.definitions[surface.view.definitionKey]?.pluginId === event.payload.pluginId) void this.refreshSettings(surface);
@@ -97,6 +96,7 @@ export class Components {
       shell.node.setAttribute("aria-label", `${w.name} 的工作区`);
       shell.node.style.setProperty("--left-width", `${w.layout.leftWidth}px`); shell.node.style.setProperty("--right-width", `${w.layout.rightWidth}px`);
       this.paint(shell);
+      this.setCloseBlocked([...this.closeBlocked]);
     }
     if (!wanted.length) { const placeholder = document.createElement("div"); placeholder.className = "workspace-empty receiving-workspace"; placeholder.textContent = "此窗口没有工作区"; this.content.append(placeholder); }
   }
@@ -151,7 +151,7 @@ export class Components {
           close.addEventListener("click",requestClose);modal.addEventListener("cancel",event=>{event.preventDefault();requestClose();});header.append(title,close);modal.append(header,frame);host.append(modal);
         } else host.append(frame);
         node.querySelector(".component-surfaces")!.append(host);
-        surface = { node: host, frame, view: v, chain: Promise.resolve(), visible: false, initialized: false, timeout: setTimeout(() => this.surfaceError(surface!, "组件界面未在 8 秒内就绪"), 8000) };
+        surface = { node: host, frame, view: v, chain: Promise.resolve(), deferred:new Map(), visible: false, initialized: false, timeout: setTimeout(() => this.surfaceError(surface!, "组件界面未在 8 秒内就绪"), 8000) };
         shell.surfaces.set(v.id, surface);
       }
       surface.view = v;
@@ -178,7 +178,7 @@ export class Components {
       const id = surface.view.id;
       if(this.definitions[surface.view.definitionKey]?.container === "dialog") {
         const modal=surface.node.querySelector<HTMLDialogElement>("dialog")!;
-        const visible=!shell.node.hidden&&!shell.node.classList.contains("incoming-component-workspace")&&!this.dialog;
+        const visible=!shell.node.hidden&&!shell.node.classList.contains("incoming-component-workspace");
         surface.node.hidden=false;
         if(visible&&!modal.open)modal.showModal();else if(!visible&&modal.open)modal.close();
         if(surface.visible!==visible){surface.visible=visible;this.post(surface,{type:"visibilityChanged",visible});}
@@ -230,6 +230,11 @@ export class Components {
     if (message.type === "flushed" && surface.flushing && surface.flushing.id === message.id) { surface.flushing.done(message.error); return; }
     if (message.type !== "request" || typeof message.id !== "string") return;
     const requestId = message.id;
+    if(this.closeBlocked.has(surface.view.context.workspaceId)&&!surface.flushing) {
+      if(surface.deferred.size>=64&&!surface.deferred.has(requestId))this.post(surface,{type:"response",id:requestId,error:"组件等待请求已满，请在关闭决定后重试"});
+      else surface.deferred.set(requestId,event);
+      return;
+    }
     if (message.method === "settings") {
       const params = message.params ?? {};
       const command = params.op === "get" ? "settings_for_surface" : params.op === "applied" ? "settings_applied" : "";
@@ -261,9 +266,8 @@ export class Components {
         for(const id of ids) {
           const view=shell?.ui.views.find(v=>v.id===id);
           if(!view || view.definitionKey.split(':')[0]!==surface.view.definitionKey.split(':')[0] || id===surface.view.id)throw new Error("页面不属于当前插件工作区");
-          if(!await this.close([surface.view.context.workspaceId],id))return false;
         }
-        return true;
+        return !ids.length||this.requestClose({kind:"views",ids});
       })().then(accepted=>this.post(surface,{type:"viewsClosed",ticket,accepted})).catch(error=>this.post(surface,{type:"viewsClosed",ticket,error:String(error)}));
       return;
     }
@@ -361,49 +365,41 @@ export class Components {
     void this.menuPosition.ready.then(ready => { if (ready && this.menu === node) (searchable ? node.querySelector<HTMLElement>("input") : keyboard ? node.querySelector<HTMLElement>("button:not(:disabled)") : node)?.focus({ preventScroll: true }); });
   }
   private closeMenu() { this.menuPosition?.dispose(); this.menuPosition = undefined; this.menu?.remove(); this.menu = undefined; this.menuAnchor = undefined; }
-  async flush() {
-    const surfaces = [...this.shells.values()].flatMap(s => [...s.surfaces.values()]);
-    await Promise.all(surfaces.filter(s => s.flushable && s.token).map(s => new Promise<void>((resolve,reject) => {
-      const id=crypto.randomUUID(), timer=setTimeout(() => {s.flushing=undefined;reject(new Error("草稿同步超时，操作已取消"));}, 45000);
-      s.flushing={id,done:error=>{clearTimeout(timer);s.flushing=undefined;error?reject(new Error(error)):resolve();}};
-      this.post(s,{type:"flush",id});
-    })));
-    await Promise.all(surfaces.map(f => f.chain));
+  private closeBlocked = new Set<string>();
+  private flushing?: Promise<void>;
+  async flush(ids?: string[]) {
+    if(this.flushing)await this.flushing;
+    const surfaces = [...this.shells.values()].flatMap(s => [...s.surfaces.values()]).filter(s=>!ids||ids.includes(s.view.id));
+    const deadline=Date.now()+45000;
+    const job=(async()=>{
+      await Promise.all(surfaces.filter(s => s.flushable && s.token).map(s => new Promise<void>((resolve,reject) => {
+        const id=crypto.randomUUID(), timer=setTimeout(() => {s.flushing=undefined;reject(new Error("草稿同步超时，请返回处理或明确放弃"));}, Math.max(1,deadline-Date.now()));
+        s.flushing={id,done:error=>{clearTimeout(timer);s.flushing=undefined;error?reject(new Error(error)):resolve();}};
+        this.resumeRequests(s);
+        this.post(s,{type:"flush",id});
+      })));
+      let timer:ReturnType<typeof setTimeout>|undefined;
+      try{await Promise.race([Promise.all(surfaces.map(f => f.chain)),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error("组件输入结果尚未确认")),Math.max(1,deadline-Date.now()));})]);}
+      finally{clearTimeout(timer);}
+      if(surfaces.some(s=>!s.mounted))throw new Error("部分组件界面尚未就绪，无法确认输入");
+    })();
+    this.flushing=job;
+    try{await job;return surfaces.flatMap(s=>s.token?[s.token]:[]);}finally{for(const surface of surfaces)surface.flushing?.done("输入同步已结束");if(this.flushing===job)this.flushing=undefined;}
   }
-  async close(workspaceIds: string[], viewId?: string) {
-    if (this.dialog) return false;
-    await this.flush();
-    const plan = await this.invoke<ClosePlan>("prepareClose", { workspaceIds, viewId });
-    let decision = "discard";
-    try {
-      if (plan.dirty.length) decision = await new Promise<string>(resolve => {
-        const dialog = document.createElement("dialog"); dialog.className = "component-close-dialog"; this.dialog = dialog;
-        dialog.innerHTML = `<h2>关闭组件页面</h2><p>以下页面有未保存内容、运行任务或无法确认的状态：</p><ul>${plan.dirty.map(v => `<li>${e(v.serverName)} · ${e(v.title)}${v.busy ? " · 任务运行中" : ""}${v.error ? ` · ${e(v.error)}` : ""}</li>`).join("")}</ul><footer><button data-decision="cancel">取消</button><button data-decision="discard">放弃并关闭</button><button class="primary" data-decision="save">保存并关闭</button></footer>`;
-        const finish = (d: string) => { dialog.remove(); this.dialog = undefined; resolve(d); };
-        dialog.addEventListener("cancel", event => { event.preventDefault(); finish("cancel"); });
-        let waiting = false;
-        dialog.addEventListener("click", event => {
-          const d = (event.target as Element).closest<HTMLElement>("[data-decision]")?.dataset.decision;
-          if (!d) return;
-          if (d === "cancel") { waiting = false; finish(d); return; }
-          if (waiting) return; waiting = true;
-          const status=document.createElement("p");status.textContent=d==="save"?"正在等待任务并保存；可返回或取消任务后关闭。":"正在取消任务，确认操作结果后关闭。";dialog.append(status);
-          void (async()=>{
-            while(waiting && dialog.isConnected) {
-              const result=await this.invoke<{waiting:unknown[]}>("pollClose",{token:plan.token,save:d==="save"});
-              if(!waiting || !dialog.isConnected)return;
-              if(!result.waiting.length){waiting=false;finish(d);return;}
-              await new Promise(resolve=>setTimeout(resolve,300));
-            }
-          })().catch(error=>{waiting=false;status.textContent=String(error);});
-        });
-        for(const s of this.shells.values())this.position(s);
-        document.body.append(dialog); dialog.showModal();
-      });
-      await this.invoke("finishClose", { ...plan, decision }); await this.refresh(); return decision !== "cancel";
-    } catch (error) { await this.invoke("finishClose", { ...plan, decision: "cancel" }).catch(() => {}); throw error; }
+  close(workspaceIds: string[], viewId?: string) {
+    return this.requestClose(viewId?{kind:"views",ids:[viewId]}:{kind:"workspace",id:workspaceIds[0]});
   }
-  async allowExit() { return this.close(await this.invoke<string[]>("allWorkspaces")); }
+  setCloseBlocked(ids:string[]) {
+    this.closeBlocked=new Set(ids);
+    for(const shell of this.shells.values()) {
+      const blocked=this.closeBlocked.has(shell.workspace.context.workspaceId);shell.node.inert=blocked;
+      for(const surface of shell.surfaces.values()) {const modal=surface.node.querySelector<HTMLDialogElement>("dialog");if(modal)modal.inert=blocked;if(!blocked)this.resumeRequests(surface);}
+    }
+  }
+  private resumeRequests(surface:Surface) {
+    const waiting=[...surface.deferred.values()];surface.deferred.clear();
+    for(const event of waiting)this.message(event);
+  }
   private async updateNetwork() {
     if(this.disposed||this.networkPending||!this.shells.size)return;this.networkPending=true;
     try {const snapshot=await this.call<NetworkSnapshot>("network_snapshot");for(const shell of this.shells.values()){
@@ -413,7 +409,7 @@ export class Components {
     }} catch { /* A diagnostic endpoint must not interrupt the workbench. */ }finally{this.networkPending=false;}
   }
   private async run(action: () => Promise<unknown>) { try { await action(); } catch (error) { this.notify(String(error)); } }
-  private removeSurface(s: Surface) { clearTimeout(s.timeout); if(s.token)this.clipboard.discard(s.token); this.data.detach(s.token); this.post(s, { type: "unmount" }); s.node.remove(); }
+  private removeSurface(s: Surface) { s.deferred.clear();s.flushing?.done("原有界面已卸载，输入无法确认");clearTimeout(s.timeout); if(s.token)this.clipboard.discard(s.token); this.data.detach(s.token); this.post(s, { type: "unmount" }); s.node.remove(); }
   private destroy(shell: Shell) { shell.observer.disconnect(); for (const f of shell.surfaces.values()) this.removeSurface(f); shell.node.remove(); }
   dispose() { this.settingsListener?.(); this.fileDrop.dispose(); this.disposed = true; clearInterval(this.networkTimer); this.closeMenu(); window.removeEventListener("message", this.message); document.removeEventListener("pointerdown", this.outside); document.removeEventListener("pointerdown", this.interaction, true); document.removeEventListener("keydown", this.interaction, true); this.theme.disconnect(); window.matchMedia("(prefers-color-scheme: dark)").removeEventListener("change", this.systemTheme); for (const shell of this.shells.values()) this.destroy(shell); }
 }

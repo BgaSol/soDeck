@@ -4,7 +4,7 @@ impl AppCore {
         self.component_close_owner(window, token)?;
         let views = {
             let ui = self.component_ui.lock().unwrap();
-            let plan = ui.plans.get(token).ok_or("关闭确认已失效")?;
+            let plan = ui.lifecycle.operations.get(token).ok_or("关闭确认已失效")?;
             plan.views
                 .iter()
                 .map(|id| ui.view(id).cloned())
@@ -19,7 +19,7 @@ impl AppCore {
             };
             let reply = self.ui_plugin_call(
                 &view,
-                if save { "ui.save" } else { "ui.beforeClose" },
+                "ui.beforeClose",
                 if save {
                     Value::Null
                 } else {

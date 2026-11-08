@@ -13,6 +13,136 @@ static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 // Keep native process launch pressure out of the five-second initialization budget.
 // Calls inside each fixture remain concurrent in the RPC integration tests.
 static STARTUP: Mutex<()> = Mutex::new(());
+fn wait_close(
+    core: &AppCore,
+    id: &str,
+    phase: sodeck::lifecycle::Phase,
+) -> sodeck::lifecycle::Operation {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(12);
+    loop {
+        let op = core.close_status("main", id).unwrap();
+        if op.phase == phase {
+            return op;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{:?}: {:?}",
+            op.phase,
+            op.error
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+fn dispose_fixture(f: &Fixture, text: &str) -> (String, String) {
+    f.load().unwrap();
+    let w = f.open("dispose");
+    let opened=f.core.ui_action("main",&w.context,json!({"op":"open","key":"test.ui:editor","resourceKey":"/dispose","requestId":"dispose"})).unwrap();
+    let id = opened["viewId"].as_str().unwrap().to_owned();
+    let mount = f.core.ui_attach("main", &id).unwrap();
+    let token = mount["surfaceId"].as_str().unwrap();
+    f.core.ui_surface_ready("main", token).unwrap();
+    f.core
+        .ui_event("main", token, json!({"text":text}))
+        .unwrap();
+    let op = f
+        .core
+        .close_prepare(
+            "main",
+            "dispose",
+            sodeck::lifecycle::Target::Views {
+                ids: vec![id.clone()],
+            },
+        )
+        .unwrap();
+    f.core
+        .close_report_inputs("main", &op.id, op.input_round, json!({"surfaces":[token]}))
+        .unwrap();
+    let ready = wait_close(&f.core, &op.id, sodeck::lifecycle::Phase::Deciding);
+    let decision = f
+        .core
+        .close_decide("main", &op.id, ready.decision_revision, "discard")
+        .unwrap();
+    f.core
+        .close_report_inputs("main", &op.id, decision.input_round, json!({}))
+        .unwrap();
+    (id, op.id)
+}
+#[test]
+fn confirmed_dispose_failure_retries_once_on_the_next_user_retry() {
+    use sodeck::lifecycle::Phase;
+    let f = Fixture::new();
+    let (view, op) = dispose_fixture(&f, "dispose-fail-once");
+    wait_close(&f.core, &op, Phase::Failed);
+    let count = f
+        .root
+        .join(format!("data/plugin-data/test.ui/dispose-count-{view}"));
+    assert_eq!(fs::read_to_string(&count).unwrap(), "1");
+    f.core.close_retry("main", &op).unwrap();
+    wait_close(&f.core, &op, Phase::Completed);
+    assert_eq!(fs::read_to_string(count).unwrap(), "2");
+}
+#[test]
+fn unknown_dispose_result_is_not_resent_and_late_success_finishes_the_original_request() {
+    use sodeck::lifecycle::Phase;
+    let f = Fixture::new();
+    let (view, op) = dispose_fixture(&f, "dispose-late");
+    wait_close(&f.core, &op, Phase::Failed);
+    let count = f
+        .root
+        .join(format!("data/plugin-data/test.ui/dispose-count-{view}"));
+    f.core.close_retry("main", &op).unwrap();
+    wait_close(&f.core, &op, Phase::Failed);
+    assert_eq!(fs::read_to_string(&count).unwrap(), "1");
+    fs::write(
+        f.root
+            .join(format!("data/plugin-data/test.ui/dispose-release-{view}")),
+        "release",
+    )
+    .unwrap();
+    f.core.close_retry("main", &op).unwrap();
+    wait_close(&f.core, &op, Phase::Completed);
+    assert_eq!(fs::read_to_string(count).unwrap(), "1");
+}
+#[test]
+fn closing_background_workspace_cannot_recreate_views_before_parent_removal() {
+    let f = Fixture::new();
+    let path = f.plugin.join("plugin.json");
+    let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    manifest["ui"]["views"] = json!([{"id":"status","title":"状态","icon":"activity","container":"sidebar","instancePolicy":"perWorkspace","openOnWorkspace":"none","backgroundOnWorkspace":true}]);
+    fs::write(path, manifest.to_string()).unwrap();
+    f.load().unwrap();
+    let w = f.open("close-background");
+    let initial = f.core.ui_snapshot("main").unwrap();
+    let original = initial["workspaces"][&w.context.workspace_id]["views"][0]["id"].clone();
+    for _ in 0..20 {
+        assert_eq!(
+            f.core.ui_snapshot("main").unwrap()["workspaces"][&w.context.workspace_id]["views"][0]
+                ["id"],
+            original
+        );
+    }
+    let cancelled = f
+        .core
+        .ui_close_prepare("main", vec![w.context.workspace_id.clone()], None)
+        .unwrap();
+    f.finish(&cancelled, "cancel").unwrap();
+    assert_eq!(
+        f.core.ui_snapshot("main").unwrap()["workspaces"][&w.context.workspace_id]["views"][0]
+            ["id"],
+        original
+    );
+    let plan = f
+        .core
+        .ui_close_prepare("main", vec![w.context.workspace_id.clone()], None)
+        .unwrap();
+    f.finish(&plan, "discard").unwrap();
+    let state = f.core.ui_snapshot("main").unwrap();
+    assert!(
+        state["workspaces"][&w.context.workspace_id].is_null(),
+        "the lifecycle removes the parent before releasing admission"
+    );
+    f.core.shutdown().unwrap();
+}
 #[test]
 fn hidden_background_mount_has_no_surface_and_does_not_block_a_move() {
     let f = Fixture::new();

@@ -152,6 +152,8 @@ impl Default for Preferences {
 #[serde(rename_all = "camelCase")]
 pub struct View {
     pub id: String,
+    #[serde(skip)]
+    pub(crate) calls: std::sync::Arc<crate::resource_tasks::Tasks>,
     pub definition_key: String,
     pub plugin_id: String,
     pub plugin_instance_id: String,
@@ -179,11 +181,6 @@ struct Surface {
     view: String,
     ready: bool,
 }
-struct ClosePlan {
-    window: String,
-    workspaces: Vec<String>,
-    views: Vec<String>,
-}
 pub struct Runtime {
     root: PathBuf,
     preferences: Preferences,
@@ -191,7 +188,7 @@ pub struct Runtime {
     pub definitions: BTreeMap<String, Registered>,
     pub workspaces: HashMap<String, WorkspaceUi>,
     surfaces: HashMap<String, Surface>,
-    plans: HashMap<String, ClosePlan>,
+    pub(crate) lifecycle: crate::lifecycle::Lifecycle,
     requests: HashMap<String, String>,
     clock: u64,
 }
@@ -216,7 +213,7 @@ pub async fn component_ui(
         .map_err(|e| e.to_string())?
 }
 pub fn dispatch(
-    core: &AppCore,
+    core: &std::sync::Arc<AppCore>,
     window: &str,
     operation: &str,
     args: Value,
@@ -234,12 +231,15 @@ pub fn dispatch(
             .ui_surface_ready(window, text("surfaceId")?)
             .map(|_| Value::Null),
         "event" => core.ui_event(window, text("surfaceId")?, args["event"].clone()),
+        #[cfg(feature = "test-fixtures")]
         "prepareClose" => core.ui_close_prepare(
             window,
             serde_json::from_value(args["workspaceIds"].clone()).map_err(|e| e.to_string())?,
             args["viewId"].as_str().map(str::to_owned),
         ),
+        #[cfg(feature = "test-fixtures")]
         "pollClose" => core.ui_close_poll(window, text("token")?, args["save"] == true),
+        #[cfg(feature = "test-fixtures")]
         "finishClose" => core
             .component_close_owner(window, text("token")?)
             .and_then(|_| {
@@ -250,6 +250,7 @@ pub fn dispatch(
                 )
             })
             .map(|_| Value::Null),
+        #[cfg(feature = "test-fixtures")]
         "allWorkspaces" if window == "main" => Ok(json!(core
             .component_ui
             .lock()

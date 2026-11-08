@@ -29,5 +29,12 @@
     sodeck.mounted();
   });
   addEventListener('sodeck:themeChanged',event=>theme(event.detail.tokens));
+  addEventListener('sodeck:flush',async event=>{
+    try {
+      const input=root.querySelector('textarea');
+      if(input)await sodeck.request('event',{action:'edit',text:input.value,cursor:input.selectionStart,scroll:Math.round(input.scrollTop)});
+      sodeck.flushed(event.detail.id);
+    } catch(error) {sodeck.flushed(event.detail.id,String(error));}
+  });
   addEventListener('sodeck:focus',()=>root.querySelector('textarea,button')?.focus());
 })();

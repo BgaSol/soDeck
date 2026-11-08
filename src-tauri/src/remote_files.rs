@@ -34,13 +34,19 @@ impl Default for Files {
 struct Resource {
     owner: Owner,
     cancel: CancellationToken,
+    tasks: Arc<crate::resource_tasks::Tasks>,
+    transports: Arc<crate::resource_tasks::Tasks>,
+    done: CancellationToken,
+    cleanup_started: std::sync::atomic::AtomicBool,
     state: tokio::sync::Mutex<State>,
     job: Mutex<Value>,
+    close_saves: Mutex<HashMap<String, Value>>,
     job_cancel: Mutex<CancellationToken>,
     operations: operations::Operations,
 }
 #[derive(Default)]
 struct State {
+    transports: Arc<crate::resource_tasks::Tasks>,
     session: Option<Arc<Sftp>>,
     directory: Option<Directory>,
     directories: HashMap<String, Directory>,
@@ -74,6 +80,13 @@ struct Document {
     revision: u64,
 }
 impl Files {
+    pub(crate) fn saving(&self, view: &str) -> bool {
+        self.entries
+            .lock()
+            .unwrap()
+            .values()
+            .any(|r| r.owner.view == view && r.job.lock().unwrap()["state"] == "running")
+    }
     pub(crate) fn cancel_pending(&self, view: &str) -> bool {
         let mut pending = false;
         for resource in self
@@ -100,11 +113,44 @@ impl Files {
     pub(crate) fn cancel(&self, predicate: impl Fn(&Owner) -> bool) {
         self.entries.lock().unwrap().retain(|_, r| {
             if predicate(&r.owner) {
-                r.cancel.cancel();
-                false
+                r.close();
+                !r.done.is_cancelled()
             } else {
                 true
             }
+        });
+    }
+    pub(crate) fn pending(&self, predicate: impl Fn(&Owner) -> bool) -> usize {
+        let mut entries = self.entries.lock().unwrap();
+        entries.retain(|_, r| !r.done.is_cancelled());
+        entries.values().filter(|r| predicate(&r.owner)).count()
+    }
+}
+impl Resource {
+    fn close(self: &Arc<Self>) {
+        // The token is set under the task admission lock before any late worker can enter.
+        self.tasks.close();
+        if self
+            .cleanup_started
+            .swap(true, std::sync::atomic::Ordering::AcqRel)
+        {
+            return;
+        }
+        self.cancel.cancel();
+        self.job_cancel.lock().unwrap().cancel();
+        self.operations.cancel_pending();
+        let resource = self.clone();
+        tauri::async_runtime::spawn(async move {
+            while !resource.tasks.finished() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            *resource.state.lock().await = State::default();
+            resource.operations.clear().await;
+            resource.transports.close();
+            while !resource.transports.finished() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            resource.done.cancel();
         });
     }
 }
@@ -142,6 +188,7 @@ impl AppCore {
         self.validate_file_download(window, token, &p)?;
         let v = self.ui_data_writable(window, token)?;
         let r = self.file_resource(&v.plugin_id, &v.plugin_instance_id, string(&p, "id")?)?;
+        let _task = r.tasks.enter()?;
         let bytes = r
             .state
             .lock()
@@ -200,6 +247,7 @@ impl AppCore {
         view: &str,
     ) -> Result<Value, String> {
         let owner = self.resource_owner(plugin, instance, view)?;
+        let admission = self.resource_admission(&owner)?;
         let mut all = self.files.entries.lock().unwrap();
         if let Some((id, _)) = all
             .iter()
@@ -211,18 +259,28 @@ impl AppCore {
             return Err("文件视图已达上限，请关闭不用的页面".into());
         }
         let id = self.next_id();
+        let transports = Arc::new(crate::resource_tasks::Tasks::default());
         all.insert(
             id.clone(),
             Arc::new(Resource {
                 owner,
                 cancel: CancellationToken::new(),
-                state: tokio::sync::Mutex::new(State::default()),
+                tasks: Arc::new(crate::resource_tasks::Tasks::default()),
+                transports: transports.clone(),
+                done: CancellationToken::new(),
+                cleanup_started: std::sync::atomic::AtomicBool::new(false),
+                state: tokio::sync::Mutex::new(State {
+                    transports: transports.clone(),
+                    ..State::default()
+                }),
                 job: Mutex::new(json!({"state":"idle"})),
+                close_saves: Mutex::new(HashMap::new()),
                 job_cancel: Mutex::new(CancellationToken::new()),
-                operations: operations::Operations::default(),
+                operations: operations::Operations::new(transports.clone()),
             }),
         );
         drop(all);
+        drop(admission);
         if let Err(error) = self.resource_owner(plugin, instance, view) {
             self.files
                 .cancel(|owner| owner.view == view && owner.instance == instance);
@@ -255,6 +313,9 @@ impl AppCore {
             return self.files_open(plugin, instance, string(p, "viewId")?);
         }
         let id = string(p, "id")?;
+        if p["action"] == "close" && !self.files.entries.lock().unwrap().contains_key(id) {
+            return Ok(json!({}));
+        }
         let r = self.file_resource(plugin, instance, id)?;
         if p["action"].as_str().is_some_and(|a| {
             a.starts_with("op.") || a.starts_with("input.") || a.starts_with("batch.")
@@ -263,8 +324,7 @@ impl AppCore {
         }
         match p["action"].as_str() {
             Some("close") => {
-                r.cancel.cancel();
-                self.files.entries.lock().unwrap().remove(id);
+                r.close();
                 Ok(json!({}))
             }
             Some("status") => Ok(r.job.lock().unwrap().clone()),
@@ -290,6 +350,7 @@ impl AppCore {
     ) -> Result<Value, String> {
         let view = self.ui_data_view(window, token)?;
         let r = self.file_resource(&view.plugin_id, &view.plugin_instance_id, string(&p, "id")?)?;
+        let _task = r.tasks.enter()?;
         if r.owner.view != view.id {
             return Err("文件资源不属于此页面".into());
         }
@@ -521,7 +582,39 @@ impl AppCore {
         context: Context,
         download: Option<(String, PathBuf)>,
     ) -> Result<Value, String> {
+        let task = r.tasks.enter()?;
         self.connection_session(&context)?;
+        let ui = self.component_ui.lock().unwrap();
+        let view = ui.resource_view(&r.owner.view)?;
+        if view.context != context || view.plugin_instance_id != r.owner.instance {
+            return Err("文件目标上下文已改变".into());
+        }
+        let close_step = if self.is_closing() || ui.frozen(&context.workspace_id) {
+            if download.is_some() {
+                return Err("关闭中不能开始新的下载".into());
+            }
+            Some(
+                ui.lifecycle
+                    .operations
+                    .values()
+                    .find(|o| {
+                        o.adopted_by.is_none()
+                            && o.phase == crate::lifecycle::Phase::Deciding
+                            && o.decision.as_deref() == Some("save")
+                            && o.working
+                            && o.saving_view.as_deref() == Some(r.owner.view.as_str())
+                    })
+                    .ok_or("此文件保存不属于当前关闭步骤")?
+                    .id
+                    .clone(),
+            )
+        } else {
+            None
+        };
+        let mut close_saves = r.close_saves.lock().unwrap();
+        if let Some(result) = close_step.as_ref().and_then(|id| close_saves.get(id)) {
+            return Ok(result.clone());
+        }
         let id = self.next_id();
         let cancel = r.cancel.child_token();
         {
@@ -533,9 +626,15 @@ impl AppCore {
             *r.job_cancel.lock().unwrap() = cancel.clone();
             *job = json!({"id":id,"state":"running","kind":if download.is_some(){"download"}else{"save"},"received":"0"});
         }
+        if let Some(step) = close_step {
+            close_saves.insert(step, json!({"id":id,"state":"running"}));
+        }
+        drop(close_saves);
+        drop(ui);
         let core = self.clone();
         let job_id = id.clone();
         tauri::async_runtime::spawn(async move {
+            let _task = task;
             let result = if let Some((remote, local)) = download {
                 download_file(&core, &r, &context, &remote, &local, &cancel).await
             } else {
@@ -574,7 +673,10 @@ async fn sftp(core: &AppCore, s: &mut State, context: &Context) -> Result<Arc<Sf
         let channel = session.open_channel().await?;
         channel.request_subsystem(true, "sftp").await.map_err(err)?;
         let raw = RawSftpSession::new_with_config(
-            channel.into_stream(),
+            crate::resource_tasks::TrackedStream {
+                stream: channel.into_stream(),
+                _task: s.transports.enter()?,
+            },
             russh_sftp::client::Config {
                 max_packet_len: 256 * 1024,
                 max_concurrent_reads: 1,

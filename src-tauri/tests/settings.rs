@@ -71,6 +71,47 @@ fn disabled_plugin_save_reopen_conflict_and_deduplication() {
     );
 }
 #[test]
+fn closing_acknowledges_completed_save_but_rejects_new_or_changed_requests() {
+    let f = Fixture::new();
+    f.definition("1.0.0", json!([field()]));
+    let core = f.open();
+    core.add_plugin(&f.root.join("plugin")).unwrap();
+    let first = core.settings_page("test.settings", "appearance").unwrap();
+    let input = json!({"definitionToken":first["definitionToken"],"baseRevision":first["revision"],"requestId":"completed","values":{"size":18}});
+    let saved = core
+        .save_settings_for_window("main", "test.settings", "appearance", input.clone())
+        .unwrap();
+    let close = core
+        .close_prepare(
+            "main",
+            "exit",
+            sodeck::lifecycle::Target::Application {
+                action: sodeck::lifecycle::Action::Exit,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        saved,
+        core.save_settings_for_window("main", "test.settings", "appearance", input.clone())
+            .unwrap()
+    );
+    let mut changed = input.clone();
+    changed["values"]["size"] = json!(20);
+    assert!(core
+        .save_settings_for_window("main", "test.settings", "appearance", changed.clone())
+        .is_err());
+    changed["requestId"] = json!("new");
+    assert!(core
+        .save_settings_for_window("main", "test.settings", "appearance", changed)
+        .is_err());
+    assert_eq!(
+        core.settings_page("test.settings", "appearance").unwrap()["revision"],
+        saved["snapshot"]["revision"]
+    );
+    core.close_decide("main", &close.id, close.decision_revision, "cancel")
+        .unwrap();
+}
+#[test]
 fn compatible_upgrade_and_invalid_original_are_preserved() {
     let f = Fixture::new();
     f.definition("1.0.0", json!([field()]));

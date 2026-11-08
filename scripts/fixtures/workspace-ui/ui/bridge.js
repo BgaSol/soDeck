@@ -12,7 +12,8 @@
         parent.postMessage({channel:'sodeck-ui-v1',type:'request',surfaceId:surface,id,method,params},parentOrigin);
       });
     },
-    mounted() { parent.postMessage({channel:'sodeck-ui-v1',type:'mounted',surfaceId:surface},parentOrigin); }
+    mounted() { parent.postMessage({channel:'sodeck-ui-v1',type:'mounted',surfaceId:surface,flush:true},parentOrigin); },
+    flushed(id,error) { parent.postMessage({channel:'sodeck-ui-v1',type:'flushed',surfaceId:surface,id,error},parentOrigin); }
   };
   addEventListener('message',event => {
     if(event.source!==parent || event.data?.channel!=='sodeck-ui-v1') return;

@@ -18,6 +18,8 @@ use std::{
 type Listener = Arc<dyn Fn(&str, Value) + Send + Sync>;
 
 pub struct AppCore {
+    pub(crate) finalizer:
+        Mutex<Option<Arc<dyn Fn(crate::lifecycle::Target) -> Result<(), String> + Send + Sync>>>,
     pub(crate) executions: crate::session_exec::Executions,
     pub(crate) background_wake: Mutex<Option<std::sync::mpsc::SyncSender<()>>>,
     pub desktop_files: crate::desktop_files::DesktopFiles,
@@ -43,7 +45,6 @@ pub struct AppCore {
     started: Instant,
     sequence: AtomicU64,
     closing: AtomicBool,
-    restart_after_error: AtomicBool,
     log_rate: Mutex<(Instant, usize, u64)>,
 }
 
@@ -69,6 +70,7 @@ impl AppCore {
             .map(|p| p.manifest.id.clone())
             .collect();
         let core = Arc::new(Self {
+            finalizer: Mutex::new(None),
             executions: crate::session_exec::Executions::default(),
             background_wake: Mutex::new(None),
             desktop_files: crate::desktop_files::DesktopFiles::default(),
@@ -94,7 +96,6 @@ impl AppCore {
             started: Instant::now(),
             sequence: AtomicU64::new(0),
             closing: AtomicBool::new(false),
-            restart_after_error: AtomicBool::new(false),
             log_rate: Mutex::new((Instant::now(), 0, 0)),
         });
         core.restore_update_cache();
@@ -106,6 +107,10 @@ impl AppCore {
     pub fn set_listener(&self, listener: Listener) {
         *self.listener.lock().unwrap() = Some(listener);
     }
+    pub fn detach_host(&self) {
+        *self.listener.lock().unwrap() = None;
+        *self.finalizer.lock().unwrap() = None;
+    }
 
     pub(crate) fn event(&self, name: &str, payload: Value) {
         let listener = self.listener.lock().unwrap().clone();
@@ -115,6 +120,14 @@ impl AppCore {
     }
 
     pub(crate) fn changed(&self) {
+        if let Err(error) = self.reconcile_ui() {
+            self.log(
+                None,
+                "warn",
+                "组件初始化未完成",
+                Some(json!({"error":error})),
+            );
+        }
         self.wake_background();
         self.event("core-changed", json!(null));
     }
@@ -153,7 +166,7 @@ impl AppCore {
             plugins: Vec::new(),
             unread_count: store.messages.iter().filter(|m| !m.read).count(),
             storage_errors: store.errors.iter().flatten().cloned().collect(),
-            restart_required: self.restart_after_error.load(Ordering::Acquire),
+            restart_required: false,
         };
         drop(store);
         if let Some(error) = &self.settings.lock().unwrap().error {
@@ -311,11 +324,20 @@ impl AppCore {
             .cloned()
             .collect::<Vec<_>>();
         self.component_ui.lock().unwrap().require_closed(&ids)?;
+        self.shutdown_resources()?;
+        self.workspaces.lock().unwrap().clear();
+        Ok(())
+    }
+    pub(crate) fn shutdown_resources(&self) -> Result<(), String> {
         self.closing.store(true, Ordering::Release);
+        drop(self.mutations.lock().unwrap());
         self.terminals.cancel(|_| true);
         self.executions.cancel(|_| true);
         self.network.cancel(|_| true);
         self.files.cancel(|_| true);
+        // Stop transports alongside processes: an outstanding SFTP mutation can only
+        // report its real unknown outcome once a lost transport has ended.
+        let connections = self.connections.stop_all();
         let instances: Vec<_> = self.instances.lock().unwrap().values().cloned().collect();
         let pending: Vec<_> = instances
             .iter()
@@ -336,21 +358,61 @@ impl AppCore {
                 Err(error) => errors.push(error),
             }
         }
+        if let Err(error) =
+            self.wait_resources(|_| true, deadline.saturating_duration_since(Instant::now()))
+        {
+            errors.push(error);
+        }
+        let update_deadline = Instant::now() + Duration::from_secs(125);
+        while self.updates_busy() && Instant::now() < update_deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if self.updates_busy() {
+            errors.push("已接受的更新任务仍在收尾，请继续完成关闭".into());
+        }
         if errors.is_empty() {
-            let connections = self.connections.stop_all();
             let deadline = Instant::now() + Duration::from_secs(3);
             while connections.iter().any(|t| !t.is_cancelled()) && Instant::now() < deadline {
                 std::thread::sleep(Duration::from_millis(10));
             }
             if connections.iter().any(|t| !t.is_cancelled()) {
-                self.closing.store(false, Ordering::Release);
                 return Err("连接资源仍在收尾，请重试退出".into());
             }
-            self.workspaces.lock().unwrap().clear();
             Ok(())
         } else {
-            self.closing.store(false, Ordering::Release);
             Err(errors.join("；"))
+        }
+    }
+    pub fn set_finalizer(
+        &self,
+        finalizer: Arc<dyn Fn(crate::lifecycle::Target) -> Result<(), String> + Send + Sync>,
+    ) {
+        *self.finalizer.lock().unwrap() = Some(finalizer);
+    }
+
+    pub(crate) fn wait_resources(
+        &self,
+        matches: impl Fn(&crate::resource_owner::Owner) -> bool,
+        budget: Duration,
+    ) -> Result<(), String> {
+        let deadline = Instant::now() + budget;
+        loop {
+            let counts = [
+                self.terminals.pending(&matches),
+                self.files.pending(&matches),
+                self.network.pending(&matches),
+                self.executions.pending(&matches),
+            ];
+            if counts.iter().all(|n| *n == 0) {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                return Err(format!(
+                    "资源仍在收尾：终端 {}，文件 {}，网络 {}，命令 {}",
+                    counts[0], counts[1], counts[2], counts[3]
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(10));
         }
     }
 
@@ -497,23 +559,12 @@ impl AppCore {
                 .is_some_and(|p| !p.view().cleanup_complete)
     }
 
-    pub fn resume_after_failed_install(&self) {
-        self.closing.store(false, Ordering::Release);
-        self.restart_after_error.store(true, Ordering::Release);
-        self.changed();
-    }
-
     pub fn is_closing(&self) -> bool {
         self.closing.load(Ordering::Acquire)
     }
-
-    pub fn prepare_restart(&self) -> Result<(), String> {
-        let updates = self.updates.lock().unwrap();
-        if !updates.busy.is_empty() {
-            return Err("请等待更新检查或下载完成再重启".into());
-        }
-        self.closing.store(true, Ordering::Release);
-        Ok(())
+    pub(crate) fn set_closing(&self, value: bool) {
+        self.closing.store(value, Ordering::Release);
+        self.wake_background();
     }
 
     pub fn set_theme(&self, theme: &str) -> Result<(), String> {

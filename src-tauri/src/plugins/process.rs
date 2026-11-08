@@ -70,15 +70,24 @@ pub(crate) fn supervise(
     let mut forced = false;
     let mut exited_at: Option<Instant> = None;
     let mut sequence = 0_u64;
-    let mut requests: std::collections::HashMap<String, (Instant, Sender<Result<Value, String>>)> =
-        std::collections::HashMap::new();
+    let mut requests: std::collections::HashMap<
+        String,
+        (
+            Instant,
+            Option<Sender<Result<Value, String>>>,
+            Option<crate::resource_tasks::Task>,
+            super::Observation,
+        ),
+    > = std::collections::HashMap::new();
     loop {
         while let Ok(waiter) = control.stops.try_recv() {
             stop_waiters.push(waiter);
             if stop_deadline.is_none() {
                 stop_deadline = Some(Instant::now() + Duration::from_secs(3));
-                for (_, (_, reply)) in requests.drain() {
-                    let _ = reply.send(Err("插件正在停止，请求已取消".into()));
+                for (_, reply, _, _) in requests.values_mut() {
+                    if let Some(reply) = reply.take() {
+                        let _ = reply.send(Err("插件正在停止，请求已取消".into()));
+                    }
                 }
                 core.log(Some((id, instance_id)), "info", "正在卸载插件", None);
                 if let Err(error) = queue_frame(
@@ -98,6 +107,8 @@ pub(crate) fn supervise(
                 params,
                 reply,
                 deadline,
+                task,
+                observation,
             } = call;
             if Instant::now() >= deadline {
                 let _ = reply.send(Err("插件请求已超时".into()));
@@ -111,7 +122,7 @@ pub(crate) fn supervise(
                     json!({"jsonrpc":"2.0","id":key,"method":method,"params":params}),
                 ) {
                     Ok(()) => {
-                        requests.insert(key, (deadline, reply));
+                        requests.insert(key, (deadline, Some(reply), task, observation));
                     }
                     Err(e) => {
                         let _ = reply.send(Err(e));
@@ -124,14 +135,13 @@ pub(crate) fn supervise(
                 failure = Some(error);
             }
         }
-        requests.retain(|_, (deadline, reply)| {
+        for (deadline, reply, _, _) in requests.values_mut() {
             if Instant::now() >= *deadline {
-                let _ = reply.send(Err("插件界面请求超时".into()));
-                false
-            } else {
-                true
+                if let Some(reply) = reply.take() {
+                    let _ = reply.send(Err("插件界面请求超时；结果尚未确认".into()));
+                }
             }
-        });
+        }
         if !initialized && stop_deadline.is_none() && Instant::now() >= init_deadline {
             failure = Some("插件初始化超过 5 秒".into());
         }
@@ -160,8 +170,10 @@ pub(crate) fn supervise(
                 .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
             core.executions
                 .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
-            for (_, (_, reply)) in requests.drain() {
-                let _ = reply.send(Err("插件通信已停止，请求已取消".into()));
+            for (_, reply, _, _) in requests.values_mut() {
+                if let Some(reply) = reply.take() {
+                    let _ = reply.send(Err("插件通信已停止，请求已取消".into()));
+                }
             }
             if expired && exited.is_none() {
                 forced = true;
@@ -176,6 +188,7 @@ pub(crate) fn supervise(
                 }
             }
             if ended && cleanup.is_ok() {
+                requests.clear();
                 let outcome = if let Some(reason) = &failure {
                     instance.update(&core, |v| {
                         v.status = PluginStatus::Failed;
@@ -290,7 +303,7 @@ pub(crate) fn supervise(
                             }
                         }
                     }
-                } else if let Some((_, reply)) =
+                } else if let Some((_, reply, _task, observation)) =
                     frame["id"].as_str().and_then(|key| requests.remove(key))
                 {
                     let result = if frame.get("error").is_some() {
@@ -298,7 +311,10 @@ pub(crate) fn supervise(
                     } else {
                         Ok(frame["result"].clone())
                     };
-                    let _ = reply.send(result);
+                    observation.complete(&result);
+                    if let Some(reply) = reply {
+                        let _ = reply.send(result);
+                    }
                 } else if frame["id"] == "initialize" && !initialized {
                     if frame.get("error").is_some() {
                         failure = Some(format!("插件初始化失败：{}", frame["error"]));

@@ -68,6 +68,14 @@ fn watermark(owner: &Owner) -> String {
     )
 }
 impl Executions {
+    pub(crate) fn pending(&self, matches: impl Fn(&Owner) -> bool) -> usize {
+        let registry = self.0.lock().unwrap();
+        registry
+            .tasks
+            .values()
+            .filter(|task| matches(&task.owner) && task.result.lock().unwrap().finished.is_none())
+            .count()
+    }
     pub(crate) fn reap(&self) {
         reap(&mut self.0.lock().unwrap());
     }
@@ -136,6 +144,9 @@ impl AppCore {
             let session = self
                 .connection_session(&owner.context)
                 .map_err(|e| error("staleContext", e))?;
+            let admission = self
+                .resource_admission(&owner)
+                .map_err(|e| error("workspaceClosing", e))?;
             let mut registry = self.executions.0.lock().unwrap();
             reap(&mut registry);
             let key = watermark(&owner);
@@ -214,6 +225,7 @@ impl AppCore {
                 .insert(key, (task.owner.clone(), sequence));
             registry.tasks.insert(id.clone(), task.clone());
             drop(registry);
+            drop(admission);
             if self
                 .resource_owner(plugin, instance, &task.owner.view)
                 .is_err()

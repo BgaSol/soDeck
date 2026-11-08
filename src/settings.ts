@@ -23,6 +23,16 @@ export class ComponentSettings {
   private applications = new Map<string, Map<string, string>>();
   private reports = new Map<string, ApplicationReport[]>();
   constructor(private render: () => void) {}
+  closeDrafts() {return [...this.drafts].filter(([,d])=>d.dirty||d.saving).map(([id,d])=>({id:`settings:${id}`,title:d.snapshot.declaration.title,dirty:d.dirty,busy:d.saving}));}
+  async closeInputs(decision:"collect"|"save"|"discard",operationId?:string) {
+    if(decision!=="collect"&&[...this.drafts.values()].some(d=>d.saving))throw new Error("设置正在保存，请等待原保存结果后返回处理");
+    if(decision==="save")for(const [key,d] of this.drafts)if(d.dirty){
+      await this.save(key,true,operationId);
+      if(d.dirty) {this.select(key);throw new Error(`${d.snapshot.declaration.title}：${d.error||d.message||"请在设置页面处理校验或冲突"}`);}
+    }
+    if(decision==="discard")for(const d of this.drafts.values())if(d.dirty){d.values=copy(d.snapshot.values);d.dirty=false;d.request=undefined;d.generation++;d.error="";}
+    return this.closeDrafts();
+  }
   async catalog() {
     if (this.catalogPending) return;
     this.catalogPending = true;
@@ -166,14 +176,14 @@ export class ComponentSettings {
       d.dirty=!same(d.values,d.snapshot.values);d.generation++;d.fontErrors={};d.fontPending.clear();d.error="";d.message="";d.request=undefined;this.paint(d);this.render();
     }
   }
-  private async save() {
-    const key=this.selected,d=this.drafts.get(key);if(!d||d.saving||d.conflict||d.fontPending.size>0||Object.keys(d.fontErrors).some(k=>!same(d.values[k],d.snapshot.values[k]))||!this.host?.querySelector<HTMLFormElement>("form")?.reportValidity())return;
+  private async save(key=this.selected,closing=false,operationId?:string) {
+    const d=this.drafts.get(key);if(!d||d.saving||d.conflict||d.fontPending.size>0||Object.keys(d.fontErrors).some(k=>!same(d.values[k],d.snapshot.values[k]))||(!closing&&!this.host?.querySelector<HTMLFormElement>("form")?.reportValidity()))return;
     const focusId=this.host?.contains(document.activeElement)?(document.activeElement as HTMLElement).id:"";
     const values=JSON.stringify(d.values);
     d.request ??= {values,input:{definitionToken:d.snapshot.definitionToken,baseRevision:d.snapshot.revision,requestId:crypto.randomUUID(),values:copy(d.values)}};
     d.saving=true;d.error="";this.feedback(d);
     try {
-      const result=await invoke<{persisted:boolean;conflict?:boolean;snapshot:SettingsSnapshot}>("save_settings",{pluginId:d.snapshot.pluginId,pageId:d.snapshot.pageId,input:d.request.input});
+      const result=await invoke<{persisted:boolean;conflict?:boolean;snapshot:SettingsSnapshot}>("save_settings",{pluginId:d.snapshot.pluginId,pageId:d.snapshot.pageId,input:{...(d.request.input as Record<string,unknown>),...(operationId?{closeOperationId:operationId}:{})}});
       if(result.conflict){d.conflict=true;d.message="保存冲突，草稿已保留";return;}
       d.snapshot=result.snapshot;d.values=copy(result.snapshot.values);d.dirty=false;d.request=undefined;d.message=result.snapshot.application==="newInstance"?"已保存，用于新建规则":result.snapshot.application==="nextInstance"?"已保存，组件启动后使用":"设置已保存，正在应用…";
     }catch(error){d.error=String(error);}

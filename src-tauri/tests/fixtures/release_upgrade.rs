@@ -182,8 +182,17 @@ fn prepare_install(handle: tauri::AppHandle, input: Input) -> Result<(), String>
         "upgrade-prepared.json",
         &json!({"coreVersion":manifest.version,"coreUrl":asset.url,"coreBytes":bytes.len(),"snapshot":core.snapshot(),"updates":core.update_views()}),
     )?;
-    core.prepare_restart()?;
-    core.shutdown()?;
+    let close = core.close_fixture_prepare(
+        "main",
+        sodeck::lifecycle::Target::Application {
+            action: sodeck::lifecycle::Action::InstallAndRestart,
+        },
+    )?;
+    core.ui_close_finish(
+        close["token"].as_str().ok_or("Missing close token")?,
+        serde_json::from_value(close["views"].clone()).map_err(|e| e.to_string())?,
+        "discard",
+    )?;
     drop(core);
     // The official native installer may exit this driver on Windows.
     update.install(bytes).map_err(|e| e.to_string())

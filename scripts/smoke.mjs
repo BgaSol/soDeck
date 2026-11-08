@@ -24,6 +24,7 @@ function launch(persisted = false) {
   if (process.env.SODECK_TEST_UPDATE_BUNDLE) extra.push("--update-bundle-test", path.resolve(process.env.SODECK_TEST_UPDATE_BUNDLE));
   const result = spawnSync(command, [...args, ...extra], {
     stdio: "inherit",
+    ...(process.platform === 'win32' ? { env: { ...process.env, WEBVIEW2_USER_DATA_FOLDER: path.join(directory, 'webview2') } } : {}),
     timeout: process.env.SODECK_TEST_NETWORK_PLUGIN ? 120_000 : process.env.SODECK_TEST_TERMINAL_PLUGIN ? 90_000 : 30_000,
   });
   if (fs.existsSync(failure)) {

@@ -451,6 +451,7 @@ impl AppCore {
         self.servers.lock().unwrap().view()
     }
     pub fn change_catalog(&self, revision: u64, change: CatalogChange) -> Result<Value, String> {
+        let _operation = self.mutations.lock().unwrap();
         if self.is_closing() {
             return Err("应用正在退出".into());
         }
@@ -660,6 +661,10 @@ impl AppCore {
         Ok(json!({"catalog":view,"selectedId":selected}))
     }
     pub fn recover_catalog(&self) -> Result<Value, String> {
+        let _operation = self.mutations.lock().unwrap();
+        if self.is_closing() {
+            return Err("应用正在关闭".into());
+        }
         let mut store = self.servers.lock().unwrap();
         if store.error.is_none() {
             return Err("当前目录无需恢复".into());

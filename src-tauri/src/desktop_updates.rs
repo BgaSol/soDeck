@@ -311,6 +311,14 @@ impl CoreUpdater {
             .verify(&read_package(&path)?)
             .map_err(|e| format!("缓存包校验失败，请重新下载：{e}"))
     }
+    pub fn verify_for_close(&self, core: &AppCore) -> Result<(), String> {
+        let result = self.verify_ready();
+        if let Err(error) = &result {
+            self.discard_prepared();
+            core.fail_update(CORE_ID, error.clone());
+        }
+        result
+    }
     /// Called only after the existing normal shutdown checks and plugin cleanup.
     pub fn install(&self) -> Result<(), String> {
         let update = self

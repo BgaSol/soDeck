@@ -93,7 +93,7 @@ try {
   const unavailable=await open('无插件',0);await refresh();
   const unavailableButton=main.locator('.server-workbench:visible [data-component-action="create"]');
   assert(await unavailableButton.isDisabled());assert.match(await unavailableButton.getAttribute('title'),/终端不可用/);
-  await main.locator(`.tab-close-button[data-id="${unavailable.context.workspaceId}"]`).click();await refresh();
+  await main.locator(`.tab-close-button[data-id="${unavailable.context.workspaceId}"]`).click();await main.locator(`.server-tab[data-id="${unavailable.context.workspaceId}"]`).waitFor({state:"detached"});await refresh();
   await call('change_catalog',{revision:(await call('server_catalog')).revision,change:{op:'deleteServer',id:unavailable.context.serverId}});
   await call("fixture_load_plugin",{directory:pluginRoot});
   const a=await open("生产 Web",1),b=await open("测试环境",2),c=await open("长名称服务器-".repeat(12),3);
@@ -234,10 +234,14 @@ try {
   checks.push('同侧单面板、左右移动保留 viewId 和编辑草稿');
   const closeEditor=()=>board.locator(`[data-component-action="close"][data-key="${editorId}"]`).click();
   await closeEditor();await main.locator('.component-close-dialog').waitFor();await main.getByRole('button',{name:'取消',exact:true}).click();
+  await main.locator('.component-close-dialog').waitFor({state:'detached'});
+  assert.equal(await board.evaluate(el=>el.inert),false);
   assert.equal(await editor.inputValue(),'draft for server A');
   await editor.fill('SODECK_TEST_SAVE_FAILURE');await flush(main);await closeEditor();await main.getByRole('button',{name:'保存并关闭',exact:true}).click();
   await main.locator('.component-close-dialog').getByText(/保存失败/).waitFor();
   await main.getByRole('button',{name:'取消',exact:true}).click();
+  await main.locator('.component-close-dialog').waitFor({state:'detached'});
+  assert.equal(await board.evaluate(el=>el.inert),false);
   assert.equal(await editor.inputValue(),'SODECK_TEST_SAVE_FAILURE');
   await editor.fill('draft for server A');await flush(main);
   checks.push('关闭取消及保存失败保留草稿，不提前释放页面');
@@ -249,7 +253,9 @@ try {
   assert.equal(await viewFrame(child,aid,editorId).getByRole('textbox').inputValue(),'draft for server A');
   await assert.rejects(()=>call('component_ui',{window:'main',operation:'event',args:{surfaceId:oldSurface,event:{action:'edit',text:'stale write'}}}),/移动|失效|关闭/);
   let p=await projection("workspace-browser"); assert.deepEqual(p.workspaces[0].context,a.context); assert.equal(Boolean((await componentState("workspace-browser")).workspaces[aid].right),true);
-  await menu(child,aid); await child.locator('[data-choice="return"]').click(); await refresh();
+  await menu(child,aid); await child.locator('[data-choice="return"]').click();
+  await wait(async()=>Boolean((await projection('main')).workspaces.find(w=>w.context.workspaceId===aid)));
+  await refresh();
   assert.deepEqual((await projection("main")).workspaces.find(w=>w.context.workspaceId===aid).context,a.context);
   assert.equal((await projection("workspace-browser")).workspaces.length,0);
   assert.equal(await editor.inputValue(),'draft for server A');
@@ -332,13 +338,14 @@ try {
   await main.screenshot({path:path.join(directory,"workspace.png")});
   const output=path.resolve("artifacts/workspace-ui.png");fs.mkdirSync(path.dirname(output),{recursive:true});fs.copyFileSync(path.join(directory,"workspace.png"),output);
   checks.push("长名称、多主题、720×480 和减少动态下布局可用；连接状态仅展示，点击无弹出菜单");
-  for (const id of [bid,cid]) { await main.locator(`.tab-close-button[data-id="${id}"]`).click(); await refresh(); }
+  for (const id of [bid,cid]) { await main.locator(`.tab-close-button[data-id="${id}"]`).click();await main.locator(`.server-tab[data-id="${id}"]`).waitFor({state:"detached"}); await refresh(); }
   await main.locator("#catalog-draft").waitFor({state:"visible"}); assert.equal((await projection("main")).window.activeWorkspace,null);
   checks.push("最后一个服务器关闭后返回固定管理页");
   assert.deepEqual(errors,[]); console.log(JSON.stringify({passed:checks.length,checks,pageErrors:errors,screenshot:output},null,2));
 } catch(error) {
+  console.error(JSON.stringify(await call('close_operations',{window:'main'}),null,2));
   fs.mkdirSync('artifacts/menu-layout',{recursive:true});await pages[0]?.screenshot({path:'artifacts/menu-layout/failure.png'});
-  for(const page of pages) console.error(await page.evaluate(()=>({focus:document.activeElement?.tagName,notice:document.querySelector('#notice')?.textContent,content:document.querySelector('#workspace-content')?.style.cssText,board:document.querySelector('.server-workbench:not([hidden])')?.style.cssText})));
+  for(const page of pages) console.error(await page.evaluate(()=>({focus:document.activeElement?.tagName,notice:document.querySelector('#notice')?.textContent,dialog:document.querySelector('.component-close-dialog')?.textContent,content:document.querySelector('#workspace-content')?.style.cssText,board:document.querySelector('.server-workbench:not([hidden])')?.style.cssText})));
   throw error;
 } finally {
   await browser.close();await vite.close();await bridge.stop();fs.rmSync(directory,{recursive:true,force:true});
