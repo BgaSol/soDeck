@@ -37,9 +37,11 @@ fn main() {
         match frame["method"].as_str() {
             Some("state.changed") => {
                 let p = &frame["params"];
-                fs::write(
-                    format!("{}/shared-frame", data.as_ref().unwrap()),
-                    p.to_string(),
+                let directory = data.as_ref().unwrap();
+                fs::write(format!("{directory}/shared-frame.next"), p.to_string()).unwrap();
+                fs::rename(
+                    format!("{directory}/shared-frame.next"),
+                    format!("{directory}/shared-frame"),
                 )
                 .unwrap();
                 send(
