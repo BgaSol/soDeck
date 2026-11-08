@@ -9,8 +9,8 @@
 @layer components {
   #status { order: 2; flex: none; max-height: 80px; overflow: auto; }
   #status + button { order: 3; flex: none; align-self: start; margin: 0 12px 8px; }
-  #terminal { flex: 1; min-height: 0; padding: 12px 16px 24px; }
-  .xterm { height: 100%; }
+  /* FitAddon reads this container's content dimensions, excluding its padding. */
+  #terminal { box-sizing: content-box; flex: 1; min-height: 0; padding: 12px 16px 24px; }
   .xterm-viewport { overscroll-behavior: contain; }
   /* Keep xterm's 14px hit area and geometry, with the shared 6px visible thumb. */
   .xterm .xterm-scrollable-element > .scrollbar > .slider {

@@ -69,6 +69,75 @@ fn unique_record_binding_and_context_never_follow_active_tab() {
 }
 
 #[test]
+fn resizing_preserves_each_other_side_and_commits_preferences() {
+    let f = Fixture::new();
+    let a = f.open("A");
+    let aid = &a.context.workspace_id;
+    f.core.workspace_resize("main", aid, "right", 360).unwrap();
+    let b = f.open("B");
+    f.core
+        .workspace_resize("main", &b.context.workspace_id, "right", 400)
+        .unwrap();
+    let result = f.core.workspace_resize("main", aid, "left", 340).unwrap();
+    assert_eq!(result.layout.left_width, 340);
+    assert_eq!(result.layout.right_width, 360);
+    assert_eq!(
+        result.revision,
+        f.core.workspace_projection("main").unwrap().revision
+    );
+    let defaults: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(f.path.join("ui-layout.json")).unwrap()).unwrap();
+    assert_eq!(defaults["leftWidth"], 340);
+    assert_eq!(defaults["rightWidth"], 400);
+    let c = f.open("C");
+    assert_eq!(c.layout.left_width, 340);
+    assert_eq!(c.layout.right_width, 400);
+}
+
+#[test]
+fn rejected_or_failed_resize_changes_neither_memory_nor_saved_defaults() {
+    let f = Fixture::new();
+    let a = f.open("A");
+    let id = &a.context.workspace_id;
+    f.core.workspace_resize("main", id, "left", 300).unwrap();
+    let saved = std::fs::read(f.path.join("ui-layout.json")).unwrap();
+    let before = f.core.workspace_projection("main").unwrap();
+    std::fs::create_dir(f.path.join("ui-layout.json.tmp")).unwrap();
+    assert!(f.core.workspace_resize("main", id, "left", 350).is_err());
+    assert_eq!(std::fs::read(f.path.join("ui-layout.json")).unwrap(), saved);
+    let after = f.core.workspace_projection("main").unwrap();
+    assert_eq!(after.revision, before.revision);
+    assert_eq!(after.workspaces[0].layout, before.workspaces[0].layout);
+    assert!(f.core.workspace_resize("main", id, "middle", 350).is_err());
+    assert!(f.core.workspace_resize("main", id, "left", 159).is_err());
+    let movement = f
+        .core
+        .prepare_workspace_move("main", id, "secondary", 0, "resize-move".into(), true)
+        .unwrap();
+    assert!(f
+        .core
+        .workspace_resize("main", id, "left", 350)
+        .unwrap_err()
+        .contains("移动"));
+    assert_eq!(std::fs::read(f.path.join("ui-layout.json")).unwrap(), saved);
+    f.core.workspaces.lock().unwrap().cancel(&movement);
+    f.core.register_close_host("main").unwrap();
+    f.core
+        .close_prepare(
+            "main",
+            "resize-close",
+            sodeck::lifecycle::Target::Workspace { id: id.clone() },
+        )
+        .unwrap();
+    assert!(f
+        .core
+        .workspace_resize("main", id, "left", 350)
+        .unwrap_err()
+        .contains("关闭"));
+    assert_eq!(std::fs::read(f.path.join("ui-layout.json")).unwrap(), saved);
+}
+
+#[test]
 fn move_commit_is_atomic_and_preserves_context_and_layout() {
     let f = Fixture::new();
     let a = f.open("A");

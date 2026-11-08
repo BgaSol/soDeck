@@ -36,6 +36,7 @@
 | Tab 新建入口 | [交互方案](plan-tab-creation.md) | [两级 Tab](implementation-tab-creation.md) |
 | 工作区菜单 | — | [菜单修复](implementation-component-menus.md) |
 | 工作台按钮与文件菜单 | [整改设计](plan-workbench-interactions.md) | [实施与验收](implementation-workbench-interactions.md) |
+| 面板拖拽与终端尺寸 | [状态归属、完整手势与尺寸同步](plan-panel-resize.md) | [实现与本机验收](implementation-panel-resize.md) |
 | 桌面一致性 | [滚动条与默认行为](plan-desktop-consistency.md) | [桌面一致性](implementation-desktop-consistency.md) |
 | 组件设置与终端外观 | [功能设计](plan-component-settings.md)、[编码方案](plan-component-settings-coding.md) | [组件设置](implementation-component-settings.md) |
 | 在线更新 | [基础方案](plan-online-updates.md)、[体验改版](plan-update-experience.md) | [更新体验](implementation-update-experience.md) |
@@ -47,6 +48,7 @@
 
 - [GitHub Releases](https://github.com/BgaSol/soDeck/releases)：已发布的核心和插件版本、下载附件与发布说明。
 - [核心版本记录](releases/)：各版本的功能变化、验收与交付边界，包含历史候选版本记录。
+- [v0.12.3](releases/v0.12.3.md)：面板拖动状态、完整手势生命周期及终端尺寸同步整改。
 - [v0.12.2](releases/v0.12.2.md)：macOS 原生窗口按钮在标题栏中垂直居中，主窗口与拆出窗口保持一致。
 - [v0.12.1 候选](releases/v0.12.1.md)：原生按钮坐标验收未通过，保留未发行候选来源。
 - [v0.12.0](releases/v0.12.0.md)：统一关闭、退出与重启生命周期，取消后保留原工作台和资源。

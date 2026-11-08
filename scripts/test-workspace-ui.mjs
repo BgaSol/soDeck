@@ -45,7 +45,8 @@ const browser = await chromium.launch({ headless: true, ...(process.env.SODECK_B
 const pages = [], errors = [], checks = [], dragCalls = [], dropTargets = new Map(), drags = new Map();
 const surfaces = new Map();
 const call = (command, args={}) => bridge.call(command,args);
-let createGate,openEditorGate;
+let createGate,openEditorGate,layoutGate;
+const layoutCalls=[];
 const projection = window => call("workspace_snapshot",{window});
 const componentState = window => call("component_ui",{window,operation:"snapshot",args:{}});
 async function makePage(window) {
@@ -55,6 +56,7 @@ async function makePage(window) {
     if(command==='workspace_surface')surfaces.set(window,args.surface);
     if(command==='component_ui'&&args.operation==='action'&&args.args?.action?.op==='open'&&args.args.action.key==='sodeck.terminal:terminal'&&createGate) await createGate();
     if(command==='component_ui'&&args.operation==='action'&&args.args?.action?.op==='open'&&args.args.action.key==='sodeck.terminal:editor'&&openEditorGate) await openEditorGate();
+    if(command==='workspace_layout'){layoutCalls.push(args);if(layoutGate)await layoutGate();}
     if(command==="workspace_drag_start") { dragCalls.push({command,args}); drags.set(window,args.id);return `browser-${window}`; }
     if(command==="workspace_drag_sample") return dropTargets.get(window)??{kind:"invalid"};
     if(command==="workspace_drag_finish") { dragCalls.push({command,args}); const target=dropTargets.get(window); const id=drags.get(window);drags.delete(window); if(!args.cancel&&target?.kind==="strip")return call("workspace_move",{window,id,target:target.windowId,index:target.index});return null; }
@@ -290,13 +292,62 @@ try {
   const separator=main.locator('.server-workbench:visible [data-resize="left"]');
   const initialWidth=await main.locator('.server-workbench:visible').evaluate(el=>parseFloat(el.style.getPropertyValue('--left-width')));
   await separator.focus(); await main.keyboard.press("ArrowRight");
-  await main.waitForFunction(width=>document.querySelector("#workspace-content").style.getPropertyValue("--left-width")===`${width+16}px`,initialWidth);
+  await main.waitForFunction(width=>document.querySelector(".server-workbench:not([hidden])").style.getPropertyValue("--left-width")===`${width+16}px`,initialWidth);
   const box=await separator.boundingBox(); await main.mouse.move(box.x+3,box.y+30); await main.mouse.down(); await main.mouse.move(box.x+53,box.y+30);
   // Live drag updates the effective iframe width before pointerup persists the preference.
   await main.waitForFunction(width=>document.querySelector('.server-workbench:not([hidden])').style.getPropertyValue('--effective-left-width')===`${width+66}px`,initialWidth);
+  await main.evaluate(()=>window.manager.refresh());
+  await main.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert.equal(await main.locator('.server-workbench:visible').evaluate(el=>parseFloat(el.style.getPropertyValue('--effective-left-width'))),initialWidth+66,'A snapshot during a captured resize must preserve the preview');
   await main.mouse.up();
-  await main.waitForFunction(width=>document.querySelector("#workspace-content").style.getPropertyValue("--left-width")===`${width+66}px`,initialWidth);
+  await main.waitForFunction(width=>document.querySelector(".server-workbench:not([hidden])").style.getPropertyValue("--left-width")===`${width+66}px`,initialWidth);
   checks.push("面板宽度支持拖动和键盘，写回核心布局");
+  const settleLayout=()=>main.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  const boardWidth=side=>main.locator('.server-workbench:visible').evaluate((el,side)=>parseFloat(el.style.getPropertyValue(`--effective-${side}-width`)),side);
+  const dragPanel=async(side,delta)=>{const handle=main.locator(`.server-workbench:visible [data-resize="${side}"]`);const box=await handle.boundingBox();await main.mouse.move(box.x+4,box.y+80);await main.mouse.down();await main.mouse.move(box.x+4+delta,box.y+80);await settleLayout();};
+  await call('workspace_layout',{window:'main',id:bid,side:'left',width:280});
+  await call('workspace_layout',{window:'main',id:bid,side:'right',width:280});await refresh();
+  if(await panel(main,'right').getAttribute('aria-expanded')!=='true')await panel(main,'right').click();
+  await main.setViewportSize({width:1000,height:720});await settleLayout();
+  await main.evaluate(()=>window.resizeFrames=[...document.querySelectorAll('.server-workbench:not([hidden]) iframe')]);
+  await dragPanel('left',70);assert.equal(await boardWidth('left'),316);assert.equal(await main.locator('.server-workbench:visible').evaluate(el=>el.classList.contains('left-open')&&el.classList.contains('right-open')),true);
+  await main.mouse.up();await main.evaluate(()=>window.manager.flush());
+  assert.equal((await projection('main')).workspaces.find(w=>w.context.workspaceId===bid).layout.leftWidth,316);
+  // A new preview remains authoritative while the previous commit is held.
+  let releaseLayout;layoutGate=()=>new Promise(resolve=>releaseLayout=resolve);
+  const callsBefore=layoutCalls.length;await dragPanel('left',-20);await main.mouse.up();await wait(()=>layoutCalls.length===callsBefore+1);
+  await main.evaluate(()=>window.manager.refresh());await settleLayout();assert.equal(await boardWidth('left'),296);
+  await dragPanel('left',-20);await main.mouse.up();await settleLayout();assert.equal(await boardWidth('left'),276);
+  layoutGate=undefined;releaseLayout();await main.evaluate(()=>window.manager.flush());await settleLayout();
+  assert.equal(await boardWidth('left'),276);assert.equal(layoutCalls.length,callsBefore+2);
+  // Key repeats derive from the latest displayed width, not the last core snapshot.
+  layoutGate=()=>new Promise(resolve=>releaseLayout=resolve);const keyCalls=layoutCalls.length;
+  await separator.focus();for(let i=0;i<3;i++)await main.keyboard.press('ArrowRight');await settleLayout();assert.equal(await boardWidth('left'),316);
+  layoutGate=undefined;releaseLayout();await main.evaluate(()=>window.manager.flush());assert.equal(layoutCalls.length,keyCalls+2);
+  layoutGate=()=>{throw new Error('隔离测试：宽度保存失败');};await dragPanel('left',-20);await main.mouse.up();await main.evaluate(()=>window.manager.flush());layoutGate=undefined;await settleLayout();
+  assert.equal(await boardWidth('left'),316);assert.match(await main.locator('#notice').textContent(),/面板宽度未保存/);
+  // All interruption paths cancel without a save or a leftover capture/cursor.
+  for(const ending of ['escape','blur','capture','cancel']){
+    if(ending==='escape')await main.locator('.server-workbench:visible .component-surface iframe').first().focus();
+    const before=await boardWidth('left'),count=layoutCalls.length;await dragPanel('left',-30);assert.equal(await boardWidth('left'),before-30);
+    if(ending==='escape')await main.keyboard.press('Escape');
+    if(ending==='blur')await main.evaluate(()=>window.dispatchEvent(new Event('blur')));
+    if(ending==='capture'){await separator.evaluate(el=>el.releasePointerCapture(1));await main.mouse.move(500,100);}
+    if(ending==='cancel')await separator.dispatchEvent('pointercancel',{pointerId:1,isPrimary:true});
+    await main.mouse.up();await settleLayout();assert.equal(await boardWidth('left'),before);assert.equal(layoutCalls.length,count);
+    assert.equal(await main.evaluate(()=>document.body.classList.contains('panel-resizing')),false);
+  }
+  // The other side uses the same preview, cancellation and persistence path.
+  await dragPanel('right',20);await main.evaluate(()=>window.manager.refresh());await settleLayout();assert.equal(await boardWidth('right'),260);
+  await main.mouse.up();await main.evaluate(()=>window.manager.flush());assert.equal((await projection('main')).workspaces.find(w=>w.context.workspaceId===bid).layout.rightWidth,260);
+  await dragPanel('left',-20);await main.setViewportSize({width:720,height:480});await settleLayout();await main.mouse.up();
+  assert.equal(await main.evaluate(()=>document.body.classList.contains('panel-resizing')),false);
+  await main.setViewportSize({width:1000,height:720});await settleLayout();assert.equal(await boardWidth('left'),316);
+  assert.equal(await main.evaluate(()=>window.resizeFrames.every(frame=>frame.isConnected)),true,'Resize must retain mounted iframe nodes');
+  await dragPanel('left',-20);await call('workspace_activate',{window:'main',id:cid});await refresh();await main.mouse.up();
+  assert.equal(await main.evaluate(()=>document.body.classList.contains('panel-resizing')),false);await select(main,bid);
+  await main.setViewportSize({width:1100,height:720});await settleLayout();
+  checks.push('两侧预览抗刷新、窄窗口约束、在途保存与重复键盘合并、所有手势取消及 iframe 保留');
   await main.evaluate(()=>{const d=document.createElement('dialog');d.id='blocking';document.body.append(d);d.showModal();});
   // Modal captures input: fixed catalog and server tabs cannot steal the draft's focus.
   assert.equal(await main.locator("dialog").evaluate(el=>el.open),true); await main.evaluate(()=>document.querySelector('dialog').remove());
@@ -341,6 +392,13 @@ try {
   for (const id of [bid,cid]) { await main.locator(`.tab-close-button[data-id="${id}"]`).click();await main.locator(`.server-tab[data-id="${id}"]`).waitFor({state:"detached"}); await refresh(); }
   await main.locator("#catalog-draft").waitFor({state:"visible"}); assert.equal((await projection("main")).window.activeWorkspace,null);
   checks.push("最后一个服务器关闭后返回固定管理页");
+  await open('手势销毁',4);await refresh();
+  if(await panel(main,'left').getAttribute('aria-expanded')!=='true')await panel(main,'left').click();
+  await settleLayout();const disposeCalls=layoutCalls.length;await dragPanel('left',-20);
+  await main.evaluate(()=>window.manager.dispose());await main.mouse.up();await settleLayout();
+  assert.equal(await main.evaluate(()=>document.body.classList.contains('panel-resizing')),false);
+  assert.equal(await main.locator('.server-workbench').count(),0);assert.equal(layoutCalls.length,disposeCalls);
+  checks.push('宿主销毁结束捕获、清理工作台与 RAF，不保存未提交的手势');
   assert.deepEqual(errors,[]); console.log(JSON.stringify({passed:checks.length,checks,pageErrors:errors,screenshot:output},null,2));
 } catch(error) {
   console.error(JSON.stringify(await call('close_operations',{window:'main'}),null,2));

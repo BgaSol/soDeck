@@ -9,6 +9,7 @@ import { escape as e, icon, replace, patchChrome } from "./ui";
 import type { Context, Projection, Workspace } from "./workspaces";
 import type { NetworkSnapshot } from "./core";
 import type { CloseTarget } from "./close";
+import { panelGeometry, type PanelWidths, type PanelSide } from "./panel-layout";
 
 type Call = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 interface Definition { key: string; id: string; pluginId: string; pluginName: string; pluginInstanceId: string; title: string; icon: string; container: string; instancePolicy: string; entry: string; available: boolean; createAction?: string; locateEntry: boolean }
@@ -17,7 +18,7 @@ interface View { id: string; definitionKey: string; pluginInstanceId: string; co
 interface UiWorkspace { views: View[]; preferences: Record<string, Preference>; left: string | null; right: string | null; editor: string | null }
 export interface UiProjection { definitions: Record<string, Definition>; workspaces: Record<string, UiWorkspace>; error?: string }
 interface Surface { node: HTMLDivElement; frame: HTMLIFrameElement; view: View; token?: string; chain: Promise<unknown>; deferred: Map<string,MessageEvent>; visible: boolean; initialized: boolean; mounted?: boolean; acceptsLocalFiles?: boolean; focusPending?: number; flushable?: boolean; flushing?: {id: string; done: (error?: string) => void}; timeout: ReturnType<typeof setTimeout> }
-interface Shell { node: HTMLElement; surfaces: Map<string, Surface>; observer: ResizeObserver; workspace: Workspace; ui: UiWorkspace; railCapacity?: number }
+interface Shell { node: HTMLElement; surfaces: Map<string, Surface>; observer: ResizeObserver; workspace: Workspace; ui: UiWorkspace; railCapacity?: number; layoutFrame?: number }
 interface MenuEntry { label: string; action: () => Promise<unknown>; extra?: MenuEntry; checked?: boolean; disabled?: boolean; separatorBefore?: boolean }
 const empty = (): UiWorkspace => ({ views: [], preferences: {}, left: null, right: null, editor: null });
 const defaultEditor = { pluginId: "sodeck.terminal", id: "terminal" };
@@ -52,7 +53,7 @@ export class Components {
   private networkTimer = setInterval(() => { void this.updateNetwork(); }, 1000);
   private networkPending = false;
   private settingsListener?: UnlistenFn;
-  constructor(private content: HTMLElement, private call: Call, private notify: (message: string) => void, private refresh: () => Promise<void>, private requestClose: (target: CloseTarget) => Promise<boolean>) {
+  constructor(private content: HTMLElement, private call: Call, private notify: (message: string) => void, private refresh: () => Promise<void>, private requestClose: (target: CloseTarget) => Promise<boolean>, private widths: (workspace: Workspace) => PanelWidths, private cancelResize: () => void) {
     this.data = new ComponentData(call);
     void listen<{pluginId:string}>("core-settings-changed", event => {
       for (const shell of this.shells.values()) for (const surface of shell.surfaces.values()) if (surface.token && this.definitions[surface.view.definitionKey]?.pluginId === event.payload.pluginId) void this.refreshSettings(surface);
@@ -84,7 +85,7 @@ export class Components {
       if (!shell) {
         const node = document.createElement("section"); node.className = "server-workbench"; node.dataset.id = id;
         node.innerHTML = `<aside class="workbench-rail left-rail sd-edge-right" aria-label="左侧组件"></aside><aside class="workbench-panel left-panel sd-edge-right"><header class="sd-panel-header sd-edge-bottom"></header><div class="component-slot"></div><div role="separator" aria-label="左侧面板宽度" aria-orientation="vertical" tabindex="0" data-resize="left"></div></aside><section class="workbench-center"><div class="component-tabs sd-tab-strip sd-edge-bottom"></div><div class="component-slot central-slot"></div></section><aside class="workbench-panel right-panel sd-edge-left"><header class="sd-panel-header sd-edge-bottom"></header><div class="component-slot"></div><div role="separator" aria-label="右侧面板宽度" aria-orientation="vertical" tabindex="0" data-resize="right"></div></aside><aside class="workbench-rail right-rail sd-edge-left" aria-label="右侧组件"></aside><footer class="workspace-status sd-status-bar sd-edge-top"></footer><div class="component-surfaces"></div>`;
-        const observer = new ResizeObserver(() => this.position(shell!)); observer.observe(node);
+        const observer = new ResizeObserver(() => this.scheduleLayout(id)); observer.observe(node);
         node.querySelectorAll(".component-slot").forEach(slot => observer.observe(slot));
         shell = { node, surfaces: new Map(), observer, workspace: w, ui: empty() }; this.shells.set(id, shell); this.content.append(node);
       }
@@ -94,7 +95,6 @@ export class Components {
       shell.node.hidden = !incoming && state.window.activeWorkspace !== id;
       shell.node.classList.toggle("incoming-component-workspace", incoming);
       shell.node.setAttribute("aria-label", `${w.name} 的工作区`);
-      shell.node.style.setProperty("--left-width", `${w.layout.leftWidth}px`); shell.node.style.setProperty("--right-width", `${w.layout.rightWidth}px`);
       this.paint(shell);
       this.setCloseBlocked([...this.closeBlocked]);
     }
@@ -102,7 +102,6 @@ export class Components {
   }
   private paint(shell: Shell) {
     const { node, ui: w } = shell;
-    node.classList.toggle("left-open", Boolean(w.left)); node.classList.toggle("right-open", Boolean(w.right));
     for (const side of ["left", "right"]) {
       const selected = side === "left" ? w.left : w.right;
       const entries = Object.values(this.definitions).filter(d => w.preferences[d.key]?.side === side && (d.container === "sidebar" || d.locateEntry)).sort((a,b) => (w.preferences[a.key].order - w.preferences[b.key].order) || a.key.localeCompare(b.key));
@@ -158,24 +157,44 @@ export class Components {
       surface.frame.title = `${v.title} · ${shell.workspace.name}`;
       if (!d.available) this.surfaceError(surface, "插件已停止，页面状态仍保留。请查看应用状态与日志。");
     }
-    requestAnimationFrame(() => this.position(shell));
+    this.scheduleLayout(shell.workspace.context.workspaceId);
+  }
+  private geometry(shell: Shell, widths = this.widths(shell.workspace)) {
+    const rails = ["left", "right"].reduce((sum, side) => sum + shell.node.querySelector(`.${side}-rail`)!.getBoundingClientRect().width, 0);
+    const a = shell.ui.views.find(v => v.id === shell.ui.left), b = shell.ui.views.find(v => v.id === shell.ui.right);
+    return panelGeometry(shell.node.getBoundingClientRect().width - rails - 320, widths, Boolean(shell.ui.left), Boolean(shell.ui.right), (a?.lastUsed ?? 0) >= (b?.lastUsed ?? 0) ? "left" : "right");
+  }
+  panelWidth(id: string, side: PanelSide, width?: number, otherWidth?: number) {
+    const shell = this.shells.get(id); if (!shell || shell.node.hidden || shell.node.inert) return;
+    const widths = this.widths(shell.workspace);
+    const geometry = this.geometry(shell, width === undefined ? widths : { ...widths, [`${side}Width`]: width, drag: { side, otherWidth: otherWidth ?? shell.node.querySelector(`.${side === "left" ? "right" : "left"}-panel`)!.getBoundingClientRect().width } });
+    return geometry[side] ? geometry[`${side}Width`] : undefined;
+  }
+  scheduleLayout(id: string) {
+    const shell = this.shells.get(id); if (!shell || shell.layoutFrame !== undefined || this.disposed) return;
+    shell.layoutFrame = requestAnimationFrame(() => { shell.layoutFrame = undefined; if (!this.disposed && this.shells.get(id) === shell) this.position(shell); });
   }
   private position(shell: Shell) {
     const r = shell.node.getBoundingClientRect(), w = shell.ui;
     if (r.height > 0) { const capacity = Math.max(1, Math.floor((r.height - 80) / 38)); if (shell.railCapacity !== capacity) { shell.railCapacity = capacity; queueMicrotask(() => this.paint(shell)); return; } }
-    const preferredLeft = Number.parseFloat(shell.node.style.getPropertyValue("--left-width")) || 280;
-    const preferredRight = Number.parseFloat(shell.node.style.getPropertyValue("--right-width")) || 280;
-    let left = Boolean(w.left), right = Boolean(w.right);
-    const room = Math.max(0, r.width - 84 - 320);
-    if (left && right && preferredLeft + preferredRight > room) {
-      const a = w.views.find(v => v.id === w.left), b = w.views.find(v => v.id === w.right);
-      left = (a?.lastUsed ?? 0) >= (b?.lastUsed ?? 0); right = !left;
-    }
+    let widths = this.widths(shell.workspace), geometry = this.geometry(shell, widths);
+    if (widths.drag && (!geometry[widths.drag.side] || shell.node.hidden || shell.node.inert)) { this.cancelResize(); widths = this.widths(shell.workspace); geometry = this.geometry(shell, widths); }
+    const { left, right } = geometry;
     shell.node.classList.toggle("left-open", left); shell.node.classList.toggle("right-open", right);
-    shell.node.style.setProperty("--effective-left-width", `${Math.min(preferredLeft, room)}px`);
-    shell.node.style.setProperty("--effective-right-width", `${Math.min(preferredRight, room)}px`);
+    for (const side of ["left", "right"] as const) {
+      for (const [name, value] of [[`--${side}-width`, widths[`${side}Width`]], [`--effective-${side}-width`, geometry[`${side}Width`]]] as const) {
+        if (shell.node.style.getPropertyValue(name) !== `${value}px`) shell.node.style.setProperty(name, `${value}px`);
+      }
+      const handle = shell.node.querySelector(`[data-resize="${side}"]`)!;
+      handle.setAttribute("aria-valuemin", "160"); handle.setAttribute("aria-valuemax", "480"); handle.setAttribute("aria-valuenow", String(geometry[`${side}Width`]));
+    }
+    const placements = new Map<Surface, DOMRect>();
     for (const surface of shell.surfaces.values()) {
       const id = surface.view.id;
+      const slot = id === w.editor ? shell.node.querySelector(".central-slot") : id === w.left && left ? shell.node.querySelector(".left-panel .component-slot") : id === w.right && right ? shell.node.querySelector(".right-panel .component-slot") : null;
+      if (slot) placements.set(surface, slot.getBoundingClientRect());
+    }
+    for (const surface of shell.surfaces.values()) {
       if(this.definitions[surface.view.definitionKey]?.container === "dialog") {
         const modal=surface.node.querySelector<HTMLDialogElement>("dialog")!;
         const visible=!shell.node.hidden&&!shell.node.classList.contains("incoming-component-workspace");
@@ -185,18 +204,14 @@ export class Components {
         if (visible && surface.focusPending === this.focusEpoch) this.focusSurface(surface);
         continue;
       }
-      let slot: HTMLElement | null = null;
-      if (w.left === id && left) slot = shell.node.querySelector(".left-panel .component-slot");
-      if (w.right === id && right) slot = shell.node.querySelector(".right-panel .component-slot");
-      if (w.editor === id) slot = shell.node.querySelector(".central-slot");
-      const visible = Boolean(slot && !shell.node.hidden && !shell.node.classList.contains("incoming-component-workspace"));
-      surface.node.hidden = !slot;
-      if (slot) { const s = slot.getBoundingClientRect(); Object.assign(surface.node.style, { left: `${s.left-r.left}px`, top: `${s.top-r.top}px`, width: `${s.width}px`, height: `${s.height}px` }); }
+      const s = placements.get(surface);
+      const visible = Boolean(s && !shell.node.hidden && !shell.node.classList.contains("incoming-component-workspace"));
+      surface.node.hidden = !s;
+      if (s) for (const [key, value] of Object.entries({ left: `${s.left-r.left}px`, top: `${s.top-r.top}px`, width: `${s.width}px`, height: `${s.height}px` })) { if (surface.node.style.getPropertyValue(key) !== value) surface.node.style.setProperty(key, value); }
       if (surface.visible !== visible) { if(visible)void this.refreshSettings(surface); if(!visible&&surface.token)this.clipboard.discard(surface.token); surface.visible = visible; this.post(surface, { type: "visibilityChanged", visible }); }
       if (visible && surface.focusPending === this.focusEpoch) this.focusSurface(surface);
     }
   }
-  resizePanels() { for (const shell of this.shells.values()) this.position(shell); }
   private tokens() { return themeTokens(); }
   private post(surface: Surface, message: Record<string, unknown>) { surface.frame.contentWindow?.postMessage({ channel: "sodeck-ui-v1", surfaceId: surface.token, ...message }, new URL(surface.frame.src).origin === "null" ? "*" : new URL(surface.frame.src).origin); }
   private broadcast() { for (const s of this.shells.values()) for (const f of s.surfaces.values()) this.post(f, { type: "themeChanged", tokens: this.tokens() }); }
@@ -410,6 +425,6 @@ export class Components {
   }
   private async run(action: () => Promise<unknown>) { try { await action(); } catch (error) { this.notify(String(error)); } }
   private removeSurface(s: Surface) { s.deferred.clear();s.flushing?.done("原有界面已卸载，输入无法确认");clearTimeout(s.timeout); if(s.token)this.clipboard.discard(s.token); this.data.detach(s.token); this.post(s, { type: "unmount" }); s.node.remove(); }
-  private destroy(shell: Shell) { shell.observer.disconnect(); for (const f of shell.surfaces.values()) this.removeSurface(f); shell.node.remove(); }
+  private destroy(shell: Shell) { if (shell.layoutFrame !== undefined) cancelAnimationFrame(shell.layoutFrame); shell.observer.disconnect(); for (const f of shell.surfaces.values()) this.removeSurface(f); shell.node.remove(); }
   dispose() { this.settingsListener?.(); this.fileDrop.dispose(); this.disposed = true; clearInterval(this.networkTimer); this.closeMenu(); window.removeEventListener("message", this.message); document.removeEventListener("pointerdown", this.outside); document.removeEventListener("pointerdown", this.interaction, true); document.removeEventListener("keydown", this.interaction, true); this.theme.disconnect(); window.matchMedia("(prefers-color-scheme: dark)").removeEventListener("change", this.systemTheme); for (const shell of this.shells.values()) this.destroy(shell); }
 }

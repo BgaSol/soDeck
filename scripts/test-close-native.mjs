@@ -89,6 +89,46 @@ async function connect() {
   const projection = await invoke('workspace_snapshot');
   return projection.workspaces[0];
 }
+async function verifyPanelResize(workspace, terminalFrame, entry) {
+  const id=workspace.context.workspaceId;
+  await invoke('workspace_layout',{id,side:'left',width:280});await invoke('workspace_layout',{id,side:'right',width:280});
+  // Inspector viewport emulation tests the packaged WebView without adding window API permissions.
+  await page.setViewportSize({width:1000,height:720});
+  const board=page.locator('.server-workbench:visible');
+  await until(async()=>board.evaluate(el=>el.classList.contains('left-open')&&el.classList.contains('right-open')), 'Both native sidebars did not open');
+  const width=side=>board.evaluate((el,side)=>parseFloat(el.style.getPropertyValue(`--effective-${side}-width`)),side);
+  await until(async()=>(await width('left'))===280&&(await width('right'))===280,'Native baseline widths were not applied');
+  const before=await board.evaluate(el=>({room:el.getBoundingClientRect().width-[...el.querySelectorAll('.workbench-rail')].reduce((n,r)=>n+r.getBoundingClientRect().width,0)-320,frames:[...el.querySelectorAll('iframe')].length}));
+  await page.evaluate(()=>window.resizeFrames=[...document.querySelectorAll('.server-workbench:not([hidden]) iframe')]);
+  const drag=async(side,delta)=>{const handle=board.locator(`[data-resize="${side}"]`);const r=await handle.boundingBox();await page.mouse.move(r.x+4,r.y+80);await page.mouse.down();await page.mouse.move(r.x+4+delta,r.y+80,{steps:12});};
+  const target=Math.min(350,before.room-280);
+  await drag('left',70);await until(async()=>(await width('left'))===target,'Native preview did not follow the pointer');
+  await invoke('workspace_activate',{id});
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert.equal(await width('left'),target,'Native workspace refresh replaced the captured preview');
+  await page.mouse.up();
+  await until(async()=>(await invoke('workspace_snapshot')).workspaces.find(w=>w.context.workspaceId===id).layout.leftWidth===target,'Native resize did not commit');
+  await drag('right',20);await page.mouse.up();
+  await until(async()=>(await invoke('workspace_snapshot')).workspaces.find(w=>w.context.workspaceId===id).layout.rightWidth===260,'Native right resize did not commit');
+  await drag('left',-20);await page.keyboard.press('Escape');await page.mouse.up();
+  await until(async()=>(await width('left'))===target,'Native cancellation did not restore the width');
+  assert.equal(await page.evaluate(()=>document.body.classList.contains('panel-resizing')),false);
+  assert.equal(await page.evaluate(()=>window.resizeFrames.every(frame=>frame.isConnected)),true);
+  await until(async()=>terminalFrame.locator('.xterm-screen').evaluate(el=>{const host=document.querySelector('#terminal'),style=getComputedStyle(host),screen=el.getBoundingClientRect();return screen.width<=host.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight)+1&&screen.height<=host.clientHeight-parseFloat(style.paddingTop)-parseFloat(style.paddingBottom)+1;}), 'Native xterm did not fit the resized iframe');
+  const saved=JSON.parse(fs.readFileSync(path.join(directory,'ui-layout.json'),'utf8'));
+  assert.equal(saved.leftWidth,target);assert.equal(saved.rightWidth,260);
+  const resizeOutput=path.resolve('artifacts/panel-resize');fs.mkdirSync(resizeOutput,{recursive:true});
+  const geometry=await terminalFrame.locator('body').evaluate(()=>{
+    const describe=el=>{const rect=el.getBoundingClientRect(),css=getComputedStyle(el);return{tag:el.tagName,id:el.id,className:el.className,x:rect.x,y:rect.y,width:rect.width,height:rect.height,display:css.display,background:css.backgroundColor,overflow:css.overflow,clientWidth:el.clientWidth,clientHeight:el.clientHeight,scrollWidth:el.scrollWidth,scrollHeight:el.scrollHeight};};
+    return{viewport:{width:innerWidth,height:innerHeight},nodes:[...document.querySelectorAll('body,#terminal,.xterm,.xterm-viewport,.xterm-scrollable-element,.xterm-screen,.scrollbar,.slider')].map(describe)};
+  });
+  fs.writeFileSync(path.join(resizeOutput,`native-${entry}-geometry.json`),JSON.stringify(geometry,null,2)+'\n');
+  const screen=geometry.nodes.find(node=>node.className==='xterm-screen'),root=geometry.nodes.find(node=>node.className.split(' ').includes('xterm'));
+  assert(Math.abs(root.height-screen.height)<=1,'Native xterm viewport must end at the last complete row');
+  await page.screenshot({path:path.join(resizeOutput,`native-${entry}.png`)});
+  checks.push(`${entry}: native left/right drag, refresh during capture, cancel, saved widths and retained terminal iframe`);
+  await page.setViewportSize({width:1100,height:720});
+}
 try {
   await new Promise(resolve => service.listen(0, '127.0.0.1', resolve));
   for (const entry of ['titlebar', 'native']) {
@@ -104,6 +144,8 @@ try {
     await page.keyboard.type(`echo ${marker}`);
     await page.keyboard.press('Enter');
     await until(async () => (await terminalFrame.locator('.xterm-rows').innerText()).replace(/\s+/g, '').split(marker).length >= 3, 'Actual PTY did not echo the command result');
+    await verifyPanelResize(workspace,terminalFrame,entry);
+    assert((await terminalFrame.locator('.xterm-rows').innerText()).replace(/\s+/g,'').split(marker).length>=3,'Native resize discarded the existing terminal output');
     await page.getByRole('button', { name: '网络隧道', exact: true }).click();
     const sidebar = page.frameLocator('iframe[title^="网络隧道 ·"]');
     await sidebar.getByRole('button', { name: '＋ 新建', exact: true }).click();

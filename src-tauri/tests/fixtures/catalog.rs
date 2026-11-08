@@ -343,15 +343,16 @@ fn main() {
                 .activate(args["window"].as_str().unwrap(), args["id"].as_str())
                 .map(|_| Value::Null),
             "workspace_layout" => core
-                .workspaces
-                .lock()
-                .unwrap()
-                .layout(
+                .workspace_resize(
                     args["window"].as_str().unwrap(),
                     args["id"].as_str().unwrap(),
-                    serde_json::from_value(args["layout"].clone()).unwrap(),
+                    args["side"].as_str().unwrap_or_default(),
+                    args["width"]
+                        .as_u64()
+                        .and_then(|v| u16::try_from(v).ok())
+                        .unwrap_or_default(),
                 )
-                .map(|_| Value::Null),
+                .map(|value| serde_json::to_value(value).unwrap()),
             "workspace_close" => core
                 .close_prepare(
                     args["window"].as_str().unwrap(),

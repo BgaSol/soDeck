@@ -1,8 +1,5 @@
 //! Native window coordination and physical screen-coordinate tab hit testing.
-use crate::{
-    workspaces::{Layout, Projection},
-    AppCore,
-};
+use crate::{workspaces::Projection, AppCore};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -404,30 +401,12 @@ pub fn workspace_layout(
     window: WebviewWindow,
     desktop: State<DesktopWindows>,
     id: String,
-    layout: Layout,
-) -> Result<(), String> {
-    let projection = desktop.core.workspace_projection(window.label())?;
-    if !projection
-        .workspaces
-        .iter()
-        .any(|w| w.context.workspace_id == id)
-    {
-        return Err("工作区已移动或关闭".into());
-    }
+    side: String,
+    width: u16,
+) -> Result<crate::workspaces::LayoutCommit, String> {
     desktop
         .core
-        .component_ui
-        .lock()
-        .unwrap()
-        .save_widths(layout.left_width, layout.right_width)?;
-    desktop
-        .core
-        .workspaces
-        .lock()
-        .unwrap()
-        .layout(window.label(), &id, layout)?;
-    desktop.core.workspace_changed();
-    Ok(())
+        .workspace_resize(window.label(), &id, &side, width)
 }
 #[tauri::command]
 pub async fn workspace_move(

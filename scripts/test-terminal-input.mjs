@@ -16,6 +16,7 @@ let requestedPlatform='Win32';
 const harness=`<!doctype html><html data-theme="dopamine"><head><meta charset="utf-8"></head><body><button id="outside">外部焦点</button><iframe id="terminal" style="width:900px;height:480px;border:0"></iframe><script type="module">
 import '/style.css';import {ClipboardBridge} from '/clipboard.ts';import {themeTokens} from '/theme.ts';
 window.writes=[];window.clipboard='中文🙂\\nsecond line';window.copies=[];window.reads=0;window.delayRead=false;
+window.resizes=[];window.holdResize=false;
 const host=new ClipboardBridge(async()=>{window.reads++;return window.delayRead?new Promise(resolve=>window.finishRead=resolve):window.clipboard;},async text=>window.copies.push(text));
 const frame=document.querySelector('iframe'),token='test-surface';let generation=1,visible=true,offset=0;
 const post=message=>frame.contentWindow.postMessage({channel:'sodeck-ui-v1',surfaceId:token,...message},location.origin);
@@ -33,6 +34,7 @@ window.addEventListener('message',async event=>{
   if(message.method==='data'){
    const p=message.params;
    if(p.op==='write')window.writes.push(p.data);
+   if(p.op==='resize'){window.resizes.push({cols:p.cols,rows:p.rows});if(window.holdResize){window.resizeWaiting=true;await new Promise(resolve=>window.finishResize=()=>{window.holdResize=false;window.resizeWaiting=false;resolve();});}}
    if(p.op==='attach'){post({type:'data',data:{kind:'caughtUp',packet:1,offset:0,data:[]}});}
   }
   post({type:'response',id:message.id,data});
@@ -114,6 +116,30 @@ try{
  rejectSourceCodeFont=false;
  await page.evaluate(settings=>window.testPost({type:'settingsChanged',settings}),retrySettings);
  await page.waitForFunction(()=>window.appearanceReports.some(r=>r.revision==='2'&&!r.error));
+ // A slow PTY resize must not hold local xterm geometry behind the input queue.
+ const initialCols=await term(()=>window.testTerminal.cols);
+ await page.evaluate(()=>{window.resizes=[];window.holdResize=true;document.querySelector('iframe').style.width='800px';});
+ await page.waitForFunction(()=>window.resizeWaiting);
+ await page.evaluate(async()=>{for(let i=0;i<20;i++){document.querySelector('iframe').style.width=(790-i*10)+'px';await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));}});
+ await page.frames().find(f=>f.url().includes('/__terminal__/index.html')).waitForFunction(cols=>window.testTerminal.cols<cols-10,initialCols,{timeout:2000});
+ const latestSize=await term(()=>({cols:window.testTerminal.cols,rows:window.testTerminal.rows}));
+ const fittedBox=await term(()=>{const host=document.querySelector('#terminal'),style=getComputedStyle(host),screen=document.querySelector('.xterm-screen').getBoundingClientRect();return {width:screen.width,height:screen.height,rootHeight:document.querySelector('.xterm').getBoundingClientRect().height,availableWidth:host.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight),availableHeight:host.clientHeight-parseFloat(style.paddingTop)-parseFloat(style.paddingBottom)};});
+ assert(fittedBox.width<=fittedBox.availableWidth+1&&fittedBox.height<=fittedBox.availableHeight+1,`xterm must fit the actual content box: ${JSON.stringify(fittedBox)}`);
+ assert(Math.abs(fittedBox.rootHeight-fittedBox.height)<=1,`xterm's viewport must end at the last complete row: ${JSON.stringify(fittedBox)}`);
+ await reset();await focus();await page.keyboard.type('resize-input');
+ await page.evaluate(()=>window.finishResize());await page.waitForFunction(()=>window.writes.length>0);
+ await page.waitForFunction(size=>window.resizes.some(v=>v.cols===size.cols&&v.rows===size.rows),latestSize);
+ assert.equal(await bytes(),'resize-input');assert((await page.evaluate(()=>window.resizes.length))<=2,'Only the in-flight and latest resize should be sent');
+ await page.evaluate(()=>{window.holdResize=true;document.querySelector('iframe').style.width='500px';});await page.waitForFunction(()=>window.resizeWaiting);
+ const hiddenCols=await term(()=>window.testTerminal.cols),hiddenRequests=await page.evaluate(()=>window.resizes.length);
+ await page.evaluate(async()=>{window.hideTerminal();document.querySelector('iframe').style.width='450px';await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));window.finishResize();});
+ assert.equal(await term(()=>window.testTerminal.cols),hiddenCols);assert.equal(await page.evaluate(()=>window.resizes.length),hiddenRequests);
+ await page.evaluate(()=>window.showTerminal());await page.frames().find(f=>f.url().includes('/__terminal__/index.html')).waitForFunction(cols=>window.testTerminal.cols<cols,hiddenCols);
+ await page.waitForFunction(()=>window.resizes.length>2);
+ await page.evaluate(()=>{window.holdResize=true;document.querySelector('iframe').style.width='400px';});await page.waitForFunction(()=>window.resizeWaiting);
+ const unmountRequests=await page.evaluate(()=>window.resizes.length);
+ await page.evaluate(async()=>{window.testPost({type:'unmount'});await new Promise(resolve=>requestAnimationFrame(resolve));window.finishResize();document.querySelector('iframe').style.width='350px';await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
+ assert.equal(await page.evaluate(()=>window.resizes.length),unmountRequests,'A late resize must not enqueue work after unmount');assert.deepEqual(errors,[]);
  for(const [platform,key]of [['Linux','Control+Shift+v'],['MacIntel','Meta+v']]){
    requestedPlatform=platform;await page.reload();await page.waitForFunction(()=>window.ready);await focus();await page.keyboard.press(key);await page.waitForFunction(()=>window.writes.length>0);assert.equal(await page.evaluate(()=>window.reads),1);await reset();
    if(platform==='Linux'){await page.keyboard.press('Control+v');await page.waitForFunction(()=>window.writes.length>0);assert.equal(await bytes(),'\x16');assert.equal(await page.evaluate(()=>window.reads),0);}

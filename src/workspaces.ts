@@ -3,6 +3,7 @@ import { escape as e, icon, patchChrome } from "./ui";
 import { Components } from "./components";
 import { CloseCoordinator, type HostInputs } from "./close";
 import { attachMenuPosition, type MenuPosition } from "./menu-position.js";
+import type { PanelSide, PanelWidths } from "./panel-layout";
 
 export interface Context { workspaceId: string; serverId: string; connectionId: string; generation: number }
 export interface Layout { leftOpen: boolean; rightOpen: boolean; leftWidth: number; rightWidth: number }
@@ -11,6 +12,9 @@ export interface Projection { revision: number; window: { id: string; role: stri
 export type DropTarget = { kind: "strip"; windowId: string; index: number } | { kind: "outside"; x: number; y: number } | { kind: "invalid" };
 type Invoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 interface Gesture { id: string; pointer: number; x: number; y: number; grabX: number; grabY: number; token?: string; starting: boolean; released: boolean; cancelled: boolean; node: HTMLElement; capture: HTMLElement; ghost?: HTMLElement; sampling: boolean }
+interface PanelGesture { id: string; side: PanelSide; pointer: number; x: number; initial: number; width: number; otherWidth: number; handle: HTMLElement; focus?: HTMLElement }
+interface WidthChange { width: number; sequence: number }
+interface WidthState { values: Partial<Record<PanelSide, WidthChange>>; flight?: Promise<void>; failed?: boolean }
 
 /** Each view is rendered from its own immutable context; no global active server API. */
 export class Workspaces {
@@ -23,6 +27,9 @@ export class Workspaces {
   private menuAnchor?: HTMLElement;
   private menuPosition?: MenuPosition;
   private gesture?: Gesture;
+  private panelGesture?: PanelGesture;
+  private widths = new Map<string, WidthState>();
+  private widthSequence = 0;
   private moving = new Set<string>();
   private disposed = false;
   private events = new AbortController();
@@ -32,16 +39,18 @@ export class Workspaces {
   private resizeObserver: ResizeObserver;
 
   constructor(private tabs: HTMLElement, private content: HTMLElement, private catalog: HTMLElement, private notify: (message: string) => void, private call: Invoke = invoke) {
-    this.closer = new CloseCoordinator(call,()=>this.state?.window.id??"main",ids=>this.components.flush(ids),(ids,blocked,host)=>{
+    this.closer = new CloseCoordinator(call,()=>this.state?.window.id??"main",async ids=>{this.finishResize(true);await this.flushLayouts().catch(error=>notify(String(error)));return this.components.flush(ids);},(ids,blocked,host)=>{
+      if (blocked) this.finishResize(true);
       this.components.setCloseBlocked(blocked?ids:[]);
       if(this.state?.window.id==="main")for(const id of ["server-catalog","overlay"]) {const node=document.getElementById(id);if(node)node.inert=host;}
       this.hostBlock?.(host);
     },notify);
     this.components = new Components(content, call, notify, () => this.refresh(),async target=>{
+      this.finishResize(true);
       const accepted=await this.closer.request(target);
       await this.refresh();
       return accepted;
-    });
+    }, workspace => this.displayWidths(workspace), () => this.finishResize(true));
     tabs.addEventListener("click", event => {
       if (this.gesture?.token) return;
       const button = (event.target as Element).closest<HTMLElement>("[data-workspace-action]");
@@ -57,11 +66,15 @@ export class Workspaces {
     tabs.addEventListener("pointercancel", () => void this.finish(true), {signal: this.events.signal});
     tabs.addEventListener("lostpointercapture", () => { if (this.gesture && !this.gesture.released) void this.finish(true); }, {signal: this.events.signal});
     tabs.addEventListener("scroll", () => this.report(), { passive: true, signal: this.events.signal});
-    document.querySelector("#catalog-tab")?.addEventListener("click", () => void this.run(() => this.call("workspace_activate", { id: null })), {signal: this.events.signal});
+    document.querySelector("#catalog-tab")?.addEventListener("click", () => { this.finishResize(true); void this.run(() => this.call("workspace_activate", { id: null })); }, {signal: this.events.signal});
     document.addEventListener("pointerdown", event => { if (!this.menu?.contains(event.target as Node) && !this.menuAnchor?.contains(event.target as Node)) this.closeMenu(); }, {signal: this.events.signal});
     content.addEventListener("surface-interaction", () => this.closeMenu(), {signal: this.events.signal});
     document.addEventListener("keydown", event => this.key(event), {signal: this.events.signal});
     content.addEventListener("pointerdown", event => this.resize(event), {signal: this.events.signal});
+    content.addEventListener("pointermove", event => this.resizeMove(event), {signal: this.events.signal});
+    content.addEventListener("pointerup", event => { if (event.pointerId === this.panelGesture?.pointer) this.finishResize(false, event); }, {signal: this.events.signal});
+    for (const name of ["pointercancel", "lostpointercapture"] as const) content.addEventListener(name, event => { if (event.pointerId === this.panelGesture?.pointer) this.finishResize(true); }, {signal: this.events.signal});
+    window.addEventListener("blur", () => this.finishResize(true), {signal: this.events.signal});
     this.observer = new MutationObserver(() => this.report());
     this.observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["open", "hidden", "inert"] });
     this.resizeObserver = new ResizeObserver(() => this.report()); this.resizeObserver.observe(tabs);
@@ -76,7 +89,11 @@ export class Workspaces {
         this.again = false;
         const state = await this.call<Projection>("workspace_snapshot");
         if(this.disposed)return;
-        if (!this.state || state.revision >= this.state.revision) { this.state = state; await this.components.sync(state); this.render(); }
+        if (!this.state || state.revision >= this.state.revision) {
+          if (this.panelGesture && state.window.activeWorkspace !== this.panelGesture.id) this.finishResize(true);
+          for (const [id, widths] of this.widths) if (!state.workspaces.some(w => w.context.workspaceId === id) || (widths.failed && !widths.flight)) this.widths.delete(id);
+          this.state = state; await this.components.sync(state); this.render();
+        }
       } while (this.again);
     })().finally(() => { this.refreshing = undefined; });
     return this.refreshing;
@@ -102,11 +119,8 @@ export class Workspaces {
     this.catalog.hidden = !main || Boolean(w);
     this.content.hidden = !w && main && !state.incoming;
     if (w) {
-      const layout = w.layout;
       this.content.dataset.workspaceId = w.context.workspaceId;
       this.content.inert = this.moving.has(w.context.workspaceId);
-      this.content.style.setProperty("--left-width", `${layout.leftWidth}px`);
-      this.content.style.setProperty("--right-width", `${layout.rightWidth}px`);
     }
     void this.menuPosition?.update(); this.paintPreview(); this.report();
   }
@@ -114,11 +128,12 @@ export class Workspaces {
     if (!this.state?.workspaces.some(w => w.context.workspaceId === id)) return;
     if (action === "menu") { this.openMenu(id, this.tabs.querySelector<HTMLElement>(`.tab-menu-button[data-id="${CSS.escape(id)}"]`)!); return; }
     this.closeMenu();
+    this.finishResize(true);
     if (action === "select") { await this.call("workspace_activate", { id }); return; }
     if (action === "close") { await this.closer.request({kind:"workspace",id}); return; }
     if (this.moving.has(id)) return;
     this.moving.add(id); this.render();
-    try { await this.components.flush(); await this.call("workspace_move", { id, target: action === "return" ? "main" : null, index: Number.MAX_SAFE_INTEGER }); }
+    try { await this.flushLayouts(); await this.components.flush(); await this.call("workspace_move", { id, target: action === "return" ? "main" : null, index: Number.MAX_SAFE_INTEGER }); }
     finally { this.moving.delete(id); }
   }
   private openMenu(id: string, anchor: HTMLElement) {
@@ -145,6 +160,7 @@ export class Workspaces {
   private closeMenu() { this.menuPosition?.dispose(); this.menuPosition = undefined; this.menu?.remove(); this.menu = undefined; this.menuAnchor = undefined; }
   private key(event: KeyboardEvent) {
     if (event.key === "Escape") {
+      if (this.panelGesture) { event.preventDefault(); this.finishResize(true); }
       if (this.gesture) { event.preventDefault(); void this.finish(true); }
       for (const id of this.moving) void this.call("workspace_cancel_move", { id }).catch(error => this.notify(String(error)));
       if (this.menu) { event.preventDefault(); const anchor = this.menuAnchor; this.closeMenu(); (anchor?.isConnected ? anchor : this.tabs.querySelector<HTMLElement>('[aria-selected="true"]'))?.focus({ preventScroll: true }); }
@@ -152,9 +168,12 @@ export class Workspaces {
     }
     if ((event.target as HTMLElement).matches("[data-resize]")) {
       const w = this.current(); if (!w || !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
-      event.preventDefault(); const side = (event.target as HTMLElement).dataset.resize!; const key = side === "left" ? "leftWidth" : "rightWidth";
+      event.preventDefault(); this.finishResize(true); const side = (event.target as HTMLElement).dataset.resize as PanelSide;
       const delta = (event.key === "ArrowRight" ? 16 : -16) * (side === "left" ? 1 : -1);
-      void this.run(() => this.call("workspace_layout", { id: w.context.workspaceId, layout: { ...w.layout, [key]: Math.max(160, Math.min(480, w.layout[key] + delta)) } })); return;
+      const initial = this.components.panelWidth(w.context.workspaceId, side);
+      const width = initial === undefined ? undefined : this.components.panelWidth(w.context.workspaceId, side, initial + delta);
+      if (width !== undefined && width !== initial) this.setWidth(w.context.workspaceId, side, width);
+      return;
     }
     if (!this.tabs.contains(event.target as Node) && (event.target as HTMLElement).id !== "catalog-tab") return;
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -196,7 +215,7 @@ export class Workspaces {
   }
   private async completeGesture(g: Gesture) {
     this.moving.add(g.id);
-    try { await this.components.flush(); await this.call("workspace_drag_finish", { token: g.token, cancel: g.cancelled }); }
+    try { this.finishResize(true); await this.flushLayouts(); await this.components.flush(); await this.call("workspace_drag_finish", { token: g.token, cancel: g.cancelled }); }
     catch (error) { this.notify(String(error)); }
     finally { this.moving.delete(g.id); this.clearGesture(g); await this.refresh().catch(() => {}); }
   }
@@ -222,23 +241,92 @@ export class Workspaces {
   }
   private resize(event: PointerEvent) {
     const handle = (event.target as Element).closest<HTMLElement>("[data-resize]"); const w = this.current();
-    if (!handle || !w || event.button !== 0) return; event.preventDefault();
-    const side = handle.dataset.resize!, key = side === "left" ? "leftWidth" : "rightWidth", x = event.clientX, initial = w.layout[key];
-    let width = initial; handle.setPointerCapture(event.pointerId);
-    const move = (ev: PointerEvent) => { width = Math.max(160, Math.min(480, Math.round(initial + (ev.clientX - x) * (side === "left" ? 1 : -1)))); this.content.querySelector<HTMLElement>(`.server-workbench[data-id="${CSS.escape(w.context.workspaceId)}"]`)?.style.setProperty(`--${side}-width`, `${width}px`); this.components.resizePanels(); };
-    const end = (ev: PointerEvent) => { handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", end); handle.removeEventListener("pointercancel", end); if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId); void this.run(() => this.call("workspace_layout", { id: w.context.workspaceId, layout: { ...w.layout, [key]: ev.type === "pointercancel" ? initial : width } })); };
-    handle.addEventListener("pointermove", move); handle.addEventListener("pointerup", end); handle.addEventListener("pointercancel", end);
+    if (!handle || !w || event.button !== 0 || !event.isPrimary || this.panelGesture || this.moving.has(w.context.workspaceId)) return;
+    const side = handle.dataset.resize as PanelSide, initial = this.components.panelWidth(w.context.workspaceId, side);
+    if (initial === undefined) return;
+    event.preventDefault(); handle.setPointerCapture(event.pointerId);
+    const focus = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
+    handle.focus({ preventScroll: true });
+    const otherWidth = handle.closest(".server-workbench")!.querySelector(`.${side === "left" ? "right" : "left"}-panel`)!.getBoundingClientRect().width;
+    this.panelGesture = { id: w.context.workspaceId, side, pointer: event.pointerId, x: event.clientX, initial, width: initial, otherWidth, handle, focus };
+    document.body.classList.add("panel-resizing");
+  }
+  private resizeMove(event: PointerEvent) {
+    const g = this.panelGesture; if (!g || g.pointer !== event.pointerId) return;
+    const width = this.components.panelWidth(g.id, g.side, g.initial + (event.clientX - g.x) * (g.side === "left" ? 1 : -1), g.otherWidth);
+    if (width === undefined) { this.finishResize(true); return; }
+    g.width = width; this.components.scheduleLayout(g.id);
+  }
+  private finishResize(cancel: boolean, event?: PointerEvent) {
+    const g = this.panelGesture; if (!g) return;
+    if (event) this.resizeMove(event);
+    if (this.panelGesture !== g) return;
+    this.panelGesture = undefined; document.body.classList.remove("panel-resizing");
+    if (g.handle.hasPointerCapture(g.pointer)) g.handle.releasePointerCapture(g.pointer);
+    if (document.hasFocus() && document.activeElement === g.handle && g.focus?.isConnected) g.focus.focus({ preventScroll: true });
+    if (!cancel && g.width !== g.initial && !this.disposed) this.setWidth(g.id, g.side, g.width);
+    this.components.scheduleLayout(g.id);
+  }
+  private displayWidths(workspace: Workspace): PanelWidths {
+    const id = workspace.context.workspaceId, values = this.widths.get(id)?.values;
+    const widths: PanelWidths = { leftWidth: values?.left?.width ?? workspace.layout.leftWidth, rightWidth: values?.right?.width ?? workspace.layout.rightWidth };
+    const g = this.panelGesture;
+    if (g?.id === id) { widths[`${g.side}Width`] = g.width; widths.drag = { side: g.side, otherWidth: g.otherWidth }; }
+    return widths;
+  }
+  private setWidth(id: string, side: PanelSide, width: number) {
+    let state = this.widths.get(id);
+    if (!state) { state = { values: {} }; this.widths.set(id, state); }
+    state.values[side] = { width, sequence: ++this.widthSequence }; state.failed = false;
+    this.components.scheduleLayout(id);
+    if (!state.flight) this.startSave(id, state);
+  }
+  private startSave(id: string, state: WidthState) {
+    state.flight = this.saveWidths(id, state).finally(() => {
+      state.flight = undefined;
+      if (this.disposed || this.widths.get(id) !== state) return;
+      if (Object.keys(state.values).length && !state.failed) this.startSave(id, state);
+      else if (!state.failed) this.widths.delete(id);
+    });
+  }
+  private async saveWidths(id: string, pending: WidthState) {
+    while (!this.disposed && this.widths.get(id) === pending && !pending.failed) {
+      const next = Object.entries(pending.values)[0] as [PanelSide, WidthChange] | undefined; if (!next) break;
+      const [side, change] = next;
+      try {
+        const result = await this.call<{ revision: number; layout: Layout }>("workspace_layout", { id, side, width: change.width });
+        if (this.disposed || this.widths.get(id) !== pending) return;
+        if (this.state && result.revision >= this.state.revision) {
+          const workspace = this.state.workspaces.find(w => w.context.workspaceId === id);
+          if (workspace) workspace.layout = result.layout;
+          this.state.revision = result.revision;
+        }
+      } catch (error) {
+        if (this.disposed || this.widths.get(id) !== pending) return;
+        try { await this.refresh(); } catch { pending.failed = true; }
+        const confirmed = this.state?.workspaces.find(w => w.context.workspaceId === id)?.layout[`${side}Width`];
+        if (pending.failed || confirmed !== change.width) this.notify(`${pending.failed ? "面板宽度保存状态未确认" : "面板宽度未保存"}：${String(error)}`);
+      }
+      if (this.disposed || this.widths.get(id) !== pending) return;
+      if (!pending.failed && pending.values[side]?.sequence === change.sequence) delete pending.values[side];
+      this.components.scheduleLayout(id);
+    }
+    if (!this.disposed) await this.refresh().catch(() => {});
+  }
+  private async flushLayouts() {
+    while ([...this.widths.values()].some(state => state.flight)) await Promise.all([...this.widths.values()].map(state => state.flight));
+    if ([...this.widths.values()].some(state => state.failed)) throw new Error("面板宽度保存状态未确认，请重试");
   }
   dispose() {
     if(this.disposed)return;
-    this.disposed=true;this.events.abort();clearTimeout(this.reportTimer);
+    this.finishResize(true);this.disposed=true;this.widths.clear();this.events.abort();clearTimeout(this.reportTimer);
     this.observer.disconnect();this.resizeObserver.disconnect();this.closeMenu();
     this.closer.dispose();this.components.dispose();
   }
   private hostBlock?: (blocked:boolean)=>void;
   setCloseParticipants(inputs:HostInputs,block:(blocked:boolean)=>void){this.closer.hostInputs=inputs;this.hostBlock=block;}
-  exit() { return this.closer.request({kind:"application",action:"exit"}); }
-  restart(install:boolean) { return this.closer.request({kind:"application",action:install?"installAndRestart":"restart"}); }
-  flush() { return this.components.flush(); }
-  closeWindow() { return this.closer.request({kind:"window",id:this.state?.window.id??"main"}); }
+  exit() { this.finishResize(true); return this.closer.request({kind:"application",action:"exit"}); }
+  restart(install:boolean) { this.finishResize(true); return this.closer.request({kind:"application",action:install?"installAndRestart":"restart"}); }
+  async flush() { this.finishResize(true); await this.flushLayouts(); return this.components.flush(); }
+  closeWindow() { this.finishResize(true); return this.closer.request({kind:"window",id:this.state?.window.id??"main"}); }
 }

@@ -74,6 +74,12 @@ pub struct Projection {
     pub incoming: Option<Workspace>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct LayoutCommit {
+    pub revision: u64,
+    pub layout: Layout,
+}
+
 #[derive(Clone)]
 pub struct Move {
     pub token: String,
@@ -477,6 +483,44 @@ impl AppCore {
     }
     pub fn workspace_projection(&self, window: &str) -> Result<Projection, String> {
         self.workspaces.lock().unwrap().projection(window)
+    }
+    pub fn workspace_resize(
+        &self,
+        window: &str,
+        id: &str,
+        side: &str,
+        width: u16,
+    ) -> Result<LayoutCommit, String> {
+        if !(160..=480).contains(&width) || !["left", "right"].contains(&side) {
+            return Err("面板宽度或方向无效".into());
+        }
+        let mut state = self.workspaces.lock().unwrap();
+        let mut ui = self.component_ui.lock().unwrap();
+        state.movable(window, id)?;
+        if self.is_closing() || ui.frozen(id) || ui.lifecycle.window_closing(window) {
+            return Err("工作区正在关闭".into());
+        }
+        let mut layout = state.owned(window, id)?.layout.clone();
+        let (mut left, mut right) = ui.widths();
+        if side == "left" {
+            layout.left_width = width;
+            left = width;
+        } else {
+            layout.right_width = width;
+            right = width;
+        }
+        // Hold ownership through persistence; a rejected move/close cannot change defaults.
+        ui.save_widths(left, right)?;
+        state.workspaces.get_mut(id).unwrap().layout = layout.clone();
+        state.revision += 1;
+        let result = LayoutCommit {
+            revision: state.revision,
+            layout,
+        };
+        drop(ui);
+        drop(state);
+        self.workspace_changed();
+        Ok(result)
     }
     pub fn workspace_changed(&self) {
         if let Err(error) = self.reconcile_ui() {

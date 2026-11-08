@@ -15,9 +15,9 @@ import {createAppearance} from './appearance.js';
   const encoder=new TextEncoder();
   const fail=error=>{status.hidden=false;status.textContent=String(error);status.classList.add('error');};
   const controls=installTerminalInput(terminal,host,()=>({key:mountKey,canCopy:!disposed&&!restoring,canPaste:enabled&&!restoring&&!disposed&&visible}),fail);
-  const enqueueSize=()=>{const resize=inputChain.then(size);inputChain=resize.catch(()=>{});return resize;};
-  const appearance=createAppearance(terminal,host,()=>caughtUp&&!restoring&&visible&&!disposed,enqueueSize,()=>controls.invalidate());
+  const appearance=createAppearance(terminal,host,()=>caughtUp&&!restoring&&visible&&!disposed,()=>enqueueSize(true),()=>controls.invalidate());
   let lastCols=0,lastRows=0;
+  let sizeFrame,sizeJob,sizeDone,sizeReject,desiredSize,resizeQueued=false,sizeEpoch=0,resizeFailed=false,resizeRetries=0,retryTimer;
   const request=p=>sodeck.request('data',{id,...p});
   const write=bytes=>new Promise(resolve=>terminal.write(bytes,resolve));
   function scan(bytes){for(const b of bytes){
@@ -33,17 +33,56 @@ import {createAppearance} from './appearance.js';
     if(disposed||restoring||!caughtUp||offset===savedOffset||escape!=='normal'||utf8)return;
     if(!force&&offset-savedOffset<128*1024&&performance.now()-lastSave<250)return;
     const bytes=encoder.encode(serialize.serialize());
+    const metadata={cols:terminal.cols,rows:terminal.rows};
     if(bytes.length>2*1024*1024)throw new Error('终端显示快照超出上限，请减少终端尺寸或清理滚动历史');
     for(let pos=0;pos<bytes.length||pos===0;pos+=16384){
-      await request({op:'checkpoint',offset,data:Array.from(bytes.subarray(pos,pos+16384)),metadata:{cols:terminal.cols,rows:terminal.rows},begin:pos===0,done:pos+16384>=bytes.length});
+      await request({op:'checkpoint',offset,data:Array.from(bytes.subarray(pos,pos+16384)),metadata,begin:pos===0,done:pos+16384>=bytes.length});
     }
     savedOffset=offset;lastSave=performance.now();
   }
-  async function size(){
-    if(!visible||!enabled||disposed||host.clientWidth<20||host.clientHeight<20)return;
-    fit.fit();const cols=Math.min(1000,terminal.cols),rows=Math.min(500,terminal.rows);if(cols===lastCols&&rows===lastRows)return;await request({op:'resize',cols,rows});lastCols=cols;lastRows=rows;
+  function enqueueSize(retry=false){
+    if(disposed)return Promise.resolve();
+    if(retry){resizeFailed=false;resizeRetries=0;}
+    if(sizeJob)return sizeJob;
+    sizeJob=new Promise((resolve,reject)=>{sizeDone=resolve;sizeReject=reject;});
+    sizeFrame=requestAnimationFrame(()=>{
+      const done=sizeDone,reject=sizeReject;sizeFrame=sizeJob=sizeDone=sizeReject=undefined;
+      try{
+        if(visible&&caughtUp&&!restoring&&!disposed&&host.clientWidth>=20&&host.clientHeight>=20){
+          fit.fit();const cols=Math.min(1000,terminal.cols),rows=Math.min(500,terminal.rows);
+          if(cols!==terminal.cols||rows!==terminal.rows)terminal.resize(cols,rows);
+          if(desiredSize?.cols!==cols||desiredSize?.rows!==rows){resizeFailed=false;resizeRetries=0;}
+          desiredSize={cols,rows};queueResize();
+        }
+        done();
+      }catch(error){reject(error);}
+    });
+    return sizeJob;
   }
-  const observer=new ResizeObserver(()=>{if(enabled)void enqueueSize().catch(()=>{});});observer.observe(host);
+  function queueResize(){
+    if(resizeQueued||retryTimer||resizeFailed||!desiredSize||!enabled||!visible||restoring||disposed||disconnected||(desiredSize.cols===lastCols&&desiredSize.rows===lastRows))return;
+    resizeQueued=true;const epoch=sizeEpoch;
+    // One replaceable queue position preserves writes while fit stays local to the next frame.
+    inputChain=inputChain.then(async()=>{
+      if(epoch!==sizeEpoch)return;
+      resizeQueued=false;
+      if(!enabled||!visible||restoring||disposed||disconnected||!desiredSize)return;
+      const target=desiredSize;if(target.cols===lastCols&&target.rows===lastRows)return;
+      await request({op:'resize',...target});
+      if(epoch!==sizeEpoch||disposed)return;
+      lastCols=target.cols;lastRows=target.rows;resizeRetries=0;
+    }).catch(error=>{
+      if(epoch!==sizeEpoch||disposed)return;
+      if(String(error).includes('忙碌')&&resizeRetries++<3)retryTimer=setTimeout(()=>{retryTimer=undefined;queueResize();},40*2**resizeRetries);
+      else{resizeFailed=true;fail(error);}
+    }).finally(()=>{if(epoch===sizeEpoch)queueResize();});
+  }
+  function stopSize(){
+    sizeEpoch++;if(sizeFrame!==undefined)cancelAnimationFrame(sizeFrame);clearTimeout(retryTimer);
+    sizeDone?.();sizeFrame=sizeJob=sizeDone=sizeReject=retryTimer=desiredSize=undefined;
+    resizeQueued=false;lastCols=lastRows=0;resizeFailed=false;resizeRetries=0;
+  }
+  const observer=new ResizeObserver(()=>{if(caughtUp)void enqueueSize().catch(fail);});observer.observe(host);
   function theme(tokens){
     Object.entries(tokens||{}).forEach(([k,v])=>document.documentElement.style.setProperty('--'+k,v));
     const palette={background:tokens?.['terminal-background']||tokens?.panel||'#fff',foreground:tokens?.['terminal-foreground']||tokens?.text||'#222',cursor:tokens?.['terminal-cursor']||tokens?.accent||'#5346a6',selectionBackground:tokens?.['terminal-selection']||tokens?.['accent-bg']||'#dad3f3',selectionForeground:tokens?.['terminal-foreground']||tokens?.text||'#222'};
@@ -64,7 +103,7 @@ import {createAppearance} from './appearance.js';
       if(disposed)return;
       const frame=event.detail.data;
       if(frame.kind==='error'){fail(frame.metadata);return;}
-      if(frame.kind==='reset'){controls.invalidate();restoring=true;enabled=false;terminal.reset();offset=frame.offset;savedOffset=offset;const d=frame.metadata;if(d?.cols&&d?.rows)terminal.resize(d.cols,d.rows);}
+      if(frame.kind==='reset'){controls.invalidate();stopSize();restoring=true;enabled=false;terminal.reset();offset=frame.offset;savedOffset=offset;const d=frame.metadata;if(d?.cols&&d?.rows)terminal.resize(d.cols,d.rows);}
       if(frame.kind==='snapshot')await write(Uint8Array.from(frame.data));
       if(frame.kind==='restore')restoring=false;
       if(frame.kind==='data'){const bytes=Uint8Array.from(frame.data);await write(bytes);scan(bytes);offset=frame.offset;}
@@ -74,19 +113,19 @@ import {createAppearance} from './appearance.js';
         // Incoming windows may render before ownership commits. Only the owner saves a checkpoint.
         await checkpoint(true).catch(()=>{});sodeck.mounted();void appearance.apply();void enqueueSize().catch(()=>{});
       }
-      if(frame.kind==='end'){controls.invalidate();enabled=false;ended=true;status.hidden=false;status.textContent=disconnected?'连接已断开，请在工作台重新连接后新建终端。':frame.metadata?.error||`终端已退出${frame.metadata?.exitCode==null?'':` · ${frame.metadata.exitCode}`}`;newTerminal.hidden=disconnected;}
+      if(frame.kind==='end'){controls.invalidate();enabled=false;ended=true;stopSize();void enqueueSize().catch(()=>{});status.hidden=false;status.textContent=disconnected?'连接已断开，请在工作台重新连接后新建终端。':frame.metadata?.error||`终端已退出${frame.metadata?.exitCode==null?'':` · ${frame.metadata.exitCode}`}`;newTerminal.hidden=disconnected;}
       if(frame.kind==='data')await checkpoint().catch(error=>{if(!String(error).includes('窗口'))throw error;});
     }).catch(fail);
   });
-  function input(text){if(!enabled||restoring||disposed)return;const bytes=encoder.encode(text);if(inputPending+bytes.length>256*1024){fail('输入待发送内容超过 256 KiB，请稍后分段粘贴；本次输入未发送');return;}inputPending+=bytes.length;inputChain=inputChain.then(async()=>{for(let i=0;i<bytes.length;i+=16384){await request({op:'write',sequence:inputSequence,data:Array.from(bytes.subarray(i,i+16384))});inputSequence++;}}).catch(error=>{enabled=false;fail(error);}).finally(()=>{inputPending-=bytes.length;});}
+  function input(text){if(!enabled||restoring||disposed)return;const key=mountKey,bytes=encoder.encode(text);if(inputPending+bytes.length>256*1024){fail('输入待发送内容超过 256 KiB，请稍后分段粘贴；本次输入未发送');return;}inputPending+=bytes.length;inputChain=inputChain.then(async()=>{for(let i=0;i<bytes.length;i+=16384){if(disposed||!enabled||restoring||mountKey!==key)return;await request({op:'write',sequence:inputSequence,data:Array.from(bytes.subarray(i,i+16384))});inputSequence++;}}).catch(error=>{if(!disposed&&mountKey===key){enabled=false;fail(error);}}).finally(()=>{inputPending-=bytes.length;});}
   terminal.onData(input);
-  addEventListener('sodeck:visibilityChanged',event=>{visible=event.detail.visible;if(!visible)controls.invalidate();if(visible){void appearance.apply();void enqueueSize().catch(()=>{});}});
+  addEventListener('sodeck:visibilityChanged',event=>{visible=event.detail.visible;if(!visible){controls.invalidate();stopSize();}if(visible){void appearance.apply();void enqueueSize(true).catch(()=>{});}});
   addEventListener('sodeck:settingsChanged',event=>appearance.receive({...event.detail.settings,retry:true}));
-  addEventListener('sodeck:contextChanged',()=>{controls.invalidate();enabled=false;newTerminal.hidden=disconnected||!ended;status.hidden=false;status.textContent='连接已更换，请在工作台新建终端；此页保留原输出。';});
-  addEventListener('sodeck:connectionChanged',event=>{disconnected=!event.detail.connected;if(disconnected){controls.invalidate();enabled=false;newTerminal.hidden=true;status.hidden=false;status.textContent='连接已断开，请在工作台重新连接；此页保留原输出。';}else if(ended){newTerminal.hidden=false;newTerminal.disabled=opening;}});
+  addEventListener('sodeck:contextChanged',()=>{controls.invalidate();enabled=false;stopSize();newTerminal.hidden=disconnected||!ended;status.hidden=false;status.textContent='连接已更换，请在工作台新建终端；此页保留原输出。';});
+  addEventListener('sodeck:connectionChanged',event=>{disconnected=!event.detail.connected;if(disconnected){controls.invalidate();enabled=false;stopSize();newTerminal.hidden=true;status.hidden=false;status.textContent='连接已断开，请在工作台重新连接；此页保留原输出。';}else if(ended){newTerminal.hidden=false;newTerminal.disabled=opening;}});
   addEventListener('sodeck:themeChanged',event=>theme(event.detail.tokens));
-  addEventListener('sodeck:focus',()=>{terminal.focus();void enqueueSize().catch(()=>{});});
-  addEventListener('sodeck:unmount',()=>{disposed=true;appearance.dispose();controls.dispose();observer.disconnect();terminal.dispose();});
+  addEventListener('sodeck:focus',()=>{terminal.focus();void enqueueSize(true).catch(()=>{});});
+  addEventListener('sodeck:unmount',()=>{disposed=true;stopSize();appearance.dispose();controls.dispose();observer.disconnect();terminal.dispose();});
   // The final output chunk may arrive without another chunk to trigger a checkpoint.
   const timer=setInterval(()=>{if(disposed){clearInterval(timer);return;}chain=chain.then(()=>checkpoint()).catch(()=>{});},500);
 })();
