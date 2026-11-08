@@ -3,7 +3,14 @@ use crate::{workspaces::Context, AppCore};
 use serde_json::{json, Value};
 use std::{sync::Arc, time::Duration};
 async fn wait<T>(stage: &str, mut read: impl FnMut() -> Option<T>) -> Result<T, String> {
-    tokio::time::timeout(Duration::from_secs(15), async {
+    wait_for(stage, 15, &mut read).await
+}
+async fn wait_for<T>(
+    stage: &str,
+    seconds: u64,
+    mut read: impl FnMut() -> Option<T>,
+) -> Result<T, String> {
+    tokio::time::timeout(Duration::from_secs(seconds), async {
         loop {
             if let Some(v) = read() {
                 break v;
@@ -12,7 +19,14 @@ async fn wait<T>(stage: &str, mut read: impl FnMut() -> Option<T>) -> Result<T, 
         }
     })
     .await
-    .map_err(|_| format!("原生插件等待超时（{stage}，15 秒）"))
+    .map_err(|_| format!("原生插件等待超时（{stage}，{seconds} 秒）"))
+}
+fn confirmed_running(runtime: &Value) -> Option<Result<(), String>> {
+    match runtime["state"].as_str() {
+        Some("running") => Some(Ok(())),
+        Some("closing" | "closed") => Some(Err(format!("原生终端启动前已结束：{runtime}"))),
+        _ => None,
+    }
 }
 fn view(core: &AppCore, context: &Context, key: &str) -> Option<String> {
     core.ui_snapshot("main").ok()?["workspaces"][&context.workspace_id]["views"]
@@ -109,12 +123,42 @@ async fn terminal_settings(
         if core
             .terminals
             .validation_surface(view_id)
-            .is_none_or(|(id, _)| id != terminal_id)
+            .is_none_or(|(id, _, _)| id != terminal_id)
         {
             return Err("修改外观重新创建了 PTY".into());
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn mounted_terminal_waits_for_creation_and_confirmed_launch() {
+        let mut observations = 0;
+        wait_for("异步终端", 1, || {
+            observations += 1;
+            let runtime = match observations {
+                1 => return None,
+                2 => json!({"state":"opening","startRequest":"notSent"}),
+                3 => json!({"state":"opening","startRequest":"sent"}),
+                _ => json!({"state":"running","startRequest":"accepted"}),
+            };
+            confirmed_running(&runtime)
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(observations, 4);
+        for state in ["closing", "closed"] {
+            let runtime = json!({"state":state,"outcome":{"error":{"message":"launch rejected"}}});
+            let error = confirmed_running(&runtime).unwrap().unwrap_err();
+            assert!(error.contains(state));
+            assert!(error.contains("launch rejected"));
+        }
+    }
 }
 pub(super) async fn roundtrip(
     core: &Arc<AppCore>,
@@ -157,10 +201,19 @@ pub(super) async fn roundtrip(
                 core.ui_snapshot("main").unwrap_or_default()
             )
         })?;
-    let (id, output) = core
-        .terminals
-        .validation_surface(&tv)
-        .ok_or("终端原语未创建")?;
+    // Mounting can precede asynchronous preparation and SSH launch confirmation.
+    let (id, output) = wait_for("终端会话启动确认", 45, || {
+        let (id, output, runtime) = core.terminals.validation_surface(&tv)?;
+        confirmed_running(&runtime).map(|result| result.map(|()| (id, output)))
+    })
+    .await
+    .map_err(|e| {
+        format!(
+            "{e}; {}",
+            core.ui_event(&window, &token, json!({"type":"terminal.status"}))
+                .unwrap_or_else(|error| json!({"error":error}))
+        )
+    })??;
     terminal_settings(core, &tv, &token).await?;
     let command = if cfg!(windows) {
         b"echo sodeck-native-pty-ok\r".to_vec()

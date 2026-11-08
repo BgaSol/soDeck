@@ -111,13 +111,13 @@ impl Terminals {
             terminal.cancel.cancel();
         }
     }
-    pub(crate) fn validation_surface(&self, view: &str) -> Option<(String, Arc<Replay>)> {
+    pub(crate) fn validation_surface(&self, view: &str) -> Option<(String, Arc<Replay>, Value)> {
         self.entries
             .lock()
             .unwrap()
             .iter()
             .find(|(_, t)| t.owner.view == view)
-            .map(|(id, t)| (id.clone(), t.output.clone()))
+            .map(|(id, t)| (id.clone(), t.output.clone(), t.snapshot()))
     }
     pub(crate) fn cancel(&self, matches: impl Fn(&Owner) -> bool) {
         let mut entries = self.entries.lock().unwrap();
