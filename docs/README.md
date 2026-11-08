@@ -31,7 +31,7 @@
 | 文件目录树 | [文件树设计](plan-file-tree.md) | [文件树](implementation-file-tree.md) |
 | 文件管理与传输 | [功能范围](plan-file-management.md)、[编码方案](plan-file-management-coding.md) | [文件管理](implementation-file-management.md) |
 | 网络隧道 | [插件方案](plan-network-proxy.md) | [网络隧道](implementation-network.md) |
-| 系统状态 | [功能设计](plan-system-status.md)、[编码方案](plan-system-status-coding.md) | [实现、验证与平台限制](implementation-system-status.md) |
+| 系统状态 | [功能设计](plan-system-status.md)、[编码方案](plan-system-status-coding.md) | [实现、验证与平台限制](implementation-system-status.md)、[界面规范](../plugins/system-status/DESIGN.md) |
 | 工作台样式与剪贴板 | [设计方案](plan-workbench-design.md) | [样式与剪贴板](implementation-workbench-design.md) |
 | Tab 新建入口 | [交互方案](plan-tab-creation.md) | [两级 Tab](implementation-tab-creation.md) |
 | 工作区菜单 | — | [菜单修复](implementation-component-menus.md) |

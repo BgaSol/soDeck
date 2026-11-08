@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-08T10:43:36.703Z",
+  "title": "Design System: SoDeck 系统状态",
+  "extensions": {
+    "colorMeta": {
+      "light-blue": {"role":"primary","displayName":"浅色 · 指标蓝","tonalRamp":["oklch(15% 0.0411 254.08)","oklch(26% 0.0705 254.08)","oklch(38% 0.0939 254.08)","oklch(49% 0.1116 254.08)","oklch(61% 0.1174 254.08)","oklch(72% 0.1057 254.08)","oklch(84% 0.0763 254.08)","oklch(95% 0.0294 254.08)"]},
+      "light-green": {"role":"secondary","displayName":"浅色 · 指标绿","tonalRamp":["oklch(15% 0.0338 159.91)","oklch(26% 0.0579 159.91)","oklch(38% 0.0772 159.91)","oklch(49% 0.0917 159.91)","oklch(61% 0.0965 159.91)","oklch(72% 0.0869 159.91)","oklch(84% 0.0627 159.91)","oklch(95% 0.0241 159.91)"]},
+      "light-focus": {"role":"primary","displayName":"浅色 · 焦点紫","tonalRamp":["oklch(15% 0.0581 288.61)","oklch(26% 0.0996 288.61)","oklch(38% 0.1328 288.61)","oklch(49% 0.1577 288.61)","oklch(61% 0.1660 288.61)","oklch(72% 0.1494 288.61)","oklch(84% 0.1079 288.61)","oklch(95% 0.0415 288.61)"]},
+      "light-warning": {"role":"tertiary","displayName":"浅色 · 注意琥珀","tonalRamp":["oklch(15% 0.0363 70.39)","oklch(26% 0.0623 70.39)","oklch(38% 0.0830 70.39)","oklch(49% 0.0986 70.39)","oklch(61% 0.1038 70.39)","oklch(72% 0.0934 70.39)","oklch(84% 0.0674 70.39)","oklch(95% 0.0259 70.39)"]},
+      "light-error": {"role":"tertiary","displayName":"浅色 · 错误红","tonalRamp":["oklch(15% 0.0558 13.63)","oklch(26% 0.0957 13.63)","oklch(38% 0.1276 13.63)","oklch(49% 0.1515 13.63)","oklch(61% 0.1595 13.63)","oklch(72% 0.1435 13.63)","oklch(84% 0.1037 13.63)","oklch(95% 0.0399 13.63)"]},
+      "light-background": {"role":"neutral","displayName":"浅色 · 数据背景","tonalRamp":["oklch(15% 0.0010 264.54)","oklch(26% 0.0017 264.54)","oklch(38% 0.0023 264.54)","oklch(49% 0.0027 264.54)","oklch(61% 0.0029 264.54)","oklch(72% 0.0026 264.54)","oklch(84% 0.0019 264.54)","oklch(95% 0.0007 264.54)"]},
+      "light-panel": {"role":"neutral","displayName":"浅色 · 控件面板","tonalRamp":["oklch(15% 0.0000 89.88)","oklch(26% 0.0000 89.88)","oklch(38% 0.0000 89.88)","oklch(49% 0.0000 89.88)","oklch(61% 0.0000 89.88)","oklch(72% 0.0000 89.88)","oklch(84% 0.0000 89.88)","oklch(95% 0.0000 89.88)"]},
+      "light-text": {"role":"neutral","displayName":"浅色 · 主文字","tonalRamp":["oklch(15% 0.0088 268.36)","oklch(26% 0.0150 268.36)","oklch(38% 0.0201 268.36)","oklch(49% 0.0238 268.36)","oklch(61% 0.0251 268.36)","oklch(72% 0.0226 268.36)","oklch(84% 0.0163 268.36)","oklch(95% 0.0063 268.36)"]},
+      "light-muted": {"role":"neutral","displayName":"浅色 · 辅助文字","tonalRamp":["oklch(15% 0.0114 265.19)","oklch(26% 0.0195 265.19)","oklch(38% 0.0260 265.19)","oklch(49% 0.0309 265.19)","oklch(61% 0.0325 265.19)","oklch(72% 0.0292 265.19)","oklch(84% 0.0211 265.19)","oklch(95% 0.0081 265.19)"]},
+      "light-border": {"role":"neutral","displayName":"浅色 · 结构边线","tonalRamp":["oklch(15% 0.0051 264.49)","oklch(26% 0.0088 264.49)","oklch(38% 0.0117 264.49)","oklch(49% 0.0139 264.49)","oklch(61% 0.0146 264.49)","oklch(72% 0.0132 264.49)","oklch(84% 0.0095 264.49)","oklch(95% 0.0037 264.49)"]},
+      "light-hover": {"role":"neutral","displayName":"浅色 · 悬停反馈","tonalRamp":["oklch(15% 0.0024 277.16)","oklch(26% 0.0041 277.16)","oklch(38% 0.0054 277.16)","oklch(49% 0.0064 277.16)","oklch(61% 0.0068 277.16)","oklch(72% 0.0061 277.16)","oklch(84% 0.0044 277.16)","oklch(95% 0.0017 277.16)"]},
+      "light-selected": {"role":"neutral","displayName":"浅色 · 按下与选择","tonalRamp":["oklch(15% 0.0076 297.42)","oklch(26% 0.0130 297.42)","oklch(38% 0.0174 297.42)","oklch(49% 0.0206 297.42)","oklch(61% 0.0217 297.42)","oklch(72% 0.0196 297.42)","oklch(84% 0.0141 297.42)","oklch(95% 0.0054 297.42)"]},
+      "dark-blue": {"role":"primary","displayName":"深色 · 指标蓝","tonalRamp":["oklch(15% 0.0414 259.22)","oklch(26% 0.0709 259.22)","oklch(38% 0.0945 259.22)","oklch(49% 0.1123 259.22)","oklch(61% 0.1182 259.22)","oklch(72% 0.1063 259.22)","oklch(84% 0.0768 259.22)","oklch(95% 0.0295 259.22)"]},
+      "dark-green": {"role":"secondary","displayName":"深色 · 指标绿","tonalRamp":["oklch(15% 0.0281 161.49)","oklch(26% 0.0482 161.49)","oklch(38% 0.0642 161.49)","oklch(49% 0.0763 161.49)","oklch(61% 0.0803 161.49)","oklch(72% 0.0722 161.49)","oklch(84% 0.0522 161.49)","oklch(95% 0.0201 161.49)"]},
+      "dark-focus": {"role":"primary","displayName":"深色 · 焦点紫","tonalRamp":["oklch(15% 0.0424 292.45)","oklch(26% 0.0726 292.45)","oklch(38% 0.0968 292.45)","oklch(49% 0.1150 292.45)","oklch(61% 0.1210 292.45)","oklch(72% 0.1089 292.45)","oklch(84% 0.0787 292.45)","oklch(95% 0.0303 292.45)"]},
+      "dark-warning": {"role":"tertiary","displayName":"深色 · 注意琥珀","tonalRamp":["oklch(15% 0.0314 78.23)","oklch(26% 0.0539 78.23)","oklch(38% 0.0719 78.23)","oklch(49% 0.0854 78.23)","oklch(61% 0.0898 78.23)","oklch(72% 0.0809 78.23)","oklch(84% 0.0584 78.23)","oklch(95% 0.0225 78.23)"]},
+      "dark-error": {"role":"tertiary","displayName":"深色 · 错误红","tonalRamp":["oklch(15% 0.0327 4.10)","oklch(26% 0.0561 4.10)","oklch(38% 0.0748 4.10)","oklch(49% 0.0889 4.10)","oklch(61% 0.0935 4.10)","oklch(72% 0.0842 4.10)","oklch(84% 0.0608 4.10)","oklch(95% 0.0234 4.10)"]},
+      "dark-background": {"role":"neutral","displayName":"深色 · 数据背景","tonalRamp":["oklch(15% 0.0054 274.17)","oklch(26% 0.0093 274.17)","oklch(38% 0.0124 274.17)","oklch(49% 0.0147 274.17)","oklch(61% 0.0155 274.17)","oklch(72% 0.0140 274.17)","oklch(84% 0.0101 274.17)","oklch(95% 0.0039 274.17)"]},
+      "dark-panel": {"role":"neutral","displayName":"深色 · 控件面板","tonalRamp":["oklch(15% 0.0061 270.68)","oklch(26% 0.0104 270.68)","oklch(38% 0.0139 270.68)","oklch(49% 0.0165 270.68)","oklch(61% 0.0174 270.68)","oklch(72% 0.0156 270.68)","oklch(84% 0.0113 270.68)","oklch(95% 0.0043 270.68)"]},
+      "dark-text": {"role":"neutral","displayName":"深色 · 主文字","tonalRamp":["oklch(15% 0.0044 271.28)","oklch(26% 0.0076 271.28)","oklch(38% 0.0101 271.28)","oklch(49% 0.0120 271.28)","oklch(61% 0.0126 271.28)","oklch(72% 0.0113 271.28)","oklch(84% 0.0082 271.28)","oklch(95% 0.0031 271.28)"]},
+      "dark-muted": {"role":"neutral","displayName":"深色 · 辅助文字","tonalRamp":["oklch(15% 0.0105 266.32)","oklch(26% 0.0180 266.32)","oklch(38% 0.0240 266.32)","oklch(49% 0.0285 266.32)","oklch(61% 0.0300 266.32)","oklch(72% 0.0270 266.32)","oklch(84% 0.0195 266.32)","oklch(95% 0.0075 266.32)"]},
+      "dark-border": {"role":"neutral","displayName":"深色 · 结构边线","tonalRamp":["oklch(15% 0.0123 263.09)","oklch(26% 0.0211 263.09)","oklch(38% 0.0281 263.09)","oklch(49% 0.0334 263.09)","oklch(61% 0.0352 263.09)","oklch(72% 0.0317 263.09)","oklch(84% 0.0229 263.09)","oklch(95% 0.0088 263.09)"]},
+      "dark-hover": {"role":"neutral","displayName":"深色 · 悬停反馈","tonalRamp":["oklch(15% 0.0071 269.50)","oklch(26% 0.0122 269.50)","oklch(38% 0.0162 269.50)","oklch(49% 0.0193 269.50)","oklch(61% 0.0203 269.50)","oklch(72% 0.0183 269.50)","oklch(84% 0.0132 269.50)","oklch(95% 0.0051 269.50)"]},
+      "dark-selected": {"role":"neutral","displayName":"深色 · 按下与选择","tonalRamp":["oklch(15% 0.0142 293.99)","oklch(26% 0.0244 293.99)","oklch(38% 0.0326 293.99)","oklch(49% 0.0387 293.99)","oklch(61% 0.0407 293.99)","oklch(72% 0.0366 293.99)","oklch(84% 0.0265 293.99)","oklch(95% 0.0102 293.99)"]},
+      "dopamine-blue": {"role":"primary","displayName":"多巴胺 · 指标蓝","tonalRamp":["oklch(15% 0.0411 254.08)","oklch(26% 0.0705 254.08)","oklch(38% 0.0939 254.08)","oklch(49% 0.1116 254.08)","oklch(61% 0.1174 254.08)","oklch(72% 0.1057 254.08)","oklch(84% 0.0763 254.08)","oklch(95% 0.0294 254.08)"]},
+      "dopamine-green": {"role":"secondary","displayName":"多巴胺 · 指标绿","tonalRamp":["oklch(15% 0.0315 165.51)","oklch(26% 0.0540 165.51)","oklch(38% 0.0721 165.51)","oklch(49% 0.0856 165.51)","oklch(61% 0.0901 165.51)","oklch(72% 0.0811 165.51)","oklch(84% 0.0585 165.51)","oklch(95% 0.0225 165.51)"]},
+      "dopamine-focus": {"role":"primary","displayName":"多巴胺 · 焦点紫","tonalRamp":["oklch(15% 0.0520 285.13)","oklch(26% 0.0892 285.13)","oklch(38% 0.1189 285.13)","oklch(49% 0.1412 285.13)","oklch(61% 0.1486 285.13)","oklch(72% 0.1338 285.13)","oklch(84% 0.0966 285.13)","oklch(95% 0.0372 285.13)"]},
+      "dopamine-warning": {"role":"tertiary","displayName":"多巴胺 · 注意琥珀","tonalRamp":["oklch(15% 0.0340 66.66)","oklch(26% 0.0582 66.66)","oklch(38% 0.0776 66.66)","oklch(49% 0.0922 66.66)","oklch(61% 0.0970 66.66)","oklch(72% 0.0873 66.66)","oklch(84% 0.0631 66.66)","oklch(95% 0.0243 66.66)"]},
+      "dopamine-error": {"role":"tertiary","displayName":"多巴胺 · 错误红","tonalRamp":["oklch(15% 0.0533 19.60)","oklch(26% 0.0914 19.60)","oklch(38% 0.1219 19.60)","oklch(49% 0.1447 19.60)","oklch(61% 0.1523 19.60)","oklch(72% 0.1371 19.60)","oklch(84% 0.0990 19.60)","oklch(95% 0.0381 19.60)"]},
+      "dopamine-background": {"role":"neutral","displayName":"多巴胺 · 数据背景","tonalRamp":["oklch(15% 0.0097 98.05)","oklch(26% 0.0167 98.05)","oklch(38% 0.0222 98.05)","oklch(49% 0.0264 98.05)","oklch(61% 0.0278 98.05)","oklch(72% 0.0250 98.05)","oklch(84% 0.0181 98.05)","oklch(95% 0.0069 98.05)"]},
+      "dopamine-panel": {"role":"neutral","displayName":"多巴胺 · 控件面板","tonalRamp":["oklch(15% 0.0097 98.05)","oklch(26% 0.0167 98.05)","oklch(38% 0.0222 98.05)","oklch(49% 0.0264 98.05)","oklch(61% 0.0278 98.05)","oklch(72% 0.0250 98.05)","oklch(84% 0.0181 98.05)","oklch(95% 0.0069 98.05)"]},
+      "dopamine-text": {"role":"neutral","displayName":"多巴胺 · 主文字","tonalRamp":["oklch(15% 0.0014 128.64)","oklch(26% 0.0024 128.64)","oklch(38% 0.0032 128.64)","oklch(49% 0.0038 128.64)","oklch(61% 0.0040 128.64)","oklch(72% 0.0036 128.64)","oklch(84% 0.0026 128.64)","oklch(95% 0.0010 128.64)"]},
+      "dopamine-muted": {"role":"neutral","displayName":"多巴胺 · 辅助文字","tonalRamp":["oklch(15% 0.0058 124.86)","oklch(26% 0.0099 124.86)","oklch(38% 0.0132 124.86)","oklch(49% 0.0157 124.86)","oklch(61% 0.0166 124.86)","oklch(72% 0.0149 124.86)","oklch(84% 0.0108 124.86)","oklch(95% 0.0041 124.86)"]},
+      "dopamine-border": {"role":"neutral","displayName":"多巴胺 · 结构边线","tonalRamp":["oklch(15% 0.0014 128.64)","oklch(26% 0.0024 128.64)","oklch(38% 0.0032 128.64)","oklch(49% 0.0038 128.64)","oklch(61% 0.0040 128.64)","oklch(72% 0.0036 128.64)","oklch(84% 0.0026 128.64)","oklch(95% 0.0010 128.64)"]},
+      "dopamine-hover": {"role":"neutral","displayName":"多巴胺 · 悬停反馈","tonalRamp":["oklch(15% 0.0240 93.89)","oklch(26% 0.0412 93.89)","oklch(38% 0.0549 93.89)","oklch(49% 0.0652 93.89)","oklch(61% 0.0686 93.89)","oklch(72% 0.0618 93.89)","oklch(84% 0.0446 93.89)","oklch(95% 0.0172 93.89)"]},
+      "dopamine-selected": {"role":"neutral","displayName":"多巴胺 · 按下与选择","tonalRamp":["oklch(15% 0.0454 92.24)","oklch(26% 0.0778 92.24)","oklch(38% 0.1037 92.24)","oklch(49% 0.1232 92.24)","oklch(61% 0.1296 92.24)","oklch(72% 0.1167 92.24)","oklch(84% 0.0843 92.24)","oklch(95% 0.0324 92.24)"]}
+    },
+    "typographyMeta": {
+      "body": {"displayName":"正文","purpose":"界面基础文字。"},
+      "title": {"displayName":"分组标题","purpose":"状态面板和指标标题。"},
+      "host-title": {"displayName":"主机身份","purpose":"服务器名称。"},
+      "metric": {"displayName":"主要读数","purpose":"CPU 与内存当前百分比。"},
+      "network": {"displayName":"双向速率","purpose":"网络接收与发送当前值。"},
+      "label": {"displayName":"辅助说明","purpose":"单位、图例、时间与容量说明。"},
+      "disclosure": {"displayName":"展开入口","purpose":"设备、I/O 与采集详情标题。"},
+      "path": {"displayName":"挂载路径","purpose":"允许断行的等宽挂载点。"}
+    },
+    "shadows": [],
+    "motion": [{"name":"control-feedback","value":"background-color 100ms ease-out","purpose":"shared.css 的按钮背景状态过渡；减少动态效果时关闭。"},{"name":"detail-chevron","value":"transform 180ms ease-out","purpose":"details 箭头旋转；减少动态效果时关闭。"}],
+    "breakpoints": [{"name":"compact-panel","value":"240px"}]
+  },
+  "components": [
+    {
+      "name": "顶部图标操作",
+      "kind": "button",
+      "refersTo": "status-action",
+      "description": "刷新与暂停，透明紧凑操作，保留可访问名称。",
+      "html": "<button class=\"ds-action\" type=\"button\" title=\"刷新\" aria-label=\"刷新\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 10a8 8 0 0 0-14-5L3 8m0-5v5h5M4 14a8 8 0 0 0 14 5l3-3m0 5v-5h-5\"/></svg></button>",
+      "css": ".ds-action {width:27px;min-height:27px;padding:0;display:grid;place-items:center;border:var(--sd-stroke-control,1px) solid transparent;border-radius:5px;background:transparent;color:var(--muted,#586174);cursor:pointer} .ds-action svg {width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round} .ds-action:focus-visible {outline:2px solid var(--accent,#7661d1);outline-offset:2px} .ds-action:disabled {opacity:.5;cursor:default}"
+    },
+    {
+      "name": "接口选择器",
+      "kind": "input",
+      "refersTo": "interface-select",
+      "description": "原生选择器，与网络分组标题并排。",
+      "html": "<select class=\"ds-select\" aria-label=\"选择网络接口\"><option>eth0</option><option>eth1</option></select>",
+      "css": ".ds-select {font:11px/1.5 system-ui, -apple-system, \"Segoe UI\", sans-serif; color:var(--text,#242936); background:var(--panel,#fff); border:var(--sd-stroke-control,1px) solid var(--border,#dce1eb); border-radius:5px; cursor:pointer; transition:background-color 100ms ease-out;min-width:64px;max-width:100%;padding:2px 5px} .ds-page:hover, .ds-select:hover {background:var(--hover,#eff0f5)} .ds-page:active {background:var(--accent-bg,#f0ecfc)} .ds-page:disabled,.ds-select:disabled {opacity:.5;cursor:default} .ds-page:focus-visible,.ds-select:focus-visible {outline:2px solid var(--accent,#7661d1);outline-offset:2px}"
+    },
+    {
+      "name": "趋势指标",
+      "kind": "custom",
+      "refersTo": "metric-section",
+      "description": "当前读数、五分钟真实折线与时间说明共处一组；预览为静态样本。",
+      "html": "<section class=\"ds-trend\"><div class=\"ds-heading\"><h2>CPU</h2><strong>23.4<span>%</span></strong></div><p>8 个逻辑核心</p><svg viewBox=\"0 0 240 48\" preserveAspectRatio=\"none\" tabindex=\"0\" role=\"img\" aria-label=\"CPU 最近五分钟趋势\"><title>静态样本，缺口不连线</title><path class=\"ds-grid\" d=\"M0 2H240 M0 24H240 M0 46H240\"/><path class=\"ds-series\" d=\"M0 35 L22 37 L44 34 L66 36 L84 35 M100 37 L122 23 L140 35 L167 34 L190 36 L217 34 L240 36\"/></svg><div class=\"ds-time\"><span>5 分钟前</span><span>现在</span></div></section>",
+      "css": ".ds-trend {font:11px/1.5 system-ui, -apple-system, \"Segoe UI\", sans-serif;font-variant-numeric:tabular-nums;color:var(--text,#242936);padding:6px 0;border-bottom:1px solid color-mix(in srgb,var(--border,#dce1eb) 75%,transparent)} .ds-heading {display:flex;align-items:center;justify-content:space-between;gap:8px} .ds-heading h2 {margin:0;font-size:13px;line-height:1.4;font-weight:650} .ds-heading strong {font-size:25px;line-height:1.15;font-weight:600;letter-spacing:-.025em} .ds-heading strong span {font-size:13px;font-weight:500;letter-spacing:0;margin-left:2px;color:var(--muted,#586174)} .ds-trend p {margin:2px 0 0;color:var(--muted,#586174)} .ds-trend > svg {display:block;width:100%;height:30px;margin-top:5px;fill:none;cursor:crosshair} .ds-grid {stroke:color-mix(in srgb,var(--border,#dce1eb) 45%,transparent);stroke-width:.7;vector-effect:non-scaling-stroke} .ds-series {stroke:var(--terminal-blue,#245b9a);stroke-width:1.6;vector-effect:non-scaling-stroke} .ds-trend > svg:focus-visible {outline:2px solid var(--accent,#7661d1);outline-offset:2px} .ds-time {display:flex;justify-content:space-between;margin-top:2px;line-height:1.2;color:var(--muted,#586174)}"
+    },
+    {
+      "name": "挂载容量",
+      "kind": "custom",
+      "refersTo": "filesystem-meter",
+      "description": "路径、分母、只读容量条和剩余量；注意状态同时显示文字。",
+      "html": "<div class=\"ds-filesystem\"><div class=\"ds-fs-top\"><strong>/data</strong><span>286 GiB / 500 GiB</span></div><div class=\"ds-meter\" role=\"meter\" aria-label=\"/data 已用容量\" aria-valuemin=\"0\" aria-valuemax=\"100\" aria-valuenow=\"57.2\"><span style=\"width:57.2%\"></span></div><div class=\"ds-fs-bottom\"><span>可用 214 GiB</span><span>57.2%</span></div></div>",
+      "css": ".ds-filesystem {font:11px/1.5 system-ui, -apple-system, \"Segoe UI\", sans-serif;font-variant-numeric:tabular-nums;margin-top:8px;color:var(--muted,#586174)} .ds-fs-top,.ds-fs-bottom {display:flex;justify-content:space-between;flex-wrap:wrap;gap:2px 8px} .ds-fs-top strong {font:600 11px/1.5 Consolas,ui-monospace,monospace;color:var(--text,#242936);overflow-wrap:anywhere;min-width:0} .ds-meter {height:4px;margin:6px 0 5px;background:color-mix(in srgb,var(--border,#dce1eb) 45%,transparent);border-radius:2px;overflow:hidden} .ds-meter > span {height:100%;display:block;background:var(--good,#23734f);border-radius:inherit} .ds-filesystem.ds-warning .ds-meter > span {background:var(--warning,#8a590f)} .ds-filesystem.ds-warning .ds-fs-bottom {color:var(--warning,#8a590f)} @media(forced-colors:active) {.ds-meter > span {background:Highlight}}"
+    },
+    {
+      "name": "按需详情",
+      "kind": "custom",
+      "refersTo": "detail-summary",
+      "description": "原生 details，用箭头和辅助文字引出设备与采集信息。",
+      "html": "<details class=\"ds-disclosure\"><summary><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m9 5 7 7-7 7\"/></svg><span>设备信息</span><span class=\"ds-meta\">规格与运行</span></summary><dl><dt>主机名</dt><dd>prod-web-01</dd><dt>逻辑核心</dt><dd>8</dd></dl></details>",
+      "css": ".ds-disclosure {font:11px/1.5 system-ui, -apple-system, \"Segoe UI\", sans-serif;color:var(--text,#242936);border-bottom:1px solid color-mix(in srgb,var(--border,#dce1eb) 75%,transparent)} .ds-disclosure > summary {display:flex;align-items:center;gap:7px;min-height:39px;list-style:none;font-size:12px;font-weight:500;cursor:pointer} .ds-disclosure > summary::-webkit-details-marker {display:none} .ds-disclosure svg {width:12px;height:12px;color:var(--muted,#586174);fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;transition:transform 180ms ease-out} .ds-disclosure[open] > summary > svg {transform:rotate(90deg)} .ds-disclosure > summary:focus-visible {outline:2px solid var(--accent,#7661d1);outline-offset:2px} .ds-meta {margin-left:auto;color:var(--muted,#586174);font-size:11px;overflow-wrap:anywhere} .ds-disclosure dl {display:grid;grid-template-columns:minmax(65px,.9fr) minmax(0,1.1fr);gap:9px 12px;margin:0;padding:2px 0 14px 19px} .ds-disclosure dt {color:var(--muted,#586174)} .ds-disclosure dd {margin:0;overflow-wrap:anywhere} @media(prefers-reduced-motion:reduce) {.ds-disclosure svg {transition:none}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "技术期刊数据图表",
+    "overview": "这份规范仅适用于系统状态插件的 ui/，记录正式实现中的视觉规则。它采用用户确认的“技术期刊数据图表”语言：紧凑、平静，让当前值、近期曲线和辅助说明沿同一连续数据面排列。\n\n宿主提供浅色、深色和多巴胺主题，插件共用结构和指标语义。数据来自当前服务器的实际采样；读取中、不可用、过期与断线各有文字，详情按需展开。",
+    "keyCharacteristics": [
+      "连续分区，数值、曲线与时间对齐。",
+      "三主题继承宿主 token，指标类别保持一致。",
+      "保留真实历史与缺口，来源和规格按需展开。"
+    ],
+    "rules": [
+      {
+        "name": "The Series Identity Rule",
+        "body": "CPU 与接收共享蓝色；内存与发送共享绿色。主题改变颜色值，不改变对应关系。",
+        "section": "colors"
+      },
+      {
+        "name": "The Numeric Alignment Rule",
+        "body": "读数、容量和时间使用等宽数字；单位退到辅助字号，标题不与当前值争夺权重。",
+        "section": "typography"
+      },
+      {
+        "name": "The Continuous Section Rule",
+        "body": "状态指标在同一滚动面中以细线分组；层次来自对齐、字阶与间距。",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do 继承宿主三主题的颜色与描边 token，保持曲线和图例的类别对应。",
+      "Do 显示明确单位、容量分母和成功采样时间；注意与错误状态同时使用文字。",
+      "Do 使用原生 select、details 和只读 meter，保留可访问名称、键盘焦点与减少动态效果设置。"
+    ],
+    "donts": [
+      "Don't 用零值代替未知数据，或用连续线跨过采样缺口。",
+      "Don't 用新的数据卡片、阴影或装饰动效替代当前连续分区。",
+      "Don't 将原型的独立色值或宿主其他组件规则扩展为本插件规范。"
+    ]
+  }
+}
