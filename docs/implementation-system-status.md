@@ -57,4 +57,16 @@ OpenWrt/Dropbear、Windows Server/不同默认 SSH shell、真实 macOS/FreeBSD/
 
 正式五目标原生打包与包内启动退出由现有 `Package plugin` 执行，运行、来源提交与实际执行/跳过范围统一记录在[插件 CHANGELOG](../plugins/system-status/CHANGELOG.md)。本次没有重复 Docker GNU/BusyBox、远端平台设备或核心包验收；采集器及其既有平台限制没有扩展，不用界面回归替代这些实测。
 
+## 0.2.1 远端 CPU 架构
+
+在既有服务器摘要的系统名旁和设备详情中加入 `identity.architecture`，沿用现有辅助字号与自动换行。初读、连接切换后无有效 identity 观测时显示待读取；采集成功但缺少架构时明确未识别。
+
+Unix 的 identity 命令增加 `uname -m`，macOS 同时读取 `hw.optional.arm64`，确认 Apple Silicon 时显示 ARM64。Windows 在既有 `Win32_Processor` 查询中保留 Architecture 数值并映射名称，不使用客户端安装包架构或 CPU 型号推断。实际 Windows 采集发现 PowerShell 单项数组会被展开成对象，导致原有 CPU 型号、核心数与新增架构无法解析；CPU 来源保留数组边界后恢复单/多处理器统一结构。
+
+常见别名归一化为 x86_64、ARM64、x86、ARMv7/ARMv6；其他有效的短机器架构值保留原文，缺失、unknown 或多行异常值不作为已识别架构。该字段只扩展插件自己的快照数据，不修改核心或 RPC 主版本，不增加动态周期查询或生产依赖。
+
+验收覆盖 Unix 各分支与 Windows 数值映射、macOS 翻译进程场景、未知数据和已有型号不能替代架构、实际本机身份采集、GNU/BusyBox 采集、三主题 160–480px、ARM64、架构缺失和 Context 无观测。五目标原生归档与同一提交的执行范围维护在[插件 CHANGELOG](../plugins/system-status/CHANGELOG.md)。
+
+本机 TypeScript/格式与正式前端构建、78 项脚本回归、17 项插件测试、Windows 实际身份采集、独立 Windows x86_64 包内程序生命周期，以及隔离 Windows OpenSSH 集成和包内 UI 通过。GNU 与 BusyBox 分别执行容器专项并通过，新增架构随实际命令读取和解析。截图仍位于 `artifacts/system-status-ui/`，包含 ARM64 三主题、展开详情、未识别和当前连接待读取状态；独立局部复核通过，原型与既有插件设计规范保持不变。真实远端 Rosetta 会话、OpenWrt/BSD/其他 Unix 设备尚未验证，本机映射和容器结果不替代这些设备验收。
+
 返回[文档索引](README.md)

@@ -130,6 +130,8 @@ function render() {
   for (const [id, key] of [['hostname', 'hostname'], ['system', 'system'], ['model', 'cpuModel'], ['cores', 'cores']]) text(id, d.identity?.[key] ?? '此系统暂未提供');
   text('host-name', d.identity?.hostname || '服务器');
   text('host-system', d.identity?.system || snapshot?.family || '识别系统中');
+  text('host-architecture', d.identity?.architecture || (group('identity')?.observedAt ? '架构未识别' : '架构待读取'));
+  text('architecture', d.identity?.architecture || (group('identity')?.observedAt ? '未识别' : '正在读取'));
   text('host-cores', d.identity?.cores ? d.identity.cores + ' 核' : '');
   $('host-cores').hidden = !d.identity?.cores;
   text('host-memory', total ? bytes(total) + ' 内存' : '');

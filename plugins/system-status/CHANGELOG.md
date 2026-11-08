@@ -1,5 +1,13 @@
 # 系统状态插件
 
+## 0.2.1
+
+- 顶部系统名旁显示远端 CPU 架构，设备信息增加独立架构项；常见别名统一为 x86_64、ARM64、x86、ARMv7 等。
+- Unix 从远端 `uname -m` 读取，macOS 另用 `hw.optional.arm64` 确认 Apple Silicon；Windows 复用 `Win32_Processor.Architecture`，修正单处理器查询结果被展开后丢失 CPU 信息的问题。
+- 未读到架构时明确显示“架构未识别”，连接切换后显示待读取；保持既有三主题和窄侧栏布局。
+
+沿用核心 API 1，不新增生产依赖。采集、界面和平台验收见[实施记录](../../docs/implementation-system-status.md)。
+
 ## 0.2.0
 
 - 重新组织右侧状态面板：紧凑服务器摘要、清晰的 CPU/内存读数、网络收发和挂载剩余空间，设备与采集详情按需展开。

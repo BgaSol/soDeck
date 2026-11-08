@@ -10,7 +10,7 @@ const observed = Date.now();
 const base = {
   context: { workspaceId: 'status-workspace', serverId: 'server-1', connectionId: 'connection-1', generation: 1 },
   revision: 1, connected: true, paused: false, family: 'Linux', intervalSeconds: 5, collecting: false, navigation: {},
-  data: { identity: { hostname: 'prod-web-01', system: 'Ubuntu 24.04 LTS', cpuModel: 'Intel Xeon Platinum', cores: 8 }, cpu: { value: 23.4 }, memory: { value: 62.1, total: '17179869184', available: '6519760810' }, uptime: { seconds: 1578240 }, load: ['0.42', '0.38', '0.31'] },
+  data: { identity: { hostname: 'prod-web-01', system: 'Ubuntu 24.04 LTS', cpuModel: 'Intel Xeon Platinum', cores: 8, architecture: 'x86_64' }, cpu: { value: 23.4 }, memory: { value: 62.1, total: '17179869184', available: '6519760810' }, uptime: { seconds: 1578240 }, load: ['0.42', '0.38', '0.31'] },
   network: { device: { id: 'eth0', name: 'eth0' }, rates: { first: 131481.6, second: 43827.2 } },
   disk: { device: { id: '8:0', name: 'nvme0n1' }, rates: { first: 1258291, second: 393216 } },
   groups: ['identity', 'dynamic', 'topology', 'capacity', 'uptime'].map(name => ({ name, observedAt: observed - (name === 'capacity' ? 32000 : 0), staleAfterMs: name === 'dynamic' ? 10000 : 120000 }))
@@ -98,6 +98,8 @@ async function refresh() { await frame.getByRole('button', { name: '刷新', exa
 try {
   await page.goto('http://127.0.0.1:' + server.address().port);
   await frame.locator('#cpu').filter({ hasText: '23.4%' }).waitFor();
+  assert.equal(await frame.locator('#host-architecture').innerText(), 'x86_64');
+  assert.equal(await frame.locator('#architecture').textContent(), 'x86_64');
   assert.match(await frame.locator('#memory-caption').innerText(), /已用 9.9 GiB \/ 16 GiB/);
   await page.waitForFunction(() => document.querySelector('iframe').contentDocument.querySelectorAll('#network-chart .series').length === 2);
   const receivePath = await frame.locator('#network-chart .series.first').getAttribute('d');
@@ -136,7 +138,40 @@ try {
     }
   }
   await page.setViewportSize({ width: 320, height: 760 });
+  snapshot.groups.forEach(g => g.observedAt = Date.now());
+  snapshot.data.identity.cpuModel = 'ARM Neoverse N1';
+  snapshot.data.identity.architecture = 'ARM64'; snapshot.revision++; await refresh();
+  assert.equal(await frame.locator('#host-architecture').innerText(), 'ARM64');
+  assert.equal(await frame.locator('#architecture').textContent(), 'ARM64');
+  for (const theme of ['light', 'dark', 'dopamine']) {
+    await applyTheme(theme);
+    for (const width of [160, 320]) {
+      await page.setViewportSize({ width, height: 760 });
+      await frame.locator('#scroll').evaluate(e => e.scrollTop = 0);
+      assert(await frame.locator('body').evaluate(e => e.scrollWidth <= e.clientWidth), 'ARM64 overflow at ' + width);
+      await page.screenshot({ path: 'artifacts/system-status-ui/arm64-' + theme + '-' + width + '.png' });
+    }
+  }
+  await page.setViewportSize({ width: 320, height: 760 });
   await applyTheme('light');
+  await frame.locator('#device > summary').click();
+  await page.setViewportSize({ width: 320, height: 1100 });
+  await frame.locator('#scroll').evaluate(e => e.scrollTop = 0);
+  assert.equal(await frame.locator('#architecture').innerText(), 'ARM64');
+  await page.screenshot({ path: 'artifacts/system-status-ui/architecture-details-light.png' });
+  await frame.locator('#device > summary').click();
+  await page.setViewportSize({ width: 320, height: 760 });
+  snapshot.groups.forEach(g => g.observedAt = Date.now());
+  snapshot.data.identity.architecture = null; snapshot.revision++; await refresh();
+  assert.equal(await frame.locator('#host-architecture').innerText(), '架构未识别');
+  assert.equal(await frame.locator('#architecture').textContent(), '未识别');
+  await page.screenshot({ path: 'artifacts/system-status-ui/architecture-unknown-light.png' });
+  delete snapshot.data.identity.architecture; snapshot.revision++; await refresh();
+  assert.equal(await frame.locator('#host-architecture').innerText(), '架构未识别');
+  snapshot.data.identity.architecture = 'riscv64-'.repeat(8); snapshot.revision++; await refresh();
+  assert(await frame.locator('body').evaluate(e => e.scrollWidth <= e.clientWidth), 'Long architecture overflow');
+  snapshot.data.identity.architecture = 'x86_64';
+  snapshot.data.identity.cpuModel = base.data.identity.cpuModel;
   snapshot.data.identity.hostname = '生产服务器 / 很长的中文名称设备';
   files = [{ id: 'large', path: '/很长的挂载目录 / volume with spaces', total: '9007199254740993', used: '4000000000000000', available: '5007199254740993', percent: 44.4, observedAt: Date.now() }];
   snapshot.revision++; await refresh();
@@ -209,6 +244,7 @@ try {
   await frame.locator('#notice').filter({ hasText: '首次读取失败' }).waitFor();
   assert.equal(await frame.locator('#cpu').innerText(), '采样中');
   assert.equal(await frame.locator('#host-name').innerText(), '服务器');
+  assert.equal(await frame.locator('#host-architecture').innerText(), '架构待读取');
   assert.equal(await frame.locator('.filesystem').count(), 0);
   assert.equal(await frame.locator('#pause').isDisabled(), true);
   await frame.locator('#scroll').evaluate(e => e.scrollTop = 0);
@@ -223,10 +259,12 @@ try {
   assert.equal(await frame.locator('#receive').innerText(), '采样中');
   assert.equal(await frame.locator('#host-name').innerText(), '服务器');
   assert.equal(await frame.locator('#uptime').textContent(), '正在读取');
+  assert.equal(await frame.locator('#architecture').textContent(), '正在读取');
   assert.equal(await frame.locator('.filesystem').count(), 0);
   await page.screenshot({ path: 'artifacts/system-status-ui/context-warming-light.png' });
   snapshot.data.identity.hostname = 'new-connection-host'; snapshot.groups.find(g => g.name === 'identity').observedAt = Date.now(); snapshot.revision++;
   await frame.locator('#host-name').filter({ hasText: 'new-connection-host' }).waitFor();
+  assert.equal(await frame.locator('#host-architecture').innerText(), 'x86_64');
   assert.equal(await frame.locator('#cpu').innerText(), '采样中');
   snapshot.groups.forEach(g => g.observedAt = Date.now()); snapshot.revision++;
   await frame.locator('#cpu').filter({ hasText: '23.4%' }).waitFor();
@@ -242,7 +280,7 @@ try {
   await frame.locator('#cpu').filter({ hasText: '采样中' }).waitFor();
   await frame.locator('#scroll').evaluate(e => e.scrollTop = 0);
   await page.screenshot({ path: 'artifacts/system-status-ui/warming-light.png' });
-  snapshot = structuredClone(base); snapshot.revision += 400; failSnapshots = true;
+  snapshot = structuredClone(base); snapshot.groups.forEach(g => g.observedAt = Date.now()); snapshot.revision += 400; failSnapshots = true;
   await page.reload();
   await frame.locator('#notice').filter({ hasText: '首次读取失败' }).waitFor();
   failSnapshots = false;

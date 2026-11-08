@@ -6,7 +6,7 @@ function Num($n) {if ($null -eq $n) {return $null}; return $n.ToString([Globaliz
 switch ('__GROUP__') {
  'identity' {
   Source os {$o=Get-CimInstance Win32_OperatingSystem -OperationTimeoutSec 3; @{hostname=$o.CSName;system=$o.Caption;version=$o.Version;totalBytes=(Num ([uint64]$o.TotalVisibleMemorySize*1024))}}
-  Source cpu {@(Get-CimInstance Win32_Processor -OperationTimeoutSec 3 | ForEach-Object {@{model=$_.Name;cores=$_.NumberOfLogicalProcessors}})}
+  Source cpu {,@(Get-CimInstance Win32_Processor -OperationTimeoutSec 3 | ForEach-Object {@{model=$_.Name;cores=$_.NumberOfLogicalProcessors;architecture=if ($null -ne $_.Architecture) {[int]$_.Architecture} else {$null}}})}
   Source device {$o=Get-CimInstance Win32_ComputerSystem -OperationTimeoutSec 3; @{model=$o.Manufacturer+' '+$o.Model}}
  }
  'dynamic' {

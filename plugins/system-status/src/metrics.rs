@@ -39,6 +39,30 @@ fn metric(value: Option<f64>, source: &str) -> Value {
 fn count(text: &str) -> Option<u64> {
     text.trim().parse().ok()
 }
+fn normalize_architecture(text: &str) -> Option<String> {
+    let raw = text.trim();
+    if raw.is_empty()
+        || raw.eq_ignore_ascii_case("unknown")
+        || raw.len() > 64
+        || !raw
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-' || c == b'.')
+    {
+        return None;
+    }
+    Some(
+        match raw.to_ascii_lowercase().as_str() {
+            "amd64" | "x64" | "x86_64" => "x86_64",
+            "aarch64" | "arm64" => "ARM64",
+            "i386" | "i486" | "i586" | "i686" | "x86" => "x86",
+            "armv7" | "armv7l" => "ARMv7",
+            "armv6" | "armv6l" => "ARMv6",
+            "arm" => "ARM",
+            _ => raw,
+        }
+        .to_string(),
+    )
+}
 pub fn apply(
     family: Family,
     group: &str,
@@ -87,6 +111,26 @@ pub fn apply(
     let get = |key: &str| sections.get(key).map(String::as_str).unwrap_or("");
     match group {
         "identity" => {
+            let architecture = if family == Family::Windows {
+                win["cpu"].as_array().into_iter().flatten().find_map(|cpu| {
+                    match cpu["architecture"].as_u64()? {
+                        0 => Some("x86"),
+                        1 => Some("MIPS"),
+                        2 => Some("Alpha"),
+                        3 => Some("PowerPC"),
+                        5 => Some("ARM"),
+                        6 => Some("IA64"),
+                        9 => Some("x86_64"),
+                        12 => Some("ARM64"),
+                        _ => None,
+                    }
+                    .map(str::to_string)
+                })
+            } else if family == Family::Darwin && get("arm64").trim() == "1" {
+                Some("ARM64".into())
+            } else {
+                normalize_architecture(get("architecture"))
+            };
             let (system, hostname, model, cores, total) = if family == Family::Windows {
                 let cores = win["cpu"]
                     .as_array()
@@ -143,7 +187,7 @@ pub fn apply(
                     count(get("total")),
                 )
             };
-            snapshot["identity"] = json!({"system":limited(&system,256),"hostname":limited(&hostname,256),"cpuModel":limited(&model,256),"cores":cores});
+            snapshot["identity"] = json!({"system":limited(&system,256),"hostname":limited(&hostname,256),"cpuModel":limited(&model,256),"cores":cores,"architecture":architecture});
             if let Some(total) = total {
                 snapshot["memoryTotal"] = json!(total.to_string());
             }
@@ -548,6 +592,115 @@ fn df_all(text: &str) -> Vec<Value> {
 mod tests {
     use super::*;
     #[test]
+    fn unix_identity_reports_architecture_without_guessing_from_model() {
+        for (family, raw, arm64, expected) in [
+            (Family::Linux, "x86_64", "", Some("x86_64")),
+            (Family::Linux, "AMD64", "", Some("x86_64")),
+            (Family::Linux, "aarch64", "", Some("ARM64")),
+            (Family::Linux, "armv7l", "", Some("ARMv7")),
+            (Family::FreeBsd, "amd64", "", Some("x86_64")),
+            (Family::OpenBsd, "arm64", "", Some("ARM64")),
+            (Family::NetBsd, "i386", "", Some("x86")),
+            (Family::Unix, "riscv64", "", Some("riscv64")),
+            (Family::Unix, "aarch64_be", "", Some("aarch64_be")),
+            (Family::Darwin, "x86_64", "1", Some("ARM64")),
+            (Family::Darwin, "x86_64", "0", Some("x86_64")),
+            (Family::Linux, "", "", None),
+            (Family::Linux, "unknown", "", None),
+            (Family::Linux, "x86_64\nunexpected banner", "", None),
+        ] {
+            let payload = format!("SD1 n BEGIN system\nLinux 6.8 x86_64\nSD1 n END system 0\nSD1 n BEGIN model\nApple M2\nSD1 n END model 0\nSD1 n BEGIN architecture\n{raw}\nSD1 n END architecture 0\nSD1 n BEGIN arm64\n{arm64}\nSD1 n END arm64 0\nSD1 n DONE\n");
+            let mut snapshot = json!({});
+            apply(
+                family,
+                "identity",
+                &payload,
+                "n",
+                &[],
+                &mut snapshot,
+                &mut Baseline::default(),
+                5,
+            )
+            .unwrap();
+            assert_eq!(
+                snapshot["identity"]["architecture"].as_str(),
+                expected,
+                "{family:?}: {raw}"
+            );
+        }
+    }
+    #[test]
+    fn windows_identity_uses_processor_architecture_and_keeps_unknown_null() {
+        for (code, expected) in [
+            (Some(9), Some("x86_64")),
+            (Some(12), Some("ARM64")),
+            (Some(0), Some("x86")),
+            (Some(5), Some("ARM")),
+            (Some(99), None),
+            (None, None),
+        ] {
+            let payload = json!({"schemaVersion":1,"nonce":"n","cpu":[{"model":"Intel compatible processor","cores":8,"architecture":code}]}).to_string();
+            let mut snapshot = json!({});
+            apply(
+                Family::Windows,
+                "identity",
+                &payload,
+                "n",
+                &[],
+                &mut snapshot,
+                &mut Baseline::default(),
+                5,
+            )
+            .unwrap();
+            assert_eq!(
+                snapshot["identity"]["architecture"].as_str(),
+                expected,
+                "{code:?}"
+            );
+        }
+    }
+    #[test]
+    fn native_identity_collects_architecture_from_the_system() {
+        let family = match std::env::consts::OS {
+            "windows" => Family::Windows,
+            "macos" => Family::Darwin,
+            _ => Family::Linux,
+        };
+        let command = collectors::command(family, "identity", "native", &[]);
+        let output = if family == Family::Windows {
+            std::process::Command::new("powershell.exe")
+                .args(["-NoProfile", "-NonInteractive", "-Command", &command])
+                .output()
+        } else {
+            std::process::Command::new("sh")
+                .args(["-c", &command])
+                .output()
+        }
+        .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let mut snapshot = json!({});
+        apply(
+            family,
+            "identity",
+            &String::from_utf8(output.stdout).unwrap(),
+            "native",
+            &[],
+            &mut snapshot,
+            &mut Baseline::default(),
+            5,
+        )
+        .unwrap();
+        assert_eq!(
+            snapshot["identity"]["architecture"].as_str(),
+            normalize_architecture(std::env::consts::ARCH).as_deref(),
+            "{snapshot}"
+        );
+    }
+    #[test]
     fn windows_source_failures_remain_visible_and_all_failed_sources_retry() {
         let mut data = json!({});
         let sample =
@@ -686,6 +839,10 @@ mod tests {
             .unwrap();
         }
         assert!(snapshot["identity"]["hostname"].is_string());
+        assert!(
+            snapshot["identity"]["architecture"].is_string(),
+            "{snapshot}"
+        );
         assert!(snapshot["memory"]["value"].is_number(), "{snapshot}");
         assert!(snapshot["cpu"]["value"].is_number(), "{snapshot}");
         assert!(!snapshot["filesystems"].as_array().unwrap().is_empty());
