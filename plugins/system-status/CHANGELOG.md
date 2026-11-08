@@ -6,7 +6,9 @@
 
 共享发布使用有界缓存与最新意图 CAS 重试，不加快采样、不阻塞采集锁。修复 Windows EncodedCommand 超过 cmd.exe 字符上限的问题，改为发送当前采集组。原面板与采集可以独立工作，完整联动需核心 0.13.0 与文件 0.5.0，没有新增生产依赖。
 
-本机 23 项源码回归、真实 Windows 采集及三插件组合通过；Linux Docker 专项本次未重复。五平台包、原始运行与正式发行来源待本次发布验收记录。
+本机 23 项源码、真实 Windows 采集和三插件组合通过；Linux Docker 专项未重复。五平台原生源码与包内 initialize、重复 mount、pause、dispose、shutdown 和资源通过；Linux x86_64 真实采集与文件挂载容量联动通过。另从草稿下载 Windows 包，随真实核心验证关闭取消与退出。
+
+包来源：[`dfdb826b0cedbe07323450692acc21bdc657bfca`](https://github.com/BgaSol/soDeck/commit/dfdb826b0cedbe07323450692acc21bdc657bfca)；原始打包：[Package plugin #42506440128](https://github.com/BgaSol/soDeck/actions/runs/42506440128)；源码：[Check #42506353705](https://github.com/BgaSol/soDeck/actions/runs/42506353705)；发行：[system-status 0.3.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-system-status-v0.3.0)，非 Latest。五平台远程包组合只包含终端、文件和网络，系统状态与核心组合另外在 Windows 实包验证；远端 macOS/BSD、Windows Server/其他默认 shell 与 Docker 专项未重复。
 
 ## 0.2.1
 

@@ -1,6 +1,6 @@
 # 组件通信与共享状态实施记录
 
-2026-11-09，按[功能设计](plan-component-communication.md)和[代码方案](plan-component-communication-coding.md)整体实现共享状态、两个业务联动及生命周期接入。没有新增生产依赖、权限系统、数据库或应用/插件版本变更，尚未发行。参数以[插件 API](plugin-api.md)为准，用户配置见[使用说明](usage.md)。
+2026-11-09，按[功能设计](plan-component-communication.md)和[代码方案](plan-component-communication-coding.md)整体实现共享状态、两个业务联动及生命周期接入，没有新增生产依赖、权限系统或数据库。随后随核心 0.13.0 与三个插件独立发行，发布验证见[版本说明](releases/v0.13.0.md)。参数以[插件 API](plugin-api.md)为准，用户配置见[使用说明](usage.md)。
 
 ## 实现行为
 
@@ -59,6 +59,6 @@ Windows 本机 PowerShell 默认文件系统的可靠报告已实际验证。主
 
 Linux mountinfo 解析与部分扫描/身份变化测试通过，本机未执行远端 Linux/macOS 真实三插件组合、bash/zsh 实际报告或 Docker 专项。Windows 固定本地卷和 macOS/BSD df 均声明 partial。采样之间发生又恢复的挂载变化无法观察；观测都有新鲜度期限，不声称实时事务或完整容量覆盖。
 
-尚未执行本次源码的五平台原生安装包构建、签名和实际包启动/退出，也未运行本次 GitHub Actions；本机 EXE 与独立包不能代替这些验收。没有提交、推送、修改版本或创建 Release，正式发布仍按[发布流程](distribution.md)补齐五目标原生包验证。
+实现阶段的上述本机检查不替代原生包验证。后续正式发布已执行同一源码的 Check、五平台核心/插件打包、签名、实际包启动/退出及远程组合；Linux x86_64 真实 bash 与三插件联动通过。源码、原始运行、正式 Release 和实际执行/跳过范围统一保存在[核心 0.13.0 版本说明](releases/v0.13.0.md)及插件 CHANGELOG，不在此重复维护发行记录。
 
 返回[文档索引](README.md)。

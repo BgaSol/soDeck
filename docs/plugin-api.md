@@ -202,7 +202,7 @@ UI v1 的 `mount.capabilities.clipboard === 1` 表示宿主提供原生文本剪
 
 ## 组件设置（可选 settings.v1）
 
-此扩展已进入源码，尚未作为新版本发行。插件在清单增加可选 `settings: {apiVersion:"1", schemaVersion:1, pages:[...]}`，一个插件可声明多个组件页，一个页可关联多个 `viewTypes`。同一视图最多关联一个页；稳定身份为 pluginId/pageId/key，不含服务器、Tab 或程序版本。字段、默认值和生效方式由插件声明，核心提供基础校验、存储、版本选择、通用表单和变化通知。正式示例见各插件的 `release.json`，实现范围见 [组件设置记录](implementation-component-settings.md)。
+组件设置从核心 0.9.0 提供，页面保存所属设置页从核心 0.13.0 提供。插件在清单增加可选 `settings: {apiVersion:"1", schemaVersion:1, pages:[...]}`，一个插件可声明多个组件页，一个页可关联多个 `viewTypes`。同一视图最多关联一个页；稳定身份为 pluginId/pageId/key，不含服务器、Tab 或程序版本。字段、默认值和生效方式由插件声明，核心提供基础校验、存储、版本选择、通用表单和变化通知。正式示例见各插件的 `release.json`，实现范围见 [组件设置记录](implementation-component-settings.md)。
 
 页面包含 id/title/icon/order/viewTypes/groups；分组包含 id/title/fields。字段为 key/type/title/default/apply，可带 description。首版类型为 boolean、number（min/max/step/unit）、string（maxLength）、select（options 的 value/title）、font（presets 的 id/title/regular/bold）；apply 为 live 或 newInstance。`visibleWhen:{key,equals}` 只引用同页无条件的 boolean/select 字段。隐藏字段仍需完整保存并校验。
 
@@ -225,7 +225,7 @@ revision 为十进制字符串，definitionToken 为插件当前程序版本、s
 
 ## 共享运行状态（可选 sharedState.v1）
 
-已进入源码，尚未发行。initialize 的 capabilities 含 `sharedState.v1`；页面 mount 的 `capabilities.sharedState` 为 1。旧核心没有能力时保留原业务并禁用联动。核心保存内存中的当前事实，进程与页面经接口访问；不持久化，不提供插件之间直接调用或历史事件日志。
+核心 0.13.0 起可用。initialize 的 capabilities 含 `sharedState.v1`；页面 mount 的 `capabilities.sharedState` 为 1。旧核心没有能力时保留原业务并禁用联动。核心保存内存中的当前事实，进程与页面经接口访问；不持久化，不提供插件之间直接调用或历史事件日志。
 
 每条记录由完整 Context、topic、producer、key 标识。Context 包含 workspaceId/serverId/connectionId/generation；producer 为 `{kind:"core"}` 或 `{kind:"plugin",pluginId,pluginInstanceId,viewId}`。核心推导调用者身份，put/remove 只能修改自己的来源。修订号为规范 u64 十进制字符串；JSON null 是存在的值，删除用 `present:false` 墓碑，读取未存在的版本为 `"0"`。
 

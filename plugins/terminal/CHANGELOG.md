@@ -4,7 +4,9 @@
 
 完整联动需核心 0.13.0 与文件 0.5.0。原 PTY、输入、外观与独立升级保持兼容。主机名配置只适用于与文件浏览相同的文件系统；同主机名容器、chroot 或嵌套 shell 无法自动识别，进入前关闭跟随。没有修改远端 shell 配置或新增生产依赖。
 
-本机真实 PowerShell、三插件 RPC/PTY/SFTP、隐藏/移窗/重连组合及原终端回归通过。五平台包、原始运行与正式发行来源待本次发布验收记录。
+本机真实 PowerShell、三插件 RPC/PTY/SFTP、隐藏/移窗/重连及原终端回归通过。五平台原生源码、独立包和实际包 SSH/PTY/文件组合通过；Linux x86_64 实际 bash 目录报告通过。另从草稿下载 Windows 包，验证 WebView2 拖动、关闭取消与最终释放。
+
+包来源：[`dfdb826b0cedbe07323450692acc21bdc657bfca`](https://github.com/BgaSol/soDeck/commit/dfdb826b0cedbe07323450692acc21bdc657bfca)；原始打包：[Package plugin #42506418843](https://github.com/BgaSol/soDeck/actions/runs/42506418843)；源码：[Check #42506353705](https://github.com/BgaSol/soDeck/actions/runs/42506353705)；实际包：[Verify native remote plugins #42507409785](https://github.com/BgaSol/soDeck/actions/runs/42507409785)；发行：[terminal 0.3.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.3.0)，非 Latest。DPI/多显示器、macOS/zsh 实际目录报告、netem 与历史升级未重复。
 
 # 0.2.3
 

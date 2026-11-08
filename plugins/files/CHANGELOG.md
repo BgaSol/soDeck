@@ -6,7 +6,9 @@
 
 完整联动需核心 0.13.0、终端 0.3.0 与系统状态 0.3.0。旧核心或缺少生产插件时保留原文件功能。UNC、容器与未知文件系统视角不提供位置映射，不新增生产依赖。
 
-本机文件协议、实际 UI、设置、三插件组合回归通过。五平台包、原始运行与正式发行来源待本次发布验收记录。
+本机文件协议、实际 UI、设置、三插件组合通过。五平台原生源码、独立包与实际包 SSH/PTY/文件/网络通过；Linux x86_64 真实目录和挂载容量联动通过。另从草稿下载 Windows 包验证 WebView2 手势、关闭取消、草稿保留与最终释放。
+
+包来源：[`dfdb826b0cedbe07323450692acc21bdc657bfca`](https://github.com/BgaSol/soDeck/commit/dfdb826b0cedbe07323450692acc21bdc657bfca)；原始打包：[Package plugin #42506429286](https://github.com/BgaSol/soDeck/actions/runs/42506429286)；源码：[Check #42506353705](https://github.com/BgaSol/soDeck/actions/runs/42506353705)；实际包：[Verify native remote plugins #42507409785](https://github.com/BgaSol/soDeck/actions/runs/42507409785)；发行：[files 0.5.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.5.0)，非 Latest。容器/chroot、UNC 和未知视角映射不支持；设备桌面互操作、netem 与历史升级未重复。
 
 # 0.4.2
 
