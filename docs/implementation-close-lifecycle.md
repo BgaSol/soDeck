@@ -72,7 +72,7 @@ surface 同步共用 45 秒截止时间。组件状态检查与保存分别使�
 | `npm run ui:test` | 最终前端全部通过：服务器、工作区、连接、交互、正式前端、桌面及设置；无页面脚本错误 |
 | SSH / 四插件普通业务 | `ssh:test`、`terminal:test`、`files:test`、`network:test`、`system-status:test` 全部通过，使用隔离 localhost OpenSSH 与独立插件包；含真实 UI、SOCKS 协议与资源压力 |
 | Windows x86_64 实际核心包 | 正式 NSIS 构建通过；解包程序的启动/资料重开、原生工作区/子窗口、真实 SSH、四插件组合关闭全部通过 |
-| 其他四个原生平台包 | 本轮尚无结果 |
+| 其他四个原生平台包 | 本机整改阶段未执行；正式 0.12.0 结果见[版本说明](releases/v0.12.0.md) |
 
 新增重点回归包括：跨窗口输入乱序不受进度 revision 影响、原生窗口失联不永久等待、主窗口失联扩展全局范围、全局接管取消恢复局部失败、无宿主启动中退出、收尾重试不重复清理、保存失败保留、设置重复请求在关闭期间确认、dispose 明确失败下一次重试成功，以及超时 dispose 不重发且迟到成功可完成。输入截止用例同时核对未知输入保留、取消完成即恢复接入，以及无需下一次关闭就能回收终态和失联窗口记录。
 
@@ -92,7 +92,7 @@ surface 同步共用 45 秒截止时间。组件状态检查与保存分别使�
 
 本轮 NSIS SHA-256：`04f8d404ab07db5cec025ab08633b52adc93d5ffe126010560b9aaf392ab86ad`。解包 `sodeck.exe` SHA-256：`609ac2a4e042337f32f88f43715ff8ccebfeb395d30cfa2a43e367b698ba17f7`。构建为本机验收包，未提供正式更新签名，不作为新版本 Release。
 
-本机证据保存在 `artifacts/close-lifecycle/verification.json`、`native-close.json`、`titlebar-cancel.png`、`native-cancel.png`，并保留同一安装包及隔离 smoke 报告。`verification.json` 记录基线完整提交、分支、未提交状态、58 个变更源文件摘要与包摘要；本轮没有可引用的 Actions run 或 Release。已查看截图，取消后的文件和网络页面未残留关闭错误。
+本机证据保存在 `artifacts/close-lifecycle/verification.json`、`native-close.json`、`titlebar-cancel.png`、`native-cancel.png`，并保留同一安装包及隔离 smoke 报告。`verification.json` 记录基线完整提交、分支、当时未提交状态、58 个变更源文件摘要与包摘要；上述本机整改阶段尚无 Actions 或 Release。正式 0.12.0 使用另一份确定提交的签名包重新验证，发行证据与运行链接统一见[版本说明](releases/v0.12.0.md)。两阶段截图均已查看，取消后的文件和网络页面未残留关闭错误。
 
 ## 未完成与交付限制
 
