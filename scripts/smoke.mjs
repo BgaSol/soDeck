@@ -67,6 +67,7 @@ try {
   );
 } finally {
   // This path was created by mkdtemp in this process, never supplied by the user.
+  // WebView2 may release its temporary file handles shortly after the app exits.
   if (!process.env.SODECK_TEST_DATA_DIR)
-    fs.rmSync(directory, { recursive: true, force: true });
+    fs.rmSync(directory, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
 }

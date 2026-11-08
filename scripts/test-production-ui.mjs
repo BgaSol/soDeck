@@ -444,6 +444,7 @@ try {
       chosenPluginDirectory = pluginDirectory;
       await page.locator('#choose-plugin').click();
       await page.locator('#back-plugins').waitFor();
+      await page.waitForFunction(() => document.activeElement?.id === 'back-plugins');
       assert.equal(await page.locator('#back-plugins').evaluate(el=>el===document.activeElement),true,'Local registration focuses plugin details');
       await page.locator('#back-plugins').click();
       assert.equal(await page.locator('#plugins-installed').getAttribute('aria-pressed'),'true','A local plugin returns to the installed list');

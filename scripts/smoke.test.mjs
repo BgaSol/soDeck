@@ -1,10 +1,45 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { setTimeout as delay } from "node:timers/promises";
+
+test("Windows package cleanup waits for transient runtime file locks", { skip: process.platform !== "win32" }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-smoke-lock-test-"));
+  let smoke, locker, temporary;
+  try {
+    const launcher = path.join(root, "launcher.mjs"), recorded = path.join(root, "directory.txt"), ready = path.join(root, "ready");
+    fs.writeFileSync(launcher, `
+      import fs from 'node:fs';import path from 'node:path';import {setTimeout as delay} from 'node:timers/promises';
+      const args=process.argv.slice(2),data=args[args.indexOf('--test-data-dir')+1];
+      fs.writeFileSync(process.env.SODECK_TEST_DIRECTORY_REPORT,data);
+      const deadline=Date.now()+10000;
+      while(!fs.existsSync(process.env.SODECK_TEST_LOCK_READY)){if(Date.now()>deadline)throw new Error('Lock setup timed out');await delay(10);}
+      fs.writeFileSync(path.join(data,'smoke-result.json'),JSON.stringify({completed:true,workspaceNative:true}));
+    `);
+    const env = { ...process.env, SODECK_TEST_DIRECTORY_REPORT: recorded, SODECK_TEST_LOCK_READY: ready };
+    for (const name of ['SODECK_TEST_DATA_DIR','SODECK_VERIFY_PERSISTED','SODECK_TEST_SSH_CONFIG','SODECK_TEST_UPDATE_BUNDLE','SODECK_TEST_CLIPBOARD','SODECK_TEST_NETWORK_PLUGIN','SODECK_EXPECT_CORE_VERSION','SODECK_EXPECT_TARGET']) delete env[name];
+    smoke = spawn(process.execPath, [fileURLToPath(new URL('./smoke.mjs', import.meta.url)), process.execPath, launcher], {env,windowsHide:true});
+    let errors='';smoke.stderr.on('data',data=>errors+=data);smoke.stdout.resume();
+    const finished=new Promise((resolve,reject)=>{smoke.on('error',reject);smoke.on('close',resolve);});
+    const deadline=Date.now()+10000;
+    while(!fs.existsSync(recorded)){assert(Date.now()<deadline,'The launcher must report its temporary directory');await delay(10);}
+    temporary=fs.readFileSync(recorded,'utf8');
+    locker=spawn('powershell.exe',['-NoProfile','-Command',"$ErrorActionPreference='Stop';$stream=[System.IO.File]::Open($env:SODECK_TEST_LOCK_FILE,'OpenOrCreate','ReadWrite','None');[Console]::WriteLine('ready');Start-Sleep -Milliseconds 1800;$stream.Dispose()"],{windowsHide:true,env:{...process.env,SODECK_TEST_LOCK_FILE:path.join(temporary,'runtime.lock')}});
+    locker.stderr.on('data',data=>errors+=data);
+    await new Promise((resolve,reject)=>{locker.on('error',reject);locker.stdout.once('data',resolve);locker.once('exit',code=>reject(new Error('Lock holder exited: '+code)));});
+    fs.writeFileSync(ready,'ready');
+    assert.equal(await finished,0,errors);
+    assert.equal(fs.existsSync(temporary), false, 'The owned temporary directory must actually be removed');
+  } finally {
+    for(const child of [smoke,locker])if(child&&child.exitCode===null){const stopped=new Promise(resolve=>child.once('close',resolve));child.kill();await stopped;}
+    if(temporary){assert.equal(path.dirname(path.resolve(temporary)),path.resolve(os.tmpdir()));assert(path.basename(temporary).startsWith('sodeck-package-'));fs.rmSync(temporary,{recursive:true,force:true,maxRetries:8,retryDelay:200});}
+    fs.rmSync(root, { recursive:true,force:true,maxRetries:8,retryDelay:200 });
+  }
+});
 
 test("package validation paths survive a launcher changing its working directory", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-launcher-test-"));
