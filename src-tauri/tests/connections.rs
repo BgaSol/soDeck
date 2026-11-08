@@ -412,7 +412,7 @@ async fn connected_in(f: &Fixture, id: &str, window: &str) -> View {
     f.core
         .connection_views()
         .into_iter()
-        .find(|v| v.server_id == id)
+        .find(|v| v.attempt_id == start.attempt_id)
         .unwrap()
 }
 

@@ -138,6 +138,7 @@ async fn explicit_terminal_session_confirms_launch_preserves_tail_and_closes_wit
         if command=="status-test:mixed"{assert_eq!(tail.len(),9004);assert!(tail.ends_with(b"err\n"));}
         if command=="status-test:mixed" {
             f.core.disconnect_connection("main",&context).unwrap();
+            until(||f.core.connection_views().iter().any(|v|v.context.as_ref()==Some(&context)&&v.state=="disconnected")).await;
             let next=connected(&f,&server).await.context.unwrap();assert_ne!(next.generation,context.generation);
             let mounted=f.core.ui_attach("main",&view).unwrap();let token=mounted["surfaceId"].as_str().unwrap();f.core.ui_surface_ready("main",token).unwrap();
             let historical=f.core.ui_event("main",token,json!({"rpc":"terminal.session.status","params":{"id":id}})).unwrap();assert_eq!(historical,end);
