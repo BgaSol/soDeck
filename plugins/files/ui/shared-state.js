@@ -1,13 +1,6 @@
 import {SharedState} from './state.js';
 const source=p=>JSON.stringify([p.pluginId,p.pluginInstanceId,p.viewId]);
 const fresh=v=>Number.isSafeInteger(v?.observedAt)&&v.observedAt<=Date.now()+5000&&Number.isSafeInteger(v.staleAfterMs)&&v.staleAfterMs>0&&Date.now()-v.observedAt<=v.staleAfterMs;
-export function terminalProvider(records,active){
-  const descriptor=records.find(r=>r.present&&r.topic==='terminal.session.v1'&&r.key==='current'&&r.producer.kind==='plugin'&&r.producer.viewId===active&&r.value?.schemaVersion===1&&r.value.viewId===active);
-  if(descriptor){const location=descriptor.value.capabilities?.location;return {session:descriptor.value,location:location?.supported?records.find(r=>r.present&&r.topic==='terminal.location.v1'&&r.key==='current'&&source(r.producer)===source(descriptor.producer)&&r.value?.terminalId===descriptor.value.ptyId)?.value:null};}
-  // Legacy providers predate the capability descriptor.
-  const legacy=records.find(r=>r.present&&r.topic==='terminal.location.v1'&&r.key==='current'&&r.producer.pluginId==='sodeck.terminal'&&r.producer.viewId===active);
-  return legacy?{location:legacy.value}:null;
-}
 export function capacityBytes(value){if(typeof value!=='string'||!/^\d{1,20}$/.test(value))return '未知';const n=BigInt(value);for(const [unit,scale] of [['TiB',1099511627776n],['GiB',1073741824n],['MiB',1048576n],['KiB',1024n]])if(n>=scale)return `${n/scale}.${n%scale*10n/scale} ${unit}`;return `${n} B`;}
 export function connectFileState(tree,mount,data,save){
   const client=new SharedState(mount);let projection,enabled=mount.settings?.values?.followTerminal!==false,visible=mount.visible!==false,disposed=false,handled='',lastActive='',epoch=0,resolving=0;
@@ -26,14 +19,12 @@ export function connectFileState(tree,mount,data,save){
   tree.onManual=()=>{followJob=null;handled=candidateKey()||handled;manual=true;followError='';update();};
   function records(){return projection?.records||[];}
   const presentation=()=>records().find(r=>r.topic==='workspace.presentation.v1'&&r.producer.kind==='core'&&r.key==='current')?.value;
-  const terminal=()=>terminalProvider(records(),presentation()?.activeEditorViewId);
-  const current=()=>terminal()?.location;
+  const current=()=>records().find(r=>r.topic==='terminal.location.v1'&&r.key==='current'&&r.producer.pluginId==='sodeck.terminal'&&r.producer.viewId===presentation()?.activeEditorViewId)?.value;
   function candidate(){
     if(!projection||projection.scope.state!=='active'||projection.scope.connected===false)return null;
     const active=presentation()?.activeEditorViewId;
     if(active!==lastActive){lastActive=active;waitingSince=Date.now();handled='';manual=false;followError='';}
-    const selected=terminal();
-    const r=records().find(r=>r.topic==='terminal.location.v1'&&r.key==='current'&&r.producer.viewId===active&&r.value===selected?.location);
+    const r=records().find(r=>r.topic==='terminal.location.v1'&&r.key==='current'&&r.producer.pluginId==='sodeck.terminal'&&r.producer.viewId===active);
     if(!r||r.value?.state!=='known'||typeof r.value.path!=='string'||!/^\d{1,20}$/.test(r.value.outputOffset)||!['session-default','shell-reported'].includes(r.value.filesystemView))return null;
     if(r.value.filesystemView==='shell-reported'&&mount.capabilities?.fileLocationProof!==1)return null;
     const key=source(r.producer),offset=BigInt(r.value.outputOffset),previous=offsets.get(key);if(previous!==undefined&&offset<previous)return null;offsets.set(key,offset);
@@ -56,8 +47,7 @@ export function connectFileState(tree,mount,data,save){
     if(!enabled)title='手动浏览';
     else if(!client.available||mount.capabilities?.fileLocation!==1||v?.reasonCode==='old-core'||v?.filesystemView==='shell-reported'&&mount.capabilities?.fileLocationProof!==1){title='当前版本不支持自动目录识别';explanation='在设置 → 更新中更新核心、终端和文件插件，然后重启。';}
     else if(!projection||projection.scope.connected===false)title='已暂停：连接已断开';
-    else if(!p?.activeEditorViewId||!terminal()&&p?.activeEditorPluginId!=='sodeck.terminal')title='已暂停：当前不是终端';
-    else if(terminal()?.session?.capabilities?.location?.supported===false){title='当前终端未提供目录';explanation=terminal().session.capabilities.location.reason||'这个终端会话不提供目录定位，可继续手动浏览。';}
+    else if(p?.activeEditorPluginId&&p.activeEditorPluginId!=='sodeck.terminal'||!p?.activeEditorViewId)title='已暂停：当前不是终端';
     else if(v?.activity==='busy'){title=Date.now()-busySince<600&&summary.textContent?summary.textContent:'终端忙碌，保留当前位置';explanation='命令仍在运行，或尚未收到外层 shell 的提示符报告。退出嵌套 SSH、容器或子 shell 后自动恢复。';}
     else if(followError){title='无法浏览终端目录';explanation=followError+'。可重试定位，或继续手动浏览。';}
     else if(next){title=manual?'已手动浏览，下次切换目录时跟随':followJob?'正在定位终端目录…':'跟随：'+(v.title||'活动终端');explanation=`${v.path}${v.shell?' · '+v.shell:''}${v.observedAt?' · 最近确认 '+new Date(v.observedAt).toLocaleTimeString():''}`;}
@@ -90,7 +80,7 @@ export function connectFileState(tree,mount,data,save){
     tree.setMounts(display);pump();
   }
   function pump(){while(!disposed&&visible&&resolving<2&&queue.length){const job=queue.shift();resolving++;void data('resolveLocation',job.value).then(result=>{if(!disposed&&job.epoch===epoch&&mapped.has(job.key))mapped.set(job.key,result.path.replace(/\/$/,'')||'/');}).catch(()=>{}).finally(()=>{resolving--;if(!disposed){decorate();pump();}});}}
-  const watch=client.available?client.watch({topics:['workspace.presentation.v1','terminal.session.v1','terminal.location.v1','filesystem.mounts.v1','filesystem.capacity.v1']},value=>{projection=value;update();}):null;
+  const watch=client.available?client.watch({topics:['workspace.presentation.v1','terminal.location.v1','filesystem.mounts.v1','filesystem.capacity.v1']},value=>{projection=value;update();}):null;
   const timer=setInterval(()=>{if(!watch?.valid){projection=null;update();}else {feedback();decorate();}},1000);
   return {settings(snapshot){const next=snapshot?.values?.followTerminal!==false;if(next!==enabled){enabled=next;handled='';cancel();}updateToggle();update();},visibility(value){visible=value;handled='';cancel();update();},invalidate(){++epoch;projection=null;mapped.clear();queue.length=0;cancel();watch?.dispose();update();},dispose(){disposed=true;++epoch;clearInterval(timer);tree.onManual=null;cancel();client.dispose();toggle.remove();providers.remove();status.remove();}};
 }

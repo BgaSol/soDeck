@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { ClipboardBridge } from '../src/clipboard.ts';
-const context={window:{}};vm.runInNewContext(fs.readFileSync('plugins/shared/terminal/clipboard.js','utf8'),context);
+const context={window:{}};vm.runInNewContext(fs.readFileSync('plugins/terminal/ui-src/clipboard.js','utf8'),context);
 const TerminalClipboard=context.window.TerminalClipboard;
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
 

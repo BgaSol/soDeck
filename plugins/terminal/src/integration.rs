@@ -1,16 +1,8 @@
 use serde_json::{json, Value};
 use sodeck_plugin_client::{encoding::unbase64, Client};
-use std::{
-    sync::atomic::{AtomicBool, Ordering},
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
-};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-pub fn prepare(
-    client: &Client,
-    view: &str,
-    context: &Value,
-    cancel: &AtomicBool,
-) -> Result<(String, Value), String> {
+pub fn prepare(client: &Client, view: &str, context: &Value) -> Result<(String, Value), String> {
     let token = format!(
         "{:x}",
         SystemTime::now()
@@ -23,10 +15,6 @@ pub fn prepare(
     let result = (|| {
         let deadline = Instant::now() + Duration::from_millis(2800);
         loop {
-            if cancel.load(Ordering::Acquire) {
-                let _ = client.call("session.exec.cancel", json!({"taskId":id}));
-                return Err("cancelled".into());
-            }
             let result = client.call(
                 "session.exec.poll",
                 json!({"taskId":id,"stdoutOffset":"0","stderrOffset":"0"}),

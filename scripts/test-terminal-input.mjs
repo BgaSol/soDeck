@@ -16,7 +16,7 @@ let requestedPlatform='Win32';
 const harness=`<!doctype html><html data-theme="dopamine"><head><meta charset="utf-8"></head><body><button id="outside">外部焦点</button><iframe id="terminal" style="width:900px;height:480px;border:0"></iframe><script type="module">
 import '/style.css';import {ClipboardBridge} from '/clipboard.ts';import {themeTokens} from '/theme.ts';
 window.writes=[];window.clipboard='中文🙂\\nsecond line';window.copies=[];window.reads=0;window.delayRead=false;
-window.resizes=[];window.holdResize=false;window.actions=[];window.opens=[];
+window.resizes=[];window.holdResize=false;
 const host=new ClipboardBridge(async()=>{window.reads++;return window.delayRead?new Promise(resolve=>window.finishRead=resolve):window.clipboard;},async text=>window.copies.push(text));
 const frame=document.querySelector('iframe'),token='test-surface';let generation=1,visible=true,offset=0;
 const post=message=>frame.contentWindow.postMessage({channel:'sodeck-ui-v1',surfaceId:token,...message},location.origin);
@@ -24,15 +24,13 @@ window.testPost=post;window.setTheme=theme=>{document.documentElement.dataset.th
 window.addEventListener('message',async event=>{
  if(event.source!==frame.contentWindow||event.data?.channel!=='sodeck-ui-v1')return;
  const message=event.data;
- if(message.type==='ready'){post({type:'mount',viewId:'A',context:{generation},data:{session:{schemaVersion:1,revision:'1',viewId:'A',context:{generation},ptyId:'pty',title:'测试终端',targetLabel:'测试目标',details:[],preparation:'prepared',targetReadiness:'ready',capabilities:{input:true,resize:true,location:{supported:false}},actions:[{id:'reenter',label:'重新进入测试目标',enabled:true}]},runtime:{id:'pty',viewId:'A',context:{generation},revision:'1',state:'running'}},tokens:themeTokens(),capabilities:{clipboard:1},visible:true});return;}
+ if(message.type==='ready'){post({type:'mount',viewId:'A',context:{generation},data:{streamId:'pty'},tokens:themeTokens(),capabilities:{clipboard:1},visible:true});return;}
  if(message.type==='mounted'){window.ready=true;return;}
  if(message.type!=='request')return;
  try{
   let data={};
   if(message.method==='clipboard'){const revision=generation;data=await host.request(token,message.params,()=>visible&&generation===revision&&document.hasFocus()&&document.activeElement===frame);}
   if(message.method==="settings"){window.appearanceReports?.push(message.params);}
-  if(message.method==='event'){window.actions.push(message.params);data={viewType:'target-shell',params:{target:'fixture'}};}
-  if(message.method==='openView')window.opens.push(message.params);
   if(message.method==='data'){
    const p=message.params;
    if(p.op==='write')window.writes.push(p.data);
@@ -149,13 +147,5 @@ try{
  }
  requestedPlatform='Win32';await page.reload();await page.waitForFunction(()=>window.ready);await focus();await frame.locator('#terminal').click({button:'right'});
  fs.mkdirSync('artifacts/terminal-ui',{recursive:true});await page.screenshot({path:'artifacts/terminal-ui/clipboard-menu.png'});
- await page.keyboard.press('Escape');await reset();
- await page.evaluate(()=>{window.testPost({type:'data',data:{kind:'data',packet:2,offset:12,data:[116,97,105,108,45,111,117,116,112,117,116,13,10]}});window.testPost({type:'data',data:{kind:'end',packet:3,offset:12,data:[],metadata:{exitCode:42}}});});
- await frame.getByRole('button',{name:'重新进入测试目标',exact:true}).waitFor();
- assert.match(await term(()=>window.testTerminal.buffer.active.getLine(0)?.translateToString()),/tail-output/);
- await focus();await page.keyboard.type('must-not-send');assert.equal(await bytes(),'');
- await frame.getByRole('button',{name:'重新进入测试目标',exact:true}).evaluate(el=>{el.click();el.click();});await page.waitForFunction(()=>window.opens.length===1);
- assert.deepEqual(await page.evaluate(()=>window.opens[0]),{viewType:'target-shell',params:{target:'fixture'}});
- assert.deepEqual(await page.evaluate(()=>window.actions[0]),{type:'terminal.action',actionId:'reenter'});assert.deepEqual(errors,[]);
  console.log('Terminal input passed: real xterm copy/Ctrl+C/paste/bracketed paste, local menu, no duplicate input, late paste cancellation, theme keeps geometry; no page errors');
 }catch(error){console.error({errors,frames:page.frames().map(f=>f.url())});throw error;}finally{await browser.close();await vite.close();}

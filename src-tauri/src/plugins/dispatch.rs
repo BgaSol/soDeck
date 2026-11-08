@@ -49,9 +49,6 @@ pub(super) fn plugin_request(
         "files.request" => core
             .files_control(id, instance, &frame["params"])
             .map_err(RpcError::execution),
-        method if method.starts_with("terminal.session.") => core
-            .terminal_session_request(id, instance, method, &frame["params"])
-            .map_err(RpcError::execution),
         "terminal.open" => {
             let p = &frame["params"];
             let view = p["viewId"]

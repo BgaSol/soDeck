@@ -132,13 +132,6 @@ impl server::Handler for Ssh {
         command: &[u8],
         session: &mut Session,
     ) -> Result<(), Self::Error> {
-        if command == b"terminal-test:reject" {
-            session.channel_failure(id)?;
-            return Ok(());
-        }
-        if command == b"terminal-test:unconfirmed" {
-            return Ok(());
-        }
         session.channel_success(id)?;
         if command == b"status-test:hang" {
             return Ok(());
@@ -412,7 +405,7 @@ async fn connected_in(f: &Fixture, id: &str, window: &str) -> View {
     f.core
         .connection_views()
         .into_iter()
-        .find(|v| v.attempt_id == start.attempt_id)
+        .find(|v| v.server_id == id)
         .unwrap()
 }
 

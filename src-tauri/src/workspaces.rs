@@ -558,9 +558,7 @@ impl AppCore {
             .flat_map(|w| w.views.iter().map(|v| (v.id.clone(), v.context.clone())))
             .collect();
         self.terminals
-            .cancel(|owner| !live.contains_key(&owner.view));
-        self.terminals
-            .cancel_execution(|owner| live.get(&owner.view) != Some(&owner.context));
+            .cancel(|owner| live.get(&owner.view) != Some(&owner.context));
         self.executions
             .cancel(|owner| live.get(&owner.view) != Some(&owner.context));
         self.files.cancel(|owner| !live.contains_key(&owner.view));

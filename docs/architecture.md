@@ -1,7 +1,5 @@
 # SoDeck 架构草案
 
-终端按[抽象设计](plan-terminal-abstraction.md)拆成核心 PTY 会话、插件目标/准备策略、共同显示和可选目录模块。核心 `terminal/session.rs` 保存启动意图及运行结果，`terminal.rs` 管理执行与有界 Replay；执行结束与历史释放分别处理。插件 `src/session.rs` 管理每 view 一次准备，`plugins/shared/terminal` 消费会话描述和原生状态，宿主机 Shell/目录逻辑留在终端插件。文件跟随优先识别会话的位置能力，旧协议兼容集中保留。真实接口及验收见[实施记录](implementation-terminal-abstraction.md)。
-
 更新体验改版已实现主进程集中检查与下载调度、同仓库同批次 Releases 复用、偏好与检查结果缓存。`updates.rs` 管理组件状态、排队、逐项失败和插件准备；`desktop_updates.rs` 通过官方 updater 恢复、验签和安装核心落盘包。前端 `updates.ts` 与 `plugin-settings.ts` 共用核心状态，下载任务独立于设置页面；现有退出检查与插件回退继续复用。实现、测试及平台边界见 [更新体验记录](implementation-update-experience.md)。
 
 组件设置已按 [整体设计](plan-component-settings.md) 实现。`settings.rs` 与 `settings/declaration.rs` 根据实际运行/安装版本解析可选声明，`settings/store.rs` 独立保存修订、原值、结构历史和备份；前端 `settings.ts` 管理通用表单、草稿、字体示例及应用反馈。插件经可选 `settings.v1` RPC 和组件宿主的单页快照接收设置，业务效果留在插件。字体随需要它的插件独立打包，核心只提供通用加载与静态资源读取，不识别业务插件 ID。首批未引入业务校验脚本或特殊预览 iframe；实际接口和验证见 [实施记录](implementation-component-settings.md)。

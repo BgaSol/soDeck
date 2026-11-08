@@ -908,57 +908,6 @@ impl StateHub {
         };
     }
 
-    pub(crate) fn set_terminal_runtime(
-        &self,
-        context: &Context,
-        id: &str,
-        value: Value,
-        now: Instant,
-    ) -> Result<(), Error> {
-        if encoded_size(&value) > 4 * 1024 {
-            return Err(Error::limit());
-        }
-        self.update(now, |store| {
-            let key = RecordKey {
-                topic: "terminal.runtime.v1".into(),
-                producer: Producer::Core,
-                key: id.into(),
-            };
-            let scope = store.scope(context)?;
-            let previous = scope.records.get(&key);
-            if previous.and_then(|r| r.value.as_ref()) == Some(&value) {
-                return Ok(());
-            }
-            let old = previous.map_or(0, |r| r.bytes);
-            let mut record = Record {
-                key: key.clone(),
-                revision: scope.next_revision()?,
-                received_at: crate::core::now(),
-                value: Some(value),
-                bytes: 0,
-            };
-            record.bytes = encoded_size(&record.wire()) + 128;
-            if (previous.is_none() && scope.records.len() >= limits::RECORDS)
-                || scope.bytes - old + record.bytes > limits::SCOPE_BYTES
-                || store.usage().retained_bytes - old + record.bytes > limits::RETAINED_BYTES
-            {
-                return Err(Error::limit());
-            }
-            let record = Arc::new(record);
-            let scope = store.scope_mut(context)?;
-            scope.bytes = scope.bytes - old + record.bytes;
-            scope.revision = record.revision;
-            scope.records.insert(key.clone(), record.clone());
-            store.publish(
-                context,
-                record.revision,
-                Some(key),
-                Change::Record(record, "updated"),
-            );
-            Ok(())
-        })
-    }
-
     pub(crate) fn sync_ui(
         &self,
         ui: &crate::component_ui::Runtime,
@@ -988,48 +937,6 @@ impl StateHub {
                 .filter(|(p, c)| live.get(*p) != Some(*c))
                 .map(|(p, _)| p.clone())
                 .collect();
-            let gone_runtime: Vec<_> = store
-                .scopes
-                .values()
-                .flat_map(|scope| {
-                    scope.records.iter().filter_map(|(key, record)| {
-                        if key.topic != "terminal.runtime.v1" || key.producer != Producer::Core {
-                            return None;
-                        }
-                        let value = record.value.as_ref()?;
-                        let producer = Producer::Plugin {
-                            plugin_id: value["pluginId"].as_str().unwrap_or("").into(),
-                            plugin_instance_id: value["pluginInstanceId"]
-                                .as_str()
-                                .unwrap_or("")
-                                .into(),
-                            view_id: value["viewId"].as_str().unwrap_or("").into(),
-                        };
-                        (live.get(&producer) != Some(&scope.context))
-                            .then(|| (scope.context.clone(), key.clone()))
-                    })
-                })
-                .collect();
-            for (context, key) in gone_runtime {
-                let scope = store.scope_mut(&context)?;
-                let record = scope.records.remove(&key).unwrap();
-                scope.bytes -= record.bytes;
-                let revision = scope.next_revision()?;
-                scope.revision = revision;
-                let removed = Arc::new(Record {
-                    key: key.clone(),
-                    revision,
-                    received_at: crate::core::now(),
-                    value: None,
-                    bytes: 0,
-                });
-                store.publish(
-                    &context,
-                    revision,
-                    Some(key),
-                    Change::Record(removed, "sourceStopped"),
-                );
-            }
             for producer in gone {
                 store.remove_source(&producer, "sourceStopped", crate::core::now());
             }

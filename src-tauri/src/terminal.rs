@@ -5,13 +5,11 @@ use crate::{
     AppCore,
 };
 use serde::Deserialize;
-mod session;
 use serde_json::{json, Value};
-use session::{Launch, Runtime};
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
         Arc, Mutex,
     },
 };
@@ -23,42 +21,16 @@ enum Input {
     Resize(u32, u32),
 }
 pub(crate) struct Terminal {
-    id: String,
     owner: Owner,
-    launch: Launch,
-    runtime: Mutex<Runtime>,
-    retiring: AtomicBool,
     pub output: Arc<Replay>,
     input: mpsc::Sender<Input>,
     cancel: CancellationToken,
     tasks: Arc<crate::resource_tasks::Tasks>,
-    readers: Arc<crate::resource_tasks::Tasks>,
-    reader_cancel: CancellationToken,
     next_input: Mutex<HashMap<String, u64>>,
     pub sent: AtomicU64,
     pub received: AtomicU64,
 }
 impl Terminal {
-    fn snapshot(&self) -> Value {
-        let mut value = self.runtime.lock().unwrap().wire();
-        let object = value.as_object_mut().unwrap();
-        object.insert("id".into(), json!(self.id));
-        object.insert("viewId".into(), json!(self.owner.view));
-        object.insert("pluginId".into(), json!(self.owner.plugin));
-        object.insert("pluginInstanceId".into(), json!(self.owner.instance));
-        object.insert("context".into(), json!(self.owner.context));
-        value
-    }
-    fn retire(&self) {
-        self.retiring.store(true, Ordering::Release);
-        self.tasks.close();
-        self.cancel.cancel();
-        self.readers.close();
-        self.reader_cancel.cancel();
-    }
-    fn released(&self) -> bool {
-        self.retiring.load(Ordering::Acquire) && self.tasks.finished() && self.readers.finished()
-    }
     fn enqueue_write(
         &self,
         data: Vec<u8>,
@@ -94,37 +66,21 @@ pub struct Terminals {
     entries: Mutex<HashMap<String, Arc<Terminal>>>,
 }
 impl Terminals {
-    pub(crate) fn cancel_execution(&self, matches: impl Fn(&Owner) -> bool) {
-        for terminal in self
-            .entries
-            .lock()
-            .unwrap()
-            .values()
-            .filter(|t| matches(&t.owner))
-        {
-            terminal
-                .runtime
-                .lock()
-                .unwrap()
-                .update("closing", None, None);
-            terminal.tasks.close();
-            terminal.cancel.cancel();
-        }
-    }
-    pub(crate) fn validation_surface(&self, view: &str) -> Option<(String, Arc<Replay>, Value)> {
+    pub(crate) fn validation_surface(&self, view: &str) -> Option<(String, Arc<Replay>)> {
         self.entries
             .lock()
             .unwrap()
             .iter()
             .find(|(_, t)| t.owner.view == view)
-            .map(|(id, t)| (id.clone(), t.output.clone(), t.snapshot()))
+            .map(|(id, t)| (id.clone(), t.output.clone()))
     }
     pub(crate) fn cancel(&self, matches: impl Fn(&Owner) -> bool) {
         let mut entries = self.entries.lock().unwrap();
         entries.retain(|_, t| {
             if matches(&t.owner) {
-                t.retire();
-                !t.released()
+                t.tasks.close();
+                t.cancel.cancel();
+                !t.tasks.finished()
             } else {
                 true
             }
@@ -132,7 +88,7 @@ impl Terminals {
     }
     pub(crate) fn pending(&self, matches: impl Fn(&Owner) -> bool) -> usize {
         let mut entries = self.entries.lock().unwrap();
-        entries.retain(|_, t| !t.released());
+        entries.retain(|_, t| !t.tasks.finished());
         entries.values().filter(|t| matches(&t.owner)).count()
     }
 }
@@ -229,103 +185,25 @@ impl AppCore {
         command: Option<String>,
     ) -> Result<Value, String> {
         dimensions(cols, rows)?;
-        let launch = command.map_or(Launch::LoginShell {}, |command| Launch::Command { command });
-        self.terminal_create(plugin, instance, view, cols, rows, launch, None, false)
-    }
-    pub(crate) fn terminal_session_request(
-        self: &Arc<Self>,
-        plugin: &str,
-        instance: &str,
-        method: &str,
-        p: &Value,
-    ) -> Result<Value, String> {
-        if method == "terminal.session.open" {
-            let view = p["viewId"].as_str().ok_or("缺少 viewId")?;
-            let context: crate::workspaces::Context =
-                serde_json::from_value(p["expectedContext"].clone())
-                    .map_err(|_| "缺少有效 expectedContext")?;
-            let launch: Launch = serde_json::from_value(p["launch"].clone())
-                .map_err(|e| format!("终端启动参数无效：{e}"))?;
-            let cols = p["cols"].as_u64().ok_or("缺少有效 cols")?;
-            let rows = p["rows"].as_u64().ok_or("缺少有效 rows")?;
-            if cols > 1000 || rows > 500 {
-                return Err("终端尺寸超出范围".into());
-            }
-            return self.terminal_create(
-                plugin,
-                instance,
-                view,
-                cols as u32,
-                rows as u32,
-                launch,
-                Some(&context),
-                true,
-            );
+        if command
+            .as_ref()
+            .is_some_and(|s| s.is_empty() || s.len() > 32 * 1024 || s.contains('\0'))
+        {
+            return Err("终端启动命令无效或超过 32 KiB".into());
         }
-        let id = p["id"].as_str().ok_or("缺少终端 id")?;
-        let terminal = self
-            .terminals
-            .entries
-            .lock()
-            .unwrap()
-            .get(id)
-            .cloned()
-            .ok_or("终端记录已释放")?;
-        if terminal.owner.plugin != plugin || terminal.owner.instance != instance {
-            return Err("终端不属于此插件实例".into());
-        }
-        match method {
-            "terminal.session.status" => {}
-            "terminal.session.close" => {
-                terminal
-                    .runtime
-                    .lock()
-                    .unwrap()
-                    .update("closing", None, None);
-                terminal.tasks.close();
-                terminal.cancel.cancel();
-                self.terminal_publish(&terminal);
-            }
-            _ => return Err("未知终端会话方法".into()),
-        }
-        Ok(terminal.snapshot())
-    }
-    fn terminal_create(
-        self: &Arc<Self>,
-        plugin: &str,
-        instance: &str,
-        view: &str,
-        cols: u32,
-        rows: u32,
-        launch: Launch,
-        expected: Option<&crate::workspaces::Context>,
-        modern: bool,
-    ) -> Result<Value, String> {
-        dimensions(cols, rows)?;
-        launch.validate()?;
         let owner = self.resource_owner(plugin, instance, view)?;
-        if expected.is_some_and(|context| context != &owner.context) {
-            return Err("终端连接 Context 已改变".into());
-        }
         self.workspaces
             .lock()
             .unwrap()
             .validate_context(&owner.context)?;
         let admission = self.resource_admission(&owner)?;
         let mut entries = self.terminals.entries.lock().unwrap();
-        entries.retain(|_, terminal| !terminal.released());
-        if let Some((id, existing)) = entries
+        entries.retain(|_, terminal| !terminal.tasks.finished());
+        if let Some((id, _)) = entries
             .iter()
             .find(|(_, t)| t.owner.view == view && t.owner.instance == instance)
         {
-            if modern && (existing.launch != launch || existing.owner.context != owner.context) {
-                return Err("终端启动计划冲突，不重新执行".into());
-            }
-            return Ok(if modern {
-                existing.snapshot()
-            } else {
-                json!({"id":id})
-            });
+            return Ok(json!({"id":id}));
         }
         if entries.len() >= 128 {
             return Err("终端数量已达上限，请先关闭不用的终端".into());
@@ -333,17 +211,11 @@ impl AppCore {
         let id = self.next_id();
         let (input, rx) = mpsc::channel(32);
         let terminal = Arc::new(Terminal {
-            id: id.clone(),
             owner,
-            launch: launch.clone(),
-            runtime: Mutex::new(Runtime::default()),
-            retiring: AtomicBool::new(false),
             output: Arc::new(Replay::default()),
             input,
             cancel: CancellationToken::new(),
             tasks: Arc::new(crate::resource_tasks::Tasks::default()),
-            readers: Arc::new(crate::resource_tasks::Tasks::default()),
-            reader_cancel: CancellationToken::new(),
             next_input: Mutex::new(HashMap::new()),
             sent: AtomicU64::new(0),
             received: AtomicU64::new(0),
@@ -357,71 +229,16 @@ impl AppCore {
             self.terminals.entries.lock().unwrap().remove(&id);
             return Err(error);
         }
-        self.terminal_publish(&terminal);
-        let initial = if modern {
-            terminal.snapshot()
-        } else {
-            json!({"id":id})
-        };
         let core = Arc::downgrade(self);
         tauri::async_runtime::spawn(async move {
-            let result = run(core.clone(), terminal.clone(), rx, cols, rows, launch).await;
-            let mut metadata = match result {
-                Ok((code, signal)) => {
-                    json!({"exitCode":code,"exitSignal":signal,"reason":"exited","remoteProcess":if code.is_some() || signal.is_some(){"exitConfirmed"}else{"unknown"}})
-                }
-                Err(error) => {
-                    let request = terminal.runtime.lock().unwrap().request();
-                    let reason = if error == "服务器连接已断开" {
-                        "connectionLost"
-                    } else if terminal.cancel.is_cancelled() {
-                        "cancelled"
-                    } else if request != "accepted" {
-                        "startFailed"
-                    } else {
-                        "transportFailed"
-                    };
-                    json!({"error":error,"reason":reason,"remoteProcess":if request=="notSent"||request=="rejected"{"notStarted"}else{"unknown"}})
-                }
-            };
-            terminal.output.finish(metadata.clone());
-            if let Some(error) = metadata["error"].as_str().map(str::to_owned) {
-                let phase = if terminal.runtime.lock().unwrap().request() == "accepted" {
-                    "transport"
-                } else {
-                    "start"
-                };
-                metadata["error"] =
-                    json!({"code":metadata["reason"],"message":error,"phase":phase});
-            }
-            let unknown_start = terminal.runtime.lock().unwrap().request() == "sent";
-            terminal.tasks.close();
-            drop(task);
-            terminal.runtime.lock().unwrap().update(
-                "closed",
-                unknown_start.then_some("unknown"),
-                Some(metadata),
-            );
-            if let Some(core) = core.upgrade() {
-                core.terminal_publish(&terminal);
-            }
+            let _task = task;
+            let result = run(core, terminal.clone(), rx, cols, rows, command).await;
+            terminal.output.finish(match result {
+                Ok(code) => json!({"exitCode":code}),
+                Err(error) => json!({"error":error}),
+            });
         });
-        Ok(initial)
-    }
-    fn terminal_publish(&self, terminal: &Terminal) {
-        let ui = self.component_ui.lock().unwrap();
-        if !ui.resource_view(&terminal.owner.view).is_ok_and(|v| {
-            v.context == terminal.owner.context && v.plugin_instance_id == terminal.owner.instance
-        }) {
-            return;
-        }
-        self.sync_shared_ui_locked(&ui);
-        let _ = self.shared_state.set_terminal_runtime(
-            &terminal.owner.context,
-            &terminal.id,
-            terminal.snapshot(),
-            std::time::Instant::now(),
-        );
+        Ok(json!({"id":id}))
     }
     pub(crate) fn terminal_close(
         &self,
@@ -434,7 +251,8 @@ impl AppCore {
             if t.owner.plugin != plugin || t.owner.instance != instance {
                 return Err("终端不属于此插件实例".into());
             }
-            t.retire();
+            t.cancel.cancel();
+            t.tasks.close();
         }
         Ok(json!({}))
     }
@@ -474,8 +292,8 @@ impl AppCore {
                 let window = window.to_string();
                 let token = token.to_string();
                 let check = token.clone();
-                let task = terminal.readers.enter()?;
-                let cancel = terminal.reader_cancel.clone();
+                let task = terminal.tasks.enter()?;
+                let cancel = terminal.cancel.clone();
                 tauri::async_runtime::spawn(async move {
                     let _task = task;
                     tokio::select! {biased; _=cancel.cancelled()=>{}, _=output.subscribe(token, sink, move || {
@@ -556,7 +374,6 @@ mod tests {
         let (input, rx) = mpsc::channel(32);
         (
             Terminal {
-                id: "test-pty".into(),
                 owner: Owner {
                     plugin: "test.terminal".into(),
                     instance: "instance".into(),
@@ -568,15 +385,10 @@ mod tests {
                         generation: 1,
                     },
                 },
-                launch: Launch::LoginShell {},
-                runtime: Mutex::new(Runtime::default()),
-                retiring: AtomicBool::new(false),
                 output: Arc::new(Replay::default()),
                 input,
                 cancel: CancellationToken::new(),
                 tasks: Arc::new(crate::resource_tasks::Tasks::default()),
-                readers: Arc::new(crate::resource_tasks::Tasks::default()),
-                reader_cancel: CancellationToken::new(),
                 next_input: Mutex::new(HashMap::new()),
                 sent: AtomicU64::new(0),
                 received: AtomicU64::new(0),
@@ -654,60 +466,34 @@ async fn run(
     mut input: mpsc::Receiver<Input>,
     cols: u32,
     rows: u32,
-    launch: Launch,
-) -> Result<(Option<u32>, Option<String>), String> {
+    command: Option<String>,
+) -> Result<Option<u32>, String> {
     let session = core
         .upgrade()
         .ok_or("应用已退出")?
         .connection_session(&terminal.owner.context)?;
     let token = session.cancellation();
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
-    let mut channel = tokio::select! {biased;
-        _=terminal.cancel.cancelled()=>return Err(if token.is_cancelled(){"服务器连接已断开"}else{"终端已关闭"}.into()),
-        _=token.cancelled()=>return Err("服务器连接已断开".into()),
-        v=tokio::time::timeout_at(deadline,session.open_channel())=>v.map_err(|_|"打开终端超时".to_string())??
-    };
     let opening = async {
+        let channel = session.open_channel().await?;
         channel
             .request_pty(true, "xterm-256color", cols, rows, 0, 0, &[])
             .await
             .map_err(|e| e.to_string())?;
-        confirm_start(&mut channel, &terminal, false).await?;
-        terminal
-            .runtime
-            .lock()
-            .unwrap()
-            .update("opening", Some("sent"), None);
-        if let Some(core) = core.upgrade() {
-            core.terminal_publish(&terminal);
+        if let Some(command) = command {
+            channel
+                .exec(true, command)
+                .await
+                .map_err(|e| e.to_string())?;
+        } else {
+            channel
+                .request_shell(true)
+                .await
+                .map_err(|e| e.to_string())?;
         }
-        match launch {
-            Launch::Command { command } => channel.exec(true, command).await,
-            Launch::LoginShell {} => channel.request_shell(true).await,
-        }
-        .map_err(|e| e.to_string())?;
-        confirm_start(&mut channel, &terminal, true).await?;
-        terminal
-            .runtime
-            .lock()
-            .unwrap()
-            .update("running", Some("accepted"), None);
-        if let Some(core) = core.upgrade() {
-            core.terminal_publish(&terminal);
-        }
-        Ok::<_, String>(())
+        Ok::<_, String>(channel)
     };
-    let started = tokio::select! {biased;
-        _=terminal.cancel.cancelled()=>Err(if token.is_cancelled(){"服务器连接已断开"}else{"终端已关闭"}.into()),
-        _=token.cancelled()=>Err("服务器连接已断开".into()),
-        v=tokio::time::timeout_at(deadline,opening)=>v.unwrap_or_else(|_|Err("打开终端超时".into()))
-    };
-    if let Err(error) = started {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(1), channel.close()).await;
-        return Err(error);
-    }
+    let mut channel = tokio::select! {biased;_=terminal.cancel.cancelled()=>return Err("终端已关闭".into()),_=token.cancelled()=>return Err("服务器连接已断开".into()),v=tokio::time::timeout(std::time::Duration::from_secs(30),opening)=>v.map_err(|_|"打开终端超时".to_string())??};
     let mut code = None;
-    let mut signal = None;
     let work = async {
         loop {
             tokio::select! {biased;
@@ -719,49 +505,15 @@ async fn run(
                 message=channel.wait()=>match message {
                     Some(russh::ChannelMsg::Data{data})|Some(russh::ChannelMsg::ExtendedData{data,..})=>{terminal.received.fetch_add(data.len() as u64,Ordering::Relaxed);if let Some(c)=core.upgrade(){c.record_business(&terminal.owner,0,data.len() as u64);}terminal.output.push(&data,&terminal.cancel).await?;},
                     Some(russh::ChannelMsg::ExitStatus{exit_status})=>code=Some(exit_status),
-                    Some(russh::ChannelMsg::ExitSignal{signal_name,..})=>signal=Some(format!("{signal_name:?}")),
                     Some(russh::ChannelMsg::Failure)=>return Err("服务器拒绝 PTY 或登录 shell".into()),
                     Some(russh::ChannelMsg::Close)|None=>break,
                     _=>{}
                 }
             }
         }
-        Ok((code, signal))
+        Ok(code)
     };
-    let result = tokio::select! {biased;_=terminal.cancel.cancelled()=>Err(if token.is_cancelled(){"服务器连接已断开"}else{"终端已关闭"}.into()),_=token.cancelled()=>Err("服务器连接已断开".into()),v=work=>v};
+    let result = tokio::select! {biased;_=terminal.cancel.cancelled()=>Err("终端已关闭".into()),_=token.cancelled()=>Err("服务器连接已断开".into()),v=work=>v};
     let _ = tokio::time::timeout(std::time::Duration::from_secs(1), channel.close()).await;
     result
-}
-
-async fn confirm_start(
-    channel: &mut russh::Channel<russh::client::Msg>,
-    terminal: &Terminal,
-    start: bool,
-) -> Result<(), String> {
-    loop {
-        match channel.wait().await {
-            Some(russh::ChannelMsg::Success) => return Ok(()),
-            Some(russh::ChannelMsg::Failure) => {
-                if start {
-                    terminal
-                        .runtime
-                        .lock()
-                        .unwrap()
-                        .update("opening", Some("rejected"), None);
-                }
-                return Err(if start {
-                    "服务器拒绝终端启动请求"
-                } else {
-                    "服务器拒绝 PTY 请求"
-                }
-                .into());
-            }
-            Some(russh::ChannelMsg::Data { data })
-            | Some(russh::ChannelMsg::ExtendedData { data, .. }) => {
-                terminal.output.push(&data, &terminal.cancel).await?
-            }
-            Some(russh::ChannelMsg::Close) | None => return Err("终端启动确认前连接已关闭".into()),
-            _ => {}
-        }
-    }
 }
