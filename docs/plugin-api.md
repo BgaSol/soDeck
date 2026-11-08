@@ -269,3 +269,11 @@ npm run plugin:build -- --plugin terminal --out-dir artifacts/another-build
 ```
 
 产物位于 `artifacts/plugins/`，包含清单和原生入口的目录与压缩归档。构建脚本在所选插件工程目录调用 Cargo，使其 Windows 静态运行库配置生效；归档前检查原生架构和额外的 Visual C++ 运行库依赖。每个插件自己的版本只在 `plugins/<名称>/Cargo.toml` 中修改，独立于核心版本；用户运行时不需要 Rust、Node.js 或额外安装 Visual C++ 运行库。
+
+## 可选 PTY 启动与目录对应（核心 0.14.0）
+
+initialize 增加 `terminal.launch.v1`。`terminal.open` 可传 `command` 字符串（非空、无 NUL、UTF-8 不超过 32 KiB）；在同一 PTY 执行该启动命令，不传时保持默认登录 shell。命令解释属于插件，核心继续统一管理资源、取消和 30 秒打开期限，不重放失败启动。
+
+`workspace.presentation.v1/current` 增加可选 `activeEditorPluginId`。`terminal.location.v1/current` 保持 known/unknown，新增可选 activity（starting/ready/busy/unavailable）、reasonCode、title、shell。busy 的 state 为 unknown，消费者不得把旧路径当作当前事实，但应保留已处理的目录以避免手动导航回跳。
+
+页面能力 `fileLocationProof:1` 允许 `resolveLocation` 接受 `filesystemView:"shell-reported"` 和 `witness:{path,value}`。核心通过当前文件服务检查标记为普通文件、内容完全匹配（上限 128 字节），再执行目标 realpath/stat；失败返回 unsupportedLocation。此标记只说明文件系统对应，不是认证或授权。旧文件插件只接受 session-default，因此不会误用新报告；新插件在旧核心上明确降级。原 session-default 及手动 OSC 7 行为保留。

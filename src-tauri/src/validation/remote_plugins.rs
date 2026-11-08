@@ -180,10 +180,34 @@ pub(super) async fn roundtrip(
             .then_some(())
     })
     .await?;
+    let automatic_location = if cfg!(target_os = "linux")
+        && core.settings_page("sodeck.terminal", "appearance")?["values"]
+            .get("directoryMode")
+            .is_some()
+    {
+        Some(wait("自动 shell 目录报告", || {
+            let result = core.state_surface_request(&window, &token, &json!({"op":"get","expectedContext":context,"topic":"terminal.location.v1","key":"current"})).ok()?;
+            let value = &result["record"]["value"];
+            (value["state"] == "known" && value["filesystemView"] == "shell-reported").then(|| value.clone())
+        }).await?)
+    } else {
+        None
+    };
     let opened=core.ui_action("main",context,json!({"op":"open","key":"sodeck.files:editor","requestId":"native-file-open","resourceKey":remote,"params":{"path":remote}}))?;
     let fv = opened["viewId"].as_str().ok_or("没有编辑器视图")?;
     let (_, token) = wait("文件编辑器界面挂载", || core.ui_ready_surface(fv)).await?;
     let id = core.files.validation_handle(fv).ok_or("文件原语未创建")?;
+    if let Some(mut location) = automatic_location {
+        location["id"] = json!(id);
+        location["action"] = json!("resolveLocation");
+        core.files_data("main", &token, location.clone())
+            .await
+            .map_err(|e| format!("自动目录文件系统对应: {e}"))?;
+        location["witness"]["value"] = json!("incorrect-witness");
+        if core.files_data("main", &token, location).await.is_ok() {
+            return Err("文件服务接受了错误的终端文件系统标记".into());
+        }
+    }
     // The iframe reads its document itself over the real native data endpoint.
     tokio::time::timeout(Duration::from_secs(15), async {
         loop {

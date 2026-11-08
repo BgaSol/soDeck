@@ -27,6 +27,7 @@
 | SSH 与混合连接 | [SSH 直连](plan-ssh-direct.md)、[远程工作台](plan-remote-workbench.md) | [混合连接](implementation-connections.md) |
 | 工作区与组件宿主 | [多窗口工作区](plan-server-workspaces.md)、[组件 UI](plan-component-ui.md) | — |
 | 组件通信与共享状态 | [功能设计](plan-component-communication.md)、[代码实施方案](plan-component-communication-coding.md) | [实施与验收](implementation-component-communication.md) |
+| 终端目录自动识别 | [首次连接、自动集成与跟随体验](plan-terminal-directory.md) | [实施与验收](implementation-terminal-directory.md) |
 | 关闭、退出与重启 | [完整生命周期设计](plan-close-lifecycle.md)、[代码整改方案](plan-close-lifecycle-coding.md) | [实施与验收](implementation-close-lifecycle.md) |
 | 真实终端与文件 | [远程工作台](plan-remote-workbench.md) | [真实插件](implementation-remote-plugins.md) |
 | 文件目录树 | [文件树设计](plan-file-tree.md) | [文件树](implementation-file-tree.md) |
@@ -49,6 +50,7 @@
 
 - [GitHub Releases](https://github.com/BgaSol/soDeck/releases)：已发布的核心和插件版本、下载附件与发布说明。
 - [核心版本记录](releases/)：各版本的功能变化、验收与交付边界，包含历史候选版本记录。
+- [v0.14.0](releases/v0.14.0.md)：终端自动识别目录、文件跟随状态与文件系统对应检查。
 - [v0.13.0](releases/v0.13.0.md)：核心共享状态、终端目录跟随与挂载容量联动。
 - [v0.12.3](releases/v0.12.3.md)：面板拖动状态、完整手势生命周期及终端尺寸同步整改。
 - [v0.12.2](releases/v0.12.2.md)：macOS 原生窗口按钮在标题栏中垂直居中，主窗口与拆出窗口保持一致。

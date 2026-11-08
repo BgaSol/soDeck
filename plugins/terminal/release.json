@@ -152,9 +152,31 @@
             "title": "目录联动",
             "fields": [
               {
+                "key": "directoryMode",
+                "title": "终端目录识别",
+                "description": "自动识别支持 Linux Bash/Zsh；只影响新建终端，不修改服务器配置文件。",
+                "type": "select",
+                "default": "auto",
+                "options": [
+                  {
+                    "value": "auto",
+                    "title": "自动识别"
+                  },
+                  {
+                    "value": "manual",
+                    "title": "兼容已有 OSC 7 配置"
+                  },
+                  {
+                    "value": "off",
+                    "title": "关闭"
+                  }
+                ],
+                "apply": "newInstance"
+              },
+              {
                 "key": "directoryReportHost",
-                "title": "目录报告主机名",
-                "description": "仅为与文件浏览使用同一文件系统的 shell 填写 OSC 7 主机名；留空时关闭目录上报。进入容器、chroot 或嵌套 SSH 前关闭跟随。",
+                "title": "兼容模式主机名",
+                "description": "仅兼容模式使用。填写已有 OSC 7 报告的主机名，确认与文件服务使用同一文件系统；进入嵌套环境前关闭跟随。",
                 "type": "string",
                 "default": "",
                 "maxLength": 128,

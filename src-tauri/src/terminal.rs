@@ -182,8 +182,15 @@ impl AppCore {
         view: &str,
         cols: u32,
         rows: u32,
+        command: Option<String>,
     ) -> Result<Value, String> {
         dimensions(cols, rows)?;
+        if command
+            .as_ref()
+            .is_some_and(|s| s.is_empty() || s.len() > 32 * 1024 || s.contains('\0'))
+        {
+            return Err("终端启动命令无效或超过 32 KiB".into());
+        }
         let owner = self.resource_owner(plugin, instance, view)?;
         self.workspaces
             .lock()
@@ -225,7 +232,7 @@ impl AppCore {
         let core = Arc::downgrade(self);
         tauri::async_runtime::spawn(async move {
             let _task = task;
-            let result = run(core, terminal.clone(), rx, cols, rows).await;
+            let result = run(core, terminal.clone(), rx, cols, rows, command).await;
             terminal.output.finish(match result {
                 Ok(code) => json!({"exitCode":code}),
                 Err(error) => json!({"error":error}),
@@ -459,6 +466,7 @@ async fn run(
     mut input: mpsc::Receiver<Input>,
     cols: u32,
     rows: u32,
+    command: Option<String>,
 ) -> Result<Option<u32>, String> {
     let session = core
         .upgrade()
@@ -471,10 +479,17 @@ async fn run(
             .request_pty(true, "xterm-256color", cols, rows, 0, 0, &[])
             .await
             .map_err(|e| e.to_string())?;
-        channel
-            .request_shell(true)
-            .await
-            .map_err(|e| e.to_string())?;
+        if let Some(command) = command {
+            channel
+                .exec(true, command)
+                .await
+                .map_err(|e| e.to_string())?;
+        } else {
+            channel
+                .request_shell(true)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
         Ok::<_, String>(channel)
     };
     let mut channel = tokio::select! {biased;_=terminal.cancel.cancelled()=>return Err("终端已关闭".into()),_=token.cancelled()=>return Err("服务器连接已断开".into()),v=tokio::time::timeout(std::time::Duration::from_secs(30),opening)=>v.map_err(|_|"打开终端超时".to_string())??};

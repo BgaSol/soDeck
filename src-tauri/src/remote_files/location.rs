@@ -25,7 +25,7 @@ mod tests {
     }
 }
 pub(super) fn normalize(p: &Value) -> Result<String, String> {
-    if p["filesystemView"] != "session-default" {
+    if p["filesystemView"] != "session-default" && p["filesystemView"] != "shell-reported" {
         return Err("unsupportedLocation: 文件系统视角无法映射".into());
     }
     let value = p["path"]

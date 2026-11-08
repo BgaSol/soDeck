@@ -982,7 +982,15 @@ impl StateHub {
                     });
                     store.publish(&context, revision, None, Change::Scope(status));
                 }
-                let value = json!({"activeEditorViewId":ui.workspaces.get(&context.workspace_id).and_then(|w|w.editor.clone())});
+                let active = ui
+                    .workspaces
+                    .get(&context.workspace_id)
+                    .and_then(|w| w.editor.clone());
+                let plugin = active
+                    .as_ref()
+                    .and_then(|id| ui.resource_view(id).ok())
+                    .map(|v| v.plugin_id.clone());
+                let value = json!({"activeEditorViewId":active,"activeEditorPluginId":plugin});
                 let key = RecordKey {
                     topic: "workspace.presentation.v1".into(),
                     producer: Producer::Core,

@@ -3,6 +3,7 @@
 *.yml text eol=lf
 *.json text eol=lf
 *.html text eol=lf
+*.sh text eol=lf
 
 # Pinned upstream font assets are verified byte-for-byte, including licenses.
 plugins/shared/fonts/*.LICENSE.txt -text -diff

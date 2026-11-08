@@ -238,11 +238,11 @@ export class Components {
     const message = event.data;
     if (message.type === "ready") {
       if (surface.initialized) return; surface.initialized = true;
-      surface.chain = this.invoke<{ surfaceId: string; data: unknown; view: View; capabilities?:{sharedState?:number;fileLocation?:number} }>("attach", { viewId: surface.view.id }).then(async result => {
+      surface.chain = this.invoke<{ surfaceId: string; data: unknown; view: View; capabilities?:{sharedState?:number;fileLocation?:number;fileLocationProof?:number} }>("attach", { viewId: surface.view.id }).then(async result => {
         surface.token = result.surfaceId;
         this.shared.attach(result.surfaceId,result.view.context,message=>this.post(surface,message));
         const settings = await this.call("settings_for_surface", {surfaceId: result.surfaceId}).catch(() => null);
-        this.post(surface, { type: "mount", connected: this.shells.get(surface.view.context.workspaceId)?.workspace.connected, context: result.view.context, serverName: this.shells.get(surface.view.context.workspaceId)?.workspace.name, viewId: surface.view.id, viewType: surface.view.definitionKey.split(":")[1], data: result.data, tokens: this.tokens(), settings, capabilities: {clipboard:1,localFiles:1,settings:1,sharedState:result.capabilities?.sharedState,fileLocation:result.capabilities?.fileLocation}, visible: surface.visible });
+        this.post(surface, { type: "mount", connected: this.shells.get(surface.view.context.workspaceId)?.workspace.connected, context: result.view.context, serverName: this.shells.get(surface.view.context.workspaceId)?.workspace.name, viewId: surface.view.id, viewType: surface.view.definitionKey.split(":")[1], data: result.data, tokens: this.tokens(), settings, capabilities: {clipboard:1,localFiles:1,settings:1,sharedState:result.capabilities?.sharedState,fileLocation:result.capabilities?.fileLocation,fileLocationProof:result.capabilities?.fileLocationProof}, visible: surface.visible });
         surface.frame.dataset.surfaceId = result.surfaceId;
       }).catch(error => this.surfaceError(surface, String(error)));
       return;

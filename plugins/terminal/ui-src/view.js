@@ -6,7 +6,7 @@ import {createLocation} from './location.js';
   const fit=new FitAddon.FitAddon(),serialize=new SerializeAddon.SerializeAddon();terminal.loadAddon(fit);terminal.loadAddon(serialize);terminal.open(host);
   let id,offset=0,inputSequence=0,chain=Promise.resolve(),inputChain=Promise.resolve(),disposed=false,caughtUp=false,restoring=false,visible=false,enabled=false;
   let savedOffset=0,lastSave=0,escape='normal',utf8=0,inputPending=0,mountKey='';
-  let ended=false,disconnected=false,opening=false;
+  let ended=false,disconnected=false,opening=false,surfaceReady=false;
   const newTerminal=document.createElement('button');newTerminal.textContent='新建终端';newTerminal.hidden=true;newTerminal.className='sd-control';status.after(newTerminal);
   newTerminal.onclick=()=>{
     if(opening||disposed||disconnected||!ended)return;
@@ -32,7 +32,7 @@ import {createLocation} from './location.js';
     else if(escape==='csi'&&b>=0x40&&b<=0x7e)escape='normal';
   }}
   async function checkpoint(force=false){
-    if(disposed||restoring||!caughtUp||offset===savedOffset||escape!=='normal'||utf8)return;
+    if(disposed||!surfaceReady||restoring||!caughtUp||offset===savedOffset||escape!=='normal'||utf8)return;
     if(!force&&offset-savedOffset<128*1024&&performance.now()-lastSave<250)return;
     const bytes=encoder.encode(serialize.serialize());
     const metadata={cols:terminal.cols,rows:terminal.rows};
@@ -95,12 +95,13 @@ import {createLocation} from './location.js';
     terminal.options.theme=palette;controls.themeChanged();
   }
   addEventListener('sodeck:mount',event=>{
-    const mount=event.detail;id=mount.data.streamId;mountKey=mount.surfaceId+':'+JSON.stringify(mount.context);disconnected=mount.connected===false;visible=mount.visible;theme(mount.tokens);
+    const mount=event.detail;surfaceReady=mount.capabilities?.sharedState!==1;id=mount.data.streamId;mountKey=mount.surfaceId+':'+JSON.stringify(mount.context);disconnected=mount.connected===false;visible=mount.visible;theme(mount.tokens);
     appearance.receive(mount.settings);
     location.mount(mount);
     status.textContent=`${mount.serverName||'服务器'} · 正在接续终端…`;
     void request({op:'attach'}).catch(fail);
   });
+  addEventListener('sodeck:surfaceReady',()=>{surfaceReady=true;enabled=caughtUp&&!disconnected&&!ended;void appearance.apply();void enqueueSize(true).catch(fail);if(enabled)location.ready();});
   addEventListener('sodeck:data',event=>{
     chain=chain.then(async()=>{
       if(disposed)return;
@@ -113,16 +114,16 @@ import {createLocation} from './location.js';
       if(frame.kind==='data'){const bytes=Uint8Array.from(frame.data);await write(bytes);scan(bytes);offset=frame.offset;location.completed();}
       await request({op:'ack',packet:frame.packet});
       if(frame.kind==='caughtUp'){
-        caughtUp=true;enabled=true;status.textContent='远程终端 · 已连接';status.hidden=true;status.classList.remove('error');document.body.dataset.ready='true';
+        caughtUp=true;enabled=surfaceReady&&!disconnected&&!ended;status.textContent='远程终端 · 已连接';status.hidden=true;status.classList.remove('error');document.body.dataset.ready='true';
         // Incoming windows may render before ownership commits. Only the owner saves a checkpoint.
-        await checkpoint(true).catch(()=>{});sodeck.mounted();void appearance.apply();void enqueueSize().catch(()=>{});
-        if(!disconnected&&!ended)location.ready();
+        await checkpoint(true).catch(()=>{});sodeck.mounted();if(surfaceReady){void appearance.apply();void enqueueSize().catch(()=>{});}
+        if(surfaceReady&&!disconnected&&!ended)location.ready();
       }
       if(frame.kind==='end'){location.unknown(offset,'终端已退出');controls.invalidate();enabled=false;ended=true;stopSize();void enqueueSize().catch(()=>{});status.hidden=false;status.textContent=disconnected?'连接已断开，请在工作台重新连接后新建终端。':frame.metadata?.error||`终端已退出${frame.metadata?.exitCode==null?'':` · ${frame.metadata.exitCode}`}`;newTerminal.hidden=disconnected;}
       if(frame.kind==='data')await checkpoint().catch(error=>{if(!String(error).includes('窗口'))throw error;});
     }).catch(fail);
   });
-  function input(text){if(!enabled||restoring||disposed)return;const key=mountKey,bytes=encoder.encode(text);if(inputPending+bytes.length>256*1024){fail('输入待发送内容超过 256 KiB，请稍后分段粘贴；本次输入未发送');return;}inputPending+=bytes.length;inputChain=inputChain.then(async()=>{for(let i=0;i<bytes.length;i+=16384){if(disposed||!enabled||restoring||mountKey!==key)return;await request({op:'write',sequence:inputSequence,data:Array.from(bytes.subarray(i,i+16384))});inputSequence++;}}).catch(error=>{if(!disposed&&mountKey===key){enabled=false;fail(error);}}).finally(()=>{inputPending-=bytes.length;});}
+  function input(text){if(!enabled||restoring||disposed)return;const key=mountKey,bytes=encoder.encode(text);if(inputPending+bytes.length>256*1024){fail('输入待发送内容超过 256 KiB，请稍后分段粘贴；本次输入未发送');return;}inputPending+=bytes.length;location.input(text);inputChain=inputChain.then(async()=>{for(let i=0;i<bytes.length;i+=16384){if(disposed||!enabled||restoring||mountKey!==key)return;await request({op:'write',sequence:inputSequence,data:Array.from(bytes.subarray(i,i+16384))});inputSequence++;}}).catch(error=>{if(!disposed&&mountKey===key){enabled=false;fail(error);}}).finally(()=>{inputPending-=bytes.length;});}
   terminal.onData(input);
   addEventListener('sodeck:visibilityChanged',event=>{visible=event.detail.visible;if(!visible){controls.invalidate();stopSize();}if(visible){void appearance.apply();void enqueueSize(true).catch(()=>{});}});
   addEventListener('sodeck:settingsChanged',event=>{appearance.receive({...event.detail.settings,retry:true});location.settings(event.detail.settings);});

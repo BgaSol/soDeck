@@ -538,6 +538,41 @@ impl AppCore {
                 "resolveLocation" => {
                     let target = location::normalize(&p)?;
                     let f = sftp(self, &mut s, &view.context).await?;
+                    if p["filesystemView"] == "shell-reported" {
+                        let witness = &p["witness"];
+                        let marker = witness["path"]
+                            .as_str()
+                            .filter(|s| {
+                                s.starts_with('/')
+                                    && s.len() <= 4096
+                                    && !s.chars().any(char::is_control)
+                            })
+                            .ok_or("unsupportedLocation: 缺少文件系统对应标记")?;
+                        let expected = witness["value"]
+                            .as_str()
+                            .filter(|s| !s.is_empty() && s.len() <= 128)
+                            .ok_or("unsupportedLocation: 文件系统标记无效")?;
+                        let a = f
+                            .raw
+                            .lstat(marker)
+                            .await
+                            .map_err(|_| "unsupportedLocation: 终端与文件服务的文件系统无法对应")?
+                            .attrs;
+                        if !a.file_type().is_file() || a.size != Some(expected.len() as u64) {
+                            return Err(
+                                "unsupportedLocation: 终端与文件服务的文件系统无法对应".into()
+                            );
+                        }
+                        let bytes = read_small(&f.raw, marker, &a, |n| {
+                            self.record_business(&r.owner, 0, n as u64)
+                        })
+                        .await?;
+                        if bytes != expected.as_bytes() {
+                            return Err(
+                                "unsupportedLocation: 终端与文件服务的文件系统无法对应".into()
+                            );
+                        }
+                    }
                     let resolved = canonical(&f.raw, &target).await?;
                     let a = f.raw.stat(resolved.clone()).await.map_err(err)?.attrs;
                     self.workspaces

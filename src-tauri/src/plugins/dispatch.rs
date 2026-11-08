@@ -59,7 +59,15 @@ pub(super) fn plugin_request(
             if cols > 1000 || rows > 500 {
                 return Err(RpcError::invalid("终端尺寸超出范围"));
             }
-            core.terminal_open(id, instance, view, cols as u32, rows as u32)
+            let command = p
+                .get("command")
+                .map(|v| {
+                    v.as_str()
+                        .map(str::to_owned)
+                        .ok_or_else(|| RpcError::invalid("启动命令必须为字符串"))
+                })
+                .transpose()?;
+            core.terminal_open(id, instance, view, cols as u32, rows as u32, command)
                 .map_err(RpcError::execution)
         }
         "terminal.close" => core

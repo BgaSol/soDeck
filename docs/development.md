@@ -153,3 +153,7 @@ CI 的 npm 下载缓存按任务实际使用的锁文件配置；核心打包只
 `core-release-v2` 是一次性的缓存迁移标识，不随提交、版本或 run ID 变化。它保留固定 action 的默认工具链/环境/Cargo 输入隔离，只缓存依赖编译结果；宿主构建依赖与目标架构 release 依赖一并保留，不开启 workspace crate 或 incremental 缓存。恢复后仍执行 `npm ci`、当前前端及当前核心的正式构建。main 手动打包会保存依赖，后续适用分支和标签可恢复默认分支缓存；详见[分发文档](distribution.md)。Linux 打包依赖安装复用官方软件源修正与有限重试，不缓存系统安装状态。
 
 返回 [项目首页](../README.md) · [文档索引](README.md)
+
+### 自动目录集成回归
+
+Linux 安装 Bash、Zsh 和 Python 3 后运行 `python3 scripts/test-terminal-shell.py`，以真实 PTY 验证随终端发行的启动脚本、用户配置顺序、字符串/数组提示符钩子、退出状态、特殊字符、嵌套 shell、Ctrl-C 与临时文件清理。Check 的终端业务任务执行此入口；Python/Zsh 是测试工具，不加入产品包。`npm run communication:test` 在 Linux 使用默认自动集成，不配置 hostname 或注入提示符钩子；Windows 保留 PowerShell 手动 OSC 7 兼容回归。
