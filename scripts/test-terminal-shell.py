@@ -89,7 +89,8 @@ for shell, array in [("/bin/bash", False), ("/bin/bash", True), ("/bin/zsh", Fal
         (home / ".bash_profile").write_text('echo profile >> "$TRACE_FILE"\n. "$HOME/.bashrc"\n')
         (home / ".bashrc").write_text('echo rc >> "$TRACE_FILE"\n' + hook + ('PROMPT_COMMAND=(user_prompt)\n' if array else 'PROMPT_COMMAND=user_prompt\n') + "PS1='custom> '\n")
         for stage in [".zshenv", ".zprofile", ".zshrc", ".zlogin"]:
-            (home / stage).write_text(f'echo {stage} >> "$TRACE_FILE"\n' + (hook + 'precmd_functions=(user_prompt)\nPS1="custom> "\n' if stage == ".zshrc" else ""))
+            # Ubuntu runners have writable global completion paths; completion is not this fixture's subject.
+            (home / stage).write_text(f'echo {stage} >> "$TRACE_FILE"\n' + ('skip_global_compinit=1\n' if stage == ".zshenv" else '') + (hook + 'precmd_functions=(user_prompt)\nPS1="custom> "\n' if stage == ".zshrc" else ""))
         session = Shell(shell, home)
         try:
             first = session.ready()
