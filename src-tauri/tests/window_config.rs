@@ -14,7 +14,8 @@ fn macos_main_window_starts_with_an_overlay_title_bar() {
     assert!(window.hidden_title);
     assert_eq!(window.title_bar_style, tauri::TitleBarStyle::Overlay);
     let position = window.traffic_light_position.as_ref().unwrap();
-    assert_eq!((position.x, position.y), (12., 22.));
+    // The native inset differs from the button center, which package smoke checks at 22pt.
+    assert_eq!((position.x, position.y), (12., 20.));
 }
 
 #[test]
