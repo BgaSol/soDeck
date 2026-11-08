@@ -1,0 +1,44 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {test} from 'node:test';
+const bus=new EventTarget();globalThis.addEventListener=bus.addEventListener.bind(bus);globalThis.removeEventListener=bus.removeEventListener.bind(bus);
+let projection;
+globalThis.SessionState=class {available=true;watch(_,change){projection=change;return {dispose(){}};}dispose(){}};
+const adapterSource=fs.readFileSync('plugins/shared/terminal/session.js','utf8').replace("import {SharedState} from '../state.js';",'const SharedState=globalThis.SessionState;');
+const {createSessionAdapter}=await import('data:text/javascript;base64,'+Buffer.from(adapterSource).toString('base64'));
+const context={workspaceId:'w',serverId:'s',connectionId:'c',generation:1};
+const session={schemaVersion:1,revision:'1',viewId:'v',context,ptyId:'p',preparation:'prepared',actions:[{id:'reenter',label:'重新进入目标',enabled:true}]};
+const runtime={id:'p',viewId:'v',context,revision:'1',state:'running'};
+const records=(s=session,r=runtime)=>({records:[{present:true,topic:'terminal.session.v1',key:'current',producer:{kind:'plugin',viewId:'v'},value:s},{present:true,topic:'terminal.runtime.v1',key:'p',producer:{kind:'core'},value:r}]});
+test('session adapter retains original context history, ignores stale replies and delegates provider action',async()=>{
+ const calls=[];globalThis.sodeck={request:async(method,params)=>{calls.push({method,params});return method==='event'?{viewType:'target-shell',params:{target:'fixture'}}:{};}};
+ const adapter=createSessionAdapter();adapter.mount({viewId:'v',context:{...context,generation:2},data:{session,runtime}});
+ assert.equal(adapter.current().descriptor.context.generation,1,'historical mount keeps immutable target');
+ projection(records({...session,revision:'2'}, {...runtime,revision:'3',state:'closed'}));
+ projection(records(session,{...runtime,revision:'2',state:'running'}));
+ assert.equal(adapter.current().runtime.state,'closed');
+ projection(records({...session,revision:'4',context:{...context,generation:2}},runtime));
+ assert.equal(adapter.current().descriptor.revision,'2','other target cannot replace the original');
+ await adapter.invokeAction('reenter');assert.deepEqual(calls.at(-1),{method:'openView',params:{viewType:'target-shell',params:{target:'fixture'}}});
+ await assert.rejects(adapter.invokeAction('missing'));adapter.dispose();
+});
+test('late status recovery cannot revive a session closed by a newer native revision',async()=>{
+ let release;globalThis.sodeck={request:()=>new Promise(resolve=>release=resolve)};
+ const adapter=createSessionAdapter();adapter.mount({viewId:'v',context,data:{session,runtime}});
+ projection(null);await new Promise(resolve=>setTimeout(resolve,550));assert(release);
+ projection(records(session,{...runtime,revision:'4',state:'closed'}));release({session,runtime});await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(adapter.current().runtime.state,'closed');adapter.dispose();
+});
+test('file follow identifies a declared provider and keeps legacy behavior isolated',async()=>{
+ const source=fs.readFileSync('plugins/files/ui/shared-state.js','utf8').replace("import {SharedState} from './state.js';",'const SharedState=class {};');
+ const {terminalProvider}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+ const producer={kind:'plugin',pluginId:'test.shell',pluginInstanceId:'i',viewId:'v'};
+ const descriptor={present:true,topic:'terminal.session.v1',key:'current',producer,value:{...session,capabilities:{location:{supported:false}}}};
+ const location={present:true,topic:'terminal.location.v1',key:'current',producer,value:{terminalId:'p',path:'/cwd'}};
+ assert.equal(terminalProvider([descriptor,location],'v').location,null,'unsupported location cannot navigate');
+ descriptor.value.capabilities.location.supported=true;
+ assert.equal(terminalProvider([descriptor,location],'v').location.path,'/cwd');
+ assert.equal(terminalProvider([descriptor,{...location,value:{terminalId:'other'}}],'v').location,undefined);
+ assert.equal(terminalProvider([location],'v'),null);
+ assert.equal(terminalProvider([{...location,producer:{...producer,pluginId:'sodeck.terminal'}}],'v').location.path,'/cwd');
+});

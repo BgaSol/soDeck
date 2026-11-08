@@ -277,3 +277,23 @@ initialize 增加 `terminal.launch.v1`。`terminal.open` 可传 `command` 字符
 `workspace.presentation.v1/current` 增加可选 `activeEditorPluginId`。`terminal.location.v1/current` 保持 known/unknown，新增可选 activity（starting/ready/busy/unavailable）、reasonCode、title、shell。busy 的 state 为 unknown，消费者不得把旧路径当作当前事实，但应保留已处理的目录以避免手动导航回跳。
 
 页面能力 `fileLocationProof:1` 允许 `resolveLocation` 接受 `filesystemView:"shell-reported"` 和 `witness:{path,value}`。核心通过当前文件服务检查标记为普通文件、内容完全匹配（上限 128 字节），再执行目标 realpath/stat；失败返回 unsupportedLocation。此标记只说明文件系统对应，不是认证或授权。旧文件插件只接受 session-default，因此不会误用新报告；新插件在旧核心上明确降级。原 session-default 及手动 OSC 7 行为保留。
+
+## 终端会话（可选 terminal.session.v1，核心 0.15.0）
+
+initialize 新增 `terminal.session.v1`，API 主版本保持 1。旧 terminal.open/close 和正文桥继续可用。
+
+| 方法 | 参数 | 返回 |
+| --- | --- | --- |
+| terminal.session.open | viewId、expectedContext、launch、cols（1–1000）、rows（1–500） | 原生运行快照；同 view/Context/启动计划返回原资源，冲突拒绝 |
+| terminal.session.status | id | 原所属插件实例可查询原运行快照；不要求原连接在线 |
+| terminal.session.close | id | 幂等请求取消，返回 closing/closed；执行收尾后才 closed |
+
+launch 为互斥对象 `{kind:"loginShell"}` 或 `{kind:"command",command:string}`，不接受混合字段；command 保留已有 32 KiB、非空、无 NUL 要求，按远端环境解释。PTY 和启动请求分别确认成功后才 running，保留 30 秒总打开期限。拒绝明确命令不回退到登录 Shell。
+
+运行快照含 id/viewId/pluginId/pluginInstanceId/context/revision、state（opening/running/closing/closed）、startRequest（notSent/sent/accepted/rejected/unknown）及 outcome。outcome 包含 reason（exited/cancelled/connectionLost/startFailed/transportFailed）、可选 exitCode/exitSignal、结构化 error（code/message/phase），以及 remoteProcess（notStarted/exitConfirmed/unknown）。仅退出码/信号确认直接启动对象结束；通道关闭不能证明任意子进程已退出。旧数据桥 end 的 error 继续为字符串。
+
+StateHub 核心主题 `terminal.runtime.v1/<id>` 保存运行快照，插件主题 `terminal.session.v1/current` 保存 schemaVersion:1 的描述：viewId/context/ptyId、title/targetLabel/details、preparation/targetReadiness、capabilities.input/resize/location.supported 及可选 reason、actions（id/label/enabled）。两份快照各有十进制 revision，适配器同时核对归属与修订；正文仍走原数据桥，不放入 StateHub。closed 先到时继续显示尾部直到 end。
+
+终端 ui.mount 返回 data.session/runtime，同时保留 streamId/title/openedContext/integration。streamId 准备时可为 null；mounted/surfaceReady/caughtUp 分别表示 UI 挂载、归属就绪及输出追赶，不证明远端启动。恢复事件 `{type:"terminal.status"}` 读取所属插件当前描述；`{type:"terminal.action",actionId}` 由提供方决定后续动作，宿主机 reopen 返回自己的 viewType/params 再经原 openView 开页。桥重试保留原 surface/request 身份。
+
+执行结束、断线或 Context 更换保留原 view 的有界历史，禁止自动重放；关闭逻辑 view 或停止插件回收历史。新文件消费者根据活动会话和同源位置能力识别提供方，保留旧宿主机兼容；位置协议和文件系统证据要求不放宽。共享前端是构建时源码复用，包内资源和设置由各插件独立携带。详细边界见[设计](plan-terminal-abstraction.md)。

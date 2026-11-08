@@ -1,5 +1,5 @@
-import {loadFont} from './font-loader.js';
-import {fontPresets,fontAsset} from './font-presets.js';
+import {loadFont} from '../font-loader.js';
+import {fontPresets,fontAsset} from '../font-presets.js';
 export const terminalDefaults = {font:{source:'preset',id:'jetbrains-mono'},fontSize:14,lineHeight:1.2,paddingBottom:24,cursorStyle:'block',cursorBlink:true};
 export function createAppearance(terminal, host, ready, resize, invalidate) {
   let snapshot, epoch=0, disposed=false, applying;

@@ -26,8 +26,16 @@ async fn openssh_terminal_plugin() {
         .unwrap();
     let mounted = f.core.ui_attach("main", view).unwrap();
     let token = mounted["surfaceId"].as_str().unwrap();
-    let id = mounted["data"]["streamId"].as_str().unwrap();
     f.core.ui_surface_ready("main", token).unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(45);
+    let id = loop {
+        let data=f.core.ui_event("main",token,json!({"type":"terminal.status"})).unwrap();
+        assert_ne!(data["session"]["preparation"],"failed","{data}");
+        if data["runtime"]["state"]=="running" {break data["streamId"].as_str().unwrap().to_string();}
+        assert!(std::time::Instant::now()<deadline,"{data}");
+        tokio::time::sleep(Duration::from_millis(30)).await;
+    };
+    let id = id.as_str();
     let mut output = subscribe(&f.core, "main", token, id).await;
     let command = if cfg!(windows) {
         b"echo sodeck-real-pty-ok\r".as_slice()
@@ -60,7 +68,7 @@ use sodeck::{
     terminal::DataRequest,
 };
 
-fn terminal_fixture(f: &Fixture) -> (String, String, String) {
+fn terminal_view_fixture(f: &Fixture) -> (String, String) {
     let plugin = f.path.join("terminal-fixture");
     std::fs::create_dir_all(plugin.join("ui")).unwrap();
     let binary = format!("plugin{}", std::env::consts::EXE_SUFFIX);
@@ -81,6 +89,10 @@ fn terminal_fixture(f: &Fixture) -> (String, String, String) {
     let mounted = f.core.ui_attach("main", &view).unwrap();
     let token = mounted["surfaceId"].as_str().unwrap().to_string();
     f.core.ui_surface_ready("main", &token).unwrap();
+    (view, token)
+}
+fn terminal_fixture(f: &Fixture) -> (String, String, String) {
+    let (view, token)=terminal_view_fixture(f);
     let terminal = f
         .core
         .ui_event("main", &token, json!({"rpc":"terminal.open"}))
@@ -89,6 +101,52 @@ fn terminal_fixture(f: &Fixture) -> (String, String, String) {
         .unwrap()
         .to_string();
     (view, token, terminal)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn explicit_terminal_session_confirms_launch_preserves_tail_and_closes_without_replay() {
+    for command in ["terminal-test:reject", "terminal-test:unconfirmed", "status-test:mixed", "status-test:missing-exit"] {
+        let f=Fixture::new();let target=SshServer::new().await;
+        let server=f.server("127.0.0.1",target.addr.port(),json!([]));
+        let context=connected(&f,&server).await.context.unwrap();
+        let (view,token)=terminal_view_fixture(&f);
+        let rpc=|method:&str,params:Value|f.core.ui_event("main",&token,json!({"rpc":method,"params":params})).and_then(|value|if value.get("rpcError").is_some(){Err(value["rpcError"].to_string())}else{Ok(value)});
+        let plan=json!({"launch":{"kind":"command","command":command},"cols":80,"rows":24});
+        let first=rpc("terminal.session.open",plan.clone()).unwrap();let id=first["id"].as_str().unwrap();
+        assert_eq!(rpc("terminal.session.open",plan.clone()).unwrap()["id"],id);
+        assert!(rpc("terminal.session.open",json!({"launch":{"kind":"loginShell"},"cols":80,"rows":24})).is_err());
+        let mut changed=serde_json::to_value(&context).unwrap();changed["generation"]=json!(99999);
+        let mut conflict=plan.clone();conflict["expectedContext"]=changed;
+        assert!(rpc("terminal.session.open",conflict).is_err());
+        if command=="terminal-test:unconfirmed" {
+            until(||rpc("terminal.session.status",json!({"id":id})).unwrap()["startRequest"]=="sent").await;
+            rpc("terminal.session.close",json!({"id":id})).unwrap();
+        }
+        until(||rpc("terminal.session.status",json!({"id":id})).unwrap()["state"]=="closed").await;
+        let end=rpc("terminal.session.status",json!({"id":id})).unwrap();
+        assert_eq!(target.state.shells.load(Ordering::Relaxed),0,"explicit command never falls back to shell");
+        match command {
+            "terminal-test:reject"=>{assert_eq!(end["startRequest"],"rejected");assert_eq!(end["outcome"]["remoteProcess"],"notStarted");assert_eq!(end["outcome"]["error"]["phase"],"start");},
+            "terminal-test:unconfirmed"=>{assert_eq!(end["startRequest"],"unknown");assert_eq!(end["outcome"]["remoteProcess"],"unknown");},
+            "status-test:mixed"=>{assert_eq!(end["startRequest"],"accepted");assert_eq!(end["outcome"]["exitCode"],7);assert_eq!(end["outcome"]["remoteProcess"],"exitConfirmed");},
+            _=>assert_eq!(end["outcome"]["remoteProcess"],"unknown"),
+        }
+        assert_eq!(rpc("terminal.session.close",json!({"id":id})).unwrap(),end);
+        assert_eq!(rpc("terminal.session.open",plan).unwrap(),end,"closed view never executes again");
+        let mut output=subscribe(&f.core,"main",&token,id).await;let mut tail=vec![];
+        loop{let frame=receive(&f.core,"main",&token,id,&mut output).await;if frame.kind=="data"{tail.extend(frame.data);}if frame.kind=="end"{if command=="terminal-test:reject"{assert!(frame.metadata["error"].is_string());}break;}}
+        if command=="status-test:mixed"{assert_eq!(tail.len(),9004);assert!(tail.ends_with(b"err\n"));}
+        if command=="status-test:mixed" {
+            f.core.disconnect_connection("main",&context).unwrap();
+            let next=connected(&f,&server).await.context.unwrap();assert_ne!(next.generation,context.generation);
+            let mounted=f.core.ui_attach("main",&view).unwrap();let token=mounted["surfaceId"].as_str().unwrap();f.core.ui_surface_ready("main",token).unwrap();
+            let historical=f.core.ui_event("main",token,json!({"rpc":"terminal.session.status","params":{"id":id}})).unwrap();assert_eq!(historical,end);
+            let mut replay=subscribe(&f.core,"main",token,id).await;
+            loop{let frame=receive(&f.core,"main",token,id,&mut replay).await;if frame.kind=="end"{assert_eq!(frame.metadata["exitCode"],7);break;}}
+            assert!(td(&f.core,"main",token,json!({"op":"write","id":id,"sequence":0,"data":b"stale"})).await.is_err());
+        }
+        close_terminal_views(&f);
+    }
 }
 async fn td(core: &Arc<AppCore>, window: &str, token: &str, p: Value) -> Result<(), String> {
     core.terminal_data(

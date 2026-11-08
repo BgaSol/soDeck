@@ -57,10 +57,11 @@ fn main() {
                     continue;
                 }
                 if method == "ui.event" {
-                    if let Some(rpc) = p["data"]["rpc"]
-                        .as_str()
-                        .filter(|s| s.starts_with("session.") || s.starts_with("state."))
-                    {
+                    if let Some(rpc) = p["data"]["rpc"].as_str().filter(|s| {
+                        s.starts_with("session.")
+                            || s.starts_with("state.")
+                            || s.starts_with("terminal.session.")
+                    }) {
                         let request = format!("session-{}", pending_sessions.len());
                         pending_sessions.insert(request.clone(), frame["id"].clone());
                         let mut params = p["data"]["params"].clone();
@@ -70,6 +71,12 @@ fn main() {
                         }
                         if rpc == "session.state" || rpc == "session.exec.start" {
                             params["viewId"] = json!(id);
+                        }
+                        if rpc == "terminal.session.open" {
+                            params["viewId"] = json!(id);
+                            if params.get("expectedContext").is_none() {
+                                params["expectedContext"] = p["context"].clone();
+                            }
                         }
                         send(json!({"jsonrpc":"2.0","id":request,"method":rpc,"params":params}));
                         continue;

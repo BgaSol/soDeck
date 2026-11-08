@@ -40,7 +40,7 @@ test('same-directory prompts after busy preserve manual browsing; explicit retry
  const tree={toolbar:{append(){}},setMounts(){},cancelFollow(){},async followLocation(){count++;}};
  const controller=connectFileState(tree,{capabilities:{fileLocation:1,fileLocationProof:1}},async()=>({}),async()=>{});
  const value={state:'known',path:'/cwd',pathStyle:'posix',filesystemView:'shell-reported',outputOffset:'1',terminalId:'terminal',activity:'ready'};
- const projection=v=>({scope:{state:'active',connected:true},records:[{topic:'workspace.presentation.v1',key:'current',producer:{kind:'core'},value:{activeEditorViewId:'view',activeEditorPluginId:'sodeck.terminal'}},{topic:'terminal.location.v1',key:'current',producer:{pluginId:'sodeck.terminal',viewId:'view'},value:v}]});
+ const projection=v=>({scope:{state:'active',connected:true},records:[{topic:'workspace.presentation.v1',key:'current',present:true,producer:{kind:'core'},value:{activeEditorViewId:'view',activeEditorPluginId:'sodeck.terminal'}},{topic:'terminal.location.v1',key:'current',present:true,producer:{pluginId:'sodeck.terminal',viewId:'view'},value:v}]});
  try{emit(projection(value));await tick();assert.equal(count,1);tree.onManual();emit(projection({...value,state:'unknown',path:null,activity:'busy',outputOffset:'2'}));emit(projection({...value,outputOffset:'3'}));await tick();assert.equal(count,1);assert.match(elements.find(e=>e.tag==='summary').textContent,/已手动浏览/);elements.find(e=>e.textContent==='定位到终端目录').onclick();await tick();assert.equal(count,2);}finally{controller.dispose();globalThis.document=prior;delete globalThis.FileStateClient;}
 });
 test('background observations only cancel a pending follow, preserving manual navigation',async()=>{
@@ -54,7 +54,7 @@ test('background observations only cancel a pending follow, preserving manual na
  const empty={scope:{state:'active',connected:true},records:[]};
  try{
   emit(empty);emit(empty);controller.visibility(true);assert.equal(cancelled,0,'no producer must not cancel manual navigation');
-  const active={...empty,records:[{topic:'workspace.presentation.v1',key:'current',producer:{kind:'core'},value:{activeEditorViewId:'view'}},{topic:'terminal.location.v1',key:'current',producer:{kind:'plugin',pluginId:'sodeck.terminal',pluginInstanceId:'instance',viewId:'view'},value:{state:'known',path:'/cwd',pathStyle:'posix',filesystemView:'session-default',outputOffset:'1',terminalId:'terminal'}}]};
+  const active={...empty,records:[{topic:'workspace.presentation.v1',key:'current',present:true,producer:{kind:'core'},value:{activeEditorViewId:'view'}},{topic:'terminal.location.v1',key:'current',present:true,producer:{kind:'plugin',pluginId:'sodeck.terminal',pluginInstanceId:'instance',viewId:'view'},value:{state:'known',path:'/cwd',pathStyle:'posix',filesystemView:'session-default',outputOffset:'1',terminalId:'terminal'}}]};
   emit(active);controller.settings({values:{followTerminal:false}});assert.equal(cancelled,1,'switching off cancels the pending follow');release();await tick();
   emit(empty);emit(empty);assert.equal(cancelled,1,'later sampler events must not cancel a manual navigation');
  }finally{controller.dispose();globalThis.document=priorDocument;delete globalThis.FileStateClient;}

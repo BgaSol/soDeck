@@ -132,6 +132,13 @@ impl server::Handler for Ssh {
         command: &[u8],
         session: &mut Session,
     ) -> Result<(), Self::Error> {
+        if command == b"terminal-test:reject" {
+            session.channel_failure(id)?;
+            return Ok(());
+        }
+        if command == b"terminal-test:unconfirmed" {
+            return Ok(());
+        }
         session.channel_success(id)?;
         if command == b"status-test:hang" {
             return Ok(());

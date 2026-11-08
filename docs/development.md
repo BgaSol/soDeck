@@ -35,6 +35,8 @@ npm run terminal:input:test
 
 `ui:test` 包含服务器、工作区、连接界面、正式前端产物、桌面一致性和组件设置回归。`terminal:input:test` 验证实际 xterm 输入与剪贴板桥，无需 OpenSSH。
 
+终端抽象契约回归包含在 `scripts:test`、`test` 和 `terminal:input:test`：验证启动确认/拒绝、同 view 幂等与 Context 冲突、关闭中未知结果、终态历史、能力来源及提供方自己的重开动作。真实自动目录、移窗、恢复与文件跟随沿用 `terminal:test`、`communication:test` 和 Linux Bash/Zsh 专项。
+
 Windows 对运行中的测试程序有文件锁，使用同一 Rust target 目录的核心/插件集成与界面测试应顺序运行。修改网络 UI 后可用 `npm run network:test -- --network-ui-only` 重新独立打包并只复验实际插件界面与隧道，不重复协议压力测试；完整网络验证仍使用 `npm run network:test`。
 
 `npm run ui:production:test -- --updates-only` 验证正式前端的官方插件发现、安装和统一更新：仓库列表延迟加载、失败重试、运行中新插件出现与移除、离线缓存、连续安装、更新说明 Markdown、链接分发、批量更新和三主题小窗口布局，不运行后续工作区菜单与拆窗专项。列表与安装回归使用真实核心及隔离回环 HTTP，不依赖公网。

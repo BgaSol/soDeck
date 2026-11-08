@@ -312,7 +312,7 @@ export class Components {
       try {
         let data: unknown;
         const shell = this.shells.get(surface.view.context.workspaceId)!;
-        if (message.method === "openView") { const key = `${this.definitions[surface.view.definitionKey].pluginId}:${message.params.viewType}`; data = await this.perform(shell, { op: "open", key, params: message.params.params, resourceKey: message.params.resourceKey }); if (this.focusEpoch === requestFocusEpoch && this.state?.window.activeWorkspace === shell.workspace.context.workspaceId) this.focus(shell,key); }
+        if (message.method === "openView") { const key = `${this.definitions[surface.view.definitionKey].pluginId}:${message.params.viewType}`; data = await this.perform(shell, { op: "open", key, params: message.params.params, resourceKey: message.params.resourceKey, requestId: `${surface.token}:${requestId}` }); if (this.focusEpoch === requestFocusEpoch && this.state?.window.activeWorkspace === shell.workspace.context.workspaceId) this.focus(shell,key); }
         else if (message.method === "event") { data = await this.invoke("event", { surfaceId: surface.token, event: message.params }); await this.refresh(); }
         else throw new Error("未知插件 UI bridge 方法");
         this.post(surface, { type: "response", id: requestId, data });
