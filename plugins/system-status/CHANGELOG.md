@@ -8,6 +8,14 @@
 
 沿用核心 API 1，不新增生产依赖。采集、界面和平台验收见[实施记录](../../docs/implementation-system-status.md)。
 
+包来源提交：[`a6b85eaebdf339d4099a4b101b834b70f9e6efcf`](https://github.com/BgaSol/soDeck/commit/a6b85eaebdf339d4099a4b101b834b70f9e6efcf)。原始打包：[Package plugin #42475823233](https://github.com/BgaSol/soDeck/actions/runs/42475823233)。发行链接：[system-status 0.2.1](https://github.com/BgaSol/soDeck/releases/tag/plugin-system-status-v0.2.1)。
+
+Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五个原生归档完成包内程序生命周期与 UI 资源验证；同一来源的 [Check #42475801962](https://github.com/BgaSol/soDeck/actions/runs/42475801962) 通过五平台插件源码和实际本机身份采集、78 项脚本回归及 Linux x86_64 隔离 OpenSSH 与包内 UI。发布前另下载 GitHub Windows x86_64 归档，核对大小、SHA-256、更新清单五平台摘要，重复包内生命周期验证并核对四份生产 UI 源码。
+
+本机 Windows 隔离 OpenSSH、GNU/BusyBox 容器专项、17 项插件源码回归、TypeScript/格式和正式前端构建通过；包内 UI 覆盖三主题、160–480px、ARM64、设备详情、架构缺失和连接切换无观测，独立局部复核通过。详细证据维护在实施记录中。
+
+本次未重复核心包或完整宿主桌面套件，Check 的 desktop/netem 未选择。真实远端 Rosetta 会话、OpenWrt/Dropbear、BSD/其他 Unix 设备尚未验证；Windows Server/不同默认 SSH shell 等既有设备限制继续保留，五平台客户端包通过不代表所有远端系统已验证。
+
 ## 0.2.0
 
 - 重新组织右侧状态面板：紧凑服务器摘要、清晰的 CPU/内存读数、网络收发和挂载剩余空间，设备与采集详情按需展开。
