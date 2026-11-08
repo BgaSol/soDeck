@@ -11,7 +11,13 @@
 
 需要核心 0.10.0 起的既有能力；本次不修改核心版本、采集协议、动态周期或后台实例生命周期，不新增生产依赖。
 
-本机 14 项插件源码回归、隔离 Windows OpenSSH 采集及实际包 UI 验证通过。正式包来源、原始打包 run、Release 与五平台本次验证结果在发布完成后记录于本节。
+包来源提交：[`cfbf7c9fd7faa868c8b0a066a8c75e0e9bce7ca2`](https://github.com/BgaSol/soDeck/commit/cfbf7c9fd7faa868c8b0a066a8c75e0e9bce7ca2)。原始打包：[Package plugin #42472880934](https://github.com/BgaSol/soDeck/actions/runs/42472880934)。发行链接：[system-status 0.2.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-system-status-v0.2.0)。
+
+Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五个原生归档完成 initialize、重复 mount、pause、dispose、shutdown 和包内 UI 资源验证；五份归档与更新清单的摘要一致。发布前另下载 GitHub Windows x86_64 归档核对大小、SHA-256，重复进程生命周期验证并核对四份生产 UI 源码。相同来源的 [Check #42472864180](https://github.com/BgaSol/soDeck/actions/runs/42472864180) 通过五平台插件源码、78 项脚本回归和 Linux x86_64 的真实隔离 OpenSSH 采集及包内界面。
+
+本机 TypeScript/格式、正式前端构建、14 项插件源码回归、隔离 Windows OpenSSH 采集及实际包 UI 验证通过；界面覆盖宿主三主题、160–480px、双向历史与键盘、容量分页和大整数、错误保留、断线旧值、上下文切换无观测及过期/全缺口历史。独立复核评分两项修复已解决，设计规范已落盘。完整证据见[实施记录](../../docs/implementation-system-status.md)。
+
+本次没有重复 Docker GNU/BusyBox 专项（源码容器专项保持忽略）、远端平台设备验收、核心包或完整宿主桌面套件；Check 的 desktop/netem 未选择。既有采集器平台限制继续保留，五平台客户端包通过不代表所有远端系统已验证。
 
 ## 0.1.0
 
