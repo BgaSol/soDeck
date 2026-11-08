@@ -165,7 +165,14 @@ impl DesktopWindows {
                 let builder = builder
                     .decorations(true)
                     .hidden_title(true)
-                    .title_bar_style(tauri::TitleBarStyle::Overlay);
+                    .title_bar_style(tauri::TitleBarStyle::Overlay)
+                    .traffic_light_position({
+                        let position = handle.config().app.windows[0]
+                            .traffic_light_position
+                            .as_ref()
+                            .ok_or("macOS 窗口按钮位置尚未配置")?;
+                        tauri::LogicalPosition::new(position.x, position.y)
+                    });
                 let window = builder.build().map_err(|e| format!("无法建立窗口：{e}"))?;
                 if let Some((x, y)) = position {
                     // Set physical coordinates after creation: mixed-DPI monitor origins must not be divided by a scale factor.

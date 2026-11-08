@@ -13,6 +13,8 @@ fn macos_main_window_starts_with_an_overlay_title_bar() {
     assert!(window.decorations);
     assert!(window.hidden_title);
     assert_eq!(window.title_bar_style, tauri::TitleBarStyle::Overlay);
+    let position = window.traffic_light_position.as_ref().unwrap();
+    assert_eq!((position.x, position.y), (12., 22.));
 }
 
 #[test]
@@ -33,6 +35,10 @@ fn platform_title_bars_preserve_shared_window_settings_and_app_version() {
             // JSON Merge Patch replaces the window array, so its shared settings must be retained.
             window["decorations"] = false.into();
             window.as_object_mut().unwrap().remove("titleBarStyle");
+            window
+                .as_object_mut()
+                .unwrap()
+                .remove("trafficLightPosition");
         } else {
             assert_eq!(window["decorations"], false);
         }

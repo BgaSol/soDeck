@@ -1,4 +1,6 @@
 //! Checks run only by the packaged-application smoke-test entry point.
+#[cfg(target_os = "macos")]
+mod macos_titlebar;
 mod network;
 mod remote_plugins;
 use crate::AppCore;
@@ -219,6 +221,15 @@ pub fn workspace_roundtrip(
         None,
     )?;
     desktop.verify_native_geometry(handle, &child, &a.context.workspace_id)?;
+    #[cfg(target_os = "macos")]
+    for label in ["main", child.as_str()] {
+        let window = handle.get_webview_window(label).ok_or("烟测窗口不存在")?;
+        macos_titlebar::verify(&window)?;
+        window
+            .set_size(tauri::LogicalSize::new(900., 650.))
+            .map_err(|e| e.to_string())?;
+        macos_titlebar::verify(&window)?;
+    }
     #[cfg(target_os = "windows")]
     for label in ["main", child.as_str()] {
         crate::desktop_behavior::verify_native_settings(
