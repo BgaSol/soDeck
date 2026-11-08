@@ -4,7 +4,11 @@
 
 修正 FitAddon 测量容器的盒模型和终端外框高度，消除横纵裁切及底部黑条。建议同时升级核心 0.12.3，以取得面板拖动预览、保存确认与取消的完整整改。插件 UI v1 与现有设置格式保持兼容，没有新增生产依赖。
 
-本机真实 xterm、阻塞尺寸请求、输入、外观、隐藏与卸载回归，以及隔离 OpenSSH 和实际 Windows x86_64 包内 WebView2 流程通过。五平台正式包与发行来源在本次发布完成后记录于本节。
+本机真实 xterm、阻塞尺寸请求、输入、外观、隐藏与卸载回归，以及隔离 OpenSSH 和实际 Windows x86_64 包内 WebView2 流程通过。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 的原生源码、独立包构建，以及本次核心 0.12.3 + 终端 0.2.3 + 文件 0.4.2 + 网络隧道 0.2.2 的实际包远程业务验收全部通过。另从本次草稿下载 Windows 核心与终端包，摘要核对、拖动、完整行高度、取消关闭和最终退出复测通过。
+
+包来源：[`d7095e910d298989431913f2a2c1d80df6b552c1`](https://github.com/BgaSol/soDeck/commit/d7095e910d298989431913f2a2c1d80df6b552c1)；原始独立打包：[Package plugin #42492560868](https://github.com/BgaSol/soDeck/actions/runs/42492560868)；源码检查：[Check #42492522325](https://github.com/BgaSol/soDeck/actions/runs/42492522325)；五平台实际包：[Verify native remote plugins #42493134683](https://github.com/BgaSol/soDeck/actions/runs/42493134683)；正式发行：[terminal 0.2.3](https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.2.3)，不设为仓库 Latest。
+
+发布核对五个原生归档、插件更新清单与 SHA-256，沿用原打包附件。实际 DPI/跨显示器和长时间拖动帧率、用户远端大型交互程序、netem 与历史版本对的在线升级未执行，不计为通过。核心发布和完整验收范围见[核心 0.12.3](../../docs/releases/v0.12.3.md)。
 
 # 0.2.2
 
