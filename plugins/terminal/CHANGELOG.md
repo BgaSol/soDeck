@@ -4,6 +4,8 @@
 
 需要核心 0.14.0 与文件 0.6.0 完成自动跟随。旧核心、其他远端 shell 或冲突钩子降级为普通终端并显示原因。无新增生产依赖。源码及本轮发布验收统一见[核心版本记录](../../docs/releases/v0.14.0.md)。
 
+包来源：[`b2ee37f`](https://github.com/BgaSol/soDeck/commit/b2ee37f850c53806bc986e5213b7d11810e17033)；原始独立打包：[Package plugin #42516550281](https://github.com/BgaSol/soDeck/actions/runs/42516550281)；发行：[terminal 0.4.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.4.0)。五平台原生包与实际包远程组合通过，自动报告的远端范围为 Linux Bash 4+/Zsh；完整源码检查、重试原因和未验证范围见上述核心记录。
+
 # 0.3.0
 
 通过核心可选 `sharedState.v1` 发布交互式终端的可靠目录报告，文件侧栏可以跟随当前活动终端。目录报告主机名在设置的“目录联动”分组配置，留空关闭上报；需要正确配置 OSC 7 的 shell。恢复输出快照不重新发布旧目录，退出、输出缺口、断线与配置改变使目录失效；重连后的旧终端不报告新连接的位置。
