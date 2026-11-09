@@ -56,15 +56,16 @@ await page.route(url+'__terminal__/**',route=>{
 });
 const frame=page.frameLocator('iframe');
 const bytes=()=>page.evaluate(()=>new TextDecoder().decode(Uint8Array.from(window.writes.flat())));
+const expectInput=async text=>{await page.waitForFunction(text=>new TextDecoder().decode(Uint8Array.from(window.writes.flat()))===text,text);assert.equal(await bytes(),text);};
 const reset=()=>page.evaluate(()=>{window.writes=[];window.copies=[];window.reads=0;window.delayRead=false;});
 const focus=()=>frame.locator('.xterm-helper-textarea').focus();
 const term=async code=>{const child=page.frames().find(f=>f.url().includes('/__terminal__/index.html'));return child.evaluate(code);};
 try{
  await page.goto(url);await page.waitForFunction(()=>window.ready);await focus();
  await page.evaluate(()=>window.testPost({type:'flush',id:'sync',freeze:false}));await page.waitForFunction(()=>window.flushed.includes('sync'));
- await page.keyboard.type('after-sync');await page.waitForFunction(()=>window.writes.length>0);assert.equal(await bytes(),'after-sync');await reset();
+ await page.keyboard.type('after-sync');await expectInput('after-sync');await reset();
  await page.evaluate(()=>window.testPost({type:'flush',id:'move',freeze:true}));await page.waitForFunction(()=>window.flushed.includes('move'));
- await page.keyboard.type('frozen');assert.equal(await bytes(),'');await page.evaluate(()=>new Promise(resolve=>{document.querySelector('iframe').contentWindow.addEventListener('sodeck:transferCancelled',()=>resolve(),{once:true});window.testPost({type:'transferCancelled'});}));await focus();await page.keyboard.type('resumed');await page.waitForFunction(()=>window.writes.length>0);assert.equal(await bytes(),'resumed');await reset();
+ await page.keyboard.type('frozen');assert.equal(await bytes(),'');await page.evaluate(()=>new Promise(resolve=>{document.querySelector('iframe').contentWindow.addEventListener('sodeck:transferCancelled',()=>resolve(),{once:true});window.testPost({type:'transferCancelled'});}));await focus();await page.keyboard.type('resumed');await expectInput('resumed');await reset();
  for(const [key,expected]of [['Control+r','\x12'],['Control+u','\x15'],['Control+p','\x10'],['F5','\x1b[15~'],['F12','\x1b[24~'],['Shift+Tab','\x1b[Z']]){
   await page.keyboard.press(key);await page.waitForFunction(()=>window.writes.length>0);assert.equal(await bytes(),expected,`${key} still reaches the terminal`);await reset();
  }
@@ -132,7 +133,7 @@ try{
  assert(fittedBox.width<=fittedBox.availableWidth+1&&fittedBox.height<=fittedBox.availableHeight+1,`xterm must fit the actual content box: ${JSON.stringify(fittedBox)}`);
  assert(Math.abs(fittedBox.rootHeight-fittedBox.height)<=1,`xterm's viewport must end at the last complete row: ${JSON.stringify(fittedBox)}`);
  await reset();await focus();await page.keyboard.type('resize-input');
- await page.evaluate(()=>window.finishResize());await page.waitForFunction(()=>window.writes.length>0);
+ await page.evaluate(()=>window.finishResize());await expectInput('resize-input');
  await page.waitForFunction(size=>window.resizes.some(v=>v.cols===size.cols&&v.rows===size.rows),latestSize);
  assert.equal(await bytes(),'resize-input');assert((await page.evaluate(()=>window.resizes.length))<=2,'Only the in-flight and latest resize should be sent');
  await page.evaluate(()=>{window.holdResize=true;document.querySelector('iframe').style.width='500px';});await page.waitForFunction(()=>window.resizeWaiting);
