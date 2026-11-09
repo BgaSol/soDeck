@@ -11,6 +11,8 @@ use tauri::Emitter;
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(any(target_os = "linux", test))]
+mod requests;
 #[cfg(windows)]
 mod windows;
 
@@ -64,27 +66,7 @@ pub struct Clipboard {
     pub has_files: bool,
 }
 pub async fn reveal_directory(handle: tauri::AppHandle, path: PathBuf) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        let _ = handle;
-        tauri::async_runtime::spawn_blocking(move || windows::reveal(path))
-            .await
-            .map_err(|e| e.to_string())?
-    }
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    {
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        handle
-            .run_on_main_thread(move || {
-                #[cfg(target_os = "macos")]
-                let result = macos::reveal(path);
-                #[cfg(target_os = "linux")]
-                let result = linux::reveal(path);
-                let _ = sender.send(result);
-            })
-            .map_err(|e| e.to_string())?;
-        receiver.await.map_err(|e| e.to_string())?
-    }
+    crate::desktop_open::directory(handle, path).await
 }
 pub async fn clipboard(handle: tauri::AppHandle, files: bool) -> Result<Clipboard, String> {
     #[cfg(windows)]
@@ -97,14 +79,24 @@ pub async fn clipboard(handle: tauri::AppHandle, files: bool) -> Result<Clipboar
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         let (sender, receiver) = tokio::sync::oneshot::channel();
+        #[cfg(target_os = "linux")]
+        let id = requests::next_id();
+        #[cfg(target_os = "linux")]
+        let _cancel = CancelRead {
+            handle: handle.clone(),
+            id,
+        };
         handle
             .run_on_main_thread(move || {
+                if sender.is_closed() {
+                    return;
+                }
                 #[cfg(target_os = "macos")]
                 {
                     let _ = sender.send(macos::read(files));
                 }
                 #[cfg(target_os = "linux")]
-                linux::read(files, sender);
+                linux::read(id, files, sender);
             })
             .map_err(|e| e.to_string())?;
         tokio::time::timeout(Duration::from_secs(5), receiver)
@@ -113,8 +105,41 @@ pub async fn clipboard(handle: tauri::AppHandle, files: bool) -> Result<Clipboar
             .map_err(|_| "文件剪贴板读取已结束".to_string())?
     }
 }
+
+#[cfg(target_os = "linux")]
+struct CancelRead {
+    handle: tauri::AppHandle,
+    id: u64,
+}
+#[cfg(target_os = "linux")]
+impl Drop for CancelRead {
+    fn drop(&mut self) {
+        let id = self.id;
+        let _ = self.handle.run_on_main_thread(move || linux::cancel(id));
+    }
+}
+
+/// Called by the application finalizer before the UI event loop ends.
+pub fn shutdown(handle: &tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        handle
+            .run_on_main_thread(move || {
+                linux::shutdown();
+                let _ = sender.send(());
+            })
+            .map_err(|e| e.to_string())?;
+        receiver
+            .recv_timeout(Duration::from_secs(5))
+            .map_err(|e| format!("文件剪贴板收尾失败：{e}"))?;
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = handle;
+    Ok(())
+}
 /// Strictly parse actual URI-list clipboard formats, never arbitrary plain text paths.
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
 pub(crate) fn uri_paths(data: &[u8]) -> Result<Vec<PathBuf>, String> {
     let mut paths = Vec::new();
     for raw in data.split(|b| *b == b'\n') {

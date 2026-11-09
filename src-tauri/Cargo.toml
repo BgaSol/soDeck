@@ -7,7 +7,7 @@ publish = false
 default-run = "sodeck"
 
 [features]
-test-fixtures = ["tauri/test"]
+test-fixtures = ["tauri/test", "windows-sys/Win32_UI_HiDpi", "windows-sys/Win32_UI_Input_KeyboardAndMouse", "windows-sys/Win32_System_Memory"]
 
 [[bin]]
 name = "catalog-fixture"
@@ -35,6 +35,18 @@ test = false
 
 [build-dependencies]
 tauri-build = { version = "=2.7.4", features = [] }
+
+[[bin]]
+name = "native-pointer-fixture"
+path = "tests/fixtures/native_pointer.rs"
+required-features = ["test-fixtures"]
+test = false
+
+[[bin]]
+name = "desktop-files-fixture"
+path = "tests/fixtures/desktop_files.rs"
+required-features = ["test-fixtures"]
+test = false
 
 [dependencies]
 tauri = { version = "=2.12.5", features = [] }
@@ -65,7 +77,17 @@ rand = "=0.10.3"
 fast-socks5 = "=1.0.0"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_System_DataExchange", "Win32_UI_Shell"] }
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_System_DataExchange", "Win32_System_Ole", "Win32_Graphics_Gdi", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "=0.6.5"
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSArray", "NSString", "NSURL", "NSGeometry"] }
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSPasteboard", "NSPasteboardItem", "NSWorkspace", "NSWindow", "NSView", "NSButton", "NSControl", "NSResponder"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "=0.18.2"
+gdk = "=0.18.2"
+glib = "=0.18.5"
 
 [profile.release]
 strip = true

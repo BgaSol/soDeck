@@ -27,6 +27,8 @@
 
 当前代码职责：`main.rs` 组合窗口、命令桥和有界退出；`core.rs` 持有真实状态；`plugins/manifest.rs` 负责清单，`plugins/process.rs` 监督进程，`plugins/rpc.rs` 处理有界控制帧/读写，`plugins/dispatch.rs` 有界分派插件对核心的调用，`plugins/mod.rs` 保留内部入口；`platform.rs` 管理 Windows Job/Unix 进程组；`storage.rs` 保存配置、消息和轮转日志。前端 `main.ts` 管理窗口与浮层，`views.ts` 展示核心数据，`core.ts` 统一调用边界。界面不直接启动插件，不另存运行状态。
 
+本机系统适配使用 windows-sys、objc2 Foundation/AppKit 和与 Tauri 匹配的 GTK3 绑定，项目不维护系统函数 ABI 声明。`desktop_files/` 负责原生文件输入，Linux 主线程后端管理变化订阅和最多四个未返回系统请求；超时释放业务等待，槽位在实际回调或应用收尾时归还。`desktop_open.rs` 为目录和已验证网页复用系统默认应用打开及线程调度。原生对象不进入插件 RPC；`unsafe` 限于绑定所需的句柄和字节借用边界。标题栏和鼠标测试同样复用绑定，详细代码与验证见[系统绑定实施记录](implementation-native-system-bindings.md)。
+
 macOS 主窗口通过 Tauri 自动合并的 `src-tauri/tauri.macos.conf.json` 在创建时启用原生窗口装饰、隐藏标题和 `Overlay` 标题栏，与 `windows.rs` 创建的独立窗口保持一致。系统窗口按钮与 44px 服务器标签条共用一行，前端保留 86px 按钮区域。避免在 `setup` 中依次切换装饰与标题栏样式：底层装饰变更异步重设窗口样式，可能覆盖 Overlay 的全尺寸内容标志，使系统按钮回到独立标题栏并留下重复空白。平台配置按 JSON Merge Patch 替换窗口数组，因此完整保留共享窗口尺寸；版本继续仅从主配置继承。`window_config` 回归使用 Tauri 实际配置解析器检查 macOS 创建参数和其他桌面平台配置，原生 macOS 实际包显示仍需在目标系统验证。
 
 控制通信整改已在 v0.5.0 发行：双向请求按 ID 匹配，处理不阻塞接收循环，停止优先，等待和队列有界；进程退出结束在途请求、作废排队工作。回归用真实插件进程复现并修复嵌套请求超时。v0.6.0 在此基础上增加每视图 Tauri Channel 正文桥及真实业务插件，控制通信的边界保持不变。

@@ -19,6 +19,7 @@ function launch(persisted = false) {
   fs.rmSync(networkReport, { force: true });
   const extra = ["--smoke-test", "--test-data-dir", directory];
   if (process.env.SODECK_TEST_CLIPBOARD === "1") extra.push("--clipboard-test");
+  if (process.env.SODECK_TEST_DESKTOP_FILES) extra.push("--desktop-files-test", path.resolve(process.env.SODECK_TEST_DESKTOP_FILES));
   if (process.env.SODECK_TEST_SSH_CONFIG) extra.push("--ssh-test-config", path.resolve(process.env.SODECK_TEST_SSH_CONFIG));
   if (persisted) extra.push("--verify-persisted");
   if (process.env.SODECK_TEST_UPDATE_BUNDLE) extra.push("--update-bundle-test", path.resolve(process.env.SODECK_TEST_UPDATE_BUNDLE));
@@ -49,6 +50,7 @@ function launch(persisted = false) {
     !JSON.parse(fs.readFileSync(report, "utf8")).completed || !JSON.parse(fs.readFileSync(report, "utf8")).workspaceNative
     || (process.env.SODECK_TEST_SSH_CONFIG && !JSON.parse(fs.readFileSync(report, "utf8")).sshNative)
     || (process.env.SODECK_TEST_CLIPBOARD === "1" && !JSON.parse(fs.readFileSync(report, "utf8")).clipboardNative)
+    || (process.env.SODECK_TEST_DESKTOP_FILES && !JSON.parse(fs.readFileSync(report, "utf8")).desktopFilesNative)
     || (process.env.SODECK_TEST_NETWORK_PLUGIN && (!fs.existsSync(networkReport) || !JSON.parse(fs.readFileSync(networkReport, "utf8")).completed))
   )
     throw new Error(

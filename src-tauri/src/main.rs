@@ -473,18 +473,22 @@ async fn test_update_mirror(
 }
 
 #[tauri::command]
-fn open_update_release() -> Result<(), String> {
-    sodeck::updates::open_release_page()
+async fn open_update_release(handle: tauri::AppHandle) -> Result<(), String> {
+    sodeck::updates::open_release_page(handle).await
 }
 
 #[tauri::command]
-fn open_update_link(url: String) -> Result<(), String> {
-    sodeck::updates::open_web_page(&url)
+async fn open_update_link(handle: tauri::AppHandle, url: String) -> Result<(), String> {
+    sodeck::updates::open_web_page(handle, &url).await
 }
 
 #[tauri::command]
-fn open_usage_help() -> Result<(), String> {
-    sodeck::updates::open_web_page("https://github.com/BgaSol/soDeck/blob/main/docs/usage.md")
+async fn open_usage_help(handle: tauri::AppHandle) -> Result<(), String> {
+    sodeck::updates::open_web_page(
+        handle,
+        "https://github.com/BgaSol/soDeck/blob/main/docs/usage.md",
+    )
+    .await
 }
 
 async fn check_all(handle: tauri::AppHandle, automatic: bool) -> Result<(), String> {
@@ -780,11 +784,18 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
     let ssh_config = argument("--ssh-test-config");
     let ssh_test_requested = ssh_config.is_some();
     let clipboard_test_requested = std::env::args().any(|a| a == "--clipboard-test");
+    let desktop_files_probe = argument("--desktop-files-test");
+    let desktop_files_requested = desktop_files_probe.is_some();
     let persisted = app.verify_persisted;
     std::thread::spawn(move || {
         let validation = (|| {
             if clipboard_test_requested {
                 tauri::async_runtime::block_on(clipboard_roundtrip(handle.clone()))?;
+            }
+            if let Some(probe) = desktop_files_probe {
+                tauri::async_runtime::block_on(sodeck::validation::desktop_files_roundtrip(
+                    &handle, &probe,
+                ))?;
             }
             sodeck::validation::server_roundtrip(&core, persisted)?;
             sodeck::validation::workspace_roundtrip(&handle, &core)?;
@@ -798,11 +809,13 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
             }
             Ok::<(), String>(())
         })();
-        let stopped = core.shutdown();
+        let stopped = core
+            .shutdown()
+            .and_then(|_| sodeck::desktop_files::shutdown(&handle));
         let result = validation.and(stopped);
         if result.is_ok() {
             let status = core.snapshot();
-            let report = serde_json::json!({"completed":true,"workspaceNative":true,"sshNative":ssh_test_requested,"clipboardNative":clipboard_test_requested,"version":status.version,"target":status.target});
+            let report = serde_json::json!({"completed":true,"workspaceNative":true,"sshNative":ssh_test_requested,"clipboardNative":clipboard_test_requested,"desktopFilesNative":desktop_files_requested,"version":status.version,"target":status.target});
             let _ = std::fs::write(
                 status.data_directory.join("smoke-result.json"),
                 report.to_string(),
@@ -880,6 +893,7 @@ fn attach_native_finalizer(handle: &tauri::AppHandle, core: &Arc<AppCore>) {
                             return Err(error);
                         }
                     }
+                    sodeck::desktop_files::shutdown(&native)?;
                     app.exit_handoff.store(true, Ordering::Release);
                     if action == Action::Exit {
                         native.exit(0);

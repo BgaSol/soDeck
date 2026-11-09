@@ -3,6 +3,7 @@ pub mod connections;
 pub mod core;
 pub mod desktop_behavior;
 pub mod desktop_files;
+mod desktop_open;
 pub mod desktop_updates;
 pub mod lifecycle;
 pub mod model;

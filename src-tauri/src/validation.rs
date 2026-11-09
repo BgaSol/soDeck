@@ -1,6 +1,14 @@
 //! Checks run only by the packaged-application smoke-test entry point.
+mod desktop_files;
 #[cfg(target_os = "macos")]
 mod macos_titlebar;
+
+pub async fn desktop_files_roundtrip(
+    handle: &tauri::AppHandle,
+    file: &std::path::Path,
+) -> Result<(), String> {
+    desktop_files::verify(handle, file).await
+}
 mod network;
 mod remote_plugins;
 use crate::AppCore;

@@ -7,7 +7,6 @@ import net from 'node:net';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
-import { fileURLToPath } from 'node:url';
 
 assert.equal(process.platform, 'win32', 'This harness controls native WebView2 on Windows');
 const [executable] = process.argv.slice(2);
@@ -42,7 +41,9 @@ async function invoke(command, args = {}) {
   return page.evaluate(({ command, args }) => window.__TAURI_INTERNALS__.invoke(command, args), { command, args });
 }
 async function nativePointer(action, plan) {
-  const helper = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', fileURLToPath(new URL('./native-pointer.ps1', import.meta.url)), '-ProcessId', String(child.pid), '-Action', action, '-Plan', JSON.stringify(plan)], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const driver = process.env.SODECK_TEST_NATIVE_POINTER;
+  assert(driver && fs.existsSync(driver), 'Provide the same-architecture native-pointer-fixture');
+  const helper = spawn(driver, [String(child.pid), action, JSON.stringify(plan)], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '', errors = '';
   helper.stdout.on('data', data => { output += data; });
   helper.stderr.on('data', data => { errors += data; });

@@ -108,6 +108,8 @@ export function selectChecks(files, { suite, fallback } = {}) {
         if (platform[1] === 'windows') plan.desktop = true;
         continue;
       }
+      if (file === 'src-tauri/src/desktop_open.rs') { core(); ui(); integration.add('files'); continue; }
+      if (file === 'src-tauri/tests/fixtures/native_pointer.rs') { core(['windows-x86_64', 'windows-aarch64']); ui(); plan.ssh = true; continue; }
       if (['src-tauri/src/network_metrics.rs', 'src-tauri/src/settings/declaration.rs'].includes(file)) {
         core(['linux-x86_64']); plan.scripts = true;
         if (file.includes('settings')) ui();

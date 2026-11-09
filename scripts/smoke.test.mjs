@@ -113,3 +113,17 @@ test("native package validation requires the selected runtime version and target
     }
   } finally { fs.rmSync(root, { recursive:true, force:true }); }
 });
+
+test("requested native files smoke rejects a stale or text-only clipboard report", () => {
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-file-smoke-test-'));
+  try{
+    const launcher=path.join(root,'launcher.mjs'),data=path.join(root,'data');fs.mkdirSync(data);
+    fs.writeFileSync(launcher,`import fs from 'node:fs';import path from 'node:path';const args=process.argv.slice(2),data=args[args.indexOf('--test-data-dir')+1];fs.writeFileSync(path.join(data,'smoke-result.json'),JSON.stringify({completed:true,workspaceNative:true,clipboardNative:true,desktopFilesNative:process.env.WRITE_FILES==='1'}));`);
+    const env={...process.env,SODECK_TEST_DATA_DIR:data,SODECK_VERIFY_PERSISTED:'1',SODECK_TEST_DESKTOP_FILES:path.join(root,'probe.json')};
+    for(const key of ['SODECK_TEST_SSH_CONFIG','SODECK_TEST_UPDATE_BUNDLE','SODECK_TEST_CLIPBOARD','SODECK_TEST_NETWORK_PLUGIN','SODECK_EXPECT_CORE_VERSION','SODECK_EXPECT_TARGET'])delete env[key];
+    const run=()=>spawnSync(process.execPath,[fileURLToPath(new URL('./smoke.mjs',import.meta.url)),process.execPath,launcher],{env,encoding:'utf8'});
+    fs.writeFileSync(path.join(data,'smoke-result.json'),'{"completed":true,"desktopFilesNative":true}');
+    assert.notEqual(run().status,0);
+    env.WRITE_FILES='1';const result=run();assert.equal(result.status,0,result.stderr);
+  }finally{fs.rmSync(root,{recursive:true,force:true});}
+});

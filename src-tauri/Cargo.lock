@@ -4450,7 +4450,13 @@ version = "0.0.0"
 dependencies = [
  "fast-socks5",
  "flate2",
+ "gdk",
+ "glib",
+ "gtk",
  "libc",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
  "rand",
  "reqwest",
  "russh",

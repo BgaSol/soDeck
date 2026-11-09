@@ -35,6 +35,12 @@ test("failed preparation and cancelled jobs retain explicit stages without a run
   assert.equal(recordResult(snapshot, target, null, { prepared: { outcome: "failure" } }, null, null, "failure", commit).stage, "prepared");
   assert.equal(recordResult(null, target, null, {}, null, null, "cancelled", commit).status, "cancelled");
 });
+test("requested native file verification requires the independent provider and exact runtime identity", () => {
+  const desktop = {...report, desktopFilesNative:true, independentProvider:true};
+  const record = value => recordResult(snapshot, target, prepared, {windows_test:{outcome:'success'}}, report, {completed:true}, 'success', commit, value, true);
+  assert.equal(record(desktop).status,'success');
+  for(const value of [null,{...desktop,version:'0.9.2'},{...desktop,target:targets[1]},{...desktop,desktopFilesNative:false},{...desktop,independentProvider:false}])assert.equal(record(value).status,'failure');
+});
 test("five-platform summary rejects missing, duplicated, stale or failed results even if a job says success", () => {
   const jobs = targets.map(target => ({ name: platforms[target], conclusion: "success", status: "completed" }));
   const results = targets.map(target => ({ schemaVersion: 1, target, platform: platforms[target], testCommit: commit, status: "success", stage: "complete" }));

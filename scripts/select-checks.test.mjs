@@ -82,6 +82,11 @@ test('transport/lifecycle changes retain real integrations and shared inputs/unk
   assert(fixtureEvents.integration[0].terminal && fixtureEvents.integration[0].files && fixtureEvents.integration[0].network);
   const nativeClose = selectChecks(['scripts/test-close-native.mjs']);
   assert(nativeClose.desktop && nativeClose.ssh && nativeClose.native.filter(t => t.core).length === 5);
+  const pointer = selectChecks(['src-tauri/tests/fixtures/native_pointer.rs']);
+  assert(pointer.desktop && pointer.ssh);
+  assert.deepEqual(pointer.native.filter(t => t.core).map(t => t.name), ['windows-x86_64', 'windows-aarch64']);
+  const opener = selectChecks(['src-tauri/src/desktop_open.rs']);
+  assert(opener.desktop && opener.native.filter(t => t.core).length === 5 && opener.integration[0].files);
   for (const file of ['src-tauri/src/connections/ssh.rs', 'src-tauri/src/plugins/rpc.rs', 'src-tauri/src/session_exec.rs', 'src-tauri/src/lifecycle.rs', 'src-tauri/src/lifecycle/close.rs', 'src-tauri/src/resource_tasks.rs', 'src-tauri/tests/close_lifecycle.rs', 'src-tauri/tests/lifecycle.rs']) {
     const p = selectChecks([file]);
     assert(p.ssh && p.desktop);

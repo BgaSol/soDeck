@@ -1,220 +1,186 @@
-use super::*;
-use std::{
-    ffi::{c_char, c_int, c_void},
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Mutex, Once, OnceLock,
-    },
+use super::{
+    requests::{Pending, Request},
+    *,
 };
-type Ptr = *mut c_void;
+use glib::{prelude::*, translate::ToGlibPtr};
+use std::{
+    cell::RefCell,
+    sync::atomic::{AtomicU64, Ordering},
+};
+
 static REVISION: AtomicU64 = AtomicU64::new(1);
-static WATCH: Once = Once::new();
-static REQUEST_ID: AtomicU64 = AtomicU64::new(1);
-static REQUESTS: OnceLock<Mutex<std::collections::HashMap<usize, Request>>> = OnceLock::new();
-fn requests() -> &'static Mutex<std::collections::HashMap<usize, Request>> {
-    REQUESTS.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+thread_local! { static BACKEND: RefCell<Backend> = RefCell::new(Backend::default()); }
+#[derive(Default)]
+struct Backend {
+    clipboard: Option<gtk::Clipboard>,
+    subscription: Option<glib::SignalHandlerId>,
+    pending: Pending,
+    closed: bool,
 }
-#[link(name = "gtk-3")]
-unsafe extern "C" {
-    fn gtk_show_uri_on_window(
-        window: Ptr,
-        uri: *const c_char,
-        timestamp: u32,
-        error: *mut Ptr,
-    ) -> c_int;
-    fn gtk_clipboard_get(selection: Ptr) -> Ptr;
-    fn gtk_clipboard_request_targets(
-        clipboard: Ptr,
-        callback: unsafe extern "C" fn(Ptr, *mut Ptr, c_int, Ptr),
-        data: Ptr,
-    );
-    fn gtk_clipboard_request_contents(
-        clipboard: Ptr,
-        target: Ptr,
-        callback: unsafe extern "C" fn(Ptr, Ptr, Ptr),
-        data: Ptr,
-    );
-    fn gtk_selection_data_get_length(data: Ptr) -> c_int;
-    fn gtk_selection_data_get_data(data: Ptr) -> *const u8;
+fn revision() -> String {
+    REVISION.load(Ordering::SeqCst).to_string()
 }
-#[link(name = "glib-2.0")]
-unsafe extern "C" {
-    fn g_error_free(error: Ptr);
-}
-pub(super) fn reveal(path: PathBuf) -> Result<(), String> {
-    use std::os::unix::ffi::OsStrExt;
-    let mut uri = String::from("file://");
-    for byte in path.as_os_str().as_bytes() {
-        if byte.is_ascii_alphanumeric() || b"/-._~".contains(byte) {
-            uri.push(*byte as char);
-        } else {
-            uri.push_str(&format!("%{byte:02X}"));
+
+fn clipboard() -> Result<gtk::Clipboard, String> {
+    let existing = BACKEND.with(|state| {
+        let state = state.borrow();
+        if state.closed {
+            return Err("文件剪贴板读取已结束".to_string());
         }
+        Ok(state.clipboard.clone())
+    })?;
+    if let Some(clipboard) = existing {
+        return Ok(clipboard);
     }
-    let uri = std::ffi::CString::new(uri).map_err(|_| "本地路径无效")?;
-    let mut error = std::ptr::null_mut();
-    if unsafe { gtk_show_uri_on_window(std::ptr::null_mut(), uri.as_ptr(), 0, &mut error) } != 0 {
-        Ok(())
+    let display = gdk::Display::default().ok_or("当前桌面无法访问文件剪贴板")?;
+    let clipboard = gtk::Clipboard::for_display(&display, &gdk::SELECTION_CLIPBOARD);
+    // gtk 0.18 has no typed owner-change convenience method; GLib owns the closure.
+    let subscription = clipboard.connect_local("owner-change", false, |_| {
+        REVISION.fetch_add(1, Ordering::SeqCst);
+        None
+    });
+    BACKEND.with(|state| {
+        let mut state = state.borrow_mut();
+        state.clipboard = Some(clipboard.clone());
+        state.subscription = Some(subscription);
+    });
+    Ok(clipboard)
+}
+
+pub(super) fn read(
+    id: u64,
+    files: bool,
+    sender: tokio::sync::oneshot::Sender<Result<Clipboard, String>>,
+) {
+    if sender.is_closed() {
+        return;
+    }
+    let clipboard = match clipboard() {
+        Ok(clipboard) => clipboard,
+        Err(error) => {
+            let _ = sender.send(Err(error));
+            return;
+        }
+    };
+    let request = Request {
+        revision: revision(),
+        sender: Some(sender),
+    };
+    if let Err(request) = BACKEND.with(|state| state.borrow_mut().pending.insert(id, request)) {
+        request.finish(Err("文件剪贴板正忙，请稍后重试".into()));
+        return;
+    }
+    issue(&clipboard, id, files, false);
+}
+
+fn issue(clipboard: &gtk::Clipboard, id: u64, files: bool, fallback: bool) {
+    let target = gdk::Atom::intern(if !files {
+        "TARGETS"
+    } else if fallback {
+        "x-special/gnome-copied-files"
     } else {
-        if !error.is_null() {
-            unsafe {
-                g_error_free(error);
+        "text/uri-list"
+    });
+    clipboard.request_contents(&target, move |clipboard, data| {
+        // An internal failure must not unwind through GTK's C callback trampoline.
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            received(clipboard, data, id, files, fallback)
+        }))
+        .is_err()
+        {
+            if let Some(request) = BACKEND.with(|state| state.borrow_mut().pending.take(id)) {
+                request.finish(Err("文件剪贴板回调异常".into()));
             }
+            eprintln!("文件剪贴板回调异常");
         }
-        Err("无法打开本地目标目录".into())
-    }
+    });
 }
-#[link(name = "gdk-3")]
-unsafe extern "C" {
-    fn gdk_atom_intern_static_string(name: *const c_char) -> Ptr;
-}
-#[link(name = "gobject-2.0")]
-unsafe extern "C" {
-    fn g_signal_connect_data(
-        object: Ptr,
-        name: *const c_char,
-        callback: unsafe extern "C" fn(Ptr, Ptr, Ptr),
-        data: Ptr,
-        destroy: Option<unsafe extern "C" fn(Ptr, Ptr)>,
-        flags: c_int,
-    ) -> u64;
-}
-struct Request {
-    sender: Option<tokio::sync::oneshot::Sender<Result<Clipboard, String>>>,
-    revision: String,
+
+fn received(
+    clipboard: &gtk::Clipboard,
+    data: &gtk::SelectionData,
+    id: u64,
+    files: bool,
     fallback: bool,
-}
-unsafe extern "C" fn changed(_: Ptr, _: Ptr, _: Ptr) {
-    REVISION.fetch_add(1, Ordering::SeqCst);
-}
-unsafe extern "C" fn targets_received(_: Ptr, targets: *mut Ptr, count: c_int, userdata: Ptr) {
-    unsafe {
-        let Some(mut request) = requests().lock().unwrap().remove(&(userdata as usize)) else {
+) {
+    let Some(request) = BACKEND.with(|state| state.borrow_mut().pending.take(id)) else {
+        return;
+    };
+    if !request.active() {
+        return;
+    }
+    if request.revision != revision() {
+        request.finish(Err("系统文件剪贴板在读取期间变化".into()));
+        return;
+    }
+    if files && data.length() < 0 && !fallback {
+        if let Err(request) = BACKEND.with(|state| state.borrow_mut().pending.insert(id, request)) {
+            request.finish(Err("文件剪贴板正忙，请稍后重试".into()));
             return;
-        };
+        }
+        issue(clipboard, id, files, true);
+        return;
+    }
+    let result = read_selection(data, files, &request.revision);
+    let result = if request.revision != revision() {
+        Err("系统文件剪贴板在读取期间变化".into())
+    } else {
+        result
+    };
+    request.finish(result);
+}
+
+fn read_selection(
+    data: &gtk::SelectionData,
+    files: bool,
+    revision: &str,
+) -> Result<Clipboard, String> {
+    let length = data.length();
+    if length > 4 * 1024 * 1024 {
+        return Err("文件剪贴板内容过大".into());
+    }
+    let mut paths = Vec::new();
+    let has_files = if length < 0 {
+        false
+    } else if !files {
         let supported = [
-            gdk_atom_intern_static_string(c"text/uri-list".as_ptr()),
-            gdk_atom_intern_static_string(c"x-special/gnome-copied-files".as_ptr()),
+            gdk::Atom::intern("text/uri-list"),
+            gdk::Atom::intern("x-special/gnome-copied-files"),
         ];
-        let has_files = count > 0
-            && !targets.is_null()
-            && std::slice::from_raw_parts(targets, count as usize)
-                .iter()
-                .any(|atom| supported.contains(atom));
-        let result = if request.revision != REVISION.load(Ordering::SeqCst).to_string() {
-            Err("系统文件剪贴板在读取期间变化".into())
+        data.targets()
+            .is_some_and(|targets| targets.iter().any(|atom| supported.contains(atom)))
+    } else {
+        let bytes = if length == 0 {
+            &[][..]
         } else {
-            Ok(Clipboard {
-                paths: vec![],
-                revision: request.revision,
-                has_files,
-            })
-        };
-        if let Some(sender) = request.sender.take() {
-            let _ = sender.send(result);
-        }
-    }
-}
-unsafe extern "C" fn received(clipboard: Ptr, data: Ptr, userdata: Ptr) {
-    unsafe {
-        let Some(mut request) = requests().lock().unwrap().remove(&(userdata as usize)) else {
-            return;
-        };
-        let length = gtk_selection_data_get_length(data);
-        if length < 0 && !request.fallback {
-            request.fallback = true;
-            requests()
-                .lock()
-                .unwrap()
-                .insert(userdata as usize, request);
-            gtk_clipboard_request_contents(
-                clipboard,
-                gdk_atom_intern_static_string(c"x-special/gnome-copied-files".as_ptr()),
-                received,
-                userdata,
-            );
-            return;
-        }
-        let result = if length < 0 {
-            Ok(Clipboard {
-                paths: vec![],
-                revision: request.revision.clone(),
-                has_files: false,
-            })
-        } else if length > 4 * 1024 * 1024 {
-            Err("文件剪贴板内容过大".into())
-        } else {
-            let bytes = if length == 0 {
-                &[][..]
-            } else {
-                let pointer = gtk_selection_data_get_data(data);
-                if pointer.is_null() {
-                    if let Some(sender) = request.sender.take() {
-                        let _ = sender.send(Err("无法读取文件剪贴板".into()));
-                    }
-                    return;
-                }
-                std::slice::from_raw_parts(pointer, length as usize)
-            };
-            super::uri_paths(bytes).map(|paths| Clipboard {
-                has_files: !paths.is_empty(),
-                paths,
-                revision: request.revision.clone(),
-            })
-        };
-        let result = if request.revision != REVISION.load(Ordering::SeqCst).to_string() {
-            Err("系统文件剪贴板在读取期间变化".into())
-        } else {
-            result
-        };
-        if let Some(sender) = request.sender.take() {
-            let _ = sender.send(result);
-        }
-    }
-}
-pub(super) fn read(files: bool, sender: tokio::sync::oneshot::Sender<Result<Clipboard, String>>) {
-    unsafe {
-        let clipboard = gtk_clipboard_get(gdk_atom_intern_static_string(c"CLIPBOARD".as_ptr()));
-        if clipboard.is_null() {
-            let _ = sender.send(Err("当前桌面无法访问文件剪贴板".into()));
-            return;
-        }
-        WATCH.call_once(|| {
-            g_signal_connect_data(
-                clipboard,
-                c"owner-change".as_ptr(),
-                changed,
-                std::ptr::null_mut(),
-                None,
-                0,
-            );
-        });
-        let revision = REVISION.load(Ordering::SeqCst).to_string();
-        let request = Request {
-            sender: Some(sender),
-            revision,
-            fallback: false,
-        };
-        let mut pending = requests().lock().unwrap();
-        pending.retain(|_, r| r.sender.as_ref().is_some_and(|s| !s.is_closed()));
-        if pending.len() >= 4 {
-            if let Some(sender) = request.sender {
-                let _ = sender.send(Err("文件剪贴板正忙，请稍后重试".into()));
+            // Borrow only after checking length; SelectionData remains alive for this callback.
+            let pointer = unsafe { gtk::ffi::gtk_selection_data_get_data(data.to_glib_none().0) };
+            if pointer.is_null() {
+                return Err("无法读取文件剪贴板".into());
             }
-            return;
-        }
-        let id = REQUEST_ID.fetch_add(1, Ordering::Relaxed) as usize;
-        pending.insert(id, request);
-        drop(pending);
-        if !files {
-            gtk_clipboard_request_targets(clipboard, targets_received, id as Ptr);
-            return;
-        }
-        gtk_clipboard_request_contents(
-            clipboard,
-            gdk_atom_intern_static_string(c"text/uri-list".as_ptr()),
-            received,
-            id as Ptr,
-        );
+            unsafe { std::slice::from_raw_parts(pointer, length as usize) }
+        };
+        paths = super::uri_paths(bytes)?;
+        !paths.is_empty()
+    };
+    Ok(Clipboard {
+        paths,
+        revision: revision.into(),
+        has_files,
+    })
+}
+
+pub(super) fn cancel(id: u64) {
+    BACKEND.with(|state| state.borrow_mut().pending.cancel(id));
+}
+pub(super) fn shutdown() {
+    let (clipboard, subscription) = BACKEND.with(|state| {
+        let mut state = state.borrow_mut();
+        state.closed = true;
+        state.pending.shutdown();
+        (state.clipboard.take(), state.subscription.take())
+    });
+    if let (Some(clipboard), Some(subscription)) = (clipboard, subscription) {
+        clipboard.disconnect(subscription);
     }
 }

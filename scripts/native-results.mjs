@@ -5,18 +5,19 @@ import { nativeGithub } from "./native-github.mjs";
 import { platforms, inputSummary, verificationMatrix } from "./resolve-native-inputs.mjs";
 import { targets } from "./core-artifacts.mjs";
 
-export function recordResult(snapshot, target, prepared, steps, report, networkReport, jobStatus, testCommit) {
+export function recordResult(snapshot, target, prepared, steps, report, networkReport, jobStatus, testCommit, desktopReport = null, requireDesktop = false) {
   if (!targets.includes(target)) throw new Error("Invalid result platform");
   const executed = ["windows_test", "linux_test", "macos_test"].some(id => steps[id]?.outcome === "success");
   const identity = report?.completed === true && report.workspaceNative === true && report.sshNative === true && report.version === snapshot?.components.core.version && report.target === target;
-  const complete = prepared?.status === "prepared" && prepared.target === target && executed && identity && (!snapshot.components.network || networkReport?.completed === true);
+  const desktop = desktopReport?.completed === true && desktopReport.desktopFilesNative === true && desktopReport.independentProvider === true && desktopReport.version === snapshot?.components.core.version && desktopReport.target === target;
+  const complete = prepared?.status === "prepared" && prepared.target === target && executed && identity && (!snapshot.components.network || networkReport?.completed === true) && (!requireDesktop || desktop);
   const failed = Object.entries(steps).find(([, item]) => item.outcome === "failure" || item.outcome === "cancelled");
   return {
     schemaVersion: 1, target, platform: platforms[target], testCommit,
     status: jobStatus === "cancelled" ? "cancelled" : jobStatus === "success" && complete ? "success" : "failure",
     stage: failed?.[0] ?? (complete ? "complete" : executed ? "runtime-report" : "not-executed"),
     components: prepared?.components ?? snapshot?.components ?? null,
-    runtime: report ? { version: report.version, target: report.target, completed: report.completed, workspaceNative: report.workspaceNative, sshNative: report.sshNative, networkNative: networkReport?.completed === true } : null,
+    runtime: report ? { version: report.version, target: report.target, completed: report.completed, workspaceNative: report.workspaceNative, sshNative: report.sshNative, networkNative: networkReport?.completed === true, desktopFilesNative: desktop } : null,
   };
 }
 
@@ -40,7 +41,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const snapshot = read("native-inputs.json"), testCommit = process.env.GITHUB_SHA;
   if (mode === "record") {
     const data = process.env.SODECK_TEST_DATA_DIR;
-    const result = recordResult(snapshot, target, read("native-prepared.json"), JSON.parse(process.env.NATIVE_STEPS ?? "{}"), data ? read(path.join(data, "smoke-result.json")) : null, data ? read(path.join(data, "network-smoke-result.json")) : null, process.env.NATIVE_JOB_STATUS, testCommit);
+    const result = recordResult(snapshot, target, read("native-prepared.json"), JSON.parse(process.env.NATIVE_STEPS ?? "{}"), data ? read(path.join(data, "smoke-result.json")) : null, data ? read(path.join(data, "network-smoke-result.json")) : null, process.env.NATIVE_JOB_STATUS, testCommit, read(`artifacts/native-desktop-files/${target}.json`), process.env.NATIVE_DESKTOP_FILES === "true");
     fs.writeFileSync(`native-result-${platforms[target]}.json`, JSON.stringify(result, null, 2) + "\n");
     console.log(`${result.platform}: ${result.status} (${result.stage})`);
   } else if (mode === "summary") {

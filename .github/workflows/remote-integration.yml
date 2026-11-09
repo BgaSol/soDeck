@@ -34,6 +34,10 @@ on:
       verification_run_id:
         description: Replay an earlier verification snapshot (leave other inputs empty)
         type: string
+      desktop_files:
+        description: Verify actual native file clipboard with an isolated provider (core 0.20+)
+        type: boolean
+        default: false
 permissions:
   contents: read
   actions: read
@@ -160,6 +164,28 @@ jobs:
               Add-WindowsCapability -Online -Name $capability.Name
             }
           }
+      - name: Install Linux clipboard fixture build dependencies
+        if: runner.os == 'Linux' && inputs.desktop_files
+        run: sudo apt-get -o Acquire::Retries=2 install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev pkg-config
+      - uses: dtolnay/rust-toolchain@master
+        if: inputs.desktop_files
+        with:
+          toolchain: 1.99.1
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        if: inputs.desktop_files
+        with:
+          shared-key: check-tests
+          workspaces: |
+            src-tauri -> target
+            plugins/terminal -> target
+            plugins/files -> target
+            plugins/network-proxy -> target
+            plugins/system-status -> target
+          save-if: false
+      - name: Build native test helpers
+        if: inputs.desktop_files
+        run: cargo build --manifest-path src-tauri/Cargo.toml --features test-fixtures --bin desktop-files-fixture --bin native-pointer-fixture --target ${{ matrix.target }} --locked
       - name: Windows installed package with independent plugins
         id: windows_test
         if: runner.os == 'Windows'
@@ -171,6 +197,11 @@ jobs:
           node scripts/verify-binary.mjs "$installDir/sodeck.exe" '${{ matrix.target }}'
           if ($LASTEXITCODE -ne 0) { throw 'Installed core architecture mismatch' }
           node scripts/test-openssh.mjs --packaged "$installDir/sodeck.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Actual remote package test failed' }
+          if ('${{ inputs.desktop_files }}' -eq 'true') {
+            node scripts/test-desktop-files-native.mjs 'src-tauri/target/${{ matrix.target }}/debug/desktop-files-fixture.exe' "$installDir/sodeck.exe"
+            if ($LASTEXITCODE -ne 0) { throw 'Actual file clipboard test failed' }
+          }
       - name: Linux extracted package with independent plugins
         id: linux_test
         if: runner.os == 'Linux'
@@ -180,6 +211,9 @@ jobs:
           dpkg-deb -x "$SODECK_CORE_PACKAGE" "$RUNNER_TEMP/SoDeck-remote"
           node scripts/verify-binary.mjs "$RUNNER_TEMP/SoDeck-remote/usr/bin/sodeck" '${{ matrix.target }}'
           node scripts/test-openssh.mjs --packaged dbus-run-session -- xvfb-run -a "$RUNNER_TEMP/SoDeck-remote/usr/bin/sodeck"
+          if [ '${{ inputs.desktop_files }}' = 'true' ]; then
+            dbus-run-session -- xvfb-run -a node scripts/test-desktop-files-native.mjs 'src-tauri/target/${{ matrix.target }}/debug/desktop-files-fixture' "$RUNNER_TEMP/SoDeck-remote/usr/bin/sodeck"
+          fi
       - name: macOS mounted package with independent plugins
         id: macos_test
         if: runner.os == 'macOS'
@@ -188,17 +222,23 @@ jobs:
           trap 'hdiutil detach "$RUNNER_TEMP/SoDeck-remote"' EXIT
           node scripts/verify-binary.mjs "$RUNNER_TEMP/SoDeck-remote/SoDeck.app/Contents/MacOS/sodeck" '${{ matrix.target }}'
           node scripts/test-openssh.mjs --packaged "$RUNNER_TEMP/SoDeck-remote/SoDeck.app/Contents/MacOS/sodeck"
+          if [ '${{ inputs.desktop_files }}' = 'true' ]; then
+            node scripts/test-desktop-files-native.mjs 'src-tauri/target/${{ matrix.target }}/debug/desktop-files-fixture' "$RUNNER_TEMP/SoDeck-remote/SoDeck.app/Contents/MacOS/sodeck"
+          fi
       - name: Record platform outcome
         if: always()
         env:
           NATIVE_JOB_STATUS: ${{ job.status }}
           NATIVE_STEPS: ${{ toJSON(steps) }}
+          NATIVE_DESKTOP_FILES: ${{ inputs.desktop_files }}
         run: node scripts/native-results.mjs record '${{ matrix.target }}'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: Native-verification-result-${{ matrix.name }}
-          path: native-result-${{ matrix.name }}.json
+          path: |
+            native-result-${{ matrix.name }}.json
+            artifacts/native-desktop-files/*.json
           if-no-files-found: error
           overwrite: true
           retention-days: 30

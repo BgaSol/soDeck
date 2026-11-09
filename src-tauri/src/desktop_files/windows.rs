@@ -1,34 +1,18 @@
 use super::*;
-use std::os::windows::ffi::{OsStrExt, OsStringExt};
+use std::os::windows::ffi::OsStringExt;
 use windows_sys::Win32::{
-    System::DataExchange::{
-        CloseClipboard, GetClipboardData, GetClipboardSequenceNumber, IsClipboardFormatAvailable,
-        OpenClipboard,
+    System::{
+        DataExchange::{
+            CloseClipboard, GetClipboardData, GetClipboardSequenceNumber,
+            IsClipboardFormatAvailable, OpenClipboard,
+        },
+        Ole::CF_HDROP,
     },
-    UI::Shell::{DragQueryFileW, ShellExecuteW},
+    UI::Shell::DragQueryFileW,
 };
-pub(super) fn reveal(path: PathBuf) -> Result<(), String> {
-    let path: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-    let open: Vec<u16> = "open".encode_utf16().chain(Some(0)).collect();
-    let result = unsafe {
-        ShellExecuteW(
-            std::ptr::null_mut(),
-            open.as_ptr(),
-            path.as_ptr(),
-            std::ptr::null(),
-            std::ptr::null(),
-            1,
-        )
-    };
-    if result as isize <= 32 {
-        Err("无法打开本地目标目录".into())
-    } else {
-        Ok(())
-    }
-}
 pub(super) fn read(files: bool) -> Result<Clipboard, String> {
     let revision = unsafe { GetClipboardSequenceNumber() }.to_string();
-    let has_files = unsafe { IsClipboardFormatAvailable(15) } != 0;
+    let has_files = unsafe { IsClipboardFormatAvailable(CF_HDROP.into()) } != 0;
     if revision != unsafe { GetClipboardSequenceNumber() }.to_string() {
         return Err("系统文件剪贴板在读取期间变化，请重试".into());
     }
@@ -39,7 +23,7 @@ pub(super) fn read(files: bool) -> Result<Clipboard, String> {
             has_files,
         });
     }
-    if unsafe { IsClipboardFormatAvailable(15) } == 0 {
+    if unsafe { IsClipboardFormatAvailable(CF_HDROP.into()) } == 0 {
         return Ok(Clipboard {
             paths: vec![],
             revision,
@@ -67,7 +51,7 @@ pub(super) fn read(files: bool) -> Result<Clipboard, String> {
     }
     let _guard = Guard;
     let start = unsafe { GetClipboardSequenceNumber() };
-    let handle = unsafe { GetClipboardData(15) };
+    let handle = unsafe { GetClipboardData(CF_HDROP.into()) };
     if handle.is_null() {
         return Err("无法读取系统文件剪贴板".into());
     }

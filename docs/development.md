@@ -80,7 +80,9 @@ cargo test --manifest-path src-tauri/Cargo.toml --features test-fixtures --lib -
 
 Windows 关闭生命周期交互验收使用 `node scripts/test-openssh.mjs --close-native --packaged <解包后的sodeck.exe>`，并通过 `SODECK_TEST_TERMINAL_PLUGIN`、`SODECK_TEST_FILES_PLUGIN`、`SODECK_TEST_NETWORK_PLUGIN`、`SODECK_TEST_SYSTEM_STATUS_PLUGIN` 指定四个独立包目录。此入口复用隔离 localhost OpenSSH，运行真实包内 WebView2，检查右上角关闭与原生 CloseRequested、取消保留原 view/草稿和网络转发、再次关闭能够继续、明确放弃不写远端，以及四个受管插件退出、真实流结束与端口可重绑。也检查左右分隔线拖动、捕获期间刷新、Esc 取消、宽度落盘及终端 iframe 保留；窄布局使用 inspector 视口模拟，不替代真实窗口缩放和 DPI 切换。结果写入 `artifacts/close-lifecycle/native-close.json`，拖拽截图写入 `artifacts/panel-resize/`。
 
-该入口还验证嵌套分屏、真实终端页面拖出、PTY 输入/输出接续、返回来源组与空窗口回收。`scripts/native-pointer.ps1` 仅按该测试进程定位原生窗口，用系统 DPI 与客户区原点转换坐标，发送真实系统鼠标事件并恢复鼠标位置；运行时需要可交互 Windows 桌面，测试窗口会短暂置前。它不替代副屏混合 DPI、整组/工作台手势和其他系统的验收。每次开始清除旧报告，失败写入 `completed: false`。
+该入口还验证嵌套分屏、真实终端页面拖出、PTY 输入/输出接续、返回来源组与空窗口回收。先用 `cargo build --manifest-path src-tauri/Cargo.toml --features test-fixtures --bin native-pointer-fixture --locked` 构建本机架构夹具，并将其完整路径写入 `SODECK_TEST_NATIVE_POINTER`。Rust 夹具通过 windows-sys 绑定按该测试进程定位原生窗口，用系统 DPI 与客户区原点转换坐标，发送真实系统鼠标事件，并在成功/失败时恢复鼠标和 DPI 上下文；不再使用手写 P/Invoke 的 PowerShell 脚本。运行时需要可交互 Windows 桌面，测试窗口会短暂置前。它不替代副屏混合 DPI、整组/工作台手势和其他系统的验收。每次开始清除旧报告，失败写入 `completed: false`。
+
+实际文件剪贴板验收仅在隔离桌面显式执行：用相同构建入口生成 `desktop-files-fixture`，运行 `node scripts/test-desktop-files-native.mjs <夹具完整路径> <实际包内sodeck程序>`。Linux 在同一 `dbus-run-session -- xvfb-run -a` 会话内运行该 Node 脚本，使提供者与核心共享 CLIPBOARD。脚本使用独立进程提供真实文件格式，验证中文/空格/特殊字符文件与目录、文件→文本的 revision 变化和退出；Linux 另验证 GNOME copied-files 回退。结果写入 `artifacts/native-desktop-files/<target>.json`，不与文本 clipboardNative 混用。测试会替换所在桌面的剪贴板，不在日常用户桌面自动运行。`Verify native remote plugins` 的 `desktop_files` 可选项启用这层实际包验收，要求核心 0.20.0 或更新版本，测试夹具不发行。
 
 该验收使用显式 `--interactive-test --test-data-dir <隔离目录>` 启动，缺少数据目录拒绝启动；普通启动继续使用原系统应用数据目录。WebView2 数据与 inspector 也限定在该测试进程中，避免连接用户正在运行的应用。此模式不自动执行常规 smoke 或在线检查，但加载已保存的启用插件；不作为用户日常入口。常规包烟测仍由 `scripts/smoke.mjs` 提供，两者结果分别记录。
 

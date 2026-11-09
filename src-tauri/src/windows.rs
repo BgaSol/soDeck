@@ -819,19 +819,17 @@ impl DesktopWindows {
         let focus = self.focus.lock().unwrap().clone();
         #[cfg(target_os = "windows")]
         let front = {
-            use windows_sys::Win32::Foundation::{HWND, POINT};
-            #[link(name = "user32")]
-            unsafe extern "system" {
-                fn WindowFromPoint(point: POINT) -> HWND;
-                fn GetAncestor(window: HWND, flags: u32) -> HWND;
-            }
+            use windows_sys::Win32::Foundation::POINT;
+            use windows_sys::Win32::UI::WindowsAndMessaging::{
+                GetAncestor, WindowFromPoint, GA_ROOT,
+            };
             let hwnd = unsafe {
                 GetAncestor(
                     WindowFromPoint(POINT {
                         x: px.round() as i32,
                         y: py.round() as i32,
                     }),
-                    2,
+                    GA_ROOT,
                 )
             };
             if hwnd.is_null() {
@@ -987,10 +985,7 @@ impl DesktopWindows {
             #[cfg(target_os = "windows")]
             let (x, y) = {
                 use windows_sys::Win32::Foundation::{HWND, POINT};
-                #[link(name = "user32")]
-                unsafe extern "system" {
-                    fn ScreenToClient(window: HWND, point: *mut POINT) -> i32;
-                }
+                use windows_sys::Win32::Graphics::Gdi::ScreenToClient;
                 let mut point = POINT {
                     x: px.round() as i32,
                     y: py.round() as i32,

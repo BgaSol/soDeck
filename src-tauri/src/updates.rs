@@ -14,8 +14,8 @@ pub const CORE_ID: &str = "sodeck.core";
 pub const REPOSITORY: &str = "BgaSol/soDeck";
 const MAX_EXPANDED: u64 = 2 * 1024 * 1024 * 1024;
 
-pub fn open_release_page() -> Result<(), String> {
-    open_web_page("https://github.com/BgaSol/soDeck/releases")
+pub async fn open_release_page(handle: tauri::AppHandle) -> Result<(), String> {
+    open_web_page(handle, "https://github.com/BgaSol/soDeck/releases").await
 }
 
 fn web_page_url(value: &str) -> Result<reqwest::Url, String> {
@@ -26,34 +26,9 @@ fn web_page_url(value: &str) -> Result<reqwest::Url, String> {
     Ok(url)
 }
 
-pub fn open_web_page(value: &str) -> Result<(), String> {
+pub async fn open_web_page(handle: tauri::AppHandle, value: &str) -> Result<(), String> {
     let url = web_page_url(value)?;
-    let url = url.as_str();
-    #[cfg(target_os = "windows")]
-    let mut command = {
-        use std::os::windows::process::CommandExt;
-        let mut c = std::process::Command::new("rundll32.exe");
-        c.args(["url.dll,FileProtocolHandler", url])
-            .creation_flags(0x08000000);
-        c
-    };
-    #[cfg(target_os = "macos")]
-    let mut command = {
-        let mut c = std::process::Command::new("open");
-        c.arg(url);
-        c
-    };
-    #[cfg(target_os = "linux")]
-    let mut command = {
-        let mut c = std::process::Command::new("xdg-open");
-        c.arg(url);
-        c
-    };
-    let mut child = command.spawn().map_err(|e| format!("无法打开网页：{e}"))?;
-    std::thread::spawn(move || {
-        let _ = child.wait();
-    });
-    Ok(())
+    crate::desktop_open::web_page(handle, url).await
 }
 
 #[cfg(test)]
