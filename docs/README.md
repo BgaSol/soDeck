@@ -30,7 +30,6 @@
 | 组件通信与共享状态 | [功能设计](plan-component-communication.md)、[代码实施方案](plan-component-communication-coding.md) | [实施与验收](implementation-component-communication.md) |
 | 终端目录自动识别 | [首次连接、自动集成与跟随体验](plan-terminal-directory.md) | [实施与验收](implementation-terminal-directory.md) |
 | 关闭、退出与重启 | [完整生命周期设计](plan-close-lifecycle.md)、[代码整改方案](plan-close-lifecycle-coding.md) | [实施与验收](implementation-close-lifecycle.md) |
-| 系统托盘与后台驻留 | [完整代码整改方案](plan-system-tray-coding.md) | 待实施 |
 | 真实终端与文件 | [远程工作台](plan-remote-workbench.md) | [真实插件](implementation-remote-plugins.md) |
 | 文件目录树 | [文件树设计](plan-file-tree.md) | [文件树](implementation-file-tree.md) |
 | 文件管理与传输 | [功能范围](plan-file-management.md)、[编码方案](plan-file-management-coding.md) | [文件管理](implementation-file-management.md) |
