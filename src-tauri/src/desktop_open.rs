@@ -106,6 +106,10 @@ fn native(target: Target) -> Result<(), String> {
         }
         Target::Web(url) => url,
     };
-    gtk::show_uri_on_window(None::<&gtk::Window>, url.as_str(), gdk::CURRENT_TIME)
-        .map_err(|e| format!("系统无法打开目标：{e}"))
+    gtk::show_uri_on_window(
+        None::<&gtk::Window>,
+        url.as_str(),
+        gdk::ffi::GDK_CURRENT_TIME as u32,
+    )
+    .map_err(|e| format!("系统无法打开目标：{e}"))
 }
