@@ -42,7 +42,7 @@ export function createLocation(terminal){
     frame(type,offset){kind=type;frameOffset=offset;report=null;},
     completed(){if(report&&Number.isSafeInteger(frameOffset)){latest=observation(report);void publish();}report=null;},
     ready(){ready=true;void publish();const ticket=epoch;void client?.request('get',{topic:'terminal.location.v1',key:'current'}).then(({record})=>{
-      if(ticket!==epoch||disposed||observed||record?.present)return;
+      if(ticket!==epoch||disposed||observed||(record?.present&&integration.mode!=='off'))return;
       latest=observation({state:'unknown',path:null,activity:'starting',reasonCode:integration.mode==='auto'?'starting':integration.mode==='off'?'disabled':integration.mode==='manual'?'manual-setup':integration.reasonCode||'old-core'});void publish();
       if(integration.mode==='auto')handshake=setTimeout(()=>{if(ticket===epoch&&!disposed&&!observed){latest=observation({state:'unknown',path:null,activity:'unavailable',reasonCode:'handshake-timeout'});void publish();}},8000);
     }).catch(()=>{});},

@@ -166,7 +166,7 @@ impl AppCore {
             },
         );
         Ok(
-            json!({"surfaceId":token,"view":view,"data":data["data"],"capabilities":{"sharedState":1,"fileLocation":1,"fileLocationProof":1}}),
+            json!({"surfaceId":token,"view":view,"data":data["data"],"capabilities":{"sharedState":1,"fileLocation":1,"fileLocationProof":1,"uiOpenView":1}}),
         )
     }
     pub fn ui_surface_ready(&self, window: &str, token: &str) -> Result<(), String> {

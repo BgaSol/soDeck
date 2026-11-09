@@ -17,12 +17,13 @@ interface Definition { key: string; id: string; pluginId: string; pluginName: st
 interface Preference { side: string; pinned: boolean; startup: string; order: number }
 interface View { id: string; definitionKey: string; pluginInstanceId: string; context: Context; title: string; dirty: boolean; busy: boolean; error?: string; lastUsed: number; uiRequested?: boolean }
 interface UiWorkspace { views: View[]; preferences: Record<string, Preference>; left: string | null; right: string | null; editor: string | null }
-export interface UiProjection { definitions: Record<string, Definition>; workspaces: Record<string, UiWorkspace>; error?: string }
+interface ActionDefinition { key: string; title: string; available: boolean; reason?: string }
+interface ActionResult { status: "pending" | "completed" | "failed" | "invalidated"; requestId: string; context: Context; viewId?: string; error?: string }
+export interface UiProjection { definitions: Record<string, Definition>; actions?: Record<string, ActionDefinition>; defaultCreateAction?: string; pendingAction?: ActionResult[]; workspaces: Record<string, UiWorkspace>; error?: string }
 interface Surface { node: HTMLDivElement; frame: HTMLIFrameElement; view: View; token?: string; chain: Promise<unknown>; deferred: Map<string,MessageEvent>; visible: boolean; initialized: boolean; mounted?: boolean; acceptsLocalFiles?: boolean; focusPending?: number; flushable?: boolean; flushing?: {id: string; done: (error?: string) => void}; timeout: ReturnType<typeof setTimeout> }
 interface Shell { node: HTMLElement; surfaces: Map<string, Surface>; observer: ResizeObserver; workspace: Workspace; ui: UiWorkspace; railCapacity?: number; layoutFrame?: number }
 interface MenuEntry { label: string; action: () => Promise<unknown>; extra?: MenuEntry; checked?: boolean; disabled?: boolean; separatorBefore?: boolean }
 const empty = (): UiWorkspace => ({ views: [], preferences: {}, left: null, right: null, editor: null });
-const defaultEditor = { pluginId: "sodeck.terminal", id: "terminal" };
 
 /** Shell and frames have different lifetimes. Rendering chrome never reconstructs a mounted iframe. */
 export class Components {
@@ -48,6 +49,11 @@ export class Components {
   private boundTabs = new WeakSet<Element>();
   private disposed = false;
   private creating = new Set<string>();
+  private defaultAction?: ActionDefinition;
+  private pendingActions = new Map<string, ActionResult & { focusEpoch?: number }>();
+  private actionTimer?: ReturnType<typeof setTimeout>;
+  private pollingActions = false;
+  private resumeActionPolling = () => this.scheduleActionPolling();
   private layoutError?: string;
   private focusEpoch = 0;
   private interaction = () => { this.focusEpoch++; };
@@ -62,6 +68,7 @@ export class Components {
       for (const shell of this.shells.values()) for (const surface of shell.surfaces.values()) if (surface.token && this.definitions[surface.view.definitionKey]?.pluginId === event.payload.pluginId) void this.refreshSettings(surface);
     }).then(unlisten => {if(this.disposed)unlisten();else this.settingsListener=unlisten;}).catch(()=>{});
     window.addEventListener("message", this.message);
+    document.addEventListener("visibilitychange", this.resumeActionPolling);
     this.theme.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "style"] });
     window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", this.systemTheme);
     content.addEventListener("click", event => {
@@ -78,8 +85,11 @@ export class Components {
     const ui = await this.invoke<UiProjection>("snapshot");
     if (this.disposed) return;
     this.state = state; this.definitions = ui.definitions;
+    this.defaultAction = ui.defaultCreateAction ? ui.actions?.[ui.defaultCreateAction] : undefined;
     if (ui.error && ui.error !== this.layoutError) { this.layoutError = ui.error; this.notify(ui.error); }
     const wanted = [...state.workspaces, ...(state.incoming ? [state.incoming] : [])];
+    for (const [id, pending] of this.pendingActions) if (!wanted.some(w => JSON.stringify(w.context) === JSON.stringify(pending.context))) this.pendingActions.delete(id);
+    for (const pending of ui.pendingAction ?? []) if (!this.pendingActions.has(pending.context.workspaceId)) this.pendingActions.set(pending.context.workspaceId, pending);
     for (const [id, shell] of this.shells) if (!wanted.some(w => w.context.workspaceId === id)) { this.destroy(shell); this.shells.delete(id); }
     this.content.querySelector(".receiving-workspace")?.remove();
     for (const w of wanted) {
@@ -102,6 +112,7 @@ export class Components {
       this.setCloseBlocked([...this.closeBlocked]);
     }
     if (!wanted.length) { const placeholder = document.createElement("div"); placeholder.className = "workspace-empty receiving-workspace"; placeholder.textContent = "此窗口没有工作区"; this.content.append(placeholder); }
+    this.scheduleActionPolling();
   }
   private paint(shell: Shell) {
     const { node, ui: w } = shell;
@@ -116,10 +127,12 @@ export class Components {
       patchChrome(node.querySelector(`.${side}-panel header`)!, view ? `<span title="${e(this.definitions[view.definitionKey]?.pluginName)}">${e(view.title)}</span><div><button class="sd-icon" data-component-action="panel-menu" data-key="${e(view.definitionKey)}" aria-label="${e(view.title)} 面板菜单">${icon("more")}</button><button class="sd-icon" data-component-action="collapse" data-key="${side}" aria-label="收起${e(view.title)}">${icon("minus")}</button></div>` : "");
     }
     const editors = w.views.filter(v => this.definitions[v.definitionKey]?.container === "editor");
-    const defaultView = this.defaultView();
-    const createHint = !shell.workspace.connected ? "连接已断开，请先重新连接" : !defaultView ? "终端不可用，请在插件管理中安装并启用后重启" : this.creating.has(shell.workspace.context.workspaceId) ? "正在新建终端…" : "新建终端";
+    const defaultAction = this.defaultAction;
+    const pending = this.pendingActions.has(shell.workspace.context.workspaceId);
+    const canCreate = shell.workspace.connected && defaultAction?.available && !pending && !this.creating.has(shell.workspace.context.workspaceId);
+    const createHint = !shell.workspace.connected ? "连接已断开，请先重新连接" : pending ? "结果尚未确认" : this.creating.has(shell.workspace.context.workspaceId) ? "正在执行默认行为…" : !defaultAction ? "未设置可用的默认行为，请查看插件管理" : defaultAction.available ? defaultAction.title : defaultAction.reason || "默认行为提供者不可用";
     const tabScroll=node.querySelector(".component-tab-list")?.scrollLeft??0;
-    patchChrome(node.querySelector(".component-tabs")!, `<div class="component-tab-list" role="tablist" aria-label="组件页面">${editors.map(v => `<div class="component-tab sd-tab ${w.editor === v.id ? "selected" : ""}" draggable="true" data-view="${e(v.id)}"><button role="tab" aria-selected="${w.editor === v.id}" data-component-action="select" data-key="${e(v.id)}" title="${e(v.title)}">${icon(this.definitions[v.definitionKey]?.icon)}<span>${e(v.title)}${v.dirty ? " ●" : ""}</span></button><button class="sd-icon" data-component-action="close" data-key="${e(v.id)}" aria-label="关闭 ${e(v.title)}">${icon("close")}</button></div>`).join("")}</div><button class="sd-icon" data-component-action="create" aria-label="新建终端" title="${e(createHint)}" ${createHint === "新建终端" ? "" : "disabled"}>${icon("plus")}</button>${shell.workspace.connected && !defaultView ? `<button class="sd-icon" data-action="manage-plugins" aria-label="打开插件管理" title="终端不可用 · 打开插件管理">${icon("plug")}</button>` : ""}<button class="sd-icon" data-component-action="pages" aria-label="全部组件页面" title="全部组件页面">${icon("chevron")}</button>`);
+    patchChrome(node.querySelector(".component-tabs")!, `<div class="component-tab-list" role="tablist" aria-label="组件页面">${editors.map(v => `<div class="component-tab sd-tab ${w.editor === v.id ? "selected" : ""}" draggable="true" data-view="${e(v.id)}"><button role="tab" aria-selected="${w.editor === v.id}" data-component-action="select" data-key="${e(v.id)}" title="${e(v.title)}">${icon(this.definitions[v.definitionKey]?.icon)}<span>${e(v.title)}${v.dirty ? " ●" : ""}</span></button><button class="sd-icon" data-component-action="close" data-key="${e(v.id)}" aria-label="关闭 ${e(v.title)}">${icon("close")}</button></div>`).join("")}</div><button class="sd-icon" data-component-action="create" aria-label="${e(defaultAction?.title || "执行默认行为")}" title="${e(createHint)}" ${canCreate ? "" : "disabled"}>${icon("plus")}</button>${shell.workspace.connected && !defaultAction?.available ? `<button class="sd-icon" data-action="manage-plugins" aria-label="打开插件管理" title="默认行为不可用 · 打开插件管理">${icon("plug")}</button>` : ""}<button class="sd-icon" data-component-action="pages" aria-label="全部组件页面" title="全部组件页面">${icon("chevron")}</button>`);
     const list = node.querySelector(".component-tab-list")!;
     list.scrollLeft=tabScroll;
     if (!this.boundTabs.has(list)) {
@@ -129,7 +142,7 @@ export class Components {
       list.addEventListener("drop", event => { event.preventDefault(); const ev = event as DragEvent, id = ev.dataTransfer?.getData("text/sodeck-view"), target = (ev.target as Element).closest<HTMLElement>("[data-view]")?.dataset.view; if (id && target) void this.run(() => this.perform(shell, { op: "reorder", viewId: id, index: shell.ui.views.findIndex(v => v.id === target) })); });
     }
     const slot = node.querySelector<HTMLElement>(".central-slot")!;
-    if (!editors.length) replace(slot, `<div class="workspace-empty"><div class="empty-icon">${icon("plug")}</div><h2>${e(shell.workspace.name)}</h2><p>${!shell.workspace.connected ? "连接已断开，请先重新连接。" : !defaultView ? "终端不可用，请在插件管理中安装或启用，重启后生效。" : "从侧栏打开组件，或点击＋新建终端。"}</p>${!shell.workspace.connected ? `<button data-reconnect-server="${e(shell.workspace.context.serverId)}">重新连接</button>` : !defaultView ? '<button data-action="manage-plugins">打开插件管理</button>' : ""}<div class="workspace-context">${e(shell.workspace.endpoint)}</div></div>`); else replace(slot, "");
+    if (!editors.length) replace(slot, `<div class="workspace-empty"><div class="empty-icon">${icon("plug")}</div><h2>${e(shell.workspace.name)}</h2><p>${!shell.workspace.connected ? "连接已断开，请先重新连接。" : !defaultAction?.available ? e(createHint) : "从侧栏打开组件，或点击＋执行默认行为。"}</p>${!shell.workspace.connected ? `<button data-reconnect-server="${e(shell.workspace.context.serverId)}">重新连接</button>` : !defaultAction?.available ? '<button data-action="manage-plugins">打开插件管理</button>' : ""}<div class="workspace-context">${e(shell.workspace.endpoint)}</div></div>`); else replace(slot, "");
     patchChrome(node.querySelector(".workspace-status")!, `<div class="workspace-connection" role="status" aria-label="连接状态" title="${e(shell.workspace.endpoint)}"><span class="health-dot ${shell.workspace.connected ? "good" : "warning"}"></span><span>${shell.workspace.connected ? "已连接" : "连接已断开"}</span><span class="workspace-endpoint">${e(shell.workspace.endpoint)}</span></div><button class="sd-status-action" data-reconnect-server="${e(shell.workspace.context.serverId)}" ${shell.workspace.connected ? "hidden" : ""}>重新连接</button><span class="workspace-status-spacer"></span><button class="workspace-network sd-status-action" data-action="status" title="服务器连接传输速率；点击查看应用状态与插件业务量">↓ 0 B/s ↑ 0 B/s</button>`);
     for (const [id, surface] of shell.surfaces) if (!w.views.some(v => v.id === id)) { this.removeSurface(surface); shell.surfaces.delete(id); }
     for (const v of w.views) {
@@ -238,11 +251,11 @@ export class Components {
     const message = event.data;
     if (message.type === "ready") {
       if (surface.initialized) return; surface.initialized = true;
-      surface.chain = this.invoke<{ surfaceId: string; data: unknown; view: View; capabilities?:{sharedState?:number;fileLocation?:number;fileLocationProof?:number} }>("attach", { viewId: surface.view.id }).then(async result => {
+      surface.chain = this.invoke<{ surfaceId: string; data: unknown; view: View; capabilities?:{sharedState?:number;fileLocation?:number;fileLocationProof?:number;uiOpenView?:number} }>("attach", { viewId: surface.view.id }).then(async result => {
         surface.token = result.surfaceId;
         this.shared.attach(result.surfaceId,result.view.context,message=>this.post(surface,message));
         const settings = await this.call("settings_for_surface", {surfaceId: result.surfaceId}).catch(() => null);
-        this.post(surface, { type: "mount", connected: this.shells.get(surface.view.context.workspaceId)?.workspace.connected, context: result.view.context, serverName: this.shells.get(surface.view.context.workspaceId)?.workspace.name, viewId: surface.view.id, viewType: surface.view.definitionKey.split(":")[1], data: result.data, tokens: this.tokens(), settings, capabilities: {clipboard:1,localFiles:1,settings:1,sharedState:result.capabilities?.sharedState,fileLocation:result.capabilities?.fileLocation,fileLocationProof:result.capabilities?.fileLocationProof}, visible: surface.visible });
+        this.post(surface, { type: "mount", connected: this.shells.get(surface.view.context.workspaceId)?.workspace.connected, context: result.view.context, serverName: this.shells.get(surface.view.context.workspaceId)?.workspace.name, viewId: surface.view.id, viewType: surface.view.definitionKey.split(":")[1], data: result.data, tokens: this.tokens(), settings, capabilities: {clipboard:1,localFiles:1,settings:1,sharedState:result.capabilities?.sharedState,fileLocation:result.capabilities?.fileLocation,fileLocationProof:result.capabilities?.fileLocationProof,uiOpenView:result.capabilities?.uiOpenView}, visible: surface.visible });
         surface.frame.dataset.surfaceId = result.surfaceId;
       }).catch(error => this.surfaceError(surface, String(error)));
       return;
@@ -313,7 +326,7 @@ export class Components {
         let data: unknown;
         const shell = this.shells.get(surface.view.context.workspaceId)!;
         if (message.method === "openView") { const key = `${this.definitions[surface.view.definitionKey].pluginId}:${message.params.viewType}`; data = await this.perform(shell, { op: "open", key, params: message.params.params, resourceKey: message.params.resourceKey }); if (this.focusEpoch === requestFocusEpoch && this.state?.window.activeWorkspace === shell.workspace.context.workspaceId) this.focus(shell,key); }
-        else if (message.method === "event") { data = await this.invoke("event", { surfaceId: surface.token, event: message.params }); await this.refresh(); }
+        else if (message.method === "event") { data = await this.invoke("event", { surfaceId: surface.token, event: message.params }); await this.refresh(); const viewId=(data as {viewId?:string})?.viewId; if(viewId && this.focusEpoch===requestFocusEpoch && this.state?.window.activeWorkspace===shell.workspace.context.workspaceId){const target=shell.surfaces.get(viewId);if(target)this.focusSurface(target);} }
         else throw new Error("未知插件 UI bridge 方法");
         this.post(surface, { type: "response", id: requestId, data });
       } catch (error) { this.post(surface, { type: "response", id: requestId, error: String(error) }); }
@@ -354,21 +367,49 @@ export class Components {
     }
     if (action === "pages") { this.showMenu(anchor, shell.ui.views.filter(v => this.definitions[v.definitionKey]?.container === "editor").map(v => ({ label: v.title, action: () => this.perform(shell, { op: "select", viewId: v.id }) })), true); return; }
     if (action === "create") {
-      const d = this.defaultView();
-      if (!d || !shell.workspace.connected || this.creating.has(id)) return;
+      const d = this.defaultAction;
+      if (!d?.available || !shell.workspace.connected || this.creating.has(id) || this.pendingActions.has(id)) return;
       const focusEpoch = this.focusEpoch;
       this.creating.add(id); this.paint(shell);
+      const requestId = crypto.randomUUID();
       try {
-        const result = await this.perform(shell, { op: "open", key: d.key }) as { viewId: string };
-        const surface = shell.surfaces.get(result.viewId);
-        if (surface && this.state?.window.activeWorkspace === id && this.focusEpoch === focusEpoch) {
-          shell.node.querySelector<HTMLElement>(`[data-component-action="select"][data-key="${CSS.escape(result.viewId)}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
-          this.focusSurface(surface);
-        }
+        this.pendingActions.set(id, {status:"pending",requestId,context:shell.workspace.context,focusEpoch});
+        const result = await this.invoke<ActionResult>("invokeAction", {context:shell.workspace.context,requestId,actionKey:d.key});
+        await this.finishAction(result, focusEpoch);
+      } catch (error) {
+        this.notify(String(error));
       } finally { this.creating.delete(id); if (this.shells.has(id)) this.paint(shell); }
+      this.scheduleActionPolling();
     }
   }
-  private defaultView() { return Object.values(this.definitions).find(d => d.pluginId === defaultEditor.pluginId && d.id === defaultEditor.id && d.available && d.container === "editor" && d.instancePolicy === "multiple" && d.createAction); }
+  private async finishAction(result: ActionResult, focusEpoch?: number) {
+    const id=result.context.workspaceId;
+    if(result.status==="pending"){this.pendingActions.set(id,{...result,focusEpoch});return;}
+    this.pendingActions.delete(id);
+    await this.refresh();
+    if(result.error)this.notify(`${result.error}${result.viewId?'；页面已创建':''}`);
+    const shell=this.shells.get(id),surface=result.viewId? shell?.surfaces.get(result.viewId):undefined;
+    if(surface && focusEpoch!==undefined && this.focusEpoch===focusEpoch && this.state?.window.activeWorkspace===id){
+      shell?.node.querySelector<HTMLElement>(`[data-component-action="select"][data-key="${CSS.escape(result.viewId!)}"]`)?.scrollIntoView({block:"nearest",inline:"nearest"});
+      this.focusSurface(surface);
+    }
+  }
+  private scheduleActionPolling() {
+    clearTimeout(this.actionTimer);
+    if(this.disposed||document.hidden||this.pollingActions)return;
+    const pending=this.pendingActions.get(this.state?.window.activeWorkspace??"");
+    if(!pending||this.creating.has(pending.context.workspaceId))return;
+    this.actionTimer=setTimeout(()=>{void this.pollAction(pending);},1000);
+  }
+  private async pollAction(pending: ActionResult & {focusEpoch?:number}) {
+    if(this.disposed||document.hidden||this.state?.window.activeWorkspace!==pending.context.workspaceId)return;
+    this.pollingActions=true;
+    try{
+      const result=await this.invoke<ActionResult>("actionStatus",{context:pending.context,requestId:pending.requestId});
+      if(this.pendingActions.get(pending.context.workspaceId)?.requestId===pending.requestId)await this.finishAction(result,pending.focusEpoch);
+    }catch(error){const message=String(error);if(/不存在|上下文|已关闭|不属于|失效/.test(message))this.pendingActions.delete(pending.context.workspaceId);if(pending.error!==message){pending.error=message;this.notify(message);}const shell=this.shells.get(pending.context.workspaceId);if(shell)this.paint(shell);}
+    finally{this.pollingActions=false;this.scheduleActionPolling();}
+  }
   private focus(shell: Shell, key?: string) {
     const selected = shell.ui.views.find(v => v.definitionKey === key && (this.definitions[v.definitionKey]?.container === "dialog" || [shell.ui.left, shell.ui.right, shell.ui.editor].includes(v.id)));
     if (selected) { const surface = shell.surfaces.get(selected.id); if (surface) this.focusSurface(surface); }
@@ -441,5 +482,5 @@ export class Components {
   private async run(action: () => Promise<unknown>) { try { await action(); } catch (error) { this.notify(String(error)); } }
   private removeSurface(s: Surface) { s.deferred.clear();s.flushing?.done("原有界面已卸载，输入无法确认");clearTimeout(s.timeout); if(s.token)this.clipboard.discard(s.token); this.shared.detach(s.token); this.data.detach(s.token); this.post(s, { type: "unmount" }); s.node.remove(); }
   private destroy(shell: Shell) { if (shell.layoutFrame !== undefined) cancelAnimationFrame(shell.layoutFrame); shell.observer.disconnect(); for (const f of shell.surfaces.values()) this.removeSurface(f); shell.node.remove(); }
-  dispose() { this.shared.dispose(); this.settingsListener?.(); this.fileDrop.dispose(); this.disposed = true; clearInterval(this.networkTimer); this.closeMenu(); window.removeEventListener("message", this.message); document.removeEventListener("pointerdown", this.outside); document.removeEventListener("pointerdown", this.interaction, true); document.removeEventListener("keydown", this.interaction, true); this.theme.disconnect(); window.matchMedia("(prefers-color-scheme: dark)").removeEventListener("change", this.systemTheme); for (const shell of this.shells.values()) this.destroy(shell); }
+  dispose() { clearTimeout(this.actionTimer); document.removeEventListener("visibilitychange",this.resumeActionPolling); this.shared.dispose(); this.settingsListener?.(); this.fileDrop.dispose(); this.disposed = true; clearInterval(this.networkTimer); this.closeMenu(); window.removeEventListener("message", this.message); document.removeEventListener("pointerdown", this.outside); document.removeEventListener("pointerdown", this.interaction, true); document.removeEventListener("keydown", this.interaction, true); this.theme.disconnect(); window.matchMedia("(prefers-color-scheme: dark)").removeEventListener("change", this.systemTheme); for (const shell of this.shells.values()) this.destroy(shell); }
 }

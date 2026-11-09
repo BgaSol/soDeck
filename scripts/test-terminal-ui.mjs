@@ -59,9 +59,22 @@ try{
  await newTerminal.evaluate(el=>{el.click();el.click();});await board.locator('.component-tab').nth(2).waitFor();
  assert.equal(Object.values((await call('component_ui',{window:'main',operation:'snapshot',args:{}})).workspaces)[0].views.length,3,'Repeated exit recovery creates one new PTY');
  assert.match(await oldFrame.locator('.xterm-rows').textContent(),/sodeck-ui-command-ok/,'Exited terminal retains output');
+ const context=(await call('connection',{command:{op:'snapshot'}}))[0].context;
+ const command=process.platform==='win32'?`powershell.exe -NoLogo -NoProfile -Command "Write-Output 'sodeck-ui-launch-ready'; $line = [Console]::ReadLine(); Write-Output ('sodeck-ui-launch-input:' + $line); exit 7"`:`sh -c 'printf "sodeck-ui-launch-ready\\n"; read line; printf "sodeck-ui-launch-input:%s\\n" "$line"; exit 7'`;
+ const config={version:1,title:'指定命令 UI',launch:{kind:'command',command},directoryIntegration:'off'};
+ const action=await call('component_ui',{window:'main',operation:'invokeAction',args:{context,requestId:'ui-command',actionKey:'sodeck.terminal:new-terminal',data:config}});assert.equal(action.status,'completed');
+ await main.evaluate(()=>window.manager.refresh());
+ const commandFrame=main.frameLocator(`.component-surface[data-view-id="${action.viewId}"] iframe`);
+ await commandFrame.locator('.xterm-rows').filter({hasText:'sodeck-ui-launch-ready'}).waitFor();
+ await commandFrame.locator('.xterm-helper-textarea').focus();await main.keyboard.type('value');await main.keyboard.press('Enter');
+ await commandFrame.locator('.xterm-rows').filter({hasText:'sodeck-ui-launch-input:value'}).waitFor();
+ await commandFrame.getByRole('button',{name:'重新打开终端',exact:true}).click();await board.locator('.component-tab').nth(4).waitFor();
+ const final=Object.values((await call('component_ui',{window:'main',operation:'snapshot',args:{}})).workspaces)[0];
+ assert.deepEqual(final.views.find(v=>v.id===final.editor).params,config,'Command recovery preserves launch, title and directory strategy');
+ await main.frameLocator(`.component-surface[data-view-id="${final.editor}"] iframe`).locator('.xterm-rows').filter({hasText:'sodeck-ui-launch-ready'}).waitFor();
  const connection=(await call('connection',{command:{op:'snapshot'}}))[0];await call('connection',{command:{op:'disconnect',context:connection.context}});await main.evaluate(()=>window.manager.refresh());
   await wait(()=>oldFrame.locator('#status + button').evaluate(el=>el.hidden));await oldFrame.locator('#status + button').evaluate(el=>el.click());
- assert.equal(Object.values((await call('component_ui',{window:'main',operation:'snapshot',args:{}})).workspaces)[0].views.length,3,'Disconnected recovery sends no new create');
+ assert.equal(Object.values((await call('component_ui',{window:'main',operation:'snapshot',args:{}})).workspaces)[0].views.length,5,'Disconnected recovery sends no new create');
  assert.deepEqual(errors,[]);
  console.log('Actual terminal UI passed: OpenSSH PTY, xterm input/output, multiple tabs, WebView remount replay, no page errors');
 }finally{await browser.close();await vite.close();if(child.exitCode===null){child.stdin.end();await new Promise(resolve=>child.once('exit',resolve));}if(path.dirname(path.resolve(data))!==path.resolve(os.tmpdir())||!path.basename(data).startsWith('sodeck-terminal-ui-'))throw new Error('Unexpected cleanup');fs.rmSync(data,{recursive:true,force:true});}

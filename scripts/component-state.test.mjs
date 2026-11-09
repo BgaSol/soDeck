@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import {test} from 'node:test';
 const bus=new EventTarget();globalThis.addEventListener=bus.addEventListener.bind(bus);globalThis.removeEventListener=bus.removeEventListener.bind(bus);
 const {SharedState}=await import('../plugins/shared/state.js');
-const {parseOsc7,parseIntegration}=await import('data:text/javascript;base64,'+Buffer.from(fs.readFileSync('plugins/terminal/ui-src/location.js','utf8').replace("'./state.js'",JSON.stringify(new URL('../plugins/shared/state.js',import.meta.url).href))).toString('base64'));
+const {parseOsc7,parseIntegration,createLocation}=await import('data:text/javascript;base64,'+Buffer.from(fs.readFileSync('plugins/terminal/ui-src/location.js','utf8').replace("'./state.js'",JSON.stringify(new URL('../plugins/shared/state.js',import.meta.url).href))).toString('base64'));
 const fixture=JSON.parse(fs.readFileSync('scripts/fixtures/shared-state.json','utf8'));
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 test('JS wire contract applies a multipart batch atomically with decimal revisions and null tombstones',async()=>{
@@ -58,4 +58,13 @@ test('background observations only cancel a pending follow, preserving manual na
   emit(active);controller.settings({values:{followTerminal:false}});assert.equal(cancelled,1,'switching off cancels the pending follow');release();await tick();
   emit(empty);emit(empty);assert.equal(cancelled,1,'later sampler events must not cancel a manual navigation');
  }finally{controller.dispose();globalThis.document=priorDocument;delete globalThis.FileStateClient;}
+});
+
+test('disabled directory integration ignores OSC7 and OSC633 and publishes only unknown state',async()=>{
+ const writes=[],handlers=new Map();globalThis.sodeck={request:async(_,p)=>({result:p.op==='get'?{record:{present:true,revision:'1',value:{state:'known',path:'/old',terminalId:'pty',outputOffset:'0'}}}:writes.push(p)})};
+ const terminal={parser:{registerOscHandler:(id,handler)=>{handlers.set(id,handler);return {dispose(){}};}}};
+ const location=createLocation(terminal);location.mount({context:fixture.context,capabilities:{sharedState:1},settings:{values:{directoryReportHost:'host'}},data:{streamId:'pty',openedContext:fixture.context,integration:{mode:'off',token:'token'}}});
+ location.ready();await tick();
+ location.frame('data',100);handlers.get(7)('file://host/should-not-follow');handlers.get(633)('SODECK;token;ready;2f776f726b;2f746d70');location.completed();location.input('command\n');await tick();
+ assert(writes.some(p=>p.op==='put'&&p.value.reasonCode==='disabled'));assert(writes.every(p=>p.op!=='put'||p.value.state==='unknown'));location.dispose();
 });

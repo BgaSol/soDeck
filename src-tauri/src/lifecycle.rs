@@ -527,6 +527,7 @@ impl AppCore {
             ended_at: None,
             input_deadline: None,
         };
+        ui.invalidate_workspace_actions(&op.workspaces, "工作区正在关闭，行为已失效");
         ui.lifecycle.operations.insert(id.clone(), op.clone());
         if matches!(target, Target::Application { .. }) {
             self.set_closing(true);

@@ -674,6 +674,10 @@ async fn run(a: Arc<Attempt>, profile: Profile, keys: Arc<host_keys::HostKeys>) 
         if let Some(context) = a.view().context {
             let mut workspaces = core.workspaces.lock().unwrap();
             let _ = workspaces.disconnected(&context);
+            core.component_ui
+                .lock()
+                .unwrap()
+                .invalidate_workspace_actions(&[context.workspace_id.clone()], "连接已断开");
             let _ = core
                 .shared_state
                 .set_scope_status(&context, Some(false), None, Instant::now());

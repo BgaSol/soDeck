@@ -3,6 +3,7 @@
   "ui": {
     "apiVersion": "1",
     "entry": "ui/index.html",
+    "actions": [{"id":"new-page","title":"新建终端","defaultCreate":true,"dataVersion":1}],
     "views": [
       {
         "id": "files",

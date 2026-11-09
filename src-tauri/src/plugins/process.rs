@@ -60,7 +60,7 @@ pub(crate) fn supervise(
         "jsonrpc":"2.0", "id":"initialize", "method":"initialize", "params":{
             "coreApiVersion":API_VERSION, "coreVersion":core.version(), "dataDirectory":path,
             "settings":core.settings_index(id),
-              "capabilities":["logging.write","messages.publish","ui.v1","rpc.concurrent","terminal.v1","terminal.launch.v1","viewData.v1","files.v1","files.directoryCursors.v1","files.operations.v1","files.localInputs.v1","net.tcp.v1","ui.dialog.v1","settings.v1","ui.background.v1","session.exec.v1","sharedState.v1","files.location.v1"]
+              "capabilities":["logging.write","messages.publish","ui.v1","ui.actions.v1","ui.openView.v1","rpc.concurrent","terminal.v1","terminal.launch.v1","viewData.v1","files.v1","files.directoryCursors.v1","files.operations.v1","files.localInputs.v1","net.tcp.v1","ui.dialog.v1","settings.v1","ui.background.v1","session.exec.v1","sharedState.v1","files.location.v1"]
         }
     }))).err();
     let mut ready = Some(ready);
@@ -85,6 +85,10 @@ pub(crate) fn supervise(
             stop_waiters.push(waiter);
             if stop_deadline.is_none() {
                 stop_deadline = Some(Instant::now() + Duration::from_secs(3));
+                core.component_ui
+                    .lock()
+                    .unwrap()
+                    .invalidate_instance_actions(id, instance_id);
                 core.shared_state
                     .stop_instance(id, instance_id, now(), Instant::now());
                 for (_, reply, _, _, _) in requests.values_mut() {
@@ -170,6 +174,10 @@ pub(crate) fn supervise(
         // Allow the pipe readers to deliver final diagnostics after process exit.
         let drain_complete = exited_at.is_none_or(|at| at.elapsed() >= Duration::from_millis(150));
         if (failure.is_some() || exited.is_some() || expired) && drain_complete {
+            core.component_ui
+                .lock()
+                .unwrap()
+                .invalidate_instance_actions(id, instance_id);
             core.network
                 .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
             core.terminals
@@ -332,6 +340,10 @@ pub(crate) fn supervise(
                         failure = Some("插件初始化响应的 API 版本不匹配".into());
                     } else {
                         initialized = true;
+                        instance.ui_actions_api.store(
+                            frame["result"]["uiActionsApiVersion"] == "1",
+                            std::sync::atomic::Ordering::Release,
+                        );
                         instance.settings_api.store(
                             frame["result"]["settingsApiVersion"] == "1",
                             std::sync::atomic::Ordering::Release,

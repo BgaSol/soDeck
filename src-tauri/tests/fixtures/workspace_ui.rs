@@ -107,16 +107,44 @@ fn dispatch(
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut views = HashMap::new();
     let mut serial = 0;
+    let mut pending = HashMap::<String, Value>::new();
+    let mut sequence = 0;
     for line in io::stdin().lock().lines() {
         let frame: Value = serde_json::from_str(&line?)?;
         let result = match frame["method"].as_str() {
-            Some("initialize") => Ok(json!({"apiVersion":"1"})),
+            Some("initialize") => Ok(json!({"apiVersion":"1","uiActionsApiVersion":"1"})),
+            Some("ui.action") => {
+                if frame["params"]["data"]["none"] == true {
+                    send(json!({"jsonrpc":"2.0","id":frame["id"],"result":{}}))?;
+                    continue;
+                }
+                sequence += 1;
+                let id = format!("open-{sequence}");
+                pending.insert(id.clone(), frame["id"].clone());
+                let p = &frame["params"];
+                let open = json!({"jsonrpc":"2.0","id":id,"method":"ui.openView","params":{"expectedContext":p["context"],"requestId":p["requestId"],"viewType":"terminal","params":p["data"]}});
+                let delay = p["data"]["delayMs"].as_u64().unwrap_or(0);
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(delay));
+                    let _ = send(open);
+                });
+                continue;
+            }
             Some("shutdown") => {
                 send(json!({"jsonrpc":"2.0","id":frame["id"],"result":{}}))?;
                 break;
             }
             Some(_) => dispatch(&mut views, &frame, &mut serial),
-            _ => continue,
+            _ => {
+                if let Some(id) = frame["id"].as_str().and_then(|id| pending.remove(id)) {
+                    send(if frame.get("error").is_some() {
+                        json!({"jsonrpc":"2.0","id":id,"error":frame["error"]})
+                    } else {
+                        json!({"jsonrpc":"2.0","id":id,"result":frame["result"]})
+                    })?;
+                }
+                continue;
+            }
         };
         match result {
             Ok(result) => send(json!({"jsonrpc":"2.0","id":frame["id"],"result":result}))?,

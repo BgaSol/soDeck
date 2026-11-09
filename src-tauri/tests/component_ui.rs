@@ -349,6 +349,21 @@ struct Fixture {
     core: Arc<AppCore>,
 }
 impl Fixture {
+    fn actions(&self) {
+        let path = self.plugin.join("plugin.json");
+        let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        manifest["ui"]["actions"] =
+            json!([{"id":"create","title":"默认行为","defaultCreate":true,"dataVersion":1}]);
+        fs::write(path, manifest.to_string()).unwrap();
+    }
+    fn invoke(&self, context: &sodeck::workspaces::Context, id: &str, data: Value) -> Value {
+        self.core
+            .ui_invoke_action(
+                "main",
+                &json!({"context":context,"requestId":id,"actionKey":"test.ui:create","data":data}),
+            )
+            .unwrap()
+    }
     fn load(&self) -> Result<sodeck::model::PluginView, String> {
         let _startup = STARTUP.lock().unwrap();
         self.core.load(&self.plugin)
@@ -401,6 +416,351 @@ impl Fixture {
             serde_json::from_value(plan["views"].clone()).unwrap(),
             decision,
         )
+    }
+}
+#[test]
+fn declared_behavior_chooses_own_page_and_deduplicates_without_a_surface() {
+    let f = Fixture::new();
+    f.actions();
+    let plugin = f.load().unwrap();
+    let w = f.open("action");
+    let snapshot = f.core.ui_snapshot("main").unwrap();
+    assert_eq!(snapshot["defaultCreateAction"], "test.ui:create");
+    assert_eq!(snapshot["actions"]["test.ui:create"]["available"], true);
+    let config =
+        json!({"title":"application terminal","launch":{"kind":"command","command":"example"}});
+    let result = f.invoke(&w.context, "create", json!({"params":config}));
+    assert_eq!(result["status"], "completed");
+    assert_eq!(
+        f.invoke(&w.context, "create", json!({"params":config})),
+        result
+    );
+    assert!(f.core.ui_invoke_action("main",&json!({"context":w.context,"requestId":"create","actionKey":"test.ui:create","data":{}})).is_err());
+    let process = json!({"expectedContext":w.context,"requestId":"create","viewType":"terminal","params":config});
+    assert_eq!(
+        f.core
+            .ui_process_open("test.ui", plugin.instance_id.as_ref().unwrap(), &process)
+            .unwrap()["viewId"],
+        result["viewId"]
+    );
+    let state = f.core.ui_snapshot("main").unwrap();
+    let view = state["workspaces"][&w.context.workspace_id]["views"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["id"] == result["viewId"])
+        .unwrap();
+    assert_eq!(view["params"], config);
+    assert!(f
+        .core
+        .ui_process_open("test.ui", "other-instance", &process)
+        .is_err());
+    let mut conflict = process.clone();
+    conflict["params"] = json!({"different":true});
+    assert!(f
+        .core
+        .ui_process_open("test.ui", plugin.instance_id.as_ref().unwrap(), &conflict)
+        .is_err());
+    let plan = f
+        .core
+        .ui_close_prepare(
+            "main",
+            vec![w.context.workspace_id.clone()],
+            Some(result["viewId"].as_str().unwrap().into()),
+        )
+        .unwrap();
+    f.finish(&plan, "discard").unwrap();
+    assert!(f
+        .core
+        .ui_process_open("test.ui", plugin.instance_id.as_ref().unwrap(), &process)
+        .unwrap_err()
+        .contains("viewClosed"));
+}
+#[test]
+fn behavior_can_return_no_page_or_select_a_different_declared_view() {
+    let f = Fixture::new();
+    f.actions();
+    f.load().unwrap();
+    let w = f.open("no-view");
+    let before = f.core.ui_snapshot("main").unwrap()["workspaces"][&w.context.workspace_id]
+        ["views"]
+        .as_array()
+        .unwrap()
+        .len();
+    assert_eq!(
+        f.invoke(&w.context, "none", json!({"none":true}))["status"],
+        "completed"
+    );
+    assert_eq!(
+        f.core.ui_snapshot("main").unwrap()["workspaces"][&w.context.workspace_id]["views"]
+            .as_array()
+            .unwrap()
+            .len(),
+        before
+    );
+    let result = f.invoke(&w.context, "sidebar", json!({"viewType":"browser"}));
+    assert_eq!(result["status"], "completed");
+    assert_eq!(
+        result["viewId"],
+        f.core.ui_snapshot("main").unwrap()["workspaces"][&w.context.workspace_id]["left"]
+    );
+    let other = f.open("other");
+    let other_view = f.core.ui_snapshot("main").unwrap()["workspaces"][&other.context.workspace_id]
+        ["editor"]
+        .clone();
+    assert_eq!(
+        f.invoke(
+            &w.context,
+            "wrong-context",
+            json!({"returnViewId":other_view})
+        )["status"],
+        "failed"
+    );
+}
+#[test]
+fn behavior_error_keeps_the_page_that_was_already_committed() {
+    let f = Fixture::new();
+    f.actions();
+    f.load().unwrap();
+    let w = f.open("partial-result");
+    let result = f.invoke(&w.context, "failure", json!({"failAfterOpen":true}));
+    assert_eq!(result["status"], "failed");
+    assert!(result["viewId"].is_string());
+    assert_eq!(
+        f.invoke(&w.context, "failure", json!({"failAfterOpen":true})),
+        result
+    );
+}
+#[test]
+fn timeout_status_queries_original_delivery_and_late_creation_is_fenced_by_close() {
+    let f = Fixture::new();
+    f.actions();
+    f.load().unwrap();
+    let w = f.open("timeout");
+    let result = f.invoke(&w.context, "late", json!({"delayMs":6100}));
+    assert_eq!(result["status"], "pending");
+    assert_eq!(
+        f.invoke(&w.context, "late", json!({"delayMs":6100}))["status"],
+        "pending"
+    );
+    let query = json!({"context":w.context,"requestId":"late"});
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    loop {
+        let status = f.core.ui_action_status("main", &query).unwrap();
+        if status["status"] == "completed" {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(30));
+    }
+    assert_eq!(
+        fs::read_to_string(f.root.join("data/plugin-data/test.ui/action-count")).unwrap(),
+        "1"
+    );
+    assert_eq!(
+        f.invoke(&w.context, "closed-late", json!({"delayMs":6100}))["status"],
+        "pending"
+    );
+    let count = f.core.ui_snapshot("main").unwrap()["workspaces"][&w.context.workspace_id]["views"]
+        .as_array()
+        .unwrap()
+        .len();
+    let plan = f
+        .core
+        .ui_close_prepare("main", vec![w.context.workspace_id.clone()], None)
+        .unwrap();
+    f.finish(&plan, "cancel").unwrap();
+    assert_eq!(
+        f.core
+            .ui_action_status(
+                "main",
+                &json!({"context":w.context,"requestId":"closed-late"})
+            )
+            .unwrap()["status"],
+        "invalidated"
+    );
+    std::thread::sleep(std::time::Duration::from_millis(1300));
+    assert_eq!(
+        f.core.ui_snapshot("main").unwrap()["workspaces"][&w.context.workspace_id]["views"]
+            .as_array()
+            .unwrap()
+            .len(),
+        count
+    );
+}
+#[test]
+fn saved_default_survives_provider_stop_and_unsupported_old_plugin_is_unavailable() {
+    let f = Fixture::new();
+    f.actions();
+    f.load().unwrap();
+    let saved = fs::read(f.root.join("data/ui-layout.json")).unwrap();
+    f.core.unload("test.ui").unwrap();
+    let snapshot = f.core.ui_snapshot("main").unwrap();
+    assert_eq!(snapshot["defaultCreateAction"], "test.ui:create");
+    assert_eq!(snapshot["actions"]["test.ui:create"]["available"], false);
+    assert_eq!(fs::read(f.root.join("data/ui-layout.json")).unwrap(), saved);
+    let old = Fixture::new();
+    old.actions();
+    fs::write(old.plugin.join("mode"), "old-actions").unwrap();
+    old.load().unwrap();
+    let snapshot = old.core.ui_snapshot("main").unwrap();
+    assert_eq!(snapshot["actions"]["test.ui:create"]["available"], false);
+    assert!(snapshot["defaultCreateAction"].is_null());
+}
+#[test]
+fn action_declaration_validates_ids_titles_versions_and_default_count() {
+    let f = Fixture::new();
+    let path = f.plugin.join("plugin.json");
+    let original: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    for actions in [
+        json!([{"id":"bad:id","title":"x","dataVersion":1}]),
+        json!([{"id":"a","title":" ","dataVersion":1}]),
+        json!([{"id":"a","title":"x","dataVersion":0}]),
+        json!([{"id":"a","title":"x","dataVersion":1},{"id":"a","title":"y","dataVersion":1}]),
+        json!([{"id":"a","title":"x","dataVersion":1,"defaultCreate":true},{"id":"b","title":"y","dataVersion":1,"defaultCreate":true}]),
+    ] {
+        let mut m = original.clone();
+        m["ui"]["actions"] = actions;
+        fs::write(&path, m.to_string()).unwrap();
+        assert!(
+            serde_json::from_value::<sodeck::component_ui::Declaration>(m["ui"].clone())
+                .unwrap()
+                .validate(&f.plugin.canonicalize().unwrap())
+                .is_err()
+        );
+    }
+    fs::write(path, original.to_string()).unwrap();
+    assert!(
+        serde_json::from_value::<sodeck::component_ui::Declaration>(original["ui"].clone())
+            .unwrap()
+            .validate(&f.plugin.canonicalize().unwrap())
+            .is_ok()
+    );
+}
+#[test]
+fn startup_default_is_stable_across_saved_plugin_order_and_queries_do_not_write() {
+    let f = Fixture::new();
+    f.actions();
+    let second = f.root.join("second");
+    fs::create_dir_all(second.join("ui")).unwrap();
+    fs::copy(
+        env!("CARGO_BIN_EXE_plugin-fixture"),
+        second.join(format!("fixture{}", std::env::consts::EXE_SUFFIX)),
+    )
+    .unwrap();
+    fs::write(second.join("ui/index.html"), "fixture").unwrap();
+    let mut manifest: Value =
+        serde_json::from_slice(&fs::read(f.plugin.join("plugin.json")).unwrap()).unwrap();
+    manifest["id"] = json!("aaa.default");
+    fs::write(second.join("plugin.json"), manifest.to_string()).unwrap();
+    f.core.add_plugin(&f.plugin).unwrap();
+    f.core.add_plugin(&second).unwrap();
+    {
+        let _startup = STARTUP.lock().unwrap();
+        f.core.start_enabled();
+    }
+    let path = f.root.join("data/ui-layout.json");
+    let saved = fs::read(&path).unwrap();
+    for _ in 0..2 {
+        assert_eq!(
+            f.core.ui_snapshot("main").unwrap()["defaultCreateAction"],
+            "aaa.default:create"
+        );
+    }
+    assert_eq!(fs::read(path).unwrap(), saved);
+}
+#[test]
+fn accepted_behavior_follows_workspace_ownership_and_disconnect_fences_new_creation() {
+    let f = Fixture::new();
+    f.actions();
+    f.load().unwrap();
+    let w = f.open("moving-action");
+    let core = f.core.clone();
+    let context = w.context.clone();
+    let action = std::thread::spawn(move || {
+        core.ui_invoke_action("main",&json!({"context":context,"requestId":"moving","actionKey":"test.ui:create","data":{"delayMs":500}})).unwrap()
+    });
+    let marker = f.root.join("data/plugin-data/test.ui/action-count");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while !marker.exists() {
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(f
+        .core
+        .ui_invoke_action(
+            "main",
+            &json!({"context":w.context,"requestId":"second","actionKey":"test.ui:create"})
+        )
+        .is_err());
+    {
+        let mut state = f.core.workspaces.lock().unwrap();
+        state.register("moved").unwrap();
+        state.ready("moved").unwrap();
+        let m = state
+            .prepare(
+                "main",
+                &w.context.workspace_id,
+                "moved",
+                0,
+                "action-move".into(),
+            )
+            .unwrap();
+        state.commit(&m).unwrap();
+    }
+    f.core.workspace_changed();
+    let result = action.join().unwrap();
+    assert_eq!(result["status"], "completed");
+    let query = json!({"context":w.context,"requestId":"moving"});
+    assert!(f.core.ui_action_status("main", &query).is_err());
+    assert_eq!(
+        f.core.ui_action_status("moved", &query).unwrap()["viewId"],
+        result["viewId"]
+    );
+    f.core
+        .workspaces
+        .lock()
+        .unwrap()
+        .disconnected(&w.context)
+        .unwrap();
+    f.core.workspace_changed();
+    assert!(f
+        .core
+        .ui_invoke_action(
+            "moved",
+            &json!({"context":w.context,"requestId":"offline","actionKey":"test.ui:create"})
+        )
+        .is_err());
+    assert_eq!(
+        f.core.ui_action_status("moved", &query).unwrap()["status"],
+        "completed"
+    );
+    let next = f
+        .core
+        .workspaces
+        .lock()
+        .unwrap()
+        .reconnect(&w.context, "next".into(), "next".into())
+        .unwrap();
+    f.core.workspace_changed();
+    assert!(f.core.ui_action_status("moved", &query).is_err());
+    assert!(f
+        .core
+        .ui_action_status("moved", &json!({"context":next,"requestId":"moving"}))
+        .is_err());
+    {
+        let mut state = f.core.workspaces.lock().unwrap();
+        state.ready("main").unwrap();
+        let m = state
+            .prepare(
+                "moved",
+                &w.context.workspace_id,
+                "main",
+                0,
+                "action-return".into(),
+            )
+            .unwrap();
+        state.commit(&m).unwrap();
     }
 }
 impl Drop for Fixture {

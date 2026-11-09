@@ -51,6 +51,30 @@ async fn openssh_terminal_plugin() {
         "sodeck-real-pty-ok",
     )
     .await;
+    let command = if cfg!(windows) {
+        "powershell.exe -NoLogo -NoProfile -Command \"Write-Output 'sodeck-command-ready'; $line = [Console]::ReadLine(); Write-Output ('sodeck-command-input:' + $line); exit 7\""
+    } else {
+        "sh -c 'printf \"sodeck-command-ready\\n\"; read line; printf \"sodeck-command-input:%s\\n\" \"$line\"; exit 7'"
+    };
+    let params=json!({"version":1,"title":"指定命令","launch":{"kind":"command","command":command},"directoryIntegration":"off"});
+    let opened=f.core.ui_invoke_action("main",&json!({"context":context,"requestId":"command-test","actionKey":"sodeck.terminal:new-terminal","data":params})).unwrap();
+    assert_eq!(opened["status"],"completed");
+    let mounted=f.core.ui_attach("main",opened["viewId"].as_str().unwrap()).unwrap();
+    assert_eq!(mounted["data"]["createParams"],params);
+    assert_eq!(mounted["data"]["integration"]["mode"],"off");
+    let token=mounted["surfaceId"].as_str().unwrap();let id=mounted["data"]["streamId"].as_str().unwrap();
+    f.core.ui_surface_ready("main",token).unwrap();let mut output=subscribe(&f.core,"main",token,id).await;
+    data_until(&f.core,"main",token,id,&mut output,"sodeck-command-ready").await;
+    td(&f.core,"main",token,json!({"op":"write","id":id,"sequence":0,"data":b"value\r"})).await.unwrap();
+    data_until(&f.core,"main",token,id,&mut output,"sodeck-command-input:value").await;
+    loop {let frame=receive(&f.core,"main",token,id,&mut output).await;if frame.kind=="end"{if cfg!(windows) {
+        let baseline=std::process::Command::new("ssh").args(["-tt","-o","StrictHostKeyChecking=no","-o","UserKnownHostsFile=NUL","-o","IdentitiesOnly=yes","-i", &std::env::var("SODECK_TEST_SSH_KEY").unwrap(),"-p", &port.to_string(), &format!("{}@127.0.0.1",std::env::var("SODECK_TEST_SSH_USER").unwrap()), "powershell.exe -NoLogo -NoProfile -Command \"exit 7\""]).stdin(std::process::Stdio::null()).output().unwrap();
+        assert_eq!(frame.metadata["exitCode"].as_i64(),baseline.status.code().map(i64::from),"must preserve the exit status reported to an independent OpenSSH PTY client");
+        eprintln!("Windows OpenSSH PTY reported exit {:?} for exit 7",baseline.status.code());
+    } else { assert_eq!(frame.metadata["exitCode"],7); }break;}}
+    let reopened=f.core.ui_event("main",token,json!({"action":"createTerminal","requestId":"reopen-command","params":params})).unwrap();
+    assert_ne!(reopened["viewId"],opened["viewId"]);
+    let next=f.core.ui_attach("main",reopened["viewId"].as_str().unwrap()).unwrap();assert_eq!(next["data"]["createParams"],params);assert_ne!(next["data"]["streamId"],mounted["data"]["streamId"]);
     close_terminal_views(&f);
     f.core.disconnect_connection("main", &context).unwrap();
     f.core.shutdown().unwrap();

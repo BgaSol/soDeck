@@ -484,6 +484,7 @@ impl AppCore {
     /// Called once during application startup, before any UI-triggered plugin operations.
     pub fn start_enabled(self: &Arc<Self>) {
         let _operation = self.mutations.lock().unwrap();
+        self.component_ui.lock().unwrap().startup_loading = true;
         let records = self.store.lock().unwrap().plugins.clone();
         for mut record in records {
             if let Some(pending) = record.pending_update.take() {
@@ -550,6 +551,7 @@ impl AppCore {
                 }
             }
         }
+        self.component_ui.lock().unwrap().startup_loading = false;
         self.changed();
     }
 

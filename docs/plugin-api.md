@@ -19,7 +19,7 @@
 - `container`：`sidebar` 或 `editor`。侧栏第一版只支持 `perWorkspace` 单例；中央还支持 `multiple` 和 `perResource`。资源标识按远程文件系统语义由插件提供，不按本机 Windows 路径转换。
 - `defaultSide`：left/right，默认 left；`defaultPinned`：初始固定入口，默认 false；`openOnWorkspace`：none/reveal/createOne，默认 none；`startupOrder`：初始动作顺序。首次出现的定义保存推荐值，已有偏好保持；新工作区按这些偏好选择未占用的栏位。
 - `backgroundOnWorkspace: true`：可选，仅适用于 sidebar + perWorkspace。需要 `ui.background.v1`。核心在工作区存在时确保逻辑 view 并幂等调用 ui.mount，无需 iframe；`uiRequested=false` 的 view 不创建页面，也不阻塞移窗。显示后沿用普通页面生命周期。隐藏只影响页面，采集和 disposeView 仍由插件进程处理。
-- `createAction`：中央“＋”中的创建动作名称；目标就是本视图。`locateEntry: true`：可固定的中央定位入口，优先定位最近使用的实例，没有时创建一个。文件编辑器需要 resourceKey，不声明空页面创建动作。
+- `createAction`：旧核心使用的视图创建名称；当前工作台“＋”使用下述 `ui.actions` 默认行为。`locateEntry: true`：可固定的中央定位入口，优先定位最近使用的实例，没有时创建一个。文件编辑器需要 resourceKey，不声明空页面创建动作。
 
 插件包附带已构建的 HTML/JS/CSS，核心通过本地 `sodeck-plugin` 协议加载，不依赖开发服务器或用户 Node 环境。打包脚本自动复制插件的 `ui/`，核心安装包不包含它们。
 
@@ -35,6 +35,49 @@
 宿主还通知 `visibilityChanged/themeChanged/focus/unmount`。`mount.connected` 可选布尔值表示工作区当前连接状态；连接状态变化时通知 `connectionChanged`，携带 `connected`。旧 UI 可忽略这两个增量字段；它们不恢复原终端或自动启动业务任务。核心校验真实页面 sender、挂载 token、插件进程实例与工作区 Context。移窗时先等目标页面 mounted，再提交窗口归属；旧表面事件因此失效。同窗切换只隐藏已挂载页面，不能重写其 DOM。示例 bridge 位于 `plugins/files/ui/bridge.js`。
 
 UI 事件最多 24 KiB，是控制交互接口，不能用来传终端输出或文件内容流。RPC 保留 64 KiB 帧上限和 5 秒等待期限；v0.6.0 的真实业务正文另走下述有界视图数据桥。可信插件不增加权限表或授权流程。
+
+### 默认行为与进程主动创建页面
+
+核心 0.16.0 起支持以下可选扩展，沿用 API 主版本 1。
+
+清单 `ui.actions` 可声明 `[{id:"new-terminal",title:"新建终端",defaultCreate:true,dataVersion:1}]`。行为不指定目标视图；插件收到事件后决定是否以及如何打开自己的页面。每插件最多 32 项，id 非空、最长 80 字节、使用 ASCII 字母/数字/短横线/下划线且不重复；title 非空白、最长 256 字节；dataVersion 为正整数；最多一个 defaultCreate 推荐。
+
+核心声明 `ui.actions.v1`、`ui.openView.v1`。支持事件的插件在 initialize 返回 `uiActionsApiVersion:"1"`，并在读取 viewId 之前处理 `ui.action`。旧插件缺少支持回应时登记为不可用；旧清单可省略 actions。旧核心仍使用原视图声明，因此插件可以保留 createAction 和 openOnWorkspace。
+
+| 方向 | 接口 | 结果 |
+| --- | --- | --- |
+| 工作台 → 核心 | component_ui `invokeAction({context,requestId,actionKey,data?})` | `{status,requestId,context,actionKey,viewId?,result?,error?}` |
+| 核心 → 插件 | `ui.action({context,requestId,actionId,data})` | `{viewId?}`，也可返回无页面的对象或错误 |
+| 工作台 → 核心 | component_ui `actionStatus({context,requestId})` | 原请求的 pending/completed/failed/invalidated 状态；查询不重发事件 |
+| 插件 → 核心 | `ui.openView({expectedContext,requestId,viewType,resourceKey?,params?})` | `{viewId}`；只接受真实调用插件声明的视图 |
+
+工作台从快照 actions/defaultCreateAction 取得默认行为，按钮文字使用声明 title。所有启动插件加载结束后，首次按 pluginId/actionId 稳定排序保存有效推荐；已有选择不覆盖，提供者卸载或停止也不自动切换。偏好仍保存到 schemaVersion=1 的 ui-layout.json。快照查询不创建页面或写入偏好，pendingAction 提供本窗口工作区尚未确认的请求，便于重新显示和移窗后继续查询。
+
+requestId 为 1–128 字节；data、params 和行为结果各最多 16 KiB，完整 UI 参数仍受 24 KiB 限制，RPC 信封受 64 KiB 限制。核心只检查结构、大小、真实 Context 和实例身份。metadata.title 最长 512 字节。业务参数由插件解释，核心不生成终端或 Docker 命令。
+
+同 Context/requestId/输入的调用读取原回执，改变输入报冲突。每工作区只允许一个未确认行为。5 秒超时返回 pending，工作台只查询原回执；插件已申请页面但随后报告失败时保留 viewId，不补建。返回的页面必须属于原插件实例及 Context。页面申请和 PTY 就绪相互独立。
+
+ui.openView 使用共同页面登记路径，同实例/Context/requestId 的相同输入返回原 viewId；不同输入拒绝，原页面关闭后返回 viewClosed，不能复用旧编号复活页面。已失败或失效的关联行为拒绝迟到的新申请。关闭冻结、断线、提供者停止会使未结束行为 invalidated，取消关闭不重发；移窗保留 Context，当前真实窗口继续查询。重连 generation 改变或工作区结束后回收旧记录。
+
+新入口的行为和页面申请去重记录每 Context 合计最多 4096 项、全局最多 16384 项，缓存预算 16 MiB；等待中的行为预留一个 RPC 帧的额度。到达额度拒绝新编号，已结束记录也不静默清空。极长期工作区需要关闭并重新打开。旧页面 openView 桥保持原兼容行为；`mount.capabilities.uiOpenView===1` 表示支持进程入口。
+
+终端的 `new-terminal` 行为解释下述终端创建配置。其他插件的业务行为继续使用自己的协议；本次没有新增 Docker 业务路由。实现与本机验证见[实施记录](implementation-default-behavior-terminal.md)。
+
+### 终端创建参数
+
+终端插件 0.6.0 起支持以下创建配置。
+
+动作 data 和终端视图 params 使用相同契约，null/空对象默认登录 shell。示例：
+
+```json
+{"version":1,"title":"api · 容器终端","launch":{"kind":"command","command":"docker exec -it api /bin/sh"},"directoryIntegration":"off"}
+```
+
+version 可省略，仅支持 1；title 可省略，非空白、最多 128 字符且不含控制字符。launch 缺省或 `{kind:"loginShell"}` 使用登录 shell；`{kind:"command",command:string}` 要求非空白且不含 NUL。已知字段类型错误、未知版本/kind 拒绝；未知可选字段忽略。总参数最多 16 KiB。
+
+loginShell 缺省目录策略在创建时读取设置，允许 auto/manual/off；command 缺省 off，首版只接受 off。command 只要求 terminal.launch.v1，不做主机探测或目录脚本注入，不回退登录 shell。自动登录 shell 集成仍要求 terminal.launch.v1 和 session.exec.v1，旧核心或不支持的 shell 保留原普通终端降级。
+
+首次挂载保存已解析配置，同 viewId 重挂载复用原 PTY，初始化失败不自动重跑。mount.data.createParams 含可再次使用的配置；command 退出后“重新打开终端”创建新 view/PTY。新核心通过现有 ui.event 的 `{action:"createTerminal",requestId,params}` 交给终端后台调用 ui.openView；旧核心通过页面自己的 openView 桥携带配置。新页面使用当前挂载 Context，不复用原 streamId、输入序号或集成 token。off 不采纳 OSC7/633 的 known 目录，不将嵌套环境路径传给主机文件跟随。
 
 ## 会话状态与有界短命令（当前源码）
 

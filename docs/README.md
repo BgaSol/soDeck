@@ -36,6 +36,7 @@
 | 系统状态 | [功能设计](plan-system-status.md)、[编码方案](plan-system-status-coding.md) | [实现、验证与平台限制](implementation-system-status.md)、[界面规范](../plugins/system-status/DESIGN.md) |
 | 工作台样式与剪贴板 | [设计方案](plan-workbench-design.md) | [样式与剪贴板](implementation-workbench-design.md) |
 | Tab 新建入口 | [交互方案](plan-tab-creation.md) | [两级 Tab](implementation-tab-creation.md) |
+| 默认新建行为与通用终端 | [功能方案](plan-default-behavior-terminal.md)、[代码整改方案](plan-default-behavior-terminal-coding.md) | [实现、本机验证与兼容边界](implementation-default-behavior-terminal.md) |
 | 工作区菜单 | — | [菜单修复](implementation-component-menus.md) |
 | 工作台按钮与文件菜单 | [整改设计](plan-workbench-interactions.md) | [实施与验收](implementation-workbench-interactions.md) |
 | 面板拖拽与终端尺寸 | [状态归属、完整手势与尺寸同步](plan-panel-resize.md) | [实现与本机验收](implementation-panel-resize.md) |
@@ -50,6 +51,7 @@
 
 - [GitHub Releases](https://github.com/BgaSol/soDeck/releases)：已发布的核心和插件版本、下载附件与发布说明。
 - [核心版本记录](releases/)：各版本的功能变化、验收与交付边界，包含历史候选版本记录。
+- [v0.16.0](releases/v0.16.0.md)：插件声明默认新建行为、进程主动打开页面与通用终端创建参数。
 - [v0.14.0](releases/v0.14.0.md)：终端自动识别目录、文件跟随状态与文件系统对应检查。
 - [v0.13.0](releases/v0.13.0.md)：核心共享状态、终端目录跟随与挂载容量联动。
 - [v0.12.3](releases/v0.12.3.md)：面板拖动状态、完整手势生命周期及终端尺寸同步整改。

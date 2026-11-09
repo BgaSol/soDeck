@@ -62,6 +62,7 @@ enum Output {
 
 pub(crate) struct Instance {
     pub(crate) settings_api: std::sync::atomic::AtomicBool,
+    pub(crate) ui_actions_api: std::sync::atomic::AtomicBool,
     view: Mutex<PluginView>,
     calls: SyncSender<Call>,
     stops: SyncSender<Sender<Result<(), String>>>,
@@ -155,6 +156,7 @@ impl Instance {
         (
             Arc::new(Self {
                 settings_api: std::sync::atomic::AtomicBool::new(false),
+                ui_actions_api: std::sync::atomic::AtomicBool::new(false),
                 view: Mutex::new(PluginView {
                     directory: record.directory,
                     manifest: record.manifest,

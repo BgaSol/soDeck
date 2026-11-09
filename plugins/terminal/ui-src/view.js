@@ -6,12 +6,13 @@ import {createLocation} from './location.js';
   const fit=new FitAddon.FitAddon(),serialize=new SerializeAddon.SerializeAddon();terminal.loadAddon(fit);terminal.loadAddon(serialize);terminal.open(host);
   let id,offset=0,inputSequence=0,chain=Promise.resolve(),inputChain=Promise.resolve(),disposed=false,caughtUp=false,restoring=false,visible=false,enabled=false;
   let savedOffset=0,lastSave=0,escape='normal',utf8=0,inputPending=0,mountKey='';
-  let ended=false,disconnected=false,opening=false,surfaceReady=false;
+  let ended=false,disconnected=false,opening=false,surfaceReady=false,createParams={},canOpen=false;
   const newTerminal=document.createElement('button');newTerminal.textContent='新建终端';newTerminal.hidden=true;newTerminal.className='sd-control';status.after(newTerminal);
   newTerminal.onclick=()=>{
     if(opening||disposed||disconnected||!ended)return;
     opening=true;newTerminal.disabled=true;
-    void sodeck.request('openView',{viewType:'terminal'}).catch(fail).finally(()=>{opening=false;newTerminal.disabled=disconnected;});
+    const requestId=crypto.randomUUID();
+    void sodeck.request(canOpen?'event':'openView',canOpen?{action:'createTerminal',requestId,params:createParams}:{viewType:'terminal',params:createParams}).catch(fail).finally(()=>{opening=false;newTerminal.disabled=disconnected;});
   };
   const encoder=new TextEncoder();
   const fail=error=>{status.hidden=false;status.textContent=String(error);status.classList.add('error');};
@@ -96,6 +97,7 @@ import {createLocation} from './location.js';
   }
   addEventListener('sodeck:mount',event=>{
     const mount=event.detail;surfaceReady=mount.capabilities?.sharedState!==1;id=mount.data.streamId;mountKey=mount.surfaceId+':'+JSON.stringify(mount.context);disconnected=mount.connected===false;visible=mount.visible;theme(mount.tokens);
+    createParams=mount.data.createParams||{};canOpen=mount.capabilities?.uiOpenView===1;newTerminal.textContent=createParams.launch?.kind==='command'?'重新打开终端':'新建终端';
     appearance.receive(mount.settings);
     location.mount(mount);
     status.textContent=`${mount.serverName||'服务器'} · 正在接续终端…`;

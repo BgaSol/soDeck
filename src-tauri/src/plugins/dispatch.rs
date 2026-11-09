@@ -110,6 +110,9 @@ pub(super) fn plugin_request(
                 .map_err(RpcError::execution)?;
             Ok(json!({"id":message.id}))
         }
+        "ui.openView" => core
+            .ui_process_open(id, instance, &frame["params"])
+            .map_err(RpcError::execution),
         "ui.updateView" => core
             .ui_process_update(id, instance, &frame["params"])
             .map_err(RpcError::execution),

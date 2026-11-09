@@ -104,6 +104,7 @@ impl AppCore {
             let mut ui = self.component_ui.lock().unwrap();
             ui.lifecycle.hosts.remove(window);
             ui.lifecycle.lost_hosts.insert(window.into());
+            ui.invalidate_workspace_actions(&scope, "原生窗口已关闭，行为已失效");
             ui.remove_window_surfaces(window);
             self.sync_shared_ui_locked(&ui);
             let op = &ui.lifecycle.operations[&id];

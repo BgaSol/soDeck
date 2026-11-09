@@ -14,6 +14,29 @@ pub struct Declaration {
     pub api_version: String,
     pub entry: String,
     pub views: Vec<Definition>,
+    #[serde(default)]
+    pub actions: Vec<ActionDefinition>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionDefinition {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub default_create: bool,
+    pub data_version: u32,
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisteredAction {
+    #[serde(flatten)]
+    pub definition: ActionDefinition,
+    pub key: String,
+    pub plugin_id: String,
+    pub plugin_name: String,
+    pub plugin_instance_id: String,
+    pub available: bool,
+    pub reason: Option<String>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -67,6 +90,24 @@ impl Declaration {
             return Err("插件 UI API 或视图数量无效".into());
         }
         resource(root, &self.entry)?;
+        let mut actions = HashSet::new();
+        if self.actions.len() > 32
+            || self.actions.iter().filter(|a| a.default_create).count() > 1
+            || self.actions.iter().any(|a| {
+                a.id.is_empty()
+                    || a.id.len() > 80
+                    || !a
+                        .id
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+                    || !actions.insert(&a.id)
+                    || a.title.trim().is_empty()
+                    || a.title.len() > 256
+                    || a.data_version == 0
+            })
+        {
+            return Err("插件 UI 行为声明无效或重复".into());
+        }
         let mut ids = HashSet::new();
         for d in &self.views {
             if d.id.is_empty()
@@ -130,6 +171,8 @@ pub struct Preference {
 struct Preferences {
     schema_version: u32,
     definitions: BTreeMap<String, Preference>,
+    #[serde(default)]
+    default_create_action: Option<String>,
     #[serde(default = "default_width")]
     left_width: u16,
     #[serde(default = "default_width")]
@@ -143,6 +186,7 @@ impl Default for Preferences {
         Self {
             schema_version: 1,
             definitions: BTreeMap::new(),
+            default_create_action: None,
             left_width: default_width(),
             right_width: default_width(),
         }
@@ -186,12 +230,17 @@ pub struct Runtime {
     preferences: Preferences,
     error: Option<String>,
     pub definitions: BTreeMap<String, Registered>,
+    pub actions: BTreeMap<String, RegisteredAction>,
+    action_requests: HashMap<String, actions::ActionRequest>,
+    open_requests: HashMap<String, actions::OpenRequest>,
     pub workspaces: HashMap<String, WorkspaceUi>,
     pub(crate) surfaces: HashMap<String, Surface>,
     pub(crate) lifecycle: crate::lifecycle::Lifecycle,
     requests: HashMap<String, String>,
     clock: u64,
+    pub(crate) startup_loading: bool,
 }
+mod actions;
 mod background;
 mod close;
 mod close_poll;
@@ -221,6 +270,8 @@ pub fn dispatch(
     let text = |key: &str| args[key].as_str().ok_or_else(|| format!("缺少 {key}"));
     match operation {
         "snapshot" => core.ui_snapshot(window),
+        "invokeAction" => core.ui_invoke_action(window, &args),
+        "actionStatus" => core.ui_action_status(window, &args),
         "action" => core.ui_action(
             window,
             &serde_json::from_value(args["context"].clone()).map_err(|e| e.to_string())?,

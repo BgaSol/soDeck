@@ -18,6 +18,11 @@ impl Runtime {
         windows
     }
     pub(crate) fn remove_views(&mut self, ids: &[String]) {
+        for request in self.open_requests.values_mut() {
+            if ids.contains(&request.view_id) {
+                request.closed = true;
+            }
+        }
         let editors: HashSet<_> = self
             .definitions
             .iter()
@@ -51,6 +56,7 @@ impl Runtime {
         self.surfaces.retain(|_, s| !ids.contains(&s.view));
     }
     pub(crate) fn rebind_context(&mut self, context: &Context) {
+        self.retain_request_contexts(std::slice::from_ref(context), Some(&context.workspace_id));
         if let Some(w) = self.workspaces.get_mut(&context.workspace_id) {
             let ids: HashSet<_> = w.views.iter().map(|v| v.id.clone()).collect();
             for view in &mut w.views {
@@ -89,11 +95,15 @@ impl Runtime {
             preferences,
             error,
             definitions: BTreeMap::new(),
+            actions: BTreeMap::new(),
+            action_requests: HashMap::new(),
+            open_requests: HashMap::new(),
             workspaces: HashMap::new(),
             surfaces: HashMap::new(),
             lifecycle: crate::lifecycle::Lifecycle::default(),
             requests: HashMap::new(),
             clock: 0,
+            startup_loading: false,
         })
     }
     pub fn frozen(&self, workspace: &str) -> bool {
@@ -135,7 +145,7 @@ impl Runtime {
             .ok_or("组件页面已关闭")?;
         let before = (v.title.clone(), v.dirty, v.busy);
         if let Some(title) = metadata["title"].as_str() {
-            if title.is_empty() || title.len() > 256 {
+            if title.is_empty() || title.len() > 512 {
                 return Err("组件标题无效".into());
             }
             v.title = title.into();
@@ -255,8 +265,15 @@ impl AppCore {
         let workspaces = self.workspaces.lock().unwrap();
         let contexts = workspaces.contexts();
         let live = workspaces.ids();
-        let initializing = plugins.iter().any(|p| p.status == PluginStatus::Starting);
         let mut ui = self.component_ui.lock().unwrap();
+        let initializing =
+            ui.startup_loading || plugins.iter().any(|p| p.status == PluginStatus::Starting);
+        ui.retain_request_contexts(&contexts, None);
+        for context in &contexts {
+            if workspaces.validate_context(context).is_err() {
+                ui.invalidate_actions(|r| &r.context == context, "连接已断开");
+            }
+        }
         ui.workspaces.retain(|id, _| live.contains(id));
         let live_views: HashSet<_> = ui
             .workspaces
@@ -286,9 +303,34 @@ impl AppCore {
         for d in ui.definitions.values_mut() {
             d.available = false;
         }
+        for a in ui.actions.values_mut() {
+            a.available = false;
+            a.reason = Some("行为提供者未运行".into());
+        }
         let mut preferences = ui.preferences.clone();
         for p in plugins.iter().filter(|p| p.status == PluginStatus::Running) {
             if let Some(declaration) = &p.manifest.ui {
+                let available = self
+                    .instances
+                    .lock()
+                    .unwrap()
+                    .get(&p.manifest.id)
+                    .is_some_and(|i| i.ui_actions_api.load(std::sync::atomic::Ordering::Acquire));
+                for a in &declaration.actions {
+                    let key = format!("{}:{}", p.manifest.id, a.id);
+                    ui.actions.insert(
+                        key.clone(),
+                        RegisteredAction {
+                            definition: a.clone(),
+                            key,
+                            plugin_id: p.manifest.id.clone(),
+                            plugin_name: p.manifest.name.clone(),
+                            plugin_instance_id: p.instance_id.clone().unwrap(),
+                            available,
+                            reason: (!available).then(|| "行为提供者需要升级".into()),
+                        },
+                    );
+                }
                 for d in &declaration.views {
                     let key = format!("{}:{}", p.manifest.id, d.id);
                     preferences
@@ -314,6 +356,13 @@ impl AppCore {
                     );
                 }
             }
+        }
+        if !initializing && preferences.default_create_action.is_none() {
+            preferences.default_create_action = ui
+                .actions
+                .values()
+                .find(|a| a.available && a.definition.default_create)
+                .map(|a| a.key.clone());
         }
         if ui.error.is_none()
             && serde_json::to_value(&preferences).unwrap()
@@ -440,7 +489,9 @@ impl AppCore {
             .map(|w| &w.context.workspace_id)
             .collect();
         Ok(
-            json!({"definitions":ui.definitions, "workspaces":ui.workspaces.iter().filter(|(id,_)| ids.contains(id)).collect::<HashMap<_,_>>(), "error":ui.error}),
+            json!({"definitions":ui.definitions,"actions":ui.actions,"defaultCreateAction":ui.preferences.default_create_action,
+                "pendingAction":ui.pending_actions().into_iter().filter(|r| ids.iter().any(|id| r["context"]["workspaceId"].as_str() == Some(id.as_str()))).collect::<Vec<_>>(),
+                "workspaces":ui.workspaces.iter().filter(|(id,_)| ids.contains(id)).collect::<HashMap<_,_>>(), "error":ui.error}),
         )
     }
     pub fn ui_action(
