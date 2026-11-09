@@ -23,7 +23,7 @@ impl Fixture {
             SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));
         let core = AppCore::open(path.clone(), "test".into()).unwrap();
-        core.workspaces.lock().unwrap().ready("main").unwrap();
+        core.workspace_state().ready("main").unwrap();
         Self { path, core }
     }
     fn open(&self, name: &str) -> sodeck::workspaces::Workspace {
@@ -44,6 +44,21 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn default_return_host_follows_host_creation_even_when_reusing_an_older_window() {
+    let f = Fixture::new();
+    let w = f.open("host-order");
+    let id = &w.context.workspace_id;
+    let mut state = f.core.workspace_state();
+    state.register("earlier-window").unwrap();
+    state.register("later-window").unwrap();
+    state.add_host("later-window", id, 0).unwrap();
+    state.add_host("earlier-window", id, 0).unwrap();
+    state.remove_host("main", id);
+    assert_eq!(state.owner(id).as_deref(), Some("later-window"));
+    state.close_window("later-window").unwrap();
+    assert_eq!(state.owner(id).as_deref(), Some("earlier-window"));
+}
+#[test]
 fn unique_record_binding_and_context_never_follow_active_tab() {
     let f = Fixture::new();
     let a = f.open("A");
@@ -57,7 +72,7 @@ fn unique_record_binding_and_context_never_follow_active_tab() {
         })
         .unwrap();
     assert_eq!(a.context, again.context);
-    let mut state = f.core.workspaces.lock().unwrap();
+    let mut state = f.core.workspace_state();
     assert_eq!(state.projection("main").unwrap().workspaces.len(), 2);
     state
         .activate("main", Some(&b.context.workspace_id))
@@ -120,7 +135,7 @@ fn rejected_or_failed_resize_changes_neither_memory_nor_saved_defaults() {
         .unwrap_err()
         .contains("移动"));
     assert_eq!(std::fs::read(f.path.join("ui-layout.json")).unwrap(), saved);
-    f.core.workspaces.lock().unwrap().cancel(&movement);
+    f.core.workspace_state().cancel(&movement);
     f.core.register_close_host("main").unwrap();
     f.core
         .close_prepare(
@@ -142,7 +157,7 @@ fn move_commit_is_atomic_and_preserves_context_and_layout() {
     let f = Fixture::new();
     let a = f.open("A");
     let b = f.open("B");
-    let mut state = f.core.workspaces.lock().unwrap();
+    let mut state = f.core.workspace_state();
     let layout = Layout {
         left_open: false,
         right_open: true,
@@ -213,7 +228,7 @@ fn move_commit_is_atomic_and_preserves_context_and_layout() {
 fn cancelled_failed_or_lost_target_does_not_remove_source() {
     let f = Fixture::new();
     let a = f.open("A");
-    let mut state = f.core.workspaces.lock().unwrap();
+    let mut state = f.core.workspace_state();
     state.register("workspace-fail").unwrap();
     let m = state
         .prepare(
@@ -258,7 +273,7 @@ fn reorder_close_window_and_catalog_lifetimes_are_separate() {
     let a = f.open("A");
     let b = f.open("B");
     let c = f.open("C");
-    let mut state = f.core.workspaces.lock().unwrap();
+    let mut state = f.core.workspace_state();
     let m = state
         .prepare("main", &a.context.workspace_id, "main", 2, "reorder".into())
         .unwrap();
@@ -298,7 +313,7 @@ fn reorder_close_window_and_catalog_lifetimes_are_separate() {
 fn old_session_results_rejected_after_disconnect_reconnect_and_close() {
     let f = Fixture::new();
     let a = f.open("A");
-    let mut state = f.core.workspaces.lock().unwrap();
+    let mut state = f.core.workspace_state();
     state.disconnected(&a.context).unwrap();
     assert_eq!(state.projection("main").unwrap().workspaces.len(), 1);
     assert!(state.validate_context(&a.context).is_err());
@@ -343,9 +358,7 @@ fn catalog_edit_renames_without_rerouting_and_blocks_delete() {
     assert_eq!(p.workspaces[0].endpoint, a.endpoint);
     assert_eq!(p.workspaces[0].context, a.context);
     f.core
-        .workspaces
-        .lock()
-        .unwrap()
+        .workspace_state()
         .close("main", &a.context.workspace_id)
         .unwrap();
     change(json!({"op":"deleteServer","id":a.context.server_id})).unwrap();
@@ -362,6 +375,8 @@ fn native_hit_testing_uses_strip_bounds_including_invalid_and_scaled_points() {
         y: 0.,
         width: 500.,
         height: 44.,
+        groups: vec![],
+        docks: vec![],
         tabs: vec![
             TabRect {
                 id: "A".into(),
@@ -394,4 +409,36 @@ fn native_hit_testing_uses_strip_bounds_including_invalid_and_scaled_points() {
         hit_surface("main", &blocked, 300., 20., "A"),
         DropTarget::Invalid
     );
+}
+
+#[test]
+fn tool_drops_match_only_the_same_workspace_and_valid_sidebar() {
+    use sodeck::windows::{hit_dock, DockRect, DropTarget};
+    let docks = vec![DockRect {
+        workspace_id: "A".into(),
+        side: "left".into(),
+        x: 0.,
+        y: 44.,
+        width: 262.,
+        height: 600.,
+    }];
+    assert_eq!(
+        hit_dock("child", &docks, 200., 200., "A"),
+        DropTarget::Dock {
+            window_id: "child".into(),
+            workspace_id: "A".into(),
+            side: "left".into()
+        }
+    );
+    for (x, y, workspace) in [
+        (200., 200., "B"),
+        (262., 200., "A"),
+        (0., 43., "A"),
+        (f64::NAN, 200., "A"),
+    ] {
+        assert_eq!(
+            hit_dock("child", &docks, x, y, workspace),
+            DropTarget::Invalid
+        );
+    }
 }

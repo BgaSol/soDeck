@@ -58,7 +58,7 @@ pub async fn connection(
         Command::Snapshot => None,
     };
     if let Some(context) = focus {
-        let mut state = core.workspaces.lock().unwrap();
+        let mut state = core.workspace_state();
         state.validate_identity(&context)?;
         let owner = state.owner(&context.workspace_id).ok_or("工作区已关闭")?;
         state.activate(&owner, Some(&context.workspace_id))?;

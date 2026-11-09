@@ -1,4 +1,5 @@
 (() => {
+  let readOnly=false;
   const root=document.querySelector('#app'),error=document.querySelector('#error');
   const e=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let context,kind,catalog={rules:[]},draft,selected,offset=0,visible=true,pending=false,timer,dirty=false,sync=Promise.resolve(),deleteConfirm,checkTarget={host:'',port:443};
@@ -44,7 +45,7 @@
   root.addEventListener('pointerdown',ev=>{if(ev.button===0&&ev.target.closest('[data-action],[data-select],summary'))press=ev.pointerId;},true);
   const release=ev=>{if(press==null||(ev&&ev.pointerId!==press))return;setTimeout(()=>{press=null;const next=queued;queued=null;if(next)paint(next.html,next.key);},0);};
   addEventListener('pointerup',release,true);addEventListener('pointercancel',release,true);root.addEventListener('pointerleave',release);addEventListener('blur',()=>release());
-  async function refresh(){if(kind!=='manager'||pending||!visible)return;pending=true;try{update(await event({action:'snapshot'}));renderManager();}catch(err){fail(err);}finally{pending=false;}}
+  async function refresh(){if(readOnly)return;if(kind!=='manager'||pending||!visible)return;pending=true;try{update(await event({action:'snapshot'}));renderManager();}catch(err){fail(err);}finally{pending=false;}}
   function renderManager(){
     const row=catalog.rules.find(r=>r.rule.id===selected);
     if(row){renderDetail(row);return;}
@@ -79,9 +80,10 @@
     if(action==='delete'&&deleteConfirm!==id){deleteConfirm=id;renderManager();return;}
     update(await event({action,id,revision:row?.rule.revision,target:checkTarget}));await refresh();
   })().catch(fail);});
-  addEventListener('sodeck:mount',ev=>{const m=ev.detail;context=m.context;kind=m.data.kind;update(m.data);applyTokens(m.tokens);visible=m.visible;settings(m.settings);dirty=m.data.dirty;selected=m.data.navigation?.selected;offset=m.data.navigation?.offset||0;if(kind==='rule-editor')renderForm();else{renderManager();clearInterval(timer);timer=setInterval(refresh,800);}sodeck.mounted(true);});
+  addEventListener('sodeck:mount',ev=>{const m=ev.detail;context=m.context;kind=m.data.kind;update(m.data);applyTokens(m.tokens);visible=m.visible;readOnly=Boolean(m.readOnly);settings(m.settings);dirty=m.data.dirty;selected=m.data.navigation?.selected;offset=m.data.navigation?.offset||0;if(kind==='rule-editor')renderForm();else{renderManager();clearInterval(timer);timer=setInterval(refresh,800);}sodeck.mounted(true);});
+  addEventListener('sodeck:surfaceReady',()=>{readOnly=false;});
   addEventListener('sodeck:themeChanged',ev=>applyTokens(ev.detail.tokens));
   addEventListener('sodeck:visibilityChanged',ev=>{visible=ev.detail.visible;if(visible)void refresh();});
-  addEventListener('sodeck:flush',ev=>{const m=ev.detail;Promise.resolve(kind==='rule-editor'&&dirty?syncDraft():sync).then(()=>parent.postMessage({channel:'sodeck-ui-v1',type:'flushed',surfaceId:m.surfaceId,id:m.id},'*')).catch(err=>parent.postMessage({channel:'sodeck-ui-v1',type:'flushed',surfaceId:m.surfaceId,id:m.id,error:String(err)},'*'));});
+  addEventListener('sodeck:flush',ev=>{const m=ev.detail;Promise.resolve(kind==='rule-editor'&&dirty?syncDraft():sync).then(()=>parent.postMessage({channel:'sodeck-ui-v2',type:'flushed',surfaceId:m.surfaceId,id:m.id},'*')).catch(err=>parent.postMessage({channel:'sodeck-ui-v2',type:'flushed',surfaceId:m.surfaceId,id:m.id,error:String(err)},'*'));});
   addEventListener('sodeck:unmount',()=>clearInterval(timer));
 })();

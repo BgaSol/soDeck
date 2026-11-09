@@ -1,6 +1,6 @@
 // Actual external plugin, shared fixture transport, and real client sockets.
 fn network_surface(f: &Fixture, context: &sodeck::workspaces::Context) -> (String, String) {
-    f.core.workspaces.lock().unwrap().ready("main").unwrap();
+    f.core.workspace_state().ready("main").unwrap();
     f.core
         .load(std::path::Path::new(
             &std::env::var("SODECK_TEST_NETWORK_PLUGIN").expect("network plugin package"),
@@ -347,7 +347,7 @@ async fn network_business(
     assert_eq!(network_address(f, "main", token, "socks").await, socks);
     // Real transfer ownership: stale source surfaces cannot mutate rules, listeners remain unchanged.
     let movement = {
-        let mut w = f.core.workspaces.lock().unwrap();
+        let mut w = f.core.workspace_state();
         w.register("network-target").unwrap();
         w.ready("network-target").unwrap();
         w.prepare(
@@ -362,7 +362,7 @@ async fn network_business(
     let mounted = f.core.ui_attach("network-target", &view).unwrap();
     let moved = mounted["surfaceId"].as_str().unwrap();
     f.core.ui_surface_ready("network-target", moved).unwrap();
-    f.core.workspaces.lock().unwrap().commit(&movement).unwrap();
+    f.core.commit_workspace_move(&movement).unwrap();
     assert!(f
         .core
         .ui_event("main", token, json!({"action":"stop","id":"socks"}))
@@ -374,9 +374,7 @@ async fn network_business(
     network_roundtrip(socks, true, host, port).await;
     let movement = f
         .core
-        .workspaces
-        .lock()
-        .unwrap()
+        .workspace_state()
         .prepare(
             "network-target",
             &context.workspace_id,
@@ -388,7 +386,7 @@ async fn network_business(
     let mounted = f.core.ui_attach("main", &view).unwrap();
     let token = mounted["surfaceId"].as_str().unwrap();
     f.core.ui_surface_ready("main", token).unwrap();
-    f.core.workspaces.lock().unwrap().commit(&movement).unwrap();
+    f.core.commit_workspace_move(&movement).unwrap();
     // Edit a running rule and reuse its port only after the old listener has stopped.
     let old = network_row(f, "main", token, "forward");
     let listener = old["run"]["snapshot"]["listenerId"].clone();

@@ -26,9 +26,11 @@
 | 服务器管理 | [资料管理](plan-server-management.md) | — |
 | SSH 与混合连接 | [SSH 直连](plan-ssh-direct.md)、[远程工作台](plan-remote-workbench.md) | [混合连接](implementation-connections.md) |
 | 工作区与组件宿主 | [多窗口工作区](plan-server-workspaces.md)、[组件 UI](plan-component-ui.md) | — |
+| 工作台分屏与多窗口体系 | [完整功能设计](plan-workbench-layout.md)，含视图归属、工具停靠、插件 UI v2、迁移与关闭 | [源码实施与验收](implementation-workbench-layout.md) |
 | 组件通信与共享状态 | [功能设计](plan-component-communication.md)、[代码实施方案](plan-component-communication-coding.md) | [实施与验收](implementation-component-communication.md) |
 | 终端目录自动识别 | [首次连接、自动集成与跟随体验](plan-terminal-directory.md) | [实施与验收](implementation-terminal-directory.md) |
 | 关闭、退出与重启 | [完整生命周期设计](plan-close-lifecycle.md)、[代码整改方案](plan-close-lifecycle-coding.md) | [实施与验收](implementation-close-lifecycle.md) |
+| 系统托盘与后台驻留 | [完整代码整改方案](plan-system-tray-coding.md) | 待实施 |
 | 真实终端与文件 | [远程工作台](plan-remote-workbench.md) | [真实插件](implementation-remote-plugins.md) |
 | 文件目录树 | [文件树设计](plan-file-tree.md) | [文件树](implementation-file-tree.md) |
 | 文件管理与传输 | [功能范围](plan-file-management.md)、[编码方案](plan-file-management-coding.md) | [文件管理](implementation-file-management.md) |
@@ -51,6 +53,7 @@
 
 - [GitHub Releases](https://github.com/BgaSol/soDeck/releases)：已发布的核心和插件版本、下载附件与发布说明。
 - [核心版本记录](releases/)：各版本的功能变化、验收与交付边界，包含历史候选版本记录。
+- [v0.17.0](releases/v0.17.0.md)：嵌套分屏、独立窗口、来源返回与四个 UI v2 插件；发行状态见记录。
 - [v0.16.0](releases/v0.16.0.md)：插件声明默认新建行为、进程主动打开页面与通用终端创建参数。
 - [v0.14.0](releases/v0.14.0.md)：终端自动识别目录、文件跟随状态与文件系统对应检查。
 - [v0.13.0](releases/v0.13.0.md)：核心共享状态、终端目录跟随与挂载容量联动。

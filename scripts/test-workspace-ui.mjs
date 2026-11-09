@@ -146,7 +146,7 @@ try {
   }
   await main.setViewportSize({width:1100,height:720});
   checks.push('三主题及窄窗口：页签、面板和两侧更多菜单紧邻入口且不遮挡入口；短菜单无滚动条，长列表仅纵向滚动，搜索后消除滚动，Esc 返回焦点及外部关闭');
-  const viewFrame=(page,wid,vid)=>page.frameLocator(`.server-workbench[data-id="${wid}"] .component-surface[data-view-id="${vid}"] iframe`);
+  const viewFrame=(page,wid,vid)=>page.frameLocator(`.component-surface[data-view-id="${vid}"] iframe`);
   const flush=page=>page.evaluate(()=>window.manager.flush());
   let aw=(await componentState("main")).workspaces[aid];
   assert.equal(aw.views.filter(v=>v.definitionKey.endsWith(':terminal')).length,1);
@@ -208,7 +208,7 @@ try {
   await main.waitForFunction(id=>document.querySelector(`.server-workbench[data-id="${id}"] .component-tab-list`).childElementCount===4,aid);
   const late=(await componentState('main')).workspaces[aid];
   assert.equal((await projection('main')).window.activeWorkspace,bid);
-  assert.equal(await board.locator(`.component-surface[data-view-id="${late.editor}"] iframe`).evaluate(el=>el===document.activeElement),false);
+  assert.equal(await main.locator(`.component-surface[data-view-id="${late.editor}"] iframe`).evaluate(el=>el===document.activeElement),false);
   await select(main,aid);await board.locator(`[data-component-action="close"][data-key="${late.editor}"]`).click();
   await board.locator(`[data-component-action="select"][data-key="${editorId}"]`).click();
   checks.push('创建中禁用且防重复，失败可重试；创建期间切换服务器，迟到结果不抢工作区和焦点');
@@ -259,13 +259,13 @@ try {
   assert.equal(await editor.inputValue(),'SODECK_TEST_SAVE_FAILURE');
   await editor.fill('draft for server A');await flush(main);
   checks.push('关闭取消及保存失败保留草稿，不提前释放页面');
-  const oldSurface=await board.locator(`.component-surface[data-view-id="${editorId}"] iframe`).getAttribute('data-surface-id');
+  const oldSurface=await main.locator(`.component-surface[data-view-id="${editorId}"] iframe`).getAttribute('data-surface-id');
   await main.locator("#catalog-tab").click(); assert.equal(await main.locator("#catalog-draft").inputValue(),"draft retained");
   await select(main,aid); await menu(main,aid); await main.locator('[data-choice="detach"]').click();
   await main.waitForFunction(id=>!document.querySelector(`.server-tab[data-id="${id}"]`),aid);
   const child=await makePage("workspace-browser"); assert.equal(await child.locator("#catalog-tab").isVisible(),false);
   assert.equal(await viewFrame(child,aid,editorId).getByRole('textbox').inputValue(),'draft for server A');
-  await assert.rejects(()=>call('component_ui',{window:'main',operation:'event',args:{surfaceId:oldSurface,event:{action:'edit',text:'stale write'}}}),/移动|失效|关闭/);
+  await assert.rejects(()=>call('component_ui',{window:'main',operation:'event',args:{surfaceId:oldSurface,event:{action:'edit',text:'stale write'}}}),/移动|失效|关闭|输入权/);
   let p=await projection("workspace-browser"); assert.deepEqual(p.workspaces[0].context,a.context); assert.equal(Boolean((await componentState("workspace-browser")).workspaces[aid].right),true);
   await menu(child,aid); await child.locator('[data-choice="return"]').click();
   await wait(async()=>Boolean((await projection('main')).workspaces.find(w=>w.context.workspaceId===aid)));
@@ -273,7 +273,7 @@ try {
   assert.deepEqual((await projection("main")).workspaces.find(w=>w.context.workspaceId===aid).context,a.context);
   assert.equal((await projection("workspace-browser")).workspaces.length,0);
   assert.equal(await editor.inputValue(),'draft for server A');
-  await closeEditor();await main.getByRole('button',{name:'保存并关闭',exact:true}).click();await board.locator(`.component-surface[data-view-id="${editorId}"]`).waitFor({state:'detached'});
+  await closeEditor();await main.getByRole('button',{name:'保存并关闭',exact:true}).click();await main.locator(`.component-surface[data-view-id="${editorId}"]`).waitFor({state:'detached'});
   checks.push("菜单拆出和返回保留会话及布局，主窗口目录草稿不丢");
   await select(main,bid); await main.locator(`.server-tab[data-id="${aid}"]`).click({button:"right"});
   await main.locator('[data-choice="close"]').click(); await main.waitForFunction(id=>!document.querySelector(`.server-tab[data-id="${id}"]`),aid);
@@ -321,7 +321,7 @@ try {
   await call('workspace_layout',{window:'main',id:bid,side:'right',width:280});await refresh();
   if(await panel(main,'right').getAttribute('aria-expanded')!=='true')await panel(main,'right').click();
   await main.setViewportSize({width:1000,height:720});await settleLayout();
-  await main.evaluate(()=>window.resizeFrames=[...document.querySelectorAll('.server-workbench:not([hidden]) iframe')]);
+  await main.evaluate(()=>window.resizeFrames=[...document.querySelectorAll('.component-surface:not([hidden]) iframe')]);assert((await main.evaluate(()=>window.resizeFrames.length))>0,'The resize retention check must include visible surfaces');
   await dragPanel('left',70);assert.equal(await boardWidth('left'),316);assert.equal(await main.locator('.server-workbench:visible').evaluate(el=>el.classList.contains('left-open')&&el.classList.contains('right-open')),true);
   await main.mouse.up();await main.evaluate(()=>window.manager.flush());
   assert.equal((await projection('main')).workspaces.find(w=>w.context.workspaceId===bid).layout.leftWidth,316);
@@ -340,7 +340,7 @@ try {
   assert.equal(await boardWidth('left'),316);assert.match(await main.locator('#notice').textContent(),/面板宽度未保存/);
   // All interruption paths cancel without a save or a leftover capture/cursor.
   for(const ending of ['escape','blur','capture','cancel']){
-    if(ending==='escape')await main.locator('.server-workbench:visible .component-surface iframe').first().focus();
+    if(ending==='escape')await main.locator('.component-surface:not([hidden]) iframe').first().focus();
     const before=await boardWidth('left'),count=layoutCalls.length;await dragPanel('left',-30);assert.equal(await boardWidth('left'),before-30);
     if(ending==='escape')await main.keyboard.press('Escape');
     if(ending==='blur')await main.evaluate(()=>window.dispatchEvent(new Event('blur')));

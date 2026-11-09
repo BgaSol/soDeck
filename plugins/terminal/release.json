@@ -8,12 +8,20 @@
   "binary": "sodeck-terminal",
   "tagPrefix": "plugin-terminal-v",
   "ui": {
-    "apiVersion": "1",
+    "apiVersion": "2",
     "entry": "ui/index.html",
-    "actions": [{"id":"new-terminal","title":"新建终端","defaultCreate":true,"dataVersion":1}],
+    "actions": [
+      {
+        "id": "new-terminal",
+        "title": "新建终端",
+        "defaultCreate": true,
+        "dataVersion": 1
+      }
+    ],
     "views": [
       {
         "id": "terminal",
+        "locationProvider":"terminal.location.v1",
         "title": "终端",
         "icon": "terminal",
         "container": "editor",

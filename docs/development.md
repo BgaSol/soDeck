@@ -24,6 +24,7 @@ npm run dev
 | `npm run web:build` | TypeScript 检查与正式前端构建 |
 | `npm run communication:test` | 独立打包终端、文件、系统状态，在隔离 OpenSSH 上验证共享状态、目录跟随、挂载容量和页面恢复；需要 SSH 服务与 Playwright Chromium |
 | `npm run interactions:test` | 浏览器真实按压刷新、文件菜单可用状态、子菜单与溢出回归；需要 Playwright Chromium |
+| `npm run layout:test` | 真实 UI v2 插件进程和核心的嵌套分屏、独立创建、比例键盘/取消、紧凑恢复、页面返回来源、两工作台原子返回与草稿连续性；浏览器页面替代原生窗口，不能替代系统手势验收 |
 
 界面测试需要 Playwright Chromium：
 
@@ -64,6 +65,8 @@ cargo test --manifest-path src-tauri/Cargo.toml --features test-fixtures --test 
 原生包验收步骤和各类测试的边界见 [分发文档](distribution.md)。
 
 Windows 关闭生命周期交互验收使用 `node scripts/test-openssh.mjs --close-native --packaged <解包后的sodeck.exe>`，并通过 `SODECK_TEST_TERMINAL_PLUGIN`、`SODECK_TEST_FILES_PLUGIN`、`SODECK_TEST_NETWORK_PLUGIN`、`SODECK_TEST_SYSTEM_STATUS_PLUGIN` 指定四个独立包目录。此入口复用隔离 localhost OpenSSH，运行真实包内 WebView2，检查右上角关闭与原生 CloseRequested、取消保留原 view/草稿和网络转发、再次关闭能够继续、明确放弃不写远端，以及四个受管插件退出、真实流结束与端口可重绑。也检查左右分隔线拖动、捕获期间刷新、Esc 取消、宽度落盘及终端 iframe 保留；窄布局使用 inspector 视口模拟，不替代真实窗口缩放和 DPI 切换。结果写入 `artifacts/close-lifecycle/native-close.json`，拖拽截图写入 `artifacts/panel-resize/`。
+
+该入口还验证嵌套分屏、真实终端页面拖出、PTY 输入/输出接续、返回来源组与空窗口回收。`scripts/native-pointer.ps1` 仅按该测试进程定位原生窗口，用系统 DPI 与客户区原点转换坐标，发送真实系统鼠标事件并恢复鼠标位置；运行时需要可交互 Windows 桌面，测试窗口会短暂置前。它不替代副屏混合 DPI、整组/工作台手势和其他系统的验收。每次开始清除旧报告，失败写入 `completed: false`。
 
 该验收使用显式 `--interactive-test --test-data-dir <隔离目录>` 启动，缺少数据目录拒绝启动；普通启动继续使用原系统应用数据目录。WebView2 数据与 inspector 也限定在该测试进程中，避免连接用户正在运行的应用。此模式不自动执行常规 smoke 或在线检查，但加载已保存的启用插件；不作为用户日常入口。常规包烟测仍由 `scripts/smoke.mjs` 提供，两者结果分别记录。
 

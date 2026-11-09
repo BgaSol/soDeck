@@ -11,11 +11,11 @@ impl AppCore {
     pub(crate) fn resource_admission(
         &self,
         owner: &Owner,
-    ) -> Result<std::sync::MutexGuard<'_, crate::component_ui::Runtime>, String> {
-        let ui = self.component_ui.lock().unwrap();
+    ) -> Result<crate::workbench::PartGuard<'_, crate::component_ui::Runtime>, String> {
+        let ui = self.ui_state();
         let view = ui.resource_view(&owner.view)?;
         if self.is_closing()
-            || ui.frozen(&owner.context.workspace_id)
+            || ui.lifecycle.view_frozen(&owner.view)
             || view.context != owner.context
             || view.plugin_instance_id != owner.instance
         {
@@ -45,12 +45,12 @@ impl AppCore {
         if !live {
             return Err("插件实例已停止".into());
         }
-        let ui = self.component_ui.lock().unwrap();
+        let ui = self.ui_state();
         let v = ui.resource_view(view)?;
         if v.plugin_id != plugin || v.plugin_instance_id != instance {
             return Err("资源视图不属于此插件实例".into());
         }
-        if ui.frozen(&v.context.workspace_id) {
+        if ui.lifecycle.view_frozen(&v.id) {
             return Err("工作区正在关闭".into());
         }
         Ok(Owner {

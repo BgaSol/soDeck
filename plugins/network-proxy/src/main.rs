@@ -42,7 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     a.tick(&client)
                 }
             });
-            return Ok(json!({"apiVersion":"1","settingsApiVersion":"1"}));
+            return Ok(json!({"apiVersion":"1","settingsApiVersion":"1","uiApiVersion":"2"}));
         }
         if method == "settings.changed" {
             return settings.changed(&p, &["defaults"]);
@@ -50,7 +50,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let id = p["viewId"].as_str().ok_or("缺少 viewId")?;
         let mut state = app.lock().unwrap();
         let a = state.as_mut().ok_or("插件尚未初始化")?;
-        if method == "ui.mount" {
+        if method == "ui.getView" {
+            if !a.views.contains_key(id) {
+                return Err("视图尚未创建".into());
+            }
+            return Ok(view_data(a, id));
+        }
+        if method == "ui.createView" {
             let server = p["context"]["serverId"]
                 .as_str()
                 .ok_or("缺少服务器")?

@@ -8,7 +8,7 @@
   "binary": "sodeck-network-proxy",
   "tagPrefix": "plugin-network-proxy-v",
   "ui": {
-    "apiVersion": "1",
+    "apiVersion": "2",
     "entry": "ui/index.html",
     "views": [
       {

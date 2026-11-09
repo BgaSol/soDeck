@@ -22,8 +22,9 @@ impl AppCore {
         let view_id = text(params, "viewId")?;
         let expected: Context = serde_json::from_value(params["expectedContext"].clone())
             .map_err(|_| Error::invalid("缺少有效 expectedContext"))?;
-        let workspaces = self.workspaces.lock().unwrap();
-        let ui = self.component_ui.lock().unwrap();
+        let mut _workbench = self.workbench_state();
+        let crate::workbench::State { workspaces, ui } = &mut *_workbench;
+
         workspaces
             .validate_identity(&expected)
             .map_err(|e| Error::new("staleContext", e))?;
@@ -59,8 +60,9 @@ impl AppCore {
     ) -> Result<Value, Error> {
         let expected: Context = serde_json::from_value(params["expectedContext"].clone())
             .map_err(|_| Error::invalid("缺少有效 expectedContext"))?;
-        let workspaces = self.workspaces.lock().unwrap();
-        let ui = self.component_ui.lock().unwrap();
+        let mut _workbench = self.workbench_state();
+        let crate::workbench::State { workspaces, ui } = &mut *_workbench;
+
         let s = ui
             .surfaces
             .get(surface)
@@ -73,14 +75,18 @@ impl AppCore {
             return Err(Error::new("staleContext", "界面 Context 已改变"));
         }
         // During a pending move the original owner can still consume/ACK facts.
-        let owned = workspaces
-            .projection(window)
-            .map_err(|e| Error::new("staleContext", e))?
-            .workspaces
-            .iter()
-            .any(|w| w.context == expected);
+        let owned = workspaces.contains(window, &expected.workspace_id)
+            || ui
+                .transfers
+                .values()
+                .any(|t| t.movement.target == window && t.views.contains(&view.id));
         if !owned {
             return Err(Error::new("staleContext", "工作区已移出此窗口"));
+        }
+        if ["put", "remove"].contains(&params["op"].as_str().unwrap_or_default())
+            && s.phase != crate::component_ui::SurfacePhase::Active
+        {
+            return Err(Error::new("staleContext", "候选或交接中的界面不能发布状态"));
         }
         self.sync_shared_ui_locked(&ui);
         let owner = Owner {

@@ -63,6 +63,8 @@ pub struct WorkspaceWindow {
     /// None selects the fixed catalog in main; secondary windows have no catalog.
     pub active_workspace: Option<String>,
     pub ready: bool,
+    #[serde(skip)]
+    created_order: u64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -72,6 +74,8 @@ pub struct Projection {
     pub window: WorkspaceWindow,
     pub workspaces: Vec<Workspace>,
     pub incoming: Option<Workspace>,
+    pub incoming_workspaces: Vec<Workspace>,
+    pub windows: Vec<WorkspaceWindow>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -80,7 +84,8 @@ pub struct LayoutCommit {
     pub layout: Layout,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Move {
     pub token: String,
     pub workspace_id: String,
@@ -89,11 +94,13 @@ pub struct Move {
     pub index: usize,
 }
 
+#[derive(Clone)]
 pub struct Runtime {
     revision: u64,
     pub(crate) windows: HashMap<String, WorkspaceWindow>,
     workspaces: HashMap<String, Workspace>,
     pending: HashMap<String, Move>,
+    host_order: HashMap<(String, String), u64>,
 }
 impl Default for Runtime {
     fn default() -> Self {
@@ -103,12 +110,14 @@ impl Default for Runtime {
             workspace_ids: vec![],
             active_workspace: None,
             ready: false,
+            created_order: 0,
         };
         Self {
             revision: 0,
             windows: HashMap::from([("main".into(), main)]),
             workspaces: HashMap::new(),
             pending: HashMap::new(),
+            host_order: HashMap::new(),
         }
     }
 }
@@ -131,7 +140,7 @@ impl Runtime {
     }
     pub fn validate_owned(&self, window: &str, context: &Context) -> Result<(), String> {
         self.validate_identity(context)?;
-        self.movable(window, &context.workspace_id)
+        self.owned(window, &context.workspace_id).map(|_| ())
     }
     pub(crate) fn by_server(&self, server: &str) -> Option<&Workspace> {
         self.workspaces
@@ -145,6 +154,8 @@ impl Runtime {
     }
     pub(crate) fn adopt(&mut self, workspace: Workspace) {
         let id = workspace.context.workspace_id.clone();
+        self.host_order
+            .insert((id.clone(), workspace.window_id.clone()), self.revision + 1);
         let owner = self.windows.get_mut(&workspace.window_id).unwrap();
         owner.workspace_ids.push(id.clone());
         owner.active_workspace = Some(id.clone());
@@ -153,6 +164,25 @@ impl Runtime {
     }
     pub fn projection(&self, window: &str) -> Result<Projection, String> {
         let win = self.windows.get(window).ok_or("窗口已关闭")?.clone();
+        let mut moves: Vec<_> = self
+            .pending
+            .values()
+            .filter(|m| m.target == window)
+            .collect();
+        moves.sort_by_key(|m| (m.index, &m.workspace_id));
+        let mut incoming_workspaces = Vec::new();
+        for m in moves {
+            if !incoming_workspaces
+                .iter()
+                .any(|w: &Workspace| w.context.workspace_id == m.workspace_id)
+            {
+                if let Some(w) = self.workspaces.get(&m.workspace_id) {
+                    incoming_workspaces.push(w.clone());
+                }
+            }
+        }
+        let mut windows: Vec<_> = self.windows.values().cloned().collect();
+        windows.sort_by_key(|w| w.created_order);
         Ok(Projection {
             revision: self.revision,
             workspaces: win
@@ -160,12 +190,9 @@ impl Runtime {
                 .iter()
                 .filter_map(|id| self.workspaces.get(id).cloned())
                 .collect(),
-            incoming: self
-                .pending
-                .values()
-                .find(|m| m.target == window)
-                .and_then(|m| self.workspaces.get(&m.workspace_id))
-                .cloned(),
+            incoming: incoming_workspaces.first().cloned(),
+            incoming_workspaces,
+            windows,
             window: win,
         })
     }
@@ -181,6 +208,7 @@ impl Runtime {
                 workspace_ids: vec![],
                 active_workspace: None,
                 ready: false,
+                created_order: self.revision + 1,
             },
         );
         self.revision += 1;
@@ -196,12 +224,12 @@ impl Runtime {
     fn owned(&self, window: &str, id: &str) -> Result<&Workspace, String> {
         self.workspaces
             .get(id)
-            .filter(|w| w.window_id == window)
+            .filter(|_| self.contains(window, id))
             .ok_or_else(|| "工作区已移动或关闭，请重新读取".into())
     }
     fn movable(&self, window: &str, id: &str) -> Result<(), String> {
         self.owned(window, id)?;
-        if self.pending.contains_key(id) {
+        if self.pending.values().any(|m| m.workspace_id == id) {
             return Err("工作区正在移动".into());
         }
         Ok(())
@@ -250,38 +278,102 @@ impl Runtime {
             target: target.into(),
             index,
         };
-        self.pending.insert(id.into(), m.clone());
+        self.pending.insert(m.token.clone(), m.clone());
         self.revision += 1;
         Ok(m)
+    }
+    pub(crate) fn reserve_transfer(&mut self, movement: Move) -> Result<(), String> {
+        self.owned(&movement.source, &movement.workspace_id)?;
+        if !self.windows.contains_key(&movement.target) {
+            return Err("目标窗口已关闭".into());
+        }
+        if self.pending.contains_key(&movement.token) {
+            return Err("移动请求已存在".into());
+        }
+        self.pending.insert(movement.token.clone(), movement);
+        self.revision += 1;
+        Ok(())
+    }
+    pub(crate) fn has_move(&self, movement: &Move) -> bool {
+        self.pending.get(&movement.token).is_some_and(|m| {
+            m.source == movement.source
+                && m.target == movement.target
+                && m.workspace_id == movement.workspace_id
+        })
+    }
+    pub(crate) fn pending_moves(&self) -> Vec<Move> {
+        self.pending.values().cloned().collect()
     }
     pub fn cancel(&mut self, m: &Move) {
         if self
             .pending
-            .get(&m.workspace_id)
+            .get(&m.token)
             .is_some_and(|p| p.token == m.token)
         {
-            self.pending.remove(&m.workspace_id);
+            self.pending.remove(&m.token);
             self.revision += 1;
         }
     }
     pub fn pending_move(&self, id: &str, source: &str) -> Option<Move> {
-        self.pending.get(id).filter(|m| m.source == source).cloned()
+        self.pending
+            .values()
+            .find(|m| m.workspace_id == id && m.source == source)
+            .cloned()
     }
-    pub(crate) fn cancel_moves_for_close(
-        &mut self,
-        scope: &[String],
-        window: Option<&str>,
-        global: bool,
-    ) {
-        let before = self.pending.len();
-        self.pending.retain(|id, m| {
-            !global
-                && !scope.contains(id)
-                && !window.is_some_and(|w| m.source == w || m.target == w)
+    pub fn pending_for_target(&self, window: &str) -> Option<Move> {
+        self.pending.values().find(|m| m.target == window).cloned()
+    }
+    pub(crate) fn pending_for_workspace(&self, window: &str, workspace: &str) -> Option<Move> {
+        self.pending
+            .values()
+            .find(|m| m.target == window && m.workspace_id == workspace)
+            .cloned()
+    }
+    pub fn contains(&self, window: &str, workspace: &str) -> bool {
+        self.windows
+            .get(window)
+            .is_some_and(|w| w.workspace_ids.iter().any(|id| id == workspace))
+    }
+    pub fn host_windows(&self, workspace: &str) -> Vec<String> {
+        let mut hosts: Vec<_> = self
+            .windows
+            .values()
+            .filter(|w| w.workspace_ids.iter().any(|id| id == workspace))
+            .collect();
+        hosts.sort_by_key(|w| {
+            self.host_order
+                .get(&(workspace.into(), w.id.clone()))
+                .copied()
+                .unwrap_or(w.created_order)
         });
-        if before != self.pending.len() {
-            self.revision += 1;
+        hosts.into_iter().map(|w| w.id.clone()).collect()
+    }
+    pub fn add_host(&mut self, window: &str, workspace: &str, index: usize) -> Result<(), String> {
+        if !self.workspaces.contains_key(workspace) {
+            return Err("工作区已关闭".into());
         }
+        let w = self.windows.get_mut(window).ok_or("窗口已关闭")?;
+        if !w.workspace_ids.iter().any(|id| id == workspace) {
+            w.workspace_ids
+                .insert(index.min(w.workspace_ids.len()), workspace.into());
+            self.host_order
+                .insert((workspace.into(), window.into()), self.revision + 1);
+        }
+        w.active_workspace = Some(workspace.into());
+        self.revision += 1;
+        Ok(())
+    }
+    pub fn remove_host(&mut self, window: &str, workspace: &str) {
+        self.remove_from_window(window, workspace);
+        let hosts = self.host_windows(workspace);
+        if let Some(w) = self.workspaces.get_mut(workspace) {
+            if w.window_id == window {
+                if let Some(next) = hosts.first() {
+                    w.window_id = next.clone();
+                }
+            }
+        }
+        self.revision += 1;
     }
     pub fn owner(&self, id: &str) -> Option<String> {
         self.workspaces.get(id).map(|w| w.window_id.clone())
@@ -289,7 +381,7 @@ impl Runtime {
     pub fn commit(&mut self, m: &Move) -> Result<(), String> {
         if !self
             .pending
-            .get(&m.workspace_id)
+            .get(&m.token)
             .is_some_and(|p| p.token == m.token)
         {
             return Err("移动已取消".into());
@@ -299,18 +391,16 @@ impl Runtime {
             return Err("目标窗口尚未就绪".into());
         }
         self.remove_from_window(&m.source, &m.workspace_id);
-        let target = self.windows.get_mut(&m.target).unwrap();
-        target.workspace_ids.insert(
-            m.index.min(target.workspace_ids.len()),
-            m.workspace_id.clone(),
-        );
-        target.active_workspace = Some(m.workspace_id.clone());
-        self.workspaces.get_mut(&m.workspace_id).unwrap().window_id = m.target.clone();
-        self.pending.remove(&m.workspace_id);
+        self.add_host(&m.target, &m.workspace_id, m.index)?;
+        if self.workspaces[&m.workspace_id].window_id == m.source {
+            self.workspaces.get_mut(&m.workspace_id).unwrap().window_id = m.target.clone();
+        }
+        self.pending.remove(&m.token);
         self.revision += 1;
         Ok(())
     }
     fn remove_from_window(&mut self, window: &str, id: &str) {
+        self.host_order.remove(&(id.into(), window.into()));
         if let Some(w) = self.windows.get_mut(window) {
             let index = w.workspace_ids.iter().position(|s| s == id).unwrap_or(0);
             w.workspace_ids.retain(|s| s != id);
@@ -324,7 +414,9 @@ impl Runtime {
     }
     pub fn close(&mut self, window: &str, id: &str) -> Result<(), String> {
         self.movable(window, id)?;
-        self.remove_from_window(window, id);
+        for host in self.host_windows(id) {
+            self.remove_from_window(&host, id);
+        }
         self.workspaces.remove(id);
         self.revision += 1;
         Ok(())
@@ -340,7 +432,17 @@ impl Runtime {
         self.pending.retain(|_, m| m.target != window);
         if let Some(w) = self.windows.remove(window) {
             for id in w.workspace_ids {
-                self.workspaces.remove(&id);
+                self.host_order.remove(&(id.clone(), window.into()));
+                let remaining = self.host_windows(&id);
+                if remaining.is_empty() {
+                    self.workspaces.remove(&id);
+                } else if self
+                    .workspaces
+                    .get(&id)
+                    .is_some_and(|w| w.window_id == window)
+                {
+                    self.workspaces.get_mut(&id).unwrap().window_id = remaining[0].clone();
+                }
             }
         }
         self.revision += 1;
@@ -447,8 +549,12 @@ impl AppCore {
         token: String,
         register: bool,
     ) -> Result<Move, String> {
-        let mut state = self.workspaces.lock().unwrap();
-        let ui = self.component_ui.lock().unwrap();
+        let mut _workbench = self.workbench_state();
+        let crate::workbench::State {
+            workspaces: state,
+            ui,
+        } = &mut *_workbench;
+
         if self.is_closing()
             || ui.frozen(id)
             || ui.lifecycle.window_closing(source)
@@ -470,8 +576,12 @@ impl AppCore {
         }
     }
     pub fn commit_workspace_move(&self, m: &Move) -> Result<(), String> {
-        let mut state = self.workspaces.lock().unwrap();
-        let mut ui = self.component_ui.lock().unwrap();
+        let mut _workbench = self.workbench_state();
+        let crate::workbench::State {
+            workspaces: state,
+            ui,
+        } = &mut *_workbench;
+
         if self.is_closing()
             || ui.frozen(&m.workspace_id)
             || ui.lifecycle.window_closing(&m.source)
@@ -482,6 +592,11 @@ impl AppCore {
         state.commit(m)?;
         if m.source == m.target {
             return Ok(());
+        }
+        if let Some(w) = ui.workspaces.get_mut(&m.workspace_id) {
+            if let Some(host) = w.hosts.remove(&m.source) {
+                w.hosts.insert(m.target.clone(), host);
+            }
         }
         let mut retired = Vec::new();
         for (token, surface) in &ui.surfaces {
@@ -498,10 +613,28 @@ impl AppCore {
         for token in retired {
             ui.surfaces.remove(&token);
         }
+        for surface in ui.surfaces.values_mut().filter(|s| s.window == m.target) {
+            surface.phase = crate::component_ui::SurfacePhase::Active;
+        }
         Ok(())
     }
     pub fn workspace_projection(&self, window: &str) -> Result<Projection, String> {
-        self.workspaces.lock().unwrap().projection(window)
+        let state = self.workbench_state();
+        let mut projection = state.workspaces.projection(window)?;
+        for w in &mut projection.workspaces {
+            w.window_id = window.into();
+            if let Some(host) = state
+                .ui
+                .workspaces
+                .get(&w.context.workspace_id)
+                .and_then(|w| w.hosts.get(window))
+            {
+                w.layout = host.layout.clone();
+                w.view_ids = host.view_ids();
+                w.active_view_id = host.active_view();
+            }
+        }
+        Ok(projection)
     }
     pub fn workspace_resize(
         &self,
@@ -513,13 +646,22 @@ impl AppCore {
         if !(160..=480).contains(&width) || !["left", "right"].contains(&side) {
             return Err("面板宽度或方向无效".into());
         }
-        let mut state = self.workspaces.lock().unwrap();
-        let mut ui = self.component_ui.lock().unwrap();
+        let mut _workbench = self.workbench_state();
+        let crate::workbench::State {
+            workspaces: state,
+            ui,
+        } = &mut *_workbench;
+
         state.movable(window, id)?;
         if self.is_closing() || ui.frozen(id) || ui.lifecycle.window_closing(window) {
             return Err("工作区正在关闭".into());
         }
-        let mut layout = state.owned(window, id)?.layout.clone();
+        let mut layout = ui
+            .workspaces
+            .get(id)
+            .and_then(|w| w.hosts.get(window))
+            .map(|h| h.layout.clone())
+            .unwrap_or(state.owned(window, id)?.layout.clone());
         let (mut left, mut right) = ui.widths();
         if side == "left" {
             layout.left_width = width;
@@ -531,13 +673,19 @@ impl AppCore {
         // Hold ownership through persistence; a rejected move/close cannot change defaults.
         ui.save_widths(left, right)?;
         state.workspaces.get_mut(id).unwrap().layout = layout.clone();
+        if let Some(host) = ui
+            .workspaces
+            .get_mut(id)
+            .and_then(|w| w.hosts.get_mut(window))
+        {
+            host.layout = layout.clone();
+        }
         state.revision += 1;
         let result = LayoutCommit {
             revision: state.revision,
             layout,
         };
-        drop(ui);
-        drop(state);
+        drop(_workbench);
         self.workspace_changed();
         Ok(result)
     }
@@ -550,8 +698,9 @@ impl AppCore {
                 Some(serde_json::json!({"error":error})),
             );
         }
+        self.remember_workbench_layout();
         self.wake_background();
-        let ui = self.component_ui.lock().unwrap();
+        let ui = self.ui_state();
         let live: std::collections::HashMap<_, _> = ui
             .workspaces
             .values()
@@ -567,6 +716,60 @@ impl AppCore {
         drop(ui);
         self.event("workspaces-changed", serde_json::Value::Null);
     }
+    pub(crate) fn remember_workbench_layout(&self) {
+        // Serialize snapshots in call order; disk IO never holds the workbench lock.
+        let _io = self.layout_io.lock().unwrap();
+        let snapshot = {
+            let state = self.workbench_state();
+            let contexts = state.workspaces.contexts();
+            let owners = contexts
+                .iter()
+                .filter_map(|c| {
+                    state
+                        .workspaces
+                        .owner(&c.workspace_id)
+                        .map(|window| (c.workspace_id.clone(), window))
+                })
+                .collect();
+            let ui = &state.ui;
+            if ui.transfers.is_empty()
+                && !ui.restoring_layout
+                && !ui
+                    .lifecycle
+                    .operations
+                    .values()
+                    .any(|o| !o.phase.terminal())
+            {
+                Some((
+                    ui.memory.clone(),
+                    contexts,
+                    ui.workspaces.clone(),
+                    ui.definitions.clone(),
+                    owners,
+                ))
+            } else {
+                None
+            }
+        };
+        let Some((mut memory, contexts, workspaces, definitions, owners)) = snapshot else {
+            return;
+        };
+        let previous = memory.error.clone();
+        let memory_error = memory
+            .capture(&contexts, &workspaces, &definitions, &owners)
+            .err()
+            .filter(|e| Some(e) != previous.as_ref());
+        self.ui_state().memory = memory;
+        drop(_io);
+        if let Some(error) = memory_error {
+            self.log(
+                None,
+                "warn",
+                "工作台布局保存失败",
+                Some(serde_json::json!({"error":error})),
+            );
+        }
+    }
 
     /// Only the core connection service calls this after successful authentication.
     pub fn accept_connected(&self, session: ConnectedSession) -> Result<Workspace, String> {
@@ -580,8 +783,12 @@ impl AppCore {
             .get(&session.server_id)
             .ok_or("服务器档案已不存在")?
             .clone();
-        let mut state = self.workspaces.lock().unwrap();
-        let ui = self.component_ui.lock().unwrap();
+        let mut _workbench = self.workbench_state();
+        let crate::workbench::State {
+            workspaces: state,
+            ui,
+        } = &mut *_workbench;
+
         if self.is_closing() || ui.lifecycle.window_closing("main") {
             return Err("应用正在关闭".into());
         }
@@ -595,8 +802,7 @@ impl AppCore {
                 return Err("工作区正在关闭".into());
             }
             state.activate(&w.window_id, Some(&w.context.workspace_id))?;
-            drop(ui);
-            drop(state);
+            drop(_workbench);
             drop(servers);
             self.workspace_changed();
             return Ok(w);
@@ -632,8 +838,7 @@ impl AppCore {
             .adopt_scope(workspace.context.clone(), std::time::Instant::now())
             .map_err(|e| e.to_string())?;
         self.sync_shared_ui_locked(&ui);
-        drop(ui);
-        drop(state);
+        drop(_workbench);
         drop(servers);
         self.workspace_changed();
         Ok(workspace)

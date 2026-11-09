@@ -183,10 +183,10 @@ async fn data_until(
     }
 }
 fn close_terminal_views(f: &Fixture) {
-    let windows={let state=f.core.workspaces.lock().unwrap();state.ids().iter().filter_map(|id|state.owner(id)).collect::<std::collections::HashSet<_>>()};
+    let windows={let state=f.core.workspace_state();state.ids().iter().filter_map(|id|state.owner(id)).collect::<std::collections::HashSet<_>>()};
     for window in windows {
         let workspaces=f.core.workspace_projection(&window).unwrap().window.workspace_ids;
-        let ids=f.core.component_ui.lock().unwrap().workspaces.iter().filter(|(id,_)|workspaces.contains(id)).flat_map(|(_,w)|w.views.iter().map(|v|v.id.clone())).collect::<Vec<_>>();
+        let ids=f.core.ui_state().workspaces.iter().filter(|(id,_)|workspaces.contains(id)).flat_map(|(_,w)|w.views.iter().map(|v|v.id.clone())).collect::<Vec<_>>();
         if ids.is_empty(){continue;}
         let plan=f.core.close_fixture_prepare(&window,sodeck::lifecycle::Target::Views{ids}).unwrap();
         f.core
@@ -244,7 +244,7 @@ async fn real_pty_keeps_one_shell_across_views_and_rejects_old_surface_input() {
     until(|| target.state.sizes.lock().unwrap().contains(&(101, 31))).await;
     td(&f.core,"main",&token,json!({"op":"checkpoint","id":id,"offset":offset2,"data":b"display-snapshot","metadata":{"cols":101,"rows":31},"begin":true,"done":true})).await.unwrap();
     let movement = {
-        let mut w = f.core.workspaces.lock().unwrap();
+        let mut w = f.core.workspace_state();
         w.register("terminal-target").unwrap();
         w.ready("terminal-target").unwrap();
         w.prepare(
@@ -279,7 +279,7 @@ async fn real_pty_keeps_one_shell_across_views_and_rejects_old_surface_input() {
     .await
     .is_err());
     f.core.ui_surface_ready("terminal-target", next).unwrap();
-    f.core.workspaces.lock().unwrap().commit(&movement).unwrap();
+    f.core.commit_workspace_move(&movement).unwrap();
     assert!(td(
         &f.core,
         "main",

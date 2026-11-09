@@ -5,7 +5,7 @@ use super::*;
 impl AppCore {
     pub fn close_unhosted(self: &Arc<Self>, id: &str) -> bool {
         let window = {
-            let mut ui = self.component_ui.lock().unwrap();
+            let mut ui = self.ui_state();
             let Some(op) = ui.lifecycle.operations.get(id) else {
                 return false;
             };
@@ -40,182 +40,205 @@ impl AppCore {
         true
     }
 
+    /// Losing a display does not end the business context or its workers.
     pub fn close_host_lost(self: &Arc<Self>, window: &str) {
-        let scope = {
-            let state = self.workspaces.lock().unwrap();
-            let Ok(projection) = state.projection(window) else {
-                let mut ui = self.component_ui.lock().unwrap();
-                ui.lifecycle.hosts.remove(window);
-                ui.remove_window_surfaces(window);
-                self.sync_shared_ui_locked(&ui);
-                return;
-            };
-            if window == "main" {
-                state.ids()
-            } else {
-                projection.window.workspace_ids
-            }
+        let mut state = self.workbench_state();
+        let crate::workbench::State { workspaces, ui } = &mut *state;
+        ui.lifecycle.hosts.remove(window);
+        let surfaces: Vec<_> = ui
+            .surfaces
+            .iter()
+            .filter(|(_, s)| s.window == window)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for token in &surfaces {
+            self.shared_state
+                .remove_surface(window, token, std::time::Instant::now());
+        }
+        ui.remove_window_surfaces(window);
+        // Normal destruction happens after registry finalization. It needs no recovery.
+        let Some(lost) = workspaces.windows.get(window).cloned() else {
+            return;
         };
-        let existing = {
-            let ui = self.component_ui.lock().unwrap();
-            let mut operations = ui
+        if window == "main"
+            && self.is_closing()
+            && ui
                 .lifecycle
                 .operations
                 .values()
-                .filter(|o| {
-                    !o.phase.terminal()
-                        && o.adopted_by.is_none()
-                        && (window == "main"
-                            || o.inputs.contains_key(window)
-                            || scope.iter().any(|w| o.workspaces.contains(w)))
-                })
-                .collect::<Vec<_>>();
-            operations.sort_by_key(|o| !matches!(o.target, Target::Application { .. }));
-            operations
-                .into_iter()
-                .map(|o| o.id.clone())
-                .collect::<Vec<_>>()
-        };
-        let id = if let Some(id) = existing.first() {
-            id.clone()
-        } else {
-            let target = if window == "main" {
-                Target::Application {
-                    action: Action::Exit,
-                }
-            } else {
-                Target::Window { id: window.into() }
-            };
-            match self.close_prepare_internal(window, &format!("lost-{window}"), target, true) {
-                Ok(op) => op.id,
-                Err(error) => {
-                    self.log(
-                        None,
-                        "error",
-                        "窗口中断后的关闭准备失败",
-                        Some(json!({"windowId":window,"error":error})),
-                    );
-                    return;
-                }
-            }
-        };
-        let (start, global, round) = {
-            let mut state = self.workspaces.lock().unwrap();
-            let mut ui = self.component_ui.lock().unwrap();
-            ui.lifecycle.hosts.remove(window);
-            ui.lifecycle.lost_hosts.insert(window.into());
-            ui.invalidate_workspace_actions(&scope, "原生窗口已关闭，行为已失效");
-            ui.remove_window_surfaces(window);
-            self.sync_shared_ui_locked(&ui);
-            let op = &ui.lifecycle.operations[&id];
-            // Normal destroy occurs after the parent registry has been finalized.
-            if op.phase == Phase::Finalizing
-                && (window != "main" || matches!(op.target, Target::Application { .. }))
+                .filter(|o| !o.phase.terminal() && o.adopted_by.is_none())
+                .all(|o| matches!(o.phase, Phase::Preparing | Phase::Deciding))
+        {
+            for o in ui
+                .lifecycle
+                .operations
+                .values_mut()
+                .filter(|o| !o.phase.terminal() && o.adopted_by.is_none())
             {
-                return;
+                o.phase = Phase::Aborted;
+                o.cancel = true;
+                o.error = Some("主窗口已消失，尚未开始释放的退出已取消".into());
+                o.ended_at = Some(crate::core::now());
+                o.revision += 1;
             }
-            let global = window == "main" || matches!(op.target, Target::Application { .. });
-            let views = scope
-                .iter()
-                .filter_map(|w| ui.workspaces.get(w))
-                .flat_map(|w| w.views.iter().map(|v| v.id.clone()))
-                .collect::<Vec<_>>();
-            let siblings = existing
-                .iter()
-                .filter(|other| *other != &id)
-                .map(|other| ui.lifecycle.operations[other].clone())
-                .collect::<Vec<_>>();
-            for other in &siblings {
-                ui.lifecycle
-                    .operations
-                    .get_mut(&other.id)
-                    .unwrap()
-                    .adopted_by = Some(id.clone());
-            }
-            let op = ui.lifecycle.operations.get_mut(&id).unwrap();
-            if op.window == window {
-                op.window = "main".into();
-            }
-            op.error = Some("原生窗口意外关闭，未持久化输入无法恢复；正在释放其资源".into());
-            op.decision_revision += 1;
-            op.revision += 1;
-            if global && window != "main" {
-                op.inputs.insert(window.into(), None);
-                (false, true, op.input_round)
-            } else {
-                op.orphaned = true;
-                op.cancel = false;
-                if window == "main" {
-                    op.target = Target::Application {
-                        action: Action::Exit,
-                    };
-                    self.set_closing(true);
-                } else if !global {
-                    op.target = Target::Window { id: window.into() };
-                }
-                for w in &scope {
-                    if !op.workspaces.contains(w) {
-                        op.workspaces.push(w.clone());
-                    }
-                }
-                for view in views {
-                    if !op.views.contains(&view) {
-                        op.views.push(view);
-                    }
-                }
-                for other in siblings {
-                    op.adopted.push(other.id);
-                    op.saved.extend(other.saved);
-                    op.save_started.extend(other.save_started);
-                    op.disposed.extend(other.disposed);
-                    op.dispose_requests.extend(other.dispose_requests);
-                }
-                op.inputs
-                    .values_mut()
-                    .for_each(|v| *v = Some(json!({"unconfirmed":true})));
-                let start = !op.working;
-                if start {
-                    op.phase = Phase::Cleaning;
-                    op.working = true;
-                }
-                state.cancel_moves_for_close(&scope, Some(window), false);
-                (start, false, op.input_round)
-            }
-        };
-        for workspace in &scope {
-            self.connections.cancel_workspace(workspace);
+            self.set_closing(false);
         }
+        if self.is_closing()
+            || ui.lifecycle.operations.values().any(|o| {
+                o.phase == Phase::Finalizing && matches!(&o.target,Target::Window{id} if id==window)
+            })
+        {
+            let mut reports = vec![];
+            for op in ui
+                .lifecycle
+                .operations
+                .values_mut()
+                .filter(|o| !o.phase.terminal() && o.inputs.contains_key(window))
+            {
+                op.inputs.insert(
+                    window.into(),
+                    Some(json!({"unconfirmed":true,"error":"窗口已消失，未同步输入无法确认"})),
+                );
+                if op.window == window {
+                    op.window = "main".into();
+                }
+                op.revision += 1;
+                reports.push((op.id.clone(), op.input_round));
+            }
+            drop(state);
+            for (id, round) in reports {
+                let _ = self.close_report_inputs(
+                    window,
+                    &id,
+                    round,
+                    json!({"unconfirmed":true,"error":"窗口已消失，输入无法确认"}),
+                );
+            }
+            self.workspace_changed();
+            return;
+        }
+        let moves: Vec<_> = ui
+            .transfers
+            .values()
+            .filter(|t| t.movement.source == window || t.movement.target == window)
+            .map(|t| t.movement.clone())
+            .collect();
+        for m in moves {
+            self.cancel_transfer_locked(workspaces, ui, &m);
+        }
+        for m in workspaces
+            .pending_moves()
+            .into_iter()
+            .filter(|m| m.source == window || m.target == window)
+        {
+            workspaces.cancel(&m);
+        }
+        ui.invalidate_host_actions(window, "原生窗口已消失，创建意图已失效");
+        let mut continuing = vec![];
+        for o in ui.lifecycle.operations.values_mut().filter(|o| {
+            !o.phase.terminal()
+                && o.adopted_by.is_none()
+                && (o.window == window || o.inputs.contains_key(window))
+        }) {
+            if matches!(o.phase, Phase::Preparing | Phase::Deciding)
+                || o.phase == Phase::Failed
+                    && matches!(o.failed_stage, Some(Phase::Preparing | Phase::Deciding))
+            {
+                o.phase = Phase::Aborted;
+                o.cancel = true;
+                o.ended_at = Some(crate::core::now());
+                o.error = Some("窗口已消失，关闭已取消；页面与任务已恢复".into());
+            } else {
+                continuing.extend(
+                    o.views
+                        .iter()
+                        .filter(|id| !o.returning_tools.contains(id))
+                        .cloned(),
+                );
+            }
+            if o.window == window {
+                o.window = "main".into();
+            }
+            o.revision += 1;
+        }
+        let mut recovered = vec![];
+        for workspace in &lost.workspace_ids {
+            let target = workspaces
+                .host_windows(workspace)
+                .into_iter()
+                .filter(|w| w != window)
+                .min_by_key(|w| (w != "main", w.clone()))
+                .unwrap_or_else(|| "main".into());
+            let Some(w) = ui.workspaces.get_mut(workspace) else {
+                continue;
+            };
+            let Some(mut host) = w.hosts.remove(window) else {
+                continue;
+            };
+            for view in &continuing {
+                host.remove(view);
+            }
+            let ids = host.view_ids();
+            if let Some(existing) = w.hosts.get_mut(&target) {
+                if existing
+                    .merge_host(host.clone(), format!("recovery-{}", self.next_id()))
+                    .is_err()
+                {
+                    // A full 16-group layout can still recover every instance into its root.
+                    let group = existing.focused_group_id.clone();
+                    for id in &ids {
+                        let is_tool = w.views.iter().find(|v| v.id == *id).is_some_and(|v| {
+                            ui.definitions
+                                .get(&v.definition_key)
+                                .is_some_and(|d| d.definition.container == "sidebar")
+                        });
+                        if is_tool {
+                            let _ = existing.dock(id, "right", false);
+                        } else if host.dialogs.contains(id) {
+                            existing.dialogs.push(id.clone());
+                        } else {
+                            let _ = existing.place(id, &group, usize::MAX, false);
+                        }
+                    }
+                }
+            } else {
+                w.hosts.insert(target.clone(), host);
+            }
+            workspaces.add_host(&target, workspace, usize::MAX).ok();
+            if target != window {
+                workspaces.remove_host(window, workspace);
+            }
+            if w.focused_window_id.as_deref() == Some(window) {
+                w.focused_window_id = Some(target.clone());
+            }
+            recovered.extend(ids);
+        }
+        if window != "main" {
+            workspaces.close_window(window).ok();
+        } else if let Some(w) = workspaces.windows.get_mut(window) {
+            w.ready = false;
+        }
+        self.sync_shared_ui_locked(ui);
+        drop(state);
         self.connections.cancel_window(window);
-        self.terminals
-            .cancel(|o| scope.contains(&o.context.workspace_id));
-        self.executions
-            .cancel(|o| scope.contains(&o.context.workspace_id));
-        self.network
-            .cancel(|o| scope.contains(&o.context.workspace_id));
-        self.files
-            .cancel(|o| scope.contains(&o.context.workspace_id));
         self.log(
             None,
             "warn",
-            "原生窗口意外中断",
-            Some(json!({"windowId":window,"operationId":id,"workspaces":scope})),
+            "窗口显示已恢复",
+            Some(json!({"windowId":window,"viewIds":recovered})),
         );
-        self.event(
-            "core-exit-error",
-            json!("窗口意外关闭，未持久化输入无法恢复；资源正在收尾"),
+        let _ = self.publish(
+            None,
+            crate::model::PublishMessage {
+                title: "窗口意外关闭，页面已恢复".into(),
+                body:
+                    "任务和已同步状态保留在可用工作台。尚未同步到核心的输入可能丢失，请核对草稿。"
+                        .into(),
+                level: "warning".into(),
+                notify: true,
+                dedupe_key: Some(format!("window-recovery:{window}")),
+            },
         );
-        if global {
-            let _ = self.close_report_inputs(
-                window,
-                &id,
-                round,
-                json!({"error":"窗口已消失，输入无法确认","unconfirmed":true}),
-            );
-        } else if start {
-            let core = self.clone();
-            let key = id.clone();
-            std::thread::spawn(move || core.close_execute(&key, "discard"));
-        }
-        self.close_changed(&id);
+        self.workspace_changed();
     }
 }

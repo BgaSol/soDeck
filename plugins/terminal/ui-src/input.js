@@ -34,6 +34,6 @@
     const focusOut=event=>{if(!host.contains(event.relatedTarget)&&!menu?.contains(event.relatedTarget))clipboard.invalidate();};
     host.addEventListener('paste',pasteEvent,true);host.addEventListener('contextmenu',context,true);host.addEventListener('compositionstart',begin);host.addEventListener('compositionend',end);host.addEventListener('focusout',focusOut);
     document.addEventListener('pointerdown',outside,true);window.addEventListener('blur',blur);
-    return {invalidate(){clipboard.invalidate();closeMenu();},themeChanged(){closeMenu(true);},dispose(){disposed=true;clipboard.invalidate();closeMenu();selection.dispose();host.removeEventListener('paste',pasteEvent,true);host.removeEventListener('contextmenu',context,true);host.removeEventListener('compositionstart',begin);host.removeEventListener('compositionend',end);host.removeEventListener('focusout',focusOut);document.removeEventListener('pointerdown',outside,true);window.removeEventListener('blur',blur);}};
+    return {composing(){return composing;},invalidate(){clipboard.invalidate();closeMenu();},themeChanged(){closeMenu(true);},dispose(){disposed=true;clipboard.invalidate();closeMenu();selection.dispose();host.removeEventListener('paste',pasteEvent,true);host.removeEventListener('contextmenu',context,true);host.removeEventListener('compositionstart',begin);host.removeEventListener('compositionend',end);host.removeEventListener('focusout',focusOut);document.removeEventListener('pointerdown',outside,true);window.removeEventListener('blur',blur);}};
   };
 })();

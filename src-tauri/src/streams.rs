@@ -49,6 +49,17 @@ pub struct Replay {
     changed: Notify,
 }
 impl Replay {
+    pub(crate) fn watermark(&self) -> u64 {
+        self.state.lock().unwrap().produced
+    }
+    pub(crate) fn caught_up(&self, token: &str, watermark: u64) -> bool {
+        self.state
+            .lock()
+            .unwrap()
+            .readers
+            .get(token)
+            .is_some_and(|r| r.cursor >= watermark)
+    }
     pub(crate) fn checkpoint_bytes(&self) -> Vec<u8> {
         self.state.lock().unwrap().checkpoint.bytes.clone()
     }

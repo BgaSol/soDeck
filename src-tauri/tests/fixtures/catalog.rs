@@ -308,7 +308,7 @@ fn main() {
                     ),
                     "focus" => (|| {
                         let context = serde_json::from_value(c["context"].clone()).unwrap();
-                        let mut state = core.workspaces.lock().unwrap();
+                        let mut state = core.workspace_state();
                         state.validate_identity(&context)?;
                         let owner = state.owner(&context.workspace_id).ok_or("工作区已关闭")?;
                         state.activate(&owner, Some(&context.workspace_id))
@@ -343,17 +343,74 @@ fn main() {
                 .workspace_projection(args["window"].as_str().unwrap())
                 .map(|p| json!(p)),
             "workspace_ready" => core
-                .workspaces
-                .lock()
-                .unwrap()
+                .workspace_state()
                 .ready(args["window"].as_str().unwrap())
                 .map(|_| Value::Null),
             "workspace_surface" => Ok(Value::Null),
+            "workbench_fixture_prepare" => (|| {
+                let scope =
+                    serde_json::from_value(args["scope"].clone()).map_err(|e| e.to_string())?;
+                let destination: sodeck::workbench_move::Destination =
+                    serde_json::from_value(args["destination"].clone()).unwrap_or_default();
+                let (target, destination) = if destination.return_to_source {
+                    core.resolve_workbench_return(
+                        args["window"].as_str().unwrap(),
+                        args["id"].as_str().unwrap(),
+                        &scope,
+                    )?
+                } else {
+                    (args["target"].as_str().unwrap().into(), destination)
+                };
+                core.prepare_workbench_move(
+                    args["window"].as_str().unwrap(),
+                    args["id"].as_str().unwrap(),
+                    &target,
+                    0,
+                    args["requestId"].as_str().unwrap().into(),
+                    core.workspace_projection(&target).is_err(),
+                    scope,
+                    destination,
+                )
+                .map(|m| {
+                    core.workspace_changed();
+                    json!(m)
+                })
+            })(),
+            "workbench_fixture_commit" => (|| {
+                core.commit_workbench_move(
+                    &serde_json::from_value(args["movement"].clone()).map_err(|e| e.to_string())?,
+                )
+                .map(|_| {
+                    core.workspace_changed();
+                    Value::Null
+                })
+            })(),
+            "workbench_fixture_return_window" => core
+                .prepare_window_return(
+                    args["window"].as_str().unwrap(),
+                    args["requestId"].as_str().unwrap().into(),
+                )
+                .map(|m| {
+                    core.workspace_changed();
+                    json!(m)
+                }),
+            "workbench_fixture_commit_many" => (|| {
+                let movements: Vec<sodeck::workspaces::Move> =
+                    serde_json::from_value(args["movements"].clone()).map_err(|e| e.to_string())?;
+                core.commit_workbench_moves(&movements).map(|_| {
+                    core.workspace_changed();
+                    Value::Null
+                })
+            })(),
+            "workbench_fixture_drain" => (|| {
+                core.begin_transfer_drain(
+                    &serde_json::from_value(args["movement"].clone()).map_err(|e| e.to_string())?,
+                )
+                .map(|_| Value::Null)
+            })(),
             "workspace_cancel_move" => Ok(Value::Null),
             "workspace_activate" => core
-                .workspaces
-                .lock()
-                .unwrap()
+                .workspace_state()
                 .activate(args["window"].as_str().unwrap(), args["id"].as_str())
                 .map(|_| Value::Null),
             "workspace_layout" => core
@@ -376,19 +433,19 @@ fn main() {
                     },
                 )
                 .map(|_| Value::Null),
-            "workspace_move" => (|| {
+            "workspace_move" | "workbench_move" => (|| {
                 let target = args["target"].as_str().unwrap_or("workspace-browser");
                 let register = core.workspace_projection(target).is_err();
                 let m = core.prepare_workspace_move(
                     args["window"].as_str().unwrap(),
                     args["id"].as_str().unwrap(),
                     target,
-                    args["index"].as_u64().unwrap() as usize,
+                    args["index"].as_u64().unwrap_or(u64::MAX) as usize,
                     "browser-move".into(),
                     register,
                 )?;
                 if register {
-                    core.workspaces.lock().unwrap().ready(target)?;
+                    core.workspace_state().ready(target)?;
                 }
                 core.commit_workspace_move(&m)?;
                 core.workspace_changed();

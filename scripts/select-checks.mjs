@@ -113,7 +113,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
         if (file.includes('settings')) ui();
         continue;
       }
-      if (/^src-tauri\/(src|tests)\/(connections|streams|plugins|session_exec|core|lib|main|model|lifecycle|close_lifecycle|resource_tasks|resource_owner|platform|servers)(\/|\.|_)/.test(file)) {
+      if (/^src-tauri\/(src|tests)\/(connections|streams|plugins|session_exec|core|lib|main|model|lifecycle|close_lifecycle|resource_tasks|resource_owner|platform|servers|workbench)(\/|\.|_)/.test(file)) {
         core(); ui();
         plan.ssh = plan.sharedClient = true;
         pluginNames.forEach(name => integration.add(name));
@@ -131,14 +131,15 @@ export function selectChecks(files, { suite, fallback } = {}) {
       }
       if (/^scripts\/(select-checks|check-docs)(\.test)?\.mjs$/.test(file)) { plan.scripts = true; continue; }
       if (file === 'scripts/fixtures/events.js') { plan.scripts = true; ['terminal', 'files', 'network-proxy'].forEach(name => integration.add(name)); continue; }
-      if (file === 'scripts/test-close-native.mjs') { core(); ui(); plan.ssh = true; continue; }
+      if(file==='scripts/workbench-transfer-fixture.mjs'){ui();plan.communication=true;['terminal','files','system-status'].forEach(name=>integration.add(name));continue;}
+      if (file === 'scripts/test-close-native.mjs' || file === 'scripts/native-pointer.ps1') { core(); ui(); plan.ssh = true; continue; }
       if (/^scripts\/test-network-netem\.mjs$/.test(file)) { plan.scripts = true; integration.add('network-proxy'); continue; }
       if (/^scripts\/(network-tools|test-network-ui)\.mjs$/.test(file)) { plan.scripts = true; integration.add('network-proxy'); continue; }
       if (/^scripts\/test-system-status-(ui|package)\.mjs$/.test(file)) { plan.scripts = true; integration.add('system-status'); continue; }
       const pluginUiTest = file.match(/^scripts\/test-(terminal|files)-ui\.mjs$/);
       if (pluginUiTest) { plan.scripts = true; integration.add(pluginUiTest[1]); continue; }
       if (file === 'scripts/test-terminal-input.mjs') { plan.scripts = plan.terminalInput = true; continue; }
-      if (/^scripts\/test-(connection-ui|desktop-ui|production-ui|server-ui|settings-ui|workspace-ui|workbench-interactions)\.mjs$/.test(file)) { ui(); continue; }
+      if (/^scripts\/test-(connection-ui|desktop-ui|production-ui|server-ui|settings-ui|workspace-ui|workbench-interactions|workbench-layout)\.mjs$/.test(file)) { ui(); continue; }
       plan.reasons.push(`Shared build input or unmapped path: ${file.replace(/[\r\n|`]/g, ' ')}`);
       full();
     }

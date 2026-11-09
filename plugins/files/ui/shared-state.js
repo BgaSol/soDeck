@@ -6,7 +6,7 @@ export function connectFileState(tree,mount,data,save){
   const client=new SharedState(mount);let projection,enabled=mount.settings?.values?.followTerminal!==false,visible=mount.visible!==false,disposed=false,handled='',lastActive='',epoch=0,resolving=0;
   const offsets=new Map(),mapped=new Map(),queue=[];let provider='',followJob;
   const cancel=()=>{if(followJob){tree.cancelFollow();handled='';}followJob=null;};
-  const toggle=document.createElement('button');toggle.className='sd-control follow-terminal';toggle.textContent='跟随终端';toggle.title='跟随活动终端报告的目录';tree.toolbar.append(toggle);
+  const toggle=document.createElement('button');toggle.className='sd-control follow-terminal';toggle.textContent='跟随终端';toggle.title='跟随最近操作的终端报告的目录';tree.toolbar.append(toggle);
   const providers=document.createElement('select');providers.className='mount-provider';providers.setAttribute('aria-label','挂载信息来源');providers.hidden=true;tree.toolbar.append(providers);
   const status=document.createElement('details');status.className='follow-status';
   const summary=document.createElement('summary');summary.setAttribute('aria-live','polite');
@@ -19,12 +19,12 @@ export function connectFileState(tree,mount,data,save){
   tree.onManual=()=>{followJob=null;handled=candidateKey()||handled;manual=true;followError='';update();};
   function records(){return projection?.records||[];}
   const presentation=()=>records().find(r=>r.topic==='workspace.presentation.v1'&&r.producer.kind==='core'&&r.key==='current')?.value;
-  const current=()=>records().find(r=>r.topic==='terminal.location.v1'&&r.key==='current'&&r.producer.pluginId==='sodeck.terminal'&&r.producer.viewId===presentation()?.activeEditorViewId)?.value;
+  const current=()=>records().find(r=>r.topic==='terminal.location.v1'&&r.key==='current'&&r.producer.viewId===(presentation()?.lastInteractedLocationViewId??presentation()?.activeEditorViewId))?.value;
   function candidate(){
     if(!projection||projection.scope.state!=='active'||projection.scope.connected===false)return null;
-    const active=presentation()?.activeEditorViewId;
+    const active=presentation()?.lastInteractedLocationViewId??presentation()?.activeEditorViewId;
     if(active!==lastActive){lastActive=active;waitingSince=Date.now();handled='';manual=false;followError='';}
-    const r=records().find(r=>r.topic==='terminal.location.v1'&&r.key==='current'&&r.producer.pluginId==='sodeck.terminal'&&r.producer.viewId===active);
+    const r=records().find(r=>r.topic==='terminal.location.v1'&&r.key==='current'&&r.producer.viewId===active);
     if(!r||r.value?.state!=='known'||typeof r.value.path!=='string'||!/^\d{1,20}$/.test(r.value.outputOffset)||!['session-default','shell-reported'].includes(r.value.filesystemView))return null;
     if(r.value.filesystemView==='shell-reported'&&mount.capabilities?.fileLocationProof!==1)return null;
     const key=source(r.producer),offset=BigInt(r.value.outputOffset),previous=offsets.get(key);if(previous!==undefined&&offset<previous)return null;offsets.set(key,offset);
@@ -43,11 +43,11 @@ export function connectFileState(tree,mount,data,save){
   function feedback(){
     const v=current(),p=presentation(),next=candidate();
     if(v?.activity==='busy'){if(!busySince)busySince=Date.now();}else busySince=0;
-    let title,explanation='仅跟随当前活动终端。手动浏览不会向终端输入命令。';
+    let title,explanation='跟随本服务器最近操作的终端。手动浏览不会向终端输入命令。';
     if(!enabled)title='手动浏览';
     else if(!client.available||mount.capabilities?.fileLocation!==1||v?.reasonCode==='old-core'||v?.filesystemView==='shell-reported'&&mount.capabilities?.fileLocationProof!==1){title='当前版本不支持自动目录识别';explanation='在设置 → 更新中更新核心、终端和文件插件，然后重启。';}
     else if(!projection||projection.scope.connected===false)title='已暂停：连接已断开';
-    else if(p?.activeEditorPluginId&&p.activeEditorPluginId!=='sodeck.terminal'||!p?.activeEditorViewId)title='已暂停：当前不是终端';
+    else if(!(p?.lastInteractedLocationViewId??p?.activeEditorViewId))title='已暂停：尚未操作终端';
     else if(v?.activity==='busy'){title=Date.now()-busySince<600&&summary.textContent?summary.textContent:'终端忙碌，保留当前位置';explanation='命令仍在运行，或尚未收到外层 shell 的提示符报告。退出嵌套 SSH、容器或子 shell 后自动恢复。';}
     else if(followError){title='无法浏览终端目录';explanation=followError+'。可重试定位，或继续手动浏览。';}
     else if(next){title=manual?'已手动浏览，下次切换目录时跟随':followJob?'正在定位终端目录…':'跟随：'+(v.title||'活动终端');explanation=`${v.path}${v.shell?' · '+v.shell:''}${v.observedAt?' · 最近确认 '+new Date(v.observedAt).toLocaleTimeString():''}`;}

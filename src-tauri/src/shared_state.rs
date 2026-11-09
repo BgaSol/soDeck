@@ -982,15 +982,32 @@ impl StateHub {
                     });
                     store.publish(&context, revision, None, Change::Scope(status));
                 }
-                let active = ui
-                    .workspaces
-                    .get(&context.workspace_id)
-                    .and_then(|w| w.editor.clone());
+                let active = ui.workspaces.get(&context.workspace_id).and_then(|w| {
+                    w.focused_view_id
+                        .clone()
+                        .or_else(|| w.hosts.values().find_map(|h| h.active_view()))
+                });
                 let plugin = active
                     .as_ref()
                     .and_then(|id| ui.resource_view(id).ok())
                     .map(|v| v.plugin_id.clone());
-                let value = json!({"activeEditorViewId":active,"activeEditorPluginId":plugin});
+                let workspace = ui.workspaces.get(&context.workspace_id);
+                let last = workspace
+                    .and_then(|w| w.last_location_view_id.as_ref())
+                    .and_then(|id| ui.resource_view(id).ok())
+                    .filter(|v| {
+                        ui.definitions
+                            .get(&v.definition_key)
+                            .is_some_and(|d| d.available)
+                    });
+                let host = workspace.and_then(|w| {
+                    w.focused_window_id
+                        .as_ref()
+                        .and_then(|window| w.hosts.get(window))
+                });
+                let value = json!({"activeEditorViewId":active,"activeEditorPluginId":plugin,
+                    "focusedViewId":workspace.and_then(|w|w.focused_view_id.clone()),"focusedWindowId":workspace.and_then(|w|w.focused_window_id.clone()),"focusedHostId":host.map(|h|&h.id),"focusedGroupId":host.map(|h|&h.focused_group_id),
+                    "lastInteractedLocationViewId":last.map(|v|&v.id),"lastInteractedLocationPluginId":last.map(|v|&v.plugin_id),"lastInteractedLocationTopic":last.and_then(|v|ui.definitions[&v.definition_key].definition.location_provider.as_ref())});
                 let key = RecordKey {
                     topic: "workspace.presentation.v1".into(),
                     producer: Producer::Core,

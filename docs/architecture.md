@@ -1,5 +1,13 @@
 # SoDeck 架构草案
 
+工作台分屏与多窗口源码使用统一的 `workbench::State` 锁，覆盖工作区身份、窗口显示部分、逻辑视图、布局、迁移保留和关闭保留。`workbench_layout.rs` 维护嵌套二分树、标签组和工具位置，`workbench_move.rs` 维护 preparing/draining/restoring 与回执，`workbench_memory.rs` 保存按服务器和稳定布局槽组织的容器意图。插件进程、网络 worker 和输出缓冲在该状态锁之外执行。实际完成与平台验证见[实施记录](implementation-workbench-layout.md)，目标见[设计](plan-workbench-layout.md)。
+
+同一 Context 可出现在多个窗口的 Host 中；View 的位置从 Host 布局取得，输入权由 Surface 阶段及当前位置共同检查。`Workspace.window_id` 继续保留为默认定位/返回入口及兼容投影字段，不作为唯一业务归属。跨窗候选只读，提交在同一状态域改变布局和有效表面，终端排空及输出追平后才接纳新输入。UI v2 将逻辑 create 与显示 get 分离，四个官方插件各自管理业务实例。
+
+运行期返回书签保存来源窗口、组、邻接标签与工具侧栏。窗口全部返回复用相同交接阶段，先预演所有工作区提交，再一次更新布局和 Surface；默认返回 Host 的替补按创建顺序选择。布局保存先取已提交状态快照，由独立 IO 锁顺序写入并比较相同内容，磁盘备份与原子替换不持工作台状态锁。
+
+关闭页面/标签组/Host/窗口收集实际包含的视图，全服务器关闭和应用退出才收集跨窗口工作区。局部关闭返回仍在运行的单例工具；最后一份显示部分关闭后统一清理服务器连接。工作台布局在 `workbench-layout.json` 独立保存，不含运行身份和业务正文，关闭清理不把最后布局覆盖为空。
+
 更新体验改版已实现主进程集中检查与下载调度、同仓库同批次 Releases 复用、偏好与检查结果缓存。`updates.rs` 管理组件状态、排队、逐项失败和插件准备；`desktop_updates.rs` 通过官方 updater 恢复、验签和安装核心落盘包。前端 `updates.ts` 与 `plugin-settings.ts` 共用核心状态，下载任务独立于设置页面；现有退出检查与插件回退继续复用。实现、测试及平台边界见 [更新体验记录](implementation-update-experience.md)。
 
 组件设置已按 [整体设计](plan-component-settings.md) 实现。`settings.rs` 与 `settings/declaration.rs` 根据实际运行/安装版本解析可选声明，`settings/store.rs` 独立保存修订、原值、结构历史和备份；前端 `settings.ts` 管理通用表单、草稿、字体示例及应用反馈。插件经可选 `settings.v1` RPC 和组件宿主的单页快照接收设置，业务效果留在插件。字体随需要它的插件独立打包，核心只提供通用加载与静态资源读取，不识别业务插件 ID。首批未引入业务校验脚本或特殊预览 iframe；实际接口和验证见 [实施记录](implementation-component-settings.md)。
@@ -29,21 +37,21 @@ macOS 主窗口通过 Tauri 自动合并的 `src-tauri/tauri.macos.conf.json` �
 
 ## 分层
 
-关闭生命周期由 `lifecycle.rs`、`lifecycle/close.rs` 和 `lifecycle/host.rs` 统一负责。页面、工作区、窗口、应用退出及重启先保留范围，再收集输入与决定，随后清理资源并执行原生收尾。状态与组件登记共用 `component_ui::Runtime` 的互斥锁；工作区归属与移动按 `workspaces → component_ui` 锁序核对，避免关闭保留和迟到提交交错。`core.rs` 中的 closing 原子值只供跨线程快速拒绝应用级新工作，关闭阶段与范围以生命周期操作为准。
+关闭生命周期由 `lifecycle.rs`、`lifecycle/close.rs` 和 `lifecycle/host.rs` 统一负责。页面、标签组、工作台显示部分、服务器工作区、窗口、应用退出及重启先保留范围，再收集输入与决定，随后清理资源并执行原生收尾。工作区、组件登记和生命周期共用 `workbench::State`；旧 `workspace_state/ui_state` 是同一锁的投影，不再按两个锁顺序交接。`core.rs` 中的 closing 原子值只供跨线程快速拒绝应用级新工作，关闭阶段与范围以生命周期操作为准。
 
 `ui_snapshot` 只读取状态。默认布局和后台 view 在工作区、插件状态变化时同步，关闭中暂停创建；取消时恢复原 view，完成时先移除父级归属再解除范围。终端、执行、文件和网络用实际 worker/transport 的结束记录证明清理完成，取消 ACK 与注册表删除不能代替结束。超时 RPC 继续保留原请求与真实结果，保存和未知释放不会自动重放。
 
 前端 `close.ts` 负责跨窗口输入同步、宿主草稿和关闭反馈，执行权在核心；`main.rs` 注册原生 finalizer 执行窗口销毁、官方 updater 安装和退出/重启交接。清理失败保留已停止事实，重试继续未完成步骤；窗口意外消失按实际归属中断并收尾，无法恢复的输入明确记录。详细设计、回归及平台验收范围见 [关闭生命周期实施记录](implementation-close-lifecycle.md)。
 
-[服务器 Tab 与可拆合工作区](plan-server-workspaces.md) 已实现到 v0.4.0。`workspaces.rs` 管理内存窗口、工作区、固定 Context 和布局；`windows.rs` 管理原生窗口、先准备后提交的移动和屏幕物理坐标命中；`workspaces.ts` 渲染窗口投影、手势和组件空槽。没有新增生产依赖、持久布局、数据库或 Dock 框架。
+[服务器 Tab 与可拆合工作区](plan-server-workspaces.md) 的早期实现由本轮 Host 与分屏树体系扩展。`workspaces.rs` 管理窗口、工作区与固定 Context；`windows.rs` 管理原生窗口、交接和屏幕物理坐标命中；`workspaces.ts/components.ts` 渲染实际窗口投影和保留 iframe 的工作台。容器意图独立保存，不引入数据库、Dock 框架或生产依赖。
 
 只有核心连接服务可交入 `ConnectedSession`；没有前端“创建已连接工作区”命令。正常连接由 connections 服务完成资料快照、逐站身份验证、认证和取消；成功接纳时短锁核对配置身份及尝试 token。连接计数、私钥边界与原生验证见 [连接实施记录](implementation-connections.md)。测试仍可由独立 fixture 或显式 `--smoke-test --test-data-dir` 入口使用隔离档案注入会话。服务器档案修改只更新运行工作区的名称，endpoint 和 connectionId 保留；删除打开档案被拒绝。断线保留工作区，重连递增 generation，旧 Context 被拒绝。
 
-主窗口固定保留服务器管理；独立窗口不复制管理表单。所有全局退出、重启和升级操作集中到主窗口，检查未保存目录表单和组件草稿。组件可声明 flush，同步输入后再移窗或关闭；文件保存完成后才释放资源。移走最后一个 Tab 回收空子窗口，关闭子窗口只关闭其工作区，主窗口退出清理整个应用。Wayland 缺少可靠全局坐标时拒绝猜测落点并提供菜单移动。
+主窗口固定保留服务器管理；独立窗口不复制管理表单。所有全局退出、重启和升级操作集中到主窗口，检查未保存目录表单和组件草稿。组件声明 flush 同步输入后再移窗或关闭；文件保存完成后才释放资源。移走最后一份内容回收空子窗口；关闭子窗口只收集其实际显示部分，主窗口退出清理整个应用。Wayland 缺少可靠全局坐标时提供菜单跨窗移动，同窗使用局部坐标。
 
 服务器管理首页双击与详情按钮、一级加号共用 `ConnectionsUi.connect`，复用现有连接状态查询、防重复、工作台聚焦与认证流程，不新增后端接口或生产依赖。单击重绘会替换服务器行，因此使用同一服务器连续点击的第二次 `click.detail` 触发连接；窄布局鼠标单击等待 500 ms 再进入详情，第二次按下取消等待，避免隐藏列表打断双击。键盘单击立即查看详情，代理资料不绑定双击连接。
 
-一级 Tab 的服务器选择层读取既有目录，连接与认证统一交给 `ConnectionsUi`。连接成功接纳新工作区时使用发起窗口；重连保留已有归属。二级加号集中指定官方终端的稳定 ID，复用组件 open 返回的 viewId 定位新实例，就绪且可见后交接焦点；请求期间切换工作区则不抢回焦点。没有新增偏好字段、生产依赖或插件协议。范围与验证见 [Tab 新建实施记录](implementation-tab-creation.md)。
+一级 Tab 的服务器选择层读取既有目录，连接与认证统一交给 `ConnectionsUi`。连接成功接纳新工作区时使用发起窗口；重连保留已有归属。每个中央组的加号执行已配置的插件默认行为，在发起组接纳返回的 viewId，就绪且可见后交接焦点；等待期间切换工作区则不抢回焦点。早期入口演进见 [Tab 新建实施记录](implementation-tab-creation.md)，当前行为契约见 [插件 API](plugin-api.md)。
 
 工作区菜单的固定定位由工作区样式明确覆盖共享菜单的相对定位；组件菜单外框与内部列表滚动分离，避免共享描边进入滚动范围。`components.ts` 按实测菜单尺寸决定上下展开和边界约束，搜索后重新定位。开发页面和正式构建均验证菜单布局，见 [菜单修复记录](implementation-component-menus.md)。
 

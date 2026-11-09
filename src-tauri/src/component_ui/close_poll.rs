@@ -3,7 +3,7 @@ impl AppCore {
     pub fn ui_close_poll(&self, window: &str, token: &str, save: bool) -> Result<Value, String> {
         self.component_close_owner(window, token)?;
         let views = {
-            let ui = self.component_ui.lock().unwrap();
+            let ui = self.ui_state();
             let plan = ui.lifecycle.operations.get(token).ok_or("关闭确认已失效")?;
             plan.views
                 .iter()
@@ -31,9 +31,7 @@ impl AppCore {
                 Err(error) if save => return Err(error),
                 Err(_) => json!({"metadata":{"busy":false}}),
             };
-            self.component_ui
-                .lock()
-                .unwrap()
+            self.ui_state()
                 .update_metadata(&view.id, &reply["metadata"])?;
             if file_pending
                 || reply["metadata"]["busy"] == true

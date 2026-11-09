@@ -8,10 +8,11 @@ import type { PanelSide, PanelWidths } from "./panel-layout";
 export interface Context { workspaceId: string; serverId: string; connectionId: string; generation: number }
 export interface Layout { leftOpen: boolean; rightOpen: boolean; leftWidth: number; rightWidth: number }
 export interface Workspace { context: Context; name: string; endpoint: string; connected: boolean; windowId: string; layout: Layout; viewIds: string[]; activeViewId: string | null }
-export interface Projection { revision: number; window: { id: string; role: string; workspaceIds: string[]; activeWorkspace: string | null; ready: boolean }; workspaces: Workspace[]; incoming: Workspace | null }
-export type DropTarget = { kind: "strip"; windowId: string; index: number } | { kind: "outside"; x: number; y: number } | { kind: "invalid" };
+interface WorkspaceWindow {id:string;role:string;workspaceIds:string[];activeWorkspace:string|null;ready:boolean}
+export interface Projection { revision: number; window: WorkspaceWindow; workspaces: Workspace[]; incoming: Workspace | null; incomingWorkspaces?:Workspace[]; windows?:WorkspaceWindow[] }
+export type DropTarget = { kind: "strip"; windowId: string; index: number } | {kind:"group";windowId:string;groupId:string;edge:string;index:number} | {kind:"dock";windowId:string;workspaceId:string;side:string} | { kind: "outside"; x: number; y: number } | { kind: "invalid" };
 type Invoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
-interface Gesture { id: string; pointer: number; x: number; y: number; grabX: number; grabY: number; token?: string; starting: boolean; released: boolean; cancelled: boolean; node: HTMLElement; capture: HTMLElement; ghost?: HTMLElement; sampling: boolean }
+interface Gesture { id: string; pointer: number; x: number; y: number; localPoint:{x:number;y:number}; grabX: number; grabY: number; token?: string; starting: boolean; released: boolean; cancelled: boolean; node: HTMLElement; capture: HTMLElement; ghost?: HTMLElement; sampling: boolean }
 interface PanelGesture { id: string; side: PanelSide; pointer: number; x: number; initial: number; width: number; otherWidth: number; handle: HTMLElement; focus?: HTMLElement }
 interface WidthChange { width: number; sequence: number }
 interface WidthState { values: Partial<Record<PanelSide, WidthChange>>; flight?: Promise<void>; failed?: boolean }
@@ -39,7 +40,7 @@ export class Workspaces {
   private resizeObserver: ResizeObserver;
 
   constructor(private tabs: HTMLElement, private content: HTMLElement, private catalog: HTMLElement, private notify: (message: string) => void, private call: Invoke = invoke) {
-    this.closer = new CloseCoordinator(call,()=>this.state?.window.id??"main",async ids=>{this.finishResize(true);await this.flushLayouts().catch(error=>notify(String(error)));return this.components.flush(ids);},(ids,blocked,host)=>{
+    this.closer = new CloseCoordinator(call,()=>this.state?.window.id??"main",async ids=>{this.finishResize(true);await this.flushLayouts().catch(error=>notify(String(error)));return this.components.flush(ids,true);},(ids,blocked,host)=>{
       if (blocked) this.finishResize(true);
       this.components.setCloseBlocked(blocked?ids:[]);
       if(this.state?.window.id==="main")for(const id of ["server-catalog","overlay"]) {const node=document.getElementById(id);if(node)node.inert=host;}
@@ -117,7 +118,7 @@ export class Workspaces {
     if (focusId) this.tabs.querySelector<HTMLElement>(`[data-id="${CSS.escape(focusId)}"] [data-workspace-action="${focusAction ?? "select"}"]`)?.focus({ preventScroll: true });
     const w = this.current();
     this.catalog.hidden = !main || Boolean(w);
-    this.content.hidden = !w && main && !state.incoming;
+    this.content.hidden = !w && main && !(state.incomingWorkspaces?.length || state.incoming);
     if (w) {
       this.content.dataset.workspaceId = w.context.workspaceId;
       this.content.inert = this.moving.has(w.context.workspaceId);
@@ -130,10 +131,13 @@ export class Workspaces {
     this.closeMenu();
     this.finishResize(true);
     if (action === "select") { await this.call("workspace_activate", { id }); return; }
-    if (action === "close") { await this.closer.request({kind:"workspace",id}); return; }
+    if (action === "close") { await this.closer.request({kind:"host",id}); return; }
+    if(action === "close-all"){await this.closer.request({kind:"workspace",id});return;}
+    if(action === "restore-layout"){await this.components.restoreLayout(id);return;}
+    if(action === "return-window"){await this.flushLayouts();await this.components.returnWindow();return;}
     if (this.moving.has(id)) return;
     this.moving.add(id); this.render();
-    try { await this.flushLayouts(); await this.components.flush(); await this.call("workspace_move", { id, target: action === "return" ? "main" : null, index: Number.MAX_SAFE_INTEGER }); }
+    try { await this.flushLayouts(); await this.components.moveHost(id, action === "return" ? "main" : action.startsWith('window:')?action.slice(7):undefined); }
     finally { this.moving.delete(id); }
   }
   private openMenu(id: string, anchor: HTMLElement) {
@@ -142,7 +146,8 @@ export class Workspaces {
     this.closeMenu();
     if (!anchor || !this.state?.workspaces.some(w => w.context.workspaceId === id)) return;
     const node = document.createElement("div"); node.className = "workspace-menu sd-menu"; node.setAttribute("role", "menu");
-    node.innerHTML = `<div class="sd-menu-list"><button role="menuitem" data-choice="detach">${icon("maximize")}移至新窗口</button>${this.state.window.id !== "main" ? `<button role="menuitem" data-choice="return">${icon("arrow")}返回主窗口</button>` : ""}<button role="menuitem" data-choice="close">${icon("close")}关闭工作区</button></div>`;
+    const targets=(this.state.windows??[]).filter(w=>w.id!==this.state!.window.id&&w.id!=='main'&&w.ready);
+    node.innerHTML = `<div class="sd-menu-list"><button role="menuitem" data-choice="detach">${icon("maximize")}移至新窗口</button>${targets.map((w,i)=>`<button role="menuitem" data-choice="${e('window:'+w.id)}">移至独立窗口 ${i+1}</button>`).join('')}${this.state.window.id !== "main" ? `<button role="menuitem" data-choice="return">${icon("arrow")}返回主窗口</button><button role="menuitem" data-choice="return-window">此窗口全部返回主窗口</button>` : ""}<button role="menuitem" data-choice="restore-layout">恢复上次窗口布局</button><button role="menuitem" data-choice="close">${icon("close")}关闭此工作台</button><button role="menuitem" data-choice="close-all">关闭服务器工作区（所有窗口）</button></div>`;
     node.addEventListener("click", event => { const action = (event.target as Element).closest<HTMLElement>("[data-choice]")?.dataset.choice; if (action) void this.run(() => this.action(action, id)); });
     node.addEventListener("keydown", event => {
       if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return; event.preventDefault();
@@ -188,11 +193,12 @@ export class Workspaces {
     if (!node || (event.target as Element).closest(".tab-close-button, .tab-menu-button")) return;
     const rect = node.getBoundingClientRect();
     const capture = node.querySelector<HTMLElement>(".server-tab-select")!;
-    this.gesture = { id: node.dataset.id!, pointer: event.pointerId, x: event.clientX, y: event.clientY, grabX: event.clientX - rect.left, grabY: event.clientY, starting: false, released: false, cancelled: false, node, capture, sampling: false };
+    this.gesture = { id: node.dataset.id!, pointer: event.pointerId, x: event.clientX, y: event.clientY, localPoint:{x:event.clientX,y:event.clientY},grabX: event.clientX - rect.left, grabY: event.clientY, starting: false, released: false, cancelled: false, node, capture, sampling: false };
     capture.setPointerCapture(event.pointerId);
   }
   private pointerMove(event: PointerEvent) {
     const g = this.gesture; if (!g || event.pointerId !== g.pointer || g.released) return;
+    g.localPoint={x:event.clientX,y:event.clientY};
     if (g.ghost) { g.ghost.style.left = `${event.clientX - g.grabX}px`; g.ghost.style.top = `${event.clientY - g.grabY + 9}px`; }
     if (g.token || g.starting || Math.hypot(event.clientX - g.x, event.clientY - g.y) < 8) return;
     g.starting = true; this.closeMenu();
@@ -202,7 +208,7 @@ export class Workspaces {
   private async sample(g: Gesture) {
     if (g.released || !g.token || g.sampling) return;
     g.sampling = true;
-    try { const target = await this.call<DropTarget>("workspace_drag_sample", { token: g.token }); this.previewDrop(target); if (g.ghost) g.ghost.dataset.drop = target.kind; }
+    try { const target = await this.call<DropTarget>("workspace_drag_sample", { token: g.token,localPoint:g.localPoint }); this.previewDrop(target); if (g.ghost) g.ghost.dataset.drop = target.kind; }
     catch (error) { this.notify(String(error)); await this.finish(true); }
     finally { g.sampling = false; }
     if (!g.released) setTimeout(() => void this.sample(g), 32);
@@ -215,7 +221,7 @@ export class Workspaces {
   }
   private async completeGesture(g: Gesture) {
     this.moving.add(g.id);
-    try { this.finishResize(true); await this.flushLayouts(); await this.components.flush(); await this.call("workspace_drag_finish", { token: g.token, cancel: g.cancelled }); }
+    try { this.finishResize(true); await this.flushLayouts(); await this.components.flush(); await this.call("workspace_drag_finish", { token: g.token, cancel: g.cancelled,localPoint:g.localPoint }); }
     catch (error) { this.notify(String(error)); }
     finally { this.moving.delete(g.id); this.clearGesture(g); await this.refresh().catch(() => {}); }
   }
@@ -223,7 +229,7 @@ export class Workspaces {
     g.ghost?.remove(); g.node.classList.remove("dragging"); if (g.capture.hasPointerCapture(g.pointer)) g.capture.releasePointerCapture(g.pointer);
     if (this.gesture === g) this.gesture = undefined; this.previewDrop({ kind: "invalid" });
   }
-  previewDrop(target: DropTarget) { this.preview = target; this.paintPreview(); }
+  previewDrop(target: DropTarget) { this.preview = target; this.components.previewDrop(target);this.paintPreview(); }
   private paintPreview() {
     this.tabs.querySelector(".tab-insertion")?.remove();
     const target = this.preview; if (target?.kind !== "strip" || target.windowId !== this.state?.window.id) return;
@@ -237,7 +243,7 @@ export class Workspaces {
     // An empty strip takes no visible space; the title-bar blank area still accepts dragged tabs.
     const target = this.tabs.querySelector('.server-tab') ? this.tabs : this.tabs.parentElement?.querySelector('.drag-region') ?? this.tabs;
     const rect = target.getBoundingClientRect();
-    await this.call("workspace_surface", { surface: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, blocked: Boolean(document.querySelector('dialog[open], #overlay:not([hidden])')), tabs: [...this.tabs.querySelectorAll<HTMLElement>(".server-tab")].map(tab => { const r = tab.getBoundingClientRect(); return { id: tab.dataset.id!, center: r.x + r.width / 2 }; }) } });
+    await this.call("workspace_surface", { surface: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, groups:this.components.dropZones(),docks:this.components.dockZones(),blocked: Boolean(document.querySelector('dialog[open], #overlay:not([hidden])')), tabs: [...this.tabs.querySelectorAll<HTMLElement>(".server-tab")].map(tab => { const r = tab.getBoundingClientRect(); return { id: tab.dataset.id!, center: r.x + r.width / 2 }; }) } });
   }
   private resize(event: PointerEvent) {
     const handle = (event.target as Element).closest<HTMLElement>("[data-resize]"); const w = this.current();

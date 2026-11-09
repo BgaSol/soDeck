@@ -115,7 +115,7 @@ fn closing_last_secondary_workspace_reserves_and_finalizes_the_native_host() {
     let movement = core
         .prepare_workspace_move("main", &id, "secondary", 0, "last-move".into(), true)
         .unwrap();
-    core.workspaces.lock().unwrap().ready("secondary").unwrap();
+    core.workspace_state().ready("secondary").unwrap();
     core.commit_workspace_move(&movement).unwrap();
     core.register_close_host("secondary").unwrap();
     let finished = Arc::new(AtomicUsize::new(0));
@@ -172,7 +172,7 @@ fn global_scope_includes_secondary_workspaces_and_close_cancels_late_move_commit
     let movement = core
         .prepare_workspace_move("main", &b, "secondary", 0, "move".into(), true)
         .unwrap();
-    core.workspaces.lock().unwrap().ready("secondary").unwrap();
+    core.workspace_state().ready("secondary").unwrap();
     core.commit_workspace_move(&movement).unwrap();
     core.workspace_changed();
     let pending = core
@@ -198,7 +198,7 @@ fn global_scope_includes_secondary_workspaces_and_close_cancels_late_move_commit
         .unwrap();
     wait(&core, &op.id, Phase::Aborted);
     assert_eq!(
-        core.workspaces.lock().unwrap().owner(&b).as_deref(),
+        core.workspace_state().owner(&b).as_deref(),
         Some("secondary")
     );
     assert!(core
@@ -206,13 +206,13 @@ fn global_scope_includes_secondary_workspaces_and_close_cancels_late_move_commit
         .is_ok());
 }
 #[test]
-fn lost_window_transfers_cleanup_to_main_without_waiting_for_missing_inputs() {
+fn lost_window_recovers_workspace_and_aborts_unconfirmed_close() {
     let core = core();
     let id = workspace(&core, "lost");
     let m = core
         .prepare_workspace_move("main", &id, "secondary", 0, "move".into(), true)
         .unwrap();
-    core.workspaces.lock().unwrap().ready("secondary").unwrap();
+    core.workspace_state().ready("secondary").unwrap();
     core.commit_workspace_move(&m).unwrap();
     core.register_close_host("secondary").unwrap();
     let op = core
@@ -225,54 +225,41 @@ fn lost_window_transfers_cleanup_to_main_without_waiting_for_missing_inputs() {
         )
         .unwrap();
     core.close_host_lost("secondary");
-    wait(&core, &op.id, Phase::Completed);
+    assert_eq!(
+        core.close_status("main", &op.id).unwrap().phase,
+        Phase::Aborted
+    );
     assert!(core.workspace_projection("secondary").is_err());
-    assert!(core
-        .workspace_projection("main")
-        .unwrap()
-        .workspaces
-        .is_empty());
+    assert_eq!(
+        core.workspace_projection("main").unwrap().workspaces[0]
+            .context
+            .workspace_id,
+        id
+    );
+    assert!(!core.is_closing());
     core.close_host_lost("secondary");
-    assert!(core.close_operations("main").is_empty());
 }
 #[test]
-fn losing_main_during_local_preparation_drains_every_window_as_an_application_close() {
+fn losing_main_preserves_every_workspace_and_does_not_begin_exit() {
     let core = core();
     let a = workspace(&core, "a");
     let b = workspace(&core, "b");
-    let movement = core
+    let m = core
         .prepare_workspace_move("main", &b, "secondary", 0, "move".into(), true)
         .unwrap();
-    core.workspaces.lock().unwrap().ready("secondary").unwrap();
-    core.commit_workspace_move(&movement).unwrap();
-    core.register_close_host("main").unwrap();
-    core.register_close_host("secondary").unwrap();
-    let targets = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let seen = targets.clone();
-    core.set_finalizer(Arc::new(move |target| {
-        seen.lock().unwrap().push(target);
-        Ok(())
-    }));
+    core.workspace_state().ready("secondary").unwrap();
+    core.commit_workspace_move(&m).unwrap();
     let op = core
-        .close_prepare("main", "local", Target::Workspace { id: a })
+        .close_prepare("main", "local", Target::Workspace { id: a.clone() })
         .unwrap();
     core.close_host_lost("main");
-    let completed = wait(&core, &op.id, Phase::Completed);
     assert_eq!(
-        completed.target,
-        Target::Application {
-            action: Action::Exit
-        }
+        core.close_status("main", &op.id).unwrap().phase,
+        Phase::Aborted
     );
-    assert!(completed.workspaces.contains(&b));
-    assert!(core.workspaces.lock().unwrap().ids().is_empty());
-    assert_eq!(
-        *targets.lock().unwrap(),
-        vec![Target::Application {
-            action: Action::Exit
-        }]
-    );
-    assert!(core.is_closing());
+    assert!(core.workspace_state().ids().contains(&a));
+    assert!(core.workspace_state().ids().contains(&b));
+    assert!(!core.is_closing());
 }
 #[test]
 fn unhosted_exit_reserves_startup_and_registered_hosts_prevent_automatic_discard() {
@@ -313,11 +300,7 @@ fn unhosted_exit_reserves_startup_and_registered_hosts_prevent_automatic_discard
 #[test]
 fn failed_empty_window_keeps_host_drafts_in_global_adoption_and_cancel_restores_failure() {
     let core = core();
-    core.workspaces
-        .lock()
-        .unwrap()
-        .register("secondary")
-        .unwrap();
+    core.workspace_state().register("secondary").unwrap();
     core.register_close_host("secondary").unwrap();
     core.set_finalizer(Arc::new(|target| {
         if matches!(target, Target::Window { .. }) {
@@ -390,11 +373,7 @@ fn failed_empty_window_keeps_host_drafts_in_global_adoption_and_cancel_restores_
 #[test]
 fn window_reports_are_independent_of_progress_revisions_and_cancel_restores_admission() {
     let core = core();
-    core.workspaces
-        .lock()
-        .unwrap()
-        .register("secondary")
-        .unwrap();
+    core.workspace_state().register("secondary").unwrap();
     let op = core
         .close_prepare(
             "main",

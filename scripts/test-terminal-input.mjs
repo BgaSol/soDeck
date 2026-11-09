@@ -15,17 +15,18 @@ const errors=[];page.on('pageerror',error=>errors.push(String(error)));
 let requestedPlatform='Win32';
 const harness=`<!doctype html><html data-theme="dopamine"><head><meta charset="utf-8"></head><body><button id="outside">外部焦点</button><iframe id="terminal" style="width:900px;height:480px;border:0"></iframe><script type="module">
 import '/style.css';import {ClipboardBridge} from '/clipboard.ts';import {themeTokens} from '/theme.ts';
-window.writes=[];window.clipboard='中文🙂\\nsecond line';window.copies=[];window.reads=0;window.delayRead=false;
+window.writes=[];window.clipboard='中文🙂\\nsecond line';window.copies=[];window.reads=0;window.delayRead=false;window.flushed=[];
 window.resizes=[];window.holdResize=false;
 const host=new ClipboardBridge(async()=>{window.reads++;return window.delayRead?new Promise(resolve=>window.finishRead=resolve):window.clipboard;},async text=>window.copies.push(text));
 const frame=document.querySelector('iframe'),token='test-surface';let generation=1,visible=true,offset=0;
-const post=message=>frame.contentWindow.postMessage({channel:'sodeck-ui-v1',surfaceId:token,...message},location.origin);
+const post=message=>frame.contentWindow.postMessage({channel:'sodeck-ui-v2',surfaceId:token,...message},location.origin);
 window.testPost=post;window.setTheme=theme=>{document.documentElement.dataset.theme=theme;post({type:'themeChanged',tokens:themeTokens()});};
 window.addEventListener('message',async event=>{
- if(event.source!==frame.contentWindow||event.data?.channel!=='sodeck-ui-v1')return;
+ if(event.source!==frame.contentWindow||event.data?.channel!=='sodeck-ui-v2')return;
  const message=event.data;
  if(message.type==='ready'){post({type:'mount',viewId:'A',context:{generation},data:{streamId:'pty'},tokens:themeTokens(),capabilities:{clipboard:1},visible:true});return;}
- if(message.type==='mounted'){window.ready=true;return;}
+ if(message.type==='prepared'){window.ready=true;return;}
+ if(message.type==='flushed'){window.flushed.push(message.id);return;}
  if(message.type!=='request')return;
  try{
   let data={};
@@ -60,6 +61,10 @@ const focus=()=>frame.locator('.xterm-helper-textarea').focus();
 const term=async code=>{const child=page.frames().find(f=>f.url().includes('/__terminal__/index.html'));return child.evaluate(code);};
 try{
  await page.goto(url);await page.waitForFunction(()=>window.ready);await focus();
+ await page.evaluate(()=>window.testPost({type:'flush',id:'sync',freeze:false}));await page.waitForFunction(()=>window.flushed.includes('sync'));
+ await page.keyboard.type('after-sync');await page.waitForFunction(()=>window.writes.length>0);assert.equal(await bytes(),'after-sync');await reset();
+ await page.evaluate(()=>window.testPost({type:'flush',id:'move',freeze:true}));await page.waitForFunction(()=>window.flushed.includes('move'));
+ await page.keyboard.type('frozen');assert.equal(await bytes(),'');await page.evaluate(()=>new Promise(resolve=>{document.querySelector('iframe').contentWindow.addEventListener('sodeck:transferCancelled',()=>resolve(),{once:true});window.testPost({type:'transferCancelled'});}));await focus();await page.keyboard.type('resumed');await page.waitForFunction(()=>window.writes.length>0);assert.equal(await bytes(),'resumed');await reset();
  for(const [key,expected]of [['Control+r','\x12'],['Control+u','\x15'],['Control+p','\x10'],['F5','\x1b[15~'],['F12','\x1b[24~'],['Shift+Tab','\x1b[Z']]){
   await page.keyboard.press(key);await page.waitForFunction(()=>window.writes.length>0);assert.equal(await bytes(),expected,`${key} still reaches the terminal`);await reset();
  }

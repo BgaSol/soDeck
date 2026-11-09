@@ -17,8 +17,12 @@ pub(crate) fn start(core: &Arc<AppCore>, wake: mpsc::Receiver<()>) {
             let Some(core) = core.upgrade() else { break };
             let now = Instant::now();
             let plans = {
-                let _workspaces = core.workspaces.lock().unwrap();
-                let ui = core.component_ui.lock().unwrap();
+                let mut _workbench = core.workbench_state();
+                let crate::workbench::State {
+                    workspaces: _workspaces,
+                    ui,
+                } = &mut *_workbench;
+
                 core.sync_shared_ui_locked(&ui);
                 core.shared_state.deliveries(now)
             };
@@ -51,7 +55,7 @@ pub(crate) fn start(core: &Arc<AppCore>, wake: mpsc::Receiver<()>) {
                                         instance_id,
                                         view_id,
                                     } => {
-                                        let ui = core.component_ui.lock().unwrap();
+                                        let ui = core.ui_state();
                                         ui.resource_view(view_id).ok().map(|v| Owner {
                                             context: v.context.clone(),
                                             producer: Producer::Plugin {

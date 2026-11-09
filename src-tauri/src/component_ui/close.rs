@@ -30,7 +30,7 @@ impl AppCore {
     ) -> Result<Value, String> {
         let op = self.close_prepare(window, &self.next_id(), target)?;
         {
-            let mut ui = self.component_ui.lock().unwrap();
+            let mut ui = self.ui_state();
             let op = ui.lifecycle.operations.get_mut(&op.id).unwrap();
             op.inputs.values_mut().for_each(|v| *v = Some(json!({})));
             op.working = true;
@@ -46,7 +46,7 @@ impl AppCore {
         decision: &str,
     ) -> Result<(), String> {
         let window = {
-            let ui = self.component_ui.lock().unwrap();
+            let ui = self.ui_state();
             let op = ui.lifecycle.operations.get(token).ok_or("关闭操作已失效")?;
             if ids != op.views {
                 return Err("关闭页面集合已改变".into());
@@ -61,7 +61,7 @@ impl AppCore {
             return Err("关闭决定无效".into());
         }
         {
-            let mut ui = self.component_ui.lock().unwrap();
+            let mut ui = self.ui_state();
             let op = ui.lifecycle.operations.get_mut(token).unwrap();
             op.working = true;
             op.decision = Some(decision.into());

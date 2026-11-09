@@ -7,6 +7,9 @@ use std::sync::{Arc, Mutex};
 pub(super) struct ActionRequest {
     pub context: Context,
     request_id: String,
+    window: String,
+    host_id: String,
+    group_id: String,
     action_key: String,
     plugin_id: String,
     instance: String,
@@ -125,6 +128,9 @@ impl Runtime {
             .map(ActionRequest::status)
             .collect()
     }
+    pub(crate) fn invalidate_host_actions(&mut self, window: &str, reason: &str) {
+        self.invalidate_actions(|r| r.window == window, reason);
+    }
     pub(crate) fn invalidate_workspace_actions(&mut self, ids: &[String], reason: &str) {
         self.invalidate_actions(|r| ids.contains(&r.context.workspace_id), reason);
     }
@@ -211,12 +217,13 @@ impl AppCore {
         let action_key = p["actionKey"].as_str().ok_or("缺少 actionKey")?;
         let data = p.get("data").cloned().unwrap_or(Value::Null);
         let bytes = bounded(&data, 16 * 1024)?;
-        let input = fingerprint(json!([action_key, data]));
+        let input = fingerprint(json!([action_key, data, p["groupId"]]));
         let request_key = key(&context, request);
         let (instance, action, receipt) = {
-            let workspaces = self.workspaces.lock().unwrap();
+            let mut _workbench = self.workbench_state();
+            let crate::workbench::State { workspaces, ui } = &mut *_workbench;
             workspaces.validate_owned(window, &context)?;
-            let mut ui = self.component_ui.lock().unwrap();
+
             ui.refresh_action(&request_key);
             if let Some(r) = ui.action_requests.get(&request_key) {
                 if r.fingerprint != input {
@@ -227,7 +234,7 @@ impl AppCore {
             workspaces.validate_context(&context)?;
             if self.is_closing()
                 || ui.frozen(&context.workspace_id)
-                || ui.lifecycle.window_closing(window)
+                || ui.lifecycle.host_closing(&context.workspace_id, window)
             {
                 return Err("工作区正在关闭".into());
             }
@@ -258,6 +265,14 @@ impl AppCore {
             {
                 return Err("工作区已有结果尚未确认的行为".into());
             }
+            let host = ui.workspaces[&context.workspace_id].host(window)?;
+            ui.layout_admission(
+                &context.workspace_id,
+                window,
+                Some(p["groupId"].as_str().unwrap_or(&host.focused_group_id)),
+                None,
+                None,
+            )?;
             ui.reserve_request(&context, bytes, 64 * 1024)?;
             let receipt = Arc::new(Mutex::new(None));
             ui.action_requests.insert(
@@ -265,6 +280,19 @@ impl AppCore {
                 ActionRequest {
                     context: context.clone(),
                     request_id: request.into(),
+                    window: window.into(),
+                    host_id: ui.workspaces[&context.workspace_id]
+                        .host(window)?
+                        .id
+                        .clone(),
+                    group_id: p["groupId"]
+                        .as_str()
+                        .unwrap_or(
+                            &ui.workspaces[&context.workspace_id]
+                                .host(window)?
+                                .focused_group_id,
+                        )
+                        .into(),
                     action_key: action_key.into(),
                     plugin_id: action.plugin_id.clone(),
                     instance: action.plugin_instance_id.clone(),
@@ -281,7 +309,7 @@ impl AppCore {
         let _ = instance.request_observed("ui.action", json!({"context":context,"requestId":request,"actionId":action.definition.id,"data":data}),
             None, Some(receipt), std::time::Duration::from_secs(5));
         let result = {
-            let mut ui = self.component_ui.lock().unwrap();
+            let mut ui = self.ui_state();
             ui.refresh_action(&request_key);
             ui.action_requests
                 .get(&request_key)
@@ -295,10 +323,11 @@ impl AppCore {
         bounded(p, 24 * 1024)?;
         let context: Context =
             serde_json::from_value(p["context"].clone()).map_err(|e| e.to_string())?;
-        let workspaces = self.workspaces.lock().unwrap();
+        let mut _workbench = self.workbench_state();
+        let crate::workbench::State { workspaces, ui } = &mut *_workbench;
         workspaces.validate_owned(window, &context)?;
         let key = key(&context, request_id(p)?);
-        let mut ui = self.component_ui.lock().unwrap();
+
         ui.refresh_action(&key);
         Ok(ui
             .action_requests
@@ -327,12 +356,13 @@ impl AppCore {
             .transpose()?;
         let params = p.get("params").cloned().unwrap_or(Value::Null);
         let bytes = bounded(&params, 16 * 1024)?;
-        let input = fingerprint(json!([view_type, resource, params]));
+        let input = fingerprint(json!([view_type, resource, params, p["sourceViewId"]]));
         let action_key = key(&context, request);
         let open_key = json!([context, plugin, instance, request]).to_string();
-        let workspaces = self.workspaces.lock().unwrap();
+        let mut _workbench = self.workbench_state();
+        let crate::workbench::State { workspaces, ui } = &mut *_workbench;
         workspaces.validate_identity(&context)?;
-        let mut ui = self.component_ui.lock().unwrap();
+
         let actual = self
             .instances
             .lock()
@@ -354,20 +384,55 @@ impl AppCore {
             return Ok(json!({"viewId":r.view_id}));
         }
         workspaces.validate_context(&context)?;
-        let owner = workspaces
-            .owner(&context.workspace_id)
-            .ok_or("工作区已关闭")?;
-        if self.is_closing()
-            || ui.frozen(&context.workspace_id)
-            || ui.lifecycle.window_closing(&owner)
-        {
-            return Err("工作区正在关闭".into());
-        }
         ui.refresh_action(&action_key);
-        if let Some(r) = ui.action_requests.get(&action_key) {
+        let mut parent = None;
+        let (owner, group) = if let Some(r) = ui.action_requests.get(&action_key) {
             if r.plugin_id != plugin || r.instance != instance || !r.pending() {
                 return Err("关联行为已结束或失效，不能申请迟到的页面".into());
             }
+            let w = ui
+                .workspaces
+                .get(&context.workspace_id)
+                .ok_or("工作台已关闭")?;
+            let (window, host) = w
+                .hosts
+                .iter()
+                .find(|(_, h)| h.id == r.host_id)
+                .ok_or("发起工作台已关闭，创建意图已失效")?;
+            (
+                window.clone(),
+                Some(if host.groups.contains_key(&r.group_id) {
+                    r.group_id.clone()
+                } else {
+                    host.focused_group_id.clone()
+                }),
+            )
+        } else if let Some(source) = p["sourceViewId"].as_str() {
+            let v = ui.resource_view(source)?;
+            if v.context != context
+                || v.plugin_id != plugin
+                || v.plugin_instance_id != instance
+                || ui.lifecycle.view_frozen(source)
+            {
+                return Err("创建来源页面已失效".into());
+            }
+            let w = &ui.workspaces[&context.workspace_id];
+            let window = w.view_window(source).ok_or("创建来源页面没有显示位置")?;
+            parent = Some(source.to_owned());
+            (window.clone(), w.host(&window)?.group_of(source))
+        } else {
+            (
+                workspaces
+                    .owner(&context.workspace_id)
+                    .ok_or("工作区已关闭")?,
+                None,
+            )
+        };
+        if self.is_closing()
+            || ui.frozen(&context.workspace_id)
+            || ui.lifecycle.host_closing(&context.workspace_id, &owner)
+        {
+            return Err("发起工作台正在关闭".into());
         }
         ui.reserve_request(&context, bytes, 128)?;
         let definition = format!("{plugin}:{view_type}");
@@ -391,12 +456,26 @@ impl AppCore {
         }
         let id = ui.open_view(
             &context,
+            &owner,
+            group.as_deref(),
             &definition,
             resource,
             params,
             self.next_id(),
             false,
         )?;
+        if ui.definitions[&definition].definition.container == "dialog" {
+            if let Some(v) = ui
+                .workspaces
+                .get_mut(&context.workspace_id)
+                .unwrap()
+                .views
+                .iter_mut()
+                .find(|v| v.id == id)
+            {
+                v.parent_view_id = parent;
+            }
+        }
         ui.open_requests.insert(
             open_key,
             OpenRequest {
@@ -411,8 +490,7 @@ impl AppCore {
             r.view_id = Some(id.clone());
         }
         self.sync_shared_ui_locked(&ui);
-        drop(ui);
-        drop(workspaces);
+        drop(_workbench);
         self.workspace_changed();
         Ok(json!({"viewId":id}))
     }

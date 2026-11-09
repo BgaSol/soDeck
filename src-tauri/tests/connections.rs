@@ -414,12 +414,7 @@ async fn new_connection_belongs_to_initiating_window_and_reconnect_keeps_owner()
     let f = Fixture::new();
     let target = SshServer::new().await;
     let id = f.server("127.0.0.1", target.addr.port(), json!([]));
-    f.core
-        .workspaces
-        .lock()
-        .unwrap()
-        .register("secondary")
-        .unwrap();
+    f.core.workspace_state().register("secondary").unwrap();
     let first = connected_in(&f, &id, "secondary").await.context.unwrap();
     assert!(f
         .core
@@ -464,21 +459,11 @@ async fn closing_initiating_window_cancels_pending_connection_without_a_workspac
     let f = Fixture::new();
     let target = SshServer::new().await;
     let id = f.server("127.0.0.1", target.addr.port(), json!([]));
-    f.core
-        .workspaces
-        .lock()
-        .unwrap()
-        .register("secondary")
-        .unwrap();
+    f.core.workspace_state().register("secondary").unwrap();
     let attempt = f.core.start_connection("secondary", &id).unwrap();
     until(|| f.core.connection_views()[0].question.is_some()).await;
     f.core.cancel_window_connections("secondary");
-    f.core
-        .workspaces
-        .lock()
-        .unwrap()
-        .close_window("secondary")
-        .unwrap();
+    f.core.workspace_state().close_window("secondary").unwrap();
     until(|| f.core.connection_views()[0].state == "cancelled").await;
     assert!(f
         .core
@@ -1028,7 +1013,7 @@ async fn reconnect_preserves_workspace_moves_and_rejects_changed_host_before_aut
     let id = f.server("127.0.0.1", target.addr.port(), json!([]));
     let first = connected(&f, &id).await.context.unwrap();
     {
-        let mut w = f.core.workspaces.lock().unwrap();
+        let mut w = f.core.workspace_state();
         w.register("secondary").unwrap();
         w.ready("secondary").unwrap();
         let m = w
@@ -1047,9 +1032,7 @@ async fn reconnect_preserves_workspace_moves_and_rejects_changed_host_before_aut
     f.core.disconnect_connection("secondary", &first).unwrap();
     until(|| f.core.connection_views()[0].state == "disconnected").await;
     f.core
-        .workspaces
-        .lock()
-        .unwrap()
+        .workspace_state()
         .validate_owned("secondary", &first)
         .unwrap();
     let second = connected(&f, &id).await.context.unwrap();
@@ -1319,9 +1302,7 @@ async fn target_change_and_closing_workspace_cancel_reconnect_before_admission()
     assert_eq!(other.state.auth.load(Ordering::Relaxed), 0);
     f.core.cancel_workspace_connection(&context.workspace_id);
     f.core
-        .workspaces
-        .lock()
-        .unwrap()
+        .workspace_state()
         .close("main", &context.workspace_id)
         .unwrap();
     until(|| f.core.connection_views()[0].state == "cancelled").await;

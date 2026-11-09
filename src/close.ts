@@ -1,7 +1,7 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { escape as e } from "./ui";
 
-export type CloseTarget = {kind:"views";ids:string[]} | {kind:"workspace";id:string} | {kind:"window";id:string} | {kind:"application";action:"exit"|"restart"|"installAndRestart"};
+export type CloseTarget = {kind:"views";ids:string[]} | {kind:"workspace";id:string} | {kind:"host";id:string} | {kind:"group";id:string;workspaceId:string} | {kind:"window";id:string} | {kind:"application";action:"exit"|"restart"|"installAndRestart"};
 export interface CloseDraft {id:string;title:string;dirty:boolean;busy:boolean;error?:string}
 interface Operation {id:string;window:string;target:CloseTarget;phase:string;failedStage?:string;revision:number;inputRound:number;decisionRevision:number;decision?:string;workspaces:string[];views:string[];inputs:Record<string,unknown|null>;dirty:CloseDraft[];error?:string;adoptedBy?:string}
 type Call = <T>(command:string,args?:Record<string,unknown>)=>Promise<T>;
@@ -51,7 +51,7 @@ export class CloseCoordinator {
   }
   private updateBlock() {
     const active=[...this.operations.values()].filter(o=>!["completed","aborted"].includes(o.phase)&&!o.adoptedBy);
-    this.block([...new Set(active.flatMap(o=>o.workspaces))],active.length>0,active.some(o=>o.target.kind==="application"||o.target.kind==="window"));
+    this.block([...new Set(active.flatMap(o=>o.views))],active.length>0,active.some(o=>o.target.kind==="application"||o.target.kind==="window"));
   }
   private receive(op:Operation) {
     if(this.disposed||(!(this.windowId() in op.inputs)&&op.window!==this.windowId()))return;

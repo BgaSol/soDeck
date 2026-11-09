@@ -64,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             return Ok(
-                json!({"apiVersion":"1","settingsApiVersion":"1","uiActionsApiVersion":"1"}),
+                json!({"apiVersion":"1","settingsApiVersion":"1","uiApiVersion":"2","uiActionsApiVersion":"1"}),
             );
         }
         if method == "settings.changed" {
@@ -106,7 +106,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             return Ok(json!({}));
         }
-        if method == "ui.mount" {
+        if method == "ui.getView" {
+            let slot = terminals
+                .lock()
+                .unwrap()
+                .get(view)
+                .cloned()
+                .ok_or("终端尚未创建")?;
+            let terminal = slot
+                .get()
+                .ok_or("终端仍在创建")?
+                .as_ref()
+                .map_err(Clone::clone)?;
+            return Ok(
+                json!({"data":{"streamId":terminal.id,"title":terminal.title,"openedContext":terminal.context,"integration":terminal.integration,"createParams":terminal.create_params},"metadata":{"title":terminal.title,"dirty":false,"busy":false}}),
+            );
+        }
+        if method == "ui.createView" {
             let (slot, next) = {
                 let mut all = terminals.lock().unwrap();
                 let next = all.len() + 1;

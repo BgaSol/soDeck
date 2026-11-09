@@ -26,8 +26,9 @@ impl AppCore {
         {
             return Err(Error::cancelled());
         }
-        let mut workspaces = self.workspaces.lock().unwrap();
-        let mut ui = self.component_ui.lock().unwrap();
+        let mut _workbench = self.workbench_state();
+        let crate::workbench::State { workspaces, ui } = &mut *_workbench;
+
         if ui.lifecycle.window_closing(&a.source_window) {
             return Err(Error::cancelled());
         }
@@ -111,8 +112,7 @@ impl AppCore {
             s.view.state = "connected".into();
             s.view.stage = "connected".into();
         }
-        drop(ui);
-        drop(workspaces);
+        drop(_workbench);
         drop(entries);
         drop(servers);
         if saved {

@@ -187,7 +187,7 @@ impl AppCore {
         local: PathBuf,
     ) -> Result<Value, String> {
         self.validate_file_download(window, token, &p)?;
-        let v = self.ui_data_writable(window, token)?;
+        let (v, _surface_call) = self.surface_call_admission(window, token)?;
         let r = self.file_resource(&v.plugin_id, &v.plugin_instance_id, string(&p, "id")?)?;
         let _task = r.tasks.enter()?;
         let bytes = r
@@ -233,7 +233,7 @@ impl AppCore {
         token: &str,
         p: &Value,
     ) -> Result<(), String> {
-        let v = self.ui_data_writable(window, token)?;
+        let (v, _surface_call) = self.surface_call_admission(window, token)?;
         let r = self.file_resource(&v.plugin_id, &v.plugin_instance_id, string(p, "id")?)?;
         if r.owner.view != v.id {
             return Err("文件资源不属于此页面".into());
@@ -332,9 +332,7 @@ impl AppCore {
             Some("save") => {
                 // Close coordination can still save; it has already frozen new UI input.
                 let context = self
-                    .component_ui
-                    .lock()
-                    .unwrap()
+                    .ui_state()
                     .resource_view(&r.owner.view)?
                     .context
                     .clone();
@@ -349,13 +347,44 @@ impl AppCore {
         token: &str,
         p: Value,
     ) -> Result<Value, String> {
-        let view = self.ui_data_view(window, token)?;
+        let (view, _surface_call) = if p["action"] == "read" {
+            // Initial document loading is allowed before prepared on the active source only.
+            let state = self.workbench_state();
+            let surface = state
+                .ui
+                .surfaces
+                .get(token)
+                .filter(|s| {
+                    s.window == window && s.phase == crate::component_ui::SurfacePhase::Active
+                })
+                .ok_or("候选表面不能打开文件")?;
+            let view = state.ui.resource_view(&surface.view)?.clone();
+            state.workspaces.validate_owned(window, &view.context)?;
+            if state.ui.lifecycle.view_frozen(&view.id) {
+                return Err("文件页面正在关闭".into());
+            }
+            let task = view.calls.enter()?;
+            (view, Some(task))
+        } else if ["describe", "chunk", "status", "home", "stat", "list"]
+            .contains(&p["action"].as_str().unwrap_or_default())
+        {
+            (self.ui_data_view(window, token)?, None)
+        } else {
+            let (v, task) = self.surface_call_admission(window, token)?;
+            (v, Some(task))
+        };
         let r = self.file_resource(&view.plugin_id, &view.plugin_instance_id, string(&p, "id")?)?;
         let _task = r.tasks.enter()?;
         if r.owner.view != view.id {
             return Err("文件资源不属于此页面".into());
         }
         let action = string(&p, "action")?;
+        if action == "list"
+            && p["independent"] != true
+            && self.ui_data_writable(window, token).is_err()
+        {
+            return Err("候选文件树只能使用独立目录游标".into());
+        }
         if action.starts_with("op.") || action.starts_with("input.") {
             self.ui_data_writable(window, token)?;
             return self.file_operation_control(r, &p);
@@ -369,7 +398,7 @@ impl AppCore {
             return Ok(json!({}));
         }
         // Local draft reads are allowed while a replacement surface is mounting.
-        if !["describe", "chunk"].contains(&action) {
+        if !["describe", "chunk", "home", "stat", "list", "read"].contains(&action) {
             self.ui_data_writable(window, token)?;
         }
         if action == "save" {
@@ -575,10 +604,7 @@ impl AppCore {
                     }
                     let resolved = canonical(&f.raw, &target).await?;
                     let a = f.raw.stat(resolved.clone()).await.map_err(err)?.attrs;
-                    self.workspaces
-                        .lock()
-                        .unwrap()
-                        .validate_identity(&view.context)?;
+                    self.workspace_state().validate_identity(&view.context)?;
                     Ok(json!({"path":resolved,"attrs":attrs(&a)}))
                 }
                 "read" => {
@@ -631,12 +657,12 @@ impl AppCore {
     ) -> Result<Value, String> {
         let task = r.tasks.enter()?;
         self.connection_session(&context)?;
-        let ui = self.component_ui.lock().unwrap();
+        let ui = self.ui_state();
         let view = ui.resource_view(&r.owner.view)?;
         if view.context != context || view.plugin_instance_id != r.owner.instance {
             return Err("文件目标上下文已改变".into());
         }
-        let close_step = if self.is_closing() || ui.frozen(&context.workspace_id) {
+        let close_step = if self.is_closing() || ui.lifecycle.view_frozen(&view.id) {
             if download.is_some() {
                 return Err("关闭中不能开始新的下载".into());
             }

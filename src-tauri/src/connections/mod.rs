@@ -396,7 +396,7 @@ impl AppCore {
         context: &Context,
     ) -> Result<Arc<route::Session>, String> {
         let entries = self.connections.entries.lock().unwrap();
-        self.workspaces.lock().unwrap().validate_context(context)?;
+        self.workspace_state().validate_context(context)?;
         entries
             .get(&context.server_id)
             .filter(|a| a.view().context.as_ref() == Some(context))
@@ -432,13 +432,7 @@ impl AppCore {
         if self.is_closing() {
             return Err("应用正在退出".into());
         }
-        if self
-            .component_ui
-            .lock()
-            .unwrap()
-            .lifecycle
-            .window_closing(window)
-        {
+        if self.ui_state().lifecycle.window_closing(window) {
             return Err("窗口正在关闭".into());
         }
         if let Some(a) = entries.get(server) {
@@ -459,18 +453,14 @@ impl AppCore {
                 entries.remove(&id);
             }
         }
-        let w = self.workspaces.lock().unwrap();
+        let workbench = self.workbench_state();
+        let w = &workbench.workspaces;
         w.projection(window)?;
         if let Some(existing) = w.by_server(server) {
             if existing.connected {
                 return Err("此服务器已有连接，请前往工作台".into());
             }
-            if self
-                .component_ui
-                .lock()
-                .unwrap()
-                .frozen(&existing.context.workspace_id)
-            {
+            if workbench.ui.frozen(&existing.context.workspace_id) {
                 return Err("工作区正在确认关闭".into());
             }
         }
@@ -483,7 +473,7 @@ impl AppCore {
                     .is_some_and(|i| i != &profile.identity)
             })
             .map(|w| w.endpoint.clone());
-        drop(w);
+        drop(workbench);
         let id = self.next_id();
         let a = Arc::new(Attempt {
             state: Mutex::new(State {
@@ -593,10 +583,7 @@ impl AppCore {
     }
     pub fn disconnect_connection(&self, window: &str, context: &Context) -> Result<(), String> {
         let entries = self.connections.entries.lock().unwrap();
-        self.workspaces
-            .lock()
-            .unwrap()
-            .validate_owned(window, context)?;
+        self.workspace_state().validate_owned(window, context)?;
         let a = entries
             .get(&context.server_id)
             .filter(|a| a.view().context.as_ref() == Some(context))
@@ -672,11 +659,10 @@ async fn run(a: Arc<Attempt>, profile: Profile, keys: Arc<host_keys::HostKeys>) 
     // Otherwise a fast retry can observe "cancelled" while start still returns the old attempt.
     if let Some(core) = a.core.upgrade() {
         if let Some(context) = a.view().context {
-            let mut workspaces = core.workspaces.lock().unwrap();
-            let _ = workspaces.disconnected(&context);
-            core.component_ui
-                .lock()
-                .unwrap()
+            let mut workbench = core.workbench_state();
+            let _ = workbench.workspaces.disconnected(&context);
+            workbench
+                .ui
                 .invalidate_workspace_actions(&[context.workspace_id.clone()], "连接已断开");
             let _ = core
                 .shared_state

@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 impl AppCore {
     fn close_handed_off(&self, id: &str) -> bool {
-        if self.operation(id).adopted_by.is_some() {
+        if self.operation(id).adopted_by.is_some() || self.operation(id).phase.terminal() {
             self.close_mutate(id, |o| o.working = false);
             true
         } else {
@@ -11,10 +11,10 @@ impl AppCore {
         }
     }
     fn operation(&self, id: &str) -> Operation {
-        self.component_ui.lock().unwrap().lifecycle.operations[id].clone()
+        self.ui_state().lifecycle.operations[id].clone()
     }
     fn close_views(&self, id: &str) -> Vec<View> {
-        let ui = self.component_ui.lock().unwrap();
+        let ui = self.ui_state();
         ui.lifecycle.operations[id]
             .views
             .iter()
@@ -23,7 +23,7 @@ impl AppCore {
     }
     fn close_mutate(&self, id: &str, change: impl FnOnce(&mut Operation)) {
         let progress = {
-            let mut ui = self.component_ui.lock().unwrap();
+            let mut ui = self.ui_state();
             let op = ui.lifecycle.operations.get_mut(id).unwrap();
             let before = (op.phase, op.error.clone());
             change(op);
@@ -88,9 +88,7 @@ impl AppCore {
                 );
                 if let Ok(reply) = reply {
                     let _ = self
-                        .component_ui
-                        .lock()
-                        .unwrap()
+                        .ui_state()
                         .update_metadata(&view.id, &reply["metadata"]);
                     if reply["metadata"]["busy"] != true && !self.files.saving(&view.id) {
                         break;
@@ -114,9 +112,19 @@ impl AppCore {
         if self.close_handed_off(id) {
             return;
         }
+        for token in self.operation(id).return_moves {
+            let movement = self
+                .ui_state()
+                .transfers
+                .get(&token)
+                .map(|t| t.movement.clone());
+            if let Some(m) = movement {
+                self.cancel_workbench_move(&m);
+            }
+        }
         let adopted = self.operation(id).adopted;
         {
-            let mut ui = self.component_ui.lock().unwrap();
+            let mut ui = self.ui_state();
             for old in adopted {
                 if let Some(o) = ui.lifecycle.operations.get_mut(&old) {
                     o.adopted_by = None;
@@ -187,9 +195,7 @@ impl AppCore {
                 ) {
                     Ok(reply) => {
                         let _ = self
-                            .component_ui
-                            .lock()
-                            .unwrap()
+                            .ui_state()
                             .update_metadata(&view.id, &reply["metadata"]);
                     }
                     Err(e) => errors.push(format!("{}：{e}", view.title)),
@@ -277,7 +283,9 @@ impl AppCore {
                     let deadline = Instant::now() + Duration::from_secs(125);
                     self.wait_calls(&views, Duration::from_secs(5))?;
                     for view in &views {
-                        if self.operation(id).adopted_by.is_some() {
+                        if self.operation(id).adopted_by.is_some()
+                            || self.operation(id).phase.terminal()
+                        {
                             return Ok(());
                         }
                         if self.operation(id).orphaned {
@@ -308,9 +316,7 @@ impl AppCore {
                                 .min(deadline.saturating_duration_since(Instant::now())),
                         )?;
                         while reply["metadata"]["busy"] == true {
-                            self.component_ui
-                                .lock()
-                                .unwrap()
+                            self.ui_state()
                                 .update_metadata(&view.id, &reply["metadata"])?;
                             if self.operation(id).adopted_by.is_some()
                                 || self.operation(id).orphaned
@@ -330,17 +336,9 @@ impl AppCore {
                                     .min(deadline.saturating_duration_since(Instant::now())),
                             )?;
                         }
-                        self.component_ui
-                            .lock()
-                            .unwrap()
+                        self.ui_state()
                             .update_metadata(&view.id, &reply["metadata"])?;
-                        if self
-                            .component_ui
-                            .lock()
-                            .unwrap()
-                            .resource_view(&view.id)?
-                            .dirty
-                        {
+                        if self.ui_state().resource_view(&view.id)?.dirty {
                             return Err("组件仍有未保存修改，请返回原页面处理".into());
                         }
                         self.close_mutate(id, |o| {
@@ -358,12 +356,34 @@ impl AppCore {
                 });
             }
             if self.operation(id).phase == Phase::Cleaning {
-                let views = self.close_views(id);
+                self.finish_close_tool_returns(id)?;
+                let op = self.operation(id);
+                if let Target::Group { workspace_id, .. } = &op.target {
+                    let mut ui = self.ui_state();
+                    let w = ui.workspaces.get_mut(workspace_id).ok_or("工作台已关闭")?;
+                    for view in &op.returning_tools {
+                        let side = w.preferences[&w
+                            .views
+                            .iter()
+                            .find(|v| v.id == *view)
+                            .ok_or("工具已关闭")?
+                            .definition_key]
+                            .side
+                            .clone();
+                        let h = w.host_mut(&op.window)?;
+                        h.dock(view, &side, false)?;
+                    }
+                }
+                let views: Vec<_> = self
+                    .close_views(id)
+                    .into_iter()
+                    .filter(|v| !op.returning_tools.contains(&v.id))
+                    .collect();
                 let global = matches!(self.operation(id).target, Target::Application { .. });
                 let deadline = Instant::now() + Duration::from_secs(6);
                 let op = self.operation(id);
                 if !global && !matches!(op.target, Target::Views { .. }) {
-                    for workspace in &op.workspaces {
+                    for workspace in &op.ending_workspaces {
                         self.connections.cancel_workspace(workspace);
                     }
                     if let Target::Window { id } = &op.target {
@@ -458,7 +478,7 @@ impl AppCore {
                 } else {
                     let op = self.operation(id);
                     if !matches!(op.target, Target::Views { .. }) {
-                        for workspace in &op.workspaces {
+                        for workspace in &op.ending_workspaces {
                             self.connections.cancel_workspace(workspace);
                         }
                         if let Target::Window { id } = &op.target {
@@ -466,7 +486,10 @@ impl AppCore {
                         }
                     }
                     self.wait_resources(
-                        |owner| op.views.contains(&owner.view),
+                        |owner| {
+                            op.views.contains(&owner.view)
+                                && !op.returning_tools.contains(&owner.view)
+                        },
                         deadline.saturating_duration_since(Instant::now()),
                     )?;
                     if !disposal_errors.is_empty() {
@@ -479,7 +502,10 @@ impl AppCore {
                     };
                     let deadline = Instant::now() + Duration::from_secs(3);
                     while !matches!(op.target, Target::Views { .. })
-                        && self.connections.pending_close(&op.workspaces, window) > 0
+                        && self
+                            .connections
+                            .pending_close(&op.ending_workspaces, window)
+                            > 0
                     {
                         if Instant::now() >= deadline {
                             return Err("连接资源仍在收尾，请继续完成关闭".into());
@@ -488,7 +514,12 @@ impl AppCore {
                     }
                 }
                 self.wait_calls(&views, Duration::from_secs(1))?;
-                let ids = self.operation(id).views;
+                let op = self.operation(id);
+                let ids: Vec<_> = op
+                    .views
+                    .into_iter()
+                    .filter(|v| !op.returning_tools.contains(v))
+                    .collect();
                 if ids.iter().any(|id| !views.iter().any(|v| &v.id == id)) {
                     // A native host was lost while this worker was cleaning.
                     // Drain the expanded scope before removing its identities.
@@ -496,7 +527,7 @@ impl AppCore {
                     return Ok(());
                 }
                 {
-                    let mut ui = self.component_ui.lock().unwrap();
+                    let mut ui = self.ui_state();
                     ui.remove_views(&ids);
                     self.sync_shared_ui_locked(&ui);
                 }
@@ -506,21 +537,41 @@ impl AppCore {
                 let op = self.operation(id);
                 match &op.target {
                     Target::Workspace { id } => {
-                        let mut workspaces = self.workspaces.lock().unwrap();
+                        let mut workspaces = self.workspace_state();
                         if workspaces.ids().contains(id) {
                             workspaces.close(&op.window, id)?;
                         }
                     }
                     Target::Window { id } => {
-                        self.workspaces.lock().unwrap().close_window(id)?;
+                        self.workspace_state().close_window(id)?;
                     }
                     Target::Application { .. } => {
-                        self.workspaces.lock().unwrap().clear();
+                        self.workspace_state().clear();
+                    }
+                    Target::Host { id } => {
+                        let mut state = self.workbench_state();
+                        if op.ending_workspaces.contains(id) {
+                            state.workspaces.close(&op.window, id)?;
+                        } else {
+                            state.workspaces.remove_host(&op.window, id);
+                        }
+                        if let Some(w) = state.ui.workspaces.get_mut(id) {
+                            w.hosts.remove(&op.window);
+                        }
+                    }
+                    Target::Group { id, workspace_id } => {
+                        let mut ui = self.ui_state();
+                        if let Some(w) = ui.workspaces.get_mut(workspace_id) {
+                            let host = w.host_mut(&op.window)?;
+                            if host.groups.contains_key(id) && host.groups.len() > 1 {
+                                host.remove_group(id)?;
+                            }
+                        }
                     }
                     Target::Views { .. } => {}
                 }
                 if !matches!(op.target, Target::Views { .. }) {
-                    for workspace in &op.workspaces {
+                    for workspace in &op.ending_workspaces {
                         self.shared_state.remove_scope(workspace, Instant::now());
                     }
                 }

@@ -392,9 +392,7 @@ impl AppCore {
                 .get_mut(id)
                 .ok_or_else(|| failure("expired", "本地文件选择已失效"))?;
             let current = self
-                .component_ui
-                .lock()
-                .unwrap()
+                .ui_state()
                 .resource_view(&r.owner.view)?
                 .context
                 .clone();
@@ -483,11 +481,11 @@ impl AppCore {
                     .unwrap()
                     .get(p["batchId"].as_str().unwrap_or(""))
                     .cloned();
-                let ui = self.component_ui.lock().unwrap();
+                let ui = self.ui_state();
                 let view = ui.resource_view(&r.owner.view)?;
                 if context.as_ref() != Some(&view.context)
-                    || !ui.frozen(&view.context.workspace_id)
-                    || !ui.lifecycle.input_work_allowed(&view.context.workspace_id)
+                    || !ui.lifecycle.view_frozen(&view.id)
+                    || !ui.lifecycle.view_input_work_allowed(&view.id)
                     || view.plugin_instance_id != r.owner.instance
                     || r.cancel.is_cancelled()
                 {

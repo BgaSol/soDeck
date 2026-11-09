@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .is_some_and(|a| a.iter().any(|v| v == "sharedState.v1"));
             scheduler::start(state.clone(), client.clone());
             *app.lock().unwrap() = Some(state);
-            return Ok(json!({"apiVersion":"1","settingsApiVersion":"1"}));
+            return Ok(json!({"apiVersion":"1","settingsApiVersion":"1","uiApiVersion":"2"}));
         }
         let state = app.lock().unwrap().clone().ok_or("插件未初始化")?;
         let mut a = state.lock().unwrap();
@@ -48,7 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let id = p["viewId"].as_str().ok_or("缺少视图")?;
         match method {
-            "ui.mount" => {
+            "ui.createView" => {
                 if p["viewType"] != "overview" {
                     return Err("未知视图".into());
                 }
@@ -58,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 a.views.remove(id);
                 return Ok(json!({}));
             }
-            "ui.beforeClose" | "ui.save" => {}
+            "ui.getView" | "ui.beforeClose" | "ui.save" => {}
             "ui.event" => {
                 let d = &p["data"];
                 let data = match d["action"].as_str().unwrap_or("") {

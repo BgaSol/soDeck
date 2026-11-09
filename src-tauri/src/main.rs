@@ -954,11 +954,20 @@ fn main() {
             if let tauri::WindowEvent::Focused(true) = event {
                 window.state::<DesktopWindows>().focused(window.label());
             }
+            if matches!(event,tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_)) {
+                if let Some(webview)=window.app_handle().get_webview_window(window.label()) {window.state::<DesktopWindows>().record_bounds(&webview);}
+            }
             if let tauri::WindowEvent::Destroyed = event {
                 let desktop = window.state::<DesktopWindows>();
                 desktop.core.close_host_lost(window.label());
                 desktop.remove_surface(window.label());
                 desktop.core.workspace_changed();
+                if window.label()=="main" && !desktop.core.is_closing() {
+                    let native=window.app_handle().clone();let recreate=native.clone();
+                    let _=native.run_on_main_thread(move || {
+                        let _=recreate.state::<DesktopWindows>().restore_main_display(&recreate);
+                    });
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -1009,6 +1018,10 @@ fn main() {
             windows::workspace_activate,
             windows::workspace_layout,
             windows::workspace_move,
+            windows::workbench_move,
+            windows::workbench_return_window,
+            windows::workbench_restore_layout,
+            windows::workbench_locate_view,
             windows::workspace_cancel_move,
             windows::workspace_close,
             windows::workspace_close_window,
@@ -1032,7 +1045,15 @@ fn main() {
                 return;
             }
             api.prevent_exit();
-            request_exit(handle);
+            if handle.get_webview_window("main").is_none()
+                && !handle.state::<Application>().core.is_closing()
+            {
+                let _ = handle
+                    .state::<DesktopWindows>()
+                    .restore_main_display(handle);
+            } else {
+                request_exit(handle);
+            }
         }
     });
 }

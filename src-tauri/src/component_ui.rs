@@ -60,6 +60,8 @@ pub struct Definition {
     pub locate_entry: bool,
     #[serde(default)]
     pub background_on_workspace: bool,
+    #[serde(default)]
+    pub location_provider: Option<String>,
 }
 fn left() -> String {
     "left".into()
@@ -86,7 +88,10 @@ pub fn resource(root: &Path, relative: &str) -> Result<PathBuf, String> {
 }
 impl Declaration {
     pub fn validate(&self, root: &Path) -> Result<(), String> {
-        if self.api_version != "1" || self.views.is_empty() || self.views.len() > 64 {
+        if !["1", "2"].contains(&self.api_version.as_str())
+            || self.views.is_empty()
+            || self.views.len() > 64
+        {
             return Err("插件 UI API 或视图数量无效".into());
         }
         resource(root, &self.entry)?;
@@ -157,6 +162,7 @@ pub struct Registered {
     pub plugin_instance_id: String,
     pub entry: String,
     pub available: bool,
+    pub ui_api_version: String,
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -198,11 +204,14 @@ pub struct View {
     pub id: String,
     #[serde(skip)]
     pub(crate) calls: std::sync::Arc<crate::resource_tasks::Tasks>,
+    #[serde(skip)]
+    pub(crate) creation: std::sync::Arc<std::sync::Mutex<Option<Result<(), String>>>>,
     pub definition_key: String,
     pub plugin_id: String,
     pub plugin_instance_id: String,
     pub context: Context,
     pub resource_key: Option<String>,
+    pub parent_view_id: Option<String>,
     pub params: Value,
     pub title: String,
     pub dirty: bool,
@@ -216,17 +225,58 @@ pub struct View {
 pub struct WorkspaceUi {
     pub views: Vec<View>,
     pub preferences: BTreeMap<String, Preference>,
-    pub left: Option<String>,
-    pub right: Option<String>,
-    pub editor: Option<String>,
+    pub hosts: BTreeMap<String, crate::workbench_layout::Host>,
+    pub focused_view_id: Option<String>,
+    pub focused_window_id: Option<String>,
+    pub last_location_view_id: Option<String>,
+    pub return_locations: BTreeMap<String, crate::workbench_move::ReturnLocation>,
+    pub group_return_locations: BTreeMap<String, crate::workbench_move::ReturnLocation>,
+}
+impl WorkspaceUi {
+    pub fn view_window(&self, view: &str) -> Option<String> {
+        self.hosts
+            .iter()
+            .find(|(_, h)| h.contains(view))
+            .map(|(window, _)| window.clone())
+    }
+    pub fn host(&self, window: &str) -> Result<&crate::workbench_layout::Host, String> {
+        self.hosts
+            .get(window)
+            .ok_or_else(|| "工作台已移动或关闭".into())
+    }
+    pub fn host_mut(&mut self, window: &str) -> Result<&mut crate::workbench_layout::Host, String> {
+        self.hosts
+            .get_mut(window)
+            .ok_or_else(|| "工作台已移动或关闭".into())
+    }
+    pub fn projection(&self, window: &str) -> Value {
+        let host = self.hosts.get(window);
+        let ids = host.map(|h| h.view_ids()).unwrap_or_default();
+        json!({"views":self.views.iter().filter(|v| ids.contains(&v.id) || !v.ui_requested).collect::<Vec<_>>(),
+          "returnLocations":self.return_locations,"groupReturnLocations":self.group_return_locations,
+          "preferences":self.preferences,"host":host,
+          "left":host.and_then(|h| h.left.active_view_id.clone()),
+          "right":host.and_then(|h| h.right.active_view_id.clone()),
+          "editor":host.and_then(|h| h.active_view()),
+          "otherViews":self.views.iter().filter_map(|v|self.view_window(&v.id).filter(|w|w!=window).map(|w|json!({"id":v.id,"definitionKey":v.definition_key,"title":v.title,"windowId":w}))).collect::<Vec<_>>(),"focusedViewId":self.focused_view_id,"focusedWindowId":self.focused_window_id})
+    }
 }
 pub(crate) struct Surface {
     pub(crate) window: String,
     pub(crate) view: String,
     pub(crate) ready: bool,
+    pub(crate) phase: SurfacePhase,
+}
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum SurfacePhase {
+    Active,
+    Candidate,
+    Frozen,
 }
 pub struct Runtime {
     root: PathBuf,
+    pub(crate) memory: crate::workbench_memory::Memory,
+    pub(crate) restoring_layout: bool,
     preferences: Preferences,
     error: Option<String>,
     pub definitions: BTreeMap<String, Registered>,
@@ -237,8 +287,11 @@ pub struct Runtime {
     pub(crate) surfaces: HashMap<String, Surface>,
     pub(crate) lifecycle: crate::lifecycle::Lifecycle,
     requests: HashMap<String, String>,
-    clock: u64,
+    pub(crate) clock: u64,
     pub(crate) startup_loading: bool,
+    pub(crate) move_receipts: HashMap<String, crate::workbench_move::MoveReceipt>,
+    pub(crate) window_returns: HashMap<String, crate::workbench_move::WindowReturn>,
+    pub(crate) transfers: HashMap<String, crate::workbench_move::Transfer>,
 }
 mod actions;
 mod background;
@@ -281,6 +334,14 @@ pub fn dispatch(
         "ready" => core
             .ui_surface_ready(window, text("surfaceId")?)
             .map(|_| Value::Null),
+        "moveStatus" => core.workbench_move_status(window, text("id")?),
+        "transferDrained" => core
+            .transfer_drained(window, text("id")?)
+            .map(|_| Value::Null),
+        "detach" => {
+            core.ui_detach(window, text("surfaceId")?);
+            Ok(Value::Null)
+        }
         "event" => core.ui_event(window, text("surfaceId")?, args["event"].clone()),
         "state" => Ok(
             match core.state_surface_request(window, text("surfaceId")?, &args["input"]) {
@@ -308,13 +369,9 @@ pub fn dispatch(
             })
             .map(|_| Value::Null),
         #[cfg(feature = "test-fixtures")]
-        "allWorkspaces" if window == "main" => Ok(json!(core
-            .component_ui
-            .lock()
-            .unwrap()
-            .workspaces
-            .keys()
-            .collect::<Vec<_>>())),
+        "allWorkspaces" if window == "main" => {
+            Ok(json!(core.ui_state().workspaces.keys().collect::<Vec<_>>()))
+        }
         _ => Err("未知组件界面操作".into()),
     }
 }

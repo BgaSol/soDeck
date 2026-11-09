@@ -1,5 +1,6 @@
 // Actual file plugin + independent OpenSSH SFTP, exercised through its shipped iframe UI.
 import assert from 'node:assert/strict';
+import {transferWorkbench} from './workbench-transfer-fixture.mjs';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import readline from 'node:readline';
 import {spawn,spawnSync} from 'node:child_process';import {createServer} from 'vite';import {chromium} from 'playwright';
 const build=spawnSync('cargo',['build','--manifest-path','src-tauri/Cargo.toml','--features','test-fixtures','--locked','--bin','catalog-fixture'],{stdio:'inherit',windowsHide:true});if(build.status!==0)throw new Error('Fixture build failed');
@@ -47,7 +48,7 @@ try{
  for(const density of ['compact','comfortable'])for(const fontSize of [11,12,18]){
    const preference=await call('settings_page',{pluginId:'sodeck.files',pageId:'browser'});
    const snapshot=(await call('save_settings',{pluginId:'sodeck.files',pageId:'browser',input:{definitionToken:preference.definitionToken,baseRevision:preference.revision,requestId:`tree-${density}-${fontSize}`,values:{...preference.values,density,fontSize}}})).snapshot;
-   await main.evaluate(snapshot=>{const frame=document.querySelector('iframe[title^="文件 ·"]');frame.contentWindow.postMessage({channel:'sodeck-ui-v1',surfaceId:frame.dataset.surfaceId,type:'settingsChanged',settings:snapshot},new URL(frame.src).origin);},snapshot);
+   await main.evaluate(snapshot=>{const frame=document.querySelector('iframe[title^="文件 ·"]');frame.contentWindow.postMessage({channel:'sodeck-ui-v2',surfaceId:frame.dataset.surfaceId,type:'settingsChanged',settings:snapshot},new URL(frame.src).origin);},snapshot);
    await wait(()=>row('设置 file.txt').locator('.tree-name').evaluate((el,size)=>parseFloat(getComputedStyle(el).fontSize)===size,fontSize));
    assert(await row('设置 file.txt').evaluate(el=>el.querySelector('.tree-name').getBoundingClientRect().height<=el.getBoundingClientRect().height),`Tree text fits ${fontSize}/${density}`);
  }
@@ -149,7 +150,7 @@ try{
  await text.evaluate(el=>{window.settingsEditor=el;el.setSelectionRange(2,9,'backward');});
  const preference=await call('settings_page',{pluginId:'sodeck.files',pageId:'editor'});
  const savedPreference=(await call('save_settings',{pluginId:'sodeck.files',pageId:'editor',input:{definitionToken:preference.definitionToken,baseRevision:preference.revision,requestId:'editor-display',values:{...preference.values,fontSize:18,lineHeight:1.6,wordWrap:true,tabSize:8,font:{source:'preset',id:'source-code-pro'}}}})).snapshot;
- await main.evaluate(snapshot=>{const frame=document.querySelector('iframe[title^="设置 file.txt"]');frame.contentWindow.postMessage({channel:'sodeck-ui-v1',surfaceId:frame.dataset.surfaceId,type:'settingsChanged',settings:snapshot},new URL(frame.src).origin);},savedPreference);
+ await main.evaluate(snapshot=>{const frame=document.querySelector('iframe[title^="设置 file.txt"]');frame.contentWindow.postMessage({channel:'sodeck-ui-v2',surfaceId:frame.dataset.surfaceId,type:'settingsChanged',settings:snapshot},new URL(frame.src).origin);},savedPreference);
  await wait(()=>text.evaluate(el=>el.style.fontSize==='18px'&&el.style.fontFamily.includes('SoDeckFont')));
  assert.equal(await text.inputValue(),'draft survives move\n中文');assert.deepEqual(fs.readFileSync(filename),remoteBeforeSettings);
  assert(await text.evaluate(el=>el===window.settingsEditor));assert.deepEqual(await text.evaluate(el=>[el.selectionStart,el.selectionEnd,el.selectionDirection]),[2,9,'backward']);
@@ -188,12 +189,12 @@ try{
  await main.screenshot({path:'artifacts/files-ui/tree-narrow.png'});
  const narrow=await handle.boundingBox();await main.mouse.move(narrow.x+3,narrow.y+100);await main.mouse.down();await main.mouse.move(narrow.x+123,narrow.y+100);await main.mouse.up();
  // Moving the entire connected workspace restores file navigation and the editor draft.
- await main.evaluate(()=>window.manager.flush());await call('workspace_move',{window:'main',id:board,target:'workspace-browser',index:0});await main.evaluate(()=>window.manager.refresh());
- const moved=await pageFor('workspace-browser');const movedSidebar=moved.frameLocator('iframe[title^="文件 ·"]');await wait(()=>movedSidebar.getByRole('textbox',{name:'远端路径'}).isEnabled());
+ const moved=await transferWorkbench(call,{window:'main',id:board,target:'workspace-browser'},{sourcePage:main,openTarget:()=>pageFor('workspace-browser')});
+ const movedSidebar=moved.frameLocator('iframe[title^="文件 ·"]');await wait(()=>movedSidebar.getByRole('textbox',{name:'远端路径'}).isEnabled());
  assert.equal(await movedSidebar.getByRole('treeitem',{name:'nginx',exact:true}).getAttribute('aria-expanded'),'true');
  assert.equal(await movedSidebar.getByRole('treeitem',{name:'设置 file.txt',exact:true}).getAttribute('aria-selected'),'true');
  assert.equal(await moved.frameLocator('iframe[title^="设置 file.txt"]').locator('textarea').inputValue(),'draft survives move\n中文');
- await moved.evaluate(()=>window.manager.flush());await call('workspace_move',{window:'workspace-browser',id:board,target:'main',index:0});await moved.evaluate(()=>window.manager.refresh());await main.evaluate(()=>window.manager.refresh());
+ await transferWorkbench(call,{window:'workspace-browser',id:board,target:'main'},{sourcePage:moved,openTarget:async()=>main});
  sidebar=main.frameLocator('iframe[title^="文件 ·"]');await wait(()=>sidebar.getByRole('textbox',{name:'远端路径'}).isEnabled());editor=main.frameLocator('iframe[title^="设置 file.txt"]');text=editor.locator('textarea');await wait(()=>text.isEnabled());
  await row('large.bin').click({button:'right'});await sidebar.getByRole('menuitem',{name:'下载',exact:true}).click();await sidebar.locator('.transfer-item').filter({hasText:'等待处理同名 · 下载 · large.bin'}).getByRole('button',{name:'覆盖',exact:true}).click();await wait(()=>fs.existsSync(local)&&fs.statSync(local).size===2*1024*1024);assert.deepEqual(fs.readFileSync(local),Buffer.alloc(2*1024*1024,42));
  const [v]=await call('connection',{command:{op:'snapshot'}});await call('connection',{command:{op:'disconnect',context:v.context}});await main.evaluate(()=>window.manager.refresh());assert.equal(await text.inputValue(),'draft survives move\n中文');

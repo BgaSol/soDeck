@@ -21,8 +21,8 @@ try{
   const request=(method,params)=>new Promise((resolve,reject)=>{const id=String(++sequence),timer=setTimeout(()=>reject(new Error('Package RPC timeout: '+method)),6000);pending.set(id,{resolve,reject,timer});send({id,method,params});});
   await request('initialize',{apiVersion:'1',capabilities:['settings.v1','session.exec.v1','ui.background.v1'],dataDirectory:directory});
   const context={workspaceId:'w',serverId:'s',connectionId:'c',generation:1};
-  const mounted=await request('ui.mount',{viewId:'v',viewType:'overview',context});assert.equal(mounted.metadata.dirty,false);
-  await request('ui.mount',{viewId:'v',viewType:'overview',context});
+  const mounted=await request('ui.createView',{viewId:'v',viewType:'overview',context});assert.equal(mounted.metadata.dirty,false);
+  await request('ui.getView',{viewId:'v',viewType:'overview',context});
   await request('ui.event',{viewId:'v',data:{action:'pause'}});
   assert.equal((await request('ui.event',{viewId:'v',data:{action:'snapshot'}})).data.paused,true);
   await request('ui.disposeView',{viewId:'v'});await request('shutdown',{});

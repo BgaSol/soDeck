@@ -97,9 +97,7 @@ pub async fn ssh_roundtrip(
         None,
     )?;
     let owner = core
-        .workspaces
-        .lock()
-        .unwrap()
+        .workspace_state()
         .owner(&context.workspace_id)
         .ok_or("工作区已丢失")?;
     let _ = core.connection_validation_exec(&context, command).await?;
@@ -141,13 +139,7 @@ pub async fn ssh_roundtrip(
         serde_json::from_value(plan["views"].clone()).map_err(|e| e.to_string())?,
         "discard",
     )?;
-    if core
-        .workspaces
-        .lock()
-        .unwrap()
-        .validate_context(&context)
-        .is_ok()
-    {
+    if core.workspace_state().validate_context(&context).is_ok() {
         return Err("关闭完成后仍保留 SSH 工作区".into());
     }
     if network.is_some() {
@@ -167,10 +159,7 @@ pub fn workspace_roundtrip(
     handle: &tauri::AppHandle,
     core: &std::sync::Arc<AppCore>,
 ) -> Result<(), String> {
-    use crate::{
-        windows::DesktopWindows,
-        workspaces::{ConnectedSession, Layout},
-    };
+    use crate::{windows::DesktopWindows, workspaces::ConnectedSession};
     use tauri::Manager;
     let catalog = core.server_catalog();
     let records = catalog["servers"].as_array().ok_or("测试目录缺失")?;
@@ -192,21 +181,18 @@ pub fn workspace_roundtrip(
     }
     let a = &opened[0];
     let b = &opened[1];
-    let layout = Layout {
-        left_open: false,
-        right_open: true,
-        left_width: 280,
-        right_width: 250,
-    };
-    core.workspaces
-        .lock()
-        .unwrap()
-        .layout("main", &a.context.workspace_id, layout.clone())?;
+    core.workspace_resize("main", &a.context.workspace_id, "left", 280)?;
+    core.workspace_resize("main", &a.context.workspace_id, "right", 250)?;
+    let layout = core
+        .workspace_projection("main")?
+        .workspaces
+        .into_iter()
+        .find(|w| w.context == a.context)
+        .ok_or("原生烟测工作台缺失")?
+        .layout;
     desktop.move_to(handle, "main", &a.context.workspace_id, None, 0, None)?;
     let child = core
-        .workspaces
-        .lock()
-        .unwrap()
+        .workspace_state()
         .owner(&a.context.workspace_id)
         .ok_or("移窗丢失工作区")?;
     if child == "main" || handle.get_webview_window(&child).is_none() {
@@ -279,24 +265,13 @@ pub fn workspace_roundtrip(
     if handle.get_webview_window(&child).is_some() || handle.get_webview_window("main").is_none() {
         return Err("关闭子窗口影响了应用生命周期".into());
     }
-    core.workspaces
-        .lock()
-        .unwrap()
-        .validate_context(&a.context)?;
-    if core
-        .workspaces
-        .lock()
-        .unwrap()
-        .validate_context(&b.context)
-        .is_ok()
-    {
+    core.workspace_state().validate_context(&a.context)?;
+    if core.workspace_state().validate_context(&b.context).is_ok() {
         return Err("已关闭子窗口仍保留会话上下文".into());
     }
     desktop.move_to(handle, "main", &a.context.workspace_id, None, 0, None)?;
     let last = core
-        .workspaces
-        .lock()
-        .unwrap()
+        .workspace_state()
         .owner(&a.context.workspace_id)
         .unwrap();
     desktop.move_to(

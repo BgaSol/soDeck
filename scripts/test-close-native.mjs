@@ -7,6 +7,7 @@ import net from 'node:net';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
+import { fileURLToPath } from 'node:url';
 
 assert.equal(process.platform, 'win32', 'This harness controls native WebView2 on Windows');
 const [executable] = process.argv.slice(2);
@@ -15,6 +16,7 @@ const ssh = JSON.parse(fs.readFileSync(process.env.SODECK_TEST_SSH_CONFIG, 'utf8
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sodeck-close-native-'));
 const output = path.resolve('artifacts/close-lifecycle');
 fs.mkdirSync(output, { recursive: true });
+fs.rmSync(path.join(output, 'native-close.json'), { force: true });
 const records = ['TERMINAL', 'FILES', 'NETWORK', 'SYSTEM_STATUS'].map(name => {
   const root = process.env[`SODECK_TEST_${name}_PLUGIN`];
   assert(root && fs.existsSync(root), `Provide the independent ${name} plugin package`);
@@ -38,6 +40,14 @@ async function until(predicate, message, milliseconds = 20000) {
 }
 async function invoke(command, args = {}) {
   return page.evaluate(({ command, args }) => window.__TAURI_INTERNALS__.invoke(command, args), { command, args });
+}
+async function nativePointer(action, plan) {
+  const helper = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', fileURLToPath(new URL('./native-pointer.ps1', import.meta.url)), '-ProcessId', String(child.pid), '-Action', action, '-Plan', JSON.stringify(plan)], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  let output = '', errors = '';
+  helper.stdout.on('data', data => { output += data; });
+  helper.stderr.on('data', data => { errors += data; });
+  await new Promise((resolve, reject) => { helper.once('error', reject); helper.once('exit', code => code === 0 ? resolve() : reject(new Error(`Native pointer helper failed: ${errors}`))); });
+  return output.trim() ? JSON.parse(output) : undefined;
 }
 async function launch() {
   spawnError = undefined;
@@ -99,9 +109,9 @@ async function verifyPanelResize(workspace, terminalFrame, entry) {
   const width=side=>board.evaluate((el,side)=>parseFloat(el.style.getPropertyValue(`--effective-${side}-width`)),side);
   await until(async()=>(await width('left'))===280&&(await width('right'))===280,'Native baseline widths were not applied');
   const before=await board.evaluate(el=>({room:el.getBoundingClientRect().width-[...el.querySelectorAll('.workbench-rail')].reduce((n,r)=>n+r.getBoundingClientRect().width,0)-320,frames:[...el.querySelectorAll('iframe')].length}));
-  await page.evaluate(()=>window.resizeFrames=[...document.querySelectorAll('.server-workbench:not([hidden]) iframe')]);
+  await page.evaluate(()=>window.resizeFrames=[...document.querySelectorAll('.component-surface:not([hidden]) iframe')]);
   const drag=async(side,delta)=>{const handle=board.locator(`[data-resize="${side}"]`);const r=await handle.boundingBox();await page.mouse.move(r.x+4,r.y+80);await page.mouse.down();await page.mouse.move(r.x+4+delta,r.y+80,{steps:12});};
-  const target=Math.min(350,before.room-280);
+  const target=Math.min(350,Math.floor(before.room)-280);
   await drag('left',70);await until(async()=>(await width('left'))===target,'Native preview did not follow the pointer');
   await invoke('workspace_activate',{id});
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
@@ -129,6 +139,59 @@ async function verifyPanelResize(workspace, terminalFrame, entry) {
   checks.push(`${entry}: native left/right drag, refresh during capture, cancel, saved widths and retained terminal iframe`);
   await page.setViewportSize({width:1100,height:720});
 }
+async function verifyWorkbench(workspace, terminal, marker, entry) {
+  const id=workspace.context.workspaceId;
+  const snapshot=await invoke('component_ui',{operation:'snapshot',args:{}});
+  const originalGroup=Object.values(snapshot.workspaces[id].host.groups).find(g=>g.viewIds.includes(terminal.viewId)).id;
+  await page.locator(`[data-group="${originalGroup}"] [data-component-action="group-menu"]`).click();
+  await page.getByRole('menuitem',{name:'左右拆分',exact:true}).click();
+  await until(async()=>page.locator('.server-workbench:visible .view-group').count().then(n=>n===2),'Native split did not render two groups');
+  const splitState=await invoke('component_ui',{operation:'snapshot',args:{}});
+  const emptyGroup=Object.keys(splitState.workspaces[id].host.groups).find(g=>g!==originalGroup);
+  if (entry === 'titlebar') {
+    const geometry = await nativePointer('arrange', { width: 1100, height: 720 });
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    console.log('Native pointer geometry:', JSON.stringify({ geometry, viewport: await page.evaluate(() => ({ width: innerWidth, height: innerHeight, dpi: devicePixelRatio, outerWidth, outerHeight })) }));
+    await invoke('component_ui',{operation:'action',args:{context:workspace.context,action:{op:'select',viewId:terminal.viewId}}});
+    const tab = page.locator(`.component-tab[data-view="${terminal.viewId}"] [data-component-action="select"]`);
+    await tab.waitFor();
+    const rect = await tab.boundingBox();
+    // The inspector's emulated devicePixelRatio is independent of the native monitor DPI.
+    const from = { x: Math.round(geometry.x + (rect.x + rect.width / 2) * geometry.scale), y: Math.round(geometry.y + (rect.y + rect.height / 2) * geometry.scale) };
+    const to = { x: geometry.right + 50, y: from.y + 70 };
+    assert(to.x < geometry.workRight, 'Native tear-out needs desktop space beside the test window');
+    await page.evaluate(() => document.addEventListener('pointerdown', event => { window.nativeDragStart = { view: event.target.closest('.component-tab')?.dataset.view, x: event.clientX, y: event.clientY }; }, { once: true, capture: true }));
+    await nativePointer('drag', { from, to });
+    assert.equal((await page.evaluate(() => window.nativeDragStart))?.view, terminal.viewId, 'Native pointer must start on the requested page tab');
+  } else {
+    await invoke('workbench_move',{id,context:workspace.context,requestId:crypto.randomUUID(),scope:{kind:'view',id:terminal.viewId},target:null,destination:null});
+  }
+  let secondary;
+  await until(async()=>{
+    for(const candidate of browser.contexts().flatMap(c=>c.pages())) {
+      if(candidate===page||candidate.isClosed())continue;
+      const state=await candidate.evaluate(()=>window.__TAURI_INTERNALS__?.invoke('workspace_snapshot')).catch(()=>null);
+      if(state?.window.id!=='main'&&state?.workspaces.some(w=>w.context.workspaceId===id)){secondary=candidate;return true;}
+    }
+    return false;
+  },'Native detached page was not found');
+  const frame=secondary.frameLocator(`.component-surface[data-view-id="${terminal.viewId}"] iframe`);
+  await frame.locator('body[data-ready="true"]').waitFor();
+  await until(async()=>(await frame.locator('.xterm-rows').innerText()).replace(/\s+/g,'').split(marker).length>=3,'Native transfer did not restore terminal output');
+  const movedMarker=marker+'-moved';
+  await frame.locator('.xterm-helper-textarea').focus();
+  await secondary.keyboard.type('echo '+movedMarker);await secondary.keyboard.press('Enter');
+  await until(async()=>(await frame.locator('.xterm-rows').innerText()).replace(/\s+/g,'').split(movedMarker).length>=3,'Native transferred terminal did not accept input');
+  const returnRequest=crypto.randomUUID();
+  await secondary.evaluate(args=>window.__TAURI_INTERNALS__.invoke('workbench_move',args),{id,context:workspace.context,requestId:returnRequest,scope:{kind:'view',id:terminal.viewId},target:null,destination:{returnToSource:true}}).catch(error=>{if(!secondary.isClosed())throw error;});
+  await until(async()=>secondary.isClosed(),'Empty detached native window was not reclaimed');
+  await until(async()=>{const state=await invoke('component_ui',{operation:'snapshot',args:{}});return state.transfers.length===0&&state.workspaces[id].host.groups[originalGroup].viewIds.includes(terminal.viewId);},'Native return did not restore the original group');
+  await invoke('component_ui',{operation:'action',args:{context:workspace.context,action:{op:'select',viewId:terminal.viewId}}});
+  const returned=page.frameLocator(`.component-surface[data-view-id="${terminal.viewId}"] iframe`);
+  await until(async()=>(await returned.locator('.xterm-rows').innerText()).replace(/\s+/g,'').split(movedMarker).length>=3,'Native return lost terminal output');
+  await invoke('component_ui',{operation:'action',args:{context:workspace.context,action:{op:'mergeGroup',sourceGroupId:emptyGroup,groupId:originalGroup}}});
+  checks.push(`${entry}: native nested-layout entry, page tear-out ${entry === 'titlebar' ? 'with OS pointer' : 'via command'}, live PTY input, original-group return and empty-window reclamation`);
+}
 try {
   await new Promise(resolve => service.listen(0, '127.0.0.1', resolve));
   for (const entry of ['titlebar', 'native']) {
@@ -145,8 +208,10 @@ try {
     await page.keyboard.press('Enter');
     await until(async () => (await terminalFrame.locator('.xterm-rows').innerText()).replace(/\s+/g, '').split(marker).length >= 3, 'Actual PTY did not echo the command result');
     await verifyPanelResize(workspace,terminalFrame,entry);
+    await verifyWorkbench(workspace,terminal,marker,entry);
     assert((await terminalFrame.locator('.xterm-rows').innerText()).replace(/\s+/g,'').split(marker).length>=3,'Native resize discarded the existing terminal output');
-    await page.getByRole('button', { name: '网络隧道', exact: true }).click();
+    const networkEntry=page.getByRole('button', { name: '网络隧道', exact: true });
+    if(await networkEntry.getAttribute('aria-expanded')!=='true')await networkEntry.click();
     const sidebar = page.frameLocator('iframe[title^="网络隧道 ·"]');
     await sidebar.getByRole('button', { name: '＋ 新建', exact: true }).click();
     const ruleEditor = page.frameLocator('iframe[title^="编辑网络隧道 ·"]');
@@ -220,6 +285,7 @@ try {
   fs.writeFileSync(path.join(output, 'native-close.json'), JSON.stringify(report, null, 2) + '\n');
   console.log(JSON.stringify(report, null, 2));
 } catch (error) {
+  fs.writeFileSync(path.join(output, 'native-close.json'), JSON.stringify({ completed: false, checks, error: String(error) }, null, 2) + '\n');
   console.error(error);
   if (page && !page.isClosed()) { console.error(await page.locator('body').innerText()); await page.screenshot({ path: path.join(output, 'native-failure.png') }); }
   throw error;

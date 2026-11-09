@@ -24,6 +24,10 @@ pub mod terminal;
 pub mod updates;
 pub mod validation;
 pub mod windows;
+pub mod workbench;
+pub mod workbench_layout;
+pub mod workbench_memory;
+pub mod workbench_move;
 pub mod workspaces;
 
 pub use core::AppCore;

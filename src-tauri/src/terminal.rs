@@ -19,6 +19,7 @@ use tokio_util::sync::CancellationToken;
 enum Input {
     Write(Vec<u8>, oneshot::Sender<Result<(), String>>),
     Resize(u32, u32),
+    Barrier(oneshot::Sender<()>),
 }
 pub(crate) struct Terminal {
     owner: Owner,
@@ -66,6 +67,28 @@ pub struct Terminals {
     entries: Mutex<HashMap<String, Arc<Terminal>>>,
 }
 impl Terminals {
+    pub(crate) fn drain_view(&self, view: &str) -> Result<(), String> {
+        let terminal = self
+            .entries
+            .lock()
+            .unwrap()
+            .values()
+            .find(|t| t.owner.view == view)
+            .cloned();
+        if let Some(t) = terminal {
+            let (tx, rx) = oneshot::channel();
+            t.input
+                .try_send(Input::Barrier(tx))
+                .map_err(|_| "终端输入队列仍忙碌".to_string())?;
+            tauri::async_runtime::block_on(async {
+                tokio::time::timeout(std::time::Duration::from_secs(5), rx)
+                    .await
+                    .map_err(|_| "终端输入排空超时".to_string())?
+                    .map_err(|_| "终端已结束".to_string())
+            })?;
+        }
+        Ok(())
+    }
     pub(crate) fn validation_surface(&self, view: &str) -> Option<(String, Arc<Replay>)> {
         self.entries
             .lock()
@@ -163,13 +186,9 @@ impl AppCore {
         {
             return Err("终端不属于此页面".into());
         }
-        self.workspaces
-            .lock()
-            .unwrap()
+        self.workspace_state()
             .validate_owned(window, &terminal.owner.context)?;
-        self.workspaces
-            .lock()
-            .unwrap()
+        self.workspace_state()
             .validate_context(&terminal.owner.context)?;
         let rx = terminal.enqueue_write(data)?;
         rx.await.map_err(|_| "终端已结束".to_string())?
@@ -192,10 +211,7 @@ impl AppCore {
             return Err("终端启动命令无效或超过 32 KiB".into());
         }
         let owner = self.resource_owner(plugin, instance, view)?;
-        self.workspaces
-            .lock()
-            .unwrap()
-            .validate_context(&owner.context)?;
+        self.workspace_state().validate_context(&owner.context)?;
         let admission = self.resource_admission(&owner)?;
         let mut entries = self.terminals.entries.lock().unwrap();
         entries.retain(|_, terminal| !terminal.tasks.finished());
@@ -311,10 +327,7 @@ impl AppCore {
                 done,
                 ..
             } => {
-                self.workspaces
-                    .lock()
-                    .unwrap()
-                    .validate_owned(window, &view.context)?;
+                let _admission = self.surface_write_admission(window, token)?;
                 terminal
                     .output
                     .checkpoint(token, offset, data, metadata, begin, done)
@@ -324,15 +337,10 @@ impl AppCore {
                 Ok(())
             }
             DataRequest::Resize { cols, rows, .. } => {
-                self.ui_data_writable(window, token)?;
+                let admission = self.surface_write_admission(window, token)?;
                 dimensions(cols, rows)?;
-                self.workspaces
-                    .lock()
-                    .unwrap()
-                    .validate_owned(window, &terminal.owner.context)?;
-                self.workspaces
-                    .lock()
-                    .unwrap()
+                admission
+                    .workspaces
                     .validate_context(&terminal.owner.context)?;
                 terminal
                     .input
@@ -340,19 +348,16 @@ impl AppCore {
                     .map_err(|_| "终端忙碌，请稍后重试".into())
             }
             DataRequest::Write { sequence, data, .. } => {
-                self.ui_data_writable(window, token)?;
-                if data.len() > BLOCK {
-                    return Err("终端输入块超过 16 KiB".into());
-                }
-                self.workspaces
-                    .lock()
-                    .unwrap()
-                    .validate_owned(window, &terminal.owner.context)?;
-                self.workspaces
-                    .lock()
-                    .unwrap()
-                    .validate_context(&terminal.owner.context)?;
-                let rx = terminal.enqueue_surface_write(token, sequence, data)?;
+                let rx = {
+                    let admission = self.surface_write_admission(window, token)?;
+                    if data.len() > BLOCK {
+                        return Err("终端输入块超过 16 KiB".into());
+                    }
+                    admission
+                        .workspaces
+                        .validate_context(&terminal.owner.context)?;
+                    terminal.enqueue_surface_write(token, sequence, data)?
+                };
                 rx.await.map_err(|_| "终端已结束".to_string())?
             }
         }
@@ -400,7 +405,7 @@ mod tests {
     fn receive(rx: &mut mpsc::Receiver<Input>) -> Vec<u8> {
         match rx.try_recv().unwrap() {
             Input::Write(bytes, _) => bytes,
-            Input::Resize(..) => panic!("unexpected resize"),
+            Input::Resize(..) | Input::Barrier(..) => panic!("unexpected control message"),
         }
     }
 
@@ -500,6 +505,7 @@ async fn run(
                 item=input.recv()=>match item{
                     Some(Input::Write(data,reply))=>{let len=data.len();let result=channel.data(data.as_slice()).await.map_err(|e|e.to_string());if result.is_ok(){terminal.sent.fetch_add(len as u64,Ordering::Relaxed);if let Some(c)=core.upgrade(){c.record_business(&terminal.owner,len as u64,0);}}let _=reply.send(result);},
                     Some(Input::Resize(cols,rows))=>channel.window_change(cols,rows,0,0).await.map_err(|e|e.to_string())?,
+                    Some(Input::Barrier(reply))=>{let _=reply.send(());},
                     None=>break,
                 },
                 message=channel.wait()=>match message {

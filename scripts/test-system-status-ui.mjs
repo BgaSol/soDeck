@@ -82,7 +82,7 @@ await page.addInitScript(() => {
   if (window !== top) return;
   addEventListener('message', async e => {
     const m = e.data;
-    if (m?.channel !== 'sodeck-ui-v1') return;
+    if (m?.channel !== 'sodeck-ui-v2') return;
     if (m.type === 'ready') e.source.postMessage({ channel: m.channel, type: 'mount', surfaceId: 'test', data: window.statusInitial, tokens: {}, visible: true }, '*');
     if (m.type === 'request') {
       try { const data = await window.statusRequest(m.params); e.source.postMessage({ channel: m.channel, type: 'response', surfaceId: 'test', id: m.id, data }, '*'); }
@@ -91,7 +91,7 @@ await page.addInitScript(() => {
   });
 });
 async function applyTheme(theme) {
-  await page.evaluate(tokens => document.querySelector('iframe').contentWindow.postMessage({ channel: 'sodeck-ui-v1', type: 'themeChanged', surfaceId: 'test', tokens }, '*'), themeTokens(theme));
+  await page.evaluate(tokens => document.querySelector('iframe').contentWindow.postMessage({ channel: 'sodeck-ui-v2', type: 'themeChanged', surfaceId: 'test', tokens }, '*'), themeTokens(theme));
 }
 const frame = page.frameLocator('iframe');
 async function refresh() { await frame.getByRole('button', { name: '刷新', exact: true }).click(); await page.waitForFunction(() => !document.querySelector('iframe').contentDocument.querySelector('#refresh').disabled); }
@@ -208,12 +208,12 @@ try {
   await frame.locator('#collection-summary').filter({ hasText: '30 秒 / 次' }).waitFor();
   await page.waitForFunction(() => { const d = document.querySelector('iframe').contentDocument.querySelector('#cpu-chart .series')?.getAttribute('d') || ''; return (d.match(/M/g) || []).length >= 2 && d.includes('L'); });
   const before = requests;
-  await page.evaluate(() => document.querySelector('iframe').contentWindow.postMessage({ channel: 'sodeck-ui-v1', type: 'visibilityChanged', surfaceId: 'test', visible: false }, '*'));
+  await page.evaluate(() => document.querySelector('iframe').contentWindow.postMessage({ channel: 'sodeck-ui-v2', type: 'visibilityChanged', surfaceId: 'test', visible: false }, '*'));
   await new Promise(resolve => setTimeout(resolve, 1200));
   assert(requests <= before + 1, 'Hidden UI kept polling');
   snapshot.connected = false; snapshot.groups.forEach(g => g.observedAt = Date.now() - 120000 - (g.name === 'capacity' ? 32000 : 0)); snapshot.revision++;
   files.forEach(f => f.observedAt = snapshot.groups.find(g => g.name === 'capacity').observedAt);
-  await page.evaluate(() => document.querySelector('iframe').contentWindow.postMessage({ channel: 'sodeck-ui-v1', type: 'visibilityChanged', surfaceId: 'test', visible: true }, '*'));
+  await page.evaluate(() => document.querySelector('iframe').contentWindow.postMessage({ channel: 'sodeck-ui-v2', type: 'visibilityChanged', surfaceId: 'test', visible: true }, '*'));
   await frame.locator('#notice').filter({ hasText: '连接已断开' }).waitFor();
   assert.equal(await frame.locator('#refresh').isDisabled(), true);
   await frame.locator('#collection > summary').click();
@@ -225,13 +225,13 @@ try {
   await frame.locator('#collection > summary').click();
 
   historyStep = 5000; snapshot.groups.forEach(g => g.observedAt = Date.now() - 360000); snapshot.revision++;
-  await page.evaluate(() => document.querySelector('iframe').contentWindow.postMessage({ channel: 'sodeck-ui-v1', type: 'visibilityChanged', surfaceId: 'test', visible: true }, '*'));
+  await page.evaluate(() => document.querySelector('iframe').contentWindow.postMessage({ channel: 'sodeck-ui-v2', type: 'visibilityChanged', surfaceId: 'test', visible: true }, '*'));
   await frame.locator('#network-peak').filter({ hasText: '等待有效采样' }).waitFor();
   assert.equal(await frame.locator('#network-chart .series.first').getAttribute('d'), '');
   await frame.locator('#scroll').evaluate(e => e.scrollTop = 0);
   await page.screenshot({ path: 'artifacts/system-status-ui/expired-history-light.png' });
   snapshot.connected = true; snapshot.groups.forEach(g => g.observedAt = Date.now()); snapshot.revision++; allGaps = true;
-  await page.evaluate(() => document.querySelector('iframe').contentWindow.postMessage({ channel: 'sodeck-ui-v1', type: 'visibilityChanged', surfaceId: 'test', visible: true }, '*'));
+  await page.evaluate(() => document.querySelector('iframe').contentWindow.postMessage({ channel: 'sodeck-ui-v2', type: 'visibilityChanged', surfaceId: 'test', visible: true }, '*'));
   await frame.locator('#refresh:enabled').waitFor();
   await refresh();
   assert.equal(await frame.locator('#network-peak').innerText(), '等待有效采样');
@@ -240,7 +240,7 @@ try {
 
   const newContext = { ...base.context, connectionId: 'connection-2', generation: 2 };
   failSnapshots = true;
-  await page.evaluate(context => document.querySelector('iframe').contentWindow.postMessage({ channel: 'sodeck-ui-v1', type: 'contextChanged', surfaceId: 'test', context }, '*'), newContext);
+  await page.evaluate(context => document.querySelector('iframe').contentWindow.postMessage({ channel: 'sodeck-ui-v2', type: 'contextChanged', surfaceId: 'test', context }, '*'), newContext);
   await frame.locator('#notice').filter({ hasText: '首次读取失败' }).waitFor();
   assert.equal(await frame.locator('#cpu').innerText(), '采样中');
   assert.equal(await frame.locator('#host-name').innerText(), '服务器');
@@ -271,7 +271,7 @@ try {
   await frame.locator('.filesystem').first().waitFor();
 
   snapshot = structuredClone(base); snapshot.revision += 200; snapshot.data.memory = { value: null, state: 'unsupported' }; snapshot.network = { device: null, rates: null };
-  await page.evaluate(() => document.querySelector('iframe').contentWindow.postMessage({ channel: 'sodeck-ui-v1', type: 'contextChanged', surfaceId: 'test' }, '*'));
+  await page.evaluate(() => document.querySelector('iframe').contentWindow.postMessage({ channel: 'sodeck-ui-v2', type: 'contextChanged', surfaceId: 'test' }, '*'));
   await frame.locator('#memory').filter({ hasText: '暂不可用' }).waitFor();
   await frame.locator('#receive').filter({ hasText: '暂不可用' }).waitFor();
   await frame.locator('#scroll').evaluate(e => e.scrollTop = 0);

@@ -31,7 +31,7 @@ fn dispatch(
         views.remove(id);
         return Ok(json!({}));
     }
-    if method == "ui.mount" && !views.contains_key(id) {
+    if matches!(method, "ui.mount" | "ui.createView") && !views.contains_key(id) {
         let kind = p["viewType"].as_str().ok_or("缺少视图类型")?;
         let title = match kind {
             "files" => "文件".into(),
@@ -97,7 +97,7 @@ fn dispatch(
             }
             v.saved = v.text.clone();
         }
-        "ui.mount" | "ui.beforeClose" => (),
+        "ui.mount" | "ui.getView" | "ui.createView" | "ui.beforeClose" => (),
         _ => return Err("未知插件 UI 方法".into()),
     }
     Ok(
@@ -112,7 +112,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for line in io::stdin().lock().lines() {
         let frame: Value = serde_json::from_str(&line?)?;
         let result = match frame["method"].as_str() {
-            Some("initialize") => Ok(json!({"apiVersion":"1","uiActionsApiVersion":"1"})),
+            Some("initialize") => {
+                Ok(json!({"apiVersion":"1","uiApiVersion":"2","uiActionsApiVersion":"1"}))
+            }
             Some("ui.action") => {
                 if frame["params"]["data"]["none"] == true {
                     send(json!({"jsonrpc":"2.0","id":frame["id"],"result":{}}))?;

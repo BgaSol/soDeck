@@ -2,6 +2,28 @@
 use super::*;
 
 impl Runtime {
+    pub(crate) fn layout_admission(
+        &self,
+        workspace: &str,
+        window: &str,
+        group: Option<&str>,
+        view: Option<&str>,
+        side: Option<&str>,
+    ) -> Result<(), String> {
+        if self.lifecycle.host_closing(workspace,window)
+            || view.is_some_and(|v|self.lifecycle.view_frozen(v))
+            || self.lifecycle.operations.values().any(|o|!o.phase.terminal()&&o.adopted_by.is_none()&&o.window==window&&matches!(&o.target,crate::lifecycle::Target::Group{id,workspace_id} if workspace_id==workspace && group==Some(id))) {
+            return Err("页面或标签组正在关闭".into());
+        }
+        if self
+            .transfers
+            .values()
+            .any(|t| t.movement.workspace_id == workspace && t.blocks(window, group, view, side))
+        {
+            return Err("页面或目标标签组正在交接".into());
+        }
+        Ok(())
+    }
     pub(crate) fn remove_window_surfaces(&mut self, window: &str) {
         self.surfaces.retain(|_, s| s.window != window);
     }
@@ -23,34 +45,19 @@ impl Runtime {
                 request.closed = true;
             }
         }
-        let editors: HashSet<_> = self
-            .definitions
-            .iter()
-            .filter(|(_, d)| d.definition.container == "editor")
-            .map(|(key, _)| key.clone())
-            .collect();
         for w in self.workspaces.values_mut() {
-            let old = w
-                .editor
-                .as_ref()
-                .and_then(|id| w.views.iter().position(|v| &v.id == id))
-                .unwrap_or(0);
             w.views.retain(|v| !ids.contains(&v.id));
-            if w.left.as_ref().is_some_and(|id| ids.contains(id)) {
-                w.left = None;
+            w.return_locations.retain(|id, _| !ids.contains(id));
+            for host in w.hosts.values_mut() {
+                for id in ids {
+                    host.remove(id);
+                }
             }
-            if w.right.as_ref().is_some_and(|id| ids.contains(id)) {
-                w.right = None;
-            }
-            if w.editor.as_ref().is_some_and(|id| ids.contains(id)) {
-                let remaining: Vec<_> = w
-                    .views
-                    .iter()
-                    .filter(|v| editors.contains(&v.definition_key))
-                    .collect();
-                w.editor = remaining
-                    .get(old.min(remaining.len().saturating_sub(1)))
-                    .map(|v| v.id.clone());
+            if w.focused_view_id
+                .as_ref()
+                .is_some_and(|id| ids.contains(id))
+            {
+                w.focused_view_id = None;
             }
         }
         self.surfaces.retain(|_, s| !ids.contains(&s.view));
@@ -61,6 +68,7 @@ impl Runtime {
             let ids: HashSet<_> = w.views.iter().map(|v| v.id.clone()).collect();
             for view in &mut w.views {
                 view.context = context.clone();
+                view.creation = Default::default();
             }
             self.surfaces.retain(|_, s| !ids.contains(&s.view));
         }
@@ -92,6 +100,8 @@ impl Runtime {
         };
         Ok(Self {
             root: root.into(),
+            memory: crate::workbench_memory::Memory::open(root),
+            restoring_layout: false,
             preferences,
             error,
             definitions: BTreeMap::new(),
@@ -104,6 +114,9 @@ impl Runtime {
             requests: HashMap::new(),
             clock: 0,
             startup_loading: false,
+            transfers: HashMap::new(),
+            move_receipts: HashMap::new(),
+            window_returns: HashMap::new(),
         })
     }
     pub fn frozen(&self, workspace: &str) -> bool {
@@ -161,6 +174,8 @@ impl Runtime {
     pub(super) fn open_view(
         &mut self,
         context: &Context,
+        window: &str,
+        group: Option<&str>,
         key: &str,
         resource_key: Option<String>,
         params: Value,
@@ -183,10 +198,24 @@ impl Runtime {
         {
             return Err("缺少稳定资源标识".into());
         }
-        let w = self
+        let host = self
             .workspaces
-            .get_mut(&context.workspace_id)
-            .ok_or("组件工作区尚未初始化")?;
+            .get(&context.workspace_id)
+            .ok_or("组件工作区尚未初始化")?
+            .host(window)?;
+        let destination_group = group.unwrap_or(&host.focused_group_id);
+        self.layout_admission(
+            &context.workspace_id,
+            window,
+            Some(destination_group),
+            None,
+            if d.definition.container == "sidebar" {
+                Some(&d.definition.default_side)
+            } else {
+                None
+            },
+        )?;
+        let w = self.workspaces.get_mut(&context.workspace_id).unwrap();
         self.clock += 1;
         let existing = w
             .views
@@ -206,6 +235,8 @@ impl Runtime {
         } else {
             w.views.push(View {
                 calls: std::sync::Arc::new(crate::resource_tasks::Tasks::default()),
+                creation: Default::default(),
+                parent_view_id: None,
                 id: id.clone(),
                 definition_key: key.into(),
                 plugin_id: d.plugin_id,
@@ -222,15 +253,22 @@ impl Runtime {
             });
             id
         };
-        if d.definition.container == "sidebar" {
-            let side = &w.preferences[key].side;
-            if side == "left" {
-                w.left = Some(selected.clone());
-            } else {
-                w.right = Some(selected.clone());
-            }
+        // Locate an existing singleton/resource in its current window; opening is not a move.
+        let actual_window = w.view_window(&selected).unwrap_or_else(|| window.into());
+        let side = w.preferences[key].side.clone();
+        let host = w.host_mut(&actual_window)?;
+        if host.contains(&selected) {
+            host.select(&selected)?;
+        } else if d.definition.container == "sidebar" {
+            host.dock(&selected, &side, true)?;
         } else if d.definition.container == "editor" {
-            w.editor = Some(selected.clone());
+            let group = group
+                .filter(|id| host.groups.contains_key(*id))
+                .unwrap_or(&host.focused_group_id)
+                .to_owned();
+            host.place(&selected, &group, usize::MAX, true)?;
+        } else if d.definition.container == "dialog" {
+            host.dialogs.push(selected.clone());
         }
         Ok(selected)
     }
@@ -262,10 +300,12 @@ impl Runtime {
 impl AppCore {
     pub(crate) fn reconcile_ui(&self) -> Result<(), String> {
         let plugins = self.snapshot().plugins;
-        let workspaces = self.workspaces.lock().unwrap();
+        let mut _workbench = self.workbench_state();
+        let crate::workbench::State { workspaces, ui } = &mut *_workbench;
         let contexts = workspaces.contexts();
+        let mut restored = Vec::new();
         let live = workspaces.ids();
-        let mut ui = self.component_ui.lock().unwrap();
+
         let initializing =
             ui.startup_loading || plugins.iter().any(|p| p.status == PluginStatus::Starting);
         ui.retain_request_contexts(&contexts, None);
@@ -281,24 +321,19 @@ impl AppCore {
             .flat_map(|w| w.views.iter().map(|v| v.id.clone()))
             .collect();
         ui.surfaces.retain(|_, s| live_views.contains(&s.view));
-        let owners: HashMap<_, _> = ui
-            .workspaces
-            .iter()
-            .flat_map(|(workspace, w)| {
-                let owner = workspaces.owner(workspace);
-                let target = owner
-                    .as_ref()
-                    .and_then(|owner| workspaces.pending_move(workspace, owner))
-                    .map(|m| m.target);
-                w.views
-                    .iter()
-                    .map(move |v| (v.id.clone(), (owner.clone(), target.clone())))
-            })
-            .collect();
         ui.surfaces.retain(|_, s| {
-            owners.get(&s.view).is_some_and(|(owner, target)| {
-                owner.as_deref() == Some(&s.window) || target.as_deref() == Some(&s.window)
-            })
+            ui.workspaces
+                .values()
+                .any(|w| w.view_window(&s.view).as_deref() == Some(&s.window))
+                || ui
+                    .transfers
+                    .values()
+                    .any(|t| t.movement.target == s.window && t.views.contains(&s.view))
+                || workspaces.pending_for_target(&s.window).is_some_and(|m| {
+                    ui.workspaces.get(&m.workspace_id).is_some_and(|w| {
+                        w.hosts.get(&m.source).is_some_and(|h| h.contains(&s.view))
+                    })
+                })
         });
         for d in ui.definitions.values_mut() {
             d.available = false;
@@ -352,6 +387,7 @@ impl AppCore {
                             plugin_instance_id: p.instance_id.clone().unwrap(),
                             entry: declaration.entry.clone(),
                             available: true,
+                            ui_api_version: declaration.api_version.clone(),
                         },
                     );
                 }
@@ -382,10 +418,25 @@ impl AppCore {
             }
             if !ui.workspaces.contains_key(id) {
                 let prefs = ui.preferences.definitions.clone();
+                let window = workspaces.owner(id).ok_or("工作区已关闭")?;
+                let mut host = crate::workbench_layout::Host::new(format!("{id}@{window}"));
+                host.layout = workspaces
+                    .projection(&window)?
+                    .workspaces
+                    .iter()
+                    .find(|w| w.context.workspace_id == *id)
+                    .ok_or("工作区已关闭")?
+                    .layout
+                    .clone();
+                if let Some(saved) = ui.memory.primary(&context.server_id) {
+                    host = saved.seed(host.id.clone())?;
+                    restored.push((id.clone(), window.clone(), saved));
+                }
                 ui.workspaces.insert(
                     id.clone(),
                     WorkspaceUi {
                         preferences: prefs,
+                        hosts: BTreeMap::from([(window.clone(), host)]),
                         ..Default::default()
                     },
                 );
@@ -417,14 +468,23 @@ impl AppCore {
                         .map(|p| p.side.as_str())
                         .unwrap_or("left");
                     let occupied = if d.definition.container == "editor" {
-                        state.editor.is_some()
+                        state.host(&window)?.active_view().is_some()
                     } else if side == "left" {
-                        state.left.is_some()
+                        state.host(&window)?.left.active_view_id.is_some()
                     } else {
-                        state.right.is_some()
+                        state.host(&window)?.right.active_view_id.is_some()
                     };
                     if policy != "none" && !occupied {
-                        ui.open_view(context, &d.key, None, Value::Null, self.next_id(), false)?;
+                        ui.open_view(
+                            context,
+                            &window,
+                            None,
+                            &d.key,
+                            None,
+                            Value::Null,
+                            self.next_id(),
+                            false,
+                        )?;
                     }
                 }
             }
@@ -437,7 +497,7 @@ impl AppCore {
                     .or_insert_with(|| p.clone());
             }
         }
-        for context in contexts {
+        for context in &contexts {
             if ui.frozen(&context.workspace_id)
                 || !ui.workspaces.contains_key(&context.workspace_id)
             {
@@ -454,11 +514,14 @@ impl AppCore {
                 if let Some(v) = w.views.iter_mut().find(|v| v.definition_key == d.key) {
                     if v.plugin_instance_id != d.plugin_instance_id {
                         v.plugin_instance_id = d.plugin_instance_id.clone();
+                        v.creation = Default::default();
                         v.error = None;
                     }
                 } else {
                     w.views.push(View {
                         calls: std::sync::Arc::new(crate::resource_tasks::Tasks::default()),
+                        creation: Default::default(),
+                        parent_view_id: None,
                         id: self.next_id(),
                         definition_key: d.key,
                         plugin_id: d.plugin_id,
@@ -476,22 +539,98 @@ impl AppCore {
                 }
             }
         }
+        for (id, window, saved) in restored {
+            for key in saved.tools.keys() {
+                if ui.definitions.get(key).is_some_and(|d| {
+                    d.available
+                        && d.definition.container == "sidebar"
+                        && d.definition.instance_policy == "perWorkspace"
+                }) {
+                    let context = contexts.iter().find(|c| c.workspace_id == id).unwrap();
+                    ui.open_view(
+                        context,
+                        &window,
+                        None,
+                        key,
+                        None,
+                        Value::Null,
+                        self.next_id(),
+                        false,
+                    )?;
+                }
+            }
+            let w = ui.workspaces.get_mut(&id).unwrap();
+            let tools = w
+                .views
+                .iter()
+                .filter(|v| w.host(&window).is_ok_and(|h| h.contains(&v.id)))
+                .map(|v| (v.id.clone(), v.definition_key.clone()))
+                .collect::<Vec<_>>();
+            saved.apply_tools(w.host_mut(&window)?, &tools)?;
+        }
         self.sync_shared_ui_locked(&ui);
         Ok(())
     }
     pub fn ui_snapshot(&self, window: &str) -> Result<Value, String> {
-        let projection = self.workspace_projection(window)?;
-        let ui = self.component_ui.lock().unwrap();
+        let state = self.workbench_state();
+        let ui = &state.ui;
+        let projection = state.workspaces.projection(window)?;
         let ids: HashSet<_> = projection
             .workspaces
             .iter()
-            .chain(projection.incoming.iter())
-            .map(|w| &w.context.workspace_id)
+            .chain(projection.incoming_workspaces.iter())
+            .map(|w| w.context.workspace_id.clone())
+            .chain(
+                ui.transfers
+                    .values()
+                    .filter(|t| t.movement.target == window)
+                    .map(|t| t.movement.workspace_id.clone()),
+            )
             .collect();
+        let mut displayed = HashMap::new();
+        for (id, w) in ui.workspaces.iter().filter(|(id, _)| ids.contains(*id)) {
+            let mut display = w.clone();
+            let mut transfers: Vec<_> = ui
+                .transfers
+                .values()
+                .filter(|t| t.movement.target == window && t.movement.workspace_id == *id)
+                .collect();
+            transfers.sort_by_key(|t| &t.movement.token);
+            for t in &transfers {
+                let target = t.target_projection(display.hosts.get(window))?;
+                display.hosts.insert(window.into(), target);
+            }
+            if transfers.is_empty() {
+                if let Some(m) = state.workspaces.pending_for_workspace(window, id) {
+                    if let Some(host) = w.hosts.get(&m.source) {
+                        display.hosts.insert(window.into(), host.clone());
+                    }
+                }
+            }
+            let mut projected = display.projection(window);
+            if let Some(host) = display.hosts.get(window) {
+                let server = state
+                    .workspaces
+                    .contexts()
+                    .into_iter()
+                    .find(|c| c.workspace_id == *id)
+                    .map(|c| c.server_id);
+                if let Some(saved) = server.and_then(|s| {
+                    ui.memory
+                        .hosts(&s)
+                        .into_iter()
+                        .find(|h| h.slot == host.layout_slot)
+                }) {
+                    projected["unavailableTools"]=json!(saved.tools.iter().filter(|(key,_)|!ui.definitions.get(*key).is_some_and(|d|d.available)).map(|(key,t)|json!({"key":key,"groupId":t.group.as_ref().map(|g|format!("{}-{g}",host.id)),"side":t.side})).collect::<Vec<_>>());
+                }
+            }
+            displayed.insert(id, projected);
+        }
         Ok(
             json!({"definitions":ui.definitions,"actions":ui.actions,"defaultCreateAction":ui.preferences.default_create_action,
-                "pendingAction":ui.pending_actions().into_iter().filter(|r| ids.iter().any(|id| r["context"]["workspaceId"].as_str() == Some(id.as_str()))).collect::<Vec<_>>(),
-                "workspaces":ui.workspaces.iter().filter(|(id,_)| ids.contains(id)).collect::<HashMap<_,_>>(), "error":ui.error}),
+          "pendingAction":ui.pending_actions().into_iter().filter(|r|ids.iter().any(|id|r["context"]["workspaceId"].as_str()==Some(id.as_str()))).collect::<Vec<_>>(),
+          "transfers":ui.transfers.values().filter(|t|t.movement.source==window||t.movement.target==window).map(|t|t.wire()).collect::<Vec<_>>(),
+          "workspaces":displayed,"error":ui.error.as_ref().or(ui.memory.error.as_ref())}),
         )
     }
     pub fn ui_action(
@@ -507,16 +646,189 @@ impl AppCore {
         {
             return Err("UI 操作超过 24 KiB".into());
         }
-        let workspaces = self.workspaces.lock().unwrap();
+        let mut _workbench = self.workbench_state();
+        let crate::workbench::State { workspaces, ui } = &mut *_workbench;
         workspaces.validate_owned(window, context)?;
-        let mut ui = self.component_ui.lock().unwrap();
-        if ui.frozen(&context.workspace_id) {
+
+        if ui.lifecycle.host_closing(&context.workspace_id, window) {
             return Err("工作区正在确认关闭".into());
         }
         let key = action["key"].as_str().unwrap_or_default();
         let op = action["op"].as_str().ok_or("缺少组件操作")?;
+        if ![
+            "select",
+            "focus",
+            "focusGroup",
+            "zoom",
+            "splitRatio",
+            "preference",
+            "recommend",
+            "collapse",
+            "locate",
+        ]
+        .contains(&op)
+        {
+            let host = ui
+                .workspaces
+                .get(&context.workspace_id)
+                .ok_or("工作台已关闭")?
+                .host(window)?;
+            let view = action["viewId"].as_str();
+            let group = action["groupId"]
+                .as_str()
+                .or(Some(host.focused_group_id.as_str()));
+            ui.layout_admission(
+                &context.workspace_id,
+                window,
+                group,
+                view,
+                action["side"].as_str(),
+            )?;
+            if let Some(source) = action["sourceGroupId"].as_str() {
+                ui.layout_admission(&context.workspace_id, window, Some(source), None, None)?;
+            }
+            if let Some(view) = view {
+                let source = host.group_of(view);
+                ui.layout_admission(
+                    &context.workspace_id,
+                    window,
+                    source.as_deref(),
+                    Some(view),
+                    None,
+                )?;
+            }
+        }
         let mut result = Value::Null;
         match op {
+            "split" | "moveView" | "dock" | "hideTool" | "splitRatio" | "zoom" | "mergeGroup"
+            | "moveGroup" | "closeEmptyGroup" | "focusGroup" => {
+                let w = ui
+                    .workspaces
+                    .get_mut(&context.workspace_id)
+                    .ok_or("工作台已关闭")?;
+                let mut host = w.host(window)?.clone();
+                if action["revision"]
+                    .as_u64()
+                    .is_some_and(|r| r != host.revision)
+                {
+                    return Err("布局已改变，请重新读取".into());
+                }
+                let group = action["groupId"]
+                    .as_str()
+                    .unwrap_or(&host.focused_group_id)
+                    .to_owned();
+                match op {
+                    "split" => {
+                        let id = self.next_id();
+                        host.split(
+                            &group,
+                            action["axis"].as_str().ok_or("缺少分屏方向")?,
+                            id.clone(),
+                            self.next_id(),
+                            action["before"] == true,
+                        )?;
+                        if let Some(view) = action["viewId"].as_str() {
+                            if !host.contains(view) {
+                                return Err("页面不属于此工作台".into());
+                            }
+                            host.place(view, &id, 0, true)?;
+                        }
+                        result = json!({"groupId":id});
+                    }
+                    "moveView" => {
+                        let view = action["viewId"].as_str().ok_or("缺少页面")?;
+                        if !host.contains(view) {
+                            return Err("页面不属于此工作台".into());
+                        }
+                        host.place(
+                            view,
+                            &group,
+                            action["index"].as_u64().unwrap_or(u64::MAX) as usize,
+                            true,
+                        )?;
+                    }
+                    "dock" | "hideTool" => {
+                        let view = action["viewId"].as_str().ok_or("缺少页面")?;
+                        if !host.contains(view)
+                            || w.views
+                                .iter()
+                                .find(|v| v.id == view)
+                                .and_then(|v| ui.definitions.get(&v.definition_key))
+                                .is_none_or(|d| d.definition.container != "sidebar")
+                        {
+                            return Err("只有此工作台的工具可以停靠".into());
+                        }
+                        let side = action["side"].as_str().unwrap_or_else(|| {
+                            if host.left.view_ids.iter().any(|id| id == view) {
+                                "left"
+                            } else if host.right.view_ids.iter().any(|id| id == view) {
+                                "right"
+                            } else {
+                                &w.preferences[&w
+                                    .views
+                                    .iter()
+                                    .find(|v| v.id == view)
+                                    .unwrap()
+                                    .definition_key]
+                                    .side
+                            }
+                        });
+                        host.dock(view, side, op != "hideTool")?;
+                        if op == "hideTool" {
+                            if side == "left" {
+                                host.left.active_view_id = None;
+                            } else {
+                                host.right.active_view_id = None;
+                            }
+                        }
+                    }
+                    "splitRatio" => host.resize(
+                        action["splitId"].as_str().ok_or("缺少分屏节点")?,
+                        action["ratio"].as_f64().ok_or("缺少比例")?,
+                    )?,
+                    "zoom" => {
+                        if !host.groups.contains_key(&group) {
+                            return Err("标签组已关闭".into());
+                        }
+                        host.zoom_group_id = if host.zoom_group_id.as_deref() == Some(&group) {
+                            None
+                        } else {
+                            Some(group)
+                        };
+                        host.revision += 1;
+                    }
+                    "moveGroup" => host.relocate_group(
+                        action["sourceGroupId"].as_str().ok_or("缺少源标签组")?,
+                        &group,
+                        action["edge"].as_str().unwrap_or("center"),
+                        self.next_id(),
+                    )?,
+                    "mergeGroup" => host.merge_group(
+                        action["sourceGroupId"].as_str().ok_or("缺少源标签组")?,
+                        &group,
+                    )?,
+                    "closeEmptyGroup" => {
+                        if host
+                            .groups
+                            .get(&group)
+                            .is_none_or(|g| !g.view_ids.is_empty())
+                        {
+                            return Err("标签组仍有页面，请先关闭页面".into());
+                        }
+                        host.remove_group(&group)?;
+                    }
+                    "focusGroup" => {
+                        if !host.groups.contains_key(&group) {
+                            return Err("标签组已关闭".into());
+                        }
+                        host.focused_group_id = group;
+                        host.revision += 1;
+                    }
+                    _ => unreachable!(),
+                }
+                host.validate()?;
+                w.hosts.insert(window.into(), host);
+            }
             "open" | "toggle" | "locate" => {
                 let request = action["requestId"].as_str().ok_or("缺少 requestId")?;
                 if request.len() > 128 {
@@ -524,19 +836,26 @@ impl AppCore {
                 }
                 let request_key = format!("{}:{request}", context.workspace_id);
                 if let Some(id) = ui.requests.get(&request_key) {
-                    return Ok(json!({"viewId":id}));
+                    return Ok(
+                        json!({"viewId":id,"windowId":ui.workspaces[&context.workspace_id].view_window(id)}),
+                    );
                 }
                 let d = ui.definitions.get(key).ok_or("组件未登记")?.clone();
                 let state = ui
                     .workspaces
                     .get(&context.workspace_id)
                     .ok_or("组件尚未就绪")?;
-                let current =
-                    if state.preferences.get(key).map(|p| p.side.as_str()) == Some("right") {
-                        &state.right
-                    } else {
-                        &state.left
-                    };
+                let host = state.host(window)?;
+                let current = [&host.left.active_view_id, &host.right.active_view_id]
+                    .into_iter()
+                    .filter_map(|id| id.as_ref())
+                    .find(|id| {
+                        state
+                            .views
+                            .iter()
+                            .any(|v| &v.id == *id && v.definition_key == key)
+                    })
+                    .cloned();
                 let toggled = op == "toggle"
                     && d.definition.container == "sidebar"
                     && current.as_ref().is_some_and(|id| {
@@ -547,36 +866,45 @@ impl AppCore {
                     });
                 if toggled {
                     let w = ui.workspaces.get_mut(&context.workspace_id).unwrap();
-                    if w.preferences[key].side == "left" {
-                        w.left = None;
+                    if w.host(window)?.left.active_view_id == current {
+                        w.host_mut(window)?.left.active_view_id = None;
                     } else {
-                        w.right = None;
+                        w.host_mut(window)?.right.active_view_id = None;
                     }
                 } else {
                     let id = ui.open_view(
                         context,
+                        window,
+                        action["groupId"].as_str(),
                         key,
                         action["resourceKey"].as_str().map(str::to_owned),
                         action["params"].clone(),
                         self.next_id(),
                         op == "locate",
                     )?;
+                    if d.definition.container == "dialog" {
+                        let parent = action["sourceViewId"].as_str().map(str::to_owned);
+                        if let Some(v) = ui
+                            .workspaces
+                            .get_mut(&context.workspace_id)
+                            .unwrap()
+                            .views
+                            .iter_mut()
+                            .find(|v| v.id == id)
+                        {
+                            v.parent_view_id = parent;
+                        }
+                    }
                     if ui.requests.len() >= 256 {
                         ui.requests.clear();
                     }
                     ui.requests.insert(request_key, id.clone());
-                    result = json!({"viewId":id});
+                    let location = ui.workspaces[&context.workspace_id].view_window(&id);
+                    result = json!({"viewId":id,"windowId":location});
                 }
             }
-            "select" => {
+            "select" | "focus" => {
                 let id = action["viewId"].as_str().ok_or("缺少 viewId")?;
-                if ui
-                    .definitions
-                    .get(&ui.view(id)?.definition_key)
-                    .is_none_or(|d| d.definition.container != "editor")
-                {
-                    return Err("只能选择中央页面".into());
-                }
                 ui.clock += 1;
                 let clock = ui.clock;
                 let w = ui
@@ -589,7 +917,16 @@ impl AppCore {
                     .find(|v| v.id == id)
                     .ok_or("组件页面已关闭")?;
                 v.last_used = clock;
-                w.editor = Some(id.into());
+                if ui
+                    .definitions
+                    .get(&v.definition_key)
+                    .is_some_and(|d| d.definition.location_provider.is_some())
+                {
+                    w.last_location_view_id = Some(id.into());
+                }
+                w.host_mut(window)?.select(id)?;
+                w.focused_view_id = Some(id.into());
+                w.focused_window_id = Some(window.into());
             }
             "collapse" => {
                 let w = ui
@@ -597,8 +934,8 @@ impl AppCore {
                     .get_mut(&context.workspace_id)
                     .ok_or("组件工作区已关闭")?;
                 match action["side"].as_str() {
-                    Some("left") => w.left = None,
-                    Some("right") => w.right = None,
+                    Some("left") => w.host_mut(window)?.left.active_view_id = None,
+                    Some("right") => w.host_mut(window)?.right.active_view_id = None,
                     _ => return Err("无效侧栏".into()),
                 }
             }
@@ -650,47 +987,28 @@ impl AppCore {
                         .find(|v| v.definition_key == key)
                         .map(|v| v.id.clone())
                     {
-                        if w.left.as_ref() == Some(&id) {
-                            w.left = None;
-                        }
-                        if w.right.as_ref() == Some(&id) {
-                            w.right = None;
-                        }
-                        if next.side == "left" {
-                            w.left = Some(id);
-                        } else {
-                            w.right = Some(id);
+                        let host = w.host_mut(window)?;
+                        if host.left.view_ids.contains(&id) || host.right.view_ids.contains(&id) {
+                            host.dock(&id, &next.side, true)?;
                         }
                     }
                 }
             }
             "reorder" => {
                 let id = action["viewId"].as_str().ok_or("缺少 viewId")?;
-                if ui
-                    .definitions
-                    .get(&ui.view(id)?.definition_key)
-                    .is_none_or(|d| d.definition.container != "editor")
-                {
-                    return Err("只能排序中央页面".into());
-                }
                 let index = action["index"].as_u64().ok_or("缺少顺序")? as usize;
                 let w = ui
                     .workspaces
                     .get_mut(&context.workspace_id)
                     .ok_or("组件工作区已关闭")?;
-                let old = w
-                    .views
-                    .iter()
-                    .position(|v| v.id == id)
-                    .ok_or("组件页面已关闭")?;
-                let v = w.views.remove(old);
-                w.views.insert(index.min(w.views.len()), v);
+                let host = w.host_mut(window)?;
+                let group = host.group_of(id).ok_or("页面不在中央标签组中")?;
+                host.place(id, &group, index, false)?;
             }
             _ => return Err("未知组件 UI 操作".into()),
         }
         self.sync_shared_ui_locked(&ui);
-        drop(ui);
-        drop(workspaces);
+        drop(_workbench);
         self.workspace_changed();
         Ok(result)
     }

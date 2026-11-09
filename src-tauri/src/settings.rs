@@ -235,16 +235,9 @@ impl AppCore {
                 Err("相同请求 ID 的正文不同".into())
             };
         }
-        if self.is_closing()
-            || window.is_some_and(|w| {
-                self.component_ui
-                    .lock()
-                    .unwrap()
-                    .lifecycle
-                    .window_closing(w)
-            })
+        if self.is_closing() || window.is_some_and(|w| self.ui_state().lifecycle.window_closing(w))
         {
-            let ui = self.component_ui.lock().unwrap();
+            let ui = self.ui_state();
             let allowed = close_operation
                 .as_ref()
                 .and_then(Value::as_str)

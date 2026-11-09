@@ -7,7 +7,7 @@ async fn openssh_system_status_plugin(){
     let package=std::path::PathBuf::from(std::env::var("SODECK_TEST_SYSTEM_STATUS_PLUGIN").unwrap());f.core.load(&package).unwrap();
     let context=connected(&f,&server).await.context.unwrap();
     // The coordinator must create and mount the logical view without ui_snapshot or attach.
-    let end=std::time::Instant::now()+Duration::from_secs(8);let view=loop {let ui=f.core.component_ui.lock().unwrap();let found=ui.workspaces.get(&context.workspace_id).and_then(|w|w.views.first()).map(|v|v.id.clone());drop(ui);if let Some(v)=found{break v;}assert!(std::time::Instant::now()<end);tokio::time::sleep(Duration::from_millis(50)).await;};
+    let end=std::time::Instant::now()+Duration::from_secs(8);let view=loop {let ui=f.core.ui_state();let found=ui.workspaces.get(&context.workspace_id).and_then(|w|w.views.first()).map(|v|v.id.clone());drop(ui);if let Some(v)=found{break v;}assert!(std::time::Instant::now()<end);tokio::time::sleep(Duration::from_millis(50)).await;};
     tokio::time::sleep(Duration::from_secs(16)).await;
     let state=f.core.ui_snapshot("main").unwrap();assert_eq!(state["workspaces"][&context.workspace_id]["right"],view);
     let mount=f.core.ui_attach("main",&view).unwrap();let token=mount["surfaceId"].as_str().unwrap();f.core.ui_surface_ready("main",token).unwrap();

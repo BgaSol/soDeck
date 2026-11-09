@@ -4,7 +4,37 @@
 
 插件是独立原生程序，核心不需要识别具体插件 ID。插件按可信扩展使用，没有权限清单、授权或签名流程。
 
-当前源码为 API v1 增加可选 UI v1，旧无 UI 插件无需修改；已发行 v0.4.0 不支持该扩展。界面方案与验收见 [组件 UI 设计](plan-component-ui.md)，实际协议如下。
+当前源码的核心 RPC 仍为 API v1，可选界面支持 UI v1 和 UI v2。UI v2 用于完整的分屏、页面/标签组移窗与输入交接；四个官方 UI 插件已在本工作区适配，尚未发布。旧无 UI 插件无需修改。旧版核心只接受 UI v1，不能安装本工作区的 UI v2 包。
+
+## 可选 UI v2：工作台与显示交接
+
+声明保留已有 `views/actions` 结构，将 `ui.apiVersion` 设为 `"2"`。初始化结果须返回 `uiApiVersion:"2"`；核心声明 `ui.workbench.v2` 能力。`sidebar/editor/dialog` 分别映射为可停靠工具、中央页面和短暂弹窗，不按插件 ID 分支；工具可放入中央组，编辑弹窗不单独移动。
+
+服务器 Context 和业务 view 在核心登记。一个工作区可以在多个原生窗口中拥有显示部分，同一 view 只归一个显示位置；新建实例、同窗移组与跨窗移动各有明确行为。PTY、文件任务和网络监听仍归插件实例/view/Context，窗口或布局变化不重建业务资源。
+
+| 插件进程方法 | 契约 |
+| --- | --- |
+| `ui.createView` | 逻辑实例初始化；同 view/Context 幂等，创建 PTY、文件句柄或插件状态。核心按当前实例与 Context 缓存结果，失败不会靠反复挂载重试创建 |
+| `ui.getView` | 读取已存在实例的显示数据；保持原 PTY/草稿/任务，不创建资源，不替代视图创建。大正文和终端输出继续走既有数据流 |
+| `ui.event`、`ui.beforeClose`、`ui.save`、`ui.disposeView` | 继续使用原业务与关闭契约；迁移期间不调用 dispose，真正关闭时才清理实例 |
+
+界面消息通道为 `sodeck-ui-v2`。宿主 `mount` 附带 `surfaceId`、`readOnly`、Context、数据及 `capabilities.workbench:2`；每次挂载取得新的输入身份。插件用 `prepared`（兼容 `mounted`）报告显示准备完成，并声明 `flush:true` 以参加输入同步。准备完成只说明可显示，插件须等待 `surfaceReady` 后才启用编辑、输入、PTY resize 和状态发布。
+
+跨窗交接依次为 preparing → draining → restoring → 提交：目标先建立只读候选，源端 `flush` 同步草稿/输入并以 `flushed` 回应；核心冻结旧表面，等待已接纳调用和终端队列排空，目标重新读取最终状态并接续终端显示检查点及输出水位。目标就绪后同一次状态提交改变位置和输入权，旧表面失效。任一步失败保留原位置和实例，向源端发送 `transferCancelled` 恢复输入。输入法组合尚未完成时插件可以拒绝 flush。
+
+UI v2 的 `flush.freeze` 为 true 时表示迁移或关闭的输入交接，源界面在同步后保持冻结，直到卸载或收到 `transferCancelled`。普通同步的 freeze 为 false，仅等待已经接纳的输入和草稿队列，完成后保持可编辑。插件不能把普通同步变成永久只读。
+
+同窗布局保留 iframe，不需要重新 get/create。切换标签、隐藏工具和紧凑显示不关闭后台业务。剪贴板、正文写入、终端 resize/checkpoint 和共享状态发布使用真实 Surface 身份检查；候选可以读取输出，不能输入或替旧表面提交检查点。
+
+核心桌面命令 `workbench_move` 以 `requestId`、Context、`scope:{kind:"view"|"group"|"host",id?}` 和目标窗口/组/侧栏表达移动。`component_ui.moveStatus` 查询原回执；相同编号和参数复用结果，更换参数拒绝。已结束回执五分钟后返回 expired；进程内最多保留 4096 个请求，达到额度后明确拒绝新编号，重启清理。超时只查询原结果，不自动再次移动或创建窗口。
+
+`workbench_move.destination.returnToSource:true` 请求核心按运行期书签定位原窗口、标签组、相邻标签或工具侧栏。`workbench_return_window({requestId})` 返回调用窗口的全部 Host；核心先统一保留，再准备所有工作区的候选，全部恢复后在一次状态锁内提交。任一成员失败均不释放其他成员的来源 Surface。窗口投影增加 `incomingWorkspaces` 与 `windows`；原 `incoming` 保留为首项兼容字段，候选挂载使用各自的 Context 和迁移编号。
+
+UI v1 仍映射到同一 Host/分屏树，可以同窗排序、分屏和移组；页面、标签组、整工作台的跨窗迁移均要求其中页面支持 UI v2。含 UI v1 工具的局部关闭若需要跨窗口返回工具，会提示先升级插件或关闭服务器全部工作区。新插件安装在旧核心中会在清单检查时被拒绝；独立 Release 应说明须先升级支持 UI v2 的核心。
+
+焦点由实际页面交互更新。`workspace.presentation.v1` 增加 `focusedViewId/focusedWindowId` 与 `lastInteractedLocationViewId`，旧 `activeEditorViewId` 继续用于兼容投影。终端可通过可选 `locationProvider:"terminal.location.v1"` 声明目录来源；文件跟随使用本服务器最近操作的目录提供页，经核心共享状态协作，不直接调用终端插件。
+
+布局文件只保存服务器的容器结构与工具定义位置；不保存 Context、viewId、Surface、正文或命令。详细交互见[使用指南](usage.md)，设计与实际验收分别见[完整设计](plan-workbench-layout.md)和[实施记录](implementation-workbench-layout.md)。
 
 后续终端/文件能力的调用关系、流式数据桥、异步保存/长任务和带宽归属设计见 [远程工作台提案](plan-remote-workbench.md)。其中方法名为提案，不是当前可调用的 RPC；实现时以保持旧插件兼容的扩展同步本协议。
 

@@ -238,9 +238,7 @@ fn hidden_background_mount_has_no_surface_and_does_not_block_a_move() {
     let view = loop {
         let ids: Vec<_> = f
             .core
-            .component_ui
-            .lock()
-            .unwrap()
+            .ui_state()
             .workspaces
             .get(&w.context.workspace_id)
             .map(|w| w.views.iter().map(|v| v.id.clone()).collect())
@@ -258,16 +256,16 @@ fn hidden_background_mount_has_no_surface_and_does_not_block_a_move() {
         );
         std::thread::sleep(std::time::Duration::from_millis(30));
     };
-    let ui = f.core.component_ui.lock().unwrap();
+    let ui = f.core.ui_state();
     let state = &ui.workspaces[&w.context.workspace_id];
-    assert!(state.right.is_none());
+    assert!(state.host("main").unwrap().right.active_view_id.is_none());
     assert!(!state.views[0].ui_requested);
     assert_eq!(state.views.len(), 1);
     assert!(ui.target_ready(&w.context.workspace_id, "secondary"));
     drop(ui);
     f.core.ui_snapshot("main").unwrap();
     assert_eq!(
-        f.core.component_ui.lock().unwrap().workspaces[&w.context.workspace_id].views[0].id,
+        f.core.ui_state().workspaces[&w.context.workspace_id].views[0].id,
         view
     );
     f.core
@@ -277,10 +275,7 @@ fn hidden_background_mount_has_no_surface_and_does_not_block_a_move() {
             json!({"op":"open","key":"test.ui:status","requestId":"reveal"}),
         )
         .unwrap();
-    assert!(
-        f.core.component_ui.lock().unwrap().workspaces[&w.context.workspace_id].views[0]
-            .ui_requested
-    );
+    assert!(f.core.ui_state().workspaces[&w.context.workspace_id].views[0].ui_requested);
 }
 #[test]
 fn component_settings_bind_reports_to_current_window_surface_and_revision() {
@@ -693,21 +688,19 @@ fn accepted_behavior_follows_workspace_ownership_and_disconnect_fences_new_creat
             &json!({"context":w.context,"requestId":"second","actionKey":"test.ui:create"})
         )
         .is_err());
-    {
-        let mut state = f.core.workspaces.lock().unwrap();
-        state.register("moved").unwrap();
-        state.ready("moved").unwrap();
-        let m = state
-            .prepare(
-                "main",
-                &w.context.workspace_id,
-                "moved",
-                0,
-                "action-move".into(),
-            )
-            .unwrap();
-        state.commit(&m).unwrap();
-    }
+    let movement = f
+        .core
+        .prepare_workspace_move(
+            "main",
+            &w.context.workspace_id,
+            "moved",
+            0,
+            "action-move".into(),
+            true,
+        )
+        .unwrap();
+    f.core.workspace_state().ready("moved").unwrap();
+    f.core.commit_workspace_move(&movement).unwrap();
     f.core.workspace_changed();
     let result = action.join().unwrap();
     assert_eq!(result["status"], "completed");
@@ -717,12 +710,7 @@ fn accepted_behavior_follows_workspace_ownership_and_disconnect_fences_new_creat
         f.core.ui_action_status("moved", &query).unwrap()["viewId"],
         result["viewId"]
     );
-    f.core
-        .workspaces
-        .lock()
-        .unwrap()
-        .disconnected(&w.context)
-        .unwrap();
+    f.core.workspace_state().disconnected(&w.context).unwrap();
     f.core.workspace_changed();
     assert!(f
         .core
@@ -737,9 +725,7 @@ fn accepted_behavior_follows_workspace_ownership_and_disconnect_fences_new_creat
     );
     let next = f
         .core
-        .workspaces
-        .lock()
-        .unwrap()
+        .workspace_state()
         .reconnect(&w.context, "next".into(), "next".into())
         .unwrap();
     f.core.workspace_changed();
@@ -749,7 +735,7 @@ fn accepted_behavior_follows_workspace_ownership_and_disconnect_fences_new_creat
         .ui_action_status("moved", &json!({"context":next,"requestId":"moving"}))
         .is_err());
     {
-        let mut state = f.core.workspaces.lock().unwrap();
+        let mut state = f.core.workspace_state();
         state.ready("main").unwrap();
         let m = state
             .prepare(
@@ -765,7 +751,7 @@ fn accepted_behavior_follows_workspace_ownership_and_disconnect_fences_new_creat
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
-        let ids = self.core.workspaces.lock().unwrap().ids();
+        let ids = self.core.workspace_state().ids();
         if let Ok(plan) = self.core.ui_close_prepare("main", ids, None) {
             let _ = self.finish(&plan, "discard");
         }
@@ -940,7 +926,7 @@ fn defaults_resource_identity_retry_and_move_preserve_view_and_reject_old_surfac
     assert!(f
         .core
         .ui_action("main", &c.context, json!({"op":"select","viewId":browser}))
-        .is_err());
+        .is_ok());
     assert_eq!(
         state["workspaces"][&c.context.workspace_id]["views"]
             .as_array()
@@ -966,15 +952,19 @@ fn defaults_resource_identity_retry_and_move_preserve_view_and_reject_old_surfac
     f.core
         .ui_event("main", old, json!({"text":"draft A"}))
         .unwrap();
-    {
-        let mut ws = f.core.workspaces.lock().unwrap();
-        ws.register("child").unwrap();
-        ws.ready("child").unwrap();
-        let m = ws
-            .prepare("main", &a.context.workspace_id, "child", 0, "move".into())
-            .unwrap();
-        ws.commit(&m).unwrap();
-    }
+    let movement = f
+        .core
+        .prepare_workspace_move(
+            "main",
+            &a.context.workspace_id,
+            "child",
+            0,
+            "move".into(),
+            true,
+        )
+        .unwrap();
+    f.core.workspace_state().ready("child").unwrap();
+    f.core.commit_workspace_move(&movement).unwrap();
     assert!(f
         .core
         .ui_event("main", old, json!({"text":"stale"}))
@@ -1029,16 +1019,801 @@ fn save_failure_cancels_whole_close_and_layout_is_persisted_without_sessions() {
             json!({"op":"preference","key":"test.ui:browser","side":"right","pinned":false}),
         )
         .unwrap();
-    f.core
-        .component_ui
-        .lock()
-        .unwrap()
-        .save_widths(300, 280)
-        .unwrap();
+    f.core.ui_state().save_widths(300, 280).unwrap();
     let disk = fs::read_to_string(f.root.join("data/ui-layout.json")).unwrap();
     assert!(disk.contains("right"));
     assert!(!disk.contains("connectionId"));
     assert!(!disk.contains("draft"));
     let restored = sodeck::component_ui::Runtime::open(&f.root.join("data")).unwrap();
     assert_eq!(restored.widths(), (300, 280));
+}
+
+fn v2_fixture() -> Fixture {
+    let f = Fixture::new();
+    let path = f.plugin.join("plugin.json");
+    let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    manifest["ui"]["apiVersion"] = json!("2");
+    fs::write(path, manifest.to_string()).unwrap();
+    f.load().unwrap();
+    f
+}
+#[test]
+fn tool_toggle_and_hide_use_actual_dock_after_moving_without_changing_default_side() {
+    let f = v2_fixture();
+    let w = f.open("actual-dock");
+    let id = f.core.ui_state().workspaces[&w.context.workspace_id]
+        .host("main")
+        .unwrap()
+        .left
+        .view_ids[0]
+        .clone();
+    f.core
+        .ui_action(
+            "main",
+            &w.context,
+            json!({"op":"dock","viewId":id,"side":"right"}),
+        )
+        .unwrap();
+    assert_eq!(
+        f.core.ui_state().workspaces[&w.context.workspace_id].preferences["test.ui:browser"].side,
+        "left"
+    );
+    f.core
+        .ui_action(
+            "main",
+            &w.context,
+            json!({"op":"toggle","key":"test.ui:browser","requestId":"toggle-actual"}),
+        )
+        .unwrap();
+    assert!(f.core.ui_state().workspaces[&w.context.workspace_id]
+        .host("main")
+        .unwrap()
+        .right
+        .active_view_id
+        .is_none());
+    f.core
+        .ui_action(
+            "main",
+            &w.context,
+            json!({"op":"open","key":"test.ui:browser","requestId":"reveal-actual"}),
+        )
+        .unwrap();
+    f.core
+        .ui_action("main", &w.context, json!({"op":"hideTool","viewId":id}))
+        .unwrap();
+    let state = f.core.ui_state();
+    let host = state.workspaces[&w.context.workspace_id]
+        .host("main")
+        .unwrap();
+    assert!(host.right.view_ids.contains(&id) && host.right.active_view_id.is_none());
+    assert!(!host.left.view_ids.contains(&id));
+}
+
+#[test]
+fn layout_memory_restores_empty_groups_and_tools_without_runtime_identities() {
+    let f = v2_fixture();
+    let w = f.open("remember-layout");
+    let group = f
+        .core
+        .ui_action("main", &w.context, json!({"op":"split","axis":"y"}))
+        .unwrap()["groupId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let state = f.core.ui_snapshot("main").unwrap();
+    let tool = state["workspaces"][&w.context.workspace_id]["left"]
+        .as_str()
+        .unwrap();
+    f.core
+        .ui_action(
+            "main",
+            &w.context,
+            json!({"op":"moveView","viewId":tool,"groupId":group}),
+        )
+        .unwrap();
+    let state = f.core.ui_snapshot("main").unwrap();
+    let split = state["workspaces"][&w.context.workspace_id]["host"]["center"]["id"]
+        .as_str()
+        .unwrap();
+    f.core
+        .ui_action(
+            "main",
+            &w.context,
+            json!({"op":"splitRatio","splitId":split,"ratio":0.65}),
+        )
+        .unwrap();
+    let path = f.root.join("data/workbench-layout.json");
+    let text = fs::read_to_string(&path).unwrap();
+    for value in [
+        &w.context.workspace_id,
+        &w.context.connection_id,
+        tool,
+        split,
+    ] {
+        assert!(!text.contains(value));
+    }
+    let memory = sodeck::workbench_memory::Memory::open(&f.root.join("data"));
+    assert!(memory.error.is_none());
+    let saved = memory.primary(&w.context.server_id).unwrap();
+    let host = saved.seed("new-container".into()).unwrap();
+    assert_eq!(host.groups.len(), 2);
+    assert!(host.view_ids().is_empty());
+    assert_eq!(serde_json::to_value(&host.center).unwrap()["ratio"], 0.65);
+    assert!(saved.tools["test.ui:browser"].group.is_some());
+    assert!(f.root.join("data/workbench-layout.json.bak").exists());
+    let plan = f
+        .core
+        .ui_close_prepare("main", vec![w.context.workspace_id.clone()], None)
+        .unwrap();
+    f.finish(&plan, "discard").unwrap();
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        text,
+        "server close preserves its last configured containers"
+    );
+    let reopened = f
+        .core
+        .accept_connected(ConnectedSession {
+            server_id: w.context.server_id,
+            connection_id: "new-session".into(),
+            endpoint: w.endpoint,
+        })
+        .unwrap();
+    let ui = f.core.ui_snapshot("main").unwrap();
+    assert_eq!(
+        ui["workspaces"][&reopened.context.workspace_id]["host"]["groups"]
+            .as_object()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert!(ui["workspaces"][&reopened.context.workspace_id]["views"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|v| v["resourceKey"].is_null()));
+}
+
+#[test]
+fn corrupt_or_unknown_layout_is_preserved_and_does_not_disable_workbench() {
+    let f = Fixture::new();
+    let root = f.root.join("invalid-layout");
+    fs::create_dir_all(&root).unwrap();
+    for original in ["{broken", "{\"schemaVersion\":99,\"servers\":{}}"] {
+        fs::write(root.join("workbench-layout.json"), original).unwrap();
+        let mut memory = sodeck::workbench_memory::Memory::open(&root);
+        assert!(memory.error.is_some());
+        assert!(memory.primary("server").is_none());
+        memory
+            .capture(
+                &[],
+                &Default::default(),
+                &Default::default(),
+                &Default::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            fs::read_to_string(root.join("workbench-layout.json")).unwrap(),
+            original
+        );
+    }
+}
+
+#[test]
+fn closing_one_host_keeps_other_window_pages_and_server_context_alive() {
+    use sodeck::{
+        lifecycle::{Phase, Target},
+        workbench_move::{Destination, Scope},
+    };
+    let f = v2_fixture();
+    let w = f.open("two-hosts");
+    let (remote, token) = page(&f, &w.context, "main", "/remote-host", None);
+    let (local, _) = page(&f, &w.context, "main", "/local-host", None);
+    let m = f
+        .core
+        .prepare_workbench_move(
+            "main",
+            &w.context.workspace_id,
+            "host-child",
+            0,
+            "host-move".into(),
+            true,
+            Scope::View { id: remote.clone() },
+            Destination::default(),
+        )
+        .unwrap();
+    finish_transfer(&f, &m, std::slice::from_ref(&remote));
+    let remote_surface = f.core.ui_attach("host-child", &remote).unwrap();
+    let active = remote_surface["surfaceId"].as_str().unwrap();
+    f.core.ui_surface_ready("host-child", active).unwrap();
+    f.core
+        .ui_event("host-child", active, json!({"text":"child draft"}))
+        .unwrap();
+    let op = f
+        .core
+        .close_prepare(
+            "main",
+            "close-main-host",
+            Target::Host {
+                id: w.context.workspace_id.clone(),
+            },
+        )
+        .unwrap();
+    assert!(op.views.contains(&local));
+    assert!(!op.views.contains(&remote));
+    f.core
+        .close_report_inputs("main", &op.id, op.input_round, json!({}))
+        .unwrap();
+    let ready = wait_close(&f.core, &op.id, Phase::Deciding);
+    let decision = f
+        .core
+        .close_decide("main", &op.id, ready.decision_revision, "discard")
+        .unwrap();
+    f.core
+        .close_report_inputs("main", &op.id, decision.input_round, json!({}))
+        .unwrap();
+    // The other window prepares and restores the singleton tools being returned.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(12);
+    let result = loop {
+        let snapshot = f.core.ui_snapshot("host-child").unwrap();
+        for transfer in snapshot["transfers"].as_array().unwrap() {
+            for view in transfer["viewIds"].as_array().unwrap() {
+                if let Ok(surface) = f.core.ui_attach("host-child", view.as_str().unwrap()) {
+                    let _ = f
+                        .core
+                        .ui_surface_ready("host-child", surface["surfaceId"].as_str().unwrap());
+                }
+            }
+        }
+        let current = f.core.close_status("main", &op.id).unwrap();
+        if current.phase == Phase::Completed {
+            break current;
+        }
+        assert!(
+            current.phase != Phase::Failed && std::time::Instant::now() < deadline,
+            "{:?}: {:?}",
+            current.phase,
+            current.error
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    assert_eq!(result.phase, Phase::Completed);
+    f.core
+        .workspace_state()
+        .validate_owned("host-child", &w.context)
+        .unwrap();
+    assert!(f
+        .core
+        .ui_event("main", &token, json!({"text":"retired"}))
+        .is_err());
+    f.core
+        .ui_event("host-child", active, json!({"text":"still usable"}))
+        .unwrap();
+}
+
+#[test]
+fn move_receipt_retries_keep_identity_and_reject_changed_scope_or_target() {
+    use sodeck::workbench_move::{Destination, Scope};
+    let f = v2_fixture();
+    let w = f.open("receipts");
+    let (id, _) = page(&f, &w.context, "main", "/receipt", None);
+    let m = f
+        .core
+        .prepare_workbench_move(
+            "main",
+            &w.context.workspace_id,
+            "receipt-child",
+            0,
+            "receipt".into(),
+            true,
+            Scope::View { id: id.clone() },
+            Destination::default(),
+        )
+        .unwrap();
+    let retry = f
+        .core
+        .prepare_workbench_move(
+            "main",
+            &w.context.workspace_id,
+            "receipt-child",
+            0,
+            "receipt".into(),
+            true,
+            Scope::View { id: id.clone() },
+            Destination::default(),
+        )
+        .unwrap();
+    assert_eq!(retry.token, m.token);
+    assert_eq!(
+        f.core.workbench_move_status("main", "receipt").unwrap()["status"],
+        "pending"
+    );
+    assert!(f
+        .core
+        .prepare_workbench_move(
+            "main",
+            &w.context.workspace_id,
+            "different",
+            0,
+            "receipt".into(),
+            true,
+            Scope::View { id: id.clone() },
+            Destination::default()
+        )
+        .is_err());
+    finish_transfer(&f, &m, std::slice::from_ref(&id));
+    f.core.commit_workbench_move(&m).unwrap();
+    assert_eq!(
+        f.core.workbench_move_status("main", "receipt").unwrap()["status"],
+        "completed"
+    );
+    assert!(f
+        .core
+        .workbench_move_status("unrelated", "receipt")
+        .is_err());
+}
+fn page(
+    f: &Fixture,
+    c: &sodeck::workspaces::Context,
+    window: &str,
+    name: &str,
+    group: Option<&str>,
+) -> (String, String) {
+    let opened=f.core.ui_action(window,c,json!({"op":"open","key":"test.ui:editor","resourceKey":name,"requestId":name,"groupId":group})).unwrap();
+    let id = opened["viewId"].as_str().unwrap().to_owned();
+    let surface = f.core.ui_attach(window, &id).unwrap();
+    let token = surface["surfaceId"].as_str().unwrap().to_owned();
+    f.core.ui_surface_ready(window, &token).unwrap();
+    (id, token)
+}
+fn finish_transfer(f: &Fixture, m: &sodeck::workspaces::Move, views: &[String]) {
+    restore_transfer(f, m, views);
+    f.core.commit_workbench_move(m).unwrap();
+    f.core.workspace_changed();
+}
+fn restore_transfer(f: &Fixture, m: &sodeck::workspaces::Move, views: &[String]) {
+    f.core.workspace_state().ready(&m.target).unwrap();
+    for view in views {
+        let s = f.core.ui_attach(&m.target, view).unwrap();
+        assert_eq!(s["readOnly"], true);
+        f.core
+            .ui_surface_ready(&m.target, s["surfaceId"].as_str().unwrap())
+            .unwrap();
+    }
+    f.core.begin_transfer_drain(m).unwrap();
+    f.core.transfer_drained(&m.source, &m.token).unwrap();
+    for view in views {
+        let s = f.core.ui_attach(&m.target, view).unwrap();
+        f.core
+            .ui_surface_ready(&m.target, s["surfaceId"].as_str().unwrap())
+            .unwrap();
+    }
+}
+#[test]
+fn window_return_commits_every_host_together_and_failed_member_preserves_all_sources() {
+    use sodeck::workbench_move::{Destination, Scope};
+    let f = v2_fixture();
+    let a = f.open("return-a");
+    let b = f.open("return-b");
+    for (at, w) in [&a, &b].iter().enumerate() {
+        let ids = f.core.ui_state().workspaces[&w.context.workspace_id]
+            .host("main")
+            .unwrap()
+            .view_ids();
+        for id in &ids {
+            let s = f.core.ui_attach("main", id).unwrap();
+            f.core
+                .ui_surface_ready("main", s["surfaceId"].as_str().unwrap())
+                .unwrap();
+        }
+        let m = f
+            .core
+            .prepare_workbench_move(
+                "main",
+                &w.context.workspace_id,
+                "return-child",
+                at,
+                format!("detach-{at}"),
+                at == 0,
+                Scope::Host,
+                Destination::default(),
+            )
+            .unwrap();
+        finish_transfer(&f, &m, &ids);
+    }
+    let old: Vec<_> = [&a, &b]
+        .iter()
+        .map(|w| {
+            let ids = f.core.ui_state().workspaces[&w.context.workspace_id]
+                .host("return-child")
+                .unwrap()
+                .view_ids();
+            let surface = f.core.ui_attach("return-child", &ids[0]).unwrap();
+            f.core
+                .ui_surface_ready("return-child", surface["surfaceId"].as_str().unwrap())
+                .unwrap();
+            (ids, surface["surfaceId"].as_str().unwrap().to_owned())
+        })
+        .collect();
+    let moves = f
+        .core
+        .prepare_window_return("return-child", "all-fail".into())
+        .unwrap();
+    assert_eq!(moves.len(), 2);
+    assert_eq!(
+        f.core
+            .workspace_projection("main")
+            .unwrap()
+            .incoming_workspaces
+            .len(),
+        2
+    );
+    restore_transfer(&f, &moves[0], &old[0].0);
+    assert!(f.core.commit_workbench_moves(&moves).is_err());
+    for (w, (ids, _)) in [&a, &b].iter().zip(&old) {
+        assert_eq!(
+            f.core.ui_state().workspaces[&w.context.workspace_id]
+                .view_window(&ids[0])
+                .as_deref(),
+            Some("return-child")
+        );
+    }
+    for m in &moves {
+        f.core.cancel_workbench_move(m);
+    }
+    for (_, token) in &old {
+        assert!(f
+            .core
+            .ui_event(
+                "return-child",
+                token,
+                json!({"text":"source still writable"})
+            )
+            .is_ok());
+    }
+    let moves = f
+        .core
+        .prepare_window_return("return-child", "all-ok".into())
+        .unwrap();
+    for (m, (ids, _)) in moves.iter().zip(&old) {
+        restore_transfer(&f, m, ids);
+    }
+    f.core.commit_workbench_moves(&moves).unwrap();
+    f.core.commit_workbench_moves(&moves).unwrap();
+    assert!(f
+        .core
+        .workspace_projection("return-child")
+        .unwrap()
+        .workspaces
+        .is_empty());
+    assert_eq!(
+        f.core
+            .workspace_projection("main")
+            .unwrap()
+            .workspaces
+            .len(),
+        2
+    );
+    assert_eq!(
+        f.core
+            .workbench_move_status("return-child", "all-ok")
+            .unwrap()["status"],
+        "completed"
+    );
+    for (_, token) in &old {
+        assert!(f
+            .core
+            .ui_event("return-child", token, json!({"text":"stale"}))
+            .is_err());
+    }
+}
+#[test]
+fn return_bookmark_restores_original_group_between_neighboring_tabs_and_tool_dock() {
+    use sodeck::workbench_move::{Destination, Scope};
+    let f = v2_fixture();
+    let w = f.open("return-bookmark");
+    let (a, _) = page(&f, &w.context, "main", "/before", None);
+    let (b, _) = page(&f, &w.context, "main", "/return", None);
+    let (c, _) = page(&f, &w.context, "main", "/after", None);
+    let group = f.core.ui_state().workspaces[&w.context.workspace_id]
+        .host("main")
+        .unwrap()
+        .group_of(&b)
+        .unwrap();
+    let m = f
+        .core
+        .prepare_workbench_move(
+            "main",
+            &w.context.workspace_id,
+            "book-child",
+            0,
+            "book-detach".into(),
+            true,
+            Scope::View { id: b.clone() },
+            Destination::default(),
+        )
+        .unwrap();
+    finish_transfer(&f, &m, std::slice::from_ref(&b));
+    f.core
+        .ui_action("main", &w.context, json!({"op":"split","axis":"y"}))
+        .unwrap();
+    let scope = Scope::View { id: b.clone() };
+    let (target, destination) = f
+        .core
+        .resolve_workbench_return("book-child", &w.context.workspace_id, &scope)
+        .unwrap();
+    assert_eq!(target, "main");
+    assert_eq!(destination.group_id.as_deref(), Some(group.as_str()));
+    let m = f
+        .core
+        .prepare_workbench_move(
+            "book-child",
+            &w.context.workspace_id,
+            &target,
+            0,
+            "book-return".into(),
+            false,
+            scope,
+            destination,
+        )
+        .unwrap();
+    finish_transfer(&f, &m, std::slice::from_ref(&b));
+    let ids = f.core.ui_state().workspaces[&w.context.workspace_id]
+        .host("main")
+        .unwrap()
+        .groups[&group]
+        .view_ids
+        .clone();
+    let at = ids.iter().position(|id| id == &b).unwrap();
+    assert_eq!(&ids[at - 1], &a);
+    assert_eq!(&ids[at + 1], &c);
+    assert!(!f.core.ui_state().workspaces[&w.context.workspace_id]
+        .return_locations
+        .contains_key(&b));
+    let tool = f.core.ui_state().workspaces[&w.context.workspace_id]
+        .host("main")
+        .unwrap()
+        .left
+        .view_ids[0]
+        .clone();
+    let s = f.core.ui_attach("main", &tool).unwrap();
+    f.core
+        .ui_surface_ready("main", s["surfaceId"].as_str().unwrap())
+        .unwrap();
+    let m = f
+        .core
+        .prepare_workbench_move(
+            "main",
+            &w.context.workspace_id,
+            "book-child",
+            0,
+            "tool-detach".into(),
+            false,
+            Scope::View { id: tool.clone() },
+            Destination::default(),
+        )
+        .unwrap();
+    finish_transfer(&f, &m, std::slice::from_ref(&tool));
+    let (_, destination) = f
+        .core
+        .resolve_workbench_return(
+            "book-child",
+            &w.context.workspace_id,
+            &Scope::View { id: tool },
+        )
+        .unwrap();
+    assert_eq!(destination.side.as_deref(), Some("left"));
+}
+#[test]
+fn group_transfer_keeps_group_identity_tab_order_and_return_bookmark_in_an_empty_window() {
+    use sodeck::workbench_move::{Destination, Scope};
+    let f = v2_fixture();
+    let w = f.open("group-identity");
+    let group = f
+        .core
+        .ui_action("main", &w.context, json!({"op":"split","axis":"y"}))
+        .unwrap()["groupId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (a, _) = page(&f, &w.context, "main", "/group-a", Some(&group));
+    let (b, _) = page(&f, &w.context, "main", "/group-b", Some(&group));
+    let m = f
+        .core
+        .prepare_workbench_move(
+            "main",
+            &w.context.workspace_id,
+            "group-child",
+            0,
+            "whole-group".into(),
+            true,
+            Scope::Group { id: group.clone() },
+            Destination::default(),
+        )
+        .unwrap();
+    finish_transfer(&f, &m, &[a.clone(), b.clone()]);
+    let ui = f.core.ui_state().workspaces[&w.context.workspace_id].clone();
+    assert!(!ui.host("main").unwrap().groups.contains_key(&group));
+    assert_eq!(
+        ui.host("group-child").unwrap().groups[&group].view_ids,
+        vec![a, b.clone()]
+    );
+    assert_eq!(
+        ui.host("group-child").unwrap().groups[&group]
+            .active_view_id
+            .as_deref(),
+        Some(b.as_str())
+    );
+    assert_eq!(ui.group_return_locations[&group].window_id, "main");
+}
+#[test]
+fn v2_page_transfer_keeps_draft_denies_candidate_input_and_retires_old_surface() {
+    use sodeck::workbench_move::{Destination, Scope};
+    let f = v2_fixture();
+    let w = f.open("transfer");
+    let (id, old) = page(&f, &w.context, "main", "/draft", None);
+    f.core
+        .ui_event("main", &old, json!({"text":"unsaved"}))
+        .unwrap();
+    let m = f
+        .core
+        .prepare_workbench_move(
+            "main",
+            &w.context.workspace_id,
+            "child",
+            0,
+            "transfer".into(),
+            true,
+            Scope::View { id: id.clone() },
+            Destination::default(),
+        )
+        .unwrap();
+    let candidate = f.core.ui_attach("child", &id).unwrap();
+    let token = candidate["surfaceId"].as_str().unwrap();
+    f.core.ui_surface_ready("child", token).unwrap();
+    assert_eq!(candidate["data"]["text"], "unsaved");
+    assert!(f
+        .core
+        .ui_event("child", token, json!({"text":"wrong"}))
+        .is_err());
+    assert!(f.core.commit_workbench_move(&m).is_err());
+    finish_transfer(&f, &m, std::slice::from_ref(&id));
+    assert!(f
+        .core
+        .ui_event("main", &old, json!({"text":"stale"}))
+        .is_err());
+    let current = f.core.ui_attach("child", &id).unwrap();
+    assert_eq!(current["data"]["text"], "unsaved");
+    assert_eq!(current["readOnly"], false);
+    assert!(f
+        .root
+        .join(format!("data/plugin-data/test.ui/created-{id}"))
+        .exists());
+    assert_eq!(
+        f.core.workspace_projection("main").unwrap().workspaces[0].context,
+        w.context
+    );
+    assert_eq!(
+        f.core.workspace_projection("child").unwrap().workspaces[0].context,
+        w.context
+    );
+}
+#[test]
+fn disjoint_groups_remain_editable_and_commit_preserves_their_changes() {
+    use sodeck::workbench_move::{Destination, Scope};
+    let f = v2_fixture();
+    let w = f.open("groups");
+    let (a, _) = page(&f, &w.context, "main", "/a", None);
+    let group = f
+        .core
+        .ui_action("main", &w.context, json!({"op":"split","axis":"x"}))
+        .unwrap()["groupId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (b, _) = page(&f, &w.context, "main", "/b", Some(&group));
+    let m = f
+        .core
+        .prepare_workbench_move(
+            "main",
+            &w.context.workspace_id,
+            "child",
+            0,
+            "moving-a".into(),
+            true,
+            Scope::View { id: a.clone() },
+            Destination::default(),
+        )
+        .unwrap();
+    let (c, _) = page(&f, &w.context, "main", "/c", Some(&group));
+    assert!(f
+        .core
+        .ui_action(
+            "main",
+            &w.context,
+            json!({"op":"moveView","viewId":a,"groupId":group})
+        )
+        .is_err());
+    finish_transfer(&f, &m, std::slice::from_ref(&a));
+    let state = f.core.ui_state();
+    let host = state.workspaces[&w.context.workspace_id]
+        .host("main")
+        .unwrap();
+    assert!(host.contains(&b) && host.contains(&c) && !host.contains(&a));
+    host.validate().unwrap();
+}
+#[test]
+fn lost_secondary_recovers_the_same_view_without_recreating_the_plugin_instance() {
+    use sodeck::workbench_move::{Destination, Scope};
+    let f = v2_fixture();
+    let w = f.open("recovery");
+    let (id, old) = page(&f, &w.context, "main", "/recover", None);
+    f.core
+        .ui_event("main", &old, json!({"text":"preserved"}))
+        .unwrap();
+    let m = f
+        .core
+        .prepare_workbench_move(
+            "main",
+            &w.context.workspace_id,
+            "child",
+            0,
+            "recover".into(),
+            true,
+            Scope::View { id: id.clone() },
+            Destination::default(),
+        )
+        .unwrap();
+    finish_transfer(&f, &m, std::slice::from_ref(&id));
+    let before = f.core.ui_attach("child", &id).unwrap();
+    let instance = before["view"]["pluginInstanceId"].clone();
+    f.core.close_host_lost("child");
+    let recovered = f.core.ui_attach("main", &id).unwrap();
+    assert_eq!(recovered["data"]["text"], "preserved");
+    assert_eq!(recovered["view"]["pluginInstanceId"], instance);
+    assert!(f.core.workspace_projection("child").is_err());
+}
+#[test]
+fn generation_change_fences_a_prepared_transfer_and_cancel_preserves_source() {
+    use sodeck::workbench_move::{Destination, Scope};
+    let f = v2_fixture();
+    let w = f.open("generation");
+    let (id, _) = page(&f, &w.context, "main", "/generation", None);
+    let m = f
+        .core
+        .prepare_workbench_move(
+            "main",
+            &w.context.workspace_id,
+            "child",
+            0,
+            "generation".into(),
+            true,
+            Scope::View { id: id.clone() },
+            Destination::default(),
+        )
+        .unwrap();
+    f.core.workspace_state().ready("child").unwrap();
+    let s = f.core.ui_attach("child", &id).unwrap();
+    f.core
+        .ui_surface_ready("child", s["surfaceId"].as_str().unwrap())
+        .unwrap();
+    f.core.begin_transfer_drain(&m).unwrap();
+    f.core.transfer_drained("main", &m.token).unwrap();
+    let s = f.core.ui_attach("child", &id).unwrap();
+    f.core
+        .ui_surface_ready("child", s["surfaceId"].as_str().unwrap())
+        .unwrap();
+    f.core.workspace_state().disconnected(&w.context).unwrap();
+    f.core
+        .workspace_state()
+        .reconnect(&w.context, "next".into(), "next".into())
+        .unwrap();
+    assert!(f.core.commit_workbench_move(&m).is_err());
+    f.core.cancel_workbench_move(&m);
+    assert_eq!(
+        f.core.ui_state().workspaces[&w.context.workspace_id]
+            .view_window(&id)
+            .as_deref(),
+        Some("main")
+    );
 }

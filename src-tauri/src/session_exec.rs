@@ -106,7 +106,7 @@ impl AppCore {
                 .ok_or_else(|| error("invalidParams", format!("缺少 {key}")))
         };
         if method == "session.state" {
-            let ui = self.component_ui.lock().unwrap();
+            let ui = self.ui_state();
             let view = ui
                 .resource_view(text("viewId")?)
                 .map_err(|e| error("staleContext", e))?;
@@ -114,7 +114,7 @@ impl AppCore {
                 return Err(error("staleContext", "视图不属于此实例"));
             }
             let context = view.context.clone();
-            let frozen = ui.frozen(&context.workspace_id);
+            let frozen = ui.lifecycle.view_frozen(&view.id);
             drop(ui);
             let connected = self.connection_session(&context).is_ok();
             return Ok(

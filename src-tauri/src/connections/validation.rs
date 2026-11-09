@@ -8,7 +8,7 @@ impl AppCore {
     ) -> Result<(Vec<u8>, u32), String> {
         let session = {
             let entries = self.connections.entries.lock().unwrap();
-            self.workspaces.lock().unwrap().validate_context(context)?;
+            self.workspace_state().validate_context(context)?;
             entries
                 .get(&context.server_id)
                 .filter(|a| a.view().context.as_ref() == Some(context))

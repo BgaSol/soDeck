@@ -70,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or_else(|| std::env::temp_dir().join("sodeck-files"));
             let manager = tasks::Tasks::new(client.clone(), directory)?;
             *task_manager_for_handler.lock().unwrap() = Some(manager);
-            return Ok(json!({"apiVersion":"1","settingsApiVersion":"1"}));
+            return Ok(json!({"apiVersion":"1","settingsApiVersion":"1","uiApiVersion":"2"}));
         }
         if method == "settings.changed" {
             return settings.changed(&p, &["browser", "editor"]);
@@ -85,7 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             return Ok(json!({}));
         }
-        if method == "ui.mount" && !views.lock().unwrap().contains_key(view) {
+        if method == "ui.createView" && !views.lock().unwrap().contains_key(view) {
             if p["viewType"] == "editor"
                 && tasks.blocks(&p["context"], p["params"]["path"].as_str().unwrap_or(""))
             {
@@ -390,7 +390,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 _ => return Err("未知文件交互".into()),
             }
-        } else if method != "ui.mount" {
+        } else if !["ui.createView", "ui.getView"].contains(&method) {
             return Err("未知文件插件方法".into());
         }
         let busy = v.busy || tasks.busy(view);

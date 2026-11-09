@@ -46,7 +46,7 @@ pub(crate) fn start_background(core: &Arc<AppCore>) {
                 }
             }
             let candidates: Vec<_> = {
-                let ui = core.component_ui.lock().unwrap();
+                let ui = core.ui_state();
                 ui.workspaces
                     .values()
                     .filter(|w| {
@@ -84,8 +84,21 @@ pub(crate) fn start_background(core: &Arc<AppCore>) {
                 let workers = workers.clone();
                 std::thread::spawn(move || {
                     let ok = core.upgrade().is_some_and(|c| {
-                        let response = c.ui_plugin_call(&view, "ui.mount", Value::Null);
-                        let mut ui = c.component_ui.lock().unwrap();
+                        let response = c.ui_create_view(&view).and_then(|_| {
+                            let version = c.ui_state().definitions[&view.definition_key]
+                                .ui_api_version
+                                .clone();
+                            c.ui_plugin_call(
+                                &view,
+                                if version == "2" {
+                                    "ui.getView"
+                                } else {
+                                    "ui.mount"
+                                },
+                                Value::Null,
+                            )
+                        });
+                        let mut ui = c.ui_state();
                         if !ui.view(&view.id).is_ok_and(|v| {
                             v.plugin_instance_id == view.plugin_instance_id
                                 && v.context == view.context

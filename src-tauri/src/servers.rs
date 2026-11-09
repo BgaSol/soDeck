@@ -554,7 +554,7 @@ impl AppCore {
                 selected = Some(id);
             }
             CatalogChange::DeleteServer { id } | CatalogChange::DeleteProxy { id } => {
-                if !deleting_proxy && self.workspaces.lock().unwrap().server_open(&id) {
+                if !deleting_proxy && self.workspace_state().server_open(&id) {
                     return Err("请先关闭此服务器的工作区，再删除档案".into());
                 }
                 if if deleting_proxy {
@@ -650,10 +650,7 @@ impl AppCore {
         }
         store.commit(c, sessions)?;
         self.connections.cancel_stale(&store);
-        self.workspaces
-            .lock()
-            .unwrap()
-            .rename(&store.workspace_names());
+        self.workspace_state().rename(&store.workspace_names());
         let view = store.view();
         drop(store);
         self.changed();

@@ -1,5 +1,6 @@
 // Actual terminal package + xterm UI + core PTY + independent OpenSSH.
 import assert from 'node:assert/strict';
+import {transferWorkbench} from './workbench-transfer-fixture.mjs';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import readline from 'node:readline';
 import {spawn,spawnSync} from 'node:child_process';import {createServer} from 'vite';import {chromium} from 'playwright';
 const build=spawnSync('cargo',['build','--manifest-path','src-tauri/Cargo.toml','--features','test-fixtures','--locked','--bin','catalog-fixture'],{stdio:'inherit',windowsHide:true});if(build.status!==0)throw new Error('Fixture build failed');
@@ -28,7 +29,7 @@ try{
  const catalog=await call('server_catalog');const changed=await call('change_catalog',{revision:catalog.revision,change:{op:'saveServer',draft:{name:'真实终端验收',host:'127.0.0.1',port:Number(process.env.SODECK_TEST_SSH_PORT),username:process.env.SODECK_TEST_SSH_USER,authentication:{type:'privateKey',privateKeyPath:process.env.SODECK_TEST_SSH_KEY,secret:{action:'clear'}},route:[]}}});
  await call('connection',{command:{op:'start',serverId:changed.selectedId}});
  await wait(async()=>{const [v]=await call('connection',{command:{op:'snapshot'}});if(v.question)await call('connection',{command:{op:'answer',attemptId:v.attemptId,questionId:v.question.id,answer:{kind:'hostKey',accept:true}}});if(v.state==='failed')throw new Error(JSON.stringify(v.error));return v.state==='connected';});
- const main=await pageFor('main');const board=main.locator('.server-workbench:visible');const frame=main.frameLocator('.server-workbench:visible iframe');
+ const main=await pageFor('main');const board=main.locator('.server-workbench:visible');const frame=main.frameLocator('.component-surface:not([hidden]) iframe');
  await frame.locator('body[data-ready="true"]').waitFor();
  await frame.locator('.xterm-helper-textarea').focus();await main.keyboard.press(process.platform==='darwin'?'Meta+v':process.platform==='linux'?'Control+Shift+v':'Control+v');
  await frame.locator('.xterm-rows').filter({hasText:'sodeck-ui-command-ok'}).waitFor();await main.keyboard.press('Enter');
@@ -53,6 +54,12 @@ try{
   await selected.locator('.xterm-rows').filter({hasText:'sodeck-ui-command-ok'}).waitFor();
   await main.screenshot({path:`artifacts/terminal-ui/real-terminal-${theme}.png`});
  }
+ const moved=await transferWorkbench(call,{window:'main',id:workspace.views[0].context.workspaceId,target:'terminal-transfer',scope:{kind:'view',id:first}},{sourcePage:main,openTarget:()=>pageFor('terminal-transfer')});
+ const movedFrame=moved.frameLocator(`.component-surface[data-view-id="${first}"] iframe`);
+ await movedFrame.locator('.xterm-rows').filter({hasText:'sodeck-ui-command-ok'}).waitFor();
+ await movedFrame.locator('.xterm-helper-textarea').focus();await moved.keyboard.type(process.platform==='win32'?'echo sodeck-ui-transfer-ok':'printf "sodeck-ui-transfer-ok\\n"');await moved.keyboard.press('Enter');
+ await movedFrame.locator('.xterm-rows').filter({hasText:'sodeck-ui-transfer-ok'}).waitFor();
+ await transferWorkbench(call,{window:'terminal-transfer',id:workspace.views[0].context.workspaceId,target:'main',scope:{kind:'view',id:first}},{sourcePage:moved,openTarget:async()=>main});
  const oldFrame=main.frameLocator(`.component-surface[data-view-id="${first}"] iframe`);
  await oldFrame.locator('.xterm-helper-textarea').focus();await main.keyboard.type('exit');await main.keyboard.press('Enter');
  const newTerminal=oldFrame.getByRole('button',{name:'新建终端',exact:true});await newTerminal.waitFor();

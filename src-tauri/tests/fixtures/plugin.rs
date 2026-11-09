@@ -154,6 +154,19 @@ fn main() {
                         _ => (),
                     }
                 }
+                if method == "ui.getView" && !ui_views.contains_key(id) {
+                    send(
+                        json!({"jsonrpc":"2.0","id":frame["id"],"error":{"code":-1,"message":"view does not exist"}}),
+                    );
+                    continue;
+                }
+                if method == "ui.createView" && !ui_views.contains_key(id) {
+                    fs::write(
+                        format!("{}/created-{id}", data.as_ref().unwrap()),
+                        p.to_string(),
+                    )
+                    .unwrap();
+                }
                 let v = ui_views
                     .entry(id.into())
                     .or_insert(json!({"text":"","dirty":false}));
@@ -248,7 +261,7 @@ fn main() {
                     fs::write(format!("{directory}/child-pid"), child.id().to_string()).unwrap();
                 }
                 send(
-                    json!({"jsonrpc":"2.0","id":frame["id"],"result":{"apiVersion":"1","uiActionsApiVersion":if mode=="old-actions" {Value::Null} else {json!("1")}}}),
+                    json!({"jsonrpc":"2.0","id":frame["id"],"result":{"apiVersion":"1","uiApiVersion":"2","uiActionsApiVersion":if mode=="old-actions" {Value::Null} else {json!("1")}}}),
                 );
                 eprintln!("fixture diagnostic");
                 send(
@@ -301,7 +314,7 @@ fn main() {
                 )
                 .unwrap();
                 send(
-                    json!({"jsonrpc":"2.0","id":"initialize","result":{"apiVersion":"1","settingsApiVersion":"1","uiActionsApiVersion":if mode=="old-actions" {Value::Null} else {json!("1")}}}),
+                    json!({"jsonrpc":"2.0","id":"initialize","result":{"apiVersion":"1","uiApiVersion":"2","settingsApiVersion":"1","uiActionsApiVersion":if mode=="old-actions" {Value::Null} else {json!("1")}}}),
                 );
             }
             _ if frame["id"]

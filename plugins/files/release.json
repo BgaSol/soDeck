@@ -8,7 +8,7 @@
   "binary": "sodeck-files",
   "tagPrefix": "plugin-files-v",
   "ui": {
-    "apiVersion": "1",
+    "apiVersion": "2",
     "entry": "ui/index.html",
     "views": [
       {
@@ -48,7 +48,13 @@
             "id": "display",
             "title": "列表显示",
             "fields": [
-              {"key":"followTerminal","title":"跟随活动终端目录","type":"boolean","default":true,"apply":"live"},
+              {
+                "key": "followTerminal",
+                "title": "跟随活动终端目录",
+                "type": "boolean",
+                "default": true,
+                "apply": "live"
+              },
               {
                 "key": "showHidden",
                 "title": "显示隐藏条目",

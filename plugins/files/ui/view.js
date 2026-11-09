@@ -7,6 +7,7 @@ import {connectFileState} from './shared-state.js';
  const root=document.querySelector('#root'),encoder=new TextEncoder();
  let id,textarea,status,tree,transfers,cancelButton,jobTimer,jobId,busy=false,queue=Promise.resolve(),localRevision=0,eol='\n',bom=false,loaded=false,pumping=false,pendingDraft=false;
  const request=(method,params)=>sodeck.request(method,params);
+ let activated=false,readOnly=false,transferFrozen=false,composing=false,mountData;
  let settingsSnapshot,settingsEpoch=0,disposed=false,shared;
  async function applySettings(snapshot,force=false){
   if(!snapshot||disposed)return;
@@ -30,7 +31,7 @@ import {connectFileState} from './shared-state.js';
   if(snapshot.revision)await request('settings',{op:'applied',pageId:snapshot.pageId,definitionToken:snapshot.definitionToken,revision:snapshot.revision,...(error?{error}:{})}).catch(()=>{});
  }
  const data=(action,args={})=>request('data',{op:'files',id,action,...args});
- const event=args=>request('event',args);
+ const event=args=>!activated||readOnly||transferFrozen?(args.action==='navigation'?Promise.resolve({}):Promise.reject(new Error('界面正在交接'))):request('event',args);
  function message(text,error=false){if(status){status.textContent=text;status.classList.toggle('error',error);}if(error)void event({action:'error',message:String(text).slice(0,2048)}).catch(()=>{});}
  function perform(fn){return Promise.resolve().then(fn).catch(e=>message(e.message,true));}
  const size=n=>n==null?'':Number(n)<1024?`${n} B`:`${(Number(n)/1024).toFixed(1)} KiB`;
@@ -68,13 +69,12 @@ import {connectFileState} from './shared-state.js';
  async function save(){if(!loaded)throw new Error('文件尚未准备好编辑');await queue;if(busy)throw new Error('保存或下载正在进行');await watchJob(await event({action:'save'}));}
  function theme(tokens){for(const [name,value]of Object.entries(tokens||{}))document.documentElement.style.setProperty('--'+name,value);}
  async function init(m){
-  loaded=false;
+  loaded=false;activated=false;readOnly=Boolean(m.readOnly);mountData=m;root.inert=readOnly;
   settingsSnapshot=m.settings;
   id=m.data.fileId;theme(m.tokens);root.replaceChildren();
   status=document.createElement('div');status.className='status';status.setAttribute('role','status');
   const footer=document.createElement('footer');footer.className='sd-edge-top';footer.append(status);
-  // Ready precedes remote operations; describe/chunk may also be used by an incoming window.
-  sodeck.mounted(true,m.viewType==='files');
+
   if(m.viewType==='files'){
    root.className='browser-root';const host=document.createElement('section');root.append(host);
    cancelButton=button('取消下载',()=>data('cancel'));cancelButton.hidden=true;footer.append(cancelButton);root.append(footer);
@@ -97,12 +97,13 @@ import {connectFileState} from './shared-state.js';
    eol=crlf?'\r\n':'\n';textarea.value=text.replaceAll('\r\n','\n');loaded=true;
    textarea.setSelectionRange(m.data.cursor||0,m.data.cursor||0);textarea.scrollTop=m.data.scroll||0;
    await applySettings(settingsSnapshot||{pageId:'editor',values:{font:{source:'preset',id:'jetbrains-mono'},fontSize:14,lineHeight:1.5,wordWrap:false,tabSize:4}},true);
-   textarea.disabled=false;
+   textarea.disabled=readOnly;
+   textarea.addEventListener('compositionstart',()=>{composing=true;});textarea.addEventListener('compositionend',()=>{composing=false;});
    textarea.addEventListener('input',stage);textarea.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();void perform(save);}});
    textarea.addEventListener('select',()=>void event({action:'position',cursor:textarea.selectionStart,scroll:textarea.scrollTop}).catch(()=>{}));
    message('UTF-8'+(bom?' BOM':'')+(eol==='\r\n'?' · CRLF':' · LF')+' · '+size(info.size));
   }
-  const job=await data('status');if(job.state==='running')await watchJob(job);
+  sodeck.mounted(true,m.viewType==='files');
  }
  addEventListener('sodeck:mount',e=>void perform(()=>init(e.detail)));
  addEventListener('sodeck:themeChanged',e=>theme(e.detail.tokens));
@@ -112,7 +113,9 @@ import {connectFileState} from './shared-state.js';
  addEventListener('sodeck:visibilityChanged',e=>{shared?.visibility(e.detail.visible);transfers?.visibility(e.detail.visible);if(!e.detail.visible)tree?.closeMenu();});
  addEventListener('sodeck:localFileDrop',e=>tree?.nativeDrop(e.detail));
  addEventListener('sodeck:contextChanged',()=>{shared?.invalidate();transfers?.invalidate();tree?.contextChanged();message(tree?'连接已更换，刷新目录以读取最新文件':'服务器连接已更换；草稿保留，保存前将重新检查远端版本');});
- addEventListener('sodeck:flush',async e=>{try{await queue;await tree?.flush();parent.postMessage({channel:'sodeck-ui-v1',type:'flushed',surfaceId:e.detail.surfaceId,id:e.detail.id},'*');}catch(error){parent.postMessage({channel:'sodeck-ui-v1',type:'flushed',surfaceId:e.detail.surfaceId,id:e.detail.id,error:error.message},'*');}});
+ addEventListener('sodeck:flush',async e=>{try{if(composing)throw new Error('请先完成当前输入法组合输入');await queue;await tree?.flush();transferFrozen=e.detail.freeze===true;root.inert=readOnly||transferFrozen;parent.postMessage({channel:'sodeck-ui-v2',type:'flushed',surfaceId:e.detail.surfaceId,id:e.detail.id},'*');}catch(error){transferFrozen=false;root.inert=readOnly;parent.postMessage({channel:'sodeck-ui-v2',type:'flushed',surfaceId:e.detail.surfaceId,id:e.detail.id,error:error.message},'*');}});
+ addEventListener('sodeck:surfaceReady',()=>{activated=true;readOnly=false;transferFrozen=false;root.inert=false;void data('status').then(job=>{if(job.state==='running')return watchJob(job);}).catch(error=>message(error.message,true));if(textarea)textarea.disabled=false;shared?.visibility(mountData?.visible!==false);});
+ addEventListener('sodeck:transferCancelled',()=>{transferFrozen=false;root.inert=readOnly;});
  addEventListener('sodeck:unmount',()=>{disposed=true;settingsEpoch++;shared?.dispose();transfers?.dispose();tree?.dispose();});
  addEventListener('unload',()=>{clearTimeout(jobTimer);transfers?.dispose();tree?.dispose();});
 })();

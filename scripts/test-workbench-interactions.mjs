@@ -16,6 +16,18 @@ const fixture=async()=>{
   return page;
 };
 
+test('nested layout reserves usable group dimensions and clamps without changing saved proportions',async()=>{
+  const page=await fixture();
+  try {
+    const result=await page.evaluate(async()=>{
+      const {centerMinimum,effectiveRatio,ratioBounds,withSplit}=await import('/center-layout.ts');
+      const tree={type:'split',id:'root',axis:'x',ratio:.1,first:{type:'group',groupId:'a'},second:{type:'split',id:'lower',axis:'y',ratio:.5,first:{type:'group',groupId:'b'},second:{type:'group',groupId:'c'}}};
+      return {minimum:centerMinimum(tree),bounds:ratioBounds(tree,1006,800),effective:effectiveRatio(tree,1006,800),saved:tree.ratio,extra:centerMinimum(withSplit(tree,'a','x'))};
+    });
+    assert.deepEqual(result,{minimum:{width:566,height:366},bounds:{min:.28,max:.72},effective:.28,saved:.1,extra:{width:852,height:366}});
+  } finally {await page.close();}
+});
+
 test('workspace menu follows a right-edge anchor when the open window shrinks',async()=>{
   const page=await fixture();
   try{

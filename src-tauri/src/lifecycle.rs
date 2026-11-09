@@ -11,10 +11,26 @@ mod host;
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Target {
-    Views { ids: Vec<String> },
-    Workspace { id: String },
-    Window { id: String },
-    Application { action: Action },
+    Views {
+        ids: Vec<String>,
+    },
+    Workspace {
+        id: String,
+    },
+    Host {
+        id: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    Group {
+        id: String,
+        workspace_id: String,
+    },
+    Window {
+        id: String,
+    },
+    Application {
+        action: Action,
+    },
 }
 
 #[cfg(test)]
@@ -59,14 +75,14 @@ mod tests {
         }
         assert!(!core.is_closing());
         {
-            let mut ui = core.component_ui.lock().unwrap();
+            let mut ui = core.ui_state();
             ui.lifecycle.lost_hosts.insert("main".into());
             ui.lifecycle.operations.get_mut(&op.id).unwrap().ended_at =
                 Some(crate::core::now() - 60_001);
         }
         core.expire_close_inputs(std::time::Instant::now());
         {
-            let ui = core.component_ui.lock().unwrap();
+            let ui = core.ui_state();
             assert!(!ui.lifecycle.operations.contains_key(&op.id));
             assert!(ui.lifecycle.lost_hosts.is_empty());
         }
@@ -93,7 +109,7 @@ pub enum Phase {
     Aborted,
 }
 impl Phase {
-    fn terminal(self) -> bool {
+    pub(crate) fn terminal(self) -> bool {
         matches!(self, Self::Completed | Self::Aborted)
     }
 }
@@ -108,6 +124,9 @@ pub struct Operation {
     pub input_round: u64,
     pub decision_revision: u64,
     pub workspaces: Vec<String>,
+    pub ending_workspaces: Vec<String>,
+    pub returning_tools: Vec<String>,
+    pub return_moves: Vec<String>,
     pub views: Vec<String>,
     pub surfaces: HashMap<String, Vec<String>>,
     pub inputs: HashMap<String, Option<Value>>,
@@ -150,13 +169,36 @@ pub(crate) struct Lifecycle {
     pub(crate) operations: HashMap<String, Operation>,
 }
 impl Lifecycle {
-    pub(crate) fn input_work_allowed(&self, workspace: &str) -> bool {
+    pub(crate) fn view_frozen(&self, view: &str) -> bool {
+        self.operations.values().any(|o| {
+            !o.phase.terminal() && o.adopted_by.is_none() && o.views.iter().any(|id| id == view)
+        })
+    }
+    pub(crate) fn host_closing(&self, workspace: &str, window: &str) -> bool {
+        self.frozen(workspace)
+            || self.window_closing(window)
+            || self.operations.values().any(|o| {
+                !o.phase.terminal()
+                    && o.adopted_by.is_none()
+                    && o.window == window
+                    && matches!(&o.target,Target::Host{id} if id==workspace)
+            })
+    }
+    pub(crate) fn view_input_allowed(&self, view: &str, window: &str) -> bool {
         self.operations
             .values()
             .filter(|o| {
-                !o.phase.terminal()
-                    && o.adopted_by.is_none()
-                    && o.workspaces.iter().any(|w| w == workspace)
+                !o.phase.terminal() && o.adopted_by.is_none() && o.views.iter().any(|id| id == view)
+            })
+            .all(|o| {
+                o.phase == Phase::Preparing && o.inputs.get(window).is_some_and(Option::is_none)
+            })
+    }
+    pub(crate) fn view_input_work_allowed(&self, view: &str) -> bool {
+        self.operations
+            .values()
+            .filter(|o| {
+                !o.phase.terminal() && o.adopted_by.is_none() && o.views.iter().any(|id| id == view)
             })
             .all(|o| matches!(o.phase, Phase::Preparing | Phase::Deciding))
     }
@@ -164,7 +206,7 @@ impl Lifecycle {
         self.operations.values().any(|o| {
             !o.phase.terminal()
                 && o.adopted_by.is_none()
-                && o.workspaces.iter().any(|w| w == workspace)
+                && o.ending_workspaces.iter().any(|w| w == workspace)
         })
     }
     pub(crate) fn window_closing(&self, window: &str) -> bool {
@@ -174,18 +216,6 @@ impl Lifecycle {
                 && (matches!(&o.target, Target::Window {id} if id==window)
                     || matches!(o.target, Target::Application { .. }))
         })
-    }
-    pub(crate) fn input_allowed(&self, workspace: &str, window: &str) -> bool {
-        self.operations
-            .values()
-            .filter(|o| {
-                !o.phase.terminal()
-                    && o.adopted_by.is_none()
-                    && o.workspaces.iter().any(|w| w == workspace)
-            })
-            .all(|o| {
-                o.phase == Phase::Preparing && o.inputs.get(window).is_some_and(Option::is_none)
-            })
     }
     fn reap(&mut self) {
         let now = crate::core::now();
@@ -212,9 +242,10 @@ impl Lifecycle {
 
 impl AppCore {
     pub fn register_close_host(&self, window: &str) -> Result<(), String> {
-        let workspaces = self.workspaces.lock().unwrap();
+        let mut _workbench = self.workbench_state();
+        let crate::workbench::State { workspaces, ui } = &mut *_workbench;
         workspaces.projection(window)?;
-        let mut ui = self.component_ui.lock().unwrap();
+
         if ui
             .lifecycle
             .operations
@@ -228,17 +259,10 @@ impl AppCore {
         Ok(())
     }
     pub fn close_host_registered(&self, window: &str) -> bool {
-        self.component_ui
-            .lock()
-            .unwrap()
-            .lifecycle
-            .hosts
-            .contains(window)
+        self.ui_state().lifecycle.hosts.contains(window)
     }
     pub fn close_operations(&self, window: &str) -> Vec<Operation> {
-        self.component_ui
-            .lock()
-            .unwrap()
+        self.ui_state()
             .lifecycle
             .operations
             .values()
@@ -254,7 +278,7 @@ impl AppCore {
         id: &str,
     ) -> Result<Operation, String> {
         {
-            let mut ui = self.component_ui.lock().unwrap();
+            let mut ui = self.ui_state();
             let op = ui
                 .lifecycle
                 .operations
@@ -316,10 +340,13 @@ impl AppCore {
         {
             return Err("请等待更新任务完成后关闭或重启".into());
         }
-        let mut workspaces = self.workspaces.lock().unwrap();
+        let mut _workbench = self.workbench_state();
+        let crate::workbench::State { workspaces, ui } = &mut *_workbench;
         workspaces.projection(window)?;
-        if let Target::Workspace { id } = &target {
-            if workspaces.closing_last_secondary(window, id) {
+        if let Target::Workspace { id } | Target::Host { id } = &target {
+            if workspaces.closing_last_secondary(window, id)
+                && (matches!(target, Target::Host { .. }) || workspaces.host_windows(id).len() == 1)
+            {
                 // Closing the last tab ends its native host too. Reserve the
                 // whole window before collecting its settings and pending work.
                 target = Target::Window { id: window.into() };
@@ -330,7 +357,7 @@ impl AppCore {
             .keys()
             .flat_map(|id| workspaces.projection(id).unwrap().workspaces)
             .collect();
-        let mut ui = self.component_ui.lock().unwrap();
+
         ui.lifecycle.reap();
         if let Some(op) = ui
             .lifecycle
@@ -374,14 +401,24 @@ impl AppCore {
                 }
                 workspaces.projection(id)?.window.workspace_ids
             }
-            Target::Workspace { id } => {
+            Target::Workspace { id } | Target::Host { id } => {
                 if !all
                     .iter()
-                    .any(|w| &w.context.workspace_id == id && w.window_id == window)
+                    .any(|w| &w.context.workspace_id == id && workspaces.contains(window, id))
                 {
                     return Err("工作区已移动或关闭".into());
                 }
                 vec![id.clone()]
+            }
+            Target::Group { id, workspace_id } => {
+                if !workspaces.contains(window, workspace_id)
+                    || ui.workspaces.get(workspace_id).is_none_or(|w| {
+                        w.host(window).is_err() || !w.host(window).unwrap().groups.contains_key(id)
+                    })
+                {
+                    return Err("标签组已移动或关闭".into());
+                }
+                vec![workspace_id.clone()]
             }
             Target::Views { ids } => {
                 if ids.is_empty() || ids.len() > 64 {
@@ -394,10 +431,13 @@ impl AppCore {
                         return Err("关闭页面集合重复".into());
                     }
                     let v = ui.resource_view(id)?;
-                    if !all
-                        .iter()
-                        .any(|w| w.context == v.context && w.window_id == window)
-                    {
+                    if !all.iter().any(|w| {
+                        w.context == v.context
+                            && ui.workspaces[&v.context.workspace_id]
+                                .view_window(&v.id)
+                                .as_deref()
+                                == Some(window)
+                    }) {
                         return Err("页面不属于此窗口".into());
                     }
                     if ui
@@ -414,6 +454,69 @@ impl AppCore {
                 scope
             }
         };
+        let ending_workspaces: Vec<String> = scope
+            .iter()
+            .filter(|id| match &target {
+                Target::Application { .. } | Target::Workspace { .. } => true,
+                Target::Host { .. } | Target::Window { .. } => {
+                    workspaces.host_windows(id).iter().all(|w| w == window)
+                }
+                Target::Views { .. } | Target::Group { .. } => false,
+            })
+            .cloned()
+            .collect();
+        let mut views: Vec<View> = scope
+            .iter()
+            .filter_map(|id| ui.workspaces.get(id))
+            .flat_map(|w| &w.views)
+            .filter(|v| match &target {
+                Target::Views { ids } => ids.contains(&v.id),
+                Target::Group { id, workspace_id } => {
+                    v.context.workspace_id == *workspace_id
+                        && ui.workspaces[workspace_id].host(window).is_ok_and(|h| {
+                            h.groups.get(id).is_some_and(|g| g.view_ids.contains(&v.id))
+                        })
+                }
+                Target::Host { .. } | Target::Window { .. } => {
+                    ui.workspaces[&v.context.workspace_id]
+                        .view_window(&v.id)
+                        .as_deref()
+                        == Some(window)
+                        || ending_workspaces.contains(&v.context.workspace_id) && !v.ui_requested
+                }
+                _ => true,
+            })
+            .cloned()
+            .collect();
+        loop {
+            let children: Vec<_> = scope
+                .iter()
+                .filter_map(|id| ui.workspaces.get(id))
+                .flat_map(|w| &w.views)
+                .filter(|v| {
+                    v.parent_view_id
+                        .as_ref()
+                        .is_some_and(|p| views.iter().any(|v| &v.id == p))
+                        && !views.iter().any(|current| current.id == v.id)
+                })
+                .cloned()
+                .collect();
+            if children.is_empty() {
+                break;
+            }
+            views.extend(children);
+        }
+        views.sort_by_key(|v| v.parent_view_id.is_none());
+        let returning_tools: Vec<String> = views
+            .iter()
+            .filter(|v| {
+                ui.definitions[&v.definition_key].definition.container == "sidebar"
+                    && (matches!(target, Target::Group { .. })
+                        || matches!(target, Target::Host { .. } | Target::Window { .. })
+                            && !ending_workspaces.contains(&v.context.workspace_id))
+            })
+            .map(|v| v.id.clone())
+            .collect();
         let mut adopted = Vec::new();
         for op in ui
             .lifecycle
@@ -423,7 +526,10 @@ impl AppCore {
         {
             if matches!(target, Target::Application { .. })
                 || matches!(op.target, Target::Application { .. })
-                || scope.iter().any(|w| op.workspaces.contains(w))
+                || ending_workspaces.iter().any(|w| op.workspaces.contains(w))
+                || op.ending_workspaces.iter().any(|w| scope.contains(w))
+                || views.iter().any(|v| op.views.contains(&v.id))
+                || matches!(target, Target::Window { .. }) && op.inputs.contains_key(window)
             {
                 if matches!(target, Target::Application { .. })
                     && op.phase == Phase::Failed
@@ -435,33 +541,49 @@ impl AppCore {
                 }
             }
         }
-        let views: Vec<View> = scope
-            .iter()
-            .filter_map(|w| ui.workspaces.get(w))
-            .flat_map(|w| &w.views)
-            .filter(|v| match &target {
-                Target::Views { ids } => ids.contains(&v.id),
-                _ => true,
-            })
-            .cloned()
-            .collect();
         let close_window = if let Target::Window { id } = &target {
             Some(id.as_str())
         } else {
             None
         };
-        workspaces.cancel_moves_for_close(
-            &scope,
-            close_window,
-            matches!(target, Target::Application { .. }),
-        );
+        let cancelled: Vec<_> = ui
+            .transfers
+            .values()
+            .filter(|t| {
+                matches!(target, Target::Application { .. })
+                    || ending_workspaces.contains(&t.movement.workspace_id)
+                    || close_window
+                        .is_some_and(|w| t.movement.source == w || t.movement.target == w)
+                    || matches!(target, Target::Host { .. })
+                        && t.movement.workspace_id == scope[0]
+                        && (t.movement.source == window || t.movement.target == window)
+                    || views.iter().any(|v| t.views.contains(&v.id))
+                    || matches!(&target,Target::Group{id,..} if t.blocks(window,Some(id),None,None))
+            })
+            .map(|t| t.movement.clone())
+            .collect();
+        for m in cancelled {
+            self.cancel_transfer_locked(workspaces, ui, &m);
+        }
+        for m in workspaces
+            .pending_moves()
+            .into_iter()
+            .filter(|m| !ui.transfers.contains_key(&m.token))
+        {
+            if matches!(target, Target::Application { .. })
+                || scope.contains(&m.workspace_id)
+                || close_window.is_some_and(|w| m.source == w || m.target == w)
+            {
+                workspaces.cancel(&m);
+            }
+        }
         let surfaces = ui.close_surfaces(&views.iter().map(|v| v.id.clone()).collect::<Vec<_>>());
         let mut inputs = HashMap::new();
         for window in surfaces.keys() {
             inputs.insert(window.clone(), None);
         }
         for w in &all {
-            if scope.contains(&w.context.workspace_id) {
+            if ending_workspaces.contains(&w.context.workspace_id) {
                 inputs.insert(w.window_id.clone(), None);
             }
         }
@@ -496,6 +618,11 @@ impl AppCore {
             .iter()
             .flat_map(|id| ui.lifecycle.operations[id].dispose_requests.clone())
             .collect();
+        let return_moves = if matches!(target, Target::Group { .. }) {
+            vec![]
+        } else {
+            self.reserve_close_tools(workspaces, ui, window, &id, &returning_tools)?
+        };
         let op = Operation {
             id: id.clone(),
             window: window.into(),
@@ -506,6 +633,9 @@ impl AppCore {
             input_round: 1,
             decision_revision: 1,
             workspaces: scope,
+            ending_workspaces,
+            returning_tools,
+            return_moves,
             views: views.iter().map(|v| v.id.clone()).collect(),
             surfaces,
             inputs,
@@ -527,14 +657,13 @@ impl AppCore {
             ended_at: None,
             input_deadline: None,
         };
-        ui.invalidate_workspace_actions(&op.workspaces, "工作区正在关闭，行为已失效");
+        ui.invalidate_workspace_actions(&op.ending_workspaces, "工作区正在关闭，行为已失效");
         ui.lifecycle.operations.insert(id.clone(), op.clone());
         if matches!(target, Target::Application { .. }) {
             self.set_closing(true);
         }
         self.sync_shared_ui_locked(&ui);
-        drop(ui);
-        drop(workspaces);
+        drop(_workbench);
         drop(updates);
         self.log(None,"info","关闭操作已保留目标",Some(json!({"operationId":id,"target":target,"workspaces":op.workspaces,"views":op.views})));
         self.close_changed(&id);
@@ -543,7 +672,7 @@ impl AppCore {
         Ok(op)
     }
     pub fn close_status(&self, window: &str, id: &str) -> Result<Operation, String> {
-        let ui = self.component_ui.lock().unwrap();
+        let ui = self.ui_state();
         let op = ui.lifecycle.operations.get(id).ok_or("关闭操作已失效")?;
         if op.window != window && !op.inputs.contains_key(window) {
             return Err("关闭操作不属于此窗口".into());
@@ -568,7 +697,7 @@ impl AppCore {
             return Err("关闭输入状态超过上限".into());
         }
         let start = {
-            let mut ui = self.component_ui.lock().unwrap();
+            let mut ui = self.ui_state();
             let op = ui
                 .lifecycle
                 .operations
@@ -609,9 +738,7 @@ impl AppCore {
             let core = self.clone();
             let id = id.to_owned();
             std::thread::spawn(move || {
-                let decision = core.component_ui.lock().unwrap().lifecycle.operations[&id]
-                    .decision
-                    .clone();
+                let decision = core.ui_state().lifecycle.operations[&id].decision.clone();
                 if let Some(decision) = decision {
                     core.close_execute(&id, &decision);
                 } else {
@@ -630,7 +757,7 @@ impl AppCore {
         decision: &str,
     ) -> Result<Operation, String> {
         let start = {
-            let mut ui = self.component_ui.lock().unwrap();
+            let mut ui = self.ui_state();
             let lost_hosts = ui.lifecycle.lost_hosts.clone();
             let op = ui
                 .lifecycle
@@ -694,7 +821,7 @@ impl AppCore {
     }
     pub fn close_retry(self: &Arc<Self>, window: &str, id: &str) -> Result<Operation, String> {
         {
-            let mut ui = self.component_ui.lock().unwrap();
+            let mut ui = self.ui_state();
             let op = ui
                 .lifecycle
                 .operations
@@ -722,20 +849,13 @@ impl AppCore {
         self.close_status(window, id)
     }
     fn close_changed(&self, id: &str) {
-        let op = self
-            .component_ui
-            .lock()
-            .unwrap()
-            .lifecycle
-            .operations
-            .get(id)
-            .cloned();
+        let op = self.ui_state().lifecycle.operations.get(id).cloned();
         if let Some(op) = op {
             self.event("core-close-changed", json!(op));
         }
     }
     fn close_input_timeout(self: &Arc<Self>, id: &str, round: u64) {
-        let mut ui = self.component_ui.lock().unwrap();
+        let mut ui = self.ui_state();
         if let Some(op) = ui.lifecycle.operations.get_mut(id) {
             if op.input_round == round && matches!(op.phase, Phase::Preparing | Phase::Deciding) {
                 op.input_deadline =
@@ -747,7 +867,7 @@ impl AppCore {
     }
     pub(crate) fn expire_close_inputs(self: &Arc<Self>, now: std::time::Instant) {
         let expired = {
-            let mut ui = self.component_ui.lock().unwrap();
+            let mut ui = self.ui_state();
             ui.lifecycle.reap();
             ui.lifecycle
                 .operations

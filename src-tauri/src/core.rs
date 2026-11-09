@@ -29,8 +29,8 @@ pub struct AppCore {
     pub(crate) terminals: crate::terminal::Terminals,
     pub(crate) connections: crate::connections::Connections,
     pub(crate) shared_state: Arc<crate::shared_state::StateHub>,
-    pub component_ui: Mutex<crate::component_ui::Runtime>,
-    pub workspaces: Mutex<crate::workspaces::Runtime>,
+    pub(crate) workbench: Mutex<crate::workbench::State>,
+    pub(crate) layout_io: Mutex<()>,
     pub(crate) servers: Mutex<crate::servers::ServerStore>,
     pub(crate) store: Mutex<Store>,
     pub(crate) settings: Mutex<crate::settings::store::SettingsStore>,
@@ -82,8 +82,8 @@ impl AppCore {
             terminals: crate::terminal::Terminals::default(),
             connections: crate::connections::Connections::open(&directory),
             shared_state: Arc::new(shared_state),
-            component_ui: Mutex::new(crate::component_ui::Runtime::open(&directory)?),
-            workspaces: Mutex::new(crate::workspaces::Runtime::default()),
+            workbench: Mutex::new(crate::workbench::State::open(&directory)?),
+            layout_io: Mutex::new(()),
             servers: Mutex::new(servers),
             store: Mutex::new(store),
             settings: Mutex::new(crate::settings::store::SettingsStore::open(&directory)),
@@ -320,16 +320,14 @@ impl AppCore {
 
     pub fn shutdown(&self) -> Result<(), String> {
         let ids = self
-            .component_ui
-            .lock()
-            .unwrap()
+            .ui_state()
             .workspaces
             .keys()
             .cloned()
             .collect::<Vec<_>>();
-        self.component_ui.lock().unwrap().require_closed(&ids)?;
+        self.ui_state().require_closed(&ids)?;
         self.shutdown_resources()?;
-        self.workspaces.lock().unwrap().clear();
+        self.workspace_state().clear();
         Ok(())
     }
     pub(crate) fn shutdown_resources(&self) -> Result<(), String> {
@@ -484,7 +482,7 @@ impl AppCore {
     /// Called once during application startup, before any UI-triggered plugin operations.
     pub fn start_enabled(self: &Arc<Self>) {
         let _operation = self.mutations.lock().unwrap();
-        self.component_ui.lock().unwrap().startup_loading = true;
+        self.ui_state().startup_loading = true;
         let records = self.store.lock().unwrap().plugins.clone();
         for mut record in records {
             if let Some(pending) = record.pending_update.take() {
@@ -551,7 +549,7 @@ impl AppCore {
                 }
             }
         }
-        self.component_ui.lock().unwrap().startup_loading = false;
+        self.ui_state().startup_loading = false;
         self.changed();
     }
 

@@ -2,7 +2,7 @@
 (() => {
   let available=false,surface;
   addEventListener('sodeck:mount',event=>{available=event.detail.capabilities?.clipboard===1;surface=event.detail.surfaceId;});
-  const interaction=()=>{if(surface)parent.postMessage({channel:'sodeck-ui-v1',type:'interaction',surfaceId:surface},'*');};
+  const interaction=()=>{if(surface)parent.postMessage({channel:sodeck.channel||'sodeck-ui-v1',type:'interaction',surfaceId:surface},'*');};
   document.addEventListener('pointerdown',interaction,true);
   document.addEventListener('keydown',interaction,true);
   const request = params => available?sodeck.request('clipboard',params):Promise.reject(new Error('当前核心不支持原生剪贴板服务，请先升级核心'));
