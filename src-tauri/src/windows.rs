@@ -990,6 +990,9 @@ impl DesktopWindows {
         workspace: &str,
     ) -> Result<(), String> {
         let window = handle.get_webview_window(label).ok_or("原生窗口不存在")?;
+        window.unminimize().map_err(|e| e.to_string())?;
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
         let origin = window.inner_position().map_err(|e| e.to_string())?;
         let size = window.inner_size().map_err(|e| e.to_string())?;
         let scale = window.scale_factor().map_err(|e| e.to_string())?;
@@ -1003,9 +1006,20 @@ impl DesktopWindows {
         self.focused(label);
         let x = origin.x as f64 + (surface.x + surface.width / 2.) * scale;
         let y = origin.y as f64 + (surface.y + surface.height / 2.) * scale;
-        if !matches!(self.hit_point(handle, x, y, workspace, (0.,0.))?, DropTarget::Strip { window_id, .. } if window_id == label)
-        {
-            return Err("原生屏幕坐标没有命中目标 Tab 条".into());
+        // Native focus requests complete asynchronously; check real occlusion after focus settles.
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            let hit = self.hit_point(handle, x, y, workspace, (0., 0.))?;
+            if matches!(&hit, DropTarget::Strip { window_id, .. } if window_id == label) {
+                break;
+            }
+            if Instant::now() >= deadline {
+                return Err(format!(
+                    "原生屏幕坐标没有命中目标 Tab 条: window={label}, focused={:?}, origin={origin:?}, size={size:?}, scale={scale}, point=({x},{y}), hit={hit:?}",
+                    window.is_focused()
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(20));
         }
         for (px, py) in [
             (
