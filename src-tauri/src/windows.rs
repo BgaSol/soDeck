@@ -993,6 +993,43 @@ impl DesktopWindows {
         window.unminimize().map_err(|e| e.to_string())?;
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
+        #[cfg(target_os = "windows")]
+        {
+            use windows_sys::Win32::{Foundation::HWND, System::Threading::GetCurrentThreadId};
+            #[link(name = "user32")]
+            unsafe extern "system" {
+                fn GetForegroundWindow() -> HWND;
+                fn GetWindowThreadProcessId(window: HWND, process: *mut u32) -> u32;
+                fn AttachThreadInput(first: u32, second: u32, attach: i32) -> i32;
+                fn BringWindowToTop(window: HWND) -> i32;
+                fn SetForegroundWindow(window: HWND) -> i32;
+            }
+            let hwnd = window.hwnd().map_err(|e| e.to_string())?.0 as isize;
+            let (send, receive) = std::sync::mpsc::channel();
+            // CI launchers have no user input. Use the same foreground handoff as the native pointer test.
+            window
+                .run_on_main_thread(move || unsafe {
+                    let current = GetCurrentThreadId();
+                    let foreground =
+                        GetWindowThreadProcessId(GetForegroundWindow(), std::ptr::null_mut());
+                    let attached = foreground != 0
+                        && foreground != current
+                        && AttachThreadInput(current, foreground, 1) != 0;
+                    BringWindowToTop(hwnd as HWND);
+                    let focused = SetForegroundWindow(hwnd as HWND) != 0;
+                    if attached {
+                        AttachThreadInput(current, foreground, 0);
+                    }
+                    let _ = send.send(focused);
+                })
+                .map_err(|e| e.to_string())?;
+            if !receive
+                .recv_timeout(Duration::from_secs(3))
+                .map_err(|e| e.to_string())?
+            {
+                return Err("Windows 未允许烟测窗口接收原生焦点".into());
+            }
+        }
         let origin = window.inner_position().map_err(|e| e.to_string())?;
         let size = window.inner_size().map_err(|e| e.to_string())?;
         let scale = window.scale_factor().map_err(|e| e.to_string())?;
