@@ -9,6 +9,11 @@ import { nativeGithub, assetRecord } from "./native-github.mjs";
 export const platforms = Object.fromEntries(targets.map(target => [target, target.includes("windows") ? `windows-${target.startsWith("aarch64") ? "aarch64" : "x86_64"}` : target.includes("linux") ? `linux-${target.startsWith("aarch64") ? "aarch64" : "x86_64"}` : "macos-aarch64"]));
 export const components = { core: "core", terminal: "terminal", files: "files", network: "network-proxy" };
 export const snapshotName = "Native-verification-inputs";
+export function verificationMatrix(platform = "all") {
+  if (platform !== "all" && !Object.values(platforms).includes(platform)) throw new Error("Invalid verification platform");
+  const runners = { "windows-x86_64": "windows-2025", "windows-aarch64": "windows-11-arm", "linux-x86_64": "ubuntu-22.04", "linux-aarch64": "ubuntu-22.04-arm", "macos-aarch64": "macos-15" };
+  return { include: targets.filter(target => platform === "all" || platforms[target] === platform).map(target => ({ name: platforms[target], runner: runners[platforms[target]], target })) };
+}
 const sha = value => /^[a-f0-9]{40}$/.test(value ?? "");
 const version = value => /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value ?? "");
 const runId = value => /^[1-9]\d*$/.test(String(value ?? ""));
@@ -216,7 +221,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     snapshot = { ...snapshot, selectionCommit: snapshot.testCommit, testCommit: process.env.GITHUB_SHA, replayedFrom: inputs.verification_run_id };
   } else snapshot = await resolveInputs(api, inputs, process.env.GITHUB_SHA);
   fs.writeFileSync("native-inputs.json", JSON.stringify(snapshot, null, 2) + "\n");
-  if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `upload_snapshot=${!artifactId}\nsnapshot_artifact_id=${artifactId}\n`);
+  const matrix = verificationMatrix(inputs.platform || "all");
+  if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `upload_snapshot=${!artifactId}\nsnapshot_artifact_id=${artifactId}\nmatrix=${JSON.stringify(matrix)}\n`);
   const summary = `## Native verification inputs\n\n\`\`\`text\n${inputSummary(snapshot)}\n\`\`\`\n`;
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
   console.log(inputSummary(snapshot));

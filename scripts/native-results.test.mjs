@@ -2,12 +2,26 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { recordResult, summarizeResults } from "./native-results.mjs";
 import { targets } from "./core-artifacts.mjs";
-import { platforms } from "./resolve-native-inputs.mjs";
+import { platforms, verificationMatrix } from "./resolve-native-inputs.mjs";
 
 const commit = "c".repeat(40), target = targets[0];
 const snapshot = { components: { core: { version: "0.9.1" }, network: {} } };
 const report = { completed: true, workspaceNative: true, sshNative: true, version: "0.9.1", target };
 const prepared = { status: "prepared", target, components: {} };
+test("a platform retry keeps the default five-target matrix and reports only its selected scope", () => {
+  assert.deepEqual(verificationMatrix().include.map(item => item.target), targets);
+  const selected = verificationMatrix("windows-aarch64").include;
+  assert.deepEqual(selected, [{ name: "windows-aarch64", runner: "windows-11-arm", target: "aarch64-pc-windows-msvc" }]);
+  assert.throws(() => verificationMatrix("unknown"));
+  const jobs = [{ name: selected[0].name, conclusion: "success", status: "completed" }];
+  const results = [{ schemaVersion: 1, target: selected[0].target, platform: selected[0].name, testCommit: commit, status: "success", stage: "complete" }];
+  const summary = summarizeResults(snapshot, jobs, results, commit, "windows-aarch64");
+  assert.equal(summary.success, true);
+  assert.equal(summary.scope, "windows-aarch64");
+  assert.equal(summary.platforms.length, 1);
+  assert.equal(summarizeResults(snapshot, jobs, results, commit).success, false);
+  assert.equal(summarizeResults(snapshot, jobs, [], commit, "windows-aarch64").success, false);
+});
 test("a result requires actual runtime identity, remote protocol, optional network and successful test execution", () => {
   const record = (r = report, network = { completed: true }, steps = { windows_test: { outcome: "success" } }) => recordResult(snapshot, target, prepared, steps, r, network, "success", commit);
   assert.equal(record().status, "success");

@@ -110,6 +110,8 @@ npm run plugin:build -- --plugin system-status
 
 五个系统与架构组合分别使用原生构建和实际包验证。已完成的验收、未完成项和已知风险记录在对应实施记录或版本说明中。
 
+`Verify native remote plugins` 的 `platform` 默认验证五平台；补测时可选择单个平台并重放 `verification_run_id`，或填写相同的原始组件打包 run。单平台汇总只表示所选平台通过，发行记录必须同时保留其他平台的原始成功报告。Windows ARM64 的隔离 OpenSSH 测试服务从固定 Microsoft Release 资产 API 下载并校验大小与 SHA-256。
+
 Check 始终响应 main push/PR，不使用 workflow 级 `paths` 跳过。`select` 使用 push 的 before/after，PR 使用 base/head 的 merge-base；删除和重命名同时计入原路径。取不到完整差异、新分支零 before、未知路径、共享客户端、工具链和构建输入按扩大范围验证。选择规则集中在 [select-checks.mjs](../scripts/select-checks.mjs)，不维护依赖图。
 
 文档检查只用 Node，运行 `node scripts/check-docs.mjs` 校验全部已提交 Markdown 的结尾换行、冲突标记和本地文件链接（含图片和引用式链接）；不访问外部网址或校验标题锚点。删除/重命名文档也会检查其他文档留下的链接。`format` 保留为最终汇总状态：选中的任务失败、取消或缺失会失败；未选中的任务显示 skipped，不代表测试通过。分支保护若单独要求旧 `network (ubuntu-22.04...)` 状态，需要改用始终出现的 `format`，本轮不修改仓库保护设置。

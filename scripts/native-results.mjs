@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { nativeGithub } from "./native-github.mjs";
-import { platforms, inputSummary } from "./resolve-native-inputs.mjs";
+import { platforms, inputSummary, verificationMatrix } from "./resolve-native-inputs.mjs";
 import { targets } from "./core-artifacts.mjs";
 
 export function recordResult(snapshot, target, prepared, steps, report, networkReport, jobStatus, testCommit) {
@@ -20,8 +20,8 @@ export function recordResult(snapshot, target, prepared, steps, report, networkR
   };
 }
 
-export function summarizeResults(snapshot, jobs, results, testCommit) {
-  const rows = targets.map(target => {
+export function summarizeResults(snapshot, jobs, results, testCommit, platform = "all") {
+  const rows = verificationMatrix(platform).include.map(({ target }) => {
     const platform = platforms[target];
     const matches = jobs.filter(job => job.name === platform);
     const job = matches.length === 1 ? matches[0] : null;
@@ -31,7 +31,7 @@ export function summarizeResults(snapshot, jobs, results, testCommit) {
     const success = job?.conclusion === "success" && valid && result.status === "success";
     return { platform, target, status: success ? "success" : job?.conclusion === "cancelled" ? "cancelled" : job?.status && job.status !== "completed" ? "not-completed" : "failure", stage: valid ? result.stage : "missing-or-invalid-result", url: job?.html_url ?? "", result: valid ? result : null };
   });
-  return { schemaVersion: 1, testCommit, success: Boolean(snapshot) && rows.every(row => row.status === "success"), inputs: snapshot ?? null, platforms: rows };
+  return { schemaVersion: 1, testCommit, scope: platform, success: Boolean(snapshot) && rows.every(row => row.status === "success"), inputs: snapshot ?? null, platforms: rows };
 }
 
 const read = file => fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : null;
@@ -48,7 +48,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const jobs = await api.list(`/actions/runs/${process.env.GITHUB_RUN_ID}/jobs?filter=latest`, "jobs");
     const directory = "native-results";
     const results = fs.existsSync(directory) ? fs.readdirSync(directory).filter(file => /^native-result-[a-z0-9_-]+\.json$/.test(file)).map(file => read(path.join(directory, file))) : [];
-    const result = summarizeResults(snapshot, jobs, results, testCommit);
+    const result = summarizeResults(snapshot, jobs, results, testCommit, process.env.NATIVE_PLATFORM || "all");
     fs.writeFileSync("native-summary.json", JSON.stringify(result, null, 2) + "\n");
     const summary = `## Native package verification\n\n${snapshot ? `\`\`\`text\n${inputSummary(snapshot)}\n\`\`\`\n\n` : "Input resolution failed; no package combination was selected.\n\n"}| Platform | Result | Stage | Job |\n| --- | --- | --- | --- |\n${result.platforms.map(row => `| ${row.platform} | ${row.status} | ${row.stage} | ${row.url ? `[logs](${row.url})` : "not started"} |`).join("\n")}\n\nTest scripts: \`${testCommit}\`. Retry failed jobs with the pinned inputs, or replay this run using verification_run_id.\n`;
     if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
