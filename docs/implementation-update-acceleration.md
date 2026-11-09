@@ -69,6 +69,12 @@
 
 此前单节点和组合失败如实保留，最终成功只代表本次、本机网络和当前 Windows 目标。命令为开发指南中的 `official_install_live_mirror` 与 `core_download_live_mirror`，`SODECK_TEST_MIRROR=auto` 使用默认组合，其余值指定单一前缀；只修改隔离临时数据，不启动插件或升级用户应用。节点实验、源代码回归与正式包跨版本安装仍是不同的验证范围。
 
+## 0.18.0 发行后的公网复核
+
+核心 0.18.0 正式发布并设为 Latest 后，再使用本轮源代码的 `SODECK_TEST_MIRROR=auto` 运行两个显式公网专项，均通过：`core_download_live_mirror` 读取正式 0.18.0 清单、下载 Windows x86_64 包，以项目公钥通过官方验签并进入 ready，耗时 12.94 秒；`official_install_live_mirror` 发现 4 个官方插件、读取核心 0.18.0 原始清单，下载终端 0.7.0 Windows 包、校验哈希、解包并登记等待重启，耗时 12.81 秒。
+
+这次复核使用正式公开 Release 和默认组合，未运行核心安装器或启动插件，资料仅写入隔离临时目录；只证明本次、本机网络的读取与下载校验流程。五平台包来源、原始 run 和实际验证范围见 [v0.18.0 发行记录](releases/v0.18.0.md)。日志保存在 `artifacts/update-acceleration-release/live-core.log` 与 `live-plugin.log`。
+
 ## 初始实施阶段的验证边界与风险
 
 - 初始实施阶段没有执行 Windows ARM64、Linux x86_64/ARM64、macOS ARM64 的原生编译、打包和实际包启动/退出，也没有正式包跨版本安装验收；后续五平台结果以 0.18.0 发行记录为准，选择规则已覆盖新增更新网络模块。
