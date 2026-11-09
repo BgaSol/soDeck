@@ -4,7 +4,7 @@
 
 逻辑创建、界面读取、冻结同步和激活分开；普通同步继续允许输入，迁移取消后恢复输入。请先升级核心，再升级插件并重启；核心 API 主版本保持 1，没有新增生产依赖。
 
-本次包来源、原始打包、Release 与实际验证/跳过范围在[核心 0.17.0](../../docs/releases/v0.17.0.md)和本条发行记录收尾时登记。
+包来源：[`7a3747e`](https://github.com/BgaSol/soDeck/commit/7a3747e009bf0ee51ec5be5d1ba8c72dc678cf2d)；原始独立打包：[Package plugin #42573183178](https://github.com/BgaSol/soDeck/actions/runs/42573183178)；发行：[terminal 0.7.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.7.0)，非 Latest。五平台原生包与包内进程生命周期验收通过；修正测试后的源码检查、实际包远程组合、Windows 四插件原生交互以及未验证范围统一见[核心 0.17.0](../../docs/releases/v0.17.0.md)。插件业务源码与原包一致，复用同一份归档。
 
 # 0.6.0
 

@@ -6,7 +6,7 @@
 
 逻辑创建与界面读取分开，保留既有采集、历史和挂载容量发布。请先升级核心，再升级插件并重启；核心 API 主版本保持 1，没有新增生产依赖。
 
-本次包来源、原始打包、Release 与实际验证/跳过范围在[核心 0.17.0](../../docs/releases/v0.17.0.md)和本条发行记录收尾时登记。
+包来源：[`7a3747e`](https://github.com/BgaSol/soDeck/commit/7a3747e009bf0ee51ec5be5d1ba8c72dc678cf2d)；原始独立打包：[Package plugin #42573214753](https://github.com/BgaSol/soDeck/actions/runs/42573214753)；发行：[system-status 0.4.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-system-status-v0.4.0)，非 Latest。五平台原生包与包内进程生命周期验收通过；本次五平台远程包组合只包含终端、文件和网络，系统状态与核心组合另在 Windows 四插件实包验证。源码、实际验证与跳过范围统一见[核心 0.17.0](../../docs/releases/v0.17.0.md)。远端 macOS/BSD、Windows Server/其他默认 shell 与 Linux Docker 采集专项未重复。
 
 ## 0.3.0
 
