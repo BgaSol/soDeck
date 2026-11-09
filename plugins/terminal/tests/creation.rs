@@ -45,7 +45,9 @@ impl Plugin {
             caps.push("ui.openView.v1");
         }
         plugin.request("init", "initialize", json!({"capabilities":caps}));
-        assert_eq!(plugin.next()["result"]["uiActionsApiVersion"], "1");
+        let initialized = plugin.next();
+        assert_eq!(initialized["result"]["uiActionsApiVersion"], "1");
+        assert_eq!(initialized["result"]["uiApiVersion"], "2");
         plugin
     }
     fn send(&mut self, frame: Value) {
@@ -92,7 +94,10 @@ fn action_and_reopen_create_pages_before_pty_and_preserve_config() {
     assert_eq!(open["params"]["expectedContext"], context);
     p.reply(&open, json!({"viewId":"v"}));
     assert_eq!(p.next()["result"]["viewId"], "v");
-    p.request("mount", "ui.mount", mount("v", config()));
+    p.request("uncreated", "ui.getView", mount("v", config()));
+    assert!(p.next().get("error").is_some());
+    assert!(p.frames.recv_timeout(Duration::from_millis(100)).is_err());
+    p.request("create", "ui.createView", mount("v", config()));
     let launch = p.next();
     assert_eq!(launch["method"], "terminal.open");
     assert_eq!(launch["params"]["command"], config()["launch"]["command"]);
@@ -102,7 +107,7 @@ fn action_and_reopen_create_pages_before_pty_and_preserve_config() {
     assert_eq!(mounted["result"]["data"]["integration"]["mode"], "off");
     p.request(
         "remount",
-        "ui.mount",
+        "ui.getView",
         mount("v", json!({"launch":{"kind":"invalid"}})),
     );
     assert_eq!(p.next()["result"]["data"]["streamId"], "pty");
@@ -114,13 +119,17 @@ fn action_and_reopen_create_pages_before_pty_and_preserve_config() {
     assert_eq!(p.next()["result"]["data"]["viewId"], "v2");
 }
 #[test]
-fn concurrent_mounts_share_one_initialization_and_other_views_keep_progressing() {
+fn concurrent_creates_share_one_initialization_and_reads_do_not_create() {
     let mut p = Plugin::new(true, true);
-    p.request("first", "ui.mount", mount("one", config()));
+    p.request("first", "ui.createView", mount("one", config()));
     let first = p.next();
     assert_eq!(first["method"], "terminal.open");
-    p.request("same", "ui.mount", mount("one", config()));
-    p.request("different", "ui.mount", mount("two", config()));
+    p.request("candidate", "ui.getView", mount("one", Value::Null));
+    let candidate = p.next();
+    assert_eq!(candidate["id"], "candidate");
+    assert!(candidate.get("error").is_some());
+    p.request("same", "ui.createView", mount("one", config()));
+    p.request("different", "ui.createView", mount("two", config()));
     let second = p.next();
     assert_eq!(second["method"], "terminal.open");
     assert_eq!(second["params"]["viewId"], "two");
@@ -135,7 +144,7 @@ fn concurrent_mounts_share_one_initialization_and_other_views_keep_progressing()
 #[test]
 fn disposal_during_initialization_closes_late_pty_and_failure_is_cached() {
     let mut p = Plugin::new(true, true);
-    p.request("mount", "ui.mount", mount("closing", config()));
+    p.request("create", "ui.createView", mount("closing", config()));
     let launch = p.next();
     p.request("dispose", "ui.disposeView", json!({"viewId":"closing"}));
     assert_eq!(p.next()["id"], "dispose");
@@ -145,23 +154,23 @@ fn disposal_during_initialization_closes_late_pty_and_failure_is_cached() {
     assert_eq!(close["params"]["id"], "late-pty");
     p.reply(&close, json!({}));
     assert!(p.next().get("error").is_some());
-    p.request("failure", "ui.mount", mount("failed", config()));
+    p.request("failure", "ui.createView", mount("failed", config()));
     let launch = p.next();
     p.send(
         json!({"jsonrpc":"2.0","id":launch["id"],"error":{"code":-32000,"message":"PTY failure"}}),
     );
     assert!(p.next().get("error").is_some());
-    p.request("repeat", "ui.mount", mount("failed", config()));
+    p.request("repeat", "ui.createView", mount("failed", config()));
     let repeated = p.next();
     assert_eq!(repeated["id"], "repeat");
     assert!(repeated.get("error").is_some());
 }
 #[test]
-fn old_core_rejects_command_and_still_opens_plain_login_shell() {
+fn missing_optional_launch_capability_rejects_command_and_opens_plain_shell() {
     let mut p = Plugin::new(false, false);
-    p.request("command", "ui.mount", mount("command", config()));
+    p.request("command", "ui.createView", mount("command", config()));
     assert!(p.next().get("error").is_some());
-    p.request("host", "ui.mount", mount("host", Value::Null));
+    p.request("host", "ui.createView", mount("host", Value::Null));
     let settings = p.next();
     assert_eq!(settings["method"], "settings.get");
     p.reply(&settings, json!({"values":{"directoryMode":"auto"}}));
