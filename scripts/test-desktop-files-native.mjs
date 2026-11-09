@@ -29,9 +29,9 @@ try {
   await until(()=>ready>0,'Clipboard provider startup');
   const marker = path.join(root,'change'), probe = path.join(root,'probe.json');
   fs.writeFileSync(probe,JSON.stringify({paths,change_marker:marker}));
-  const env={...process.env,SODECK_TEST_DESKTOP_FILES:probe,SODECK_TEST_DATA_DIR:path.join(root,'data'),SODECK_VERIFY_PERSISTED:'1'};
+  const env={...process.env,SODECK_TEST_DESKTOP_FILES:probe,SODECK_TEST_DATA_DIR:path.join(root,'data')};
   // Plugin/SSH integration is verified separately by the existing package smoke.
-  for(const key of ['SODECK_TEST_SSH_CONFIG','SODECK_TEST_UPDATE_BUNDLE','SODECK_TEST_CLIPBOARD','SODECK_TEST_TERMINAL_PLUGIN','SODECK_TEST_FILES_PLUGIN','SODECK_TEST_NETWORK_PLUGIN','SODECK_TEST_SYSTEM_STATUS_PLUGIN'])delete env[key];
+  for(const key of ['SODECK_VERIFY_PERSISTED','SODECK_TEST_SSH_CONFIG','SODECK_TEST_UPDATE_BUNDLE','SODECK_TEST_CLIPBOARD','SODECK_TEST_TERMINAL_PLUGIN','SODECK_TEST_FILES_PLUGIN','SODECK_TEST_NETWORK_PLUGIN','SODECK_TEST_SYSTEM_STATUS_PLUGIN'])delete env[key];
   const formats=process.platform==='linux'?['files','gnome']:['files'];
   let report;
   for(const format of formats){

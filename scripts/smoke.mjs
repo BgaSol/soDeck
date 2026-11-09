@@ -63,9 +63,12 @@ function launch(persisted = false) {
 }
 try {
   launch(process.env.SODECK_VERIFY_PERSISTED === "1");
-  if (process.env.SODECK_VERIFY_PERSISTED !== "1") launch(true);
+  // A file probe changes its provider to text during the first launch and cannot be replayed.
+  if (process.env.SODECK_VERIFY_PERSISTED !== "1" && !process.env.SODECK_TEST_DESKTOP_FILES) launch(true);
   console.log(
-    "Packaged app rendered, moved workspaces between native windows, closed secondary windows, saved catalog records, reopened persisted data and exited successfully.",
+    process.env.SODECK_TEST_DESKTOP_FILES
+      ? "Packaged app verified native file clipboard and exited successfully."
+      : "Packaged app rendered, moved workspaces between native windows, closed secondary windows, saved catalog records, reopened persisted data and exited successfully.",
   );
 } finally {
   // This path was created by mkdtemp in this process, never supplied by the user.
