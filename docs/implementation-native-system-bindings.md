@@ -18,17 +18,35 @@
 
 ## 本机验证
 
-本机为 Windows x86_64。源码改造前的核心套件通过；迁移后核心 211 项通过、12 项远端用例 ignored，脚本 93 项通过，类型/格式检查、test-fixtures 全部二进制编译与 NSIS 构建通过。解开 0.20.0 安装包后，实际程序完成启动、窗口迁移、资料保存重开与退出烟测。
+本机为 Windows x86_64。源码改造前的核心套件通过；迁移后核心 211 项通过、12 项远端用例 ignored，脚本 93 项通过，类型/格式检查、test-fixtures 全部二进制编译与 NSIS 构建通过。本机安装包来源为 `68b47e6`；解开 0.20.0 安装包后，实际程序完成启动、窗口迁移、资料保存重开与退出烟测。正式发行使用下节的 `3e75370` 包，本机结果不替代正式包验收。
 
 Windows 原生交互测试与烟测并行时，拖出窗口判据失败；顺序复验通过真实鼠标拖出/返回、PTY 接续、分隔线拖动、关闭取消、明确放弃与四插件/SSH/转发资源释放。并行结果不计为通过。日志位于忽略目录 `artifacts/native-bindings-*`，成功交互报告为 `artifacts/close-lifecycle/native-close.json`。
 
 ## 原生与实际包验收
 
-首次 GitHub 原生检查发现 Linux 打开模块引用了高层 GDK 未导出的 `CURRENT_TIME`；固定 0.18.2 的常量实际位于 `gdk::ffi::GDK_CURRENT_TIME`。修正引用后重新进行源码检查与打包，失败候选不用于发行。本次五平台最终源码、正式原生打包/签名及独立提供者实际包验收正在执行，完成后填入本次链接与结果。
+首次 GitHub 原生检查发现 Linux 打开模块引用了高层 GDK 未导出的 `CURRENT_TIME`；固定 0.18.2 的常量实际位于 `gdk::ffi::GDK_CURRENT_TIME`。修正引用后重新进行源码检查与打包，失败候选不用于发行。
+
+正式核心包来源为 `3e75370726c6a39ddb8ae742ed1dc9df0e062768`。[完整 Check](https://github.com/BgaSol/soDeck/actions/runs/42618172797) 通过五平台核心/四插件源码、格式、前端、脚本、Windows SSH/UI 与 Linux 两架构业务回归；Windows 正式前端焦点断言首次超时，本机 13 组复验通过，重跑失败 desktop 任务后完整 Check 通过。netem 为 skipped。
+
+[原始打包运行](https://github.com/BgaSol/soDeck/actions/runs/42618160193) 的五平台原生构建、签名及实际包启动/退出全部通过，Linux 同时运行 DEB 内程序和 AppImage，macOS 检查主窗口与拆出窗口的 AppKit 按钮几何。首次 metadata 创建草稿后未立即读回同一记录；核对标签与源码后只重跑 metadata 成功，复用五平台附件。草稿包含 16 个附件，名称、大小和 SHA-256 均已核对。
+
+[最终独立提供者/远程插件验收](https://github.com/BgaSol/soDeck/actions/runs/42621468753) 使用脚本提交 `03604d4a03ae44acce13e93f4f27b1930a08d549`，固定上述原始核心包 run，以及正式终端 0.7.0、文件 0.8.0、网络隧道 0.3.0。汇总与五份原生报告均为 success：
+
+| 原生目标 | 实际包、SSH/PTY/SFTP/网络 | 独立系统文件格式、来源变化与退出 |
+| --- | --- | --- |
+| Windows x86_64 | 通过 | CF_HDROP 通过 |
+| Windows ARM64 | 通过 | CF_HDROP 通过 |
+| Linux x86_64 | 通过 | URI-list、GNOME copied-files 均通过 |
+| Linux ARM64 | 通过 | URI-list、GNOME copied-files 均通过 |
+| macOS ARM64 | 通过 | NSPasteboard FileURL 通过 |
+
+ARM64 均使用原生 ARM64 程序，未以交叉编译代替实际包执行。系统状态 0.4.0 本次不重新发行；四插件源码矩阵与本机原生关闭测试包含它，最终远程包组合的独立输入为表中三款插件。
 
 `desktopFilesNative` 单独证明实际文件格式与变化，不由旧文本 clipboardNative 或 JS stub 推断。该层在隔离 runner 显式开启，失败/缺报告/版本架构不匹配不能通过汇总。
 
 首次独立提供者验收在新建目录误设 `SODECK_VERIFY_PERSISTED=1`，文件 probe 完成后由既有工作区验收报“重开后服务器未保留”。修正测试编排：文件 probe 只启动一次，来源改为文本后不自动重放；普通包烟测继续验证资料重开。脚本回归同时检查不重放、拒绝旧报告和拒绝文本 clipboard 报告。该修正不更换已验证核心包，最终验收记录分别保留包源码与测试脚本提交。
+
+本地最终脚本 93 项、类型/格式、Node 语法和文档检查通过；脚本提交的[补充 Check](https://github.com/BgaSol/soDeck/actions/runs/42621433901) 首次在 Linux x86_64 文件 UI 等待“草稿已导出”提示超时，只重跑失败 integration 任务后全部通过。其他平台源码、Windows 完整 UI 和 Linux ARM64 业务均通过；netem 为 skipped。
 
 ## 未执行范围与限制
 
