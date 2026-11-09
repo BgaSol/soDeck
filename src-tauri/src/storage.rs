@@ -157,6 +157,28 @@ impl Store {
         Ok(())
     }
 
+    pub fn set_update_network(
+        &mut self,
+        expected_revision: u64,
+        input: crate::update_network::Preferences,
+    ) -> Result<crate::update_network::Preferences, String> {
+        if self.blocked[2] {
+            return Err(self.errors[2].clone().unwrap());
+        }
+        if self.preferences.update_network.revision != expected_revision {
+            return Err("网络设置已在另一窗口修改，请重新读取后再保存。当前输入仍保留。".into());
+        }
+        let mut input = input.validated()?;
+        input.revision = expected_revision
+            .checked_add(1)
+            .ok_or("网络设置修订号无效")?;
+        let mut preferences = self.preferences.clone();
+        preferences.update_network = input.clone();
+        self.save(2, "preferences.json", &preferences)?;
+        self.preferences = preferences;
+        Ok(input)
+    }
+
     pub fn append_log(&mut self, mut record: LogRecord) {
         if record.message.len() > 6000 {
             let mut end = 6000;

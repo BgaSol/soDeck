@@ -22,6 +22,8 @@ v0.6.0 增加 terminal/files 两个独立目录，沿用 Package plugin 的 `--p
 
 更新使用固定版本的 Tauri 官方 updater，它要求更新包签名。公钥提交到 Tauri 配置；私钥保存在维护者用户目录 `.sodeck-signing/updater.key` 并配置为 Actions 的 `TAURI_SIGNING_PRIVATE_KEY` Secret，绝不提交私钥。密码可用 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` Secret；本项目初始私钥无密码，Secret 留空即可。此签名与 Windows/macOS 商业代码签名、插件权限无关。必须备份原私钥，随意换公钥会使旧客户端无法升级。
 
+加速分支将客户端的 GitHub 请求统一接入备用传输地址，操作见[使用指南](usage.md)。发行仍采用原始 GitHub 仓库和 Release URL；清单、缓存与固定的版本/平台/哈希/签名不保存代理地址。核心由官方 updater 从已读取清单恢复 Update，下载后验签，安装与离线缓存恢复继续使用官方实现。此功能不改变打包、签名或发布工作流，也不把代理首页可用或包首段测试当作正式包验收。实际实现和验证范围见[实施记录](implementation-update-acceleration.md)。
+
 本地普通构建不需要签名密钥：
 
 ```sh

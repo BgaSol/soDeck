@@ -147,6 +147,8 @@ pub struct Preferences {
     pub theme: String,
     #[serde(default = "automatic_updates_default")]
     pub automatic_updates: bool,
+    #[serde(default)]
+    pub update_network: crate::update_network::Preferences,
 }
 
 fn automatic_updates_default() -> bool {
@@ -158,6 +160,7 @@ impl Default for Preferences {
         Self {
             theme: "system".into(),
             automatic_updates: true,
+            update_network: crate::update_network::Preferences::default(),
         }
     }
 }
@@ -176,6 +179,7 @@ pub struct Snapshot {
     pub data_directory: PathBuf,
     pub log_directory: PathBuf,
     pub preferences: Preferences,
+    pub update_mirrors: Vec<crate::update_network::BuiltinMirror>,
     pub plugins: Vec<PluginView>,
     pub unread_count: usize,
     pub storage_errors: Vec<String>,

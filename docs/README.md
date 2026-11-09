@@ -44,6 +44,7 @@
 | 桌面一致性 | [滚动条与默认行为](plan-desktop-consistency.md) | [桌面一致性](implementation-desktop-consistency.md) |
 | 组件设置与终端外观 | [功能设计](plan-component-settings.md)、[编码方案](plan-component-settings-coding.md) | [组件设置](implementation-component-settings.md) |
 | 在线更新 | [基础方案](plan-online-updates.md)、[体验改版](plan-update-experience.md) | [更新体验](implementation-update-experience.md) |
+| 更新下载与加速 | [多地址切换、用户设置与代码整改](plan-update-acceleration.md) | [实施与验收](implementation-update-acceleration.md) |
 | 打包与发布工作流 | [发布提速修改方案](plan-release-performance.md)、[既有分步优化计划](plan-packaging-workflows.md) | [提速实施与验收](implementation-release-performance.md)、[既有实施与验收](implementation-packaging-workflows.md) |
 | 基础逻辑与成熟库复用 | [分步整改计划](plan-standard-library-adoption.md)，含三系统本地文件适配详细方案 | [版本、文件 URI 与菜单](implementation-standard-library-adoption.md) |
 | SOCKS5 协议库复用 | [核心、网络插件与检查器完整计划](plan-socks5-library-adoption.md) | [接入与验证](implementation-standard-library-adoption.md#第六阶段socks5-报文库接入) |

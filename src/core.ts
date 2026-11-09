@@ -25,6 +25,10 @@ export interface Plugin {
   pendingVersion: string | null;
   updateError: string | null;
 }
+export interface UpdateMirror { name: string; prefix: string; enabled: boolean }
+export interface UpdateNetwork { revision: number; fallbackEnabled: boolean; disabledBuiltins: string[]; customMirrors: UpdateMirror[] }
+export interface BuiltinMirror { id: string; prefix: string; supportsApi: boolean }
+export interface MirrorDiagnostic { name: string; ok: boolean; elapsedMs: number; error: string | null }
 export interface Snapshot {
   network?: NetworkSnapshot;
   connectedServers: number;
@@ -37,7 +41,8 @@ export interface Snapshot {
   uptimeMs: number;
   dataDirectory: string;
   logDirectory: string;
-  preferences: { theme: string; automaticUpdates: boolean };
+  preferences: { theme: string; automaticUpdates: boolean; updateNetwork?: UpdateNetwork };
+  updateMirrors?: BuiltinMirror[];
   plugins: Plugin[];
   unreadCount: number;
   storageErrors: string[];
@@ -55,6 +60,7 @@ export interface Update {
   error: string | null;
   errorStage?: string | null;
   checkedAt?: number | null;
+  network?: { endpoint: string; attempt: number; error: string | null } | null;
 }
 export interface UpdateOverview { checking: boolean; busy: boolean; lastCheckedAt: number; nextCheckAt: number }
 export interface Log {
@@ -100,6 +106,8 @@ export const core = {
   checkUpdates: (automatic = false) => invoke<void>("check_updates", { automatic }),
   downloadUpdates: (ids: string[]) => invoke<void>("download_updates", { ids }),
   automaticUpdates: (enabled: boolean) => invoke<void>("set_automatic_updates", { enabled }),
+  updateNetwork: (preferences: UpdateNetwork) => invoke<UpdateNetwork>("set_update_network", { expectedRevision: preferences.revision, preferences }),
+  testMirror: (prefix: string | null) => invoke<MirrorDiagnostic[]>("test_update_mirror", { prefix }),
   checkUpdate: (id: string) => invoke<void>("check_update", { id }),
   download: (id: string) => invoke<boolean>("download_update", { id }),
   restart: (installCore = false) => invoke<void>("restart_app", { installCore }),

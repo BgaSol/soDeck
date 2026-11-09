@@ -6,6 +6,7 @@ import { Workspaces, type DropTarget } from "./workspaces";
 import { core, type Snapshot, type Message } from "./core";
 import * as views from "./views";
 import { selectedUpdates, updateCount, CORE_ID } from "./updates";
+import { networkAction, networkInput } from "./update-network";
 import { button as b, escape as e, icon, replace } from "./ui";
 import "./style.css";
 import "./text-menu.js";
@@ -224,7 +225,12 @@ async function refresh() {
   }
   refreshing = true;
   try {
+    const networkRevision = snapshot?.preferences.updateNetwork?.revision;
     [snapshot, state.updates, state.updateOverview] = await Promise.all([core.snapshot(), core.updates(), core.updateOverview()]);
+    if (networkRevision !== undefined && networkRevision !== snapshot.preferences.updateNetwork?.revision) {
+      state.networkGeneration = (state.networkGeneration ?? 0) + 1;
+      state.networkResults = undefined;
+    }
     snapshot.network=await core.network();
     lastError = "";
     applyTheme();
@@ -328,6 +334,14 @@ root.addEventListener("click", (event) => {
   const name = target.dataset.action!;
   const id = target.dataset.id ?? "";
   void action(async () => {
+    if (snapshot && await networkAction(name, id, snapshot, state, renderLayer)) {
+      await refresh();
+      if (name === "network-add") document.getElementById(`mirror-name-${(state.networkDraft?.customMirrors.length ?? 1) - 1}`)?.focus();
+      if (name === "network-delete") document.getElementById("network-add")?.focus({ preventScroll: true });
+      if (name === "network-up" || name === "network-down") document.getElementById(`mirror-name-${Number(id) + (name === "network-up" ? -1 : 1)}`)?.focus({ preventScroll: true });
+      if (name === "network-save" || name === "network-reload") document.getElementById("update-network-summary")?.focus({ preventScroll: true });
+      return;
+    }
     switch (name) {
       case "status":
       case "settings":
@@ -533,6 +547,7 @@ root.addEventListener("click", (event) => {
 let queryTimer: ReturnType<typeof setTimeout>;
 root.addEventListener("input", (event) => {
   const input = event.target as HTMLInputElement;
+  if (snapshot && networkInput(input, snapshot, state)) { if (!(event as InputEvent).isComposing) renderLayer(); return; }
   if (input.dataset.source && state.plugin) {
     const saved = snapshot?.plugins.find(p => p.manifest.id === state.plugin)?.manifest.updateSource;
     const draft = state.sourceDrafts[state.plugin] ?? { repository: saved?.repository ?? "", tagPrefix: saved?.tagPrefix ?? "" };
@@ -549,6 +564,7 @@ root.addEventListener("input", (event) => {
 });
 root.addEventListener("change", (event) => {
   const input = event.target as HTMLInputElement;
+  if (snapshot && networkInput(input, snapshot, state)) { renderLayer(); return; }
   if (input.dataset.updateSelect) { input.checked ? state.excludedUpdates.delete(input.dataset.updateSelect) : state.excludedUpdates.add(input.dataset.updateSelect); renderLayer(); return; }
   if (input.id === "automatic-updates") { void action(() => core.automaticUpdates(input.checked)); return; }
   if (input.id === "log-source") state.filter.pluginId = input.value;

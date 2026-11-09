@@ -236,6 +236,98 @@ impl Drop for Fixture {
 fn manifest(version: &str) -> serde_json::Value {
     json!({"id":"test.fixture","name":"Update Fixture","version":version,"apiVersion":"1","target":TARGET,"entry":format!("fixture{}",std::env::consts::EXE_SUFFIX)})
 }
+
+#[test]
+fn official_install_uses_fallback_for_tree_blob_release_manifest_and_package() {
+    let fixture = Fixture::new();
+    let direct = Server::new();
+    let bad = Server::new();
+    let good = Server::new();
+    direct.official_release(fixture.package_for("sodeck.terminal", ""), "1", TARGET);
+    let canonical = direct.routes.lock().unwrap().clone();
+    for (path, bytes) in canonical {
+        good.put(&format!("/{}{path}", direct.base), bytes);
+        bad.put(
+            &format!("/{}{path}", direct.base),
+            b"<html>bad cached response</html>".to_vec(),
+        );
+    }
+    direct.routes.lock().unwrap().clear();
+    let client = ReleaseClient::test_mirrors(
+        &direct.base,
+        vec![
+            (format!("{}/", bad.base), true),
+            (format!("{}/", good.base), true),
+        ],
+        Arc::new(Default::default()),
+    );
+    let core = fixture.open();
+    let catalog = core.official_plugins(&client, true).unwrap();
+    assert!(catalog.error.is_none());
+    assert_eq!(catalog.plugins[0].id, "sodeck.terminal");
+    core.install_official_plugin("sodeck.terminal", &client)
+        .unwrap();
+    assert_eq!(core.snapshot().plugins[0].manifest.version, "0.1.1");
+    let requests = good.requests.lock().unwrap();
+    for part in [
+        "git/trees/main",
+        "git/blobs/",
+        "/releases",
+        "/manifest.json",
+        "/plugin.zip",
+    ] {
+        assert!(
+            requests.iter().any(|path| path.contains(part)),
+            "{part}: {requests:?}"
+        );
+    }
+    assert!(requests
+        .iter()
+        .all(|path| path.starts_with(&format!("/{}", direct.base))));
+    core.shutdown().unwrap();
+}
+
+#[test]
+#[ignore = "Explicit public mirror test downloads an official plugin into isolated temporary data"]
+fn official_install_live_mirror() {
+    let prefix = std::env::var("SODECK_TEST_MIRROR")
+        .expect("Set SODECK_TEST_MIRROR to the single HTTPS prefix to test");
+    let fixture = Fixture::new();
+    let core = fixture.open();
+    let client = if prefix == "auto" {
+        core.release_client().unwrap()
+    } else {
+        ReleaseClient::test_proxy(&prefix).unwrap()
+    };
+    let catalog = core.official_plugins(&client, true).unwrap();
+    assert!(catalog.error.is_none());
+    println!(
+        "{} official plugins discovered via {prefix}",
+        catalog.plugins.len()
+    );
+    let candidate = client
+        .discover(
+            &UpdateSource {
+                repository: "BgaSol/soDeck".into(),
+                tag_prefix: "v".into(),
+            },
+            sodeck::updates::CORE_ID,
+            "0.0.1",
+        )
+        .unwrap()
+        .unwrap();
+    assert!(candidate.manifest_url.starts_with("https://github.com/"));
+    println!(
+        "Core {} manifest discovered with original URLs",
+        candidate.version
+    );
+    core.install_official_plugin("sodeck.terminal", &client)
+        .unwrap();
+    let snapshot = core.snapshot();
+    assert_eq!(snapshot.plugins[0].manifest.id, "sodeck.terminal");
+    println!("Official terminal {} package downloaded, hashed, unpacked and registered for restart on {}",snapshot.plugins[0].manifest.version,TARGET);
+    core.shutdown().unwrap();
+}
 fn settings_manifest(version: &str) -> serde_json::Value {
     let mut m = manifest(version);
     m["ui"] = json!({"apiVersion":"1","entry":"ui.html","views":[{"id":"test","title":"Test","icon":"info","container":"editor","instancePolicy":"multiple"}]});

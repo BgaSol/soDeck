@@ -21,6 +21,7 @@ pub mod shared_state;
 mod storage;
 pub mod streams;
 pub mod terminal;
+pub mod update_network;
 pub mod updates;
 pub mod validation;
 pub mod windows;

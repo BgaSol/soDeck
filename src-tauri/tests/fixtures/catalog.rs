@@ -225,6 +225,30 @@ fn main() {
             }
             "update_status" => Ok(json!(core.update_views())),
             "update_overview" => Ok(json!(core.update_overview())),
+            "set_update_network" => core
+                .set_update_network(
+                    args["expectedRevision"].as_u64().unwrap(),
+                    serde_json::from_value(args["preferences"].clone()).unwrap(),
+                )
+                .map(|saved| json!(saved)),
+            "test_update_mirror" => {
+                let base = std::env::var("SODECK_TEST_PLUGIN_API").unwrap();
+                let client = sodeck::updates::ReleaseClient::test_server(&base);
+                // Inject a single local endpoint so the production diagnostic never contacts public nodes.
+                let prefix = args["prefix"].as_str().map(|p| {
+                    format!(
+                        "{base}/{}/",
+                        if p.contains("failed") {
+                            "diagnostic-failed"
+                        } else {
+                            "diagnostic"
+                        }
+                    )
+                });
+                client
+                    .diagnose(prefix.as_deref())
+                    .map(|results| json!(results))
+            }
             "set_automatic_updates" => core
                 .set_automatic_updates(args["enabled"].as_bool().unwrap())
                 .map(|_| Value::Null),

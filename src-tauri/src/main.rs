@@ -398,7 +398,7 @@ async fn official_plugins(
 ) -> Result<sodeck::official_plugins::OfficialCatalog, String> {
     let core = app.core.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        core.official_plugins(&ReleaseClient::github()?, refresh)
+        core.official_plugins(&core.release_client()?, refresh)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -411,7 +411,7 @@ async fn install_official_plugin(
 ) -> Result<String, String> {
     let core = app.core.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        core.install_official_plugin(&id, &ReleaseClient::github()?)
+        core.install_official_plugin(&id, &core.release_client()?)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -453,6 +453,26 @@ fn set_automatic_updates(app: State<Application>, enabled: bool) -> Result<(), S
 }
 
 #[tauri::command]
+fn set_update_network(
+    app: State<Application>,
+    expected_revision: u64,
+    preferences: sodeck::update_network::Preferences,
+) -> Result<sodeck::update_network::Preferences, String> {
+    app.core.set_update_network(expected_revision, preferences)
+}
+
+#[tauri::command]
+async fn test_update_mirror(
+    app: State<'_, Application>,
+    prefix: Option<String>,
+) -> Result<Vec<sodeck::update_network::Diagnostic>, String> {
+    let client = app.core.release_client()?;
+    tauri::async_runtime::spawn_blocking(move || client.diagnose(prefix.as_deref()))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 fn open_update_release() -> Result<(), String> {
     sodeck::updates::open_release_page()
 }
@@ -472,7 +492,7 @@ async fn check_all(handle: tauri::AppHandle, automatic: bool) -> Result<(), Stri
     let Some(mut batch) = app.core.begin_update_check(automatic) else {
         return Ok(());
     };
-    let client = Arc::new(ReleaseClient::github()?);
+    let client = Arc::new(app.core.release_client()?);
     for id in app.core.update_check_ids() {
         let result = if id == sodeck::updates::CORE_ID {
             app.updater
@@ -499,16 +519,22 @@ async fn check_updates(handle: tauri::AppHandle, automatic: bool) -> Result<(), 
     check_all(handle, automatic).await
 }
 
-async fn download_reserved(handle: tauri::AppHandle, task: (String, sodeck::updates::Operation)) {
+async fn download_reserved(
+    handle: tauri::AppHandle,
+    task: (String, sodeck::updates::Operation),
+    client: Arc<ReleaseClient>,
+) {
     let (id, operation) = task;
     let app = handle.state::<Application>();
     let result = if id == sodeck::updates::CORE_ID {
-        app.updater.download_reserved(&app.core, operation).await
+        app.updater
+            .download_reserved_with_client(&app.core, operation, client)
+            .await
     } else {
         let core = app.core.clone();
         let plugin_id = id.clone();
         match tauri::async_runtime::spawn_blocking(move || {
-            core.download_plugin_reserved(&plugin_id, &ReleaseClient::github()?, operation)
+            core.download_plugin_reserved(&plugin_id, &client, operation)
                 .map(|_| ())
         })
         .await
@@ -524,6 +550,7 @@ async fn download_reserved(handle: tauri::AppHandle, task: (String, sodeck::upda
 
 #[tauri::command]
 async fn download_updates(handle: tauri::AppHandle, ids: Vec<String>) -> Result<(), String> {
+    let client = Arc::new(handle.state::<Application>().core.release_client()?);
     let tasks = handle
         .state::<Application>()
         .core
@@ -532,11 +559,15 @@ async fn download_updates(handle: tauri::AppHandle, ids: Vec<String>) -> Result<
     while let Some(first) = tasks.pop_front() {
         let second = tasks.pop_front();
         let other = handle.clone();
-        tokio::join!(download_reserved(handle.clone(), first), async move {
-            if let Some(task) = second {
-                download_reserved(other, task).await;
+        let second_client = client.clone();
+        tokio::join!(
+            download_reserved(handle.clone(), first, client.clone()),
+            async move {
+                if let Some(task) = second {
+                    download_reserved(other, task, second_client).await;
+                }
             }
-        });
+        );
     }
     Ok(())
 }
@@ -581,7 +612,7 @@ async fn check_update(
     }
     let core = app.core.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        core.check_component(&id, &ReleaseClient::github()?)
+        core.check_component(&id, &core.release_client()?)
             .map(|_| ())
     })
     .await
@@ -595,11 +626,9 @@ async fn download_update(app: State<'_, Application>, id: String) -> Result<bool
         return Ok(true);
     }
     let core = app.core.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        core.download_plugin(&id, &ReleaseClient::github()?)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || core.download_plugin(&id, &core.release_client()?))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -999,6 +1028,8 @@ fn main() {
             check_updates,
             download_updates,
             set_automatic_updates,
+            set_update_network,
+            test_update_mirror,
             open_update_release,
             open_update_link,
             open_usage_help,

@@ -125,7 +125,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
         integration.add(service[2] === 'network' ? 'network-proxy' : service[2] === 'terminal' ? 'terminal' : 'files');
         continue;
       }
-      if (/^src-tauri\/(src|tests)\/(updates|desktop_updates|desktop_behavior|settings|storage|windows|window_config|workspaces|component_ui|official_plugins)(\/|\.)/.test(file)) {
+      if (/^src-tauri\/(src|tests)\/(updates|update_network|desktop_updates|desktop_behavior|settings|storage|windows|window_config|workspaces|component_ui|official_plugins)(\/|\.)/.test(file)) {
         core(); ui();
         continue;
       }

@@ -1,4 +1,4 @@
-import type { Snapshot, Log, Message, Filter, Update, UpdateOverview, Manifest, OfficialPlugin } from "./core";
+import type { Snapshot, Log, Message, Filter, Update, UpdateOverview, Manifest, OfficialPlugin, UpdateNetwork, MirrorDiagnostic } from "./core";
 import { updatesPage, pendingUpdates, updateCount } from "./updates";
 import { pluginsPage } from "./plugin-settings";
 import { button as b, date, empty, escape as e, icon, statusText } from "./ui";
@@ -23,6 +23,12 @@ export interface ViewState {
   excludedUpdates: Set<string>;
   pluginTab: "installed" | "official" | null;
   sourceDrafts: Record<string, NonNullable<Manifest["updateSource"]>>;
+  networkDraft?: UpdateNetwork;
+  networkError?: string;
+  networkNotice?: string;
+  networkTesting?: string;
+  networkResults?: { endpoint: string; results: MirrorDiagnostic[] };
+  networkGeneration?: number;
 }
 const pair = (name: string, value: unknown) =>
   `<div class="pair"><dt>${name}</dt><dd>${e(value)}</dd></div>`;

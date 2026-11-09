@@ -61,7 +61,7 @@ test('native adapter scopes both architectures of the affected system; common lo
   const common = selectChecks(['src-tauri/src/network_metrics.rs']);
   assert.deepEqual(common.native.map(t => t.name), ['linux-x86_64']);
   assert.deepEqual(common.integration, []);
-  for (const file of ['src-tauri/src/platform.rs', 'src-tauri/src/updates.rs', 'src-tauri/src/storage.rs']) {
+  for (const file of ['src-tauri/src/platform.rs', 'src-tauri/src/updates.rs', 'src-tauri/src/update_network.rs', 'src-tauri/tests/update_network.rs', 'src-tauri/src/storage.rs']) {
     assert.equal(selectChecks([file]).native.length, 5, file);
   }
   const full = selectChecks([], { suite: 'all' });

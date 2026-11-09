@@ -1,21 +1,17 @@
 //! Independent GitHub releases and staged plugin programs. No live process replacement.
 use crate::{model::*, plugins, AppCore, API_VERSION, TARGET};
-use reqwest::blocking::Client;
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet},
     fs::{self, File, OpenOptions},
-    io::{Read, Write},
+    io::Read,
     path::{Component, Path, PathBuf},
     sync::Arc,
-    time::{Duration, Instant},
 };
 
 pub const CORE_ID: &str = "sodeck.core";
 pub const REPOSITORY: &str = "BgaSol/soDeck";
-const MAX_PACKAGE: u64 = 512 * 1024 * 1024;
 const MAX_EXPANDED: u64 = 2 * 1024 * 1024 * 1024;
 
 pub fn open_release_page() -> Result<(), String> {
@@ -97,11 +93,34 @@ pub struct UpdateView {
     pub error: Option<String>,
     pub error_stage: Option<String>,
     pub checked_at: Option<u64>,
+    #[serde(default)]
+    pub network: Option<crate::update_network::Attempt>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn repository_blob_accepts_both_cached_formats_and_rejects_invalid_envelopes() {
+        use russh::keys::ssh_encoding::base64::{Base64, Encoding};
+        let raw = br#"{"id":"test.plugin","name":"test"}"#;
+        let encoded = Base64::encode_string(raw);
+        let envelope = serde_json::json!({"encoding":"base64","size":raw.len(),"content":format!("{}\n{}", &encoded[..8], &encoded[8..])});
+        let a: serde_json::Value = decode_repository_blob(raw).unwrap();
+        let b: serde_json::Value =
+            decode_repository_blob(&serde_json::to_vec(&envelope).unwrap()).unwrap();
+        assert_eq!(a, b);
+        for invalid in [
+            serde_json::json!({"encoding":"base64","size":1,"content":encoded}),
+            serde_json::json!({"encoding":"base64","size":1,"content":"!"}),
+            serde_json::json!({"encoding":"utf8","content":"{}"}),
+        ] {
+            assert!(decode_repository_blob::<serde_json::Value>(
+                &serde_json::to_vec(&invalid).unwrap()
+            )
+            .is_err());
+        }
+    }
     #[test]
     fn tar_gzip_extracts_regular_files_and_rejects_links() {
         let root = std::env::temp_dir().join(format!(
@@ -289,69 +308,181 @@ fn stable_version(value: &str) -> Result<Version, String> {
 }
 
 pub struct ReleaseClient {
-    client: Client,
+    pub(crate) network: crate::update_network::Transport,
     api_base: String,
-    test_http: bool,
-    #[cfg(feature = "test-fixtures")]
-    test_github_token: Option<String>,
-    releases: std::sync::Mutex<HashMap<String, Result<Vec<Release>, String>>>,
+    releases: Arc<std::sync::Mutex<HashMap<String, Result<Vec<Release>, String>>>>,
+}
+
+fn decode_repository_blob<T: serde::de::DeserializeOwned>(
+    bytes: &[u8],
+) -> Result<T, crate::update_network::Error> {
+    use crate::update_network::Error;
+    use russh::keys::ssh_encoding::base64::{Base64, Encoding};
+    let value: serde_json::Value = serde_json::from_slice(bytes)
+        .map_err(|e| Error::remote(format!("插件配置格式错误：{e}")))?;
+    // Public proxies may cache either GitHub's raw JSON or its base64 envelope for this URL.
+    if value.get("encoding").is_some() || value.get("content").is_some() {
+        if value["encoding"] != "base64" {
+            return Err(Error::remote("插件配置编码不受支持"));
+        }
+        let content = value["content"]
+            .as_str()
+            .ok_or_else(|| Error::remote("插件配置内容缺失"))?;
+        let content: String = content
+            .chars()
+            .filter(|c| !c.is_ascii_whitespace())
+            .collect();
+        let decoded =
+            Base64::decode_vec(&content).map_err(|_| Error::remote("插件配置 Base64 无效"))?;
+        if value["size"].as_u64() != Some(decoded.len() as u64) {
+            return Err(Error::remote("插件配置长度不一致"));
+        }
+        serde_json::from_slice(&decoded)
+            .map_err(|e| Error::remote(format!("插件配置格式错误：{e}")))
+    } else {
+        serde_json::from_value(value).map_err(|e| Error::remote(format!("插件配置格式错误：{e}")))
+    }
 }
 
 impl ReleaseClient {
-    pub fn github() -> Result<Self, String> {
-        Self::new("https://api.github.com".into(), false)
-    }
-    fn new(api_base: String, test_http: bool) -> Result<Self, String> {
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        let mut builder = Client::builder()
-            .user_agent("SoDeck-updates")
-            .connect_timeout(Duration::from_secs(15))
-            .timeout(Duration::from_secs(600))
-            .https_only(!test_http);
-        if test_http {
-            builder = builder.no_proxy();
+    pub fn diagnose(
+        &self,
+        prefix: Option<&str>,
+    ) -> Result<Vec<crate::update_network::Diagnostic>, String> {
+        use crate::update_network::{diagnostic, BUILTIN_MIRRORS};
+        let network = self.network.clone().only_endpoint(prefix)?;
+        let file_only = prefix.is_some_and(|p| {
+            BUILTIN_MIRRORS
+                .iter()
+                .any(|m| m.prefix == p && !m.supports_api)
+        });
+        let client = Self::with_network(self.api_base.clone(), network);
+        let mut results = Vec::new();
+        if !file_only {
+            diagnostic(&mut results, "发行版本 API", || {
+                client.repository_releases(REPOSITORY)
+            });
+            diagnostic(&mut results, "插件目录与配置", || {
+                let tree: serde_json::Value =
+                    client.official_repository_json("git/trees/main?recursive=1", false)?;
+                if tree["truncated"] != false {
+                    return Err("仓库目录不完整".into());
+                }
+                let blob = tree["tree"]
+                    .as_array()
+                    .and_then(|entries| {
+                        entries.iter().find(|entry| {
+                            entry["type"] == "blob"
+                                && entry["path"].as_str().is_some_and(|p| {
+                                    p.starts_with("plugins/") && p.ends_with("/release.json")
+                                })
+                        })
+                    })
+                    .and_then(|entry| entry["sha"].as_str())
+                    .ok_or("未找到插件配置")?;
+                if blob.len() != 40 || !blob.bytes().all(|c| c.is_ascii_hexdigit()) {
+                    return Err("插件配置标识无效".into());
+                }
+                let _: crate::official_plugins::OfficialPlugin =
+                    client.official_repository_json(&format!("git/blobs/{blob}"), true)?;
+                Ok(())
+            });
         }
-        let client = builder.build().map_err(|e| e.to_string())?;
-        Ok(Self {
-            client,
-            api_base,
-            test_http,
+        let manifest = diagnostic(&mut results, "更新清单", || {
+            let url = format!(
+                "https://github.com/{REPOSITORY}/releases/latest/download/core-update.json"
+            );
             #[cfg(feature = "test-fixtures")]
-            test_github_token: None,
-            releases: std::sync::Mutex::new(HashMap::new()),
-        })
+            let url = if client.api_base.starts_with("http://127.0.0.1:") {
+                format!("{}/core-update.json", client.api_base)
+            } else {
+                url
+            };
+            let manifest: UpdateManifest = client.json(&url)?;
+            if manifest.id != CORE_ID {
+                return Err("核心更新清单 ID 无效".into());
+            }
+            stable_version(&manifest.version)?;
+            let asset = manifest.platforms.get(TARGET).ok_or("当前平台没有更新包")?;
+            client.url(&asset.url)?;
+            if asset.signature.is_empty() {
+                return Err("核心更新清单缺少签名".into());
+            }
+            Ok(manifest)
+        });
+        if let Some(manifest) = manifest {
+            diagnostic(&mut results, "安装包首段（最多 64 KiB）", || {
+                client
+                    .network
+                    .sample_package(&manifest.platforms[TARGET].url)
+            });
+        }
+        Ok(results)
+    }
+
+    pub fn github() -> Result<Self, String> {
+        let preferences = crate::update_network::Preferences {
+            fallback_enabled: false,
+            ..Default::default()
+        };
+        let network =
+            crate::update_network::Transport::new(preferences, Arc::new(Default::default()))?;
+        Ok(Self::with_network("https://api.github.com".into(), network))
+    }
+    pub(crate) fn with_network(
+        api_base: String,
+        network: crate::update_network::Transport,
+    ) -> Self {
+        Self {
+            network,
+            api_base,
+            releases: Arc::new(std::sync::Mutex::new(HashMap::new())),
+        }
     }
     #[cfg(feature = "test-fixtures")]
     pub fn test_github(token: String) -> Result<Self, String> {
         let mut client = Self::github()?;
-        client.test_github_token = Some(token);
+        client.network = client.network.test_token(token);
         Ok(client)
     }
     #[cfg(feature = "test-fixtures")]
-    fn test_authorize(
-        &self,
-        url: &reqwest::Url,
-        request: reqwest::blocking::RequestBuilder,
-    ) -> reqwest::blocking::RequestBuilder {
-        match (&self.test_github_token, url.host_str()) {
-            (Some(token), Some("api.github.com")) => request.bearer_auth(token),
-            _ => request,
-        }
+    pub fn test_proxy(prefix: &str) -> Result<Self, String> {
+        let mut client = Self::github()?;
+        client.network = client.network.only_endpoint(Some(prefix))?;
+        Ok(client)
     }
     #[cfg(feature = "test-fixtures")]
     pub fn test_server(base: &str) -> Self {
-        let url = reqwest::Url::parse(base).unwrap();
-        assert_eq!(url.host_str(), Some("127.0.0.1"));
-        Self::new(base.into(), true).unwrap()
+        Self::test_mirrors(base, Vec::new(), Arc::new(Default::default()))
+    }
+
+    #[cfg(feature = "test-fixtures")]
+    pub fn test_mirrors(
+        base: &str,
+        mirrors: Vec<(String, bool)>,
+        state: Arc<crate::update_network::State>,
+    ) -> Self {
+        Self::with_network(
+            base.into(),
+            crate::update_network::Transport::test_server(base, mirrors, state),
+        )
+    }
+
+    pub fn for_component(&self, core: &Arc<AppCore>, id: &str) -> Self {
+        Self {
+            network: self
+                .network
+                .clone()
+                .observed(core.update_network_observer(Some(id)), {
+                    let weak = Arc::downgrade(core);
+                    Arc::new(move || weak.upgrade().is_none_or(|core| core.is_closing()))
+                }),
+            api_base: self.api_base.clone(),
+            releases: self.releases.clone(),
+        }
     }
     fn url(&self, value: &str) -> Result<reqwest::Url, String> {
-        let url = reqwest::Url::parse(value).map_err(|_| "更新下载地址无效".to_string())?;
-        if url.scheme() != "https"
-            && !(self.test_http && url.scheme() == "http" && url.host_str() == Some("127.0.0.1"))
-        {
-            return Err("更新下载必须使用 HTTPS".into());
-        }
-        Ok(url)
+        self.network.validate_url(value)
     }
     fn json<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T, String> {
         self.json_with_accept(url, "application/json")
@@ -362,14 +493,17 @@ impl ReleaseClient {
         path: &str,
         raw: bool,
     ) -> Result<T, String> {
-        self.json_with_accept(
-            &format!("{}/repos/{REPOSITORY}/{path}", self.api_base),
-            if raw {
-                "application/vnd.github.raw+json"
-            } else {
-                "application/vnd.github+json"
-            },
-        )
+        let url = format!("{}/repos/{REPOSITORY}/{path}", self.api_base);
+        if raw {
+            self.network.read(
+                &url,
+                crate::update_network::RequestKind::Api,
+                "application/vnd.github+json",
+                decode_repository_blob,
+            )
+        } else {
+            self.json_with_accept(&url, "application/vnd.github+json")
+        }
     }
 
     fn json_with_accept<T: serde::de::DeserializeOwned>(
@@ -377,45 +511,15 @@ impl ReleaseClient {
         url: &str,
         accept: &str,
     ) -> Result<T, String> {
-        let url = self.url(url)?;
-        let mut response = None;
-        for attempt in 0..3 {
-            let request = self
-                .client
-                .get(url.clone())
-                .header(reqwest::header::ACCEPT, accept)
-                .timeout(Duration::from_secs(30));
-            #[cfg(feature = "test-fixtures")]
-            let request = self.test_authorize(&url, request);
-            match request.send() {
-                Ok(value) => {
-                    response = Some(value);
-                    break;
-                }
-                Err(error)
-                    if attempt < 2
-                        && !error.is_timeout()
-                        && (error.is_connect() || error.is_request()) =>
-                {
-                    // GitHub and local proxy connections can be reset before any response arrives.
-                    std::thread::sleep(Duration::from_millis(150 * (attempt + 1)));
-                }
-                Err(error) => return Err(format!("无法读取发行信息：{error}")),
-            }
-        }
-        let response = response
-            .ok_or("无法建立更新连接")?
-            .error_for_status()
-            .map_err(|e| format!("无法读取发行信息：{e}"))?;
-        let mut bytes = Vec::new();
-        response
-            .take(2 * 1024 * 1024 + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|e| e.to_string())?;
-        if bytes.len() > 2 * 1024 * 1024 {
-            return Err("发行信息过大".into());
-        }
-        serde_json::from_slice(&bytes).map_err(|e| format!("发行信息格式错误：{e}"))
+        let parsed = self.url(url)?;
+        let kind = if parsed.host_str() == Some("api.github.com")
+            || parsed.path().starts_with("/repos/")
+        {
+            crate::update_network::RequestKind::Api
+        } else {
+            crate::update_network::RequestKind::File
+        };
+        self.network.json(url, kind, accept)
     }
 
     pub fn discover(
@@ -526,83 +630,58 @@ impl ReleaseClient {
         &self,
         asset: &PackageAsset,
         path: &Path,
-        mut progress: impl FnMut(u64, Option<u64>),
+        progress: impl FnMut(u64, Option<u64>),
     ) -> Result<(), String> {
         if asset.sha256.len() != 64 || !asset.sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err("更新包缺少有效的 SHA-256".into());
         }
-        let mut response = self
-            .client
-            .get(self.url(&asset.url)?)
-            .send()
-            .and_then(|r| r.error_for_status())
-            .map_err(|e| format!("下载失败：{e}"))?;
-        let total = response.content_length();
-        if total.is_some_and(|n| n > MAX_PACKAGE) {
-            return Err("插件包超过 512 MiB".into());
-        }
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(path)
-            .map_err(|e| e.to_string())?;
-        let mut hash = Sha256::new();
-        let mut buffer = [0; 64 * 1024];
-        let mut count = 0;
-        let mut last = Instant::now();
-        loop {
-            let read = response
-                .read(&mut buffer)
-                .map_err(|e| format!("下载中断：{e}"))?;
-            if read == 0 {
-                break;
-            }
-            count += read as u64;
-            if count > MAX_PACKAGE {
-                return Err("插件包超过 512 MiB".into());
-            }
-            file.write_all(&buffer[..read]).map_err(|e| e.to_string())?;
-            hash.update(&buffer[..read]);
-            if last.elapsed() >= Duration::from_millis(200) {
-                progress(count, total);
-                last = Instant::now();
-            }
-        }
-        file.sync_all().map_err(|e| e.to_string())?;
-        if total.is_some_and(|n| n != count)
-            || format!("{:x}", hash.finalize()) != asset.sha256.to_lowercase()
-        {
-            return Err("下载包不完整或 SHA-256 不匹配，旧插件未改变".into());
-        }
-        progress(count, total);
-        Ok(())
+        self.network
+            .download(&asset.url, path, progress, |_, hash| {
+                if hash != asset.sha256.to_lowercase() {
+                    Err(crate::update_network::Error::remote(
+                        "下载包不完整或 SHA-256 不匹配，旧插件未改变",
+                    ))
+                } else {
+                    Ok(())
+                }
+            })
     }
-}
 
-#[cfg(all(test, feature = "test-fixtures"))]
-mod fixture_tests {
-    use super::*;
-
-    #[test]
-    fn fixture_token_is_sent_only_to_the_github_api() {
-        let client = ReleaseClient::test_github("fixture-token".into()).unwrap();
-        for (url, expected) in [
-            ("https://api.github.com/repos/BgaSol/soDeck/releases", true),
-            (
-                "https://github.com/BgaSol/soDeck/releases/download/file",
-                false,
-            ),
-            ("https://example.com/manifest.json", false),
-        ] {
-            let url = reqwest::Url::parse(url).unwrap();
-            let request = client
-                .test_authorize(&url, client.client.get(url.clone()))
-                .build()
-                .unwrap();
-            assert_eq!(request.headers().contains_key("authorization"), expected);
+    pub(crate) fn download_core(
+        &self,
+        update: &tauri_plugin_updater::Update,
+        path: &Path,
+        progress: impl FnMut(u64, Option<u64>),
+    ) -> Result<(), String> {
+        let fallback = format!(
+            "https://github.com/{REPOSITORY}/releases/download/v{}/core-update.json",
+            update.version
+        );
+        let source = update
+            .raw_json
+            .get("manifestUrl")
+            .and_then(|value| value.as_str())
+            .unwrap_or(&fallback);
+        let fresh: UpdateManifest = self.json(source)?;
+        let asset = fresh
+            .platforms
+            .get(TARGET)
+            .ok_or("核心更新不支持本机平台")?;
+        if fresh.id != CORE_ID
+            || fresh.version != update.version
+            || asset.url != update.download_url.as_str()
+            || asset.signature != update.signature
+        {
+            return Err("核心发行信息已改变，请重新检查更新".into());
         }
-        let normal = ReleaseClient::github().unwrap();
-        assert!(normal.test_github_token.is_none());
+        self.network
+            .download(update.download_url.as_str(), path, progress, |path, _| {
+                let bytes = crate::desktop_updates::read_package(path)
+                    .map_err(crate::update_network::Error::Local)?;
+                update.verify(&bytes).map_err(|e| {
+                    crate::update_network::Error::remote(format!("核心包签名校验失败：{e}"))
+                })
+            })
     }
 }
 
@@ -869,7 +948,11 @@ impl AppCore {
                 .filter(|(_, v)| {
                     !["checking", "downloading", "preparing", "waiting"].contains(&v.phase.as_str())
                 })
-                .map(|(k, v)| (k.clone(), v.clone()))
+                .map(|(k, v)| {
+                    let mut view = v.clone();
+                    view.network = None;
+                    (k.clone(), view)
+                })
                 .collect(),
             candidates: state.candidates.clone(),
             last_checked_at: state.last_checked_at,
@@ -905,6 +988,7 @@ impl AppCore {
                 })
         });
         cache.items.retain(|id, v| {
+            v.network = None;
             id != CORE_ID
                 && snapshot
                     .plugins
@@ -983,6 +1067,7 @@ impl AppCore {
         id: &str,
         client: &ReleaseClient,
     ) -> Result<Option<UpdateManifest>, String> {
+        let client = client.for_component(self, id);
         let _operation = self.update_operation(id)?;
         if self
             .snapshot()
@@ -1028,7 +1113,11 @@ impl AppCore {
                     record.manifest.version.clone(),
                 )
             };
-            client.discover(&source, id, &current)
+            let result = client.discover(&source, id, &current);
+            if self.is_closing() {
+                return Err("应用正在退出或重启".into());
+            }
+            result
         })();
         match &result {
             Ok(candidate) => {
@@ -1097,6 +1186,7 @@ impl AppCore {
         client: &ReleaseClient,
         _operation: Operation,
     ) -> Result<bool, String> {
+        let client = client.for_component(self, id);
         let candidate = self
             .updates
             .lock()
@@ -1106,7 +1196,7 @@ impl AppCore {
             .cloned()
             .ok_or("请先检查插件更新")?;
         self.update_phase(id, "downloading", None);
-        let result = self.prepare_plugin(id, &candidate, client, false);
+        let result = self.prepare_plugin(id, &candidate, &client, false);
         match &result {
             Ok(restart) => self.update_phase(id, if *restart { "ready" } else { "current" }, None),
             Err(error) => self.update_phase(id, "error", Some(error.clone())),
@@ -1150,6 +1240,9 @@ impl AppCore {
                 return Err("下载包的 ID、版本或 API 与更新清单不一致".into());
             }
             let _mutation = self.mutations.lock().unwrap();
+            if self.is_closing() {
+                return Err("应用正在退出或重启".into());
+            }
             let active = self.plugin_needs_restart(id);
             let mut store = self.store.lock().unwrap();
             if initial_install {

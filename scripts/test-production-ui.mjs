@@ -50,9 +50,13 @@ assert.equal(spawnSync(tar, ['-czf', filesArchive, '-C', directory, 'files-fixtu
 const filesBytes = fs.readFileSync(filesArchive);
 const catalogFiles = new Map(fs.readdirSync('plugins').filter(name=>fs.existsSync(`plugins/${name}/release.json`)).map(name=>[name, JSON.parse(fs.readFileSync(`plugins/${name}/release.json`,'utf8'))]));
 let catalogUnavailable = true, holdCatalog = false, releaseCatalog;
+let holdDiagnostic = false, releaseDiagnostic, diagnosticReached;
 const markdownNotes = '# 更新测试\n\n## 改进\n\n- **保留工作**并支持*重试*\n  - 使用 `npm run check` 验证\n- 下载后继续使用\n\n> 完成工作后再重启。\n\n[发行说明](https://github.com/BgaSol/soDeck/releases)\n\n```sh\nnpm run check\n' + 'a'.repeat(180) + '\n```\n\n| 项目 | 结果 |\n| --- | --- |\n| 核心 | 可更新 |\n| 插件 | 独立下载 |';
 const downloads = http.createServer(async (request, response) => {
   requests.push(request.url);
+  if (request.url.startsWith('/diagnostic/') && holdDiagnostic) { diagnosticReached(); await new Promise(resolve=>releaseDiagnostic=resolve); }
+  if (request.url.startsWith('/diagnostic-failed/')) { response.writeHead(503).end(); return; }
+  if (request.url.startsWith('/diagnostic/')) { const original=new URL(request.url.slice('/diagnostic/'.length)); request.url=original.pathname+original.search; }
   const base = `http://127.0.0.1:${downloads.address().port}`;
   const blobs = [...catalogFiles].map(([name,config])=>({path:`plugins/${name}/release.json`,type:'blob',sha:createHash('sha256').update(JSON.stringify(config)).digest('hex').slice(0,40),config}));
   let data;
@@ -62,12 +66,14 @@ const downloads = http.createServer(async (request, response) => {
     data = JSON.stringify({truncated:false,tree:blobs.map(({config,...entry})=>entry)});
   }
   else if (request.url.startsWith('/repos/BgaSol/soDeck/git/blobs/')) {
-    assert.equal(request.headers.accept,'application/vnd.github.raw+json');
+    assert.equal(request.headers.accept,'application/vnd.github+json');
     const item=blobs.find(item=>request.url.endsWith(item.sha));
     if(!item){response.writeHead(404).end();return;}
-    data=JSON.stringify(item.config);
+    const content=Buffer.from(JSON.stringify(item.config));
+    data=JSON.stringify({encoding:'base64',size:content.length,content:content.toString('base64')});
   }
   else if (request.url.startsWith("/repos/BgaSol/soDeck/releases")) data = JSON.stringify(published ? [{ tag_name: "plugin-terminal-v0.1.1", draft: false, prerelease: false, assets: [{ name: "plugin-update.json", browser_download_url: `${base}/manifest.json` }] }, { tag_name:'plugin-files-v0.1.1', draft:false, prerelease:false, assets:[{name:'plugin-update.json',browser_download_url:`${base}/files.json`}] }, ...extraReleases] : []);
+  else if (request.url === '/core-update.json') data = JSON.stringify({id:'sodeck.core',version:'0.1.1',platforms:{[target]:{url:`${base}/fixture.tar.gz`,signature:'fixture-diagnostic-only'}}});
   else if (request.url === '/files.json') data = JSON.stringify({ id:'sodeck.files', version:'0.1.1', apiVersion:'1', platforms:{[target]:{url:`${base}/files.tar.gz`,sha256:createHash('sha256').update(filesBytes).digest('hex')}} });
   else if (request.url === '/files.tar.gz') data = filesBytes;
   else if (extraManifests.has(request.url)) data = JSON.stringify(extraManifests.get(request.url));
@@ -454,6 +460,78 @@ try {
   }
   await page.reload();await page.locator('#settings-button').click();
   await page.locator('[data-action="section"][data-id="updates"]').click();
+  await page.locator('#update-network-summary').click();
+  await page.locator('#update-network-summary').focus();await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'network-fallback','Keyboard enters expanded network settings');
+  await page.locator('#network-fallback').uncheck();
+  await page.locator('#network-add').click();
+  await page.locator('#mirror-name-0').fill('公司节点');
+  await page.locator('#mirror-prefix-0').fill('http://example.com');
+  await page.locator('#network-save').click();
+  await page.locator('.update-network [role="alert"]').filter({hasText:'HTTPS'}).waitFor();
+  assert.equal(await page.locator('#mirror-name-0').inputValue(),'公司节点');
+  await page.locator('#mirror-prefix-0').fill('https://Example.com/proxy');
+  await page.evaluate(()=>window.emitTestEvent('core-changed'));await page.waitForTimeout(300);
+  assert.equal(await page.locator('#mirror-prefix-0').inputValue(),'https://Example.com/proxy');
+  assert.equal(await page.locator('#mirror-prefix-0').evaluate(el=>el===document.activeElement),true);
+  await page.locator('#network-save').click();
+  await page.locator('.network-notice').waitFor();
+  assert.equal((await call('snapshot')).preferences.updateNetwork.customMirrors[0].prefix,'https://example.com/proxy/');
+  await page.locator('#network-add').click();
+  await page.locator('#mirror-name-1').fill('备用节点');
+  await page.locator('#mirror-prefix-1').fill('https://backup.example.com/');
+  await page.locator('[data-action="network-up"][data-id="1"]').click();
+  await page.waitForFunction(()=>document.querySelector('#mirror-name-0')?.value==='备用节点');
+  assert.equal(await page.locator('#mirror-name-0').inputValue(),'备用节点');
+  await page.locator('#mirror-enabled-1').uncheck();
+  await page.locator('#mirror-builtin-ghfast').uncheck();
+  const concurrent=(await call('snapshot')).preferences.updateNetwork;
+  await call('set_update_network',{expectedRevision:concurrent.revision,preferences:concurrent});
+  await page.locator('#network-save').click();
+  await page.locator('.update-network [role="alert"]').filter({hasText:'另一窗口'}).waitFor();
+  assert.equal(await page.locator('#mirror-name-0').inputValue(),'备用节点');
+  await page.locator('[data-action="network-reload"]').click();
+  await page.locator('#network-fallback').check();
+  await page.locator('#mirror-builtin-ghfast').uncheck();
+  await page.locator('#network-save').click();await page.locator('.network-notice').waitFor();
+  await page.waitForTimeout(300);
+  assert((await call('snapshot')).preferences.updateNetwork.disabledBuiltins.includes('ghfast'));
+  await page.locator('#network-test-custom-0').click();
+  await page.locator('.network-diagnostic li').filter({hasText:'安装包首段'}).waitFor();
+  assert.equal(await page.locator('.network-diagnostic .update-error').count(),0);
+  assert(requests.some(p=>p.startsWith('/diagnostic/http://127.0.0.1:')));
+  holdDiagnostic=true;
+  const diagnosticStarted=new Promise(resolve=>diagnosticReached=resolve);
+  await page.locator('#network-test-custom-0').click();await diagnosticStarted;
+  await page.locator('#mirror-prefix-0').fill('https://edited.example.com/');
+  holdDiagnostic=false;releaseDiagnostic();
+  await page.waitForFunction(()=>document.querySelector('#network-test-custom-0').textContent==='测试');
+  assert.equal(await page.locator('.network-diagnostic').count(),0,'Late diagnostic results must not overwrite edited address state');
+  await page.locator('#mirror-prefix-0').fill('https://failed.example.com/');
+  const diagnosticStart=requests.length;
+  await page.locator('#network-test-custom-0').click();
+  await page.locator('.network-diagnostic .update-error').first().waitFor();
+  assert(requests.slice(diagnosticStart).every(p=>p.startsWith('/diagnostic-failed/')),'A selected failing endpoint must never report another endpoint success');
+  await page.locator('[data-action="network-reload"]').click();
+  await page.locator('#network-fallback').uncheck();
+  for (const theme of ['light','dark','dopamine']) for (const [width,height] of [[1100,720],[720,480]]) {
+    await page.setViewportSize({width,height});
+    await call('set_theme',{theme});
+    await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+    await page.waitForTimeout(160); // Let the existing 100 ms control background transition finish.
+    await page.evaluate(()=>document.querySelector('#network-add').scrollIntoView({block:'center'}));
+    assert.equal(await page.locator('.settings-page').evaluate(el=>el.scrollWidth>el.clientWidth+1),false,`${theme}/${width} network settings fit`);
+    const networkContrasts=await page.locator('.network-intro,.network-custom > label:not(.network-toggle),.network-builtin small,.update-network .primary:not(:disabled),.update-network .text-button:not(:disabled)').evaluateAll(nodes=>{
+      const luminance=color=>{const c=color.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722;};
+      return nodes.map(node=>{let surface=node;while(surface.parentElement&&Number(getComputedStyle(surface).backgroundColor.match(/[\d.]+/g)?.[3]??1)===0)surface=surface.parentElement;const a=luminance(getComputedStyle(node).color),b=luminance(getComputedStyle(surface).backgroundColor);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);});
+    });
+    assert(networkContrasts.length&&networkContrasts.every(ratio=>ratio>=4.5),`${theme}/${width} network text contrast: ${networkContrasts}`);
+    await page.screenshot({path:`artifacts/production-ui/update-network-${theme}-${width}.png`});
+  }
+  await page.setViewportSize({width:1100,height:720});
+  await page.locator('#update-network-summary').click();
+  await page.locator('.settings-page').evaluate(el=>el.scrollTo(0,0));
+  checks.push('Update network: editable drafts survive refresh and retain focus, invalid URL and revision conflict preserve input, custom ordering/toggles, normalized save, single-endpoint API/blob/manifest/package diagnostics, three themes and small window');
   await page.locator('[data-action="check-all-updates"]').click();
   const firstUpdate=page.locator('[data-update-id="test.update-one"]'),secondUpdate=page.locator('[data-update-id="test.update-two"]');
   await firstUpdate.locator('[data-action="download-update"]').waitFor();

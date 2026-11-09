@@ -35,6 +35,7 @@ pub struct AppCore {
     pub(crate) store: Mutex<Store>,
     pub(crate) settings: Mutex<crate::settings::store::SettingsStore>,
     pub(crate) updates: Mutex<crate::updates::UpdateState>,
+    pub(crate) update_network: Arc<crate::update_network::State>,
     pub(crate) official_catalog: Mutex<Option<crate::official_plugins::OfficialCatalog>>,
     pub(crate) update_cache_io: Mutex<()>,
     pub(crate) mutations: Mutex<()>,
@@ -88,6 +89,7 @@ impl AppCore {
             store: Mutex::new(store),
             settings: Mutex::new(crate::settings::store::SettingsStore::open(&directory)),
             updates: Mutex::new(crate::updates::UpdateState::default()),
+            update_network: Arc::new(crate::update_network::State::default()),
             official_catalog: Mutex::new(None),
             update_cache_io: Mutex::new(()),
             mutations: Mutex::new(()),
@@ -167,6 +169,7 @@ impl AppCore {
             data_directory: store.root.clone(),
             log_directory: store.root.join("logs"),
             preferences: store.preferences.clone(),
+            update_mirrors: crate::update_network::BUILTIN_MIRRORS.to_vec(),
             plugins: Vec::new(),
             unread_count: store.messages.iter().filter(|m| !m.read).count(),
             storage_errors: store.errors.iter().flatten().cloned().collect(),
@@ -581,6 +584,71 @@ impl AppCore {
         self.store.lock().unwrap().set_automatic_updates(enabled)?;
         self.changed();
         Ok(())
+    }
+
+    pub fn set_update_network(
+        &self,
+        expected_revision: u64,
+        input: crate::update_network::Preferences,
+    ) -> Result<crate::update_network::Preferences, String> {
+        let saved = self
+            .store
+            .lock()
+            .unwrap()
+            .set_update_network(expected_revision, input)?;
+        self.update_network.clear();
+        self.changed();
+        Ok(saved)
+    }
+
+    pub fn release_client(self: &Arc<Self>) -> Result<crate::updates::ReleaseClient, String> {
+        let store = self.store.lock().unwrap();
+        let preferences = store.preferences.update_network.clone();
+        let weak = Arc::downgrade(self);
+        let network =
+            crate::update_network::Transport::new(preferences, self.update_network.clone())?
+                .observed(
+                    self.update_network_observer(None),
+                    Arc::new(move || weak.upgrade().is_none_or(|core| core.is_closing())),
+                );
+        drop(store);
+        Ok(crate::updates::ReleaseClient::with_network(
+            "https://api.github.com".into(),
+            network,
+        ))
+    }
+
+    pub(crate) fn update_network_observer(
+        self: &Arc<Self>,
+        id: Option<&str>,
+    ) -> Arc<dyn Fn(crate::update_network::Attempt) + Send + Sync> {
+        let weak = Arc::downgrade(self);
+        let id = id.map(str::to_owned);
+        Arc::new(move |attempt| {
+            let Some(core) = weak.upgrade() else {
+                return;
+            };
+            if core.is_closing() {
+                return;
+            }
+            if let Some(id) = &id {
+                let mut state = core.updates.lock().unwrap();
+                if let Some(view) = state.items.get_mut(id).filter(|view| {
+                    ["checking", "downloading", "preparing"].contains(&view.phase.as_str())
+                }) {
+                    view.network = Some(attempt.clone());
+                }
+            }
+            if attempt.error.is_some() || attempt.attempt > 1 {
+                core.log(
+                    None,
+                    "debug",
+                    "更新访问线路已切换或失败",
+                    Some(json!({"componentId":id,"network":attempt})),
+                );
+            }
+            core.changed();
+        })
     }
 
     pub fn logs(&self, filter: &LogFilter) -> Vec<LogRecord> {

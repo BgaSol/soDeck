@@ -38,12 +38,26 @@ npm run terminal:input:test
 
 Windows 对运行中的测试程序有文件锁，使用同一 Rust target 目录的核心/插件集成与界面测试应顺序运行。修改网络 UI 后可用 `npm run network:test -- --network-ui-only` 重新独立打包并只复验实际插件界面与隧道，不重复协议压力测试；完整网络验证仍使用 `npm run network:test`。
 
-`npm run ui:production:test -- --updates-only` 验证正式前端的官方插件发现、安装和统一更新：仓库列表延迟加载、失败重试、运行中新插件出现与移除、离线缓存、连续安装、更新说明 Markdown、链接分发、批量更新和三主题小窗口布局，不运行后续工作区菜单与拆窗专项。列表与安装回归使用真实核心及隔离回环 HTTP，不依赖公网。
+`npm run ui:production:test -- --updates-only` 验证正式前端的官方插件发现、安装和统一更新：仓库列表延迟加载、失败重试、运行中新插件出现与移除、离线缓存、连续安装、更新说明 Markdown、链接分发、批量更新，以及下载网络设置的草稿、地址排序/停用、保存冲突、单地址诊断和三主题小窗口布局，不运行后续工作区菜单与拆窗专项。列表、安装和诊断回归使用真实核心及隔离回环 HTTP，不依赖公网。
+
+`npm run test` 的 `tests/update_network.rs` 覆盖线路切换、API/文件健康隔离、URL/偏好校验、设置修订冲突、下载中断/损坏/取消和单地址诊断；`tests/updates.rs` 包含代理上的完整官方插件安装链路。核心单元测试用官方公开签名向量验证坏包重试与已准备包的离线恢复。公网节点的历史探测与当前源代码测试分别记录在[实施记录](implementation-update-acceleration.md)，不能互相替代。
 
 需要核对实际 GitHub Trees/Blobs 接口时，显式执行以下烟测；它只读取官方仓库列表，不安装插件，依赖网络及 GitHub API 可用额度，默认核心测试不运行：
 
 ```sh
 cargo test --manifest-path src-tauri/Cargo.toml --features test-fixtures --test updates --locked official_catalog_live_repository -- --ignored --nocapture
+```
+
+需要验证完整公网加速安装链路时，设置 `SODECK_TEST_MIRROR` 为 `auto`（实际默认线路切换）或单一 HTTPS 转发前缀，再运行下面的显式专项。它读取官方名单和核心清单，下载并校验真实终端插件到隔离临时目录，不启动插件；不更新正在使用的应用。需要公网及可用 API 额度，不能放进默认离线测试：
+
+```sh
+cargo test --manifest-path src-tauri/Cargo.toml --features test-fixtures --test updates --locked official_install_live_mirror -- --ignored --nocapture
+```
+
+同样的环境变量下，可显式读取并下载本机平台的真实核心更新包，以 Tauri 配置中的公钥验签并准备到隔离临时目录；下面的专项不运行安装器：
+
+```sh
+cargo test --manifest-path src-tauri/Cargo.toml --features test-fixtures --lib --locked core_download_live_mirror -- --ignored --nocapture
 ```
 
 真实远程业务测试还需要本机 OpenSSH 服务端与 `ssh-keygen`，并启动隔离的临时回环服务：
@@ -147,7 +161,7 @@ Check 的 **Run workflow** 先选择需要验证的分支或标签，再选择 `
 
 完整 Windows `ui:test` 已包含 settings 回归，选中 desktop 时不再在 Linux 重复。手动 `standard` 没有 desktop，Linux 单独执行 `settings:test`，为其真实 catalog 核心夹具安装 WebKit/GTK 构建库并恢复 `check-tests` 依赖缓存。
 
-`native-core` 覆盖当前核心单元测试及 `tests/lifecycle.rs`、`close_lifecycle.rs`、`updates.rs`、`connections.rs`、`component_ui.rs`、`settings.rs`、`servers.rs`、`streams.rs`、`window_config.rs`、`workspaces.rs`；Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 都在对应原生 runner 执行。`platform`、`desktop_files`、桌面行为及更新等系统分支随原生测试验证。标记为 ignored 的真实远端用例仍由对应 SSH/终端/文件/网络专项提供环境后显式运行，不能把 `native-core` 通过当作这些专项已通过。
+`native-core` 覆盖当前核心单元测试及 `tests/lifecycle.rs`、`close_lifecycle.rs`、`updates.rs`、`update_network.rs`、`connections.rs`、`component_ui.rs`、`settings.rs`、`servers.rs`、`streams.rs`、`window_config.rs`、`workspaces.rs`；Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 都在对应原生 runner 执行。`platform`、`desktop_files`、桌面行为及更新等系统分支随原生测试验证。标记为 ignored 的真实远端用例仍由对应 SSH/终端/文件/网络专项提供环境后显式运行，不能把 `native-core` 通过当作这些专项已通过。
 
 核心与插件打包中的源码测试已经移到 Check；核心 preflight 只使用 Node 检查发行输入，正式前端构建仍执行 TypeScript 检查。实际包的架构、更新签名、启动、持久资料重开和退出验证继续执行，Windows x86_64 另保留包内 SSH 烟测。
 
