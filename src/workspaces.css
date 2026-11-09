@@ -18,7 +18,7 @@
   .server-tab button:hover { background: var(--hover); }
   .server-tab .server-tab-select { min-width: 0; flex: 1; padding: 6px 4px 6px 9px; justify-content: start; font-size: 12px; }
   .server-tab .tab-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  .server-tab .tab-menu-button, .server-tab .tab-close-button { width: 23px; flex-shrink: 0; }
+  .server-tab .tab-close-button { width: 23px; flex-shrink: 0; }
   .tab-close-button svg { width: 12px; height: 12px; }
   .server-tab.dragging, .server-tab.moving { opacity: .45; }
   .topbar .drag-region { flex: 1; min-width: 32px; }

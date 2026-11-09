@@ -731,6 +731,11 @@ impl AppCore {
                             if !host.contains(view) {
                                 return Err("页面不属于此工作台".into());
                             }
+                            // A requested split keeps its source usable even when its only page moves.
+                            let source = host.groups.get_mut(&group).ok_or("源标签组已关闭")?;
+                            if source.view_ids.as_slice() == [view] {
+                                source.explicit_empty = true;
+                            }
                             host.place(view, &id, 0, true)?;
                         }
                         result = json!({"groupId":id});

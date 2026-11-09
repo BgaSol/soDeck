@@ -5,7 +5,7 @@ import { ClipboardBridge } from "./clipboard";
 import { LocalFileDrop } from "./local-files";
 import { ComponentData } from "./component-data";
 import { ComponentState } from "./component-state";
-import { attachMenuPosition, type MenuPosition } from "./menu-position.js";
+import { attachMenuPosition, type MenuPosition, type MenuReference } from "./menu-position.js";
 import { escape as e, icon, replace, patchChrome } from "./ui";
 import type { Context, Projection, Workspace, DropTarget } from "./workspaces";
 import type { NetworkSnapshot } from "./core";
@@ -19,7 +19,7 @@ interface Preference { side: string; pinned: boolean; startup: string; order: nu
 interface View { id: string; definitionKey: string; pluginInstanceId: string; context: Context; title: string; dirty: boolean; busy: boolean; error?: string; lastUsed: number; uiRequested?: boolean }
 export type CenterNode = {type:"group";groupId:string}|{type:"split";id:string;axis:"x"|"y";ratio:number;first:CenterNode;second:CenterNode};
 export interface ViewGroup {id:string;viewIds:string[];activeViewId:string|null;explicitEmpty:boolean}
-export interface WorkbenchHost {id:string;center:CenterNode;groups:Record<string,ViewGroup>;left:{viewIds:string[];activeViewId:string|null};right:{viewIds:string[];activeViewId:string|null};focusedGroupId:string;zoomGroupId:string|null;revision:number}
+export interface WorkbenchHost {id:string;center:CenterNode;groups:Record<string,ViewGroup>;left:{viewIds:string[];activeViewId:string|null};right:{viewIds:string[];activeViewId:string|null};dialogs?:string[];focusedGroupId:string;zoomGroupId:string|null;revision:number}
 interface Transfer {closeOwner?:string;id:string;workspaceId:string;source:string;target:string;viewIds:string[];phase:"preparing"|"draining"|"restoring"}
 interface ReturnLocation {windowId:string;groupId?:string;side?:string}
 interface UiWorkspace {returnLocations?:Record<string,ReturnLocation>;groupReturnLocations?:Record<string,ReturnLocation>;unavailableTools?:{key:string;groupId?:string;side?:string}[];otherViews?:{id:string;definitionKey:string;title:string;windowId:string}[]; views: View[]; preferences: Record<string, Preference>; left: string | null; right: string | null; editor: string | null; host?:WorkbenchHost }
@@ -106,6 +106,7 @@ export class Components {
   }
   private invoke<T>(operation: string, args: Record<string, unknown> = {}) { return this.call<T>("component_ui", { operation, args }); }
   async sync(state: Projection) {
+    if(this.state?.window.activeWorkspace!==state.window.activeWorkspace)this.closeMenu();
     const ui = await this.invoke<UiProjection>("snapshot");
     if (this.disposed) return;
     this.state = state; this.definitions = ui.definitions; this.transfers=ui.transfers??[];
@@ -203,7 +204,7 @@ export class Components {
       const workspaceId=shell.workspace.context.workspaceId,pending=this.pendingActions.get(workspaceId);
       const canCreate=shell.workspace.connected&&this.defaultAction?.available&&!pending&&!this.creating.has(workspaceId);
       const createTitle=pending&&!this.creating.has(workspaceId)?'结果尚未确认':this.creating.has(workspaceId)?'正在创建…':this.defaultAction?.title||'未设置默认行为';
-      return `<section class="view-group ${host.focusedGroupId===id?'focused':''}" data-group="${e(id)}" aria-label="标签组"><header class="component-tabs sd-tab-strip sd-edge-bottom"><div class="component-tab-list" role="tablist" aria-label="标签组页面">${missing.map(t=>`<button class="sd-quiet" disabled title="${e(t.key)} 未安装或未启用">${icon('plug')}${e(t.key)}</button>`).join('')}${pages.map(v=>`<div class="component-tab sd-tab ${g.activeViewId===v.id?'selected':''}" data-view="${e(v.id)}"><button role="tab" aria-selected="${g.activeViewId===v.id}" tabindex="${g.activeViewId===v.id?0:-1}" data-component-action="select" data-key="${e(v.id)}" title="${e(v.title)}">${icon(this.definitions[v.definitionKey]?.icon)}<span>${e(v.title)}${v.dirty?' ●':''}</span></button><button class="sd-icon" data-component-action="close" data-key="${e(v.id)}" aria-label="${this.definitions[v.definitionKey]?.container==='sidebar'?'隐藏':'关闭'} ${e(v.title)}">${icon('close')}</button></div>`).join('')}</div><button class="sd-icon" data-component-action="create" title="${e(createTitle)}" aria-label="${e(this.defaultAction?.title||'新建页面')}" ${canCreate?'':'disabled'}>${icon('plus')}</button><button class="sd-icon" data-component-action="group-menu" aria-label="标签组菜单" title="拆分与标签组操作">${icon('more')}</button></header><div class="component-slot central-slot">${missing.map(t=>`<div class="unavailable-tool" role="status">${icon('plug')}<span>${e(t.key)} 未安装或未启用；已保留此工具位置。</span></div>`).join('')}${pages.length?'':`<div class="workspace-empty"><h2>${e(shell.workspace.name)}</h2><p>${shell.workspace.connected?'拖入页面，或点击＋新建。':'连接已断开；布局仍可调整。'}</p><div class="empty-group-actions"><button class="sd-control" data-component-action="split-x">左右拆分</button><button class="sd-control" data-component-action="split-y">上下拆分</button></div></div>`}</div></section>`;
+      return `<section class="view-group ${host.focusedGroupId===id?'focused':''}" data-group="${e(id)}" aria-label="标签组"><header class="component-tabs sd-tab-strip sd-edge-bottom" tabindex="0" aria-label="分屏标签栏"><div class="component-tab-list" role="tablist" aria-label="标签组页面">${missing.map(t=>`<button class="sd-quiet" disabled title="${e(t.key)} 未安装或未启用">${icon('plug')}${e(t.key)}</button>`).join('')}${pages.map(v=>`<div class="component-tab sd-tab ${g.activeViewId===v.id?'selected':''}" data-view="${e(v.id)}"><button role="tab" aria-selected="${g.activeViewId===v.id}" tabindex="${g.activeViewId===v.id?0:-1}" data-component-action="select" data-key="${e(v.id)}" title="${e(v.title)}">${icon(this.definitions[v.definitionKey]?.icon)}<span>${e(v.title)}${v.dirty?' ●':''}</span></button><button class="sd-icon" data-component-action="close" data-key="${e(v.id)}" aria-label="${this.definitions[v.definitionKey]?.container==='sidebar'?'隐藏':'关闭'} ${e(v.title)}">${icon('close')}</button></div>`).join('')}</div><button class="sd-icon" data-component-action="create" title="${e(createTitle)}" aria-label="${e(this.defaultAction?.title||'新建页面')}" ${canCreate?'':'disabled'}>${icon('plus')}</button></header><div class="component-slot central-slot">${missing.map(t=>`<div class="unavailable-tool" role="status">${icon('plug')}<span>${e(t.key)} 未安装或未启用；已保留此工具位置。</span></div>`).join('')}${pages.length?'':`<div class="workspace-empty"><p>${shell.workspace.connected?'点击＋新建，或拖入标签。':'连接已断开；仍可整理分屏。'}</p></div>`}</div></section>`;
     };
     const render=(n:CenterNode,width:number,height:number):string=>{
       if(n.type==='group')return group(n.groupId);
@@ -215,11 +216,12 @@ export class Components {
     const zoom=host.zoomGroupId||(compact?host.focusedGroupId:null);
     const hiddenViews=zoom?Object.values(host.groups).filter(g=>g.id!==zoom).flatMap(g=>g.viewIds).map(id=>shell.ui.views.find(v=>v.id===id)).filter(Boolean) as View[]:[];
     const hiddenStatus=[hiddenViews.filter(v=>v.dirty).length?`${hiddenViews.filter(v=>v.dirty).length} 页未保存`:'',hiddenViews.filter(v=>v.error).length?`${hiddenViews.filter(v=>v.error).length} 页错误`:''].filter(Boolean).join(' · ');
-    patchChrome(center,zoom?`<div class="compact-group-bar"><span role="status">${compact?'窗口空间较小，显示当前标签组':'标签组已放大'}${hiddenStatus?` · 其他组：${e(hiddenStatus)}`:''}</span><button class="sd-quiet" data-group="${e(zoom)}" data-component-action="group-menu">切换或恢复布局</button></div>${group(zoom)}`:render(host.center,center.clientWidth,center.clientHeight));
+    patchChrome(center,zoom?`<div class="compact-group-bar"><span role="status">当前分屏${hiddenStatus?` · 其他分屏：${e(hiddenStatus)}`:''}</span><button class="sd-quiet" data-component-action="hidden-groups">其他分屏（${Object.keys(host.groups).length-1}）</button></div>${group(zoom)}`:render(host.center,center.clientWidth,center.clientHeight));
     for(const node of center.querySelectorAll<HTMLElement>(".view-group")){
       const list=node.querySelector<HTMLElement>(".component-tab-list")!;list.scrollLeft=scrolls.get(node.dataset.group)??0;
       if(this.boundTabs.has(node))continue;this.boundTabs.add(node);
-      node.addEventListener("contextmenu",event=>{event.preventDefault();const tab=(event.target as Element).closest<HTMLElement>("[data-view]");if(tab)this.viewMenu(shell,tab.dataset.view!,tab);else this.groupMenu(shell,node.dataset.group!,node);});
+      node.addEventListener("contextmenu",event=>{const target=event.target as Element,header=target.closest<HTMLElement>('.component-tabs');if(!header)return;event.preventDefault();const tab=target.closest<HTMLElement>("[data-view]"),anchor=tab?.querySelector<HTMLElement>('[role="tab"]')??header,reference={x:event.clientX,y:event.clientY,contextElement:anchor};if(tab)this.viewMenu(shell,tab.dataset.view!,anchor,false,reference);else this.groupMenu(shell,node.dataset.group!,anchor,false,reference);});
+      node.addEventListener('keydown',event=>{if(event.key!=='ContextMenu'&&!(event.shiftKey&&event.key==='F10'))return;const target=event.target as Element,header=target.closest<HTMLElement>('.component-tabs');if(!header)return;event.preventDefault();event.stopPropagation();const tab=target.closest<HTMLElement>('[data-view]'),anchor=tab?.querySelector<HTMLElement>('[role="tab"]')??header;if(tab)this.viewMenu(shell,tab.dataset.view!,anchor,true);else this.groupMenu(shell,node.dataset.group!,anchor,true);});
       list.addEventListener("keydown",event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const g=shell.ui.host!.groups[node.dataset.group!],at=g.viewIds.indexOf(g.activeViewId??'');const index=event.key==='Home'?0:event.key==='End'?g.viewIds.length-1:(at+(event.key==='ArrowRight'?1:-1)+g.viewIds.length)%g.viewIds.length;const id=g.viewIds[index];if(id)void this.run(async()=>{await this.perform(shell,{op:'select',viewId:id});const surface=shell.surfaces.get(id);if(surface)this.focusSurface(surface);});});
     }
     for(const handle of center.querySelectorAll<HTMLElement>("[data-split-ratio]"))if(!this.boundTabs.has(handle)){
@@ -239,35 +241,50 @@ export class Components {
     const up=(ev:PointerEvent)=>{if(ev.pointerId===event.pointerId)end(true);},cancel=()=>end(false);
     this.splitGesture={shell,cancel};handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',up);handle.addEventListener('pointercancel',cancel);handle.addEventListener('lostpointercapture',cancel);
   }
-  private groupMenu(shell:Shell,id:string,anchor:HTMLElement,keyboard=false) {
+  private groupIds(node:CenterNode):string[] {return node.type==='group'?[node.groupId]:[...this.groupIds(node.first),...this.groupIds(node.second)];}
+  private groupMenu(shell:Shell,id:string,anchor:HTMLElement,keyboard=false,reference:MenuReference=anchor) {
+    this.cancelGestures();
     const host=shell.ui.host!,g=host.groups[id];if(!g)return;
-    const returnLocation=shell.ui.groupReturnLocations?.[id]??g.viewIds.map(v=>shell.ui.returnLocations?.[v]).find(Boolean);
+    const order=this.groupIds(host.center),index=order.indexOf(id),target=order[index>0?index-1:index+1];
+    const x=this.canSplit(shell,id,'x'),y=this.canSplit(shell,id,'y');
+    const affected=[...g.viewIds,...(host.groups[target]?.viewIds??[])];
+    const busy=()=>affected.some(id=>this.closeBlocked.has(id)||this.transfers.some(t=>t.viewIds.includes(id)))||[...this.pendingMoves.keys()].some(key=>key.startsWith(`${shell.workspace.context.workspaceId}:`));
     this.showMenu(anchor,[
-      {label:this.canSplit(shell,id,'x')?'左右拆分':'左右拆分（空间不足）',disabled:!this.canSplit(shell,id,'x'),action:()=>this.perform(shell,{op:'split',axis:'x',groupId:id})},
-      {label:this.canSplit(shell,id,'y')?'上下拆分':'上下拆分（空间不足）',disabled:!this.canSplit(shell,id,'y'),action:()=>this.perform(shell,{op:'split',axis:'y',groupId:id})},
-      {label:host.zoomGroupId===id?'恢复分屏布局':'放大此标签组',action:()=>this.perform(shell,{op:'zoom',groupId:id})},
-      {label:'标签组移至新窗口',action:()=>this.moveWindow(shell,{kind:'group',id})},
-      ...this.windowTargets().map(w=>({label:`标签组移至${w.label}`,action:()=>this.moveWindow(shell,{kind:'group',id},w.id)})),
-      ...(returnLocation?[{label:'标签组返回来源',action:()=>this.moveWindow(shell,{kind:'group',id},undefined,true)}]:[]),
-      ...(this.state?.window.id!=='main'?[{label:'标签组返回主窗口',action:()=>this.moveWindow(shell,{kind:'group',id},'main')}]:[]),
-      ...Object.values(host.groups).filter(other=>other.id!==id).map(other=>({label:`合并到标签组 ${Object.keys(host.groups).indexOf(other.id)+1}`,action:()=>this.perform(shell,{op:'mergeGroup',sourceGroupId:id,groupId:other.id})})),
-      ...Object.values(host.groups).filter(other=>other.id!==id).map(other=>{const views=other.viewIds.map(id=>shell.ui.views.find(v=>v.id===id)).filter(Boolean) as View[];return{label:`切换到标签组 ${Object.keys(host.groups).indexOf(other.id)+1}${views.some(v=>v.dirty)?' · 未保存':''}${views.some(v=>v.error)?' · 错误':''}`,action:()=>this.perform(shell,{op:'focusGroup',groupId:other.id})};}),
-      {label:'关闭标签组',disabled:Object.keys(host.groups).length===1&&!g.viewIds.length,separatorBefore:true,action:()=>this.requestClose({kind:'group',id,workspaceId:shell.workspace.context.workspaceId})},
-    ],false,undefined,keyboard);
+      {label:'左右分屏',disabled:!x||busy(),action:()=>this.perform(shell,{op:'split',axis:'x',groupId:id,revision:host.revision})},
+      {label:'上下分屏',disabled:!y||busy(),action:()=>this.perform(shell,{op:'split',axis:'y',groupId:id,revision:host.revision})},
+      ...(target?[{label:'取消此分屏',disabled:busy(),separatorBefore:true,action:()=>this.perform(shell,{op:'mergeGroup',sourceGroupId:id,groupId:target,revision:host.revision})}]:[]),
+    ],false,!x||!y?'窗口空间不足，扩大窗口后再分屏。':undefined,keyboard,reference,()=>shell.ui.host?.revision===host.revision&&!busy());
   }
-  private viewMenu(shell:Shell,id:string,anchor:HTMLElement,keyboard=false) {
+  private returnEntry(shell:Shell,id:string):MenuEntry[] {
+    const location=shell.ui.returnLocations?.[id],current=this.state?.window.id,wid=shell.workspace.context.workspaceId;
+    const valid=(windowId:string)=>windowId!==current&&this.state?.windows?.some(w=>w.id===windowId&&w.ready&&w.workspaceIds.includes(wid));
+    if(location&&valid(location.windowId))return [{label:'返回原窗口',action:()=>this.moveWindow(shell,{kind:'view',id},undefined,true)}];
+    return valid('main')?[{label:'返回主窗口',action:()=>this.moveWindow(shell,{kind:'view',id},'main')}]:[];
+  }
+  private hiddenGroupsMenu(shell:Shell,anchor:HTMLElement,keyboard=false) {
+    const host=shell.ui.host!;
+    this.showMenu(anchor,this.groupIds(host.center).filter(id=>id!==host.focusedGroupId).map(id=>{
+      const group=host.groups[id],views=group.viewIds.map(id=>shell.ui.views.find(v=>v.id===id)).filter(Boolean) as View[];
+      return {label:(views.map(v=>v.title).join('、')||'空分屏')+(views.some(v=>v.dirty)?' · 未保存':'')+(views.some(v=>v.error)?' · 错误':''),action:async()=>{if(shell.ui.host?.zoomGroupId)await this.perform(shell,{op:'zoom',groupId:shell.ui.host.zoomGroupId});await this.perform(shell,{op:'focusGroup',groupId:id});}};
+    }),false,undefined,keyboard);
+  }
+  private viewMenu(shell:Shell,id:string,anchor:HTMLElement,keyboard=false,reference:MenuReference=anchor) {
+    this.cancelGestures();
     const host=shell.ui.host!,view=shell.ui.views.find(v=>v.id===id);if(!view)return;
     const group=Object.values(host.groups).find(g=>g.viewIds.includes(id));
+    const tool=this.definitions[view.definitionKey]?.container==='sidebar';
+    const canDetach=this.state?.window.id==='main'||this.state?.workspaces.length!==1||Object.keys(host.groups).length>1||host.left.viewIds.length>0||host.right.viewIds.length>0||(host.dialogs?.length??0)>0||Object.values(host.groups).some(g=>g.viewIds.some(v=>v!==id))||Boolean(shell.ui.unavailableTools?.length)||this.transfers.some(t=>t.workspaceId===shell.workspace.context.workspaceId);
+    const x=this.canSplit(shell,group?.id??host.focusedGroupId,'x'),y=this.canSplit(shell,group?.id??host.focusedGroupId,'y');
+    const busy=()=>this.closeBlocked.has(id)||this.transfers.some(t=>t.viewIds.includes(id))||[...this.pendingMoves.keys()].some(key=>key.startsWith(`${shell.workspace.context.workspaceId}:`));
     this.showMenu(anchor,[
-      ...(['left','right','top','bottom'] as const).map(edge=>{const axis=['left','right'].includes(edge)?'x':'y',label=`移至${({left:'左侧',right:'右侧',top:'上方',bottom:'下方'})[edge]}分屏`,enabled=this.canSplit(shell,group?.id??host.focusedGroupId,axis);return{label:enabled?label:`${label}（空间不足）`,disabled:!enabled,action:()=>this.perform(shell,{op:'split',axis,groupId:group?.id,viewId:id,before:['left','top'].includes(edge)})};}),
-      ...Object.values(host.groups).filter(g=>g.id!==group?.id).map(g=>({label:`移到标签组 ${Object.keys(host.groups).indexOf(g.id)+1}`,action:()=>this.perform(shell,{op:'moveView',viewId:id,groupId:g.id})})),
-      {label:'页面移至新窗口',action:()=>this.moveWindow(shell,{kind:'view',id})},
-      ...this.windowTargets().map(w=>({label:`页面移至${w.label}`,action:()=>this.moveWindow(shell,{kind:'view',id},w.id)})),
-      ...(shell.ui.returnLocations?.[id]?[{label:'页面返回来源',action:()=>this.moveWindow(shell,{kind:'view',id},undefined,true)}]:[]),
-      ...(this.state?.window.id!=='main'?[{label:'页面返回主窗口',action:()=>this.moveWindow(shell,{kind:'view',id},'main')}]:[]),
-      ...(this.definitions[view.definitionKey]?.container==='sidebar'?['left','right'].map(side=>({label:`停靠到${side==='left'?'左':'右'}侧`,action:()=>this.perform(shell,{op:'dock',viewId:id,side})})):[]),
-      {label:'恢复显示',separatorBefore:true,action:async()=>{const surface=shell.surfaces.get(id);if(surface){this.removeSurface(surface);shell.surfaces.delete(id);}this.paint(shell);}},
-    ],false,undefined,keyboard);
+      ...(tool?[{label:'停靠到侧栏',action:()=>this.perform(shell,{op:'dock',viewId:id,side:shell.ui.preferences[view.definitionKey]?.side??'right'})}]:[
+        {label:'移到右侧分屏',disabled:!x,action:()=>this.perform(shell,{op:'split',axis:'x',groupId:group?.id,viewId:id})},
+        {label:'移到下方分屏',disabled:!y,action:()=>this.perform(shell,{op:'split',axis:'y',groupId:group?.id,viewId:id})},
+      ]),
+      ...(canDetach?[{label:'移到新窗口',action:()=>this.moveWindow(shell,{kind:'view',id})}]:[]),
+      ...this.returnEntry(shell,id),
+      {label:tool?'隐藏工具':'关闭标签',separatorBefore:true,action:()=>tool?this.perform(shell,{op:'hideTool',viewId:id}):this.close([shell.workspace.context.workspaceId],id)},
+    ].map(entry=>({...entry,disabled:entry.disabled||busy()})),false,!tool&&(!x||!y)?'窗口空间不足，扩大窗口后再分屏。':undefined,keyboard,reference,()=>shell.ui.host?.revision===host.revision&&shell.ui.views.some(v=>v.id===id)&&!busy());
   }
   private windowTargets() {return (this.state?.windows??[]).filter(w=>w.id!=='main').map((w,i)=>({...w,label:`独立窗口 ${i+1}`})).filter(w=>w.id!==this.state?.window.id&&w.ready);}
   private async confirmMove(requestId:string,operation:()=>Promise<unknown>) {
@@ -342,7 +359,7 @@ export class Components {
   };
   private dragUp=(event:PointerEvent)=>{if(event.pointerId===this.drag?.pointer)void this.finishDrag(false);};
   private dragLost=(event:PointerEvent)=>{if(event.pointerId===this.drag?.pointer&&!this.drag.finished)void this.finishDrag(true);};
-  private cancelGestures=()=>{this.splitGesture?.cancel();void this.finishDrag(true);};
+  private cancelGestures=()=>{this.closeMenu();this.splitGesture?.cancel();void this.finishDrag(true);};
   private dragCancel=(event:PointerEvent)=>{if(event.pointerId===this.drag?.pointer)void this.finishDrag(true);};
   private async finishDrag(cancel:boolean) {
     const g=this.drag;if(!g||g.finished)return;g.finished=true;
@@ -527,6 +544,7 @@ export class Components {
     if (!error) { error = document.createElement("div"); error.className = "component-error"; error.setAttribute("role", "alert"); s.node.append(error); }
     const definition = this.definitions[s.view.definitionKey];
     error.innerHTML = `<p>${e(message)}</p>${definition ? `<button data-action="locate-plugin" data-id="${e(definition.pluginId)}">查看插件</button><button data-action="plugin-logs" data-id="${e(definition.pluginId)}">查看日志</button>` : '<button data-action="manage-plugins">打开插件管理</button>'}`;
+    if(definition?.available){const retry=document.createElement('button');retry.textContent='重试显示';retry.addEventListener('click',()=>{if(this.closeBlocked.has(s.view.id)||s.readOnly)return;const shell=this.shells.get(s.view.context.workspaceId);if(!shell||shell.surfaces.get(s.view.id)!==s)return;this.removeSurface(s);shell.surfaces.delete(s.view.id);this.paint(shell);});error.prepend(retry);}
   }
   private async perform(shell: Shell, action: Record<string, unknown>) {
     if(action.op==='split') {
@@ -548,9 +566,7 @@ export class Components {
     if (!shell) return;
     const focusEpoch = this.focusEpoch;
     const groupId=anchor.closest<HTMLElement>("[data-group]")?.dataset.group;
-    if(action==="group-menu"){this.groupMenu(shell,groupId!,anchor,keyboard);return;}
-    if(action==="view-menu"){this.viewMenu(shell,key,anchor,keyboard);return;}
-    if(action==="split-x"||action==="split-y"){await this.perform(shell,{op:"split",groupId,axis:action.endsWith("x")?"x":"y"});return;}
+    if(action==="hidden-groups"){this.hiddenGroupsMenu(shell,anchor,keyboard);return;}
     if (["toggle", "locate", "panel-menu"].includes(action) && !this.definitions[key]?.available) { this.notify("组件不可用，请查看应用状态"); return; }
     if (["toggle", "locate", "collapse"].includes(action)) { await this.perform(shell, { op: action, key, side: key }); if (this.focusEpoch === focusEpoch && this.state?.window.activeWorkspace === id) this.focus(shell, action === "collapse" ? undefined : key); return; }
     if (action === "select") { if (!shell.ui.views.some(v => v.id === key)) return; await this.perform(shell, { op: "select", viewId: key }); const surface = shell.surfaces.get(key); if (surface && this.focusEpoch === focusEpoch && this.state?.window.activeWorkspace === id) this.focusSurface(surface); return; }
@@ -629,23 +645,24 @@ export class Components {
     else shell.node.querySelector<HTMLElement>(`[data-key="${CSS.escape(key ?? "")}"]`)?.focus();
   }
   private focusSurface(surface: Surface) { if (!surface.mounted || !surface.visible) { surface.focusPending = this.focusEpoch; return; } surface.focusPending = undefined; surface.frame.focus(); this.post(surface, { type: "focus" });void this.invoke("action",{context:surface.view.context,action:{op:"focus",viewId:surface.view.id}}).catch(()=>{}); }
-  private showMenu(anchor: HTMLElement, entries: MenuEntry[], searchable = false, detail?: string, keyboard = false) {
-    if (this.menu && this.menuAnchor === anchor) { this.closeMenu(); return; }
+  private showMenu(anchor: HTMLElement, entries: MenuEntry[], searchable = false, detail?: string, keyboard = false, reference:MenuReference=anchor,valid:()=>boolean=()=>true) {
+    if (this.menu && this.menuAnchor === anchor && reference===anchor) { this.closeMenu(); return; }
     this.closeMenu(); const node = document.createElement("div"); node.className = "workspace-menu component-menu sd-menu"; node.tabIndex = -1;
     node.setAttribute("role", "menu");
     if (detail) { const text=document.createElement("p");text.textContent=detail;node.append(text); }
     if (searchable) { const input = document.createElement("input"); input.placeholder = "查找组件或页面"; input.setAttribute("aria-label", "查找组件或页面"); input.addEventListener("input", () => { node.querySelectorAll<HTMLElement>(".component-menu-row").forEach(r => r.hidden = !r.textContent!.toLowerCase().includes(input.value.toLowerCase())); void this.menuPosition?.update(); }); node.append(input); }
     const list = document.createElement("div"); list.className = "component-menu-list sd-menu-list"; node.append(list);
-    for (const item of entries) { if (item.separatorBefore) list.append(document.createElement("hr")); const row = document.createElement("div"); row.className = "component-menu-row"; for (const entry of [item, item.extra].filter(Boolean) as MenuEntry[]) { const b = document.createElement("button"); b.setAttribute("role", entry.checked === undefined ? "menuitem" : "menuitemcheckbox"); if (entry.checked !== undefined) { b.setAttribute("aria-checked", String(entry.checked)); b.classList.add("menu-check"); } b.textContent = entry.label; b.disabled = entry.disabled === true; b.addEventListener("click", () => { this.closeMenu(); void this.run(entry.action); }); row.append(b); } list.append(row); }
+    for (const item of entries) { if (item.separatorBefore) list.append(document.createElement("hr")); const row = document.createElement("div"); row.className = "component-menu-row"; for (const entry of [item, item.extra].filter(Boolean) as MenuEntry[]) { const b = document.createElement("button"); b.setAttribute("role", entry.checked === undefined ? "menuitem" : "menuitemcheckbox"); if (entry.checked !== undefined) { b.setAttribute("aria-checked", String(entry.checked)); b.classList.add("menu-check"); } b.textContent = entry.label; b.disabled = entry.disabled === true; b.addEventListener("click", () => { const accepted=valid();this.closeMenu();if(accepted)void this.run(entry.action); }); row.append(b); } list.append(row); }
     if (!entries.length) { const text = document.createElement("p"); text.textContent = "暂无可用组件"; node.append(text); }
     node.addEventListener("keydown", event => {
+      if(event.key==='Tab'){event.preventDefault();this.closeMenu();anchor.focus({preventScroll:true});return;}
       if (event.key === "Escape") { event.preventDefault(); this.closeMenu(); if (anchor.isConnected) anchor.focus({ preventScroll: true }); else this.content.querySelector<HTMLElement>(".server-workbench:not([hidden]) .workbench-rail button")?.focus(); return; }
       if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) || (event.target instanceof HTMLInputElement && !["ArrowDown", "ArrowUp"].includes(event.key))) return;
       event.preventDefault(); const buttons = [...node.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")].filter(b => !b.closest("[hidden]")); const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
       buttons[event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : index < 0 ? (event.key === "ArrowUp" ? buttons.length - 1 : 0) : (index + (event.key === "ArrowUp" ? -1 : 1) + buttons.length) % buttons.length]?.focus();
     });
     document.body.append(node); this.menu = node; this.menuAnchor = anchor;
-    this.menuPosition = attachMenuPosition(node, anchor, { isValid: () => this.menu === node, onInvalid: () => { if (this.menu === node) this.closeMenu(); } });
+    this.menuPosition = attachMenuPosition(node, reference, { isValid: () => this.menu === node&&valid(), onInvalid: () => { if (this.menu === node) this.closeMenu(); } });
     void this.menuPosition.ready.then(ready => { if (ready && this.menu === node) (searchable ? node.querySelector<HTMLElement>("input") : keyboard ? node.querySelector<HTMLElement>("button:not(:disabled)") : node)?.focus({ preventScroll: true }); });
   }
   private closeMenu() { this.menuPosition?.dispose(); this.menuPosition = undefined; this.menu?.remove(); this.menu = undefined; this.menuAnchor = undefined; }

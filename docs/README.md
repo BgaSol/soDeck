@@ -38,7 +38,7 @@
 | 工作台样式与剪贴板 | [设计方案](plan-workbench-design.md) | [样式与剪贴板](implementation-workbench-design.md) |
 | Tab 新建入口 | [交互方案](plan-tab-creation.md) | [两级 Tab](implementation-tab-creation.md) |
 | 默认新建行为与通用终端 | [功能方案](plan-default-behavior-terminal.md)、[代码整改方案](plan-default-behavior-terminal-coding.md) | [实现、本机验证与兼容边界](implementation-default-behavior-terminal.md) |
-| 工作区菜单 | — | [菜单修复](implementation-component-menus.md) |
+| 工作区菜单 | [两级 Tab 与右键菜单精简](plan-tab-interactions.md) | [Tab 精简实施与验收](implementation-tab-interactions.md)、[既有菜单修复](implementation-component-menus.md) |
 | 工作台按钮与文件菜单 | [整改设计](plan-workbench-interactions.md) | [实施与验收](implementation-workbench-interactions.md) |
 | 面板拖拽与终端尺寸 | [状态归属、完整手势与尺寸同步](plan-panel-resize.md) | [实现与本机验收](implementation-panel-resize.md) |
 | 桌面一致性 | [滚动条与默认行为](plan-desktop-consistency.md) | [桌面一致性](implementation-desktop-consistency.md) |
@@ -53,6 +53,7 @@
 
 - [GitHub Releases](https://github.com/BgaSol/soDeck/releases)：已发布的核心和插件版本、下载附件与发布说明。
 - [核心版本记录](releases/)：各版本的功能变化、验收与交付边界，包含历史候选版本记录。
+- [v0.19.0](releases/v0.19.0.md)：精简两级 Tab 右键菜单、取消分屏保留页面及空标签组关闭修复。
 - [v0.18.0](releases/v0.18.0.md)：GitHub 全链路备用地址、失败切换和可管理的下载网络设置。
 - [v0.17.0](releases/v0.17.0.md)：嵌套分屏、独立窗口、来源返回与四个 UI v2 插件；发行状态见记录。
 - [v0.16.0](releases/v0.16.0.md)：插件声明默认新建行为、进程主动打开页面与通用终端创建参数。

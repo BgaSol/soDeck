@@ -143,8 +143,14 @@ async function verifyWorkbench(workspace, terminal, marker, entry) {
   const id=workspace.context.workspaceId;
   const snapshot=await invoke('component_ui',{operation:'snapshot',args:{}});
   const originalGroup=Object.values(snapshot.workspaces[id].host.groups).find(g=>g.viewIds.includes(terminal.viewId)).id;
-  await page.locator(`[data-group="${originalGroup}"] [data-component-action="group-menu"]`).click();
-  await page.getByRole('menuitem',{name:'左右拆分',exact:true}).click();
+  assert.equal(await page.locator('.tab-menu-button,[data-component-action="group-menu"]').count(),0);
+  const pageTab=page.locator(`.component-tab[data-view="${terminal.viewId}"] [role="tab"]`);
+  await pageTab.click({button:'right'});
+  assert.deepEqual(await page.getByRole('menuitem').allTextContents(),['移到右侧分屏','移到下方分屏','移到新窗口','关闭标签']);
+  await page.keyboard.press('Escape');assert(await pageTab.evaluate(el=>el===document.activeElement));
+  await page.locator(`[data-group="${originalGroup}"] .component-tabs`).focus();await page.keyboard.press("Shift+F10");
+  assert.deepEqual(await page.getByRole('menuitem').allTextContents(),['左右分屏','上下分屏']);
+  await page.getByRole('menuitem',{name:'左右分屏',exact:true}).click();
   await until(async()=>page.locator('.server-workbench:visible .view-group').count().then(n=>n===2),'Native split did not render two groups');
   const splitState=await invoke('component_ui',{operation:'snapshot',args:{}});
   const emptyGroup=Object.keys(splitState.workspaces[id].host.groups).find(g=>g!==originalGroup);

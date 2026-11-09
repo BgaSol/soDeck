@@ -36,7 +36,7 @@ test('workspace menu follows a right-edge anchor when the open window shrinks',a
       const {Workspaces}=await import('/workspaces.ts');
       const anchor=document.createElement('button');anchor.textContent='菜单';anchor.style.cssText='position:fixed;right:12px;top:56px;width:32px;height:32px';document.body.append(anchor);
       window.workspaceMenu=Object.create(Workspaces.prototype);
-      Object.assign(workspaceMenu,{tabs:document.querySelector('#chrome'),state:{window:{id:'main'},workspaces:[{context:{workspaceId:'one'}}]}});
+      Object.assign(workspaceMenu,{moving:new Set(),tabs:document.querySelector('#chrome'),state:{window:{id:'main'},workspaces:[{context:{workspaceId:'one'}}]}});
       workspaceMenu.openMenu('one',anchor);
     });
     await page.locator('.workspace-menu').waitFor();
@@ -216,7 +216,7 @@ test('component filtering resizes one menu and workspace context replacement clo
     await page.setViewportSize({width:180,height:160});
     await page.waitForFunction(()=>{const r=document.querySelector('.component-menu').getBoundingClientRect();return r.left>=7&&r.top>=7&&r.right<=innerWidth-7&&r.bottom<=innerHeight-7;});
     await page.evaluate(()=>document.querySelector('#anchor').remove());await menu.waitFor({state:'detached'});
-    await page.evaluate(()=>{const anchor=document.createElement('button');document.body.append(anchor);window.workspace=Object.create(Workspaces.prototype);Object.assign(workspace,{state:{window:{id:'main',activeWorkspace:'one'},workspaces:[{context:{workspaceId:'one'}},{context:{workspaceId:'two'}}]}});workspace.openMenu('one',anchor);workspace.state.window.activeWorkspace='two';workspace.menuPosition.update();});
+    await page.evaluate(()=>{const anchor=document.createElement('button');document.body.append(anchor);window.workspace=Object.create(Workspaces.prototype);Object.assign(workspace,{moving:new Set(),state:{window:{id:'main',activeWorkspace:'one'},workspaces:[{context:{workspaceId:'one'}},{context:{workspaceId:'two'}}]}});workspace.openMenu('one',anchor);workspace.state.window.activeWorkspace='two';workspace.menuPosition.update();});
     await page.locator('.workspace-menu').waitFor({state:'detached'});
   }finally{await page.close();}
 });

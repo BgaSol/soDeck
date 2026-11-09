@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { escape as e, icon, patchChrome } from "./ui";
 import { Components } from "./components";
 import { CloseCoordinator, type HostInputs } from "./close";
-import { attachMenuPosition, type MenuPosition } from "./menu-position.js";
+import { attachMenuPosition, type MenuPosition, type MenuReference } from "./menu-position.js";
 import type { PanelSide, PanelWidths } from "./panel-layout";
 
 export interface Context { workspaceId: string; serverId: string; connectionId: string; generation: number }
@@ -59,7 +59,7 @@ export class Workspaces {
     }, {signal: this.events.signal});
     tabs.addEventListener("contextmenu", event => {
       const tab = (event.target as Element).closest<HTMLElement>(".server-tab");
-      if (!tab) return; event.preventDefault(); this.openMenu(tab.dataset.id!, tab);
+      if (!tab) return; event.preventDefault(); this.openMenu(tab.dataset.id!, tab.querySelector<HTMLElement>('.server-tab-select')!,{x:event.clientX,y:event.clientY,contextElement:tab});
     }, {signal: this.events.signal});
     tabs.addEventListener("pointerdown", event => this.down(event), {signal: this.events.signal});
     tabs.addEventListener("pointermove", event => this.pointerMove(event), {signal: this.events.signal});
@@ -75,7 +75,7 @@ export class Workspaces {
     content.addEventListener("pointermove", event => this.resizeMove(event), {signal: this.events.signal});
     content.addEventListener("pointerup", event => { if (event.pointerId === this.panelGesture?.pointer) this.finishResize(false, event); }, {signal: this.events.signal});
     for (const name of ["pointercancel", "lostpointercapture"] as const) content.addEventListener(name, event => { if (event.pointerId === this.panelGesture?.pointer) this.finishResize(true); }, {signal: this.events.signal});
-    window.addEventListener("blur", () => this.finishResize(true), {signal: this.events.signal});
+    window.addEventListener("blur", () => {this.finishResize(true);this.closeMenu();}, {signal: this.events.signal});
     this.observer = new MutationObserver(() => this.report());
     this.observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["open", "hidden", "inert"] });
     this.resizeObserver = new ResizeObserver(() => this.report()); this.resizeObserver.observe(tabs);
@@ -112,7 +112,7 @@ export class Workspaces {
     const scroll = this.tabs.scrollLeft;
     patchChrome(this.tabs, state.workspaces.map(w => {
       const id = e(w.context.workspaceId), active = state.window.activeWorkspace === w.context.workspaceId;
-      return `<div class="server-tab sd-tab ${active ? "selected" : ""} ${this.moving.has(w.context.workspaceId) ? "moving" : ""}" data-id="${id}" data-tauri-drag-region="false"><button class="server-tab-select" role="tab" aria-selected="${active}" tabindex="${active ? 0 : -1}" data-workspace-action="select" data-id="${id}" title="${e(w.name)} · ${e(w.endpoint)}"><span class="health-dot ${w.connected ? "good" : "warning"}"></span><span class="tab-name">${e(w.name)}</span></button><button class="tab-menu-button sd-icon" data-workspace-action="menu" data-id="${id}" aria-label="${e(w.name)} 的菜单" title="工作区菜单">${icon("more")}</button><button class="tab-close-button sd-icon" data-workspace-action="close" data-id="${id}" aria-label="关闭 ${e(w.name)}" title="关闭工作区">${icon("close")}</button></div>`;
+      return `<div class="server-tab sd-tab ${active ? "selected" : ""} ${this.moving.has(w.context.workspaceId) ? "moving" : ""}" data-id="${id}" data-tauri-drag-region="false"><button class="server-tab-select" role="tab" aria-selected="${active}" tabindex="${active ? 0 : -1}" data-workspace-action="select" data-id="${id}" title="${e(w.name)} · ${e(w.endpoint)}"><span class="health-dot ${w.connected ? "good" : "warning"}"></span><span class="tab-name">${e(w.name)}</span></button><button class="tab-close-button sd-icon" data-workspace-action="close" data-id="${id}" aria-label="关闭 ${e(w.name)}" title="关闭此窗口的服务器标签">${icon("close")}</button></div>`;
     }).join(""));
     this.tabs.scrollLeft = scroll;
     if (focusId) this.tabs.querySelector<HTMLElement>(`[data-id="${CSS.escape(focusId)}"] [data-workspace-action="${focusAction ?? "select"}"]`)?.focus({ preventScroll: true });
@@ -127,43 +127,43 @@ export class Workspaces {
   }
   private async action(action: string, id: string) {
     if (!this.state?.workspaces.some(w => w.context.workspaceId === id)) return;
-    if (action === "menu") { this.openMenu(id, this.tabs.querySelector<HTMLElement>(`.tab-menu-button[data-id="${CSS.escape(id)}"]`)!); return; }
     this.closeMenu();
     this.finishResize(true);
     if (action === "select") { await this.call("workspace_activate", { id }); return; }
     if (action === "close") { await this.closer.request({kind:"host",id}); return; }
-    if(action === "close-all"){await this.closer.request({kind:"workspace",id});return;}
-    if(action === "restore-layout"){await this.components.restoreLayout(id);return;}
-    if(action === "return-window"){await this.flushLayouts();await this.components.returnWindow();return;}
     if (this.moving.has(id)) return;
     this.moving.add(id); this.render();
     try { await this.flushLayouts(); await this.components.moveHost(id, action === "return" ? "main" : action.startsWith('window:')?action.slice(7):undefined); }
     finally { this.moving.delete(id); }
   }
-  private openMenu(id: string, anchor: HTMLElement) {
-    anchor = anchor?.querySelector<HTMLElement>(".tab-menu-button") ?? anchor;
-    if (this.menu && this.menuAnchor === anchor) { this.closeMenu(); return; }
+  private openMenu(id: string, anchor: HTMLElement, reference:MenuReference=anchor) {
+    this.finishResize(true);if(this.gesture)void this.finish(true);
     this.closeMenu();
     if (!anchor || !this.state?.workspaces.some(w => w.context.workspaceId === id)) return;
     const node = document.createElement("div"); node.className = "workspace-menu sd-menu"; node.setAttribute("role", "menu");
-    const targets=(this.state.windows??[]).filter(w=>w.id!==this.state!.window.id&&w.id!=='main'&&w.ready);
-    node.innerHTML = `<div class="sd-menu-list"><button role="menuitem" data-choice="detach">${icon("maximize")}移至新窗口</button>${targets.map((w,i)=>`<button role="menuitem" data-choice="${e('window:'+w.id)}">移至独立窗口 ${i+1}</button>`).join('')}${this.state.window.id !== "main" ? `<button role="menuitem" data-choice="return">${icon("arrow")}返回主窗口</button><button role="menuitem" data-choice="return-window">此窗口全部返回主窗口</button>` : ""}<button role="menuitem" data-choice="restore-layout">恢复上次窗口布局</button><button role="menuitem" data-choice="close">${icon("close")}关闭此工作台</button><button role="menuitem" data-choice="close-all">关闭服务器工作区（所有窗口）</button></div>`;
+    const secondary=this.state.window.id!=="main",moving=this.moving.has(id);
+    node.innerHTML = `<div class="sd-menu-list">${secondary?`<button role="menuitem" data-choice="return" ${moving?'disabled':''}>返回主窗口</button>`:""}${!secondary||this.state.workspaces.length>1?`<button role="menuitem" data-choice="detach" ${moving?'disabled':''}>移到新窗口</button>`:""}<hr><button role="menuitem" data-choice="close" ${moving?'disabled':''}>关闭标签</button></div>`;
     node.addEventListener("click", event => { const action = (event.target as Element).closest<HTMLElement>("[data-choice]")?.dataset.choice; if (action) void this.run(() => this.action(action, id)); });
     node.addEventListener("keydown", event => {
+      if(event.key==="Tab"){event.preventDefault();this.closeMenu();anchor.focus({preventScroll:true});return;}
       if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return; event.preventDefault();
-      const buttons = [...node.querySelectorAll("button")]; const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+      const buttons = [...node.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")]; const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
       buttons[event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (index + (event.key === "ArrowUp" ? -1 : 1) + buttons.length) % buttons.length]?.focus();
     });
     document.body.append(node); this.menu = node; this.menuAnchor = anchor;
     const active = this.state.window.activeWorkspace;
-    this.menuPosition = attachMenuPosition(node, anchor, {
+    this.menuPosition = attachMenuPosition(node, reference, {
       isValid: () => this.menu === node && this.state?.window.activeWorkspace === active && Boolean(this.state.workspaces.some(w => w.context.workspaceId === id)),
       onInvalid: () => { if (this.menu === node) this.closeMenu(); },
     });
-    void this.menuPosition.ready.then(ready => { if (ready && this.menu === node) node.querySelector("button")?.focus(); });
+    void this.menuPosition.ready.then(ready => { if (ready && this.menu === node) node.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus(); });
   }
   private closeMenu() { this.menuPosition?.dispose(); this.menuPosition = undefined; this.menu?.remove(); this.menu = undefined; this.menuAnchor = undefined; }
   private key(event: KeyboardEvent) {
+    if((event.key==="ContextMenu"||event.shiftKey&&event.key==="F10")&&this.tabs.contains(event.target as Node)) {
+      const tab=(event.target as HTMLElement).closest<HTMLElement>('.server-tab');if(!tab)return;
+      event.preventDefault();this.openMenu(tab.dataset.id!,tab.querySelector<HTMLElement>('.server-tab-select')!);return;
+    }
     if (event.key === "Escape") {
       if (this.panelGesture) { event.preventDefault(); this.finishResize(true); }
       if (this.gesture) { event.preventDefault(); void this.finish(true); }
@@ -190,7 +190,7 @@ export class Workspaces {
   private down(event: PointerEvent) {
     if (event.button !== 0 || this.gesture || this.menu || document.querySelector('dialog[open], .modal-backdrop:not([hidden])')) return;
     const node = (event.target as Element).closest<HTMLElement>(".server-tab");
-    if (!node || (event.target as Element).closest(".tab-close-button, .tab-menu-button")) return;
+    if (!node || (event.target as Element).closest(".tab-close-button")) return;
     const rect = node.getBoundingClientRect();
     const capture = node.querySelector<HTMLElement>(".server-tab-select")!;
     this.gesture = { id: node.dataset.id!, pointer: event.pointerId, x: event.clientX, y: event.clientY, localPoint:{x:event.clientX,y:event.clientY},grabX: event.clientX - rect.left, grabY: event.clientY, starting: false, released: false, cancelled: false, node, capture, sampling: false };

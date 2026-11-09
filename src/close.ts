@@ -122,7 +122,7 @@ export class CloseCoordinator {
     this.dialog.dataset.renderKey=renderKey;
     const focus=(document.activeElement as HTMLElement)?.dataset.decision;
     const labels:Record<string,string>={preparing:"正在同步各窗口的输入…",deciding:"请确认未保存内容和运行任务。",cleaning:"正在停止组件并等待资源释放…",finalizing:"正在完成窗口或应用操作…",failed:"关闭尚未完成，已停止的资源将保持停止。"};
-    const title = op.target.kind === "application" ? "关闭应用" : op.target.kind === "window" ? "关闭窗口" : op.target.kind === "workspace" ? "关闭工作区" : "关闭组件页面";
+    const title = op.target.kind === "application" ? "关闭应用" : op.target.kind === "window" ? "关闭窗口" : op.target.kind === "host" ? "关闭服务器标签" : op.target.kind === "workspace" ? "关闭工作区" : "关闭组件页面";
     this.dialog.innerHTML=`<h2>${title}</h2><p role="status">${labels[op.phase]??"正在关闭…"}</p>${op.error?`<p class="error-box" role="alert">${e(op.error)}</p>`:""}<ul>${op.dirty.map(v=>`<li>${e(v.title)}${v.busy?" · 任务运行中":""}${v.error?` · ${e(v.error)}`:""}</li>`).join("")}</ul><footer>${op.phase==="preparing"||op.phase==="deciding"?`<button data-decision="cancel">取消</button>${op.phase==="deciding"&&!op.decision?`<button data-decision="discard">放弃并关闭</button><button class="primary" data-decision="save" ${op.error?"disabled":""}>保存并关闭</button>`:""}`:op.phase==="failed"?`<button data-decision="retry">继续完成关闭</button>${op.target.kind!=="application"||op.failedStage==="finalizing"?`<button data-decision="exit">退出应用</button>`:""}`:""}</footer>`;
     if(op.phase==="deciding"&&!op.decision&&!op.error&&!op.dirty.length)void this.decide(op,"discard");
     if(focus)this.dialog.querySelector<HTMLButtonElement>(`[data-decision="${CSS.escape(focus)}"]`)?.focus();

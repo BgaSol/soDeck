@@ -75,7 +75,7 @@ async function makePage(window) {
 }
 async function refresh() { for (const page of pages) await page.evaluate(()=>window.manager.refresh()); }
 const select = async (page,id)=>{ await page.locator(`.server-tab-select[data-id="${id}"]`).click(); await page.waitForFunction(id=>document.querySelector(`.server-tab-select[data-id="${id}"]`)?.getAttribute("aria-selected")==="true",id); };
-const menu = (page,id)=>page.locator(`.tab-menu-button[data-id="${id}"]`).click();
+const menu = (page,id)=>page.locator(`.server-tab-select[data-id="${id}"]`).click({button:"right"});
 const panel = (page,side)=>page.locator(`.server-workbench:visible [data-component-action="toggle"][data-key="test.workbench:${side==='left'?'files':'forwarding'}"]`);
 async function open(name,index) {
   const changed=await call("change_catalog",{revision:(await call("server_catalog")).revision,change:{op:"saveServer",draft:{name,host:"same.invalid",port:22,username:"ops",authentication:{type:"password",secret:{action:"clear"}},route:[]}}});
@@ -117,15 +117,15 @@ try {
   for(const side of ['left','right']){const toggle=panel(main,side),before=await toggle.getAttribute('aria-expanded');await pressRefresh(toggle);await wait(async()=>await toggle.getAttribute('aria-expanded')!==before);await toggle.click();await wait(async()=>await toggle.getAttribute('aria-expanded')===before);}
   const stableMenu=board.getByRole('button',{name:'网络转发 面板菜单',exact:true});
   await pressRefresh(stableMenu);await main.getByRole('menu').waitFor();await stableMenu.click();assert.equal(await main.getByRole('menu').count(),0);
-  const serverMenu=main.locator(`.tab-menu-button[data-id="${aid}"]`);await pressRefresh(serverMenu);await main.getByRole('menu').waitFor();await serverMenu.click();assert.equal(await main.getByRole('menu').count(),0);
-  checks.push('真实按压跨工作台刷新仍触发一次，两侧入口与核心菜单按钮节点稳定，同入口再次点击关闭菜单');
+  const serverMenu=main.locator(`.server-tab-select[data-id="${aid}"]`);await serverMenu.click({button:"right"});await main.getByRole("menu").waitFor();await serverMenu.click({button:"right"});assert.equal(await main.getByRole("menu").count(),1);await main.keyboard.press("Escape");assert.equal(await main.locator(".tab-menu-button").count(),0);
+  checks.push('真实按压跨工作台刷新仍触发一次，两侧入口节点稳定，右键再次打开标签菜单');
   fs.mkdirSync('artifacts/menu-layout',{recursive:true});
   for(const theme of ['light','dark','dopamine'])for(const [width,height]of [[1100,720],[720,480]]){
     await main.setViewportSize({width,height});
     await main.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
-    const tabMenu=main.locator(`.tab-menu-button[data-id="${aid}"]`);
+    const tabMenu=main.locator(`.server-tab-select[data-id="${aid}"]`);
     const tabBounds=await tabMenu.boundingBox();
-    await tabMenu.click();await assertMenuLayout(main,tabBounds);await main.keyboard.press('Escape');
+    const point={x:Math.round(tabBounds.x+tabBounds.width/2),y:Math.round(tabBounds.y+tabBounds.height/2),width:0,height:0};await main.mouse.click(point.x,point.y,{button:"right"});await assertMenuLayout(main,point,{point:true});await main.screenshot({path:`artifacts/menu-layout/server-${theme}-${width}.png`});await main.keyboard.press("Escape");
     const panelMenu=board.getByRole('button',{name:'网络转发 面板菜单',exact:true});
     const panelBounds=await panelMenu.boundingBox();
     await panelMenu.click();await assertMenuLayout(main,panelBounds);
@@ -145,7 +145,7 @@ try {
     await board.locator('.workspace-status').click();assert.equal(await main.getByRole('menu').count(),0);
   }
   await main.setViewportSize({width:1100,height:720});
-  checks.push('三主题及窄窗口：页签、面板和两侧更多菜单紧邻入口且不遮挡入口；短菜单无滚动条，长列表仅纵向滚动，搜索后消除滚动，Esc 返回焦点及外部关闭');
+  checks.push('三主题及窄窗口：页签右键菜单靠近点击位置，面板和两侧更多菜单紧邻入口；短菜单无滚动条，长列表仅纵向滚动，搜索后消除滚动，Esc 返回焦点及外部关闭');
   const viewFrame=(page,wid,vid)=>page.frameLocator(`.component-surface[data-view-id="${vid}"] iframe`);
   const flush=page=>page.evaluate(()=>window.manager.flush());
   let aw=(await componentState("main")).workspaces[aid];
@@ -153,6 +153,11 @@ try {
   const firstTerminal=aw.views.find(v=>v.definitionKey.endsWith(':terminal')).id;
   const terminalOne=viewFrame(main,aid,firstTerminal).getByRole('textbox',{name:'终端输入草稿'});
   await terminalOne.fill('terminal A one');await flush(main);
+  const failedFrame=await main.locator(`.component-surface[data-view-id="${firstTerminal}"] iframe`).elementHandle();
+  await main.evaluate(({aid,id})=>{const components=manager.components,surface=components.shells.get(aid).surfaces.get(id);components.surfaceError(surface,'测试界面加载失败');},{aid,id:firstTerminal});
+  await main.getByRole('button',{name:'重试显示',exact:true}).click();
+  await terminalOne.waitFor();assert.equal(await terminalOne.inputValue(),'terminal A one');
+  assert.equal(await failedFrame.evaluate(el=>el.isConnected),false,'Error retry remounts only the failed surface');
   await board.locator('[data-component-action="create"]').click();
   await main.waitForFunction(id=>document.querySelector(`.server-workbench[data-id="${id}"] .component-tab-list`).childElementCount===2,aid);
   aw=(await componentState("main")).workspaces[aid];
@@ -276,6 +281,13 @@ try {
   await closeEditor();await main.getByRole('button',{name:'保存并关闭',exact:true}).click();await main.locator(`.component-surface[data-view-id="${editorId}"]`).waitFor({state:'detached'});
   checks.push("菜单拆出和返回保留会话及布局，主窗口目录草稿不丢");
   await select(main,bid); await main.locator(`.server-tab[data-id="${aid}"]`).click({button:"right"});
+  assert.equal((await projection('main')).window.activeWorkspace,bid,'Right-click does not activate a server');
+  assert.deepEqual(await main.getByRole('menuitem').allTextContents(),['移到新窗口','关闭标签']);
+  await main.keyboard.press('Escape');
+  const inactive=main.locator(`.server-tab-select[data-id="${aid}"]`);assert(await inactive.evaluate(el=>el===document.activeElement));
+  await main.keyboard.press('Shift+F10');assert.deepEqual(await main.getByRole('menuitem').allTextContents(),['移到新窗口','关闭标签']);
+  await main.keyboard.press('Tab');assert.equal(await main.getByRole('menu').count(),0);assert(await inactive.evaluate(el=>el===document.activeElement));
+  await inactive.click({button:'right'});
   await main.locator('[data-choice="close"]').click(); await main.waitForFunction(id=>!document.querySelector(`.server-tab[data-id="${id}"]`),aid);
   assert.equal((await projection("main")).window.activeWorkspace,bid); assert.equal((await call("server_catalog")).servers.length,3);
   checks.push("右键菜单锁定点击目标，关闭工作区保留服务器档案");

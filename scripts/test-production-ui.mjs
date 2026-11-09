@@ -156,7 +156,7 @@ async function checkTitlebar() {
     };
     const blank = ["#drag-region", ".topbar", "#server-tabs", ".global-tools"].map(check);
     const interactive = ["#catalog-tab span", "#new-workspace svg", "#status-button .health-dot", "#messages-button svg", "#settings-button svg", "#window-controls button svg", "#server-workspace"];
-    if (document.querySelector(".server-tab")) interactive.push(".server-tab", ".server-tab .tab-name", ".tab-menu-button svg", ".tab-close-button svg");
+    if (document.querySelector(".server-tab")) interactive.push(".server-tab", ".server-tab .tab-name", ".tab-close-button svg");
     const excluded = interactive.map(check);
     window.nativeWindowCalls.length = 0;
     press(document.querySelector("#drag-region"), 1, 2);
@@ -642,9 +642,9 @@ try {
   for(const theme of ['light','dark','dopamine'])for(const [width,height]of [[1100,720],[720,480]]){
     await page.setViewportSize({width,height});
     await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
-    const tabMenu=page.locator(`.tab-menu-button[data-id="${workspace.context.workspaceId}"]`);
+    const tabMenu=page.locator(`.server-tab-select[data-id="${workspace.context.workspaceId}"]`);
     const tabBounds=await tabMenu.boundingBox();
-    await tabMenu.click();await assertMenuLayout(page,tabBounds);await page.keyboard.press('Escape');
+    const point={x:Math.round(tabBounds.x+tabBounds.width/2),y:Math.round(tabBounds.y+tabBounds.height/2),width:0,height:0};await page.mouse.click(point.x,point.y,{button:"right"});await assertMenuLayout(page,point,{point:true});await page.keyboard.press("Escape");
     const panelMenu=board.getByRole('button',{name:'文件 面板菜单',exact:true});
     const panelBounds=await panelMenu.boundingBox();
     await panelMenu.click();await assertMenuLayout(page,panelBounds);

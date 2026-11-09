@@ -1090,6 +1090,125 @@ fn tool_toggle_and_hide_use_actual_dock_after_moving_without_changing_default_si
 }
 
 #[test]
+fn page_split_preserves_only_the_intended_empty_source_and_merge_keeps_instances() {
+    for axis in ["x", "y"] {
+        let f = v2_fixture();
+        let w = f.open("page-split");
+        let state = f.core.ui_state();
+        let workspace = &state.workspaces[&w.context.workspace_id];
+        let host = workspace.host("main").unwrap();
+        let original = host.focused_group_id.clone();
+        let page = host.groups[&original].view_ids[0].clone();
+        let views = workspace.views.clone();
+        drop(state);
+        let split = f
+            .core
+            .ui_action(
+                "main",
+                &w.context,
+                json!({"op":"split","axis":axis,"groupId":original,"viewId":page}),
+            )
+            .unwrap()["groupId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let state = f.core.ui_state();
+        let host = state.workspaces[&w.context.workspace_id]
+            .host("main")
+            .unwrap();
+        assert_eq!(host.groups.len(), 2);
+        assert!(host.groups[&original].view_ids.is_empty());
+        assert!(host.groups[&original].explicit_empty);
+        assert_eq!(host.groups[&split].view_ids, [page.clone()]);
+        let revision = host.revision;
+        drop(state);
+        assert!(f.core.ui_action("main", &w.context, json!({"op":"mergeGroup","sourceGroupId":split,"groupId":original,"revision":revision-1})).is_err());
+        f.core.ui_action("main", &w.context, json!({"op":"mergeGroup","sourceGroupId":split,"groupId":original,"revision":revision})).unwrap();
+        let state = f.core.ui_state();
+        let workspace = &state.workspaces[&w.context.workspace_id];
+        assert_eq!(workspace.host("main").unwrap().groups.len(), 1);
+        assert_eq!(
+            serde_json::to_value(&workspace.views).unwrap(),
+            serde_json::to_value(&views).unwrap()
+        );
+        drop(state);
+        // A populated explicit-empty group becomes ordinary again and prunes on its last move.
+        let empty = f
+            .core
+            .ui_action(
+                "main",
+                &w.context,
+                json!({"op":"split","axis":axis,"groupId":original}),
+            )
+            .unwrap()["groupId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        f.core
+            .ui_action(
+                "main",
+                &w.context,
+                json!({"op":"moveView","viewId":page,"groupId":empty}),
+            )
+            .unwrap();
+        let state = f.core.ui_state();
+        let host = state.workspaces[&w.context.workspace_id]
+            .host("main")
+            .unwrap();
+        assert_eq!(host.groups.len(), 1);
+        assert!(!host.groups[&empty].explicit_empty);
+        drop(state);
+        let key = &views.iter().find(|v| v.id == page).unwrap().definition_key;
+        let other = f
+            .core
+            .ui_action(
+                "main",
+                &w.context,
+                json!({"op":"open","key":key,"groupId":empty,"requestId":"second-page"}),
+            )
+            .unwrap()["viewId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let split = f
+            .core
+            .ui_action(
+                "main",
+                &w.context,
+                json!({"op":"split","axis":axis,"groupId":empty,"viewId":page}),
+            )
+            .unwrap()["groupId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let state = f.core.ui_state();
+        let host = state.workspaces[&w.context.workspace_id]
+            .host("main")
+            .unwrap();
+        assert!(
+            !host.groups[&empty].explicit_empty,
+            "Moving one of several pages must not pin its source open"
+        );
+        drop(state);
+        f.core
+            .ui_action(
+                "main",
+                &w.context,
+                json!({"op":"moveView","viewId":other,"groupId":split}),
+            )
+            .unwrap();
+        assert_eq!(
+            f.core.ui_state().workspaces[&w.context.workspace_id]
+                .host("main")
+                .unwrap()
+                .groups
+                .len(),
+            1
+        );
+    }
+}
+
+#[test]
 fn layout_memory_restores_empty_groups_and_tools_without_runtime_identities() {
     let f = v2_fixture();
     let w = f.open("remember-layout");

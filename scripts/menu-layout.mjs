@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 // Clicking alone can scroll an incorrectly positioned menu into view.
-export async function assertMenuLayout(page, trigger, {long=false}={}) {
+export async function assertMenuLayout(page, trigger, {long=false,point=false}={}) {
   const popup=page.getByRole('menu');
   const geometry=await popup.evaluate(node=>{
     const rect=node.getBoundingClientRect(),list=node.querySelector('.sd-menu-list')??node,style=getComputedStyle(list);
@@ -14,7 +14,8 @@ export async function assertMenuLayout(page, trigger, {long=false}={}) {
   assert(geometry.bottom<=trigger.y||geometry.top>=trigger.y+trigger.height,JSON.stringify({geometry,trigger}));
   const expectedLeft=Math.max(8,Math.min(trigger.x,width-(geometry.right-geometry.left)-8));
   assert(Math.abs(geometry.left-expectedLeft)<=1,JSON.stringify({geometry,trigger}));
-  assert(Math.abs(geometry.top-trigger.y-trigger.height-4)<=1||Math.abs(geometry.bottom-trigger.y+4)<=1,JSON.stringify({geometry,trigger}));
+  const gap=point?0:4;
+  assert(Math.abs(geometry.top-trigger.y-trigger.height-gap)<=1||Math.abs(geometry.bottom-trigger.y+gap)<=1,JSON.stringify({geometry,trigger}));
   assert.equal(geometry.horizontal,false,JSON.stringify(geometry));
   assert.equal(geometry.vertical,long,JSON.stringify(geometry));
   return popup;
