@@ -57,6 +57,65 @@ fn workspace(core: &Arc<AppCore>, name: &str) -> String {
     .workspace_id
 }
 #[test]
+fn empty_group_close_collects_initiator_input_and_can_cancel_then_complete() {
+    let core = core();
+    core.register_close_host("main").unwrap();
+    let id = workspace(&core, "empty-group");
+    let context = core.workspace_projection("main").unwrap().workspaces[0]
+        .context
+        .clone();
+    let group = core
+        .ui_action("main", &context, json!({"op":"split","axis":"x"}))
+        .unwrap()["groupId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let target = Target::Group {
+        id: group.clone(),
+        workspace_id: id.clone(),
+    };
+    let first = core
+        .close_prepare("main", "cancel-empty-group", target.clone())
+        .unwrap();
+    assert!(first.views.is_empty());
+    assert!(first.surfaces.is_empty());
+    assert_eq!(first.inputs.len(), 1);
+    assert!(first.inputs["main"].is_none());
+    inputs(&core, &first);
+    let ready = wait(&core, &first.id, Phase::Deciding);
+    assert!(ready.dirty.is_empty());
+    assert!(ready.error.is_none());
+    core.close_decide("main", &first.id, ready.decision_revision, "cancel")
+        .unwrap();
+    wait(&core, &first.id, Phase::Aborted);
+    assert!(
+        core.ui_snapshot("main").unwrap()["workspaces"][&id]["host"]["groups"]
+            .get(&group)
+            .is_some()
+    );
+
+    let second = core
+        .close_prepare("main", "finish-empty-group", target)
+        .unwrap();
+    inputs(&core, &second);
+    let ready = wait(&core, &second.id, Phase::Deciding);
+    let decided = core
+        .close_decide("main", &second.id, ready.decision_revision, "discard")
+        .unwrap();
+    inputs(&core, &decided);
+    wait(&core, &second.id, Phase::Completed);
+    let state = core.ui_snapshot("main").unwrap();
+    let groups = state["workspaces"][&id]["host"]["groups"]
+        .as_object()
+        .unwrap();
+    assert_eq!(groups.len(), 1);
+    assert!(!groups.contains_key(&group));
+    assert_eq!(
+        core.workspace_projection("main").unwrap().workspaces[0].context,
+        context
+    );
+}
+#[test]
 fn native_close_intents_coalesce_while_active_and_start_fresh_after_cancel() {
     let core = core();
     let target = Target::Application {

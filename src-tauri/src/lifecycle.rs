@@ -578,7 +578,8 @@ impl AppCore {
             }
         }
         let surfaces = ui.close_surfaces(&views.iter().map(|v| v.id.clone()).collect::<Vec<_>>());
-        let mut inputs = HashMap::new();
+        // An empty group still needs a host report to advance the close operation.
+        let mut inputs = HashMap::from([(window.to_owned(), None)]);
         for window in surfaces.keys() {
             inputs.insert(window.clone(), None);
         }

@@ -73,6 +73,14 @@ try {
   const action=async value=>{await call('component_ui',{window:'main',operation:'action',args:{context:workspace.context,action:value}});await refresh();};
   await main.locator('[data-component-action="group-menu"]').click();await main.getByRole('menuitem',{name:'左右拆分',exact:true}).click();
   await wait(async()=>await main.locator('.view-group').count()===2);
+  const emptyGroup=(await ui()).workspaces[wid].host.focusedGroupId;
+  await main.locator(`[data-group="${emptyGroup}"] [data-component-action="group-menu"]`).click();await main.getByRole('menuitem',{name:'关闭标签组',exact:true}).click();
+  await wait(async()=>await main.locator('.view-group').count()===1&&await main.locator('.component-close-dialog').count()===0);
+  assert.equal((await ui()).workspaces[wid].host.groups[emptyGroup],undefined);
+  assert(await before.evaluate(el=>el.isConnected),'Closing an empty split keeps the other page mounted');
+  assert.equal(await frame.locator('textarea').inputValue(),'draft survives moving');
+  await main.locator('[data-component-action="group-menu"]').click();await main.getByRole('menuitem',{name:'左右拆分',exact:true}).click();
+  await wait(async()=>await main.locator('.view-group').count()===2);
   const split=(await ui()).workspaces[wid].host,second=split.focusedGroupId;
   await main.locator(`[data-group="${second}"] [data-component-action="create"]`).click();
   await wait(async()=>await main.locator('.component-surface iframe').count()===3);
@@ -129,7 +137,7 @@ try {
   await wait(async()=>(await ui()).workspaces[wid].right===null);
   assert((await ui()).workspaces[wid].host.right.viewIds.includes(tool),'Toggling a relocated tool preserves its actual dock');
   assert.deepEqual(errors,[]);
-  console.log('Passed: nested splits, independent creation, stable iframe, keyboard/escape resize, zoom, compact recovery, UI v2 page transfer/source return, two-workspace atomic window return and draft continuity; three theme screenshots saved.');
+  console.log('Passed: empty split close, nested splits, independent creation, stable iframe, keyboard/escape resize, zoom, compact recovery, UI v2 page transfer/source return, two-workspace atomic window return and draft continuity; three theme screenshots saved.');
 } catch(error) {
   console.error('Layout failure',JSON.stringify((await ui()).transfers),errors);
   for(const [name,page] of pages)console.error(name,JSON.stringify(await page.evaluate(()=>({notice:document.querySelector('#notice')?.textContent,shells:[...manager.components.shells.values()].map(s=>({id:s.workspace.context.workspaceId,surfaces:[...s.surfaces.values()].map(v=>({id:v.view.id,mounted:v.mounted,readOnly:v.readOnly,flushing:Boolean(v.flushing),error:v.node.querySelector('.component-error')?.textContent}))}))}))));
