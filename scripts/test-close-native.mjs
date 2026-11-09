@@ -222,6 +222,7 @@ try {
     await page.locator('.plugin-view-dialog').waitFor({ state: 'detached' });
     await sidebar.getByRole('button', { name: `Native ${entry}` }).click();
     await sidebar.locator('.entry code').waitFor();
+    await until(async () => /127\.0\.0\.1:\d+/.test(await sidebar.locator('.entry code').textContent()), 'Native tunnel did not reach the listening state');
     const address = await sidebar.locator('.entry code').textContent();
     assert.match(address, /127\.0\.0\.1:\d+/);
     const tunnelPort = Number(address.split(':').at(-1));
@@ -285,6 +286,7 @@ try {
   fs.writeFileSync(path.join(output, 'native-close.json'), JSON.stringify(report, null, 2) + '\n');
   console.log(JSON.stringify(report, null, 2));
 } catch (error) {
+  if (fs.existsSync(path.join(directory, 'logs/current.jsonl'))) fs.copyFileSync(path.join(directory, 'logs/current.jsonl'), path.join(output, 'native-failure-core.jsonl'));
   fs.writeFileSync(path.join(output, 'native-close.json'), JSON.stringify({ completed: false, checks, error: String(error) }, null, 2) + '\n');
   console.error(error);
   if (page && !page.isClosed()) { console.error(await page.locator('body').innerText()); await page.screenshot({ path: path.join(output, 'native-failure.png') }); }
