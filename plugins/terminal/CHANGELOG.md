@@ -6,6 +6,8 @@
 
 源码、原始打包运行、正式发行与本次验证范围统一见[核心 0.16.0](../../docs/releases/v0.16.0.md)。0.5.0 的旧草稿属于已撤销的另一轮整改，本次不复用其归档。
 
+包来源：[`c022271`](https://github.com/BgaSol/soDeck/commit/c02227168791dd2cef4b959474dc5cd8873b17ad)；原始独立打包：[Package plugin #42552644774](https://github.com/BgaSol/soDeck/actions/runs/42552644774)；发行：[terminal 0.6.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.6.0)，非 Latest。五平台原生源码、独立包、实际包远程组合通过；macOS 首次窗口坐标检查失败及同包重试结果、跳过范围见上述核心记录。
+
 # 0.4.0
 
 新终端默认自动识别远端 Linux Bash（4+）/Zsh 的目录。保留用户启动配置和提示符钩子，通过本次 shell 的目录/忙碌报告联动文件侧栏；进入嵌套环境时暂停，返回后恢复。自动模式不需要主机名，不永久修改远端配置；兼容已有 OSC 7 和关闭模式只影响新终端。
