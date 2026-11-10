@@ -2,7 +2,15 @@
 
 终端首次打开前先应用宿主主题，滚动视口的初始背景也跟随主题，消除每次打开时默认黑色背景形成的短暂矩形。保留原 PTY、输入与显示恢复流程，没有新增依赖。
 
-Windows x86_64 类型/格式检查、95 项脚本回归、独立打包、真实 xterm 三主题延迟挂载与输入回归、实际包 OpenSSH 多页/重挂载/跨窗接续通过。发布前继续核对本次提交的 GitHub Check、五平台原生包和实际包验收；原生 WebView 人工闪烁观察、多屏/DPI 和历史版本升级未执行。
+Windows x86_64 类型/格式检查、95 项脚本回归、真实 xterm 三主题延迟挂载与输入回归、实际包 OpenSSH 多页/重挂载/跨窗接续通过。[本次源码 Check #42752536107](https://github.com/BgaSol/soDeck/actions/runs/42752536107) 的五平台终端源码、公共检查、Linux 终端及组件协作全部通过；完整 Windows desktop 和 netem 按改动范围跳过。
+
+包来源：[`2c0d37190868c2961b489f7552bf3973c779f4d0`](https://github.com/BgaSol/soDeck/commit/2c0d37190868c2961b489f7552bf3973c779f4d0)；原始独立打包：[Package plugin #42752591628](https://github.com/BgaSol/soDeck/actions/runs/42752591628)；发行：[terminal 0.7.1](https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.7.1)，按本次要求设为 GitHub Latest。
+
+五目标均使用原生包；[实际包验收 #42753141416](https://github.com/BgaSol/soDeck/actions/runs/42753141416) 配合既有核心 0.20.1、文件 0.8.0，验证真实终端输入输出、显示恢复、原生窗口接续、资料重开和正常退出，五平台全部通过。本机下载原始五份归档，核对包内 0.7.1 版本及启动修复、原生架构、GitHub 草稿摘要和更新清单，沿用同一份附件，不重复打包。
+
+正式发布草稿后 GitHub 补建版本标签触发的[额外打包 #42753954350](https://github.com/BgaSol/soDeck/actions/runs/42753954350) 已取消，不计为发行来源。发布后核对 Latest、标签源码、六个附件和最终更新清单；五份包附件 ID 与 SHA-256 保持原始草稿一致。
+
+网络插件、原生 WebView 人工闪烁观察、多屏/DPI、用户业务服务器、netem 和历史版本升级不在本次专项范围。
 
 # 0.7.0
 
