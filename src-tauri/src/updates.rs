@@ -75,6 +75,52 @@ pub struct UpdateView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "test-fixtures")]
+    #[test]
+    fn pinned_upgrade_uses_exact_component_and_rejects_incompatible_inputs() {
+        let source = UpdateSource {
+            repository: REPOSITORY.into(),
+            tag_prefix: "plugin-docker-v".into(),
+        };
+        let manifest: UpdateManifest = serde_json::from_value(serde_json::json!({
+            "id": "sodeck.docker", "version": "0.1.3", "apiVersion": "1",
+            "source": source, "manifestUrl": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.1.3/plugin-update.json",
+            "platforms": { (TARGET): { "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.1.3/package.zip", "sha256": "a".repeat(64) } }
+        })).unwrap();
+        let client = ReleaseClient::github()
+            .unwrap()
+            .test_pin(vec![manifest.clone()]);
+        assert_eq!(
+            client
+                .discover(&source, "sodeck.docker", "0.1.2")
+                .unwrap()
+                .unwrap()
+                .version,
+            "0.1.3"
+        );
+        assert!(client
+            .discover(&source, "sodeck.docker", "0.1.3")
+            .unwrap()
+            .is_none());
+        assert!(client.discover(&source, CORE_ID, "0.1.2").is_err());
+        for invalid in 0..4 {
+            let mut changed = manifest.clone();
+            match invalid {
+                0 => changed.source.as_mut().unwrap().repository = "other/repo".into(),
+                1 => changed.api_version = "2".into(),
+                2 => changed.platforms.clear(),
+                _ => {
+                    changed.platforms.get_mut(TARGET).unwrap().url =
+                        "file:///tmp/package.zip".into()
+                }
+            }
+            assert!(ReleaseClient::github()
+                .unwrap()
+                .test_pin(vec![changed])
+                .discover(&source, "sodeck.docker", "0.1.2")
+                .is_err());
+        }
+    }
     #[test]
     fn repository_blob_accepts_both_cached_formats_and_rejects_invalid_envelopes() {
         use russh::keys::ssh_encoding::base64::{Base64, Encoding};
@@ -285,6 +331,8 @@ fn stable_version(value: &str) -> Result<Version, String> {
 pub struct ReleaseClient {
     pub(crate) network: crate::update_network::Transport,
     api_base: String,
+    #[cfg(feature = "test-fixtures")]
+    pinned: Option<Vec<UpdateManifest>>,
     releases: Arc<std::sync::Mutex<HashMap<String, Result<Vec<Release>, String>>>>,
 }
 
@@ -411,6 +459,8 @@ impl ReleaseClient {
         Self {
             network,
             api_base,
+            #[cfg(feature = "test-fixtures")]
+            pinned: None,
             releases: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
@@ -419,6 +469,11 @@ impl ReleaseClient {
         let mut client = Self::github()?;
         client.network = client.network.test_token(token);
         Ok(client)
+    }
+    #[cfg(feature = "test-fixtures")]
+    pub fn test_pin(mut self, manifests: Vec<UpdateManifest>) -> Self {
+        self.pinned = Some(manifests);
+        self
     }
     #[cfg(feature = "test-fixtures")]
     pub fn test_proxy(prefix: &str) -> Result<Self, String> {
@@ -453,6 +508,8 @@ impl ReleaseClient {
                     Arc::new(move || weak.upgrade().is_none_or(|core| core.is_closing()))
                 }),
             api_base: self.api_base.clone(),
+            #[cfg(feature = "test-fixtures")]
+            pinned: self.pinned.clone(),
             releases: self.releases.clone(),
         }
     }
@@ -505,6 +562,28 @@ impl ReleaseClient {
     ) -> Result<Option<UpdateManifest>, String> {
         validate_source(source)?;
         let current = stable_version(current)?;
+        #[cfg(feature = "test-fixtures")]
+        if let Some(pinned) = &self.pinned {
+            let manifest = pinned
+                .iter()
+                .find(|m| m.id == id)
+                .ok_or("固定输入缺少组件")?;
+            let binding = manifest.source.as_ref().ok_or("固定输入缺少来源")?;
+            if binding.repository != source.repository || binding.tag_prefix != source.tag_prefix {
+                return Err("固定输入来源不匹配".into());
+            }
+            if stable_version(&manifest.version)? <= current {
+                return Ok(None);
+            }
+            if !manifest.platforms.contains_key(TARGET)
+                || (id != CORE_ID && manifest.api_version.split('.').next() != Some(API_VERSION))
+            {
+                return Err("固定输入平台或 API 不兼容".into());
+            }
+            self.url(&manifest.manifest_url)?;
+            self.url(&manifest.platforms[TARGET].url)?;
+            return Ok(Some(manifest.clone()));
+        }
         let all = self.repository_releases(&source.repository)?;
         let mut releases = Vec::new();
         for release in all {

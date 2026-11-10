@@ -13,6 +13,8 @@ struct Input {
     current: String,
     version: String,
     plugins: Vec<Plugin>,
+    core_package: Option<PathBuf>,
+    manifests: Vec<UpdateManifest>,
 }
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,14 +27,19 @@ struct Plugin {
 fn write(root: &std::path::Path, name: &str, value: &Value) -> Result<(), String> {
     fs::write(root.join(name), serde_json::to_vec_pretty(value).unwrap()).map_err(|e| e.to_string())
 }
-fn settings(core: &Arc<AppCore>) -> Result<Value, String> {
+fn settings(core: &Arc<AppCore>, input: &Input) -> Result<Value, String> {
     let mut result = serde_json::Map::new();
     for (id, page) in [
         ("sodeck.terminal", "appearance"),
         ("sodeck.files", "browser"),
         ("sodeck.files", "editor"),
         ("sodeck.network-proxy", "defaults"),
+        ("sodeck.system-status", "sampling"),
+        ("sodeck.docker", "display"),
     ] {
+        if !input.plugins.iter().any(|p| p.id == id) {
+            continue;
+        }
         result.insert(
             format!("{id}/{page}"),
             core.settings_page(id, page)?["values"].clone(),
@@ -54,6 +61,9 @@ fn seed(input: &Input) -> Result<(), String> {
         ("sodeck.files", "editor", "wordWrap", json!(true)),
         ("sodeck.network-proxy", "defaults", "fixedPort", json!(2080)),
     ] {
+        if !input.plugins.iter().any(|p| p.id == id) {
+            continue;
+        }
         let previous = core.settings_page(id, page)?;
         let mut values = previous["values"].clone();
         values[key] = value;
@@ -64,7 +74,7 @@ fn seed(input: &Input) -> Result<(), String> {
     write(
         &input.root,
         "upgrade-baseline.json",
-        &json!({"catalog":core.server_catalog(),"settings":settings(&core)?,"snapshot":core.snapshot()}),
+        &json!({"catalog":core.server_catalog(),"settings":settings(&core, input)?,"snapshot":core.snapshot()}),
     )?;
     core.shutdown()
 }
@@ -102,7 +112,7 @@ fn activate(input: &Input) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
     if baseline["catalog"] != core.server_catalog()
-        || baseline["settings"] != settings(&core)?
+        || baseline["settings"] != settings(&core, input)?
         || core.snapshot().preferences.automatic_updates
     {
         return Err(
@@ -112,7 +122,7 @@ fn activate(input: &Input) -> Result<(), String> {
     write(
         &input.root,
         "upgrade-activated.json",
-        &json!({"completed":true,"snapshot":core.snapshot(),"settings":settings(&core)?,"catalog":core.server_catalog()}),
+        &json!({"completed":true,"snapshot":core.snapshot(),"settings":settings(&core, input)?,"catalog":core.server_catalog()}),
     )?;
     core.shutdown()
 }
@@ -123,48 +133,54 @@ fn prepare_install(handle: tauri::AppHandle, input: Input) -> Result<(), String>
     let client = match std::env::var("GH_TOKEN") {
         Ok(token) => ReleaseClient::test_github(token)?,
         Err(_) => ReleaseClient::github()?,
-    };
-    let manifest = client
-        .discover(
-            &UpdateSource {
-                repository: REPOSITORY.into(),
-                tag_prefix: "v".into(),
-            },
-            CORE_ID,
-            &input.current,
-        )?
-        .ok_or("No published core update")?;
-    if manifest.version != input.version {
-        return Err("Unexpected published core version".into());
     }
-    let asset = manifest
-        .platforms
-        .get(sodeck::TARGET)
-        .ok_or("Core target missing")?;
-    let builder = handle
-        .updater_builder()
-        .target(sodeck::TARGET)
-        .executable_path(&input.executable)
-        .endpoints(vec!["https://github.com/BgaSol/soDeck".parse().unwrap()])
-        .map_err(|e| e.to_string())?
-        .restart_after_install(false);
-    #[cfg(windows)]
-    let builder = builder.installer_args([
-        "/S".to_string(),
-        format!(
-            "/D={}",
-            input
-                .executable
-                .parent()
-                .ok_or("Missing install directory")?
-                .display()
-        ),
-    ]);
-    let updater = builder.build().map_err(|e| e.to_string())?;
-    let update = updater.restore_update(json!({"version":manifest.version,"platforms":{sodeck::TARGET:{"url":asset.url,"signature":asset.signature}}})).map_err(|e| e.to_string())?.ok_or("Updater rejected published version")?;
-    let bytes = tauri::async_runtime::block_on(update.download(|_, _| {}, || {}))
-        .map_err(|e| e.to_string())?;
-    fs::write(input.root.join("core-download.bin"), &bytes).map_err(|e| e.to_string())?;
+    .test_pin(input.manifests.clone());
+    let core_update = if let Some(package) = &input.core_package {
+        let manifest = client
+            .discover(
+                &UpdateSource {
+                    repository: REPOSITORY.into(),
+                    tag_prefix: "v".into(),
+                },
+                CORE_ID,
+                &input.current,
+            )?
+            .ok_or("No published core update")?;
+        if manifest.version != input.version {
+            return Err("Unexpected published core version".into());
+        }
+        let asset = manifest
+            .platforms
+            .get(sodeck::TARGET)
+            .ok_or("Core target missing")?;
+        let builder = handle
+            .updater_builder()
+            .target(sodeck::TARGET)
+            .executable_path(&input.executable)
+            .endpoints(vec!["https://github.com/BgaSol/soDeck".parse().unwrap()])
+            .map_err(|e| e.to_string())?
+            .restart_after_install(false);
+        #[cfg(windows)]
+        let builder = builder.installer_args([
+            "/S".to_string(),
+            format!(
+                "/D={}",
+                input
+                    .executable
+                    .parent()
+                    .ok_or("Missing install directory")?
+                    .display()
+            ),
+        ]);
+        let updater = builder.build().map_err(|e| e.to_string())?;
+        let update = updater.restore_update(json!({"version":manifest.version,"platforms":{sodeck::TARGET:{"url":asset.url,"signature":asset.signature}}})).map_err(|e| e.to_string())?.ok_or("Updater rejected published version")?;
+        let bytes = fs::read(package).map_err(|e| e.to_string())?;
+        update.verify(&bytes).map_err(|e| e.to_string())?;
+        fs::write(input.root.join("core-download.bin"), &bytes).map_err(|e| e.to_string())?;
+        Some((update, bytes))
+    } else {
+        None
+    };
     for plugin in &input.plugins {
         let candidate = core
             .check_component(&plugin.id, &client)?
@@ -180,7 +196,7 @@ fn prepare_install(handle: tauri::AppHandle, input: Input) -> Result<(), String>
     write(
         &input.root,
         "upgrade-prepared.json",
-        &json!({"coreVersion":manifest.version,"coreUrl":asset.url,"coreBytes":bytes.len(),"snapshot":core.snapshot(),"updates":core.update_views()}),
+        &json!({"coreVersion":input.version,"snapshot":core.snapshot(),"updates":core.update_views()}),
     )?;
     let close = core.close_fixture_prepare(
         "main",
@@ -195,7 +211,11 @@ fn prepare_install(handle: tauri::AppHandle, input: Input) -> Result<(), String>
     )?;
     drop(core);
     // The official native installer may exit this driver on Windows.
-    update.install(bytes).map_err(|e| e.to_string())
+    if let Some((update, bytes)) = core_update {
+        update.install(bytes).map_err(|e| e.to_string())
+    } else {
+        Ok(())
+    }
 }
 fn main() {
     let args: Vec<String> = std::env::args().collect();

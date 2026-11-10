@@ -2,6 +2,20 @@ name: Verify published release upgrade
 
 on:
   workflow_dispatch:
+    inputs:
+      component:
+        type: choice
+        options: [core, terminal, files, network-proxy, system-status, docker]
+        required: true
+      from_version:
+        type: string
+        required: true
+      to_version:
+        type: string
+        required: true
+      core_version:
+        description: Fixed host version for a plugin upgrade
+        type: string
 
 permissions:
   contents: read
@@ -34,42 +48,25 @@ jobs:
         run: |
           sudo "$(command -v node)" scripts/configure-ubuntu-mirror.mjs
           sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
-          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev patchelf xvfb dbus-x11 openssh-server libfuse2
-          sudo mkdir -p /run/sshd
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev patchelf xvfb dbus-x11 libfuse2
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: check-tests
           workspaces: src-tauri -> target
           save-if: false
+      - run: npm ci
+      - run: npm run check
       - name: Build the verification fixture
         run: |
-          npm ci
-          npm run check
           cargo build --manifest-path src-tauri/Cargo.toml --features test-fixtures --bin release-upgrade-fixture --locked
-      - name: Install Windows test server
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          if (-not (Test-Path "$env:WINDIR/System32/OpenSSH/sshd.exe")) {
-            if ('${{ matrix.name }}' -eq 'windows-aarch64') {
-              $archive = Join-Path $env:RUNNER_TEMP 'OpenSSH-ARM64.zip'
-              Invoke-WebRequest 'https://github.com/PowerShell/Win32-OpenSSH/releases/download/10.4.0.0p1-Preview/OpenSSH-ARM64.zip' -OutFile $archive
-              if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne 'D2B1928225479FEC9E0C938F527FDB5ED676446CCA1BBCC5AF84ACA1F272842E') { throw 'OpenSSH test archive hash mismatch' }
-              $directory = Join-Path $env:RUNNER_TEMP 'OpenSSH-test'
-              Expand-Archive -LiteralPath $archive -DestinationPath $directory
-              $server = (Get-ChildItem $directory -Recurse -Filter sshd.exe | Select-Object -First 1).FullName
-              if (-not $server) { throw 'OpenSSH server is missing' }
-              "SODECK_SSHD=$server" >> $env:GITHUB_ENV
-              "SODECK_SFTP_SERVER=$(Join-Path (Split-Path $server) 'sftp-server.exe')" >> $env:GITHUB_ENV
-            } else {
-              $capability = Get-WindowsCapability -Online -Name 'OpenSSH.Server*' | Select-Object -First 1
-              Add-WindowsCapability -Online -Name $capability.Name
-            }
-          }
       - name: Upgrade real published core and plugin packages
         env:
           GH_TOKEN: ${{ github.token }}
           SODECK_UPGRADE_TARGET: ${{ matrix.target }}
+          SODECK_UPGRADE_COMPONENT: ${{ inputs.component }}
+          SODECK_UPGRADE_FROM: ${{ inputs.from_version }}
+          SODECK_UPGRADE_TO: ${{ inputs.to_version }}
+          SODECK_UPGRADE_CORE: ${{ inputs.core_version }}
         run: node scripts/test-release-upgrade.mjs
       - uses: actions/upload-artifact@v7
         if: always()

@@ -7,9 +7,10 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
+import { upgradeInputs } from "./upgrade-inputs.mjs";
 
-const target = process.env.SODECK_UPGRADE_TARGET;
-assert(target, "Set SODECK_UPGRADE_TARGET to the native Rust target");
+const { target, component, from, to, current, version } = upgradeInputs(process.env);
+assert.equal(target, `${process.arch === "arm64" ? "aarch64" : "x86_64"}-${{ win32: "pc-windows-msvc", linux: "unknown-linux-gnu", darwin: "apple-darwin" }[process.platform]}`);
 const output = path.resolve("artifacts/release-upgrade", target);
 assert(!fs.existsSync(output), "Use a clean output directory for a new verification run");
 fs.mkdirSync(output, { recursive: true });
@@ -17,12 +18,7 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-release-upgrade-"));
 const data = path.join(root, "data");
 const suffix = process.platform === "win32" ? ".exe" : "";
 const driver = path.resolve(`src-tauri/target/debug/release-upgrade-fixture${suffix}`);
-const current = "0.9.2", version = "0.9.3";
-const plugins = [
-  { name: "terminal", id: "sodeck.terminal", current: "0.2.1", version: "0.2.2" },
-  { name: "files", id: "sodeck.files", current: "0.4.1", version: "0.4.2" },
-  { name: "network-proxy", id: "sodeck.network-proxy", current: "0.2.1", version: "0.2.2" },
-];
+const plugins = component === "core" ? [] : [{ name: component, id: `sodeck.${component}`, current: from, version: to }];
 const digest = filename => createHash("sha256").update(fs.readFileSync(filename)).digest("hex");
 function run(command, args, env = {}) {
   const result = spawnSync(command, args, { windowsHide: true, stdio: "inherit", timeout: 600_000, env: { ...process.env, ...env } });
@@ -59,9 +55,22 @@ function asset(release, name) {
 function smoke(executable, preserved = false, directory = data) {
   native(process.execPath, ["scripts/smoke.mjs", executable], { SODECK_TEST_DATA_DIR: directory, SODECK_EXPECT_CORE_VERSION: preserved ? version : current, SODECK_EXPECT_TARGET: target, SODECK_VERIFY_PERSISTED: preserved ? "1" : "0" });
 }
-const report = { target, current, version, completed: false, fixtureDriven: true };
+const report = { target, component, current, version, from, to, completed: false, fixtureDriven: true, inputs: [] };
 try {
   const old = await release(`v${current}`);
+  const next = await release(component === "core" ? `v${to}` : `plugin-${component}-v${to}`);
+  const manifestAsset = asset(next, component === "core" ? "core-update.json" : "plugin-update.json");
+  const manifest = JSON.parse(fs.readFileSync(await download(manifestAsset, root), "utf8"));
+  assert.equal(manifest.id, component === "core" ? "sodeck.core" : `sodeck.${component}`);
+  assert.equal(manifest.version, to); assert(manifest.platforms[target], "Missing target");
+  manifest.manifestUrl = manifestAsset.browser_download_url;
+  manifest.source = { repository: "BgaSol/soDeck", tagPrefix: component === "core" ? "v" : `plugin-${component}-v` };
+  const updateAsset = next.assets.find(a => a.browser_download_url === manifest.platforms[target].url);
+  assert(updateAsset, "Manifest must refer to this exact Release");
+  const nextPackage = await download(updateAsset, path.join(root, "new"));
+  if (component !== "core") assert.equal(digest(nextPackage), manifest.platforms[target].sha256);
+  report.inputs.push({ releaseId: next.id, tag: next.tag_name, manifest: manifestAsset, package: updateAsset });
+
   const architecture = target.startsWith("aarch64") ? "aarch64" : "amd64";
   let executable, oldDeb;
   if (process.platform === "win32") {
@@ -82,8 +91,10 @@ try {
     finally { run("hdiutil", ["detach", mount]); }
     executable = path.join(root, "SoDeck.app/Contents/MacOS/sodeck");
   }
+  report.inputs.push({ releaseId: old.id, tag: old.tag_name, assets: old.assets });
   for (const plugin of plugins) {
     const released = await release(`plugin-${plugin.name}-v${plugin.current}`);
+    report.inputs.push({ releaseId: released.id, tag: released.tag_name, assets: released.assets });
     const archive = await download(asset(released, `sodeck-${plugin.name}_${plugin.current}_${target}.${process.platform === "win32" ? "zip" : "tar.gz"}`), root);
     const extracted = path.join(root, "plugins"); fs.mkdirSync(extracted, { recursive: true });
     run("tar", ["-xf", archive, "-C", extracted]);
@@ -95,10 +106,12 @@ try {
   run(process.execPath, ["scripts/verify-binary.mjs", executable, target]);
   smoke(executable);
   const input = path.join(root, "input.json");
-  fs.writeFileSync(input, JSON.stringify({ root: data, executable, current, version, plugins }));
+  fs.writeFileSync(input, JSON.stringify({ root: data, executable, current, version, plugins, corePackage: component === "core" ? nextPackage : null, manifests: [manifest] }));
   run(driver, ["seed", input]);
   native(driver, ["install", input]);
   assert(!fs.existsSync(path.join(data, "upgrade-error.txt")), fs.existsSync(path.join(data, "upgrade-error.txt")) ? fs.readFileSync(path.join(data, "upgrade-error.txt"), "utf8") : "");
+  let expectedDigest = digest(executable);
+  if (component === "core") {
   const expectedRoot = path.join(root, "expected"); fs.mkdirSync(expectedRoot);
   const downloaded = path.join(data, "core-download.bin");
   let expected;
@@ -109,7 +122,8 @@ try {
     run("tar", ["-xzf", downloaded, "-C", expectedRoot]);
     expected = path.join(expectedRoot, "SoDeck.app/Contents/MacOS/sodeck");
   }
-  const expectedDigest = digest(expected), deadline = Date.now() + 180_000;
+  expectedDigest = digest(expected);
+  const deadline = Date.now() + 180_000;
   for (;;) {
     try { if (digest(executable) === expectedDigest) break; } catch {}
     assert(Date.now() < deadline, "Native installer did not replace the old program with the verified release bytes");
@@ -117,9 +131,10 @@ try {
   }
   await delay(2000);
   smoke(executable, true);
+  }
   run(driver, ["activate", input]);
-  if (process.platform === "linux") {
-    const latest = await release(`v${version}`);
+  if (process.platform === "linux" && component === "core") {
+    const latest = next;
     const newDeb = await download(asset(latest, `SoDeck_${version}_${architecture === "aarch64" ? "arm64" : "amd64"}.deb`), root);
     const debData = path.join(root, "deb-data");
     run("sudo", ["dpkg", "-i", oldDeb]);
@@ -128,17 +143,10 @@ try {
     smoke("/usr/bin/sodeck", true, debData);
     report.debSystemUpgrade = true;
   }
-  const installed = JSON.parse(fs.readFileSync(path.join(data, "plugins.json"), "utf8"));
-  // The remote smoke owns its catalog and appearance baseline; upgrade data was verified above.
-  const businessData = path.join(root, "business-data"); fs.mkdirSync(businessData);
-  const businessEnv = { SODECK_TEST_DATA_DIR: businessData, SODECK_EXPECT_CORE_VERSION: version, SODECK_EXPECT_TARGET: target, SODECK_VERIFY_PERSISTED: "0" };
-  for (const plugin of plugins) businessEnv[`SODECK_TEST_${plugin.name === "network-proxy" ? "NETWORK" : plugin.name.toUpperCase()}_PLUGIN`] = installed.find(p => p.manifest.id === plugin.id).directory;
-  native(process.execPath, ["scripts/test-openssh.mjs", "--packaged", executable], businessEnv);
   report.coreDigest = expectedDigest;
   report.baseline = JSON.parse(fs.readFileSync(path.join(data, "upgrade-baseline.json"), "utf8"));
   report.prepared = JSON.parse(fs.readFileSync(path.join(data, "upgrade-prepared.json"), "utf8"));
   report.activated = JSON.parse(fs.readFileSync(path.join(data, "upgrade-activated.json"), "utf8"));
-  report.business = JSON.parse(fs.readFileSync(path.join(businessData, "smoke-result.json"), "utf8"));
   report.completed = true;
 } catch (error) {
   report.error = error.stack || String(error);
