@@ -76,6 +76,9 @@ impl Terminals {
             .find(|t| t.owner.view == view)
             .cloned();
         if let Some(t) = terminal {
+            if t.tasks.finished() {
+                return Ok(());
+            }
             let (tx, rx) = oneshot::channel();
             t.input
                 .try_send(Input::Barrier(tx))
@@ -111,8 +114,11 @@ impl Terminals {
     }
     pub(crate) fn pending(&self, matches: impl Fn(&Owner) -> bool) -> usize {
         let mut entries = self.entries.lock().unwrap();
-        entries.retain(|_, t| !t.tasks.finished());
-        entries.values().filter(|t| matches(&t.owner)).count()
+        entries.retain(|_, t| !t.cancel.is_cancelled() || !t.tasks.finished());
+        entries
+            .values()
+            .filter(|t| matches(&t.owner) && !t.tasks.finished())
+            .count()
     }
 }
 #[derive(Deserialize)]
@@ -144,6 +150,10 @@ pub enum DataRequest {
         begin: bool,
         done: bool,
     },
+    Metadata {
+        id: String,
+        metadata: Value,
+    },
     Detach {
         id: String,
     },
@@ -156,6 +166,7 @@ impl DataRequest {
             | Self::Write { id, .. }
             | Self::Resize { id, .. }
             | Self::Checkpoint { id, .. }
+            | Self::Metadata { id, .. }
             | Self::Detach { id } => id,
         }
     }
@@ -214,7 +225,7 @@ impl AppCore {
         self.workspace_state().validate_context(&owner.context)?;
         let admission = self.resource_admission(&owner)?;
         let mut entries = self.terminals.entries.lock().unwrap();
-        entries.retain(|_, terminal| !terminal.tasks.finished());
+        entries.retain(|_, terminal| !terminal.cancel.is_cancelled() || !terminal.tasks.finished());
         if let Some((id, _)) = entries
             .iter()
             .find(|(_, t)| t.owner.view == view && t.owner.instance == instance)
@@ -225,10 +236,23 @@ impl AppCore {
             return Err("终端数量已达上限，请先关闭不用的终端".into());
         }
         let id = self.next_id();
+        let recovery = self
+            .store
+            .lock()
+            .unwrap()
+            .root
+            .join("terminal-recovery")
+            .join(format!(
+                "{}-{}-{}",
+                std::process::id(),
+                crate::core::now(),
+                id
+            ));
+        let output = Arc::new(Replay::journaled(recovery)?);
         let (input, rx) = mpsc::channel(32);
         let terminal = Arc::new(Terminal {
             owner,
-            output: Arc::new(Replay::default()),
+            output,
             input,
             cancel: CancellationToken::new(),
             tasks: Arc::new(crate::resource_tasks::Tasks::default()),
@@ -319,6 +343,10 @@ impl AppCore {
                 Ok(())
             }
             DataRequest::Ack { packet, .. } => terminal.output.ack(token, packet),
+            DataRequest::Metadata { metadata, .. } => {
+                let _admission = self.surface_write_admission(window, token)?;
+                terminal.output.metadata(token, metadata)
+            }
             DataRequest::Checkpoint {
                 offset,
                 data,

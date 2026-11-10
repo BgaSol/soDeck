@@ -194,10 +194,22 @@ API v1 通过 capabilities 扩展真实 PTY、SFTP 与正文桥。插件检查 t
 - terminal.open({viewId,cols,rows}) 返回 id；terminal.close({id}) 释放 PTY，结束状态走正文通道。资源固定创建时会话，不自动重放命令。
 - files.request({action:"open",viewId}) 返回 id；close/status/save 传 id。save 返回后台任务，status 为 running/completed/failed；关闭协调可等待完成，不阻塞接收线程。
 - metrics.networkSnapshot() 返回服务器 socket 量、插件有效载荷、约 3 秒速率与质量。累计为十进制 u64 字符串，不以目录 JSON 代替网络字节。
-- iframe 经 sodeck.request("data",request) 调用正文桥。终端 op 为 attach/ack/write/resize/checkpoint/detach；文件 op="files"，action 为 home/list/stat/read/describe/chunk/stage/save/status/download/cancel/exportDraft。每块最多 16 KiB；按真实 view/实例/Context 校验，不通过普通 ui.event 传正文。download/exportDraft 由核心打开本地保存对话框；导出草稿不要求远端在线。
+- iframe 经 sodeck.request("data",request) 调用正文桥。终端 op 为 attach/ack/write/resize/checkpoint/detach，支持 `terminal.history.v1` 的核心另提供 metadata；文件 op="files"，action 为 home/list/stat/read/describe/chunk/stage/save/status/download/cancel/exportDraft。每块最多 16 KiB；按真实 view/实例/Context 校验，不通过普通 ui.event 传正文。download/exportDraft 由核心打开本地保存对话框；导出草稿不要求远端在线。
 - 页面以 mounted 消息 flush=true 声明移窗/关闭前需要同步。收到 flush，完成在途同步后回复同 id 的 flushed；携带 error 可阻止丢失输入。旧插件不声明则保留原行为。
 
 所有权、缓冲、保存与下载约束见 [实施记录](implementation-remote-plugins.md)。不引入跨插件直调或插件授权流程。
+
+### 终端大历史恢复（增量能力，尚未发布）
+
+initialize 新增 `terminal.history.v1`。新版终端插件初始化时要求该能力，缺失时明确提示升级核心；核心 API 主版本仍为 1，旧插件原 op 保持兼容。
+
+- `data({op:"metadata",id,metadata})` 独立保存当前 view 的小界面状态，最多 8 KiB；要求已有有效订阅和当前 Surface 写入身份，不推进显示快照 offset。恢复 reset 帧的 `metadata.ui` 返回该状态，核心不解释搜索词、阅读位置或选择。
+- `checkpoint` 保持 begin/done 和已消费 offset 校验，每块最多 16 KiB，整份最多 128 MiB。done 原子替换旧快照，未完成上传不作为恢复来源；detach 清理该 Surface 的上传。已提交与正在读取的旧快照共享不可变字节，恢复读取完即释放读取引用。
+- 正常 ACK 释放已解析的实时队列；原始输出另写入每流最多 128 MiB 的临时分段日志。仅清理已提交快照覆盖、且所有读者均不再需要的日志。日志与所有显示快照分配共用 1 GiB 全局额度；不保证每个并行终端均能同时用满各自额度。
+- `kind:"recovery"` 的正文帧以 `metadata.available/error` 报告恢复可用状态。写盘或额度失败时，活动页继续接收有界实时输出；慢读者使用 ACK 背压。新检查点覆盖失败区间后可恢复。重新挂载所需字节出现缺口时明确失败，不能重复执行命令来补数据。
+- 自然退出的流保留到用户关闭 view，允许退出页重挂载、搜索和复制。关闭、插件停止及应用退出清理当前资源；启动清理可识别且所属进程已退出的临时目录。不提供关闭终端或应用重启后的搜索档案。
+
+搜索、索引、颜色摘要和预览均属于终端插件；核心不提供搜索 RPC、不读取 shell history，也不接收搜索结果数组。方案与验证边界见[终端搜索实施记录](implementation-terminal-search.md)。
 
 ### 目录树扩展（核心 0.6.1）
 

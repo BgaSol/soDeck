@@ -29,6 +29,7 @@
 | 工作台分屏与多窗口体系 | [完整功能设计](plan-workbench-layout.md)，含视图归属、工具停靠、插件 UI v2、迁移与关闭 | [源码实施与验收](implementation-workbench-layout.md) |
 | 侧边工具入口与停靠 | [功能设计](plan-tool-docking.md)、[代码整改方案](plan-tool-docking-coding.md) | [实施与本机验证](implementation-tool-docking.md) |
 | 组件通信与共享状态 | [功能设计](plan-component-communication.md)、[代码实施方案](plan-component-communication-coding.md) | [实施与验收](implementation-component-communication.md) |
+| 终端历史搜索与彩色预览 | [功能与代码方案](plan-terminal-search.md)，含 10 万行历史、可取消检索和恢复接口 | [实现、性能与发行范围](implementation-terminal-search.md) |
 | 终端目录自动识别 | [首次连接、自动集成与跟随体验](plan-terminal-directory.md) | [实施与验收](implementation-terminal-directory.md) |
 | 关闭、退出与重启 | [完整生命周期设计](plan-close-lifecycle.md)、[代码整改方案](plan-close-lifecycle-coding.md) | [实施与验收](implementation-close-lifecycle.md) |
 | 真实终端与文件 | [远程工作台](plan-remote-workbench.md) | [真实插件](implementation-remote-plugins.md) |
@@ -59,6 +60,7 @@
 
 - [GitHub Releases](https://github.com/BgaSol/soDeck/releases)：已发布的核心和插件版本、下载附件与发布说明。
 - [核心版本记录](releases/)：各版本的功能变化、验收与交付边界，包含历史候选版本记录。
+- [v0.22.0](releases/v0.22.0.md)：终端大历史恢复接口，配合终端 0.8.0 的搜索与彩色预览；正在准备发行。
 - [v0.21.1 候选](releases/v0.21.1.md)：Base64/opener 接入、main 交付与未发布包的来源和验证边界。
 - [v0.21.0](releases/v0.21.0.md)：工具按钮与面板共同停靠、拖动排序、布局记忆及终端入口调整。
 - [v0.20.1](releases/v0.20.1.md)：Docker 标准图标、右侧推荐入口及本地添加插件的键盘焦点修复。

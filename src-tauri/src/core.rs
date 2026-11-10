@@ -63,6 +63,8 @@ impl AppCore {
     }
 
     pub fn open(directory: PathBuf, version: String) -> Result<Arc<Self>, String> {
+        let recovery = directory.join("terminal-recovery");
+        std::thread::spawn(move || crate::streams::cleanup(&recovery));
         let store = Store::open(directory.clone())?;
         let servers = crate::servers::ServerStore::open(directory.clone());
         let startup_enabled = store

@@ -58,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ordering::Relaxed,
             );
             can_open.store(supports("ui.openView.v1"), Ordering::Relaxed);
-            for capability in ["terminal.v1", "viewData.v1"] {
+            for capability in ["terminal.v1", "viewData.v1", "terminal.history.v1"] {
                 if !supports(capability) {
                     return Err(format!("核心缺少 {capability}，请先升级 SoDeck"));
                 }

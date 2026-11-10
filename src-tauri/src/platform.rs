@@ -152,3 +152,29 @@ mod native {
 }
 
 pub use native::spawn;
+pub(crate) fn process_exists(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        (unsafe { libc::kill(pid as i32, 0) == 0 })
+            || io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::{
+            Foundation::CloseHandle,
+            System::Threading::{
+                GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+            },
+        };
+        let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+        if handle.is_null() {
+            return io::Error::last_os_error().raw_os_error() != Some(87);
+        }
+        let mut code = 0;
+        let known = unsafe { GetExitCodeProcess(handle, &mut code) } != 0;
+        unsafe {
+            CloseHandle(handle);
+        }
+        !known || code == 259
+    }
+}

@@ -131,6 +131,8 @@ jobs:
         if: fromJSON(needs.select.outputs.plan).web
       - run: npm run ci:test -- terminal:input:test
         if: fromJSON(needs.select.outputs.plan).terminalInput
+      - run: npm run ci:test -- terminal:history:test
+        if: fromJSON(needs.select.outputs.plan).terminalInput
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -144,6 +146,8 @@ jobs:
             artifacts/settings-ui/
             artifacts/production-ui/
             artifacts/workspace-ui.png
+            artifacts/terminal-history/
+            artifacts/terminal-search/
           if-no-files-found: warn
           retention-days: 14
 

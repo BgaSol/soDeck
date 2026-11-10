@@ -144,6 +144,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
       if (/^scripts\/(test-file-editor-ui|file-editor-fixture)\.mjs$/.test(file)) { plan.scripts = true; integration.add('files'); continue; }
       if (pluginUiTest) { plan.scripts = true; integration.add(pluginUiTest[1]); continue; }
       if (file === 'scripts/test-terminal-input.mjs') { plan.scripts = plan.terminalInput = true; continue; }
+      if (/^scripts\/(test-terminal-(history|search-ui)|benchmark-terminal-history|terminal-history\.test)\.mjs$/.test(file)) { plan.scripts = plan.terminalInput = true; continue; }
       if (/^scripts\/test-(connection-ui|desktop-ui|production-ui|server-ui|settings-ui|workspace-ui|workbench-interactions|workbench-layout)\.mjs$/.test(file)) { ui(); continue; }
       plan.reasons.push(`Shared build input or unmapped path: ${file.replace(/[\r\n|`]/g, ' ')}`);
       full();

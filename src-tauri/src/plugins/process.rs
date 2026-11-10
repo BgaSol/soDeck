@@ -60,7 +60,7 @@ pub(crate) fn supervise(
         "jsonrpc":"2.0", "id":"initialize", "method":"initialize", "params":{
             "coreApiVersion":API_VERSION, "coreVersion":core.version(), "dataDirectory":path,
             "settings":core.settings_index(id),
-              "capabilities":["logging.write","messages.publish","ui.v1","ui.workbench.v2","ui.actions.v1","ui.openView.v1","rpc.concurrent","terminal.v1","terminal.launch.v1","viewData.v1","files.v1","files.directoryCursors.v1","files.operations.v1","files.localInputs.v1","net.tcp.v1","ui.dialog.v1","settings.v1","ui.background.v1","session.exec.v1","sharedState.v1","files.location.v1"]
+              "capabilities":["logging.write","messages.publish","ui.v1","ui.workbench.v2","ui.actions.v1","ui.openView.v1","rpc.concurrent","terminal.v1","terminal.launch.v1","terminal.history.v1","viewData.v1","files.v1","files.directoryCursors.v1","files.operations.v1","files.localInputs.v1","net.tcp.v1","ui.dialog.v1","settings.v1","ui.background.v1","session.exec.v1","sharedState.v1","files.location.v1"]
         }
     }))).err();
     let mut ready = Some(ready);

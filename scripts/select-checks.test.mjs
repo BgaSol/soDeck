@@ -66,6 +66,9 @@ test('a plugin only selects its own source and normal business tests', () => {
   }
   const input = selectChecks(['scripts/test-terminal-input.mjs']);
   assert(input.terminalInput && !input.web && !input.integration.length && !input.native.length);
+  for(const file of ['test-terminal-history','test-terminal-search-ui','benchmark-terminal-history','terminal-history.test']){
+    const history=selectChecks([`scripts/${file}.mjs`]);assert(history.scripts&&history.terminalInput&&!history.web&&!history.integration.length&&!history.native.length);
+  }
 });
 
 test('native adapter scopes both architectures of the affected system; common logic stays on Linux', () => {

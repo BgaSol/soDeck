@@ -33,17 +33,21 @@ npm run dev
 npx playwright install chromium
 npm run ui:test
 npm run terminal:input:test
+npm run terminal:history:test
 ```
 
 `ui:test` 包含服务器、工作区、连接界面、正式前端产物、桌面一致性和组件设置回归。`terminal:input:test` 验证实际 xterm 输入与剪贴板桥，无需 OpenSSH。
 
 CI 使用 `npm run ci:test -- <现有测试命令>`，例如 `npm run ci:test -- ui:test`。该入口保留原命令的退出码，输出实时日志，并将 SHA、attempt、平台、耗时和结果写入 `artifacts/ci/<命令>/`；命令中的冒号转换为连字符。服务器、工作台和正式产物 UI 在该入口下记录 Playwright trace，失败时保存，成功时丢弃；本机直接运行原入口不记录 trace。
 
+`terminal:history:test` 验证本地打包的真实 xterm/Worker：10 万行检索、计数/定位、移窗元数据、预览手势、输入法组合事件、清屏/备用屏幕/重排和冻结快照。最后运行 100 个不同关键词的计算与内存基准；数字报告写入 `artifacts/terminal-history/`，界面截图写入 `artifacts/terminal-search/`。无需 OpenSSH，不能代替原生 WebView、系统 IME 或五平台实际包验收。xterm / SerializeAddon 更新前必须复验本入口，构建会检查固定适配版本。
+
 Windows 对运行中的测试程序有文件锁，使用同一 Rust target 目录的核心/插件集成与界面测试应顺序运行。修改网络 UI 后可用 `npm run network:test -- --network-ui-only` 重新独立打包并只复验实际插件界面与隧道，不重复协议压力测试；完整网络验证仍使用 `npm run network:test`。
 
 文件 UI 可用 `node scripts/test-openssh.mjs --files --files-ui-only` 重新独立打包并复验真实 SFTP 界面。文件插件现在有独立 npm 锁文件，打包入口自动安装并检查/构建其 UI；核心构建仍不依赖它。Windows 原生编辑器专项：先独立打包文件插件，将 `SODECK_TEST_FILES_PLUGIN` 指向完整包目录，再运行 `node scripts/test-openssh.mjs --file-editor-native --packaged <本次核心可执行文件>`。该专项使用隔离应用数据和 SSH，验证 WebView2/CSP/worker、编辑功能、保存与退出，不操作日常桌面剪贴板。传入构建目录程序只能证明本机原生运行，发行前仍需实际安装包与五平台验收。
 
 `Verify native remote plugins` 的 `file_editor` 是 Windows 深度界面专项的显式入口，默认关闭，需要运行环境允许 WebView2 调试端口。本次 GitHub Windows 运行器未应用该调试参数，失败发生在测试连接渲染器之前；五平台常规实际包验收继续运行，本机可用正式包执行上述专项。显式选中后失败仍使工作流失败，不计为通过。
+
 
 `npm run ui:production:test -- --updates-only` 验证正式前端的官方插件发现、安装和统一更新：仓库列表延迟加载、失败重试、运行中新插件出现与移除、离线缓存、连续安装、更新说明 Markdown、链接分发、批量更新，以及下载网络设置的草稿、地址排序/停用、保存冲突、单地址诊断和三主题小窗口布局，不运行后续工作区菜单与拆窗专项。列表、安装和诊断回归使用真实核心及隔离回环 HTTP，不依赖公网。
 
@@ -77,7 +81,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --features test-fixtures --lib -
 | `npm run network:test` | TCP 转发、实际插件、独立 SOCKS 服务端、curl 互操作及资源限额 |
 | `npm run network:netem` | Linux 私有 network namespace 内的真实延迟、丢包及资源清理 |
 | `npm run system-status:test` | 独立插件包、真实 OpenSSH 采集/隐藏/暂停/关闭和三主题侧栏 |
-| `npm run system-status:ui:test` | 固定数据 UI 与 160/280/480px 布局；`SODECK_TEST_SYSTEM_STATUS_PLUGIN` 可指向实际包 |
+| `npm run system-status:ui:test` | 固定数据 UI、概览用量条、CPU/内存趋势切换与重挂载、三主题 160/200/240/280/320/400/480px；`SODECK_TEST_SYSTEM_STATUS_PLUGIN` 可指向实际包 |
 | `npm run docker:test` | 本机原生插件、真实核心与隔离 Linux Docker Engine/OpenSSH；验证单容器操作、日志、资源、断线保留及删容器保留卷 |
 | `npm run docker:process:test` | 实际插件进程与假核心；验证查询复用、跨页搜索、操作去重、丢失回执、失败/中断状态、关闭与资源释放 |
 | `npm run docker:ui:test` | 固定数据 UI、键盘/确认/环境变量/日志搜索、三主题与 200/320/400/900px 布局 |
@@ -169,6 +173,8 @@ Check 始终响应 main push/PR，不使用 workflow 级 `paths` 跳过。`selec
 | 共享 plugin-client、根工具链/锁文件/构建脚本、未知输入 | 五平台核心与五插件源码、相关 UI、普通业务和宿主脚本；仍排除 netem |
 
 已知 UI 测试入口也按组件路由：`test-terminal-ui`/`test-files-ui` 仅运行对应普通业务，`test-terminal-input` 仅输入/脚本，核心 UI 测试脚本走 Linux 完整 browser。共享 OpenSSH/打包脚本和未映射脚本继续扩大范围。
+
+已知 UI 测试入口也按组件路由：`test-terminal-ui`/`test-files-ui` 仅运行对应普通业务，`test-terminal-input` 与终端 history/search-ui/benchmark 入口走终端输入、历史与脚本回归，核心 UI 测试脚本走前端和完整 desktop。共享 OpenSSH/打包脚本和未映射脚本继续扩大范围。
 
 Check 的 **Run workflow** 先选择需要验证的分支或标签，再选择 `suite`，手动选择覆盖自动判定。检查结果只适用于该次运行的确切提交；打包工作流不等待 Check。
 

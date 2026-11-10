@@ -37,7 +37,7 @@ impl Plugin {
             input,
             frames,
         };
-        let mut caps = vec!["terminal.v1", "viewData.v1"];
+        let mut caps = vec!["terminal.v1", "viewData.v1", "terminal.history.v1"];
         if launch {
             caps.push("terminal.launch.v1");
         }
@@ -77,6 +77,24 @@ fn config() -> Value {
 }
 fn mount(view: &str, params: Value) -> Value {
     json!({"viewId":view,"params":params,"context":{"workspaceId":"w","serverId":"s","connectionId":"c","generation":1}})
+}
+
+#[test]
+fn a_core_without_large_history_support_is_rejected_before_creating_a_pty() {
+    let mut plugin = Plugin::new(false, false);
+    plugin.request(
+        "legacy",
+        "initialize",
+        json!({"capabilities":["terminal.v1","viewData.v1"]}),
+    );
+    let response = plugin.next();
+    assert!(response["error"]
+        .to_string()
+        .contains("terminal.history.v1"));
+    assert!(plugin
+        .frames
+        .recv_timeout(Duration::from_millis(100))
+        .is_err());
 }
 
 #[test]
