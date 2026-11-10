@@ -1,12 +1,14 @@
 // Actual terminal package + xterm UI + core PTY + independent OpenSSH.
 import assert from 'node:assert/strict';
 import {transferWorkbench} from './workbench-transfer-fixture.mjs';
+import {recordTrace} from './ui-trace.mjs';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import readline from 'node:readline';
 import {spawn,spawnSync} from 'node:child_process';import {createServer} from 'vite';import {chromium} from 'playwright';
 const build=spawnSync('cargo',['build','--manifest-path','src-tauri/Cargo.toml','--features','test-fixtures','--locked','--bin','catalog-fixture'],{stdio:'inherit',windowsHide:true});if(build.status!==0)throw new Error('Fixture build failed');
 const data=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-terminal-ui-'));
 const child=spawn(path.resolve(`src-tauri/target/debug/catalog-fixture${process.platform==='win32'?'.exe':''}`),[data],{stdio:['pipe','pipe','inherit'],windowsHide:true});
-const pending=[],routes=new Map(),pages=[],errors=[];
+const pending=[],routes=new Map(),pages=[],errors=[],traces=[];
+let delayOwnership=false;
 child.on('exit',()=>{for(const p of pending.splice(0))p.reject(new Error('Core fixture exited'));});
 readline.createInterface({input:child.stdout}).on('line',line=>{const r=JSON.parse(line);if(r.event==='data'){const route=routes.get(r.surface);if(route)void route.page.evaluate(({callback,index,frame})=>window.callbacks.get(callback)?.({index,message:frame}),{callback:route.callback,index:route.index++,frame:r.frame}).catch(()=>{});return;}const p=pending.shift();r.error?p.reject(new Error(r.error)):p.resolve(r.value);});
 const call=(command,args={})=>new Promise((resolve,reject)=>{pending.push({resolve,reject});child.stdin.write(JSON.stringify({command,args})+'\n');});
@@ -14,9 +16,19 @@ const vite=await createServer({server:{host:'127.0.0.1',port:0}});await vite.lis
 const browser=await chromium.launch({headless:true});
 let clipboard=process.platform==='win32'?'echo sodeck-ui-command-ok':'printf "sodeck-ui-command-ok\\n"';
 async function pageFor(window){
- const page=await browser.newPage({viewport:{width:1100,height:720}});pages.push(page);page.on('pageerror',e=>errors.push(String(e)));
+ const page=await browser.newPage({viewport:{width:1100,height:720}});pages.push(page);traces.push(await recordTrace(page.context(),'terminal-'+window));page.on('pageerror',e=>errors.push(String(e)));
+ await page.addInitScript(()=>addEventListener('sodeck:surfaceReady',()=>{document.documentElement.dataset.testInputReady='true';},{once:true}));
  await page.exposeBinding('testInvoke',async(_,command,args={})=>{if(command==='clipboard_text'){if(args.operation==='read')return clipboard;clipboard=args.text;return null;}if(command==='component_data'&&args.request.op==='attach')routes.set(args.surfaceId,{page,callback:args.callback,index:0});return call(command,{...args,window});});
- await page.route(url+'__plugin__/**',route=>{const relative=new URL(route.request().url()).pathname.split('/').slice(3).join('/');const filename=path.join(process.env.SODECK_TEST_TERMINAL_PLUGIN,relative);const contentType={'.js':'text/javascript','.css':'text/css','.html':'text/html'}[path.extname(filename)]||'application/octet-stream';return route.fulfill({contentType,body:fs.readFileSync(filename)});});
+ await page.route(url+'__plugin__/**',route=>{const relative=new URL(route.request().url()).pathname.split('/').slice(3).join('/');const filename=path.join(process.env.SODECK_TEST_TERMINAL_PLUGIN,relative);const contentType={'.js':'text/javascript','.css':'text/css','.html':'text/html'}[path.extname(filename)]||'application/octet-stream';
+  let body=fs.readFileSync(filename);
+  if(delayOwnership&&window==='main'&&relative.endsWith('/bridge.js')){
+   // A restored xterm must wait for the ownership event, even when its delivery is delayed.
+   const dispatch="else dispatchEvent(new CustomEvent('sodeck:'+message.type,{detail:message}));";
+   assert(body.toString().includes(dispatch),'Terminal bridge still exposes the event dispatcher');
+   body=Buffer.from(body.toString().replace(dispatch,"else {const notify=()=>dispatchEvent(new CustomEvent('sodeck:'+message.type,{detail:message}));if(message.type==='surfaceReady')setTimeout(notify,800);else notify();}"));
+  }
+  return route.fulfill({contentType,body});
+ });
  await page.route(url+'__fixture_events.js',route=>route.fulfill({contentType:'text/javascript',body:fs.readFileSync('scripts/fixtures/events.js')}));
 await page.route(url,route=>route.fulfill({contentType:'text/html',body:`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"></head><body><header class="topbar"><button id="catalog-tab">服务器管理</button><div id="server-tabs" class="server-tabs"></div></header><main class="workspace"><div id="server-catalog"></div><div id="workspace-content"></div></main><div id="notice"></div><script type="module">import '/style.css';import {Workspaces} from '/workspaces.ts';import {installFixtureEvents} from '/__fixture_events.js';window.callbacks=new Map();let serial=Number(sessionStorage.getItem('sodeckTestCallbackSerial')||0);window.__TAURI_INTERNALS__={convertFileSrc:p=>new URL('/__plugin__/'+p,location.href).href,transformCallback:callback=>{const id=++serial;sessionStorage.setItem('sodeckTestCallbackSerial',String(id));window.callbacks.set(id,callback);return id;}};window.adapter=(command,args={})=>{if(args.channel){args={...args,callback:args.channel.id};delete args.channel;}return window.testInvoke(command,args);};installFixtureEvents();window.manager=new Workspaces(document.querySelector('#server-tabs'),document.querySelector('#workspace-content'),document.querySelector('#server-catalog'),m=>document.querySelector('#notice').textContent=m,window.adapter);await window.manager.start();window.ready=true;</script></body></html>`}));
  await page.goto(url);
@@ -31,6 +43,7 @@ try{
  await wait(async()=>{const [v]=await call('connection',{command:{op:'snapshot'}});if(v.question)await call('connection',{command:{op:'answer',attemptId:v.attemptId,questionId:v.question.id,answer:{kind:'hostKey',accept:true}}});if(v.state==='failed')throw new Error(JSON.stringify(v.error));return v.state==='connected';});
  const main=await pageFor('main');const board=main.locator('.server-workbench:visible');const frame=main.frameLocator('.component-surface:not([hidden]) iframe');
  await frame.locator('body[data-ready="true"]').waitFor();
+ await frame.locator('html[data-test-input-ready="true"]').waitFor();
  await frame.locator('.xterm-helper-textarea').focus();await main.keyboard.press(process.platform==='darwin'?'Meta+v':process.platform==='linux'?'Control+Shift+v':'Control+v');
  await frame.locator('.xterm-rows').filter({hasText:'sodeck-ui-command-ok'}).waitFor();await main.keyboard.press('Enter');
  await frame.locator('.xterm-rows').filter({hasText:'sodeck-ui-command-ok'}).waitFor();
@@ -57,10 +70,14 @@ try{
  const moved=await transferWorkbench(call,{window:'main',id:workspace.views[0].context.workspaceId,target:'terminal-transfer',scope:{kind:'view',id:first}},{sourcePage:main,openTarget:()=>pageFor('terminal-transfer')});
  const movedFrame=moved.frameLocator(`.component-surface[data-view-id="${first}"] iframe`);
  await movedFrame.locator('.xterm-rows').filter({hasText:'sodeck-ui-command-ok'}).waitFor();
+ await movedFrame.locator('html[data-test-input-ready="true"]').waitFor();
  await movedFrame.locator('.xterm-helper-textarea').focus();await moved.keyboard.type(process.platform==='win32'?'echo sodeck-ui-transfer-ok':'printf "sodeck-ui-transfer-ok\\n"');await moved.keyboard.press('Enter');
  await movedFrame.locator('.xterm-rows').filter({hasText:'sodeck-ui-transfer-ok'}).waitFor();
+ delayOwnership=true;
  await transferWorkbench(call,{window:'terminal-transfer',id:workspace.views[0].context.workspaceId,target:'main',scope:{kind:'view',id:first}},{sourcePage:moved,openTarget:async()=>main});
  const oldFrame=main.frameLocator(`.component-surface[data-view-id="${first}"] iframe`);
+ await oldFrame.locator('html[data-test-input-ready="true"]').waitFor();delayOwnership=false;
+ await oldFrame.locator('.xterm-rows').filter({hasText:'sodeck-ui-transfer-ok'}).waitFor();
  await oldFrame.locator('.xterm-helper-textarea').focus();await main.keyboard.type('exit');await main.keyboard.press('Enter');
  const newTerminal=oldFrame.getByRole('button',{name:'新建终端',exact:true});await newTerminal.waitFor();
  await newTerminal.evaluate(el=>{el.click();el.click();});await board.locator('.component-tab').nth(2).waitFor();
@@ -73,6 +90,7 @@ try{
  await main.evaluate(()=>window.manager.refresh());
  const commandFrame=main.frameLocator(`.component-surface[data-view-id="${action.viewId}"] iframe`);
  await commandFrame.locator('.xterm-rows').filter({hasText:'sodeck-ui-launch-ready'}).waitFor();
+ await commandFrame.locator('html[data-test-input-ready="true"]').waitFor();
  await commandFrame.locator('.xterm-helper-textarea').focus();await main.keyboard.type('value');await main.keyboard.press('Enter');
  await commandFrame.locator('.xterm-rows').filter({hasText:'sodeck-ui-launch-input:value'}).waitFor();
  await commandFrame.getByRole('button',{name:'重新打开终端',exact:true}).click();await board.locator('.component-tab').nth(4).waitFor();
@@ -84,4 +102,4 @@ try{
  assert.equal(Object.values((await call('component_ui',{window:'main',operation:'snapshot',args:{}})).workspaces)[0].views.length,5,'Disconnected recovery sends no new create');
  assert.deepEqual(errors,[]);
  console.log('Actual terminal UI passed: OpenSSH PTY, xterm input/output, multiple tabs, WebView remount replay, no page errors');
-}finally{await browser.close();await vite.close();if(child.exitCode===null){child.stdin.end();await new Promise(resolve=>child.once('exit',resolve));}if(path.dirname(path.resolve(data))!==path.resolve(os.tmpdir())||!path.basename(data).startsWith('sodeck-terminal-ui-'))throw new Error('Unexpected cleanup');fs.rmSync(data,{recursive:true,force:true});}
+}catch(error){for(const finish of traces)await finish(true);throw error;}finally{for(const finish of traces)await finish(false);await browser.close();await vite.close();if(child.exitCode===null){child.stdin.end();await new Promise(resolve=>child.once('exit',resolve));}if(path.dirname(path.resolve(data))!==path.resolve(os.tmpdir())||!path.basename(data).startsWith('sodeck-terminal-ui-'))throw new Error('Unexpected cleanup');fs.rmSync(data,{recursive:true,force:true});}

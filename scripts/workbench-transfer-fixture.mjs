@@ -14,7 +14,10 @@ export async function transferWorkbench(call,{window,id,target,scope={kind:'host
     await wait(()=>targetPage.evaluate(ids=>ids.every(id=>[...manager.components.shells.values()].some(shell=>shell.surfaces.get(id)?.mounted)),prepared));
     await call('workbench_fixture_drain',{movement});await refresh();
     await wait(async()=>{try {await call('workbench_fixture_commit',{movement});return true;}catch(error){if(!String(error).includes('目标页面尚未恢复'))throw error;return false;}});
-    await refresh();return targetPage;
+    await refresh();
+    // Ownership commits before the next layout frame removes inert and releases input.
+    await wait(()=>targetPage.evaluate(ids=>ids.every(id=>[...manager.components.shells.values()].some(shell=>{const surface=shell.surfaces.get(id);return surface?.mounted&&!surface.readOnly&&!surface.node.inert&&surface.frame.dataset.stateReady==='true';})),prepared));
+    return targetPage;
   } catch(error) {
     const state=await snapshot();console.error('Shipped plugin transfer',JSON.stringify(state.transfers));throw error;
   }

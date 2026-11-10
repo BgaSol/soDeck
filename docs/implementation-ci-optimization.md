@@ -6,7 +6,7 @@
 
 - 普通 Chromium 回归迁移到 Linux `browser` job，公共格式/脚本检查不安装浏览器；正式 dist、设置和交互回归保留，组内串行。自动 Windows desktop 保留 SSH/系统专项，手动 `desktop` 保留完整 Windows 对照。
 - Linux 真实业务拆成网络 x86_64、网络 ARM64、其他业务 x86_64 三行，最多 3 行并行，各自隔离资源；未减少测试入口、连接容量、真实超时或业务断言。
-- 新增 `ci:test` 包装现有 npm 命令，保留退出码与实时输出，写入 suite、SHA、attempt、平台、耗时、日志和结果。服务器、工作台和正式产物 UI 使用现有 Playwright Library tracing，失败保存、成功丢弃；其他套件先保留日志与结果。
+- 新增 `ci:test` 包装现有 npm 命令，保留退出码与实时输出，写入 suite、SHA、attempt、平台、耗时、日志和结果。服务器、工作台、正式产物和真实终端 UI 使用现有 Playwright Library tracing，失败保存、成功丢弃；其他套件先保留日志与结果。
 - 修正 workspace UI 复制夹具后的 Unix 执行位，保证 Linux 可以启动真实插件夹具。原有异步移侧/尺寸等待修复保留。
 - 工作流相关变化及手动 `all` 执行固定 actionlint 1.7.12；下载前后使用发行 checksum 校验。纯文档仍不安装 npm/Rust 或构建产品。
 - 最终 `format` 状态显式汇总 browser，失败、取消、跳过或缺失的选中任务仍拒绝通过。诊断 Artifact 保留 14 天，实际包与发行记录仍保留 30 天。
@@ -24,6 +24,16 @@
 - [全量 Check 42773434512](https://github.com/BgaSol/soDeck/actions/runs/42773434512) 全部选中任务通过：Linux 完整 UI、两架构网络、完整业务组、Windows SSH、核心与五插件的五平台原生源码。netem 按原规则跳过。PR head 为 `af309bf0f859e7441ecbd2ad17d59527e055968f`，实际 checkout/报告为 PR merge `86c079025203f552ffca5e2480397befb690168e`；已核对二者 Git tree 相同。
 - [核心包 42773476010](https://github.com/BgaSol/soDeck/actions/runs/42773476010) 在同一分支提交完成五平台原生构建/签名和实际包验收，验证修正后的 Linux/macOS 包路径导出；五个平台包及清单 Artifact 齐全。`publish=false`，没有创建或覆盖 Release。
 - 实际 Playwright 故障注入生成了 trace ZIP、stderr 和 `status: failure` 结果，保留原非零退出码。CI 的 browser、Windows desktop 和三组 integration 共五份诊断 Artifact 均已上传；下载 browser ZIP 后核对 SHA-256 与 GitHub digest 相同，内部 UI/输入结果为 success，正常 UI 没有保留大 trace。
+
+### 同步 main 后的复核与终端时序修正
+
+同步 `origin/main` 的 `be7247d` 后，提交为 `65a84f6a92b3518143ef3a85dfa33b0d0447bfac`。[Check 42776085105](https://github.com/BgaSol/soDeck/actions/runs/42776085105) 的浏览器、Windows SSH、五平台源码和两架构网络通过，但 business 行在终端移回窗口后的退出恢复按钮上超时；该失败以及未执行的后续业务保留，汇总正确失败。
+
+原因是测试交接夹具只等待核心提交和页面挂载，没有等待下一帧解除只读/inert，也没有等待终端收到 `surfaceReady` 后恢复输入。`.focus()` 只保证节点附着，不保证可输入，因而 `exit` 可以丢失。Windows 本机把返回窗口的交接确认事件延迟 1200ms，复现同一 30 秒超时；trace 中原 PTY 没有收到 `exit`，没有发生业务退出。
+
+修正只涉及测试：共享交接夹具等到目标页面完成核心布局交接，真实终端测试另外等待实际收到输入恢复事件；返回窗口的事件固定延迟 800ms，覆盖该竞争。移回后继续确认输出保留、发送 `exit`、重复恢复只创建一个 PTY。终端接入失败 trace，没有缩短超时、删除断言或自动重试。修改后本机真实 OpenSSH/终端完整回归、格式/类型检查和 98 项脚本测试通过；最终提交的远端结果保留在对应 PR。
+
+[核心包 42776080730](https://github.com/BgaSol/soDeck/actions/runs/42776080730) 在 `65a84f6` 完成全部五平台原生构建、签名及实际包启动退出，五包与清单 Artifact 齐全，`publish=false`。之后的交接夹具、终端 UI 测试与文档修正没有改动核心构建输入、包验收入口或核心/插件运行代码，不为这处测试修正重复打包。
 
 ### 首个成功样本的耗时
 
