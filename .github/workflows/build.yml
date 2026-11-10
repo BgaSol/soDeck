@@ -102,6 +102,9 @@ jobs:
             if (-not $capability) { throw 'OpenSSH Server capability is unavailable' }
             Add-WindowsCapability -Online -Name $capability.Name
           }
+      - name: Verify macOS default-handler fixture
+        if: runner.os == 'macOS'
+        run: node scripts/test-desktop-open-native.mjs --handler-only
       - name: Build installer
         uses: tauri-apps/tauri-action@v1
         env:

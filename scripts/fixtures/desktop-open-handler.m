@@ -1,5 +1,7 @@
 #import <AppKit/AppKit.h>
 #import <CoreServices/CoreServices.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 static void record(NSString *target) {
     NSData *bytes = [target dataUsingEncoding:NSUTF8StringEncoding];
@@ -7,14 +9,22 @@ static void record(NSString *target) {
     const unsigned char *raw = bytes.bytes;
     for (NSUInteger i = 0; i < bytes.length; i++) [line appendFormat:@"%02x", raw[i]];
     [line appendString:@"\n"];
-    NSFileHandle *file = [NSFileHandle fileHandleForWritingAtPath:@SODECK_OPEN_HANDLER_LOG];
-    [file seekToEndOfFile]; [file writeData:[line dataUsingEncoding:NSUTF8StringEncoding]]; [file closeFile];
+    NSData *data = [line dataUsingEncoding:NSUTF8StringEncoding];
+    int file = open(SODECK_OPEN_HANDLER_LOG, O_WRONLY | O_APPEND | O_CREAT, 0600);
+    if (file < 0 || write(file, data.bytes, data.length) != (ssize_t)data.length) exit(1);
+    close(file);
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 200 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ [NSApp terminate:nil]; });
 }
 
 @interface Handler : NSObject <NSApplicationDelegate>
 @end
 @implementation Handler
+- (void)handleURL:(NSAppleEventDescriptor *)event withReplyEvent:(NSAppleEventDescriptor *)reply {
+    record([event paramDescriptorForKeyword:keyDirectObject].stringValue);
+}
+- (BOOL)application:(NSApplication *)app openFile:(NSString *)file {
+    record(file); return YES;
+}
 - (void)application:(NSApplication *)app openURLs:(NSArray<NSURL *> *)urls {
     for (NSURL *url in urls) record(url.isFileURL ? url.path : url.absoluteString);
 }
@@ -44,7 +54,13 @@ int main(int argc, const char **argv) {
             return LSRegisterURL((__bridge CFURLRef)[NSURL fileURLWithPath:[NSString stringWithUTF8String:argv[2]]], true) == noErr ? 0 : 1;
         }
         NSApplication *app = [NSApplication sharedApplication];
-        Handler *delegate = [Handler new]; app.delegate = delegate; [app run];
+        Handler *delegate = [Handler new]; app.delegate = delegate;
+        [[NSAppleEventManager sharedAppleEventManager] setEventHandler:delegate andSelector:@selector(handleURL:withReplyEvent:) forEventClass:kInternetEventClass andEventID:kAEGetURL];
+        [app setActivationPolicy:NSApplicationActivationPolicyAccessory];
+        FILE *started = fopen(SODECK_OPEN_HANDLER_LOG ".started", "a");
+        if (started) { fprintf(started, "pid=%d bundle=%s\n", getpid(), [NSBundle mainBundle].bundleIdentifier.UTF8String); fclose(started); }
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 8 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ [NSApp terminate:nil]; });
+        [app run];
     }
     return 0;
 }
