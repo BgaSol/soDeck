@@ -22,14 +22,15 @@ npm run dev
 | `npm run scripts:test` | 构建、打包、更新、原生验收和 CI 软件源配置回归 |
 | `npm run test` | 核心 Rust 测试，包含仅测试使用的宿主夹具 |
 | `npm run web:build` | TypeScript 检查与正式前端构建 |
-| `npm run files:editor:test` | 独立编辑器类型/构建、实际产物的搜索、语法颜色、缩略图、字节上限、剪贴板与恢复回归；需要 Chromium，不需要 OpenSSH |
-| `npm run communication:test` | 独立打包终端、文件、系统状态，在隔离 OpenSSH 上验证共享状态、目录跟随、挂载容量和页面恢复；需要 SSH 服务与 Playwright Chromium |
+| `npm run files:editor:test` | 独立编辑器构建、实际产物的搜索、语法颜色、缩略图、字节上限、剪贴板与恢复回归；需要 Chromium，不需要 OpenSSH |
+| `npm run communication:test` | 使用已准备的终端、文件、系统状态测试目录，在隔离 OpenSSH 上验证共享状态、目录跟随、挂载容量和页面恢复；需要 SSH 服务与 Playwright Chromium |
 | `npm run interactions:test` | 浏览器真实按压刷新、文件菜单可用状态、子菜单与溢出回归；需要 Playwright Chromium |
 | `npm run layout:test` | 真实 UI v2 插件进程和核心的嵌套分屏、独立创建、比例键盘/取消、紧凑恢复、页面返回来源、两工作台原子返回与草稿连续性；浏览器页面替代原生窗口，不能替代系统手势验收 |
 
 界面测试需要 Playwright Chromium：
 
 ```sh
+npm run test:prepare -- --ui-only terminal files
 npx playwright install chromium
 npm run ui:test
 npm run terminal:input:test
@@ -42,9 +43,9 @@ CI 使用 `npm run ci:test -- <现有测试命令>`，例如 `npm run ci:test --
 
 `terminal:history:test` 验证本地打包的真实 xterm/Worker：10 万行检索、计数/定位、移窗元数据、预览手势、输入法组合事件、清屏/备用屏幕/重排和冻结快照。最后运行 100 个不同关键词的计算与内存基准；数字报告写入 `artifacts/terminal-history/`，界面截图写入 `artifacts/terminal-search/`。无需 OpenSSH，不能代替原生 WebView、系统 IME 或五平台实际包验收。xterm / SerializeAddon 更新前必须复验本入口，构建会检查固定适配版本。
 
-Windows 对运行中的测试程序有文件锁，使用同一 Rust target 目录的核心/插件集成与界面测试应顺序运行。修改网络 UI 后可用 `npm run network:test -- --network-ui-only` 重新独立打包并只复验实际插件界面与隧道，不重复协议压力测试；完整网络验证仍使用 `npm run network:test`。
+Windows 对运行中的测试程序有文件锁，使用同一 Rust target 目录的核心/插件集成与界面测试应顺序运行。修改网络 UI 后可用 `npm run network:test -- --network-ui-only` 使用已准备的测试目录并只复验实际插件界面与隧道，不重复协议压力测试；完整网络验证仍使用 `npm run network:test`。
 
-文件 UI 可用 `node scripts/test-openssh.mjs --files --files-ui-only` 重新独立打包并复验真实 SFTP 界面。文件插件现在有独立 npm 锁文件，打包入口自动安装并检查/构建其 UI；核心构建仍不依赖它。Windows 原生编辑器专项：先独立打包文件插件，将 `SODECK_TEST_FILES_PLUGIN` 指向完整包目录，再运行 `node scripts/test-openssh.mjs --file-editor-native --packaged <本次核心可执行文件>`。该专项使用隔离应用数据和 SSH，验证 WebView2/CSP/worker、编辑功能、保存与退出，不操作日常桌面剪贴板。传入构建目录程序只能证明本机原生运行，发行前仍需实际安装包与五平台验收。
+文件 UI 可用 `node scripts/test-openssh.mjs --files --files-ui-only` 使用已准备的测试目录复验真实 SFTP 界面。文件插件现在有独立 npm 锁文件，打包入口自动安装并构建其 UI，类型检查单独运行 `npm run check --prefix plugins/files`；核心构建仍不依赖它。Windows 原生编辑器专项：先独立打包文件插件，将 `SODECK_TEST_FILES_PLUGIN` 指向完整包目录，再运行 `node scripts/test-openssh.mjs --file-editor-native --packaged <本次核心可执行文件>`。该专项使用隔离应用数据和 SSH，验证 WebView2/CSP/worker、编辑功能、保存与退出，不操作日常桌面剪贴板。传入构建目录程序只能证明本机原生运行，发行前仍需实际安装包与五平台验收。
 
 `Verify native remote plugins` 的 `file_editor` 是 Windows 深度界面专项的显式入口，默认关闭，需要运行环境允许 WebView2 调试端口。环境未应用调试参数时会在连接渲染器之前失败，此时不能声称编辑器专项通过；五平台常规实际包验收仍独立执行。具体执行结果写入文件插件 CHANGELOG。显式选中后失败仍使工作流失败，不计为通过。
 
@@ -80,14 +81,13 @@ cargo test --manifest-path src-tauri/Cargo.toml --features test-fixtures --lib -
 | `npm run files:test` | SFTP 与文件业务 |
 | `npm run network:test` | TCP 转发、实际插件、独立 SOCKS 服务端、curl 互操作及资源限额 |
 | `npm run network:netem` | Linux 私有 network namespace 内的真实延迟、丢包及资源清理 |
-| `npm run system-status:test` | 独立插件包、真实 OpenSSH 采集/隐藏/暂停/关闭和三主题侧栏 |
+| `npm run system-status:test` | 独立测试目录、真实 OpenSSH 采集/隐藏/暂停/关闭和三主题侧栏 |
 | `npm run system-status:ui:test` | 固定数据 UI、概览用量条、CPU/内存趋势切换与重挂载、三主题 160/200/240/280/320/400/480px；`SODECK_TEST_SYSTEM_STATUS_PLUGIN` 可指向实际包 |
 | `npm run docker:test` | 本机原生插件、真实核心与隔离 Linux Docker Engine/OpenSSH；验证单容器操作、日志、资源、断线保留及删容器保留卷 |
 | `npm run docker:process:test` | 实际插件进程与假核心；验证查询复用、跨页搜索、操作去重、丢失回执、失败/中断状态、关闭与资源释放 |
 | `npm run docker:ui:test` | 固定数据 UI、键盘/确认/环境变量/日志搜索、三主题与 200/320/400/900px 布局 |
-| `npm run docker:package:test` | 解开本机真实归档，核对资源并运行包内程序的进程验收与退出 |
 
-Docker 测试先用 `npm run plugin:build -- --plugin docker` 生成本机包，或通过 `SODECK_TEST_DOCKER_PLUGIN` 指定目录；`docker:test` 自行重新构建插件。真实联调需要本机 Docker CLI、支持 privileged 容器的 Linux daemon、`ssh-keygen` 和可下载 Docker/Alpine 镜像的软件源。脚本创建独立 Docker-in-Docker daemon，只共享其测试 Unix socket，不使用宿主 Docker socket；测试结束清理自身容器和测试卷。可用 `SODECK_TEST_ALPINE_MIRROR` 指定测试镜像构建所用的 HTTPS Alpine 仓库根地址。此变量只用于测试，不影响产品。
+源码业务测试先运行 `npm run test:prepare -- <插件名称...>`，例如 `npm run test:prepare -- terminal files system-status docker network-proxy`，一次准备 `artifacts/test-fixtures/<插件>`，再执行所需测试。准备入口编译 dev 程序与 UI，不生成发行归档；测试入口只消费目录，缺少时明确失败。可用对应 `SODECK_TEST_*_PLUGIN` 指定显式目录。源码修改后重新准备。Docker 的进程和真实业务测试均使用该目录，不隐式打包。真实联调需要本机 Docker CLI、支持 privileged 容器的 Linux daemon、`ssh-keygen` 和可下载 Docker/Alpine 镜像的软件源。脚本创建独立 Docker-in-Docker daemon，只共享其测试 Unix socket，不使用宿主 Docker socket；测试结束清理自身容器和测试卷。可用 `SODECK_TEST_ALPINE_MIRROR` 指定测试镜像构建所用的 HTTPS Alpine 仓库根地址。此变量只用于测试，不影响产品。
 
 `network:test` 使用测试依赖 `fast-socks5 1.0.0` 和固定 curl 8.21.0。`scripts/network-tools.mjs` 优先复用匹配版本的 curl；缺少时从 curl 官方下载源码，经 SHA-256 核验后用 CMake 和本机 C 工具链编译测试工具。Windows 源码编译还需要 Visual Studio C++ 构建工具，Linux/macOS 需要 `cmake`、`tar` 和 C 编译器；可用 `SODECK_TEST_CURL` 指向已安装的对应版本。工具缓存于 `artifacts/network-tools/`，不进入核心或插件发行包。
 
@@ -103,9 +103,9 @@ Windows 关闭生命周期交互验收使用 `node scripts/test-openssh.mjs --cl
 
 该验收使用显式 `--interactive-test --test-data-dir <隔离目录>` 启动，缺少数据目录拒绝启动；普通启动继续使用原系统应用数据目录。WebView2 数据与 inspector 也限定在该测试进程中，避免连接用户正在运行的应用。此模式不自动执行常规 smoke 或在线检查，但加载已保存的启用插件；不作为用户日常入口。常规包烟测仍由 `scripts/smoke.mjs` 提供，两者结果分别记录。
 
-`Verify published release upgrade` 手动工作流的当前夹具固定验证正式核心 0.9.2 → 0.9.3、终端 0.2.1 → 0.2.2、文件 0.4.1 → 0.4.2、网络隧道 0.2.1 → 0.2.2。五个原生 runner 执行 `node scripts/test-release-upgrade.mjs`（`SODECK_UPGRADE_TARGET` 指定本机 Rust target），下载真实正式包并核对 GitHub SHA-256，使用仅测试的 `release-upgrade-fixture` 调用生产插件更新服务与官方 Tauri updater 安装，随后核对安装字节、实际新程序、设置及服务器资料，再验证远程业务。Linux 另执行 DEB 系统安装升级。夹具不发行；此入口验证安装和持久化，完整更新页面点击流程由本机桌面验收另行记录。后续发布新版本后，严格版本预期会拒绝误用该历史版本对。
+`Verify published release upgrade` 每次显式选择 `component`、`from_version` 和 `to_version`；插件还必须填写固定的 `core_version`。五个原生 runner 下载精确正式 Release，固定 manifest/附件 ID、摘要与版本，不读取其他组件的最新版本。新版本必须大于旧版本。测试专用 `release-upgrade-fixture` 调用生产插件更新服务和官方 Tauri updater，核对包摘要、实际安装字节、重启激活、设置及服务器资料；Linux 核心升级另验 DEB 系统安装。夹具不发行，固定输入能力只编入 test-fixtures；远程业务和完整更新页面点击另行验证。正常发布无需在仓库提交运行 ID 或修改历史版本常量。
 
-系统默认应用验收使用 `node scripts/test-desktop-open-native.mjs <实际包内程序>`，仅在一次性 Actions runner 或显式 `SODECK_TEST_OPEN_ISOLATED=1` 的隔离桌面运行。Windows 编译无控制台 Rust handler，解析测试账户真实 UserChoice ProgID 并临时配置 HTTP/HTTPS 与目录关联，退出时恢复；目录收据按文件系统身份接受 8.3 别名，URL 仍逐字节校验。Linux 使用 xdg-utils、desktop-file-utils 和隔离 XDG 目录，在同一 dbus/Xvfb 会话设置默认 handler。脚本核对唯一 URL 与中文/空格/特殊字符目录各一次、非法目标拒绝和程序退出；Windows/Linux 另设启动器失败用例，Shell 处理坏关联可能超时，超时必须记为失败。Package SoDeck 在五个原生目标调用此入口，Linux 分别运行 DEB 内程序和 AppImage；夹具不发行，结果上传为 Native-opener Artifact。
+系统默认应用验收使用 `node scripts/test-desktop-open-native.mjs <实际包内程序>`，仅在一次性 Actions runner 或显式 `SODECK_TEST_OPEN_ISOLATED=1` 的隔离桌面运行。Windows 编译无控制台 Rust handler，解析测试账户真实 UserChoice ProgID 并临时配置 HTTP/HTTPS 与目录关联，退出时恢复；目录收据按文件系统身份接受 8.3 别名，URL 仍逐字节校验。Linux 使用 xdg-utils、desktop-file-utils 和隔离 XDG 目录，在同一 dbus/Xvfb 会话设置默认 handler。脚本核对唯一 URL 与中文/空格/特殊字符目录各一次、非法目标拒绝和程序退出；Windows/Linux 另设启动器失败用例，Shell 处理坏关联可能超时，超时必须记为失败。`Verify native remote plugins` 显式开启 `desktop_open` 后在所选原生目标调用此入口，Linux 分别运行 DEB 内程序和 AppImage；夹具不发行，结果随 Native-verification-result 上传。
 
 macOS 用系统 clang、AppKit/LaunchServices、Apple Events 和 ad hoc 签名构建临时 app 并恢复关联。原生 Check 先运行 `node scripts/test-desktop-open-native.mjs --handler-only`。如果系统保留受保护的默认关联，此模式仅编译 handler 并标记 skipped；实际包模式仍验证核心交付、非法目标拒绝和退出，但报告 `targetsExactlyOnce:false` 与 `receiptSkipReason`，不能记作目标收据通过。关联可控时才核对 HTTP URL 和目录各到达一次。`/usr/bin/open` 成功不能确认目标应用后续状态；此专项不替代真实浏览器/Finder/Explorer 的可见窗口、UNC 或 Wayland 桌面验收。
 
@@ -150,7 +150,7 @@ npm run plugin:build -- --plugin docker
 | 工作流 | 用途 |
 | --- | --- |
 | [Check](../.github/workflows/check.yml) | main/PR 按实际改动选择源码和业务回归，汇总执行/跳过状态；手动补测同一引用，netem 单独按需 |
-| [Package SoDeck](../.github/workflows/build.yml) | 五目标原生核心构建、打包、包内验证及更新签名；可填写原始 `core_run_id` 跳过构建完成汇总/草稿收尾 |
+| [Package SoDeck](../.github/workflows/build.yml) | 五目标原生核心构建、打包、包内验证及更新签名；可填写原始 `core_run_id` 跳过构建，复验原包后汇总/草稿收尾 |
 | [Package plugin](../.github/workflows/plugin.yml) | 按插件目录独立打包，生成插件更新清单 |
 | [Verify native remote plugins](../.github/workflows/remote-integration.yml) | 按组件版本或明确 run 定位实际包，校验来源后执行五平台原生界面/远程业务验收，支持输入快照重放 |
 
@@ -199,7 +199,7 @@ Check 的 **Run workflow** 先选择需要验证的分支或标签，再选择 `
 
 `native-core` 覆盖当前核心单元测试及 `tests/lifecycle.rs`、`close_lifecycle.rs`、`updates.rs`、`update_network.rs`、`connections.rs`、`component_ui.rs`、`settings.rs`、`servers.rs`、`streams.rs`、`window_config.rs`、`workspaces.rs`；Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 都在对应原生 runner 执行。`platform`、`desktop_files`、桌面行为及更新等系统分支随原生测试验证。标记为 ignored 的真实远端用例仍由对应 SSH/终端/文件/网络专项提供环境后显式运行，不能把 `native-core` 通过当作这些专项已通过。
 
-核心与插件打包中的源码测试已经移到 Check；核心 preflight 只使用 Node 检查发行输入，正式前端构建仍执行 TypeScript 检查。实际包的架构、更新签名、启动、持久资料重开和退出验证继续执行，Windows x86_64 另保留包内 SSH 烟测。
+Check 独立执行源码、类型及业务测试；核心与插件现有工作流内分别使用 package → verify → metadata/release。package 只编译、签名、归档和上传，不运行产品或业务测试；编译器自身的类型检查仍属于构建。verify 下载原包，在原生环境验证架构、资源、核心更新签名、启动和退出，核心另验资料重开；不安装 npm/Rust 构建依赖或重新构建。metadata/release 核对五份通过报告与原包提交、版本、SHA-256 后生成清单。SSH、工作台及系统桌面行为移至独立专项。
 
 CI 的 npm 下载缓存按任务实际使用的锁文件配置；核心打包只使用根锁文件，终端 UI 测试同时使用终端锁文件。Rust 缓存区分日常 `check-tests`、正式核心 `core-release-v2` 和各插件，只有成功的 main 运行保存，其他引用尝试恢复；插件及其原生测试显式覆盖共享 plugin-client 清单。Linux browser 与 Windows desktop 对齐各自原生核心 `check-tests` 的 workspace 顺序和共享清单输入，减少重复大缓存；不同 OS/架构仍隔离。升级验收夹具使用 `check-tests`，不恢复发行缓存。
 

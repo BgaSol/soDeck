@@ -39,7 +39,7 @@ Compose 分组只是读取标签和排序，没有独立分组标题或折叠操
 
 - 插件：[main.rs](../../plugins/docker/src/main.rs)、[runtime.rs](../../plugins/docker/src/runtime.rs)、[commands.rs](../../plugins/docker/src/commands.rs)、[view.js](../../plugins/docker/ui/view.js)。
 - 核心契约：[插件 API](../plugin-api.md)的短命令、UI v2、设置与日志能力。
-- 回归：[命令与进程](../../scripts/test-docker-process.mjs)、[UI](../../scripts/test-docker-ui.mjs)、[实际包](../../scripts/test-docker-package.mjs)、[真实 Docker](../../scripts/test-docker.mjs)。
+- 回归：[命令与进程](../../scripts/test-docker-process.mjs)、[UI](../../scripts/test-docker-ui.mjs)、[实际包](../../scripts/test-plugin-package.mjs)、[真实 Docker](../../scripts/test-docker.mjs)。
 - 五平台客户端包验证与远端 Docker Engine 兼容是不同范围；rootless、代理路径、生产集群或全部 Engine 版本不因普通夹具通过而视为已验证。独立来源和结果见[CHANGELOG](../../plugins/docker/CHANGELOG.md)。
 
 返回[文档索引](../README.md)。

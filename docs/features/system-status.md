@@ -36,6 +36,6 @@ Windows 网络计数器实例尚未可靠映射为物理网卡；macOS/BSD 缺�
 
 - 实现：[scheduler.rs](../../plugins/system-status/src/scheduler.rs)、[collectors.rs](../../plugins/system-status/src/collectors.rs)、[metrics.rs](../../plugins/system-status/src/metrics.rs)、[shared_state.rs](../../plugins/system-status/src/shared_state.rs)、[view.js](../../plugins/system-status/ui/view.js)、[charts.js](../../plugins/system-status/ui/charts.js)、[style.css](../../plugins/system-status/ui/style.css)。
 - 核心能力：[session_exec.rs](../../src-tauri/src/session_exec.rs)、[后台 view](../../src-tauri/src/component_ui/background.rs)、[共享状态](../../src-tauri/src/shared_state.rs)。契约见[插件 API](../plugin-api.md)。
-- 回归：[系统状态夹具](../../src-tauri/tests/fixtures/system_status_flow.rs)、[UI](../../scripts/test-system-status-ui.mjs)、[实际包](../../scripts/test-system-status-package.mjs)、[跨插件联动](../../scripts/test-component-communication.mjs)。源码和设备验证分开记录，运行方法见[开发指南](../development.md)。
+- 回归：[系统状态夹具](../../src-tauri/tests/fixtures/system_status_flow.rs)、[UI](../../scripts/test-system-status-ui.mjs)、[实际包](../../scripts/test-plugin-package.mjs)、[跨插件联动](../../scripts/test-component-communication.mjs)。源码和设备验证分开记录，运行方法见[开发指南](../development.md)。
 
 返回[文档索引](../README.md)。
