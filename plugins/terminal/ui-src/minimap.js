@@ -21,14 +21,14 @@ export function createMinimap(terminal,host,find){
   }
   function scroll(top){const buffer=terminal.buffer.active;terminal.scrollToLine(Math.max(0,Math.min(buffer.baseY,Math.round(top))));layout();}
   const down=event=>{if(event.button!==0)return;event.preventDefault();event.stopPropagation();const rect=rail.getBoundingClientRect();const y=event.clientY-rect.top;
-    if(event.target===thumb){drag={id:event.pointerId,offset:y-parseFloat(thumb.style.top||'0')};rail.setPointerCapture(event.pointerId);return;}
+    if(event.target===thumb){drag={id:event.pointerId,offset:y-parseFloat(thumb.style.top||'0')};rail.classList.add('is-dragging');rail.setPointerCapture(event.pointerId);return;}
     const at=data?Math.min(data.height-1,Math.floor(y/rect.height*data.height)):0;
     if(searching&&data?.density[at])find(data.head+Math.floor(at/data.height*data.length));else scroll(y/rect.height*terminal.buffer.active.length-terminal.rows/2);
   };
   const move=event=>{if(!drag||drag.id!==event.pointerId)return;const rect=rail.getBoundingClientRect(),space=Math.max(1,rect.height-thumb.offsetHeight);scroll((event.clientY-rect.top-drag.offset)/space*terminal.buffer.active.baseY);};
-  const stop=()=>{if(drag&&rail.hasPointerCapture(drag.id))rail.releasePointerCapture(drag.id);drag=undefined;};
+  const stop=()=>{if(drag&&rail.hasPointerCapture(drag.id))rail.releasePointerCapture(drag.id);drag=undefined;rail.classList.remove('is-dragging');};
   const keys=event=>{let y=terminal.buffer.active.viewportY;const changes={ArrowUp:-3,ArrowDown:3,PageUp:-terminal.rows,PageDown:terminal.rows};if(event.key in changes)y+=changes[event.key];else if(event.key==='Home')y=0;else if(event.key==='End')y=terminal.buffer.active.baseY;else if(event.key==='Escape'){stop();terminal.focus();return;}else return;event.preventDefault();event.stopPropagation();scroll(y);};
-  rail.addEventListener('pointerdown',down);rail.addEventListener('pointermove',move);rail.addEventListener('pointerup',stop);rail.addEventListener('pointercancel',stop);rail.addEventListener('lostpointercapture',()=>{drag=undefined;});thumb.addEventListener('keydown',keys);window.addEventListener('blur',stop);
+  rail.addEventListener('pointerdown',down);rail.addEventListener('pointermove',move);rail.addEventListener('pointerup',stop);rail.addEventListener('pointercancel',stop);rail.addEventListener('lostpointercapture',stop);thumb.addEventListener('keydown',keys);window.addEventListener('blur',stop);
   const scrollSub=terminal.onScroll(()=>{if(!frame)frame=requestAnimationFrame(()=>{frame=undefined;layout();});});const resize=new ResizeObserver(()=>{paint();layout();});resize.observe(rail);
   return {receive(message){data=message;paint();},selection(open,match){searching=open;current=match;paint();},theme:paint,height(){return Math.max(1,Math.min(1200,rail.clientHeight));},stop,dispose(){disposed=true;stop();cancelAnimationFrame(frame);scrollSub.dispose();resize.disconnect();window.removeEventListener('blur',stop);rail.remove();}};
 }

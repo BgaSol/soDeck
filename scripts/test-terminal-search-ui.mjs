@@ -19,8 +19,33 @@ await page.route(url+'__terminal__/**',route=>{const relative=new URL(route.requ
 const child=()=>page.frames().find(f=>f.url().includes('/__terminal__/index.html')),frame=page.frameLocator('iframe');
 const count=frame.locator('.search-count'),input=frame.locator('.terminal-search input');
 const query=async text=>{await input.fill(text);await count.filter({hasText:/\d|没有匹配/}).waitFor();};
+const searchAlignment=async()=>{
+  const geometry=await frame.locator('.terminal-search').evaluate(panel=>{
+    const rect=el=>{const r=el.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,width:r.width,height:r.height};};
+    return {input:rect(panel.querySelector('input')),count:rect(panel.querySelector('.search-count')),buttons:[...panel.querySelectorAll('.search-button')].map(el=>({button:rect(el),icon:el.querySelector('svg')?rect(el.querySelector('svg')):null}))};
+  });
+  for(const {button,icon}of geometry.buttons){
+    assert.equal(button.width,button.height,'Search controls use square hit areas');
+    assert.equal(button.height,geometry.input.height,'Input and search buttons have the same height');
+    if(icon){assert(Math.abs(icon.x-button.x)<.25,'Search icon is horizontally centered');assert(Math.abs(icon.y-button.y)<.25,'Search icon is vertically centered');}
+    if(page.viewportSize().width>310)assert(Math.abs(button.y-geometry.input.y)<.25,'Search controls share the input centerline');
+  }
+  if(page.viewportSize().width>600)assert(Math.abs(geometry.count.y-geometry.input.y)<.25,'Match count shares the input centerline');
+  if(page.viewportSize().width<=310){const positions=geometry.buttons.map(({button})=>button.x);assert(Math.abs((positions[1]-positions[0])-(positions[3]-positions[2]))<.25,'Stacked search buttons are evenly spaced');}
+};
 try{
   await page.goto(url);await page.waitForFunction(()=>window.ready);await frame.locator('.xterm-helper-textarea').focus();
+  await page.evaluate(()=>window.emit(Array.from({length:120},(_,id)=>`\x1b[32mdw@dw:~$\x1b[0m journalctl --no-pager · ${id}\r\n`).join('')));
+  fs.mkdirSync('artifacts/terminal-search',{recursive:true});
+  for(const theme of ['dark','light','dopamine']){
+    await page.evaluate(theme=>window.setTheme(theme),theme);await page.waitForTimeout(250);
+    await page.screenshot({path:`artifacts/terminal-search/minimap-${theme}.png`});
+    assert.equal(await frame.locator('.minimap-viewport').evaluate(el=>getComputedStyle(el).backgroundColor),'rgba(0, 0, 0, 0)',`${theme}: reading position must not cover the terminal preview with a theme selection fill`);
+    await page.keyboard.press('Control+Shift+f');await input.fill('journalctl');await count.filter({hasText:/\d+ \/ 120/}).waitFor();
+    await page.mouse.move(0,0);await frame.locator('.terminal-search').screenshot({path:`artifacts/terminal-search/popover-${theme}.png`});await searchAlignment();
+    await input.fill('missing-layout-query');await count.filter({hasText:'没有匹配'}).waitFor();await searchAlignment();
+    await frame.locator('[aria-label="关闭搜索（Esc）"]').click();
+  }
   await page.evaluate(async()=>{await window.emit(Array.from({length:100500},(_,id)=>`${String(id).padStart(6,'0')} ${[14320,41982,88127].includes(id)?`\x1b[31mERROR ${id===41982?'TIMEOUT':'timeout'} 中文🙂\x1b[0m`:'INFO heartbeat received'}\r\n`).join(''));});
   await page.keyboard.press('Control+Shift+f');await input.waitFor();await input.fill('timeout');await count.filter({hasText:'1 / 3'}).waitFor();
   assert.equal((await child().evaluate(()=>window.testTerminal.options.scrollback)),100000);
@@ -47,13 +72,22 @@ try{
   await input.dispatchEvent('compositionstart');await input.fill('composition-only');await input.press('Enter');assert.match(await count.textContent(),/2 \/ 3/);await input.dispatchEvent('compositionend');await count.filter({hasText:'没有匹配'}).waitFor();
   await input.fill('saved');await count.filter({hasText:'1 / 3'}).waitFor();await input.evaluate(el=>{for(let i=0;i<7;i++)el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));});await count.filter({hasText:'2 / 3'}).waitFor();
   await input.press('Escape');const rail=frame.locator('.terminal-minimap'),thumb=frame.locator('.minimap-viewport');await thumb.focus();await thumb.press('Home');await thumb.press('ArrowDown');assert.equal(await child().evaluate(()=>window.testTerminal.buffer.active.viewportY),3);await thumb.press('End');
-  const box=await rail.boundingBox();await page.mouse.click(box.x+box.width/2,box.y+box.height/2);const middle=await child().evaluate(()=>window.testTerminal.buffer.active.viewportY);assert(middle>40000&&middle<60000,'Minimap click maps to history rows');const drag=await thumb.boundingBox();await page.mouse.move(drag.x+drag.width/2,drag.y+drag.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2,box.y+20);await page.mouse.up();assert((await child().evaluate(()=>window.testTerminal.buffer.active.viewportY))<middle,'Minimap drag updates reading position');
+  const box=await rail.boundingBox();await page.mouse.click(box.x+box.width/2,box.y+box.height/2);const middle=await child().evaluate(()=>window.testTerminal.buffer.active.viewportY);assert(middle>40000&&middle<60000,'Minimap click maps to history rows');const drag=await thumb.boundingBox();await page.mouse.move(drag.x+drag.width/2,drag.y+drag.height/2);
+  assert.equal(await thumb.evaluate(el=>getComputedStyle(el).backgroundColor),'rgba(0, 0, 0, 0)','Hovered viewport remains transparent');
+  await page.mouse.down();await page.mouse.move(box.x-30,box.y+20);
+  assert.equal(await rail.evaluate(el=>el.classList.contains('is-dragging')),true,'Drag feedback persists outside the preview');
+  assert.deepEqual(await thumb.evaluate(el=>{const style=getComputedStyle(el);return [style.backgroundColor,style.cursor];}),['rgba(0, 0, 0, 0)','grabbing'],'Dragging viewport remains transparent with a grabbing cursor');
+  await page.mouse.up();assert.equal(await rail.evaluate(el=>el.classList.contains('is-dragging')),false,'Releasing outside clears drag feedback');assert((await child().evaluate(()=>window.testTerminal.buffer.active.viewportY))<middle,'Minimap drag updates reading position');
+  await thumb.focus();assert.equal(await thumb.evaluate(el=>getComputedStyle(el).outlineOffset),'-2px','Keyboard focus stays inside the clipped preview');
   await page.keyboard.press('Control+Shift+f');await input.fill('timeout');await count.filter({hasText:/[123] \/ 3/}).waitFor();
   fs.mkdirSync('artifacts/terminal-search',{recursive:true});
   await frame.locator('[aria-label="下一处（Enter）"]').click();await count.filter({hasText:/[123] \/ 3/}).waitFor();
   for(const theme of ['light','dark','dopamine']){await page.evaluate(theme=>window.setTheme(theme),theme);await page.waitForTimeout(250);await page.screenshot({path:`artifacts/terminal-search/${theme}.png`});}
-  await page.setViewportSize({width:320,height:700});await input.waitFor();await count.filter({hasText:/[123] \/ [123]/}).waitFor();await page.waitForTimeout(250);await page.screenshot({path:'artifacts/terminal-search/narrow.png'});
+  await page.setViewportSize({width:320,height:700});await input.waitFor();await page.waitForTimeout(250);await count.filter({hasText:/[123] \/ [123]/}).waitFor();await searchAlignment();await page.screenshot({path:'artifacts/terminal-search/narrow.png'});
   const overflow=await child().evaluate(()=>{const p=document.querySelector('.terminal-search').getBoundingClientRect(),host=document.querySelector('#terminal').getBoundingClientRect();return p.right>host.right||p.left<host.left;});assert.equal(overflow,false,'Narrow floating search must remain within the terminal');
+  await page.setViewportSize({width:240,height:700});await page.waitForTimeout(250);await count.filter({hasText:/\d|没有匹配/}).waitFor();await searchAlignment();
+  assert.equal(await frame.locator('.terminal-search').evaluate(panel=>{const p=panel.getBoundingClientRect();return [...panel.querySelectorAll('input,.search-button,.search-count')].some(el=>{const r=el.getBoundingClientRect();return r.left<p.left||r.right>p.right;});}),false,'Stacked search controls stay inside the popup');
+  await frame.locator('.terminal-search').screenshot({path:'artifacts/terminal-search/popover-small.png'});
   await page.setViewportSize({width:1000,height:700});
   const write=async text=>child().evaluate(text=>new Promise(resolve=>window.testTerminal.write(text,resolve)),text);
   await write('\x1b[?1049h\x1b[2J\x1b[Halternate needle');await input.fill('needle');await count.filter({hasText:'1 / 1'}).waitFor();assert.equal(await frame.locator('.search-scope').textContent(),'当前应用屏幕');await write('\x1b[?1049l');await count.filter({hasText:'没有匹配'}).waitFor();

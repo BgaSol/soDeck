@@ -8,7 +8,7 @@ export function createSearch(terminal,host,save,state){
   const button=(label,path)=>{const b=document.createElement('button');b.type='button';b.className='sd-control search-button';b.setAttribute('aria-label',label);b.title=label;b.innerHTML=`<svg viewBox="0 0 20 20" aria-hidden="true"><path d="${path}"/></svg>`;return b;};
   const sensitive=document.createElement('button');sensitive.type='button';sensitive.className='sd-control search-button search-case';sensitive.textContent='Aa';sensitive.title='区分大小写';sensitive.setAttribute('aria-label','区分大小写');
   const count=document.createElement('span');count.className='search-count';count.setAttribute('role','status');count.setAttribute('aria-live','polite');
-  const previous=button('上一处（Shift+Enter）','m5 12 5-5 5 5'),next=button('下一处（Enter）','m5 8 5 5 5-5'),close=button('关闭搜索（Esc）','m5 5 10 10M15 5 5 15');
+  const previous=button('上一处（Shift+Enter）','m5 12.5 5-5 5 5'),next=button('下一处（Enter）','m5 7.5 5 5 5-5'),close=button('关闭搜索（Esc）','m5 5 10 10M15 5 5 15');
   const retry=document.createElement('button');retry.type='button';retry.className='sd-control search-retry';retry.textContent='重试';retry.hidden=true;
   const scope=document.createElement('span');scope.className='search-scope';scope.textContent='当前终端 · 最多 10 万行历史';
   panel.append(input,sensitive,count,previous,next,close,retry,scope);host.append(panel);
