@@ -136,6 +136,18 @@ impl server::Handler for Ssh {
         if command == b"status-test:hang" {
             return Ok(());
         }
+        if command == b"status-test:binary" {
+            session.data(id, (0..16385).map(|i| i as u8).collect::<Vec<_>>())?;
+            session.extended_data(
+                id,
+                1,
+                (0..8193).map(|i| (255 - i % 256) as u8).collect::<Vec<_>>(),
+            )?;
+            session.exit_status_request(id, 0)?;
+            session.eof(id)?;
+            session.close(id)?;
+            return Ok(());
+        }
         if command == b"status-test:mixed" {
             session.data(id, vec![b'x'; 9000])?;
             session.extended_data(id, 1, b"err\n".to_vec())?;

@@ -7,6 +7,19 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
+test("native opener smoke requires its own report and dispatches the probe once", () => {
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-open-smoke-test-'));
+  try {
+    const launcher=path.join(root,'launcher.mjs');
+    fs.writeFileSync(launcher,`import fs from 'node:fs';import path from 'node:path';const args=process.argv.slice(2),data=args[args.indexOf('--test-data-dir')+1];if(args.includes('--verify-persisted'))throw new Error('Open probe must run once');if(!path.isAbsolute(args[args.indexOf('--desktop-open-test')+1]))throw new Error('Absolute probe required');fs.writeFileSync(path.join(data,'smoke-result.json'),JSON.stringify({completed:true,workspaceNative:true,desktopOpenNative:process.env.WRITE_OPEN==='1'}));`);
+    const env={...process.env,SODECK_TEST_DESKTOP_OPEN:path.join(root,'probe.json')};
+    for(const key of ['SODECK_TEST_DATA_DIR','SODECK_VERIFY_PERSISTED','SODECK_TEST_SSH_CONFIG','SODECK_TEST_UPDATE_BUNDLE','SODECK_TEST_CLIPBOARD','SODECK_TEST_NETWORK_PLUGIN','SODECK_EXPECT_CORE_VERSION','SODECK_EXPECT_TARGET'])delete env[key];
+    const run=()=>spawnSync(process.execPath,[fileURLToPath(new URL('./smoke.mjs',import.meta.url)),process.execPath,launcher],{env,encoding:'utf8'});
+    assert.notEqual(run().status,0);
+    env.WRITE_OPEN='1';const result=run();assert.equal(result.status,0,result.stderr);
+  } finally { fs.rmSync(root,{recursive:true,force:true}); }
+});
+
 test("Windows package cleanup waits for transient runtime file locks", { skip: process.platform !== "win32" }, async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-smoke-lock-test-"));
   let smoke, locker, temporary;

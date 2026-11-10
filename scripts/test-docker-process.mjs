@@ -4,7 +4,7 @@ import {pluginPeer,context,capabilities,until,packageRoot} from './docker-proces
 const root=packageRoot();
 const manifest=JSON.parse(fs.readFileSync(path.join(root,'plugin.json')));
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-docker-process-'));
-const id='a'.repeat(64),tasks=new Map(),commands=[],diagnostics=[];let number=0,hold=false,holdMutation=false,loseReceipt=true,engineId='engine',peer;
+const id='a'.repeat(64),tasks=new Map(),commands=[],diagnostics=[];let number=0,hold=false,holdMutation=false,loseReceipt=true,malformed=false,engineId='engine',peer;
 const inspect={Id:id,Name:'/service-中文',Image:'sha256:'+'b'.repeat(64),Config:{Image:'demo:1',Env:['TOKEN=a=b'],Labels:{}},State:{Status:'running',Running:true,Health:{Status:'unhealthy',Log:[]}},Mounts:[],NetworkSettings:{Ports:{},Networks:{}}};
 const output=command=>{
   if(command.includes("'version'"))return JSON.stringify({Server:{Os:'linux',Arch:'amd64',Version:'24.0.9'}});
@@ -34,7 +34,7 @@ peer=pluginPeer(path.join(root,manifest.entry),async(method,p)=>{
     const t=tasks.get(p.taskId);assert(t);
     if(hold||(holdMutation&&t.command.includes("'stop'")))return {state:'running',stdout:{dataBase64:'',nextOffset:'0'},stderr:{dataBase64:'',nextOffset:'0'},outputComplete:false};
     const start=Number(p.stdoutOffset),end=Math.min(start+8192,t.bytes.length);
-    return {state:'completed',stdout:{dataBase64:t.bytes.subarray(start,end).toString('base64'),nextOffset:String(end)},stderr:{dataBase64:'',nextOffset:'0'},outputComplete:end===t.bytes.length,remoteExitConfirmed:true,exitCode:0,error:null};
+    return {state:'completed',stdout:{dataBase64:malformed ? 'Zg=a' : t.bytes.subarray(start,end).toString('base64'),nextOffset:String(end)},stderr:{dataBase64:'',nextOffset:'0'},outputComplete:end===t.bytes.length,remoteExitConfirmed:true,exitCode:0,error:null};
   }
   if(method==='session.exec.release'){tasks.delete(p.taskId);return {};}
   throw new Error('Unexpected core call: '+method);
@@ -49,6 +49,11 @@ try{
   let list=(await request('ui.event','browser',{data:{action:'list',status:'abnormal',query:'中文'}})).data;
   assert.equal(list.total,1);assert.equal(list.rows[0].project,'web');
   await request('ui.createView','detail',{viewType:'container',resourceKey:JSON.stringify({id,engineId:'engine'})});await idle('detail');
+  const malformedBefore=commands.length;
+  malformed=true;await request('ui.event','detail',{data:{action:'refresh'}});let failed=await idle('detail');
+  assert(JSON.stringify(failed).includes('核心输出编码无效'),JSON.stringify(failed));assert.equal(tasks.size,0,'bad encoding must release the task');
+  assert.equal(commands.length,malformedBefore+1,'bad output must not replay a command');
+  malformed=false;await request('ui.event','detail',{data:{action:'refresh'}});await idle('detail');
   const before=commands.length;for(let i=0;i<3;i++)await request('ui.getView','detail');assert.equal(commands.length,before,'mount/getView must not create commands');
   const mutation={action:'operate',requestId:'stop-once',intentSequence:'1',operation:'stop'};
   await request('ui.event','detail',{data:mutation});await request('ui.event','detail',{data:mutation});

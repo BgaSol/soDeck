@@ -82,7 +82,7 @@ jobs:
         run: |
           sudo "$(command -v node)" scripts/configure-ubuntu-mirror.mjs
           sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
-          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev patchelf xvfb dbus-x11 libfuse2
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev patchelf xvfb dbus-x11 libfuse2 xdg-utils desktop-file-utils
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.99.1
@@ -124,6 +124,7 @@ jobs:
           node scripts/verify-binary.mjs "$installDir/sodeck.exe" '${{ matrix.target }}'
           $env:SODECK_TEST_UPDATE_BUNDLE = $installer.FullName
           node scripts/smoke.mjs "$installDir/sodeck.exe"
+          node scripts/test-desktop-open-native.mjs "$installDir/sodeck.exe"
           if ('${{ matrix.name }}' -eq 'windows-x86_64') { node scripts/test-openssh.mjs --packaged "$installDir/sodeck.exe" }
       - name: Extract and launch Linux package
         if: runner.os == 'Linux'
@@ -136,6 +137,8 @@ jobs:
           export SODECK_TEST_UPDATE_BUNDLE
           test -n "$SODECK_TEST_UPDATE_BUNDLE"
           node scripts/smoke.mjs dbus-run-session -- xvfb-run -a "$RUNNER_TEMP/SoDeck/usr/bin/sodeck"
+          dbus-run-session -- xvfb-run -a node scripts/test-desktop-open-native.mjs "$RUNNER_TEMP/SoDeck/usr/bin/sodeck"
+          APPIMAGE_EXTRACT_AND_RUN=1 dbus-run-session -- xvfb-run -a node scripts/test-desktop-open-native.mjs src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
           APPIMAGE_EXTRACT_AND_RUN=1 node scripts/smoke.mjs dbus-run-session -- xvfb-run -a src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
       - name: Mount and launch macOS package
         if: runner.os == 'macOS'
@@ -147,6 +150,15 @@ jobs:
           export SODECK_TEST_UPDATE_BUNDLE
           test -n "$SODECK_TEST_UPDATE_BUNDLE"
           node scripts/smoke.mjs "$RUNNER_TEMP/SoDeck/SoDeck.app/Contents/MacOS/sodeck"
+          node scripts/test-desktop-open-native.mjs "$RUNNER_TEMP/SoDeck/SoDeck.app/Contents/MacOS/sodeck"
+      - name: Upload native opener evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Native-opener-${{ matrix.name }}
+          path: artifacts/native-desktop-open/
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Collect verified packages
         run: node scripts/collect-core.mjs ${{ matrix.target }}
       - uses: actions/upload-artifact@v7

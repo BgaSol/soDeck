@@ -21,6 +21,7 @@ function launch(persisted = false) {
   if (process.env.SODECK_TEST_CLIPBOARD === "1") extra.push("--clipboard-test");
   if (process.env.SODECK_TEST_DESKTOP_FILES) extra.push("--desktop-files-test", path.resolve(process.env.SODECK_TEST_DESKTOP_FILES));
   if (process.env.SODECK_TEST_SSH_CONFIG) extra.push("--ssh-test-config", path.resolve(process.env.SODECK_TEST_SSH_CONFIG));
+  if (process.env.SODECK_TEST_DESKTOP_OPEN) extra.push("--desktop-open-test", path.resolve(process.env.SODECK_TEST_DESKTOP_OPEN));
   if (persisted) extra.push("--verify-persisted");
   if (process.env.SODECK_TEST_UPDATE_BUNDLE) extra.push("--update-bundle-test", path.resolve(process.env.SODECK_TEST_UPDATE_BUNDLE));
   const result = spawnSync(command, [...args, ...extra], {
@@ -51,6 +52,7 @@ function launch(persisted = false) {
     || (process.env.SODECK_TEST_SSH_CONFIG && !JSON.parse(fs.readFileSync(report, "utf8")).sshNative)
     || (process.env.SODECK_TEST_CLIPBOARD === "1" && !JSON.parse(fs.readFileSync(report, "utf8")).clipboardNative)
     || (process.env.SODECK_TEST_DESKTOP_FILES && !JSON.parse(fs.readFileSync(report, "utf8")).desktopFilesNative)
+    || (process.env.SODECK_TEST_DESKTOP_OPEN && !JSON.parse(fs.readFileSync(report, "utf8")).desktopOpenNative)
     || (process.env.SODECK_TEST_NETWORK_PLUGIN && (!fs.existsSync(networkReport) || !JSON.parse(fs.readFileSync(networkReport, "utf8")).completed))
   )
     throw new Error(
@@ -64,7 +66,7 @@ function launch(persisted = false) {
 try {
   launch(process.env.SODECK_VERIFY_PERSISTED === "1");
   // A file probe changes its provider to text during the first launch and cannot be replayed.
-  if (process.env.SODECK_VERIFY_PERSISTED !== "1" && !process.env.SODECK_TEST_DESKTOP_FILES) launch(true);
+  if (process.env.SODECK_VERIFY_PERSISTED !== "1" && !process.env.SODECK_TEST_DESKTOP_FILES && !process.env.SODECK_TEST_DESKTOP_OPEN) launch(true);
   console.log(
     process.env.SODECK_TEST_DESKTOP_FILES
       ? "Packaged app verified native file clipboard and exited successfully."
