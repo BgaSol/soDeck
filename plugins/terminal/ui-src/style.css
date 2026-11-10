@@ -11,7 +11,8 @@
   #status + button { order: 3; flex: none; align-self: start; margin: 0 12px 8px; }
   /* FitAddon reads this container's content dimensions, excluding its padding. */
   #terminal { box-sizing: content-box; flex: 1; min-height: 0; padding: 12px 16px 24px; }
-  .xterm-viewport { overscroll-behavior: contain; }
+  /* xterm's unlayered stylesheet starts the viewport at black. */
+  .xterm-viewport { overscroll-behavior: contain; background-color: var(--terminal-background, var(--panel, #fff)) !important; }
   /* Keep xterm's 14px hit area and geometry, with the shared 6px visible thumb. */
   .xterm .xterm-scrollable-element > .scrollbar > .slider {
     box-sizing: border-box; border: 2px solid transparent; border-inline-width: 4px;

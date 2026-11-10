@@ -12,9 +12,10 @@ const browser=await chromium.launch({headless:true});const page=await browser.ne
 const desktopArg=process.argv.indexOf('--desktop-script');
 if(desktopArg!==-1)await page.addInitScript({content:fs.readFileSync(process.argv[desktopArg+1],'utf8')});
 const errors=[];page.on('pageerror',error=>errors.push(String(error)));
-let requestedPlatform='Win32';
-const harness=`<!doctype html><html data-theme="dopamine"><head><meta charset="utf-8"></head><body><button id="outside">外部焦点</button><iframe id="terminal" style="width:900px;height:480px;border:0"></iframe><script type="module">
+let requestedPlatform='Win32',holdMount=true;
+const harness=()=>`<!doctype html><html data-theme="dopamine"><head><meta charset="utf-8"></head><body><button id="outside">外部焦点</button><iframe id="terminal" style="width:900px;height:480px;border:0"></iframe><script type="module">
 import '/style.css';import {ClipboardBridge} from '/clipboard.ts';import {themeTokens} from '/theme.ts';
+window.holdMount=${holdMount};
 window.writes=[];window.clipboard='中文🙂\\nsecond line';window.copies=[];window.reads=0;window.delayRead=false;window.flushed=[];
 window.resizes=[];window.holdResize=false;
 const host=new ClipboardBridge(async()=>{window.reads++;return window.delayRead?new Promise(resolve=>window.finishRead=resolve):window.clipboard;},async text=>window.copies.push(text));
@@ -24,7 +25,7 @@ window.testPost=post;window.setTheme=theme=>{document.documentElement.dataset.th
 window.addEventListener('message',async event=>{
  if(event.source!==frame.contentWindow||event.data?.channel!=='sodeck-ui-v2')return;
  const message=event.data;
- if(message.type==='ready'){post({type:'mount',viewId:'A',context:{generation},data:{streamId:'pty'},tokens:themeTokens(),capabilities:{clipboard:1},visible:true});return;}
+ if(message.type==='ready'){window.mountTerminal=()=>post({type:'mount',viewId:'A',context:{generation},data:{streamId:'pty'},tokens:themeTokens(),capabilities:{clipboard:1},visible:true});window.mountWaiting=true;if(!window.holdMount)window.mountTerminal();return;}
  if(message.type==='prepared'){window.ready=true;return;}
  if(message.type==='flushed'){window.flushed.push(message.id);return;}
  if(message.type!=='request')return;
@@ -45,12 +46,12 @@ frame.src='/__terminal__/index.html';
 window.hideTerminal=()=>{visible=false;generation++;host.discard(token);post({type:'visibilityChanged',visible:false});};
 window.showTerminal=()=>{visible=true;post({type:'visibilityChanged',visible:true});};
 </script></body></html>`;
-await page.route(url,route=>route.fulfill({contentType:'text/html',body:harness}));
+await page.route(url,route=>route.fulfill({contentType:'text/html',body:harness()}));
 let rejectSourceCodeFont=false;
 await page.route(url+'__terminal__/**',route=>{
  const relative=new URL(route.request().url()).pathname.replace('/__terminal__/','');const filename=path.join('plugins/terminal/ui',relative);
  if(rejectSourceCodeFont&&relative.startsWith('fonts/source-code-pro-'))return route.abort();
- let body=fs.readFileSync(filename);if(relative==='vendor/xterm.js')body=Buffer.concat([body,Buffer.from('\n;window.RealTerminal=window.Terminal;window.Terminal=class extends window.RealTerminal{constructor(options){super(options);window.testTerminal=this;}};')]);
+ let body=fs.readFileSync(filename);if(relative==='vendor/xterm.js')body=Buffer.concat([body,Buffer.from('\n;window.RealTerminal=window.Terminal;window.Terminal=class extends window.RealTerminal{constructor(options){super(options);window.testTerminal=this;}open(host){super.open(host);window.firstTerminalTheme={background:this.options.theme.background,viewport:getComputedStyle(this.element.querySelector(".xterm-viewport")).backgroundColor,scrollable:getComputedStyle(this.element.querySelector(".xterm-scrollable-element")).backgroundColor};}};')]);
  if(relative==='index.html')body=Buffer.from(body.toString().replace('<body>',`<body><script>Object.defineProperty(navigator,'platform',{configurable:true,value:'${requestedPlatform}'});Object.defineProperty(navigator,'userAgentData',{configurable:true,value:undefined});</script>`));
  return route.fulfill({contentType:{'.js':'text/javascript','.css':'text/css','.html':'text/html'}[path.extname(filename)],body});
 });
@@ -61,6 +62,23 @@ const reset=()=>page.evaluate(()=>{window.writes=[];window.copies=[];window.read
 const focus=()=>frame.locator('.xterm-helper-textarea').focus();
 const term=async code=>{const child=page.frames().find(f=>f.url().includes('/__terminal__/index.html'));return child.evaluate(code);};
 try{
+ // Hold the host mount across paint frames: xterm must not expose its default black theme.
+ for(const theme of ['light','dark','dopamine']){
+  await page.goto(url);await page.waitForFunction(()=>window.mountWaiting);
+  await term(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  const startup=await term(()=>{const viewport=document.querySelector('.xterm-viewport');return {opened:Boolean(window.testTerminal.element),background:viewport&&getComputedStyle(viewport).backgroundColor};});
+  if(startup.opened){fs.mkdirSync('artifacts/terminal-ui',{recursive:true});await page.screenshot({path:'artifacts/terminal-ui/startup-before-theme.png'});}
+  assert.equal(startup.opened,false,`The terminal must wait for the host theme before opening: ${JSON.stringify(startup)}`);
+  const expected=await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;return getComputedStyle(document.documentElement).getPropertyValue('--terminal-background').trim();},theme);
+  await page.evaluate(()=>window.mountTerminal());await page.waitForFunction(()=>window.ready);
+  const firstTheme=await term(()=>window.firstTerminalTheme);
+  assert.equal(firstTheme.background,expected,`${theme} must be applied before xterm's first paint`);
+  assert.equal(firstTheme.viewport,await term(()=>getComputedStyle(document.documentElement).backgroundColor),`${theme} viewport must use the host background from its first paint`);
+  assert.equal(firstTheme.scrollable,firstTheme.viewport,`${theme} scrollable area must use the same initial background`);
+  assert.equal(await frame.locator('.xterm').count(),1);
+  fs.mkdirSync('artifacts/terminal-ui',{recursive:true});await page.screenshot({path:`artifacts/terminal-ui/startup-${theme}.png`});
+ }
+ holdMount=false;
  await page.goto(url);await page.waitForFunction(()=>window.ready);await focus();
  await page.evaluate(()=>window.testPost({type:'flush',id:'sync',freeze:false}));await page.waitForFunction(()=>window.flushed.includes('sync'));
  await page.keyboard.type('after-sync');await expectInput('after-sync');await reset();
@@ -153,5 +171,5 @@ try{
  }
  requestedPlatform='Win32';await page.reload();await page.waitForFunction(()=>window.ready);await focus();await frame.locator('#terminal').click({button:'right'});
  fs.mkdirSync('artifacts/terminal-ui',{recursive:true});await page.screenshot({path:'artifacts/terminal-ui/clipboard-menu.png'});
- console.log('Terminal input passed: real xterm copy/Ctrl+C/paste/bracketed paste, local menu, no duplicate input, late paste cancellation, theme keeps geometry; no page errors');
+ console.log('Terminal input passed: delayed mount and first paint in three themes, real xterm copy/Ctrl+C/paste/bracketed paste, local menu, no duplicate input, late paste cancellation, theme keeps geometry; no page errors');
 }catch(error){console.error({errors,frames:page.frames().map(f=>f.url())});throw error;}finally{await browser.close();await vite.close();}
