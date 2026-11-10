@@ -109,6 +109,7 @@ function content() {
 function renderLayer() {
   const target = document.querySelector<HTMLElement>("#layer-content");
   if (target) {
+    const hadPluginDetails = !!target.querySelector("#back-plugins");
     const retained = layer === "settings" && state.section === "components" ? target.querySelector<HTMLElement>("#component-settings-page") : null;
     const retainedFocus = retained?.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
     const expanded=[...target.querySelectorAll<HTMLDetailsElement>('details[data-network-server][open]')].map(d=>d.dataset.networkServer);
@@ -116,6 +117,8 @@ function renderLayer() {
     const placeholder = target.querySelector<HTMLElement>("#component-settings-page");
     if (retained && placeholder && retained !== placeholder) placeholder.replaceWith(retained);
     if (retainedFocus?.isConnected) retainedFocus.focus({preventScroll: true});
+    if (!hadPluginDetails && document.activeElement === document.body)
+      target.querySelector<HTMLElement>("#back-plugins")?.focus({preventScroll: true});
     componentSettings.mount(target.querySelector("#component-settings-page"), layer === "settings" && state.section === "components");
     for(const key of expanded)target.querySelector<HTMLDetailsElement>(`details[data-network-server="${CSS.escape(key!)}"]`)?.setAttribute('open','');
   }

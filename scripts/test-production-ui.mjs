@@ -105,11 +105,13 @@ await page.route('**/__plugin__/**',route=>{
 });
 const errors = [], checks = [];
 let failCatalog = false, testWindow = "main", heldLogReply, releaseLogReply, chosenPluginDirectory = null;
+let holdLocalNetwork = false, localNetworkReached, releaseLocalNetwork;
 page.on("pageerror", error => errors.push(String(error)));
 await page.exposeBinding("desktopInvoke", async (_, command, args) => {
   if (command === 'plugin:dialog|open') return chosenPluginDirectory;
   if (command === 'server_catalog' && failCatalog) throw new Error('隔离测试：目录暂时不可读');
   const result=await call(command, { ...args, window: testWindow });
+  if(command==='network_snapshot'&&holdLocalNetwork){holdLocalNetwork=false;localNetworkReached();await new Promise(resolve=>releaseLocalNetwork=resolve);}
   if(command==='read_logs'&&args.filter?.query==='held-old-filter'){heldLogReply=true;await new Promise(resolve=>releaseLogReply=resolve);}
   return result;
 });
@@ -135,7 +137,7 @@ await page.addInitScript(() => {
         if (action === "toggle_maximize" || action === "internal_toggle_maximize") window.nativeMaximized = !window.nativeMaximized;
         return Promise.resolve();
       }
-      return window.desktopInvoke(command, args);
+      return window.desktopInvoke(command, args).then(result=>{if(command==='add_plugin')window.localPluginAdded=true;return result;});
     },
   };
 });
@@ -448,9 +450,15 @@ try {
     extraReleases.push({tag_name:`plugin-${name}-v0.1.1`,draft:false,prerelease:false,assets:[{name:'plugin-update.json',browser_download_url:`${base}/${name}.json`}]});
     fs.writeFileSync(path.join(pluginDirectory,'plugin.json'),JSON.stringify({...metadata,version:'0.1.0'}));
     if (name === 'update-one') {
+      // A refresh may still contain the old plugin list when the picker returns.
+      holdLocalNetwork=true;
+      const reached=new Promise(resolve=>localNetworkReached=resolve);
       await page.locator('#plugins-official').click();
+      await reached;
       chosenPluginDirectory = pluginDirectory;
       await page.locator('#choose-plugin').click();
+      await page.waitForFunction(() => window.localPluginAdded);
+      releaseLocalNetwork();
       await page.locator('#back-plugins').waitFor();
       await page.waitForFunction(() => document.activeElement?.id === 'back-plugins');
       assert.equal(await page.locator('#back-plugins').evaluate(el=>el===document.activeElement),true,'Local registration focuses plugin details');
@@ -747,6 +755,7 @@ try {
   if (await dialog().count()) console.error(await dialog().evaluate(el => [...el.querySelectorAll("form,fieldset,header,footer")].map(node => ({ tag: node.tagName, css: node.className, height: node.getBoundingClientRect().height, scroll: node.scrollHeight, client: node.clientHeight, min: getComputedStyle(node).minHeight, flex: getComputedStyle(node).flex }))));
   throw error;
 } finally {
+  releaseLocalNetwork?.();
   holdCatalog = false; releaseCatalog?.();
   await browser.close(); await new Promise(resolve => server.httpServer.close(resolve));
   if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.stdin.end(); await exited; }
