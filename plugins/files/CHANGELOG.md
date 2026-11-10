@@ -8,7 +8,9 @@
 
 [来源提交 Check](https://github.com/BgaSol/soDeck/actions/runs/42914202961) 全部通过，包含五平台核心/插件/共享客户端源码测试及相关浏览器、SSH/SFTP、终端、网络、Docker、通信回归。首次草稿索引延迟导致收尾失败，重跑 release 成功，未重编译或覆盖包。
 
-发行：[files 0.10.1](https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.10.1)，非 Latest。实际正式版升级专项另行记录；没有将源码或包生命周期测试算作生产服务器、真实 IME/DPI/Wayland 或所有设备兼容验收。
+发行：[files 0.10.1](https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.10.1)，非 Latest。[真实正式版升级 0.10.0 → 0.10.1](https://github.com/BgaSol/soDeck/actions/runs/42919802460) 五平台通过，宿主固定为核心 0.23.1，验证下载校验、升级前原进程保留、重启激活及设置/服务器资料保留。没有将源码或包生命周期测试算作生产服务器、真实 IME/DPI/Wayland 或所有设备兼容验收。
+
+[正式包组合](https://github.com/BgaSol/soDeck/actions/runs/42919779115) 与核心 0.23.1、terminal 0.8.2、files 0.10.1、network-proxy 0.4.1 在五平台通过 SSH/PTY/SFTP、网络、工作台与重开；系统桌面测试的具体范围及 macOS 默认关联收据跳过见[核心记录](../../docs/releases/v0.23.1.md)。
 
 # 0.10.0
 

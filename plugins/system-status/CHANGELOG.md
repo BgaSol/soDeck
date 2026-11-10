@@ -8,7 +8,7 @@
 
 [来源提交 Check](https://github.com/BgaSol/soDeck/actions/runs/42914202961) 全部通过，包含五平台核心/插件/共享客户端源码测试及相关浏览器、SSH/SFTP、终端、网络、Docker、通信回归。
 
-发行：[system-status 0.4.3](https://github.com/BgaSol/soDeck/releases/tag/plugin-system-status-v0.4.3)，非 Latest。实际正式版升级专项另行记录；没有将源码或包生命周期测试算作生产服务器、真实 IME/DPI/Wayland 或所有设备兼容验收。
+发行：[system-status 0.4.3](https://github.com/BgaSol/soDeck/releases/tag/plugin-system-status-v0.4.3)，非 Latest。[真实正式版升级 0.4.2 → 0.4.3](https://github.com/BgaSol/soDeck/actions/runs/42919816802) 五平台通过，宿主固定为核心 0.23.1，验证下载校验、升级前原进程保留、重启激活及设置/服务器资料保留。没有将源码或包生命周期测试算作生产服务器、真实 IME/DPI/Wayland 或所有设备兼容验收。
 
 # 0.4.2
 
