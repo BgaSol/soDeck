@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Docker</title><link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="style.css"></head>
+<body>
+<main id="app">
+  <header><div class="heading"><h1 id="title">Docker</h1><span id="state">正在读取</span></div><div class="toolbar"><button id="refresh" type="button">刷新</button><button id="cancel" type="button" hidden>取消等待</button><button id="pause" type="button" hidden>暂停刷新</button></div></header>
+  <p id="notice" role="status" hidden></p>
+  <section id="engine-bar"><span id="engine-name">等待 Engine</span><span id="engine-version"></span><span id="endpoint"></span></section>
+  <div id="scroll">
+    <section id="browser" hidden>
+      <details id="connection"><summary>Docker 连接</summary><form id="endpoint-form"><label for="socket">远端 Unix socket</label><input id="socket" type="text" spellcheck="false" autocomplete="off"><button type="submit">保存连接</button><p class="muted">Rootless Engine 请填写其实际 socket。客户端无需安装 Docker。</p></form></details>
+      <div class="filters"><label for="query">搜索容器</label><input id="query" type="search" placeholder="名称、镜像、标签或 ID" autocomplete="off"><div class="filter-row"><select id="status-filter" aria-label="容器状态"><option value="running">运行中</option><option value="all">全部</option><option value="abnormal">异常</option><option value="exited">已停止</option><option value="paused">已暂停</option></select><select id="health-filter" aria-label="健康状态"><option value="all">全部健康状态</option><option value="healthy">健康</option><option value="unhealthy">不健康</option><option value="none">未配置</option></select></div><label class="check"><input id="group" type="checkbox">按 Compose 项目排列</label></div>
+      <div class="toolbar selection"><button id="open-detail" type="button" disabled>打开详情</button><button id="open-log" type="button" disabled>查看日志</button><span id="count" class="muted"></span></div>
+      <div id="list" role="listbox" aria-label="容器列表"></div><p id="empty" class="muted" hidden>没有符合条件的容器</p>
+      <div class="paging"><button id="previous" type="button" disabled>上一页</button><span id="page-label"></span><button id="next" type="button" disabled>下一页</button></div>
+    </section>
+    <section id="container" hidden>
+      <div class="identity"><span id="container-id"></span><button id="copy-id" type="button">复制 ID</button></div>
+      <div id="actions" class="toolbar"><button data-operation="start">启动</button><button data-operation="stop">停止</button><button data-operation="restart">重启</button><button data-operation="pause">暂停</button><button data-operation="unpause">恢复</button><button data-operation="remove" class="danger">删除容器</button><button id="detail-logs">查看日志</button></div>
+      <p id="operation" role="status" hidden></p>
+      <section class="metrics"><div class="section-title"><h2>资源快照</h2><button id="read-stats" type="button">读取资源</button></div><p class="muted">按需读取 · 数值来自 Docker CLI，网络和块 I/O 为累计量。</p><dl id="stats"><dt>状态</dt><dd>尚未读取</dd></dl></section>
+      <nav id="sections" aria-label="容器详情分区"></nav><label id="show-env-label" class="check" hidden><input id="show-env" type="checkbox">显示环境变量值</label><dl id="fields"></dl>
+      <div class="paging"><button id="fields-prev" type="button" disabled>上一页</button><span id="fields-page"></span><button id="fields-next" type="button" disabled>下一页</button></div>
+    </section>
+    <section id="logs" hidden>
+      <div class="log-toolbar"><label for="tail">最近行数</label><select id="tail"><option>50</option><option selected>200</option><option>500</option></select><label for="log-query">搜索当前快照</label><input id="log-query" type="search" placeholder="日志文本"><button id="copy-logs" type="button">复制当前页</button></div>
+      <p class="muted">刷新替换最近日志快照；两路输出分别标记，不保证严格全局顺序。</p><pre id="log-content" tabindex="0" aria-label="最近容器日志"></pre>
+      <div class="paging"><button id="logs-prev" type="button" disabled>上一页</button><span id="logs-page"></span><button id="logs-next" type="button" disabled>下一页</button></div>
+    </section>
+  </div>
+  <footer><span id="freshness">等待首次采集</span><span id="busy"></span></footer>
+</main>
+<dialog id="confirm"><form method="dialog"><h2 id="confirm-title">确认操作</h2><p id="confirm-object"></p><p id="confirm-impact"></p><div class="toolbar"><button value="cancel">取消</button><button id="confirm-submit" value="submit">确认</button></div></form></dialog>
+<script src="bridge.js"></script><script src="text-menu.js"></script><script src="clipboard-bridge.js"></script><script src="view.js" type="module"></script>
+</body>
+</html>

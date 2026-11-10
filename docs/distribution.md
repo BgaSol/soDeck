@@ -56,13 +56,15 @@ Windows x86_64 与 ARM64 的 NSIS 新安装统一使用 `perMachine`，默认目
 
 ## 仓库维护
 
-每个 Rust 插件在 `plugins/<名称>/` 包含：Cargo.toml（唯一版本来源）、Cargo.lock、release.json（ID、名称、API、二进制名、标签前缀）、CHANGELOG.md 和 src/。现有业务目录为 terminal、files、network-proxy 和 system-status。新增其他语言插件时再扩展构建适配，不提前建立通用构建框架。
+每个 Rust 插件在 `plugins/<名称>/` 包含：Cargo.toml（唯一版本来源）、Cargo.lock、release.json（ID、名称、API、二进制名、标签前缀）、CHANGELOG.md 和 src/。现有业务目录为 terminal、files、network-proxy、system-status 和 docker。新增其他语言插件时再扩展构建适配，不提前建立通用构建框架。
 
 `release.json` 同时作为仓库中的官方发现元数据，不另建集中名单。`id`、`name`、`tagPrefix` 必填；可选 `description` 为用途说明、`icon` 为核心图标名称（缺省使用通用图标）、`order` 为显示顺序（缺省 0，再按 ID 排序）。这些展示字段不改变实际插件包、版本来源或 API。ID 与标签前缀在官方配置中各自唯一；无效配置或不完整目录会使本次刷新失败并保留上次完整缓存，不能用部分结果覆盖名单。
 
 新增官方插件时，将自身目录和发行配置合入 main，再用现有 `Package plugin` 工作流发布自己的正式 Release。名单更新无需修改或重新发布核心，也不需要生成聚合索引、修改旧 Release 附件。配置出现后可被发现，只有正式 Release 有兼容 API、本机平台的包时才可安装；移除该发行配置后下次成功刷新不再列出，但已有用户的插件记录与更新来源保留。旧版核心仍使用自身的固定名单，需要先升级到支持仓库发现的核心版本一次。
 
 系统状态沿用独立 `Package plugin` 和 `plugin-system-status-v` 标签。五个原生打包任务解开本次归档，验证包内程序的 initialize、重复 mount、pause、dispose 和 shutdown 及 UI 资源；远端采集另外通过 `npm run system-status:test` 验证，归档烟测不能代替各远端系统验收。0.1.0 已独立发行，核心 0.10.0 登记官方下载来源；包来源、原始 run、Release 和实际验证范围见[插件 CHANGELOG](../plugins/system-status/CHANGELOG.md)，实现边界见[实施记录](implementation-system-status.md)。
+
+Docker 使用同一独立 `Package plugin` 工作流和 `plugin-docker-v` 标签。五个原生任务解开真实归档，验证包内进程的初始化、查询、操作去重、日志搜索、关闭与正常退出；Check 在 Linux x86_64 上运行真实核心、隔离 Engine 和 OpenSSH 的业务联调及 UI 回归。归档进程验收不能代替真实 Engine 或原生 WebView 交互验收。本次实际运行范围见[实施记录](implementation-docker-plugin.md)；0.1.0 尚未发布。
 
 插件包与更新清单使用同一 Cargo 元数据读取函数，按插件 `Cargo.toml` 路径选择包版本，不依赖 TOML 表的顺序或空格写法。`Package plugin` 的选择、打包和 Release 汇总任务均显式安装固定 Rust 工具链；发布标签仍须匹配插件自己的正式版本。
 
@@ -75,6 +77,7 @@ Hello 和组件交互示例已退役，删除了独立工程、官方来源和�
 npm run plugin:build -- --plugin terminal
 npm run plugin:build -- --plugin files
 npm run plugin:build -- --plugin system-status
+npm run plugin:build -- --plugin docker
 npm run plugin:build -- --plugin network-proxy --out-dir artifacts/another-build
 # 发布核心
 # 修改 tauri.conf.json 版本及 docs/releases/v<版本>.md 后提交

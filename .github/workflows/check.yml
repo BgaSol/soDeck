@@ -136,6 +136,7 @@ jobs:
             plugins/files -> target
             plugins/terminal -> target
             plugins/system-status -> target
+            plugins/docker -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
       - run: npx playwright install --with-deps chromium
@@ -154,6 +155,12 @@ jobs:
       - name: Real system status plugin and background sampling
         if: matrix.status
         run: npm run system-status:test
+      - name: Actual Docker plugin with isolated Engine and OpenSSH
+        if: matrix.docker
+        run: npm run docker:test
+      - name: Docker UI and actual native archive
+        if: matrix.docker
+        run: npm run docker:ui:test && npm run docker:package:test
       - name: Three real plugins and shared state communication
         if: matrix.communication
         run: npm run communication:test
@@ -253,6 +260,9 @@ jobs:
       - name: Native system status plugin source tests
         if: matrix.status
         run: cargo test --manifest-path plugins/system-status/Cargo.toml --locked
+      - name: Native Docker plugin source tests
+        if: matrix.docker
+        run: cargo test --manifest-path plugins/docker/Cargo.toml --locked
 
   netem:
     needs: select

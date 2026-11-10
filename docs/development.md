@@ -18,7 +18,7 @@ npm run dev
 | 命令 | 验证内容 |
 | --- | --- |
 | `npm run check` | TypeScript 类型与核心 Rust 格式 |
-| `npm run plugin:check` | 终端、文件、网络隧道和系统状态的 Rust 格式 |
+| `npm run plugin:check` | 终端、文件、网络隧道、系统状态和 Docker 的 Rust 格式 |
 | `npm run scripts:test` | 构建、打包、更新、原生验收和 CI 软件源配置回归 |
 | `npm run test` | 核心 Rust 测试，包含仅测试使用的宿主夹具 |
 | `npm run web:build` | TypeScript 检查与正式前端构建 |
@@ -71,6 +71,12 @@ cargo test --manifest-path src-tauri/Cargo.toml --features test-fixtures --lib -
 | `npm run network:netem` | Linux 私有 network namespace 内的真实延迟、丢包及资源清理 |
 | `npm run system-status:test` | 独立插件包、真实 OpenSSH 采集/隐藏/暂停/关闭和三主题侧栏 |
 | `npm run system-status:ui:test` | 固定数据 UI 与 160/280/480px 布局；`SODECK_TEST_SYSTEM_STATUS_PLUGIN` 可指向实际包 |
+| `npm run docker:test` | 本机原生插件、真实核心与隔离 Linux Docker Engine/OpenSSH；验证单容器操作、日志、资源、断线保留及删容器保留卷 |
+| `npm run docker:process:test` | 实际插件进程与假核心；验证查询复用、跨页搜索、操作去重、丢失回执、失败/中断状态、关闭与资源释放 |
+| `npm run docker:ui:test` | 固定数据 UI、键盘/确认/环境变量/日志搜索、三主题与 200/320/400/900px 布局 |
+| `npm run docker:package:test` | 解开本机真实归档，核对资源并运行包内程序的进程验收与退出 |
+
+Docker 测试先用 `npm run plugin:build -- --plugin docker` 生成本机包，或通过 `SODECK_TEST_DOCKER_PLUGIN` 指定目录；`docker:test` 自行重新构建插件。真实联调需要本机 Docker CLI、支持 privileged 容器的 Linux daemon、`ssh-keygen` 和可下载 Docker/Alpine 镜像的软件源。脚本创建独立 Docker-in-Docker daemon，只共享其测试 Unix socket，不使用宿主 Docker socket；测试结束清理自身容器和测试卷。可用 `SODECK_TEST_ALPINE_MIRROR` 指定测试镜像构建所用的 HTTPS Alpine 仓库根地址。此变量只用于测试，不影响产品。
 
 `network:test` 使用测试依赖 `fast-socks5 1.0.0` 和固定 curl 8.21.0。`scripts/network-tools.mjs` 优先复用匹配版本的 curl；缺少时从 curl 官方下载源码，经 SHA-256 核验后用 CMake 和本机 C 工具链编译测试工具。Windows 源码编译还需要 Visual Studio C++ 构建工具，Linux/macOS 需要 `cmake`、`tar` 和 C 编译器；可用 `SODECK_TEST_CURL` 指向已安装的对应版本。工具缓存于 `artifacts/network-tools/`，不进入核心或插件发行包。
 
@@ -107,6 +113,7 @@ npm run plugin:build -- --plugin terminal
 npm run plugin:build -- --plugin files
 npm run plugin:build -- --plugin network-proxy
 npm run plugin:build -- --plugin system-status
+npm run plugin:build -- --plugin docker
 ```
 
 产物位于 `artifacts/plugins/sodeck-<插件名>_<版本>_<target>`。在应用设置中添加对应目录并重启；正在运行的插件不能原位覆盖，需要关闭并重启后构建，或指定其他输出目录。宿主测试夹具只用于回归，不发行。
@@ -142,9 +149,9 @@ Check 始终响应 main push/PR，不使用 workflow 级 `paths` 跳过。`selec
 | desktop_files 的 windows/linux/macos.rs | 对应系统两架构/一个 macOS 架构的核心测试、文件业务；Windows 另有完整 UI |
 | network_metrics.rs、settings/declaration.rs | 一次 Linux x86_64 完整核心套件；声明变化另走前端相关回归 |
 | 其他已映射核心系统/更新模块 | 五平台原生核心和相关 UI；网络、文件、终端服务分别追加自己的普通业务验收 |
-| 连接、流、生命周期/RPC、平台进程、服务器路由 | 五平台原生核心、Windows UI/SSH、四插件普通业务验收 |
-| 共享 UI/字体/菜单 | 扩大至核心与四插件 UI/普通业务验收；不因此运行 netem 或旧版升级 |
-| 共享 plugin-client、根工具链/锁文件/构建脚本、未知输入 | 五平台核心与四插件源码、相关 UI、普通业务和宿主脚本；仍排除 netem |
+| 连接、流、生命周期/RPC、平台进程、服务器路由 | 五平台原生核心、Windows UI/SSH、五插件普通业务验收 |
+| 共享 UI/字体/菜单 | 扩大至核心与五插件 UI/普通业务验收；不因此运行 netem 或旧版升级 |
+| 共享 plugin-client、根工具链/锁文件/构建脚本、未知输入 | 五平台核心与五插件源码、相关 UI、普通业务和宿主脚本；仍排除 netem |
 
 已知 UI 测试入口也按组件路由：`test-terminal-ui`/`test-files-ui` 仅运行对应普通业务，`test-terminal-input` 仅输入/脚本，核心 UI 测试脚本走前端和完整 desktop。共享 OpenSSH/打包脚本和未映射脚本继续扩大范围。
 
@@ -152,11 +159,11 @@ Check 的 **Run workflow** 先选择需要验证的分支或标签，再选择 `
 
 | suite | 执行范围 |
 | --- | --- |
-| `standard`（默认） | 公共 Linux 核心/四插件格式和源码、前端/脚本/输入/设置回归及 Linux x86_64/ARM64 普通网络；排除 netem、完整 Windows UI |
+| `standard`（默认） | 公共 Linux 核心/五插件格式和源码、前端/脚本/输入/设置回归及 Linux x86_64/ARM64 普通网络；排除 netem、完整 Windows UI |
 | `desktop` | Windows x86_64 顺序执行源码 `ssh:test` 和完整 `ui:test`，包含 Chromium 与终端 UI 依赖 |
 | `native-core` | 五个原生目标各执行 `npm run test`；Windows x86_64、Linux x86_64、macOS ARM64 另执行原宿主脚本回归 |
 | `network-plugin` | 网络插件格式、五个原生目标的 `cargo test --manifest-path plugins/network-proxy/Cargo.toml --locked`，不构建核心测试夹具 |
-| `all` | 核心与四插件五平台源码、完整 Windows UI/SSH、普通网络/文件/终端和脚本回归；同一 job 顺序执行，矩阵并行；排除 netem |
+| `all` | 核心与五插件五平台源码、完整 Windows UI/SSH、普通网络/文件/终端和脚本回归；同一 job 顺序执行，矩阵并行；排除 netem |
 | `netem` | 单独运行 Linux x86_64/ARM64 私有 namespace 弱网矩阵；成功/失败报告 Artifact 保留 14 天，不安装 Chromium 或 OpenSSH |
 
 原宿主脚本回归为 `collect-core.test.mjs`、`core-release.test.mjs`、`plugin-settings-assets.test.mjs`、`release-metadata.test.mjs` 和 `smoke.test.mjs`；在 `native-core`/`all` 和共享未知输入下于 Windows x86_64、Linux x86_64、macOS ARM64 执行。自动选择仍以既有套件为单位，不能独立切分时运行较大范围；需要额外验证时可对同一 ref 补做手动套件。真实包组合与升级保持原入口，不把工作流选择当作已验收。
@@ -169,7 +176,7 @@ Check 的 **Run workflow** 先选择需要验证的分支或标签，再选择 `
 
 CI 的 npm 下载缓存按任务实际使用的锁文件配置；核心打包只使用根锁文件，终端 UI 测试同时使用终端锁文件。Rust 缓存区分日常 `check-tests`、正式核心 `core-release-v2` 和各插件，只有成功的 main 运行保存，其他引用尝试恢复；插件及其原生测试显式覆盖共享 plugin-client 清单。升级验收夹具使用 `check-tests`，不恢复发行缓存。
 
-包含核心的原生测试统一声明现有核心/四插件 workspace 输入，复用同一稳定 `check-tests` 键，避免每个组件/平台范围生成大份重复核心依赖。声明缓存目录不启动对应插件测试；实际执行仍由所选范围控制。仅插件的原生 job 保留小范围 workspace，不恢复核心 target。发行缓存仍只有核心自身输入。
+包含核心的原生测试统一声明现有核心/五插件 workspace 输入，复用同一稳定 `check-tests` 键，避免每个组件/平台范围生成大份重复核心依赖。声明缓存目录不启动对应插件测试；实际执行仍由所选范围控制。仅插件的原生 job 保留小范围 workspace，不恢复核心 target。发行缓存仍只有核心自身输入。
 
 `core-release-v2` 是一次性的缓存迁移标识，不随提交、版本或 run ID 变化。它保留固定 action 的默认工具链/环境/Cargo 输入隔离，只缓存依赖编译结果；宿主构建依赖与目标架构 release 依赖一并保留，不开启 workspace crate 或 incremental 缓存。恢复后仍执行 `npm ci`、当前前端及当前核心的正式构建。main 手动打包会保存依赖，后续适用分支和标签可恢复默认分支缓存；详见[分发文档](distribution.md)。Linux 打包依赖安装复用官方软件源修正与有限重试，不缓存系统安装状态。
 

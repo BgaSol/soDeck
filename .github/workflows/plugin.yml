@@ -102,6 +102,9 @@ jobs:
       - name: Verify actual system status archive
         if: needs.select.outputs.plugin == 'system-status'
         run: node scripts/test-system-status-package.mjs
+      - name: Verify actual Docker archive
+        if: needs.select.outputs.plugin == 'docker'
+        run: node scripts/test-docker-package.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: Plugin-${{ needs.select.outputs.plugin }}-${{ matrix.name }}

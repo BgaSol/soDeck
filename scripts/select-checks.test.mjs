@@ -25,6 +25,16 @@ test('frontend layout keeps UI verification without SSH/network/native source su
 });
 
 test('a plugin only selects its own source and normal business tests', () => {
+  const docker = selectChecks(['plugins/docker/src/runtime.rs']);
+  assert.deepEqual(docker.plugins, ['docker']);
+  assert.equal(docker.native.length, 5);
+  assert(docker.native.every(t => t.docker && !t.core));
+  assert.equal(docker.integration.length, 1);
+  assert(docker.integration[0].docker);
+  assert(selectionSummary(docker).includes('linux-x86_64: docker'));
+  const dockerUi = selectChecks(['scripts/test-docker-ui.mjs']);
+  assert.deepEqual(dockerUi.native, []);
+  assert(dockerUi.integration[0].docker && !dockerUi.integration[0].files && !dockerUi.desktop);
   const status = selectChecks(['plugins/system-status/src/scheduler.rs']);
   assert.deepEqual(status.plugins, ['system-status']);
   assert(status.native.length === 5 && status.native.every(t => t.status && !t.core));

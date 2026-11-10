@@ -10,7 +10,7 @@ export const targets = [
   { name: 'linux-aarch64', runner: 'ubuntu-22.04-arm', target: 'aarch64-unknown-linux-gnu' },
   { name: 'macos-aarch64', runner: 'macos-15', target: 'aarch64-apple-darwin' },
 ];
-const pluginNames = ['terminal', 'files', 'network-proxy', 'system-status'];
+const pluginNames = ['terminal', 'files', 'network-proxy', 'system-status', 'docker'];
 const git = (cwd, args) => execFileSync('git', args, { cwd, encoding: 'utf8', windowsHide: true,
   stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 16 * 1024 * 1024 });
 
@@ -91,7 +91,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
         core(); ui();
         continue;
       }
-      const match = file.match(/^plugins\/(terminal|files|network-proxy|system-status)\/(.+)$/);
+      const match = file.match(/^plugins\/(terminal|files|network-proxy|system-status|docker)\/(.+)$/);
       if (match) {
         const [, name, relative] = match;
         if(['terminal','files','system-status'].includes(name))plan.communication=true;
@@ -138,6 +138,8 @@ export function selectChecks(files, { suite, fallback } = {}) {
       if (/^scripts\/test-network-netem\.mjs$/.test(file)) { plan.scripts = true; integration.add('network-proxy'); continue; }
       if (/^scripts\/(network-tools|test-network-ui)\.mjs$/.test(file)) { plan.scripts = true; integration.add('network-proxy'); continue; }
       if (/^scripts\/test-system-status-(ui|package)\.mjs$/.test(file)) { plan.scripts = true; integration.add('system-status'); continue; }
+      if (/^scripts\/(docker-process|test-docker(?:-(ui|process|package))?)\.mjs$/.test(file)) { plan.scripts = true; integration.add('docker'); continue; }
+      if (file === 'src-tauri/tests/fixtures/docker_flow.rs') { core(['linux-x86_64']); integration.add('docker'); continue; }
       const pluginUiTest = file.match(/^scripts\/test-(terminal|files)-ui\.mjs$/);
       if (pluginUiTest) { plan.scripts = true; integration.add(pluginUiTest[1]); continue; }
       if (file === 'scripts/test-terminal-input.mjs') { plan.scripts = plan.terminalInput = true; continue; }
@@ -159,7 +161,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
       return row;
     });
   plan.integration = targets.filter(t => t.name.startsWith('linux-') && (integration.has('network-proxy') || (t.name === 'linux-x86_64' && (integration.size||plan.communication))))
-    .map(t => ({ ...t, network: integration.has('network-proxy'),
+    .map(t => ({ ...t, network: integration.has('network-proxy'), docker: t.name === 'linux-x86_64' && integration.has('docker'),
       communication:t.name==='linux-x86_64'&&plan.communication,terminal: t.name === 'linux-x86_64' && integration.has('terminal'), files: t.name === 'linux-x86_64' && integration.has('files'), status: t.name === 'linux-x86_64' && integration.has('system-status') }));
   plan.core = coreTargets.size > 0;
   plan.checks = plan.web || plan.scripts || plan.terminalInput || plan.sharedClient || plan.plugins.length > 0 || plan.core;
@@ -172,8 +174,8 @@ export function selectionSummary(plan) {
     '| Documentation | Always: tracked Markdown structure and local file links |',
     `| Frontend / browser / scripts | ${[plan.web && 'frontend + interactions', plan.web && !plan.desktop && 'standalone settings', plan.terminalInput && 'terminal input', plan.scripts && 'script tests'].filter(Boolean).join(', ') || 'Skipped'} |`,
     `| Plugin format | ${plan.plugins.join(', ') || 'Skipped'} |`,
-    `| Native source tests | ${plan.native.map(t => `${t.name}: ${[t.core && 'core', t.terminal && 'terminal', t.files && 'files', t.network && 'network', t.status && 'system-status', t.scripts && 'scripts'].filter(Boolean).join(', ')}`).join('<br>') || 'Skipped'} |`,
-    `| Normal integration | ${plan.integration.map(t => `${t.name}: ${[t.network && 'network', t.terminal && 'terminal', t.files && 'files', t.status && 'system-status',t.communication&&'component communication'].filter(Boolean).join(', ')}`).join('<br>') || 'Skipped'} |`,
+    `| Native source tests | ${plan.native.map(t => `${t.name}: ${[t.core && 'core', t.terminal && 'terminal', t.files && 'files', t.network && 'network', t.status && 'system-status', t.docker && 'docker', t.scripts && 'scripts'].filter(Boolean).join(', ')}`).join('<br>') || 'Skipped'} |`,
+    `| Normal integration | ${plan.integration.map(t => `${t.name}: ${[t.network && 'network', t.terminal && 'terminal', t.files && 'files', t.status && 'system-status', t.docker && 'docker',t.communication&&'component communication'].filter(Boolean).join(', ')}`).join('<br>') || 'Skipped'} |`,
     `| Windows desktop | ${plan.desktop ? `Full UI${plan.ssh ? ' + SSH' : ''}` : 'Skipped'} |`,
     `| Weak network | ${plan.netem ? 'Explicit manual netem: both native Linux targets' : 'Skipped; manual netem only, including for all'} |`, '',
     'Selections are not test results. Installed-package checks and published-package/upgrade verification remain independent.', ''].join('\n');
