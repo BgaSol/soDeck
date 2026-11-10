@@ -290,6 +290,7 @@ pub struct Runtime {
     pub(crate) clock: u64,
     pub(crate) startup_loading: bool,
     pub(crate) move_receipts: HashMap<String, crate::workbench_move::MoveReceipt>,
+    pub(crate) tool_receipts: HashMap<String, tools::ToolReceipt>,
     pub(crate) window_returns: HashMap<String, crate::workbench_move::WindowReturn>,
     pub(crate) transfers: HashMap<String, crate::workbench_move::Transfer>,
 }
@@ -299,6 +300,7 @@ mod close;
 mod close_poll;
 mod host;
 mod layout;
+mod tools;
 pub(crate) use background::start_background;
 
 #[tauri::command]
@@ -335,6 +337,9 @@ pub fn dispatch(
             .ui_surface_ready(window, text("surfaceId")?)
             .map(|_| Value::Null),
         "moveStatus" => core.workbench_move_status(window, text("id")?),
+        "retryLayoutSave" => core
+            .save_workbench_layout()
+            .map(|saved| json!({"persistence":if saved {"saved"} else {"pending"}})),
         "transferDrained" => core
             .transfer_drained(window, text("id")?)
             .map(|_| Value::Null),

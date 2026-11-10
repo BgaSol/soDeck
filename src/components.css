@@ -33,6 +33,12 @@
   .view-group[data-drop-edge="bottom"]::after { top:50%; }
   .view-group[data-drop-edge="tab"]::after { inset:0 0 auto; height:36px; }
   .workbench-dragging .component-surface { pointer-events:none; }
+  .workbench-dragging { user-select:none; cursor:grabbing; }
+  .workbench-rail { position:relative; }
+  .tool-entry { touch-action:none; cursor:grab; }
+  .tool-entry:disabled { cursor:default; }
+  .workbench-rail[data-tool-drop] { background:var(--accent-bg); outline:1px solid var(--accent); outline-offset:-1px; }
+  .tool-insertion { position:absolute; left:5px; right:5px; height:2px; background:var(--accent); pointer-events:none; }
   [data-dock-preview] { outline:2px solid var(--accent); outline-offset:-2px; background:var(--accent-bg); }
   .workbench-drag-ghost { position:fixed; z-index:10000; padding:7px 12px; background:var(--panel); color:var(--text); border:1px solid var(--accent); border-radius:6px; box-shadow:0 8px 20px #0002; font-size:12px; pointer-events:none; }
   .component-tab-list { display: flex; overflow: auto hidden; scrollbar-width: none; flex: 0 1 auto; min-width: 0; height: 100%; }

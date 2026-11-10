@@ -362,6 +362,13 @@ impl AppCore {
                     let mut ui = self.ui_state();
                     let w = ui.workspaces.get_mut(workspace_id).ok_or("工作台已关闭")?;
                     for view in &op.returning_tools {
+                        let key = w
+                            .views
+                            .iter()
+                            .find(|v| v.id == *view)
+                            .ok_or("工具已关闭")?
+                            .definition_key
+                            .clone();
                         let side = w.preferences[&w
                             .views
                             .iter()
@@ -371,7 +378,7 @@ impl AppCore {
                             .side
                             .clone();
                         let h = w.host_mut(&op.window)?;
-                        h.dock(view, &side, false)?;
+                        h.dock(view, &key, &side, false)?;
                     }
                 }
                 let views: Vec<_> = self

@@ -717,6 +717,9 @@ impl AppCore {
         self.event("workspaces-changed", serde_json::Value::Null);
     }
     pub(crate) fn remember_workbench_layout(&self) {
+        let _ = self.save_workbench_layout();
+    }
+    pub(crate) fn save_workbench_layout(&self) -> Result<bool, String> {
         // Serialize snapshots in call order; disk IO never holds the workbench lock.
         let _io = self.layout_io.lock().unwrap();
         let snapshot = {
@@ -752,14 +755,34 @@ impl AppCore {
             }
         };
         let Some((mut memory, contexts, workspaces, definitions, owners)) = snapshot else {
-            return;
+            return Ok(false);
         };
         let previous = memory.error.clone();
-        let memory_error = memory
-            .capture(&contexts, &workspaces, &definitions, &owners)
+        let result = memory.capture(&contexts, &workspaces, &definitions, &owners);
+        let memory_error = result
+            .as_ref()
             .err()
-            .filter(|e| Some(e) != previous.as_ref());
-        self.ui_state().memory = memory;
+            .filter(|e| Some(*e) != previous.as_ref())
+            .cloned();
+        let mut ui = self.ui_state();
+        ui.memory = memory;
+        for receipt in ui
+            .tool_receipts
+            .values_mut()
+            .filter(|r| !r.expired() && r.result["status"] == "completed")
+        {
+            if contexts.contains(&receipt.context)
+                && workspaces
+                    .get(&receipt.context.workspace_id)
+                    .and_then(|w| w.hosts.get(&receipt.window))
+                    .is_some_and(|h| h.id == receipt.host && h.revision >= receipt.revision)
+            {
+                receipt.result["persistence"] =
+                    serde_json::json!(if result.is_ok() { "saved" } else { "failed" });
+                receipt.result["saveError"] = serde_json::json!(result.as_ref().err());
+            }
+        }
+        drop(ui);
         drop(_io);
         if let Some(error) = memory_error {
             self.log(
@@ -769,6 +792,7 @@ impl AppCore {
                 Some(serde_json::json!({"error":error})),
             );
         }
+        result.map(|_| true)
     }
 
     /// Only the core connection service calls this after successful authentication.

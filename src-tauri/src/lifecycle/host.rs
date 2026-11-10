@@ -193,7 +193,8 @@ impl AppCore {
                                 .is_some_and(|d| d.definition.container == "sidebar")
                         });
                         if is_tool {
-                            let _ = existing.dock(id, "right", false);
+                            let key = &w.views.iter().find(|v| v.id == *id).unwrap().definition_key;
+                            let _ = existing.dock(id, key, "right", false);
                         } else if host.dialogs.contains(id) {
                             existing.dialogs.push(id.clone());
                         } else {
