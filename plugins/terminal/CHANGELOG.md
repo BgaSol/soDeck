@@ -2,7 +2,19 @@
 
 清单取消侧边固定与定位入口推荐。终端仍是中央多实例页面，保留默认“新建终端”行为、自动首开、分屏、移窗及原 PTY 生命周期；没有提高核心 API/UI 主版本或修改业务实现。新版核心也会忽略旧终端清单的侧边定位字段。
 
-本轮代码与本机验证见[工具停靠实施记录](../../docs/implementation-tool-docking.md)。本版独立打包，配合核心 0.21.0；源码检查与五平台实际包验收完成后发布。
+本轮代码与本机验证见[工具停靠实施记录](../../docs/implementation-tool-docking.md)。本版独立打包，配合核心 0.21.0；终端仍负责 PTY 与自身界面，位置、排序和持久化由核心管理。
+
+包来源：[`066df9ec5ed6a0d7fea9c4a4d41e25472995d32e`](https://github.com/BgaSol/soDeck/commit/066df9ec5ed6a0d7fea9c4a4d41e25472995d32e)；原始独立打包：[Package plugin #42763703046](https://github.com/BgaSol/soDeck/actions/runs/42763703046)；源码检查：[Check #42763617373](https://github.com/BgaSol/soDeck/actions/runs/42763617373)；五平台实际包：[Verify native remote plugins #42764368478](https://github.com/BgaSol/soDeck/actions/runs/42764368478)。
+
+五目标均使用原生产物，独立归档的包内程序启动与退出全部通过。实际包验收配合核心 0.21.0、既有正式文件 0.8.0 和网络隧道 0.3.0，验证真实终端输入输出、显示恢复、原生窗口接续、资料重开与正常退出，五平台全部通过。另下载原始五份归档，核对 0.7.2 清单取消侧边推荐、原生架构、GitHub 草稿摘要及更新清单；直接发布同一份六个附件。
+
+多屏混合 DPI、用户业务服务器、netem 和历史版本升级未在本轮专项中验证，完整范围见[核心 0.21.0](../../docs/releases/v0.21.0.md)。
+
+Windows 旧工作台测试未等待异步布局完成导致 CI 断言失败；仅修正测试等待和 CI 镜像配置后的 [Check #42766195900](https://github.com/BgaSol/soDeck/actions/runs/42766195900) 完整 Windows UI、公共检查、五平台原生源码和 Linux 真实业务全部通过。插件及核心产品代码与上述原始包来源保持一致。
+
+正式发行：[terminal 0.7.2](https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.7.2)，保持非 Latest；本轮仓库 Latest 为配套[核心 0.21.0](https://github.com/BgaSol/soDeck/releases/tag/v0.21.0)。
+
+发布后核对标签源码、六个附件与公开更新清单，附件 ID、大小与 SHA-256 保持原始草稿一致。GitHub 补建版本标签触发的[额外打包 #42768600594](https://github.com/BgaSol/soDeck/actions/runs/42768600594) 已取消，不计为发行来源。
 
 # 0.7.1
 
