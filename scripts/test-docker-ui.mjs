@@ -69,7 +69,7 @@ try{
   await frame.locator('#query').fill('absent');await frame.locator('#empty').waitFor({state:'visible'});
   await frame.locator('#query').fill('');await frame.locator('#status-filter').selectOption('all');await frame.locator('.container-row').nth(1).waitFor();
   await frame.locator('.container-row').nth(1).click();await frame.locator('#query').fill('prod');
-  await frame.locator('.container-row[tabindex="0"]').waitFor();assert.equal(await frame.locator('.container-row[tabindex="0"]').getAttribute('data-id'),id);
+  await frame.locator('.container-row[tabindex="0"][data-id="'+id+'"]').waitFor();assert.equal(await frame.locator('.container-row[tabindex="0"]').getAttribute('data-id'),id);
   rows.push(...Array.from({length:58},(_,i)=>({id:(i+1).toString(16).padStart(64,'0'),name:'extra-'+i,image:'extra:1',status:'running'})));
   await frame.locator('#query').fill('');
   await frame.locator('#next:not([disabled])').waitFor();await frame.locator('#next').click();await frame.locator('#page-label').filter({hasText:'51–60'}).waitFor();
