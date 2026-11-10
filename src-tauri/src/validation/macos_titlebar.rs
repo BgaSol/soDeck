@@ -1,9 +1,25 @@
 //! Read AppKit button frames only during the explicit packaged-application smoke test.
 use objc2::MainThreadMarker;
 use objc2_app_kit::{NSWindow, NSWindowButton};
-use std::{sync::mpsc, time::Duration};
+use std::{
+    sync::mpsc,
+    thread,
+    time::{Duration, Instant},
+};
 
 pub(super) fn verify(window: &tauri::WebviewWindow) -> Result<(), String> {
+    // AppKit resets the button frames during resize before Tauri reapplies the position.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let result = measure(window, deadline.saturating_duration_since(Instant::now()));
+        if result.is_ok() || Instant::now() >= deadline {
+            return result;
+        }
+        thread::sleep(Duration::from_millis(16));
+    }
+}
+
+fn measure(window: &tauri::WebviewWindow, timeout: Duration) -> Result<(), String> {
     let label = window.label().to_owned();
     let (send, receive) = mpsc::channel();
     window
@@ -51,6 +67,6 @@ pub(super) fn verify(window: &tauri::WebviewWindow) -> Result<(), String> {
         })
         .map_err(|e| e.to_string())?;
     receive
-        .recv_timeout(Duration::from_secs(5))
+        .recv_timeout(timeout)
         .map_err(|e| format!("无法验证 macOS 原生窗口按钮：{e}"))?
 }

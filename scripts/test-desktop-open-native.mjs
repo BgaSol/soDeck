@@ -10,7 +10,8 @@ import {setTimeout as delay} from 'node:timers/promises';
 assert(process.env.GITHUB_ACTIONS === 'true' || process.env.SODECK_TEST_OPEN_ISOLATED === '1', 'Use a disposable runner or explicitly isolated desktop');
 const [executable, ...launcherArgs] = process.argv.slice(2);
 assert(executable, 'Provide the actual package executable or launcher');
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sodeck-native-open-'));
+// ShellExecute expands Windows short names; compare the same physical path throughout.
+const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'sodeck-native-open-')));
 const log = path.join(root, 'opened.txt'); fs.writeFileSync(log, '');
 const directory = path.join(root, '中文 😀 目录 #%'); fs.mkdirSync(directory);
 const url = `https://example.invalid/sodeck-${path.basename(root)}?q=%E4%B8%AD%E6%96%87&literal=%23%25#once`;
@@ -43,12 +44,15 @@ try {
     const handler = path.join(root,'handler.exe');
     run('rustc', ['scripts/fixtures/desktop-open-handler.rs', '-o', handler], {env:{...env,SODECK_OPEN_HANDLER_LOG:log}});
     const keys = ['http','https','Folder','Directory'].map(name=>'HKCU\\Software\\Classes\\'+name);
-    const saved = keys.map((key,i)=>{
+    const choices = ['http','https'].map(name=>'HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\'+name+'\\UserChoice');
+    const saved = [...keys,...choices].map((key,i)=>{
       const file=path.join(root,`registry-${i}.reg`);
       const result=spawnSync('reg',['export',key,file,'/y'],{windowsHide:true,encoding:'utf8'});
       return {key,file,existed:result.status===0};
     });
     restore=()=>{for(const {key,file,existed} of saved){spawnSync('reg',['delete',key,'/f'],{windowsHide:true});if(existed)run('reg',['import',file]);}};
+    // A disposable profile's UserChoice takes precedence over the temporary scheme handlers.
+    for(const {key,existed} of saved)if(existed&&choices.includes(key))run('reg',['delete',key,'/f']);
     const configure = command => {
       for (const key of keys) {
         if (/http/.test(key)) run('reg',['add',key,'/v','URL Protocol','/d','','/f']);
@@ -92,6 +96,6 @@ try {
   console.log('Actual package opened exact URL/directory once through system defaults, rejected invalid targets and exited.');
 } finally {
   restore();
-  assert.equal(path.dirname(root),os.tmpdir());assert(path.basename(root).startsWith('sodeck-native-open-'));
+  assert.equal(path.dirname(root),fs.realpathSync.native(os.tmpdir()));assert(path.basename(root).startsWith('sodeck-native-open-'));
   fs.rmSync(root,{recursive:true,force:true,maxRetries:8,retryDelay:250});
 }
