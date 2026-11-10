@@ -75,6 +75,9 @@ jobs:
         if: fromJSON(needs.select.outputs.plan).web
       - run: npm run scripts:test
         if: fromJSON(needs.select.outputs.plan).scripts
+      - name: Configure Ubuntu mirror for browser dependencies
+        if: fromJSON(needs.select.outputs.plan).web || fromJSON(needs.select.outputs.plan).terminalInput
+        run: sudo "$(command -v node)" scripts/configure-ubuntu-mirror.mjs
       - run: npx playwright install --with-deps chromium
         if: fromJSON(needs.select.outputs.plan).web || fromJSON(needs.select.outputs.plan).terminalInput
       - run: npm run interactions:test
