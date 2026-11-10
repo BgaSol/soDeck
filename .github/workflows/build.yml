@@ -132,7 +132,8 @@ jobs:
         run: |
           dpkg-deb -x src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb "$RUNNER_TEMP/SoDeck"
           node scripts/verify-binary.mjs "$RUNNER_TEMP/SoDeck/usr/bin/sodeck" '${{ matrix.target }}'
-          export SODECK_TEST_UPDATE_BUNDLE="$(find src-tauri/target/${{ matrix.target }}/release/bundle/appimage -name '*.AppImage' | head -1)"
+          SODECK_TEST_UPDATE_BUNDLE="$(find src-tauri/target/${{ matrix.target }}/release/bundle/appimage -name '*.AppImage' | head -1)"
+          export SODECK_TEST_UPDATE_BUNDLE
           test -n "$SODECK_TEST_UPDATE_BUNDLE"
           node scripts/smoke.mjs dbus-run-session -- xvfb-run -a "$RUNNER_TEMP/SoDeck/usr/bin/sodeck"
           APPIMAGE_EXTRACT_AND_RUN=1 node scripts/smoke.mjs dbus-run-session -- xvfb-run -a src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
@@ -142,7 +143,8 @@ jobs:
           hdiutil attach src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg -nobrowse -readonly -mountpoint "$RUNNER_TEMP/SoDeck"
           trap 'hdiutil detach "$RUNNER_TEMP/SoDeck"' EXIT
           node scripts/verify-binary.mjs "$RUNNER_TEMP/SoDeck/SoDeck.app/Contents/MacOS/sodeck" '${{ matrix.target }}'
-          export SODECK_TEST_UPDATE_BUNDLE="$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name '*.app.tar.gz' | head -1)"
+          SODECK_TEST_UPDATE_BUNDLE="$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name '*.app.tar.gz' | head -1)"
+          export SODECK_TEST_UPDATE_BUNDLE
           test -n "$SODECK_TEST_UPDATE_BUNDLE"
           node scripts/smoke.mjs "$RUNNER_TEMP/SoDeck/SoDeck.app/Contents/MacOS/sodeck"
       - name: Collect verified packages

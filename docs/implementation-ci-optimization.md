@@ -18,9 +18,9 @@
 
 - 本机 `npm run check`、`npm run web:build` 通过。
 - 本机完整 `npm run scripts:test`：98 项通过，覆盖新 browser 选择/汇总、三组矩阵、退出码/缺失可执行程序与 trace 保留规则。
-- 本机 actionlint 1.7.12 校验全部工作流通过；工具 Windows 发行包 SHA-256 与官方 checksum 一致。
+- 本机 actionlint 1.7.12 的工作流语法/表达式检查通过；工具 Windows 发行包 SHA-256 与官方 checksum 一致。本机没有 ShellCheck，不能外推为 Bash 检查也通过。
 - 本机 Windows `npm run ci:test -- ui:test` 完整对照通过，包括服务器 12 项、工作台 21 项、连接、分屏、交互 9 项、正式产物 13 项、桌面策略/终端输入及 settings；成功 trace 已丢弃，结果和日志已保存。
-- GitHub Actions 实际运行结果待补充，不将 YAML/脚本测试或本机 Windows 通过当作 Linux/五平台集成已通过。
+- [首轮 CI 42773155560](https://github.com/BgaSol/soDeck/actions/runs/42773155560) 在 Linux actionlint/ShellCheck 检出核心打包的两个 SC2155：`export VAR="$(find ...)"` 会掩盖赋值命令退出状态。已拆开赋值与导出，不关闭 ShellCheck；后续 CI 及核心打包实际结果待补充。
 
 ## 待完成与风险
 
