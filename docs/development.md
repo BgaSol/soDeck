@@ -103,7 +103,7 @@ Windows 关闭生命周期交互验收使用 `node scripts/test-openssh.mjs --cl
 
 该验收使用显式 `--interactive-test --test-data-dir <隔离目录>` 启动，缺少数据目录拒绝启动；普通启动继续使用原系统应用数据目录。WebView2 数据与 inspector 也限定在该测试进程中，避免连接用户正在运行的应用。此模式不自动执行常规 smoke 或在线检查，但加载已保存的启用插件；不作为用户日常入口。常规包烟测仍由 `scripts/smoke.mjs` 提供，两者结果分别记录。
 
-`Verify published release upgrade` 每次显式选择 `component`、`from_version` 和 `to_version`；插件还必须填写固定的 `core_version`。五个原生 runner 下载精确正式 Release，固定 manifest/附件 ID、摘要与版本，不读取其他组件的最新版本。新版本必须大于旧版本。测试专用 `release-upgrade-fixture` 调用生产插件更新服务和官方 Tauri updater，核对包摘要、实际安装字节、重启激活、设置及服务器资料；Linux 核心升级另验 DEB 系统安装。夹具不发行，固定输入能力只编入 test-fixtures；远程业务和完整更新页面点击另行验证。正常发布无需在仓库提交运行 ID 或修改历史版本常量。
+`Verify published release upgrade` 每次显式选择 `component`、`from_version` 和 `to_version`；插件还必须填写固定的 `core_version`。`platform` 默认 all，修复验收工具后可用相同版本对补跑单个平台；单平台结果不替代其余平台证据。五个原生 runner 下载精确正式 Release，固定 manifest/附件 ID、摘要与版本，不读取其他组件的最新版本。新版本必须大于旧版本。测试专用 `release-upgrade-fixture` 调用生产插件更新服务和官方 Tauri updater，核对包摘要、实际安装字节、重启激活、设置及服务器资料；Linux 核心升级另验 DEB 系统安装。夹具不发行，固定输入能力只编入 test-fixtures；远程业务和完整更新页面点击另行验证。正常发布无需在仓库提交运行 ID 或修改历史版本常量。
 
 系统默认应用验收使用 `node scripts/test-desktop-open-native.mjs <实际包内程序>`，仅在一次性 Actions runner 或显式 `SODECK_TEST_OPEN_ISOLATED=1` 的隔离桌面运行。Windows 编译无控制台 Rust handler，解析测试账户真实 UserChoice ProgID 并临时配置 HTTP/HTTPS 与目录关联，退出时恢复；目录收据按文件系统身份接受 8.3 别名，URL 仍逐字节校验。Linux 使用 xdg-utils、desktop-file-utils 和隔离 XDG 目录，在同一 dbus/Xvfb 会话设置默认 handler。脚本核对唯一 URL 与中文/空格/特殊字符目录各一次、非法目标拒绝和程序退出；Windows/Linux 另设启动器失败用例，Shell 处理坏关联可能超时，超时必须记为失败。`Verify native remote plugins` 显式开启 `desktop_open` 后在所选原生目标调用此入口，Linux 分别运行 DEB 内程序和 AppImage；夹具不发行，结果随 Native-verification-result 上传。
 

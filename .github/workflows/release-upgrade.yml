@@ -3,6 +3,11 @@ name: Verify published release upgrade
 on:
   workflow_dispatch:
     inputs:
+      platform:
+        description: All native platforms or one platform for a fixed version-pair retry
+        type: choice
+        default: all
+        options: [all, windows-x86_64, windows-aarch64, linux-x86_64, linux-aarch64, macos-aarch64]
       component:
         type: choice
         options: [core, terminal, files, network-proxy, system-status, docker]
@@ -21,16 +26,25 @@ permissions:
   contents: read
 
 jobs:
+  select:
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.platforms.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+      - id: platforms
+        env:
+          PLATFORM: ${{ inputs.platform }}
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; import {verificationMatrix} from "./scripts/resolve-native-inputs.mjs"; fs.appendFileSync(process.env.GITHUB_OUTPUT, "matrix=" + JSON.stringify(verificationMatrix(process.env.PLATFORM || "all")) + "\n");'
   upgrade:
+    needs: select
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - {name: windows-x86_64, runner: windows-2025, target: x86_64-pc-windows-msvc}
-          - {name: windows-aarch64, runner: windows-11-arm, target: aarch64-pc-windows-msvc}
-          - {name: linux-x86_64, runner: ubuntu-22.04, target: x86_64-unknown-linux-gnu}
-          - {name: linux-aarch64, runner: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu}
-          - {name: macos-aarch64, runner: macos-15, target: aarch64-apple-darwin}
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
@@ -74,4 +88,5 @@ jobs:
           name: Release-upgrade-${{ matrix.name }}
           path: artifacts/release-upgrade/
           if-no-files-found: warn
+          overwrite: true
           retention-days: 30

@@ -152,8 +152,17 @@ try {
   report.error = error.stack || String(error);
   throw error;
 } finally {
-  fs.writeFileSync(path.join(output, "result.json"), JSON.stringify(report, null, 2));
-  if (fs.existsSync(path.join(data, "logs"))) fs.cpSync(path.join(data, "logs"), path.join(output, "logs"), { recursive: true });
-  // root was created by this script, never provided by a caller.
-  fs.rmSync(root, { recursive: true, force: true });
+  try {
+    if (fs.existsSync(path.join(data, "logs"))) fs.cpSync(path.join(data, "logs"), path.join(output, "logs"), { recursive: true });
+    assert.equal(path.dirname(root), fs.realpathSync(os.tmpdir()));
+    // WebView2 and the native installer can release file handles after process exit.
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
+    report.cleanedUp = true;
+  } catch (error) {
+    report.completed = false;
+    report.cleanupError = String(error.stack ?? error);
+    throw error;
+  } finally {
+    fs.writeFileSync(path.join(output, "result.json"), JSON.stringify(report, null, 2));
+  }
 }
