@@ -43,6 +43,8 @@ Windows 对运行中的测试程序有文件锁，使用同一 Rust target 目�
 
 文件 UI 可用 `node scripts/test-openssh.mjs --files --files-ui-only` 重新独立打包并复验真实 SFTP 界面。文件插件现在有独立 npm 锁文件，打包入口自动安装并检查/构建其 UI；核心构建仍不依赖它。Windows 原生编辑器专项：先独立打包文件插件，将 `SODECK_TEST_FILES_PLUGIN` 指向完整包目录，再运行 `node scripts/test-openssh.mjs --file-editor-native --packaged <本次核心可执行文件>`。该专项使用隔离应用数据和 SSH，验证 WebView2/CSP/worker、编辑功能、保存与退出，不操作日常桌面剪贴板。传入构建目录程序只能证明本机原生运行，发行前仍需实际安装包与五平台验收。
 
+`Verify native remote plugins` 的 `file_editor` 是 Windows 深度界面专项的显式入口，默认关闭，需要运行环境允许 WebView2 调试端口。本次 GitHub Windows 运行器未应用该调试参数，失败发生在测试连接渲染器之前；五平台常规实际包验收继续运行，本机可用正式包执行上述专项。显式选中后失败仍使工作流失败，不计为通过。
+
 `npm run ui:production:test -- --updates-only` 验证正式前端的官方插件发现、安装和统一更新：仓库列表延迟加载、失败重试、运行中新插件出现与移除、离线缓存、连续安装、更新说明 Markdown、链接分发、批量更新，以及下载网络设置的草稿、地址排序/停用、保存冲突、单地址诊断和三主题小窗口布局，不运行后续工作区菜单与拆窗专项。列表、安装和诊断回归使用真实核心及隔离回环 HTTP，不依赖公网。
 
 `npm run test` 的 `tests/update_network.rs` 覆盖线路切换、API/文件健康隔离、URL/偏好校验、设置修订冲突、下载中断/损坏/取消和单地址诊断；`tests/updates.rs` 包含代理上的完整官方插件安装链路。核心单元测试用官方公开签名向量验证坏包重试与已准备包的离线恢复。公网节点的历史探测与当前源代码测试分别记录在[实施记录](implementation-update-acceleration.md)，不能互相替代。

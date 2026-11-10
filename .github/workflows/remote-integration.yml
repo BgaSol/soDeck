@@ -38,6 +38,10 @@ on:
         description: Verify actual native file clipboard with an isolated provider (core 0.20+)
         type: boolean
         default: false
+      file_editor:
+        description: Run Windows editor UI automation (requires a WebView2 debugging endpoint)
+        type: boolean
+        default: false
 permissions:
   contents: read
   actions: read
@@ -198,16 +202,21 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Installed core architecture mismatch' }
           node scripts/test-openssh.mjs --packaged "$installDir/sodeck.exe"
           if ($LASTEXITCODE -ne 0) { throw 'Actual remote package test failed' }
-          if (Test-Path "$env:SODECK_TEST_FILES_PLUGIN/ui/vendor/editor.js") {
-            npm ci
-            if ($LASTEXITCODE -ne 0) { throw 'File editor test dependencies failed' }
-            node scripts/test-openssh.mjs --file-editor-native --packaged "$installDir/sodeck.exe"
-            if ($LASTEXITCODE -ne 0) { throw 'Actual file editor test failed' }
-          }
           if ('${{ inputs.desktop_files }}' -eq 'true') {
             node scripts/test-desktop-files-native.mjs 'src-tauri/target/${{ matrix.target }}/debug/desktop-files-fixture.exe' "$installDir/sodeck.exe"
             if ($LASTEXITCODE -ne 0) { throw 'Actual file clipboard test failed' }
           }
+      - name: Windows file editor UI automation
+        id: file_editor_test
+        if: runner.os == 'Windows' && inputs.file_editor
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "$env:SODECK_TEST_FILES_PLUGIN/ui/vendor/editor.js")) { throw 'Select files 0.9.0 or later for editor UI automation' }
+          npm ci
+          if ($LASTEXITCODE -ne 0) { throw 'File editor test dependencies failed' }
+          $installDir = Join-Path $env:RUNNER_TEMP 'SoDeck-remote'
+          node scripts/test-openssh.mjs --file-editor-native --packaged "$installDir/sodeck.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Actual file editor test failed' }
       - name: Linux extracted package with independent plugins
         id: linux_test
         if: runner.os == 'Linux'
