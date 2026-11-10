@@ -1,6 +1,7 @@
 // Actual file plugin + independent OpenSSH SFTP, exercised through its shipped iframe UI.
 import assert from 'node:assert/strict';
 import {transferWorkbench} from './workbench-transfer-fixture.mjs';
+import {recordTrace} from './ui-trace.mjs';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import readline from 'node:readline';
 import {spawn,spawnSync} from 'node:child_process';import {createServer} from 'vite';import {chromium} from 'playwright';
 const build=spawnSync('cargo',['build','--manifest-path','src-tauri/Cargo.toml','--features','test-fixtures','--locked','--bin','catalog-fixture'],{stdio:'inherit',windowsHide:true});if(build.status!==0)throw new Error('Fixture build failed');
@@ -13,13 +14,13 @@ fs.writeFileSync(path.join(remote,'gone.txt'),'temporary');
 for(const directory of ['many-a','many-b']){fs.mkdirSync(path.join(remote,directory));for(let i=0;i<215;i++)fs.writeFileSync(path.join(remote,directory,`item-${String(i).padStart(3,'0')}.txt`),'test');}
 const upload=path.join(data,'上传 中文'),downloads=path.join(data,'downloads');fs.mkdirSync(upload);fs.mkdirSync(downloads);fs.mkdirSync(path.join(upload,'空目录'));fs.writeFileSync(path.join(upload,'.hidden'),'ui upload');fs.writeFileSync(path.join(upload,'zero.bin'),Buffer.alloc(0));
 const child=spawn(path.resolve(`src-tauri/target/debug/catalog-fixture${process.platform==='win32'?'.exe':''}`),[path.join(data,'app')],{stdio:['pipe','pipe','inherit'],windowsHide:true,env:{...process.env,SODECK_TEST_UPLOAD_PATH:upload,SODECK_TEST_DOWNLOAD_PATH:local,SODECK_TEST_DOWNLOAD_DIRECTORY:downloads}});
-const pending=[],pages=[],errors=[],requests=[];child.on('exit',()=>{for(const p of pending.splice(0))p.reject(new Error('Core fixture exited'));});
+const pending=[],pages=[],errors=[],requests=[],traces=[];child.on('exit',()=>{for(const p of pending.splice(0))p.reject(new Error('Core fixture exited'));});
 let clipboard='',pauseRead=false,readRelease;
 readline.createInterface({input:child.stdout}).on('line',line=>{const r=JSON.parse(line);const p=pending.shift();if(!p)throw new Error('Unexpected fixture response');r.error?p.reject(new Error(r.error)):p.resolve(r.value);});
 const call=(command,args={})=>new Promise((resolve,reject)=>{pending.push({resolve,reject});child.stdin.write(JSON.stringify({command,args})+'\n');});
 const vite=await createServer({server:{host:'127.0.0.1',port:0}});await vite.listen();const url=vite.resolvedUrls.local[0];const browser=await chromium.launch({headless:true});
 async function pageFor(window){
- const page=await browser.newPage({viewport:{width:1180,height:760}});pages.push(page);page.on('pageerror',e=>errors.push(String(e)));
+ const page=await browser.newPage({viewport:{width:1180,height:760}});pages.push(page);traces.push(await recordTrace(page.context(),'files-'+window));page.on('pageerror',e=>errors.push(String(e)));
  await page.exposeBinding('testInvoke',async(_,command,args={})=>{requests.push({command,args});if(command==='component_data'&&args.request?.action==='input.revision')return {revision:'file-ui-fixture',hasFiles:false};if(command==='clipboard_text'){if(args.operation==='read')return clipboard;clipboard=args.text;return null;}if(command==='component_data'&&args.request?.action==='chunk'&&pauseRead){pauseRead=false;const result=await call(command,{...args,window});await new Promise(resolve=>readRelease=resolve);return result;}return call(command,{...args,window});});
  await page.route(url+'__plugin__/**',route=>{const relative=new URL(route.request().url()).pathname.split('/').slice(3).join('/');const filename=path.join(process.env.SODECK_TEST_FILES_PLUGIN,relative);return route.fulfill({contentType:{'.js':'text/javascript','.css':'text/css','.html':'text/html'}[path.extname(filename)]||'application/octet-stream',body:fs.readFileSync(filename)});});
  await page.route(url+'__fixture_events.js',route=>route.fulfill({contentType:'text/javascript',body:fs.readFileSync('scripts/fixtures/events.js')}));
@@ -196,10 +197,16 @@ try{
  assert.equal(await moved.frameLocator('iframe[title^="设置 file.txt"]').locator('textarea').inputValue(),'draft survives move\n中文');
  await transferWorkbench(call,{window:'workspace-browser',id:board,target:'main'},{sourcePage:moved,openTarget:async()=>main});
  sidebar=main.frameLocator('iframe[title^="文件 ·"]');await wait(()=>sidebar.getByRole('textbox',{name:'远端路径'}).isEnabled());editor=main.frameLocator('iframe[title^="设置 file.txt"]');text=editor.locator('textarea');await wait(()=>text.isEnabled());
- await row('large.bin').click({button:'right'});await sidebar.getByRole('menuitem',{name:'下载',exact:true}).click();await sidebar.locator('.transfer-item').filter({hasText:'等待处理同名 · 下载 · large.bin'}).getByRole('button',{name:'覆盖',exact:true}).click();await wait(()=>fs.existsSync(local)&&fs.statSync(local).size===2*1024*1024);assert.deepEqual(fs.readFileSync(local),Buffer.alloc(2*1024*1024,42));
+ await row('large.bin').click({button:'right'});await sidebar.getByRole('menuitem',{name:'下载',exact:true}).click();
+ const replaceDownload=sidebar.locator('.transfer-item').filter({hasText:'等待处理同名 · 下载 · large.bin'}).getByRole('button',{name:'覆盖',exact:true});
+ const downloadId=(await replaceDownload.getAttribute('data-control')).slice(0,-'/覆盖'.length);
+ await replaceDownload.click();await wait(()=>fs.existsSync(local)&&fs.statSync(local).size===2*1024*1024);assert.deepEqual(fs.readFileSync(local),Buffer.alloc(2*1024*1024,42));
+ // File writes finish before both surfaces receive the task's completion notification.
+ await tasksIdle();await editor.locator(`[data-control="${downloadId}/查看结果"]`).waitFor({state:'attached'});
+ await editor.getByRole('status').filter({hasText:'下载完成'}).waitFor();
  const [v]=await call('connection',{command:{op:'snapshot'}});await call('connection',{command:{op:'disconnect',context:v.context}});await main.evaluate(()=>window.manager.refresh());assert.equal(await text.inputValue(),'draft survives move\n中文');
  await editor.getByRole('button',{name:'导出草稿',exact:true}).click();await editor.getByRole('status').filter({hasText:'草稿已导出'}).waitFor();assert.equal(fs.readFileSync(local,'utf8'),'\uFEFFdraft survives move\r\n中文');
  assert.deepEqual(errors,[]);fs.mkdirSync('artifacts/files-ui',{recursive:true});await main.screenshot({path:'artifacts/files-ui/real-files.png'});
  console.log('Actual files UI passed: folder upload/download, conflict apply-all, remote clipboard, create/rename/delete, pointer move/copy, multi-branch tree, pagination, themes/narrow layout, cross-window draft, BOM/CRLF save, save-and-close, conflict, streamed download and offline export');
-}catch(error){for(const page of pages){console.error(await page.locator('#notice').textContent());for(const frame of page.frames().slice(1)){console.error(await frame.locator('[role="status"]').allTextContents());console.error(await frame.locator('.transfer-item').allTextContents());}fs.mkdirSync('artifacts/files-ui',{recursive:true});await page.screenshot({path:'artifacts/files-ui/failure.png'});}throw error;
-}finally{await browser.close();await vite.close();if(child.exitCode===null){child.stdin.end();await new Promise(resolve=>child.once('exit',resolve));}if(path.dirname(path.resolve(data))!==path.resolve(os.tmpdir())||!path.basename(data).startsWith('sodeck-files-ui-'))throw new Error('Unexpected cleanup');fs.rmSync(data,{recursive:true,force:true});}
+}catch(error){for(const finish of traces)await finish(true);for(const page of pages){console.error(await page.locator('#notice').textContent());for(const frame of page.frames().slice(1)){console.error(await frame.locator('[role="status"]').allTextContents());console.error(await frame.locator('.transfer-item').allTextContents());}fs.mkdirSync('artifacts/files-ui',{recursive:true});await page.screenshot({path:'artifacts/files-ui/failure.png'});}throw error;
+}finally{for(const finish of traces)await finish(false);await browser.close();await vite.close();if(child.exitCode===null){child.stdin.end();await new Promise(resolve=>child.once('exit',resolve));}if(path.dirname(path.resolve(data))!==path.resolve(os.tmpdir())||!path.basename(data).startsWith('sodeck-files-ui-'))throw new Error('Unexpected cleanup');fs.rmSync(data,{recursive:true,force:true});}
