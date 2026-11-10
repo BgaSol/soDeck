@@ -144,12 +144,78 @@ function render() {
   rateText('read', dynamic ? disk.rates?.first : null, !dynamic || Boolean(disk.device && !disk.device.removed));
   rateText('write', dynamic ? disk.rates?.second : null, !dynamic || Boolean(disk.device && !disk.device.removed));
   text('disk-summary', disk.device?.name || '暂不可用');
-  text('network-note', net.device?.counterInstance ? '性能计数器实例，未映射物理网卡。' : (net.device?.addresses || []).join(' · '));
   text('collection-note', (d.cacheLimited ? '缓存达到预算，部分历史或设备列表已缩短。' : '') + '隐藏侧栏继续采集。拓扑每 30 秒、容量和运行时间每 60 秒；设备信息按连接或刷新读取。');
   if (!d.uptime) { text('uptime', '正在读取'); text('uptime-short', '运行时间待读取'); }
   freshness();
 }
 const list = (kind, start = 0) => event({ action: 'list', kind, offset: start });
+function interfaceRecord(node, item) {
+  const name = Object.assign(document.createElement('strong'), { textContent: item?.name || item?.id || '暂不可用' });
+  const addresses = Object.assign(document.createElement('span'), { className: 'interface-addresses', textContent: item?.removed ? '设备已移除' : item?.addresses?.length ? item.addresses.join(' · ') : item?.counterInstance ? '性能计数器实例，未映射物理网卡 · 未提供 IP' : '未提供 IP' });
+  node.replaceChildren(name, addresses);
+}
+function interfaceOptions(items, selected) {
+  const menu = $('interface-options'), trigger = $('interface');
+  const rows = selected?.removed ? [...items, selected] : items;
+  const signature = JSON.stringify(rows);
+  if (menu.dataset.items !== signature) {
+    const focused = menu.contains(document.activeElement) ? document.activeElement.dataset.interfaceId : null;
+    menu.replaceChildren();
+    for (const item of rows) {
+      const button = document.createElement('button');
+      button.type = 'button'; button.dataset.interfaceId = item.id; button.disabled = Boolean(item.removed);
+      button.setAttribute('role', 'option'); button.tabIndex = -1;
+      const record = document.createElement('span'); record.className = 'interface-record'; interfaceRecord(record, item);
+      button.append(record); menu.append(button);
+    }
+    menu.dataset.items = signature;
+    if (focused) [...menu.children].find(button => button.dataset.interfaceId === focused)?.focus();
+  }
+  const focusTarget = [...menu.children].find(button => button.dataset.interfaceId === selected?.id && !button.disabled) || menu.querySelector('button:not(:disabled)');
+  for (const button of menu.children) { button.setAttribute('aria-selected', String(button.dataset.interfaceId === selected?.id)); button.autofocus = button === focusTarget; }
+  const current = rows.find(item => item.id === selected?.id) || selected;
+  const currentSignature = JSON.stringify(current || null);
+  if (trigger.dataset.current !== currentSignature) { interfaceRecord($('interface-current'), current); trigger.dataset.current = currentSignature; }
+  trigger.disabled = !items.length;
+  text('interface-count', items.length ? items.length + ' 个接口' : '');
+  if (trigger.disabled) closeInterfaces();
+  else if (menu.matches(':popover-open')) positionInterfaces();
+}
+function closeInterfaces(focus = false) {
+  if ($('interface-options').matches(':popover-open')) $('interface-options').hidePopover();
+  if (focus) $('interface').focus();
+}
+function positionInterfaces() {
+  const menu = $('interface-options'), r = $('interface').getBoundingClientRect();
+  const below = innerHeight - r.bottom - 8, above = r.top - 8;
+  const down = below >= Math.min(320, menu.scrollHeight) || below >= above;
+  menu.style.width = r.width + 'px'; menu.style.left = r.left + 'px';
+  menu.style.maxHeight = Math.max(0, Math.min(320, down ? below : above)) + 'px';
+  menu.style.top = (down ? r.bottom + 4 : r.top - menu.offsetHeight - 4) + 'px';
+}
+$('interface-options').addEventListener('beforetoggle', e => $('interface').setAttribute('aria-expanded', String(e.newState === 'open')));
+$('interface-options').addEventListener('toggle', e => { if (e.newState === 'open') positionInterfaces(); });
+$('interface-options').addEventListener('click', e => {
+  const button = e.target.closest('button'); if (!button || button.disabled) return;
+  closeInterfaces(true);
+  if (button.dataset.interfaceId === snapshot?.network.device?.id) return;
+  epoch++; lastHistory = 0;
+  void event({ action: 'navigation', state: { interfaceId: button.dataset.interfaceId } }).then(() => poll(true)).catch(error => { actionError = error.message || String(error); freshness(); });
+});
+$('interface-options').addEventListener('keydown', e => {
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeInterfaces(true); return; }
+  if (e.key === 'Tab') { closeInterfaces(true); return; }
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+  e.preventDefault();
+  const buttons = [...$('interface-options').querySelectorAll('button:not(:disabled)')];
+  const index = buttons.indexOf(document.activeElement);
+  const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : (index + (e.key === 'ArrowUp' ? -1 : 1) + buttons.length) % buttons.length;
+  buttons[next]?.focus();
+});
+$('interface').addEventListener('keydown', e => {
+  if (['ArrowDown', 'ArrowUp'].includes(e.key)) { e.preventDefault(); $('interface-options').showPopover(); }
+});
+addEventListener('resize', () => { if ($('interface-options').matches(':popover-open')) positionInterfaces(); });
 function options(select, items, selected) {
   const signature = JSON.stringify([items.map(i => [i.id, i.name]), selected?.removed ? selected : null]);
   if (select.dataset.items !== signature) {
@@ -179,9 +245,10 @@ async function allDevices(kind) {
 async function lists(localEpoch) {
   const [interfaces, disks, files] = await Promise.all([allDevices('interfaces'), allDevices('disks'), list('filesystems', offset)]);
   if (localEpoch !== epoch || !visible) return;
-  if (!group('topology')?.observedAt && !group('dynamic')?.observedAt) { interfaces.length = 0; disks.length = 0; }
+  const devicesKnown = group('topology')?.observedAt || group('dynamic')?.observedAt;
+  if (!devicesKnown) { interfaces.length = 0; disks.length = 0; }
   if (!group('capacity')?.observedAt) { files.items = []; files.total = 0; files.nextOffset = null; }
-  options($('interface'), interfaces, snapshot.network.device);
+  interfaceOptions(interfaces, devicesKnown ? snapshot.network.device : null);
   options($('disk'), disks, snapshot.disk.device);
   nextOffset = files.nextOffset;
   $('previous').disabled = offset === 0; $('next').disabled = nextOffset == null;
@@ -267,14 +334,14 @@ async function control(action) {
 }
 $('refresh').onclick = () => void control('refresh');
 $('pause').onclick = () => void control(snapshot?.paused ? 'resume' : 'pause');
-for (const [id, key] of [['interface', 'interfaceId'], ['disk', 'diskId']]) $(id).onchange = () => {
+$('disk').onchange = () => {
   epoch++; lastHistory = 0;
-  void event({ action: 'navigation', state: { [key]: $(id).value } }).then(() => poll(true)).catch(error => { actionError = error.message || String(error); freshness(); });
+  void event({ action: 'navigation', state: { diskId: $('disk').value } }).then(() => poll(true)).catch(error => { actionError = error.message || String(error); freshness(); });
 };
 $('previous').onclick = () => { offset = Math.max(0, offset - 32); void poll(true); };
 $('next').onclick = () => { if (nextOffset != null) { offset = nextOffset; void poll(true); } };
 let navigationTimer;
-$('scroll').onscroll = () => { clearTimeout(navigationTimer); navigationTimer = setTimeout(() => void event({ action: 'navigation', state: { scrollTop: $('scroll').scrollTop } }).catch(() => {}), 300); };
+$('scroll').onscroll = () => { closeInterfaces(); clearTimeout(navigationTimer); navigationTimer = setTimeout(() => void event({ action: 'navigation', state: { scrollTop: $('scroll').scrollTop } }).catch(() => {}), 300); };
 for (const id of ['device', 'collection', 'disks']) $(id).addEventListener('toggle', () => void event({ action: 'navigation', state: { expandedGroups: ['device', 'collection', 'disks'].filter(id => $(id).open) } }).catch(() => {}));
 $('history-details').addEventListener('toggle', renderHistory);
 function tokens(values) {
@@ -296,12 +363,12 @@ addEventListener('sodeck:mount', e => {
 });
 addEventListener('sodeck:themeChanged', e => tokens(e.detail.tokens));
 addEventListener('sodeck:settingsChanged', e => { settingsApplied(e.detail.settings); void poll(true); });
-addEventListener('sodeck:visibilityChanged', e => { visible = e.detail.visible; epoch++; schedule(); if (visible) void poll(true); });
+addEventListener('sodeck:visibilityChanged', e => { closeInterfaces(); visible = e.detail.visible; epoch++; schedule(); if (visible) void poll(true); });
 addEventListener('sodeck:contextChanged', e => {
   epoch++; lastHistory = 0; expectedContext = e.detail.context; snapshot = undefined; actionError = ''; pollError = ''; offset = 0;
   histories = { cpu: [], memory: [], receive: [], send: [] };
   for (const id of ['filesystems', 'group-details', 'history-values']) { $(id).replaceChildren(); delete $(id).dataset.items; }
-  options($('interface'), [], null); options($('disk'), [], null); $('paging').hidden = true;
+  interfaceOptions([], null); options($('disk'), [], null); $('paging').hidden = true;
   render(); renderHistory(); void poll(true);
 });
-addEventListener('sodeck:unmount', () => { visible = false; epoch++; clearInterval(timer); clearTimeout(navigationTimer); });
+addEventListener('sodeck:unmount', () => { closeInterfaces(); visible = false; epoch++; clearInterval(timer); clearTimeout(navigationTimer); });

@@ -7,11 +7,17 @@ import { path as chartPath } from '../plugins/system-status/ui/charts.js';
 
 const root = path.resolve(process.env.SODECK_TEST_SYSTEM_STATUS_PLUGIN || 'plugins/system-status');
 const observed = Date.now();
+const normalInterfaces = [
+  { id: 'eth0', name: 'eth0', addresses: ['192.168.10.12/24', 'fe80::d019:2cff:fec8:137/64'] },
+  { id: 'eth1', name: 'enp0s31f6', addresses: ['10.0.0.8/16', '10.0.1.8/16', '2001:db8:1234:5678:abcd:ef01:2345:6789/64'] },
+  { id: 'docker0', name: 'docker0', addresses: [] },
+  { id: 'counter', name: 'Windows 网络计数器实例', counterInstance: true }
+];
 const base = {
   context: { workspaceId: 'status-workspace', serverId: 'server-1', connectionId: 'connection-1', generation: 1 },
   revision: 1, connected: true, paused: false, family: 'Linux', intervalSeconds: 5, collecting: false, navigation: {},
   data: { identity: { hostname: 'prod-web-01', system: 'Ubuntu 24.04 LTS', cpuModel: 'Intel Xeon Platinum', cores: 8, architecture: 'x86_64' }, cpu: { value: 23.4 }, memory: { value: 62.1, total: '17179869184', available: '6519760810' }, uptime: { seconds: 1578240 }, load: ['0.42', '0.38', '0.31'] },
-  network: { device: { id: 'eth0', name: 'eth0' }, rates: { first: 131481.6, second: 43827.2 } },
+  network: { device: normalInterfaces[0], rates: { first: 131481.6, second: 43827.2 } },
   disk: { device: { id: '8:0', name: 'nvme0n1' }, rates: { first: 1258291, second: 393216 } },
   groups: ['identity', 'dynamic', 'topology', 'capacity', 'uptime'].map(name => ({ name, observedAt: observed - (name === 'capacity' ? 32000 : 0), staleAfterMs: name === 'dynamic' ? 10000 : 120000 }))
 };
@@ -19,7 +25,7 @@ const normalFiles = [
   { id: 'root', path: '/', total: '85899345920', used: '36721970380', available: '49177375540', percent: 42.8, observedAt: observed - 32000 },
   { id: 'data', path: '/data', total: '536870912000', used: '307090161664', available: '229780750336', percent: 57.2, observedAt: observed - 32000 }
 ];
-let snapshot = structuredClone(base), files = structuredClone(normalFiles), requests = 0, actions = [], seriesKeys = [], historyStep = 5000, allGaps = false, failRefresh = false, failSnapshots = false;
+let snapshot = structuredClone(base), files = structuredClone(normalFiles), interfaces = structuredClone(normalInterfaces), requests = 0, actions = [], seriesKeys = [], historyStep = 5000, allGaps = false, failRefresh = false, failSnapshots = false;
 const windowEnd = 300000;
 assert.equal(chartPath([{ at: windowEnd, value: 20 }], 100, 15000, windowEnd + 120000), 'M144.0 37.2');
 assert.equal(chartPath([{ at: 1000, value: 20 }], 100, 15000, windowEnd + 120000), '');
@@ -52,12 +58,12 @@ await page.exposeFunction('statusRequest', params => {
   if (params.action === 'refresh') { if (failRefresh) throw new Error('刷新失败：远端查询超时'); snapshot.revision++; }
   if (params.action === 'navigation') {
     Object.assign(snapshot.navigation, params.state);
-    if (params.state.interfaceId) { snapshot.network.device = { id: params.state.interfaceId, name: params.state.interfaceId }; snapshot.revision++; }
+    if (params.state.interfaceId) { snapshot.network.device = structuredClone(interfaces.find(item => item.id === params.state.interfaceId)); snapshot.revision++; }
     if (params.state.diskId) { snapshot.disk.device = { id: params.state.diskId, name: params.state.diskId }; snapshot.revision++; }
     return { accepted: true };
   }
   if (params.action === 'list') {
-    const rows = params.kind === 'interfaces' ? [{ id: 'eth0', name: 'eth0' }, { id: 'eth1', name: 'eth1' }] : params.kind === 'disks' ? [{ id: '8:0', name: 'nvme0n1' }, { id: '8:16', name: 'sda' }] : files;
+    const rows = params.kind === 'interfaces' ? interfaces : params.kind === 'disks' ? [{ id: '8:0', name: 'nvme0n1' }, { id: '8:16', name: 'sda' }] : files;
     const offset = params.offset || 0, items = rows.slice(offset, offset + 32);
     return { items, total: rows.length, offset, nextOffset: offset + items.length < rows.length ? offset + items.length : null };
   }
@@ -95,6 +101,14 @@ async function applyTheme(theme) {
 }
 const frame = page.frameLocator('iframe');
 async function refresh() { await frame.getByRole('button', { name: '刷新', exact: true }).click(); await page.waitForFunction(() => !document.querySelector('iframe').contentDocument.querySelector('#refresh').disabled); }
+async function openInterfaces() {
+  await frame.locator('#interface').click();
+  await page.waitForFunction(() => {
+    const doc = document.querySelector('iframe').contentDocument, menu = doc.querySelector('#interface-options'), trigger = doc.querySelector('#interface');
+    return menu.matches(':popover-open') && menu.getBoundingClientRect().width === trigger.getBoundingClientRect().width;
+  });
+}
+async function selectInterface(id) { await openInterfaces(); await frame.locator('[data-interface-id="' + id + '"]').click(); }
 try {
   await page.goto('http://127.0.0.1:' + server.address().port);
   await frame.locator('#cpu').filter({ hasText: '23.4%' }).waitFor();
@@ -106,6 +120,55 @@ try {
   const sendPath = await frame.locator('#network-chart .series.second').getAttribute('d');
   assert.notEqual(receivePath, sendPath);
   assert(seriesKeys.includes('net:eth0:second'));
+  assert.equal(await frame.locator('h1').innerText(), 'prod-web-01', 'Plugin header should identify the server without repeating the host title');
+  assert.equal(await frame.locator('#network-note').count(), 0, 'Addresses belong in the picker');
+  assert.match(await frame.locator('#interface').innerText(), /192\.168\.10\.12\/24.*fe80::d019:2cff:fec8:137\/64/s);
+  await openInterfaces();
+  for (const item of normalInterfaces) {
+    const option = frame.locator('[data-interface-id="' + item.id + '"]');
+    for (const ip of item.addresses || []) assert((await option.innerText()).includes(ip));
+  }
+  assert.match(await frame.locator('[data-interface-id="docker0"]').innerText(), /未提供 IP/);
+  assert.match(await frame.locator('[data-interface-id="counter"]').innerText(), /性能计数器实例/);
+  await page.keyboard.press('ArrowDown');
+  assert.equal(await frame.locator('[data-interface-id="eth1"]').evaluate(e => e === document.activeElement), true);
+  await page.keyboard.press('Enter');
+  await frame.locator('#interface').filter({ hasText: '10.0.1.8/16' }).waitFor();
+  assert.equal(await frame.locator('#interface').evaluate(e => e === document.activeElement), true);
+  await page.reload();
+  await frame.locator('#interface').filter({ hasText: '10.0.1.8/16' }).waitFor();
+  interfaces[1].addresses[0] = '10.0.0.9/16'; snapshot.revision++; await refresh();
+  await frame.locator('#interface').filter({ hasText: '10.0.0.9/16' }).waitFor();
+  await openInterfaces();
+  await page.keyboard.press('Escape');
+  assert.equal(await frame.locator('#interface').getAttribute('aria-expanded'), 'false');
+  assert.equal(await frame.locator('#interface').evaluate(e => e === document.activeElement), true);
+  await selectInterface('eth0');
+  await frame.locator('#interface').filter({ hasText: '192.168.10.12/24' }).waitFor();
+  await frame.locator('#interface').focus(); await page.keyboard.press('ArrowDown');
+  await page.waitForFunction(() => document.querySelector('iframe').contentDocument.activeElement?.dataset.interfaceId === 'eth0');
+  await page.keyboard.press('ArrowDown');
+  interfaces[1].addresses.push('172.16.0.9/16'); snapshot.revision++;
+  await frame.locator('[data-interface-id="eth1"]').filter({ hasText: '172.16.0.9/16' }).waitFor();
+  assert.equal(await frame.locator('[data-interface-id="eth1"]').evaluate(e => e === document.activeElement), true, 'Background topology updates must preserve keyboard focus');
+  await page.keyboard.press('Tab');
+  assert.equal(await frame.locator('#interface').getAttribute('aria-expanded'), 'false');
+  interfaces.push(...Array.from({ length: 40 }, (_, i) => ({ id: 'bridge-' + i, name: 'br-' + i, addresses: ['172.23.' + i + '.1/16'] })));
+  snapshot.revision++; await refresh();
+  await openInterfaces();
+  await page.keyboard.press('End');
+  assert.equal(await frame.locator('[data-interface-id="bridge-39"]').evaluate(e => e === document.activeElement), true);
+  await page.keyboard.press('Enter');
+  await frame.locator('#interface').filter({ hasText: '172.23.39.1/16' }).waitFor();
+  interfaces = structuredClone(normalInterfaces); snapshot.network.device = { id: 'bridge-39', name: '已移除的设备', removed: true }; snapshot.revision++; await refresh();
+  await frame.locator('#interface').filter({ hasText: '设备已移除' }).waitFor();
+  await openInterfaces();
+  assert.equal(await frame.locator('[data-interface-id="bridge-39"]').isDisabled(), true);
+  await frame.locator('[data-interface-id="eth0"]').click();
+  await frame.locator('#interface').filter({ hasText: '192.168.10.12/24' }).waitFor();
+  interfaces = []; snapshot.network.device = null; snapshot.revision++; await refresh();
+  assert.equal(await frame.locator('#interface').isDisabled(), true);
+  interfaces = structuredClone(normalInterfaces); snapshot.network.device = structuredClone(normalInterfaces[0]); snapshot.revision++; await refresh();
   await frame.locator('#device summary').click();
   await frame.locator('#device summary').focus();
   await new Promise(resolve => setTimeout(resolve, 1100));
@@ -130,11 +193,17 @@ try {
   fs.mkdirSync('artifacts/system-status-ui', { recursive: true });
   for (const theme of ['light', 'dark', 'dopamine']) {
     await applyTheme(theme);
-    for (const width of [160, 280, 320, 400, 480]) {
+    for (const width of [160, 200, 240, 280, 320, 400, 480]) {
       await page.setViewportSize({ width, height: 760 });
       await frame.locator('#scroll').evaluate(e => e.scrollTop = 0);
       assert(await frame.locator('body').evaluate(e => e.scrollWidth <= e.clientWidth), theme + ' horizontal overflow at ' + width);
       await page.screenshot({ path: 'artifacts/system-status-ui/' + theme + '-' + width + '.png' });
+      await openInterfaces();
+      const menu = await frame.locator('#interface-options').boundingBox();
+      assert(menu.x >= 0 && menu.x + menu.width <= width && menu.y >= 0 && menu.y + menu.height <= 760, 'Interface menu must stay inside the viewport: ' + JSON.stringify({ theme, width, menu }));
+      assert(await frame.locator('#interface-options').evaluate(e => e.scrollWidth <= e.clientWidth), 'Long IP addresses must wrap');
+      await page.screenshot({ path: 'artifacts/system-status-ui/interfaces-' + theme + '-' + width + '.png' });
+      await page.keyboard.press('Escape');
     }
   }
   await page.setViewportSize({ width: 320, height: 760 });
@@ -185,7 +254,7 @@ try {
   failRefresh = true;
   await refresh(); await frame.locator('#notice').filter({ hasText: '远端查询超时' }).waitFor();
   const beforeAge = snapshot.groups.find(g => g.name === 'dynamic').observedAt;
-  await frame.locator('#interface').selectOption('eth1');
+  await selectInterface('eth1');
   await frame.locator('#notice').filter({ hasText: '远端查询超时' }).waitFor();
   await frame.locator('#disks summary').click(); await frame.locator('#disk').selectOption('8:16');
   await frame.locator('#notice').filter({ hasText: '远端查询超时' }).waitFor();
@@ -257,6 +326,8 @@ try {
   assert.equal(await frame.locator('#cpu').innerText(), '采样中');
   assert.equal(await frame.locator('#memory').innerText(), '采样中');
   assert.equal(await frame.locator('#receive').innerText(), '采样中');
+  assert.equal(await frame.locator('#interface').isDisabled(), true);
+  assert.doesNotMatch(await frame.locator('#interface').innerText(), /enp0s31f6|10\.0\.0\.8|192\.168\.10\.12/);
   assert.equal(await frame.locator('#host-name').innerText(), '服务器');
   assert.equal(await frame.locator('#uptime').textContent(), '正在读取');
   assert.equal(await frame.locator('#architecture').textContent(), '正在读取');
@@ -288,7 +359,7 @@ try {
   assert.equal(await frame.locator('#notice').isVisible(), false);
   assert(actions.includes('refresh') && actions.includes('pause') && actions.includes('resume'));
   assert.deepEqual(errors, []);
-  console.log('Status UI: real three-theme tokens, five widths, two-way history and keyboard, pause/refresh, failure retention, pagination, large/long paths, 30-second gaps, hidden polling, disconnect and unavailable metrics passed.');
+  console.log('Status UI: server header, full-width interface picker with all IPs, keyboard/remount/address updates, three themes and seven widths, two-way history, pause/refresh, failure retention, pagination, large paths, gaps, hidden polling, disconnect and unavailable metrics passed.');
 } finally {
   await browser.close();
   await new Promise(resolve => server.close(resolve));
