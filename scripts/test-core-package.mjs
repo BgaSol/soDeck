@@ -8,7 +8,7 @@ import { verifyBinary } from "./verify-binary.mjs";
 
 const [input, target, commit] = process.argv.slice(2);
 assert(input && target && commit, "Provide package directory, native target and source commit");
-const directory = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-core-verify-"));
+const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-core-verify-")));
 const metadata = JSON.parse(fs.readFileSync(path.join(input, target, "core-artifact.json"), "utf8"));
 const report = { ...metadata, toolCommit: process.env.GITHUB_SHA, passed: false };
 function run(command, args, env = {}) {
@@ -53,5 +53,5 @@ try {
 finally {
   fs.mkdirSync("artifacts/verification", { recursive: true });
   fs.writeFileSync(`artifacts/verification/core-${target}.json`, JSON.stringify(report, null, 2) + "\n");
-  assert.equal(path.dirname(directory), os.tmpdir()); fs.rmSync(directory, { recursive: true, force: true });
+  assert.equal(path.dirname(directory), fs.realpathSync(os.tmpdir())); fs.rmSync(directory, { recursive: true, force: true });
 }

@@ -14,7 +14,7 @@ assert.equal(target, `${process.arch === "arm64" ? "aarch64" : "x86_64"}-${{ win
 const output = path.resolve("artifacts/release-upgrade", target);
 assert(!fs.existsSync(output), "Use a clean output directory for a new verification run");
 fs.mkdirSync(output, { recursive: true });
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-release-upgrade-"));
+const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-release-upgrade-")));
 const data = path.join(root, "data");
 const suffix = process.platform === "win32" ? ".exe" : "";
 const driver = path.resolve(`src-tauri/target/debug/release-upgrade-fixture${suffix}`);
