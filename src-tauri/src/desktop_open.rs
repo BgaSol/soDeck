@@ -50,7 +50,7 @@ mod tests {
         );
         assert!(validate_directory(&std::env::temp_dir()).is_ok());
     }
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn validation_preserves_non_utf8_paths() {
         use std::{ffi::OsString, os::unix::ffi::OsStringExt};
