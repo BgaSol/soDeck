@@ -249,11 +249,16 @@ try {
   await main.waitForFunction(id=>!document.querySelector(`.server-workbench[data-id="${id}"]`).classList.contains('right-open'),aid);
   assert((await componentState("main")).workspaces[aid].left);
   await board.getByRole('button',{name:'文件',exact:true}).click();
+  await main.waitForFunction(id=>document.querySelector(`.server-workbench[data-id="${id}"] .left-rail [data-key="test.workbench:files"]`)?.getAttribute('aria-expanded')==='true',aid);
   assert.equal(await editor.inputValue(),'draft for server A');
   // Move it back so the existing ownership/layout checks keep their initial shape.
   await board.getByRole('button',{name:'网络转发',exact:true}).click();
+  await main.waitForFunction(id=>document.querySelector(`.server-workbench[data-id="${id}"] .left-rail [data-key="test.workbench:forwarding"]`)?.getAttribute('aria-expanded')==='true',aid);
+  await flush(main);await refresh();
   await board.getByRole('button',{name:'网络转发 面板菜单',exact:true}).click();await main.getByRole('menuitem',{name:'移到右侧',exact:true}).click();
+  await main.waitForFunction(id=>document.querySelector(`.server-workbench[data-id="${id}"] .right-rail [data-key="test.workbench:forwarding"]`)?.getAttribute('aria-expanded')==='true',aid);
   await board.getByRole('button',{name:'文件',exact:true}).click();
+  await main.waitForFunction(id=>document.querySelector(`.server-workbench[data-id="${id}"] .left-rail [data-key="test.workbench:files"]`)?.getAttribute('aria-expanded')==='true',aid);
   checks.push('同侧单面板、左右移动保留 viewId 和编辑草稿');
   const closeEditor=()=>board.locator(`[data-component-action="close"][data-key="${editorId}"]`).click();
   await closeEditor();await main.locator('.component-close-dialog').waitFor();await main.getByRole('button',{name:'取消',exact:true}).click();
@@ -337,6 +342,8 @@ try {
   await call('workspace_layout',{window:'main',id:bid,side:'right',width:280});await refresh();
   if(await panel(main,'right').getAttribute('aria-expanded')!=='true')await panel(main,'right').click();
   await main.setViewportSize({width:1000,height:720});await settleLayout();
+  // The click awaits pointer delivery; the asynchronous core layout must settle before measuring a drag.
+  await main.waitForFunction(()=>{const board=document.querySelector('.server-workbench:not([hidden])');return board.classList.contains('left-open')&&board.classList.contains('right-open')&&board.style.getPropertyValue('--effective-left-width')==='280px'&&board.style.getPropertyValue('--effective-right-width')==='280px';});
   await main.evaluate(()=>window.resizeFrames=[...document.querySelectorAll('.component-surface:not([hidden]) iframe')]);assert((await main.evaluate(()=>window.resizeFrames.length))>0,'The resize retention check must include visible surfaces');
   await dragPanel('left',70);assert.equal(await boardWidth('left'),316);assert.equal(await main.locator('.server-workbench:visible').evaluate(el=>el.classList.contains('left-open')&&el.classList.contains('right-open')),true);
   await main.mouse.up();await main.evaluate(()=>window.manager.flush());
