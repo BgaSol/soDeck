@@ -183,7 +183,7 @@ test('summary rejects failed, cancelled or skipped selected jobs rather than rep
 test('browser installation prepares the official Ubuntu source for every selected browser suite', () => {
   const workflow = fs.readFileSync('.github/workflows/check.yml', 'utf8').replaceAll('\r\n', '\n');
   const common = workflow.split('\n  checks:\n')[1].split('\n  network:\n')[0];
-  const preparation = common.match(/- name: Configure official Ubuntu source before browser installation\n\s+if: (.+)\n\s+run: sudo "\$\(command -v node\)" scripts\/configure-ubuntu-mirror\.mjs/);
+  const preparation = common.match(/- name: Configure Ubuntu mirror for browser dependencies\n\s+if: (.+)\n\s+run: sudo "\$\(command -v node\)" scripts\/configure-ubuntu-mirror\.mjs/);
   assert(preparation, 'prepare the official source before Playwright installs system dependencies');
   const browserCondition = common.match(/- run: npx playwright install --with-deps chromium\n\s+if: (.+)/)[1];
   assert(common.indexOf(preparation[0]) < common.indexOf('npx playwright install --with-deps chromium'));

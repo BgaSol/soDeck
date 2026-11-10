@@ -1033,10 +1033,40 @@ fn v2_fixture() -> Fixture {
     let path = f.plugin.join("plugin.json");
     let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     manifest["ui"]["apiVersion"] = json!("2");
+    manifest["ui"]["views"][1]["locateEntry"] = json!(true);
+    manifest["ui"]["views"][1]["defaultPinned"] = json!(true);
     fs::write(path, manifest.to_string()).unwrap();
     f.load().unwrap();
     f
 }
+#[test]
+fn relocated_tool_entry_uses_actual_side_and_excludes_editor_locate_entry() {
+    let f = v2_fixture();
+    let w = f.open("tool-entry");
+    let initial = f.core.ui_snapshot("main").unwrap();
+    let id = initial["workspaces"][&w.context.workspace_id]["left"]
+        .as_str()
+        .unwrap();
+    f.core
+        .ui_action(
+            "main",
+            &w.context,
+            json!({"op":"dock","viewId":id,"side":"right"}),
+        )
+        .unwrap();
+    let snapshot = f.core.ui_snapshot("main").unwrap();
+    let tools = snapshot["workspaces"][&w.context.workspace_id]["tools"]
+        .as_array()
+        .expect("Core must project tool entries from actual placement");
+    let browser = tools
+        .iter()
+        .find(|t| t["key"] == "test.ui:browser")
+        .unwrap();
+    assert_eq!(browser["location"]["side"], "right");
+    assert_eq!(browser["viewId"], id);
+    assert!(tools.iter().all(|t| t["key"] != "test.ui:terminal"));
+}
+
 #[test]
 fn tool_toggle_and_hide_use_actual_dock_after_moving_without_changing_default_side() {
     let f = v2_fixture();
@@ -1045,7 +1075,7 @@ fn tool_toggle_and_hide_use_actual_dock_after_moving_without_changing_default_si
         .host("main")
         .unwrap()
         .left
-        .view_ids[0]
+        .view_ids()[0]
         .clone();
     f.core
         .ui_action(
@@ -1085,8 +1115,191 @@ fn tool_toggle_and_hide_use_actual_dock_after_moving_without_changing_default_si
     let host = state.workspaces[&w.context.workspace_id]
         .host("main")
         .unwrap();
-    assert!(host.right.view_ids.contains(&id) && host.right.active_view_id.is_none());
-    assert!(!host.left.view_ids.contains(&id));
+    assert!(host.right.view_ids().contains(&id) && host.right.active_view_id.is_none());
+    assert!(!host.left.view_ids().contains(&id));
+}
+
+#[test]
+fn tool_slots_move_without_creating_views_and_receipts_preserve_the_committed_result() {
+    let f = Fixture::new();
+    let path = f.plugin.join("plugin.json");
+    let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    manifest["ui"]["apiVersion"] = json!("2");
+    for id in ["second", "third"] {
+        manifest["ui"]["views"].as_array_mut().unwrap().push(json!({"id":id,"title":id,"icon":"folder","container":"sidebar","instancePolicy":"perWorkspace","defaultPinned":true}));
+    }
+    fs::write(path, manifest.to_string()).unwrap();
+    f.load().unwrap();
+    let w = f.open("slot-move");
+    let other = f.open("untouched-server");
+    let snapshot =
+        || f.core.ui_snapshot("main").unwrap()["workspaces"][&w.context.workspace_id].clone();
+    let before = snapshot();
+    let unchanged = f.core.ui_snapshot("main").unwrap()["workspaces"][&other.context.workspace_id]
+        ["host"]
+        .clone();
+    let action = json!({"op":"moveTool","requestId":"empty-slot","key":"test.ui:second","side":"right","beforeKey":null,"revision":before["host"]["revision"]});
+    let result = f
+        .core
+        .ui_action("main", &w.context, action.clone())
+        .unwrap();
+    assert_eq!(result["status"], "completed");
+    assert_eq!(result["persistence"], "saved");
+    let moved = snapshot();
+    assert_eq!(
+        moved["views"].as_array().unwrap().len(),
+        before["views"].as_array().unwrap().len()
+    );
+    assert!(moved["right"].is_null());
+    assert!(moved["host"]["right"]["entries"][0]["viewId"].is_null());
+    assert_eq!(
+        f.core
+            .ui_action("main", &w.context, action.clone())
+            .unwrap(),
+        result
+    );
+    assert_eq!(
+        f.core.workbench_move_status("main", "empty-slot").unwrap(),
+        result
+    );
+    assert!(f
+        .core
+        .workbench_move_status("other-window", "empty-slot")
+        .is_err());
+    let mut conflict = action.clone();
+    conflict["side"] = json!("left");
+    assert!(f.core.ui_action("main", &w.context, conflict).is_err());
+    let mut stale = action;
+    stale["requestId"] = json!("stale-slot");
+    assert_eq!(
+        f.core.ui_action("main", &w.context, stale).unwrap()["status"],
+        "failed"
+    );
+    assert_eq!(snapshot()["host"], moved["host"]);
+    for (request, key, side, before_key) in [
+        ("editor-slot", "test.ui:terminal", "right", Value::Null),
+        ("bad-before", "test.ui:third", "right", json!("missing")),
+        ("bad-side", "test.ui:third", "bottom", Value::Null),
+    ] {
+        assert_eq!(f.core.ui_action("main", &w.context, json!({"op":"moveTool","requestId":request,"key":key,"side":side,"beforeKey":before_key,"revision":moved["host"]["revision"]})).unwrap()["status"], "failed");
+        assert_eq!(snapshot()["host"], moved["host"]);
+    }
+    let opened = f
+        .core
+        .ui_action(
+            "main",
+            &w.context,
+            json!({"op":"open","key":"test.ui:second","requestId":"open-moved"}),
+        )
+        .unwrap()["viewId"]
+        .clone();
+    assert_eq!(snapshot()["right"], opened);
+    let state = snapshot();
+    f.core.ui_action("main", &w.context, json!({"op":"moveTool","requestId":"visible-slot","key":"test.ui:browser","side":"right","beforeKey":"test.ui:second","revision":state["host"]["revision"]})).unwrap();
+    let state = snapshot();
+    assert!(state["left"].is_null());
+    assert_eq!(state["right"], before["left"]);
+    assert_eq!(
+        state["host"]["right"]["entries"][0]["definitionKey"],
+        "test.ui:browser"
+    );
+    f.core.ui_action("main", &w.context, json!({"op":"moveTool","requestId":"hidden-slot","key":"test.ui:second","side":"left","beforeKey":"test.ui:third","revision":state["host"]["revision"]})).unwrap();
+    assert!(snapshot()["left"].is_null());
+    assert_eq!(snapshot()["right"], before["left"]);
+    assert_eq!(
+        f.core.ui_snapshot("main").unwrap()["workspaces"][&other.context.workspace_id]["host"],
+        unchanged
+    );
+    let text = fs::read_to_string(f.root.join("data/workbench-layout.json")).unwrap();
+    let saved: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(saved["schemaVersion"], 2);
+    assert_eq!(
+        saved["servers"][&w.context.server_id]["hosts"]["0"]["tools"]["test.ui:third"]["visible"],
+        false
+    );
+    assert!(!text.contains(opened.as_str().unwrap()));
+    let plan = f
+        .core
+        .ui_close_prepare("main", vec![w.context.workspace_id.clone()], None)
+        .unwrap();
+    f.finish(&plan, "discard").unwrap();
+    assert_eq!(
+        f.core.workbench_move_status("main", "empty-slot").unwrap()["status"],
+        "completed"
+    );
+    let reopened = f
+        .core
+        .accept_connected(ConnectedSession {
+            server_id: w.context.server_id,
+            connection_id: "reopened-slot".into(),
+            endpoint: w.endpoint,
+        })
+        .unwrap();
+    let restored =
+        f.core.ui_snapshot("main").unwrap()["workspaces"][&reopened.context.workspace_id].clone();
+    assert_eq!(
+        restored["host"]["left"]["entries"][0]["definitionKey"],
+        "test.ui:second"
+    );
+    assert!(restored["host"]["left"]["viewIds"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(restored["views"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|v| v["definitionKey"] != "test.ui:second" && v["definitionKey"] != "test.ui:third"));
+}
+
+#[test]
+fn local_tool_save_failure_and_deferred_save_retry_never_replay_the_move() {
+    let f = v2_fixture();
+    let w = f.open("save-slot");
+    let path = f.root.join("data/workbench-layout.json");
+    fs::remove_file(&path).unwrap();
+    fs::create_dir(&path).unwrap();
+    let revision = f.core.ui_snapshot("main").unwrap()["workspaces"][&w.context.workspace_id]
+        ["host"]["revision"]
+        .clone();
+    let result = f.core.ui_action("main", &w.context, json!({"op":"moveTool","requestId":"failed-save","key":"test.ui:browser","side":"right","revision":revision})).unwrap();
+    assert_eq!(result["status"], "completed");
+    assert_eq!(result["persistence"], "failed");
+    assert!(f.core.ui_snapshot("main").unwrap()["layoutSaveError"].is_string());
+    fs::remove_dir(&path).unwrap();
+    assert_eq!(
+        sodeck::component_ui::dispatch(&f.core, "main", "retryLayoutSave", json!({})).unwrap()
+            ["persistence"],
+        "saved"
+    );
+    assert!(f.core.ui_snapshot("main").unwrap()["layoutSaveError"].is_null());
+    assert_eq!(
+        f.core.workbench_move_status("main", "failed-save").unwrap()["persistence"],
+        "saved"
+    );
+    let other = f.open("closing-other");
+    let plan = f
+        .core
+        .ui_close_prepare("main", vec![other.context.workspace_id.clone()], None)
+        .unwrap();
+    let revision = f.core.ui_snapshot("main").unwrap()["workspaces"][&w.context.workspace_id]
+        ["host"]["revision"]
+        .clone();
+    let result = f.core.ui_action("main", &w.context, json!({"op":"moveTool","requestId":"deferred-save","key":"test.ui:browser","side":"left","revision":revision})).unwrap();
+    assert_eq!(result["persistence"], "pending");
+    f.finish(&plan, "cancel").unwrap();
+    sodeck::component_ui::dispatch(&f.core, "main", "retryLayoutSave", json!({})).unwrap();
+    assert_eq!(
+        f.core
+            .workbench_move_status("main", "deferred-save")
+            .unwrap()["persistence"],
+        "saved"
+    );
+    assert_eq!(
+        f.core.ui_snapshot("main").unwrap()["workspaces"][&w.context.workspace_id]["host"]
+            ["revision"],
+        result["revision"]
+    );
 }
 
 #[test]
@@ -1303,14 +1516,14 @@ fn corrupt_or_unknown_layout_is_preserved_and_does_not_disable_workbench() {
         let mut memory = sodeck::workbench_memory::Memory::open(&root);
         assert!(memory.error.is_some());
         assert!(memory.primary("server").is_none());
-        memory
+        assert!(memory
             .capture(
                 &[],
                 &Default::default(),
                 &Default::default(),
                 &Default::default(),
             )
-            .unwrap();
+            .is_err());
         assert_eq!(
             fs::read_to_string(root.join("workbench-layout.json")).unwrap(),
             original
@@ -1693,12 +1906,25 @@ fn return_bookmark_restores_original_group_between_neighboring_tabs_and_tool_doc
         .host("main")
         .unwrap()
         .left
-        .view_ids[0]
+        .view_ids()[0]
         .clone();
     let s = f.core.ui_attach("main", &tool).unwrap();
     f.core
         .ui_surface_ready("main", s["surfaceId"].as_str().unwrap())
         .unwrap();
+    f.core
+        .ui_state()
+        .workspaces
+        .get_mut(&w.context.workspace_id)
+        .unwrap()
+        .host_mut("main")
+        .unwrap()
+        .left
+        .entries
+        .push(sodeck::workbench_layout::ToolSlot {
+            definition_key: "missing.plugin:uncreated".into(),
+            view_id: None,
+        });
     let m = f
         .core
         .prepare_workbench_move(
@@ -1722,6 +1948,10 @@ fn return_bookmark_restores_original_group_between_neighboring_tabs_and_tool_doc
         )
         .unwrap();
     assert_eq!(destination.side.as_deref(), Some("left"));
+    assert_eq!(
+        destination.before_tool_key.as_deref(),
+        Some("missing.plugin:uncreated")
+    );
 }
 #[test]
 fn group_transfer_keeps_group_identity_tab_order_and_return_bookmark_in_an_empty_window() {

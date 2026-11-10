@@ -30,6 +30,14 @@ try{
  const cd=async(id,name)=>send(id,process.platform==='win32'?`Set-Location -LiteralPath '${path.join(directory,name).replaceAll("'","''")}'`:`cd '${path.join(directory,name).replaceAll("'","'\\''")}'`);
  const selected=async(frame=files)=>frame.locator('input[aria-label="远端路径"]').inputValue();const expectPath=async(name,frame=files)=>wait(async()=> (await selected(frame)).replaceAll('\\','/').endsWith('/'+name),'follow '+name);
  await integrate(first);assert.equal(await terminal(first).locator('#status.error:visible').count(),0,'no writes before mount acknowledgement');await cd(first,'cwd-a');await expectPath('cwd-a');
+ const fileFrame=await main.locator('iframe[title^="文件 ·"]').elementHandle();
+ for(const side of ['right','left']){
+  await main.evaluate(()=>manager.refresh());
+  const button=await main.locator('[data-tool-key="sodeck.files:files"]').boundingBox(),rail=await main.locator(`.server-workbench:visible .${side}-rail`).boundingBox();
+  await main.mouse.move(button.x+button.width/2,button.y+button.height/2);await main.mouse.down();await main.mouse.move(rail.x+rail.width/2,rail.y+160,{steps:12});await main.mouse.up();
+  await wait(()=>main.locator(`.${side}-rail [data-tool-key="sodeck.files:files"]`).getAttribute('aria-expanded').then(value=>value==='true'),'file button follows its panel');
+  assert(await fileFrame.evaluate(el=>el.isConnected),'File docking retains the original iframe');await expectPath('cwd-a');
+ }
  const stateSurface=requests.findLast(r=>r.command==='component_ui'&&r.args.operation==='state'&&r.args.args.input.op==='subscribe')?.args.args.surfaceId;
  assert(stateSurface,'real surface watch');
  // The sampler must publish independently of opening its own page.

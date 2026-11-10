@@ -43,6 +43,14 @@ try{
  const getEntry=()=>sidebar.locator('.entry code').textContent();const entry=await getEntry();assert.match(entry,/127\.0\.0\.1:\d+/);
  await sidebar.getByRole('button',{name:'复制',exact:true}).click();await wait(()=>clipboard===entry);assert.equal(clipboard,entry);await cycles();assert.equal(await sidebar.getByRole('button',{name:'已复制',exact:true}).count(),1);
  const echo=()=>new Promise((resolve,reject)=>{const socket=net.connect(Number(entry.split(':').at(-1)),'127.0.0.1',()=>socket.write('ui-real-relay'));socket.once('data',bytes=>{try{assert.equal(bytes.toString(),'ui-real-relay');socket.destroy();resolve();}catch(e){reject(e)}});socket.on('error',reject);socket.setTimeout(8000,()=>{socket.destroy();reject(new Error('UI tunnel timeout'))});});await echo();
+ const networkFrame=await page.locator('iframe[title^="网络隧道 ·"]').elementHandle();
+ for(const side of ['left','right']){
+  await page.evaluate(()=>manager.refresh());
+  const button=await page.getByRole('button',{name:'网络隧道',exact:true}).boundingBox(),rail=await page.locator(`.server-workbench:visible .${side}-rail`).boundingBox();
+  await page.mouse.move(button.x+button.width/2,button.y+button.height/2);await page.mouse.down();await page.mouse.move(rail.x+rail.width/2,rail.y+140,{steps:12});await page.mouse.up();
+  await wait(()=>page.locator(`.${side}-rail [data-tool-key]`).getAttribute('aria-expanded').then(value=>value==='true'));
+  assert(await networkFrame.evaluate(el=>el.isConnected),'Network docking retains the iframe');assert.equal(await getEntry(),entry);await echo();
+ }
  const rulesFile=path.join(data,'plugin-data/sodeck.network-proxy/network-rules.json'),rulesBeforeSettings=fs.readFileSync(rulesFile);
  const preference=await call('settings_page',{pluginId:'sodeck.network-proxy',pageId:'defaults'});
  await call('save_settings',{pluginId:'sodeck.network-proxy',pageId:'defaults',input:{definitionToken:preference.definitionToken,baseRevision:preference.revision,requestId:'new-rule-defaults',values:{defaultType:'socks5',portMode:'fixed',fixedPort:2080}}});

@@ -17,6 +17,9 @@ pub struct Destination {
     pub side: Option<String>,
     pub index: Option<usize>,
     pub edge: Option<String>,
+    pub before_tool_key: Option<String>,
+    pub source_revision: Option<u64>,
+    pub source_context: Option<crate::workspaces::Context>,
     #[serde(default)]
     pub return_to_source: bool,
 }
@@ -28,6 +31,8 @@ pub struct ReturnLocation {
     pub side: Option<String>,
     pub previous_view_id: Option<String>,
     pub next_view_id: Option<String>,
+    pub previous_tool_key: Option<String>,
+    pub next_tool_key: Option<String>,
 }
 impl ReturnLocation {
     fn capture(window: &str, host: &Host, view: Option<&str>, group: Option<&str>) -> Self {
@@ -36,9 +41,9 @@ impl ReturnLocation {
             .or_else(|| view.and_then(|v| host.group_of(v)));
         let side = view
             .and_then(|v| {
-                if host.left.view_ids.iter().any(|id| id == v) {
+                if host.left.view_ids().iter().any(|id| id == v) {
                     Some("left")
-                } else if host.right.view_ids.iter().any(|id| id == v) {
+                } else if host.right.view_ids().iter().any(|id| id == v) {
                     Some("right")
                 } else {
                     None
@@ -48,25 +53,44 @@ impl ReturnLocation {
         let ids = group_id
             .as_ref()
             .and_then(|id| host.groups.get(id))
-            .map(|g| &g.view_ids)
+            .map(|g| g.view_ids.clone())
             .or_else(|| {
                 side.as_ref().map(|s| {
                     if s == "left" {
-                        &host.left.view_ids
+                        host.left.view_ids()
                     } else {
-                        &host.right.view_ids
+                        host.right.view_ids()
                     }
                 })
             });
-        let at = view.and_then(|v| ids?.iter().position(|id| id == v));
+        let at = view.and_then(|v| ids.as_ref()?.iter().position(|id| id == v));
+        let tools = side.as_deref().map(|s| {
+            if s == "left" {
+                &host.left.entries
+            } else {
+                &host.right.entries
+            }
+        });
+        let slot = view.and_then(|view| {
+            tools?
+                .iter()
+                .position(|e| e.view_id.as_deref() == Some(view))
+        });
         Self {
             window_id: window.into(),
             group_id,
             side,
             previous_view_id: at
                 .and_then(|i| i.checked_sub(1))
-                .and_then(|i| ids?.get(i).cloned()),
-            next_view_id: at.and_then(|i| ids?.get(i + 1).cloned()),
+                .and_then(|i| ids.as_ref()?.get(i).cloned()),
+            next_view_id: at.and_then(|i| ids.as_ref()?.get(i + 1).cloned()),
+            previous_tool_key: slot
+                .and_then(|i| i.checked_sub(1))
+                .and_then(|i| tools?.get(i))
+                .map(|e| e.definition_key.clone()),
+            next_tool_key: slot
+                .and_then(|i| tools?.get(i + 1))
+                .map(|e| e.definition_key.clone()),
         }
     }
 }
@@ -108,7 +132,7 @@ pub(crate) struct WindowReturn {
     movements: Vec<Move>,
 }
 impl MoveReceipt {
-    fn expired(&self) -> bool {
+    pub(crate) fn expired(&self) -> bool {
         self.ended_at
             .is_some_and(|at| at.elapsed() > std::time::Duration::from_secs(300))
     }
@@ -145,7 +169,7 @@ impl Transfer {
                 .iter()
                 .map(|id| {
                     self.source_before.group_of(id).unwrap_or_else(|| {
-                        if self.source_before.left.view_ids.contains(id) {
+                        if self.source_before.left.view_ids().contains(id) {
                             "@left".into()
                         } else {
                             "@right".into()
@@ -162,7 +186,7 @@ impl Transfer {
                 self.views
                     .iter()
                     .map(|id| {
-                        if self.target_after.left.view_ids.contains(id) {
+                        if self.target_after.left.view_ids().contains(id) {
                             "@left".into()
                         } else {
                             "@right".into()
@@ -227,12 +251,12 @@ impl Transfer {
                                 .get(id)
                                 .is_some_and(|b| g.view_ids == b.view_ids)
                         })
-                        && current.left.view_ids == before.left.view_ids
-                        && current.right.view_ids == before.right.view_ids
+                        && current.left.entries == before.left.entries
+                        && current.right.entries == before.right.entries
                         && current.dialogs == before.dialogs
                 }
-                "@left" => current.left.view_ids == before.left.view_ids,
-                "@right" => current.right.view_ids == before.right.view_ids,
+                "@left" => current.left.entries == before.left.entries,
+                "@right" => current.right.entries == before.right.entries,
                 id => current
                     .groups
                     .get(id)
@@ -262,7 +286,8 @@ impl Transfer {
             for view in &self.views {
                 target.dock(
                     view,
-                    if self.target_after.left.view_ids.contains(view) {
+                    self.target_after.tool_key(view).ok_or("工具槽位已改变")?,
+                    if self.target_after.left.view_ids().contains(view) {
                         "left"
                     } else {
                         "right"
@@ -278,7 +303,11 @@ impl Transfer {
                 )?,
                 Scope::View { id } => {
                     if let Some(side) = &self.destination.side {
-                        target.dock(id, side, true)?;
+                        let key = self.target_after.tool_key(id).ok_or("工具槽位已改变")?;
+                        target.dock(id, key, side, true)?;
+                        if let Some(before) = self.destination.before_tool_key.as_deref() {
+                            target.move_tool(key, side, Some(before))?;
+                        }
                     } else {
                         let mut group = self
                             .destination
@@ -376,6 +405,8 @@ impl Transfer {
                 source_after.layout = source.layout.clone();
                 source_after.layout_slot = source.layout_slot;
                 source_after.bounds = source.bounds.clone();
+                source_after.left = source.left.clone();
+                source_after.right = source.right.clone();
             }
         } else {
             for view in &self.views {
@@ -459,6 +490,25 @@ impl AppCore {
         };
         if let Some(side) = &book.side {
             destination.side = Some(side.clone());
+            if let Some(host) = target_host {
+                let tools = if side == "left" {
+                    &host.left.entries
+                } else {
+                    &host.right.entries
+                };
+                destination.before_tool_key = book
+                    .next_tool_key
+                    .as_ref()
+                    .filter(|key| tools.iter().any(|e| &e.definition_key == *key))
+                    .cloned()
+                    .or_else(|| {
+                        book.previous_tool_key
+                            .as_ref()
+                            .and_then(|key| tools.iter().position(|e| &e.definition_key == key))
+                            .and_then(|i| tools.get(i + 1))
+                            .map(|e| e.definition_key.clone())
+                    });
+            }
         } else if let Some(host) = target_host {
             let group = book
                 .group_id
@@ -588,6 +638,12 @@ impl AppCore {
         token: &str,
     ) -> Result<serde_json::Value, String> {
         let ui = self.ui_state();
+        if let Some(r) = ui.tool_receipts.get(token) {
+            if r.window != window {
+                return Err("移动回执不属于此窗口".into());
+            }
+            return Ok(r.wire());
+        }
         let r = ui.move_receipts.get(token).ok_or("移动请求不存在")?;
         if r.movement.source != window && r.movement.target != window {
             return Err("移动回执不属于此窗口".into());
@@ -644,7 +700,7 @@ impl AppCore {
             for id in &views {
                 source_after.remove(id);
                 let side = &w.preferences[&ui.resource_view(id)?.definition_key].side;
-                target_after.dock(id, side, false)?;
+                target_after.dock(id, &ui.resource_view(id)?.definition_key, side, false)?;
             }
             let token = self.next_id();
             let movement = Move {
@@ -777,7 +833,10 @@ impl AppCore {
             }
             return Ok(r.movement.clone());
         }
-        if ui.move_receipts.len() >= 4096 {
+        if ui.tool_receipts.contains_key(&token) {
+            return Err("移动 requestId 已被占用".into());
+        }
+        if ui.move_receipts.len() + ui.tool_receipts.len() >= 4096 {
             return Err("移动请求记录已满，请重启后继续".into());
         }
         workspaces.validate_owned(
@@ -790,6 +849,12 @@ impl AppCore {
                 .ok_or("工作台已关闭")?
                 .context,
         )?;
+        if let Some(context) = &destination.source_context {
+            if context.workspace_id != id {
+                return Err("拖动上下文不属于此工作台".into());
+            }
+            workspaces.validate_owned(source, context)?;
+        }
         if self.is_closing()
             || ui.frozen(id)
             || ui.lifecycle.host_closing(id, source)
@@ -802,6 +867,12 @@ impl AppCore {
             return Err("同窗口移动应使用布局操作".into());
         }
         let source_host = w.host(source)?.clone();
+        if destination
+            .source_revision
+            .is_some_and(|revision| revision != source_host.revision)
+        {
+            return Err("布局已改变，请重新拖动".into());
+        }
         let mut source_after = source_host.clone();
         let current_target = w.hosts.get(target);
         let target_revision = current_target.map(|h| h.revision);
@@ -853,7 +924,10 @@ impl AppCore {
                 }
                 source_after.remove(view);
                 if let Some(side) = &destination.side {
-                    target_after.dock(view, side, true)?;
+                    target_after.dock(view, &v.definition_key, side, true)?;
+                    if let Some(before) = destination.before_tool_key.as_deref() {
+                        target_after.move_tool(&v.definition_key, side, Some(before))?;
+                    }
                 } else {
                     let mut group = destination
                         .group_id
@@ -897,6 +971,8 @@ impl AppCore {
                     source_after.layout_slot = source_host.layout_slot;
                     source_after.layout = source_host.layout.clone();
                     source_after.bounds = source_host.bounds.clone();
+                    source_after.left = source_host.left.clone();
+                    source_after.right = source_host.right.clone();
                 }
                 let mut portion = Host::new(format!("portion-{token}"));
                 portion.groups.clear();
@@ -974,6 +1050,8 @@ impl AppCore {
             source_after: if matches!(scope, Scope::Host)
                 || (source != "main"
                     && source_after.view_ids().is_empty()
+                    && source_after.left.entries.is_empty()
+                    && source_after.right.entries.is_empty()
                     && source_after.groups.len() == 1)
             {
                 None

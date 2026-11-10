@@ -421,13 +421,18 @@ fn tool_drops_match_only_the_same_workspace_and_valid_sidebar() {
         y: 44.,
         width: 262.,
         height: 600.,
+        tools: vec![sodeck::windows::ToolRect {
+            key: "test:later".into(),
+            center: 250.,
+        }],
     }];
     assert_eq!(
         hit_dock("child", &docks, 200., 200., "A"),
         DropTarget::Dock {
             window_id: "child".into(),
             workspace_id: "A".into(),
-            side: "left".into()
+            side: "left".into(),
+            before_tool_key: Some("test:later".into()),
         }
     );
     for (x, y, workspace) in [

@@ -19,6 +19,7 @@ for(const file of ['bridge.js','view.js']) {const p=path.join(plugin,'ui',file);
 // Candidate UI restores state without publishing selection or scroll mutations.
 const view=path.join(plugin,'ui/view.js');fs.writeFileSync(view,fs.readFileSync(view,'utf8').replace("function position() {","function position() { if(current?.readOnly)return;").replace("addEventListener('sodeck:themeChanged'","addEventListener('sodeck:surfaceReady',()=>{current.readOnly=false;});\n  addEventListener('sodeck:themeChanged'"));
 const manifest=JSON.parse(fs.readFileSync('scripts/fixtures/workspace-ui/manifest.json','utf8'));manifest.ui.apiVersion='2';
+for(const id of ['spare-one','spare-two'])manifest.ui.views.push({id,title:id,icon:'folder',container:'sidebar',instancePolicy:'perWorkspace',defaultPinned:true});
 const target=spawnSync('rustc',['-vV'],{encoding:'utf8'}).stdout.match(/^host: (.+)$/m)[1];
 fs.writeFileSync(path.join(plugin,'plugin.json'),JSON.stringify({...manifest,target,entry:`fixture${suffix}`}));
 const child=spawn(path.resolve(`src-tauri/target/debug/catalog-fixture${suffix}`),[root],{windowsHide:true,stdio:['pipe','pipe','inherit']});
@@ -153,10 +154,52 @@ try {
   assert(await toolFrame.evaluate(el=>el.isConnected),'Tool docking keeps the same iframe and business instance');
   await main.locator(`.component-tab[data-view="${tool}"]`).click({button:'right'});
   await main.getByRole("menuitem",{name:"停靠到侧栏",exact:true}).click();await main.locator(`.server-workbench[data-id="${wid}"] [data-component-action="panel-menu"][data-key="${toolKey}"]`).click();await main.getByRole("menuitem",{name:"移到右侧",exact:true}).click();
-  await wait(async()=>(await ui()).workspaces[wid].right===tool);
-  await main.locator(`.server-workbench[data-id="${wid}"] .left-rail [data-key="${toolKey}"]`).click();
+  await wait(async()=>(await ui()).workspaces[wid].right===tool&&await main.locator(`.server-workbench[data-id="${wid}"] .left-rail [data-key="${toolKey}"]`).count()===0);
+  assert.equal(await main.locator(`.server-workbench[data-id="${wid}"] .left-rail [data-key="${toolKey}"]`).count(),0);
+  await main.locator(`.server-workbench[data-id="${wid}"] .right-rail [data-key="${toolKey}"]`).click();
   await wait(async()=>(await ui()).workspaces[wid].right===null);
   assert((await ui()).workspaces[wid].host.right.viewIds.includes(tool),'Toggling a relocated tool preserves its actual dock');
+  const board=main.locator(`.server-workbench[data-id="${wid}"]`),spareKey=`${manifest.id}:spare-one`,secondKey=`${manifest.id}:spare-two`;
+  const slots=()=>ui().then(s=>s.workspaces[wid]);
+  const toolsBefore=await slots(),countBefore=toolsBefore.views.length;
+  const dragButton=async(key,side,y,cancel)=>{
+    await refresh();
+    const from=await board.locator(`[data-tool-key="${key}"]`).boundingBox(),to=await board.locator(`.${side}-rail`).boundingBox();
+    await main.mouse.move(from.x+from.width/2,from.y+from.height/2);await main.mouse.down();
+    await main.mouse.move(to.x+to.width/2,to.y+y,{steps:12});
+    if(cancel==='escape')await main.keyboard.press('Escape');
+    if(cancel==='blur')await main.evaluate(()=>dispatchEvent(new Event('blur')));
+    await main.mouse.up();
+  };
+  await dragButton(spareKey,'right',140);
+  await wait(async()=>(await slots()).tools.find(t=>t.key===spareKey)?.location.side==='right');
+  await board.locator(`.right-rail [data-tool-key="${spareKey}"]`).waitFor({state:'visible'});
+  assert.equal((await slots()).views.length,countBefore,'Dragging an uncreated tool does not create a business view');
+  assert.equal((await slots()).right,null,'Dragging a collapsed slot keeps the destination collapsed');
+  const beforeFirst=await board.locator(`[data-tool-key="${spareKey}"]`).boundingBox(),rail=await board.locator('.right-rail').boundingBox();
+  await dragButton(secondKey,'right',beforeFirst.y-rail.y+2);
+  await wait(async()=>{const keys=(await slots()).host.right.entries.map(t=>t.definitionKey);return keys.indexOf(secondKey)<keys.indexOf(spareKey);});
+  const reordered=(await slots()).host;
+  for(const cancel of ['escape','blur']){await dragButton(spareKey,'left',140,cancel);assert.deepEqual((await slots()).host,reordered,'Cancelled gestures never commit');}
+  await dragButton(spareKey,'left',140,'escape');
+  const button=await board.locator(`[data-tool-key="${spareKey}"]`).boundingBox(),leftRail=await board.locator('.left-rail').boundingBox();
+  await main.mouse.move(button.x+button.width/2,button.y+button.height/2);await main.mouse.down();await main.mouse.move(leftRail.x+leftRail.width/2,leftRail.y+150,{steps:10});
+  const currentHost=(await slots()).host;
+  await action({op:'focusGroup',groupId:Object.keys(currentHost.groups).find(id=>id!==currentHost.focusedGroupId)});
+  const changed=(await slots()).host;await main.mouse.up();assert.deepEqual((await slots()).host,changed,'A stale drag cannot overwrite a newer core layout');
+  await dragButton(toolKey,'left',180);
+  await wait(async()=>(await slots()).tools.find(t=>t.key===toolKey)?.location.side==='left');
+  assert.equal((await slots()).left,null,'Moving a hidden existing tool does not reveal it');
+  await board.locator(`.left-rail [data-tool-key="${toolKey}"]`).click();
+  await wait(async()=>(await slots()).left===tool&&await board.locator(`.left-rail [data-tool-key="${toolKey}"]`).getAttribute('aria-expanded')==='true');
+  await dragButton(toolKey,'right',180);
+  await wait(async()=>(await slots()).right===tool&&(await slots()).left===null&&await board.locator(`.right-rail [data-tool-key="${toolKey}"]`).getAttribute('aria-expanded')==='true');
+  assert(await toolFrame.evaluate(el=>el.isConnected),'Button movement retains the original iframe');
+  await board.locator(`[data-tool-key="${spareKey}"]`).focus();await main.keyboard.press('Shift+F10');
+  await main.getByRole('menuitem',{name:'移到左侧',exact:true}).click();
+  await wait(async()=>(await slots()).tools.find(t=>t.key===spareKey)?.location.side==='left');
+  assert.equal((await slots()).views.length,countBefore,'Keyboard movement also keeps empty slots uncreated');
+  for(const theme of ['light','dark','dopamine']){await main.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);await main.screenshot({path:`artifacts/workbench-layout/tools-${theme}.png`});}
   assert.deepEqual(errors,[]);
   console.log('Passed: empty split close, nested splits, independent creation, stable iframe, keyboard/escape resize, zoom, compact recovery, UI v2 page transfer/source return, two-workspace atomic window return and draft continuity; three theme screenshots saved.');
 } catch(error) {

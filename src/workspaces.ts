@@ -10,7 +10,7 @@ export interface Layout { leftOpen: boolean; rightOpen: boolean; leftWidth: numb
 export interface Workspace { context: Context; name: string; endpoint: string; connected: boolean; windowId: string; layout: Layout; viewIds: string[]; activeViewId: string | null }
 interface WorkspaceWindow {id:string;role:string;workspaceIds:string[];activeWorkspace:string|null;ready:boolean}
 export interface Projection { revision: number; window: WorkspaceWindow; workspaces: Workspace[]; incoming: Workspace | null; incomingWorkspaces?:Workspace[]; windows?:WorkspaceWindow[] }
-export type DropTarget = { kind: "strip"; windowId: string; index: number } | {kind:"group";windowId:string;groupId:string;edge:string;index:number} | {kind:"dock";windowId:string;workspaceId:string;side:string} | { kind: "outside"; x: number; y: number } | { kind: "invalid" };
+export type DropTarget = { kind: "strip"; windowId: string; index: number } | {kind:"group";windowId:string;groupId:string;edge:string;index:number} | {kind:"dock";windowId:string;workspaceId:string;side:string;beforeToolKey?:string|null} | { kind: "outside"; x: number; y: number } | { kind: "invalid" };
 type Invoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 interface Gesture { id: string; pointer: number; x: number; y: number; localPoint:{x:number;y:number}; grabX: number; grabY: number; token?: string; starting: boolean; released: boolean; cancelled: boolean; node: HTMLElement; capture: HTMLElement; ghost?: HTMLElement; sampling: boolean }
 interface PanelGesture { id: string; side: PanelSide; pointer: number; x: number; initial: number; width: number; otherWidth: number; handle: HTMLElement; focus?: HTMLElement }

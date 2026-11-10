@@ -71,7 +71,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SODECK_UPGRADE_TARGET: ${{ matrix.target }}
         run: node scripts/test-release-upgrade.mjs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: Release-upgrade-${{ matrix.name }}

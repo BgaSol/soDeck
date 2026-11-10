@@ -87,7 +87,7 @@ Docker 测试先用 `npm run plugin:build -- --plugin docker` 生成本机包，
 
 Windows 关闭生命周期交互验收使用 `node scripts/test-openssh.mjs --close-native --packaged <解包后的sodeck.exe>`，并通过 `SODECK_TEST_TERMINAL_PLUGIN`、`SODECK_TEST_FILES_PLUGIN`、`SODECK_TEST_NETWORK_PLUGIN`、`SODECK_TEST_SYSTEM_STATUS_PLUGIN` 指定四个独立包目录。此入口复用隔离 localhost OpenSSH，运行真实包内 WebView2，检查右上角关闭与原生 CloseRequested、取消保留原 view/草稿和网络转发、再次关闭能够继续、明确放弃不写远端，以及四个受管插件退出、真实流结束与端口可重绑。也检查左右分隔线拖动、捕获期间刷新、Esc 取消、宽度落盘及终端 iframe 保留；窄布局使用 inspector 视口模拟，不替代真实窗口缩放和 DPI 切换。结果写入 `artifacts/close-lifecycle/native-close.json`，拖拽截图写入 `artifacts/panel-resize/`。
 
-该入口还验证嵌套分屏、真实终端页面拖出、PTY 输入/输出接续、返回来源组与空窗口回收。先用 `cargo build --manifest-path src-tauri/Cargo.toml --features test-fixtures --bin native-pointer-fixture --locked` 构建本机架构夹具，并将其完整路径写入 `SODECK_TEST_NATIVE_POINTER`。Rust 夹具通过 windows-sys 绑定按该测试进程定位原生窗口，用系统 DPI 与客户区原点转换坐标，发送真实系统鼠标事件，并在成功/失败时恢复鼠标和 DPI 上下文；不再使用手写 P/Invoke 的 PowerShell 脚本。运行时需要可交互 Windows 桌面，测试窗口会短暂置前。它不替代副屏混合 DPI、整组/工作台手势和其他系统的验收。每次开始清除旧报告，失败写入 `completed: false`。
+该入口还验证嵌套分屏、真实终端页面拖出、PTY 输入/输出接续、返回来源组与空窗口回收，以及工具按钮跨侧保留文件/网络 iframe、草稿与运行中的转发。先用 `cargo build --manifest-path src-tauri/Cargo.toml --features test-fixtures --bin native-pointer-fixture --locked` 构建本机架构夹具，并将其完整路径写入 `SODECK_TEST_NATIVE_POINTER`。Rust 夹具通过 windows-sys 绑定按该测试进程定位原生窗口，用系统 DPI 与客户区原点转换坐标，发送真实系统鼠标事件，并在成功/失败时恢复鼠标和 DPI 上下文；检查器在系统手势期间按该客户区及 DPI 校准，不能使用窄窗口模拟的坐标。运行时需要可交互 Windows 桌面，测试窗口会短暂置前。它不替代副屏混合 DPI、整组/工作台手势和其他系统的验收。每次开始清除旧报告，失败写入 `completed: false`。
 
 实际文件剪贴板验收仅在隔离桌面显式执行：用相同构建入口生成 `desktop-files-fixture`，运行 `node scripts/test-desktop-files-native.mjs <夹具完整路径> <实际包内sodeck程序>`。Linux 在同一 `dbus-run-session -- xvfb-run -a` 会话内运行该 Node 脚本，使提供者与核心共享 CLIPBOARD。脚本使用独立进程提供真实文件格式，验证中文/空格/特殊字符文件与目录、文件→文本的 revision 变化和退出；Linux 另验证 GNOME copied-files 回退。结果写入 `artifacts/native-desktop-files/<target>.json`，不与文本 clipboardNative 混用。测试会替换所在桌面的剪贴板，不在日常用户桌面自动运行。`Verify native remote plugins` 的 `desktop_files` 可选项启用这层实际包验收，要求核心 0.20.0 或更新版本，测试夹具不发行。
 
@@ -124,6 +124,10 @@ npm run plugin:build -- --plugin docker
 核心版本只修改 [src-tauri/tauri.conf.json](../src-tauri/tauri.conf.json)，插件版本只修改各自的 `plugins/<名称>/Cargo.toml`。核心与插件使用独立标签、独立 Release；发布步骤、更新清单和签名配置统一维护在 [分发文档](distribution.md)。
 
 插件版本读取由 `cargo metadata --format-version 1 --no-deps --locked` 解析，并按清单路径选取包，支持合法 TOML 写法与 workspace 版本继承。版本相关脚本测试同样需要上述固定 Rust 工具链；缺少 Cargo 或清单无效时明确失败，不从文本猜测版本。
+
+依赖更新由 [.github/dependabot.yml](../.github/dependabot.yml) 配置：每月检查根目录与终端插件的 npm、核心/共享 plugin-client/五插件的 Cargo，以及 GitHub Actions 引用。各配置块最多保持两个未关闭的常规更新 PR，小版本和补丁更新分组，主版本更新单独审查。
+
+漏洞告警、安全更新与安全更新分组在 GitHub 仓库安全设置中开启，不受常规更新的每月周期和 PR 数量限制。所有依赖更新沿用 Check 与相关验收，由维护者合并；配置不启用自动合并或发布，Node/Rust 工具链仍人工维护。共享客户端与插件的依赖清单、锁文件须核对兼容，源码检查不能替代五平台实际包验收。
 
 | 工作流 | 用途 |
 | --- | --- |

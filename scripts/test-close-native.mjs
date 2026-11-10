@@ -157,19 +157,22 @@ async function verifyWorkbench(workspace, terminal, marker, entry) {
   const emptyGroup=Object.keys(splitState.workspaces[id].host.groups).find(g=>g!==originalGroup);
   if (entry === 'titlebar') {
     const geometry = await nativePointer('arrange', { width: 1100, height: 720 });
+    const display=await page.context().newCDPSession(page);
+    await display.send('Emulation.setDeviceMetricsOverride',{width:Math.floor(geometry.width/geometry.scale),height:Math.floor(geometry.height/geometry.scale),deviceScaleFactor:geometry.scale,mobile:false});
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     console.log('Native pointer geometry:', JSON.stringify({ geometry, viewport: await page.evaluate(() => ({ width: innerWidth, height: innerHeight, dpi: devicePixelRatio, outerWidth, outerHeight })) }));
     await invoke('component_ui',{operation:'action',args:{context:workspace.context,action:{op:'select',viewId:terminal.viewId}}});
     const tab = page.locator(`.component-tab[data-view="${terminal.viewId}"] [data-component-action="select"]`);
     await tab.waitFor();
     const rect = await tab.boundingBox();
-    // The inspector's emulated devicePixelRatio is independent of the native monitor DPI.
+    // Real system pointers require the native viewport and monitor DPI.
     const from = { x: Math.round(geometry.x + (rect.x + rect.width / 2) * geometry.scale), y: Math.round(geometry.y + (rect.y + rect.height / 2) * geometry.scale) };
     const to = { x: geometry.right + 50, y: from.y + 70 };
     assert(to.x < geometry.workRight, 'Native tear-out needs desktop space beside the test window');
     await page.evaluate(() => document.addEventListener('pointerdown', event => { window.nativeDragStart = { view: event.target.closest('.component-tab')?.dataset.view, x: event.clientX, y: event.clientY }; }, { once: true, capture: true }));
     await nativePointer('drag', { from, to });
     assert.equal((await page.evaluate(() => window.nativeDragStart))?.view, terminal.viewId, 'Native pointer must start on the requested page tab');
+    await display.detach();
   } else {
     await invoke('workbench_move',{id,context:workspace.context,requestId:crypto.randomUUID(),scope:{kind:'view',id:terminal.viewId},target:null,destination:null});
   }
@@ -253,6 +256,31 @@ try {
     await until(() => editor.isEnabled(), 'Remote document did not load');
     const draft = `native unsaved draft ${entry}`;
     await editor.fill(draft);
+    const board=page.locator('.server-workbench:visible');
+    const beforeDock=await invoke('component_ui',{operation:'snapshot',args:{}});
+    const networkTool=beforeDock.workspaces[workspace.context.workspaceId].tools.find(tool=>tool.key.startsWith('sodeck.network-proxy:')&&tool.location?.side);
+    assert(networkTool,'Native network tool must have a real slot');
+    const networkFrame=await page.locator('iframe[title^="网络隧道 ·"]').elementHandle(),fileFrame=await page.locator('iframe[title^="文件 ·"]').elementHandle();
+    const geometry=await nativePointer('arrange',{width:1100,height:720});
+    const display=await page.context().newCDPSession(page);
+    await display.send('Emulation.setDeviceMetricsOverride',{width:Math.floor(geometry.width/geometry.scale),height:Math.floor(geometry.height/geometry.scale),deviceScaleFactor:geometry.scale,mobile:false});
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    for(const side of ['left','right']){
+      const button=await board.locator(`[data-tool-key="${networkTool.key}"]`).boundingBox(),rail=await board.locator(`.${side}-rail`).boundingBox();
+      const point=(x,y)=>({x:Math.round(geometry.x+x*geometry.scale),y:Math.round(geometry.y+y*geometry.scale)});
+      await nativePointer('drag',{from:point(button.x+button.width/2,button.y+button.height/2),to:point(rail.x+rail.width/2,rail.y+140)});
+      await until(()=>board.locator(`.${side}-rail [data-tool-key="${networkTool.key}"]`).getAttribute('aria-expanded').then(value=>value==='true'),'Native tool button did not follow its panel');
+      assert(await networkFrame.evaluate(el=>el.isConnected));assert(await fileFrame.evaluate(el=>el.isConnected));
+      assert.equal(await editor.inputValue(),draft);assert.equal(await sidebar.locator('.entry code').textContent(),address);await echo();
+    }
+    await display.detach();
+    const fileButton=board.locator('[data-tool-key="sodeck.files:files"]');
+    if(await fileButton.getAttribute('aria-expanded')!=='true')await fileButton.click();
+    assert.equal(await board.locator('.workbench-rail [aria-label="终端"]').count(),0);
+    const afterDock=await invoke('component_ui',{operation:'snapshot',args:{}});
+    assert.deepEqual(afterDock.workspaces[workspace.context.workspaceId].views.map(v=>v.id).sort(),beforeDock.workspaces[workspace.context.workspaceId].views.map(v=>v.id).sort());
+    fs.mkdirSync('artifacts/workbench-layout',{recursive:true});await page.screenshot({path:`artifacts/workbench-layout/native-tools-${entry}.png`});
+    checks.push(`${entry}: native system-pointer tool docking kept button/panel side, original file/network iframes, draft and live forwarding`);
     const before = await invoke('component_ui', { operation: 'snapshot', args: {} });
     const identity = before.workspaces[workspace.context.workspaceId].views.map(v => v.id).sort();
     const pids = (await invoke('snapshot')).plugins.map(p => p.pid);
