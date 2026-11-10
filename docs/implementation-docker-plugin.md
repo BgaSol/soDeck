@@ -1,6 +1,6 @@
 # Docker 插件第一版实施与验收
 
-记录日期：2026-11-10。组件 `sodeck.docker` 0.1.0，未发布。范围来自[第一版方案](plan-docker-plugin.md)。
+记录日期：2026-11-10。组件 `sodeck.docker` 0.1.0。范围来自[第一版方案](plan-docker-plugin.md)，发行来源见[插件 CHANGELOG](../plugins/docker/CHANGELOG.md)。
 
 ## 实际实现
 
@@ -60,8 +60,16 @@ Docker 作为独立 Rust 进程和独立发行目录接入，未增加核心运�
 
 ## 未完成与已知限制
 
-Windows ARM64、Linux x86_64/ARM64、macOS ARM64 原生构建、归档进程验收，以及五目标原生 WebView 交互尚未实际运行。工作流已接入这些原生插件打包/归档验收入口，定义本身不是通过证据。本机 Rust 核心联调和 Chromium UI 不能替代原生桌面移窗、系统关闭和安装升级验收。
+五个目标的原生构建、归档进程验收已经在本轮 GitHub 打包通过，见下节。五目标原生 WebView 交互尚未专项运行；本机 Rust 核心联调和 Chromium UI 不能替代原生桌面移窗、多屏/DPI 和安装升级验收。
 
 第一版不含容器终端、实时日志跟随、时间范围日志、文件导出、批量操作、镜像拉取与镜像/网络/卷管理、跨插件跳转或持久任务中心。日志 stdout/stderr 分路展示，不保证严格全局顺序；资源快照来自 Docker CLI 文本单位，无趋势。大规模容器 inventory 按批顺序读取，超限或容器中途消失会提示不完整。
 
-本次未提交、推送、运行 GitHub Actions 或创建 Release。发布前仍需按[分发流程](distribution.md)完成五目标原生验收，并在插件 CHANGELOG 写入包来源提交、原始打包 run 和 Release 链接。
+## GitHub 原生验收与发行
+
+包来源为 `d32b60a798f593df5a3b89d4a5807cc12d1bc546`，独立版本 0.1.0。原始 [Package plugin #42741187586](https://github.com/BgaSol/soDeck/actions/runs/42741187586) 在 Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 原生构建、校验架构、解开实际归档并运行包内程序的初始化、操作去重、查询、关闭与退出，五个目标全部通过。没有交叉编译结果替代原生执行，也没有重新打包核心。
+
+[Check #42741108087](https://github.com/BgaSol/soDeck/actions/runs/42741108087) 的五平台核心与 Docker 等插件源码、公共检查、Linux 两架构常规业务及 x86_64 真实 Docker/OpenSSH、UI/实际包回归通过。首轮 desktop 在官方目录断言中仍预期四个插件，实际正确返回包括 Docker 的五个；`369000d` 只修正测试预期并增加 Docker 说明断言。[Check desktop #42742706703](https://github.com/BgaSol/soDeck/actions/runs/42742706703) 两次在本地添加后的焦点断言超时。
+
+本机控制 `network_snapshot` 回执时序后稳定复现：`refresh()` 仍在读取旧列表时，添加流程调用的刷新提前返回，详情尚未出现便尝试恢复焦点；随后详情出现，焦点留在 body。`1c71367` 在新详情实际渲染且焦点空缺时恢复焦点，仅增加三行核心前端代码，并保留该时序回归。本机正式前端构建、类型/格式、93 项脚本、9 项交互及 13 组完整 production UI 通过；[Check #42745621259](https://github.com/BgaSol/soDeck/actions/runs/42745621259) 的 Windows 完整 UI、公共检查和汇总全部通过。此提交与包来源的差异只有 `src/main.ts` 和 `scripts/test-production-ui.mjs`，Docker 程序、UI、核心 API 和 Rust 运行代码均未改变，继续复用原包。焦点修正仅在 main，等待下次核心发行；当前 0.20.0 本地快速添加可能需要再次 Tab 或点击控件，官方安装和 Docker 业务不依赖该修正。
+
+本机另从草稿下载全部五份包及更新清单，核对大小、GitHub SHA-256、五平台 URL/摘要、各包内清单，并运行下载的 Windows x86_64 进程验收通过。发布说明在收尾时补齐，更新清单只同步说明文本，五份归档保持原始字节。Release 为 [plugin-docker-v0.1.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.1.0)，本次按用户要求标记 GitHub Latest。发行交付记录统一维护于插件 CHANGELOG；本机快照与日志保存在已忽略的 `artifacts/docker-release/`。

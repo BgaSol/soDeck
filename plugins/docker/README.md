@@ -14,7 +14,7 @@ npm run docker:package:test
 npm run docker:test
 ```
 
-本地构建后在设置 → 插件管理中添加 `artifacts/plugins/sodeck-docker_0.1.0_<target>` 并重启。需要核心提供 `session.exec.v1`、UI v2、`ui.openView.v1` 和 `settings.v1`；发行来源使用 `plugin-docker-v` 标签。0.1.0 尚未发布，官方下载安装需等独立 Release。
+在设置 → 插件管理 → 官方插件刷新列表，选择 Docker 安装并重启。也可以本地构建后添加 `artifacts/plugins/sodeck-docker_0.1.0_<target>`。需要核心提供 `session.exec.v1`、UI v2、`ui.openView.v1` 和 `settings.v1`；发行来源使用 `plugin-docker-v` 标签，正式包见[Docker 0.1.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.1.0)。
 
 远端需要当前用户能直接运行 Docker CLI 并访问 Unix socket，默认 `unix:///var/run/docker.sock`。Rootless Docker 可在浏览器的连接选项指定其他绝对 socket 地址；先关闭同服务器的详情与日志页并等待请求完成。不自动安装 Docker、使用 sudo 或修改用户组。
 

@@ -869,4 +869,3 @@ npm run plugin:build -- --plugin docker
 已知方案限制：远端仅承诺经验证的 Linux Docker Engine；CLI 无法提供事务式“检查再删除”；多标签镜像非强制删除可能被拒绝；暂停/断线日志不承诺无缝恢复；容器指标来自有舍入的 CLI；本机导出只是有界缓存快照。
 
 返回 [文档索引](README.md)
-
