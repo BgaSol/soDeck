@@ -79,11 +79,15 @@ export async function prepareReleaseAssets(api, config, desired, commit, manifes
     if (!ref) await api("POST", "/git/refs", { ref: `refs/tags/${config.tag}`, sha: commit });
     release = await api("POST", "/releases", { tag_name: config.tag, target_commitish: commit, name: title, body: config.notes, draft: true, make_latest: "false" });
   }
+  const checkDraft = async () => {
+    // The list/by-tag endpoints can lag immediately after draft creation.
+    const current = await api("GET", `/releases/${release.id}`);
+    if (!current?.draft || current.id !== release.id || current.tag_name !== config.tag) throw new Error("Release changed while uploading");
+  };
   for (const file of desired) {
     const name = path.basename(file), digest = `sha256:${sha256(file)}`, asset = existing.find(asset => asset.name === name);
     if (asset?.state === "uploaded" && asset.digest === digest && asset.size === fs.statSync(file).size) continue;
-    const current = await releaseState(api, config, commit);
-    if (!current || current.id !== release.id) throw new Error("Core release changed while uploading");
+    await checkDraft();
     if (asset) {
       if (name !== manifestName && asset.state === "uploaded") throw new Error(`Existing core draft asset differs: ${name}`);
       await api("DELETE", `/releases/assets/${asset.id}`);
@@ -91,8 +95,7 @@ export async function prepareReleaseAssets(api, config, desired, commit, manifes
     const uploaded = await api("POST", `${release.upload_url.split("{")[0]}?name=${encodeURIComponent(name)}`, fs.readFileSync(file), true);
     if (uploaded.digest !== digest || uploaded.size !== fs.statSync(file).size || uploaded.state !== "uploaded") throw new Error(`Uploaded core asset hash mismatch: ${name}`);
   }
-  const current = await releaseState(api, config, commit);
-  if (!current || current.id !== release.id) throw new Error("Core release changed while uploading");
+  await checkDraft();
   await api("PATCH", `/releases/${release.id}`, { tag_name: config.tag, name: title, body: config.notes });
   existing = await releaseAssets(api, release.id);
   if (existing.length !== desired.length || desired.some(file => !existing.some(asset => asset.name === path.basename(file) && asset.digest === `sha256:${sha256(file)}` && asset.state === "uploaded"))) throw new Error("Core draft asset verification failed");

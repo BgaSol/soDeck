@@ -29,11 +29,12 @@ function fakeGithub() {
     if (method === "GET" && route.startsWith("/releases?")) return state.release ? [{ tag_name: config.tag, ...state.release }] : [];
     if (method === "GET" && route.startsWith("/git/ref/tags/")) return state.release || state.tagExists ? { object: { type: "commit", sha: state.tagCommit } } : null;
     if (method === "GET" && route.startsWith("/releases/1/assets?")) return state.assets;
+    if (method === "GET" && route === "/releases/1") return state.release;
     state.writes.push({ method, route });
     if (method === "POST" && route === "/git/refs") { assert.equal(body.sha, commit); state.tagExists = true; return {}; }
     if (method === "POST" && route === "/releases") {
       assert.equal(body.draft, true); assert.equal(body.target_commitish, commit);
-      state.release = { id: 1, draft: true, upload_url: "https://uploads.github.com/repos/test/repo/releases/1/assets{?name}", html_url: "https://github.com/test/repo/releases/tag/v1.2.3" };
+      state.release = { id: 1, draft: true, tag_name: body.tag_name, upload_url: "https://uploads.github.com/repos/test/repo/releases/1/assets{?name}", html_url: "https://github.com/test/repo/releases/tag/v1.2.3" };
       return state.release;
     }
     if (method === "POST" && route.startsWith("https://uploads.github.com/")) {
@@ -143,6 +144,23 @@ test("draft upload retries use the same verified input and skip already uploaded
   const before = state.writes.length;
   await assert.rejects(prepareCoreRelease(api, config, input, commit, "test/repo"), /draft asset differs/);
   assert.equal(state.writes.length, before);
+});
+
+test("new draft uploads use its exact ID even while release list indexing lags", async t => {
+  const input = fixture(t), { api, state } = fakeGithub();
+  const delayed = async (...args) => args[0] === "GET" && args[1].startsWith("/releases?") ? [] : api(...args);
+  await prepareCoreRelease(delayed, config, input, commit, "test/repo");
+  assert.equal(state.assets.length, 16);
+});
+
+test("a draft published during upload stops further attachment writes", async t => {
+  const input = fixture(t), { api, state } = fakeGithub();
+  const changed = async (...args) => {
+    if (args[0] === "GET" && args[1] === "/releases/1") state.release.draft = false;
+    return api(...args);
+  };
+  await assert.rejects(prepareCoreRelease(changed, config, input, commit, "test/repo"), /changed while uploading/);
+  assert.equal(state.assets.length, 0);
 });
 test("published drafts and old extra platform assets cannot be overwritten during retry", async t => {
   const input = fixture(t, [targets[0]]), { api, state } = fakeGithub();
