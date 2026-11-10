@@ -124,6 +124,10 @@ npm run plugin:build -- --plugin docker
 
 插件版本读取由 `cargo metadata --format-version 1 --no-deps --locked` 解析，并按清单路径选取包，支持合法 TOML 写法与 workspace 版本继承。版本相关脚本测试同样需要上述固定 Rust 工具链；缺少 Cargo 或清单无效时明确失败，不从文本猜测版本。
 
+依赖更新由 [.github/dependabot.yml](../.github/dependabot.yml) 配置：每月检查根目录与终端插件的 npm、核心/共享 plugin-client/五插件的 Cargo，以及 GitHub Actions 引用。各配置块最多保持两个未关闭的常规更新 PR，小版本和补丁更新分组，主版本更新单独审查。
+
+漏洞告警、安全更新与安全更新分组在 GitHub 仓库安全设置中开启，不受常规更新的每月周期和 PR 数量限制。所有依赖更新沿用 Check 与相关验收，由维护者合并；配置不启用自动合并或发布，Node/Rust 工具链仍人工维护。共享客户端与插件的依赖清单、锁文件须核对兼容，源码检查不能替代五平台实际包验收。
+
 | 工作流 | 用途 |
 | --- | --- |
 | [Check](../.github/workflows/check.yml) | main/PR 按实际改动选择源码和业务回归，汇总执行/跳过状态；手动补测同一引用，netem 单独按需 |

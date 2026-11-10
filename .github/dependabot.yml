@@ -1,0 +1,41 @@
+version: 2
+
+updates:
+  - package-ecosystem: "npm"
+    directories:
+      - "/"
+      - "/plugins/terminal"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 2
+    groups:
+      npm-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "cargo"
+    directories:
+      - "/src-tauri"
+      - "/crates/plugin-client"
+      - "/plugins/terminal"
+      - "/plugins/files"
+      - "/plugins/network-proxy"
+      - "/plugins/system-status"
+      - "/plugins/docker"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 2
+    groups:
+      cargo-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 2
+    groups:
+      actions-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
