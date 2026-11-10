@@ -215,6 +215,10 @@ impl Fixture {
             ),
             ("plugin/mode".into(), mode.as_bytes().to_vec()),
             ("plugin/ui.html".into(), b"settings fixture".to_vec()),
+            (
+                "plugin/资料/说明.txt".into(),
+                "更新包的中文文件".as_bytes().to_vec(),
+            ),
         ] {
             writer
                 .start_file(
@@ -1089,6 +1093,10 @@ fn disabled_plugin_updates_without_starting_a_process() {
     assert_eq!(plugin.status, PluginStatus::Unloaded);
     assert!(!plugin.enabled);
     assert!(!core.snapshot().restart_required);
+    assert_eq!(
+        fs::read(plugin.directory.join("资料/说明.txt")).unwrap(),
+        "更新包的中文文件".as_bytes()
+    );
 }
 
 #[test]
@@ -1125,6 +1133,21 @@ fn invalid_packages_sources_and_platforms_preserve_old_program() {
         .unwrap_err()
         .contains("不安全"));
     assert!(!f.root.join("data/plugins/test.fixture/outside").exists());
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    archive
+        .add_symlink(
+            "plugin/link",
+            "../../outside",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+    server.release(archive.finish().unwrap().into_inner(), "1", TARGET);
+    core.check_component("test.fixture", &server.client())
+        .unwrap();
+    assert!(core
+        .download_plugin("test.fixture", &server.client())
+        .unwrap_err()
+        .contains("符号链接"));
     server.release(f.package(""), "1", TARGET);
     core.check_component("test.fixture", &server.client())
         .unwrap();
