@@ -245,6 +245,9 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
         if: matrix.core || matrix.scripts
+      - name: Verify macOS default-handler fixture
+        if: runner.os == 'macOS' && matrix.core
+        run: node scripts/test-desktop-open-native.mjs --handler-only
       - name: Native core source tests
         if: matrix.core
         run: npm run test

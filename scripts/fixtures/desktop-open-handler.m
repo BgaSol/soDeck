@@ -54,7 +54,7 @@ int main(int argc, const char **argv) {
             return LSRegisterURL((__bridge CFURLRef)[NSURL fileURLWithPath:[NSString stringWithUTF8String:argv[2]]], true) == noErr ? 0 : 1;
         }
         NSApplication *app = [NSApplication sharedApplication];
-        Handler *delegate = [Handler new]; app.delegate = delegate;
+        __attribute__((objc_precise_lifetime)) Handler *delegate = [Handler new]; app.delegate = delegate;
         [[NSAppleEventManager sharedAppleEventManager] setEventHandler:delegate andSelector:@selector(handleURL:withReplyEvent:) forEventClass:kInternetEventClass andEventID:kAEGetURL];
         [app setActivationPolicy:NSApplicationActivationPolicyAccessory];
         FILE *started = fopen(SODECK_OPEN_HANDLER_LOG ".started", "a");
