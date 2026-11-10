@@ -6,6 +6,7 @@ import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {setTimeout as delay} from 'node:timers/promises';
+import {assertDelivered} from './fixtures/desktop-open-targets.mjs';
 
 assert(process.env.GITHUB_ACTIONS === 'true' || process.env.SODECK_TEST_OPEN_ISOLATED === '1', 'Use a disposable runner or explicitly isolated desktop');
 const [executable, ...launcherArgs] = process.argv.slice(2);
@@ -38,11 +39,10 @@ async function probe(name, target = directory, expectFailure = false) {
     assert.equal(report.desktopOpenNative, true);
   }
   if (!expectFailure) {
-    const wanted = [url, target].map(s => Buffer.from(s).toString('hex')).sort();
     const deadline = Date.now()+5000;
-    while (fs.readFileSync(log,'utf8').trim().split('\n').filter(Boolean).length < wanted.length && Date.now()<deadline) await delay(50);
+    while (fs.readFileSync(log,'utf8').trim().split('\n').filter(Boolean).length < 2 && Date.now()<deadline) await delay(50);
     await delay(350);
-    assert.deepEqual(fs.readFileSync(log,'utf8').trim().split('\n').filter(Boolean).sort(), wanted, `${name}: targets must reach their defaults exactly once`);
+    assertDelivered(fs.readFileSync(log,'utf8').trim().split('\n').filter(Boolean),url,target);
   } else assert.equal(fs.readFileSync(log,'utf8'), '', 'Failed launchers must not deliver targets');
 }
 
