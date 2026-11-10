@@ -171,6 +171,8 @@ Check 的 **Run workflow** 先选择需要验证的分支或标签，再选择 `
 
 完整 Windows `ui:test` 已包含 settings 回归，选中 desktop 时不再在 Linux 重复。手动 `standard` 没有 desktop，Linux 单独执行 `settings:test`，为其真实 catalog 核心夹具安装 WebKit/GTK 构建库并恢复 `check-tests` 依赖缓存。
 
+公共 Linux 检查在安装 Chromium 及其系统依赖前调用 `configure-ubuntu-mirror.mjs`，将 runner 的 Azure/动态镜像来源替换为 Ubuntu 官方 HTTPS 软件源；该准备步骤与浏览器安装使用相同的前端/终端输入选择条件。
+
 `native-core` 覆盖当前核心单元测试及 `tests/lifecycle.rs`、`close_lifecycle.rs`、`updates.rs`、`update_network.rs`、`connections.rs`、`component_ui.rs`、`settings.rs`、`servers.rs`、`streams.rs`、`window_config.rs`、`workspaces.rs`；Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 都在对应原生 runner 执行。`platform`、`desktop_files`、桌面行为及更新等系统分支随原生测试验证。标记为 ignored 的真实远端用例仍由对应 SSH/终端/文件/网络专项提供环境后显式运行，不能把 `native-core` 通过当作这些专项已通过。
 
 核心与插件打包中的源码测试已经移到 Check；核心 preflight 只使用 Node 检查发行输入，正式前端构建仍执行 TypeScript 检查。实际包的架构、更新签名、启动、持久资料重开和退出验证继续执行，Windows x86_64 另保留包内 SSH 烟测。

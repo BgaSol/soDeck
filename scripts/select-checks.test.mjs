@@ -180,6 +180,21 @@ test('summary rejects failed, cancelled or skipped selected jobs rather than rep
   assert.equal(new Set(targets.map(t => t.target)).size, 5);
 });
 
+test('browser installation prepares the official Ubuntu source for every selected browser suite', () => {
+  const workflow = fs.readFileSync('.github/workflows/check.yml', 'utf8').replaceAll('\r\n', '\n');
+  const common = workflow.split('\n  checks:\n')[1].split('\n  network:\n')[0];
+  const preparation = common.match(/- name: Configure official Ubuntu source before browser installation\n\s+if: (.+)\n\s+run: sudo "\$\(command -v node\)" scripts\/configure-ubuntu-mirror\.mjs/);
+  assert(preparation, 'prepare the official source before Playwright installs system dependencies');
+  const browserCondition = common.match(/- run: npx playwright install --with-deps chromium\n\s+if: (.+)/)[1];
+  assert(common.indexOf(preparation[0]) < common.indexOf('npx playwright install --with-deps chromium'));
+  assert.equal(preparation[1], browserCondition);
+  const enabled = (condition, plan) => Function('plan', `return (${condition.replaceAll('fromJSON(needs.select.outputs.plan)', 'plan')})`)(plan);
+  for (const files of [['src/settings.css'], ['scripts/test-terminal-input.mjs'], ['docs/usage.md'], ['scripts/select-checks.test.mjs']]) {
+    const plan = selectChecks(files);
+    assert.equal(enabled(preparation[1], plan), plan.web || plan.terminalInput);
+  }
+});
+
 test('core-backed settings runs once with its Linux build environment or inside full desktop UI', () => {
   const workflow = fs.readFileSync('.github/workflows/check.yml', 'utf8').replaceAll('\r\n', '\n');
   const common = workflow.split('\n  checks:\n')[1].split('\n  network:\n')[0];
