@@ -2,7 +2,11 @@
 
 文件编辑器增加当前正文搜索、右侧彩色缩略图、行号和按文件类型语法着色，支持手动更正语言；继续执行 1 MiB 字节上限、UTF-8/BOM/换行保留和远端安全保存。补齐本地待暂存状态、完整选区与搜索/语言恢复，避免旧保存结果清除新修改的未保存标记。新增编辑器依赖仅随文件插件打包。
 
-本版按用户要求发布为 Latest，核心 API 主版本保持 1。实现与本次平台验证见[实施记录](../../docs/implementation-file-editor-search.md)；发布检查和五平台实际包验收完成前保持草稿。
+本版按用户要求发布为 Latest，核心 API 主版本保持 1。实现与本次平台验证见[实施记录](../../docs/implementation-file-editor-search.md)。
+
+包来源：[`68f8eac0eeb3017806f82a49f29949b6ae48be85`](https://github.com/BgaSol/soDeck/commit/68f8eac0eeb3017806f82a49f29949b6ae48be85)；原始打包：[Package plugin #42799998357](https://github.com/BgaSol/soDeck/actions/runs/42799998357)；源码：[Check #42799928597](https://github.com/BgaSol/soDeck/actions/runs/42799928597)；发行：[files 0.9.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.9.0)，Latest。五份原生归档与更新清单直接从同一草稿发布，附件哈希和公开清单核对通过。
+
+五平台原生包与实际核心 0.21.0、终端 0.7.2 的启动、SFTP 文件读写、工作区恢复和退出通过；Windows 两个补测分别为 [42804113763](https://github.com/BgaSol/soDeck/actions/runs/42804113763) / [42804127755](https://github.com/BgaSol/soDeck/actions/runs/42804127755)，其余三个成功目标位于 [42800515265](https://github.com/BgaSol/soDeck/actions/runs/42800515265)。首次 Windows 额外深度专项因 CI 未开启 WebView2 调试端口失败，失败记录保留；本机使用正式包的深度专项通过，不能外推为 CI 或其他平台深度界面通过。具体证据、失败原因与系统输入法/长期性能等未验收范围统一见上述实施记录。
 
 # 0.8.1
 

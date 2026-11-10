@@ -1,6 +1,6 @@
 # 文件编辑器搜索、缩略图与语法高亮实施记录
 
-整理日期：2026-11-10。状态：源码已实现，本机浏览器、Windows x86_64 WebView2 与真实 SFTP 回归通过；尚未正式发行，其他四个平台原生验收未完成。目标见[功能设计](plan-file-editor-search.md)。
+整理日期：2026-11-10。状态：文件插件 0.9.0 已独立发行，按用户要求标记 Latest；五平台原生打包与常规实际包验收通过。浏览器和 Windows x86_64 深度界面专项在本机通过；CI 深度界面覆盖限制见下文。目标见[功能设计](plan-file-editor-search.md)。
 
 ## 实现范围
 
@@ -53,13 +53,35 @@ Monaco 固定的 DOMPurify 3.4.15 被审计报告标记有漏洞，通过插件�
 | Windows 原生编辑器 | [WebView2 回归](../scripts/test-file-editor-native.mjs)通过：本机构建核心可执行文件与实际文件插件包，现有 CSP 下本地 ESM/worker、语法、minimap、搜索、上限、SSH 保存、进程退出 |
 | 界面检查 | 检查浅色、深色、330 px 窄页和原生窗口截图；机械界面检查无报告项 |
 
-截图与本机报告位于 `artifacts/files-ui/`；原生结果为 `native-editor.json`。本机候选插件包位于 `artifacts/file-editor-package/`，仍使用当前开发组件版本 0.8.0；它不是新的正式 Release，也没有覆盖已发布附件。
+设计实施阶段的截图与本机报告位于 `artifacts/files-ui/`；原生结果为 `native-editor.json`。初始本机候选插件包位于 `artifacts/file-editor-package/`，使用当时开发组件版本 0.8.0；正式 0.9.0 包来自下述 GitHub 原始打包运行。
 
-原生检查使用本次 `src-tauri/target/release/sodeck.exe`，不是安装器解包验收。GitHub Actions 已增加文件编辑器的浏览器入口；五个平台独立打包继续复用现有插件工作流，本轮没有推送或触发远端打包/发布。
+初始原生检查使用本次 `src-tauri/target/release/sodeck.exe`，不是安装器解包验收。后续另从正式核心 0.21.0 NSIS 中提取实际程序，配合 GitHub 0.9.0 文件插件归档在本机执行深度编辑器专项通过；GitHub 原生验收使用实际安装/解包后的核心及独立插件。
+
+## 0.9.0 发布验收
+
+发行：[files 0.9.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.9.0)，Latest。包来源固定为 [`68f8eac0eeb3017806f82a49f29949b6ae48be85`](https://github.com/BgaSol/soDeck/commit/68f8eac0eeb3017806f82a49f29949b6ae48be85)；[原始独立打包 42799998357](https://github.com/BgaSol/soDeck/actions/runs/42799998357) 的五平台全部成功，ARM64 为原生 ARM64 程序。直接发布同一份草稿中的五份归档与 `plugin-update.json`，没有重建或替换附件。
+
+[包来源 Check 42799928597](https://github.com/BgaSol/soDeck/actions/runs/42799928597) 全部选中任务通过，包含五平台原生源码、浏览器、真实 SFTP、编辑器回归和共享菜单/宿主检查；netem 明确 skipped。本机同步最新 main 后，类型/格式、101 项脚本、6 项文件插件 Rust 测试与编辑器实际产物回归通过。
+
+实际包组合为已发布核心 **0.21.0**、已发布终端 **0.7.2** 和本次文件插件 **0.9.0**。五平台验证包内程序的启动、UI 挂载、远端文件读写/下载、工作区恢复与退出；此次组合不带网络隧道插件，不代表重做其实际包或旧版升级专项。
+
+| 原生目标 | 实际包证据 |
+| --- | --- |
+| Windows x86_64 | [42804113763](https://github.com/BgaSol/soDeck/actions/runs/42804113763)，所选目标与汇总通过 |
+| Windows ARM64 | [42804127755](https://github.com/BgaSol/soDeck/actions/runs/42804127755)，所选目标与汇总通过 |
+| Linux x86_64 | [42800515265](https://github.com/BgaSol/soDeck/actions/runs/42800515265) 中对应目标通过 |
+| Linux ARM64 | 同一 42800515265 中对应目标通过 |
+| macOS ARM64 | 同一 42800515265 中对应目标通过 |
+
+首次在常规 Windows 任务中附加 CDP 深度界面专项，导致 42800515265 的两个 Windows 目标及总汇总失败，不能称整次运行成功。[直连探测重试](https://github.com/BgaSol/soDeck/actions/runs/42802001782)、[ARM64 重试](https://github.com/BgaSol/soDeck/actions/runs/42802011182)和[进程诊断](https://github.com/BgaSol/soDeck/actions/runs/42802699301)确认：核心、WebView2 渲染器和插件都已启动，CI 运行器的浏览器命令行没有请求的调试参数，端口连接被拒绝；额外界面测试尚未执行。这些失败保留为失败，不把等待超时计为编辑器验收通过。
+
+后续只修改验收入口与诊断，业务源码和原包未变。`file_editor` 改为默认关闭的显式 Windows 专项，需要环境提供 WebView2 调试端口，显式开启后失败仍使工作流失败。上表两个 Windows 补测沿用原组合与原归档，执行常规原生包验收；深度专项由本机正式包结果提供证据，不外推为 CI 或 ARM64 深度界面通过。
+
+发布后重新核对 GitHub Latest 指向、标签提交、六个附件的 ID/大小/SHA-256；公开更新清单可下载且与原草稿逐字节一致，包含五个正式平台。证据与下载包位于本机 `artifacts/files-release/`。标签指向原包源码，后续验收脚本和交付文档提交不替代包来源。
 
 ## 未完成与限制
 
-- Windows ARM64、Linux x86_64/ARM64、macOS ARM64 的新编辑器原生包与实际运行验收待执行。不能把本机结果当成五平台完成。
+- 五平台常规实际包验收已完成；Windows ARM64、Linux x86_64/ARM64、macOS ARM64 的完整键盘、缩略图手势等深度界面专项尚未单独完成。Windows x86_64 的深度专项目前只有本机正式包证据，CI 调试端口不可用。
 - 真实操作系统输入法、触摸/辅助技术和系统剪贴板的人机验收待执行；本轮未操作日常桌面的剪贴板。
 - 完整性能 P95、长时间内存与多文件负载预算尚未测量；目前没有新增大文件模式。
 - 高密度搜索的缩略图标记是有界部分集合，界面有提示；导航仍覆盖全文。长于 10,000 字符的单行可以部分按纯文本呈现，正文与搜索不被截断。
