@@ -34,7 +34,7 @@
 - 支持单容器启动、停止、重启、暂停、恢复及停止后的删除，保留挂载卷。
 - 支持按需资源快照；复用现有短命令能力，中断操作不自动重发。
 
-远端先支持 Linux Docker Engine，不包含容器终端、实时日志跟随、文件导出、批量操作和镜像/网络/卷管理。日志两路输出不保证严格全局顺序；取消本地等待不会回滚已发送操作。本机行为与详细边界见[实施记录](../../docs/implementation-docker-plugin.md)。
+远端先支持 Linux Docker Engine，不包含容器终端、实时日志跟随、文件导出、批量操作和镜像/网络/卷管理。日志两路输出不保证严格全局顺序；取消本地等待不会回滚已发送操作。本机行为与详细边界见[实施记录](https://github.com/BgaSol/soDeck/blob/8115fdcd5bed4108021a729da605fbde77afc2af/docs/implementation-docker-plugin.md)。
 
 发行来源：
 

@@ -9,7 +9,7 @@ npm ci
 npm run dev
 ```
 
-开发核心时不需要构建业务插件。使用终端、文件或网络隧道时，先独立打包对应插件，在应用设置中添加产物目录并重启。
+开发核心时不需要构建业务插件。使用终端、文件、网络隧道、系统状态或 Docker 时，先独立打包对应插件，在应用设置中添加产物目录并重启。
 
 ## 检查与测试
 
@@ -46,12 +46,12 @@ Windows 对运行中的测试程序有文件锁，使用同一 Rust target 目�
 
 文件 UI 可用 `node scripts/test-openssh.mjs --files --files-ui-only` 重新独立打包并复验真实 SFTP 界面。文件插件现在有独立 npm 锁文件，打包入口自动安装并检查/构建其 UI；核心构建仍不依赖它。Windows 原生编辑器专项：先独立打包文件插件，将 `SODECK_TEST_FILES_PLUGIN` 指向完整包目录，再运行 `node scripts/test-openssh.mjs --file-editor-native --packaged <本次核心可执行文件>`。该专项使用隔离应用数据和 SSH，验证 WebView2/CSP/worker、编辑功能、保存与退出，不操作日常桌面剪贴板。传入构建目录程序只能证明本机原生运行，发行前仍需实际安装包与五平台验收。
 
-`Verify native remote plugins` 的 `file_editor` 是 Windows 深度界面专项的显式入口，默认关闭，需要运行环境允许 WebView2 调试端口。本次 GitHub Windows 运行器未应用该调试参数，失败发生在测试连接渲染器之前；五平台常规实际包验收继续运行，本机可用正式包执行上述专项。显式选中后失败仍使工作流失败，不计为通过。
+`Verify native remote plugins` 的 `file_editor` 是 Windows 深度界面专项的显式入口，默认关闭，需要运行环境允许 WebView2 调试端口。环境未应用调试参数时会在连接渲染器之前失败，此时不能声称编辑器专项通过；五平台常规实际包验收仍独立执行。具体执行结果写入文件插件 CHANGELOG。显式选中后失败仍使工作流失败，不计为通过。
 
 
 `npm run ui:production:test -- --updates-only` 验证正式前端的官方插件发现、安装和统一更新：仓库列表延迟加载、失败重试、运行中新插件出现与移除、离线缓存、连续安装、更新说明 Markdown、链接分发、批量更新，以及下载网络设置的草稿、地址排序/停用、保存冲突、单地址诊断和三主题小窗口布局，不运行后续工作区菜单与拆窗专项。列表、安装和诊断回归使用真实核心及隔离回环 HTTP，不依赖公网。
 
-`npm run test` 的 `tests/update_network.rs` 覆盖线路切换、API/文件健康隔离、URL/偏好校验、设置修订冲突、下载中断/损坏/取消和单地址诊断；`tests/updates.rs` 包含代理上的完整官方插件安装链路。核心单元测试用官方公开签名向量验证坏包重试与已准备包的离线恢复。公网节点的历史探测与当前源代码测试分别记录在[实施记录](implementation-update-acceleration.md)，不能互相替代。
+`npm run test` 的 `tests/update_network.rs` 覆盖线路切换、API/文件健康隔离、URL/偏好校验、设置修订冲突、下载中断/损坏/取消和单地址诊断；`tests/updates.rs` 包含代理上的完整官方插件安装链路。核心单元测试用官方公开签名向量验证坏包重试与已准备包的离线恢复。公网可用性与当前源代码测试分别验证，不能互相替代；具体发行结果进入核心版本记录。
 
 需要核对实际 GitHub Trees/Blobs 接口时，显式执行以下烟测；它只读取官方仓库列表，不安装插件，依赖网络及 GitHub API 可用额度，默认核心测试不运行：
 
@@ -103,7 +103,15 @@ Windows 关闭生命周期交互验收使用 `node scripts/test-openssh.mjs --cl
 
 该验收使用显式 `--interactive-test --test-data-dir <隔离目录>` 启动，缺少数据目录拒绝启动；普通启动继续使用原系统应用数据目录。WebView2 数据与 inspector 也限定在该测试进程中，避免连接用户正在运行的应用。此模式不自动执行常规 smoke 或在线检查，但加载已保存的启用插件；不作为用户日常入口。常规包烟测仍由 `scripts/smoke.mjs` 提供，两者结果分别记录。
 
-`Verify published release upgrade` 手动工作流验证本轮正式核心 0.9.2 → 0.9.3、终端 0.2.1 → 0.2.2、文件 0.4.1 → 0.4.2、网络隧道 0.2.1 → 0.2.2。五个原生 runner 执行 `node scripts/test-release-upgrade.mjs`（`SODECK_UPGRADE_TARGET` 指定本机 Rust target），下载真实正式包并核对 GitHub SHA-256，使用仅测试的 `release-upgrade-fixture` 调用生产插件更新服务与官方 Tauri updater 安装，随后核对安装字节、实际新程序、设置及服务器资料，再验证远程业务。Linux 另执行 DEB 系统安装升级。夹具不发行；此入口验证安装和持久化，完整更新页面点击流程由本机桌面验收另行记录。后续发布新版本后，严格版本预期会拒绝误用该历史版本对。
+`Verify published release upgrade` 手动工作流的当前夹具固定验证正式核心 0.9.2 → 0.9.3、终端 0.2.1 → 0.2.2、文件 0.4.1 → 0.4.2、网络隧道 0.2.1 → 0.2.2。五个原生 runner 执行 `node scripts/test-release-upgrade.mjs`（`SODECK_UPGRADE_TARGET` 指定本机 Rust target），下载真实正式包并核对 GitHub SHA-256，使用仅测试的 `release-upgrade-fixture` 调用生产插件更新服务与官方 Tauri updater 安装，随后核对安装字节、实际新程序、设置及服务器资料，再验证远程业务。Linux 另执行 DEB 系统安装升级。夹具不发行；此入口验证安装和持久化，完整更新页面点击流程由本机桌面验收另行记录。后续发布新版本后，严格版本预期会拒绝误用该历史版本对。
+
+系统默认应用验收使用 `node scripts/test-desktop-open-native.mjs <实际包内程序>`，仅在一次性 Actions runner 或显式 `SODECK_TEST_OPEN_ISOLATED=1` 的隔离桌面运行。Windows 编译无控制台 Rust handler，解析测试账户真实 UserChoice ProgID 并临时配置 HTTP/HTTPS 与目录关联，退出时恢复；目录收据按文件系统身份接受 8.3 别名，URL 仍逐字节校验。Linux 使用 xdg-utils、desktop-file-utils 和隔离 XDG 目录，在同一 dbus/Xvfb 会话设置默认 handler。脚本核对唯一 URL 与中文/空格/特殊字符目录各一次、非法目标拒绝和程序退出；Windows/Linux 另设启动器失败用例，Shell 处理坏关联可能超时，超时必须记为失败。Package SoDeck 在五个原生目标调用此入口，Linux 分别运行 DEB 内程序和 AppImage；夹具不发行，结果上传为 Native-opener Artifact。
+
+macOS 用系统 clang、AppKit/LaunchServices、Apple Events 和 ad hoc 签名构建临时 app 并恢复关联。原生 Check 先运行 `node scripts/test-desktop-open-native.mjs --handler-only`。如果系统保留受保护的默认关联，此模式仅编译 handler 并标记 skipped；实际包模式仍验证核心交付、非法目标拒绝和退出，但报告 `targetsExactlyOnce:false` 与 `receiptSkipReason`，不能记作目标收据通过。关联可控时才核对 HTTP URL 和目录各到达一次。`/usr/bin/open` 成功不能确认目标应用后续状态；此专项不替代真实浏览器/Finder/Explorer 的可见窗口、UNC 或 Wayland 桌面验收。
+
+### 自动目录集成回归
+
+Linux 安装 Bash、Zsh 和 Python 3 后运行 `python3 scripts/test-terminal-shell.py`，以真实 PTY 验证随终端发行的启动脚本、用户配置顺序、字符串/数组提示符钩子、退出状态、特殊字符、嵌套 shell、Ctrl-C 与临时文件清理。Check 的终端业务任务执行此入口；Python/Zsh 是测试工具，不加入产品包。`npm run communication:test` 在 Linux 使用默认自动集成，不配置 hostname 或注入提示符钩子；Windows 保留 PowerShell 手动 OSC 7 兼容回归。
 
 ## 打包
 
@@ -117,7 +125,7 @@ Windows 关闭生命周期交互验收使用 `node scripts/test-openssh.mjs --cl
 
 普通本地打包不需要更新签名密钥。正式更新包的签名与发布配置见 [分发文档](distribution.md)。
 
-每个官方插件独立构建。先在仓库根目录执行 `npm ci`，共享菜单脚本使用根目录锁定的 Vite 和 Floating UI 打成插件自带的普通脚本；不依赖核心前端产物。终端入口还会安装其自身锁定的 xterm 依赖：
+每个官方插件独立构建。先在仓库根目录执行 `npm ci`，共享菜单脚本使用根目录锁定的 Vite 和 Floating UI 打成插件自带的普通脚本；不依赖核心前端产物。终端与文件入口还会安装各自锁定的 xterm/Monaco 依赖：
 
 ```sh
 npm run plugin:build -- --plugin terminal
@@ -128,10 +136,6 @@ npm run plugin:build -- --plugin docker
 ```
 
 产物位于 `artifacts/plugins/sodeck-<插件名>_<版本>_<target>`。在应用设置中添加对应目录并重启；正在运行的插件不能原位覆盖，需要关闭并重启后构建，或指定其他输出目录。宿主测试夹具只用于回归，不发行。
-
-系统默认应用验收使用 `node scripts/test-desktop-open-native.mjs <实际包内程序>`，仅在一次性 Actions runner 或显式 `SODECK_TEST_OPEN_ISOLATED=1` 的隔离桌面运行。Windows 编译无控制台 Rust handler，解析测试账户真实 UserChoice ProgID 并临时配置 HTTP/HTTPS 与目录关联，退出时恢复；目录收据按文件系统身份接受 8.3 别名，URL 仍逐字节校验。Linux 使用 xdg-utils、desktop-file-utils 和隔离 XDG 目录，在同一 dbus/Xvfb 会话设置默认 handler。脚本核对唯一 URL 与中文/空格/特殊字符目录各一次、非法目标拒绝和程序退出；Windows/Linux 另设启动器失败用例，Shell 处理坏关联可能超时，超时必须记为失败。Package SoDeck 在五个原生目标调用此入口，Linux 分别运行 DEB 内程序和 AppImage；夹具不发行，结果上传为 Native-opener Artifact。
-
-macOS 用系统 clang、AppKit/LaunchServices、Apple Events 和 ad hoc 签名构建临时 app 并恢复关联。原生 Check 先运行 `node scripts/test-desktop-open-native.mjs --handler-only`。如果系统保留受保护的默认关联，此模式仅编译 handler 并标记 skipped；实际包模式仍验证核心交付、非法目标拒绝和退出，但报告 `targetsExactlyOnce:false` 与 `receiptSkipReason`，不能记作目标收据通过。关联可控时才核对 HTTP URL 和目录各到达一次。`/usr/bin/open` 成功不能确认目标应用后续状态；此专项不替代真实浏览器/Finder/Explorer 的可见窗口、UNC 或 Wayland 桌面验收。
 
 ## 版本与持续集成
 
@@ -150,13 +154,13 @@ macOS 用系统 clang、AppKit/LaunchServices、Apple Events 和 ad hoc 签名�
 | [Package plugin](../.github/workflows/plugin.yml) | 按插件目录独立打包，生成插件更新清单 |
 | [Verify native remote plugins](../.github/workflows/remote-integration.yml) | 按组件版本或明确 run 定位实际包，校验来源后执行五平台原生界面/远程业务验收，支持输入快照重放 |
 
-五个系统与架构组合分别使用原生构建和实际包验证。已完成的验收、未完成项和已知风险记录在对应实施记录或版本说明中。
+五个系统与架构组合分别使用原生构建和实际包验证。结果、未完成项和已知风险记录在核心版本说明或对应插件 CHANGELOG；尚在实施的范围保留在临时计划。
 
 `Verify native remote plugins` 的 `platform` 默认验证五平台；补测时可选择单个平台并重放 `verification_run_id`，或填写相同的原始组件打包 run。单平台汇总只表示所选平台通过，发行记录必须同时保留其他平台的原始成功报告。Windows ARM64 的隔离 OpenSSH 测试服务从固定 Microsoft Release 资产 API 下载并校验大小与 SHA-256。
 
 Check 始终响应 main push/PR，不使用 workflow 级 `paths` 跳过。`select` 使用 push 的 before/after，PR 使用 base/head 的 merge-base；删除和重命名同时计入原路径。取不到完整差异、新分支零 before、未知路径、共享客户端、工具链和构建输入按扩大范围验证。选择规则集中在 [select-checks.mjs](../scripts/select-checks.mjs)，不维护依赖图。
 
-文档检查只用 Node，运行 `node scripts/check-docs.mjs` 校验全部已提交 Markdown 的结尾换行、冲突标记和本地文件链接（含图片和引用式链接）；不访问外部网址或校验标题锚点。删除/重命名文档也会检查其他文档留下的链接。`format` 保留为最终汇总状态：选中的任务失败、取消或缺失会失败；未选中的任务显示 skipped，不代表测试通过。分支保护若单独要求旧 `network (ubuntu-22.04...)` 状态，需要改用始终出现的 `format`，本轮不修改仓库保护设置。
+文档检查只用 Node，运行 `node scripts/check-docs.mjs` 校验全部已提交 Markdown 的结尾换行、冲突标记和本地文件链接（含图片和引用式链接）；不访问外部网址或校验标题锚点。删除/重命名文档也会检查其他文档留下的链接。`format` 保留为最终汇总状态：选中的任务失败、取消或缺失会失败；未选中的任务显示 skipped，不代表测试通过。分支保护应使用始终出现的汇总状态；未选中的矩阵任务可能不出现。
 
 | 自动改动范围 | 实际选择 |
 | --- | --- |
@@ -171,8 +175,6 @@ Check 始终响应 main push/PR，不使用 workflow 级 `paths` 跳过。`selec
 | 连接、流、生命周期/RPC、平台进程、服务器路由 | 五平台原生核心、Linux UI、Windows SSH、五插件普通业务验收 |
 | 共享 UI/字体/菜单 | 扩大至核心与五插件 UI/普通业务验收；不因此运行 netem 或旧版升级 |
 | 共享 plugin-client、根工具链/锁文件/构建脚本、未知输入 | 五平台核心与五插件源码、相关 UI、普通业务和宿主脚本；仍排除 netem |
-
-已知 UI 测试入口也按组件路由：`test-terminal-ui`/`test-files-ui` 仅运行对应普通业务，`test-terminal-input` 仅输入/脚本，核心 UI 测试脚本走 Linux 完整 browser。共享 OpenSSH/打包脚本和未映射脚本继续扩大范围。
 
 已知 UI 测试入口也按组件路由：`test-terminal-ui`/`test-files-ui` 仅运行对应普通业务，`test-terminal-input` 与终端 history/search-ui/benchmark 入口走终端输入、历史与脚本回归，核心 UI 测试脚本走前端和完整 desktop。共享 OpenSSH/打包脚本和未映射脚本继续扩大范围。
 
@@ -205,8 +207,46 @@ CI 的 npm 下载缓存按任务实际使用的锁文件配置；核心打包只
 
 `core-release-v2` 是一次性的缓存迁移标识，不随提交、版本或 run ID 变化。它保留固定 action 的默认工具链/环境/Cargo 输入隔离，只缓存依赖编译结果；宿主构建依赖与目标架构 release 依赖一并保留，不开启 workspace crate 或 incremental 缓存。恢复后仍执行 `npm ci`、当前前端及当前核心的正式构建。main 手动打包会保存依赖，后续适用分支和标签可恢复默认分支缓存；详见[分发文档](distribution.md)。Linux 打包依赖安装复用官方软件源修正与有限重试，不缓存系统安装状态。
 
+## 文档与开发收束
+
+正式文档描述当前检出的代码，功能迭代持续修改同一份说明。开始改动前阅读对应功能、相关源码与回归，写清用户可验收行为；代码与既定要求不一致时，先确定缺陷、文档过时还是已确认的需求变化。
+
+| 内容 | 唯一维护位置 |
+| --- | --- |
+| 功能入口、行为、失败、生命周期与使用限制 | [功能目录](README.md#核心功能)中的对应文档 |
+| 产品范围、架构归属、接口字段与兼容 | product.md、architecture.md、plugin-api.md |
+| 环境、命令、检查选择 | 本文 |
+| 打包、签名、发布、包复用与恢复 | [分发流程](distribution.md) |
+| 核心/插件版本、包来源和实际验证范围 | docs/releases/ 或插件 CHANGELOG |
+| 正在设计、实施或约定验收未完成的工作 | docs/plans/ 中每主题一份计划 |
+
+功能文档按“用途与入口 → 当前行为 → 生命周期/失败/限制 → 维护约束 → 主要源码与回归入口”组织；简单功能可合并章节。只链接主要模块，不维护完整函数清单，不抄命令和 API 字段，不追加逐轮进度。README、usage 和插件 README 提供入口，详细规则链接唯一归属。
+
+需要跨会话规划时，在 docs/plans/ 新建一个主题，最低模板如下；小改动在任务描述中说明即可：
+
+```markdown
+# 主题
+状态：正在设计 / 实施中 / 待验收；核对基线。
+
+## 目标与验收
+本次范围、可见行为、成功/失败条件。
+
+## 现状与决定
+源码证据、必要选择、尚未解决的问题。
+
+## 剩余步骤与验证
+影响的代码、回归入口、实际通过和跳过范围。
+
+## 回写与收束
+完成后更新哪些功能、架构/API 章节，证据写到哪里。
+```
+
+实现过程中及时把已完成行为写入正式文档，计划只留下未完成部分及必要上下文。待定提案不能出现在当前能力描述中；源码已实现但待发行的部分简短标注，并链接组件版本记录。
+
+结束任务前核对：相关代码和验收完成；受影响的正式文档与代码一致；必要设计理由已进入架构、API 或功能约束；发行证据已进入组件版本记录；引用有效；已完成计划、评审过程和无用附件已删除。没有完成计划归档目录，也不把计划改名成实施记录继续累积。Git 保留历史，历史发行记录可链接固定提交中的原始材料。
+
+源码完成但约定验收尚未完成时保留对应计划；取消或被替代的工作先安置仍有效的需求。若任务包含发布，必须完成该组件的发布验收；若发布另行安排，待发行记录承接剩余交付事项。浏览器、源码、原生包和设备验证分别记载，跳过不等于通过。
+
+纯文档改动运行文档链接/格式检查与 diff 检查，不为此构建产品；若同时变更代码，按上面的实际范围检查。文档检查脚本默认读取 Git 已跟踪文件；未暂存删除与新增并存时，可调用其导出的 checkMarkdown 检查当前实际文件集合，不能漏掉新文档或把删除文件读失败当成有效验收。
+
 返回 [项目首页](../README.md) · [文档索引](README.md)
-
-### 自动目录集成回归
-
-Linux 安装 Bash、Zsh 和 Python 3 后运行 `python3 scripts/test-terminal-shell.py`，以真实 PTY 验证随终端发行的启动脚本、用户配置顺序、字符串/数组提示符钩子、退出状态、特殊字符、嵌套 shell、Ctrl-C 与临时文件清理。Check 的终端业务任务执行此入口；Python/Zsh 是测试工具，不加入产品包。`npm run communication:test` 在 Linux 使用默认自动集成，不配置 hostname 或注入提示符钩子；Windows 保留 PowerShell 手动 OSC 7 兼容回归。

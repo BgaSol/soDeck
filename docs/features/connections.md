@@ -1,0 +1,44 @@
+# 服务器与连接
+
+在服务器管理页维护 SSH 服务器和 SOCKS5 跳板资料，通过双击服务器、详情连接按钮或工作台一级“＋”建立连接。连接成功后进入该服务器工作区；SOCKS5 资料用于连接路径，不直接创建服务器工作区。
+
+## 资料与认证
+
+- 支持新增、编辑、复制、删除、搜索和分组。连接路径是有序的 SSH/SOCKS5 资料引用，最后追加目标服务器；引用节点不递归展开自己的路径。
+- SSH 支持密码及普通/加密的 OpenSSH Ed25519、RSA 私钥。核心读取本机私钥，插件复用核心会话，不保存另一份认证资料。
+- 新建资料或切换认证方式默认记住凭据，编辑已有资料保留实际选项。缺少凭据、密码失效或私钥口令错误时可补填；取消记住仅用于当前连接。
+- 整条路径成功、原资料与连接尝试仍有效时，才提交勾选记住的值。失败、取消、拒绝主机指纹或后续节点失败不覆盖旧凭据；并发编辑后拒绝过期写入。保存失败明确报告，不创建工作区。
+- 当前记住的密码和私钥口令以明文保存在应用数据目录，私钥保存路径。尚未接入系统凭据库。秘密不进入公开连接投影、日志或插件初始化参数。
+
+每个 SSH 节点在认证前核验主机密钥。首次连接和密钥变化分别要求确认，变化显示旧/新 SHA-256 指纹。应用自己的 `ssh-hosts.json` 按连接路径前缀、协议、端点和有关账号区分身份，不修改系统 known_hosts；不同访问路径需要分别确认。
+
+## 建连、断开与重连
+
+| 场景 | 当前行为 |
+| --- | --- |
+| 连接中 | 显示当前节点与 TCP、SSH 握手、认证、隧道或 SOCKS5 阶段；同一资料复用正在进行的尝试，不同资料可并行 |
+| 多层路径 | 只有第一站使用本机 TCP/DNS；后续地址交给上一站，最终目标域名不会强制改为开发机器解析 |
+| 超时与取消 | 单个非交互阶段限时 30 秒，等待用户时间不计入；取消关闭受管传输，阻塞系统操作的迟到结果不能接纳为会话 |
+| 失败 | 保留明确原因，不创建一个伪连接工作区；可以修改资料后重试 |
+| 断开 | 保留工作区和适用的本地显示/草稿；依赖远程连接的操作显示不可用 |
+| 手动重连 | 成功后更换 connectionId 并递增 generation；旧 Context 与旧页面 Surface 失效，不自动重放远端变更 |
+| 地址、账号或路径变化 | 已有会话保留原身份，按新资料重连前确认变化 |
+| 移窗 | 只交接显示归属，沿用同一 SSH 会话 |
+| 关闭工作区或应用 | 通过[统一关闭规则](lifecycle.md)取消尝试并释放所属连接，迟到成功不能重建工作区 |
+
+SSH 保活间隔 30 秒，连续 3 次未响应后断开。SOCKS5 上游支持无认证及用户名/密码，不降级认证方式。当前不读取系统 SSH config，不支持 SSH agent、交互式 MFA、主机证书或自动重连。
+
+## 流量与资源
+
+核心统计第一条实际 socket 的成功读写字节，包含 SSH/代理协议字节，排除 IP/TCP 头及重传；多跳不重复累加。插件业务载荷另按资源归属统计，不能与物理流量简单相加，也没有逐跳精确分摊。网络隧道显示口径见[网络隧道](network-proxy.md)。
+
+插件只能经当前会话能力创建受管资源。关闭单个终端或命令任务不关闭共享 SSH；连接、视图和资源身份的共同规则见[架构](../architecture.md)及[插件 API](../plugin-api.md)。
+
+## 实现与回归入口
+
+- 资料与建链：[servers.rs](../../src-tauri/src/servers.rs)、[connection_profile.rs](../../src-tauri/src/servers/connection_profile.rs)、[connections](../../src-tauri/src/connections/mod.rs)、[route.rs](../../src-tauri/src/connections/route.rs)、[ssh.rs](../../src-tauri/src/connections/ssh.rs)、[host_keys.rs](../../src-tauri/src/connections/host_keys.rs)。
+- 界面：[servers.ts](../../src/servers.ts)、[connections.ts](../../src/connections.ts)、[server-picker.ts](../../src/server-picker.ts)。
+- 回归：[servers.rs](../../src-tauri/tests/servers.rs)、[connections.rs](../../src-tauri/tests/connections.rs)、[连接 UI](../../scripts/test-connection-ui.mjs)、[真实 OpenSSH](../../scripts/test-openssh.mjs)。覆盖混合链、远端 DNS、凭据提交、指纹、取消、代次隔离及真实会话。
+- 运行方法和原生包验证边界见[开发指南](../development.md)。生产服务器、各类外部 SSH 实现和所有认证配置不因夹具通过而视为已验证。
+
+返回[文档索引](../README.md)。
