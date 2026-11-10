@@ -5,7 +5,7 @@ import path from "node:path";
 import net from "node:net";
 import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
-import { cargoPackageVersion } from "./cargo-package.mjs";
+import { testPluginDirectory } from "./test-plugin-directory.mjs";
 import { testCurl } from "./network-tools.mjs";
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-openssh-"));
@@ -59,11 +59,7 @@ try {
     const env={ ...process.env, SODECK_TEST_SSH_PORT: String(port), SODECK_TEST_SSH_USER: username, SODECK_TEST_SSH_KEY: path.join(directory, "user") };
     if(network) env.SODECK_TEST_CURL=await testCurl();
     for(const plugin of [terminal?'terminal':null,files?'files':null,network?'network-proxy':null,status?'system-status':null].filter(Boolean)){
-      const output=path.join(directory,'plugins');
-      const build=spawnSync(process.execPath,['scripts/package-plugin.mjs','--plugin',plugin,'--out-dir',output],{stdio:'inherit',windowsHide:true});if(build.status!==0)throw new Error(`${plugin} package failed`);
-      const version=cargoPackageVersion(`plugins/${plugin}/Cargo.toml`);
-      const target=spawnSync('rustc',['-vV'],{encoding:'utf8'}).stdout.match(/^host: (.+)$/m)[1];
-      env[`SODECK_TEST_${(plugin==='network-proxy'?'NETWORK':plugin.toUpperCase().replaceAll('-','_'))}_PLUGIN`]=path.join(output,`sodeck-${plugin}_${version}_${target}`);
+      env[`SODECK_TEST_${(plugin==='network-proxy'?'NETWORK':plugin.toUpperCase().replaceAll('-','_'))}_PLUGIN`]=testPluginDirectory(plugin);
     }
     if(files){const root=env.SODECK_TEST_FILES_PLUGIN;const manifest=JSON.parse(fs.readFileSync(path.join(root,'plugin.json'),'utf8'));const test=spawnSync(process.execPath,['scripts/test-files-process.mjs'],{stdio:'inherit',windowsHide:true,env:{...env,SODECK_TEST_FILES_EXECUTABLE:path.join(root,manifest.entry)}});if(test.status!==0)throw new Error('File process regressions failed');}
     if(network){const root=env.SODECK_TEST_NETWORK_PLUGIN;const manifest=JSON.parse(fs.readFileSync(path.join(root,'plugin.json'),'utf8'));const test=spawnSync(process.execPath,['scripts/test-network-process.mjs'],{stdio:'inherit',windowsHide:true,env:{...env,SODECK_TEST_NETWORK_EXECUTABLE:path.join(root,manifest.entry)}});if(test.status!==0)throw new Error('Network process regressions failed');}

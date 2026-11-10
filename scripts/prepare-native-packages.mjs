@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { validateCoreArtifacts, sha256, targets } from "./core-artifacts.mjs";
+import { validateCoreArtifacts, coreNames, sha256, targets } from "./core-artifacts.mjs";
 import { verifyBinary } from "./verify-binary.mjs";
 import { nativeGithub } from "./native-github.mjs";
 import { components, platforms, packageName, validatePinned } from "./resolve-native-inputs.mjs";
@@ -62,6 +62,15 @@ export async function preparePackages(api, snapshot, target, root = "packages") 
         file = path.join(directory, target, selected.file);
       }
       env.SODECK_CORE_PACKAGE = file;
+      if (target.includes("linux")) {
+        const name = coreNames(config.version, target).appimage[0];
+        const appimage = path.join(path.dirname(file), name);
+        if (config.source.kind === "release") {
+          const asset = selected.assets.find(item => item.name === name);
+          await api.download(`/releases/assets/${asset.id}`, appimage, asset);
+        }
+        env.SODECK_CORE_APPIMAGE = appimage;
+      }
       result.components[key] = { id: config.id, version: config.version, apiVersion: config.apiVersion, commit: config.commit, source: config.source, file: selected.file, size: fs.statSync(file).size, sha256: sha256(file) };
     } else {
       const checked = validatePluginArchive(directory, config, target, config.source.kind === "artifact");

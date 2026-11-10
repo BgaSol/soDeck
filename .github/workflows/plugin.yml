@@ -25,22 +25,21 @@ jobs:
     outputs:
       plugin: ${{ steps.config.outputs.plugin }}
       tag: ${{ steps.config.outputs.tag }}
+      publish: ${{ steps.config.outputs.publish }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.99.1
-          components: rustfmt
       - uses: actions/setup-node@v6
         with:
           node-version-file: .node-version
       - id: config
         env:
           PLUGIN: ${{ inputs.plugin || 'terminal' }}
-        run: node scripts/release-metadata.mjs --kind plugin --plugin "$PLUGIN"
-      - env:
-          PLUGIN: ${{ steps.config.outputs.plugin }}
-        run: cargo fmt --manifest-path "plugins/$PLUGIN/Cargo.toml" -- --check
+          PLUGIN_PUBLISH: ${{ inputs.publish || false }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/plugin-release.mjs preflight "$PLUGIN"
   package:
     needs: select
     strategy:
@@ -99,12 +98,6 @@ jobs:
         env:
           PLUGIN: ${{ needs.select.outputs.plugin }}
         run: node scripts/package-plugin.mjs --plugin "$PLUGIN" --target '${{ matrix.target }}'
-      - name: Verify actual system status archive
-        if: needs.select.outputs.plugin == 'system-status'
-        run: node scripts/test-system-status-package.mjs
-      - name: Verify actual Docker archive
-        if: needs.select.outputs.plugin == 'docker'
-        run: node scripts/test-docker-package.mjs
       - uses: actions/upload-artifact@v7
         with:
           name: Plugin-${{ needs.select.outputs.plugin }}-${{ matrix.name }}
@@ -114,9 +107,52 @@ jobs:
             artifacts/plugins/plugin-*.json
           if-no-files-found: error
           retention-days: 30
-  release:
+  verify:
     needs: [select, package]
-    if: always() && !cancelled() && needs.select.result == 'success' && (startsWith(github.ref, 'refs/tags/') || inputs.publish)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x86_64
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+          - name: windows-aarch64
+            runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+          - name: linux-x86_64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - name: linux-aarch64
+            runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+          - name: macos-aarch64
+            runner: macos-15
+            target: aarch64-apple-darwin
+    name: verify-${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+      - uses: actions/download-artifact@v5
+        with:
+          name: Plugin-${{ needs.select.outputs.plugin }}-${{ matrix.name }}
+          path: packages/plugin
+      - name: Verify actual native plugin archive
+        run: node scripts/test-plugin-package.mjs packages/plugin '${{ matrix.target }}' '${{ github.sha }}' '${{ needs.select.outputs.plugin }}'
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: Plugin-verification-${{ needs.select.outputs.plugin }}-${{ matrix.name }}
+          path: artifacts/verification/
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
+  release:
+    needs: [select, verify]
+    if: ${{ !cancelled() && needs.select.result == 'success' && needs.verify.result == 'success' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     concurrency:
@@ -137,15 +173,22 @@ jobs:
           pattern: Plugin-${{ needs.select.outputs.plugin }}-*
           merge-multiple: true
           path: artifacts/plugins
-      - env:
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: Plugin-verification-${{ needs.select.outputs.plugin }}-*
+          merge-multiple: true
+          path: verification
+      - name: Bind results to the package bytes
+        run: node scripts/verification-report.mjs '${{ needs.select.outputs.plugin }}' artifacts/plugins verification '${{ github.sha }}'
+      - name: Prepare optional plugin draft
+        env:
           PLUGIN: ${{ needs.select.outputs.plugin }}
-          TAG: ${{ needs.select.outputs.tag }}
+          PLUGIN_PUBLISH: ${{ needs.select.outputs.publish }}
           GH_TOKEN: ${{ github.token }}
-        run: |
-          node scripts/release-metadata.mjs --kind plugin --plugin "$PLUGIN" --tag "$TAG" --input artifacts/plugins
-          if gh release view "$TAG" --json isDraft > release.json; then
-            node -e 'if (!JSON.parse(require("fs").readFileSync("release.json")).isDraft) throw new Error("Published versions are immutable; bump the version")'
-          else
-            gh release create "$TAG" --target "$GITHUB_SHA" --draft --latest=false --title "$PLUGIN ${TAG##*-v}" --notes-file "plugins/$PLUGIN/CHANGELOG.md"
-          fi
-          find artifacts/plugins -maxdepth 1 -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name 'plugin-update.json' \) -exec gh release upload "$TAG" --clobber {} +
+        run: node scripts/plugin-release.mjs prepare "$PLUGIN" artifacts/plugins
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Plugin-update-manifest-${{ needs.select.outputs.plugin }}
+          path: artifacts/plugins/plugin-update.json
+          if-no-files-found: error
+          retention-days: 30

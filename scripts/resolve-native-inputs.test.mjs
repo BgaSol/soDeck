@@ -32,12 +32,13 @@ function fixture() {
     },
     async list(route) {
       if (route.includes("/artifacts")) { const items = artifacts.get(route.split("/")[3]); return state.missingArtifact ? items.slice(1) : items; }
-      if (route.includes("/jobs")) return Object.values(platforms).map(name => ({ name, status: "completed", conclusion: name === state.failedJob ? "failure" : "success" }));
+      if (route.includes("/jobs")) return Object.values(platforms).flatMap(name => [name, ...(state.splitVerification ? [`verify-${name}`] : [])]).map(name => ({ name, status: "completed", conclusion: name === state.failedJob ? "failure" : "success" }));
       if (route.includes("/workflows/")) return [...runs.values()].filter(run => run.path.endsWith(route.includes("build.yml") ? "build.yml" : "plugin.yml"));
       if (route.includes("/assets")) return releases.get(Number(route.split("/")[2])).assets;
       throw new Error(`Unexpected list ${route}`);
     },
     async text(file) {
+      if (file.startsWith(".github/workflows/")) return state.splitVerification ? "jobs:\n  verify:\n" : "jobs:\n  package:\n";
       if (file === "src-tauri/tauri.conf.json") return JSON.stringify({ version: values.core });
       if (file === "src-tauri/src/lib.rs") return 'pub const API_VERSION: &str = "1";';
       const key = file.split("/")[1] === "network-proxy" ? "network" : file.split("/")[1];
@@ -82,6 +83,14 @@ test("run-only selection accepts successful platform packages despite failed met
   assert.equal(result.components.files.commit, pluginCommit);
   assert.equal(Object.keys(result.components.files.platforms).length, 5);
   await validatePinned(api, result);
+});
+
+test("split workflows reject packages with failed native verification even after upload", async () => {
+  const { api, inputs, state } = fixture();
+  state.splitVerification = true;
+  await resolveInputs(api, inputs, scriptCommit);
+  state.failedJob = "verify-windows-aarch64";
+  await assert.rejects(resolveInputs(api, inputs, scriptCommit), /native verification/);
 });
 
 test("invalid inputs, wrong workflow/repository, failed jobs, expired or duplicate Artifacts are rejected", async () => {

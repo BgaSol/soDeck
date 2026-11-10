@@ -18,6 +18,7 @@ function launch(persisted = false) {
   const networkReport = path.join(directory, "network-smoke-result.json");
   fs.rmSync(networkReport, { force: true });
   const extra = ["--smoke-test", "--test-data-dir", directory];
+  if (process.env.SODECK_PACKAGE_ONLY === "1") extra.push("--package-only");
   if (process.env.SODECK_TEST_CLIPBOARD === "1") extra.push("--clipboard-test");
   if (process.env.SODECK_TEST_DESKTOP_FILES) extra.push("--desktop-files-test", path.resolve(process.env.SODECK_TEST_DESKTOP_FILES));
   if (process.env.SODECK_TEST_SSH_CONFIG) extra.push("--ssh-test-config", path.resolve(process.env.SODECK_TEST_SSH_CONFIG));
@@ -48,7 +49,7 @@ function launch(persisted = false) {
     );
   if (
     !fs.existsSync(report) ||
-    !JSON.parse(fs.readFileSync(report, "utf8")).completed || !JSON.parse(fs.readFileSync(report, "utf8")).workspaceNative
+    !JSON.parse(fs.readFileSync(report, "utf8")).completed || !(process.env.SODECK_PACKAGE_ONLY === "1" ? JSON.parse(fs.readFileSync(report, "utf8")).packageNative : JSON.parse(fs.readFileSync(report, "utf8")).workspaceNative)
     || (process.env.SODECK_TEST_SSH_CONFIG && !JSON.parse(fs.readFileSync(report, "utf8")).sshNative)
     || (process.env.SODECK_TEST_CLIPBOARD === "1" && !JSON.parse(fs.readFileSync(report, "utf8")).clipboardNative)
     || (process.env.SODECK_TEST_DESKTOP_FILES && !JSON.parse(fs.readFileSync(report, "utf8")).desktopFilesNative)
@@ -68,7 +69,9 @@ try {
   // A file probe changes its provider to text during the first launch and cannot be replayed.
   if (process.env.SODECK_VERIFY_PERSISTED !== "1" && !process.env.SODECK_TEST_DESKTOP_FILES && !process.env.SODECK_TEST_DESKTOP_OPEN) launch(true);
   console.log(
-    process.env.SODECK_TEST_DESKTOP_FILES
+    process.env.SODECK_PACKAGE_ONLY === "1"
+      ? "Packaged app rendered, persisted isolated data, reopened and exited successfully."
+      : process.env.SODECK_TEST_DESKTOP_FILES
       ? "Packaged app verified native file clipboard and exited successfully."
       : "Packaged app rendered, moved workspaces between native windows, closed secondary windows, saved catalog records, reopened persisted data and exited successfully.",
   );

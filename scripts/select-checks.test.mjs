@@ -5,6 +5,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { changedFiles, selectChecks, checkResults, targets, selectionSummary } from './select-checks.mjs';
+
+test('shared client runs its own native tests and known script-only regressions stay narrow', () => {
+  const client = selectChecks(['crates/plugin-client/src/lib.rs']);
+  assert.equal(client.native.filter(row => row.client).length, 5);
+  const shell = selectChecks(['scripts/test-terminal-shell.py']);
+  assert(shell.integration.some(row => row.terminal)); assert.equal(shell.core, false);
+  const release = selectChecks(['scripts/core-release.test.mjs']);
+  assert(release.scripts); assert.equal(release.core, false); assert.equal(release.integration.length, 0);
+  assert(selectChecks(['scripts/core-release.test.mjs', 'unknown-input']).core);
+});
 test('shared state selects its native source, SDK and actual three-plugin communication',()=>{for(const file of ['src/component-state.ts','src-tauri/src/shared_state.rs','src-tauri/src/shared_state/delivery.rs','plugins/shared/state.js']){const p=selectChecks([file]);assert(p.communication&&p.sharedClient&&p.core);assert(p.integration.some(t=>t.communication&&t.terminal&&t.files&&t.status));assert.deepEqual(p.plugins,['terminal','files','system-status']);}assert(selectChecks(['plugins/files/ui/tree.js']).communication);});
 
 test('documentation produces an explicit lightweight check without product suites', () => {

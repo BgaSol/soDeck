@@ -849,6 +849,7 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
     let desktop_open_probe = argument("--desktop-open-test");
     let desktop_open_requested = desktop_open_probe.is_some();
     let persisted = app.verify_persisted;
+    let package_only = std::env::args().any(|arg| arg == "--package-only");
     std::thread::spawn(move || {
         let validation = (|| {
             if clipboard_test_requested {
@@ -865,7 +866,9 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
                 ))?;
             }
             sodeck::validation::server_roundtrip(&core, persisted)?;
-            sodeck::validation::workspace_roundtrip(&handle, &core)?;
+            if !package_only {
+                sodeck::validation::workspace_roundtrip(&handle, &core)?;
+            }
             if let Some(bundle) = update_bundle {
                 sodeck::validation::core_update_bundle(&handle, &bundle)?;
             }
@@ -882,7 +885,7 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
         let result = validation.and(stopped);
         if result.is_ok() {
             let status = core.snapshot();
-            let report = serde_json::json!({"completed":true,"workspaceNative":true,"sshNative":ssh_test_requested,"clipboardNative":clipboard_test_requested,"desktopFilesNative":desktop_files_requested,"desktopOpenNative":desktop_open_requested,"version":status.version,"target":status.target});
+            let report = serde_json::json!({"completed":true,"workspaceNative":!package_only,"packageNative":true,"sshNative":ssh_test_requested,"clipboardNative":clipboard_test_requested,"desktopFilesNative":desktop_files_requested,"desktopOpenNative":desktop_open_requested,"version":status.version,"target":status.target});
             let _ = std::fs::write(
                 status.data_directory.join("smoke-result.json"),
                 report.to_string(),

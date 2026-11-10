@@ -27,7 +27,7 @@ export function packageName(config, target) {
     const names = coreNames(config.version, target);
     return target.includes("windows") ? names.nsis[0] : target.includes("linux") ? names.deb[0] : names.dmg[0];
   }
-  if (!/^sodeck\.(terminal|files|network-proxy)$/.test(config.id) || !/^[a-z][a-z0-9-]*$/.test(config.binary ?? "")) throw new Error("Invalid plugin package identity");
+  if (!/^sodeck\.(terminal|files|network-proxy|system-status|docker)$/.test(config.id) || !/^[a-z][a-z0-9-]*$/.test(config.binary ?? "")) throw new Error("Invalid plugin package identity");
   return `${config.binary}_${config.version}_${target}${target.includes("windows") ? ".zip" : ".tar.gz"}`;
 }
 
@@ -81,6 +81,12 @@ async function artifactComponent(api, key, id, wanted, binding = null, candidate
   if (Object.values(platforms).some(name => jobs.filter(job => job.name === name && job.status === "completed" && job.conclusion === "success").length !== 1)) {
     if (candidate) return null;
     throw new Error(`${key} run ${id}: all five effective package jobs must succeed`);
+  }
+  // Historical workflows verified inside package; split workflows must also pass verify.
+  const splitVerification = /^  verify:/m.test(await api.text(workflow(key), run.head_sha));
+  if (splitVerification && Object.values(platforms).some(name => jobs.filter(job => job.name === `verify-${name}` && job.status === "completed" && job.conclusion === "success").length !== 1)) {
+    if (candidate) return null;
+    throw new Error(`${key} run ${id}: all five native verification jobs must succeed`);
   }
   const config = await sourceConfig(api, key, run.head_sha);
   if (wanted && config.version !== wanted) {

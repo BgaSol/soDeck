@@ -47,7 +47,7 @@ try{
     await new Promise(r=>setTimeout(r,100));
   }
   assert(sshReady);
-  const build=spawnSync(process.execPath,['scripts/package-plugin.mjs','--plugin','docker'],{stdio:'inherit',windowsHide:true});assert.equal(build.status,0);
+  packageRoot(); // Fixtures are prepared explicitly before source integration tests.
   const code=await new Promise((resolve,reject)=>{
     const test=spawn('cargo',['test','--manifest-path','src-tauri/Cargo.toml','--features','test-fixtures','--locked','--test','connections','openssh_docker_plugin','--','--ignored','--exact','--nocapture'],
       {stdio:'inherit',windowsHide:true,env:{...process.env,SODECK_TEST_SSH_PORT:port,SODECK_TEST_SSH_USER:'root',SODECK_TEST_SSH_KEY:path.join(directory,'user'),SODECK_TEST_DOCKER_PLUGIN:packageRoot(),SODECK_TEST_DOCKER_CONTAINER:app}});
@@ -56,7 +56,7 @@ try{
   assert.equal(code,0);
   inside(['volume','inspect',appVolume]);assert.equal(inside(['container','ls','--all','--quiet']).length,0,'test container should have been explicitly removed');
   fs.mkdirSync('artifacts/docker-integration',{recursive:true});
-  fs.writeFileSync('artifacts/docker-integration/result.json',JSON.stringify({engine:'24.0.9',clientTarget:path.basename(packageRoot()).match(/^sodeck-docker_[^_]+_(.+)$/)[1],actualCore:true,actualPlugin:true,ssh:true,containerRemoved:true,volumePreserved:true},null,2)+'\n');
+  fs.writeFileSync('artifacts/docker-integration/result.json',JSON.stringify({engine:'24.0.9',clientTarget:JSON.parse(fs.readFileSync(path.join(packageRoot(),'plugin.json'),'utf8')).target,actualCore:true,actualPlugin:true,ssh:true,containerRemoved:true,volumePreserved:true},null,2)+'\n');
   console.log('Actual core/native Docker plugin/OpenSSH/isolated Engine: list, details, logs, stats, pause/unpause/stop/start/restart/remove, retained logs on disconnect and volume preservation passed.');
 }finally{
   for(const resource of created.reverse()){assert(resource.startsWith(name+'-'));spawnSync('docker',['rm','-f','-v',resource],{windowsHide:true,stdio:'ignore'});}

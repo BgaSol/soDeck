@@ -131,7 +131,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
         core(); ui();
         continue;
       }
-      if (/^scripts\/(select-checks|check-docs)(\.test)?\.mjs$/.test(file)) { plan.scripts = true; continue; }
+      if (/^scripts\/(select-checks|check-docs|core-release|release-metadata|collect-core|cargo-package|resolve-native-inputs|prepare-native-packages|run-ci-suite)\.test\.mjs$/.test(file) || /^scripts\/(select-checks|check-docs)\.mjs$/.test(file)) { plan.scripts = true; continue; }
       if (file === 'scripts/fixtures/events.js') { plan.scripts = true; ['terminal', 'files', 'network-proxy'].forEach(name => integration.add(name)); continue; }
       if(file==='scripts/workbench-transfer-fixture.mjs'){ui();plan.communication=true;['terminal','files','system-status'].forEach(name=>integration.add(name));continue;}
       if (file === 'scripts/test-close-native.mjs' || file === 'scripts/native-pointer.ps1') { core(); ui(); plan.ssh = true; continue; }
@@ -143,6 +143,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
       const pluginUiTest = file.match(/^scripts\/test-(terminal|files)-ui\.mjs$/);
       if (/^scripts\/(test-file-editor-ui|file-editor-fixture)\.mjs$/.test(file)) { plan.scripts = true; integration.add('files'); continue; }
       if (pluginUiTest) { plan.scripts = true; integration.add(pluginUiTest[1]); continue; }
+      if (file === 'scripts/test-terminal-shell.py') { plan.scripts = true; integration.add('terminal'); continue; }
       if (file === 'scripts/test-terminal-input.mjs') { plan.scripts = plan.terminalInput = true; continue; }
       if (/^scripts\/(test-terminal-(history|search-ui)|benchmark-terminal-history|terminal-history\.test)\.mjs$/.test(file)) { plan.scripts = plan.terminalInput = true; continue; }
       if (/^scripts\/test-(connection-ui|desktop-ui|production-ui|server-ui|settings-ui|workspace-ui|workbench-interactions|workbench-layout)\.mjs$/.test(file)) { ui(); continue; }
@@ -152,13 +153,14 @@ export function selectChecks(files, { suite, fallback } = {}) {
     if (!plan.reasons.length) plan.reasons.push('Selected from changed components and native adapters');
   }
 
+  const clientTarget = t => plan.sharedClient && (suite !== 'standard' || t.name === 'linux-x86_64');
   plan.plugins = [...plugins];
-  plan.native = targets.filter(t => coreTargets.has(t.name) || scriptTargets.has(t.name) || pluginNames.some(p => pluginTargets[p].has(t.name)))
+  plan.native = targets.filter(t => clientTarget(t) || coreTargets.has(t.name) || scriptTargets.has(t.name) || pluginNames.some(p => pluginTargets[p].has(t.name)))
     .map(t => {
-      const row = { ...t, core: coreTargets.has(t.name), scripts: scriptTargets.has(t.name) };
+      const row = { ...t, core: coreTargets.has(t.name), client: clientTarget(t), scripts: scriptTargets.has(t.name) };
       for (const name of pluginNames) row[name === 'network-proxy' ? 'network' : name === 'system-status' ? 'status' : name] = pluginTargets[name].has(t.name);
       // Core scopes share the existing full-core key; plugin-only jobs keep their small cache.
-      row.workspaces = [row.core ? 'src-tauri -> target' : null,
+      row.workspaces = [row.core ? 'src-tauri -> target' : null, (row.core || row.client) ? 'crates/plugin-client -> target' : null,
         ...pluginNames.filter(p => row.core || pluginTargets[p].has(t.name)).map(p => `plugins/${p} -> target`)].filter(Boolean).join('\n');
       return row;
     });
@@ -183,7 +185,7 @@ export function selectionSummary(plan) {
     '| Documentation | Always: tracked Markdown structure and local file links |',
     `| Frontend / browser / scripts | ${[plan.web && 'Linux full UI + production build', plan.terminalInput && 'terminal input', plan.scripts && 'script tests', plan.workflow && 'actionlint'].filter(Boolean).join(', ') || 'Skipped'} |`,
     `| Plugin format | ${plan.plugins.join(', ') || 'Skipped'} |`,
-    `| Native source tests | ${plan.native.map(t => `${t.name}: ${[t.core && 'core', t.terminal && 'terminal', t.files && 'files', t.network && 'network', t.status && 'system-status', t.docker && 'docker', t.scripts && 'scripts'].filter(Boolean).join(', ')}`).join('<br>') || 'Skipped'} |`,
+    `| Native source tests | ${plan.native.map(t => `${t.name}: ${[t.core && 'core', t.client && 'plugin-client', t.terminal && 'terminal', t.files && 'files', t.network && 'network', t.status && 'system-status', t.docker && 'docker', t.scripts && 'scripts'].filter(Boolean).join(', ')}`).join('<br>') || 'Skipped'} |`,
     `| Normal integration | ${plan.integration.map(t => `${t.name}: ${[t.network && 'network', t.terminal && 'terminal', t.files && 'files', t.status && 'system-status', t.docker && 'docker',t.communication&&'component communication'].filter(Boolean).join(', ')}`).join('<br>') || 'Skipped'} |`,
     `| Windows desktop | ${plan.desktop ? [plan.ssh && 'native SSH', plan.windowsUi && 'manual full UI comparison'].filter(Boolean).join(' + ') : 'Skipped'} |`,
     `| Weak network | ${plan.netem ? 'Explicit manual netem: both native Linux targets' : 'Skipped; manual netem only, including for all'} |`, '',

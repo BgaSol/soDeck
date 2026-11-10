@@ -1,116 +1,26 @@
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { createHash } from "node:crypto";
-import { verifyBinary } from "./verify-binary.mjs";
-import { packageSettingsAssets } from "./plugin-settings-assets.mjs";
+import { buildPlugin, nativeTarget, run } from "./plugin-build.mjs";
 import { cargoPackageVersion } from "./cargo-package.mjs";
-import { packageMenuAssets } from "./plugin-menu-assets.mjs";
-// Git Bash's GNU tar treats C: as a remote host; Windows ships a native bsdtar.
-const tar = process.platform === "win32" ? path.join(process.env.SystemRoot, "System32", "tar.exe") : "tar";
-
-function run(command, args, options = {}) {
-  const result = spawnSync(command, args, { stdio: "inherit", ...options });
-  if (result.error) throw result.error;
-  if (result.status !== 0)
-    throw new Error(`${command} failed (${result.status})`);
-}
-const pluginArg = process.argv.indexOf("--plugin");
-const plugin = pluginArg === -1 ? undefined : process.argv[pluginArg + 1];
-if (!plugin) throw new Error("Specify a plugin with --plugin terminal, --plugin files, or --plugin network-proxy");
-if (!/^[a-z][a-z0-9-]*$/.test(plugin ?? "")) throw new Error("Invalid plugin directory name");
-const pluginRoot = `plugins/${plugin}`;
-const metadata = JSON.parse(fs.readFileSync(`${pluginRoot}/release.json`, "utf8"));
-const version = cargoPackageVersion(`${pluginRoot}/Cargo.toml`);
-if (fs.existsSync(`${pluginRoot}/package.json`)) {
-  // Explicit UI build, isolated from the core and other plugins; no arbitrary release hooks.
-  let npmCli=process.env.npm_execpath;
-  if(process.platform==='win32'&&!npmCli){
-    const location=spawnSync('where.exe',['npm.cmd'],{encoding:'utf8',windowsHide:true});
-    if(location.status!==0)throw new Error('Node.js/npm is required to build this plugin UI');
-    npmCli=path.join(path.dirname(location.stdout.trim().split(/\r?\n/)[0]),'node_modules/npm/bin/npm-cli.js');
-  }
-  const npm=(args)=>npmCli?run(process.execPath,[npmCli,...args],{cwd:pluginRoot}):run('npm',args,{cwd:pluginRoot});
-  npm(["ci", "--ignore-scripts"]);
-  npm(["run", "build"]);
-}
-const targetArg = process.argv.indexOf("--target");
-const target =
-  targetArg === -1
-    ? spawnSync("rustc", ["-vV"], { encoding: "utf8" }).stdout.match(
-        /^host: (.+)$/m,
-      )?.[1]
-    : process.argv[targetArg + 1];
-const targets = [
-  "x86_64-pc-windows-msvc",
-  "aarch64-pc-windows-msvc",
-  "x86_64-unknown-linux-gnu",
-  "aarch64-unknown-linux-gnu",
-  "aarch64-apple-darwin",
-];
-if (!targets.includes(target)) throw new Error(`Unsupported target: ${target}`);
-run("cargo", ["build", "--release", "--locked", "--target", target], {
-  cwd: pluginRoot,
-});
+import { sha256 } from "./core-artifacts.mjs";
+import { spawnSync } from "node:child_process";
+const arg = name => { const i = process.argv.indexOf(name); return i < 0 ? undefined : process.argv[i + 1]; };
+const plugin = arg("--plugin");
+if (!plugin) throw new Error("Specify a plugin with --plugin <name>");
+if (!/^[a-z][a-z0-9-]*$/.test(plugin)) throw new Error("Invalid plugin directory name");
+const target = arg("--target") ?? nativeTarget();
+const metadata = JSON.parse(fs.readFileSync(`plugins/${plugin}/release.json`, "utf8"));
+const version = cargoPackageVersion(`plugins/${plugin}/Cargo.toml`);
+const output = path.resolve(arg("--out-dir") ?? "artifacts/plugins");
 const stem = `${metadata.binary}_${version}_${target}`;
-const outputArg = process.argv.indexOf("--out-dir");
-const output =
-  outputArg === -1 ? "artifacts/plugins" : process.argv[outputArg + 1];
-if (!output) throw new Error("--out-dir requires a directory");
-const directory = path.resolve(output, stem);
-fs.mkdirSync(path.join(directory, "bin"), { recursive: true });
-const executable = `${metadata.binary}${target.includes("windows") ? ".exe" : ""}`;
-const destination = path.join(directory, "bin", executable);
-if (fs.existsSync(`${pluginRoot}/ui`)) fs.cpSync(`${pluginRoot}/ui`, path.join(directory, "ui"), { recursive: true });
-if (metadata.ui) fs.copyFileSync("src/ui.css", path.join(directory, "ui/shared.css"));
-if (metadata.ui) fs.copyFileSync("plugins/shared/clipboard.js", path.join(directory, "ui/clipboard-bridge.js"));
-if (['terminal','files'].includes(plugin)) fs.copyFileSync("plugins/shared/state.js", path.join(directory, "ui/state.js"));
-if (metadata.ui) await packageMenuAssets(directory);
-packageSettingsAssets(metadata, directory);
-fs.copyFileSync(
-  `${pluginRoot}/target/${target}/release/${executable}`,
-  destination,
-);
-verifyBinary(destination, target);
-if (!target.includes("windows")) fs.chmodSync(destination, 0o755);
-if (target.includes("apple") && process.platform === "darwin")
-  run("codesign", ["--force", "--sign", "-", destination]);
-fs.writeFileSync(
-  path.join(directory, "plugin.json"),
-  JSON.stringify(
-    {
-      id: metadata.id,
-      name: metadata.name,
-      version,
-      apiVersion: metadata.apiVersion,
-      target,
-      entry: `bin/${executable}`,
-      updateSource: { repository: "BgaSol/soDeck", tagPrefix: metadata.tagPrefix },
-      ...(metadata.ui ? { ui: metadata.ui } : {}),
-      ...(metadata.settings ? { settings: metadata.settings } : {}),
-    },
-    null,
-    2,
-  ) + "\n",
-);
-if (target.includes("windows"))
-  run(tar, [
-    "-a",
-    "-c",
-    "-f",
-    `${directory}.zip`,
-    "-C",
-    path.dirname(directory),
-    stem,
-  ]);
-else
-  run(tar, [
-    "-czf",
-    `${directory}.tar.gz`,
-    "-C",
-    path.dirname(directory),
-    stem,
-  ]);
+const archive = path.join(output, stem + (target.includes("windows") ? ".zip" : ".tar.gz"));
+const sidecar = path.join(output, `plugin-${target}.json`);
+if (fs.existsSync(archive) || fs.existsSync(sidecar)) throw new Error("Use a clean plugin release output directory");
+const { directory } = await buildPlugin({ plugin, target, output: path.join(output, stem), release: true });
+if (target.includes("apple") && process.platform === "darwin") run("codesign", ["--force", "--sign", "-", path.join(directory, "bin", metadata.binary)]);
+const tar = process.platform === "win32" ? path.join(process.env.SystemRoot, "System32/tar.exe") : "tar";
+run(tar, [target.includes("windows") ? "-a" : "-z", "-cf", archive, "-C", output, stem]);
+const commit = process.env.GITHUB_SHA ?? spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8", windowsHide: true }).stdout?.trim();
+if (!/^[a-f0-9]{40}$/.test(commit ?? "")) throw new Error("Plugin artifacts require the source commit");
+fs.writeFileSync(sidecar, JSON.stringify({ id: metadata.id, version, apiVersion: metadata.apiVersion, target, commit, runId: process.env.GITHUB_RUN_ID ?? null, file: path.basename(archive), size: fs.statSync(archive).size, sha256: sha256(archive) }, null, 2) + "\n");
 console.log(`Plugin package: ${directory}`);
-const archive = `${directory}${target.includes("windows") ? ".zip" : ".tar.gz"}`;
-fs.writeFileSync(path.resolve(output, `plugin-${target}.json`), JSON.stringify({ id: metadata.id, version, apiVersion: metadata.apiVersion, target, file: path.basename(archive), sha256: createHash("sha256").update(fs.readFileSync(archive)).digest("hex") }, null, 2) + "\n");

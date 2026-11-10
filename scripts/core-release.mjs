@@ -61,20 +61,23 @@ export async function prepareCoreRelease(api, config, input, commit, repository)
   const manifest = generate("core", config, input, repository);
   const manifestFile = path.join(input, "core-update.json");
   fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2) + "\n");
+  return { ...verified, ...await prepareReleaseAssets(api, config, [...verified.assets, manifestFile], commit, "core-update.json", `SoDeck ${config.tag}`) };
+}
+
+export async function prepareReleaseAssets(api, config, desired, commit, manifestName, title) {
   let release = await releaseState(api, config, commit);
-  const desired = [...verified.assets, manifestFile];
   let existing = release ? await releaseAssets(api, release.id) : [];
   const names = desired.map(file => path.basename(file));
   if (existing.some(asset => !names.includes(asset.name)) || new Set(existing.map(asset => asset.name)).size !== existing.length) throw new Error("Core draft contains unexpected or duplicate assets; do not mix build inputs");
   // Verify all existing package bytes before changing the draft at all.
-  for (const asset of existing.filter(asset => asset.name !== "core-update.json" && asset.state === "uploaded")) {
+  for (const asset of existing.filter(asset => asset.name !== manifestName && asset.state === "uploaded")) {
     const file = desired.find(file => path.basename(file) === asset.name);
     if (asset.size !== fs.statSync(file).size || asset.digest !== `sha256:${sha256(file)}`) throw new Error(`Existing core draft asset differs: ${asset.name}`);
   }
   if (!release) {
     const ref = await api("GET", `/git/ref/tags/${encodeURIComponent(config.tag)}`, undefined, false, true);
     if (!ref) await api("POST", "/git/refs", { ref: `refs/tags/${config.tag}`, sha: commit });
-    release = await api("POST", "/releases", { tag_name: config.tag, target_commitish: commit, name: `SoDeck ${config.tag}`, body: config.notes, draft: true, make_latest: "false" });
+    release = await api("POST", "/releases", { tag_name: config.tag, target_commitish: commit, name: title, body: config.notes, draft: true, make_latest: "false" });
   }
   for (const file of desired) {
     const name = path.basename(file), digest = `sha256:${sha256(file)}`, asset = existing.find(asset => asset.name === name);
@@ -82,7 +85,7 @@ export async function prepareCoreRelease(api, config, input, commit, repository)
     const current = await releaseState(api, config, commit);
     if (!current || current.id !== release.id) throw new Error("Core release changed while uploading");
     if (asset) {
-      if (name !== "core-update.json" && asset.state === "uploaded") throw new Error(`Existing core draft asset differs: ${name}`);
+      if (name !== manifestName && asset.state === "uploaded") throw new Error(`Existing core draft asset differs: ${name}`);
       await api("DELETE", `/releases/assets/${asset.id}`);
     }
     const uploaded = await api("POST", `${release.upload_url.split("{")[0]}?name=${encodeURIComponent(name)}`, fs.readFileSync(file), true);
@@ -90,10 +93,10 @@ export async function prepareCoreRelease(api, config, input, commit, repository)
   }
   const current = await releaseState(api, config, commit);
   if (!current || current.id !== release.id) throw new Error("Core release changed while uploading");
-  await api("PATCH", `/releases/${release.id}`, { tag_name: config.tag, name: `SoDeck ${config.tag}`, body: config.notes });
+  await api("PATCH", `/releases/${release.id}`, { tag_name: config.tag, name: title, body: config.notes });
   existing = await releaseAssets(api, release.id);
   if (existing.length !== desired.length || desired.some(file => !existing.some(asset => asset.name === path.basename(file) && asset.digest === `sha256:${sha256(file)}` && asset.state === "uploaded"))) throw new Error("Core draft asset verification failed");
-  return { ...verified, url: release.html_url };
+  return { url: release.html_url };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -82,7 +82,7 @@ jobs:
         run: |
           sudo "$(command -v node)" scripts/configure-ubuntu-mirror.mjs
           sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
-          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev patchelf xvfb dbus-x11 libfuse2 xdg-utils desktop-file-utils
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev patchelf libfuse2 xdg-utils desktop-file-utils
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.99.1
@@ -93,18 +93,6 @@ jobs:
           workspaces: src-tauri -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
-      - name: Install OpenSSH for packaged SSH verification
-        if: matrix.name == 'windows-x86_64'
-        shell: pwsh
-        run: |
-          if (-not (Test-Path "$env:WINDIR/System32/OpenSSH/sshd.exe")) {
-            $capability = Get-WindowsCapability -Online -Name 'OpenSSH.Server*' | Select-Object -First 1
-            if (-not $capability) { throw 'OpenSSH Server capability is unavailable' }
-            Add-WindowsCapability -Online -Name $capability.Name
-          }
-      - name: Verify macOS default-handler fixture
-        if: runner.os == 'macOS'
-        run: node scripts/test-desktop-open-native.mjs --handler-only
       - name: Build installer
         uses: tauri-apps/tauri-action@v1
         env:
@@ -114,55 +102,7 @@ jobs:
         with:
           uploadUpdaterJson: false
           args: --config src-tauri/tauri.release.conf.json --target ${{ matrix.target }} --bundles ${{ matrix.bundle }} -- --locked
-      - name: Install and launch Windows package
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $installer = Get-ChildItem 'src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe' | Select-Object -First 1
-          $installDir = Join-Path $env:ProgramW6432 'SoDeck'
-          $install = Start-Process -FilePath $installer.FullName -ArgumentList '/S' -WindowStyle Hidden -PassThru -Wait
-          if ($install.ExitCode -ne 0) { throw "Installer failed: $($install.ExitCode)" }
-          $registration = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\SoDeck'
-          if ($registration.InstallLocation.Trim('"') -ne $installDir) { throw 'System installation location mismatch' }
-          node scripts/verify-binary.mjs "$installDir/sodeck.exe" '${{ matrix.target }}'
-          $env:SODECK_TEST_UPDATE_BUNDLE = $installer.FullName
-          node scripts/smoke.mjs "$installDir/sodeck.exe"
-          node scripts/test-desktop-open-native.mjs "$installDir/sodeck.exe"
-          if ('${{ matrix.name }}' -eq 'windows-x86_64') { node scripts/test-openssh.mjs --packaged "$installDir/sodeck.exe" }
-      - name: Extract and launch Linux package
-        if: runner.os == 'Linux'
-        env:
-          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
-        run: |
-          dpkg-deb -x src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb "$RUNNER_TEMP/SoDeck"
-          node scripts/verify-binary.mjs "$RUNNER_TEMP/SoDeck/usr/bin/sodeck" '${{ matrix.target }}'
-          SODECK_TEST_UPDATE_BUNDLE="$(find src-tauri/target/${{ matrix.target }}/release/bundle/appimage -name '*.AppImage' | head -1)"
-          export SODECK_TEST_UPDATE_BUNDLE
-          test -n "$SODECK_TEST_UPDATE_BUNDLE"
-          node scripts/smoke.mjs dbus-run-session -- xvfb-run -a "$RUNNER_TEMP/SoDeck/usr/bin/sodeck"
-          dbus-run-session -- xvfb-run -a node scripts/test-desktop-open-native.mjs "$RUNNER_TEMP/SoDeck/usr/bin/sodeck"
-          APPIMAGE_EXTRACT_AND_RUN=1 dbus-run-session -- xvfb-run -a node scripts/test-desktop-open-native.mjs src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
-          APPIMAGE_EXTRACT_AND_RUN=1 node scripts/smoke.mjs dbus-run-session -- xvfb-run -a src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
-      - name: Mount and launch macOS package
-        if: runner.os == 'macOS'
-        run: |
-          hdiutil attach src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg -nobrowse -readonly -mountpoint "$RUNNER_TEMP/SoDeck"
-          trap 'hdiutil detach "$RUNNER_TEMP/SoDeck"' EXIT
-          node scripts/verify-binary.mjs "$RUNNER_TEMP/SoDeck/SoDeck.app/Contents/MacOS/sodeck" '${{ matrix.target }}'
-          SODECK_TEST_UPDATE_BUNDLE="$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name '*.app.tar.gz' | head -1)"
-          export SODECK_TEST_UPDATE_BUNDLE
-          test -n "$SODECK_TEST_UPDATE_BUNDLE"
-          node scripts/smoke.mjs "$RUNNER_TEMP/SoDeck/SoDeck.app/Contents/MacOS/sodeck"
-          node scripts/test-desktop-open-native.mjs "$RUNNER_TEMP/SoDeck/SoDeck.app/Contents/MacOS/sodeck"
-      - name: Upload native opener evidence
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: Native-opener-${{ matrix.name }}
-          path: artifacts/native-desktop-open/
-          if-no-files-found: ignore
-          retention-days: 30
-      - name: Collect verified packages
+      - name: Collect built packages
         run: node scripts/collect-core.mjs ${{ matrix.target }}
       - uses: actions/upload-artifact@v7
         with:
@@ -170,9 +110,66 @@ jobs:
           path: artifacts/core/
           if-no-files-found: error
           retention-days: 30
-  metadata:
+  verify:
     needs: [preflight, package]
-    if: always() && !cancelled() && needs.preflight.result == 'success'
+    if: ${{ !cancelled() && needs.preflight.result == 'success' && (needs.package.result == 'success' || (inputs.core_run_id != '' && needs.package.result == 'skipped')) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x86_64
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            bundle: nsis
+          - name: windows-aarch64
+            runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            bundle: nsis
+          - name: linux-x86_64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundle: deb,appimage
+          - name: linux-aarch64
+            runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            bundle: deb,appimage
+          - name: macos-aarch64
+            runner: macos-15
+            target: aarch64-apple-darwin
+            bundle: dmg,app
+    name: verify-${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+      - name: Install Linux runtime verification dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo "$(command -v node)" scripts/configure-ubuntu-mirror.mjs
+          sudo apt-get -o Acquire::Retries=2 update
+          sudo apt-get -o Acquire::Retries=2 install -y libwebkit2gtk-4.1-0 libayatana-appindicator3-1 librsvg2-2 xvfb dbus-x11 libfuse2
+      - uses: actions/download-artifact@v5
+        with:
+          name: SoDeck-${{ matrix.name }}
+          run-id: ${{ needs.preflight.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: packages/core
+      - name: Verify actual native packages
+        run: node scripts/test-core-package.mjs packages/core '${{ matrix.target }}' '${{ needs.preflight.outputs.source_sha }}'
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: Core-verification-${{ matrix.name }}
+          path: artifacts/verification/
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
+  metadata:
+    needs: [preflight, verify]
+    if: ${{ !cancelled() && needs.preflight.result == 'success' && needs.verify.result == 'success' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     concurrency:
@@ -193,6 +190,13 @@ jobs:
           github-token: ${{ github.token }}
           merge-multiple: true
           path: artifacts/core
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: Core-verification-*
+          merge-multiple: true
+          path: verification
+      - name: Bind results to the original package bytes
+        run: node scripts/verification-report.mjs core artifacts/core verification '${{ needs.preflight.outputs.source_sha }}'
       - name: Prepare verified manifest and optional draft
         env:
           GH_TOKEN: ${{ github.token }}

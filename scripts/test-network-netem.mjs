@@ -1,3 +1,4 @@
+import { testPluginDirectory } from "./test-plugin-directory.mjs";
 // Linux only: the test process and its plugin inherit a private network namespace.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -32,9 +33,7 @@ try {
   if (!['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu'].includes(target)) throw new Error('unsupported native Linux target');
   environment.rust = version;
   environment.tc = run('tc', ['-V']).trim();
-  run(process.execPath, ['scripts/package-plugin.mjs', '--plugin', 'network-proxy', '--out-dir', root], { stdio: 'inherit' });
-  const packages = fs.readdirSync(root).filter(p => fs.existsSync(path.join(root, p, 'plugin.json')));
-  if (packages.length !== 1) throw new Error('expected one packaged network plugin');
+  const pluginDirectory = testPluginDirectory('network-proxy');
   const build = run('cargo', ['test', '--manifest-path', 'src-tauri/Cargo.toml', '--features', 'test-fixtures', '--locked',
     '--test', 'connections', '--no-run', '--message-format=json']);
   const artifact = build.split('\n').filter(Boolean).map(line => { try { return JSON.parse(line); } catch { return null; } })
@@ -58,7 +57,7 @@ try {
       'delay', profile.delay, profile.jitter, 'loss', profile.loss]);
     const qdisc = admin('ip', ['netns', 'exec', name, 'tc', '-s', 'qdisc', 'show', 'dev', 'lo']);
     console.log(`netem ${profile.name}: ${profile.delay} ± ${profile.jitter}, loss ${profile.loss}, ${profile.count} attempts`);
-    const args = ['netns', 'exec', name, 'env', `SODECK_TEST_NETWORK_PLUGIN=${path.join(root, packages[0])}`,
+    const args = ['netns', 'exec', name, 'env', `SODECK_TEST_NETWORK_PLUGIN=${pluginDirectory}`,
       `SODECK_NETEM_PROFILE=${profile.name}`, `SODECK_NETEM_COUNT=${profile.count}`, `SODECK_NETEM_LOSS=${profile.loss}`,
       artifact.executable, 'network_socks_netem', '--ignored', '--exact', '--nocapture'];
     const execution = privileged.length ? execute(privileged[0], [...privileged.slice(1), 'ip', ...args]) : execute('ip', args);

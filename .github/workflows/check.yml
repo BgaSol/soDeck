@@ -124,6 +124,8 @@ jobs:
             plugins/docker -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
+      - name: Prepare browser test dependencies once
+        run: npm run test:prepare -- --ui-only terminal files
       - name: Configure Ubuntu browser dependency mirror
         run: sudo "$(command -v node)" scripts/configure-ubuntu-mirror.mjs
       - run: npx playwright install --with-deps chromium
@@ -195,9 +197,14 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      - name: Prepare selected source plugin fixtures once
+        run: npm run test:prepare -- --matrix '${{ toJSON(matrix) }}'
       - name: Real network plugin, independent SOCKS server and curl
         if: matrix.network
         run: npm run ci:test -- network:test
+      - name: File editor source types
+        if: matrix.files
+        run: npm run check --prefix plugins/files
       - name: Real files plugin and SFTP
         if: matrix.files
         run: npm run ci:test -- files:test
@@ -216,9 +223,9 @@ jobs:
       - name: Actual Docker plugin with isolated Engine and OpenSSH
         if: matrix.docker
         run: npm run ci:test -- docker:test
-      - name: Docker UI and actual native archive
+      - name: Docker UI and source process regression
         if: matrix.docker
-        run: npm run ci:test -- docker:ui:test && npm run ci:test -- docker:package:test
+        run: npm run ci:test -- docker:ui:test && npm run ci:test -- docker:process:test
       - name: Three real plugins and shared state communication
         if: matrix.communication
         run: npm run ci:test -- communication:test
@@ -263,6 +270,8 @@ jobs:
             plugins/docker -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
+      - name: Prepare browser test dependencies once
+        run: npm run test:prepare -- --ui-only terminal files
       - name: Install OpenSSH test server
         if: fromJSON(needs.select.outputs.plan).ssh
         shell: pwsh
@@ -330,6 +339,9 @@ jobs:
       - name: Verify macOS default-handler fixture
         if: runner.os == 'macOS' && matrix.core
         run: node scripts/test-desktop-open-native.mjs --handler-only
+      - name: Shared plugin client source tests
+        if: matrix.client
+        run: cargo test --manifest-path crates/plugin-client/Cargo.toml --locked
       - name: Native core source tests
         if: matrix.core
         run: npm run test
@@ -387,6 +399,7 @@ jobs:
             plugins/network-proxy -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
+      - run: npm run test:prepare -- network-proxy
       - name: Private namespace packet loss and recovery
         run: npm run network:netem
       - uses: actions/upload-artifact@v7

@@ -38,6 +38,10 @@ on:
         description: Verify actual native file clipboard with an isolated provider (core 0.20+)
         type: boolean
         default: false
+      desktop_open:
+        description: Verify default application handoff on isolated native desktops
+        type: boolean
+        default: false
       file_editor:
         description: Run Windows editor UI automation (requires a WebView2 debugging endpoint)
         type: boolean
@@ -137,7 +141,7 @@ jobs:
         run: |
           sudo "$(command -v node)" scripts/configure-ubuntu-mirror.mjs
           sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
-          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-0 xvfb dbus-x11 openssh-server
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-0 xvfb dbus-x11 openssh-server xdg-utils desktop-file-utils libfuse2
           sudo mkdir -p /run/sshd
       - name: Install Windows test server
         id: windows_runtime
@@ -172,7 +176,7 @@ jobs:
         if: runner.os == 'Linux' && inputs.desktop_files
         run: sudo apt-get -o Acquire::Retries=2 install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev pkg-config
       - uses: dtolnay/rust-toolchain@master
-        if: inputs.desktop_files
+        if: inputs.desktop_files || inputs.desktop_open
         with:
           toolchain: 1.99.1
           targets: ${{ matrix.target }}
@@ -202,6 +206,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Installed core architecture mismatch' }
           node scripts/test-openssh.mjs --packaged "$installDir/sodeck.exe"
           if ($LASTEXITCODE -ne 0) { throw 'Actual remote package test failed' }
+          if ('${{ inputs.desktop_open }}' -eq 'true') {
+            node scripts/test-desktop-open-native.mjs "$installDir/sodeck.exe"
+            if ($LASTEXITCODE -ne 0) { throw 'Default application handoff test failed' }
+          }
           if ('${{ inputs.desktop_files }}' -eq 'true') {
             node scripts/test-desktop-files-native.mjs 'src-tauri/target/${{ matrix.target }}/debug/desktop-files-fixture.exe' "$installDir/sodeck.exe"
             if ($LASTEXITCODE -ne 0) { throw 'Actual file clipboard test failed' }
@@ -226,6 +234,11 @@ jobs:
           dpkg-deb -x "$SODECK_CORE_PACKAGE" "$RUNNER_TEMP/SoDeck-remote"
           node scripts/verify-binary.mjs "$RUNNER_TEMP/SoDeck-remote/usr/bin/sodeck" '${{ matrix.target }}'
           node scripts/test-openssh.mjs --packaged dbus-run-session -- xvfb-run -a "$RUNNER_TEMP/SoDeck-remote/usr/bin/sodeck"
+          if [ '${{ inputs.desktop_open }}' = 'true' ]; then
+            dbus-run-session -- xvfb-run -a node scripts/test-desktop-open-native.mjs "$RUNNER_TEMP/SoDeck-remote/usr/bin/sodeck"
+            chmod +x "$SODECK_CORE_APPIMAGE"
+            APPIMAGE_EXTRACT_AND_RUN=1 dbus-run-session -- xvfb-run -a node scripts/test-desktop-open-native.mjs "$SODECK_CORE_APPIMAGE"
+          fi
           if [ '${{ inputs.desktop_files }}' = 'true' ]; then
             dbus-run-session -- xvfb-run -a node scripts/test-desktop-files-native.mjs 'src-tauri/target/${{ matrix.target }}/debug/desktop-files-fixture' "$RUNNER_TEMP/SoDeck-remote/usr/bin/sodeck"
           fi
@@ -237,6 +250,9 @@ jobs:
           trap 'hdiutil detach "$RUNNER_TEMP/SoDeck-remote"' EXIT
           node scripts/verify-binary.mjs "$RUNNER_TEMP/SoDeck-remote/SoDeck.app/Contents/MacOS/sodeck" '${{ matrix.target }}'
           node scripts/test-openssh.mjs --packaged "$RUNNER_TEMP/SoDeck-remote/SoDeck.app/Contents/MacOS/sodeck"
+          if [ '${{ inputs.desktop_open }}' = 'true' ]; then
+            node scripts/test-desktop-open-native.mjs "$RUNNER_TEMP/SoDeck-remote/SoDeck.app/Contents/MacOS/sodeck"
+          fi
           if [ '${{ inputs.desktop_files }}' = 'true' ]; then
             node scripts/test-desktop-files-native.mjs 'src-tauri/target/${{ matrix.target }}/debug/desktop-files-fixture' "$RUNNER_TEMP/SoDeck-remote/SoDeck.app/Contents/MacOS/sodeck"
           fi
@@ -257,6 +273,7 @@ jobs:
             artifacts/files-ui/native-editor-failure.json
             artifacts/files-ui/editor-native.png
             artifacts/native-desktop-files/*.json
+            artifacts/native-desktop-open/*.json
           if-no-files-found: error
           overwrite: true
           retention-days: 30
