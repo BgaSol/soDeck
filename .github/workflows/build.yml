@@ -169,7 +169,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version-file: .node-version
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           pattern: SoDeck-*
           run-id: ${{ needs.preflight.outputs.run_id }}

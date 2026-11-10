@@ -80,13 +80,13 @@ jobs:
         with:
           node-version-file: .node-version
       - id: snapshot
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.resolve.outputs.snapshot_id }}
           merge-multiple: true
       - id: selected
         run: node scripts/prepare-native-packages.mjs platform '${{ matrix.target }}'
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         id: core_download
         if: steps.selected.outputs.core_kind == 'artifact'
         with:
@@ -95,7 +95,7 @@ jobs:
           github-token: ${{ github.token }}
           merge-multiple: true
           path: packages/core
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         id: terminal_download
         if: steps.selected.outputs.terminal_kind == 'artifact'
         with:
@@ -104,7 +104,7 @@ jobs:
           github-token: ${{ github.token }}
           merge-multiple: true
           path: packages/terminal
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         id: files_download
         if: steps.selected.outputs.files_kind == 'artifact'
         with:
@@ -113,7 +113,7 @@ jobs:
           github-token: ${{ github.token }}
           merge-multiple: true
           path: packages/files
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         id: network_download
         if: steps.selected.outputs.network_kind == 'artifact'
         with:
@@ -252,13 +252,13 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version-file: .node-version
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         if: needs.resolve.result == 'success'
         continue-on-error: true
         with:
           artifact-ids: ${{ needs.resolve.outputs.snapshot_id }}
           merge-multiple: true
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         if: needs.resolve.result == 'success'
         continue-on-error: true
         with:

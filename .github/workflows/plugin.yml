@@ -132,7 +132,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version-file: .node-version
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           pattern: Plugin-${{ needs.select.outputs.plugin }}-*
           merge-multiple: true
