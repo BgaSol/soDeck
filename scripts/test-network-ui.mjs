@@ -27,9 +27,9 @@ try{
  // Fixed-port checkbox and small viewport scroll must be usable.
  await editor.locator('input[name=auto]').uncheck();assert.equal(await editor.locator('input[name=port]').isEnabled(),true);await editor.locator('input[name=auto]').check();
  await page.setViewportSize({width:720,height:480});await editor.locator('summary').click();await editor.locator('.fields').evaluate(el=>el.scrollTop=el.scrollHeight);await editor.locator('input[name=bindHost]').waitFor({state:'visible'});
- const scroll=await editor.locator('.fields').evaluate(el=>({scroll:el.scrollHeight,client:el.clientHeight,top:el.scrollTop}));assert(scroll.scroll>scroll.client&&scroll.top>0);assert(await editor.getByRole('button',{name:'保存并启动',exact:true}).isVisible());
+ const scroll=await editor.locator('.fields').evaluate(el=>({scroll:el.scrollHeight,client:el.clientHeight,top:el.scrollTop}));assert(scroll.scroll>scroll.client&&scroll.top>0);assert(await editor.getByRole('button',{name:'保存',exact:true}).isVisible());
  fs.mkdirSync('artifacts/network-ui',{recursive:true});await page.screenshot({path:'artifacts/network-ui/editor-narrow.png'});
- await editor.getByRole('button',{name:'保存并启动',exact:true}).click();await page.locator('.plugin-view-dialog').waitFor({state:'detached'});await page.setViewportSize({width:1180,height:760});
+ await editor.getByRole('button',{name:'保存',exact:true}).click();await page.locator('.plugin-view-dialog').waitFor({state:'detached'});await page.setViewportSize({width:1180,height:760});
  const instrument=()=>sidebar.locator('#app').evaluate(()=>{window.refreshes=0;const request=sodeck.request;sodeck.request=async(method,params)=>{const result=await request(method,params);if(method==='event'&&params.action==='snapshot')window.refreshes++;return result;};});
  await instrument();
  const cycles=async()=>{const before=await sidebar.locator('#app').evaluate(()=>window.refreshes);try{await wait(()=>sidebar.locator('#app').evaluate((el,n)=>window.refreshes>=n+2,before));}catch(e){console.log({refreshes:await sidebar.locator('#app').evaluate(()=>window.refreshes),error:await sidebar.locator('#error').textContent(),actions:actions.slice(-5)});throw e;}};
@@ -37,7 +37,7 @@ try{
  await listRow.focus();await listRow.evaluate(el=>window.stableRow=el);await cycles();
  assert(await listRow.evaluate(el=>el===window.stableRow&&el===document.activeElement),'List row identity and focus survive real refreshes');
  assert.equal(await sidebar.getByRole('button',{name:'上一页规则',exact:true}).count(),1);
- await listRow.click();await sidebar.getByRole('button',{name:'停止',exact:true}).waitFor();
+ await listRow.click();assert.equal(await sidebar.getByRole('button',{name:'启动',exact:true}).isEnabled(),true);await sidebar.getByRole('button',{name:'启动',exact:true}).click();await sidebar.getByRole('button',{name:'停止',exact:true}).waitFor();
  const pathSummary=sidebar.getByText('连接路径',{exact:true});await pathSummary.click();await pathSummary.focus();await pathSummary.evaluate(el=>window.stableSummary=el);await cycles();
  assert(await pathSummary.evaluate(el=>el===window.stableSummary&&el===document.activeElement&&el.parentElement.open));
  const getEntry=()=>sidebar.locator('.entry code').textContent();const entry=await getEntry();assert.match(entry,/127\.0\.0\.1:\d+/);
@@ -64,10 +64,10 @@ try{
  const start=sidebar.getByRole('button',{name:'启动',exact:true}),startBox=await start.boundingBox(),startsBefore=actions.filter(a=>a.event?.action==='start').length;
  await page.mouse.move(startBox.x+startBox.width/2,startBox.y+startBox.height/2);await page.mouse.down();await cycles();await page.mouse.move(startBox.x-40,startBox.y+startBox.height+40);await page.mouse.up();await cycles();
  assert.equal(actions.filter(a=>a.event?.action==='start').length,startsBefore,'Dragging out cancels the press');
- await sidebar.getByRole('button',{name:'删除规则',exact:true}).click();await sidebar.getByRole('button',{name:'确认停止并删除',exact:true}).click();await sidebar.getByText('连接远端网络',{exact:true}).waitFor();
+ await sidebar.getByRole('button',{name:'删除规则',exact:true}).click();await sidebar.getByRole('button',{name:'确认删除',exact:true}).click();await sidebar.getByText('连接远端网络',{exact:true}).waitFor();
  await sidebar.getByRole('button',{name:'＋ 新建',exact:true}).click();await editor.locator('input[name=port]').waitFor();assert.equal(await editor.locator('input[name=port]').inputValue(),'2080');assert(!await editor.locator('input[name=auto]').isChecked());assert.equal(await editor.locator('input[name=host]').count(),0);
- await editor.locator('input[name=name]').fill('SOCKS 检查');await editor.locator('input[name=auto]').check();await editor.getByRole('button',{name:'保存并启动',exact:true}).click();await page.locator('.plugin-view-dialog').waitFor({state:'detached'});
- await sidebar.getByRole('button',{name:'SOCKS 检查'}).click();await sidebar.getByText('连通性检查',{exact:true}).click();await sidebar.getByRole('textbox',{name:'检查主机',exact:true}).fill('typed.example');await cycles();
+ await editor.locator('input[name=name]').fill('SOCKS 检查');await editor.locator('input[name=auto]').check();await editor.getByRole('button',{name:'保存',exact:true}).click();await page.locator('.plugin-view-dialog').waitFor({state:'detached'});
+ await sidebar.getByRole('button',{name:'SOCKS 检查'}).click();await sidebar.getByRole('button',{name:'启动',exact:true}).click();await sidebar.getByRole('button',{name:'停止',exact:true}).waitFor();await sidebar.getByText('连通性检查',{exact:true}).click();await sidebar.getByRole('textbox',{name:'检查主机',exact:true}).fill('typed.example');await cycles();
  assert.equal(await sidebar.getByRole('textbox',{name:'检查主机',exact:true}).inputValue(),'typed.example');assert(await sidebar.getByRole('textbox',{name:'检查主机',exact:true}).evaluate(el=>el===document.activeElement));
  assert.deepEqual(errors,[]);console.log('Network UI: real forwarding, unchanged listener/rules after preferences, new SOCKS/fixed-port defaults, form scroll, themes, dirty close, remount and delete passed.');
 }finally{await browser.close();await vite.close();child.stdin.end();await new Promise(r=>child.exitCode!==null?r():child.once('exit',r));await new Promise(r=>service.close(r));if(!path.basename(data).startsWith('sodeck-network-ui-'))throw new Error('Unexpected cleanup path');fs.rmSync(data,{recursive:true,force:true});}

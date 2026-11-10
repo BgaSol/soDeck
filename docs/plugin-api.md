@@ -1,10 +1,10 @@
 # 外置插件 API v1
 
-通用 TCP 与弹窗扩展已实现，见本文末尾接口和 [网络隧道设计](plan-network-proxy.md)。插件须先检查 `net.tcp.v1` 和 `ui.dialog.v1`，旧核心仍可加载不使用新能力的旧插件。
+本文定义当前核心的插件清单、RPC、可选能力和兼容契约。功能操作见[功能索引](README.md)，开发与独立打包见[开发指南](development.md#打包)。插件使用可选能力前先检查能力声明，旧核心继续按兼容范围加载旧插件。
 
 插件是独立原生程序，核心不需要识别具体插件 ID。插件按可信扩展使用，没有权限清单、授权或签名流程。
 
-当前源码的核心 RPC 仍为 API v1，可选界面支持 UI v1 和 UI v2。UI v2 用于完整的分屏、页面/标签组移窗与输入交接；四个官方 UI 插件已在本工作区适配，尚未发布。旧无 UI 插件无需修改。旧版核心只接受 UI v1，不能安装本工作区的 UI v2 包。
+核心 RPC 保持 API v1，可选界面支持 UI v1 和 UI v2。核心 0.17.0 起提供 UI v2，当前五个官方插件均使用它进行分屏、页面/标签组移窗与输入交接。旧无 UI 插件无需修改；只接受 UI v1 的旧核心不能加载 UI v2 包。
 
 ## 可选 UI v2：工作台与显示交接
 
@@ -36,11 +36,9 @@ UI v1 仍映射到同一 Host/分屏树，可以同窗排序、分屏和移组�
 
 焦点由实际页面交互更新。`workspace.presentation.v1` 增加 `focusedViewId/focusedWindowId` 与 `lastInteractedLocationViewId`，旧 `activeEditorViewId` 继续用于兼容投影。终端可通过可选 `locationProvider:"terminal.location.v1"` 声明目录来源；文件跟随使用本服务器最近操作的目录提供页，经核心共享状态协作，不直接调用终端插件。
 
-布局文件只保存服务器的容器结构与工具定义位置；不保存 Context、viewId、Surface、正文或命令。详细交互见[使用指南](usage.md)，设计与实际验收分别见[完整设计](plan-workbench-layout.md)和[实施记录](implementation-workbench-layout.md)。
+布局文件只保存服务器的容器结构与工具定义位置；不保存 Context、viewId、Surface、正文或命令。当前交互见[工作台](features/workbench.md)，资源与交接职责见[架构](architecture.md)。
 
-后续终端/文件能力的调用关系、流式数据桥、异步保存/长任务和带宽归属设计见 [远程工作台提案](plan-remote-workbench.md)。其中方法名为提案，不是当前可调用的 RPC；实现时以保持旧插件兼容的扩展同步本协议。
-
-## 可选 UI v1（当前源码）
+## 可选 UI v1
 
 关闭的准备、决定、清理和原生收尾由核心统一管理。宿主快照查询不会创建 view；后台 view 只由工作区/插件状态变化触发，关闭保留期间暂停创建，取消恢复原身份。关闭页面集合、工作区、窗口和应用共用同一操作。插件仍使用已有 `ui.*` 方法，无需增加权限声明或生命周期专用必填字段。
 
@@ -93,7 +91,7 @@ ui.openView 使用共同页面登记路径，同实例/Context/requestId 的相�
 
 新入口的行为和页面申请去重记录每 Context 合计最多 4096 项、全局最多 16384 项，缓存预算 16 MiB；等待中的行为预留一个 RPC 帧的额度。到达额度拒绝新编号，已结束记录也不静默清空。极长期工作区需要关闭并重新打开。旧页面 openView 桥保持原兼容行为；`mount.capabilities.uiOpenView===1` 表示支持进程入口。
 
-终端的 `new-terminal` 行为解释下述终端创建配置。其他插件的业务行为继续使用自己的协议；本次没有新增 Docker 业务路由。实现与本机验证见[实施记录](implementation-default-behavior-terminal.md)。
+终端的 `new-terminal` 行为解释下述终端创建配置。业务语义见[终端功能](features/terminal.md)，其他插件的业务行为使用自己的协议。
 
 ### 终端创建参数
 
@@ -111,7 +109,7 @@ loginShell 缺省目录策略在创建时读取设置，允许 auto/manual/off�
 
 首次挂载保存已解析配置，同 viewId 重挂载复用原 PTY，初始化失败不自动重跑。mount.data.createParams 含可再次使用的配置；command 退出后“重新打开终端”创建新 view/PTY。新核心通过现有 ui.event 的 `{action:"createTerminal",requestId,params}` 交给终端后台调用 ui.openView；旧核心通过页面自己的 openView 桥携带配置。新页面使用当前挂载 Context，不复用原 streamId、输入序号或集成 token。off 不采纳 OSC7/633 的 known 目录，不将嵌套环境路径传给主机文件跟随。
 
-## 会话状态与有界短命令（当前源码）
+## 会话状态与有界短命令
 
 可选能力 `session.exec.v1`。系统识别、命令文本、指标和调度由插件负责；核心提供当前认证会话上的非交互任务，不暴露凭据或传输类型。
 
@@ -189,7 +187,7 @@ stdin/stdout 每行一个 UTF-8 JSON-RPC 2.0 对象，以 LF 结尾，最大 64 
 
 API v1 通过 capabilities 扩展真实 PTY、SFTP 与正文桥。插件检查 terminal.v1 / files.v1 / viewData.v1 后使用；旧核心拒绝不支持的方法。不兼容变化增加 API 主版本。
 
-## 真实远程能力（v0.6.0）
+## 真实远程能力
 
 - terminal.open({viewId,cols,rows}) 返回 id；terminal.close({id}) 释放 PTY，结束状态走正文通道。资源固定创建时会话，不自动重放命令。
 - files.request({action:"open",viewId}) 返回 id；close/status/save 传 id。save 返回后台任务，status 为 running/completed/failed；关闭协调可等待完成，不阻塞接收线程。
@@ -197,9 +195,9 @@ API v1 通过 capabilities 扩展真实 PTY、SFTP 与正文桥。插件检查 t
 - iframe 经 sodeck.request("data",request) 调用正文桥。终端 op 为 attach/ack/write/resize/checkpoint/detach，支持 `terminal.history.v1` 的核心另提供 metadata；文件 op="files"，action 为 home/list/stat/read/describe/chunk/stage/save/status/download/cancel/exportDraft。每块最多 16 KiB；按真实 view/实例/Context 校验，不通过普通 ui.event 传正文。download/exportDraft 由核心打开本地保存对话框；导出草稿不要求远端在线。
 - 页面以 mounted 消息 flush=true 声明移窗/关闭前需要同步。收到 flush，完成在途同步后回复同 id 的 flushed；携带 error 可阻止丢失输入。旧插件不声明则保留原行为。
 
-所有权、缓冲、保存与下载约束见 [实施记录](implementation-remote-plugins.md)。不引入跨插件直调或插件授权流程。
+所有权见[架构](architecture.md)，业务的缓冲、保存与下载规则见[终端](features/terminal.md)和[文件](features/files.md)。不引入跨插件直调或插件授权流程。
 
-### 终端大历史恢复（增量能力，尚未发布）
+### 终端大历史恢复
 
 initialize 新增 `terminal.history.v1`。新版终端插件初始化时要求该能力，缺失时明确提示升级核心；核心 API 主版本仍为 1，旧插件原 op 保持兼容。
 
@@ -209,7 +207,7 @@ initialize 新增 `terminal.history.v1`。新版终端插件初始化时要求�
 - `kind:"recovery"` 的正文帧以 `metadata.available/error` 报告恢复可用状态。写盘或额度失败时，活动页继续接收有界实时输出；慢读者使用 ACK 背压。新检查点覆盖失败区间后可恢复。重新挂载所需字节出现缺口时明确失败，不能重复执行命令来补数据。
 - 自然退出的流保留到用户关闭 view，允许退出页重挂载、搜索和复制。关闭、插件停止及应用退出清理当前资源；启动清理可识别且所属进程已退出的临时目录。不提供关闭终端或应用重启后的搜索档案。
 
-搜索、索引、颜色摘要和预览均属于终端插件；核心不提供搜索 RPC、不读取 shell history，也不接收搜索结果数组。方案与验证边界见[终端搜索实施记录](implementation-terminal-search.md)。
+搜索、索引、颜色摘要和预览均属于终端插件；核心不提供搜索 RPC、不读取 shell history，也不接收搜索结果数组。功能及维护边界见[终端](features/terminal.md)。
 
 ### 目录树扩展（核心 0.6.1）
 
@@ -221,7 +219,7 @@ initialize 新增 `terminal.history.v1`。新版终端插件初始化时要求�
 
 界面挂载及 `themeChanged` 的 `tokens` 增加 `color-scheme`、`good`、`error`、`shadow`、`file-tree-bg`、`status-bg`、`folder-color`、`folder-fill`、`tree-selection-border`。旧插件可忽略新增字段，新插件提供基础色回退。文件导航状态由插件进程按视图保存，只保存有界路径、选择和滚动元数据，目录内容不进入控制 RPC。
 
-### 工作台外观与文本剪贴板（增量能力，尚未发布）
+### 工作台外观与文本剪贴板
 
 UI v1 的 `mount.capabilities.clipboard === 1` 表示宿主提供原生文本剪贴板。它是 UI 桥能力，不是插件权限声明。插件 UI 通过 `sodeck.request("clipboard", params)` 使用：
 
@@ -237,7 +235,7 @@ UI v1 的 `mount.capabilities.clipboard === 1` 表示宿主提供原生文本剪
 
 `tokens` 保留原颜色字段，新增 `sd-stroke-structure/control`、`sd-icon-stroke`、`sd-control-weight`、`sd-title-weight`、`sd-radius-control`、`sd-tab-height`、`sd-status-height`、`sd-hit-size` 及导航、工具栏、主操作和反馈状态语义色；具体名称以 `src/theme.ts` 为准。终端提供 `terminal-background/foreground/cursor/selection` 与 ANSI16（`terminal-black` 至 `terminal-brightWhite`）。插件将字段设置为同名 `--` CSS 变量，配合打包的 `shared.css` 使用；旧插件可忽略新增项，新插件保留基础色回退。主题变更不重建视图或会话。
 
-### 统一桌面行为和滚动条（增量能力，尚未发布）
+### 统一桌面行为和滚动条
 
 桌面一致性改动向 UI v1 增量提供 `sd-scrollbar-thumb`、`sd-scrollbar-hover`、`sd-scrollbar-active`，分别表示滑块默认、悬停及拖动颜色。DOM 页面使用随插件打包的 `shared.css`；终端使用 xterm 的 `scrollbarSlider*Background`，无需替换滚动机制。旧插件可忽略这些字段，自绘滚动条的插件需要主动适配。
 
@@ -261,23 +259,21 @@ UI v1 的 `mount.capabilities.clipboard === 1` 表示宿主提供原生文本剪
 | `net.listener.probe` | `listenerId,operationId` | `{probeId}`；以真实本机入口连接，接受端按预登记端点关联；clients 含对应 probeId |
 | `net.close` | `id` | `{}`；取消监听及全部子资源，或指定流；本地流连带其目标，重复关闭成功 |
 
-协商读写合计最多 1024 字节，控制队列 8 项；正常正文只经原生流。每监听最多 64 活动连接、16 待协商连接，每插件实例最多 32 监听，核心最多 256 本地客户端；协商期限约 15 秒，远端连接 10 秒。probe 最多 4 个并发、10 秒期限，检查完成应关闭匹配的客户端流。监听 open 的 operationId 在同实例内保留 60 秒，最多 4096 项；窗口重挂载应复用 listenerId，不重复创建。tcp open 以本地客户端及 operationId 去重，参数变化拒绝。
+协商读写合计最多 1024 字节，控制队列 8 项；正常正文只经原生流。每监听最多 64 活动连接、16 待协商连接，每插件实例最多 32 监听，核心最多 256 本地客户端；协商期限约 15 秒，远端连接 10 秒。probe 最多 4 个并发、10 秒期限，检查完成应关闭匹配的客户端流。旧监听 open 的 operationId 在资源存活期间保留，完成后按原创建时间的 60 秒期限回收，最多 4096 项；窗口重挂载应复用 listenerId，不重复创建。tcp open 以本地客户端及 operationId 去重，参数变化拒绝。
 
 `snapshot.error` 为 `{stage,message}`（listen/sessionLost）；单流失败不使整条监听失败。累计量为 u64 十进制字符串，计入远端有效载荷，并归属原有服务器/插件统计；不含本地 SOCKS 协商，不将 SSH 加密开销重复归属插件。关闭视图、服务器断开、插件进程退出或应用退出会清理资源，收起及移窗保持原资源。
 
 清单的视图可声明 `container:"dialog",instancePolicy:"perWorkspace"`，禁止 startup/pin/create/locate 组合。宿主提供标题、关闭、三主题和可滚动容器；按原有 ui.mount/event/beforeClose/save/disposeView 协议工作。iframe 的 `sodeck.request("closeView",{})` 请求关闭当前逻辑视图，仍经过 flush 和保存/放弃/取消；关闭编辑弹窗不关闭同插件的管理侧栏资源。
 
-## 本地构建业务插件
+## 文件批量操作与本地输入
 
-### 文件批量操作与本地输入（未发布增量）
-
-初始化能力增加 `files.operations.v1` / `files.localInputs.v1`。具体约束见 [实施记录](implementation-file-management.md)。核心只执行单项 IO；递归、冲突选择、失败重试由文件插件进程执行。
+初始化能力包含 `files.operations.v1` / `files.localInputs.v1`。核心只执行单项 IO；递归、冲突选择、失败重试由文件插件进程执行，用户行为见[文件管理](features/files.md)。
 
 - `files.request({action:"batch.begin",id,batchId,context})` 登记已接受批次；`batch.end` 释放。关闭冻结新输入时允许原 Context 的已接受批次继续或取消。
 - `op.start` 参数为 `id,requestId,sequence,expectedContext,batchId?,operation`，立即返回 `{id,state}`。sequence 是资源内递增十进制字符串，同 requestId/sequence/Context/参数重复返回原操作，低序号拒绝重做。`op.lookup({id,requestId})` 查询超时请求；`op.poll/result/cancel/release({id,operationId})` 查询、取消和释放，release 只接受终态。
 - operation.kind 为 `inspect/list/next/closeCursor/mkdir/createEmpty/copyFile/rename/removeFile/removeDirectory`。端点为 `{side:"remote",path}` 或 `{side:"local",inputId,rootId,relative:[独立分量]}`。单文件保存目标可用 rootName 在原选定父目录改名；上传输入不允许。
 - list 返回 `{entries,more,cursor?}`，next/closeCursor 传 cursor。inspect 返回 `{attrs}`，不存在为 null；attrs 含 kind、十进制 size、mtime、stamp，远程目录含 resolved。copyFile 传 source/destination/sourceStamp/destinationGuard，成功返回目标 stamp；guard 为 `{kind:"absent"}` 或 `{kind:"match",stamp}`；其他变更用 endpoint、可选 sourceStamp、guard，rename 另传 destination 且要求目标不存在。
-- 状态为 running/committing/completed/failed/cancelled/unknown。completed 的 result 为元数据，失败的 error 为 `{code,message,retryable}`。unknown 表示远程未确认变更结果，不可自动重试。received/total 为十进制字符串。每资源 16 项、核心全局 128 项，结果页最多 100 条且不超过 16 KiB。
+- 状态为 running/committing/completed/failed/cancelled/unknown。completed 的 result 为元数据，失败的 error 为 `{code,message,effect,retryable}`。unknown 表示远程未确认变更结果，不可自动重试。received/total 为十进制字符串。每资源 16 项、核心全局 128 项，结果页最多 100 条且不超过 16 KiB。
 - iframe 的文件 data 桥增加 `input.revision/clipboard/drop/chooseUpload/chooseDownload/release/reveal`。chooseUpload 传 directory，chooseDownload 传 single/name；立即返回 waitingInput 操作票据，以 op.poll 等待 inputId 或 cancelled，再 op.release。clipboard 仅解析原生文件格式，drop 传宿主事件 dropId。input.release 传 inputId，reveal 只打开已登记下载目录。
 - `input.revision` 兼容增加 `hasFiles:boolean`，返回 `{revision,count,hasFiles}`。该查询只检查本地剪贴板的受支持文件格式，不枚举路径或登记 input；因此此时 count 仍可能为 0，不能据此判断有无文件。缺少 hasFiles 的旧核心按状态未知处理，显式 `input.clipboard` 仍沿用既有行为。远程复制/剪切来源及其可用性由文件插件维护。
 - 插件进程用 `input.claim/list/release` 领取/分页读取/释放输入。list 返回 rootId、name、next，最多 4096 顶层项。claim 的 renew:true 仅允许同工作区已领取输入在用户明确重试失败项时重新绑定当前 Context。本地 PathBuf 留在核心，普通文本路径不是上传源。
@@ -285,11 +281,58 @@ UI v1 的 `mount.capabilities.clipboard === 1` 表示宿主提供原生文本剪
 - UI 可向宿主发送 `{channel:"sodeck-ui-v1",type:"interaction",surfaceId}` 通知实际指针/键盘交互，供宿主关闭旧菜单和取消过期的自动聚焦。宿主按已有 iframe 来源、origin 与 surface token 绑定核对；不携带按键、文件或终端输入内容。旧宿主忽略此增量消息，旧 UI 仍按原协议加载。
 - iframe `request("closeViews",{viewIds})` 立即返回 ticket，宿主异步发送 viewsClosed（ticket/accepted/error）。只允许同插件同工作区页面，将整个集合交给一次核心关闭操作，统一同步输入并决定保存/放弃/取消，全部决定后才释放页面。
 
-旧 files.v1、旧目录游标和文本剪贴板协议保持兼容。文件插件 0.3.0 需要核心 0.8.4；五目标原生包构建和既有远程业务组合烟测通过，原生系统粘贴/拖入的设备互操作待验收。
+旧 files.v1、旧目录游标和文本剪贴板协议保持兼容。文件插件 0.3.0 引入这些扩展并要求核心 0.8.4；当前插件的 UI v2 要求另见本文开头。平台验证范围由插件 CHANGELOG 记录，不属于接口支持推定。
+
+## 文件和监听结果确认（核心 0.23.0 起）
+
+新增能力 `files.operations.v2`、`files.editor.v1`、`net.listenerLifecycle.v1`，核心 API 主版本保持 1。当前文件/网络插件初始化检查对应新能力；缺失时明确要求升级核心，不使用旧接口代替。旧插件仍可使用旧能力，其自身的业务决策不在新协议保证内。
+
+### 文件原语 v2
+
+插件调用 `files.operations({action,id,...})`，action 为 start/lookup/poll/cancel/release。start 必须传固定 requestId、递增十进制 sequence、完整 expectedContext、已登记的 batchId 和 operation；其他端点/配额沿用文件原语。lookup 传 requestId 和 batchId，其余控制传 operationId。重复 start 先返回已登记回执；相同身份不同参数拒绝，release 后旧序号不能重新执行。
+
+新入口拒绝旧 rename，提供独立的 renameNoReplace 原语。当前适配器返回 unsupported，不发送复制或删除作为替代。旧入口的 rename 为兼容保留，不属于新版插件使用路径。
+
+任务失败和方法拒绝保留 `{code,message,effect,retryable}`，方法拒绝位于 JSON-RPC error.data。effect 为 none/unknown，成功通过 completed/result 表达。明确成功提交之后的附属 stat/cleanup 失败记录为 warning/cleanupWarning，不改成可重试失败。通信超时没有这些提交事实，只能继续查询原请求。
+
+`files.request({action:"batch.cancel",id,batchId})` 先封闭批次，再取消已登记操作。lookup 在已封闭且从未接纳的请求上可返回 cancelled/effect:none；取消 ACK 本身不证明已接纳操作未修改目标。batch.end 与新接纳按同一短锁顺序互斥，结束后的批次不能接纳迟到 start。终态落盘后才 release，不淘汰在途或待确认回执来腾出容量。
+
+### 草稿、保存和导出
+
+正文继续走 iframe `data({op:"files",id,action,...})`。新版 action 成功返回 `{ok:true,value}`，拒绝返回 `{ok:false,error:{code,message}}`；code 为 draftRejected/saveRejected/exportRejected，外层挂载或通信失败仍可能直接拒绝 Promise。插件控制面 `files.editor({id,action,...})` 提供 draft.describe、save.start/status/cancel/release 及 export.status/cancel/release；导出 start 必须来自 UI 对话框入口。
+
+| action | 参数与结果 |
+| --- | --- |
+| draft.describe | 返回 path/size/version、draftRef、savedRevision、writeBlock、saveSequence/exportSequence、exportState 和 source（最近提交上传的身份） |
+| draft.chunk | draftRef、offset；返回 data/draftRef，修订不同拒绝 |
+| draft.begin | documentId、uploadId、uploadSequence、editRevision、size、sha256；返回 pending/nextOffset 或原 committed 回执 |
+| draft.append | documentId、uploadId、uploadSequence、offset、data；每片最多 16 KiB，重复片必须完全相同，不允许乱序或混片 |
+| draft.commit | documentId、uploadId、uploadSequence；完整大小/摘要吻合后原子替换草稿，返回 committed、draftRef、上传身份、surfaceId、editRevision、sha256、size |
+| draft.status | uploadId；返回最近 committed、当前 pending 或 expired，expired 不能证明保存结果 |
+| draft.abort | documentId、uploadId、uploadSequence；封住序号并放弃此上传，不改变完整草稿 |
+| save.start | requestId、sequence、expectedDraftRef、expectedContext；接受时固定字节，立即返回任务与 request/draft |
+| save.status | requestId 可省略以读取当前投影；状态 idle/running/committing/committed/notCommitted/unknown，附 request/draft，终态含 result 或 error |
+| save.cancel/release | 原 requestId；取消尚未接纳的请求还须原 sequence 与完整 start 参数以封住意图。release 仅接受终态，保留退役序号 |
+| export.start | requestId、sequence、expectedDraftRef、path（建议文件名）；立即返回 waitingInput/request/draftRef，只有首次接纳才弹框 |
+| export.status/cancel/release | 原 requestId，取消未接纳意图还需完整 start 参数；状态 waitingInput/writing/completed/failed/cancelled。取消不结束仍可见的原生对话框，release 只接受实际终态 |
+
+DraftRef 为 `{documentId,revision}`。revision、sequence 和 editRevision 用十进制字符串。草稿上限 1 MiB；每个 Surface 一个上传和最后提交身份，每个文件资源各保留一个保存及导出回执，下一任务前先确认并 release。上传序号在 Surface 内单调，保存/导出序号在文件资源内单调，不随移窗重置。
+
+候选 Surface 只能读草稿和状态；提交在最终输入归属锁下复核。保存与导出固定接受时的 DraftRef，后续输入不能更改已固定的字节。保存提交发出后继续等待协议结果，取消不抹去真实提交；成功 ACK 后 stat 失败仍为 committed，并以 baselineUnavailable/writeBlock 阻止继续原位保存。unknown 禁止新保存，release 不解除 writeBlock。导出不访问 SSH，选路径后复核原 Surface 和取消状态再写固定快照；本地覆盖不保证防住外部并发写入。
+
+同一文件只维护一份草稿。首次使用新版上传/保存/导出后，旧 stage/save/exportDraft 拒绝混用；旧 describe/chunk/status 读取同一事实，legacy status 把 committing 映射为 running、unknown 映射为 failed 并保留说明。旧导出也在弹框前固定字节，但同步接口仍受原桥等待期限限制；新版插件使用后台任务。
+
+### 监听生命周期
+
+插件调用 `net.listener.create/lookup/cancel/release`，均传 viewId、expectedContext、固定 operationId、递增十进制 sequence；create 还传 bind。按插件实例/view/Context 隔离，保留退役序号，活跃回执不按时间过期。回执/旧 open 合计最多 4096 项，scope 也有 4096 项上限；原归属退役且实际任务完成后回收。
+
+create/lookup/cancel 返回 observed（listenerId/snapshot/cleanupComplete）、notObserved（cleanupComplete:false）或 retired（cleanupComplete:true）。相同身份不同绑定参数拒绝；cancel 先封住序号，先于 create 到达也不能再创建。retired 只表示意图封闭且没有活跃资源，或核心确认原归属退役且资源全部退出。RPC 错误、Context 失效本身不能作为清理证明；方法错误 data.code 为 networkRequestRejected。
+
+snapshot 增加 cleanupComplete；只有监听、客户端流、远端通道、转发和探测任务全部退出才为 true，closed/failed 字符串不能替代它。release 只接受已确认清理的回执，低序号重放不能创建；net.close 仍仅接受取消请求。规则保存/删除不进入核心协议。
 
 ## 组件设置（可选 settings.v1）
 
-组件设置从核心 0.9.0 提供，页面保存所属设置页从核心 0.13.0 提供。插件在清单增加可选 `settings: {apiVersion:"1", schemaVersion:1, pages:[...]}`，一个插件可声明多个组件页，一个页可关联多个 `viewTypes`。同一视图最多关联一个页；稳定身份为 pluginId/pageId/key，不含服务器、Tab 或程序版本。字段、默认值和生效方式由插件声明，核心提供基础校验、存储、版本选择、通用表单和变化通知。正式示例见各插件的 `release.json`，实现范围见 [组件设置记录](implementation-component-settings.md)。
+组件设置从核心 0.9.0 提供，页面保存所属设置页从核心 0.13.0 提供。插件在清单增加可选 `settings: {apiVersion:"1", schemaVersion:1, pages:[...]}`，一个插件可声明多个组件页，一个页可关联多个 `viewTypes`。同一视图最多关联一个页；稳定身份为 pluginId/pageId/key，不含服务器、Tab 或程序版本。字段、默认值和生效方式由插件声明，核心提供基础校验、存储、版本选择、通用表单和变化通知。正式示例见各插件的 `release.json`，功能与维护约束见[设置](features/settings.md)。
 
 页面包含 id/title/icon/order/viewTypes/groups；分组包含 id/title/fields。字段为 key/type/title/default/apply，可带 description。首版类型为 boolean、number（min/max/step/unit）、string（maxLength）、select（options 的 value/title）、font（presets 的 id/title/regular/bold）；apply 为 live 或 newInstance。`visibleWhen:{key,equals}` 只引用同页无条件的 boolean/select 字段。隐藏字段仍需完整保存并校验。
 
@@ -344,18 +387,6 @@ filter 为 `{topics:[...] ,producer?,key?}`，需要 1–8 个明确主题。快
 ## 远程位置解析（可选 files.location.v1）
 
 initialize 宣告 `files.location.v1`，页面 `capabilities.fileLocation:1`。现有 files 数据通路增加 `action:"resolveLocation"`，传入 path/pathStyle（posix 或 windows）/filesystemView（当前只支持 session-default），返回经当前文件服务 realpath/stat 验证的 path/attrs。原生 Windows 盘符绝对路径转换后仍需服务端验证；UNC、相对路径、容器或未知视角返回 unsupportedLocation，不用客户端 OS 猜测。返回和应用前继续校验 Context。
-
-## 独立插件打包
-
-```sh
-npm run plugin:build -- --plugin terminal
-# 指定目标时仍需要相应编译环境
-npm run plugin:build -- --plugin terminal --target aarch64-apple-darwin
-# 正在运行的插件不能原位覆盖；关闭并重启后构建，或使用另外的输出目录
-npm run plugin:build -- --plugin terminal --out-dir artifacts/another-build
-```
-
-产物位于 `artifacts/plugins/`，包含清单和原生入口的目录与压缩归档。构建脚本在所选插件工程目录调用 Cargo，使其 Windows 静态运行库配置生效；归档前检查原生架构和额外的 Visual C++ 运行库依赖。每个插件自己的版本只在 `plugins/<名称>/Cargo.toml` 中修改，独立于核心版本；用户运行时不需要 Rust、Node.js 或额外安装 Visual C++ 运行库。
 
 ## 可选 PTY 启动与目录对应（核心 0.14.0）
 

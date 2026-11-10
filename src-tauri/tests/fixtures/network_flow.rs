@@ -31,7 +31,7 @@ fn network_save(f: &Fixture, context: &sodeck::workspaces::Context, rule: Value)
         .ui_event("main", token, json!({"action":"draft","rule":rule}))
         .unwrap();
     f.core
-        .ui_event("main", token, json!({"action":"saveStart"}))
+        .ui_event("main", token, json!({"action":"save"}))
         .unwrap();
     let plan = f
         .core
@@ -62,6 +62,10 @@ fn network_row(f: &Fixture, window: &str, token: &str, id: &str) -> Value {
         .clone()
 }
 async fn network_address(f: &Fixture, window: &str, token: &str, id: &str) -> std::net::SocketAddr {
+    if network_row(f, window, token, id)["run"].is_null() {
+        // Saving produced no listener; starting is a separate user intent.
+        f.core.ui_event(window, token, json!({"action":"start","id":id})).unwrap();
+    }
     let mut result = None;
     until(|| {
         let row = network_row(f, window, token, id);
@@ -394,6 +398,10 @@ async fn network_business(
     rule["name"] = json!("edited running rule");
     rule["bind"]["port"] = json!(fixed.port());
     network_save(f, context, rule);
+    assert_eq!(network_row(f,"main",token,"forward")["run"]["snapshot"]["listenerId"],listener);
+    f.core.ui_event("main",token,json!({"action":"stop","id":"forward"})).unwrap();
+    until(||network_row(f,"main",token,"forward")["run"]["canStart"]==true).await;
+    f.core.ui_event("main",token,json!({"action":"start","id":"forward"})).unwrap();
     until(|| {
         let row = network_row(f, "main", token, "forward");
         assert_ne!(row["run"]["snapshot"]["state"], "failed", "{row}");
@@ -404,7 +412,11 @@ async fn network_business(
     .await;
     assert_eq!(network_address(f, "main", token, "forward").await, fixed);
     network_roundtrip(fixed, false, host, port).await;
-    // One delete operation stops the running listener and persists deletion.
+    // Running rules cannot be deleted; stop and confirmed cleanup are separate steps.
+    let revision=network_row(f,"main",token,"forward")["rule"]["revision"].clone();
+    assert!(f.core.ui_event("main",token,json!({"action":"delete","id":"forward","revision":revision})).is_err());
+    f.core.ui_event("main",token,json!({"action":"stop","id":"forward"})).unwrap();
+    until(||network_row(f,"main",token,"forward")["run"]["canStart"]==true).await;
     let revision = network_row(f, "main", token, "forward")["rule"]["revision"].clone();
     f.core
         .ui_event(

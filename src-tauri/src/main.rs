@@ -253,7 +253,8 @@ async fn component_data(
             )?;
             return app
                 .core
-                .files_register_input(window.label(), &surface_id, &file, paths, false);
+                .files_register_input(window.label(), &surface_id, &file, paths, false)
+                .map_err(Into::into);
         }
         if action == "input.chooseUpload" || action == "input.chooseDownload" {
             use tauri_plugin_dialog::DialogExt;
@@ -289,14 +290,65 @@ async fn component_data(
                         .map(|p| p.into_path().map_err(|e| e.to_string()))
                         .collect::<Result<Vec<_>, _>>()
                 })();
-                core.files_finish_input(window.label(), &surface_id, &file, &operation, result);
+                core.files_finish_input(
+                    window.label(),
+                    &surface_id,
+                    &file,
+                    &operation,
+                    result.map_err(Into::into),
+                );
             });
             return Ok(started);
+        }
+        if request["action"] == "export.start" {
+            use tauri_plugin_dialog::DialogExt;
+            let (receipt, task) = match app.core.files_export_begin(
+                window.label(),
+                &surface_id,
+                &request,
+            ) {
+                Ok(value) => value,
+                Err(error) => {
+                    return Ok(
+                        serde_json::json!({"ok":false,"error":{"code":"exportRejected","message":error}}),
+                    )
+                }
+            };
+            if let Some(task) = task {
+                let core = app.core.clone();
+                let filename = request["path"]
+                    .as_str()
+                    .unwrap_or("draft.txt")
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or("draft.txt");
+                let dialog = window.dialog().file().set_file_name(filename);
+                tauri::async_runtime::spawn(async move {
+                    let chosen =
+                        tauri::async_runtime::spawn_blocking(move || dialog.blocking_save_file())
+                            .await
+                            .map_err(|e| e.to_string())
+                            .and_then(|v| {
+                                v.map(|p| p.into_path().map_err(|e| e.to_string()))
+                                    .transpose()
+                            });
+                    core.files_export_finish(task, chosen).await;
+                });
+            }
+            return Ok(serde_json::json!({"ok":true,"value":receipt}));
         }
         if request["action"] == "download" || request["action"] == "exportDraft" {
             use tauri_plugin_dialog::DialogExt;
             app.core
                 .validate_file_download(window.label(), &surface_id, &request)?;
+            let export = if request["action"] == "exportDraft" {
+                Some(
+                    app.core
+                        .files_export_legacy_begin(window.label(), &surface_id, &request)?,
+                )
+            } else {
+                None
+            };
             let filename = request["path"]
                 .as_str()
                 .unwrap_or("download")
@@ -307,17 +359,25 @@ async fn component_data(
             let dialog = window.dialog().file().set_file_name(filename);
             let chosen = tauri::async_runtime::spawn_blocking(move || dialog.blocking_save_file())
                 .await
-                .map_err(|e| e.to_string())?;
-            let Some(chosen) = chosen else {
+                .map_err(|e| e.to_string());
+            if let Some(task) = export {
+                let chosen = chosen.and_then(|value| {
+                    value
+                        .map(|p| p.into_path().map_err(|e| e.to_string()))
+                        .transpose()
+                });
+                let result = app.core.files_export_finish(task, chosen).await;
+                if result["state"] == "failed" {
+                    return Err(result["error"].as_str().unwrap_or("导出失败").into());
+                }
+                return Ok(
+                    serde_json::json!({"path":result["path"],"size":result["size"],"cancelled":result["state"]=="cancelled"}),
+                );
+            }
+            let Some(chosen) = chosen? else {
                 return Ok(serde_json::json!({"cancelled":true}));
             };
             let local = chosen.into_path().map_err(|e| e.to_string())?;
-            if request["action"] == "exportDraft" {
-                return app
-                    .core
-                    .files_export(window.label(), &surface_id, request, local)
-                    .await;
-            }
             return app
                 .core
                 .files_download(window.label(), &surface_id, request, local)

@@ -22,7 +22,12 @@ pub struct Run {
     pub view: String,
     pub listener: String,
     pub snapshot: Value,
-    pub restart: bool,
+    pub request: Value,
+    pub stop_requested: bool,
+    pub query_error: Option<String>,
+    pub observed_at: Option<u64>,
+    sent: bool,
+    pub released: bool,
     last_error: Option<Value>,
     clients: HashMap<String, Peer>,
 }
@@ -36,7 +41,7 @@ pub struct App {
     pub views: HashMap<String, View>,
     pub runs: HashMap<String, Run>,
     pub checks: HashMap<String, Value>,
-    pub deletes: HashMap<String, (String, u64)>,
+    pub sequence: u64,
 }
 pub fn name(r: &Value) -> String {
     r["name"]
@@ -64,7 +69,7 @@ impl App {
             .filter(|r| r["serverId"] == server)
             .count();
         let offset = offset.min(total.saturating_sub(1) / 20 * 20);
-        let rows:Vec<_>=self.rules.items.iter().filter(|r|r["serverId"]==server).skip(offset).take(20).map(|r|json!({"rule":r,"name":name(r),"run":self.runs.get(r["id"].as_str().unwrap()).map(|v|json!({"ruleRevision":v.rule["revision"],"lastError":v.last_error,"snapshot":({let mut snapshot=v.snapshot.clone();snapshot.as_object_mut().map(|s|s.remove("clients"));snapshot})}))})).collect();
+        let rows:Vec<_>=self.rules.items.iter().filter(|r|r["serverId"]==server).skip(offset).take(20).map(|r|json!({"rule":r,"name":name(r),"run":self.runs.get(r["id"].as_str().unwrap()).map(|v|json!({"ruleRevision":v.rule["revision"],"canStart":v.snapshot["cleanupComplete"]==true&&v.released&&v.query_error.is_none(),"lastError":v.last_error,"queryError":v.query_error,"observedAt":v.observed_at,"stopRequested":v.stop_requested,"snapshot":({let mut snapshot=v.snapshot.clone();snapshot.as_object_mut().map(|s|s.remove("clients"));snapshot})}))})).collect();
         let checks: serde_json::Map<String, Value> = rows
             .iter()
             .filter_map(|row| {
@@ -76,46 +81,46 @@ impl App {
             .collect();
         json!({"rules":rows,"storageError":self.rules.error,"checks":checks,"total":total,"offset":offset})
     }
-    pub fn start(&mut self, c: &Client, view: &str, id: &str) -> Result<(), String> {
+    pub fn start(&mut self, _c: &Client, view: &str, id: &str) -> Result<(), String> {
         let v = self.views.get(view).ok_or("工作区已关闭")?;
         if v.kind != "manager" {
             return Err("需要网络侧栏".into());
         }
-        let r = self
+        if self.runs.get(id).is_some_and(|r| {
+            r.snapshot["cleanupComplete"] != true || !r.released || r.query_error.is_some()
+        }) {
+            return Err("原监听尚未确认清理，请先停止并核对".into());
+        }
+        if self.runs.values().any(|r| {
+            r.view == view && r.listener.is_empty() && r.snapshot["cleanupComplete"] != true
+        }) {
+            return Err("此页面有尚未确认的启动，请先查询或停止".into());
+        }
+        let rule = self
             .rules
             .items
             .iter()
             .find(|r| r["id"] == id && r["serverId"] == v.server)
             .ok_or("规则不存在")?
             .clone();
-        if let Some(old) = self.runs.get(id) {
-            if !matches!(old.snapshot["state"].as_str(), Some("closed" | "failed")) {
-                return Ok(());
-            }
-        }
-        let operation = format!(
-            "{id}-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        );
-        let result = c.call(
-            "net.listener.open",
-            json!({"viewId":view,"operationId":operation,"bind":r["bind"]}),
-        )?;
-        let listener = result["listenerId"]
-            .as_str()
-            .ok_or("没有返回监听 ID")?
-            .to_owned();
+        self.sequence = self
+            .sequence
+            .checked_add(1)
+            .ok_or("操作序号已用尽，请重启插件")?;
+        let request = json!({"viewId":view,"expectedContext":v.context,"operationId":format!("{id}/{}",self.sequence),"sequence":self.sequence.to_string(),"bind":rule["bind"]});
         self.runs.insert(
             id.into(),
             Run {
-                rule: r,
+                rule,
                 view: view.into(),
-                listener,
-                snapshot: json!({"state":"starting"}),
-                restart: false,
+                listener: String::new(),
+                snapshot: json!({"state":"starting","cleanupComplete":false}),
+                request,
+                stop_requested: false,
+                query_error: None,
+                observed_at: None,
+                sent: false,
+                released: false,
                 last_error: None,
                 clients: HashMap::new(),
             },
@@ -123,134 +128,196 @@ impl App {
         self.checks.remove(id);
         Ok(())
     }
-    pub fn stop(&mut self, c: &Client, id: &str) -> Result<(), String> {
+    pub fn stop(&mut self, _c: &Client, id: &str) -> Result<(), String> {
         self.checks.remove(id);
         if let Some(r) = self.runs.get_mut(id) {
-            c.call("net.close", json!({"id":r.listener}))?;
-            r.snapshot["state"] = json!("stopping");
-            r.restart = false;
-            r.clients.clear();
+            r.stop_requested = true;
         }
         Ok(())
     }
-    pub fn tick(&mut self, c: &Client) {
-        let views: Vec<_> = self
-            .views
+}
+
+// Snapshot requests and stream negotiation never hold App while waiting for RPC.
+pub fn tick(shared: &std::sync::Arc<std::sync::Mutex<Option<App>>>, c: &Client) {
+    let mut ids = {
+        let state = shared.lock().unwrap();
+        let Some(a) = state.as_ref() else { return };
+        a.runs
             .iter()
-            .filter(|(_, v)| v.kind == "manager")
-            .map(|(id, _)| id.clone())
-            .collect();
-        for view in views {
-            let Ok(result) = c.call("net.poll", json!({"viewId":view})) else {
+            .map(|(id, r)| (id.clone(), !r.stop_requested))
+            .collect::<Vec<_>>()
+    };
+    ids.sort_by_key(|(_, normal)| *normal);
+    for (id, _) in ids {
+        let (request, method) = {
+            let mut state = shared.lock().unwrap();
+            let Some(r) = state.as_mut().and_then(|a| a.runs.get_mut(&id)) else {
                 continue;
             };
-            for item in result["items"].as_array().into_iter().flatten() {
-                let Some(run) = self
-                    .runs
-                    .values_mut()
-                    .find(|r| r.listener == item["listenerId"].as_str().unwrap_or(""))
-                else {
+            if r.snapshot["cleanupComplete"] == true && r.released {
+                continue;
+            }
+            let method = if r.snapshot["cleanupComplete"] == true {
+                "net.listener.release"
+            } else if r.stop_requested {
+                "net.listener.cancel"
+            } else if !r.sent {
+                r.sent = true;
+                "net.listener.create"
+            } else {
+                "net.listener.lookup"
+            };
+            (r.request.clone(), method)
+        };
+        let result = c.call_detailed(method, request.clone());
+        let mut state = shared.lock().unwrap();
+        let Some(r) = state
+            .as_mut()
+            .and_then(|a| a.runs.get_mut(&id))
+            .filter(|r| r.request == request)
+        else {
+            continue;
+        };
+        let was_failed = r.snapshot["state"] == "failed";
+        match result {
+            Ok(value) => {
+                if method == "net.listener.release" {
+                    r.released = true;
+                    r.query_error = None;
                     continue;
-                };
+                }
+                if let Some(listener) = value["listenerId"].as_str() {
+                    r.listener = listener.into();
+                }
+                if value["state"] == "retired" && value["cleanupComplete"] == true {
+                    r.snapshot["cleanupComplete"] = json!(true);
+                    r.snapshot["state"] = json!("closed");
+                } else if value["snapshot"].is_object() {
+                    r.snapshot = value["snapshot"].clone();
+                } else {
+                    r.query_error = Some("核心尚未观测到创建；可以继续查询或停止原启动".into());
+                    continue;
+                }
+                r.query_error = None;
+                r.observed_at = Some(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                );
+            }
+            Err(e) => r.query_error = Some(e.message),
+        }
+        let notification=(!was_failed&&r.snapshot["state"]=="failed"&&!r.stop_requested).then(||json!({"title":"网络隧道已中断","body":format!("{}：{}",name(&r.rule),r.snapshot["error"]["message"].as_str().unwrap_or("连接已断开")),"level":"warning","notify":true,"dedupeKey":format!("tunnel-{}",r.rule["serverId"])}));
+        drop(state);
+        if let Some(message) = notification {
+            let _ = c.call("messages.publish", message);
+        }
+    }
+    let views = {
+        let state = shared.lock().unwrap();
+        let Some(a) = state.as_ref() else { return };
+        a.views
+            .iter()
+            .filter(|(_, v)| v.kind == "manager")
+            .filter(|(view, _)| {
+                !a.runs.values().any(|r| {
+                    r.view == **view
+                        && r.listener.is_empty()
+                        && r.snapshot["cleanupComplete"] != true
+                })
+            })
+            .map(|(id, _)| id.clone())
+            .collect::<Vec<_>>()
+    };
+    for view in views {
+        let Ok(result) = c.call("net.poll", json!({"viewId":view})) else {
+            continue;
+        };
+        let mut close = Vec::new();
+        {
+            let mut state = shared.lock().unwrap();
+            let Some(a) = state.as_mut() else { return };
+            for item in result["items"].as_array().into_iter().flatten() {
                 let Some(id) = item["streamId"].as_str() else {
                     continue;
                 };
-                if run.clients.len() >= 16 {
-                    let _ = c.call("net.close", json!({"id":id}));
-                    continue;
-                }
-                let peer = Peer {
-                    socks: if run.rule["type"] == "socks5" {
-                        Some(Socks::default())
-                    } else {
-                        None
-                    },
-                    remote: None,
-                    created: Instant::now(),
-                };
-                run.clients.entry(id.into()).or_insert(peer);
-            }
-        }
-        for run in self.runs.values_mut() {
-            if matches!(run.snapshot["state"].as_str(), Some("closed" | "failed")) {
-                continue;
-            }
-            match c.call("net.listener.snapshot", json!({"listenerId":run.listener})) {
-                Ok(snapshot) => {
-                    if matches!(snapshot["state"].as_str(), Some("closed" | "failed")) {
-                        if snapshot["state"] == "failed" {
-                            let _=c.call("messages.publish",json!({"title":"网络隧道已中断","body":format!("{}：{}",name(&run.rule),snapshot["error"]["message"].as_str().unwrap_or("连接已断开")),"level":"warning","notify":true,"dedupeKey":format!("tunnel-{}",run.rule["serverId"])}));
-                        }
-                        run.clients.clear();
+                if let Some(r) = a.runs.values_mut().find(|r| {
+                    r.listener == item["listenerId"].as_str().unwrap_or("")
+                        && !r.stop_requested
+                        && r.query_error.is_none()
+                }) {
+                    if r.clients.len() < 16 {
+                        r.clients.entry(id.into()).or_insert(Peer {
+                            socks: if r.rule["type"] == "socks5" {
+                                Some(Socks::default())
+                            } else {
+                                None
+                            },
+                            remote: None,
+                            created: Instant::now(),
+                        });
+                        continue;
                     }
-                    run.snapshot = snapshot;
                 }
-                Err(e) => {
-                    run.snapshot =
-                        json!({"state":"failed","error":{"stage":"cleanup","message":e}});
-                    run.clients.clear();
-                    continue;
-                }
-            }
-            run.clients.retain(|id,peer|{
-                let result=advance(c,&run.listener,&run.rule,id,peer);
-                match result {Ok(done)=>!done,Err(e)=>{
-                    let response=peer.socks.as_mut().and_then(|s|s.failure_reply(if e.contains("超时"){Reply::TTL_EXPIRED}else if e.to_lowercase().contains("refused"){Reply::CONNECTION_REFUSED}else{Reply::GENERAL_FAILURE}));
-                    if let Some(bytes)=response{let _=c.call("net.stream.write",json!({"streamId":id,"bytes":bytes}));let _=c.call("net.stream.finish",json!({"streamId":id}));}else{let _=c.call("net.close",json!({"id":id}));}
-                    if let Some(remote)=&peer.remote{let _=c.call("net.close",json!({"id":remote}));}
-                    let stage=if peer.remote.is_some(){"targetConnect"}else{"protocol"};
-                    run.last_error=Some(json!({"stage":stage,"message":e}));
-                    let _=c.call("logging.write",json!({"level":"warn","message":"隧道客户端连接失败","fields":{"ruleId":run.rule["id"],"stage":stage,"error":e}}));false
-                }}
-            });
-        }
-        let pending: Vec<_> = self
-            .runs
-            .iter()
-            .filter(|(_, r)| {
-                r.restart && matches!(r.snapshot["state"].as_str(), Some("closed" | "failed"))
-            })
-            .map(|(id, r)| (id.clone(), r.view.clone()))
-            .collect();
-        for (id, view) in pending {
-            if let Err(e) = self.start(c, &view, &id) {
-                // A save-and-close temporarily freezes the workspace. Keep the
-                // restart pending; disposing the manager cancels it on a real close.
-                if e == "工作区正在关闭" || e == "工作区正在确认关闭" {
-                    continue;
-                }
-                if let Some(r) = self.runs.get_mut(&id) {
-                    r.restart = false;
-                    r.snapshot = json!({"state":"failed","error":{"message":e}})
-                }
+                close.push(id.to_owned());
             }
         }
-        let deletes: Vec<_> = self
-            .deletes
-            .iter()
-            .filter(|(id, _)| {
-                self.runs.get(*id).is_none_or(|r| {
-                    matches!(r.snapshot["state"].as_str(), Some("closed" | "failed"))
-                })
-            })
-            .map(|(id, v)| (id.clone(), v.clone()))
-            .collect();
-        for (id, (server, revision)) in deletes {
-            match self.rules.delete(&server, &id, revision) {
-                Ok(()) => {
-                    self.runs.remove(&id);
-                }
-                Err(e) => {
-                    let _ = c.call(
-                        "messages.publish",
-                        json!({"title":"删除规则失败","body":e,"level":"error"}),
-                    );
-                }
-            }
-            self.deletes.remove(&id);
+        for id in close {
+            let _ = c.call("net.close", json!({"id":id}));
         }
     }
+    let ids = {
+        let state = shared.lock().unwrap();
+        let Some(a) = state.as_ref() else { return };
+        a.runs.keys().cloned().collect::<Vec<_>>()
+    };
+    for id in ids {
+        let (request, listener, rule, mut clients) = {
+            let mut state = shared.lock().unwrap();
+            let Some(r) = state.as_mut().and_then(|a| a.runs.get_mut(&id)) else {
+                continue;
+            };
+            if r.stop_requested || r.query_error.is_some() || r.snapshot["state"] != "running" {
+                continue;
+            }
+            (
+                r.request.clone(),
+                r.listener.clone(),
+                r.rule.clone(),
+                std::mem::take(&mut r.clients),
+            )
+        };
+        let mut last_error = None;
+        clients.retain(|peer_id,peer|{
+            let active={let state=shared.lock().unwrap();state.as_ref().and_then(|a|a.runs.get(&id)).is_some_and(|r|r.request==request&&!r.stop_requested)};
+            let result=if active{advance(c,&listener,&rule,peer_id,peer)}else{Err("监听正在停止".into())};
+            match result{Ok(done)=>!done,Err(e)=>{
+                let response=peer.socks.as_mut().and_then(|s|s.failure_reply(if e.contains("超时"){Reply::TTL_EXPIRED}else if e.to_lowercase().contains("refused"){Reply::CONNECTION_REFUSED}else{Reply::GENERAL_FAILURE}));
+                if active{if let Some(bytes)=response{let _=c.call("net.stream.write",json!({"streamId":peer_id,"bytes":bytes}));let _=c.call("net.stream.finish",json!({"streamId":peer_id}));}else{let _=c.call("net.close",json!({"id":peer_id}));}}
+                if let Some(remote)=&peer.remote{let _=c.call("net.close",json!({"id":remote}));}
+                let stage=if peer.remote.is_some(){"targetConnect"}else{"protocol"};last_error=Some(json!({"stage":stage,"message":e}));
+                let _=c.call("logging.write",json!({"level":"warn","message":"隧道客户端连接失败","fields":{"ruleId":id,"stage":stage,"error":e}}));false}}
+        });
+        let mut state = shared.lock().unwrap();
+        if let Some(r) = state
+            .as_mut()
+            .and_then(|a| a.runs.get_mut(&id))
+            .filter(|r| r.request == request)
+        {
+            r.clients.extend(clients);
+            if last_error.is_some() {
+                r.last_error = last_error;
+            }
+        }
+    }
+    let mut state = shared.lock().unwrap();
+    if let Some(a) = state.as_mut() {
+        a.runs
+            .retain(|_, r| a.views.contains_key(&r.view) || !r.released);
+    }
 }
+
 fn target(c: &Client, listener: &str, id: &str, host: &str, port: u16) -> Result<String, String> {
     c.call("net.tcp.open",json!({"listenerId":listener,"clientStreamId":id,"operationId":"target","host":host,"port":port}))?["streamId"].as_str().map(str::to_owned).ok_or("没有返回远端流".into())
 }
@@ -340,7 +407,7 @@ mod tests {
             checks: (0..21)
                 .map(|i| (format!("rule-{i}"), json!({"ok":true})))
                 .collect(),
-            deletes: HashMap::new(),
+            sequence: 0,
         };
         let page = app.snapshot("server", 20);
         assert_eq!(page["rules"].as_array().unwrap().len(), 1);

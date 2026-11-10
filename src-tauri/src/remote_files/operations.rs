@@ -86,10 +86,46 @@ struct Io {
     session: Arc<Sftp>,
     operation: Arc<Operation>,
 }
-fn failure(code: &str, message: impl std::fmt::Display) -> String {
-    format!("{code}: {message}")
+#[derive(Debug, Clone)]
+pub struct OperationError {
+    pub code: String,
+    pub message: String,
 }
-fn mutation_error(error: Error) -> String {
+impl OperationError {
+    pub fn value(&self) -> Value {
+        json!({"code":self.code,"message":self.message,"effect":if self.code=="unknown"{"unknown"}else{"none"},"retryable":!["unknown","invalid","unsupported","expired","cancelled","contextChanged"].contains(&self.code.as_str())})
+    }
+}
+impl std::fmt::Display for OperationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.code, self.message)
+    }
+}
+impl From<String> for OperationError {
+    fn from(message: String) -> Self {
+        failure("io", message)
+    }
+}
+impl From<&str> for OperationError {
+    fn from(message: &str) -> Self {
+        failure("invalid", message)
+    }
+}
+impl From<OperationError> for String {
+    fn from(error: OperationError) -> Self {
+        error.to_string()
+    }
+}
+fn err(error: impl std::fmt::Display) -> OperationError {
+    failure("io", error)
+}
+fn failure(code: &str, message: impl std::fmt::Display) -> OperationError {
+    OperationError {
+        code: code.into(),
+        message: message.to_string(),
+    }
+}
+fn mutation_error(error: Error) -> OperationError {
     match error {
         Error::Status(status) => failure(
             match status.status_code {
@@ -114,7 +150,7 @@ fn mutation_error(error: Error) -> String {
         ),
     }
 }
-fn local_error(error: std::io::Error) -> String {
+fn local_error(error: std::io::Error) -> OperationError {
     failure(
         match error.kind() {
             std::io::ErrorKind::PermissionDenied => "permissionDenied",
@@ -126,9 +162,8 @@ fn local_error(error: std::io::Error) -> String {
         error,
     )
 }
-fn error_value(error: String) -> Value {
-    let (code, message) = error.split_once(": ").unwrap_or(("io", &error));
-    json!({"code":code,"message":message,"retryable":!["unknown","invalid","unsupported","expired"].contains(&code)})
+fn error_value(error: OperationError) -> Value {
+    error.value()
 }
 fn local_attrs(m: &std::fs::Metadata) -> Value {
     let kind = if m.file_type().is_symlink() {
@@ -157,7 +192,7 @@ fn remote_attrs(a: &FileAttributes) -> Value {
     ));
     value
 }
-fn valid_name(name: &str) -> Result<(), String> {
+fn valid_name(name: &str) -> Result<(), OperationError> {
     if name.is_empty() || name == "." || name == ".." || name.contains(['\0', '/']) {
         return Err(failure("invalid", "文件名无效"));
     }
@@ -189,7 +224,7 @@ impl AppCore {
         token: &str,
         file: &str,
         input: &str,
-    ) -> Result<PathBuf, String> {
+    ) -> Result<PathBuf, OperationError> {
         let view = self.ui_data_writable(window, token)?;
         let resource = self.file_resource(&view.plugin_id, &view.plugin_instance_id, file)?;
         if resource.owner.view != view.id {
@@ -214,7 +249,7 @@ impl AppCore {
         file: &str,
         mut roots: Vec<PathBuf>,
         allow_sibling: bool,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, OperationError> {
         let view = self.ui_data_writable(window, token)?;
         let r = self.file_resource(&view.plugin_id, &view.plugin_instance_id, file)?;
         let _task = r.tasks.enter()?;
@@ -255,7 +290,7 @@ impl AppCore {
         token: &str,
         file: &str,
         download: bool,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, OperationError> {
         let view = self.ui_data_writable(window, token)?;
         let r = self.file_resource(&view.plugin_id, &view.plugin_instance_id, file)?;
         let _task = r.tasks.enter()?;
@@ -292,7 +327,7 @@ impl AppCore {
         token: &str,
         file: &str,
         operation: &str,
-        paths: Result<Vec<PathBuf>, String>,
+        paths: Result<Vec<PathBuf>, OperationError>,
     ) {
         let Some(r) = self.files.entries.lock().unwrap().get(file).cloned() else {
             return;
@@ -343,8 +378,25 @@ impl AppCore {
         self: &Arc<Self>,
         r: Arc<Resource>,
         p: &Value,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, OperationError> {
         let action = string(p, "action")?;
+        if action == "op.start" {
+            let registry = r.operations.registry.lock().unwrap();
+            if let Some(op) = registry
+                .entries
+                .values()
+                .find(|op| op.request["requestId"] == p["requestId"] && p["requestId"].is_string())
+            {
+                if op.request["operation"] != p["operation"]
+                    || op.request["sequence"] != p["sequence"]
+                    || op.request["batchId"] != p["batchId"]
+                    || op.request["expectedContext"] != p["expectedContext"]
+                {
+                    return Err(failure("invalid", "重复操作参数不一致"));
+                }
+                return Ok(op.state.lock().unwrap().clone());
+            }
+        }
         let _task = if matches!(action, "op.start" | "batch.begin") {
             Some(r.tasks.enter()?)
         } else {
@@ -355,11 +407,34 @@ impl AppCore {
             if serde_json::to_value(&owner.context).map_err(err)? != p["context"] {
                 return Err(failure("contextChanged", "连接已更换，请重新提交"));
             }
+            let cancelled = r.operations.cancelled_batches.lock().unwrap();
+            if cancelled.contains(string(p, "batchId")?) {
+                return Err(failure("cancelled", "批次已取消"));
+            }
             let mut batches = r.operations.batches.lock().unwrap();
             if batches.len() >= 64 {
                 return Err(failure("busy", "文件任务已满"));
             }
             batches.insert(string(p, "batchId")?.into(), owner.context);
+            return Ok(json!({}));
+        }
+        if action == "batch.cancel" {
+            let id = string(p, "batchId")?;
+            let mut cancelled = r.operations.cancelled_batches.lock().unwrap();
+            if r.operations.batches.lock().unwrap().contains_key(id) {
+                cancelled.insert(id.into());
+            }
+            for op in r
+                .operations
+                .registry
+                .lock()
+                .unwrap()
+                .entries
+                .values()
+                .filter(|op| op.request["batchId"] == id)
+            {
+                op.cancel.cancel();
+            }
             return Ok(json!({}));
         }
         if action == "batch.end" {
@@ -369,16 +444,9 @@ impl AppCore {
                 .lock()
                 .unwrap()
                 .retain(|_, cursor| cursor.try_lock().map_or(true, |cursor| cursor.batch != id));
-            r.operations
-                .cancelled_batches
-                .lock()
-                .unwrap()
-                .remove(string(p, "batchId")?);
-            r.operations
-                .batches
-                .lock()
-                .unwrap()
-                .remove(string(p, "batchId")?);
+            let mut cancelled = r.operations.cancelled_batches.lock().unwrap();
+            r.operations.batches.lock().unwrap().remove(id);
+            cancelled.remove(id);
             return Ok(json!({}));
         }
         if action.starts_with("input.") {
@@ -439,6 +507,7 @@ impl AppCore {
             );
         }
         if action != "op.start" {
+            let cancelled = r.operations.cancelled_batches.lock().unwrap();
             let mut registry = r.operations.registry.lock().unwrap();
             let key = registry
                 .entries
@@ -449,6 +518,14 @@ impl AppCore {
                 })
                 .map(|(key, _)| key.clone());
             let Some(key) = key else {
+                if action == "op.lookup"
+                    && p["protocolVersion"] == 2
+                    && cancelled.contains(p["batchId"].as_str().unwrap_or(""))
+                {
+                    return Ok(
+                        json!({"state":"cancelled","error":{"code":"cancelled","effect":"none","retryable":false,"message":"批次已封闭；此请求未被接纳"}}),
+                    );
+                }
                 return Err(failure("expired", "文件操作结果已释放或不存在"));
             };
             let op = registry.entries[&key].clone();
@@ -489,7 +566,7 @@ impl AppCore {
                     || view.plugin_instance_id != r.owner.instance
                     || r.cancel.is_cancelled()
                 {
-                    return Err(error);
+                    return Err(error.into());
                 }
                 Owner {
                     context: view.context.clone(),
@@ -503,7 +580,26 @@ impl AppCore {
             return Err(failure("contextChanged", "连接已更换，请重新操作"));
         }
         self.connection_session(&owner.context)?;
+        let admission = self.ui_state();
+        let current = admission.resource_view(&r.owner.view)?;
+        if current.context != owner.context
+            || current.plugin_instance_id != r.owner.instance
+            || (admission.lifecycle.view_frozen(&current.id)
+                && !admission.lifecycle.view_input_work_allowed(&current.id))
+        {
+            return Err(failure("contextChanged", "文件页面已关闭或更换上下文"));
+        }
         let cancellation_guard = r.operations.cancelled_batches.lock().unwrap();
+        if p["protocolVersion"] == 2
+            && r.operations
+                .batches
+                .lock()
+                .unwrap()
+                .get(p["batchId"].as_str().unwrap_or(""))
+                != Some(&owner.context)
+        {
+            return Err(failure("expired", "文件批次已结束或上下文改变"));
+        }
         if cancellation_guard.contains(p["batchId"].as_str().unwrap_or("")) {
             return Err(failure("cancelled", "文件任务已取消"));
         }
@@ -529,23 +625,25 @@ impl AppCore {
         let sequence = p["sequence"]
             .as_str()
             .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(registry.last + 1);
+            .unwrap_or(registry.last.saturating_add(1));
         if sequence <= registry.last {
             return Err(failure("expired", "操作序号已退役，请核对已有结果"));
         }
         if registry.entries.len() >= MAX_OPERATIONS {
             return Err(failure("busy", "文件操作已满"));
         }
+        let task = r.tasks.enter()?;
+        let slot = self
+            .files
+            .operation_slots
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| failure("busy", "核心文件操作已满"))?;
         registry.last = sequence;
         let id = self.next_id();
         let operation = Arc::new(Operation {
             input_task: Mutex::new(None),
-            _slot: self
-                .files
-                .operation_slots
-                .clone()
-                .try_acquire_owned()
-                .map_err(|_| failure("busy", "核心文件操作已满"))?,
+            _slot: slot,
             id: id.clone(),
             request: p.clone(),
             state: Mutex::new(json!({"id":id,"state":"running","received":"0"})),
@@ -555,8 +653,8 @@ impl AppCore {
         registry.entries.insert(id.clone(), operation.clone());
         drop(registry);
         drop(cancellation_guard);
+        drop(admission);
         let core = self.clone();
-        let task = r.tasks.enter()?;
         tauri::async_runtime::spawn(async move {
             let _task = task;
             let mut state = State {
@@ -608,7 +706,7 @@ impl AppCore {
     }
 }
 impl Io {
-    async fn parent_identity(&self, e: &Endpoint) -> Result<Endpoint, String> {
+    async fn parent_identity(&self, e: &Endpoint) -> Result<Endpoint, OperationError> {
         match e {
             Endpoint::Local(path) => {
                 let parent = path
@@ -640,7 +738,7 @@ impl Io {
             }
         }
     }
-    fn endpoint(&self, p: &Value) -> Result<Endpoint, String> {
+    fn endpoint(&self, p: &Value) -> Result<Endpoint, OperationError> {
         if p["side"] == "remote" {
             let path = string(p, "path")?;
             if path.is_empty() || path.len() > 4096 || path.contains('\0') {
@@ -688,7 +786,7 @@ impl Io {
         }
         Ok(Endpoint::Local(path))
     }
-    async fn inspect(&self, e: &Endpoint) -> Result<Option<Value>, String> {
+    async fn inspect(&self, e: &Endpoint) -> Result<Option<Value>, OperationError> {
         match e {
             Endpoint::Local(path) => match tokio::fs::symlink_metadata(path).await {
                 Ok(m) => Ok(Some(local_attrs(&m))),
@@ -708,7 +806,11 @@ impl Io {
             },
         }
     }
-    async fn check_guard(&self, e: &Endpoint, guard: &Value) -> Result<Option<Value>, String> {
+    async fn check_guard(
+        &self,
+        e: &Endpoint,
+        guard: &Value,
+    ) -> Result<Option<Value>, OperationError> {
         let current = self.inspect(e).await?;
         if guard["kind"] == "absent" && current.is_some() {
             return Err(failure("targetExists", "目标已存在"));
@@ -720,12 +822,18 @@ impl Io {
         }
         Ok(current)
     }
-    async fn execute(&self, p: &Value) -> Result<Value, String> {
+    async fn execute(&self, p: &Value) -> Result<Value, OperationError> {
         if self.operation.cancel.is_cancelled() {
             return Err(failure("cancelled", "文件操作已取消"));
         }
         self.core.connection_session(&self.owner.context)?;
         let kind = string(p, "kind")?;
+        if kind == "renameNoReplace" {
+            return Err(failure(
+                "unsupported",
+                "当前后端不能保证原子无覆盖移动，未修改源或目标",
+            ));
+        }
         if kind == "next" || kind == "closeCursor" {
             return self.cursor_action(p).await;
         }
@@ -773,11 +881,11 @@ impl Io {
                     )
                     .await
                     .map_err(mutation_error)?;
-                self.session
-                    .raw
-                    .close(h.handle)
-                    .await
-                    .map_err(mutation_error)?;
+                if let Err(error) = self.session.raw.close(h.handle).await {
+                    return Ok(
+                        json!({"done":true,"cleanupWarning":format!("文件已创建，关闭句柄未确认：{error}")}),
+                    );
+                }
             }
             ("removeFile", Endpoint::Local(path)) => {
                 tokio::fs::remove_file(path).await.map_err(err)?

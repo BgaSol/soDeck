@@ -408,7 +408,7 @@
       if(n&&!multiple&&!directory)add('file','打开',()=>this.open(n));
       if(n&&(this.transfers||!directory))add('download','下载',()=>this.transfers?this.transfers.download(paths):this.download(n.path));
       separator();
-      if(this.transfers&&mutable){add('cut','剪切',()=>this.transfers.copy(paths,true));add('copy','复制',()=>this.transfers.copy(paths));}
+      if(this.transfers&&mutable){const cut=add('cut','剪切（当前后端不支持）',()=>{});cut.disabled=true;add('copy','复制',()=>this.transfers.copy(paths));}
       if(this.transfers&&target){paste=add('paste','粘贴',()=>this.transfers.paste(target,pasteState));paste.disabled=true;paste.title='正在读取剪贴板';}
       if(n)add('copy','复制路径',async()=>{await sodeckClipboard.writeText(paths.join('\n'));this.message('路径已复制');dispatchEvent(new Event('sodeck:fileClipboardChanged'));});
       separator();
@@ -417,7 +417,7 @@
         addSub('upload','上传',[['file','文件…',()=>this.transfers.upload(false,null,target)],['folder','文件夹…',()=>this.transfers.upload(true,null,target)]]);
       }
       if(!multiple)add('refresh','刷新',()=>this.refresh(n?(directory?n.path:parentOf(n.path)):this.rootPath));
-      if(this.transfers&&mutable){separator();if(!multiple)add('rename','重命名…',()=>this.transfers.mutate('rename',paths));add('delete','删除',()=>this.transfers.mutate('delete',paths)).classList.add('danger');}
+      if(this.transfers&&mutable){separator();if(!multiple){const rename=add('rename','重命名（当前后端不支持）',()=>{});rename.disabled=true;}add('delete','删除',()=>this.transfers.mutate('delete',paths)).classList.add('danger');}
       menu.addEventListener('keydown', e => {
         if(e.key==='Escape'||e.key==='ArrowLeft'){
           if(submenu){e.preventDefault();e.stopPropagation();const anchor=submenuAnchor;hideSub();anchor.focus();}

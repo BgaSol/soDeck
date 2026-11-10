@@ -122,6 +122,7 @@
       await this.upload(false, input,targetPath);
     }
     async copy(roots,cut=false) {
+      if(cut)throw new Error("当前后端不支持原子无覆盖移动；请使用复制");
       if(!roots.length)return;
       const epoch=this.contextEpoch;
       const revision=await this.input('input.revision');
@@ -132,6 +133,7 @@
       dispatchEvent(new Event('sodeck:fileClipboardChanged'));
     }
     async mutate(kind, roots, targetPath = null) {
+      if (kind === 'rename' || kind === 'move') throw new Error('当前后端不支持原子无覆盖移动/改名');
       const epoch=this.contextEpoch;
       if (kind === 'delete') {
         if (!await this.ask(`直接删除 ${roots.length} 个选中条目？`, '文件夹会递归删除，远程没有回收站。', false)) return;
@@ -188,14 +190,14 @@
             const text = document.createElement('div'); text.textContent = task.conflict?.invalidName?'目标系统不支持此名称，请改名或跳过':task.conflict?.typeConflict ? '同名条目类型不同' : '目标已有同名文件'; row.append(text);
             const all = document.createElement('input'); all.type = 'checkbox';all.checked=this.conflictAll.get(task.id)||false;all.dataset.control=task.id+'/all';all.onchange=()=>this.conflictAll.set(task.id,all.checked); const label = document.createElement('label'); label.append(all, document.createTextNode('应用到本批同类冲突')); row.append(label);
             for (const [choice, text] of [['replace', '覆盖'], ['keepBoth', '保留两份'], ['skip', '跳过'], ['cancel', '取消任务']]) {
-              if (choice === 'replace' && task.conflict?.typeConflict) continue;
+              if (!task.conflict?.allowedActions?.includes(choice)) continue;
               if(choice==='keepBoth'&&task.conflict?.invalidName)continue;
               button(text, () => command({ action: 'resolveConflict', choice, applyAll: all.checked }));
             }
             button('改名',async()=>{const name=await this.ask('为目标改名','新名称',true,task.conflict?.name||'');if(name!=null)await command({action:'resolveConflict',choice:'rename',name});});
-          } else if (!terminal(task.state)) button('取消任务', () => command({ action: 'cancelBatch' }));
+           } else if(task.awaitingReceipt){button('确认并继续',()=>command({action:'confirmBatch'}));button('取消任务',()=>command({action:'cancelBatch'}));} else if (!terminal(task.state)) button('取消任务', () => command({ action: 'cancelBatch' }));
           else {
-            if (Number(task.failed) > 0 && task.state !== 'needsReview') button('重试失败项', () => command({ action: 'retryFailed' }));
+            if (Number(task.retryable) > 0 && task.state !== 'needsReview') button('重试失败项', () => command({ action: 'retryFailed' }));
             button('查看结果',()=>this.showItems(task.id));
             if(task.kind==='download'&&task.fileId===this.fileId)button('打开所在目录',()=>this.data('input.reveal',{inputId:task.inputId}));
             button('清除记录',()=>command({action:'clearBatch'}));

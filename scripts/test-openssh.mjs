@@ -65,6 +65,8 @@ try {
       const target=spawnSync('rustc',['-vV'],{encoding:'utf8'}).stdout.match(/^host: (.+)$/m)[1];
       env[`SODECK_TEST_${(plugin==='network-proxy'?'NETWORK':plugin.toUpperCase().replaceAll('-','_'))}_PLUGIN`]=path.join(output,`sodeck-${plugin}_${version}_${target}`);
     }
+    if(files){const root=env.SODECK_TEST_FILES_PLUGIN;const manifest=JSON.parse(fs.readFileSync(path.join(root,'plugin.json'),'utf8'));const test=spawnSync(process.execPath,['scripts/test-files-process.mjs'],{stdio:'inherit',windowsHide:true,env:{...env,SODECK_TEST_FILES_EXECUTABLE:path.join(root,manifest.entry)}});if(test.status!==0)throw new Error('File process regressions failed');}
+    if(network){const root=env.SODECK_TEST_NETWORK_PLUGIN;const manifest=JSON.parse(fs.readFileSync(path.join(root,'plugin.json'),'utf8'));const test=spawnSync(process.execPath,['scripts/test-network-process.mjs'],{stdio:'inherit',windowsHide:true,env:{...env,SODECK_TEST_NETWORK_EXECUTABLE:path.join(root,manifest.entry)}});if(test.status!==0)throw new Error('Network process regressions failed');}
       const result = uiOnly ? 0 : await new Promise((resolve, reject) => {
     const test = spawn("cargo", ["test", "--manifest-path", "src-tauri/Cargo.toml", "--features", "test-fixtures", "--locked", "--test", "connections", status?'openssh_system_status_plugin':network?'network_proxy_plugin':files?'openssh_files_plugin':terminal?'openssh_terminal_plugin':'openssh_interop', "--", "--ignored", "--exact", "--nocapture"], {
       windowsHide: true, stdio: "inherit", env,

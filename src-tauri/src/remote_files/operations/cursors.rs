@@ -21,7 +21,7 @@ impl Drop for Cursor {
     }
 }
 impl Cursor {
-    async fn page(&mut self) -> Result<Value, String> {
+    async fn page(&mut self) -> Result<Value, OperationError> {
         self.touched = Instant::now();
         let mut entries = Vec::new();
         let mut bytes = 0;
@@ -78,7 +78,7 @@ impl Cursor {
     }
 }
 impl Io {
-    pub(super) async fn open_cursor(&self, endpoint: Endpoint) -> Result<Value, String> {
+    pub(super) async fn open_cursor(&self, endpoint: Endpoint) -> Result<Value, OperationError> {
         if self
             .inspect(&endpoint)
             .await?
@@ -127,7 +127,7 @@ impl Io {
         }
         Ok(page)
     }
-    pub(super) async fn cursor_action(&self, p: &Value) -> Result<Value, String> {
+    pub(super) async fn cursor_action(&self, p: &Value) -> Result<Value, OperationError> {
         let id = string(p, "cursor")?;
         if p["kind"] == "closeCursor" {
             self.resource.operations.cursors.lock().unwrap().remove(id);

@@ -323,7 +323,7 @@ export class Components {
     this.movingViews=new Set(this.transfers.filter(t=>t.source===this.state?.window.id&&t.phase!=='preparing').flatMap(t=>t.viewIds));
     for(const shell of this.shells.values())for(const surface of shell.surfaces.values()){surface.node.inert=this.movingViews.has(surface.view.id)||Boolean(surface.readOnly)||this.closeBlocked.has(surface.view.id);if(previous.has(surface.view.id)&&!this.movingViews.has(surface.view.id)){this.post(surface,{type:'transferCancelled'});this.resumeRequests(surface);}}
     for(const transfer of this.transfers)if(transfer.source===this.state?.window.id&&transfer.phase==='draining'&&!transfer.closeOwner&&!this.transferJobs.has(transfer.id)){
-      this.transferJobs.add(transfer.id);void this.flush(transfer.viewIds,true).then(()=>this.invoke('transferDrained',{id:transfer.id})).catch(error=>{this.notify(String(error));return this.call('workspace_cancel_move',{id:transfer.workspaceId});}).finally(()=>{void this.refresh();});
+      this.transferJobs.add(transfer.id);void this.flush(transfer.viewIds,true).then(()=>{if(!this.disposed&&this.transfers.some(t=>t.id===transfer.id&&t.phase==='draining'))return this.invoke('transferDrained',{id:transfer.id});}).catch(error=>{if(this.transfers.some(t=>t.id===transfer.id&&t.phase==='draining')){this.notify(String(error));return this.call('workspace_cancel_move',{id:transfer.workspaceId});}}).finally(()=>{void this.refresh();});
     }
     const live=new Set(this.transfers.map(t=>t.id));for(const id of this.transferJobs)if(!live.has(id))this.transferJobs.delete(id);
   }
@@ -754,6 +754,7 @@ export class Components {
   async flush(ids?: string[],freeze=false) {
     if(this.flushing)await this.flushing;
     const surfaces = [...this.shells.values()].flatMap(s => [...s.surfaces.values()]).filter(s=>!ids||ids.includes(s.view.id));
+    const identities=new Map(surfaces.map(s=>[s,s.token]));
     const deadline=Date.now()+45000;
     const job=(async()=>{
       await Promise.all(surfaces.filter(s => s.flushable && s.token).map(s => new Promise<void>((resolve,reject) => {
@@ -765,7 +766,7 @@ export class Components {
       let timer:ReturnType<typeof setTimeout>|undefined;
       try{await Promise.race([Promise.all(surfaces.map(f => f.chain)),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error("组件输入结果尚未确认")),Math.max(1,deadline-Date.now()));})]);}
       finally{clearTimeout(timer);}
-      if(surfaces.some(s=>!s.mounted))throw new Error("部分组件界面尚未就绪，无法确认输入");
+      if(this.disposed||surfaces.some(s=>!s.mounted||s.token!==identities.get(s)))throw new Error("部分组件界面尚未就绪，无法确认输入");
     })();
     this.flushing=job;
     try{await job;return surfaces.flatMap(s=>s.token?[s.token]:[]);}finally{for(const surface of surfaces)surface.flushing?.done("输入同步已结束");if(this.flushing===job)this.flushing=undefined;}

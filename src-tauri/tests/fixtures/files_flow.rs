@@ -3,6 +3,14 @@ async fn fd(core: &Arc<AppCore>, token: &str, id: &str, mut p: Value) -> Result<
     p["id"] = json!(id);
     core.files_data("main", token, p).await
 }
+async fn editor_draft(core:&Arc<AppCore>,token:&str,id:&str,document:&Value,sequence:u64,bytes:&[u8])->Value {
+    use sha2::Digest;
+    let identity=json!({"id":id,"documentId":document["documentId"],"uploadId":format!("draft-{sequence}"),"uploadSequence":sequence.to_string(),"editRevision":sequence.to_string(),"size":bytes.len(),"sha256":format!("{:x}",sha2::Sha256::digest(bytes))});
+    let mut p=identity.clone();p["action"]=json!("draft.begin");
+    assert_eq!(fd(core,token,id,p).await.unwrap()["ok"],true);
+    for (i,chunk) in bytes.chunks(16384).enumerate(){let mut p=identity.clone();p["action"]=json!("draft.append");p["offset"]=json!(i*16384);p["data"]=json!(chunk);assert_eq!(fd(core,token,id,p).await.unwrap()["ok"],true);}
+    let mut p=identity;p["action"]=json!("draft.commit");let reply=fd(core,token,id,p).await.unwrap();assert_eq!(reply["ok"],true,"{reply}");reply["value"]["draftRef"].clone()
+}
 async fn job(core: &Arc<AppCore>, token: &str, id: &str) -> Value {
     tokio::time::timeout(Duration::from_secs(30), async {
         loop {
@@ -383,13 +391,9 @@ async fn openssh_files_plugin() {
     );
     let renamed = ops.join("renamed.txt");
     let renamed_path = renamed.to_str().unwrap().replace('\\', "/");
-    let batch=f.core.ui_event("main",token,json!({"action":"startBatch","parameters":{"kind":"rename","path":empty_path,"destination":renamed_path}})).unwrap();
-    assert_eq!(
-        wait_file_batch(&f.core, token, batch["batchId"].as_str().unwrap()).await["state"],
-        "completed"
-    );
-    assert!(!empty.exists());
-    assert!(renamed.exists());
+    assert!(f.core.ui_event("main",token,json!({"action":"startBatch","parameters":{"kind":"rename","path":empty_path,"destination":renamed_path}})).unwrap_err().contains("不支持"));
+    assert!(empty.exists());assert!(!renamed.exists());
+    let renamed_path=empty_path.clone();
     let batch=f.core.ui_event("main",token,json!({"action":"startBatch","parameters":{"kind":"copy","roots":[renamed_path],"targetPath":ops_path}})).unwrap();
     let copy_id = batch["batchId"].as_str().unwrap();
     conflict_choice(&f.core, token, copy_id, "keepBoth").await;
@@ -397,18 +401,14 @@ async fn openssh_files_plugin() {
         wait_file_batch(&f.core, token, copy_id).await["state"],
         "completed"
     );
-    assert!(ops.join("renamed (1).txt").exists());
+    assert!(ops.join("new (1).txt").exists());
     let move_source = remote.join("move-replace.txt");
     let move_target = ops.join("move-replace.txt");
     std::fs::write(&move_source, b"new move content").unwrap();
     std::fs::write(&move_target, b"old target").unwrap();
-    let batch=f.core.ui_event("main",token,json!({"action":"startBatch","parameters":{"kind":"move","roots":[move_source.to_str().unwrap().replace('\\',"/")],"targetPath":ops_path}})).unwrap();
-    let move_id = batch["batchId"].as_str().unwrap();
-    conflict_choice(&f.core, token, move_id, "replace").await;
-    let moved = wait_file_batch(&f.core, token, move_id).await;
-    assert_eq!(moved["state"], "completed", "{moved}");
-    assert!(!move_source.exists());
-    assert_eq!(std::fs::read(move_target).unwrap(), b"new move content");
+    assert!(f.core.ui_event("main",token,json!({"action":"startBatch","parameters":{"kind":"move","roots":[move_source.to_str().unwrap().replace('\\',"/")],"targetPath":ops_path}})).unwrap_err().contains("不支持"));
+    assert_eq!(std::fs::read(move_source).unwrap(),b"new move content");
+    assert_eq!(std::fs::read(move_target).unwrap(),b"old target");
     // A directory larger than one page must visit each child exactly once.
     let many = remote.join("many");
     std::fs::create_dir(&many).unwrap();
@@ -422,12 +422,9 @@ async fn openssh_files_plugin() {
     assert_eq!(std::fs::read_dir(ops.join("many")).unwrap().count(), 215);
     let moved = remote.join("moved");
     std::fs::create_dir(&moved).unwrap();
-    let batch=f.core.ui_event("main",token,json!({"action":"startBatch","parameters":{"kind":"move","roots":[ops.join("many").to_str().unwrap().replace('\\',"/")],"targetPath":moved.to_str().unwrap().replace('\\',"/")}})).unwrap();
-    assert_eq!(
-        wait_file_batch(&f.core, token, batch["batchId"].as_str().unwrap()).await["state"],
-        "completed"
-    );
-    assert!(!ops.join("many").exists());
+    assert!(f.core.ui_event("main",token,json!({"action":"startBatch","parameters":{"kind":"move","roots":[ops.join("many").to_str().unwrap().replace('\\',"/")],"targetPath":moved.to_str().unwrap().replace('\\',"/")}})).is_err());
+    assert_eq!(std::fs::read_dir(ops.join("many")).unwrap().count(),215);
+    let moved=ops.join("many");
     let batch=f.core.ui_event("main",token,json!({"action":"startBatch","parameters":{"kind":"delete","roots":[moved.to_str().unwrap().replace('\\',"/")]}})).unwrap();
     assert_eq!(
         wait_file_batch(&f.core, token, batch["batchId"].as_str().unwrap()).await["state"],
@@ -632,32 +629,38 @@ async fn openssh_files_plugin() {
         original
     );
     let replacement = "\u{feff}changed\r\n中文\r\n".as_bytes();
-    fd(
-        &f.core,
-        token,
-        id,
-        json!({"action":"stage","begin":true,"done":true,"offset":0,"data":replacement}),
-    )
-    .await
-    .unwrap();
-    f.core
-        .ui_event("main", token, json!({"action":"staged","revision":1}))
-        .unwrap();
-    fd(&f.core, token, id, json!({"action":"save"}))
-        .await
-        .unwrap();
-    let saved = job(&f.core, token, id).await;
-    assert_eq!(saved["state"], "completed", "{saved}");
-    assert_eq!(std::fs::read(&document).unwrap(), replacement);
-    std::fs::write(&document, b"external-change").unwrap();
-    fd(&f.core,token,id,json!({"action":"stage","begin":true,"done":true,"offset":0,"data":b"should-not-overwrite"})).await.unwrap();
-    fd(&f.core, token, id, json!({"action":"save"}))
-        .await
-        .unwrap();
-    let failed = job(&f.core, token, id).await;
-    assert_eq!(failed["state"], "failed");
-    assert!(failed["error"].as_str().unwrap().contains("已被修改"));
-    assert_eq!(std::fs::read(&document).unwrap(), b"external-change");
+    let reference=editor_draft(&f.core,token,id,&read["draftRef"],1,replacement).await;
+    let save=json!({"action":"save.start","requestId":"save-1","sequence":"1","expectedContext":context,"expectedDraftRef":reference});
+    let accepted=fd(&f.core,token,id,save.clone()).await.unwrap();assert_eq!(accepted["ok"],true,"{accepted}");
+    let newer=editor_draft(&f.core,token,id,&reference,2,b"newer draft").await;
+    assert!(fd(&f.core,token,id,json!({"action":"stage","data":[120]})).await.is_err());
+    assert!(fd(&f.core,token,id,json!({"action":"save"})).await.is_err());
+    assert!(f.core.files_export_legacy_begin("main",token,&json!({"id":id})).is_err());
+    let saved=job(&f.core,token,id).await;assert_eq!(saved["state"],"completed","{saved}");
+    assert_eq!(std::fs::read(&document).unwrap(),replacement);
+    let facts=fd(&f.core,token,id,json!({"action":"draft.describe"})).await.unwrap();
+    assert_eq!(facts["value"]["savedRevision"],"1");assert_eq!(facts["value"]["draftRef"]["revision"],"2");
+    let duplicate=fd(&f.core,token,id,save).await.unwrap();assert_eq!(duplicate["value"]["id"],accepted["value"]["id"]);
+    let exported=f.path.join("fixed-draft.txt");
+    let export=json!({"id":id,"action":"export.start","requestId":"export-1","sequence":"1","expectedDraftRef":newer});
+    let (_,task)=f.core.files_export_begin("main",token,&export).unwrap();
+    assert!(f.core.files_export_begin("main",token,&export).unwrap().1.is_none());
+    let latest=editor_draft(&f.core,token,id,&newer,3,b"should-not-overwrite").await;
+    let done=f.core.files_export_finish(task.unwrap(),Ok(Some(exported.clone()))).await;
+    assert_eq!(done["state"],"completed","{done}");assert_eq!(std::fs::read(exported).unwrap(),b"newer draft");
+    assert_eq!(fd(&f.core,token,id,json!({"action":"export.release","requestId":"export-1"})).await.unwrap()["ok"],true);
+    let cancelled_path=f.path.join("cancelled-export.txt");
+    std::fs::write(&cancelled_path,b"keep-local").unwrap();
+    let export=json!({"id":id,"action":"export.start","requestId":"export-2","sequence":"2","expectedDraftRef":latest});
+    let (_,task)=f.core.files_export_begin("main",token,&export).unwrap();
+    assert_eq!(fd(&f.core,token,id,json!({"action":"export.cancel","requestId":"export-2","sequence":"2"})).await.unwrap()["ok"],true);
+    assert_eq!(fd(&f.core,token,id,json!({"action":"export.status","requestId":"export-2"})).await.unwrap()["value"]["state"],"waitingInput");
+    let done=f.core.files_export_finish(task.unwrap(),Ok(Some(cancelled_path.clone()))).await;
+    assert_eq!(done["state"],"cancelled");assert_eq!(std::fs::read(cancelled_path).unwrap(),b"keep-local");
+    assert_eq!(fd(&f.core,token,id,json!({"action":"save.release","requestId":"save-1"})).await.unwrap()["ok"],true);
+    std::fs::write(&document,b"external-change").unwrap();
+    let started=fd(&f.core,token,id,json!({"action":"save.start","requestId":"save-2","sequence":"2","expectedContext":context,"expectedDraftRef":latest})).await.unwrap();assert_eq!(started["ok"],true,"{started}");
+    let failed=job(&f.core,token,id).await;assert_eq!(failed["state"],"failed","{failed}");assert!(failed["error"].as_str().unwrap().contains("已被修改"));assert_eq!(std::fs::read(&document).unwrap(),b"external-change");
     let local = f.path.join("download.bin");
     std::fs::write(&local, b"local-original").unwrap();
     f.core

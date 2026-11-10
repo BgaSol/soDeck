@@ -44,8 +44,22 @@ pub(super) fn plugin_request(
             .map_err(RpcError::execution),
         method if method.starts_with("net.") => core
             .network_request(id, instance, method, &frame["params"])
-            .map_err(RpcError::execution),
+            .map_err(|message| RpcError {
+                code: -32000,
+                message,
+                data: json!({"code":"networkRequestRejected"}),
+            }),
         "metrics.networkSnapshot" => Ok(core.network_snapshot()),
+        "files.editor" => core
+            .files_editor(id, instance, &frame["params"])
+            .map_err(RpcError::execution),
+        "files.operations" => core
+            .files_operations(id, instance, &frame["params"])
+            .map_err(|e| RpcError {
+                code: -32000,
+                message: e.message.clone(),
+                data: e.value(),
+            }),
         "files.request" => core
             .files_control(id, instance, &frame["params"])
             .map_err(RpcError::execution),

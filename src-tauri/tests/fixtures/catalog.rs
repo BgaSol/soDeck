@@ -168,6 +168,28 @@ fn main() {
                             vec![local],
                             args["request"]["action"] == "input.chooseDownload",
                         )
+                        .map_err(String::from)
+                    } else if args["request"]["action"] == "export.start" {
+                        match core.files_export_begin(
+                            args["window"].as_str().unwrap_or("main"),
+                            args["surfaceId"].as_str().unwrap(),
+                            &args["request"],
+                        ) {
+                            Ok((receipt, task)) => {
+                                if let Some(task) = task {
+                                    let core = core.clone();
+                                    let path = std::env::var("SODECK_TEST_DOWNLOAD_PATH")
+                                        .expect("test export destination");
+                                    tauri::async_runtime::spawn(async move {
+                                        core.files_export_finish(task, Ok(Some(path.into()))).await;
+                                    });
+                                }
+                                Ok(json!({"ok":true,"value":receipt}))
+                            }
+                            Err(error) => Ok(
+                                json!({"ok":false,"error":{"code":"exportRejected","message":error}}),
+                            ),
+                        }
                     } else if args["request"]["action"] == "exportDraft" {
                         let local = std::env::var("SODECK_TEST_DOWNLOAD_PATH")
                             .expect("test export destination");

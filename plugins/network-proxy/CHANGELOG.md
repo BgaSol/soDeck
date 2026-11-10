@@ -1,8 +1,14 @@
+# 0.4.0
+
+保存只保存规则，删除需先确认监听清理完成，移除保存并重启和停止后自动删除。查询失败保留原监听并显示待确认；后台 RPC 不占用整个应用状态锁，停止等待实际 socket 和子任务退出。
+
+依赖核心 `net.listenerLifecycle.v1`。 API 主版本保持 1；缺少能力时初始化明确拒绝，不回退到旧流程。本次准备独立发行；核心需先升级至 0.23.0。五平台原生打包、实际包验证及发行来源在完成后补录；尚未补齐的故障组合见[剩余验收](../../docs/plans/operation-outcomes.md)。
+
 # 0.3.1
 
 共享客户端改用固定 base64 0.23.1；保留标准编码、严格解码、原始字节分页和既有 API。本版同步锁文件并重新独立打包，插件业务和核心 API 主版本不变。
 
-实现见[接入记录](../../docs/implementation-base64-opener-adoption.md)；核心与插件继续独立发行，核心包不含业务插件。
+实现见[接入记录](https://github.com/BgaSol/soDeck/blob/8115fdcd5bed4108021a729da605fbde77afc2af/docs/implementation-base64-opener-adoption.md)；核心与插件继续独立发行，核心包不含业务插件。
 
 包来源：[`0abaf3e8ccc2045e437dac723d898eca87759f6c`](https://github.com/BgaSol/soDeck/commit/0abaf3e8ccc2045e437dac723d898eca87759f6c)；原始独立打包：[Package plugin #42779058143](https://github.com/BgaSol/soDeck/actions/runs/42779058143)；正式发行：[network-proxy 0.3.1](https://github.com/BgaSol/soDeck/releases/tag/plugin-network-proxy-v0.3.1)，非 Latest。
 

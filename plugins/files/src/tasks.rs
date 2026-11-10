@@ -42,6 +42,8 @@ struct Batch {
     decision_wake: Condvar,
     policy: Mutex<Value>,
     journal: PathBuf,
+    confirm: AtomicBool,
+    receipts: Mutex<Vec<String>>,
 }
 #[derive(Clone)]
 struct Item {
@@ -49,9 +51,48 @@ struct Item {
     destination: Value,
     name: String,
     stamp: Value,
-    cleanup: bool,
-    target_stamp: Value,
+    delete_directory: bool,
 }
+#[derive(Debug)]
+struct TaskError {
+    code: String,
+    message: String,
+}
+impl TaskError {
+    fn new(code: &str, message: impl ToString) -> Self {
+        Self {
+            code: code.into(),
+            message: message.to_string(),
+        }
+    }
+    fn retryable(&self) -> bool {
+        ![
+            "unknown",
+            "invalid",
+            "unsupported",
+            "expired",
+            "cancelled",
+            "contextChanged",
+        ]
+        .contains(&self.code.as_str())
+    }
+}
+impl From<String> for TaskError {
+    fn from(message: String) -> Self {
+        Self::new("io", message)
+    }
+}
+impl From<&str> for TaskError {
+    fn from(message: &str) -> Self {
+        Self::new("invalid", message)
+    }
+}
+impl std::fmt::Display for TaskError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
 struct Scratch(Vec<PathBuf>);
 impl Drop for Scratch {
     fn drop(&mut self) {
@@ -141,12 +182,21 @@ impl Tasks {
         {
             return Err("未知文件任务".into());
         }
+        if ["move", "rename"].contains(&kind.as_str()) {
+            return Err("当前后端不支持原子无覆盖移动/改名；可另行复制，源不会自动删除".into());
+        }
         if let Some(roots) = parameters["roots"].as_array() {
             if roots.is_empty() || roots.len() > 4096 {
                 return Err("请选择 1 至 4096 个条目".into());
             }
         }
         let mut queue = self.inner.queue.lock().unwrap();
+        if queue.batches.values().any(|b| {
+            b.context["workspaceId"] == context["workspaceId"]
+                && b.state.lock().unwrap()["state"] == "needsReview"
+        }) {
+            return Err("此工作区有待确认文件操作，请先核对结果".into());
+        }
         if queue.waiting.len() >= 64 {
             return Err("文件任务队列已满，请先处理现有任务".into());
         }
@@ -165,7 +215,7 @@ impl Tasks {
                 json!({"action":"input.claim","id":file,"inputId":input,"renew":parameters["renewInput"]==true}),
             )?;
         }
-        let id = self.inner.next().to_string();
+        let id = self.inner.next().map_err(|e| e.message)?.to_string();
         self.inner.client.call(
             "files.request",
             json!({"action":"batch.begin","id":file,"batchId":id,"context":context}),
@@ -184,6 +234,8 @@ impl Tasks {
             decision_wake: Condvar::new(),
             policy: Mutex::new(json!({})),
             journal: self.inner.directory.join(format!("{id}.results.jsonl")),
+            confirm: AtomicBool::new(false),
+            receipts: Mutex::new(Vec::new()),
         });
         queue.batches.insert(id.clone(), batch);
         queue.waiting.push_back(id.clone());
@@ -304,6 +356,14 @@ impl Tasks {
                 self.inner.wake.notify_all();
                 Ok(json!({}))
             }
+            Some("confirmBatch") => {
+                if batch.state.lock().unwrap()["awaitingReceipt"] != true {
+                    return Err("没有可查询的未决操作，请核对服务器现状".into());
+                }
+                batch.confirm.store(true, Ordering::Release);
+                batch.decision_wake.notify_all();
+                Ok(json!({}))
+            }
             Some("resolveConflict") => {
                 let state = batch.state.lock().unwrap();
                 if state["state"] != "awaitingConflict"
@@ -311,6 +371,12 @@ impl Tasks {
                         && parameters["conflictId"] != state["conflict"]["itemId"])
                 {
                     return Err("冲突已处理或任务已变化".into());
+                }
+                if !state["conflict"]["allowedActions"]
+                    .as_array()
+                    .is_some_and(|a| a.contains(&parameters["choice"]))
+                {
+                    return Err("此冲突不支持该操作".into());
                 }
                 drop(state);
                 *batch.decision.lock().unwrap() = Some(parameters.clone());
@@ -385,6 +451,9 @@ impl Tasks {
     }
 }
 fn terminal(state: &Value) -> bool {
+    if state["awaitingReceipt"] == true {
+        return false;
+    }
     ["completed", "partial", "failed", "cancelled", "needsReview"]
         .contains(&state["state"].as_str().unwrap_or(""))
 }
@@ -430,8 +499,10 @@ impl Inner {
             }
         }
     }
-    fn next(&self) -> u64 {
-        self.sequence.fetch_add(1, Ordering::SeqCst)
+    fn next(&self) -> Result<u64, TaskError> {
+        self.sequence
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |v| v.checked_add(1))
+            .map_err(|_| TaskError::new("expired", "操作序号已用尽，请重启插件"))
     }
     fn worker(self: Arc<Self>) {
         loop {
@@ -465,12 +536,10 @@ impl Inner {
             {
                 let mut state = batch.state.lock().unwrap();
                 if let Err(error) = result {
-                    state["error"] = json!(error.chars().take(2048).collect::<String>());
-                    state["state"] = json!(if error.starts_with("unknown:") {
+                    state["error"] = json!(error.message.chars().take(2048).collect::<String>());
+                    state["state"] = json!(if error.code == "unknown" {
                         "needsReview"
-                    } else if batch.cancel.load(Ordering::Acquire)
-                        || error.starts_with("cancelled:")
-                    {
+                    } else if batch.cancel.load(Ordering::Acquire) || error.code == "cancelled" {
                         "cancelled"
                     } else {
                         "failed"
@@ -505,70 +574,138 @@ impl Inner {
             self.wake.notify_all();
         }
     }
-    fn op(&self, batch: &Batch, operation: Value) -> Result<Value, String> {
+    fn op(&self, batch: &Batch, operation: Value) -> Result<Value, TaskError> {
         if batch.cancel.load(Ordering::Acquire) {
-            return Err("cancelled: 文件任务已取消".into());
+            return Err(TaskError::new("cancelled", "文件任务已取消"));
         }
-        let sequence = self.next().to_string();
-        let request = format!("{}/{}", batch.id, sequence);
-        let started=self.client.call("files.request",json!({"action":"op.start","id":batch.file,"batchId":batch.id,"requestId":request,"sequence":sequence,"expectedContext":batch.context,"operation":operation}));
-        let started = match started {
-            Ok(v) => v,
-            Err(error) => {
-                if !error.contains("超时") {
-                    return Err(error);
-                }
-                self.client
-                    .call(
-                        "files.request",
-                        json!({"action":"op.lookup","id":batch.file,"requestId":request}),
-                    )
-                    .map_err(|_| format!("unknown: 操作应答超时，请刷新核对：{error}"))?
-            }
-        };
-        let id = started["id"].as_str().ok_or("核心未返回操作 ID")?;
+        let sequence = self.next()?.to_string();
+        let request = json!({"action":"start","id":batch.file,"batchId":batch.id,"requestId":format!("{}/{}",batch.id,sequence),"sequence":sequence,"expectedContext":batch.context,"operation":operation});
+        let readonly = ["inspect", "list", "next", "closeCursor"]
+            .contains(&operation["kind"].as_str().unwrap_or(""));
+        let pending_path = batch.journal.with_extension("pending.json");
+        if !readonly {
+            let mut f = File::create(&pending_path).map_err(|e| e.to_string())?;
+            append(&mut f, &request)?;
+            f.sync_all().map_err(|e| e.to_string())?;
+        }
+        let mut response = self
+            .client
+            .call_detailed("files.operations", request.clone());
+        let mut id = None::<String>;
         let mut cancelled = false;
-        let mut polls = 0;
         loop {
-            if batch.cancel.load(Ordering::Acquire) && !cancelled {
-                let _ = self.client.call(
-                    "files.request",
-                    json!({"action":"op.cancel","id":batch.file,"operationId":id}),
-                );
-                cancelled = true;
-            }
-            let status = self.client.call(
-                "files.request",
-                json!({"action":"op.poll","id":batch.file,"operationId":id}),
-            )?;
-            if ["running", "committing"].contains(&status["state"].as_str().unwrap_or("")) {
-                if operation["kind"] == "copyFile" {
-                    let mut state = batch.state.lock().unwrap();
-                    state["currentBytes"] = status["received"].clone();
-                    state["currentTotal"] = status["total"].clone();
+            match response {
+                Ok(status) => {
+                    if let Some(value) = status["id"].as_str() {
+                        id = Some(value.into());
+                    }
+                    if status["state"] == "completed" {
+                        let id = id
+                            .as_ref()
+                            .ok_or_else(|| TaskError::new("unknown", "核心回执缺少操作身份"))?;
+                        if readonly {
+                            self.release_receipt(batch, id)?;
+                        } else {
+                            batch.receipts.lock().unwrap().push(id.clone());
+                        }
+                        batch.state.lock().unwrap()["awaitingReceipt"] = json!(false);
+                        batch.state.lock().unwrap()["state"] = json!("running");
+                        return Ok(status["result"].clone());
+                    }
+                    if ["failed", "cancelled", "unknown"]
+                        .contains(&status["state"].as_str().unwrap_or(""))
+                    {
+                        batch.state.lock().unwrap()["awaitingReceipt"] = json!(false);
+                        if let Some(id) = &id {
+                            batch.receipts.lock().unwrap().push(id.clone());
+                        }
+                        let code = if status["state"] == "unknown"
+                            || status["error"]["effect"] == "unknown"
+                        {
+                            "unknown"
+                        } else {
+                            status["error"]["code"].as_str().unwrap_or("io")
+                        };
+                        return Err(TaskError::new(
+                            code,
+                            status["error"]["message"]
+                                .as_str()
+                                .unwrap_or("文件操作失败"),
+                        ));
+                    }
+                    if !["running", "committing"].contains(&status["state"].as_str().unwrap_or(""))
+                    {
+                        return Err(TaskError::new("unknown", "核心操作状态无效"));
+                    }
+                    if operation["kind"] == "copyFile" {
+                        let mut s = batch.state.lock().unwrap();
+                        s["currentBytes"] = status["received"].clone();
+                        s["currentTotal"] = status["total"].clone();
+                    }
                 }
-                polls += 1;
-                thread::sleep(Duration::from_millis(if polls <= 3 { 5 } else { 60 }));
-                continue;
+                Err(error) => {
+                    if id.is_none()
+                        && error.data["effect"] == "none"
+                        && !["expired", "unknown"]
+                            .contains(&error.data["code"].as_str().unwrap_or(""))
+                    {
+                        return Err(TaskError::new(
+                            error.data["code"].as_str().unwrap_or("io"),
+                            error.message,
+                        ));
+                    }
+                    {
+                        let mut s = batch.state.lock().unwrap();
+                        s["state"] = json!("needsReview");
+                        s["awaitingReceipt"] = json!(true);
+                        s["error"] = json!(format!("操作结果待确认：{}", error.message));
+                    }
+                    let mut wait = batch.decision.lock().unwrap();
+                    while !batch.confirm.swap(false, Ordering::AcqRel)
+                        && !batch.cancel.load(Ordering::Acquire)
+                        && !self.client.is_closed()
+                    {
+                        wait = batch
+                            .decision_wake
+                            .wait_timeout(wait, Duration::from_millis(300))
+                            .unwrap()
+                            .0;
+                    }
+                    drop(wait);
+                    if self.client.is_closed() {
+                        return Err(TaskError::new("unknown", "核心通信已结束，操作未确认"));
+                    }
+                }
             }
-            let _ = self.client.call(
-                "files.request",
-                json!({"action":"op.release","id":batch.file,"operationId":id}),
+            if batch.cancel.load(Ordering::Acquire) && !cancelled {
+                if let Err(error) = self.client.call_detailed(
+                    "files.request",
+                    json!({"action":"batch.cancel","id":batch.file,"batchId":batch.id}),
+                ) {
+                    response = Err(error);
+                    thread::sleep(Duration::from_millis(300));
+                    continue;
+                }
+                cancelled = true;
+                if let Some(id) = &id {
+                    let _ = self.client.call(
+                        "files.operations",
+                        json!({"action":"cancel","id":batch.file,"operationId":id}),
+                    );
+                }
+            }
+            thread::sleep(Duration::from_millis(60));
+            response = self.client.call_detailed(
+                "files.operations",
+                if let Some(id) = &id {
+                    json!({"action":"poll","id":batch.file,"operationId":id})
+                } else {
+                    json!({"action":"lookup","id":batch.file,"batchId":batch.id,"requestId":request["requestId"]})
+                },
             );
-            return if status["state"] == "completed" {
-                Ok(status["result"].clone())
-            } else {
-                Err(format!(
-                    "{}: {}",
-                    status["error"]["code"].as_str().unwrap_or("io"),
-                    status["error"]["message"]
-                        .as_str()
-                        .unwrap_or("文件操作失败")
-                ))
-            };
         }
     }
-    fn inspect(&self, batch: &Batch, endpoint: &Value) -> Result<Option<Value>, String> {
+    fn inspect(&self, batch: &Batch, endpoint: &Value) -> Result<Option<Value>, TaskError> {
         let value = self.op(batch, json!({"kind":"inspect","endpoint":endpoint}))?;
         Ok(if value["attrs"].is_null() {
             None
@@ -576,14 +713,61 @@ impl Inner {
             Some(value["attrs"].clone())
         })
     }
+    fn release_receipt(&self, batch: &Batch, id: &str) -> Result<(), TaskError> {
+        loop {
+            let reply = self.client.call_detailed(
+                "files.operations",
+                json!({"action":"release","id":batch.file,"operationId":id}),
+            );
+            if reply
+                .as_ref()
+                .map_or_else(|error| error.data["code"] == "expired", |_| true)
+            {
+                batch.state.lock().unwrap()["awaitingReceipt"] = json!(false);
+                return Ok(());
+            }
+            {
+                let mut state = batch.state.lock().unwrap();
+                state["state"] = json!("needsReview");
+                state["awaitingReceipt"] = json!(true);
+                state["error"] = json!(format!(
+                    "结果已确认，回执释放待确认：{}",
+                    reply.unwrap_err().message
+                ));
+            }
+            let mut wait = batch.decision.lock().unwrap();
+            while !batch.confirm.swap(false, Ordering::AcqRel)
+                && !batch.cancel.load(Ordering::Acquire)
+                && !self.client.is_closed()
+            {
+                wait = batch
+                    .decision_wake
+                    .wait_timeout(wait, Duration::from_millis(300))
+                    .unwrap()
+                    .0;
+            }
+            if batch.cancel.load(Ordering::Acquire) || self.client.is_closed() {
+                batch.state.lock().unwrap()["awaitingReceipt"] = json!(false);
+                return Err(TaskError::new(
+                    "unknown",
+                    "操作已结束，但核心回执释放未确认；请核对后关闭页面清理",
+                ));
+            }
+        }
+    }
     fn conflict(
         &self,
         batch: &Batch,
         item: &Item,
         target: &Value,
         type_conflict: bool,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, TaskError> {
         let group = if type_conflict { "type" } else { "file" };
+        let allowed = if type_conflict {
+            json!(["keepBoth", "skip", "cancel", "rename"])
+        } else {
+            json!(["replace", "keepBoth", "skip", "cancel", "rename"])
+        };
         if let Some(policy) = batch.policy.lock().unwrap().get(group).cloned() {
             return Ok(policy);
         }
@@ -591,13 +775,13 @@ impl Inner {
         {
             let mut state = batch.state.lock().unwrap();
             state["state"] = json!("awaitingConflict");
-            state["conflict"] = json!({"name":item.name,"typeConflict":type_conflict,"invalidName":target["kind"]=="invalidName","target":target,"itemId":self.next().to_string()});
+            state["conflict"] = json!({"allowedActions":allowed,"name":item.name,"typeConflict":type_conflict,"invalidName":target["kind"]=="invalidName","target":target,"itemId":self.next()?.to_string()});
         }
         let _=self.client.call("messages.publish",json!({"title":"文件任务需要处理同名条目","body":item.name.chars().take(256).collect::<String>(),"level":"warning","dedupeKey":format!("{}/conflict",batch.id)}));
         let mut decision = batch.decision.lock().unwrap();
         while decision.is_none() {
             if batch.cancel.load(Ordering::Acquire) || self.client.is_closed() {
-                return Err("cancelled: 文件任务已取消".into());
+                return Err(TaskError::new("cancelled", "文件任务已取消"));
             }
             decision = batch
                 .decision_wake
@@ -617,12 +801,14 @@ impl Inner {
         }
         Ok(value)
     }
-    fn run(&self, batch: &Batch) -> Result<(), String> {
+    fn run(&self, batch: &Batch) -> Result<(), TaskError> {
         let mut journal = OpenOptions::new()
             .create(true)
-            .append(true)
+            .truncate(false)
+            .write(true)
             .open(&batch.journal)
             .map_err(|e| e.to_string())?;
+        journal.seek(SeekFrom::End(0)).map_err(|e| e.to_string())?;
         let work_path = self.directory.join(format!("{}.work.jsonl", batch.id));
         let dirs_path = self
             .directory
@@ -641,10 +827,12 @@ impl Inner {
             .open(&work_path)
             .map_err(|e| e.to_string())?;
         let kind = batch.parameters["kind"].as_str().unwrap_or("");
-        if kind == "mkdir" || kind == "createEmpty" || kind == "rename" {
+        if kind == "mkdir" || kind == "createEmpty" {
             let endpoint = json!({"side":"remote","path":batch.parameters["path"]});
-            let old = self.inspect(batch, &endpoint)?;
-            let result=self.op(batch,json!({"kind":kind,"endpoint":endpoint,"destination":{"side":"remote","path":batch.parameters["destination"]},"guard":if kind=="rename"{json!({"kind":"match","stamp":old.as_ref().ok_or("条目不存在")?["stamp"]})}else{json!({"kind":"absent"})}}));
+            let result = self.op(
+                batch,
+                json!({"kind":kind,"endpoint":endpoint,"guard":{"kind":"absent"}}),
+            );
             self.record(
                 batch,
                 &mut journal,
@@ -653,8 +841,7 @@ impl Inner {
                     destination: Value::Null,
                     name: batch.parameters["path"].as_str().unwrap_or("").into(),
                     stamp: Value::Null,
-                    cleanup: false,
-                    target_stamp: Value::Null,
+                    delete_directory: false,
                 },
                 result.map(|_| 0),
             )?;
@@ -665,7 +852,7 @@ impl Inner {
             for line in BufReader::new(File::open(retry).map_err(|e| e.to_string())?).lines() {
                 let value: Value = serde_json::from_str(&line.map_err(|e| e.to_string())?)
                     .map_err(|e| e.to_string())?;
-                if value["state"] == "failed" {
+                if value["state"] == "failed" && value["retryable"] == true {
                     append(&mut work, &value["item"])?;
                 }
             }
@@ -688,8 +875,7 @@ impl Inner {
                             destination: child(&target, name),
                             name: name.into(),
                             stamp: Value::Null,
-                            cleanup: false,
-                            target_stamp: Value::Null,
+                            delete_directory: false,
                         }),
                     )?;
                 }
@@ -748,8 +934,7 @@ impl Inner {
                         destination,
                         name: name.into(),
                         stamp: Value::Null,
-                        cleanup: false,
-                        target_stamp: Value::Null,
+                        delete_directory: false,
                     }),
                 )?;
             }
@@ -769,7 +954,7 @@ impl Inner {
         let result = (|| {
             loop {
                 if batch.cancel.load(Ordering::Acquire) {
-                    return Err("cancelled: 文件任务已取消".into());
+                    return Err(TaskError::new("cancelled", "文件任务已取消"));
                 }
                 let mut line = String::new();
                 if reader.read_line(&mut line).map_err(|e| e.to_string())? == 0 {
@@ -788,7 +973,7 @@ impl Inner {
                     self.process(batch, &mut item, &mut work, &mut dirs, &mut offsets, kind);
                 self.record(batch, &mut journal, &item, result)?;
             }
-            if kind == "delete" || kind == "move" {
+            if kind == "delete" {
                 let mut directory_reader =
                     BufReader::new(File::open(&dirs_path).map_err(|e| e.to_string())?);
                 let mut position = offsets.metadata().map_err(|e| e.to_string())?.len();
@@ -833,35 +1018,25 @@ impl Inner {
         dirs: &mut File,
         offsets: &mut File,
         kind: &str,
-    ) -> Result<u64, String> {
-        let attrs = self.inspect(batch, &item.source)?.ok_or("源条目已不存在")?;
-        if item.cleanup {
-            if attrs["kind"] == "directory" {
-                self.op(
-                    batch,
-                    json!({"kind":"removeDirectory","endpoint":item.source}),
-                )?;
-            } else {
-                if item.stamp != attrs["stamp"] {
-                    return Err("sourceChanged: 待清理源文件已变化，未删除".into());
-                }
-                if self
-                    .inspect(batch, &item.destination)?
-                    .as_ref()
-                    .map(|a| &a["stamp"])
-                    != Some(&item.target_stamp)
-                {
-                    return Err("targetChanged: 已复制目标发生变化，未删除源文件".into());
-                }
-                self.op(
-                    batch,
-                    json!({"kind":"removeFile","endpoint":item.source,"sourceStamp":item.stamp}),
-                )?;
+    ) -> Result<u64, TaskError> {
+        let attrs = self
+            .inspect(batch, &item.source)?
+            .ok_or_else(|| TaskError::new("missing", "源条目已不存在"))?;
+        if item.delete_directory {
+            if kind != "delete" || attrs["kind"] != "directory" {
+                return Err(TaskError::new("invalid", "非删除任务不能清理源"));
             }
+            self.op(
+                batch,
+                json!({"kind":"removeDirectory","endpoint":item.source}),
+            )?;
             return Ok(0);
         }
         if !item.stamp.is_null() && attrs["kind"] != "directory" && item.stamp != attrs["stamp"] {
-            return Err("sourceChanged: 枚举后源条目已变化，未修改源或目标".into());
+            return Err(TaskError::new(
+                "sourceChanged",
+                "枚举后源条目已变化，未修改源或目标",
+            ));
         }
         item.stamp = attrs["stamp"].clone();
         if attrs["kind"] == "directory" && item.destination["side"] == "remote" {
@@ -875,20 +1050,11 @@ impl Inner {
                     (attrs["resolved"].as_str(), parent["resolved"].as_str())
                 {
                     if within(target, source) {
-                        return Err(
-                            "invalid: 不能将目录复制或移动到自身子目录（包括目录别名）".into()
-                        );
+                        return Err(TaskError::new(
+                            "invalid",
+                            "不能将目录复制或移动到自身子目录（包括目录别名）",
+                        ));
                     }
-                }
-            }
-        }
-        if kind == "move" {
-            let target = self.inspect(batch, &item.destination)?;
-            if target.is_none() {
-                match self.op(batch,json!({"kind":"rename","endpoint":item.source,"destination":item.destination,"sourceStamp":attrs["stamp"]})) {
-                    Ok(_) => return Ok(0),
-                    Err(error) if error.starts_with("crossDevice:") || error.starts_with("unsupported:") || error.starts_with("io:") => {},
-                    Err(error) => return Err(error),
                 }
             }
         }
@@ -899,15 +1065,15 @@ impl Inner {
             )?;
             return Ok(0);
         }
-        if (attrs["kind"] == "link" && kind != "move") || attrs["kind"] == "other" {
-            return Err("skipped: 符号链接与特殊文件不跟随传输".into());
+        if attrs["kind"] == "link" || attrs["kind"] == "other" {
+            return Err(TaskError::new("skipped", "符号链接与特殊文件不跟随传输"));
         }
         let directory = attrs["kind"] == "directory";
         let mut selected_guard = json!({"kind":"absent"});
         if kind != "delete" {
             for _ in 0..100 {
                 let target = match self.inspect(batch, &item.destination) {
-                    Err(error) if error.starts_with("invalidName:") => {
+                    Err(error) if error.code == "invalidName" => {
                         Some(json!({"kind":"invalidName"}))
                     }
                     value => value?,
@@ -925,10 +1091,10 @@ impl Inner {
                 let decision =
                     self.conflict(batch, item, target.as_ref().unwrap(), type_conflict)?;
                 match decision["choice"].as_str() {
-                    Some("skip") => return Err("skipped: 用户选择跳过".into()),
+                    Some("skip") => return Err(TaskError::new("skipped", "用户选择跳过")),
                     Some("cancel") => {
                         batch.cancel.store(true, Ordering::Release);
-                        return Err("cancelled: 文件任务已取消".into());
+                        return Err(TaskError::new("cancelled", "文件任务已取消"));
                     }
                     Some("replace") if !type_conflict && !directory => {
                         selected_guard =
@@ -1001,8 +1167,7 @@ impl Inner {
                                 },
                                 name: name.into(),
                                 stamp: entry["attrs"]["stamp"].clone(),
-                                cleanup: false,
-                                target_stamp: Value::Null,
+                                delete_directory: false,
                             }),
                         )?;
                     }
@@ -1010,7 +1175,7 @@ impl Inner {
                         break;
                     }
                 }
-                Ok::<_, String>(())
+                Ok::<_, TaskError>(())
             })();
             if !cursor.is_null() {
                 let _ = self.op(batch, json!({"kind":"closeCursor","cursor":cursor}));
@@ -1023,50 +1188,25 @@ impl Inner {
             )
             .map_err(|e| e.to_string())?;
             work.flush().map_err(|e| e.to_string())?;
-            if kind == "delete" || kind == "move" {
+            if kind == "delete" {
                 let offset = dirs.metadata().map_err(|e| e.to_string())?.len();
                 offsets
                     .write_all(&offset.to_le_bytes())
                     .and_then(|_| offsets.flush())
                     .map_err(|e| e.to_string())?;
                 let mut cleanup = item.clone();
-                cleanup.cleanup = true;
+                cleanup.delete_directory = true;
                 append(dirs, &item_value(&cleanup))?;
             }
             return if kind == "delete" {
-                Err("scanned: 目录已枚举".into())
+                Err(TaskError::new("scanned", "目录已枚举"))
             } else {
                 Ok(0)
             };
         }
-        if kind == "move" && attrs["kind"] == "link" {
-            if selected_guard["kind"] != "absent" {
-                return Err(
-                    "unsupported: 同名符号链接仅支持改名、保留两份或跳过；源保持不变".into(),
-                );
-            }
-            self.op(batch,json!({"kind":"rename","endpoint":item.source,"destination":item.destination,"sourceStamp":attrs["stamp"]}))?;
-            return Ok(0);
-        }
         let copied=self.op(batch,json!({"kind":"copyFile","source":item.source,"destination":item.destination,"sourceStamp":attrs["stamp"],"destinationGuard":selected_guard}))?;
         if copied["cleanupWarning"].is_string() {
             batch.state.lock().unwrap()["warning"] = copied["cleanupWarning"].clone();
-        }
-        if kind == "move" {
-            item.cleanup = true;
-            item.target_stamp = copied["stamp"].clone();
-            if self
-                .inspect(batch, &item.destination)?
-                .as_ref()
-                .map(|a| &a["stamp"])
-                != Some(&item.target_stamp)
-            {
-                return Err("targetChanged: 已复制目标发生变化，未删除源文件".into());
-            }
-            self.op(
-                batch,
-                json!({"kind":"removeFile","endpoint":item.source,"sourceStamp":attrs["stamp"]}),
-            )?;
         }
         Ok(copied["size"]
             .as_str()
@@ -1078,19 +1218,19 @@ impl Inner {
         batch: &Batch,
         journal: &mut File,
         item: &Item,
-        result: Result<u64, String>,
-    ) -> Result<(), String> {
-        if result.as_ref().is_err_and(|e| e.starts_with("scanned:")) {
+        result: Result<u64, TaskError>,
+    ) -> Result<(), TaskError> {
+        if result.as_ref().is_err_and(|e| e.code == "scanned") {
             return Ok(());
         }
         let (status, error, bytes) = match result {
             Ok(bytes) => ("completed", None, bytes),
             Err(error) => {
-                let status = if error.starts_with("skipped:") {
+                let status = if error.code == "skipped" {
                     "skipped"
-                } else if error.starts_with("cancelled:") {
+                } else if error.code == "cancelled" {
                     "cancelled"
-                } else if error.starts_with("unknown:") {
+                } else if error.code == "unknown" {
                     "unknown"
                 } else {
                     "failed"
@@ -1098,10 +1238,52 @@ impl Inner {
                 (status, Some(error), 0)
             }
         };
-        append(
-            journal,
-            &json!({"item":item_value(item),"state":status,"error":error.as_ref().map(|e|e.chars().take(2048).collect::<String>())}),
-        )?;
+        let offset = journal
+            .metadata()
+            .map_err(|e| TaskError::new("unknown", e))?
+            .len();
+        let record = json!({"item":item_value(item),"state":status,"retryable":error.as_ref().is_some_and(TaskError::retryable),"errorCode":error.as_ref().map(|e|&e.code),"error":error.as_ref().map(|e|e.message.chars().take(2048).collect::<String>())});
+        loop {
+            let persisted = (|| -> Result<(), String> {
+                journal.set_len(offset).map_err(|e| e.to_string())?;
+                journal
+                    .seek(SeekFrom::Start(offset))
+                    .map_err(|e| e.to_string())?;
+                append(journal, &record)?;
+                journal.sync_all().map_err(|e| e.to_string())
+            })();
+            if persisted.is_ok() {
+                break;
+            }
+            {
+                let mut state = batch.state.lock().unwrap();
+                state["state"] = json!("needsReview");
+                state["awaitingReceipt"] = json!(true);
+                state["error"] = json!(format!(
+                    "结果记录未持久化，保留核心回执：{}",
+                    persisted.unwrap_err()
+                ));
+            }
+            let mut wait = batch.decision.lock().unwrap();
+            while !batch.confirm.swap(false, Ordering::AcqRel)
+                && !batch.cancel.load(Ordering::Acquire)
+                && !self.client.is_closed()
+            {
+                wait = batch
+                    .decision_wake
+                    .wait_timeout(wait, Duration::from_millis(300))
+                    .unwrap()
+                    .0;
+            }
+            if batch.cancel.load(Ordering::Acquire) || self.client.is_closed() {
+                batch.state.lock().unwrap()["awaitingReceipt"] = json!(false);
+                return Err(TaskError::new(
+                    "unknown",
+                    "结果记录未持久化；请保留并核对当前记录",
+                ));
+            }
+        }
+        batch.state.lock().unwrap()["awaitingReceipt"] = json!(false);
         {
             let mut state = batch.state.lock().unwrap();
             let key = if status == "cancelled" {
@@ -1113,16 +1295,26 @@ impl Inner {
             };
             let n = count(&state, key) + 1;
             state[key] = json!(n.to_string());
+            if error.as_ref().is_some_and(TaskError::retryable) {
+                state["retryable"] = json!((count(&state, "retryable") + 1).to_string());
+            }
             let n = count(&state, "bytes") + bytes;
             state["bytes"] = json!(n.to_string());
             if let Some(error) = &error {
-                state["lastError"] = json!(error.chars().take(1024).collect::<String>());
+                state["lastError"] = json!(error.message.chars().take(1024).collect::<String>());
             }
         }
+        loop {
+            let id = batch.receipts.lock().unwrap().last().cloned();
+            let Some(id) = id else { break };
+            self.release_receipt(batch, &id)?;
+            batch.receipts.lock().unwrap().pop();
+        }
+        let _ = fs::remove_file(batch.journal.with_extension("pending.json"));
         if let Some(error) = error {
-            if error.starts_with("unknown:")
-                || error.starts_with("contextChanged:")
-                || error.starts_with("cancelled:")
+            if error.code == "unknown"
+                || error.code == "contextChanged"
+                || error.code == "cancelled"
             {
                 return Err(error);
             }
@@ -1160,16 +1352,18 @@ fn append(file: &mut File, value: &Value) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 fn item_value(item: &Item) -> Value {
-    json!({"source":item.source,"destination":item.destination,"name":item.name,"stamp":item.stamp,"cleanup":item.cleanup,"targetStamp":item.target_stamp})
+    json!({"source":item.source,"destination":item.destination,"name":item.name,"stamp":item.stamp,"deleteDirectory":item.delete_directory})
 }
 fn parse_item(value: &Value) -> Result<Item, String> {
+    if value["cleanup"] == true || !value["targetStamp"].is_null() {
+        return Err("旧移动清理记录不再接纳".into());
+    }
     Ok(Item {
         source: value["source"].clone(),
         destination: value["destination"].clone(),
         name: value["name"].as_str().ok_or("任务条目无效")?.into(),
         stamp: value["stamp"].clone(),
-        cleanup: value["cleanup"] == true,
-        target_stamp: value["targetStamp"].clone(),
+        delete_directory: value["deleteDirectory"] == true,
     })
 }
 fn child(base: &Value, name: &str) -> Value {
@@ -1242,10 +1436,9 @@ mod tests {
             destination: Value::Null,
             name: "a".into(),
             stamp: json!("stamp"),
-            cleanup: true,
-            target_stamp: Value::Null,
+            delete_directory: true,
         };
-        assert!(parse_item(&item_value(&item)).unwrap().cleanup);
+        assert!(parse_item(&item_value(&item)).unwrap().delete_directory);
         assert_eq!(
             sibling(
                 &json!({"side":"local","inputId":"x","rootId":"0","relative":[]}),

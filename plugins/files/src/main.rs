@@ -28,6 +28,25 @@ impl View {
     fn update_dirty(&mut self) {
         self.dirty = self.revision != self.saved || self.edit_revision != self.staged_edit_revision;
     }
+    fn project(&mut self, facts: &serde_json::Value) {
+        let d = &facts["draft"];
+        self.revision = d["draftRef"]["revision"]
+            .as_str()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(self.revision);
+        self.saved = d["savedRevision"]
+            .as_str()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(self.saved);
+        self.staged_edit_revision = d["source"]["editRevision"]
+            .as_str()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(self.staged_edit_revision);
+        self.edit_revision = self.edit_revision.max(self.staged_edit_revision);
+        self.busy = ["running", "committing"].contains(&facts["state"].as_str().unwrap_or(""))
+            || ["waitingInput", "writing"].contains(&d["exportState"].as_str().unwrap_or(""));
+        self.update_dirty();
+    }
     fn require_staged(&self) -> Result<(), String> {
         if self.edit_revision != self.staged_edit_revision {
             return Err("当前正文尚未完整暂存，请等待后重试".into());
@@ -95,6 +114,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "files.v1",
                 "files.directoryCursors.v1",
                 "files.operations.v1",
+                "files.operations.v2",
+                "files.editor.v1",
                 "files.localInputs.v1",
                 "viewData.v1",
             ] {
@@ -220,6 +241,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &p["data"]["parameters"],
             )?;
             let kind = parameters["kind"].as_str().unwrap_or("");
+            if ["move", "rename"].contains(&kind) {
+                return Err("当前后端不支持原子无覆盖移动/改名".into());
+            }
             let mut affected = Vec::new();
             if kind != "download" {
                 for (id, editor) in all.iter().filter(|(_, v)| {
@@ -255,33 +279,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .into(),
                 );
             }
-            let job = client.call("files.request", json!({"action":"status","id":v.id}))?;
-            if job["state"] == "failed" && v.busy {
-                v.busy = false;
-                return Err(job["error"]
-                    .as_str()
-                    .unwrap_or("文件任务失败，草稿保留")
-                    .into());
-            }
-            v.busy = job["state"] == "running";
-            if job["state"] == "completed" {
-                if let Some(revision) = job["result"]["revision"].as_u64() {
-                    v.saved = revision;
-                    v.update_dirty();
+            if v.editor {
+                let job = client.call("files.editor", json!({"action":"save.status","id":v.id}))?;
+                let was_busy = v.busy;
+                v.project(&job);
+                if was_busy
+                    && ["notCommitted", "unknown"].contains(&job["state"].as_str().unwrap_or(""))
+                {
+                    return Err(job["error"]
+                        .as_str()
+                        .unwrap_or("保存未确认，草稿保留")
+                        .into());
                 }
-            }
-            if method == "ui.save" && v.dirty && !v.busy {
-                v.require_staged()?;
-                if tasks.blocks(&p["context"], &v.path) {
-                    return Err("此路径有文件任务正在修改，请等待后保存".into());
+                if method == "ui.save" && v.dirty && !v.busy {
+                    v.require_staged()?;
+                    if tasks.blocks(&p["context"], &v.path) {
+                        return Err("此路径有文件任务正在修改，请等待后保存".into());
+                    }
+                    if job["state"] == "unknown" {
+                        return Err("原保存结果未知，请核对服务器；可以导出草稿".into());
+                    }
+                    if job["request"]["requestId"].is_string() {
+                        client.call("files.editor", json!({"action":"save.release", "id":v.id,"requestId":job["request"]["requestId"]}))?;
+                    }
+                    let sequence = job["draft"]["saveSequence"]
+                        .as_str()
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .unwrap_or(0)
+                        .checked_add(1)
+                        .ok_or("保存序号已用尽")?;
+                    let started = client.call("files.editor", json!({"action":"save.start","id":v.id,"requestId":format!("close/{view}/{sequence}"),"sequence":sequence.to_string(),"expectedDraftRef":job["draft"]["draftRef"],"expectedContext":p["context"]}))?;
+                    v.project(&started);
                 }
-                client.call("files.request", json!({"action":"save","id":v.id}))?;
-                v.busy = true;
             }
         } else if method == "ui.event" {
             let d = &p["data"];
             let task_result = match d["action"].as_str() {
                 Some("copyEntries") => {
+                    if d["cut"] == true {
+                        return Err("当前后端不支持原子无覆盖移动；请使用复制".into());
+                    }
                     let copied =
                         selection_parameters(&selections.lock().unwrap(), view, &p["context"], d)?;
                     if copied["roots"]
@@ -369,7 +406,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     tasks.snapshot_page(&p["context"], d["offset"].as_u64().unwrap_or(0) as usize),
                 ),
                 Some(
-                    "cancelBatch" | "resolveConflict" | "readItems" | "retryFailed" | "clearBatch",
+                    "confirmBatch" | "cancelBatch" | "resolveConflict" | "readItems"
+                    | "retryFailed" | "clearBatch",
                 ) => {
                     let mut command = d.clone();
                     command["context"] = p["context"].clone();
@@ -377,12 +415,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Some(tasks.command(view, &command)?)
                 }
                 Some("save") => {
-                    v.require_staged()?;
                     if tasks.blocks(&p["context"], &v.path) {
                         return Err("此路径有文件任务正在修改，请等待后保存".into());
                     }
-                    let job = client.call("files.request", json!({"action":"save","id":v.id}))?;
-                    v.busy = true;
+                    let mut command = d.clone();
+                    command["action"] = json!("save.start");
+                    command["id"] = json!(v.id);
+                    let job = client.call("files.editor", command)?;
+                    v.project(&job);
                     Some(job)
                 }
                 _ => None,
@@ -399,29 +439,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "fields":{"viewId":view}
                     }))?;
                 }
-                Some("dirty") => {
-                    v.dirty = true;
+                Some("dirty" | "staged" | "saved" | "busy" | "editorState") => {
                     if let Some(revision) = d["editRevision"].as_u64() {
                         v.edit_revision = v.edit_revision.max(revision);
                     }
-                    v.revision = d["revision"].as_u64().unwrap_or(v.revision);
+                    let facts =
+                        client.call("files.editor", json!({"action":"save.status","id":v.id}))?;
+                    v.project(&facts);
                 }
-                Some("staged") => {
-                    v.revision = d["revision"].as_u64().ok_or("缺少 revision")?;
-                    if let Some(revision) = d["editRevision"].as_u64() {
-                        if revision > v.edit_revision {
-                            return Err("草稿编辑版本无效".into());
-                        }
-                        v.staged_edit_revision = v.staged_edit_revision.max(revision);
-                    }
-                    v.update_dirty();
-                }
-                Some("saved") => {
-                    v.saved = d["revision"].as_u64().ok_or("缺少 revision")?;
-                    v.update_dirty();
-                    v.busy = false;
-                }
-                Some("busy") => v.busy = d["busy"] == true,
                 Some("position") => {
                     if let Some(state) = d.get("editorState") {
                         validate_editor_state(state)?;

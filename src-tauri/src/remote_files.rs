@@ -15,8 +15,12 @@ use std::{
 use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
 
+mod editor;
 mod location;
 mod operations;
+#[cfg(test)]
+mod save_tests;
+pub use operations::OperationError;
 
 pub const LIMIT: usize = 1024 * 1024;
 const BLOCK: usize = 16 * 1024;
@@ -40,6 +44,7 @@ struct Resource {
     done: CancellationToken,
     cleanup_started: std::sync::atomic::AtomicBool,
     state: tokio::sync::Mutex<State>,
+    editor: Mutex<editor::Editor>,
     job: Mutex<Value>,
     close_saves: Mutex<HashMap<String, Value>>,
     job_cancel: Mutex<CancellationToken>,
@@ -52,8 +57,6 @@ struct State {
     directory: Option<Directory>,
     directories: HashMap<String, Directory>,
     directory_order: VecDeque<String>,
-    document: Option<Document>,
-    upload: Option<Vec<u8>>,
 }
 struct Sftp {
     raw: RawSftpSession,
@@ -73,20 +76,23 @@ struct Directory {
 }
 #[derive(Clone)]
 struct Document {
+    id: String,
     path: String,
     resolved: String,
     version: String,
     attrs: FileAttributes,
-    bytes: Vec<u8>,
+    bytes: Arc<[u8]>,
     revision: u64,
 }
 impl Files {
     pub(crate) fn saving(&self, view: &str) -> bool {
-        self.entries
-            .lock()
-            .unwrap()
-            .values()
-            .any(|r| r.owner.view == view && r.job.lock().unwrap()["state"] == "running")
+        self.entries.lock().unwrap().values().any(|r| {
+            if r.owner.view != view {
+                return false;
+            }
+            let saving = editor::pending(&r.job.lock().unwrap());
+            saving || editor::pending(&r.editor.lock().unwrap().export)
+        })
     }
     pub(crate) fn cancel_pending(&self, view: &str) -> bool {
         let mut pending = false;
@@ -98,8 +104,13 @@ impl Files {
             .filter(|r| r.owner.view == view)
         {
             resource.job_cancel.lock().unwrap().cancel();
+            let e = resource.editor.lock().unwrap();
+            e.export_cancel.cancel();
+            pending |= editor::pending(&e.export);
+            drop(e);
             pending |= resource.operations.cancel_pending()
-                || resource.job.lock().unwrap()["state"] == "running";
+                || ["running", "committing"]
+                    .contains(&resource.job.lock().unwrap()["state"].as_str().unwrap_or(""));
         }
         pending
     }
@@ -146,6 +157,7 @@ impl Resource {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
             *resource.state.lock().await = State::default();
+            *resource.editor.lock().unwrap() = editor::Editor::default();
             resource.operations.clear().await;
             resource.transports.close();
             while !resource.transports.finished() {
@@ -179,53 +191,55 @@ fn attrs(a: &FileAttributes) -> Value {
 }
 
 impl AppCore {
+    pub(crate) fn files_operations(
+        self: &Arc<Self>,
+        plugin: &str,
+        instance: &str,
+        p: &Value,
+    ) -> Result<Value, OperationError> {
+        let r = self.file_resource(plugin, instance, string(p, "id")?)?;
+        let action = string(p, "action")?;
+        if !["start", "lookup", "poll", "cancel", "release"].contains(&action) {
+            return Err(OperationError {
+                code: "invalid".into(),
+                message: "未知文件原语操作".into(),
+            });
+        }
+        if action == "start"
+            && (p["requestId"].as_str().is_none_or(str::is_empty)
+                || p["sequence"]
+                    .as_str()
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .is_none()
+                || p["expectedContext"].is_null()
+                || p["operation"]["kind"] == "rename")
+        {
+            return Err(OperationError {
+                code: "invalid".into(),
+                message: "需要固定请求身份、上下文及新版操作".into(),
+            });
+        }
+        let mut request = p.clone();
+        request["action"] = json!(format!("op.{action}"));
+        request["protocolVersion"] = json!(2);
+        self.file_operation_control(r, &request)
+    }
     pub async fn files_export(
-        &self,
+        self: &Arc<Self>,
         window: &str,
         token: &str,
         p: Value,
         local: PathBuf,
     ) -> Result<Value, String> {
-        self.validate_file_download(window, token, &p)?;
-        let (v, _surface_call) = self.surface_call_admission(window, token)?;
-        let r = self.file_resource(&v.plugin_id, &v.plugin_instance_id, string(&p, "id")?)?;
-        let _task = r.tasks.enter()?;
-        let bytes = r
-            .state
-            .lock()
-            .await
-            .document
-            .as_ref()
-            .ok_or("尚未打开文件")?
-            .bytes
-            .clone();
-        let temporary = LocalTemporary(
-            local
-                .parent()
-                .ok_or("目标没有父目录")?
-                .join(format!(".sodeck-{}.part", self.next_id())),
-        );
-        let before = std::fs::metadata(&local)
-            .ok()
-            .map(|m| (m.len(), m.modified().ok()));
-        let mut output = tokio::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary.0)
-            .await
-            .map_err(err)?;
-        output.write_all(&bytes).await.map_err(err)?;
-        output.sync_all().await.map_err(err)?;
-        drop(output);
-        if std::fs::metadata(&local)
-            .ok()
-            .map(|m| (m.len(), m.modified().ok()))
-            != before
-        {
-            return Err("本地目标已变化，未覆盖".into());
+        let task = self.files_export_legacy_begin(window, token, &p)?;
+        let result = self.files_export_finish(task, Ok(Some(local))).await;
+        if result["state"] == "failed" {
+            Err(result["error"].as_str().unwrap_or("导出失败").into())
+        } else {
+            Ok(
+                json!({"path":result["path"],"size":result["size"],"cancelled":result["state"]=="cancelled"}),
+            )
         }
-        tokio::fs::rename(&temporary.0, &local).await.map_err(err)?;
-        Ok(json!({"path":local,"size":bytes.len()}))
     }
     pub fn validate_file_download(
         &self,
@@ -274,6 +288,7 @@ impl AppCore {
                     transports: transports.clone(),
                     ..State::default()
                 }),
+                editor: Mutex::new(editor::Editor::default()),
                 job: Mutex::new(json!({"state":"idle"})),
                 close_saves: Mutex::new(HashMap::new()),
                 job_cancel: Mutex::new(CancellationToken::new()),
@@ -321,14 +336,14 @@ impl AppCore {
         if p["action"].as_str().is_some_and(|a| {
             a.starts_with("op.") || a.starts_with("input.") || a.starts_with("batch.")
         }) {
-            return self.file_operation_control(r, p);
+            return self.file_operation_control(r, p).map_err(Into::into);
         }
         match p["action"].as_str() {
             Some("close") => {
                 r.close();
                 Ok(json!({}))
             }
-            Some("status") => Ok(r.job.lock().unwrap().clone()),
+            Some("status") => Ok(editor::legacy_job(r.job.lock().unwrap().clone())),
             Some("save") => {
                 // Close coordination can still save; it has already frozen new UI input.
                 let context = self
@@ -336,7 +351,7 @@ impl AppCore {
                     .resource_view(&r.owner.view)?
                     .context
                     .clone();
-                self.start_file_job(r, context, None)
+                self.start_file_job(r, context, None, None)
             }
             _ => Err("未知文件控制方法".into()),
         }
@@ -365,8 +380,20 @@ impl AppCore {
             }
             let task = view.calls.enter()?;
             (view, Some(task))
-        } else if ["describe", "chunk", "status", "home", "stat", "list"]
-            .contains(&p["action"].as_str().unwrap_or_default())
+        } else if [
+            "describe",
+            "chunk",
+            "status",
+            "home",
+            "stat",
+            "list",
+            "draft.describe",
+            "draft.chunk",
+            "draft.status",
+            "save.status",
+            "export.status",
+        ]
+        .contains(&p["action"].as_str().unwrap_or_default())
         {
             (self.ui_data_view(window, token)?, None)
         } else {
@@ -387,10 +414,10 @@ impl AppCore {
         }
         if action.starts_with("op.") || action.starts_with("input.") {
             self.ui_data_writable(window, token)?;
-            return self.file_operation_control(r, &p);
+            return self.file_operation_control(r, &p).map_err(Into::into);
         }
         if action == "status" {
-            return Ok(r.job.lock().unwrap().clone());
+            return Ok(editor::legacy_job(r.job.lock().unwrap().clone()));
         }
         if action == "cancel" {
             self.ui_data_writable(window, token)?;
@@ -398,54 +425,98 @@ impl AppCore {
             return Ok(json!({}));
         }
         // Local draft reads are allowed while a replacement surface is mounting.
-        if !["describe", "chunk", "home", "stat", "list", "read"].contains(&action) {
+        if ![
+            "describe",
+            "chunk",
+            "home",
+            "stat",
+            "list",
+            "read",
+            "draft.describe",
+            "draft.chunk",
+            "draft.status",
+            "save.status",
+            "export.status",
+        ]
+        .contains(&action)
+        {
             self.ui_data_writable(window, token)?;
         }
         if action == "save" {
-            return self.start_file_job(r, view.context, None);
+            return self.start_file_job(r, view.context, None, None);
+        }
+        if action.starts_with("draft.") {
+            let readonly = ["draft.describe", "draft.chunk", "draft.status"].contains(&action);
+            let _admission = if readonly {
+                None
+            } else {
+                Some(self.surface_write_admission(window, token)?)
+            };
+            return Ok(match r.editor.lock().unwrap().draft(token, &p) {
+                Ok(value) => json!({"ok":true,"value":value}),
+                Err(error) => json!({"ok":false,"error":{"code":"draftRejected","message":error}}),
+            });
+        }
+        if action.starts_with("save.") || action.starts_with("export.") {
+            return Ok(
+                match self.files_editor(&view.plugin_id, &view.plugin_instance_id, &p) {
+                    Ok(value) => json!({"ok":true,"value":value}),
+                    Err(error) => {
+                        json!({"ok":false,"error":{"code":"saveRejected","message":error}})
+                    }
+                },
+            );
+        }
+        if ["describe", "chunk", "stage"].contains(&action) {
+            let _admission = if action == "stage" {
+                Some(self.surface_write_admission(window, token)?)
+            } else {
+                None
+            };
+            let mut e = r.editor.lock().unwrap();
+            if action == "describe" {
+                return Ok(e.describe());
+            }
+            if action == "chunk" {
+                let d = e.document.as_ref().ok_or("尚未打开文件")?;
+                let offset = p["offset"].as_u64().ok_or("缺少 offset")? as usize;
+                if offset > d.bytes.len() {
+                    return Err("文件数据偏移无效".into());
+                }
+                return Ok(
+                    json!({"data":&d.bytes[offset..(offset+BLOCK).min(d.bytes.len())],"size":d.bytes.len(),"revision":d.revision}),
+                );
+            }
+            if e.protocol {
+                return Err("新版草稿不接纳旧写入协议".into());
+            }
+            let bytes: Vec<u8> = serde_json::from_value(p["data"].clone()).map_err(err)?;
+            if bytes.len() > BLOCK {
+                return Err("文件数据块超过 16 KiB".into());
+            }
+            if p["begin"] == true {
+                e.legacy_upload = Some(Vec::new());
+            }
+            let buffer = e.legacy_upload.as_mut().ok_or("没有正在上传的草稿")?;
+            if p["offset"].as_u64() != Some(buffer.len() as u64)
+                || buffer.len() + bytes.len() > LIMIT
+            {
+                return Err("草稿偏移无效或超过 1 MiB".into());
+            }
+            buffer.extend(bytes);
+            if p["done"] == true {
+                let bytes = e.legacy_upload.take().unwrap();
+                let d = e.document.as_mut().ok_or("尚未打开文件")?;
+                d.bytes = bytes.into();
+                d.revision += 1;
+                return Ok(json!({"revision":d.revision}));
+            }
+            return Ok(json!({}));
         }
         let cancel = r.cancel.clone();
         let work = async {
             let mut s = r.state.lock().await;
             match action {
-                "describe" => Ok(if let Some(d) = &s.document {
-                    json!({"path":d.path,"size":d.bytes.len(),"revision":d.revision,"version":d.version})
-                } else {
-                    json!({})
-                }),
-                "chunk" => {
-                    let d = s.document.as_ref().ok_or("尚未打开文件")?;
-                    let offset = p["offset"].as_u64().ok_or("缺少 offset")? as usize;
-                    if offset > d.bytes.len() {
-                        return Err("文件数据偏移无效".into());
-                    }
-                    Ok(
-                        json!({"data":&d.bytes[offset..(offset+BLOCK).min(d.bytes.len())],"size":d.bytes.len(),"revision":d.revision}),
-                    )
-                }
-                "stage" => {
-                    let bytes: Vec<u8> = serde_json::from_value(p["data"].clone()).map_err(err)?;
-                    if bytes.len() > BLOCK {
-                        return Err("文件数据块超过 16 KiB".into());
-                    }
-                    if p["begin"] == true {
-                        s.upload = Some(Vec::new());
-                    }
-                    let buffer = s.upload.as_mut().ok_or("没有正在上传的草稿")?;
-                    let offset = p["offset"].as_u64().ok_or("缺少 offset")? as usize;
-                    if offset != buffer.len() || buffer.len() + bytes.len() > LIMIT {
-                        return Err("草稿偏移无效或超过 1 MiB".into());
-                    }
-                    buffer.extend(bytes);
-                    if p["done"] == true {
-                        let bytes = s.upload.take().unwrap();
-                        let d = s.document.as_mut().ok_or("尚未打开文件")?;
-                        d.bytes = bytes;
-                        d.revision += 1;
-                        return Ok(json!({"revision":d.revision}));
-                    }
-                    Ok(json!({}))
-                }
                 "home" => {
                     let f = sftp(self, &mut s, &view.context).await?;
                     Ok(json!({"path":canonical(&f.raw,".").await?}))
@@ -608,7 +679,7 @@ impl AppCore {
                     Ok(json!({"path":resolved,"attrs":attrs(&a)}))
                 }
                 "read" => {
-                    if s.document.is_some() {
+                    if r.editor.lock().unwrap().document.is_some() {
                         return Err("此编辑器已经打开文件，刷新不会覆盖草稿".into());
                     }
                     let target = path(&p)?.to_string();
@@ -623,16 +694,30 @@ impl AppCore {
                     })
                     .await?;
                     let version = version(&a, &bytes);
-                    let result = json!({"path":target,"resolved":resolved,"size":bytes.len(),"version":version,"revision":0});
-                    s.document = Some(Document {
+                    drop(s);
+                    let admission = self.workbench_state();
+                    if !admission.ui.surfaces.get(token).is_some_and(|surface| {
+                        surface.window == window
+                            && surface.phase == crate::component_ui::SurfacePhase::Active
+                    }) || admission.ui.resource_view(&view.id)?.context != view.context
+                        || admission.ui.lifecycle.view_frozen(&view.id)
+                    {
+                        return Err("文件输入权已改变".into());
+                    }
+                    let mut editor = r.editor.lock().unwrap();
+                    if editor.document.is_some() {
+                        return Err("此编辑器已经打开文件".into());
+                    }
+                    editor.document = Some(Document {
+                        id: self.next_id(),
                         path: target,
                         resolved,
                         version,
                         attrs: a,
-                        bytes,
+                        bytes: bytes.into(),
                         revision: 0,
                     });
-                    Ok(result)
+                    Ok(editor.describe())
                 }
                 _ => Err("未知文件数据方法".into()),
             }
@@ -654,7 +739,19 @@ impl AppCore {
         r: Arc<Resource>,
         context: Context,
         download: Option<(String, PathBuf)>,
+        save_params: Option<&Value>,
     ) -> Result<Value, String> {
+        if let Some(p) = save_params {
+            let e = r.editor.lock().unwrap();
+            if e.save_request["requestId"] == p["requestId"] && p["requestId"].is_string() {
+                for key in ["sequence", "expectedDraftRef", "expectedContext"] {
+                    if e.save_request[key] != p[key] {
+                        return Err("相同保存身份参数变化".into());
+                    }
+                }
+                return Ok(e.save_result.clone());
+            }
+        }
         let task = r.tasks.enter()?;
         self.connection_session(&context)?;
         let ui = self.ui_state();
@@ -686,19 +783,73 @@ impl AppCore {
         };
         let mut close_saves = r.close_saves.lock().unwrap();
         if let Some(result) = close_step.as_ref().and_then(|id| close_saves.get(id)) {
-            return Ok(result.clone());
+            return if r.job.lock().unwrap()["id"] == result["id"] {
+                Ok(r.job.lock().unwrap().clone())
+            } else {
+                Err("关闭保存回执已退役".into())
+            };
         }
+        let mut editor = r.editor.lock().unwrap();
+        if let Some(p) = save_params {
+            if editor.save_request["requestId"] == p["requestId"] && p["requestId"].is_string() {
+                for key in ["sequence", "expectedDraftRef", "expectedContext"] {
+                    if editor.save_request[key] != p[key] {
+                        return Err("相同保存身份参数变化".into());
+                    }
+                }
+                return Ok(editor.save_result.clone());
+            }
+            if !editor.save_request.is_null() {
+                return Err("请先确认并释放上次保存回执".into());
+            }
+        }
+        let snapshot = if download.is_none() {
+            if let Some(reason) = &editor.write_block {
+                return Err(reason.clone());
+            }
+            let d = editor.document.as_ref().ok_or("尚未打开文件")?.clone();
+            if let Some(p) = save_params {
+                if p["expectedDraftRef"] != editor::reference(&d) {
+                    return Err("revisionConflict: 草稿版本已变化".into());
+                }
+                if p["expectedContext"] != serde_json::to_value(&context).map_err(err)? {
+                    return Err("保存上下文已变化".into());
+                }
+                let sequence = editor::number(p, "sequence")?;
+                if sequence <= editor.save_sequence {
+                    return Err("expired: 保存序号已退役".into());
+                }
+                if p["requestId"]
+                    .as_str()
+                    .is_none_or(|s| s.is_empty() || s.len() > 160)
+                {
+                    return Err("保存请求身份无效".into());
+                }
+            } else if editor.protocol {
+                return Err("新版草稿必须按固定修订保存".into());
+            }
+            Some(d)
+        } else {
+            None
+        };
         let id = self.next_id();
         let cancel = r.cancel.child_token();
         {
             let mut job = r.job.lock().unwrap();
-            if job["state"] == "running" {
+            if ["running", "committing"].contains(&job["state"].as_str().unwrap_or("")) {
                 return Err("文件任务正在进行".into());
             }
             // Publish the cancellation token before callers can observe running.
             *r.job_cancel.lock().unwrap() = cancel.clone();
             *job = json!({"id":id,"state":"running","kind":if download.is_some(){"download"}else{"save"},"received":"0"});
         }
+        if let Some(p) = save_params {
+            editor.save_sequence = editor::number(p, "sequence")?;
+            editor.save_request = p.clone();
+            editor.save_result = r.job.lock().unwrap().clone();
+            editor.protocol = true;
+        }
+        drop(editor);
         if let Some(step) = close_step {
             close_saves.insert(step, json!({"id":id,"state":"running"}));
         }
@@ -706,17 +857,28 @@ impl AppCore {
         drop(ui);
         let core = self.clone();
         let job_id = id.clone();
+        let saving = download.is_none();
         tauri::async_runtime::spawn(async move {
             let _task = task;
             let result = if let Some((remote, local)) = download {
-                download_file(&core, &r, &context, &remote, &local, &cancel).await
+                download_file(&core, &r, &context, &remote, &local, &cancel)
+                    .await
+                    .map_err(SaveFailure::from)
             } else {
-                save_file(&core, &r, &context, &cancel).await
+                save_file(&core, &r, &context, &cancel, snapshot.unwrap()).await
             };
             let result = match result {
-                Ok(data) => json!({"id":job_id,"state":"completed","result":data}),
-                Err(error) => json!({"id":job_id,"state":"failed","error":error}),
+                Ok(data) => {
+                    json!({"id":job_id,"kind":if data.get("revision").is_some(){"save"}else{"download"},"state":"completed","result":data})
+                }
+                Err(error) => {
+                    json!({"id":job_id,"kind":if saving{"save"}else{"download"},"state":if error.unknown{"unknown"}else{"failed"},"error":error.message})
+                }
             };
+            let mut editor = r.editor.lock().unwrap();
+            if saving {
+                editor.save_result = result.clone();
+            }
             *r.job.lock().unwrap() = result;
         });
         Ok(json!({"id":id,"state":"running"}))
@@ -733,7 +895,7 @@ impl AppCore {
         if r.owner.view != view.id {
             return Err("文件资源不属于此页面".into());
         }
-        self.start_file_job(r, view.context, Some((path(&p)?.into(), local)))
+        self.start_file_job(r, view.context, Some((path(&p)?.into(), local)), None)
     }
 }
 async fn sftp(core: &AppCore, s: &mut State, context: &Context) -> Result<Arc<Sftp>, String> {
@@ -844,25 +1006,45 @@ fn ssh_string(data: &mut Vec<u8>, s: &str) {
     data.extend_from_slice(&(s.len() as u32).to_be_bytes());
     data.extend_from_slice(s.as_bytes());
 }
+#[derive(Debug)]
+struct SaveFailure {
+    unknown: bool,
+    message: String,
+}
+impl From<String> for SaveFailure {
+    fn from(message: String) -> Self {
+        Self {
+            unknown: false,
+            message,
+        }
+    }
+}
+impl From<&str> for SaveFailure {
+    fn from(message: &str) -> Self {
+        message.to_owned().into()
+    }
+}
 async fn save_file(
     core: &Arc<AppCore>,
     r: &Resource,
     context: &Context,
     cancel: &CancellationToken,
-) -> Result<Value, String> {
-    let mut state = r.state.lock().await;
+    doc: Document,
+) -> Result<Value, SaveFailure> {
+    let mut state = State {
+        transports: r.transports.clone(),
+        ..State::default()
+    };
     let s = tokio::select! {
         biased;
         _ = cancel.cancelled() => return Err("保存已取消，草稿保留".into()),
         session = sftp(core, &mut state, context) => session?,
     };
-    let doc = state.document.as_ref().ok_or("尚未打开文件")?.clone();
     drop(state);
     if !s.atomic {
         return Err("服务器不支持原子替换，未修改原文件；请下载后通过其他方式保存".into());
     }
     let temporary = format!("{}.sodeck-{}.tmp", doc.resolved, core.next_id());
-    let mut committing = false;
     let work = async {
         let verify = async {
             if canonical(&s.raw, &doc.path).await? != doc.resolved {
@@ -930,41 +1112,89 @@ async fn save_file(
         if version(&a, &bytes) != doc.version {
             return Err("远端文件已被修改，未覆盖；草稿保留".into());
         }
-        let mut data = Vec::new();
-        ssh_string(&mut data, &temporary);
-        ssh_string(&mut data, &doc.resolved);
-        committing = true;
-        match s
-            .raw
-            .extended("posix-rename@openssh.com", data)
-            .await
-            .map_err(err)?
-        {
-            Packet::Status(status) if status.status_code == StatusCode::Ok => (),
-            other => return Err(format!("服务器未确认提交：{other:?}")),
-        }
-        let a = s.raw.stat(doc.resolved.clone()).await.map_err(err)?.attrs;
-        let result = json!({"revision":doc.revision,"version":version(&a,&doc.bytes),"size":doc.bytes.len()});
-        Ok((result, a))
+        Ok::<_, String>(())
     };
-    let result = tokio::select! {biased;_=cancel.cancelled()=>Err("保存已取消".into()),v=tokio::time::timeout(Duration::from_secs(120),work)=>v.map_err(|_|"保存超时".to_string()).and_then(|v|v)};
-    // Never remove or truncate the original; temporary cleanup is best effort.
-    let _ = tokio::time::timeout(Duration::from_secs(2), s.raw.remove(temporary)).await;
-    match result {
-        Ok((result, a)) => {
-            let mut state = r.state.lock().await;
-            let d = state.document.as_mut().unwrap();
-            d.version = result["version"].as_str().unwrap().into();
-            d.attrs = a;
-            Ok(result)
-        }
-        Err(error) => Err(if committing {
-            format!("提交结果未知，请重新读取远端确认；草稿保留：{error}")
-        } else {
-            error
-        }),
+    let prepared = tokio::select! {biased;_=cancel.cancelled()=>Err("保存已取消，草稿保留".into()),v=tokio::time::timeout(Duration::from_secs(120),work)=>v.map_err(|_|"保存准备超时".to_string()).and_then(|v|v)};
+    if let Err(error) = prepared {
+        let _ = s.raw.close_session();
+        return Err(format!("{error}；如已创建临时文件则保留在 {temporary}").into());
     }
+    if cancel.is_cancelled() {
+        let _ = s.raw.remove(temporary).await;
+        return Err("保存已取消，未提交".into());
+    }
+    r.job.lock().unwrap()["state"] = json!("committing");
+    r.editor.lock().unwrap().save_result["state"] = json!("committing");
+    let attrs = match commit_file(&s.raw, &temporary, &doc.resolved).await {
+        Ok(attrs) => attrs,
+        Err(error) => {
+            if error.unknown {
+                r.editor.lock().unwrap().write_block = Some(error.message.clone());
+            }
+            return Err(error);
+        }
+    };
+    let ui = core.ui_state();
+    let current = ui
+        .resource_view(&r.owner.view)
+        .is_ok_and(|v| v.context == *context);
+    let mut editor = r.editor.lock().unwrap();
+    let matches = editor
+        .document
+        .as_ref()
+        .is_some_and(|d| d.id == doc.id && d.version == doc.version);
+    if current && matches {
+        editor.saved = doc.revision;
+    }
+    let mut result = json!({"revision":doc.revision,"draftRef":editor::reference(&doc),"size":doc.bytes.len(),"committed":true});
+    if let Some(a) = attrs.filter(|_| current && matches) {
+        let version = version(&a, &doc.bytes);
+        let d = editor.document.as_mut().unwrap();
+        d.version = version.clone();
+        d.attrs = a;
+        result["version"] = json!(version);
+    } else {
+        let warning =
+            "该修订已提交，但后续基线或连接身份未确认；请核对后重新打开，期间可以导出草稿";
+        editor.write_block = Some(warning.into());
+        result["baselineUnavailable"] = json!(true);
+        result["warning"] = json!(warning);
+    }
+    Ok(result)
 }
+
+// This phase has no cancellation select: sending a commit cannot be undone locally.
+async fn commit_file(
+    raw: &RawSftpSession,
+    temporary: &str,
+    destination: &str,
+) -> Result<Option<FileAttributes>, SaveFailure> {
+    let mut data = Vec::new();
+    ssh_string(&mut data, temporary);
+    ssh_string(&mut data, destination);
+    match raw.extended("posix-rename@openssh.com", data).await {
+        Ok(Packet::Status(status)) if status.status_code == StatusCode::Ok => (),
+        Ok(Packet::Status(status)) | Err(Error::Status(status))
+            if !matches!(
+                status.status_code,
+                StatusCode::NoConnection | StatusCode::ConnectionLost
+            ) =>
+        {
+            let _ = raw.remove(temporary).await;
+            return Err(format!("服务器拒绝保存：{}", status.error_message).into());
+        }
+        other => {
+            let message = format!("提交结果未知，请核对服务器；草稿保留，不能直接重试：{other:?}");
+            let _ = raw.close_session();
+            return Err(SaveFailure {
+                unknown: true,
+                message,
+            });
+        }
+    }
+    Ok(raw.stat(destination).await.ok().map(|r| r.attrs))
+}
+
 struct LocalTemporary(PathBuf);
 impl Drop for LocalTemporary {
     fn drop(&mut self) {

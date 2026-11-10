@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let settings = sodeck_plugin_client::settings::SettingsCache::default();
     sodeck_plugin_client::run(move |c, method, p| {
         if method == "initialize" {
-            for capability in ["net.tcp.v1", "ui.dialog.v1"] {
+            for capability in ["net.tcp.v1", "net.listenerLifecycle.v1", "ui.dialog.v1"] {
                 if !p["capabilities"]
                     .as_array()
                     .is_some_and(|v| v.iter().any(|v| v == capability))
@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 views: HashMap::new(),
                 runs: HashMap::new(),
                 checks: HashMap::new(),
-                deletes: HashMap::new(),
+                sequence: 0,
             });
             let state = app.clone();
             let client = c.clone();
@@ -38,9 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if client.is_closed() {
                     break;
                 }
-                if let Some(a) = state.lock().unwrap().as_mut() {
-                    a.tick(&client)
-                }
+                manager::tick(&state, &client);
             });
             return Ok(json!({"apiVersion":"1","settingsApiVersion":"1","uiApiVersion":"2"}));
         }
@@ -91,7 +89,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .collect();
                 for run in ids {
                     let _ = a.stop(c, &run);
-                    a.runs.remove(&run);
                 }
             }
             a.views.remove(id);
@@ -101,7 +98,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         match method {
             "ui.beforeClose" => return Ok(view_data(a, id)),
             "ui.save" => {
-                save(a, c, id, false)?;
+                save(a, id)?;
                 return Ok(view_data(a, id));
             }
             "ui.event" => {}
@@ -132,7 +129,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 a.views.get_mut(id).unwrap().navigation = d["state"].clone();
             }
-            "save" | "saveStart" => save(a, c, id, d["action"] == "saveStart")?,
+            "save" => save(a, id)?,
             "start" | "stop" | "delete" | "check" => {
                 if a.views[id].kind != "manager" {
                     return Err("需要管理视图".into());
@@ -148,22 +145,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 match d["action"].as_str().unwrap() {
                     "start" => a.start(c, id, rule_id)?,
                     "stop" => {
-                        if let Some(r) = a.runs.get_mut(rule_id) {
-                            r.restart = false;
-                        }
                         a.stop(c, rule_id)?;
                     }
                     "delete" => {
-                        if let Some(run) = a.runs.get(rule_id) {
-                            if !matches!(run.snapshot["state"].as_str(), Some("closed" | "failed"))
-                            {
-                                a.stop(c, rule_id)?;
-                                a.deletes.insert(
-                                    rule_id.into(),
-                                    (server.clone(), d["revision"].as_u64().ok_or("缺少修订")?),
-                                );
-                                return Ok(view_data(a, id));
-                            }
+                        if a.runs.get(rule_id).is_some_and(|r| {
+                            r.snapshot["cleanupComplete"] != true
+                                || !r.released
+                                || r.query_error.is_some()
+                        }) {
+                            return Err("请先停止并确认清理，再删除规则".into());
                         }
                         a.rules.delete(
                             &server,
@@ -174,7 +164,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     "check" => {
                         let run = a.runs.get(rule_id).ok_or("请先启动隧道")?;
-                        if run.snapshot["state"] != "running" {
+                        if run.snapshot["state"] != "running"
+                            || run.stop_requested
+                            || run.query_error.is_some()
+                        {
                             return Err("隧道尚未就绪".into());
                         }
                         let listener = run.listener.clone();
@@ -215,45 +208,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(view_data(a, id))
     })
 }
-fn save(
-    a: &mut App,
-    c: &sodeck_plugin_client::Client,
-    id: &str,
-    start: bool,
-) -> Result<(), String> {
+fn save(a: &mut App, id: &str) -> Result<(), String> {
     let v = a.views.get(id).ok_or("视图已关闭")?;
-    if v.kind != "rule-editor" {
+    if v.kind != "rule-editor" || !v.dirty {
         return Ok(());
     }
-    if !v.dirty && !start {
-        return Ok(());
-    }
-    let server = v.server.clone();
-    let r = if v.dirty {
-        a.rules.save(&server, v.draft.clone())?
-    } else {
-        v.draft.clone()
-    };
+    let rule = a.rules.save(&v.server, v.draft.clone())?;
     let v = a.views.get_mut(id).unwrap();
-    v.draft = r.clone();
+    v.draft = rule;
     v.dirty = false;
-    if start {
-        let manager = a
-            .views
-            .iter()
-            .find(|(_, v)| v.server == server && v.kind == "manager")
-            .map(|(id, _)| id.clone())
-            .ok_or("请先打开网络侧栏")?;
-        let rid = r["id"].as_str().unwrap();
-        if let Some(run) = a.runs.get(rid) {
-            if !matches!(run.snapshot["state"].as_str(), Some("closed" | "failed")) {
-                a.stop(c, rid)?;
-                a.runs.get_mut(rid).unwrap().restart = true;
-                return Ok(());
-            }
-        }
-        a.start(c, &manager, rid)?;
-    }
     Ok(())
 }
 fn view_data(a: &App, id: &str) -> Value {

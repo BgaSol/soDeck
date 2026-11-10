@@ -229,9 +229,10 @@ try {
     await ruleEditor.locator('input[name=name]').fill(`Native ${entry}`);
     await ruleEditor.locator('input[name=host]').fill('127.0.0.1');
     await ruleEditor.locator('input[name=targetPort]').fill(String(service.address().port));
-    await ruleEditor.getByRole('button', { name: '保存并启动', exact: true }).click();
+    await ruleEditor.getByRole('button', { name: '保存', exact: true }).click();
     await page.locator('.plugin-view-dialog').waitFor({ state: 'detached' });
     await sidebar.getByRole('button', { name: `Native ${entry}` }).click();
+    await sidebar.locator('.detail').getByRole('button', { name: '启动', exact: true }).click();
     await sidebar.locator('.entry code').waitFor();
     await until(async () => /127\.0\.0\.1:\d+/.test(await sidebar.locator('.entry code').textContent()), 'Native tunnel did not reach the listening state');
     const address = await sidebar.locator('.entry code').textContent();

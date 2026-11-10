@@ -9,7 +9,7 @@ enum Writer {
     Remote(String),
 }
 impl Io {
-    pub(super) async fn copy(&self, p: &Value) -> Result<Value, String> {
+    pub(super) async fn copy(&self, p: &Value) -> Result<Value, OperationError> {
         let source = self.endpoint(&p["source"])?;
         let destination = self.endpoint(&p["destination"])?;
         let source_parent = self.parent_identity(&source).await?;
@@ -162,7 +162,7 @@ impl Io {
                 file.flush().await.map_err(local_error)?;
                 file.sync_all().await.map_err(local_error)?;
             }
-            Ok::<_, String>(())
+            Ok::<_, OperationError>(())
         };
         let result = tokio::select! {biased;_=self.operation.cancel.cancelled()=>Err(failure("cancelled","传输已取消，原目标保留")),v=streaming=>v};
         if let Reader::Remote(handle) = reader {
@@ -220,14 +220,36 @@ impl Io {
                     }else{tokio::fs::rename(temp,target).await.map_err(err)?;}
                 },
                 (Endpoint::Remote(temp),Endpoint::Remote(target))=>{
-                    let committed=if original.is_some(){let mut data=Vec::new();ssh_string(&mut data,temp);ssh_string(&mut data,target);match self.session.raw.extended("posix-rename@openssh.com",data).await{Ok(Packet::Status(status))if status.status_code==StatusCode::Ok=>Ok(()),Ok(packet)=>Err(failure("io",format!("服务器拒绝提交：{packet:?}"))),Err(Error::Status(status))=>Err(failure("io",status.error_message)),Err(e)=>Err(failure("unknown",format!("服务器未确认提交结果，请刷新核对：{e}")))}}
-                    else{match self.session.raw.rename(temp,target).await{Ok(_)=>Ok(()),Err(Error::Status(status))=>Err(failure("targetExists",status.error_message)),Err(e)=>Err(failure("unknown",format!("服务器未确认提交结果，请刷新核对：{e}")))}};
+                    let committed = if original.is_some() {
+                        let mut data=Vec::new();ssh_string(&mut data,temp);ssh_string(&mut data,target);
+                        match self.session.raw.extended("posix-rename@openssh.com",data).await {
+                            Ok(Packet::Status(status)) if status.status_code==StatusCode::Ok => Ok(()),
+                            Ok(Packet::Status(status)) => Err(mutation_error(Error::Status(status))),
+                            Ok(packet) => Err(failure("unknown",format!("提交响应无效，请核对目标：{packet:?}"))),
+                            Err(error) => Err(mutation_error(error)),
+                        }
+                    } else {self.session.raw.rename(temp,target).await.map(|_|()).map_err(mutation_error)};
                     committed?;
                 },_=>unreachable!(),
             }
-            let committed=self.inspect(&destination).await.map_err(|e|failure("unknown",format!("文件已提交，目标状态未确认：{e}")))?.ok_or_else(||failure("targetChanged","提交后目标已被移除"))?;
-            Ok(json!({"size":offset.to_string(),"stamp":committed["stamp"]}))
+            match self.inspect(&destination).await {
+                Ok(Some(committed))=>Ok(json!({"size":offset.to_string(),"stamp":committed["stamp"]})),
+                result=>Ok(json!({"size":offset.to_string(),"cleanupWarning":format!("文件已提交，但后续目标查询未确认：{result:?}")})),
+            }
         }.await;
+        // An unacknowledged commit may still use the temporary name on the server.
+        if result.as_ref().is_err_and(|error| error.code == "unknown") {
+            return result.map_err(|mut error| {
+                let path = match &temporary {
+                    Endpoint::Local(path) => path.to_string_lossy().into_owned(),
+                    Endpoint::Remote(path) => path.clone(),
+                };
+                error
+                    .message
+                    .push_str(&format!("；提交未确认，保留临时路径供核对：{path}"));
+                error
+            });
+        }
         // Only remove the operation's temporary name, never the destination.
         let cleanup = match &temporary {
             Endpoint::Local(path) => match tokio::fs::remove_file(path).await {
@@ -248,10 +270,12 @@ impl Io {
                 value["cleanupWarning"] = json!(format!("临时文件清理失败：{error}"));
                 Ok(value)
             }
-            (Err(error), Err(cleanup)) => Err(format!(
-                "{error}；临时文件 .sodeck-{}.part 清理失败：{cleanup}",
-                self.operation.id
-            )),
+            (Err(mut error), Err(cleanup)) => {
+                error
+                    .message
+                    .push_str(&format!("；临时文件清理失败：{cleanup}"));
+                Err(error)
+            }
             (result, _) => result,
         }
     }

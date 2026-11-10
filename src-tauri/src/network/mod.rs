@@ -68,35 +68,119 @@ struct Operation {
     id: String,
     at: Instant,
 }
+#[derive(Default)]
+struct Registry {
+    listeners: HashMap<String, Arc<Listener>>,
+    operations: HashMap<(String, String), Operation>,
+    scopes: HashMap<String, Scope>,
+}
+struct Scope {
+    owner: Owner,
+    last: u64,
+    retiring: bool,
+    entries: HashMap<u64, Receipt>,
+}
+struct Receipt {
+    operation: String,
+    bind: Value,
+    listener: Option<String>,
+    result: Value,
+}
+impl Registry {
+    fn reap(&mut self) {
+        let finished: Vec<_> = self
+            .listeners
+            .iter()
+            .filter(|(_, l)| l.tasks.finished())
+            .map(|(id, l)| (id.clone(), l.snapshot()))
+            .collect();
+        for (id, snapshot) in finished {
+            for scope in self.scopes.values_mut() {
+                for receipt in scope
+                    .entries
+                    .values_mut()
+                    .filter(|r| r.listener.as_ref() == Some(&id))
+                {
+                    receipt.result = snapshot.clone();
+                }
+            }
+            self.listeners.remove(&id);
+        }
+        self.scopes.retain(|_, scope| {
+            !scope.retiring
+                || scope
+                    .entries
+                    .values()
+                    .any(|r| r.result["cleanupComplete"] != true)
+        });
+        self.operations.retain(|_, op| {
+            self.listeners.contains_key(&op.id) || op.at.elapsed() < Duration::from_secs(60)
+        });
+    }
+    fn observed(&self, scope: &str, sequence: u64, operation: &str) -> Result<Value, String> {
+        let Some(scope) = self.scopes.get(scope) else {
+            return Ok(json!({"state":"notObserved","cleanupComplete":false}));
+        };
+        if let Some(receipt) = scope.entries.get(&sequence) {
+            if receipt.operation != operation {
+                return Err("操作身份与序号不一致".into());
+            }
+            let snapshot = receipt
+                .listener
+                .as_ref()
+                .and_then(|id| self.listeners.get(id))
+                .map(|l| l.snapshot())
+                .unwrap_or_else(|| receipt.result.clone());
+            return Ok(
+                json!({"state":"observed","listenerId":receipt.listener,"snapshot":snapshot,"cleanupComplete":snapshot["cleanupComplete"]==true}),
+            );
+        }
+        Ok(if sequence <= scope.last {
+            json!({"state":"retired","cleanupComplete":true})
+        } else {
+            json!({"state":"notObserved","cleanupComplete":false})
+        })
+    }
+}
 pub struct Network {
-    listeners: Mutex<HashMap<String, Arc<Listener>>>,
-    operations: Mutex<HashMap<(String, String), Operation>>,
+    registry: Mutex<Registry>,
     slots: Arc<Semaphore>,
 }
 impl Default for Network {
     fn default() -> Self {
         Self {
-            listeners: Mutex::new(HashMap::new()),
-            operations: Mutex::new(HashMap::new()),
+            registry: Mutex::new(Registry::default()),
             slots: Arc::new(Semaphore::new(256)),
         }
     }
 }
 impl Network {
     pub(crate) fn cancel(&self, matches: impl Fn(&Owner) -> bool) {
-        self.listeners.lock().unwrap().retain(|_, l| {
-            if matches(&l.owner) {
-                l.close();
-                !l.tasks.finished()
-            } else {
-                true
-            }
+        let mut registry = self.registry.lock().unwrap();
+        for l in registry.listeners.values().filter(|l| matches(&l.owner)) {
+            l.close();
+        }
+        for scope in registry.scopes.values_mut().filter(|s| matches(&s.owner)) {
+            scope.retiring = true;
+        }
+        registry.reap();
+        // The view/instance is retiring; resource admission prevents it being recreated.
+        registry.scopes.retain(|_, scope| {
+            !matches(&scope.owner)
+                || scope
+                    .entries
+                    .values()
+                    .any(|r| r.result["cleanupComplete"] != true)
         });
     }
     pub(crate) fn pending(&self, matches: impl Fn(&Owner) -> bool) -> usize {
-        let mut listeners = self.listeners.lock().unwrap();
-        listeners.retain(|_, l| !l.tasks.finished());
-        listeners.values().filter(|l| matches(&l.owner)).count()
+        let mut registry = self.registry.lock().unwrap();
+        registry.reap();
+        registry
+            .listeners
+            .values()
+            .filter(|l| matches(&l.owner))
+            .count()
     }
 }
 fn text<'a>(p: &'a Value, key: &str) -> Result<&'a str, String> {
@@ -120,8 +204,136 @@ impl AppCore {
                 Ok(())
             }
         };
-        if method == "net.listener.open" {
+        let lifecycle = [
+            "net.listener.create",
+            "net.listener.lookup",
+            "net.listener.cancel",
+            "net.listener.release",
+        ]
+        .contains(&method);
+        let mut identity = None;
+        if lifecycle {
+            let view = text(p, "viewId")?;
+            let operation = text(p, "operationId")?;
+            let sequence = text(p, "sequence")?
+                .parse::<u64>()
+                .ok()
+                .filter(|v| *v > 0)
+                .ok_or("操作序号无效")?;
+            if p["expectedContext"].is_null() {
+                return Err("缺少 expectedContext".into());
+            }
+            let scope = json!([plugin, instance, view, p["expectedContext"]]).to_string();
+            let mut registry = self.network.registry.lock().unwrap();
+            registry.reap();
+            let observed = registry.observed(&scope, sequence, operation)?;
+            if observed["state"] == "notObserved" && method != "net.listener.create" {
+                drop(registry);
+                let ui = self.ui_state();
+                let retired = ui.resource_view(view).map_or(true, |v| {
+                    v.plugin_id != plugin
+                        || v.plugin_instance_id != instance
+                        || serde_json::to_value(&v.context).ok().as_ref()
+                            != Some(&p["expectedContext"])
+                });
+                let mut next = self.network.registry.lock().unwrap();
+                next.reap();
+                if retired
+                    && !next.listeners.values().any(|l| {
+                        l.owner.plugin == plugin
+                            && l.owner.instance == instance
+                            && l.owner.view == view
+                            && serde_json::to_value(&l.owner.context).ok().as_ref()
+                                == Some(&p["expectedContext"])
+                    })
+                {
+                    return Ok(if method == "net.listener.release" {
+                        json!({"released":true})
+                    } else {
+                        json!({"state":"retired","cleanupComplete":true})
+                    });
+                }
+                drop(ui);
+                registry = next;
+            }
+            let observed = registry.observed(&scope, sequence, operation)?;
+            if method == "net.listener.lookup" {
+                return Ok(observed);
+            }
+            if method == "net.listener.release" {
+                if observed["cleanupComplete"] != true {
+                    return Err("监听清理尚未确认".into());
+                }
+                if let Some(scope) = registry.scopes.get_mut(&scope) {
+                    scope.entries.remove(&sequence);
+                }
+                return Ok(json!({"released":true}));
+            }
+            if method == "net.listener.cancel" {
+                if let Some(id) = observed["listenerId"].as_str() {
+                    if let Some(l) = registry.listeners.get(id) {
+                        l.close();
+                    }
+                }
+                if let Some(state) = registry.scopes.get_mut(&scope) {
+                    state.last = state.last.max(sequence);
+                } else {
+                    drop(registry);
+                    let ui = self.ui_state();
+                    let v = ui.resource_view(view)?;
+                    if v.plugin_id != plugin || v.plugin_instance_id != instance {
+                        return Err("视图不属于此插件实例".into());
+                    }
+                    let owner = Owner {
+                        plugin: plugin.into(),
+                        instance: instance.into(),
+                        view: view.into(),
+                        context: serde_json::from_value(p["expectedContext"].clone())
+                            .map_err(|e| e.to_string())?,
+                    };
+                    let mut registry = self.network.registry.lock().unwrap();
+                    if !registry.scopes.contains_key(&scope) && registry.scopes.len() >= 4096 {
+                        return Err("网络操作作用域已满".into());
+                    }
+                    let state = registry.scopes.entry(scope.clone()).or_insert(Scope {
+                        owner,
+                        last: 0,
+                        retiring: false,
+                        entries: HashMap::new(),
+                    });
+                    state.last = state.last.max(sequence);
+                    if let Some(id) = state
+                        .entries
+                        .get(&sequence)
+                        .and_then(|r| r.listener.clone())
+                    {
+                        if let Some(l) = registry.listeners.get(&id) {
+                            l.close();
+                        }
+                    }
+                    return registry.observed(&scope, sequence, operation);
+                }
+                return registry.observed(&scope, sequence, operation);
+            }
+            if observed["state"] == "observed" {
+                if registry.scopes[&scope].entries[&sequence].bind != p["bind"] {
+                    return Err("操作 ID 参数已变化".into());
+                }
+                return Ok(observed);
+            }
+            if observed["state"] == "retired" {
+                return Err("操作序号已退役，不能重新启动".into());
+            }
+            identity = Some((scope, sequence, operation.to_owned()));
+        }
+        if method == "net.listener.open" || method == "net.listener.create" {
             let owner = self.resource_owner(plugin, instance, text(p, "viewId")?)?;
+            if lifecycle
+                && serde_json::to_value(&owner.context).map_err(|e| e.to_string())?
+                    != p["expectedContext"]
+            {
+                return Err("连接上下文已变化".into());
+            }
             let session = self.connection_session(&owner.context)?;
             let host = text(&p["bind"], "host")?
                 .parse::<std::net::IpAddr>()
@@ -140,19 +352,43 @@ impl AppCore {
                 .map(|v| json!({"endpoint":v.endpoint,"nodeCount":v.node_count}))
                 .unwrap_or(Value::Null);
             let admission = self.resource_admission(&owner)?;
-            let mut ops = self.network.operations.lock().unwrap();
-            ops.retain(|_, v| v.at.elapsed() < Duration::from_secs(60));
-            if let Some(op) = ops.get(&key) {
+            let mut registry = self.network.registry.lock().unwrap();
+            registry.reap();
+            if let Some((scope, sequence, operation)) = &identity {
+                let old = registry.observed(scope, *sequence, operation)?;
+                if old["state"] == "retired" {
+                    return Err("操作序号已退役，不能重新启动".into());
+                }
+                if old["state"] == "observed" {
+                    if registry.scopes[scope].entries[sequence].bind != p["bind"] {
+                        return Err("操作 ID 参数已变化".into());
+                    }
+                    return Ok(old);
+                }
+            } else if let Some(op) = registry.operations.get(&key) {
                 if op.fingerprint != fingerprint {
                     return Err("操作 ID 参数已变化".into());
                 }
                 return Ok(json!({"listenerId":op.id}));
             }
-            if ops.len() >= 4096 {
-                return Err("网络操作过多，请稍后再试".into());
+            if identity
+                .as_ref()
+                .is_some_and(|(scope, _, _)| !registry.scopes.contains_key(scope))
+                && registry.scopes.len() >= 4096
+            {
+                return Err("网络操作作用域已满".into());
             }
-            let mut all = self.network.listeners.lock().unwrap();
-            all.retain(|_, l| l.owner.instance != instance || !l.tasks.finished());
+            if registry.operations.len()
+                + registry
+                    .scopes
+                    .values()
+                    .map(|s| s.entries.len())
+                    .sum::<usize>()
+                >= 4096
+            {
+                return Err("网络操作已满，请先确认并释放旧记录".into());
+            }
+            let all = &registry.listeners;
             if all
                 .values()
                 .filter(|l| l.owner.instance == instance)
@@ -185,33 +421,51 @@ impl AppCore {
                 probe_operations: Mutex::new(HashSet::new()),
             });
             let task = l.tasks.enter()?;
-            all.insert(id.clone(), l.clone());
-            ops.insert(
-                key,
-                Operation {
-                    fingerprint,
-                    id: id.clone(),
-                    at: Instant::now(),
-                },
-            );
-            drop(all);
-            drop(ops);
-            drop(admission);
-            if let Err(e) = self.resource_owner(plugin, instance, &l.owner.view) {
-                l.cancel.cancel();
-                self.network.listeners.lock().unwrap().remove(&id);
-                return Err(e);
+            registry.listeners.insert(id.clone(), l.clone());
+            if let Some((scope, sequence, operation)) = &identity {
+                let state = registry.scopes.entry(scope.clone()).or_insert(Scope {
+                    owner: l.owner.clone(),
+                    last: 0,
+                    retiring: false,
+                    entries: HashMap::new(),
+                });
+                state.last = *sequence;
+                state.entries.insert(
+                    *sequence,
+                    Receipt {
+                        operation: operation.clone(),
+                        bind: p["bind"].clone(),
+                        listener: Some(id.clone()),
+                        result: Value::Null,
+                    },
+                );
+            } else {
+                registry.operations.insert(
+                    key,
+                    Operation {
+                        fingerprint,
+                        id: id.clone(),
+                        at: Instant::now(),
+                    },
+                );
             }
+            drop(registry);
+            drop(admission);
             let slots = self.network.slots.clone();
             tauri::async_runtime::spawn(async move {
                 let _task = task;
                 runtime::listen(l, host, port, slots).await;
             });
-            return Ok(json!({"listenerId":id}));
+            return Ok(if lifecycle {
+                json!({"state":"observed","listenerId":id,"cleanupComplete":false,"snapshot":{"listenerId":id,"state":"starting","cleanupComplete":false}})
+            } else {
+                json!({"listenerId":id})
+            });
         }
         if method == "net.poll" {
             let view = text(p, "viewId")?;
-            let all = self.network.listeners.lock().unwrap();
+            let registry = self.network.registry.lock().unwrap();
+            let all = &registry.listeners;
             let mut items = Vec::new();
             for l in all.values().filter(|l| {
                 l.owner.plugin == plugin && l.owner.instance == instance && l.owner.view == view
@@ -232,7 +486,8 @@ impl AppCore {
             .or_else(|| p["id"].as_str())
             .ok_or("缺少网络资源 ID")?;
         let resource = {
-            let all = self.network.listeners.lock().unwrap();
+            let registry = self.network.registry.lock().unwrap();
+            let all = &registry.listeners;
             if let Some(l) = all.get(id) {
                 Some((l.clone(), None))
             } else {
@@ -301,10 +556,10 @@ impl AppCore {
             if probes.len() >= 4 {
                 return Err("正在检查，请稍后再试".into());
             }
+            let task = l.tasks.enter()?;
             probes.insert(operation.clone());
             drop(probes);
             let listener = l.clone();
-            let task = l.tasks.enter()?;
             tauri::async_runtime::spawn(async move {
                 let _task = task;
                 runtime::probe(listener, host, port, operation).await;
@@ -486,6 +741,78 @@ impl Listener {
             samples.push_back((now, sent, received));
         }
         let children:Vec<_>=streams.values().filter(|s|!s.remote).take(64).map(|s|{let state=s.state.lock().unwrap();let remote=streams.values().find(|r|r.client.as_deref()==Some(&s.id)).map(|r|{let x=r.state.lock().unwrap();json!({"state":x.state,"error":x.error})});json!({"id":s.id,"state":state.state,"probeId":s.id.split_once("@probe:").map(|(_,p)|p),"target":remote})}).collect();
-        json!({"listenerId":self.id,"state":st.state,"address":st.address,"error":st.error,"path":self.path,"sent":sent.to_string(),"received":received.to_string(),"sentPerSecond":up,"receivedPerSecond":down,"connections":streams.values().filter(|s|!s.remote&&matches!(s.state.lock().unwrap().state,"ready"|"relaying")).count(),"clients":children})
+        json!({"listenerId":self.id,"cleanupComplete":self.tasks.finished(),"state":st.state,"address":st.address,"error":st.error,"path":self.path,"sent":sent.to_string(),"received":received.to_string(),"sentPerSecond":up,"receivedPerSecond":down,"connections":streams.values().filter(|s|!s.remote&&matches!(s.state.lock().unwrap().state,"ready"|"relaying")).count(),"clients":children})
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+    fn scope() -> Scope {
+        Scope {
+            owner: Owner {
+                plugin: "plugin".into(),
+                instance: "instance".into(),
+                view: "view".into(),
+                context: crate::workspaces::Context {
+                    workspace_id: "workspace".into(),
+                    server_id: "server".into(),
+                    connection_id: "connection".into(),
+                    generation: 1,
+                },
+            },
+            last: 1,
+            retiring: false,
+            entries: HashMap::new(),
+        }
+    }
+    #[test]
+    fn cancelled_sequence_is_retired_but_absence_is_not_cleanup() {
+        let mut registry = Registry::default();
+        assert_eq!(
+            registry.observed("scope", 1, "open").unwrap()["cleanupComplete"],
+            false
+        );
+        registry.scopes.insert("scope".into(), scope());
+        assert_eq!(
+            registry.observed("scope", 1, "open").unwrap()["state"],
+            "retired"
+        );
+        assert_eq!(
+            registry.observed("scope", 2, "next").unwrap()["state"],
+            "notObserved"
+        );
+    }
+    #[test]
+    fn unfinished_receipts_survive_reaping_and_reject_changed_identity() {
+        let mut registry = Registry::default();
+        let mut scope = scope();
+        scope.retiring = true;
+        scope.entries.insert(
+            1,
+            Receipt {
+                operation: "open".into(),
+                bind: json!({"host":"127.0.0.1","port":0}),
+                listener: None,
+                result: json!({"state":"closed","cleanupComplete":false}),
+            },
+        );
+        registry.scopes.insert("scope".into(), scope);
+        registry.reap();
+        assert_eq!(
+            registry.observed("scope", 1, "open").unwrap()["cleanupComplete"],
+            false
+        );
+        assert!(registry.observed("scope", 1, "other").is_err());
+        registry
+            .scopes
+            .get_mut("scope")
+            .unwrap()
+            .entries
+            .get_mut(&1)
+            .unwrap()
+            .result["cleanupComplete"] = json!(true);
+        registry.reap();
+        assert!(registry.scopes.is_empty());
     }
 }

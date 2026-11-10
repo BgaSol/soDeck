@@ -1,18 +1,24 @@
+# 0.10.0
+
+移动、剪切与改名在当前后端明确降级为不支持，移除复制后删源。批次回执丢失保留原请求并暂停，确认只查询原操作。编辑器按固定正文修订保存/导出，草稿同步失败可恢复，旧保存不能清除新输入；提交未知时禁止直接重放。
+
+依赖核心 `files.operations.v2`、`files.editor.v1`。 API 主版本保持 1；缺少能力时初始化明确拒绝，不回退到旧流程。本次准备独立发行；核心需先升级至 0.23.0。五平台原生打包、实际包验证及发行来源在完成后补录；尚未补齐的故障组合见[剩余验收](../../docs/plans/operation-outcomes.md)。
+
 # 0.9.0
 
 文件编辑器增加当前正文搜索、右侧彩色缩略图、行号和按文件类型语法着色，支持手动更正语言；继续执行 1 MiB 字节上限、UTF-8/BOM/换行保留和远端安全保存。补齐本地待暂存状态、完整选区与搜索/语言恢复，避免旧保存结果清除新修改的未保存标记。新增编辑器依赖仅随文件插件打包。
 
-本版按用户要求发布为 Latest，核心 API 主版本保持 1。实现与本次平台验证见[实施记录](../../docs/implementation-file-editor-search.md)。
+本版按用户要求发布为 Latest，核心 API 主版本保持 1。实现与本次平台验证见[实施记录](https://github.com/BgaSol/soDeck/blob/8115fdcd5bed4108021a729da605fbde77afc2af/docs/implementation-file-editor-search.md)。
 
 包来源：[`68f8eac0eeb3017806f82a49f29949b6ae48be85`](https://github.com/BgaSol/soDeck/commit/68f8eac0eeb3017806f82a49f29949b6ae48be85)；原始打包：[Package plugin #42799998357](https://github.com/BgaSol/soDeck/actions/runs/42799998357)；源码：[Check #42799928597](https://github.com/BgaSol/soDeck/actions/runs/42799928597)；发行：[files 0.9.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.9.0)，Latest。五份原生归档与更新清单直接从同一草稿发布，附件哈希和公开清单核对通过。
 
-五平台原生包与实际核心 0.21.0、终端 0.7.2 的启动、SFTP 文件读写、工作区恢复和退出通过；Windows 两个补测分别为 [42804113763](https://github.com/BgaSol/soDeck/actions/runs/42804113763) / [42804127755](https://github.com/BgaSol/soDeck/actions/runs/42804127755)，其余三个成功目标位于 [42800515265](https://github.com/BgaSol/soDeck/actions/runs/42800515265)。首次 Windows 额外深度专项因 CI 未开启 WebView2 调试端口失败，失败记录保留；本机使用正式包的深度专项通过，不能外推为 CI 或其他平台深度界面通过。具体证据、失败原因与系统输入法/长期性能等未验收范围统一见上述实施记录。
+五平台原生包与实际核心 0.21.0、终端 0.7.2 的启动、SFTP 文件读写、工作区恢复和退出通过；Windows 两个补测分别为 [42804113763](https://github.com/BgaSol/soDeck/actions/runs/42804113763) / [42804127755](https://github.com/BgaSol/soDeck/actions/runs/42804127755)，其余三个成功目标位于 [42800515265](https://github.com/BgaSol/soDeck/actions/runs/42800515265)。首次 Windows 额外深度专项因 CI 未开启 WebView2 调试端口失败，失败记录保留；本机使用正式包的深度专项通过，不能外推为 CI 或其他平台深度界面通过。上述实施记录保留详细失败诊断。系统 IME、触摸/辅助技术及系统剪贴板的人机验收未执行；完整性能 P95、长期内存与多文件负载预算尚未测量。Windows ARM64、Linux x86_64/ARM64、macOS ARM64 没有同等深度编辑器专项通过证据。
 
 # 0.8.1
 
 共享客户端改用固定 base64 0.23.1；保留标准编码、严格解码、原始字节分页和既有 API。本版同步锁文件并重新独立打包，插件业务和核心 API 主版本不变。
 
-本版为未发布候选，最终按要求仅推送 main。实现见[接入记录](../../docs/implementation-base64-opener-adoption.md)；核心与插件继续独立发行，核心包不含业务插件。
+本版为未发布候选，最终按要求仅推送 main。实现见[接入记录](https://github.com/BgaSol/soDeck/blob/8115fdcd5bed4108021a729da605fbde77afc2af/docs/implementation-base64-opener-adoption.md)；核心与插件继续独立发行，核心包不含业务插件。
 
 包来源：[`0abaf3e8ccc2045e437dac723d898eca87759f6c`](https://github.com/BgaSol/soDeck/commit/0abaf3e8ccc2045e437dac723d898eca87759f6c)；原始独立打包：[Package plugin #42779053034](https://github.com/BgaSol/soDeck/actions/runs/42779053034)；[草稿 440084221](https://github.com/BgaSol/soDeck/releases/tag/untagged-7ac77c37e2cbdf46a73a)，保留原五平台归档与更新清单，共六个附件，未正式发布。
 
@@ -70,7 +76,7 @@
 
 # 0.3.0
 
-增加文件与文件夹的批量上传下载、冲突选择、取消、失败重试和远程创建/改名/删除/复制移动。本地文件剪贴板和原生拖入入口已接入；不实现远程到系统的粘贴或拖出。需要核心 0.8.4 的 `files.operations.v1` / `files.localInputs.v1`。先升级核心，再升级文件插件并重启。原生包与系统桌面互操作的实际验证范围见 [文件管理实施记录](../../docs/implementation-file-management.md)。
+增加文件与文件夹的批量上传下载、冲突选择、取消、失败重试和远程创建/改名/删除/复制移动。本地文件剪贴板和原生拖入入口已接入；不实现远程到系统的粘贴或拖出。需要核心 0.8.4 的 `files.operations.v1` / `files.localInputs.v1`。先升级核心，再升级文件插件并重启。原生包与系统桌面互操作的实际验证范围见 [文件管理实施记录](https://github.com/BgaSol/soDeck/blob/8115fdcd5bed4108021a729da605fbde77afc2af/docs/implementation-file-management.md)。
 
 # 0.2.1
 

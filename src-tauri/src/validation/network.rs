@@ -64,7 +64,7 @@ pub(super) async fn start(
         core.workspace_changed();
         let (win, form) = surface(core, &dialog).await?;
         core.ui_event(&win, &form, json!({"action":"draft","rule":rule}))?;
-        core.ui_event(&win, &form, json!({"action":"saveStart"}))?;
+        core.ui_event(&win, &form, json!({"action":"save"}))?;
         let plan = core.ui_close_prepare(&win, vec![context.workspace_id.clone()], Some(dialog))?;
         core.ui_close_finish(
             plan["token"].as_str().ok_or("没有关闭 token")?,
@@ -72,6 +72,7 @@ pub(super) async fn start(
             "discard",
         )?;
         core.workspace_changed();
+        core.ui_event(&window, &token, json!({"action":"start","id":id}))?;
         let addr = tokio::time::timeout(Duration::from_secs(10), async {
             loop {
                 let snapshot = core.ui_event(&window, &token, json!({"action":"snapshot"}))?;
