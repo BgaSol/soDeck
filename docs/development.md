@@ -21,7 +21,7 @@ npm run dev
 | `npm run plugin:check` | 终端、文件、网络隧道、系统状态和 Docker 的 Rust 格式 |
 | `npm run scripts:test` | 构建、打包、更新、原生验收和 CI 软件源配置回归 |
 | `npm run test` | 核心 Rust 测试，包含仅测试使用的宿主夹具 |
-| `npm run web:build` | TypeScript 检查与正式前端构建 |
+| `npm run web:build` | 只构建正式前端资源；类型检查使用 `npm run check` |
 | `npm run files:editor:test` | 独立编辑器构建、实际产物的搜索、语法颜色、缩略图、字节上限、剪贴板与恢复回归；需要 Chromium，不需要 OpenSSH |
 | `npm run communication:test` | 使用已准备的终端、文件、系统状态测试目录，在隔离 OpenSSH 上验证共享状态、目录跟随、挂载容量和页面恢复；需要 SSH 服务与 Playwright Chromium |
 | `npm run interactions:test` | 浏览器真实按压刷新、文件菜单可用状态、子菜单与溢出回归；需要 Playwright Chromium |
@@ -199,7 +199,7 @@ Check 的 **Run workflow** 先选择需要验证的分支或标签，再选择 `
 
 `native-core` 覆盖当前核心单元测试及 `tests/lifecycle.rs`、`close_lifecycle.rs`、`updates.rs`、`update_network.rs`、`connections.rs`、`component_ui.rs`、`settings.rs`、`servers.rs`、`streams.rs`、`window_config.rs`、`workspaces.rs`；Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 都在对应原生 runner 执行。`platform`、`desktop_files`、桌面行为及更新等系统分支随原生测试验证。标记为 ignored 的真实远端用例仍由对应 SSH/终端/文件/网络专项提供环境后显式运行，不能把 `native-core` 通过当作这些专项已通过。
 
-Check 独立执行源码、类型及业务测试；核心与插件现有工作流内分别使用 package → verify → metadata/release。package 只编译、签名、归档和上传，不运行产品或业务测试；编译器自身的类型检查仍属于构建。verify 下载原包，在原生环境验证架构、资源、核心更新签名、启动和退出，核心另验资料重开；不安装 npm/Rust 构建依赖或重新构建。metadata/release 核对五份通过报告与原包提交、版本、SHA-256 后生成清单。SSH、工作台及系统桌面行为移至独立专项。
+Check 独立执行源码、类型及业务测试；核心与插件现有工作流内分别使用 package → verify → metadata/release。package 只编译、签名、归档和上传，不运行产品或业务测试；核心 `tsc --noEmit` 与文件编辑器类型检查都在 Check 单独执行；Rust 编译器自身的检查属于构建。verify 下载原包，在原生环境验证架构、资源、核心更新签名、启动和退出，核心另验资料重开；不安装 npm/Rust 构建依赖或重新构建。metadata/release 核对五份通过报告与原包提交、版本、SHA-256 后生成清单。SSH、工作台及系统桌面行为移至独立专项。
 
 CI 的 npm 下载缓存按任务实际使用的锁文件配置；核心打包只使用根锁文件，终端 UI 测试同时使用终端锁文件。Rust 缓存区分日常 `check-tests`、正式核心 `core-release-v2` 和各插件，只有成功的 main 运行保存，其他引用尝试恢复；插件及其原生测试显式覆盖共享 plugin-client 清单。Linux browser 与 Windows desktop 对齐各自原生核心 `check-tests` 的 workspace 顺序和共享清单输入，减少重复大缓存；不同 OS/架构仍隔离。升级验收夹具使用 `check-tests`，不恢复发行缓存。
 

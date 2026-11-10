@@ -71,6 +71,9 @@ jobs:
             package-lock.json
             plugins/terminal/package-lock.json
       - run: npm ci
+      - name: Core frontend source types
+        if: fromJSON(needs.select.outputs.plan).web
+        run: npx tsc --noEmit
       - name: Format affected Rust components
         run: |
           node --input-type=module <<'NODE'

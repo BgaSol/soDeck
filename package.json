@@ -5,7 +5,7 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "web:dev": "vite",
-    "web:build": "tsc && vite build",
+    "web:build": "vite build",
     "check": "tsc && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
     "plugin:check": "cargo fmt --manifest-path plugins/terminal/Cargo.toml -- --check && cargo fmt --manifest-path plugins/files/Cargo.toml -- --check && cargo fmt --manifest-path plugins/network-proxy/Cargo.toml -- --check && cargo fmt --manifest-path plugins/system-status/Cargo.toml -- --check && cargo fmt --manifest-path plugins/docker/Cargo.toml -- --check",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml --features test-fixtures --locked",
