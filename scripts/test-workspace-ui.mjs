@@ -381,7 +381,9 @@ try {
   await main.mouse.up();await main.evaluate(()=>window.manager.flush());assert.equal((await projection('main')).workspaces.find(w=>w.context.workspaceId===bid).layout.rightWidth,260);
   await dragPanel('left',-20);await main.setViewportSize({width:720,height:480});await settleLayout();await main.mouse.up();
   assert.equal(await main.evaluate(()=>document.body.classList.contains('panel-resizing')),false);
-  await main.setViewportSize({width:1000,height:720});await settleLayout();assert.equal(await boardWidth('left'),316);
+  await main.setViewportSize({width:1000,height:720});
+  // ResizeObserver may deliver the narrow viewport's geometry after two animation frames.
+  await wait(async()=>await boardWidth('left')===316);assert.equal(await boardWidth('left'),316);
   assert.equal(await main.evaluate(()=>window.resizeFrames.every(frame=>frame.isConnected)),true,'Resize must retain mounted iframe nodes');
   await dragPanel('left',-20);await call('workspace_activate',{window:'main',id:cid});await refresh();await main.mouse.up();
   assert.equal(await main.evaluate(()=>document.body.classList.contains('panel-resizing')),false);await select(main,bid);
