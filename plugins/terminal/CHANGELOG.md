@@ -2,7 +2,13 @@
 
 当前终端保留 10 万行滚动历史，新增浮动子串搜索、大小写开关、命中计数/前后定位和常驻彩色预览。独立 Worker 维护索引与每行计数，支持 Unicode 与软换行；移窗恢复查询和有效的当前命中，退出页仍可查找。
 
-依赖核心新增 `terminal.history.v1`，以临时恢复日志、分片冻结检查点和独立 UI 元数据支持大历史。需要核心 0.22.1；没有新增生产依赖。本机验证、性能数字及五平台待验收范围统一见[实施记录](../../docs/implementation-terminal-search.md)。
+依赖核心新增 `terminal.history.v1`，以临时恢复日志、分片冻结检查点和独立 UI 元数据支持大历史。需要核心 0.22.1；没有新增生产依赖。本机验证、性能数字及原生专项边界统一见[实施记录](../../docs/implementation-terminal-search.md)。
+
+包来源：[`febdd109cb56ec13836dd954d219f9dfcd3e0f5f`](https://github.com/BgaSol/soDeck/commit/febdd109cb56ec13836dd954d219f9dfcd3e0f5f)；原始独立打包：[Package plugin #42807888458](https://github.com/BgaSol/soDeck/actions/runs/42807888458)；同一提交的源码与业务：[Check #42807748154](https://github.com/BgaSol/soDeck/actions/runs/42807748154)；正式发行：[terminal 0.8.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.8.0)，非 Latest。
+
+五平台均使用原生产物，独立包的启动、生命周期和退出通过。实际包配合核心 0.22.1、文件 0.9.0 与网络隧道 0.3.1，在 [Verify native remote plugins #42814180548，attempt 2](https://github.com/BgaSol/soDeck/actions/runs/42814180548/attempts/2) 完成五平台 PTY/原生显示、移窗、重开和退出；首次输入解析失败未启动业务。另下载原五份归档，核对 SHA-256、清单、更新地址和原生二进制架构，直接发布原六个附件。系统 IME/DPI、多屏、四终端压力和深度搜索的原生专项未执行，不把基本包验收外推为这些专项通过。
+
+正式发布时 GitHub 创建插件标签，触发的[重复打包 #42817936348](https://github.com/BgaSol/soDeck/actions/runs/42817936348) 已取消；不是发行来源。正式六个附件的 ID、大小与摘要、公开更新清单仍与原始草稿一致；配套核心 0.22.1 为仓库 Latest。
 
 # 0.7.3
 

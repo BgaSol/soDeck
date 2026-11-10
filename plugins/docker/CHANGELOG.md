@@ -1,12 +1,14 @@
 # 0.1.2
 
-命令输出改用共享客户端的标准严格 Base64 解码。非法填充、缺失填充、非零尾位和尾随垃圾明确报错；报错后释放原任务，不自动重发 Docker 操作。
+命令输出使用标准严格 Base64 解码；非法输入明确报错，失败后释放原任务，不重复执行 Docker 操作。
 
-本版为未发布候选，最终按要求仅推送 main。实现见[接入记录](../../docs/implementation-base64-opener-adoption.md)；核心与插件继续独立发行，核心包不含业务插件。
+独立分发；启用中的插件升级在重启后生效，核心安装包不包含插件。
 
-包来源：[`0abaf3e8ccc2045e437dac723d898eca87759f6c`](https://github.com/BgaSol/soDeck/commit/0abaf3e8ccc2045e437dac723d898eca87759f6c)；原始独立打包：[Package plugin #42779070485](https://github.com/BgaSol/soDeck/actions/runs/42779070485)；[草稿 440086864](https://github.com/BgaSol/soDeck/releases/tag/untagged-e8290ebf5644ad3bb805)，保留原五平台归档与更新清单，共六个附件，未正式发布。
+包来源：[0abaf3e8ccc2045e437dac723d898eca87759f6c](https://github.com/BgaSol/soDeck/commit/0abaf3e8ccc2045e437dac723d898eca87759f6c)。原始五平台打包：[42779070485](https://github.com/BgaSol/soDeck/actions/runs/42779070485)，均使用原生产物，包内进程启动、生命周期和退出通过。
 
-五个原生目标独立构建、解包、包内进程启动与退出通过；ARM64 使用原生程序。最终源码 CI、实际核心候选失败及未执行的新版本包组合/升级范围见[核心候选记录](../../docs/releases/v0.21.1.md)。源码 main 的后续测试和 CI 修正不改变这些归档来源，没有重建或覆盖附件。
+[Check 42807748154](https://github.com/BgaSol/soDeck/actions/runs/42807748154) 复验相同插件业务源码的五平台测试和真实业务；后续核心修复不修改这份插件程序。下载原五份归档及清单，核对版本、原生架构、SHA-256 和更新地址；Windows x86_64 原归档再次通过实际包进程测试。直接发布原六个附件。
+
+未重复历史版本在线升级、用户生产服务器或全平台人工界面操作。正式发行：[docker 0.1.2](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.1.2)，非 Latest。
 
 # Docker 变更记录
 

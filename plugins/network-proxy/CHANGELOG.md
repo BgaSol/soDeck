@@ -2,11 +2,13 @@
 
 共享客户端改用固定 base64 0.23.1；保留标准编码、严格解码、原始字节分页和既有 API。本版同步锁文件并重新独立打包，插件业务和核心 API 主版本不变。
 
-本版为未发布候选，最终按要求仅推送 main。实现见[接入记录](../../docs/implementation-base64-opener-adoption.md)；核心与插件继续独立发行，核心包不含业务插件。
+实现见[接入记录](../../docs/implementation-base64-opener-adoption.md)；核心与插件继续独立发行，核心包不含业务插件。
 
-包来源：[`0abaf3e8ccc2045e437dac723d898eca87759f6c`](https://github.com/BgaSol/soDeck/commit/0abaf3e8ccc2045e437dac723d898eca87759f6c)；原始独立打包：[Package plugin #42779058143](https://github.com/BgaSol/soDeck/actions/runs/42779058143)；[草稿 440085456](https://github.com/BgaSol/soDeck/releases/tag/untagged-2de24128e1e977985432)，保留原五平台归档与更新清单，共六个附件，未正式发布。
+包来源：[`0abaf3e8ccc2045e437dac723d898eca87759f6c`](https://github.com/BgaSol/soDeck/commit/0abaf3e8ccc2045e437dac723d898eca87759f6c)；原始独立打包：[Package plugin #42779058143](https://github.com/BgaSol/soDeck/actions/runs/42779058143)；正式发行：[network-proxy 0.3.1](https://github.com/BgaSol/soDeck/releases/tag/plugin-network-proxy-v0.3.1)，非 Latest。
 
-五个原生目标独立构建、解包、包内进程启动与退出通过；ARM64 使用原生程序。最终源码 CI、实际核心候选失败及未执行的新版本包组合/升级范围见[核心候选记录](../../docs/releases/v0.21.1.md)。源码 main 的后续测试和 CI 修正不改变这些归档来源，没有重建或覆盖附件。
+五个原生目标独立构建、解包、包内进程启动与退出通过；ARM64 使用原生程序。[Check #42807748154](https://github.com/BgaSol/soDeck/actions/runs/42807748154) 复验相同插件运行源码的五平台测试与普通网络业务。实际包配合核心 0.22.1、终端 0.8.0 和文件 0.9.0，在 [Verify native remote plugins #42814180548，attempt 2](https://github.com/BgaSol/soDeck/actions/runs/42814180548/attempts/2) 完成五平台 TCP/SOCKS5 正文、移窗、端口释放与退出；首轮输入解析失败未启动业务。另下载原五份归档，核对 SHA-256、清单、更新地址和原生二进制架构，直接发布原六个附件。netem、历史版本在线升级与用户生产服务器未重复；不重建已通过包或覆盖正式附件。
+
+正式发布时 GitHub 创建插件标签，触发的[重复打包 #42817942627](https://github.com/BgaSol/soDeck/actions/runs/42817942627) 已取消；不是发行来源。正式六个附件的 ID、大小与摘要、公开更新清单仍与原始草稿一致。
 
 # 0.3.0
 
