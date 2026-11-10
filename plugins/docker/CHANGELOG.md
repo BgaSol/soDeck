@@ -10,6 +10,8 @@
 
 未重复历史版本在线升级、用户生产服务器或全平台人工界面操作。正式发行：[docker 0.1.2](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.1.2)，非 Latest。
 
+2026-11-11 随核心 0.23.0 发行再次核对：0.1.2 继续为 Docker 最新正式版本，运行源码、共享客户端与打包输入未变，保留原始包来源和五平台验收。下载五份正式归档并核对 SHA-256、更新清单、包内版本、UI 与原生架构；原 Windows x86_64 程序的实际进程回归通过。[Check #42885519869](https://github.com/BgaSol/soDeck/actions/runs/42885519869) 与 [Docker 补测 #42887442456](https://github.com/BgaSol/soDeck/actions/runs/42887442456) 再验相同 Docker 源码的五平台测试及 Linux Engine/OpenSSH 普通业务。没有重新构建、覆盖或另升空版本；Docker 不在本轮四组件远程包组合入口内。
+
 # Docker 变更记录
 
 ## 0.1.1（2026-11-10）

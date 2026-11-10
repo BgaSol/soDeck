@@ -4,7 +4,13 @@
 
 该次本机核对通过类型/核心格式、正式前端、106 项脚本回归、插件格式和 23 项 Rust 测试；重新构建 Windows x86_64 独立包，其实际归档的初始化、挂载、暂停、释放和退出通过。包内固定数据 UI 覆盖三主题、160–480px、全部地址/长 IPv6、键盘选择与退出、重挂载、刷新保留焦点、44 接口滚动、设备移除/空列表和旧 Context 预热。
 
-本版准备独立发行，五平台原生打包与实际包验证在完成后补录；真实 GNU/BusyBox 采集及完整宿主桌面回归仍按实际执行范围记录。既有采集器和远端平台限制保持。详细历史见[实施记录](https://github.com/BgaSol/soDeck/blob/8115fdcd5bed4108021a729da605fbde77afc2af/docs/implementation-system-status.md)。
+本版已独立发行，启用中的插件升级在重启后生效。既有采集器和远端平台限制保持。详细历史见[实施记录](https://github.com/BgaSol/soDeck/blob/8115fdcd5bed4108021a729da605fbde77afc2af/docs/implementation-system-status.md)。
+
+包来源：[`fcf4f44`](https://github.com/BgaSol/soDeck/commit/fcf4f446d0e588c16da2187473c2c22a63d31f7c)；原始独立打包：[Package plugin #42883705770](https://github.com/BgaSol/soDeck/actions/runs/42883705770)；发行：[system-status 0.4.2](https://github.com/BgaSol/soDeck/releases/tag/plugin-system-status-v0.4.2)，本插件最新正式版本。五平台均为原生产物，下载原五份归档并核对 SHA-256、更新清单、包内版本、UI 入口及架构，直接发布同一草稿的六个附件。[Check #42885519869](https://github.com/BgaSol/soDeck/actions/runs/42885519869) 与 [Docker 补测 #42887442456](https://github.com/BgaSol/soDeck/actions/runs/42887442456) 对相同产品源码的五平台 Rust 及相关普通业务复验通过，后续仅修正测试，插件程序未改变。
+
+五平台各自解包并验证实际程序初始化、挂载、暂停、释放及退出。系统状态不在远程包组合入口内；未重复真实 GNU/BusyBox 设备、Windows Server/macOS/BSD 远端、历史版本在线升级或全平台人工桌面专项。
+
+发布标签触发的[重复打包 #42888190464](https://github.com/BgaSol/soDeck/actions/runs/42888190464) 已取消，不是发行来源；原六个附件的 ID、大小与摘要保持不变。
 
 # 0.4.1
 

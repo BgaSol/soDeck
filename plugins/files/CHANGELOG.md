@@ -2,7 +2,13 @@
 
 移动、剪切与改名在当前后端明确降级为不支持，移除复制后删源。批次回执丢失保留原请求并暂停，确认只查询原操作。编辑器按固定正文修订保存/导出，草稿同步失败可恢复，旧保存不能清除新输入；提交未知时禁止直接重放。
 
-依赖核心 `files.operations.v2`、`files.editor.v1`。 API 主版本保持 1；缺少能力时初始化明确拒绝，不回退到旧流程。本次准备独立发行；核心需先升级至 0.23.0。五平台原生打包、实际包验证及发行来源在完成后补录；尚未补齐的故障组合见[剩余验收](../../docs/plans/operation-outcomes.md)。
+依赖核心 `files.operations.v2`、`files.editor.v1`。 API 主版本保持 1；缺少能力时初始化明确拒绝，不回退到旧流程。本版已独立发行；核心需先升级至 0.23.0 并重启，再升级插件。尚未补齐的故障组合见[剩余验收](../../docs/plans/operation-outcomes.md)。
+
+包来源：[`fcf4f44`](https://github.com/BgaSol/soDeck/commit/fcf4f446d0e588c16da2187473c2c22a63d31f7c)；原始独立打包：[Package plugin #42883698048](https://github.com/BgaSol/soDeck/actions/runs/42883698048)；发行：[files 0.10.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.10.0)，本插件最新正式版本。五平台均为原生产物，下载原五份归档并核对 SHA-256、更新清单、包内版本、UI 入口及架构，直接发布同一草稿的六个附件。[Check #42885519869](https://github.com/BgaSol/soDeck/actions/runs/42885519869) 与 [Docker 补测 #42887442456](https://github.com/BgaSol/soDeck/actions/runs/42887442456) 对相同产品源码的五平台 Rust 及相关普通业务复验通过，后续仅修正测试，插件程序未改变。
+
+[Verify native remote plugins #42885589898](https://github.com/BgaSol/soDeck/actions/runs/42885589898) 配合核心 0.23.0、终端 0.8.1、文件 0.10.0 和网络隧道 0.4.0，完成五平台实际包的启动、对应远程业务、移窗、重开及退出。下载的 Windows x86_64 进程另验丢失变更回执、原身份确认不重放和禁止移动回退。未重复历史版本在线升级、netem、生产服务器或 IME/DPI 等深度原生专项。
+
+发布标签触发的[重复打包 #42888175110](https://github.com/BgaSol/soDeck/actions/runs/42888175110) 已取消，不是发行来源；原六个附件的 ID、大小与摘要保持不变。
 
 # 0.9.0
 
