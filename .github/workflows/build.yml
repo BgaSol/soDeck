@@ -147,7 +147,7 @@ jobs:
           node scripts/smoke.mjs "$RUNNER_TEMP/SoDeck/SoDeck.app/Contents/MacOS/sodeck"
       - name: Collect verified packages
         run: node scripts/collect-core.mjs ${{ matrix.target }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: SoDeck-${{ matrix.name }}
           path: artifacts/core/
@@ -183,7 +183,7 @@ jobs:
           CORE_SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
           CORE_RUN_ID: ${{ needs.preflight.outputs.run_id }}
         run: node scripts/core-release.mjs prepare artifacts/core
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Core-update-manifest
           path: artifacts/core/core-update.json
