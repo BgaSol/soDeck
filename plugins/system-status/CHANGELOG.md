@@ -4,7 +4,11 @@
 - 原生归档统一检查资源、初始化、视图生命周期和退出；发布前绑定来源与摘要，拒绝覆盖不同内容的同版本附件。
 - 插件 API 与在线更新协议保持兼容。
 
-发行验证与链接待本轮五平台任务完成后补充。
+包来源：[a52157346409d4457c4b00b5bbd3364df86df36c](https://github.com/BgaSol/soDeck/commit/a52157346409d4457c4b00b5bbd3364df86df36c)；原始打包与验收：[42914271714](https://github.com/BgaSol/soDeck/actions/runs/42914271714)。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 全部原生构建，最终归档的摘要、资源、初始化、视图释放和退出通过；上传与验收独立执行。
+
+[来源提交 Check](https://github.com/BgaSol/soDeck/actions/runs/42914202961) 全部通过，包含五平台核心/插件/共享客户端源码测试及相关浏览器、SSH/SFTP、终端、网络、Docker、通信回归。
+
+发行：[system-status 0.4.3](https://github.com/BgaSol/soDeck/releases/tag/plugin-system-status-v0.4.3)，非 Latest。实际正式版升级专项另行记录；没有将源码或包生命周期测试算作生产服务器、真实 IME/DPI/Wayland 或所有设备兼容验收。
 
 # 0.4.2
 
