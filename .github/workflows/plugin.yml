@@ -105,7 +105,7 @@ jobs:
       - name: Verify actual Docker archive
         if: needs.select.outputs.plugin == 'docker'
         run: node scripts/test-docker-package.mjs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Plugin-${{ needs.select.outputs.plugin }}-${{ matrix.name }}
           path: |
