@@ -109,7 +109,8 @@ test('file menu has real paste states, stable target, short labels and cancellab
     await page.waitForFunction(()=>document.querySelector('.tree-menu button[title="没有可粘贴的文件"]'));
     assert.equal(await paste.isDisabled(),true);
     assert.equal(await page.getByRole('menuitem',{name:'展开 / 折叠',exact:true}).count(),0);
-    assert.equal(await page.getByRole('menuitem',{name:'重命名…'}).count(),1);
+    assert.equal(await page.getByRole('menuitem',{name:'重命名（当前后端不支持）',exact:true}).isDisabled(),true);
+    assert.equal(await page.getByRole('menuitem',{name:'剪切（当前后端不支持）',exact:true}).isDisabled(),true);
     await page.evaluate(()=>{window.originalMenu=tree.menu;clipboard={revision:'2',hasFiles:true};tree.readMenuState();});
     await page.waitForFunction(()=>!document.querySelector('.tree-menu button[title="正在读取剪贴板"]')&&[...document.querySelectorAll('.tree-menu button')].some(b=>b.textContent==='粘贴'&&!b.disabled));
     assert.equal(await page.evaluate(()=>tree.menu===originalMenu),true);
@@ -122,7 +123,7 @@ test('file menu has real paste states, stable target, short labels and cancellab
     assert.equal(await page.getByRole('menuitem',{name:'粘贴',exact:true}).count(),0);
     assert.equal(await page.getByRole('menuitem',{name:'新建',exact:true}).count(),0);
     await page.evaluate(()=>{tree.selection=new Set(['/home/dw','/home/config.txt']);tree.showMenu(tree.nodes.get('/home/dw'),180,130);});
-    assert.equal(await page.getByRole('menuitem',{name:'重命名…'}).count(),0);assert.equal(await page.getByRole('menuitem',{name:'复制',exact:true}).count(),1);
+    assert.equal(await page.getByRole('menuitem',{name:'重命名（当前后端不支持）',exact:true}).count(),0);assert.equal(await page.getByRole('menuitem',{name:'复制',exact:true}).count(),1);
     await page.getByRole('menuitem',{name:'复制',exact:true}).click();assert.deepEqual(await page.evaluate(()=>operations.find(op=>op[0]==='copy')[1]),['/home/dw','/home/config.txt']);
     await page.evaluate(()=>{openMenu('file');tree.nodes.get('/home').children=['/home/dw'];tree.render();});
     assert.equal(await page.getByRole('menu',{name:'文件操作',exact:true}).count(),0);

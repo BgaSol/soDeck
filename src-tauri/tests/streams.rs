@@ -3,13 +3,16 @@ use sodeck::streams::{Frame, Replay, Sink};
 use std::{sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
 fn directory() -> std::path::PathBuf {
+    // Windows timestamps can repeat across concurrent tests.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     std::env::temp_dir().join(format!(
-        "sodeck-replay-{}-{}",
+        "sodeck-replay-{}-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_nanos()
+            .as_nanos(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ))
 }
 fn reader(replay: &Arc<Replay>, token: &str) -> tokio::sync::mpsc::UnboundedReceiver<Frame> {
