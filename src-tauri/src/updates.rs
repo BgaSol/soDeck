@@ -709,7 +709,8 @@ fn unpack(archive: &Path, output: &Path, zip_format: bool) -> Result<PathBuf, St
             if entry.is_symlink() {
                 return Err("插件包不支持符号链接".into());
             }
-            let path = PathBuf::from(entry.name().trim_end_matches('/'));
+            let name = entry.name().map_err(|e| e.to_string())?;
+            let path = PathBuf::from(name.trim_end_matches('/'));
             write(&path, entry.is_dir(), entry.size(), &mut entry)?;
         }
     } else {
