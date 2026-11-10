@@ -87,7 +87,7 @@ objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "=0.18.2"
 gdk = "=0.18.2"
-glib = "=0.18.5"
+glib = "=0.20.0"
 
 [profile.release]
 strip = true
