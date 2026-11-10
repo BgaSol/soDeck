@@ -41,9 +41,11 @@
 
 [Check 42779505212](https://github.com/BgaSol/soDeck/actions/runs/42779505212) 的完整 UI、SSH、三业务组和四个平台源码通过；macOS 的目录测试在创建非法 UTF-8 名字时遇到 APFS 的 `EILSEQ`，汇总保留失败。[核心包 42779534067](https://github.com/BgaSol/soDeck/actions/runs/42779534067) 的两个 Linux 及 Windows x86_64 通过，macOS 在缩放后立即读到按钮中心 14pt 而非最终 22pt，Windows ARM64 的默认浏览器 UserChoice 覆盖临时 scheme handler，同时系统把测试目录的 8.3 名字展开为长路径；这次部分结果不算五平台通过。
 
-修正限定在单元测试、隔离夹具和显式烟测入口：Unix 目录测试保留任意字节路径验证，并在 macOS 文件系统拒绝时核对 `EILSEQ` 及核心拒绝结果；macOS 在既有 5 秒内等待实际按钮布局，22pt 和横向留位断言不变；默认应用夹具使用真实路径，在一次性 Windows profile 内保存/清除覆盖测试关联的 UserChoice，结束后走原恢复步骤。完整 URL、中文/特殊字符目录各一次、非法目标和启动失败断言继续保留。本机不执行会改变默认应用的原生关联夹具；Windows/macOS 原生结果由一次性 runner 的实际包验收确认。
+修正限定在单元测试、隔离夹具和显式烟测入口：物理创建任意字节文件名的目录测试仅在支持它的 Linux 文件系统执行；macOS 在既有 5 秒内等待实际按钮布局，22pt 和横向留位断言不变；默认应用夹具使用真实路径，在一次性 Windows profile 内解析 UserChoice 指向的实际 ProgID，为该关联配置临时 handler，结束后恢复。完整 URL、中文/特殊字符目录各一次、非法目标和启动失败断言继续保留。本机不执行会改变默认应用的原生关联夹具；Windows/macOS 原生结果由一次性 runner 的实际包验收确认。
 
 本机格式/类型、99 项脚本测试和 Windows 目录单元测试通过；五平台的新源码及包验收继续以最后的固定来源提交和 PR 记录为准，不使用旧失败运行的重跑来验证新代码。
+
+main 的 `72f1cbd` / `b59e9e1` 同时修正了文件系统范围和实际默认关联。同步时直接复用这两个文件的 main 实现，保留本轮 macOS 布局等待；PR 不再携带另一套目录或 UserChoice 处理。此前冲突导致 PR 自动 Check 没有启动，解决后在固定合并提交重新验证。
 
 ### 首个成功样本的耗时
 

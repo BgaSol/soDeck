@@ -50,9 +50,9 @@ mod tests {
         );
         assert!(validate_directory(&std::env::temp_dir()).is_ok());
     }
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
-    fn non_utf8_paths_follow_filesystem_rules() {
+    fn validation_preserves_non_utf8_paths() {
         use std::{ffi::OsString, os::unix::ffi::OsStringExt};
         let path = std::env::temp_dir().join(OsString::from_vec(
             format!("sodeck-native-{}-", std::process::id())
@@ -61,13 +61,7 @@ mod tests {
                 .chain([0xff])
                 .collect(),
         ));
-        if let Err(error) = std::fs::create_dir(&path) {
-            // APFS rejects illegal UTF-8 names before the directory can exist.
-            assert!(cfg!(target_os = "macos"));
-            assert_eq!(error.raw_os_error(), Some(libc::EILSEQ));
-            assert!(validate_directory(&path).is_err());
-            return;
-        }
+        std::fs::create_dir(&path).unwrap();
         let result = validate_directory(&path);
         std::fs::remove_dir(&path).unwrap();
         assert!(result.is_ok());

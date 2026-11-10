@@ -10,14 +10,13 @@ import {setTimeout as delay} from 'node:timers/promises';
 assert(process.env.GITHUB_ACTIONS === 'true' || process.env.SODECK_TEST_OPEN_ISOLATED === '1', 'Use a disposable runner or explicitly isolated desktop');
 const [executable, ...launcherArgs] = process.argv.slice(2);
 assert(executable, 'Provide the actual package executable or launcher');
-// ShellExecute expands Windows short names; compare the same physical path throughout.
-const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'sodeck-native-open-')));
+const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sodeck-native-open-')));
 const log = path.join(root, 'opened.txt'); fs.writeFileSync(log, '');
 const directory = path.join(root, '中文 😀 目录 #%'); fs.mkdirSync(directory);
 const url = `https://example.invalid/sodeck-${path.basename(root)}?q=%E4%B8%AD%E6%96%87&literal=%23%25#once`;
 const env = {...process.env};
 for (const key of Object.keys(env)) if (key.startsWith('SODECK_TEST_') || key === 'SODECK_VERIFY_PERSISTED') delete env[key];
-let restore = () => {}, report;
+let restore = () => {}, report, failed = false;
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {env, encoding:'utf8', windowsHide:true, timeout:30000, ...options});
   assert.equal(result.status, 0, `${command}: ${result.error?.message || result.stderr || result.stdout}`);
@@ -43,22 +42,25 @@ try {
   if (process.platform === 'win32') {
     const handler = path.join(root,'handler.exe');
     run('rustc', ['scripts/fixtures/desktop-open-handler.rs', '-o', handler], {env:{...env,SODECK_OPEN_HANDLER_LOG:log}});
-    const keys = ['http','https','Folder','Directory'].map(name=>'HKCU\\Software\\Classes\\'+name);
-    const choices = ['http','https'].map(name=>'HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\'+name+'\\UserChoice');
-    const saved = [...keys,...choices].map((key,i)=>{
+    const classes = ['http','https','Folder','Directory'];
+    for (const scheme of ['http','https']) {
+      const choice = spawnSync('reg',['query',`HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\${scheme}\\UserChoice`,'/v','ProgId'],{encoding:'utf8',windowsHide:true});
+      const id = choice.stdout?.match(/ProgId\s+REG_SZ\s+(\S+)/)?.[1];
+      if (id && !classes.includes(id)) classes.push(id);
+    }
+    const keys = classes.map(name=>'HKCU\\Software\\Classes\\'+name);
+    const saved = keys.map((key,i)=>{
       const file=path.join(root,`registry-${i}.reg`);
       const result=spawnSync('reg',['export',key,file,'/y'],{windowsHide:true,encoding:'utf8'});
       return {key,file,existed:result.status===0};
     });
     restore=()=>{for(const {key,file,existed} of saved){spawnSync('reg',['delete',key,'/f'],{windowsHide:true});if(existed)run('reg',['import',file]);}};
-    // A disposable profile's UserChoice takes precedence over the temporary scheme handlers.
-    for(const {key,existed} of saved)if(existed&&choices.includes(key))run('reg',['delete',key,'/f']);
     const configure = command => {
       for (const key of keys) {
         if (/http/.test(key)) run('reg',['add',key,'/v','URL Protocol','/d','','/f']);
         run('reg',['add',key+'\\shell','/ve','/d','open','/f']);
         run('reg',['add',key+'\\shell\\open\\command','/ve','/d',`"${command}" "%1"`,'/f']);
-        spawnSync('reg',['delete',key+'\\shell\\open\\command','/v','DelegateExecute','/f'],{windowsHide:true});
+        run('reg',['add',key+'\\shell\\open\\command','/v','DelegateExecute','/d','','/f']);
       }
     };
     configure(handler);
@@ -94,8 +96,11 @@ try {
   const variant=launcherArgs.some(a=>a.endsWith('.AppImage')) || executable.endsWith('.AppImage')?'appimage':'installed';
   fs.writeFileSync(`artifacts/native-desktop-open/${report.target}-${variant}.json`,JSON.stringify({...report,defaultHandlers:true,targetsExactlyOnce:true,invalidTargetsRejected:true,launcherFailure:process.platform!=='darwin',variant},null,2)+'\n');
   console.log('Actual package opened exact URL/directory once through system defaults, rejected invalid targets and exited.');
+} catch (error) {
+  failed = true;
+  throw error;
 } finally {
-  restore();
-  assert.equal(path.dirname(root),fs.realpathSync.native(os.tmpdir()));assert(path.basename(root).startsWith('sodeck-native-open-'));
+  try { restore(); } catch (error) { if (failed) console.error('Restoring isolated associations:',error); else throw error; }
+  assert.equal(path.dirname(root),fs.realpathSync(os.tmpdir()));assert(path.basename(root).startsWith('sodeck-native-open-'));
   fs.rmSync(root,{recursive:true,force:true,maxRetries:8,retryDelay:250});
 }
