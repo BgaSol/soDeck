@@ -12,4 +12,12 @@
 
 ## 系统打开
 
-实施和原生验证结果将在本轮完成后记录。发布来源、原始打包运行与 Release 链接统一记入对应核心版本说明及插件 CHANGELOG，避免重复维护交付状态。
+核心固定使用 tauri-plugin-opener 2.7.2（MIT OR Apache-2.0，MSRV 1.90，Tauri 官方维护）及锁文件中的 open 5.4.5，删除 ShellExecute/AppKit/GTK 三套打开实现。保留原异步接口，通过 spawn_blocking 调用 Rust 自由函数；PathBuf 原样传入 open_path，网页仍只接受绝对 HTTP/HTTPS。目录增加绝对路径、NUL 和 metadata.is_dir 检查，页面、资源、下载目标归属检查继续保留。
+
+没有注册 opener 插件、注入链接处理脚本、增加 npm 依赖或权限声明。原 windows-sys/objc/GTK 依赖仍用于剪贴板、窗口等其他系统功能。替代方案是维持原三系统实现；官方插件统一承担启动器兼容和错误处理。
+
+新增独立 `--desktop-open-test` 烟测，直接委托生产网页和目录入口；系统关联 handler 只用于隔离验收，未进入核心包。Package SoDeck 在五个原生目标验证默认 handler 收到完整 URL 与中文/特殊字符目录各一次、非法目标拒绝和正常退出；Linux 的 DEB 与 AppImage 分别运行，Windows/Linux 另检查即时启动器失败。独立报告不使用历史 clipboardNative/desktopFilesNative 代替。
+
+成功表示系统已经接受交付；Linux 超过每启动器 250ms 才出现的失败、macOS 目标应用在 `/usr/bin/open` 成功之后的退出不由接口确认。受控 handler 不等于人工验证真实浏览器/文件管理器可见窗口；UNC、Wayland、多屏/DPI 和真实用户桌面验收在本轮不外推。
+
+最终本机、源码 CI 与原生验证结果将在本轮完成后补齐。发布来源、原始打包运行与 Release 链接统一记入对应核心版本说明及插件 CHANGELOG，避免重复维护交付状态。

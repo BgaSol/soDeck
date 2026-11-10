@@ -1,5 +1,13 @@
 //! Checks run only by the packaged-application smoke-test entry point.
 mod desktop_files;
+mod desktop_open;
+
+pub async fn desktop_open_roundtrip(
+    handle: &tauri::AppHandle,
+    file: &std::path::Path,
+) -> Result<(), String> {
+    desktop_open::verify(handle, file).await
+}
 #[cfg(target_os = "macos")]
 mod macos_titlebar;
 

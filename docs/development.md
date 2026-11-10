@@ -118,6 +118,8 @@ npm run plugin:build -- --plugin docker
 
 产物位于 `artifacts/plugins/sodeck-<插件名>_<版本>_<target>`。在应用设置中添加对应目录并重启；正在运行的插件不能原位覆盖，需要关闭并重启后构建，或指定其他输出目录。宿主测试夹具只用于回归，不发行。
 
+系统默认应用验收使用 `node scripts/test-desktop-open-native.mjs <实际包内程序>`，仅在一次性 Actions runner 或显式 `SODECK_TEST_OPEN_ISOLATED=1` 的隔离桌面运行。Windows 编译无控制台 Rust handler 并临时设置测试账户的 HTTP/HTTPS 与目录关联，退出时恢复；macOS 用系统 clang、AppKit/LaunchServices 构建临时 app 并恢复关联；Linux 使用 xdg-utils、desktop-file-utils 和隔离 XDG 目录，在同一 dbus/Xvfb 会话设置默认 handler。脚本验证唯一 URL 与中文/空格/特殊字符目录各到达一次、非法目标拒绝和程序退出；Windows/Linux 另验证即时启动器错误。macOS 的成功只表示 `/usr/bin/open` 已交付，不证明应用后续正常运行。Package SoDeck 在五个原生目标调用此入口，Linux 分别运行 DEB 内程序和 AppImage；夹具不发行，结果上传为 Native-opener Artifact。它不替代真实浏览器/Finder/Explorer 的可见窗口、UNC 或 Wayland 桌面验收。
+
 ## 版本与持续集成
 
 核心版本只修改 [src-tauri/tauri.conf.json](../src-tauri/tauri.conf.json)，插件版本只修改各自的 `plugins/<名称>/Cargo.toml`。核心与插件使用独立标签、独立 Release；发布步骤、更新清单和签名配置统一维护在 [分发文档](distribution.md)。
