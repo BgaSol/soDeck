@@ -1,7 +1,7 @@
 // Windows WebView2 with an actual file plugin archive and isolated SSH/app data.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import net from 'node:net';import http from 'node:http';
-import {spawn} from 'node:child_process';import {setTimeout as delay} from 'node:timers/promises';import {chromium} from 'playwright';
+import {spawn,spawnSync} from 'node:child_process';import {setTimeout as delay} from 'node:timers/promises';import {chromium} from 'playwright';
 import {fileDocument} from './file-editor-fixture.mjs';
 assert.equal(process.platform,'win32','Native editor harness requires WebView2');
 const executable=process.argv[2],plugin=process.env.SODECK_TEST_FILES_PLUGIN;
@@ -34,4 +34,7 @@ try{
  const pids=(await invoke('snapshot')).plugins.map(p=>p.pid);await invoke('plugin:window|close',{label:'main'});await until(()=>child.exitCode!==null);assert.equal(child.exitCode,0);await until(()=>pids.every(pid=>{try{process.kill(pid,0);return false;}catch{return true;}}));
  fs.writeFileSync('artifacts/files-ui/native-editor.json',JSON.stringify({platform:process.platform,arch:process.arch,plugin:JSON.parse(fs.readFileSync(path.join(plugin,'plugin.json'),'utf8')).version,executable:path.resolve(executable),checks:['local ESM and worker under actual CSP','syntax','minimap','search','byte limit','safe SSH save','plugin exit']},null,2)+'\n');
  console.log('Native WebView2 file editor passed: local worker/CSP, syntax, minimap, search, byte limit, SSH save and exit');
+}catch(error){
+ const escaped=directory.replaceAll("'","''"),processes=child?spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',`Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -eq ${child.pid} -or $_.ParentProcessId -eq ${child.pid} -or ($_.CommandLine -and $_.CommandLine.Contains('${escaped}')) } | Select-Object ProcessId,ParentProcessId,Name,CommandLine | ConvertTo-Json -Depth 2`],{encoding:'utf8',windowsHide:true,timeout:5000}):undefined;
+ const log=path.join(directory,'logs/current.jsonl'),diagnostic={error:String(error),runtimeLog,files:fs.readdirSync(directory),processes:processes?.stdout,coreLog:fs.existsSync(log)?fs.readFileSync(log,'utf8').slice(-16384):undefined};fs.mkdirSync('artifacts/files-ui',{recursive:true});fs.writeFileSync('artifacts/files-ui/native-editor-failure.json',JSON.stringify(diagnostic,null,2)+'\n');console.error(JSON.stringify(diagnostic));throw error;
 }finally{if(child?.exitCode===null){child.kill();await new Promise(resolve=>child.once('exit',resolve));}await browser?.close().catch(()=>{});assert.equal(path.dirname(path.resolve(directory)),path.resolve(os.tmpdir()));assert(path.basename(directory).startsWith('sodeck-file-editor-native-'));fs.rmSync(directory,{recursive:true,force:true,maxRetries:8,retryDelay:250});}

@@ -245,6 +245,7 @@ jobs:
           path: |
             native-result-${{ matrix.name }}.json
             artifacts/files-ui/native-editor.json
+            artifacts/files-ui/native-editor-failure.json
             artifacts/files-ui/editor-native.png
             artifacts/native-desktop-files/*.json
           if-no-files-found: error
