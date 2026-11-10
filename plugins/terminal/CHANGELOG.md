@@ -1,14 +1,16 @@
-# 未发布
+# 0.8.1
 
 预览阅读框改为透明底、细轮廓和窄位置标记，保留底下的彩色内容与搜索分布；悬停、拖动及键盘聚焦提供清晰的边缘提示。
 
 搜索条输入框和按钮统一高度，文字、图标与计数居中对齐；窄分屏保持方形点击区域，极窄窗口中的按钮均匀排列。
 
+本版独立发行；五平台原生打包、实际包验证及发行来源在完成后补录。
+
 # 0.8.0
 
 当前终端保留 10 万行滚动历史，新增浮动子串搜索、大小写开关、命中计数/前后定位和常驻彩色预览。独立 Worker 维护索引与每行计数，支持 Unicode 与软换行；移窗恢复查询和有效的当前命中，退出页仍可查找。
 
-依赖核心新增 `terminal.history.v1`，以临时恢复日志、分片冻结检查点和独立 UI 元数据支持大历史。需要核心 0.22.1；没有新增生产依赖。本机验证、性能数字及原生专项边界统一见[实施记录](../../docs/implementation-terminal-search.md)。
+依赖核心新增 `terminal.history.v1`，以临时恢复日志、分片冻结检查点和独立 UI 元数据支持大历史。需要核心 0.22.1；没有新增生产依赖。本机验证、性能数字及原生专项边界统一见[实施记录](https://github.com/BgaSol/soDeck/blob/8115fdcd5bed4108021a729da605fbde77afc2af/docs/implementation-terminal-search.md)。
 
 包来源：[`febdd109cb56ec13836dd954d219f9dfcd3e0f5f`](https://github.com/BgaSol/soDeck/commit/febdd109cb56ec13836dd954d219f9dfcd3e0f5f)；原始独立打包：[Package plugin #42807888458](https://github.com/BgaSol/soDeck/actions/runs/42807888458)；同一提交的源码与业务：[Check #42807748154](https://github.com/BgaSol/soDeck/actions/runs/42807748154)；正式发行：[terminal 0.8.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.8.0)，非 Latest。
 
@@ -16,11 +18,32 @@
 
 正式发布时 GitHub 创建插件标签，触发的[重复打包 #42817936348](https://github.com/BgaSol/soDeck/actions/runs/42817936348) 已取消；不是发行来源。正式六个附件的 ID、大小与摘要、公开更新清单仍与原始草稿一致；配套核心 0.22.1 为仓库 Latest。
 
+## 0.8.0 本机性能样本
+
+硬件：Intel Core Ultra 5 250K Plus，Windows x86_64；Node v24.22.0，Playwright Chromium 158.0.8127.18。报告保存在本机 `artifacts/terminal-history/`，均由测试脚本重生成。不同宿主、系统 WebView 与并行负载需重新测量。
+
+`search.json`：10 万行、11,360,000 UTF-8 文本字节，按 120 列预算生成，100 个不同关键词；直接使用正式扫描器测完整计数，包含协作式让出任务，不含 UI 合并、终端网格或真实 Worker 传输。颜色摘要包含普通色和稀疏强调色。
+
+| 查询类别 | 本次 P95 |
+| --- | --- |
+| 稀疏命中 | 134.1 ms |
+| 无命中 | 116.7 ms |
+| 密集重复子串 | 136.2 ms |
+| 单字符 | 137.1 ms |
+
+行补丁/颜色块初建约 36.2 ms。GC 后新增 JS 堆约 62.2 MB、外部 ArrayBuffer 约 0.2 MB，合计约 **59.5 MiB**。这是扫描器及文本/摘要样本的附加内存，不是整个终端、Worker 进程、核心或移窗峰值。
+
+`ui-search.json`：102 列、100,031 个保留屏幕行，主要是短 heartbeat 行，100 个不同查询。输入事件到最终计数/有效当前序号，包括约 60 ms 合并与真实 Worker 消息：稀疏/无命中/常见片段/单字符 P95 分别约 **96.8 / 95.7 / 100.9 / 101.1 ms**。没有逐帧测量高亮完成、键盘输入响应或原生 WebView；短行结果不能代替更长文本负载。
+
+`serialization.json`：120 列、100,024 保留行，中文/emoji/颜色/软换行约 7.94 MB 官方序列化内容。同步完整序列化约 328 ms；分片冻结快照约 549 ms，单次 iterator.next 等待最大约 17.2 ms，过程中另写入 159,200 行。恢复后的文字、颜色模式、宽度、样式、软换行、光标与官方完整序列化一致；小样本同时覆盖备用屏幕、终端模式与彩色空单元格。
+
+上述数字支持第一版直接扫描的选择；没有启用 Bloom 过滤、通用倒排索引或额外搜索 addon。不是所有查询都能常数时间完成，也未据此宣布所有设计目标通过。
+
 # 0.7.3
 
 共享客户端改用固定 base64 0.23.1；保留标准编码、严格解码、原始字节分页和既有 API。本版同步锁文件并重新独立打包，插件业务和核心 API 主版本不变。
 
-本版为未发布候选，最终按要求仅推送 main。实现见[接入记录](../../docs/implementation-base64-opener-adoption.md)；核心与插件继续独立发行，核心包不含业务插件。
+本版为未发布候选，最终按要求仅推送 main。实现见[接入记录](https://github.com/BgaSol/soDeck/blob/8115fdcd5bed4108021a729da605fbde77afc2af/docs/implementation-base64-opener-adoption.md)；核心与插件继续独立发行，核心包不含业务插件。
 
 包来源：[`0abaf3e8ccc2045e437dac723d898eca87759f6c`](https://github.com/BgaSol/soDeck/commit/0abaf3e8ccc2045e437dac723d898eca87759f6c)；原始独立打包：[Package plugin #42779045378](https://github.com/BgaSol/soDeck/actions/runs/42779045378)；[草稿 440083889](https://github.com/BgaSol/soDeck/releases/tag/untagged-2f48279889d5db0c3017)，保留原五平台归档与更新清单，共六个附件，未正式发布。
 
@@ -30,7 +53,7 @@
 
 清单取消侧边固定与定位入口推荐。终端仍是中央多实例页面，保留默认“新建终端”行为、自动首开、分屏、移窗及原 PTY 生命周期；没有提高核心 API/UI 主版本或修改业务实现。新版核心也会忽略旧终端清单的侧边定位字段。
 
-本轮代码与本机验证见[工具停靠实施记录](../../docs/implementation-tool-docking.md)。本版独立打包，配合核心 0.21.0；终端仍负责 PTY 与自身界面，位置、排序和持久化由核心管理。
+本轮代码与本机验证见[工具停靠实施记录](https://github.com/BgaSol/soDeck/blob/8115fdcd5bed4108021a729da605fbde77afc2af/docs/implementation-tool-docking.md)。本版独立打包，配合核心 0.21.0；终端仍负责 PTY 与自身界面，位置、排序和持久化由核心管理。
 
 包来源：[`066df9ec5ed6a0d7fea9c4a4d41e25472995d32e`](https://github.com/BgaSol/soDeck/commit/066df9ec5ed6a0d7fea9c4a4d41e25472995d32e)；原始独立打包：[Package plugin #42763703046](https://github.com/BgaSol/soDeck/actions/runs/42763703046)；源码检查：[Check #42763617373](https://github.com/BgaSol/soDeck/actions/runs/42763617373)；五平台实际包：[Verify native remote plugins #42764368478](https://github.com/BgaSol/soDeck/actions/runs/42764368478)。
 
