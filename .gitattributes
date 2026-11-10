@@ -8,3 +8,6 @@
 # Pinned upstream font assets are verified byte-for-byte, including licenses.
 plugins/shared/fonts/*.LICENSE.txt -text -diff
 plugins/shared/fonts/*.woff2 -text -diff
+
+# Preserve the published dependency license, including its final blank line.
+vendor/glib/LICENSE -text whitespace=-blank-at-eof

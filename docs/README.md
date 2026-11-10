@@ -18,6 +18,7 @@
 
 ## 功能方案与实施记录
 
+- [GLib 兼容安全补丁](implementation-glib-variant-iter.md)：GTK3 依赖链、VariantStrIter 上游补丁回移及 Linux 优化构建回归。
 功能方案描述目标和可验收行为；实施记录描述实际完成情况、测试结果、未完成项和已知限制。已发布版本的范围以正式 Release 和对应版本说明为准。
 
 | 主题 | 功能与代码方案 | 实施与验收 |

@@ -245,6 +245,11 @@ jobs:
       - name: Native core source tests
         if: matrix.core
         run: npm run test
+      - name: Optimized GLib string iterator regression
+        if: runner.os == 'Linux' && matrix.core
+        env:
+          CARGO_TARGET_DIR: src-tauri/target
+        run: npm run glib:test
       - name: Scripts on native host
         if: matrix.scripts
         run: node --test scripts/collect-core.test.mjs scripts/core-release.test.mjs scripts/plugin-settings-assets.test.mjs scripts/release-metadata.test.mjs scripts/smoke.test.mjs

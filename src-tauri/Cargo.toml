@@ -87,7 +87,11 @@ objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "=0.18.2"
 gdk = "=0.18.2"
-glib = "=0.20.0"
+glib = "=0.18.5"
+
+# GTK3 requires glib 0.18; backport the upstream VariantStrIter safety fix.
+[patch.crates-io]
+glib = { path = "../vendor/glib" }
 
 [profile.release]
 strip = true

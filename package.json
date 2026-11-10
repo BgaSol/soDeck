@@ -9,6 +9,7 @@
     "check": "tsc && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
     "plugin:check": "cargo fmt --manifest-path plugins/terminal/Cargo.toml -- --check && cargo fmt --manifest-path plugins/files/Cargo.toml -- --check && cargo fmt --manifest-path plugins/network-proxy/Cargo.toml -- --check && cargo fmt --manifest-path plugins/system-status/Cargo.toml -- --check && cargo fmt --manifest-path plugins/docker/Cargo.toml -- --check",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml --features test-fixtures --locked",
+    "glib:test": "cargo test --manifest-path vendor/glib/Cargo.toml --release --locked --test variant_str_iter",
     "scripts:test": "node --test scripts/*.test.mjs",
     "ui:test": "node scripts/test-server-ui.mjs && node scripts/test-workspace-ui.mjs && node scripts/test-connection-ui.mjs && npm run layout:test && npm run interactions:test && npm run ui:production:test && npm run desktop:test && npm run settings:test",
     "interactions:test": "node --test scripts/test-workbench-interactions.mjs",

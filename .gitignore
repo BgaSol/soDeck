@@ -6,5 +6,6 @@
 /plugins/terminal/node_modules/
 /plugins/terminal/ui/
 /crates/plugin-client/target/
+/vendor/*/target/
 *.log
 /artifacts/
