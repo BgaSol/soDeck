@@ -1,6 +1,6 @@
 // Windows WebView2 with an actual file plugin archive and isolated SSH/app data.
 import assert from 'node:assert/strict';
-import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import net from 'node:net';
+import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import net from 'node:net';import http from 'node:http';
 import {spawn} from 'node:child_process';import {setTimeout as delay} from 'node:timers/promises';import {chromium} from 'playwright';
 import {fileDocument} from './file-editor-fixture.mjs';
 assert.equal(process.platform,'win32','Native editor harness requires WebView2');
@@ -9,14 +9,16 @@ assert(executable&&fs.existsSync(executable));assert(plugin&&fs.existsSync(path.
 const ssh=JSON.parse(fs.readFileSync(process.env.SODECK_TEST_SSH_CONFIG,'utf8'));
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-file-editor-native-'));
 fs.writeFileSync(path.join(directory,'plugins.json'),JSON.stringify([{directory:path.resolve(plugin),manifest:JSON.parse(fs.readFileSync(path.join(plugin,'plugin.json'),'utf8')),enabled:true}]));
-let child,browser,page;const errors=[];
-const until=async fn=>{const deadline=Date.now()+25000;while(!await fn()){assert(Date.now()<deadline,'Native editor condition timed out');await delay(50);}};
+let child,browser,page;const errors=[];let runtimeLog='',probeError='';
+const until=async(fn,message='Native editor condition timed out')=>{const deadline=Date.now()+25000;while(!await fn()){assert(Date.now()<deadline,typeof message==='function'?message():message);await delay(50);}};
+const debuggerReady=port=>new Promise(resolve=>{const request=http.get({hostname:'127.0.0.1',port,path:'/json/version',agent:false,timeout:300},response=>{probeError=`HTTP ${response.statusCode}`;response.resume();resolve(response.statusCode===200);});request.on('timeout',()=>request.destroy(new Error('debugger socket timed out')));request.on('error',error=>{probeError=error.message;resolve(false);});});
 const invoke=(command,args={})=>page.evaluate(({command,args})=>window.__TAURI_INTERNALS__.invoke(command,args),{command,args});
 try{
  const socket=net.createServer();await new Promise(resolve=>socket.listen(0,'127.0.0.1',resolve));const port=socket.address().port;await new Promise(resolve=>socket.close(resolve));
- child=spawn(path.resolve(executable),['--interactive-test','--test-data-dir',directory],{windowsHide:true,stdio:'ignore',env:{...process.env,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port}`,WEBVIEW2_USER_DATA_FOLDER:path.join(directory,'webview2')}});
+ child=spawn(path.resolve(executable),['--interactive-test','--test-data-dir',directory],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...process.env,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port}`,WEBVIEW2_USER_DATA_FOLDER:path.join(directory,'webview2')}});
+ const log=data=>{runtimeLog=(runtimeLog+data).slice(-16384);};child.stdout.on('data',log);child.stderr.on('data',log);
  let spawnError;child.on('error',error=>spawnError=error);
- await until(async()=>{if(spawnError)throw spawnError;assert.equal(child.exitCode,null);try{return (await fetch(`http://127.0.0.1:${port}/json/version`,{signal:AbortSignal.timeout(300)})).ok;}catch{return false;}});
+ await until(async()=>{if(spawnError)throw spawnError;assert.equal(child.exitCode,null,runtimeLog);return debuggerReady(port);},()=>`WebView2 debugger unavailable: ${probeError}\n${runtimeLog}`);
  browser=await chromium.connectOverCDP(`http://127.0.0.1:${port}`);await until(()=>{page=browser.contexts().flatMap(c=>c.pages()).find(p=>p.url().includes('tauri.localhost'));return Boolean(page);});page.on('pageerror',error=>errors.push(String(error)));
  await until(async()=>(await invoke('snapshot')).plugins.some(p=>p.manifest.id==='sodeck.files'&&p.status==='running'));
  const catalog=await invoke('server_catalog'),changed=await invoke('change_catalog',{revision:catalog.revision,change:{op:'saveServer',draft:{name:'文件编辑器原生验收',host:'127.0.0.1',port:ssh.port,username:ssh.username,authentication:{type:'privateKey',privateKeyPath:ssh.privateKeyPath,secret:{action:'clear'}},route:[]}}});
