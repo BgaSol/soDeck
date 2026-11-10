@@ -36,6 +36,8 @@ npm run terminal:input:test
 
 `ui:test` 包含服务器、工作区、连接界面、正式前端产物、桌面一致性和组件设置回归。`terminal:input:test` 验证实际 xterm 输入与剪贴板桥，无需 OpenSSH。
 
+CI 使用 `npm run ci:test -- <现有测试命令>`，例如 `npm run ci:test -- ui:test`。该入口保留原命令的退出码，输出实时日志，并将 SHA、attempt、平台、耗时和结果写入 `artifacts/ci/<命令>/`；命令中的冒号转换为连字符。服务器、工作台和正式产物 UI 在该入口下记录 Playwright trace，失败时保存，成功时丢弃；本机直接运行原入口不记录 trace。
+
 Windows 对运行中的测试程序有文件锁，使用同一 Rust target 目录的核心/插件集成与界面测试应顺序运行。修改网络 UI 后可用 `npm run network:test -- --network-ui-only` 重新独立打包并只复验实际插件界面与隧道，不重复协议压力测试；完整网络验证仍使用 `npm run network:test`。
 
 `npm run ui:production:test -- --updates-only` 验证正式前端的官方插件发现、安装和统一更新：仓库列表延迟加载、失败重试、运行中新插件出现与移除、离线缓存、连续安装、更新说明 Markdown、链接分发、批量更新，以及下载网络设置的草稿、地址排序/停用、保存冲突、单地址诊断和三主题小窗口布局，不运行后续工作区菜单与拆窗专项。列表、安装和诊断回归使用真实核心及隔离回环 HTTP，不依赖公网。
@@ -146,39 +148,43 @@ Check 始终响应 main push/PR，不使用 workflow 级 `paths` 跳过。`selec
 | 自动改动范围 | 实际选择 |
 | --- | --- |
 | Markdown、docs 下的说明/配图 | 仅文档检查；不安装 npm/Rust，不构建产品 |
-| 核心前端 | 正式前端构建（含 tsc）、脚本、Linux interactions、Windows 完整 UI（含 settings）；不因此运行 SSH、网络或原生 Rust 矩阵 |
-| Tauri 版本/核心配置、capabilities | 核心格式/前端/脚本、五平台原生核心和 Windows UI；不追加插件源码和普通网络/文件/终端业务 |
+| 核心前端 | 脚本、Linux 完整 UI（含 interactions、settings、正式前端构建/tsc）；不因此运行 SSH、网络或原生 Rust 矩阵 |
+| Tauri 版本/核心配置、capabilities | 核心格式/脚本、Linux 完整 UI 与五平台原生核心；不追加插件源码和普通网络/文件/终端业务 |
 | 单插件 UI/发行元数据 | 脚本和该插件普通业务验收；终端额外验证输入，网络使用 Linux 两架构，文件/终端使用 Linux x86_64 |
 | 单插件 Rust/清单/锁文件/构建输入 | 该插件格式与五平台原生 Rust 测试、该插件普通业务验收；其他插件不跟随 |
-| desktop_files 的 windows/linux/macos.rs | 对应系统两架构/一个 macOS 架构的核心测试、文件业务；Windows 另有完整 UI |
+| desktop_files 的 windows/linux/macos.rs | 对应系统两架构/一个 macOS 架构的核心测试、文件业务；Windows 保留系统专项，普通 UI 不跟随 |
 | network_metrics.rs、settings/declaration.rs | 一次 Linux x86_64 完整核心套件；声明变化另走前端相关回归 |
 | 其他已映射核心系统/更新模块 | 五平台原生核心和相关 UI；网络、文件、终端服务分别追加自己的普通业务验收 |
-| 连接、流、生命周期/RPC、平台进程、服务器路由 | 五平台原生核心、Windows UI/SSH、五插件普通业务验收 |
+| 连接、流、生命周期/RPC、平台进程、服务器路由 | 五平台原生核心、Linux UI、Windows SSH、五插件普通业务验收 |
 | 共享 UI/字体/菜单 | 扩大至核心与五插件 UI/普通业务验收；不因此运行 netem 或旧版升级 |
 | 共享 plugin-client、根工具链/锁文件/构建脚本、未知输入 | 五平台核心与五插件源码、相关 UI、普通业务和宿主脚本；仍排除 netem |
 
-已知 UI 测试入口也按组件路由：`test-terminal-ui`/`test-files-ui` 仅运行对应普通业务，`test-terminal-input` 仅输入/脚本，核心 UI 测试脚本走前端和完整 desktop。共享 OpenSSH/打包脚本和未映射脚本继续扩大范围。
+已知 UI 测试入口也按组件路由：`test-terminal-ui`/`test-files-ui` 仅运行对应普通业务，`test-terminal-input` 仅输入/脚本，核心 UI 测试脚本走 Linux 完整 browser。共享 OpenSSH/打包脚本和未映射脚本继续扩大范围。
 
 Check 的 **Run workflow** 先选择需要验证的分支或标签，再选择 `suite`，手动选择覆盖自动判定。检查结果只适用于该次运行的确切提交；打包工作流不等待 Check。
 
 | suite | 执行范围 |
 | --- | --- |
-| `standard`（默认） | 公共 Linux 核心/五插件格式和源码、前端/脚本/输入/设置回归及 Linux x86_64/ARM64 普通网络；排除 netem、完整 Windows UI |
-| `desktop` | Windows x86_64 顺序执行源码 `ssh:test` 和完整 `ui:test`，包含 Chromium 与终端 UI 依赖 |
+| `standard`（默认） | 公共 Linux 核心/五插件格式和源码、Linux 完整 UI/脚本/输入及所选普通业务；排除 netem、Windows desktop |
+| `desktop` | 保留手动 Windows x86_64 `ssh:test` 和完整 `ui:test` 对照，包含 Chromium 与终端 UI 依赖 |
 | `native-core` | 五个原生目标各执行 `npm run test`；Windows x86_64、Linux x86_64、macOS ARM64 另执行原宿主脚本回归 |
 | `network-plugin` | 网络插件格式、五个原生目标的 `cargo test --manifest-path plugins/network-proxy/Cargo.toml --locked`，不构建核心测试夹具 |
-| `all` | 核心与五插件五平台源码、完整 Windows UI/SSH、普通网络/文件/终端和脚本回归；同一 job 顺序执行，矩阵并行；排除 netem |
+| `all` | 核心与五插件五平台源码、Linux 完整 UI、Windows SSH、普通网络/文件/终端与其他业务、脚本及 actionlint；组内顺序执行，矩阵并行；排除 netem |
 | `netem` | 单独运行 Linux x86_64/ARM64 私有 namespace 弱网矩阵；成功/失败报告 Artifact 保留 14 天，不安装 Chromium 或 OpenSSH |
 
 原宿主脚本回归为 `collect-core.test.mjs`、`core-release.test.mjs`、`plugin-settings-assets.test.mjs`、`release-metadata.test.mjs` 和 `smoke.test.mjs`；在 `native-core`/`all` 和共享未知输入下于 Windows x86_64、Linux x86_64、macOS ARM64 执行。自动选择仍以既有套件为单位，不能独立切分时运行较大范围；需要额外验证时可对同一 ref 补做手动套件。真实包组合与升级保持原入口，不把工作流选择当作已验收。
 
-完整 Windows `ui:test` 已包含 settings 回归，选中 desktop 时不再在 Linux 重复。手动 `standard` 没有 desktop，Linux 单独执行 `settings:test`，为其真实 catalog 核心夹具安装 WebKit/GTK 构建库并恢复 `check-tests` 依赖缓存。
+普通 `ui:test` 集中在 Linux x86_64 `browser` job 顺序执行，包含既有 settings、interactions 和正式 dist 回归；公共 `checks` 不再安装 Chromium 或重复这些测试。终端基础输入按选择单独执行，桌面策略输入保留其不同的测试模式。Linux UI 使用真实 catalog/workspace 核心夹具，安装 WebKit/GTK 开发库并核对 Unix 入口执行位；它不能替代原生 WebView、实际包或系统指针验收。
+
+自动 Windows `desktop` 仅执行已选中的 SSH/系统专项；手动 `desktop` 保留完整 Windows UI 对照。Linux integration 使用三行矩阵：网络 x86_64、网络 ARM64，以及文件/终端/状态/Docker/通信的 x86_64 业务组；最多 3 行并行，各行自己的目录、端口、进程和 target，组内串行。单插件变化只生成所需行。三个任务恢复适用的既有 `network-tests` 缓存，未新增按业务组划分的大缓存键。
+
+相关工作流/本地 action 变化和手动 `all` 使用校验下载摘要的 actionlint 1.7.12；纯文档仍只运行 Node 文档检查。`format` 汇总包含新增 `browser`，选中后失败、取消、跳过或缺失均不能通过。浏览器、Windows desktop 和 integration 的诊断 Artifact 在成功/失败时均上传，保留 14 天；发行/实际包的 30 天保留规则不变。
 
 `native-core` 覆盖当前核心单元测试及 `tests/lifecycle.rs`、`close_lifecycle.rs`、`updates.rs`、`update_network.rs`、`connections.rs`、`component_ui.rs`、`settings.rs`、`servers.rs`、`streams.rs`、`window_config.rs`、`workspaces.rs`；Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 都在对应原生 runner 执行。`platform`、`desktop_files`、桌面行为及更新等系统分支随原生测试验证。标记为 ignored 的真实远端用例仍由对应 SSH/终端/文件/网络专项提供环境后显式运行，不能把 `native-core` 通过当作这些专项已通过。
 
 核心与插件打包中的源码测试已经移到 Check；核心 preflight 只使用 Node 检查发行输入，正式前端构建仍执行 TypeScript 检查。实际包的架构、更新签名、启动、持久资料重开和退出验证继续执行，Windows x86_64 另保留包内 SSH 烟测。
 
-CI 的 npm 下载缓存按任务实际使用的锁文件配置；核心打包只使用根锁文件，终端 UI 测试同时使用终端锁文件。Rust 缓存区分日常 `check-tests`、正式核心 `core-release-v2` 和各插件，只有成功的 main 运行保存，其他引用尝试恢复；插件及其原生测试显式覆盖共享 plugin-client 清单。升级验收夹具使用 `check-tests`，不恢复发行缓存。
+CI 的 npm 下载缓存按任务实际使用的锁文件配置；核心打包只使用根锁文件，终端 UI 测试同时使用终端锁文件。Rust 缓存区分日常 `check-tests`、正式核心 `core-release-v2` 和各插件，只有成功的 main 运行保存，其他引用尝试恢复；插件及其原生测试显式覆盖共享 plugin-client 清单。Linux browser 与 Windows desktop 对齐各自原生核心 `check-tests` 的 workspace 顺序和共享清单输入，减少重复大缓存；不同 OS/架构仍隔离。升级验收夹具使用 `check-tests`，不恢复发行缓存。
 
 包含核心的原生测试统一声明现有核心/五插件 workspace 输入，复用同一稳定 `check-tests` 键，避免每个组件/平台范围生成大份重复核心依赖。声明缓存目录不启动对应插件测试；实际执行仍由所选范围控制。仅插件的原生 job 保留小范围 workspace，不恢复核心 target。发行缓存仍只有核心自身输入。
 

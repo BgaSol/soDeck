@@ -150,7 +150,7 @@ Windows ARM64 runner 的 OpenSSH 系统可选组件安装曾持续等待十余�
 
 原生远程验收的 Linux 运行依赖安装前使用 `configure-ubuntu-mirror.mjs` 切换到官方 `archive.ubuntu.com`，兼容传统 `.list`、Deb822 `.sources` 和 hosted runner 的 `mirror+file` 入口；ARM64 ports 和第三方源保持原地址。Check 复用该入口，依赖列表、有限下载重试和任务超时继续生效。
 
-服务器管理验收：`npx playwright install chromium` 后运行 `npm run ui:test`，以无头浏览器调用真实目录核心，测试数据保存在临时目录，不连接服务器。Check 在相关核心/UI 改动或手动 `desktop`/`all` 时于 Windows x86_64 执行完整回归；核心打包不安装 Chromium 或终端 UI 测试依赖。所有五目标的 `scripts/smoke.mjs` 都会在实际包中保存服务器、分组、代理及混合路径，再重开验证持久资料与临时秘密生命周期。
+服务器管理验收：`npx playwright install chromium` 后运行 `npm run ui:test`，以无头浏览器调用真实目录核心，测试数据保存在临时目录，不连接服务器。Check 在相关核心/UI 改动和手动 `standard`/`all` 时于 Linux x86_64 执行完整回归；手动 `desktop` 保留 Windows 对照，自动 Windows 检查保留系统相关 SSH。CI 使用 `ci:test` 保存结果、耗时、日志及核心长 UI 的失败 trace；核心打包不安装 Chromium 或终端 UI 测试依赖。所有五目标的 `scripts/smoke.mjs` 都会在实际包中保存服务器、分组、代理及混合路径，再重开验证持久资料与临时秘密生命周期。
 
 `npm run ui:test` 还会运行 `npm run ui:production:test`：先生成正式前端产物，再直接加载 dist 中的 HTML/JS/CSS，配合隔离的真实目录核心检查保存主题、服务器/代理表单、滚轮、底部字段、焦点和固定页脚；覆盖浅色、深色、多巴胺及 1100×720 / 720×480。此检查用于发现开发模块样式加载顺序与正式打包顺序不同造成的回归，不以开发服务器的截图代替正式产物。
 

@@ -38,6 +38,17 @@ jobs:
         run: node scripts/select-checks.mjs
       - name: Check documentation structure and local file links
         run: node scripts/check-docs.mjs
+      - name: Lint GitHub Actions workflows
+        if: fromJSON(steps.scope.outputs.plan).workflow
+        shell: bash
+        run: |
+          lint_dir="$RUNNER_TEMP/actionlint"
+          mkdir -p "$lint_dir"
+          curl --fail --silent --show-error --location --retry 2 --max-time 60 https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o "$lint_dir/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location --retry 2 --max-time 60 https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_checksums.txt -o "$lint_dir/checksums.txt"
+          (cd "$lint_dir" && grep ' actionlint_1.7.12_linux_amd64.tar.gz$' checksums.txt | sha256sum --check --strict)
+          tar -xzf "$lint_dir/actionlint_1.7.12_linux_amd64.tar.gz" -C "$lint_dir" actionlint
+          "$lint_dir/actionlint" -color
 
   checks:
     needs: select
@@ -71,40 +82,77 @@ jobs:
             if (result.status !== 0) process.exit(result.status || 1);
           }
           NODE
-      - run: npm run web:build
-        if: fromJSON(needs.select.outputs.plan).web
       - run: npm run scripts:test
         if: fromJSON(needs.select.outputs.plan).scripts
-      - name: Configure Ubuntu mirror for browser dependencies
-        if: fromJSON(needs.select.outputs.plan).web || fromJSON(needs.select.outputs.plan).terminalInput
-        run: sudo "$(command -v node)" scripts/configure-ubuntu-mirror.mjs
-      - run: npx playwright install --with-deps chromium
-        if: fromJSON(needs.select.outputs.plan).web || fromJSON(needs.select.outputs.plan).terminalInput
-      - run: npm run interactions:test
+
+  browser:
+    needs: select
+    if: fromJSON(needs.select.outputs.plan).browser
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            plugins/terminal/package-lock.json
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.1
+      - name: Install core-backed browser fixture dependencies
         if: fromJSON(needs.select.outputs.plan).web
-      - name: Install standalone settings fixture dependencies
-        if: fromJSON(needs.select.outputs.plan).web && !fromJSON(needs.select.outputs.plan).desktop
         run: |
           sudo "$(command -v node)" scripts/configure-ubuntu-mirror.mjs
           sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
           sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev patchelf
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        if: fromJSON(needs.select.outputs.plan).web && !fromJSON(needs.select.outputs.plan).desktop
+        if: fromJSON(needs.select.outputs.plan).web
+        env:
+          SODECK_PLUGIN_CLIENT_MANIFEST_HASH: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
         with:
           shared-key: check-tests
-          workspaces: src-tauri -> target
+          env-vars: SODECK_PLUGIN_CLIENT_MANIFEST_HASH
+          workspaces: |
+            src-tauri -> target
+            plugins/terminal -> target
+            plugins/files -> target
+            plugins/network-proxy -> target
+            plugins/system-status -> target
+            plugins/docker -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # Full Windows UI already includes this core-backed settings regression.
-      - run: npm run settings:test
-        if: fromJSON(needs.select.outputs.plan).web && !fromJSON(needs.select.outputs.plan).desktop
-      - run: npm run terminal:input:test
+      - run: npm ci
+      - name: Configure Ubuntu browser dependency mirror
+        run: sudo "$(command -v node)" scripts/configure-ubuntu-mirror.mjs
+      - run: npx playwright install --with-deps chromium
+      - run: npm run ci:test -- ui:test
+        if: fromJSON(needs.select.outputs.plan).web
+      - run: npm run ci:test -- terminal:input:test
         if: fromJSON(needs.select.outputs.plan).terminalInput
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: browser-diagnostics
+          path: |
+            artifacts/ci/
+            artifacts/menu-layout/
+            artifacts/workbench-design/
+            artifacts/workbench-layout/
+            artifacts/desktop-ui/
+            artifacts/settings-ui/
+            artifacts/production-ui/
+            artifacts/workspace-ui.png
+          if-no-files-found: warn
+          retention-days: 14
 
   network:
     needs: select
     if: fromJSON(needs.select.outputs.plan).integration[0] != null
     strategy:
       fail-fast: false
+      max-parallel: 3
       matrix: ${{ fromJSON(needs.select.outputs.integration_matrix) }}
     name: integration-${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
@@ -145,28 +193,36 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Real network plugin, independent SOCKS server and curl
         if: matrix.network
-        run: npm run network:test
+        run: npm run ci:test -- network:test
       - name: Real files plugin and SFTP
         if: matrix.files
-        run: npm run files:test
+        run: npm run ci:test -- files:test
       - name: Real terminal plugin and PTY
         if: matrix.terminal
-        run: npm run terminal:test
+        run: npm run ci:test -- terminal:test
       - name: Automatic Bash and Zsh startup in real PTYs
         if: matrix.terminal
         run: python3 scripts/test-terminal-shell.py
       - name: Real system status plugin and background sampling
         if: matrix.status
-        run: npm run system-status:test
+        run: npm run ci:test -- system-status:test
       - name: Actual Docker plugin with isolated Engine and OpenSSH
         if: matrix.docker
-        run: npm run docker:test
+        run: npm run ci:test -- docker:test
       - name: Docker UI and actual native archive
         if: matrix.docker
-        run: npm run docker:ui:test && npm run docker:package:test
+        run: npm run ci:test -- docker:ui:test && npm run ci:test -- docker:package:test
       - name: Three real plugins and shared state communication
         if: matrix.communication
-        run: npm run communication:test
+        run: npm run ci:test -- communication:test
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: integration-diagnostics-${{ matrix.name }}
+          path: artifacts/ci/
+          if-no-files-found: warn
+          retention-days: 14
 
   desktop:
     needs: select
@@ -186,9 +242,18 @@ jobs:
         with:
           toolchain: 1.99.1
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        env:
+          SODECK_PLUGIN_CLIENT_MANIFEST_HASH: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
         with:
           shared-key: check-tests
-          workspaces: src-tauri -> target
+          env-vars: SODECK_PLUGIN_CLIENT_MANIFEST_HASH
+          workspaces: |
+            src-tauri -> target
+            plugins/terminal -> target
+            plugins/files -> target
+            plugins/network-proxy -> target
+            plugins/system-status -> target
+            plugins/docker -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
       - name: Install OpenSSH test server
@@ -200,10 +265,20 @@ jobs:
             if (-not $capability) { throw 'OpenSSH Server capability is unavailable' }
             Add-WindowsCapability -Online -Name $capability.Name
           }
-      - run: npm run ssh:test
+      - run: npm run ci:test -- ssh:test
         if: fromJSON(needs.select.outputs.plan).ssh
       - run: npx playwright install chromium
-      - run: npm run ui:test
+        if: fromJSON(needs.select.outputs.plan).windowsUi
+      - run: npm run ci:test -- ui:test
+        if: fromJSON(needs.select.outputs.plan).windowsUi
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: windows-desktop-diagnostics
+          path: artifacts/ci/
+          if-no-files-found: warn
+          retention-days: 14
 
   native:
     needs: select
@@ -314,7 +389,7 @@ jobs:
 
   # Preserve the existing common status name for branch protection.
   format:
-    needs: [select, checks, network, desktop, native, netem]
+    needs: [select, checks, browser, network, desktop, native, netem]
     if: always()
     runs-on: ubuntu-22.04
     timeout-minutes: 5

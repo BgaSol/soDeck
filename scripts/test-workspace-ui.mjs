@@ -8,6 +8,7 @@ import readline from "node:readline";
 import { createServer } from "vite";
 import { chromium } from "playwright";
 import { assertMenuLayout } from "./menu-layout.mjs";
+import { recordTrace } from "./ui-trace.mjs";
 
 const build = spawnSync("cargo", ["build", "--manifest-path", "src-tauri/Cargo.toml", "--features", "test-fixtures", "--bin", "catalog-fixture", "--bin", "workspace-ui-fixture", "--locked"], { stdio: "inherit" });
 if (build.status !== 0) throw new Error("Catalog test bridge build failed");
@@ -15,6 +16,7 @@ const directory = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-ui-"));
 const pluginRoot = path.join(directory, "ui-plugin");fs.mkdirSync(pluginRoot);
 const suffix = process.platform === "win32" ? ".exe" : "";
 fs.copyFileSync(`src-tauri/target/debug/workspace-ui-fixture${suffix}`, path.join(pluginRoot, `workspace-ui-fixture${suffix}`));
+if (process.platform !== 'win32') fs.chmodSync(path.join(pluginRoot, `workspace-ui-fixture${suffix}`), 0o755);
 fs.cpSync("scripts/fixtures/workspace-ui/ui", path.join(pluginRoot,"ui"), {recursive:true});
 const metadata = JSON.parse(fs.readFileSync("scripts/fixtures/workspace-ui/manifest.json","utf8"));
 // Exercise the product's default target with a test process, never a distributed plugin.
@@ -42,6 +44,7 @@ const bridge = startBridge();
 const vite = await createServer({ server: { host: "127.0.0.1", port: 0 } }); await vite.listen();
 const url = vite.resolvedUrls.local[0];
 const browser = await chromium.launch({ headless: true, ...(process.env.SODECK_BROWSER_CHANNEL ? { channel: process.env.SODECK_BROWSER_CHANNEL } : {}) });
+const traces = [];
 const pages = [], errors = [], checks = [], dragCalls = [], dropTargets = new Map(), drags = new Map();
 const surfaces = new Map();
 const call = (command, args={}) => bridge.call(command,args);
@@ -52,6 +55,7 @@ const projection = window => call("workspace_snapshot",{window});
 const componentState = window => call("component_ui",{window,operation:"snapshot",args:{}});
 async function makePage(window) {
   const page = await browser.newPage({ viewport: {width:1100,height:720} }); pages.push(page);
+  traces.push(await recordTrace(page.context(), window));
   page.on("pageerror", error=>errors.push(String(error)));
   await page.exposeBinding("workspaceInvoke",async (_,command,args={})=>{
     if(command==='workspace_surface')surfaces.set(window,args.surface);
@@ -436,10 +440,12 @@ try {
   checks.push('宿主销毁结束捕获、清理工作台与 RAF，不保存未提交的手势');
   assert.deepEqual(errors,[]); console.log(JSON.stringify({passed:checks.length,checks,pageErrors:errors,screenshot:output},null,2));
 } catch(error) {
+  for (const finish of traces) await finish(true);
   console.error(JSON.stringify(await call('close_operations',{window:'main'}),null,2));
   fs.mkdirSync('artifacts/menu-layout',{recursive:true});await pages[0]?.screenshot({path:'artifacts/menu-layout/failure.png'});
   for(const page of pages) console.error(await page.evaluate(()=>({focus:document.activeElement?.tagName,notice:document.querySelector('#notice')?.textContent,dialog:document.querySelector('.component-close-dialog')?.textContent,content:document.querySelector('#workspace-content')?.style.cssText,board:document.querySelector('.server-workbench:not([hidden])')?.style.cssText})));
   throw error;
 } finally {
+  for (const finish of traces) await finish(false);
   await browser.close();await vite.close();await bridge.stop();fs.rmSync(directory,{recursive:true,force:true});
 }

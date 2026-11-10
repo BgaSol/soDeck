@@ -40,18 +40,18 @@ export function changedFiles(eventName, event, cwd = process.cwd()) {
 }
 
 export function selectChecks(files, { suite, fallback } = {}) {
-  const plan = { web: false, scripts: false, terminalInput: false, desktop: false, ssh: false,
+  const plan = { web: false, scripts: false, terminalInput: false, browser: false, desktop: false, windowsUi: false, workflow: false, ssh: false,
     sharedClient: false, communication:false, netem: false, plugins: [], native: [], integration: [], reasons: [] };
   const coreTargets = new Set(), scriptTargets = new Set(), plugins = new Set(), integration = new Set();
   const pluginTargets = Object.fromEntries(pluginNames.map(name => [name, new Set()]));
   const allTargets = targets.map(t => t.name);
   const core = (names = allTargets) => names.forEach(name => coreTargets.add(name));
   const plugin = name => { plugins.add(name); allTargets.forEach(t => pluginTargets[name].add(t)); };
-  const ui = () => { plan.web = plan.scripts = plan.desktop = true; };
+  const ui = () => { plan.web = plan.scripts = plan.browser = true; };
   const sharedUi = () => { ui(); plan.terminalInput = true; pluginNames.forEach(name => integration.add(name)); };
   const communication=()=>{plan.communication=true;ui();['terminal','files','system-status'].forEach(name=>integration.add(name));};
   const full = () => {
-    sharedUi(); communication(); core(); plan.ssh = plan.sharedClient = true;
+    sharedUi(); communication(); core(); plan.desktop = plan.ssh = plan.sharedClient = true;
     pluginNames.forEach(plugin);
     ['windows-x86_64', 'linux-x86_64', 'macos-aarch64'].forEach(t => scriptTargets.add(t));
   };
@@ -65,10 +65,10 @@ export function selectChecks(files, { suite, fallback } = {}) {
     if (suite === 'all') full();
     else if (suite === 'standard') {
       standard();
-      // standard preserves the previous common checks; full Windows UI stays in desktop/all.
+      // Browser regressions run on Linux; desktop is a Windows-only diagnostic override.
       plan.desktop = false;
       integration.delete('terminal'); integration.delete('files');
-    } else if (suite === 'desktop') plan.desktop = plan.ssh = true;
+    } else if (suite === 'desktop') plan.desktop = plan.ssh = plan.windowsUi = true;
     else if (suite === 'native-core') {
       core(); ['windows-x86_64', 'linux-x86_64', 'macos-aarch64'].forEach(t => scriptTargets.add(t));
     } else if (suite === 'network-plugin') plugin('network-proxy');
@@ -79,6 +79,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
   } else {
     for (const file of files) {
       if (file.endsWith('.md') || file.startsWith('docs/')) continue;
+      if (file.startsWith('.github/workflows/') || file.startsWith('.github/actions/')) plan.workflow = true;
       if (/^(src\/component-state\.ts|src-tauri\/src\/shared_state(\/|\.)|plugins\/shared\/state\.js|scripts\/(test-component-communication\.mjs|component-state\.test\.mjs|fixtures\/shared-state\.json))$/.test(file)||file==='src-tauri/src/shared_state.rs'||file.startsWith('src-tauri/src/shared_state/')){communication();core();plan.sharedClient=true;['terminal','files','system-status'].forEach(plugin);continue;}
       if (file.startsWith('src/')) {
         if (/^src\/(ui\.css|themes\.css|text-menu\.|menu-position\.|font-loader\.)/.test(file)) sharedUi();
@@ -105,7 +106,6 @@ export function selectChecks(files, { suite, fallback } = {}) {
       if (platform) {
         core(allTargets.filter(t => t.startsWith(`${platform[1]}-`)));
         integration.add('files');
-        if (platform[1] === 'windows') plan.desktop = true;
         continue;
       }
       if (file === 'src-tauri/src/desktop_open.rs') { core(); ui(); integration.add('files'); continue; }
@@ -160,9 +160,16 @@ export function selectChecks(files, { suite, fallback } = {}) {
         ...pluginNames.filter(p => row.core || pluginTargets[p].has(t.name)).map(p => `plugins/${p} -> target`)].filter(Boolean).join('\n');
       return row;
     });
-  plan.integration = targets.filter(t => t.name.startsWith('linux-') && (integration.has('network-proxy') || (t.name === 'linux-x86_64' && (integration.size||plan.communication))))
-    .map(t => ({ ...t, network: integration.has('network-proxy'), docker: t.name === 'linux-x86_64' && integration.has('docker'),
-      communication:t.name==='linux-x86_64'&&plan.communication,terminal: t.name === 'linux-x86_64' && integration.has('terminal'), files: t.name === 'linux-x86_64' && integration.has('files'), status: t.name === 'linux-x86_64' && integration.has('system-status') }));
+  const business = { network: false, docker: integration.has('docker'), communication: plan.communication,
+    terminal: integration.has('terminal'), files: integration.has('files'), status: integration.has('system-status') };
+  plan.integration = [
+    ...targets.filter(t => t.name.startsWith('linux-') && integration.has('network-proxy'))
+      .map(t => ({ ...t, name: `network-${t.name}`, network: true, docker: false, communication: false, terminal: false, files: false, status: false })),
+    ...(Object.values(business).some(Boolean) ? [{ ...targets[2], name: 'business-linux-x86_64', ...business }] : []),
+  ];
+  plan.browser ||= plan.terminalInput;
+  plan.desktop ||= plan.ssh;
+  if (suite === 'all') plan.workflow = true;
   plan.core = coreTargets.size > 0;
   plan.checks = plan.web || plan.scripts || plan.terminalInput || plan.sharedClient || plan.plugins.length > 0 || plan.core;
   return plan;
@@ -172,11 +179,11 @@ export function selectionSummary(plan) {
   return ['## Selected checks', '', ...plan.reasons.map(reason => `- ${reason}`), '',
     '| Scope | Selection |', '| --- | --- |',
     '| Documentation | Always: tracked Markdown structure and local file links |',
-    `| Frontend / browser / scripts | ${[plan.web && 'frontend + interactions', plan.web && !plan.desktop && 'standalone settings', plan.terminalInput && 'terminal input', plan.scripts && 'script tests'].filter(Boolean).join(', ') || 'Skipped'} |`,
+    `| Frontend / browser / scripts | ${[plan.web && 'Linux full UI + production build', plan.terminalInput && 'terminal input', plan.scripts && 'script tests', plan.workflow && 'actionlint'].filter(Boolean).join(', ') || 'Skipped'} |`,
     `| Plugin format | ${plan.plugins.join(', ') || 'Skipped'} |`,
     `| Native source tests | ${plan.native.map(t => `${t.name}: ${[t.core && 'core', t.terminal && 'terminal', t.files && 'files', t.network && 'network', t.status && 'system-status', t.docker && 'docker', t.scripts && 'scripts'].filter(Boolean).join(', ')}`).join('<br>') || 'Skipped'} |`,
     `| Normal integration | ${plan.integration.map(t => `${t.name}: ${[t.network && 'network', t.terminal && 'terminal', t.files && 'files', t.status && 'system-status', t.docker && 'docker',t.communication&&'component communication'].filter(Boolean).join(', ')}`).join('<br>') || 'Skipped'} |`,
-    `| Windows desktop | ${plan.desktop ? `Full UI${plan.ssh ? ' + SSH' : ''}` : 'Skipped'} |`,
+    `| Windows desktop | ${plan.desktop ? [plan.ssh && 'native SSH', plan.windowsUi && 'manual full UI comparison'].filter(Boolean).join(' + ') : 'Skipped'} |`,
     `| Weak network | ${plan.netem ? 'Explicit manual netem: both native Linux targets' : 'Skipped; manual netem only, including for all'} |`, '',
     'Selections are not test results. Installed-package checks and published-package/upgrade verification remain independent.', ''].join('\n');
 }
@@ -185,10 +192,10 @@ export function checkResults(needs) {
   const failures = [];
   if (needs.select?.result !== 'success') failures.push('select');
   const plan = JSON.parse(needs.select?.outputs?.plan || '{}');
-  const valid = typeof plan.checks === 'boolean' && typeof plan.desktop === 'boolean' && typeof plan.netem === 'boolean'
+  const valid = typeof plan.checks === 'boolean' && typeof plan.browser === 'boolean' && typeof plan.desktop === 'boolean' && typeof plan.netem === 'boolean'
     && Array.isArray(plan.native) && Array.isArray(plan.integration) && Array.isArray(plan.plugins);
   if (!valid) failures.push('selection output');
-  const expected = { checks: plan.checks, network: plan.integration?.length > 0, desktop: plan.desktop, native: plan.native?.length > 0, netem: plan.netem };
+  const expected = { checks: plan.checks, browser: plan.browser, network: plan.integration?.length > 0, desktop: plan.desktop, native: plan.native?.length > 0, netem: plan.netem };
   const lines = ['## Executed job results', '', '| Job | Result |', '| --- | --- |'];
   for (const [job, selected] of Object.entries(expected)) {
     const result = needs[job]?.result || 'missing';

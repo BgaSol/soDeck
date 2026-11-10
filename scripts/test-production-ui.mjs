@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import { preview } from "vite";
 import { chromium } from "playwright";
 import { assertMenuLayout } from "./menu-layout.mjs";
+import { recordTrace } from './ui-trace.mjs';
 
 const build = spawnSync("cargo", ["build", "--manifest-path", "src-tauri/Cargo.toml", "--features", "test-fixtures", "--bin", "catalog-fixture", "--bin", "plugin-fixture", "--bin", "workspace-ui-fixture", "--locked"], { stdio: "inherit" });
 if (build.status !== 0) throw new Error("Catalog test bridge build failed");
@@ -98,6 +99,7 @@ const call = (command, args = {}) => new Promise((resolve, reject) => {
 const server = await preview({ preview: { host: "127.0.0.1", port: 0 } });
 const browser = await chromium.launch({ headless: true, ...(process.env.SODECK_BROWSER_CHANNEL ? { channel: process.env.SODECK_BROWSER_CHANNEL } : {}) });
 const page = await browser.newPage({ viewport: { width: 1100, height: 720 } });
+const finishTrace = await recordTrace(page.context(), 'production');
 await page.route('**/__plugin__/**',route=>{
   const relative=decodeURIComponent(new URL(route.request().url()).pathname).split('/').slice(3).join('/');
   const file=path.join(uiFixture,relative),types={'.html':'text/html','.js':'text/javascript','.css':'text/css'};
@@ -751,10 +753,12 @@ try {
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: checks.length, checks, pageErrors: errors }, null, 2));
 } catch (error) {
+  await finishTrace(true);
   await page.screenshot({ path: "artifacts/production-ui/failure.png" });
   if (await dialog().count()) console.error(await dialog().evaluate(el => [...el.querySelectorAll("form,fieldset,header,footer")].map(node => ({ tag: node.tagName, css: node.className, height: node.getBoundingClientRect().height, scroll: node.scrollHeight, client: node.clientHeight, min: getComputedStyle(node).minHeight, flex: getComputedStyle(node).flex }))));
   throw error;
 } finally {
+  await finishTrace(false);
   releaseLocalNetwork?.();
   holdCatalog = false; releaseCatalog?.();
   await browser.close(); await new Promise(resolve => server.httpServer.close(resolve));

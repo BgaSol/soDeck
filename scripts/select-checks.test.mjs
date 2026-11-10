@@ -18,7 +18,7 @@ test('documentation produces an explicit lightweight check without product suite
 
 test('frontend layout keeps UI verification without SSH/network/native source suites', () => {
   const p = selectChecks(['src/shell.css', 'src/workspaces.ts']);
-  assert(p.web && p.desktop && p.scripts);
+  assert(p.web && p.browser && p.scripts && !p.desktop);
   assert(!p.ssh && !p.terminalInput);
   assert.deepEqual(p.integration, []);
   assert.deepEqual(p.native, []);
@@ -67,6 +67,7 @@ test('native adapter scopes both architectures of the affected system; common lo
     const p = selectChecks([`src-tauri/src/desktop_files/${osName}.rs`]);
     assert.equal(p.native.length, count);
     assert(p.native.every(t => t.name.startsWith(`${osName}-`) && t.core));
+    assert.equal(p.desktop, false, 'Filesystem adapters use native tests, not an empty desktop job');
   }
   const common = selectChecks(['src-tauri/src/network_metrics.rs']);
   assert.deepEqual(common.native.map(t => t.name), ['linux-x86_64']);
@@ -77,7 +78,7 @@ test('native adapter scopes both architectures of the affected system; common lo
   const full = selectChecks([], { suite: 'all' });
   for (const file of ['src-tauri/tauri.conf.json', 'src-tauri/tauri.macos.conf.json', 'src-tauri/tauri.release.conf.json', 'src-tauri/capabilities/main.json']) {
     const config = selectChecks([file]);
-    assert(config.web && config.desktop && !config.ssh);
+    assert(config.web && config.browser && !config.desktop && !config.ssh);
     assert.deepEqual(config.integration, []);
     assert.deepEqual(config.plugins, []);
     assert.equal(config.native.length, 5);
@@ -89,19 +90,21 @@ test('native adapter scopes both architectures of the affected system; common lo
 test('transport/lifecycle changes retain real integrations and shared inputs/unknown paths expand conservatively', () => {
   const fixtureEvents = selectChecks(['scripts/fixtures/events.js']);
   assert(fixtureEvents.scripts && !fixtureEvents.core && !fixtureEvents.netem);
-  assert(fixtureEvents.integration[0].terminal && fixtureEvents.integration[0].files && fixtureEvents.integration[0].network);
+  assert(fixtureEvents.integration.some(t => t.network));
+  assert(fixtureEvents.integration.some(t => t.terminal && t.files && !t.network));
   const nativeClose = selectChecks(['scripts/test-close-native.mjs']);
   assert(nativeClose.desktop && nativeClose.ssh && nativeClose.native.filter(t => t.core).length === 5);
   const pointer = selectChecks(['src-tauri/tests/fixtures/native_pointer.rs']);
   assert(pointer.desktop && pointer.ssh);
   assert.deepEqual(pointer.native.filter(t => t.core).map(t => t.name), ['windows-x86_64', 'windows-aarch64']);
   const opener = selectChecks(['src-tauri/src/desktop_open.rs']);
-  assert(opener.desktop && opener.native.filter(t => t.core).length === 5 && opener.integration[0].files);
+  assert(opener.browser && !opener.desktop && opener.native.filter(t => t.core).length === 5 && opener.integration[0].files);
   for (const file of ['src-tauri/src/connections/ssh.rs', 'src-tauri/src/plugins/rpc.rs', 'src-tauri/src/session_exec.rs', 'src-tauri/src/lifecycle.rs', 'src-tauri/src/lifecycle/close.rs', 'src-tauri/src/resource_tasks.rs', 'src-tauri/tests/close_lifecycle.rs', 'src-tauri/tests/lifecycle.rs']) {
     const p = selectChecks([file]);
     assert(p.ssh && p.desktop);
     assert.equal(p.native.filter(t => t.core).length, 5);
-    assert(p.integration[0].network && p.integration[0].files && p.integration[0].terminal);
+    assert(p.integration.some(t => t.network));
+    assert(p.integration.some(t => t.files && t.terminal && !t.network));
   }
   for (const file of ['crates/plugin-client/src/lib.rs', 'package-lock.json', '.node-version', '.github/workflows/check.yml', 'scripts/package-plugin.mjs', 'new-adapter.rs', 'src-tauri/src/new_service.rs']) {
     const p = selectChecks([file]);
@@ -110,7 +113,7 @@ test('transport/lifecycle changes retain real integrations and shared inputs/unk
     assert(!p.netem, file);
   }
   const sharedUi = selectChecks(['src/text-menu.js', 'plugins/shared/clipboard.js']);
-  assert(sharedUi.terminalInput && sharedUi.web && sharedUi.desktop && sharedUi.integration[0].files);
+  assert(sharedUi.terminalInput && sharedUi.web && sharedUi.browser && !sharedUi.desktop && sharedUi.integration.some(t => t.files));
   const mixed = selectChecks(['docs/usage.md', 'src-tauri/src/platform.rs']);
   assert.equal(mixed.native.length, 5);
   const files = selectChecks(['src-tauri/src/remote_files/operations/copy.rs']);
@@ -123,7 +126,7 @@ test('manual same-ref routes preserve overrides and only netem explicitly enable
   assert(!standard.desktop && !standard.netem && standard.integration[0].network);
   assert.equal(standard.native.length, 1);
   const desktop = selectChecks([], { suite: 'desktop' });
-  assert(desktop.desktop && desktop.ssh && !desktop.checks);
+  assert(desktop.desktop && desktop.ssh && desktop.windowsUi && !desktop.browser && !desktop.checks);
   const native = selectChecks([], { suite: 'native-core' });
   assert.equal(native.native.length, 5);
   assert.equal(native.native.filter(t => t.scripts).length, 3);
@@ -168,11 +171,13 @@ test('PR merge-base excludes upstream-only changes; pushes include deletion and 
 test('summary rejects failed, cancelled or skipped selected jobs rather than reporting a false pass', () => {
   const plan = selectChecks(['src/shell.css']);
   const needs = { select: { result: 'success', outputs: { plan: JSON.stringify(plan) } },
-    checks: { result: 'success' }, desktop: { result: 'success' }, network: { result: 'skipped' }, native: { result: 'skipped' }, netem: { result: 'skipped' } };
+    checks: { result: 'success' }, browser: { result: 'success' }, desktop: { result: 'skipped' }, network: { result: 'skipped' }, native: { result: 'skipped' }, netem: { result: 'skipped' } };
   assert.deepEqual(checkResults(needs).failures, []);
   for (const result of ['failure', 'cancelled', 'skipped']) {
-    assert.deepEqual(checkResults({ ...needs, desktop: { result } }).failures, ['desktop']);
+    assert.deepEqual(checkResults({ ...needs, browser: { result } }).failures, ['browser']);
   }
+  const missing = { ...needs }; delete missing.browser;
+  assert.deepEqual(checkResults(missing).failures, ['browser']);
   assert(checkResults({ ...needs, select: { result: 'failure' } }).failures.includes('select'));
   assert(checkResults({ ...needs, select: { result: 'success', outputs: {} } }).failures.includes('selection output'));
   assert(checkResults({ ...needs, netem: { result: 'success' } }).failures.includes('netem'));
@@ -180,21 +185,31 @@ test('summary rejects failed, cancelled or skipped selected jobs rather than rep
   assert.equal(new Set(targets.map(t => t.target)).size, 5);
 });
 
-test('core-backed settings runs once with its Linux build environment or inside full desktop UI', () => {
+test('core-backed UI has one default Linux owner and keeps manual Windows comparison', () => {
   const workflow = fs.readFileSync('.github/workflows/check.yml', 'utf8').replaceAll('\r\n', '\n');
-  const common = workflow.split('\n  checks:\n')[1].split('\n  network:\n')[0];
-  const settingsCondition = common.match(/- run: npm run settings:test\n\s+if: (.+)/)[1];
-  const dependenciesCondition = common.match(/- name: Install standalone settings fixture dependencies\n\s+if: (.+)/)[1];
-  const cacheCondition = common.match(/- uses: Swatinem\/rust-cache[^\n]+\n\s+if: (.+)/)[1];
-  const enabled = (condition, plan) => Function('plan', `return (${condition.replaceAll('fromJSON(needs.select.outputs.plan)', 'plan')})`)(plan);
-  assert(fs.readFileSync('scripts/test-settings-ui.mjs', 'utf8').includes("'catalog-fixture'"));
+  const common = workflow.split('\n  checks:\n')[1].split('\n  browser:\n')[0];
+  const browser = workflow.split('\n  browser:\n')[1].split('\n  network:\n')[0];
+  const desktop = workflow.split('\n  desktop:\n')[1].split('\n  native:\n')[0];
+  assert(!common.includes('playwright') && !common.includes('ui:test') && !common.includes('settings:test'));
+  assert(browser.includes('libwebkit2gtk-4.1-dev') && browser.includes('npm run ci:test -- ui:test'));
+  assert(desktop.includes('if: fromJSON(needs.select.outputs.plan).windowsUi'));
   assert(JSON.parse(fs.readFileSync('package.json', 'utf8')).scripts['ui:test'].includes('npm run settings:test'));
-  assert(common.includes('libwebkit2gtk-4.1-dev'));
-  assert(common.indexOf('Install standalone settings fixture dependencies') < common.indexOf('npm run settings:test'));
   for (const plan of [selectChecks(['src/settings.css']), selectChecks(['src-tauri/src/desktop_files/windows.rs']),
     selectChecks([], { suite: 'standard' }), selectChecks([], { suite: 'desktop' }), selectChecks([], { suite: 'all' }), selectChecks(['docs/usage.md'])]) {
-    const standalone = enabled(settingsCondition, plan);
-    assert.equal(Number(standalone) + Number(plan.desktop), Number(plan.web || plan.desktop));
-    if (standalone) assert(enabled(dependenciesCondition, plan) && enabled(cacheCondition, plan));
+    assert.equal(Number(plan.browser && plan.web) + Number(plan.windowsUi), Number(plan.web || plan.windowsUi));
   }
+});
+
+test('integration groups isolate network on both native architectures from other business', () => {
+  const full = selectChecks([], { suite: 'all' });
+  assert.deepEqual(full.integration.map(t => t.name), ['network-linux-x86_64', 'network-linux-aarch64', 'business-linux-x86_64']);
+  for (const row of full.integration.filter(t => t.network)) assert(!row.files && !row.terminal && !row.docker && !row.status && !row.communication);
+  const business = full.integration.find(t => !t.network);
+  assert(business.files && business.terminal && business.docker && business.status && business.communication);
+  assert.equal(business.target, 'x86_64-unknown-linux-gnu');
+  assert(!selectChecks(['plugins/files/ui/tree.js']).integration.some(t => t.network));
+  assert.equal(selectChecks(['docs/usage.md']).browser, false);
+  assert.equal(selectChecks(['docs/usage.md']).workflow, false);
+  assert(selectChecks(['.github/workflows/check.yml']).workflow);
+  assert(selectChecks([], { suite: 'all' }).workflow);
 });

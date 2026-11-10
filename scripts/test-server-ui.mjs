@@ -7,6 +7,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { createServer } from "vite";
 import { chromium } from "playwright";
+import { recordTrace } from './ui-trace.mjs';
 
 const build = spawnSync("cargo", ["build", "--manifest-path", "src-tauri/Cargo.toml", "--features", "test-fixtures", "--bin", "catalog-fixture", "--locked"], { stdio: "inherit" });
 if (build.status !== 0) throw new Error("Catalog test bridge build failed");
@@ -31,6 +32,7 @@ await vite.listen();
 const url = vite.resolvedUrls.local[0];
 const browser = await chromium.launch({ headless: true, ...(process.env.SODECK_BROWSER_CHANNEL ? { channel: process.env.SODECK_BROWSER_CHANNEL } : {}) });
 const page = await browser.newPage({ viewport: { width: 1100, height: 720 } });
+const finishTrace = await recordTrace(page.context(), 'server');
 const errors = [];
 page.on("pageerror", error => errors.push(String(error)));
 page.on("request", request => { assert.equal(new URL(request.url()).hostname, "127.0.0.1", "Unexpected network request"); });
@@ -184,9 +186,11 @@ try {
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: checks.length, checks, pageErrors: errors }, null, 2));
 } catch (error) {
+  await finishTrace(true);
   console.error({ pageErrors: errors });
   throw error;
 } finally {
+  await finishTrace(false);
   await browser.close(); await vite.close(); await bridge.stop();
   // Only this process's mkdtemp output, never a user supplied directory.
   fs.rmSync(directory, { recursive: true, force: true });
