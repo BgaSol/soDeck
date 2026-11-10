@@ -83,6 +83,9 @@ try {
     const previous=JSON.parse(run(handler,['associations']));
     restore=()=>run(handler,['set',previous[0],'',previous[2]]);
     run(handler,['register',app]);run(handler,['set',id,'',id]);
+    const configured=JSON.parse(run(handler,['associations']));
+    assert.equal(configured[0],id,'HTTP default must select the test app');
+    assert.equal(configured[2],id,'Directory default must select the test app');
     await probe('defaults');
     // macOS confirms /usr/bin/open's handoff; app exit after acceptance is outside that contract.
   } else {
@@ -106,6 +109,8 @@ try {
   console.log(fixtureOnly ? 'macOS default-handler fixture preflight passed.' : 'Actual package opened exact URL/directory once through system defaults, rejected invalid targets and exited.');
 } catch (error) {
   failed = true;
+    if (fs.existsSync(log+'.started')) console.error('Native handler startup:',fs.readFileSync(log+'.started','utf8'));
+    console.error('Native handler targets:',fs.readFileSync(log,'utf8'));
   throw error;
 } finally {
   try { restore(); } catch (error) { if (failed) console.error('Restoring isolated associations:',error); else throw error; }
