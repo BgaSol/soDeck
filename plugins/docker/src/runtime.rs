@@ -458,8 +458,14 @@ fn execute(
                 Err(e) if e.code == -32003 => continue,
                 Err(e) => return Err(e.message),
             };
-            let out = commands::base64(r["stdout"]["dataBase64"].as_str().ok_or("缺少 stdout")?)?;
-            let err = commands::base64(r["stderr"]["dataBase64"].as_str().ok_or("缺少 stderr")?)?;
+            let out = sodeck_plugin_client::encoding::unbase64(
+                r["stdout"]["dataBase64"].as_str().ok_or("缺少 stdout")?,
+            )
+            .map_err(|_| "核心输出编码无效")?;
+            let err = sodeck_plugin_client::encoding::unbase64(
+                r["stderr"]["dataBase64"].as_str().ok_or("缺少 stderr")?,
+            )
+            .map_err(|_| "核心输出编码无效")?;
             if stdout.len() + stderr.len() + out.len() + err.len() > budget {
                 return Err("命令输出超过本地预算".into());
             }

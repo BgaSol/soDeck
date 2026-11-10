@@ -198,34 +198,19 @@ pub fn fields(value: &Value) -> Value {
     }
     result
 }
-pub fn base64(input: &str) -> Result<Vec<u8>, String> {
-    let mut result = Vec::with_capacity(input.len() * 3 / 4);
-    let mut n = 0u32;
-    let mut bits = 0;
-    for b in input.bytes() {
-        if b == b'=' {
-            break;
-        }
-        let v = match b {
-            b'A'..=b'Z' => b - b'A',
-            b'a'..=b'z' => b - b'a' + 26,
-            b'0'..=b'9' => b - b'0' + 52,
-            b'+' => 62,
-            b'/' => 63,
-            _ => return Err("核心输出编码无效".into()),
-        };
-        n = (n << 6) | u32::from(v);
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            result.push((n >> bits) as u8);
-        }
-    }
-    Ok(result)
-}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sodeck_plugin_client::encoding::unbase64;
+    #[test]
+    fn command_output_rejects_malformed_base64() {
+        for input in ["Zg=a", "Zh==", "Zg", "Zg==!", "====", "Zm9v=", "Zg==\n"] {
+            assert!(
+                unbase64(input).is_err(),
+                "accepted malformed output: {input:?}"
+            );
+        }
+    }
     #[test]
     fn boundaries_and_shell() {
         assert!(endpoint("unix:///run/user/1000/docker.sock").is_ok());
@@ -235,7 +220,7 @@ mod tests {
         assert_eq!(quote("a'b;$(x)"), "'a'\\''b;$(x)'");
         assert!(id(&"a".repeat(64)).is_ok());
         assert!(id("abcdef").is_err());
-        assert_eq!(base64("5Lit5paH").unwrap(), "中文".as_bytes());
+        assert_eq!(unbase64("5Lit5paH").unwrap(), "中文".as_bytes());
         assert_eq!(text("中文中文", 7), "中文… [已截断]");
     }
     #[test]

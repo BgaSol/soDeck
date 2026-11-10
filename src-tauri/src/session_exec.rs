@@ -1,5 +1,6 @@
 //! Owned, bounded non-interactive commands on the current authenticated session.
 use crate::{resource_owner::Owner, workspaces::Context, AppCore};
+use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{
@@ -273,7 +274,7 @@ impl AppCore {
                 let ae = (a + 8192).min(out.stdout.len());
                 let be = (b + 8192).min(out.stderr.len());
                 Ok(
-                    json!({"state":out.state,"stdout":{"dataBase64":base64(&out.stdout[a..ae]),"nextOffset":ae.to_string()},"stderr":{"dataBase64":base64(&out.stderr[b..be]),"nextOffset":be.to_string()},"outputComplete":out.finished.is_some() && ae==out.stdout.len() && be==out.stderr.len(),"exitCode":out.exit_code,"exitSignal":out.exit_signal,"error":out.error,"remoteExitConfirmed":out.confirmed,"execSent":out.sent,"elapsedMs":out.finished.unwrap_or_else(Instant::now).duration_since(task.started).as_millis() as u64,"outputLimitExceeded":out.error["code"]=="outputLimit"}),
+                    json!({"state":out.state,"stdout":{"dataBase64":STANDARD.encode(&out.stdout[a..ae]),"nextOffset":ae.to_string()},"stderr":{"dataBase64":STANDARD.encode(&out.stderr[b..be]),"nextOffset":be.to_string()},"outputComplete":out.finished.is_some() && ae==out.stdout.len() && be==out.stderr.len(),"exitCode":out.exit_code,"exitSignal":out.exit_signal,"error":out.error,"remoteExitConfirmed":out.confirmed,"execSent":out.sent,"elapsedMs":out.finished.unwrap_or_else(Instant::now).duration_since(task.started).as_millis() as u64,"outputLimitExceeded":out.error["code"]=="outputLimit"}),
                 )
             }
             _ => Err(error("unsupported", "未知会话方法")),
@@ -294,23 +295,6 @@ fn reap(registry: &mut Registry) {
         o.finished
             .is_none_or(|at| !o.released && at.elapsed() < Duration::from_secs(30))
     });
-}
-fn base64(bytes: &[u8]) -> String {
-    const ABC: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut result = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for b in bytes.chunks(3) {
-        let n = ((b[0] as u32) << 16)
-            | ((b.get(1).copied().unwrap_or(0) as u32) << 8)
-            | b.get(2).copied().unwrap_or(0) as u32;
-        for i in 0..4 {
-            result.push(if i > b.len() {
-                '='
-            } else {
-                ABC[((n >> (18 - i * 6)) & 63) as usize] as char
-            });
-        }
-    }
-    result
 }
 async fn run(
     core: std::sync::Weak<AppCore>,
@@ -390,7 +374,7 @@ mod tests {
         assert!(decimal("-1").is_err());
         assert!(decimal("18446744073709551616").is_err());
         assert_eq!(decimal("18446744073709551615").unwrap(), u64::MAX);
-        assert_eq!(base64(b"fo"), "Zm8=");
-        assert_eq!(base64(&[0, 255, 128]), "AP+A");
+        assert_eq!(STANDARD.encode(b"fo"), "Zm8=");
+        assert_eq!(STANDARD.encode([0, 255, 128]), "AP+A");
     }
 }

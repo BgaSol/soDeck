@@ -49,6 +49,7 @@ required-features = ["test-fixtures"]
 test = false
 
 [dependencies]
+base64 = { version = "=0.23.1", default-features = false, features = ["std"] }
 tauri = { version = "=2.12.5", features = [] }
 tauri-plugin-dialog = "=2.8.4"
 tauri-plugin-clipboard-manager = "=2.5.0"

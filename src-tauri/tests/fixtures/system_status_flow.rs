@@ -47,5 +47,24 @@ async fn session_exec_bounds_streams_and_cancels_without_losing_shared_connectio
     }
     let task=start(5,"status-test:hang",256,30000);invoke("session.exec.cancel",json!({"taskId":task}));assert_eq!(terminal(task.clone()).await["state"],"cancelled");invoke("session.exec.release",json!({"taskId":task}));
     let task=start(6,"sample",256,1000);assert_eq!(terminal(task.clone()).await["state"],"completed");assert_eq!(target.state.auth.load(Ordering::Relaxed),1,"cancel caused a new authentication");invoke("session.exec.release",json!({"taskId":task}));
+    let task=start(7,"status-test:binary",30000,1000);let output=terminal(task.clone()).await;
+    assert_eq!(output["state"],"completed");
+    let (mut a,mut b)=(0usize,0usize);let (mut stdout,mut stderr)=(vec![],vec![]);
+    loop {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let page=poll(&task,&a.to_string(),&b.to_string());
+        assert_eq!(page,poll(&task,&a.to_string(),&b.to_string()));
+        assert!(serde_json::to_vec(&json!({"jsonrpc":"2.0","id":1,"result":page})).unwrap().len()<64*1024);
+        let out=STANDARD.decode(page["stdout"]["dataBase64"].as_str().unwrap()).unwrap();
+        let err=STANDARD.decode(page["stderr"]["dataBase64"].as_str().unwrap()).unwrap();
+        assert!(out.len()<=8192 && err.len()<=8192);
+        a+=out.len();b+=err.len();stdout.extend(out);stderr.extend(err);
+        assert_eq!(page["stdout"]["nextOffset"],a.to_string());assert_eq!(page["stderr"]["nextOffset"],b.to_string());
+        assert_eq!(page["outputComplete"],a==16385 && b==8193);
+        if page["outputComplete"]==true { break; }
+    }
+    assert_eq!(stdout,(0..16385).map(|i|i as u8).collect::<Vec<_>>());
+    assert_eq!(stderr,(0..8193).map(|i|(255-i%256) as u8).collect::<Vec<_>>());
+    invoke("session.exec.release",json!({"taskId":task}));
     close_terminal_views(&f);f.core.shutdown().unwrap();
 }

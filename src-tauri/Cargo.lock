@@ -4428,6 +4428,7 @@ dependencies = [
 name = "sodeck"
 version = "0.0.0"
 dependencies = [
+ "base64 0.23.1",
  "fast-socks5",
  "flate2",
  "gdk",

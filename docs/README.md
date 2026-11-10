@@ -50,6 +50,7 @@
 | 打包与发布工作流 | [发布提速修改方案](plan-release-performance.md)、[既有分步优化计划](plan-packaging-workflows.md) | [提速实施与验收](implementation-release-performance.md)、[既有实施与验收](implementation-packaging-workflows.md) |
 | 基础逻辑与成熟库复用 | [分步整改计划](plan-standard-library-adoption.md)，含三系统本地文件适配详细方案 | [版本、文件 URI 与菜单](implementation-standard-library-adoption.md) |
 | 本机系统绑定 | [功能与代码设计](plan-native-system-bindings.md)，覆盖运行代码、原生测试和系统打开入口 | [实现与原生验收](implementation-native-system-bindings.md) |
+| Base64 与系统打开库复用 | [接入方案](plan-base64-opener-adoption.md) | [实现与验收](implementation-base64-opener-adoption.md) |
 | SOCKS5 协议库复用 | [核心、网络插件与检查器完整计划](plan-socks5-library-adoption.md) | [接入与验证](implementation-standard-library-adoption.md#第六阶段socks5-报文库接入) |
 
 ## 版本与历史资料
