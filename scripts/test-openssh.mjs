@@ -45,7 +45,7 @@ try {
     const remoteFile=path.join(directory,'native-file.txt');fs.writeFileSync(remoteFile,'sodeck-native-original\n');
     fs.writeFileSync(config,JSON.stringify({port,username,privateKeyPath:path.join(directory,"user"),remoteFile:remoteFile.replaceAll('\\','/')}));
     const result=await new Promise((resolve,reject)=>{
-      const smoke=spawn(process.execPath,[process.argv.includes('--close-native')?"scripts/test-close-native.mjs":"scripts/smoke.mjs",...executable],{windowsHide:true,stdio:"inherit",env:{...process.env,SODECK_TEST_SSH_CONFIG:config}});
+      const smoke=spawn(process.execPath,[process.argv.includes('--file-editor-native')?"scripts/test-file-editor-native.mjs":process.argv.includes('--close-native')?"scripts/test-close-native.mjs":"scripts/smoke.mjs",...executable],{windowsHide:true,stdio:"inherit",env:{...process.env,SODECK_TEST_SSH_CONFIG:config}});
       smoke.on("error",reject);smoke.on("exit",resolve);
     });
     if (result!==0) throw new Error(`Packaged OpenSSH validation failed (${result}): ${diagnostic}`);

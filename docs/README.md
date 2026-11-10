@@ -34,6 +34,7 @@
 | 真实终端与文件 | [远程工作台](plan-remote-workbench.md) | [真实插件](implementation-remote-plugins.md) |
 | 文件目录树 | [文件树设计](plan-file-tree.md) | [文件树](implementation-file-tree.md) |
 | 文件管理与传输 | [功能范围](plan-file-management.md)、[编码方案](plan-file-management-coding.md) | [文件管理](implementation-file-management.md) |
+| 文件编辑器搜索与缩略图 | [功能设计](plan-file-editor-search.md)，含 1 MiB 硬上限、当前正文检索、彩色缩略图、语法识别与安全保存 | [实现、本机验证与待验收范围](implementation-file-editor-search.md) |
 | 网络隧道 | [插件方案](plan-network-proxy.md) | [网络隧道](implementation-network.md) |
 | Docker | [第一版范围与后续设计](plan-docker-plugin.md) | [实现、验证与平台限制](implementation-docker-plugin.md) |
 | 系统状态 | [功能设计](plan-system-status.md)、[编码方案](plan-system-status-coding.md) | [实现、验证与平台限制](implementation-system-status.md)、[界面规范](../plugins/system-status/DESIGN.md) |

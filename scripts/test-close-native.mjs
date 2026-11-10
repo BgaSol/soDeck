@@ -7,6 +7,7 @@ import net from 'node:net';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
+import {fileDocument} from './file-editor-fixture.mjs';
 
 assert.equal(process.platform, 'win32', 'This harness controls native WebView2 on Windows');
 const [executable] = process.argv.slice(2);
@@ -251,7 +252,7 @@ try {
       op: 'open', key: 'sodeck.files:editor', requestId: entry, resourceKey: ssh.remoteFile, params: { path: ssh.remoteFile },
     } } });
     const editorFrame = page.frameLocator(`.component-surface[data-view-id="${opened.viewId}"] iframe`);
-    const editor = editorFrame.getByRole('textbox', { name: '远端文件编辑器' });
+    const editor = fileDocument(editorFrame);
     await editor.waitFor();
     await until(() => editor.isEnabled(), 'Remote document did not load');
     const draft = `native unsaved draft ${entry}`;

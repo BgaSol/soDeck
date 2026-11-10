@@ -283,6 +283,7 @@
         n.attrs = info.attrs; return this.toggle(n);
       }
       if (info.attrs.kind !== 'file') throw new Error('此条目不是普通文件或目录');
+      if (Number(info.attrs.size)>1048576) throw new Error('文件超过 1 MiB，无法编辑，请下载后查看');
       await this.request('openView', { viewType: 'editor', resourceKey: info.path, params: { path: info.path } });
     }
     async refresh(path = this.selected) {

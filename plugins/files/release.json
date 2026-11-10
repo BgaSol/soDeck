@@ -192,6 +192,13 @@
                   }
                 ],
                 "apply": "live"
+              },
+              {
+                "key": "minimap",
+                "title": "显示缩略图",
+                "type": "boolean",
+                "default": true,
+                "apply": "live"
               }
             ]
           }

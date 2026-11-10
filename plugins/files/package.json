@@ -1,0 +1,12 @@
+{
+  "name": "sodeck-files-ui",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc -p tsconfig.json",
+    "build": "npm run check && node build.mjs"
+  },
+  "dependencies": { "monaco-editor": "0.57.0" },
+  "overrides": { "dompurify": "3.4.17" },
+  "devDependencies": { "typescript": "7.0.2", "vite": "8.3.6" }
+}

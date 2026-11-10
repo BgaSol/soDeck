@@ -3,6 +3,8 @@ use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
+#[cfg(test)]
+mod editor_tests;
 mod file_clipboard;
 mod tasks;
 struct View {
@@ -13,11 +15,50 @@ struct View {
     busy: bool,
     revision: u64,
     saved: u64,
+    edit_revision: u64,
+    staged_edit_revision: u64,
+    editor_state: serde_json::Value,
     cursor: u64,
     scroll: u64,
     navigation: serde_json::Value,
     context: serde_json::Value,
     editor: bool,
+}
+impl View {
+    fn update_dirty(&mut self) {
+        self.dirty = self.revision != self.saved || self.edit_revision != self.staged_edit_revision;
+    }
+    fn require_staged(&self) -> Result<(), String> {
+        if self.edit_revision != self.staged_edit_revision {
+            return Err("当前正文尚未完整暂存，请等待后重试".into());
+        }
+        Ok(())
+    }
+}
+fn validate_editor_state(state: &serde_json::Value) -> Result<(), String> {
+    if state["version"] != 1
+        || state.to_string().len() > 8192
+        || ["anchor", "active", "topLine"]
+            .iter()
+            .any(|key| state[*key].as_u64().is_none_or(|value| value > 1048577))
+        || state["topOffset"]
+            .as_f64()
+            .is_none_or(|value| !value.is_finite() || value.abs() > 100000000.0)
+        || state["left"]
+            .as_f64()
+            .is_none_or(|value| !value.is_finite() || !(0.0..=100000000.0).contains(&value))
+        || state["language"]
+            .as_str()
+            .is_none_or(|value| value.len() > 64)
+        || !state["search"]["open"].is_boolean()
+        || !state["search"]["matchCase"].is_boolean()
+        || state["search"]["query"]
+            .as_str()
+            .is_none_or(|value| value.encode_utf16().count() > 1024 || value.contains(['\r', '\n']))
+    {
+        return Err("文件编辑器状态无效或过大".into());
+    }
+    Ok(())
 }
 struct Selection {
     view: String,
@@ -106,6 +147,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 busy: false,
                 revision: 0,
                 saved: 0,
+                edit_revision: 0,
+                staged_edit_revision: 0,
+                editor_state: serde_json::Value::Null,
                 cursor: 0,
                 scroll: 0,
                 navigation: serde_json::Value::Null,
@@ -223,10 +267,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if job["state"] == "completed" {
                 if let Some(revision) = job["result"]["revision"].as_u64() {
                     v.saved = revision;
-                    v.dirty = v.revision != revision;
+                    v.update_dirty();
                 }
             }
             if method == "ui.save" && v.dirty && !v.busy {
+                v.require_staged()?;
                 if tasks.blocks(&p["context"], &v.path) {
                     return Err("此路径有文件任务正在修改，请等待后保存".into());
                 }
@@ -332,6 +377,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Some(tasks.command(view, &command)?)
                 }
                 Some("save") => {
+                    v.require_staged()?;
                     if tasks.blocks(&p["context"], &v.path) {
                         return Err("此路径有文件任务正在修改，请等待后保存".into());
                     }
@@ -355,19 +401,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Some("dirty") => {
                     v.dirty = true;
+                    if let Some(revision) = d["editRevision"].as_u64() {
+                        v.edit_revision = v.edit_revision.max(revision);
+                    }
                     v.revision = d["revision"].as_u64().unwrap_or(v.revision);
                 }
                 Some("staged") => {
                     v.revision = d["revision"].as_u64().ok_or("缺少 revision")?;
-                    v.dirty = v.revision != v.saved;
+                    if let Some(revision) = d["editRevision"].as_u64() {
+                        if revision > v.edit_revision {
+                            return Err("草稿编辑版本无效".into());
+                        }
+                        v.staged_edit_revision = v.staged_edit_revision.max(revision);
+                    }
+                    v.update_dirty();
                 }
                 Some("saved") => {
                     v.saved = d["revision"].as_u64().ok_or("缺少 revision")?;
-                    v.dirty = v.revision != v.saved;
+                    v.update_dirty();
                     v.busy = false;
                 }
                 Some("busy") => v.busy = d["busy"] == true,
                 Some("position") => {
+                    if let Some(state) = d.get("editorState") {
+                        validate_editor_state(state)?;
+                        v.editor_state = state.clone();
+                    }
                     v.cursor = d["cursor"].as_u64().unwrap_or(0);
                     v.scroll = d["scroll"].as_u64().unwrap_or(0);
                 }
@@ -395,7 +454,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let busy = v.busy || tasks.busy(view);
         Ok(
-            json!({"data":{"fileId":v.id,"path":v.path,"cursor":v.cursor,"scroll":v.scroll,"revision":v.revision,"navigation":v.navigation,"tasks":tasks.snapshot(&p["context"])},"metadata":{"title":v.title,"dirty":v.dirty,"busy":busy}}),
+            json!({"data":{"fileId":v.id,"path":v.path,"cursor":v.cursor,"scroll":v.scroll,"revision":v.revision,"editRevision":v.edit_revision,"editorState":v.editor_state,"navigation":v.navigation,"tasks":tasks.snapshot(&p["context"])},"metadata":{"title":v.title,"dirty":v.dirty,"busy":busy}}),
         )
     })
 }

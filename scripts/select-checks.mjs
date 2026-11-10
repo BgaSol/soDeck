@@ -141,6 +141,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
       if (/^scripts\/(docker-process|test-docker(?:-(ui|process|package))?)\.mjs$/.test(file)) { plan.scripts = true; integration.add('docker'); continue; }
       if (file === 'src-tauri/tests/fixtures/docker_flow.rs') { core(['linux-x86_64']); integration.add('docker'); continue; }
       const pluginUiTest = file.match(/^scripts\/test-(terminal|files)-ui\.mjs$/);
+      if (/^scripts\/(test-file-editor-ui|file-editor-fixture)\.mjs$/.test(file)) { plan.scripts = true; integration.add('files'); continue; }
       if (pluginUiTest) { plan.scripts = true; integration.add(pluginUiTest[1]); continue; }
       if (file === 'scripts/test-terminal-input.mjs') { plan.scripts = plan.terminalInput = true; continue; }
       if (/^scripts\/test-(connection-ui|desktop-ui|production-ui|server-ui|settings-ui|workspace-ui|workbench-interactions|workbench-layout)\.mjs$/.test(file)) { ui(); continue; }

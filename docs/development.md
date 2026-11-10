@@ -22,6 +22,7 @@ npm run dev
 | `npm run scripts:test` | 构建、打包、更新、原生验收和 CI 软件源配置回归 |
 | `npm run test` | 核心 Rust 测试，包含仅测试使用的宿主夹具 |
 | `npm run web:build` | TypeScript 检查与正式前端构建 |
+| `npm run files:editor:test` | 独立编辑器类型/构建、实际产物的搜索、语法颜色、缩略图、字节上限、剪贴板与恢复回归；需要 Chromium，不需要 OpenSSH |
 | `npm run communication:test` | 独立打包终端、文件、系统状态，在隔离 OpenSSH 上验证共享状态、目录跟随、挂载容量和页面恢复；需要 SSH 服务与 Playwright Chromium |
 | `npm run interactions:test` | 浏览器真实按压刷新、文件菜单可用状态、子菜单与溢出回归；需要 Playwright Chromium |
 | `npm run layout:test` | 真实 UI v2 插件进程和核心的嵌套分屏、独立创建、比例键盘/取消、紧凑恢复、页面返回来源、两工作台原子返回与草稿连续性；浏览器页面替代原生窗口，不能替代系统手势验收 |
@@ -39,6 +40,8 @@ npm run terminal:input:test
 CI 使用 `npm run ci:test -- <现有测试命令>`，例如 `npm run ci:test -- ui:test`。该入口保留原命令的退出码，输出实时日志，并将 SHA、attempt、平台、耗时和结果写入 `artifacts/ci/<命令>/`；命令中的冒号转换为连字符。服务器、工作台和正式产物 UI 在该入口下记录 Playwright trace，失败时保存，成功时丢弃；本机直接运行原入口不记录 trace。
 
 Windows 对运行中的测试程序有文件锁，使用同一 Rust target 目录的核心/插件集成与界面测试应顺序运行。修改网络 UI 后可用 `npm run network:test -- --network-ui-only` 重新独立打包并只复验实际插件界面与隧道，不重复协议压力测试；完整网络验证仍使用 `npm run network:test`。
+
+文件 UI 可用 `node scripts/test-openssh.mjs --files --files-ui-only` 重新独立打包并复验真实 SFTP 界面。文件插件现在有独立 npm 锁文件，打包入口自动安装并检查/构建其 UI；核心构建仍不依赖它。Windows 原生编辑器专项：先独立打包文件插件，将 `SODECK_TEST_FILES_PLUGIN` 指向完整包目录，再运行 `node scripts/test-openssh.mjs --file-editor-native --packaged <本次核心可执行文件>`。该专项使用隔离应用数据和 SSH，验证 WebView2/CSP/worker、编辑功能、保存与退出，不操作日常桌面剪贴板。传入构建目录程序只能证明本机原生运行，发行前仍需实际安装包与五平台验收。
 
 `npm run ui:production:test -- --updates-only` 验证正式前端的官方插件发现、安装和统一更新：仓库列表延迟加载、失败重试、运行中新插件出现与移除、离线缓存、连续安装、更新说明 Markdown、链接分发、批量更新，以及下载网络设置的草稿、地址排序/停用、保存冲突、单地址诊断和三主题小窗口布局，不运行后续工作区菜单与拆窗专项。列表、安装和诊断回归使用真实核心及隔离回环 HTTP，不依赖公网。
 

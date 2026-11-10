@@ -75,7 +75,7 @@ import { attachMenuPosition } from './menu-position.js';
       void position.ready.then(ready => { if (ready && menu === current) current.querySelector('button:not(:disabled)')?.focus({ preventScroll: true }); });
     }
     const context = event => {
-      if (event.defaultPrevented || !(event.target instanceof Element) || event.target.closest('.xterm,[role="menu"]')) return;
+      if (event.defaultPrevented || !(event.target instanceof Element) || (event.target.closest('.xterm,[role="menu"]') || event.target.closest('[data-text-menu]')?.dataset.textMenu==='custom')) return;
       const s = snapshot(event.target); if (!s) return;
       event.preventDefault(); show(s, { x: event.clientX, y: event.clientY, contextElement: s.element });
     };
@@ -89,7 +89,7 @@ import { attachMenuPosition } from './menu-position.js';
       }
       if (menu && event.key === 'Tab') { close(true); return; }
       if (!menu) version++;
-      if ((event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) && event.target instanceof Element && !event.target.closest('.xterm')) {
+      if ((event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) && event.target instanceof Element && !event.target.closest('.xterm') && event.target.closest('[data-text-menu]')?.dataset.textMenu!=='custom') {
         const s = snapshot(event.target); if (!s) return;
         event.preventDefault(); event.stopPropagation(); show(s, s.element);
       }

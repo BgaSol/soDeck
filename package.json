@@ -22,6 +22,7 @@
     "network:test": "node scripts/test-openssh.mjs --network",
     "network:netem": "node scripts/test-network-netem.mjs",
     "files:test": "node scripts/test-openssh.mjs --files",
+    "files:editor:test": "npm ci --prefix plugins/files --ignore-scripts && node scripts/test-file-editor-ui.mjs",
     "plugin:build": "node scripts/package-plugin.mjs",
     "settings:test": "node scripts/test-settings-ui.mjs",
     "system-status:test": "node scripts/test-openssh.mjs --system-status",

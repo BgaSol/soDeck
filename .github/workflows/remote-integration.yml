@@ -198,6 +198,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Installed core architecture mismatch' }
           node scripts/test-openssh.mjs --packaged "$installDir/sodeck.exe"
           if ($LASTEXITCODE -ne 0) { throw 'Actual remote package test failed' }
+          if (Test-Path "$env:SODECK_TEST_FILES_PLUGIN/ui/vendor/editor.js") {
+            npm ci
+            if ($LASTEXITCODE -ne 0) { throw 'File editor test dependencies failed' }
+            node scripts/test-openssh.mjs --file-editor-native --packaged "$installDir/sodeck.exe"
+            if ($LASTEXITCODE -ne 0) { throw 'Actual file editor test failed' }
+          }
           if ('${{ inputs.desktop_files }}' -eq 'true') {
             node scripts/test-desktop-files-native.mjs 'src-tauri/target/${{ matrix.target }}/debug/desktop-files-fixture.exe' "$installDir/sodeck.exe"
             if ($LASTEXITCODE -ne 0) { throw 'Actual file clipboard test failed' }
@@ -238,6 +244,8 @@ jobs:
           name: Native-verification-result-${{ matrix.name }}
           path: |
             native-result-${{ matrix.name }}.json
+            artifacts/files-ui/native-editor.json
+            artifacts/files-ui/editor-native.png
             artifacts/native-desktop-files/*.json
           if-no-files-found: error
           overwrite: true

@@ -16,6 +16,12 @@ test('documentation produces an explicit lightweight check without product suite
   assert.equal(p.netem, false);
 });
 
+test('file editor regression selects the file plugin integration',()=>{
+  for(const file of ['scripts/test-file-editor-ui.mjs','scripts/file-editor-fixture.mjs']){
+    const plan=selectChecks([file]);assert(plan.scripts&&plan.integration[0].files);assert.deepEqual(plan.native,[]);assert(!plan.terminalInput&&!plan.desktop);
+  }
+});
+
 test('frontend layout keeps UI verification without SSH/network/native source suites', () => {
   const p = selectChecks(['src/shell.css', 'src/workspaces.ts']);
   assert(p.web && p.browser && p.scripts && !p.desktop);

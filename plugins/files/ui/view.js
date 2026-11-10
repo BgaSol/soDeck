@@ -4,8 +4,8 @@ import {fontPresets,fontAsset} from './font-presets.js';
 import {readDocument} from './read-document.js';
 import {connectFileState} from './shared-state.js';
 (() => {
- const root=document.querySelector('#root'),encoder=new TextEncoder();
- let id,textarea,status,tree,transfers,cancelButton,jobTimer,jobId,busy=false,queue=Promise.resolve(),localRevision=0,eol='\n',bom=false,loaded=false,pumping=false,pendingDraft=false;
+ const root=document.querySelector('#root');
+ let id,codeEditor,status,tree,transfers,cancelButton,jobTimer,jobId,busy=false,queue=Promise.resolve(),dirtyQueue=Promise.resolve(),localRevision=0,eol='\n',bom=false,loaded=false,pumping=false,pendingDraft=false,positionTimer,stagedRevision=0,stagedLocalRevision=0;
  const request=(method,params)=>sodeck.request(method,params);
  let activated=false,readOnly=false,transferFrozen=false,composing=false,mountData;
  let settingsSnapshot,settingsEpoch=0,disposed=false,shared;
@@ -18,14 +18,11 @@ import {connectFileState} from './shared-state.js';
   if(snapshot.pageId==='editor'&&!loaded)return;
   let error;
   if(snapshot.pageId==='browser'){tree?.preferences(v);shared?.settings(snapshot);}
-  if(snapshot.pageId==='editor'&&textarea){
+  if(snapshot.pageId==='editor'&&codeEditor){
    let family;
    try{family=await loadFont(v.font,fontPresets,fontAsset);}catch(e){error=e.message;try{family=await loadFont({source:'preset',id:'jetbrains-mono'},fontPresets,fontAsset);}catch{family='monospace';}}
    if(disposed||ticket!==settingsEpoch)return;
-   const start=textarea.selectionStart,end=textarea.selectionEnd,direction=textarea.selectionDirection,top=textarea.scrollTop,left=textarea.scrollLeft;
-   textarea.style.fontFamily=family;textarea.style.fontSize=v.fontSize+'px';textarea.style.lineHeight=String(v.lineHeight);textarea.style.tabSize=String(v.tabSize);
-   textarea.wrap=v.wordWrap?'soft':'off';textarea.style.whiteSpace=v.wordWrap?'pre-wrap':'pre';textarea.style.overflowWrap=v.wordWrap?'anywhere':'normal';
-   textarea.setSelectionRange(start,end,direction);textarea.scrollTop=top;textarea.scrollLeft=left;
+   codeEditor.preferencesChanged(v,family);
   }
   if(disposed||ticket!==settingsEpoch)return;
   if(snapshot.revision)await request('settings',{op:'applied',pageId:snapshot.pageId,definitionToken:snapshot.definitionToken,revision:snapshot.revision,...(error?{error}:{})}).catch(()=>{});
@@ -44,30 +41,32 @@ import {connectFileState} from './shared-state.js';
     if(state.state==='running'){message(state.kind==='download'?`下载中 ${size(state.received)} / ${size(state.total)}`:'正在检查并保存…');jobTimer=setTimeout(poll,300);return;}
     busy=false;if(cancelButton)cancelButton.hidden=true;await event({action:'busy',busy:false});
     if(state.state==='failed'){message(state.error,true);return;}
-    if(state.result?.revision!==undefined){await event({action:'saved',revision:state.result.revision});message('已保存到服务器');}
+    if(state.result?.revision!==undefined){await event({action:'saved',revision:state.result.revision});message(pendingDraft||pumping||localRevision!==stagedLocalRevision||state.result.revision!==stagedRevision?'已保存先前版本 · 当前内容仍未保存':'已保存到服务器');}
     else message('下载完成：'+state.result.path);
    }catch(e){busy=false;if(cancelButton)cancelButton.hidden=true;message(e.message,true);}
   };await poll();
  }
  async function download(target){await transfers.download([target]);}
- function encoded(){let text=textarea.value;if(eol==='\r\n')text=text.replaceAll('\n','\r\n');return encoder.encode((bom?'\uFEFF':'')+text);}
+ function encoded(){return codeEditor.bytes();}
+ async function flushPosition(){clearTimeout(positionTimer);if(codeEditor&&activated&&!readOnly&&!transferFrozen)await event({action:'position',cursor:codeEditor.selection().active,scroll:Math.round(codeEditor.editor.getScrollTop()),editorState:codeEditor.state()});}
+ function position(){clearTimeout(positionTimer);if(activated&&!transferFrozen)positionTimer=setTimeout(()=>void flushPosition().catch(()=>{}),150);}
  function stage(){
-  ++localRevision;pendingDraft=true;if(pumping)return;pumping=true;
+  const changed=++localRevision;pendingDraft=true;dirtyQueue=dirtyQueue.catch(()=>{}).then(()=>event({action:'dirty',editRevision:changed}));dirtyQueue.catch(e=>message(e.message,true));if(pumping)return;pumping=true;
   // At most one in-flight snapshot; newer input is coalesced, not queued as full documents.
   queue=Promise.resolve().then(async()=>{while(pendingDraft){
    pendingDraft=false;
-   const revision=localRevision,bytes=encoded(),cursor=textarea.selectionStart,scroll=textarea.scrollTop;
-   await event({action:'dirty'});
+   const revision=localRevision,bytes=encoded();
+   await dirtyQueue;
    if(bytes.length>1048576)throw new Error('草稿超过 1 MiB，无法保存；请缩小内容');
    let staged;
    for(let offset=0;offset<bytes.length||offset===0;offset+=16384){staged=await data('stage',{offset,begin:offset===0,done:offset+16384>=bytes.length,data:Array.from(bytes.subarray(offset,offset+16384))});}
-   await event({action:'staged',revision:staged.revision});await event({action:'position',cursor,scroll});
+   stagedRevision=staged.revision;stagedLocalRevision=revision;await event({action:'staged',revision:staged.revision,editRevision:revision});await flushPosition();
    if(revision===localRevision)message('未保存 · UTF-8'+(bom?' BOM':'')+(eol==='\r\n'?' · CRLF':' · LF'));
   }}).finally(()=>{pumping=false;});
   queue.catch(e=>message(e.message,true));
  }
- async function save(){if(!loaded)throw new Error('文件尚未准备好编辑');await queue;if(busy)throw new Error('保存或下载正在进行');await watchJob(await event({action:'save'}));}
- function theme(tokens){for(const [name,value]of Object.entries(tokens||{}))document.documentElement.style.setProperty('--'+name,value);}
+ async function save(){if(!loaded)throw new Error('文件尚未准备好编辑');if(codeEditor?.composing)throw new Error('请先完成当前输入法组合输入');await queue;if(busy)throw new Error('保存或下载正在进行');await watchJob(await event({action:'save'}));}
+ function theme(tokens){for(const [name,value]of Object.entries(tokens||{}))document.documentElement.style.setProperty('--'+name,value);codeEditor?.theme(tokens||{});}
  async function init(m){
   loaded=false;activated=false;readOnly=Boolean(m.readOnly);mountData=m;root.inert=readOnly;
   settingsSnapshot=m.settings;
@@ -84,23 +83,23 @@ import {connectFileState} from './shared-state.js';
    void applySettings(settingsSnapshot,true);
   }else{
    root.className='editor-root';const header=document.createElement('header');header.className='editor-toolbar';root.append(header);
-   const title=document.createElement('span');title.className='path';title.textContent=m.data.path;title.title=m.data.path;header.append(title,button('保存',save,'primary'),button('下载远端',()=>download(m.data.path)),button('导出草稿',async()=>{await queue;const result=await data('exportDraft',{path:m.data.path});if(!result.cancelled)message('草稿已导出：'+result.path);}));
+   const title=document.createElement('span');title.className='path';title.textContent=m.data.path;title.title=m.data.path;header.append(title,button('保存',save,'primary'),button('搜索',()=>codeEditor?.openSearch()),button('下载远端',()=>download(m.data.path)),button('导出草稿',async()=>{if(codeEditor?.composing)throw new Error('请先完成当前输入法组合输入');await queue;const result=await data('exportDraft',{path:m.data.path});if(!result.cancelled)message('草稿已导出：'+result.path);}));
    transfers=new FileTransfers({fileId:id,data,event,request,message,host:root,target:()=>m.data.path.slice(0,m.data.path.lastIndexOf('/'))||'/',refresh:async()=>{}});
    const exportHint=document.createElement('p');exportHint.className='editor-export-hint';exportHint.textContent='下载远端：服务器当前版本 · 导出草稿：此页当前内容（含未保存更改）';root.append(exportHint);
-   textarea=document.createElement('textarea');textarea.spellcheck=false;textarea.disabled=true;textarea.setAttribute('aria-label','远端文件编辑器');root.append(textarea,footer);
+   const editorHost=document.createElement('section');editorHost.className='code-editor';editorHost.dataset.ready='false';editorHost.setAttribute('aria-label','远端文件编辑器');root.append(editorHost,footer);message('正在读取文件…');
    const {info,bytes}=await readDocument(data,m.data.path);
    let text;try{text=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(bytes);}catch{throw new Error('此文件不是有效 UTF-8 文本，请下载后查看');}
    if(text.includes('\0'))throw new Error('检测到二进制内容，请下载后查看');
    bom=text.startsWith('\uFEFF');if(bom)text=text.slice(1);
    const crlf=(text.match(/\r\n/g)||[]).length,lf=(text.match(/\n/g)||[]).length;
    if(text.replaceAll('\r\n','').includes('\r')||(crlf>0&&crlf!==lf))throw new Error('文件包含混合换行，为避免改变原文，请下载后编辑');
-   eol=crlf?'\r\n':'\n';textarea.value=text.replaceAll('\r\n','\n');loaded=true;
-   textarea.setSelectionRange(m.data.cursor||0,m.data.cursor||0);textarea.scrollTop=m.data.scroll||0;
+   eol=crlf?'\r\n':'\n';
+   const css=document.createElement('link');css.rel='stylesheet';css.href=new URL('./vendor/editor.css',import.meta.url).href;document.head.append(css);
+   const {FileEditor}=await import('./vendor/editor.js');if(disposed)return;
+   localRevision=m.data.editRevision||0;stagedLocalRevision=localRevision;stagedRevision=info.revision;
+   codeEditor=new FileEditor({host:editorHost,footer,path:m.data.path,text:text.replaceAll('\r\n','\n'),bom,eol,state:m.data.editorState,cursor:m.data.cursor,scroll:m.data.scroll,notify:message,change:stage,position,save:()=>void perform(save)});codeEditor.theme(m.tokens||{});loaded=true;
    await applySettings(settingsSnapshot||{pageId:'editor',values:{font:{source:'preset',id:'jetbrains-mono'},fontSize:14,lineHeight:1.5,wordWrap:false,tabSize:4}},true);
-   textarea.disabled=readOnly;
-   textarea.addEventListener('compositionstart',()=>{composing=true;});textarea.addEventListener('compositionend',()=>{composing=false;});
-   textarea.addEventListener('input',stage);textarea.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();void perform(save);}});
-   textarea.addEventListener('select',()=>void event({action:'position',cursor:textarea.selectionStart,scroll:textarea.scrollTop}).catch(()=>{}));
+   codeEditor.readOnly(readOnly||!activated);editorHost.dataset.ready='true';
    message('UTF-8'+(bom?' BOM':'')+(eol==='\r\n'?' · CRLF':' · LF')+' · '+size(info.size));
   }
   sodeck.mounted(true,m.viewType==='files');
@@ -109,13 +108,13 @@ import {connectFileState} from './shared-state.js';
  addEventListener('sodeck:themeChanged',e=>theme(e.detail.tokens));
  addEventListener('sodeck:settingsChanged',e=>void applySettings(e.detail.settings,true));
  addEventListener('sodeck:textMenuError',e=>message(e.detail,true));
- addEventListener('sodeck:focus',()=>tree?tree.focus():textarea?.focus());
- addEventListener('sodeck:visibilityChanged',e=>{shared?.visibility(e.detail.visible);transfers?.visibility(e.detail.visible);if(!e.detail.visible)tree?.closeMenu();});
+ addEventListener('sodeck:focus',()=>tree?tree.focus():codeEditor?.focus());
+ addEventListener('sodeck:visibilityChanged',e=>{shared?.visibility(e.detail.visible);transfers?.visibility(e.detail.visible);codeEditor?.visibility(e.detail.visible);if(!e.detail.visible)tree?.closeMenu();});
  addEventListener('sodeck:localFileDrop',e=>tree?.nativeDrop(e.detail));
  addEventListener('sodeck:contextChanged',()=>{shared?.invalidate();transfers?.invalidate();tree?.contextChanged();message(tree?'连接已更换，刷新目录以读取最新文件':'服务器连接已更换；草稿保留，保存前将重新检查远端版本');});
- addEventListener('sodeck:flush',async e=>{try{if(composing)throw new Error('请先完成当前输入法组合输入');await queue;await tree?.flush();transferFrozen=e.detail.freeze===true;root.inert=readOnly||transferFrozen;parent.postMessage({channel:'sodeck-ui-v2',type:'flushed',surfaceId:e.detail.surfaceId,id:e.detail.id},'*');}catch(error){transferFrozen=false;root.inert=readOnly;parent.postMessage({channel:'sodeck-ui-v2',type:'flushed',surfaceId:e.detail.surfaceId,id:e.detail.id,error:error.message},'*');}});
- addEventListener('sodeck:surfaceReady',()=>{activated=true;readOnly=false;transferFrozen=false;root.inert=false;void data('status').then(job=>{if(job.state==='running')return watchJob(job);}).catch(error=>message(error.message,true));if(textarea)textarea.disabled=false;shared?.visibility(mountData?.visible!==false);});
- addEventListener('sodeck:transferCancelled',()=>{transferFrozen=false;root.inert=readOnly;});
- addEventListener('sodeck:unmount',()=>{disposed=true;settingsEpoch++;shared?.dispose();transfers?.dispose();tree?.dispose();});
- addEventListener('unload',()=>{clearTimeout(jobTimer);transfers?.dispose();tree?.dispose();});
+ addEventListener('sodeck:flush',async e=>{try{if(composing||codeEditor?.composing)throw new Error('请先完成当前输入法组合输入');if(e.detail.freeze===true){root.inert=true;codeEditor?.readOnly(true);}await queue;await dirtyQueue;await flushPosition();await tree?.flush();transferFrozen=e.detail.freeze===true;root.inert=readOnly||transferFrozen;codeEditor?.readOnly(readOnly||transferFrozen);parent.postMessage({channel:'sodeck-ui-v2',type:'flushed',surfaceId:e.detail.surfaceId,id:e.detail.id},'*');}catch(error){transferFrozen=false;root.inert=readOnly;codeEditor?.readOnly(readOnly);parent.postMessage({channel:'sodeck-ui-v2',type:'flushed',surfaceId:e.detail.surfaceId,id:e.detail.id,error:error.message},'*');}});
+ addEventListener('sodeck:surfaceReady',()=>{activated=true;readOnly=false;transferFrozen=false;root.inert=false;void data('status').then(job=>{if(job.state==='running')return watchJob(job);}).catch(error=>message(error.message,true));codeEditor?.readOnly(false);shared?.visibility(mountData?.visible!==false);});
+ addEventListener('sodeck:transferCancelled',()=>{transferFrozen=false;root.inert=readOnly;codeEditor?.readOnly(readOnly);});
+ addEventListener('sodeck:unmount',()=>{disposed=true;settingsEpoch++;clearTimeout(positionTimer);codeEditor?.dispose();shared?.dispose();transfers?.dispose();tree?.dispose();});
+ addEventListener('unload',()=>{clearTimeout(jobTimer);clearTimeout(positionTimer);codeEditor?.dispose();transfers?.dispose();tree?.dispose();});
 })();

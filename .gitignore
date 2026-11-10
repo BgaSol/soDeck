@@ -5,6 +5,8 @@
 /plugins/*/target/
 /plugins/terminal/node_modules/
 /plugins/terminal/ui/
+/plugins/files/node_modules/
+/plugins/files/ui/vendor/
 /crates/plugin-client/target/
 *.log
 /artifacts/

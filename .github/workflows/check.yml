@@ -197,6 +197,9 @@ jobs:
       - name: Real files plugin and SFTP
         if: matrix.files
         run: npm run ci:test -- files:test
+      - name: File editor syntax, minimap, search and byte limits
+        if: matrix.files
+        run: npm run ci:test -- files:editor:test
       - name: Real terminal plugin and PTY
         if: matrix.terminal
         run: npm run ci:test -- terminal:test

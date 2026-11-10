@@ -1,5 +1,6 @@
 // Actual file plugin + independent OpenSSH SFTP, exercised through its shipped iframe UI.
 import assert from 'node:assert/strict';
+import {fileDocument as editorDocument} from './file-editor-fixture.mjs';
 import {transferWorkbench} from './workbench-transfer-fixture.mjs';
 import {recordTrace} from './ui-trace.mjs';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import readline from 'node:readline';
@@ -126,7 +127,7 @@ try{
  await locate(filename);
  await row('设置 file.txt').click();assert.equal(await main.locator('iframe[title^="设置 file.txt"]').count(),0);
  pauseRead=true;await row('设置 file.txt').dblclick();
- let editor=main.frameLocator('iframe[title^="设置 file.txt"]');let text=editor.locator('textarea');await text.waitFor();await wait(()=>typeof readRelease==='function');
+ let editor=main.frameLocator('iframe[title^="设置 file.txt"]');let text=editorDocument(editor);await text.waitFor();await wait(()=>typeof readRelease==='function');
  assert.equal(await text.isEnabled(),false);
  const loadingSettings=await call('settings_page',{pluginId:'sodeck.files',pageId:'editor'});
  assert.equal(loadingSettings.applications.filter(a=>a.target==='surface').length,0,'Reading a descriptor must not report an editor with applied preferences');
@@ -143,22 +144,25 @@ try{
  await main.locator(`.component-surface[data-view-id="${viewId}"]`).waitFor({state:'detached'});
  assert.equal(fs.readFileSync(filename,'utf8'),'\uFEFFsaved by close\r\n中文\r\n');
  await row('设置 file.txt').dblclick();
- editor=main.frameLocator('iframe[title^="设置 file.txt"]');text=editor.locator('textarea');await wait(()=>text.isEnabled());assert.equal(await text.inputValue(),'saved by close\n中文\n');
+ editor=main.frameLocator('iframe[title^="设置 file.txt"]');text=editorDocument(editor);await wait(()=>text.isEnabled());assert.equal(await text.inputValue(),'saved by close\n中文\n');
  await text.fill('draft survives move\n中文');await main.evaluate(()=>window.manager.flush());
  await editor.getByRole('button',{name:'下载远端',exact:true}).click();await editor.getByRole('status').filter({hasText:'下载完成'}).waitFor();
  assert.equal(fs.readFileSync(local,'utf8'),'\uFEFFsaved by close\r\n中文\r\n','Remote download excludes current draft');
  const remoteBeforeSettings=fs.readFileSync(filename);
- await text.evaluate(el=>{window.settingsEditor=el;el.setSelectionRange(2,9,'backward');});
+ await text.evaluate(el=>{window.settingsEditor=el.sodeckEditor;el.sodeckEditor.setSelection(9,2);});
  const preference=await call('settings_page',{pluginId:'sodeck.files',pageId:'editor'});
  const savedPreference=(await call('save_settings',{pluginId:'sodeck.files',pageId:'editor',input:{definitionToken:preference.definitionToken,baseRevision:preference.revision,requestId:'editor-display',values:{...preference.values,fontSize:18,lineHeight:1.6,wordWrap:true,tabSize:8,font:{source:'preset',id:'source-code-pro'}}}})).snapshot;
  await main.evaluate(snapshot=>{const frame=document.querySelector('iframe[title^="设置 file.txt"]');frame.contentWindow.postMessage({channel:'sodeck-ui-v2',surfaceId:frame.dataset.surfaceId,type:'settingsChanged',settings:snapshot},new URL(frame.src).origin);},savedPreference);
- await wait(()=>text.evaluate(el=>el.style.fontSize==='18px'&&el.style.fontFamily.includes('SoDeckFont')));
+ await wait(()=>text.evaluate(el=>el.sodeckEditor.editor.getRawOptions().fontSize===18&&el.sodeckEditor.editor.getRawOptions().fontFamily.includes('SoDeckFont')));
  assert.equal(await text.inputValue(),'draft survives move\n中文');assert.deepEqual(fs.readFileSync(filename),remoteBeforeSettings);
- assert(await text.evaluate(el=>el===window.settingsEditor));assert.deepEqual(await text.evaluate(el=>[el.selectionStart,el.selectionEnd,el.selectionDirection]),[2,9,'backward']);
+ assert(await text.evaluate(el=>el.sodeckEditor===window.settingsEditor));assert.deepEqual(await text.evaluate(el=>el.sodeckEditor.selection()),{anchor:9,active:2});
  await main.evaluate(()=>window.manager.flush());assert.deepEqual(fs.readFileSync(filename),remoteBeforeSettings);
+ const stagedBeforeSearch=requests.filter(r=>r.command==='component_data'&&r.args.request?.action==='stage').length;
+ await editor.getByLabel('文件语言').selectOption('ini');await editor.getByRole('button',{name:'搜索',exact:true}).click();await editor.getByRole('textbox',{name:'查找当前文件'}).fill('draft');await wait(()=>editor.locator('.editor-find-count').textContent().then(text=>text.endsWith('1 处')));await main.evaluate(()=>window.manager.flush());assert.equal(requests.filter(r=>r.command==='component_data'&&r.args.request?.action==='stage').length,stagedBeforeSearch);
  const savedScroll=await sidebar.getByRole('tree').evaluate(el=>el.scrollTop);
  // Destruction/remount must recover the staged draft, with no remote read replacing it.
- await main.reload();await main.waitForFunction(()=>window.ready);editor=main.frameLocator('iframe[title^="设置 file.txt"]');text=editor.locator('textarea');await wait(async()=>await text.inputValue()==='draft survives move\n中文');
+ await main.reload();await main.waitForFunction(()=>window.ready);editor=main.frameLocator('iframe[title^="设置 file.txt"]');text=editorDocument(editor);await wait(async()=>await text.inputValue()==='draft survives move\n中文');
+ assert.equal(await editor.getByRole('textbox',{name:'查找当前文件'}).inputValue(),'draft');assert.equal(await editor.getByLabel('文件语言').inputValue(),'ini');
  fs.writeFileSync(filename,'external');await editor.getByRole('button',{name:'保存',exact:true}).click();await editor.getByRole('status').filter({hasText:'已被修改'}).waitFor();assert.equal(fs.readFileSync(filename,'utf8'),'external');
  sidebar=main.frameLocator('iframe[title^="文件 ·"]');await wait(()=>sidebar.getByRole('textbox',{name:'远端路径'}).isEnabled());
  assert(await expanded('home'));assert(await expanded('nginx'));assert.equal(await row('设置 file.txt').getAttribute('aria-selected'),'true');
@@ -194,9 +198,9 @@ try{
  const movedSidebar=moved.frameLocator('iframe[title^="文件 ·"]');await wait(()=>movedSidebar.getByRole('textbox',{name:'远端路径'}).isEnabled());
  assert.equal(await movedSidebar.getByRole('treeitem',{name:'nginx',exact:true}).getAttribute('aria-expanded'),'true');
  assert.equal(await movedSidebar.getByRole('treeitem',{name:'设置 file.txt',exact:true}).getAttribute('aria-selected'),'true');
- assert.equal(await moved.frameLocator('iframe[title^="设置 file.txt"]').locator('textarea').inputValue(),'draft survives move\n中文');
+ assert.equal(await editorDocument(moved.frameLocator('iframe[title^="设置 file.txt"]')).inputValue(),'draft survives move\n中文');
  await transferWorkbench(call,{window:'workspace-browser',id:board,target:'main'},{sourcePage:moved,openTarget:async()=>main});
- sidebar=main.frameLocator('iframe[title^="文件 ·"]');await wait(()=>sidebar.getByRole('textbox',{name:'远端路径'}).isEnabled());editor=main.frameLocator('iframe[title^="设置 file.txt"]');text=editor.locator('textarea');await wait(()=>text.isEnabled());
+ sidebar=main.frameLocator('iframe[title^="文件 ·"]');await wait(()=>sidebar.getByRole('textbox',{name:'远端路径'}).isEnabled());editor=main.frameLocator('iframe[title^="设置 file.txt"]');text=editorDocument(editor);await wait(()=>text.isEnabled());
  await row('large.bin').click({button:'right'});await sidebar.getByRole('menuitem',{name:'下载',exact:true}).click();
  const replaceDownload=sidebar.locator('.transfer-item').filter({hasText:'等待处理同名 · 下载 · large.bin'}).getByRole('button',{name:'覆盖',exact:true});
  const downloadId=(await replaceDownload.getAttribute('data-control')).slice(0,-'/覆盖'.length);
