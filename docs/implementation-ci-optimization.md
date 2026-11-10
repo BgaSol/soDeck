@@ -47,6 +47,10 @@
 
 main 的 `72f1cbd` / `b59e9e1` 同时修正了文件系统范围和实际默认关联。同步时直接复用这两个文件的 main 实现，保留本轮 macOS 布局等待；PR 不再携带另一套目录或 UserChoice 处理。此前冲突导致 PR 自动 Check 没有启动，解决后在固定合并提交重新验证。
 
+[Check 42782850740](https://github.com/BgaSol/soDeck/actions/runs/42782850740) 在 `48860fb` 全部通过，耗时 11 分 19 秒。[核心包 42782985473](https://github.com/BgaSol/soDeck/actions/runs/42782985473) 的两个 Linux 与 Windows x86_64 通过；macOS 实际应用的创建、缩放、22pt 按钮布局及启动退出通过，随后夹具修改 HTTPS 默认关联遇到 LaunchServices `-54`；Windows ARM64 的实际应用启动退出和唯一完整 URL 通过，但目录被 Shell 从短路径展开为长路径，旧字符串比较拒绝了同一目录。失败平台没有上传合格包，这次运行不能作为完整发行候选。
+
+随后同步 main 的 `18f94b4`、`f0b4002`、`b4f1cbd`：macOS 受控默认关联限定到允许设置的 HTTP，临时 handler 正确接收 URL 与文件 Apple Events，并在核心包验收前单独验证 handler；目录按实际文件系统身份接受别名，仍拒绝其他目标、重复调用和被替换目录。继续复用 main 实现，没有降低调用次数或目标断言。合并后本机 `npm run check`、100 项脚本测试、actionlint 和 135 份 Markdown 结构检查通过；初次本机检查因未将已安装 Cargo 加入当前进程 PATH 失败，补齐工具链 PATH 后通过。五平台实际包与最终 Check 的固定来源及结果以 [PR #10](https://github.com/BgaSol/soDeck/pull/10) 交付记录为准，旧失败 run 不用于验证新源码。
+
 ### 首个成功样本的耗时
 
 | 指标 | 既有成功 Check 42766195900 | 新 Check 42773434512 |
