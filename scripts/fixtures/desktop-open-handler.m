@@ -29,15 +29,16 @@ int main(int argc, const char **argv) {
         if (argc > 1 && strcmp(argv[1], "associations") == 0) {
             NSArray *old = @[(id)CFBridgingRelease(LSCopyDefaultHandlerForURLScheme(CFSTR("http"))) ?: @"",
                 (id)CFBridgingRelease(LSCopyDefaultHandlerForURLScheme(CFSTR("https"))) ?: @"",
-                (id)CFBridgingRelease(LSCopyDefaultRoleHandlerForContentType(CFSTR("public.folder"), kLSRolesAll)) ?: @""];
+                (id)CFBridgingRelease(LSCopyDefaultRoleHandlerForContentType(CFSTR("public.folder"), kLSRolesViewer)) ?: @"com.apple.finder"];
             puts([[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:old options:0 error:nil] encoding:NSUTF8StringEncoding].UTF8String);
             return 0;
         }
         if (argc > 1 && strcmp(argv[1], "set") == 0) {
-            OSStatus result = LSSetDefaultHandlerForURLScheme(CFSTR("http"), (__bridge CFStringRef)[NSString stringWithUTF8String:argv[2]]);
-            result |= LSSetDefaultHandlerForURLScheme(CFSTR("https"), (__bridge CFStringRef)[NSString stringWithUTF8String:argv[3]]);
-            result |= LSSetDefaultRoleHandlerForContentType(CFSTR("public.folder"), kLSRolesAll, (__bridge CFStringRef)[NSString stringWithUTF8String:argv[4]]);
-            return result == noErr ? 0 : 1;
+            OSStatus http = argc > 2 && strlen(argv[2]) ? LSSetDefaultHandlerForURLScheme(CFSTR("http"), (__bridge CFStringRef)[NSString stringWithUTF8String:argv[2]]) : noErr;
+            OSStatus https = argc > 3 && strlen(argv[3]) ? LSSetDefaultHandlerForURLScheme(CFSTR("https"), (__bridge CFStringRef)[NSString stringWithUTF8String:argv[3]]) : noErr;
+            OSStatus folder = LSSetDefaultRoleHandlerForContentType(CFSTR("public.folder"), kLSRolesViewer, (__bridge CFStringRef)[NSString stringWithUTF8String:argv[4]]);
+            if (http || https || folder) fprintf(stderr, "LaunchServices defaults: http=%d https=%d folder=%d\n", (int)http, (int)https, (int)folder);
+            return http == noErr && https == noErr && folder == noErr ? 0 : 1;
         }
         if (argc > 1 && strcmp(argv[1], "register") == 0) {
             return LSRegisterURL((__bridge CFURLRef)[NSURL fileURLWithPath:[NSString stringWithUTF8String:argv[2]]], true) == noErr ? 0 : 1;
