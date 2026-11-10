@@ -134,7 +134,7 @@ enum DockerObject {
 
 | viewType | 位置与实例策略 | 内容和生命周期 |
 | --- | --- | --- |
-| `browser` | sidebar / perWorkspace，默认左侧固定入口，openOnWorkspace=none | Engine 概览、容器/镜像/网络/卷分类及筛选；点击入口才创建并探测 |
+| `browser` | sidebar / perWorkspace，默认右侧鲸鱼图标固定入口，openOnWorkspace=none | Engine 概览、容器/镜像/网络/卷分类及筛选；点击入口才创建并探测 |
 | `container` | editor / perResource | 单容器详情和指标；相同容器再次打开定位原页 |
 | `logs` | editor / perResource | 单容器日志；与详情是不同 view type，可并排或移窗 |
 | `resource` | editor / perResource | 镜像、网络、卷或 Compose 项目详情，kind 在 resourceKey 中 |
@@ -153,7 +153,7 @@ enum DockerObject {
     "apiVersion": "2",
     "entry": "ui/index.html",
     "views": [
-      {"id":"browser","title":"Docker","container":"sidebar","instancePolicy":"perWorkspace","defaultSide":"left","defaultPinned":true,"openOnWorkspace":"none"},
+      {"id":"browser","title":"Docker","icon":"docker","container":"sidebar","instancePolicy":"perWorkspace","defaultSide":"right","defaultPinned":true,"openOnWorkspace":"none"},
       {"id":"container","title":"容器","container":"editor","instancePolicy":"perResource"},
       {"id":"logs","title":"日志","container":"editor","instancePolicy":"perResource"},
       {"id":"resource","title":"Docker 资源","container":"editor","instancePolicy":"perResource"},

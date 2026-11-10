@@ -2,7 +2,7 @@
   "id": "sodeck.docker",
   "name": "Docker",
   "description": "查看远端容器、最近日志和资源快照，执行单容器日常操作。",
-  "icon": "box",
+  "icon": "docker",
   "order": 50,
   "apiVersion": "1",
   "binary": "sodeck-docker",
@@ -11,16 +11,16 @@
     "apiVersion": "2",
     "entry": "ui/index.html",
     "views": [
-      {"id":"browser","title":"Docker","icon":"box","container":"sidebar","instancePolicy":"perWorkspace","defaultSide":"left","defaultPinned":true,"openOnWorkspace":"none"},
+      {"id":"browser","title":"Docker","icon":"docker","container":"sidebar","instancePolicy":"perWorkspace","defaultSide":"right","defaultPinned":true,"openOnWorkspace":"none"},
       {"id":"container","title":"容器","icon":"box","container":"editor","instancePolicy":"perResource"},
-      {"id":"logs","title":"容器日志","icon":"file-text","container":"editor","instancePolicy":"perResource"}
+      {"id":"logs","title":"容器日志","icon":"log","container":"editor","instancePolicy":"perResource"}
     ]
   },
   "settings": {
     "apiVersion": "1",
     "schemaVersion": 1,
     "pages": [{
-      "id":"display","title":"Docker","icon":"box","viewTypes":["browser","container","logs"],"order":500,
+      "id":"display","title":"Docker","icon":"docker","viewTypes":["browser","container","logs"],"order":500,
       "groups":[{"id":"refresh","title":"读取偏好","fields":[
         {"key":"refreshSeconds","title":"容器列表刷新间隔","type":"select","default":"5","options":[{"value":"5","title":"5 秒"},{"value":"10","title":"10 秒"},{"value":"30","title":"30 秒"}],"apply":"live"},
         {"key":"logTail","title":"默认最近日志行数","type":"select","default":"200","options":[{"value":"50","title":"50 行"},{"value":"200","title":"200 行"},{"value":"500","title":"500 行"}],"apply":"live"}
