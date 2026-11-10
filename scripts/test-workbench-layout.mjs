@@ -8,6 +8,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import {createServer} from 'vite';
 import {chromium} from 'playwright';
+import {recordTrace} from './ui-trace.mjs';
 
 assert.equal(spawnSync('cargo',['build','--manifest-path','src-tauri/Cargo.toml','--features','test-fixtures','--bin','catalog-fixture','--bin','workspace-ui-fixture','--locked'],{stdio:'inherit'}).status,0);
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-layout-ui-')),plugin=path.join(root,'plugin');fs.mkdirSync(plugin);
@@ -28,10 +29,12 @@ child.on('exit',()=>{for(const p of queue.splice(0))p.reject(new Error('Core fix
 const call=(command,args={})=>new Promise((resolve,reject)=>{queue.push({resolve,reject});child.stdin.write(JSON.stringify({command,args})+'\n');});
 const server=await createServer({server:{host:'127.0.0.1',port:0}});await server.listen();const url=server.resolvedUrls.local[0];
 const browser=await chromium.launch({headless:true}),pages=new Map(),errors=[];
+const traces=[];
+let delayMount=false;
 const refresh=async()=>{for(const page of pages.values())await page.evaluate(()=>manager.refresh());};
 const wait=async(fn)=>{const end=Date.now()+10000;while(!await fn()){assert(Date.now()<end,'Layout operation did not settle');await new Promise(r=>setTimeout(r,25));}};
 async function makePage(window) {
-  const page=await browser.newPage({viewport:{width:1280,height:800}});pages.set(window,page);page.on('pageerror',e=>errors.push(String(e)));
+  const page=await browser.newPage({viewport:{width:1280,height:800}});pages.set(window,page);traces.push(await recordTrace(page.context(),'layout-'+window));page.on('pageerror',e=>errors.push(String(e)));
   await page.exposeFunction('bridge',async(command,args={})=>{
     if(command==='workbench_return_window') {
       const movements=await call('workbench_fixture_return_window',{...args,window});
@@ -54,7 +57,7 @@ async function makePage(window) {
     if(['clipboard_text','close_register_host'].includes(command))return null;
     return call(command,{...args,window});
   });
-  await page.route(url+'__plugin__/**',route=>{const p=path.join(plugin,decodeURIComponent(new URL(route.request().url()).pathname).split('/').slice(3).join('/'));return route.fulfill({contentType:({'.html':'text/html','.js':'text/javascript','.css':'text/css'})[path.extname(p)],body:fs.readFileSync(p)});});
+  await page.route(url+'__plugin__/**',route=>{const p=path.join(plugin,decodeURIComponent(new URL(route.request().url()).pathname).split('/').slice(3).join('/'));let body=fs.readFileSync(p);if(delayMount&&path.basename(p)==='view.js'){assert(body.toString().includes('sodeck.mounted();'));body=Buffer.from(body.toString().replace('sodeck.mounted();','setTimeout(()=>sodeck.mounted(),800);'));}return route.fulfill({contentType:({'.html':'text/html','.js':'text/javascript','.css':'text/css'})[path.extname(p)],body});});
   await page.route(url,route=>route.fulfill({contentType:'text/html',body:`<html lang="zh-CN"><head><meta charset="utf-8"></head><body><header class="topbar"><button id="catalog-tab" role="tab">服务器管理</button><div id="server-tabs" class="server-tabs" role="tablist"></div><div class="drag-region"></div></header><main class="workspace"><div id="server-catalog"></div><div id="workspace-content" hidden></div></main><div id="notice"></div><script type="module">import '/style.css';import {Workspaces} from '/workspaces.ts';window.__TAURI_INTERNALS__={convertFileSrc:p=>new URL('/__plugin__/'+p,location.href).href,transformCallback:()=>1,invoke:async(command,args)=>{if(command==='plugin:event|listen')return 1;if(command==='plugin:event|unlisten')return;return bridge(command,args);}};window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};window.manager=new Workspaces(document.querySelector('#server-tabs'),document.querySelector('#workspace-content'),document.querySelector('#server-catalog'),text=>document.querySelector('#notice').textContent=text,bridge);await manager.start();window.ready=true;</script></body></html>`}));
   await page.goto(url);await page.waitForFunction(()=>window.ready);return page;
 }
@@ -119,10 +122,15 @@ try {
   await wait(async()=>(await ui()).workspaces[wid].host.focusedGroupId!==host.focusedGroupId);
   await main.screenshot({path:'artifacts/workbench-layout/compact.png'});
   await main.setViewportSize({width:1280,height:800});await wait(async()=>await main.locator('.view-group').count()===3);
+  delayMount=true;
   await main.locator(`[data-group="${originalGroup}"] [data-component-action="create"]`).click();
   await wait(async()=>((await ui()).workspaces[wid].host.groups[originalGroup]?.viewIds.length??0)===2);
+  const created=(await ui()).workspaces[wid].host.groups[originalGroup].activeViewId;
+  await wait(()=>main.evaluate(id=>[...manager.components.shells.values()].some(shell=>{const surface=shell.surfaces.get(id);return surface?.mounted&&surface.focusPending===undefined&&surface.frame.dataset.stateReady==='true'&&shell.layoutFrame===undefined;}),created));
+  delayMount=false;
   await action({op:'focusGroup',groupId:host.focusedGroupId});
-  await main.locator(`.component-tab[data-view="${terminal}"]`).click({button:'right'});
+  await wait(()=>main.evaluate(()=>[...manager.components.shells.values()].every(shell=>shell.layoutFrame===undefined)));
+  await main.locator(`.component-tab[data-view="${terminal}"] [role="tab"]`).click({button:'right'});
   assert.equal((await ui()).workspaces[wid].host.groups[originalGroup].activeViewId===terminal,false,'Right-clicking an inactive page keeps the active page');
   await main.getByRole('menuitem',{name:'移到新窗口',exact:true}).click();
   await wait(async()=>pages.has('layout-secondary')&&await pages.get('layout-secondary').locator(`.component-surface[data-view-id="${terminal}"] iframe`).count()===1&&await main.locator(`.component-surface[data-view-id="${terminal}"]`).count()===0);
@@ -203,9 +211,11 @@ try {
   assert.deepEqual(errors,[]);
   console.log('Passed: empty split close, nested splits, independent creation, stable iframe, keyboard/escape resize, zoom, compact recovery, UI v2 page transfer/source return, two-workspace atomic window return and draft continuity; three theme screenshots saved.');
 } catch(error) {
+  for(const finish of traces)await finish(true);
   console.error('Layout failure',JSON.stringify((await ui()).transfers),errors);
   for(const [name,page] of pages)console.error(name,JSON.stringify(await page.evaluate(()=>({notice:document.querySelector('#notice')?.textContent,shells:[...manager.components.shells.values()].map(s=>({id:s.workspace.context.workspaceId,surfaces:[...s.surfaces.values()].map(v=>({id:v.view.id,mounted:v.mounted,readOnly:v.readOnly,flushing:Boolean(v.flushing),error:v.node.querySelector('.component-error')?.textContent}))}))}))));
   throw error;
 } finally {
+  for(const finish of traces)await finish(false);
   await browser.close();await server.close();child.stdin.end();await new Promise(r=>child.exitCode===null?child.once('exit',r):r());fs.rmSync(root,{recursive:true,force:true});
 }
