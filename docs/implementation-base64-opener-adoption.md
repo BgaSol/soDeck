@@ -35,3 +35,5 @@ macOS 夹具编译临时 AppKit/LaunchServices handler，使用 Apple Events 收
 用户另一个 CI 优化会话多次合入本任务的 main 修正；最终对比时没有独立 Base64/opener 文件差异。其工作流分层、诊断、终端时序与 macOS 按钮验收等待已合入同一工作目录，详情见[CI 实施记录](implementation-ci-optimization.md)。
 
 未完成：最终源码的五平台实际核心包、macOS 默认应用目标收据、真实包组合和历史版本升级。本轮没有再发起发布或包组合；既有部分包成功结果不能代替这些范围。
+
+后续核心 0.22.0 候选在 Windows ARM64 复现了坏默认关联使 Shell 调用阻塞的问题。Windows 改为复用已有 windows-sys 的原生 Shell 调用，使用 `SEE_MASK_FLAG_NO_UI` 将启动失败返回核心；不等待隐藏的系统修复弹窗。其他系统继续使用官方 opener，目标校验和默认应用语义保持不变。该修复、本次原生包和发布结果维护在 [0.22.0 记录](releases/v0.22.0.md)，不把旧失败候选计为通过。
