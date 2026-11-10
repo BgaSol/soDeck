@@ -22,10 +22,12 @@ export interface ViewGroup {id:string;viewIds:string[];activeViewId:string|null;
 export interface WorkbenchHost {id:string;center:CenterNode;groups:Record<string,ViewGroup>;left:{viewIds:string[];activeViewId:string|null};right:{viewIds:string[];activeViewId:string|null};dialogs?:string[];focusedGroupId:string;zoomGroupId:string|null;revision:number}
 interface Transfer {closeOwner?:string;id:string;workspaceId:string;source:string;target:string;viewIds:string[];phase:"preparing"|"draining"|"restoring"}
 interface ReturnLocation {windowId:string;groupId?:string;side?:string}
-interface UiWorkspace {returnLocations?:Record<string,ReturnLocation>;groupReturnLocations?:Record<string,ReturnLocation>;unavailableTools?:{key:string;groupId?:string;side?:string}[];otherViews?:{id:string;definitionKey:string;title:string;windowId:string}[]; views: View[]; preferences: Record<string, Preference>; left: string | null; right: string | null; editor: string | null; host?:WorkbenchHost }
+interface ToolEntry {key:string;viewId:string|null;location:{windowId:string;hostId:string;side?:string;order?:number;groupId?:string}|null;active:boolean;pinned:boolean;available:boolean}
+interface ToolResult {status:string;revision?:number;persistence?:string;error?:string;saveError?:string}
+interface UiWorkspace {tools?:ToolEntry[];returnLocations?:Record<string,ReturnLocation>;groupReturnLocations?:Record<string,ReturnLocation>;unavailableTools?:{key:string;groupId?:string;side?:string}[];otherViews?:{id:string;definitionKey:string;title:string;windowId:string}[]; views: View[]; preferences: Record<string, Preference>; left: string | null; right: string | null; editor: string | null; host?:WorkbenchHost }
 interface ActionDefinition { key: string; title: string; available: boolean; reason?: string }
 interface ActionResult { status: "pending" | "completed" | "failed" | "invalidated"; requestId: string; context: Context; viewId?: string; error?: string }
-export interface UiProjection { definitions: Record<string, Definition>; actions?: Record<string, ActionDefinition>; defaultCreateAction?: string; pendingAction?: ActionResult[]; workspaces: Record<string, UiWorkspace>; error?: string; transfers?:Transfer[] }
+export interface UiProjection { definitions: Record<string, Definition>; actions?: Record<string, ActionDefinition>; defaultCreateAction?: string; pendingAction?: ActionResult[]; workspaces: Record<string, UiWorkspace>; error?: string; layoutSaveError?:string; transfers?:Transfer[] }
 interface Surface { readOnly?:boolean; transferEpoch?:string; node: HTMLDivElement; frame: HTMLIFrameElement; view: View; token?: string; chain: Promise<unknown>; deferred: Map<string,MessageEvent>; visible: boolean; initialized: boolean; mounted?: boolean; acceptsLocalFiles?: boolean; focusPending?: number; flushable?: boolean; flushing?: {id: string; done: (error?: string) => void}; timeout: ReturnType<typeof setTimeout> }
 interface Shell { node: HTMLElement; surfaces: Map<string, Surface>; observer: ResizeObserver; workspace: Workspace; ui: UiWorkspace; railCapacity?: number; layoutFrame?: number }
 interface MenuEntry { label: string; action: () => Promise<unknown>; extra?: MenuEntry; checked?: boolean; disabled?: boolean; separatorBefore?: boolean }
@@ -61,7 +63,7 @@ export class Components {
   private transferJobs=new Set<string>();
   private movingViews=new Set<string>();
   private pendingMoves=new Map<string,Promise<void>>();
-  private drag?:{shell:Shell;scope:{kind:'view'|'group';id:string};handle:HTMLElement;pointer:number;x:number;y:number;localPoint:{x:number;y:number};offsetX:number;offsetY:number;token?:string;starting?:Promise<void>;finished:boolean;sampling:boolean;ghost?:HTMLElement};
+  private drag?:{shell:Shell;scope:{kind:'view'|'group'|'tool';id:string};handle:HTMLElement;trigger:HTMLElement;revision:number;context:string;hostId:string;instance?:string;focusEpoch:number;pointer:number;x:number;y:number;localPoint:{x:number;y:number};offsetX:number;offsetY:number;token?:string;starting?:Promise<void>;finished:boolean;sampling:boolean;ghost?:HTMLElement;toolTarget?:{side:string;beforeKey:string|null}};
   private creating = new Set<string>();
   private defaultAction?: ActionDefinition;
   private pendingActions = new Map<string, ActionResult & { focusEpoch?: number }>();
@@ -69,6 +71,7 @@ export class Components {
   private pollingActions = false;
   private resumeActionPolling = () => this.scheduleActionPolling();
   private layoutError?: string;
+  private layoutSaveFailed=false;
   private focusEpoch = 0;
   private interaction = () => { this.focusEpoch++; };
   private theme = new MutationObserver(() => this.broadcast());
@@ -103,6 +106,7 @@ export class Components {
     content.addEventListener('pointercancel',this.dragCancel);
     document.addEventListener('keydown',this.layoutKey);
     content.addEventListener('lostpointercapture',this.dragLost);window.addEventListener('blur',this.cancelGestures);
+    content.addEventListener('contextmenu',this.toolMenuEvent);content.addEventListener('keydown',this.toolMenuEvent);
   }
   private invoke<T>(operation: string, args: Record<string, unknown> = {}) { return this.call<T>("component_ui", { operation, args }); }
   async sync(state: Projection) {
@@ -110,6 +114,7 @@ export class Components {
     const ui = await this.invoke<UiProjection>("snapshot");
     if (this.disposed) return;
     this.state = state; this.definitions = ui.definitions; this.transfers=ui.transfers??[];
+    this.layoutSaveFailed=Boolean(ui.layoutSaveError);
     this.defaultAction = ui.defaultCreateAction ? ui.actions?.[ui.defaultCreateAction] : undefined;
     if (ui.error && ui.error !== this.layoutError) { this.layoutError = ui.error; this.notify(ui.error); }
     const incomingWorkspaces=state.incomingWorkspaces??(state.incoming?[state.incoming]:[]);
@@ -130,6 +135,8 @@ export class Components {
       }
       if (shell.workspace.connected !== w.connected) for (const surface of shell.surfaces.values()) this.post(surface, {type: "connectionChanged", connected: w.connected});
       shell.workspace = w; shell.ui = ui.workspaces[id] ?? empty();
+      const drag=this.drag;
+      if(drag?.shell===shell&&!drag.finished&&(state.window.activeWorkspace!==id||shell.ui.host?.id!==drag.hostId||shell.ui.host.revision!==drag.revision||JSON.stringify(w.context)!==drag.context||(drag.instance&&this.definitions[drag.scope.kind==='tool'?drag.scope.id:shell.ui.views.find(v=>v.id===drag.scope.id)?.definitionKey??'']?.pluginInstanceId!==drag.instance)))void this.finishDrag(true);
       const incoming = incomingWorkspaces.some(w=>w.context.workspaceId===id) && !state.workspaces.some(w=>w.context.workspaceId===id);
       shell.node.hidden = !incoming && state.window.activeWorkspace !== id;
       shell.node.classList.toggle("incoming-component-workspace", incoming);
@@ -145,16 +152,18 @@ export class Components {
     const { node, ui: w } = shell;
     for (const side of ["left", "right"]) {
       const selected = side === "left" ? w.left : w.right;
-      const entries = Object.values(this.definitions).filter(d => w.preferences[d.key]?.side === side && (d.container === "sidebar" || d.locateEntry)).sort((a,b) => (w.preferences[a.key].order - w.preferences[b.key].order) || a.key.localeCompare(b.key));
-      patchChrome(node.querySelector(`.${side}-rail`)!, entries.filter(d => w.preferences[d.key].pinned).slice(0, shell.railCapacity ?? 20).map(d => {
-        const active = d.container === "sidebar" ? w.views.some(v => v.definitionKey === d.key && (v.id===w.left||v.id===w.right||Object.values(w.host?.groups??{}).some(g=>g.activeViewId===v.id))) : w.views.some(v => v.id === w.editor && v.definitionKey === d.key);
-        return `<button class="sd-icon" data-component-action="${d.container === "sidebar" ? "toggle" : "locate"}" data-key="${e(d.key)}" aria-label="${e(d.container === "sidebar" ? d.title : `定位${d.title}`)}" aria-expanded="${active}" title="${e(d.title)} · ${e(d.pluginName)}" ${!d.available ? "disabled" : ""}>${icon(d.icon)}</button>`;
+      const entries = this.sideTools(shell,side).filter(t=>t.pinned||t.active),capacity=shell.railCapacity??20;
+      let visible=entries.slice(0,capacity);const active=entries.find(t=>t.active);
+      if(active&&!visible.includes(active))visible=[...visible.slice(0,Math.max(0,capacity-1)),active].sort((a,b)=>(a.location?.order??0)-(b.location?.order??0));
+      patchChrome(node.querySelector(`.${side}-rail`)!, visible.map(t => {
+        const d=this.definitions[t.key];
+        return `<button class="sd-icon tool-entry" data-tool-key="${e(t.key)}" data-component-action="toggle" data-key="${e(t.key)}" aria-label="${e(d.title)}" aria-expanded="${t.active}" title="${e(d.title)} · ${e(d.pluginName)}${t.pinned?'':' · 临时入口'}" ${!t.available ? "disabled" : ""}>${icon(d.icon)}</button>`;
       }).join("") + (w.unavailableTools??[]).filter(t=>t.side===side).map(t=>`<button class="sd-icon" disabled title="${e(t.key)} 未安装或未启用；已保留停靠位置" aria-label="${e(t.key)} 不可用">${icon('plug')}</button>`).join('')+ `<button class="component-more sd-icon" data-component-action="more" data-key="${side}" aria-label="${side === "left" ? "左" : "右"}侧更多组件">${icon("more")}</button>`);
       const view = w.views.find(v => v.id === selected);
       patchChrome(node.querySelector(`.${side}-panel header`)!, view ? `<span title="${e(this.definitions[view.definitionKey]?.pluginName)}">${e(view.title)}</span><div><button class="sd-icon" data-component-action="panel-menu" data-key="${e(view.definitionKey)}" aria-label="${e(view.title)} 面板菜单">${icon("more")}</button><button class="sd-icon" data-component-action="collapse" data-key="${side}" aria-label="收起${e(view.title)}">${icon("minus")}</button></div>` : "");
     }
     this.paintCenter(shell);
-    patchChrome(node.querySelector(".workspace-status")!, `<div class="workspace-connection" role="status" aria-label="连接状态" title="${e(shell.workspace.endpoint)}"><span class="health-dot ${shell.workspace.connected ? "good" : "warning"}"></span><span>${shell.workspace.connected ? "已连接" : "连接已断开"}</span><span class="workspace-endpoint">${e(shell.workspace.endpoint)}</span></div><button class="sd-status-action" data-reconnect-server="${e(shell.workspace.context.serverId)}" ${shell.workspace.connected ? "hidden" : ""}>重新连接</button><span class="workspace-status-spacer"></span><button class="workspace-network sd-status-action" data-action="status" title="服务器连接传输速率；点击查看应用状态与插件业务量">↓ 0 B/s ↑ 0 B/s</button>`);
+    patchChrome(node.querySelector(".workspace-status")!, `<div class="workspace-connection" role="status" aria-label="连接状态" title="${e(shell.workspace.endpoint)}"><span class="health-dot ${shell.workspace.connected ? "good" : "warning"}"></span><span>${shell.workspace.connected ? "已连接" : "连接已断开"}</span><span class="workspace-endpoint">${e(shell.workspace.endpoint)}</span></div><button class="sd-status-action" data-reconnect-server="${e(shell.workspace.context.serverId)}" ${shell.workspace.connected ? "hidden" : ""}>重新连接</button><span class="workspace-status-spacer"></span>${this.layoutSaveFailed?`<button class="sd-status-action" data-component-action="retry-layout-save">重试保存布局</button>`:""}<button class="workspace-network sd-status-action" data-action="status" title="服务器连接传输速率；点击查看应用状态与插件业务量">↓ 0 B/s ↑ 0 B/s</button>`);
     for (const [id, surface] of shell.surfaces) if (!w.views.some(v => v.id === id)) { this.removeSurface(surface); shell.surfaces.delete(id); }
     for (const v of w.views) {
       if (v.uiRequested === false) continue;
@@ -326,48 +335,85 @@ export class Components {
   dockZones() {
     return [...this.shells.values()].filter(s=>!s.node.hidden&&!s.node.classList.contains('incoming-component-workspace')).flatMap(shell=>['left','right'].map(side=>{
       const rail=shell.node.querySelector(`.${side}-rail`)!.getBoundingClientRect(),panel=shell.node.querySelector(`.${side}-panel`)!.getBoundingClientRect();
-      return {workspaceId:shell.workspace.context.workspaceId,side,x:Math.min(rail.x,panel.width?panel.x:rail.x),y:rail.y,width:rail.width+panel.width,height:rail.height};
+      return {workspaceId:shell.workspace.context.workspaceId,side,x:Math.min(rail.x,panel.width?panel.x:rail.x),y:rail.y,width:rail.width+panel.width,height:rail.height,tools:[...shell.node.querySelectorAll<HTMLElement>(`.${side}-rail [data-tool-key]`)].map(button=>({key:button.dataset.toolKey!,center:button.getBoundingClientRect().top+button.offsetHeight/2}))};
     }));
   }
   previewDrop(target:DropTarget) {
+    for(const shell of this.shells.values())this.previewTool(shell);
     for(const node of this.content.querySelectorAll<HTMLElement>('[data-drop-edge]'))delete node.dataset.dropEdge;
     for(const node of this.content.querySelectorAll<HTMLElement>('[data-dock-preview]'))delete node.dataset.dockPreview;
     if(target.kind==='group'&&target.windowId===this.state?.window.id)this.content.querySelector<HTMLElement>(`.view-group[data-group="${CSS.escape(target.groupId)}"]`)?.setAttribute('data-drop-edge',target.edge);
     if(target.kind==='dock'&&target.windowId===this.state?.window.id){const shell=this.shells.get(target.workspaceId);shell?.node.querySelector(`.${target.side}-rail`)?.setAttribute('data-dock-preview','true');shell?.node.querySelector(`.${target.side}-panel`)?.setAttribute('data-dock-preview','true');}
+    if(target.kind==='dock'&&target.windowId===this.state?.window.id){const shell=this.shells.get(target.workspaceId);if(shell)this.previewTool(shell,{side:target.side,beforeKey:target.beforeToolKey??null});}
   }
   private dragDown=(event:PointerEvent)=>{
     if(event.button!==0||!event.isPrimary||this.drag)return;
-    const element=event.target as Element,tab=element.closest<HTMLElement>('.component-tab'),group=element.closest<HTMLElement>('.view-group'),panel=element.closest<HTMLElement>('.workbench-panel header');
+    const element=event.target as Element,button=element.closest<HTMLElement>('[data-tool-key]'),tab=element.closest<HTMLElement>('.component-tab'),group=element.closest<HTMLElement>('.view-group'),panel=element.closest<HTMLElement>('.workbench-panel header');
     if(tab&&element.closest('[data-component-action="close"]'))return;
-    if(!tab&&element.closest('button'))return;
-    if(!tab&&!panel&&(!group||!element.closest('.component-tabs')||element.closest('[data-component-action="create"]')))return;
-    const shell=this.shells.get(element.closest<HTMLElement>('.server-workbench')?.dataset.id??'');if(!shell||this.transfers.some(t=>t.viewIds.includes(tab?.dataset.view??'')))return;
+    if(!tab&&!button&&element.closest('button'))return;
+    if(!button&&!tab&&!panel&&(!group||!element.closest('.component-tabs')||element.closest('[data-component-action="create"]')))return;
+    const shell=this.shells.get(element.closest<HTMLElement>('.server-workbench')?.dataset.id??'');if(!shell?.ui.host||shell.node.inert||this.transfers.some(t=>t.viewIds.includes(tab?.dataset.view??'')))return;
+    if(button&&(button.matches(':disabled')||this.pendingMoves.has(`${shell.workspace.context.workspaceId}:tool:${button.dataset.toolKey}`)))return;
     const id=tab?.dataset.view||(panel?shell.ui.views.find(v=>v.id===(panel.closest('.left-panel')?shell.ui.left:shell.ui.right))?.id:undefined);if(panel&&!id)return;
-    const handle=tab?.querySelector<HTMLElement>('[role="tab"]')??panel??group!,rect=handle.getBoundingClientRect();handle.setPointerCapture(event.pointerId);
-    this.drag={shell,scope:id?{kind:'view',id}:{kind:'group',id:group!.dataset.group!},handle,pointer:event.pointerId,x:event.clientX,y:event.clientY,localPoint:{x:event.clientX,y:event.clientY},offsetX:event.clientX-rect.left,offsetY:event.clientY-rect.top,finished:false,sampling:false};
+    const trigger=button??tab?.querySelector<HTMLElement>('[role="tab"]')??panel??group!,rect=trigger.getBoundingClientRect();
+    this.drag={shell,scope:button?{kind:'tool',id:button.dataset.toolKey!}:id?{kind:'view',id}:{kind:'group',id:group!.dataset.group!},handle:this.content,trigger,revision:shell.ui.host.revision,hostId:shell.ui.host.id,context:JSON.stringify(shell.workspace.context),instance:this.definitions[button?.dataset.toolKey??shell.ui.views.find(v=>v.id===id)?.definitionKey??'']?.pluginInstanceId,focusEpoch:this.focusEpoch,pointer:event.pointerId,x:event.clientX,y:event.clientY,localPoint:{x:event.clientX,y:event.clientY},offsetX:event.clientX-rect.left,offsetY:event.clientY-rect.top,finished:false,sampling:false};
   };
   private dragMove=(event:PointerEvent)=>{
     const g=this.drag;if(!g||g.pointer!==event.pointerId||g.finished)return;
     g.localPoint={x:event.clientX,y:event.clientY};
-    if(!g.starting&&Math.hypot(event.clientX-g.x,event.clientY-g.y)>8){
-      event.preventDefault();document.body.classList.add('workbench-dragging');
-      const ghost=document.createElement('div');ghost.className='workbench-drag-ghost';ghost.textContent=g.scope.kind==='view'?(g.shell.ui.views.find(v=>v.id===g.scope.id)?.title??'页面'):'标签组';document.body.append(ghost);g.ghost=ghost;
-      g.starting=this.call<string>('workspace_drag_start',{id:g.shell.workspace.context.workspaceId,scope:g.scope,offsetX:g.offsetX,offsetY:g.offsetY}).then(token=>{g.token=token;}).catch(error=>{this.notify(String(error));g.finished=true;this.clearDrag(g);});
+    if(!g.starting&&Math.hypot(event.clientX-g.x,event.clientY-g.y)>=6){
+      event.preventDefault();g.handle.setPointerCapture(g.pointer);document.body.classList.add('workbench-dragging');window.getSelection()?.removeAllRanges();this.closeMenu();
+      const ghost=document.createElement('div');ghost.className='workbench-drag-ghost';ghost.textContent=g.scope.kind==='tool'?this.definitions[g.scope.id]?.title??'工具':g.scope.kind==='view'?(g.shell.ui.views.find(v=>v.id===g.scope.id)?.title??'页面'):'标签组';document.body.append(ghost);g.ghost=ghost;
+      g.starting=g.scope.kind==='tool'?Promise.resolve():this.call<string>('workspace_drag_start',{id:g.shell.workspace.context.workspaceId,scope:g.scope,offsetX:g.offsetX,offsetY:g.offsetY}).then(token=>{g.token=token;}).catch(error=>{this.notify(String(error));g.finished=true;this.clearDrag(g);});
     }
-    if(g.ghost){g.ghost.style.left=`${event.clientX+14}px`;g.ghost.style.top=`${event.clientY+14}px`;}
+    if(g.ghost){event.preventDefault();g.ghost.style.left=`${event.clientX+14}px`;g.ghost.style.top=`${event.clientY+14}px`;}
+    if(g.scope.kind==='tool'&&g.starting){
+      g.toolTarget=this.toolDrop(g.shell,event.clientX,event.clientY,g.scope.id);
+      this.previewTool(g.shell,g.toolTarget);return;
+    }
     if(g.token&&!g.sampling){g.sampling=true;void this.call<DropTarget>('workspace_drag_sample',{token:g.token,localPoint:g.localPoint}).then(target=>this.previewDrop(target)).catch(error=>{this.notify(String(error));void this.finishDrag(true);}).finally(()=>{g.sampling=false;});}
   };
-  private dragUp=(event:PointerEvent)=>{if(event.pointerId===this.drag?.pointer)void this.finishDrag(false);};
+  private dragUp=(event:PointerEvent)=>{if(event.pointerId===this.drag?.pointer)void this.finishDrag(false);setTimeout(()=>{this.suppressClickUntil=0;},0);};
   private dragLost=(event:PointerEvent)=>{if(event.pointerId===this.drag?.pointer&&!this.drag.finished)void this.finishDrag(true);};
   private cancelGestures=()=>{this.closeMenu();this.splitGesture?.cancel();void this.finishDrag(true);};
+  private toolMenuEvent=(event:MouseEvent|KeyboardEvent)=>{
+    if(event instanceof KeyboardEvent && event.key!=='ContextMenu' && !(event.shiftKey&&event.key==='F10'))return;
+    const button=(event.target as Element).closest<HTMLElement>('[data-tool-key]');
+    const shell=this.shells.get(button?.closest<HTMLElement>('.server-workbench')?.dataset.id??'');
+    if(!button||!shell)return;event.preventDefault();this.toolMenu(shell,button.dataset.toolKey!,button,event instanceof KeyboardEvent);
+  };
   private dragCancel=(event:PointerEvent)=>{if(event.pointerId===this.drag?.pointer)void this.finishDrag(true);};
   private async finishDrag(cancel:boolean) {
     const g=this.drag;if(!g||g.finished)return;g.finished=true;
     if(g.starting)this.suppressClickUntil=Date.now()+350;
-    await g.starting;if(g.token){try{await this.confirmMove(g.token,()=>this.call('workspace_drag_finish',{token:g.token,cancel,localPoint:g.localPoint}));}catch(error){this.notify(String(error));}}
+    if(g.scope.kind==='tool') {
+      const target=g.toolTarget,valid=g.shell.ui.host?.revision===g.revision&&JSON.stringify(g.shell.workspace.context)===g.context&&this.state?.window.activeWorkspace===g.shell.workspace.context.workspaceId;
+      this.clearDrag(g);
+      if(!cancel&&g.starting&&target&&valid)try{await this.moveTool(g.shell,g.scope.id,target.side,target.beforeKey,g.revision);}catch(error){this.notify(String(error));}
+      else if(g.starting&&valid)g.trigger.focus({preventScroll:true});
+      return;
+    } else {
+      await g.starting;
+      if(g.token){try{await this.confirmMove(g.token,()=>this.call('workspace_drag_finish',{token:g.token,cancel,localPoint:g.localPoint}));}catch(error){this.notify(String(error));}}
+    }
     this.clearDrag(g);if(!this.disposed)await this.refresh();
   }
-  private clearDrag(g:NonNullable<Components['drag']>) {g.ghost?.remove();if(g.handle.hasPointerCapture(g.pointer))g.handle.releasePointerCapture(g.pointer);if(this.drag===g)this.drag=undefined;document.body.classList.remove('workbench-dragging');this.previewDrop({kind:'invalid'});}
+  private clearDrag(g:NonNullable<Components['drag']>) {g.ghost?.remove();if(this.drag!==g)return;this.drag=undefined;if(g.handle.hasPointerCapture(g.pointer))g.handle.releasePointerCapture(g.pointer);document.body.classList.remove('workbench-dragging');this.previewTool(g.shell);this.previewDrop({kind:'invalid'});}
+  private toolDrop(shell:Shell,x:number,y:number,key:string) {
+    for(const side of ['left','right']) {
+      const rail=shell.node.querySelector<HTMLElement>(`.${side}-rail`)!,r=rail.getBoundingClientRect();
+      if(x<r.left||x>r.right||y<r.top||y>r.bottom)continue;
+      const before=[...rail.querySelectorAll<HTMLElement>('[data-tool-key]')].find(button=>button.dataset.toolKey!==key&&y<button.getBoundingClientRect().top+button.offsetHeight/2);
+      return {side,beforeKey:before?.dataset.toolKey??null};
+    }
+  }
+  private previewTool(shell:Shell,target?:{side:string;beforeKey:string|null}) {
+    for(const rail of shell.node.querySelectorAll<HTMLElement>('.workbench-rail')){delete rail.dataset.toolDrop;rail.querySelector('.tool-insertion')?.remove();}
+    if(!target)return;const rail=shell.node.querySelector<HTMLElement>(`.${target.side}-rail`)!;rail.dataset.toolDrop='true';
+    const before=target.beforeKey?rail.querySelector<HTMLElement>(`[data-tool-key="${CSS.escape(target.beforeKey)}"]`):undefined;
+    const line=document.createElement('span');line.className='tool-insertion';line.setAttribute('aria-hidden','true');
+    line.style.top=`${before?before.offsetTop:Math.max(4,...[...rail.querySelectorAll<HTMLElement>('[data-tool-key]')].map(b=>b.offsetTop+b.offsetHeight+3))}px`;rail.append(line);
+  }
   private layoutKey=(event:KeyboardEvent)=>{
     if(event.key==='Escape'&&this.splitGesture){event.preventDefault();this.splitGesture.cancel();return;}
     if(event.key==='Escape'&&this.drag){event.preventDefault();void this.finishDrag(true);return;}
@@ -556,6 +602,36 @@ export class Components {
     if(result?.viewId&&result.windowId&&result.windowId!==this.state?.window.id&&this.focusEpoch===focusEpoch){await this.call("workbench_locate_view",{context:shell.workspace.context,viewId:result.viewId});}
     return result;
   }
+  private sideTools(shell:Shell,side:string) {return (shell.ui.tools??[]).filter(t=>t.location?.hostId===shell.ui.host?.id&&t.location?.side===side).sort((a,b)=>(a.location?.order??0)-(b.location?.order??0));}
+  private moveTool(shell:Shell,key:string,side:string,beforeKey:string|null=null,revision=shell.ui.host!.revision) {
+    const pendingKey=`${shell.workspace.context.workspaceId}:tool:${key}`,pending=this.pendingMoves.get(pendingKey);if(pending)return pending;
+    const requestId=crypto.randomUUID(),focusEpoch=this.focusEpoch,entry=shell.ui.tools?.find(t=>t.key===key);
+    const job=(async()=>{
+      let result:ToolResult;
+      try{result=await this.invoke<ToolResult>('action',{context:shell.workspace.context,action:{op:'moveTool',requestId,key,side,beforeKey,revision}});}
+      catch(error){const receipt=await this.invoke<ToolResult>('moveStatus',{id:requestId}).catch(()=>null);if(!receipt)throw error;result=receipt;}
+      await this.refresh();
+      if(result.status!=='completed')throw new Error(result.error??'工具位置已改变，请重新操作');
+      if(result.persistence==='failed'&&this.layoutSaveFailed)this.notify('布局已调整，但未能保存，重启后可能恢复原位置。可点击状态栏重试保存。');
+      if(this.focusEpoch===focusEpoch&&this.state?.window.activeWorkspace===shell.workspace.context.workspaceId){
+        const surface=entry?.active&&entry.viewId?shell.surfaces.get(entry.viewId):undefined;
+        if(surface)this.focusSurface(surface);else shell.node.querySelector<HTMLElement>(`[data-tool-key="${CSS.escape(key)}"]`)?.focus({preventScroll:true});
+      }
+    })().finally(()=>this.pendingMoves.delete(pendingKey));
+    this.pendingMoves.set(pendingKey,job);return job;
+  }
+  private toolMenu(shell:Shell,key:string,anchor:HTMLElement,keyboard=false) {
+    this.cancelGestures();
+    const entry=shell.ui.tools?.find(t=>t.key===key),side=entry?.location?.side,host=shell.ui.host;if(!entry||!side||!host)return;
+    const keys=this.sideTools(shell,side).map(t=>t.key),index=keys.indexOf(key),revision=host.revision;
+    this.showMenu(anchor,[
+      {label:side==='left'?'移到右侧':'移到左侧',action:()=>this.moveTool(shell,key,side==='left'?'right':'left',null,revision)},
+      {label:'上移',disabled:index<=0,action:()=>this.moveTool(shell,key,side,keys[index-1],revision)},
+      {label:'下移',disabled:index<0||index>=keys.length-1,action:()=>this.moveTool(shell,key,side,keys[index+2]??null,revision)},
+      {label:'入口置顶',disabled:index===0,action:()=>this.moveTool(shell,key,side,keys[0],revision)},
+      {label:entry.pinned?'取消固定':'固定入口',separatorBefore:true,action:()=>this.perform(shell,{op:'preference',key,pinned:!entry.pinned})},
+    ],false,undefined,keyboard,anchor,()=>shell.ui.host?.revision===revision&&!this.pendingMoves.has(`${shell.workspace.context.workspaceId}:tool:${key}`));
+  }
   private canSplit(shell:Shell,id:string,axis:'x'|'y') {
     const minimum=centerMinimum(withSplit(shell.ui.host!.center,id,axis));
     const rails=['left','right'].reduce((width,side)=>width+shell.node.querySelector(`.${side}-rail`)!.getBoundingClientRect().width,0),center=shell.node.querySelector<HTMLElement>('.workbench-center')!;
@@ -567,29 +643,36 @@ export class Components {
     const focusEpoch = this.focusEpoch;
     const groupId=anchor.closest<HTMLElement>("[data-group]")?.dataset.group;
     if(action==="hidden-groups"){this.hiddenGroupsMenu(shell,anchor,keyboard);return;}
+    if(action==='retry-layout-save'){const result=await this.invoke<{persistence:string}>('retryLayoutSave');if(result.persistence==='saved'){this.layoutSaveFailed=false;this.notify('工作台布局已保存');await this.refresh();}return;}
     if (["toggle", "locate", "panel-menu"].includes(action) && !this.definitions[key]?.available) { this.notify("组件不可用，请查看应用状态"); return; }
     if (["toggle", "locate", "collapse"].includes(action)) { await this.perform(shell, { op: action, key, side: key }); if (this.focusEpoch === focusEpoch && this.state?.window.activeWorkspace === id) this.focus(shell, action === "collapse" ? undefined : key); return; }
     if (action === "select") { if (!shell.ui.views.some(v => v.id === key)) return; await this.perform(shell, { op: "select", viewId: key }); const surface = shell.surfaces.get(key); if (surface && this.focusEpoch === focusEpoch && this.state?.window.activeWorkspace === id) this.focusSurface(surface); return; }
     if (action === "close") { if(this.definitions[shell.ui.views.find(v=>v.id===key)?.definitionKey??""]?.container==="sidebar")await this.perform(shell,{op:"hideTool",viewId:key});else await this.close([id], key); return; }
-    if (action === "more") { this.showMenu(anchor, Object.values(this.definitions).filter(d => shell.ui.preferences[d.key]?.side === key && (d.container === "sidebar" || d.locateEntry)).map(d => ({ label: d.title, action: () => this.perform(shell, { op: d.container === "sidebar" ? "open" : "locate", key: d.key }), extra: { label: shell.ui.preferences[d.key].pinned ? "取消固定" : "固定", action: () => this.perform(shell, { op: "preference", key: d.key, pinned: !shell.ui.preferences[d.key].pinned }) } })), true); return; }
+    if (action === "more") {
+      this.showMenu(anchor,(shell.ui.tools??[]).map(t=>{
+        const d=this.definitions[t.key],local=t.location?.hostId===shell.ui.host?.id,side=t.location?.side;
+        const position=!t.location?'未打开':!local?'其他窗口':side?`${side==='left'?'左侧':'右侧'} · ${t.active?'展开':'收起'}`:'主区域';
+        return {label:`${d.title} · ${position}`,disabled:!t.available,action:()=>this.perform(shell,{op:'open',key:t.key}),extra:local&&side?{label:t.pinned?'取消固定':'固定入口',action:()=>this.perform(shell,{op:'preference',key:t.key,pinned:!t.pinned})}:local&&t.viewId?{label:`停靠到${key==='left'?'左':'右'}侧`,action:()=>this.perform(shell,{op:'dock',viewId:t.viewId,side:key})}:undefined};
+      }),true,undefined,keyboard);return;
+    }
     if (action === "panel-menu") {
       const p = shell.ui.preferences[key];
       if (!p) return;
       const tool=shell.ui.views.find(v=>v.definitionKey===key);
       const side=tool&&shell.ui.host?.left.viewIds.includes(tool.id)?'left':'right';
-      const sideKeys = Object.keys(shell.ui.preferences).filter(k => shell.ui.preferences[k].side === p.side).sort((a,b) => shell.ui.preferences[a].order-shell.ui.preferences[b].order);
+      const sideKeys = this.sideTools(shell,side).map(t=>t.key),revision=shell.ui.host!.revision;
       this.showMenu(anchor, [
         ...(tool?[
-          {label:side==='left'?'移到右侧':'移到左侧',action:()=>this.perform(shell,{op:'dock',viewId:tool.id,side:side==='left'?'right':'left'})},
+          {label:side==='left'?'移到右侧':'移到左侧',action:()=>this.moveTool(shell,key,side==='left'?'right':'left',null,revision)},
           {label:'放入主区域',action:()=>this.perform(shell,{op:'moveView',viewId:tool.id,groupId:shell.ui.host!.focusedGroupId})},
           {label:'工具移至新窗口',action:()=>this.moveWindow(shell,{kind:'view',id:tool.id})},
           ...this.windowTargets().map(w=>({label:`工具移至${w.label}`,action:()=>this.moveWindow(shell,{kind:'view',id:tool.id},w.id)})),
           ...(shell.ui.returnLocations?.[tool.id]?[{label:'工具返回来源',action:()=>this.moveWindow(shell,{kind:'view',id:tool.id},undefined,true)}]:[]),
         ]:[]),
         { label: p.pinned ? "隐藏入口" : "固定入口", action: () => this.perform(shell, { op: "preference", key, pinned: !p.pinned }) },
-        { label: "入口置顶", action: () => this.perform(shell, { op: "preference", key, order: Math.max(0, Math.min(...sideKeys.map(k => shell.ui.preferences[k].order)) - 1) }) },
+        { label: "入口置顶", action: () => this.moveTool(shell,key,side,sideKeys[0]??null,revision) },
         { label: "新工作区自动展开", checked: p.startup !== "none", separatorBefore: true, action: () => this.perform(shell, { op: "preference", key, startup: p.startup === "none" ? "reveal" : "none" }) },
-        { label: "恢复推荐布局", action: () => this.perform(shell, { op: "recommend", key }) },
+        { label: "恢复新工作台推荐", action: () => this.perform(shell, { op: "recommend", key }) },
       ], false, undefined, keyboard); return;
     }
     if (action === "pages") { this.showMenu(anchor, shell.ui.views.filter(v => Object.values(shell.ui.host?.groups??{}).some(g=>g.viewIds.includes(v.id))).map(v => ({ label: v.title, action: () => this.perform(shell, { op: "select", viewId: v.id }) })), true); return; }
@@ -712,5 +795,5 @@ export class Components {
   private async run(action: () => Promise<unknown>) { try { await action(); } catch (error) { this.notify(String(error)); } }
   private removeSurface(s: Surface) { if(s.token)void this.invoke("detach",{surfaceId:s.token}).catch(()=>{}); s.deferred.clear();s.flushing?.done("原有界面已卸载，输入无法确认");clearTimeout(s.timeout); if(s.token)this.clipboard.discard(s.token); this.shared.detach(s.token); this.data.detach(s.token); this.post(s, { type: "unmount" }); s.node.remove(); }
   private destroy(shell: Shell) { if (shell.layoutFrame !== undefined) cancelAnimationFrame(shell.layoutFrame); shell.observer.disconnect(); for (const f of shell.surfaces.values()) this.removeSurface(f); shell.node.remove(); }
-  dispose() { this.cancelGestures();this.content.removeEventListener("lostpointercapture",this.dragLost);window.removeEventListener("blur",this.cancelGestures);this.surfaceLayer.remove(); clearTimeout(this.actionTimer); document.removeEventListener("visibilitychange",this.resumeActionPolling); this.shared.dispose();this.content.removeEventListener("pointerdown",this.dragDown);this.content.removeEventListener("pointermove",this.dragMove);this.content.removeEventListener("pointerup",this.dragUp);this.content.removeEventListener("pointercancel",this.dragCancel);document.removeEventListener("keydown",this.layoutKey); this.settingsListener?.();this.locateListener?.(); this.fileDrop.dispose(); this.disposed = true; clearInterval(this.networkTimer); this.closeMenu(); window.removeEventListener("message", this.message); document.removeEventListener("pointerdown", this.outside); document.removeEventListener("pointerdown", this.interaction, true); document.removeEventListener("keydown", this.interaction, true); this.theme.disconnect(); window.matchMedia("(prefers-color-scheme: dark)").removeEventListener("change", this.systemTheme); for (const shell of this.shells.values()) this.destroy(shell); }
+  dispose() { this.content.removeEventListener("contextmenu",this.toolMenuEvent);this.content.removeEventListener("keydown",this.toolMenuEvent);this.cancelGestures();this.content.removeEventListener("lostpointercapture",this.dragLost);window.removeEventListener("blur",this.cancelGestures);this.surfaceLayer.remove(); clearTimeout(this.actionTimer); document.removeEventListener("visibilitychange",this.resumeActionPolling); this.shared.dispose();this.content.removeEventListener("pointerdown",this.dragDown);this.content.removeEventListener("pointermove",this.dragMove);this.content.removeEventListener("pointerup",this.dragUp);this.content.removeEventListener("pointercancel",this.dragCancel);document.removeEventListener("keydown",this.layoutKey); this.settingsListener?.();this.locateListener?.(); this.fileDrop.dispose(); this.disposed = true; clearInterval(this.networkTimer); this.closeMenu(); window.removeEventListener("message", this.message); document.removeEventListener("pointerdown", this.outside); document.removeEventListener("pointerdown", this.interaction, true); document.removeEventListener("keydown", this.interaction, true); this.theme.disconnect(); window.matchMedia("(prefers-color-scheme: dark)").removeEventListener("change", this.systemTheme); for (const shell of this.shells.values()) this.destroy(shell); }
 }

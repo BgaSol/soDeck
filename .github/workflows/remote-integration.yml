@@ -60,7 +60,7 @@ jobs:
         run: node scripts/resolve-native-inputs.mjs
       - id: saved
         if: steps.selection.outputs.upload_snapshot == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Native-verification-inputs
           path: native-inputs.json
@@ -232,7 +232,7 @@ jobs:
           NATIVE_STEPS: ${{ toJSON(steps) }}
           NATIVE_DESKTOP_FILES: ${{ inputs.desktop_files }}
         run: node scripts/native-results.mjs record '${{ matrix.target }}'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: Native-verification-result-${{ matrix.name }}
@@ -270,7 +270,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           NATIVE_PLATFORM: ${{ inputs.platform || 'all' }}
         run: node scripts/native-results.mjs summary
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: Native-verification-summary

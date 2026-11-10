@@ -27,6 +27,7 @@
 | SSH 与混合连接 | [SSH 直连](plan-ssh-direct.md)、[远程工作台](plan-remote-workbench.md) | [混合连接](implementation-connections.md) |
 | 工作区与组件宿主 | [多窗口工作区](plan-server-workspaces.md)、[组件 UI](plan-component-ui.md) | — |
 | 工作台分屏与多窗口体系 | [完整功能设计](plan-workbench-layout.md)，含视图归属、工具停靠、插件 UI v2、迁移与关闭 | [源码实施与验收](implementation-workbench-layout.md) |
+| 侧边工具入口与停靠 | [功能设计](plan-tool-docking.md)、[代码整改方案](plan-tool-docking-coding.md) | [实施与本机验证](implementation-tool-docking.md) |
 | 组件通信与共享状态 | [功能设计](plan-component-communication.md)、[代码实施方案](plan-component-communication-coding.md) | [实施与验收](implementation-component-communication.md) |
 | 终端目录自动识别 | [首次连接、自动集成与跟随体验](plan-terminal-directory.md) | [实施与验收](implementation-terminal-directory.md) |
 | 关闭、退出与重启 | [完整生命周期设计](plan-close-lifecycle.md)、[代码整改方案](plan-close-lifecycle-coding.md) | [实施与验收](implementation-close-lifecycle.md) |
@@ -55,6 +56,7 @@
 
 - [GitHub Releases](https://github.com/BgaSol/soDeck/releases)：已发布的核心和插件版本、下载附件与发布说明。
 - [核心版本记录](releases/)：各版本的功能变化、验收与交付边界，包含历史候选版本记录。
+- [v0.21.0](releases/v0.21.0.md)：工具按钮与面板共同停靠、拖动排序、布局记忆及终端入口调整。
 - [v0.20.1](releases/v0.20.1.md)：Docker 标准图标、右侧推荐入口及本地添加插件的键盘焦点修复。
 - [v0.19.0](releases/v0.19.0.md)：精简两级 Tab 右键菜单、取消分屏保留页面及空标签组关闭修复。
 - [v0.18.0](releases/v0.18.0.md)：GitHub 全链路备用地址、失败切换和可管理的下载网络设置。

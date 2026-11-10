@@ -26,6 +26,8 @@ UI v2 的 `flush.freeze` 为 true 时表示迁移或关闭的输入交接，源�
 
 同窗布局保留 iframe，不需要重新 get/create。切换标签、隐藏工具和紧凑显示不关闭后台业务。剪贴板、正文写入、终端 resize/checkpoint 和共享状态发布使用真实 Surface 身份检查；候选可以读取输出，不能输入或替旧表面提交检查点。
 
+侧边入口仅由 `container:"sidebar"` 生成，跟随核心 Host 的实际位置与完整顺序。未创建工具以稳定定义 key 的空槽位参与移动和记忆，不分配 viewId/Surface，不调用插件创建方法。中央及其他窗口中的工具从更多入口定位，`editor/dialog` 不进入工具条；旧 `locateEntry` 清单字段继续兼容读取，但不再生成侧边按钮。核心自行处理停靠、按钮拖动、排序与保存回执，插件不新增左右位置设置、停靠 RPC 或权限声明；同窗移动继续保留原输入身份和业务资源。
+
 核心桌面命令 `workbench_move` 以 `requestId`、Context、`scope:{kind:"view"|"group"|"host",id?}` 和目标窗口/组/侧栏表达移动。`component_ui.moveStatus` 查询原回执；相同编号和参数复用结果，更换参数拒绝。已结束回执五分钟后返回 expired；进程内最多保留 4096 个请求，达到额度后明确拒绝新编号，重启清理。超时只查询原结果，不自动再次移动或创建窗口。
 
 `workbench_move.destination.returnToSource:true` 请求核心按运行期书签定位原窗口、标签组、相邻标签或工具侧栏。`workbench_return_window({requestId})` 返回调用窗口的全部 Host；核心先统一保留，再准备所有工作区的候选，全部恢复后在一次状态锁内提交。任一成员失败均不释放其他成员的来源 Surface。窗口投影增加 `incomingWorkspaces` 与 `windows`；原 `incoming` 保留为首项兼容字段，候选挂载使用各自的 Context 和迁移编号。

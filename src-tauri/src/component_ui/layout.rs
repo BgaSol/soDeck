@@ -50,7 +50,30 @@ impl Runtime {
             w.return_locations.retain(|id, _| !ids.contains(id));
             for host in w.hosts.values_mut() {
                 for id in ids {
+                    let slot = [&host.left, &host.right].into_iter().enumerate().find_map(
+                        |(side, tools)| {
+                            tools
+                                .entries
+                                .iter()
+                                .position(|e| e.view_id.as_ref() == Some(id))
+                                .map(|at| (side, at, tools.entries[at].definition_key.clone()))
+                        },
+                    );
                     host.remove(id);
+                    if let Some((side, at, key)) = slot {
+                        let tools = if side == 0 {
+                            &mut host.left
+                        } else {
+                            &mut host.right
+                        };
+                        tools.entries.insert(
+                            at.min(tools.entries.len()),
+                            crate::workbench_layout::ToolSlot {
+                                definition_key: key,
+                                view_id: None,
+                            },
+                        );
+                    }
                 }
             }
             if w.focused_view_id
@@ -116,6 +139,7 @@ impl Runtime {
             startup_loading: false,
             transfers: HashMap::new(),
             move_receipts: HashMap::new(),
+            tool_receipts: HashMap::new(),
             window_returns: HashMap::new(),
         })
     }
@@ -198,19 +222,44 @@ impl Runtime {
         {
             return Err("缺少稳定资源标识".into());
         }
+        let w = self
+            .workspaces
+            .get(&context.workspace_id)
+            .ok_or("组件工作区尚未初始化")?;
+        let actual_window = if d.definition.container == "sidebar" {
+            w.views
+                .iter()
+                .find(|v| v.definition_key == key)
+                .and_then(|v| w.view_window(&v.id))
+                .or_else(|| {
+                    w.hosts
+                        .iter()
+                        .find(|(_, h)| h.tool_side(key).is_some())
+                        .map(|(id, _)| id.clone())
+                })
+                .unwrap_or_else(|| window.into())
+        } else {
+            window.into()
+        };
         let host = self
             .workspaces
             .get(&context.workspace_id)
             .ok_or("组件工作区尚未初始化")?
-            .host(window)?;
+            .host(&actual_window)?;
         let destination_group = group.unwrap_or(&host.focused_group_id);
+        if d.definition.container == "sidebar"
+            && host.tool_side(key).is_none()
+            && host.left.entries.len() + host.right.entries.len() >= 128
+        {
+            return Err("此工作台的工具槽位已满".into());
+        }
         self.layout_admission(
             &context.workspace_id,
-            window,
+            &actual_window,
             Some(destination_group),
             None,
             if d.definition.container == "sidebar" {
-                Some(&d.definition.default_side)
+                host.tool_side(key).or(Some(&d.definition.default_side))
             } else {
                 None
             },
@@ -254,13 +303,14 @@ impl Runtime {
             id
         };
         // Locate an existing singleton/resource in its current window; opening is not a move.
-        let actual_window = w.view_window(&selected).unwrap_or_else(|| window.into());
+        let actual_window = w.view_window(&selected).unwrap_or(actual_window);
         let side = w.preferences[key].side.clone();
         let host = w.host_mut(&actual_window)?;
         if host.contains(&selected) {
             host.select(&selected)?;
         } else if d.definition.container == "sidebar" {
-            host.dock(&selected, &side, true)?;
+            let side = host.tool_side(key).unwrap_or(&side).to_owned();
+            host.dock(&selected, key, &side, true)?;
         } else if d.definition.container == "editor" {
             let group = group
                 .filter(|id| host.groups.contains_key(*id))
@@ -430,6 +480,7 @@ impl AppCore {
                     .clone();
                 if let Some(saved) = ui.memory.primary(&context.server_id) {
                     host = saved.seed(host.id.clone())?;
+                    saved.seed_order(&mut host, &prefs);
                     restored.push((id.clone(), window.clone(), saved));
                 }
                 ui.workspaces.insert(
@@ -440,6 +491,7 @@ impl AppCore {
                         ..Default::default()
                     },
                 );
+                ui.seed_tool_slots(id, &window, &context.server_id);
                 let mut defs: Vec<_> = ui
                     .definitions
                     .values()
@@ -461,11 +513,29 @@ impl AppCore {
                         .get(&d.key)
                         .map(|p| p.startup.clone())
                         .unwrap_or_else(none);
+                    if restored.iter().any(|(workspace, _, saved)| {
+                        workspace == id && saved.tools.get(&d.key).is_some_and(|t| !t.visible)
+                    }) {
+                        continue;
+                    }
+                    if d.definition.container == "sidebar"
+                        && ui
+                            .memory
+                            .tool_slot(&context.server_id, &d.key)
+                            .is_some_and(|slot| {
+                                ui.workspaces[id]
+                                    .hosts
+                                    .values()
+                                    .all(|h| h.layout_slot != slot)
+                            })
+                    {
+                        continue;
+                    }
                     let state = &ui.workspaces[id];
                     let side = state
-                        .preferences
-                        .get(&d.key)
-                        .map(|p| p.side.as_str())
+                        .host(&window)?
+                        .tool_side(&d.key)
+                        .or_else(|| state.preferences.get(&d.key).map(|p| p.side.as_str()))
                         .unwrap_or("left");
                     let occupied = if d.definition.container == "editor" {
                         state.host(&window)?.active_view().is_some()
@@ -495,6 +565,11 @@ impl AppCore {
                 w.preferences
                     .entry(key.clone())
                     .or_insert_with(|| p.clone());
+            }
+        }
+        for context in &contexts {
+            if let Some(window) = workspaces.owner(&context.workspace_id) {
+                ui.seed_tool_slots(&context.workspace_id, &window, &context.server_id);
             }
         }
         for context in &contexts {
@@ -540,7 +615,10 @@ impl AppCore {
             }
         }
         for (id, window, saved) in restored {
-            for key in saved.tools.keys() {
+            for (key, tool) in &saved.tools {
+                if !tool.visible {
+                    continue;
+                }
                 if ui.definitions.get(key).is_some_and(|d| {
                     d.available
                         && d.definition.container == "sidebar"
@@ -608,6 +686,7 @@ impl AppCore {
                 }
             }
             let mut projected = display.projection(window);
+            projected["tools"] = ui.tool_projection(w);
             if let Some(host) = display.hosts.get(window) {
                 let server = state
                     .workspaces
@@ -630,7 +709,7 @@ impl AppCore {
             json!({"definitions":ui.definitions,"actions":ui.actions,"defaultCreateAction":ui.preferences.default_create_action,
           "pendingAction":ui.pending_actions().into_iter().filter(|r|ids.iter().any(|id|r["context"]["workspaceId"].as_str()==Some(id.as_str()))).collect::<Vec<_>>(),
           "transfers":ui.transfers.values().filter(|t|t.movement.source==window||t.movement.target==window).map(|t|t.wire()).collect::<Vec<_>>(),
-          "workspaces":displayed,"error":ui.error.as_ref().or(ui.memory.error.as_ref())}),
+          "workspaces":displayed,"error":ui.error.as_ref().or(ui.memory.error.as_ref()),"layoutSaveError":ui.memory.error}),
         )
     }
     pub fn ui_action(
@@ -645,6 +724,9 @@ impl AppCore {
             > 24 * 1024
         {
             return Err("UI 操作超过 24 KiB".into());
+        }
+        if action["op"] == "moveTool" {
+            return self.ui_move_tool(window, context, action);
         }
         let mut _workbench = self.workbench_state();
         let crate::workbench::State { workspaces, ui } = &mut *_workbench;
@@ -764,9 +846,9 @@ impl AppCore {
                             return Err("只有此工作台的工具可以停靠".into());
                         }
                         let side = action["side"].as_str().unwrap_or_else(|| {
-                            if host.left.view_ids.iter().any(|id| id == view) {
+                            if host.left.view_ids().iter().any(|id| id == view) {
                                 "left"
-                            } else if host.right.view_ids.iter().any(|id| id == view) {
+                            } else if host.right.view_ids().iter().any(|id| id == view) {
                                 "right"
                             } else {
                                 &w.preferences[&w
@@ -778,11 +860,23 @@ impl AppCore {
                                     .side
                             }
                         });
-                        host.dock(view, side, op != "hideTool")?;
+                        let key = &w
+                            .views
+                            .iter()
+                            .find(|v| v.id == view)
+                            .unwrap()
+                            .definition_key;
+                        if host.tool_side(key).is_some() {
+                            host.move_tool(key, side, action["beforeKey"].as_str())?;
+                        } else {
+                            host.dock(view, key, side, op != "hideTool")?;
+                        }
                         if op == "hideTool" {
-                            if side == "left" {
+                            if side == "left" && host.left.active_view_id.as_deref() == Some(view) {
                                 host.left.active_view_id = None;
-                            } else {
+                            } else if side == "right"
+                                && host.right.active_view_id.as_deref() == Some(view)
+                            {
                                 host.right.active_view_id = None;
                             }
                         }
@@ -876,6 +970,7 @@ impl AppCore {
                     } else {
                         w.host_mut(window)?.right.active_view_id = None;
                     }
+                    w.host_mut(window)?.revision += 1;
                 } else {
                     let id = ui.open_view(
                         context,
@@ -943,6 +1038,7 @@ impl AppCore {
                     Some("right") => w.host_mut(window)?.right.active_view_id = None,
                     _ => return Err("无效侧栏".into()),
                 }
+                w.host_mut(window)?.revision += 1;
             }
             "preference" | "recommend" => {
                 if ui.error.is_some() {
@@ -955,6 +1051,7 @@ impl AppCore {
                     p.side = d.definition.default_side;
                     p.pinned = d.definition.default_pinned;
                     p.startup = d.definition.open_on_workspace;
+                    p.order = d.definition.startup_order;
                 }
                 if let Some(side) = action["side"].as_str() {
                     if !["left", "right"].contains(&side) {
@@ -979,24 +1076,8 @@ impl AppCore {
                 let next = p.clone();
                 storage::write_json(&ui.root.join("ui-layout.json"), &prefs)?;
                 ui.preferences = prefs;
-                let w = ui
-                    .workspaces
-                    .get_mut(&context.workspace_id)
-                    .ok_or("组件工作区已关闭")?;
-                let moving = w.preferences.get(key).is_some_and(|p| p.side != next.side);
-                w.preferences.insert(key.into(), next.clone());
-                if moving && d.definition.container == "sidebar" {
-                    if let Some(id) = w
-                        .views
-                        .iter()
-                        .find(|v| v.definition_key == key)
-                        .map(|v| v.id.clone())
-                    {
-                        let host = w.host_mut(window)?;
-                        if host.left.view_ids.contains(&id) || host.right.view_ids.contains(&id) {
-                            host.dock(&id, &next.side, true)?;
-                        }
-                    }
+                for w in ui.workspaces.values_mut() {
+                    w.preferences.insert(key.into(), next.clone());
                 }
             }
             "reorder" => {

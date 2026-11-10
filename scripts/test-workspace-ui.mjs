@@ -141,7 +141,8 @@ try {
     await main.keyboard.press('Escape');assert(await more.evaluate(el=>el===document.activeElement));
     const rightMore=board.getByRole('button',{name:'右侧更多组件',exact:true});
     const rightBounds=await rightMore.boundingBox();
-    await rightMore.click();await assertMenuLayout(main,rightBounds);
+    await rightMore.click();await assertMenuLayout(main,rightBounds,{long:true});
+    assert.equal(await main.getByRole('menu').locator('.component-menu-row').count(),metadata.ui.views.filter(v=>v.container==='sidebar').length,'Both sides expose the same complete tool list');
     await board.locator('.workspace-status').click();assert.equal(await main.getByRole('menu').count(),0);
   }
   await main.setViewportSize({width:1100,height:720});
@@ -164,7 +165,10 @@ try {
   const secondTerminal=aw.views.filter(v=>v.definitionKey.endsWith(':terminal')).find(v=>v.id!==firstTerminal).id;
   await viewFrame(main,aid,secondTerminal).getByRole('textbox').fill('terminal A two');await flush(main);
   await board.locator(`[data-component-action="select"][data-key="${firstTerminal}"]`).click();
-  await board.getByRole('button',{name:'定位终端',exact:true}).click();
+  assert.equal(await board.locator('.workbench-rail [data-key$=":terminal"]').count(),0,'Legacy terminal locateEntry is ignored by the tool rail');
+  await board.getByRole('button',{name:'左侧更多组件',exact:true}).click();
+  assert.equal(await main.getByRole('menuitem').filter({hasText:'终端'}).count(),0,'Editor views stay out of more tools');
+  await main.keyboard.press('Escape');
   assert.equal((await componentState("main")).workspaces[aid].editor,firstTerminal);
   assert.equal(await terminalOne.inputValue(),'terminal A one');
   await panel(main,'left').click();
@@ -235,7 +239,7 @@ try {
   checks.push('多终端独立草稿、最近使用定位、混合 Tab、同文件去重、切换不重建 iframe');
   await board.getByRole('button',{name:'左侧更多组件',exact:true}).click();
   await main.getByRole('textbox',{name:'查找组件或页面'}).fill('扩展测试组件 19');
-  await main.locator('.component-menu-row:visible').getByRole('menuitem',{name:'固定',exact:true}).click();
+  await main.locator('.component-menu-row:visible').getByRole('menuitem',{name:'固定入口',exact:true}).click();
   assert.equal((await componentState('main')).workspaces[aid].preferences['test.workbench:extra19'].pinned,true);
   await board.getByRole('button',{name:'左侧更多组件',exact:true}).click();await main.getByRole('textbox',{name:'查找组件或页面'}).fill('扩展测试组件 19');
   await main.locator('.component-menu-row:visible').getByRole('menuitem',{name:'取消固定',exact:true}).click();
@@ -245,11 +249,16 @@ try {
   await main.waitForFunction(id=>!document.querySelector(`.server-workbench[data-id="${id}"]`).classList.contains('right-open'),aid);
   assert((await componentState("main")).workspaces[aid].left);
   await board.getByRole('button',{name:'文件',exact:true}).click();
+  await main.waitForFunction(id=>document.querySelector(`.server-workbench[data-id="${id}"] .left-rail [data-key="test.workbench:files"]`)?.getAttribute('aria-expanded')==='true',aid);
   assert.equal(await editor.inputValue(),'draft for server A');
   // Move it back so the existing ownership/layout checks keep their initial shape.
   await board.getByRole('button',{name:'网络转发',exact:true}).click();
+  await main.waitForFunction(id=>document.querySelector(`.server-workbench[data-id="${id}"] .left-rail [data-key="test.workbench:forwarding"]`)?.getAttribute('aria-expanded')==='true',aid);
+  await flush(main);await refresh();
   await board.getByRole('button',{name:'网络转发 面板菜单',exact:true}).click();await main.getByRole('menuitem',{name:'移到右侧',exact:true}).click();
+  await main.waitForFunction(id=>document.querySelector(`.server-workbench[data-id="${id}"] .right-rail [data-key="test.workbench:forwarding"]`)?.getAttribute('aria-expanded')==='true',aid);
   await board.getByRole('button',{name:'文件',exact:true}).click();
+  await main.waitForFunction(id=>document.querySelector(`.server-workbench[data-id="${id}"] .left-rail [data-key="test.workbench:files"]`)?.getAttribute('aria-expanded')==='true',aid);
   checks.push('同侧单面板、左右移动保留 viewId 和编辑草稿');
   const closeEditor=()=>board.locator(`[data-component-action="close"][data-key="${editorId}"]`).click();
   await closeEditor();await main.locator('.component-close-dialog').waitFor();await main.getByRole('button',{name:'取消',exact:true}).click();
@@ -333,6 +342,8 @@ try {
   await call('workspace_layout',{window:'main',id:bid,side:'right',width:280});await refresh();
   if(await panel(main,'right').getAttribute('aria-expanded')!=='true')await panel(main,'right').click();
   await main.setViewportSize({width:1000,height:720});await settleLayout();
+  // The click awaits pointer delivery; the asynchronous core layout must settle before measuring a drag.
+  await main.waitForFunction(()=>{const board=document.querySelector('.server-workbench:not([hidden])');return board.classList.contains('left-open')&&board.classList.contains('right-open')&&board.style.getPropertyValue('--effective-left-width')==='280px'&&board.style.getPropertyValue('--effective-right-width')==='280px';});
   await main.evaluate(()=>window.resizeFrames=[...document.querySelectorAll('.component-surface:not([hidden]) iframe')]);assert((await main.evaluate(()=>window.resizeFrames.length))>0,'The resize retention check must include visible surfaces');
   await dragPanel('left',70);assert.equal(await boardWidth('left'),316);assert.equal(await main.locator('.server-workbench:visible').evaluate(el=>el.classList.contains('left-open')&&el.classList.contains('right-open')),true);
   await main.mouse.up();await main.evaluate(()=>window.manager.flush());

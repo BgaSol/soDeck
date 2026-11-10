@@ -26,8 +26,6 @@
         "icon": "terminal",
         "container": "editor",
         "instancePolicy": "multiple",
-        "defaultPinned": true,
-        "locateEntry": true,
         "createAction": "新建终端",
         "openOnWorkspace": "createOne",
         "startupOrder": 20

@@ -37,6 +37,13 @@ pub struct DockRect {
     pub y: f64,
     pub width: f64,
     pub height: f64,
+    #[serde(default)]
+    pub tools: Vec<ToolRect>,
+}
+#[derive(Clone, Deserialize)]
+pub struct ToolRect {
+    pub key: String,
+    pub center: f64,
 }
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -83,6 +90,7 @@ pub enum DropTarget {
         window_id: String,
         workspace_id: String,
         side: String,
+        before_tool_key: Option<String>,
     },
 }
 #[derive(Clone)]
@@ -92,6 +100,8 @@ struct Drag {
     workspace: String,
     offset: (f64, f64),
     scope: crate::workbench_move::Scope,
+    revision: u64,
+    context: crate::workspaces::Context,
 }
 
 pub struct DesktopWindows {
@@ -287,7 +297,19 @@ impl DesktopWindows {
                         continue;
                     }
                     let target = format!("workspace-{}", self.core.next_id());
-                    let host = saved.seed(format!("{}@{target}", context.workspace_id))?;
+                    let mut host = saved.seed(format!("{}@{target}", context.workspace_id))?;
+                    saved.seed_order(&mut host, &w.preferences);
+                    for tools in [&mut host.left, &mut host.right] {
+                        tools.entries.retain(|e| {
+                            !w.hosts
+                                .values()
+                                .any(|h| h.tool_side(&e.definition_key).is_some())
+                                && !w.views.iter().any(|v| {
+                                    v.definition_key == e.definition_key
+                                        && w.view_window(&v.id).is_some()
+                                })
+                        });
+                    }
                     state.workspaces.register(&target)?;
                     state
                         .workspaces
@@ -325,52 +347,44 @@ impl DesktopWindows {
                     self.cleanup_empty(handle, &target);
                     return Err(error);
                 }
-                for key in saved.tools.keys() {
+                for (key, tool) in &saved.tools {
+                    if !tool.visible {
+                        continue;
+                    }
                     let view = {
                         let ui = self.core.ui_state();
-                        ui.workspaces[&context.workspace_id]
-                            .views
-                            .iter()
-                            .find(|v| {
-                                &v.definition_key == key
-                                    && v.ui_requested
-                                    && ui
-                                        .definitions
-                                        .get(key)
-                                        .is_some_and(|d| d.available && d.ui_api_version == "2")
+                        let w = &ui.workspaces[&context.workspace_id];
+                        if !ui
+                            .definitions
+                            .get(key)
+                            .is_some_and(|d| d.available && d.definition.container == "sidebar")
+                            || w.views.iter().any(|v| {
+                                v.definition_key == *key
+                                    && w.view_window(&v.id).is_some_and(|window| window != target)
                             })
+                            || w.hosts
+                                .iter()
+                                .any(|(window, h)| window != &target && h.tool_side(key).is_some())
+                        {
+                            continue;
+                        }
+                        w.views
+                            .iter()
+                            .find(|v| v.definition_key == *key && v.ui_requested)
                             .map(|v| v.id.clone())
                     };
-                    let Some(view) = view else {
-                        continue;
+                    let view = match view {
+                        Some(view) => view,
+                        None => self.core.ui_action(&target,context,serde_json::json!({"op":"open","key":key,"requestId":self.core.next_id()}))?["viewId"].as_str().ok_or("恢复工具未返回页面")?.to_owned(),
                     };
-                    let (origin, destination) = {
-                        let ui = self.core.ui_state();
-                        let w = &ui.workspaces[&context.workspace_id];
-                        (
-                            w.view_window(&view),
-                            saved.destination(w.host(&target)?, key),
-                        )
-                    };
-                    if let (Some(origin), Some(destination)) = (origin, destination) {
-                        if origin != target {
-                            self.move_scope_to(
-                                handle,
-                                &origin,
-                                &context.workspace_id,
-                                Some(target.clone()),
-                                usize::MAX,
-                                None,
-                                crate::workbench_move::Scope::View { id: view.clone() },
-                                destination,
-                            )?;
-                        }
-                    }
-                    if saved.tools[key].side.is_some() && !saved.tools[key].visible {
-                        self.core.ui_action(
-                            &target,
-                            context,
-                            serde_json::json!({"op":"collapse","side":saved.tools[key].side}),
+                    {
+                        let mut ui = self.core.ui_state();
+                        saved.apply_tools(
+                            ui.workspaces
+                                .get_mut(&context.workspace_id)
+                                .unwrap()
+                                .host_mut(&target)?,
+                            &[(view, key.clone())],
                         )?;
                     }
                 }
@@ -540,20 +554,29 @@ impl DesktopWindows {
         };
         if target.as_deref() == Some(source) && !matches!(scope, crate::workbench_move::Scope::Host)
         {
-            let context = self
-                .core
-                .workspace_projection(source)?
-                .workspaces
-                .iter()
-                .find(|w| w.context.workspace_id == id)
-                .ok_or("工作台已关闭")?
-                .context
-                .clone();
-            let action = match scope {
+            let context = destination.source_context.clone().unwrap_or(
+                self.core
+                    .workspace_projection(source)?
+                    .workspaces
+                    .iter()
+                    .find(|w| w.context.workspace_id == id)
+                    .ok_or("工作台已关闭")?
+                    .context
+                    .clone(),
+            );
+            let mut action = match scope {
                 crate::workbench_move::Scope::View { id } => {
                     let edge = destination.edge.as_deref().unwrap_or("center");
                     if let Some(side) = destination.side.as_deref() {
-                        serde_json::json!({"op":"dock","viewId":id,"side":side})
+                        let ui = self.core.ui_state();
+                        let w = &ui.workspaces[&context.workspace_id];
+                        let host = w.host(source)?;
+                        let key = ui.resource_view(&id)?.definition_key.clone();
+                        if host.tool_side(&key).is_some() {
+                            serde_json::json!({"op":"moveTool","requestId":request_id.as_ref().cloned().unwrap_or_else(||self.core.next_id()),"key":key,"side":side,"beforeKey":destination.before_tool_key,"revision":destination.source_revision.unwrap_or(host.revision)})
+                        } else {
+                            serde_json::json!({"op":"dock","viewId":id,"side":side,"beforeKey":destination.before_tool_key,"revision":destination.source_revision.unwrap_or(host.revision)})
+                        }
                     } else if ["left", "right", "top", "bottom"].contains(&edge) {
                         serde_json::json!({"op":"split","groupId":destination.group_id,"viewId":id,"axis":if ["left","right"].contains(&edge){"x"}else{"y"},"before":(["left","top"].contains(&edge))})
                     } else {
@@ -565,7 +588,16 @@ impl DesktopWindows {
                 }
                 _ => unreachable!(),
             };
-            self.core.ui_action(source, &context, action)?;
+            if let Some(revision) = destination.source_revision {
+                action["revision"] = serde_json::json!(revision);
+            }
+            let result = self.core.ui_action(source, &context, action)?;
+            if result["status"] == "failed" || result["status"] == "expired" {
+                return Err(result["error"]
+                    .as_str()
+                    .unwrap_or("工具移动结果已失效，请重新读取")
+                    .into());
+            }
             return Ok(());
         }
         let new_window = target.is_none();
@@ -1241,6 +1273,11 @@ pub fn hit_dock(label: &str, docks: &[DockRect], x: f64, y: f64, workspace: &str
                 window_id: label.into(),
                 workspace_id: workspace.into(),
                 side: dock.side.clone(),
+                before_tool_key: dock
+                    .tools
+                    .iter()
+                    .find(|t| t.center.is_finite() && t.center > y)
+                    .map(|t| t.key.clone()),
             };
         }
     }
@@ -1392,12 +1429,29 @@ pub fn workspace_drag_start(
         return Err("已有 Tab 正在拖动".into());
     }
     let token = desktop.core.next_id();
+    let context = state
+        .workspaces
+        .iter()
+        .find(|w| w.context.workspace_id == id)
+        .unwrap()
+        .context
+        .clone();
+    let revision = desktop
+        .core
+        .ui_state()
+        .workspaces
+        .get(&id)
+        .ok_or("工作台尚未就绪")?
+        .host(window.label())?
+        .revision;
     *drag = Some(Drag {
         token: token.clone(),
         source: window.label().into(),
         workspace: id,
         offset: (offset_x * scale, offset_y * scale),
         scope: scope.unwrap_or(crate::workbench_move::Scope::Host),
+        revision,
+        context,
     });
     Ok(token)
 }
@@ -1439,7 +1493,7 @@ pub async fn workspace_drag_finish(
     cancel: bool,
     local_point: Option<LocalPoint>,
 ) -> Result<(), String> {
-    let (source, id, target, scope) = {
+    let (source, id, target, scope, revision, context) = {
         let mut lock = desktop.drag.lock().unwrap();
         if !lock
             .as_ref()
@@ -1454,12 +1508,24 @@ pub async fn workspace_drag_finish(
         } else {
             desktop.hit(&handle, &drag, local_point.as_ref())
         };
-        (drag.source, drag.workspace, target, drag.scope)
+        (
+            drag.source,
+            drag.workspace,
+            target,
+            drag.scope,
+            drag.revision,
+            drag.context,
+        )
     };
     let _ = handle.emit("workspace-drop-preview", DropTarget::Invalid);
     let target = target?;
     tauri::async_runtime::spawn_blocking(move || {
         let desktop = handle.state::<DesktopWindows>();
+        let destination = crate::workbench_move::Destination {
+            source_revision: Some(revision),
+            source_context: Some(context),
+            ..Default::default()
+        };
         match target {
             DropTarget::Strip { window_id, index } => desktop.move_scope_request(
                 &handle,
@@ -1469,7 +1535,7 @@ pub async fn workspace_drag_finish(
                 index,
                 None,
                 scope,
-                Default::default(),
+                destination,
                 Some(token),
             ),
             DropTarget::Outside { x, y } => desktop.move_scope_request(
@@ -1480,7 +1546,7 @@ pub async fn workspace_drag_finish(
                 0,
                 Some((x, y)),
                 scope,
-                Default::default(),
+                destination,
                 Some(token),
             ),
             DropTarget::Group {
@@ -1501,12 +1567,15 @@ pub async fn workspace_drag_finish(
                     edge: Some(edge),
                     index: Some(index),
                     side: None,
-                    ..Default::default()
+                    ..destination
                 },
                 Some(token),
             ),
             DropTarget::Dock {
-                window_id, side, ..
+                window_id,
+                side,
+                before_tool_key,
+                ..
             } => desktop.move_scope_request(
                 &handle,
                 &source,
@@ -1517,7 +1586,8 @@ pub async fn workspace_drag_finish(
                 scope,
                 crate::workbench_move::Destination {
                     side: Some(side),
-                    ..Default::default()
+                    before_tool_key,
+                    ..destination
                 },
                 Some(token),
             ),

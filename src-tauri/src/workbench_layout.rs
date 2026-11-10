@@ -194,11 +194,36 @@ impl Group {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolSlot {
+    pub definition_key: String,
+    pub view_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Tools {
-    pub view_ids: Vec<String>,
+    pub entries: Vec<ToolSlot>,
     pub active_view_id: Option<String>,
+}
+impl Tools {
+    pub fn view_ids(&self) -> Vec<String> {
+        self.entries
+            .iter()
+            .filter_map(|e| e.view_id.clone())
+            .collect()
+    }
+}
+impl Serialize for Tools {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut s = serializer.serialize_struct("Tools", 3)?;
+        s.serialize_field("entries", &self.entries)?;
+        s.serialize_field("viewIds", &self.view_ids())?;
+        s.serialize_field("activeViewId", &self.active_view_id)?;
+        s.end()
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -324,8 +349,8 @@ impl Host {
         self.ordered_groups()
             .iter()
             .flat_map(|id| self.groups[id].view_ids.clone())
-            .chain(self.left.view_ids.clone())
-            .chain(self.right.view_ids.clone())
+            .chain(self.left.view_ids())
+            .chain(self.right.view_ids())
             .chain(self.dialogs.clone())
             .collect()
     }
@@ -376,7 +401,7 @@ impl Host {
             g.remove(view);
         }
         for tools in [&mut self.left, &mut self.right] {
-            tools.view_ids.retain(|id| id != view);
+            tools.entries.retain(|e| e.view_id.as_deref() != Some(view));
             if tools.active_view_id.as_deref() == Some(view) {
                 tools.active_view_id = None;
             }
@@ -409,7 +434,7 @@ impl Host {
             g.remove(view);
         }
         for tools in [&mut self.left, &mut self.right] {
-            tools.view_ids.retain(|id| id != view);
+            tools.entries.retain(|e| e.view_id.as_deref() != Some(view));
             if tools.active_view_id.as_deref() == Some(view) {
                 tools.active_view_id = None;
             }
@@ -427,30 +452,145 @@ impl Host {
         self.revision += 1;
         Ok(())
     }
-    pub fn dock(&mut self, view: &str, side: &str, activate: bool) -> Result<(), String> {
+    pub fn tool_key(&self, view: &str) -> Option<&str> {
+        self.left
+            .entries
+            .iter()
+            .chain(&self.right.entries)
+            .find(|e| e.view_id.as_deref() == Some(view))
+            .map(|e| e.definition_key.as_str())
+    }
+    pub fn tool_side(&self, key: &str) -> Option<&str> {
+        if self.left.entries.iter().any(|e| e.definition_key == key) {
+            Some("left")
+        } else if self.right.entries.iter().any(|e| e.definition_key == key) {
+            Some("right")
+        } else {
+            None
+        }
+    }
+    pub fn dock(
+        &mut self,
+        view: &str,
+        key: &str,
+        side: &str,
+        activate: bool,
+    ) -> Result<(), String> {
         if !["left", "right"].contains(&side) {
             return Err("无效停靠侧".into());
         }
+        if key.is_empty()
+            || key.len() > 256
+            || (self.tool_side(key).is_none()
+                && self.left.entries.len() + self.right.entries.len() >= 128)
+        {
+            return Err("工具槽位无效或超出额度".into());
+        }
+        let index = if side == "left" {
+            &self.left
+        } else {
+            &self.right
+        }
+        .entries
+        .iter()
+        .position(|e| e.definition_key == key);
         self.remove(view);
+        self.left.entries.retain(|e| e.definition_key != key);
+        self.right.entries.retain(|e| e.definition_key != key);
         let tools = if side == "left" {
             &mut self.left
         } else {
             &mut self.right
         };
-        tools.view_ids.push(view.into());
+        tools.entries.insert(
+            index
+                .unwrap_or(tools.entries.len())
+                .min(tools.entries.len()),
+            ToolSlot {
+                definition_key: key.into(),
+                view_id: Some(view.into()),
+            },
+        );
         if activate {
             tools.active_view_id = Some(view.into());
         }
         self.revision += 1;
         Ok(())
     }
+    pub fn move_tool(&mut self, key: &str, side: &str, before: Option<&str>) -> Result<(), String> {
+        let mut next = self.clone();
+        next.move_tool_inner(key, side, before)?;
+        next.validate()?;
+        *self = next;
+        Ok(())
+    }
+    fn move_tool_inner(
+        &mut self,
+        key: &str,
+        side: &str,
+        before: Option<&str>,
+    ) -> Result<(), String> {
+        if !["left", "right"].contains(&side) {
+            return Err("无效停靠侧".into());
+        }
+        let source = self.tool_side(key).ok_or("工具位置已改变")?.to_owned();
+        let original = self.clone();
+        let from = if source == "left" {
+            &mut self.left
+        } else {
+            &mut self.right
+        };
+        let at = from
+            .entries
+            .iter()
+            .position(|e| e.definition_key == key)
+            .unwrap();
+        let entry = from.entries.remove(at);
+        let active = entry.view_id.is_some() && from.active_view_id == entry.view_id;
+        if source != side && active {
+            from.active_view_id = None;
+        }
+        let target = if side == "left" {
+            &mut self.left
+        } else {
+            &mut self.right
+        };
+        let at = match before {
+            Some(b) if b == key => at.min(target.entries.len()),
+            Some(b) => target
+                .entries
+                .iter()
+                .position(|e| e.definition_key == b)
+                .ok_or("目标工具顺序已改变")?,
+            None => target.entries.len(),
+        };
+        if source != side && active {
+            target.active_view_id = entry.view_id.clone();
+        }
+        target.entries.insert(at, entry);
+        if self.left != original.left || self.right != original.right {
+            self.revision += 1;
+        }
+        self.validate()
+    }
     pub fn select(&mut self, view: &str) -> Result<(), String> {
         if let Some(group) = self.group_of(view) {
+            if self.groups[&group].active_view_id.as_deref() == Some(view)
+                && self.focused_group_id == group
+            {
+                return Ok(());
+            }
             self.groups.get_mut(&group).unwrap().active_view_id = Some(view.into());
             self.focused_group_id = group;
-        } else if self.left.view_ids.iter().any(|id| id == view) {
+        } else if self.left.view_ids().iter().any(|id| id == view) {
+            if self.left.active_view_id.as_deref() == Some(view) {
+                return Ok(());
+            }
             self.left.active_view_id = Some(view.into());
-        } else if self.right.view_ids.iter().any(|id| id == view) {
+        } else if self.right.view_ids().iter().any(|id| id == view) {
+            if self.right.active_view_id.as_deref() == Some(view) {
+                return Ok(());
+            }
             self.right.active_view_id = Some(view.into());
         } else if !self.dialogs.iter().any(|id| id == view) {
             return Err("页面不属于此工作台".into());
@@ -539,7 +679,22 @@ impl Host {
             next.groups.extend(other.groups);
         }
         for (a, b) in [(&mut next.left, other.left), (&mut next.right, other.right)] {
-            a.view_ids.extend(b.view_ids);
+            for entry in b.entries {
+                if let Some(existing) = a
+                    .entries
+                    .iter()
+                    .position(|e| e.definition_key == entry.definition_key)
+                {
+                    if a.entries[existing].view_id.is_some() && entry.view_id.is_some() {
+                        return Err("工具存在重复布局位置".into());
+                    }
+                    if entry.view_id.is_none() {
+                        continue;
+                    }
+                    a.entries.remove(existing);
+                }
+                a.entries.push(entry);
+            }
             if b.active_view_id.is_some() {
                 a.active_view_id = b.active_view_id;
             }
@@ -586,10 +741,29 @@ impl Host {
             if tools
                 .active_view_id
                 .as_ref()
-                .is_some_and(|id| !tools.view_ids.contains(id))
+                .is_some_and(|id| !tools.view_ids().contains(id))
             {
                 return Err("活动工具不在停靠组中".into());
             }
+        }
+        let slots: Vec<_> = self
+            .left
+            .entries
+            .iter()
+            .chain(&self.right.entries)
+            .collect();
+        if slots.len() > 128
+            || slots
+                .iter()
+                .any(|e| e.definition_key.is_empty() || e.definition_key.len() > 256)
+            || slots
+                .iter()
+                .map(|e| &e.definition_key)
+                .collect::<HashSet<_>>()
+                .len()
+                != slots.len()
+        {
+            return Err("工具槽位无效或重复".into());
         }
         Ok(())
     }
@@ -643,7 +817,7 @@ mod tests {
         let mut h = Host::new("h".into());
         let root = h.focused_group_id.clone();
         h.place("tool", &root, 0, true).unwrap();
-        h.dock("tool", "right", true).unwrap();
+        h.dock("tool", "test:tool", "right", true).unwrap();
         assert_eq!(h.view_ids(), vec!["tool"]);
         assert!(h.active_view().is_none());
         h.validate().unwrap();
@@ -673,5 +847,36 @@ mod tests {
         let before = origin.clone();
         assert!(origin.merge_host(returning, "duplicate".into()).is_err());
         assert_eq!(origin, before);
+    }
+    #[test]
+    fn slot_order_and_activity_are_atomic_and_noop_keeps_revision() {
+        let mut h = Host::new("h".into());
+        h.left.entries.push(ToolSlot {
+            definition_key: "a".into(),
+            view_id: None,
+        });
+        h.dock("b-view", "b", "left", true).unwrap();
+        h.dock("c-view", "c", "right", true).unwrap();
+        let before = h.clone();
+        assert!(h.move_tool("a", "right", Some("missing")).is_err());
+        assert_eq!(h, before);
+        h.move_tool("a", "left", Some("b")).unwrap();
+        assert_eq!(h, before);
+        h.move_tool("a", "right", Some("c")).unwrap();
+        assert_eq!(h.right.active_view_id.as_deref(), Some("c-view"));
+        h.move_tool("b", "right", Some("c")).unwrap();
+        assert!(h.left.active_view_id.is_none());
+        assert_eq!(h.right.active_view_id.as_deref(), Some("b-view"));
+        assert_eq!(
+            h.right
+                .entries
+                .iter()
+                .map(|e| e.definition_key.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a", "b", "c"]
+        );
+        let before = h.clone();
+        h.move_tool("c", "right", None).unwrap();
+        assert_eq!(h, before);
     }
 }
