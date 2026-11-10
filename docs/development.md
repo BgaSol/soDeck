@@ -120,7 +120,9 @@ npm run plugin:build -- --plugin docker
 
 产物位于 `artifacts/plugins/sodeck-<插件名>_<版本>_<target>`。在应用设置中添加对应目录并重启；正在运行的插件不能原位覆盖，需要关闭并重启后构建，或指定其他输出目录。宿主测试夹具只用于回归，不发行。
 
-系统默认应用验收使用 `node scripts/test-desktop-open-native.mjs <实际包内程序>`，仅在一次性 Actions runner 或显式 `SODECK_TEST_OPEN_ISOLATED=1` 的隔离桌面运行。Windows 编译无控制台 Rust handler 并临时设置测试账户的 HTTP/HTTPS 与目录关联，退出时恢复；macOS 用系统 clang、AppKit/LaunchServices 构建临时 app 并恢复关联；Linux 使用 xdg-utils、desktop-file-utils 和隔离 XDG 目录，在同一 dbus/Xvfb 会话设置默认 handler。脚本验证唯一 URL 与中文/空格/特殊字符目录各到达一次、非法目标拒绝和程序退出；Windows/Linux 另验证即时启动器错误。macOS 的成功只表示 `/usr/bin/open` 已交付，不证明应用后续正常运行。Package SoDeck 在五个原生目标调用此入口，Linux 分别运行 DEB 内程序和 AppImage；夹具不发行，结果上传为 Native-opener Artifact。它不替代真实浏览器/Finder/Explorer 的可见窗口、UNC 或 Wayland 桌面验收。
+系统默认应用验收使用 `node scripts/test-desktop-open-native.mjs <实际包内程序>`，仅在一次性 Actions runner 或显式 `SODECK_TEST_OPEN_ISOLATED=1` 的隔离桌面运行。Windows 编译无控制台 Rust handler，解析测试账户真实 UserChoice ProgID 并临时配置 HTTP/HTTPS 与目录关联，退出时恢复；目录收据按文件系统身份接受 8.3 别名，URL 仍逐字节校验。Linux 使用 xdg-utils、desktop-file-utils 和隔离 XDG 目录，在同一 dbus/Xvfb 会话设置默认 handler。脚本核对唯一 URL 与中文/空格/特殊字符目录各一次、非法目标拒绝和程序退出；Windows/Linux 另设启动器失败用例，Shell 处理坏关联可能超时，超时必须记为失败。Package SoDeck 在五个原生目标调用此入口，Linux 分别运行 DEB 内程序和 AppImage；夹具不发行，结果上传为 Native-opener Artifact。
+
+macOS 用系统 clang、AppKit/LaunchServices、Apple Events 和 ad hoc 签名构建临时 app 并恢复关联。原生 Check 先运行 `node scripts/test-desktop-open-native.mjs --handler-only`。如果系统保留受保护的默认关联，此模式仅编译 handler 并标记 skipped；实际包模式仍验证核心交付、非法目标拒绝和退出，但报告 `targetsExactlyOnce:false` 与 `receiptSkipReason`，不能记作目标收据通过。关联可控时才核对 HTTP URL 和目录各到达一次。`/usr/bin/open` 成功不能确认目标应用后续状态；此专项不替代真实浏览器/Finder/Explorer 的可见窗口、UNC 或 Wayland 桌面验收。
 
 ## 版本与持续集成
 

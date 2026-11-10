@@ -2,7 +2,11 @@
 
 命令输出改用共享客户端的标准严格 Base64 解码。非法填充、缺失填充、非零尾位和尾随垃圾明确报错；报错后释放原任务，不自动重发 Docker 操作。
 
-核心与插件独立发行，核心包不含业务插件。实现见[接入记录](../../docs/implementation-base64-opener-adoption.md)。本次包来源、原始打包 run 与实际验证范围在验收后补齐。
+本版为未发布候选，最终按要求仅推送 main。实现见[接入记录](../../docs/implementation-base64-opener-adoption.md)；核心与插件继续独立发行，核心包不含业务插件。
+
+包来源：[`0abaf3e8ccc2045e437dac723d898eca87759f6c`](https://github.com/BgaSol/soDeck/commit/0abaf3e8ccc2045e437dac723d898eca87759f6c)；原始独立打包：[Package plugin #42779070485](https://github.com/BgaSol/soDeck/actions/runs/42779070485)；[草稿 440086864](https://github.com/BgaSol/soDeck/releases/tag/untagged-e8290ebf5644ad3bb805)，保留原五平台归档与更新清单，共六个附件，未正式发布。
+
+五个原生目标独立构建、解包、包内进程启动与退出通过；ARM64 使用原生程序。最终源码 CI、实际核心候选失败及未执行的新版本包组合/升级范围见[核心候选记录](../../docs/releases/v0.21.1.md)。源码 main 的后续测试和 CI 修正不改变这些归档来源，没有重建或覆盖附件。
 
 # Docker 变更记录
 

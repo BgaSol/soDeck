@@ -58,6 +58,7 @@
 
 - [GitHub Releases](https://github.com/BgaSol/soDeck/releases)：已发布的核心和插件版本、下载附件与发布说明。
 - [核心版本记录](releases/)：各版本的功能变化、验收与交付边界，包含历史候选版本记录。
+- [v0.21.1 候选](releases/v0.21.1.md)：Base64/opener 接入、main 交付与未发布包的来源和验证边界。
 - [v0.21.0](releases/v0.21.0.md)：工具按钮与面板共同停靠、拖动排序、布局记忆及终端入口调整。
 - [v0.20.1](releases/v0.20.1.md)：Docker 标准图标、右侧推荐入口及本地添加插件的键盘焦点修复。
 - [v0.19.0](releases/v0.19.0.md)：精简两级 Tab 右键菜单、取消分屏保留页面及空标签组关闭修复。

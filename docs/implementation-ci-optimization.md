@@ -12,7 +12,7 @@
 - 最终 `format` 状态显式汇总 browser，失败、取消、跳过或缺失的选中任务仍拒绝通过。诊断 Artifact 保留 14 天，实际包与发行记录仍保留 30 天。
 - browser/desktop 对齐已有原生 `check-tests` 输入；integration 三行复用既有 `network-tests` 输入，没有增加按业务组区分的大缓存键。核心 `core-release-v2`、插件发行缓存与平台隔离保留；未删除远端缓存或调整付费配额。
 
-核心/插件运行时、接口、版本和打包产物未改。五平台原生源码、核心独立构建/签名、实际包启动退出及独立插件组合验收保持原入口；本轮没有发布新版本。
+CI 改动不改变核心/插件业务运行时、接口和版本；打包 Shell 赋值错误及显式 macOS 验收等待为独立修正。五平台原生源码、核心独立构建/签名、实际包启动退出及独立插件组合验收保持原入口；本轮没有发布新版本。
 
 ## 验收
 
@@ -43,13 +43,13 @@
 
 修正限定在单元测试、隔离夹具和显式烟测入口：物理创建任意字节文件名的目录测试仅在支持它的 Linux 文件系统执行；macOS 在既有 5 秒内等待实际按钮布局，22pt 和横向留位断言不变；默认应用夹具使用真实路径，在一次性 Windows profile 内解析 UserChoice 指向的实际 ProgID，为该关联配置临时 handler，结束后恢复。完整 URL、中文/特殊字符目录各一次、非法目标和启动失败断言继续保留。本机不执行会改变默认应用的原生关联夹具；Windows/macOS 原生结果由一次性 runner 的实际包验收确认。
 
-本机格式/类型、99 项脚本测试和 Windows 目录单元测试通过；五平台的新源码及包验收继续以最后的固定来源提交和 PR 记录为准，不使用旧失败运行的重跑来验证新代码。
+本机格式/类型、99 项脚本测试和 Windows 目录单元测试通过；后续固定来源的源码及包验收见下方收尾记录，不使用旧失败运行的重跑来验证新代码。
 
 main 的 `72f1cbd` / `b59e9e1` 同时修正了文件系统范围和实际默认关联。同步时直接复用这两个文件的 main 实现，保留本轮 macOS 布局等待；PR 不再携带另一套目录或 UserChoice 处理。此前冲突导致 PR 自动 Check 没有启动，解决后在固定合并提交重新验证。
 
 [Check 42782850740](https://github.com/BgaSol/soDeck/actions/runs/42782850740) 在 `48860fb` 全部通过，耗时 11 分 19 秒。[核心包 42782985473](https://github.com/BgaSol/soDeck/actions/runs/42782985473) 的两个 Linux 与 Windows x86_64 通过；macOS 实际应用的创建、缩放、22pt 按钮布局及启动退出通过，随后夹具修改 HTTPS 默认关联遇到 LaunchServices `-54`；Windows ARM64 的实际应用启动退出和唯一完整 URL 通过，但目录被 Shell 从短路径展开为长路径，旧字符串比较拒绝了同一目录。失败平台没有上传合格包，这次运行不能作为完整发行候选。
 
-随后同步 main 的 `18f94b4`、`f0b4002`、`b4f1cbd`：macOS 受控默认关联限定到允许设置的 HTTP，临时 handler 正确接收 URL 与文件 Apple Events，并在核心包验收前单独验证 handler；目录按实际文件系统身份接受别名，仍拒绝其他目标、重复调用和被替换目录。继续复用 main 实现，没有降低调用次数或目标断言。合并后本机 `npm run check`、100 项脚本测试、actionlint 和 135 份 Markdown 结构检查通过；初次本机检查因未将已安装 Cargo 加入当前进程 PATH 失败，补齐工具链 PATH 后通过。五平台实际包与最终 Check 的固定来源及结果以 [PR #10](https://github.com/BgaSol/soDeck/pull/10) 交付记录为准，旧失败 run 不用于验证新源码。
+随后同步 main 的 `18f94b4`、`f0b4002`、`b4f1cbd`：macOS 受控默认关联限定到 HTTP，临时 handler 改用 URL 与文件 Apple Events，并在核心包验收前单独检查；目录按实际文件系统身份接受别名，仍拒绝其他目标、重复调用和被替换目录。继续复用 main 实现。合并后本机 `npm run check`、100 项脚本测试、actionlint 和 135 份 Markdown 结构检查通过；初次本机检查因未将已安装 Cargo 加入当前进程 PATH 失败，补齐工具链 PATH 后通过。最终收据可验证性、Check 与实际包的固定来源见下方 main 收尾及[核心候选记录](releases/v0.21.1.md)，旧失败 run 不用于验证新源码。
 
 ### 首个成功样本的耗时
 
@@ -64,7 +64,23 @@ main 的 `72f1cbd` / `b59e9e1` 同时修正了文件系统范围和实际默认�
 
 这只是一次成功样本，runner、排队及缓存条件会变化；不能当作中位数、P95 或永久耗时保证。来源以各 run 的 PR/head 与实际 checkout 信息为准，后续纯文档提交不改变这批运行代码。
 
-## 待完成与风险
+## 合并 main 后的收尾
+
+用户将本任务与 Base64/opener 接入一并交付 main，停止另一会话后不再分别推进。同一工作目录已合入 `codex/ci-optimization` 的全部提交，[PR #10](https://github.com/BgaSol/soDeck/pull/10) 随提交进入 main 自动标记 merged；Base64/opener 使用已有 main 实现，没有保留第二套默认关联或目录处理。
+
+[`026ba8c92b68a3cd2e6a09ce5fd81d287b9a316d`](https://github.com/BgaSol/soDeck/commit/026ba8c92b68a3cd2e6a09ce5fd81d287b9a316d) 的 [Check #42790964201](https://github.com/BgaSol/soDeck/actions/runs/42790964201) 中，工作流静态检查、脚本、Windows SSH、核心与五插件的五平台原生源码、两个网络组和完整 business 组全部通过；Linux browser 在布局测试新建页面后的右键菜单超时，汇总正确失败。该次完整 business 也验证了文件导出等待修正，终端、文件、状态、Docker/归档及三插件通信通过；netem skipped。
+
+文件 UI 的上一轮 [Check #42787813366](https://github.com/BgaSol/soDeck/actions/runs/42787813366) 在“下载后断线导出草稿”步骤超时，故障日志最终显示下载完成通知。原测试仅以本地字节写满判断下载完成，尚有任务收尾和两个页面的通知；现在记录同一个 batch ID，等待编辑页出现该批的已完成动作及下载通知后再断线导出。字节、BOM/CRLF、草稿跨窗、离线导出断言保留，未通过重试掩盖失败；文件回归加入失败 trace。本机完整真实文件回归及修正后的 UI 专项通过。
+
+布局测试原先仅等待核心登记两页，没有等待新页面挂载、接管输入和布局帧完成。后续补齐这些前置条件，右键命中明确的 tab 按钮，并将该次新页面的挂载延迟 800ms；本机延迟用例通过，但 Windows 上未稳定复现 Linux 的同一菜单超时，不能将时序推断描述为已确认的唯一原因。布局回归也加入失败 trace；后续 Linux 复验记录见最终源码检查。
+
+[`f555665`](https://github.com/BgaSol/soDeck/commit/f5556655a06a159ea70477ba9d546b666fe38b25) 的 [Check #42792471502](https://github.com/BgaSol/soDeck/actions/runs/42792471502) 公共脚本通过，但 browser 在更早的工作区宽度断言失败，尚未执行后面的布局菜单专项。窗口从 720 恢复为 1000 宽后，测试固定等两帧仍读到旧窄窗口的有效侧栏宽度 0，随后诊断日志已显示 316；后续改为等待实际恢复到 316，保留缩放取消、保存结果和 iframe 节点保留断言。本机完整工作区回归通过；没有缩短超时或加入运行失败后的自动重试。
+
+最终测试源码为 [`9ef08b5ca7845a3db89b9163bf11a445a77b0776`](https://github.com/BgaSol/soDeck/commit/9ef08b5ca7845a3db89b9163bf11a445a77b0776)，对应 [Check #42793876847](https://github.com/BgaSol/soDeck/actions/runs/42793876847)，首次 attempt 的全部选中检查及汇总通过。末两次只改浏览器测试，按实际选择复验 Linux 完整 UI/正式构建和脚本；核心/插件源码与上述通过的五平台和 business 结果保持一致，未选中的平台/业务和 netem 明确 skipped。后续文档提交不改变这些代码。
+
+本机合并后类型/格式、正式前端构建、100 项脚本测试、核心全套源码、actionlint 1.7.12、完整 Windows UI 对照、实际 OpenSSH/终端及文件回归通过。actionlint 使用已核对官方 checksum 的 Windows 原包；Linux 工作流的 actionlint/ShellCheck 在上述 select 中通过。此轮不新增发布，最近核心包的部分失败、新默认应用收据及未执行的实际包组合统一见[核心候选记录](releases/v0.21.1.md)。
+
+## 后续规划与风险
 
 新 Linux 完整 UI 已首次实际通过；更多 runner/缓存条件的稳定性仍需观察。并行增加首轮构建与 runner 等待，需积累 3～5 个可比成功样本后比较中位数、范围和总 job 时间。trace 会增加少量运行开销，CI 强制终止时可能只有未完成结果和部分日志。
 
