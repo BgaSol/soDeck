@@ -5,7 +5,15 @@
 - Docker 默认固定在右侧工具栏，仍按需展开；已有布局偏好保留，可通过“恢复推荐布局”回到右侧。
 - 工作台入口、插件列表和组件设置使用标准鲸鱼图标；容器详情和日志页使用宿主支持的对应图标。请配套更新核心至 0.20.1。
 
-此版本正在准备五平台原生包和发布验收，完成后在本节记录包来源与 Release。
+发行来源：
+
+- 插件版本：0.1.1，核心 API 1、UI API 2；配套核心 0.20.1。
+- 包来源提交：[`e6aa6c1c35ca0d67f10bcec5e4ca65de0f7bdd32`](https://github.com/BgaSol/soDeck/commit/e6aa6c1c35ca0d67f10bcec5e4ca65de0f7bdd32)。
+- 原始打包：[Package plugin #42748870815](https://github.com/BgaSol/soDeck/actions/runs/42748870815)，五个原生目标的构建、归档解包、包内进程协议与退出全部通过。
+- 源码与业务：[Check #42748827332](https://github.com/BgaSol/soDeck/actions/runs/42748827332)，五平台源码、公共前端/脚本、Windows 完整 UI/SSH、Linux 普通网络及 x86_64 Docker Engine/OpenSSH、UI 和归档回归全部通过；netem 跳过。
+- Release：[Docker 0.1.1](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.1.1)，按本次要求设为 GitHub Latest。
+
+本机下载本次五份草稿归档，核对实际文件 SHA-256、GitHub 摘要和更新清单，检查各包内 0.1.1 版本、右侧默认与鲸鱼图标声明，并运行下载的 Windows x86_64 程序验收通过。没有重建已通过的包，也没有覆盖 0.1.0 正式附件。原生 WebView 人工交互、多屏/DPI、用户业务服务器和历史版本升级不在本次专项范围。
 
 ## 0.1.0（2026-11-10）
 
