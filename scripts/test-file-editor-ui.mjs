@@ -46,6 +46,31 @@ try{
  for(const [path,text]of [['data.json','{"port":8080,"enabled":true}'],['compose.yaml','port: 8080\n# config\nname: "web"'],['config.toml','[server]\nport = 8080\nname = "web"\n# config'],['config.ini','[main]\nkey=value\n; config'],['.env','PORT=8080\nNAME="web"\n# config'],['Dockerfile','FROM ubuntu:24.04\n# config\nRUN echo "hello"']]){
    await page.evaluate(({path,text})=>mount(text,path),{path,text});await page.waitForFunction(()=>new Set([...document.querySelectorAll('.view-lines span[class^="mtk"]')].filter(el=>el.textContent.trim()).map(el=>getComputedStyle(el).color)).size>=2);
  }
+ const tokenColor=(value,exact=true)=>page.evaluate(({value,exact})=>{
+   const span=[...document.querySelectorAll('.view-lines span[class^="mtk"]')].find(el=>exact?el.textContent.replaceAll('"','')===value:el.textContent.includes(value));
+   if(!span)throw new Error(`Missing colored token: ${value}`);
+   return getComputedStyle(span).color;
+ },{value,exact});
+ const mountColored=async(path,text)=>{
+   await page.evaluate(({path,text})=>mount(text,path),{path,text});
+   await page.waitForFunction(()=>[...document.querySelectorAll('.view-lines span[class^="mtk"]')].some(el=>el.textContent.replaceAll('"','')==='ordinary'));
+ };
+ const commentColors=[];
+ const dollarText='// lineMarker\n/* blockMarker\nblockContinuation */\n'+JSON.stringify({plain:'ordinary',dollar:'$HOME',braced:'${HOME}',lone:'$'},null,2);
+ for(const path of ['data.json','data.jsonc']){
+   await mountColored(path,dollarText);
+   const ordinary=await tokenColor('ordinary');
+   for(const value of ['$HOME','${HOME}','$'])assert.equal(await tokenColor(value),ordinary,`${path}: dollar signs stay string content`);
+   assert.equal(await page.evaluate(()=>editor.value()),dollarText,'Coloring does not edit the document');
+   commentColors.push([await tokenColor('lineMarker',false),await tokenColor('blockContinuation',false)]);
+ }
+ assert.notEqual(commentColors[0][0],commentColors[1][0],'Only JSONC colors line comments');
+ assert.notEqual(commentColors[0][1],commentColors[1][1],'Only JSONC colors continued block comments');
+ assert.equal(commentColors[1][0],commentColors[1][1],'JSONC retains its block comment state');
+ for(const [path,text]of [['.env','PLAIN="ordinary"\nVALUE="$HOME"'],['/etc/nginx/nginx.conf','set $plain "ordinary";\nset $value "$HOME";'],['config.toml','plain = "ordinary"\nvalue = "$HOME"']]){
+   await mountColored(path,text);
+   assert.notEqual(await tokenColor('$HOME'),await tokenColor('ordinary'),`${path}: shared variable coloring is unchanged`);
+ }
  await page.evaluate(()=>mount('line\n'.repeat(300),'position.txt'));await page.waitForTimeout(50);await page.evaluate(()=>editor.editor.setScrollTop(400));const position=await page.evaluate(()=>editor.state());
  await page.evaluate(state=>{document.querySelector('#editor-host').style.display='none';mount('line\n'.repeat(300),'position.txt',state);editor.preferencesChanged({fontSize:18,lineHeight:1.5,tabSize:4,wordWrap:false,minimap:true},'monospace');},position);
  assert.equal(await page.evaluate(()=>editor.state().topLine),position.topLine,'Hidden candidate retains logical scroll anchor');
