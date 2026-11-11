@@ -35,6 +35,13 @@ impl Fixture {
     fn open(&self) -> std::sync::Arc<AppCore> {
         AppCore::open(self.root.join("data"), "test".into()).unwrap()
     }
+    fn set_manifest_field(&self, key: &str, value: &str) {
+        let path = self.plugin.join("plugin.json");
+        let mut manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        manifest[key] = json!(value);
+        fs::write(path, manifest.to_string()).unwrap();
+    }
     fn pid(&self, file: &str) -> u32 {
         fs::read_to_string(self.root.join("data/plugin-data/test.fixture").join(file))
             .unwrap()
@@ -138,19 +145,49 @@ fn load_stop_reload_and_persist() {
 fn invalid_manifest_and_api_are_rejected_without_starting() {
     let f = Fixture::new("");
     let core = f.open();
+    let path = f.plugin.join("plugin.json");
+    let original = fs::read(&path).unwrap();
     for (key, value) in [
         ("apiVersion", "2"),
         ("target", "wrong"),
         ("entry", "../escape"),
+        ("version", "01.2.3"),
+        ("version", "1.2"),
+        ("version", "1.2.3-"),
+        ("version", "1.2.3-01"),
+        ("version", "1.2.3-a b"),
     ] {
-        let path = f.plugin.join("plugin.json");
-        let original = fs::read(&path).unwrap();
-        let mut manifest: serde_json::Value = serde_json::from_slice(&original).unwrap();
-        manifest[key] = json!(value);
-        fs::write(&path, manifest.to_string()).unwrap();
-        assert!(core.load(&f.plugin).is_err());
-        assert!(core.snapshot().plugins.is_empty());
-        fs::write(&path, original).unwrap();
+        f.set_manifest_field(key, value);
+        assert!(core.add_plugin(&f.plugin).is_err(), "{key}={value}");
+        assert!(core.load(&f.plugin).is_err(), "{key}={value}");
+        assert!(core.snapshot().plugins.is_empty(), "{key}={value}");
+        assert!(
+            !f.root.join("data/plugin-data/test.fixture/pid").exists(),
+            "{key}={value}"
+        );
+        fs::write(&path, &original).unwrap();
+    }
+    core.shutdown().unwrap();
+}
+#[test]
+fn local_semver_versions_are_registered_and_loaded_unchanged() {
+    for version in ["1.2.3", "1.2.3-rc.1", "1.2.3+local.7", "1.2.3-rc.1+local.7"] {
+        let f = Fixture::new("");
+        f.set_manifest_field("version", version);
+        let core = f.open();
+
+        assert_eq!(core.add_plugin(&f.plugin).unwrap(), "test.fixture");
+        assert_eq!(core.snapshot().plugins[0].manifest.version, version);
+        assert!(!f.root.join("data/plugin-data/test.fixture/pid").exists());
+
+        let loaded = core.load(&f.plugin).unwrap();
+        assert_eq!(loaded.manifest.version, version);
+        assert_eq!(loaded.status, PluginStatus::Running);
+
+        let pid = f.pid("pid");
+        core.unload("test.fixture").unwrap();
+        assert!(!alive(pid));
+        core.shutdown().unwrap();
     }
 }
 #[test]

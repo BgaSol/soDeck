@@ -146,6 +146,8 @@ completed 表示收到远端退出状态，非零退出码仍可能 completed。
 
 每个包包含一个目标的程序，五个 target 见分发文档。Unix 入口需要执行位。核心只做必需字段、版本、API 主版本、目标及目录内入口的基本检查。同一 ID 只能有一个活动实例。启用/关闭在重启后生效，核心启动时加载已启用插件。
 
+`version` 按 SemVer 校验，本地目录可使用合法的预发布和构建信息，核心保留原始字符串。`apiVersion` 与插件版本独立，仍按核心 API 主版本检查。官方打包和在线更新的正式版本限制见[分发文档](distribution.md)；当前非正式本地版本不能使用在线更新通道。
+
 清单可选 `updateSource: { "repository": "BgaSol/soDeck", "tagPrefix": "plugin-terminal-v" }`。未声明来源的本地插件可在设置中显式配置。插件仍为 API v1，不增加运行时更新 RPC。发布维护与重启切换见分发文档。
 
 ## 通信

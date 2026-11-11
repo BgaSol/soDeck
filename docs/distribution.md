@@ -77,6 +77,8 @@ Windows 插件在自身工程目录运行 Cargo，以应用静态运行库配置
 
 每个核心 Release 含 `core-update.json`，每个插件 Release 含 `plugin-update.json`；脚本从构建产物自动生成，包含组件 ID、版本、按 Rust target 区分的下载地址，以及核心签名或插件 SHA-256。插件还有核心 API 版本。版本和清单不手工维护两份。
 
+官方更新通道只接受不含预发布标识或构建信息的 SemVer `major.minor.patch`；当前已安装版本和候选版本都须满足此限制。
+
 应用分页读取 Releases，筛选组件自己的标签前缀、正式版本和本机平台；插件还检查 API。不会用全仓库 latest 混淆核心和不同插件。插件 Release 发布时标为非 latest，核心保持仓库默认发行入口。检查和下载失败显示原因与重试，不改旧程序。
 
 ## 验证

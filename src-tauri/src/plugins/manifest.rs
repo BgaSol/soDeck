@@ -2,6 +2,7 @@ use crate::{
     model::{Manifest, PluginRecord},
     API_VERSION, TARGET,
 };
+use semver::Version;
 use std::{
     fs,
     path::{Component, Path},
@@ -35,12 +36,8 @@ pub fn read_manifest(directory: &Path) -> Result<PluginRecord, String> {
     if manifest.name.trim().is_empty() || manifest.name.len() > 256 {
         return Err("插件名称不能为空或过长".into());
     }
-    let version = manifest.version.split('-').next().unwrap_or_default();
-    if version.split('.').count() != 3
-        || !version.split('.').all(|part| part.parse::<u32>().is_ok())
-    {
-        return Err("插件版本应为 major.minor.patch".into());
-    }
+    Version::parse(&manifest.version)
+        .map_err(|_| "插件版本应为有效的 SemVer（major.minor.patch）".to_string())?;
     if manifest.api_version.split('.').next() != Some(API_VERSION) {
         return Err(format!(
             "插件要求核心 API {}，当前为 {API_VERSION}",
