@@ -1,3 +1,9 @@
+# 0.8.4
+
+- 插件客户端使用标准库有界逐行读取，保留超长控制帧立即退出，Interrupted 自动重试；终端业务和持久状态保持原有契约。
+
+未新增或升级生产依赖，核心 API 与 RPC 字段保持兼容。待本次独立源码与五平台原生包验收后补充包来源、原始 run、Release 及实际验证/跳过范围；当前不代表已发布。
+
 # 0.8.3
 
 - 全选使用 Windows/Linux Ctrl+A、macOS Cmd+A；查找使用 Windows/Linux Ctrl+F、macOS Cmd+F。两项快捷键无需 Shift，在本地处理，菜单显示对应提示。
