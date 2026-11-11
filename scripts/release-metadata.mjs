@@ -2,10 +2,20 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
 import { cargoPackageVersion } from "./cargo-package.mjs";
 
 import { targets, validateCoreArtifacts } from "./core-artifacts.mjs";
 export { targets };
+export function parseReleaseMetadataArgs(args) {
+  const { values } = parseArgs({ args, options: {
+    kind: { type: "string", multiple: true },
+    tag: { type: "string", multiple: true },
+    plugin: { type: "string", multiple: true },
+    input: { type: "string", multiple: true },
+  } });
+  return { kind: values.kind?.[0], tag: values.tag?.[0], plugin: values.plugin?.[0], input: values.input?.[0] };
+}
 export function pluginConfig(plugin, root = ".") {
   if (typeof plugin !== "string" || !/^[a-z][a-z0-9-]*$/.test(plugin)) throw new Error("Invalid plugin name");
   const directory = path.join(root, "plugins", plugin);
@@ -62,20 +72,19 @@ export function generate(kind, config, input, repository = "BgaSol/soDeck") {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const arg = name => { const index = process.argv.indexOf(`--${name}`); return index < 0 ? undefined : process.argv[index + 1]; };
-  const kind = arg("kind");
-  const tag = arg("tag") ?? process.env.GITHUB_REF_NAME;
-  const plugin = tag?.match(/^plugin-([a-z][a-z0-9-]*)-v\d+\.\d+\.\d+$/)?.[1] ?? arg("plugin");
+  const { kind, tag: requestedTag, plugin: requestedPlugin, input } = parseReleaseMetadataArgs(process.argv.slice(2));
+  const tag = requestedTag ?? process.env.GITHUB_REF_NAME;
+  const plugin = tag?.match(/^plugin-([a-z][a-z0-9-]*)-v\d+\.\d+\.\d+$/)?.[1] ?? requestedPlugin;
   if (kind === "plugin" && !plugin) throw new Error("Specify a plugin with --plugin <directory> or a plugin release tag");
   const config = kind === "plugin" ? pluginConfig(plugin) : coreConfig();
-  if (arg("tag") || process.env.GITHUB_REF_TYPE === "tag") checkTag(config, tag);
+  if (requestedTag || process.env.GITHUB_REF_TYPE === "tag") checkTag(config, tag);
   if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${kind === "plugin" ? `plugin=${plugin}\n` : ""}tag=${config.tag}\n`);
-  if (arg("input")) {
+  if (input) {
     if (kind === "core") {
-      validateCoreArtifacts(arg("input"), config, process.env.GITHUB_SHA);
+      validateCoreArtifacts(input, config, process.env.GITHUB_SHA);
     }
-    const manifest = generate(kind, config, arg("input"));
-    fs.writeFileSync(path.join(arg("input"), `${kind}-update.json`), JSON.stringify(manifest, null, 2) + "\n");
+    const manifest = generate(kind, config, input);
+    fs.writeFileSync(path.join(input, `${kind}-update.json`), JSON.stringify(manifest, null, 2) + "\n");
   }
   console.log(config.tag);
 }
