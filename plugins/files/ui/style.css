@@ -55,7 +55,7 @@ footer button { font-size: 11px; padding: 1px 4px; }
 .editor-language { max-width: 140px; font: inherit; font-size: 11px; padding: 2px 3px; color: var(--text); background: var(--panel); }
 .file-search-match { background: color-mix(in srgb, #BA922D 25%, transparent); outline: 1px solid #A47B24; }
 .file-search-current { background: color-mix(in srgb, #D77727 35%, transparent); outline: 2px solid #C25E12; }
-.file-editor-menu { position: absolute; z-index: 6; width: 136px; padding: 4px; }
+.file-editor-menu { position: fixed; z-index: 6; width: 136px; padding: 4px; }
 .file-editor-menu button { display: block; width: 100%; text-align: left; }
 .editor-find :focus-visible, .editor-language:focus-visible, .file-editor-menu :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 @media (max-width: 520px) { .editor-toolbar { flex-wrap: wrap; } .editor-toolbar .path { flex-basis: 100%; } .editor-find { right: 14px; max-width: calc(100% - 28px); } .editor-location { display: none; } .editor-language { max-width: 110px; } }

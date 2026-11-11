@@ -1,15 +1,20 @@
 // Shipped editor bundle, real browser editing, bounded search and byte-limit regression.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {createServer} from 'vite';
 import {chromium} from 'playwright';
+import {packageMenuAssets} from './plugin-menu-assets.mjs';
 const npm=process.env.npm_execpath||path.join(path.dirname(process.execPath),'node_modules/npm/bin/npm-cli.js');
 const built=spawnSync(process.execPath,[npm,'run','build','--prefix','plugins/files'],{stdio:'inherit',windowsHide:true});if(built.status!==0)throw new Error('File editor build failed');
+const menuDirectory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-editor-menu-'));
+await packageMenuAssets(menuDirectory);
 const vite=await createServer({configFile:false,optimizeDeps:{noDiscovery:true,include:[]},server:{watch:null,host:'127.0.0.1',port:0}});await vite.listen();const url=vite.resolvedUrls.local[0];
 const browser=await chromium.launch({headless:true}),page=await browser.newPage({viewport:{width:1100,height:760}}),errors=[];
 page.on('pageerror',error=>{errors.push(String(error));console.error(String(error));});page.setDefaultTimeout(10000);
+await page.addInitScript({path:path.join(menuDirectory,'ui/text-menu.js')});
 await page.route(url+'file-editor/**',route=>{const relative=new URL(route.request().url()).pathname.slice('/file-editor/'.length);return route.fulfill({contentType:relative.endsWith('.css')?'text/css':'text/javascript',body:fs.readFileSync(path.join('plugins/files/ui/vendor',relative))});});
 await page.route(url+'editor.html',route=>route.fulfill({contentType:'text/html',body:`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; worker-src 'self'"><link rel="stylesheet" href="/src/ui.css"><link rel="stylesheet" href="/plugins/files/ui/style.css"><link rel="stylesheet" href="/file-editor/editor.css"></head><body><main id="root"><header class="editor-toolbar"><span class="path">/etc/nginx/nginx.conf</span><button class="sd-control primary" id="save">保存</button></header><section id="editor-host" class="code-editor"></section><footer><span id="status" class="status"></span></footer></main><script type="module">import {FileEditor} from '/file-editor/editor.js';window.changes=0;window.messages=[];window.clipboard='';window.sodeckClipboard={readText:async()=>window.clipboard,writeText:async text=>{window.clipboard=text;return true;}};window.mount=(text,path='/etc/nginx/nginx.conf',state,bom=false,eol='\\n')=>{window.editor?.dispose();document.querySelector('#editor-host').replaceChildren();document.querySelector('footer').innerHTML='<span id="status" class="status"></span>';window.editor=new FileEditor({host:document.querySelector('#editor-host'),footer:document.querySelector('footer'),text,path,state,bom,eol,notify:message=>{window.messages.push(message);document.querySelector('#status').textContent=message;},change:()=>window.changes++,position:()=>{},save:()=>{}});window.editor.theme({panel:'#ffffff',text:'#263044',muted:'#64748b','color-scheme':'light'});window.editor.readOnly(false);};window.mount('worker_processes auto;\\n# configuration\\nserver {\\n  server_name example.com;\\n}\\n');window.ready=true;</script></body></html>`}));
 try{
@@ -75,5 +80,37 @@ try{
  await page.evaluate(state=>{document.querySelector('#editor-host').style.display='none';mount('line\n'.repeat(300),'position.txt',state);editor.preferencesChanged({fontSize:18,lineHeight:1.5,tabSize:4,wordWrap:false,minimap:true},'monospace');},position);
  assert.equal(await page.evaluate(()=>editor.state().topLine),position.topLine,'Hidden candidate retains logical scroll anchor');
  await page.evaluate(()=>{document.querySelector('#editor-host').style.display='';editor.visibility(true);});assert(Math.abs((await page.evaluate(()=>editor.state().topLine))-position.topLine)<=1);
- assert.deepEqual(errors,[]);console.log('File editor passed: real input/undo, byte limits, current-model search, dense full navigation, syntax, minimap, clipboard, state and narrow themes');
-}finally{await browser.close();await vite.close();}
+ await page.setViewportSize({width:800,height:600});
+ await page.evaluate(()=>{document.querySelector('#editor-host').style.display='';mount('old\n'+'line\n'.repeat(300),'menu.txt');});
+ const menu=page.locator('.file-editor-menu'),host=page.locator('#editor-host');
+ const dimensions=async(width=100,height=70,left=30,top=40)=>{await host.evaluate((el,{width,height,left,top})=>{Object.assign(el.style,{position:'fixed',width:width+'px',height:height+'px',left:left+'px',top:top+'px',flex:'none'});},{width,height,left,top});await page.waitForTimeout(50);};
+ const openMenu=async()=>{await host.evaluate(el=>{const r=el.getBoundingClientRect();el.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.right-2,clientY:r.bottom-2}));});await menu.waitFor({state:'visible'});};
+ const menuGeometry=()=>menu.evaluate(el=>{const r=el.getBoundingClientRect(),list=el.querySelector('.sd-menu-list')||el,style=getComputedStyle(list);return {parent:el.parentElement===document.body,position:getComputedStyle(el).position,left:r.left,top:r.top,right:r.right,bottom:r.bottom,scrolling:list.scrollHeight>list.clientHeight,horizontal:['auto','scroll'].includes(style.overflowX)&&list.scrollWidth>list.clientWidth};});
+ const assertMenu=async()=>{const g=await menuGeometry(),v=page.viewportSize();assert(g.parent&&g.position==='fixed',JSON.stringify(g));assert(g.left>=0&&g.top>=0&&g.right<=v.width&&g.bottom<=v.height,JSON.stringify(g));assert.equal(g.horizontal,false);return g;};
+ assert.equal(await page.evaluate(()=>typeof window.SoDeckMenuPosition?.attachMenuPosition),'function','The independently packaged menu API is loaded');
+ await dimensions();await openMenu();await assertMenu();
+ for(const button of await menu.getByRole('menuitem').all()){await button.focus();assert(await button.evaluate(el=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}),'Each narrow-editor menu item is reachable');}
+ await page.keyboard.press('Escape');assert.equal(await menu.count(),0);assert(await page.evaluate(()=>editor.editor.hasTextFocus()));
+ await dimensions(330,220);await openMenu();await dimensions();await assertMenu();await page.keyboard.press('Tab');assert.equal(await menu.count(),0);
+ for(const [left,top]of [[0,0],[700,0],[0,530],[700,530]]){await dimensions(100,70,left,top);await openMenu();await assertMenu();await page.keyboard.press('Escape');}
+ await page.setViewportSize({width:180,height:120});await dimensions(100,70,10,20);await openMenu();assert((await assertMenu()).scrolling);
+ await page.keyboard.press('End');assert.equal(await page.evaluate(()=>document.activeElement.textContent),'全选');assert(await menu.getByRole('menuitem',{name:'全选'}).evaluate(el=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}));
+ await page.keyboard.press('Home');assert.equal(await page.evaluate(()=>document.activeElement.textContent),'剪切');await page.keyboard.press('ArrowDown');assert.equal(await page.evaluate(()=>document.activeElement.textContent),'复制');await page.keyboard.press('Escape');
+ await page.setViewportSize({width:800,height:600});await dimensions(330,220);await page.evaluate(()=>editor.focus());await page.keyboard.press('Shift+F10');await menu.waitFor();await page.waitForFunction(()=>document.activeElement.textContent==='剪切');await page.keyboard.press('Escape');
+ await openMenu();await host.evaluate(()=>editor.editor.setScrollTop(200));await page.waitForFunction(()=>!document.querySelector('.file-editor-menu'));assert.equal(await page.evaluate(()=>editor.editor.getScrollTop()),200);
+ await openMenu();await page.evaluate(()=>editor.visibility(false));assert.equal(await menu.count(),0);await page.evaluate(()=>editor.visibility(true));
+ await openMenu();await page.evaluate(()=>editor.readOnly(true));assert.equal(await menu.count(),0);await openMenu();await page.waitForFunction(()=>document.activeElement.textContent==='复制');await page.keyboard.press('ArrowDown');assert.equal(await page.evaluate(()=>document.activeElement.textContent),'全选');await page.keyboard.press('Escape');await page.evaluate(()=>editor.readOnly(false));
+ await page.evaluate(()=>{editor.setSelection(0,3);editor.focus();});await openMenu();await menu.getByRole('menuitem',{name:'复制',exact:true}).click();assert.equal(await page.evaluate(()=>clipboard),'old');assert(await page.evaluate(()=>editor.editor.hasTextFocus()));
+ await openMenu();await menu.getByRole('menuitem',{name:'全选'}).press('Enter');assert.equal(await page.evaluate(()=>editor.selection().active),await page.evaluate(()=>editor.value().length));
+ await page.evaluate(()=>{editor.setSelection(0,3);window.sodeckClipboard.writeText=async()=>false;});await openMenu();await menu.getByRole('menuitem',{name:'剪切'}).press('Space');assert((await page.evaluate(()=>editor.value())).startsWith('old\n'),'Failed clipboard writes never delete source text');
+ for(const invalid of ['focus','selection','version','readOnly','dispose']){
+   await page.evaluate(()=>{mount('old\n','menu.txt');editor.setSelection(0,3);window.finishRead=undefined;window.sodeckClipboard.readText=valid=>new Promise(resolve=>{window.finishRead=()=>resolve(valid()?'late':null);});});
+   await dimensions(330,220);await openMenu();await menu.getByRole('menuitem',{name:'粘贴'}).click();await page.waitForFunction(()=>typeof finishRead==='function');
+   await page.evaluate(invalid=>{if(invalid==='focus')document.querySelector('#save').focus();if(invalid==='selection')editor.setSelection(4,4);if(invalid==='version')editor.setText('new\n');if(invalid==='readOnly')editor.readOnly(true);if(invalid==='dispose')mount('replacement\n','other.txt');finishRead();},invalid);
+   await page.waitForTimeout(20);assert.equal(await page.evaluate(()=>editor.value()),invalid==='version'?'new\n':invalid==='dispose'?'replacement\n':'old\n',`${invalid}: late clipboard input must not edit`);
+ }
+ await page.evaluate(()=>{mount('old\n','menu.txt');window.originalPosition=SoDeckMenuPosition.attachMenuPosition;window.pendingReady=[];window.positionDisposals=0;SoDeckMenuPosition.attachMenuPosition=(...args)=>{const real=originalPosition(...args);return {...real,ready:new Promise(resolve=>pendingReady.push(()=>real.ready.then(resolve))),dispose(){positionDisposals++;real.dispose();}}};});
+ await dimensions(330,220);await openMenu();await page.keyboard.press('Escape');await openMenu();await page.evaluate(()=>pendingReady[0]());await page.waitForTimeout(20);assert(await page.evaluate(()=>editor.editor.hasTextFocus()),'A closed menu ready callback cannot steal focus');await page.evaluate(()=>pendingReady[1]());await page.waitForFunction(()=>document.activeElement.textContent==='剪切');await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>positionDisposals),2);
+ await page.evaluate(()=>{SoDeckMenuPosition.attachMenuPosition=originalPosition;});await openMenu();await page.evaluate(()=>editor.dispose());assert.equal(await menu.count(),0);
+ assert.deepEqual(errors,[]);console.log('File editor passed: real input/undo, byte limits, current-model search, dense full navigation, syntax, minimap, clipboard, state, narrow themes and owned menus');
+}finally{await browser.close();await vite.close();const target=path.resolve(menuDirectory);assert.equal(path.dirname(target),path.resolve(os.tmpdir()));assert(path.basename(target).startsWith('sodeck-editor-menu-'));fs.rmSync(target,{recursive:true,force:true});}
