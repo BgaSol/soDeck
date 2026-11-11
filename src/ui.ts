@@ -60,17 +60,19 @@ export const button = (
 export const empty = (title: string, body: string, name = "plug") =>
   `<div class="empty"><div class="empty-icon">${icon(name)}</div><h3>${title}</h3><p>${body}</p></div>`;
 const rendered = new WeakMap<HTMLElement, { input: string; output: string }>();
+const selectionControl = (node: Element | null): node is HTMLInputElement | HTMLTextAreaElement =>
+  node instanceof HTMLTextAreaElement || node instanceof HTMLInputElement && ["text", "search", "url", "tel", "password"].includes(node.type);
 export function replace(element: HTMLElement, html: string) {
   const previous = rendered.get(element);
   if (element.innerHTML === html || (previous?.input === html && previous.output === element.innerHTML)) return;
-  const active = document.activeElement as HTMLInputElement | null;
+  const active = document.activeElement as HTMLElement | null;
   const id = active && element.contains(active) ? active.id : "";
   const focusedDetails = active?.matches("summary") && element.contains(active)
     ? active.closest<HTMLDetailsElement>("details[data-persist]")?.dataset.persist
     : undefined;
   const selection =
-    active && "selectionStart" in active
-      ? [active.selectionStart, active.selectionEnd]
+    id && selectionControl(active) && active.selectionStart !== null && active.selectionEnd !== null
+      ? [active.selectionStart, active.selectionEnd, active.selectionDirection] as const
       : null;
   const scroll = [
     ...element.querySelectorAll<HTMLElement>("[data-scroll]"),
@@ -85,10 +87,12 @@ export function replace(element: HTMLElement, html: string) {
   if (focusedDetails)
     element.querySelector<HTMLElement>(`details[data-persist="${CSS.escape(focusedDetails)}"] > summary`)?.focus({ preventScroll: true });
   if (id) {
-    const target = document.getElementById(id) as HTMLInputElement | null;
-    target?.focus({ preventScroll: true });
-    if (selection && target && ["text", "search"].includes(target.type))
-      target.setSelectionRange(selection[0], selection[1]);
+    const target = element.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
+    if (target && !target.matches(":disabled")) {
+      target.focus({ preventScroll: true });
+      if (selection && selectionControl(target))
+        target.setSelectionRange(selection[0], selection[1], selection[2] ?? undefined);
+    }
   }
   rendered.set(element, { input: html, output: element.innerHTML });
 }

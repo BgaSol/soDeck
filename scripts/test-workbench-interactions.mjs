@@ -16,6 +16,47 @@ const fixture=async()=>{
   return page;
 };
 
+test('form refresh preserves supported selections and direction without transferring values or outside focus',async()=>{
+  const page=await fixture();
+  try{
+    const results=await page.evaluate(()=>{
+      const host=document.querySelector('#chrome'),cases=[];
+      const markup=(kind,value='abcdef',attrs='')=>kind==='textarea'?`<textarea id="field" ${attrs}>${value}</textarea>`:`<input id="field" type="${kind}" value="${value}" ${attrs}>`;
+      for(const kind of ['text','search','password','tel','url','textarea'])for(const direction of ['forward','backward','none']){
+        host.innerHTML=markup(kind)+'<span>before</span>';
+        const old=host.querySelector('#field');old.focus();old.setSelectionRange(1,4,direction);
+        const expected=[old.selectionStart,old.selectionEnd,old.selectionDirection];
+        render.replace(host,markup(kind)+'<span>after</span>');
+        const current=host.querySelector('#field');
+        cases.push({kind,direction,expected,focused:document.activeElement===current,selection:[current.selectionStart,current.selectionEnd,current.selectionDirection],value:current.value});
+      }
+      host.innerHTML=markup('password');host.firstElementChild.focus();host.firstElementChild.setSelectionRange(1,4,'backward');
+      render.replace(host,markup('password','x'));
+      const shortened={value:host.firstElementChild.value,selection:[host.firstElementChild.selectionStart,host.firstElementChild.selectionEnd]};
+      const outside=document.createElement('input');outside.id='field';outside.value='outside';document.body.prepend(outside);
+      host.innerHTML=markup('text');host.firstElementChild.focus();host.firstElementChild.setSelectionRange(1,4);
+      render.replace(host,markup('text')+'<span>scoped target</span>');
+      const scoped=document.activeElement===host.firstElementChild;
+      outside.focus();outside.setSelectionRange(2,5,'backward');render.replace(host,markup('text','new entity'));
+      const outsideKept=document.activeElement===outside&&outside.selectionStart===2&&outside.selectionEnd===5&&outside.selectionDirection==='backward';
+      outside.remove();
+      const changes=[];
+      for(const next of [markup('number','12345'),markup('checkbox'),'<select id="field"><option>one</option></select>',markup('password','abcdef','disabled'),'<span>removed</span>','<input value="new entity">']){
+        host.innerHTML=markup('password');host.firstElementChild.focus();host.firstElementChild.setSelectionRange(1,4);
+        render.replace(host,next);changes.push({html:next,focused:document.activeElement===host.firstElementChild,value:host.firstElementChild.value});
+      }
+      host.innerHTML='<input value="abcdef">';host.firstElementChild.focus();host.firstElementChild.setSelectionRange(1,4);
+      render.replace(host,'<input value="different">');
+      return {cases,shortened,scoped,outsideKept,changes,noIdFocused:document.activeElement===host.firstElementChild,noIdValue:host.firstElementChild.value};
+    });
+    for(const row of results.cases){assert.equal(row.focused,true,row.kind);assert.deepEqual(row.selection,row.expected,row.kind);assert.equal(row.value,'abcdef');}
+    assert.deepEqual(results.shortened,{value:'x',selection:[1,1]});
+    assert.equal(results.scoped,true);assert.equal(results.outsideKept,true);
+    assert.deepEqual(results.changes.map(row=>row.focused),[true,true,true,false,false,false]);
+    assert.equal(results.noIdFocused,false);assert.equal(results.noIdValue,'different');
+  }finally{await page.close();}
+});
+
 test('nested layout reserves usable group dimensions and clamps without changing saved proportions',async()=>{
   const page=await fixture();
   try {

@@ -59,7 +59,14 @@ try {
   assert.equal(await work().locator(".catalog-page").evaluate(el => el.getBoundingClientRect().width), 1100);
   await action("new", work()).click(); await field("host").fill("gateway.invalid"); await field("username").fill("ops");
   assert.equal(await field("remember").isChecked(), true);
-  await field("password").fill("ui-saved-secret"); await field("name").fill("入口跳板"); await save(); await expectDialogs(0);
+  await field("password").fill("ui-saved-secret"); await field("name").fill("入口跳板");
+  await field("routed").selectOption("true"); await field("password").focus();
+  await field("password").evaluate(el=>el.setSelectionRange(1,4,'backward')); await field("password").press("Enter");
+  await dialogs().locator(".error-box").waitFor();
+  assert.deepEqual(await field("password").evaluate(el=>({focused:el===document.activeElement,value:el.value,start:el.selectionStart,end:el.selectionEnd,direction:el.selectionDirection})),
+    {focused:true,value:"ui-saved-secret",start:1,end:4,direction:"backward"});
+  await field("routed").selectOption("false"); await save(); await expectDialogs(0);
+  checks.push("资料验证失败刷新保留密码草稿、焦点、选区和方向");
   let catalog = await read(); const gateway = catalog.servers[0].id;
   assert.equal(catalog.servers[0].authentication.hasSavedSecret, true); assert(!JSON.stringify(catalog).includes("ui-saved-secret"));
   assert(fs.readFileSync(path.join(directory, "servers.json"), "utf8").includes("ui-saved-secret"));
