@@ -160,7 +160,7 @@ export class Components {
         return `<button class="sd-icon tool-entry" data-tool-key="${e(t.key)}" data-component-action="toggle" data-key="${e(t.key)}" aria-label="${e(d.title)}" aria-expanded="${t.active}" title="${e(d.title)} · ${e(d.pluginName)}${t.pinned?'':' · 临时入口'}" ${!t.available ? "disabled" : ""}>${icon(d.icon)}</button>`;
       }).join("") + (w.unavailableTools??[]).filter(t=>t.side===side).map(t=>`<button class="sd-icon" disabled title="${e(t.key)} 未安装或未启用；已保留停靠位置" aria-label="${e(t.key)} 不可用">${icon('plug')}</button>`).join('')+ `<button class="component-more sd-icon" data-component-action="more" data-key="${side}" aria-label="${side === "left" ? "左" : "右"}侧更多组件">${icon("more")}</button>`);
       const view = w.views.find(v => v.id === selected);
-      patchChrome(node.querySelector(`.${side}-panel header`)!, view ? `<span title="${e(this.definitions[view.definitionKey]?.pluginName)}">${e(view.title)}</span><div><button class="sd-icon" data-component-action="panel-menu" data-key="${e(view.definitionKey)}" aria-label="${e(view.title)} 面板菜单">${icon("more")}</button><button class="sd-icon" data-component-action="collapse" data-key="${side}" aria-label="收起${e(view.title)}">${icon("minus")}</button></div>` : "");
+      patchChrome(node.querySelector(`.${side}-panel header`)!, view ? `<span title="${e(this.definitions[view.definitionKey]?.pluginName)}">${e(view.title)}</span><button class="sd-icon" data-component-action="collapse" data-key="${side}" aria-label="收起${e(view.title)}">${icon("minus")}</button>` : "");
     }
     this.paintCenter(shell);
     patchChrome(node.querySelector(".workspace-status")!, `<div class="workspace-connection" role="status" aria-label="连接状态" title="${e(shell.workspace.endpoint)}"><span class="health-dot ${shell.workspace.connected ? "good" : "warning"}"></span><span>${shell.workspace.connected ? "已连接" : "连接已断开"}</span><span class="workspace-endpoint">${e(shell.workspace.endpoint)}</span></div><button class="sd-status-action" data-reconnect-server="${e(shell.workspace.context.serverId)}" ${shell.workspace.connected ? "hidden" : ""}>重新连接</button><span class="workspace-status-spacer"></span>${this.layoutSaveFailed?`<button class="sd-status-action" data-component-action="retry-layout-save">重试保存布局</button>`:""}<button class="workspace-network sd-status-action" data-action="status" title="服务器连接传输速率；点击查看应用状态与插件业务量">↓ 0 B/s ↑ 0 B/s</button>`);
@@ -295,7 +295,6 @@ export class Components {
       {label:tool?'隐藏工具':'关闭标签',separatorBefore:true,action:()=>tool?this.perform(shell,{op:'hideTool',viewId:id}):this.close([shell.workspace.context.workspaceId],id)},
     ].map(entry=>({...entry,disabled:entry.disabled||busy()})),false,!tool&&(!x||!y)?'窗口空间不足，扩大窗口后再分屏。':undefined,keyboard,reference,()=>shell.ui.host?.revision===host.revision&&shell.ui.views.some(v=>v.id===id)&&!busy());
   }
-  private windowTargets() {return (this.state?.windows??[]).filter(w=>w.id!=='main').map((w,i)=>({...w,label:`独立窗口 ${i+1}`})).filter(w=>w.id!==this.state?.window.id&&w.ready);}
   private async confirmMove(requestId:string,operation:()=>Promise<unknown>) {
     try { await operation(); }
     catch(error) {
@@ -644,7 +643,7 @@ export class Components {
     const groupId=anchor.closest<HTMLElement>("[data-group]")?.dataset.group;
     if(action==="hidden-groups"){this.hiddenGroupsMenu(shell,anchor,keyboard);return;}
     if(action==='retry-layout-save'){const result=await this.invoke<{persistence:string}>('retryLayoutSave');if(result.persistence==='saved'){this.layoutSaveFailed=false;this.notify('工作台布局已保存');await this.refresh();}return;}
-    if (["toggle", "locate", "panel-menu"].includes(action) && !this.definitions[key]?.available) { this.notify("组件不可用，请查看应用状态"); return; }
+    if (["toggle", "locate"].includes(action) && !this.definitions[key]?.available) { this.notify("组件不可用，请查看应用状态"); return; }
     if (["toggle", "locate", "collapse"].includes(action)) { await this.perform(shell, { op: action, key, side: key }); if (this.focusEpoch === focusEpoch && this.state?.window.activeWorkspace === id) this.focus(shell, action === "collapse" ? undefined : key); return; }
     if (action === "select") { if (!shell.ui.views.some(v => v.id === key)) return; await this.perform(shell, { op: "select", viewId: key }); const surface = shell.surfaces.get(key); if (surface && this.focusEpoch === focusEpoch && this.state?.window.activeWorkspace === id) this.focusSurface(surface); return; }
     if (action === "close") { if(this.definitions[shell.ui.views.find(v=>v.id===key)?.definitionKey??""]?.container==="sidebar")await this.perform(shell,{op:"hideTool",viewId:key});else await this.close([id], key); return; }
@@ -654,26 +653,6 @@ export class Components {
         const position=!t.location?'未打开':!local?'其他窗口':side?`${side==='left'?'左侧':'右侧'} · ${t.active?'展开':'收起'}`:'主区域';
         return {label:`${d.title} · ${position}`,disabled:!t.available,action:()=>this.perform(shell,{op:'open',key:t.key}),extra:local&&side?{label:t.pinned?'取消固定':'固定入口',action:()=>this.perform(shell,{op:'preference',key:t.key,pinned:!t.pinned})}:local&&t.viewId?{label:`停靠到${key==='left'?'左':'右'}侧`,action:()=>this.perform(shell,{op:'dock',viewId:t.viewId,side:key})}:undefined};
       }),true,undefined,keyboard);return;
-    }
-    if (action === "panel-menu") {
-      const p = shell.ui.preferences[key];
-      if (!p) return;
-      const tool=shell.ui.views.find(v=>v.definitionKey===key);
-      const side=tool&&shell.ui.host?.left.viewIds.includes(tool.id)?'left':'right';
-      const sideKeys = this.sideTools(shell,side).map(t=>t.key),revision=shell.ui.host!.revision;
-      this.showMenu(anchor, [
-        ...(tool?[
-          {label:side==='left'?'移到右侧':'移到左侧',action:()=>this.moveTool(shell,key,side==='left'?'right':'left',null,revision)},
-          {label:'放入主区域',action:()=>this.perform(shell,{op:'moveView',viewId:tool.id,groupId:shell.ui.host!.focusedGroupId})},
-          {label:'工具移至新窗口',action:()=>this.moveWindow(shell,{kind:'view',id:tool.id})},
-          ...this.windowTargets().map(w=>({label:`工具移至${w.label}`,action:()=>this.moveWindow(shell,{kind:'view',id:tool.id},w.id)})),
-          ...(shell.ui.returnLocations?.[tool.id]?[{label:'工具返回来源',action:()=>this.moveWindow(shell,{kind:'view',id:tool.id},undefined,true)}]:[]),
-        ]:[]),
-        { label: p.pinned ? "隐藏入口" : "固定入口", action: () => this.perform(shell, { op: "preference", key, pinned: !p.pinned }) },
-        { label: "入口置顶", action: () => this.moveTool(shell,key,side,sideKeys[0]??null,revision) },
-        { label: "新工作区自动展开", checked: p.startup !== "none", separatorBefore: true, action: () => this.perform(shell, { op: "preference", key, startup: p.startup === "none" ? "reveal" : "none" }) },
-        { label: "恢复新工作台推荐", action: () => this.perform(shell, { op: "recommend", key }) },
-      ], false, undefined, keyboard); return;
     }
     if (action === "pages") { this.showMenu(anchor, shell.ui.views.filter(v => Object.values(shell.ui.host?.groups??{}).some(g=>g.viewIds.includes(v.id))).map(v => ({ label: v.title, action: () => this.perform(shell, { op: "select", viewId: v.id }) })), true); return; }
     if (action === "create") {

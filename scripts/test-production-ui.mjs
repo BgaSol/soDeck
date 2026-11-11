@@ -657,11 +657,9 @@ try {
     const tabMenu=page.locator(`.server-tab-select[data-id="${workspace.context.workspaceId}"]`);
     const tabBounds=await tabMenu.boundingBox();
     const point={x:Math.round(tabBounds.x+tabBounds.width/2),y:Math.round(tabBounds.y+tabBounds.height/2),width:0,height:0};await page.mouse.click(point.x,point.y,{button:"right"});await assertMenuLayout(page,point,{point:true});await page.keyboard.press("Escape");
-    const panelMenu=board.getByRole('button',{name:'文件 面板菜单',exact:true});
-    const panelBounds=await panelMenu.boundingBox();
-    await panelMenu.click();await assertMenuLayout(page,panelBounds);
-    if(theme==='dopamine'&&width===1100)await page.screenshot({path:'artifacts/production-ui/panel-menu.png'});
-    await page.keyboard.press('Escape');
+    assert.equal(await board.locator('[data-component-action="panel-menu"]').count(),0);
+    assert.equal(await board.getByRole('button',{name:'收起文件',exact:true}).count(),1);
+    if(theme==='dopamine'&&width===1100)await page.screenshot({path:'artifacts/production-ui/panel-header.png'});
     const more=board.getByRole('button',{name:'左侧更多组件',exact:true});
     const moreBounds=await more.boundingBox();
     await more.click();const popup=await assertMenuLayout(page,moreBounds,{long:true});

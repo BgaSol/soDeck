@@ -119,8 +119,8 @@ try {
   const board=main.locator(`.server-workbench[data-id="${aid}"]`);
   const pressRefresh=async locator=>{const rect=await locator.boundingBox();await locator.evaluate(el=>window.pressedChrome=el);await main.mouse.move(rect.x+rect.width/2,rect.y+rect.height/2);await main.mouse.down();await main.evaluate(()=>window.manager.refresh());assert.equal(await locator.evaluate(el=>el===window.pressedChrome&&el.isConnected),true);await main.mouse.up();};
   for(const side of ['left','right']){const toggle=panel(main,side),before=await toggle.getAttribute('aria-expanded');await pressRefresh(toggle);await wait(async()=>await toggle.getAttribute('aria-expanded')!==before);await toggle.click();await wait(async()=>await toggle.getAttribute('aria-expanded')===before);}
-  const stableMenu=board.getByRole('button',{name:'网络转发 面板菜单',exact:true});
-  await pressRefresh(stableMenu);await main.getByRole('menu').waitFor();await stableMenu.click();assert.equal(await main.getByRole('menu').count(),0);
+  const stableCollapse=board.getByRole('button',{name:'收起网络转发',exact:true});
+  await pressRefresh(stableCollapse);await wait(async()=>await panel(main,'right').getAttribute('aria-expanded')==='false');await panel(main,'right').click();
   const serverMenu=main.locator(`.server-tab-select[data-id="${aid}"]`);await serverMenu.click({button:"right"});await main.getByRole("menu").waitFor();await serverMenu.click({button:"right"});assert.equal(await main.getByRole("menu").count(),1);await main.keyboard.press("Escape");assert.equal(await main.locator(".tab-menu-button").count(),0);
   checks.push('真实按压跨工作台刷新仍触发一次，两侧入口节点稳定，右键再次打开标签菜单');
   fs.mkdirSync('artifacts/menu-layout',{recursive:true});
@@ -130,11 +130,9 @@ try {
     const tabMenu=main.locator(`.server-tab-select[data-id="${aid}"]`);
     const tabBounds=await tabMenu.boundingBox();
     const point={x:Math.round(tabBounds.x+tabBounds.width/2),y:Math.round(tabBounds.y+tabBounds.height/2),width:0,height:0};await main.mouse.click(point.x,point.y,{button:"right"});await assertMenuLayout(main,point,{point:true});await main.screenshot({path:`artifacts/menu-layout/server-${theme}-${width}.png`});await main.keyboard.press("Escape");
-    const panelMenu=board.getByRole('button',{name:'网络转发 面板菜单',exact:true});
-    const panelBounds=await panelMenu.boundingBox();
-    await panelMenu.click();await assertMenuLayout(main,panelBounds);
-    if(theme==='dopamine'&&width===1100)await main.screenshot({path:'artifacts/menu-layout/panel-menu.png'});
-    await main.keyboard.press('Escape');assert(await panelMenu.evaluate(el=>el===document.activeElement));
+    assert.equal(await board.locator('[data-component-action="panel-menu"]').count(),0);
+    assert.equal(await board.getByRole('button',{name:'收起网络转发',exact:true}).count(),1);
+    if(theme==='dopamine'&&width===1100)await main.screenshot({path:'artifacts/menu-layout/panel-header.png'});
     const more=board.getByRole('button',{name:'左侧更多组件',exact:true});
     const moreBounds=await more.boundingBox();
     await more.click();const popup=await assertMenuLayout(main,moreBounds,{long:true});
@@ -150,7 +148,7 @@ try {
     await board.locator('.workspace-status').click();assert.equal(await main.getByRole('menu').count(),0);
   }
   await main.setViewportSize({width:1100,height:720});
-  checks.push('三主题及窄窗口：页签右键菜单靠近点击位置，面板和两侧更多菜单紧邻入口；短菜单无滚动条，长列表仅纵向滚动，搜索后消除滚动，Esc 返回焦点及外部关闭');
+  checks.push('三主题及窄窗口：面板仅保留名称和收起按钮，页签右键与更多组件菜单靠近入口；短菜单无滚动条，长列表仅纵向滚动，搜索后消除滚动，Esc 返回焦点及外部关闭');
   const viewFrame=(page,wid,vid)=>page.frameLocator(`.component-surface[data-view-id="${vid}"] iframe`);
   const flush=page=>page.evaluate(()=>window.manager.flush());
   let aw=(await componentState("main")).workspaces[aid];
@@ -248,7 +246,7 @@ try {
   await board.getByRole('button',{name:'左侧更多组件',exact:true}).click();await main.getByRole('textbox',{name:'查找组件或页面'}).fill('扩展测试组件 19');
   await main.locator('.component-menu-row:visible').getByRole('menuitem',{name:'取消固定',exact:true}).click();
   checks.push('20 个扩展视图通过更多入口查找、固定和取消固定');
-  await board.getByRole('button',{name:'网络转发 面板菜单',exact:true}).click();
+  await board.getByRole('button',{name:'网络转发',exact:true}).click({button:'right'});
   await main.getByRole('menuitem',{name:'移到左侧',exact:true}).click();
   await main.waitForFunction(id=>!document.querySelector(`.server-workbench[data-id="${id}"]`).classList.contains('right-open'),aid);
   assert((await componentState("main")).workspaces[aid].left);
@@ -259,7 +257,7 @@ try {
   await board.getByRole('button',{name:'网络转发',exact:true}).click();
   await main.waitForFunction(id=>document.querySelector(`.server-workbench[data-id="${id}"] .left-rail [data-key="test.workbench:forwarding"]`)?.getAttribute('aria-expanded')==='true',aid);
   await flush(main);await refresh();
-  await board.getByRole('button',{name:'网络转发 面板菜单',exact:true}).click();await main.getByRole('menuitem',{name:'移到右侧',exact:true}).click();
+  await board.getByRole('button',{name:'网络转发',exact:true}).click({button:'right'});await main.getByRole('menuitem',{name:'移到右侧',exact:true}).click();
   await main.waitForFunction(id=>document.querySelector(`.server-workbench[data-id="${id}"] .right-rail [data-key="test.workbench:forwarding"]`)?.getAttribute('aria-expanded')==='true',aid);
   await board.getByRole('button',{name:'文件',exact:true}).click();
   await main.waitForFunction(id=>document.querySelector(`.server-workbench[data-id="${id}"] .left-rail [data-key="test.workbench:files"]`)?.getAttribute('aria-expanded')==='true',aid);

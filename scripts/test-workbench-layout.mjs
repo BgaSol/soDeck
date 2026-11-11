@@ -156,12 +156,12 @@ try {
   await call('workspace_activate',{window:'main',id:wid});await refresh();
   const tool=initial.left,toolKey=initial.views.find(v=>v.id===tool).definitionKey;
   const toolFrame=await main.locator(`.component-surface[data-view-id="${tool}"] iframe`).elementHandle();
-  await main.locator(`.server-workbench[data-id="${wid}"] [data-component-action="panel-menu"][data-key="${toolKey}"]`).click();
-  await main.getByRole('menuitem',{name:'放入主区域',exact:true}).click();
+  assert.equal(await main.locator('[data-component-action="panel-menu"]').count(),0,'Tool panels expose a title and collapse action');
+  await action({op:'moveView',viewId:tool,groupId:(await ui()).workspaces[wid].host.focusedGroupId});
   await wait(async()=>Object.values((await ui()).workspaces[wid].host.groups).some(g=>g.viewIds.includes(tool)));
   assert(await toolFrame.evaluate(el=>el.isConnected),'Tool docking keeps the same iframe and business instance');
   await main.locator(`.component-tab[data-view="${tool}"]`).click({button:'right'});
-  await main.getByRole("menuitem",{name:"停靠到侧栏",exact:true}).click();await main.locator(`.server-workbench[data-id="${wid}"] [data-component-action="panel-menu"][data-key="${toolKey}"]`).click();await main.getByRole("menuitem",{name:"移到右侧",exact:true}).click();
+  await main.getByRole("menuitem",{name:"停靠到侧栏",exact:true}).click();await main.locator(`.server-workbench[data-id="${wid}"] [data-tool-key="${toolKey}"]`).click({button:'right'});await main.getByRole("menuitem",{name:"移到右侧",exact:true}).click();
   await wait(async()=>(await ui()).workspaces[wid].right===tool&&await main.locator(`.server-workbench[data-id="${wid}"] .left-rail [data-key="${toolKey}"]`).count()===0);
   assert.equal(await main.locator(`.server-workbench[data-id="${wid}"] .left-rail [data-key="${toolKey}"]`).count(),0);
   await main.locator(`.server-workbench[data-id="${wid}"] .right-rail [data-key="${toolKey}"]`).click();
