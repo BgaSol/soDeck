@@ -241,6 +241,40 @@ fn crashes_and_broken_protocol_leave_core_usable() {
     }
 }
 #[test]
+fn oversized_stderr_is_omitted_and_later_diagnostics_keep_working() {
+    let f = Fixture::new("oversized-stderr");
+    let core = f.open();
+    let loaded = core.load(&f.plugin).unwrap();
+    wait_for(|| {
+        core.logs(&LogFilter::default())
+            .iter()
+            .any(|record| record.message == "fixture diagnostic after oversized line")
+    });
+    let logs = core.logs(&LogFilter::default());
+    for message in [
+        "诊断日志行过长，已省略",
+        "fixture diagnostic after oversized line",
+    ] {
+        let record = logs
+            .iter()
+            .find(|record| record.message == message)
+            .unwrap();
+        assert_eq!(record.plugin_id.as_deref(), Some("test.fixture"));
+        assert_eq!(record.instance_id, loaded.instance_id);
+    }
+    assert!(!logs
+        .iter()
+        .any(|record| record.message.contains(&"x".repeat(100))));
+    assert_eq!(core.snapshot().plugins[0].status, PluginStatus::Running);
+    let pid = f.pid("pid");
+    assert!(alive(pid));
+    core.unload("test.fixture").unwrap();
+    assert!(!alive(pid));
+    assert!(core.snapshot().plugins[0].cleanup_complete);
+    core.shutdown().unwrap();
+}
+
+#[test]
 fn output_flood_does_not_block_shutdown() {
     let f = Fixture::new("flood");
     let core = f.open();

@@ -2,7 +2,7 @@
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
-    io::{self, BufRead, Write},
+    io::{self, BufRead, Read, Write},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc, Arc, Mutex,
@@ -66,6 +66,11 @@ impl Client {
         result
     }
 }
+fn read_control_line(input: &mut impl BufRead) -> io::Result<Vec<u8>> {
+    let mut line = Vec::new();
+    Read::take(&mut *input, MAX as u64 + 1).read_until(b'\n', &mut line)?;
+    Ok(line)
+}
 pub fn run(
     handler: impl Fn(&Client, &str, Value) -> Result<Value, String> + Send + Sync + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -104,26 +109,7 @@ pub fn run(
     }
     let mut input = io::stdin().lock();
     loop {
-        let mut line = Vec::new();
-        // Stop allocating at the protocol limit even if the sender never writes LF.
-        while line.len() <= MAX {
-            let buf = input.fill_buf()?;
-            if buf.is_empty() {
-                break;
-            }
-            let n = buf
-                .iter()
-                .position(|b| *b == b'\n')
-                .map(|n| n + 1)
-                .unwrap_or(buf.len())
-                .min(MAX + 1 - line.len());
-            let end = buf[n - 1] == b'\n';
-            line.extend_from_slice(&buf[..n]);
-            input.consume(n);
-            if end {
-                break;
-            }
-        }
+        let line = read_control_line(&mut input)?;
         if line.is_empty() {
             break;
         }
@@ -197,6 +183,164 @@ impl RpcError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{collections::VecDeque, io::BufReader};
+
+    enum ReadStep {
+        Data(io::Cursor<Vec<u8>>),
+        Error(io::ErrorKind, &'static str),
+    }
+    impl ReadStep {
+        fn data(bytes: impl Into<Vec<u8>>) -> Self {
+            Self::Data(io::Cursor::new(bytes.into()))
+        }
+    }
+    struct ScriptedRead {
+        steps: VecDeque<ReadStep>,
+        reads: usize,
+        bytes_read: usize,
+    }
+    impl ScriptedRead {
+        fn new(steps: impl IntoIterator<Item = ReadStep>) -> Self {
+            Self {
+                steps: steps.into_iter().collect(),
+                reads: 0,
+                bytes_read: 0,
+            }
+        }
+    }
+    impl Read for ScriptedRead {
+        fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+            if output.is_empty() {
+                return Ok(0);
+            }
+            self.reads += 1;
+            match self.steps.pop_front() {
+                Some(ReadStep::Data(mut data)) => {
+                    let count = data.read(output)?;
+                    self.bytes_read += count;
+                    if data.position() < data.get_ref().len() as u64 {
+                        self.steps.push_front(ReadStep::Data(data));
+                    }
+                    Ok(count)
+                }
+                Some(ReadStep::Error(kind, message)) => Err(io::Error::new(kind, message)),
+                None => Ok(0),
+            }
+        }
+    }
+
+    #[test]
+    fn control_line_limit_counts_lf_crlf_and_eof_bytes() {
+        for ending in [b"\n".as_slice(), b"\r\n".as_slice(), b"".as_slice()] {
+            for length in [MAX - 1, MAX, MAX + 1] {
+                for capacity in [7, MAX + 8] {
+                    let mut frame = vec![b'x'; length - ending.len()];
+                    frame.extend_from_slice(ending);
+                    let mut stream = frame.clone();
+                    if !ending.is_empty() {
+                        stream.extend_from_slice(b"next\n");
+                    }
+                    let mut input = BufReader::with_capacity(
+                        capacity,
+                        ScriptedRead::new([ReadStep::data(stream)]),
+                    );
+                    let line = read_control_line(&mut input).unwrap();
+                    assert_eq!(line, frame);
+                    assert_eq!(line.len() > MAX, length == MAX + 1);
+                    let next = read_control_line(&mut input).unwrap();
+                    assert_eq!(
+                        next,
+                        if ending.is_empty() {
+                            b"".as_slice()
+                        } else {
+                            b"next\n".as_slice()
+                        }
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn control_line_empty_eof_is_empty() {
+        let mut input = BufReader::new(ScriptedRead::new([]));
+        assert!(read_control_line(&mut input).unwrap().is_empty());
+        assert_eq!(input.get_ref().bytes_read, 0);
+    }
+
+    #[test]
+    fn oversized_control_line_keeps_its_unread_tail() {
+        let mut stream = vec![b'x'; MAX + 1];
+        stream.extend_from_slice(b"tail\nnext\n");
+        let mut input =
+            BufReader::with_capacity(MAX + 32, ScriptedRead::new([ReadStep::data(stream)]));
+        assert_eq!(read_control_line(&mut input).unwrap(), vec![b'x'; MAX + 1]);
+        assert_eq!(input.buffer(), b"tail\nnext\n");
+        assert_eq!(read_control_line(&mut input).unwrap(), b"tail\n");
+        assert_eq!(read_control_line(&mut input).unwrap(), b"next\n");
+    }
+
+    #[test]
+    fn control_line_does_not_observe_errors_after_lf_or_the_limit() {
+        for prefix in [b"ok\n".to_vec(), vec![b'x'; MAX + 1]] {
+            let expected = prefix.clone();
+            let mut input = BufReader::with_capacity(
+                MAX + 1,
+                ScriptedRead::new([
+                    ReadStep::data(prefix),
+                    ReadStep::Error(io::ErrorKind::BrokenPipe, "later error"),
+                ]),
+            );
+            assert_eq!(read_control_line(&mut input).unwrap(), expected);
+            assert_eq!(input.get_ref().reads, 1);
+            assert_eq!(input.get_ref().steps.len(), 1);
+            let error = read_control_line(&mut input).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
+            assert_eq!(error.to_string(), "later error");
+        }
+    }
+
+    #[test]
+    fn control_line_errors_preserve_kind_message_and_consumed_prefix() {
+        for kind in [
+            io::ErrorKind::BrokenPipe,
+            io::ErrorKind::InvalidData,
+            io::ErrorKind::UnexpectedEof,
+        ] {
+            for prefix in [b"".as_slice(), b"ab".as_slice()] {
+                let mut steps = Vec::new();
+                if !prefix.is_empty() {
+                    steps.push(ReadStep::data(prefix));
+                }
+                steps.push(ReadStep::Error(kind, "read failed"));
+                steps.push(ReadStep::data(b"c\nnext\n".as_slice()));
+                let mut input = BufReader::with_capacity(3, ScriptedRead::new(steps));
+                let error = read_control_line(&mut input).unwrap_err();
+                assert_eq!(error.kind(), kind);
+                assert_eq!(error.to_string(), "read failed");
+                assert_eq!(input.get_ref().bytes_read, prefix.len());
+                assert_eq!(read_control_line(&mut input).unwrap(), b"c\n");
+                assert_eq!(read_control_line(&mut input).unwrap(), b"next\n");
+            }
+        }
+    }
+
+    #[test]
+    fn control_line_retries_interrupted_without_losing_its_prefix() {
+        let mut input = BufReader::with_capacity(
+            3,
+            ScriptedRead::new([
+                ReadStep::Error(io::ErrorKind::Interrupted, "before input"),
+                ReadStep::data(b"ab".as_slice()),
+                ReadStep::Error(io::ErrorKind::Interrupted, "after prefix"),
+                ReadStep::Error(io::ErrorKind::Interrupted, "interrupted again"),
+                ReadStep::data(b"c\nnext\n".as_slice()),
+            ]),
+        );
+        assert_eq!(read_control_line(&mut input).unwrap(), b"abc\n");
+        assert_eq!(read_control_line(&mut input).unwrap(), b"next\n");
+    }
+
     #[test]
     fn structured_errors_keep_recovery_code_and_legacy_message() {
         let e = RpcError::from_frame(

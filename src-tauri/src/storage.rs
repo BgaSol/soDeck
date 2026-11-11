@@ -335,6 +335,49 @@ pub fn query_logs(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn log_query_stops_only_the_oversized_file_and_skips_short_invalid_json() {
+        let root =
+            std::env::temp_dir().join(format!("sodeck-log-query-test-{}", std::process::id()));
+        fs::create_dir_all(root.join("logs")).unwrap();
+        let record = |id: &str, received_at| LogRecord {
+            id: id.into(),
+            received_at,
+            source: "core".into(),
+            plugin_id: None,
+            instance_id: None,
+            level: "info".into(),
+            message: id.into(),
+            fields: None,
+        };
+        let before = record("before", 1);
+        let after = record("after", 2);
+        let current = record("current", 3);
+        let fallback = record("fallback", 4);
+        let mut rotated = serde_json::to_vec(&before).unwrap();
+        rotated.push(b'\n');
+        rotated.extend(vec![b'x'; 16 * 1024]);
+        rotated.push(b'\n');
+        rotated.extend(serde_json::to_vec(&after).unwrap());
+        rotated.push(b'\n');
+        fs::write(root.join("logs/1.jsonl"), rotated).unwrap();
+        let mut active = b"invalid json\n".to_vec();
+        active.extend(serde_json::to_vec(&current).unwrap());
+        active.push(b'\n');
+        fs::write(root.join("logs/current.jsonl"), active).unwrap();
+
+        let found = query_logs(&root, &[before, fallback], &LogFilter::default(), 10);
+        assert_eq!(
+            found
+                .iter()
+                .map(|record| record.id.as_str())
+                .collect::<Vec<_>>(),
+            ["before", "current", "fallback"]
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn logs_bound_escaped_messages_and_rotate_files() {
         let root = std::env::temp_dir().join(format!("sodeck-log-test-{}", std::process::id()));

@@ -273,6 +273,10 @@ fn main() {
                 if mode == "oversized" {
                     println!("{}", "x".repeat(70000));
                 }
+                if mode == "oversized-stderr" {
+                    eprintln!("{}", "x".repeat(9000));
+                    eprintln!("fixture diagnostic after oversized line");
+                }
                 if mode == "flood" {
                     for i in 0..5000 {
                         send(
