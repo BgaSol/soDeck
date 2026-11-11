@@ -1,6 +1,7 @@
 import { address, serverApi, type Catalog } from "./server-api";
 import type { ConnectionView } from "./connections";
 import { escape as e } from "./ui";
+import { attachMenuPosition, type MenuPosition } from "./menu-position.js";
 
 /** A view of the saved catalog; connection and authentication stay in ConnectionsUi. */
 export class ServerPicker {
@@ -12,6 +13,7 @@ export class ServerPicker {
   private loading = false;
   private error = "";
   private generation = 0;
+  private positioner?: MenuPosition;
   constructor(private anchor: HTMLButtonElement, private connect: (id: string) => Promise<void>, private notify: (text: string) => void) {
     this.node.className = "server-picker sd-menu";
     this.node.id = "server-picker";
@@ -26,11 +28,11 @@ export class ServerPicker {
     anchor.popoverTargetElement = this.node;
     this.node.addEventListener("beforetoggle", event => {
       if (event.newState === "open") { this.search.value = ""; this.loading = true; this.error = ""; this.render(); }
-      else this.generation++;
+      else { this.generation++; this.stopPosition(); }
     });
     this.node.addEventListener("toggle", () => {
       anchor.setAttribute("aria-expanded", String(this.open));
-      if (this.open) { this.position(); this.search.focus(); void this.refresh(); }
+      if (this.open) { this.startPosition(); void this.refresh(); }
     });
     this.search.addEventListener("input", () => this.render());
     this.node.addEventListener("keydown", event => this.key(event));
@@ -41,7 +43,6 @@ export class ServerPicker {
       const id = button.dataset.serverId;
       if (id) { this.close(true); void this.connect(id).catch(error => this.notify(String(error))); }
     });
-    window.addEventListener("resize", () => { if (this.open) this.position(); });
   }
   private get open() { return this.node.matches(":popover-open"); }
   setConnections(views: ConnectionView[]) { this.connections = views; if (this.open) this.render(); }
@@ -82,11 +83,21 @@ export class ServerPicker {
       buttons[next]?.focus();
     }
   }
-  private close(focus: boolean) { this.node.hidePopover(); if (focus) this.anchor.focus(); }
+  private close(focus: boolean) { this.stopPosition(); this.node.hidePopover(); if (focus && this.anchor.isConnected) this.anchor.focus(); }
+  dispose() { this.generation++; this.stopPosition(); this.node.remove(); }
+  private stopPosition() { this.positioner?.dispose(); this.positioner = undefined; }
+  private startPosition() {
+    this.stopPosition();
+    const handle = attachMenuPosition(this.node, this.anchor, {
+      isValid: () => this.open,
+      onInvalid: () => this.close(false),
+    });
+    this.positioner = handle;
+    void handle.ready.then(ready => {
+      if (ready && this.open && this.positioner === handle) this.search.focus();
+    });
+  }
   private position() {
-    const r = this.anchor.getBoundingClientRect();
-    this.node.style.maxHeight = `${Math.max(80, innerHeight - r.bottom - 12)}px`;
-    this.node.style.left = `${Math.max(8, Math.min(r.left, innerWidth - this.node.offsetWidth - 8))}px`;
-    this.node.style.top = `${r.bottom + 4}px`;
+    if (this.open) void this.positioner?.update();
   }
 }

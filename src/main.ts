@@ -592,7 +592,7 @@ async function subscribe<T>(name:string,callback:EventCallback<T>) {
   const unlisten=await listen<T>(name,callback);
   if(hostDisposed)unlisten();else hostListeners.push(unlisten);
 }
-window.addEventListener("pagehide",()=>{hostDisposed=true;clearInterval(statusTimer);hostListeners.forEach(fn=>fn());workspaces.dispose();},{once:true});
+window.addEventListener("pagehide",()=>{hostDisposed=true;clearInterval(statusTimer);hostListeners.forEach(fn=>fn());picker.dispose();workspaces.dispose();},{once:true});
 async function start() {
   await subscribe("core-changed", scheduleRefresh);
   await subscribe<SettingsSnapshot>("core-settings-changed", event => componentSettings.changed(event.payload));

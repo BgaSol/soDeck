@@ -108,11 +108,14 @@ await page.route('**/__plugin__/**',route=>{
 const errors = [], checks = [];
 let failCatalog = false, testWindow = "main", heldLogReply, releaseLogReply, chosenPluginDirectory = null;
 let holdLocalNetwork = false, localNetworkReached, releaseLocalNetwork;
+let holdPickerCatalog = false, releasePickerCatalog, pickerConnects = 0;
 page.on("pageerror", error => errors.push(String(error)));
 await page.exposeBinding("desktopInvoke", async (_, command, args) => {
   if (command === 'plugin:dialog|open') return chosenPluginDirectory;
   if (command === 'server_catalog' && failCatalog) throw new Error('隔离测试：目录暂时不可读');
   const result=await call(command, { ...args, window: testWindow });
+  if(command==='connection'&&args.command?.op==='start')pickerConnects++;
+  if(command==='server_catalog'&&holdPickerCatalog){holdPickerCatalog=false;await new Promise(resolve=>releasePickerCatalog=resolve);}
   if(command==='network_snapshot'&&holdLocalNetwork){holdLocalNetwork=false;localNetworkReached();await new Promise(resolve=>releaseLocalNetwork=resolve);}
   if(command==='read_logs'&&args.filter?.query==='held-old-filter'){heldLogReply=true;await new Promise(resolve=>releaseLogReply=resolve);}
   return result;
@@ -139,7 +142,11 @@ await page.addInitScript(() => {
         if (action === "toggle_maximize" || action === "internal_toggle_maximize") window.nativeMaximized = !window.nativeMaximized;
         return Promise.resolve();
       }
-      return window.desktopInvoke(command, args).then(result=>{if(command==='add_plugin')window.localPluginAdded=true;return result;});
+      return window.desktopInvoke(command, args).then(result=>{
+        if(command==='add_plugin')window.localPluginAdded=true;
+        if(command==='server_catalog')(window.receivedCatalogRevisions??=[]).push(result.revision);
+        return result;
+      });
     },
   };
 });
@@ -241,6 +248,18 @@ try {
   await plus.click();await picker.waitFor({state:'hidden',timeout:2000});
   await plus.click();await picker.getByRole('status').filter({hasText:'暂无服务器'}).waitFor();
   await page.keyboard.press('Escape');assert.equal(await plus.evaluate(el=>el===document.activeElement),true);
+  const pickerConnections=pickerConnects;
+  await page.setViewportSize({width:720,height:480});
+  const pickerAnchorStyle=await plus.getAttribute('style');
+  await plus.evaluate(node=>Object.assign(node.style,{position:'fixed',left:'680px',top:'400px',zIndex:'100'}));
+  await plus.click();await picker.getByRole('status').filter({hasText:'暂无服务器'}).waitFor();
+  await page.waitForFunction(()=>{const node=document.querySelector('#server-picker'),r=node.getBoundingClientRect();return node.style.visibility==='visible'&&node.dataset.placement?.startsWith('top')&&r.left>=8&&r.top>=8&&r.right<=innerWidth-8&&r.bottom<=innerHeight-8;},null,{timeout:2000});
+  assert.match(await picker.getAttribute('data-placement'),/^top/,'A low anchor flips the picker above it');
+  await plus.evaluate(node=>node.style.top='40px');
+  await page.waitForFunction(()=>{const anchor=document.querySelector('#new-workspace').getBoundingClientRect(),popup=document.querySelector('#server-picker').getBoundingClientRect();return Math.abs(popup.top-anchor.bottom-4)<=1;},null,{timeout:2000});
+  await plus.evaluate(node=>node.hidden=true);await picker.waitFor({state:'hidden',timeout:2000});
+  await plus.evaluate((node,style)=>{node.hidden=false;if(style===null)node.removeAttribute('style');else node.setAttribute('style',style);},pickerAnchorStyle);
+  await page.setViewportSize({width:1100,height:720});
   let saved=await call('change_catalog',{revision:(await call('server_catalog')).revision,change:{op:'saveGroup',id:null,name:'生产组'}});
   const groupId=saved.catalog.groups[0].id;
   const serverIds=[];
@@ -267,6 +286,23 @@ try {
   await picker.getByRole('button',{name:/生产入口-已更新/}).waitFor();assert.equal(await search.inputValue(),'生产');
   assert.equal(await page.evaluate(()=>document.activeElement.dataset.serverId),serverIds[0]);
   await page.locator('#catalog-tab').click();await picker.waitFor({state:'hidden'});
+  holdPickerCatalog=true;releasePickerCatalog=undefined;
+  await plus.click();
+  for(let attempt=0;!releasePickerCatalog&&attempt<100;attempt++)await page.waitForTimeout(20);
+  assert(releasePickerCatalog,'The isolated catalog response is held');
+  const oldPickerRevision=(await call('server_catalog')).revision;
+  await plus.click();await picker.waitFor({state:'hidden'});
+  const freshPickerServer=await call('change_catalog',{revision:oldPickerRevision,change:{op:'saveServer',draft:{name:'迟到响应验收',host:'192.0.2.30',port:22,username:'ops',groupId,authentication:{type:'password',secret:{action:'clear'}},route:[]}}});
+  await plus.click();await search.fill('迟到响应验收');await picker.getByRole('button',{name:/迟到响应验收/}).waitFor();
+  const oldPickerReplies=await page.evaluate(revision=>window.receivedCatalogRevisions.filter(value=>value===revision).length,oldPickerRevision);
+  releasePickerCatalog();releasePickerCatalog=undefined;
+  await page.waitForFunction(({revision,count})=>window.receivedCatalogRevisions.filter(value=>value===revision).length>count,{revision:oldPickerRevision,count:oldPickerReplies});
+  assert.equal(await search.inputValue(),'迟到响应验收','A prior opening cannot overwrite the current search');
+  assert.equal(await picker.getByRole('button',{name:/迟到响应验收/}).count(),1,'A prior catalog cannot replace the current opening');
+  await page.keyboard.press('Escape');
+  await call('change_catalog',{revision:(await call('server_catalog')).revision,change:{op:'deleteServer',id:freshPickerServer.selectedId}});
+  assert.equal(pickerConnects,pickerConnections,'Positioning and repeated opens do not initiate a connection');
+  checks.push('一级加号定位：边缘翻转、锚点移动和隐藏、关闭重开后的迟到目录响应，以及定位不触发连接');
   checks.push('一级加号：重复点击开关、空目录、搜索名称/地址/账号/分组、无结果 Enter 不误操作、读取失败重试、实时更新保留搜索与焦点、Esc 和外部关闭');
 
   const palettes = { light: "#f6f7f9", dark: "#191b22", dopamine: "#fbf1e8" };
