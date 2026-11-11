@@ -2,7 +2,11 @@
 
 - 修复 JSON/JSONC 字符串误用 shell 插值规则的着色，美元符号保持字符串颜色；保留 JSONC 注释及其他语言原有规则。
 
-本版待发行；本次来源提交检查、五平台原生归档及实际包验收尚待完成，发行证据将在完成后补齐。
+[来源提交 Check](https://github.com/BgaSol/soDeck/actions/runs/43058813431) 全部通过，包含五平台核心/插件/共享客户端源码、Linux 完整界面、文件编辑器及普通 OpenSSH/SFTP、终端、网络、状态、Docker和通信回归。Linux 依赖准备遇到临时 DNS 故障后，仅在原 run 重跑未通过任务，成功结果保留。
+
+包来源：[8928e87ddeb66d3bee2da0a1c1c677e9e3f149b5](https://github.com/BgaSol/soDeck/commit/8928e87ddeb66d3bee2da0a1c1c677e9e3f149b5)；原始独立打包与验收：[43058954465](https://github.com/BgaSol/soDeck/actions/runs/43058954465)。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五个平台原生打包、独立实际归档验收及来源/摘要绑定全部一次成功，无重跑。实际归档的架构、摘要、资源、初始化、视图创建/释放和进程退出通过。
+
+发行：[files 0.10.2](https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.10.2)，非 Latest。五份归档和更新清单共六个附件沿用上述原始 run；发布前只同步更新清单与说明的验收状态，五份程序归档保持原字节。本次独立包验收不包含核心/插件原生远程组合、历史版本在线升级、生产服务器或真实 IME/DPI/Wayland 等专项。
 
 # 0.10.1
 
