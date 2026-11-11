@@ -95,6 +95,7 @@ try{
  await term(()=>new Promise(resolve=>window.testTerminal.write('\x1b[?2004h',resolve)));await page.keyboard.press('Control+Shift+v');await page.waitForFunction(()=>window.writes.length>0);assert.equal(await bytes(),'\x1b[200~中文🙂\rsecond line\x1b[201~');await reset();
  await term(()=>new Promise(resolve=>window.testTerminal.write('copy 中文🙂',resolve)));await term(()=>window.testTerminal.select(0,0,5));await page.keyboard.press('Control+c');await page.waitForFunction(()=>window.copies.length===1);assert.equal((await page.evaluate(()=>window.copies))[0],'copy ');assert.equal(await bytes(),'');assert.equal(await term(()=>window.testTerminal.hasSelection()),false);
  await page.keyboard.press('Control+c');await page.waitForFunction(()=>window.writes.length>0);assert.equal(await bytes(),'\x03');await reset();
+ await page.keyboard.press('Control+a');assert.match(await term(()=>window.testTerminal.getSelection()),/copy 中文🙂/);assert.equal(await bytes(),'','Select all stays local');await term(()=>window.testTerminal.clearSelection());
  // Menu actions do not read early and Escape does not reach the remote program.
  await frame.locator('#terminal').click({button:'right'});assert.equal(await page.evaluate(()=>window.reads),0);await page.keyboard.press('Escape');assert.equal(await frame.locator('.terminal-menu').count(),0);assert.equal(await bytes(),'');
  await frame.locator('#terminal').click({button:'right'});await frame.getByRole('menuitem',{name:/^粘贴/}).click();await page.waitForFunction(()=>window.writes.length>0);assert.equal(await page.evaluate(()=>window.reads),1);await reset();
@@ -168,8 +169,12 @@ try{
    requestedPlatform=platform;await page.reload();await page.waitForFunction(()=>window.ready);await focus();await page.keyboard.press(key);await page.waitForFunction(()=>window.writes.length>0);assert.equal(await page.evaluate(()=>window.reads),1);await reset();
    if(platform==='Linux'){await page.keyboard.press('Control+v');await page.waitForFunction(()=>window.writes.length>0);assert.equal(await bytes(),'\x16');assert.equal(await page.evaluate(()=>window.reads),0);}
    else {await page.keyboard.press('Control+c');await page.waitForFunction(()=>window.writes.length>0);assert.equal(await bytes(),'\x03');}
+   await reset();await term(()=>new Promise(resolve=>window.testTerminal.write('select all 中文🙂',resolve)));
+   await page.keyboard.press(platform==='MacIntel'?'Meta+a':'Control+a');assert.match(await term(()=>window.testTerminal.getSelection()),/select all 中文🙂/);assert.equal(await bytes(),'');
+   await page.keyboard.press(platform==='MacIntel'?'Meta+f':'Control+f');await frame.locator('.terminal-search input').waitFor();assert.equal(await bytes(),'');await page.keyboard.press('Escape');
  }
  requestedPlatform='Win32';await page.reload();await page.waitForFunction(()=>window.ready);await focus();await frame.locator('#terminal').click({button:'right'});
+ assert.equal(await frame.getByRole('menuitem',{name:'全选Ctrl+A',exact:true}).count(),1);assert.equal(await frame.getByRole('menuitem',{name:'查找Ctrl+F',exact:true}).count(),1);
  fs.mkdirSync('artifacts/terminal-ui',{recursive:true});await page.screenshot({path:'artifacts/terminal-ui/clipboard-menu.png'});
  console.log('Terminal input passed: delayed mount and first paint in three themes, real xterm copy/Ctrl+C/paste/bracketed paste, local menu, no duplicate input, late paste cancellation, theme keeps geometry; no page errors');
 }catch(error){console.error({errors,frames:page.frames().map(f=>f.url())});throw error;}finally{await browser.close();await vite.close();}

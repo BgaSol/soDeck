@@ -41,13 +41,13 @@ try{
     await page.evaluate(theme=>window.setTheme(theme),theme);await page.waitForTimeout(250);
     await page.screenshot({path:`artifacts/terminal-search/minimap-${theme}.png`});
     assert.equal(await frame.locator('.minimap-viewport').evaluate(el=>getComputedStyle(el).backgroundColor),'rgba(0, 0, 0, 0)',`${theme}: reading position must not cover the terminal preview with a theme selection fill`);
-    await page.keyboard.press('Control+Shift+f');await input.fill('journalctl');await count.filter({hasText:/\d+ \/ 120/}).waitFor();
+    await page.keyboard.press('Control+f');await input.fill('journalctl');await count.filter({hasText:/\d+ \/ 120/}).waitFor();
     await page.mouse.move(0,0);await frame.locator('.terminal-search').screenshot({path:`artifacts/terminal-search/popover-${theme}.png`});await searchAlignment();
     await input.fill('missing-layout-query');await count.filter({hasText:'没有匹配'}).waitFor();await searchAlignment();
     await frame.locator('[aria-label="关闭搜索（Esc）"]').click();
   }
   await page.evaluate(async()=>{await window.emit(Array.from({length:100500},(_,id)=>`${String(id).padStart(6,'0')} ${[14320,41982,88127].includes(id)?`\x1b[31mERROR ${id===41982?'TIMEOUT':'timeout'} 中文🙂\x1b[0m`:'INFO heartbeat received'}\r\n`).join(''));});
-  await page.keyboard.press('Control+Shift+f');await input.waitFor();await input.fill('timeout');await count.filter({hasText:'1 / 3'}).waitFor();
+  await page.keyboard.press('Control+f');await input.waitFor();await input.fill('timeout');await count.filter({hasText:'1 / 3'}).waitFor();
   assert.equal((await child().evaluate(()=>window.testTerminal.options.scrollback)),100000);
   await page.keyboard.press('Enter');await count.filter({hasText:'2 / 3'}).waitFor();await page.keyboard.press('Shift+Enter');await count.filter({hasText:'1 / 3'}).waitFor();
   await input.fill('TIMEOUT');await count.filter({hasText:'1 / 3'}).waitFor();await frame.locator('.search-case').click();await count.filter({hasText:'1 / 1'}).waitFor();
@@ -64,8 +64,8 @@ try{
   const before=await child().evaluate(()=>window.testTerminal.buffer.active.getLine(window.testTerminal.buffer.active.viewportY+Math.floor(window.testTerminal.rows/2)).translateToString(true));
   await page.evaluate(()=>window.emit('new output\r\n'.repeat(300)));await count.filter({hasText:/[123] \/ 3/}).waitFor();const after=await child().evaluate(()=>window.testTerminal.buffer.active.getLine(window.testTerminal.buffer.active.viewportY+Math.floor(window.testTerminal.rows/2)).translateToString(true));assert.equal(after,before,'Output must preserve the reading position');
   await input.focus();await page.keyboard.press('Escape');assert.equal(await frame.locator('.terminal-search').isVisible(),false);assert.equal(await frame.locator('.terminal-minimap').isVisible(),true);
-  await page.keyboard.press('Control+f');await page.waitForFunction(()=>window.writes.flat().includes(6));assert.equal(await page.evaluate(()=>window.writes.flat().filter(b=>b===6).length),1);
-  await page.keyboard.press('Control+Shift+f');await input.waitFor();assert.equal(await input.inputValue(),'timeout');await count.filter({hasText:/[123] \/ 3/}).waitFor();
+  await page.keyboard.press('Control+f');await input.waitFor();assert.deepEqual(await page.evaluate(()=>window.writes),[],'Search shortcut is local');
+  await page.keyboard.press('Control+f');await input.waitFor();assert.equal(await input.inputValue(),'timeout');await count.filter({hasText:/[123] \/ 3/}).waitFor();
   await input.fill('saved');await count.filter({hasText:'没有匹配'}).waitFor();await page.evaluate(()=>window.emit('saved saved saved\r\n'));await count.filter({hasText:'1 / 3'}).waitFor();await input.press('Enter');await count.filter({hasText:'2 / 3'}).waitFor();
   assert.equal(await page.evaluate(()=>window.flush()),undefined);await page.evaluate(()=>window.remount());await page.waitForFunction(()=>window.ready);await count.filter({hasText:'2 / 3'}).waitFor();assert.equal(await input.inputValue(),'saved','Same-row current result survives remount');
   // Composition must not start queries or send Enter to the shell.
@@ -79,7 +79,7 @@ try{
   assert.deepEqual(await thumb.evaluate(el=>{const style=getComputedStyle(el);return [style.backgroundColor,style.cursor];}),['rgba(0, 0, 0, 0)','grabbing'],'Dragging viewport remains transparent with a grabbing cursor');
   await page.mouse.up();assert.equal(await rail.evaluate(el=>el.classList.contains('is-dragging')),false,'Releasing outside clears drag feedback');assert((await child().evaluate(()=>window.testTerminal.buffer.active.viewportY))<middle,'Minimap drag updates reading position');
   await thumb.focus();assert.equal(await thumb.evaluate(el=>getComputedStyle(el).outlineOffset),'-2px','Keyboard focus stays inside the clipped preview');
-  await page.keyboard.press('Control+Shift+f');await input.fill('timeout');await count.filter({hasText:/[123] \/ 3/}).waitFor();
+  await page.keyboard.press('Control+f');await input.fill('timeout');await count.filter({hasText:/[123] \/ 3/}).waitFor();
   fs.mkdirSync('artifacts/terminal-search',{recursive:true});
   await frame.locator('[aria-label="下一处（Enter）"]').click();await count.filter({hasText:/[123] \/ 3/}).waitFor();
   for(const theme of ['light','dark','dopamine']){await page.evaluate(theme=>window.setTheme(theme),theme);await page.waitForTimeout(250);await page.screenshot({path:`artifacts/terminal-search/${theme}.png`});}
