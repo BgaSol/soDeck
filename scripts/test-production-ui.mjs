@@ -604,10 +604,9 @@ try {
   assert.equal(await notes.locator('strong').textContent(),'保留工作');
   assert.equal((await notes.locator('blockquote').textContent()).trim(),'完成工作后再重启。');
   assert.equal(await notes.locator('table tbody tr').count(),2);
-  // The status ticker can replace a notes node while Playwright captures it.
-  // Capture its current page region after the content assertions above.
+  // Async refresh can replace the notes node during capture; record the visible page.
   await notes.evaluate(node=>node.scrollIntoView({block:'start'}));
-  await page.screenshot({path:'artifacts/production-ui/update-notes-markdown.png',clip:await notes.boundingBox()});
+  await page.screenshot({path:'artifacts/production-ui/update-notes-markdown.png'});
   const updatePageUrl=page.url();
   await notes.getByRole('link',{name:'发行说明'}).focus();await page.keyboard.press('Enter');
   await page.waitForFunction(()=>window.openedUpdateLinks?.length===1);
