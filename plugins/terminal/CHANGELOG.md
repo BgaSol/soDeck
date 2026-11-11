@@ -1,7 +1,13 @@
 # 0.8.3
 
 - 全选使用 Windows/Linux Ctrl+A、macOS Cmd+A；查找使用 Windows/Linux Ctrl+F、macOS Cmd+F。两项快捷键无需 Shift，在本地处理，菜单显示对应提示。
-- 当前为待发布源码；五平台原生包验收与发行进行中。核心独立发行，不需要与本插件同步升级。
+- 启用中的插件升级在重启后生效；核心独立发行，不需要与本插件同步升级。
+
+包来源：[c9e01423c43131e38172141dbde7ff0ec9ae692b](https://github.com/BgaSol/soDeck/commit/c9e01423c43131e38172141dbde7ff0ec9ae692b)；原始打包与独立验收：[42930260373](https://github.com/BgaSol/soDeck/actions/runs/42930260373)。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五个平台的原生归档均一次通过资源、初始化、视图生命周期和退出验收。
+
+[包来源提交 Check](https://github.com/BgaSol/soDeck/actions/runs/42930211841) 全部通过，包含五平台核心/终端源码，以及相关浏览器、终端输入、历史与普通 OpenSSH/PTY 业务回归；本地真实 xterm 的 Windows/Linux/macOS 平台快捷键分支验证通过。原生系统键盘、IME/DPI/Wayland、旧版升级、原生实际包远程组合和 netem 本次未验证。
+
+发行：[terminal 0.8.3](https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.8.3)，非 Latest。正式六个附件保留原始归档，插件更新清单的五平台 URL 与归档 SHA-256 核对通过。
 
 # 0.8.2
 
