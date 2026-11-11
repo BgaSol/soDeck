@@ -4,7 +4,17 @@
 - 偏好变更使用 Monaco 公共视图快照，保留多选区和隐藏实例的逻辑阅读位置；跨窗持久状态仍为版本 1。
 - 插件客户端使用标准库有界逐行读取，保留超长控制帧立即退出，Interrupted 自动重试。
 
-未新增或升级生产依赖，核心 API 与 RPC 字段保持兼容。待本次独立源码与五平台原生包验收后补充包来源、原始 run、Release 及实际验证/跳过范围；当前不代表已发布。
+未新增或升级生产依赖，核心 API 与 RPC 字段保持兼容。
+
+包来源：[90d49f4c7ef509f89025696a71ddddebfec99d51](https://github.com/BgaSol/soDeck/commit/90d49f4c7ef509f89025696a71ddddebfec99d51)；原始独立打包与验收：[43083446157](https://github.com/BgaSol/soDeck/actions/runs/43083446157)。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生归档的架构、摘要、资源、初始化、视图创建/释放与退出全部一次通过。
+
+[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/43083351828) 的五平台源码、文件/SFTP/进程、生产编辑器类型与完整浏览器回归通过，包含菜单边缘/缩窗/键盘/剪贴板时效、多选区和隐藏后偏好恢复。本地实际 WebView2 的 Worker/CSP、搜索、安全保存和退出通过。[原包组合](https://github.com/BgaSol/soDeck/actions/runs/43088114019) 配合核心 0.23.5、terminal 0.8.4、network-proxy 0.4.2 在五平台通过远程流程与重开；组合脚本来自仅增加诊断的 330dc90，程序来源仍为上述提交。
+
+发行：[files 0.10.3](https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.10.3)，非 Latest。五份归档和更新清单共六个附件沿用原始 run；发布前只同步说明与清单的验收记录，程序归档字节保持不变，正式发布后附件摘要复核一致。
+
+[真实正式版升级 0.10.2 → 0.10.3](https://github.com/BgaSol/soDeck/actions/runs/43089745312) 在五平台通过，宿主固定为核心 0.23.5。匿名正式附件下载使用本轮流式大小/SHA-256 校验；下载准备期间旧插件继续运行，重启后激活 0.10.3、清除待重启状态并保留服务器资料与文件设置。测试脚本来自仅增加失败诊断的 330dc90，没有改变正式归档。
+
+Windows CI 编辑器专项仍因 WebView2 调试端口不可用而失败，未当作通过；失败与两平台复验见[核心记录](../../docs/releases/v0.23.5.md)。未验证真实 IME/DPI/Wayland、生产服务器、netem 或本轮系统文件剪贴板/默认应用专项。
 
 # 0.10.2
 

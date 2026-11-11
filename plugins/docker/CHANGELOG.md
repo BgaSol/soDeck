@@ -2,7 +2,13 @@
 
 - 插件客户端使用标准库有界逐行读取，保留超长控制帧立即退出，Interrupted 自动重试；远端操作和视图生命周期保持原有契约。
 
-未新增或升级生产依赖，核心 API 与 RPC 字段保持兼容。待本次独立源码与五平台原生包验收后补充包来源、原始 run、Release 及实际验证/跳过范围；当前不代表已发布。
+未新增或升级生产依赖，核心 API 与 RPC 字段保持兼容。
+
+包来源：[90d49f4c7ef509f89025696a71ddddebfec99d51](https://github.com/BgaSol/soDeck/commit/90d49f4c7ef509f89025696a71ddddebfec99d51)；原始独立打包与验收：[43083474805](https://github.com/BgaSol/soDeck/actions/runs/43083474805)。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生归档的架构、摘要、资源、初始化、视图创建/释放与退出全部一次通过。
+
+[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/43083351828) 的五平台源码、真实 Docker Engine/进程和真实 CSSOM 三主题界面回归通过。
+
+发行：[docker 0.1.4](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.1.4)，非 Latest。六个附件沿用原始 run，发布前只同步说明与更新清单的验收记录，五份程序归档字节保持不变。未执行本版历史版本升级、五平台远程包组合、netem、生产服务器或真实 IME/DPI/Wayland 专项。
 
 # 0.1.3
 

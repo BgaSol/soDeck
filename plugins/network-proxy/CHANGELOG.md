@@ -2,7 +2,13 @@
 
 - 插件客户端使用标准库有界逐行读取，保留超长控制帧立即退出，Interrupted 自动重试；网络通道和清理策略保持原有契约。
 
-未新增或升级生产依赖，核心 API 与 RPC 字段保持兼容。待本次独立源码与五平台原生包验收后补充包来源、原始 run、Release 及实际验证/跳过范围；当前不代表已发布。
+未新增或升级生产依赖，核心 API 与 RPC 字段保持兼容。
+
+包来源：[90d49f4c7ef509f89025696a71ddddebfec99d51](https://github.com/BgaSol/soDeck/commit/90d49f4c7ef509f89025696a71ddddebfec99d51)；原始独立打包与验收：[43083461261](https://github.com/BgaSol/soDeck/actions/runs/43083461261)。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生归档的架构、摘要、资源、初始化、视图创建/释放与退出全部一次通过。
+
+[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/43083351828) 的五平台源码及 Linux x86_64/ARM64 真实 SOCKS/curl、进程与网络界面回归通过。[原包组合](https://github.com/BgaSol/soDeck/actions/runs/43088114019) 配合核心 0.23.5、terminal 0.8.4、files 0.10.3 在五平台通过远程流程与重开；组合脚本来自仅增加诊断的 330dc90，程序来源仍为上述提交。
+
+发行：[network-proxy 0.4.2](https://github.com/BgaSol/soDeck/releases/tag/plugin-network-proxy-v0.4.2)，非 Latest。六个附件沿用原始 run，发布前只同步说明与更新清单的验收记录，五份程序归档字节保持不变。未执行本版历史版本升级、netem 或生产服务器专项。
 
 # 0.4.1
 
