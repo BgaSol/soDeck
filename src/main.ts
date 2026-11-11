@@ -5,7 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Workspaces, type DropTarget } from "./workspaces";
 import { core, type Snapshot, type Message } from "./core";
 import * as views from "./views";
-import { selectedUpdates, updateCount, CORE_ID } from "./updates";
+import { selectedUpdates, updateCount, CORE_ID, renderUpdatesSettings } from "./updates";
 import { networkAction, networkInput } from "./update-network";
 import { button as b, escape as e, icon, replace } from "./ui";
 import "./style.css";
@@ -113,7 +113,8 @@ function renderLayer() {
     const retained = layer === "settings" && state.section === "components" ? target.querySelector<HTMLElement>("#component-settings-page") : null;
     const retainedFocus = retained?.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
     const expanded=[...target.querySelectorAll<HTMLDetailsElement>('details[data-network-server][open]')].map(d=>d.dataset.networkServer);
-    replace(target, content());
+    if (layer === "settings" && state.section === "updates") renderUpdatesSettings(target, content());
+    else replace(target, content());
     const placeholder = target.querySelector<HTMLElement>("#component-settings-page");
     if (retained && placeholder && retained !== placeholder) placeholder.replaceWith(retained);
     if (retainedFocus?.isConnected) retainedFocus.focus({preventScroll: true});

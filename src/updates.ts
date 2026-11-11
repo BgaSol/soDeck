@@ -1,10 +1,24 @@
 import type { Plugin, Snapshot, Update } from "./core";
 import type { ViewState } from "./views";
-import { button as b, date, escape as e, icon } from "./ui";
+import { button as b, date, escape as e, icon, replace } from "./ui";
 import { renderReleaseNotes } from "./release-notes";
 import { updateNetworkPanel } from "./update-network";
 
 export const CORE_ID = "sodeck.core";
+export function renderUpdatesSettings(target: HTMLElement, html: string) {
+  const page = target.querySelector<HTMLElement>('[data-settings-section="updates"]');
+  if (!page) { replace(target, html); return; }
+  const next = document.createElement("div"); next.innerHTML = html;
+  // Keep the scroll container mounted so progress refreshes do not cancel wheel gestures.
+  replace(target.querySelector<HTMLElement>(".settings-nav")!, next.querySelector(".settings-nav")!.innerHTML);
+  const top = page.scrollTop;
+  replace(page, next.querySelector(".settings-page")!.innerHTML);
+  page.scrollTop = top;
+  const pending = target.querySelector<HTMLElement>(".maintenance-pending"), nextPending = next.querySelector<HTMLElement>(".maintenance-pending");
+  if (pending && nextPending) replace(pending, nextPending.innerHTML);
+  else if (pending) pending.remove();
+  else if (nextPending) page.after(nextPending);
+}
 export const updateWorking = (u?: Update) => !!u && ["checking", "waiting", "downloading", "preparing"].includes(u.phase);
 export const canDownload = (u?: Update) => !!u?.version && (u.phase === "available" || (u.phase === "error" && u.errorStage !== "check"));
 export function pluginUpdate(p: Plugin, v: ViewState): Update {
