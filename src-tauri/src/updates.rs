@@ -294,6 +294,12 @@ struct ReleaseAsset {
     browser_download_url: String,
 }
 
+#[derive(Deserialize)]
+struct TagRef {
+    #[serde(rename = "ref")]
+    name: String,
+}
+
 pub fn validate_source(source: &UpdateSource) -> Result<(), String> {
     let parts: Vec<_> = source.repository.split('/').collect();
     if parts.len() != 2
@@ -333,7 +339,6 @@ pub struct ReleaseClient {
     api_base: String,
     #[cfg(feature = "test-fixtures")]
     pinned: Option<Vec<UpdateManifest>>,
-    releases: Arc<std::sync::Mutex<HashMap<String, Result<Vec<Release>, String>>>>,
 }
 
 fn decode_repository_blob<T: serde::de::DeserializeOwned>(
@@ -383,7 +388,10 @@ impl ReleaseClient {
         let mut results = Vec::new();
         if !file_only {
             diagnostic(&mut results, "发行版本 API", || {
-                client.repository_releases(REPOSITORY)
+                client.component_tags(&UpdateSource {
+                    repository: REPOSITORY.into(),
+                    tag_prefix: "v".into(),
+                })
             });
             diagnostic(&mut results, "插件目录与配置", || {
                 let tree: serde_json::Value =
@@ -461,7 +469,6 @@ impl ReleaseClient {
             api_base,
             #[cfg(feature = "test-fixtures")]
             pinned: None,
-            releases: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
     #[cfg(feature = "test-fixtures")]
@@ -510,7 +517,6 @@ impl ReleaseClient {
             api_base: self.api_base.clone(),
             #[cfg(feature = "test-fixtures")]
             pinned: self.pinned.clone(),
-            releases: self.releases.clone(),
         }
     }
     fn url(&self, value: &str) -> Result<reqwest::Url, String> {
@@ -584,87 +590,83 @@ impl ReleaseClient {
             self.url(&manifest.platforms[TARGET].url)?;
             return Ok(Some(manifest.clone()));
         }
-        let all = self.repository_releases(&source.repository)?;
-        let mut releases = Vec::new();
-        for release in all {
+        for (version, tag) in self.component_tags(source)? {
+            if version <= current {
+                break;
+            }
+            let Some(release) = self.release_by_tag(&source.repository, &tag)? else {
+                continue;
+            };
+            if release.tag_name != tag {
+                return Err("请求标签与发行标签不一致".into());
+            }
             if release.draft || release.prerelease {
                 continue;
             }
-            if let Some(version) = release
-                .tag_name
-                .strip_prefix(&source.tag_prefix)
-                .and_then(|v| stable_version(v).ok())
-            {
-                if version > current {
-                    releases.push((version, release));
-                }
-            }
-        }
-        releases.sort_by(|a, b| b.0.cmp(&a.0));
-        let mut incompatible = None;
-        for (version, release) in releases {
             let name = if id == CORE_ID {
                 "core-update.json"
             } else {
                 "plugin-update.json"
             };
-            let Some(asset) = release.assets.iter().find(|a| a.name == name) else {
-                continue;
-            };
+            let asset = release
+                .assets
+                .iter()
+                .find(|a| a.name == name)
+                .ok_or("最新正式发行缺少更新清单")?;
             let mut manifest: UpdateManifest = self.json(&asset.browser_download_url)?;
             if manifest.id != id || stable_version(&manifest.version)? != version {
                 return Err("发行标签与更新清单的组件或版本不一致".into());
             }
             if id != CORE_ID && manifest.api_version.split('.').next() != Some(API_VERSION) {
-                incompatible = Some(format!(
+                return Err(format!(
                     "新版 {} 要求核心 API {}，当前为 {API_VERSION}",
                     manifest.version, manifest.api_version
                 ));
-                continue;
             }
             if !manifest.platforms.contains_key(TARGET) {
-                incompatible = Some(format!(
+                return Err(format!(
                     "新版 {} 尚未提供本机平台 {TARGET} 的包",
                     manifest.version
                 ));
-                continue;
             }
             self.url(&manifest.platforms[TARGET].url)?;
             manifest.manifest_url = asset.browser_download_url.clone();
             manifest.source = Some(source.clone());
             return Ok(Some(manifest));
         }
-        if let Some(error) = incompatible {
-            return Err(error);
-        }
         Ok(None)
     }
 
-    fn repository_releases(&self, repository: &str) -> Result<Vec<Release>, String> {
-        let mut cache = self.releases.lock().unwrap();
-        if let Some(releases) = cache.get(repository) {
-            return releases.clone();
-        }
-        let result = (|| {
-            let mut releases = Vec::new();
-            for page in 1..=10 {
-                let batch: Vec<Release> = self.json(&format!(
-                    "{}/repos/{}/releases?per_page=100&page={page}",
-                    self.api_base, repository
-                ))?;
-                let done = batch.len() < 100;
-                releases.extend(batch);
-                if done {
-                    break;
-                }
-                if page == 10 {
-                    return Err("发行记录超过 1000 条，请收窄更新仓库".into());
-                }
+    fn component_tags(&self, source: &UpdateSource) -> Result<Vec<(Version, String)>, String> {
+        let refs: Vec<TagRef> = self.json_with_accept(
+            &format!(
+                "{}/repos/{}/git/matching-refs/tags/{}",
+                self.api_base, source.repository, source.tag_prefix
+            ),
+            "application/vnd.github+json",
+        )?;
+        let expected = format!("refs/tags/{}", source.tag_prefix);
+        let mut tags = Vec::new();
+        for reference in refs {
+            let version = reference
+                .name
+                .strip_prefix(&expected)
+                .ok_or("标签目录包含其他来源的引用")?;
+            if let Ok(version) = stable_version(version) {
+                tags.push((version, reference.name["refs/tags/".len()..].to_string()));
             }
-            Ok(releases)
-        })();
-        cache.insert(repository.into(), result.clone());
-        result
+        }
+        tags.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+        tags.dedup_by(|a, b| a.1 == b.1);
+        Ok(tags)
+    }
+
+    fn release_by_tag(&self, repository: &str, tag: &str) -> Result<Option<Release>, String> {
+        self.network.json_optional(
+            &format!("{}/repos/{repository}/releases/tags/{tag}", self.api_base),
+            crate::update_network::RequestKind::Api,
+            "application/vnd.github+json",
+        )
     }
 
     fn validate_candidate(&self, cached: &UpdateManifest) -> Result<(), String> {

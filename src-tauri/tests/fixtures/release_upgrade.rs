@@ -126,15 +126,54 @@ fn activate(input: &Input) -> Result<(), String> {
     )?;
     core.shutdown()
 }
+fn release_client() -> Result<ReleaseClient, String> {
+    match std::env::var("GH_TOKEN") {
+        Ok(token) => ReleaseClient::test_github(token),
+        Err(_) => ReleaseClient::github(),
+    }
+}
+fn discover(input: &Input) -> Result<(), String> {
+    let client = release_client()?;
+    let mut discovered = Vec::new();
+    for expected in &input.manifests {
+        let current = if expected.id == CORE_ID {
+            &input.current
+        } else {
+            &input
+                .plugins
+                .iter()
+                .find(|p| p.id == expected.id)
+                .ok_or("Missing current plugin version")?
+                .current
+        };
+        let manifest = client
+            .discover(
+                expected.source.as_ref().ok_or("Missing published source")?,
+                &expected.id,
+                current,
+            )?
+            .ok_or("No published update discovered")?;
+        if serde_json::to_value(&manifest).map_err(|e| e.to_string())?
+            != serde_json::to_value(expected).map_err(|e| e.to_string())?
+        {
+            return Err(format!(
+                "Discovered latest manifest differs from the selected Release: {}",
+                expected.id
+            ));
+        }
+        discovered.push(manifest);
+    }
+    write(
+        &input.root,
+        "upgrade-discovered.json",
+        &json!({"completed":true,"target":sodeck::TARGET,"manifests":discovered}),
+    )
+}
 fn prepare_install(handle: tauri::AppHandle, input: Input) -> Result<(), String> {
     let core = AppCore::open(input.root.clone(), input.current.clone())?;
     core.start_enabled();
     check_plugins(&core, &input, false)?;
-    let client = match std::env::var("GH_TOKEN") {
-        Ok(token) => ReleaseClient::test_github(token)?,
-        Err(_) => ReleaseClient::github()?,
-    }
-    .test_pin(input.manifests.clone());
+    let client = release_client()?.test_pin(input.manifests.clone());
     let core_update = if let Some(package) = &input.core_package {
         let manifest = client
             .discover(
@@ -149,10 +188,6 @@ fn prepare_install(handle: tauri::AppHandle, input: Input) -> Result<(), String>
         if manifest.version != input.version {
             return Err("Unexpected published core version".into());
         }
-        let asset = manifest
-            .platforms
-            .get(sodeck::TARGET)
-            .ok_or("Core target missing")?;
         let builder = handle
             .updater_builder()
             .target(sodeck::TARGET)
@@ -173,7 +208,13 @@ fn prepare_install(handle: tauri::AppHandle, input: Input) -> Result<(), String>
             ),
         ]);
         let updater = builder.build().map_err(|e| e.to_string())?;
-        let update = updater.restore_update(json!({"version":manifest.version,"platforms":{sodeck::TARGET:{"url":asset.url,"signature":asset.signature}}})).map_err(|e| e.to_string())?.ok_or("Updater rejected published version")?;
+        let update = updater
+            .restore_update(serde_json::to_value(&manifest).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?
+            .ok_or("Updater rejected published version")?;
+        if update.body.as_deref() != Some(manifest.notes.as_str()) {
+            return Err("Updater did not preserve published release notes".into());
+        }
         let bytes = fs::read(package).map_err(|e| e.to_string())?;
         update.verify(&bytes).map_err(|e| e.to_string())?;
         fs::write(input.root.join("core-download.bin"), &bytes).map_err(|e| e.to_string())?;
@@ -222,6 +263,7 @@ fn main() {
     let input: Input = serde_json::from_slice(&fs::read(&args[2]).unwrap()).unwrap();
     match args[1].as_str() {
         "seed" => seed(&input).unwrap(),
+        "discover" => discover(&input).unwrap(),
         "activate" => activate(&input).unwrap(),
         "install" => {
             let mut context = tauri::generate_context!();
@@ -246,6 +288,6 @@ fn main() {
                 .run(context)
                 .unwrap();
         }
-        _ => panic!("Expected seed, install or activate"),
+        _ => panic!("Expected seed, discover, install or activate"),
     }
 }

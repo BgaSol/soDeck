@@ -21,6 +21,10 @@ on:
       core_version:
         description: Fixed host version for a plugin upgrade
         type: string
+      verify_discovery:
+        description: Verify production tag discovery selects to_version as the current latest
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -81,6 +85,7 @@ jobs:
           SODECK_UPGRADE_FROM: ${{ inputs.from_version }}
           SODECK_UPGRADE_TO: ${{ inputs.to_version }}
           SODECK_UPGRADE_CORE: ${{ inputs.core_version }}
+          SODECK_UPGRADE_DISCOVERY: ${{ inputs.verify_discovery || false }}
         run: node scripts/test-release-upgrade.mjs
       - uses: actions/upload-artifact@v7
         if: always()

@@ -76,7 +76,19 @@ const downloads = http.createServer(async (request, response) => {
     const content=Buffer.from(JSON.stringify(item.config));
     data=JSON.stringify({encoding:'base64',size:content.length,content:content.toString('base64')});
   }
-  else if (request.url.startsWith("/repos/BgaSol/soDeck/releases")) data = JSON.stringify(published ? [{ tag_name: "plugin-terminal-v0.1.1", draft: false, prerelease: false, assets: [{ name: "plugin-update.json", browser_download_url: `${base}/manifest.json` }] }, { tag_name:'plugin-files-v0.1.1', draft:false, prerelease:false, assets:[{name:'plugin-update.json',browser_download_url:`${base}/files.json`}] }, ...extraReleases] : []);
+  else if (request.url.startsWith('/repos/BgaSol/soDeck/git/matching-refs/tags/') || request.url.startsWith('/repos/BgaSol/soDeck/releases/tags/')) {
+    const releases = published ? [{ tag_name: 'plugin-terminal-v0.1.1', draft: false, prerelease: false, assets: [{ name: 'plugin-update.json', browser_download_url: `${base}/manifest.json` }] }, { tag_name:'plugin-files-v0.1.1', draft:false, prerelease:false, assets:[{name:'plugin-update.json',browser_download_url:`${base}/files.json`}] }, ...extraReleases] : [];
+    if (request.url.includes('/git/matching-refs/')) {
+      const prefix=request.url.split('/tags/')[1];
+      const refs=releases.filter(release=>release.tag_name.startsWith(prefix)).map(release=>({ref:`refs/tags/${release.tag_name}`}));
+      if (published && prefix==='plugin-terminal-v') refs.push({ref:'refs/tags/plugin-terminal-v0.1.2'});
+      data=JSON.stringify(refs);
+    } else {
+      const release=releases.find(release=>release.tag_name===request.url.split('/tags/')[1]);
+      if(!release){response.writeHead(404).end();return;}
+      data=JSON.stringify(release);
+    }
+  }
   else if (request.url === '/core-update.json') data = JSON.stringify({id:'sodeck.core',version:'0.1.1',platforms:{[target]:{url:`${base}/fixture.tar.gz`,signature:'fixture-diagnostic-only'}}});
   else if (request.url === '/files.json') data = JSON.stringify({ id:'sodeck.files', version:'0.1.1', apiVersion:'1', platforms:{[target]:{url:`${base}/files.tar.gz`,sha256:createHash('sha256').update(filesBytes).digest('hex')}} });
   else if (request.url === '/files.tar.gz') data = filesBytes;

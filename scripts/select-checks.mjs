@@ -82,6 +82,8 @@ export function selectChecks(files, { suite, fallback } = {}) {
       if (file === 'scripts/test-cli-arguments.mjs') { full(); continue; }
       if (file === 'scripts/test-theme-tokens.mjs') { plan.scripts = true; integration.add('system-status'); integration.add('docker'); continue; }
       if (file.startsWith('.github/workflows/') || file.startsWith('.github/actions/')) plan.workflow = true;
+      if (['src-tauri/tests/fixtures/release_upgrade.rs', 'scripts/test-release-upgrade.mjs', '.github/workflows/release-upgrade.yml'].includes(file)) { core(); plan.scripts = true; continue; }
+      if (/^scripts\/upgrade-inputs(?:\.test)?\.mjs$/.test(file)) { plan.scripts = true; continue; }
       if (/^(src\/component-state\.ts|src-tauri\/src\/shared_state(\/|\.)|plugins\/shared\/state\.js|scripts\/(test-component-communication\.mjs|component-state\.test\.mjs|fixtures\/shared-state\.json))$/.test(file)||file==='src-tauri/src/shared_state.rs'||file.startsWith('src-tauri/src/shared_state/')){communication();core();plan.sharedClient=true;['terminal','files','system-status'].forEach(plugin);continue;}
       if (file.startsWith('src/')) {
         if (/^src\/(ui\.css|themes\.css|text-menu\.|menu-position\.|font-loader\.)/.test(file)) sharedUi();

@@ -20,6 +20,260 @@ use std::{
     time::Duration,
 };
 static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
+
+#[test]
+fn latest_discovery_does_not_read_oversized_historical_releases() {
+    let server = Server::new();
+    server.put("/repos/test/repo/releases", vec![b' '; 2 * 1024 * 1024 + 1]);
+    server.put(
+        "/repos/test/repo/git/matching-refs/tags/plugin-fixture-v",
+        json!([
+            {"ref":"refs/tags/plugin-fixture-v0.9.0"},
+            {"ref":"refs/tags/plugin-fixture-v0.10.0"},
+            {"ref":"refs/tags/plugin-fixture-v1.0.0-beta.1"}
+        ])
+        .to_string(),
+    );
+    server.put(
+        "/repos/test/repo/releases/tags/plugin-fixture-v0.10.0",
+        json!({"tag_name":"plugin-fixture-v0.10.0","draft":false,"prerelease":false,
+            "assets":[{"name":"plugin-update.json","browser_download_url":format!("{}/manifest.json",server.base)}]})
+        .to_string(),
+    );
+    server.put(
+        "/manifest.json",
+        json!({"id":"test.fixture","version":"0.10.0","apiVersion":"1","notes":"current version only",
+            "platforms":{TARGET:{"url":format!("{}/plugin.zip",server.base),"sha256":"a".repeat(64)}}})
+        .to_string(),
+    );
+    let update = server
+        .client()
+        .discover(
+            &UpdateSource {
+                repository: "test/repo".into(),
+                tag_prefix: "plugin-fixture-v".into(),
+            },
+            "test.fixture",
+            "0.8.0",
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(update.version, "0.10.0");
+    assert_eq!(update.notes, "current version only");
+    assert_eq!(
+        *server.requests.lock().unwrap(),
+        [
+            "/repos/test/repo/git/matching-refs/tags/plugin-fixture-v",
+            "/repos/test/repo/releases/tags/plugin-fixture-v0.10.0",
+            "/manifest.json"
+        ]
+    );
+}
+
+#[test]
+fn missing_and_unpublished_tags_are_checked_in_version_order_then_stop() {
+    let server = Server::new();
+    server.release(Vec::new(), "1", TARGET);
+    server.tags(
+        "test/repo",
+        "plugin-fixture-v",
+        &[
+            "plugin-fixture-v0.1.1",
+            "plugin-fixture-v0.1.5",
+            "plugin-fixture-v0.1.2",
+            "plugin-fixture-v0.1.0",
+            "plugin-fixture-v0.1.3",
+            "plugin-fixture-v0.1.4",
+            "plugin-fixture-v0.1.1",
+            "plugin-fixture-v0.1.6-beta.1",
+            "plugin-fixture-v0.1.6+build",
+            "plugin-fixture-vmain",
+            "plugin-fixture-v0.01.6",
+        ],
+    );
+    for (version, draft, prerelease) in [("0.1.4", true, false), ("0.1.3", false, true)] {
+        server.put(&format!("/repos/test/repo/releases/tags/plugin-fixture-v{version}"),
+            json!({"tag_name":format!("plugin-fixture-v{version}"),"draft":draft,"prerelease":prerelease,"assets":[]}).to_string());
+    }
+    let update = server
+        .client()
+        .discover(
+            &UpdateSource {
+                repository: "test/repo".into(),
+                tag_prefix: "plugin-fixture-v".into(),
+            },
+            "test.fixture",
+            "0.1.0",
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(update.version, "0.1.1");
+    assert_eq!(
+        *server.requests.lock().unwrap(),
+        [
+            "/repos/test/repo/git/matching-refs/tags/plugin-fixture-v",
+            "/repos/test/repo/releases/tags/plugin-fixture-v0.1.5",
+            "/repos/test/repo/releases/tags/plugin-fixture-v0.1.4",
+            "/repos/test/repo/releases/tags/plugin-fixture-v0.1.3",
+            "/repos/test/repo/releases/tags/plugin-fixture-v0.1.2",
+            "/repos/test/repo/releases/tags/plugin-fixture-v0.1.1",
+            "/manifest.json",
+        ]
+    );
+}
+
+#[test]
+fn missing_new_releases_never_probe_current_or_older_versions() {
+    for tags in [
+        vec![],
+        vec!["vmain", "v1.0.1-beta.1", "v1.0.1+build"],
+        vec!["v0.9.0", "v1.0.0"],
+        vec!["v1.0.1", "v0.9.0", "v1.0.2", "v1.0.0"],
+    ] {
+        let server = Server::new();
+        server.tags("test/repo", "v", &tags);
+        assert!(server
+            .client()
+            .discover(
+                &UpdateSource {
+                    repository: "test/repo".into(),
+                    tag_prefix: "v".into()
+                },
+                "sodeck.core",
+                "1.0.0",
+            )
+            .unwrap()
+            .is_none());
+        let expected = if tags.contains(&"v1.0.2") {
+            vec![
+                "/repos/test/repo/git/matching-refs/tags/v",
+                "/repos/test/repo/releases/tags/v1.0.2",
+                "/repos/test/repo/releases/tags/v1.0.1",
+            ]
+        } else {
+            vec!["/repos/test/repo/git/matching-refs/tags/v"]
+        };
+        assert_eq!(*server.requests.lock().unwrap(), expected);
+    }
+}
+
+#[test]
+fn tag_directory_rejects_wrong_refs_invalid_json_and_large_responses() {
+    for (body, message) in [
+        (
+            json!([{"ref":"refs/tags/other-v1.0.0"}])
+                .to_string()
+                .into_bytes(),
+            "其他来源",
+        ),
+        (
+            json!([{"ref":"refs/heads/v1.0.0"}])
+                .to_string()
+                .into_bytes(),
+            "其他来源",
+        ),
+        (b"not json".to_vec(), "格式错误"),
+        (vec![b' '; 2 * 1024 * 1024 + 1], "过大"),
+    ] {
+        let server = Server::new();
+        server.put("/repos/test/repo/git/matching-refs/tags/v", body);
+        let error = server
+            .client()
+            .discover(
+                &UpdateSource {
+                    repository: "test/repo".into(),
+                    tag_prefix: "v".into(),
+                },
+                "sodeck.core",
+                "0.1.0",
+            )
+            .unwrap_err();
+        assert!(error.contains(message), "{error}");
+        assert_eq!(server.requests.lock().unwrap().len(), 1);
+    }
+}
+
+#[test]
+fn first_official_release_errors_are_not_bypassed() {
+    for (case, message) in [
+        ("missing-asset", "缺少更新清单"),
+        ("release-tag", "发行标签不一致"),
+        ("release-json", "格式错误"),
+        ("missing-manifest", "404"),
+        ("manifest-json", "格式错误"),
+        ("id", "组件或版本不一致"),
+        ("version", "组件或版本不一致"),
+        ("api", "核心 API"),
+        ("platform", "本机平台"),
+        ("url", "HTTPS"),
+    ] {
+        let server = Server::new();
+        server.release(Vec::new(), "1", TARGET);
+        server.tags(
+            "test/repo",
+            "plugin-fixture-v",
+            &["plugin-fixture-v0.1.1", "plugin-fixture-v0.1.2"],
+        );
+        let mut release: serde_json::Value = serde_json::from_slice(
+            &server.routes.lock().unwrap()["/repos/test/repo/releases/tags/plugin-fixture-v0.1.1"],
+        )
+        .unwrap();
+        let mut manifest: serde_json::Value =
+            serde_json::from_slice(&server.routes.lock().unwrap()["/manifest.json"]).unwrap();
+        release["tag_name"] = json!("plugin-fixture-v0.1.2");
+        manifest["version"] = json!("0.1.2");
+        match case {
+            "missing-asset" => release["assets"] = json!([]),
+            "release-tag" => release["tag_name"] = json!("plugin-fixture-v0.1.1"),
+            "id" => manifest["id"] = json!("other.plugin"),
+            "version" => manifest["version"] = json!("0.1.1"),
+            "api" => manifest["apiVersion"] = json!("2"),
+            "platform" => manifest["platforms"] = json!({}),
+            "url" => {
+                manifest["platforms"][TARGET]["url"] = json!("http://unsafe.example/package.zip")
+            }
+            _ => {}
+        }
+        server.put(
+            "/repos/test/repo/releases/tags/plugin-fixture-v0.1.2",
+            release.to_string(),
+        );
+        server.put("/manifest.json", manifest.to_string());
+        match case {
+            "release-json" => server.put(
+                "/repos/test/repo/releases/tags/plugin-fixture-v0.1.2",
+                "not json",
+            ),
+            "manifest-json" => server.put("/manifest.json", "not json"),
+            "missing-manifest" => {
+                server.routes.lock().unwrap().remove("/manifest.json");
+            }
+            _ => {}
+        }
+        let error = server
+            .client()
+            .discover(
+                &UpdateSource {
+                    repository: "test/repo".into(),
+                    tag_prefix: "plugin-fixture-v".into(),
+                },
+                "test.fixture",
+                "0.1.0",
+            )
+            .unwrap_err();
+        assert!(error.contains(message), "{case}: {error}");
+        assert!(
+            !server
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|p| p.ends_with("plugin-fixture-v0.1.1")),
+            "{case}"
+        );
+    }
+}
+
 struct Server {
     base: String,
     routes: Arc<Mutex<HashMap<String, Vec<u8>>>>,
@@ -97,15 +351,42 @@ impl Server {
             .unwrap()
             .insert(path.into(), bytes.into());
     }
+    fn tags(&self, repository: &str, prefix: &str, tags: &[&str]) {
+        self.put(
+            &format!("/repos/{repository}/git/matching-refs/tags/{prefix}"),
+            json!(tags
+                .iter()
+                .map(|tag| json!({"ref":format!("refs/tags/{tag}")}))
+                .collect::<Vec<_>>())
+            .to_string(),
+        );
+    }
+    fn publish(&self, repository: &str, prefix: &str, releases: Vec<serde_json::Value>) {
+        let tags: Vec<_> = releases
+            .iter()
+            .filter_map(|release| release["tag_name"].as_str())
+            .filter(|tag| tag.starts_with(prefix))
+            .collect();
+        self.tags(repository, prefix, &tags);
+        for release in &releases {
+            self.put(
+                &format!(
+                    "/repos/{repository}/releases/tags/{}",
+                    release["tag_name"].as_str().unwrap()
+                ),
+                release.to_string(),
+            );
+        }
+    }
     fn release(&self, bytes: Vec<u8>, api: &str, target: &str) {
         let hash = format!("{:x}", Sha256::digest(&bytes));
         self.put("/plugin.zip", bytes);
         self.put("/manifest.json", json!({"id":"test.fixture","version":"0.1.1","apiVersion":api,"notes":"new plugin","platforms":{target:{"url":format!("{}/plugin.zip", self.base),"sha256":hash}}}).to_string());
-        self.put("/repos/test/repo/releases", json!([
-            {"tag_name":"v99.0.0","draft":false,"prerelease":false,"assets":[]},
-            {"tag_name":"plugin-fixture-v0.1.1","draft":false,"prerelease":false,"assets":[{"name":"plugin-update.json","browser_download_url":format!("{}/manifest.json",self.base)}]},
-            {"tag_name":"plugin-fixture-v99.0.0","draft":true,"prerelease":false,"assets":[]}
-        ]).to_string());
+        self.publish("test/repo", "plugin-fixture-v", vec![
+            json!({"tag_name":"v99.0.0","draft":false,"prerelease":false,"assets":[]}),
+            json!({"tag_name":"plugin-fixture-v0.1.1","draft":false,"prerelease":false,"assets":[{"name":"plugin-update.json","browser_download_url":format!("{}/manifest.json",self.base)}]}),
+            json!({"tag_name":"plugin-fixture-v99.0.0","draft":true,"prerelease":false,"assets":[]})
+        ]);
     }
     fn client(&self) -> ReleaseClient {
         ReleaseClient::test_server(&self.base)
@@ -139,9 +420,9 @@ impl Server {
             serde_json::from_slice(&self.routes.lock().unwrap()["/manifest.json"]).unwrap();
         manifest["id"] = json!(id);
         self.put("/manifest.json", manifest.to_string());
-        self.put("/repos/BgaSol/soDeck/releases", json!([
-            {"tag_name":format!("{prefix}0.1.1"),"draft":false,"prerelease":false,"assets":[{"name":"plugin-update.json","browser_download_url":format!("{}/manifest.json",self.base)}]}
-        ]).to_string());
+        self.publish("BgaSol/soDeck", prefix, vec![
+            json!({"tag_name":format!("{prefix}0.1.1"),"draft":false,"prerelease":false,"assets":[{"name":"plugin-update.json","browser_download_url":format!("{}/manifest.json",self.base)}]})
+        ]);
     }
 }
 impl Drop for Server {
@@ -276,7 +557,8 @@ fn official_install_uses_fallback_for_tree_blob_release_manifest_and_package() {
     for part in [
         "git/trees/main",
         "git/blobs/",
-        "/releases",
+        "/git/matching-refs/tags/",
+        "/releases/tags/",
         "/manifest.json",
         "/plugin.zip",
     ] {
@@ -902,7 +1184,7 @@ fn failed_checks_remain_visible_after_reopening_without_a_candidate() {
 }
 
 #[test]
-fn unavailable_repository_is_requested_once_per_check_batch() {
+fn failed_tag_checks_are_independent_and_can_retry() {
     let server = Server::new();
     let client = server.client();
     for (id, prefix) in [("sodeck.core", "v"), ("test.fixture", "plugin-fixture-v")] {
@@ -917,8 +1199,8 @@ fn unavailable_repository_is_requested_once_per_check_batch() {
             )
             .is_err());
     }
-    assert_eq!(server.requests.lock().unwrap().len(), 1);
-    // An explicit new batch can retry the source.
+    assert_eq!(server.requests.lock().unwrap().len(), 2);
+    // A new request retries the source rather than reusing a repository-wide failure.
     assert!(server
         .client()
         .discover(
@@ -930,23 +1212,15 @@ fn unavailable_repository_is_requested_once_per_check_batch() {
             "0.1.0",
         )
         .is_err());
-    assert_eq!(server.requests.lock().unwrap().len(), 2);
+    assert_eq!(server.requests.lock().unwrap().len(), 3);
 }
 
 #[test]
-fn core_and_plugin_discovery_share_repository_requests() {
+fn core_and_plugin_discovery_read_only_their_own_tags() {
     let server = Server::new();
     let f = Fixture::new();
     server.release(f.package(""), "1", TARGET);
-    let releases: serde_json::Value =
-        serde_json::from_slice(&server.routes.lock().unwrap()["/repos/test/repo/releases"])
-            .unwrap();
-    let mut releases = releases.as_array().unwrap().clone();
-    releases.push(json!({"tag_name":"v0.2.1","draft":false,"prerelease":false,"assets":[{"name":"core-update.json","browser_download_url":format!("{}/core.json",server.base)}]}));
-    server.put(
-        "/repos/test/repo/releases",
-        serde_json::to_vec(&releases).unwrap(),
-    );
+    server.publish("test/repo", "v", vec![json!({"tag_name":"v0.2.1","draft":false,"prerelease":false,"assets":[{"name":"core-update.json","browser_download_url":format!("{}/core.json",server.base)}]})]);
     server.put("/core.json",json!({"id":"sodeck.core","version":"0.2.1","platforms":{TARGET:{"url":format!("{}/core.zip",server.base)}}}).to_string());
     let client = server.client();
     for (id, prefix, old, new) in [
@@ -975,10 +1249,16 @@ fn core_and_plugin_discovery_share_repository_requests() {
             .lock()
             .unwrap()
             .iter()
-            .filter(|p| p.as_str() == "/repos/test/repo/releases")
+            .filter(|p| p.contains("/git/matching-refs/tags/"))
             .count(),
-        1
+        2
     );
+    assert!(!server
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|p| p == "/repos/test/repo/releases"));
 }
 
 #[test]

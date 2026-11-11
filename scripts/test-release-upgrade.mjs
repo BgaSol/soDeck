@@ -26,7 +26,7 @@ export async function download(asset, directory, request = fetch) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-const { target, component, from, to, current, version } = upgradeInputs(process.env);
+const { target, component, from, to, current, version, verifyDiscovery } = upgradeInputs(process.env);
 assert.equal(target, `${process.arch === "arm64" ? "aarch64" : "x86_64"}-${{ win32: "pc-windows-msvc", linux: "unknown-linux-gnu", darwin: "apple-darwin" }[process.platform]}`);
 const output = path.resolve("artifacts/release-upgrade", target);
 assert(!fs.existsSync(output), "Use a clean output directory for a new verification run");
@@ -113,6 +113,11 @@ try {
   const input = path.join(root, "input.json");
   fs.writeFileSync(input, JSON.stringify({ root: data, executable, current, version, plugins, corePackage: component === "core" ? nextPackage : null, manifests: [manifest] }));
   run(driver, ["seed", input]);
+  if (verifyDiscovery) {
+    run(driver, ["discover", input]);
+    report.discovered = JSON.parse(fs.readFileSync(path.join(data, "upgrade-discovered.json"), "utf8"));
+    assert.equal(report.discovered.completed, true);
+  }
   native(driver, ["install", input]);
   assert(!fs.existsSync(path.join(data, "upgrade-error.txt")), fs.existsSync(path.join(data, "upgrade-error.txt")) ? fs.readFileSync(path.join(data, "upgrade-error.txt"), "utf8") : "");
   let expectedDigest = digest(executable);

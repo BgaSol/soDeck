@@ -16,6 +16,16 @@
 
 插件下载前重新核对清单与候选身份，验证 SHA-256、解包路径、入口和平台。已加载程序继续运行到重启；完全关闭且未加载的插件更新后仍关闭。切换失败的回退见[插件管理](plugins.md)。
 
+### 最新版本发现
+
+核心与插件分别按自己的发行仓库和标签前缀检查版本。先读取轻量标签引用，按正式 SemVer 从高到低排列，只检查高于本机的标签；不读取全仓库 Release 列表或历史更新说明，也不提供版本回退入口。
+
+按顺序确认标签对应的 Release。原始 GitHub API 返回 404 时，表示该标签没有公开 Release，继续检查下一标签；草稿和预发行同样跳过。找到第一个公开正式 Release 后只读取它的更新清单，成功即停止。没有更高正式发行时显示当前无更新。
+
+镜像 404 不能确认 Release 缺席，仍需按现有线路回退；原站不可达而只有镜像 404 时检查失败。原始线路跨来源重定向后的 404 也不能作为缺席。目录、清单和安装包的 404 均为读取失败。
+
+首个正式 Release 缺清单、清单损坏、组件或版本不符、插件 API 或本机平台不兼容时立即显示原因，不再选择其他历史清单。网络故障同样不会触发版本顺延；一项失败不妨碍其他组件检查。首次官方插件安装复用相同发现方法，插件目录只负责提供官方插件及其更新来源。
+
 ## 下载与网络
 
 软件更新页的“下载与网络”覆盖官方插件目录、GitHub Release、更新清单、首次插件安装和核心/插件包下载。
@@ -33,7 +43,7 @@
 
 - 服务：[updates.rs](../../src-tauri/src/updates.rs)、[update_network.rs](../../src-tauri/src/update_network.rs)、[desktop_updates.rs](../../src-tauri/src/desktop_updates.rs)、[official_plugins.rs](../../src-tauri/src/official_plugins.rs)。
 - 界面：[updates.ts](../../src/updates.ts)、[update-network.ts](../../src/update-network.ts)、[release-notes.ts](../../src/release-notes.ts)。
-- 回归：[updates.rs](../../src-tauri/tests/updates.rs)、[update_network.rs](../../src-tauri/tests/update_network.rs)、[正式升级夹具](../../scripts/test-release-upgrade.mjs)。涵盖缓存篡改、签名、错误线路、取消、候选固定、旧配置隔离和插件回退。
+- 回归：[updates.rs](../../src-tauri/tests/updates.rs)、[update_network.rs](../../src-tauri/tests/update_network.rs)、[正式升级夹具](../../scripts/test-release-upgrade.mjs)。涵盖标签排序、缺席顺延、正式发行错误、缓存篡改、签名、错误线路、取消、候选固定、旧配置隔离和插件回退。
 - 真实线路可用性随网络变化；原生安装器、历史版本升级和线上下载需在对应任务中明确验收，旧版升级样本不代表任意版本组合。
 
 返回[文档索引](../README.md)。

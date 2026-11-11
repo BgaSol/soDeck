@@ -96,6 +96,136 @@ fn partial() -> std::path::PathBuf {
 }
 
 #[test]
+fn only_origin_404_confirms_optional_metadata_is_absent() {
+    let direct = Server::new(|_, _| ("404 Not Found".into(), Vec::new(), None));
+    let mirror = Server::new(|_, _| ("200 OK".into(), b"{}".to_vec(), None));
+    let t = Transport::test_server(
+        &direct.base,
+        vec![(mirror.prefix(), true)],
+        Arc::new(State::default()),
+    );
+    let url = format!("{}/repos/test/repo/releases/tags/v1.0.0", direct.base);
+    assert!(t
+        .json_optional::<serde_json::Value>(&url, RequestKind::Api, "application/json")
+        .unwrap()
+        .is_none());
+    assert!(mirror.requests.lock().unwrap().is_empty());
+    assert!(t
+        .only_endpoint(None)
+        .unwrap()
+        .json::<serde_json::Value>(&url, RequestKind::Api, "application/json")
+        .unwrap_err()
+        .contains("404"));
+}
+
+#[test]
+fn a_preferred_mirror_404_still_checks_the_origin() {
+    let direct = Server::new(|path, _| {
+        if path.ends_with("warmup") {
+            failed(path, "")
+        } else {
+            ("200 OK".into(), br#"{"version":"1.0.0"}"#.to_vec(), None)
+        }
+    });
+    let mirror = Server::new(|path, _| {
+        if path.ends_with("warmup") {
+            ("200 OK".into(), b"{}".to_vec(), None)
+        } else {
+            ("404 Not Found".into(), Vec::new(), None)
+        }
+    });
+    let t = Transport::test_server(
+        &direct.base,
+        vec![(mirror.prefix(), true)],
+        Arc::new(State::default()),
+    );
+    t.json::<serde_json::Value>(
+        &format!("{}/warmup", direct.base),
+        RequestKind::Api,
+        "application/json",
+    )
+    .unwrap();
+    let value = t
+        .json_optional::<serde_json::Value>(
+            &format!("{}/repos/test/repo/releases/tags/v1.0.0", direct.base),
+            RequestKind::Api,
+            "application/json",
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(value["version"], "1.0.0");
+    assert_eq!(direct.requests.lock().unwrap().len(), 2);
+    assert_eq!(mirror.requests.lock().unwrap().len(), 2);
+}
+
+#[test]
+fn optional_metadata_does_not_hide_network_http_or_redirect_failures() {
+    let direct = Server::new(failed);
+    let mirror = Server::new(|_, _| ("404 Not Found".into(), Vec::new(), None));
+    let t = Transport::test_server(
+        &direct.base,
+        vec![(mirror.prefix(), true)],
+        Arc::new(State::default()),
+    );
+    assert!(t
+        .json_optional::<serde_json::Value>(&direct.base, RequestKind::Api, "application/json")
+        .is_err());
+
+    let foreign = Server::new(|_, _| ("404 Not Found".into(), Vec::new(), None));
+    let destination = foreign.base.clone();
+    let redirected = Server::new(move |_, _| {
+        (
+            format!("302 Found\r\nLocation: {destination}"),
+            Vec::new(),
+            None,
+        )
+    });
+    let t = Transport::test_server(&redirected.base, Vec::new(), Arc::new(State::default()));
+    assert!(t
+        .json_optional::<serde_json::Value>(&redirected.base, RequestKind::Api, "application/json")
+        .is_err());
+
+    for status in ["403 Forbidden", "429 Too Many Requests", "500 Error"] {
+        let direct = Server::new(move |_, _| (status.into(), Vec::new(), None));
+        let t = Transport::test_server(&direct.base, Vec::new(), Arc::new(State::default()));
+        assert!(t
+            .json_optional::<serde_json::Value>(&direct.base, RequestKind::Api, "application/json")
+            .is_err());
+    }
+}
+
+#[test]
+fn optional_metadata_preserves_size_and_cancellation_limits() {
+    let direct = Server::new(|_, _| ("200 OK".into(), vec![b' '; 2 * 1024 * 1024 + 1], None));
+    let t = Transport::test_server(&direct.base, Vec::new(), Arc::new(State::default()));
+    assert!(t
+        .json_optional::<serde_json::Value>(&direct.base, RequestKind::Api, "application/json")
+        .unwrap_err()
+        .contains("过大"));
+    let before = direct.requests.lock().unwrap().len();
+    let t = t.observed(Arc::new(|_| {}), Arc::new(|| true));
+    assert!(t
+        .json_optional::<serde_json::Value>(&direct.base, RequestKind::Api, "application/json")
+        .is_err());
+    assert_eq!(direct.requests.lock().unwrap().len(), before);
+
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let requested = cancelled.clone();
+    let direct = Server::new(move |_, _| {
+        requested.store(true, Ordering::Release);
+        ("404 Not Found".into(), Vec::new(), None)
+    });
+    let t = Transport::test_server(&direct.base, Vec::new(), Arc::new(State::default())).observed(
+        Arc::new(|_| {}),
+        Arc::new(move || cancelled.load(Ordering::Acquire)),
+    );
+    assert!(t
+        .json_optional::<serde_json::Value>(&direct.base, RequestKind::Api, "application/json")
+        .unwrap_err()
+        .contains("停止"));
+}
+
+#[test]
 fn defaults_and_custom_address_validation() {
     let old: Preferences = serde_json::from_value(json!({})).unwrap();
     assert!(old.fallback_enabled);

@@ -13,5 +13,7 @@ export function upgradeInputs(env) {
   assert(changed >= 0 && newParts[changed] > oldParts[changed], "New version must be greater than old version");
   const current = component === "core" ? from : env.SODECK_UPGRADE_CORE;
   assert(valid(current), "Plugin upgrades require a fixed core version");
-  return { target, component, from, to, current, version: component === "core" ? to : current };
+  const discovery = env.SODECK_UPGRADE_DISCOVERY ?? "false";
+  assert(["true", "false"].includes(discovery), "Discovery verification must be true or false");
+  return { target, component, from, to, current, version: component === "core" ? to : current, verifyDiscovery: discovery === "true" };
 }

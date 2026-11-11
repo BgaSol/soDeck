@@ -152,6 +152,20 @@ test('transport/lifecycle changes retain real integrations and shared inputs/unk
   assert(files.integration[0].files && !files.integration[0].network && !files.integration[0].terminal);
 });
 
+test('published-upgrade verification checks the core fixture and scripts without selecting plugin builds', () => {
+  for (const file of ['src-tauri/tests/fixtures/release_upgrade.rs', 'scripts/test-release-upgrade.mjs', '.github/workflows/release-upgrade.yml']) {
+    const p = selectChecks([file]);
+    assert(p.scripts && p.native.length === 5 && p.native.every(t => t.core));
+    assert.deepEqual(p.plugins, []);
+    assert.deepEqual(p.integration, []);
+    assert.equal(p.workflow, file.endsWith('.yml'));
+  }
+  for (const file of ['scripts/upgrade-inputs.mjs', 'scripts/upgrade-inputs.test.mjs']) {
+    const p = selectChecks([file]);
+    assert(p.scripts && !p.native.length && !p.integration.length);
+  }
+});
+
 test('manual same-ref routes preserve overrides and only netem explicitly enables weak-network tests', () => {
   const standard = selectChecks([], { suite: 'standard' });
   assert(!standard.desktop && !standard.netem && standard.integration[0].network);

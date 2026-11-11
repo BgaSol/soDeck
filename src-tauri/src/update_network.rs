@@ -210,6 +210,12 @@ impl State {
 #[derive(Debug)]
 pub enum Error {
     Remote(String, Duration),
+    Http {
+        status: u16,
+        origin: bool,
+        message: String,
+        cooldown: Duration,
+    },
     Local(String),
     Rejected(String),
     Cancelled,
@@ -220,10 +226,17 @@ impl Error {
     }
     pub fn message(&self) -> String {
         match self {
-            Self::Remote(message, _) | Self::Local(message) | Self::Rejected(message) => {
-                message.clone()
-            }
+            Self::Remote(message, _)
+            | Self::Http { message, .. }
+            | Self::Local(message)
+            | Self::Rejected(message) => message.clone(),
             Self::Cancelled => "更新任务已停止".into(),
+        }
+    }
+    fn cooldown(&self) -> Option<Duration> {
+        match self {
+            Self::Remote(_, cooldown) | Self::Http { cooldown, .. } => Some(*cooldown),
+            _ => None,
         }
     }
 }
@@ -555,12 +568,12 @@ impl Transport {
         health.preferred.insert(kind, route.key.clone());
     }
     fn failure(&self, route: &Route, kind: RequestKind, attempt: usize, error: &Error) {
-        if let Error::Remote(_, cooldown) = error {
+        if let Some(cooldown) = error.cooldown() {
             let mut health = self.state.inner.lock().unwrap();
             if self.epoch == self.state.epoch.load(Ordering::Acquire) {
                 health
                     .cooldown
-                    .insert((kind, route.key.clone()), Instant::now() + *cooldown);
+                    .insert((kind, route.key.clone()), Instant::now() + cooldown);
             }
         }
         (self.observer)(Attempt {
@@ -672,13 +685,15 @@ impl Transport {
                     }
                     _ => None,
                 };
-                return Err(Error::Remote(
-                    format!(
+                return Err(Error::Http {
+                    status,
+                    origin: route.prefix.is_none() && url.origin() == original.origin(),
+                    message: format!(
                         "服务器返回 HTTP {status}{}",
                         message.map(|text| format!("：{text}")).unwrap_or_default()
                     ),
-                    Duration::from_secs(retry),
-                ));
+                    cooldown: Duration::from_secs(retry),
+                });
             }
             return Ok(response);
         }
@@ -704,6 +719,30 @@ impl Transport {
         accept: &str,
         decode: impl Fn(&[u8]) -> Result<T, Error>,
     ) -> Result<T, String> {
+        self.read_inner(original, kind, accept, false, decode)
+            .and_then(|value| value.ok_or_else(|| "更新资源不存在".into()))
+    }
+
+    pub fn json_optional<T: serde::de::DeserializeOwned>(
+        &self,
+        original: &str,
+        kind: RequestKind,
+        accept: &str,
+    ) -> Result<Option<T>, String> {
+        self.read_inner(original, kind, accept, true, |bytes| {
+            serde_json::from_slice(bytes)
+                .map_err(|e| Error::remote(format!("发行信息格式错误：{e}")))
+        })
+    }
+
+    fn read_inner<T>(
+        &self,
+        original: &str,
+        kind: RequestKind,
+        accept: &str,
+        optional: bool,
+        decode: impl Fn(&[u8]) -> Result<T, Error>,
+    ) -> Result<Option<T>, String> {
         tauri::async_runtime::block_on(async {
             let original = self.validate_url(original).map_err(Error::Rejected)?;
             let deadline = Instant::now() + METADATA_BUDGET;
@@ -748,9 +787,19 @@ impl Transport {
                 match result {
                     Ok(value) => {
                         self.success(&route, kind);
-                        return Ok(value);
+                        return Ok(Some(value));
                     }
-                    Err(error @ Error::Remote(_, _)) => {
+                    Err(Error::Http {
+                        status: 404,
+                        origin: true,
+                        ..
+                    }) if optional => {
+                        // A proxy's 404 cannot confirm that a public Release is absent.
+                        self.check_cancelled()?;
+                        self.success(&route, kind);
+                        return Ok(None);
+                    }
+                    Err(error) if error.cooldown().is_some() => {
                         self.failure(&route, kind, index + 1, &error);
                         failures.push(format!("{}：{}", route.endpoint(), error.message()));
                     }
@@ -856,7 +905,7 @@ impl Transport {
                             std::fs::remove_file(path)
                                 .map_err(|e| Error::Local(format!("无法清理未完成下载：{e}")))?;
                         }
-                        if matches!(error, Error::Remote(_, _)) {
+                        if error.cooldown().is_some() {
                             self.failure(&route, RequestKind::File, index + 1, &error);
                             failures.push(format!("{}：{}", route.endpoint(), error.message()));
                         } else {
