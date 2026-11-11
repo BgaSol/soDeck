@@ -2,16 +2,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';import path from 'node:path';import {createServer} from 'node:http';
 import {chromium} from 'playwright';
 import {packageRoot,context} from './docker-process.mjs';
+import {readTestThemeTokens} from './test-theme-tokens.mjs';
 const root=packageRoot(),id='a'.repeat(64),second='b'.repeat(64),requests=[];
 const rows=[{id,name:'prod-api-中文',image:'api:2026.11',status:'running',health:'unhealthy',project:'shop',service:'api'},
   {id:second,name:'worker',image:'worker:1',status:'exited',health:null,project:'shop',service:'worker'}];
 let snapshot={kind:'browser',context,containerId:id,endpoint:'unix:///var/run/docker.sock',engine:{id:'engine',name:'prod-engine-01',version:'24.0.9',arch:'amd64'},revision:'1',nextIntent:'1',state:'ready',status:'running',observedAt:Date.now(),busy:false,paused:false,tail:200,navigation:{}};
 const env=[{key:'TOKEN',value:'a=b=c',secret:true},{key:'EMPTY',value:'',secret:true}];
 const logs=[{stream:'stdout',text:'2026-11-10T03:42:01.123Z 服务启动成功'},{stream:'stderr',text:'2026-11-10T03:42:02Z connection refused <script>boom()</script>'},{stream:'stdout',text:'repeat'},{stream:'stdout',text:'repeat'}];
-const themes=fs.readFileSync('src/themes.css','utf8');
-const parse=s=>Object.fromEntries([...s.matchAll(/--([\w-]+):\s*([^;]+);/g)].map(m=>[m[1],m[2].trim()]));
-const light=parse(themes.match(/:root \{([\s\S]*?)\n\s*\}/)[1]);
-const theme=t=>({...light,...(t==='light'?{}:parse(themes.match(new RegExp(':root\\[data-theme="'+t+'"\\] \\{([\\s\\S]*?)\\n\\s*\\}'))[1])),'color-scheme':t==='dark'?'dark':'light'});
 const server=createServer((req,res)=>{
   if(req.url==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><html><body style="margin:0"><iframe title="Docker 测试" style="border:0;width:100vw;height:100vh" src="/ui/index.html"></iframe></body></html>');return;}
   const file=path.resolve(root,'.'+decodeURIComponent(req.url.split('?')[0]));
@@ -20,6 +17,15 @@ const server=createServer((req,res)=>{
 });
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const browser=await chromium.launch({headless:true}),page=await browser.newPage({viewport:{width:320,height:780},reducedMotion:'reduce'});
+const contexts=browser.contexts().length,themes=await readTestThemeTokens(browser);
+assert.equal(browser.contexts().length,contexts,'Theme snapshots release their temporary page and context');
+for(const [name,tokens]of Object.entries(themes)){
+  assert(Object.values(tokens).every(value=>value!==''),name+' has all host theme tokens');
+  assert.equal(tokens['color-scheme'],name==='dark'?'dark':'light');
+  for(const key of ['sd-radius-control','sd-tab-height','sd-status-height','sd-hit-size'])assert.equal(tokens[key],themes.light[key],key+' stays stable across themes');
+}
+assert.notEqual(themes.light.canvas,themes.dark.canvas);
+assert.notEqual(themes.light.accent,themes.dopamine.accent);
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 await page.exposeFunction('mock',async d=>{
   requests.push(d);
@@ -58,7 +64,7 @@ await page.addInitScript(({snapshot,tokens})=>{
       catch(error){window.post('response',{id:m.id,error:error.message});}
     }
   });
-},{snapshot,tokens:theme('light')});
+},{snapshot,tokens:themes.light});
 const url='http://127.0.0.1:'+server.address().port;
 try{
   await page.goto(url);let frame=page.frames()[1];
@@ -105,7 +111,7 @@ try{
       assert(!(await frame.locator('#log-content').innerText()).includes('服务启动'));await frame.locator('#log-query').fill('');await frame.locator('#log-content').filter({hasText:'服务启动'}).waitFor();
     }
     for(const t of ['light','dark','dopamine'])for(const width of [200,320,400,900]){
-      await page.setViewportSize({width,height:780});await page.evaluate(tokens=>window.post('themeChanged',{tokens}),theme(t));
+      await page.setViewportSize({width,height:780});await page.evaluate(tokens=>window.post('themeChanged',{tokens}),themes[t]);
       assert(await frame.locator('body').evaluate(e=>e.scrollWidth<=e.clientWidth),mode+' '+t+' overflow '+width);
       await page.screenshot({path:'artifacts/docker-ui/'+mode+'-'+t+'-'+width+'.png'});
     }

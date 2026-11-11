@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createServer } from 'node:http';
 import { chromium } from 'playwright';
 import { path as chartPath } from '../plugins/system-status/ui/charts.js';
+import { readTestThemeTokens } from './test-theme-tokens.mjs';
 
 const root = path.resolve(process.env.SODECK_TEST_SYSTEM_STATUS_PLUGIN || 'plugins/system-status');
 const observed = Date.now();
@@ -31,10 +32,6 @@ assert.equal(chartPath([{ at: windowEnd, value: 20 }], 100, 15000, windowEnd + 1
 assert.equal(chartPath([{ at: 1000, value: 20 }], 100, 15000, windowEnd + 120000), '');
 assert.equal((chartPath([{ at: 280000, value: 20 }, { at: 285000, value: null }, { at: 290000, value: 30 }, { at: 300000, value: 40 }], 100, 15000, windowEnd).match(/M/g) || []).length, 2);
 
-const themesCss = fs.readFileSync('src/themes.css', 'utf8');
-const parseTokens = source => Object.fromEntries([...source.matchAll(/--([\w-]+):\s*([^;]+);/g)].map(m => [m[1], m[2].trim()]));
-const light = parseTokens(themesCss.match(/:root \{([\s\S]*?)\n\s*\}/)[1]);
-const themeTokens = theme => ({ ...light, ...(theme === 'light' ? {} : parseTokens(themesCss.match(new RegExp(':root\\[data-theme="' + theme + '"\\] \\{([\\s\\S]*?)\\n\\s*\\}'))[1])), 'color-scheme': theme === 'dark' ? 'dark' : 'light' });
 const server = createServer((req, res) => {
   if (req.url === '/') {
     res.setHeader('Content-Type', 'text/html');
@@ -48,6 +45,7 @@ const server = createServer((req, res) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const browser = await chromium.launch({ headless: true });
+const themes = await readTestThemeTokens(browser);
 const page = await browser.newPage({ viewport: { width: 320, height: 760 }, reducedMotion: 'reduce' });
 const errors = [];
 page.on('pageerror', e => errors.push(e.message));
@@ -97,7 +95,7 @@ await page.addInitScript(() => {
   });
 });
 async function applyTheme(theme) {
-  await page.evaluate(tokens => document.querySelector('iframe').contentWindow.postMessage({ channel: 'sodeck-ui-v2', type: 'themeChanged', surfaceId: 'test', tokens }, '*'), themeTokens(theme));
+  await page.evaluate(tokens => document.querySelector('iframe').contentWindow.postMessage({ channel: 'sodeck-ui-v2', type: 'themeChanged', surfaceId: 'test', tokens }, '*'), themes[theme]);
 }
 const frame = page.frameLocator('iframe');
 async function refresh() { await frame.getByRole('button', { name: '刷新', exact: true }).click(); await page.waitForFunction(() => !document.querySelector('iframe').contentDocument.querySelector('#refresh').disabled); }

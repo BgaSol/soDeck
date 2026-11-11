@@ -29,6 +29,8 @@ npm run dev
 
 OpenSSH、终端输入和正式 UI 测试使用 Node `util.parseArgs`；未知开关、非预期位置参数和缺失值在构建或资源启动前失败。OpenSSH 的第一个 `--packaged` 是启动器边界，前面的开关属于测试脚本，后面的程序、`--`、`-a` 等参数逐项原样透传，不能把测试开关放在后面。终端输入的 `--desktop-script <路径>` 保留第一个重复值，正式 UI 的 `--updates-only` 仍只选择更新专项。
 
+状态与 Docker UI 夹具在短命浏览器页面中加载共享 UI 与主题 CSS，通过宿主 `themeTokens()` 读取三主题的真实级联快照；页面用后关闭，业务 UI 仍使用独立插件目录的静态资源。主题读取需要锁定的 Node 版本和 Playwright Chromium，普通工程脚本回归不增加浏览器前提。
+
 界面测试需要 Playwright Chromium：
 
 ```sh
