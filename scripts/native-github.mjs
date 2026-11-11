@@ -75,22 +75,34 @@ export function nativeGithub(repository, token, request = fetch, wait = delay) {
       return bytes;
     },
     async download(route, file, expected) {
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      const partial = `${file}.part`;
       const result = await response(route, "application/octet-stream");
-      const hash = createHash("sha256"); let size = 0;
-      const count = new Transform({ transform(chunk, _encoding, callback) {
-        size += chunk.length; hash.update(chunk);
-        callback(size > expected.size ? new Error("Download exceeds expected size") : null, chunk);
-      } });
-      try {
-        await pipeline(Readable.fromWeb(result.body), count, fs.createWriteStream(partial));
-        checkBytes(size, hash.digest("hex"), expected);
-        fs.renameSync(partial, file);
-      } finally { fs.rmSync(partial, { force: true }); }
+      await writeVerifiedDownload(result, file, expected);
     },
   };
   return api;
+}
+
+export async function writeVerifiedDownload(response, file, expected, { signal } = {}) {
+  const partial = `${file}.part`;
+  let input, writing = false;
+  try {
+    if (!Number.isSafeInteger(expected?.size) || expected.size <= 0 || !/^[a-f0-9]{64}$/.test(expected.sha256 ?? "")) throw new Error("Invalid expected download size or SHA-256");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const hash = createHash("sha256"); let size = 0;
+    const count = new Transform({ transform(chunk, _encoding, callback) {
+      size += chunk.length; hash.update(chunk);
+      callback(size > expected.size ? new Error("Download exceeds expected size") : null, chunk);
+    } });
+    input = Readable.fromWeb(response.body);
+    writing = true;
+    await pipeline(input, count, fs.createWriteStream(partial), { signal });
+    checkBytes(size, hash.digest("hex"), expected);
+    fs.renameSync(partial, file);
+  } finally {
+    if (input) input.destroy();
+    else await response?.body?.cancel();
+    if (writing) fs.rmSync(partial, { force: true });
+  }
 }
 
 export function checkBytes(size, hash, expected) {

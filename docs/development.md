@@ -109,6 +109,8 @@ Windows 关闭生命周期交互验收使用 `node scripts/test-openssh.mjs --cl
 
 `Verify published release upgrade` 每次显式选择 `component`、`from_version` 和 `to_version`；插件还必须填写固定的 `core_version`。`platform` 默认 all，修复验收工具后可用相同版本对补跑单个平台；单平台结果不替代其余平台证据。五个原生 runner 下载精确正式 Release，固定 manifest/附件 ID、摘要与版本，不读取其他组件的最新版本。新版本必须大于旧版本。测试专用 `release-upgrade-fixture` 调用生产插件更新服务和官方 Tauri updater，核对包摘要、实际安装字节、重启激活、设置及服务器资料；Linux 核心升级另验 DEB 系统安装。夹具不发行，固定输入能力只编入 test-fixtures；远程业务和完整更新页面点击另行验证。正常发布无需在仓库提交运行 ID 或修改历史版本常量。
 
+原生包准备与正式升级测试共用流式 size/SHA-256 writer，先写同目录 `.part`，完整校验并关闭后才提交最终文件；截断、超量、错误摘要、I/O 错误或取消均清理本次临时文件并保留已有最终文件，清理失败明确报告。同一目标串行下载。升级测试的公开附件请求不发送认证头，仍可不提供 `GH_TOKEN`；每次请求的 120 秒期限覆盖响应头和正文。原生 GitHub API 客户端继续要求 token，来源固定与请求重试规则保持原样。纯下载和匿名请求回归不联网，也不代替实际版本对升级验收。
+
 系统默认应用验收使用 `node scripts/test-desktop-open-native.mjs <实际包内程序>`，仅在一次性 Actions runner 或显式 `SODECK_TEST_OPEN_ISOLATED=1` 的隔离桌面运行。Windows 编译无控制台 Rust handler，解析测试账户真实 UserChoice ProgID 并临时配置 HTTP/HTTPS 与目录关联，退出时恢复；目录收据按文件系统身份接受 8.3 别名，URL 仍逐字节校验。Linux 使用 xdg-utils、desktop-file-utils 和隔离 XDG 目录，在同一 dbus/Xvfb 会话设置默认 handler。脚本核对唯一 URL 与中文/空格/特殊字符目录各一次、非法目标拒绝和程序退出；Windows/Linux 另设启动器失败用例，Shell 处理坏关联可能超时，超时必须记为失败。`Verify native remote plugins` 显式开启 `desktop_open` 后在所选原生目标调用此入口，Linux 分别运行 DEB 内程序和 AppImage；夹具不发行，结果随 Native-verification-result 上传。
 
 macOS 用系统 clang、AppKit/LaunchServices、Apple Events 和 ad hoc 签名构建临时 app 并恢复关联。原生 Check 先运行 `node scripts/test-desktop-open-native.mjs --handler-only`。如果系统保留受保护的默认关联，此模式仅编译 handler 并标记 skipped；实际包模式仍验证核心交付、非法目标拒绝和退出，但报告 `targetsExactlyOnce:false` 与 `receiptSkipReason`，不能记作目标收据通过。关联可控时才核对 HTTP URL 和目录各到达一次。`/usr/bin/open` 成功不能确认目标应用后续状态；此专项不替代真实浏览器/Finder/Explorer 的可见窗口、UNC 或 Wayland 桌面验收。

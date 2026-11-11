@@ -7,8 +7,25 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import { upgradeInputs } from "./upgrade-inputs.mjs";
+import { writeVerifiedDownload } from "./native-github.mjs";
 
+export async function download(asset, directory, request = fetch) {
+  assert(asset && /^sha256:[0-9a-f]{64}$/.test(asset.digest), "Release asset must have a GitHub SHA-256 digest");
+  const filename = path.join(directory, asset.name);
+  assert.equal(path.basename(filename), asset.name);
+  const signal = AbortSignal.timeout(120_000);
+  const response = await request(asset.browser_download_url, { signal });
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw new Error(`Download ${asset.name}: ${response.status}`);
+  }
+  await writeVerifiedDownload(response, filename, { size: asset.size, sha256: asset.digest.slice(7) }, { signal });
+  return filename;
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
 const { target, component, from, to, current, version } = upgradeInputs(process.env);
 assert.equal(target, `${process.arch === "arm64" ? "aarch64" : "x86_64"}-${{ win32: "pc-windows-msvc", linux: "unknown-linux-gnu", darwin: "apple-darwin" }[process.platform]}`);
 const output = path.resolve("artifacts/release-upgrade", target);
@@ -29,23 +46,11 @@ function native(command, args, env = {}) {
   else run(command, args, env);
 }
 async function release(tag) {
-  const response = await fetch(`https://api.github.com/repos/BgaSol/soDeck/releases/tags/${tag}`, { headers: { "User-Agent": "SoDeck-native-upgrade-test", ...(process.env.GH_TOKEN ? { Authorization: `Bearer ${process.env.GH_TOKEN}` } : {}) } });
+  const response = await fetch(`https://api.github.com/repos/BgaSol/soDeck/releases/tags/${tag}`, { signal: AbortSignal.timeout(120_000), headers: { "User-Agent": "SoDeck-native-upgrade-test", ...(process.env.GH_TOKEN ? { Authorization: `Bearer ${process.env.GH_TOKEN}` } : {}) } });
   assert(response.ok, `Release ${tag}: ${response.status}`);
   const result = await response.json();
   assert.equal(result.draft, false); assert.equal(result.prerelease, false); assert.equal(result.tag_name, tag);
   return result;
-}
-async function download(asset, directory) {
-  assert(asset && /^sha256:[0-9a-f]{64}$/.test(asset.digest), "Release asset must have a GitHub SHA-256 digest");
-  fs.mkdirSync(directory, { recursive: true });
-  const filename = path.join(directory, asset.name);
-  assert.equal(path.basename(filename), asset.name);
-  const response = await fetch(asset.browser_download_url);
-  assert(response.ok, `Download ${asset.name}: ${response.status}`);
-  const bytes = Buffer.from(await response.arrayBuffer());
-  assert.equal(bytes.length, asset.size); fs.writeFileSync(filename, bytes);
-  assert.equal(digest(filename), asset.digest.slice(7));
-  return filename;
 }
 function asset(release, name) {
   const matches = release.assets.filter(a => a.name === name);
@@ -165,4 +170,5 @@ try {
   } finally {
     fs.writeFileSync(path.join(output, "result.json"), JSON.stringify(report, null, 2));
   }
+}
 }
