@@ -27,6 +27,8 @@ npm run dev
 | `npm run interactions:test` | 浏览器真实按压刷新、文件菜单可用状态、子菜单与溢出回归；需要 Playwright Chromium |
 | `npm run layout:test` | 真实 UI v2 插件进程和核心的嵌套分屏、独立创建、比例键盘/取消、紧凑恢复、页面返回来源、两工作台原子返回与草稿连续性；浏览器页面替代原生窗口，不能替代系统手势验收 |
 
+OpenSSH、终端输入和正式 UI 测试使用 Node `util.parseArgs`；未知开关、非预期位置参数和缺失值在构建或资源启动前失败。OpenSSH 的第一个 `--packaged` 是启动器边界，前面的开关属于测试脚本，后面的程序、`--`、`-a` 等参数逐项原样透传，不能把测试开关放在后面。终端输入的 `--desktop-script <路径>` 保留第一个重复值，正式 UI 的 `--updates-only` 仍只选择更新专项。
+
 界面测试需要 Playwright Chromium：
 
 ```sh

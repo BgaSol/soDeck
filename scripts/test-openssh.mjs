@@ -7,7 +7,9 @@ import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { testPluginDirectory } from "./test-plugin-directory.mjs";
 import { testCurl } from "./network-tools.mjs";
+import { parseOpenSshTestArgs } from "./test-cli-arguments.mjs";
 
+const { flags, launcher } = parseOpenSshTestArgs(process.argv.slice(2));
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-openssh-"));
 const sshd = process.env.SODECK_SSHD ?? (process.platform === "win32" ? path.join(process.env.WINDIR, "System32/OpenSSH/sshd.exe") : "/usr/sbin/sshd");
 const quote = value => `"${value.replaceAll("\\", "/")}"`;
@@ -38,24 +40,22 @@ try {
     if (ready) break;
   }
   if (!ready) throw new Error("OpenSSH did not listen within 5 seconds");
-  const packagedIndex=process.argv.indexOf("--packaged");
-  if (packagedIndex !== -1) {
-    const executable=process.argv.slice(packagedIndex+1); if (!executable.length) throw new Error("--packaged requires the installed executable or launcher command");
+  if (launcher) {
     const config=path.join(directory,"validation.json");
     const remoteFile=path.join(directory,'native-file.txt');fs.writeFileSync(remoteFile,'sodeck-native-original\n');
     fs.writeFileSync(config,JSON.stringify({port,username,privateKeyPath:path.join(directory,"user"),remoteFile:remoteFile.replaceAll('\\','/')}));
     const result=await new Promise((resolve,reject)=>{
-      const smoke=spawn(process.execPath,[process.argv.includes('--file-editor-native')?"scripts/test-file-editor-native.mjs":process.argv.includes('--close-native')?"scripts/test-close-native.mjs":"scripts/smoke.mjs",...executable],{windowsHide:true,stdio:"inherit",env:{...process.env,SODECK_TEST_SSH_CONFIG:config}});
+      const smoke=spawn(process.execPath,[flags['file-editor-native']?"scripts/test-file-editor-native.mjs":flags['close-native']?"scripts/test-close-native.mjs":"scripts/smoke.mjs",...launcher],{windowsHide:true,stdio:"inherit",env:{...process.env,SODECK_TEST_SSH_CONFIG:config}});
       smoke.on("error",reject);smoke.on("exit",resolve);
     });
     if (result!==0) throw new Error(`Packaged OpenSSH validation failed (${result}): ${diagnostic}`);
   } else {
-    const communication=process.argv.includes('--communication');
-    const terminal=process.argv.includes('--terminal')||communication;
-    const files=process.argv.includes('--files')||communication;
-    const network=process.argv.includes('--network');
-    const status=process.argv.includes('--system-status')||communication;
-    const uiOnly=communication||(files&&process.argv.includes('--files-ui-only'))||(network&&process.argv.includes('--network-ui-only'));
+    const communication=flags.communication;
+    const terminal=flags.terminal||communication;
+    const files=flags.files||communication;
+    const network=flags.network;
+    const status=flags['system-status']||communication;
+    const uiOnly=communication||(files&&flags['files-ui-only'])||(network&&flags['network-ui-only']);
     const env={ ...process.env, SODECK_TEST_SSH_PORT: String(port), SODECK_TEST_SSH_USER: username, SODECK_TEST_SSH_KEY: path.join(directory, "user") };
     if(network) env.SODECK_TEST_CURL=await testCurl();
     for(const plugin of [terminal?'terminal':null,files?'files':null,network?'network-proxy':null,status?'system-status':null].filter(Boolean)){

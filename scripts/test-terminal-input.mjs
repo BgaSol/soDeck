@@ -5,12 +5,13 @@ import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {createServer} from 'vite';
 import {chromium} from 'playwright';
+import {parseTerminalInputTestArgs} from './test-cli-arguments.mjs';
+const {desktopScript}=parseTerminalInputTestArgs(process.argv.slice(2));
 const build=spawnSync(process.execPath,['build.mjs'],{cwd:'plugins/terminal',stdio:'inherit',windowsHide:true});
 if(build.status!==0)throw new Error('Terminal UI build failed; install its locked dependencies first');
 const vite=await createServer({server:{host:'127.0.0.1',port:0}});await vite.listen();const url=vite.resolvedUrls.local[0];
 const browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:1024,height:700}});
-const desktopArg=process.argv.indexOf('--desktop-script');
-if(desktopArg!==-1)await page.addInitScript({content:fs.readFileSync(process.argv[desktopArg+1],'utf8')});
+if(desktopScript!==undefined)await page.addInitScript({content:fs.readFileSync(desktopScript,'utf8')});
 const errors=[];page.on('pageerror',error=>errors.push(String(error)));
 let requestedPlatform='Win32',holdMount=true;
 const harness=()=>`<!doctype html><html data-theme="dopamine"><head><meta charset="utf-8"></head><body><button id="outside">外部焦点</button><iframe id="terminal" style="width:900px;height:480px;border:0"></iframe><script type="module">

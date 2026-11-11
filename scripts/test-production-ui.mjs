@@ -11,7 +11,9 @@ import { preview } from "vite";
 import { chromium } from "playwright";
 import { assertMenuLayout } from "./menu-layout.mjs";
 import { recordTrace } from './ui-trace.mjs';
+import { parseProductionUiTestArgs } from './test-cli-arguments.mjs';
 
+const { updatesOnly } = parseProductionUiTestArgs(process.argv.slice(2));
 const build = spawnSync("cargo", ["build", "--manifest-path", "src-tauri/Cargo.toml", "--features", "test-fixtures", "--bin", "catalog-fixture", "--bin", "plugin-fixture", "--bin", "workspace-ui-fixture", "--locked"], { stdio: "inherit" });
 if (build.status !== 0) throw new Error("Catalog test bridge build failed");
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-production-ui-"));
@@ -679,7 +681,7 @@ try {
   }
   await page.locator('[data-action="close-layer"]').click();
   checks.push('Unified updates: Markdown headings/lists/code/tables and external-link dispatch, real plugin batch checks/downloads and independent failure/retry, keyboard selection, preserved prepared versions, source drafts/disclosures/focus, deduplicated plugin overview and three themes at 1100x720, 880x576, 734x480 and 720x480');
-  if (!process.argv.includes('--updates-only')) {
+  if (!updatesOnly) {
   await call('fixture_load_plugin',{directory:uiFixture});
   const workspace=await call('workspace_fixture_open',{serverId:serverIds[0],connectionId:'bundled-menu-test',endpoint:'root@192.0.2.10:22'});
   await page.reload();

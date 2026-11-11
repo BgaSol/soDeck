@@ -9,6 +9,7 @@ import { parsePluginBuildArgs } from './package-plugin.mjs';
 import { parseReleaseMetadataArgs, pluginConfig } from './release-metadata.mjs';
 import { parseTestPrepareArgs } from './prepare-test-plugins.mjs';
 import { selectChecks } from './select-checks.mjs';
+import { parseOpenSshTestArgs, parseTerminalInputTestArgs, parseProductionUiTestArgs } from './test-cli-arguments.mjs';
 
 test('plugin build parses existing flags and leaves runtime defaults to the build entry', () => {
   assert.deepEqual(parsePluginBuildArgs(['--plugin', 'terminal']), { plugin: 'terminal', target: undefined, outDir: undefined });
@@ -142,4 +143,68 @@ test('argument unit tests select script checks without native or plugin builds',
   assert(!plan.web && !plan.browser && !plan.core);
   assert.deepEqual(plan.native, []);
   assert.deepEqual(plan.integration, []);
+});
+
+test('remaining OpenSSH arguments retain every flag and opaque packaged launcher tail', () => {
+  const names = ['terminal', 'files', 'network', 'system-status', 'communication', 'files-ui-only', 'network-ui-only', 'file-editor-native', 'close-native'];
+  const defaults = parseOpenSshTestArgs([]);
+  assert.deepEqual({ ...defaults.flags }, {});
+  assert.equal(defaults.launcher, null);
+  const parsed = parseOpenSshTestArgs(names.map(name => `--${name}`));
+  assert.deepEqual({ ...parsed.flags }, Object.fromEntries(names.map(name => [name, true])));
+  assert.equal(parseOpenSshTestArgs(['--terminal', '--terminal']).flags.terminal, true);
+  const tail = ['dbus-run-session', '--', 'xvfb-run', '-a', '程序 with spaces', '--close-native', '--file-editor-native', '--packaged'];
+  const packaged = parseOpenSshTestArgs(['--terminal', '--packaged', ...tail]);
+  assert.deepEqual(packaged.launcher, tail);
+  assert.deepEqual({ ...packaged.flags }, { terminal: true });
+  assert.deepEqual(parseOpenSshTestArgs(['--file-editor-native', '--close-native', '--packaged', 'C:\\程序 with spaces.exe']).launcher, ['C:\\程序 with spaces.exe']);
+});
+
+test('remaining terminal and production UI arguments keep defaults and first path priority', () => {
+  assert.deepEqual(parseTerminalInputTestArgs([]), { desktopScript: undefined });
+  assert.deepEqual(parseTerminalInputTestArgs(['--desktop-script=脚本 with spaces.js']), { desktopScript: '脚本 with spaces.js' });
+  assert.deepEqual(parseTerminalInputTestArgs(['--desktop-script', 'first', '--desktop-script', 'second']), { desktopScript: 'first' });
+  assert.deepEqual(parseProductionUiTestArgs([]), { updatesOnly: false });
+  assert.deepEqual(parseProductionUiTestArgs(['--updates-only', '--updates-only']), { updatesOnly: true });
+});
+
+test('remaining test arguments reject missing values, unknown flags and unexpected positions', () => {
+  for (const args of [['--unknown'], ['terminal'], ['--terminal=true'], ['--packaged=program']]) {
+    assert.throws(() => parseOpenSshTestArgs(args), error => error.code?.startsWith('ERR_PARSE_ARGS_'));
+  }
+  for (const args of [['--packaged'], ['--packaged', '']]) assert.throws(() => parseOpenSshTestArgs(args), /--packaged requires/);
+  for (const args of [['--desktop-script'], ['--desktop-script', '--unknown'], ['--unknown'], ['script.js']]) {
+    assert.throws(() => parseTerminalInputTestArgs(args), error => error.code?.startsWith('ERR_PARSE_ARGS_'));
+  }
+  assert.throws(() => parseTerminalInputTestArgs(['--desktop-script', '']), /nonempty path/);
+  for (const args of [['--unknown'], ['updates'], ['--updates-only=true']]) {
+    assert.throws(() => parseProductionUiTestArgs(args), error => error.code?.startsWith('ERR_PARSE_ARGS_'));
+  }
+});
+
+test('remaining test argument import and executable failures occur before resource startup', t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sodeck-test-cli-'));
+  t.after(() => { assert.equal(path.dirname(directory), os.tmpdir()); fs.rmSync(directory, { recursive: true, force: true }); });
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toLowerCase() !== 'path'));
+  env.PATH = directory; env.TMP = directory; env.TEMP = directory;
+  const imported = spawnSync(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(new URL('./test-cli-arguments.mjs', import.meta.url).href)});`], {
+    cwd: directory, env, encoding: 'utf8', windowsHide: true,
+  });
+  assert.equal(imported.status, 0, imported.stderr);
+  assert.equal(imported.stdout, '');
+  for (const [script, args, error] of [
+    ['test-openssh.mjs', ['--unknown'], /ERR_PARSE_ARGS_/],
+    ['test-openssh.mjs', ['--packaged'], /--packaged requires/],
+    ['test-terminal-input.mjs', ['--desktop-script'], /ERR_PARSE_ARGS_/],
+    ['test-terminal-input.mjs', ['--desktop-script', ''], /nonempty path/],
+    ['test-production-ui.mjs', ['--unknown'], /ERR_PARSE_ARGS_/],
+  ]) {
+    const result = spawnSync(process.execPath, [fileURLToPath(new URL(script, import.meta.url)), ...args], {
+      cwd: directory, env, encoding: 'utf8', windowsHide: true,
+    });
+    assert.notEqual(result.status, 0, script);
+    assert.match(result.stderr, error, script);
+    assert.equal(result.stdout, '', script);
+    assert.deepEqual(fs.readdirSync(directory), [], script);
+  }
 });
