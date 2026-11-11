@@ -2,17 +2,29 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import MarkdownIt from 'markdown-it';
+
+const markdown = new MarkdownIt({ html: false, linkify: false });
+// Preserve malformed percent escapes for the existing path validation.
+markdown.normalizeLink = href => href;
+
+function markdownDestinations(source) {
+  const env = {};
+  const tokens = markdown.parse(source, env);
+  const links = tokens.flatMap(token => token.children ?? []).flatMap(token => {
+    if (token.type === 'link_open') return [token.attrGet('href')];
+    if (token.type === 'image') return [token.attrGet('src')];
+    return [];
+  });
+  return new Set([...links, ...Object.values(env.references ?? {}).map(ref => ref.href)]);
+}
 
 export function checkMarkdown(file, source, root = process.cwd()) {
   const errors = [];
   if (!source.endsWith('\n')) errors.push(`${file}: missing final newline`);
   if (/^(<{7}|={7}|>{7})( |$)/m.test(source)) errors.push(`${file}: unresolved merge marker`);
   // Check file destinations, not remote URLs or heading fragments; no network access needed.
-  const prose = source.replace(/^([ \t]*)(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1\2[^\n]*(?:\n|$)/gm, '').replace(/`[^`\n]+`/g, '');
-  const links = [...prose.matchAll(/!?\[[^\]\n]*\]\((<[^>\n]+>|[^\s)\n]+)(?:\s+["'][^\n]*?["'])?\)/g),
-    ...prose.matchAll(/^\s*\[[^\]\n]+\]:\s*(<[^>\n]+>|[^\s\n]+)/gm)];
-  for (const match of links) {
-    const href = match[1].replace(/^<|>$/g, '');
+  for (const href of markdownDestinations(source)) {
     if (/^(?:[a-z][a-z\d+.-]*:|\/\/|#)/i.test(href)) continue;
     let destination;
     try { destination = decodeURIComponent(href.split(/[?#]/)[0]); }

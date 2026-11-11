@@ -160,11 +160,11 @@ npm run plugin:build -- --plugin docker
 
 Check 始终响应 main push/PR，不使用 workflow 级 `paths` 跳过。`select` 使用 push 的 before/after，PR 使用 base/head 的 merge-base；删除和重命名同时计入原路径。取不到完整差异、新分支零 before、未知路径、共享客户端、工具链和构建输入按扩大范围验证。选择规则集中在 [select-checks.mjs](../scripts/select-checks.mjs)，不维护依赖图。
 
-文档检查只用 Node，运行 `node scripts/check-docs.mjs` 校验全部已提交 Markdown 的结尾换行、冲突标记和本地文件链接（含图片和引用式链接）；不访问外部网址或校验标题锚点。删除/重命名文档也会检查其他文档留下的链接。`format` 保留为最终汇总状态：选中的任务失败、取消或缺失会失败；未选中的任务显示 skipped，不代表测试通过。分支保护应使用始终出现的汇总状态；未选中的矩阵任务可能不出现。
+文档检查使用 Node 和根 `package-lock.json` 锁定的现有运行时依赖；`select` 先运行 `npm ci --ignore-scripts --omit=dev`，再运行 `node scripts/check-docs.mjs` 校验全部已提交 Markdown 的结尾换行、冲突标记和本地文件链接（含图片和引用式链接）。此检查不安装 Rust 或插件依赖，不执行产品构建，也不访问外部网址或校验标题锚点。删除/重命名文档也会检查其他文档留下的链接。`format` 保留为最终汇总状态：选中的任务失败、取消或缺失会失败；未选中的任务显示 skipped，不代表测试通过。分支保护应使用始终出现的汇总状态；未选中的矩阵任务可能不出现。
 
 | 自动改动范围 | 实际选择 |
 | --- | --- |
-| Markdown、docs 下的说明/配图 | 仅文档检查；不安装 npm/Rust，不构建产品 |
+| Markdown、docs 下的说明/配图 | 仅文档检查及其根目录依赖准备；不安装 Rust/插件依赖，不构建产品 |
 | 核心前端 | 脚本、Linux 完整 UI（含 interactions、settings、正式前端构建/tsc）；不因此运行 SSH、网络或原生 Rust 矩阵 |
 | Tauri 版本/核心配置、capabilities | 核心格式/脚本、Linux 完整 UI 与五平台原生核心；不追加插件源码和普通网络/文件/终端业务 |
 | 单插件 UI/发行元数据 | 脚本和该插件普通业务验收；终端额外验证输入，网络使用 Linux 两架构，文件/终端使用 Linux x86_64 |
@@ -195,7 +195,7 @@ Check 的 **Run workflow** 先选择需要验证的分支或标签，再选择 `
 
 自动 Windows `desktop` 仅执行已选中的 SSH/系统专项；手动 `desktop` 保留完整 Windows UI 对照。Linux integration 使用三行矩阵：网络 x86_64、网络 ARM64，以及文件/终端/状态/Docker/通信的 x86_64 业务组；最多 3 行并行，各行自己的目录、端口、进程和 target，组内串行。单插件变化只生成所需行。三个任务恢复适用的既有 `network-tests` 缓存，未新增按业务组划分的大缓存键。
 
-相关工作流/本地 action 变化和手动 `all` 使用校验下载摘要的 actionlint 1.7.12；纯文档仍只运行 Node 文档检查。`format` 汇总包含新增 `browser`，选中后失败、取消、跳过或缺失均不能通过。浏览器、Windows desktop 和 integration 的诊断 Artifact 在成功/失败时均上传，保留 14 天；发行/实际包的 30 天保留规则不变。
+相关工作流/本地 action 变化和手动 `all` 使用校验下载摘要的 actionlint 1.7.12；纯文档仍按本节文档检查范围执行。`format` 汇总包含新增 `browser`，选中后失败、取消、跳过或缺失均不能通过。浏览器、Windows desktop 和 integration 的诊断 Artifact 在成功/失败时均上传，保留 14 天；发行/实际包的 30 天保留规则不变。
 
 `native-core` 覆盖当前核心单元测试及 `tests/lifecycle.rs`、`close_lifecycle.rs`、`updates.rs`、`update_network.rs`、`connections.rs`、`component_ui.rs`、`settings.rs`、`servers.rs`、`streams.rs`、`window_config.rs`、`workspaces.rs`；Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 都在对应原生 runner 执行。`platform`、`desktop_files`、桌面行为及更新等系统分支随原生测试验证。标记为 ignored 的真实远端用例仍由对应 SSH/终端/文件/网络专项提供环境后显式运行，不能把 `native-core` 通过当作这些专项已通过。
 

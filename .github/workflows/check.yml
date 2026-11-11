@@ -34,8 +34,12 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
       - id: scope
         run: node scripts/select-checks.mjs
+      - name: Install locked documentation dependencies
+        run: npm ci --ignore-scripts --omit=dev
       - name: Check documentation structure and local file links
         run: node scripts/check-docs.mjs
       - name: Lint GitHub Actions workflows

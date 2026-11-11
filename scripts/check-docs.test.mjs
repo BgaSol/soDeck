@@ -17,6 +17,12 @@ test('Markdown validates relative, encoded, root and image destinations without 
     assert.match(checkMarkdown('docs/README.md', source, root).join('\n'), /missing local link target: \/image.png/);
     assert.match(checkMarkdown('docs/README.md', '[bad](%zz.md)\n', root).join('\n'), /invalid link encoding/);
     assert.match(checkMarkdown('docs/README.md', '[ref]: absent.md\n', root).join('\n'), /missing local link target/);
+    assert.match(checkMarkdown('docs/README.md', '[outer [inner]](absent.md)\n', root).join('\n'), /missing local link target: absent\.md/);
+    fs.writeFileSync(path.join(root, 'docs', 'file(one).md'), 'ok');
+    assert.deepEqual(checkMarkdown('docs/README.md', '[nested [label]](file\\(one\\).md)\n', root), []);
+    assert.deepEqual(checkMarkdown('docs/README.md', '[balanced](file(one).md)\n', root), []);
+    fs.writeFileSync(path.join(root, 'image.png'), 'image');
+    assert.deepEqual(checkMarkdown('docs/README.md', '![image][asset]\n\n[asset]: /image.png\n', root), []);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -24,4 +30,5 @@ test('Markdown checks merge markers/newlines and ignores links in code examples'
   assert.equal(checkMarkdown('README.md', 'no newline').length, 1);
   assert.match(checkMarkdown('README.md', '<<<<<<< conflict\n').join('\n'), /merge marker/);
   assert.deepEqual(checkMarkdown('README.md', '`[example](absent.md)`\n\n```md\n[example](absent.md)\n```\n\n~~~md\n[example](absent.md)\n~~~\n'), []);
+  assert.deepEqual(checkMarkdown('README.md', '    [example](absent.md)\n\n``[example](absent.md)``\n', ''), []);
 });
