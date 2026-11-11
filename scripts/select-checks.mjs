@@ -79,6 +79,8 @@ export function selectChecks(files, { suite, fallback } = {}) {
   } else {
     for (const file of files) {
       if (file.endsWith('.md') || file.startsWith('docs/')) continue;
+      if (file === 'scripts/test-cli-arguments.mjs') { full(); continue; }
+      if (file === 'scripts/test-theme-tokens.mjs') { plan.scripts = true; integration.add('system-status'); integration.add('docker'); continue; }
       if (file.startsWith('.github/workflows/') || file.startsWith('.github/actions/')) plan.workflow = true;
       if (/^(src\/component-state\.ts|src-tauri\/src\/shared_state(\/|\.)|plugins\/shared\/state\.js|scripts\/(test-component-communication\.mjs|component-state\.test\.mjs|fixtures\/shared-state\.json))$/.test(file)||file==='src-tauri/src/shared_state.rs'||file.startsWith('src-tauri/src/shared_state/')){communication();core();plan.sharedClient=true;['terminal','files','system-status'].forEach(plugin);continue;}
       if (file.startsWith('src/')) {
@@ -131,7 +133,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
         core(); ui();
         continue;
       }
-      if (/^scripts\/(select-checks|check-docs|cli-arguments|core-release|release-metadata|collect-core|cargo-package|resolve-native-inputs|prepare-native-packages|run-ci-suite)\.test\.mjs$/.test(file) || /^scripts\/(select-checks|check-docs)\.mjs$/.test(file)) { plan.scripts = true; continue; }
+      if (/^scripts\/(select-checks|check-docs|cli-arguments|verified-download|core-release|release-metadata|collect-core|cargo-package|resolve-native-inputs|prepare-native-packages|run-ci-suite)\.test\.mjs$/.test(file) || /^scripts\/(select-checks|check-docs)\.mjs$/.test(file)) { plan.scripts = true; continue; }
       if (file === 'scripts/fixtures/events.js') { plan.scripts = true; ['terminal', 'files', 'network-proxy'].forEach(name => integration.add(name)); continue; }
       if(file==='scripts/workbench-transfer-fixture.mjs'){ui();plan.communication=true;['terminal','files','system-status'].forEach(name=>integration.add(name));continue;}
       if (file === 'scripts/test-close-native.mjs' || file === 'scripts/native-pointer.ps1') { core(); ui(); plan.ssh = true; continue; }

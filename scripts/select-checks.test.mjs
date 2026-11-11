@@ -15,6 +15,18 @@ test('shared client runs its own native tests and known script-only regressions 
   assert(release.scripts); assert.equal(release.core, false); assert.equal(release.integration.length, 0);
   assert(selectChecks(['scripts/core-release.test.mjs', 'unknown-input']).core);
 });
+
+test('test helpers select their existing consumers and download unit tests stay script-only',()=>{
+  const cli=selectChecks(['scripts/test-cli-arguments.mjs']);
+  assert(cli.scripts&&cli.terminalInput&&cli.browser&&cli.ssh);
+  assert.equal(cli.native.length,5);assert(cli.integration.some(row=>row.network));
+  const theme=selectChecks(['scripts/test-theme-tokens.mjs']);
+  assert(theme.scripts);assert.deepEqual(theme.native,[]);
+  assert.equal(theme.integration.length,1);assert(theme.integration[0].status&&theme.integration[0].docker);
+  assert(!theme.browser&&!theme.terminalInput&&!theme.ssh&&!theme.desktop);
+  const download=selectChecks(['scripts/verified-download.test.mjs']);
+  assert(download.scripts);assert.deepEqual(download.native,[]);assert.deepEqual(download.integration,[]);
+});
 test('shared state selects its native source, SDK and actual three-plugin communication',()=>{for(const file of ['src/component-state.ts','src-tauri/src/shared_state.rs','src-tauri/src/shared_state/delivery.rs','plugins/shared/state.js']){const p=selectChecks([file]);assert(p.communication&&p.sharedClient&&p.core);assert(p.integration.some(t=>t.communication&&t.terminal&&t.files&&t.status));assert.deepEqual(p.plugins,['terminal','files','system-status']);}assert(selectChecks(['plugins/files/ui/tree.js']).communication);});
 
 test('documentation produces an explicit lightweight check without product suites', () => {
