@@ -39,11 +39,10 @@ fn main() {
         match frame["method"].as_str() {
             Some("state.changed") => {
                 let p = &frame["params"];
-                fs::write(
-                    format!("{}/shared-frame", data.as_ref().unwrap()),
-                    p.to_string(),
-                )
-                .unwrap();
+                let path = format!("{}/shared-frame", data.as_ref().unwrap());
+                let pending = format!("{path}.tmp");
+                fs::write(&pending, p.to_string()).unwrap();
+                fs::rename(pending, path).unwrap();
                 send(
                     json!({"jsonrpc":"2.0","id":frame["id"],"result":{"accepted":true,"batchId":p["batchId"],"part":p["part"],"appliedRevision":p["toRevision"]}}),
                 );
