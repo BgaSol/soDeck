@@ -61,12 +61,23 @@ try{
    await page.waitForFunction(()=>[...document.querySelectorAll('.view-lines span[class^="mtk"]')].some(el=>el.textContent.replaceAll('"','')==='ordinary'));
  };
  const commentColors=[];
- const dollarText='// lineMarker\n/* blockMarker\nblockContinuation */\n'+JSON.stringify({plain:'ordinary',dollar:'$HOME',braced:'${HOME}',lone:'$'},null,2);
+ const jsonText=JSON.stringify({plain:'ordinary',dollar:'$HOME',braced:'${HOME}',lone:'$',array:['arrayValue'],enabled:true,nothing:null},null,2).replace('"plain":','"plain"\n  :');
+ const dollarText='// lineMarker\n/* blockMarker\nblockContinuation */\n'+jsonText;
  for(const path of ['data.json','data.jsonc']){
+   await mountColored(path,jsonText);
+   for(const dark of [false,true]){
+     await page.evaluate(dark=>editor.theme({panel:dark?'#202732':'#ffffff',text:dark?'#e5eaf3':'#263044',muted:dark?'#a5afbd':'#64748b','color-scheme':dark?'dark':'light'}),dark);
+     await page.waitForFunction(expected=>{const span=[...document.querySelectorAll('.view-lines span[class^="mtk"]')].find(el=>el.textContent.replaceAll('"','')==='ordinary');return span&&getComputedStyle(span).color===expected;},dark?'rgb(226, 185, 144)':'rgb(153, 81, 38)');
+     const ordinary=await tokenColor('ordinary'),key=dark?'rgb(156, 203, 255)':'rgb(23, 92, 158)';
+     assert.equal(ordinary,dark?'rgb(226, 185, 144)':'rgb(153, 81, 38)',`${path}: string value keeps its theme color`);
+     assert.equal(await tokenColor('plain'),key,`${path}: multiline property name keeps its theme color`);
+     assert.equal(await tokenColor('dollar'),key,`${path}: inline property name keeps its theme color`);
+     for(const value of ['$HOME','${HOME}','$','arrayValue'])assert.equal(await tokenColor(value),ordinary,`${path}: literal and array strings stay string content`);
+     for(const value of ['true','null'])assert.equal(await tokenColor(value),dark?'rgb(207, 183, 255)':'rgb(104, 64, 163)',`${path}: keyword keeps its theme color`);
+   }
+   assert.equal(await page.evaluate(()=>editor.value()),jsonText,'Coloring does not edit the document');
    await mountColored(path,dollarText);
-   const ordinary=await tokenColor('ordinary');
-   for(const value of ['$HOME','${HOME}','$'])assert.equal(await tokenColor(value),ordinary,`${path}: dollar signs stay string content`);
-   assert.equal(await page.evaluate(()=>editor.value()),dollarText,'Coloring does not edit the document');
+   assert.equal(await page.evaluate(()=>editor.value()),dollarText,'Comment coloring does not edit the document');
    commentColors.push([await tokenColor('lineMarker',false),await tokenColor('blockContinuation',false)]);
  }
  assert.notEqual(commentColors[0][0],commentColors[1][0],'Only JSONC colors line comments');

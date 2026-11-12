@@ -1,4 +1,5 @@
 import * as monaco from 'monaco-editor/editor/editor.api.js';
+import {createTokenizationSupport} from 'monaco-editor/languages/features/json/tokenization.js';
 import 'monaco-editor/languages/definitions/yaml/register.js';
 import 'monaco-editor/languages/definitions/shell/register.js';
 import 'monaco-editor/languages/definitions/powershell/register.js';
@@ -19,7 +20,17 @@ const strings: monaco.languages.IMonarchLanguage['tokenizer'] = {
   double: [[/[^\\"$]+/,'string'],[/\\./,'string.escape'],[/\$(?:\{[^}]*\}|\w+)/,'variable'],[/"/,'string','@pop']],
   single: [[/[^']+/,'string'],[/'/,'string','@pop']],
 };
-for(const id of ['json','jsonc'])monaco.languages.setMonarchTokensProvider(id,{tokenizer:{root:[...(id==='jsonc'?[[/\/\/.*$/,'comment'],[/\/\*/,'comment','@comment']]:[]) as monaco.languages.IMonarchLanguageRule[],[/"(?:[^"\\]|\\.)*"(?=\s*:)/,'key'],[/"/,'string','@double'],[/\b(?:true|false|null)\b/,'keyword'],[/-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/,'number'],[/[{}[\],:]/,'delimiter']],double:[[/[^\\"]+/,'string'],[/\\./,'string.escape'],[/"/,'string','@pop']],comment:[[/[^*/]+/,'comment'],[/\*\//,'comment','@pop'],[/[*/]/,'comment']]}});
+const jsonTokens=createTokenizationSupport(false);
+monaco.languages.setTokensProvider('jsonc',createTokenizationSupport(true));
+monaco.languages.setTokensProvider('json',{
+  ...jsonTokens,
+  tokenize(line,state){
+    const result=jsonTokens.tokenize(line,state);
+    // Monaco 0.57 ignores supportComments; JSON keeps comments uncolored.
+    for(const token of result.tokens)if(token.scopes.startsWith('comment.'))token.scopes='';
+    return result;
+  },
+});
 monaco.languages.setMonarchTokensProvider('nginx',{tokenizer:{root:[[/#.*$/,'comment'],[/\$[\w]+/,'variable'],[/"/,'string','@double'],[/'/,'string','@single'],[/^\s*[\w]+/,'keyword'],[/\b\d+(?:[kKmMgG]|ms|s)?\b/,'number'],[/[{};]/,'delimiter']],...strings}});
 monaco.languages.setMonarchTokensProvider('dotenv',{tokenizer:{root:[[/#.*$/,'comment'],[/^\s*(?:export\s+)?[\w]+(?=\s*=)/,'key'],[/\$\{[^}]+\}|\$\w+/,'variable'],[/"/,'string','@double'],[/'/,'string','@single'],[/=/,'delimiter']],...strings}});
 monaco.languages.setMonarchTokensProvider('toml',{tokenizer:{root:[[/#.*$/,'comment'],[/\[\[?[^\]]+\]\]?/,'type'],[/[\w.-]+(?=\s*=)/,'key'],[/"""/,'string','@multidouble'],[/'''/,'string','@multisingle'],[/"/,'string','@double'],[/'/,'string','@single'],[/\b(?:true|false)\b/,'keyword'],[/\b\d{4}-\d\d-\d\d(?:[Tt ][\d:.+Zz-]+)?/,'number'],[/[+-]?(?:\d[\d_]*(?:\.[\d_]+)?(?:[eE][+-]?\d+)?|inf|nan)/,'number'],[/[{}[\],=]/,'delimiter']],...strings,multidouble:[[/"""/,'string','@pop'],[/\\./,'string.escape'],[/./,'string']],multisingle:[[/'''/,'string','@pop'],[/./,'string']]}});
