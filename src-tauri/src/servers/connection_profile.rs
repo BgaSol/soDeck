@@ -181,7 +181,7 @@ impl ServerStore {
         }
         let mut catalog = self.catalog.clone();
         let mut sessions = self.sessions.clone();
-        let time = timestamp();
+        let time = timestamp(now())?;
         for node in profile
             .nodes
             .iter()

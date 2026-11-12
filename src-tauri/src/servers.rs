@@ -425,25 +425,11 @@ fn validate(c: &Catalog) -> Result<(), String> {
     Ok(())
 }
 
-// Gregorian UTC, avoiding a date dependency for two metadata fields.
-fn timestamp() -> String {
-    let secs = now() / 1000;
-    let z = (secs / 86400) as i64 + 719468;
-    let era = z / 146097;
-    let doe = z - era * 146097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let mut year = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = mp + if mp < 10 { 3 } else { -9 };
-    year += i64::from(month <= 2);
-    format!(
-        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
-        secs / 3600 % 24,
-        secs / 60 % 60,
-        secs % 60
-    )
+fn timestamp(millis: u64) -> Result<String, String> {
+    let time = time::OffsetDateTime::from_unix_timestamp((millis / 1000) as i64)
+        .map_err(|e| format!("无法生成资料时间：{e}"))?;
+    time.format(&time::format_description::well_known::Rfc3339)
+        .map_err(|e| format!("无法生成资料时间：{e}"))
 }
 
 impl AppCore {
@@ -464,7 +450,7 @@ impl AppCore {
         }
         let mut c = store.catalog.clone();
         let mut sessions = store.sessions.clone();
-        let time = timestamp();
+        let time = timestamp(now())?;
         let mut selected = None;
         let deleting_proxy = matches!(&change, CatalogChange::DeleteProxy { .. });
         match change {
@@ -680,5 +666,25 @@ impl AppCore {
         drop(store);
         self.changed();
         Ok(view)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::timestamp;
+
+    #[test]
+    fn catalog_timestamps_keep_utc_second_precision() {
+        for (millis, expected) in [
+            (0, "1970-01-01T00:00:00Z"),
+            (999, "1970-01-01T00:00:00Z"),
+            (951_782_400_000, "2000-02-29T00:00:00Z"),
+            (1_709_164_800_123, "2024-02-29T00:00:00Z"),
+            (2_147_483_648_000, "2038-01-19T03:14:08Z"),
+            (4_107_542_400_000, "2100-03-01T00:00:00Z"),
+        ] {
+            assert_eq!(timestamp(millis).unwrap(), expected);
+        }
+        assert!(timestamp(u64::MAX).is_err());
     }
 }

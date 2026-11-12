@@ -57,6 +57,66 @@ fn edit(core: &AppCore, id: &str) -> Value {
     json!({"op":"saveServer","draft":d})
 }
 #[test]
+fn catalog_dates_preserve_existing_creation_times_and_refresh_copies() {
+    let f = Fixture::new();
+    let core = f.open();
+    let server_id = id(change(&core, server("date.invalid")).unwrap());
+    let proxy_id = id(change(&core, proxy()).unwrap());
+    drop(core);
+    let mut catalog = f.disk();
+    let original_time = "2000-02-29T23:59:59Z";
+    for records in ["servers", "proxies"] {
+        for record in catalog[records].as_array_mut().unwrap() {
+            record["createdAt"] = json!(original_time);
+            record["updatedAt"] = json!(original_time);
+        }
+    }
+    fs::write(
+        f.0.join("servers.json"),
+        serde_json::to_vec(&catalog).unwrap(),
+    )
+    .unwrap();
+    let core = f.open();
+    change(&core, edit(&core, &server_id)).unwrap();
+    let mut proxy_draft = proxy();
+    proxy_draft["draft"]["id"] = json!(proxy_id);
+    change(&core, proxy_draft).unwrap();
+    change(&core, json!({"op":"copyServer","id":server_id})).unwrap();
+    change(&core, json!({"op":"copyProxy","id":proxy_id})).unwrap();
+    let updated = core.server_catalog();
+    for records in ["servers", "proxies"] {
+        let rows = updated[records].as_array().unwrap();
+        assert_eq!(rows[0]["createdAt"], original_time);
+        assert_ne!(rows[0]["updatedAt"], original_time);
+        assert_eq!(rows[1]["createdAt"], rows[1]["updatedAt"]);
+        assert_ne!(rows[1]["createdAt"], original_time);
+        for row in rows {
+            for field in ["createdAt", "updatedAt"] {
+                let time = row[field].as_str().unwrap();
+                assert_eq!(time.len(), 20);
+                assert!(time.ends_with('Z'));
+                assert_eq!(&time[10..11], "T");
+            }
+        }
+    }
+    drop(core);
+    let reopened = f.open().server_catalog();
+    for stored in [f.disk(), reopened] {
+        for records in ["servers", "proxies"] {
+            for (row, expected) in stored[records]
+                .as_array()
+                .unwrap()
+                .iter()
+                .zip(updated[records].as_array().unwrap())
+            {
+                assert_eq!(row["createdAt"], expected["createdAt"]);
+                assert_eq!(row["updatedAt"], expected["updatedAt"]);
+            }
+        }
+    }
+}
+
+#[test]
 fn mixed_routes_reopen_and_crud() {
     let f = Fixture::new();
     let core = f.open();

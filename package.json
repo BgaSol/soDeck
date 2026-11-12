@@ -44,6 +44,7 @@
     "@floating-ui/dom": "1.8.0",
     "@tauri-apps/api": "2.12.4",
     "@tauri-apps/plugin-dialog": "2.8.4",
+    "date-fns": "4.4.0",
     "markdown-it": "15.0.3"
   },
   "type": "module"

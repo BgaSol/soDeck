@@ -1,7 +1,8 @@
 import type { Snapshot, Log, Message, Filter, Update, UpdateOverview, Manifest, OfficialPlugin, UpdateNetwork, MirrorDiagnostic } from "./core";
 import { updatesPage, pendingUpdates, updateCount } from "./updates";
 import { pluginsPage } from "./plugin-settings";
-import { button as b, date, empty, escape as e, icon, statusText } from "./ui";
+import { button as b, empty, escape as e, icon, statusText } from "./ui";
+import { date, localTime } from "./datetime";
 
 export interface ViewState {
   officialPlugins: OfficialPlugin[];
@@ -76,13 +77,6 @@ function about(s: Snapshot) {
 
 export function logs(s: Snapshot, v: ViewState) {
   return `<div class="log-toolbar"><label>来源<select id="log-source"><option value="">全部来源</option><option value="core" ${v.filter.pluginId === "core" ? "selected" : ""}>核心</option>${s.plugins.map((p) => `<option value="${e(p.manifest.id)}" ${v.filter.pluginId === p.manifest.id ? "selected" : ""}>${e(p.manifest.name)}</option>`).join("")}${v.filter.pluginId && v.filter.pluginId !== "core" && !s.plugins.some((p) => p.manifest.id === v.filter.pluginId) ? `<option selected value="${e(v.filter.pluginId)}">${e(v.filter.pluginId)}</option>` : ""}</select></label><label>级别<select id="log-level"><option value="">全部级别</option>${["debug", "info", "warn", "error"].map((l) => `<option ${v.filter.level === l ? "selected" : ""}>${l}</option>`).join("")}</select></label><label class="search-label">搜索<input id="log-query" type="search" placeholder="搜索日志正文" value="${e(v.filter.query)}"></label>${b("clear-log-filters", "清除筛选", undefined, "quiet", 'id="clear-log-filters"')}${b("pause-logs", v.paused ? "继续显示" : "暂停显示", undefined, "quiet")}${b("copy-logs-content", "复制记录", "copy", "quiet")}</div><div class="log-times"><label>开始 <input id="log-since" type="datetime-local" value="${localTime(v.filter.since)}"></label><label>结束 <input id="log-until" type="datetime-local" value="${localTime(v.filter.until)}"></label><span class="hint">最近 500 条 · ${v.paused ? "显示已暂停，后台继续记录" : "实时更新"}</span></div><div id="log-results" class="log-results" data-scroll="logs">${logResults(v.logs)}</div>`;
-}
-function localTime(value?: number) {
-  if (!value) return "";
-  const d = new Date(value);
-  return new Date(value - d.getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 16);
 }
 export function logResults(records: Log[]) {
   return records.length

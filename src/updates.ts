@@ -1,6 +1,7 @@
 import type { Plugin, Snapshot, Update } from "./core";
 import type { ViewState } from "./views";
-import { button as b, date, escape as e, icon, replace } from "./ui";
+import { button as b, escape as e, icon, replace } from "./ui";
+import { date } from "./datetime";
 import { renderReleaseNotes } from "./release-notes";
 import { updateNetworkPanel } from "./update-network";
 
