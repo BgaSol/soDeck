@@ -32,3 +32,18 @@ test('compact color runs preserve rare colors through overwrite, trim and minima
   const {index,messages}=await setup(samples,'plain');assert(index.rows.get(0).colors.byteLength<32*4);index.map(500);assert(messages.at(-1).colors.includes(0x1ff0022));
   index.patch({epoch:1,head:1260,length:3740,rows:[]});await index.search();index.map(500);assert(!messages.at(-1).colors.includes(0x1ff0022));assert(messages.at(-1).colors.includes(0x3000000));
 });
+test('empty queries finish cleanly and preview density waits for complete counts',async()=>{
+  const {index,messages}=await setup([row(0,'needle')],'needle');
+  index.patch({epoch:1,head:0,length:1,rows:[row(0,'overwritten')]});
+  const before=messages.length;index.map(20,{requestId:5});assert.equal(messages.length,before,'Partial counts never enter a map');
+  await index.queryFor({query:'',caseSensitive:false,queryRevision:2,anchorRow:0});assert.equal(index.dirty,Infinity);
+  index.map(20,{requestId:6});assert.equal(messages.at(-1).requestId,6);assert.equal(messages.at(-1).queryRevision,2);assert(messages.at(-1).density.every(n=>n===0));
+});
+test('visible batches capture their version and stop when a newer viewport supersedes them',async()=>{
+  const {index,messages}=await setup(Array.from({length:256},(_,id)=>row(id,'a'.repeat(120))),'a');index.revision=7;messages.length=0;
+  const old=index.visible({start:0,end:255,queryRevision:1,requestId:10});
+  const boundary=messages.length;const latest=index.visible({start:200,end:220,queryRevision:1,requestId:11});
+  await Promise.all([old,latest]);assert(messages.slice(boundary).every(m=>m.requestId===11));
+  assert(messages.every(m=>m.revision===7&&m.epoch===1&&m.start<=m.end));assert.equal(messages.at(-1).complete,true);
+  messages.length=0;const pending=index.visible({start:0,end:255,queryRevision:1,requestId:12});index.reset(2);messages.length=0;await pending;assert.deepEqual(messages,[]);
+});

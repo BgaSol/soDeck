@@ -31,7 +31,8 @@ import {snapshotChunks} from './snapshot.js';
   const search=createSearch(terminal,host,metadata=>{
     if(disposed||!surfaceReady||readOnly||restoring||!caughtUp)return Promise.resolve();
     return request({op:'metadata',metadata}).catch(error=>{if(!String(error).includes('窗口'))fail(error);});
-  },()=>({ready:caughtUp&&!restoring&&!disposed,visible}));
+  },()=>({ready:caughtUp&&!restoring&&!disposed,visible,frozen:transferFrozen}));
+  async function resumeDisplay(){await appearance.apply();await enqueueSize(true);if(!disposed)search.resume();}
   function scan(bytes){for(const b of bytes){
     if(utf8){if((b&0xc0)===0x80){utf8--;continue;}utf8=0;}
     if(b>=0xc2){utf8=b<0xe0?1:b<0xf0?2:3;continue;}
@@ -122,7 +123,7 @@ import {snapshotChunks} from './snapshot.js';
     status.textContent=`${mount.serverName||'服务器'} · 正在接续终端…`;
     void request({op:'attach'}).catch(fail);
   });
-  addEventListener('sodeck:surfaceReady',()=>{readOnly=false;transferFrozen=false;surfaceReady=true;enabled=caughtUp&&!disconnected&&!ended;void appearance.apply();void enqueueSize(true).catch(fail);if(enabled)location.ready();});
+  addEventListener('sodeck:surfaceReady',()=>{readOnly=false;transferFrozen=false;surfaceReady=true;enabled=caughtUp&&!disconnected&&!ended;void resumeDisplay().catch(fail);if(enabled)location.ready();});
   addEventListener('sodeck:data',event=>{
     chain=chain.then(async()=>{
       if(disposed)return;
@@ -148,15 +149,15 @@ import {snapshotChunks} from './snapshot.js';
   terminal.onData(input);
   addEventListener('sodeck:flush',async event=>{
     try {
-      if(controls.composing())throw new Error('中文输入仍在组合，请完成输入后再移动');
-      transferFrozen=event.detail.freeze===true;if(transferFrozen){stopSize();search.stop();}await inputChain;await chain;
+      if(controls.composing()||search.composing())throw new Error('中文输入仍在组合，请完成输入后再移动');
+      transferFrozen=event.detail.freeze===true;if(transferFrozen){stopSize();search.pause();}await inputChain;await chain;
       if(inputError)throw inputError;
       await checkpoint(true);
       parent.postMessage({channel:'sodeck-ui-v2',type:'flushed',surfaceId:event.detail.surfaceId,id:event.detail.id},'*');
-    }catch(error){transferFrozen=false;parent.postMessage({channel:'sodeck-ui-v2',type:'flushed',surfaceId:event.detail.surfaceId,id:event.detail.id,error:String(error)},'*');}
+    }catch(error){if(transferFrozen){transferFrozen=false;void resumeDisplay().catch(fail);}parent.postMessage({channel:'sodeck-ui-v2',type:'flushed',surfaceId:event.detail.surfaceId,id:event.detail.id,error:String(error)},'*');}
   });
-  addEventListener('sodeck:transferCancelled',()=>{transferFrozen=false;void enqueueSize(true).catch(fail);});
-  addEventListener('sodeck:visibilityChanged',event=>{visible=event.detail.visible;if(!visible){controls.invalidate();stopSize();search.stop();}if(visible){void appearance.apply();void enqueueSize(true).catch(()=>{});}});
+  addEventListener('sodeck:transferCancelled',()=>{transferFrozen=false;void resumeDisplay().catch(fail);});
+  addEventListener('sodeck:visibilityChanged',event=>{visible=event.detail.visible;if(!visible){controls.invalidate();stopSize();search.pause();}if(visible)void resumeDisplay().catch(fail);});
   addEventListener('sodeck:settingsChanged',event=>{appearance.receive({...event.detail.settings,retry:true});location.settings(event.detail.settings);});
   addEventListener('sodeck:contextChanged',()=>location.invalidate());
   addEventListener('sodeck:connectionChanged',event=>{if(!event.detail.connected)location.invalidate();});

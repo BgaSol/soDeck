@@ -7,7 +7,7 @@ export function textColumns(line,offset,end=false){
 export function createHistory(terminal,onMessage){
   let worker,disposed=false,epoch=0,head=0,lastScreen=0,dirty=0,revision=0,job=false,timer,sequence=0,list,bufferType,subscriptions=[],structural=false;
   const pending=new Map();
-  function start(){worker=new Worker(new URL('./history-worker.js',import.meta.url),{type:'module'});worker.onmessage=event=>{const m=event.data;if(m.type==='ack'){pending.get(m.id)?.();pending.delete(m.id);}else onMessage(m);};worker.onerror=()=>{onMessage({type:'error',message:'历史索引任务已停止'});for(const done of pending.values())done();pending.clear();};}
+  function start(){const instance=worker=new Worker(new URL('./history-worker.js',import.meta.url),{type:'module'});worker.onmessage=event=>{if(disposed||instance!==worker)return;const m=event.data;if(m.type==='ack'){pending.get(m.id)?.();pending.delete(m.id);}else onMessage(m);};worker.onerror=()=>{if(disposed||instance!==worker)return;onMessage({type:'error',fatal:true,message:'历史索引任务已停止'});for(const done of pending.values())done();pending.clear();};}
   start();
   function bind(){
     // xterm 6.0.0: public events do not report recycling at a full scrollback. Read only its structural events.
@@ -19,7 +19,7 @@ export function createHistory(terminal,onMessage){
   }
   function invalidate(){const previousHead=head,previousType=bufferType;bufferType=terminal.buffer.active.type;epoch++;head=0;lastScreen=0;dirty=0;worker.postMessage({type:'reset',epoch});onMessage({type:'reset',epoch,previousHead,previousType});}
   function update(reset=false){
-    if(disposed)return;try{if(bind()||reset||structural){structural=false;invalidate();}dirty=Math.min(dirty,lastScreen);lastScreen=head+terminal.buffer.active.baseY;revision++;schedule();}catch(error){onMessage({type:'error',message:String(error)});}
+    if(disposed)return;try{if(bind()||reset||structural){structural=false;invalidate();}dirty=Math.min(dirty,lastScreen);lastScreen=head+terminal.buffer.active.baseY;revision++;onMessage({type:'changed',epoch,revision,head,start:Math.max(head,dirty),end:head+terminal.buffer.active.length-1});schedule();}catch(error){onMessage({type:'error',fatal:true,message:String(error)});}
   }
   function schedule(){if(!job&&!timer)timer=setTimeout(()=>{timer=undefined;void drain();},60);}
   async function drain(){
@@ -41,8 +41,8 @@ export function createHistory(terminal,onMessage){
       const id=++sequence;const ack=new Promise(resolve=>pending.set(id,resolve));worker.postMessage({type:'rows',epoch:ticket,id,head,length:terminal.buffer.active.length,rows},transfers);await ack;
     }
     if(!disposed&&ticket===epoch)worker.postMessage({type:'done',epoch,revision:version});
-    }catch(error){onMessage({type:'error',message:String(error)});}finally{job=false;if(dirty!==Infinity&&!disposed)schedule();}
+    }catch(error){onMessage({type:'error',fatal:true,message:String(error)});}finally{job=false;if(dirty!==Infinity&&!disposed)schedule();}
   }
   const resize=terminal.onResize(()=>update(true)),switchBuffer=terminal.buffer.onBufferChange(()=>update(true));
-  return {update,send(message){if(!disposed)worker.postMessage({...message,epoch});},state(){return {epoch,head,revision,length:terminal.buffer.active.length,indexing:job||dirty!==Infinity||Boolean(timer)};},retry(){worker.terminate();for(const done of pending.values())done();pending.clear();start();list=undefined;update(true);},dispose(){disposed=true;clearTimeout(timer);worker.terminate();for(const done of pending.values())done();pending.clear();subscriptions.forEach(s=>s.dispose());resize.dispose();switchBuffer.dispose();}};
+  return {update,send(message){if(!disposed)worker.postMessage({...message,epoch,revision});},state(){return {epoch,head,revision,length:terminal.buffer.active.length,indexing:job||dirty!==Infinity||Boolean(timer)};},retry(){worker.terminate();for(const done of pending.values())done();pending.clear();start();list=undefined;update(true);},dispose(){disposed=true;clearTimeout(timer);worker.terminate();for(const done of pending.values())done();pending.clear();subscriptions.forEach(s=>s.dispose());resize.dispose();switchBuffer.dispose();}};
 }

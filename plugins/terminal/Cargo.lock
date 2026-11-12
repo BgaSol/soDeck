@@ -90,7 +90,7 @@ dependencies = [
 
 [[package]]
 name = "sodeck-terminal"
-version = "0.8.4"
+version = "0.8.5"
 dependencies = [
  "serde_json",
  "sodeck-plugin-client",

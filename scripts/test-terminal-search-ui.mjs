@@ -4,16 +4,28 @@ import {spawnSync} from 'node:child_process';import {createServer} from 'vite';i
 const build=spawnSync(process.execPath,['build.mjs'],{cwd:'plugins/terminal',stdio:'inherit',windowsHide:true});assert.equal(build.status,0);
 const vite=await createServer({server:{host:'127.0.0.1',port:0}});await vite.listen();const url=vite.resolvedUrls.local[0];
 const browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:1000,height:700}}),errors=[];page.on('pageerror',error=>errors.push(String(error)));
+await page.addInitScript(()=>{
+  const trace=window.searchTrace={requests:[],results:[],hold:false,types:['visible','map'],held:[],draws:0};
+  const NativeWorker=window.Worker;
+  window.Worker=class extends NativeWorker{
+    constructor(...args){super(...args);this.addEventListener('message',event=>{if(event.data?.type==='result')trace.results.push({worker:this,data:event.data});if(trace.hold&&trace.types.includes(event.data?.type)){event.stopImmediatePropagation();trace.held.push({worker:this,data:event.data});}});}
+    postMessage(message,...args){trace.requests.push({...message,rows:undefined});return super.postMessage(message,...args);}
+  };
+  for(const name of ['fillRect','clearRect','drawImage']){const original=CanvasRenderingContext2D.prototype[name];CanvasRenderingContext2D.prototype[name]=function(...args){if(['terminal-highlights','minimap-content','minimap-search'].includes(this.canvas.className))trace.draws++;return original.apply(this,args);};}
+});
 await page.route(url,route=>route.fulfill({contentType:'text/html',body:`<!doctype html><html data-theme="light"><meta charset="utf-8"><style>html,body{margin:0;height:100%;}iframe{border:0;width:100%;height:100%;}</style><iframe></iframe><script type="module">
 import '/style.css';import {themeTokens} from '/theme.ts';
 const frame=document.querySelector('iframe'),token='history-test';const post=message=>frame.contentWindow.postMessage({channel:'sodeck-ui-v2',surfaceId:token,...message},location.origin);let offset=0,packet=0,checkpoint={offset:0,data:[],metadata:{}},upload,ui;const acks=new Map(),flushes=new Map();window.writes=[];window.metadata=[];
 const send=async(kind,data=[],metadata,at=offset)=>{const id=++packet;await new Promise(resolve=>{acks.set(id,resolve);post({type:'data',data:{kind,offset:at,packet:id,data,metadata}});});};
 window.recovery=async available=>{await send('recovery',[],{available});if(!available)await send('caughtUp');};
-window.flush=()=>new Promise(resolve=>{const id=crypto.randomUUID();flushes.set(id,resolve);post({type:'flush',id,freeze:false});});
+window.flush=(freeze=false)=>new Promise(resolve=>{const id=crypto.randomUUID();flushes.set(id,resolve);post({type:'flush',id,freeze});});
+window.lifecycle=(type,detail={})=>post({type,...detail});window.failCheckpoint=false;
 window.remount=()=>{window.savedForRemount=structuredClone(ui);window.ready=false;frame.src='/__terminal__/index.html?remount';};
 window.emit=async text=>{const bytes=new TextEncoder().encode(text);for(let pos=0;pos<bytes.length;pos+=16384){const data=Array.from(bytes.subarray(pos,pos+16384));offset+=data.length;const id=++packet;await new Promise(resolve=>{acks.set(id,resolve);post({type:'data',data:{kind:'data',offset,packet:id,data}});});}};
 window.setTheme=theme=>{document.documentElement.dataset.theme=theme;post({type:'themeChanged',tokens:themeTokens()});};
-addEventListener('message',event=>{if(event.source!==frame.contentWindow||event.data?.channel!=='sodeck-ui-v2')return;const m=event.data;if(m.type==='ready'){post({type:'mount',viewId:'A',context:{generation:1},data:{streamId:'pty'},tokens:themeTokens(),capabilities:{clipboard:1},visible:true});return;}if(m.type==='prepared'){window.ready=true;return;}if(m.type==='flushed'){flushes.get(m.id)?.(m.error);flushes.delete(m.id);return;}if(m.type!=='request')return;const p=m.params;if(m.method==='data'){if(p.op==='attach')void(async()=>{await send('reset',[],{...checkpoint.metadata,ui},checkpoint.offset);for(let pos=0;pos<checkpoint.data.length;pos+=16384)await send('snapshot',checkpoint.data.slice(pos,pos+16384),undefined,checkpoint.offset);await send('restore',[],undefined,checkpoint.offset);await send('caughtUp');})();if(p.op==='ack'){acks.get(p.packet)?.();acks.delete(p.packet);}if(p.op==='write')window.writes.push(p.data);if(p.op==='metadata'){window.metadata.push(p.metadata);ui=p.metadata;}if(p.op==='checkpoint'){if(p.begin)upload={offset:p.offset,data:[],metadata:p.metadata};upload.data.push(...p.data);if(p.done){checkpoint=upload;upload=undefined;}}}post({type:'response',id:m.id,data:{}});});frame.src='/__terminal__/index.html';
+addEventListener('message',event=>{if(event.source!==frame.contentWindow||event.data?.channel!=='sodeck-ui-v2')return;const m=event.data;if(m.type==='ready'){post({type:'mount',viewId:'A',context:{generation:1},data:{streamId:'pty'},tokens:themeTokens(),capabilities:{clipboard:1},visible:true});return;}if(m.type==='prepared'){window.ready=true;return;}if(m.type==='flushed'){flushes.get(m.id)?.(m.error);flushes.delete(m.id);return;}if(m.type!=='request')return;const p=m.params;
+if(m.method==='data'&&p.op==='checkpoint'&&window.failCheckpoint){window.failCheckpoint=false;post({type:'response',id:m.id,error:'fixture checkpoint failure'});return;}
+if(m.method==='data'){if(p.op==='attach')void(async()=>{await send('reset',[],{...checkpoint.metadata,ui},checkpoint.offset);for(let pos=0;pos<checkpoint.data.length;pos+=16384)await send('snapshot',checkpoint.data.slice(pos,pos+16384),undefined,checkpoint.offset);await send('restore',[],undefined,checkpoint.offset);await send('caughtUp');})();if(p.op==='ack'){acks.get(p.packet)?.();acks.delete(p.packet);}if(p.op==='write')window.writes.push(p.data);if(p.op==='metadata'){window.metadata.push(p.metadata);ui=p.metadata;}if(p.op==='checkpoint'){if(p.begin)upload={offset:p.offset,data:[],metadata:p.metadata};upload.data.push(...p.data);if(p.done){checkpoint=upload;upload=undefined;}}}post({type:'response',id:m.id,data:{}});});frame.src='/__terminal__/index.html';
 </script></html>`}));
 await page.route(url+'__terminal__/**',route=>{const relative=new URL(route.request().url()).pathname.replace('/__terminal__/',''),filename=path.join('plugins/terminal/ui',relative);let body=fs.readFileSync(filename);if(relative==='vendor/xterm.js')body=Buffer.concat([body,Buffer.from('\n;window.RealTerminal=window.Terminal;window.Terminal=class extends window.RealTerminal{constructor(options){super(options);window.testTerminal=this;}};')]);return route.fulfill({contentType:{'.js':'text/javascript','.css':'text/css','.html':'text/html','.woff2':'font/woff2'}[path.extname(filename)]||'application/octet-stream',body});});
 const child=()=>page.frames().find(f=>f.url().includes('/__terminal__/index.html')),frame=page.frameLocator('iframe');
@@ -30,12 +42,57 @@ const searchAlignment=async()=>{
     if(icon){assert(Math.abs(icon.x-button.x)<.25,'Search icon is horizontally centered');assert(Math.abs(icon.y-button.y)<.25,'Search icon is vertically centered');}
     if(page.viewportSize().width>310)assert(Math.abs(button.y-geometry.input.y)<.25,'Search controls share the input centerline');
   }
-  if(page.viewportSize().width>600)assert(Math.abs(geometry.count.y-geometry.input.y)<.25,'Match count shares the input centerline');
+  if(page.viewportSize().width>310)assert(geometry.count.y>geometry.input.y,'Changing count text uses the separate status row');
   if(page.viewportSize().width<=310){const positions=geometry.buttons.map(({button})=>button.x);assert(Math.abs((positions[1]-positions[0])-(positions[3]-positions[2]))<.25,'Stacked search buttons are evenly spaced');}
 };
 try{
   await page.goto(url);await page.waitForFunction(()=>window.ready);await frame.locator('.xterm-helper-textarea').focus();
   await page.evaluate(()=>window.emit(Array.from({length:120},(_,id)=>`\x1b[32mdw@dw:~$\x1b[0m journalctl --no-pager · ${id}\r\n`).join('')));
+  await page.keyboard.press('Control+f');await input.fill('journalctl');await count.filter({hasText:/\d+ \/ 120/}).waitFor();
+  await child().waitForFunction(()=>{const canvas=document.querySelector('.terminal-highlights');return canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data.some((v,i)=>i%4===3&&v);});
+  const stable=await child().evaluate(async()=>{
+    const canvas=document.querySelector('.terminal-highlights'),input=document.querySelector('.terminal-search input'),ctx=canvas.getContext('2d');
+  const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data,at=pixels.findIndex((v,i)=>i%4===3&&v),point=[((at-3)/4)%canvas.width,Math.floor((at-3)/4/canvas.width)];
+    const before=window.searchTrace.requests.length,width=input.getBoundingClientRect().width;let blank=0,frames=0;
+    const start=performance.now();await new Promise(resolve=>{const sample=()=>{frames++;if(!ctx.getImageData(...point,1,1).data[3])blank++;if(performance.now()-start<3100)requestAnimationFrame(sample);else resolve();};requestAnimationFrame(sample);});
+    return {blank,frames,width,requests:window.searchTrace.requests.slice(before).filter(m=>['visible','map'].includes(m.type)).length};
+  });
+  assert(stable.frames>10);assert.equal(stable.blank,0,'Completed highlights never disappear during cursor blinking');assert.equal(stable.requests,0,'Idle rendering never polls visible matches or the preview');
+  await child().evaluate(()=>window.testTerminal.scrollToLine(0));await page.waitForTimeout(150);
+  const outputSample=child().evaluate(async()=>{
+    const canvas=document.querySelector('.terminal-highlights'),ctx=canvas.getContext('2d'),input=document.querySelector('.terminal-search input'),original=input;
+    const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data,at=pixels.findIndex((v,i)=>i%4===3&&v),point=[((at-3)/4)%canvas.width,Math.floor((at-3)/4/canvas.width)];let blank=0;const widths=new Set();
+    const start=performance.now();await new Promise(resolve=>{const sample=()=>{if(!ctx.getImageData(...point,1,1).data[3])blank++;widths.add(input.getBoundingClientRect().width);if(performance.now()-start<1100)requestAnimationFrame(sample);else resolve();};requestAnimationFrame(sample);});
+    return {blank,widths:[...widths],same:input===original&&input.isConnected,focused:document.activeElement===input};
+  });
+  for(let i=0;i<8;i++){await page.evaluate(()=>window.emit('unrelated heartbeat\r\n'));await page.waitForTimeout(100);}
+  const output=await outputSample;assert.equal(output.blank,0,'Unrelated output preserves verified historical highlights');assert.equal(output.widths.length,1,'Background indexing never changes the input width');assert(output.same&&output.focused);
+  await child().evaluate(()=>{window.searchTrace.hold=true;window.testTerminal.scrollToLine(10);});await page.evaluate(()=>window.emit('queued reply\r\n'));
+  await child().waitForFunction(()=>['visible','map'].every(type=>window.searchTrace.held.some(m=>m.data.type===type)));
+  const savedBefore=await page.evaluate(()=>window.metadata.length);
+  const hidden=await child().evaluate(async()=>{
+    const trace=window.searchTrace;window.dispatchEvent(new CustomEvent('sodeck:visibilityChanged',{detail:{visible:false}}));
+    const before=trace.draws,status=document.querySelector('.search-count').textContent,scroll=window.testTerminal.buffer.active.viewportY;trace.hold=false;
+    const held=trace.held.splice(0);for(const m of held)m.worker.dispatchEvent(new MessageEvent('message',{data:m.data}));
+    const visible=held.find(m=>m.data.type==='visible');visible.worker.dispatchEvent(new MessageEvent('message',{data:{...visible.data,type:'error',operation:'visible'}}));
+    window.testTerminal.refresh(0,window.testTerminal.rows-1);await new Promise(resolve=>setTimeout(resolve,350));
+    return {draws:trace.draws-before,same:status===document.querySelector('.search-count').textContent,scroll:scroll===window.testTerminal.buffer.active.viewportY};
+  });
+  assert.deepEqual(hidden,{draws:0,same:true,scroll:true});assert.equal(await page.evaluate(()=>window.metadata.length),savedBefore,'Hidden replies cannot save metadata');
+  await page.evaluate(()=>window.lifecycle('visibilityChanged',{visible:true}));await child().waitForFunction(()=>window.searchTrace.requests.some(m=>m.type==='map'&&m.requestId>1));await page.waitForTimeout(200);
+  assert.equal(await page.evaluate(()=>window.flush(true)),undefined);await page.evaluate(()=>window.lifecycle('transferCancelled'));await count.filter({hasText:/\d+ \/ 120/}).waitFor();
+  await input.evaluate(el=>{el.value='pending-search-draft';el.dispatchEvent(new Event('input',{bubbles:true}));});
+  assert.equal(await page.evaluate(()=>window.flush(true)),undefined);assert.equal(await page.evaluate(()=>window.metadata.at(-1).search.query),'pending-search-draft');assert.equal(await page.evaluate(()=>window.metadata.at(-1).search.current),undefined);
+  await page.evaluate(()=>window.lifecycle('transferCancelled'));await count.filter({hasText:'没有匹配'}).waitFor();
+  await input.dispatchEvent('compositionstart');assert.match(await page.evaluate(()=>window.flush(true)),/组合/);await input.dispatchEvent('compositionend');
+  await page.evaluate(()=>window.emit('checkpoint-failure-output\r\n'));
+  await page.evaluate(()=>window.failCheckpoint=true);assert.match(await page.evaluate(()=>window.flush(true)),/fixture checkpoint failure/);
+  await input.fill('journalctl');await count.filter({hasText:/\d+ \/ 120/}).waitFor();
+  await child().waitForFunction(()=>{const canvas=document.querySelector('.terminal-highlights');return canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data.some((v,i)=>i%4===3&&v);});
+  assert.equal(await page.evaluate(()=>window.flush(true)),undefined);await page.evaluate(()=>window.lifecycle('transferCancelled'));
+  await input.press('Escape');
+  const mapsBefore=await child().evaluate(()=>window.searchTrace.requests.filter(m=>m.type==='map').length);await page.evaluate(()=>window.emit('\x1b[31mclosed-search-color\x1b[0m\r\n'));
+  await child().waitForFunction(before=>window.searchTrace.requests.filter(m=>m.type==='map').length>before,mapsBefore);
   fs.mkdirSync('artifacts/terminal-search',{recursive:true});
   for(const theme of ['dark','light','dopamine']){
     await page.evaluate(theme=>window.setTheme(theme),theme);await page.waitForTimeout(250);
@@ -94,6 +151,45 @@ try{
   await write('\x1b[3J\x1b[2J\x1b[Hold needle\rnew text\x1b[K');await count.filter({hasText:'没有匹配'}).waitFor();await input.fill('new text');await count.filter({hasText:'1 / 1'}).waitFor();
   await write('\x1b[H\x1b[Lreplacement\x1b[K');await count.filter({hasText:'1 / 1'}).waitFor();await write('\x1b[2;1H\x1b[M');await count.filter({hasText:'没有匹配'}).waitFor();
   await write('\x1b[H'+ 'x'.repeat(await child().evaluate(()=>window.testTerminal.cols-3))+'WRAPNEEDLE\r\n');await input.fill('WRAPNEEDLE');await count.filter({hasText:'1 / 1'}).waitFor();await page.setViewportSize({width:700,height:700});await count.filter({hasText:'1 / 1'}).waitFor();await page.waitForTimeout(250);assert.match(await count.textContent(),/1 \/ 1/,'Resize reflow preserves a completed soft-wrap match');
+  await write('\x1b[3J\x1b[2J\x1b[H'+('a'.repeat(await child().evaluate(()=>window.testTerminal.cols))+'\r\n').repeat(45));
+  await child().evaluate(()=>{const trace=window.searchTrace;trace.hold=true;trace.types=['visible'];trace.held=[];});await input.fill('a');
+  await child().waitForFunction(()=>window.searchTrace.held.some(m=>m.data.type==='visible'&&m.data.complete));
+  const partial=await child().evaluate(()=>{
+    const trace=window.searchTrace,id=Math.max(...trace.held.map(m=>m.data.requestId)),batches=trace.held.filter(m=>m.data.requestId===id);
+    const first=batches.find(m=>m.data.begin&&!m.data.complete);if(!first)return {batch:false,blank:false};
+    trace.hold=false;first.worker.dispatchEvent(new MessageEvent('message',{data:first.data}));trace.hold=true;trace.held=trace.held.filter(m=>m!==first);
+    const canvas=document.querySelector('.terminal-highlights');return {batch:true,blank:canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data.every((v,i)=>i%4!==3||v===0)};
+  });assert.deepEqual(partial,{batch:true,blank:true},'An incomplete dense batch never enters the displayed canvas');
+  await child().evaluate(()=>{const trace=window.searchTrace;trace.hold=false;for(const m of trace.held.splice(0))m.worker.dispatchEvent(new MessageEvent('message',{data:m.data}));});
+  await child().waitForFunction(()=>{const canvas=document.querySelector('.terminal-highlights');return canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data.some((v,i)=>i%4===3&&v);});
+  await child().evaluate(()=>{const trace=window.searchTrace;trace.hold=true;trace.types=['visible','map','result'];window.testTerminal.scrollToLine(0);});await input.press('Enter');
+  await child().waitForFunction(()=>window.searchTrace.held.some(m=>m.data.match));
+  assert.equal(await page.evaluate(()=>window.flush(true)),undefined);
+  const frozen=await child().evaluate(async()=>{const trace=window.searchTrace,before=trace.draws,scroll=window.testTerminal.buffer.active.viewportY,text=document.querySelector('.search-count').textContent;trace.hold=false;for(const m of trace.held.splice(0))m.worker.dispatchEvent(new MessageEvent('message',{data:m.data}));await new Promise(resolve=>setTimeout(resolve,120));return {draws:trace.draws-before,same:scroll===window.testTerminal.buffer.active.viewportY&&text===document.querySelector('.search-count').textContent};});
+  assert.deepEqual(frozen,{draws:0,same:true},'Frozen navigation and drawing replies have no side effects');
+  await page.evaluate(()=>window.lifecycle('transferCancelled'));await count.filter({hasText:/\d+ \/ \d/}).waitFor();
+  await child().waitForFunction(()=>{const trace=window.searchTrace,query=trace.requests.findLast(m=>m.type==='query');return trace.results.some(m=>!m.data.match&&m.data.queryRevision===query.queryRevision);});await page.waitForTimeout(150);
+  await child().evaluate(()=>{const trace=window.searchTrace;trace.stale=trace.results.findLast(m=>!m.data.match);trace.hold=true;trace.types=['visible','map','result'];window.dispatchEvent(new CustomEvent('sodeck:visibilityChanged',{detail:{visible:false}}));});
+  await page.evaluate(()=>window.lifecycle('visibilityChanged',{visible:true}));
+  await child().waitForFunction(()=>window.searchTrace.held.some(m=>m.data.type==='result'&&!m.data.match));
+  const lateResult=await child().evaluate(async()=>{
+    const trace=window.searchTrace,before=trace.requests.length,text=document.querySelector('.search-count').textContent;
+    const fresh=trace.held.findLast(m=>m.data.type==='result'&&!m.data.match).data;
+    if(['epoch','revision'].some(key=>fresh[key]!==trace.stale.data[key]))throw new Error('Resume fixture must keep the same buffer version: '+JSON.stringify({old:trace.stale.data,fresh}));
+    trace.hold=false;trace.stale.worker.dispatchEvent(new MessageEvent('message',{data:trace.stale.data}));trace.hold=true;await new Promise(resolve=>setTimeout(resolve,100));
+    return {requests:trace.requests.length-before,same:text===document.querySelector('.search-count').textContent};
+  });assert.deepEqual(lateResult,{requests:0,same:true},'A completed result from before hiding cannot initiate navigation after resume');
+  await child().evaluate(()=>{const trace=window.searchTrace;trace.hold=false;for(const m of trace.held.splice(0))m.worker.dispatchEvent(new MessageEvent('message',{data:m.data}));});
+  await child().waitForFunction(()=>{const canvas=document.querySelector('.terminal-highlights');return canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data.some((v,i)=>i%4===3&&v);});
+  await child().evaluate(()=>window.dispatchEvent(new CustomEvent('sodeck:visibilityChanged',{detail:{visible:false}})));
+  await write('\x1b[3J\x1b[2J\x1b[Hzzzz');await page.waitForTimeout(150);
+  await child().evaluate(()=>{const trace=window.searchTrace;trace.hold=true;trace.held=[];});await page.evaluate(()=>window.lifecycle('visibilityChanged',{visible:true}));
+  await child().waitForFunction(()=>window.searchTrace.held.some(m=>m.data.type==='result'&&!m.data.match));
+  assert.equal(await child().evaluate(()=>{const canvas=document.querySelector('.terminal-highlights');return canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data.every((v,i)=>i%4!==3||v===0);}),true,'Resume clears highlights whose text changed while hidden before accepting delayed new results');
+  await child().evaluate(()=>{const trace=window.searchTrace;trace.hold=false;for(const m of trace.held.splice(0))m.worker.dispatchEvent(new MessageEvent('message',{data:m.data}));});await count.filter({hasText:'没有匹配'}).waitFor();
+  await input.fill('');await page.waitForTimeout(100);const emptyMaps=await child().evaluate(()=>window.searchTrace.requests.filter(m=>m.type==='map').length);await write('\x1b[32mempty-query-color\x1b[0m\r\n');await child().waitForFunction(before=>window.searchTrace.requests.filter(m=>m.type==='map').length>before,emptyMaps);
+  await child().evaluate(()=>{window.faultBuffer=window.testTerminal.buffer.active;window.faultGetNullCell=window.faultBuffer.getNullCell;window.faultBuffer.getNullCell=()=>{throw new Error('fixture extraction failure');};});await write('index-failure\r\n');await count.filter({hasText:'搜索暂不可用'}).waitFor();
+  await child().evaluate(()=>{window.faultBuffer.getNullCell=window.faultGetNullCell;});await frame.locator('.search-retry').click();await frame.locator('.search-retry').waitFor({state:'hidden'});
   await page.evaluate(()=>window.recovery(false));await frame.locator('#status').filter({hasText:'历史恢复暂不可用'}).waitFor();await page.evaluate(()=>window.recovery(true));assert.equal(await frame.locator('#status').isVisible(),false,'Recovery warning clears only when recovery resumes');
-  assert.deepEqual(errors,[]);console.log('Terminal search UI passed: 100k history, Unicode/case/navigation, remount current result, IME, minimap gestures/keys, live reading anchor, shell shortcut, alternate/erase/insert/delete/reflow, themes and narrow layout.');
+  assert.deepEqual(errors,[]);console.log('Terminal search UI passed: stable highlights/input, complete batches, stale/hidden/frozen replies, resume and extraction retry, 100k history, Unicode/case/navigation, remount, IME, minimap, themes and narrow layout.');
 }catch(error){console.log(JSON.stringify({count:await count.textContent(),query:await input.inputValue(),saved:await page.evaluate(()=>window.savedForRemount),errors}));fs.mkdirSync('artifacts/terminal-search',{recursive:true});await page.screenshot({path:'artifacts/terminal-search/failure.png'});throw error;}finally{await browser.close();await vite.close();}

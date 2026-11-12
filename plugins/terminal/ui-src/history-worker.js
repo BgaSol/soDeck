@@ -13,7 +13,7 @@ function compactColors(colors){const runs=[];for(let x=0;x<32;){const code=color
 function mergeColors(target,colors){let run=0;for(let x=0;x<32;x++){while(colors.length!==32&&x>=colors[run])run+=2;const code=colors.length===32?colors[x]:colors[run+1];if(code&&(code>>>24)!==3||!target[x])target[x]=code;}}
 export class HistoryIndex {
   constructor(emit=()=>{}){this.emit=emit;this.rows=new Map();this.blocks=new Map();this.checkpoints=new Map();this.epoch=0;this.head=0;this.length=0;this.revision=0;this.serial=0;this.queryRevision=0;this.query='';this.caseSensitive=false;this.total=0;this.dirty=Infinity;this.fresh=true;this.anchorRow=0;}
-  reset(epoch){this.serial++;this.epoch=epoch;this.rows.clear();this.blocks.clear();this.checkpoints.clear();this.head=0;this.length=0;this.total=0;this.dirty=0;this.fresh=true;}
+  reset(epoch){this.serial++;this.epoch=epoch;this.rows.clear();this.blocks.clear();this.checkpoints.clear();this.head=0;this.length=0;this.revision=0;this.total=0;this.dirty=0;this.fresh=true;this.pendingNavigation=undefined;this.visibleRequest=undefined;}
   patch(message){
     if(message.epoch!==this.epoch)return;
     this.serial++;const blocks=new Set();
@@ -41,7 +41,7 @@ export class HistoryIndex {
     const before=state.offset-keep;state.segments=segments.filter(p=>p.end>p.start&&p.end>before);
   }
   async search(){
-    if(!this.query){for(const row of this.rows.values())row.count=0;this.total=0;this.emitResult({complete:true});return;}
+    if(!this.query){for(const row of this.rows.values())row.count=0;this.total=0;this.fresh=false;this.trimmed=false;this.dirty=Infinity;this.emitResult({complete:true});return;}
     const serial=++this.serial;let begin=this.head,state=blankState();
     if(!this.fresh){const checkpointId=Math.floor(this.dirty/256)*256,checkpoint=this.checkpoints.get(checkpointId);if(checkpoint&&checkpointId>=this.head&&checkpoint.state.segments.every(p=>p.id>=this.head)){begin=checkpointId;state=cloneState(checkpoint.state);}else if(this.dirty===Infinity)begin=this.head+this.length;}
     if(this.trimmed&&!this.fresh&&this.rows.get(this.head)?.wrapped){
@@ -83,13 +83,16 @@ export class HistoryIndex {
     if(match&&serial===this.serial)this.emitResult({complete:true,match,ordinal,requestId:message.requestId});
   }
   async visible(message){
+    this.visibleRequest=message.requestId;
     if(message.queryRevision!==this.queryRevision||!this.query||this.dirty!==Infinity)return;
     const start=Math.max(this.head,message.start-this.query.length),end=Math.min(this.head+this.length,message.end+this.query.length);
     let begin=start;while(begin>this.head&&this.rows.get(begin)?.wrapped)begin--;
     const saved=this.checkpoints.get(Math.floor(begin/256)*256);let state=blankState();if(saved){begin=Math.floor(begin/256)*256;state=cloneState(saved.state);}
-    let matches=[],first=true;const serial=this.serial;
-    const send=complete=>{this.emit({type:'visible',epoch:this.epoch,queryRevision:this.queryRevision,requestId:message.requestId,matches,begin:first,complete});first=false;matches=[];};
-    for(let id=begin;id<end;id++){const row=this.rows.get(id);if(!row)continue;this.walk(row,state,(a,from,b,to)=>{if(a.id<=message.end&&b.id>=message.start){matches.push({start:this.point(a,from),end:this.point(b,to,true)});if(matches.length===128)send(false);}});if(id%64===0){await yieldTask();if(serial!==this.serial)return;}}
+    let matches=[],first=true,lastYield=performance.now();const serial=this.serial;
+    const belongs=()=>serial===this.serial&&message.requestId===this.visibleRequest;
+    const context={type:'visible',epoch:this.epoch,revision:this.revision,queryRevision:this.queryRevision,requestId:message.requestId,head:this.head,start:begin,end:end-1};
+    const send=complete=>{if(belongs())this.emit({...context,matches,begin:first,complete});first=false;matches=[];};
+    for(let id=begin;id<end;id++){if(!belongs())return;const row=this.rows.get(id);if(!row)continue;this.walk(row,state,(a,from,b,to)=>{if(a.id<=message.end&&b.id>=message.start){matches.push({start:this.point(a,from),end:this.point(b,to,true)});if(matches.length===128)send(false);}});if(id%64===0||performance.now()-lastYield>4){await yieldTask();lastYield=performance.now();if(!belongs())return;}}
     send(true);
   }
   async near(message){
@@ -108,25 +111,31 @@ export class HistoryIndex {
     if(match&&serial===this.serial){if(message.delta)await this.locate({...message,ordinal:ordinal+message.delta});else this.emitResult({complete:true,match,ordinal,requestId:message.requestId});}
     else await this.locate({...message,ordinal:target.prefix});
   }
-  map(height){
+  map(height,message={}){
+    if(this.query&&this.dirty!==Infinity)return;
     height=Math.max(1,Math.min(1200,height));const colors=new Uint32Array(height*32),density=new Uint32Array(height),length=Math.max(1,this.length);
     if(length<4096){for(const row of this.rows.values()){const y=Math.min(height-1,Math.floor((row.id-this.head)/length*height));mergeColors(colors.subarray(y*32,(y+1)*32),row.colors);}}
     else for(const [block,summary]of this.blocks){const y=Math.min(height-1,Math.max(0,Math.floor((block*64-this.head)/length*height)));for(let x=0;x<32;x++){const code=summary[x],at=y*32+x;if(code&&(code>>>24)!==3||!colors[at])colors[at]=code;}}
     for(const row of this.rows.values()){if(row.count)density[Math.min(height-1,Math.floor((row.id-this.head)/length*height))]+=row.count;}
-    this.emit({type:'map',epoch:this.epoch,colors,density,height,head:this.head,length:this.length},[colors.buffer,density.buffer]);
+    this.emit({type:'map',epoch:this.epoch,revision:this.revision,queryRevision:this.queryRevision,requestId:message.requestId,colors,density,height,head:this.head,length:this.length},[colors.buffer,density.buffer]);
   }
 }
 if(typeof WorkerGlobalScope!=='undefined'&&self instanceof WorkerGlobalScope){
   const index=new HistoryIndex((message,transfer)=>postMessage(message,transfer||[]));
   self.onmessage=event=>{const message=event.data;let job;
+    const context={epoch:message.epoch,revision:message.revision??index.revision,queryRevision:message.queryRevision??index.queryRevision,requestId:message.requestId,operation:message.type};
+    const fail=error=>postMessage({type:'error',...context,message:String(error)});
+    try{
     if(message.type==='reset')index.reset(message.epoch);
     if(message.type==='rows'){index.patch(message);postMessage({type:'ack',id:message.id});}
+    if(message.epoch!==index.epoch)return;
     if(message.type==='done'&&message.epoch===index.epoch){index.revision=message.revision;job=index.search();}
     if(message.type==='query')job=index.queryFor(message);
     if(message.type==='locate')job=index.locate(message);
     if(message.type==='near')job=index.near(message);
     if(message.type==='visible')job=index.visible(message);
-    if(message.type==='map')index.map(message.height);
-    Promise.resolve(job).catch(error=>postMessage({type:'error',message:String(error)}));
+    if(message.type==='map')index.map(message.height,message);
+    Promise.resolve(job).catch(fail);
+    }catch(error){fail(error);}
   };
 }
