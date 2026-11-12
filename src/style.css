@@ -3,6 +3,7 @@
 @import "./shell.css";
 @import "./workspaces.css";
 @import "./components.css";
+@import "./tab-strip.css";
 @import "./servers.css";
 @import "./connections.css";
 @import "./updates.css";

@@ -65,6 +65,7 @@ async function makePage(window) {
     if(command==='workspace_layout'){layoutCalls.push(args);if(layoutGate)await layoutGate();}
     if(command==="workspace_drag_start") { dragCalls.push({command,args}); drags.set(window,args.id);return `browser-${window}`; }
     if(command==="workspace_drag_sample") return dropTargets.get(window)??{kind:"invalid"};
+    if(command==="workspace_drag_release") { dragCalls.push({command,args});return null; }
     if(command==="workspace_drag_finish") { dragCalls.push({command,args}); const target=dropTargets.get(window); const id=drags.get(window);drags.delete(window); if(!args.cancel&&target?.kind==="strip")return call("workspace_move",{window,id,target:target.windowId,index:target.index});return null; }
     return call(command,{...args,window});
   });
@@ -74,7 +75,7 @@ async function makePage(window) {
     const types={'.html':'text/html','.js':'text/javascript','.css':'text/css'};
     return route.fulfill({contentType:types[path.extname(file)]||'application/octet-stream',body:fs.readFileSync(file)});
   });
-  await page.route(url, route=>route.fulfill({contentType:"text/html",body:`<html lang="zh-CN"><head><meta charset="utf-8"></head><body><header class="topbar"><button id="catalog-tab" role="tab">服务器管理</button><div id="server-tabs" class="server-tabs" role="tablist"></div><div class="drag-region"></div><nav class="global-tools"><button>状态</button><button>消息</button><button>设置</button></nav><div class="window-controls"><button>—</button><button>□</button><button>×</button></div></header><main class="workspace"><div id="server-catalog"><input id="catalog-draft" value="draft retained"></div><div id="workspace-content" hidden></div></main><div id="notice"></div><script type="module">import '/style.css';import {Workspaces} from '/workspaces.ts';const callbacks=new Map(),listeners=new Map();let nativeId=0;window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:(_event,id)=>{callbacks.delete(listeners.get(id));listeners.delete(id);}};window.__TAURI_INTERNALS__={convertFileSrc:p=>new URL('/__plugin__/'+p,location.href).href,transformCallback:callback=>{const id=++nativeId;callbacks.set(id,callback);return id;},invoke:async(command,args)=>{if(command==='plugin:event|listen'){const id=++nativeId;listeners.set(id,args.handler);return id;}if(command==='plugin:event|unlisten')return;return window.workspaceInvoke(command,args);}};window.manager=new Workspaces(document.querySelector('#server-tabs'),document.querySelector('#workspace-content'),document.querySelector('#server-catalog'),message=>document.querySelector('#notice').textContent=message,window.workspaceInvoke);await window.manager.start();window.ready=true;</script></body></html>`}));
+  await page.route(url, route=>route.fulfill({contentType:"text/html",body:`<html lang="zh-CN"><head><meta charset="utf-8"></head><body><header class="topbar"><button id="catalog-tab" role="tab">服务器管理</button><div class="tab-navigation"><div id="server-tabs" class="server-tabs" role="tablist"></div><div class="tab-controls"><span class="tab-arrows" hidden></span><button data-tab-action="pick" aria-haspopup="dialog" aria-expanded="false" hidden><span class="tab-count"></span></button></div></div><button id="new-workspace" class="sd-icon" aria-label="选择服务器"></button><div id="drag-region" class="drag-region"></div><nav class="global-tools"><button>状态</button><button>消息</button><button>设置</button></nav><div class="window-controls"><button>—</button><button>□</button><button>×</button></div></header><main class="workspace"><div id="server-catalog"><input id="catalog-draft" value="draft retained"></div><div id="workspace-content" hidden></div></main><div id="notice"></div><script type="module">import '/style.css';import {Workspaces} from '/workspaces.ts';import {tabControls} from '/tab-strip.ts';import {icon} from '/ui.ts';document.querySelector('.topbar .tab-controls').outerHTML=tabControls('服务器标签');document.querySelector('#new-workspace').innerHTML=icon('plus');const callbacks=new Map(),listeners=new Map();let nativeId=0;window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:(_event,id)=>{callbacks.delete(listeners.get(id));listeners.delete(id);}};window.__TAURI_INTERNALS__={convertFileSrc:p=>new URL('/__plugin__/'+p,location.href).href,transformCallback:callback=>{const id=++nativeId;callbacks.set(id,callback);return id;},invoke:async(command,args)=>{if(command==='plugin:event|listen'){const id=++nativeId;listeners.set(id,args.handler);return id;}if(command==='plugin:event|unlisten')return;return window.workspaceInvoke(command,args);}};window.manager=new Workspaces(document.querySelector('#server-tabs'),document.querySelector('#workspace-content'),document.querySelector('#server-catalog'),message=>document.querySelector('#notice').textContent=message,window.workspaceInvoke);await window.manager.start();window.ready=true;</script></body></html>`}));
   await page.goto(url); await page.waitForFunction(()=>window.ready); return page;
 }
 async function refresh() { for (const page of pages) await page.evaluate(()=>window.manager.refresh()); }
@@ -428,6 +429,28 @@ try {
   await main.screenshot({path:path.join(directory,"workspace.png")});
   const output=path.resolve("artifacts/workspace-ui.png");fs.mkdirSync(path.dirname(output),{recursive:true});fs.copyFileSync(path.join(directory,"workspace.png"),output);
   checks.push("长名称、多主题、720×480 和减少动态下布局可用；连接状态仅展示，点击无弹出菜单");
+
+  const crowded=[];for(let i=0;i<20;i++)crowded.push(await open('多标签服务器 '+i,100+i));await refresh();
+  assert.equal(await main.locator('#server-tabs .server-tab').count(),22);
+  const pickerButton=main.locator('.topbar [data-tab-action="pick"]');
+  for(const width of [1100,720]){
+    await main.setViewportSize({width,height:720});await pickerButton.click();
+    await main.locator('.tab-picker input').fill('100.invalid');
+    assert.equal(await main.locator('.tab-picker-row').count(),1);
+    await main.locator('[data-tab-picker-action="select"]').click();
+    await wait(async()=>(await projection('main')).window.activeWorkspace===crowded[0].context.workspaceId);
+    await main.waitForTimeout(300);
+    assert.equal(await main.locator('#server-tabs').evaluate(n=>{const t=n.querySelector('[aria-selected="true"]').closest('.server-tab').getBoundingClientRect(),r=n.getBoundingClientRect();return t.left>=r.left-1&&t.right<=r.right+1;}),true);
+    await main.locator('.topbar [data-tab-action="forward"]').click();await main.waitForTimeout(300);
+    const browsed=await main.locator('#server-tabs').evaluate(n=>n.scrollLeft);await refresh();
+    assert.equal(await main.locator('#server-tabs').evaluate(n=>n.scrollLeft),browsed);
+    assert.equal((await projection('main')).window.activeWorkspace,crowded[0].context.workspaceId);
+    assert.equal(await main.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    fs.mkdirSync('artifacts/tab-overflow',{recursive:true});await main.screenshot({path:'artifacts/tab-overflow/servers-'+width+'.png'});
+  }
+  for(const w of crowded)await main.evaluate(async id=>{await manager.closer.request({kind:'host',id});await manager.refresh();},w.context.workspaceId);
+  await refresh();await select(main,bid);
+  checks.push('20 个服务器标签：1100/720 宽度固定操作区、endpoint 搜索、选择露出、手动浏览与刷新不抢活动页');
   for (const id of [bid,cid]) { await main.locator(`.tab-close-button[data-id="${id}"]`).click();await main.locator(`.server-tab[data-id="${id}"]`).waitFor({state:"detached"}); await refresh(); }
   await main.locator("#catalog-draft").waitFor({state:"visible"}); assert.equal((await projection("main")).window.activeWorkspace,null);
   checks.push("最后一个服务器关闭后返回固定管理页");

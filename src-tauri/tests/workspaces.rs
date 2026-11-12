@@ -447,3 +447,51 @@ fn tool_drops_match_only_the_same_workspace_and_valid_sidebar() {
         );
     }
 }
+
+#[test]
+fn scrolling_group_drop_excludes_controls_and_uses_current_centers() {
+    use sodeck::windows::{hit_group, DropTarget, GroupRect};
+    let mut group: GroupRect = serde_json::from_value(serde_json::json!({
+        "workspaceId":"w", "groupId":"g", "x":20., "y":50., "width":280., "height":400.,
+        "tabs":[{"id":"a","center":30.},{"id":"b","center":130.},{"id":"c","center":230.}],
+        "tabViewport":{"x":25.,"y":50.,"width":160.,"height":36.}
+    }))
+    .unwrap();
+    for scale in [1., 1.25, 1.5, 2.] {
+        let physical = -1920. + 180. * scale;
+        let x = (physical + 1920.) / scale;
+        assert_eq!(
+            hit_group("target", &[group.clone()], x, 70., "w", Some("a")),
+            DropTarget::Group {
+                window_id: "target".into(),
+                group_id: "g".into(),
+                edge: "tab".into(),
+                index: 1
+            }
+        );
+    }
+    for x in [20., 185., 220., 290.] {
+        assert_eq!(
+            hit_group("target", &[group.clone()], x, 70., "w", None),
+            DropTarget::Invalid
+        );
+    }
+    group.tabs.iter_mut().for_each(|t| t.center -= 100.);
+    assert_eq!(
+        hit_group("target", &[group.clone()], 180., 70., "w", Some("a")),
+        DropTarget::Group {
+            window_id: "target".into(),
+            group_id: "g".into(),
+            edge: "tab".into(),
+            index: 2
+        }
+    );
+    group.tab_viewport = None;
+    assert!(
+        matches!(
+            hit_group("target", &[group], 250., 70., "w", None),
+            DropTarget::Group { .. }
+        ),
+        "Legacy fixtures retain the original hit area"
+    );
+}

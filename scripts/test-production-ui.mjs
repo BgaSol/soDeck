@@ -214,14 +214,16 @@ async function checkTitlebarPosition(state) {
       const strip = document.querySelector('#server-tabs').getBoundingClientRect();
       const last = (document.querySelector('.server-tab:last-child') || document.querySelector('#catalog-tab')).getBoundingClientRect();
       const plus = document.querySelector('#new-workspace').getBoundingClientRect();
+      const controlsNode = document.querySelector('.topbar .tab-controls');
+      const controls = controlsNode.getClientRects().length ? controlsNode.getBoundingClientRect() : null;
       const toolsNode = document.querySelector('.global-tools');
       const tools = (toolsNode.getClientRects().length ? toolsNode : document.querySelector('#window-controls')).getBoundingClientRect();
-      return { gap: plus.left - Math.min(last.right, strip.right), offset: plus.y + plus.height / 2 - last.y - last.height / 2, width: plus.width, visible: plus.left >= strip.right && plus.right <= tools.left };
+      return { gap: plus.left - (controls?.right ?? Math.min(last.right, strip.right)), offset: plus.y + plus.height / 2 - last.y - last.height / 2, width: plus.width, visible: plus.left >= (controls?.right ?? strip.right) && plus.right <= tools.left };
     }, { theme, macos });
     fs.mkdirSync('artifacts/titlebar-position', { recursive: true });
     if (width === 1100 && !macos) await page.screenshot({ path: `artifacts/titlebar-position/${state}-${theme}.png`, clip: { x: 0, y: 0, width, height: 80 } });
     const label = `${state}/${theme}/${width}/${macos ? 'macos' : 'windows-linux'}: ${JSON.stringify(layout)}`;
-    assert(layout.gap >= 0 && layout.gap <= 8, `Plus follows the last visible tab: ${label}`);
+    assert(layout.gap >= 0 && layout.gap <= 8, `Plus follows the fixed tag controls or empty catalog tab: ${label}`);
     assert(Math.abs(layout.offset) <= 1, `Plus aligns with the tab center: ${label}`);
     assert.equal(layout.width, 28, label);
     assert(layout.visible, `Plus remains outside the scrolling tabs: ${label}`);

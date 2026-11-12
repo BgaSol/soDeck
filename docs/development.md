@@ -43,6 +43,8 @@ npm run terminal:history:test
 
 `ui:test` 包含服务器、工作区、连接界面、正式前端产物、桌面一致性和组件设置回归。`terminal:input:test` 验证实际 xterm 输入与剪贴板桥，无需 OpenSSH。
 
+标签溢出回归在 `interactions:test` 验证可打断缓动、像素输入接管、边缘停留、减少动态与搜索输入保持；`ui:test` 使用真实核心覆盖 20 个服务器、单组 50 页、各分屏位置、关闭取消和 iframe 保留。设备专项仍需在原生包中验证鼠标/触控板、静止边缘拖动、跨窗松手后的最终落点与混合 DPI；浏览器合成 WheelEvent 不证明真实设备惯性。
+
 CI 使用 `npm run ci:test -- <现有测试命令>`，例如 `npm run ci:test -- ui:test`。该入口保留原命令的退出码，输出实时日志，并将 SHA、attempt、平台、耗时和结果写入 `artifacts/ci/<命令>/`；命令中的冒号转换为连字符。服务器、工作台和正式产物 UI 在该入口下记录 Playwright trace，失败时保存，成功时丢弃；本机直接运行原入口不记录 trace。
 
 `terminal:history:test` 验证本地打包的真实 xterm/Worker：10 万行检索、计数/定位、移窗元数据、预览手势、输入法组合事件、清屏/备用屏幕/重排和冻结快照。最后运行 100 个不同关键词的计算与内存基准；数字报告写入 `artifacts/terminal-history/`，界面截图写入 `artifacts/terminal-search/`。无需 OpenSSH，不能代替原生 WebView、系统 IME 或五平台实际包验收。xterm / SerializeAddon 更新前必须复验本入口，构建会检查固定适配版本。

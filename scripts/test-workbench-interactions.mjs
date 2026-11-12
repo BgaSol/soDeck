@@ -16,6 +16,111 @@ const fixture=async()=>{
   return page;
 };
 
+const stripFixture=async()=>{
+  const page=await fixture();
+  await page.evaluate(async()=>{
+    await import('/style.css');const {TabStrip,tabControls}=await import('/tab-strip.ts');
+    const host=document.querySelector('#chrome');host.innerHTML=`<header class="component-tabs sd-tab-strip" style="width:360px"><div class="tab-navigation"><div class="component-tab-list" role="tablist">${Array.from({length:20},(_,i)=>`<div class="component-tab sd-tab" data-tab-id="${i}"><button role="tab">服务器终端 ${i}</button><button class="sd-icon">×</button></div>`).join('')}</div>${tabControls('本组页面')}</div><button id="create">＋</button></header>`;
+    window.strip=new TabStrip(host.querySelector('.component-tab-list'),host.querySelector('.tab-controls'));strip.update('0');
+    window.positions=()=>({left:strip.viewport.scrollLeft,max:strip.viewport.scrollWidth-strip.viewport.clientWidth});
+  });
+  return page;
+};
+test('overflow controls stay fixed, animation merges input and direct pixels interrupt it',async()=>{
+  const page=await stripFixture();
+  try{
+    const forward=page.locator('[data-tab-action="forward"]');await forward.waitFor();
+    assert.equal(await page.locator('[data-tab-action="back"]').isDisabled(),true);
+    const fixed=await page.locator('#create').boundingBox();
+    await page.evaluate(()=>{strip.scroll(240);window.first=positions().left;});
+    assert.equal(await page.evaluate(()=>first),0);
+    await page.waitForTimeout(45);const middle=await page.evaluate(()=>positions().left);assert(middle>0&&middle<240);
+    await page.evaluate(()=>{strip.scroll(240);strip.update('0');});await page.waitForTimeout(320);
+    assert(Math.abs(await page.evaluate(()=>positions().left)-480)<=1,'Refresh or repeated input reset the target');
+    assert.deepEqual(await page.locator('#create').boundingBox(),fixed);
+    await page.evaluate(()=>{strip.scroll(500);strip.scroll(-100);});await page.waitForTimeout(320);
+    assert(Math.abs(await page.evaluate(()=>positions().left)-380)<=1,'Reverse must start from the visible position');
+    await page.evaluate(()=>{strip.scroll(500);window.takeover=positions().left;strip.viewport.dispatchEvent(new WheelEvent('wheel',{deltaY:7.5,deltaMode:0,cancelable:true}));});
+    await page.waitForTimeout(220);assert(Math.abs(await page.evaluate(()=>positions().left-takeover)-7.5)<=1);
+    const zoom=await page.evaluate(()=>!strip.viewport.dispatchEvent(new WheelEvent('wheel',{deltaY:200,ctrlKey:true,cancelable:true})));assert.equal(zoom,false);
+    await page.evaluate(()=>{strip.scroll(500);strip.viewport.dispatchEvent(new WheelEvent('wheel',{deltaX:5,cancelable:true}));window.native=positions().left;});await page.waitForTimeout(200);assert.equal(await page.evaluate(()=>positions().left),await page.evaluate(()=>native));
+    await page.evaluate(()=>{strip.scroll(200);strip.dispose();window.stopped=positions().left;});await page.waitForTimeout(100);assert.equal(await page.evaluate(()=>positions().left),await page.evaluate(()=>stopped));
+  }finally{await page.close();}
+});
+test('reveal, resize, manual browsing, edge dwell and reduced motion preserve selection',async()=>{
+  const page=await stripFixture();
+  try{
+    await page.evaluate(()=>strip.update('19'));await page.waitForTimeout(350);
+    assert(Math.abs((await page.evaluate(()=>positions())).left-(await page.evaluate(()=>positions())).max)<=1);
+    await page.evaluate(()=>{strip.scroll(-900,false);strip.update('19');window.browsed=positions().left;});
+    await page.evaluate(()=>{document.querySelector('header').style.width='280px';});await page.waitForTimeout(100);
+    assert.equal(await page.evaluate(()=>positions().left),await page.evaluate(()=>browsed));
+    await page.evaluate(()=>{strip.reveal('19',false);});await page.waitForTimeout(30);
+    await page.evaluate(()=>{document.querySelector('header').style.width='230px';});await page.waitForTimeout(100);
+    assert.equal(await page.evaluate(()=>{const r=strip.tab('19').getBoundingClientRect(),v=strip.viewport.getBoundingClientRect();return r.left>=v.left-1&&r.right<=v.right+1;}),true,'Previously visible active tab remains visible after shrinking');
+    await page.evaluate(()=>{strip.scroll(-10000,false);const r=strip.viewport.getBoundingClientRect();strip.drag({x:r.right-2,y:r.top+12});});
+    await page.waitForTimeout(60);assert.equal(await page.evaluate(()=>positions().left),0);
+    await page.waitForTimeout(250);assert((await page.evaluate(()=>positions().left))>20);
+    await page.evaluate(()=>{strip.drag();window.end=positions().left;});await page.waitForTimeout(100);assert.equal(await page.evaluate(()=>positions().left),await page.evaluate(()=>end));
+    await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>{strip.scroll(10000);});assert.equal((await page.evaluate(()=>positions())).left,(await page.evaluate(()=>positions())).max);
+    await page.evaluate(()=>{strip.viewport.replaceChildren();strip.update(null);});assert.equal(await page.locator('.tab-arrows').isVisible(),false);assert.equal(await page.locator('[data-tab-action="pick"]').isVisible(),false);
+  }finally{await page.close();}
+});
+test('picker searches resource identity and preserves composition, focus and cancelled close',async()=>{
+  const page=await stripFixture();
+  try{
+    await page.evaluate(async()=>{
+      const {TabPicker}=await import('/tab-picker.ts');window.rows=[{id:'one',title:'config.yaml',detail:'/服务一/config.yaml',current:true,status:'未保存',closeLabel:'关闭'},{id:'two',title:'config.yaml',detail:'/服务二/config.yaml',closeLabel:'关闭'}];window.chosen=[];window.closeCalls=[];
+      window.picker=new TabPicker(document.querySelector('[data-tab-action="pick"]'),'本组页面',()=>rows,async id=>chosen.push(id),async id=>closeCalls.push(id),()=>true,()=>{});
+    });
+    const input=page.locator('.tab-picker input');await input.fill('服务二');assert.equal(await page.locator('.tab-picker-row').count(),1);
+    await page.evaluate(()=>{const input=document.querySelector('.tab-picker input');window.original=input;input.dispatchEvent(new CompositionEvent('compositionstart'));input.setSelectionRange(1,2);rows[1].status='错误';picker.update();});
+    assert.equal(await page.evaluate(()=>document.activeElement===original&&original.selectionStart===1&&original.selectionEnd===2),true);
+    await page.locator('[data-tab-picker-action="close"]').click();assert.deepEqual(await page.evaluate(()=>closeCalls),['two']);assert.equal(await page.locator('.tab-picker-row').count(),1,'Cancelled close keeps the live record');
+    await input.fill('absent');assert.equal(await page.getByRole('status').textContent(),'没有匹配的标签');
+    await input.fill('服务二');await input.press('ArrowDown');await page.keyboard.press('Enter');assert.deepEqual(await page.evaluate(()=>chosen),['two']);assert.equal(await page.locator('.tab-picker').count(),0);
+  }finally{await page.close();}
+});
+test('line and page wheels normalize distance, single long labels fit without overflow controls',async()=>{
+  const page=await stripFixture();
+  try{
+    await page.evaluate(()=>{strip.viewport.dispatchEvent(new WheelEvent('wheel',{deltaY:120,cancelable:true}));strip.viewport.dispatchEvent(new WheelEvent('wheel',{deltaY:120,cancelable:true}));});
+    assert.equal(await page.evaluate(()=>positions().left),0,'Fast discrete wheel input still animates');await page.waitForTimeout(320);
+    assert(Math.abs(await page.evaluate(()=>positions().left)-240)<=1);await page.evaluate(()=>strip.scroll(-10000,false));
+    await page.evaluate(()=>strip.viewport.dispatchEvent(new WheelEvent('wheel',{deltaY:3,deltaMode:1,cancelable:true})));await page.waitForTimeout(320);
+    assert(Math.abs(await page.evaluate(()=>positions().left)-96)<=1);
+    const width=await page.evaluate(()=>strip.viewport.clientWidth);
+    await page.evaluate(()=>strip.viewport.dispatchEvent(new WheelEvent('wheel',{deltaY:1,deltaMode:2,cancelable:true})));await page.waitForTimeout(320);
+    assert(Math.abs(await page.evaluate(()=>positions().left)-96-width)<=1);
+    await page.evaluate(()=>{strip.viewport.innerHTML='<div class="component-tab sd-tab" data-tab-id="long"><button role="tab"><span>'+('很长的文件名称'.repeat(20))+'</span></button><button class="sd-icon" aria-label="关闭">'+render.icon('close')+'</button></div>';strip.update('long');});
+    await page.waitForTimeout(150);assert.equal(await page.locator('.tab-arrows').isVisible(),false);
+    assert.equal(await page.locator('.component-tab').evaluate(n=>{const r=n.parentElement.getBoundingClientRect(),close=n.lastElementChild.getBoundingClientRect();return close.left>=r.left&&close.right<=r.right+1;}),true);
+  }finally{await page.close();}
+});
+test('settling a drop stops edge scrolling, reports its token and rejects late previews',async()=>{
+  const page=await stripFixture();
+  try{
+    await page.evaluate(async()=>{
+      const {Workspaces}=await import('/workspaces.ts');window.dropHost=Object.create(Workspaces.prototype);window.reports=[];
+      Object.assign(dropHost,{tabs:strip.viewport,strip,state:{window:{id:'main'}},retiredPreviews:new Set(),components:{previewDrop:()=>{},dropZones:()=>[],dockZones:()=>[]},call:async(command,args)=>reports.push({command,args})});
+      const r=strip.viewport.getBoundingClientRect();window.preview={kind:'strip',windowId:'main',token:'drag-one',index:0,point:{x:r.right-2,y:r.top+10}};dropHost.previewDrop(preview);
+    });
+    await page.waitForTimeout(250);assert((await page.evaluate(()=>positions().left))>0);
+    await page.evaluate(async()=>{await dropHost.settleDrop('drag-one');window.finished=positions().left;dropHost.previewDrop(preview);});
+    await page.waitForTimeout(250);assert.equal(await page.evaluate(()=>positions().left),await page.evaluate(()=>finished));
+    assert.equal(await page.evaluate(()=>reports.at(-1).args.dragToken),'drag-one');
+    await page.evaluate(()=>{
+      const gate=new Promise(resolve=>window.savedGate=resolve);window.flushing=false;
+      Object.assign(dropHost,{moving:new Set(),finishResize:()=>{},flushLayouts:()=>{window.flushing=true;return gate;},clearGesture:()=>{},refresh:async()=>{},notify:()=>{}});dropHost.components.flush=async()=>{};
+      window.finishPromise=dropHost.completeGesture({id:'server',token:'drag-two',cancelled:false});
+    });
+    await page.waitForFunction(()=>flushing);
+    assert.equal(await page.evaluate(()=>reports.at(-1).command),'workspace_drag_release','Remote scrolling stops before waiting for a save');
+    await page.evaluate(async()=>{savedGate();await finishPromise;});
+    assert.equal(await page.evaluate(()=>reports.at(-1).command),'workspace_drag_finish');
+  }finally{await page.close();}
+});
+
 test('form refresh preserves supported selections and direction without transferring values or outside focus',async()=>{
   const page=await fixture();
   try{

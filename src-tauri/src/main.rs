@@ -1142,6 +1142,7 @@ fn main() {
             windows::workspace_close_window,
             windows::workspace_drag_start,
             windows::workspace_drag_sample,
+            windows::workspace_drag_release,
             windows::workspace_drag_finish
             ,sodeck::component_ui::component_ui
         ])

@@ -17,6 +17,9 @@ export function icon(name: string) {
   const paths: Record<string, string> = {
     plus: '<path d="M12 5v14M5 12h14"/>',
     chevron: '<path d="m6 9 6 6 6-6"/>',
+    'chevron-left': '<path d="m15 6-6 6 6 6"/>',
+    'chevron-right': '<path d="m9 6 6 6-6 6"/>',
+    list: '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>',
     more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
     terminal: '<path d="m4 6 6 6-6 6m9 0h7"/>',
     // Docker mark from Simple Icons (CC0), kept monochrome with the host theme.
@@ -99,7 +102,7 @@ export function replace(element: HTMLElement, html: string) {
 // their separate lifetime and rendering rules.
 function chromeKey(node: Node): string | null {
   if (!(node instanceof Element)) return null;
-  for (const attr of ["data-view", "data-component-action", "data-workspace-action", "data-id"]) {
+  for (const attr of ["data-view", "data-group", "data-tab-id", "data-tab-action", "data-tab-picker-action", "data-component-action", "data-workspace-action", "data-id"]) {
     if (node.hasAttribute(attr)) return `${attr}:${node.getAttribute(attr)}:${node.getAttribute("data-key") ?? node.getAttribute("data-id") ?? ""}`;
   }
   return null;
@@ -123,7 +126,7 @@ function patchChildren(parent: Node, source: Node) {
 let chromePress: { button: Element; pointerId: number } | undefined;
 const pendingChrome = new Map<HTMLElement, string>();
 document.addEventListener("pointerdown", event => {
-  const button = (event.target as Element).closest?.("[data-component-action], [data-workspace-action]");
+  const button = (event.target as Element).closest?.("[data-component-action], [data-workspace-action], [data-tab-action], [data-tab-picker-action]");
   if (event.button === 0 && button) chromePress = { button, pointerId: event.pointerId };
 }, true);
 // The browser has committed the click target; action handlers may now update

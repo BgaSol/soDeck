@@ -7,16 +7,18 @@ import { ComponentData } from "./component-data";
 import { ComponentState } from "./component-state";
 import { attachMenuPosition, type MenuPosition, type MenuReference } from "./menu-position.js";
 import { escape as e, icon, replace, patchChrome } from "./ui";
-import type { Context, Projection, Workspace, DropTarget } from "./workspaces";
+import type { Context, Projection, Workspace, DropTarget, DropPreview } from "./workspaces";
 import type { NetworkSnapshot } from "./core";
 import type { CloseTarget } from "./close";
 import { panelGeometry, type PanelWidths, type PanelSide } from "./panel-layout";
+import { TabStrip, tabControls } from './tab-strip';
+import { TabPicker, type TabRecord } from './tab-picker';
 import {centerMinimum,effectiveRatio,ratioBounds,splitNode,splitWidth,withSplit} from './center-layout';
 
 type Call = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 interface Definition { uiApiVersion?:string; key: string; id: string; pluginId: string; pluginName: string; pluginInstanceId: string; title: string; icon: string; container: string; instancePolicy: string; entry: string; available: boolean; createAction?: string; locateEntry: boolean }
 interface Preference { side: string; pinned: boolean; startup: string; order: number }
-interface View { id: string; definitionKey: string; pluginInstanceId: string; context: Context; title: string; dirty: boolean; busy: boolean; error?: string; lastUsed: number; uiRequested?: boolean }
+interface View { resourceKey?: string; id: string; definitionKey: string; pluginInstanceId: string; context: Context; title: string; dirty: boolean; busy: boolean; error?: string; lastUsed: number; uiRequested?: boolean }
 export type CenterNode = {type:"group";groupId:string}|{type:"split";id:string;axis:"x"|"y";ratio:number;first:CenterNode;second:CenterNode};
 export interface ViewGroup {id:string;viewIds:string[];activeViewId:string|null;explicitEmpty:boolean}
 export interface WorkbenchHost {id:string;center:CenterNode;groups:Record<string,ViewGroup>;left:{viewIds:string[];activeViewId:string|null};right:{viewIds:string[];activeViewId:string|null};dialogs?:string[];focusedGroupId:string;zoomGroupId:string|null;revision:number}
@@ -29,7 +31,7 @@ interface ActionDefinition { key: string; title: string; available: boolean; rea
 interface ActionResult { status: "pending" | "completed" | "failed" | "invalidated"; requestId: string; context: Context; viewId?: string; error?: string }
 export interface UiProjection { definitions: Record<string, Definition>; actions?: Record<string, ActionDefinition>; defaultCreateAction?: string; pendingAction?: ActionResult[]; workspaces: Record<string, UiWorkspace>; error?: string; layoutSaveError?:string; transfers?:Transfer[] }
 interface Surface { readOnly?:boolean; transferEpoch?:string; node: HTMLDivElement; frame: HTMLIFrameElement; view: View; token?: string; chain: Promise<unknown>; deferred: Map<string,MessageEvent>; visible: boolean; initialized: boolean; mounted?: boolean; acceptsLocalFiles?: boolean; focusPending?: number; flushable?: boolean; flushing?: {id: string; done: (error?: string) => void}; timeout: ReturnType<typeof setTimeout> }
-interface Shell { node: HTMLElement; surfaces: Map<string, Surface>; observer: ResizeObserver; workspace: Workspace; ui: UiWorkspace; railCapacity?: number; layoutFrame?: number }
+interface Shell { tabStrips?: Map<string, {strip?:TabStrip;scroll:number;active:string|null;seen?:boolean}>; node: HTMLElement; surfaces: Map<string, Surface>; observer: ResizeObserver; workspace: Workspace; ui: UiWorkspace; railCapacity?: number; layoutFrame?: number }
 interface MenuEntry { label: string; action: () => Promise<unknown>; extra?: MenuEntry; checked?: boolean; disabled?: boolean; separatorBefore?: boolean }
 const empty = (): UiWorkspace => ({ views: [], preferences: {}, left: null, right: null, editor: null });
 
@@ -59,6 +61,7 @@ export class Components {
   private menuPosition?: MenuPosition;
   private boundTabs = new WeakSet<Element>();
   private disposed = false;
+  private picker?: TabPicker;
   private transfers:Transfer[]=[];
   private transferJobs=new Set<string>();
   private movingViews=new Set<string>();
@@ -207,13 +210,18 @@ export class Components {
     const host=shell.ui.host,center=shell.node.querySelector<HTMLElement>(".workbench-center")!;
     if(!host){patchChrome(center,'<div class="workspace-empty">正在准备工作台…</div>');return;}
     const scrolls=new Map([...center.querySelectorAll<HTMLElement>(".view-group")].map(g=>[g.dataset.group,g.querySelector(".component-tab-list")?.scrollLeft??0]));
+    const strips = shell.tabStrips ??= new Map();
+    for (const [key, saved] of strips) {
+      if (saved.strip) saved.scroll = saved.strip.viewport.scrollLeft;
+      if (!key.startsWith(host.id + ':') || !host.groups[key.slice(host.id.length + 1)]) { saved.strip?.dispose(); strips.delete(key); }
+    }
     const group=(id:string)=>{
       const g=host.groups[id],pages=g.viewIds.map(id=>shell.ui.views.find(v=>v.id===id)).filter(Boolean) as View[];
       const missing=(shell.ui.unavailableTools??[]).filter(t=>t.groupId===id);
       const workspaceId=shell.workspace.context.workspaceId,pending=this.pendingActions.get(workspaceId);
       const canCreate=shell.workspace.connected&&this.defaultAction?.available&&!pending&&!this.creating.has(workspaceId);
       const createTitle=pending&&!this.creating.has(workspaceId)?'结果尚未确认':this.creating.has(workspaceId)?'正在创建…':this.defaultAction?.title||'未设置默认行为';
-      return `<section class="view-group ${host.focusedGroupId===id?'focused':''}" data-group="${e(id)}" aria-label="标签组"><header class="component-tabs sd-tab-strip sd-edge-bottom" tabindex="0" aria-label="分屏标签栏"><div class="component-tab-list" role="tablist" aria-label="标签组页面">${missing.map(t=>`<button class="sd-quiet" disabled title="${e(t.key)} 未安装或未启用">${icon('plug')}${e(t.key)}</button>`).join('')}${pages.map(v=>`<div class="component-tab sd-tab ${g.activeViewId===v.id?'selected':''}" data-view="${e(v.id)}"><button role="tab" aria-selected="${g.activeViewId===v.id}" tabindex="${g.activeViewId===v.id?0:-1}" data-component-action="select" data-key="${e(v.id)}" title="${e(v.title)}">${icon(this.definitions[v.definitionKey]?.icon)}<span>${e(v.title)}${v.dirty?' ●':''}</span></button><button class="sd-icon" data-component-action="close" data-key="${e(v.id)}" aria-label="${this.definitions[v.definitionKey]?.container==='sidebar'?'隐藏':'关闭'} ${e(v.title)}">${icon('close')}</button></div>`).join('')}</div><button class="sd-icon" data-component-action="create" title="${e(createTitle)}" aria-label="${e(this.defaultAction?.title||'新建页面')}" ${canCreate?'':'disabled'}>${icon('plus')}</button></header><div class="component-slot central-slot">${missing.map(t=>`<div class="unavailable-tool" role="status">${icon('plug')}<span>${e(t.key)} 未安装或未启用；已保留此工具位置。</span></div>`).join('')}${pages.length?'':`<div class="workspace-empty"><p>${shell.workspace.connected?'点击＋新建，或拖入标签。':'连接已断开；仍可整理分屏。'}</p></div>`}</div></section>`;
+      return `<section class="view-group ${host.focusedGroupId===id?'focused':''}" data-group="${e(id)}" aria-label="标签组"><header class="component-tabs sd-tab-strip sd-edge-bottom" tabindex="0" aria-label="分屏标签栏"><div class="tab-navigation"><div class="component-tab-list" role="tablist" aria-label="标签组页面">${missing.map(t=>`<button class="sd-quiet" data-tab-id="missing:${e(t.key)}" disabled title="${e(t.key)} 未安装或未启用">${icon('plug')}${e(t.key)}</button>`).join('')}${pages.map(v=>`<div class="component-tab sd-tab ${g.activeViewId===v.id?'selected':''}" data-view="${e(v.id)}" data-tab-id="${e(v.id)}"><button role="tab" aria-selected="${g.activeViewId===v.id}" tabindex="${g.activeViewId===v.id?0:-1}" data-component-action="select" data-key="${e(v.id)}" title="${e(v.title)}">${icon(this.definitions[v.definitionKey]?.icon)}<span>${e(v.title)}${v.dirty?' ●':''}</span></button><button class="sd-icon" data-component-action="close" data-key="${e(v.id)}" aria-label="${this.definitions[v.definitionKey]?.container==='sidebar'?'隐藏':'关闭'} ${e(v.title)}">${icon('close')}</button></div>`).join('')}</div>${tabControls('本组页面')}</div><button class="sd-icon" data-component-action="create" title="${e(createTitle)}" aria-label="${e(this.defaultAction?.title||'新建页面')}" ${canCreate?'':'disabled'}>${icon('plus')}</button></header><div class="component-slot central-slot">${missing.map(t=>`<div class="unavailable-tool" role="status">${icon('plug')}<span>${e(t.key)} 未安装或未启用；已保留此工具位置。</span></div>`).join('')}${pages.length?'':`<div class="workspace-empty"><p>${shell.workspace.connected?'点击＋新建，或拖入标签。':'连接已断开；仍可整理分屏。'}</p></div>`}</div></section>`;
     };
     const render=(n:CenterNode,width:number,height:number):string=>{
       if(n.type==='group')return group(n.groupId);
@@ -227,17 +235,48 @@ export class Components {
     const hiddenStatus=[hiddenViews.filter(v=>v.dirty).length?`${hiddenViews.filter(v=>v.dirty).length} 页未保存`:'',hiddenViews.filter(v=>v.error).length?`${hiddenViews.filter(v=>v.error).length} 页错误`:''].filter(Boolean).join(' · ');
     patchChrome(center,zoom?`<div class="compact-group-bar"><span role="status">当前分屏${hiddenStatus?` · 其他分屏：${e(hiddenStatus)}`:''}</span><button class="sd-quiet" data-component-action="hidden-groups">其他分屏（${Object.keys(host.groups).length-1}）</button></div>${group(zoom)}`:render(host.center,center.clientWidth,center.clientHeight));
     for(const node of center.querySelectorAll<HTMLElement>(".view-group")){
-      const list=node.querySelector<HTMLElement>(".component-tab-list")!;list.scrollLeft=scrolls.get(node.dataset.group)??0;
+      const list=node.querySelector<HTMLElement>(".component-tab-list")!, key=host.id+':'+node.dataset.group;
+      let saved=strips.get(key);
+      if (!saved) {saved={scroll:scrolls.get(node.dataset.group)??0,active:null};strips.set(key,saved);}
+      if (saved.strip?.viewport!==list) {
+        saved.strip?.dispose(); list.scrollLeft=saved.scroll;
+        saved.strip=new TabStrip(list,node.querySelector<HTMLElement>('.tab-controls')!,()=>{saved!.scroll=list.scrollLeft;this.content.dispatchEvent(new Event('tab-geometry-changed'));});
+        saved.strip.update(saved.active,false);
+      }
+      const active=host.groups[node.dataset.group!].activeViewId, pending=this.pendingActions.get(shell.workspace.context.workspaceId);
+      saved.strip.pause(shell.node.hidden);
+      if(!shell.node.hidden){saved.strip.update(active,!pending || pending.focusEpoch===this.focusEpoch);if(!saved.seen)saved.strip.reveal(active,false);saved.seen=true;}
+      else if(saved.seen)saved.strip.update(active,false);
+      saved.active=active;
       if(this.boundTabs.has(node))continue;this.boundTabs.add(node);
+      node.querySelector('[data-tab-action="pick"]')?.addEventListener('click',event=>{event.stopPropagation();this.pagesPicker(shell,node.dataset.group!,(event.currentTarget as HTMLElement));});
       node.addEventListener("contextmenu",event=>{const target=event.target as Element,header=target.closest<HTMLElement>('.component-tabs');if(!header)return;event.preventDefault();const tab=target.closest<HTMLElement>("[data-view]"),anchor=tab?.querySelector<HTMLElement>('[role="tab"]')??header,reference={x:event.clientX,y:event.clientY,contextElement:anchor};if(tab)this.viewMenu(shell,tab.dataset.view!,anchor,false,reference);else this.groupMenu(shell,node.dataset.group!,anchor,false,reference);});
       node.addEventListener('keydown',event=>{if(event.key!=='ContextMenu'&&!(event.shiftKey&&event.key==='F10'))return;const target=event.target as Element,header=target.closest<HTMLElement>('.component-tabs');if(!header)return;event.preventDefault();event.stopPropagation();const tab=target.closest<HTMLElement>('[data-view]'),anchor=tab?.querySelector<HTMLElement>('[role="tab"]')??header;if(tab)this.viewMenu(shell,tab.dataset.view!,anchor,true);else this.groupMenu(shell,node.dataset.group!,anchor,true);});
-      list.addEventListener("keydown",event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const g=shell.ui.host!.groups[node.dataset.group!],at=g.viewIds.indexOf(g.activeViewId??'');const index=event.key==='Home'?0:event.key==='End'?g.viewIds.length-1:(at+(event.key==='ArrowRight'?1:-1)+g.viewIds.length)%g.viewIds.length;const id=g.viewIds[index];if(id)void this.run(async()=>{await this.perform(shell,{op:'select',viewId:id});const surface=shell.surfaces.get(id);if(surface)this.focusSurface(surface);});});
+      list.addEventListener("keydown",event=>{if(!(event.target as Element).closest('[role="tab"]'))return;if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const g=shell.ui.host!.groups[node.dataset.group!],at=g.viewIds.indexOf(g.activeViewId??'');const index=event.key==='Home'?0:event.key==='End'?g.viewIds.length-1:(at+(event.key==='ArrowRight'?1:-1)+g.viewIds.length)%g.viewIds.length;const id=g.viewIds[index];if(id)void this.run(async()=>{await this.perform(shell,{op:'select',viewId:id});this.revealView(shell,id);node.querySelector<HTMLElement>(`[data-view="${CSS.escape(id)}"] [role="tab"]`)?.focus({preventScroll:true});});});
     }
+    for (const saved of strips.values()) if (saved.strip && !saved.strip.viewport.isConnected) {saved.strip.dispose();saved.strip=undefined;}
+    this.picker?.update();
     for(const handle of center.querySelectorAll<HTMLElement>("[data-split-ratio]"))if(!this.boundTabs.has(handle)){
       this.boundTabs.add(handle);handle.addEventListener('pointerdown',event=>this.splitResize(shell,handle,event));
       handle.addEventListener('dblclick',()=>void this.run(()=>this.perform(shell,{op:'splitRatio',splitId:handle.dataset.splitRatio,ratio:.5})));
       handle.addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key))return;event.preventDefault();const min=Number(handle.getAttribute('aria-valuemin'))/100,max=Number(handle.getAttribute('aria-valuemax'))/100;const ratio=event.key==='Home'?min:event.key==='End'?max:Number(handle.getAttribute('aria-valuenow'))/100+(['ArrowRight','ArrowDown'].includes(event.key)?1:-1)*(event.shiftKey?.1:.05);void this.run(()=>this.perform(shell,{op:'splitRatio',splitId:handle.dataset.splitRatio,ratio:Math.max(min,Math.min(max,ratio))}));});
     }
+  }
+  private revealView(shell:Shell,id:string) { for(const saved of shell.tabStrips?.values()??[])saved.strip?.reveal(id); }
+  private pagesPicker(shell:Shell,groupId:string,anchor:HTMLElement) {
+    if(anchor.getAttribute('aria-expanded')==='true'){this.closeTabPicker();anchor.focus({preventScroll:true});return;}
+    this.closeMenu();const hostId=shell.ui.host?.id;
+    const records=():TabRecord[]=>{
+      const group=shell.ui.host?.groups[groupId];if(!group)return [];
+      return [...group.viewIds.flatMap(id=>{
+        const v=shell.ui.views.find(v=>v.id===id);if(!v)return [];
+        const d=this.definitions[v.definitionKey];
+        return [{id,title:v.title,detail:v.resourceKey||d?.pluginName||d?.title||v.definitionKey,icon:d?.icon,current:group.activeViewId===id,status:[!shell.workspace.connected?'已断开':'',v.dirty?'未保存':'',v.error?'错误':'',!d?.available?'不可用':'',v.busy?'忙碌':''].filter(Boolean).join(' · '),disabled:this.closeBlocked.has(id)||this.movingViews.has(id),closeLabel:d?.container==='sidebar'?'隐藏':'关闭'}];
+      }),...(shell.ui.unavailableTools??[]).filter(t=>t.groupId===groupId).map(t=>({id:'missing:'+t.key,title:t.key,detail:'未安装或未启用',status:'不可用',disabled:true,icon:'plug'}))];
+    };
+    this.picker=new TabPicker(anchor,'本组页面',records,async id=>{const group=shell.ui.host?.groups[groupId];if(!group?.viewIds.includes(id))return;await this.run(async()=>{await this.perform(shell,{op:'select',viewId:id});this.revealView(shell,id);shell.node.querySelector<HTMLElement>(`[data-view="${CSS.escape(id)}"] [role="tab"]`)?.focus({preventScroll:true});});},
+      id=>this.run(async()=>{if(!shell.ui.host?.groups[groupId]?.viewIds.includes(id))return;const v=shell.ui.views.find(v=>v.id===id);if(this.definitions[v?.definitionKey??'']?.container==='sidebar')await this.perform(shell,{op:'hideTool',viewId:id});else await this.close([shell.workspace.context.workspaceId],id);}),
+      ()=>!shell.node.hidden&&shell.ui.host?.id===hostId&&Boolean(shell.ui.host?.groups[groupId])&&!document.querySelector('dialog[open]'),this.notify);
   }
   private splitResize(shell:Shell,handle:HTMLElement,event:PointerEvent) {
     if(event.button!==0||this.splitGesture)return;event.preventDefault();handle.setPointerCapture(event.pointerId);handle.focus();
@@ -328,7 +367,7 @@ export class Components {
   }
   dropZones() {
     return [...this.shells.values()].filter(s=>!s.node.hidden&&!s.node.classList.contains('incoming-component-workspace')).flatMap(shell=>[...shell.node.querySelectorAll<HTMLElement>('.view-group')].map(group=>{
-      const r=group.getBoundingClientRect(),rails=['left','right'].reduce((width,side)=>width+shell.node.querySelector(`.${side}-rail`)!.getBoundingClientRect().width,0);return {workspaceId:shell.workspace.context.workspaceId,groupId:group.dataset.group!,x:r.x,y:r.y,width:r.width,height:r.height,workspaceWidth:shell.node.clientWidth-rails,workspaceHeight:shell.node.querySelector<HTMLElement>('.workbench-center')!.clientHeight,tabs:[...group.querySelectorAll<HTMLElement>('[data-view]')].map(tab=>{const r=tab.getBoundingClientRect();return{id:tab.dataset.view!,center:r.x+r.width/2};})};
+      const r=group.getBoundingClientRect(),rails=['left','right'].reduce((width,side)=>width+shell.node.querySelector(`.${side}-rail`)!.getBoundingClientRect().width,0);return {workspaceId:shell.workspace.context.workspaceId,groupId:group.dataset.group!,x:r.x,y:r.y,width:r.width,height:r.height,workspaceWidth:shell.node.clientWidth-rails,tabViewport:(()=>{const t=group.querySelector(".component-tab-list")!.getBoundingClientRect();return{x:t.x,y:t.y,width:t.width,height:t.height};})(),workspaceHeight:shell.node.querySelector<HTMLElement>('.workbench-center')!.clientHeight,tabs:[...group.querySelectorAll<HTMLElement>('[data-view]')].map(tab=>{const r=tab.getBoundingClientRect();return{id:tab.dataset.view!,center:r.x+r.width/2};})};
     }));
   }
   dockZones() {
@@ -337,11 +376,18 @@ export class Components {
       return {workspaceId:shell.workspace.context.workspaceId,side,x:Math.min(rail.x,panel.width?panel.x:rail.x),y:rail.y,width:rail.width+panel.width,height:rail.height,tools:rail.width?[...shell.node.querySelectorAll<HTMLElement>(`.${side}-rail [data-tool-key]`)].map(button=>({key:button.dataset.toolKey!,center:button.getBoundingClientRect().top+button.offsetHeight/2})):[]};
     }));
   }
-  previewDrop(target:DropTarget) {
+  previewDrop(target:DropPreview) {
+    for(const shell of this.shells.values())for(const [key,saved] of shell.tabStrips??[])saved.strip?.drag(target.kind==='group'&&target.edge==='tab'&&target.windowId===this.state?.window.id&&key===shell.ui.host?.id+':'+target.groupId?target.point:undefined);
     for(const shell of this.shells.values())this.previewTool(shell);
     for(const node of this.content.querySelectorAll<HTMLElement>('[data-drop-edge]'))delete node.dataset.dropEdge;
     for(const node of this.content.querySelectorAll<HTMLElement>('[data-dock-preview]'))delete node.dataset.dockPreview;
+    this.content.querySelectorAll('.component-tab-list .tab-insertion').forEach(node=>node.remove());
     if(target.kind==='group'&&target.windowId===this.state?.window.id)this.content.querySelector<HTMLElement>(`.view-group[data-group="${CSS.escape(target.groupId)}"]`)?.setAttribute('data-drop-edge',target.edge);
+    if(target.kind==='group'&&target.edge==='tab'&&target.windowId===this.state?.window.id){
+      const list=this.content.querySelector<HTMLElement>(`.view-group[data-group="${CSS.escape(target.groupId)}"] .component-tab-list`);
+      if(list){const tabs=[...list.querySelectorAll<HTMLElement>('[data-view]')].filter(t=>this.drag?.scope.kind!=='view'||t.dataset.view!==this.drag.scope.id),r=list.getBoundingClientRect(),x=tabs[target.index]?.getBoundingClientRect().left??tabs.at(-1)?.getBoundingClientRect().right??r.left;
+        const line=document.createElement('span');line.className='tab-insertion';line.style.left=`${Math.max(0,Math.min(r.width-2,x-r.left))+list.scrollLeft}px`;list.append(line);}
+    }
     if(target.kind==='dock'&&target.windowId===this.state?.window.id){const shell=this.shells.get(target.workspaceId);shell?.node.querySelector(`.${target.side}-rail`)?.setAttribute('data-dock-preview','true');shell?.node.querySelector(`.${target.side}-panel`)?.setAttribute('data-dock-preview','true');}
     if(target.kind==='dock'&&target.windowId===this.state?.window.id){const shell=this.shells.get(target.workspaceId);if(shell)this.previewTool(shell,{side:target.side,beforeKey:target.beforeToolKey??null});}
   }
@@ -363,15 +409,22 @@ export class Components {
     if(!g.starting&&Math.hypot(event.clientX-g.x,event.clientY-g.y)>=6){
       event.preventDefault();g.handle.setPointerCapture(g.pointer);document.body.classList.add('workbench-dragging');window.getSelection()?.removeAllRanges();this.closeMenu();
       const ghost=document.createElement('div');ghost.className='workbench-drag-ghost';ghost.textContent=g.scope.kind==='tool'?this.definitions[g.scope.id]?.title??'工具':g.scope.kind==='view'?(g.shell.ui.views.find(v=>v.id===g.scope.id)?.title??'页面'):'标签组';document.body.append(ghost);g.ghost=ghost;
-      g.starting=g.scope.kind==='tool'?Promise.resolve():this.call<string>('workspace_drag_start',{id:g.shell.workspace.context.workspaceId,scope:g.scope,offsetX:g.offsetX,offsetY:g.offsetY}).then(token=>{g.token=token;}).catch(error=>{this.notify(String(error));g.finished=true;this.clearDrag(g);});
+      g.starting=g.scope.kind==='tool'?Promise.resolve():this.call<string>('workspace_drag_start',{id:g.shell.workspace.context.workspaceId,scope:g.scope,offsetX:g.offsetX,offsetY:g.offsetY}).then(token=>{g.token=token;void this.sampleDrag(g);}).catch(error=>{this.notify(String(error));g.finished=true;this.clearDrag(g);});
     }
     if(g.ghost){event.preventDefault();g.ghost.style.left=`${event.clientX+14}px`;g.ghost.style.top=`${event.clientY+14}px`;}
     if(g.scope.kind==='tool'&&g.starting){
       g.toolTarget=this.toolDrop(g.shell,event.clientX,event.clientY,g.scope.id);
       this.previewTool(g.shell,g.toolTarget);return;
     }
-    if(g.token&&!g.sampling){g.sampling=true;void this.call<DropTarget>('workspace_drag_sample',{token:g.token,localPoint:g.localPoint}).then(target=>this.previewDrop(target)).catch(error=>{this.notify(String(error));void this.finishDrag(true);}).finally(()=>{g.sampling=false;});}
+
   };
+  private async sampleDrag(g:NonNullable<Components['drag']>) {
+    if(g.finished||!g.token||g.sampling)return;g.sampling=true;
+    try { const target=await this.call<DropPreview>('workspace_drag_sample',{token:g.token,localPoint:g.localPoint});if(!g.finished)this.previewDrop(target); }
+    catch(error){if(!g.finished){this.notify(String(error));void this.finishDrag(true);}}
+    finally{g.sampling=false;}
+    if(!g.finished)setTimeout(()=>void this.sampleDrag(g),32);
+  }
   private dragUp=(event:PointerEvent)=>{if(event.pointerId===this.drag?.pointer)void this.finishDrag(false);setTimeout(()=>{this.suppressClickUntil=0;},0);};
   private dragLost=(event:PointerEvent)=>{if(event.pointerId===this.drag?.pointer&&!this.drag.finished)void this.finishDrag(true);};
   private cancelGestures=()=>{this.closeMenu();this.splitGesture?.cancel();void this.finishDrag(true);};
@@ -384,6 +437,7 @@ export class Components {
   private dragCancel=(event:PointerEvent)=>{if(event.pointerId===this.drag?.pointer)void this.finishDrag(true);};
   private async finishDrag(cancel:boolean) {
     const g=this.drag;if(!g||g.finished)return;g.finished=true;
+    this.previewDrop({kind:'invalid'});
     if(g.starting)this.suppressClickUntil=Date.now()+350;
     if(g.scope.kind==='tool') {
       const target=g.toolTarget,valid=g.shell.ui.host?.revision===g.revision&&JSON.stringify(g.shell.workspace.context)===g.context&&this.state?.window.activeWorkspace===g.shell.workspace.context.workspaceId;
@@ -393,6 +447,7 @@ export class Components {
       return;
     } else {
       await g.starting;
+      if(g.token)await this.call('workspace_drag_release',{token:g.token}).catch(()=>{});
       if(g.token){try{await this.confirmMove(g.token,()=>this.call('workspace_drag_finish',{token:g.token,cancel,localPoint:g.localPoint}));}catch(error){this.notify(String(error));}}
     }
     this.clearDrag(g);if(!this.disposed)await this.refresh();
@@ -645,6 +700,7 @@ export class Components {
     if(action==='retry-layout-save'){const result=await this.invoke<{persistence:string}>('retryLayoutSave');if(result.persistence==='saved'){this.layoutSaveFailed=false;this.notify('工作台布局已保存');await this.refresh();}return;}
     if (["toggle", "locate"].includes(action) && !this.definitions[key]?.available) { this.notify("组件不可用，请查看应用状态"); return; }
     if (["toggle", "locate", "collapse"].includes(action)) { await this.perform(shell, { op: action, key, side: key }); if (this.focusEpoch === focusEpoch && this.state?.window.activeWorkspace === id) this.focus(shell, action === "collapse" ? undefined : key); return; }
+    if (action === "pages") { if(groupId)this.pagesPicker(shell,groupId,anchor);return; }
     if (action === "select") { if (!shell.ui.views.some(v => v.id === key)) return; await this.perform(shell, { op: "select", viewId: key }); const surface = shell.surfaces.get(key); if (surface && this.focusEpoch === focusEpoch && this.state?.window.activeWorkspace === id) this.focusSurface(surface); return; }
     if (action === "close") { if(this.definitions[shell.ui.views.find(v=>v.id===key)?.definitionKey??""]?.container==="sidebar")await this.perform(shell,{op:"hideTool",viewId:key});else await this.close([id], key); return; }
     if (action === "more") {
@@ -654,7 +710,7 @@ export class Components {
         return {label:`${d.title} · ${position}`,disabled:!t.available,action:()=>this.perform(shell,{op:'open',key:t.key}),extra:local&&side?{label:t.pinned?'取消固定':'固定入口',action:()=>this.perform(shell,{op:'preference',key:t.key,pinned:!t.pinned})}:local&&t.viewId?{label:`停靠到${key==='left'?'左':'右'}侧`,action:()=>this.perform(shell,{op:'dock',viewId:t.viewId,side:key})}:undefined};
       }),true,undefined,keyboard);return;
     }
-    if (action === "pages") { this.showMenu(anchor, shell.ui.views.filter(v => Object.values(shell.ui.host?.groups??{}).some(g=>g.viewIds.includes(v.id))).map(v => ({ label: v.title, action: () => this.perform(shell, { op: "select", viewId: v.id }) })), true); return; }
+
     if (action === "create") {
       const d = this.defaultAction;
       if (!d?.available || !shell.workspace.connected || this.creating.has(id) || this.pendingActions.has(id)) return;
@@ -681,7 +737,7 @@ export class Components {
     if(result.error)this.notify(`${result.error}${result.viewId?'；页面已创建':''}`);
     const shell=this.shells.get(id),surface=result.viewId? shell?.surfaces.get(result.viewId):undefined;
     if(surface && focusEpoch!==undefined && this.focusEpoch===focusEpoch && this.state?.window.activeWorkspace===id){
-      shell?.node.querySelector<HTMLElement>(`[data-component-action="select"][data-key="${CSS.escape(result.viewId!)}"]`)?.scrollIntoView({block:"nearest",inline:"nearest"});
+      if(shell)this.revealView(shell,result.viewId!);
       this.focusSurface(surface);
     }
   }
@@ -706,7 +762,7 @@ export class Components {
     if (selected) { const surface = shell.surfaces.get(selected.id); if (surface) this.focusSurface(surface); }
     else shell.node.querySelector<HTMLElement>(`[data-key="${CSS.escape(key ?? "")}"]`)?.focus();
   }
-  private focusSurface(surface: Surface) { if (!surface.mounted || !surface.visible) { surface.focusPending = this.focusEpoch; return; } surface.focusPending = undefined; surface.frame.focus(); this.post(surface, { type: "focus" });void this.invoke("action",{context:surface.view.context,action:{op:"focus",viewId:surface.view.id}}).catch(()=>{}); }
+  private focusSurface(surface: Surface) { const shell=this.shells.get(surface.view.context.workspaceId);if(shell)this.revealView(shell,surface.view.id); if (!surface.mounted || !surface.visible) { surface.focusPending = this.focusEpoch; return; } surface.focusPending = undefined; surface.frame.focus(); this.post(surface, { type: "focus" });void this.invoke("action",{context:surface.view.context,action:{op:"focus",viewId:surface.view.id}}).catch(()=>{}); }
   private showMenu(anchor: HTMLElement, entries: MenuEntry[], searchable = false, detail?: string, keyboard = false, reference:MenuReference=anchor,valid:()=>boolean=()=>true) {
     if (this.menu && this.menuAnchor === anchor && reference===anchor) { this.closeMenu(); return; }
     this.closeMenu(); const node = document.createElement("div"); node.className = "workspace-menu component-menu sd-menu"; node.tabIndex = -1;
@@ -727,7 +783,8 @@ export class Components {
     this.menuPosition = attachMenuPosition(node, reference, { isValid: () => this.menu === node&&valid(), onInvalid: () => { if (this.menu === node) this.closeMenu(); } });
     void this.menuPosition.ready.then(ready => { if (ready && this.menu === node) (searchable ? node.querySelector<HTMLElement>("input") : keyboard ? node.querySelector<HTMLElement>("button:not(:disabled)") : node)?.focus({ preventScroll: true }); });
   }
-  private closeMenu() { this.menuPosition?.dispose(); this.menuPosition = undefined; this.menu?.remove(); this.menu = undefined; this.menuAnchor = undefined; }
+  closeTabPicker() { this.picker?.dispose(); }
+  private closeMenu() { this.closeTabPicker(); this.menuPosition?.dispose(); this.menuPosition = undefined; this.menu?.remove(); this.menu = undefined; this.menuAnchor = undefined; }
   private closeBlocked = new Set<string>();
   private flushing?: Promise<void>;
   async flush(ids?: string[],freeze=false) {
@@ -754,6 +811,7 @@ export class Components {
     return this.requestClose(viewId?{kind:"views",ids:[viewId]}:{kind:"workspace",id:workspaceIds[0]});
   }
   setCloseBlocked(ids:string[]) {
+    if(ids.length)this.closeTabPicker();
     const previous=this.closeBlocked;this.closeBlocked=new Set(ids);
     for(const shell of this.shells.values()) {
       const blocked=shell.ui.views.some(v=>this.closeBlocked.has(v.id));shell.node.inert=false;
@@ -774,6 +832,6 @@ export class Components {
   }
   private async run(action: () => Promise<unknown>) { try { await action(); } catch (error) { this.notify(String(error)); } }
   private removeSurface(s: Surface) { if(s.token)void this.invoke("detach",{surfaceId:s.token}).catch(()=>{}); s.deferred.clear();s.flushing?.done("原有界面已卸载，输入无法确认");clearTimeout(s.timeout); if(s.token)this.clipboard.discard(s.token); this.shared.detach(s.token); this.data.detach(s.token); this.post(s, { type: "unmount" }); s.node.remove(); }
-  private destroy(shell: Shell) { if (shell.layoutFrame !== undefined) cancelAnimationFrame(shell.layoutFrame); shell.observer.disconnect(); for (const f of shell.surfaces.values()) this.removeSurface(f); shell.node.remove(); }
+  private destroy(shell: Shell) { for(const saved of shell.tabStrips?.values()??[])saved.strip?.dispose(); if (shell.layoutFrame !== undefined) cancelAnimationFrame(shell.layoutFrame); shell.observer.disconnect(); for (const f of shell.surfaces.values()) this.removeSurface(f); shell.node.remove(); }
   dispose() { this.content.removeEventListener("contextmenu",this.toolMenuEvent);this.content.removeEventListener("keydown",this.toolMenuEvent);this.cancelGestures();this.content.removeEventListener("lostpointercapture",this.dragLost);window.removeEventListener("blur",this.cancelGestures);this.surfaceLayer.remove(); clearTimeout(this.actionTimer); document.removeEventListener("visibilitychange",this.resumeActionPolling); this.shared.dispose();this.content.removeEventListener("pointerdown",this.dragDown);this.content.removeEventListener("pointermove",this.dragMove);this.content.removeEventListener("pointerup",this.dragUp);this.content.removeEventListener("pointercancel",this.dragCancel);document.removeEventListener("keydown",this.layoutKey); this.settingsListener?.();this.locateListener?.(); this.fileDrop.dispose(); this.disposed = true; clearInterval(this.networkTimer); this.closeMenu(); window.removeEventListener("message", this.message); document.removeEventListener("pointerdown", this.outside); document.removeEventListener("pointerdown", this.interaction, true); document.removeEventListener("keydown", this.interaction, true); this.theme.disconnect(); window.matchMedia("(prefers-color-scheme: dark)").removeEventListener("change", this.systemTheme); for (const shell of this.shells.values()) this.destroy(shell); }
 }

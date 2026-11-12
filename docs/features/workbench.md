@@ -16,6 +16,20 @@
 
 普通菜单保持精简；核心内部支持的整组迁移、已有窗口目标、批量返回和额外窗口恢复，不都作为普通菜单入口展示。接口能力不能直接当成界面已经提供的操作。
 
+## 多标签与查找
+
+服务器标签和每个中央分屏的页面标签保持单行。名称过长时省略，关闭入口保持可见；标签溢出后显示左右滚动按钮，到边界禁用对应按钮。列表入口显示本窗口服务器或本组页面的总数，与“＋”一起留在固定操作区；没有标签时隐藏列表和翻页按钮。
+
+点击箭头、离散滚轮和主动定位使用可打断的短缓动，同方向连续输入合并，反方向从当前可见位置改向。触控板横向像素输入使用原生滚动，连续竖向像素输入在标签视口内直接映射横向；不会额外模拟手势惯性。Ctrl/捏合缩放不拦截。设备类型只能通过 WheelEvent 启发式判断，真实设备手感仍需校准；系统减少动态效果时关闭额外缓动。
+
+选择、新建及关闭活动标签后露出新的活动标签。手动翻阅不会切换页面，后台刷新保留浏览位置；缩窄窗口时保持原先可见的活动标签，原先已翻出视野时保留浏览位置。各分屏滚动位置相互独立，在运行期保存，收起和恢复分屏继续沿用，不写入布局文件。
+
+服务器列表搜索名称和 endpoint，只列当前窗口服务器；页面列表搜索标题和已有资源标识，只列当前分屏页面。列表保留标签顺序，展示当前、断开、未保存、错误、忙碌或不可用状态。关闭或隐藏沿用既有生命周期，取消或失败保留页面及资源。搜索期间刷新保留输入和选区；无匹配时显示空结果。
+
+标签取得焦点时支持左右方向键和 Home/End；搜索列表支持上下方向键、Enter 选择、Esc 返回入口，Tab 使用正常焦点顺序。开始拖拽、离开所属工作区、关闭保护或锚点失效时关闭列表；终端正文输入不绑定这些操作。
+
+拖拽在标签视口边缘短暂停留后自动滚动，离开、松手或取消后停止。固定按钮区不接受标签落点；松手前目标窗口确认最新几何，确认失败时取消并提示重试，避免使用旧插入位置。跨窗坐标和 Wayland 限制沿用下文的交接规则。
+
 ## 工具停靠与尺寸
 
 工具入口可以固定、排序并在左右两侧之间移动；已打开的面板随入口共同停靠，继续复用原 view、iframe、文件草稿和网络监听。中央工具可停靠左右侧栏或中央，隐藏只影响展示。入口位置与实际停靠位置一致，已有定制优先于插件推荐值。
@@ -43,7 +57,7 @@ Windows 的跨窗落点使用实际系统窗口命中和物理坐标。Wayland �
 ## 实现与回归入口
 
 - 核心：[workbench.rs](../../src-tauri/src/workbench.rs)、[布局](../../src-tauri/src/workbench_layout.rs)、[迁移](../../src-tauri/src/workbench_move.rs)、[布局记忆](../../src-tauri/src/workbench_memory.rs)、[工具](../../src-tauri/src/component_ui/tools.rs)。
-- 界面：[workspaces.ts](../../src/workspaces.ts)、[components.ts](../../src/components.ts)、[center-layout.ts](../../src/center-layout.ts)、[panel-layout.ts](../../src/panel-layout.ts)。
+- 界面：[workspaces.ts](../../src/workspaces.ts)、[components.ts](../../src/components.ts)、[标签滚动](../../src/tab-strip.ts)、[标签列表](../../src/tab-picker.ts)、[center-layout.ts](../../src/center-layout.ts)、[panel-layout.ts](../../src/panel-layout.ts)。
 - 回归：[组件与 Surface](../../src-tauri/tests/component_ui.rs)、[工作区](../../src-tauri/tests/workspaces.rs)、[真实布局 UI](../../scripts/test-workbench-layout.mjs)、[工作区 UI](../../scripts/test-workspace-ui.mjs)、[原生关闭与迁移](../../scripts/test-close-native.mjs)。
 - 系统多屏、混合 DPI、Wayland/macOS 原生拖动与读屏仍需专项设备验证；基本包启动或浏览器模拟不能替代。验证方法见[开发指南](../development.md)，发行证据按版本保留。
 

@@ -59,11 +59,27 @@ pub struct GroupRect {
     pub workspace_width: f64,
     #[serde(default)]
     pub workspace_height: f64,
+    #[serde(default)]
+    pub tab_viewport: Option<ViewportRect>,
 }
 #[derive(Clone, Deserialize)]
+pub struct ViewportRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+#[derive(Clone, Deserialize, Serialize)]
 pub struct LocalPoint {
     pub x: f64,
     pub y: f64,
+}
+#[derive(Serialize)]
+pub struct DropPreview {
+    #[serde(flatten)]
+    target: DropTarget,
+    token: String,
+    point: Option<LocalPoint>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -102,6 +118,7 @@ struct Drag {
     scope: crate::workbench_move::Scope,
     revision: u64,
     context: crate::workspaces::Context,
+    released: bool,
 }
 
 pub struct DesktopWindows {
@@ -109,6 +126,7 @@ pub struct DesktopWindows {
     surfaces: Mutex<HashMap<String, Surface>>,
     focus: Mutex<Vec<String>>,
     drag: Mutex<Option<Drag>>,
+    settling: Mutex<HashMap<String, (String, tokio::sync::oneshot::Sender<()>)>>,
     native_moves: Mutex<std::collections::HashSet<String>>,
 }
 impl DesktopWindows {
@@ -413,6 +431,7 @@ impl DesktopWindows {
             surfaces: Mutex::new(HashMap::new()),
             focus: Mutex::new(vec!["main".into()]),
             drag: Mutex::new(None),
+            settling: Mutex::new(HashMap::new()),
             native_moves: Mutex::new(Default::default()),
         }
     }
@@ -1233,6 +1252,15 @@ pub fn hit_group(
             continue;
         }
         let edge = if y - g.y < 36. {
+            if g.tab_viewport.as_ref().is_some_and(|r| {
+                ![r.x, r.y, r.width, r.height].iter().all(|v| v.is_finite())
+                    || x < r.x
+                    || x >= r.x + r.width
+                    || y < r.y
+                    || y >= r.y + r.height
+            }) {
+                return DropTarget::Invalid;
+            }
             "tab"
         } else if x - g.x < g.width.min(240.) * 0.2 {
             "left"
@@ -1305,6 +1333,7 @@ pub fn workspace_surface(
     window: WebviewWindow,
     desktop: State<DesktopWindows>,
     surface: Surface,
+    drag_token: Option<String>,
 ) -> Result<(), String> {
     if ![surface.x, surface.y, surface.width, surface.height]
         .iter()
@@ -1319,6 +1348,17 @@ pub fn workspace_surface(
         .lock()
         .unwrap()
         .insert(window.label().into(), surface);
+    if let Some(token) = drag_token {
+        let mut settling = desktop.settling.lock().unwrap();
+        if settling
+            .get(&token)
+            .is_some_and(|(label, _)| label == window.label())
+        {
+            if let Some((_, sender)) = settling.remove(&token) {
+                let _ = sender.send(());
+            }
+        }
+    }
     Ok(())
 }
 #[tauri::command]
@@ -1452,6 +1492,7 @@ pub fn workspace_drag_start(
         scope: scope.unwrap_or(crate::workbench_move::Scope::Host),
         revision,
         context,
+        released: false,
     });
     Ok(token)
 }
@@ -1462,7 +1503,7 @@ pub fn workspace_drag_sample(
     desktop: State<DesktopWindows>,
     token: String,
     local_point: Option<LocalPoint>,
-) -> Result<DropTarget, String> {
+) -> Result<DropPreview, String> {
     let drag = desktop
         .drag
         .lock()
@@ -1471,18 +1512,75 @@ pub fn workspace_drag_sample(
         .filter(|d| d.token == token && d.source == window.label())
         .cloned()
         .ok_or("拖动已取消")?;
+    if drag.released {
+        return Ok(DropPreview {
+            target: DropTarget::Invalid,
+            token,
+            point: None,
+        });
+    }
     let target = desktop.hit(&handle, &drag, local_point.as_ref())?;
     if !desktop
         .drag
         .lock()
         .unwrap()
         .as_ref()
-        .is_some_and(|d| d.token == token)
+        .is_some_and(|d| d.token == token && !d.released)
     {
-        return Ok(DropTarget::Invalid);
+        return Ok(DropPreview {
+            target: DropTarget::Invalid,
+            token,
+            point: None,
+        });
     }
-    let _ = handle.emit("workspace-drop-preview", &target);
-    Ok(target)
+    let label = match &target {
+        DropTarget::Strip { window_id, .. } | DropTarget::Group { window_id, .. } => {
+            Some(window_id)
+        }
+        _ => None,
+    };
+    let point = label.and_then(|label| {
+        #[cfg(target_os = "linux")]
+        if std::env::var_os("WAYLAND_DISPLAY").is_some()
+            && std::env::var("GDK_BACKEND").as_deref() != Ok("x11")
+        {
+            return (label == window.label())
+                .then(|| local_point.clone())
+                .flatten();
+        }
+        let target_window = handle.get_webview_window(label)?;
+        let cursor = window.cursor_position().ok()?;
+        let origin = target_window.inner_position().ok()?;
+        let scale = target_window.scale_factor().ok()?;
+        Some(LocalPoint {
+            x: (cursor.x - origin.x as f64) / scale,
+            y: (cursor.y - origin.y as f64) / scale,
+        })
+    });
+    let preview = DropPreview {
+        target,
+        token,
+        point,
+    };
+    let _ = handle.emit("workspace-drop-preview", &preview);
+    Ok(preview)
+}
+#[tauri::command]
+pub fn workspace_drag_release(
+    handle: tauri::AppHandle,
+    window: WebviewWindow,
+    desktop: State<DesktopWindows>,
+    token: String,
+) -> Result<(), String> {
+    let mut lock = desktop.drag.lock().unwrap();
+    let drag = lock
+        .as_mut()
+        .filter(|d| d.token == token && d.source == window.label())
+        .ok_or("拖动已取消")?;
+    drag.released = true;
+    drop(lock);
+    let _ = handle.emit("workspace-drop-preview", DropTarget::Invalid);
+    Ok(())
 }
 #[tauri::command]
 pub async fn workspace_drag_finish(
@@ -1493,7 +1591,7 @@ pub async fn workspace_drag_finish(
     cancel: bool,
     local_point: Option<LocalPoint>,
 ) -> Result<(), String> {
-    let (source, id, target, scope, revision, context) = {
+    let drag = {
         let mut lock = desktop.drag.lock().unwrap();
         if !lock
             .as_ref()
@@ -1501,24 +1599,44 @@ pub async fn workspace_drag_finish(
         {
             return Err("拖动已取消".into());
         }
-        let drag = lock.take().unwrap();
-        drop(lock);
-        let target = if cancel {
-            Ok(DropTarget::Invalid)
-        } else {
-            desktop.hit(&handle, &drag, local_point.as_ref())
-        };
-        (
-            drag.source,
-            drag.workspace,
-            target,
-            drag.scope,
-            drag.revision,
-            drag.context,
-        )
+        lock.take().unwrap()
     };
     let _ = handle.emit("workspace-drop-preview", DropTarget::Invalid);
-    let target = target?;
+    let mut target = if cancel {
+        DropTarget::Invalid
+    } else {
+        desktop.hit(&handle, &drag, local_point.as_ref())?
+    };
+    if let DropTarget::Strip { window_id, .. } | DropTarget::Group { window_id, .. } = &target {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        desktop
+            .settling
+            .lock()
+            .unwrap()
+            .insert(token.clone(), (window_id.clone(), sender));
+        let sent = handle
+            .emit_to(
+                window_id,
+                "workspace-drop-settle",
+                serde_json::json!({"token":token}),
+            )
+            .is_ok();
+        let confirmed = sent
+            && matches!(
+                tokio::time::timeout(Duration::from_millis(500), receiver).await,
+                Ok(Ok(()))
+            );
+        desktop.settling.lock().unwrap().remove(&token);
+        if !confirmed {
+            return Err("标签落点未确认，已取消拖动，请重试".into());
+        }
+        target = desktop.hit(&handle, &drag, local_point.as_ref())?;
+    }
+    let source = drag.source;
+    let id = drag.workspace;
+    let scope = drag.scope;
+    let revision = drag.revision;
+    let context = drag.context;
     tauri::async_runtime::spawn_blocking(move || {
         let desktop = handle.state::<DesktopWindows>();
         let destination = crate::workbench_move::Destination {

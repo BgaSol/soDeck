@@ -4,6 +4,8 @@ import { Components } from "./components";
 import { CloseCoordinator, type HostInputs } from "./close";
 import { attachMenuPosition, type MenuPosition, type MenuReference } from "./menu-position.js";
 import type { PanelSide, PanelWidths } from "./panel-layout";
+import { TabStrip } from './tab-strip';
+import { TabPicker } from './tab-picker';
 
 export interface Context { workspaceId: string; serverId: string; connectionId: string; generation: number }
 export interface Layout { leftOpen: boolean; rightOpen: boolean; leftWidth: number; rightWidth: number }
@@ -12,6 +14,7 @@ interface WorkspaceWindow {id:string;role:string;workspaceIds:string[];activeWor
 export interface Projection { revision: number; window: WorkspaceWindow; workspaces: Workspace[]; incoming: Workspace | null; incomingWorkspaces?:Workspace[]; windows?:WorkspaceWindow[] }
 export type DropTarget = { kind: "strip"; windowId: string; index: number } | {kind:"group";windowId:string;groupId:string;edge:string;index:number} | {kind:"dock";windowId:string;workspaceId:string;side:string;beforeToolKey?:string|null} | { kind: "outside"; x: number; y: number } | { kind: "invalid" };
 type Invoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
+export type DropPreview = DropTarget & { token?: string; point?: {x:number;y:number} };
 interface Gesture { id: string; pointer: number; x: number; y: number; localPoint:{x:number;y:number}; grabX: number; grabY: number; token?: string; starting: boolean; released: boolean; cancelled: boolean; node: HTMLElement; capture: HTMLElement; ghost?: HTMLElement; sampling: boolean }
 interface PanelGesture { id: string; side: PanelSide; pointer: number; x: number; initial: number; width: number; otherWidth: number; handle: HTMLElement; focus?: HTMLElement }
 interface WidthChange { width: number; sequence: number }
@@ -38,10 +41,14 @@ export class Workspaces {
   private preview?: DropTarget;
   private observer: MutationObserver;
   private resizeObserver: ResizeObserver;
+  private strip?: TabStrip;
+  private picker?: TabPicker;
+  private previewToken?: string;
+  private retiredPreviews = new Set<string>();
 
   constructor(private tabs: HTMLElement, private content: HTMLElement, private catalog: HTMLElement, private notify: (message: string) => void, private call: Invoke = invoke) {
     this.closer = new CloseCoordinator(call,()=>this.state?.window.id??"main",async ids=>{this.finishResize(true);await this.flushLayouts().catch(error=>notify(String(error)));return this.components.flush(ids,true);},(ids,blocked,host)=>{
-      if (blocked) this.finishResize(true);
+      if (blocked) {this.finishResize(true);this.closeMenu();}
       this.components.setCloseBlocked(blocked?ids:[]);
       if(this.state?.window.id==="main")for(const id of ["server-catalog","overlay"]) {const node=document.getElementById(id);if(node)node.inert=host;}
       this.hostBlock?.(host);
@@ -52,6 +59,21 @@ export class Workspaces {
       await this.refresh();
       return accepted;
     }, workspace => this.displayWidths(workspace), () => this.finishResize(true));
+    const controls = tabs.parentElement?.querySelector<HTMLElement>('.tab-controls');
+    if (controls) {
+      this.strip = new TabStrip(tabs, controls, () => { this.paintPreview(); this.report(); });
+      controls.addEventListener('click', event => {
+        const anchor = (event.target as Element).closest<HTMLElement>('[data-tab-action="pick"]');
+        if (!anchor) return;
+        if (anchor.getAttribute('aria-expanded') === 'true') { this.picker?.dispose(true); return; }
+        this.closeMenu(); this.components.closeTabPicker();
+        const windowId = this.state?.window.id;
+        this.picker = new TabPicker(anchor, '服务器标签', () => (this.state?.workspaces ?? []).map(w => ({id:w.context.workspaceId,title:w.name,detail:w.endpoint,icon:'server',current:w.context.workspaceId===this.state?.window.activeWorkspace,status:w.connected?'已连接':'已断开',disabled:this.moving.has(w.context.workspaceId),closeLabel:'关闭'})),
+          id => this.run(async () => { await this.action('select',id); await this.refresh(); this.strip?.reveal(id); this.tabs.querySelector<HTMLElement>(`[data-id="${CSS.escape(id)}"] [role="tab"]`)?.focus({preventScroll:true}); }),
+          id => this.run(() => this.action('close',id)), () => this.state?.window.id === windowId && !document.querySelector('dialog[open], #overlay:not([hidden])'), notify);
+      }, {signal:this.events.signal});
+    }
+    document.addEventListener('tab-picker-open', () => this.closeMenu(false), {signal:this.events.signal});
     tabs.addEventListener("click", event => {
       if (this.gesture?.token) return;
       const button = (event.target as Element).closest<HTMLElement>("[data-workspace-action]");
@@ -68,8 +90,9 @@ export class Workspaces {
     tabs.addEventListener("lostpointercapture", () => { if (this.gesture && !this.gesture.released) void this.finish(true); }, {signal: this.events.signal});
     tabs.addEventListener("scroll", () => this.report(), { passive: true, signal: this.events.signal});
     document.querySelector("#catalog-tab")?.addEventListener("click", () => { this.finishResize(true); void this.run(() => this.call("workspace_activate", { id: null })); }, {signal: this.events.signal});
-    document.addEventListener("pointerdown", event => { if (!this.menu?.contains(event.target as Node) && !this.menuAnchor?.contains(event.target as Node)) this.closeMenu(); }, {signal: this.events.signal});
+    document.addEventListener("pointerdown", event => { if (this.menu && !this.menu.contains(event.target as Node) && !this.menuAnchor?.contains(event.target as Node)) this.closeMenu(); }, {signal: this.events.signal});
     content.addEventListener("surface-interaction", () => this.closeMenu(), {signal: this.events.signal});
+    content.addEventListener('tab-geometry-changed', () => this.report(), {signal:this.events.signal});
     document.addEventListener("keydown", event => this.key(event), {signal: this.events.signal});
     content.addEventListener("pointerdown", event => this.resize(event), {signal: this.events.signal});
     content.addEventListener("pointermove", event => this.resizeMove(event), {signal: this.events.signal});
@@ -79,7 +102,7 @@ export class Workspaces {
     this.observer = new MutationObserver(() => this.report());
     this.observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["open", "hidden", "inert"] });
     this.resizeObserver = new ResizeObserver(() => this.report()); this.resizeObserver.observe(tabs);
-    const blank = tabs.parentElement?.querySelector('.drag-region'); if (blank) this.resizeObserver.observe(blank);
+    const blank = document.querySelector('#drag-region'); if (blank) this.resizeObserver.observe(blank);
   }
   async start() { await this.refresh(); await this.closer.start(); await this.reportNow(); await this.call("workspace_ready"); }
   refresh(): Promise<void> {
@@ -113,9 +136,10 @@ export class Workspaces {
     const scroll = this.tabs.scrollLeft;
     patchChrome(this.tabs, state.workspaces.map(w => {
       const id = e(w.context.workspaceId), active = state.window.activeWorkspace === w.context.workspaceId;
-      return `<div class="server-tab sd-tab ${active ? "selected" : ""} ${this.moving.has(w.context.workspaceId) ? "moving" : ""}" data-id="${id}" data-tauri-drag-region="false"><button class="server-tab-select" role="tab" aria-selected="${active}" tabindex="${active ? 0 : -1}" data-workspace-action="select" data-id="${id}" title="${e(w.name)} · ${e(w.endpoint)}"><span class="health-dot ${w.connected ? "good" : "warning"}"></span><span class="tab-name">${e(w.name)}</span></button><button class="tab-close-button sd-icon" data-workspace-action="close" data-id="${id}" aria-label="关闭 ${e(w.name)}" title="关闭此窗口的服务器标签">${icon("close")}</button></div>`;
+      return `<div class="server-tab sd-tab ${active ? "selected" : ""} ${this.moving.has(w.context.workspaceId) ? "moving" : ""}" data-id="${id}" data-tab-id="${id}" data-tauri-drag-region="false"><button class="server-tab-select" role="tab" aria-selected="${active}" tabindex="${active ? 0 : -1}" data-workspace-action="select" data-id="${id}" title="${e(w.name)} · ${e(w.endpoint)}"><span class="health-dot ${w.connected ? "good" : "warning"}"></span><span class="tab-name">${e(w.name)}</span></button><button class="tab-close-button sd-icon" data-workspace-action="close" data-id="${id}" aria-label="关闭 ${e(w.name)}" title="关闭此窗口的服务器标签">${icon("close")}</button></div>`;
     }).join(""));
     this.tabs.scrollLeft = scroll;
+    this.strip?.update(state.window.activeWorkspace); this.picker?.update();
     if (focusId) this.tabs.querySelector<HTMLElement>(`[data-id="${CSS.escape(focusId)}"] [data-workspace-action="${focusAction ?? "select"}"]`)?.focus({ preventScroll: true });
     const w = this.current();
     this.catalog.hidden = !main || Boolean(w);
@@ -128,7 +152,7 @@ export class Workspaces {
   }
   private async action(action: string, id: string) {
     if (!this.state?.workspaces.some(w => w.context.workspaceId === id)) return;
-    this.closeMenu();
+    if (action !== 'close') this.closeMenu();
     this.finishResize(true);
     if (action === "select") { await this.call("workspace_activate", { id }); return; }
     if (action === "close") { await this.closer.request({kind:"host",id}); return; }
@@ -159,7 +183,7 @@ export class Workspaces {
     });
     void this.menuPosition.ready.then(ready => { if (ready && this.menu === node) node.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus(); });
   }
-  private closeMenu() { this.menuPosition?.dispose(); this.menuPosition = undefined; this.menu?.remove(); this.menu = undefined; this.menuAnchor = undefined; }
+  private closeMenu(picker = true) { if (picker) this.picker?.dispose(); this.menuPosition?.dispose(); this.menuPosition = undefined; this.menu?.remove(); this.menu = undefined; this.menuAnchor = undefined; }
   private key(event: KeyboardEvent) {
     if((event.key==="ContextMenu"||event.shiftKey&&event.key==="F10")&&this.tabs.contains(event.target as Node)) {
       const tab=(event.target as HTMLElement).closest<HTMLElement>('.server-tab');if(!tab)return;
@@ -186,7 +210,7 @@ export class Workspaces {
     event.preventDefault(); const nodes = [...document.querySelectorAll<HTMLElement>('#catalog-tab:not([hidden]), .server-tab-select')];
     const current = nodes.indexOf(document.activeElement as HTMLElement);
     const index = event.key === "Home" ? 0 : event.key === "End" ? nodes.length - 1 : (current + (event.key === "ArrowLeft" ? -1 : 1) + nodes.length) % nodes.length;
-    nodes[index]?.click(); nodes[index]?.focus(); nodes[index]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    nodes[index]?.click(); nodes[index]?.focus({preventScroll:true}); this.strip?.reveal(nodes[index]?.dataset.id);
   }
   private down(event: PointerEvent) {
     if (event.button !== 0 || this.gesture || this.menu || document.querySelector('dialog[open], .modal-backdrop:not([hidden])')) return;
@@ -209,19 +233,21 @@ export class Workspaces {
   private async sample(g: Gesture) {
     if (g.released || !g.token || g.sampling) return;
     g.sampling = true;
-    try { const target = await this.call<DropTarget>("workspace_drag_sample", { token: g.token,localPoint:g.localPoint }); this.previewDrop(target); if (g.ghost) g.ghost.dataset.drop = target.kind; }
-    catch (error) { this.notify(String(error)); await this.finish(true); }
+    try { const target = await this.call<DropPreview>("workspace_drag_sample", { token: g.token,localPoint:g.localPoint }); if(!g.released)this.previewDrop(target); if (g.ghost) g.ghost.dataset.drop = target.kind; }
+    catch (error) { if(!g.released){this.notify(String(error)); await this.finish(true);} }
     finally { g.sampling = false; }
     if (!g.released) setTimeout(() => void this.sample(g), 32);
   }
   private async finish(cancel: boolean) {
     const g = this.gesture; if (!g || g.released) return;
     g.released = true; g.cancelled = cancel;
+    this.previewDrop({kind:'invalid'});
     if (g.token) await this.completeGesture(g);
     else if (!g.starting) this.clearGesture(g);
   }
   private async completeGesture(g: Gesture) {
     this.moving.add(g.id);
+    await this.call('workspace_drag_release',{token:g.token}).catch(()=>{});
     try { this.finishResize(true); await this.flushLayouts(); await this.components.flush(); await this.call("workspace_drag_finish", { token: g.token, cancel: g.cancelled,localPoint:g.localPoint }); }
     catch (error) { this.notify(String(error)); }
     finally { this.moving.delete(g.id); this.clearGesture(g); await this.refresh().catch(() => {}); }
@@ -230,7 +256,12 @@ export class Workspaces {
     g.ghost?.remove(); g.node.classList.remove("dragging"); if (g.capture.hasPointerCapture(g.pointer)) g.capture.releasePointerCapture(g.pointer);
     if (this.gesture === g) this.gesture = undefined; this.previewDrop({ kind: "invalid" });
   }
-  previewDrop(target: DropTarget) { this.preview = target; this.components.previewDrop(target);this.paintPreview(); }
+  previewDrop(target: DropPreview) {
+    if(target.token && this.retiredPreviews.has(target.token))return;
+    if(target.kind==='invalid'&&!target.token&&this.previewToken){this.retiredPreviews.add(this.previewToken);if(this.retiredPreviews.size>64)this.retiredPreviews.delete(this.retiredPreviews.values().next().value!);this.previewToken=undefined;}
+    if(target.token)this.previewToken=target.token;
+    this.preview = target; this.strip?.drag(target.kind === 'strip' && target.windowId === this.state?.window.id ? target.point : undefined); this.components.previewDrop(target);this.paintPreview();
+  }
   private paintPreview() {
     this.tabs.querySelector(".tab-insertion")?.remove();
     const target = this.preview; if (target?.kind !== "strip" || target.windowId !== this.state?.window.id) return;
@@ -240,11 +271,12 @@ export class Workspaces {
     const line = document.createElement("span"); line.className = "tab-insertion"; line.style.left = `${left}px`; this.tabs.append(line);
   }
   private report() { if (!this.reportTimer) this.reportTimer = setTimeout(() => { this.reportTimer = undefined; void this.reportNow().catch(() => {}); }, 30); }
-  private async reportNow() {
+  async settleDrop(token:string) { this.previewDrop({kind:'invalid'}); await this.reportNow(token); }
+  private async reportNow(dragToken?:string) {
     // An empty strip takes no visible space; the title-bar blank area still accepts dragged tabs.
-    const target = this.tabs.querySelector('.server-tab') ? this.tabs : this.tabs.parentElement?.querySelector('.drag-region') ?? this.tabs;
+    const target = this.tabs.querySelector('.server-tab') ? this.tabs : document.querySelector('#drag-region') ?? this.tabs;
     const rect = target.getBoundingClientRect();
-    await this.call("workspace_surface", { surface: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, groups:this.components.dropZones(),docks:this.components.dockZones(),blocked: Boolean(document.querySelector('dialog[open], #overlay:not([hidden])')), tabs: [...this.tabs.querySelectorAll<HTMLElement>(".server-tab")].map(tab => { const r = tab.getBoundingClientRect(); return { id: tab.dataset.id!, center: r.x + r.width / 2 }; }) } });
+    await this.call("workspace_surface", { dragToken, surface: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, groups:this.components.dropZones(),docks:this.components.dockZones(),blocked: Boolean(document.querySelector('dialog[open], #overlay:not([hidden])')), tabs: [...this.tabs.querySelectorAll<HTMLElement>(".server-tab")].map(tab => { const r = tab.getBoundingClientRect(); return { id: tab.dataset.id!, center: r.x + r.width / 2 }; }) } });
   }
   private resize(event: PointerEvent) {
     const handle = (event.target as Element).closest<HTMLElement>("[data-resize]"); const w = this.current();
@@ -327,7 +359,7 @@ export class Workspaces {
   dispose() {
     if(this.disposed)return;
     this.finishResize(true);this.disposed=true;this.widths.clear();this.events.abort();clearTimeout(this.reportTimer);
-    this.observer.disconnect();this.resizeObserver.disconnect();this.closeMenu();
+    this.observer.disconnect();this.resizeObserver.disconnect();this.closeMenu();this.strip?.dispose();
     this.closer.dispose();this.components.dispose();
   }
   private hostBlock?: (blocked:boolean)=>void;

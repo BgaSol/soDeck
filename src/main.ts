@@ -2,7 +2,7 @@ import { listen, type UnlistenFn, type EventCallback } from "@tauri-apps/api/eve
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
-import { Workspaces, type DropTarget } from "./workspaces";
+import { Workspaces, type DropPreview } from "./workspaces";
 import { core, type Snapshot, type Message } from "./core";
 import * as views from "./views";
 import { selectedUpdates, updateCount, CORE_ID, renderUpdatesSettings } from "./updates";
@@ -14,6 +14,7 @@ import "./text-menu.js";
 import { ServerManager } from "./servers";
 import { ConnectionsUi } from "./connections";
 import { ServerPicker } from "./server-picker";
+import { tabControls } from "./tab-strip";
 import { ComponentSettings, type SettingsSnapshot } from "./settings";
 
 const win = getCurrentWindow();
@@ -25,7 +26,7 @@ window.installTextMenu({
   notify: error => toast(error, undefined, true),
 });
 const root = document.querySelector<HTMLDivElement>("#app")!;
-root.innerHTML = `<header class="topbar" data-tauri-drag-region="deep"><button id="catalog-tab" role="tab" aria-selected="true">${icon("grid")}<span>服务器管理</span></button><div class="server-tabs" id="server-tabs" role="tablist" aria-label="服务器工作区"></div><button id="new-workspace" class="sd-icon" aria-label="选择服务器" title="选择服务器" aria-haspopup="dialog" aria-expanded="false">${icon("plus")}</button><div id="drag-region" class="drag-region" aria-hidden="true"></div><nav class="global-tools" aria-label="应用工具"><button data-action="status" id="status-button" aria-label="应用状态" aria-expanded="false"><span class="health-dot"></span><span id="health">正在启动</span></button>${b("messages", '<span id="message-count">消息</span>', "bell", "icon-label", 'id="messages-button" aria-label="消息中心"')}${b("settings", "设置", "settings", "icon-label", 'id="settings-button"')}</nav><div id="window-controls" class="window-controls">${b("minimize", "", "minus", "", 'aria-label="最小化"')}${b("maximize", "", "maximize", "", 'id="maximize-button" aria-label="最大化或还原"')}${b("close-window", "", "close", "close-window", 'aria-label="关闭窗口"')}</div></header><main class="workspace" id="server-workspace"><div id="server-catalog"></div><div id="workspace-content" hidden></div></main><div id="overlay" hidden></div><div id="toasts" class="toasts" aria-live="polite"></div>`;
+root.innerHTML = `<header class="topbar" data-tauri-drag-region="deep"><button id="catalog-tab" role="tab" aria-selected="true">${icon("grid")}<span>服务器管理</span></button><div class="tab-navigation"><div class="server-tabs" id="server-tabs" role="tablist" aria-label="服务器工作区"></div>${tabControls("服务器标签")}</div><button id="new-workspace" class="sd-icon" aria-label="选择服务器" title="选择服务器" aria-haspopup="dialog" aria-expanded="false">${icon("plus")}</button><div id="drag-region" class="drag-region" aria-hidden="true"></div><nav class="global-tools" aria-label="应用工具"><button data-action="status" id="status-button" aria-label="应用状态" aria-expanded="false"><span class="health-dot"></span><span id="health">正在启动</span></button>${b("messages", '<span id="message-count">消息</span>', "bell", "icon-label", 'id="messages-button" aria-label="消息中心"')}${b("settings", "设置", "settings", "icon-label", 'id="settings-button"')}</nav><div id="window-controls" class="window-controls">${b("minimize", "", "minus", "", 'aria-label="最小化"')}${b("maximize", "", "maximize", "", 'id="maximize-button" aria-label="最大化或还原"')}${b("close-window", "", "close", "close-window", 'aria-label="关闭窗口"')}</div></header><main class="workspace" id="server-workspace"><div id="server-catalog"></div><div id="workspace-content" hidden></div></main><div id="overlay" hidden></div><div id="toasts" class="toasts" aria-live="polite"></div>`;
 const servers = win.label === "main" ? new ServerManager(document.querySelector<HTMLElement>("#server-catalog")!, text => toast(text)) : undefined;
 const workspaces = new Workspaces(document.querySelector("#server-tabs")!, document.querySelector("#workspace-content")!, document.querySelector("#server-catalog")!, text => toast(text, undefined, true));
 const connections = new ConnectionsUi(win.label, views => { servers?.setConnections(views); picker.setConnections(views); }, text => toast(text, undefined, true));
@@ -599,7 +600,8 @@ async function start() {
   await subscribe("connections-changed", () => { void connections.refresh().catch(error => toast(String(error), undefined, true)); scheduleRefresh(); });
   await subscribe("workspaces-changed", () => void workspaces.refresh().catch(error => toast(String(error), undefined, true)));
   await subscribe("workspace-request-close", () => void action(() => workspaces.closeWindow()));
-  await subscribe<DropTarget>("workspace-drop-preview", event => workspaces.previewDrop(event.payload));
+  await subscribe<{token:string}>("workspace-drop-settle", event => { void workspaces.settleDrop(event.payload.token).catch(error => toast(String(error))); });
+  await subscribe<DropPreview>("workspace-drop-preview", event => workspaces.previewDrop(event.payload));
   await subscribe<string>("core-main-action", event => { if (servers) void action(() => event.payload==="exit"?workspaces.exit():restart(event.payload === "install")); });
   await subscribe("core-request-close", () => {
     void action(()=>workspaces.exit());

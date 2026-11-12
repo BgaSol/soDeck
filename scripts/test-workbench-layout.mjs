@@ -58,7 +58,7 @@ async function makePage(window) {
     return call(command,{...args,window});
   });
   await page.route(url+'__plugin__/**',route=>{const p=path.join(plugin,decodeURIComponent(new URL(route.request().url()).pathname).split('/').slice(3).join('/'));let body=fs.readFileSync(p);if(delayMount&&path.basename(p)==='view.js'){assert(body.toString().includes('sodeck.mounted();'));body=Buffer.from(body.toString().replace('sodeck.mounted();','setTimeout(()=>sodeck.mounted(),800);'));}return route.fulfill({contentType:({'.html':'text/html','.js':'text/javascript','.css':'text/css'})[path.extname(p)],body});});
-  await page.route(url,route=>route.fulfill({contentType:'text/html',body:`<html lang="zh-CN"><head><meta charset="utf-8"></head><body><header class="topbar"><button id="catalog-tab" role="tab">服务器管理</button><div id="server-tabs" class="server-tabs" role="tablist"></div><div class="drag-region"></div></header><main class="workspace"><div id="server-catalog"></div><div id="workspace-content" hidden></div></main><div id="notice"></div><script type="module">import '/style.css';import {Workspaces} from '/workspaces.ts';window.__TAURI_INTERNALS__={convertFileSrc:p=>new URL('/__plugin__/'+p,location.href).href,transformCallback:()=>1,invoke:async(command,args)=>{if(command==='plugin:event|listen')return 1;if(command==='plugin:event|unlisten')return;return bridge(command,args);}};window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};window.manager=new Workspaces(document.querySelector('#server-tabs'),document.querySelector('#workspace-content'),document.querySelector('#server-catalog'),text=>document.querySelector('#notice').textContent=text,bridge);await manager.start();window.ready=true;</script></body></html>`}));
+  await page.route(url,route=>route.fulfill({contentType:'text/html',body:`<html lang="zh-CN"><head><meta charset="utf-8"></head><body><header class="topbar"><button id="catalog-tab" role="tab">服务器管理</button><div class="tab-navigation"><div id="server-tabs" class="server-tabs" role="tablist"></div><div class="tab-controls"><span class="tab-arrows" hidden></span><button data-tab-action="pick" aria-haspopup="dialog" aria-expanded="false" hidden><span class="tab-count"></span></button></div></div><button id="new-workspace" class="sd-icon" aria-label="选择服务器"></button><div id="drag-region" class="drag-region"></div></header><main class="workspace"><div id="server-catalog"></div><div id="workspace-content" hidden></div></main><div id="notice"></div><script type="module">import '/style.css';import {Workspaces} from '/workspaces.ts';import {tabControls} from '/tab-strip.ts';import {icon} from '/ui.ts';document.querySelector('.topbar .tab-controls').outerHTML=tabControls('服务器标签');document.querySelector('#new-workspace').innerHTML=icon('plus');window.__TAURI_INTERNALS__={convertFileSrc:p=>new URL('/__plugin__/'+p,location.href).href,transformCallback:()=>1,invoke:async(command,args)=>{if(command==='plugin:event|listen')return 1;if(command==='plugin:event|unlisten')return;return bridge(command,args);}};window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};window.manager=new Workspaces(document.querySelector('#server-tabs'),document.querySelector('#workspace-content'),document.querySelector('#server-catalog'),text=>document.querySelector('#notice').textContent=text,bridge);await manager.start();window.ready=true;</script></body></html>`}));
   await page.goto(url);await page.waitForFunction(()=>window.ready);return page;
 }
 const ui=()=>call('component_ui',{window:'main',operation:'snapshot',args:{}});
@@ -208,6 +208,28 @@ try {
   await wait(async()=>(await slots()).tools.find(t=>t.key===spareKey)?.location.side==='left');
   assert.equal((await slots()).views.length,countBefore,'Keyboard movement also keeps empty slots uncreated');
   for(const theme of ['light','dark','dopamine']){await main.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);await main.screenshot({path:`artifacts/workbench-layout/tools-${theme}.png`});}
+
+  await main.setViewportSize({width:1100,height:720});
+  const crowdedGroup=(await slots()).host.focusedGroupId;
+  for(let i=0;i<50;i++)await call('component_ui',{window:'main',operation:'invokeAction',args:{context:workspace.context,requestId:'overflow-'+i,actionKey:manifest.id+':new-page',groupId:crowdedGroup}});
+  await refresh();await wait(async()=>(await slots()).host.groups[crowdedGroup].viewIds.length>=50);
+  const crowdedHeader=board.locator('[data-group="'+crowdedGroup+'"] .component-tabs');
+  await crowdedHeader.locator('[data-tab-action="pick"]').click();
+  const count=(await slots()).host.groups[crowdedGroup].viewIds.length;
+  assert.equal(await main.locator('.tab-picker-row').count(),count,'Picker is scoped to this group');
+  await main.locator('.tab-picker input').fill('终端');assert((await main.locator('.tab-picker-row').count())>=50);
+  await main.locator('[data-tab-picker-action="select"]').first().click();await main.waitForTimeout(300);
+  const originalActive=(await slots()).host.groups[crowdedGroup].activeViewId;
+  await crowdedHeader.locator('[data-tab-action="forward"]').click();await main.waitForTimeout(300);
+  const browsed=await crowdedHeader.locator('.component-tab-list').evaluate(n=>n.scrollLeft);await refresh();
+  assert.equal(await crowdedHeader.locator('.component-tab-list').evaluate(n=>n.scrollLeft),browsed);
+  assert.equal((await slots()).host.groups[crowdedGroup].activeViewId,originalActive);
+  assert(await toolFrame.evaluate(el=>el.isConnected),'Many tabs retain the current iframe');
+  for(const width of [1100,720])for(const theme of ['light','dark','dopamine']){
+    await main.setViewportSize({width,height:720});await main.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+    fs.mkdirSync('artifacts/tab-overflow',{recursive:true});await main.screenshot({path:'artifacts/tab-overflow/pages-'+theme+'-'+width+'.png'});
+    assert.equal(await main.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  }
   assert.deepEqual(errors,[]);
   console.log('Passed: empty split close, nested splits, independent creation, stable iframe, keyboard/escape resize, zoom, compact recovery, UI v2 page transfer/source return, two-workspace atomic window return and draft continuity; three theme screenshots saved.');
 } catch(error) {
