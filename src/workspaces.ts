@@ -104,6 +104,7 @@ export class Workspaces {
   private render() {
     const state = this.state!;
     const main = state.window.role === "main";
+    document.body.classList.toggle("secondary-window", !main);
     const fixed = document.querySelector<HTMLElement>("#catalog-tab");
     if (fixed) { fixed.hidden = !main; fixed.setAttribute("aria-selected", String(!state.window.activeWorkspace)); fixed.tabIndex = state.window.activeWorkspace ? -1 : 0; }
     const focused = document.activeElement as HTMLElement;

@@ -334,7 +334,7 @@ export class Components {
   dockZones() {
     return [...this.shells.values()].filter(s=>!s.node.hidden&&!s.node.classList.contains('incoming-component-workspace')).flatMap(shell=>['left','right'].map(side=>{
       const rail=shell.node.querySelector(`.${side}-rail`)!.getBoundingClientRect(),panel=shell.node.querySelector(`.${side}-panel`)!.getBoundingClientRect();
-      return {workspaceId:shell.workspace.context.workspaceId,side,x:Math.min(rail.x,panel.width?panel.x:rail.x),y:rail.y,width:rail.width+panel.width,height:rail.height,tools:[...shell.node.querySelectorAll<HTMLElement>(`.${side}-rail [data-tool-key]`)].map(button=>({key:button.dataset.toolKey!,center:button.getBoundingClientRect().top+button.offsetHeight/2}))};
+      return {workspaceId:shell.workspace.context.workspaceId,side,x:Math.min(rail.x,panel.width?panel.x:rail.x),y:rail.y,width:rail.width+panel.width,height:rail.height,tools:rail.width?[...shell.node.querySelectorAll<HTMLElement>(`.${side}-rail [data-tool-key]`)].map(button=>({key:button.dataset.toolKey!,center:button.getBoundingClientRect().top+button.offsetHeight/2})):[]};
     }));
   }
   previewDrop(target:DropTarget) {

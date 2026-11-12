@@ -17,6 +17,7 @@ import { ServerPicker } from "./server-picker";
 import { ComponentSettings, type SettingsSnapshot } from "./settings";
 
 const win = getCurrentWindow();
+document.body.classList.toggle("secondary-window", win.label !== "main");
 await invoke("close_register_host");
 window.installTextMenu({
   read: async valid => { const text = await invoke<string>("clipboard_text", { operation: "read" }); return valid() ? text : null; },

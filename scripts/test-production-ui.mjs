@@ -214,7 +214,8 @@ async function checkTitlebarPosition(state) {
       const strip = document.querySelector('#server-tabs').getBoundingClientRect();
       const last = (document.querySelector('.server-tab:last-child') || document.querySelector('#catalog-tab')).getBoundingClientRect();
       const plus = document.querySelector('#new-workspace').getBoundingClientRect();
-      const tools = document.querySelector('.global-tools').getBoundingClientRect();
+      const toolsNode = document.querySelector('.global-tools');
+      const tools = (toolsNode.getClientRects().length ? toolsNode : document.querySelector('#window-controls')).getBoundingClientRect();
       return { gap: plus.left - Math.min(last.right, strip.right), offset: plus.y + plus.height / 2 - last.y - last.height / 2, width: plus.width, visible: plus.left >= strip.right && plus.right <= tools.left };
     }, { theme, macos });
     fs.mkdirSync('artifacts/titlebar-position', { recursive: true });
@@ -812,9 +813,23 @@ try {
   await page.evaluate(() => sessionStorage.setItem("test-window", "workspace-titlebar"));
   await page.reload();
   await board.waitFor();
+  assert.equal(await page.locator('.global-tools').isVisible(), false, 'Pop-out hides global status, messages and settings');
+  assert.equal(await page.locator('#new-workspace').isVisible(), true, 'Pop-out keeps the existing server picker');
+  assert.equal(await page.locator('.server-tab-select').isVisible(), true, 'Pop-out keeps server tabs');
+  assert.equal(await board.locator('.workspace-status').isVisible(), true, 'Pop-out keeps its connection status');
+  for (const side of ['left', 'right']) {
+    const rail = board.locator(`.${side}-rail`);
+    assert.equal(await rail.isVisible(), false, `Pop-out hides the ${side} tool rail`);
+    assert.equal(await rail.evaluate(node => node.getBoundingClientRect().width), 0, `Hidden ${side} tool rail leaves no blank column`);
+  }
+  const contentWidths = await board.evaluate(node => ({
+    board: node.getBoundingClientRect().width,
+    content: ['.left-panel', '.workbench-center', '.right-panel'].reduce((sum, selector) => sum + node.querySelector(selector).getBoundingClientRect().width, 0),
+  }));
+  assert(Math.abs(contentWidths.board - contentWidths.content) < 1, 'Pop-out content uses the width released by the tool rails');
   await checkTitlebarPosition('popout');
   await checkTitlebar();
-  checks.push("Pop-out title bar: same maximize/restore behavior; server tabs and their controls retain their own interactions");
+  checks.push("Pop-out hides global tools and tool-rail columns; server tabs, picker, status and maximize/restore keep their existing behavior");
   }
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: checks.length, checks, pageErrors: errors }, null, 2));

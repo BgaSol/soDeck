@@ -1,9 +1,9 @@
 @layer components {
   #workspace-content { position:relative; }
   .server-workbench { position: relative; }
-  .server-workbench.left-open { grid-template-columns: 42px var(--effective-left-width,220px) minmax(0,1fr) 42px; }
-  .server-workbench.right-open { grid-template-columns: 42px minmax(0,1fr) var(--effective-right-width,220px) 42px; }
-  .server-workbench.left-open.right-open { grid-template-columns: 42px var(--effective-left-width,220px) minmax(0,1fr) var(--effective-right-width,220px) 42px; }
+  .server-workbench.left-open { grid-template-columns: var(--workbench-rail-width,42px) var(--effective-left-width,220px) minmax(0,1fr) var(--workbench-rail-width,42px); }
+  .server-workbench.right-open { grid-template-columns: var(--workbench-rail-width,42px) minmax(0,1fr) var(--effective-right-width,220px) var(--workbench-rail-width,42px); }
+  .server-workbench.left-open.right-open { grid-template-columns: var(--workbench-rail-width,42px) var(--effective-left-width,220px) minmax(0,1fr) var(--effective-right-width,220px) var(--workbench-rail-width,42px); }
   .incoming-component-workspace { position: absolute; inset: 0; visibility: hidden; pointer-events: none; }
   .workbench-panel { flex-direction: column; min-height: 0; }
   .left-open .left-panel, .right-open .right-panel { display: flex; }
