@@ -6,7 +6,13 @@
 
 本地文件插件类型/格式、Rust 测试、正式编辑器构建与完整浏览器回归通过，覆盖合法 JSON 跨行字段名、数组字符串、美元符号、JSONC 跨行注释及浅色/深色主题。
 
-本版待发行。本次包来源提交的源码检查、五平台原生构建与实际归档验收、原始打包运行及正式发行结果在完成后记入本节。Monaco 升级仍需复验词法模块、注释差异和主题映射。
+包来源：[4bc4ff4f23982b855996b15c16098bb915cfc0e5](https://github.com/BgaSol/soDeck/commit/4bc4ff4f23982b855996b15c16098bb915cfc0e5)；原始独立打包与实包验收：[43130591301](https://github.com/BgaSol/soDeck/actions/runs/43130591301)。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台全部原生构建，实际归档的架构、资源、初始化、视图创建/释放和退出全部一次通过；五份报告与原包字节及来源提交的绑定校验通过。
+
+[来源提交 Check](https://github.com/BgaSol/soDeck/actions/runs/43130513580) 的五平台源码、文件/SFTP/进程、正式编辑器类型和完整浏览器回归通过。该 run 的无关网络容量回归首次超时、相同源码复验及其余验证范围见[核心记录](../../docs/releases/v0.23.7.md)。
+
+发行页面：[files 0.10.4](https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.10.4)，文件插件更新渠道。五份归档和更新清单共六个附件沿用原始 run；发布前只同步说明与清单的验收记录，程序归档字节保持不变。
+
+本轮未执行原生远程包组合、编辑器设备、真实 IME/DPI/Wayland、生产服务器或系统剪贴板/默认应用专项。Monaco 升级仍需复验词法模块、注释差异和主题映射。
 
 # 0.10.3
 
