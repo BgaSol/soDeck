@@ -151,6 +151,36 @@ test("network omission is explicit and pinned inputs reject changed hashes, tag 
   await assert.rejects(validatePinned(g.api, pinned), /Invalid native/);
 });
 
+test("pinned Artifacts accept reordered platform and nested metadata keys", async () => {
+  const { api, inputs } = fixture();
+  const snapshot = await resolveInputs(api, inputs, scriptCommit);
+  const item = snapshot.components.files;
+  item.platforms = Object.fromEntries(Object.entries(item.platforms).reverse());
+  const platform = item.platforms[targets[0]];
+  platform.artifact = Object.fromEntries(Object.entries(platform.artifact).reverse());
+  await validatePinned(api, snapshot);
+});
+
+test("pinned Releases accept reordered keys but reject changed fields and asset array order", async () => {
+  const f = fixture(); f.release("core");
+  delete f.inputs.core_run_id; f.inputs.core_version = f.state.values.core;
+  const snapshot = await resolveInputs(f.api, f.inputs, scriptCommit);
+  const item = snapshot.components.core;
+  item.manifest = Object.fromEntries(Object.entries(item.manifest).reverse());
+  const platform = item.platforms[targets[0]];
+  platform.assets = platform.assets.map(asset => Object.fromEntries(Object.entries(asset).reverse()));
+  await validatePinned(f.api, snapshot);
+  for (const mutate of [
+    item => item.platforms[targets[0]].assets[0].size++,
+    item => item.platforms[targets[0]].assets[0].size = String(item.platforms[targets[0]].assets[0].size),
+    item => item.platforms[targets[0]].assets.reverse(),
+    item => item.manifest.sha256 = "e".repeat(64),
+  ]) {
+    const changed = structuredClone(snapshot); mutate(changed.components.core);
+    await assert.rejects(validatePinned(f.api, changed), /Pinned core package source changed/);
+  }
+});
+
 test("formal Release missing platforms, wrong URLs/signatures, absent digests and tag/source conflicts fail without fallback", async () => {
   for (const mutate of [
     (f, r) => r.assets.pop(),

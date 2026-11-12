@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import { targets, coreNames } from "./core-artifacts.mjs";
 import { nativeGithub, assetRecord } from "./native-github.mjs";
 
@@ -184,7 +185,7 @@ export async function validatePinned(api, snapshot) {
       if (!Number.isSafeInteger(item.source.id) || item.source.id <= 0 || item.source.tag !== tagName(key, item.version)) throw new Error(`Invalid pinned ${key} Release`);
       fresh = await releaseComponent(api, key, item.version, await api.get(`/releases/${item.source.id}`));
     } else throw new Error(`Invalid pinned ${key} source`);
-    if (!fresh || ["id", "version", "apiVersion", "binary", "commit"].some(field => fresh[field] !== item[field]) || JSON.stringify(fresh.platforms) !== JSON.stringify(item.platforms) || JSON.stringify(fresh.manifest) !== JSON.stringify(item.manifest)) throw new Error(`Pinned ${key} package source changed`);
+    if (!fresh || ["id", "version", "apiVersion", "binary", "commit"].some(field => fresh[field] !== item[field]) || !isDeepStrictEqual(fresh.platforms, item.platforms) || !isDeepStrictEqual(fresh.manifest, item.manifest)) throw new Error(`Pinned ${key} package source changed`);
   }
   const major = snapshot.components.core.apiVersion.split(".")[0];
   if (Object.values(snapshot.components).some(item => item && item.apiVersion.split(".")[0] !== major)) throw new Error("Pinned plugin/core API mismatch");

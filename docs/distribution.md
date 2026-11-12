@@ -100,6 +100,8 @@ Verify native remote plugins 的 core_version、terminal_version、files_version
 
 platform 默认 all；补测可选单个平台，重跑复用固定输入。新建运行重放时填写 verification_run_id，其余版本/run 输入留空；原运行须已结束并保有唯一输入快照，业务失败的运行也可重放原包。单平台通过只代表该平台，交付记录同时保留其他平台的成功报告。源包缺失、过期或摘要变化明确失败，不自动换包。输入快照和验收结果保留 30 天，不修改原始包或 Release。
 
+平台包和更新清单元数据按结构及字段值复验；对象键顺序不影响结果，数组顺序、字段类型和字段值必须一致。
+
 原生文件剪贴板 desktop_files、默认应用 desktop_open 与 Windows 深度编辑器 file_editor 默认关闭；明确开启后失败仍使工作流失败。编辑器自动化需要 WebView2 调试端口。系统默认应用验收区分实际目标收据与关联受保护的 skipped，不能把启动命令成功等同目标应用收到请求。隔离前提、工具和运行命令见[开发指南](development.md#检查与测试)。
 
 Windows ARM64 的隔离 OpenSSH 在缺失时从固定 Microsoft Release 下载原生便携包，核对大小与 SHA-256，不安装系统服务或随产品分发。Linux 依赖安装使用官方软件源修正和有限重试；这些测试准备不改变产品依赖。
