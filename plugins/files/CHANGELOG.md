@@ -10,7 +10,9 @@
 
 [来源提交 Check](https://github.com/BgaSol/soDeck/actions/runs/43130513580) 的五平台源码、文件/SFTP/进程、正式编辑器类型和完整浏览器回归通过。该 run 的无关网络容量回归首次超时、相同源码复验及其余验证范围见[核心记录](../../docs/releases/v0.23.7.md)。
 
-发行页面：[files 0.10.4](https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.10.4)，文件插件更新渠道。五份归档和更新清单共六个附件沿用原始 run；发布前只同步说明与清单的验收记录，程序归档字节保持不变。
+发行：[files 0.10.4](https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.10.4)，非 Latest。五份归档和更新清单共六个附件沿用原始 run；发布前只同步说明与清单的验收记录，程序归档字节保持不变。正式发布后附件 ID、大小、摘要和匿名更新清单下载复核一致。
+
+[真实正式版升级 0.10.3 → 0.10.4](https://github.com/BgaSol/soDeck/actions/runs/43133168068) 在五个平台全部一次通过，宿主固定为核心 0.23.7。生产标签发现选中本版并保留完整清单和说明；下载准备期间旧插件继续运行，重启后激活 0.10.4、清除待重启状态，并保留服务器资料与文件设置。五份完成报告和公开清单来源均已复核；仅补充发行文档的夹具来源见[核心记录](../../docs/releases/v0.23.7.md)。
 
 本轮未执行原生远程包组合、编辑器设备、真实 IME/DPI/Wayland、生产服务器或系统剪贴板/默认应用专项。Monaco 升级仍需复验词法模块、注释差异和主题映射。
 
