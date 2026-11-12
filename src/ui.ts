@@ -6,8 +6,6 @@ export const escape = (value: unknown) =>
         c
       ]!,
   );
-export const date = (value: number) =>
-  new Date(value).toLocaleString("zh-CN", { hour12: false });
 export const statusText = {
   unloaded: "未加载",
   starting: "正在加载",

@@ -120,11 +120,13 @@ await page.route('**/__plugin__/**',route=>{
   return route.fulfill({contentType:types[path.extname(file)]||'application/octet-stream',body:fs.readFileSync(file)});
 });
 const errors = [], checks = [];
+const logFilters = [];
 let failCatalog = false, testWindow = "main", heldLogReply, releaseLogReply, chosenPluginDirectory = null;
 let holdLocalNetwork = false, localNetworkReached, releaseLocalNetwork;
 let holdPickerCatalog = false, releasePickerCatalog, pickerConnects = 0;
 page.on("pageerror", error => errors.push(String(error)));
 await page.exposeBinding("desktopInvoke", async (_, command, args) => {
+  if (command === 'read_logs') logFilters.push(args.filter);
   if (command === 'plugin:dialog|open') return chosenPluginDirectory;
   if (command === 'server_catalog' && failCatalog) throw new Error('隔离测试：目录暂时不可读');
   const result=await call(command, { ...args, window: testWindow });
@@ -754,6 +756,23 @@ try {
   assert.equal(await page.locator('#clear-log-filters').evaluate(el=>el===document.activeElement),true);
   await page.getByRole('button',{name:'继续显示',exact:true}).click();await page.locator('.log-row').first().waitFor();
   assert.equal(await page.locator('.log-meta').first().evaluate(el=>getComputedStyle(el).fontSize),'12px');
+  const localDates = await page.evaluate(() => {
+    const zero = new Date(0);
+    return { zero: new Date(-zero.getTimezoneOffset()*60000).toISOString().slice(0,16), until: new Date('2024-02-29T12:34').getTime() };
+  });
+  await page.locator('#log-since').fill(localDates.zero);await page.locator('#log-since').blur();
+  for(let i=0;!logFilters.some(filter=>filter.since===0)&&i<50;i++)await page.waitForTimeout(20);
+  assert(logFilters.some(filter=>filter.since===0),'The local epoch filter is submitted as zero milliseconds');
+  await page.locator('#log-until').fill('2024-02-29T12:34');await page.locator('#log-until').blur();
+  for(let i=0;!logFilters.some(filter=>filter.since===0&&filter.until===localDates.until)&&i<50;i++)await page.waitForTimeout(20);
+  assert(logFilters.some(filter=>filter.since===0&&filter.until===localDates.until),'Both log boundaries use local time');
+  await page.evaluate(()=>window.emitTestEvent('core-changed'));await page.waitForTimeout(150);
+  assert.equal(await page.locator('#log-since').inputValue(),localDates.zero,'Refreshing preserves the epoch input');
+  assert.equal(await page.locator('#log-until').inputValue(),'2024-02-29T12:34');
+  const cleared = logFilters.length;await page.getByRole('button',{name:'清除筛选',exact:true}).click();
+  for(let i=0;logFilters.length===cleared&&i<50;i++)await page.waitForTimeout(20);
+  assert(!('since' in logFilters.at(-1))&&!('until' in logFilters.at(-1)),'Clearing removes both timestamp boundaries');
+  checks.push('Bundled local dates: epoch and leap-day filters, millisecond boundaries, refresh and clearing');
   await page.keyboard.press('Escape');
   const messageFixture=path.join(directory,'messages');fs.cpSync(fixture,messageFixture,{recursive:true});
   const messageManifest=JSON.parse(fs.readFileSync(path.join(messageFixture,'plugin.json'),'utf8'));messageManifest.id='test.messages';

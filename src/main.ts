@@ -8,6 +8,7 @@ import * as views from "./views";
 import { selectedUpdates, updateCount, CORE_ID, renderUpdatesSettings } from "./updates";
 import { networkAction, networkInput } from "./update-network";
 import { button as b, escape as e, icon, replace } from "./ui";
+import { parseLocalTime } from "./datetime";
 import "./style.css";
 import "./text-menu.js";
 import { ServerManager } from "./servers";
@@ -574,13 +575,9 @@ root.addEventListener("change", (event) => {
   if (input.id === "log-source") state.filter.pluginId = input.value;
   else if (input.id === "log-level") state.filter.level = input.value;
   else if (input.id === "log-since")
-    state.filter.since = input.value
-      ? new Date(input.value).getTime()
-      : undefined;
+    state.filter.since = parseLocalTime(input.value);
   else if (input.id === "log-until")
-    state.filter.until = input.value
-      ? new Date(input.value).getTime()
-      : undefined;
+    state.filter.until = parseLocalTime(input.value);
   else return;
   ++logGeneration;
   if (!state.paused) void action(refreshLogs);
