@@ -25,6 +25,7 @@ export interface ViewState {
   pluginTab: "installed" | "official" | null;
   sourceDrafts: Record<string, NonNullable<Manifest["updateSource"]>>;
   networkDraft?: UpdateNetwork;
+  networkMirrorKeys?: { revision: number; keys: string[] };
   networkError?: string;
   networkNotice?: string;
   networkTesting?: string;

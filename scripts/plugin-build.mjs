@@ -5,6 +5,7 @@ import { verifyBinary } from "./verify-binary.mjs";
 import { packageSettingsAssets } from "./plugin-settings-assets.mjs";
 import { cargoPackageVersion } from "./cargo-package.mjs";
 import { packageMenuAssets } from "./plugin-menu-assets.mjs";
+import { packageDomAssets } from "./plugin-dom-assets.mjs";
 import { targets } from "./core-artifacts.mjs";
 import {fileEditorSettings,buildFileEditor,packageFileEditor} from './plugin-file-editor-assets.mjs';
 export function run(command, args, options = {}) {
@@ -51,6 +52,7 @@ export async function buildPlugin({ plugin, target, output, release, installDepe
   if (metadata.build?.fileEditor) packageFileEditor(directory);
   if (['terminal','files'].includes(plugin)) fs.copyFileSync("plugins/shared/state.js", path.join(directory, "ui/state.js"));
   if (metadata.ui) await packageMenuAssets(directory);
+  if (plugin === 'network-proxy') await packageDomAssets(directory);
   packageSettingsAssets(metadata, directory);
   fs.copyFileSync(
     `${pluginRoot}/target/${target}/${release ? "release" : "debug"}/${executable}`,

@@ -455,6 +455,15 @@ impl AppCore {
     }
 
     pub fn set_update_source(&self, id: &str, source: Option<UpdateSource>) -> Result<(), String> {
+        self.set_update_source_checked(id, source, None)
+    }
+
+    pub fn set_update_source_checked(
+        &self,
+        id: &str,
+        source: Option<UpdateSource>,
+        expected: Option<crate::model::UpdateSourceBaseline>,
+    ) -> Result<(), String> {
         if self.updates.lock().unwrap().busy.contains(id) {
             return Err("该插件正在检查或下载，请完成后修改来源".into());
         }
@@ -469,6 +478,9 @@ impl AppCore {
             .find(|p| p.manifest.id == id)
             .cloned()
             .ok_or("插件记录不存在")?;
+        if expected.is_some_and(|base| base.source != record.manifest.update_source) {
+            return Err("更新来源已被另一窗口修改，草稿已保留；请重新读取后保存".into());
+        }
         record.manifest.update_source = source.clone();
         // Update sources are user settings and must survive switching program versions.
         if let Some(pending) = &mut record.pending_update {

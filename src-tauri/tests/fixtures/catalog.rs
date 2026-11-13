@@ -284,9 +284,10 @@ fn main() {
                 )
                 .map(|_| Value::Null),
             "set_plugin_update_source" => core
-                .set_update_source(
+                .set_update_source_checked(
                     args["id"].as_str().unwrap(),
                     serde_json::from_value(args["source"].clone()).unwrap(),
+                    serde_json::from_value(args["expected"].clone()).unwrap(),
                 )
                 .map(|_| Value::Null),
             "check_update" => {

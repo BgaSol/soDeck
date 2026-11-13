@@ -201,6 +201,7 @@ try {
   assert.equal(await editorFrame.locator('textarea').inputValue(),'draft for server A');
   await viewFrame(main,aid,added.id).locator('textarea:focus').waitFor({timeout:5000});
   await board.locator(`[data-component-action="close"][data-key="${added.id}"]`).click();
+  await board.locator(`[data-component-action="close"][data-key="${added.id}"]`).waitFor({state:"detached"});
   await board.locator(`[data-component-action="select"][data-key="${editorId}"]`).click();
   checks.push('默认终端未加载时禁用；多个创建类型或正在编辑文件时，加号仍只新建一个独立终端并聚焦，保留文件草稿');
   let releaseCreate,createRequests=0;
@@ -221,7 +222,7 @@ try {
   const late=(await componentState('main')).workspaces[aid];
   assert.equal((await projection('main')).window.activeWorkspace,bid);
   assert.equal(await main.locator(`.component-surface[data-view-id="${late.editor}"] iframe`).evaluate(el=>el===document.activeElement),false);
-  await select(main,aid);await board.locator(`[data-component-action="close"][data-key="${late.editor}"]`).click();
+  await select(main,aid);await board.locator(`[data-component-action="close"][data-key="${late.editor}"]`).click();await board.locator(`[data-component-action="close"][data-key="${late.editor}"]`).waitFor({state:"detached"});
   await board.locator(`[data-component-action="select"][data-key="${editorId}"]`).click();
   checks.push('创建中禁用且防重复，失败可重试；创建期间切换服务器，迟到结果不抢工作区和焦点');
   const actionBefore=(await componentState('main')).workspaces[aid].views.length;
@@ -232,7 +233,7 @@ try {
   await board.locator('[data-component-action="create"]').dispatchEvent('click');await select(main,bid);await main.waitForTimeout(1300);await select(main,aid);
   await wait(()=>board.locator('[data-component-action="create"]').isEnabled());createData=undefined;
   const resolved=(await componentState('main')).workspaces[aid];assert.equal(resolved.views.length,actionBefore+1);assert.equal(actionCalls.filter(op=>op==='invokeAction').length,sentBefore+1);assert(actionCalls.includes('actionStatus'));
-  await board.locator(`[data-component-action="close"][data-key="${resolved.editor}"]`).click();await board.locator(`[data-component-action="select"][data-key="${editorId}"]`).click();
+  await board.locator(`[data-component-action="close"][data-key="${resolved.editor}"]`).click();await board.locator(`[data-component-action="close"][data-key="${resolved.editor}"]`).waitFor({state:"detached"});await board.locator(`[data-component-action="select"][data-key="${editorId}"]`).click();
   checks.push('无页面动作不补建；超过等待期限后查询原回执，切换工作区恢复查询，重复点击不重发');
   await fileBrowser.getByRole('button',{name:'nginx.conf',exact:true}).dblclick();await flush(main);
   assert.equal((await componentState("main")).workspaces[aid].views.filter(v=>v.definitionKey.endsWith(':editor')).length,1);

@@ -5,12 +5,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { Workspaces, type DropPreview } from "./workspaces";
 import { core, type Snapshot, type Message } from "./core";
 import * as views from "./views";
-import { selectedUpdates, updateCount, CORE_ID, renderUpdatesSettings } from "./updates";
+import { selectedUpdates, updateCount, CORE_ID } from "./updates";
 import { networkAction, networkInput } from "./update-network";
-import { button as b, escape as e, icon, replace } from "./ui";
+import { button as b, escape as e, icon } from "./ui";
+import { updateDOM } from "./dom-update";
 import { parseLocalTime } from "./datetime";
 import "./style.css";
 import "./text-menu.js";
+import { HostDrafts } from "./host-drafts";
 import { ServerManager } from "./servers";
 import { ConnectionsUi } from "./connections";
 import { ServerPicker } from "./server-picker";
@@ -37,7 +39,7 @@ async function restart(install: boolean) {
 }
 const overlay = document.querySelector<HTMLDivElement>("#overlay")!;
 const componentSettings = new ComponentSettings(() => { if (layer === "settings") renderLayer(); });
-workspaces.setCloseParticipants(async (decision,operationId)=>[...await (servers?.closeInputs(decision)??Promise.resolve([])),...await componentSettings.closeInputs(decision,operationId)],blocked=>servers?.setCloseBlocked(blocked));
+workspaces.setCloseParticipants(async (decision,operationId)=>{await hostDrafts.flushInputs();return [...await (servers?.closeInputs(decision)??Promise.resolve([])),...await componentSettings.closeInputs(decision,operationId),...await hostDrafts.closeInputs(decision)];},blocked=>servers?.setCloseBlocked(blocked));
 let snapshot: Snapshot | undefined;
 let layer = "";
 let returnFocus: HTMLElement | null = null;
@@ -67,6 +69,8 @@ const state: views.ViewState = {
   pluginTab: null,
   sourceDrafts: {},
 };
+
+const hostDrafts = new HostDrafts(() => snapshot, state, renderLayer);
 
 function applyTheme() {
   const theme = snapshot?.preferences.theme ?? "system";
@@ -110,21 +114,26 @@ function content() {
   return views.messages(state);
 }
 function renderLayer() {
+  const error = document.querySelector<HTMLElement>("#layer-error");
+  if (error) { error.textContent = lastError ? `${lastError}；保留上次读取结果。` : ""; error.hidden = !lastError || !snapshot; }
   const target = document.querySelector<HTMLElement>("#layer-content");
   if (target) {
     const hadPluginDetails = !!target.querySelector("#back-plugins");
-    const retained = layer === "settings" && state.section === "components" ? target.querySelector<HTMLElement>("#component-settings-page") : null;
-    const retainedFocus = retained?.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
-    const expanded=[...target.querySelectorAll<HTMLDetailsElement>('details[data-network-server][open]')].map(d=>d.dataset.networkServer);
-    if (layer === "settings" && state.section === "updates") renderUpdatesSettings(target, content());
-    else replace(target, content());
-    const placeholder = target.querySelector<HTMLElement>("#component-settings-page");
-    if (retained && placeholder && retained !== placeholder) placeholder.replaceWith(retained);
-    if (retainedFocus?.isConnected) retainedFocus.focus({preventScroll: true});
+    if (layer === "settings" && snapshot) {
+      const next = document.createElement("div"); next.innerHTML = content();
+      if (!target.querySelector(".settings-main")) target.innerHTML = '<aside class="settings-nav" aria-label="设置导航"></aside><div class="settings-main"></div>';
+      updateDOM(target.querySelector<HTMLElement>(".settings-nav")!, next.querySelector(".settings-nav")!.innerHTML);
+      const main = target.querySelector<HTMLElement>(".settings-main")!;
+      const identity = state.section === "components" ? `components:${componentSettings.selected}` : state.section === "plugins" ? `plugins:${state.plugin}` : state.section;
+      if (main.dataset.page !== identity) {
+        componentSettings.mount(null, false);
+        main.innerHTML = next.querySelector(".settings-main")!.innerHTML;
+        main.dataset.page = identity;
+      } else if (state.section !== "components") updateDOM(main, next.querySelector(".settings-main")!.innerHTML);
+    } else updateDOM(target, content());
     if (!hadPluginDetails && document.activeElement === document.body)
       target.querySelector<HTMLElement>("#back-plugins")?.focus({preventScroll: true});
     componentSettings.mount(target.querySelector("#component-settings-page"), layer === "settings" && state.section === "components");
-    for(const key of expanded)target.querySelector<HTMLDetailsElement>(`details[data-network-server="${CSS.escape(key!)}"]`)?.setAttribute('open','');
   }
 }
 async function showLayer(next: string) {
@@ -144,7 +153,7 @@ async function showLayer(next: string) {
       messages: "消息中心",
     } as Record<string, string>
   )[next];
-  overlay.innerHTML = `<section class="layer ${next === "status" ? "status-popover" : next === "settings" ? "settings-dialog" : "wide-dialog"}" role="dialog" aria-modal="${next !== "status"}" aria-labelledby="layer-title"><header class="layer-heading"><h2 id="layer-title">${title}</h2>${b("close-layer", "", "close", "icon-button", 'aria-label="关闭"')}</header><div id="layer-content" class="layer-content ${next}-content"></div></section>`;
+  overlay.innerHTML = `<section class="layer ${next === "status" ? "status-popover" : next === "settings" ? "settings-dialog" : "wide-dialog"}" role="dialog" aria-modal="${next !== "status"}" aria-labelledby="layer-title"><header class="layer-heading"><h2 id="layer-title">${title}</h2>${b("close-layer", "", "close", "icon-button", 'aria-label="关闭"')}</header><p id="layer-error" role="status" class="error-box" hidden></p><div id="layer-content" class="layer-content ${next}-content"></div></section>`;
   document.querySelector<HTMLElement>(".workspace")!.inert = next !== "status";
   document
     .querySelector("#status-button")!
@@ -177,7 +186,7 @@ overlay.addEventListener("click", (event) => {
   if (event.target === overlay) closeLayer();
 });
 document.addEventListener("keydown", (event) => {
-  if (!layer) return;
+  if (!layer || event.isComposing) return;
   if (event.key === "Escape") {
     event.preventDefault();
     closeLayer();
@@ -233,13 +242,21 @@ async function refresh() {
   refreshing = true;
   try {
     const networkRevision = snapshot?.preferences.updateNetwork?.revision;
-    [snapshot, state.updates, state.updateOverview] = await Promise.all([core.snapshot(), core.updates(), core.updateOverview()]);
-    if (networkRevision !== undefined && networkRevision !== snapshot.preferences.updateNetwork?.revision) {
+    const results = await Promise.allSettled([core.snapshot(), core.updates(), core.updateOverview(), core.network()]);
+    if (hostDisposed) return;
+    const [application, updates, overview, network] = results;
+    if (application.status === "fulfilled") {
+      application.value.network = snapshot?.network;
+      snapshot = application.value;
+    }
+    if (updates.status === "fulfilled") state.updates = updates.value;
+    if (overview.status === "fulfilled") state.updateOverview = overview.value;
+    if (network.status === "fulfilled" && snapshot) snapshot.network = network.value;
+    lastError = results.flatMap((result, i) => result.status === "rejected" ? [`${["应用状态", "更新状态", "更新检查", "网络计量"][i]}读取失败：${result.reason}`] : []).join("；");
+    if (networkRevision !== undefined && networkRevision !== snapshot?.preferences.updateNetwork?.revision) {
       state.networkGeneration = (state.networkGeneration ?? 0) + 1;
       state.networkResults = undefined;
     }
-    snapshot.network=await core.network();
-    lastError = "";
     applyTheme();
     renderTop();
     if (layer === "settings") void componentSettings.catalog();
@@ -247,7 +264,6 @@ async function refresh() {
     if (layer === "logs" && !state.paused) await refreshLogs();
     if (layer === "messages") await refreshMessages();
   } catch (error) {
-    snapshot = undefined;
     lastError = String(error);
     renderTop();
     renderLayer();
@@ -260,7 +276,7 @@ async function refresh() {
   }
 }
 function scheduleRefresh() {
-  if (refreshTimer) return;
+  if (refreshTimer || hostDisposed) return;
   refreshTimer = setTimeout(() => {
     refreshTimer = undefined;
     void refresh();
@@ -269,12 +285,12 @@ function scheduleRefresh() {
 async function refreshLogs() {
   const generation = ++logGeneration;
   const logs = await core.logs({ ...state.filter });
-  if (generation !== logGeneration) return;
+  if (hostDisposed || generation !== logGeneration) return;
   state.logs = logs;
   const results = document.querySelector<HTMLElement>("#log-results");
   if (layer === "logs" && results) {
     const top = results.scrollTop;
-    replace(results, views.logResults(logs));
+    updateDOM(results, views.logResults(logs));
     results.scrollTop = top;
   }
 }
@@ -475,11 +491,13 @@ root.addEventListener("click", (event) => {
       case "save-update-source": {
         const p = snapshot?.plugins.find((p) => p.manifest.id === id);
         const source = state.sourceDrafts[id] ?? p?.manifest.updateSource;
-        if (source) await pluginAction(id, () => core.updateSource(id, { repository: source.repository.trim(), tagPrefix: source.tagPrefix.trim() }));
+        if (source) await pluginAction(id, () => hostDrafts.saveSource(id));
         break;
       }
+      case "reload-update-source":
+        hostDrafts.discardSource(id); renderLayer(); break;
       case "clear-update-source":
-        await pluginAction(id, async () => { await core.updateSource(id, null); delete state.sourceDrafts[id]; });
+        await pluginAction(id, async () => { await hostDrafts.saveSource(id, true); });
         break;
       case "forget-plugin":
         await pluginAction(id, async () => {
@@ -556,11 +574,7 @@ root.addEventListener("input", (event) => {
   const input = event.target as HTMLInputElement;
   if (snapshot && networkInput(input, snapshot, state)) { if (!(event as InputEvent).isComposing) renderLayer(); return; }
   if (input.dataset.source && state.plugin) {
-    const saved = snapshot?.plugins.find(p => p.manifest.id === state.plugin)?.manifest.updateSource;
-    const draft = state.sourceDrafts[state.plugin] ?? { repository: saved?.repository ?? "", tagPrefix: saved?.tagPrefix ?? "" };
-    if (input.dataset.source === "repository") draft.repository = input.value;
-    else draft.tagPrefix = input.value;
-    state.sourceDrafts[state.plugin] = draft;
+    hostDrafts.input(state.plugin, input.dataset.source, input.value);
     return;
   }
   if (input.id !== "log-query") return;
@@ -591,7 +605,7 @@ async function subscribe<T>(name:string,callback:EventCallback<T>) {
   const unlisten=await listen<T>(name,callback);
   if(hostDisposed)unlisten();else hostListeners.push(unlisten);
 }
-window.addEventListener("pagehide",()=>{hostDisposed=true;clearInterval(statusTimer);hostListeners.forEach(fn=>fn());picker.dispose();workspaces.dispose();},{once:true});
+window.addEventListener("pagehide",()=>{hostDisposed=true;clearTimeout(refreshTimer);clearTimeout(queryTimer);servers?.dispose();componentSettings.dispose();hostDrafts.dispose();clearInterval(statusTimer);hostListeners.forEach(fn=>fn());picker.dispose();workspaces.dispose();},{once:true});
 async function start() {
   await subscribe("core-changed", scheduleRefresh);
   await subscribe<SettingsSnapshot>("core-settings-changed", event => componentSettings.changed(event.payload));

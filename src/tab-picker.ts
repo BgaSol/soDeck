@@ -1,4 +1,5 @@
-import { escape as e, icon, patchChrome } from './ui';
+import { escape as e, icon } from './ui';
+import { DomRegion } from './dom-update';
 import { attachMenuPosition, type MenuPosition } from './menu-position.js';
 
 export interface TabRecord { id: string; title: string; detail: string; icon?: string; current?: boolean; status?: string; disabled?: boolean; closeLabel?: string }
@@ -8,6 +9,7 @@ export class TabPicker {
   private input = document.createElement('input');
   private list = document.createElement('div');
   private events = new AbortController();
+  private region = new DomRegion(this.node, () => this.update());
   private position: MenuPosition;
   private busy = new Set<string>();
   constructor(private anchor: HTMLElement, label: string, private records: () => TabRecord[], private select: (id: string) => Promise<unknown>, private close: (id: string) => Promise<unknown>, valid: () => boolean, private notify: (error: string) => void) {
@@ -44,7 +46,7 @@ export class TabPicker {
     this.anchor.setAttribute('aria-expanded','true');
     const query = this.input.value.trim().toLocaleLowerCase(), rows = this.records().filter(r => `${r.title}\n${r.detail}`.toLocaleLowerCase().includes(query));
     const focus = document.activeElement as HTMLElement, oldRows = [...this.list.children], oldIndex = oldRows.indexOf(focus.closest('.tab-picker-row')!);
-    patchChrome(this.list, rows.map(r => `<div class="tab-picker-row" data-tab-id="${e(r.id)}"><button data-tab-picker-action="select" data-key="${e(r.id)}" aria-current="${r.current ? 'page' : 'false'}" ${r.disabled || this.busy.has(r.id) ? 'disabled' : ''}>${icon(r.icon || 'file')}<span class="tab-picker-record"><strong>${e(r.title)}</strong><span title="${e(r.detail)}">${e(r.detail)}</span>${r.status ? `<span>${e(r.status)}</span>` : ''}</span>${r.current ? icon('check') : ''}</button>${r.closeLabel ? `<button class="sd-icon" data-tab-picker-action="close" data-key="${e(r.id)}" aria-label="${e(r.closeLabel)} ${e(r.title)}" ${r.disabled || this.busy.has(r.id) ? 'disabled' : ''}>${icon('close')}</button>` : ''}</div>`).join('') || '<p class="tab-picker-empty" role="status">没有匹配的标签</p>');
+    this.region.update(this.list, rows.map(r => `<div class="tab-picker-row" data-tab-id="${e(r.id)}"><button data-tab-picker-action="select" data-key="${e(r.id)}" aria-current="${r.current ? 'page' : 'false'}" ${r.disabled || this.busy.has(r.id) ? 'disabled' : ''}>${icon(r.icon || 'file')}<span class="tab-picker-record"><strong>${e(r.title)}</strong><span title="${e(r.detail)}">${e(r.detail)}</span>${r.status ? `<span>${e(r.status)}</span>` : ''}</span>${r.current ? icon('check') : ''}</button>${r.closeLabel ? `<button class="sd-icon" data-tab-picker-action="close" data-key="${e(r.id)}" aria-label="${e(r.closeLabel)} ${e(r.title)}" ${r.disabled || this.busy.has(r.id) ? 'disabled' : ''}>${icon('close')}</button>` : ''}</div>`).join('') || '<p class="tab-picker-empty" role="status">没有匹配的标签</p>');
     if (oldIndex >= 0 && (!focus.isConnected || focus.matches(':disabled'))) (this.list.children[Math.min(oldIndex, this.list.children.length - 1)]?.querySelector<HTMLElement>('button:not(:disabled)') ?? this.input).focus({ preventScroll: true });
     void this.position?.update();
   }
@@ -55,5 +57,5 @@ export class TabPicker {
     try { await this.close(id); } catch (error) { this.notify(String(error)); }
     finally { this.busy.delete(id); this.update(); }
   }
-  dispose(focus = false) { this.position?.dispose(); this.events.abort(); this.node.remove(); this.anchor.setAttribute('aria-expanded', 'false'); if (TabPicker.open === this) TabPicker.open = undefined; if (focus && this.anchor.isConnected) this.anchor.focus({ preventScroll: true }); }
+  dispose(focus = false) { this.region.dispose(); this.position?.dispose(); this.events.abort(); this.node.remove(); this.anchor.setAttribute('aria-expanded', 'false'); if (TabPicker.open === this) TabPicker.open = undefined; if (focus && this.anchor.isConnected) this.anchor.focus({ preventScroll: true }); }
 }

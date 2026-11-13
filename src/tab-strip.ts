@@ -1,4 +1,5 @@
-import { icon, patchChrome } from './ui';
+import { icon } from './ui';
+import { updateDOM } from './dom-update';
 
 export const tabControls = (label: string) => `<div class="tab-controls" data-tauri-drag-region="false"><span class="tab-arrows" hidden><button class="sd-icon" data-tab-action="back" aria-label="向左滚动${label}">${icon('chevron-left')}</button><button class="sd-icon" data-tab-action="forward" aria-label="向右滚动${label}">${icon('chevron-right')}</button></span><button class="tab-picker-button sd-icon" data-tab-action="pick" aria-label="${label}列表" aria-haspopup="dialog" aria-expanded="false" hidden>${icon('list')}<span class="tab-count"></span></button></div>`;
 
@@ -67,7 +68,7 @@ export class TabStrip {
   }
   private buttons() {
     const arrows = this.controls.querySelector<HTMLElement>('.tab-arrows'); if (!arrows) return;
-    patchChrome(arrows, `<button class="sd-icon" data-tab-action="back" aria-label="向左滚动标签" ${this.viewport.scrollLeft <= 1 ? 'disabled' : ''}>${icon('chevron-left')}</button><button class="sd-icon" data-tab-action="forward" aria-label="向右滚动标签" ${this.viewport.scrollLeft >= this.max() - 1 ? 'disabled' : ''}>${icon('chevron-right')}</button>`);
+    updateDOM(arrows, `<button class="sd-icon" data-tab-action="back" aria-label="向左滚动标签" ${this.viewport.scrollLeft <= 1 ? 'disabled' : ''}>${icon('chevron-left')}</button><button class="sd-icon" data-tab-action="forward" aria-label="向右滚动标签" ${this.viewport.scrollLeft >= this.max() - 1 ? 'disabled' : ''}>${icon('chevron-right')}</button>`);
   }
   scroll(distance: number, smooth = true) {
     this.edge = undefined;

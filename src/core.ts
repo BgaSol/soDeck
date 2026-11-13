@@ -100,7 +100,7 @@ export const core = {
   officialPlugins: (refresh = false) => invoke<OfficialCatalog>("official_plugins", { refresh }),
   installOfficial: (id: string) => invoke<string>("install_official_plugin", { id }),
   enabled: (id: string, enabled: boolean) => invoke<void>("set_plugin_enabled", { id, enabled }),
-  updateSource: (id: string, source: Manifest["updateSource"] | null) => invoke<void>("set_plugin_update_source", { id, source }),
+  updateSource: (id: string, source: Manifest["updateSource"] | null, expected?: { source: Manifest["updateSource"] | null }) => invoke<void>("set_plugin_update_source", { id, source, expected }),
   updates: () => invoke<Record<string, Update>>("update_status"),
   updateOverview: () => invoke<UpdateOverview>("update_overview"),
   checkUpdates: (automatic = false) => invoke<void>("check_updates", { automatic }),

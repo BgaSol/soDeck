@@ -1,6 +1,7 @@
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { loadFont, type FontValue, type FontPreset } from "./font-loader.js";
-import { escape as e, button as b, icon, replace } from "./ui";
+import { escape as e, button as b, icon } from "./ui";
+import { updateDOM } from "./dom-update";
 
 export interface SettingsEntry { pluginId: string; pluginName: string; pageId: string; title: string; icon?: string; order: number; enabled: boolean; available: boolean; error?: string }
 interface Field { key: string; type: string; title: string; description: string; default: unknown; apply: string; min?: number; max?: number; step?: number; unit?: string; maxLength?: number; options: {value: unknown; title: string}[]; presets: FontPreset[]; visibleWhen?: {key: string; equals: unknown} }
@@ -19,6 +20,7 @@ export class ComponentSettings {
   private host?: HTMLElement;
   private active = "";
   private catalogPending = false;
+  private disposed = false;
   private catalogError = "";
   private applications = new Map<string, Map<string, string>>();
   private reports = new Map<string, ApplicationReport[]>();
@@ -34,10 +36,11 @@ export class ComponentSettings {
     return this.closeDrafts();
   }
   async catalog() {
-    if (this.catalogPending) return;
+    if (this.catalogPending || this.disposed) return;
     this.catalogPending = true;
     try {
       const entries = await invoke<SettingsEntry[]>("settings_catalog");
+      if (this.disposed) return;
       if (!same(entries, this.entries)) {
         const previous=this.entries;this.entries=entries;this.active="";this.render();
         for(const entry of entries){const key=`${entry.pluginId}/${entry.pageId}`;if(entry.available&&this.drafts.has(key)&&previous.find(p=>`${p.pluginId}/${p.pageId}`===key)?.version!==entry.version)void this.read(key);}
@@ -61,7 +64,7 @@ export class ComponentSettings {
     this.active = this.selected;
     this.host.dataset.settingsKey = this.selected;
     const entry = this.entries.find(p => `${p.pluginId}/${p.pageId}` === this.selected);
-    if (!entry?.available) { this.host.innerHTML = `<div class="section-heading"><div><h2>${e(entry?.title ?? "组件设置")}</h2><p>${e(entry?.error ?? this.catalogError ?? "请选择组件")}</p></div></div>`; return; }
+    if (!entry?.available) { updateDOM(this.host, `<div class="section-heading"><div><h2>${e(entry?.title ?? "组件设置")}</h2><p>${e(entry?.error ?? this.catalogError ?? "请选择组件")}</p></div></div>`); return; }
     const draft = this.drafts.get(this.selected);
     if (draft) this.paint(draft);
     else { this.host.innerHTML = '<p class="hint" role="status">正在读取设置…</p>'; void this.read(this.selected); }
@@ -72,6 +75,7 @@ export class ComponentSettings {
     const job = (async () => {
       try {
         const snapshot = await invoke<SettingsSnapshot>("settings_page", {pluginId: entry.pluginId, pageId: entry.pageId});
+        if (this.disposed || !this.entries.some(p => p.available && p.pluginId === entry.pluginId && p.pageId === entry.pageId && p.version === entry.version)) return;
         const old = this.drafts.get(key);
         if (!old || reload || !old.dirty) this.drafts.set(key, {snapshot, values: copy(snapshot.values), dirty: false, conflict: false, saving: false, message: "", error: "", fontErrors: {}, fontPending: new Set(), generation: (old?.generation ?? 0) + 1});
         else if (old.snapshot.revision !== snapshot.revision || old.snapshot.definitionToken !== snapshot.definitionToken) old.conflict = true;
@@ -79,8 +83,16 @@ export class ComponentSettings {
           if(old?.dirty && !reload)this.feedback(old);else this.paint(this.drafts.get(key)!);
         }
         for(const report of snapshot.applications ?? [])this.applied(report);
-      } catch (error) { if (this.selected === key && this.host) this.host.innerHTML = `<p class="error-box" role="alert">${e(error)}</p>${b("reload-component-settings","重新读取",undefined,"quiet")}`; }
-      finally { this.loading.delete(key); }
+      } catch (error) {
+        if (this.disposed) return;
+        const draft = this.drafts.get(key);
+        if (draft) { draft.error = `读取设置失败，已保留当前内容：${error}`; this.feedback(draft); }
+        else if (this.selected === key && this.host) updateDOM(this.host, `<p class="error-box" role="alert">${e(error)}</p>${b("reload-component-settings","重新读取",undefined,"quiet")}`);
+      }
+      finally {
+        this.loading.delete(key);
+        if (!this.disposed && this.entries.some(p => p.available && p.pluginId === entry.pluginId && p.pageId === entry.pageId && p.version !== entry.version)) void this.read(key);
+      }
     })(); this.loading.set(key, job); return job;
   }
   private field(f: Field, d: Draft) {
@@ -100,7 +112,7 @@ export class ComponentSettings {
     const host = this.host; if (!host) return;
     const focused = focusId ?? (host.contains(document.activeElement) ? (document.activeElement as HTMLElement).id : "");
     const entry = this.entries.find(p => `${p.pluginId}/${p.pageId}` === this.selected);
-    host.innerHTML = `<div class="section-heading"><div><h2>${e(d.snapshot.declaration.title)}</h2><p>同类组件在所有服务器和窗口共享${entry?.enabled ? "" : " · 插件关闭时也可配置"}</p></div><span class="hint">${e(d.snapshot.version)}</span></div><form class="component-settings-form"><div class="settings-fields" data-scroll="settings-fields">${d.snapshot.declaration.groups.map(g => `<fieldset><legend>${e(g.title)}</legend>${g.fields.map(f => this.field(f,d)).join("")}</fieldset>`).join("")}<div class="settings-warnings">${d.snapshot.warnings.map(w => `<p>${e(w)}</p>`).join("")}</div></div><footer class="settings-commit"><div class="settings-feedback" id="settings-feedback" role="status" tabindex="-1"></div><div class="settings-save-bar">${b("defaults-component-settings","恢复默认",undefined,"text-button",'id="settings-defaults"')}${b("discard-component-settings","放弃更改",undefined,"quiet",'id="settings-discard"')}${b("save-component-settings","保存",undefined,"",'id="settings-save"')}</div></footer></form>`;
+    updateDOM(host, `<div class="section-heading"><div><h2>${e(d.snapshot.declaration.title)}</h2><p>同类组件在所有服务器和窗口共享${entry?.enabled ? "" : " · 插件关闭时也可配置"}</p></div><span class="hint">${e(d.snapshot.version)}</span></div><form class="component-settings-form"><div class="settings-fields" data-scroll="settings-fields">${d.snapshot.declaration.groups.map(g => `<fieldset data-dom-key="group:${e(g.id)}"><legend>${e(g.title)}</legend>${g.fields.map(f => this.field(f,d)).join("")}</fieldset>`).join("")}<div class="settings-warnings">${d.snapshot.warnings.map(w => `<p>${e(w)}</p>`).join("")}</div></div><footer class="settings-commit"><div class="settings-feedback" id="settings-feedback" role="status" tabindex="-1"></div><div class="settings-save-bar">${b("defaults-component-settings","恢复默认",undefined,"text-button",'id="settings-defaults"')}${b("discard-component-settings","放弃更改",undefined,"quiet",'id="settings-discard"')}${b("save-component-settings","保存",undefined,"",'id="settings-save"')}</div></footer></form>`);
     host.oninput = event => this.input(event, d);
     host.onchange = event => this.input(event, d);
     host.querySelector("form")!.onsubmit = event => {event.preventDefault(); void this.save();};
@@ -133,7 +145,7 @@ export class ComponentSettings {
   private async preview(f: Field, d: Draft) {
     this.previewMetrics(d);
     const value = copy(d.values[f.key] as FontValue), generation = d.generation;
-    const valid = () => d.generation === generation && same(d.values[f.key],value);
+    const valid = () => !this.disposed && this.drafts.get(`${d.snapshot.pluginId}/${d.snapshot.pageId}`) === d && d.generation === generation && same(d.values[f.key],value);
     d.fontPending.add(f.key); delete d.fontErrors[f.key]; this.feedback(d);
     if(this.drafts.get(this.selected)===d){const status=this.host?.querySelector(`[data-font-status="${CSS.escape(f.key)}"]`);if(status)status.textContent="正在加载字体…";}
     try {
@@ -159,7 +171,7 @@ export class ComponentSettings {
     const node = this.host.querySelector<HTMLElement>(".settings-feedback"); if (!node) return;
     node.classList.toggle("error-box",Boolean(d.error));
     const text = d.conflict ? `其他窗口或插件版本已更新，草稿已保留。${b("reload-component-settings","载入最新值",undefined,"text-button",'id="settings-reload"')}` : e(d.error || d.message || (d.dirty ? "有未保存的更改" : d.snapshot.application === "newInstance" ? "用于之后新建的规则" : "保存后应用于组件"));
-    replace(node,text+(d.error.startsWith("设置已保存，部分组件未应用") ? b("retry-component-settings","重试应用",undefined,"text-button",'id="settings-retry"') : ""));
+    updateDOM(node,text+(d.error.startsWith("设置已保存，部分组件未应用") ? b("retry-component-settings","重试应用",undefined,"text-button",'id="settings-retry"') : ""));
     for(const input of this.host.querySelectorAll<HTMLInputElement|HTMLSelectElement>("input,select"))input.disabled=d.saving;
     const save = this.host.querySelector<HTMLButtonElement>('[data-action="save-component-settings"]')!;
     save.disabled = d.saving || !d.dirty || d.conflict || d.fontPending.size > 0 || Object.keys(d.fontErrors).some(key => !same(d.values[key],d.snapshot.values[key]));
@@ -205,4 +217,5 @@ export class ComponentSettings {
     if(errors.length){d.error=`设置已保存，部分组件未应用：${errors.join("；")}`;if(this.selected===key)this.feedback(d);}
     else{d.error="";d.message=d.snapshot.application==="newInstance"?"已保存，用于新建规则":[...targets.keys()].some(t=>t!=="backend")?"已保存，组件显示已更新": "设置已保存，等待可见组件应用";if(this.selected===key)this.feedback(d);}
   }
+  dispose() { this.disposed = true; this.mount(null, false); for (const d of this.drafts.values()) d.generation++; }
 }

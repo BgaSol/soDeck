@@ -51,7 +51,7 @@ export class CloseCoordinator {
   }
   private updateBlock() {
     const active=[...this.operations.values()].filter(o=>!["completed","aborted"].includes(o.phase)&&!o.adoptedBy);
-    this.block([...new Set(active.flatMap(o=>o.views))],active.length>0,active.some(o=>o.target.kind==="application"||o.target.kind==="window"));
+    this.block([...new Set(active.flatMap(o=>o.views))],active.length>0,active.some(o=>(o.phase!=="preparing"||this.reports.has(`${o.id}/${o.inputRound}`))&&(o.target.kind==="application"||o.target.kind==="window")));
   }
   private receive(op:Operation) {
     if(this.disposed||(!(this.windowId() in op.inputs)&&op.window!==this.windowId()))return;
@@ -70,7 +70,7 @@ export class CloseCoordinator {
       return;
     }
     if(op.inputs[this.windowId()]===null && (op.phase==="preparing"||op.decision))void this.report(op);
-    if(op.window===this.windowId())this.paint(op);
+    if(op.window===this.windowId() && op.phase!=="preparing")this.paint(op);
   }
   private report(op:Operation) {
     const key=`${op.id}/${op.inputRound}`;
@@ -85,6 +85,7 @@ export class CloseCoordinator {
       const current=this.operations.get(op.id);
       if(this.disposed || current?.inputRound!==op.inputRound || ["completed","aborted"].includes(current?.phase??"") || current?.adoptedBy)return;
       this.reports.set(key,{drafts,error,surfaces});
+      this.updateBlock();
       }
       const latest=await this.call<Operation>("close_report_inputs",{operationId:op.id,inputRound:op.inputRound,report:this.reports.get(key)});
       this.receive(latest);

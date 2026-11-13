@@ -1,7 +1,8 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { newDraft, referenced, serverApi, toInput, type Catalog, type Change, type Draft, type ServerApi } from "./server-api";
 import { action, editor, page, type PageState } from "./server-views";
-import { escape as e, replace } from "./ui";
+import { escape as e } from "./ui";
+import { updateDOM } from "./dom-update";
 import type { ConnectionView } from "./connections";
 
 interface Frame {
@@ -16,6 +17,9 @@ export class ServerManager {
   private state: PageState = { tab: "servers", query: "", group: "all", selected: "" };
   private frames: Frame[] = [];
   private busy = false;
+  private generation = 0;
+  private disposed = false;
+  private readError = "";
   private selectionTimer?: ReturnType<typeof setTimeout>;
   constructor(private host: HTMLElement, private notify: (message: string) => void, private api: ServerApi = serverApi) {
     host.addEventListener("mousedown", event => {
@@ -42,10 +46,22 @@ export class ServerManager {
     });
   }
   async start() {
-    try { this.catalog = await this.api.read(); this.render(); return true; }
-    catch (error) { this.host.innerHTML = `<div class="error-box">无法读取服务器目录：${e(error)} ${action("reload", "重试")}</div>`; return false; }
+    const generation = ++this.generation;
+    try {
+      const catalog = await this.api.read();
+      if (this.disposed || generation !== this.generation) return false;
+      if (!this.catalog || catalog.revision >= this.catalog.revision) this.catalog = catalog;
+      this.readError = ""; this.render(); return true;
+    } catch (error) {
+      if (this.disposed || generation !== this.generation) return false;
+      this.readError = `无法读取服务器目录：${error}`; this.render(); return false;
+    }
   }
-  private render() { if (this.catalog) replace(this.host, page(this.catalog, this.state, this.connections)); }
+  private render() {
+    if (this.disposed) return;
+    updateDOM(this.host, `${this.catalog ? page(this.catalog, this.state, this.connections) : ""}${this.readError ? `<div class="error-box" role="alert">${e(this.readError)} ${action("reload", "重试")}</div>` : ""}`);
+  }
+  dispose() { this.disposed = true; this.generation++; clearTimeout(this.selectionTimer); }
   private top() { return this.frames.at(-1); }
   private frame(kind: Frame["kind"]): Frame {
     const dialog = document.createElement("dialog");
@@ -71,7 +87,7 @@ export class ServerManager {
     if (f.draft) f.draft.password = "";
   }
   private renderEditor(f: Frame) {
-    replace(f.dialog, editor(this.catalog!, f.draft!, !!f.proxy, f.error, f.busy, f.dialog.id));
+    updateDOM(f.dialog, editor(this.catalog!, f.draft!, !!f.proxy, f.error, f.busy, f.dialog.id));
   }
   private openEditor(proxy: boolean, id?: string, inline = false) {
     const record = id ? (proxy ? this.catalog!.proxies : this.catalog!.servers).find(r => r.id === id) : undefined;
@@ -167,7 +183,7 @@ export class ServerManager {
     } finally { f.busy = false; }
   }
   private renderGroups(f: Frame) {
-    replace(f.dialog, `<header class="catalog-dialog-heading"><h2>管理分组</h2>${action("cancel", "关闭")}</header><div class="group-list">${this.catalog!.groups.map(g => `<div><strong>${e(g.name)}</strong><small>${this.catalog!.servers.filter(s => s.groupId === g.id).length} 台服务器</small>${action("rename-group", "重命名", `data-id="${e(g.id)}"`)}${action("delete-group", "删除", `data-id="${e(g.id)}"`, "danger")}</div>`).join("") || '<p class="hint">还没有分组</p>'}</div><footer class="catalog-dialog-footer">${action("new-group", "+ 新建分组", "", "primary")}</footer>`);
+    updateDOM(f.dialog, `<header class="catalog-dialog-heading"><h2>管理分组</h2>${action("cancel", "关闭")}</header><div class="group-list">${this.catalog!.groups.map(g => `<div><strong>${e(g.name)}</strong><small>${this.catalog!.servers.filter(s => s.groupId === g.id).length} 台服务器</small>${action("rename-group", "重命名", `data-id="${e(g.id)}"`)}${action("delete-group", "删除", `data-id="${e(g.id)}"`, "danger")}</div>`).join("") || '<p class="hint">还没有分组</p>'}</div><footer class="catalog-dialog-footer">${action("new-group", "+ 新建分组", "", "primary")}</footer>`);
   }
   private openGroup(id?: string) {
     const name = this.catalog!.groups.find(g => g.id === id)?.name ?? "";

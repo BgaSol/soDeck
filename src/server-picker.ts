@@ -73,6 +73,7 @@ export class ServerPicker {
     this.position();
   }
   private key(event: KeyboardEvent) {
+    if (event.isComposing) return;
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); this.close(true); return; }
     const buttons = [...this.list.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
     if (event.key === "Enter" && event.target === this.search) { event.preventDefault(); buttons[0]?.click(); }

@@ -79,6 +79,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
   } else {
     for (const file of files) {
       if (file.endsWith('.md') || file.startsWith('docs/')) continue;
+      if (file === 'src/dom-update.ts' || file === 'scripts/plugin-dom-assets.mjs') { ui(); plugin('network-proxy'); integration.add('network-proxy'); continue; }
       if (file === 'scripts/test-cli-arguments.mjs') { full(); continue; }
       if (file === 'scripts/test-theme-tokens.mjs') { plan.scripts = true; integration.add('system-status'); integration.add('docker'); continue; }
       if (file.startsWith('.github/workflows/') || file.startsWith('.github/actions/')) plan.workflow = true;

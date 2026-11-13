@@ -27,18 +27,17 @@ export class ConnectionsUi {
   private dialog?: { node: HTMLDialogElement; id: string; attempt: string; submitted: boolean };
   private dismissed = new Set<string>();
   private starting = new Set<string>();
-  private catalogClick?: string;
   private progress = document.createElement("div");
   constructor(private windowId: string, private update: (views: ConnectionView[]) => void, private notify: (text: string) => void, private call: Call = invoke) {
     this.progress.className = "connection-progress sd-notice";
     this.progress.setAttribute("role", "status"); this.progress.setAttribute("aria-label", "连接进度");
     this.progress.hidden = true; document.body.append(this.progress);
-    document.addEventListener("click", event => {
-      // Selection redraws the row, so native dblclick will not fire on the replaced element.
+    document.addEventListener("dblclick", event => {
       const row = (event.target as Element).closest<HTMLButtonElement>("[data-connect-server-on-double-click]");
       const server = row && !row.disabled ? row.dataset.connectServerOnDoubleClick : undefined;
-      if (server && event.detail === 2 && this.catalogClick === server) void this.connect(server).catch(error => notify(String(error)));
-      this.catalogClick = event.detail === 1 ? server : undefined;
+      if (server) void this.connect(server).catch(error => notify(String(error)));
+    });
+    document.addEventListener("click", event => {
       const b = (event.target as Element).closest<HTMLElement>("[data-connect-server],[data-connection-cancel],[data-connection-prompt],[data-disconnect-context],[data-reconnect-server]");
       if (b) void this.action(b).catch(error => notify(String(error)));
     });

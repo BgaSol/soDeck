@@ -5,6 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { changedFiles, selectChecks, checkResults, targets, selectionSummary } from './select-checks.mjs';
+
+test('shared DOM runtime checks its independently packaged network consumer',()=>{
+  for(const file of ['src/dom-update.ts','scripts/plugin-dom-assets.mjs']){
+    const result=selectChecks([file]);assert(result.browser&&result.scripts);assert(result.plugins.includes('network-proxy'));assert(result.integration.some(row=>row.network));
+  }
+});
 test('file editor SDK selects its real consumers and file integration',()=>{
  const p=selectChecks(['packages/file-editor/src/page.js']);assert(p.plugins.includes('files'));assert(p.integration.some(v=>v.files));assert(p.scripts);
 });

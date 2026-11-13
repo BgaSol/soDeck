@@ -6,7 +6,8 @@ import { LocalFileDrop } from "./local-files";
 import { ComponentData } from "./component-data";
 import { ComponentState } from "./component-state";
 import { attachMenuPosition, type MenuPosition, type MenuReference } from "./menu-position.js";
-import { escape as e, icon, replace, patchChrome } from "./ui";
+import { escape as e, icon } from "./ui";
+import { updateDOM, DomRegion } from "./dom-update";
 import type { Context, Projection, Workspace, DropTarget, DropPreview } from "./workspaces";
 import type { NetworkSnapshot } from "./core";
 import type { CloseTarget } from "./close";
@@ -31,7 +32,7 @@ interface ActionDefinition { key: string; title: string; available: boolean; rea
 interface ActionResult { status: "pending" | "completed" | "failed" | "invalidated"; requestId: string; context: Context; viewId?: string; error?: string }
 export interface UiProjection { definitions: Record<string, Definition>; actions?: Record<string, ActionDefinition>; defaultCreateAction?: string; pendingAction?: ActionResult[]; workspaces: Record<string, UiWorkspace>; error?: string; layoutSaveError?:string; transfers?:Transfer[] }
 interface Surface { readOnly?:boolean; transferEpoch?:string; node: HTMLDivElement; frame: HTMLIFrameElement; view: View; token?: string; chain: Promise<unknown>; deferred: Map<string,MessageEvent>; visible: boolean; initialized: boolean; mounted?: boolean; acceptsLocalFiles?: boolean; focusPending?: number; flushable?: boolean; flushing?: {id: string; done: (error?: string) => void}; timeout: ReturnType<typeof setTimeout> }
-interface Shell { tabStrips?: Map<string, {strip?:TabStrip;scroll:number;active:string|null;seen?:boolean}>; node: HTMLElement; surfaces: Map<string, Surface>; observer: ResizeObserver; workspace: Workspace; ui: UiWorkspace; railCapacity?: number; layoutFrame?: number }
+interface Shell { region: DomRegion; tabStrips?: Map<string, {strip?:TabStrip;scroll:number;active:string|null;seen?:boolean}>; node: HTMLElement; surfaces: Map<string, Surface>; observer: ResizeObserver; workspace: Workspace; ui: UiWorkspace; railCapacity?: number; layoutFrame?: number }
 interface MenuEntry { label: string; action: () => Promise<unknown>; extra?: MenuEntry; checked?: boolean; disabled?: boolean; separatorBefore?: boolean }
 const empty = (): UiWorkspace => ({ views: [], preferences: {}, left: null, right: null, editor: null });
 
@@ -134,7 +135,7 @@ export class Components {
         node.innerHTML = `<aside class="workbench-rail left-rail sd-edge-right" aria-label="左侧组件"></aside><aside class="workbench-panel left-panel sd-edge-right"><header class="sd-panel-header sd-edge-bottom"></header><div class="component-slot"></div><div role="separator" aria-label="左侧面板宽度" aria-orientation="vertical" tabindex="0" data-resize="left"></div></aside><section class="workbench-center workbench-layout"></section><aside class="workbench-panel right-panel sd-edge-left"><header class="sd-panel-header sd-edge-bottom"></header><div class="component-slot"></div><div role="separator" aria-label="右侧面板宽度" aria-orientation="vertical" tabindex="0" data-resize="right"></div></aside><aside class="workbench-rail right-rail sd-edge-left" aria-label="右侧组件"></aside><footer class="workspace-status sd-status-bar sd-edge-top"></footer>`;
         const observer = new ResizeObserver(() => this.scheduleLayout(id)); observer.observe(node);
         node.querySelectorAll(".component-slot").forEach(slot => observer.observe(slot));
-        shell = { node, surfaces: new Map(), observer, workspace: w, ui: empty() }; this.shells.set(id, shell); this.content.append(node);
+        shell = { region: new DomRegion(node, () => this.paint(shell!)), node, surfaces: new Map(), observer, workspace: w, ui: empty() }; this.shells.set(id, shell); this.content.append(node);
       }
       if (shell.workspace.connected !== w.connected) for (const surface of shell.surfaces.values()) this.post(surface, {type: "connectionChanged", connected: w.connected});
       shell.workspace = w; shell.ui = ui.workspaces[id] ?? empty();
@@ -158,15 +159,15 @@ export class Components {
       const entries = this.sideTools(shell,side).filter(t=>t.pinned||t.active),capacity=shell.railCapacity??20;
       let visible=entries.slice(0,capacity);const active=entries.find(t=>t.active);
       if(active&&!visible.includes(active))visible=[...visible.slice(0,Math.max(0,capacity-1)),active].sort((a,b)=>(a.location?.order??0)-(b.location?.order??0));
-      patchChrome(node.querySelector(`.${side}-rail`)!, visible.map(t => {
+      shell.region.update(node.querySelector(`.${side}-rail`)!, visible.map(t => {
         const d=this.definitions[t.key];
         return `<button class="sd-icon tool-entry" data-tool-key="${e(t.key)}" data-component-action="toggle" data-key="${e(t.key)}" aria-label="${e(d.title)}" aria-expanded="${t.active}" title="${e(d.title)} · ${e(d.pluginName)}${t.pinned?'':' · 临时入口'}" ${!t.available ? "disabled" : ""}>${icon(d.icon)}</button>`;
       }).join("") + (w.unavailableTools??[]).filter(t=>t.side===side).map(t=>`<button class="sd-icon" disabled title="${e(t.key)} 未安装或未启用；已保留停靠位置" aria-label="${e(t.key)} 不可用">${icon('plug')}</button>`).join('')+ `<button class="component-more sd-icon" data-component-action="more" data-key="${side}" aria-label="${side === "left" ? "左" : "右"}侧更多组件">${icon("more")}</button>`);
       const view = w.views.find(v => v.id === selected);
-      patchChrome(node.querySelector(`.${side}-panel header`)!, view ? `<span title="${e(this.definitions[view.definitionKey]?.pluginName)}">${e(view.title)}</span><button class="sd-icon" data-component-action="collapse" data-key="${side}" aria-label="收起${e(view.title)}">${icon("minus")}</button>` : "");
+      shell.region.update(node.querySelector(`.${side}-panel header`)!, view ? `<span title="${e(this.definitions[view.definitionKey]?.pluginName)}">${e(view.title)}</span><button class="sd-icon" data-component-action="collapse" data-key="${side}" aria-label="收起${e(view.title)}">${icon("minus")}</button>` : "");
     }
     this.paintCenter(shell);
-    patchChrome(node.querySelector(".workspace-status")!, `<div class="workspace-connection" role="status" aria-label="连接状态" title="${e(shell.workspace.endpoint)}"><span class="health-dot ${shell.workspace.connected ? "good" : "warning"}"></span><span>${shell.workspace.connected ? "已连接" : "连接已断开"}</span><span class="workspace-endpoint">${e(shell.workspace.endpoint)}</span></div><button class="sd-status-action" data-reconnect-server="${e(shell.workspace.context.serverId)}" ${shell.workspace.connected ? "hidden" : ""}>重新连接</button><span class="workspace-status-spacer"></span>${this.layoutSaveFailed?`<button class="sd-status-action" data-component-action="retry-layout-save">重试保存布局</button>`:""}<button class="workspace-network sd-status-action" data-action="status" title="服务器连接传输速率；点击查看应用状态与插件业务量">↓ 0 B/s ↑ 0 B/s</button>`);
+    shell.region.update(node.querySelector(".workspace-status")!, `<div class="workspace-connection" role="status" aria-label="连接状态" title="${e(shell.workspace.endpoint)}"><span class="health-dot ${shell.workspace.connected ? "good" : "warning"}"></span><span>${shell.workspace.connected ? "已连接" : "连接已断开"}</span><span class="workspace-endpoint">${e(shell.workspace.endpoint)}</span></div><button class="sd-status-action" data-reconnect-server="${e(shell.workspace.context.serverId)}" ${shell.workspace.connected ? "hidden" : ""}>重新连接</button><span class="workspace-status-spacer"></span>${this.layoutSaveFailed?`<button class="sd-status-action" data-component-action="retry-layout-save">重试保存布局</button>`:""}<button class="workspace-network sd-status-action" data-action="status" title="服务器连接传输速率；点击查看应用状态与插件业务量">↓ 0 B/s ↑ 0 B/s</button>`);
     for (const [id, surface] of shell.surfaces) if (!w.views.some(v => v.id === id)) { this.removeSurface(surface); shell.surfaces.delete(id); }
     for (const v of w.views) {
       if (v.uiRequested === false) continue;
@@ -208,7 +209,7 @@ export class Components {
   private paintCenter(shell:Shell) {
     if(this.splitGesture?.shell===shell)return;
     const host=shell.ui.host,center=shell.node.querySelector<HTMLElement>(".workbench-center")!;
-    if(!host){patchChrome(center,'<div class="workspace-empty">正在准备工作台…</div>');return;}
+    if(!host){shell.region.update(center,'<div class="workspace-empty">正在准备工作台…</div>');return;}
     const scrolls=new Map([...center.querySelectorAll<HTMLElement>(".view-group")].map(g=>[g.dataset.group,g.querySelector(".component-tab-list")?.scrollLeft??0]));
     const strips = shell.tabStrips ??= new Map();
     for (const [key, saved] of strips) {
@@ -233,7 +234,7 @@ export class Components {
     const zoom=host.zoomGroupId||(compact?host.focusedGroupId:null);
     const hiddenViews=zoom?Object.values(host.groups).filter(g=>g.id!==zoom).flatMap(g=>g.viewIds).map(id=>shell.ui.views.find(v=>v.id===id)).filter(Boolean) as View[]:[];
     const hiddenStatus=[hiddenViews.filter(v=>v.dirty).length?`${hiddenViews.filter(v=>v.dirty).length} 页未保存`:'',hiddenViews.filter(v=>v.error).length?`${hiddenViews.filter(v=>v.error).length} 页错误`:''].filter(Boolean).join(' · ');
-    patchChrome(center,zoom?`<div class="compact-group-bar"><span role="status">当前分屏${hiddenStatus?` · 其他分屏：${e(hiddenStatus)}`:''}</span><button class="sd-quiet" data-component-action="hidden-groups">其他分屏（${Object.keys(host.groups).length-1}）</button></div>${group(zoom)}`:render(host.center,center.clientWidth,center.clientHeight));
+    shell.region.update(center,zoom?`<div class="compact-group-bar"><span role="status">当前分屏${hiddenStatus?` · 其他分屏：${e(hiddenStatus)}`:''}</span><button class="sd-quiet" data-component-action="hidden-groups">其他分屏（${Object.keys(host.groups).length-1}）</button></div>${group(zoom)}`:render(host.center,center.clientWidth,center.clientHeight));
     for(const node of center.querySelectorAll<HTMLElement>(".view-group")){
       const list=node.querySelector<HTMLElement>(".component-tab-list")!, key=host.id+':'+node.dataset.group;
       let saved=strips.get(key);
@@ -832,6 +833,6 @@ export class Components {
   }
   private async run(action: () => Promise<unknown>) { try { await action(); } catch (error) { this.notify(String(error)); } }
   private removeSurface(s: Surface) { if(s.token)void this.invoke("detach",{surfaceId:s.token}).catch(()=>{}); s.deferred.clear();s.flushing?.done("原有界面已卸载，输入无法确认");clearTimeout(s.timeout); if(s.token)this.clipboard.discard(s.token); this.shared.detach(s.token); this.data.detach(s.token); this.post(s, { type: "unmount" }); s.node.remove(); }
-  private destroy(shell: Shell) { for(const saved of shell.tabStrips?.values()??[])saved.strip?.dispose(); if (shell.layoutFrame !== undefined) cancelAnimationFrame(shell.layoutFrame); shell.observer.disconnect(); for (const f of shell.surfaces.values()) this.removeSurface(f); shell.node.remove(); }
+  private destroy(shell: Shell) { shell.region.dispose(); for(const saved of shell.tabStrips?.values()??[])saved.strip?.dispose(); if (shell.layoutFrame !== undefined) cancelAnimationFrame(shell.layoutFrame); shell.observer.disconnect(); for (const f of shell.surfaces.values()) this.removeSurface(f); shell.node.remove(); }
   dispose() { this.content.removeEventListener("contextmenu",this.toolMenuEvent);this.content.removeEventListener("keydown",this.toolMenuEvent);this.cancelGestures();this.content.removeEventListener("lostpointercapture",this.dragLost);window.removeEventListener("blur",this.cancelGestures);this.surfaceLayer.remove(); clearTimeout(this.actionTimer); document.removeEventListener("visibilitychange",this.resumeActionPolling); this.shared.dispose();this.content.removeEventListener("pointerdown",this.dragDown);this.content.removeEventListener("pointermove",this.dragMove);this.content.removeEventListener("pointerup",this.dragUp);this.content.removeEventListener("pointercancel",this.dragCancel);document.removeEventListener("keydown",this.layoutKey); this.settingsListener?.();this.locateListener?.(); this.fileDrop.dispose(); this.disposed = true; clearInterval(this.networkTimer); this.closeMenu(); window.removeEventListener("message", this.message); document.removeEventListener("pointerdown", this.outside); document.removeEventListener("pointerdown", this.interaction, true); document.removeEventListener("keydown", this.interaction, true); this.theme.disconnect(); window.matchMedia("(prefers-color-scheme: dark)").removeEventListener("change", this.systemTheme); for (const shell of this.shells.values()) this.destroy(shell); }
 }

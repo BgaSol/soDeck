@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { escape as e, icon, patchChrome } from "./ui";
+import { escape as e, icon } from "./ui";
+import { DomRegion } from "./dom-update";
 import { Components } from "./components";
 import { CloseCoordinator, type HostInputs } from "./close";
 import { attachMenuPosition, type MenuPosition, type MenuReference } from "./menu-position.js";
@@ -23,6 +24,7 @@ interface WidthState { values: Partial<Record<PanelSide, WidthChange>>; flight?:
 /** Each view is rendered from its own immutable context; no global active server API. */
 export class Workspaces {
   private components: Components;
+  private tabRegion: DomRegion;
   private closer: CloseCoordinator;
   private state?: Projection;
   private refreshing?: Promise<void>;
@@ -47,6 +49,7 @@ export class Workspaces {
   private retiredPreviews = new Set<string>();
 
   constructor(private tabs: HTMLElement, private content: HTMLElement, private catalog: HTMLElement, private notify: (message: string) => void, private call: Invoke = invoke) {
+    this.tabRegion = new DomRegion(tabs, () => this.render());
     this.closer = new CloseCoordinator(call,()=>this.state?.window.id??"main",async ids=>{this.finishResize(true);await this.flushLayouts().catch(error=>notify(String(error)));return this.components.flush(ids,true);},(ids,blocked,host)=>{
       if (blocked) {this.finishResize(true);this.closeMenu();}
       this.components.setCloseBlocked(blocked?ids:[]);
@@ -134,7 +137,7 @@ export class Workspaces {
     const focusId = this.tabs.contains(focused) ? focused.closest<HTMLElement>(".server-tab")?.dataset.id : undefined;
     const focusAction = focused?.dataset.workspaceAction;
     const scroll = this.tabs.scrollLeft;
-    patchChrome(this.tabs, state.workspaces.map(w => {
+    this.tabRegion.update(this.tabs, state.workspaces.map(w => {
       const id = e(w.context.workspaceId), active = state.window.activeWorkspace === w.context.workspaceId;
       return `<div class="server-tab sd-tab ${active ? "selected" : ""} ${this.moving.has(w.context.workspaceId) ? "moving" : ""}" data-id="${id}" data-tab-id="${id}" data-tauri-drag-region="false"><button class="server-tab-select" role="tab" aria-selected="${active}" tabindex="${active ? 0 : -1}" data-workspace-action="select" data-id="${id}" title="${e(w.name)} · ${e(w.endpoint)}"><span class="health-dot ${w.connected ? "good" : "warning"}"></span><span class="tab-name">${e(w.name)}</span></button><button class="tab-close-button sd-icon" data-workspace-action="close" data-id="${id}" aria-label="关闭 ${e(w.name)}" title="关闭此窗口的服务器标签">${icon("close")}</button></div>`;
     }).join(""));
@@ -360,7 +363,7 @@ export class Workspaces {
     if(this.disposed)return;
     this.finishResize(true);this.disposed=true;this.widths.clear();this.events.abort();clearTimeout(this.reportTimer);
     this.observer.disconnect();this.resizeObserver.disconnect();this.closeMenu();this.strip?.dispose();
-    this.closer.dispose();this.components.dispose();
+    this.tabRegion.dispose();this.closer.dispose();this.components.dispose();
   }
   private hostBlock?: (blocked:boolean)=>void;
   setCloseParticipants(inputs:HostInputs,block:(blocked:boolean)=>void){this.closer.hostInputs=inputs;this.hostBlock=block;}

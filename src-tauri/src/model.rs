@@ -10,6 +10,11 @@ pub struct UpdateSource {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct UpdateSourceBaseline {
+    pub source: Option<UpdateSource>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {
     pub id: String,

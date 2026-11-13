@@ -1026,6 +1026,48 @@ fn clearing_update_source_survives_autoload() {
 }
 
 #[test]
+fn source_save_compares_its_baseline_including_manual_mode() {
+    let f = Fixture::new();
+    let core = f.open();
+    core.add_plugin(&f.external).unwrap();
+    let initial = core.snapshot().plugins[0].manifest.update_source.clone();
+    let source = Some(sodeck::model::UpdateSource {
+        repository: "test/new".into(),
+        tag_prefix: "plugin-fixture-v".into(),
+    });
+    core.set_update_source_checked(
+        "test.fixture",
+        source.clone(),
+        Some(sodeck::model::UpdateSourceBaseline {
+            source: initial.clone(),
+        }),
+    )
+    .unwrap();
+    assert!(core
+        .set_update_source_checked(
+            "test.fixture",
+            None,
+            Some(sodeck::model::UpdateSourceBaseline { source: initial })
+        )
+        .unwrap_err()
+        .contains("另一窗口"));
+    assert_eq!(core.snapshot().plugins[0].manifest.update_source, source);
+    core.set_update_source_checked(
+        "test.fixture",
+        None,
+        Some(sodeck::model::UpdateSourceBaseline { source }),
+    )
+    .unwrap();
+    core.set_update_source_checked(
+        "test.fixture",
+        None,
+        Some(sodeck::model::UpdateSourceBaseline { source: None }),
+    )
+    .unwrap();
+    core.shutdown().unwrap();
+}
+
+#[test]
 fn enabled_update_keeps_old_process_until_restart_then_runs_new_program() {
     let f = Fixture::new();
     f.add();

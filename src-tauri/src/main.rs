@@ -658,11 +658,14 @@ async fn set_plugin_update_source(
     app: State<'_, Application>,
     id: String,
     source: Option<UpdateSource>,
+    expected: Option<sodeck::model::UpdateSourceBaseline>,
 ) -> Result<(), String> {
     let core = app.core.clone();
-    tauri::async_runtime::spawn_blocking(move || core.set_update_source(&id, source))
-        .await
-        .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        core.set_update_source_checked(&id, source, expected)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

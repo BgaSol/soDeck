@@ -1,5 +1,7 @@
 # SoDeck 开发指南
 
+DOM 回归在现有服务器、设置、交互及正式产物测试中运行。正式产物用真实 main/settings 入口与 CDP composition 通道检查连续组合更新、一次提交及子树从未断开，并注入快照/网络/设置读取失败；这些结果不能替代各系统原生输入法和 DPI 设备验收。共享 DOM 资源变更同时选择网络插件独立构建和集成检查，包内验收检查脚本与 MIT 许可证；核心产物携带 licenses.txt。
+
 ## 环境与启动
 
 Node.js 版本以 [.node-version](../.node-version) 为准；Rust 工具链以 [rust-toolchain.toml](../rust-toolchain.toml) 为准。准备 [Tauri 系统构建依赖](https://v2.tauri.app/start/prerequisites/)，使用仓库锁文件安装依赖。

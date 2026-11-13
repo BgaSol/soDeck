@@ -31,7 +31,7 @@ fs.copyFileSync(`src-tauri/target/debug/workspace-ui-fixture${suffix}`,path.join
 if(process.platform!=='win32')fs.chmodSync(path.join(uiFixture,`workspace-ui-fixture${suffix}`),0o755);
 fs.cpSync('scripts/fixtures/workspace-ui/ui',path.join(uiFixture,'ui'),{recursive:true});
 const uiMetadata=JSON.parse(fs.readFileSync('scripts/fixtures/workspace-ui/manifest.json','utf8'));
-uiMetadata.settings={apiVersion:'1',schemaVersion:1,pages:[{id:'display',title:'显示偏好验收',viewTypes:['files'],groups:[{id:'text',title:'文字',fields:[{key:'fontSize',type:'number',title:'名称字号',default:12,min:11,max:18,step:1,unit:'px',apply:'live'}]}]}]};
+uiMetadata.settings={apiVersion:'1',schemaVersion:1,pages:[{id:'display',title:'显示偏好验收',viewTypes:['files'],groups:[{id:'text',title:'文字',fields:[{key:'caption',type:'string',title:'输入连续性',default:'',maxLength:128,apply:'live'},{key:'fontSize',type:'number',title:'名称字号',default:12,min:11,max:18,step:1,unit:'px',apply:'live'}]}]}]};
 for(let index=0;index<20;index++)uiMetadata.ui.views.push({id:`extra${index}`,title:`扩展测试组件 ${index}`,icon:'plug',container:'sidebar',instancePolicy:'perWorkspace',defaultSide:'left'});
 fs.writeFileSync(path.join(uiFixture,'plugin.json'),JSON.stringify({...uiMetadata,target,entry:`workspace-ui-fixture${suffix}`}));
 fs.copyFileSync(`src-tauri/target/debug/plugin-fixture${suffix}`, path.join(fixture, `plugin-fixture${suffix}`));
@@ -121,6 +121,9 @@ await page.route('**/__plugin__/**',route=>{
 });
 const errors = [], checks = [];
 const logFilters = [];
+let failReadCommand = "";
+let persistReadFailure = false;
+const failedReads = new Map();
 let failCatalog = false, testWindow = "main", heldLogReply, releaseLogReply, chosenPluginDirectory = null;
 let holdLocalNetwork = false, localNetworkReached, releaseLocalNetwork;
 let holdPickerCatalog = false, releasePickerCatalog, pickerConnects = 0;
@@ -129,6 +132,11 @@ await page.exposeBinding("desktopInvoke", async (_, command, args) => {
   if (command === 'read_logs') logFilters.push(args.filter);
   if (command === 'plugin:dialog|open') return chosenPluginDirectory;
   if (command === 'server_catalog' && failCatalog) throw new Error('隔离测试：目录暂时不可读');
+  if (command === failReadCommand) {
+    failedReads.set(command,(failedReads.get(command)??0)+1);
+    if (!persistReadFailure) failReadCommand = "";
+    throw new Error("受控读取失败：" + command);
+  }
   const result=await call(command, { ...args, window: testWindow });
   if(command==='connection'&&args.command?.op==='start')pickerConnects++;
   if(command==='server_catalog'&&holdPickerCatalog){holdPickerCatalog=false;await new Promise(resolve=>releasePickerCatalog=resolve);}
@@ -160,6 +168,7 @@ await page.addInitScript(() => {
       }
       return window.desktopInvoke(command, args).then(result=>{
         if(command==='add_plugin')window.localPluginAdded=true;
+        if(command==='snapshot')window.snapshotReplies=(window.snapshotReplies||0)+1;
         if(command==='server_catalog')(window.receivedCatalogRevisions??=[]).push(result.revision);
         return result;
       });
@@ -544,6 +553,14 @@ try {
   await page.locator('#network-save').click();
   await page.locator('.network-notice').waitFor();
   assert.equal((await call('snapshot')).preferences.updateNetwork.customMirrors[0].prefix,'https://example.com/proxy/');
+  const mirrorName=page.locator('#mirror-name-0'),savedMirrorName=await mirrorName.inputValue();
+  await mirrorName.focus();await mirrorName.evaluate(input=>{input.select();window.originalMirror=input;window.mirrorDisconnects=0;const ancestors=new Set();for(let n=input;n&&n!==document.querySelector('#layer-content');n=n.parentNode)ancestors.add(n);new MutationObserver(records=>{for(const r of records)for(const n of r.removedNodes)if(ancestors.has(n))mirrorDisconnects++;}).observe(document.body,{subtree:true,childList:true});});
+  const networkIme=await page.context().newCDPSession(page);
+  await networkIme.send('Input.imeSetComposition',{text:'zhong',selectionStart:5,selectionEnd:5});
+  const networkReplies=await page.evaluate(()=>snapshotReplies);await page.evaluate(()=>emitTestEvent('core-changed'));await page.waitForFunction(n=>snapshotReplies>n,networkReplies);
+  await networkIme.send('Input.imeSetComposition',{text:'zhongwen',selectionStart:8,selectionEnd:8});
+  assert.equal(await mirrorName.inputValue(),'zhongwen');assert.equal(await mirrorName.evaluate(input=>input===originalMirror&&mirrorDisconnects===0),true,'Saved mirror to draft transition retains the active row');
+  await networkIme.send('Input.insertText',{text:'中文'});assert.equal(await mirrorName.inputValue(),'中文');await networkIme.detach();await mirrorName.fill(savedMirrorName);
   await page.locator('#network-add').click();
   await page.locator('#mirror-name-1').fill('备用节点');
   await page.locator('#mirror-prefix-1').fill('https://backup.example.com/');
@@ -599,6 +616,42 @@ try {
   await page.locator('#update-network-summary').click();
   await page.locator('.settings-page').evaluate(el=>el.scrollTo(0,0));
   checks.push('Update network: editable drafts survive refresh and retain focus, invalid URL and revision conflict preserve input, custom ordering/toggles, normalized save, single-endpoint API/blob/manifest/package diagnostics, three themes and small window');
+  // Real core close coordinator, two hidden host draft types and a partial save failure.
+  await page.locator('#update-network-summary').click();
+  const networkBefore=(await call('snapshot')).preferences.updateNetwork;
+  await page.locator('#network-fallback').setChecked(!networkBefore.fallbackEnabled);
+  await page.locator('#settings-nav-plugins').click();
+  await page.locator('[data-action="select-plugin"][data-id="test.update-one"]').click();
+  await page.locator('details[data-persist="source-test.update-one"] summary').click();
+  const sourceBefore=(await call('snapshot')).plugins.find(p=>p.manifest.id==='test.update-one').manifest.updateSource;
+  await page.locator('#update-repository').fill('test/close-draft');
+  await page.locator('#settings-nav-appearance').click();
+  const requestClose=async()=>{
+    const op=await call('close_prepare',{requestId:crypto.randomUUID(),target:{kind:'application',action:'restart'}});
+    await page.evaluate(op=>emitTestEvent('core-close-inputs',op),op);
+    await page.locator('.component-close-dialog [data-decision="save"]').waitFor();return op;
+  };
+  await requestClose();
+  assert.match(await page.locator('.component-close-dialog').textContent(),/下载与网络设置/);
+  assert.match(await page.locator('.component-close-dialog').textContent(),/更新来源/);
+  await page.locator('[data-decision="cancel"]').click();await page.locator('.component-close-dialog').waitFor({state:'detached'});
+  await requestClose();failReadCommand='set_plugin_update_source';
+  await page.locator('[data-decision="save"]').click();
+  await page.locator('.component-close-dialog').getByText('受控读取失败',{exact:false}).waitFor();
+  assert.equal((await call('snapshot')).preferences.updateNetwork.fallbackEnabled,!networkBefore.fallbackEnabled);
+  assert.deepEqual((await call('snapshot')).plugins.find(p=>p.manifest.id==='test.update-one').manifest.updateSource,sourceBefore);
+  await page.locator('[data-decision="cancel"]').click();await page.locator('.component-close-dialog').waitFor({state:'detached'});
+  await page.locator('#settings-nav-plugins').click();
+  await page.locator('[data-action="select-plugin"][data-id="test.update-one"]').click();
+  await page.locator('details[data-persist="source-test.update-one"] summary').click();
+  assert.equal(await page.locator('#update-repository').inputValue(),'test/close-draft');
+  await page.locator('[data-action="save-update-source"]').click();
+  await page.waitForFunction(()=>!document.querySelector('[data-action="reload-update-source"]'));
+  assert.equal((await call('snapshot')).plugins.find(p=>p.manifest.id==='test.update-one').manifest.updateSource.repository,'test/close-draft');
+  await page.locator('#update-repository').fill(sourceBefore.repository);await page.locator('[data-action="save-update-source"]').click();
+  await page.waitForFunction(()=>!document.querySelector('[data-action="reload-update-source"]'));
+  await page.locator('#settings-nav-updates').click();
+  checks.push('Actual close coordinator: hidden network/source drafts collected, cancel retains input, partial save failure prevents exit, successful source save advances baseline');
   await page.locator('[data-action="check-all-updates"]').click();
   const firstUpdate=page.locator('[data-update-id="test.update-one"]'),secondUpdate=page.locator('[data-update-id="test.update-two"]');
   await firstUpdate.locator('[data-action="download-update"]').waitFor();
@@ -730,6 +783,39 @@ try {
   checks.push('Bundled workspace menus: fixed placement, no short-menu scrollbars, vertical-only long lists, search and Escape across all three themes at 1100×720 and 720×480');
   await page.setViewportSize({width:1100,height:720});await page.locator('#settings-button').click();
   await page.locator('.settings-nav').getByRole('button',{name:'显示偏好验收',exact:true}).click();const preference=page.locator('#component-settings-page').getByLabel('名称字号');await preference.fill('17');
+  const caption=page.getByLabel('输入连续性',{exact:true});
+  await caption.focus();
+  await page.evaluate(()=>{
+    window.detachedInputs=0;window.compositionEvents=[];
+    if(!customElements.get('input-lifetime-probe'))customElements.define('input-lifetime-probe',class extends HTMLElement{disconnectedCallback(){window.detachedInputs++;}});
+    document.querySelector('#component-settings-page').append(document.createElement('input-lifetime-probe'));
+    window.composingInput=document.querySelector('#setting-caption');
+    for(const name of ['compositionstart','compositionend'])composingInput.addEventListener(name,event=>compositionEvents.push(event.type));
+  });
+  const ime=await page.context().newCDPSession(page);
+  await ime.send('Input.imeSetComposition',{text:'zhong',selectionStart:5,selectionEnd:5});
+  const replies=await page.evaluate(()=>window.snapshotReplies);
+  await page.evaluate(()=>emitTestEvent('core-changed'));
+  await page.waitForFunction(previous=>snapshotReplies>previous,replies);
+  await ime.send('Input.imeSetComposition',{text:'zhongwen',selectionStart:8,selectionEnd:8});
+  assert.equal(await caption.inputValue(),'zhongwen');
+  assert.equal(await page.evaluate(()=>detachedInputs),0,'Active component subtree must never detach');
+  await ime.send('Input.insertText',{text:'中文'});
+  assert.equal(await caption.inputValue(),'中文');
+  assert.deepEqual(await page.evaluate(()=>compositionEvents),['compositionstart','compositionend']);
+  for(const command of ['network_snapshot','snapshot','settings_page']){
+    const failures=failedReads.get(command)??0;
+    failReadCommand=command;persistReadFailure=true;
+    if(command==='settings_page')await page.evaluate(snapshot=>emitTestEvent('core-settings-changed',{...snapshot,revision:'99999'}),await call('settings_page',{pluginId:uiMetadata.id,pageId:'display'}));
+    else await page.evaluate(()=>emitTestEvent('core-changed'));
+    await page.getByText(`受控读取失败：${command}`,{exact:false}).first().waitFor();
+    assert((failedReads.get(command)??0)>failures,'The requested read failure must reach the actual page');
+    failReadCommand='';persistReadFailure=false;
+    assert.equal(await caption.inputValue(),'中文');
+    assert.equal(await page.evaluate(()=>composingInput===document.querySelector('#setting-caption')&&detachedInputs===0),true);
+  }
+  await ime.detach();await preference.focus();
+  checks.push('Actual bundled main: continuous CDP composition, zero subtree disconnects, one commit, isolated snapshot/network/settings read failures');
   await preference.evaluate(el=>window.componentPreferenceInput=el);await page.evaluate(()=>window.emitTestEvent('core-changed'));await page.waitForTimeout(150);
   assert(await preference.evaluate(el=>el===window.componentPreferenceInput));assert.equal(await preference.inputValue(),'17');
   await page.waitForTimeout(200);assert(await preference.evaluate(el=>el===document.activeElement),'Retained form focus survives global refresh');
@@ -790,6 +876,7 @@ try {
   await allMessages.focus();await page.keyboard.press('Enter');
   await page.locator('.message-row').first().focus();await page.keyboard.press('Enter');
   await page.locator('.message-row.selected').waitFor();
+  await page.locator('.message-row.selected').evaluate(async node=>{await Promise.allSettled(node.getAnimations({subtree:true}).map(animation=>animation.finished));});
   const messageContrasts=await page.locator('.message-row.selected').evaluate(row=>{
     const luminance=color=>{const c=color.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722;};
     const background=luminance(getComputedStyle(row).backgroundColor);

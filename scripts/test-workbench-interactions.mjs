@@ -11,7 +11,7 @@ before(async()=>{await packageMenuAssets('artifacts/menu-position/test-runtime')
 after(async()=>{await browser?.close();await server?.close();});
 const fixture=async()=>{
   const page=await browser.newPage({viewport:{width:400,height:540}});
-  await page.route('**/__interactions__',route=>route.fulfill({contentType:'text/html',body:'<html><head><style>@layer base,components,themes;</style><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/themes.css"></head><body><div id="chrome"></div><div id="tree-host"></div><script type="module">import {replace,patchChrome,icon} from "/ui.ts";window.render={replace,patchChrome,icon};</script></body></html>'}));
+  await page.route('**/__interactions__',route=>route.fulfill({contentType:'text/html',body:'<html><head><style>@layer base,components,themes;</style><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/themes.css"></head><body><div id="chrome"></div><div id="tree-host"></div><script type="module">import {icon} from "/ui.ts";import {updateDOM,DomRegion} from "/dom-update.ts";const region=new DomRegion(document.querySelector("#chrome"));window.render={replace:updateDOM,patchChrome:(element,html)=>region.update(element,html),icon};</script></body></html>'}));
   await page.goto(server.resolvedUrls.local[0]+'__interactions__');await page.waitForFunction(()=>window.render);
   return page;
 };
@@ -84,8 +84,8 @@ test('picker searches resource identity and preserves composition, focus and can
 test('line and page wheels normalize distance, single long labels fit without overflow controls',async()=>{
   const page=await stripFixture();
   try{
-    await page.evaluate(()=>{strip.viewport.dispatchEvent(new WheelEvent('wheel',{deltaY:120,cancelable:true}));strip.viewport.dispatchEvent(new WheelEvent('wheel',{deltaY:120,cancelable:true}));});
-    assert.equal(await page.evaluate(()=>positions().left),0,'Fast discrete wheel input still animates');await page.waitForTimeout(320);
+    await page.evaluate(()=>{strip.viewport.dispatchEvent(new WheelEvent('wheel',{deltaY:120,cancelable:true}));strip.viewport.dispatchEvent(new WheelEvent('wheel',{deltaY:120,cancelable:true}));window.wheelStart=positions().left;});
+    assert.equal(await page.evaluate(()=>wheelStart),0,'Fast discrete wheel input still animates');await page.waitForTimeout(320);
     assert(Math.abs(await page.evaluate(()=>positions().left)-240)<=1);await page.evaluate(()=>strip.scroll(-10000,false));
     await page.evaluate(()=>strip.viewport.dispatchEvent(new WheelEvent('wheel',{deltaY:3,deltaMode:1,cancelable:true})));await page.waitForTimeout(320);
     assert(Math.abs(await page.evaluate(()=>positions().left)-96)<=1);
@@ -157,8 +157,8 @@ test('form refresh preserves supported selections and direction without transfer
     for(const row of results.cases){assert.equal(row.focused,true,row.kind);assert.deepEqual(row.selection,row.expected,row.kind);assert.equal(row.value,'abcdef');}
     assert.deepEqual(results.shortened,{value:'x',selection:[1,1]});
     assert.equal(results.scoped,true);assert.equal(results.outsideKept,true);
-    assert.deepEqual(results.changes.map(row=>row.focused),[true,true,true,false,false,false]);
-    assert.equal(results.noIdFocused,false);assert.equal(results.noIdValue,'different');
+    assert.deepEqual(results.changes.map(row=>row.focused),[false,false,false,true,false,false]);
+    assert.equal(results.noIdFocused,true);assert.equal(results.noIdValue,'different');
   }finally{await page.close();}
 });
 
@@ -215,13 +215,56 @@ test('chrome updates preserve unrelated controls and defer reordering until clic
   }finally{await page.close();}
 });
 
+test('nested entity keys keep controls scoped and disposed regions cannot repaint',async()=>{
+  const page=await fixture();
+  try{
+    const result=await page.evaluate(async()=>{
+      const {updateDOM,DomRegion}=await import('/dom-update.ts');const host=document.querySelector('#tree-host');
+      const group=id=>`<section data-group="${id}"><button data-component-action="create">${id}</button></section>`;
+      updateDOM(host,group('a')+group('b'));const a=host.querySelector('[data-group=a]'),b=host.querySelector('[data-group=b]'),buttons=[a.firstChild,b.firstChild];
+      updateDOM(host,`<div data-split="outer">${group('b')}<div data-split="inner">${group('a')}</div></div>`);
+      const retained=[a,b].every(node=>node===host.querySelector(`[data-group="${node.dataset.group}"]`))&&a.firstChild===buttons[0]&&b.firstChild===buttons[1];
+      const signals=[];const original=document.addEventListener.bind(document);document.addEventListener=(name,listener,options)=>{if(options?.signal)signals.push(options.signal);return original(name,listener,options);};
+      const nodes=[];for(let i=0;i<20;i++){
+        const root=document.createElement('div');root.innerHTML='<button>before</button>';document.body.append(root);nodes.push(root);
+        const region=new DomRegion(root);root.firstChild.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,pointerId:1}));region.update(root,'<button>late</button>');document.dispatchEvent(new PointerEvent('pointerup',{pointerId:1}));region.dispose();root.remove();
+      }
+      document.addEventListener=original;await new Promise(resolve=>setTimeout(resolve,20));
+      return {retained,disposed:signals.length===60&&signals.every(signal=>signal.aborted),unchanged:nodes.every(node=>node.textContent==='before')};
+    });
+    assert.deepEqual(result,{retained:true,disposed:true,unchanged:true});
+  }finally{await page.close();}
+});
+
+test('host draft close waits for final composition and reports only changed values',async()=>{
+  const page=await fixture();
+  try{
+    const result=await page.evaluate(async()=>{
+      const {HostDrafts}=await import('/host-drafts.ts'),{core}=await import('/core.ts');
+      const snapshot={preferences:{updateNetwork:{revision:0,fallbackEnabled:true,disabledBuiltins:[],customMirrors:[]}},plugins:[{manifest:{id:'one',name:'One',updateSource:{repository:'owner/repo',tagPrefix:'v'}}}]};
+      const state={busy:new Set(),sourceDrafts:{}};const drafts=new HostDrafts(()=>snapshot,state,()=>{});
+      const input=document.createElement('input');document.body.append(input);input.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true}));let flushed=false;
+      const pending=drafts.flushInputs().then(()=>flushed=true);await Promise.resolve();const waited=!flushed;
+      input.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true}));drafts.input('one','repository','owner/edited');await pending;
+      const collected=await drafts.closeInputs('collect');let writes=0;
+      core.updateSource=async()=>{writes++;throw new Error('save failed');};
+      let failed=false;try{await drafts.closeInputs('save');}catch{failed=true;}
+      const retained=state.sourceDrafts.one.repository==='owner/edited';
+      await drafts.closeInputs('discard');const clean=(await drafts.closeInputs('collect')).length===0;
+      drafts.input('one','repository','owner/repo');const unchanged=(await drafts.closeInputs('collect')).length===0;
+      drafts.dispose();return {waited,flushed,count:collected.length,failed,retained,writes,clean,unchanged};
+    });
+    assert.deepEqual(result,{waited:true,flushed:true,count:1,failed:true,retained:true,writes:1,clean:true,unchanged:true});
+  }finally{await page.close();}
+});
+
 test('update progress preserves wheel scrolling and expanded notes',async()=>{
   const page=await fixture();
   try{
     await page.setViewportSize({width:1100,height:720});
     await page.evaluate(async()=>{
       await import('/style.css');
-      const {settings}=await import('/views.ts');const {renderUpdatesSettings}=await import('/updates.ts');
+      const {settings}=await import('/views.ts');const {updateDOM:renderUpdatesSettings}=await import('/dom-update.ts');
       const host=document.querySelector('#chrome');host.className='settings-content';host.style.cssText='width:940px;height:560px';
       window.updateSnapshot={version:'0.1.0',target:'x86_64-pc-windows-msvc',preferences:{},plugins:Array.from({length:12},(_,i)=>({manifest:{id:'test.'+i,name:'插件 '+i,version:'0.1.0',target:'x86_64-pc-windows-msvc',updateSource:{repository:'test/plugins'}},enabled:true}))};
       window.updateView={section:'updates',updates:Object.fromEntries(updateSnapshot.plugins.map(p=>[p.manifest.id,{id:p.manifest.id,phase:'downloading',version:'0.2.0',notes:'# 更新说明\n\n'+Array.from({length:20},(_,i)=>'- 改进 '+i).join('\n'),downloadedBytes:1048576,totalBytes:104857600,error:null}])),excludedUpdates:new Set(),busy:new Set(),updateOverview:{busy:true,checking:false}};

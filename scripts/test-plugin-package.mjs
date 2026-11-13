@@ -35,6 +35,7 @@ try {
     }
   }
   if (plugin === "terminal") for (const file of ["history-worker.js", "vendor/xterm.js", "vendor/xterm.js.LICENSE", "vendor/serialize.js", "vendor/serialize.js.LICENSE"]) assert(fs.statSync(path.join(checked.root, "ui", file)).size > 0);
+  if (plugin === "network-proxy") for (const file of ["dom-update.js", "licenses/morphdom.LICENSE"]) assert(fs.statSync(path.join(checked.root, "ui", file)).size > 0);
   if (plugin === "files") {
     const vendor = path.join(checked.root, "ui/file-editor");
     for (const file of ["editor.js", "index.js", "open.js", "editor.css", "monaco.LICENSE", "ThirdPartyNotices.txt", "dompurify.LICENSE", "marked.LICENSE.md"]) assert(fs.statSync(path.join(vendor, file)).size > 0);

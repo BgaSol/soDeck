@@ -56,6 +56,13 @@ async function load() { await page.goto(url); await page.waitForFunction(() => w
 const checks = [];
 try {
   await load();
+  const search=work().locator('#catalog-query');await search.focus();
+  await search.evaluate(input=>{window.searchInput=input;window.searchDisconnects=0;const ancestors=new Set();for(let n=input;n&&n!==document.body;n=n.parentNode)ancestors.add(n);new MutationObserver(records=>{for(const r of records)for(const n of r.removedNodes)if(ancestors.has(n))searchDisconnects++;}).observe(document.body,{childList:true,subtree:true});});
+  const ime=await page.context().newCDPSession(page);
+  await ime.send('Input.imeSetComposition',{text:'zhong',selectionStart:5,selectionEnd:5});await page.evaluate(()=>manager.start());
+  await ime.send('Input.imeSetComposition',{text:'zhongwen',selectionStart:8,selectionEnd:8});
+  assert.equal(await search.inputValue(),'zhongwen');assert.equal(await search.evaluate(input=>input===searchInput&&searchDisconnects===0),true);
+  await ime.send('Input.insertText',{text:'中文'});assert.equal(await search.inputValue(),'中文');await ime.detach();await search.fill('');
   assert.equal(await work().locator(".catalog-page").evaluate(el => el.getBoundingClientRect().width), 1100);
   await action("new", work()).click(); await field("host").fill("gateway.invalid"); await field("username").fill("ops");
   assert.equal(await field("remember").isChecked(), true);
@@ -164,7 +171,7 @@ try {
       const row=work().locator(`[data-server-action="select"][data-id="${target}"]`);
       await row.focus();await page.keyboard.press('Enter');
       assert.equal(await page.evaluate(()=>document.activeElement===document.body),false,`${theme}/${width} selecting a server keeps contextual focus`);
-      if(width===1100){const ratios=await row.evaluate(row=>{const l=color=>{const c=color.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722;};const b=l(getComputedStyle(row).backgroundColor);return [...row.querySelectorAll('small')].map(node=>{const a=l(getComputedStyle(node).color);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);});});assert(ratios.every(r=>r>=4.5),`${theme} selected server contrast: ${ratios}`);}
+      if(width===1100){await row.evaluate(async node=>{await Promise.allSettled(node.getAnimations({subtree:true}).map(animation=>animation.finished));});const ratios=await row.evaluate(row=>{const l=color=>{const c=color.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722;};const b=l(getComputedStyle(row).backgroundColor);return [...row.querySelectorAll('small')].map(node=>{const a=l(getComputedStyle(node).color);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);});});assert(ratios.every(r=>r>=4.5),`${theme} selected server contrast: ${ratios}`);}
       if(width===720){await action('back',work()).focus();await page.keyboard.press('Enter');assert.equal(await row.evaluate(el=>el===document.activeElement),true,'Returning to the list focuses the original server');}
       await action("new", work()).click();
       await field("routed").selectOption("true"); await action("add-socks").click();
