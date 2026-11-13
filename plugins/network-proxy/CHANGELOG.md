@@ -4,7 +4,11 @@
 - 按压队列随挂载容器结束；轮询结果核对挂载代次，卸载后的快照不再绘制页面。
 - 表单切换自动端口时保留其他输入节点；网络监听与业务生命周期保持原规则。
 
-待发行；本次原生归档、真实隧道及组合验证来源在完成后回写。系统 IME/触控板/DPI 和 netem 不计为已验证。
+包来源：[2a510727c8fba367a638b9e79fc8468323f68256](https://github.com/BgaSol/soDeck/commit/2a510727c8fba367a638b9e79fc8468323f68256)；原始独立打包与验收：[43373715746](https://github.com/BgaSol/soDeck/actions/runs/43373715746)。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生归档的架构、摘要、资源、初始化、视图创建/释放与退出全部一次通过，包含独立 DOM 运行资源和许可证。
+
+[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/43373679922) 全部相关检查通过，包含五平台原生源码及 Linux x86_64/ARM64 的真实 SSH/SOCKS/curl、进程与网络界面回归。本地真实网络专项同时通过。与本轮核心 0.23.11、terminal 0.8.5、files 0.11.1 的[原包远程组合](https://github.com/BgaSol/soDeck/actions/runs/43374667881)五平台一次通过，包含真实网络通道、移窗与重开退出。
+
+发行：[network-proxy 0.4.3](https://github.com/BgaSol/soDeck/releases/tag/plugin-network-proxy-v0.4.3)，非 Latest。六个附件沿用原始 run；发布前只同步说明与更新清单中的说明，五份程序归档字节保持不变。摘要与本轮来源见[发行附件记录](../../docs/releases/v0.23.11-assets.json)。系统 IME/触控板/DPI、生产服务器、正式版实际升级和 netem 不计为已验证。
 
 # 0.4.2
 
