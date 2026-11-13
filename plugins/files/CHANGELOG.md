@@ -5,9 +5,19 @@
 
 未新增或升级生产依赖；核心 API 与文件编辑协议保持不变。SDK 源码随使用插件独立构建发行。当前正式消费方仍为文件插件，独立进程夹具验证另一个自定义视图接入，不新增其他插件业务。
 
-本地 SDK 类型/构建、Rust、脚本、正式编辑器与完整文件/SFTP 界面回归通过，覆盖来源资源、关闭保存、并发查询、跨窗草稿、BOM/CRLF、冲突、下载及断线导出。五平台原生包、来源 Check 与正式发布待本次候选完成后补充。
+本地 SDK 类型/构建、Rust、脚本、正式编辑器与完整文件/SFTP 界面回归通过，覆盖来源资源、关闭保存、并发查询、跨窗草稿、BOM/CRLF、冲突、下载及断线导出。本机 Windows WebView2 使用本次构建的核心与插件，Worker/CSP、语法、缩略图、搜索、字节限制、SSH 保存和退出通过；这不替代发行包验收。
 
-本轮不验证生产服务器、真实 IME/DPI/Wayland、系统文件剪贴板/默认应用或历史正式版升级。
+包来源：[631dbb57694b603ebcbfe18d2b0aaff6229459d7](https://github.com/BgaSol/soDeck/commit/631dbb57694b603ebcbfe18d2b0aaff6229459d7)；原始独立打包与实包验收：[43356226992](https://github.com/BgaSol/soDeck/actions/runs/43356226992)。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五个平台全部原生构建；实际归档的架构、资源、初始化、视图创建/释放、退出以及来源/摘要绑定全部通过。
+
+[来源提交 Check](https://github.com/BgaSol/soDeck/actions/runs/43356225397) 完整通过：五平台核心/插件/共享客户端源码、157 项以上工程脚本、Linux 完整界面、Windows SSH、文件/SFTP、正式编辑器、终端、网络、系统状态、Docker 与跨组件通信。资源创建中关闭、关闭失败后保留所有权重试及修订 R/R+1 回归通过。
+
+前一未发行的 0.11.0 候选在最终核对时被 0.11.1 替代：补上资源创建回执与页面释放交接的竞态，未覆盖原候选的程序附件。此前 Linux 颜色断言因直接读取 Monaco 未渲染的行而两次失败；以 220px 矮视口复现，测试改为滚动到目标并等待实际颜色后，[前轮完整检查](https://github.com/BgaSol/soDeck/actions/runs/43355112355)及本次来源检查均通过。
+
+[原包远程组合](https://github.com/BgaSol/soDeck/actions/runs/43356799617) 固定核心 0.23.9、terminal 0.8.5 和本次 files 候选，在 Windows x86_64/ARM64、Linux x86_64/ARM64 的远程、工作台、重开和退出通过。macOS ARM64 在已发布核心的“内容区或窗口按钮错误地接受了 Tab 拖放”检查失败，未进入文件流程，组合汇总仍为失败；前候选的[首次及单平台复验](https://github.com/BgaSol/soDeck/actions/runs/43353243241)同样失败，不声称五平台组合通过。文件插件自身五平台原生实包验收均通过。本轮组合不包含网络插件，Windows 深度编辑器开关未开启。
+
+发行：[files 0.11.1](https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.11.1)，按用户要求标为 Latest。五份归档和更新清单共六个附件沿用原始 run；发布前只同步说明与更新清单的验收记录，程序归档字节不变。正式发布后 Latest、六个附件 ID/大小/摘要、全部匿名下载及公开更新清单复核一致。
+
+本轮未执行生产服务器、netem、真实 IME/DPI/Wayland、系统文件剪贴板/默认应用或历史正式版升级专项。
 
 # 0.10.4
 
@@ -166,4 +176,3 @@ Windows CI 编辑器专项仍因 WebView2 调试端口不可用而失败，未�
 # 0.1.0
 
 真实 SFTP 目录、UTF-8 小文件编辑、版本检查与单文件下载。需要支持 files.v1 的核心。
-
