@@ -51,23 +51,29 @@ try{
  for(const [path,text]of [['data.json','{"port":8080,"enabled":true}'],['compose.yaml','port: 8080\n# config\nname: "web"'],['config.toml','[server]\nport = 8080\nname = "web"\n# config'],['config.ini','[main]\nkey=value\n; config'],['.env','PORT=8080\nNAME="web"\n# config'],['Dockerfile','FROM ubuntu:24.04\n# config\nRUN echo "hello"']]){
    await page.evaluate(({path,text})=>mount(text,path),{path,text});await page.waitForFunction(()=>new Set([...document.querySelectorAll('.view-lines span[class^="mtk"]')].filter(el=>el.textContent.trim()).map(el=>getComputedStyle(el).color)).size>=2);
  }
- const tokenColor=(value,exact=true)=>page.evaluate(({value,exact})=>{
+ // Monaco virtualizes lines; scroll the target into view before inspecting rendered colors.
+ const tokenColor=async(value,exact=true,expected)=>{
+  await page.evaluate(value=>{const offset=editor.value().indexOf(value);if(offset<0)throw Error('Token missing from model: '+value);editor.editor.revealPositionInCenter(editor.model.getPositionAt(offset),0);editor.editor.render(true);},value);
+  await page.waitForFunction(({value,exact,expected})=>{const span=[...document.querySelectorAll('.view-lines span[class^="mtk"]')].find(el=>exact?el.textContent.replaceAll('"','')===value:el.textContent.includes(value));return span&&(!expected||getComputedStyle(span).color===expected);},{value,exact,expected});
+  return page.evaluate(({value,exact})=>{
    const span=[...document.querySelectorAll('.view-lines span[class^="mtk"]')].find(el=>exact?el.textContent.replaceAll('"','')===value:el.textContent.includes(value));
    if(!span)throw new Error(`Missing colored token: ${value}`);
    return getComputedStyle(span).color;
- },{value,exact});
+  },{value,exact});
+ };
  const mountColored=async(path,text)=>{
    await page.evaluate(({path,text})=>mount(text,path),{path,text});
    await page.waitForFunction(()=>[...document.querySelectorAll('.view-lines span[class^="mtk"]')].some(el=>el.textContent.replaceAll('"','')==='ordinary'));
  };
  const commentColors=[];
+ await page.setViewportSize({width:330,height:220});
  const jsonText=JSON.stringify({plain:'ordinary',dollar:'$HOME',braced:'${HOME}',lone:'$',array:['arrayValue'],enabled:true,nothing:null},null,2).replace('"plain":','"plain"\n  :');
  const dollarText='// lineMarker\n/* blockMarker\nblockContinuation */\n'+jsonText;
  for(const path of ['data.json','data.jsonc']){
    await mountColored(path,jsonText);
    for(const dark of [false,true]){
      await page.evaluate(dark=>editor.theme({panel:dark?'#202732':'#ffffff',text:dark?'#e5eaf3':'#263044',muted:dark?'#a5afbd':'#64748b','color-scheme':dark?'dark':'light'}),dark);
-     await page.waitForFunction(expected=>{const span=[...document.querySelectorAll('.view-lines span[class^="mtk"]')].find(el=>el.textContent.replaceAll('"','')==='ordinary');return span&&getComputedStyle(span).color===expected;},dark?'rgb(226, 185, 144)':'rgb(153, 81, 38)');
+     await tokenColor('ordinary',true,dark?'rgb(226, 185, 144)':'rgb(153, 81, 38)');
      const ordinary=await tokenColor('ordinary'),key=dark?'rgb(156, 203, 255)':'rgb(23, 92, 158)';
      assert.equal(ordinary,dark?'rgb(226, 185, 144)':'rgb(153, 81, 38)',`${path}: string value keeps its theme color`);
      assert.equal(await tokenColor('plain'),key,`${path}: multiline property name keeps its theme color`);
