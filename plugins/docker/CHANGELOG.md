@@ -2,7 +2,13 @@
 
 - 运行中容器详情增加“打开终端”，通过核心命令请求终端插件。固定 socket、Engine、完整容器 ID 与 shell，关闭目录集成；关闭 Docker 来源页后，已登记终端继续独立运行。当前要求核心 commands.v1。
 
-未新增生产依赖。容器终端需要核心 0.24.0 的 commands.v1 与终端 0.9.0 的 terminal.open.v1；缺少能力或处理者时明确提示，不自动启用或替换插件。本版独立发行，启用中的升级在重启后生效。发布验收进行中，当前范围见[通信增强待验收范围](../../docs/plans/component-communication.md)。
+未新增生产依赖。容器终端需要核心 0.24.0 的 commands.v1 与终端 0.9.0 的 terminal.open.v1；缺少能力或处理者时明确提示，不自动启用或替换插件。本版独立发行，启用中的升级在重启后生效。
+
+包来源：[36a0dc5f26830659264fc8ce3f357f9088ac3b9f](https://github.com/BgaSol/soDeck/commit/36a0dc5f26830659264fc8ce3f357f9088ac3b9f)；原始独立打包与验收：[43415192099](https://github.com/BgaSol/soDeck/actions/runs/43415192099)。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生归档的摘要、架构、UI 资源、初始化、视图创建/释放和退出全部通过。[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/43415020177) 的五平台插件源码、进程/UI、Linux 真实 Engine/OpenSSH 回归通过。
+
+Windows x86_64 另下载本次 Docker 0.2.0 与终端 0.9.0 原始归档，核对摘要后配合相同核心源码及隔离 Engine 24.0.9/OpenSSH 联调通过，覆盖容器终端、环境值、目录集成关闭、关闭来源后继续输入及原有容器操作。该测试使用核心源码夹具；核心安装包验收和原生远程组合见[核心发行记录](../../docs/releases/v0.24.0.md)，不把它算作五平台 Docker 远端业务全部通过。
+
+发行：[docker 0.2.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.2.0)，非 Latest。六个附件沿用原始 run；发布前仅同步说明与更新清单 notes，五份程序归档字节不变。来源与摘要保留在[本轮附件记录](../../docs/releases/v0.24.0-assets.json)。未执行正式版安装升级、生产服务器、rootless、代理路径或全部 Engine 版本专项。
 
 # 0.1.4
 

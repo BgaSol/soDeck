@@ -2,7 +2,13 @@
 
 - 默认创建、新建和重开统一接入 terminal.open.v1；命令处理者随进程运行，不依赖 iframe。回执丢失保留原票据查询，不自动重建页面；支持旧核心时沿用原协议。
 
-未新增生产依赖。新命令能力由核心 0.24.0 提供；缺少 commands.v1 的兼容核心继续沿用旧协议。本版独立发行，启用中的升级在重启后生效。发布验收进行中，当前范围见[通信增强待验收范围](../../docs/plans/component-communication.md)。
+未新增生产依赖。新命令能力由核心 0.24.0 提供；缺少 commands.v1 的兼容核心继续沿用旧协议。本版独立发行，启用中的升级在重启后生效。
+
+包来源：[36a0dc5f26830659264fc8ce3f357f9088ac3b9f](https://github.com/BgaSol/soDeck/commit/36a0dc5f26830659264fc8ce3f357f9088ac3b9f)；原始独立打包与验收：[43415172474](https://github.com/BgaSol/soDeck/actions/runs/43415172474)。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生归档的摘要、架构、UI/字体资源、命令握手、视图创建/释放和退出全部通过。[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/43415020177) 的五平台源码和相关真实终端、组件通信回归通过。
+
+[新核心 0.24.0 组合](https://github.com/BgaSol/soDeck/actions/runs/43418488124)与[旧核心 0.23.11 组合](https://github.com/BgaSol/soDeck/actions/runs/43415857999)均固定本次终端原包及 files 0.11.1、network-proxy 0.4.3，在五平台通过原生工作台、SSH/PTY、文件、网络、移窗、重开及退出。旧核心组合实际验证原协议兼容路径。
+
+发行：[terminal 0.9.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.9.0)，非 Latest。六个附件沿用原始 run；发布前仅同步说明与更新清单 notes，五份程序归档字节不变。来源、摘要和组合输入保留在[本轮附件记录](../../docs/releases/v0.24.0-assets.json)。未重复正式版安装升级、生产服务器或真实系统 IME/DPI/设备专项。
 
 # 0.8.5
 
