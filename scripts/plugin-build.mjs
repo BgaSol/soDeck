@@ -72,6 +72,7 @@ export async function buildPlugin({ plugin, target, output, release, installDepe
         entry: `bin/${executable}`,
         updateSource: { repository: "BgaSol/soDeck", tagPrefix: metadata.tagPrefix },
         ...(metadata.ui ? { ui: metadata.ui } : {}),
+        ...(metadata.commands ? { commands: metadata.commands } : {}),
         ...(metadata.settings ? { settings: metadata.settings } : {}),
       },
       null,

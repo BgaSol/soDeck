@@ -43,9 +43,9 @@ test('release metadata parses flags without applying tag environment policy', ()
 
 test('test preparation preserves positional flags, CI aliases and matrix precedence', () => {
   assert.deepEqual(parseTestPrepareArgs(['terminal', '--ui-only', 'files']), { plugins: ['terminal', 'files'], uiOnly: true });
-  assert.deepEqual(parseTestPrepareArgs(['docker']), { plugins: ['docker'], uiOnly: false });
+  assert.deepEqual(parseTestPrepareArgs(['docker']), { plugins: ['terminal', 'docker'], uiOnly: false });
   assert.deepEqual(parseTestPrepareArgs(['--matrix', '{"network":true,"status":true,"docker":true}']), {
-    plugins: ['network-proxy', 'system-status', 'docker'], uiOnly: false,
+    plugins: ['terminal', 'network-proxy', 'system-status', 'docker'], uiOnly: false,
   });
   assert.deepEqual(parseTestPrepareArgs(['--matrix={"communication":true}', '--ui-only']), {
     plugins: ['terminal', 'files', 'system-status'], uiOnly: true,

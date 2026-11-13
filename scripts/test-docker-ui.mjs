@@ -43,6 +43,7 @@ await page.exposeFunction('mock',async d=>{
   if(d.action==='navigation'){snapshot.navigation=d.state;return snapshot;}
   if(d.action==='resumeInput')return snapshot;
   if(d.action==='openContainer'||d.action==='openLogs')return {viewId:'opened'};
+  if(d.action==='openTerminal'){snapshot={...snapshot,revision:String(Number(snapshot.revision)+1),terminal:{status:'pending'}};return snapshot;}
   if(d.action==='pauseRefresh'){snapshot.paused=d.paused;return snapshot;}
   if(d.action==='operate'){snapshot={...snapshot,revision:String(Number(snapshot.revision)+1),nextIntent:'2',status:d.operation==='stop'?'exited':'running',operation:{action:d.operation,state:'succeeded',message:'已刷新当前观测状态'}};return snapshot;}
   if(d.action==='stats'){snapshot={...snapshot,revision:String(Number(snapshot.revision)+1),stats:{CPUPerc:'150.5%',MemUsage:'512MiB / 2GiB',NetIO:'10MB / 2MB',BlockIO:'1MB / 0B'}};return snapshot;}
@@ -93,6 +94,16 @@ try{
     await page.evaluate(s=>{window.mount=s;window.post('mount',{data:s,tokens:window.tokens,readOnly:false,capabilities:{clipboard:1}});},snapshot);
     await frame.locator('#'+mode).waitFor({state:'visible'});
     if(mode==='container'){
+      await frame.locator('#terminal-shell').fill('/bin/bash');
+      await frame.locator('#open-terminal').click();
+      assert(await frame.locator('#open-terminal').isDisabled());
+      assert(await frame.locator('#terminal-shell').isDisabled());
+      await frame.locator('#open-terminal').dispatchEvent('click');
+      await frame.locator('#terminal-result').filter({hasText:'终端请求待确认'}).waitFor();
+      assert.equal(requests.filter(r=>r.action==='openTerminal').length,1);
+      assert.equal(requests.find(r=>r.action==='openTerminal').shell,'/bin/bash');
+      snapshot={...snapshot,revision:String(Number(snapshot.revision)+1),terminal:{status:'completed',viewId:'terminal-page'}};
+      await frame.locator('#terminal-result').filter({hasText:'终端页面已创建'}).waitFor();
       await frame.getByRole('button',{name:'环境变量',exact:true}).click();await frame.locator('#fields').filter({hasText:'TOKEN'}).waitFor();assert(!(await frame.locator('#fields').innerText()).includes('a=b=c'));
       await frame.locator('#show-env').check();assert((await frame.locator('#fields').innerText()).includes('a=b=c'));
       await frame.getByRole('button',{name:'停止',exact:true}).click();await frame.locator('#confirm').waitFor({state:'visible'});await page.keyboard.press('Escape');

@@ -4,6 +4,7 @@ import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
 import {spawn,spawnSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {packageRoot} from './docker-process.mjs';
+import {testPluginDirectory} from './test-plugin-directory.mjs';
 const run=(args,options={})=>{
   const r=spawnSync('docker',args,{encoding:'utf8',windowsHide:true,timeout:120000,...options});
   if(r.status!==0)throw new Error('Docker fixture command failed: '+args[0]+' '+(r.stderr||r.error||''));
@@ -50,14 +51,14 @@ try{
   packageRoot(); // Fixtures are prepared explicitly before source integration tests.
   const code=await new Promise((resolve,reject)=>{
     const test=spawn('cargo',['test','--manifest-path','src-tauri/Cargo.toml','--features','test-fixtures','--locked','--test','connections','openssh_docker_plugin','--','--ignored','--exact','--nocapture'],
-      {stdio:'inherit',windowsHide:true,env:{...process.env,SODECK_TEST_SSH_PORT:port,SODECK_TEST_SSH_USER:'root',SODECK_TEST_SSH_KEY:path.join(directory,'user'),SODECK_TEST_DOCKER_PLUGIN:packageRoot(),SODECK_TEST_DOCKER_CONTAINER:app}});
+      {stdio:'inherit',windowsHide:true,env:{...process.env,SODECK_TEST_SSH_PORT:port,SODECK_TEST_SSH_USER:'root',SODECK_TEST_SSH_KEY:path.join(directory,'user'),SODECK_TEST_DOCKER_PLUGIN:packageRoot(),SODECK_TEST_TERMINAL_PLUGIN:testPluginDirectory("terminal"),SODECK_TEST_DOCKER_CONTAINER:app}});
     test.on('error',reject);test.on('exit',resolve);
   });
   assert.equal(code,0);
   inside(['volume','inspect',appVolume]);assert.equal(inside(['container','ls','--all','--quiet']).length,0,'test container should have been explicitly removed');
   fs.mkdirSync('artifacts/docker-integration',{recursive:true});
-  fs.writeFileSync('artifacts/docker-integration/result.json',JSON.stringify({engine:'24.0.9',clientTarget:JSON.parse(fs.readFileSync(path.join(packageRoot(),'plugin.json'),'utf8')).target,actualCore:true,actualPlugin:true,ssh:true,containerRemoved:true,volumePreserved:true},null,2)+'\n');
-  console.log('Actual core/native Docker plugin/OpenSSH/isolated Engine: list, details, logs, stats, pause/unpause/stop/start/restart/remove, retained logs on disconnect and volume preservation passed.');
+  fs.writeFileSync('artifacts/docker-integration/result.json',JSON.stringify({engine:'24.0.9',clientTarget:JSON.parse(fs.readFileSync(path.join(packageRoot(),'plugin.json'),'utf8')).target,actualCore:true,actualPlugin:true,ssh:true,terminalCommand:true,sourceCloseKeepsTerminal:true,containerRemoved:true,volumePreserved:true},null,2)+'\n');
+  console.log('Actual core/native Docker plugin/OpenSSH/isolated Engine: list, details, container terminal through commands, terminal survives source close, logs, stats, pause/unpause/stop/start/restart/remove, retained logs on disconnect and volume preservation passed.');
 }finally{
   for(const resource of created.reverse()){assert(resource.startsWith(name+'-'));spawnSync('docker',['rm','-f','-v',resource],{windowsHide:true,stdio:'ignore'});}
   if(volumeCreated)spawnSync('docker',['volume','rm',socket],{windowsHide:true,stdio:'ignore'});

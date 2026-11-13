@@ -75,6 +75,56 @@ impl Drop for Plugin {
 fn config() -> Value {
     json!({"version":1,"title":"container shell","launch":{"kind":"command","command":"container exec --interactive shell"},"directoryIntegration":"off"})
 }
+#[test]
+fn commands_register_pages_and_reopen_preserves_ticket_across_lost_receipts() {
+    let mut plugin = Plugin::new(true, true);
+    plugin.request("commands-init","initialize",json!({"capabilities":["commands.v1","terminal.v1","terminal.launch.v1","viewData.v1","terminal.history.v1","ui.openView.v1"]}));
+    let init = plugin.next();
+    assert_eq!(init["result"]["commandsApiVersion"], "1");
+    assert_eq!(
+        init["result"]["commandHandlers"],
+        json!(["terminal.open.v1"])
+    );
+    let context = json!({"workspaceId":"w","serverId":"s","connectionId":"c","generation":1});
+    plugin.request("command","commands.handle",json!({"commandId":"command-1","context":context,"name":"terminal.open.v1","payload":config()}));
+    let open = plugin.next();
+    assert_eq!(open["method"], "ui.openView");
+    assert_eq!(open["params"]["commandId"], "command-1");
+    assert_eq!(open["params"]["requestId"], "open:command-1");
+    assert_eq!(open["params"]["params"], config());
+    plugin.reply(&open, json!({"viewId":"page"}));
+    assert_eq!(plugin.next()["result"]["viewId"], "page");
+    plugin.request("rejected","commands.handle",json!({"commandId":"command-2","context":context,"name":"terminal.open.v1","payload":config()}));
+    let rejected = plugin.next();
+    plugin.send(json!({"jsonrpc":"2.0","id":rejected["id"],"error":{"code":-32000,"message":"目标正在交接","data":{"code":"targetBusy"}}}));
+    let rejected = plugin.next();
+    assert_eq!(rejected["error"]["data"]["code"], "targetBusy");
+    assert_eq!(rejected["error"]["message"], "目标正在交接");
+    let event = json!({"viewId":"source","context":context,"data":{"action":"createTerminal","requestId":"intent-1","params":config()}});
+    plugin.request("reopen", "ui.event", event.clone());
+    let submit = plugin.next();
+    assert_eq!(submit["method"], "commands.submit");
+    assert_eq!(submit["params"]["sourceViewId"], "source");
+    plugin
+        .send(json!({"jsonrpc":"2.0","id":submit["id"],"error":{"code":-32003,"message":"lost"}}));
+    assert_eq!(plugin.next()["result"]["data"]["status"], "pending");
+    plugin.request(
+        "check",
+        "ui.event",
+        json!({"viewId":"source","context":context,"data":{"action":"terminalCommandStatus"}}),
+    );
+    let get = plugin.next();
+    assert_eq!(get["method"], "commands.get");
+    assert_eq!(get["params"]["requestId"], "intent-1");
+    plugin.reply(&get, json!({"status":"completed","viewId":"next"}));
+    assert_eq!(plugin.next()["result"]["data"]["viewId"], "next");
+    plugin.request("same", "ui.event", event);
+    assert_eq!(plugin.next()["result"]["data"]["viewId"], "next");
+    assert!(plugin
+        .frames
+        .recv_timeout(Duration::from_millis(100))
+        .is_err());
+}
 fn mount(view: &str, params: Value) -> Value {
     json!({"viewId":view,"params":params,"context":{"workspaceId":"w","serverId":"s","connectionId":"c","generation":1}})
 }

@@ -15,20 +15,22 @@
         "id": "new-terminal",
         "title": "新建终端",
         "defaultCreate": true,
-        "dataVersion": 1
+        "dataVersion": 1,
+        "command": "terminal.open.v1"
       }
     ],
     "views": [
       {
         "id": "terminal",
-        "locationProvider":"terminal.location.v1",
+        "locationProvider": "terminal.location.v1",
         "title": "终端",
         "icon": "terminal",
         "container": "editor",
         "instancePolicy": "multiple",
         "createAction": "新建终端",
         "openOnWorkspace": "createOne",
-        "startupOrder": 20
+        "startupOrder": 20,
+        "createActionId": "new-terminal"
       }
     ]
   },
@@ -193,6 +195,12 @@
           }
         ]
       }
+    ]
+  },
+  "commands": {
+    "apiVersion": "1",
+    "handlers": [
+      "terminal.open.v1"
     ]
   }
 }

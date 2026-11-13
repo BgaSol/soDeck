@@ -216,7 +216,7 @@ impl AppCore {
             Value::Null,
         )?;
         let mut _workbench = self.workbench_state();
-        let crate::workbench::State { workspaces, ui } = &mut *_workbench;
+        let crate::workbench::State { workspaces, ui, .. } = &mut *_workbench;
         if !workspaces.contains(window, &view.context.workspace_id)
             && !ui
                 .transfers

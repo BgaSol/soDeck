@@ -74,6 +74,15 @@ fn read_control_line(input: &mut impl BufRead) -> io::Result<Vec<u8>> {
 pub fn run(
     handler: impl Fn(&Client, &str, Value) -> Result<Value, String> + Send + Sync + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    run_with_commands(&[], move |client, method, params| {
+        handler(client, method, params).map_err(RpcError::from)
+    })
+}
+/// Static process-scoped handlers, dispatched by the existing bounded worker set.
+pub fn run_with_commands(
+    names: &'static [&'static str],
+    handler: impl Fn(&Client, &str, Value) -> Result<Value, RpcError> + Send + Sync + 'static,
+) -> Result<(), Box<dyn std::error::Error>> {
     let client = Arc::new(Client {
         inner: Arc::new(Inner {
             closed: AtomicBool::new(false),
@@ -93,15 +102,29 @@ pub fn run(
         std::thread::spawn(move || loop {
             let frame = { rx.lock().unwrap().recv() };
             let Ok(frame) = frame else { break };
-            let result = handler(
-                &client,
-                frame["method"].as_str().unwrap_or_default(),
-                frame["params"].clone(),
-            );
+            let method = frame["method"].as_str().unwrap_or_default();
+            let mut result = if method == "commands.handle"
+                && !names.iter().any(|name| frame["params"]["name"] == *name)
+            {
+                Err("未登记的命令处理者".into())
+            } else {
+                handler(&client, method, frame["params"].clone())
+            };
+            if method == "initialize"
+                && !names.is_empty()
+                && frame["params"]["capabilities"]
+                    .as_array()
+                    .is_some_and(|caps| caps.iter().any(|c| c == "commands.v1"))
+            {
+                if let Ok(value) = &mut result {
+                    value["commandsApiVersion"] = json!("1");
+                    value["commandHandlers"] = json!(names);
+                }
+            }
             let response = match result {
                 Ok(value) => json!({"jsonrpc":"2.0","id":frame["id"],"result":value}),
                 Err(error) => {
-                    json!({"jsonrpc":"2.0","id":frame["id"],"error":{"code":-32000,"message":error}})
+                    json!({"jsonrpc":"2.0","id":frame["id"],"error":{"code":error.code,"message":error.message,"data":error.data}})
                 }
             };
             let _ = client.send(response);
@@ -153,6 +176,7 @@ pub fn run(
     }
     Ok(())
 }
+pub mod commands;
 pub mod encoding;
 pub mod file_editor;
 pub mod settings;
@@ -163,6 +187,20 @@ pub struct RpcError {
     pub code: i64,
     pub message: String,
     pub data: Value,
+}
+impl From<String> for RpcError {
+    fn from(message: String) -> Self {
+        Self {
+            code: -32000,
+            message,
+            data: Value::Null,
+        }
+    }
+}
+impl From<&str> for RpcError {
+    fn from(message: &str) -> Self {
+        message.to_owned().into()
+    }
 }
 impl RpcError {
     fn local(message: impl Into<String>) -> Self {

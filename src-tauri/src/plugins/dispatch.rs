@@ -19,6 +19,13 @@ pub(super) fn plugin_request(
     frame: &Value,
 ) -> Result<Value, RpcError> {
     match frame["method"].as_str().unwrap_or_default() {
+        method if method.starts_with("commands.") => core
+            .command_process_request(id, instance, method, &frame["params"])
+            .map_err(|e| RpcError {
+                code: -32000,
+                message: e.message,
+                data: json!({"code":e.code}),
+            }),
         method if method.starts_with("state.") => core
             .state_process_request(id, instance, method, &frame["params"])
             .map_err(|e| RpcError {
@@ -124,6 +131,13 @@ pub(super) fn plugin_request(
                 .map_err(RpcError::execution)?;
             Ok(json!({"id":message.id}))
         }
+        "ui.openView" if frame["params"].get("commandId").is_some() => core
+            .command_open(id, instance, &frame["params"])
+            .map_err(|e| RpcError {
+                code: -32000,
+                message: e.message,
+                data: json!({"code":e.code}),
+            }),
         "ui.openView" => core
             .ui_process_open(id, instance, &frame["params"])
             .map_err(RpcError::execution),

@@ -48,7 +48,7 @@ const traces = [];
 const pages = [], errors = [], checks = [], dragCalls = [], dropTargets = new Map(), drags = new Map();
 const surfaces = new Map();
 const call = (command, args={}) => bridge.call(command,args);
-let createGate,createData,openEditorGate,layoutGate;
+let createGate,createData,openEditorGate,layoutGate,lostSubmission;
 const actionCalls=[];
 const layoutCalls=[];
 const projection = window => call("workspace_snapshot",{window});
@@ -59,8 +59,18 @@ async function makePage(window) {
   page.on("pageerror", error=>errors.push(String(error)));
   await page.exposeBinding("workspaceInvoke",async (_,command,args={})=>{
     if(command==='workspace_surface')surfaces.set(window,args.surface);
-    if(command==='component_ui'&&args.operation==='invokeAction'&&args.args?.actionKey==='test.workbench:new-page'&&createGate) await createGate();
-    if(command==='component_ui'&&['invokeAction','actionStatus'].includes(args.operation)){actionCalls.push(args.operation);if(args.operation==='invokeAction'&&createData)args.args.data=createData;}
+    if(command==='component_ui'&&args.operation==='command'){
+      actionCalls.push(args.args.op);
+      if(args.args.op==='submit'&&args.args.actionKey==='test.workbench:new-page'){
+        if(createGate){const rejection=await createGate();if(rejection)return rejection;}
+        if(createData)args.args.payload=createData;
+        if(lostSubmission){
+          const loss=lostSubmission;lostSubmission=undefined;
+          if(loss==='after')await call(command,{...args,window});
+          throw new Error('隔离测试：提交回执丢失');
+        }
+      }
+    }
     if(command==='component_ui'&&args.operation==='action'&&args.args?.action?.op==='open'&&args.args.action.key==='test.workbench:editor'&&openEditorGate) await openEditorGate();
     if(command==='workspace_layout'){layoutCalls.push(args);if(layoutGate)await layoutGate();}
     if(command==="workspace_drag_start") { dragCalls.push({command,args}); drags.set(window,args.id);return `browser-${window}`; }
@@ -205,7 +215,7 @@ try {
   await board.locator(`[data-component-action="select"][data-key="${editorId}"]`).click();
   checks.push('默认终端未加载时禁用；多个创建类型或正在编辑文件时，加号仍只新建一个独立终端并聚焦，保留文件草稿');
   let releaseCreate,createRequests=0;
-  const failedCreate=new Promise((_,reject)=>{releaseCreate=()=>reject(new Error('隔离测试：终端创建失败'));});
+  const failedCreate=new Promise(resolve=>{releaseCreate=()=>resolve({error:{code:'resourceLimit',message:'隔离测试：终端创建失败'}});});
   createGate=()=>{createRequests++;return failedCreate;};
   await board.locator('[data-component-action="create"]').click();
   assert(await board.locator('[data-component-action="create"]').isDisabled());
@@ -228,13 +238,23 @@ try {
   const actionBefore=(await componentState('main')).workspaces[aid].views.length;
   createData={none:true};await board.locator('[data-component-action="create"]').click();await wait(()=>board.locator('[data-component-action="create"]').isEnabled());
   assert.equal((await componentState('main')).workspaces[aid].views.length,actionBefore,'A behavior that returns no page must not get a host-created page');
-  const sentBefore=actionCalls.filter(op=>op==='invokeAction').length;createData={delayMs:6200};
+  const sentBefore=actionCalls.filter(op=>op==='submit').length;createData={delayMs:6200};
   await board.locator('[data-component-action="create"]').click();await wait(()=>board.locator('[data-component-action="create"]').getAttribute('title').then(title=>title==='结果尚未确认'));
   await board.locator('[data-component-action="create"]').dispatchEvent('click');await select(main,bid);await main.waitForTimeout(1300);await select(main,aid);
   await wait(()=>board.locator('[data-component-action="create"]').isEnabled());createData=undefined;
-  const resolved=(await componentState('main')).workspaces[aid];assert.equal(resolved.views.length,actionBefore+1);assert.equal(actionCalls.filter(op=>op==='invokeAction').length,sentBefore+1);assert(actionCalls.includes('actionStatus'));
+  const resolved=(await componentState('main')).workspaces[aid];assert.equal(resolved.views.length,actionBefore+1);assert.equal(actionCalls.filter(op=>op==='submit').length,sentBefore+1);assert(actionCalls.includes('get'));
   await board.locator(`[data-component-action="close"][data-key="${resolved.editor}"]`).click();await board.locator(`[data-component-action="close"][data-key="${resolved.editor}"]`).waitFor({state:"detached"});await board.locator(`[data-component-action="select"][data-key="${editorId}"]`).click();
   checks.push('无页面动作不补建；超过等待期限后查询原回执，切换工作区恢复查询，重复点击不重发');
+  createData={none:true};
+  for(const loss of ['before','after']){
+    const start=actionCalls.filter(op=>op==='submit').length;lostSubmission=loss;
+    await board.locator('[data-component-action="create"]').click();
+    await wait(()=>board.locator('[data-component-action="create"]').isEnabled());
+    assert.equal(actionCalls.filter(op=>op==='submit').length-start,loss==='before'?2:1,'Only an unobserved request may be submitted again with its original intent');
+    assert.equal((await componentState('main')).workspaces[aid].views.length,actionBefore);
+  }
+  createData=undefined;
+  checks.push('接纳前后丢失提交回执均恢复：原意图查询，无接纳记录时复用原编号提交，完成后解除等待');
   await fileBrowser.getByRole('button',{name:'nginx.conf',exact:true}).dblclick();await flush(main);
   assert.equal((await componentState("main")).workspaces[aid].views.filter(v=>v.definitionKey.endsWith(':editor')).length,1);
   await editorFrame.locator('body').evaluate(el=>el.dataset.retained='same iframe');

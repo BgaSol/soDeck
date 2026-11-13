@@ -13,11 +13,12 @@
 | 工作台与生命周期 | 工作区/Host/Group/View/Surface、布局、迁移、关闭与资源接纳：[workbench.rs](../src-tauri/src/workbench.rs)、[component_ui.rs](../src-tauri/src/component_ui.rs)、[lifecycle.rs](../src-tauri/src/lifecycle.rs) |
 | 通用会话能力 | PTY、短命令、SFTP 文件、流式正文、TCP 通道与计量：[terminal.rs](../src-tauri/src/terminal.rs)、[session_exec.rs](../src-tauri/src/session_exec.rs)、[remote_files.rs](../src-tauri/src/remote_files.rs)、[network](../src-tauri/src/network/mod.rs) |
 | 插件与 RPC | 清单、子进程、控制分派、停止和错误：[plugins](../src-tauri/src/plugins/mod.rs) |
+| 组件命令 | 单处理者路由、稳定意图、回执与页面关联：[commands.rs](../src-tauri/src/commands.rs)；复用既有 RPC，不增加传输层 |
 | 共享状态与设置 | 核心管理作用域、修订、订阅、冲突和持久化，插件解释业务含义：[shared_state.rs](../src-tauri/src/shared_state.rs)、[settings.rs](../src-tauri/src/settings.rs) |
 | 更新和系统适配 | 下载、官方验签、缓存、默认应用与本地文件：[updates.rs](../src-tauri/src/updates.rs)、[platform.rs](../src-tauri/src/platform.rs)、[desktop_files.rs](../src-tauri/src/desktop_files.rs) |
 | 业务插件 | [terminal](../plugins/terminal/src/main.rs)、[files](../plugins/files/src/main.rs)、[network-proxy](../plugins/network-proxy/src/main.rs)、[system-status](../plugins/system-status/src/main.rs)、[docker](../plugins/docker/src/main.rs) |
 
-共享 [plugin-client](../crates/plugin-client/src/lib.rs) 提供 RPC、设置、共享状态和文件编辑生命周期客户端，不保存连接凭据，也不封装插件之间的直接调用。文件编辑的标准 UI 在 [packages/file-editor](../packages/file-editor/)，随使用组件独立打包；[接入与职责](features/file-editor.md)由通用编辑功能说明维护。
+共享 [plugin-client](../crates/plugin-client/src/lib.rs) 提供 RPC、命令票据、设置、共享状态和文件编辑生命周期客户端，不保存连接凭据，也不封装插件之间的直接调用。文件编辑的标准 UI 在 [packages/file-editor](../packages/file-editor/)，随使用组件独立打包；[接入与职责](features/file-editor.md)由通用编辑功能说明维护。
 
 ## 宿主状态与 DOM 边界
 
@@ -47,6 +48,14 @@ Workspace 表示服务器会话上下文，Host 表示某个窗口中的显示�
 同窗隐藏/排序/分屏保留 iframe，跨窗按准备、flush、排空、恢复、提交交接；失败取消保留源实例。后台逻辑 view 的运行不依赖 iframe 是否存在。纯快照不创建、销毁或恢复业务资源，初始化由明确工作区和插件状态变化触发。
 
 宿主通过本地资源协议加载插件 HTML/JS/CSS，经 postMessage 和核心数据桥交互。业务 UI 不直接持有服务器认证。UI v1/v2、控制帧、数据分片和兼容策略统一维护在[插件 API](plugin-api.md)。
+
+## 组件协作
+
+共享状态表达当前事实，命令表达一次执行意图。两者复用进程 RPC、真实实例和 Context，分别管理修订订阅与命令回执。命令不借用状态订阅的重试，不做广播执行或自动转投。
+
+命令登记表放在 workbench::State，与工作区、布局、关闭保留共用短状态锁。接纳先固定处理实例、来源 Host/Group、指纹和预算，释放锁后加入现有 RPC 队列；commands.submit 不等待另一插件完成。页面登记与命令关联原子提交。回执的逻辑终态和实际 RPC 任务守卫分开，关闭覆盖没有页面的命令，失效调用仍占在途额度直到真实结束。
+
+核心“＋”、默认创建、终端重开和 Docker 进入容器都提交 terminal.open.v1。处理者属于终端进程，不依赖终端 iframe；终端负责创建参数，Docker 负责 socket、Engine、容器身份与 shell。已登记终端归自身 view，来源页的生命周期不收养它。旧 ui.actions 作为同一服务的兼容适配，不保留独立行为执行表。完整字段、限额和失败契约见[命令 API](plugin-api.md#命令默认行为与进程主动创建页面)。
 
 ## 核心能力与业务边界
 

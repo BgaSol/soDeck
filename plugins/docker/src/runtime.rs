@@ -19,6 +19,8 @@ pub struct App {
     jobs: VecDeque<Job>,
 }
 pub struct View {
+    terminal_ticket: Option<sodeck_plugin_client::commands::Ticket>,
+    terminal_receipt: Value,
     pub kind: String,
     pub context: Value,
     pub container: String,
@@ -38,6 +40,7 @@ pub struct View {
 }
 #[derive(Clone)]
 struct Job {
+    terminal: Option<sodeck_plugin_client::commands::Ticket>,
     view: String,
     context: Value,
     endpoint: String,
@@ -50,6 +53,12 @@ struct Exec {
     bytes: Vec<u8>,
     stderr: Vec<u8>,
     response: Value,
+}
+impl View {
+    pub fn clear_terminal(&mut self) {
+        self.terminal_ticket = None;
+        self.terminal_receipt = Value::Null;
+    }
 }
 fn now() -> u64 {
     SystemTime::now()
@@ -123,6 +132,8 @@ impl App {
             .cloned()
             .unwrap_or("unix:///var/run/docker.sock".into());
         let view = View {
+            terminal_ticket: None,
+            terminal_receipt: Value::Null,
             kind: kind.into(),
             context,
             container,
@@ -146,7 +157,7 @@ impl App {
     pub fn snapshot(&self, id: &str) -> Result<Value, String> {
         let v = self.views.get(id).ok_or("视图已关闭")?;
         Ok(
-            json!({"kind":v.kind,"context":v.context,"containerId":v.container,"endpoint":v.endpoint,"revision":v.revision.to_string(),
+            json!({"terminal":v.terminal_receipt,"kind":v.kind,"context":v.context,"containerId":v.container,"endpoint":v.endpoint,"revision":v.revision.to_string(),
             "busy":v.busy,"paused":v.paused,"nextIntent":(v.intent+1).to_string(),"navigation":v.navigation,
             "state":v.data["state"],"error":v.data["error"],"engine":v.data["engine"],"name":v.data["name"],"status":v.data["status"],
             "health":v.data["health"],"observedAt":v.data["observedAt"],"partial":v.data["partial"],"operation":v.data["operation"],
@@ -180,6 +191,7 @@ impl App {
         v.revision += 1;
         v.due = Instant::now() + Duration::from_secs(self.refresh_seconds);
         self.jobs.push_back(Job {
+            terminal: v.terminal_ticket.clone(),
             view: id.into(),
             context: v.context.clone(),
             endpoint: v.endpoint.clone(),
@@ -289,7 +301,40 @@ impl App {
                 d["limit"].as_u64().unwrap_or(50).min(100) as usize,
             ));
         }
-        if action == "navigation" {
+        if action == "openTerminal" {
+            let request = d["requestId"]
+                .as_str()
+                .filter(|s| !s.is_empty() && s.len() <= 128)
+                .ok_or("请求 ID 无效")?;
+            let v = self.views.get(id).ok_or("视图已关闭")?;
+            if v.terminal_ticket.is_some() {
+                return self.snapshot(id);
+            }
+            if v.kind != "container"
+                || v.data["state"] != "ready"
+                || v.data["status"] != "running"
+                || v.expected_engine.is_empty()
+            {
+                return Err("请先刷新运行中的容器详情".into());
+            }
+            let shell = d["shell"].as_str().unwrap_or("/bin/sh");
+            let command =
+                commands::terminal_launch(&v.endpoint, &v.expected_engine, &v.container, shell)?;
+            let ticket = sodeck_plugin_client::commands::Ticket::new(
+                v.context.clone(),
+                id,
+                request,
+                "terminal.open.v1",
+                json!({"version":1,"title":format!("{} · 容器",commands::text(v.data["name"].as_str().unwrap_or("Docker"),100)),"launch":{"kind":"command","command":command},"directoryIntegration":"off"}),
+            );
+            let v = self.views.get_mut(id).unwrap();
+            v.terminal_ticket = Some(ticket);
+            v.terminal_receipt = json!({"status":"pending","message":"检查容器并请求终端页面"});
+            if let Err(error) = self.enqueue(id, "terminal", self.tail) {
+                self.views.get_mut(id).unwrap().terminal_ticket = None;
+                return Err(error);
+            }
+        } else if action == "navigation" {
             if serde_json::to_vec(&d["state"]).unwrap().len() > 4096 {
                 return Err("页面状态过大".into());
             }
@@ -526,6 +571,48 @@ fn inspect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
         return Err("容器身份已改变".into());
     }
     Ok(v)
+}
+fn terminal_request(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
+    let ticket = job.terminal.as_ref().ok_or("终端票据已失效")?;
+    if job.action == "terminal" {
+        ticket.resolve(client).map_err(|e| e.message)?;
+        let info = commands::object(&checked(execute(
+            app,
+            job,
+            client,
+            &["info", "--format", "{{json .}}"],
+            256 * 1024,
+        )?)?)?;
+        if info["ID"] != job.engine {
+            return Err("Engine 已改变，请重新打开容器详情".into());
+        }
+        let container = inspect(app, job, client)?;
+        if container["State"]["Running"] != true || container["State"]["Paused"] == true {
+            return Err("容器当前不能接受交互终端，请刷新状态".into());
+        }
+    }
+    let reply = if job.action == "terminal" {
+        ticket.submit(client)
+    } else {
+        ticket.get(client)
+    };
+    match reply {
+        Ok(receipt) => Ok(receipt),
+        Err(e) if e.code == -32003 => {
+            Ok(json!({"status":"pending","message":"请求回执待确认，保留原编号继续查询"}))
+        }
+        Err(e) if e.data["code"] == "notFound" => ticket
+            .submit(client)
+            .or_else(|e| {
+                if e.code == -32003 {
+                    Ok(json!({"status":"pending"}))
+                } else {
+                    Err(e)
+                }
+            })
+            .map_err(|e| e.message),
+        Err(e) => Err(e.message),
+    }
 }
 fn collect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
     let session = client.call("session.state", json!({"viewId":job.view}))?;
@@ -775,9 +862,44 @@ pub fn start(app: Shared, client: Client) {
                     let tail = a.tail;
                     let _ = a.enqueue(&id, "refresh", tail);
                 }
+                let commands = a
+                    .views
+                    .iter()
+                    .filter(|(_, v)| {
+                        v.terminal_ticket.is_some()
+                            && !v.busy
+                            && !v.frozen
+                            && v.due <= Instant::now()
+                    })
+                    .map(|(id, _)| id.clone())
+                    .collect::<Vec<_>>();
+                for id in commands {
+                    let tail = a.tail;
+                    let _ = a.enqueue(&id, "terminalStatus", tail);
+                }
                 a.jobs.pop_front()
             };
             if let Some(job) = job {
+                if job.action.starts_with("terminal") {
+                    let result = terminal_request(&app, &job, &client);
+                    let mut a = app.lock().unwrap();
+                    if let Some(v) = a
+                        .views
+                        .get_mut(&job.view)
+                        .filter(|v| v.context == job.context)
+                    {
+                        v.busy = false;
+                        v.due = Instant::now() + Duration::from_secs(1);
+                        v.revision += 1;
+                        v.terminal_receipt = result.unwrap_or_else(
+                            |message| json!({"status":"failed","error":{"message":message}}),
+                        );
+                        if v.terminal_receipt["status"] != "pending" {
+                            v.terminal_ticket = None;
+                        }
+                    }
+                    continue;
+                }
                 let result = collect(&app, &job, &client);
                 if !["refresh", "stats"].contains(&job.action.as_str()) {
                     let operation = match &result {

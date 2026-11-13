@@ -8,12 +8,14 @@ use std::{
 };
 
 pub struct State {
+    pub commands: crate::commands::Runtime,
     pub workspaces: workspaces::Runtime,
     pub ui: component_ui::Runtime,
 }
 impl State {
     pub fn open(root: &Path) -> Result<Self, String> {
         Ok(Self {
+            commands: crate::commands::Runtime::default(),
             workspaces: workspaces::Runtime::default(),
             ui: component_ui::Runtime::open(root)?,
         })

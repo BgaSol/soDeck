@@ -21,6 +21,7 @@ pub(crate) fn start(core: &Arc<AppCore>, wake: mpsc::Receiver<()>) {
                 let crate::workbench::State {
                     workspaces: _workspaces,
                     ui,
+                    ..
                 } = &mut *_workbench;
 
                 core.sync_shared_ui_locked(&ui);

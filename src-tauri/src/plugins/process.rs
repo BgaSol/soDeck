@@ -60,7 +60,7 @@ pub(crate) fn supervise(
         "jsonrpc":"2.0", "id":"initialize", "method":"initialize", "params":{
             "coreApiVersion":API_VERSION, "coreVersion":core.version(), "dataDirectory":path,
             "settings":core.settings_index(id),
-              "capabilities":["logging.write","messages.publish","ui.v1","ui.workbench.v2","ui.actions.v1","ui.openView.v1","rpc.concurrent","terminal.v1","terminal.launch.v1","terminal.history.v1","viewData.v1","files.v1","files.directoryCursors.v1","files.operations.v1","files.operations.v2","files.editor.v1","files.localInputs.v1","net.tcp.v1","net.listenerLifecycle.v1","ui.dialog.v1","settings.v1","ui.background.v1","session.exec.v1","sharedState.v1","files.location.v1"]
+              "capabilities":["commands.v1","logging.write","messages.publish","ui.v1","ui.workbench.v2","ui.actions.v1","ui.openView.v1","rpc.concurrent","terminal.v1","terminal.launch.v1","terminal.history.v1","viewData.v1","files.v1","files.directoryCursors.v1","files.operations.v1","files.operations.v2","files.editor.v1","files.localInputs.v1","net.tcp.v1","net.listenerLifecycle.v1","ui.dialog.v1","settings.v1","ui.background.v1","session.exec.v1","sharedState.v1","files.location.v1"]
         }
     }))).err();
     let mut ready = Some(ready);
@@ -85,7 +85,9 @@ pub(crate) fn supervise(
             stop_waiters.push(waiter);
             if stop_deadline.is_none() {
                 stop_deadline = Some(Instant::now() + Duration::from_secs(3));
-                core.ui_state().invalidate_instance_actions(id, instance_id);
+                core.workbench_state()
+                    .commands
+                    .stop_instance(id, instance_id);
                 core.shared_state
                     .stop_instance(id, instance_id, now(), Instant::now());
                 for (_, reply, _, _, _) in requests.values_mut() {
@@ -112,12 +114,19 @@ pub(crate) fn supervise(
                 reply,
                 deadline,
                 task,
-                observation,
+                mut observation,
                 expire_at_deadline,
             } = call;
             if Instant::now() >= deadline {
                 let _ = reply.send(Err("插件请求已超时".into()));
-            } else if stop_deadline.is_some() || !initialized || requests.len() >= 64 {
+            } else if stop_deadline.is_some()
+                || !initialized
+                || requests.len() >= 64
+                || observation
+                    .command
+                    .as_ref()
+                    .is_some_and(|command| !command.allowed(&core))
+            {
                 let _ = reply.send(Err("插件忙碌或正在停止".into()));
             } else {
                 sequence += 1;
@@ -127,6 +136,7 @@ pub(crate) fn supervise(
                     json!({"jsonrpc":"2.0","id":key,"method":method,"params":params}),
                 ) {
                     Ok(()) => {
+                        observation.sent();
                         requests.insert(
                             key,
                             (deadline, Some(reply), task, observation, expire_at_deadline),
@@ -171,7 +181,9 @@ pub(crate) fn supervise(
         // Allow the pipe readers to deliver final diagnostics after process exit.
         let drain_complete = exited_at.is_none_or(|at| at.elapsed() >= Duration::from_millis(150));
         if (failure.is_some() || exited.is_some() || expired) && drain_complete {
-            core.ui_state().invalidate_instance_actions(id, instance_id);
+            core.workbench_state()
+                .commands
+                .stop_instance(id, instance_id);
             core.network
                 .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
             core.terminals
@@ -315,9 +327,10 @@ pub(crate) fn supervise(
                             }
                         }
                     }
-                } else if let Some((_, reply, _task, observation, _)) =
+                } else if let Some((_, reply, _task, mut observation, _)) =
                     frame["id"].as_str().and_then(|key| requests.remove(key))
                 {
+                    observation.frame(&core, &frame);
                     let result = if frame.get("error").is_some() {
                         Err(format!("{}", frame["error"]))
                     } else {
@@ -340,8 +353,16 @@ pub(crate) fn supervise(
                         && frame["result"]["uiApiVersion"] != "2"
                     {
                         failure = Some("插件清单声明 UI v2，但初始化未确认 UI v2".into());
+                    } else if let Err(error) =
+                        crate::commands::confirm(&initial.manifest, &frame["result"])
+                    {
+                        failure = Some(error);
                     } else {
                         initialized = true;
+                        instance.commands_api.store(
+                            frame["result"]["commandsApiVersion"] == "1",
+                            std::sync::atomic::Ordering::Release,
+                        );
                         instance.ui_actions_api.store(
                             frame["result"]["uiActionsApiVersion"] == "1",
                             std::sync::atomic::Ordering::Release,

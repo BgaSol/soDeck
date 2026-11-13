@@ -591,7 +591,7 @@ impl AppCore {
             ) {
                 Ok(m) => movements.push(m),
                 Err(error) => {
-                    let crate::workbench::State { workspaces, ui } = &mut *state;
+                    let crate::workbench::State { workspaces, ui, .. } = &mut *state;
                     for m in &movements {
                         self.cancel_transfer_locked(workspaces, ui, m);
                     }
@@ -819,7 +819,7 @@ impl AppCore {
         scope: Scope,
         mut destination: Destination,
     ) -> Result<Move, String> {
-        let crate::workbench::State { workspaces, ui } = &mut *state;
+        let crate::workbench::State { workspaces, ui, .. } = &mut *state;
         if token.is_empty() || token.len() > 128 {
             return Err("移动请求 ID 无效".into());
         }
@@ -1216,7 +1216,7 @@ impl AppCore {
     /// Validate every member and rehearse workspace changes before releasing any surface.
     pub fn commit_workbench_moves(&self, movements: &[Move]) -> Result<(), String> {
         let mut state = self.workbench_state();
-        let crate::workbench::State { workspaces, ui } = &mut *state;
+        let crate::workbench::State { workspaces, ui, .. } = &mut *state;
         let mut next_workspaces = workspaces.clone();
         let mut prepared = Vec::new();
         let mut seen = std::collections::HashSet::new();
@@ -1364,7 +1364,7 @@ impl AppCore {
     }
     pub fn cancel_workbench_move(&self, m: &Move) {
         let mut state = self.workbench_state();
-        let crate::workbench::State { workspaces, ui } = &mut *state;
+        let crate::workbench::State { workspaces, ui, .. } = &mut *state;
         self.cancel_transfer_locked(workspaces, ui, m);
         drop(state);
         self.workspace_changed();

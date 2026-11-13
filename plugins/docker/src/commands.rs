@@ -30,6 +30,34 @@ pub fn docker(endpoint: &str, args: &[&str]) -> String {
     argv.extend_from_slice(args);
     argv.iter().map(|s| quote(s)).collect::<Vec<_>>().join(" ")
 }
+pub fn terminal_launch(
+    endpoint_value: &str,
+    engine: &str,
+    container: &str,
+    shell: &str,
+) -> Result<String, String> {
+    endpoint(endpoint_value)?;
+    id(container)?;
+    if engine.is_empty() || engine.len() > 256 || engine.chars().any(char::is_control) {
+        return Err("Engine ID 无效".into());
+    }
+    if !shell.starts_with('/') || shell.len() > 256 || shell.chars().any(char::is_control) {
+        return Err("Shell 必须为容器内的绝对路径".into());
+    }
+    let check = docker(endpoint_value, &["info", "--format", "{{.ID}}"]);
+    let enter = docker(
+        endpoint_value,
+        &[
+            "container",
+            "exec",
+            "--interactive",
+            "--tty",
+            container,
+            shell,
+        ],
+    );
+    Ok(format!("actual=$({check}) || exit; [ \"$actual\" = {} ] || {{ printf '%s\\n' 'Docker Engine changed; terminal not started' >&2; exit 1; }}; exec {enter}",quote(engine)))
+}
 pub fn lines(bytes: &[u8]) -> Result<Vec<Value>, String> {
     let text = std::str::from_utf8(bytes).map_err(|_| "Docker 输出不是 UTF-8")?;
     text.lines()
@@ -222,6 +250,30 @@ mod tests {
         assert!(id("abcdef").is_err());
         assert_eq!(unbase64("5Lit5paH").unwrap(), "中文".as_bytes());
         assert_eq!(text("中文中文", 7), "中文… [已截断]");
+    }
+    #[test]
+    fn terminal_launch_fixes_identity_and_quotes_the_shell_as_one_argument() {
+        let container = "a".repeat(64);
+        let launch = terminal_launch(
+            "unix:///run/docker.sock",
+            "engine-1",
+            &container,
+            "/a'b;$(touch nope)",
+        )
+        .unwrap();
+        assert!(launch.contains(&quote("/a'b;$(touch nope)")));
+        assert!(launch.contains(&quote(&container)));
+        assert!(launch.contains("actual=$("));
+        assert!(launch.contains("[ \"$actual\" = 'engine-1' ]"));
+        assert_eq!(launch.matches("DOCKER_CONTEXT").count(), 2);
+        for shell in ["sh", "/bin/sh\n", "", &format!("/{}", "a".repeat(256))] {
+            assert!(
+                terminal_launch("unix:///run/docker.sock", "engine-1", &container, shell).is_err()
+            );
+        }
+        assert!(terminal_launch("tcp://host", "engine-1", &container, "/bin/sh").is_err());
+        assert!(terminal_launch("unix:///run/docker.sock", "", &container, "/bin/sh").is_err());
+        assert!(terminal_launch("unix:///run/docker.sock", "engine-1", "abc", "/bin/sh").is_err());
     }
     #[test]
     fn state_is_checked_before_mutation() {

@@ -15,6 +15,8 @@ npm run dev
 
 ## 检查与测试
 
+命令回归在核心 component_ui 的真实进程测试覆盖去重、来源隔离、单处理者路由、关闭撤销、在途额度、移窗和默认创建竞争。terminal:test 验证实际终端进程与 PTY/UI；docker:test 使用隔离 Docker Engine、OpenSSH 和两个实际插件验证容器终端及来源关闭后的独立运行。test:prepare 选择 Docker 时同时准备终端测试目录；核心独立构建仍无需插件。
+
 按改动范围运行相关检查；具体开发约定见 [AGENTS.md](../AGENTS.md)。
 
 | 命令 | 验证内容 |

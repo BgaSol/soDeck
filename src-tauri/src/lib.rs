@@ -1,3 +1,4 @@
+pub mod commands;
 pub mod component_ui;
 pub mod connections;
 pub mod core;

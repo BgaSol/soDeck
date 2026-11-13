@@ -38,6 +38,14 @@ test('test helpers select their existing consumers and download unit tests stay 
 });
 test('shared state selects its native source, SDK and actual three-plugin communication',()=>{for(const file of ['src/component-state.ts','src-tauri/src/shared_state.rs','src-tauri/src/shared_state/delivery.rs','plugins/shared/state.js']){const p=selectChecks([file]);assert(p.communication&&p.sharedClient&&p.core);assert(p.integration.some(t=>t.communication&&t.terminal&&t.files&&t.status));assert.deepEqual(p.plugins,['terminal','files','system-status']);}assert(selectChecks(['plugins/files/ui/tree.js']).communication);});
 
+test('command service selects native core, client, terminal and Docker with real integration', () => {
+  const plan=selectChecks(['src-tauri/src/commands.rs']);
+  assert(plan.core&&plan.sharedClient&&plan.communication);
+  assert.deepEqual(plan.plugins,['terminal','docker']);
+  assert.equal(plan.native.length,5);
+  assert(plan.integration.some(t=>t.terminal&&t.docker&&t.communication));
+});
+
 test('documentation produces an explicit lightweight check without product suites', () => {
   const p = selectChecks(['docs/usage.md', 'docs/reference-v2/files-panel.png', 'README.md', 'plugins/files/CHANGELOG.md']);
   assert.equal(p.checks, false);

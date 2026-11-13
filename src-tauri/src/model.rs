@@ -17,6 +17,8 @@ pub struct UpdateSourceBaseline {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commands: Option<crate::commands::Declaration>,
     pub id: String,
     pub name: String,
     pub version: String,

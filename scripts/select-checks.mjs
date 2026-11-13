@@ -49,7 +49,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
   const plugin = name => { plugins.add(name); allTargets.forEach(t => pluginTargets[name].add(t)); };
   const ui = () => { plan.web = plan.scripts = plan.browser = true; };
   const sharedUi = () => { ui(); plan.terminalInput = true; pluginNames.forEach(name => integration.add(name)); };
-  const communication=()=>{plan.communication=true;ui();['terminal','files','system-status'].forEach(name=>integration.add(name));};
+  const communication=()=>{plan.communication=true;ui();['terminal','files','system-status','docker'].forEach(name=>integration.add(name));};
   const full = () => {
     sharedUi(); communication(); core(); plan.desktop = plan.ssh = plan.sharedClient = true;
     pluginNames.forEach(plugin);
@@ -86,6 +86,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
       if (['src-tauri/tests/fixtures/release_upgrade.rs', 'scripts/test-release-upgrade.mjs', '.github/workflows/release-upgrade.yml'].includes(file)) { core(); plan.scripts = true; continue; }
       if (/^scripts\/upgrade-inputs(?:\.test)?\.mjs$/.test(file)) { plan.scripts = true; continue; }
       if (/^(src\/component-state\.ts|src-tauri\/src\/shared_state(\/|\.)|plugins\/shared\/state\.js|scripts\/(test-component-communication\.mjs|component-state\.test\.mjs|fixtures\/shared-state\.json))$/.test(file)||file==='src-tauri/src/shared_state.rs'||file.startsWith('src-tauri/src/shared_state/')){communication();core();plan.sharedClient=true;['terminal','files','system-status'].forEach(plugin);continue;}
+      if (/^src-tauri\/(src|tests)\/commands(\/|\.)/.test(file)) {communication();core();plan.sharedClient=true;plugin('terminal');plugin('docker');continue;}
       if (file.startsWith('src/')) {
         if (/^src\/(ui\.css|themes\.css|text-menu\.|menu-position\.|font-loader\.)/.test(file)) sharedUi();
         else ui();

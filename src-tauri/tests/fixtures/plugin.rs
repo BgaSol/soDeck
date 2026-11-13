@@ -37,6 +37,56 @@ fn main() {
     for line in io::stdin().lock().lines() {
         let frame: Value = serde_json::from_str(&line.unwrap()).unwrap();
         match frame["method"].as_str() {
+            Some("commands.handle") => {
+                action_count += 1;
+                let p = &frame["params"];
+                let directory = data.as_ref().unwrap();
+                fs::write(
+                    format!("{directory}/command-count"),
+                    action_count.to_string(),
+                )
+                .unwrap();
+                fs::write(
+                    format!("{directory}/command-{}", p["commandId"].as_str().unwrap()),
+                    p.to_string(),
+                )
+                .unwrap();
+                if p["payload"]["ignore"] == true {
+                    continue;
+                }
+                if p["payload"]["exit"] == true {
+                    std::process::exit(3);
+                }
+                if p["payload"]["none"] == true {
+                    send(json!({"jsonrpc":"2.0","id":frame["id"],"result":{}}));
+                    continue;
+                }
+                let request = format!("command-open-{action_count}");
+                pending_actions.insert(
+                    request.clone(),
+                    (frame["id"].clone(), p["payload"]["failAfterOpen"] == true),
+                );
+                let open = json!({"jsonrpc":"2.0","id":request,"method":"ui.openView","params":{"expectedContext":p["context"],"commandId":p["commandId"],"requestId":format!("open:{}",p["commandId"].as_str().unwrap()),"viewType":"terminal","params":p["payload"]["params"]}});
+                let gate = p["payload"]["gate"]
+                    .as_str()
+                    .map(str::to_owned)
+                    .or_else(|| {
+                        (mode == "hold-first-command" && action_count == 1)
+                            .then(|| format!("{directory}/startup-release"))
+                    });
+                thread::spawn(move || {
+                    if let Some(gate) = gate {
+                        let end = std::time::Instant::now() + Duration::from_secs(30);
+                        while !std::path::Path::new(&gate).exists()
+                            && std::time::Instant::now() < end
+                        {
+                            thread::sleep(Duration::from_millis(10));
+                        }
+                    }
+                    send(open);
+                });
+                continue;
+            }
             Some("state.changed") => {
                 let p = &frame["params"];
                 let path = format!("{}/shared-frame", data.as_ref().unwrap());
@@ -93,15 +143,20 @@ fn main() {
                     continue;
                 }
                 if method == "ui.event" {
-                    if let Some(rpc) = p["data"]["rpc"]
-                        .as_str()
-                        .filter(|s| s.starts_with("session.") || s.starts_with("state."))
-                    {
+                    if let Some(rpc) = p["data"]["rpc"].as_str().filter(|s| {
+                        s.starts_with("session.")
+                            || s.starts_with("state.")
+                            || s.starts_with("commands.")
+                    }) {
                         let request = format!("session-{}", pending_sessions.len());
                         pending_sessions.insert(request.clone(), frame["id"].clone());
                         let mut params = p["data"]["params"].clone();
                         if rpc.starts_with("state.") {
                             params["viewId"] = json!(id);
+                            params["expectedContext"] = p["context"].clone();
+                        }
+                        if rpc.starts_with("commands.") && params.is_object() {
+                            params["sourceViewId"] = json!(id);
                             params["expectedContext"] = p["context"].clone();
                         }
                         if rpc == "session.state" || rpc == "session.exec.start" {
@@ -260,7 +315,7 @@ fn main() {
                     fs::write(format!("{directory}/child-pid"), child.id().to_string()).unwrap();
                 }
                 send(
-                    json!({"jsonrpc":"2.0","id":frame["id"],"result":{"apiVersion":"1","uiApiVersion":"2","uiActionsApiVersion":if mode=="old-actions" {Value::Null} else {json!("1")}}}),
+                    json!({"jsonrpc":"2.0","id":frame["id"],"result":{"apiVersion":"1","uiApiVersion":"2","commandsApiVersion":"1","commandHandlers":["terminal.open.v1"],"uiActionsApiVersion":if mode=="old-actions" {Value::Null} else {json!("1")}}}),
                 );
                 eprintln!("fixture diagnostic");
                 send(

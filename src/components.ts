@@ -28,8 +28,8 @@ interface ReturnLocation {windowId:string;groupId?:string;side?:string}
 interface ToolEntry {key:string;viewId:string|null;location:{windowId:string;hostId:string;side?:string;order?:number;groupId?:string}|null;active:boolean;pinned:boolean;available:boolean}
 interface ToolResult {status:string;revision?:number;persistence?:string;error?:string;saveError?:string}
 interface UiWorkspace {tools?:ToolEntry[];returnLocations?:Record<string,ReturnLocation>;groupReturnLocations?:Record<string,ReturnLocation>;unavailableTools?:{key:string;groupId?:string;side?:string}[];otherViews?:{id:string;definitionKey:string;title:string;windowId:string}[]; views: View[]; preferences: Record<string, Preference>; left: string | null; right: string | null; editor: string | null; host?:WorkbenchHost }
-interface ActionDefinition { key: string; title: string; available: boolean; reason?: string }
-interface ActionResult { status: "pending" | "completed" | "failed" | "invalidated"; requestId: string; context: Context; viewId?: string; error?: string }
+interface ActionDefinition { command?:string; key: string; title: string; available: boolean; reason?: string }
+interface ActionResult { commandId?:string; command?:string; groupId?:string; hostId?:string; status: "pending" | "completed" | "failed" | "invalidated" | "unknown"; requestId: string; context: Context; viewId?: string; error?: string }
 export interface UiProjection { definitions: Record<string, Definition>; actions?: Record<string, ActionDefinition>; defaultCreateAction?: string; pendingAction?: ActionResult[]; workspaces: Record<string, UiWorkspace>; error?: string; layoutSaveError?:string; transfers?:Transfer[] }
 interface Surface { readOnly?:boolean; transferEpoch?:string; node: HTMLDivElement; frame: HTMLIFrameElement; view: View; token?: string; chain: Promise<unknown>; deferred: Map<string,MessageEvent>; visible: boolean; initialized: boolean; mounted?: boolean; acceptsLocalFiles?: boolean; focusPending?: number; flushable?: boolean; flushing?: {id: string; done: (error?: string) => void}; timeout: ReturnType<typeof setTimeout> }
 interface Shell { region: DomRegion; tabStrips?: Map<string, {strip?:TabStrip;scroll:number;active:string|null;seen?:boolean}>; node: HTMLElement; surfaces: Map<string, Surface>; observer: ResizeObserver; workspace: Workspace; ui: UiWorkspace; railCapacity?: number; layoutFrame?: number }
@@ -70,7 +70,7 @@ export class Components {
   private drag?:{shell:Shell;scope:{kind:'view'|'group'|'tool';id:string};handle:HTMLElement;trigger:HTMLElement;revision:number;context:string;hostId:string;instance?:string;focusEpoch:number;pointer:number;x:number;y:number;localPoint:{x:number;y:number};offsetX:number;offsetY:number;token?:string;starting?:Promise<void>;finished:boolean;sampling:boolean;ghost?:HTMLElement;toolTarget?:{side:string;beforeKey:string|null}};
   private creating = new Set<string>();
   private defaultAction?: ActionDefinition;
-  private pendingActions = new Map<string, ActionResult & { focusEpoch?: number }>();
+  private pendingActions = new Map<string, ActionResult & { focusEpoch?: number; submission?:Record<string,unknown> }>();
   private actionTimer?: ReturnType<typeof setTimeout>;
   private pollingActions = false;
   private resumeActionPolling = () => this.scheduleActionPolling();
@@ -124,7 +124,7 @@ export class Components {
     const incomingWorkspaces=state.incomingWorkspaces??(state.incoming?[state.incoming]:[]);
     const wanted = [...state.workspaces, ...incomingWorkspaces.filter(w=>!state.workspaces.some(active=>active.context.workspaceId===w.context.workspaceId))];
     for (const [id, pending] of this.pendingActions) if (!wanted.some(w => JSON.stringify(w.context) === JSON.stringify(pending.context))) this.pendingActions.delete(id);
-    for (const pending of ui.pendingAction ?? []) if (!this.pendingActions.has(pending.context.workspaceId)) this.pendingActions.set(pending.context.workspaceId, pending);
+    for (const pending of ui.pendingAction ?? []) if (!this.pendingActions.has(pending.requestId)) this.pendingActions.set(pending.requestId, {...pending,error:typeof pending.error==='object'?(pending.error as {message?:string})?.message:pending.error});
     for (const [id, shell] of this.shells) if (!wanted.some(w => w.context.workspaceId === id)) { this.destroy(shell); this.shells.delete(id); }
     this.content.querySelector(".receiving-workspace")?.remove();
     for (const w of wanted) {
@@ -219,7 +219,7 @@ export class Components {
     const group=(id:string)=>{
       const g=host.groups[id],pages=g.viewIds.map(id=>shell.ui.views.find(v=>v.id===id)).filter(Boolean) as View[];
       const missing=(shell.ui.unavailableTools??[]).filter(t=>t.groupId===id);
-      const workspaceId=shell.workspace.context.workspaceId,pending=this.pendingActions.get(workspaceId);
+      const workspaceId=shell.workspace.context.workspaceId,pending=[...this.pendingActions.values()].find(p=>p.context.workspaceId===workspaceId&&p.groupId===id);
       const canCreate=shell.workspace.connected&&this.defaultAction?.available&&!pending&&!this.creating.has(workspaceId);
       const createTitle=pending&&!this.creating.has(workspaceId)?'结果尚未确认':this.creating.has(workspaceId)?'正在创建…':this.defaultAction?.title||'未设置默认行为';
       return `<section class="view-group ${host.focusedGroupId===id?'focused':''}" data-group="${e(id)}" aria-label="标签组"><header class="component-tabs sd-tab-strip sd-edge-bottom" tabindex="0" aria-label="分屏标签栏"><div class="tab-navigation"><div class="component-tab-list" role="tablist" aria-label="标签组页面">${missing.map(t=>`<button class="sd-quiet" data-tab-id="missing:${e(t.key)}" disabled title="${e(t.key)} 未安装或未启用">${icon('plug')}${e(t.key)}</button>`).join('')}${pages.map(v=>`<div class="component-tab sd-tab ${g.activeViewId===v.id?'selected':''}" data-view="${e(v.id)}" data-tab-id="${e(v.id)}"><button role="tab" aria-selected="${g.activeViewId===v.id}" tabindex="${g.activeViewId===v.id?0:-1}" data-component-action="select" data-key="${e(v.id)}" title="${e(v.title)}">${icon(this.definitions[v.definitionKey]?.icon)}<span>${e(v.title)}${v.dirty?' ●':''}</span></button><button class="sd-icon" data-component-action="close" data-key="${e(v.id)}" aria-label="${this.definitions[v.definitionKey]?.container==='sidebar'?'隐藏':'关闭'} ${e(v.title)}">${icon('close')}</button></div>`).join('')}</div>${tabControls('本组页面')}</div><button class="sd-icon" data-component-action="create" title="${e(createTitle)}" aria-label="${e(this.defaultAction?.title||'新建页面')}" ${canCreate?'':'disabled'}>${icon('plus')}</button></header><div class="component-slot central-slot">${missing.map(t=>`<div class="unavailable-tool" role="status">${icon('plug')}<span>${e(t.key)} 未安装或未启用；已保留此工具位置。</span></div>`).join('')}${pages.length?'':`<div class="workspace-empty"><p>${shell.workspace.connected?'点击＋新建，或拖入标签。':'连接已断开；仍可整理分屏。'}</p></div>`}</div></section>`;
@@ -244,7 +244,7 @@ export class Components {
         saved.strip=new TabStrip(list,node.querySelector<HTMLElement>('.tab-controls')!,()=>{saved!.scroll=list.scrollLeft;this.content.dispatchEvent(new Event('tab-geometry-changed'));});
         saved.strip.update(saved.active,false);
       }
-      const active=host.groups[node.dataset.group!].activeViewId, pending=this.pendingActions.get(shell.workspace.context.workspaceId);
+      const active=host.groups[node.dataset.group!].activeViewId, pending=[...this.pendingActions.values()].find(p=>p.context.workspaceId===shell.workspace.context.workspaceId);
       saved.strip.pause(shell.node.hidden);
       if(!shell.node.hidden){saved.strip.update(active,!pending || pending.focusEpoch===this.focusEpoch);if(!saved.seen)saved.strip.reveal(active,false);saved.seen=true;}
       else if(saved.seen)saved.strip.update(active,false);
@@ -714,26 +714,29 @@ export class Components {
 
     if (action === "create") {
       const d = this.defaultAction;
-      if (!d?.available || !shell.workspace.connected || this.creating.has(id) || this.pendingActions.has(id)) return;
+      if (!d?.available || !shell.workspace.connected || this.creating.has(id) || [...this.pendingActions.values()].some(p=>p.context.workspaceId===id&&p.groupId===groupId)) return;
       const focusEpoch = this.focusEpoch;
       this.creating.add(id); this.paint(shell);
       const requestId = crypto.randomUUID();
+      const submission={op:"submit",expectedContext:shell.workspace.context,requestId,name:d.command??'ui.action.v1',actionKey:d.key,groupId};
       try {
-        this.pendingActions.set(id, {status:"pending",requestId,context:shell.workspace.context,focusEpoch});
-        const result = await this.invoke<ActionResult>("invokeAction", {context:shell.workspace.context,requestId,actionKey:d.key,groupId});
+        this.pendingActions.set(requestId, {status:"pending",requestId,context:shell.workspace.context,focusEpoch,command:d.command,groupId,submission});
+        const result = await this.command(submission);
+        result.command=submission.name;
         await this.finishAction(result, focusEpoch);
       } catch (error) {
         this.notify(String(error));
-        try { await this.finishAction(await this.invoke<ActionResult>('actionStatus',{context:shell.workspace.context,requestId}),focusEpoch); }
-        catch(statusError) { if(/不存在|上下文|已关闭|不属于|失效/.test(String(statusError)))this.pendingActions.delete(id); }
+        if ((error as {code?:string}).code) this.pendingActions.delete(requestId);
+        else try { await this.finishAction(await this.command({op:'get',expectedContext:shell.workspace.context,requestId}),focusEpoch); }
+        catch(statusError) { const code=(statusError as {code?:string}).code;if(code&&["staleContext","sourceStopped"].includes(code))this.pendingActions.delete(requestId); }
       } finally { this.creating.delete(id); if (this.shells.has(id)) this.paint(shell); }
       this.scheduleActionPolling();
     }
   }
   private async finishAction(result: ActionResult, focusEpoch?: number) {
     const id=result.context.workspaceId;
-    if(result.status==="pending"){this.pendingActions.set(id,{...result,focusEpoch});return;}
-    this.pendingActions.delete(id);
+    if(result.status==="pending"){this.pendingActions.set(result.requestId,{...this.pendingActions.get(result.requestId),...result,focusEpoch});return;}
+    this.pendingActions.delete(result.requestId);
     await this.refresh();
     if(result.error)this.notify(`${result.error}${result.viewId?'；页面已创建':''}`);
     const shell=this.shells.get(id),surface=result.viewId? shell?.surfaces.get(result.viewId):undefined;
@@ -742,21 +745,38 @@ export class Components {
       this.focusSurface(surface);
     }
   }
+  private async command(args:Record<string,unknown>):Promise<ActionResult> {
+    const reply=await this.invoke<{result?:ActionResult;error?:{code:string;message:string}}>('command',args);
+    if(reply.error)throw Object.assign(new Error(reply.error.message),{code:reply.error.code});
+    const result=reply.result!;
+    if(typeof result.error==='object')result.error=(result.error as {message?:string})?.message;
+    return result;
+  }
   private scheduleActionPolling() {
     clearTimeout(this.actionTimer);
-    if(this.disposed||document.hidden||this.pollingActions)return;
-    const pending=this.pendingActions.get(this.state?.window.activeWorkspace??"");
-    if(!pending||this.creating.has(pending.context.workspaceId))return;
-    this.actionTimer=setTimeout(()=>{void this.pollAction(pending);},1000);
+    if(this.disposed||document.hidden||this.pollingActions||!this.pendingActions.size)return;
+    this.actionTimer=setTimeout(()=>{void this.pollActions();},1000);
   }
-  private async pollAction(pending: ActionResult & {focusEpoch?:number}) {
-    if(this.disposed||document.hidden||this.state?.window.activeWorkspace!==pending.context.workspaceId)return;
+  private async pollActions() {
     this.pollingActions=true;
-    try{
-      const result=await this.invoke<ActionResult>("actionStatus",{context:pending.context,requestId:pending.requestId});
-      if(this.pendingActions.get(pending.context.workspaceId)?.requestId===pending.requestId)await this.finishAction(result,pending.focusEpoch);
-    }catch(error){const message=String(error);if(/不存在|上下文|已关闭|不属于|失效/.test(message))this.pendingActions.delete(pending.context.workspaceId);if(pending.error!==message){pending.error=message;this.notify(message);}const shell=this.shells.get(pending.context.workspaceId);if(shell)this.paint(shell);}
-    finally{this.pollingActions=false;this.scheduleActionPolling();}
+    try { for(const pending of [...this.pendingActions.values()].slice(0,8)) {
+      if(this.disposed||document.hidden)break;
+      this.pendingActions.delete(pending.requestId);this.pendingActions.set(pending.requestId,pending);
+      try {
+        const result=await this.command({op:'get',expectedContext:pending.context,requestId:pending.requestId,commandId:pending.commandId});
+        result.command=pending.command;
+        if(this.pendingActions.has(pending.requestId))await this.finishAction(result,pending.focusEpoch);
+      } catch(error) {
+        const code=(error as {code?:string}).code;
+        if(code==='notFound'&&pending.submission){
+          try {await this.finishAction(await this.command(pending.submission),pending.focusEpoch);}
+          catch(retryError){if((retryError as {code?:string}).code)this.pendingActions.delete(pending.requestId);}
+          continue;
+        }
+        if(code&&['staleContext','sourceStopped'].includes(code))this.pendingActions.delete(pending.requestId);
+        const message=String(error);if(pending.error!==message){pending.error=message;this.notify(message);}
+      }
+    }} finally {this.pollingActions=false;this.scheduleActionPolling();}
   }
   private focus(shell: Shell, key?: string) {
     const selected = shell.ui.views.find(v => v.definitionKey === key && (this.definitions[v.definitionKey]?.container === "dialog" || [shell.ui.left, shell.ui.right, shell.ui.editor].includes(v.id)));

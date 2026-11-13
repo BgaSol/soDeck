@@ -23,7 +23,7 @@ impl AppCore {
         let expected: Context = serde_json::from_value(params["expectedContext"].clone())
             .map_err(|_| Error::invalid("缺少有效 expectedContext"))?;
         let mut _workbench = self.workbench_state();
-        let crate::workbench::State { workspaces, ui } = &mut *_workbench;
+        let crate::workbench::State { workspaces, ui, .. } = &mut *_workbench;
 
         workspaces
             .validate_identity(&expected)
@@ -61,7 +61,7 @@ impl AppCore {
         let expected: Context = serde_json::from_value(params["expectedContext"].clone())
             .map_err(|_| Error::invalid("缺少有效 expectedContext"))?;
         let mut _workbench = self.workbench_state();
-        let crate::workbench::State { workspaces, ui } = &mut *_workbench;
+        let crate::workbench::State { workspaces, ui, .. } = &mut *_workbench;
 
         let s = ui
             .surfaces

@@ -32,17 +32,31 @@ pub(crate) struct Call {
 }
 pub(crate) type Receipt = Arc<Mutex<Option<Result<Value, String>>>>;
 /// A timed-out caller keeps its receipt until the real reply or process cleanup.
-struct Observation(Option<Receipt>);
+struct Observation {
+    legacy: Option<Receipt>,
+    command: Option<crate::commands::Delivery>,
+}
 impl Observation {
+    fn sent(&mut self) {
+        if let Some(command) = &mut self.command {
+            command.sent();
+        }
+    }
+    fn frame(&mut self, core: &AppCore, frame: &Value) {
+        if let Some(command) = &mut self.command {
+            command.complete(frame);
+            command.log(core);
+        }
+    }
     fn complete(&self, result: &Result<Value, String>) {
-        if let Some(receipt) = &self.0 {
+        if let Some(receipt) = &self.legacy {
             *receipt.lock().unwrap() = Some(result.clone());
         }
     }
 }
 impl Drop for Observation {
     fn drop(&mut self) {
-        if let Some(receipt) = &self.0 {
+        if let Some(receipt) = &self.legacy {
             receipt
                 .lock()
                 .unwrap()
@@ -61,6 +75,7 @@ enum Output {
 }
 
 pub(crate) struct Instance {
+    pub(crate) commands_api: std::sync::atomic::AtomicBool,
     pub(crate) settings_api: std::sync::atomic::AtomicBool,
     pub(crate) ui_actions_api: std::sync::atomic::AtomicBool,
     view: Mutex<PluginView>,
@@ -117,7 +132,47 @@ impl Instance {
         timeout: Duration,
         expire_at_deadline: bool,
     ) -> Result<Receiver<Result<Value, String>>, String> {
-        let observation = Observation(receipt);
+        self.enqueue_observation(
+            method,
+            params,
+            task,
+            Observation {
+                legacy: receipt,
+                command: None,
+            },
+            timeout,
+            expire_at_deadline,
+        )
+    }
+    pub(crate) fn enqueue_command(
+        &self,
+        method: &str,
+        params: Value,
+        task: crate::resource_tasks::Task,
+        delivery: crate::commands::Delivery,
+    ) -> Result<(), String> {
+        self.enqueue_observation(
+            method,
+            params,
+            Some(task),
+            Observation {
+                legacy: None,
+                command: Some(delivery),
+            },
+            rpc::REQUEST_TIMEOUT,
+            false,
+        )
+        .map(|_| ())
+    }
+    fn enqueue_observation(
+        &self,
+        method: &str,
+        params: Value,
+        task: Option<crate::resource_tasks::Task>,
+        observation: Observation,
+        timeout: Duration,
+        expire_at_deadline: bool,
+    ) -> Result<Receiver<Result<Value, String>>, String> {
         if self.view().status != PluginStatus::Running {
             return Err("插件当前不可用".into());
         }
@@ -155,6 +210,7 @@ impl Instance {
         let (ready, ready_rx) = mpsc::channel();
         (
             Arc::new(Self {
+                commands_api: std::sync::atomic::AtomicBool::new(false),
                 settings_api: std::sync::atomic::AtomicBool::new(false),
                 ui_actions_api: std::sync::atomic::AtomicBool::new(false),
                 view: Mutex::new(PluginView {

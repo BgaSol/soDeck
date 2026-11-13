@@ -62,7 +62,7 @@ impl AppCore {
         if matches!(self.operation(id).target, Target::Application { .. }) {
             drop(self.mutations.lock().unwrap());
         }
-        if let Err(error) = self.wait_calls(&self.close_views(id), Duration::from_secs(6)) {
+        if let Err(error) = self.wait_calls(id, &self.close_views(id), Duration::from_secs(6)) {
             self.close_mutate(id, |o| {
                 o.phase = Phase::Deciding;
                 o.error = Some(error);
@@ -151,9 +151,15 @@ impl AppCore {
             self.close_abort(id);
         }
     }
-    fn wait_calls(&self, views: &[View], budget: Duration) -> Result<(), String> {
+    fn wait_calls(&self, id: &str, views: &[View], budget: Duration) -> Result<(), String> {
         let deadline = Instant::now() + budget;
-        while views.iter().any(|v| v.calls.active() > 0) {
+        while views.iter().any(|v| v.calls.active() > 0)
+            || self
+                .operation(id)
+                .command_tasks
+                .iter()
+                .any(|t| t.active() > 0)
+        {
             if Instant::now() >= deadline {
                 return Err("组件调用的真实结果尚未确认；可以返回处理，或明确放弃后关闭".into());
             }
@@ -173,7 +179,7 @@ impl AppCore {
         let views = self.close_views(id);
         let deadline = Instant::now() + Duration::from_secs(125);
         let mut errors = Vec::new();
-        if let Err(e) = self.wait_calls(&views, Duration::from_secs(5)) {
+        if let Err(e) = self.wait_calls(id, &views, Duration::from_secs(5)) {
             errors.push(e);
         }
         if errors.is_empty() {
@@ -281,7 +287,7 @@ impl AppCore {
                 }
                 if decision == "save" {
                     let deadline = Instant::now() + Duration::from_secs(125);
-                    self.wait_calls(&views, Duration::from_secs(5))?;
+                    self.wait_calls(id, &views, Duration::from_secs(5))?;
                     for view in &views {
                         if self.operation(id).adopted_by.is_some()
                             || self.operation(id).phase.terminal()
@@ -415,7 +421,11 @@ impl AppCore {
                     self.files.cancel(|o| o.view == view.id);
                 }
                 if !global {
-                    self.wait_calls(&views, deadline.saturating_duration_since(Instant::now()))?;
+                    self.wait_calls(
+                        id,
+                        &views,
+                        deadline.saturating_duration_since(Instant::now()),
+                    )?;
                 }
                 let mut disposal_errors = Vec::new();
                 for view in &views {
@@ -520,7 +530,7 @@ impl AppCore {
                         std::thread::sleep(Duration::from_millis(10));
                     }
                 }
-                self.wait_calls(&views, Duration::from_secs(1))?;
+                self.wait_calls(id, &views, Duration::from_secs(1))?;
                 let op = self.operation(id);
                 let ids: Vec<_> = op
                     .views

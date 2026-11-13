@@ -20,6 +20,8 @@ pub struct Declaration {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionDefinition {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
     pub id: String,
     pub title: String,
     #[serde(default)]
@@ -41,6 +43,8 @@ pub struct RegisteredAction {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Definition {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub create_action_id: Option<String>,
     pub id: String,
     pub title: String,
     pub icon: String,
@@ -281,7 +285,6 @@ pub struct Runtime {
     error: Option<String>,
     pub definitions: BTreeMap<String, Registered>,
     pub actions: BTreeMap<String, RegisteredAction>,
-    action_requests: HashMap<String, actions::ActionRequest>,
     open_requests: HashMap<String, actions::OpenRequest>,
     pub workspaces: HashMap<String, WorkspaceUi>,
     pub(crate) surfaces: HashMap<String, Surface>,
@@ -325,6 +328,10 @@ pub fn dispatch(
     let text = |key: &str| args[key].as_str().ok_or_else(|| format!("缺少 {key}"));
     match operation {
         "snapshot" => core.ui_snapshot(window),
+        "command" => Ok(match core.command_host_request(window, &args) {
+            Ok(result) => json!({"result":result}),
+            Err(error) => json!({"error":error}),
+        }),
         "invokeAction" => core.ui_invoke_action(window, &args),
         "actionStatus" => core.ui_action_status(window, &args),
         "action" => core.ui_action(

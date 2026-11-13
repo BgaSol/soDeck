@@ -43,7 +43,12 @@ impl AppCore {
     /// Losing a display does not end the business context or its workers.
     pub fn close_host_lost(self: &Arc<Self>, window: &str) {
         let mut state = self.workbench_state();
-        let crate::workbench::State { workspaces, ui } = &mut *state;
+        let crate::workbench::State {
+            workspaces,
+            ui,
+            commands,
+        } = &mut *state;
+        commands.lost_host(window, ui);
         ui.lifecycle.hosts.remove(window);
         let surfaces: Vec<_> = ui
             .surfaces
@@ -133,7 +138,6 @@ impl AppCore {
         {
             workspaces.cancel(&m);
         }
-        ui.invalidate_host_actions(window, "原生窗口已消失，创建意图已失效");
         let mut continuing = vec![];
         for o in ui.lifecycle.operations.values_mut().filter(|o| {
             !o.phase.terminal()

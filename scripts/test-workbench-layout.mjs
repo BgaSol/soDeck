@@ -1,3 +1,4 @@
+import {completedAction} from './component-command-fixture.mjs';
 // Browser input and iframes use the real core and a real UI v2 plugin process.
 // Separate browser pages stand in for native windows; this is not an OS drag test.
 import assert from 'node:assert/strict';
@@ -211,7 +212,7 @@ try {
 
   await main.setViewportSize({width:1100,height:720});
   const crowdedGroup=(await slots()).host.focusedGroupId;
-  for(let i=0;i<50;i++)await call('component_ui',{window:'main',operation:'invokeAction',args:{context:workspace.context,requestId:'overflow-'+i,actionKey:manifest.id+':new-page',groupId:crowdedGroup}});
+  for(let i=0;i<50;i++)await completedAction(call,{window:'main',context:workspace.context,requestId:'overflow-'+i},await call('component_ui',{window:'main',operation:'invokeAction',args:{context:workspace.context,requestId:'overflow-'+i,actionKey:manifest.id+':new-page',groupId:crowdedGroup}}));
   await refresh();await wait(async()=>(await slots()).host.groups[crowdedGroup].viewIds.length>=50);
   const crowdedHeader=board.locator('[data-group="'+crowdedGroup+'"] .component-tabs');
   await crowdedHeader.locator('[data-tab-action="pick"]').click();

@@ -344,6 +344,48 @@ struct Fixture {
     core: Arc<AppCore>,
 }
 impl Fixture {
+    fn commands(&self, startup: bool) {
+        self.actions();
+        let path = self.plugin.join("plugin.json");
+        let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        manifest["commands"] = json!({"apiVersion":"1","handlers":["terminal.open.v1"]});
+        manifest["ui"]["actions"][0]["command"] = json!("terminal.open.v1");
+        manifest["ui"]["views"][1]["createActionId"] = json!("create");
+        manifest["ui"]["views"][1]["openOnWorkspace"] =
+            json!(if startup { "createOne" } else { "none" });
+        fs::write(path, manifest.to_string()).unwrap();
+    }
+    fn command(
+        &self,
+        window: &str,
+        context: &sodeck::workspaces::Context,
+        request: &str,
+        payload: Value,
+    ) -> Value {
+        self.core.command_host_request(window,&json!({"op":"submit","expectedContext":context,"name":"terminal.open.v1","requestId":request,"payload":payload})).unwrap()
+    }
+    fn wait_command(&self, window: &str, receipt: &Value) -> Value {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            let status=self.core.command_host_request(window,&json!({"op":"get","expectedContext":receipt["context"],"requestId":receipt["requestId"],"commandId":receipt["commandId"]})).unwrap();
+            if status["status"] != "pending" {
+                return status;
+            }
+            assert!(std::time::Instant::now() < deadline, "{status}");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+    fn command_sent(&self, receipt: &Value) {
+        let marker = self.root.join(format!(
+            "data/plugin-data/test.ui/command-{}",
+            receipt["commandId"].as_str().unwrap()
+        ));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !marker.exists() {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
     fn actions(&self) {
         let path = self.plugin.join("plugin.json");
         let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
@@ -352,12 +394,31 @@ impl Fixture {
         fs::write(path, manifest.to_string()).unwrap();
     }
     fn invoke(&self, context: &sodeck::workspaces::Context, id: &str, data: Value) -> Value {
-        self.core
+        let receipt = self
+            .core
             .ui_invoke_action(
                 "main",
                 &json!({"context":context,"requestId":id,"actionKey":"test.ui:create","data":data}),
             )
-            .unwrap()
+            .unwrap();
+        self.wait_action("main", context, id, receipt)
+    }
+    fn wait_action(
+        &self,
+        window: &str,
+        context: &sodeck::workspaces::Context,
+        id: &str,
+        mut receipt: Value,
+    ) -> Value {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while receipt["status"] == "pending" && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            receipt = self
+                .core
+                .ui_action_status(window, &json!({"context":context,"requestId":id}))
+                .unwrap();
+        }
+        receipt
     }
     fn load(&self) -> Result<sodeck::model::PluginView, String> {
         let _startup = STARTUP.lock().unwrap();
@@ -414,6 +475,444 @@ impl Fixture {
     }
 }
 #[test]
+fn commands_deduplicate_in_parallel_and_retain_closed_page_receipts() {
+    let f = Fixture::new();
+    f.commands(false);
+    let plugin = f.load().unwrap();
+    let w = f.open("command");
+    let gate = f.root.join("release");
+    let payload = json!({"gate":gate,"params":{"b":2,"a":1}});
+    let one = f.command("main", &w.context, "same", payload.clone());
+    f.command_sent(&one);
+    assert_eq!(one["status"], "pending");
+    let retry = f.command(
+        "main",
+        &w.context,
+        "same",
+        json!({"params":{"a":1,"b":2},"gate":gate}),
+    );
+    assert_eq!(one["commandId"], retry["commandId"]);
+    let conflict=f.core.command_host_request("main",&json!({"op":"submit","expectedContext":w.context,"name":"terminal.open.v1","requestId":"same","payload":{}})).unwrap_err();
+    assert_eq!(conflict.code, "requestConflict");
+    let second = f.command("main", &w.context, "second", json!({}));
+    assert_ne!(one["commandId"], second["commandId"]);
+    assert_eq!(f.wait_command("main", &second)["status"], "completed");
+    fs::write(&gate, "").unwrap();
+    let done = f.wait_command("main", &one);
+    assert_eq!(done["status"], "completed");
+    let view = done["viewId"].as_str().unwrap().to_owned();
+    let plan = f
+        .core
+        .ui_close_prepare("main", vec![], Some(view.clone()))
+        .unwrap();
+    f.finish(&plan, "discard").unwrap();
+    assert_eq!(
+        f.command("main", &w.context, "same", payload)["status"],
+        "completed"
+    );
+    let opened=f.core.ui_process_open("test.ui",plugin.instance_id.as_ref().unwrap(),&json!({"expectedContext":w.context,"commandId":one["commandId"],"requestId":format!("open:{}",one["commandId"].as_str().unwrap()),"viewType":"terminal","params":{"a":1,"b":2}})).unwrap();
+    assert_eq!(opened["viewId"], view);
+    assert_eq!(opened["closed"], true);
+    assert_eq!(
+        fs::read_to_string(f.root.join("data/plugin-data/test.ui/command-count")).unwrap(),
+        "2"
+    );
+}
+#[test]
+fn commands_scope_identical_request_ids_to_real_origins_and_can_reenter_provider() {
+    let f = Fixture::new();
+    f.commands(false);
+    f.load().unwrap();
+    let w = f.open("origins");
+    let browser = f.core.ui_snapshot("main").unwrap()["workspaces"][&w.context.workspace_id]
+        ["left"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mounted = f.core.ui_attach("main", &browser).unwrap();
+    let surface = mounted["surfaceId"].as_str().unwrap();
+    f.core.ui_surface_ready("main", surface).unwrap();
+    for invalid in [json!([]), json!(1), json!("invalid")] {
+        let rejected = f
+            .core
+            .ui_event(
+                "main",
+                surface,
+                json!({"rpc":"commands.submit","params":invalid}),
+            )
+            .unwrap();
+        assert_eq!(rejected["rpcError"]["data"]["code"], "invalidParams");
+    }
+    for (field, value) in [
+        ("groupId", json!(false)),
+        ("startupDefinition", json!("x".repeat(257))),
+        ("actionKey", json!({})),
+    ] {
+        let mut p = json!({"op":"submit","expectedContext":w.context,"name":"terminal.open.v1","requestId":"bad-envelope"});
+        p[field] = value;
+        assert_eq!(
+            f.core.command_host_request("main", &p).unwrap_err().code,
+            "invalidParams"
+        );
+    }
+    let host = f.command("main", &w.context, "shared", json!({}));
+    let process=f.core.ui_event("main",surface,json!({"rpc":"commands.submit","params":{"name":"terminal.open.v1","requestId":"shared","payload":{}}})).unwrap();
+    assert_ne!(host["commandId"], process["commandId"]);
+    let query = f.core.ui_event(
+        "main",
+        surface,
+        json!({"rpc":"commands.get","params":{"requestId":"shared","commandId":host["commandId"]}}),
+    );
+    assert_eq!(query.unwrap()["rpcError"]["data"]["code"], "notFound");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let result = f
+            .core
+            .ui_event(
+                "main",
+                surface,
+                json!({"rpc":"commands.get","params":{"requestId":"shared"}}),
+            )
+            .unwrap();
+        if result["status"] != "pending" {
+            assert_eq!(result["status"], "completed");
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+#[test]
+fn close_reserves_zero_page_commands_and_cancel_does_not_revive_them() {
+    use sodeck::lifecycle::{Phase, Target};
+    let f = Fixture::new();
+    f.commands(false);
+    f.load().unwrap();
+    let w = f.open("closing-command");
+    let gate = f.root.join("release");
+    let receipt = f.command("main", &w.context, "late", json!({"gate":gate}));
+    f.command_sent(&receipt);
+    let group = f.core.ui_state().workspaces[&w.context.workspace_id]
+        .host("main")
+        .unwrap()
+        .focused_group_id
+        .clone();
+    let op = f
+        .core
+        .close_prepare(
+            "main",
+            "close-command",
+            Target::Group {
+                id: group,
+                workspace_id: w.context.workspace_id.clone(),
+            },
+        )
+        .unwrap();
+    assert_eq!(f.wait_command("main", &receipt)["status"], "invalidated");
+    fs::write(gate, "").unwrap();
+    for window in op.inputs.keys() {
+        f.core
+            .close_report_inputs(window, &op.id, op.input_round, json!({}))
+            .unwrap();
+    }
+    wait_close(&f.core, &op.id, Phase::Deciding);
+    let state = f.core.close_status("main", &op.id).unwrap();
+    f.core
+        .close_decide("main", &op.id, state.decision_revision, "cancel")
+        .unwrap();
+    wait_close(&f.core, &op.id, Phase::Aborted);
+    assert_eq!(
+        f.command(
+            "main",
+            &w.context,
+            "late",
+            json!({"gate":f.root.join("release")})
+        )["status"],
+        "invalidated"
+    );
+    assert!(f.core.ui_state().workspaces[&w.context.workspace_id]
+        .views
+        .iter()
+        .all(|v| v.definition_key != "test.ui:terminal"));
+    let next = f.command("main", &w.context, "new", json!({}));
+    assert_eq!(f.wait_command("main", &next)["status"], "completed");
+}
+#[test]
+fn stopped_handler_keeps_unknown_and_never_replays_in_replacement_instance() {
+    let f = Fixture::new();
+    f.commands(false);
+    f.load().unwrap();
+    let w = f.open("unknown");
+    let receipt = f.command("main", &w.context, "unknown", json!({"ignore":true}));
+    f.command_sent(&receipt);
+    f.core.unload("test.ui").unwrap();
+    let result = f.wait_command("main", &receipt);
+    assert_eq!(result["status"], "unknown");
+    f.load().unwrap();
+    assert_eq!(
+        f.command("main", &w.context, "unknown", json!({"ignore":true}))["status"],
+        "unknown"
+    );
+    assert_eq!(
+        fs::read_to_string(f.root.join("data/plugin-data/test.ui/command-count")).unwrap(),
+        "1"
+    );
+    let next = f.command("main", &w.context, "new", json!({}));
+    assert_eq!(f.wait_command("main", &next)["status"], "completed");
+}
+#[test]
+fn command_limits_survive_invalidation_until_actual_worker_exit() {
+    let f = Fixture::new();
+    f.commands(false);
+    f.load().unwrap();
+    let w = f.open("bounded");
+    for i in 0..32 {
+        let receipt = f.command(
+            "main",
+            &w.context,
+            &format!("hold-{i}"),
+            json!({"ignore":true}),
+        );
+        f.command_sent(&receipt);
+    }
+    let p = json!({"op":"submit","expectedContext":w.context,"name":"terminal.open.v1","requestId":"overflow","payload":{}});
+    assert_eq!(
+        f.core.command_host_request("main", &p).unwrap_err().code,
+        "resourceLimit"
+    );
+    f.core.workspace_state().disconnected(&w.context).unwrap();
+    f.core.workspace_changed();
+    let next = f
+        .core
+        .workspace_state()
+        .reconnect(&w.context, "second".into(), "second".into())
+        .unwrap();
+    f.core.workspace_changed();
+    let mut p = p;
+    p["expectedContext"] = json!(next);
+    assert_eq!(
+        f.core.command_host_request("main", &p).unwrap_err().code,
+        "resourceLimit"
+    );
+    f.core.unload("test.ui").unwrap();
+    f.load().unwrap();
+    let one = f.command("main", &next, "new-instance", json!({}));
+    assert_eq!(f.wait_command("main", &one)["status"], "completed");
+}
+#[test]
+fn command_creation_follows_host_move_and_keeps_partial_effect_on_failure() {
+    let f = Fixture::new();
+    f.commands(false);
+    f.load().unwrap();
+    let w = f.open("moved-command");
+    let gate = f.root.join("release");
+    let receipt = f.command(
+        "main",
+        &w.context,
+        "moving",
+        json!({"gate":gate,"failAfterOpen":true}),
+    );
+    f.command_sent(&receipt);
+    let m = f
+        .core
+        .prepare_workspace_move(
+            "main",
+            &w.context.workspace_id,
+            "moved",
+            0,
+            "command-move".into(),
+            true,
+        )
+        .unwrap();
+    f.core.workspace_state().ready("moved").unwrap();
+    f.core.commit_workspace_move(&m).unwrap();
+    f.core.workspace_changed();
+    fs::write(gate, "").unwrap();
+    let result = f.wait_command("moved", &receipt);
+    assert_eq!(result["status"], "failed");
+    assert!(result["viewId"].is_string());
+    assert!(f.core.ui_state().workspaces[&w.context.workspace_id]
+        .host("moved")
+        .unwrap()
+        .contains(result["viewId"].as_str().unwrap()));
+    assert!(f
+        .core
+        .command_host_request(
+            "main",
+            &json!({"op":"get","context":w.context,"requestId":"moving"})
+        )
+        .is_err());
+}
+#[test]
+fn a_late_command_page_preserves_the_later_active_page() {
+    let f = Fixture::new();
+    f.commands(false);
+    f.load().unwrap();
+    let w = f.open("command-focus");
+    let gate = f.root.join("focus-release");
+    let slow = f.command("main", &w.context, "slow", json!({"gate":gate}));
+    f.command_sent(&slow);
+    let fast = f.command("main", &w.context, "fast", json!({}));
+    let fast = f.wait_command("main", &fast);
+    fs::write(gate, "").unwrap();
+    let slow = f.wait_command("main", &slow);
+    assert_eq!(slow["status"], "completed");
+    assert_ne!(slow["viewId"], fast["viewId"]);
+    let ui = f.core.ui_snapshot("main").unwrap();
+    assert_eq!(
+        ui["workspaces"][&w.context.workspace_id]["editor"],
+        fast["viewId"]
+    );
+}
+#[test]
+fn startup_and_explicit_creation_share_the_command_handler() {
+    let f = Fixture::new();
+    f.commands(true);
+    f.load().unwrap();
+    let w = f.open("startup-command");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        if f.core.ui_state().workspaces[&w.context.workspace_id]
+            .views
+            .iter()
+            .any(|v| v.definition_key == "test.ui:terminal")
+        {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let result = f
+        .core
+        .ui_invoke_action(
+            "main",
+            &json!({"context":w.context,"requestId":"explicit","actionKey":"test.ui:create"}),
+        )
+        .unwrap();
+    assert_eq!(
+        f.wait_action("main", &w.context, "explicit", result)["status"],
+        "completed"
+    );
+    for _ in 0..3 {
+        f.core.ui_snapshot("main").unwrap();
+        f.core.workspace_changed();
+    }
+    assert_eq!(
+        fs::read_to_string(f.root.join("data/plugin-data/test.ui/command-count")).unwrap(),
+        "2"
+    );
+}
+#[test]
+fn explicit_page_wins_when_startup_handler_has_not_registered_its_page() {
+    let f = Fixture::new();
+    f.commands(true);
+    fs::write(f.plugin.join("mode"), "hold-first-command").unwrap();
+    f.load().unwrap();
+    let w = f.open("startup-race");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let marker = f.root.join("data/plugin-data/test.ui/command-count");
+    while !marker.exists() {
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let manual = f.command("main", &w.context, "manual", json!({}));
+    assert_eq!(f.wait_command("main", &manual)["status"], "completed");
+    fs::write(f.root.join("data/plugin-data/test.ui/startup-release"), "").unwrap();
+    loop {
+        let result=f.core.command_host_request("main",&json!({"op":"get","context":w.context,"requestId":"startup:terminal","startupDefinition":"test.ui:terminal"})).unwrap();
+        if result["status"] != "pending" {
+            assert_eq!(result["status"], "invalidated");
+            assert_eq!(result["error"]["code"], "startupSuperseded");
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(
+        f.core.ui_state().workspaces[&w.context.workspace_id]
+            .views
+            .iter()
+            .filter(|v| v.definition_key == "test.ui:terminal")
+            .count(),
+        1
+    );
+}
+#[test]
+fn command_routing_requires_exactly_one_confirmed_handler() {
+    let f = Fixture::new();
+    let w = f.open("no-handler");
+    let input =
+        json!({"op":"submit","context":w.context,"requestId":"route","name":"terminal.open.v1"});
+    assert_eq!(
+        f.core
+            .command_host_request("main", &input)
+            .unwrap_err()
+            .code,
+        "noHandler"
+    );
+    f.commands(false);
+    f.load().unwrap();
+    let second = f.root.join("second");
+    fs::create_dir_all(second.join("ui")).unwrap();
+    let binary = format!("fixture{}", std::env::consts::EXE_SUFFIX);
+    fs::copy(env!("CARGO_BIN_EXE_plugin-fixture"), second.join(&binary)).unwrap();
+    fs::write(second.join("ui/index.html"), "fixture").unwrap();
+    let mut manifest: Value =
+        serde_json::from_slice(&fs::read(f.plugin.join("plugin.json")).unwrap()).unwrap();
+    manifest["id"] = json!("test.second");
+    fs::write(second.join("plugin.json"), manifest.to_string()).unwrap();
+    {
+        let _startup = STARTUP.lock().unwrap();
+        f.core.load(&second).unwrap();
+    }
+    assert_eq!(
+        f.core
+            .command_host_request("main", &input)
+            .unwrap_err()
+            .code,
+        "ambiguousHandler"
+    );
+    assert_eq!(
+        f.core.ui_snapshot("main").unwrap()["actions"]["test.ui:create"]["available"],
+        false
+    );
+    f.core.unload("test.second").unwrap();
+    let one = f.core.command_host_request("main", &input).unwrap();
+    assert_eq!(f.wait_command("main", &one)["status"], "completed");
+}
+#[test]
+fn command_creation_binding_rejects_singletons_and_resource_key_views() {
+    for (container, policy) in [
+        ("sidebar", "perWorkspace"),
+        ("editor", "perResource"),
+        ("dialog", "perWorkspace"),
+    ] {
+        let f = Fixture::new();
+        f.commands(false);
+        let path = f.plugin.join("plugin.json");
+        let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        manifest["ui"]["views"][1]["container"] = json!(container);
+        manifest["ui"]["views"][1]["instancePolicy"] = json!(policy);
+        manifest["ui"]["views"][1]
+            .as_object_mut()
+            .unwrap()
+            .remove("createAction");
+        fs::write(path, manifest.to_string()).unwrap();
+        assert!(f.load().unwrap_err().contains("createActionId"));
+    }
+}
+#[test]
+fn manifest_and_initialize_must_agree_on_command_handlers() {
+    let f = Fixture::new();
+    f.commands(false);
+    let path = f.plugin.join("plugin.json");
+    let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    manifest["commands"]["handlers"] = json!(["other.open.v1"]);
+    manifest["ui"]["actions"][0]["command"] = json!("other.open.v1");
+    fs::write(path, manifest.to_string()).unwrap();
+    assert!(f.load().unwrap_err().contains("声明不一致"));
+}
+#[test]
 fn declared_behavior_chooses_own_page_and_deduplicates_without_a_surface() {
     let f = Fixture::new();
     f.actions();
@@ -431,7 +930,7 @@ fn declared_behavior_chooses_own_page_and_deduplicates_without_a_surface() {
         result
     );
     assert!(f.core.ui_invoke_action("main",&json!({"context":w.context,"requestId":"create","actionKey":"test.ui:create","data":{}})).is_err());
-    let process = json!({"expectedContext":w.context,"requestId":"create","viewType":"terminal","params":config});
+    let process = json!({"expectedContext":w.context,"requestId":result["commandId"],"viewType":"terminal","params":config});
     assert_eq!(
         f.core
             .ui_process_open("test.ui", plugin.instance_id.as_ref().unwrap(), &process)
@@ -535,7 +1034,7 @@ fn timeout_status_queries_original_delivery_and_late_creation_is_fenced_by_close
     let result = f.invoke(&w.context, "late", json!({"delayMs":6100}));
     assert_eq!(result["status"], "pending");
     assert_eq!(
-        f.invoke(&w.context, "late", json!({"delayMs":6100}))["status"],
+        f.core.ui_invoke_action("main",&json!({"context":w.context,"requestId":"late","actionKey":"test.ui:create","data":{"delayMs":6100}})).unwrap()["status"],
         "pending"
     );
     let query = json!({"context":w.context,"requestId":"late"});
@@ -687,7 +1186,7 @@ fn accepted_behavior_follows_workspace_ownership_and_disconnect_fences_new_creat
             "main",
             &json!({"context":w.context,"requestId":"second","actionKey":"test.ui:create"})
         )
-        .is_err());
+        .is_ok());
     let movement = f
         .core
         .prepare_workspace_move(
@@ -702,7 +1201,7 @@ fn accepted_behavior_follows_workspace_ownership_and_disconnect_fences_new_creat
     f.core.workspace_state().ready("moved").unwrap();
     f.core.commit_workspace_move(&movement).unwrap();
     f.core.workspace_changed();
-    let result = action.join().unwrap();
+    let result = f.wait_action("moved", &w.context, "moving", action.join().unwrap());
     assert_eq!(result["status"], "completed");
     let query = json!({"context":w.context,"requestId":"moving"});
     assert!(f.core.ui_action_status("main", &query).is_err());

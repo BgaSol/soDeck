@@ -662,8 +662,8 @@ async fn run(a: Arc<Attempt>, profile: Profile, keys: Arc<host_keys::HostKeys>) 
             let mut workbench = core.workbench_state();
             let _ = workbench.workspaces.disconnected(&context);
             workbench
-                .ui
-                .invalidate_workspace_actions(&[context.workspace_id.clone()], "连接已断开");
+                .commands
+                .invalidate_context(&context, "连接已断开");
             let _ = core
                 .shared_state
                 .set_scope_status(&context, Some(false), None, Instant::now());

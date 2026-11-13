@@ -1,3 +1,4 @@
+import {completedAction} from './component-command-fixture.mjs';
 // Windows packaged WebView2 + actual core/plugins/SSH, with isolated app data.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -208,9 +209,9 @@ try {
   for (const entry of ['titlebar', 'native']) {
     await launch();
     const workspace = await connect();
-    const terminal = await invoke('component_ui', { operation: 'action', args: { context: workspace.context, action: {
+    const terminal = await completedAction(invoke, {context:workspace.context,requestId:`${entry}-terminal`}, await invoke('component_ui', { operation: 'action', args: { context: workspace.context, action: {
       op: 'open', key: 'sodeck.terminal:terminal', requestId: `${entry}-terminal`,
-    } } });
+    } } }));
     const terminalFrame = page.frameLocator(`.component-surface[data-view-id="${terminal.viewId}"] iframe`);
     await terminalFrame.locator('body[data-ready="true"]').waitFor();
     await terminalFrame.locator('.xterm-helper-textarea').focus();

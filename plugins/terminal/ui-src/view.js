@@ -9,15 +9,24 @@ import {snapshotChunks} from './snapshot.js';
   let id,offset=0,inputSequence=0,chain=Promise.resolve(),inputChain=Promise.resolve(),disposed=false,caughtUp=false,restoring=false,visible=false,enabled=false;
   let savedOffset=0,lastSave=0,escape='normal',utf8=0,inputPending=0,mountKey='';
   let transferFrozen=false,readOnly=false,inputError,restoredDisplay;
-  let ended=false,disconnected=false,opening=false,surfaceReady=false,createParams={},canOpen=false;
-  let snapshotJob;
+  let ended=false,disconnected=false,opening=false,surfaceReady=false,createParams={},canOpen=false,commandsApi=false;
+  let snapshotJob,commandTimer,commandPending=false;
+  async function commandStatus(result) {
+    if(disposed)return;
+    clearTimeout(commandTimer);
+    commandPending=result?.status==='pending';
+    newTerminal.disabled=disconnected||commandPending;
+    if(commandPending){status.hidden=false;status.textContent='终端请求待确认';clearTimeout(commandTimer);commandTimer=setTimeout(()=>{if(!disposed&&surfaceReady&&!readOnly&&!transferFrozen)void sodeck.request('event',{action:'terminalCommandStatus'}).then(commandStatus).catch(error=>{fail(error);commandTimer=setTimeout(()=>commandStatus({status:'pending'}),1000);});else commandStatus({status:'pending'});},1000);}
+    else if(result?.error)fail(result.error.message||result.error);
+    else if(result?.status==='completed'){status.hidden=false;status.textContent='终端页面已创建';}
+  }
   let recoveryUnavailable=false;const recoveryNotice='当前终端可继续使用，历史恢复暂不可用；请保留此页面';
   const newTerminal=document.createElement('button');newTerminal.textContent='新建终端';newTerminal.hidden=true;newTerminal.className='sd-control';status.after(newTerminal);
   newTerminal.onclick=()=>{
-    if(opening||disposed||disconnected||!ended)return;
+    if(opening||commandPending||readOnly||transferFrozen||disposed||disconnected||!ended)return;
     opening=true;newTerminal.disabled=true;
     const requestId=crypto.randomUUID();
-    void sodeck.request(canOpen?'event':'openView',canOpen?{action:'createTerminal',requestId,params:createParams}:{viewType:'terminal',params:createParams}).catch(fail).finally(()=>{opening=false;newTerminal.disabled=disconnected;});
+    void sodeck.request(canOpen?'event':'openView',canOpen?{action:'createTerminal',requestId,params:createParams}:{viewType:'terminal',params:createParams}).then(commandStatus).catch(error=>{fail(error);if(commandsApi)void commandStatus({status:'pending'});}).finally(()=>{opening=false;newTerminal.disabled=disconnected||commandPending;});
   };
   const encoder=new TextEncoder();
   const fail=error=>{status.hidden=false;status.textContent=String(error);status.classList.add('error');};
@@ -117,7 +126,7 @@ import {snapshotChunks} from './snapshot.js';
   addEventListener('sodeck:mount',event=>{
     const mount=event.detail;readOnly=mount.readOnly===true;surfaceReady=mount.capabilities?.sharedState!==1;id=mount.data.streamId;mountKey=mount.surfaceId+':'+JSON.stringify(mount.context);disconnected=mount.connected===false;visible=mount.visible;theme(mount.tokens);
     terminal.open(host);
-    createParams=mount.data.createParams||{};canOpen=mount.capabilities?.uiOpenView===1;newTerminal.textContent=createParams.launch?.kind==='command'?'重新打开终端':'新建终端';
+    commandsApi=mount.data.commandsApi===true;createParams=mount.data.createParams||{};canOpen=mount.capabilities?.uiOpenView===1;newTerminal.textContent=createParams.launch?.kind==='command'?'重新打开终端':'新建终端';if(mount.data.commandPending)void commandStatus({status:'pending'});
     appearance.receive(mount.settings);
     location.mount(mount);
     status.textContent=`${mount.serverName||'服务器'} · 正在接续终端…`;
@@ -162,10 +171,10 @@ import {snapshotChunks} from './snapshot.js';
   addEventListener('sodeck:contextChanged',()=>location.invalidate());
   addEventListener('sodeck:connectionChanged',event=>{if(!event.detail.connected)location.invalidate();});
   addEventListener('sodeck:contextChanged',()=>{controls.invalidate();enabled=false;stopSize();newTerminal.hidden=disconnected||!ended;status.hidden=false;status.textContent='连接已更换，请在工作台新建终端；此页保留原输出。';});
-  addEventListener('sodeck:connectionChanged',event=>{disconnected=!event.detail.connected;if(disconnected){controls.invalidate();enabled=false;stopSize();newTerminal.hidden=true;status.hidden=false;status.textContent='连接已断开，请在工作台重新连接；此页保留原输出。';}else if(ended){newTerminal.hidden=false;newTerminal.disabled=opening;}});
+  addEventListener('sodeck:connectionChanged',event=>{disconnected=!event.detail.connected;if(disconnected){controls.invalidate();enabled=false;stopSize();newTerminal.hidden=true;status.hidden=false;status.textContent='连接已断开，请在工作台重新连接；此页保留原输出。';}else if(ended){newTerminal.hidden=false;newTerminal.disabled=opening||commandPending;}});
   addEventListener('sodeck:themeChanged',event=>theme(event.detail.tokens));
   addEventListener('sodeck:focus',()=>{if(!search.focus())terminal.focus();void enqueueSize(true).catch(()=>{});});
-  addEventListener('sodeck:unmount',()=>{disposed=true;stopSize();search.dispose();location.dispose();appearance.dispose();controls.dispose();observer.disconnect();terminal.dispose();});
+  addEventListener('sodeck:unmount',()=>{disposed=true;clearTimeout(commandTimer);stopSize();search.dispose();location.dispose();appearance.dispose();controls.dispose();observer.disconnect();terminal.dispose();});
   // The final output chunk may arrive without another chunk to trigger a checkpoint.
   const timer=setInterval(()=>{if(disposed){clearInterval(timer);return;}chain=chain.then(()=>{void checkpoint().catch(()=>{});}).catch(()=>{});},1000);
 })();

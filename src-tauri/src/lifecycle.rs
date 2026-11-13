@@ -150,6 +150,8 @@ pub struct Operation {
     #[serde(skip)]
     pub(crate) dispose_requests: HashMap<String, crate::plugins::Receipt>,
     #[serde(skip)]
+    pub(crate) command_tasks: Vec<Arc<crate::resource_tasks::Tasks>>,
+    #[serde(skip)]
     pub(crate) saving_view: Option<String>,
     #[serde(skip)]
     pub(crate) orphaned: bool,
@@ -243,7 +245,7 @@ impl Lifecycle {
 impl AppCore {
     pub fn register_close_host(&self, window: &str) -> Result<(), String> {
         let mut _workbench = self.workbench_state();
-        let crate::workbench::State { workspaces, ui } = &mut *_workbench;
+        let crate::workbench::State { workspaces, ui, .. } = &mut *_workbench;
         workspaces.projection(window)?;
 
         if ui
@@ -341,7 +343,11 @@ impl AppCore {
             return Err("请等待更新任务完成后关闭或重启".into());
         }
         let mut _workbench = self.workbench_state();
-        let crate::workbench::State { workspaces, ui } = &mut *_workbench;
+        let crate::workbench::State {
+            workspaces,
+            ui,
+            commands,
+        } = &mut *_workbench;
         workspaces.projection(window)?;
         if let Target::Workspace { id } | Target::Host { id } = &target {
             if workspaces.closing_last_secondary(window, id)
@@ -624,7 +630,7 @@ impl AppCore {
         } else {
             self.reserve_close_tools(workspaces, ui, window, &id, &returning_tools)?
         };
-        let op = Operation {
+        let mut op = Operation {
             id: id.clone(),
             window: window.into(),
             request: request.into(),
@@ -651,6 +657,10 @@ impl AppCore {
             save_started,
             disposed,
             dispose_requests,
+            command_tasks: adopted
+                .iter()
+                .flat_map(|id| ui.lifecycle.operations[id].command_tasks.clone())
+                .collect(),
             saving_view: None,
             orphaned: false,
             unhosted: false,
@@ -658,7 +668,7 @@ impl AppCore {
             ended_at: None,
             input_deadline: None,
         };
-        ui.invalidate_workspace_actions(&op.ending_workspaces, "工作区正在关闭，行为已失效");
+        op.command_tasks.extend(commands.reserve_close(&op, ui));
         ui.lifecycle.operations.insert(id.clone(), op.clone());
         if matches!(target, Target::Application { .. }) {
             self.set_closing(true);

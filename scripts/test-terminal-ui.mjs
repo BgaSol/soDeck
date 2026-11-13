@@ -1,3 +1,4 @@
+import {completedAction} from './component-command-fixture.mjs';
 // Actual terminal package + xterm UI + core PTY + independent OpenSSH.
 import assert from 'node:assert/strict';
 import {transferWorkbench} from './workbench-transfer-fixture.mjs';
@@ -86,7 +87,7 @@ try{
  const context=(await call('connection',{command:{op:'snapshot'}}))[0].context;
  const command=process.platform==='win32'?`powershell.exe -NoLogo -NoProfile -Command "Write-Output 'sodeck-ui-launch-ready'; $line = [Console]::ReadLine(); Write-Output ('sodeck-ui-launch-input:' + $line); exit 7"`:`sh -c 'printf "sodeck-ui-launch-ready\\n"; read line; printf "sodeck-ui-launch-input:%s\\n" "$line"; exit 7'`;
  const config={version:1,title:'指定命令 UI',launch:{kind:'command',command},directoryIntegration:'off'};
- const action=await call('component_ui',{window:'main',operation:'invokeAction',args:{context,requestId:'ui-command',actionKey:'sodeck.terminal:new-terminal',data:config}});assert.equal(action.status,'completed');
+ const action=await completedAction(call,{window:'main',context,requestId:'ui-command'},await call('component_ui',{window:'main',operation:'invokeAction',args:{context,requestId:'ui-command',actionKey:'sodeck.terminal:new-terminal',data:config}}));assert.equal(action.status,'completed');
  await main.evaluate(()=>window.manager.refresh());
  const commandFrame=main.frameLocator(`.component-surface[data-view-id="${action.viewId}"] iframe`);
  await commandFrame.locator('.xterm-rows').filter({hasText:'sodeck-ui-launch-ready'}).waitFor();

@@ -17,6 +17,8 @@
     <section id="container" hidden>
       <div class="identity"><span id="container-id"></span><button id="copy-id" type="button">复制 ID</button></div>
       <div id="actions" class="toolbar"><button data-operation="start">启动</button><button data-operation="stop">停止</button><button data-operation="restart">重启</button><button data-operation="pause">暂停</button><button data-operation="unpause">恢复</button><button data-operation="remove" class="danger">删除容器</button><button id="detail-logs">查看日志</button></div>
+      <form id="terminal-form" class="toolbar"><label for="terminal-shell">容器 Shell</label><input id="terminal-shell" value="/bin/sh" spellcheck="false" autocomplete="off" required><button id="open-terminal" type="submit">打开终端</button></form>
+      <p id="terminal-result" role="status" hidden></p>
       <p id="operation" role="status" hidden></p>
       <section class="metrics"><div class="section-title"><h2>资源快照</h2><button id="read-stats" type="button">读取资源</button></div><p class="muted">按需读取 · 数值来自 Docker CLI，网络和块 I/O 为累计量。</p><dl id="stats"><dt>状态</dt><dd>尚未读取</dd></dl></section>
       <nav id="sections" aria-label="容器详情分区"></nav><label id="show-env-label" class="check" hidden><input id="show-env" type="checkbox">显示环境变量值</label><dl id="fields"></dl>

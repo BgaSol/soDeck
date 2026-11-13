@@ -5,6 +5,7 @@ const sections = { basic:'配置',state:'状态与健康',environment:'环境变
 let snapshot, ready=false, frozen=false, visible=true, epoch=0, revision, timer, selected='',offset=0,nextOffset,section='basic',fieldOffset=0,fieldNext,logOffset=0,logNext,rows=[],fields=[],logRows=[],operationRequest,rendering=false,renderAgain=false,restoreScroll;
 const listHistory=[],fieldHistory=[],logHistory=[];
 const pending = new Set();
+let terminalOpening=false;
 const event = data => {const promise=sodeck.request('event',data);pending.add(promise);return promise.finally(()=>pending.delete(promise));};
 function notice(message) { $('notice').textContent=message||''; $('notice').hidden=!message; }
 function tokens(values) { for(const [key,value] of Object.entries(values||{})) key==='color-scheme'?document.documentElement.style.colorScheme=value:document.documentElement.style.setProperty('--'+key,value); }
@@ -34,6 +35,11 @@ function renderHeader() {
   $('freshness').textContent=snapshot.observedAt?'采集于 '+new Date(snapshot.observedAt).toLocaleTimeString():'尚未完成采集';
   notice(snapshot.error||(snapshot.partial?'当前数据不完整或已截断；请缩小范围后刷新':''));
   $('container-id').textContent=snapshot.containerId||'';
+  const terminal=snapshot.terminal;
+  $('open-terminal').disabled=terminalOpening||!!snapshot.busy||!ready||frozen||snapshot.status!=='running'||snapshot.state!=='ready'||terminal?.status==='pending';
+  $('terminal-shell').disabled=$('open-terminal').disabled;
+  $('terminal-result').hidden=!terminal;
+  $('terminal-result').textContent=terminal?({pending:'终端请求待确认',completed:'终端页面已创建；容器连接结果请在终端查看',failed:'终端请求失败',invalidated:'终端请求已失效',unknown:'终端执行结果未确认'}[terminal.status]||terminal.status)+(terminal.error?.message?'：'+terminal.error.message:''):'';
   const op=snapshot.operation;
   $('operation').hidden=!op; $('operation').textContent=op?(operations[op.action]||op.action)+' · '+({checking:'检查中',running:'执行中',succeeded:'命令成功',failed:'失败',unknown:'结果未确认',skipped:'无需操作'}[op.state]||op.state)+'：'+op.message:'';
   for(const button of document.querySelectorAll('[data-operation]')) {
@@ -137,6 +143,12 @@ $('logs-prev').onclick=()=>{logOffset=logHistory.pop()??0;void renderBody();};
 $('logs-next').onclick=()=>{logHistory.push(logOffset);logOffset=logNext;void renderBody();};
 $('show-env').onchange=renderFields;$('log-query').oninput=()=>{logOffset=0;logHistory.length=0;void renderBody();};
 async function copy(text){const generation=epoch;try{await sodeckClipboard.writeText(text,()=>generation===epoch&&ready&&!frozen);}catch(error){notice(error.message);}}
+$('terminal-form').onsubmit=event=>{
+  event.preventDefault();if($('open-terminal').disabled)return;
+  terminalOpening=true;renderHeader();
+  void call({action:'openTerminal',requestId:crypto.randomUUID(),shell:$('terminal-shell').value})
+    .finally(()=>{terminalOpening=false;renderHeader();void poll(true);});
+};
 $('copy-id').onclick=()=>void copy(snapshot.containerId);
 $('copy-logs').onclick=()=>void copy($('log-content').textContent);
 for(const button of document.querySelectorAll('[data-operation]')) button.onclick=()=>{

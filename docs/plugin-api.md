@@ -103,32 +103,72 @@ UI v1 仍映射到同一 Host/分屏树，可以同窗排序、分屏和移组�
 
 UI 事件最多 24 KiB，是控制交互接口，不能用来传终端输出或文件内容流。RPC 保留 64 KiB 帧上限和 5 秒等待期限；v0.6.0 的真实业务正文另走下述有界视图数据桥。可信插件不增加权限表或授权流程。
 
-### 默认行为与进程主动创建页面
+### 命令、默认行为与进程主动创建页面
 
-核心 0.16.0 起支持以下可选扩展，沿用 API 主版本 1。
+此命令扩展已在当前源码实现，尚未发行；本轮验证与剩余包验收见[待验收范围](plans/component-communication.md)。
 
-清单 `ui.actions` 可声明 `[{id:"new-terminal",title:"新建终端",defaultCreate:true,dataVersion:1}]`。行为不指定目标视图；插件收到事件后决定是否以及如何打开自己的页面。每插件最多 32 项，id 非空、最长 80 字节、使用 ASCII 字母/数字/短横线/下划线且不重复；title 非空白、最长 256 字节；dataVersion 为正整数；最多一个 defaultCreate 推荐。
+可选能力 `commands.v1` 在现有双向 RPC 上提供一次动作的接纳、路由和回执。共享状态仍表达当前事实；命令用于“请执行一次动作”。没有持久消息队列、离线重放、广播执行、自动启动插件或失败转投。插件按可信扩展运行，命令声明不构成权限列表。
 
-核心声明 `ui.actions.v1`、`ui.openView.v1`。支持事件的插件在 initialize 返回 `uiActionsApiVersion:"1"`，并在读取 viewId 之前处理 `ui.action`。旧插件缺少支持回应时登记为不可用；旧清单可省略 actions。旧核心仍使用原视图声明，因此插件可以保留 createAction 和 openOnWorkspace。
+插件清单可声明：
 
-| 方向 | 接口 | 结果 |
+```json
+{
+  "commands": {"apiVersion":"1","handlers":["terminal.open.v1"]},
+  "ui": {
+    "apiVersion":"2",
+    "actions":[{"id":"new-terminal","title":"新建终端","defaultCreate":true,"dataVersion":1,"command":"terminal.open.v1"}],
+    "views":[{"id":"terminal","title":"终端","icon":"terminal","container":"editor","instancePolicy":"multiple","createAction":"新建终端","createActionId":"new-terminal","openOnWorkspace":"createOne"}]
+  }
+}
+```
+
+每插件最多声明 32 个唯一命令。名称最多 128 字节，由 ASCII 字母、数字、下划线和短横线分段，以点分隔，最后是规范的 `.v<正整数>`（u32；无前导零）。`commands.v1` 是通道能力版本，`terminal.open.v1` 是业务契约版本，不兼容业务变化使用新的主版本名称。
+
+初始化结果必须返回 `commandsApiVersion:"1"` 和与清单完全一致的 `commandHandlers` 数组；不一致时启动失败。处理者只在实例 Running 且握手确认后可路由，停止即撤销，不依赖 iframe。零个处理者返回 noHandler，多个返回 ambiguousHandler；提交时固定唯一的处理实例，不按加载顺序选择，不转交替代实例。resolve 只查询当前可用性，submit 仍重新检查。
+
+`ui.actions` 保留入口的标题、图标、默认选择和 dataVersion，不另建执行队列。`command` 必须是本插件声明的命令；`createActionId` 引用本插件带命令的 action，首版只允许 editor + multiple 的独立新建页面；单例恢复和 perResource 资源打开保持既有契约。命令处理者仍可显式申请本插件其他已声明视图。默认页面创建、旧核心操作入口 `action.op:open` 和中央“＋”均适配同一命令。`createAction` 继续是兼容显示名称。默认选择仍保存到 ui-layout.json；已有选择不因提供者停止自动切换。
+
+| 方向 | 接口及必要参数 | 返回 |
 | --- | --- | --- |
-| 工作台 → 核心 | component_ui `invokeAction({context,requestId,actionKey,data?})` | `{status,requestId,context,actionKey,viewId?,result?,error?}` |
-| 核心 → 插件 | `ui.action({context,requestId,actionId,data})` | `{viewId?}`，也可返回无页面的对象或错误 |
-| 工作台 → 核心 | component_ui `actionStatus({context,requestId})` | 原请求的 pending/completed/failed/invalidated 状态；查询不重发事件 |
-| 插件 → 核心 | `ui.openView({expectedContext,requestId,viewType,resourceKey?,params?})` | `{viewId}`；只接受真实调用插件声明的视图 |
+| 插件 → 核心 | `commands.resolve({expectedContext,sourceViewId,name})` | `{available:true,name}` 或结构化错误；不执行 |
+| 插件 → 核心 | `commands.submit({expectedContext,sourceViewId,requestId,name,payload?})` | 立即返回同一命令回执，不同步等待另一个插件 |
+| 插件 → 核心 | `commands.get({expectedContext,sourceViewId,requestId,commandId?})` | 原回执；不重新路由、分发或创建 |
+| 宿主 → 核心 | component_ui `command`，参数含 `op:resolve/submit/get`，其余同上，但无 sourceViewId | `{result}` 或 `{error:{code,message}}`；submit 可指定 groupId/actionKey |
+| 核心 → 处理插件 | `commands.handle({commandId,name,context,payload})` | 对象结果；业务处理者决定是否登记自己的页面 |
+| 处理插件 → 核心 | `ui.openView({expectedContext,commandId,requestId:"open:<commandId>",viewType,resourceKey?,params?})` | `{viewId,closed?}`；每命令最多一个关联页面 |
 
-工作台从快照 actions/defaultCreateAction 取得默认行为，按钮文字使用声明 title。所有启动插件加载结束后，首次按 pluginId/actionId 稳定排序保存有效推荐；已有选择不覆盖，提供者卸载或停止也不自动切换。偏好仍保存到 schemaVersion=1 的 ui-layout.json。快照查询不创建页面或写入偏好，pendingAction 提供本窗口工作区尚未确认的请求，便于重新显示和移窗后继续查询。
+核心绑定真实进程实例、来源逻辑 view、Host 和完整 Context（workspaceId/serverId/connectionId/generation），不信任调用方提供的插件身份。插件请求的目标是来源 view 当前所在的 Host/Group；宿主提交时捕获目标组。整 Host 移窗后跟随该 Host，目标组关闭或交接中明确拒绝，不回退到当前活动组。迟到创建不覆盖用户后续改变的焦点。
 
-requestId 为 1–128 字节；data、params 和行为结果各最多 16 KiB，完整 UI 参数仍受 24 KiB 限制，RPC 信封受 64 KiB 限制。核心只检查结构、大小、真实 Context 和实例身份。metadata.title 最长 512 字节。业务参数由插件解释，核心不生成终端或 Docker 命令。
+回执包含 `commandId,requestId,name,context,status,actionKey,result,error,viewId,hostId,groupId`。未产生结果的字段为 null；error 为 `{code,message}`。
 
-同 Context/requestId/输入的调用读取原回执，改变输入报冲突。每工作区只允许一个未确认行为。5 秒超时返回 pending，工作台只查询原回执；插件已申请页面但随后报告失败时保留 viewId，不补建。返回的页面必须属于原插件实例及 Context。页面申请和 PTY 就绪相互独立。
+| status | 含义 |
+| --- | --- |
+| pending | 已接纳，等待分发或原处理结果 |
+| completed | 处理者按业务成功契约返回对象；打开终端仅表示逻辑页面登记成功，PTY 和容器连接另行报告 |
+| failed | 已知失败，保留已经登记的 viewId，不暗示回滚 |
+| invalidated | 关闭、断线、来源结束等撤销继续创建资格；取消关闭不复活命令 |
+| unknown | 已发送但通信结束，处理结果无法确认；保留已观察到的页面，不重放 |
 
-ui.openView 使用共同页面登记路径，同实例/Context/requestId 的相同输入返回原 viewId；不同输入拒绝，原页面关闭后返回 viewClosed，不能复用旧编号复活页面。已失败或失效的关联行为拒绝迟到的新申请。关闭冻结、断线、提供者停止会使未结束行为 invalidated，取消关闭不重发；移窗保留 Context，当前真实窗口继续查询。重连 generation 改变或工作区结束后回收旧记录。
+方法拒绝使用 JSON-RPC error.message 和 error.data.code；接纳后的失败保存在回执 error。常见 code：invalidParams、staleContext、sourceStopped、workspaceClosing、targetBusy、targetClosed、noHandler、ambiguousHandler、requestConflict、resourceLimit、notFound、notSent、resultUnknown、handlerError、protocolError、pageRejected、startupSuperseded。notSent 表示能确认尚未发送；resultUnknown 不证明没有副作用。处理插件通过 SDK 的 RpcError 返回结构化错误；旧字符串错误映射为 handlerError。
 
-新入口的行为和页面申请去重记录每 Context 合计最多 4096 项、全局最多 16384 项，缓存预算 16 MiB；等待中的行为预留一个 RPC 帧的额度。到达额度拒绝新编号，已结束记录也不静默清空。极长期工作区需要关闭并重新打开。旧页面 openView 桥保持原兼容行为；`mount.capabilities.uiOpenView===1` 表示支持进程入口。
+去重身份为完整 Context + 真实来源 + requestId。来源区分逻辑 Host、Host/定义默认创建、插件实例/逻辑 view。requestId 为 1–128 字节；可选 groupId 为 1–128 字节、startupDefinition/actionKey 为 1–256 字节，已知字段类型错误拒绝。commandId 由核心生成。相同身份及输入返回原回执，不同命令/参数/显式目标/入口引用返回 requestConflict。指纹只规范化 JSON 对象键顺序，不改写路径、命令或业务默认值。超时后保存原票据继续 get；若 get 为 notFound，可用原完整输入和原编号重交，不能生成新编号自动补执行。
 
-终端的 `new-terminal` 行为解释下述终端创建配置。业务语义见[终端功能](features/terminal.md)，其他插件的业务行为使用自己的协议。
+页面登记和命令关联在同一工作台锁中提交。重复 ui.openView 返回原 viewId，页面已经关闭时附 `closed:true`，绝不复活。处理者返回的 viewId 必须是该命令已登记的页面。来源页关闭会撤销未登记的创建；已登记的终端独立归终端 view，关闭 Docker 来源不关闭它。关闭保留覆盖零页面命令；逻辑 invalidated/unknown 与真实 RPC 在途任务分开，实际响应或进程确认结束后才释放在途额度。重连不把旧票据带到新代次。
+
+| 预算 | 上限 |
+| --- | --- |
+| payload、页面 params、结果 | 各 16 KiB |
+| 命令信封、RPC 帧 | 24 KiB、既有 64 KiB |
+| 同来源、同处理实例在途命令 | 各 32 项（失效但未实际结束的调用仍计入） |
+| 命令与自主页面申请的回执 | 每 Context 合计 4096 项、全局 16384 项、合计 16 MiB，含结果与在途预留 |
+
+满额先拒绝新编号，不淘汰现存回执以重做动作。连接代次结束后回收旧记录，未结束调用保留至实际结束。极长期工作区可关闭后重新连接。查询只刷新回执，不启动业务。
+
+SDK `run_with_commands(&["terminal.open.v1"], handler)` 使用既有四个 worker，初始化时确认名称；处理函数返回 `Result<Value,RpcError>`。旧 `run` 与 `Client.call` 保留字符串错误接口。`commands::Ticket` 保存 Context、sourceViewId、requestId、name 和 payload，提供 submit/get/resolve；通信超时保留票据。没有新增 iframe 命令桥，UI 事件先交给所属插件后台。
+
+旧 `ui.actions.v1` 的 invokeAction/actionStatus 适配同一命令服务，内部使用固定提供者的 ui.action.v1。旧插件收到的 ui.action.requestId 是核心 commandId，使用它调用旧 ui.openView 即可关联原命令；它不等于发起方编号。旧回执保留字符串错误和 pending/completed/failed/invalidated 形状（unknown 兼容映射为 invalidated）。未声明 command 的旧插件无需升级，不再限制一个工作区只能有一个在途行为。
+
+未关联命令的自主 ui.openView 继续限定为调用插件自己的视图，以实例/Context/requestId 去重；原页面关闭返回旧 viewClosed 错误。带 createActionId 的新视图必须通过显式命令关联创建，不能绕过命令申请。旧 UI openView 桥保持兼容；`mount.capabilities.uiOpenView===1` 仍表示支持进程入口。
 
 ### 终端创建参数
 
@@ -144,7 +184,7 @@ version 可省略，仅支持 1；title 可省略，非空白、最多 128 字�
 
 loginShell 缺省目录策略在创建时读取设置，允许 auto/manual/off；command 缺省 off，首版只接受 off。command 只要求 terminal.launch.v1，不做主机探测或目录脚本注入，不回退登录 shell。自动登录 shell 集成仍要求 terminal.launch.v1 和 session.exec.v1，旧核心或不支持的 shell 保留原普通终端降级。
 
-首次挂载保存已解析配置，同 viewId 重挂载复用原 PTY，初始化失败不自动重跑。mount.data.createParams 含可再次使用的配置；command 退出后“重新打开终端”创建新 view/PTY。新核心通过现有 ui.event 的 `{action:"createTerminal",requestId,params}` 交给终端后台调用 ui.openView；旧核心通过页面自己的 openView 桥携带配置。新页面使用当前挂载 Context，不复用原 streamId、输入序号或集成 token。off 不采纳 OSC7/633 的 known 目录，不将嵌套环境路径传给主机文件跟随。
+首次挂载保存已解析配置，同 viewId 重挂载复用原 PTY，初始化失败不自动重跑。mount.data.createParams 含可再次使用的配置；command 退出后“重新打开终端”创建新 view/PTY。支持 commands.v1 时，现有 ui.event 的 `{action:"createTerminal",requestId,params}` 由终端后台保存票据并提交 terminal.open.v1；terminalCommandStatus 查询原票据，Surface 重挂载继续查询。缺少该能力的旧核心沿用旧创建接口；新协议业务失败不降级到旧路径。新页面使用当前挂载 Context，不复用原 streamId、输入序号或集成 token。off 不采纳 OSC7/633 的 known 目录，不将嵌套环境路径传给主机文件跟随。
 
 ## 会话状态与有界短命令
 

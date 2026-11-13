@@ -4,6 +4,7 @@ import {pluginPeer,context,capabilities,until,packageRoot} from './docker-proces
 const root=packageRoot();
 const manifest=JSON.parse(fs.readFileSync(path.join(root,'plugin.json')));
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-docker-process-'));
+const tickets=new Map(),submissions=[];let loseCommandReceipt=true;
 const id='a'.repeat(64),tasks=new Map(),commands=[],diagnostics=[];let number=0,hold=false,holdMutation=false,loseReceipt=true,malformed=false,engineId='engine',peer;
 const inspect={Id:id,Name:'/service-中文',Image:'sha256:'+'b'.repeat(64),Config:{Image:'demo:1',Env:['TOKEN=a=b'],Labels:{}},State:{Status:'running',Running:true,Health:{Status:'unhealthy',Log:[]}},Mounts:[],NetworkSettings:{Ports:{},Networks:{}}};
 const output=command=>{
@@ -19,6 +20,14 @@ const output=command=>{
   return id+'\n';
 };
 peer=pluginPeer(path.join(root,manifest.entry),async(method,p)=>{
+  if(method==='commands.resolve')return {available:true};
+  if(method==='commands.submit'){
+    submissions.push(p);let receipt=tickets.get(p.requestId);
+    if(!receipt){receipt={status:'pending',commandId:'command-'+p.requestId,viewId:'terminal-'+p.requestId};tickets.set(p.requestId,receipt);}
+    if(loseCommandReceipt){loseCommandReceipt=false;throw Object.assign(new Error('lost command receipt'),{code:-32003});}
+    return receipt;
+  }
+  if(method==='commands.get'){const receipt=tickets.get(p.requestId);assert(receipt);return {...receipt,status:'completed'};}
   if(method==='settings.get')return {values:{refreshSeconds:'30',logTail:'200'}};
   if(method==='session.state')return {state:'connected',context};
   if(method==='logging.write'||method==='messages.publish'){diagnostics.push({method,...p});return {};}
@@ -49,6 +58,12 @@ try{
   let list=(await request('ui.event','browser',{data:{action:'list',status:'abnormal',query:'中文'}})).data;
   assert.equal(list.total,1);assert.equal(list.rows[0].project,'web');
   await request('ui.createView','detail',{viewType:'container',resourceKey:JSON.stringify({id,engineId:'engine'})});await idle('detail');
+  const terminal={action:'openTerminal',requestId:'terminal-once',shell:'/bin/sh'};
+  await request('ui.event','detail',{data:terminal});await request('ui.event','detail',{data:terminal});
+  const terminalResult=await until(async()=>(await request('ui.getView','detail')).data,v=>v.terminal?.status==='completed');
+  assert.equal(terminalResult.terminal.viewId,'terminal-terminal-once');assert.equal(submissions.length,1,'lost submit receipt must query the original intent');
+  assert.equal(submissions[0].name,'terminal.open.v1');assert.equal(submissions[0].sourceViewId,'detail');
+  const launch=submissions[0].payload;assert.equal(launch.directoryIntegration,'off');assert(launch.launch.command.includes('DOCKER_HOST DOCKER_CONTEXT'));assert(launch.launch.command.includes("'engine'"));assert(launch.launch.command.includes(id));assert(launch.launch.command.includes("'/bin/sh'"));
   const malformedBefore=commands.length;
   malformed=true;await request('ui.event','detail',{data:{action:'refresh'}});let failed=await idle('detail');
   assert(JSON.stringify(failed).includes('核心输出编码无效'),JSON.stringify(failed));assert.equal(tasks.size,0,'bad encoding must release the task');

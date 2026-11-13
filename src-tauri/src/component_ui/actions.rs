@@ -1,25 +1,16 @@
-//! Generic declared behavior delivery and caller-owned page creation.
+//! Declared UI behaviors adapt to commands; own-page opens retain their original contract.
 use super::*;
-use crate::plugins::Receipt;
 use sha2::{Digest, Sha256};
-use std::sync::{Arc, Mutex};
-
-pub(super) struct ActionRequest {
-    pub context: Context,
-    request_id: String,
-    window: String,
-    host_id: String,
-    group_id: String,
-    action_key: String,
-    plugin_id: String,
-    instance: String,
-    fingerprint: Vec<u8>,
-    receipt: Receipt,
-    outcome: Option<Result<Value, String>>,
-    invalidated: bool,
-    view_id: Option<String>,
-    bytes: usize,
+fn legacy_command(mut result: Value) -> Value {
+    if result["status"] == "unknown" {
+        result["status"] = json!("invalidated");
+    }
+    if let Some(message) = result["error"]["message"].as_str() {
+        result["error"] = json!(message);
+    }
+    result
 }
+
 pub(super) struct OpenRequest {
     context: Context,
     fingerprint: Vec<u8>,
@@ -40,168 +31,41 @@ fn request_id(p: &Value) -> Result<&str, String> {
         .filter(|s| !s.is_empty() && s.len() <= 128)
         .ok_or_else(|| "requestId 必须为 1 至 128 字节的字符串".into())
 }
-fn key(context: &Context, request: &str) -> String {
-    json!([context, request]).to_string()
-}
 fn fingerprint(value: Value) -> Vec<u8> {
     Sha256::digest(serde_json::to_vec(&value).unwrap()).to_vec()
 }
-impl ActionRequest {
-    fn pending(&self) -> bool {
-        self.outcome.is_none() && !self.invalidated
-    }
-    fn status(&self) -> Value {
-        let (status, result, error) = if self.invalidated {
-            (
-                "invalidated",
-                Value::Null,
-                self.outcome
-                    .as_ref()
-                    .and_then(|r| r.as_ref().err())
-                    .cloned(),
-            )
-        } else {
-            match &self.outcome {
-                None => ("pending", Value::Null, None),
-                Some(Ok(v)) => ("completed", v.clone(), None),
-                Some(Err(e)) => ("failed", Value::Null, Some(e.clone())),
-            }
-        };
-        json!({"status":status,"requestId":self.request_id,"context":self.context,
-            "actionKey":self.action_key,"viewId":self.view_id,"result":result,"error":error})
-    }
-}
 impl Runtime {
-    fn refresh_action(&mut self, request: &str) {
-        let Some(r) = self.action_requests.get(request) else {
-            return;
-        };
-        if !r.pending() {
-            return;
-        }
-        let Some(mut outcome) = r.receipt.lock().unwrap().take() else {
-            return;
-        };
-        if let Ok(value) = &outcome {
-            let validation = (|| {
-                if !value.is_object() {
-                    return Err("ui.action 结果必须为对象".into());
-                }
-                bounded(value, 16 * 1024)?;
-                if let Some(id) = value.get("viewId") {
-                    let view = self.view(id.as_str().ok_or("ui.action viewId 必须为字符串")?)?;
-                    if view.context != r.context
-                        || view.plugin_id != r.plugin_id
-                        || view.plugin_instance_id != r.instance
-                    {
-                        return Err("ui.action 返回了其他插件实例或工作区的页面".into());
-                    }
-                }
-                Ok::<_, String>(())
-            })();
-            if let Err(e) = validation {
-                outcome = Err(e);
-            }
-        }
-        if let Err(error) = &mut outcome {
-            if serde_json::to_vec(error).unwrap().len() > 16 * 1024 {
-                *error = "ui.action 错误超过 16 KiB".into();
-            }
-        }
-        let r = self.action_requests.get_mut(request).unwrap();
-        if let Ok(value) = &outcome {
-            if let Some(id) = value["viewId"].as_str() {
-                r.view_id = Some(id.into());
-            }
-        }
-        r.outcome = Some(outcome);
-    }
-    fn refresh_actions(&mut self) {
-        for key in self.action_requests.keys().cloned().collect::<Vec<_>>() {
-            self.refresh_action(&key);
-        }
-    }
-    pub(super) fn pending_actions(&self) -> Vec<Value> {
-        self.action_requests
-            .values()
-            .filter(|r| r.pending())
-            .map(ActionRequest::status)
-            .collect()
-    }
-    pub(crate) fn invalidate_host_actions(&mut self, window: &str, reason: &str) {
-        self.invalidate_actions(|r| r.window == window, reason);
-    }
-    pub(crate) fn invalidate_workspace_actions(&mut self, ids: &[String], reason: &str) {
-        self.invalidate_actions(|r| ids.contains(&r.context.workspace_id), reason);
-    }
-    pub(crate) fn invalidate_instance_actions(&mut self, plugin: &str, instance: &str) {
-        self.invalidate_actions(
-            |r| r.plugin_id == plugin && r.instance == instance,
-            "行为提供者已停止",
-        );
-    }
-    pub(super) fn invalidate_actions(
-        &mut self,
-        predicate: impl Fn(&ActionRequest) -> bool,
-        reason: &str,
-    ) {
-        self.refresh_actions();
-        for r in self
-            .action_requests
-            .values_mut()
-            .filter(|r| r.pending() && predicate(r))
-        {
-            r.invalidated = true;
-            r.outcome = Some(Err(reason.into()));
-            // The supervisor still owns the original receipt until the real RPC ends.
-            r.receipt = Arc::new(Mutex::new(None));
-        }
-    }
     pub(super) fn retain_request_contexts(
         &mut self,
         contexts: &[Context],
         workspace: Option<&str>,
     ) {
-        let retain = |context: &Context| {
-            workspace.is_some_and(|id| context.workspace_id != id) || contexts.contains(context)
-        };
-        self.action_requests.retain(|_, r| retain(&r.context));
-        self.open_requests.retain(|_, r| retain(&r.context));
+        self.open_requests.retain(|_, r| {
+            workspace.is_some_and(|id| r.context.workspace_id != id)
+                || contexts.contains(&r.context)
+        });
+    }
+    pub(crate) fn open_request_usage(&self, context: &Context) -> (usize, usize, usize) {
+        (
+            self.open_requests
+                .values()
+                .filter(|r| r.context == *context)
+                .count(),
+            self.open_requests.len(),
+            self.open_requests.values().map(|r| r.bytes + 128).sum(),
+        )
     }
     fn reserve_request(
         &self,
         context: &Context,
         bytes: usize,
         result_budget: usize,
+        other: (usize, usize, usize),
     ) -> Result<(), String> {
-        let count = self
-            .action_requests
-            .values()
-            .filter(|r| &r.context == context)
-            .count()
-            + self
-                .open_requests
-                .values()
-                .filter(|r| &r.context == context)
-                .count();
-        let used: usize = self
-            .action_requests
-            .values()
-            .map(|r| {
-                r.bytes
-                    + r.outcome
-                        .as_ref()
-                        .map_or(64 * 1024, |v| serde_json::to_vec(v).unwrap().len())
-            })
-            .sum::<usize>()
-            + self
-                .open_requests
-                .values()
-                .map(|r| r.bytes + 128)
-                .sum::<usize>();
-        if count >= 4096
-            || self.action_requests.len() + self.open_requests.len() >= 16384
-            || used + bytes + result_budget > 16 * 1024 * 1024
+        let (count, total, used) = self.open_request_usage(context);
+        if count + other.0 >= 4096
+            || total + other.1 >= 16384
+            || used + other.2 + bytes + result_budget > 16 * 1024 * 1024
         {
             return Err("工作区创建请求记录已满，请关闭并重新打开工作区".into());
         }
@@ -210,130 +74,30 @@ impl Runtime {
 }
 impl AppCore {
     pub fn ui_invoke_action(&self, window: &str, p: &Value) -> Result<Value, String> {
-        bounded(p, 24 * 1024)?;
-        let context: Context =
-            serde_json::from_value(p["context"].clone()).map_err(|e| e.to_string())?;
-        let request = request_id(p)?;
-        let action_key = p["actionKey"].as_str().ok_or("缺少 actionKey")?;
-        let data = p.get("data").cloned().unwrap_or(Value::Null);
-        let bytes = bounded(&data, 16 * 1024)?;
-        let input = fingerprint(json!([action_key, data, p["groupId"]]));
-        let request_key = key(&context, request);
-        let (instance, action, receipt) = {
-            let mut _workbench = self.workbench_state();
-            let crate::workbench::State { workspaces, ui } = &mut *_workbench;
-            workspaces.validate_owned(window, &context)?;
-
-            ui.refresh_action(&request_key);
-            if let Some(r) = ui.action_requests.get(&request_key) {
-                if r.fingerprint != input {
-                    return Err("requestId 已用于不同的行为或参数".into());
-                }
-                return Ok(r.status());
-            }
-            workspaces.validate_context(&context)?;
-            if self.is_closing()
-                || ui.frozen(&context.workspace_id)
-                || ui.lifecycle.host_closing(&context.workspace_id, window)
-            {
-                return Err("工作区正在关闭".into());
-            }
-            let action = ui
-                .actions
-                .get(action_key)
-                .filter(|a| a.available)
-                .cloned()
-                .ok_or("行为提供者不可用")?;
-            let instance = self
-                .instances
-                .lock()
-                .unwrap()
-                .get(&action.plugin_id)
-                .cloned()
-                .ok_or("行为提供者未运行")?;
-            let actual = instance.view();
-            if actual.status != PluginStatus::Running
-                || actual.instance_id.as_deref() != Some(&action.plugin_instance_id)
-            {
-                return Err("行为提供者实例已失效".into());
-            }
-            ui.refresh_actions();
-            if ui
-                .action_requests
-                .values()
-                .any(|r| r.context == context && r.pending())
-            {
-                return Err("工作区已有结果尚未确认的行为".into());
-            }
-            let host = ui.workspaces[&context.workspace_id].host(window)?;
-            ui.layout_admission(
-                &context.workspace_id,
-                window,
-                Some(p["groupId"].as_str().unwrap_or(&host.focused_group_id)),
-                None,
-                None,
-            )?;
-            ui.reserve_request(&context, bytes, 64 * 1024)?;
-            let receipt = Arc::new(Mutex::new(None));
-            ui.action_requests.insert(
-                request_key.clone(),
-                ActionRequest {
-                    context: context.clone(),
-                    request_id: request.into(),
-                    window: window.into(),
-                    host_id: ui.workspaces[&context.workspace_id]
-                        .host(window)?
-                        .id
-                        .clone(),
-                    group_id: p["groupId"]
-                        .as_str()
-                        .unwrap_or(
-                            &ui.workspaces[&context.workspace_id]
-                                .host(window)?
-                                .focused_group_id,
-                        )
-                        .into(),
-                    action_key: action_key.into(),
-                    plugin_id: action.plugin_id.clone(),
-                    instance: action.plugin_instance_id.clone(),
-                    fingerprint: input,
-                    receipt: receipt.clone(),
-                    outcome: None,
-                    invalidated: false,
-                    view_id: None,
-                    bytes,
-                },
-            );
-            (instance, action, receipt)
-        };
-        let _ = instance.request_observed("ui.action", json!({"context":context,"requestId":request,"actionId":action.definition.id,"data":data}),
-            None, Some(receipt), std::time::Duration::from_secs(5));
-        let result = {
-            let mut ui = self.ui_state();
-            ui.refresh_action(&request_key);
-            ui.action_requests
-                .get(&request_key)
-                .ok_or("行为上下文已结束")?
-                .status()
-        };
-        self.workspace_changed();
-        Ok(result)
+        let action = self
+            .ui_state()
+            .actions
+            .get(p["actionKey"].as_str().unwrap_or_default())
+            .cloned()
+            .ok_or("行为未登记")?;
+        let mut params = p.clone();
+        params["op"] = json!("submit");
+        params["name"] = json!(action
+            .definition
+            .command
+            .as_deref()
+            .unwrap_or("ui.action.v1"));
+        params["payload"] = p.get("data").cloned().unwrap_or(Value::Null);
+        self.command_host_request(window, &params)
+            .map(legacy_command)
+            .map_err(|e| e.to_string())
     }
     pub fn ui_action_status(&self, window: &str, p: &Value) -> Result<Value, String> {
-        bounded(p, 24 * 1024)?;
-        let context: Context =
-            serde_json::from_value(p["context"].clone()).map_err(|e| e.to_string())?;
-        let mut _workbench = self.workbench_state();
-        let crate::workbench::State { workspaces, ui } = &mut *_workbench;
-        workspaces.validate_owned(window, &context)?;
-        let key = key(&context, request_id(p)?);
-
-        ui.refresh_action(&key);
-        Ok(ui
-            .action_requests
-            .get(&key)
-            .ok_or("行为请求不存在或上下文已结束")?
-            .status())
+        let mut params = p.clone();
+        params["op"] = json!("get");
+        self.command_host_request(window, &params)
+            .map(legacy_command)
+            .map_err(|e| e.to_string())
     }
     pub fn ui_process_open(
         &self,
@@ -341,6 +105,23 @@ impl AppCore {
         instance: &str,
         p: &Value,
     ) -> Result<Value, String> {
+        if let Some(input) = self.command_legacy_open(plugin, instance, p) {
+            return self
+                .command_open(plugin, instance, &input)
+                .map_err(|e| e.to_string())
+                .and_then(|result| {
+                    if result["closed"] == true {
+                        Err("viewClosed：原页面已关闭".into())
+                    } else {
+                        Ok(result)
+                    }
+                });
+        }
+        if p.get("commandId").is_some() {
+            return self
+                .command_open(plugin, instance, p)
+                .map_err(|e| e.to_string());
+        }
         bounded(p, 24 * 1024)?;
         let context: Context =
             serde_json::from_value(p["expectedContext"].clone()).map_err(|e| e.to_string())?;
@@ -357,10 +138,13 @@ impl AppCore {
         let params = p.get("params").cloned().unwrap_or(Value::Null);
         let bytes = bounded(&params, 16 * 1024)?;
         let input = fingerprint(json!([view_type, resource, params, p["sourceViewId"]]));
-        let action_key = key(&context, request);
         let open_key = json!([context, plugin, instance, request]).to_string();
         let mut _workbench = self.workbench_state();
-        let crate::workbench::State { workspaces, ui } = &mut *_workbench;
+        let crate::workbench::State {
+            workspaces,
+            ui,
+            commands,
+        } = &mut *_workbench;
         workspaces.validate_identity(&context)?;
 
         let actual = self
@@ -384,30 +168,8 @@ impl AppCore {
             return Ok(json!({"viewId":r.view_id}));
         }
         workspaces.validate_context(&context)?;
-        ui.refresh_action(&action_key);
         let mut parent = None;
-        let (owner, group) = if let Some(r) = ui.action_requests.get(&action_key) {
-            if r.plugin_id != plugin || r.instance != instance || !r.pending() {
-                return Err("关联行为已结束或失效，不能申请迟到的页面".into());
-            }
-            let w = ui
-                .workspaces
-                .get(&context.workspace_id)
-                .ok_or("工作台已关闭")?;
-            let (window, host) = w
-                .hosts
-                .iter()
-                .find(|(_, h)| h.id == r.host_id)
-                .ok_or("发起工作台已关闭，创建意图已失效")?;
-            (
-                window.clone(),
-                Some(if host.groups.contains_key(&r.group_id) {
-                    r.group_id.clone()
-                } else {
-                    host.focused_group_id.clone()
-                }),
-            )
-        } else if let Some(source) = p["sourceViewId"].as_str() {
+        let (owner, group) = if let Some(source) = p["sourceViewId"].as_str() {
             let v = ui.resource_view(source)?;
             if v.context != context
                 || v.plugin_id != plugin
@@ -434,7 +196,7 @@ impl AppCore {
         {
             return Err("发起工作台正在关闭".into());
         }
-        ui.reserve_request(&context, bytes, 128)?;
+        ui.reserve_request(&context, bytes, 128, commands.usage(&context))?;
         let definition = format!("{plugin}:{view_type}");
         if ui
             .definitions
@@ -442,6 +204,13 @@ impl AppCore {
             .is_none_or(|d| d.plugin_instance_id != instance)
         {
             return Err("视图不属于当前插件实例".into());
+        }
+        if ui.definitions[&definition]
+            .definition
+            .create_action_id
+            .is_some()
+        {
+            return Err("命令视图必须通过命令处理者登记".into());
         }
         let policy = &ui.definitions[&definition].definition.instance_policy;
         if ui.workspaces.get(&context.workspace_id).is_some_and(|w| {
@@ -486,9 +255,6 @@ impl AppCore {
                 bytes,
             },
         );
-        if let Some(r) = ui.action_requests.get_mut(&action_key) {
-            r.view_id = Some(id.clone());
-        }
         self.sync_shared_ui_locked(&ui);
         drop(_workbench);
         self.workspace_changed();
@@ -520,7 +286,7 @@ mod tests {
                 },
             );
         }
-        assert!(ui.reserve_request(&context, 2, 128).is_err());
+        assert!(ui.reserve_request(&context, 2, 128, (0, 0, 0)).is_err());
         assert_eq!(ui.open_requests.len(), 4096);
         ui.retain_request_contexts(&[], None);
         assert!(ui.open_requests.is_empty());
@@ -534,7 +300,9 @@ mod tests {
                 bytes: 16 * 1024 * 1024,
             },
         );
-        assert!(ui.reserve_request(&context, 2, 64 * 1024).is_err());
+        assert!(ui
+            .reserve_request(&context, 2, 64 * 1024, (0, 0, 0))
+            .is_err());
         assert!(ui.open_requests.contains_key("large"));
         assert!(bounded(&json!("x".repeat(16 * 1024)), 16 * 1024).is_err());
         assert!(request_id(&json!({"requestId":""})).is_err());

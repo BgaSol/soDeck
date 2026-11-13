@@ -27,7 +27,11 @@ impl AppCore {
             return Err(Error::cancelled());
         }
         let mut _workbench = self.workbench_state();
-        let crate::workbench::State { workspaces, ui } = &mut *_workbench;
+        let crate::workbench::State {
+            workspaces,
+            ui,
+            commands,
+        } = &mut *_workbench;
 
         if ui.lifecycle.window_closing(&a.source_window) {
             return Err(Error::cancelled());
@@ -64,6 +68,8 @@ impl AppCore {
                 .reconnect(&w.context, a.view().attempt_id, endpoint)
                 .map_err(|_| Error::new("workspaceChanged", "重连上下文已失效"))?;
             workspaces.set_target_identity(&context.workspace_id, identity);
+            commands.invalidate_context(&w.context, "连接代次已改变");
+            commands.retain_contexts(&workspaces.contexts());
             ui.rebind_context(&context);
             workspaces
                 .activate(&w.window_id, Some(&context.workspace_id))

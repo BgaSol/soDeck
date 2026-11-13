@@ -18,6 +18,7 @@ export function parseTestPrepareArgs(args) {
   if (raw !== undefined && (matrix === null || typeof matrix !== "object" || Array.isArray(matrix))) throw new Error("--matrix must be a JSON object");
   const plugins = raw === undefined ? positionals : names.filter(name => matrix[fields[name] ?? name] || (matrix.communication && ["terminal", "files", "system-status"].includes(name)));
   if (!plugins.length || plugins.some(name => !names.includes(name))) throw new Error("Select explicit test plugins or a CI matrix");
+  if (plugins.includes("docker") && !plugins.includes("terminal")) plugins.unshift("terminal");
   return { plugins, uiOnly: values["ui-only"] ?? false };
 }
 

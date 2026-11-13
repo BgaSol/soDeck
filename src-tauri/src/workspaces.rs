@@ -553,6 +553,7 @@ impl AppCore {
         let crate::workbench::State {
             workspaces: state,
             ui,
+            ..
         } = &mut *_workbench;
 
         if self.is_closing()
@@ -580,6 +581,7 @@ impl AppCore {
         let crate::workbench::State {
             workspaces: state,
             ui,
+            ..
         } = &mut *_workbench;
 
         if self.is_closing()
@@ -650,6 +652,7 @@ impl AppCore {
         let crate::workbench::State {
             workspaces: state,
             ui,
+            ..
         } = &mut *_workbench;
 
         state.movable(window, id)?;
@@ -811,6 +814,7 @@ impl AppCore {
         let crate::workbench::State {
             workspaces: state,
             ui,
+            ..
         } = &mut *_workbench;
 
         if self.is_closing() || ui.lifecycle.window_closing("main") {

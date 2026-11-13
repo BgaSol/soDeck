@@ -19,7 +19,8 @@ async fn openssh_terminal_plugin() {
             &std::env::var("SODECK_TEST_TERMINAL_PLUGIN").unwrap(),
         ))
         .unwrap();
-    f.core.ui_action("main", &context, json!({"op":"open","key":"sodeck.terminal:terminal","requestId":"terminal-test"})).unwrap();
+    let opened=f.core.ui_action("main", &context, json!({"op":"open","key":"sodeck.terminal:terminal","requestId":"terminal-test"})).unwrap();
+    wait_terminal_action(&f.core,"main",&context,"terminal-test",opened).await;
     let state = f.core.ui_snapshot("main").unwrap();
     let view = state["workspaces"][&context.workspace_id]["editor"]
         .as_str()
@@ -58,6 +59,7 @@ async fn openssh_terminal_plugin() {
     };
     let params=json!({"version":1,"title":"指定命令","launch":{"kind":"command","command":command},"directoryIntegration":"off"});
     let opened=f.core.ui_invoke_action("main",&json!({"context":context,"requestId":"command-test","actionKey":"sodeck.terminal:new-terminal","data":params})).unwrap();
+    let opened=wait_terminal_action(&f.core,"main",&context,"command-test",opened).await;
     assert_eq!(opened["status"],"completed");
     let mounted=f.core.ui_attach("main",opened["viewId"].as_str().unwrap()).unwrap();
     assert_eq!(mounted["data"]["createParams"],params);
@@ -72,7 +74,10 @@ async fn openssh_terminal_plugin() {
         assert_eq!(frame.metadata["exitCode"].as_i64(),baseline.status.code().map(i64::from),"must preserve the exit status reported to an independent OpenSSH PTY client");
         eprintln!("Windows OpenSSH PTY reported exit {:?} for exit 7",baseline.status.code());
     } else { assert_eq!(frame.metadata["exitCode"],7); }break;}}
-    let reopened=f.core.ui_event("main",token,json!({"action":"createTerminal","requestId":"reopen-command","params":params})).unwrap();
+    let mut reopened=f.core.ui_event("main",token,json!({"action":"createTerminal","requestId":"reopen-command","params":params})).unwrap();
+    let end=std::time::Instant::now()+Duration::from_secs(10);
+    while reopened["status"]=="pending" {assert!(std::time::Instant::now()<end);tokio::time::sleep(Duration::from_millis(25)).await;reopened=f.core.ui_event("main",token,json!({"action":"terminalCommandStatus"})).unwrap();}
+    assert_eq!(reopened["status"],"completed","{reopened}");
     assert_ne!(reopened["viewId"],opened["viewId"]);
     let next=f.core.ui_attach("main",reopened["viewId"].as_str().unwrap()).unwrap();assert_eq!(next["data"]["createParams"],params);assert_ne!(next["data"]["streamId"],mounted["data"]["streamId"]);
     close_terminal_views(&f);
@@ -331,4 +336,10 @@ async fn real_pty_keeps_one_shell_across_views_and_rejects_old_surface_input() {
     .await
     .is_err());
     f.core.shutdown().unwrap();
+}
+
+async fn wait_terminal_action(core:&AppCore,window:&str,context:&sodeck::workspaces::Context,request:&str,mut receipt:Value)->Value {
+    let deadline=std::time::Instant::now()+Duration::from_secs(10);
+    while receipt["status"]=="pending" {assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(25)).await;receipt=core.ui_action_status(window,&json!({"context":context,"requestId":request})).unwrap();}
+    receipt
 }

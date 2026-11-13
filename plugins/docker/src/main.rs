@@ -7,6 +7,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     sodeck_plugin_client::run(move |client, method, p| {
         if method == "initialize" {
             for cap in [
+                "commands.v1",
                 "session.exec.v1",
                 "ui.workbench.v2",
                 "ui.openView.v1",
@@ -96,6 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .get_mut(id)
                     .filter(|v| !p["context"].is_null() && v.context != p["context"])
                 {
+                    v.clear_terminal();
                     v.context = p["context"].clone();
                     v.cancelled = true;
                     v.busy = false;

@@ -70,6 +70,27 @@ async fn openssh_docker_plugin() {
     let detail = mounted["surfaceId"].as_str().unwrap();
     f.core.ui_surface_ready("main", detail).unwrap();
     assert_eq!(idle(&f, detail).await["status"], "running");
+    f.core.load(std::path::Path::new(&std::env::var("SODECK_TEST_TERMINAL_PLUGIN").unwrap())).unwrap();
+    event(detail,json!({"action":"openTerminal","requestId":"docker-terminal","shell":"/bin/sh"}));
+    let deadline=std::time::Instant::now()+Duration::from_secs(40);
+    let receipt=loop {
+        let snapshot=event(detail,json!({"action":"snapshot"}));
+        if snapshot["terminal"]["status"]!="pending" {break snapshot["terminal"].clone();}
+        assert!(std::time::Instant::now()<deadline,"{snapshot}");tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    assert_eq!(receipt["status"],"completed","{receipt}");
+    let terminal_view=receipt["viewId"].as_str().unwrap();let terminal=f.core.ui_attach("main",terminal_view).unwrap();
+    let terminal_token=terminal["surfaceId"].as_str().unwrap();let stream=terminal["data"]["streamId"].as_str().unwrap();
+    f.core.ui_surface_ready("main",terminal_token).unwrap();let mut output=subscribe(&f.core,"main",terminal_token,stream).await;
+    td(&f.core,"main",terminal_token,json!({"op":"write","id":stream,"sequence":0,"data":b"printf 'sodeck-container-terminal:%s\\n' \"$SODECK_TOKEN\"\r".as_slice()})).await.unwrap();
+    data_until(&f.core,"main",terminal_token,stream,&mut output,"sodeck-container-terminal:a=b").await;
+    assert_eq!(terminal["data"]["integration"]["mode"],"off");
+    let close=f.core.ui_close_prepare("main",vec![],Some(detail_id.into())).unwrap();
+    f.core.ui_close_finish(close["token"].as_str().unwrap(),serde_json::from_value(close["views"].clone()).unwrap(),"discard").unwrap();
+    td(&f.core,"main",terminal_token,json!({"op":"write","id":stream,"sequence":1,"data":b"printf 'sodeck-source-closed:%s\\n' \"$SODECK_TOKEN\"\r".as_slice()})).await.unwrap();
+    data_until(&f.core,"main",terminal_token,stream,&mut output,"sodeck-source-closed:a=b").await;
+    let reopened=event(token,json!({"action":"openContainer","id":id,"requestId":"docker-detail-again"}));
+    let remounted=f.core.ui_attach("main",reopened["viewId"].as_str().unwrap()).unwrap();let detail=remounted["surfaceId"].as_str().unwrap();f.core.ui_surface_ready("main",detail).unwrap();idle(&f,detail).await;
     let env = event(detail, json!({"action":"section","section":"environment"}));
     assert!(
         env["rows"]

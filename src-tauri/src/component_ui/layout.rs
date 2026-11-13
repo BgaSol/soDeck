@@ -129,7 +129,6 @@ impl Runtime {
             error,
             definitions: BTreeMap::new(),
             actions: BTreeMap::new(),
-            action_requests: HashMap::new(),
             open_requests: HashMap::new(),
             workspaces: HashMap::new(),
             surfaces: HashMap::new(),
@@ -195,7 +194,7 @@ impl Runtime {
         }
         Ok(before != (v.title.clone(), v.dirty, v.busy))
     }
-    pub(super) fn open_view(
+    pub(crate) fn open_view(
         &mut self,
         context: &Context,
         window: &str,
@@ -351,9 +350,20 @@ impl AppCore {
     pub(crate) fn reconcile_ui(&self) -> Result<(), String> {
         let plugins = self.snapshot().plugins;
         let mut _workbench = self.workbench_state();
-        let crate::workbench::State { workspaces, ui } = &mut *_workbench;
+        let crate::workbench::State {
+            workspaces,
+            ui,
+            commands,
+        } = &mut *_workbench;
         let contexts = workspaces.contexts();
+        commands.retain_contexts(&contexts);
+        for p in plugins.iter().filter(|p| p.status != PluginStatus::Running) {
+            if let Some(instance) = &p.instance_id {
+                commands.stop_instance(&p.manifest.id, instance);
+            }
+        }
         let mut restored = Vec::new();
+        let mut startup_commands = Vec::new();
         let live = workspaces.ids();
 
         let initializing =
@@ -361,7 +371,7 @@ impl AppCore {
         ui.retain_request_contexts(&contexts, None);
         for context in &contexts {
             if workspaces.validate_context(context).is_err() {
-                ui.invalidate_actions(|r| &r.context == context, "连接已断开");
+                commands.invalidate_context(context, "连接已断开");
             }
         }
         ui.workspaces.retain(|id, _| live.contains(id));
@@ -402,6 +412,11 @@ impl AppCore {
                     .get(&p.manifest.id)
                     .is_some_and(|i| i.ui_actions_api.load(std::sync::atomic::Ordering::Acquire));
                 for a in &declaration.actions {
+                    let command_error = a
+                        .command
+                        .as_ref()
+                        .and_then(|name| self.command_provider(name).err());
+                    let available = available && command_error.is_none();
                     let key = format!("{}:{}", p.manifest.id, a.id);
                     ui.actions.insert(
                         key.clone(),
@@ -412,7 +427,9 @@ impl AppCore {
                             plugin_name: p.manifest.name.clone(),
                             plugin_instance_id: p.instance_id.clone().unwrap(),
                             available,
-                            reason: (!available).then(|| "行为提供者需要升级".into()),
+                            reason: command_error
+                                .map(|e| e.to_string())
+                                .or_else(|| (!available).then(|| "行为提供者需要升级".into())),
                         },
                     );
                 }
@@ -545,6 +562,17 @@ impl AppCore {
                         state.host(&window)?.right.active_view_id.is_some()
                     };
                     if policy != "none" && !occupied {
+                        if let Some(action_id) = &d.definition.create_action_id {
+                            if let Some(action) =
+                                ui.actions.get(&format!("{}:{action_id}", d.plugin_id))
+                            {
+                                if let Some(name) = &action.definition.command {
+                                    startup_commands.push((window.clone(),json!({"op":"submit","expectedContext":context,"name":name,"requestId":format!("startup:{}",d.definition.id),"startupDefinition":d.key,"payload":null})));
+                                    continue;
+                                }
+                            }
+                            continue;
+                        }
                         ui.open_view(
                             context,
                             &window,
@@ -647,10 +675,22 @@ impl AppCore {
             saved.apply_tools(w.host_mut(&window)?, &tools)?;
         }
         self.sync_shared_ui_locked(&ui);
+        drop(_workbench);
+        for (window, params) in startup_commands {
+            if let Err(error) = self.command_host_request(&window, &params) {
+                self.log(
+                    None,
+                    "warn",
+                    "默认页面命令未接纳",
+                    Some(json!({"code":error.code,"message":error.message})),
+                );
+            }
+        }
         Ok(())
     }
     pub fn ui_snapshot(&self, window: &str) -> Result<Value, String> {
-        let state = self.workbench_state();
+        let mut state = self.workbench_state();
+        state.commands.refresh();
         let ui = &state.ui;
         let projection = state.workspaces.projection(window)?;
         let ids: HashSet<_> = projection
@@ -707,7 +747,7 @@ impl AppCore {
         }
         Ok(
             json!({"definitions":ui.definitions,"actions":ui.actions,"defaultCreateAction":ui.preferences.default_create_action,
-          "pendingAction":ui.pending_actions().into_iter().filter(|r|ids.iter().any(|id|r["context"]["workspaceId"].as_str()==Some(id.as_str()))).collect::<Vec<_>>(),
+          "pendingAction":state.commands.pending(window,ui).into_iter().collect::<Vec<_>>(),
           "transfers":ui.transfers.values().filter(|t|t.movement.source==window||t.movement.target==window).map(|t|t.wire()).collect::<Vec<_>>(),
           "workspaces":displayed,"error":ui.error.as_ref().or(ui.memory.error.as_ref()),"layoutSaveError":ui.memory.error}),
         )
@@ -725,11 +765,26 @@ impl AppCore {
         {
             return Err("UI 操作超过 24 KiB".into());
         }
+        if action["op"] == "open" {
+            let binding = self
+                .ui_state()
+                .definitions
+                .get(action["key"].as_str().unwrap_or_default())
+                .and_then(|d| {
+                    d.definition
+                        .create_action_id
+                        .as_ref()
+                        .map(|id| format!("{}:{id}", d.plugin_id))
+                });
+            if let Some(key) = binding {
+                return self.ui_invoke_action(window,&json!({"context":context,"requestId":action["requestId"],"actionKey":key,"groupId":action["groupId"],"data":action["params"]}));
+            }
+        }
         if action["op"] == "moveTool" {
             return self.ui_move_tool(window, context, action);
         }
         let mut _workbench = self.workbench_state();
-        let crate::workbench::State { workspaces, ui } = &mut *_workbench;
+        let crate::workbench::State { workspaces, ui, .. } = &mut *_workbench;
         workspaces.validate_owned(window, context)?;
 
         if ui.lifecycle.host_closing(&context.workspace_id, window) {
