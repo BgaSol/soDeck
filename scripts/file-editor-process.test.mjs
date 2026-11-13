@@ -60,3 +60,20 @@ test('closing a source or editor during resource creation releases the late reso
   }finally{release?.();await peer.kill();}
  }
 });
+
+test('a failed close retains SDK ownership so resource disposal can be retried',async()=>{
+ let fail=true,closes=0;
+ const peer=pluginPeer(path.resolve('crates/plugin-client/target/debug/examples/file-editor-fixture'+(process.platform==='win32'?'.exe':'')),async(method,p)=>{
+  assert.equal(method,'files.request');
+  if(p.action==='open')return {id:'owned'};
+  assert.equal(p.action,'close');closes++;if(fail){fail=false;throw Error('close observation lost');}return {};
+ });
+ const view={viewId:'retry',viewType:'configFile',context:{workspaceId:'sdk'},params:{path:'/config'}};
+ try{
+  await peer.request('ui.createView',view);
+  await assert.rejects(peer.request('ui.disposeView',view),/close observation lost/);
+  assert.equal((await peer.request('ui.getView',view)).data.fileId,'owned');
+  await peer.request('ui.disposeView',view);assert.equal(closes,2);
+  await assert.rejects(peer.request('ui.getView',view),/已关闭/);await peer.close();
+ }finally{await peer.kill();}
+});

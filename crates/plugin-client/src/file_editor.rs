@@ -315,22 +315,42 @@ impl EditorHost {
                         return Err(error);
                     }
                 };
-                if self.entry(view).is_err() {
+                let accepted = {
+                    let views = self.views.lock().unwrap();
+                    if views
+                        .get(view)
+                        .is_some_and(|current| Arc::ptr_eq(current, &entry))
+                    {
+                        let mut v = entry.lock().unwrap();
+                        v.id = id.clone();
+                        v.opening = false;
+                        true
+                    } else {
+                        false
+                    }
+                };
+                if !accepted {
                     client.call("files.request", json!({"action":"close","id":id}))?;
                     return Err("编辑页面已关闭".into());
                 }
-                let mut v = entry.lock().unwrap();
-                v.id = id;
-                v.opening = false;
             }
         }
         let entry = self.entry(view)?;
         if method == "ui.disposeView" {
+            // Remove ownership atomically with open acceptance; the late opener closes its own ID.
+            self.views.lock().unwrap().remove(view);
             let id = entry.lock().unwrap().id.clone();
             if !id.is_empty() {
-                client.call("files.request", json!({"action":"close","id":id}))?;
+                if let Err(error) = client.call("files.request", json!({"action":"close","id":id}))
+                {
+                    self.views
+                        .lock()
+                        .unwrap()
+                        .entry(view.into())
+                        .or_insert(entry);
+                    return Err(error);
+                }
             }
-            self.views.lock().unwrap().remove(view);
             return Ok(json!({}));
         }
         entry.lock().unwrap().context = p["context"].clone();
