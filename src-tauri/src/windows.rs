@@ -28,6 +28,58 @@ pub struct Surface {
     #[serde(default)]
     pub docks: Vec<DockRect>,
 }
+impl Surface {
+    fn matches_workspaces(&self, ids: &[String]) -> bool {
+        !self.blocked
+            && self.width > 0.
+            && self.height > 0.
+            && self.tabs.len() == ids.len()
+            && self.tabs.iter().zip(ids).all(|(tab, id)| tab.id == *id)
+    }
+}
+
+#[cfg(test)]
+mod geometry_tests {
+    use super::*;
+
+    #[test]
+    fn package_geometry_waits_for_the_committed_tab_order_and_usable_surface() {
+        let mut surface = Surface {
+            x: 86.,
+            y: 0.,
+            width: 500.,
+            height: 44.,
+            tabs: vec![TabRect {
+                id: "A".into(),
+                center: 150.,
+            }],
+            blocked: false,
+            groups: vec![],
+            docks: vec![],
+        };
+        let expected = vec!["B".into(), "A".into()];
+        assert!(!surface.matches_workspaces(&expected));
+        surface.tabs.insert(
+            0,
+            TabRect {
+                id: "B".into(),
+                center: 100.,
+            },
+        );
+        assert!(surface.matches_workspaces(&expected));
+        surface.tabs.reverse();
+        assert!(!surface.matches_workspaces(&expected));
+        surface.tabs.reverse();
+        surface.blocked = true;
+        assert!(!surface.matches_workspaces(&expected));
+        surface.blocked = false;
+        surface.width = 0.;
+        assert!(!surface.matches_workspaces(&expected));
+        surface.width = 500.;
+        surface.height = 0.;
+        assert!(!surface.matches_workspaces(&expected));
+    }
+}
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DockRect {
@@ -1022,16 +1074,24 @@ impl DesktopWindows {
         workspace: &str,
     ) -> Result<(), String> {
         let window = handle.get_webview_window(label).ok_or("原生窗口不存在")?;
+        let expected = self.core.workspace_projection(label)?.window.workspace_ids;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        // Move commit precedes the webview's debounced geometry report.
+        let surface = loop {
+            let candidate = self.surfaces.lock().unwrap().get(label).cloned();
+            if let Some(surface) = candidate.filter(|s| s.matches_workspaces(&expected)) {
+                break surface;
+            }
+            if Instant::now() >= deadline {
+                return Err(format!(
+                    "{label}: 移窗后的 Tab 区域未就绪，期望标签 {expected:?}"
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
         let origin = window.inner_position().map_err(|e| e.to_string())?;
         let size = window.inner_size().map_err(|e| e.to_string())?;
         let scale = window.scale_factor().map_err(|e| e.to_string())?;
-        let surface = self
-            .surfaces
-            .lock()
-            .unwrap()
-            .get(label)
-            .cloned()
-            .ok_or("Tab 区域尚未上报")?;
         let hit = |px: f64, py: f64| -> Result<DropTarget, String> {
             #[cfg(target_os = "windows")]
             let (x, y) = {
@@ -1059,15 +1119,22 @@ impl DesktopWindows {
         if !matches!(hit(x, y)?, DropTarget::Strip { window_id, .. } if window_id == label) {
             return Err("原生屏幕坐标没有命中目标 Tab 条".into());
         }
-        for (px, py) in [
+        // macOS traffic lights are on the left; its right title-bar blank is a valid drop zone.
+        let controls_x = if cfg!(target_os = "macos") {
+            origin.x as f64 + 20. * scale
+        } else {
+            origin.x as f64 + size.width as f64 - 5.
+        };
+        for (region, px, py) in [
             (
+                "内容区",
                 origin.x as f64 + 200. * scale,
                 origin.y as f64 + 100. * scale,
             ),
-            (origin.x as f64 + size.width as f64 - 5., y),
+            ("窗口按钮", controls_x, y),
         ] {
             if hit(px, py)? != DropTarget::Invalid {
-                return Err("内容区或窗口按钮错误地接受了 Tab 拖放".into());
+                return Err(format!("{label}: {region}错误地接受了 Tab 拖放，屏幕坐标 ({px}, {py})，Tab 区域 ({}, {}, {}, {})，缩放 {scale}", surface.x, surface.y, surface.width, surface.height));
             }
         }
         eprintln!("Package smoke checked window-scoped native geometry; foreground occlusion requires the interactive native pointer test.");

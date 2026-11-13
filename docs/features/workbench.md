@@ -61,4 +61,6 @@ Windows 的跨窗落点使用实际系统窗口命中和物理坐标。Wayland �
 - 回归：[组件与 Surface](../../src-tauri/tests/component_ui.rs)、[工作区](../../src-tauri/tests/workspaces.rs)、[真实布局 UI](../../scripts/test-workbench-layout.mjs)、[工作区 UI](../../scripts/test-workspace-ui.mjs)、[原生关闭与迁移](../../scripts/test-close-native.mjs)。
 - 系统多屏、混合 DPI、Wayland/macOS 原生拖动与读屏仍需专项设备验证；基本包启动或浏览器模拟不能替代。验证方法见[开发指南](../development.md)，发行证据按版本保留。
 
+原生移窗验收等待目标窗口上报与已提交标签顺序一致的可用区域，再校验屏幕坐标。窗口按钮拒绝落点按系统位置检查：macOS 位于左侧，其右侧标题栏空白可接收标签；Windows/Linux 的窗口按钮位于右侧。此区域验收不替代系统前景遮挡与真实指针专项。
+
 返回[文档索引](../README.md)。
