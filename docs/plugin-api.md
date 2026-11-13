@@ -6,6 +6,43 @@
 
 核心 RPC 保持 API v1，可选界面支持 UI v1 和 UI v2。核心 0.17.0 起提供 UI v2，当前五个官方插件均使用它进行分屏、页面/标签组移窗与输入交接。旧无 UI 插件无需修改；只接受 UI v1 的旧核心不能加载 UI v2 包。
 
+
+## 文件编辑 SDK
+
+SDK 是随插件编译的客户端与 UI 源码，不是新增核心 RPC。它复用 files.editor.v1、files.v1、viewData.v1、ui.workbench.v2 和 ui.openView.v1；初始化调用 EditorHost::check_capabilities，缺少任一能力时明确拒绝并提示升级。功能与限制见[通用文件编辑](features/file-editor.md)。
+
+### 插件进程
+
+从 sodeck_plugin_client::file_editor 导入 EditorHost。每个插件实例保留一个 EditorHost::new(view_type)，view_type 对应插件自己声明的中央 perResource 视图。来源事件调用 source_event(client, params)，返回值包装在普通 UI 响应的 data 中。来源最终释放时调用 dispose_source(client, view_id)，不在 Surface 迁移时释放。
+
+| 来源事件 data | 字段与效果 |
+| --- | --- |
+| fileEditor.resource | expectedContext 必须与 RPC Context 完全一致；为来源 viewId 懒创建本组件的文件资源，返回 id；创建中再次请求明确失败，可稍后重试 |
+| fileEditor.open | expectedContext、requestId、viewType、path；viewType 必须匹配构造参数，path 是来源资源 stat 返回的规范路径；调用 ui.openView，以 path 作为 resourceKey，params 为 {path} |
+
+将编辑视图的 ui.createView/getView/event/beforeClose/save/disposeView 交给 handle(client, method, params, before_write)。返回普通 {data,metadata}，错误为 Result<Value,String> 的 Err；不包装另一层 RPC。before_write(Context,path) 在创建与保存前执行短业务检查，不能把数据正文放在这里。编辑事件为 save、editorState、dirty、staged、saved、busy、position、error；下载等组件业务事件仍由组件分派。
+
+data 默认包含 fileId、path、cursor、scroll、revision、editRevision、editorState；metadata 包含 title、dirty、busy。保存事件的 data 为核心保存操作回执。contains(view_id) 识别编辑实例，view(view_id) 返回状态快照，entries(Context) 返回同 workspaceId 的实例供组件检查路径冲突；projection(view_id) 读取最近事实，refresh(client,view_id) 向核心刷新事实。远端 RPC 和 before_write 不占用 SDK 状态锁。
+
+ui.save 仅在 dirty 且不 busy 时提交完整暂存版本；未暂存正文、未知提交结果和业务路径阻断明确失败。修订 R 的保存不会清除 R+1 输入的 dirty。旧的状态观察不会覆盖新观察。ui.disposeView 关闭该页文件资源；创建后迟到的资源也会关闭。来源资源和编辑资源分别持有，关闭来源不关闭编辑页。
+
+position.editorState 版本为 1，序列化最多 8192 字节；anchor/active/topLine 为 0–1048577 的整数，topOffset 绝对值最多 100000000，left 为 0–100000000，language 最多 64 字节；search 包含 open/matchCase 布尔值和最多 1024 UTF-16 单元、无换行的 query。正文仅走核心绑定当前 Surface 的文件数据桥。
+
+### UI 与打包
+
+包内入口 ui/file-editor/open.js 导出 openRemoteFile({path,mount,fileId?,viewType?,request?})，默认 viewType 为 editor，request 为 sodeck.request。mount 是当前来源 mount 快照。已有文件资源时传 fileId；否则请求来源进程懒创建。入口先 stat，拒绝非普通文件和超过 1 MiB 文件，再以同一 requestId 重试一次丢失的打开回执。Context 变化、卸载或 flush 使尚未完成的打开失效；不规范化远端路径为本地路径。
+
+加载 ui/file-editor/editor.css 后，从 ui/file-editor/index.js 导入 mountRemoteFileEditor({root,mount,configureDownloads?})，返回 {dispose}。例如组件在自己的 mount 处理器中执行：
+
+```js
+const {mountRemoteFileEditor} = await import('./file-editor/index.js');
+const editor = mountRemoteFileEditor({root: document.querySelector('#root'), mount});
+```
+
+同一 iframe 只能有一个标准编辑页。SDK 接管 prepared、激活、flush、设置、主题和卸载；组件不要重复发送回执。可选 configureDownloads(bindings) 获得 path、fileId、data、event、request、message、host；返回组件原有传输对象（download/visibility/invalidate/dispose），并自行处理其任务事件和 busy。没有此接点时仍提供编辑、保存、取消保存和草稿导出。
+
+release.json 声明 build.fileEditor:true；设置页使用 {id,viewTypes,fileEditor:true}。打包展开 packages/file-editor/settings.json，复制 SDK 的 JS/CSS/Worker/许可证及设置字体；模板标记不进入 plugin.json。SDK 与使用插件同包更新，不另建运行时版本协商；已有核心 API major 1 和 files.editor.v1 契约不变。不依赖文件插件的 ID、目录或进程。
+
 ## 可选 UI v2：工作台与显示交接
 
 声明保留已有 `views/actions` 结构，将 `ui.apiVersion` 设为 `"2"`。初始化结果须返回 `uiApiVersion:"2"`；核心声明 `ui.workbench.v2` 能力。`sidebar/editor/dialog` 分别映射为可停靠工具、中央页面和短暂弹窗，不按插件 ID 分支；工具可放入中央组，编辑弹窗不单独移动。

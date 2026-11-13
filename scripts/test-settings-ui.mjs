@@ -1,3 +1,4 @@
+import {fileEditorSettings} from './plugin-file-editor-assets.mjs';
 // Core-backed declaration forms and committed offline fonts. No business process is launched.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import readline from 'node:readline';
@@ -38,7 +39,7 @@ const choose=title=>page.locator('.settings-nav').getByRole('button',{name:title
 const save=()=>section().getByRole('button',{name:'保存',exact:true}).click();
 try{
   for(const plugin of ['terminal','files','network-proxy']){
-    const metadata=JSON.parse(fs.readFileSync(`plugins/${plugin}/release.json`,'utf8')),directory=path.join(root,metadata.id);fs.mkdirSync(path.join(directory,'ui'),{recursive:true});
+    const metadata=fileEditorSettings(JSON.parse(fs.readFileSync(`plugins/${plugin}/release.json`,'utf8'))),directory=path.join(root,metadata.id);fs.mkdirSync(path.join(directory,'ui'),{recursive:true});
     fs.writeFileSync(path.join(directory,'entry'),'never executed');fs.writeFileSync(path.join(directory,'ui/index.html'),'never mounted');
     packageSettingsAssets(metadata,directory);
     fs.writeFileSync(path.join(directory,'plugin.json'),JSON.stringify({...metadata,version:'1.0.0',target,entry:'entry'}));

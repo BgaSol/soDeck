@@ -6,6 +6,7 @@ import { packageSettingsAssets } from "./plugin-settings-assets.mjs";
 import { cargoPackageVersion } from "./cargo-package.mjs";
 import { packageMenuAssets } from "./plugin-menu-assets.mjs";
 import { targets } from "./core-artifacts.mjs";
+import {fileEditorSettings,buildFileEditor,packageFileEditor} from './plugin-file-editor-assets.mjs';
 export function run(command, args, options = {}) {
   const result = spawnSync(command, args, { windowsHide: true, stdio: "inherit", ...options });
   if (result.error) throw result.error;
@@ -23,8 +24,9 @@ export async function buildPlugin({ plugin, target, output, release, installDepe
   const directory = path.resolve(output);
   if (fs.existsSync(directory)) throw new Error(`Plugin output already exists: ${directory}`);
   const pluginRoot = `plugins/${plugin}`;
-  const metadata = JSON.parse(fs.readFileSync(`${pluginRoot}/release.json`, "utf8"));
+  const metadata = fileEditorSettings(JSON.parse(fs.readFileSync(`${pluginRoot}/release.json`, "utf8")));
   const version = cargoPackageVersion(`${pluginRoot}/Cargo.toml`);
+  if(metadata.build?.fileEditor)buildFileEditor({install:installDependencies});
   if (fs.existsSync(`${pluginRoot}/package.json`)) {
     // Explicit UI build, isolated from the core and other plugins; no arbitrary release hooks.
     let npmCli=process.env.npm_execpath;
@@ -46,6 +48,7 @@ export async function buildPlugin({ plugin, target, output, release, installDepe
   if (fs.existsSync(`${pluginRoot}/ui`)) fs.cpSync(`${pluginRoot}/ui`, path.join(directory, "ui"), { recursive: true });
   if (metadata.ui) fs.copyFileSync("src/ui.css", path.join(directory, "ui/shared.css"));
   if (metadata.ui) fs.copyFileSync("plugins/shared/clipboard.js", path.join(directory, "ui/clipboard-bridge.js"));
+  if (metadata.build?.fileEditor) packageFileEditor(directory);
   if (['terminal','files'].includes(plugin)) fs.copyFileSync("plugins/shared/state.js", path.join(directory, "ui/state.js"));
   if (metadata.ui) await packageMenuAssets(directory);
   packageSettingsAssets(metadata, directory);

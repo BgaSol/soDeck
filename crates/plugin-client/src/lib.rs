@@ -154,6 +154,7 @@ pub fn run(
     Ok(())
 }
 pub mod encoding;
+pub mod file_editor;
 pub mod settings;
 pub mod shared_state;
 

@@ -25,33 +25,19 @@
 
 ## 文本编辑与保存
 
-编辑上限为 1 MiB（1,048,576 字节），同时约束远端打开及修改后的原始编码字节。仅编辑 UTF-8（可含 BOM）、一致的 LF/CRLF 文本；二进制、非法编码或混合换行可以下载。超限输入拒绝或撤销本次事务，不能截断正文。
-
-Monaco 提供行号、撤销、选区、当前正文搜索、词法颜色和右侧彩色缩略图。搜索包含未保存内容，支持大小写、循环前后查找、Ctrl/Cmd+F、Enter/Shift+Enter、F3 和 Esc；最多显示 1000 个普通命中，更多显示“1,000+ 处”，导航仍搜索全文。查询最多 1024 个 UTF-16 单元。
-
-编辑器文本菜单按视口避让，窄编辑区和缩窗后仍可访问全部操作，极矮视口只滚动菜单内部。方向键、Home/End 可导航可用项，Esc/Tab 关闭后回到编辑器；正文滚动、隐藏或只读交接时关闭菜单，迟到的剪贴板结果不修改已变化的正文或主选区。
-
-根据文件名、后缀和有限 shebang 判断语言，可以手动更正；支持运维常见 YAML、JSON/JSONC、Shell、PowerShell、Nginx、INI/systemd、TOML、环境变量及 Dockerfile。这里只提供词法着色，不提供语言服务器、配置诊断、补全或格式化。长于 10,000 字符的单行可部分按纯文本呈现，正文与搜索不截断。缩略图可点击，窄编辑区退为位置标记；显示设置不产生正文修改。
-
-同一编辑器实例修改字体、行高、Tab 宽度、折行或缩略图设置时，通过 Monaco 视图快照保留多选区方向和逻辑阅读位置，并保留搜索、语言覆盖、焦点和撤销记录。隐藏期间的显示设置变化等待页面具有有效尺寸后恢复视图；跨页面交接仍使用原有版本 1 显示状态，不持久化多选区或撤销栈。
+通过[通用文件编辑 SDK](file-editor.md)提供标准编辑、保存、搜索和草稿导出；编码、限制、失败及生命周期见该文档。下载与文件批次仍由文件插件负责。
 
 JSON/JSONC 字符串中的 `$HOME`、`${HOME}` 和独立 `$` 按字面字符串着色。JSONC 保留行注释和跨行块注释着色，JSON 不提供注释着色。这项修正已由文件插件 0.10.2 发行，见[文件插件变更记录](../../plugins/files/CHANGELOG.md#0102)。
 
 JSON/JSONC 支持字段名与冒号分行，浅色和深色主题继续区分字段名、字符串值与关键字；数组内字符串沿用值的颜色。这项完善已由文件插件 0.10.4 发行，见[0.10.4 变更](../../plugins/files/CHANGELOG.md#0104)。
 
-保存核对远端内容摘要、属性和链接目标，在同目录写临时文件并原子替换。已检测到的外部修改拒绝覆盖。属性/摘要检查与最终提交是分开的 SFTP 请求，不能阻止检查之后其他写入者的更新被覆盖；这是普通单写入者文件编辑，不提供原子版本比较或协同编辑。传输覆盖同样受此限制。
-
-正文同步、元数据和光标通知分别处理。分片有上传身份、摘要和修订，失败可重试同一快照，末次提交丢回执可查询原结果。保存接受时固定修订 R，期间输入的 R+1 保持未保存。提交应答丢失标为未知，禁止直接重放保存；提交成功但后续属性读取失败仍显示已提交，同时禁止继续原位保存，须核对并重新打开。准备失败可能留下提示路径中的临时文件，不自动删除正式目标。
-
-“下载远端”取得服务器当前版本。“导出草稿”在弹出本地对话框前固定本次正文，弹框期间的后续编辑不改变导出字节；同一请求不会重复弹框。导出不依赖远端连接、元数据或光标通知，断线后仍可使用。取消后迟到的路径选择不写入，原生对话框尚未结束时仍算在途任务。显示状态最多 8 KiB，含完整选区、逻辑滚动、搜索和语言覆盖；候选页面只读，交接先冻结输入再等待同步。撤销栈不跨 UI 重挂载持久化，进程崩溃不承诺草稿恢复，关闭释放编辑模型和 Worker。当前没有正则、替换、跨文件搜索或自动保存。
-
 ## 维护约束与入口
 
 核心统一管理会话、文件资源、正文传输、本地输入引用和安全提交；插件管理目录 UI、业务批次、编辑器和冲突交互。接口、配额及旧核心拒绝策略见[插件 API](../plugin-api.md)。
 
-- 插件：[main.rs](../../plugins/files/src/main.rs)、[tasks.rs](../../plugins/files/src/tasks.rs)、[目录树](../../plugins/files/ui/tree.js)、[传输](../../plugins/files/ui/transfer.js)、[正文同步](../../plugins/files/ui/draft-sync.js)、[编辑器](../../plugins/files/editor-src/editor.ts)、[语言](../../plugins/files/editor-src/languages.ts)。
+- 插件：[main.rs](../../plugins/files/src/main.rs)、[tasks.rs](../../plugins/files/src/tasks.rs)、[目录树](../../plugins/files/ui/tree.js)、[传输](../../plugins/files/ui/transfer.js)、[正文同步](../../packages/file-editor/src/draft-sync.js)、[编辑器](../../packages/file-editor/src/editor.ts)、[语言](../../packages/file-editor/src/languages.ts)。
 - 核心：[remote_files.rs](../../src-tauri/src/remote_files.rs)、[批量操作](../../src-tauri/src/remote_files/operations.rs)、[位置解析](../../src-tauri/src/remote_files/location.rs)、[本地文件](../../src-tauri/src/desktop_files.rs)。
-- 回归：[编辑事务](../../plugins/files/src/editor_tests.rs)、[真实文件 UI](../../scripts/test-files-ui.mjs)、[编辑器](../../scripts/test-file-editor-ui.mjs)、[原生编辑器](../../scripts/test-file-editor-native.mjs)、[本地文件剪贴板](../../scripts/test-desktop-files-native.mjs)、[跨插件联动](../../scripts/test-component-communication.mjs)。
+- 回归：[编辑事务](../../crates/plugin-client/src/file_editor.rs)、[真实文件 UI](../../scripts/test-files-ui.mjs)、[编辑器](../../scripts/test-file-editor-ui.mjs)、[原生编辑器](../../scripts/test-file-editor-native.mjs)、[本地文件剪贴板](../../scripts/test-desktop-files-native.mjs)、[跨插件联动](../../scripts/test-component-communication.mjs)。
 - Windows/Linux/macOS 文件剪贴板与原生拖入、IME、DPI、超长行及多编辑器性能的实际范围按发行记录区分。当前源码不能据此承诺所有系统文件管理器均已验证。
 
 返回[文档索引](../README.md)。

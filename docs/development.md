@@ -51,7 +51,7 @@ CI 使用 `npm run ci:test -- <现有测试命令>`，例如 `npm run ci:test --
 
 Windows 对运行中的测试程序有文件锁，使用同一 Rust target 目录的核心/插件集成与界面测试应顺序运行。修改网络 UI 后可用 `npm run network:test -- --network-ui-only` 使用已准备的测试目录并只复验实际插件界面与隧道，不重复协议压力测试；完整网络验证仍使用 `npm run network:test`。
 
-文件 UI 可用 `node scripts/test-openssh.mjs --files --files-ui-only` 使用已准备的测试目录复验真实 SFTP 界面。文件插件现在有独立 npm 锁文件，打包入口自动安装并构建其 UI，类型检查单独运行 `npm run check --prefix plugins/files`；核心构建仍不依赖它。Windows 原生编辑器专项：先独立打包文件插件，将 `SODECK_TEST_FILES_PLUGIN` 指向完整包目录，再运行 `node scripts/test-openssh.mjs --file-editor-native --packaged <本次核心可执行文件>`。该专项使用隔离应用数据和 SSH，验证 WebView2/CSP/worker、编辑功能、保存与退出，不操作日常桌面剪贴板。传入构建目录程序只能证明本机原生运行，发行前仍需实际安装包与五平台验收。
+文件 UI 可用 `node scripts/test-openssh.mjs --files --files-ui-only` 使用已准备的测试目录复验真实 SFTP 界面。文件编辑 UI SDK 使用 packages/file-editor 的独立 npm 锁文件，声明 build.fileEditor 的插件打包时自动构建并携带它；类型检查运行 `npm run check --prefix packages/file-editor`，单独构建运行 `npm run build --prefix packages/file-editor`（首次先 `npm ci --prefix packages/file-editor`）。核心构建不依赖 SDK UI。Windows 原生编辑器专项：先独立打包文件插件，将 `SODECK_TEST_FILES_PLUGIN` 指向完整包目录，再运行 `node scripts/test-openssh.mjs --file-editor-native --packaged <本次核心可执行文件>`。该专项使用隔离应用数据和 SSH，验证 WebView2/CSP/worker、编辑功能、保存与退出，不操作日常桌面剪贴板。传入构建目录程序只能证明本机原生运行，发行前仍需实际安装包与五平台验收。
 
 `Verify native remote plugins` 的 `file_editor` 是 Windows 深度界面专项的显式入口，默认关闭，需要运行环境允许 WebView2 调试端口。环境未应用调试参数时会在连接渲染器之前失败，此时不能声称编辑器专项通过；五平台常规实际包验收仍独立执行。具体执行结果写入文件插件 CHANGELOG。显式选中后失败仍使工作流失败，不计为通过。
 
@@ -213,7 +213,7 @@ Check 的 **Run workflow** 先选择需要验证的分支或标签，再选择 `
 
 Check 独立执行源码、类型及业务测试；核心与插件现有工作流内分别使用 package → verify → metadata/release。package 只编译、签名、归档和上传，不运行产品或业务测试；核心 `tsc --noEmit` 与文件编辑器类型检查都在 Check 单独执行；Rust 编译器自身的检查属于构建。verify 下载原包，在原生环境验证架构、资源、核心更新签名、启动和退出，核心另验资料重开；不安装 npm/Rust 构建依赖或重新构建。metadata/release 核对五份通过报告与原包提交、版本、SHA-256 后生成清单。SSH、工作台及系统桌面行为移至独立专项。
 
-CI 的 npm 下载缓存按任务实际使用的锁文件配置；核心打包只使用根锁文件，终端 UI 测试同时使用终端锁文件。Rust 缓存区分日常 `check-tests`、正式核心 `core-release-v2` 和各插件，只有成功的 main 运行保存，其他引用尝试恢复；插件及其原生测试显式覆盖共享 plugin-client 清单。Linux browser 与 Windows desktop 对齐各自原生核心 `check-tests` 的 workspace 顺序和共享清单输入，减少重复大缓存；不同 OS/架构仍隔离。升级验收夹具使用 `check-tests`，不恢复发行缓存。
+CI 的 npm 下载缓存按任务实际使用的锁文件配置；核心打包只使用根锁文件，终端 UI 测试同时使用终端锁文件，文件编辑 SDK 消费方同时使用 packages/file-editor 锁文件。Rust 缓存区分日常 `check-tests`、正式核心 `core-release-v2` 和各插件，只有成功的 main 运行保存，其他引用尝试恢复；插件及其原生测试显式覆盖共享 plugin-client 清单。Linux browser 与 Windows desktop 对齐各自原生核心 `check-tests` 的 workspace 顺序和共享清单输入，减少重复大缓存；不同 OS/架构仍隔离。升级验收夹具使用 `check-tests`，不恢复发行缓存。
 
 包含核心的原生测试统一声明现有核心/五插件 workspace 输入，复用同一稳定 `check-tests` 键，避免每个组件/平台范围生成大份重复核心依赖。声明缓存目录不启动对应插件测试；实际执行仍由所选范围控制。仅插件的原生 job 保留小范围 workspace，不恢复核心 target。发行缓存仍只有核心自身输入。
 

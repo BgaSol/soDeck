@@ -219,7 +219,7 @@ jobs:
         if: runner.os == 'Windows' && inputs.file_editor
         shell: pwsh
         run: |
-          if (-not (Test-Path "$env:SODECK_TEST_FILES_PLUGIN/ui/vendor/editor.js")) { throw 'Select files 0.9.0 or later for editor UI automation' }
+          if (-not ((Test-Path "$env:SODECK_TEST_FILES_PLUGIN/ui/vendor/editor.js") -or (Test-Path "$env:SODECK_TEST_FILES_PLUGIN/ui/file-editor/editor.js"))) { throw 'Select files 0.9.0 or later for editor UI automation' }
           npm ci
           if ($LASTEXITCODE -ne 0) { throw 'File editor test dependencies failed' }
           $installDir = Join-Path $env:RUNNER_TEMP 'SoDeck-remote'

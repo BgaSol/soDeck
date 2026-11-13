@@ -17,7 +17,7 @@
 | 更新和系统适配 | 下载、官方验签、缓存、默认应用与本地文件：[updates.rs](../src-tauri/src/updates.rs)、[platform.rs](../src-tauri/src/platform.rs)、[desktop_files.rs](../src-tauri/src/desktop_files.rs) |
 | 业务插件 | [terminal](../plugins/terminal/src/main.rs)、[files](../plugins/files/src/main.rs)、[network-proxy](../plugins/network-proxy/src/main.rs)、[system-status](../plugins/system-status/src/main.rs)、[docker](../plugins/docker/src/main.rs) |
 
-共享 [plugin-client](../crates/plugin-client/src/lib.rs) 提供 RPC、设置和共享状态客户端，不保存连接凭据，也不封装插件之间的直接调用。
+共享 [plugin-client](../crates/plugin-client/src/lib.rs) 提供 RPC、设置、共享状态和文件编辑生命周期客户端，不保存连接凭据，也不封装插件之间的直接调用。文件编辑的标准 UI 在 [packages/file-editor](../packages/file-editor/)，随使用组件独立打包；[接入与职责](features/file-editor.md)由通用编辑功能说明维护。
 
 ## 连接与资源归属
 

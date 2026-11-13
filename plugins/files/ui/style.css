@@ -41,24 +41,6 @@ footer { display: flex; align-items: center; gap: 6px; flex-shrink: 0; min-heigh
 .status { flex: 1; color: var(--muted, #777); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status.error { color: var(--error, #b32929); white-space: normal; overflow-wrap: anywhere; max-height: 76px; overflow-y: auto; }
 footer button { font-size: 11px; padding: 1px 4px; }
-.editor-toolbar { display: flex; align-items: center; gap: 5px; min-height: 38px; padding: 5px 10px; border-bottom: var(--sd-stroke-structure) solid var(--border); background: var(--subtle, #f8f9fb); }
-.editor-toolbar .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted, #777); font-size: 12px; }
-.editor-toolbar button { font-size: 12px; flex-shrink: 0; }
-.code-editor { position: relative; width: 100%; flex: 1; min-height: 0; overflow: hidden; background: var(--panel, #fff); }
-.editor-find { position: absolute; z-index: 5; top: 6px; right: 100px; max-width: calc(100% - 112px); display: flex; flex-wrap: wrap; gap: 4px; padding: 6px; border: var(--sd-stroke-control, 1px) solid var(--border); background: var(--panel); border-radius: var(--sd-radius-control, 5px); }
-.editor-find input { flex: 1; width: 140px; min-width: 70px; padding: 4px 6px; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 3px; }
-.editor-find input::placeholder { color: var(--muted); }
-.editor-find button { font-size: 11px; padding: 3px 5px; }
-.editor-find button[aria-pressed="true"] { color: var(--text); background: var(--accent-bg); }
-.editor-find-count { flex-basis: 100%; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.editor-location { white-space: nowrap; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.editor-language { max-width: 140px; font: inherit; font-size: 11px; padding: 2px 3px; color: var(--text); background: var(--panel); }
-.file-search-match { background: color-mix(in srgb, #BA922D 25%, transparent); outline: 1px solid #A47B24; }
-.file-search-current { background: color-mix(in srgb, #D77727 35%, transparent); outline: 2px solid #C25E12; }
-.file-editor-menu { position: fixed; z-index: 6; width: 136px; padding: 4px; }
-.file-editor-menu button { display: block; width: 100%; text-align: left; }
-.editor-find :focus-visible, .editor-language:focus-visible, .file-editor-menu :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-@media (max-width: 520px) { .editor-toolbar { flex-wrap: wrap; } .editor-toolbar .path { flex-basis: 100%; } .editor-find { right: 14px; max-width: calc(100% - 28px); } .editor-location { display: none; } .editor-language { max-width: 110px; } }
 @media (max-width: 230px) { .tree-size, .tree-columns > span:last-child { display: none; } .pathbar { margin-left: 5px; margin-right: 5px; } .tree-name { min-width: 0; } }
 @media (prefers-contrast: more) { .tree-row[aria-selected="true"] { outline: 1px solid currentColor; outline-offset: -1px; } }
 .tree-menu.sd-menu, .tree-submenu.sd-menu { position: fixed; inset: auto; margin: 0; z-index: 10; max-height: calc(100dvh - 16px); display: flex; flex-direction: column; overflow: visible; }

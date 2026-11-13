@@ -32,8 +32,8 @@
     return span;
   }
   window.FileTree = class FileTree {
-    constructor(host, { data, event, request, download, message, state, transfers }) {
-      Object.assign(this, { data, event, request, download, message, transfers });
+    constructor(host, { data, event, request, openFile, download, message, state, transfers }) {
+      Object.assign(this, { data, event, request, openFile, download, message, transfers });
       this.selection = new Set(); this.anchor = ''; this.dropPath = '';
       this.nodes = new Map(); this.expanded = new Set(); this.selected = ''; this.rootPath = '/';
       this.persistQueue = Promise.resolve(); this.pending = new Set(); this.counter = 0; this.restoring = true;
@@ -284,7 +284,7 @@
       }
       if (info.attrs.kind !== 'file') throw new Error('此条目不是普通文件或目录');
       if (Number(info.attrs.size)>1048576) throw new Error('文件超过 1 MiB，无法编辑，请下载后查看');
-      await this.request('openView', { viewType: 'editor', resourceKey: info.path, params: { path: info.path } });
+      await this.openFile(info.path);
     }
     async refresh(path = this.selected) {
       let n = this.nodes.get(path) || this.nodes.get(this.rootPath);

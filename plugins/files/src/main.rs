@@ -1,10 +1,9 @@
 use serde_json::json;
+use sodeck_plugin_client::file_editor::EditorHost;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
-#[cfg(test)]
-mod editor_tests;
 mod file_clipboard;
 mod tasks;
 struct View {
@@ -13,71 +12,8 @@ struct View {
     path: String,
     dirty: bool,
     busy: bool,
-    revision: u64,
-    saved: u64,
-    edit_revision: u64,
-    staged_edit_revision: u64,
-    editor_state: serde_json::Value,
-    cursor: u64,
-    scroll: u64,
     navigation: serde_json::Value,
     context: serde_json::Value,
-    editor: bool,
-}
-impl View {
-    fn update_dirty(&mut self) {
-        self.dirty = self.revision != self.saved || self.edit_revision != self.staged_edit_revision;
-    }
-    fn project(&mut self, facts: &serde_json::Value) {
-        let d = &facts["draft"];
-        self.revision = d["draftRef"]["revision"]
-            .as_str()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(self.revision);
-        self.saved = d["savedRevision"]
-            .as_str()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(self.saved);
-        self.staged_edit_revision = d["source"]["editRevision"]
-            .as_str()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(self.staged_edit_revision);
-        self.edit_revision = self.edit_revision.max(self.staged_edit_revision);
-        self.busy = ["running", "committing"].contains(&facts["state"].as_str().unwrap_or(""))
-            || ["waitingInput", "writing"].contains(&d["exportState"].as_str().unwrap_or(""));
-        self.update_dirty();
-    }
-    fn require_staged(&self) -> Result<(), String> {
-        if self.edit_revision != self.staged_edit_revision {
-            return Err("当前正文尚未完整暂存，请等待后重试".into());
-        }
-        Ok(())
-    }
-}
-fn validate_editor_state(state: &serde_json::Value) -> Result<(), String> {
-    if state["version"] != 1
-        || state.to_string().len() > 8192
-        || ["anchor", "active", "topLine"]
-            .iter()
-            .any(|key| state[*key].as_u64().is_none_or(|value| value > 1048577))
-        || state["topOffset"]
-            .as_f64()
-            .is_none_or(|value| !value.is_finite() || value.abs() > 100000000.0)
-        || state["left"]
-            .as_f64()
-            .is_none_or(|value| !value.is_finite() || !(0.0..=100000000.0).contains(&value))
-        || state["language"]
-            .as_str()
-            .is_none_or(|value| value.len() > 64)
-        || !state["search"]["open"].is_boolean()
-        || !state["search"]["matchCase"].is_boolean()
-        || state["search"]["query"]
-            .as_str()
-            .is_none_or(|value| value.encode_utf16().count() > 1024 || value.contains(['\r', '\n']))
-    {
-        return Err("文件编辑器状态无效或过大".into());
-    }
-    Ok(())
 }
 struct Selection {
     view: String,
@@ -103,13 +39,15 @@ fn selection_parameters(
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let views = Mutex::new(HashMap::<String, View>::new());
+    let editors = EditorHost::new("editor");
     let settings = sodeck_plugin_client::settings::SettingsCache::default();
     let clipboard = Mutex::new(serde_json::Value::Null);
     let selections = Mutex::new(HashMap::<String, Selection>::new());
-    let task_manager: Arc<Mutex<Option<tasks::Tasks>>> = Arc::new(Mutex::new(None));
+    let task_manager: Arc<Mutex<Option<Arc<tasks::Tasks>>>> = Arc::new(Mutex::new(None));
     let task_manager_for_handler = task_manager.clone();
     sodeck_plugin_client::run(move |client, method, p| {
         if method == "initialize" {
+            editors.check_capabilities(&p)?;
             for capability in [
                 "files.v1",
                 "files.directoryCursors.v1",
@@ -130,52 +68,109 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .as_str()
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(|| std::env::temp_dir().join("sodeck-files"));
-            let manager = tasks::Tasks::new(client.clone(), directory)?;
+            let manager = Arc::new(tasks::Tasks::new(client.clone(), directory)?);
             *task_manager_for_handler.lock().unwrap() = Some(manager);
             return Ok(json!({"apiVersion":"1","settingsApiVersion":"1","uiApiVersion":"2"}));
         }
         if method == "settings.changed" {
             return settings.changed(&p, &["browser", "editor"]);
         }
-        let manager = task_manager_for_handler.lock().unwrap();
-        let tasks = manager.as_ref().ok_or("文件任务尚未初始化")?;
+        let tasks = task_manager_for_handler
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or("文件任务尚未初始化")?;
         let view = p["viewId"].as_str().ok_or("缺少 viewId")?;
+        if method == "ui.event"
+            && p["data"]["action"]
+                .as_str()
+                .is_some_and(|a| a.starts_with("fileEditor."))
+        {
+            let result = editors.source_event(client, &p)?;
+            return Ok(json!({"data":result}));
+        }
+        let editor_event = method == "ui.event"
+            && [
+                "save",
+                "editorState",
+                "dirty",
+                "staged",
+                "saved",
+                "busy",
+                "position",
+                "error",
+            ]
+            .contains(&p["data"]["action"].as_str().unwrap_or(""));
+        if (method == "ui.createView" && p["viewType"] == "editor")
+            || (editors.contains(view) && (method != "ui.event" || editor_event))
+        {
+            if method == "ui.disposeView"
+                || (method == "ui.beforeClose" && p["data"]["cancelTasks"] == true)
+            {
+                tasks.cancel_view(view);
+            }
+            if method == "ui.save" && tasks.waiting_conflict(view) {
+                return Err(
+                    "文件任务正在等待同名处理；请取消关闭并处理冲突，或选择放弃并关闭以取消任务"
+                        .into(),
+                );
+            }
+            let mut response = editors.handle(client, &method, &p, |context, path| {
+                // Serialize this short check with file-batch acceptance; no SDK RPC holds it.
+                let _business = views.lock().unwrap();
+                if tasks.blocks(context, path) {
+                    Err("此路径有文件任务正在修改，请等待任务结束后再操作".into())
+                } else {
+                    Ok(())
+                }
+            })?;
+            if response["metadata"].is_object() {
+                response["metadata"]["busy"] =
+                    json!(response["metadata"]["busy"] == true || tasks.busy(view));
+            }
+            if method == "ui.createView" {
+                let editor = editors.view(view)?;
+                views.lock().unwrap().insert(
+                    view.into(),
+                    View {
+                        id: editor.id,
+                        title: editor.title,
+                        path: editor.path,
+                        dirty: editor.dirty,
+                        busy: editor.busy,
+                        navigation: serde_json::Value::Null,
+                        context: p["context"].clone(),
+                    },
+                );
+            }
+            if method == "ui.disposeView" {
+                views.lock().unwrap().remove(view);
+            }
+            if ["ui.createView", "ui.getView"].contains(&method) {
+                response["data"]["tasks"] = tasks.snapshot(&p["context"]);
+            }
+            return Ok(response);
+        }
         if method == "ui.disposeView" {
             tasks.cancel_view(view);
+            editors.dispose_source(client, view)?;
             if let Some(v) = views.lock().unwrap().remove(view) {
                 client.call("files.request", json!({"action":"close","id":v.id}))?;
             }
             return Ok(json!({}));
         }
         if method == "ui.createView" && !views.lock().unwrap().contains_key(view) {
-            if p["viewType"] == "editor"
-                && tasks.blocks(&p["context"], p["params"]["path"].as_str().unwrap_or(""))
-            {
-                return Err("此路径有文件任务正在修改，请等待任务结束后打开".into());
-            }
             let result = client.call("files.request", json!({"action":"open","viewId":view}))?;
             let path = p["params"]["path"].as_str().unwrap_or("").to_string();
-            let title = if p["viewType"] == "editor" {
-                path.rsplit('/').next().unwrap_or("文件").to_string()
-            } else {
-                "文件".into()
-            };
+            let title = "文件".to_string();
             views.lock().unwrap().entry(view.into()).or_insert(View {
                 id: result["id"].as_str().ok_or("没有文件资源 ID")?.into(),
                 title,
                 path,
                 dirty: false,
                 busy: false,
-                revision: 0,
-                saved: 0,
-                edit_revision: 0,
-                staged_edit_revision: 0,
-                editor_state: serde_json::Value::Null,
-                cursor: 0,
-                scroll: 0,
                 navigation: serde_json::Value::Null,
                 context: p["context"].clone(),
-                editor: p["viewType"] == "editor",
             });
         }
         let mut all = views.lock().unwrap();
@@ -246,14 +241,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             let mut affected = Vec::new();
             if kind != "download" {
-                for (id, editor) in all.iter().filter(|(_, v)| {
-                    v.editor && v.context["workspaceId"] == p["context"]["workspaceId"]
-                }) {
+                for (id, editor) in editors.entries(&p["context"]) {
                     if tasks::affected_paths(&parameters)
                         .iter()
                         .any(|path| tasks::within(&editor.path, path))
                     {
-                        affected.push(id.clone());
+                        affected.push(id);
                     }
                 }
             }
@@ -268,6 +261,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         let v = all.get_mut(view).ok_or("文件视图尚未创建")?;
+        if editors.contains(view) {
+            let editor = editors.view(view)?;
+            v.dirty = editor.dirty;
+            v.busy = editor.busy;
+        }
         v.context = p["context"].clone();
         if ["ui.beforeClose", "ui.save"].contains(&method) {
             if method == "ui.beforeClose" && p["data"]["cancelTasks"] == true {
@@ -278,39 +276,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "文件任务正在等待同名处理；请取消关闭并处理冲突，或选择放弃并关闭以取消任务"
                         .into(),
                 );
-            }
-            if v.editor {
-                let job = client.call("files.editor", json!({"action":"save.status","id":v.id}))?;
-                let was_busy = v.busy;
-                v.project(&job);
-                if was_busy
-                    && ["notCommitted", "unknown"].contains(&job["state"].as_str().unwrap_or(""))
-                {
-                    return Err(job["error"]
-                        .as_str()
-                        .unwrap_or("保存未确认，草稿保留")
-                        .into());
-                }
-                if method == "ui.save" && v.dirty && !v.busy {
-                    v.require_staged()?;
-                    if tasks.blocks(&p["context"], &v.path) {
-                        return Err("此路径有文件任务正在修改，请等待后保存".into());
-                    }
-                    if job["state"] == "unknown" {
-                        return Err("原保存结果未知，请核对服务器；可以导出草稿".into());
-                    }
-                    if job["request"]["requestId"].is_string() {
-                        client.call("files.editor", json!({"action":"save.release", "id":v.id,"requestId":job["request"]["requestId"]}))?;
-                    }
-                    let sequence = job["draft"]["saveSequence"]
-                        .as_str()
-                        .and_then(|s| s.parse::<u64>().ok())
-                        .unwrap_or(0)
-                        .checked_add(1)
-                        .ok_or("保存序号已用尽")?;
-                    let started = client.call("files.editor", json!({"action":"save.start","id":v.id,"requestId":format!("close/{view}/{sequence}"),"sequence":sequence.to_string(),"expectedDraftRef":job["draft"]["draftRef"],"expectedContext":p["context"]}))?;
-                    v.project(&started);
-                }
             }
         } else if method == "ui.event" {
             let d = &p["data"];
@@ -414,17 +379,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     command["fileId"] = json!(v.id);
                     Some(tasks.command(view, &command)?)
                 }
-                Some("save") => {
-                    if tasks.blocks(&p["context"], &v.path) {
-                        return Err("此路径有文件任务正在修改，请等待后保存".into());
-                    }
-                    let mut command = d.clone();
-                    command["action"] = json!("save.start");
-                    command["id"] = json!(v.id);
-                    let job = client.call("files.editor", command)?;
-                    v.project(&job);
-                    Some(job)
-                }
                 _ => None,
             };
             if let Some(result) = task_result {
@@ -438,22 +392,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "level":"error", "message":d["message"].as_str().unwrap_or("文件操作失败"),
                         "fields":{"viewId":view}
                     }))?;
-                }
-                Some("dirty" | "staged" | "saved" | "busy" | "editorState") => {
-                    if let Some(revision) = d["editRevision"].as_u64() {
-                        v.edit_revision = v.edit_revision.max(revision);
-                    }
-                    let facts =
-                        client.call("files.editor", json!({"action":"save.status","id":v.id}))?;
-                    v.project(&facts);
-                }
-                Some("position") => {
-                    if let Some(state) = d.get("editorState") {
-                        validate_editor_state(state)?;
-                        v.editor_state = state.clone();
-                    }
-                    v.cursor = d["cursor"].as_u64().unwrap_or(0);
-                    v.scroll = d["scroll"].as_u64().unwrap_or(0);
                 }
                 Some("directory") => v.path = d["path"].as_str().ok_or("缺少 path")?.into(),
                 Some("navigation") => {
@@ -479,7 +417,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let busy = v.busy || tasks.busy(view);
         Ok(
-            json!({"data":{"fileId":v.id,"path":v.path,"cursor":v.cursor,"scroll":v.scroll,"revision":v.revision,"editRevision":v.edit_revision,"editorState":v.editor_state,"navigation":v.navigation,"tasks":tasks.snapshot(&p["context"])},"metadata":{"title":v.title,"dirty":v.dirty,"busy":busy}}),
+            json!({"data":{"fileId":v.id,"path":v.path,"navigation":v.navigation,"tasks":tasks.snapshot(&p["context"])},"metadata":{"title":v.title,"dirty":v.dirty,"busy":busy}}),
         )
     })
 }

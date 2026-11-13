@@ -1,4 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
+import {fileEditorSettings} from './plugin-file-editor-assets.mjs';
 import {packageSettingsAssets} from './plugin-settings-assets.mjs';
 import {execFileSync} from 'node:child_process';
 test('Git preserves pinned font asset bytes with either checkout newline policy',()=>{
@@ -18,7 +19,7 @@ test('font-consuming plugins independently package complete fonts, metadata and 
   try{
     for(const plugin of ['terminal','files','network-proxy']){
       const metadata=JSON.parse(fs.readFileSync(`plugins/${plugin}/release.json`,'utf8')),directory=path.join(root,plugin);fs.mkdirSync(directory);
-      packageSettingsAssets(metadata,directory);
+      packageSettingsAssets(fileEditorSettings(metadata),directory);
       if(plugin==='network-proxy'){assert(!fs.existsSync(path.join(directory,'ui/fonts')));continue;}
       const files=fs.readdirSync(path.join(directory,'ui/fonts'));assert.equal(files.filter(f=>f.endsWith('.woff2')).length,6);assert.equal(files.filter(f=>f.endsWith('.LICENSE.txt')).length,3);
       assert(fs.readFileSync(path.join(directory,'ui/font-loader.js'),'utf8').includes('FontFace'));

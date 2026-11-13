@@ -5,6 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { changedFiles, selectChecks, checkResults, targets, selectionSummary } from './select-checks.mjs';
+test('file editor SDK selects its real consumers and file integration',()=>{
+ const p=selectChecks(['packages/file-editor/src/page.js']);assert(p.plugins.includes('files'));assert(p.integration.some(v=>v.files));assert(p.scripts);
+});
 
 test('shared client runs its own native tests and known script-only regressions stay narrow', () => {
   const client = selectChecks(['crates/plugin-client/src/lib.rs']);

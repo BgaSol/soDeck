@@ -40,7 +40,7 @@ release.json 同时是官方发现元数据和独立发行配置，不另建集�
 
 插件版本由 cargo metadata 按清单路径解析，支持合法 TOML 与 workspace 版本继承，不从文本猜测；选择、打包和汇总任务均安装固定 Rust 工具链。插件标签为 plugin-<名称>-v<版本>，必须匹配其唯一版本来源。
 
-插件打包使用根目录锁定的 Vite/Floating UI 生成自带文本菜单；终端 xterm 和文件 Monaco 使用各自 npm 锁文件构建。无 CDN 或用户运行时 npm 依赖。终端和文件各自携带字体、来源校验元数据与许可证；普通构建只校验和复制资产，维护时才显式运行 prepare-font-assets.mjs，核心包不携带这些插件字体。
+插件打包使用根目录锁定的 Vite/Floating UI 生成自带文本菜单；终端 xterm 使用自身 npm 锁文件，声明 build.fileEditor 的组件使用 packages/file-editor 的独立锁文件构建 Monaco 和标准编辑页。编辑 SDK 的设置模板在打包时展开为普通插件设置；build/fileEditor 模板标记不进入运行时清单。无 CDN 或用户运行时 npm 依赖。字体消费组件各自携带字体、来源校验元数据与许可证；普通构建只校验和复制资产，维护时才显式运行 prepare-font-assets.mjs，核心包不携带这些插件字体。
 
 Windows 插件在自身工程目录运行 Cargo，以应用静态运行库配置；归档前检查原生架构及额外 Visual C++ 运行库依赖。用户不需另外安装 Visual C++ 运行库。宿主测试夹具不发行，已退役的 Hello/组件交互示例不重新加入官方目录。
 

@@ -33,6 +33,7 @@
 
 - [开发约定](../AGENTS.md)：开发边界、质量门槛及任务完成条件。
 - [当前架构](architecture.md)：分层、资源归属、显示交接和系统适配。
+- [通用文件编辑 SDK](features/file-editor.md)：组件自己的编辑页、草稿、保存、导出与关闭接入。
 - [插件 API](plugin-api.md)：清单、RPC、能力及兼容契约。
 - [开发指南](development.md)：环境、命令、检查范围与文档收束流程。
 - [分发文档](distribution.md)：五平台原生打包、签名、独立发布和失败恢复。

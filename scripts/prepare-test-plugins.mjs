@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import {buildFileEditor} from "./plugin-file-editor-assets.mjs";
 import path from "node:path";
 import { buildPlugin, nativeTarget, run } from "./plugin-build.mjs";
 import { parseArgs } from "node:util";
@@ -29,6 +30,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       if (!process.env.npm_execpath) throw new Error("Use npm run test:prepare -- <plugins>");
       run(process.execPath, [process.env.npm_execpath, "ci", "--ignore-scripts"], { cwd: pluginRoot });
     }
+    if(JSON.parse(fs.readFileSync(path.join(pluginRoot,"release.json"),"utf8")).build?.fileEditor)buildFileEditor();
     if (uiOnly) continue;
     const output = path.join(root, plugin);
     if (path.dirname(output) !== root) throw new Error("Invalid test fixture output");

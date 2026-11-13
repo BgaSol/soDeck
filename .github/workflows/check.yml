@@ -35,7 +35,9 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            packages/file-editor/package-lock.json
       - id: scope
         run: node scripts/select-checks.mjs
       - name: Install locked documentation dependencies
@@ -74,6 +76,7 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             plugins/terminal/package-lock.json
+            packages/file-editor/package-lock.json
       - run: npm ci
       - name: Core frontend source types
         if: fromJSON(needs.select.outputs.plan).web
@@ -106,6 +109,7 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             plugins/terminal/package-lock.json
+            packages/file-editor/package-lock.json
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.99.1
@@ -182,6 +186,7 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             plugins/terminal/package-lock.json
+            packages/file-editor/package-lock.json
       - name: Install native fixture and OpenSSH dependencies
         run: |
           sudo "$(command -v node)" scripts/configure-ubuntu-mirror.mjs
@@ -211,7 +216,7 @@ jobs:
         run: npm run ci:test -- network:test
       - name: File editor source types
         if: matrix.files
-        run: npm run check --prefix plugins/files
+        run: npm run check --prefix packages/file-editor
       - name: Real files plugin and SFTP
         if: matrix.files
         run: npm run ci:test -- files:test
@@ -259,6 +264,7 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             plugins/terminal/package-lock.json
+            packages/file-editor/package-lock.json
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.99.1
@@ -318,7 +324,9 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            packages/file-editor/package-lock.json
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.99.1
@@ -389,7 +397,9 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            packages/file-editor/package-lock.json
       - name: Install native fixture and namespace dependencies
         run: |
           sudo "$(command -v node)" scripts/configure-ubuntu-mirror.mjs

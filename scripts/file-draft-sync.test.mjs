@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createDraftSync} from '../plugins/files/ui/draft-sync.js';
+import {createDraftSync} from '../packages/file-editor/src/draft-sync.js';
 
 function fixture() {
  let text='old',coreRevision=0,receipt,upload,fail,hold;

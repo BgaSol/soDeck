@@ -91,6 +91,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
         if (file === 'src/clipboard.ts') { sharedUi(); core(); }
         continue;
       }
+      if(file.startsWith('packages/file-editor/')){plan.scripts=true;for(const name of pluginNames){const meta=JSON.parse(fs.readFileSync(new URL('../plugins/'+name+'/release.json',import.meta.url),'utf8'));if(meta.build?.fileEditor){plugin(name);integration.add(name);}}continue;}
       if (file.startsWith('plugins/shared/')) { sharedUi(); continue; }
       if (/^src-tauri\/(tauri(?:\.[a-z-]+)?\.conf\.json|capabilities\/.+\.json)$/.test(file)) {
         core(); ui();

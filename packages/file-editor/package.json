@@ -1,5 +1,5 @@
 {
-  "name": "sodeck-files-ui",
+  "name": "sodeck-file-editor",
   "private": true,
   "type": "module",
   "scripts": {

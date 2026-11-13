@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {readDocument} from '../plugins/files/ui/read-document.js';
+import {readDocument} from '../packages/file-editor/src/read-document.js';
 
 test('file editor restarts a snapshot when a staged draft changes its size and revision during reading',async()=>{
   let changed=false;

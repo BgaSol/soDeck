@@ -43,7 +43,7 @@ const peer = pluginPeer(executable, async (method, p) => {
 const request = (method, data={}) => peer.request(method,{viewId:'browser',viewType:'files',context,...data});
 const event = data => request('ui.event',{data}).then(r=>r.data);
 try {
-  await peer.request('initialize',{dataDirectory:directory,capabilities:['files.v1','files.directoryCursors.v1','files.operations.v1','files.operations.v2','files.localInputs.v1','files.editor.v1','viewData.v1']});
+  await peer.request('initialize',{dataDirectory:directory,capabilities:['files.v1','files.directoryCursors.v1','files.operations.v1','files.operations.v2','files.localInputs.v1','files.editor.v1','viewData.v1','ui.workbench.v2','ui.openView.v1']});
   await request('ui.createView');
   const {batchId} = await event({action:'startBatch',parameters:{kind:'createEmpty',path:'/new.txt'}});
   const batch = await until(()=>event({action:'readTasks'}),r=>r.tasks.some(t=>t.id===batchId&&['failed','partial','needsReview'].includes(t.state)));

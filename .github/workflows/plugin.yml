@@ -71,7 +71,9 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            packages/file-editor/package-lock.json
       - uses: actions/setup-node@v6
         if: needs.select.outputs.plugin == 'terminal'
         with:
@@ -80,6 +82,7 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             plugins/terminal/package-lock.json
+            packages/file-editor/package-lock.json
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.99.1

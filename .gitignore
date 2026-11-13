@@ -10,3 +10,5 @@
 /crates/plugin-client/target/
 *.log
 /artifacts/
+/packages/file-editor/node_modules/
+/packages/file-editor/dist/
