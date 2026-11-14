@@ -120,7 +120,7 @@ export class LogModel {
   highlights(row) { if(!this.conditions.query)return [];const regex=pattern(this.conditions.query),matches=[];let found;while((found=regex.exec(row.text))&&found.index<8192)matches.push([found.index,found.index+found[0].length]);return matches; }
   view(start = 0, count = 300) {
     const p = this.projection(), day=row=>new Date(row.time||row.receivedAt).toLocaleDateString('zh-CN'),crossDay=p.rows.length>1&&day(p.rows[0].row)!==day(p.rows.at(-1).row);return { generation: this.generation, revision: this.revision, total: p.rows.length, matches: p.total, gap: this.gap, levels: [...new Set(p.all.map(r => r.level).filter(Boolean))],
-      rows: p.rows.slice(start, start + Math.min(count, 500)).map((r, i) => ({ ...this.display(r.row, this.highlights(r.row), r.context), index: start + i,day:crossDay&&(!p.rows[start+i-1]||day(p.rows[start+i-1].row)!==day(r.row))?day(r.row):null })), ranges: this.pinRanges(), first: p.all[0]?.time, last: p.all.at(-1)?.time,
+      rows: p.rows.slice(start, start + Math.min(count, 500)).map((r, i) => ({ ...this.display(r.row, this.highlights(r.row), r.context), index: start + i,day:crossDay&&(!p.rows[start+i-1]||day(p.rows[start+i-1].row)!==day(r.row))?day(r.row):null })), ranges: this.pinRanges(), windowTotal:p.all.length,first: p.rows[0]?.row.time, last: p.rows.at(-1)?.row.time,firstReceivedAt:p.rows[0]?.row.receivedAt,lastReceivedAt:p.rows.at(-1)?.row.receivedAt,
       newCount: this.fixed ? this.recent.filter(r => r.serial > this.fixedSerial).length : 0 };
   }
   detail(id) { const row = this.all().find(r => r.id === id); return row ? { ...this.display(row), text: row.text, raw: decode(row.bytes), resourceId: row.resourceId, start: row.start, end: row.end } : null; }

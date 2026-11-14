@@ -59,6 +59,10 @@ test('search-only context expands actual adjacent records and minimap targets re
   const m=new LogModel();register(m);feed(m,'live','before\nERROR target target\nafter\n');m.query({query:'target',only:true});assert.equal(m.view().total,1);assert.equal(m.view().matches,2);
   const id=m.view().rows[0].id;assert.equal(m.summary(1).bins[0].target,id);m.context(id);assert.equal(m.view().total,3);assert(m.view().rows[0].context);
 });
+test('filtered result boundaries belong to its records and an empty result has no invented time',()=>{
+  const m=new LogModel();register(m);feed(m,'live','1970-01-01T00:00:01Z old\nERROR target\n');m.query({query:'target',only:true});const view=m.view();assert.equal(view.total,1);assert.equal(view.windowTotal,2);assert.equal(view.first,null);assert.equal(view.firstReceivedAt,100000);
+  m.query({query:'absent',only:true});assert.equal(m.view().total,0);assert.equal(m.view().firstReceivedAt,undefined);assert.equal(m.view().first,undefined);
+});
 test('wrapped rows keep record and pixel anchors after history is prepended',()=>{
   const layout=new LogLayout();layout.reset(['a','b','c']);layout.measure(0,100);layout.measure(1,60);assert.equal(layout.index(110),1);const anchor=layout.anchor(110);
   assert.equal(layout.restore(layout.anchor(-38)),-38,'space before the first record keeps its pixel position');
