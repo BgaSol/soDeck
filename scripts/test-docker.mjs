@@ -36,7 +36,13 @@ try{
   const appVolume=name+'-data';inside(['volume','create',appVolume]);
   const app=inside(['run','-d','--name',name+'-app','--network','none','--label','sodeck.test='+suffix,'--label','com.docker.compose.project=sodeck-test',
     '--label','com.docker.compose.service=api','--env','SODECK_TOKEN=a=b','--mount','type=volume,source='+appVolume+',target=/data',image,
-    'sh','-c','printf "sodeck-docker-log 中文\\n"; exec sleep 600']);
+    'sh','-c','awk \'BEGIN {for (i=0;i<1000000;i++) printf "INFO historical %07d 中文\\n",i}\'; printf "sodeck-docker-log 中文\\n"; exec sleep 600']);
+  const historyStarted=Date.now();
+  while(!inside(['logs','--tail','1',app]).includes('sodeck-docker-log 中文')) {
+    assert(Date.now()-historyStarted<60000,'million-line history did not finish generating');
+    await new Promise(resolve=>setTimeout(resolve,200));
+  }
+  const historyMs=Date.now()-historyStarted;
   const publicKey=fs.readFileSync(path.join(directory,'user.pub'),'utf8').trim();
   run(['run','-d','--name',ssh,'--label','sodeck.test='+suffix,'-p','127.0.0.1::22','--mount','type=volume,source='+socket+',target=/var/run',
     '-e','PUBKEY='+publicKey,image,'sh','-c',
@@ -57,7 +63,7 @@ try{
   assert.equal(code,0);
   inside(['volume','inspect',appVolume]);assert.equal(inside(['container','ls','--all','--quiet']).length,0,'test container should have been explicitly removed');
   fs.mkdirSync('artifacts/docker-integration',{recursive:true});
-  fs.writeFileSync('artifacts/docker-integration/result.json',JSON.stringify({engine:'24.0.9',clientTarget:JSON.parse(fs.readFileSync(path.join(packageRoot(),'plugin.json'),'utf8')).target,actualCore:true,actualPlugin:true,ssh:true,terminalCommand:true,sourceCloseKeepsTerminal:true,containerRemoved:true,volumePreserved:true},null,2)+'\n');
+  fs.writeFileSync('artifacts/docker-integration/result.json',JSON.stringify({engine:'24.0.9',clientTarget:JSON.parse(fs.readFileSync(path.join(packageRoot(),'plugin.json'),'utf8')).target,actualCore:true,actualPlugin:true,ssh:true,terminalCommand:true,sourceCloseKeepsTerminal:true,historyLines:1000001,historyGenerationMs:historyMs,initialTailLines:2001,initialCaptureLimitBytes:4*1024*1024,containerRemoved:true,volumePreserved:true},null,2)+'\n');
   console.log('Actual core/native Docker plugin/OpenSSH/isolated Engine: list, details, container terminal through commands, terminal survives source close, logs, stats, pause/unpause/stop/start/restart/remove, retained logs on disconnect and volume preservation passed.');
 }finally{
   for(const resource of created.reverse()){assert(resource.startsWith(name+'-'));spawnSync('docker',['rm','-f','-v',resource],{windowsHide:true,stdio:'ignore'});}

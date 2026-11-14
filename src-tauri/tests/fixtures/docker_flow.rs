@@ -126,6 +126,10 @@ async fn openssh_docker_plugin() {
     use base64::{engine::general_purpose::STANDARD, Engine};
     let raw=lines.split(|b|*b==b'\n').filter(|l|!l.is_empty()).flat_map(|line|{let envelope:Value=serde_json::from_slice(line).unwrap();STANDARD.decode(envelope["dataBase64"].as_str().unwrap()).unwrap()}).collect::<Vec<_>>();
     assert!(String::from_utf8_lossy(&raw).contains("sodeck-docker-log 中文"));
+    assert_eq!(raw.iter().filter(|b|**b==b'\n').count(),2001,"million-line container only returns its finite initial tail");
+    assert!(String::from_utf8_lossy(&raw).contains("INFO historical 0999999 中文"));
+    assert!(!String::from_utf8_lossy(&raw).contains("INFO historical 0000000 中文"));
+    assert!(watermark.parse::<u64>().unwrap()<=4*1024*1024);
     let operate=|mut data:Value| {data["id"]=json!(id);data["engineId"]=browser["engine"]["id"].clone();data["endpoint"]=browser["endpoint"].clone();data["expectedContext"]=browser["context"].clone();event(token,data)};
     let status=||event(token,json!({"action":"list","status":"all"}))["rows"].as_array().unwrap().iter().find(|row|row["id"]==id).map(|row|row["status"].clone()).unwrap_or(Value::Null);
     operate(
