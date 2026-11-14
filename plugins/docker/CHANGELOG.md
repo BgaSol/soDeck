@@ -6,9 +6,13 @@
 
 本机 Windows x86_64 已通过相关格式/类型检查、Docker Rust 测试、脚本测试、前端构建、侧栏进程/UI 回归及真实隔离 Linux Engine 24.0.9/OpenSSH 联调。联调覆盖侧栏容器终端、关闭来源后继续输入、暂停/恢复/停止/启动/重启/删除、日志与指标、断线快照及挂载卷保留；本机归档的资源、摘要、原生架构、初始化、视图创建/释放和实际程序退出通过。界面覆盖三主题及 200/320/400/900 px，刷新焦点与键盘取消回归通过。
 
-本版正在准备独立发行，五平台原生包与来源检查完成后补入确切提交、原始打包 run 和 Release。开发期间的 0.2.0 本机测试包不作为正式候选。未新增生产依赖或变更核心 API；继续需要核心 0.24.0 的 commands.v1 与终端 0.9.0 的 terminal.open.v1。
+包来源：[ed1ba41e2187a5723e4b5b27e4612284a7cc94aa](https://github.com/BgaSol/soDeck/commit/ed1ba41e2187a5723e4b5b27e4612284a7cc94aa)；原始独立打包与实包验收：[43539625780](https://github.com/BgaSol/soDeck/actions/runs/43539625780)。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台均使用原生产物，归档摘要、架构、UI 资源、初始化、视图创建/释放和程序退出全部通过，报告与原包字节绑定通过。
 
-正式升级和目标应用中的人工 DPI/输入法专项尚未执行；已有手动停靠继续恢复，不静默覆盖保存布局。用户要求本版设为 GitHub Latest。
+[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/43539593225)全部选中检查通过，包含五平台 Docker 源码测试、Linux x86_64 核心夹具测试、格式/工程脚本/文档，以及 Docker 进程/UI 和真实隔离 Linux Engine/OpenSSH 集成。核心完整浏览器、Windows desktop 和 netem 按本次改动范围跳过，不计为通过。
+
+本机另下载本次原始五份归档、更新清单及五平台验收报告，核对提交、版本、SHA-256、大小与草稿附件；Windows x86_64 原归档实际进程验收再次通过。发行：[docker 0.3.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.3.0)，按用户要求设为 GitHub Latest。六个附件沿用原始 run；发布前只同步发行说明和更新清单 notes，五份程序归档不变。开发期间的 0.2.0 本机测试包不作为正式候选。
+
+未新增生产依赖或变更核心 API；继续需要核心 0.24.0 的 commands.v1 与终端 0.9.0 的 terminal.open.v1。启用中的升级在重启后生效。未执行正式版实际升级、目标应用的人工 DPI/输入法/读屏、多屏、生产服务器、rootless、代理路径或全部 Engine 版本专项；设备复核见 [Docker 后续计划](../../docs/plans/docker-expansion.md)。已有手动停靠继续恢复，不静默覆盖保存布局。
 
 # 0.2.0
 
