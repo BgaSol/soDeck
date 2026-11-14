@@ -1,6 +1,6 @@
 ---
 name: "SoDeck 核心界面"
-description: "面向运维的紧凑服务器会话工作台；多巴胺与 IDEA 明暗三主题共用核心几何。"
+description: "面向运维的紧凑服务器会话工作台；多巴胺、晨曦与星夜三主题共用核心几何。"
 colors:
   light-canvas: "#ffffff"
   light-subtle: "#f7f8fa"
@@ -215,7 +215,7 @@ components:
 
 SoDeck 的核心界面是一张紧凑、可持续工作的服务器会话工作台。桌面壳维持应用导航与连接身份，管理台集中维护资料和偏好，工作台承载会话中的插件页面与工具。信息层级依靠区域、结构线、选中底和可读状态，不以大标题或装饰性卡片组织每个操作。
 
-用户已确认保留多巴胺主题，浅色和深色采用 IDEA 默认配色方向。三主题共享控件几何与操作路径；多巴胺通过暖底、粉色导航、黄色选中、绿色工具底和更粗的结构线表达个性，IDEA 明暗主题以中性面和蓝色焦点服务长时间阅读。
+晨曦（浅色）和星夜（深色）沿用 IDEA 默认配色方向，多巴胺保留原有配色。三主题共享控件几何与操作路径；多巴胺通过暖底、粉色导航、黄色选中、绿色工具底和更粗的结构线表达个性，晨曦与星夜以中性面和蓝色焦点服务长时间阅读。
 
 这份文档从当前正式核心源码提取，服务后续核心界面维护。色值与公共控件以 [themes.css](packages/ui/themes.css)、[shared.css](packages/ui/shared.css) 为准；核心覆盖以 [console.css](src/console.css) 为准。实际发行与验证范围见[1.0.0 版本记录](docs/releases/v1.0.0.md)。
 
@@ -233,11 +233,11 @@ frontmatter 只收录核心中复用的实际颜色；同一主题中的同值�
 
 ### Primary
 
-IDEA 蓝用于主操作，accent 用于焦点、访问路线与选中边缘。明暗主题的 accent 与主按钮底是两个既有角色；主操作必须使用 sd-primary 与 sd-primary-text，不能由 accent 与 panel 推算。文本动作和发行说明链接独立使用 sd-link；不把主按钮背景色同时用作深色链接。多巴胺的主按钮使用黄色和深字，紫色 accent 用于焦点与路线。
+晨曦与星夜的蓝色用于主操作，accent 用于焦点、访问路线与选中边缘。明暗主题的 accent 与主按钮底是两个既有角色；主操作必须使用 sd-primary 与 sd-primary-text，不能由 accent 与 panel 推算。文本动作和发行说明链接独立使用 sd-link；不把主按钮背景色同时用作深色链接。多巴胺的主按钮使用黄色和深字，紫色 accent 用于焦点与路线。
 
 ### Secondary
 
-多巴胺粉色 navigation 承载管理导航，绿色 tools 承载工具和工作标签区域，暖色 rail 承载窄侧栏。IDEA 浅色管理导航使用 accent-bg；IDEA 深色导航、工具区和侧栏使用 panel。顶栏实际使用 panel，不采用原型的浅色深顶栏值。
+多巴胺粉色 navigation 承载管理导航，绿色 tools 承载工具和工作标签区域，暖色 rail 承载窄侧栏。晨曦管理导航使用 accent-bg；星夜导航、工具区和侧栏使用 panel。顶栏实际使用 panel，不采用原型的浅色深顶栏值。
 
 ### Tertiary
 
@@ -263,7 +263,7 @@ good、warning、error 分别辅助成功、需关注和错误文字。success-b
 **Body Font:** frontmatter 的 body 系统字体栈，不打包字体。
 **Label/Mono Font:** endpoint 用于地址；log 用于日志。两者保持源码中的独立回退顺序。
 
-界面默认字号为 body（13px），根元素没有指定统一行高；段落使用已实现的行高（1.7）。普通区域标题使用 title（17px）与 section 标题（14px）；标题字重由主题角色控制，IDEA 为 title-idea，多巴胺为 title-dopamine。控件字重分别为 control-idea 和 control-dopamine。
+界面默认字号为 body（13px），根元素没有指定统一行高；段落使用已实现的行高（1.7）。普通区域标题使用 title（17px）与 section 标题（14px）；标题字重由主题角色控制，晨曦与星夜为 title-idea，多巴胺为 title-dopamine。控件字重分别为 control-idea 和 control-dopamine。
 
 导航、工作标签与字段说明通常使用 label（12px）；底栏与地址使用 metadata（11px），状态标签使用 badge（10px）。连接节点名称固定使用 connection-title（12px / 600 / 18px），第二行地址使用 endpoint（11px / 18px），不套用全局标题字重。插件与更新维护标题为（22px），在 ≤800px 时为（20px），以 [updates.css](src/updates.css) 的局部规则为准。应用状态数值使用 metric（22px / 550）。这些局部字号和字重来源见 [shell.css](src/shell.css)、[servers.css](src/servers.css) 与 [console.css](src/console.css)。
 
@@ -294,7 +294,7 @@ good、warning、error 分别辅助成功、需关注和错误文字。success-b
 
 ## Elevation & Depth
 
-主工作面使用背景层级和结构线；菜单、连接对话框及旧核心浮层读取 shadow。IDEA 浅色与深色分别使用源码中的主题阴影，多巴胺为 none。准确值收录在 sidecar 的 shadows，遮罩通过 sd-scrim 切换。工作标签选中不加阴影，当前聚焦分屏仅以底边 accent 标识。
+主工作面使用背景层级和结构线；菜单、连接对话框及旧核心浮层读取 shadow。晨曦与星夜分别使用源码中的主题阴影，多巴胺为 none。准确值收录在 sidecar 的 shadows，遮罩通过 sd-scrim 切换。工作标签选中不加阴影，当前聚焦分屏仅以底边 accent 标识。
 
 按钮状态采用已实现的背景过渡（100ms ease-out）。旧核心浮层采用 appear（120ms ease-out），从向上位移（4px）及透明进入；prefers-reduced-motion 下关闭动画与过渡。这里不引入原型的弹簧、抽屉或新位移动效。源码依据 [shared.css](packages/ui/shared.css)、[shell.css](src/shell.css) 与 [components.css](src/components.css)。
 
@@ -304,7 +304,7 @@ good、warning、error 分别辅助成功、需关注和错误文字。success-b
 
 拼接区域使用矩形和结构线，控件采用短半径圆角。状态标签为 badge（4px），管理导航为 navigation（5px），连接节点为 connection-node（6px），当前核心普通按钮和字段为 core-control（7px），公共 sd-* 控件为 shared-control（8px），菜单为 menu（10px），待重启容器沿用 shared-control（8px）。工作页面标签沿用上圆角（8px）并在底边接入内容面；不要将它简化为四角相同的卡片。
 
-IDEA 的结构线与控件描边为（1px），图标线宽（2），控件/标题字重（500 / 600）；多巴胺对应为（2px）、（2.25）与（600 / 700）。公共控件使用透明边框预算（2px）及伪元素描边，主题切换保持内容几何。普通功能 SVG 默认（17px），公共图标按钮中的 SVG 为（16px），标签关闭图标为（12px）；路径与形状来自 [ui.ts](src/ui.ts)。
+晨曦与星夜的结构线与控件描边为（1px），图标线宽（2），控件/标题字重（500 / 600）；多巴胺对应为（2px）、（2.25）与（600 / 700）。公共控件使用透明边框预算（2px）及伪元素描边，主题切换保持内容几何。普通功能 SVG 默认（17px），公共图标按钮中的 SVG 为（16px），标签关闭图标为（12px）；路径与形状来自 [ui.ts](src/ui.ts)。
 
 ## Components
 
@@ -352,7 +352,7 @@ IDEA 的结构线与控件描边为（1px），图标线宽（2），控件/标�
 
 ### Do:
 
-- Do 使用 packages/ui 的现有主题角色，并保持多巴胺、IDEA 浅色和 IDEA 深色的同构布局。
+- Do 使用 packages/ui 的现有主题角色，并保持多巴胺、晨曦和星夜的同构布局。
 - Do 将核心功能放在管理台导航，保留左右窄侧栏给 sidebar 插件贡献。
 - Do 让终端通过中央新建动作与工作标签使用，切换管理台时保留会话、Surface 和草稿。
 - Do 为连接、插件和消息状态保留可读文字，为图标按钮提供名称。

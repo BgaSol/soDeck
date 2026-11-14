@@ -6,12 +6,12 @@
   },
   {
     "id": "light",
-    "name": "IDEA 浅色",
+    "name": "晨曦",
     "dark": false
   },
   {
     "id": "dark",
-    "name": "IDEA 深色",
+    "name": "星夜",
     "dark": true
   }
 ]

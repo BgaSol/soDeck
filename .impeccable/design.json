@@ -6,7 +6,7 @@
     "colorMeta": {
       "light-canvas": {
         "role": "neutral",
-        "displayName": "IDEA 浅色 · canvas",
+        "displayName": "晨曦 · canvas",
         "tonalRamp": [
           "oklch(15% 0.0000 89.88)",
           "oklch(25% 0.0000 89.88)",
@@ -20,7 +20,7 @@
       },
       "light-subtle": {
         "role": "neutral",
-        "displayName": "IDEA 浅色 · subtle",
+        "displayName": "晨曦 · subtle",
         "tonalRamp": [
           "oklch(15% 0.0011 264.54)",
           "oklch(25% 0.0023 264.54)",
@@ -34,7 +34,7 @@
       },
       "light-text": {
         "role": "neutral",
-        "displayName": "IDEA 浅色 · text",
+        "displayName": "晨曦 · text",
         "tonalRamp": [
           "oklch(15% 0.0044 278.14)",
           "oklch(25% 0.0089 278.14)",
@@ -48,7 +48,7 @@
       },
       "light-muted": {
         "role": "neutral",
-        "displayName": "IDEA 浅色 · muted",
+        "displayName": "晨曦 · muted",
         "tonalRamp": [
           "oklch(15% 0.0091 275.94)",
           "oklch(25% 0.0182 275.94)",
@@ -62,7 +62,7 @@
       },
       "light-border": {
         "role": "neutral",
-        "displayName": "IDEA 浅色 · border",
+        "displayName": "晨曦 · border",
         "tonalRamp": [
           "oklch(15% 0.0023 264.53)",
           "oklch(25% 0.0047 264.53)",
@@ -76,7 +76,7 @@
       },
       "light-accent": {
         "role": "primary",
-        "displayName": "IDEA 浅色 · accent",
+        "displayName": "晨曦 · accent",
         "tonalRamp": [
           "oklch(15% 0.0792 262.03)",
           "oklch(25% 0.1584 262.03)",
@@ -90,7 +90,7 @@
       },
       "light-accent-bg": {
         "role": "primary",
-        "displayName": "IDEA 浅色 · accent-bg",
+        "displayName": "晨曦 · accent-bg",
         "tonalRamp": [
           "oklch(15% 0.0170 264.99)",
           "oklch(25% 0.0340 264.99)",
@@ -104,7 +104,7 @@
       },
       "light-hover": {
         "role": "neutral",
-        "displayName": "IDEA 浅色 · hover",
+        "displayName": "晨曦 · hover",
         "tonalRamp": [
           "oklch(15% 0.0022 274.96)",
           "oklch(25% 0.0044 274.96)",
@@ -118,7 +118,7 @@
       },
       "light-good": {
         "role": "tertiary",
-        "displayName": "IDEA 浅色 · good",
+        "displayName": "晨曦 · good",
         "tonalRamp": [
           "oklch(15% 0.0460 148.66)",
           "oklch(25% 0.0921 148.66)",
@@ -132,7 +132,7 @@
       },
       "light-warning": {
         "role": "tertiary",
-        "displayName": "IDEA 浅色 · warning",
+        "displayName": "晨曦 · warning",
         "tonalRamp": [
           "oklch(15% 0.0489 69.17)",
           "oklch(25% 0.0978 69.17)",
@@ -146,7 +146,7 @@
       },
       "light-error": {
         "role": "tertiary",
-        "displayName": "IDEA 浅色 · error",
+        "displayName": "晨曦 · error",
         "tonalRamp": [
           "oklch(15% 0.0662 20.48)",
           "oklch(25% 0.1325 20.48)",
@@ -160,7 +160,7 @@
       },
       "light-primary": {
         "role": "primary",
-        "displayName": "IDEA 浅色 · primary",
+        "displayName": "晨曦 · primary",
         "tonalRamp": [
           "oklch(15% 0.0627 262.58)",
           "oklch(25% 0.1253 262.58)",
@@ -174,7 +174,7 @@
       },
       "light-primary-hover": {
         "role": "primary",
-        "displayName": "IDEA 浅色 · primary-hover",
+        "displayName": "晨曦 · primary-hover",
         "tonalRamp": [
           "oklch(15% 0.0515 261.13)",
           "oklch(25% 0.1030 261.13)",
@@ -188,7 +188,7 @@
       },
       "light-pressed": {
         "role": "neutral",
-        "displayName": "IDEA 浅色 · pressed",
+        "displayName": "晨曦 · pressed",
         "tonalRamp": [
           "oklch(15% 0.0198 262.61)",
           "oklch(25% 0.0397 262.61)",
@@ -202,7 +202,7 @@
       },
       "light-success-bg": {
         "role": "tertiary",
-        "displayName": "IDEA 浅色 · success-bg",
+        "displayName": "晨曦 · success-bg",
         "tonalRamp": [
           "oklch(15% 0.0119 151.53)",
           "oklch(25% 0.0239 151.53)",
@@ -216,7 +216,7 @@
       },
       "light-error-bg": {
         "role": "tertiary",
-        "displayName": "IDEA 浅色 · error-bg",
+        "displayName": "晨曦 · error-bg",
         "tonalRamp": [
           "oklch(15% 0.0087 14.06)",
           "oklch(25% 0.0175 14.06)",
@@ -230,7 +230,7 @@
       },
       "light-scrim": {
         "role": "neutral",
-        "displayName": "IDEA 浅色 · scrim",
+        "displayName": "晨曦 · scrim",
         "tonalRamp": [
           "oklch(15% 0.0160 266.86)",
           "oklch(25% 0.0321 266.86)",
@@ -244,7 +244,7 @@
       },
       "dark-canvas": {
         "role": "neutral",
-        "displayName": "IDEA 深色 · canvas",
+        "displayName": "星夜 · canvas",
         "tonalRamp": [
           "oklch(15% 0.0024 271.17)",
           "oklch(25% 0.0047 271.17)",
@@ -258,7 +258,7 @@
       },
       "dark-panel": {
         "role": "neutral",
-        "displayName": "IDEA 深色 · panel",
+        "displayName": "星夜 · panel",
         "tonalRamp": [
           "oklch(15% 0.0025 258.36)",
           "oklch(25% 0.0049 258.36)",
@@ -272,7 +272,7 @@
       },
       "dark-text": {
         "role": "neutral",
-        "displayName": "IDEA 深色 · text",
+        "displayName": "星夜 · text",
         "tonalRamp": [
           "oklch(15% 0.0023 264.53)",
           "oklch(25% 0.0047 264.53)",
@@ -286,7 +286,7 @@
       },
       "dark-muted": {
         "role": "neutral",
-        "displayName": "IDEA 深色 · muted",
+        "displayName": "星夜 · muted",
         "tonalRamp": [
           "oklch(15% 0.0043 261.78)",
           "oklch(25% 0.0087 261.78)",
@@ -300,7 +300,7 @@
       },
       "dark-border": {
         "role": "neutral",
-        "displayName": "IDEA 深色 · border",
+        "displayName": "星夜 · border",
         "tonalRamp": [
           "oklch(15% 0.0042 264.46)",
           "oklch(25% 0.0085 264.46)",
@@ -314,7 +314,7 @@
       },
       "dark-accent": {
         "role": "primary",
-        "displayName": "IDEA 深色 · accent",
+        "displayName": "星夜 · accent",
         "tonalRamp": [
           "oklch(15% 0.0598 262.83)",
           "oklch(25% 0.1196 262.83)",
@@ -328,7 +328,7 @@
       },
       "dark-accent-bg": {
         "role": "primary",
-        "displayName": "IDEA 深色 · accent-bg",
+        "displayName": "星夜 · accent-bg",
         "tonalRamp": [
           "oklch(15% 0.0313 263.46)",
           "oklch(25% 0.0626 263.46)",
@@ -342,7 +342,7 @@
       },
       "dark-hover": {
         "role": "neutral",
-        "displayName": "IDEA 深色 · hover",
+        "displayName": "星夜 · hover",
         "tonalRamp": [
           "oklch(15% 0.0036 268.40)",
           "oklch(25% 0.0073 268.40)",
@@ -356,7 +356,7 @@
       },
       "dark-good": {
         "role": "tertiary",
-        "displayName": "IDEA 深色 · good",
+        "displayName": "星夜 · good",
         "tonalRamp": [
           "oklch(15% 0.0442 146.22)",
           "oklch(25% 0.0884 146.22)",
@@ -370,7 +370,7 @@
       },
       "dark-warning": {
         "role": "tertiary",
-        "displayName": "IDEA 深色 · warning",
+        "displayName": "星夜 · warning",
         "tonalRamp": [
           "oklch(15% 0.0530 85.95)",
           "oklch(25% 0.1060 85.95)",
@@ -384,7 +384,7 @@
       },
       "dark-error": {
         "role": "tertiary",
-        "displayName": "IDEA 深色 · error",
+        "displayName": "星夜 · error",
         "tonalRamp": [
           "oklch(15% 0.0430 24.15)",
           "oklch(25% 0.0860 24.15)",
@@ -398,7 +398,7 @@
       },
       "dark-primary": {
         "role": "primary",
-        "displayName": "IDEA 深色 · primary",
+        "displayName": "星夜 · primary",
         "tonalRamp": [
           "oklch(15% 0.0627 262.58)",
           "oklch(25% 0.1253 262.58)",
@@ -412,7 +412,7 @@
       },
       "dark-primary-text": {
         "role": "primary",
-        "displayName": "IDEA 深色 · primary-text",
+        "displayName": "星夜 · primary-text",
         "tonalRamp": [
           "oklch(15% 0.0000 89.88)",
           "oklch(25% 0.0000 89.88)",
@@ -426,7 +426,7 @@
       },
       "dark-primary-hover": {
         "role": "primary",
-        "displayName": "IDEA 深色 · primary-hover",
+        "displayName": "星夜 · primary-hover",
         "tonalRamp": [
           "oklch(15% 0.0515 261.13)",
           "oklch(25% 0.1030 261.13)",
@@ -440,7 +440,7 @@
       },
       "dark-success-bg": {
         "role": "tertiary",
-        "displayName": "IDEA 深色 · success-bg",
+        "displayName": "星夜 · success-bg",
         "tonalRamp": [
           "oklch(15% 0.0139 147.75)",
           "oklch(25% 0.0278 147.75)",
@@ -454,7 +454,7 @@
       },
       "dark-error-bg": {
         "role": "tertiary",
-        "displayName": "IDEA 深色 · error-bg",
+        "displayName": "星夜 · error-bg",
         "tonalRamp": [
           "oklch(15% 0.0139 19.23)",
           "oklch(25% 0.0277 19.23)",
@@ -468,7 +468,7 @@
       },
       "dark-scrim": {
         "role": "neutral",
-        "displayName": "IDEA 深色 · scrim",
+        "displayName": "星夜 · scrim",
         "tonalRamp": [
           "oklch(15% 0.0064 265.80)",
           "oklch(25% 0.0128 265.80)",
@@ -768,7 +768,7 @@
       },
       "control-idea": {
         "displayName": "control-idea",
-        "purpose": "IDEA 明暗控件字重。"
+        "purpose": "晨曦与星夜控件字重。"
       },
       "control-dopamine": {
         "displayName": "control-dopamine",
@@ -776,7 +776,7 @@
       },
       "title-idea": {
         "displayName": "title-idea",
-        "purpose": "IDEA 明暗普通区域标题。"
+        "purpose": "晨曦与星夜普通区域标题。"
       },
       "title-dopamine": {
         "displayName": "title-dopamine",
@@ -908,13 +908,13 @@
       },
       {
         "id": "light",
-        "name": "IDEA 浅色",
+        "name": "晨曦",
         "dark": false,
         "source": "packages/ui/themes.json"
       },
       {
         "id": "dark",
-        "name": "IDEA 深色",
+        "name": "星夜",
         "dark": true,
         "source": "packages/ui/themes.json"
       }
@@ -1831,7 +1831,7 @@
   ],
   "narrative": {
     "northStar": "服务器会话工作台",
-    "overview": "SoDeck 的核心界面是一张紧凑、可持续工作的服务器会话工作台。桌面壳维持应用导航与连接身份，管理台集中维护资料和偏好，工作台承载会话中的插件页面与工具。信息层级依靠区域、结构线、选中底和可读状态，不以大标题或装饰性卡片组织每个操作。\n\n用户已确认保留多巴胺主题，浅色和深色采用 IDEA 默认配色方向。三主题共享控件几何与操作路径；多巴胺通过暖底、粉色导航、黄色选中、绿色工具底和更粗的结构线表达个性，IDEA 明暗主题以中性面和蓝色焦点服务长时间阅读。",
+    "overview": "SoDeck 的核心界面是一张紧凑、可持续工作的服务器会话工作台。桌面壳维持应用导航与连接身份，管理台集中维护资料和偏好，工作台承载会话中的插件页面与工具。信息层级依靠区域、结构线、选中底和可读状态，不以大标题或装饰性卡片组织每个操作。\n\n晨曦（浅色）和星夜（深色）沿用 IDEA 默认配色方向，多巴胺保留原有配色。三主题共享控件几何与操作路径；多巴胺通过暖底、粉色导航、黄色选中、绿色工具底和更粗的结构线表达个性，晨曦与星夜主题以中性面和蓝色焦点服务长时间阅读。",
     "keyCharacteristics": [
       "核心导航、服务器会话和插件工具入口分区明确。",
       "三主题共享紧凑几何，主题差异通过角色颜色、描边和字重表达。",
@@ -1855,7 +1855,7 @@
       }
     ],
     "dos": [
-      "Do 使用 packages/ui 的现有主题角色，并保持多巴胺、IDEA 浅色和 IDEA 深色的同构布局。",
+      "Do 使用 packages/ui 的现有主题角色，并保持多巴胺、晨曦和 星夜的同构布局。",
       "Do 将核心功能放在管理台导航，保留左右窄侧栏给 sidebar 插件贡献。",
       "Do 让终端通过中央新建动作与工作标签使用，切换管理台时保留会话、Surface 和草稿。",
       "Do 为连接、插件和消息状态保留可读文字，为图标按钮提供名称。",
