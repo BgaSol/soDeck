@@ -1,0 +1,1158 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-14T06:34:30.056Z",
+  "title": "Design System: SoDeck 界面原型",
+  "extensions": {
+    "colorMeta": {
+      "dark-accent": {
+        "role": "primary",
+        "displayName": "IDEA 深色 · accent",
+        "canonical": "#3574f0",
+        "tonalRamp": [
+          "oklch(15% 0.0495 262.0)",
+          "oklch(27% 0.1089 262.0)",
+          "oklch(39% 0.1584 262.0)",
+          "oklch(51% 0.1981 262.0)",
+          "oklch(63% 0.1981 262.0)",
+          "oklch(75% 0.1683 262.0)",
+          "oklch(87% 0.0990 262.0)",
+          "oklch(95% 0.0396 262.0)"
+        ]
+      },
+      "dark-canvas": {
+        "role": "neutral",
+        "displayName": "IDEA 深色 · canvas",
+        "canonical": "#1e1f22",
+        "tonalRamp": [
+          "oklch(15% 0.0015 271.2)",
+          "oklch(27% 0.0032 271.2)",
+          "oklch(39% 0.0047 271.2)",
+          "oklch(51% 0.0059 271.2)",
+          "oklch(63% 0.0059 271.2)",
+          "oklch(75% 0.0050 271.2)",
+          "oklch(87% 0.0029 271.2)",
+          "oklch(95% 0.0012 271.2)"
+        ]
+      },
+      "dark-panel": {
+        "role": "neutral",
+        "displayName": "IDEA 深色 · panel",
+        "canonical": "#2b2d30",
+        "tonalRamp": [
+          "oklch(15% 0.0015 258.4)",
+          "oklch(27% 0.0034 258.4)",
+          "oklch(39% 0.0049 258.4)",
+          "oklch(51% 0.0061 258.4)",
+          "oklch(63% 0.0061 258.4)",
+          "oklch(75% 0.0052 258.4)",
+          "oklch(87% 0.0031 258.4)",
+          "oklch(95% 0.0012 258.4)"
+        ]
+      },
+      "dark-raised": {
+        "role": "neutral",
+        "displayName": "IDEA 深色 · raised",
+        "canonical": "#393b40",
+        "tonalRamp": [
+          "oklch(15% 0.0023 268.4)",
+          "oklch(27% 0.0050 268.4)",
+          "oklch(39% 0.0073 268.4)",
+          "oklch(51% 0.0091 268.4)",
+          "oklch(63% 0.0091 268.4)",
+          "oklch(75% 0.0077 268.4)",
+          "oklch(87% 0.0045 268.4)",
+          "oklch(95% 0.0018 268.4)"
+        ]
+      },
+      "dark-text": {
+        "role": "neutral",
+        "displayName": "IDEA 深色 · text",
+        "canonical": "#dfe1e5",
+        "tonalRamp": [
+          "oklch(15% 0.0015 264.5)",
+          "oklch(27% 0.0032 264.5)",
+          "oklch(39% 0.0047 264.5)",
+          "oklch(51% 0.0058 264.5)",
+          "oklch(63% 0.0058 264.5)",
+          "oklch(75% 0.0050 264.5)",
+          "oklch(87% 0.0029 264.5)",
+          "oklch(95% 0.0012 264.5)"
+        ]
+      },
+      "dark-muted": {
+        "role": "neutral",
+        "displayName": "IDEA 深色 · muted",
+        "canonical": "#9da0a8",
+        "tonalRamp": [
+          "oklch(15% 0.0030 269.5)",
+          "oklch(27% 0.0067 269.5)",
+          "oklch(39% 0.0097 269.5)",
+          "oklch(51% 0.0121 269.5)",
+          "oklch(63% 0.0121 269.5)",
+          "oklch(75% 0.0103 269.5)",
+          "oklch(87% 0.0060 269.5)",
+          "oklch(95% 0.0024 269.5)"
+        ]
+      },
+      "dark-control-border": {
+        "role": "neutral",
+        "displayName": "IDEA 深色 · control-border",
+        "canonical": "#4e5157",
+        "tonalRamp": [
+          "oklch(15% 0.0026 264.5)",
+          "oklch(27% 0.0058 264.5)",
+          "oklch(39% 0.0085 264.5)",
+          "oklch(51% 0.0106 264.5)",
+          "oklch(63% 0.0106 264.5)",
+          "oklch(75% 0.0090 264.5)",
+          "oklch(87% 0.0053 264.5)",
+          "oklch(95% 0.0021 264.5)"
+        ]
+      },
+      "dark-selected": {
+        "role": "neutral",
+        "displayName": "IDEA 深色 · selected",
+        "canonical": "#2e436e",
+        "tonalRamp": [
+          "oklch(15% 0.0196 263.5)",
+          "oklch(27% 0.0430 263.5)",
+          "oklch(39% 0.0626 263.5)",
+          "oklch(51% 0.0782 263.5)",
+          "oklch(63% 0.0782 263.5)",
+          "oklch(75% 0.0665 263.5)",
+          "oklch(87% 0.0391 263.5)",
+          "oklch(95% 0.0156 263.5)"
+        ]
+      },
+      "dark-good": {
+        "role": "tertiary",
+        "displayName": "IDEA 深色 · good",
+        "canonical": "#89cc8e",
+        "tonalRamp": [
+          "oklch(15% 0.0276 146.2)",
+          "oklch(27% 0.0608 146.2)",
+          "oklch(39% 0.0884 146.2)",
+          "oklch(51% 0.1105 146.2)",
+          "oklch(63% 0.1105 146.2)",
+          "oklch(75% 0.0940 146.2)",
+          "oklch(87% 0.0553 146.2)",
+          "oklch(95% 0.0221 146.2)"
+        ]
+      },
+      "dark-warning": {
+        "role": "tertiary",
+        "displayName": "IDEA 深色 · warning",
+        "canonical": "#f2c55c",
+        "tonalRamp": [
+          "oklch(15% 0.0331 86.0)",
+          "oklch(27% 0.0729 86.0)",
+          "oklch(39% 0.1060 86.0)",
+          "oklch(51% 0.1325 86.0)",
+          "oklch(63% 0.1325 86.0)",
+          "oklch(75% 0.1126 86.0)",
+          "oklch(87% 0.0662 86.0)",
+          "oklch(95% 0.0265 86.0)"
+        ]
+      },
+      "dark-error": {
+        "role": "tertiary",
+        "displayName": "IDEA 深色 · error",
+        "canonical": "#eb938d",
+        "tonalRamp": [
+          "oklch(15% 0.0269 24.2)",
+          "oklch(27% 0.0591 24.2)",
+          "oklch(39% 0.0860 24.2)",
+          "oklch(51% 0.1075 24.2)",
+          "oklch(63% 0.1075 24.2)",
+          "oklch(75% 0.0914 24.2)",
+          "oklch(87% 0.0538 24.2)",
+          "oklch(95% 0.0215 24.2)"
+        ]
+      },
+      "dark-good-bg": {
+        "role": "tertiary",
+        "displayName": "IDEA 深色 · good-bg",
+        "canonical": "#253627",
+        "tonalRamp": [
+          "oklch(15% 0.0087 147.8)",
+          "oklch(27% 0.0191 147.8)",
+          "oklch(39% 0.0278 147.8)",
+          "oklch(51% 0.0347 147.8)",
+          "oklch(63% 0.0347 147.8)",
+          "oklch(75% 0.0295 147.8)",
+          "oklch(87% 0.0173 147.8)",
+          "oklch(95% 0.0069 147.8)"
+        ]
+      },
+      "dark-warning-bg": {
+        "role": "tertiary",
+        "displayName": "IDEA 深色 · warning-bg",
+        "canonical": "#3d3223",
+        "tonalRamp": [
+          "oklch(15% 0.0074 75.0)",
+          "oklch(27% 0.0162 75.0)",
+          "oklch(39% 0.0236 75.0)",
+          "oklch(51% 0.0295 75.0)",
+          "oklch(63% 0.0295 75.0)",
+          "oklch(75% 0.0251 75.0)",
+          "oklch(87% 0.0147 75.0)",
+          "oklch(95% 0.0059 75.0)"
+        ]
+      },
+      "dark-error-bg": {
+        "role": "tertiary",
+        "displayName": "IDEA 深色 · error-bg",
+        "canonical": "#402929",
+        "tonalRamp": [
+          "oklch(15% 0.0087 19.2)",
+          "oklch(27% 0.0191 19.2)",
+          "oklch(39% 0.0277 19.2)",
+          "oklch(51% 0.0347 19.2)",
+          "oklch(63% 0.0347 19.2)",
+          "oklch(75% 0.0295 19.2)",
+          "oklch(87% 0.0173 19.2)",
+          "oklch(95% 0.0069 19.2)"
+        ]
+      },
+      "dark-toolbar-muted": {
+        "role": "neutral",
+        "displayName": "IDEA 深色 · toolbar-muted",
+        "canonical": "#b4b8bf",
+        "tonalRamp": [
+          "oklch(15% 0.0027 261.8)",
+          "oklch(27% 0.0060 261.8)",
+          "oklch(39% 0.0087 261.8)",
+          "oklch(51% 0.0109 261.8)",
+          "oklch(63% 0.0109 261.8)",
+          "oklch(75% 0.0092 261.8)",
+          "oklch(87% 0.0054 261.8)",
+          "oklch(95% 0.0022 261.8)"
+        ]
+      },
+      "dark-code-green": {
+        "role": "tertiary",
+        "displayName": "IDEA 深色 · code-green",
+        "canonical": "#6aab73",
+        "tonalRamp": [
+          "oklch(15% 0.0264 147.7)",
+          "oklch(27% 0.0581 147.7)",
+          "oklch(39% 0.0846 147.7)",
+          "oklch(51% 0.1057 147.7)",
+          "oklch(63% 0.1057 147.7)",
+          "oklch(75% 0.0898 147.7)",
+          "oklch(87% 0.0528 147.7)",
+          "oklch(95% 0.0211 147.7)"
+        ]
+      },
+      "dark-code-blue": {
+        "role": "tertiary",
+        "displayName": "IDEA 深色 · code-blue",
+        "canonical": "#56a8f5",
+        "tonalRamp": [
+          "oklch(15% 0.0347 249.1)",
+          "oklch(27% 0.0763 249.1)",
+          "oklch(39% 0.1109 249.1)",
+          "oklch(51% 0.1387 249.1)",
+          "oklch(63% 0.1387 249.1)",
+          "oklch(75% 0.1179 249.1)",
+          "oklch(87% 0.0693 249.1)",
+          "oklch(95% 0.0277 249.1)"
+        ]
+      },
+      "dark-code-orange": {
+        "role": "tertiary",
+        "displayName": "IDEA 深色 · code-orange",
+        "canonical": "#cf8e6d",
+        "tonalRamp": [
+          "oklch(15% 0.0230 47.7)",
+          "oklch(27% 0.0505 47.7)",
+          "oklch(39% 0.0735 47.7)",
+          "oklch(51% 0.0918 47.7)",
+          "oklch(63% 0.0918 47.7)",
+          "oklch(75% 0.0781 47.7)",
+          "oklch(87% 0.0459 47.7)",
+          "oklch(95% 0.0184 47.7)"
+        ]
+      },
+      "light-accent": {
+        "role": "primary",
+        "displayName": "IDEA 浅色 · accent",
+        "canonical": "#3574f0",
+        "tonalRamp": [
+          "oklch(15% 0.0495 262.0)",
+          "oklch(27% 0.1089 262.0)",
+          "oklch(39% 0.1584 262.0)",
+          "oklch(51% 0.1981 262.0)",
+          "oklch(63% 0.1981 262.0)",
+          "oklch(75% 0.1683 262.0)",
+          "oklch(87% 0.0990 262.0)",
+          "oklch(95% 0.0396 262.0)"
+        ]
+      },
+      "light-canvas": {
+        "role": "neutral",
+        "displayName": "IDEA 浅色 · canvas",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "oklch(15% 0.0000 0.0)",
+          "oklch(27% 0.0000 0.0)",
+          "oklch(39% 0.0000 0.0)",
+          "oklch(51% 0.0000 0.0)",
+          "oklch(63% 0.0000 0.0)",
+          "oklch(75% 0.0000 0.0)",
+          "oklch(87% 0.0000 0.0)",
+          "oklch(95% 0.0000 0.0)"
+        ]
+      },
+      "light-panel": {
+        "role": "neutral",
+        "displayName": "IDEA 浅色 · panel",
+        "canonical": "#f7f8fa",
+        "tonalRamp": [
+          "oklch(15% 0.0007 264.5)",
+          "oklch(27% 0.0016 264.5)",
+          "oklch(39% 0.0023 264.5)",
+          "oklch(51% 0.0029 264.5)",
+          "oklch(63% 0.0029 264.5)",
+          "oklch(75% 0.0024 264.5)",
+          "oklch(87% 0.0014 264.5)",
+          "oklch(95% 0.0006 264.5)"
+        ]
+      },
+      "light-text": {
+        "role": "neutral",
+        "displayName": "IDEA 浅色 · text",
+        "canonical": "#27282e",
+        "tonalRamp": [
+          "oklch(15% 0.0028 278.1)",
+          "oklch(27% 0.0061 278.1)",
+          "oklch(39% 0.0089 278.1)",
+          "oklch(51% 0.0111 278.1)",
+          "oklch(63% 0.0111 278.1)",
+          "oklch(75% 0.0094 278.1)",
+          "oklch(87% 0.0055 278.1)",
+          "oklch(95% 0.0022 278.1)"
+        ]
+      },
+      "light-muted": {
+        "role": "neutral",
+        "displayName": "IDEA 浅色 · muted",
+        "canonical": "#5a5d6b",
+        "tonalRamp": [
+          "oklch(15% 0.0057 275.9)",
+          "oklch(27% 0.0125 275.9)",
+          "oklch(39% 0.0182 275.9)",
+          "oklch(51% 0.0227 275.9)",
+          "oklch(63% 0.0227 275.9)",
+          "oklch(75% 0.0193 275.9)",
+          "oklch(87% 0.0114 275.9)",
+          "oklch(95% 0.0045 275.9)"
+        ]
+      },
+      "light-border": {
+        "role": "neutral",
+        "displayName": "IDEA 浅色 · border",
+        "canonical": "#dfe1e5",
+        "tonalRamp": [
+          "oklch(15% 0.0015 264.5)",
+          "oklch(27% 0.0032 264.5)",
+          "oklch(39% 0.0047 264.5)",
+          "oklch(51% 0.0058 264.5)",
+          "oklch(63% 0.0058 264.5)",
+          "oklch(75% 0.0050 264.5)",
+          "oklch(87% 0.0029 264.5)",
+          "oklch(95% 0.0012 264.5)"
+        ]
+      },
+      "light-control-border": {
+        "role": "neutral",
+        "displayName": "IDEA 浅色 · control-border",
+        "canonical": "#c9ccd6",
+        "tonalRamp": [
+          "oklch(15% 0.0036 272.7)",
+          "oklch(27% 0.0078 272.7)",
+          "oklch(39% 0.0114 272.7)",
+          "oklch(51% 0.0142 272.7)",
+          "oklch(63% 0.0142 272.7)",
+          "oklch(75% 0.0121 272.7)",
+          "oklch(87% 0.0071 272.7)",
+          "oklch(95% 0.0028 272.7)"
+        ]
+      },
+      "light-selected": {
+        "role": "neutral",
+        "displayName": "IDEA 浅色 · selected",
+        "canonical": "#d4e2ff",
+        "tonalRamp": [
+          "oklch(15% 0.0106 265.0)",
+          "oklch(27% 0.0234 265.0)",
+          "oklch(39% 0.0340 265.0)",
+          "oklch(51% 0.0425 265.0)",
+          "oklch(63% 0.0425 265.0)",
+          "oklch(75% 0.0361 265.0)",
+          "oklch(87% 0.0213 265.0)",
+          "oklch(95% 0.0085 265.0)"
+        ]
+      },
+      "light-hover": {
+        "role": "neutral",
+        "displayName": "IDEA 浅色 · hover",
+        "canonical": "#ebecf0",
+        "tonalRamp": [
+          "oklch(15% 0.0014 275.0)",
+          "oklch(27% 0.0030 275.0)",
+          "oklch(39% 0.0044 275.0)",
+          "oklch(51% 0.0055 275.0)",
+          "oklch(63% 0.0055 275.0)",
+          "oklch(75% 0.0046 275.0)",
+          "oklch(87% 0.0027 275.0)",
+          "oklch(95% 0.0011 275.0)"
+        ]
+      },
+      "light-good": {
+        "role": "tertiary",
+        "displayName": "IDEA 浅色 · good",
+        "canonical": "#1e6b33",
+        "tonalRamp": [
+          "oklch(15% 0.0288 148.7)",
+          "oklch(27% 0.0633 148.7)",
+          "oklch(39% 0.0921 148.7)",
+          "oklch(51% 0.1151 148.7)",
+          "oklch(63% 0.1151 148.7)",
+          "oklch(75% 0.0978 148.7)",
+          "oklch(87% 0.0575 148.7)",
+          "oklch(95% 0.0230 148.7)"
+        ]
+      },
+      "light-warning": {
+        "role": "tertiary",
+        "displayName": "IDEA 浅色 · warning",
+        "canonical": "#a46704",
+        "tonalRamp": [
+          "oklch(15% 0.0306 69.2)",
+          "oklch(27% 0.0673 69.2)",
+          "oklch(39% 0.0978 69.2)",
+          "oklch(51% 0.1223 69.2)",
+          "oklch(63% 0.1223 69.2)",
+          "oklch(75% 0.1040 69.2)",
+          "oklch(87% 0.0612 69.2)",
+          "oklch(95% 0.0245 69.2)"
+        ]
+      },
+      "light-error": {
+        "role": "tertiary",
+        "displayName": "IDEA 浅色 · error",
+        "canonical": "#ad2b38",
+        "tonalRamp": [
+          "oklch(15% 0.0414 20.5)",
+          "oklch(27% 0.0911 20.5)",
+          "oklch(39% 0.1325 20.5)",
+          "oklch(51% 0.1656 20.5)",
+          "oklch(63% 0.1656 20.5)",
+          "oklch(75% 0.1408 20.5)",
+          "oklch(87% 0.0828 20.5)",
+          "oklch(95% 0.0331 20.5)"
+        ]
+      },
+      "light-good-bg": {
+        "role": "tertiary",
+        "displayName": "IDEA 浅色 · good-bg",
+        "canonical": "#e3f7e7",
+        "tonalRamp": [
+          "oklch(15% 0.0075 151.5)",
+          "oklch(27% 0.0164 151.5)",
+          "oklch(39% 0.0239 151.5)",
+          "oklch(51% 0.0299 151.5)",
+          "oklch(63% 0.0299 151.5)",
+          "oklch(75% 0.0254 151.5)",
+          "oklch(87% 0.0149 151.5)",
+          "oklch(95% 0.0060 151.5)"
+        ]
+      },
+      "light-warning-bg": {
+        "role": "tertiary",
+        "displayName": "IDEA 浅色 · warning-bg",
+        "canonical": "#fff5db",
+        "tonalRamp": [
+          "oklch(15% 0.0089 89.4)",
+          "oklch(27% 0.0196 89.4)",
+          "oklch(39% 0.0285 89.4)",
+          "oklch(51% 0.0356 89.4)",
+          "oklch(63% 0.0356 89.4)",
+          "oklch(75% 0.0303 89.4)",
+          "oklch(87% 0.0178 89.4)",
+          "oklch(95% 0.0071 89.4)"
+        ]
+      },
+      "light-error-bg": {
+        "role": "tertiary",
+        "displayName": "IDEA 浅色 · error-bg",
+        "canonical": "#ffebec",
+        "tonalRamp": [
+          "oklch(15% 0.0055 14.1)",
+          "oklch(27% 0.0120 14.1)",
+          "oklch(39% 0.0175 14.1)",
+          "oklch(51% 0.0218 14.1)",
+          "oklch(63% 0.0218 14.1)",
+          "oklch(75% 0.0185 14.1)",
+          "oklch(87% 0.0109 14.1)",
+          "oklch(95% 0.0044 14.1)"
+        ]
+      },
+      "light-toolbar-selected": {
+        "role": "neutral",
+        "displayName": "IDEA 浅色 · toolbar-selected",
+        "canonical": "#383a42",
+        "tonalRamp": [
+          "oklch(15% 0.0035 274.5)",
+          "oklch(27% 0.0078 274.5)",
+          "oklch(39% 0.0113 274.5)",
+          "oklch(51% 0.0141 274.5)",
+          "oklch(63% 0.0141 274.5)",
+          "oklch(75% 0.0120 274.5)",
+          "oklch(87% 0.0071 274.5)",
+          "oklch(95% 0.0028 274.5)"
+        ]
+      },
+      "light-toolbar-hover": {
+        "role": "neutral",
+        "displayName": "IDEA 浅色 · toolbar-hover",
+        "canonical": "#494b57",
+        "tonalRamp": [
+          "oklch(15% 0.0050 278.0)",
+          "oklch(27% 0.0111 278.0)",
+          "oklch(39% 0.0161 278.0)",
+          "oklch(51% 0.0201 278.0)",
+          "oklch(63% 0.0201 278.0)",
+          "oklch(75% 0.0171 278.0)",
+          "oklch(87% 0.0100 278.0)",
+          "oklch(95% 0.0040 278.0)"
+        ]
+      },
+      "light-code-green": {
+        "role": "tertiary",
+        "displayName": "IDEA 浅色 · code-green",
+        "canonical": "#067d17",
+        "tonalRamp": [
+          "oklch(15% 0.0412 143.8)",
+          "oklch(27% 0.0907 143.8)",
+          "oklch(39% 0.1319 143.8)",
+          "oklch(51% 0.1649 143.8)",
+          "oklch(63% 0.1649 143.8)",
+          "oklch(75% 0.1402 143.8)",
+          "oklch(87% 0.0824 143.8)",
+          "oklch(95% 0.0330 143.8)"
+        ]
+      },
+      "light-code-blue": {
+        "role": "tertiary",
+        "displayName": "IDEA 浅色 · code-blue",
+        "canonical": "#0033b3",
+        "tonalRamp": [
+          "oklch(15% 0.0514 263.2)",
+          "oklch(27% 0.1132 263.2)",
+          "oklch(39% 0.1646 263.2)",
+          "oklch(51% 0.2058 263.2)",
+          "oklch(63% 0.2058 263.2)",
+          "oklch(75% 0.1749 263.2)",
+          "oklch(87% 0.1029 263.2)",
+          "oklch(95% 0.0412 263.2)"
+        ]
+      },
+      "light-code-orange": {
+        "role": "tertiary",
+        "displayName": "IDEA 浅色 · code-orange",
+        "canonical": "#9e4b00",
+        "tonalRamp": [
+          "oklch(15% 0.0328 51.8)",
+          "oklch(27% 0.0721 51.8)",
+          "oklch(39% 0.1049 51.8)",
+          "oklch(51% 0.1312 51.8)",
+          "oklch(63% 0.1312 51.8)",
+          "oklch(75% 0.1115 51.8)",
+          "oklch(87% 0.0656 51.8)",
+          "oklch(95% 0.0262 51.8)"
+        ]
+      },
+      "light-code-muted": {
+        "role": "neutral",
+        "displayName": "IDEA 浅色 · code-muted",
+        "canonical": "#6c707e",
+        "tonalRamp": [
+          "oklch(15% 0.0056 273.0)",
+          "oklch(27% 0.0122 273.0)",
+          "oklch(39% 0.0178 273.0)",
+          "oklch(51% 0.0223 273.0)",
+          "oklch(63% 0.0223 273.0)",
+          "oklch(75% 0.0189 273.0)",
+          "oklch(87% 0.0111 273.0)",
+          "oklch(95% 0.0045 273.0)"
+        ]
+      },
+      "dopamine-accent": {
+        "role": "primary",
+        "displayName": "多巴胺 · accent",
+        "canonical": "#5346a6",
+        "tonalRamp": [
+          "oklch(15% 0.0372 285.1)",
+          "oklch(27% 0.0817 285.1)",
+          "oklch(39% 0.1189 285.1)",
+          "oklch(51% 0.1486 285.1)",
+          "oklch(63% 0.1486 285.1)",
+          "oklch(75% 0.1263 285.1)",
+          "oklch(87% 0.0743 285.1)",
+          "oklch(95% 0.0297 285.1)"
+        ]
+      },
+      "dopamine-canvas": {
+        "role": "neutral",
+        "displayName": "多巴胺 · canvas",
+        "canonical": "#fbf1e8",
+        "tonalRamp": [
+          "oklch(15% 0.0040 64.7)",
+          "oklch(27% 0.0089 64.7)",
+          "oklch(39% 0.0129 64.7)",
+          "oklch(51% 0.0161 64.7)",
+          "oklch(63% 0.0161 64.7)",
+          "oklch(75% 0.0137 64.7)",
+          "oklch(87% 0.0081 64.7)",
+          "oklch(95% 0.0032 64.7)"
+        ]
+      },
+      "dopamine-panel": {
+        "role": "neutral",
+        "displayName": "多巴胺 · panel",
+        "canonical": "#fffbe6",
+        "tonalRamp": [
+          "oklch(15% 0.0069 98.1)",
+          "oklch(27% 0.0153 98.1)",
+          "oklch(39% 0.0222 98.1)",
+          "oklch(51% 0.0278 98.1)",
+          "oklch(63% 0.0278 98.1)",
+          "oklch(75% 0.0236 98.1)",
+          "oklch(87% 0.0139 98.1)",
+          "oklch(95% 0.0056 98.1)"
+        ]
+      },
+      "dopamine-raised": {
+        "role": "neutral",
+        "displayName": "多巴胺 · raised",
+        "canonical": "#fffef5",
+        "tonalRamp": [
+          "oklch(15% 0.0030 101.5)",
+          "oklch(27% 0.0065 101.5)",
+          "oklch(39% 0.0095 101.5)",
+          "oklch(51% 0.0119 101.5)",
+          "oklch(63% 0.0119 101.5)",
+          "oklch(75% 0.0101 101.5)",
+          "oklch(87% 0.0059 101.5)",
+          "oklch(95% 0.0024 101.5)"
+        ]
+      },
+      "dopamine-text": {
+        "role": "neutral",
+        "displayName": "多巴胺 · text",
+        "canonical": "#20211f",
+        "tonalRamp": [
+          "oklch(15% 0.0010 128.6)",
+          "oklch(27% 0.0022 128.6)",
+          "oklch(39% 0.0032 128.6)",
+          "oklch(51% 0.0040 128.6)",
+          "oklch(63% 0.0040 128.6)",
+          "oklch(75% 0.0034 128.6)",
+          "oklch(87% 0.0020 128.6)",
+          "oklch(95% 0.0008 128.6)"
+        ]
+      },
+      "dopamine-muted": {
+        "role": "neutral",
+        "displayName": "多巴胺 · muted",
+        "canonical": "#585c52",
+        "tonalRamp": [
+          "oklch(15% 0.0041 124.9)",
+          "oklch(27% 0.0091 124.9)",
+          "oklch(39% 0.0132 124.9)",
+          "oklch(51% 0.0166 124.9)",
+          "oklch(63% 0.0166 124.9)",
+          "oklch(75% 0.0141 124.9)",
+          "oklch(87% 0.0083 124.9)",
+          "oklch(95% 0.0033 124.9)"
+        ]
+      },
+      "dopamine-selected": {
+        "role": "neutral",
+        "displayName": "多巴胺 · selected",
+        "canonical": "#ffde75",
+        "tonalRamp": [
+          "oklch(15% 0.0324 92.2)",
+          "oklch(27% 0.0713 92.2)",
+          "oklch(39% 0.1037 92.2)",
+          "oklch(51% 0.1296 92.2)",
+          "oklch(63% 0.1296 92.2)",
+          "oklch(75% 0.1102 92.2)",
+          "oklch(87% 0.0648 92.2)",
+          "oklch(95% 0.0259 92.2)"
+        ]
+      },
+      "dopamine-hover": {
+        "role": "neutral",
+        "displayName": "多巴胺 · hover",
+        "canonical": "#fff0bc",
+        "tonalRamp": [
+          "oklch(15% 0.0172 93.9)",
+          "oklch(27% 0.0377 93.9)",
+          "oklch(39% 0.0549 93.9)",
+          "oklch(51% 0.0686 93.9)",
+          "oklch(63% 0.0686 93.9)",
+          "oklch(75% 0.0583 93.9)",
+          "oklch(87% 0.0343 93.9)",
+          "oklch(95% 0.0137 93.9)"
+        ]
+      },
+      "dopamine-good": {
+        "role": "tertiary",
+        "displayName": "多巴胺 · good",
+        "canonical": "#176b4f",
+        "tonalRamp": [
+          "oklch(15% 0.0225 165.5)",
+          "oklch(27% 0.0495 165.5)",
+          "oklch(39% 0.0721 165.5)",
+          "oklch(51% 0.0901 165.5)",
+          "oklch(63% 0.0901 165.5)",
+          "oklch(75% 0.0766 165.5)",
+          "oklch(87% 0.0450 165.5)",
+          "oklch(95% 0.0180 165.5)"
+        ]
+      },
+      "dopamine-warning": {
+        "role": "tertiary",
+        "displayName": "多巴胺 · warning",
+        "canonical": "#7a4a08",
+        "tonalRamp": [
+          "oklch(15% 0.0243 66.7)",
+          "oklch(27% 0.0534 66.7)",
+          "oklch(39% 0.0776 66.7)",
+          "oklch(51% 0.0970 66.7)",
+          "oklch(63% 0.0970 66.7)",
+          "oklch(75% 0.0825 66.7)",
+          "oklch(87% 0.0485 66.7)",
+          "oklch(95% 0.0194 66.7)"
+        ]
+      },
+      "dopamine-error": {
+        "role": "tertiary",
+        "displayName": "多巴胺 · error",
+        "canonical": "#a12c38",
+        "tonalRamp": [
+          "oklch(15% 0.0381 19.6)",
+          "oklch(27% 0.0838 19.6)",
+          "oklch(39% 0.1219 19.6)",
+          "oklch(51% 0.1523 19.6)",
+          "oklch(63% 0.1523 19.6)",
+          "oklch(75% 0.1295 19.6)",
+          "oklch(87% 0.0762 19.6)",
+          "oklch(95% 0.0305 19.6)"
+        ]
+      },
+      "dopamine-good-bg": {
+        "role": "secondary",
+        "displayName": "多巴胺 · good-bg",
+        "canonical": "#d5f1e5",
+        "tonalRamp": [
+          "oklch(15% 0.0084 168.0)",
+          "oklch(27% 0.0184 168.0)",
+          "oklch(39% 0.0267 168.0)",
+          "oklch(51% 0.0334 168.0)",
+          "oklch(63% 0.0334 168.0)",
+          "oklch(75% 0.0284 168.0)",
+          "oklch(87% 0.0167 168.0)",
+          "oklch(95% 0.0067 168.0)"
+        ]
+      },
+      "dopamine-error-bg": {
+        "role": "tertiary",
+        "displayName": "多巴胺 · error-bg",
+        "canonical": "#ffd7cc",
+        "tonalRamp": [
+          "oklch(15% 0.0119 35.9)",
+          "oklch(27% 0.0261 35.9)",
+          "oklch(39% 0.0380 35.9)",
+          "oklch(51% 0.0475 35.9)",
+          "oklch(63% 0.0475 35.9)",
+          "oklch(75% 0.0403 35.9)",
+          "oklch(87% 0.0237 35.9)",
+          "oklch(95% 0.0095 35.9)"
+        ]
+      },
+      "dopamine-toolbar": {
+        "role": "secondary",
+        "displayName": "多巴胺 · toolbar",
+        "canonical": "#ffb7cf",
+        "tonalRamp": [
+          "oklch(15% 0.0221 357.4)",
+          "oklch(27% 0.0486 357.4)",
+          "oklch(39% 0.0706 357.4)",
+          "oklch(51% 0.0883 357.4)",
+          "oklch(63% 0.0883 357.4)",
+          "oklch(75% 0.0751 357.4)",
+          "oklch(87% 0.0442 357.4)",
+          "oklch(95% 0.0177 357.4)"
+        ]
+      },
+      "dopamine-toolbar-hover": {
+        "role": "neutral",
+        "displayName": "多巴胺 · toolbar-hover",
+        "canonical": "#ffd3e2",
+        "tonalRamp": [
+          "oklch(15% 0.0132 355.7)",
+          "oklch(27% 0.0290 355.7)",
+          "oklch(39% 0.0422 355.7)",
+          "oklch(51% 0.0528 355.7)",
+          "oklch(63% 0.0528 355.7)",
+          "oklch(75% 0.0449 355.7)",
+          "oklch(87% 0.0264 355.7)",
+          "oklch(95% 0.0106 355.7)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "headline",
+        "purpose": "页面标题，实际媒体查询在窄屏缩减字号。"
+      },
+      "title": {
+        "displayName": "title",
+        "purpose": "普通区域标题。"
+      },
+      "dialog-title": {
+        "displayName": "dialog-title",
+        "purpose": "对话框标题。"
+      },
+      "body": {
+        "displayName": "body",
+        "purpose": "界面正文与控件默认字号。"
+      },
+      "label": {
+        "displayName": "label",
+        "purpose": "表单标签与次要说明。"
+      },
+      "metadata": {
+        "displayName": "metadata",
+        "purpose": "计数、标签与底栏元信息。"
+      },
+      "mono": {
+        "displayName": "mono",
+        "purpose": "终端输出、路径和文件编辑。"
+      },
+      "metric": {
+        "displayName": "metric",
+        "purpose": "侧工具指标数值。"
+      }
+    },
+    "themeRoles": {
+      "dark": {
+        "accent": "{colors.dark-accent}",
+        "canvas": "{colors.dark-canvas}",
+        "panel": "{colors.dark-panel}",
+        "raised": "{colors.dark-raised}",
+        "text": "{colors.dark-text}",
+        "muted": "{colors.dark-muted}",
+        "border": "{colors.dark-raised}",
+        "control-border": "{colors.dark-control-border}",
+        "selected": "{colors.dark-selected}",
+        "hover": "{colors.dark-raised}",
+        "good": "{colors.dark-good}",
+        "warning": "{colors.dark-warning}",
+        "error": "{colors.dark-error}",
+        "good-bg": "{colors.dark-good-bg}",
+        "warning-bg": "{colors.dark-warning-bg}",
+        "error-bg": "{colors.dark-error-bg}",
+        "toolbar": "{colors.dark-panel}",
+        "toolbar-text": "{colors.dark-text}",
+        "toolbar-muted": "{colors.dark-toolbar-muted}",
+        "toolbar-selected": "{colors.dark-selected}",
+        "toolbar-hover": "{colors.dark-raised}",
+        "tools-field": "{colors.dark-panel}",
+        "code-green": "{colors.dark-code-green}",
+        "code-blue": "{colors.dark-code-blue}",
+        "code-orange": "{colors.dark-code-orange}",
+        "code-muted": "{colors.dark-muted}"
+      },
+      "light": {
+        "accent": "{colors.light-accent}",
+        "canvas": "{colors.light-canvas}",
+        "panel": "{colors.light-panel}",
+        "raised": "{colors.light-canvas}",
+        "text": "{colors.light-text}",
+        "muted": "{colors.light-muted}",
+        "border": "{colors.light-border}",
+        "control-border": "{colors.light-control-border}",
+        "selected": "{colors.light-selected}",
+        "hover": "{colors.light-hover}",
+        "good": "{colors.light-good}",
+        "warning": "{colors.light-warning}",
+        "error": "{colors.light-error}",
+        "good-bg": "{colors.light-good-bg}",
+        "warning-bg": "{colors.light-warning-bg}",
+        "error-bg": "{colors.light-error-bg}",
+        "toolbar": "{colors.light-text}",
+        "toolbar-text": "{colors.light-hover}",
+        "toolbar-muted": "{colors.light-control-border}",
+        "toolbar-selected": "{colors.light-toolbar-selected}",
+        "toolbar-hover": "{colors.light-toolbar-hover}",
+        "tools-field": "{colors.light-panel}",
+        "code-green": "{colors.light-code-green}",
+        "code-blue": "{colors.light-code-blue}",
+        "code-orange": "{colors.light-code-orange}",
+        "code-muted": "{colors.light-code-muted}"
+      },
+      "dopamine": {
+        "accent": "{colors.dopamine-accent}",
+        "canvas": "{colors.dopamine-canvas}",
+        "panel": "{colors.dopamine-panel}",
+        "raised": "{colors.dopamine-raised}",
+        "text": "{colors.dopamine-text}",
+        "muted": "{colors.dopamine-muted}",
+        "border": "{colors.dopamine-text}",
+        "control-border": "{colors.dopamine-text}",
+        "selected": "{colors.dopamine-selected}",
+        "hover": "{colors.dopamine-hover}",
+        "good": "{colors.dopamine-good}",
+        "warning": "{colors.dopamine-warning}",
+        "error": "{colors.dopamine-error}",
+        "good-bg": "{colors.dopamine-good-bg}",
+        "warning-bg": "{colors.dopamine-hover}",
+        "error-bg": "{colors.dopamine-error-bg}",
+        "toolbar": "{colors.dopamine-toolbar}",
+        "toolbar-text": "{colors.dopamine-text}",
+        "toolbar-muted": "{colors.dopamine-muted}",
+        "toolbar-selected": "{colors.dopamine-selected}",
+        "toolbar-hover": "{colors.dopamine-toolbar-hover}",
+        "tools-field": "{colors.dopamine-good-bg}",
+        "code-green": "{colors.dopamine-good}",
+        "code-blue": "{colors.dopamine-accent}",
+        "code-orange": "{colors.dopamine-warning}",
+        "code-muted": "{colors.dopamine-muted}"
+      }
+    },
+    "shadows": [
+      {
+        "name": "dialog",
+        "value": "0 16px 54px #00000044",
+        "purpose": "实际对话框浮层。"
+      },
+      {
+        "name": "toast",
+        "value": "0 6px 24px #00000022",
+        "purpose": "短提示浮层。"
+      }
+    ],
+    "motion": [
+      {
+        "name": "dialog-enter",
+        "value": "140ms cubic-bezier(.16, 1, .3, 1)",
+        "purpose": "translateY(5px) 到 0；仅在 prefers-reduced-motion: no-preference 播放。"
+      },
+      {
+        "name": "drawer-enter",
+        "value": "160ms cubic-bezier(.16, 1, .3, 1)",
+        "purpose": "translateY(8px) 到 0；仅在 prefers-reduced-motion: no-preference 播放。"
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "narrow-desktop",
+        "value": "1200px"
+      },
+      {
+        "name": "tool-overlay",
+        "value": "980px"
+      },
+      {
+        "name": "stacked-workspace",
+        "value": "760px"
+      },
+      {
+        "name": "compact-window",
+        "value": "480px"
+      }
+    ],
+    "sourceRefs": {
+      "design": "../DESIGN.md",
+      "stylesheet": "../style.css",
+      "components": "../app.js",
+      "syntheticData": "../data.js",
+      "product": "../../../docs/product.md",
+      "direction": "../../../.impeccable/surfaces/prototypes-interface-index-html.md",
+      "dopaminePalette": "../../../src/themes.css"
+    },
+    "previewPolicy": "九个样例提取实际组件与 CSS 值；ds-gallery、主题标签、样例容器，以及对话框的静态定位、父容器限宽和动作换行仅用于独立展示。样例不运行原型状态机或原生模态焦点逻辑。生成的 8 步 OKLCH tonalRamp 为面板预览元数据，不是原型新增 token。",
+    "connectionTree": {
+      "nodeRadius": "6px",
+      "nodePadding": "5px 10px",
+      "rowGap": "4px",
+      "indent": "20px",
+      "compactIndent": "16px",
+      "routeSemantics": "explicit ordered prefix trie; no recursive inheritance",
+      "tagStrategy": "AND on own target tags; preserve ancestor context",
+      "modelScope": "prototype-only tags; production groups remain unchanged",
+      "narrowWindow": "<=480px collapsed tag disclosure with AND/count/clear; detail hides catalog controls; entering console reveals selected target",
+      "edgeGeometry": "actual stage clientHeight, independent of SVG overflow",
+      "toolbar": {
+        "identity": "console navigation and breadcrumb",
+        "typeControl": "150px native select with profile counts",
+        "desktop": "type, search, tag management, refresh, create in one row",
+        "narrow": "<=480px type/create on row 1, search/tag management/refresh on row 2",
+        "removed": "duplicate page heading, instruction paragraph and separate profile tabs"
+      },
+      "nodeMinHeight": "52px",
+      "compactNodeMinHeight": "48px",
+      "compactNodeVerticalPadding": "3px",
+      "stagePadding": "14px 14px 18px",
+      "nodeLayout": "two lines: name/protocol/status, then endpoint/own tags; ellipsis with full titles and inspector",
+      "originLayout": "single line: local origin and connection start"
+    },
+    "networkInterface": {
+      "label": "name · IP/prefix",
+      "fontSize": "12px",
+      "width": "100% of tool content",
+      "selection": "per server session",
+      "dataScope": "synthetic prototype fixture; actual server prefix must not be inferred"
+    }
+  },
+  "components": [
+    {
+      "name": "主按钮",
+      "kind": "button",
+      "refersTo": "button-primary-idea",
+      "description": "主确认操作；IDEA 使用 Blue 白字，多巴胺使用黄色深字。",
+      "source": "../app.js",
+      "html": "<div class=\"ds-gallery\"><section class=\"ds-theme ds-theme-dark\" aria-label=\"IDEA 深色\"><p class=\"ds-theme-name\">IDEA 深色</p><button type=\"button\" class=\"ds-button ds-primary\">保存资料</button></section><section class=\"ds-theme ds-theme-light\" aria-label=\"IDEA 浅色\"><p class=\"ds-theme-name\">IDEA 浅色</p><button type=\"button\" class=\"ds-button ds-primary\">保存资料</button></section><section class=\"ds-theme ds-theme-dopamine\" aria-label=\"多巴胺\"><p class=\"ds-theme-name\">多巴胺</p><button type=\"button\" class=\"ds-button ds-primary\">保存资料</button></section></div>",
+      "css": ".ds-theme-dark{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#1e1f22;--text:#dfe1e5;--muted:#9da0a8;--weight:500;--stroke:1px;--control-border:#4e5157;--raised:#393b40;--hover:#393b40;--accent:#3574f0;--primary-hover:#467ff2;}.ds-theme-light{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#ffffff;--text:#27282e;--muted:#5a5d6b;--weight:500;--stroke:1px;--control-border:#c9ccd6;--raised:#ffffff;--hover:#ebecf0;--accent:#3574f0;--primary-hover:#467ff2;}.ds-theme-dopamine{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#fbf1e8;--text:#20211f;--muted:#585c52;--weight:600;--stroke:2px;--control-border:#20211f;--raised:#fffef5;--hover:#fff0bc;--accent:#5346a6;--primary-hover:#ffe795;}.ds-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}.ds-theme{padding:12px;color:var(--text);background:var(--canvas);font:13px/1.5 var(--font-ui);min-width:0}.ds-theme-name{font-size:12px;color:var(--muted);margin:0 0 12px}.ds-stack{display:flex;gap:8px;flex-wrap:wrap}.ds-theme-dark .ds-context-muted{color:#b4b8bf}.ds-button{font:13px/1.5 var(--font-ui);font-weight:var(--weight);color:var(--text);cursor:pointer;border:var(--stroke) solid var(--control-border);background:var(--raised);border-radius:5px;padding:5px 11px;min-height:30px}.ds-button:hover{background:var(--hover)}.ds-button:disabled{cursor:default;opacity:.48}.ds-button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;pointer-events:none}.ds-muted{color:var(--muted)}.ds-primary{background:var(--accent);border-color:var(--accent);color:#fff}.ds-primary:hover{background:var(--primary-hover)}.ds-theme-dopamine .ds-primary{background:#ffde75;border-color:#20211f;color:#20211f}"
+    },
+    {
+      "name": "次按钮",
+      "kind": "button",
+      "refersTo": "button-secondary-dark",
+      "description": "可取消或次要操作；展示普通与禁用状态。",
+      "source": "../app.js",
+      "html": "<div class=\"ds-gallery\"><section class=\"ds-theme ds-theme-dark\" aria-label=\"IDEA 深色\"><p class=\"ds-theme-name\">IDEA 深色</p><div class=\"ds-stack\"><button type=\"button\" class=\"ds-button\">取消</button><button type=\"button\" class=\"ds-button\" disabled>保存并关闭</button></div></section><section class=\"ds-theme ds-theme-light\" aria-label=\"IDEA 浅色\"><p class=\"ds-theme-name\">IDEA 浅色</p><div class=\"ds-stack\"><button type=\"button\" class=\"ds-button\">取消</button><button type=\"button\" class=\"ds-button\" disabled>保存并关闭</button></div></section><section class=\"ds-theme ds-theme-dopamine\" aria-label=\"多巴胺\"><p class=\"ds-theme-name\">多巴胺</p><div class=\"ds-stack\"><button type=\"button\" class=\"ds-button\">取消</button><button type=\"button\" class=\"ds-button\" disabled>保存并关闭</button></div></section></div>",
+      "css": ".ds-theme-dark{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#1e1f22;--text:#dfe1e5;--muted:#9da0a8;--weight:500;--stroke:1px;--control-border:#4e5157;--raised:#393b40;--hover:#393b40;--accent:#3574f0;}.ds-theme-light{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#ffffff;--text:#27282e;--muted:#5a5d6b;--weight:500;--stroke:1px;--control-border:#c9ccd6;--raised:#ffffff;--hover:#ebecf0;--accent:#3574f0;}.ds-theme-dopamine{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#fbf1e8;--text:#20211f;--muted:#585c52;--weight:600;--stroke:2px;--control-border:#20211f;--raised:#fffef5;--hover:#fff0bc;--accent:#5346a6;}.ds-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}.ds-theme{padding:12px;color:var(--text);background:var(--canvas);font:13px/1.5 var(--font-ui);min-width:0}.ds-theme-name{font-size:12px;color:var(--muted);margin:0 0 12px}.ds-stack{display:flex;gap:8px;flex-wrap:wrap}.ds-theme-dark .ds-context-muted{color:#b4b8bf}.ds-button{font:13px/1.5 var(--font-ui);font-weight:var(--weight);color:var(--text);cursor:pointer;border:var(--stroke) solid var(--control-border);background:var(--raised);border-radius:5px;padding:5px 11px;min-height:30px}.ds-button:hover{background:var(--hover)}.ds-button:disabled{cursor:default;opacity:.48}.ds-button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;pointer-events:none}.ds-muted{color:var(--muted)}"
+    },
+    {
+      "name": "图标按钮",
+      "kind": "button",
+      "description": "工具栏中的紧凑功能入口，使用内联 SVG 与可读名称。",
+      "source": "../app.js",
+      "html": "<div class=\"ds-gallery\"><section class=\"ds-theme ds-theme-dark\" aria-label=\"IDEA 深色\"><p class=\"ds-theme-name\">IDEA 深色</p><div class=\"ds-stack\"><button type=\"button\" class=\"ds-button ds-icon-button\" aria-label=\"刷新文件\" title=\"刷新文件\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 8a8 8 0 1 0 0 8M20 3v5h-5\"/></svg></button><button type=\"button\" class=\"ds-button ds-icon-button\" aria-label=\"新建页面\" title=\"新建页面\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 5v14M5 12h14\"/></svg></button></div></section><section class=\"ds-theme ds-theme-light\" aria-label=\"IDEA 浅色\"><p class=\"ds-theme-name\">IDEA 浅色</p><div class=\"ds-stack\"><button type=\"button\" class=\"ds-button ds-icon-button\" aria-label=\"刷新文件\" title=\"刷新文件\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 8a8 8 0 1 0 0 8M20 3v5h-5\"/></svg></button><button type=\"button\" class=\"ds-button ds-icon-button\" aria-label=\"新建页面\" title=\"新建页面\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 5v14M5 12h14\"/></svg></button></div></section><section class=\"ds-theme ds-theme-dopamine\" aria-label=\"多巴胺\"><p class=\"ds-theme-name\">多巴胺</p><div class=\"ds-stack\"><button type=\"button\" class=\"ds-button ds-icon-button\" aria-label=\"刷新文件\" title=\"刷新文件\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 8a8 8 0 1 0 0 8M20 3v5h-5\"/></svg></button><button type=\"button\" class=\"ds-button ds-icon-button\" aria-label=\"新建页面\" title=\"新建页面\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 5v14M5 12h14\"/></svg></button></div></section></div>",
+      "css": ".ds-theme-dark{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#1e1f22;--text:#dfe1e5;--muted:#9da0a8;--weight:500;--stroke:1px;--control-border:#4e5157;--raised:#393b40;--hover:#393b40;--accent:#3574f0;}.ds-theme-light{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#ffffff;--text:#27282e;--muted:#5a5d6b;--weight:500;--stroke:1px;--control-border:#c9ccd6;--raised:#ffffff;--hover:#ebecf0;--accent:#3574f0;}.ds-theme-dopamine{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#fbf1e8;--text:#20211f;--muted:#585c52;--weight:600;--stroke:2px;--control-border:#20211f;--raised:#fffef5;--hover:#fff0bc;--accent:#5346a6;}.ds-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}.ds-theme{padding:12px;color:var(--text);background:var(--canvas);font:13px/1.5 var(--font-ui);min-width:0}.ds-theme-name{font-size:12px;color:var(--muted);margin:0 0 12px}.ds-stack{display:flex;gap:8px;flex-wrap:wrap}.ds-theme-dark .ds-context-muted{color:#b4b8bf}.ds-button{font:13px/1.5 var(--font-ui);font-weight:var(--weight);color:var(--text);cursor:pointer;border:var(--stroke) solid var(--control-border);background:var(--raised);border-radius:5px;padding:5px 11px;min-height:30px}.ds-button:hover{background:var(--hover)}.ds-button:disabled{cursor:default;opacity:.48}.ds-button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;pointer-events:none}.ds-muted{color:var(--muted)}.ds-icon-button{display:inline-flex;align-items:center;justify-content:center;width:30px;padding:5px;border-color:transparent;background:transparent}"
+    },
+    {
+      "name": "表单字段",
+      "kind": "input",
+      "refersTo": "field-dark",
+      "description": "服务器资料字段；标签和输入关联，使用浏览器原生校验。",
+      "source": "../app.js",
+      "html": "<div class=\"ds-gallery\"><section class=\"ds-theme ds-theme-dark\" aria-label=\"IDEA 深色\"><p class=\"ds-theme-name\">IDEA 深色</p><label class=\"ds-field\" for=\"ds-host-dark\">主机地址<input id=\"ds-host-dark\" class=\"ds-input\" name=\"host\" value=\"203.0.113.24\" required placeholder=\"域名、IPv4 或 IPv6\"></label></section><section class=\"ds-theme ds-theme-light\" aria-label=\"IDEA 浅色\"><p class=\"ds-theme-name\">IDEA 浅色</p><label class=\"ds-field\" for=\"ds-host-light\">主机地址<input id=\"ds-host-light\" class=\"ds-input\" name=\"host\" value=\"203.0.113.24\" required placeholder=\"域名、IPv4 或 IPv6\"></label></section><section class=\"ds-theme ds-theme-dopamine\" aria-label=\"多巴胺\"><p class=\"ds-theme-name\">多巴胺</p><label class=\"ds-field\" for=\"ds-host-dopamine\">主机地址<input id=\"ds-host-dopamine\" class=\"ds-input\" name=\"host\" value=\"203.0.113.24\" required placeholder=\"域名、IPv4 或 IPv6\"></label></section></div>",
+      "css": ".ds-theme-dark{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#1e1f22;--text:#dfe1e5;--muted:#9da0a8;--stroke:1px;--control-border:#4e5157;--accent:#3574f0;}.ds-theme-light{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#ffffff;--text:#27282e;--muted:#5a5d6b;--stroke:1px;--control-border:#c9ccd6;--accent:#3574f0;}.ds-theme-dopamine{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#fbf1e8;--text:#20211f;--muted:#585c52;--stroke:2px;--control-border:#20211f;--accent:#5346a6;}.ds-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}.ds-theme{padding:12px;color:var(--text);background:var(--canvas);font:13px/1.5 var(--font-ui);min-width:0}.ds-theme-name{font-size:12px;color:var(--muted);margin:0 0 12px}.ds-stack{display:flex;gap:8px;flex-wrap:wrap}.ds-theme-dark .ds-context-muted{color:#b4b8bf}.ds-field{display:flex;flex-direction:column;gap:6px;font-size:12px}.ds-input{font:12px/1.5 var(--font-ui);color:var(--text);border:var(--stroke) solid var(--control-border);background:var(--canvas);border-radius:5px;padding:6px 9px;min-width:0;caret-color:var(--accent)}.ds-input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-input::placeholder{color:var(--muted);opacity:1}"
+    },
+    {
+      "name": "管理台导航",
+      "kind": "nav",
+      "refersTo": "sidebar-item-dark",
+      "description": "管理台内统一的核心功能导航；默认选择服务器连接，活动项标明当前页面。",
+      "source": "../app.js",
+      "html": "<div class=\"ds-gallery\"><section class=\"ds-theme ds-theme-dark\" aria-label=\"IDEA 深色\"><p class=\"ds-theme-name\">IDEA 深色</p><nav class=\"ds-sidebar\" aria-label=\"管理台功能\"><header class=\"ds-sidebar-header\"><h2>管理台</h2></header><div class=\"ds-sidebar-content\"><button type=\"button\" class=\"ds-button ds-nav-item ds-active\" aria-current=\"page\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"7\" rx=\"2\"/><rect x=\"3\" y=\"14\" width=\"18\" height=\"7\" rx=\"2\"/><path d=\"M7 6.5h.01M7 17.5h.01M12 6.5h5M12 17.5h5\"/></svg>服务器连接</button><button type=\"button\" class=\"ds-button ds-nav-item\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M8 3v5M16 3v5M5 8h14v3a7 7 0 0 1-14 0zM12 18v4\"/></svg>插件管理</button><button type=\"button\" class=\"ds-button ds-nav-item\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m9 3-1 3-3 1-1 4 2 2v3l3 2 3-1 3 1 3-2v-3l2-2-1-4-3-1-1-3z\"/><circle cx=\"12\" cy=\"11\" r=\"3\"/></svg>设置</button><button type=\"button\" class=\"ds-button ds-nav-item\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5 17h14l-2-3V9a5 5 0 0 0-10 0v5zM10 21h4\"/></svg>消息中心</button><button type=\"button\" class=\"ds-button ds-nav-item\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5 3h14v18H5zM8 7h8M8 11h8M8 15h5\"/></svg>诊断日志</button><button type=\"button\" class=\"ds-button ds-nav-item\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 12h4l3-8 4 16 3-8h4\"/></svg>应用状态</button><button type=\"button\" class=\"ds-button ds-nav-item\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m7 10 5 5 5-5M12 15V3M4 16v5h16v-5\"/></svg>软件更新</button></div></nav></section><section class=\"ds-theme ds-theme-light\" aria-label=\"IDEA 浅色\"><p class=\"ds-theme-name\">IDEA 浅色</p><nav class=\"ds-sidebar\" aria-label=\"管理台功能\"><header class=\"ds-sidebar-header\"><h2>管理台</h2></header><div class=\"ds-sidebar-content\"><button type=\"button\" class=\"ds-button ds-nav-item ds-active\" aria-current=\"page\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"7\" rx=\"2\"/><rect x=\"3\" y=\"14\" width=\"18\" height=\"7\" rx=\"2\"/><path d=\"M7 6.5h.01M7 17.5h.01M12 6.5h5M12 17.5h5\"/></svg>服务器连接</button><button type=\"button\" class=\"ds-button ds-nav-item\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M8 3v5M16 3v5M5 8h14v3a7 7 0 0 1-14 0zM12 18v4\"/></svg>插件管理</button><button type=\"button\" class=\"ds-button ds-nav-item\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m9 3-1 3-3 1-1 4 2 2v3l3 2 3-1 3 1 3-2v-3l2-2-1-4-3-1-1-3z\"/><circle cx=\"12\" cy=\"11\" r=\"3\"/></svg>设置</button><button type=\"button\" class=\"ds-button ds-nav-item\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5 17h14l-2-3V9a5 5 0 0 0-10 0v5zM10 21h4\"/></svg>消息中心</button><button type=\"button\" class=\"ds-button ds-nav-item\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5 3h14v18H5zM8 7h8M8 11h8M8 15h5\"/></svg>诊断日志</button><button type=\"button\" class=\"ds-button ds-nav-item\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 12h4l3-8 4 16 3-8h4\"/></svg>应用状态</button><button type=\"button\" class=\"ds-button ds-nav-item\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m7 10 5 5 5-5M12 15V3M4 16v5h16v-5\"/></svg>软件更新</button></div></nav></section><section class=\"ds-theme ds-theme-dopamine\" aria-label=\"多巴胺\"><p class=\"ds-theme-name\">多巴胺</p><nav class=\"ds-sidebar\" aria-label=\"管理台功能\"><header class=\"ds-sidebar-header\"><h2>管理台</h2></header><div class=\"ds-sidebar-content\"><button type=\"button\" class=\"ds-button ds-nav-item ds-active\" aria-current=\"page\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"7\" rx=\"2\"/><rect x=\"3\" y=\"14\" width=\"18\" height=\"7\" rx=\"2\"/><path d=\"M7 6.5h.01M7 17.5h.01M12 6.5h5M12 17.5h5\"/></svg>服务器连接</button><button type=\"button\" class=\"ds-button ds-nav-item\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M8 3v5M16 3v5M5 8h14v3a7 7 0 0 1-14 0zM12 18v4\"/></svg>插件管理</button><button type=\"button\" class=\"ds-button ds-nav-item\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m9 3-1 3-3 1-1 4 2 2v3l3 2 3-1 3 1 3-2v-3l2-2-1-4-3-1-1-3z\"/><circle cx=\"12\" cy=\"11\" r=\"3\"/></svg>设置</button><button type=\"button\" class=\"ds-button ds-nav-item\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5 17h14l-2-3V9a5 5 0 0 0-10 0v5zM10 21h4\"/></svg>消息中心</button><button type=\"button\" class=\"ds-button ds-nav-item\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5 3h14v18H5zM8 7h8M8 11h8M8 15h5\"/></svg>诊断日志</button><button type=\"button\" class=\"ds-button ds-nav-item\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 12h4l3-8 4 16 3-8h4\"/></svg>应用状态</button><button type=\"button\" class=\"ds-button ds-nav-item\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m7 10 5 5 5-5M12 15V3M4 16v5h16v-5\"/></svg>软件更新</button></div></nav></section></div>",
+      "css": ".ds-theme-dark{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#1e1f22;--text:#dfe1e5;--muted:#9da0a8;--weight:500;--stroke:1px;--control-border:#4e5157;--raised:#393b40;--hover:#393b40;--accent:#3574f0;--nav-field:#2b2d30;--border:#393b40;--selected:#2e436e;}.ds-theme-light{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#ffffff;--text:#27282e;--muted:#5a5d6b;--weight:500;--stroke:1px;--control-border:#c9ccd6;--raised:#ffffff;--hover:#ebecf0;--accent:#3574f0;--nav-field:#f7f8fa;--border:#dfe1e5;--selected:#d4e2ff;}.ds-theme-dopamine{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#fbf1e8;--text:#20211f;--muted:#585c52;--weight:600;--stroke:2px;--control-border:#20211f;--raised:#fffef5;--hover:#fff0bc;--accent:#5346a6;--nav-field:#ffb7cf;--border:#20211f;--selected:#ffde75;}.ds-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}.ds-theme{padding:12px;color:var(--text);background:var(--canvas);font:13px/1.5 var(--font-ui);min-width:0}.ds-theme-name{font-size:12px;color:var(--muted);margin:0 0 12px}.ds-stack{display:flex;gap:8px;flex-wrap:wrap}.ds-theme-dark .ds-context-muted{color:#b4b8bf}.ds-button{font:13px/1.5 var(--font-ui);font-weight:var(--weight);color:var(--text);cursor:pointer;border:var(--stroke) solid var(--control-border);background:var(--raised);border-radius:5px;padding:5px 11px;min-height:30px}.ds-button:hover{background:var(--hover)}.ds-button:disabled{cursor:default;opacity:.48}.ds-button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;pointer-events:none}.ds-muted{color:var(--muted)}.ds-sidebar{width:192px;display:flex;flex-direction:column;background:var(--nav-field);border-right:var(--stroke) solid var(--border)}.ds-sidebar-header{min-height:48px;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px}.ds-sidebar-content{padding:8px}.ds-nav-item{display:flex;align-items:center;gap:9px;border:0;width:100%;text-align:left;border-radius:5px;padding:8px 10px;background:transparent;min-height:34px}.ds-nav-item.ds-active{background:var(--selected)}.ds-sidebar-header h2{font-size:16px;font-weight:600;margin:0}.ds-grow{flex:1;min-width:0}"
+    },
+    {
+      "name": "状态与标签",
+      "kind": "chip",
+      "refersTo": "badge-dark",
+      "description": "圆点与文字共同表达连接结果；错误标签有语义浅底。",
+      "source": "../app.js",
+      "html": "<div class=\"ds-gallery\"><section class=\"ds-theme ds-theme-dark\" aria-label=\"IDEA 深色\"><p class=\"ds-theme-name\">IDEA 深色</p><div class=\"ds-stack\"><span class=\"ds-status\"><i class=\"ds-dot ds-connected\"></i>已连接</span><span class=\"ds-status\"><i class=\"ds-dot ds-failed\"></i>连接失败</span><span class=\"ds-status\"><i class=\"ds-dot ds-connecting\"></i>连接中</span></div><div class=\"ds-stack ds-tag-row\"><span class=\"ds-badge\">待重启</span><span class=\"ds-badge ds-error\">健康检查失败</span></div></section><section class=\"ds-theme ds-theme-light\" aria-label=\"IDEA 浅色\"><p class=\"ds-theme-name\">IDEA 浅色</p><div class=\"ds-stack\"><span class=\"ds-status\"><i class=\"ds-dot ds-connected\"></i>已连接</span><span class=\"ds-status\"><i class=\"ds-dot ds-failed\"></i>连接失败</span><span class=\"ds-status\"><i class=\"ds-dot ds-connecting\"></i>连接中</span></div><div class=\"ds-stack ds-tag-row\"><span class=\"ds-badge\">待重启</span><span class=\"ds-badge ds-error\">健康检查失败</span></div></section><section class=\"ds-theme ds-theme-dopamine\" aria-label=\"多巴胺\"><p class=\"ds-theme-name\">多巴胺</p><div class=\"ds-stack\"><span class=\"ds-status\"><i class=\"ds-dot ds-connected\"></i>已连接</span><span class=\"ds-status\"><i class=\"ds-dot ds-failed\"></i>连接失败</span><span class=\"ds-status\"><i class=\"ds-dot ds-connecting\"></i>连接中</span></div><div class=\"ds-stack ds-tag-row\"><span class=\"ds-badge\">待重启</span><span class=\"ds-badge ds-error\">健康检查失败</span></div></section></div>",
+      "css": ".ds-theme-dark{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#1e1f22;--text:#dfe1e5;--muted:#9da0a8;--good:#89cc8e;--error:#eb938d;--warning:#f2c55c;--selected:#2e436e;--error-bg:#402929;}.ds-theme-light{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#ffffff;--text:#27282e;--muted:#5a5d6b;--good:#1e6b33;--error:#ad2b38;--warning:#a46704;--selected:#d4e2ff;--error-bg:#ffebec;}.ds-theme-dopamine{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#fbf1e8;--text:#20211f;--muted:#585c52;--good:#176b4f;--error:#a12c38;--warning:#7a4a08;--selected:#ffde75;--error-bg:#ffd7cc;}.ds-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}.ds-theme{padding:12px;color:var(--text);background:var(--canvas);font:13px/1.5 var(--font-ui);min-width:0}.ds-theme-name{font-size:12px;color:var(--muted);margin:0 0 12px}.ds-stack{display:flex;gap:8px;flex-wrap:wrap}.ds-theme-dark .ds-context-muted{color:#b4b8bf}.ds-status{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}.ds-dot{width:6px;height:6px;border-radius:50%;background:var(--muted);display:inline-block;flex:none}.ds-dot.ds-connected{background:var(--good)}.ds-dot.ds-failed{background:var(--error)}.ds-dot.ds-connecting{background:var(--warning)}.ds-tag-row{margin-top:10px}.ds-badge{font-size:11px;padding:1px 6px;border-radius:4px;background:var(--selected);color:var(--text);white-space:nowrap}.ds-badge.ds-error{background:var(--error-bg);color:var(--error)}"
+    },
+    {
+      "name": "会话工具容器",
+      "kind": "card",
+      "refersTo": "tool-pane-dark",
+      "description": "系统状态侧工具；摘要与指标以结构线分隔。",
+      "source": "../app.js",
+      "html": "<div class=\"ds-gallery\"><section class=\"ds-theme ds-theme-dark\" aria-label=\"IDEA 深色\"><p class=\"ds-theme-name\">IDEA 深色</p><aside class=\"ds-tool-pane\" aria-label=\"系统状态\"><header class=\"ds-pane-heading\"><h2>系统状态</h2><button type=\"button\" class=\"ds-button ds-tool-refresh\" aria-label=\"刷新工具\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 8a8 8 0 1 0 0 8M20 3v5h-5\"/></svg></button></header><div class=\"ds-tool-content\"><div class=\"ds-host-summary\"><h3>生产 Web</h3><p class=\"ds-muted\">Ubuntu 24.04 LTS　x86_64</p></div><div class=\"ds-metric\"><div class=\"ds-metric-row\"><h3 class=\"ds-grow\">CPU</h3><span class=\"ds-muted ds-small\">4 vCPU</span></div><div class=\"ds-metric-value\">18.2<small>%</small></div></div><div class=\"ds-metric\"><div class=\"ds-metric-row\"><h3 class=\"ds-grow\">内存</h3><span class=\"ds-muted ds-small\">8 GiB</span></div><div class=\"ds-metric-value\">57.4<small>%</small></div></div></div></aside></section><section class=\"ds-theme ds-theme-light\" aria-label=\"IDEA 浅色\"><p class=\"ds-theme-name\">IDEA 浅色</p><aside class=\"ds-tool-pane\" aria-label=\"系统状态\"><header class=\"ds-pane-heading\"><h2>系统状态</h2><button type=\"button\" class=\"ds-button ds-tool-refresh\" aria-label=\"刷新工具\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 8a8 8 0 1 0 0 8M20 3v5h-5\"/></svg></button></header><div class=\"ds-tool-content\"><div class=\"ds-host-summary\"><h3>生产 Web</h3><p class=\"ds-muted\">Ubuntu 24.04 LTS　x86_64</p></div><div class=\"ds-metric\"><div class=\"ds-metric-row\"><h3 class=\"ds-grow\">CPU</h3><span class=\"ds-muted ds-small\">4 vCPU</span></div><div class=\"ds-metric-value\">18.2<small>%</small></div></div><div class=\"ds-metric\"><div class=\"ds-metric-row\"><h3 class=\"ds-grow\">内存</h3><span class=\"ds-muted ds-small\">8 GiB</span></div><div class=\"ds-metric-value\">57.4<small>%</small></div></div></div></aside></section><section class=\"ds-theme ds-theme-dopamine\" aria-label=\"多巴胺\"><p class=\"ds-theme-name\">多巴胺</p><aside class=\"ds-tool-pane\" aria-label=\"系统状态\"><header class=\"ds-pane-heading\"><h2>系统状态</h2><button type=\"button\" class=\"ds-button ds-tool-refresh\" aria-label=\"刷新工具\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 8a8 8 0 1 0 0 8M20 3v5h-5\"/></svg></button></header><div class=\"ds-tool-content\"><div class=\"ds-host-summary\"><h3>生产 Web</h3><p class=\"ds-muted\">Ubuntu 24.04 LTS　x86_64</p></div><div class=\"ds-metric\"><div class=\"ds-metric-row\"><h3 class=\"ds-grow\">CPU</h3><span class=\"ds-muted ds-small\">4 vCPU</span></div><div class=\"ds-metric-value\">18.2<small>%</small></div></div><div class=\"ds-metric\"><div class=\"ds-metric-row\"><h3 class=\"ds-grow\">内存</h3><span class=\"ds-muted ds-small\">8 GiB</span></div><div class=\"ds-metric-value\">57.4<small>%</small></div></div></div></aside></section></div>",
+      "css": ".ds-theme-dark{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#1e1f22;--text:#dfe1e5;--muted:#9da0a8;--weight:500;--stroke:1px;--control-border:#4e5157;--raised:#393b40;--hover:#393b40;--accent:#3574f0;--tools-field:#2b2d30;--border:#393b40;}.ds-theme-light{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#ffffff;--text:#27282e;--muted:#5a5d6b;--weight:500;--stroke:1px;--control-border:#c9ccd6;--raised:#ffffff;--hover:#ebecf0;--accent:#3574f0;--tools-field:#f7f8fa;--border:#dfe1e5;}.ds-theme-dopamine{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#fbf1e8;--text:#20211f;--muted:#585c52;--weight:600;--stroke:2px;--control-border:#20211f;--raised:#fffef5;--hover:#fff0bc;--accent:#5346a6;--tools-field:#d5f1e5;--border:#20211f;}.ds-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}.ds-theme{padding:12px;color:var(--text);background:var(--canvas);font:13px/1.5 var(--font-ui);min-width:0}.ds-theme-name{font-size:12px;color:var(--muted);margin:0 0 12px}.ds-stack{display:flex;gap:8px;flex-wrap:wrap}.ds-theme-dark .ds-context-muted{color:#b4b8bf}.ds-button{font:13px/1.5 var(--font-ui);font-weight:var(--weight);color:var(--text);cursor:pointer;border:var(--stroke) solid var(--control-border);background:var(--raised);border-radius:5px;padding:5px 11px;min-height:30px}.ds-button:hover{background:var(--hover)}.ds-button:disabled{cursor:default;opacity:.48}.ds-button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;pointer-events:none}.ds-muted{color:var(--muted)}.ds-tool-pane{box-sizing:border-box;width:272px;display:flex;flex-direction:column;background:var(--tools-field);border-left:var(--stroke) solid var(--border)}.ds-pane-heading{height:38px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 12px;border-bottom:var(--stroke) solid var(--border)}.ds-pane-heading h2{font-size:12px;font-weight:600;margin:0}.ds-tool-refresh{display:inline-flex;align-items:center;justify-content:center;width:30px;padding:5px;border-color:transparent;background:transparent}.ds-tool-content{padding:16px}.ds-host-summary{border-bottom:1px solid var(--border);padding-bottom:15px}.ds-host-summary h3{font-size:13px;font-weight:600;margin:0 0 4px}.ds-host-summary p{margin:0;font-size:12px}.ds-metric{padding:17px 0;border-bottom:1px solid var(--border)}.ds-metric h3{font-size:13px;font-weight:600;margin:0}.ds-metric-row{display:flex;align-items:center;gap:8px}.ds-grow{flex:1;min-width:0}.ds-small{font-size:12px}.ds-metric-value{font-size:22px;font-weight:500;font-variant-numeric:tabular-nums;margin-top:6px;line-height:1.3}.ds-metric-value small{font-size:12px;color:var(--muted);margin-left:4px}"
+    },
+    {
+      "name": "未保存对话框",
+      "kind": "custom",
+      "refersTo": "dialog-dark",
+      "description": "实际未保存关闭提示的视觉结构；预览按普通文档流展示。",
+      "source": "../app.js",
+      "html": "<div class=\"ds-gallery\"><section class=\"ds-theme ds-theme-dark\" aria-label=\"IDEA 深色\"><p class=\"ds-theme-name\">IDEA 深色</p><dialog class=\"ds-dialog\" open aria-labelledby=\"ds-dialog-title-dark\"><header class=\"ds-dialog-header\"><h2 id=\"ds-dialog-title-dark\">文件有未保存的更改</h2><button type=\"button\" class=\"ds-button ds-dialog-close\" aria-label=\"关闭对话框\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m6 6 12 12M6 18 18 6\"/></svg></button></header><div class=\"ds-dialog-body\"><p>nginx.conf 的更改还没有保存。关闭页面前选择如何处理。</p><p class=\"ds-muted ds-small ds-context-muted\">取消会保留页面和草稿。</p></div><footer class=\"ds-dialog-footer\"><button type=\"button\" class=\"ds-button\">取消</button><button type=\"button\" class=\"ds-button ds-danger\">放弃更改</button><button type=\"button\" class=\"ds-button ds-primary\">保存并关闭</button></footer></dialog></section><section class=\"ds-theme ds-theme-light\" aria-label=\"IDEA 浅色\"><p class=\"ds-theme-name\">IDEA 浅色</p><dialog class=\"ds-dialog\" open aria-labelledby=\"ds-dialog-title-light\"><header class=\"ds-dialog-header\"><h2 id=\"ds-dialog-title-light\">文件有未保存的更改</h2><button type=\"button\" class=\"ds-button ds-dialog-close\" aria-label=\"关闭对话框\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m6 6 12 12M6 18 18 6\"/></svg></button></header><div class=\"ds-dialog-body\"><p>nginx.conf 的更改还没有保存。关闭页面前选择如何处理。</p><p class=\"ds-muted ds-small ds-context-muted\">取消会保留页面和草稿。</p></div><footer class=\"ds-dialog-footer\"><button type=\"button\" class=\"ds-button\">取消</button><button type=\"button\" class=\"ds-button ds-danger\">放弃更改</button><button type=\"button\" class=\"ds-button ds-primary\">保存并关闭</button></footer></dialog></section><section class=\"ds-theme ds-theme-dopamine\" aria-label=\"多巴胺\"><p class=\"ds-theme-name\">多巴胺</p><dialog class=\"ds-dialog\" open aria-labelledby=\"ds-dialog-title-dopamine\"><header class=\"ds-dialog-header\"><h2 id=\"ds-dialog-title-dopamine\">文件有未保存的更改</h2><button type=\"button\" class=\"ds-button ds-dialog-close\" aria-label=\"关闭对话框\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m6 6 12 12M6 18 18 6\"/></svg></button></header><div class=\"ds-dialog-body\"><p>nginx.conf 的更改还没有保存。关闭页面前选择如何处理。</p><p class=\"ds-muted ds-small ds-context-muted\">取消会保留页面和草稿。</p></div><footer class=\"ds-dialog-footer\"><button type=\"button\" class=\"ds-button\">取消</button><button type=\"button\" class=\"ds-button ds-danger\">放弃更改</button><button type=\"button\" class=\"ds-button ds-primary\">保存并关闭</button></footer></dialog></section></div>",
+      "css": ".ds-theme-dark{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#1e1f22;--text:#dfe1e5;--muted:#9da0a8;--weight:500;--stroke:1px;--control-border:#4e5157;--raised:#393b40;--hover:#393b40;--accent:#3574f0;--border:#393b40;--error:#eb938d;--primary-hover:#467ff2;}.ds-theme-light{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#ffffff;--text:#27282e;--muted:#5a5d6b;--weight:500;--stroke:1px;--control-border:#c9ccd6;--raised:#ffffff;--hover:#ebecf0;--accent:#3574f0;--border:#dfe1e5;--error:#ad2b38;--primary-hover:#467ff2;}.ds-theme-dopamine{--font-ui:\"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;--canvas:#fbf1e8;--text:#20211f;--muted:#585c52;--weight:600;--stroke:2px;--control-border:#20211f;--raised:#fffef5;--hover:#fff0bc;--accent:#5346a6;--border:#20211f;--error:#a12c38;--primary-hover:#ffe795;}.ds-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}.ds-theme{padding:12px;color:var(--text);background:var(--canvas);font:13px/1.5 var(--font-ui);min-width:0}.ds-theme-name{font-size:12px;color:var(--muted);margin:0 0 12px}.ds-stack{display:flex;gap:8px;flex-wrap:wrap}.ds-theme-dark .ds-context-muted{color:#b4b8bf}.ds-button{font:13px/1.5 var(--font-ui);font-weight:var(--weight);color:var(--text);cursor:pointer;border:var(--stroke) solid var(--control-border);background:var(--raised);border-radius:5px;padding:5px 11px;min-height:30px}.ds-button:hover{background:var(--hover)}.ds-button:disabled{cursor:default;opacity:.48}.ds-button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;pointer-events:none}.ds-muted{color:var(--muted)}.ds-dialog{border:0;padding:0;background:var(--raised);color:var(--text);border-radius:8px;width:620px;max-width:calc(100vw - 32px);max-height:calc(100dvh - 48px);box-shadow:0 16px 54px #00000044}.ds-dialog-header{display:flex;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:var(--stroke) solid var(--border)}.ds-dialog-header h2{font-size:17px;font-weight:600;margin:0}.ds-dialog-close{display:inline-flex;align-items:center;justify-content:center;width:30px;padding:5px;border-color:transparent;background:transparent}.ds-dialog-body{padding:20px 24px;overflow:auto;max-height:calc(100dvh - 200px)}.ds-dialog-body p{margin:0}.ds-dialog-body p+p{margin-top:12px}.ds-small{font-size:12px}.ds-dialog-footer{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:14px 24px;border-top:var(--stroke) solid var(--border)}.ds-danger{color:var(--error)}.ds-primary{background:var(--accent);border-color:var(--accent);color:#fff}.ds-primary:hover{background:var(--primary-hover)}.ds-theme-dopamine .ds-primary{background:#ffde75;border-color:#20211f;color:#20211f}.ds-theme .ds-dialog{position:static;margin:0;max-width:100%}.ds-dialog-footer{flex-wrap:wrap}"
+    },
+    {
+      "name": "连接节点",
+      "kind": "custom",
+      "refersTo": "connection-node-dark",
+      "description": "两行紧凑连接节点，默认最小高 52px；同一布局展示 IDEA 明暗与多巴胺三主题。连线由运行时测量完整树绘制。",
+      "source": "../app.js",
+      "html": "<div class=\"ds-gallery\"><section class=\"ds-theme ds-theme-dark ds-node-sample\" aria-label=\"IDEA 深色\"><p class=\"ds-theme-name\">IDEA 深色</p><button type=\"button\" class=\"connection-node selected on-route\" aria-label=\"生产 Web 节点\"><span class=\"node-icon\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"7\" rx=\"2\"/><rect x=\"3\" y=\"14\" width=\"18\" height=\"7\" rx=\"2\"/><path d=\"M7 6.5h.01M7 17.5h.01M12 6.5h5M12 17.5h5\"/></svg></span><span class=\"node-content\"><span class=\"node-heading\"><strong title=\"生产 Web\">生产 Web</strong><span class=\"node-protocol\">SSH</span><span class=\"grow\"></span><span class=\"status\"><i class=\"dot connected\"></i>已连接</span></span><span class=\"node-meta\"><span class=\"node-endpoint\" title=\"ops@10.20.1.24:22\">ops@10.20.1.24:22</span><span class=\"node-tags\" title=\"生产环境、Web\"><span>生产环境</span><span>Web</span></span></span></span></button></section><section class=\"ds-theme ds-theme-light ds-node-sample\" aria-label=\"IDEA 浅色\"><p class=\"ds-theme-name\">IDEA 浅色</p><button type=\"button\" class=\"connection-node selected on-route\" aria-label=\"生产 Web 节点\"><span class=\"node-icon\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"7\" rx=\"2\"/><rect x=\"3\" y=\"14\" width=\"18\" height=\"7\" rx=\"2\"/><path d=\"M7 6.5h.01M7 17.5h.01M12 6.5h5M12 17.5h5\"/></svg></span><span class=\"node-content\"><span class=\"node-heading\"><strong title=\"生产 Web\">生产 Web</strong><span class=\"node-protocol\">SSH</span><span class=\"grow\"></span><span class=\"status\"><i class=\"dot connected\"></i>已连接</span></span><span class=\"node-meta\"><span class=\"node-endpoint\" title=\"ops@10.20.1.24:22\">ops@10.20.1.24:22</span><span class=\"node-tags\" title=\"生产环境、Web\"><span>生产环境</span><span>Web</span></span></span></span></button></section><section class=\"ds-theme ds-theme-dopamine ds-node-sample\" aria-label=\"多巴胺\"><p class=\"ds-theme-name\">多巴胺</p><button type=\"button\" class=\"connection-node selected on-route\" aria-label=\"生产 Web 节点\"><span class=\"node-icon\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"7\" rx=\"2\"/><rect x=\"3\" y=\"14\" width=\"18\" height=\"7\" rx=\"2\"/><path d=\"M7 6.5h.01M7 17.5h.01M12 6.5h5M12 17.5h5\"/></svg></span><span class=\"node-content\"><span class=\"node-heading\"><strong title=\"生产 Web\">生产 Web</strong><span class=\"node-protocol\">SSH</span><span class=\"grow\"></span><span class=\"status\"><i class=\"dot connected\"></i>已连接</span></span><span class=\"node-meta\"><span class=\"node-endpoint\" title=\"ops@10.20.1.24:22\">ops@10.20.1.24:22</span><span class=\"node-tags\" title=\"生产环境、Web\"><span>生产环境</span><span>Web</span></span></span></span></button></section></div>",
+      "css": ".ds-node-sample {\n  --canvas: #1e1f22; --panel: #2b2d30; --raised: #393b40; --text: #dfe1e5;\n  --muted: #9da0a8; --border: #393b40; --control-border: #4e5157;\n  --accent: #3574f0; --accent-text: #ffffff; --selected: #2e436e; --hover: #393b40;\n  --good: #89cc8e; --warning: #f2c55c; --error: #eb938d;\n  --good-bg: #253627; --warning-bg: #3d3223; --error-bg: #402929;\n  --toolbar: #2b2d30; --toolbar-text: #dfe1e5; --toolbar-muted: #b4b8bf;\n  --toolbar-selected: #2e436e; --toolbar-hover: #393b40; --rail: #2b2d30;\n  --editor: #1e1f22; --editor-text: #dfe1e5; --code-green: #6aab73;\n  --code-blue: #56a8f5; --code-orange: #cf8e6d; --code-muted: #9da0a8;\n  --line: #393b40; --scrim: #00000066; --scroll-thumb: #5a5d63;\n  --nav-field: #2b2d30; --tools-field: #2b2d30; --primary-hover: #467ff2;\n  --font-ui: \"Segoe UI\", \"Microsoft YaHei UI\", \"PingFang SC\", system-ui, sans-serif;\n  --font-code: \"JetBrains Mono\", Consolas, \"SFMono-Regular\", \"Liberation Mono\", monospace;\n  --stroke: 1px; --weight: 500; color-scheme: dark;\n}\n.ds-theme-light {\n  --canvas: #ffffff; --panel: #f7f8fa; --raised: #ffffff; --text: #27282e;\n  --muted: #5a5d6b; --border: #dfe1e5; --control-border: #c9ccd6;\n  --selected: #d4e2ff; --hover: #ebecf0; --good: #1e6b33; --warning: #a46704;\n  --error: #ad2b38; --good-bg: #e3f7e7; --warning-bg: #fff5db; --error-bg: #ffebec;\n  --toolbar: #27282e; --toolbar-text: #ebecf0; --toolbar-muted: #c9ccd6;\n  --toolbar-selected: #383a42; --toolbar-hover: #494b57; --rail: #f7f8fa;\n  --editor: #ffffff; --editor-text: #27282e; --code-green: #067d17;\n  --code-blue: #0033b3; --code-orange: #9e4b00; --code-muted: #6c707e;\n  --line: #ebecf0; --scrim: #27282e42; --scroll-thumb: #a8adbd;\n  --nav-field: #f7f8fa; --tools-field: #f7f8fa; color-scheme: light;\n}\n.ds-theme-dopamine {\n  --canvas: #fbf1e8; --panel: #fffbe6; --raised: #fffef5; --text: #20211f;\n  --muted: #585c52; --border: #20211f; --control-border: #20211f;\n  --accent: #5346a6; --accent-text: #20211f; --selected: #ffde75; --hover: #fff0bc;\n  --good: #176b4f; --warning: #7a4a08; --error: #a12c38;\n  --good-bg: #d5f1e5; --warning-bg: #fff0bc; --error-bg: #ffd7cc;\n  --toolbar: #ffb7cf; --toolbar-text: #20211f; --toolbar-muted: #585c52;\n  --toolbar-selected: #ffde75; --toolbar-hover: #ffd3e2; --rail: #fbf1e8;\n  --editor: #fffbe6; --editor-text: #20211f; --code-green: #176b4f;\n  --code-blue: #5346a6; --code-orange: #7a4a08; --code-muted: #585c52;\n  --line: #eadcc1; --scrim: #20211f55; --scroll-thumb: #92907b;\n  --nav-field: #ffb7cf; --tools-field: #d5f1e5; --primary-hover: #ffe795;\n  --stroke: 2px; --weight: 600; color-scheme: light;\n}\n.ds-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}.ds-node-sample{padding:12px;color:var(--text);background:var(--canvas);font:13px/1.5 var(--font-ui);min-width:0}.ds-theme-name{font-size:12px;color:var(--muted);margin:0 0 12px}.ds-node-sample button{font:inherit;color:inherit;box-sizing:border-box;cursor:pointer}.ds-node-sample svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}.ds-theme-dark .connection-node.selected{--muted:#b4b8bf}.ds-node-sample .connection-node:focus-visible{outline:2px solid var(--accent);outline-offset:2px}\n.grow { flex: 1; min-width: 0; }\n.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); display: inline-block; flex: none; }\n.dot.connected, .dot.running { background: var(--good); }\n.dot.failed, .dot.unhealthy { background: var(--error); }\n.dot.connecting { background: var(--warning); }\n.status { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }\n.connection-node { position: relative; z-index: 1; display: flex; gap: 8px; align-items: center; width: 100%; min-width: 0; min-height: 52px; text-align: left; padding: 5px 10px; border: var(--stroke) solid var(--control-border); border-radius: 6px; background: var(--canvas); font-weight: 400; }\n.connection-node:hover { background: var(--hover); }\n.connection-node.on-route { border-color: var(--accent); }\n.connection-node.selected { background: var(--selected); border-color: var(--accent); }\n.node-icon { display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; color: var(--muted); flex: none; }\n.node-icon svg { width: 18px; height: 18px; }\n.on-route .node-icon { color: var(--text); }\n.node-content { flex: 1; min-width: 0; }\n.node-heading { display: flex; align-items: center; gap: 6px; }\n.node-heading strong { min-width: 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n.node-protocol { flex: none; font-size: 10px; color: var(--muted); border: 1px solid var(--control-border); padding: 0 4px; border-radius: 3px; }\n.node-heading .status, .node-context-label { flex: none; font-size: 11px; color: var(--muted); white-space: nowrap; }\n.node-meta { display: flex; align-items: baseline; gap: 10px; margin-top: 1px; }\n.node-endpoint { display: block; min-width: 0; flex: 1; color: var(--muted); font: 11px/1.6 var(--font-code); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }\n.node-tags { display: flex; flex: none; gap: 5px; max-width: 45%; overflow: hidden; }\n.node-tags > span { min-width: 0; font-size: 11px; line-height: 1.6; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n.node-tags > span + span { border-left: 1px solid var(--control-border); padding-left: 5px; }\n.context .node-icon { color: var(--muted); }\n[data-density=\"compact\"] .connection-node { min-height: 48px; padding-top: 3px; padding-bottom: 3px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "服务器会话工作台",
+    "overview": "这份系统只描述已构建的可点击原型。服务器会话是操作上下文，终端、文件编辑和容器详情是会话内的工作页面；目录、工作页面和侧工具各占明确区域，连接身份留在底栏。顶栏 SoDeck 打开完整管理台，核心功能在管理台内部导航，左右窄侧栏只承载插件入口。正式应用尚未采用这套界面。\n\n用户指定保留多巴胺主题，明暗两主题直接使用 IDEA 默认配色。三主题共用紧凑标准控件、信息层级与交互；差异集中在颜色、结构线宽和控件字重。系统界面字体服务操作阅读，等宽字体服务路径、终端输出和代码。\n\n原型只使用合成数据和本地演示状态，不读取真实凭据、不连接服务器、不执行远端命令；没有新增生产依赖。系统窗口、多窗口迁移、完整 xterm/编辑器及真实操作仍需正式重构与原生验收。浏览器原型不能替代五个正式目标的实际包验收。",
+    "keyCharacteristics": [
+      "会话身份、核心导航与插件工具区域清楚分离。",
+      "三主题同构，颜色差异不改变操作路径。",
+      "紧凑标准控件、文字状态与可见键盘焦点。"
+    ],
+    "rules": [
+      {
+        "name": "The 主题同构 Rule",
+        "body": "主题切换保留布局与交互。IDEA 明暗主题遵循原型中的官方 Gray/Blue 角色；多巴胺保留粉色导航、黄色选中和绿色工具区域。",
+        "section": "colors"
+      },
+      {
+        "name": "The 会话上下文 Rule",
+        "body": "切换会话时，工作页面、侧工具和底部连接身份一同切换；上下文不能只依赖顶栏名称。",
+        "section": "layout"
+      },
+      {
+        "name": "The 焦点连续 Rule",
+        "body": "重绘后用稳定操作身份恢复对应新节点的焦点；关闭或取消对话框后回到发起控件，文本控件同时保留可恢复的选区。",
+        "section": "components"
+      },
+      {
+        "name": "The 插件入口 Rule",
+        "body": "左右窄侧栏只在会话工作台展示，并只承载插件贡献；核心功能使用管理台内的完整导航。终端通过新建页面和标签页使用，不占侧栏按钮位。原型侧栏按钮标明所属插件，按运行状态显示，插件启停仍在重启后生效。",
+        "section": "components"
+      },
+      {
+        "name": "The 连接路径 Rule",
+        "body": "合并显式有序路线的相同前缀，标签 AND 只匹配目标自身；保留完整祖先并标记非命中路径节点，不递归继承跳板路线。",
+        "section": "components"
+      },
+      {
+        "name": "The 文件插件视觉 Rule",
+        "body": "仅优化 UI，操作和展示逻辑以现有正式文件插件为准；完整保留范围见 docs/plans/interface-refactor.md#目标与边界。简化文件原型不替代既有交互规范。",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do 使用原型主题角色值，并保留浅色主题的深色顶栏。",
+      "Do 给连接、容器和插件状态提供可读文字，圆点和颜色只辅助识别。",
+      "Do 保持键盘焦点可见，关闭对话框后恢复发起控件，保存草稿时保留输入选区。",
+      "Do 使用内联 SVG 功能图标，图标按钮提供可读名称。",
+      "Do 把服务器、插件管理、设置、消息和日志入口放在核心导航区域，保留窄侧栏给插件。"
+    ],
+    "donts": [
+      "Don't 把三主题改成三套页面结构或用颜色替代状态文字。",
+      "Don't 在深色选中底和对话框上使用较暗的普通次要文字；这些上下文采用既有 Gray10。",
+      "Don't 将原型演示结果写成正式应用已经交付的能力或原生窗口行为。"
+    ]
+  }
+}

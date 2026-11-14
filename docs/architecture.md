@@ -7,7 +7,7 @@
 | 层 | 职责与主要入口 |
 | --- | --- |
 | 桌面适配 | 原生窗口、系统事件、Tauri 命令及应用收尾：[main.rs](../src-tauri/src/main.rs)、[windows.rs](../src-tauri/src/windows.rs) |
-| 宿主界面 | 服务器、工作台、设置、更新、消息及插件 Surface：[main.ts](../src/main.ts)、[components.ts](../src/components.ts) |
+| 宿主界面 | 启动组合、壳导航及应用读取、管理台、工作区和插件 Surface：[main.ts](../src/main.ts)、[shell.ts](../src/shell.ts)、[console.ts](../src/console.ts)、[workspaces.ts](../src/workspaces.ts)、[components.ts](../src/components.ts) |
 | 核心状态 | 服务组合、持久配置、受管实例和事件：[core.rs](../src-tauri/src/core.rs) |
 | 连接服务 | 资料快照、认证、主机密钥、SSH/SOCKS5 混合链、取消与代次：[connections](../src-tauri/src/connections/mod.rs) |
 | 工作台与生命周期 | 工作区/Host/Group/View/Surface、布局、迁移、关闭与资源接纳：[workbench.rs](../src-tauri/src/workbench.rs)、[component_ui.rs](../src-tauri/src/component_ui.rs)、[lifecycle.rs](../src-tauri/src/lifecycle.rs) |
@@ -21,6 +21,10 @@
 共享 [plugin-client](../crates/plugin-client/src/lib.rs) 提供 RPC、命令票据、设置、共享状态和文件编辑生命周期客户端，不保存连接凭据，也不封装插件之间的直接调用。文件编辑的标准 UI 在 [packages/file-editor](../packages/file-editor/)，随使用组件独立打包；[接入与职责](features/file-editor.md)由通用编辑功能说明维护。
 
 ## 宿主状态与 DOM 边界
+
+Shell 拥有当前管理页/工作台导航意图及应用快照、网络计量；连接服务只接纳真实会话，显示定位由发起窗口的有效意图明确请求。管理台不是伪工作区，核心页草稿继续属于原页面控制器。Workspaces 管理工作区操作，Components 独占 Surface 挂载、消息身份、有效可见性和输入权；壳隐藏宿主时只取消显示手势与焦点意图，不销毁 View 或远端资源。
+
+公共 CSS、主题值、主题 ID 登记及已发行 token 名称统一维护在 [packages/ui](../packages/ui/README.md)。核心直接编译共享源码，插件独立打包自身 CSS 副本并沿用 UI v1/v2 的 token 下发；宿主尺寸限定在核心容器内，不改变旧插件几何语义。旧插件选择器兼容仅进入插件包的 legacy.css，核心不导入。核心不导入插件业务 UI，不按具体插件 ID 分配入口或业务行为。
 
 页面控制器拥有草稿、基线修订与保存结果，核心快照只提供已保存状态。设置导航与当前页分别更新；组件设置独占自己的挂载容器，父级刷新不遍历或搬回其内部节点。切页/关闭设置只结束显示，草稿随宿主保留；退出规则见[生命周期](features/lifecycle.md)。后台读取分区接收，失败保留上次有效状态并展示对应错误，失效请求不能更新新实体。
 

@@ -314,7 +314,7 @@ UI v1 的 `mount.capabilities.clipboard === 1` 表示宿主提供原生文本剪
 
 每个 surface 最多一个传输，15 秒过期；总上限 256 KiB UTF-8，单请求预留 24000 字节。宿主检查当前可见 surface、焦点和 Context；隐藏、移除和更换 Context 时使旧操作失效。共享 `clipboard-bridge.js` 负责分块与能力检查；旧核心缺少能力时明确提示升级。剪贴板正文不经插件进程或普通控制事件，也不记录和持久化。
 
-`tokens` 保留原颜色字段，新增 `sd-stroke-structure/control`、`sd-icon-stroke`、`sd-control-weight`、`sd-title-weight`、`sd-radius-control`、`sd-tab-height`、`sd-status-height`、`sd-hit-size` 及导航、工具栏、主操作和反馈状态语义色；具体名称以 `src/theme.ts` 为准。终端提供 `terminal-background/foreground/cursor/selection` 与 ANSI16（`terminal-black` 至 `terminal-brightWhite`）。插件将字段设置为同名 `--` CSS 变量，配合打包的 `shared.css` 使用；旧插件可忽略新增项，新插件保留基础色回退。主题变更不重建视图或会话。
+`tokens` 保留原颜色字段，新增 `sd-stroke-structure/control`、`sd-icon-stroke`、`sd-control-weight`、`sd-title-weight`、`sd-radius-control`、`sd-tab-height`、`sd-status-height`、`sd-hit-size` 及导航、工具栏、主操作和反馈状态语义色；名称契约维护在 [token-names.ts](../packages/ui/token-names.ts)。`sd-link` 表示文字链接色，与主按钮背景 `sd-primary` 分开。终端提供 `terminal-background/foreground/cursor/selection` 与 ANSI16（`terminal-black` 至 `terminal-brightWhite`）。插件将字段设置为同名 `--` CSS 变量，配合自身打包的 `shared.css` 使用；旧插件可忽略新增项，新插件保留基础色回退。已发行的几何键保持原语义，核心壳尺寸只作用于宿主容器。主题变更不重建视图或会话。
 
 ### 统一桌面行为和滚动条
 

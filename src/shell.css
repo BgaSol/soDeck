@@ -386,13 +386,12 @@
     font-size: 12px;
   }
   .primary {
-    background: var(--accent);
-    color: var(--panel);
-    border-color: var(--accent);
+    background: var(--sd-primary);
+    color: var(--sd-primary-text);
+    border-color: var(--sd-primary);
   }
   .primary:hover {
-    filter: brightness(0.94);
-    background: var(--accent);
+    background: var(--sd-primary-hover);
   }
   .quiet {
     background: transparent;
@@ -401,7 +400,7 @@
   .text-button {
     background: transparent;
     border: 0;
-    color: var(--accent);
+    color: var(--sd-link);
     padding: 4px 0;
     min-height: 24px;
   }
@@ -639,64 +638,11 @@
     right: 12px;
     width: 14px;
   }
-  .theme-preview {
-    width: 100%;
-    height: 74px;
-    border: 1px solid #dfe2eb;
-    border-radius: 5px;
-    background: #f6f7f9;
-    display: flex;
-    overflow: hidden;
-  }
-  .theme-preview i {
-    width: 24%;
-    height: 100%;
-    background: #eceef3;
-    border-right: 1px solid #dfe2eb;
-  }
-  .theme-preview div {
-    padding: 14px 10px;
-    flex: 1;
-  }
-  .theme-preview span {
-    display: block;
-    height: 5px;
-    border-radius: 3px;
-    background: #d5cee9;
-    margin-bottom: 8px;
-    width: 95%;
-  }
-  .theme-preview span + span {
-    width: 65%;
-    background: #dddfe7;
-  }
-  .theme-preview.dark {
-    background: #252832;
-    border-color: #484c58;
-  }
-  .theme-preview.dark i {
-    background: #1b1d25;
-    border-color: #484c58;
-  }
-  .theme-preview.system {
-    background: linear-gradient(90deg, #f6f7f9 50%, #252832 50%);
-  }
-  .theme-preview.dopamine {
-    background: #fffbe6;
-    border: 2px solid #20211f;
-  }
-  .theme-preview.dopamine i {
-    background: #ffb7cf;
-    border-right: 2px solid #20211f;
-  }
-  .theme-preview.dopamine span {
-    background: #ffde75;
-    border: 1px solid #20211f;
-    height: 8px;
-  }
-  .theme-preview.dopamine span + span {
-    background: #42c69b;
-  }
+  .theme-preview {width:100%;height:74px;border:var(--sd-stroke-control) solid var(--border);border-radius:5px;background:var(--canvas);display:flex;overflow:hidden;}
+  .theme-preview i {width:24%;height:100%;background:var(--sd-navigation);border-right:var(--sd-stroke-control) solid var(--border);}
+  .theme-preview div {padding:14px 10px;flex:1;}
+  .theme-preview span {display:block;height:6px;border-radius:3px;background:var(--sd-server-selected);margin-bottom:8px;width:95%;}
+  .theme-preview span+span {width:65%;background:var(--sd-tools);}
   .about-brand {
     display: flex;
     align-items: center;
@@ -1107,4 +1053,23 @@
   .update-source input { width: 100%; min-width: 0; padding: 8px 10px; border: var(--sd-stroke-control) solid var(--border); border-radius: 6px; color: var(--text); background: var(--panel); }
   .plugin-switch::before { content: ''; display: block; width: 25px; height: 14px; border-radius: 10px; background: radial-gradient(circle at 6px center, var(--panel) 0 4px, transparent 4.5px), var(--muted); border: 0; }
   .plugin-switch.on::before { background: radial-gradient(circle at 19px center, var(--panel) 0 4px, transparent 4.5px), var(--accent); }
+}
+
+@layer components {
+  .server-tab.selected { background: var(--sd-server-selected); }
+  #catalog-tab[aria-selected="true"] { background: var(--sd-server-selected); color: var(--text); box-shadow: none; }
+  .topbar { border-bottom: 0; }
+  .topbar::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: var(--sd-stroke-structure); background: var(--border); pointer-events: none; }
+  .settings-nav, .catalog-dialog-heading { background: var(--sd-navigation); }
+  .endpoint-symbol { background: var(--sd-symbol); color: var(--text); }
+  .catalog-row.selected .endpoint-symbol { background: var(--sd-symbol-selected); }
+  .badge.running, .badge.success, .metrics { background: var(--sd-success-bg); }
+  .badge.failed, .badge.error, .error-box { background: var(--sd-error-bg); }
+  .modal-backdrop, .catalog-dialog::backdrop, .component-close-dialog::backdrop, .plugin-view-dialog::backdrop { background: var(--sd-scrim); }
+  .welcome-emblem { background: var(--sd-tools); box-shadow: none; }
+  .workspace { background: var(--canvas); }
+  /* Existing forms use the same appearance parameters, without theme selectors. */
+  input, select, .layer, .plugin-layout, .plugin-symbol, .metrics, .log-results, .toast,
+  .restart-banner, .update-card, .catalog-layout, .catalog-dialog, .route-editor-step,
+  .route-number, .endpoint-symbol, .component-close-dialog, .plugin-view-dialog { border-width: var(--sd-stroke-control); }
 }

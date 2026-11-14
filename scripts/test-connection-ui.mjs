@@ -36,16 +36,16 @@ async function settle(predicate) { for (let i = 0; i < 100; i++) { const v = awa
 try {
   const saved = await call("change_catalog", { revision: 0, change: { op: "saveServer", draft: { name: "隔离测试服务器", host: "127.0.0.1", port: server.address().port, username: "ops", authentication: { type: "password", secret: { action: "clear" } }, route: [] } } });
   await call("change_catalog", { revision: saved.catalog.revision, change: { op: "saveProxy", draft: { name: "隔离代理资料", host: "127.0.0.1", port: 1080, authentication: { type: "none", secret: { action: "clear" } } } } });
-  await page.goto(url); await page.waitForFunction(() => window.testReady === true); await page.locator(".catalog-row").click();
+  await page.goto(url); await page.waitForFunction(() => window.testReady === true); await page.locator(".connection-node").click();
   assert.equal(starts.length, 0, "Single click only shows server details");
   await page.locator('[data-tab="proxies"]').click();
-  await page.locator(".catalog-row strong").dblclick({ delay: 100 });
+  await page.locator(".connection-node strong").dblclick({ delay: 100 });
   assert.equal(await page.locator("[data-connect-server-on-double-click]").count(), 0);
   assert.equal(starts.length, 0, "Double clicking a proxy only shows its details");
   await page.goto(url); await page.waitForFunction(() => window.testReady === true);
   const picker=page.getByRole('dialog',{name:'选择服务器',exact:true}),progress=page.getByRole('status',{name:'连接进度',exact:true});
   const choose=async()=>{await page.getByRole('button',{name:'选择服务器',exact:true}).click();await picker.getByRole('button',{name:/隔离测试服务器/}).click();await picker.waitFor({state:'hidden'});};
-  await page.locator(".catalog-row strong").dblclick({ delay: 100 });
+  await page.locator(".connection-node strong").dblclick({ delay: 100 });
   await settle(v => v[0]?.question?.kind === "credentials");
   const dialog = page.getByRole("dialog", { name: "补充连接凭据" }); await dialog.waitFor({ state: "visible" });
   assert.equal(await dialog.locator('[name="remember"]').isChecked(), true);
@@ -59,7 +59,7 @@ try {
   assert(await picker.getByRole('button',{name:/隔离测试服务器/}).isDisabled());
   await page.evaluate(id=>Promise.all([window.connections.connect(id),window.connections.connect(id)]),saved.selectedId);
   assert.equal(starts.length,1);await page.keyboard.press('Escape');
-  await page.locator(".catalog-row small").first().dblclick({ delay: 100 });
+  await page.locator(".connection-node .node-endpoint").first().dblclick({ delay: 100 });
   await page.evaluate(() => window.connections.refresh());
   assert.equal(starts.length, 1, "Double clicking a connecting server reuses its attempt");
   assert.equal(sockets.size, 1);
@@ -93,11 +93,11 @@ try {
   const previousStarts = starts.length;
   await page.setViewportSize({ width: 720, height: 480 });
   await page.goto(url); await page.waitForFunction(() => window.testReady === true);
-  await page.locator(".catalog-row").click();
+  await page.locator(".connection-node").click();
   await page.locator(".connection-card").waitFor({ state: "visible" });
   assert.equal(starts.length, previousStarts, "Narrow-layout single click still only shows details");
   await page.locator('[data-server-action="back"]').click();
-  await page.locator(".catalog-row strong").dblclick({ delay: 300 });
+  await page.locator(".connection-node strong").dblclick({ delay: 300 });
   await settle(v => v[0]?.question?.kind === "credentials");
   await dialog.waitFor({ state: "visible" });
   assert.equal(starts.length, previousStarts + 1, "An unselected row connects on the first double click at 720px");

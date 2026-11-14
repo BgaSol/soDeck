@@ -192,7 +192,7 @@ async function checkTitlebar() {
       return { selector, maximized, restored: !window.nativeMaximized, calls: [...window.nativeWindowCalls] };
     };
     const blank = ["#drag-region", ".topbar", "#server-tabs", ".global-tools"].map(check);
-    const interactive = ["#catalog-tab span", "#new-workspace svg", "#status-button .health-dot", "#messages-button svg", "#settings-button svg", "#window-controls button svg", "#server-workspace"];
+    const interactive = ["#catalog-tab span", "#new-workspace svg", "#messages-button svg", "#settings-button svg", "#window-controls button svg", "#server-workspace"];
     if (document.querySelector(".server-tab")) interactive.push(".server-tab", ".server-tab .tab-name", ".tab-close-button svg");
     const excluded = interactive.map(check);
     window.nativeWindowCalls.length = 0;
@@ -271,87 +271,29 @@ try {
   assert.equal(before.alignItems, "stretch", "Form labels must use component layout");
   await close();
 
-  const plus=page.locator('#new-workspace'),picker=page.getByRole('dialog',{name:'选择服务器',exact:true});
-  await plus.click();await picker.getByRole('status').filter({hasText:'暂无服务器'}).waitFor();
-  await plus.click();await picker.waitFor({state:'hidden',timeout:2000});
-  await plus.click();await picker.getByRole('status').filter({hasText:'暂无服务器'}).waitFor();
-  await page.keyboard.press('Escape');assert.equal(await plus.evaluate(el=>el===document.activeElement),true);
-  const pickerConnections=pickerConnects;
-  await page.setViewportSize({width:720,height:480});
-  const pickerAnchorStyle=await plus.getAttribute('style');
-  await plus.evaluate(node=>Object.assign(node.style,{position:'fixed',left:'680px',top:'400px',zIndex:'100'}));
-  await plus.click();await picker.getByRole('status').filter({hasText:'暂无服务器'}).waitFor();
-  await page.waitForFunction(()=>{const node=document.querySelector('#server-picker'),r=node.getBoundingClientRect();return node.style.visibility==='visible'&&node.dataset.placement?.startsWith('top')&&r.left>=8&&r.top>=8&&r.right<=innerWidth-8&&r.bottom<=innerHeight-8;},null,{timeout:2000});
-  assert.match(await picker.getAttribute('data-placement'),/^top/,'A low anchor flips the picker above it');
-  await plus.evaluate(node=>node.style.top='40px');
-  await page.waitForFunction(()=>{const anchor=document.querySelector('#new-workspace').getBoundingClientRect(),popup=document.querySelector('#server-picker').getBoundingClientRect();return Math.abs(popup.top-anchor.bottom-4)<=1;},null,{timeout:2000});
-  await plus.evaluate(node=>node.hidden=true);await picker.waitFor({state:'hidden',timeout:2000});
-  await plus.evaluate((node,style)=>{node.hidden=false;if(style===null)node.removeAttribute('style');else node.setAttribute('style',style);},pickerAnchorStyle);
-  await page.setViewportSize({width:1100,height:720});
-  let saved=await call('change_catalog',{revision:(await call('server_catalog')).revision,change:{op:'saveGroup',id:null,name:'生产组'}});
-  const groupId=saved.catalog.groups[0].id;
-  const serverIds=[];
-  for (const [name,host,username] of [['生产入口','192.0.2.10','root'],['测试环境','192.0.2.20','ops']]) {
-    saved=await call('change_catalog',{revision:(await call('server_catalog')).revision,change:{op:'saveServer',draft:{name,host,port:22,username,groupId,authentication:{type:'password',secret:{action:'clear'}},route:[]}}});serverIds.push(saved.selectedId);
-  }
-  await plus.click();
-  const search=picker.getByRole('searchbox',{name:'搜索服务器'});
-  for(const query of ['生产入口','192.0.2.10','root','生产组']) { await search.fill(query);await picker.getByRole('button',{name:/生产入口/}).waitFor(); }
-  await search.fill('没有这个服务器');await picker.getByRole('status').filter({hasText:'没有匹配'}).waitFor();
-  await page.keyboard.press('Enter');assert.equal(await picker.isVisible(),true);
-  await search.fill('');await page.keyboard.press('ArrowUp');
-  assert.equal(await page.evaluate(()=>document.activeElement.dataset.serverId),await picker.locator('[data-server-id]').last().getAttribute('data-server-id'));
-  await search.focus();await page.keyboard.press('ArrowDown');assert.match(await page.evaluate(()=>document.activeElement.textContent),/生产入口|测试环境/);
-  await page.keyboard.press('Escape');
-  failCatalog=true;await plus.click();await picker.getByRole('alert').filter({hasText:'目录暂时不可读'}).waitFor();
-  failCatalog=false;await picker.getByRole('button',{name:'重新读取',exact:true}).click();await picker.getByRole('button',{name:/生产入口/}).waitFor();
-  // A catalog event refreshes only the list and preserves the user's search.
-  await search.fill('生产');
-  const record=(await call('server_catalog')).servers.find(s=>s.id===serverIds[0]);
-  await call('change_catalog',{revision:(await call('server_catalog')).revision,change:{op:'saveServer',draft:{...record,name:'生产入口-已更新',authentication:{type:'password',secret:{action:'keep',remember:false}}}}});
-  await picker.getByRole('button',{name:/生产入口/}).focus();
+  const plus=page.locator('#new-workspace');
+  await plus.click();assert.equal(await page.locator('#server-catalog').isVisible(),true);
+  assert.equal(await page.locator('#server-picker').count(),0,'Main + opens the complete connection page');
+  let saved=await call('change_catalog',{revision:(await call('server_catalog')).revision,change:{op:'saveTag',id:null,name:'生产组'}});
+  const groupId=saved.catalog.tags[0].id;const serverIds=[];
+  for(const [name,host,username] of [['生产入口','192.0.2.10','root'],['测试环境','192.0.2.20','ops']]){saved=await call('change_catalog',{revision:(await call('server_catalog')).revision,change:{op:'saveServer',draft:{name,host,port:22,username,tagIds:[groupId],authentication:{type:'password',secret:{action:'clear'}},route:[]}}});serverIds.push(saved.selectedId);}
   await page.evaluate(()=>window.emitTestEvent('server-catalog-changed'));
-  await picker.getByRole('button',{name:/生产入口-已更新/}).waitFor();assert.equal(await search.inputValue(),'生产');
-  assert.equal(await page.evaluate(()=>document.activeElement.dataset.serverId),serverIds[0]);
-  await page.locator('#catalog-tab').click();await picker.waitFor({state:'hidden'});
-  holdPickerCatalog=true;releasePickerCatalog=undefined;
-  await plus.click();
-  for(let attempt=0;!releasePickerCatalog&&attempt<100;attempt++)await page.waitForTimeout(20);
-  assert(releasePickerCatalog,'The isolated catalog response is held');
-  const oldPickerRevision=(await call('server_catalog')).revision;
-  await plus.click();await picker.waitFor({state:'hidden'});
-  const freshPickerServer=await call('change_catalog',{revision:oldPickerRevision,change:{op:'saveServer',draft:{name:'迟到响应验收',host:'192.0.2.30',port:22,username:'ops',groupId,authentication:{type:'password',secret:{action:'clear'}},route:[]}}});
-  await plus.click();await search.fill('迟到响应验收');await picker.getByRole('button',{name:/迟到响应验收/}).waitFor();
-  const oldPickerReplies=await page.evaluate(revision=>window.receivedCatalogRevisions.filter(value=>value===revision).length,oldPickerRevision);
-  releasePickerCatalog();releasePickerCatalog=undefined;
-  await page.waitForFunction(({revision,count})=>window.receivedCatalogRevisions.filter(value=>value===revision).length>count,{revision:oldPickerRevision,count:oldPickerReplies});
-  assert.equal(await search.inputValue(),'迟到响应验收','A prior opening cannot overwrite the current search');
-  assert.equal(await picker.getByRole('button',{name:/迟到响应验收/}).count(),1,'A prior catalog cannot replace the current opening');
-  await page.keyboard.press('Escape');
-  await call('change_catalog',{revision:(await call('server_catalog')).revision,change:{op:'deleteServer',id:freshPickerServer.selectedId}});
-  assert.equal(pickerConnects,pickerConnections,'Positioning and repeated opens do not initiate a connection');
-  checks.push('一级加号定位：边缘翻转、锚点移动和隐藏、关闭重开后的迟到目录响应，以及定位不触发连接');
-  checks.push('一级加号：重复点击开关、空目录、搜索名称/地址/账号/分组、无结果 Enter 不误操作、读取失败重试、实时更新保留搜索与焦点、Esc 和外部关闭');
+  await page.locator('.connection-node').first().waitFor();
+  checks.push('Main + enters the complete management connection page without a second picker');
 
-  const palettes = { light: "#f6f7f9", dark: "#191b22", dopamine: "#fbf1e8" };
+  const palettes = { light: "rgb(255, 255, 255)", dark: "rgb(30, 31, 34)", dopamine: "rgb(251, 241, 232)" };
   for (const [theme, canvas] of Object.entries(palettes)) {
     await call("set_theme", { theme }); await page.reload();
     await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
-    assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--canvas").trim()), canvas);
+    assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor), canvas);
     for (const [width, height] of [[1100, 720], [720, 480]]) {
       await page.setViewportSize({ width, height });
-      await plus.click();await picker.getByRole('button',{name:/生产入口-已更新/}).waitFor();
-      assert.equal(await plus.evaluate(el=>getComputedStyle(el).borderTopWidth),'0px');
-      assert.equal(await picker.evaluate(el=>getComputedStyle(el).overflow),'visible');
-      assert.equal(await picker.evaluate(el=>getComputedStyle(el,'::before').borderTopWidth),theme==='dopamine'?'2px':'1px');
-      assert(await picker.evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.bottom<=innerHeight;}));
-      if(width===1100){fs.mkdirSync('artifacts/tab-creation',{recursive:true});await page.screenshot({path:`artifacts/tab-creation/server-picker-${theme}.png`});}
-      await page.keyboard.press('Escape');
-      await page.locator('[data-tab="servers"]').click();await page.locator('.catalog-row').first().click();
+      await page.locator('[data-tab="servers"]').click();await page.locator('.connection-node').first().click();
       const connectButton=page.locator('.connection-card [data-connect-server]');await connectButton.waitFor();
       assert(await connectButton.evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight;}),`${theme}/${width} connection action is visible`);
       assert(await page.locator('.connection-card').evaluate(el=>Boolean(el.compareDocumentPosition(el.parentElement.querySelector('.endpoint-fields'))&Node.DOCUMENT_POSITION_FOLLOWING)));
       await page.screenshot({path:`artifacts/production-ui/server-detail-${theme}-${width}.png`});
+      if(await page.locator('[data-server-action="back"]').isVisible())await page.locator('[data-server-action="back"]').click();
       for (const kind of ["servers", "proxies"]) {
         await page.locator(`[data-tab="${kind}"]`).click();
         await page.locator('[data-server-action="new"]').click();
@@ -392,7 +334,7 @@ try {
   await page.setViewportSize({ width: 1100, height: 720 });
   await page.locator("#settings-button").click();
   assert.equal(await page.locator('#settings-nav-appearance').getAttribute('aria-current'), 'page', 'Settings initially opens preferences');
-  assert.deepEqual(await page.locator('.settings-nav .nav-label').allTextContents(), ['偏好设置','应用管理']);
+  assert.equal(await page.locator('.console-nav [aria-current=page]').getAttribute('data-console-page'),'settings');
   const appearanceNav = page.locator('[data-action="section"][data-id="appearance"]');
   await appearanceNav.focus(); await page.keyboard.press('Enter');
   assert.equal(await appearanceNav.evaluate(el => el === document.activeElement), true, 'Changed settings pages retain navigation focus');
@@ -404,25 +346,23 @@ try {
     return nodes.map(node => { const s = getComputedStyle(node), a = luminance(s.color), b = luminance(s.backgroundColor); return (Math.max(a,b) + .05) / (Math.min(a,b) + .05); });
   });
   assert(contrasts.every(ratio => ratio >= 4.5), `Selected small text contrast: ${contrasts}`);
-  await page.locator('[data-action="section"][data-id="plugins"]').click();
+  await page.locator('[data-console-page="plugins"]').click();
   await page.getByRole('alert').filter({hasText:'无法获取官方插件列表'}).waitFor();
   assert.equal(await page.locator('[data-official-plugin]').count(),0,'An unavailable catalog is not presented as an empty successful list');
   assert(await page.locator('#choose-plugin').isEnabled(),'Local plugins remain available when the repository cannot be reached');
   catalogUnavailable = false; holdCatalog = true;
   await page.locator('#refresh-official-plugins').click();
   await page.getByRole('status').filter({hasText:'正在从官方仓库获取插件'}).waitFor();
-  await page.locator('[data-action="section"][data-id="about"]').click();
+  await page.locator('#settings-button').click();await page.locator('[data-action="section"][data-id="about"]').click();
   assert.equal(await page.getByRole('heading',{name:'应用与数据',exact:true}).count(),1,'A pending catalog request does not block settings navigation');
   for(let i=0;!releaseCatalog&&i<50;i++)await page.waitForTimeout(20);
   assert(releaseCatalog);holdCatalog=false;releaseCatalog();
   await page.getByRole('button',{name:'使用帮助',exact:true}).focus();await page.keyboard.press('Enter');
   assert.equal(await page.evaluate(()=>window.openedUsageHelp),true);
-  const closeLayer=page.locator('[data-action="close-layer"]');
   await page.getByRole('button',{name:'复制日志路径',exact:true}).focus();await page.keyboard.press('Tab');
-  assert.equal(await closeLayer.evaluate(el=>el===document.activeElement),true,'Last Tab wraps to close');
-  await page.keyboard.press('Shift+Tab');assert.equal(await page.getByRole('button',{name:'复制日志路径',exact:true}).evaluate(el=>el===document.activeElement),true);
-  await page.keyboard.press('Escape');assert.equal(await page.locator('#settings-button').evaluate(el=>el===document.activeElement),true);
-  await page.locator('#settings-button').click();await page.locator('[data-action="section"][data-id="plugins"]').click();
+  assert.equal(await page.evaluate(()=>!!document.activeElement.closest('[role="dialog"]')),false,'Full management pages do not trap Tab');
+  await page.locator('#catalog-tab').click();
+  await page.locator('#settings-button').click();await page.locator('[data-console-page="plugins"]').click();
   assert.equal(await page.locator('#plugins-official').getAttribute('aria-pressed'),'true','An empty installation opens official plugins directly');
   await page.locator('#plugins-installed').focus();await page.keyboard.press('Enter');
   await page.getByRole('heading',{name:'还没有安装插件'}).waitFor();
@@ -479,10 +419,10 @@ try {
   assert.equal(await terminal.locator('[data-action="select-plugin"]').evaluate(el=>el===document.activeElement),true,'Back restores focus to the plugin');
   await page.locator('.toast-error').last().waitFor({state:'hidden'});
   for (const theme of ['light','dark','dopamine']) {
-    await page.locator('#settings-nav-appearance').click();
+    await page.locator('#settings-button').click();await page.locator('#settings-nav-appearance').click();
     await page.locator(`#theme-${theme}`).click();
     await page.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme);
-    await page.locator('#settings-nav-plugins').click();
+    await page.locator('[data-console-page="plugins"]').click();
     for (const [width,height] of [[1100,720],[720,480]]) {
       await page.setViewportSize({width,height});
       assert.equal(await page.locator('.settings-page').evaluate(el=>el.scrollWidth>el.clientWidth+1),false,`${theme}/${width} official plugins fit`);
@@ -496,7 +436,7 @@ try {
   }
   await page.setViewportSize({width:1100,height:720});
   await page.reload(); await page.locator("#settings-button").click();
-  await page.locator('#settings-nav-plugins').click();
+  await page.locator('[data-console-page="plugins"]').click();
   await page.locator('[data-plugin-id="sodeck.terminal"]').waitFor();
   assert.equal(await page.locator('[data-plugin-id="sodeck.terminal"]').count(),1);
   assert.equal((await call("snapshot")).plugins.length, 2);
@@ -535,7 +475,7 @@ try {
     } else await call('add_plugin',{directory:pluginDirectory});
   }
   await page.reload();await page.locator('#settings-button').click();
-  await page.locator('[data-action="section"][data-id="updates"]').click();
+  await page.locator('[data-console-page="updates"]').click();
   await page.locator('#update-network-summary').click();
   await page.locator('#update-network-summary').focus();await page.keyboard.press('Tab');
   assert.equal(await page.evaluate(()=>document.activeElement.id),'network-fallback','Keyboard enters expanded network settings');
@@ -620,12 +560,12 @@ try {
   await page.locator('#update-network-summary').click();
   const networkBefore=(await call('snapshot')).preferences.updateNetwork;
   await page.locator('#network-fallback').setChecked(!networkBefore.fallbackEnabled);
-  await page.locator('#settings-nav-plugins').click();
+  await page.locator('[data-console-page="plugins"]').click();
   await page.locator('[data-action="select-plugin"][data-id="test.update-one"]').click();
   await page.locator('details[data-persist="source-test.update-one"] summary').click();
   const sourceBefore=(await call('snapshot')).plugins.find(p=>p.manifest.id==='test.update-one').manifest.updateSource;
   await page.locator('#update-repository').fill('test/close-draft');
-  await page.locator('#settings-nav-appearance').click();
+  await page.locator('[data-console-page="settings"]').click();await page.locator('#settings-nav-appearance').click();
   const requestClose=async()=>{
     const op=await call('close_prepare',{requestId:crypto.randomUUID(),target:{kind:'application',action:'restart'}});
     await page.evaluate(op=>emitTestEvent('core-close-inputs',op),op);
@@ -641,7 +581,7 @@ try {
   assert.equal((await call('snapshot')).preferences.updateNetwork.fallbackEnabled,!networkBefore.fallbackEnabled);
   assert.deepEqual((await call('snapshot')).plugins.find(p=>p.manifest.id==='test.update-one').manifest.updateSource,sourceBefore);
   await page.locator('[data-decision="cancel"]').click();await page.locator('.component-close-dialog').waitFor({state:'detached'});
-  await page.locator('#settings-nav-plugins').click();
+  await page.locator('[data-console-page="plugins"]').click();
   await page.locator('[data-action="select-plugin"][data-id="test.update-one"]').click();
   await page.locator('details[data-persist="source-test.update-one"] summary').click();
   assert.equal(await page.locator('#update-repository').inputValue(),'test/close-draft');
@@ -650,7 +590,7 @@ try {
   assert.equal((await call('snapshot')).plugins.find(p=>p.manifest.id==='test.update-one').manifest.updateSource.repository,'test/close-draft');
   await page.locator('#update-repository').fill(sourceBefore.repository);await page.locator('[data-action="save-update-source"]').click();
   await page.waitForFunction(()=>!document.querySelector('[data-action="reload-update-source"]'));
-  await page.locator('#settings-nav-updates').click();
+  await page.locator('[data-console-page="updates"]').click();
   checks.push('Actual close coordinator: hidden network/source drafts collected, cancel retains input, partial save failure prevents exit, successful source save advances baseline');
   await page.locator('[data-action="check-all-updates"]').click();
   const firstUpdate=page.locator('[data-update-id="test.update-one"]'),secondUpdate=page.locator('[data-update-id="test.update-two"]');
@@ -659,7 +599,7 @@ try {
   await page.keyboard.press('Space');
   assert.match(await page.locator('[data-action="download-all-updates"]').textContent(),/所选（1）/);
   await secondUpdate.locator('[data-update-select]').check();
-  await page.locator('#settings-nav-plugins').click();
+  await page.locator('[data-console-page="plugins"]').click();
   const updateShortcut = page.locator('[data-plugin-id="test.update-one"] [data-action="plugin-updates"]');
   await updateShortcut.click();
   assert.equal(await firstUpdate.evaluate(el=>el===document.activeElement),true,'A plugin update shortcut locates and focuses its software update row');
@@ -699,7 +639,7 @@ try {
   await firstUpdate.locator('.update-state').filter({hasText:'重启后应用'}).waitFor();
   assert.equal(await page.locator('[data-action="download-all-updates"]').count(),0);
   await page.screenshot({path:'artifacts/production-ui/updates-ready.png'});
-  await page.locator('[data-action="section"][data-id="plugins"]').click();
+  await page.locator('[data-console-page="plugins"]').click();
   assert.equal(await page.locator('[data-plugin-id]').count(),4);
   assert.equal(await page.locator('#update-repository').count(),0,'Technical source fields are not in the overview');
   await page.locator('[data-plugin-id="test.update-one"] [data-action="select-plugin"]').focus();await page.keyboard.press('Enter');
@@ -719,7 +659,7 @@ try {
   assert.equal(await page.locator('details[data-persist="source-test.update-one"]').getAttribute('open'),'');
   await page.locator('[data-action="back-plugins"]').click();
   for (const theme of ['light','dark','dopamine']) {
-    await page.locator('[data-action="section"][data-id="appearance"]').click();
+    await page.locator('#settings-button').click();await page.locator('[data-action="section"][data-id="appearance"]').click();
     await page.locator(`[data-action="theme"][data-id="${theme}"]`).click();
     await page.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme);
     const navigationContrasts=await page.locator('.settings-nav').evaluate(nav=>{
@@ -727,8 +667,8 @@ try {
       const background=luminance(getComputedStyle(nav).backgroundColor);
       return [...nav.querySelectorAll('.nav-label,.nav-bottom,.settings-nav-hint')].map(node=>{const foreground=luminance(getComputedStyle(node).color);return {text:node.textContent,ratio:(Math.max(foreground,background)+.05)/(Math.min(foreground,background)+.05)};});
     });
-    assert(navigationContrasts.length>=2&&navigationContrasts.every(item=>item.ratio>=4.5),`${theme} navigation small text contrast: ${JSON.stringify(navigationContrasts)}`);
-    await page.locator('[data-action="section"][data-id="updates"]').click();
+    assert(navigationContrasts.length>=1&&navigationContrasts.every(item=>item.ratio>=4.5),`${theme} navigation small text contrast: ${JSON.stringify(navigationContrasts)}`);
+    await page.locator('[data-console-page="updates"]').click();
     if (await firstUpdate.locator('.update-release-notes').getAttribute('open') === null)
       await firstUpdate.locator('.update-release-notes summary').click();
     for(const [width,height] of [[1100,720],[880,576],[734,480],[720,480]]) {
@@ -748,13 +688,14 @@ try {
       await page.keyboard.press('Enter');
     }
   }
-  await page.locator('[data-action="close-layer"]').click();
+  await page.locator('#catalog-tab').click();
   checks.push('Unified updates: Markdown headings/lists/code/tables and external-link dispatch, real plugin batch checks/downloads and independent failure/retry, keyboard selection, preserved prepared versions, source drafts/disclosures/focus, deduplicated plugin overview and three themes at 1100x720, 880x576, 734x480 and 720x480');
   if (!updatesOnly) {
   await call('fixture_load_plugin',{directory:uiFixture});
   const workspace=await call('workspace_fixture_open',{serverId:serverIds[0],connectionId:'bundled-menu-test',endpoint:'root@192.0.2.10:22'});
   await page.reload();
   const board=page.locator(`.server-workbench[data-id="${workspace.context.workspaceId}"]`);
+  await page.locator(`.server-tab-select[data-id="${workspace.context.workspaceId}"]`).click();
   await board.waitFor();
   await checkTitlebarPosition('single');
   await checkTitlebar();
@@ -782,7 +723,7 @@ try {
   }
   checks.push('Bundled workspace menus: fixed placement, no short-menu scrollbars, vertical-only long lists, search and Escape across all three themes at 1100×720 and 720×480');
   await page.setViewportSize({width:1100,height:720});await page.locator('#settings-button').click();
-  await page.locator('.settings-nav').getByRole('button',{name:'显示偏好验收',exact:true}).click();const preference=page.locator('#component-settings-page').getByLabel('名称字号');await preference.fill('17');
+  await page.locator('#settings-button').click();await page.locator('.settings-nav').getByRole('button',{name:'显示偏好验收',exact:true}).click();const preference=page.locator('#component-settings-page').getByLabel('名称字号');await preference.fill('17');
   const caption=page.getByLabel('输入连续性',{exact:true});
   await caption.focus();
   await page.evaluate(()=>{
@@ -819,19 +760,19 @@ try {
   await preference.evaluate(el=>window.componentPreferenceInput=el);await page.evaluate(()=>window.emitTestEvent('core-changed'));await page.waitForTimeout(150);
   assert(await preference.evaluate(el=>el===window.componentPreferenceInput));assert.equal(await preference.inputValue(),'17');
   await page.waitForTimeout(200);assert(await preference.evaluate(el=>el===document.activeElement),'Retained form focus survives global refresh');
-  await page.locator('[data-action="close-layer"]').click();await page.locator('#settings-button').click();assert.equal(await preference.inputValue(),'17');
+  await page.locator('#catalog-tab').click();await page.locator('#settings-button').click();assert.equal(await preference.inputValue(),'17');
   await page.locator('#component-settings-page').getByRole('button',{name:'保存',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.settings-feedback')?.textContent.includes('设置已保存'));
   const preferenceValue=await call('settings_page',{pluginId:uiMetadata.id,pageId:'display'});assert.equal(preferenceValue.values.fontSize,17);
   for (const destination of ['appearance','plugins','updates']) {
-    await page.locator(`#settings-nav-${destination}`).click();
-    assert.equal(await page.locator('.settings-nav [aria-current="page"]').count(),1,'Only the visible settings page is selected');
-    assert.equal(await page.locator('.settings-nav .nav-item.active').count(),1,'Previous component settings do not stay highlighted');
-    await page.locator('.settings-nav').getByRole('button',{name:'显示偏好验收',exact:true}).click();
+    await page.locator(destination==='appearance'?'#settings-nav-appearance':`[data-console-page="${destination}"]`).click();
+    assert.equal(await page.locator('.console-nav [aria-current="page"]').count(),1,'Only the current management page is selected');
+
+    await page.locator('#settings-button').click();await page.locator('.settings-nav').getByRole('button',{name:'显示偏好验收',exact:true}).click();
     assert.equal(await preference.inputValue(),'17','Returning to component preferences preserves their values');
     assert.equal(await page.locator('.settings-nav [aria-current="page"]').count(),1);
   }
-  await page.locator('[data-action="close-layer"]').click();checks.push('Bundled component settings: existing navigation, core save, global refresh preserves input DOM, closing/reopening keeps drafts');
-  await page.locator('#status-button').click();await page.getByRole('button',{name:'查看日志',exact:true}).click();
+  await page.locator('#catalog-tab').click();checks.push('Bundled component settings: existing navigation, core save, global refresh preserves input DOM, closing/reopening keeps drafts');
+  await page.locator('#shell-status [data-action="status"]').click();await page.getByRole('button',{name:'查看日志',exact:true}).click();
   await page.locator('.log-row').first().waitFor();const currentLogs=await page.locator('#log-results').textContent();assert(currentLogs.length>0);
   await page.locator('#log-query').fill('held-old-filter');await page.waitForFunction(()=>true);
   for(let i=0;!heldLogReply&&i<50;i++)await page.waitForTimeout(20);assert(heldLogReply);
@@ -894,7 +835,7 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('.server-tab').length === 8);
   assert(await page.locator('#server-tabs').evaluate(el => el.scrollWidth > el.clientWidth), 'Long server tabs overflow');
   await checkTitlebarPosition('overflow');
-  await plus.click(); await picker.waitFor({ state: 'visible' }); await page.keyboard.press('Escape');
+  await plus.click();assert.equal(await page.locator('#server-catalog').isVisible(),true);
   assert.equal(await plus.evaluate(el => el === document.activeElement), true);
   checks.push('Title-bar plus: adjacent and vertically aligned in empty, single and overflowing long-tab states, three themes, 1100/720 widths and macOS inset; overflow picker remains clickable');
   await call("workspace_move", { window: "main", id: workspace.context.workspaceId, target: "workspace-titlebar", index: 0 });
@@ -905,7 +846,7 @@ try {
   assert.equal(await page.locator('.global-tools').isVisible(), false, 'Pop-out hides global status, messages and settings');
   assert.equal(await page.locator('#new-workspace').isVisible(), true, 'Pop-out keeps the existing server picker');
   assert.equal(await page.locator('.server-tab-select').isVisible(), true, 'Pop-out keeps server tabs');
-  assert.equal(await board.locator('.workspace-status').isVisible(), true, 'Pop-out keeps its connection status');
+  assert.equal(await page.locator('#shell-status').isVisible(), true, 'Pop-out keeps its core connection status');
   for (const side of ['left', 'right']) {
     const rail = board.locator(`.${side}-rail`);
     assert.equal(await rail.isVisible(), false, `Pop-out hides the ${side} tool rail`);

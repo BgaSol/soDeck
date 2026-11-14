@@ -20,7 +20,7 @@ export class ServerPicker {
     this.node.popover = "auto";
     this.node.setAttribute("role", "dialog");
     this.node.setAttribute("aria-label", "选择服务器");
-    this.node.innerHTML = `<input type="search" aria-label="搜索服务器" placeholder="搜索名称、地址、账号或分组" autofocus><div class="server-picker-list"></div>`;
+    this.node.innerHTML = `<input type="search" aria-label="搜索服务器" placeholder="搜索名称、地址、账号或标签" autofocus><div class="server-picker-list"></div>`;
     this.search = this.node.querySelector("input")!;
     this.list = this.node.querySelector(".server-picker-list")!;
     document.body.append(this.node);
@@ -60,14 +60,14 @@ export class ServerPicker {
   private render() {
     const focused = this.list.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.serverId : undefined;
     const query = this.search.value.trim().toLocaleLowerCase();
-    const group = (id: string | null) => this.catalog?.groups.find(g => g.id === id)?.name ?? "未分组";
-    const servers = (this.catalog?.servers ?? []).filter(s => [s.name, address(s), s.username, group(s.groupId)].join(" ").toLocaleLowerCase().includes(query))
+    const tags = (ids: string[]) => ids.map(id=>this.catalog?.tags.find(t=>t.id===id)?.name??id).join("、") || "无标签";
+    const servers = (this.catalog?.servers ?? []).filter(s => [s.name, address(s), s.username, tags(s.tagIds)].join(" ").toLocaleLowerCase().includes(query))
       .sort((a, b) => a.name.localeCompare(b.name, "zh-CN", { numeric: true }));
     this.list.innerHTML = this.error ? `<p role="alert">${e(this.error)}</p><button data-picker-retry>重新读取</button>`
       : this.loading && !this.catalog ? `<p role="status">正在读取服务器…</p>` : servers.length ? servers.map(s => {
         const v = this.connections.find(v => v.serverId === s.id), busy = v?.state === "connecting";
         const status = busy ? v.question ? "等待确认" : "正在连接" : v?.state === "connected" ? "已打开" : v?.state === "disconnected" ? "已断线" : "";
-        return `<button data-server-id="${e(s.id)}" ${busy ? "disabled" : ""} title="${e(`${s.username}@${address(s)} · ${group(s.groupId)}`)}"><span class="server-picker-record"><strong>${e(s.name)}</strong><span>${e(s.username)}@${e(address(s))} · ${e(group(s.groupId))}</span></span><span class="server-picker-state">${status}</span></button>`;
+        return `<button data-server-id="${e(s.id)}" ${busy ? "disabled" : ""} title="${e(`${s.username}@${address(s)} · ${tags(s.tagIds)}`)}"><span class="server-picker-record"><strong>${e(s.name)}</strong><span>${e(s.username)}@${e(address(s))} · ${e(tags(s.tagIds))}</span></span><span class="server-picker-state">${status}</span></button>`;
       }).join("") : `<p role="status">${this.catalog?.servers.length ? "没有匹配的服务器" : "暂无服务器，请先在服务器管理中添加"}</p>`;
     if (focused) (this.list.querySelector<HTMLButtonElement>(`[data-server-id="${CSS.escape(focused)}"]:not(:disabled)`) ?? this.search).focus();
     this.position();

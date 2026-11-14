@@ -11,7 +11,7 @@
     "test": "cargo test --manifest-path src-tauri/Cargo.toml --features test-fixtures --locked",
     "scripts:test": "node --test scripts/*.test.mjs",
     "ci:test": "node scripts/run-ci-suite.mjs",
-    "ui:test": "node scripts/test-server-ui.mjs && node scripts/test-workspace-ui.mjs && node scripts/test-connection-ui.mjs && npm run layout:test && npm run interactions:test && npm run ui:production:test && npm run desktop:test && npm run settings:test",
+    "ui:test": "node scripts/test-shell-navigation.mjs && node scripts/test-server-ui.mjs && node scripts/test-workspace-ui.mjs && node scripts/test-connection-ui.mjs && npm run layout:test && npm run interactions:test && npm run ui:production:test && npm run desktop:test && npm run settings:test",
     "interactions:test": "node --test scripts/test-workbench-interactions.mjs",
     "layout:test": "node scripts/test-workbench-layout.mjs",
     "desktop:test": "node scripts/test-desktop-ui.mjs",

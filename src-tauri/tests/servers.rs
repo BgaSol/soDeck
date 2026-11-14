@@ -36,7 +36,78 @@ fn change(core: &AppCore, v: Value) -> Result<Value, String> {
     )
 }
 fn server(host: &str) -> Value {
-    json!({"op":"saveServer","draft":{"id":null,"name":"","groupId":null,"host":host,"port":22,"username":"ops","authentication":{"type":"password","secret":{"action":"keep","remember":false}},"route":[]}})
+    json!({"op":"saveServer","draft":{"id":null,"name":"","tagIds":[],"host":host,"port":22,"username":"ops","authentication":{"type":"password","secret":{"action":"keep","remember":false}},"route":[]}})
+}
+
+#[test]
+fn v1_migrates_once_and_preserves_credentials_routes_and_original_backup() {
+    let f = Fixture::new();
+    let core = f.open();
+    let tag = id(change(&core, json!({"op":"saveTag","id":null,"name":"生产"})).unwrap());
+    let mut input = server("original.invalid");
+    input["draft"]["tagIds"] = json!([tag]);
+    input["draft"]["authentication"]["secret"] =
+        json!({"action":"replace","value":"migration-secret","remember":true});
+    let saved = id(change(&core, input).unwrap());
+    drop(core);
+    let mut original = f.disk();
+    original["schemaVersion"] = json!(1);
+    let object = original.as_object_mut().unwrap();
+    let tags = object.remove("tags").unwrap();
+    object.insert("groups".into(), tags);
+    for s in object["servers"].as_array_mut().unwrap() {
+        let ids = s.as_object_mut().unwrap().remove("tagIds").unwrap();
+        s["groupId"] = ids[0].clone();
+    }
+    fs::write(
+        f.0.join("servers.json"),
+        serde_json::to_vec_pretty(&original).unwrap(),
+    )
+    .unwrap();
+    let core = f.open();
+    assert_eq!(core.server_catalog()["schemaVersion"], 2);
+    assert_eq!(core.server_catalog()["servers"][0]["tagIds"], json!([tag]));
+    assert!(
+        core.server_catalog()["servers"][0]["authentication"]["hasSavedSecret"]
+            .as_bool()
+            .unwrap()
+    );
+    assert!(!core
+        .server_catalog()
+        .to_string()
+        .contains("migration-secret"));
+    assert_eq!(f.disk(), original, "reading does not rewrite v1");
+    change(&core, edit(&core, &saved)).unwrap();
+    let backup: Value =
+        serde_json::from_slice(&fs::read(f.0.join("servers.v1.json.bak")).unwrap()).unwrap();
+    assert_eq!(backup, original);
+    assert_eq!(f.disk()["schemaVersion"], 2);
+    change(&core, edit(&core, &saved)).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<Value>(&fs::read(f.0.join("servers.v1.json.bak")).unwrap())
+            .unwrap(),
+        original
+    );
+}
+
+#[test]
+fn multiple_tags_validate_and_deletion_preserves_other_memberships() {
+    let f = Fixture::new();
+    let core = f.open();
+    let a = id(change(&core, json!({"op":"saveTag","id":null,"name":"生产"})).unwrap());
+    let b = id(change(&core, json!({"op":"saveTag","id":null,"name":"数据库"})).unwrap());
+    let mut input = server("tag.invalid");
+    input["draft"]["tagIds"] = json!([a, b]);
+    let saved = id(change(&core, input).unwrap());
+    let mut duplicate = edit(&core, &saved);
+    duplicate["draft"]["tagIds"] = json!([a, a]);
+    assert!(change(&core, duplicate).is_err());
+    let mut missing = edit(&core, &saved);
+    missing["draft"]["tagIds"] = json!(["missing"]);
+    assert!(change(&core, missing).is_err());
+    change(&core, json!({"op":"deleteTag","id":a})).unwrap();
+    assert_eq!(core.server_catalog()["servers"][0]["tagIds"], json!([b]));
+    assert_eq!(core.server_catalog()["servers"][0]["id"], saved);
 }
 fn proxy() -> Value {
     json!({"op":"saveProxy","draft":{"id":null,"name":"Local proxy","host":"127.0.0.1","port":1080,"authentication":{"type":"none","secret":{"action":"clear"}}}})
@@ -120,11 +191,11 @@ fn catalog_dates_preserve_existing_creation_times_and_refresh_copies() {
 fn mixed_routes_reopen_and_crud() {
     let f = Fixture::new();
     let core = f.open();
-    let g = id(change(&core, json!({"op":"saveGroup","id":null,"name":"生产"})).unwrap());
+    let g = id(change(&core, json!({"op":"saveTag","id":null,"name":"生产"})).unwrap());
     let a = id(change(&core, server("gateway.invalid")).unwrap());
     let p = id(change(&core, proxy()).unwrap());
     let mut b = server("db.internal");
-    b["draft"]["groupId"] = json!(g);
+    b["draft"]["tagIds"] = json!([g]);
     b["draft"]["route"] = json!([{"id":"","kind":"ssh","serverId":a},{"id":"","kind":"socks5","proxyId":p},{"id":"","kind":"socks5","proxyId":p}]);
     let b = id(change(&core, b).unwrap());
     let mut rename = edit(&core, &a);
@@ -149,7 +220,7 @@ fn mixed_routes_reopen_and_crud() {
         .find(|r| r["id"] == copy)
         .unwrap();
     assert_ne!(original["route"][0]["id"], duplicate["route"][0]["id"]);
-    change(&core, json!({"op":"deleteGroup","id":g})).unwrap();
+    change(&core, json!({"op":"deleteTag","id":g})).unwrap();
     change(&core, json!({"op":"deleteServer","id":copy})).unwrap();
     let view = core.server_catalog();
     drop(core);
@@ -162,7 +233,7 @@ fn mixed_routes_reopen_and_crud() {
         .iter()
         .find(|r| r["id"] == b)
         .unwrap();
-    assert!(bview["groupId"].is_null());
+    assert_eq!(bview["tagIds"], json!([]));
     assert_eq!(bview["route"].as_array().unwrap().len(), 3);
     change(&core, json!({"op":"deleteServer","id":b})).unwrap();
     change(&core, json!({"op":"deleteServer","id":a})).unwrap();

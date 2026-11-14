@@ -8,5 +8,6 @@
 @import "./connections.css";
 @import "./updates.css";
 @import "./settings.css";
-@import "./ui.css";
-@import "./themes.css";
+@import "../packages/ui/shared.css";
+@import "../packages/ui/themes.css";
+@import "./console.css";

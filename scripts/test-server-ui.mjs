@@ -39,7 +39,7 @@ page.on("request", request => { assert.equal(new URL(request.url()).hostname, "1
 await page.exposeBinding("catalogInvoke", async (_, command, args) => {
   const result = await bridge.call(command, args);
   // Disk completion may precede the UI callback. Keep this race reproducible.
-  if (args?.change?.op === "deleteGroup") await new Promise(resolve => setTimeout(resolve, 150));
+  if (args?.change?.op === "deleteTag") await new Promise(resolve => setTimeout(resolve, 150));
   return result;
 });
 await page.addInitScript(() => { window.__TAURI_INTERNALS__ = { invoke: (command, args) => window.catalogInvoke(command, args) }; });
@@ -49,7 +49,7 @@ const action = (name, scope = dialogs()) => scope.locator(`[data-server-action="
 const work = () => page.locator("#test-workspace");
 const field = key => dialogs().locator(`[data-field="${key}"]`);
 const read = () => bridge.call("server_catalog");
-async function expectDialogs(n) { await page.waitForFunction(n => document.querySelectorAll("dialog[open]").length === n, n); }
+async function expectDialogs(n) { try {await page.waitForFunction(n => document.querySelectorAll("dialog[open]").length === n, n);} catch(error){console.log(await page.locator("dialog[open]").allTextContents());throw error;} }
 async function save() { await dialogs().locator('button[type="submit"]').click(); }
 async function closeDirty() { await action("cancel").first().click(); await action("confirm-yes").click(); await expectDialogs(0); }
 async function load() { await page.goto(url); await page.waitForFunction(() => window.testReady === true); }
@@ -82,10 +82,10 @@ try {
   await field("name").fill("公网入口"); await save(); await expectDialogs(0);
   checks.push("创建、编辑、秘密不回填和留空保持");
 
-  await action("edit", work()).click(); await action("new-group").click();
-  await dialogs().locator("#group-name").fill("生产环境"); await save(); await expectDialogs(1);
-  await closeDirty(); catalog = await read(); assert.equal(catalog.groups.length, 1); assert.equal(catalog.servers[0].groupId, null);
-  checks.push("独立保存分组，取消父表单仍保留");
+  await action("edit", work()).click(); await action("new-tag").click();
+  await dialogs().locator("#tag-name").fill("生产环境"); await save(); await expectDialogs(1);
+  await closeDirty(); catalog = await read(); assert.equal(catalog.tags.length, 1); assert.deepEqual(catalog.servers[0].tagIds, []);
+  checks.push("独立保存标签，取消父表单仍保留");
 
   const proxyTab=work().locator('[data-tab="proxies"]');await proxyTab.focus();await page.keyboard.press('Enter');
   assert.equal(await proxyTab.evaluate(el=>el===document.activeElement),true,'Switching catalog tabs retains keyboard focus');
@@ -102,7 +102,7 @@ try {
 
   await work().locator('[data-tab="servers"]').click(); await action("new", work()).click();
   await field("host").fill("db.internal"); await field("username").fill("deploy"); await field("name").fill("生产数据库");
-  await field("groupId").selectOption(catalog.groups[0].id); await field("routed").selectOption("true");
+  await dialogs().locator(`[data-tag="${catalog.tags[0].id}"]`).check(); await field("routed").selectOption("true");
   await action("add-ssh").focus();await page.keyboard.press('Enter');
   assert.equal(await dialogs().locator('[data-step="0"]').evaluate(el=>el===document.activeElement),true,'New SSH hop focuses its source selector');
   await dialogs().locator('[data-step="0"]').selectOption(gateway);
@@ -118,13 +118,37 @@ try {
   assert.equal(catalog.servers.find(s => s.id === target).authentication.hasSessionSecret, true);
   checks.push("三层混合路径、重复代理、重排、回环来源与临时秘密");
 
-  await work().locator(`[data-server-action="select"][data-id="${gateway}"]`).click();
+  await action("edit", work()).click();await action("new-tag").click();
+  await dialogs().locator("#tag-name").fill("数据库");await save();await expectDialogs(1);
+  const databaseTag=(await read()).tags.find(t=>t.name==='数据库').id;
+  await dialogs().locator(`[data-tag="${databaseTag}"]`).check();await save();await expectDialogs(0);
+  await work().locator(`[data-server-action="select"][data-id="${gateway}"]`).first().click();await action("edit",work()).click();
+  await dialogs().locator(`[data-tag="${databaseTag}"]`).check();await save();await expectDialogs(0);
+  await work().locator('.tag-filter summary').click();
+  await work().locator(`[data-filter-tag="${databaseTag}"]`).check();
+  assert.equal(await work().locator('.connection-node:not(.path-node)').count(),2);
+  await work().locator(`[data-filter-tag="${catalog.tags[0].id}"]`).check();
+  assert.equal(await work().locator('.connection-node:not(.path-node)').count(),1,'AND excludes the server with only one selected tag');
+  assert.equal(await work().locator('.path-node').count(),3,'Every explicit ancestor remains visible');
+  assert.equal(await work().locator('.path-node[data-connect-server-on-double-click]').count(),0);
+  await work().locator(`[data-server-action="select"][data-id="${target}"]`).click();
+  fs.mkdirSync('artifacts/connection-tree',{recursive:true});
+  for(const theme of ['light','dark','dopamine']){
+    await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+    await page.evaluate(async()=>{await new Promise(requestAnimationFrame);await Promise.allSettled(document.getAnimations().map(animation=>animation.finished));});
+    await page.screenshot({path:`artifacts/connection-tree/${theme}.png`});
+  }
+  await work().locator(`[data-filter-tag="${databaseTag}"]`).uncheck();await work().locator(`[data-filter-tag="${catalog.tags[0].id}"]`).uncheck();
+  await work().locator('.tag-filter summary').click();
+  checks.push('多标签 AND、完整混合祖先路径、上下文节点无连接入口及三主题节点展示');
+
+  await work().locator(`[data-server-action="select"][data-id="${gateway}"]`).first().click();
   await action("delete", work()).click(); assert((await dialogs().innerText()).includes("生产数据库")); await action("confirm-yes").click();
   await expectDialogs(0); assert.equal((await read()).servers.length, 2);
-  await work().locator("#catalog-query").fill("deploy"); assert.equal(await work().locator(".catalog-row").count(), 1);
-  await work().locator("#catalog-query").fill(""); await work().locator("#catalog-group").selectOption(catalog.groups[0].id);
-  assert.equal(await work().locator(".catalog-row").count(), 1); await work().locator("#catalog-group").selectOption("all");
-  checks.push("引用阻止删除，按账号搜索和分组筛选");
+  await work().locator("#catalog-query").fill("deploy"); assert.equal(await work().locator(".connection-node:not(.path-node)").count(), 1);
+  await work().locator("#catalog-query").fill(""); await work().locator(".tag-filter summary").click();await work().locator(`[data-filter-tag="${catalog.tags[0].id}"]`).check();
+  assert.equal(await work().locator(".connection-node:not(.path-node)").count(), 1); await work().locator(`[data-filter-tag="${catalog.tags[0].id}"]`).uncheck();await work().locator(".tag-filter summary").click();
+  checks.push("引用阻止删除，按账号搜索和标签筛选");
 
   await action("new", work()).click(); await field("host").fill("unsaved.internal"); await action("inline-proxy").count().then(async n => {
     // Inline creation is inside the routed section.
@@ -142,7 +166,7 @@ try {
   checks.push("内联代理保存后取消服务器仍保留");
 
   await work().locator(`[data-server-action="select"][data-id="${target}"]`).click(); await action("edit", work()).click(); await field("name").fill("不可覆盖的草稿");
-  catalog = await read(); await bridge.call("change_catalog", { revision: catalog.revision, change: { op: "saveGroup", id: null, name: "外部更新" } });
+  catalog = await read(); await bridge.call("change_catalog", { revision: catalog.revision, change: { op: "saveTag", id: null, name: "外部更新" } });
   await save(); await dialogs().locator(".error-box").waitFor(); assert.equal(await field("name").inputValue(), "不可覆盖的草稿");
   await page.keyboard.press("Escape"); await action("confirm-no").click(); await expectDialogs(1); assert.equal(await field("name").inputValue(), "不可覆盖的草稿");
   await closeDirty(); await action("reload", work()).click();
@@ -154,14 +178,14 @@ try {
   fs.rmdirSync(path.join(directory, "servers.json.tmp")); await save(); await expectDialogs(0);
   checks.push("写入失败保留输入并可重试");
 
-  const productionGroup=(await read()).groups.find(g=>g.name==="生产环境").id;
-  await action("groups", work()).click(); await dialogs().locator(`[data-server-action="rename-group"][data-id="${productionGroup}"]`).click();
-  await dialogs().locator("#group-name").fill("生产组"); await save(); await expectDialogs(1);
-  await dialogs().locator(`[data-server-action="delete-group"][data-id="${productionGroup}"]`).click(); await action("confirm-yes").click(); await expectDialogs(1);
-  await dialogs().locator(`[data-server-action="delete-group"][data-id="${productionGroup}"]`).waitFor({ state: "detached" });
+  const productionTag=(await read()).tags.find(g=>g.name==="生产环境").id;
+  await work().locator(".tag-filter summary").click();await action("tags", work()).click(); await dialogs().locator(`[data-server-action="rename-tag"][data-id="${productionTag}"]`).click();
+  await dialogs().locator("#tag-name").fill("生产组"); await save(); await expectDialogs(1);
+  await dialogs().locator(`[data-server-action="delete-tag"][data-id="${productionTag}"]`).click(); await action("confirm-yes").click(); await expectDialogs(1);
+  await dialogs().locator(`[data-server-action="delete-tag"][data-id="${productionTag}"]`).waitFor({ state: "detached" });
   await action("cancel").click(); await expectDialogs(0);
-  assert.equal((await read()).servers.find(s => s.id === target).groupId, null);
-  checks.push("分组重命名，删除分组保留服务器");
+  assert.deepEqual((await read()).servers.find(s => s.id === target).tagIds, [databaseTag]);
+  checks.push("标签重命名，删除标签保留服务器");
 
   for (const theme of ["system", "light", "dark", "dopamine"]) {
     await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
@@ -171,7 +195,7 @@ try {
       const row=work().locator(`[data-server-action="select"][data-id="${target}"]`);
       await row.focus();await page.keyboard.press('Enter');
       assert.equal(await page.evaluate(()=>document.activeElement===document.body),false,`${theme}/${width} selecting a server keeps contextual focus`);
-      if(width===1100){await row.evaluate(async node=>{await Promise.allSettled(node.getAnimations({subtree:true}).map(animation=>animation.finished));});const ratios=await row.evaluate(row=>{const l=color=>{const c=color.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722;};const b=l(getComputedStyle(row).backgroundColor);return [...row.querySelectorAll('small')].map(node=>{const a=l(getComputedStyle(node).color);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);});});assert(ratios.every(r=>r>=4.5),`${theme} selected server contrast: ${ratios}`);}
+      if(width===1100){await row.evaluate(async node=>{await Promise.allSettled(node.getAnimations({subtree:true}).map(animation=>animation.finished));});const ratios=await row.evaluate(row=>{const l=color=>{const c=color.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722;};const b=l(getComputedStyle(row).backgroundColor);return [...row.querySelectorAll('.node-endpoint,.node-tags,.node-state')].map(node=>{const a=l(getComputedStyle(node).color);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);});});assert(ratios.length&&ratios.every(r=>r>=4.5),`${theme} selected server contrast: ${ratios}`);}
       if(width===720){await action('back',work()).focus();await page.keyboard.press('Enter');assert.equal(await row.evaluate(el=>el===document.activeElement),true,'Returning to the list focuses the original server');}
       await action("new", work()).click();
       await field("routed").selectOption("true"); await action("add-socks").click();

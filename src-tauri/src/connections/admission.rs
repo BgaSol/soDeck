@@ -71,9 +71,6 @@ impl AppCore {
             commands.invalidate_context(&w.context, "连接代次已改变");
             commands.retain_contexts(&workspaces.contexts());
             ui.rebind_context(&context);
-            workspaces
-                .activate(&w.window_id, Some(&context.workspace_id))
-                .map_err(|_| Error::new("workspaceChanged", "工作区已移动或关闭"))?;
             a.state.lock().unwrap().view.window_id = w.window_id;
             context
         } else {

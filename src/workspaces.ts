@@ -48,12 +48,12 @@ export class Workspaces {
   private previewToken?: string;
   private retiredPreviews = new Set<string>();
 
-  constructor(private tabs: HTMLElement, private content: HTMLElement, private catalog: HTMLElement, private notify: (message: string) => void, private call: Invoke = invoke) {
+  constructor(private tabs: HTMLElement, private content: HTMLElement, private notify: (message: string) => void, private call: Invoke = invoke) {
     this.tabRegion = new DomRegion(tabs, () => this.render());
     this.closer = new CloseCoordinator(call,()=>this.state?.window.id??"main",async ids=>{this.finishResize(true);await this.flushLayouts().catch(error=>notify(String(error)));return this.components.flush(ids,true);},(ids,blocked,host)=>{
       if (blocked) {this.finishResize(true);this.closeMenu();}
       this.components.setCloseBlocked(blocked?ids:[]);
-      if(this.state?.window.id==="main")for(const id of ["server-catalog","overlay"]) {const node=document.getElementById(id);if(node)node.inert=host;}
+      this.blockHost?.(host);
       this.hostBlock?.(host);
     },notify);
     this.components = new Components(content, call, notify, () => this.refresh(),async target=>{
@@ -73,7 +73,7 @@ export class Workspaces {
         const windowId = this.state?.window.id;
         this.picker = new TabPicker(anchor, '服务器标签', () => (this.state?.workspaces ?? []).map(w => ({id:w.context.workspaceId,title:w.name,detail:w.endpoint,icon:'server',current:w.context.workspaceId===this.state?.window.activeWorkspace,status:w.connected?'已连接':'已断开',disabled:this.moving.has(w.context.workspaceId),closeLabel:'关闭'})),
           id => this.run(async () => { await this.action('select',id); await this.refresh(); this.strip?.reveal(id); this.tabs.querySelector<HTMLElement>(`[data-id="${CSS.escape(id)}"] [role="tab"]`)?.focus({preventScroll:true}); }),
-          id => this.run(() => this.action('close',id)), () => this.state?.window.id === windowId && !document.querySelector('dialog[open], #overlay:not([hidden])'), notify);
+          id => this.run(() => this.action('close',id)), () => this.state?.window.id === windowId && !document.querySelector('dialog[open], .workspace[inert]'), notify);
       }, {signal:this.events.signal});
     }
     document.addEventListener('tab-picker-open', () => this.closeMenu(false), {signal:this.events.signal});
@@ -92,7 +92,6 @@ export class Workspaces {
     tabs.addEventListener("pointercancel", () => void this.finish(true), {signal: this.events.signal});
     tabs.addEventListener("lostpointercapture", () => { if (this.gesture && !this.gesture.released) void this.finish(true); }, {signal: this.events.signal});
     tabs.addEventListener("scroll", () => this.report(), { passive: true, signal: this.events.signal});
-    document.querySelector("#catalog-tab")?.addEventListener("click", () => { this.finishResize(true); void this.run(() => this.call("workspace_activate", { id: null })); }, {signal: this.events.signal});
     document.addEventListener("pointerdown", event => { if (this.menu && !this.menu.contains(event.target as Node) && !this.menuAnchor?.contains(event.target as Node)) this.closeMenu(); }, {signal: this.events.signal});
     content.addEventListener("surface-interaction", () => this.closeMenu(), {signal: this.events.signal});
     content.addEventListener('tab-geometry-changed', () => this.report(), {signal:this.events.signal});
@@ -125,6 +124,15 @@ export class Workspaces {
     })().finally(() => { this.refreshing = undefined; });
     return this.refreshing;
   }
+  private projectionChanged?: (state:Projection)=>void;
+  private hostVisible=true;
+  private selectedHost?: ()=>void;
+  private selectingHost?: ()=>void;
+  private blockHost?: (blocked:boolean)=>void;
+  setHostCallbacks(changed:(state:Projection)=>void,selected:()=>void,blocked:(blocked:boolean)=>void,selecting:()=>void) {this.projectionChanged=changed;this.selectedHost=selected;this.blockHost=blocked;this.selectingHost=selecting;}
+  setHostVisible(visible:boolean) {this.hostVisible=visible;this.finishResize(true);this.closeMenu();this.components.setHostVisible(visible);if(this.state)this.render();}
+  get layoutSaveFailed() {return this.components.layoutSaveFailed;}
+  async retryLayoutSave() {await this.components.retryLayoutSave();await this.refresh();}
   private current() { return this.state?.workspaces.find(w => w.context.workspaceId === this.state?.window.activeWorkspace); }
   private async run(fn: () => Promise<unknown>) { try { await fn(); } catch (error) { this.notify(String(error)); } finally { if (!this.disposed) await this.refresh().catch(error => this.notify(String(error))); } }
   private render() {
@@ -132,21 +140,20 @@ export class Workspaces {
     const main = state.window.role === "main";
     document.body.classList.toggle("secondary-window", !main);
     const fixed = document.querySelector<HTMLElement>("#catalog-tab");
-    if (fixed) { fixed.hidden = !main; fixed.setAttribute("aria-selected", String(!state.window.activeWorkspace)); fixed.tabIndex = state.window.activeWorkspace ? -1 : 0; }
+    if (fixed) fixed.hidden = !main;
     const focused = document.activeElement as HTMLElement;
     const focusId = this.tabs.contains(focused) ? focused.closest<HTMLElement>(".server-tab")?.dataset.id : undefined;
     const focusAction = focused?.dataset.workspaceAction;
     const scroll = this.tabs.scrollLeft;
     this.tabRegion.update(this.tabs, state.workspaces.map(w => {
-      const id = e(w.context.workspaceId), active = state.window.activeWorkspace === w.context.workspaceId;
+      const id = e(w.context.workspaceId), active = this.hostVisible && state.window.activeWorkspace === w.context.workspaceId;
       return `<div class="server-tab sd-tab ${active ? "selected" : ""} ${this.moving.has(w.context.workspaceId) ? "moving" : ""}" data-id="${id}" data-tab-id="${id}" data-tauri-drag-region="false"><button class="server-tab-select" role="tab" aria-selected="${active}" tabindex="${active ? 0 : -1}" data-workspace-action="select" data-id="${id}" title="${e(w.name)} · ${e(w.endpoint)}"><span class="health-dot ${w.connected ? "good" : "warning"}"></span><span class="tab-name">${e(w.name)}</span></button><button class="tab-close-button sd-icon" data-workspace-action="close" data-id="${id}" aria-label="关闭 ${e(w.name)}" title="关闭此窗口的服务器标签">${icon("close")}</button></div>`;
     }).join(""));
     this.tabs.scrollLeft = scroll;
     this.strip?.update(state.window.activeWorkspace); this.picker?.update();
     if (focusId) this.tabs.querySelector<HTMLElement>(`[data-id="${CSS.escape(focusId)}"] [data-workspace-action="${focusAction ?? "select"}"]`)?.focus({ preventScroll: true });
     const w = this.current();
-    this.catalog.hidden = !main || Boolean(w);
-    this.content.hidden = !w && main && !(state.incomingWorkspaces?.length || state.incoming);
+    this.projectionChanged?.(state);
     if (w) {
       this.content.dataset.workspaceId = w.context.workspaceId;
       this.content.inert = this.moving.has(w.context.workspaceId);
@@ -157,7 +164,7 @@ export class Workspaces {
     if (!this.state?.workspaces.some(w => w.context.workspaceId === id)) return;
     if (action !== 'close') this.closeMenu();
     this.finishResize(true);
-    if (action === "select") { await this.call("workspace_activate", { id }); return; }
+    if (action === "select") { this.selectingHost?.();await this.call("workspace_activate", { id }); await this.refresh(); this.selectedHost?.(); return; }
     if (action === "close") { await this.closer.request({kind:"host",id}); return; }
     if (this.moving.has(id)) return;
     this.moving.add(id); this.render();

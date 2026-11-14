@@ -54,11 +54,7 @@
   .right-panel { padding-inline: 2px 0; }
   .workbench-rail { background: var(--sd-rail); }
   .workbench-rail button[aria-expanded="true"] { background: var(--sd-tools); color: var(--text); }
-  .workspace-status { grid-column: 1 / -1; }
-  .workspace-status-spacer { flex: 1; min-width: 0; }
-  .workspace-connection { display: inline-flex; align-items: center; gap: 6px; padding: 3px 7px; min-width: 0; max-width: 65%; flex-shrink: 1; white-space: nowrap; }
   .workspace-network { font-variant-numeric: tabular-nums; min-width: 180px; font-weight: 400; }
-  @media (max-width: 760px) { .workspace-network { display: none; } .workspace-connection { max-width: 75%; } }
   .component-tab [role="tab"] { justify-content: start; font-size: 12px; }
   .component-tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .component-surfaces { position: absolute; inset: 0; z-index: 1; pointer-events: none; overflow: hidden; }

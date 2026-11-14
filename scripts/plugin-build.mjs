@@ -8,6 +8,7 @@ import { packageMenuAssets } from "./plugin-menu-assets.mjs";
 import { packageDomAssets } from "./plugin-dom-assets.mjs";
 import { targets } from "./core-artifacts.mjs";
 import {fileEditorSettings,buildFileEditor,packageFileEditor} from './plugin-file-editor-assets.mjs';
+import {packageStyles} from '../packages/ui/package.mjs';
 export function run(command, args, options = {}) {
   const result = spawnSync(command, args, { windowsHide: true, stdio: "inherit", ...options });
   if (result.error) throw result.error;
@@ -47,7 +48,7 @@ export async function buildPlugin({ plugin, target, output, release, installDepe
   const executable = `${metadata.binary}${target.includes("windows") ? ".exe" : ""}`;
   const destination = path.join(directory, "bin", executable);
   if (fs.existsSync(`${pluginRoot}/ui`)) fs.cpSync(`${pluginRoot}/ui`, path.join(directory, "ui"), { recursive: true });
-  if (metadata.ui) fs.copyFileSync("src/ui.css", path.join(directory, "ui/shared.css"));
+  if (metadata.ui) packageStyles(directory);
   if (metadata.ui) fs.copyFileSync("plugins/shared/clipboard.js", path.join(directory, "ui/clipboard-bridge.js"));
   if (metadata.build?.fileEditor) packageFileEditor(directory);
   if (['terminal','files'].includes(plugin)) fs.copyFileSync("plugins/shared/state.js", path.join(directory, "ui/state.js"));

@@ -28,7 +28,7 @@ const html = frame => `<!doctype html><html data-theme="light"><head><meta chars
 <textarea id="editor">line one\nline two</textarea><p id="readable">copy this log</p><div id="business">业务菜单区域</div>
 <div id="scroll" tabindex="0" aria-label="滚动内容" style="height:80px;width:230px;overflow:auto"><div style="height:360px;width:450px">滚动内容</div></div>
 <dialog id="dialog"><input id="modal-input" value="modal"></dialog>${frame ? '' : '<iframe title="插件测试" src="/desktop-frame" style="width:700px;height:350px;border:0"></iframe>'}</main>
-<script type="module">import '/ui.css';import '/themes.css';import '/text-menu.js';
+<script type="module">import '/@fs/${path.resolve('packages/ui/shared.css').replaceAll('\\','/')}';import '/@fs/${path.resolve('packages/ui/themes.css').replaceAll('\\','/')}';import '/text-menu.js';
 window.clipboard='paste';window.copies=[];window.notifications=[];
 window.textMenu=window.installTextMenu({read:async valid=>window.delayRead?new Promise(resolve=>window.finishRead=resolve):window.clipboard,write:async(text,valid)=>{if(valid())window.copies.push(text);return valid();},notify:e=>window.notifications.push(e)});
 window.events=[];window.addEventListener('keydown',e=>window.events.push({key:e.key,prevented:e.defaultPrevented}));
@@ -93,7 +93,7 @@ try {
   await page.setViewportSize({width:1100,height:720});
   // Re-enter the plugin through an editable field, as in a normal focus handoff.
   await child.locator('#input').click(); assert(await child.locator('#input').evaluate(node => node === document.activeElement));
-  for (const [theme, color] of [['light', 'rgb(167, 173, 187)'], ['dark', 'rgb(89, 101, 124)'], ['dopamine', 'rgb(146, 144, 123)']]) {
+  for (const [theme, color] of [['light', 'rgb(167, 173, 187)'], ['dark', 'rgb(90, 93, 99)'], ['dopamine', 'rgb(146, 144, 123)']]) {
     for (const surface of [page, child]) {
       await surface.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
       const styles = await surface.locator('#scroll').evaluate(node => ({ width: getComputedStyle(node, '::-webkit-scrollbar').width, color: getComputedStyle(node, '::-webkit-scrollbar-thumb').backgroundColor, radius: getComputedStyle(node, '::-webkit-scrollbar-thumb').borderRadius }));

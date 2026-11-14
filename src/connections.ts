@@ -20,6 +20,7 @@ export function connectionCard(id: string, v?: ConnectionView) {
   return `<section class="connection-card" aria-label="服务器连接"><div><strong>${online ? "远程会话已就绪" : busy ? "正在连接" : "远程连接"}</strong><p role="status">${v ? e(connectionSummary(v)) : "通过保存的访问路径连接 SSH 服务器"}</p></div><div class="actions">${busy ? `<button data-connection-cancel="${e(v.attemptId)}">取消连接</button>${v.question ? `<button data-connection-prompt="${e(v.attemptId)}" class="primary">继续确认</button>` : ""}` : `<button data-connect-server="${e(id)}" class="primary">${online ? "前往工作台" : v ? "重新连接" : "连接服务器"}</button>${v?.state === "failed" ? `<button data-server-action="edit" data-id="${e(id)}">编辑连接资料</button>` : ""}`}</div></section>`;
 }
 type Call = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
+interface Navigation { begin: () => number; accept: (context:Context, revision:number) => Promise<void> }
 export class ConnectionsUi {
   views: ConnectionView[] = [];
   private refreshing?: Promise<void>;
@@ -27,6 +28,9 @@ export class ConnectionsUi {
   private dialog?: { node: HTMLDialogElement; id: string; attempt: string; submitted: boolean };
   private dismissed = new Set<string>();
   private starting = new Set<string>();
+  private navigation?: Navigation;
+  private intents = new Map<string, {revision:number;attemptId?:string}>();
+  setNavigation(navigation:Navigation) {this.navigation=navigation;}
   private progress = document.createElement("div");
   constructor(private windowId: string, private update: (views: ConnectionView[]) => void, private notify: (text: string) => void, private call: Call = invoke) {
     this.progress.className = "connection-progress sd-notice";
@@ -54,12 +58,32 @@ export class ConnectionsUi {
   async connect(serverId: string) {
     if (this.starting.has(serverId)) return;
     this.starting.add(serverId);
+    const intent={revision:this.navigation?.begin()??0,attemptId:undefined as string|undefined};
+    this.intents.set(serverId,intent);
     try {
       await this.refresh();
       const v = this.views.find(v => v.serverId === serverId);
-      if (v?.state === "connected" && v.context) await this.send({ op: "focus", context: v.context });
-      else if (v?.state !== "connecting") await this.send({ op: "start", serverId });
+      if (v?.state === "connected" || v?.state === "connecting") intent.attemptId=v.attemptId;
+      else {
+        const result=await this.call<ConnectionView[]>("connection",{command:{op:'start',serverId}});
+        intent.attemptId=result.find(v=>v.serverId===serverId)?.attemptId;
+        this.apply(result);
+      }
+      await this.refresh();
+      this.acceptIntents();
+    } catch(error) {if(this.intents.get(serverId)===intent)this.intents.delete(serverId);throw error;
     } finally { this.starting.delete(serverId); }
+  }
+  private acceptIntents() {
+    for(const [id,intent] of this.intents) {
+      const v=this.views.find(v=>v.serverId===id&&v.attemptId===intent.attemptId);
+      if(!v)continue;
+      if(v.state==='failed'||v.state==='cancelled')this.intents.delete(id);
+      if(v.state!=='connected'||!v.context)continue;
+      this.intents.delete(id);
+      const accepted=this.navigation?this.navigation.accept(v.context,intent.revision):this.call('connection',{command:{op:'focus',context:v.context}});
+      void accepted.catch(error=>this.notify(String(error)));
+    }
   }
   private apply(views: ConnectionView[]) {
     const previous = this.views;
@@ -72,9 +96,9 @@ export class ConnectionsUi {
       const old = previous.find(old => old.attemptId === v.attemptId);
       if (old?.state === "connecting" && old.windowId === this.windowId) {
         if (v.state === "failed") this.notify(v.error?.message ?? "连接失败，请重试");
-        if (v.state === "connected" && v.context) void this.call("connection", { command: { op: "focus", context: v.context } }).catch(error => this.notify(String(error)));
       }
     }
+    this.acceptIntents();
     if (this.dialog && !views.some(v => v.attemptId === this.dialog!.attempt && v.question?.id === this.dialog!.id)) this.closePrompt();
     if (!this.dialog) {
       const v = views.find(v => v.windowId === this.windowId && v.state === "connecting" && v.question && !this.dismissed.has(v.question.id));

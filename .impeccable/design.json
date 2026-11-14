@@ -1,0 +1,1871 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-14T08:24:06.490Z",
+  "title": "Design System: SoDeck 核心界面",
+  "extensions": {
+    "colorMeta": {
+      "light-canvas": {
+        "role": "neutral",
+        "displayName": "IDEA 浅色 · canvas",
+        "tonalRamp": [
+          "oklch(15% 0.0000 89.88)",
+          "oklch(25% 0.0000 89.88)",
+          "oklch(35% 0.0000 89.88)",
+          "oklch(45% 0.0000 89.88)",
+          "oklch(55% 0.0000 89.88)",
+          "oklch(65% 0.0000 89.88)",
+          "oklch(80% 0.0000 89.88)",
+          "oklch(95% 0.0000 89.88)"
+        ]
+      },
+      "light-subtle": {
+        "role": "neutral",
+        "displayName": "IDEA 浅色 · subtle",
+        "tonalRamp": [
+          "oklch(15% 0.0011 264.54)",
+          "oklch(25% 0.0023 264.54)",
+          "oklch(35% 0.0029 264.54)",
+          "oklch(45% 0.0029 264.54)",
+          "oklch(55% 0.0029 264.54)",
+          "oklch(65% 0.0029 264.54)",
+          "oklch(80% 0.0023 264.54)",
+          "oklch(95% 0.0006 264.54)"
+        ]
+      },
+      "light-text": {
+        "role": "neutral",
+        "displayName": "IDEA 浅色 · text",
+        "tonalRamp": [
+          "oklch(15% 0.0044 278.14)",
+          "oklch(25% 0.0089 278.14)",
+          "oklch(35% 0.0111 278.14)",
+          "oklch(45% 0.0111 278.14)",
+          "oklch(55% 0.0111 278.14)",
+          "oklch(65% 0.0111 278.14)",
+          "oklch(80% 0.0089 278.14)",
+          "oklch(95% 0.0022 278.14)"
+        ]
+      },
+      "light-muted": {
+        "role": "neutral",
+        "displayName": "IDEA 浅色 · muted",
+        "tonalRamp": [
+          "oklch(15% 0.0091 275.94)",
+          "oklch(25% 0.0182 275.94)",
+          "oklch(35% 0.0227 275.94)",
+          "oklch(45% 0.0227 275.94)",
+          "oklch(55% 0.0227 275.94)",
+          "oklch(65% 0.0227 275.94)",
+          "oklch(80% 0.0182 275.94)",
+          "oklch(95% 0.0045 275.94)"
+        ]
+      },
+      "light-border": {
+        "role": "neutral",
+        "displayName": "IDEA 浅色 · border",
+        "tonalRamp": [
+          "oklch(15% 0.0023 264.53)",
+          "oklch(25% 0.0047 264.53)",
+          "oklch(35% 0.0058 264.53)",
+          "oklch(45% 0.0058 264.53)",
+          "oklch(55% 0.0058 264.53)",
+          "oklch(65% 0.0058 264.53)",
+          "oklch(80% 0.0047 264.53)",
+          "oklch(95% 0.0012 264.53)"
+        ]
+      },
+      "light-accent": {
+        "role": "primary",
+        "displayName": "IDEA 浅色 · accent",
+        "tonalRamp": [
+          "oklch(15% 0.0792 262.03)",
+          "oklch(25% 0.1584 262.03)",
+          "oklch(35% 0.1981 262.03)",
+          "oklch(45% 0.1981 262.03)",
+          "oklch(55% 0.1981 262.03)",
+          "oklch(65% 0.1981 262.03)",
+          "oklch(80% 0.1584 262.03)",
+          "oklch(95% 0.0396 262.03)"
+        ]
+      },
+      "light-accent-bg": {
+        "role": "primary",
+        "displayName": "IDEA 浅色 · accent-bg",
+        "tonalRamp": [
+          "oklch(15% 0.0170 264.99)",
+          "oklch(25% 0.0340 264.99)",
+          "oklch(35% 0.0425 264.99)",
+          "oklch(45% 0.0425 264.99)",
+          "oklch(55% 0.0425 264.99)",
+          "oklch(65% 0.0425 264.99)",
+          "oklch(80% 0.0340 264.99)",
+          "oklch(95% 0.0085 264.99)"
+        ]
+      },
+      "light-hover": {
+        "role": "neutral",
+        "displayName": "IDEA 浅色 · hover",
+        "tonalRamp": [
+          "oklch(15% 0.0022 274.96)",
+          "oklch(25% 0.0044 274.96)",
+          "oklch(35% 0.0055 274.96)",
+          "oklch(45% 0.0055 274.96)",
+          "oklch(55% 0.0055 274.96)",
+          "oklch(65% 0.0055 274.96)",
+          "oklch(80% 0.0044 274.96)",
+          "oklch(95% 0.0011 274.96)"
+        ]
+      },
+      "light-good": {
+        "role": "tertiary",
+        "displayName": "IDEA 浅色 · good",
+        "tonalRamp": [
+          "oklch(15% 0.0460 148.66)",
+          "oklch(25% 0.0921 148.66)",
+          "oklch(35% 0.1151 148.66)",
+          "oklch(45% 0.1151 148.66)",
+          "oklch(55% 0.1151 148.66)",
+          "oklch(65% 0.1151 148.66)",
+          "oklch(80% 0.0921 148.66)",
+          "oklch(95% 0.0230 148.66)"
+        ]
+      },
+      "light-warning": {
+        "role": "tertiary",
+        "displayName": "IDEA 浅色 · warning",
+        "tonalRamp": [
+          "oklch(15% 0.0489 69.17)",
+          "oklch(25% 0.0978 69.17)",
+          "oklch(35% 0.1223 69.17)",
+          "oklch(45% 0.1223 69.17)",
+          "oklch(55% 0.1223 69.17)",
+          "oklch(65% 0.1223 69.17)",
+          "oklch(80% 0.0978 69.17)",
+          "oklch(95% 0.0245 69.17)"
+        ]
+      },
+      "light-error": {
+        "role": "tertiary",
+        "displayName": "IDEA 浅色 · error",
+        "tonalRamp": [
+          "oklch(15% 0.0662 20.48)",
+          "oklch(25% 0.1325 20.48)",
+          "oklch(35% 0.1656 20.48)",
+          "oklch(45% 0.1656 20.48)",
+          "oklch(55% 0.1656 20.48)",
+          "oklch(65% 0.1656 20.48)",
+          "oklch(80% 0.1325 20.48)",
+          "oklch(95% 0.0331 20.48)"
+        ]
+      },
+      "light-primary": {
+        "role": "primary",
+        "displayName": "IDEA 浅色 · primary",
+        "tonalRamp": [
+          "oklch(15% 0.0627 262.58)",
+          "oklch(25% 0.1253 262.58)",
+          "oklch(35% 0.1566 262.58)",
+          "oklch(45% 0.1566 262.58)",
+          "oklch(55% 0.1566 262.58)",
+          "oklch(65% 0.1566 262.58)",
+          "oklch(80% 0.1253 262.58)",
+          "oklch(95% 0.0313 262.58)"
+        ]
+      },
+      "light-primary-hover": {
+        "role": "primary",
+        "displayName": "IDEA 浅色 · primary-hover",
+        "tonalRamp": [
+          "oklch(15% 0.0515 261.13)",
+          "oklch(25% 0.1030 261.13)",
+          "oklch(35% 0.1288 261.13)",
+          "oklch(45% 0.1288 261.13)",
+          "oklch(55% 0.1288 261.13)",
+          "oklch(65% 0.1288 261.13)",
+          "oklch(80% 0.1030 261.13)",
+          "oklch(95% 0.0258 261.13)"
+        ]
+      },
+      "light-pressed": {
+        "role": "neutral",
+        "displayName": "IDEA 浅色 · pressed",
+        "tonalRamp": [
+          "oklch(15% 0.0198 262.61)",
+          "oklch(25% 0.0397 262.61)",
+          "oklch(35% 0.0496 262.61)",
+          "oklch(45% 0.0496 262.61)",
+          "oklch(55% 0.0496 262.61)",
+          "oklch(65% 0.0496 262.61)",
+          "oklch(80% 0.0397 262.61)",
+          "oklch(95% 0.0099 262.61)"
+        ]
+      },
+      "light-success-bg": {
+        "role": "tertiary",
+        "displayName": "IDEA 浅色 · success-bg",
+        "tonalRamp": [
+          "oklch(15% 0.0119 151.53)",
+          "oklch(25% 0.0239 151.53)",
+          "oklch(35% 0.0299 151.53)",
+          "oklch(45% 0.0299 151.53)",
+          "oklch(55% 0.0299 151.53)",
+          "oklch(65% 0.0299 151.53)",
+          "oklch(80% 0.0239 151.53)",
+          "oklch(95% 0.0060 151.53)"
+        ]
+      },
+      "light-error-bg": {
+        "role": "tertiary",
+        "displayName": "IDEA 浅色 · error-bg",
+        "tonalRamp": [
+          "oklch(15% 0.0087 14.06)",
+          "oklch(25% 0.0175 14.06)",
+          "oklch(35% 0.0218 14.06)",
+          "oklch(45% 0.0218 14.06)",
+          "oklch(55% 0.0218 14.06)",
+          "oklch(65% 0.0218 14.06)",
+          "oklch(80% 0.0175 14.06)",
+          "oklch(95% 0.0044 14.06)"
+        ]
+      },
+      "light-scrim": {
+        "role": "neutral",
+        "displayName": "IDEA 浅色 · scrim",
+        "tonalRamp": [
+          "oklch(15% 0.0160 266.86)",
+          "oklch(25% 0.0321 266.86)",
+          "oklch(35% 0.0401 266.86)",
+          "oklch(45% 0.0401 266.86)",
+          "oklch(55% 0.0401 266.86)",
+          "oklch(65% 0.0401 266.86)",
+          "oklch(80% 0.0321 266.86)",
+          "oklch(95% 0.0080 266.86)"
+        ]
+      },
+      "dark-canvas": {
+        "role": "neutral",
+        "displayName": "IDEA 深色 · canvas",
+        "tonalRamp": [
+          "oklch(15% 0.0024 271.17)",
+          "oklch(25% 0.0047 271.17)",
+          "oklch(35% 0.0059 271.17)",
+          "oklch(45% 0.0059 271.17)",
+          "oklch(55% 0.0059 271.17)",
+          "oklch(65% 0.0059 271.17)",
+          "oklch(80% 0.0047 271.17)",
+          "oklch(95% 0.0012 271.17)"
+        ]
+      },
+      "dark-panel": {
+        "role": "neutral",
+        "displayName": "IDEA 深色 · panel",
+        "tonalRamp": [
+          "oklch(15% 0.0025 258.36)",
+          "oklch(25% 0.0049 258.36)",
+          "oklch(35% 0.0061 258.36)",
+          "oklch(45% 0.0061 258.36)",
+          "oklch(55% 0.0061 258.36)",
+          "oklch(65% 0.0061 258.36)",
+          "oklch(80% 0.0049 258.36)",
+          "oklch(95% 0.0012 258.36)"
+        ]
+      },
+      "dark-text": {
+        "role": "neutral",
+        "displayName": "IDEA 深色 · text",
+        "tonalRamp": [
+          "oklch(15% 0.0023 264.53)",
+          "oklch(25% 0.0047 264.53)",
+          "oklch(35% 0.0058 264.53)",
+          "oklch(45% 0.0058 264.53)",
+          "oklch(55% 0.0058 264.53)",
+          "oklch(65% 0.0058 264.53)",
+          "oklch(80% 0.0047 264.53)",
+          "oklch(95% 0.0012 264.53)"
+        ]
+      },
+      "dark-muted": {
+        "role": "neutral",
+        "displayName": "IDEA 深色 · muted",
+        "tonalRamp": [
+          "oklch(15% 0.0043 261.78)",
+          "oklch(25% 0.0087 261.78)",
+          "oklch(35% 0.0109 261.78)",
+          "oklch(45% 0.0109 261.78)",
+          "oklch(55% 0.0109 261.78)",
+          "oklch(65% 0.0109 261.78)",
+          "oklch(80% 0.0087 261.78)",
+          "oklch(95% 0.0022 261.78)"
+        ]
+      },
+      "dark-border": {
+        "role": "neutral",
+        "displayName": "IDEA 深色 · border",
+        "tonalRamp": [
+          "oklch(15% 0.0042 264.46)",
+          "oklch(25% 0.0085 264.46)",
+          "oklch(35% 0.0106 264.46)",
+          "oklch(45% 0.0106 264.46)",
+          "oklch(55% 0.0106 264.46)",
+          "oklch(65% 0.0106 264.46)",
+          "oklch(80% 0.0085 264.46)",
+          "oklch(95% 0.0021 264.46)"
+        ]
+      },
+      "dark-accent": {
+        "role": "primary",
+        "displayName": "IDEA 深色 · accent",
+        "tonalRamp": [
+          "oklch(15% 0.0598 262.83)",
+          "oklch(25% 0.1196 262.83)",
+          "oklch(35% 0.1494 262.83)",
+          "oklch(45% 0.1494 262.83)",
+          "oklch(55% 0.1494 262.83)",
+          "oklch(65% 0.1494 262.83)",
+          "oklch(80% 0.1196 262.83)",
+          "oklch(95% 0.0299 262.83)"
+        ]
+      },
+      "dark-accent-bg": {
+        "role": "primary",
+        "displayName": "IDEA 深色 · accent-bg",
+        "tonalRamp": [
+          "oklch(15% 0.0313 263.46)",
+          "oklch(25% 0.0626 263.46)",
+          "oklch(35% 0.0782 263.46)",
+          "oklch(45% 0.0782 263.46)",
+          "oklch(55% 0.0782 263.46)",
+          "oklch(65% 0.0782 263.46)",
+          "oklch(80% 0.0626 263.46)",
+          "oklch(95% 0.0156 263.46)"
+        ]
+      },
+      "dark-hover": {
+        "role": "neutral",
+        "displayName": "IDEA 深色 · hover",
+        "tonalRamp": [
+          "oklch(15% 0.0036 268.40)",
+          "oklch(25% 0.0073 268.40)",
+          "oklch(35% 0.0091 268.40)",
+          "oklch(45% 0.0091 268.40)",
+          "oklch(55% 0.0091 268.40)",
+          "oklch(65% 0.0091 268.40)",
+          "oklch(80% 0.0073 268.40)",
+          "oklch(95% 0.0018 268.40)"
+        ]
+      },
+      "dark-good": {
+        "role": "tertiary",
+        "displayName": "IDEA 深色 · good",
+        "tonalRamp": [
+          "oklch(15% 0.0442 146.22)",
+          "oklch(25% 0.0884 146.22)",
+          "oklch(35% 0.1105 146.22)",
+          "oklch(45% 0.1105 146.22)",
+          "oklch(55% 0.1105 146.22)",
+          "oklch(65% 0.1105 146.22)",
+          "oklch(80% 0.0884 146.22)",
+          "oklch(95% 0.0221 146.22)"
+        ]
+      },
+      "dark-warning": {
+        "role": "tertiary",
+        "displayName": "IDEA 深色 · warning",
+        "tonalRamp": [
+          "oklch(15% 0.0530 85.95)",
+          "oklch(25% 0.1060 85.95)",
+          "oklch(35% 0.1325 85.95)",
+          "oklch(45% 0.1325 85.95)",
+          "oklch(55% 0.1325 85.95)",
+          "oklch(65% 0.1325 85.95)",
+          "oklch(80% 0.1060 85.95)",
+          "oklch(95% 0.0265 85.95)"
+        ]
+      },
+      "dark-error": {
+        "role": "tertiary",
+        "displayName": "IDEA 深色 · error",
+        "tonalRamp": [
+          "oklch(15% 0.0430 24.15)",
+          "oklch(25% 0.0860 24.15)",
+          "oklch(35% 0.1075 24.15)",
+          "oklch(45% 0.1075 24.15)",
+          "oklch(55% 0.1075 24.15)",
+          "oklch(65% 0.1075 24.15)",
+          "oklch(80% 0.0860 24.15)",
+          "oklch(95% 0.0215 24.15)"
+        ]
+      },
+      "dark-primary": {
+        "role": "primary",
+        "displayName": "IDEA 深色 · primary",
+        "tonalRamp": [
+          "oklch(15% 0.0627 262.58)",
+          "oklch(25% 0.1253 262.58)",
+          "oklch(35% 0.1566 262.58)",
+          "oklch(45% 0.1566 262.58)",
+          "oklch(55% 0.1566 262.58)",
+          "oklch(65% 0.1566 262.58)",
+          "oklch(80% 0.1253 262.58)",
+          "oklch(95% 0.0313 262.58)"
+        ]
+      },
+      "dark-primary-text": {
+        "role": "primary",
+        "displayName": "IDEA 深色 · primary-text",
+        "tonalRamp": [
+          "oklch(15% 0.0000 89.88)",
+          "oklch(25% 0.0000 89.88)",
+          "oklch(35% 0.0000 89.88)",
+          "oklch(45% 0.0000 89.88)",
+          "oklch(55% 0.0000 89.88)",
+          "oklch(65% 0.0000 89.88)",
+          "oklch(80% 0.0000 89.88)",
+          "oklch(95% 0.0000 89.88)"
+        ]
+      },
+      "dark-primary-hover": {
+        "role": "primary",
+        "displayName": "IDEA 深色 · primary-hover",
+        "tonalRamp": [
+          "oklch(15% 0.0515 261.13)",
+          "oklch(25% 0.1030 261.13)",
+          "oklch(35% 0.1288 261.13)",
+          "oklch(45% 0.1288 261.13)",
+          "oklch(55% 0.1288 261.13)",
+          "oklch(65% 0.1288 261.13)",
+          "oklch(80% 0.1030 261.13)",
+          "oklch(95% 0.0258 261.13)"
+        ]
+      },
+      "dark-success-bg": {
+        "role": "tertiary",
+        "displayName": "IDEA 深色 · success-bg",
+        "tonalRamp": [
+          "oklch(15% 0.0139 147.75)",
+          "oklch(25% 0.0278 147.75)",
+          "oklch(35% 0.0347 147.75)",
+          "oklch(45% 0.0347 147.75)",
+          "oklch(55% 0.0347 147.75)",
+          "oklch(65% 0.0347 147.75)",
+          "oklch(80% 0.0278 147.75)",
+          "oklch(95% 0.0069 147.75)"
+        ]
+      },
+      "dark-error-bg": {
+        "role": "tertiary",
+        "displayName": "IDEA 深色 · error-bg",
+        "tonalRamp": [
+          "oklch(15% 0.0139 19.23)",
+          "oklch(25% 0.0277 19.23)",
+          "oklch(35% 0.0347 19.23)",
+          "oklch(45% 0.0347 19.23)",
+          "oklch(55% 0.0347 19.23)",
+          "oklch(65% 0.0347 19.23)",
+          "oklch(80% 0.0277 19.23)",
+          "oklch(95% 0.0069 19.23)"
+        ]
+      },
+      "dark-scrim": {
+        "role": "neutral",
+        "displayName": "IDEA 深色 · scrim",
+        "tonalRamp": [
+          "oklch(15% 0.0064 265.80)",
+          "oklch(25% 0.0128 265.80)",
+          "oklch(35% 0.0161 265.80)",
+          "oklch(45% 0.0161 265.80)",
+          "oklch(55% 0.0161 265.80)",
+          "oklch(65% 0.0161 265.80)",
+          "oklch(80% 0.0128 265.80)",
+          "oklch(95% 0.0032 265.80)"
+        ]
+      },
+      "dopamine-canvas": {
+        "role": "neutral",
+        "displayName": "多巴胺 · canvas",
+        "tonalRamp": [
+          "oklch(15% 0.0065 64.67)",
+          "oklch(25% 0.0129 64.67)",
+          "oklch(35% 0.0161 64.67)",
+          "oklch(45% 0.0161 64.67)",
+          "oklch(55% 0.0161 64.67)",
+          "oklch(65% 0.0161 64.67)",
+          "oklch(80% 0.0129 64.67)",
+          "oklch(95% 0.0032 64.67)"
+        ]
+      },
+      "dopamine-panel": {
+        "role": "neutral",
+        "displayName": "多巴胺 · panel",
+        "tonalRamp": [
+          "oklch(15% 0.0111 98.05)",
+          "oklch(25% 0.0222 98.05)",
+          "oklch(35% 0.0278 98.05)",
+          "oklch(45% 0.0278 98.05)",
+          "oklch(55% 0.0278 98.05)",
+          "oklch(65% 0.0278 98.05)",
+          "oklch(80% 0.0222 98.05)",
+          "oklch(95% 0.0056 98.05)"
+        ]
+      },
+      "dopamine-subtle": {
+        "role": "neutral",
+        "displayName": "多巴胺 · subtle",
+        "tonalRamp": [
+          "oklch(15% 0.0047 101.47)",
+          "oklch(25% 0.0095 101.47)",
+          "oklch(35% 0.0119 101.47)",
+          "oklch(45% 0.0119 101.47)",
+          "oklch(55% 0.0119 101.47)",
+          "oklch(65% 0.0119 101.47)",
+          "oklch(80% 0.0095 101.47)",
+          "oklch(95% 0.0024 101.47)"
+        ]
+      },
+      "dopamine-text": {
+        "role": "neutral",
+        "displayName": "多巴胺 · text",
+        "tonalRamp": [
+          "oklch(15% 0.0016 128.64)",
+          "oklch(25% 0.0032 128.64)",
+          "oklch(35% 0.0040 128.64)",
+          "oklch(45% 0.0040 128.64)",
+          "oklch(55% 0.0040 128.64)",
+          "oklch(65% 0.0040 128.64)",
+          "oklch(80% 0.0032 128.64)",
+          "oklch(95% 0.0008 128.64)"
+        ]
+      },
+      "dopamine-muted": {
+        "role": "neutral",
+        "displayName": "多巴胺 · muted",
+        "tonalRamp": [
+          "oklch(15% 0.0066 124.86)",
+          "oklch(25% 0.0132 124.86)",
+          "oklch(35% 0.0166 124.86)",
+          "oklch(45% 0.0166 124.86)",
+          "oklch(55% 0.0166 124.86)",
+          "oklch(65% 0.0166 124.86)",
+          "oklch(80% 0.0132 124.86)",
+          "oklch(95% 0.0033 124.86)"
+        ]
+      },
+      "dopamine-accent": {
+        "role": "primary",
+        "displayName": "多巴胺 · accent",
+        "tonalRamp": [
+          "oklch(15% 0.0594 285.13)",
+          "oklch(25% 0.1189 285.13)",
+          "oklch(35% 0.1486 285.13)",
+          "oklch(45% 0.1486 285.13)",
+          "oklch(55% 0.1486 285.13)",
+          "oklch(65% 0.1486 285.13)",
+          "oklch(80% 0.1189 285.13)",
+          "oklch(95% 0.0297 285.13)"
+        ]
+      },
+      "dopamine-accent-bg": {
+        "role": "primary",
+        "displayName": "多巴胺 · accent-bg",
+        "tonalRamp": [
+          "oklch(15% 0.0519 92.24)",
+          "oklch(25% 0.1037 92.24)",
+          "oklch(35% 0.1296 92.24)",
+          "oklch(45% 0.1296 92.24)",
+          "oklch(55% 0.1296 92.24)",
+          "oklch(65% 0.1296 92.24)",
+          "oklch(80% 0.1037 92.24)",
+          "oklch(95% 0.0259 92.24)"
+        ]
+      },
+      "dopamine-hover": {
+        "role": "neutral",
+        "displayName": "多巴胺 · hover",
+        "tonalRamp": [
+          "oklch(15% 0.0274 93.89)",
+          "oklch(25% 0.0549 93.89)",
+          "oklch(35% 0.0686 93.89)",
+          "oklch(45% 0.0686 93.89)",
+          "oklch(55% 0.0686 93.89)",
+          "oklch(65% 0.0686 93.89)",
+          "oklch(80% 0.0549 93.89)",
+          "oklch(95% 0.0137 93.89)"
+        ]
+      },
+      "dopamine-good": {
+        "role": "tertiary",
+        "displayName": "多巴胺 · good",
+        "tonalRamp": [
+          "oklch(15% 0.0360 165.51)",
+          "oklch(25% 0.0721 165.51)",
+          "oklch(35% 0.0901 165.51)",
+          "oklch(45% 0.0901 165.51)",
+          "oklch(55% 0.0901 165.51)",
+          "oklch(65% 0.0901 165.51)",
+          "oklch(80% 0.0721 165.51)",
+          "oklch(95% 0.0180 165.51)"
+        ]
+      },
+      "dopamine-warning": {
+        "role": "tertiary",
+        "displayName": "多巴胺 · warning",
+        "tonalRamp": [
+          "oklch(15% 0.0388 66.66)",
+          "oklch(25% 0.0776 66.66)",
+          "oklch(35% 0.0970 66.66)",
+          "oklch(45% 0.0970 66.66)",
+          "oklch(55% 0.0970 66.66)",
+          "oklch(65% 0.0970 66.66)",
+          "oklch(80% 0.0776 66.66)",
+          "oklch(95% 0.0194 66.66)"
+        ]
+      },
+      "dopamine-error": {
+        "role": "tertiary",
+        "displayName": "多巴胺 · error",
+        "tonalRamp": [
+          "oklch(15% 0.0609 19.60)",
+          "oklch(25% 0.1219 19.60)",
+          "oklch(35% 0.1523 19.60)",
+          "oklch(45% 0.1523 19.60)",
+          "oklch(55% 0.1523 19.60)",
+          "oklch(65% 0.1523 19.60)",
+          "oklch(80% 0.1219 19.60)",
+          "oklch(95% 0.0305 19.60)"
+        ]
+      },
+      "dopamine-status-bg": {
+        "role": "neutral",
+        "displayName": "多巴胺 · status-bg",
+        "tonalRamp": [
+          "oklch(15% 0.0134 167.96)",
+          "oklch(25% 0.0267 167.96)",
+          "oklch(35% 0.0334 167.96)",
+          "oklch(45% 0.0334 167.96)",
+          "oklch(55% 0.0334 167.96)",
+          "oklch(65% 0.0334 167.96)",
+          "oklch(80% 0.0267 167.96)",
+          "oklch(95% 0.0067 167.96)"
+        ]
+      },
+      "dopamine-navigation": {
+        "role": "secondary",
+        "displayName": "多巴胺 · navigation",
+        "tonalRamp": [
+          "oklch(15% 0.0353 357.43)",
+          "oklch(25% 0.0706 357.43)",
+          "oklch(35% 0.0883 357.43)",
+          "oklch(45% 0.0883 357.43)",
+          "oklch(55% 0.0883 357.43)",
+          "oklch(65% 0.0883 357.43)",
+          "oklch(80% 0.0706 357.43)",
+          "oklch(95% 0.0177 357.43)"
+        ]
+      },
+      "dopamine-tools": {
+        "role": "secondary",
+        "displayName": "多巴胺 · tools",
+        "tonalRamp": [
+          "oklch(15% 0.0523 167.32)",
+          "oklch(25% 0.1046 167.32)",
+          "oklch(35% 0.1308 167.32)",
+          "oklch(45% 0.1308 167.32)",
+          "oklch(55% 0.1308 167.32)",
+          "oklch(65% 0.1308 167.32)",
+          "oklch(80% 0.1046 167.32)",
+          "oklch(95% 0.0262 167.32)"
+        ]
+      },
+      "dopamine-primary-hover": {
+        "role": "primary",
+        "displayName": "多巴胺 · primary-hover",
+        "tonalRamp": [
+          "oklch(15% 0.0419 93.67)",
+          "oklch(25% 0.0839 93.67)",
+          "oklch(35% 0.1048 93.67)",
+          "oklch(45% 0.1048 93.67)",
+          "oklch(55% 0.1048 93.67)",
+          "oklch(65% 0.1048 93.67)",
+          "oklch(80% 0.0839 93.67)",
+          "oklch(95% 0.0210 93.67)"
+        ]
+      },
+      "dopamine-pressed": {
+        "role": "neutral",
+        "displayName": "多巴胺 · pressed",
+        "tonalRamp": [
+          "oklch(15% 0.0319 89.20)",
+          "oklch(25% 0.0637 89.20)",
+          "oklch(35% 0.0797 89.20)",
+          "oklch(45% 0.0797 89.20)",
+          "oklch(55% 0.0797 89.20)",
+          "oklch(65% 0.0797 89.20)",
+          "oklch(80% 0.0637 89.20)",
+          "oklch(95% 0.0159 89.20)"
+        ]
+      },
+      "dopamine-error-bg": {
+        "role": "tertiary",
+        "displayName": "多巴胺 · error-bg",
+        "tonalRamp": [
+          "oklch(15% 0.0190 35.85)",
+          "oklch(25% 0.0380 35.85)",
+          "oklch(35% 0.0475 35.85)",
+          "oklch(45% 0.0475 35.85)",
+          "oklch(55% 0.0475 35.85)",
+          "oklch(65% 0.0475 35.85)",
+          "oklch(80% 0.0380 35.85)",
+          "oklch(95% 0.0095 35.85)"
+        ]
+      },
+      "dopamine-scrim": {
+        "role": "neutral",
+        "displayName": "多巴胺 · scrim",
+        "tonalRamp": [
+          "oklch(15% 0.0016 128.64)",
+          "oklch(25% 0.0032 128.64)",
+          "oklch(35% 0.0040 128.64)",
+          "oklch(45% 0.0040 128.64)",
+          "oklch(55% 0.0040 128.64)",
+          "oklch(65% 0.0040 128.64)",
+          "oklch(80% 0.0032 128.64)",
+          "oklch(95% 0.0008 128.64)"
+        ]
+      },
+      "dopamine-selection": {
+        "role": "neutral",
+        "displayName": "多巴胺 · selection",
+        "tonalRamp": [
+          "oklch(15% 0.0309 293.81)",
+          "oklch(25% 0.0617 293.81)",
+          "oklch(35% 0.0771 293.81)",
+          "oklch(45% 0.0771 293.81)",
+          "oklch(55% 0.0771 293.81)",
+          "oklch(65% 0.0771 293.81)",
+          "oklch(80% 0.0617 293.81)",
+          "oklch(95% 0.0154 293.81)"
+        ]
+      },
+      "dopamine-disabled-bg": {
+        "role": "neutral",
+        "displayName": "多巴胺 · disabled-bg",
+        "tonalRamp": [
+          "oklch(15% 0.0082 94.53)",
+          "oklch(25% 0.0163 94.53)",
+          "oklch(35% 0.0204 94.53)",
+          "oklch(45% 0.0204 94.53)",
+          "oklch(55% 0.0204 94.53)",
+          "oklch(65% 0.0204 94.53)",
+          "oklch(80% 0.0163 94.53)",
+          "oklch(95% 0.0041 94.53)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "body": {
+        "displayName": "body",
+        "purpose": "根界面字号与系统字体。"
+      },
+      "control-idea": {
+        "displayName": "control-idea",
+        "purpose": "IDEA 明暗控件字重。"
+      },
+      "control-dopamine": {
+        "displayName": "control-dopamine",
+        "purpose": "多巴胺控件字重。"
+      },
+      "title-idea": {
+        "displayName": "title-idea",
+        "purpose": "IDEA 明暗普通区域标题。"
+      },
+      "title-dopamine": {
+        "displayName": "title-dopamine",
+        "purpose": "多巴胺普通区域标题。"
+      },
+      "label": {
+        "displayName": "label",
+        "purpose": "导航、标签与字段说明。"
+      },
+      "metadata": {
+        "displayName": "metadata",
+        "purpose": "底栏与次要元信息。"
+      },
+      "badge": {
+        "displayName": "badge",
+        "purpose": "核心状态标签。"
+      },
+      "connection-title": {
+        "displayName": "connection-title",
+        "purpose": "连接树节点名称。"
+      },
+      "endpoint": {
+        "displayName": "endpoint",
+        "purpose": "连接树地址。"
+      },
+      "log": {
+        "displayName": "log",
+        "purpose": "诊断日志。"
+      },
+      "metric": {
+        "displayName": "metric",
+        "purpose": "应用状态读数。"
+      }
+    },
+    "shadows": [
+      {
+        "name": "theme-light",
+        "value": "0 12px 40px #22283e21",
+        "purpose": "菜单、连接对话框及旧核心浮层；light 主题。",
+        "source": "packages/ui/themes.css:--shadow"
+      },
+      {
+        "name": "theme-dark",
+        "value": "0 12px 40px #0006",
+        "purpose": "菜单、连接对话框及旧核心浮层；dark 主题。",
+        "source": "packages/ui/themes.css:--shadow"
+      },
+      {
+        "name": "theme-dopamine",
+        "value": "none",
+        "purpose": "菜单、连接对话框及旧核心浮层；dopamine 主题。",
+        "source": "packages/ui/themes.css:--shadow"
+      }
+    ],
+    "motion": [
+      {
+        "name": "button-background",
+        "value": "background-color 100ms ease-out",
+        "purpose": "按钮背景状态过渡。",
+        "source": "packages/ui/shared.css:button"
+      },
+      {
+        "name": "layer-appear",
+        "value": "appear 0.12s ease-out",
+        "purpose": "旧核心浮层透明度 0→1，translateY(-4px)→0；reduce 下关闭。",
+        "source": "src/shell.css:.layer / @keyframes appear"
+      },
+      {
+        "name": "reduced-motion",
+        "value": "animation: none !important; transition: none !important;",
+        "purpose": "核心全局减少动画偏好。",
+        "source": "src/shell.css:@media (prefers-reduced-motion: reduce)"
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "catalog-details",
+        "value": "1000px",
+        "source": "src/servers.css"
+      },
+      {
+        "name": "console-nav",
+        "value": "900px",
+        "source": "src/console.css"
+      },
+      {
+        "name": "legacy-core-pages",
+        "value": "880px",
+        "source": "src/shell.css"
+      },
+      {
+        "name": "shell-shortcuts",
+        "value": "820px",
+        "source": "src/workspaces.css"
+      },
+      {
+        "name": "maintenance-pages",
+        "value": "800px",
+        "source": "src/updates.css"
+      },
+      {
+        "name": "catalog-list-details",
+        "value": "760px",
+        "source": "src/servers.css"
+      },
+      {
+        "name": "console-horizontal-nav",
+        "value": "640px",
+        "source": "src/console.css"
+      },
+      {
+        "name": "catalog-dialog",
+        "value": "500px",
+        "source": "src/servers.css"
+      },
+      {
+        "name": "maintenance-short-window",
+        "value": "600px",
+        "axis": "height",
+        "source": "src/updates.css"
+      }
+    ],
+    "themeMeta": [
+      {
+        "id": "dopamine",
+        "name": "多巴胺",
+        "dark": false,
+        "source": "packages/ui/themes.json"
+      },
+      {
+        "id": "light",
+        "name": "IDEA 浅色",
+        "dark": false,
+        "source": "packages/ui/themes.json"
+      },
+      {
+        "id": "dark",
+        "name": "IDEA 深色",
+        "dark": true,
+        "source": "packages/ui/themes.json"
+      }
+    ],
+    "themeRoles": {
+      "light": {
+        "canvas": "{colors.light-canvas}",
+        "panel": "{colors.light-canvas}",
+        "subtle": "{colors.light-subtle}",
+        "text": "{colors.light-text}",
+        "muted": "{colors.light-muted}",
+        "border": "{colors.light-border}",
+        "accent": "{colors.light-accent}",
+        "accent-bg": "{colors.light-accent-bg}",
+        "hover": "{colors.light-hover}",
+        "good": "{colors.light-good}",
+        "warning": "{colors.light-warning}",
+        "error": "{colors.light-error}",
+        "status-bg": "{colors.light-subtle}",
+        "sd-navigation": "{colors.light-accent-bg}",
+        "sd-tools": "{colors.light-subtle}",
+        "sd-rail": "{colors.light-subtle}",
+        "sd-primary": "{colors.light-primary}",
+        "sd-primary-text": "{colors.light-canvas}",
+        "sd-primary-hover": "{colors.light-primary-hover}",
+        "sd-pressed": "{colors.light-pressed}",
+        "sd-success-bg": "{colors.light-success-bg}",
+        "sd-error-bg": "{colors.light-error-bg}",
+        "sd-scrim": "{colors.light-scrim}",
+        "sd-tab-selected": "{colors.light-canvas}",
+        "sd-server-selected": "{colors.light-accent-bg}",
+        "sd-selection": "{colors.light-accent-bg}",
+        "sd-disabled-bg": "{colors.light-hover}",
+        "sd-link": "{colors.light-primary}"
+      },
+      "dark": {
+        "canvas": "{colors.dark-canvas}",
+        "panel": "{colors.dark-panel}",
+        "subtle": "{colors.dark-panel}",
+        "text": "{colors.dark-text}",
+        "muted": "{colors.dark-muted}",
+        "border": "{colors.dark-border}",
+        "accent": "{colors.dark-accent}",
+        "accent-bg": "{colors.dark-accent-bg}",
+        "hover": "{colors.dark-hover}",
+        "good": "{colors.dark-good}",
+        "warning": "{colors.dark-warning}",
+        "error": "{colors.dark-error}",
+        "status-bg": "{colors.dark-panel}",
+        "sd-navigation": "{colors.dark-panel}",
+        "sd-tools": "{colors.dark-panel}",
+        "sd-rail": "{colors.dark-panel}",
+        "sd-primary": "{colors.dark-primary}",
+        "sd-primary-text": "{colors.dark-primary-text}",
+        "sd-primary-hover": "{colors.dark-primary-hover}",
+        "sd-pressed": "{colors.dark-accent-bg}",
+        "sd-success-bg": "{colors.dark-success-bg}",
+        "sd-error-bg": "{colors.dark-error-bg}",
+        "sd-scrim": "{colors.dark-scrim}",
+        "sd-tab-selected": "{colors.dark-panel}",
+        "sd-server-selected": "{colors.dark-panel}",
+        "sd-selection": "{colors.dark-accent-bg}",
+        "sd-disabled-bg": "{colors.dark-hover}",
+        "sd-link": "{colors.dark-accent}"
+      },
+      "dopamine": {
+        "canvas": "{colors.dopamine-canvas}",
+        "panel": "{colors.dopamine-panel}",
+        "subtle": "{colors.dopamine-subtle}",
+        "text": "{colors.dopamine-text}",
+        "muted": "{colors.dopamine-muted}",
+        "border": "{colors.dopamine-text}",
+        "accent": "{colors.dopamine-accent}",
+        "accent-bg": "{colors.dopamine-accent-bg}",
+        "hover": "{colors.dopamine-hover}",
+        "good": "{colors.dopamine-good}",
+        "warning": "{colors.dopamine-warning}",
+        "error": "{colors.dopamine-error}",
+        "status-bg": "{colors.dopamine-status-bg}",
+        "sd-navigation": "{colors.dopamine-navigation}",
+        "sd-tools": "{colors.dopamine-tools}",
+        "sd-rail": "{colors.dopamine-canvas}",
+        "sd-primary": "{colors.dopamine-accent-bg}",
+        "sd-primary-text": "{colors.dopamine-text}",
+        "sd-primary-hover": "{colors.dopamine-primary-hover}",
+        "sd-pressed": "{colors.dopamine-pressed}",
+        "sd-success-bg": "{colors.dopamine-status-bg}",
+        "sd-error-bg": "{colors.dopamine-error-bg}",
+        "sd-scrim": "{colors.dopamine-scrim}",
+        "sd-tab-selected": "{colors.dopamine-accent-bg}",
+        "sd-server-selected": "{colors.dopamine-navigation}",
+        "sd-selection": "{colors.dopamine-selection}",
+        "sd-disabled-bg": "{colors.dopamine-disabled-bg}",
+        "sd-link": "{colors.dopamine-accent}"
+      }
+    },
+    "tokenSources": {
+      "light-canvas": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--canvas"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--panel"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--sd-primary-text"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--sd-tab-selected"
+        }
+      ],
+      "light-subtle": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--subtle"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--status-bg"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--sd-tools"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--sd-rail"
+        }
+      ],
+      "light-text": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--text"
+        }
+      ],
+      "light-muted": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--muted"
+        }
+      ],
+      "light-border": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--border"
+        }
+      ],
+      "light-accent": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--accent"
+        }
+      ],
+      "light-accent-bg": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--accent-bg"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--sd-navigation"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--sd-server-selected"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--sd-selection"
+        }
+      ],
+      "light-hover": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--hover"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--sd-disabled-bg"
+        }
+      ],
+      "light-good": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--good"
+        }
+      ],
+      "light-warning": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--warning"
+        }
+      ],
+      "light-error": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--error"
+        }
+      ],
+      "light-primary": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--sd-primary"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--sd-link"
+        }
+      ],
+      "light-primary-hover": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--sd-primary-hover"
+        }
+      ],
+      "light-pressed": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--sd-pressed"
+        }
+      ],
+      "light-success-bg": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--sd-success-bg"
+        }
+      ],
+      "light-error-bg": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--sd-error-bg"
+        }
+      ],
+      "light-scrim": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "light",
+          "property": "--sd-scrim"
+        }
+      ],
+      "dark-canvas": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--canvas"
+        }
+      ],
+      "dark-panel": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--panel"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--subtle"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--status-bg"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--sd-navigation"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--sd-tools"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--sd-rail"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--sd-tab-selected"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--sd-server-selected"
+        }
+      ],
+      "dark-text": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--text"
+        }
+      ],
+      "dark-muted": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--muted"
+        }
+      ],
+      "dark-border": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--border"
+        }
+      ],
+      "dark-accent": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--accent"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--sd-link"
+        }
+      ],
+      "dark-accent-bg": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--accent-bg"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--sd-pressed"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--sd-selection"
+        }
+      ],
+      "dark-hover": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--hover"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--sd-disabled-bg"
+        }
+      ],
+      "dark-good": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--good"
+        }
+      ],
+      "dark-warning": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--warning"
+        }
+      ],
+      "dark-error": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--error"
+        }
+      ],
+      "dark-primary": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--sd-primary"
+        }
+      ],
+      "dark-primary-text": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--sd-primary-text"
+        }
+      ],
+      "dark-primary-hover": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--sd-primary-hover"
+        }
+      ],
+      "dark-success-bg": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--sd-success-bg"
+        }
+      ],
+      "dark-error-bg": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--sd-error-bg"
+        }
+      ],
+      "dark-scrim": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dark",
+          "property": "--sd-scrim"
+        }
+      ],
+      "dopamine-canvas": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--canvas"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--sd-rail"
+        }
+      ],
+      "dopamine-panel": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--panel"
+        }
+      ],
+      "dopamine-subtle": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--subtle"
+        }
+      ],
+      "dopamine-text": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--text"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--border"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--sd-primary-text"
+        }
+      ],
+      "dopamine-muted": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--muted"
+        }
+      ],
+      "dopamine-accent": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--accent"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--sd-link"
+        }
+      ],
+      "dopamine-accent-bg": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--accent-bg"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--sd-primary"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--sd-tab-selected"
+        }
+      ],
+      "dopamine-hover": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--hover"
+        }
+      ],
+      "dopamine-good": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--good"
+        }
+      ],
+      "dopamine-warning": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--warning"
+        }
+      ],
+      "dopamine-error": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--error"
+        }
+      ],
+      "dopamine-status-bg": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--status-bg"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--sd-success-bg"
+        }
+      ],
+      "dopamine-navigation": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--sd-navigation"
+        },
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--sd-server-selected"
+        }
+      ],
+      "dopamine-tools": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--sd-tools"
+        }
+      ],
+      "dopamine-primary-hover": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--sd-primary-hover"
+        }
+      ],
+      "dopamine-pressed": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--sd-pressed"
+        }
+      ],
+      "dopamine-error-bg": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--sd-error-bg"
+        }
+      ],
+      "dopamine-scrim": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--sd-scrim"
+        }
+      ],
+      "dopamine-selection": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--sd-selection"
+        }
+      ],
+      "dopamine-disabled-bg": [
+        {
+          "path": "packages/ui/themes.css",
+          "theme": "dopamine",
+          "property": "--sd-disabled-bg"
+        }
+      ]
+    },
+    "sourceFiles": [
+      "docs/PRODUCT.md",
+      "packages/ui/shared.css",
+      "packages/ui/themes.css",
+      "packages/ui/themes.json",
+      "packages/ui/token-names.ts",
+      "packages/ui/README.md",
+      "src/style.css",
+      "src/shell.css",
+      "src/console.css",
+      "src/servers.css",
+      "src/workspaces.css",
+      "src/components.css",
+      "src/updates.css",
+      "src/shell.ts",
+      "src/console.ts",
+      "src/components.ts",
+      "src/server-views.ts",
+      "src/connection-tree.ts",
+      "src/theme.ts",
+      "src/ui.ts"
+    ],
+    "notes": [
+      "frontmatter 保存基础 token；themeRoles 与 tokenSources 只将实际 CSS 角色映射到 frontmatter 引用。",
+      "tonalRamp 是生成的预览元信息；带透明度遮罩的色带使用不透明近似，不属于运行时主题 token。",
+      "控件片段保持真实 CSS 变量绑定，并提供当前浅色主题值作为离线回退。",
+      "ds-* 类名只隔离预览；事件处理、RPC、连接和插件状态机不在样例执行范围。"
+    ]
+  },
+  "components": [
+    {
+      "name": "核心主按钮",
+      "kind": "button",
+      "refersTo": "button-primary-light",
+      "description": "核心表单与更新主操作；背景、文字和链接角色保持分离。",
+      "html": "<button type=\"button\" class=\"ds-primary\">保存服务器</button>",
+      "css": ".ds-primary { font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", sans-serif; font-size: 13px; font-weight: var(--sd-control-weight, 500); display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 32px; padding: 6px 12px; border: var(--sd-stroke-control, 1px) solid var(--border, #dfe1e5); border-radius: 7px; background: var(--panel, #ffffff); color: var(--text, #27282e); white-space: nowrap; cursor: pointer; transition: background-color 100ms ease-out; } .ds-primary:hover { background: var(--hover, #ebecf0); } .ds-primary:disabled { opacity: .45; cursor: default; } .ds-primary:focus-visible { outline: 2px solid var(--accent, #3574f0); outline-offset: -2px; } @media (prefers-reduced-motion: reduce) { .ds-primary { transition: none; } } .ds-primary { background: var(--sd-primary, #315fbd); color: var(--sd-primary-text, #ffffff); border-color: var(--sd-primary, #315fbd); } .ds-primary:hover { background: var(--sd-primary-hover, #2c559f); }",
+      "sources": [
+        {
+          "path": "src/shell.css",
+          "selectors": [
+            "button",
+            ".primary",
+            ".primary:hover"
+          ]
+        },
+        {
+          "path": "packages/ui/shared.css",
+          "selectors": [
+            "button",
+            "button:focus-visible"
+          ]
+        },
+        {
+          "path": "src/server-views.ts",
+          "symbols": [
+            "editor"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "核心次按钮",
+      "kind": "button",
+      "refersTo": "button-secondary-light",
+      "description": "核心详情、表单取消和次要操作。",
+      "html": "<button type=\"button\" class=\"ds-secondary\">取消</button>",
+      "css": ".ds-secondary { font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", sans-serif; font-size: 13px; font-weight: var(--sd-control-weight, 500); display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 32px; padding: 6px 12px; border: var(--sd-stroke-control, 1px) solid var(--border, #dfe1e5); border-radius: 7px; background: var(--panel, #ffffff); color: var(--text, #27282e); white-space: nowrap; cursor: pointer; transition: background-color 100ms ease-out; } .ds-secondary:hover { background: var(--hover, #ebecf0); } .ds-secondary:disabled { opacity: .45; cursor: default; } .ds-secondary:focus-visible { outline: 2px solid var(--accent, #3574f0); outline-offset: -2px; } @media (prefers-reduced-motion: reduce) { .ds-secondary { transition: none; } }",
+      "sources": [
+        {
+          "path": "src/shell.css",
+          "selectors": [
+            "button",
+            "button:hover"
+          ]
+        },
+        {
+          "path": "src/server-views.ts",
+          "symbols": [
+            "action"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "公共图标按钮",
+      "kind": "button",
+      "refersTo": "button-icon-light",
+      "description": "中央新建等紧凑工具动作；保留可读名称。",
+      "html": "<button type=\"button\" class=\"ds-icon\" aria-label=\"新建页面\" title=\"新建页面\"><svg aria-hidden=\"true\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 5v14M5 12h14\"/></svg></button>",
+      "css": ".ds-icon { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", sans-serif; font-size: 13px; font-weight: var(--sd-control-weight, 500); display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: var(--sd-radius-control, 8px); background: transparent; color: var(--text, #27282e); min-height: var(--sd-hit-size, 28px); width: var(--sd-hit-size, 28px); height: var(--sd-hit-size, 28px); padding: 5px; cursor: pointer; transition: background-color 100ms ease-out; } .ds-icon svg { width: 16px; height: 16px; stroke-width: var(--sd-icon-stroke, 2); } .ds-icon:hover { background: var(--hover, #ebecf0); } .ds-icon:active:not(:disabled) { background: var(--sd-pressed, #c9dbfc); } .ds-icon:focus-visible { outline: 2px solid var(--accent, #3574f0); outline-offset: -2px; } .ds-icon:disabled { opacity: .45; cursor: default; } @media (prefers-reduced-motion: reduce) { .ds-icon { transition: none; } }",
+      "sources": [
+        {
+          "path": "packages/ui/shared.css",
+          "selectors": [
+            ".sd-icon",
+            ".sd-icon:hover",
+            ".sd-icon:active"
+          ]
+        },
+        {
+          "path": "src/components.ts",
+          "symbols": [
+            "paintCenter"
+          ]
+        },
+        {
+          "path": "src/ui.ts",
+          "symbols": [
+            "icon:plus"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "目录搜索字段",
+      "kind": "input",
+      "refersTo": "field-search-light",
+      "description": "目录名称、地址、账号与标签搜索；示例只呈现字段。",
+      "html": "<label class=\"ds-search\"><svg aria-hidden=\"true\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"10.5\" cy=\"10.5\" r=\"6.5\"/><path d=\"m16 16 5 5\"/></svg><input type=\"search\" placeholder=\"搜索名称、地址、账号或标签\" aria-label=\"搜索目录\"></label>",
+      "css": ".ds-search { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", sans-serif; font-size: 12px; color: var(--muted, #5a5d6b); } .ds-search svg { position: absolute; left: 10px; width: 15px; height: 17px; pointer-events: none; stroke-width: var(--sd-icon-stroke, 2); } .ds-search input { box-sizing: border-box; font: inherit; height: 32px; width: 100%; min-width: 0; padding: 6px 10px 6px 31px; border: var(--sd-stroke-control, 1px) solid var(--border, #dfe1e5); border-radius: 7px; color: var(--text, #27282e); background: var(--panel, #ffffff); caret-color: var(--accent, #3574f0); } .ds-search input::placeholder { color: var(--muted, #5a5d6b); opacity: 1; } .ds-search input:focus-visible { outline: 2px solid var(--accent, #3574f0); outline-offset: -2px; }",
+      "sources": [
+        {
+          "path": "src/shell.css",
+          "selectors": [
+            "input",
+            "label"
+          ]
+        },
+        {
+          "path": "src/servers.css",
+          "selectors": [
+            ".catalog-search",
+            ".catalog-search svg",
+            ".catalog-search input"
+          ]
+        },
+        {
+          "path": "src/console.css",
+          "selectors": [
+            "input::placeholder",
+            "input"
+          ]
+        },
+        {
+          "path": "src/server-views.ts",
+          "symbols": [
+            "page"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "管理台导航项",
+      "kind": "nav",
+      "refersTo": "navigation-console-selected-light",
+      "description": "当前核心功能导航，不是工作台插件入口。",
+      "html": "<nav class=\"ds-console-nav\" aria-label=\"管理台\"><button type=\"button\" aria-current=\"page\"><svg aria-hidden=\"true\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"7\" rx=\"2\"/><rect x=\"3\" y=\"14\" width=\"18\" height=\"7\" rx=\"2\"/><path d=\"M7 6.5h.01M7 17.5h.01M12 6.5h5M12 17.5h5\"/></svg><span>服务器连接</span></button><button type=\"button\"><svg aria-hidden=\"true\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8 3v5m8-5v5M6 8h12v3a6 6 0 0 1-12 0zm6 9v4\"/></svg><span>插件</span></button></nav>",
+      "css": ".ds-console-nav { display: flex; flex-direction: column; gap: 3px; padding: 14px 9px; width: 156px; box-sizing: border-box; background: var(--sd-navigation, #d4e2ff); border-right: var(--sd-stroke-structure, 1px) solid var(--border, #dfe1e5); } .ds-console-nav button { font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", sans-serif; font-size: 13px; font-weight: var(--sd-control-weight, 500); display: inline-flex; align-items: center; justify-content: flex-start; gap: 7px; min-height: 36px; border: 0; padding: 7px 11px; border-radius: 5px; color: var(--text, #27282e); background: transparent; white-space: nowrap; cursor: pointer; transition: background-color 100ms ease-out; } .ds-console-nav button[aria-current=\"page\"] { background: var(--sd-server-selected, #d4e2ff); box-shadow: inset 0 0 0 var(--sd-stroke-control, 1px) var(--border, #dfe1e5); } .ds-console-nav button:hover { background: var(--hover, #ebecf0); } .ds-console-nav button:focus-visible { outline: 2px solid var(--accent, #3574f0); outline-offset: -2px; } .ds-console-nav svg { width: 17px; height: 17px; flex-shrink: 0; stroke-width: var(--sd-icon-stroke, 2); } @media (prefers-reduced-motion: reduce) { .ds-console-nav button { transition: none; } }",
+      "sources": [
+        {
+          "path": "src/console.css",
+          "selectors": [
+            ".console-nav",
+            ".console-nav button",
+            ".console-nav button[aria-current=\"page\"]"
+          ]
+        },
+        {
+          "path": "src/shell.ts",
+          "symbols": [
+            "consolePages",
+            "Shell.paint"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "插件运行状态标签",
+      "kind": "chip",
+      "refersTo": "badge-running-light",
+      "description": "带文字的运行状态，圆点辅助识别。",
+      "html": "<span class=\"ds-running\">运行中</span>",
+      "css": ".ds-running { font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", sans-serif; font-size: 10px; display: inline-flex; align-items: center; gap: 5px; color: var(--good, #1e6b33); padding: 3px 6px; border-radius: 4px; background: var(--sd-success-bg, #e3f7e7); } .ds-running::before { content: \"\"; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }",
+      "sources": [
+        {
+          "path": "src/shell.css",
+          "selectors": [
+            ".badge",
+            ".badge.running",
+            ".badge.running:before"
+          ]
+        },
+        {
+          "path": "src/plugin-settings.ts",
+          "symbols": [
+            "pluginsPage"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "待重启容器",
+      "kind": "card",
+      "refersTo": "card-pending-light",
+      "description": "已准备好的核心或插件变更，明确说明重启结果。",
+      "html": "<div class=\"ds-pending\" role=\"status\"><div><b>有变更等待重启</b><p>完成手头工作后，再统一重启应用。当前连接和任务会结束。</p></div><button type=\"button\" class=\"ds-pending-button\">重启并应用</button></div>",
+      "css": ".ds-pending { font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", sans-serif; font-size: 13px; color: var(--text, #27282e); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 16px; border-radius: 8px; background: var(--accent-bg, #d4e2ff); } .ds-pending > div { flex: 1; min-width: min(240px, 100%); } .ds-pending p { margin: 5px 0 0; font-size: 12px; color: var(--muted, #5a5d6b); line-height: 1.7; } .ds-pending-button { font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", sans-serif; font-size: 13px; font-weight: var(--sd-control-weight, 500); display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 32px; padding: 6px 12px; border: var(--sd-stroke-control, 1px) solid var(--border, #dfe1e5); border-radius: 7px; background: var(--panel, #ffffff); color: var(--text, #27282e); white-space: nowrap; cursor: pointer; transition: background-color 100ms ease-out; } .ds-pending-button:hover { background: var(--hover, #ebecf0); } .ds-pending-button:disabled { opacity: .45; cursor: default; } .ds-pending-button:focus-visible { outline: 2px solid var(--accent, #3574f0); outline-offset: -2px; } @media (prefers-reduced-motion: reduce) { .ds-pending-button { transition: none; } } .ds-pending-button { background: var(--sd-primary, #315fbd); color: var(--sd-primary-text, #ffffff); border-color: var(--sd-primary, #315fbd); } .ds-pending-button:hover { background: var(--sd-primary-hover, #2c559f); }",
+      "sources": [
+        {
+          "path": "src/updates.css",
+          "selectors": [
+            ".maintenance-pending",
+            ".maintenance-pending > div",
+            ".maintenance-pending p"
+          ]
+        },
+        {
+          "path": "src/updates.ts",
+          "symbols": [
+            "pendingUpdates"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "工作页面标签",
+      "kind": "nav",
+      "refersTo": "workspace-tab-selected-light",
+      "description": "当前插件页面与独立关闭按钮；示例不启动插件。",
+      "html": "<div class=\"ds-tab\" role=\"presentation\"><button type=\"button\" role=\"tab\" aria-selected=\"true\" class=\"ds-tab-select\"><svg aria-hidden=\"true\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"7\" rx=\"2\"/><rect x=\"3\" y=\"14\" width=\"18\" height=\"7\" rx=\"2\"/><path d=\"M7 6.5h.01M7 17.5h.01M12 6.5h5M12 17.5h5\"/></svg><span>工作页面</span></button><button type=\"button\" class=\"ds-tab-close\" aria-label=\"关闭 工作页面\"><svg aria-hidden=\"true\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m6 6 12 12M6 18 18 6\"/></svg></button></div>",
+      "css": ".ds-tab { box-sizing: border-box; position: relative; display: flex; align-items: center; height: 30px; max-width: 210px; width: fit-content; border: 2px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; background: var(--sd-tab-selected, #ffffff); color: var(--text, #27282e); } .ds-tab::before { content: \"\"; position: absolute; inset: -2px -2px 0; border: var(--sd-stroke-control, 1px) solid var(--border, #dfe1e5); border-bottom: 0; border-radius: inherit; pointer-events: none; } .ds-tab button { font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", sans-serif; font-size: 12px; font-weight: var(--sd-control-weight, 500); display: inline-flex; align-items: center; gap: 7px; min-height: 26px; border: 0; background: transparent; color: inherit; padding: 3px 7px; border-radius: 5px; cursor: pointer; transition: background-color 100ms ease-out; } .ds-tab-select { min-width: 76px; max-width: 180px; justify-content: start; } .ds-tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ds-tab .ds-tab-close { width: 26px; padding: 5px; flex-shrink: 0; justify-content: center; } .ds-tab svg { width: 16px; height: 16px; stroke-width: var(--sd-icon-stroke, 2); } .ds-tab .ds-tab-close svg { width: 12px; height: 12px; } .ds-tab button:hover { background: var(--hover, #ebecf0); } .ds-tab .ds-tab-close:active { background: var(--sd-pressed, #c9dbfc); } .ds-tab button:focus-visible { outline: 2px solid var(--accent, #3574f0); outline-offset: -2px; } @media (prefers-reduced-motion: reduce) { .ds-tab button { transition: none; } }",
+      "sources": [
+        {
+          "path": "packages/ui/shared.css",
+          "selectors": [
+            ".sd-tab",
+            ".sd-tab.selected",
+            ".sd-tab button"
+          ]
+        },
+        {
+          "path": "src/components.css",
+          "selectors": [
+            ".component-tab",
+            ".component-tab [role=\"tab\"]"
+          ]
+        },
+        {
+          "path": "src/components.ts",
+          "symbols": [
+            "paintCenter"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "连接树选中节点",
+      "kind": "custom",
+      "refersTo": "connection-node-selected-light",
+      "description": "两行紧凑节点，示例地址用于展示文本省略。",
+      "html": "<div class=\"ds-node\" role=\"treeitem\" tabindex=\"0\" aria-level=\"1\" aria-selected=\"true\" title=\"示例服务器 · ops@example.internal:22 · 运维 · 已连接\"><span class=\"ds-node-symbol\"><svg aria-hidden=\"true\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"7\" rx=\"2\"/><rect x=\"3\" y=\"14\" width=\"18\" height=\"7\" rx=\"2\"/><path d=\"M7 6.5h.01M7 17.5h.01M12 6.5h5M12 17.5h5\"/></svg></span><div class=\"ds-node-content\"><div class=\"ds-node-title\"><strong>示例服务器</strong><span class=\"ds-node-protocol\">SSH</span><span class=\"ds-node-state\">已连接</span></div><div class=\"ds-node-subline\"><span class=\"ds-node-endpoint\">ops@example.internal:22</span><span class=\"ds-node-tags\">运维</span></div></div></div>",
+      "css": ".ds-node { box-sizing: border-box; position: relative; font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", sans-serif; color: var(--text, #27282e); display: flex; align-items: center; gap: 8px; min-height: 52px; height: 52px; margin: 4px 0 4px 20px; padding: 5px 9px; border: var(--sd-stroke-control, 1px) solid var(--accent, #3574f0); border-radius: 6px; background: var(--accent-bg, #d4e2ff); cursor: pointer; } .ds-node:hover { background: var(--accent-bg, #d4e2ff); } .ds-node:focus-visible { outline: 2px solid var(--accent, #3574f0); outline-offset: 2px; } .ds-node-symbol { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; color: var(--muted, #5a5d6b); flex-shrink: 0; } .ds-node-symbol svg { width: 16px; height: 16px; stroke-width: var(--sd-icon-stroke, 2); } .ds-node-content { min-width: 0; flex: 1; } .ds-node-title, .ds-node-subline { display: flex; align-items: center; gap: 8px; min-width: 0; line-height: 18px; } .ds-node-title strong { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ds-node-protocol { font-size: 10px; color: var(--muted, #5a5d6b); flex-shrink: 0; } .ds-node-state { font-size: 11px; color: var(--good, #1e6b33); margin-left: auto; white-space: nowrap; } .ds-node-subline { font-size: 11px; color: var(--muted, #5a5d6b); } .ds-node-endpoint { font-family: Consolas, 'SFMono-Regular', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 40px; } .ds-node-tags { margin-left: auto; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }",
+      "sources": [
+        {
+          "path": "src/servers.css",
+          "selectors": [
+            ".connection-node",
+            ".connection-node.selected",
+            ".node-title",
+            ".node-subline"
+          ]
+        },
+        {
+          "path": "src/server-views.ts",
+          "symbols": [
+            "page"
+          ]
+        },
+        {
+          "path": "src/ui.ts",
+          "symbols": [
+            "icon:server"
+          ]
+        }
+      ]
+    }
+  ],
+  "narrative": {
+    "northStar": "服务器会话工作台",
+    "overview": "SoDeck 的核心界面是一张紧凑、可持续工作的服务器会话工作台。桌面壳维持应用导航与连接身份，管理台集中维护资料和偏好，工作台承载会话中的插件页面与工具。信息层级依靠区域、结构线、选中底和可读状态，不以大标题或装饰性卡片组织每个操作。\n\n用户已确认保留多巴胺主题，浅色和深色采用 IDEA 默认配色方向。三主题共享控件几何与操作路径；多巴胺通过暖底、粉色导航、黄色选中、绿色工具底和更粗的结构线表达个性，IDEA 明暗主题以中性面和蓝色焦点服务长时间阅读。",
+    "keyCharacteristics": [
+      "核心导航、服务器会话和插件工具入口分区明确。",
+      "三主题共享紧凑几何，主题差异通过角色颜色、描边和字重表达。",
+      "路径与日志采用等宽字，状态带文字，键盘焦点可见。"
+    ],
+    "rules": [
+      {
+        "name": "主题同构",
+        "body": "使用同一布局和交互，颜色、描边和字重通过现有主题角色切换；不复制三套页面结构。",
+        "section": "colors"
+      },
+      {
+        "name": "几何分层",
+        "body": "公共控件几何与核心壳尺寸分别读取 shared.css 和 #app 覆盖；核心壳尺寸不得作为插件主题快照发送。",
+        "section": "layout"
+      },
+      {
+        "name": "浮层才抬升",
+        "body": "工作面靠背景和结构线分区；菜单与对话框使用已有 shadow 角色，多巴胺保持无阴影。",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do 使用 packages/ui 的现有主题角色，并保持多巴胺、IDEA 浅色和 IDEA 深色的同构布局。",
+      "Do 将核心功能放在管理台导航，保留左右窄侧栏给 sidebar 插件贡献。",
+      "Do 让终端通过中央新建动作与工作标签使用，切换管理台时保留会话、Surface 和草稿。",
+      "Do 为连接、插件和消息状态保留可读文字，为图标按钮提供名称。",
+      "Do 使用当前系统字体、等宽地址和已有焦点处理，并按当前窗口宽度保留滚动与省略。"
+    ],
+    "donts": [
+      "Don't 将原型的数值、演示数据或简化文件操作直接视作当前核心实现。",
+      "Don't 把核心 #app 尺寸下发到插件，或随主题切换改变控件布局。",
+      "Don't 在本次核心界面规范中重定义文件、终端、Docker 等插件的内部展示和操作。",
+      "Don't 用圆点或颜色代替连接和失败文字，也不把请求已发出写成操作成功。"
+    ]
+  }
+}

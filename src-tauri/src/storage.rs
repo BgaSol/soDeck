@@ -133,7 +133,16 @@ impl Store {
     }
 
     pub fn set_theme(&mut self, theme: &str) -> Result<(), String> {
-        if !["system", "light", "dark", "dopamine"].contains(&theme) {
+        let themes: serde_json::Value =
+            serde_json::from_str(include_str!("../../packages/ui/themes.json"))
+                .expect("built-in theme registry");
+        if theme != "system"
+            && !themes
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| entry["id"].as_str() == Some(theme))
+        {
             return Err("未知的主题设置".into());
         }
         if self.blocked[2] {

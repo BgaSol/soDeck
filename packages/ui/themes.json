@@ -1,0 +1,17 @@
+[
+  {
+    "id": "dopamine",
+    "name": "多巴胺",
+    "dark": false
+  },
+  {
+    "id": "light",
+    "name": "IDEA 浅色",
+    "dark": false
+  },
+  {
+    "id": "dark",
+    "name": "IDEA 深色",
+    "dark": true
+  }
+]

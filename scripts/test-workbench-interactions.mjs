@@ -1,3 +1,4 @@
+import path from 'node:path';
 // Real browser input and shipped file-menu code; no remote or native clipboard writes.
 import assert from 'node:assert/strict';
 import {before,after,test} from 'node:test';
@@ -11,7 +12,7 @@ before(async()=>{await packageMenuAssets('artifacts/menu-position/test-runtime')
 after(async()=>{await browser?.close();await server?.close();});
 const fixture=async()=>{
   const page=await browser.newPage({viewport:{width:400,height:540}});
-  await page.route('**/__interactions__',route=>route.fulfill({contentType:'text/html',body:'<html><head><style>@layer base,components,themes;</style><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/themes.css"></head><body><div id="chrome"></div><div id="tree-host"></div><script type="module">import {icon} from "/ui.ts";import {updateDOM,DomRegion} from "/dom-update.ts";const region=new DomRegion(document.querySelector("#chrome"));window.render={replace:updateDOM,patchChrome:(element,html)=>region.update(element,html),icon};</script></body></html>'}));
+  await page.route('**/__interactions__',route=>route.fulfill({contentType:'text/html',body:`<html><head><style>@layer base,components,themes;</style><link rel="stylesheet" href="/@fs/${path.resolve('packages/ui/shared.css').replaceAll('\\','/')}"><link rel="stylesheet" href="/@fs/${path.resolve('packages/ui/legacy.css').replaceAll('\\','/')}"><link rel="stylesheet" href="/@fs/${path.resolve('packages/ui/themes.css').replaceAll('\\','/')}"></head><body><div id="chrome"></div><div id="tree-host"></div><script type="module">import {icon} from "/ui.ts";import {updateDOM,DomRegion} from "/dom-update.ts";const region=new DomRegion(document.querySelector("#chrome"));window.render={replace:updateDOM,patchChrome:(element,html)=>region.update(element,html),icon};</script></body></html>`}));
   await page.goto(server.resolvedUrls.local[0]+'__interactions__');await page.waitForFunction(()=>window.render);
   return page;
 };

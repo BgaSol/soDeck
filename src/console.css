@@ -1,0 +1,43 @@
+@layer components {
+  #app { --sd-shell-top: 44px; --sd-shell-bottom: 26px; --sd-tab-height: 38px; --sd-status-height: 26px; --sd-hit-size: 28px; }
+  #app { height: 100dvh; display: flex; flex-direction: column; }
+  #app > .topbar { height: var(--sd-shell-top); min-height: var(--sd-shell-top); }
+  #server-workspace { flex: 1; min-height: 0; height: auto; position: relative; }
+  #workspace-content, .management-console { height: 100%; min-width: 0; }
+  .management-console { display: grid; grid-template-columns: 156px minmax(0,1fr); }
+  .console-nav { background: var(--sd-navigation); border-right: var(--sd-stroke-structure) solid var(--border); display: flex; flex-direction: column; gap: 3px; padding: 14px 9px; }
+  .console-nav button { justify-content: flex-start; min-height: 36px; border: 0; padding: 7px 11px; background: transparent; border-radius: 5px; }
+  .console-nav button[aria-current="page"] { background: var(--sd-server-selected); box-shadow: inset 0 0 0 var(--sd-stroke-control) var(--border); }
+  .console-nav button:hover { background: var(--hover); }
+  .console-nav-bottom { margin-top: auto; padding: 9px 11px; color: var(--muted); font-size: 12px; }
+  .console-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .console-heading { display: flex; gap: 9px; align-items: center; height: 42px; min-height: 42px; padding: 0 18px; border-bottom: var(--sd-stroke-structure) solid var(--border); font-size: 12px; }
+  .console-heading > span { color: var(--muted); }
+  .console-heading svg { width: 13px; }
+  #return-workbench { margin-left: auto; font-size: 12px; }
+  #server-catalog { flex: 1; min-height: 0; overflow: hidden; }
+  .console-page { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .console-page > .layer-content { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px; }
+  .console-page > .settings-content { display: grid; grid-template-columns: 160px minmax(0,1fr); padding: 0; overflow: hidden; }
+  .console-page > .plugins-content, .console-page > .updates-content { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+  .console-page .settings-main { min-height: 0; flex: 1; }
+  .shell-status { display: flex; align-items: center; gap: 9px; padding: 0 10px; min-height: var(--sd-shell-bottom); height: var(--sd-shell-bottom); background: var(--status-bg); font-size: 11px; }
+  .shell-status .sd-status-action { min-height: 24px; font-size: 11px; padding: 2px 4px; }
+  .shell-status .grow { flex: 1; }
+  .shell-endpoint { max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  input,textarea { caret-color: var(--accent); }
+  input::placeholder,textarea::placeholder { color: var(--muted); opacity: 1; }
+  @media (max-width: 900px) { .management-console { grid-template-columns: 128px minmax(0,1fr); } }
+  @media (max-width: 640px) {
+    .management-console { grid-template-columns: minmax(0,1fr); grid-template-rows: 42px minmax(0,1fr); }
+    .console-nav { flex-direction: row; overflow-x: auto; padding: 4px 7px; border-right: 0; border-bottom: var(--sd-stroke-structure) solid var(--border); gap: 2px; }
+    .console-nav button { min-height: 30px; padding: 4px 8px; flex-shrink: 0; font-size: 12px; }
+    .console-nav button svg, .console-nav-bottom { display: none; }
+    .console-heading { padding: 0 12px; height: 36px; min-height: 36px; }
+    .console-page > .layer-content { padding: 12px; }
+    .console-page > .settings-content { display: flex; flex-direction: column; padding: 0; }
+    .console-page .settings-nav { flex-direction: row; min-height: 40px; padding: 5px; overflow-x: auto; }
+    .console-page .settings-nav .nav-bottom { display: none; }
+    .shell-status { gap: 5px; }
+  }
+}

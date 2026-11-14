@@ -1,0 +1,7 @@
+/* Frozen selectors for independently shipped UI v1 plugins. */
+@layer components {
+  .pathbar, .tree-menu { border: 2px solid transparent; position: relative; border-radius: var(--sd-radius-control); background: var(--panel); }
+  .pathbar::before, .tree-menu::before { content: ""; position: absolute; inset: -2px; border: var(--sd-stroke-control) solid var(--border); border-radius: inherit; pointer-events: none; }
+  .primary { background: var(--sd-primary); color: var(--sd-primary-text); }
+  .primary:hover { background: var(--sd-primary-hover); filter: none; }
+}

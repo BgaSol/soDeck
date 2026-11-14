@@ -1,9 +1,21 @@
+import { tokenNames } from '../packages/ui/token-names.ts';
+export { default as themes } from '../packages/ui/themes.json' with {type:'json'};
 /** Additive UI v1 snapshot: old names remain available to existing plugins. */
-export function themeTokens() {
+export function themeTokens(names = tokenNames) {
   const css = getComputedStyle(document.documentElement);
-  const names = ["canvas", "panel", "subtle", "text", "muted", "border", "accent", "accent-bg", "hover", "good", "warning", "error", "shadow", "file-tree-bg", "status-bg", "folder-color", "folder-fill", "tree-selection-border",
-    "sd-stroke-structure", "sd-stroke-control", "sd-icon-stroke", "sd-control-weight", "sd-title-weight", "sd-radius-control", "sd-tab-height", "sd-status-height", "sd-hit-size", "sd-navigation", "sd-tools", "sd-rail", "sd-primary", "sd-primary-text", "sd-primary-hover", "sd-pressed", "sd-success-bg", "sd-error-bg", "sd-scrim", "sd-tab-selected", "sd-selection", "sd-disabled-bg"];
-  names.push(...["background", "foreground", "cursor", "selection", "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white", "brightBlack", "brightRed", "brightGreen", "brightYellow", "brightBlue", "brightMagenta", "brightCyan", "brightWhite"].map(name => `terminal-${name}`));
-  names.push("sd-scrollbar-thumb", "sd-scrollbar-hover", "sd-scrollbar-active");
   return { ...Object.fromEntries(names.map(name => [name, css.getPropertyValue(`--${name}`).trim()])), "color-scheme": css.colorScheme };
+}
+
+let preference = 'system';
+const system = typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)') : undefined;
+export function applyTheme(next = preference) {
+  preference = next;
+  const resolved = next === 'system' ? system?.matches ? 'dark' : 'light' : next;
+  if (document.documentElement.dataset.theme !== resolved) document.documentElement.dataset.theme = resolved;
+}
+system?.addEventListener('change', () => applyTheme());
+export function subscribeTheme(change: () => void) {
+  const observer = new MutationObserver(change);
+  observer.observe(document.documentElement, {attributes:true,attributeFilter:['data-theme','style']});
+  return () => observer.disconnect();
 }

@@ -1,3 +1,4 @@
+import { themes } from './theme';
 import type { Snapshot, Log, Message, Filter, Update, UpdateOverview, Manifest, OfficialPlugin, UpdateNetwork, MirrorDiagnostic } from "./core";
 import { updatesPage, pendingUpdates, updateCount } from "./updates";
 import { pluginsPage } from "./plugin-settings";
@@ -55,17 +56,11 @@ function networkStatus(s: Snapshot) {
 }
 
 export function settings(s: Snapshot, v: ViewState, componentNavigation = "") {
-  const count = updateCount(s, v);
   const nav = (id: string, label: string, symbol: string) => b("section",label,symbol,id === v.section ? "nav-item active" : "nav-item",`id="settings-nav-${id}" data-id="${id}" aria-current="${id === v.section ? "page" : "false"}"`);
-  return `<aside class="settings-nav" aria-label="设置导航"><div class="nav-label">偏好设置</div>${nav("appearance","外观","sun")}${componentNavigation}<div class="nav-label settings-management-label">应用管理</div>${nav("plugins","插件管理","plug")}${nav("updates",`软件更新${count ? ` <span class="settings-nav-count">${count}</span>` : ""}`,"download")}${nav("about","应用与数据","info")}<div class="nav-bottom">SoDeck <span>v${e(s.version)}</span></div></aside><div class="settings-main"><section class="settings-page" data-scroll="settings" data-settings-section="${e(v.section)}" ${v.section === "components" ? 'id="component-settings-page"' : ""}>${v.section === "components" ? "" : v.section === "plugins" ? pluginsPage(s,v) : v.section === "appearance" ? appearance(s) : v.section === "updates" ? updatesPage(s,v) : about(s)}</section>${["plugins","updates"].includes(v.section) ? pendingUpdates(s,v) : ""}</div>`;
+  return `<aside class="settings-nav" aria-label="设置导航">${nav("appearance","外观","sun")}${componentNavigation}${nav("about","应用与数据","info")}<div class="nav-bottom">SoDeck <span>v${e(s.version)}</span></div></aside><div class="settings-main"><section class="settings-page" data-scroll="settings" data-settings-section="${e(v.section)}" ${v.section === "components" ? 'id="component-settings-page"' : ""}>${v.section === "components" ? "" : v.section === "plugins" ? pluginsPage(s,v) : v.section === "appearance" ? appearance(s) : v.section === "updates" ? updatesPage(s,v) : about(s)}</section>${["plugins","updates"].includes(v.section) ? pendingUpdates(s,v) : ""}</div>`;
 }
 function appearance(s: Snapshot) {
-  return `<div class="section-heading"><div><h2>外观</h2><p>选择适合当前环境的显示主题。</p></div></div><h3 class="field-title">应用主题</h3><div class="themes">${[
-    ["dopamine", "多巴胺"],
-    ["system", "跟随系统"],
-    ["light", "浅色"],
-    ["dark", "深色"],
-  ]
+  return `<div class="section-heading"><div><h2>外观</h2><p>选择适合当前环境的显示主题。</p></div></div><h3 class="field-title">应用主题</h3><div class="themes">${[["system", "跟随系统"], ...themes.map(t => [t.id, t.name])]
     .map(
       ([id, label]) =>
         `<button id="theme-${id}" data-action="theme" data-id="${id}" aria-pressed="${s.preferences.theme === id}" class="theme-option ${s.preferences.theme === id ? "selected" : ""}"><div class="theme-preview ${id}"><i></i><div><span></span><span></span></div></div><span>${label}</span>${s.preferences.theme === id ? icon("check") : ""}</button>`,

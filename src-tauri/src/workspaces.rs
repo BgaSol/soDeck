@@ -158,7 +158,6 @@ impl Runtime {
             .insert((id.clone(), workspace.window_id.clone()), self.revision + 1);
         let owner = self.windows.get_mut(&workspace.window_id).unwrap();
         owner.workspace_ids.push(id.clone());
-        owner.active_workspace = Some(id.clone());
         self.workspaces.insert(id, workspace);
         self.revision += 1;
     }

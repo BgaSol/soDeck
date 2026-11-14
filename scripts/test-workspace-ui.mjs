@@ -85,7 +85,17 @@ async function makePage(window) {
     const types={'.html':'text/html','.js':'text/javascript','.css':'text/css'};
     return route.fulfill({contentType:types[path.extname(file)]||'application/octet-stream',body:fs.readFileSync(file)});
   });
-  await page.route(url, route=>route.fulfill({contentType:"text/html",body:`<html lang="zh-CN"><head><meta charset="utf-8"></head><body><header class="topbar"><button id="catalog-tab" role="tab">服务器管理</button><div class="tab-navigation"><div id="server-tabs" class="server-tabs" role="tablist"></div><div class="tab-controls"><span class="tab-arrows" hidden></span><button data-tab-action="pick" aria-haspopup="dialog" aria-expanded="false" hidden><span class="tab-count"></span></button></div></div><button id="new-workspace" class="sd-icon" aria-label="选择服务器"></button><div id="drag-region" class="drag-region"></div><nav class="global-tools"><button>状态</button><button>消息</button><button>设置</button></nav><div class="window-controls"><button>—</button><button>□</button><button>×</button></div></header><main class="workspace"><div id="server-catalog"><input id="catalog-draft" value="draft retained"></div><div id="workspace-content" hidden></div></main><div id="notice"></div><script type="module">import '/style.css';import {Workspaces} from '/workspaces.ts';import {tabControls} from '/tab-strip.ts';import {icon} from '/ui.ts';document.querySelector('.topbar .tab-controls').outerHTML=tabControls('服务器标签');document.querySelector('#new-workspace').innerHTML=icon('plus');const callbacks=new Map(),listeners=new Map();let nativeId=0;window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:(_event,id)=>{callbacks.delete(listeners.get(id));listeners.delete(id);}};window.__TAURI_INTERNALS__={convertFileSrc:p=>new URL('/__plugin__/'+p,location.href).href,transformCallback:callback=>{const id=++nativeId;callbacks.set(id,callback);return id;},invoke:async(command,args)=>{if(command==='plugin:event|listen'){const id=++nativeId;listeners.set(id,args.handler);return id;}if(command==='plugin:event|unlisten')return;return window.workspaceInvoke(command,args);}};window.manager=new Workspaces(document.querySelector('#server-tabs'),document.querySelector('#workspace-content'),document.querySelector('#server-catalog'),message=>document.querySelector('#notice').textContent=message,window.workspaceInvoke);await window.manager.start();window.ready=true;</script></body></html>`}));
+  await page.route(url, route=>route.fulfill({contentType:"text/html",body:`<html lang="zh-CN"><head><meta charset="utf-8"></head><body><div id="app"></div><div id="notice"></div><script type="module">
+import '/style.css';import {Workspaces} from '/workspaces.ts';import {Shell} from '/shell.ts';
+const callbacks=new Map(),listeners=new Map();let nativeId=0;
+window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:(_event,id)=>{callbacks.delete(listeners.get(id));listeners.delete(id);}};
+window.__TAURI_INTERNALS__={convertFileSrc:p=>new URL('/__plugin__/'+p,location.href).href,transformCallback:callback=>{const id=++nativeId;callbacks.set(id,callback);return id;},invoke:async(command,args)=>{if(command==='plugin:event|listen'){const id=++nativeId;listeners.set(id,args.handler);return id;}if(command==='plugin:event|unlisten')return;return window.workspaceInvoke(command,args);}};
+document.body.classList.toggle('secondary-window','${window}'!=='main');
+window.shell=new Shell(document.querySelector('#app'),'${window}'==='main');
+shell.catalog.innerHTML='<input id="catalog-draft" value="draft retained">';
+window.manager=new Workspaces(shell.tabs,shell.content,message=>document.querySelector('#notice').textContent=message,window.workspaceInvoke);
+shell.attach(manager,{setNavigation(){}});await manager.start();window.ready=true;
+</script></body></html>`}));
   await page.goto(url); await page.waitForFunction(()=>window.ready); return page;
 }
 async function refresh() { for (const page of pages) await page.evaluate(()=>window.manager.refresh()); }
@@ -109,7 +119,7 @@ try {
   assert.deepEqual({ x: surfaces.get('main').x, y: surfaces.get('main').y, width: surfaces.get('main').width, height: surfaces.get('main').height }, narrowBlank, 'Resizing an empty window updates its native drop target');
   await main.setViewportSize({ width: 1100, height: 720 });
   checks.push("普通启动只显示目录，不伪造连接");
-  const unavailable=await open('无插件',0);await refresh();
+  const unavailable=await open('无插件',0);await refresh();await select(main,unavailable.context.workspaceId);
   const unavailableButton=main.locator('.server-workbench:visible [data-component-action="create"]');
   assert(await unavailableButton.isDisabled());assert.match(await unavailableButton.getAttribute('title'),/默认行为|未设置/);
   await main.locator(`.tab-close-button[data-id="${unavailable.context.workspaceId}"]`).click();await main.locator(`.server-tab[data-id="${unavailable.context.workspaceId}"]`).waitFor({state:"detached"});await refresh();
@@ -125,7 +135,7 @@ try {
   await select(main,aid); await panel(main,"left").click(); await main.waitForFunction(()=>document.querySelector('.server-workbench:not([hidden]) [data-component-action="toggle"][data-key="test.workbench:files"]').getAttribute('aria-expanded')==='false'); await panel(main,"right").click(); await main.waitForFunction(()=>document.querySelector('.server-workbench:not([hidden]) [data-component-action="toggle"][data-key="test.workbench:forwarding"]').getAttribute('aria-expanded')==='true');
   await select(main,bid); assert.equal(await panel(main,"left").getAttribute("aria-expanded"),"true"); assert.equal(await panel(main,"right").getAttribute("aria-expanded"),"false");
   await select(main,aid); assert.equal(await panel(main,"left").getAttribute("aria-expanded"),"false"); assert.equal(await panel(main,"right").getAttribute("aria-expanded"),"true");
-  assert((await main.locator(".server-workbench:visible .workspace-endpoint").innerText()).includes("1.invalid"));
+  assert((await main.locator("#shell-status .shell-endpoint").innerText()).includes("1.invalid"));
   checks.push("固定上下文、服务器切换与侧栏状态各自保持");
   const board=main.locator(`.server-workbench[data-id="${aid}"]`);
   const pressRefresh=async locator=>{const rect=await locator.boundingBox();await locator.evaluate(el=>window.pressedChrome=el);await main.mouse.move(rect.x+rect.width/2,rect.y+rect.height/2);await main.mouse.down();await main.evaluate(()=>window.manager.refresh());assert.equal(await locator.evaluate(el=>el===window.pressedChrome&&el.isConnected),true);await main.mouse.up();};
@@ -156,7 +166,7 @@ try {
     const rightBounds=await rightMore.boundingBox();
     await rightMore.click();await assertMenuLayout(main,rightBounds,{long:true});
     assert.equal(await main.getByRole('menu').locator('.component-menu-row').count(),metadata.ui.views.filter(v=>v.container==='sidebar').length,'Both sides expose the same complete tool list');
-    await board.locator('.workspace-status').click();assert.equal(await main.getByRole('menu').count(),0);
+    await board.locator('.left-rail').click({position:{x:10,y:300}});assert.equal(await main.getByRole('menu').count(),0);
   }
   await main.setViewportSize({width:1100,height:720});
   checks.push('三主题及窄窗口：面板仅保留名称和收起按钮，页签右键与更多组件菜单靠近入口；短菜单无滚动条，长列表仅纵向滚动，搜索后消除滚动，Esc 返回焦点及外部关闭');
@@ -298,8 +308,12 @@ try {
   await editor.fill('draft for server A');await flush(main);
   checks.push('关闭取消及保存失败保留草稿，不提前释放页面');
   const oldSurface=await main.locator(`.component-surface[data-view-id="${editorId}"] iframe`).getAttribute('data-surface-id');
-  await main.locator("#catalog-tab").click(); assert.equal(await main.locator("#catalog-draft").inputValue(),"draft retained");
-  await select(main,aid); await menu(main,aid); await main.locator('[data-choice="detach"]').click();
+  await main.evaluate(()=>{window.hostFrames=[...document.querySelectorAll('.component-surface iframe')];manager.setHostVisible(false);});
+  await refresh();await main.evaluate(()=>document.documentElement.dataset.theme='dark');
+  assert.equal(await main.evaluate(()=>hostFrames.every(frame=>frame.isConnected&&[...document.querySelectorAll('.component-surface iframe')].includes(frame))),true,'Management navigation and theme changes retain iframe identity');
+  assert.equal(await main.locator('.component-surface:not([hidden]) iframe').count(),0,'Hidden workbench surfaces cannot appear during refresh');
+  assert.equal(await main.locator("#catalog-draft").inputValue(),"draft retained");
+  await main.evaluate(()=>manager.setHostVisible(true));await select(main,aid); await menu(main,aid); await main.locator('[data-choice="detach"]').click();
   await main.waitForFunction(id=>!document.querySelector(`.server-tab[data-id="${id}"]`),aid);
   const child=await makePage("workspace-browser"); assert.equal(await child.locator("#catalog-tab").isVisible(),false);
   assert.equal(await viewFrame(child,aid,editorId).getByRole('textbox').inputValue(),'draft for server A');
@@ -416,33 +430,17 @@ try {
     await main.setViewportSize({width,height:480}); await main.emulateMedia({reducedMotion:"reduce"});
     await main.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
     await main.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-    const chrome=await main.locator('.server-workbench:visible').evaluate(node=>{
-      const footer=node.querySelector('.workspace-status'),rect=footer.getBoundingClientRect();
-      const buttons=[...footer.querySelectorAll('button')].filter(b=>!b.hidden&&getComputedStyle(b).display!=='none');
-      return {height:rect.height,buttonsFit:buttons.every(b=>{const r=b.getBoundingClientRect();return r.top>=rect.top&&r.bottom<=rect.bottom;}),buttonBorders:buttons.map(b=>getComputedStyle(b).borderTopWidth),divider:getComputedStyle(node.querySelector('.left-rail'),'::after').width,tools:getComputedStyle(node.querySelector('.component-tabs')).backgroundColor};
-    });
-    assert.equal(chrome.height,32);assert(chrome.buttonsFit,JSON.stringify(chrome));assert(chrome.buttonBorders.every(width=>width==='0px'));
+    const chrome=await main.locator('.server-workbench:visible').evaluate(node=>({divider:getComputedStyle(node.querySelector('.left-rail'),'::after').width,tools:getComputedStyle(node.querySelector('.component-tabs')).backgroundColor}));
     assert.equal(chrome.divider,theme==='dopamine'?'2px':'1px');
     if(theme==='dopamine')assert.equal(chrome.tools,'rgb(66, 198, 155)');
     assert.equal(await main.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-    assert.equal(await main.locator(".window-controls").evaluate(el=>el.getBoundingClientRect().right<=innerWidth),true);
-    const footer=main.locator('.server-workbench:visible .workspace-status');
-    const status=footer.getByRole('status',{name:'连接状态'});
-    assert.match(await status.innerText(),/已连接/);
-    assert.equal(await status.locator('.workspace-endpoint').innerText(),'ops@2.invalid:22');
-    assert.equal(await status.getAttribute('title'),'ops@2.invalid:22');
-    assert.equal(await status.evaluate(el=>el.tabIndex),-1);
-    await status.click();
-    assert.equal(await main.getByRole('menu').count(),0);
-    assert.equal(await footer.locator('[data-component-action="connection-menu"], [aria-label="工作区更多操作"]').count(),0);
-    assert.equal(await footer.locator('[data-reconnect-server]').isVisible(),false);
+    assert.equal(await main.locator('.workspace-status').count(),0,'Core status is owned by Shell');
     if(width===1100){fs.mkdirSync('artifacts/workbench-design',{recursive:true});await main.screenshot({path:`artifacts/workbench-design/workbench-${theme}.png`});}
   }
   await main.setViewportSize({width:1100,height:720});
   const display=await main.context().newCDPSession(main);
   for(const scale of [1.25,1.5]){
     await display.send('Emulation.setDeviceMetricsOverride',{width:1100,height:720,deviceScaleFactor:scale,mobile:false});
-    assert.equal(await main.locator('.server-workbench:visible .workspace-status').evaluate(el=>el.getBoundingClientRect().height),32);
     assert(await main.locator('.server-workbench:visible').evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.bottom<=innerHeight;}));
     await main.screenshot({path:`artifacts/workbench-design/workbench-dopamine-${scale}.png`});
   }
@@ -475,7 +473,7 @@ try {
   for (const id of [bid,cid]) { await main.locator(`.tab-close-button[data-id="${id}"]`).click();await main.locator(`.server-tab[data-id="${id}"]`).waitFor({state:"detached"}); await refresh(); }
   await main.locator("#catalog-draft").waitFor({state:"visible"}); assert.equal((await projection("main")).window.activeWorkspace,null);
   checks.push("最后一个服务器关闭后返回固定管理页");
-  await open('手势销毁',4);await refresh();
+  const disposal=await open('手势销毁',4);await refresh();await select(main,disposal.context.workspaceId);
   if(await panel(main,'left').getAttribute('aria-expanded')!=='true')await panel(main,'left').click();
   await settleLayout();const disposeCalls=layoutCalls.length;await dragPanel('left',-20);
   await main.evaluate(()=>window.manager.dispose());await main.mouse.up();await settleLayout();

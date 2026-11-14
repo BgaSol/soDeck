@@ -11,7 +11,7 @@ use std::{
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Group {
+pub struct Tag {
     pub id: String,
     pub name: String,
 }
@@ -100,7 +100,7 @@ impl Authentication {
 struct Server {
     id: String,
     name: String,
-    group_id: Option<String>,
+    tag_ids: Vec<String>,
     protocol: String,
     host: String,
     port: u16,
@@ -127,16 +127,16 @@ struct Proxy {
 struct Catalog {
     schema_version: u32,
     revision: u64,
-    groups: Vec<Group>,
+    tags: Vec<Tag>,
     servers: Vec<Server>,
     proxies: Vec<Proxy>,
 }
 impl Default for Catalog {
     fn default() -> Self {
         Self {
-            schema_version: 1,
+            schema_version: 2,
             revision: 0,
-            groups: vec![],
+            tags: vec![],
             servers: vec![],
             proxies: vec![],
         }
@@ -163,7 +163,8 @@ pub struct AuthInput {
 pub struct ServerInput {
     pub id: Option<String>,
     pub name: String,
-    pub group_id: Option<String>,
+    #[serde(default)]
+    pub tag_ids: Vec<String>,
     pub host: String,
     pub port: u16,
     pub username: String,
@@ -188,8 +189,8 @@ pub enum CatalogChange {
     DeleteProxy { id: String },
     CopyServer { id: String },
     CopyProxy { id: String },
-    SaveGroup { id: Option<String>, name: String },
-    DeleteGroup { id: String },
+    SaveTag { id: Option<String>, name: String },
+    DeleteTag { id: String },
 }
 
 pub(crate) struct ServerStore {
@@ -207,10 +208,43 @@ impl ServerStore {
             .collect()
     }
 }
+fn decode_catalog(bytes: &[u8]) -> Result<Catalog, String> {
+    let mut value: Value =
+        serde_json::from_slice(bytes).map_err(|_| "服务器目录 JSON 格式不正确".to_string())?;
+    match value["schemaVersion"].as_u64() {
+        Some(1) => {
+            let object = value.as_object_mut().ok_or("服务器目录 JSON 格式不正确")?;
+            let tags = object.remove("groups").ok_or("服务器目录缺少分组")?;
+            object.insert("tags".into(), tags);
+            object.insert("schemaVersion".into(), json!(2));
+            for server in object
+                .get_mut("servers")
+                .and_then(Value::as_array_mut)
+                .ok_or("服务器目录缺少服务器列表")?
+            {
+                let server = server.as_object_mut().ok_or("服务器资料格式不正确")?;
+                let group = server.remove("groupId").unwrap_or(Value::Null);
+                if !group.is_null() && !group.is_string() {
+                    return Err("服务器分组格式不正确".into());
+                }
+                server.insert(
+                    "tagIds".into(),
+                    if group.is_null() {
+                        json!([])
+                    } else {
+                        json!([group])
+                    },
+                );
+            }
+        }
+        Some(2) => (),
+        _ => return Err("不支持该服务器目录版本".into()),
+    }
+    serde_json::from_value(value).map_err(|_| "服务器目录 JSON 格式不正确".into())
+}
 fn read(path: &std::path::Path) -> Result<Catalog, String> {
     let bytes = fs::read(path).map_err(|_| "无法读取服务器目录文件".to_string())?;
-    let c: Catalog =
-        serde_json::from_slice(&bytes).map_err(|_| "服务器目录 JSON 格式不正确".to_string())?;
+    let c = decode_catalog(&bytes)?;
     validate(&c)?;
     Ok(c)
 }
@@ -240,8 +274,8 @@ impl ServerStore {
     }
     fn view(&self) -> Value {
         // Construct public views explicitly: disk authentication is never returned.
-        json!({"schemaVersion":1,"revision":self.catalog.revision,"groups":self.catalog.groups,
-            "servers":self.catalog.servers.iter().map(|s|json!({"id":s.id,"name":s.name,"groupId":s.group_id,
+        json!({"schemaVersion":2,"revision":self.catalog.revision,"tags":self.catalog.tags,
+            "servers":self.catalog.servers.iter().map(|s|json!({"id":s.id,"name":s.name,"tagIds":s.tag_ids,
                 "protocol":s.protocol,"host":s.host,"port":s.port,"username":s.username,"route":s.route,
                 "authentication":s.authentication.view(self.sessions.contains_key(&s.id)),"createdAt":s.created_at,"updatedAt":s.updated_at})).collect::<Vec<_>>(),
             "proxies":self.catalog.proxies.iter().map(|p|json!({"id":p.id,"name":p.name,"protocol":p.protocol,"host":p.host,"port":p.port,
@@ -256,6 +290,14 @@ impl ServerStore {
             .checked_add(1)
             .ok_or("目录修订已超出范围")?;
         if self.path.exists() {
+            let original: Value = serde_json::from_slice(
+                &fs::read(&self.path).map_err(|e| format!("无法读取原目录：{e}"))?,
+            )
+            .map_err(|e| format!("无法读取原目录：{e}"))?;
+            let legacy = self.path.with_file_name("servers.v1.json.bak");
+            if original["schemaVersion"] == 1 && !legacy.exists() {
+                storage::write_json(&legacy, &original)?;
+            }
             storage::write_json(&self.path.with_extension("json.bak"), &self.catalog)?;
         }
         storage::write_json(&self.path, &c)?;
@@ -348,12 +390,12 @@ fn secret(
     }
 }
 fn validate(c: &Catalog) -> Result<(), String> {
-    if c.schema_version != 1 {
+    if c.schema_version != 2 {
         return Err("不支持该服务器目录版本".into());
     }
     let mut ids = HashSet::new();
     for id in c
-        .groups
+        .tags
         .iter()
         .map(|g| &g.id)
         .chain(c.servers.iter().map(|s| &s.id))
@@ -364,9 +406,9 @@ fn validate(c: &Catalog) -> Result<(), String> {
         }
     }
     let mut names = HashSet::new();
-    for g in &c.groups {
+    for g in &c.tags {
         if g.name.trim().is_empty() || !names.insert(g.name.to_lowercase()) {
-            return Err("分组名称为空或重复".into());
+            return Err("标签名称为空或重复".into());
         }
     }
     for s in &c.servers {
@@ -382,11 +424,12 @@ fn validate(c: &Catalog) -> Result<(), String> {
         {
             return Err("服务器字段不完整或认证方式错误".into());
         }
-        if s.group_id
-            .as_ref()
-            .is_some_and(|id| !c.groups.iter().any(|g| g.id == *id))
+        let mut tag_ids = HashSet::new();
+        if s.tag_ids
+            .iter()
+            .any(|id| !tag_ids.insert(id) || !c.tags.iter().any(|tag| tag.id == *id))
         {
-            return Err("服务器引用了不存在的分组".into());
+            return Err("服务器引用了不存在的标签".into());
         }
         let mut steps = HashSet::new();
         let mut ssh = HashSet::new();
@@ -488,7 +531,7 @@ impl AppCore {
                 let s = Server {
                     id: id.clone(),
                     name: endpoint_name(&d.name, &h, d.port, 22),
-                    group_id: d.group_id,
+                    tag_ids: d.tag_ids,
                     protocol: "ssh".into(),
                     host: h,
                     port: d.port,
@@ -604,31 +647,31 @@ impl AppCore {
                 selected = Some(p.id.clone());
                 c.proxies.push(p);
             }
-            CatalogChange::SaveGroup { id, name } => {
+            CatalogChange::SaveTag { id, name } => {
                 let id = match id {
                     Some(id) => {
-                        if !c.groups.iter().any(|g| g.id == id) {
-                            return Err("分组已不存在".into());
+                        if !c.tags.iter().any(|g| g.id == id) {
+                            return Err("标签已不存在".into());
                         }
                         id
                     }
                     None => self.next_id(),
                 };
-                c.groups.retain(|g| g.id != id);
-                c.groups.push(Group {
+                c.tags.retain(|g| g.id != id);
+                c.tags.push(Tag {
                     id: id.clone(),
                     name: name.trim().into(),
                 });
                 selected = Some(id);
             }
-            CatalogChange::DeleteGroup { id } => {
-                if !c.groups.iter().any(|g| g.id == id) {
-                    return Err("分组已不存在".into());
+            CatalogChange::DeleteTag { id } => {
+                if !c.tags.iter().any(|g| g.id == id) {
+                    return Err("标签已不存在".into());
                 }
-                c.groups.retain(|g| g.id != id);
+                c.tags.retain(|g| g.id != id);
                 for s in &mut c.servers {
-                    if s.group_id.as_ref() == Some(&id) {
-                        s.group_id = None;
+                    if s.tag_ids.contains(&id) {
+                        s.tag_ids.retain(|tag| tag != &id);
                         s.updated_at = time.clone();
                     }
                 }

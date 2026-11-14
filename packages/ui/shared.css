@@ -34,16 +34,16 @@
 }
 @layer components {
   /* A fixed transparent 2px budget keeps content geometry stable across themes. */
-  .sd-control, .sd-menu, .pathbar, .tree-menu {
+  .sd-control, .sd-menu {
     border: 2px solid transparent; position: relative;
     border-radius: var(--sd-radius-control); background: var(--panel);
   }
-  .sd-control::before, .sd-menu::before, .pathbar::before, .tree-menu::before {
+  .sd-control::before, .sd-menu::before {
     content: ""; position: absolute; inset: -2px; border: var(--sd-stroke-control) solid var(--border);
     border-radius: inherit; pointer-events: none;
   }
   .sd-control { min-height: var(--sd-hit-size); padding: 3px 8px; color: var(--text); font-weight: var(--sd-control-weight); }
-  .sd-control:hover:not(:disabled):not(.primary):not(.sd-primary) { background: var(--hover); }
+  .sd-control:hover:not(:disabled):not(.sd-primary) { background: var(--hover); }
   .sd-control:active:not(:disabled) { background: var(--sd-pressed, var(--accent-bg)); }
   .sd-control:disabled { background: var(--sd-disabled-bg, var(--subtle)); }
   button:disabled { opacity: .45; cursor: default; }
@@ -58,8 +58,8 @@
   .sd-icon:hover, .sd-quiet:hover, .sd-status-action:hover { background: var(--hover); }
   .sd-icon:active:not(:disabled), .sd-quiet:active:not(:disabled), .sd-status-action:active:not(:disabled) { background: var(--sd-pressed, var(--accent-bg)); }
   .sd-status-action { font-size: 12px; white-space: nowrap; }
-  .sd-primary, .primary { background: var(--sd-primary); color: var(--sd-primary-text); }
-  .sd-primary:hover, .primary:hover { background: var(--sd-primary-hover); filter: none; }
+  .sd-primary { background: var(--sd-primary); color: var(--sd-primary-text); }
+  .sd-primary:hover { background: var(--sd-primary-hover); filter: none; }
   .sd-menu { background: var(--panel); box-shadow: var(--shadow); padding: 5px; border-radius: 10px; }
   .sd-menu { box-sizing: border-box; display: flex; flex-direction: column; overflow: visible; min-width: 0; }
   .sd-menu[hidden] { display: none; }
@@ -88,10 +88,6 @@
   .sd-tab { position: relative; display: flex; align-items: center; flex-shrink: 0; border: 2px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; }
   .sd-tab.selected { background: var(--sd-tab-selected, var(--accent-bg)); color: var(--text); box-shadow: none; }
   .sd-tab.selected::before { content: ""; position: absolute; inset: -2px -2px 0; border: var(--sd-stroke-control) solid var(--border); border-bottom: 0; border-radius: inherit; pointer-events: none; }
-  .server-tab.selected { background: var(--sd-server-selected); }
-  #catalog-tab[aria-selected="true"] { background: var(--sd-server-selected); color: var(--text); box-shadow: none; }
-  .topbar { border-bottom: 0; }
-  .topbar::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: var(--sd-stroke-structure); background: var(--border); pointer-events: none; }
   .sd-tab button { min-height: 26px; border: 0; background: transparent; padding: 3px 7px; border-radius: 5px; }
   .sd-tab svg { width: 16px; height: 16px; }
   .sd-tab [role="tab"] { font-size: 12px; }
@@ -99,17 +95,5 @@
   .sd-panel-header { height: var(--sd-tab-height); min-height: var(--sd-tab-height); font-size: 12px; font-weight: var(--sd-control-weight); background: var(--sd-navigation, var(--subtle)); }
   .sd-status-bar { height: var(--sd-status-height); display: flex; align-items: center; gap: 6px; padding: 2px 9px; background: var(--status-bg, var(--panel)); font-size: 12px; color: var(--text); }
   button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .settings-nav, .catalog-dialog-heading { background: var(--sd-navigation); }
-  .endpoint-symbol { background: var(--sd-symbol); color: var(--text); }
-  .catalog-row.selected .endpoint-symbol { background: var(--sd-symbol-selected); }
-  .badge.running, .badge.success, .metrics { background: var(--sd-success-bg); }
-  .badge.failed, .badge.error, .error-box { background: var(--sd-error-bg); }
-  .modal-backdrop, .catalog-dialog::backdrop, .component-close-dialog::backdrop, .plugin-view-dialog::backdrop { background: var(--sd-scrim); }
-  .welcome-emblem { background: var(--sd-tools); box-shadow: none; }
-  .workspace { background: var(--canvas); }
-  /* Existing forms use the same appearance parameters, without theme selectors. */
-  input, select, .layer, .plugin-layout, .plugin-symbol, .metrics, .log-results, .toast,
-  .restart-banner, .update-card, .catalog-layout, .catalog-dialog, .route-editor-step,
-  .route-number, .endpoint-symbol, .component-close-dialog, .plugin-view-dialog { border-width: var(--sd-stroke-control); }
   @media (prefers-reduced-motion: reduce) { button, .sd-menu { transition: none; animation: none; } }
 }

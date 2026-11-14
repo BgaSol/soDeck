@@ -436,8 +436,18 @@ async fn new_connection_belongs_to_initiating_window_and_reconnect_keeps_owner()
         .workspaces
         .is_empty());
     let secondary = f.core.workspace_projection("secondary").unwrap();
+    assert_eq!(secondary.window.active_workspace.as_ref(), None);
+    f.core
+        .workspace_state()
+        .activate("secondary", Some(&first.workspace_id))
+        .unwrap();
     assert_eq!(
-        secondary.window.active_workspace.as_ref(),
+        f.core
+            .workspace_projection("secondary")
+            .unwrap()
+            .window
+            .active_workspace
+            .as_ref(),
         Some(&first.workspace_id)
     );
     assert_eq!(secondary.workspaces[0].window_id, "secondary");
