@@ -1542,7 +1542,7 @@
       ]
     },
     "sourceFiles": [
-      "docs/PRODUCT.md",
+      "docs/product.md",
       "packages/ui/shared.css",
       "packages/ui/themes.css",
       "packages/ui/themes.json",

@@ -219,7 +219,7 @@ SoDeck 的核心界面是一张紧凑、可持续工作的服务器会话工作�
 
 这份文档从当前正式核心源码提取，服务后续核心界面维护。色值与公共控件以 [themes.css](packages/ui/themes.css)、[shared.css](packages/ui/shared.css) 为准；核心覆盖以 [console.css](src/console.css) 为准。已批准的 [界面原型](prototypes/interface/DESIGN.md) 只提供方向参考。文档不宣布本次源码已经完成发行验收。
 
-范围为桌面壳、管理台、服务器连接目录、会话标签和插件 Surface 宿主。文件等插件的内部展示与操作冻结；业务功能与失败行为仍由 [产品定义](docs/PRODUCT.md) 链接的功能文档维护。
+范围为桌面壳、管理台、服务器连接目录、会话标签和插件 Surface 宿主。文件等插件的内部展示与操作冻结；业务功能与失败行为仍由 [产品定义](docs/product.md) 链接的功能文档维护。
 
 **Key Characteristics:**
 
