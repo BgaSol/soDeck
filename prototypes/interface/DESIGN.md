@@ -212,7 +212,7 @@ IDEA 明暗主题以 Gray 组织层级，用 Blue 标记操作与焦点；多巴
 | 顶栏 / 工具区 | dark-panel / dark-panel | light-text / light-panel | dopamine-toolbar / dopamine-good-bg |
 | 选中底 | dark-selected | light-selected | dopamine-selected |
 
-IDEA 来源：[官方深色主题](https://raw.githubusercontent.com/JetBrains/intellij-community/master/platform/platform-resources/src/themes/expUI/expUI_dark.theme.json)、[官方浅色主题](https://raw.githubusercontent.com/JetBrains/intellij-community/master/platform/platform-resources/src/themes/expUI/expUI_light.theme.json)。深色核心采用 Gray1 / Gray2 / Gray12 / Blue6；浅色采用 Gray2 / Gray13 / Gray14 / Blue4，浅色顶栏也使用 darkGray2。多巴胺按角色取值自仓库 [themes.css](../../src/themes.css)。
+IDEA 来源：[官方深色主题](https://raw.githubusercontent.com/JetBrains/intellij-community/master/platform/platform-resources/src/themes/expUI/expUI_dark.theme.json)、[官方浅色主题](https://raw.githubusercontent.com/JetBrains/intellij-community/master/platform/platform-resources/src/themes/expUI/expUI_light.theme.json)。深色核心采用 Gray1 / Gray2 / Gray12 / Blue6；浅色采用 Gray2 / Gray13 / Gray14 / Blue4，浅色顶栏也使用 darkGray2。多巴胺按角色取值自仓库 [themes.css](../../packages/ui/themes.css)。
 
 深色连接树选中节点、容器选中项、待重启横条、活动导航和对话框的次要文字使用既有 Gray10（dark-toolbar-muted），使小字在 selected 和 raised 底保持至少 4.5:1 的对比。其他次要文字和代码注释继续使用原有角色。
 
