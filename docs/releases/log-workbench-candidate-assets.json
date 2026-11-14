@@ -1,0 +1,272 @@
+{
+  "date": "2026-11-15",
+  "status": "unreleased",
+  "core": {
+    "configuredVersion": "1.0.0",
+    "sourceCommit": "15f0e82e6285c6147415d1804ef8d0d65c1214dc",
+    "originalRunId": "43648687765",
+    "originalRunUrl": "https://github.com/BgaSol/soDeck/actions/runs/43648687765",
+    "releaseUrl": null,
+    "reports": [
+      {
+        "id": "sodeck.core",
+        "version": "1.0.0",
+        "target": "aarch64-apple-darwin",
+        "commit": "15f0e82e6285c6147415d1804ef8d0d65c1214dc",
+        "files": [
+          {
+            "name": "SoDeck_1.0.0_aarch64.dmg",
+            "size": 9497979,
+            "sha256": "6e39a76a4b452de8eb4c30cada3128072de01068ab5fff0b86870ab4ba102f04"
+          },
+          {
+            "name": "SoDeck_1.0.0_aarch64.app.tar.gz",
+            "size": 9732462,
+            "sha256": "943259cd2a47c2f3fc5b06b05613f74b51f9087bea36be020847bba4f25a408b"
+          },
+          {
+            "name": "SoDeck_1.0.0_aarch64.app.tar.gz.sig",
+            "size": 424,
+            "sha256": "d5e4783917650a0a2df6c70be0dc8edb352cef7aff7459dfe25cf4188cb371cc"
+          }
+        ],
+        "toolCommit": "15f0e82e6285c6147415d1804ef8d0d65c1214dc",
+        "passed": true
+      },
+      {
+        "id": "sodeck.core",
+        "version": "1.0.0",
+        "target": "aarch64-pc-windows-msvc",
+        "commit": "15f0e82e6285c6147415d1804ef8d0d65c1214dc",
+        "files": [
+          {
+            "name": "SoDeck_1.0.0_arm64-setup.exe",
+            "size": 6280254,
+            "sha256": "d10c64b0b3a1e1f044b347af1a6143e044e5950bc72c2fd4f7ce3eb8fa666265"
+          },
+          {
+            "name": "SoDeck_1.0.0_arm64-setup.exe.sig",
+            "size": 436,
+            "sha256": "0bfa368f9476179c8fc9cb9dc4b4a8d49a09b5a79d43e1e140d389246449d9cc"
+          }
+        ],
+        "toolCommit": "15f0e82e6285c6147415d1804ef8d0d65c1214dc",
+        "passed": true
+      },
+      {
+        "id": "sodeck.core",
+        "version": "1.0.0",
+        "target": "aarch64-unknown-linux-gnu",
+        "commit": "15f0e82e6285c6147415d1804ef8d0d65c1214dc",
+        "files": [
+          {
+            "name": "SoDeck_1.0.0_arm64.deb",
+            "size": 9903236,
+            "sha256": "ba88c96e3091b838998d088a2ca61b2d8cdf2daf1ee7ff192bac726a8c776c8d"
+          },
+          {
+            "name": "SoDeck_1.0.0_arm64.deb.sig",
+            "size": 428,
+            "sha256": "0b16aaa3e0a564fc30916fc7b673d9c91847756b7fe3386844c13467057d282a"
+          },
+          {
+            "name": "SoDeck_1.0.0_aarch64.AppImage",
+            "size": 85535240,
+            "sha256": "98c7c1751db02f4112a5e2ea6335de65532796af994369b5db98bf0a90003f6d"
+          },
+          {
+            "name": "SoDeck_1.0.0_aarch64.AppImage.sig",
+            "size": 440,
+            "sha256": "83b746de8f5c6e716903d0032ee58c8240ee5d5f4a4dc40fd8c6bdf70cd6e91c"
+          }
+        ],
+        "toolCommit": "15f0e82e6285c6147415d1804ef8d0d65c1214dc",
+        "passed": true
+      },
+      {
+        "id": "sodeck.core",
+        "version": "1.0.0",
+        "target": "x86_64-pc-windows-msvc",
+        "commit": "15f0e82e6285c6147415d1804ef8d0d65c1214dc",
+        "files": [
+          {
+            "name": "SoDeck_1.0.0_x64-setup.exe",
+            "size": 7239458,
+            "sha256": "3bf7cfbfe3fbdd43ad986ae461eb9df1b74cf68e87aef8f329b0e9246f4ff55d"
+          },
+          {
+            "name": "SoDeck_1.0.0_x64-setup.exe.sig",
+            "size": 436,
+            "sha256": "58efa454e649444e5f1011e4a391eea4e516211ddbe03eaabb0d9e187f2ec114"
+          }
+        ],
+        "toolCommit": "15f0e82e6285c6147415d1804ef8d0d65c1214dc",
+        "passed": true
+      },
+      {
+        "id": "sodeck.core",
+        "version": "1.0.0",
+        "target": "x86_64-unknown-linux-gnu",
+        "commit": "15f0e82e6285c6147415d1804ef8d0d65c1214dc",
+        "files": [
+          {
+            "name": "SoDeck_1.0.0_amd64.deb",
+            "size": 10709956,
+            "sha256": "45fc56d523767829f241850a4114a29dfda58079b938792a19bf2d1e82694693"
+          },
+          {
+            "name": "SoDeck_1.0.0_amd64.deb.sig",
+            "size": 428,
+            "sha256": "f6a7e61b0be6e2b8d7f0e89250ed237606bd2f1d2112042e5238d0a3567c0dbb"
+          },
+          {
+            "name": "SoDeck_1.0.0_amd64.AppImage",
+            "size": 88230392,
+            "sha256": "7f8dd4703691af588e41c27821220966f4e4cb8261fdab6f86ce8d5765a43039"
+          },
+          {
+            "name": "SoDeck_1.0.0_amd64.AppImage.sig",
+            "size": 436,
+            "sha256": "05f03c14d8f1b18af0b58e4219fce7753c8979d9ef582303c7d083647852be44"
+          }
+        ],
+        "toolCommit": "15f0e82e6285c6147415d1804ef8d0d65c1214dc",
+        "passed": true
+      }
+    ]
+  },
+  "docker": {
+    "configuredVersion": "0.3.0",
+    "sourceCommit": "673eddac435fb413df29290d2cad51a093dea773",
+    "originalRunId": "43649849965",
+    "originalRunUrl": "https://github.com/BgaSol/soDeck/actions/runs/43649849965",
+    "releaseUrl": null,
+    "reports": [
+      {
+        "id": "sodeck.docker",
+        "version": "0.3.0",
+        "target": "aarch64-apple-darwin",
+        "commit": "673eddac435fb413df29290d2cad51a093dea773",
+        "sha256": "384ce7e9f560f1eb5ba96a24bf31b74b231c09eaf166ebf41d7857c423648d67",
+        "runId": "43649849965",
+        "toolCommit": "673eddac435fb413df29290d2cad51a093dea773",
+        "passed": true,
+        "calls": [
+          "settings.get"
+        ]
+      },
+      {
+        "id": "sodeck.docker",
+        "version": "0.3.0",
+        "target": "aarch64-pc-windows-msvc",
+        "commit": "673eddac435fb413df29290d2cad51a093dea773",
+        "sha256": "e592bdece7f3368035e9e8b74abe6f66fc085b9a787c47fd6e899cd37fdf1997",
+        "runId": "43649849965",
+        "toolCommit": "673eddac435fb413df29290d2cad51a093dea773",
+        "passed": true,
+        "calls": [
+          "settings.get"
+        ]
+      },
+      {
+        "id": "sodeck.docker",
+        "version": "0.3.0",
+        "target": "aarch64-unknown-linux-gnu",
+        "commit": "673eddac435fb413df29290d2cad51a093dea773",
+        "sha256": "affcd6586b446a8f4d5d0d5cfafc1a3314d37fea926c3b0a90168cebe3a67dbf",
+        "runId": "43649849965",
+        "toolCommit": "673eddac435fb413df29290d2cad51a093dea773",
+        "passed": true,
+        "calls": [
+          "settings.get"
+        ]
+      },
+      {
+        "id": "sodeck.docker",
+        "version": "0.3.0",
+        "target": "x86_64-pc-windows-msvc",
+        "commit": "673eddac435fb413df29290d2cad51a093dea773",
+        "sha256": "6f93361ebc960b157a26405e1316111e55ee21c8d41fe1bf4ffe7c14d8df7f4d",
+        "runId": "43649849965",
+        "toolCommit": "673eddac435fb413df29290d2cad51a093dea773",
+        "passed": true,
+        "calls": [
+          "settings.get"
+        ]
+      },
+      {
+        "id": "sodeck.docker",
+        "version": "0.3.0",
+        "target": "x86_64-unknown-linux-gnu",
+        "commit": "673eddac435fb413df29290d2cad51a093dea773",
+        "sha256": "9738529659dd2157134c07577e7112e1391fa25cebe6a31213871868d44fb9c8",
+        "runId": "43649849965",
+        "toolCommit": "673eddac435fb413df29290d2cad51a093dea773",
+        "passed": true,
+        "calls": [
+          "settings.get"
+        ]
+      }
+    ]
+  },
+  "windowsIntegration": {
+    "engine": "24.0.9",
+    "clientTarget": "x86_64-pc-windows-msvc",
+    "actualCore": true,
+    "actualPlugin": true,
+    "ssh": true,
+    "terminalCommand": true,
+    "sourceCloseKeepsTerminal": true,
+    "historyLines": 1000001,
+    "historyGenerationMs": 1061,
+    "initialTailLines": 2001,
+    "initialCaptureLimitBytes": 4194304,
+    "containerRemoved": true,
+    "volumePreserved": true
+  },
+  "visual": {
+    "disposition": "ship",
+    "scope": "Only the two scored fixes: projected result time bounds and explicit ERROR/WARN prefixes; not native device or release acceptance.",
+    "viewports": [
+      200,
+      320,
+      400,
+      900
+    ],
+    "themes": [
+      "light",
+      "dark",
+      "dopamine"
+    ],
+    "fixes": [
+      "Filtered record boundaries and separate retained count use local dates; empty results have no invented range.",
+      "Explicit ERROR/WARN prefixes use semantic spans without changing raw copied/exported bytes."
+    ]
+  },
+  "sourceChecks": [
+    {
+      "id": "43648683901",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/43648683901",
+      "sourceCommit": "15f0e82e6285c6147415d1804ef8d0d65c1214dc",
+      "suite": "all",
+      "attempt": 2,
+      "conclusion": "success",
+      "firstAttempt": "The terminal dense-batch browser assertion failed; only failed browser/summary jobs were rerun at the same source.",
+      "skipped": [
+        "netem"
+      ]
+    },
+    {
+      "id": "43649851838",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/43649851838",
+      "sourceCommit": "673eddac435fb413df29290d2cad51a093dea773",
+      "suite": "standard",
+      "attempt": 1,
+      "conclusion": "success",
+      "skipped": [
+        "Windows desktop comparison",
+        "netem"
+      ]
+    }
+  ]
+}
