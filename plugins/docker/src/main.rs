@@ -71,6 +71,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if v.expected_engine.is_empty() {
                     return Err("请先刷新 Docker 状态".into());
                 }
+                for (key, expected) in [
+                    ("engineId", json!(v.expected_engine)),
+                    ("endpoint", json!(v.endpoint)),
+                    ("expectedContext", v.context.clone()),
+                ] {
+                    if d.get(key).is_some_and(|value| value != &expected) {
+                        return Err("容器连接身份已改变，请刷新后重新选择".into());
+                    }
+                }
                 (
                     v.context.clone(),
                     json!({"id":container,"engineId":v.expected_engine}).to_string(),

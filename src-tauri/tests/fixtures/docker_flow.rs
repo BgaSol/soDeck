@@ -30,7 +30,7 @@ async fn openssh_docker_plugin() {
     let mount = f.core.ui_attach("main", view).unwrap();
     let token = mount["surfaceId"].as_str().unwrap();
     f.core.ui_surface_ready("main", token).unwrap();
-    let event = |token: &str, data: Value| f.core.ui_event("main", token, data).unwrap();
+    let event = |token: &str, data: Value| f.core.ui_event("main", token, data.clone()).unwrap_or_else(|error|panic!("{data}: {error}"));
     async fn idle(f: &Fixture, token: &str) -> Value {
         let end = std::time::Instant::now() + Duration::from_secs(40);
         loop {
@@ -47,6 +47,7 @@ async fn openssh_docker_plugin() {
     }
     let browser = idle(&f, token).await;
     assert_eq!(browser["state"], "ready", "{browser}");
+    event(token,json!({"action":"pauseRefresh","paused":true}));
     let list = event(token, json!({"action":"list","status":"all"}));
     let id = std::env::var("SODECK_TEST_DOCKER_CONTAINER").unwrap();
     assert!(
@@ -71,10 +72,10 @@ async fn openssh_docker_plugin() {
     f.core.ui_surface_ready("main", detail).unwrap();
     assert_eq!(idle(&f, detail).await["status"], "running");
     f.core.load(std::path::Path::new(&std::env::var("SODECK_TEST_TERMINAL_PLUGIN").unwrap())).unwrap();
-    event(detail,json!({"action":"openTerminal","requestId":"docker-terminal","shell":"/bin/sh"}));
+    event(token,json!({"action":"openTerminal","requestId":"docker-terminal","shell":"/bin/sh","id":id,"engineId":browser["engine"]["id"],"endpoint":browser["endpoint"],"expectedContext":browser["context"]}));
     let deadline=std::time::Instant::now()+Duration::from_secs(40);
     let receipt=loop {
-        let snapshot=event(detail,json!({"action":"snapshot"}));
+        let snapshot=event(token,json!({"action":"snapshot"}));
         if snapshot["terminal"]["status"]!="pending" {break snapshot["terminal"].clone();}
         assert!(std::time::Instant::now()<deadline,"{snapshot}");tokio::time::sleep(Duration::from_millis(50)).await;
     };
@@ -85,12 +86,13 @@ async fn openssh_docker_plugin() {
     td(&f.core,"main",terminal_token,json!({"op":"write","id":stream,"sequence":0,"data":b"printf 'sodeck-container-terminal:%s\\n' \"$SODECK_TOKEN\"\r".as_slice()})).await.unwrap();
     data_until(&f.core,"main",terminal_token,stream,&mut output,"sodeck-container-terminal:a=b").await;
     assert_eq!(terminal["data"]["integration"]["mode"],"off");
-    let close=f.core.ui_close_prepare("main",vec![],Some(detail_id.into())).unwrap();
+    let close=f.core.ui_close_prepare("main",vec![],Some(view.into())).unwrap();
     f.core.ui_close_finish(close["token"].as_str().unwrap(),serde_json::from_value(close["views"].clone()).unwrap(),"discard").unwrap();
     td(&f.core,"main",terminal_token,json!({"op":"write","id":stream,"sequence":1,"data":b"printf 'sodeck-source-closed:%s\\n' \"$SODECK_TOKEN\"\r".as_slice()})).await.unwrap();
     data_until(&f.core,"main",terminal_token,stream,&mut output,"sodeck-source-closed:a=b").await;
-    let reopened=event(token,json!({"action":"openContainer","id":id,"requestId":"docker-detail-again"}));
-    let remounted=f.core.ui_attach("main",reopened["viewId"].as_str().unwrap()).unwrap();let detail=remounted["surfaceId"].as_str().unwrap();f.core.ui_surface_ready("main",detail).unwrap();idle(&f,detail).await;
+    let reopened=f.core.ui_action("main",&context,json!({"op":"open","key":"sodeck.docker:browser","requestId":"docker-browser-again"})).unwrap();
+    let remounted=f.core.ui_attach("main",reopened["viewId"].as_str().unwrap()).unwrap();let token=remounted["surfaceId"].as_str().unwrap();f.core.ui_surface_ready("main",token).unwrap();idle(&f,token).await;
+    event(token,json!({"action":"pauseRefresh","paused":true}));
     let env = event(detail, json!({"action":"section","section":"environment"}));
     assert!(
         env["rows"]
@@ -122,42 +124,40 @@ async fn openssh_docker_plugin() {
             .any(|r| r["text"].as_str().unwrap().contains("sodeck-docker-log")),
         "{lines}"
     );
-    event(
-        detail,
+    let operate=|mut data:Value| {data["id"]=json!(id);data["engineId"]=browser["engine"]["id"].clone();data["endpoint"]=browser["endpoint"].clone();data["expectedContext"]=browser["context"].clone();event(token,data)};
+    let status=||event(token,json!({"action":"list","status":"all"}))["rows"].as_array().unwrap().iter().find(|row|row["id"]==id).map(|row|row["status"].clone()).unwrap_or(Value::Null);
+    operate(
         json!({"action":"operate","requestId":"docker-pause","intentSequence":"1","operation":"pause"}),
     );
-    assert_eq!(idle(&f, detail).await["status"], "paused");
-    event(
-        detail,
+    idle(&f,token).await;assert_eq!(status(),"paused");
+    operate(
         json!({"action":"operate","requestId":"docker-unpause","intentSequence":"2","operation":"unpause"}),
     );
-    assert_eq!(idle(&f, detail).await["status"], "running");
+    idle(&f,token).await;assert_eq!(status(),"running");
     let stop = json!({"action":"operate","requestId":"docker-stop-once","intentSequence":"3","operation":"stop"});
-    event(detail, stop.clone());
-    event(detail, stop);
-    let stopped = idle(&f, detail).await;
-    assert_eq!(stopped["status"], "exited", "{stopped}");
+    operate(stop.clone());
+    operate(stop);
+    let stopped = idle(&f, token).await;
+    assert_eq!(status(), "exited", "{stopped}");
     assert_eq!(stopped["operation"]["state"], "succeeded");
-    event(
-        detail,
+    operate(
         json!({"action":"operate","requestId":"docker-start","intentSequence":"4","operation":"start"}),
     );
-    assert_eq!(idle(&f, detail).await["status"], "running");
-    event(
-        detail,
+    idle(&f,token).await;assert_eq!(status(),"running");
+    operate(
         json!({"action":"operate","requestId":"docker-restart","intentSequence":"5","operation":"restart"}),
     );
-    assert_eq!(idle(&f, detail).await["operation"]["state"], "succeeded");
-    event(
-        detail,
+    assert_eq!(idle(&f, token).await["operation"]["state"], "succeeded");
+    operate(
         json!({"action":"operate","requestId":"docker-stop-again","intentSequence":"6","operation":"stop"}),
     );
-    idle(&f, detail).await;
-    event(
-        detail,
+    idle(&f, token).await;
+    operate(
         json!({"action":"operate","requestId":"docker-remove","intentSequence":"7","operation":"remove"}),
     );
-    assert_eq!(idle(&f, detail).await["state"], "gone");
+    assert_eq!(idle(&f, token).await["operation"]["state"], "succeeded");
+    assert!(status().is_null(),"removed container must leave the browser list");
+    assert_eq!(idle(&f,detail).await["state"],"gone","existing details reflect sidebar deletion");
     f.core.disconnect_connection("main", &context).unwrap();
     event(logs, json!({"action":"refresh"}));
     assert!(idle(&f, logs).await["error"].is_string());

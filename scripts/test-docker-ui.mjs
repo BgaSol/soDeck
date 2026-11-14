@@ -43,16 +43,16 @@ await page.exposeFunction('mock',async d=>{
   if(d.action==='navigation'){snapshot.navigation=d.state;return snapshot;}
   if(d.action==='resumeInput')return snapshot;
   if(d.action==='openContainer'||d.action==='openLogs')return {viewId:'opened'};
-  if(d.action==='openTerminal'){snapshot={...snapshot,revision:String(Number(snapshot.revision)+1),terminal:{status:'pending'}};return snapshot;}
+  if(d.action==='openTerminal'){snapshot={...snapshot,revision:String(Number(snapshot.revision)+1),terminal:{status:'pending',containerId:d.id}};return snapshot;}
   if(d.action==='pauseRefresh'){snapshot.paused=d.paused;return snapshot;}
-  if(d.action==='operate'){snapshot={...snapshot,revision:String(Number(snapshot.revision)+1),nextIntent:'2',status:d.operation==='stop'?'exited':'running',operation:{action:d.operation,state:'succeeded',message:'已刷新当前观测状态'}};return snapshot;}
+  if(d.action==='operate'){const status=d.operation==='stop'?'exited':'running';const row=rows.find(r=>r.id===d.id);if(row)row.status=status;snapshot={...snapshot,revision:String(Number(snapshot.revision)+1),nextIntent:String(Number(snapshot.nextIntent)+1),status,operation:{action:d.operation,containerId:d.id,name:row?.name,state:'succeeded',message:'已刷新当前观测状态'}};return snapshot;}
   if(d.action==='stats'){snapshot={...snapshot,revision:String(Number(snapshot.revision)+1),stats:{CPUPerc:'150.5%',MemUsage:'512MiB / 2GiB',NetIO:'10MB / 2MB',BlockIO:'1MB / 0B'}};return snapshot;}
   if(d.action==='refresh'){snapshot.revision=String(Number(snapshot.revision)+1);return snapshot;}
   throw new Error('Unexpected UI action '+d.action);
 });
 await page.addInitScript(({snapshot,tokens})=>{
   if(window!==top)return;
-  window.mount=snapshot;window.tokens=tokens;window.flushed=[];
+  window.mount=snapshot;window.tokens=tokens;window.flushed=[];window.responses=[];
   window.post=(type,extra={})=>document.querySelector('iframe').contentWindow.postMessage({channel:'sodeck-ui-v2',surfaceId:'surface',type,...extra},'*');
   addEventListener('message',async e=>{
     if(e.source!==document.querySelector('iframe')?.contentWindow||e.data?.channel!=='sodeck-ui-v2')return;
@@ -61,7 +61,7 @@ await page.addInitScript(({snapshot,tokens})=>{
     if(m.type==='prepared'&&!window.candidate)window.post('surfaceReady');
     if(m.type==='flushed')window.flushed.push(m);
     if(m.type==='request'){
-      try{const data=m.method==='event'?await window.mock(m.params):{};window.post('response',{id:m.id,data});}
+      try{const data=m.method==='event'?await window.mock(m.params):{};if(m.method==='event')window.responses.push(m.params);window.post('response',{id:m.id,data});}
       catch(error){window.post('response',{id:m.id,error:error.message});}
     }
   });
@@ -71,16 +71,18 @@ try{
   await page.goto(url);let frame=page.frames()[1];
   await frame.locator('.container-row').first().waitFor();
   await frame.locator('#query').fill('中文');assert.equal(await frame.locator('.container-row').count(),1);
-  await frame.locator('.container-row').first().focus();await page.keyboard.press('Enter');
-  await page.waitForFunction(()=>true);await new Promise(r=>setTimeout(r,100));assert(requests.some(r=>r.action==='openContainer'&&r.id===id));
+  await frame.locator('.container-select').first().focus();await page.keyboard.press('Enter');
+  await frame.locator('.inline-actions').waitFor();assert(!requests.some(r=>r.action==='openContainer'),'Enter only selects');
+  await frame.locator('.inline-actions').getByRole('button',{name:'详情',exact:true}).click();
+  assert(requests.some(r=>r.action==='openContainer'&&r.id===id&&r.engineId==='engine'));
   await frame.locator('#query').fill('absent');await frame.locator('#empty').waitFor({state:'visible'});
-  await frame.locator('#query').fill('');await frame.locator('#status-filter').selectOption('all');await frame.locator('.container-row').nth(1).waitFor();
-  await frame.locator('.container-row').nth(1).click();await frame.locator('#query').fill('prod');
-  await frame.locator('.container-row[tabindex="0"][data-id="'+id+'"]').waitFor();assert.equal(await frame.locator('.container-row[tabindex="0"]').getAttribute('data-id'),id);
+  await frame.locator('#query').fill('');await frame.locator('[data-status="all"]').click();await frame.locator('.container-row').nth(1).waitFor();
+  await frame.locator('.container-select').nth(1).click();await frame.locator('#query').fill('prod');
+  await frame.locator('[data-id="'+id+'"] .container-select[tabindex="0"]').waitFor();
   rows.push(...Array.from({length:58},(_,i)=>({id:(i+1).toString(16).padStart(64,'0'),name:'extra-'+i,image:'extra:1',status:'running'})));
   await frame.locator('#query').fill('');
   await frame.locator('#next:not([disabled])').waitFor();await frame.locator('#next').click();await frame.locator('#page-label').filter({hasText:'51–60'}).waitFor();
-  assert.equal(await frame.locator('.container-row[tabindex="0"]').count(),1,'page without the selected row must keep a keyboard entry');
+  assert.equal(await frame.locator('.container-select[tabindex="0"]').count(),1,'page without the selected row must keep a keyboard entry');
   await frame.locator('#previous').click();await frame.locator('#page-label').filter({hasText:'1–50'}).waitFor();
   await frame.locator('#scroll').evaluate(e=>{e.scrollTop=180;});
   await page.evaluate(()=>window.post('flush',{id:'navigation',freeze:false}));await page.waitForFunction(()=>window.flushed.some(f=>f.id==='navigation'));
@@ -90,9 +92,57 @@ try{
   rows.splice(2);await frame.locator('#query').fill('prod');await frame.locator('.container-row').first().waitFor();
   fs.mkdirSync('artifacts/docker-ui',{recursive:true});
   for(const mode of ['browser','container','logs']){
-    snapshot={...snapshot,kind:mode,name:'prod-api-中文',revision:String(Number(snapshot.revision)+1)};
+    snapshot={...snapshot,kind:mode,name:'prod-api-中文',status:'running',terminal:null,operation:null,revision:String(Number(snapshot.revision)+1)};
     await page.evaluate(s=>{window.mount=s;window.post('mount',{data:s,tokens:window.tokens,readOnly:false,capabilities:{clipboard:1}});},snapshot);
     await frame.locator('#'+mode).waitFor({state:'visible'});
+    const opsBefore=requests.filter(r=>r.action==='operate').length,terminalsBefore=requests.filter(r=>r.action==='openTerminal').length;
+    if(mode==='browser'){
+      await frame.locator('#query').fill('');await frame.locator('[data-status="all"]').click();
+      await frame.locator('[data-id="'+id+'"] .container-select').click();
+      const more=frame.locator('.row-more'),summary=more.locator('summary');
+      await summary.click();await more.getByRole('button',{name:'暂停',exact:true}).focus();
+      const oldMenu=await more.elementHandle();snapshot={...snapshot,revision:String(Number(snapshot.revision)+1)};
+      await frame.waitForFunction(menu=>!menu.isConnected,oldMenu);await oldMenu.dispose();
+      assert(await more.evaluate(e=>e.open),'background revisions keep the row menu open');
+      assert(await more.getByRole('button',{name:'暂停',exact:true}).evaluate(e=>e===document.activeElement),'background revisions preserve menu focus');
+      await page.keyboard.press('Escape');assert(!(await more.evaluate(e=>e.open)));
+      assert(await summary.evaluate(e=>e===document.activeElement),'Escape returns menu focus to its summary');
+      await summary.click();await more.getByRole('button',{name:'终端选项',exact:true}).click();
+      const shell=frame.locator('#browser-shell');await shell.fill('/bin/bash');await shell.evaluate(e=>e.setSelectionRange(5,9,'backward'));
+      const oldShell=await shell.elementHandle();snapshot={...snapshot,revision:String(Number(snapshot.revision)+1)};
+      await frame.waitForFunction(input=>!input.isConnected,oldShell);await oldShell.dispose();
+      assert.deepEqual(await shell.evaluate(e=>({focused:e===document.activeElement,value:e.value,start:e.selectionStart,end:e.selectionEnd,direction:e.selectionDirection})),{focused:true,value:'/bin/bash',start:5,end:9,direction:'backward'},'background revisions preserve shell focus, value and selection');
+      await more.getByRole('button',{name:'暂停',exact:true}).click();await frame.locator('#confirm').waitFor({state:'visible'});await page.keyboard.press('Escape');
+      assert(await summary.evaluate(e=>e===document.activeElement),'cancelling a menu operation returns to the visible summary');
+      await frame.locator('[data-id="'+id+'"] .container-select').click();
+      const openedBefore=requests.filter(r=>['openContainer','openLogs','openTerminal'].includes(r.action)).length;
+      await frame.locator('.inline-actions').getByRole('button',{name:'停止',exact:true}).click();await frame.locator('#confirm').waitFor({state:'visible'});
+      const oldRow=await frame.locator('[data-id="'+id+'"]').elementHandle();snapshot={...snapshot,revision:String(Number(snapshot.revision)+1)};
+      await frame.waitForFunction(row=>!row.isConnected,oldRow);await oldRow.dispose();
+      assert(await frame.locator('#confirm-cancel').evaluate(e=>e===document.activeElement),'background revisions preserve focus in the inline confirmation');
+      await page.keyboard.press('Escape');assert(await frame.locator('.inline-actions').getByRole('button',{name:'停止',exact:true}).evaluate(e=>e===document.activeElement),'Escape after a refresh returns to the recreated operation trigger');
+      await frame.locator('.inline-actions').getByRole('button',{name:'停止',exact:true}).click();await frame.locator('#confirm').waitFor({state:'visible'});
+      assert.equal(await frame.locator('dialog').count(),0,'confirmation stays in the sidebar');
+      await frame.locator('[data-id="'+second+'"] .container-select').click();assert(await frame.locator('#confirm').isHidden());
+      assert.equal(requests.filter(r=>r.action==='operate').length,opsBefore,'changing selection cancels the old confirmation');
+      await frame.locator('[data-id="'+id+'"] .container-select').click();
+      await frame.locator('.inline-actions').getByRole('button',{name:'停止',exact:true}).click();await frame.locator('#confirm-submit').click();
+      await frame.locator('.row-result').filter({hasText:'命令成功'}).waitFor();
+      assert.equal(requests.filter(r=>r.action==='operate').length,opsBefore+1);
+      assert.equal(requests.filter(r=>['openContainer','openLogs','openTerminal'].includes(r.action)).length,openedBefore,'sidebar maintenance does not open central pages');
+      const op=requests.filter(r=>r.action==='operate').at(-1);assert.equal(op.id,id);assert.deepEqual(op.expectedContext,context);assert.equal(op.endpoint,snapshot.endpoint);
+      await frame.locator('.inline-actions').getByRole('button',{name:'启动',exact:true}).click();await frame.locator('.inline-actions').getByRole('button',{name:'停止',exact:true}).waitFor();
+      await frame.locator('.inline-actions').getByRole('button',{name:'终端',exact:true}).click();await frame.locator('.row-result').filter({hasText:'终端请求待确认'}).waitFor();
+      assert.equal(requests.filter(r=>r.action==='openTerminal').length,terminalsBefore+1);
+      assert(await frame.locator('.inline-actions').getByRole('button',{name:'终端',exact:true}).isDisabled());
+      snapshot={...snapshot,revision:String(Number(snapshot.revision)+1),terminal:{status:'completed',containerId:id,viewId:'sidebar-terminal'}};
+      await frame.locator('.row-result').filter({hasText:'终端页面已创建'}).waitFor();
+      const logsBefore=requests.filter(r=>r.action==='openLogs').length;
+      await frame.locator('.inline-actions').getByRole('button',{name:'日志',exact:true}).click();
+      await page.waitForFunction(count=>window.responses.filter(r=>r.action==='openLogs').length>count,logsBefore);
+      assert.equal(requests.filter(r=>r.action==='openLogs').length,logsBefore+1);
+      assert.equal(requests.filter(r=>r.action==='openLogs').at(-1).id,id,'logs open the selected container even when a list poll follows');
+    }
     if(mode==='container'){
       await frame.locator('#terminal-shell').fill('/bin/bash');
       await frame.locator('#open-terminal').click();
@@ -100,16 +150,16 @@ try{
       assert(await frame.locator('#terminal-shell').isDisabled());
       await frame.locator('#open-terminal').dispatchEvent('click');
       await frame.locator('#terminal-result').filter({hasText:'终端请求待确认'}).waitFor();
-      assert.equal(requests.filter(r=>r.action==='openTerminal').length,1);
-      assert.equal(requests.find(r=>r.action==='openTerminal').shell,'/bin/bash');
+      assert.equal(requests.filter(r=>r.action==='openTerminal').length,terminalsBefore+1);
+      assert.equal(requests.filter(r=>r.action==='openTerminal').at(-1).shell,'/bin/bash');
       snapshot={...snapshot,revision:String(Number(snapshot.revision)+1),terminal:{status:'completed',viewId:'terminal-page'}};
       await frame.locator('#terminal-result').filter({hasText:'终端页面已创建'}).waitFor();
       await frame.getByRole('button',{name:'环境变量',exact:true}).click();await frame.locator('#fields').filter({hasText:'TOKEN'}).waitFor();assert(!(await frame.locator('#fields').innerText()).includes('a=b=c'));
       await frame.locator('#show-env').check();assert((await frame.locator('#fields').innerText()).includes('a=b=c'));
       await frame.getByRole('button',{name:'停止',exact:true}).click();await frame.locator('#confirm').waitFor({state:'visible'});await page.keyboard.press('Escape');
-      assert.equal(requests.filter(r=>r.action==='operate').length,0);
+      assert.equal(requests.filter(r=>r.action==='operate').length,opsBefore);
       await frame.getByRole('button',{name:'停止',exact:true}).click();await frame.locator('#confirm-submit').click();
-      await frame.locator('#operation').filter({hasText:'命令成功'}).waitFor();assert.equal(requests.filter(r=>r.action==='operate').length,1);
+      await frame.locator('#operation').filter({hasText:'命令成功'}).waitFor();assert.equal(requests.filter(r=>r.action==='operate').length,opsBefore+1);
       await frame.locator('#read-stats').click();await frame.locator('#stats').filter({hasText:'150.5%'}).waitFor();
     }
     if(mode==='logs'){
@@ -131,5 +181,5 @@ try{
   await page.evaluate(()=>{window.candidate=false;window.post('surfaceReady');window.post('flush',{id:'move',freeze:true});});await page.waitForFunction(()=>window.flushed.some(f=>f.id==='move'));
   const frozen=requests.length;await new Promise(r=>setTimeout(r,1200));assert.equal(requests.length,frozen,'Frozen surface must not keep polling');
   await page.evaluate(()=>window.post('transferCancelled'));await new Promise(r=>setTimeout(r,1200));assert(requests.length>frozen);
-  assert.deepEqual(errors,[]);console.log('Docker UI: filters, keyboard, confirmation, environment visibility, logs, stats, themes, narrow layouts and transfer passed.');
+  assert.deepEqual(errors,[]);console.log('Docker UI: inline maintenance, terminal, refresh focus, filters, keyboard, confirmation, environment visibility, logs, stats, themes, narrow layouts and transfer passed.');
 }finally{await browser.close();await new Promise(r=>server.close(r));}
