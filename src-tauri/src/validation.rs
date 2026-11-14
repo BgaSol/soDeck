@@ -90,6 +90,16 @@ pub async fn ssh_roundtrip(
     })
     .await
     .map_err(|_| format!("包内 SSH 连接超过 10 秒：{last_stage}"))??;
+    // Package smoke opens the workspace through the same explicit tab action as a user.
+    core.workspace_changed();
+    let workspace_id = serde_json::to_string(&context.workspace_id).map_err(|e| e.to_string())?;
+    handle
+        .get_webview_window("main")
+        .ok_or("原生验收主窗口不存在")?
+        .eval(&format!(
+            r#"(() => {{ const id={workspace_id}, deadline=Date.now()+15000; const select=()=>{{ const tab=Array.from(document.querySelectorAll('[data-workspace-action="select"]')).find(el=>el.closest('.server-tab')?.dataset.id===id); if(tab)tab.click(); else if(Date.now()<deadline)setTimeout(select,50); }}; select(); }})()"#
+        ))
+        .map_err(|e| e.to_string())?;
     let command = if cfg!(windows) {
         "cmd /c echo sodeck-openssh-ok"
     } else {
@@ -332,14 +342,18 @@ pub fn server_roundtrip(core: &AppCore, persisted: bool) -> Result<(), String> {
             .iter()
             .find(|s| s["name"] == "Package target")
             .ok_or("重开后服务器未保留")?;
-        if target["route"].as_array().map(Vec::len) != Some(3)
+        if catalog["schemaVersion"] != 2
+            || target["tagIds"].as_array().map(Vec::len) != Some(1)
+            || catalog["tags"].as_array().map(Vec::len) != Some(1)
+            || target["tagIds"][0] != catalog["tags"][0]["id"]
+            || target["route"].as_array().map(Vec::len) != Some(3)
             || target["authentication"]["hasSavedSecret"] != true
             || servers
                 .iter()
                 .any(|s| s["authentication"]["hasSessionSecret"] == true)
             || catalog["proxies"].as_array().map(Vec::len) != Some(1)
         {
-            return Err("重开后路径、代理或凭据状态不正确".into());
+            return Err("重开后标签、路径、代理或凭据状态不正确".into());
         }
         return Ok(());
     }
@@ -350,15 +364,15 @@ pub fn server_roundtrip(core: &AppCore, persisted: bool) -> Result<(), String> {
         )?;
         Ok(result["selectedId"].as_str().unwrap_or("").into())
     };
-    let group = apply(json!({"op":"saveGroup","id":null,"name":"Package test"}))?;
+    let tag = apply(json!({"op":"saveTag","id":null,"name":"Package test"}))?;
     let gateway = apply(
-        json!({"op":"saveServer","draft":{"id":null,"name":"Package gateway","host":"gateway.invalid","port":22,"username":"ops","groupId":group,"authentication":{"type":"password","secret":{"action":"replace","value":"fixture-session","remember":false}},"route":[]}}),
+        json!({"op":"saveServer","draft":{"id":null,"name":"Package gateway","host":"gateway.invalid","port":22,"username":"ops","tagIds":[tag],"authentication":{"type":"password","secret":{"action":"replace","value":"fixture-session","remember":false}},"route":[]}}),
     )?;
     let proxy = apply(
         json!({"op":"saveProxy","draft":{"id":null,"name":"Package proxy","host":"127.0.0.1","port":1080,"authentication":{"type":"none","secret":{"action":"clear"}}}}),
     )?;
     let target = apply(
-        json!({"op":"saveServer","draft":{"id":null,"name":"Package target","host":"db.internal","port":22,"username":"ops","groupId":group,"authentication":{"type":"privateKey","privateKeyPath":"fixture-key","secret":{"action":"replace","value":"fixture-saved","remember":true}},"route":[{"id":"","kind":"ssh","serverId":gateway},{"id":"","kind":"socks5","proxyId":proxy},{"id":"","kind":"socks5","proxyId":proxy}]}}),
+        json!({"op":"saveServer","draft":{"id":null,"name":"Package target","host":"db.internal","port":22,"username":"ops","tagIds":[tag],"authentication":{"type":"privateKey","privateKeyPath":"fixture-key","secret":{"action":"replace","value":"fixture-saved","remember":true}},"route":[{"id":"","kind":"ssh","serverId":gateway},{"id":"","kind":"socks5","proxyId":proxy},{"id":"","kind":"socks5","proxyId":proxy}]}}),
     )?;
     let copy = apply(json!({"op":"copyServer","id":target}))?;
     apply(json!({"op":"deleteServer","id":copy}))?;

@@ -34,6 +34,7 @@ try{
  const catalog=await call('server_catalog');const changed=await call('change_catalog',{revision:catalog.revision,change:{op:'saveServer',draft:{name:'真实文件验收',host:'127.0.0.1',port:Number(process.env.SODECK_TEST_SSH_PORT),username:process.env.SODECK_TEST_SSH_USER,authentication:{type:'privateKey',privateKeyPath:process.env.SODECK_TEST_SSH_KEY,secret:{action:'clear'}},route:[]}}});
  await call('connection',{command:{op:'start',serverId:changed.selectedId}});
  await wait(async()=>{const [v]=await call('connection',{command:{op:'snapshot'}});if(v.question)await call('connection',{command:{op:'answer',attemptId:v.attemptId,questionId:v.question.id,answer:{kind:'hostKey',accept:true}}});if(v.state==='failed')throw new Error(JSON.stringify(v.error));return v.state==='connected';});
+ const [connected]=await call('connection',{command:{op:'snapshot'}});await call('connection',{command:{op:'focus',context:connected.context}});
  const main=await pageFor('main');let sidebar=main.frameLocator('.component-panel.left iframe');
  // The iframe is hosted in shared surface slots; select by its accessible title.
  sidebar=main.frameLocator('iframe[title^="文件 ·"]');

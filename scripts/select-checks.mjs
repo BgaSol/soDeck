@@ -81,7 +81,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
       if (file.endsWith('.md') || file.startsWith('docs/')) continue;
       if (file === 'src/dom-update.ts' || file === 'scripts/plugin-dom-assets.mjs') { ui(); plugin('network-proxy'); integration.add('network-proxy'); continue; }
       if (file === 'scripts/test-cli-arguments.mjs') { full(); continue; }
-      if (file === 'scripts/test-theme-tokens.mjs') { plan.scripts = true; integration.add('system-status'); integration.add('docker'); continue; }
+      if (file === 'scripts/test-theme-tokens.mjs') { ui(); integration.add('system-status'); integration.add('docker'); continue; }
       if (file.startsWith('.github/workflows/') || file.startsWith('.github/actions/')) plan.workflow = true;
       if (['src-tauri/tests/fixtures/release_upgrade.rs', 'scripts/test-release-upgrade.mjs', '.github/workflows/release-upgrade.yml'].includes(file)) { core(); plan.scripts = true; continue; }
       if (/^scripts\/upgrade-inputs(?:\.test)?\.mjs$/.test(file)) { plan.scripts = true; continue; }
@@ -153,7 +153,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
       if (file === 'scripts/test-terminal-shell.py') { plan.scripts = true; integration.add('terminal'); continue; }
       if (file === 'scripts/test-terminal-input.mjs') { plan.scripts = plan.terminalInput = true; continue; }
       if (/^scripts\/(test-terminal-(history|search-ui)|benchmark-terminal-history|terminal-history\.test)\.mjs$/.test(file)) { plan.scripts = plan.terminalInput = true; continue; }
-      if (/^scripts\/test-(connection-ui|desktop-ui|production-ui|server-ui|settings-ui|workspace-ui|workbench-interactions|workbench-layout)\.mjs$/.test(file)) { ui(); continue; }
+      if (/^scripts\/test-(theme-ui|connection-ui|desktop-ui|production-ui|server-ui|settings-ui|workspace-ui|workbench-interactions|workbench-layout)\.mjs$/.test(file)) { ui(); continue; }
       plan.reasons.push(`Shared build input or unmapped path: ${file.replace(/[\r\n|`]/g, ' ')}`);
       full();
     }

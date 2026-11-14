@@ -21,6 +21,7 @@ try{
  const catalog=await call('server_catalog');const change=await call('change_catalog',{revision:catalog.revision,change:{op:'saveServer',draft:{name:'网络隧道验收',host:'127.0.0.1',port:Number(process.env.SODECK_TEST_SSH_PORT),username:process.env.SODECK_TEST_SSH_USER,authentication:{type:'privateKey',privateKeyPath:process.env.SODECK_TEST_SSH_KEY,secret:{action:'clear'}},route:[]}}});
  await call('connection',{command:{op:'start',serverId:change.selectedId}});
  await wait(async()=>{const [v]=await call('connection',{command:{op:'snapshot'}});if(v.question)await call('connection',{command:{op:'answer',attemptId:v.attemptId,questionId:v.question.id,answer:{kind:'hostKey',accept:true}}});if(v.state==='failed')throw new Error(JSON.stringify(v.error));return v.state==='connected';});
+ const [connected]=await call('connection',{command:{op:'snapshot'}});await call('connection',{command:{op:'focus',context:connected.context}});
  await page.goto(url);await page.waitForFunction(()=>window.ready);await page.getByRole('button',{name:'网络隧道',exact:true}).click();
  const sidebar=page.frameLocator('iframe[title^="网络隧道 ·"]');await sidebar.getByRole('button',{name:'＋ 新建',exact:true}).click();
  const editor=page.frameLocator('iframe[title^="编辑网络隧道 ·"]');await editor.locator('input[name=name]').fill('应用服务');await editor.locator('input[name=host]').fill('127.0.0.1');await editor.locator('input[name=targetPort]').fill(String(service.address().port));

@@ -32,7 +32,9 @@ test('test helpers select their existing consumers and download unit tests stay 
   const theme=selectChecks(['scripts/test-theme-tokens.mjs']);
   assert(theme.scripts);assert.deepEqual(theme.native,[]);
   assert.equal(theme.integration.length,1);assert(theme.integration[0].status&&theme.integration[0].docker);
-  assert(!theme.browser&&!theme.terminalInput&&!theme.ssh&&!theme.desktop);
+  assert(theme.browser&&!theme.terminalInput&&!theme.ssh&&!theme.desktop);
+  const themeUi=selectChecks(['scripts/test-theme-ui.mjs']);
+  assert(themeUi.browser&&themeUi.scripts);assert.deepEqual(themeUi.native,[]);assert.deepEqual(themeUi.integration,[]);
   const download=selectChecks(['scripts/verified-download.test.mjs']);
   assert(download.scripts);assert.deepEqual(download.native,[]);assert.deepEqual(download.integration,[]);
 });

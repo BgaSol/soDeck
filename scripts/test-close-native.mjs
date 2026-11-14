@@ -95,6 +95,8 @@ async function connect() {
     if (view.question) await invoke('connection', { command: { op: 'answer', attemptId: view.attemptId, questionId: view.question.id, answer: { kind: 'hostKey', accept: true } } });
     return view.state === 'connected';
   }, 'SSH did not connect');
+  const [connected] = await invoke('connection', { command: { op: 'snapshot' } });
+  await page.locator(`[data-id="${connected.context.workspaceId}"] [data-workspace-action="select"]`).click();
   await until(async () => {
     const ui = await invoke('component_ui', { operation: 'snapshot', args: {} });
     return Object.values(ui.workspaces).some(w => w.views.some(v => v.pluginId === 'sodeck.system-status'));

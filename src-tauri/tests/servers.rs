@@ -40,6 +40,15 @@ fn server(host: &str) -> Value {
 }
 
 #[test]
+fn package_catalog_smoke_preserves_current_schema_after_reopening() {
+    let f = Fixture::new();
+    let core = f.open();
+    sodeck::validation::server_roundtrip(&core, false).unwrap();
+    drop(core);
+    sodeck::validation::server_roundtrip(&f.open(), true).unwrap();
+}
+
+#[test]
 fn v1_migrates_once_and_preserves_credentials_routes_and_original_backup() {
     let f = Fixture::new();
     let core = f.open();
