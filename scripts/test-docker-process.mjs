@@ -4,12 +4,12 @@ import {pluginPeer,context,capabilities,until,packageRoot} from './docker-proces
 const root=packageRoot();
 const manifest=JSON.parse(fs.readFileSync(path.join(root,'plugin.json')));
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-docker-process-'));
-const tickets=new Map(),submissions=[];let loseCommandReceipt=true;
+const tickets=new Map(),submissions=[],streams=new Map(),streamRequests=[],streamLookups=[];let loseCommandReceipt=true,loseStreamReceipts=6;
 const id='a'.repeat(64),tasks=new Map(),commands=[],diagnostics=[];let number=0,hold=false,holdMutation=false,loseReceipt=true,malformed=false,engineId='engine',peer;
 const inspect={Id:id,Name:'/service-中文',Image:'sha256:'+'b'.repeat(64),Config:{Image:'demo:1',Env:['TOKEN=a=b'],Labels:{}},State:{Status:'running',Running:true,Health:{Status:'unhealthy',Log:[]}},Mounts:[],NetworkSettings:{Ports:{},Networks:{}}};
 const output=command=>{
   if(command.includes("'version'"))return JSON.stringify({Server:{Os:'linux',Arch:'amd64',Version:'24.0.9'}});
-  if(command.includes("'info'"))return JSON.stringify({ID:engineId,Name:'fixture',Containers:1,Images:1});
+  if(command.includes("'info'"))return JSON.stringify({ID:engineId,Name:'fixture',Containers:1,Images:1,SystemTime:'2026-11-15T10:00:00.123456789Z'});
   if(command.includes("'ls'"))return id+'\n';
   if(command.includes("'inspect'")&&command.includes('"id":'))return JSON.stringify({id,name:'service-中文',image:'demo:1',status:inspect.State.Status,health:'unhealthy',exitCode:0,labels:{'com.docker.compose.project':'web','com.docker.compose.service':'api'},ports:{}});
   if(command.includes("'inspect'"))return JSON.stringify(inspect);
@@ -28,11 +28,23 @@ peer=pluginPeer(path.join(root,manifest.entry),async(method,p)=>{
     return receipt;
   }
   if(method==='commands.get'){const receipt=tickets.get(p.requestId);assert(receipt);return {...receipt,status:'completed'};}
-  if(method==='settings.get')return {values:{refreshSeconds:'30',logTail:'200'}};
+  if(method==='settings.get')return {values:{refreshSeconds:'30',showLogMinimap:true}};
   if(method==='session.state')return {state:'connected',context};
   if(method==='logging.write'||method==='messages.publish'){diagnostics.push({method,...p});return {};}
   if(method==='ui.updateView')return {};
   if(method==='ui.openView')return {viewId:'opened'};
+  if(method==='session.stream.open'){
+    let old=streamRequests.find(r=>r.operationId===p.operationId);if(old){const {streamId,...original}=old;assert.deepEqual(p,original);}else{
+      const streamId='stream-'+(++number);old={...p,streamId};streamRequests.push(old);streams.set(streamId,{state:p.retention==='rolling'?'running':'completed',finished:p.retention!=='rolling',producedBytes:'100',earliestAvailableOffset:'0'});
+    }
+    if(loseStreamReceipts>0){loseStreamReceipts--;throw Object.assign(new Error('lost stream receipt'),{code:-32003});}return {streamId:old.streamId,state:'running'};
+  }
+  if(method==='session.stream.lookup'){
+    streamLookups.push(p);const old=streamRequests.find(r=>r.operationId===p.operationId);if(!old)return {known:false};const {streamId,...original}=old;assert.deepEqual(p,original);return {known:true,streamId,status:streams.get(streamId)};
+  }
+  if(method==='session.stream.status'){assert(streams.has(p.streamId));return streams.get(p.streamId);}
+  if(method==='session.stream.close'){streams.set(p.streamId,{...streams.get(p.streamId),state:'cancelled',finished:true});return {accepted:true};}
+  if(method==='session.stream.release'){streams.delete(p.streamId);return {released:true};}
   if(method==='session.exec.start'){
     const old=[...tasks.values()].find(t=>t.operationId===p.operationId);if(old)return {taskId:old.id,state:'running'};
     const taskId=String(++number),bytes=Buffer.from(output(p.command));commands.push(p.command);tasks.set(taskId,{id:taskId,operationId:p.operationId,bytes,command:p.command});
@@ -81,8 +93,23 @@ try{
   await request('ui.event','detail',{data:{action:'operate',operation:'remove',requestId:'reject-running-remove',intentSequence:'3'}});detail=await idle('detail');
   assert.equal(detail.operation.state,'failed','preflight rejection must not claim a sent mutation');assert.equal(commands.filter(c=>c.includes("'rm'")).length,0);
   await request('ui.createView','logs',{viewType:'logs',resourceKey:JSON.stringify({id,engineId:'engine'})});await idle('logs');
-  const logs=(await request('ui.event','logs',{data:{action:'readLogs'}})).data;assert.equal(logs.total,151);assert(logs.rows[0].text.includes('中文'));
-  const match=(await request('ui.event','logs',{data:{action:'readLogs',query:'unique',limit:100}})).data;assert.equal(match.total,1);assert(match.rows[0].text.includes('off-page'));
+  const logRequest={action:'logs.start',requestId:'logs-once',intentSequence:'1',windowSeconds:900,live:true,complete:false};
+  await request('ui.event','logs',{data:logRequest});await request('ui.event','logs',{data:logRequest});
+  const logs=await until(async()=>(await request('ui.event','logs',{data:{action:'logs.status'}})).data,s=>s.resources.length===2&&s.resources.every(r=>r.id)&&!s.loading);
+  assert.equal(streamRequests.length,2,'lost open receipt and repeated UI request must not rerun a command');
+  assert.equal(loseStreamReceipts,0);assert.equal(new Set(streamLookups.map(r=>r.operationId)).size,2,'both lost tickets are resolved independently');
+  assert(streamRequests.some(r=>r.command.includes("'--tail' '2001'")));assert(streamRequests.some(r=>r.command.includes("'--follow'")));
+  assert(streamRequests.every(r=>r.command.includes("'inspect'")&&r.command.includes("'engine'")));
+  assert.equal(logs.resources.find(r=>r.end!=null).end,1794736800,'range uses fresh Engine time');
+  await assert.rejects(request('ui.event','logs',{data:{...logRequest,complete:true}}),/相同日志请求参数不同/);
+  const count=streamRequests.length;await request('ui.getView','logs');assert.equal(streamRequests.length,count,'remount only describes existing captures');
+  await request('ui.event','logs',{data:{action:'logs.stop'}});await until(async()=>(await request('ui.event','logs',{data:{action:'logs.status'}})).data,s=>s.resources.every(r=>r.status.finished));
+  inspect.State.Status='exited';inspect.State.Running=false;
+  await request('ui.event','logs',{data:{...logRequest,requestId:'stopped-tail',intentSequence:'2'}});
+  const stoppedLogs=await until(async()=>(await request('ui.event','logs',{data:{action:'logs.status'}})).data,s=>s.generation===2&&!s.loading);
+  assert.equal(stoppedLogs.resources.length,1);assert.equal(stoppedLogs.resources[0].start,0,'stopped container shows its latest retained tail even if it stopped long ago');
+  await assert.rejects(request('ui.event','logs',{data:{...logRequest,requestId:'stale-log-intent'}}),/旧日志请求/);
+  inspect.State.Status='running';inspect.State.Running=true;
   const env=(await request('ui.event','detail',{data:{action:'section',section:'environment'}})).data;assert.equal(env.rows[0].value,'a=b');assert.equal(env.rows[0].secret,true);
   await assert.rejects(request('ui.event','browser',{data:{action:'setEndpoint',endpoint:'tcp://host:2375'}}),/unix/);
   await request('ui.event','detail',{data:{action:'refresh'}});await idle('detail');
@@ -95,7 +122,7 @@ try{
   assert.equal((await request('ui.beforeClose','detail')).metadata.busy,true);
   await assert.rejects(request('ui.event','detail',{data:{action:'refresh'}}),/关闭/);
   await request('ui.disposeView','detail');await until(async()=>tasks.size,n=>n===0);hold=false;
-  await request('ui.disposeView','logs');engineId='replacement-engine';
+  await request('ui.disposeView','logs');await until(async()=>streams.size,n=>n===0);engineId='replacement-engine';
   await request('ui.event','browser',{data:{action:'setEndpoint',endpoint:'unix:///run/docker-test.sock'}});browser=await idle('browser');assert.equal(browser.engine.id,engineId);
   await request('ui.event','browser',{data:{action:'setEndpoint',endpoint:'unix:///var/run/docker.sock'}});browser=await idle('browser');assert.equal(browser.state,'ready');
   engineId='third-engine';await request('ui.event','browser',{data:{action:'refresh'}});browser=await idle('browser');assert.equal(browser.engine.id,engineId);

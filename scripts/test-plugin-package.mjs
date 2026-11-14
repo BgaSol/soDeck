@@ -62,7 +62,7 @@ try {
     if (method === "terminal.close" || (method === "files.request" && params.action === "close")) { assert(resources.delete(params.id)); return {}; }
     unexpected.push(method); throw new Error(`Unexpected package RPC: ${method}`);
   });
-  const capabilities = ["commands.v1", "terminal.v1", "viewData.v1", "terminal.history.v1", "files.v1", "files.directoryCursors.v1", "files.operations.v1", "files.operations.v2", "files.editor.v1", "files.localInputs.v1", "net.tcp.v1", "net.listenerLifecycle.v1", "ui.dialog.v1", "session.exec.v1", "ui.background.v1", "settings.v1", "ui.workbench.v2", "ui.openView.v1"];
+  const capabilities = ["commands.v1", "terminal.v1", "viewData.v1", "terminal.history.v1", "files.v1", "files.directoryCursors.v1", "files.operations.v1", "files.operations.v2", "files.editor.v1", "files.localInputs.v1", "net.tcp.v1", "net.listenerLifecycle.v1", "ui.dialog.v1", "session.exec.v1", "session.stream.v1", "content.export.v1", "ui.background.v1", "settings.v1", "ui.workbench.v2", "ui.openView.v1"];
   const initialized = await peer.request("initialize", { apiVersion: "1", capabilities, dataDirectory: path.join(directory, "data") });
   assert.equal(initialized.apiVersion, "1");
   if (manifest.commands) {

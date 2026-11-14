@@ -328,6 +328,7 @@ include!("fixtures/files_flow.rs");
 include!("fixtures/network_flow.rs");
 include!("fixtures/system_status_flow.rs");
 include!("fixtures/docker_flow.rs");
+include!("fixtures/session_stream_flow.rs");
 struct Fixture {
     core: Arc<AppCore>,
     path: PathBuf,

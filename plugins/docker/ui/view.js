@@ -1,9 +1,11 @@
+import {installLogPage} from './logs-controller.js';
+installLogPage(()=>{clearTimeout(timer);timer=null;ready=false;frozen=true;epoch++;});
 const $ = id => document.getElementById(id);
 const names = { running:'运行中',paused:'已暂停',exited:'已停止',created:'未启动',restarting:'重启中',dead:'异常',removing:'删除中' };
 const operations = { start:'启动',stop:'停止',restart:'重启',pause:'暂停',unpause:'恢复',remove:'删除容器' };
 const sections = { basic:'配置',state:'状态与健康',environment:'环境变量',ports:'端口',mounts:'挂载',networks:'网络',labels:'标签' };
-let snapshot, ready=false, frozen=false, visible=true, epoch=0, revision, timer, selected='',offset=0,nextOffset,section='basic',fieldOffset=0,fieldNext,logOffset=0,logNext,rows=[],fields=[],logRows=[],operationRequest,rendering=false,renderAgain=false,restoreScroll;
-const listHistory=[],fieldHistory=[],logHistory=[];
+let snapshot, ready=false, frozen=false, visible=true, epoch=0, revision, timer, selected='',offset=0,nextOffset,section='basic',fieldOffset=0,fieldNext,rows=[],fields=[],operationRequest,rendering=false,renderAgain=false,restoreScroll;
+const listHistory=[],fieldHistory=[];
 const pending = new Set();
 let terminalOpening=false;
 let shellOptions=false,containerShell='/bin/sh',operationSubmitting=false;
@@ -11,7 +13,7 @@ const confirmPanel=$('confirm');
 const event = data => {const promise=sodeck.request('event',data);pending.add(promise);return promise.finally(()=>pending.delete(promise));};
 function notice(message) { $('notice').textContent=message||''; $('notice').hidden=!message; }
 function tokens(values) { for(const [key,value] of Object.entries(values||{})) key==='color-scheme'?document.documentElement.style.colorScheme=value:document.documentElement.style.setProperty('--'+key,value); }
-function navigation() { return { query:$('query').value,status:$('status-filter').value,health:$('health-filter').value,group:$('group').checked,selected,offset,listHistory,section,fieldOffset,fieldHistory,logOffset,logHistory,logQuery:$('log-query').value,tail:Number($('tail').value),scrollTop:$('scroll').scrollTop,shell:containerShell }; }
+function navigation() { return { query:$('query').value,status:$('status-filter').value,health:$('health-filter').value,group:$('group').checked,selected,offset,listHistory,section,fieldOffset,fieldHistory,scrollTop:$('scroll').scrollTop,shell:containerShell }; }
 async function remember() { if(ready&&!frozen) await call({action:'navigation',state:navigation()}); }
 async function call(data) {
   if(!ready||frozen) return;
@@ -166,11 +168,6 @@ async function renderBody() {
       fields=data.rows;fieldNext=data.nextOffset;renderFields();
       $('fields-page').textContent=data.total?String(fieldOffset+1)+'–'+(fieldOffset+fields.length)+' / '+data.total:'无记录';
       $('fields-prev').disabled=fieldOffset===0;$('fields-next').disabled=fieldNext==null;
-    } else {
-      const data=await event({action:'readLogs',query:$('log-query').value,offset:logOffset,limit:100});if(generation!==epoch||frozen)return;
-      logRows=data.rows;logNext=data.nextOffset;renderLogs();
-      $('logs-page').textContent=data.total?String(logOffset+1)+'–'+(logOffset+logRows.length)+' / '+data.total:($('log-query').value?'无匹配日志':'无日志');
-      $('logs-prev').disabled=logOffset===0;$('logs-next').disabled=logNext==null;
     }
     if(restoreScroll!==undefined){$('scroll').scrollTop=restoreScroll;restoreScroll=undefined;}
     revision=current;
@@ -182,9 +179,6 @@ function renderFields() {
   $('show-env-label').hidden=section!=='environment';$('fields').replaceChildren();
   for(const field of fields) appendField($('fields'),field.key,field.secret&&!$('show-env').checked?'值已隐藏':field.value);
 }
-function renderLogs() {
-  $('log-content').textContent=logRows.map(r=>'['+r.stream+'] '+r.text).join('\n');
-}
 async function poll(force=false) {
   if(!ready||frozen||!visible) return;
   const generation=epoch;
@@ -194,7 +188,7 @@ async function poll(force=false) {
 function schedule() {clearInterval(timer);timer=setInterval(()=>void poll(),1000);}
 async function open(action,row) {await call({action,...identity(row),requestId:crypto.randomUUID()});}
 $('detail-logs').onclick=()=>void open('openLogs',{id:snapshot.containerId});
-$('refresh').onclick=()=>{logOffset=fieldOffset=0;logHistory.length=fieldHistory.length=0;void call({action:'refresh',tail:Number($('tail').value)}).then(()=>poll(true));};
+$('refresh').onclick=()=>{fieldOffset=0;fieldHistory.length=0;void call({action:'refresh',}).then(()=>poll(true));};
 $('cancel').onclick=()=>void call({action:'cancel'}).then(()=>poll(true));
 $('pause').onclick=()=>void call({action:'pauseRefresh',paused:!snapshot.paused});
 $('read-stats').onclick=()=>void call({action:'stats'});
@@ -206,28 +200,25 @@ $('previous').onclick=()=>{offset=listHistory.pop()??0;void renderBody();};
 $('next').onclick=()=>{listHistory.push(offset);offset=nextOffset;void renderBody();};
 $('fields-prev').onclick=()=>{fieldOffset=fieldHistory.pop()??0;void renderBody();};
 $('fields-next').onclick=()=>{fieldHistory.push(fieldOffset);fieldOffset=fieldNext;void renderBody();};
-$('logs-prev').onclick=()=>{logOffset=logHistory.pop()??0;void renderBody();};
-$('logs-next').onclick=()=>{logHistory.push(logOffset);logOffset=logNext;void renderBody();};
-$('show-env').onchange=renderFields;$('log-query').oninput=()=>{logOffset=0;logHistory.length=0;void renderBody();};
+$('show-env').onchange=renderFields;
 async function copy(text){const generation=epoch;try{await sodeckClipboard.writeText(text,()=>generation===epoch&&ready&&!frozen);}catch(error){notice(error.message);}}
 $('terminal-form').onsubmit=event=>{
   event.preventDefault();if($('open-terminal').disabled)return;
   void openTerminal({id:snapshot.containerId},$('terminal-shell').value);
 };
 $('copy-id').onclick=()=>void copy(snapshot.containerId);
-$('copy-logs').onclick=()=>void copy($('log-content').textContent);
 for(const button of document.querySelectorAll('[data-operation]'))button.onclick=()=>beginOperation(button.dataset.operation,{id:snapshot.containerId,name:snapshot.name},button);
 $('confirm-cancel').onclick=closeConfirmation;
 $('confirm-form').onsubmit=e=>{e.preventDefault();if(!operationRequest||!writable())return;const request=operationRequest;closeConfirmation();void submitOperation(request);};
 addEventListener('keydown',e=>{if(e.key==='Escape'){const menu=document.activeElement?.closest('details[open]');closeConfirmation();for(const details of document.querySelectorAll('details[open]'))details.open=false;menu?.querySelector('summary')?.focus();}});
 addEventListener('sodeck:mount',e=>{
   closeConfirmation();epoch++;snapshot=e.detail.data;ready=false;frozen=!!e.detail.readOnly;visible=e.detail.visible!==false;revision=undefined;tokens(e.detail.tokens);
-  const nav=snapshot?.navigation||{};selected=nav.selected||'';offset=nav.offset||0;section=nav.section||'basic';fieldOffset=nav.fieldOffset||0;logOffset=nav.logOffset||0;
-  for(const [history,key] of [[listHistory,'listHistory'],[fieldHistory,'fieldHistory'],[logHistory,'logHistory']])history.splice(0,history.length,...(nav[key]||[]));
+  const nav=snapshot?.navigation||{};selected=nav.selected||'';offset=nav.offset||0;section=nav.section||'basic';fieldOffset=nav.fieldOffset||0;
+  for(const [history,key] of [[listHistory,'listHistory'],[fieldHistory,'fieldHistory']])history.splice(0,history.length,...(nav[key]||[]));
   restoreScroll=nav.scrollTop||0;
   containerShell=nav.shell||'/bin/sh';shellOptions=false;
-  $('query').value=nav.query||'';$('status-filter').value=nav.status||'running';$('health-filter').value=nav.health||'all';$('group').checked=!!nav.group;$('log-query').value=nav.logQuery||'';
-  if(nav.tail||snapshot?.tail)$('tail').value=String(nav.tail||snapshot.tail);renderHeader();sodeck.mounted();schedule();
+  $('query').value=nav.query||'';$('status-filter').value=nav.status||'running';$('health-filter').value=nav.health||'all';$('group').checked=!!nav.group;
+  renderHeader();sodeck.mounted();schedule();
 });
 addEventListener('sodeck:surfaceReady',()=>{ready=true;frozen=false;void call({action:'resumeInput'}).then(()=>poll(true));});
 addEventListener('sodeck:themeChanged',e=>tokens(e.detail.tokens));

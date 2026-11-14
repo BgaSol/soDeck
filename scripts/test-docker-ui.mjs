@@ -8,7 +8,13 @@ const rows=[{id,name:'prod-api-中文',image:'api:2026.11',status:'running',heal
   {id:second,name:'worker',image:'worker:1',status:'exited',health:null,project:'shop',service:'worker'}];
 let snapshot={kind:'browser',context,containerId:id,endpoint:'unix:///var/run/docker.sock',engine:{id:'engine',name:'prod-engine-01',version:'24.0.9',arch:'amd64'},revision:'1',nextIntent:'1',state:'ready',status:'running',observedAt:Date.now(),busy:false,paused:false,tail:200,navigation:{}};
 const env=[{key:'TOKEN',value:'a=b=c',secret:true},{key:'EMPTY',value:'',secret:true}];
-const logs=[{stream:'stdout',text:'2026-11-10T03:42:01.123Z 服务启动成功'},{stream:'stderr',text:'2026-11-10T03:42:02Z connection refused <script>boom()</script>'},{stream:'stdout',text:'repeat'},{stream:'stdout',text:'repeat'}];
+const logs=[{stream:'stdout',text:new Date(Date.now()-90000).toISOString()+' INFO 服务启动成功'},{stream:'stderr',text:new Date(Date.now()-89000).toISOString()+' ERROR connection refused <script>boom()</script>'},{stream:'stdout',text:'repeat'},{stream:'stdout',text:'repeat'}];
+let logCapture={generation:1,loading:false,navigation:{},resources:[{id:'history',start:0,end:2000000000,tail:true,status:{state:'completed',finished:true}},{id:'live',start:0,end:null,tail:false,status:{state:'running',finished:false}}]};
+const subscriptions=new Map();
+const bytesFor=rows=>Buffer.from(rows.map((row,i)=>JSON.stringify({v:1,sequence:String(i+1),source:row.stream,receivedAt:Date.now(),dataBase64:Buffer.from(row.text+'\n').toString('base64')})+'\n').join(''));
+const capturedBytes=new Map([['history',bytesFor(logs)],['live',Buffer.alloc(0)]]);
+async function sendFrame(id,kind,bytes=Buffer.alloc(0)) {const s=subscriptions.get(id);if(!s)return;s.packet++;s.offset+=bytes.length;await page.evaluate(frame=>window.post('data',{data:frame}),{kind,packet:s.packet,offset:s.offset,data:[...bytes],metadata:{streamId:id}});}
+async function appendLive(rows) {const bytes=bytesFor(rows);capturedBytes.set('live',Buffer.concat([capturedBytes.get('live'),bytes]));await sendFrame('live','data',bytes);}
 const server=createServer((req,res)=>{
   if(req.url==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><html><body style="margin:0"><iframe title="Docker 测试" style="border:0;width:100vw;height:100vh" src="/ui/index.html"></iframe></body></html>');return;}
   const file=path.resolve(root,'.'+decodeURIComponent(req.url.split('?')[0]));
@@ -36,10 +42,11 @@ await page.exposeFunction('mock',async d=>{
     return {rows:found.slice(offset,offset+limit),total:found.length,nextOffset:offset+limit<found.length?offset+limit:null};
   }
   if(d.action==='section')return {rows:d.section==='environment'?env:[{key:'容器工作目录',value:'/srv/app'},{key:'重启策略',value:'{"Name":"unless-stopped"}'}],total:2,nextOffset:null};
-  if(d.action==='readLogs'){
-    const found=logs.filter(r=>!d.query||r.text.toLowerCase().includes(d.query.toLowerCase())),offset=d.offset||0,limit=d.limit||100;
-    return {rows:found.slice(offset,offset+limit),total:found.length,nextOffset:offset+limit<found.length?offset+limit:null};
-  }
+  if(d.action==='logs.status')return logCapture;
+  if(d.action==='logs.start')return {accepted:true};
+  if(d.action==='logs.navigation'){logCapture.navigation=d.state;snapshot.logCapture=logCapture;return {};}
+  if(d.action==='logs.stop'){logCapture.resources[1].status={state:'cancelled',finished:true};return {};}
+  if(d.action==='logs.loadEarlier')return {accepted:true};
   if(d.action==='navigation'){snapshot.navigation=d.state;return snapshot;}
   if(d.action==='resumeInput')return snapshot;
   if(d.action==='openContainer'||d.action==='openLogs')return {viewId:'opened'};
@@ -49,6 +56,16 @@ await page.exposeFunction('mock',async d=>{
   if(d.action==='stats'){snapshot={...snapshot,revision:String(Number(snapshot.revision)+1),stats:{CPUPerc:'150.5%',MemUsage:'512MiB / 2GiB',NetIO:'10MB / 2MB',BlockIO:'1MB / 0B'}};return snapshot;}
   if(d.action==='refresh'){snapshot.revision=String(Number(snapshot.revision)+1);return snapshot;}
   throw new Error('Unexpected UI action '+d.action);
+});
+await page.exposeFunction('mockData',async d=>{
+  if(d.op==='sessionStream'){
+    if(d.action==='attach'){const offset=Number(d.offset||0);subscriptions.set(d.id,{packet:0,offset});await sendFrame(d.id,'reset');const bytes=capturedBytes.get(d.id)||Buffer.alloc(0);for(let at=offset;at<bytes.length;at+=16384)await sendFrame(d.id,'data',bytes.subarray(at,at+16384));await sendFrame(d.id,'caughtUp');if(logCapture.resources.find(r=>r.id===d.id)?.status.finished)await sendFrame(d.id,'end');return {};}
+    if(d.action==='detach'){subscriptions.delete(d.id);return {};}
+    if(d.action==='pin')return {pinId:'pin-'+d.id};
+    if(d.action==='unpin'||d.action==='ack')return {};
+  }
+  if(d.op==='contentExport')return d.action==='begin'?{id:'export',state:'receiving'}:{state:d.action==='finish'?'completed':d.action==='cancel'?'cancelled':'receiving'};
+  throw new Error('Unexpected data request '+JSON.stringify(d));
 });
 await page.addInitScript(({snapshot,tokens})=>{
   if(window!==top)return;
@@ -61,7 +78,7 @@ await page.addInitScript(({snapshot,tokens})=>{
     if(m.type==='prepared'&&!window.candidate)window.post('surfaceReady');
     if(m.type==='flushed')window.flushed.push(m);
     if(m.type==='request'){
-      try{const data=m.method==='event'?await window.mock(m.params):{};if(m.method==='event')window.responses.push(m.params);window.post('response',{id:m.id,data});}
+      try{const data=m.method==='event'?await window.mock(m.params):m.method==='data'?await window.mockData(m.params):{};if(m.method==='event')window.responses.push(m.params);window.post('response',{id:m.id,data});}
       catch(error){window.post('response',{id:m.id,error:error.message});}
     }
   });
@@ -74,6 +91,7 @@ try{
   await frame.locator('.container-select').first().focus();await page.keyboard.press('Enter');
   await frame.locator('.inline-actions').waitFor();assert(!requests.some(r=>r.action==='openContainer'),'Enter only selects');
   await frame.locator('.inline-actions').getByRole('button',{name:'详情',exact:true}).click();
+  await page.waitForFunction(()=>window.responses.some(r=>r.action==='openContainer'));
   assert(requests.some(r=>r.action==='openContainer'&&r.id===id&&r.engineId==='engine'));
   await frame.locator('#query').fill('absent');await frame.locator('#empty').waitFor({state:'visible'});
   await frame.locator('#query').fill('');await frame.locator('[data-status="all"]').click();await frame.locator('.container-row').nth(1).waitFor();
@@ -163,23 +181,48 @@ try{
       await frame.locator('#read-stats').click();await frame.locator('#stats').filter({hasText:'150.5%'}).waitFor();
     }
     if(mode==='logs'){
-      await frame.locator('#log-content').filter({hasText:'服务启动'}).waitFor();
-      logs.push(...Array.from({length:120},(_,i)=>({stream:'stdout',text:'fixture '+i})),{stream:'stdout',text:'off-page UNIQUE'});
-      await frame.locator('#log-query').fill('unique');await frame.locator('#log-content').filter({hasText:'off-page UNIQUE'}).waitFor();
-      assert.equal(await frame.locator('#logs-page').innerText(),'1–1 / 1');
-      await frame.locator('#log-query').fill('no-match');await frame.locator('#logs-page').filter({hasText:'无匹配日志'}).waitFor();
-      logs.splice(4);await frame.locator('#log-query').fill('refused');await frame.locator('#log-content').filter({hasText:'refused'}).waitFor();
-      assert(!(await frame.locator('#log-content').innerText()).includes('服务启动'));await frame.locator('#log-query').fill('');await frame.locator('#log-content').filter({hasText:'服务启动'}).waitFor();
+      await frame.locator('#log-lines').filter({hasText:'服务启动'}).waitFor();
+      await appendLive([...Array.from({length:500},(_,i)=>({stream:'stdout',text:'INFO fixture '+i+' '+(i%7===0?'长内容 '.repeat(25):'')})),{stream:'stderr',text:'ERROR off-page UNIQUE'}]);
+      await frame.locator('#log-scope').filter({hasText:'505条'}).waitFor();assert(await frame.locator('#log-viewport').evaluate(e=>e.scrollTop+e.clientHeight>=e.scrollHeight-8),'follows new output');
+      await frame.locator('#log-query').fill('unique');await frame.locator('#log-matches').filter({hasText:'1处'}).waitFor();
+      await frame.locator('#log-next-match').click();await frame.locator('#log-lines').filter({hasText:'off-page UNIQUE'}).waitFor();
+      await frame.locator('#log-query').fill('no-match');await frame.locator('#log-matches').filter({hasText:'0处'}).waitFor();
+      await frame.locator('#log-query').fill('refused');await frame.locator('#log-next-match').click();await frame.locator('#log-lines').filter({hasText:'refused'}).waitFor();
+      await frame.waitForFunction(()=>{const v=document.getElementById('log-viewport'),line=[...document.querySelectorAll('.log-line')].find(e=>e.querySelector('mark')?.textContent==='refused');if(!line)return false;const a=line.getBoundingClientRect(),b=v.getBoundingClientRect();return v.scrollTop<1||Math.abs(a.top+a.height/2-b.top-b.height/2)<3;});
+      const before=await frame.locator('#log-viewport').evaluate(e=>e.scrollTop);await appendLive([{stream:'stdout',text:'INFO received while reading'}]);await frame.locator('#log-latest').filter({hasText:'1条新日志'}).waitFor();assert.equal(await frame.locator('#log-viewport').evaluate(e=>e.scrollTop),before,'incoming output keeps pinned reading position');
+      await frame.locator('#log-query').fill('');await frame.locator('.log-map-thumb').focus();await page.keyboard.press('Home');await frame.locator('#log-lines').filter({hasText:'服务启动'}).waitFor();
+      await frame.locator('.log-time').first().click();await frame.locator('#log-detail').waitFor({state:'visible'});await frame.locator('#log-detail-close').click();
+      await frame.locator('#log-latest').click();await frame.locator('#log-lines').filter({hasText:'received while reading'}).waitFor();assert(await frame.locator('#log-latest').isHidden());
+      assert((await frame.locator('.log-line').count())<100,'DOM stays limited to the visible window');
     }
     for(const t of ['light','dark','dopamine'])for(const width of [200,320,400,900]){
       await page.setViewportSize({width,height:780});await page.evaluate(tokens=>window.post('themeChanged',{tokens}),themes[t]);
+      if(mode==='logs')await frame.waitForFunction(()=>{const v=document.getElementById('log-viewport'),last=[...document.querySelectorAll('.log-line')].at(-1);return last?.textContent.includes('received while reading')&&v.scrollTop+v.clientHeight>=v.scrollHeight-8;});
       assert(await frame.locator('body').evaluate(e=>e.scrollWidth<=e.clientWidth),mode+' '+t+' overflow '+width);
       await page.screenshot({path:'artifacts/docker-ui/'+mode+'-'+t+'-'+width+'.png'});
     }
+    if(mode==='logs'){
+      await frame.locator('.log-map-thumb').focus();await page.keyboard.press('Home');
+      await frame.locator('#log-lines').filter({hasText:'服务启动'}).waitFor();
+      const initial=await frame.locator('.log-line').first().getAttribute('data-id'),thumb=await frame.locator('.log-map-thumb').boundingBox(),rail=await frame.locator('.log-minimap').boundingBox();
+      await page.mouse.move(thumb.x+thumb.width/2,thumb.y+thumb.height/2);await page.mouse.down();await page.mouse.move(thumb.x+thumb.width/2,rail.y+rail.height*.7);
+      capturedBytes.set('earlier',bytesFor([{stream:'stdout',text:'2026-01-01T00:00:00Z INFO earlier history'}]));logCapture.resources.push({id:'earlier',start:0,end:2000000000,tail:true,status:{state:'completed',finished:true}});
+      await frame.locator('#log-scope').filter({hasText:'507条'}).waitFor();await frame.locator('.log-map-thumb').focus();await page.keyboard.press('Escape');await page.mouse.up();
+      await frame.locator('.log-line[data-id="'+initial+'"]').waitFor();assert(await frame.locator('.log-line[data-id="'+initial+'"]').evaluate(e=>{const v=document.getElementById('log-viewport').getBoundingClientRect(),r=e.getBoundingClientRect();return r.top>=v.top-2&&r.top<v.top+65;}),'Escape restores the original record after history arrives during drag');
+      await page.setViewportSize({width:900,height:780});await page.evaluate(tokens=>window.post('themeChanged',{tokens}),themes.dark);
+      await frame.locator('#log-query').fill('UNIQUE');await frame.locator('#log-matches').filter({hasText:'1处'}).waitFor();await frame.locator('.log-tools details').first().locator('summary').click();await frame.locator('#log-only').check();
+      await frame.locator('#log-scope').filter({hasText:'1条'}).waitFor();await page.screenshot({path:'artifacts/docker-ui/logs-search.png'});
+      await frame.locator('.log-tools details').first().locator('summary').click();await frame.locator('.log-time').first().click();await frame.locator('#log-detail').waitFor({state:'visible'});await page.screenshot({path:'artifacts/docker-ui/logs-detail.png'});await frame.locator('#log-detail-close').click();
+      await frame.locator('#log-query').fill('not-found');await frame.locator('#log-empty').waitFor({state:'visible'});await page.screenshot({path:'artifacts/docker-ui/logs-empty.png'});
+      await frame.locator('#log-query').fill('UNIQUE');await frame.locator('#log-scope').filter({hasText:'1条'}).waitFor();await frame.locator('.log-tools details').last().locator('summary').click();await page.screenshot({path:'artifacts/docker-ui/logs-more.png'});await frame.locator('.log-tools details').last().locator('summary').click();
+    }
   }
-  const before=requests.length;await page.evaluate(()=>{window.candidate=true;window.post('mount',{data:window.mount,tokens:window.tokens,readOnly:true});});await new Promise(r=>setTimeout(r,1200));assert.equal(requests.length,before,'Candidate must not poll or send UI events');
+  await page.evaluate(()=>window.post('flush',{id:'candidate-source',freeze:true}));await page.waitForFunction(()=>window.flushed.some(f=>f.id==='candidate-source'));
+  const before=requests.length;await page.evaluate(s=>{window.mount=s;window.candidate=true;window.post('mount',{data:s,tokens:window.tokens,readOnly:true});},snapshot);await new Promise(r=>setTimeout(r,1200));assert.equal(requests.length,before,'Candidate must not poll or send UI events: '+JSON.stringify(requests.slice(before)));
+  assert.equal(await frame.locator('#log-query').inputValue(),'UNIQUE','candidate restores the fixed query from the original capture');
   await page.evaluate(()=>{window.candidate=false;window.post('surfaceReady');window.post('flush',{id:'move',freeze:true});});await page.waitForFunction(()=>window.flushed.some(f=>f.id==='move'));
   const frozen=requests.length;await new Promise(r=>setTimeout(r,1200));assert.equal(requests.length,frozen,'Frozen surface must not keep polling');
   await page.evaluate(()=>window.post('transferCancelled'));await new Promise(r=>setTimeout(r,1200));assert(requests.length>frozen);
+  snapshot={...snapshot,containerId:second,name:'other-container',logCapture:{...logCapture,generation:2,navigation:{}}};logCapture=snapshot.logCapture;await page.evaluate(s=>window.post('mount',{data:s,tokens:window.tokens,readOnly:false}),snapshot);await frame.locator('#title').filter({hasText:'other-container'}).waitFor();assert.equal(await frame.locator('#log-query').inputValue(),'');assert.equal(await frame.locator('#log-range').inputValue(),'latest');assert(!(await frame.locator('#log-only').isChecked()),'another container starts without prior filters');
   assert.deepEqual(errors,[]);console.log('Docker UI: inline maintenance, terminal, refresh focus, filters, keyboard, confirmation, environment visibility, logs, stats, themes, narrow layouts and transfer passed.');
 }finally{await browser.close();await new Promise(r=>server.close(r));}

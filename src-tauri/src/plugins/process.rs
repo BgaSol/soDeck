@@ -60,7 +60,7 @@ pub(crate) fn supervise(
         "jsonrpc":"2.0", "id":"initialize", "method":"initialize", "params":{
             "coreApiVersion":API_VERSION, "coreVersion":core.version(), "dataDirectory":path,
             "settings":core.settings_index(id),
-              "capabilities":["commands.v1","logging.write","messages.publish","ui.v1","ui.workbench.v2","ui.actions.v1","ui.openView.v1","rpc.concurrent","terminal.v1","terminal.launch.v1","terminal.history.v1","viewData.v1","files.v1","files.directoryCursors.v1","files.operations.v1","files.operations.v2","files.editor.v1","files.localInputs.v1","net.tcp.v1","net.listenerLifecycle.v1","ui.dialog.v1","settings.v1","ui.background.v1","session.exec.v1","sharedState.v1","files.location.v1"]
+              "capabilities":["commands.v1","logging.write","messages.publish","ui.v1","ui.workbench.v2","ui.actions.v1","ui.openView.v1","rpc.concurrent","terminal.v1","terminal.launch.v1","terminal.history.v1","viewData.v1","files.v1","files.directoryCursors.v1","files.operations.v1","files.operations.v2","files.editor.v1","files.localInputs.v1","net.tcp.v1","net.listenerLifecycle.v1","ui.dialog.v1","settings.v1","ui.background.v1","session.exec.v1","session.stream.v1","content.export.v1","sharedState.v1","files.location.v1"]
         }
     }))).err();
     let mut ready = Some(ready);
@@ -190,6 +190,10 @@ pub(crate) fn supervise(
                 .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
             core.files
                 .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
+            core.command_streams
+                .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
+            core.content_exports
+                .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
             core.executions
                 .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
             core.shared_state
@@ -247,6 +251,10 @@ pub(crate) fn supervise(
                 core.terminals
                     .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
                 core.files
+                    .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
+                core.command_streams
+                    .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
+                core.content_exports
                     .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
                 core.executions
                     .cancel(|owner| owner.plugin == id && owner.instance == instance_id);

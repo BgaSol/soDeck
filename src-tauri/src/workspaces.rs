@@ -712,6 +712,11 @@ impl AppCore {
             .cancel(|owner| live.get(&owner.view) != Some(&owner.context));
         self.executions
             .cancel(|owner| live.get(&owner.view) != Some(&owner.context));
+        // Old command captures remain readable after reconnect; their SSH session cancels execution.
+        self.command_streams
+            .cancel(|owner| !live.contains_key(&owner.view));
+        self.content_exports
+            .cancel(|owner| !live.contains_key(&owner.view));
         self.files.cancel(|owner| !live.contains_key(&owner.view));
         self.network
             .cancel(|owner| live.get(&owner.view) != Some(&owner.context));

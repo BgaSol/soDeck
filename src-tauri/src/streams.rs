@@ -7,6 +7,7 @@ use std::{
 };
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
+pub(crate) mod capture;
 mod journal;
 
 pub const BLOCK: usize = 16 * 1024;

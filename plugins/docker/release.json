@@ -18,12 +18,12 @@
   },
   "settings": {
     "apiVersion": "1",
-    "schemaVersion": 1,
+    "schemaVersion": 2,
     "pages": [{
       "id":"display","title":"Docker","icon":"docker","viewTypes":["browser","container","logs"],"order":500,
       "groups":[{"id":"refresh","title":"读取偏好","fields":[
         {"key":"refreshSeconds","title":"容器列表刷新间隔","type":"select","default":"5","options":[{"value":"5","title":"5 秒"},{"value":"10","title":"10 秒"},{"value":"30","title":"30 秒"}],"apply":"live"},
-        {"key":"logTail","title":"默认最近日志行数","type":"select","default":"200","options":[{"value":"50","title":"50 行"},{"value":"200","title":"200 行"},{"value":"500","title":"500 行"}],"apply":"live"}
+        {"key":"showLogMinimap","title":"默认显示日志缩略","type":"boolean","default":true,"apply":"live"}
       ]}]
     }]
   }

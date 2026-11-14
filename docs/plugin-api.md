@@ -7,6 +7,48 @@
 核心 RPC 保持 API v1，可选界面支持 UI v1 和 UI v2。核心 0.17.0 起提供 UI v2，当前五个官方插件均使用它进行分屏、页面/标签组移窗与输入交接。旧无 UI 插件无需修改；只接受 UI v1 的旧核心不能加载 UI v2 包。
 
 
+## 非交互命令流与本地内容导出
+
+以下为已实现、待发行的新增可选能力；插件必须检查 `session.stream.v1`、`viewData.v1` 和 `content.export.v1`，缺少时提示升级核心。旧短命令和终端接口保持兼容。
+
+### session.stream.v1
+
+插件通过版本化 RPC 复用已有远程会话执行非 PTY 命令。核心管理原始输出、取消和归属，不解析 Docker、日志时间或级别。正文不进入插件进程控制帧。
+
+| 方法 | 参数与回执 |
+| --- | --- |
+| session.stream.open | viewId、expectedContext、operationId（1–128字符）、sequence（u64十进制字符串）、command（1–16KiB，无NUL）、maxOutputBytes（1KiB–64MiB）、retention（fixed/rolling）；返回streamId、state |
+| session.stream.lookup | 原始open完整参数；只查询原票据，返回known，已知时附streamId和status；连接断开后仍可查，不重新执行 |
+| session.stream.status | streamId；返回state、finished、execSent、remoteExitConfirmed、可选exitCode/exitSignal/error、producedBytes和earliestAvailableOffset（十进制字符串） |
+| session.stream.close | streamId；取消自己的远端通道，保留已捕获字节；accepted只表示接纳取消 |
+| session.stream.release | streamId；取消、停订阅并释放捕获；同票据不能再次执行 |
+
+同票据参数必须完全相同；序号水位阻止旧票据在释放后重新执行。open要求当前真实Context和在线会话；lookup/status及原捕获正文只验证仍存活的逻辑View、插件实例与Surface归属。打开期限30秒，运行期间无空闲超时。退出确认来自远端退出码/信号；cancelled或failed不等于确认远端进程已经退出，也不承诺撤销副作用。
+
+核心把stdout/stderr原字节分成不超过8192字节的JSONL信封：`{v:1,sequence,source,receivedAt,dataBase64}`。sequence为十进制字符串，source为stdout/stderr，receivedAt是核心接收Unix毫秒；时间和级别解释属于插件。固定捕获到额度后停止并保留已接受块；滚动捕获按完整信封推进最早水位，淘汰不删除远端数据。
+
+UI使用`sodeck.request('data', {op:'sessionStream', action, id, ...})`。attach可提供完整信封边界offset（十进制字符串），收到reset/data/caughtUp/gap/end的Frame，offset是块末尾绝对偏移。每包按packet确认ack后继续发送；重复同一ack可重试。gap要求丢弃未完成信封/记录并按新offset重新建立解析状态。detach仅结束该Surface订阅，不关闭远端命令。
+
+read提供offset和固定watermark，返回至多16KiB的data与nextOffset；跨缺口只返回可用连续部分，缺失起点明确失败。pin提供start/end，返回pinId；unpin释放窗口。候选Surface只读attach/read，激活Surface才可pin/unpin。原捕获可在新Context中只读恢复，不能将其Owner改成新连接。
+
+全核心最多24条在运行命令，每插件12条、每View3条；每插件最多64条保留资源。每View滚动额度64MiB，固定捕获与滚动pin合计64MiB；pin最多8段/资源，重复范围保守计入额度。恢复journal与终端共用1GiB全局磁盘额度，每journal128MiB，分段边缘另受全局额度约束。关闭View/插件/核心取消执行和订阅，实际任务完成后回收；Surface消失由订阅检查或宿主detach结束。缓存只用于当前进程恢复，不是持久日志档案。
+
+### content.export.v1
+
+UI使用`sodeck.request('data', {op:'contentExport', action, ...})`，由核心打开本机保存对话框；插件只传建议文件名和字节，不提供本地路径，不借用远程文件编辑资源。
+
+| action | 参数与效果 |
+| --- | --- |
+| begin | requestId（1–128字符）、name（无路径分隔符/控制字符，至多256字符）、byteLength（u64十进制字符串，至多128MiB）；返回id、started、status；同Surface同票据同参数复用原对话框 |
+| status | id；state为waitingInput/receiving/committing/completed/cancelled/failed，receivedBytes为十进制字符串，失败附error |
+| append | id、offset（十进制字符串）、data（1–16KiB字节数组）；严格连续，只允许最后一块相同offset/字节的回执重试，冲突失败 |
+| finish | id；完整接收后同步同目录临时文件并替换；completed才能报告成功；相同完成请求可复查 |
+| cancel | id；清理自己的临时文件，保留原目标；不逆转已经完成的提交 |
+
+每View最多一个活动导出，全核心4个；只允许最初激活Surface提交。关闭或移动时先排空导出/明确取消；提交前再次核对输入权，目标在选择后变化时拒绝覆盖。连接断开不影响本地导出。正文等待60秒、对话框等待300秒，status/新请求会检查期限。现有目标按长度和修改时间检查，不提供外部应用同时改写目标的事务隔离；崩溃后临时文件不是已保存结果。
+
+实现：[session_stream.rs](../src-tauri/src/session_stream.rs)、[capture.rs](../src-tauri/src/streams/capture.rs)、[content_export.rs](../src-tauri/src/content_export.rs)。
+
 ## 文件编辑 SDK
 
 SDK 是随插件编译的客户端与 UI 源码，不是新增核心 RPC。它复用 files.editor.v1、files.v1、viewData.v1、ui.workbench.v2 和 ui.openView.v1；初始化调用 EditorHost::check_capabilities，缺少任一能力时明确拒绝并提示升级。功能与限制见[通用文件编辑](features/file-editor.md)。

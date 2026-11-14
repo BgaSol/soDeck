@@ -159,7 +159,11 @@ fn main() {
                             params["sourceViewId"] = json!(id);
                             params["expectedContext"] = p["context"].clone();
                         }
-                        if rpc == "session.state" || rpc == "session.exec.start" {
+                        if rpc == "session.state"
+                            || rpc == "session.exec.start"
+                            || rpc == "session.stream.open"
+                            || rpc == "session.stream.lookup"
+                        {
                             params["viewId"] = json!(id);
                         }
                         send(json!({"jsonrpc":"2.0","id":request,"method":rpc,"params":params}));

@@ -122,7 +122,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
         if (file.includes('settings')) ui();
         continue;
       }
-      if (/^src-tauri\/(src|tests)\/(connections|streams|plugins|session_exec|core|lib|main|model|lifecycle|close_lifecycle|resource_tasks|resource_owner|platform|servers|workbench)(\/|\.|_)/.test(file)) {
+      if (/^src-tauri\/(src|tests)\/(connections|streams|plugins|session_exec|session_stream|content_export|core|lib|main|model|lifecycle|close_lifecycle|resource_tasks|resource_owner|platform|servers|workbench)(\/|\.|_)/.test(file)) {
         core(); ui();
         plan.ssh = plan.sharedClient = true;
         pluginNames.forEach(name => integration.add(name));
@@ -147,6 +147,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
       if (/^scripts\/test-system-status-(ui|package)\.mjs$/.test(file)) { plan.scripts = true; integration.add('system-status'); continue; }
       if (/^scripts\/(docker-process|test-docker(?:-(ui|process|package))?)\.mjs$/.test(file)) { plan.scripts = true; integration.add('docker'); continue; }
       if (file === 'src-tauri/tests/fixtures/docker_flow.rs') { core(['linux-x86_64']); integration.add('docker'); continue; }
+      if (file === 'src-tauri/tests/fixtures/session_stream_flow.rs') { core(); integration.add('docker'); integration.add('terminal'); continue; }
       const pluginUiTest = file.match(/^scripts\/test-(terminal|files)-ui\.mjs$/);
       if (/^scripts\/(test-file-editor-ui|file-editor-fixture)\.mjs$/.test(file)) { plan.scripts = true; integration.add('files'); continue; }
       if (pluginUiTest) { plan.scripts = true; integration.add(pluginUiTest[1]); continue; }

@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod component_ui;
 pub mod connections;
+mod content_export;
 pub mod core;
 pub mod desktop_behavior;
 pub mod desktop_files;
@@ -18,6 +19,7 @@ mod resource_owner;
 mod resource_tasks;
 pub mod servers;
 mod session_exec;
+mod session_stream;
 pub mod settings;
 pub mod shared_state;
 mod storage;

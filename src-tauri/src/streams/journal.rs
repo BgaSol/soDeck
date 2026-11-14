@@ -10,24 +10,24 @@ const SEGMENT: u64 = 1024 * 1024;
 const LIMIT: usize = 128 * 1024 * 1024;
 const GLOBAL: usize = 1024 * 1024 * 1024;
 static USED: AtomicUsize = AtomicUsize::new(0);
-pub(super) fn reserve(bytes: usize) -> Result<(), String> {
+pub(crate) fn reserve(bytes: usize) -> Result<(), String> {
     USED.try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
         n.checked_add(bytes).filter(|v| *v <= GLOBAL)
     })
     .map(|_| ())
     .map_err(|_| "终端恢复资源总额度已用完".into())
 }
-pub(super) fn release(bytes: usize) {
+pub(crate) fn release(bytes: usize) {
     USED.fetch_sub(bytes, Ordering::AcqRel);
 }
 
-pub(super) struct Journal {
+pub(crate) struct Journal {
     root: PathBuf,
     segments: BTreeMap<u64, usize>,
     size: usize,
 }
 impl Journal {
-    pub(super) fn new(root: PathBuf) -> Result<Self, String> {
+    pub(crate) fn new(root: PathBuf) -> Result<Self, String> {
         fs::create_dir_all(&root).map_err(|e| format!("无法创建终端恢复目录：{e}"))?;
         #[cfg(unix)]
         {
@@ -41,7 +41,7 @@ impl Journal {
             size: 0,
         })
     }
-    pub(super) fn append(&mut self, offset: u64, bytes: &[u8]) -> Result<(), String> {
+    pub(crate) fn append(&mut self, offset: u64, bytes: &[u8]) -> Result<(), String> {
         for (start, data) in split(offset, bytes) {
             let segment = start / SEGMENT;
             let previous = *self.segments.get(&segment).unwrap_or(&0);
@@ -89,7 +89,7 @@ impl Journal {
         }
         Ok(())
     }
-    pub(super) fn read(&self, offset: u64, length: usize) -> Result<Vec<u8>, String> {
+    pub(crate) fn read(&self, offset: u64, length: usize) -> Result<Vec<u8>, String> {
         let mut bytes = vec![0; length];
         let mut position = 0;
         while position < length {
@@ -113,6 +113,27 @@ impl Journal {
             .keys()
             .copied()
             .take_while(|n| (n + 1) * SEGMENT <= offset)
+            .collect();
+        for key in old {
+            if fs::remove_file(self.root.join(key.to_string())).is_ok() {
+                if let Some(size) = self.segments.remove(&key) {
+                    self.size -= size;
+                    USED.fetch_sub(size, Ordering::AcqRel);
+                }
+            }
+        }
+    }
+    pub(crate) fn retain_ranges(&mut self, ranges: &[(u64, u64)]) {
+        let old: Vec<_> = self
+            .segments
+            .keys()
+            .copied()
+            .filter(|segment| {
+                let start = segment * SEGMENT;
+                !ranges
+                    .iter()
+                    .any(|(a, b)| *a < start + SEGMENT && *b > start)
+            })
             .collect();
         for key in old {
             if fs::remove_file(self.root.join(key.to_string())).is_ok() {

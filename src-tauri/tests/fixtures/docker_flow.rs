@@ -115,15 +115,17 @@ async fn openssh_docker_plugin() {
     f.core.ui_surface_ready("main", logs).unwrap();
     let snapshot = idle(&f, logs).await;
     assert_eq!(snapshot["state"], "ready", "{snapshot}");
-    let lines = event(logs, json!({"action":"readLogs"}));
-    assert!(
-        lines["rows"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|r| r["text"].as_str().unwrap().contains("sodeck-docker-log")),
-        "{lines}"
-    );
+    event(logs,json!({"action":"logs.start","requestId":"native-logs","intentSequence":"1","windowSeconds":900,"live":true}));
+    let deadline=std::time::Instant::now()+Duration::from_secs(40);
+    let capture=loop{let state=event(logs,json!({"action":"logs.status"}));if state["resources"].as_array().is_some_and(|r|r.iter().any(|r|!r["end"].is_null()&&r["status"]["finished"]==true)){break state;}assert!(std::time::Instant::now()<deadline,"{state}");tokio::time::sleep(Duration::from_millis(50)).await;};
+    let resource=capture["resources"].as_array().unwrap().iter().find(|r|!r["end"].is_null()).unwrap();
+    assert_eq!(resource["status"]["state"],"completed","{resource}");
+    let resource_id=resource["id"].as_str().unwrap();let watermark=resource["status"]["producedBytes"].as_str().unwrap();
+    async fn captured(core:&Arc<AppCore>,token:&str,id:&str,watermark:&str)->Vec<u8>{let end=watermark.parse::<u64>().unwrap();let mut offset=0u64;let mut bytes=vec![];while offset<end{let value=core.session_stream_data("main",token,json!({"id":id,"action":"read","offset":offset.to_string(),"watermark":watermark}),None).await.unwrap();let part:Vec<u8>=serde_json::from_value(value["data"].clone()).unwrap();offset+=part.len() as u64;bytes.extend(part);}bytes}
+    let lines=captured(&f.core,logs,resource_id,watermark).await;
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    let raw=lines.split(|b|*b==b'\n').filter(|l|!l.is_empty()).flat_map(|line|{let envelope:Value=serde_json::from_slice(line).unwrap();STANDARD.decode(envelope["dataBase64"].as_str().unwrap()).unwrap()}).collect::<Vec<_>>();
+    assert!(String::from_utf8_lossy(&raw).contains("sodeck-docker-log 中文"));
     let operate=|mut data:Value| {data["id"]=json!(id);data["engineId"]=browser["engine"]["id"].clone();data["endpoint"]=browser["endpoint"].clone();data["expectedContext"]=browser["context"].clone();event(token,data)};
     let status=||event(token,json!({"action":"list","status":"all"}))["rows"].as_array().unwrap().iter().find(|row|row["id"]==id).map(|row|row["status"].clone()).unwrap_or(Value::Null);
     operate(
@@ -161,9 +163,9 @@ async fn openssh_docker_plugin() {
     f.core.disconnect_connection("main", &context).unwrap();
     event(logs, json!({"action":"refresh"}));
     assert!(idle(&f, logs).await["error"].is_string());
-    let retained = event(logs, json!({"action":"readLogs"}));
+    let retained = captured(&f.core,logs,resource_id,watermark).await;
     assert_eq!(
-        retained["rows"], lines["rows"],
+        retained, lines,
         "disconnect must retain log snapshot"
     );
     let close = f

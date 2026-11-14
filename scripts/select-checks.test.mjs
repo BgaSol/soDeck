@@ -149,7 +149,7 @@ test('transport/lifecycle changes retain real integrations and shared inputs/unk
   assert.deepEqual(pointer.native.filter(t => t.core).map(t => t.name), ['windows-x86_64', 'windows-aarch64']);
   const opener = selectChecks(['src-tauri/src/desktop_open.rs']);
   assert(opener.browser && !opener.desktop && opener.native.filter(t => t.core).length === 5 && opener.integration[0].files);
-  for (const file of ['src-tauri/src/connections/ssh.rs', 'src-tauri/src/plugins/rpc.rs', 'src-tauri/src/session_exec.rs', 'src-tauri/src/lifecycle.rs', 'src-tauri/src/lifecycle/close.rs', 'src-tauri/src/resource_tasks.rs', 'src-tauri/tests/close_lifecycle.rs', 'src-tauri/tests/lifecycle.rs']) {
+  for (const file of ['src-tauri/src/connections/ssh.rs', 'src-tauri/src/plugins/rpc.rs', 'src-tauri/src/session_exec.rs', 'src-tauri/src/session_stream.rs', 'src-tauri/src/content_export.rs', 'src-tauri/src/streams/capture.rs', 'src-tauri/src/lifecycle.rs', 'src-tauri/src/lifecycle/close.rs', 'src-tauri/src/resource_tasks.rs', 'src-tauri/tests/close_lifecycle.rs', 'src-tauri/tests/lifecycle.rs']) {
     const p = selectChecks([file]);
     assert(p.ssh && p.desktop);
     assert.equal(p.native.filter(t => t.core).length, 5);

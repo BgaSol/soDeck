@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Docker</title><link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="style.css"></head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Docker</title><link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="logs.css"></head>
 <body>
 <main id="app">
   <header><div class="heading"><h1 id="title">Docker</h1><span id="state">正在读取</span></div><div class="toolbar"><button id="refresh" type="button">刷新</button><button id="cancel" type="button" hidden>取消等待</button><button id="pause" type="button" hidden>暂停刷新</button></div></header>
@@ -23,9 +23,19 @@
       <div class="paging"><button id="fields-prev" type="button" disabled>上一页</button><span id="fields-page"></span><button id="fields-next" type="button" disabled>下一页</button></div>
     </section>
     <section id="logs" hidden>
-      <div class="log-toolbar"><label for="tail">最近行数</label><select id="tail"><option>50</option><option selected>200</option><option>500</option></select><label for="log-query">搜索当前快照</label><input id="log-query" type="search" placeholder="日志文本"><button id="copy-logs" type="button">复制当前页</button></div>
-      <p class="muted">刷新替换最近日志快照；两路输出分别标记，不保证严格全局顺序。</p><pre id="log-content" tabindex="0" aria-label="最近容器日志"></pre>
-      <div class="paging"><button id="logs-prev" type="button" disabled>上一页</button><span id="logs-page"></span><button id="logs-next" type="button" disabled>下一页</button></div>
+      <p id="log-origin-label" class="log-origin-label"></p>
+      <div class="log-tools">
+        <select id="log-range" aria-label="日志时间范围"><option value="latest">最新</option><option value="900">过去15分钟</option><option value="3600">过去1小时</option><option value="86400">过去24小时</option><option value="custom">自定义时间</option></select>
+        <div class="log-search"><input id="log-query" type="search" placeholder="搜索当前窗口" aria-label="搜索当前已读日志" autocomplete="off" maxlength="1024"><span id="log-matches"></span><button id="log-prev-match" title="上一处匹配" aria-label="上一处匹配">上一处</button><button id="log-next-match" title="下一处匹配" aria-label="下一处匹配">下一处</button></div>
+        <details><summary>筛选</summary><div class="log-options"><label>级别<select id="log-level"><option value="">全部</option><option value="unknown">未标注</option></select></label><label>来源<select id="log-source"><option value="">全部</option><option value="stdout">stdout</option><option value="stderr">stderr</option></select></label><label><input id="log-only" type="checkbox">只看匹配</label></div></details>
+        <details><summary>显示</summary><div class="log-options"><label><input id="log-wrap" type="checkbox" checked>自动换行</label><label><input id="log-map" type="checkbox" checked>右侧缩略</label><label><input id="log-show-source" type="checkbox">显示来源</label><button id="log-hold">保持当前位置</button></div></details>
+        <details><summary>更多</summary><div class="log-options"><button id="log-reload">重新读取</button><button id="log-complete">完整读取时间范围</button><button id="log-stop">停止读取</button><label><input id="log-export-one" type="checkbox">导出当前记录</label><label><input id="log-export-context" type="checkbox">包含前后10条</label><button id="log-export">导出当前结果</button></div></details>
+      </div>
+      <div id="log-conditions" class="log-conditions" hidden></div>
+      <div id="log-custom" hidden><label>从 <input id="log-from" type="datetime-local"></label><label>至 <input id="log-to" type="datetime-local"></label><button id="log-read-custom" type="button">读取此范围</button></div>
+      <p id="log-notice" role="status" hidden></p>
+      <div id="log-main" class="log-main"><div id="log-viewport" class="log-viewport" tabindex="0" aria-label="容器日志正文"><button id="log-earlier" type="button">查看更早日志</button><p id="log-empty"></p><div id="log-lines"></div></div><aside id="log-detail" class="log-detail" hidden><div class="log-detail-header"><h2>日志详情</h2><button id="log-detail-close" aria-label="关闭日志详情">关闭</button></div><p id="log-detail-time"></p><div class="toolbar"><button id="log-copy">复制原文</button></div><pre id="log-detail-raw"></pre><details id="log-json" hidden><summary>结构化查看</summary><pre id="log-detail-json"></pre></details></aside></div>
+      <div class="log-footer"><span id="log-status">等待读取</span><span id="log-scope">当前窗口</span><span id="log-coverage"></span><span id="log-export-progress" role="status"></span><button id="log-export-cancel" hidden>取消导出</button><button id="log-latest" hidden>查看最新</button></div>
     </section>
   </div>
   <details id="connection"><summary>连接设置</summary><form id="endpoint-form"><label for="socket">远端 Unix socket</label><input id="socket" type="text" spellcheck="false" autocomplete="off"><button type="submit">保存连接</button><p class="muted">Rootless Engine 请填写其实际 socket。客户端无需安装 Docker。</p></form></details>

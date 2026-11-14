@@ -21,6 +21,8 @@ pub struct AppCore {
     pub(crate) finalizer:
         Mutex<Option<Arc<dyn Fn(crate::lifecycle::Target) -> Result<(), String> + Send + Sync>>>,
     pub(crate) executions: crate::session_exec::Executions,
+    pub(crate) command_streams: crate::session_stream::Streams,
+    pub(crate) content_exports: crate::content_export::Exports,
     pub(crate) background_wake: Mutex<Option<std::sync::mpsc::SyncSender<()>>>,
     pub desktop_files: crate::desktop_files::DesktopFiles,
     pub(crate) network: crate::network::Network,
@@ -65,6 +67,8 @@ impl AppCore {
     pub fn open(directory: PathBuf, version: String) -> Result<Arc<Self>, String> {
         let recovery = directory.join("terminal-recovery");
         std::thread::spawn(move || crate::streams::cleanup(&recovery));
+        let recovery = directory.join("command-output");
+        std::thread::spawn(move || crate::streams::cleanup(&recovery));
         let store = Store::open(directory.clone())?;
         let servers = crate::servers::ServerStore::open(directory.clone());
         let startup_enabled = store
@@ -77,6 +81,8 @@ impl AppCore {
         let core = Arc::new(Self {
             finalizer: Mutex::new(None),
             executions: crate::session_exec::Executions::default(),
+            command_streams: crate::session_stream::Streams::default(),
+            content_exports: crate::content_export::Exports::default(),
             background_wake: Mutex::new(None),
             desktop_files: crate::desktop_files::DesktopFiles::default(),
             network: crate::network::Network::default(),
@@ -340,6 +346,8 @@ impl AppCore {
         drop(self.mutations.lock().unwrap());
         self.terminals.cancel(|_| true);
         self.executions.cancel(|_| true);
+        self.command_streams.cancel(|_| true);
+        self.content_exports.cancel(|_| true);
         self.network.cancel(|_| true);
         self.files.cancel(|_| true);
         // Stop transports alongside processes: an outstanding SFTP mutation can only
@@ -409,14 +417,16 @@ impl AppCore {
                 self.files.pending(&matches),
                 self.network.pending(&matches),
                 self.executions.pending(&matches),
+                self.command_streams.pending(&matches),
+                self.content_exports.pending(&matches),
             ];
             if counts.iter().all(|n| *n == 0) {
                 return Ok(());
             }
             if Instant::now() >= deadline {
                 return Err(format!(
-                    "资源仍在收尾：终端 {}，文件 {}，网络 {}，命令 {}",
-                    counts[0], counts[1], counts[2], counts[3]
+                    "资源仍在收尾：终端 {}，文件 {}，网络 {}，命令 {}，命令流 {}，导出 {}",
+                    counts[0], counts[1], counts[2], counts[3], counts[4], counts[5]
                 ));
             }
             std::thread::sleep(Duration::from_millis(10));

@@ -201,6 +201,43 @@ async fn component_data(
     request: serde_json::Value,
     channel: tauri::ipc::Channel<sodeck::streams::Frame>,
 ) -> Result<serde_json::Value, String> {
+    if request["op"] == "sessionStream" {
+        let sink = Arc::new(move |frame| channel.send(frame).map_err(|e| e.to_string()))
+            as sodeck::streams::Sink;
+        return app
+            .core
+            .session_stream_data(window.label(), &surface_id, request, Some(sink))
+            .await;
+    }
+    if request["op"] == "contentExport" {
+        if request["action"] == "begin" {
+            use tauri_plugin_dialog::DialogExt;
+            let started = app
+                .core
+                .content_export_begin(window.label(), &surface_id, &request)?;
+            if started["started"] == true {
+                let core = app.core.clone();
+                let id = started["id"].as_str().unwrap().to_owned();
+                window
+                    .dialog()
+                    .file()
+                    .set_file_name(request["name"].as_str().unwrap_or("logs.txt"))
+                    .save_file(move |chosen| {
+                        let selected = chosen
+                            .map(|p| p.into_path().map_err(|e| e.to_string()))
+                            .transpose();
+                        tauri::async_runtime::spawn_blocking(move || {
+                            core.content_export_choose(&id, selected)
+                        });
+                    });
+            }
+            return Ok(started);
+        }
+        return app
+            .core
+            .content_export_data(window.label(), &surface_id, request)
+            .await;
+    }
     if request["op"] == "files" {
         let action = request["action"].as_str().unwrap_or("");
         let file = request["id"].as_str().unwrap_or("").to_string();

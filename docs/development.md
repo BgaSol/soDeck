@@ -95,7 +95,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --features test-fixtures --lib -
 | `npm run system-status:ui:test` | 固定数据 UI、概览用量条、CPU/内存趋势切换与重挂载、三主题 160/200/240/280/320/400/480px；`SODECK_TEST_SYSTEM_STATUS_PLUGIN` 可指向实际包 |
 | `npm run docker:test` | 本机原生插件、真实核心与隔离 Linux Docker Engine/OpenSSH；验证单容器操作、日志、资源、断线保留及删容器保留卷 |
 | `npm run docker:process:test` | 实际插件进程与假核心；验证查询复用、跨页搜索、操作去重、丢失回执、失败/中断状态、关闭与资源释放 |
-| `npm run docker:ui:test` | 固定数据 UI、键盘/确认/环境变量/日志搜索、三主题与 200/320/400/900px 布局 |
+| `npm run docker:ui:test` | 固定数据 UI、维护/环境变量、日志持续接收与固定阅读、搜索/筛选/详情、缩略拖动取消、候选原捕获恢复、三主题与 200/320/400/900px 布局 |
 
 源码业务测试先运行 `npm run test:prepare -- <插件名称...>`，例如 `npm run test:prepare -- terminal files system-status docker network-proxy`，一次准备 `artifacts/test-fixtures/<插件>`，再执行所需测试。准备入口编译 dev 程序与 UI，不生成发行归档；测试入口只消费目录，缺少时明确失败。可用对应 `SODECK_TEST_*_PLUGIN` 指定显式目录。源码修改后重新准备。Docker 的进程和真实业务测试均使用该目录，不隐式打包。真实联调需要本机 Docker CLI、支持 privileged 容器的 Linux daemon、`ssh-keygen` 和可下载 Docker/Alpine 镜像的软件源。脚本创建独立 Docker-in-Docker daemon，只共享其测试 Unix socket，不使用宿主 Docker socket；测试结束清理自身容器和测试卷。可用 `SODECK_TEST_ALPINE_MIRROR` 指定测试镜像构建所用的 HTTPS Alpine 仓库根地址。此变量只用于测试，不影响产品。
 
@@ -185,6 +185,7 @@ Check 始终响应 main push/PR，不使用 workflow 级 `paths` 跳过。`selec
 | 单插件 Rust/清单/锁文件/构建输入 | 该插件格式与五平台原生 Rust 测试、该插件普通业务验收；其他插件不跟随 |
 | desktop_files 的 windows/linux/macos.rs | 对应系统两架构/一个 macOS 架构的核心测试、文件业务；Windows 保留系统专项，普通 UI 不跟随 |
 | network_metrics.rs、settings/declaration.rs | 一次 Linux x86_64 完整核心套件；声明变化另走前端相关回归 |
+| session_stream、content_export | 五平台原生核心、Linux UI、Windows SSH、五插件普通业务验收，与连接/流生命周期相同 |
 | 其他已映射核心系统/更新模块 | 五平台原生核心和相关 UI；网络、文件、终端服务分别追加自己的普通业务验收 |
 | 连接、流、生命周期/RPC、平台进程、服务器路由 | 五平台原生核心、Linux UI、Windows SSH、五插件普通业务验收 |
 | 共享 UI/字体/菜单 | 扩大至核心与五插件 UI/普通业务验收；不因此运行 netem 或旧版升级 |

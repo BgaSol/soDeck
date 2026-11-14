@@ -1,14 +1,19 @@
 mod commands;
+mod logs;
 mod runtime;
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let holder = Arc::new(Mutex::new(None::<runtime::Shared>));
+    let log_holder = Arc::new(Mutex::new(None::<Arc<logs::Logs>>));
     sodeck_plugin_client::run(move |client, method, p| {
         if method == "initialize" {
             for cap in [
                 "commands.v1",
                 "session.exec.v1",
+                "session.stream.v1",
+                "viewData.v1",
+                "content.export.v1",
                 "ui.workbench.v2",
                 "ui.openView.v1",
                 "settings.v1",
@@ -26,6 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             apply_settings(&mut state, &settings["values"])?;
             let app = Arc::new(Mutex::new(state));
             runtime::start(app.clone(), client.clone());
+            *log_holder.lock().unwrap() = Some(logs::Logs::new(client.clone(), app.clone()));
             *holder.lock().unwrap() = Some(app);
             return Ok(json!({"apiVersion":"1","uiApiVersion":"2","settingsApiVersion":"1"}));
         }
@@ -53,6 +59,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Ok(json!({"accepted":true,"revision":revision.to_string()}));
         }
         let id = p["viewId"].as_str().ok_or("缺少 viewId")?;
+        if method == "ui.disposeView" {
+            if let Some(logs) = log_holder.lock().unwrap().as_ref() {
+                logs.dispose(id)
+            }
+        }
+        if method == "ui.event"
+            && p["data"]["action"]
+                .as_str()
+                .is_some_and(|s| s.starts_with("logs."))
+        {
+            let target = {
+                let a = app.lock().unwrap();
+                let v = a.views.get(id).ok_or("日志页已关闭")?;
+                if v.kind != "logs" {
+                    return Err("不是日志页面".into());
+                }
+                if v.frozen && p["data"]["action"] != "logs.status" {
+                    return Err("日志页面正在关闭".into());
+                }
+                a.snapshot(id)?
+            };
+            let service = log_holder
+                .lock()
+                .unwrap()
+                .clone()
+                .ok_or("日志服务尚未就绪")?;
+            let result = service.event(id, target, &p["data"])?;
+            return app.lock().unwrap().response(id, result);
+        }
         if method == "ui.event"
             && matches!(
                 p["data"]["action"].as_str(),
@@ -142,7 +177,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             _ => return Err("未知 Docker 方法".into()),
         }
-        let data = a.snapshot(id)?;
+        let mut data = a.snapshot(id)?;
+        if data["kind"] == "logs" {
+            if let Some(logs) = log_holder.lock().unwrap().as_ref() {
+                data["logCapture"] = logs.snapshot(id)?;
+            }
+        }
         a.response(id, data)
     })
 }
@@ -155,11 +195,11 @@ fn apply_settings(a: &mut runtime::App, values: &Value) -> Result<(), String> {
             .unwrap_or(default)
     };
     let refresh = read("refreshSeconds", 5);
-    let tail = read("logTail", 200);
-    if ![5, 10, 30].contains(&refresh) || ![50, 200, 500].contains(&tail) {
+
+    if ![5, 10, 30].contains(&refresh) {
         return Err("Docker 设置值无效".into());
     }
     a.refresh_seconds = refresh;
-    a.tail = tail;
+    a.show_log_minimap = values["showLogMinimap"].as_bool().unwrap_or(true);
     Ok(())
 }

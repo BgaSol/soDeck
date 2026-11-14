@@ -14,7 +14,7 @@ pub struct App {
     pub endpoints: BTreeMap<String, String>,
     pub directory: PathBuf,
     pub refresh_seconds: u64,
-    pub tail: u64,
+    pub show_log_minimap: bool,
     pub settings_revision: u64,
     jobs: VecDeque<Job>,
 }
@@ -48,7 +48,6 @@ struct Job {
     container: String,
     engine: String,
     action: String,
-    tail: u64,
 }
 struct Exec {
     bytes: Vec<u8>,
@@ -90,7 +89,7 @@ impl App {
             endpoints,
             directory,
             refresh_seconds: 5,
-            tail: 200,
+            show_log_minimap: true,
             settings_revision: 0,
             jobs: VecDeque::new(),
         })
@@ -143,7 +142,7 @@ impl App {
             expected_engine: resource["engineId"].as_str().unwrap_or("").into(),
             endpoint,
             revision: 1,
-            data: json!({"state":"loading","error":null,"engine":null,"rows":[],"sections":{},"logs":[],"stats":null,"operation":null}),
+            data: json!({"state":"loading","error":null,"engine":null,"rows":[],"sections":{},"stats":null,"operation":null}),
             navigation: json!({}),
             busy: false,
             frozen: false,
@@ -155,7 +154,7 @@ impl App {
             due: Instant::now() + Duration::from_secs(self.refresh_seconds),
         };
         self.views.insert(id.into(), view);
-        self.enqueue(id, "refresh", self.tail)
+        self.enqueue(id, "refresh")
     }
     pub fn snapshot(&self, id: &str) -> Result<Value, String> {
         let v = self.views.get(id).ok_or("视图已关闭")?;
@@ -164,8 +163,8 @@ impl App {
             "busy":v.busy,"paused":v.paused,"nextIntent":(v.intent+1).to_string(),"navigation":v.navigation,
             "state":v.data["state"],"error":v.data["error"],"engine":v.data["engine"],"name":v.data["name"],"status":v.data["status"],
             "health":v.data["health"],"observedAt":v.data["observedAt"],"partial":v.data["partial"],"operation":v.data["operation"],
-            "stats":v.data["stats"],"count":v.data["rows"].as_array().map_or(0,Vec::len),"logCount":v.data["logs"].as_array().map_or(0,Vec::len),
-            "sections":v.data["sections"].as_object().map(|m|m.keys().collect::<Vec<_>>()),"tail":self.tail}),
+            "tty":v.data["tty"],"stats":v.data["stats"],"count":v.data["rows"].as_array().map_or(0,Vec::len),
+            "sections":v.data["sections"].as_object().map(|m|m.keys().collect::<Vec<_>>()),"showLogMinimap":self.show_log_minimap}),
         )
     }
     pub fn response(&self, id: &str, data: Value) -> Result<Value, String> {
@@ -178,14 +177,13 @@ impl App {
             json!({"metadata":{"title":match v.kind.as_str() {"browser"=>"Docker".into(),"logs"=>format!("{} · 日志",commands::text(name,100)),_=>commands::text(name,100)},"dirty":false,"busy":v.busy},"data":data}),
         )
     }
-    pub fn enqueue(&mut self, id: &str, action: &str, tail: u64) -> Result<(), String> {
-        self.enqueue_target(id, action, tail, None)
+    pub fn enqueue(&mut self, id: &str, action: &str) -> Result<(), String> {
+        self.enqueue_target(id, action, None)
     }
     fn enqueue_target(
         &mut self,
         id: &str,
         action: &str,
-        tail: u64,
         target: Option<&Value>,
     ) -> Result<(), String> {
         if self.jobs.len() >= 16 {
@@ -224,7 +222,6 @@ impl App {
                 v.expected_engine.clone()
             },
             action: action.into(),
-            tail,
         });
         Ok(())
     }
@@ -271,11 +268,10 @@ impl App {
         if action == "snapshot" {
             return self.snapshot(id);
         }
-        if matches!(action, "list" | "section" | "readLogs") {
+        if matches!(action, "list" | "section") {
             let v = self.views.get(id).ok_or("视图已关闭")?;
             let items = match action {
                 "list" => &v.data["rows"],
-                "readLogs" => &v.data["logs"],
                 _ => {
                     let section = d["section"].as_str().ok_or("缺少详情分区")?;
                     if ![
@@ -333,28 +329,6 @@ impl App {
                     50,
                 ));
             }
-            if action == "readLogs" {
-                let query = commands::text(d["query"].as_str().unwrap_or(""), 1024).to_lowercase();
-                let filtered = items
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter(|row| {
-                        query.is_empty()
-                            || row["text"]
-                                .as_str()
-                                .unwrap_or("")
-                                .to_lowercase()
-                                .contains(&query)
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>();
-                return Ok(page(
-                    &json!(filtered),
-                    d["offset"].as_u64().unwrap_or(0) as usize,
-                    d["limit"].as_u64().unwrap_or(50).min(100) as usize,
-                ));
-            }
             return Ok(page(
                 items,
                 d["offset"].as_u64().unwrap_or(0) as usize,
@@ -400,7 +374,7 @@ impl App {
             let v = self.views.get_mut(id).unwrap();
             v.terminal_ticket = Some(ticket);
             v.terminal_receipt = json!({"status":"pending","containerId":input["id"],"name":target["name"],"message":"检查容器并请求终端页面"});
-            if let Err(error) = self.enqueue_target(id, "terminal", self.tail, Some(&input)) {
+            if let Err(error) = self.enqueue_target(id, "terminal", Some(&input)) {
                 self.views.get_mut(id).unwrap().clear_terminal();
                 return Err(error);
             }
@@ -411,11 +385,7 @@ impl App {
             }
             self.views.get_mut(id).ok_or("视图已关闭")?.navigation = d["state"].clone();
         } else if action == "refresh" || action == "stats" {
-            let tail = d["tail"].as_u64().unwrap_or(self.tail);
-            if !(1..=500).contains(&tail) {
-                return Err("日志行数必须在 1–500 之间".into());
-            }
-            self.enqueue(id, action, tail)?;
+            self.enqueue(id, action)?;
         } else if action == "cancel" {
             let v = self.views.get_mut(id).ok_or("视图已关闭")?;
             v.cancelled = true;
@@ -463,7 +433,7 @@ impl App {
                 v.data = json!({"rows":[],"state":"loading"});
                 v.revision += 1;
             }
-            self.enqueue(id, "refresh", self.tail)?;
+            self.enqueue(id, "refresh")?;
         } else if action == "operate" {
             let request = d["requestId"]
                 .as_str()
@@ -492,7 +462,7 @@ impl App {
                 return Err("旧操作回执已过期，不能重发".into());
             }
             let target = self.target(id, &input)?;
-            self.enqueue_target(id, op, self.tail, Some(&input))?;
+            self.enqueue_target(id, op, Some(&input))?;
             let v = self.views.get_mut(id).unwrap();
             v.intent = seq;
             v.receipts.push_back((request.into(), seq, input.clone()));
@@ -625,6 +595,48 @@ fn checked(result: Exec) -> Result<Vec<u8>, String> {
     }
     Ok(result.bytes)
 }
+pub fn log_target(
+    app: &Shared,
+    client: &Client,
+    view: &str,
+    expected: &Value,
+) -> Result<Value, String> {
+    let job = {
+        let a = app.lock().unwrap();
+        let v = a.views.get(view).ok_or("日志页面已关闭")?;
+        if v.context != expected["context"] || v.frozen || v.cancelled {
+            return Err("日志目标上下文已改变，请刷新后重新读取".into());
+        }
+        Job {
+            terminal: None,
+            view: view.into(),
+            context: v.context.clone(),
+            endpoint: v.endpoint.clone(),
+            container: v.container.clone(),
+            engine: v.expected_engine.clone(),
+            action: "logs".into(),
+        }
+    };
+    let info: Value = serde_json::from_slice(&checked(execute(
+        app,
+        &job,
+        client,
+        &["info", "--format", "{{json .}}"],
+        256 * 1024,
+    )?)?)
+    .map_err(|_| "Engine身份输出无效")?;
+    if info["ID"] != job.engine {
+        return Err("Docker Engine已改变，请重新打开容器".into());
+    }
+    let container = inspect(app, &job, client)?;
+    if container["Id"] != job.container {
+        return Err("Docker容器身份已改变".into());
+    }
+    let mut target = expected.clone();
+    target["engine"]["systemTime"] = info["SystemTime"].clone();
+    target["status"] = container["State"]["Status"].clone();
+    Ok(target)
+}
 fn inspect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
     let out = checked(execute(
         app,
@@ -717,7 +729,7 @@ fn collect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
         return Err("Engine 已改变，原容器页面失效，请从列表重新打开".into());
     }
     let engine = json!({"id":engine_id,"name":commands::text(info["Name"].as_str().unwrap_or("Docker"),256),"version":version["Server"]["Version"],
-        "os":version["Server"]["Os"],"arch":version["Server"]["Arch"],"containers":info["Containers"],"images":info["Images"]});
+        "os":version["Server"]["Os"],"arch":version["Server"]["Arch"],"containers":info["Containers"],"images":info["Images"],"systemTime":info["SystemTime"]});
     let kind = app
         .lock()
         .unwrap()
@@ -808,35 +820,8 @@ fn collect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
     let mut data = json!({"engine":engine,"name":name,"status":container["State"]["Status"],"health":container["State"]["Health"]["Status"],
         "sections":commands::fields(&container),"observedAt":now(),"state":"ready","error":null,"partial":false});
     if kind == "logs" {
-        let r = execute(
-            app,
-            job,
-            client,
-            &[
-                "container",
-                "logs",
-                "--timestamps",
-                "--tail",
-                &job.tail.to_string(),
-                &job.container,
-            ],
-            256 * 1024,
-        )?;
-        let partial = r.response["error"]["code"] == "outputLimit";
-        if !partial && (r.response["state"] != "completed" || r.response["exitCode"] != 0) {
-            checked(r)?;
-            unreachable!();
-        }
-        let mut logs = vec![];
-        for (stream, bytes) in [("stdout", r.bytes), ("stderr", r.stderr)] {
-            // shortcut: separate CLI streams have no strict global order; use the Engine API if ordering becomes required.
-            for line in String::from_utf8_lossy(&bytes).lines().take(2000) {
-                logs.push(json!({"stream":stream,"text":commands::text(line,4096)}));
-            }
-        }
-        data["logs"] = json!(logs);
+        data["tty"] = container["Config"]["Tty"].clone();
         data["sections"] = json!({});
-        data["partial"] = json!(partial);
     } else if job.action == "stats" {
         if container["State"]["Running"] != true {
             data["stats"] = json!({"unavailable":"容器未运行"});
@@ -933,8 +918,7 @@ pub fn start(app: Shared, client: Client) {
                     .map(|(id, _)| id.clone())
                     .collect::<Vec<_>>();
                 for id in due {
-                    let tail = a.tail;
-                    let _ = a.enqueue(&id, "refresh", tail);
+                    let _ = a.enqueue(&id, "refresh");
                 }
                 let commands = a
                     .views
@@ -948,8 +932,7 @@ pub fn start(app: Shared, client: Client) {
                     .map(|(id, _)| id.clone())
                     .collect::<Vec<_>>();
                 for id in commands {
-                    let tail = a.tail;
-                    let _ = a.enqueue(&id, "terminalStatus", tail);
+                    let _ = a.enqueue(&id, "terminalStatus");
                 }
                 a.jobs.pop_front()
             };
