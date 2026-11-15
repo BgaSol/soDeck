@@ -1,13 +1,13 @@
-# Unreleased
+# 0.4.0（准备发行）
 
 - 容器日志改为连续工作台：跟随最新、固定阅读同时后台接收、按时间补读、搜索/筛选/上下文/详情、右侧缩略与原文导出。停止很久的容器默认显示最后保留尾部；长时日志采用有限预览与滚动窗口，不一次下载全部历史。
 - Docker保留命令/解析/查询/UI，核心提供通用命令流原字节捕获与本机保存；新增要求session.stream.v1和content.export.v1。旧日志分页与行数设置移除，容器维护与终端入口保持原操作。
 
 本机格式/类型、工程脚本、Docker源码/进程、三主题四宽度UI及真实OpenSSH/隔离Engine24.0.9联调通过；百万行容器默认只返回最后2001条给Worker，UI预览限制为2000条/2MiB。连续接收、固定阅读、缩略取消、原捕获恢复、维护与终端共存回归通过。
 
-包来源：[673edda](https://github.com/BgaSol/soDeck/commit/673eddac435fb413df29290d2cad51a093dea773)；原始独立打包与实包验收：[43649849965](https://github.com/BgaSol/soDeck/actions/runs/43649849965)。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64五平台均为原生产物，归档架构、摘要、资源、初始化、视图创建/释放与退出全部通过。[来源Check](https://github.com/BgaSol/soDeck/actions/runs/43649851838)的standard选中检查全部通过，包含最终日志UI/进程及真实Engine联调；Windows桌面对照和netem未选中。[持久验收证据](../../docs/releases/log-workbench-candidate-assets.json)保留报告和摘要；核心原始包及检查范围见[待发行记录](../../docs/releases/log-workbench-candidate.md)。
+固定阅读在提示条/正文高度变化时保留折行测量，宽度或系统缩放改变时保留实际可见记录及偏移；显示、筛选、更多菜单互斥打开。Windows WebView2、真实核心Channel、Docker归档、隔离OpenSSH/Engine24.0.9的持续接收、固定阅读、隐藏恢复和20万条完整历史搜索已通过短测。微软拼音真实候选、中文搜索、F3/Shift+F3，以及系统保存框取消/重试和中文空格路径原文字节对照已实测。100%/125%/150%/200%实际系统缩放的固定记录最大偏移0.67px，已恢复原150%。
 
-本项尚未发行，Release链接为无；没有修改0.3.0正式附件或版本，不把旧版五平台证据算成本次通过。未新增生产依赖。原生设备交互、慢ACK/多轮轮换、驱动/rootless/TTY/轮转及磁盘故障后续验收见[日志工作台计划](../../docs/plans/docker-log-viewer.md)。
+本项尚未发行。新0.4.0原始打包run、源码、Release和五平台实际包结果将在候选形成后记录；旧0.3.0分支包仅保留为[历史开发证据](../../docs/releases/log-workbench-candidate.md)，不计入新版本验收。核心能力与本机证据见[核心1.1.0记录](../../docs/releases/v1.1.0.md)。未新增生产依赖；一小时持续负载正在执行，五平台新增日志WebView专项、其他系统真实IME/保存框、多屏、全部Engine/故障范围尚未完成，详见[日志工作台计划](../../docs/plans/docker-log-viewer.md)。
 
 # 0.3.0
 
