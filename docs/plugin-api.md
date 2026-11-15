@@ -9,7 +9,7 @@
 
 ## 非交互命令流与本地内容导出
 
-以下为已实现、待发行的新增可选能力；插件必须检查 `session.stream.v1`、`viewData.v1` 和 `content.export.v1`，缺少时提示升级核心。旧短命令和终端接口保持兼容。
+以下为核心 1.1.0 新增的可选能力；插件必须检查 `session.stream.v1`、`viewData.v1` 和 `content.export.v1`，缺少时提示升级核心。旧短命令和终端接口保持兼容。
 
 ### session.stream.v1
 

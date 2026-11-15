@@ -14,7 +14,7 @@ Docker 是独立插件，默认固定在右侧工具栏、按需打开。通过�
 
 Compose 分组只是读取标签和排序，没有独立分组标题或折叠操作，也不提供创建、部署或管理 Compose 项目的能力。当前不提供批量操作或镜像/网络/卷管理。
 
-新版日志已实现、尚未发行，需带session.stream.v1/content.export.v1的新版核心；0.3.0已发行包仍使用旧日志快照。验证与未完成范围见[日志后续验收](../plans/docker-log-viewer.md)，对应插件记录见[CHANGELOG](../../plugins/docker/CHANGELOG.md)。
+日志工作台从 Docker 0.4.1 提供，需配套核心 1.1.0 的 session.stream.v1/content.export.v1；启用中的插件升级在重启后生效。验证与未完成范围见[日志后续验收](../plans/docker-log-viewer.md)，对应插件记录见[CHANGELOG](../../plugins/docker/CHANGELOG.md)。
 
 行内侧栏重构已在 Docker 0.3.0 发行，来源与验收范围见插件 [CHANGELOG](../../plugins/docker/CHANGELOG.md)。状态选择常驻，健康和 Compose 排列收在“更多筛选”，socket 编辑位于底部“连接设置”。操作结果显示在对应容器行；对象因筛选或删除而离开当前页时，仍显示带名称的结果。断线或数据待刷新时禁用维护，保留快照；不适用操作按容器状态隐藏，未运行容器的终端入口明确不可用。
 

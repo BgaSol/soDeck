@@ -20,7 +20,7 @@
 
 共享 [plugin-client](../crates/plugin-client/src/lib.rs) 提供 RPC、命令票据、设置、共享状态和文件编辑生命周期客户端，不保存连接凭据，也不封装插件之间的直接调用。文件编辑的标准 UI 在 [packages/file-editor](../packages/file-editor/)，随使用组件独立打包；[接入与职责](features/file-editor.md)由通用编辑功能说明维护。
 
-非交互命令流由[session_stream.rs](../src-tauri/src/session_stream.rs)复用核心会话，[capture.rs](../src-tauri/src/streams/capture.rs)管理有界原始字节与固定阅读范围；[content_export.rs](../src-tauri/src/content_export.rs)只负责用户选择的本地字节导出。这两项可选能力已实现、待发行，契约统一见[插件API](plugin-api.md)。Docker命令、源时间、级别、历史覆盖和采集代次属于插件后台；解析、搜索、虚拟正文、缩略导航及阅读状态属于Docker UI/Worker。核心不保存容器日志索引，不导入Docker正文样式；颜色和基础控件继续复用packages/ui。
+非交互命令流由[session_stream.rs](../src-tauri/src/session_stream.rs)复用核心会话，[capture.rs](../src-tauri/src/streams/capture.rs)管理有界原始字节与固定阅读范围；[content_export.rs](../src-tauri/src/content_export.rs)只负责用户选择的本地字节导出。这两项可选能力从核心 1.1.0 提供，契约统一见[插件API](plugin-api.md)。Docker命令、源时间、级别、历史覆盖和采集代次属于插件后台；解析、搜索、虚拟正文、缩略导航及阅读状态属于Docker UI/Worker。核心不保存容器日志索引，不导入Docker正文样式；颜色和基础控件继续复用packages/ui。
 
 ## 宿主状态与 DOM 边界
 
