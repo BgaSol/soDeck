@@ -19,7 +19,6 @@ test = false
 name = "release-upgrade-fixture"
 path = "tests/fixtures/release_upgrade.rs"
 required-features = ["test-fixtures"]
-test = false
 
 [[bin]]
 name = "plugin-fixture"

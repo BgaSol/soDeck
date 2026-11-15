@@ -1,6 +1,7 @@
 //! Native release verification driver. Never included in a core installer.
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
+use sodeck::settings::declaration::Page;
 use sodeck::{model::*, updates::*, AppCore};
 use std::{fs, path::PathBuf, sync::Arc};
 use tauri_plugin_updater::UpdaterExt;
@@ -47,6 +48,17 @@ fn settings(core: &Arc<AppCore>, input: &Input) -> Result<Value, String> {
     }
     Ok(Value::Object(result))
 }
+fn preserved_values(before: &Value, defaults: Map<String, Value>) -> Value {
+    Value::Object(
+        defaults
+            .into_iter()
+            .map(|(key, default)| {
+                let value = before.get(&key).cloned().unwrap_or(default);
+                (key, value)
+            })
+            .collect(),
+    )
+}
 fn seed(input: &Input) -> Result<(), String> {
     let core = AppCore::open(input.root.clone(), input.current.clone())?;
     core.set_automatic_updates(false)?;
@@ -60,6 +72,7 @@ fn seed(input: &Input) -> Result<(), String> {
         ("sodeck.files", "browser", "fontSize", json!(13)),
         ("sodeck.files", "editor", "wordWrap", json!(true)),
         ("sodeck.network-proxy", "defaults", "fixedPort", json!(2080)),
+        ("sodeck.docker", "display", "refreshSeconds", json!("30")),
     ] {
         if !input.plugins.iter().any(|p| p.id == id) {
             continue;
@@ -111,13 +124,24 @@ fn activate(input: &Input) -> Result<(), String> {
         &fs::read(input.root.join("upgrade-baseline.json")).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;
-    if baseline["catalog"] != core.server_catalog()
-        || baseline["settings"] != settings(&core, input)?
-        || core.snapshot().preferences.automatic_updates
+    for (key, before) in baseline["settings"]
+        .as_object()
+        .ok_or("Missing baseline settings")?
     {
-        return Err(
-            "Server catalog, plugin settings or update preference changed during upgrade".into(),
-        );
+        let (plugin, page_id) = key
+            .rsplit_once('/')
+            .ok_or("Invalid baseline settings page")?;
+        let current = core.settings_page(plugin, page_id)?;
+        let declaration: Page =
+            serde_json::from_value(current["declaration"].clone()).map_err(|e| e.to_string())?;
+        // Compare surviving fields and declared defaults, rather than an obsolete schema.
+        if current["values"] != preserved_values(before, declaration.defaults()) {
+            return Err(format!("Plugin settings changed during upgrade: {key}"));
+        }
+    }
+    if baseline["catalog"] != core.server_catalog() || core.snapshot().preferences.automatic_updates
+    {
+        return Err("Server catalog or update preference changed during upgrade".into());
     }
     write(
         &input.root,
@@ -125,6 +149,42 @@ fn activate(input: &Input) -> Result<(), String> {
         &json!({"completed":true,"snapshot":core.snapshot(),"settings":settings(&core, input)?,"catalog":core.server_catalog()}),
     )?;
     core.shutdown()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upgrade_preserves_existing_values_and_initializes_only_new_fields() {
+        let before = json!({"refreshSeconds":"30", "logTail":"500"});
+        let defaults = json!({"refreshSeconds":"5", "showLogMinimap":true});
+        let expected = preserved_values(&before, defaults.as_object().unwrap().clone());
+        assert_eq!(
+            expected,
+            json!({"refreshSeconds":"30", "showLogMinimap":true})
+        );
+        assert_ne!(
+            expected, defaults,
+            "Resetting the retained setting must fail"
+        );
+        assert_ne!(
+            expected,
+            json!({"refreshSeconds":"30", "showLogMinimap":false}),
+            "A new field must have its declared default"
+        );
+        assert_eq!(before["logTail"], "500");
+    }
+
+    #[test]
+    fn unchanged_schema_requires_every_previous_value() {
+        let before = json!({"fontSize":16, "wordWrap":true});
+        let defaults = json!({"fontSize":12, "wordWrap":false});
+        assert_eq!(
+            preserved_values(&before, defaults.as_object().unwrap().clone()),
+            before
+        );
+    }
 }
 fn release_client() -> Result<ReleaseClient, String> {
     match std::env::var("GH_TOKEN") {

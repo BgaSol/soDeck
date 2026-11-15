@@ -154,15 +154,18 @@ try {
     report.debSystemUpgrade = true;
   }
   report.coreDigest = expectedDigest;
-  report.baseline = JSON.parse(fs.readFileSync(path.join(data, "upgrade-baseline.json"), "utf8"));
-  report.prepared = JSON.parse(fs.readFileSync(path.join(data, "upgrade-prepared.json"), "utf8"));
-  report.activated = JSON.parse(fs.readFileSync(path.join(data, "upgrade-activated.json"), "utf8"));
   report.completed = true;
 } catch (error) {
   report.error = error.stack || String(error);
   throw error;
 } finally {
   try {
+    // Keep the available receipts even when activation or cleanup fails.
+    for (const phase of ["baseline", "prepared", "activated"]) {
+      const receipt = path.join(data, `upgrade-${phase}.json`);
+      if (fs.existsSync(receipt)) report[phase] = JSON.parse(fs.readFileSync(receipt, "utf8"));
+      if (report.completed) assert(report[phase], `Missing ${phase} upgrade receipt`);
+    }
     if (fs.existsSync(path.join(data, "logs"))) fs.cpSync(path.join(data, "logs"), path.join(output, "logs"), { recursive: true });
     assert.equal(path.dirname(root), fs.realpathSync(os.tmpdir()));
     // WebView2 and the native installer can release file handles after process exit.
