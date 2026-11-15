@@ -182,6 +182,7 @@ try{
     }
     if(mode==='logs'){
       await frame.locator('#log-lines').filter({hasText:'服务启动'}).waitFor();
+      for(const label of ['更多','显示','筛选']){await frame.locator('.log-tools').getByText(label,{exact:true}).click();assert.equal(await frame.locator('.log-tools details[open]').count(),1,'log popovers never overlap');}await frame.locator('.log-tools').getByText('筛选',{exact:true}).click();
       await appendLive([...Array.from({length:500},(_,i)=>({stream:'stdout',text:'INFO fixture '+i+' '+(i%7===0?'长内容 '.repeat(25):'')})),{stream:'stderr',text:'ERROR off-page UNIQUE'}]);
       await frame.locator('#log-scope').filter({hasText:'505条'}).waitFor();assert(await frame.locator('#log-viewport').evaluate(e=>e.scrollTop+e.clientHeight>=e.scrollHeight-8),'follows new output');
       await frame.locator('#log-viewport').focus();await page.keyboard.press('PageUp');await frame.locator('#log-latest').waitFor();await page.waitForTimeout(400);
