@@ -8,11 +8,13 @@
 
 固定阅读在提示条/正文高度变化时保留折行测量，宽度或系统缩放改变时保留实际可见记录及偏移；显示、筛选、更多菜单互斥打开。Windows WebView2、真实核心Channel、Docker归档、隔离OpenSSH/Engine24.0.9的持续接收、固定阅读、隐藏恢复和20万条完整历史搜索已通过短测。微软拼音真实候选、中文搜索、F3/Shift+F3，以及系统保存框取消/重试和中文空格路径原文字节对照已实测。100%/125%/150%/200%实际系统缩放的固定记录最大偏移0.67px，已恢复原150%。
 
-0.4.1 最终包来源为 [5002491b7bd17dbc3346d540a6648998a556c755](https://github.com/BgaSol/soDeck/commit/5002491b7bd17dbc3346d540a6648998a556c755)，原始独立打包/验包为 [43668647795](https://github.com/BgaSol/soDeck/actions/runs/43668647795)。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生归档的来源、摘要、架构、资源、初始化和退出全部通过；六个草稿附件与原包大小、SHA-256 核对一致。
+0.4.1 最终包来源为 [5002491b7bd17dbc3346d540a6648998a556c755](https://github.com/BgaSol/soDeck/commit/5002491b7bd17dbc3346d540a6648998a556c755)，原始独立打包/验包为 [43668647795](https://github.com/BgaSol/soDeck/actions/runs/43668647795)。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生归档的来源、摘要、架构、资源、初始化和退出全部通过；六个发行附件与原包大小、SHA-256 核对一致。
 
 [来源 Check](https://github.com/BgaSol/soDeck/actions/runs/43668621670) 的全部选中源码、脚本、UI 和 Docker 普通业务通过，其他组件 UI/desktop 和 netem skipped。最终 CI Windows 原归档配合核心原 NSIS 解出程序的实际 WebView2、IME/F3、系统保存框取消/重试和 4436559 字节冻结原文对照通过；30 次近期/20 万条搜索 P95 为 182.7/334.4ms，20 次日志打开/固定/关闭的 Surface、Worker、捕获目录回收和退出通过。核心能力、设备条件及早期失败统一保留在[1.1.0 记录](../../docs/releases/v1.1.0.md)。未采用的 0.4.0 候选来源为 e7745d9，原始打包 [43663678732](https://github.com/BgaSol/soDeck/actions/runs/43663678732)，缺少本次重绘修复，不发布。
 
 发行：[Docker 0.4.1](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.4.1)，非 Latest，需配套核心 1.1.0；沿用上述五份原始归档，草稿阶段只同步说明及更新清单 notes。Windows 一小时持续接收 746.3 MiB、约 23.32 轮容量、175 次固定位置采样最大偏移 0px，以及 100 次实际开/固定/关与退出通过。耐久使用实际核心与本机构建的 Docker，UI 与 CI 仅有 CRLF 差异、插件程序 SHA 不同；最终实际 CI 归档另验短测及十分钟对照。输入、内存走势与早期失败统一保存在[1.1.0 记录及证据](../../docs/releases/v1.1.0.md)。
+
+[正式版 0.3.0→0.4.1 升级](https://github.com/BgaSol/soDeck/actions/runs/43674763640) 五平台通过，宿主固定为核心 1.1.0；生产发现、公开附件字节校验、准备阶段旧进程保留、重启激活、服务器资料及自定义 30 秒刷新间隔保留、退出和清理均通过。旧 logTail 设置按新版声明退出，新 showLogMinimap 使用默认 true。首次五平台因夹具要求新旧设置对象完全相同而失败，修正为按新版声明逐值检查并增加回归后，复用原正式包通过；首轮失败与执行提交保存在[1.1.0 记录及证据](../../docs/releases/v1.1.0.md)。
 
 五平台新增日志 WebView 专项、其他系统真实 IME/保存框、多屏、全部 Engine/故障范围及长期内存稳定性尚未完成，详见[日志工作台计划](../../docs/plans/docker-log-viewer.md)。未新增生产依赖，不修改已有容器维护、终端或文件插件的操作规则。
 
