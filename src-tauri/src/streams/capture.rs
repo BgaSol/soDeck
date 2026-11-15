@@ -139,6 +139,36 @@ impl Capture {
 mod tests {
     use super::*;
     #[test]
+    fn repeated_rotation_keeps_only_pins_and_a_bounded_tail() {
+        let path = std::env::temp_dir().join(format!(
+            "sodeck-capture-rotation-{}-{}",
+            std::process::id(),
+            crate::core::now()
+        ));
+        let mut c = Capture::new(path.clone(), 32 * 1024, true).unwrap();
+        let first = vec![17; 8192];
+        c.append(&first).unwrap();
+        c.pin("reading".into(), 0, 8192).unwrap();
+        for i in 0..2000 {
+            c.append(&vec![(i % 256) as u8; 8192]).unwrap();
+            assert!(c.blocks.len() <= 5);
+            assert_eq!(c.read(0, 8192, c.produced).unwrap(), first);
+        }
+        assert!(c.earliest > 10 * 32 * 1024);
+        assert!(c
+            .read(8192, 1, c.produced)
+            .unwrap_err()
+            .starts_with("bufferGap"));
+        assert!(
+            std::fs::read_dir(&path).unwrap().count() <= 3,
+            "segment overhead and pinned segment remain bounded"
+        );
+        c.unpin("reading");
+        assert!(c.read(0, 1, c.produced).is_err());
+        drop(c);
+        assert!(!path.exists());
+    }
+    #[test]
     fn rolling_keeps_pins_and_reports_gaps() {
         let path = std::env::temp_dir().join(format!(
             "sodeck-capture-{}-{}",

@@ -29,6 +29,27 @@ async fn session_stream_recovers_raw_bytes_and_cancels_only_its_channel() {
 }
 
 #[tokio::test(flavor="multi_thread",worker_threads=2)]
+async fn slow_stream_ack_does_not_block_capture_and_revoked_readers_cannot_resume() {
+    let f=Fixture::new();let ssh=SshServer::new().await;let server=f.server("127.0.0.1",ssh.addr.port(),json!([]));let context=connected(&f,&server).await.context.unwrap();let (view,token,_)=terminal_fixture(&f);
+    let opened=f.core.ui_event("main",&token,json!({"rpc":"session.stream.open","params":{"expectedContext":context,"operationId":"burst","sequence":"1","command":"status-test:stream-burst","maxOutputBytes":65536,"retention":"rolling"}})).unwrap();let id=opened["streamId"].as_str().unwrap();
+    let (tx,mut rx)=tokio::sync::mpsc::unbounded_channel();let sink:Sink=Arc::new(move|frame|tx.send(frame).map_err(|_|"closed".into()));
+    f.core.session_stream_data("main",&token,json!({"action":"attach","id":id,"offset":"0"}),Some(sink)).await.unwrap();
+    let reset=tokio::time::timeout(Duration::from_secs(3),rx.recv()).await.unwrap().unwrap();assert_eq!(reset.kind,"reset");
+    tokio::time::sleep(Duration::from_millis(200)).await;assert!(rx.try_recv().is_err());
+    let deadline=std::time::Instant::now()+Duration::from_secs(10);loop { let status=f.core.ui_event("main",&token,json!({"rpc":"session.stream.status","params":{"streamId":id}})).unwrap();if status["finished"]==true {assert_eq!(status["state"],"completed");assert!(status["producedBytes"].as_str().unwrap().parse::<u64>().unwrap()>3_000_000);break;}assert!(std::time::Instant::now()<deadline,"{status}");tokio::time::sleep(Duration::from_millis(25)).await; }
+    // A real stalled reader keeps one pending packet while the source completes and rotates.
+    tokio::time::sleep(Duration::from_secs(30)).await;assert!(rx.try_recv().is_err());
+    f.core.session_stream_data("main",&token,json!({"action":"ack","id":id,"packet":reset.packet}),None).await.unwrap();let gap=tokio::time::timeout(Duration::from_secs(3),rx.recv()).await.unwrap().unwrap();assert_eq!(gap.kind,"gap");
+    tokio::time::sleep(Duration::from_secs(2)).await;assert!(rx.try_recv().is_err());
+    f.core.ui_detach("main",&token);assert!(f.core.session_stream_data("main",&token,json!({"action":"ack","id":id,"packet":gap.packet}),None).await.is_err());
+    let mounted=f.core.ui_attach("main",&view).unwrap();let replacement=mounted["surfaceId"].as_str().unwrap();f.core.ui_surface_ready("main",replacement).unwrap();
+    let (tx,mut rx)=tokio::sync::mpsc::unbounded_channel();let sink:Sink=Arc::new(move|frame|tx.send(frame).map_err(|_|"closed".into()));
+    f.core.session_stream_data("main",replacement,json!({"action":"attach","id":id}),Some(sink)).await.unwrap();let reset=tokio::time::timeout(Duration::from_secs(3),rx.recv()).await.unwrap().unwrap();assert_eq!(reset.kind,"reset");
+    f.core.session_stream_data("main",replacement,json!({"action":"ack","id":id,"packet":reset.packet}),None).await.unwrap();let data=tokio::time::timeout(Duration::from_secs(3),rx.recv()).await.unwrap().unwrap();assert_eq!(data.kind,"data");assert!(data.data.len()<=16384);
+    close_terminal_views(&f);f.core.shutdown().unwrap();
+}
+
+#[tokio::test(flavor="multi_thread",worker_threads=2)]
 async fn content_export_is_sequential_atomic_and_owned_by_the_surface() {
     let f=Fixture::new();let target=SshServer::new().await;let server=f.server("127.0.0.1",target.addr.port(),json!([]));connected(&f,&server).await;let (_,token,_)=terminal_fixture(&f);
     let target_path=f.path.join("output.txt");std::fs::write(&target_path,b"before").unwrap();

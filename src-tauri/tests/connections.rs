@@ -136,6 +136,21 @@ impl server::Handler for Ssh {
         if command == b"status-test:hang" {
             return Ok(());
         }
+        if command == b"status-test:stream-burst" {
+            let handle = session.handle();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                for i in 0..400 {
+                    if handle.data(id, vec![(i % 256) as u8; 8192]).await.is_err() {
+                        return;
+                    }
+                }
+                let _ = handle.exit_status_request(id, 0).await;
+                let _ = handle.eof(id).await;
+                let _ = handle.close(id).await;
+            });
+            return Ok(());
+        }
         if command == b"status-test:binary" {
             session.data(id, (0..16385).map(|i| i as u8).collect::<Vec<_>>())?;
             session.extended_data(
