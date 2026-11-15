@@ -5,7 +5,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 export function installLogPage(releaseIncumbent=()=>{}) {
   let active=false, worker, serial=0, snapshot, capture, generation=-1, enabled=false, visible=true, frozen=false, following=true, selected, total=0, pollTimer, paintTimer, painting=false, paintAgain=false, epoch=0, composing=false, exporting=false, cancelExport=false, map, pins=[], anchors=[], holding, restored=false, starting=false, revision=-1;
   const pending=new Map(), attached=new Set(), replay=new Map(), queues=new Map(), layout=new LogLayout();
-  let flushing=false, pollCount=0,conditionVersion=0,positionVersion=0,minimapSetting; const pollWaiters=[];
+  let flushing=false, pollCount=0,conditionVersion=0,positionVersion=0,minimapSetting,readingAnchor,resizeAnchor; const pollWaiters=[];
   const event = params => sodeck.request('event', params);
   const data = params => sodeck.request('data', params);
   const localTime=value=>new Date(value).toLocaleString('zh-CN',{hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
@@ -30,6 +30,7 @@ export function installLogPage(releaseIncumbent=()=>{}) {
     $('log-viewport').classList.toggle('no-wrap',!$('log-wrap').checked); map?.show($('log-map').checked); pins=nav.pins||[]; anchors=nav.anchors||[]; $('log-latest').hidden=following;
   }
   function resetControls() {
+    readingAnchor=resizeAnchor=undefined;
     $('log-range').value='latest'; $('log-query').value=''; $('log-only').checked=false;
     $('log-level').value=''; $('log-source').value=''; $('log-wrap').checked=true; $('log-show-source').checked=false;
     $('log-export-one').checked=false; $('log-export-context').checked=false; $('log-custom').hidden=true;
@@ -59,12 +60,17 @@ export function installLogPage(releaseIncumbent=()=>{}) {
     if($('log-only').checked) { const context=document.createElement('button'); context.className='log-context'; context.textContent='上下文'; context.onclick=()=>void protect().then(()=>ask('context',{id:row.id})).then(()=>paint()); body.append(context); }
     line.append(body); return line;
   }
+  function visibleAnchor() {
+    const viewport=$('log-viewport'),top=viewport.getBoundingClientRect().top;
+    const line=[...$('log-lines').querySelectorAll('.log-line')].find(node=>node.getBoundingClientRect().bottom>top);
+    return line?{id:line.dataset.id,pixel:top-line.getBoundingClientRect().top}:undefined;
+  }
   async function paint() {
     if(!worker||!visible||frozen) return; if(painting) {paintAgain=true;return;} painting=true; const local=epoch,version=conditionVersion,position=positionVersion;
     const stale=()=>local!==epoch||version!==conditionVersion||position!==positionVersion;
     try {
       const viewport=$('log-viewport'), container=$('log-lines'), selection=getSelection();
-      const oldAnchor=layout.anchor(viewport.scrollTop-container.offsetTop); const info=await ask('view',{start:0,count:0}); if(stale()) return;
+      const oldAnchor=resizeAnchor||layout.anchor(viewport.scrollTop-container.offsetTop); const info=await ask('view',{start:0,count:0}); if(stale()) return;
       total=info.total;
       filterChips();
       $('log-latest').textContent=info.newCount?`${info.newCount.toLocaleString()}条新日志 · 查看最新`:'查看最新';
@@ -83,8 +89,14 @@ export function installLogPage(releaseIncumbent=()=>{}) {
       $('log-empty').hidden=total>0; $('log-empty').textContent=capture?.loading?'正在读取日志…':conditions().query||conditions().levels.length||conditions().sources.length?'当前已读窗口没有匹配；可调整条件或读取其他时间段':'当前窗口没有日志，可选择更早时间段';
       const selectedLevel=$('log-level').value; for(const value of info.levels) if(![...$('log-level').options].some(o=>o.value===value)) $('log-level').add(new Option(value,value)); $('log-level').value=selectedLevel;
       if(info.gap) error('部分内容已退出缓冲或长记录未完整保留；搜索与缩略仅覆盖当前窗口，可按时间重新读取。');
+      if(resizeAnchor&&!following) {
+        const line=nodes.find(node=>node.dataset.id===resizeAnchor.id);
+        if(line) viewport.scrollTop+=line.getBoundingClientRect().top-viewport.getBoundingClientRect().top+resizeAnchor.pixel;
+        resizeAnchor=undefined;
+      }
       const summary=await ask('summary',{height:Math.ceil(viewport.clientHeight)}); if(stale()) return;
       map.update({...summary,ids:layout.ids},layout.index(Math.max(0,viewport.scrollTop-container.offsetTop)),layout.index(Math.max(0,viewport.scrollTop+viewport.clientHeight-container.offsetTop)));
+      if(!following&&viewport.clientWidth===viewportWidth&&devicePixelRatio===viewportScale)readingAnchor=visibleAnchor();
     } finally { painting=false; if(paintAgain) {paintAgain=false;schedule();} }
   }
   async function jump(index,id) { const local=epoch;positionVersion++;await protect();const next=await ask('layout');if(local!==epoch)return;layout.reset(next.ids);revision=next.revision;if(id)index=next.ids.indexOf(id);if(index<0)return;const viewport=$('log-viewport'); viewport.scrollTop=layout.offset(index)+$('log-lines').offsetTop; await paint(); }
@@ -162,7 +174,7 @@ export function installLogPage(releaseIncumbent=()=>{}) {
   lifecycle('contextChanged',()=>{error('连接已改变，保留已读日志；重新读取前核对容器身份');void poll();});
   lifecycle('settingsChanged',()=>{if(snapshot.showLogMinimap!==undefined){$('log-map').checked=snapshot.showLogMinimap;map.show(snapshot.showLogMinimap);}void poll();});
   lifecycle('unmount',()=>{stop();active=false;enabled=false;});
-  $('log-viewport').addEventListener('scroll',()=>{if(!active)return;positionVersion++;if(painting){paintAgain=true;return;}schedule();});
+  $('log-viewport').addEventListener('scroll',()=>{if(!active)return;positionVersion++;if(painting){paintAgain=true;return;}const viewport=$('log-viewport');if(!following&&!resizeAnchor&&viewport.clientWidth===viewportWidth&&devicePixelRatio===viewportScale)readingAnchor=visibleAnchor();schedule();});
   $('log-viewport').addEventListener('wheel',e=>{if(e.deltaY<0)void protect();},{passive:true});
   $('log-viewport').addEventListener('keydown',e=>{if(['ArrowUp','PageUp','Home'].includes(e.key))void protect();});
   $('log-viewport').addEventListener('pointerdown',()=>{if(active)void protect();});$('log-query').addEventListener('compositionstart',()=>composing=true);$('log-query').addEventListener('compositionend',()=>{composing=false;void query();});$('log-query').oninput=()=>void query();
@@ -171,12 +183,12 @@ export function installLogPage(releaseIncumbent=()=>{}) {
   $('log-earlier').onclick=async()=>{await protect();const end=Math.min(...(capture?.resources||[]).filter(r=>r.end!=null).map(r=>r.start));if(!Number.isFinite(end)||end<=0){error('已到当前历史范围起点，可选择时间范围重新读取');return;}await event({action:'logs.loadEarlier',end});await poll();};
   const reflow=()=>{positionVersion++;layout.reset(layout.ids,true);schedule();void remember();};$('log-wrap').onchange=()=>{$('log-viewport').classList.toggle('no-wrap',!$('log-wrap').checked);reflow();};$('log-map').onchange=()=>{map?.show($('log-map').checked);reflow();};$('log-show-source').onchange=reflow;
   $('log-detail-close').onclick=()=>{$('log-detail').hidden=true;$('log-viewport').focus();reflow();};$('log-copy').onclick=async()=>{const row=await ask('detail',{id:selected});if(row)try{await sodeckClipboard.writeText(row.raw,()=>active&&enabled&&!frozen);}catch(e){error(e.message);}};$('log-export').onclick=()=>void exportLogs();$('log-export-cancel').onclick=()=>cancelExport=true;
-  let viewportWidth=0;
+  let viewportWidth=0,viewportScale=devicePixelRatio;
   const resize=new ResizeObserver(()=>{
     const viewport=$('log-viewport'),width=viewport.clientWidth;if(!active||!width)return;
     // Height changes (status/notice/hidden page) do not invalidate measured line heights.
-    if(viewportWidth&&width!==viewportWidth){const anchor=layout.anchor(viewport.scrollTop-$('log-lines').offsetTop);layout.reset(layout.ids,true);const top=layout.restore(anchor);if(!following&&top!==null)viewport.scrollTop=top+$('log-lines').offsetTop;}
-    viewportWidth=width;positionVersion++;schedule();
+    if(viewportWidth&&(width!==viewportWidth||devicePixelRatio!==viewportScale)){if(!following)resizeAnchor=resizeAnchor||readingAnchor||visibleAnchor();layout.reset(layout.ids,true);const top=layout.restore(resizeAnchor);if(!following&&top!==null)viewport.scrollTop=top+$('log-lines').offsetTop;}
+    viewportWidth=width;viewportScale=devicePixelRatio;positionVersion++;schedule();
   });resize.observe($('log-viewport'));
   addEventListener('keydown',e=>{if(!active||!enabled||frozen)return;if((e.ctrlKey||e.metaKey)&&e.key==='f'){e.preventDefault();$('log-query').focus();}if(e.key==='F3'){e.preventDefault();void navigate(e.shiftKey?-1:1);}if(e.key==='Escape'&&!$('log-detail').hidden){$('log-detail').hidden=true;$('log-viewport').focus();reflow();}});
 }
