@@ -69,13 +69,13 @@ await page.exposeFunction('mockData',async d=>{
 });
 await page.addInitScript(({snapshot,tokens})=>{
   if(window!==top)return;
-  window.mount=snapshot;window.tokens=tokens;window.flushed=[];window.responses=[];
+  window.mount=snapshot;window.tokens=tokens;window.flushed=[];window.responses=[];window.prepared=0;
   window.post=(type,extra={})=>document.querySelector('iframe').contentWindow.postMessage({channel:'sodeck-ui-v2',surfaceId:'surface',type,...extra},'*');
   addEventListener('message',async e=>{
     if(e.source!==document.querySelector('iframe')?.contentWindow||e.data?.channel!=='sodeck-ui-v2')return;
     const m=e.data;
     if(m.type==='ready')window.post('mount',{data:window.mount,tokens:window.tokens,capabilities:{clipboard:1},readOnly:!!window.candidate});
-    if(m.type==='prepared'&&!window.candidate)window.post('surfaceReady');
+    if(m.type==='prepared'){window.prepared++;if(!window.candidate)window.post('surfaceReady');}
     if(m.type==='flushed')window.flushed.push(m);
     if(m.type==='request'){
       try{const data=m.method==='event'?await window.mock(m.params):m.method==='data'?await window.mockData(m.params):{};if(m.method==='event')window.responses.push(m.params);window.post('response',{id:m.id,data});}
@@ -183,20 +183,27 @@ try{
     if(mode==='logs'){
       await frame.locator('#log-lines').filter({hasText:'服务启动'}).waitFor();
       for(const label of ['更多','显示','筛选']){await frame.locator('.log-tools').getByText(label,{exact:true}).click();assert.equal(await frame.locator('.log-tools details[open]').count(),1,'log popovers never overlap');}await frame.locator('.log-tools').getByText('筛选',{exact:true}).click();
-      await appendLive([...Array.from({length:500},(_,i)=>({stream:'stdout',text:'INFO fixture '+i+' '+(i%7===0?'长内容 '.repeat(25):'')})),{stream:'stderr',text:'ERROR off-page UNIQUE'}]);
-      await frame.locator('#log-scope').filter({hasText:'505条'}).waitFor();assert(await frame.locator('#log-viewport').evaluate(e=>e.scrollTop+e.clientHeight>=e.scrollHeight-8),'follows new output');
+      await appendLive([...Array.from({length:4000},(_,i)=>({stream:'stdout',text:'INFO fixture '+i+' '+(i%7===0?'长内容 '.repeat(25):'')})),{stream:'stderr',text:'ERROR off-page UNIQUE'}]);
+      await frame.locator('#log-scope').filter({hasText:'4,005条'}).waitFor();assert(await frame.locator('#log-viewport').evaluate(e=>e.scrollTop+e.clientHeight>=e.scrollHeight-8),'follows new output');
       await frame.locator('#log-viewport').focus();await page.keyboard.press('PageUp');await frame.locator('#log-latest').waitFor();await page.waitForTimeout(400);
       const anchor=await frame.locator('#log-lines').evaluate(el=>{const v=el.parentElement,top=v.getBoundingClientRect().top,line=[...el.querySelectorAll('.log-line')].find(e=>e.getBoundingClientRect().top>=top);return {id:line.dataset.id,top:line.getBoundingClientRect().top,viewportTop:top,width:v.clientWidth,height:v.clientHeight,scroll:v.scrollTop};});
       for(const height of [620,780]){await page.setViewportSize({...page.viewportSize(),height});await page.waitForTimeout(400);const line=frame.locator('.log-line[data-id="'+anchor.id+'"]');assert.equal(await line.count(),1,'height-only reflow retains the visible record');const next=await line.evaluate(e=>{const v=document.getElementById('log-viewport');return {top:e.getBoundingClientRect().top,viewportTop:v.getBoundingClientRect().top,width:v.clientWidth,height:v.clientHeight,scroll:v.scrollTop};});assert(Math.abs(next.top-anchor.top)<=2,'height-only reflow preserves wrapped record position: '+JSON.stringify({height,anchor,next}));}
       const reading=await frame.locator('#log-lines').evaluate(el=>{const top=el.parentElement.getBoundingClientRect().top,line=[...el.querySelectorAll('.log-line')].find(e=>e.getBoundingClientRect().bottom>top);return {id:line.dataset.id,relativeTop:line.getBoundingClientRect().top-top};});
       const originalWidth=page.viewportSize().width;
       for(const width of [900,400,originalWidth]){await page.setViewportSize({width,height:780});await page.waitForTimeout(500);const line=frame.locator('.log-line[data-id="'+reading.id+'"]');assert.equal(await line.count(),1,'width reflow retains the actual visible record');const relativeTop=await line.evaluate(e=>e.getBoundingClientRect().top-document.getElementById('log-viewport').getBoundingClientRect().top);assert(Math.abs(relativeTop-reading.relativeTop)<=2,'width reflow preserves actual record offset: '+JSON.stringify({width,reading,relativeTop}));}
+      // A previous measurement can disagree with the actual wrapped DOM before the next paint.
+      const redrawReading=await frame.locator('#log-lines').evaluate(el=>{el.querySelector('.log-line').style.minHeight='140px';const v=el.parentElement.getBoundingClientRect(),line=[...el.querySelectorAll('.log-line')].find(e=>{const r=e.getBoundingClientRect();return r.bottom>v.top&&r.top<v.bottom;});return {id:line.dataset.id,relativeTop:line.getBoundingClientRect().top-v.top};});
+      for(let cycle=0;cycle<40;cycle++){
+        await appendLive([{stream:'stdout',text:'INFO background '+cycle+' '+ '长内容 '.repeat(25)}]);await page.waitForTimeout(180);
+        const relativeTop=await frame.locator('body').evaluate((_,id)=>{const line=[...document.querySelectorAll('.log-line')].find(e=>e.dataset.id===id);return line?line.getBoundingClientRect().top-document.getElementById('log-viewport').getBoundingClientRect().top:null;},redrawReading.id);
+        assert.notEqual(relativeTop,null,'background repaint keeps the actual reading record');assert(Math.abs(relativeTop-redrawReading.relativeTop)<=2,'background repaint keeps record offset: '+JSON.stringify({cycle,redrawReading,relativeTop}));
+      }
       await frame.locator('#log-query').fill('unique');await frame.locator('#log-matches').filter({hasText:'1处'}).waitFor();
       await frame.locator('#log-next-match').click();await frame.locator('#log-lines').filter({hasText:'off-page UNIQUE'}).waitFor();
       await frame.locator('#log-query').fill('no-match');await frame.locator('#log-matches').filter({hasText:'0处'}).waitFor();
       await frame.locator('#log-query').fill('refused');await frame.locator('#log-next-match').click();await frame.locator('#log-lines').filter({hasText:'refused'}).waitFor();
       await frame.waitForFunction(()=>{const v=document.getElementById('log-viewport'),line=[...document.querySelectorAll('.log-line')].find(e=>e.querySelector('mark')?.textContent==='refused');if(!line)return false;const a=line.getBoundingClientRect(),b=v.getBoundingClientRect();return v.scrollTop<1||Math.abs(a.top+a.height/2-b.top-b.height/2)<3;});
-      const before=await frame.locator('#log-viewport').evaluate(e=>e.scrollTop);await appendLive([{stream:'stdout',text:'INFO received while reading'}]);await frame.locator('#log-latest').filter({hasText:'1条新日志'}).waitFor();assert.equal(await frame.locator('#log-viewport').evaluate(e=>e.scrollTop),before,'incoming output keeps pinned reading position');
+      const before=await frame.locator('#log-viewport').evaluate(e=>e.scrollTop);await appendLive([{stream:'stdout',text:'INFO received while reading'}]);await frame.locator('#log-latest').filter({hasText:'41条新日志'}).waitFor();assert.equal(await frame.locator('#log-viewport').evaluate(e=>e.scrollTop),before,'incoming output keeps pinned reading position');
       await frame.locator('#log-query').fill('');await frame.locator('.log-map-thumb').focus();await page.keyboard.press('Home');await frame.locator('#log-lines').filter({hasText:'服务启动'}).waitFor();
       await frame.locator('.log-time').first().click();await frame.locator('#log-detail').waitFor({state:'visible'});await frame.locator('#log-detail-close').click();
       await frame.locator('#log-latest').click();await frame.locator('#log-lines').filter({hasText:'received while reading'}).waitFor();assert(await frame.locator('#log-latest').isHidden());
@@ -214,7 +221,7 @@ try{
       const initial=await frame.locator('.log-line').first().getAttribute('data-id'),thumb=await frame.locator('.log-map-thumb').boundingBox(),rail=await frame.locator('.log-minimap').boundingBox();
       await page.mouse.move(thumb.x+thumb.width/2,thumb.y+thumb.height/2);await page.mouse.down();await page.mouse.move(thumb.x+thumb.width/2,rail.y+rail.height*.7);
       capturedBytes.set('earlier',bytesFor([{stream:'stdout',text:'2026-01-01T00:00:00Z INFO earlier history'}]));logCapture.resources.push({id:'earlier',start:0,end:2000000000,tail:true,status:{state:'completed',finished:true}});
-      await frame.locator('#log-scope').filter({hasText:'507条'}).waitFor();await frame.locator('.log-map-thumb').focus();await page.keyboard.press('Escape');await page.mouse.up();
+      await frame.locator('#log-scope').filter({hasText:'4,047条'}).waitFor();await frame.locator('.log-map-thumb').focus();await page.keyboard.press('Escape');await page.mouse.up();
       await frame.locator('.log-line[data-id="'+initial+'"]').waitFor();assert(await frame.locator('.log-line[data-id="'+initial+'"]').evaluate(e=>{const v=document.getElementById('log-viewport').getBoundingClientRect(),r=e.getBoundingClientRect();return r.top>=v.top-2&&r.top<v.top+65;}),'Escape restores the original record after history arrives during drag');
       await page.setViewportSize({width:900,height:780});await page.evaluate(tokens=>window.post('themeChanged',{tokens}),themes.dark);
       await frame.locator('#log-query').fill('UNIQUE');await frame.locator('#log-matches').filter({hasText:'1处'}).waitFor();await frame.locator('.log-tools details').first().locator('summary').click();await frame.locator('#log-only').check();
@@ -225,10 +232,10 @@ try{
     }
   }
   await page.evaluate(()=>window.post('flush',{id:'candidate-source',freeze:true}));await page.waitForFunction(()=>window.flushed.some(f=>f.id==='candidate-source'));
-  const before=requests.length;await page.evaluate(s=>{window.mount=s;window.candidate=true;window.post('mount',{data:s,tokens:window.tokens,readOnly:true});},snapshot);await new Promise(r=>setTimeout(r,1200));assert.equal(requests.length,before,'Candidate must not poll or send UI events: '+JSON.stringify(requests.slice(before)));
+  const before=requests.length,prepared=await page.evaluate(()=>window.prepared);await page.evaluate(s=>{window.mount=s;window.candidate=true;window.post('mount',{data:s,tokens:window.tokens,readOnly:true});},snapshot);await page.waitForFunction(count=>window.prepared>count,prepared);assert.equal(requests.length,before,'Candidate must not poll or send UI events: '+JSON.stringify(requests.slice(before)));
   assert.equal(await frame.locator('#log-query').inputValue(),'UNIQUE','candidate restores the fixed query from the original capture');
   await page.evaluate(()=>{window.candidate=false;window.post('surfaceReady');window.post('flush',{id:'move',freeze:true});});await page.waitForFunction(()=>window.flushed.some(f=>f.id==='move'));
-  const frozen=requests.length;await new Promise(r=>setTimeout(r,1200));assert.equal(requests.length,frozen,'Frozen surface must not keep polling');
+  const frozen=requests.length;await new Promise(r=>setTimeout(r,1200));assert.equal(requests.length,frozen,'Frozen surface must not keep polling: '+JSON.stringify(requests.slice(frozen)));
   await page.evaluate(()=>window.post('transferCancelled'));await new Promise(r=>setTimeout(r,1200));assert(requests.length>frozen);
   snapshot={...snapshot,containerId:second,name:'other-container',logCapture:{...logCapture,generation:2,navigation:{}}};logCapture=snapshot.logCapture;await page.evaluate(s=>window.post('mount',{data:s,tokens:window.tokens,readOnly:false}),snapshot);await frame.locator('#title').filter({hasText:'other-container'}).waitFor();assert.equal(await frame.locator('#log-query').inputValue(),'');assert.equal(await frame.locator('#log-range').inputValue(),'latest');assert(!(await frame.locator('#log-only').isChecked()),'another container starts without prior filters');
   assert.deepEqual(errors,[]);console.log('Docker UI: inline maintenance, terminal, refresh focus, filters, keyboard, confirmation, environment visibility, logs, stats, themes, narrow layouts and transfer passed.');

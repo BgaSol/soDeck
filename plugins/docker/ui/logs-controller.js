@@ -61,8 +61,8 @@ export function installLogPage(releaseIncumbent=()=>{}) {
     line.append(body); return line;
   }
   function visibleAnchor() {
-    const viewport=$('log-viewport'),top=viewport.getBoundingClientRect().top;
-    const line=[...$('log-lines').querySelectorAll('.log-line')].find(node=>node.getBoundingClientRect().bottom>top);
+    const viewport=$('log-viewport'),bounds=viewport.getBoundingClientRect(),top=bounds.top;
+    const line=[...$('log-lines').querySelectorAll('.log-line')].find(node=>{const r=node.getBoundingClientRect();return r.bottom>top&&r.top<bounds.bottom;});
     return line?{id:line.dataset.id,pixel:top-line.getBoundingClientRect().top}:undefined;
   }
   async function paint() {
@@ -70,13 +70,15 @@ export function installLogPage(releaseIncumbent=()=>{}) {
     const stale=()=>local!==epoch||version!==conditionVersion||position!==positionVersion;
     try {
       const viewport=$('log-viewport'), container=$('log-lines'), selection=getSelection();
-      const oldAnchor=resizeAnchor||layout.anchor(viewport.scrollTop-container.offsetTop); const info=await ask('view',{start:0,count:0}); if(stale()) return;
+      const oldAnchor=resizeAnchor||(!following&&visibleAnchor())||layout.anchor(viewport.scrollTop-container.offsetTop); const info=await ask('view',{start:0,count:0}); if(stale()) return;
       total=info.total;
       filterChips();
       $('log-latest').textContent=info.newCount?`${info.newCount.toLocaleString()}条新日志 · 查看最新`:'查看最新';
       if(selection?.toString()&&container.contains(selection.anchorNode)) return;
-      if(revision!==info.revision) { const next=await ask('layout'); if(stale()) return; layout.reset(next.ids); revision=next.revision; if(!following) { const top=layout.restore(oldAnchor); if(top!==null) viewport.scrollTop=top+container.offsetTop; } }
-      const top=following?Math.max(0,layout.offset(total)-viewport.clientHeight):Math.max(0,viewport.scrollTop-container.offsetTop);
+      if(revision!==info.revision) { const next=await ask('layout'); if(stale()) return; layout.reset(next.ids); revision=next.revision; }
+      // Plan the new slice without scrolling the old DOM while Worker requests are pending.
+      const anchoredTop=following?null:layout.restore(oldAnchor);
+      const top=following?Math.max(0,layout.offset(total)-viewport.clientHeight):Math.max(0,anchoredTop??(viewport.scrollTop-container.offsetTop));
       const start=Math.max(0,layout.index(top)-8), end=Math.min(total,layout.index(top+viewport.clientHeight)+20);
       const result=await ask('view',{start,count:Math.max(30,end-start)}); if(stale()) return;
       const before=document.createElement('div'), after=document.createElement('div'); before.className=after.className='log-spacer'; before.style.height=layout.offset(start)+'px'; after.style.height=(layout.offset(total)-layout.offset(start+result.rows.length))+'px';
@@ -89,9 +91,9 @@ export function installLogPage(releaseIncumbent=()=>{}) {
       $('log-empty').hidden=total>0; $('log-empty').textContent=capture?.loading?'正在读取日志…':conditions().query||conditions().levels.length||conditions().sources.length?'当前已读窗口没有匹配；可调整条件或读取其他时间段':'当前窗口没有日志，可选择更早时间段';
       const selectedLevel=$('log-level').value; for(const value of info.levels) if(![...$('log-level').options].some(o=>o.value===value)) $('log-level').add(new Option(value,value)); $('log-level').value=selectedLevel;
       if(info.gap) error('部分内容已退出缓冲或长记录未完整保留；搜索与缩略仅覆盖当前窗口，可按时间重新读取。');
-      if(resizeAnchor&&!following) {
-        const line=nodes.find(node=>node.dataset.id===resizeAnchor.id);
-        if(line) viewport.scrollTop+=line.getBoundingClientRect().top-viewport.getBoundingClientRect().top+resizeAnchor.pixel;
+      if(!following) {
+        const line=nodes.find(node=>node.dataset.id===oldAnchor.id);
+        if(line) viewport.scrollTop+=line.getBoundingClientRect().top-viewport.getBoundingClientRect().top+oldAnchor.pixel;
         resizeAnchor=undefined;
       }
       const summary=await ask('summary',{height:Math.ceil(viewport.clientHeight)}); if(stale()) return;
