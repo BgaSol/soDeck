@@ -171,6 +171,12 @@ export function installLogPage(releaseIncumbent=()=>{}) {
   $('log-earlier').onclick=async()=>{await protect();const end=Math.min(...(capture?.resources||[]).filter(r=>r.end!=null).map(r=>r.start));if(!Number.isFinite(end)||end<=0){error('已到当前历史范围起点，可选择时间范围重新读取');return;}await event({action:'logs.loadEarlier',end});await poll();};
   const reflow=()=>{positionVersion++;layout.reset(layout.ids,true);schedule();void remember();};$('log-wrap').onchange=()=>{$('log-viewport').classList.toggle('no-wrap',!$('log-wrap').checked);reflow();};$('log-map').onchange=()=>{map?.show($('log-map').checked);reflow();};$('log-show-source').onchange=reflow;
   $('log-detail-close').onclick=()=>{$('log-detail').hidden=true;$('log-viewport').focus();reflow();};$('log-copy').onclick=async()=>{const row=await ask('detail',{id:selected});if(row)try{await sodeckClipboard.writeText(row.raw,()=>active&&enabled&&!frozen);}catch(e){error(e.message);}};$('log-export').onclick=()=>void exportLogs();$('log-export-cancel').onclick=()=>cancelExport=true;
-  const resize=new ResizeObserver(()=>{if(active){positionVersion++;layout.reset(layout.ids,true);schedule();}});resize.observe($('log-viewport'));
+  let viewportWidth=0;
+  const resize=new ResizeObserver(()=>{
+    const viewport=$('log-viewport'),width=viewport.clientWidth;if(!active||!width)return;
+    // Height changes (status/notice/hidden page) do not invalidate measured line heights.
+    if(viewportWidth&&width!==viewportWidth){const anchor=layout.anchor(viewport.scrollTop-$('log-lines').offsetTop);layout.reset(layout.ids,true);const top=layout.restore(anchor);if(!following&&top!==null)viewport.scrollTop=top+$('log-lines').offsetTop;}
+    viewportWidth=width;positionVersion++;schedule();
+  });resize.observe($('log-viewport'));
   addEventListener('keydown',e=>{if(!active||!enabled||frozen)return;if((e.ctrlKey||e.metaKey)&&e.key==='f'){e.preventDefault();$('log-query').focus();}if(e.key==='F3'){e.preventDefault();void navigate(e.shiftKey?-1:1);}if(e.key==='Escape'&&!$('log-detail').hidden){$('log-detail').hidden=true;$('log-viewport').focus();reflow();}});
 }

@@ -17,7 +17,7 @@
 #log-custom { padding:8px 16px; display:flex; gap:8px; flex-wrap:wrap; }
 #log-notice { margin:0; padding:7px 16px; color:var(--warning); background:var(--subtle); font-size:12px; }
 .log-main { display:flex; flex:1; min-height:0; min-width:0; position:relative; }
-.log-viewport { position:relative; flex:1; min-width:0; overflow:auto; outline-offset:-2px; padding:8px 0; background:var(--panel); }
+.log-viewport { position:relative; flex:1; min-width:0; overflow:auto; overflow-anchor:none; outline-offset:-2px; padding:8px 0; background:var(--panel); }
 .log-line { display:flex; align-items:baseline; gap:12px; padding:1px 16px; min-height:23px; font:12px/21px ui-monospace,SFMono-Regular,Consolas,monospace; }
 .log-line:hover { background:var(--subtle); }
 .log-time { flex:none; width:98px; border:0; border-radius:0; padding:0; min-height:21px; color:var(--muted); background:transparent; font:inherit; text-align:left; }
