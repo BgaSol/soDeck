@@ -126,7 +126,6 @@
   .maintenance-details summary { font-size: 13px; }
   .maintenance-details .update-source { margin-top: 0; padding-top: 0; border-top: 0; }
   .maintenance-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
-  .settings-update-count, .settings-update-pending { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--accent); }
   @media (max-width: 800px) {
     .settings-main > .settings-page { padding: 18px; }
     .settings-main > .maintenance-pending { margin: 0 18px 16px; padding: 12px; gap: 10px; }

@@ -30,6 +30,7 @@ const componentSettings = new ComponentSettings(() => { if (["settings","plugins
 workspaces.setCloseParticipants(async (decision,operationId)=>{await hostDrafts.flushInputs();return [...await (servers?.closeInputs(decision)??Promise.resolve([])),...await componentSettings.closeInputs(decision,operationId),...await hostDrafts.closeInputs(decision)];},blocked=>servers?.setCloseBlocked(blocked));
 let snapshot: Snapshot | undefined;
 let currentPage = 'connections';
+let settingsSection = 'appearance';
 let lastError = "";
 let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 let refreshing = false;
@@ -63,8 +64,12 @@ const hostDrafts = new HostDrafts(() => snapshot, state, renderPage);
 function renderTop() {
   const count = snapshot ? updateCount(snapshot, state) : 0;
   const pending = snapshot?.restartRequired || state.updates[CORE_ID]?.phase === "ready";
-  const settingsButton = document.querySelector<HTMLButtonElement>("#settings-button")!;
-  settingsButton.innerHTML = `${icon("settings")}设置${count ? `<span class="settings-update-count">${count}</span>` : pending ? '<span class="settings-update-pending">待重启</span>' : ""}`;
+  const updatesBadge = root.querySelector<HTMLElement>('#console-update-count')!;
+  updatesBadge.textContent = count ? String(count) : pending ? '待重启' : '';
+  updatesBadge.hidden = !count && !pending;
+  const messagesBadge = root.querySelector<HTMLElement>('#console-message-count')!;
+  messagesBadge.textContent = snapshot?.unreadCount ? snapshot.unreadCount > 99 ? '99+' : String(snapshot.unreadCount) : '';
+  messagesBadge.hidden = !snapshot?.unreadCount;
   document.querySelector("#message-count")!.textContent = snapshot?.unreadCount
     ? `消息 ${snapshot.unreadCount > 99 ? "99+" : snapshot.unreadCount}`
     : "消息";
@@ -108,20 +113,20 @@ function renderPage() {
     componentSettings.mount(target.querySelector("#component-settings-page"), ["settings","plugins","updates"].includes(currentPage) && state.section === "components");
   }
 }
-async function showPage(next: string) {
-  shell.navigate(next as ConsolePage);
+async function showPage(next: ConsolePage) {
+  shell.navigate(next);
 }
 async function enterPage(next: ConsolePage) {
+  if(currentPage==='settings' && next!=='settings')settingsSection=state.section;
   currentPage=next;
   if(next === 'connections') {componentSettings.mount(null,false);return;}
-  if(next==='plugins')state.plugin='';
   if(['plugins','updates'].includes(next))state.section=next;
-  else if(next==='settings'&&['plugins','updates'].includes(state.section))state.section='appearance';
+  else if(next==='settings')state.section=settingsSection;
   const target=pageHost.querySelector<HTMLElement>('#layer-content')!;
   target.className='layer-content '+next+'-content';
   renderPage();
   if(next==='messages')await refreshMessages();
-  if(next==='logs'){state.paused=false;await refreshLogs();}
+  if(next==='logs'&&!state.paused)await refreshLogs();
   if(next==='updates')void core.checkUpdates(true).catch(()=>{});
   if(['settings','plugins','updates'].includes(next))void componentSettings.catalog();
   if(next==='plugins')void loadOfficialPlugins();
@@ -280,34 +285,30 @@ root.addEventListener("click", (event) => {
         break;
       case "logs":
         state.filter.pluginId = "";
+        state.paused = false;
         await showPage("logs");
-        break;
-      case "close-page":
-        shell.showWorkbench();
         break;
       case "refresh":
         await refresh();
         break;
       case "section":
         state.section = id;
-        if (["plugins","updates"].includes(id)) {await showPage(id);break;}
+        settingsSection = id;
         renderPage();
         break;
       case "manage-plugins":
-        state.section = "plugins";
         state.plugin = "";
-        state.pluginTab = null;
-        await showPage("settings");
+        await showPage("plugins");
         break;
       case "component-settings":
-        state.section = "components";
+        settingsSection = "components";
         await showPage("settings");
         componentSettings.select(id);
         break;
       case "plugin-component-settings": {
         await componentSettings.catalog();
         const entry = componentSettings.entries.find(p => p.pluginId === id);
-        if (entry) { state.section = "components"; await showPage("settings"); componentSettings.select(`${entry.pluginId}/${entry.pageId}`); }
+        if (entry) { settingsSection = "components"; await showPage("settings"); componentSettings.select(`${entry.pluginId}/${entry.pageId}`); }
         break;
       }
       case "save-component-settings":
@@ -328,7 +329,6 @@ root.addEventListener("click", (event) => {
         await loadOfficialPlugins(true);
         break;
       case "plugin-updates":
-        state.section = "updates";
         await showPage("updates");
         pageHost.querySelector<HTMLElement>(`[data-update-id="${CSS.escape(id)}"]`)?.focus();
         void core.checkUpdates(true).catch(() => {});
@@ -413,13 +413,13 @@ root.addEventListener("click", (event) => {
         break;
       case "plugin-logs":
         state.filter.pluginId = id;
+        state.paused = false;
         await showPage("logs");
         break;
       case "locate-plugin":
         state.plugin = id;
         state.pluginTab = "installed";
-        state.section = "plugins";
-        await showPage("settings");
+        await showPage("plugins");
         break;
       case "theme":
         await core.theme(id);

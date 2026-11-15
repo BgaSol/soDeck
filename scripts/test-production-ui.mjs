@@ -362,6 +362,7 @@ try {
   await page.getByRole('button',{name:'复制日志路径',exact:true}).focus();await page.keyboard.press('Tab');
   assert.equal(await page.evaluate(()=>!!document.activeElement.closest('[role="dialog"]')),false,'Full management pages do not trap Tab');
   await page.locator('#catalog-tab').click();
+  assert.equal(await page.locator('#settings-nav-about').getAttribute('aria-current'),'page','SoDeck keeps the current management page');
   await page.locator('#settings-button').click();await page.locator('[data-console-page="plugins"]').click();
   assert.equal(await page.locator('#plugins-official').getAttribute('aria-pressed'),'true','An empty installation opens official plugins directly');
   await page.locator('#plugins-installed').focus();await page.keyboard.press('Enter');
@@ -414,6 +415,10 @@ try {
   assert.equal((await call('snapshot')).plugins.length, 2, 'A second official plugin installs without leaving the list');
   await terminal.locator('[data-action="select-plugin"]').click();
   assert.equal(await page.locator('[data-action="download-update"],[data-action="check-update"]').count(),0,'Plugin details route upgrades to software updates');
+  await page.locator('#settings-button').click();
+  assert.equal(await page.locator('#settings-nav-about').getAttribute('aria-current'),'page','Plugin management preserves the last preference section');
+  await page.locator('[data-console-page="plugins"]').click();
+  assert.equal(await page.locator('.settings-main').getAttribute('data-page'),'plugins:sodeck.terminal','Returning to plugins retains the selected details');
   await page.locator('[data-action="back-plugins"]').click();
   assert.equal(await page.locator('#plugins-official').getAttribute('aria-pressed'),'true','Back returns to the same plugin list');
   assert.equal(await terminal.locator('[data-action="select-plugin"]').evaluate(el=>el===document.activeElement),true,'Back restores focus to the plugin');
@@ -582,7 +587,7 @@ try {
   assert.deepEqual((await call('snapshot')).plugins.find(p=>p.manifest.id==='test.update-one').manifest.updateSource,sourceBefore);
   await page.locator('[data-decision="cancel"]').click();await page.locator('.component-close-dialog').waitFor({state:'detached'});
   await page.locator('[data-console-page="plugins"]').click();
-  await page.locator('[data-action="select-plugin"][data-id="test.update-one"]').click();
+  assert.equal(await page.locator('.settings-main').getAttribute('data-page'),'plugins:test.update-one','Returning after close cancellation retains the plugin target');
   await page.locator('details[data-persist="source-test.update-one"] summary').click();
   assert.equal(await page.locator('#update-repository').inputValue(),'test/close-draft');
   await page.locator('[data-action="save-update-source"]').click();
@@ -595,11 +600,14 @@ try {
   await page.locator('[data-action="check-all-updates"]').click();
   const firstUpdate=page.locator('[data-update-id="test.update-one"]'),secondUpdate=page.locator('[data-update-id="test.update-two"]');
   await firstUpdate.locator('[data-action="download-update"]').waitFor();
+  await page.waitForFunction(()=>Number(document.querySelector('#console-update-count').textContent)>=2);
+  assert.equal(await page.locator('#settings-button [class*=update]').count(),0,'Update notices belong to the update entry');
   await secondUpdate.locator('[data-update-select]').focus();
   await page.keyboard.press('Space');
   assert.match(await page.locator('[data-action="download-all-updates"]').textContent(),/所选（1）/);
   await secondUpdate.locator('[data-update-select]').check();
   await page.locator('[data-console-page="plugins"]').click();
+  await page.locator('#back-plugins').click();
   const updateShortcut = page.locator('[data-plugin-id="test.update-one"] [data-action="plugin-updates"]');
   await updateShortcut.click();
   assert.equal(await firstUpdate.evaluate(el=>el===document.activeElement),true,'A plugin update shortcut locates and focuses its software update row');
@@ -760,7 +768,7 @@ try {
   await preference.evaluate(el=>window.componentPreferenceInput=el);await page.evaluate(()=>window.emitTestEvent('core-changed'));await page.waitForTimeout(150);
   assert(await preference.evaluate(el=>el===window.componentPreferenceInput));assert.equal(await preference.inputValue(),'17');
   await page.waitForTimeout(200);assert(await preference.evaluate(el=>el===document.activeElement),'Retained form focus survives global refresh');
-  await page.locator('#catalog-tab').click();await page.locator('#settings-button').click();assert.equal(await preference.inputValue(),'17');
+  await page.locator('#return-workbench').click();await page.locator('#catalog-tab').click();assert.equal(await preference.inputValue(),'17');
   await page.locator('#component-settings-page').getByRole('button',{name:'保存',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.settings-feedback')?.textContent.includes('设置已保存'));
   const preferenceValue=await call('settings_page',{pluginId:uiMetadata.id,pageId:'display'});assert.equal(preferenceValue.values.fontSize,17);
   for (const destination of ['appearance','plugins','updates']) {
@@ -771,7 +779,7 @@ try {
     assert.equal(await preference.inputValue(),'17','Returning to component preferences preserves their values');
     assert.equal(await page.locator('.settings-nav [aria-current="page"]').count(),1);
   }
-  await page.locator('#catalog-tab').click();checks.push('Bundled component settings: existing navigation, core save, global refresh preserves input DOM, closing/reopening keeps drafts');
+  await page.locator('#return-workbench').click();await page.locator('#catalog-tab').click();checks.push('Bundled component settings: existing navigation, core save, global refresh preserves input DOM, returning from the workbench keeps drafts');
   await page.locator('#shell-status [data-action="status"]').click();await page.getByRole('button',{name:'查看日志',exact:true}).click();
   await page.locator('.log-row').first().waitFor();const currentLogs=await page.locator('#log-results').textContent();assert(currentLogs.length>0);
   await page.locator('#log-query').fill('held-old-filter');await page.waitForFunction(()=>true);
@@ -784,6 +792,9 @@ try {
   releaseLogReply();await page.waitForTimeout(100);assert.equal(await page.locator('#log-results').textContent(),currentLogs,'Paused clear keeps records and rejects stale response');
   assert.equal(await page.getByRole('button',{name:'继续显示',exact:true}).count(),1);
   assert.equal(await page.locator('#clear-log-filters').evaluate(el=>el===document.activeElement),true);
+  await page.locator('#settings-button').click();await page.locator('[data-console-page="logs"]').click();
+  assert.equal(await page.getByRole('button',{name:'继续显示',exact:true}).count(),1,'Page navigation preserves log pause');
+  assert.equal(await page.locator('#log-results').textContent(),currentLogs,'Returning to paused logs retains the displayed records');
   await page.getByRole('button',{name:'继续显示',exact:true}).click();await page.locator('.log-row').first().waitFor();
   assert.equal(await page.locator('.log-meta').first().evaluate(el=>getComputedStyle(el).fontSize),'12px');
   const localDates = await page.evaluate(() => {
@@ -825,6 +836,12 @@ try {
   });
   assert(messageContrasts.length&&messageContrasts.every(ratio=>ratio>=4.5),`Selected message small text contrast: ${messageContrasts}`);
   assert.equal(await page.locator('.message-row.selected').evaluate(el=>el===document.activeElement),true,'Reading a message retains row focus');
+  await page.locator('.message-row').filter({hasText:'test.messages'}).first().click();
+  await page.locator('.message-detail [data-action="locate-plugin"]').click();
+  assert.equal(await page.locator('.console-nav [aria-current="page"]').getAttribute('data-console-page'),'plugins','View plugin opens plugin management');
+  assert.equal(await page.locator('.settings-main').getAttribute('data-page'),'plugins:test.messages','View plugin locates the exact source plugin');
+  await page.locator('#messages-button').click();
+  assert.match(await page.locator('.message-row.selected').textContent(),/test.messages/,'Returning to messages preserves selection');
   await page.keyboard.press('Escape');
   checks.push('Messages: real fixture publication, accessible filter selection and keyboard focus, selected-row contrast and focus after marking read');
   for (let index = 0; index < 7; index++) {

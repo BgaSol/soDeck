@@ -21,11 +21,39 @@ window.ready=true;
 try {
  await page.goto(url);await page.waitForFunction(()=>window.ready);
  assert.equal(await page.locator('#management-console').isVisible(),true);
+ assert.equal(await page.locator('#return-workbench').isVisible(),false,'No return action without an active workspace');
+ for(const width of [1100,720,600]){
+  await page.setViewportSize({width,height:720});
+  for(const destination of ['connections','plugins','settings','messages','logs','status','updates']){
+   await page.locator(`[data-console-page=${destination}]`).click();
+   const gap=await page.evaluate(()=>{
+    const content=document.querySelector(shell.route.page==='connections'?'#server-catalog':'#console-page');
+    return content.getBoundingClientRect().top-document.querySelector('.console-main').getBoundingClientRect().top;
+   });
+   assert.equal(gap,0,`${destination} at ${width}px starts directly at the top of the content area`);
+  }
+ }
+ await page.setViewportSize({width:1100,height:720});await page.locator('[data-console-page=connections]').click();
  await page.evaluate(()=>{window.connecting=connection.connect('s');});await page.waitForFunction(()=>gated());
  await page.evaluate(()=>finish());await page.evaluate(()=>connecting);
  await page.waitForFunction(()=>shell.route.kind==='workbench');
  assert.equal(await page.evaluate(()=>focuses.length),1,'Immediate success without an observed connecting snapshot activates once');
  await page.evaluate(()=>connection.refresh());assert.equal(await page.evaluate(()=>focuses.length),1,'Repeated snapshots do not activate twice');
+ for(const width of [1100,720,600]){
+  await page.setViewportSize({width,height:720});
+  await page.locator('#catalog-tab').click();await page.locator('[data-console-page=logs]').click();
+  assert.equal(await page.locator('.console-nav #return-workbench').isVisible(),true);
+  await page.locator('#return-workbench').focus();await page.keyboard.press('Enter');
+  assert.equal(await page.evaluate(()=>shell.route.kind),'workbench','Return action restores the active workspace with the keyboard');
+  assert.equal(await page.evaluate(()=>hidden.at(-1)),false,'Returning makes existing plugin surfaces visible');
+  await page.locator('#catalog-tab').click();
+  assert.deepEqual(await page.evaluate(()=>shell.route),{kind:'console',page:'logs'},'SoDeck restores the last management page');
+  await page.locator('#new-workspace').click();
+  assert.deepEqual(await page.evaluate(()=>shell.route),{kind:'console',page:'connections'},'Main + explicitly opens connections');
+ }
+ assert.equal(await page.locator('#new-workspace').getAttribute('aria-label'),'连接服务器');
+ assert.equal(await page.locator('#new-workspace').getAttribute('aria-haspopup'),null,'Main + navigates to a page');
+ await page.setViewportSize({width:1100,height:720});
  await page.evaluate(()=>{shell.navigate('connections');clear();window.connecting=connection.connect('s');});await page.waitForFunction(()=>gated());
  await page.locator('[data-console-page=logs]').click();await page.evaluate(()=>finish());await page.evaluate(()=>connecting);
  assert.deepEqual(await page.evaluate(()=>shell.route),{kind:'console',page:'logs'});
@@ -38,5 +66,5 @@ try {
  await page.evaluate(()=>connection.connect('s'));await page.waitForFunction(()=>shell.route.kind==='workbench');
  assert.equal(await page.evaluate(()=>focuses.length),1,'Explicit selection reuses an existing online session');
  assert.deepEqual(errors,[]);
- console.log('Shell navigation: immediate success, repeated snapshots, late success, passive refresh and online reuse passed');
+ console.log('Shell navigation: seven pages without a heading, remembered management page, keyboard return at three widths, immediate/late success and online reuse passed');
 } finally {await browser.close();await server.close();}
