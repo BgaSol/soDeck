@@ -40,3 +40,26 @@ async fn content_export_is_sequential_atomic_and_owned_by_the_surface() {
     let id=begin("finish");f.core.content_export_choose(&id,Ok(Some(target_path.clone())));f.core.content_export_data("main",&token,json!({"id":id,"action":"append","offset":"0","data":b"abcdef"})).await.unwrap();let status=f.core.content_export_data("main",&token,json!({"id":id,"action":"finish"})).await.unwrap();assert_eq!(status["state"],"completed","{status}");assert_eq!(std::fs::read(&target_path).unwrap(),b"abcdef");
     assert!(!std::fs::read_dir(&f.path).unwrap().any(|e|e.unwrap().file_name().to_string_lossy().ends_with(".part")));close_terminal_views(&f);f.core.shutdown().unwrap();
 }
+
+#[tokio::test(flavor="multi_thread",worker_threads=2)]
+async fn content_export_picker_and_commit_failures_preserve_existing_files() {
+    let f=Fixture::new();let ssh=SshServer::new().await;let server=f.server("127.0.0.1",ssh.addr.port(),json!([]));connected(&f,&server).await;let (_,token,_)=terminal_fixture(&f);
+    let begin=|request:&str|f.core.content_export_begin("main",&token,&json!({"requestId":request,"name":"中文 output.txt","byteLength":"6"})).unwrap()["id"].as_str().unwrap().to_string();
+    let target=f.path.join("中文 output.txt");std::fs::write(&target,b"original").unwrap();
+    let id=begin("picker-cancel");f.core.content_export_choose(&id,Ok(None));f.core.content_export_choose(&id,Ok(Some(target.clone())));
+    assert_eq!(f.core.content_export_data("main",&token,json!({"id":id,"action":"status"})).await.unwrap()["state"],"cancelled");
+    let id=begin("missing-parent");f.core.content_export_choose(&id,Ok(Some(f.path.join("absent/output.txt"))));assert_eq!(f.core.content_export_data("main",&token,json!({"id":id,"action":"status"})).await.unwrap()["state"],"failed");
+    let directory=f.path.join("directory-target");std::fs::create_dir(&directory).unwrap();std::fs::write(directory.join("keep"),b"original").unwrap();
+    let id=begin("rename-failure");f.core.content_export_choose(&id,Ok(Some(directory.clone())));f.core.content_export_data("main",&token,json!({"id":id,"action":"append","offset":"0","data":b"abcdef"})).await.unwrap();
+    let status=f.core.content_export_data("main",&token,json!({"id":id,"action":"finish"})).await.unwrap();assert_eq!(status["state"],"failed","{status}");assert_eq!(std::fs::read(directory.join("keep")).unwrap(),b"original");
+    #[cfg(windows)] {
+        use std::os::windows::fs::OpenOptionsExt;
+        let id=begin("locked-target");f.core.content_export_choose(&id,Ok(Some(target.clone())));f.core.content_export_data("main",&token,json!({"id":id,"action":"append","offset":"0","data":b"abcdef"})).await.unwrap();
+        let locked=std::fs::OpenOptions::new().read(true).share_mode(0).open(&target).unwrap();
+        let status=f.core.content_export_data("main",&token,json!({"id":id,"action":"finish"})).await.unwrap();assert_eq!(status["state"],"failed","{status}");drop(locked);
+    }
+    assert_eq!(std::fs::read(&target).unwrap(),b"original");assert!(!std::fs::read_dir(&f.path).unwrap().any(|e|e.unwrap().file_name().to_string_lossy().ends_with(".part")));
+    let id=begin("retry");f.core.content_export_choose(&id,Ok(Some(target.clone())));f.core.content_export_data("main",&token,json!({"id":id,"action":"append","offset":"0","data":b"abcdef"})).await.unwrap();
+    assert_eq!(f.core.content_export_data("main",&token,json!({"id":id,"action":"finish"})).await.unwrap()["state"],"completed");
+    assert_eq!(std::fs::read(&target).unwrap(),b"abcdef");close_terminal_views(&f);f.core.shutdown().unwrap();
+}

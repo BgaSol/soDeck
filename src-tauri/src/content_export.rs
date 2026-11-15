@@ -24,6 +24,93 @@ struct Output {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn waiting() -> Output {
+        Output {
+            state: "waitingInput",
+            error: None,
+            offset: 0,
+            file: None,
+            temporary: None,
+            target: None,
+            before: None,
+            last: None,
+            touched: Instant::now(),
+        }
+    }
+    #[test]
+    fn late_picker_does_not_restart_an_expired_export() {
+        let directory = std::env::temp_dir().join(format!(
+            "sodeck-late-picker-{}-{}",
+            std::process::id(),
+            crate::core::now()
+        ));
+        let core = AppCore::open(directory.clone(), "test".into()).unwrap();
+        let mut output = waiting();
+        output.touched -= std::time::Duration::from_secs(301);
+        let export = Arc::new(Export {
+            owner: Owner {
+                plugin: "test".into(),
+                instance: "test".into(),
+                view: "test".into(),
+                context: crate::workspaces::Context {
+                    workspace_id: "test".into(),
+                    server_id: "test".into(),
+                    connection_id: "test".into(),
+                    generation: 1,
+                },
+            },
+            surface: "test".into(),
+            request: "test".into(),
+            length: 1,
+            name: "output.txt".into(),
+            output: Mutex::new(output),
+            tasks: Arc::new(Tasks::default()),
+        });
+        core.content_exports
+            .0
+            .lock()
+            .unwrap()
+            .insert("test".into(), export.clone());
+        let target = directory.join("output.txt");
+        core.content_export_choose("test", Ok(Some(target.clone())));
+        let output = export.output.lock().unwrap();
+        assert_eq!(output.state, "failed");
+        assert!(output.error.as_ref().unwrap().contains("超时"));
+        assert!(output.temporary.is_none());
+        assert!(!target.exists());
+        drop(output);
+        core.shutdown().unwrap();
+        drop(core);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
+    fn write_failure_keeps_cleanup_error_and_path_for_drop_retry() {
+        let directory = std::env::temp_dir().join(format!(
+            "sodeck-cleanup-failure-{}-{}",
+            std::process::id(),
+            crate::core::now()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let temporary = directory.join("temporary.part");
+        // A directory at the registered file path forces remove_file to fail on every target.
+        std::fs::create_dir(&temporary).unwrap();
+        let mut output = waiting();
+        output.state = "receiving";
+        output.temporary = Some(temporary.clone());
+        fail(&mut output, "写入失败".into());
+        assert_eq!(output.state, "failed");
+        assert!(output
+            .error
+            .as_ref()
+            .unwrap()
+            .contains("写入失败；临时导出文件清理失败"));
+        assert_eq!(output.temporary.as_ref(), Some(&temporary));
+        std::fs::remove_dir(&temporary).unwrap();
+        std::fs::write(&temporary, b"partial").unwrap();
+        drop(output);
+        assert!(!temporary.exists());
+        std::fs::remove_dir(directory).unwrap();
+    }
     #[test]
     fn idle_exports_expire_without_touching_the_destination_or_completed_result() {
         let directory = std::env::temp_dir().join(format!(
@@ -93,14 +180,24 @@ fn cancel(o: &mut Output) {
         return;
     }
     o.file.take();
-    if let Some(p) = o.temporary.take() {
+    if let Some(p) = o.temporary.as_ref() {
         if let Err(e) = std::fs::remove_file(&p) {
             o.error = Some(format!("临时导出文件清理失败：{e}"));
             o.state = "failed";
             return;
         }
+        o.temporary = None;
     }
     o.state = "cancelled";
+}
+fn fail(o: &mut Output, error: String) {
+    cancel(o);
+    let cleanup = o.error.take();
+    o.state = "failed";
+    o.error = Some(match cleanup {
+        Some(cleanup) => format!("{error}；{cleanup}"),
+        None => error,
+    });
 }
 fn value(o: &Output) -> Value {
     json!({"state":o.state,"error":o.error,"receivedBytes":o.offset.to_string()})
@@ -108,9 +205,7 @@ fn value(o: &Output) -> Value {
 fn expire(o: &mut Output) {
     let deadline = if o.state == "waitingInput" { 300 } else { 60 };
     if active(o) && o.touched.elapsed().as_secs() > deadline {
-        cancel(o);
-        o.state = "failed";
-        o.error = Some("导出等待超时，请重新导出".into());
+        fail(o, "导出等待超时，请重新导出".into());
     }
 }
 impl Exports {
@@ -226,6 +321,7 @@ impl AppCore {
             return;
         };
         let mut o = e.output.lock().unwrap();
+        expire(&mut o);
         if o.state != "waitingInput" {
             return;
         }
@@ -364,9 +460,7 @@ impl AppCore {
                 Ok::<_, String>(())
             })();
             if let Err(error) = result {
-                cancel(&mut o);
-                o.state = "failed";
-                o.error = Some(error)
+                fail(&mut o, error);
             }
             Ok(value(&o))
         })
