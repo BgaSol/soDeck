@@ -275,7 +275,7 @@ good、warning、error 分别辅助成功、需关注和错误文字。success-b
 
 管理台使用功能导航（156px）加弹性内容，内容上沿直接展示页面工具栏或内容；当前页由导航选中状态标识。有活动工作区时，“返回工作台”位于导航底部。普通页面内边距为（20px 24px）；设置还保留内部导航（160px）。工作台默认是左右入口栏（各 42px）加弹性中央区，侧面板宽度由宿主布局计算，CSS 的有效宽度回退为（220px）。布局依据 [console.css](src/console.css)、[workspaces.css](src/workspaces.css) 与 [components.css](src/components.css)。
 
-连接目录上方是紧凑工具栏；列表和详情各自滚动，默认详情宽度为 max（290px，36%）。节点固定高（52px），紧凑密度为（48px），当前紧凑样式只修改高度。节点间隔（4px），内边距（5px 9px），层级缩进（20px）；列表内边距（12px 14px 24px）。本机起点占（32px）并留（8px）下间距。连接树几何依据 [servers.css](src/servers.css)。
+连接目录上方是搜索、分体新增与可见刷新的紧凑工具栏，不设服务器/SOCKS5 分类页签。列表和详情各自滚动，默认详情宽度为 max（290px，36%）。节点仅保留（48px）最小高度的紧凑布局。节点间隔（4px），内边距（5px 9px），层级缩进（20px）；列表内边距（12px 14px 24px）。本机起点占（32px）并留（8px）下间距。连接树几何依据 [servers.css](src/servers.css)。
 
 | 当前断点 | 源码中的变化 |
 | --- | --- |
@@ -340,7 +340,7 @@ good、warning、error 分别辅助成功、需关注和错误文字。success-b
 
 节点用两行组织名称、协议、状态，以及账号地址与自身标签；状态保留独立显示空间。目标选中使用 accent-bg 底与 accent 边，完整祖先路线的连线使用 accent；当前源码没有为所有祖先节点统一添加 accent 边的样式，不能照搬原型说明。键盘焦点使用外轮廓，树中的层级、展开状态与选中状态保留对应 ARIA。
 
-搜索与多标签 AND 筛选保留完整祖先路线，并用“路径节点”区分非命中祖先；仅目标计入匹配。目录语义与连接动作见 [连接功能](docs/features/connections.md)，模板和模型来源为 [server-views.ts](src/server-views.ts) 与 [connection-tree.ts](src/connection-tree.ts)。
+搜索匹配目标及显式中转，标签用树上方可换行的按钮直接切换，aria-pressed 表达选中状态；多标签 AND 只约束服务器目标。保留完整祖先路线，SSH 上下文用“路径节点”说明用途，代理说明引用数或未使用状态。详情先展示身份、状态与主动作，再展示访问路线和资料；标签编辑归入服务器表单。目录语义与连接动作见 [连接功能](docs/features/connections.md)，模板和模型来源为 [server-views.ts](src/server-views.ts) 与 [connection-tree.ts](src/connection-tree.ts)。
 
 ### Dialogs
 

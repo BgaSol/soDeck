@@ -258,7 +258,7 @@ try {
   assert.equal(await page.locator('.catalog-empty').count(),1,'First use has one empty state');
   assert.equal(await page.locator('.catalog-detail').count(),0);
   checks.push("Main title bar: blank areas maximize/restore without DOM dblclick; buttons, nested icons, content and right clicks stay independent");
-  await page.locator('[data-server-action="new"]').click();
+  await page.locator('[data-server-action="new-server"]').first().click();
   const before = await page.evaluate(() => {
     const root = getComputedStyle(document.documentElement), field = getComputedStyle(document.querySelector(".catalog-field"));
     const body = document.querySelector(".catalog-form-body");
@@ -277,6 +277,11 @@ try {
   let saved=await call('change_catalog',{revision:(await call('server_catalog')).revision,change:{op:'saveTag',id:null,name:'生产组'}});
   const groupId=saved.catalog.tags[0].id;const serverIds=[];
   for(const [name,host,username] of [['生产入口','192.0.2.10','root'],['测试环境','192.0.2.20','ops']]){saved=await call('change_catalog',{revision:(await call('server_catalog')).revision,change:{op:'saveServer',draft:{name,host,port:22,username,tagIds:[groupId],authentication:{type:'password',secret:{action:'clear'}},route:[]}}});serverIds.push(saved.selectedId);}
+  const proxyIds=[];
+  for(const name of ['机房 SOCKS5 入口','备用代理']) {
+    saved=await call('change_catalog',{revision:(await call('server_catalog')).revision,change:{op:'saveProxy',draft:{name,host:'127.0.0.1',port:1080,authentication:{type:'none',secret:{action:'clear'}}}}});proxyIds.push(saved.selectedId);
+  }
+  saved=await call('change_catalog',{revision:(await call('server_catalog')).revision,change:{op:'saveServer',draft:{id:serverIds[1],name:'测试环境 · 通过机房入口访问的服务器',host:'192.0.2.20',port:22,username:'ops',tagIds:[groupId],newTagNames:['数据库','上海机房','长标签名称用于验证自然换行和完整显示'],authentication:{type:'password',secret:{action:'keep',remember:true}},route:[{id:'',kind:'ssh',serverId:serverIds[0]},...Array.from({length:4},()=>({id:'',kind:'socks5',proxyId:proxyIds[0]}))]}}});
   await page.evaluate(()=>window.emitTestEvent('server-catalog-changed'));
   await page.locator('.connection-node').first().waitFor();
   checks.push('Main + enters the complete management connection page without a second picker');
@@ -286,17 +291,34 @@ try {
     await call("set_theme", { theme }); await page.reload();
     await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
     assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor), canvas);
-    for (const [width, height] of [[1100, 720], [720, 480]]) {
+    for (const [width, height] of [[1100, 720], [880, 720], [720, 480]]) {
       await page.setViewportSize({ width, height });
-      await page.locator('[data-tab="servers"]').click();await page.locator('.connection-node').first().click();
+      if(await page.locator('[data-server-action="back"]').isVisible())await page.locator('[data-server-action="back"]').click();
+      assert.equal(await page.locator('.catalog-tabs,.tag-filter,[data-server-action="density"],[data-server-action="tags"]').count(),0);
+      assert(await page.locator('[data-server-action="reload"]').isVisible());
+      assert(await page.locator('[data-filter-tag]').count()>=4);
+      assert.equal(await page.locator('.catalog-page').evaluate(el=>el.scrollWidth<=el.clientWidth+1),true,`${theme}/${width} directory has no horizontal overflow`);
+      const newMenu=page.locator('[data-server-action="new-menu"]');await newMenu.click();
+      const menu=page.locator('.catalog-action-menu');await menu.waitFor({state:'visible'});
+      assert(await menu.evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;}));
+      await page.keyboard.press('End');assert.equal(await page.locator('.catalog-action-menu [data-server-action="new-proxy"]').evaluate(el=>el===document.activeElement),true);
+      await page.keyboard.press('Escape');assert.equal(await newMenu.evaluate(el=>el===document.activeElement),true);
+      assert.equal(await newMenu.getAttribute('aria-expanded'),'false');
+      const catalogList=page.locator('.catalog-list');
+      await catalogList.evaluate(el=>el.scrollTo(0,80));const directoryScroll=await catalogList.evaluate(el=>el.scrollTop);
+      await page.locator('[data-server-action="reload"]').click();
+      assert.equal(await catalogList.evaluate(el=>el.scrollTop),directoryScroll,`${theme}/${width} refresh preserves directory scroll`);
+      await catalogList.evaluate(el=>el.scrollTo(0,0));
+      await page.screenshot({path:`artifacts/production-ui/server-directory-${theme}-${width}.png`});
+      await page.locator(`.connection-node[data-id="${serverIds[1]}"]`).click();
       const connectButton=page.locator('.connection-card [data-connect-server]');await connectButton.waitFor();
       assert(await connectButton.evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight;}),`${theme}/${width} connection action is visible`);
       assert(await page.locator('.connection-card').evaluate(el=>Boolean(el.compareDocumentPosition(el.parentElement.querySelector('.endpoint-fields'))&Node.DOCUMENT_POSITION_FOLLOWING)));
       await page.screenshot({path:`artifacts/production-ui/server-detail-${theme}-${width}.png`});
       if(await page.locator('[data-server-action="back"]').isVisible())await page.locator('[data-server-action="back"]').click();
       for (const kind of ["servers", "proxies"]) {
-        await page.locator(`[data-tab="${kind}"]`).click();
-        await page.locator('[data-server-action="new"]').click();
+        if(kind==='proxies'){await page.locator('[data-server-action="new-menu"]').click();await page.locator('.catalog-action-menu [data-server-action="new-proxy"]').click();}
+        else await page.locator('[data-server-action="new-server"]').first().click();
         if (kind === "servers") {
           await field("authType").selectOption("privateKey");
           await field("routed").selectOption("true");
@@ -328,7 +350,7 @@ try {
         await close();
       }
     }
-    checks.push(`${theme}: bundled palette, server/proxy forms, wheel scrolling, last fields, fixed footer and keyboard at 1100×720 and 720×480`);
+    checks.push(`${theme}: unified deep tree, inline labels, visible refresh, menu keyboard/bounds, bundled palette, server/proxy forms and fixed footer at 1100/880/720 widths`);
   }
 
   await page.setViewportSize({ width: 1100, height: 720 });

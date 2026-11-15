@@ -165,6 +165,8 @@ pub struct ServerInput {
     pub name: String,
     #[serde(default)]
     pub tag_ids: Vec<String>,
+    #[serde(default)]
+    pub new_tag_names: Vec<String>,
     pub host: String,
     pub port: u16,
     pub username: String,
@@ -528,10 +530,41 @@ impl AppCore {
                         step.new_id(self.next_id());
                     }
                 }
+                let mut tag_ids = d.tag_ids;
+                let mut selected_tags = HashSet::new();
+                if tag_ids.iter().any(|id| {
+                    !selected_tags.insert(id.clone()) || !c.tags.iter().any(|tag| tag.id == *id)
+                }) {
+                    return Err("服务器引用了不存在或重复的标签".into());
+                }
+                for name in d.new_tag_names {
+                    let name = name.trim();
+                    if name.is_empty() {
+                        return Err("标签名称不能为空".into());
+                    }
+                    let tag_id = match c
+                        .tags
+                        .iter()
+                        .find(|tag| tag.name.to_lowercase() == name.to_lowercase())
+                    {
+                        Some(tag) => tag.id.clone(),
+                        None => {
+                            let id = self.next_id();
+                            c.tags.push(Tag {
+                                id: id.clone(),
+                                name: name.into(),
+                            });
+                            id
+                        }
+                    };
+                    if selected_tags.insert(tag_id.clone()) {
+                        tag_ids.push(tag_id);
+                    }
+                }
                 let s = Server {
                     id: id.clone(),
                     name: endpoint_name(&d.name, &h, d.port, 22),
-                    tag_ids: d.tag_ids,
+                    tag_ids,
                     protocol: "ssh".into(),
                     host: h,
                     port: d.port,

@@ -21,7 +21,7 @@ export interface Catalog {
 export type SecretChange = { action: "keep"; remember: boolean } | { action: "replace"; value: string; remember: boolean } | { action: "clear" };
 export interface Draft {
   id: string | null; name: string; host: string; port: string; username: string;
-  tagIds: string[]; authType: Authentication["type"]; privateKeyPath: string;
+  tagIds: string[]; newTagNames: string[]; tagInput: string; authType: Authentication["type"]; privateKeyPath: string;
   password: string; remember: boolean; clearSecret: boolean;
   route: RouteStep[]; routed: boolean;
 }
@@ -39,7 +39,7 @@ export function newDraft(record?: Server | Proxy): Draft {
   return {
     id: record?.id ?? null, name: record?.name ?? "", host: record?.host ?? "",
     port: String(record?.port ?? 22), username: record?.protocol === "ssh" ? record.username : record?.authentication.username ?? "",
-    tagIds: record?.protocol === "ssh" ? [...record.tagIds] : [], authType: record?.authentication.type ?? "password",
+    tagIds: record?.protocol === "ssh" ? [...record.tagIds] : [], newTagNames: [], tagInput: "", authType: record?.authentication.type ?? "password",
     privateKeyPath: record?.authentication.privateKeyPath ?? "", password: "",
     remember: record?.authentication.hasSavedSecret ?? true, clearSecret: false,
     route: record?.protocol === "ssh" ? structuredClone(record.route) : [], routed: record?.protocol === "ssh" && record.route.length > 0,
@@ -48,7 +48,15 @@ export function newDraft(record?: Server | Proxy): Draft {
 export function toInput(d: Draft, proxy: boolean) {
   const secret: SecretChange = d.clearSecret ? { action: "clear" } : d.password ? { action: "replace", value: d.password, remember: d.remember } : { action: "keep", remember: d.remember };
   const common = { id: d.id, name: d.name, host: d.host, port: Number(d.port), authentication: { type: d.authType, username: d.username, privateKeyPath: d.privateKeyPath || null, secret } };
-  return proxy ? common : { ...common, username: d.username, tagIds: [...d.tagIds], route: d.routed ? d.route : [] };
+  return proxy ? common : { ...common, username: d.username, tagIds: [...d.tagIds], newTagNames: [...d.newTagNames], route: d.routed ? d.route : [] };
+}
+export function commitTagInput(d:Draft,c:Catalog) {
+  for(const name of d.tagInput.split(/[,，]/).map(name=>name.trim()).filter(Boolean)) {
+    const tag=c.tags.find(tag=>tag.name.toLowerCase()===name.toLowerCase());
+    if(tag){if(!d.tagIds.includes(tag.id))d.tagIds.push(tag.id);}
+    else if(!d.newTagNames.some(value=>value.toLowerCase()===name.toLowerCase()))d.newTagNames.push(name);
+  }
+  d.tagInput='';
 }
 export const address = (r: Pick<Endpoint, "host" | "port">) => `${r.host.includes(":") ? `[${r.host}]` : r.host}:${r.port}`;
 export const referenced = (catalog: Catalog, id: string) => catalog.servers.filter(s => s.route.some(r => r.kind === "ssh" ? r.serverId === id : r.proxyId === id));

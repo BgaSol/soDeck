@@ -34,10 +34,16 @@ const browser = await chromium.launch({ headless: true, ...(process.env.SODECK_B
 const page = await browser.newPage({ viewport: { width: 1100, height: 720 } });
 const finishTrace = await recordTrace(page.context(), 'server');
 const errors = [];
+let failCatalogRead = false, holdCatalogRead = false, catalogReadHeld = false, releaseCatalogRead;
 page.on("pageerror", error => errors.push(String(error)));
 page.on("request", request => { assert.equal(new URL(request.url()).hostname, "127.0.0.1", "Unexpected network request"); });
 await page.exposeBinding("catalogInvoke", async (_, command, args) => {
+  if (command === "server_catalog" && failCatalogRead) throw new Error("隔离测试：目录暂时不可读");
   const result = await bridge.call(command, args);
+  if (command === "server_catalog" && holdCatalogRead) {
+    holdCatalogRead = false; catalogReadHeld = true;
+    await new Promise(resolve => releaseCatalogRead = resolve);
+  }
   // Disk completion may precede the UI callback. Keep this race reproducible.
   if (args?.change?.op === "deleteTag") await new Promise(resolve => setTimeout(resolve, 150));
   return result;
@@ -45,8 +51,9 @@ await page.exposeBinding("catalogInvoke", async (_, command, args) => {
 await page.addInitScript(() => { window.__TAURI_INTERNALS__ = { invoke: (command, args) => window.catalogInvoke(command, args) }; });
 await page.route(url, route => route.fulfill({ contentType: "text/html", body: `<html lang="zh-CN"><head><meta charset="UTF-8"></head><body><header class="topbar"><div class="app-tab">SoDeck · 服务器</div></header><main class="workspace" id="test-workspace"></main><div id="test-notice"></div><script type="module">import '/style.css'; import {ServerManager} from '/servers.ts'; window.manager=new ServerManager(document.querySelector('main'),text=>document.querySelector('#test-notice').textContent=text); await window.manager.start(); window.testReady=true;</script></body></html>` }));
 const dialogs = () => page.locator("dialog[open]").last();
-const action = (name, scope = dialogs()) => scope.locator(`[data-server-action="${name}"]`);
+const action = (name, scope = dialogs()) => scope.locator(`[data-server-action="${name}"]`).first();
 const work = () => page.locator("#test-workspace");
+async function menuAction(name) { await action("record-menu",work()).click(); await page.locator(".catalog-action-menu:visible").waitFor(); await page.locator(`.catalog-action-menu [data-server-action="${name}"]`).click(); }
 const field = key => dialogs().locator(`[data-field="${key}"]`);
 const read = () => bridge.call("server_catalog");
 async function expectDialogs(n) { try {await page.waitForFunction(n => document.querySelectorAll("dialog[open]").length === n, n);} catch(error){console.log(await page.locator("dialog[open]").allTextContents());throw error;} }
@@ -55,6 +62,9 @@ async function closeDirty() { await action("cancel").first().click(); await acti
 async function load() { await page.goto(url); await page.waitForFunction(() => window.testReady === true); }
 const checks = [];
 try {
+  failCatalogRead=true;await load();await work().locator('.error-box').waitFor();
+  failCatalogRead=false;await action('reload',work()).click();
+  assert.equal(await work().locator('.catalog-page').count(),1,'An initial read failure can be retried without a catalog snapshot');
   await load();
   const search=work().locator('#catalog-query');await search.focus();
   await search.evaluate(input=>{window.searchInput=input;window.searchDisconnects=0;const ancestors=new Set();for(let n=input;n&&n!==document.body;n=n.parentNode)ancestors.add(n);new MutationObserver(records=>{for(const r of records)for(const n of r.removedNodes)if(ancestors.has(n))searchDisconnects++;}).observe(document.body,{childList:true,subtree:true});});
@@ -64,7 +74,7 @@ try {
   assert.equal(await search.inputValue(),'zhongwen');assert.equal(await search.evaluate(input=>input===searchInput&&searchDisconnects===0),true);
   await ime.send('Input.insertText',{text:'中文'});assert.equal(await search.inputValue(),'中文');await ime.detach();await search.fill('');
   assert.equal(await work().locator(".catalog-page").evaluate(el => el.getBoundingClientRect().width), 1100);
-  await action("new", work()).click(); await field("host").fill("gateway.invalid"); await field("username").fill("ops");
+  await action("new-server", work()).click(); await field("host").fill("gateway.invalid"); await field("username").fill("ops");
   assert.equal(await field("remember").isChecked(), true);
   await field("password").fill("ui-saved-secret"); await field("name").fill("入口跳板");
   await field("routed").selectOption("true"); await field("password").focus();
@@ -82,27 +92,24 @@ try {
   await field("name").fill("公网入口"); await save(); await expectDialogs(0);
   checks.push("创建、编辑、秘密不回填和留空保持");
 
-  await action("edit", work()).click(); await action("new-tag").click();
-  await dialogs().locator("#tag-name").fill("生产环境"); await save(); await expectDialogs(1);
-  await closeDirty(); catalog = await read(); assert.equal(catalog.tags.length, 1); assert.deepEqual(catalog.servers[0].tagIds, []);
-  checks.push("独立保存标签，取消父表单仍保留");
-
-  const proxyTab=work().locator('[data-tab="proxies"]');await proxyTab.focus();await page.keyboard.press('Enter');
-  assert.equal(await proxyTab.evaluate(el=>el===document.activeElement),true,'Switching catalog tabs retains keyboard focus');
-  await action("new", work()).click();
+  await action("edit", work()).click();await field('tagInput').fill('生产环境');await field('tagInput').press('Enter');
+  assert.equal((await read()).tags.length,0);await closeDirty();
+  assert.equal((await read()).tags.length,0);checks.push('取消服务器表单不留下新标签');
+  await action("new-menu",work()).click();
+  await page.locator('.catalog-action-menu [data-server-action="new-proxy"]').click();
   await field("host").fill("127.0.0.1"); await field("authType").selectOption("usernamePassword");
   assert.equal(await field("remember").isChecked(), true);
   await field("username").fill("proxy-ops"); await field("password").fill("ui-proxy-secret"); await field("remember").check();
   await field("name").fill("回环代理"); await save(); await expectDialogs(0);
   catalog = await read(); const proxy = catalog.proxies[0].id;
-  await action("copy", work()).click(); await page.waitForFunction(() => document.querySelector(".catalog-detail h2")?.textContent?.includes("副本"));
+  await menuAction("copy"); await page.waitForFunction(() => document.querySelector(".catalog-detail h2")?.textContent?.includes("副本"));
   catalog = await read(); assert.equal(catalog.proxies[1].authentication.hasSavedSecret, false);
-  await action("delete", work()).click(); await action("confirm-yes").click(); await expectDialogs(0);
+  await menuAction("delete"); await action("confirm-yes").click(); await expectDialogs(0);
   assert.equal((await read()).proxies.length, 1); checks.push("代理增删改查和复制不带秘密");
 
-  await work().locator('[data-tab="servers"]').click(); await action("new", work()).click();
+  await action("new-server", work()).click();
   await field("host").fill("db.internal"); await field("username").fill("deploy"); await field("name").fill("生产数据库");
-  await dialogs().locator(`[data-tag="${catalog.tags[0].id}"]`).check(); await field("routed").selectOption("true");
+  await field("tagInput").fill("生产环境"); await field("routed").selectOption("true");
   await action("add-ssh").focus();await page.keyboard.press('Enter');
   assert.equal(await dialogs().locator('[data-step="0"]').evaluate(el=>el===document.activeElement),true,'New SSH hop focuses its source selector');
   await dialogs().locator('[data-step="0"]').selectOption(gateway);
@@ -118,19 +125,22 @@ try {
   assert.equal(catalog.servers.find(s => s.id === target).authentication.hasSessionSecret, true);
   checks.push("三层混合路径、重复代理、重排、回环来源与临时秘密");
 
-  await action("edit", work()).click();await action("new-tag").click();
-  await dialogs().locator("#tag-name").fill("数据库");await save();await expectDialogs(1);
-  const databaseTag=(await read()).tags.find(t=>t.name==='数据库').id;
-  await dialogs().locator(`[data-tag="${databaseTag}"]`).check();await save();await expectDialogs(0);
-  await work().locator(`[data-server-action="select"][data-id="${gateway}"]`).first().click();await action("edit",work()).click();
-  await dialogs().locator(`[data-tag="${databaseTag}"]`).check();await save();await expectDialogs(0);
-  await work().locator('.tag-filter summary').click();
-  await work().locator(`[data-filter-tag="${databaseTag}"]`).check();
+  await action("edit",work()).click();await field('tagInput').fill('数据库，数据库');await save();await expectDialogs(0);
+  catalog=await read();const databaseTag=catalog.tags.find(t=>t.name==='数据库').id;
+  await work().locator(`[data-server-action="select"][data-id="${gateway}"]`).first().click();await action('edit',work()).click();await field('tagInput').fill('数据库');await save();await expectDialogs(0);
+  await work().locator(`[data-filter-tag="${databaseTag}"]`).click();
   assert.equal(await work().locator('.connection-node:not(.path-node)').count(),2);
-  await work().locator(`[data-filter-tag="${catalog.tags[0].id}"]`).check();
+  await work().locator(`[data-filter-tag="${catalog.tags[0].id}"]`).click();
   assert.equal(await work().locator('.connection-node:not(.path-node)').count(),1,'AND excludes the server with only one selected tag');
   assert.equal(await work().locator('.path-node').count(),3,'Every explicit ancestor remains visible');
   assert.equal(await work().locator('.path-node[data-connect-server-on-double-click]').count(),0);
+  await work().locator(`.connection-node[data-id="${gateway}"]`).first().click();
+  assert.equal(await work().locator('.catalog-detail [data-connect-server]').count(),0,'A filtered ancestor is context even if its saved target shares this prefix');
+  await work().locator('.catalog-detail [data-server-action="locate-target"]').first().click();
+  assert.equal(await work().locator('[data-filter-tag][aria-pressed=true]').count(),0);
+  assert.equal(await work().locator('.catalog-detail [data-connect-server]').count(),1);
+  await work().locator(`[data-filter-tag="${databaseTag}"]`).click();
+  await work().locator(`[data-filter-tag="${catalog.tags[0].id}"]`).click();
   await work().locator(`[data-server-action="select"][data-id="${target}"]`).click();
   fs.mkdirSync('artifacts/connection-tree',{recursive:true});
   for(const theme of ['light','dark','dopamine']){
@@ -138,22 +148,59 @@ try {
     await page.evaluate(async()=>{await new Promise(requestAnimationFrame);await Promise.allSettled(document.getAnimations().map(animation=>animation.finished));});
     await page.screenshot({path:`artifacts/connection-tree/${theme}.png`});
   }
-  await work().locator(`[data-filter-tag="${databaseTag}"]`).uncheck();await work().locator(`[data-filter-tag="${catalog.tags[0].id}"]`).uncheck();
-  await work().locator('.tag-filter summary').click();
+  await search.fill('公网');
+  assert.equal(await work().locator('.connection-node:not(.path-node)').count(),1,'Searching a route node retains its matching target');
+  await action('clear-tags',work()).click();assert.equal(await search.inputValue(),'公网','All clears labels without clearing search');
+  await work().locator(`[data-filter-tag="${databaseTag}"]`).click();
+  await work().locator(`[data-filter-tag="${catalog.tags[0].id}"]`).click();
+  const selectedPath=await work().locator('.connection-node.selected').getAttribute('data-path');
+  await search.evaluate(input=>window.refreshSearch=input);
+  await action('reload',work()).click();
+  assert.equal(await search.evaluate(input=>input===refreshSearch),true);
+  assert.equal(await work().locator('.connection-node.selected').getAttribute('data-path'),selectedPath);
+  assert.equal(await work().locator('[data-filter-tag][aria-pressed=true]').count(),2);
+  failCatalogRead=true;await action('reload',work()).click();
+  await work().locator('.error-box').waitFor();
+  assert.equal(await work().locator('.connection-node.selected').getAttribute('data-path'),selectedPath);
+  assert.equal(await work().locator('[data-connect-server]').count(),0);
+  assert.equal(await action('new-server',work()).isDisabled(),true);
+  failCatalogRead=false;await action('reload',work()).click();
+  assert.equal(await work().locator('.error-box').count(),0);assert.equal(await search.inputValue(),'公网');
+  await search.fill('没有匹配的资料');
+  assert.equal(await work().locator('.catalog-detail h2').innerText(),'生产数据库');
+  await action('reveal',work()).click();assert.equal(await search.inputValue(),'');
+  assert.equal(await work().locator('.connection-node.selected').getAttribute('data-path'),selectedPath);
+  holdCatalogRead=true;await page.evaluate(()=>{window.pendingCatalog=manager.start();});
+  while(!catalogReadHeld)await new Promise(resolve=>setTimeout(resolve,10));
+  await action('edit',work()).click();await field('name').fill('生产数据库更新');await save();await expectDialogs(0);
+  releaseCatalogRead();await page.evaluate(()=>pendingCatalog);
+  assert.equal(await work().locator('.catalog-detail h2').innerText(),'生产数据库更新','A delayed refresh cannot overwrite a newer save');
+  checks.push('中转搜索、全部保留搜索、刷新保留选择和筛选、失败保留树、隐藏资料恢复及过期读取隔离');
+  const ancestor=work().locator(`.connection-node[data-id="${gateway}"]`).first();
+  await ancestor.locator('[data-server-action="collapse"]').click();
+  assert.equal(await ancestor.getAttribute('aria-expanded'),'false');
+  await action('reload',work()).click();assert.equal(await ancestor.getAttribute('aria-expanded'),'false');
+  assert.equal(await work().locator('.catalog-detail h2').innerText(),'生产数据库更新');
+  await search.fill('公网');assert.equal(await ancestor.getAttribute('aria-expanded'),'true');
+  await search.fill('');assert.equal(await ancestor.getAttribute('aria-expanded'),'false');
+  await ancestor.locator('[data-server-action="collapse"]').click();
+  checks.push('刷新保留折叠和详情，筛选临时展开后恢复原折叠');
   checks.push('多标签 AND、完整混合祖先路径、上下文节点无连接入口及三主题节点展示');
 
   await work().locator(`[data-server-action="select"][data-id="${gateway}"]`).first().click();
-  await action("delete", work()).click(); assert((await dialogs().innerText()).includes("生产数据库")); await action("confirm-yes").click();
+  await menuAction("delete"); assert((await dialogs().innerText()).includes("生产数据库")); await action("confirm-yes").click();
   await expectDialogs(0); assert.equal((await read()).servers.length, 2);
   await work().locator("#catalog-query").fill("deploy"); assert.equal(await work().locator(".connection-node:not(.path-node)").count(), 1);
-  await work().locator("#catalog-query").fill(""); await work().locator(".tag-filter summary").click();await work().locator(`[data-filter-tag="${catalog.tags[0].id}"]`).check();
-  assert.equal(await work().locator(".connection-node:not(.path-node)").count(), 1); await work().locator(`[data-filter-tag="${catalog.tags[0].id}"]`).uncheck();await work().locator(".tag-filter summary").click();
+  await work().locator("#catalog-query").fill(""); await work().locator(`[data-filter-tag="${catalog.tags[0].id}"]`).click();
+  assert.equal(await work().locator(".connection-node:not(.path-node)").count(), 1); await work().locator(`[data-filter-tag="${catalog.tags[0].id}"]`).click();
   checks.push("引用阻止删除，按账号搜索和标签筛选");
 
-  await action("new", work()).click(); await field("host").fill("unsaved.internal"); await action("inline-proxy").count().then(async n => {
+  await action("new-server", work()).click(); await field("host").fill("unsaved.internal"); await action("inline-proxy").count().then(async n => {
     // Inline creation is inside the routed section.
     if (!n) await field("routed").selectOption("true");
   });
+  await field('tagInput').fill('父表单待保存标签');await field('tagInput').press('Enter');
+  await field('tagInput').fill('正在输入的标签');await field('password').fill('nested-draft-secret');
   await action("inline-proxy").click();
   const nestedLabels=await dialogs().locator('[data-field]').evaluateAll(nodes=>nodes.filter(node=>node.type!=='checkbox').map(node=>({field:node.dataset.field,labels:[...node.labels].map(label=>({text:label.textContent,owns:label.control===node&&label.closest('dialog')===node.closest('dialog')}))})));
   assert(nestedLabels.every(item=>item.labels.length===1&&item.labels[0].owns),`Nested proxy fields own their labels: ${JSON.stringify(nestedLabels)}`);
@@ -162,8 +209,12 @@ try {
   await field("username").fill("proxy-ops");
   await field("host").fill("proxy.internal"); await field("name").fill("单独保留代理");
   await save(); await expectDialogs(1); assert.equal(await dialogs().locator("[data-step]").count(), 1);
+  assert.equal(await field('tagInput').inputValue(),'正在输入的标签');
+  assert.equal(await field('password').inputValue(),'nested-draft-secret');
+  assert.match(await dialogs().locator('.catalog-draft-tags').innerText(),/父表单待保存标签/);
   await closeDirty(); assert.equal((await read()).proxies.length, 2);
-  checks.push("内联代理保存后取消服务器仍保留");
+  assert(!(await read()).tags.some(tag=>tag.name==='父表单待保存标签'||tag.name==='正在输入的标签'));
+  checks.push("内联代理保存保留父表单标签、输入和凭据草稿，取消服务器仍保留代理");
 
   await work().locator(`[data-server-action="select"][data-id="${target}"]`).click(); await action("edit", work()).click(); await field("name").fill("不可覆盖的草稿");
   catalog = await read(); await bridge.call("change_catalog", { revision: catalog.revision, change: { op: "saveTag", id: null, name: "外部更新" } });
@@ -178,15 +229,11 @@ try {
   fs.rmdirSync(path.join(directory, "servers.json.tmp")); await save(); await expectDialogs(0);
   checks.push("写入失败保留输入并可重试");
 
-  const productionTag=(await read()).tags.find(g=>g.name==="生产环境").id;
-  await work().locator(".tag-filter summary").click();await action("tags", work()).click(); await dialogs().locator(`[data-server-action="rename-tag"][data-id="${productionTag}"]`).click();
-  await dialogs().locator("#tag-name").fill("生产组"); await save(); await expectDialogs(1);
-  await dialogs().locator(`[data-server-action="delete-tag"][data-id="${productionTag}"]`).click(); await action("confirm-yes").click(); await expectDialogs(1);
-  await dialogs().locator(`[data-server-action="delete-tag"][data-id="${productionTag}"]`).waitFor({ state: "detached" });
-  await action("cancel").click(); await expectDialogs(0);
-  assert.deepEqual((await read()).servers.find(s => s.id === target).tagIds, [databaseTag]);
-  checks.push("标签重命名，删除标签保留服务器");
-
+  const productionTag=(await read()).tags.find(tag=>tag.name==='生产环境').id;
+  assert.equal(await action('tags',work()).count(),0);assert.equal(await action('density',work()).count(),0);
+  await bridge.call('change_catalog',{revision:(await read()).revision,change:{op:'deleteTag',id:productionTag}});
+  await page.evaluate(()=>manager.start());assert.deepEqual((await read()).servers.find(s=>s.id===target).tagIds,[databaseTag]);
+  checks.push('已移除管理标签和密度入口，旧标签数据变更仍正确刷新');
   for (const theme of ["system", "light", "dark", "dopamine"]) {
     await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
     for (const [width, height] of [[1100, 720], [720, 480]]) {
@@ -197,7 +244,7 @@ try {
       assert.equal(await page.evaluate(()=>document.activeElement===document.body),false,`${theme}/${width} selecting a server keeps contextual focus`);
       if(width===1100){await row.evaluate(async node=>{await Promise.allSettled(node.getAnimations({subtree:true}).map(animation=>animation.finished));});const ratios=await row.evaluate(row=>{const l=color=>{const c=color.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722;};const b=l(getComputedStyle(row).backgroundColor);return [...row.querySelectorAll('.node-endpoint,.node-tags,.node-state')].map(node=>{const a=l(getComputedStyle(node).color);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);});});assert(ratios.length&&ratios.every(r=>r>=4.5),`${theme} selected server contrast: ${ratios}`);}
       if(width===720){await action('back',work()).focus();await page.keyboard.press('Enter');assert.equal(await row.evaluate(el=>el===document.activeElement),true,'Returning to the list focuses the original server');}
-      await action("new", work()).click();
+      await action("new-server", work()).click();
       await field("routed").selectOption("true"); await action("add-socks").click();
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       assert(await dialogs().evaluate(d => d.scrollWidth <= d.clientWidth + 1));
@@ -216,7 +263,7 @@ try {
   checks.push("真实核心进程重开，持久资料保留、临时秘密清除");
 
   await bridge.stop(); fs.writeFileSync(path.join(directory, "servers.json"), "{bad-json"); bridge = startBridge(); await load();
-  await work().locator(".error-box").waitFor(); assert.equal(await action("new", work()).isDisabled(), true);
+  await work().locator(".error-box").waitFor(); assert.equal(await action("new-server", work()).isDisabled(), true);
   await action("recover", work()).click(); await action("confirm-yes").click(); await expectDialogs(0);
   await page.waitForFunction(() => !document.querySelector(".catalog-page > .error-box"));
   assert(fs.readdirSync(directory).some(f => f.startsWith("servers.corrupt-")));

@@ -20,9 +20,15 @@
 
 ## 连接树与标签
 
-目录按显式路线的相同前缀合并为连接树，同一资料可以出现在不同路径位置。两行节点显示名称、协议、连接状态、账号地址和自身标签；选择后高亮完整祖先路径，支持折叠、紧凑密度及方向键导航。路径上下文节点可查看资料，但不能作为筛选命中的独立连接目标。
+服务器与 SOCKS5 共用一棵连接树，保留本机根、显式路线的前缀合并、不同路径位置及完整祖先高亮。目录仅使用约 48px 的紧凑两行节点，显示名称、协议、状态、账号地址和自身标签。未使用的代理放在本机下；被引用的代理出现在实际路线中，状态说明用途与引用数量。代理和非目标的 SSH 路径节点只能查看、编辑与定位，不能双击建连。
 
-搜索只匹配目标自身的名称、地址、账号和标签，多选标签要求同时包含全部标签。筛选保留命中目标的完整祖先并自动展开；清除筛选恢复原折叠状态。SOCKS5 资料单独管理，不使用服务器标签。删除标签只解除关联，不删除服务器；标签变化不改变连接身份，无需重连。
+工具栏默认“新增服务器”直接打开 SSH 表单，旁边的箭头可选择新增 SOCKS5 代理；刷新始终显示在外。资料的编辑、复制与删除按实际类型执行，复制不带秘密，引用中的资料仍不能删除。
+
+搜索匹配目标及其显式中转节点的名称、地址、账号和 SSH 标签。树上方直接显示正在被服务器使用的标签，点击选中，再点取消；多选要求目标服务器同时包含全部标签，SOCKS5 不使用标签。“全部”只清标签，保留搜索。筛选临时展开完整路线，清除后恢复原折叠；无匹配时可以清除搜索和筛选。
+
+筛选隐藏所选资料时保留详情，并提供“显示此资料”；刷新保留查询、标签、选择路径、折叠与滚动位置，失败保留最后有效树并禁用新增、编辑与建连。原树位置消失但资料仍在时定位同一资料，资料删除才清选择。窄窗口在目录与详情间切换，返回目录保留所选位置；方向键、Home/End 移动树焦点，左右展开/折叠或定位父子节点，Enter 查看。
+
+标签在服务器表单内维护，不提供独立管理页。输入中文或英文逗号分隔的名称，或按 Enter 添加；保存前也会合并剩余输入，按名称复用已有标签并去重。已有标签逐项按 ID 保留，历史名称中的逗号不会被重新拆分，点击可从当前服务器解除。新标签与服务器一次保存，校验、版本冲突或写入失败时均不提交，取消不会留下新标签；嵌套新建的代理仍独立保存，返回后保留服务器标签与其他草稿。标签变化不改变连接身份，无需重连。
 
 目录保存为 `schemaVersion: 2`。读取旧 v1 分组时在内存中转换为同 ID 标签，首次写入前保存 `servers.v1.json.bak`，再通过既有原子写入保存 v2；读取不改原文件，迁移或保存失败保留原件和草稿。旧核心无法读取 v2，降级前需退出并恢复 v1 备份，迁移后新增的资料及标签不会包含在旧备份中。
 
@@ -52,7 +58,7 @@ SSH 保活间隔 30 秒，连续 3 次未响应后断开。SOCKS5 上游支持�
 
 - 资料与建链：[servers.rs](../../src-tauri/src/servers.rs)、[connection_profile.rs](../../src-tauri/src/servers/connection_profile.rs)、[connections](../../src-tauri/src/connections/mod.rs)、[route.rs](../../src-tauri/src/connections/route.rs)、[ssh.rs](../../src-tauri/src/connections/ssh.rs)、[host_keys.rs](../../src-tauri/src/connections/host_keys.rs)。
 - 界面：[servers.ts](../../src/servers.ts)、[连接树](../../src/connection-tree.ts)、[connections.ts](../../src/connections.ts)、[server-picker.ts](../../src/server-picker.ts)。
-- 回归：[servers.rs](../../src-tauri/tests/servers.rs)、[connections.rs](../../src-tauri/tests/connections.rs)、[连接 UI](../../scripts/test-connection-ui.mjs)、[真实 OpenSSH](../../scripts/test-openssh.mjs)。覆盖混合链、远端 DNS、凭据提交、指纹、取消、代次隔离及真实会话。
+- 回归：[资料与原子标签保存](../../src-tauri/tests/servers.rs)、[连接服务](../../src-tauri/tests/connections.rs)、[树模型](../../scripts/connection-tree.test.mjs)、[标签草稿](../../scripts/server-tags.test.mjs)、[目录 UI](../../scripts/test-server-ui.mjs)、[连接 UI](../../scripts/test-connection-ui.mjs)、[正式前端](../../scripts/test-production-ui.mjs)、[真实 OpenSSH](../../scripts/test-openssh.mjs)。覆盖混合链、直接筛选、状态保留、原子保存、远端 DNS、凭据提交、指纹、取消、代次隔离及真实会话。
 - 运行方法和原生包验证边界见[开发指南](../development.md)。生产服务器、各类外部 SSH 实现和所有认证配置不因夹具通过而视为已验证。
 
 返回[文档索引](../README.md)。

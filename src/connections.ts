@@ -15,10 +15,6 @@ export function connectionSummary(v: ConnectionView) {
   const node = v.nodeCount > 0 ? `第 ${v.nodeIndex + 1} / ${v.nodeCount} 站 · ` : "";
   return v.state === "connecting" ? `${node}${v.question ? "等待确认" : stages[v.stage] ?? v.stage}` : v.state === "connected" ? "已连接" : v.state === "cancelled" ? "已取消" : v.error ? `${node}${stages[v.error.stage] ?? v.error.stage}失败 · ${v.endpoint}：${v.error.message}` : "已断开";
 }
-export function connectionCard(id: string, v?: ConnectionView) {
-  const busy = v?.state === "connecting", online = v?.state === "connected";
-  return `<section class="connection-card" aria-label="服务器连接"><div><strong>${online ? "远程会话已就绪" : busy ? "正在连接" : "远程连接"}</strong><p role="status">${v ? e(connectionSummary(v)) : "通过保存的访问路径连接 SSH 服务器"}</p></div><div class="actions">${busy ? `<button data-connection-cancel="${e(v.attemptId)}">取消连接</button>${v.question ? `<button data-connection-prompt="${e(v.attemptId)}" class="primary">继续确认</button>` : ""}` : `<button data-connect-server="${e(id)}" class="primary">${online ? "前往工作台" : v ? "重新连接" : "连接服务器"}</button>${v?.state === "failed" ? `<button data-server-action="edit" data-id="${e(id)}">编辑连接资料</button>` : ""}`}</div></section>`;
-}
 type Call = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 interface Navigation { begin: () => number; accept: (context:Context, revision:number) => Promise<void> }
 export class ConnectionsUi {

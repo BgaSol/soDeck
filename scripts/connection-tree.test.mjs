@@ -22,9 +22,21 @@ test('AND matches targets themselves, retaining complete non-connectable ancesto
  assert.equal(ancestors(rows[2],tree.index).size,3);
  assert.equal(visibleNodes(tree.roots,new Set([tree.roots[0].key]),false).length,1);
 });
-test('search does not match descendant targets via ancestor names or tags',()=>{
- assert.deepEqual(connectionTree(c,{query:'入口',tags:[]}).matches.map(s=>s.id),['gateway']);
+test('search matches route nodes while tag AND still belongs to targets',()=>{
+ assert.deepEqual(connectionTree(c,{query:'入口',tags:[]}).matches.map(s=>s.id),['gateway','db','cache']);
+ assert.deepEqual(connectionTree(c,{query:'入口',tags:['prod','db']}).matches.map(s=>s.id),['db']);
  assert.equal(connectionTree(c,{query:'missing',tags:[]}).roots.length,0);
+});
+test('unused proxies remain under the root, and filters do not turn referenced proxies into orphans',()=>{
+ const catalog=structuredClone(c);catalog.proxies.push({id:'spare',name:'spare',host:'unused.invalid',authentication:{username:'proxy-user'}});
+ const full=connectionTree(catalog,{query:'',tags:[]});
+ assert.equal(full.roots.at(-1).recordId,'spare');assert.equal(full.roots.at(-1).target,false);
+ const filtered=connectionTree(catalog,{query:'direct',tags:[]});assert.deepEqual(filtered.roots.map(n=>n.recordId),['direct']);
+ assert.equal(connectionTree(catalog,{query:'proxy-user',tags:[]}).roots[0].recordId,'spare');
+ assert.equal(connectionTree(catalog,{query:'proxy-user',tags:['prod']}).roots.length,0);
+ catalog.servers[3].route=[proxy('spare')];
+ assert.equal(connectionTree(catalog,{query:'',tags:[]}).roots.find(n=>n.recordId==='spare').children[0].recordId,'direct');
+ assert.equal([...connectionTree(catalog,{query:'',tags:[]}).index.values()].filter(n=>n.recordId==='spare').length,1);
 });
 test('keys survive record rename and route step IDs but preserve occurrence identity',()=>{
  const before=connectionTree(c,{query:'',tags:[]});

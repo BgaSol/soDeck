@@ -100,6 +100,71 @@ fn v1_migrates_once_and_preserves_credentials_routes_and_original_backup() {
 }
 
 #[test]
+fn server_tags_commit_together_reuse_existing_ids_and_preserve_legacy_names() {
+    let f = Fixture::new();
+    let core = f.open();
+    let legacy = id(change(&core, json!({"op":"saveTag","id":null,"name":"工厂，机房"})).unwrap());
+    let existing =
+        id(change(&core, json!({"op":"saveTag","id":null,"name":"Production"})).unwrap());
+    let revision = core.server_catalog()["revision"].as_u64().unwrap();
+    let mut input = server("atomic-tags.invalid");
+    input["draft"]["tagIds"] = json!([legacy]);
+    input["draft"]["newTagNames"] = json!([" production ", "数据库", "数据库"]);
+    let saved = id(change(&core, input).unwrap());
+    let catalog = core.server_catalog();
+    assert_eq!(catalog["revision"], revision + 1);
+    assert_eq!(catalog["tags"].as_array().unwrap().len(), 3);
+    let server = catalog["servers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == saved)
+        .unwrap();
+    assert_eq!(server["tagIds"][0], legacy);
+    assert_eq!(server["tagIds"][1], existing);
+    assert_eq!(server["tagIds"].as_array().unwrap().len(), 3);
+    drop(core);
+    assert_eq!(
+        f.open().server_catalog()["servers"][0]["tagIds"],
+        server["tagIds"]
+    );
+}
+
+#[test]
+fn failed_server_save_does_not_leave_new_tags_or_advance_revision() {
+    let f = Fixture::new();
+    let core = f.open();
+    let saved = id(change(&core, server("original.invalid")).unwrap());
+    let before = core.server_catalog();
+    let disk = f.disk();
+    for value in [json!([""]), json!(["未提交"])] {
+        let mut input = edit(&core, &saved);
+        input["draft"]["newTagNames"] = value.clone();
+        if value[0] != "" {
+            input["draft"]["route"] = json!([{"kind":"ssh","id":"","serverId":"missing"}]);
+        }
+        assert!(change(&core, input).is_err());
+        assert_eq!(core.server_catalog(), before);
+        assert_eq!(f.disk(), disk);
+    }
+    let mut input = edit(&core, &saved);
+    input["draft"]["newTagNames"] = json!(["未提交"]);
+    assert!(core
+        .change_catalog(0, serde_json::from_value(input.clone()).unwrap())
+        .is_err());
+    fs::create_dir(f.0.join("servers.json.tmp")).unwrap();
+    assert!(change(&core, input.clone()).is_err());
+    let after = core.server_catalog();
+    for field in ["revision", "servers", "proxies", "tags"] {
+        assert_eq!(after[field], before[field]);
+    }
+    assert_eq!(f.disk(), disk);
+    fs::remove_dir(f.0.join("servers.json.tmp")).unwrap();
+    change(&core, input).unwrap();
+    assert_eq!(core.server_catalog()["tags"].as_array().unwrap().len(), 1);
+}
+
+#[test]
 fn multiple_tags_validate_and_deletion_preserves_other_memberships() {
     let f = Fixture::new();
     let core = f.open();
