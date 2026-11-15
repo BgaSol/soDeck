@@ -9,7 +9,9 @@ const executable=path.resolve(process.argv[2]),plugin=path.resolve(process.env.S
 const ssh=JSON.parse(fs.readFileSync(process.env.SODECK_TEST_SSH_CONFIG,'utf8'));
 assert(fs.existsSync(executable));assert(/^[a-f0-9]{64}$/.test(ssh.containerId));
 const duration=Number(process.env.SODECK_LOG_DURATION_MS||60000),manual=Number(process.env.SODECK_LOG_MANUAL_MS||0);
+const reopenCycles=Number(process.env.SODECK_LOG_REOPEN_CYCLES||20);
 assert(Number.isSafeInteger(duration)&&duration>=1000&&duration<=5400000);assert(Number.isSafeInteger(manual)&&manual>=0&&manual<=1800000);
+assert(Number.isSafeInteger(reopenCycles)&&reopenCycles>=20&&reopenCycles<=100);
 const reportRoot=path.resolve('artifacts/log-validation/native-'+new Date().toISOString().replaceAll(/[:.]/g,'-'));
 const directory=path.join(reportRoot,'app-data');fs.mkdirSync(directory,{recursive:true});
 const manifest=JSON.parse(fs.readFileSync(path.join(plugin,'plugin.json'),'utf8'));
@@ -32,10 +34,11 @@ try {
   page.on('pageerror',e=>report.errors.push(String(e)));
   // Observation only: retain bounded timing/response receipts from the real module Worker.
   await browser.contexts()[0].addInitScript(()=>{
-    const p=globalThis.__logProbe={workerCreated:0,workerTerminated:0,firstBodyAt:null,firstPaintAt:null,lastView:null,longTasks:[],times:{query:[],navigate:[],view:[]},exports:[],queryPaintText:null};
+    const p=globalThis.__logProbe={workerCreated:0,workerTerminated:0,firstBodyAt:null,firstPaintAt:null,lastView:null,longTasks:[],times:{query:[],navigate:[],view:[]},exports:[],queryPaintText:null,actions:[]};
+    document.addEventListener('click',e=>{const button=e.target.closest('button,input,select');if(button){p.actions.push({at:Date.now(),type:'click',id:button.id,focus:button.dataset.focus,trusted:e.isTrusted});if(p.actions.length>100)p.actions.shift();}},true);
     const Original=Worker;
     globalThis.Worker=class extends Original {
-      constructor(...a){super(...a);p.workerCreated++;const requests=new Map();this.addEventListener('message',e=>{const q=requests.get(e.data.requestId);if(!q)return;requests.delete(e.data.requestId);if(p.times[q.type]?.length<100)p.times[q.type].push(performance.now()-q.at);if(q.type==='query')p.pendingQuery=q.query;if(q.type==='view')p.lastView=e.data.data;if(q.type==='exportChunk')p.exports.push([...e.data.data.bytes]);});this.postMessage=(value,...rest)=>{requests.set(value.requestId,{type:value.type,at:performance.now(),query:value.conditions?.query});if(value.type==='append'&&p.firstBodyAt===null)p.firstBodyAt=performance.now();return Original.prototype.postMessage.call(this,value,...rest);};}
+      constructor(...a){super(...a);p.workerCreated++;const requests=new Map();this.addEventListener('message',e=>{const q=requests.get(e.data.requestId);if(!q)return;requests.delete(e.data.requestId);if(p.times[q.type]?.length<100)p.times[q.type].push(performance.now()-q.at);if(q.type==='query')p.pendingQuery=q.query;if(q.type==='view')p.lastView=e.data.data;if(q.type==='exportChunk')p.exports.push([...e.data.data.bytes]);});this.postMessage=(value,...rest)=>{requests.set(value.requestId,{type:value.type,at:performance.now(),query:value.conditions?.query});if(['latest','reset','restore','anchor'].includes(value.type)){p.actions.push({at:Date.now(),type:value.type,generation:value.generation,stack:new Error().stack});if(p.actions.length>100)p.actions.shift();}if(value.type==='append'&&p.firstBodyAt===null)p.firstBodyAt=performance.now();return Original.prototype.postMessage.call(this,value,...rest);};}
       terminate(){p.workerTerminated++;return super.terminate();}
     };
     try{new PerformanceObserver(list=>{for(const e of list.getEntries())if(p.longTasks.length<2000)p.longTasks.push({start:e.startTime,duration:e.duration});}).observe({type:'longtask',buffered:true});}catch{}
@@ -72,7 +75,7 @@ try {
     const capture=await frame.locator('body').evaluate(()=>sodeck.request('event',{action:'logs.status'}));const live=capture.resources.find(r=>r.end==null);assert(live,JSON.stringify(capture));assert.equal(live.status.state,'running',JSON.stringify(live));
     const produced=Number(live.status.producedBytes),earliest=Number(live.status.earliestAvailableOffset);assert(produced>=lastProduced);lastProduced=produced;if(earliest>lastEarliest){evictions++;lastEarliest=earliest;}
     const position=await frame.locator('body').evaluate((_,id)=>{const el=[...document.querySelectorAll('#log-lines .log-line')].find(el=>el.dataset.id===id),viewport=document.getElementById('log-viewport');if(!el)throw new Error('Protected record is no longer rendered');return {top:el.getBoundingClientRect().top,relativeTop:el.getBoundingClientRect().top-viewport.getBoundingClientRect().top,scroll:viewport.scrollTop,height:viewport.clientHeight,linesTop:el.parentElement.offsetTop,footerHeight:document.querySelector('.log-footer').getBoundingClientRect().height};},anchor.id);report.latestPosition=position;assert(Math.abs(position.relativeTop-anchor.relativeTop)<=2,'Reading anchor drifted within the viewport without navigation');
-    const probe=await metrics();report.samples.push({elapsedMs:Date.now()-start,producedBytes:produced,earliestOffset:earliest,retainedBytes:produced-earliest,rows:probe.lastView?.windowTotal,newCount:probe.lastView?.newCount,position,processes:processes()});
+    const probe=await metrics();report.actions=probe.actions;report.samples.push({elapsedMs:Date.now()-start,producedBytes:produced,earliestOffset:earliest,retainedBytes:produced-earliest,rows:probe.lastView?.windowTotal,newCount:probe.lastView?.newCount,position,processes:processes()});
     if(++round%3===0){await page.locator('#catalog-tab').click();await delay(30000);await page.locator('#return-workbench').click();await until(()=>frame.locator('#log-status').textContent().then(s=>s==='持续接收'),'Hidden capture did not resume');}
     save();console.log('Log soak',Math.round((Date.now()-start)/1000),'seconds; retained bytes',produced-earliest,'new records',probe.lastView?.newCount);
   }
@@ -97,6 +100,33 @@ try {
     report.checks.push('actual native 200000-row bounded history search');
   }
   assert.deepEqual(report.errors,[]);report.checks.push('query/filter/latest native page path');await page.screenshot({path:path.join(reportRoot,'native-logs.png')});
+  // Closing a real Surface must release its Worker and command capture before reopening.
+  for(const view of (await views()).filter(v=>v.definitionKey==='sodeck.docker:logs'&&v.id!==logView)) {
+    await page.locator(`[data-component-action="close"][data-key="${view.id}"]`).click();
+    await until(async()=>!(await views()).some(v=>v.id===view.id),'History view did not close');
+  }
+  const outputRoot=path.join(directory,'command-output'),outputDirectories=()=>fs.existsSync(outputRoot)?fs.readdirSync(outputRoot):[];
+  const retainedDirectories=new Set(outputDirectories()),workers=page.workers().length;
+  report.reopen=[];
+  await browserFrame.locator('body').evaluate(()=>{
+    globalThis.__openProbe={clicks:0,errors:[]};
+    document.addEventListener('click',e=>{if(e.target.closest('[data-focus="openLogs"]'))__openProbe.clicks++;},true);
+    addEventListener('message',e=>{if(['sodeck-ui-v1','sodeck-ui-v2'].includes(e.data?.channel)&&e.data.type==='response'&&e.data.error)__openProbe.errors.push(e.data.error);});
+  });
+  for(let cycle=0;cycle<reopenCycles;cycle++) {
+    await browserFrame.getByRole('button',{name:'日志',exact:true}).click();
+    const opened=await browserFrame.locator('body').evaluate(()=>__openProbe);assert.equal(opened.clicks,cycle+1,'Native pointer click was lost during browser refresh: '+JSON.stringify(opened));
+    let id;await until(async()=>{id=(await views()).find(v=>v.definitionKey==='sodeck.docker:logs'&&v.id!==logView)?.id;const probe=await browserFrame.locator('body').evaluate(()=>__openProbe);assert.deepEqual(probe.errors,[],'Repeated open returned an error');return !!id;},'Repeated log view did not open');
+    frame=page.frameLocator(`.component-surface[data-view-id="${id}"] iframe`);await frame.locator('.log-text').first().waitFor({timeout:45000});
+    assert.equal((await metrics()).workerCreated,1,'Each log Surface creates one Worker');
+    await frame.getByText('显示',{exact:true}).click();await frame.locator('#log-hold').click();await frame.getByText('显示',{exact:true}).click();
+    await page.locator(`[data-component-action="close"][data-key="${id}"]`).click();
+    await until(async()=>!(await views()).some(v=>v.id===id)&&await page.locator(`.component-surface[data-view-id="${id}"]`).count()===0,'Closed log view/Surface survived');
+    await until(()=>outputDirectories().every(name=>retainedDirectories.has(name))&&page.workers().length<=workers,'Closed log Worker or capture directory survived');
+    report.reopen.push({cycle:cycle+1,workers:page.workers().length,captureDirectories:outputDirectories().length});
+    report.openProbe=await browserFrame.locator('body').evaluate(()=>__openProbe);save();
+  }
+  report.checks.push(`${reopenCycles} real log open/hold/close cycles release Surfaces, Workers and capture directories`);
   const pids=(await invoke('snapshot')).plugins.map(p=>p.pid);await invoke('plugin:window|close',{label:'main'});await until(()=>child.exitCode!==null,'Core did not exit');assert.equal(child.exitCode,0);
   await until(()=>pids.every(pid=>{try{process.kill(pid,0);return false;}catch{return true;}}),'Plugin leaked after exit');report.checks.push('native core/plugin exit');
   report.finished=new Date().toISOString();report.result='passed';save();console.log('Native log validation passed:',reportRoot);
