@@ -188,7 +188,7 @@ impl App {
             v.data["rates"][format!("{prefix}:{}", row["id"].as_str().unwrap_or(""))].clone()
         };
         Ok(
-            json!({"revision":v.revision,"context":v.context,"paused":v.paused,"connected":v.connected,"collecting":v.ticket.is_some(),"family":v.family.map(Family::name),"intervalSeconds":self.interval,"data":data,"groups":group,"navigation":v.navigation,"network":{"device":network,"rates":rates("net",&network)},"disk":{"device":disk,"rates":rates("disk",&disk)},"filesystemTotal":v.data["filesystems"].as_array().map(Vec::len).unwrap_or(0)}),
+            json!({"revision":v.revision,"context":v.context,"paused":v.paused,"connected":v.connected,"collecting":v.ticket.is_some(),"family":v.family.map(Family::name),"intervalSeconds":self.interval,"data":data,"groups":group,"navigation":v.navigation,"network":{"device":network,"rates":rates("net",&network)},"disk":{"device":disk,"rates":rates("disk",&disk)},"filesystemTotal":v.data["filesystems"].as_array().map(Vec::len).unwrap_or(0),"filesystemSummary":crate::filesystem::summary(&crate::filesystem::project(&v.data))}),
         )
     }
     pub fn control(
@@ -254,7 +254,8 @@ impl App {
                             "device",
                             "collection",
                             "disks",
-                            "memory"
+                            "memory",
+                            "other-mounts"
                         ]
                         .contains(&s)))
                         .collect::<Vec<_>>());
@@ -280,7 +281,27 @@ impl App {
         } else {
             kind
         };
-        let rows = v.data[key].as_array().cloned().unwrap_or_default();
+        if p["expectedRevision"]
+            .as_u64()
+            .is_some_and(|r| r != v.revision)
+        {
+            return Err("列表修订已过期".into());
+        }
+        let rows = if kind == "filesystems" && !p["group"].is_null() {
+            let group = p["group"]
+                .as_str()
+                .filter(|g| ["overview", "primary", "auxiliary", "system"].contains(g))
+                .ok_or("未知文件系统分组")?;
+            crate::filesystem::select(crate::filesystem::project(&v.data), group)
+        } else {
+            let mut rows = v.data[key].as_array().cloned().unwrap_or_default();
+            for row in &mut rows {
+                if let Some(o) = row.as_object_mut() {
+                    o.remove("mountIdentity");
+                }
+            }
+            rows
+        };
         let start = p["offset"].as_u64().unwrap_or(0) as usize;
         if start > rows.len() {
             return Err("列表游标已过期".into());
@@ -290,13 +311,16 @@ impl App {
         for row in rows.iter().skip(start).take(32) {
             let n = serde_json::to_vec(row).unwrap().len();
             if bytes + n > 20000 {
+                if page.is_empty() {
+                    return Err("单项列表超过响应预算".into());
+                }
                 break;
             }
             bytes += n;
             page.push(row.clone());
         }
         Ok(
-            json!({"revision":v.revision,"items":page,"total":rows.len(),"offset":start,"nextOffset":(start+page.len()<rows.len()).then_some(start+page.len())}),
+            json!({"revision":v.revision,"listRevision":crate::filesystem::revision(&rows),"items":page,"total":rows.len(),"offset":start,"nextOffset":(start+page.len()<rows.len()).then_some(start+page.len())}),
         )
     }
     fn take_work(&mut self) -> Option<Work> {
@@ -1078,5 +1102,88 @@ mod tests {
             .views
             .values()
             .all(|v| cache_size(v) <= 2 * 1024 * 1024 && v.data["cpu"]["value"] == 23.0));
+    }
+    #[test]
+    fn filesystem_overview_does_not_warn_on_snap_images() {
+        let mut app = App::new(5);
+        app.mount("v", &json!({})).unwrap();
+        let v = app.views.get_mut("v").unwrap();
+        v.data["filesystems"] = json!([
+            {"id":"/dev/sda1","path":"/","total":"1000","used":"200","available":"800"},
+            {"id":"/dev/loop0","path":"/snap/core20/2318","total":"1000","used":"1000","available":"0"}
+        ]);
+        v.data["mountTopology"] = crate::shared_state::linux_mounts("1 0 8:1 / / rw - ext4 /dev/sda1 rw\n2 1 7:0 / /snap/core20/2318 ro - squashfs /dev/loop0 ro\n");
+        let topology = v.data["mountTopology"].clone();
+        for row in v.data["filesystems"].as_array_mut().unwrap() {
+            crate::filesystem::associate(row, &topology);
+        }
+        let overview = app
+            .list("v", &json!({"kind":"filesystems","group":"overview"}))
+            .unwrap();
+        assert_eq!(
+            overview["total"], 1,
+            "Snap images must not fill the overview"
+        );
+        assert_eq!(
+            app.snapshot("v", None).unwrap()["filesystemSummary"]["warnings"],
+            0
+        );
+    }
+    #[test]
+    fn filesystem_classification_precedes_pagination_and_cursors_are_bounded() {
+        let mut app = App::new(5);
+        app.mount("v", &json!({})).unwrap();
+        let v = app.views.get_mut("v").unwrap();
+        v.data = crate::filesystem::tests::screenshot();
+        for i in 0..40 {
+            v.data["filesystems"].as_array_mut().unwrap().push(json!({"id":i.to_string(),"path":format!("/mnt/{i:02}"),"total":"1000","used":"900","available":"100"}));
+        }
+        let raw = app.list("v", &json!({"kind":"filesystems"})).unwrap();
+        assert_eq!(raw["total"], 54);
+        let first = app
+            .list("v", &json!({"kind":"filesystems","group":"overview"}))
+            .unwrap();
+        assert_eq!(first["total"], 41);
+        assert_eq!(first["items"].as_array().unwrap().len(), 32);
+        assert_eq!(first["nextOffset"], 32);
+        let second = app
+            .list(
+                "v",
+                &json!({"kind":"filesystems","group":"overview","offset":32}),
+            )
+            .unwrap();
+        assert_eq!(second["items"].as_array().unwrap().len(), 9);
+        assert_eq!(first["listRevision"], second["listRevision"]);
+        assert!(second["nextOffset"].is_null());
+        assert_eq!(
+            app.snapshot("v", None).unwrap()["filesystemSummary"]["warnings"],
+            40
+        );
+        assert!(app
+            .list("v", &json!({"kind":"filesystems","group":"wrong"}))
+            .is_err());
+        assert!(app
+            .list("v", &json!({"kind":"filesystems","expectedRevision":0}))
+            .is_err());
+        app.views.get_mut("v").unwrap().data["filesystems"] = json!((0..6).map(|i|json!({"id":i.to_string(),"path":format!("/{i}{}","x".repeat(4090)),"total":"1000","used":"900","available":"100"})).collect::<Vec<_>>());
+        let limited = app
+            .list("v", &json!({"kind":"filesystems","group":"primary"}))
+            .unwrap();
+        let n = limited["items"].as_array().unwrap().len();
+        assert!(n > 0 && n < 6);
+        assert_eq!(limited["nextOffset"], n);
+        assert!(serde_json::to_vec(&limited).unwrap().len() < 24 * 1024);
+        app.views.get_mut("v").unwrap().data["filesystems"][0]["path"] = json!("x".repeat(25000));
+        assert!(app.list("v", &json!({"kind":"filesystems"})).is_err());
+        app.control(
+            "v",
+            "navigation",
+            &json!({"state":{"expandedGroups":["other-mounts","invalid"]}}),
+        )
+        .unwrap();
+        assert_eq!(
+            app.snapshot("v", None).unwrap()["navigation"]["expandedGroups"],
+            json!(["other-mounts"])
+        );
     }
 }

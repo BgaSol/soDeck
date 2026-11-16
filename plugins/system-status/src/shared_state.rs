@@ -257,6 +257,28 @@ fn decode(text: &str) -> Option<String> {
 mod tests {
     use super::*;
     #[test]
+    fn display_filter_does_not_remove_shared_mounts_or_capacity() {
+        let mut data = crate::filesystem::tests::screenshot();
+        data["mountTopology"]["coverage"] = json!("complete");
+        data["mountTopology"]["observedAt"] = json!(5);
+        let mut publisher = Publisher::default();
+        publisher.observe(&data, 5, None, false);
+        assert_eq!(
+            crate::filesystem::select(crate::filesystem::project(&data), "overview").len(),
+            2
+        );
+        for topic in ["filesystem.mounts.v1", "filesystem.capacity.v1"] {
+            assert_eq!(
+                publisher
+                    .desired
+                    .iter()
+                    .filter(|((t, k), v)| t == topic && k != "scan-status" && v.is_some())
+                    .count(),
+                14
+            );
+        }
+    }
+    #[test]
     fn late_write_and_conflict_reconcile_to_latest_observation() {
         let mut p = Publisher::default();
         let key = ("filesystem.capacity.v1".into(), "mount".into());

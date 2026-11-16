@@ -1,4 +1,5 @@
 mod collectors;
+mod filesystem;
 mod metrics;
 mod scheduler;
 mod shared_state;

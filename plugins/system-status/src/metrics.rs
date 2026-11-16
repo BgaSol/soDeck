@@ -439,7 +439,8 @@ pub fn apply(
                 snapshot["interfaces"] = json!(rows);
                 let mounts = collectors::mount_paths(get("mounts"));
                 snapshot["mountTopology"] = crate::shared_state::linux_mounts(get("mounts"));
-                if let Some(rows) = snapshot["filesystems"].as_array_mut() {
+                let complete = snapshot["mountTopology"]["coverage"] == "complete";
+                if let Some(rows) = snapshot["filesystems"].as_array_mut().filter(|_| complete) {
                     rows.retain(|r| {
                         r["path"]
                             .as_str()
@@ -487,6 +488,7 @@ pub fn apply(
                     .cloned()
                     .map(|mut row| {
                         row["observedAt"] = json!(observed);
+                        crate::filesystem::associate(&mut row, &snapshot["mountTopology"]);
                         row
                     })
                     .collect::<Vec<_>>());
@@ -502,6 +504,7 @@ pub fn apply(
                 for (i, path) in paths.iter().enumerate().take(16) {
                     if let Some(mut fs) = df(get(&format!("fs{i}")), Some(path)) {
                         fs["observedAt"] = json!(observed);
+                        crate::filesystem::associate(&mut fs, &snapshot["mountTopology"]);
                         rows.retain(|v| v["path"] != *path);
                         rows.push(fs);
                     }
@@ -510,6 +513,7 @@ pub fn apply(
                     rows = df_all(get("filesystems"));
                     for row in &mut rows {
                         row["observedAt"] = json!(observed);
+                        crate::filesystem::associate(row, &snapshot["mountTopology"]);
                     }
                 }
                 rows.truncate(512);
@@ -541,6 +545,9 @@ pub fn apply(
             }
         }
         _ => {}
+    }
+    if group == "topology" {
+        crate::filesystem::reconcile(snapshot);
     }
     Ok(())
 }
@@ -851,5 +858,84 @@ mod tests {
         assert!(snapshot["memory"]["value"].is_number(), "{snapshot}");
         assert!(snapshot["cpu"]["value"].is_number(), "{snapshot}");
         assert!(!snapshot["filesystems"].as_array().unwrap().is_empty());
+    }
+    #[test]
+    #[ignore = "requires isolated Ubuntu container with real Snap and ext4 mounts; SODECK_STATUS_TEST_CONTAINER"]
+    fn linux_filesystem_rules_match_real_mounts() {
+        let container = std::env::var("SODECK_STATUS_TEST_CONTAINER").unwrap();
+        let snap_path = std::env::var("SODECK_STATUS_TEST_SNAP_PATH").unwrap();
+        let exec = |command: &str| {
+            let out = std::process::Command::new("docker")
+                .args(["exec", &container, "sh", "-c", command])
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            String::from_utf8(out.stdout).unwrap()
+        };
+        let mut data = json!({});
+        let mut baseline = Baseline::default();
+        let paths = vec![
+            "/".into(),
+            "/mnt/status-data".into(),
+            "/boot".into(),
+            "/run".into(),
+            "/run/credentials/status-test".into(),
+            snap_path.clone(),
+        ];
+        for group in ["topology", "capacity"] {
+            let text = exec(&collectors::command(Family::Linux, group, "real", &paths));
+            apply(
+                Family::Linux,
+                group,
+                &text,
+                "real",
+                &paths,
+                &mut data,
+                &mut baseline,
+                5,
+            )
+            .unwrap();
+        }
+        let projected = crate::filesystem::project(&data);
+        let row = |path: &str| projected.iter().find(|r| r["path"] == path).unwrap();
+        assert_eq!(row(&snap_path)["capacityState"], "fixedImage");
+        assert_eq!(row(&snap_path)["percent"], 100.0);
+        assert_eq!(row(&snap_path)["spaceWarning"], false);
+        assert_eq!(row("/boot")["displayGroup"], "auxiliary");
+        assert_eq!(row("/mnt/status-data")["displayGroup"], "primary");
+        assert_eq!(row("/run")["displayGroup"], "system");
+        assert_eq!(
+            row("/run/credentials/status-test")["capacityState"],
+            "notApplicable"
+        );
+        exec("dd if=/dev/zero of=/boot/status-fill bs=1M count=26 2>/dev/null; sync");
+        let text = exec(&collectors::command(
+            Family::Linux,
+            "capacity",
+            "real",
+            &paths,
+        ));
+        apply(
+            Family::Linux,
+            "capacity",
+            &text,
+            "real",
+            &paths,
+            &mut data,
+            &mut baseline,
+            5,
+        )
+        .unwrap();
+        assert!(crate::filesystem::project(&data)
+            .iter()
+            .any(|r| r["path"] == "/boot"
+                && r["spaceWarning"] == true
+                && r["displayGroup"] == "primary"));
+        assert_eq!(data["filesystems"].as_array().unwrap().len(), 6);
+        assert!(data["mountTopology"]["mounts"].as_array().unwrap().len() >= 6);
     }
 }

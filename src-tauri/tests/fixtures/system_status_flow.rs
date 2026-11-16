@@ -13,6 +13,12 @@ async fn openssh_system_status_plugin(){
     let mount=f.core.ui_attach("main",&view).unwrap();let token=mount["surfaceId"].as_str().unwrap();f.core.ui_surface_ready("main",token).unwrap();
     let first=f.core.ui_event("main",token,json!({"action":"snapshot"})).unwrap();assert!(first["family"].is_string(),"{first}");assert!(first["data"]["identity"]["hostname"].is_string(),"{first}");
     let before=first["groups"][1]["observedAt"].as_u64().expect("dynamic sample");
+    let raw=f.core.ui_event("main",token,json!({"action":"list","kind":"filesystems"})).unwrap();
+    let overview=f.core.ui_event("main",token,json!({"action":"list","kind":"filesystems","group":"overview"})).unwrap();
+    assert!(raw["total"].as_u64().unwrap()>0,"capacity sample missing: {raw}");
+    assert!(first["filesystemSummary"]["primary"].is_number(),"{first}");
+    assert!(overview["total"].as_u64().unwrap()<=raw["total"].as_u64().unwrap());
+    for row in overview["items"].as_array().unwrap(){assert_eq!(row["displayGroup"],"primary");assert!(row["mountKey"].is_string());assert!(row["spaceWarning"].is_boolean());}
     f.core.ui_action("main",&context,json!({"op":"collapse","side":"right"})).unwrap();tokio::time::sleep(Duration::from_secs(7)).await;
     let later=f.core.ui_event("main",token,json!({"action":"snapshot"})).unwrap();assert!(later["groups"][1]["observedAt"].as_u64().unwrap()>before,"hidden panel stopped sampling");
     f.core.ui_event("main",token,json!({"action":"pause"})).unwrap();tokio::time::sleep(Duration::from_secs(1)).await;let paused=f.core.ui_event("main",token,json!({"action":"snapshot"})).unwrap();assert_eq!(paused["paused"],true);

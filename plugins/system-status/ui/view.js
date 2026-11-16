@@ -4,7 +4,10 @@ const $ = id => document.getElementById(id);
 const event = data => sodeck.request('event', data);
 const names = { identity: '设备信息', dynamic: '动态指标', topology: '拓扑 / 负载', capacity: '容量', uptime: '运行时间' };
 let snapshot, expectedContext, visible = true, pending = false, queued = false, epoch = 0, timer;
-let offset = 0, nextOffset = null, lastHistory = 0, restoreScroll = false;
+let lastHistory = 0, restoreScroll = false;
+let filesystemMode = 'overview';
+const filePages = Object.fromEntries(['overview', 'primary', 'auxiliary', 'system'].map(name => [name, { offset: 0, next: null, previous: [], revision: null }]));
+const fileNodes = new Map();
 let actionError = '', pollError = '', controlPending = false;
 let histories = { cpu: [], memory: [], receive: [], send: [] };
 let historyEnd = Date.now();
@@ -104,10 +107,10 @@ function freshness() {
     text('uptime', Math.floor(n / 86400) + ' 天 ' + Math.floor(n / 3600) % 24 + ' 小时 ' + Math.floor(n / 60) % 60 + ' 分' + (up.estimated ? '（估算）' : ''));
     text('uptime-short', '运行 ' + (n >= 86400 ? Math.floor(n / 86400) + ' 天' : n >= 3600 ? Math.floor(n / 3600) + ' 小时' : Math.floor(n / 60) + ' 分'));
   } else text('uptime-short', group('uptime')?.observedAt || group('dynamic')?.observedAt ? '运行时间未提供' : '运行时间待读取');
-  for (const node of $('filesystems').querySelectorAll('[data-observed-at]')) {
+  for (const node of document.querySelectorAll('.filesystem [data-observed-at]')) {
     const at = Number(node.dataset.observedAt);
     node.textContent = '容量 · ' + age(at);
-    node.hidden = snapshot.connected && !snapshot.paused && at && Date.now() - at < 120000;
+    node.hidden = !node.classList.contains('detail-age') && snapshot.connected && !snapshot.paused && at && Date.now() - at < 120000;
   }
   collectionDetails();
   const at = Date.now();
@@ -148,7 +151,7 @@ function render() {
   if (!d.uptime) { text('uptime', '正在读取'); text('uptime-short', '运行时间待读取'); }
   freshness();
 }
-const list = (kind, start = 0) => event({ action: 'list', kind, offset: start });
+const list = (kind, start = 0, fileGroup) => event({ action: 'list', kind, offset: start, group: fileGroup, expectedRevision: snapshot?.revision });
 function interfaceRecord(node, item) {
   const name = Object.assign(document.createElement('strong'), { textContent: item?.name || item?.id || '暂不可用' });
   const addresses = Object.assign(document.createElement('span'), { className: 'interface-addresses', textContent: item?.removed ? '设备已移除' : item?.addresses?.length ? item.addresses.join(' · ') : item?.counterInstance ? '性能计数器实例，未映射物理网卡 · 未提供 IP' : '未提供 IP' });
@@ -243,40 +246,80 @@ async function allDevices(kind) {
   return rows;
 }
 async function lists(localEpoch) {
-  const [interfaces, disks, files] = await Promise.all([allDevices('interfaces'), allDevices('disks'), list('filesystems', offset)]);
+  const [interfaces, disks] = await Promise.all([allDevices('interfaces'), allDevices('disks')]);
   if (localEpoch !== epoch || !visible) return;
   const devicesKnown = group('topology')?.observedAt || group('dynamic')?.observedAt;
   if (!devicesKnown) { interfaces.length = 0; disks.length = 0; }
-  if (!group('capacity')?.observedAt) { files.items = []; files.total = 0; files.nextOffset = null; }
   interfaceOptions(interfaces, devicesKnown ? snapshot.network.device : null);
   options($('disk'), disks, snapshot.disk.device);
-  nextOffset = files.nextOffset;
-  $('previous').disabled = offset === 0; $('next').disabled = nextOffset == null;
-  $('paging').hidden = files.total <= files.items.length && offset === 0;
-  text('page-label', files.total ? (offset + 1) + '–' + (offset + files.items.length) + ' / ' + files.total : '');
-  const root = $('filesystems'), signature = JSON.stringify(files.items);
-  if (root.dataset.items === signature) return;
-  root.dataset.items = signature; root.replaceChildren();
-  if (!files.items.length) root.append(Object.assign(document.createElement('p'), { className: 'caption', textContent: '暂未读取到本地文件系统。远程挂载不查询容量。' }));
-  for (const f of files.items) {
-    const used = f.percent ?? (f.total && f.available && BigInt(f.total) > 0n ? Number((BigInt(f.total) - BigInt(f.available)) * 10000n / BigInt(f.total)) / 100 : null);
-    const known = Number.isFinite(used), warning = known && used >= 85;
-    const row = document.createElement('div'); row.className = 'filesystem' + (warning ? ' warning' : '');
-    const top = document.createElement('div'); top.className = 'filesystem-top';
-    const name = document.createElement('strong'); name.className = 'filesystem-path'; name.textContent = f.path || f.name || f.id;
-    const stats = document.createElement('span'); stats.className = 'filesystem-stats'; stats.textContent = bytes(f.used) + ' / ' + bytes(f.total);
-    top.append(name, stats); row.append(top);
-    if (known) {
-      const meter = document.createElement('div'); meter.className = 'meter';
-      meter.setAttribute('role', 'meter'); meter.setAttribute('aria-label', name.textContent + ' 已用容量');
-      meter.setAttribute('aria-valuemin', '0'); meter.setAttribute('aria-valuemax', '100'); meter.setAttribute('aria-valuenow', Math.max(0, Math.min(100, used)).toFixed(1));
-      const bar = document.createElement('span'); bar.style.width = Math.max(0, Math.min(100, used)) + '%'; meter.append(bar); row.append(meter);
-    }
-    const bottom = document.createElement('div'); bottom.className = 'filesystem-bottom';
-    bottom.append(Object.assign(document.createElement('span'), { textContent: '可用 ' + bytes(f.available) }), Object.assign(document.createElement('span'), { textContent: known ? used.toFixed(1) + '%' + (warning ? ' · 空间偏紧' : '') : '容量不可读' }));
-    const observed = document.createElement('p'); observed.className = 'caption'; observed.dataset.observedAt = f.observedAt || 0;
-    row.append(bottom, observed); root.append(row);
+  const summary = snapshot.filesystemSummary || {};
+  text('filesystem-warnings', summary.warnings ? summary.warnings + ' 项空间偏紧' : '');
+  const hidden = (summary.auxiliary || 0) + (summary.system || 0);
+  $('other-mounts').hidden = !hidden;
+  text('other-mounts-label', '其他挂载（' + hidden + '）');
+  await filesystemList(filesystemMode, 'filesystems', '', localEpoch);
+  if (localEpoch !== epoch || !visible) return;
+  $('all-filesystems').hidden = !summary.primary || (filesystemMode === 'overview' && summary.primary <= filePages.overview.total);
+  text('all-filesystems', filesystemMode === 'overview' ? '展开主要存储（' + summary.primary + '）' : '收起主要存储');
+  if ($('other-mounts').open && hidden) {
+    await Promise.all(['auxiliary', 'system'].map(name => filesystemList(name, name + '-filesystems', name + '-', localEpoch)));
   }
+}
+function resetFiles() {
+  filesystemMode = 'overview'; fileNodes.clear();
+  for (const state of Object.values(filePages)) Object.assign(state, { offset: 0, next: null, previous: [], revision: null });
+  for (const id of ['filesystems', 'auxiliary-filesystems', 'system-filesystems']) $(id).replaceChildren();
+}
+async function filesystemList(name, rootId, prefix, localEpoch) {
+  const state = filePages[name];
+  let page;
+  try { page = await list('filesystems', state.offset, name); }
+  catch (error) {
+    if (!state.offset || !String(error.message).includes('游标已过期')) throw error;
+    state.offset = 0; state.previous = []; page = await list('filesystems', 0, name);
+  }
+  if (localEpoch !== epoch || !visible) return;
+  if (state.offset && state.revision !== page.listRevision) {
+    state.offset = 0; state.previous = []; page = await list('filesystems', 0, name);
+    if (localEpoch !== epoch || !visible) return;
+  }
+  state.revision = page.listRevision; state.total = page.total; state.next = page.nextOffset;
+  if (!group('capacity')?.observedAt) { page.items = []; page.total = 0; state.next = null; }
+  $(prefix + 'previous').disabled = !state.previous.length;
+  $(prefix + 'next').disabled = state.next == null;
+  $(prefix + 'paging').hidden = !state.offset && state.next == null;
+  text(prefix + 'page-label', page.total ? (state.offset + 1) + '–' + (state.offset + page.items.length) + ' / ' + page.total : '');
+  if (prefix) $(name + '-section').hidden = !page.total;
+  reconcileFiles($(rootId), page.items);
+}
+function reconcileFiles(root, items) {
+  const focused = root.contains(document.activeElement) ? document.activeElement : null;
+  const desired = items.map(f => {
+    let row = fileNodes.get(f.mountKey);
+    if (!row) {
+      row = document.createElement('details'); row.className = 'filesystem'; row.dataset.mountKey = f.mountKey;
+      row.innerHTML = '<summary><div class="filesystem-top"><strong class="filesystem-path"></strong><span class="filesystem-usage"></span></div><div class="filesystem-bottom"><span class="filesystem-stats"></span><div class="meter" role="meter" aria-valuemin="0" aria-valuemax="100"><span></span></div></div><p class="filesystem-warning" hidden>空间偏紧</p><p class="capacity-age" data-observed-at="0" hidden></p></summary><dl><dt>路径</dt><dd class="detail-path"></dd><dt>可用</dt><dd class="detail-free"></dd><dt>类型</dt><dd class="detail-type"></dd><dt>访问</dt><dd class="detail-access"></dd><dt>观察</dt><dd class="detail-age" data-observed-at="0"></dd></dl>';
+      fileNodes.set(f.mountKey, row);
+    }
+    const put = (selector, value) => { const node = row.querySelector(selector); if (node.textContent !== value) node.textContent = value; };
+    const known = f.capacityState === 'known' && Number.isFinite(f.percent);
+    const label = f.path || f.name || f.id;
+    row.classList.toggle('warning', f.spaceWarning === true);
+    put('.filesystem-path', label); row.querySelector('.filesystem-path').title = label;
+    put('.filesystem-usage', known ? f.percent.toFixed(1) + '%' : f.capacityState === 'fixedImage' ? '只读镜像' : f.capacityState === 'notApplicable' ? '容量不适用' : '容量不可读');
+    put('.filesystem-stats', f.capacityState === 'fixedImage' ? '镜像 ' + bytes(f.total) : f.capacityState === 'notApplicable' ? '系统运行挂载' : f.capacityState === 'unknown' ? '等待有效容量' : bytes(f.used) + ' / ' + bytes(f.total));
+    const meter = row.querySelector('.meter'); meter.hidden = !known;
+    if (known) { meter.setAttribute('aria-label', label + ' 已用容量'); meter.setAttribute('aria-valuenow', f.percent.toFixed(1)); meter.firstElementChild.style.width = f.percent + '%'; }
+    row.querySelector('.filesystem-warning').hidden = !f.spaceWarning;
+    put('.detail-path', label); put('.detail-free', bytes(f.available)); put('.detail-type', f.filesystemType || '未确认'); put('.detail-access', f.readOnly === true ? '只读' : f.readOnly === false ? '可写' : '未确认');
+    for (const node of row.querySelectorAll('[data-observed-at]')) node.dataset.observedAt = f.observedAt || 0;
+    return row;
+  });
+  for (const node of [...root.children]) if (!desired.includes(node)) node.remove();
+  for (let i = 0; i < desired.length; i++) if (root.children[i] !== desired[i]) root.insertBefore(desired[i], root.children[i] || null);
+  if (focused?.isConnected && document.activeElement !== focused) focused.focus({ preventScroll: true });
+  if (fileNodes.size > 512) for (const [key, node] of fileNodes) if (!node.isConnected) fileNodes.delete(key);
+  if (!items.length && root.id === 'filesystems') root.append(Object.assign(document.createElement('p'), { className: 'caption', textContent: '暂未读取到本地文件系统。远程挂载不查询容量。' }));
 }
 function renderHistory() {
   const end = historyEnd, gap = snapshot?.intervalSeconds * 3000 || 15000;
@@ -318,10 +361,10 @@ async function poll(force = false) {
       snapshot = data; render(); await lists(localEpoch);
       if (localEpoch !== epoch || !visible) return;
       if (data.revision !== lastHistory) { lastHistory = data.revision; await history(localEpoch); }
-      if (restoreScroll) { restoreScroll = false; $('scroll').scrollTop = snapshot.navigation?.scrollTop || 0; }
+      if (restoreScroll) { restoreScroll = false; for (const id of snapshot.navigation?.expandedGroups || []) if ($(id)) $(id).open = true; $('scroll').scrollTop = snapshot.navigation?.scrollTop || 0; }
     }
     freshness();
-  } catch (error) { if (localEpoch === epoch) { pollError = error.message || String(error); freshness(); } }
+  } catch (error) { if (localEpoch === epoch) { if (String(error.message).includes('修订已过期')) queued = true; else { pollError = error.message || String(error); freshness(); } } }
   finally { pending = false; if (queued) { queued = false; void poll(true); } }
 }
 function schedule() { clearInterval(timer); if (visible) timer = setInterval(() => void poll(), 1000); }
@@ -338,11 +381,16 @@ $('disk').onchange = () => {
   epoch++; lastHistory = 0;
   void event({ action: 'navigation', state: { diskId: $('disk').value } }).then(() => poll(true)).catch(error => { actionError = error.message || String(error); freshness(); });
 };
-$('previous').onclick = () => { offset = Math.max(0, offset - 32); void poll(true); };
-$('next').onclick = () => { if (nextOffset != null) { offset = nextOffset; void poll(true); } };
+for (const prefix of ['', 'auxiliary-', 'system-']) {
+  const state = () => filePages[prefix ? prefix.slice(0, -1) : filesystemMode];
+  $(prefix + 'previous').onclick = () => { const s = state(); s.offset = s.previous.pop() ?? 0; void poll(true); };
+  $(prefix + 'next').onclick = () => { const s = state(); if (s.next != null) { s.previous.push(s.offset); s.offset = s.next; void poll(true); } };
+}
+$('all-filesystems').onclick = () => { filesystemMode = filesystemMode === 'overview' ? 'primary' : 'overview'; void poll(true); };
+$('other-mounts').addEventListener('toggle', () => { if ($('other-mounts').open) void poll(true); });
 let navigationTimer;
 $('scroll').onscroll = () => { closeInterfaces(); clearTimeout(navigationTimer); navigationTimer = setTimeout(() => void event({ action: 'navigation', state: { scrollTop: $('scroll').scrollTop } }).catch(() => {}), 300); };
-for (const id of ['device', 'collection', 'disks']) $(id).addEventListener('toggle', () => void event({ action: 'navigation', state: { expandedGroups: ['device', 'collection', 'disks'].filter(id => $(id).open) } }).catch(() => {}));
+for (const id of ['device', 'collection', 'disks', 'other-mounts']) $(id).addEventListener('toggle', () => void event({ action: 'navigation', state: { expandedGroups: ['device', 'collection', 'disks', 'other-mounts'].filter(id => $(id).open) } }).catch(() => {}));
 $('history-details').addEventListener('toggle', renderHistory);
 function tokens(values) {
   for (const [key, value] of Object.entries(values || {})) {
@@ -356,6 +404,7 @@ function settingsApplied(settings) {
 addEventListener('sodeck:mount', e => {
   epoch++; lastHistory = 0; snapshot = e.detail.data; expectedContext = e.detail.context || snapshot?.context; restoreScroll = true; actionError = ''; pollError = '';
   histories = { cpu: [], memory: [], receive: [], send: [] };
+  resetFiles();
   tokens(e.detail.tokens); settingsApplied(e.detail.settings); visible = e.detail.visible !== false;
   renderHistory();
   if (snapshot) { render(); for (const id of snapshot.navigation?.expandedGroups || []) if ($(id)) $(id).open = true; }
@@ -365,7 +414,8 @@ addEventListener('sodeck:themeChanged', e => tokens(e.detail.tokens));
 addEventListener('sodeck:settingsChanged', e => { settingsApplied(e.detail.settings); void poll(true); });
 addEventListener('sodeck:visibilityChanged', e => { closeInterfaces(); visible = e.detail.visible; epoch++; schedule(); if (visible) void poll(true); });
 addEventListener('sodeck:contextChanged', e => {
-  epoch++; lastHistory = 0; expectedContext = e.detail.context; snapshot = undefined; actionError = ''; pollError = ''; offset = 0;
+  epoch++; lastHistory = 0; expectedContext = e.detail.context; snapshot = undefined; actionError = ''; pollError = ''; resetFiles();
+  $('other-mounts').open = false;
   histories = { cpu: [], memory: [], receive: [], send: [] };
   for (const id of ['filesystems', 'group-details', 'history-values']) { $(id).replaceChildren(); delete $(id).dataset.items; }
   interfaceOptions([], null); options($('disk'), [], null); $('paging').hidden = true;

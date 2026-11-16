@@ -77,12 +77,25 @@ h1, h2 { margin: 0; font-size: 13px; line-height: 1.4; font-weight: 650; }
 .interface-options > button[aria-selected="true"] { background: var(--accent-bg); }
 .interface-options > button:hover { background: var(--hover); }
 .interface-options > button:focus-visible { outline-offset: -2px; }
-.filesystem { margin-top: 8px; }
-.filesystem-top, .filesystem-bottom { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 2px 8px; font-size: 11px; }
-.filesystem-path { font: 600 11px/1.5 Consolas, ui-monospace, monospace; overflow-wrap: anywhere; min-width: 0; }
-.filesystem-stats, .filesystem-bottom { color: var(--muted); }
-.meter { height: 4px; margin: 6px 0 5px; background: var(--grid); border-radius: 2px; overflow: hidden; }.meter > span { height: 100%; display: block; background: var(--series-green); border-radius: inherit; }
-.filesystem.warning .meter > span { background: var(--warning); }.filesystem.warning .filesystem-bottom { color: var(--warning); }
+.filesystem { padding: 8px 0; font-size: 11px; }
+.filesystem + .filesystem { border-top: 1px solid var(--divider); }
+.filesystem > summary { list-style: none; cursor: pointer; }
+.filesystem > summary::-webkit-details-marker { display: none; }
+.filesystem-top, .filesystem-bottom { display: flex; align-items: center; justify-content: space-between; gap: 4px 8px; min-width: 0; }
+.filesystem-bottom { margin-top: 3px; }
+.filesystem-path { font: 600 11px/1.5 Consolas, ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.filesystem-usage { flex-shrink: 0; text-align: right; }
+.filesystem-stats { color: var(--muted); overflow-wrap: anywhere; min-width: 0; }
+.meter { width: 56px; flex-shrink: 0; height: 3px; background: var(--grid); border-radius: 2px; overflow: hidden; }.meter > span { height: 100%; display: block; background: var(--series-green); border-radius: inherit; }
+.filesystem.warning .meter > span { background: var(--warning); }.filesystem.warning .filesystem-usage, .filesystem-warning-count { color: var(--warning); }
+.filesystem-warning { color: var(--warning); font-size: 11px; margin: 3px 0 0; }
+.filesystem dl { display: grid; grid-template-columns: minmax(45px, auto) minmax(0, 1fr); padding: 10px 0 0; gap: 4px 8px; }
+.filesystem dl dd { margin: 0; }
+.filesystem .capacity-age { margin: 4px 0 0; color: var(--muted); }
+.filesystem-expand { width: 100%; margin: 6px 0; font-size: 11px; }
+.mount-group h3 { font-size: 11px; font-weight: 500; color: var(--muted); margin: 12px 0 0; }
+#other-mounts { border: 0; }
+@container (max-width: 200px) { .filesystem-bottom { flex-wrap: wrap; }.meter { width: 100%; }.filesystem-usage { font-size: 10px; } }
 .paging { display: flex; gap: 6px; align-items: center; justify-content: space-between; flex-wrap: wrap; font-size: 11px; color: var(--muted); margin-top: 8px; }.paging button { font-size: 11px; }
 .disclosure { border-bottom: 1px solid var(--divider); }.disclosure:last-child { border-bottom: 0; }
 .disclosure > summary { display: flex; align-items: center; gap: 7px; min-height: 39px; list-style: none; font-size: 12px; font-weight: 500; cursor: pointer; }

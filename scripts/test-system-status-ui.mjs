@@ -26,6 +26,14 @@ const normalFiles = [
   { id: 'root', path: '/', total: '85899345920', used: '36721970380', available: '49177375540', percent: 42.8, observedAt: observed - 32000 },
   { id: 'data', path: '/data', total: '536870912000', used: '307090161664', available: '229780750336', percent: 57.2, observedAt: observed - 32000 }
 ];
+const projected = f => ({ mountKey: f.id, displayGroup: 'primary', capacityState: 'known', spaceWarning: f.percent >= 85, filesystemType: null, readOnly: null, ...f });
+const screenshotFiles = [
+  ...normalFiles,
+  ...['core20/2318', 'core20/2434', 'core22/100', 'core22/101', 'lxd/1', 'snapd/1', 'snapd/2'].map((name, i) => ({ id: 'snap-' + i, path: '/snap/' + name, total: '104857600', used: '104857600', available: '0', percent: 100, displayGroup: 'system', capacityState: 'fixedImage', spaceWarning: false, filesystemType: 'squashfs', readOnly: true, observedAt: observed })),
+  ...['/run', '/dev/shm'].map((path, i) => ({ id: 'runtime-' + i, path, total: '104857600', used: '1048576', available: '103809024', percent: 1, displayGroup: 'system', filesystemType: 'tmpfs', readOnly: false, observedAt: observed })),
+  { id: 'credentials', path: '/run/credentials/systemd-sysusers.service', total: '0', used: '0', available: '0', displayGroup: 'system', capacityState: 'notApplicable', filesystemType: 'ramfs', readOnly: true, observedAt: observed },
+  ...['/boot', '/boot/efi'].map((path, i) => ({ id: 'boot-' + i, path, total: '104857600', used: '1048576', available: '103809024', percent: 1, displayGroup: 'auxiliary', filesystemType: i ? 'vfat' : 'ext4', readOnly: false, observedAt: observed }))
+];
 let snapshot = structuredClone(base), files = structuredClone(normalFiles), interfaces = structuredClone(normalInterfaces), requests = 0, actions = [], seriesKeys = [], historyStep = 5000, allGaps = false, failRefresh = false, failSnapshots = false;
 const windowEnd = 300000;
 assert.equal(chartPath([{ at: windowEnd, value: 20 }], 100, 15000, windowEnd + 120000), 'M144.0 37.2');
@@ -61,9 +69,16 @@ await page.exposeFunction('statusRequest', params => {
     return { accepted: true };
   }
   if (params.action === 'list') {
-    const rows = params.kind === 'interfaces' ? interfaces : params.kind === 'disks' ? [{ id: '8:0', name: 'nvme0n1' }, { id: '8:16', name: 'sda' }] : files;
+    let rows = params.kind === 'interfaces' ? interfaces : params.kind === 'disks' ? [{ id: '8:0', name: 'nvme0n1' }, { id: '8:16', name: 'sda' }] : files.map(projected);
+    if (params.kind === 'filesystems' && params.group) {
+      if (params.group === 'overview') {
+        const primary = rows.filter(f => f.displayGroup === 'primary');
+        const required = primary.filter(f => f.path === '/' || f.spaceWarning);
+        rows = [...required, ...primary.filter(f => !required.includes(f)).slice(0, Math.max(0, 3 - required.length))];
+      } else rows = rows.filter(f => f.displayGroup === params.group);
+    }
     const offset = params.offset || 0, items = rows.slice(offset, offset + 32);
-    return { items, total: rows.length, offset, nextOffset: offset + items.length < rows.length ? offset + items.length : null };
+    return { revision: snapshot.revision, listRevision: rows.map(f => f.mountKey).join('|'), items, total: rows.length, offset, nextOffset: offset + items.length < rows.length ? offset + items.length : null };
   }
   if (params.action === 'history') {
     seriesKeys.push(params.seriesKey);
@@ -80,6 +95,9 @@ await page.exposeFunction('statusRequest', params => {
     })) };
   }
   if (failSnapshots) throw new Error('首次读取失败：连接服务暂不可用');
+  const projectedFiles = files.map(projected);
+  snapshot.filesystemSummary = Object.fromEntries(['primary', 'auxiliary', 'system'].map(name => [name, projectedFiles.filter(f => f.displayGroup === name).length]));
+  snapshot.filesystemSummary.warnings = projectedFiles.filter(f => f.spaceWarning).length;
   return params.knownRevision === snapshot.revision ? { revision: snapshot.revision, unchanged: true } : structuredClone(snapshot);
 });
 await page.addInitScript(() => {
@@ -266,9 +284,57 @@ try {
 
   files = Array.from({ length: 34 }, (_, i) => ({ ...normalFiles[0], id: 'fs-' + i, path: '/mnt/' + i }));
   snapshot.revision++; await refresh();
+  assert.equal(await frame.locator('#filesystems > .filesystem').count(), 3);
+  await frame.locator('#all-filesystems').click();
+  await frame.locator('#page-label').filter({ hasText: '1–32 / 34' }).waitFor();
   await frame.locator('#next').click();
   await frame.locator('#page-label').filter({ hasText: '33–34 / 34' }).waitFor();
   await frame.locator('#previous').click(); await frame.locator('#page-label').filter({ hasText: '1–32 / 34' }).waitFor();
+  files = structuredClone(normalFiles); snapshot.revision++; await refresh();
+  await frame.locator('#all-filesystems').click();
+
+  files = structuredClone(screenshotFiles); snapshot.revision++; await refresh();
+  assert.equal(await frame.locator('#filesystems > .filesystem').count(), 2);
+  assert.equal(await frame.locator('.filesystem.warning').count(), 0);
+  assert.equal(await frame.locator('#other-mounts-label').innerText(), '其他挂载（12）');
+  assert.equal(await frame.locator('#system-filesystems > .filesystem').count(), 0, 'Hidden mounts load on demand');
+  await frame.locator('#other-mounts > summary').click();
+  await frame.locator('#system-filesystems > .filesystem').nth(9).waitFor();
+  assert.equal(await frame.locator('#auxiliary-filesystems > .filesystem').count(), 2);
+  assert.equal(await frame.locator('#system-filesystems .meter:not([hidden])').count(), 2);
+  const snap = frame.locator('[data-mount-key="snap-0"]');
+  await snap.locator('summary').click(); await snap.locator('summary').focus();
+  await snap.evaluate(e => { window.retainedFilesystem = e; });
+  await refresh(); await snap.locator('summary').focus();
+  snapshot.revision++;
+  await page.waitForTimeout(1500);
+  assert(await snap.evaluate(e => e === window.retainedFilesystem && e.open && document.activeElement === e.querySelector('summary')));
+  assert.match(await snap.locator('dl').innerText(), /squashfs.*只读/s);
+  const credential = frame.locator('[data-mount-key="credentials"]');
+  assert.match(await credential.innerText(), /容量不适用/);
+  assert.equal(await credential.locator('.meter').isVisible(), false);
+  await page.reload();
+  await frame.locator('#other-mounts[open]').waitFor();
+  await frame.locator('#system-filesystems > .filesystem').nth(9).waitFor();
+  await snap.locator('summary').click();
+  await frame.locator('#scroll').evaluate(e => e.scrollTop = e.querySelector('.filesystem-section').offsetTop);
+  await page.screenshot({ path: 'artifacts/system-status-ui/filesystem-expanded-light.png' });
+  Object.assign(files.find(f => f.id === 'boot-0'), { percent: 90, displayGroup: 'primary', spaceWarning: true });
+  snapshot.revision++; await refresh();
+  assert.equal(await frame.locator('#filesystems .filesystem.warning').count(), 1);
+  assert.equal(await frame.locator('#other-mounts-label').innerText(), '其他挂载（11）');
+  assert.equal(await frame.locator('#auxiliary-filesystems [data-mount-key="boot-0"]').count(), 0);
+  Object.assign(files.find(f => f.id === 'boot-0'), { percent: 1, displayGroup: 'auxiliary', spaceWarning: false });
+  snapshot.revision++; await refresh();
+  assert.equal(await frame.locator('#filesystems > .filesystem').count(), 2);
+  assert.equal(await frame.locator('#other-mounts-label').innerText(), '其他挂载（12）');
+  await frame.locator('#other-mounts > summary').click();
+  for (const theme of Object.keys(themes)) for (const width of [160, 200, 240, 280, 320, 400, 480]) {
+    await applyTheme(theme); await page.setViewportSize({ width, height: 760 });
+    assert(await frame.locator('body').evaluate(e => e.scrollWidth <= e.clientWidth), 'Filesystem layout overflow: ' + theme + '/' + width);
+  }
+  await applyTheme('light'); await page.setViewportSize({ width: 320, height: 760 });
+  await page.screenshot({ path: 'artifacts/system-status-ui/filesystem-overview-light.png' });
   files = structuredClone(normalFiles); snapshot.revision++; await refresh();
 
   snapshot.intervalSeconds = 30; historyStep = 30050; snapshot.revision++; await refresh();
@@ -357,7 +423,7 @@ try {
   assert.equal(await frame.locator('#notice').isVisible(), false);
   assert(actions.includes('refresh') && actions.includes('pause') && actions.includes('resume'));
   assert.deepEqual(errors, []);
-  console.log('Status UI: server header, full-width interface picker with all IPs, keyboard/remount/address updates, three themes and seven widths, two-way history, pause/refresh, failure retention, pagination, large paths, gaps, hidden polling, disconnect and unavailable metrics passed.');
+  console.log('Status UI: filesystem overview/hidden groups, Snap and zero-capacity mounts, risk promotion/recovery, keyed details/focus/remount, pagination, three themes/seven widths, existing server/network/history/lifecycle regressions passed.');
 } finally {
   await browser.close();
   await new Promise(resolve => server.close(resolve));
