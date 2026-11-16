@@ -128,7 +128,7 @@ try{
  await locate(filename);
  await row('设置 file.txt').click();assert.equal(await main.locator('iframe[title^="设置 file.txt"]').count(),0);
  pauseRead=true;await row('设置 file.txt').dblclick();
- let editor=main.frameLocator('iframe[title^="设置 file.txt"]');let text=editorDocument(editor);await text.waitFor();await wait(()=>typeof readRelease==='function');
+ let editor=main.frameLocator('iframe[title^="设置 file.txt"]');let text=editorDocument(editor);await text.waitFor({state:'attached'});await wait(()=>typeof readRelease==='function');
  assert.equal(await text.isEnabled(),false);
  const loadingSettings=await call('settings_page',{pluginId:'sodeck.files',pageId:'editor'});
  assert.equal(loadingSettings.applications.filter(a=>a.target==='surface').length,0,'Reading a descriptor must not report an editor with applied preferences');
