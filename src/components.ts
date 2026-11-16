@@ -527,6 +527,8 @@ export class Components {
     }
     if(changed){
       shell.closingSides={left:!left?(shell.renderedSides?.left??shell.closingSides?.left??null):null,right:!right?(shell.renderedSides?.right??shell.closingSides?.right??null):null};
+      const active=new Set([left?w.left:null,right?w.right:null,...Object.values(w.host?.groups??{}).map(group=>group.activeViewId)]);
+      for(const side of ['left','right'] as const)if(active.has(shell.closingSides[side]))shell.closingSides[side]=null;
       shell.renderedSides={left:w.left,right:w.right};shell.motionKey=key;
     }
     const centerSize=`${center.clientWidth}:${center.clientHeight}`;

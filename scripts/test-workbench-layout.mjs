@@ -227,6 +227,7 @@ try {
   assert(await toolFrame.evaluate(el=>el.isConnected),'Motion never replaces the tool iframe');
   await dragButton(toolKey,'right',180);
   await wait(async()=>(await slots()).right===tool&&(await slots()).left===null&&await board.locator(`.right-rail [data-tool-key="${toolKey}"]`).getAttribute('aria-expanded')==='true');
+  await main.waitForFunction(id=>{const surface=document.querySelector(`.component-surface[data-view-id="${CSS.escape(id)}"]`);return surface&&!surface.hidden&&!surface.inert&&surface.getBoundingClientRect().width>0;},tool);
   assert(await toolFrame.evaluate(el=>el.isConnected),'Button movement retains the original iframe');
   await board.locator(`[data-tool-key="${spareKey}"]`).focus();await main.keyboard.press('Shift+F10');
   await main.getByRole('menuitem',{name:'移到左侧',exact:true}).click();

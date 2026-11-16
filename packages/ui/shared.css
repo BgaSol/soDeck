@@ -38,12 +38,6 @@
     *::-webkit-scrollbar-thumb, *::-webkit-scrollbar-track, *::-webkit-scrollbar-corner, *::-webkit-scrollbar-button { all: revert; }
   }
 }
-@supports (interpolate-size:allow-keywords) and selector(details::details-content) {
-  @layer base {
-    details[data-motion-details]::details-content { interpolate-size:allow-keywords; block-size:0; overflow:clip; transition:block-size var(--sd-motion-enter) var(--sd-motion-ease),content-visibility var(--sd-motion-enter) allow-discrete; }
-    details[data-motion-details][open]::details-content { block-size:auto; }
-  }
-}
 @layer components {
   /* A fixed transparent 2px budget keeps content geometry stable across themes. */
   .sd-control, .sd-menu {
