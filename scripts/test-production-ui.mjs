@@ -356,6 +356,7 @@ try {
           await field("routed").selectOption("true");
           for (let i = 0; i < 5; i++) await dialog().locator('[data-server-action="add-socks"]').click();
         } else await field("authType").selectOption("usernamePassword");
+        await dialog().evaluate(node=>Promise.all(node.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
         const body = dialog().locator(".catalog-form-body"), footer = dialog().locator(".catalog-dialog-footer"), heading = dialog().locator(".catalog-dialog-heading");
         const top = await heading.boundingBox(), bottom = await footer.boundingBox();
         assert(top.y >= 0 && bottom.y + bottom.height <= height, `Heading and footer stay inside the window: ${JSON.stringify({ theme, kind, width, height, top, bottom })}`);

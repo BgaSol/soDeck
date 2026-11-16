@@ -284,7 +284,6 @@
     border-radius: 11px;
     box-shadow: var(--shadow);
     overflow: hidden;
-    animation: appear 0.12s ease-out;
   }
   .layer-heading {
     height: 54px;
@@ -916,20 +915,9 @@
     font-size: 12px;
     line-height: 1.6;
     overflow-wrap: anywhere;
-    animation: appear 0.12s ease-out;
   }
   .toast-error {
     color: var(--error);
-  }
-  @keyframes appear {
-    from {
-      opacity: 0;
-      transform: translateY(-4px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
   }
   @media (max-width: 880px) {
     .settings-nav {

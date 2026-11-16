@@ -1,5 +1,6 @@
 import { draw, timeline } from './charts.js';
 
+SoDeckMotion.observeMotion(document);
 const $ = id => document.getElementById(id);
 const event = data => sodeck.request('event', data);
 const names = { identity: '设备信息', dynamic: '动态指标', topology: '拓扑 / 负载', capacity: '容量', uptime: '运行时间' };
@@ -12,7 +13,7 @@ let actionError = '', pollError = '', controlPending = false;
 let histories = { cpu: [], memory: [], receive: [], send: [] };
 let historyEnd = Date.now();
 
-const text = (id, value) => { const label = String(value); if ($(id).textContent !== label) $(id).textContent = label; };
+const text = (id, value) => { const label = String(value); if ($(id).textContent !== label) {$(id).textContent = label;if(['freshness','connection','notice','filesystem-warnings'].includes(id))SoDeckMotion.feedbackMotion($(id));} };
 const validBytes = value => typeof value === 'string' ? /^\d{1,20}$/.test(value) : typeof value === 'number' && Number.isFinite(value) && value >= 0;
 const bytes = value => {
   if (!validBytes(value)) return '暂不可用';
@@ -295,18 +296,19 @@ async function filesystemList(name, rootId, prefix, localEpoch) {
   reconcileFiles($(rootId), page.items);
 }
 function reconcileFiles(root, items) {
+  const before=SoDeckMotion.captureMotion(root,'.filesystem');
   const focused = root.contains(document.activeElement) ? document.activeElement : null;
   const desired = items.map(f => {
     let row = fileNodes.get(f.mountKey);
     if (!row) {
-      row = document.createElement('details'); row.className = 'filesystem'; row.dataset.mountKey = f.mountKey;
+      row = document.createElement('details'); row.className = 'filesystem';row.setAttribute('data-motion-details',''); row.dataset.mountKey = f.mountKey;
       row.innerHTML = '<summary><div class="filesystem-top"><strong class="filesystem-path"></strong><span class="filesystem-usage"></span></div><div class="filesystem-bottom"><span class="filesystem-stats"></span><div class="meter" role="meter" aria-valuemin="0" aria-valuemax="100"><span></span></div></div><p class="filesystem-warning" hidden>空间偏紧</p><p class="capacity-age" data-observed-at="0" hidden></p></summary><dl><dt>路径</dt><dd class="detail-path"></dd><dt>可用</dt><dd class="detail-free"></dd><dt>类型</dt><dd class="detail-type"></dd><dt>访问</dt><dd class="detail-access"></dd><dt>观察</dt><dd class="detail-age" data-observed-at="0"></dd></dl>';
       fileNodes.set(f.mountKey, row);
     }
     const put = (selector, value) => { const node = row.querySelector(selector); if (node.textContent !== value) node.textContent = value; };
     const known = f.capacityState === 'known' && Number.isFinite(f.percent);
     const label = f.path || f.name || f.id;
-    row.classList.toggle('warning', f.spaceWarning === true);
+    const wasWarning=row.classList.contains('warning');row.classList.toggle('warning', f.spaceWarning === true);if(wasWarning!==Boolean(f.spaceWarning))SoDeckMotion.feedbackMotion(row.querySelector('.filesystem-warning'));
     put('.filesystem-path', label); row.querySelector('.filesystem-path').title = label;
     put('.filesystem-usage', known ? f.percent.toFixed(1) + '%' : f.capacityState === 'fixedImage' ? '只读镜像' : f.capacityState === 'notApplicable' ? '容量不适用' : '容量不可读');
     put('.filesystem-stats', f.capacityState === 'fixedImage' ? '镜像 ' + bytes(f.total) : f.capacityState === 'notApplicable' ? '系统运行挂载' : f.capacityState === 'unknown' ? '等待有效容量' : bytes(f.used) + ' / ' + bytes(f.total));
@@ -319,6 +321,7 @@ function reconcileFiles(root, items) {
   });
   for (const node of [...root.children]) if (!desired.includes(node)) node.remove();
   for (let i = 0; i < desired.length; i++) if (root.children[i] !== desired[i]) root.insertBefore(desired[i], root.children[i] || null);
+  SoDeckMotion.settleMotion(root,before,'.filesystem');
   if (focused?.isConnected && document.activeElement !== focused) focused.focus({ preventScroll: true });
   if (fileNodes.size > 512) for (const [key, node] of fileNodes) if (!node.isConnected) fileNodes.delete(key);
   if (!items.length && root.id === 'filesystems') root.append(Object.assign(document.createElement('p'), { className: 'caption', textContent: '暂未读取到本地文件系统。远程挂载不查询容量。' }));

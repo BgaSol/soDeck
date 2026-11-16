@@ -40,4 +40,8 @@ JSON/JSONC 支持字段名与冒号分行，浅色和深色主题继续区分字
 - 回归：[编辑事务](../../crates/plugin-client/src/file_editor.rs)、[真实文件 UI](../../scripts/test-files-ui.mjs)、[编辑器](../../scripts/test-file-editor-ui.mjs)、[原生编辑器](../../scripts/test-file-editor-native.mjs)、[本地文件剪贴板](../../scripts/test-desktop-files-native.mjs)、[跨插件联动](../../scripts/test-component-communication.mjs)。
 - Windows/Linux/macOS 文件剪贴板与原生拖入、IME、DPI、超长行及多编辑器性能的实际范围按发行记录区分。当前源码不能据此承诺所有系统文件管理器均已验证。
 
+## 操作反馈
+
+新展开的可见文件行局部揭示，文件夹箭头转向；任务进入列表与真实阶段变化有短暂反馈。当前文件有明确总量时，进度条按实际收到的字节平滑衔接；切换文件重新显示该文件进度，无总量或结果待核对时不模拟进度。刷新不重播已有行或阶段，传输与文件操作不等待展示过渡。节奏和减少动态效果规则见[界面规范](../../DESIGN.md#动效)。
+
 返回[文档索引](../README.md)。

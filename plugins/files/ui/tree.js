@@ -298,6 +298,7 @@
       this.expanded.clear(); this.selected = this.rootPath; this.input.value = this.rootPath; this.render(); this.persist();
     }
     render() {
+      const before=new Map([...this.tree.querySelectorAll('.tree-row')].map(row=>[row.dataset.path,row.getAttribute('aria-expanded')]));
       const fragment = document.createDocumentFragment(); this.visible = []; this.maxDepth = 1;
       const visit = (n, level, pos, count) => {
         this.maxDepth = Math.max(this.maxDepth, level);
@@ -335,6 +336,10 @@
       this.tree.replaceChildren(fragment); this.tree.scrollTop = scroll;
       const visible=new Set(this.visible.map(n=>n.path));this.selection=new Set([...this.selection].filter(path=>visible.has(path)));if(!visible.has(this.anchor))this.anchor='';
       this.indent();
+      for(const row of [...this.tree.querySelectorAll('.tree-row')].filter(row=>{const r=row.getBoundingClientRect(),v=this.tree.getBoundingClientRect();return r.bottom>v.top&&r.top<v.bottom;}).slice(0,40)){
+        if(!before.has(row.dataset.path))SoDeckMotion.revealMotion(row);
+        else if(before.get(row.dataset.path)!==row.getAttribute('aria-expanded')){const icon=row.querySelector('.tree-arrow .glyph');if(icon)SoDeckMotion.animateMotion(icon,[{transform:before.get(row.dataset.path)==='true'?'rotate(90deg)':'rotate(0deg)'},{transform:row.getAttribute('aria-expanded')==='true'?'rotate(90deg)':'rotate(0deg)'}]);}
+      }
       if (this.selected && !this.visible.some(n => n.path === this.selected)) {
         let path = parentOf(this.selected);
         while (path !== this.rootPath && path !== '/' && !this.visible.some(n => n.path === path)) path = parentOf(path);

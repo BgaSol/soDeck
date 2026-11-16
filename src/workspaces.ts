@@ -147,7 +147,7 @@ export class Workspaces {
     const scroll = this.tabs.scrollLeft;
     this.tabRegion.update(this.tabs, state.workspaces.map(w => {
       const id = e(w.context.workspaceId), active = this.hostVisible && state.window.activeWorkspace === w.context.workspaceId;
-      return `<div class="server-tab sd-tab ${active ? "selected" : ""} ${this.moving.has(w.context.workspaceId) ? "moving" : ""}" data-id="${id}" data-tab-id="${id}" data-tauri-drag-region="false"><button class="server-tab-select" role="tab" aria-selected="${active}" tabindex="${active ? 0 : -1}" data-workspace-action="select" data-id="${id}" title="${e(w.name)} · ${e(w.endpoint)}"><span class="health-dot ${w.connected ? "good" : "warning"}"></span><span class="tab-name">${e(w.name)}</span></button><button class="tab-close-button sd-icon" data-workspace-action="close" data-id="${id}" aria-label="关闭 ${e(w.name)}" title="关闭此窗口的服务器标签">${icon("close")}</button></div>`;
+      return `<div data-motion="item" class="server-tab sd-tab ${active ? "selected" : ""} ${this.moving.has(w.context.workspaceId) ? "moving" : ""}" data-id="${id}" data-tab-id="${id}" data-tauri-drag-region="false"><button class="server-tab-select" role="tab" aria-selected="${active}" tabindex="${active ? 0 : -1}" data-workspace-action="select" data-id="${id}" title="${e(w.name)} · ${e(w.endpoint)}"><span class="health-dot ${w.connected ? "good" : "warning"}"></span><span class="tab-name">${e(w.name)}</span></button><button class="tab-close-button sd-icon" data-workspace-action="close" data-id="${id}" aria-label="关闭 ${e(w.name)}" title="关闭此窗口的服务器标签">${icon("close")}</button></div>`;
     }).join(""));
     this.tabs.scrollLeft = scroll;
     this.strip?.update(state.window.activeWorkspace); this.picker?.update();
@@ -291,8 +291,9 @@ export class Workspaces {
   private resize(event: PointerEvent) {
     const handle = (event.target as Element).closest<HTMLElement>("[data-resize]"); const w = this.current();
     if (!handle || !w || event.button !== 0 || !event.isPrimary || this.panelGesture || this.moving.has(w.context.workspaceId)) return;
-    const side = handle.dataset.resize as PanelSide, initial = this.components.panelWidth(w.context.workspaceId, side);
-    if (initial === undefined) return;
+    const side = handle.dataset.resize as PanelSide;
+    if (this.components.panelWidth(w.context.workspaceId, side) === undefined) return;
+    const initial = handle.closest(".server-workbench")!.querySelector(`.${side}-panel`)!.getBoundingClientRect().width;
     event.preventDefault(); handle.setPointerCapture(event.pointerId);
     const focus = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
     handle.focus({ preventScroll: true });

@@ -33,4 +33,8 @@ JetBrains Mono、Source Code Pro、IBM Plex Mono 字体随相关插件独立打�
 - 回归：[核心设置](../../src-tauri/tests/settings.rs)、[设置 UI](../../scripts/test-settings-ui.mjs)、[桌面 UI](../../scripts/test-desktop-ui.mjs)、[真实默认应用](../../scripts/test-desktop-open-native.mjs)、[字体资源](../../scripts/plugin-settings-assets.test.mjs)。
 - 本机字体、系统 IME、混合 DPI、读屏、高对比及原生桌面互操作的验证范围见对应发行记录；浏览器模拟不等于这些设备验证。
 
+## 操作反馈
+
+设置分区与主题选择即时生效，切换分区有短暂过渡；输入、选区和草稿继续按原机制保存。跟随系统减少动态效果时保留可读的选中状态。 节奏和减少动态效果规则见[界面规范](../../DESIGN.md#动效)。
+
 返回[文档索引](../README.md)。

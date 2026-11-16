@@ -6,6 +6,7 @@ const $ = id => document.getElementById(id);
 const names = { running:'运行中',paused:'已暂停',exited:'已停止',created:'未启动',restarting:'重启中',dead:'异常',removing:'删除中' };
 const operations = { start:'启动',stop:'停止',restart:'重启',pause:'暂停',unpause:'恢复',remove:'删除容器' };
 const sections = { basic:'配置',state:'状态与健康',environment:'环境变量',ports:'端口',mounts:'挂载',networks:'网络',labels:'标签' };
+SoDeckMotion.observeMotion(document);
 let snapshot, ready=false, frozen=false, visible=true, epoch=0, revision, timer, selected='',offset=0,nextOffset,section='basic',fieldOffset=0,fieldNext,rows=[],fields=[],operationRequest,rendering=false,renderAgain=false,restoreScroll;
 const listHistory=[],fieldHistory=[];
 const pending = new Set();
@@ -13,7 +14,7 @@ let terminalOpening=false;
 let shellOptions=false,containerShell='/bin/sh',operationSubmitting=false;
 const confirmPanel=$('confirm');
 const event = data => {const promise=sodeck.request('event',data);pending.add(promise);return promise.finally(()=>pending.delete(promise));};
-function notice(message) { $('notice').textContent=message||''; $('notice').hidden=!message; }
+function notice(message) { SoDeckMotion.setMotionText($('notice'),message||''); $('notice').hidden=!message; }
 function tokens(values) { for(const [key,value] of Object.entries(values||{})) key==='color-scheme'?document.documentElement.style.colorScheme=value:document.documentElement.style.setProperty('--'+key,value); }
 function navigation() { return { query:$('query').value,status:$('status-filter').value,health:$('health-filter').value,group:$('group').checked,selected,offset,listHistory,section,fieldOffset,fieldHistory,scrollTop:$('scroll').scrollTop,shell:containerShell }; }
 async function remember() { if(ready&&!frozen) await call({action:'navigation',state:navigation()}); }
@@ -84,7 +85,7 @@ function beginOperation(action,row,trigger) {
   $('confirm-object').textContent=row.name+' · '+row.id+' · '+(snapshot.engine.name||'Engine');
   $('confirm-impact').textContent=action==='remove'?'删除容器可写层，保留挂载卷和 bind 数据。':action==='pause'?'容器进程将暂停，服务可能无法响应。':'服务可能中断；取消本地等待不会回滚 Engine 已接受的操作。';
   $('confirm-submit').textContent=operations[action];$('confirm-submit').disabled=false;
-  const target=$('actions');target.append(confirmPanel);confirmPanel.hidden=false;$('confirm-cancel').focus();
+  const target=$('actions');target.append(confirmPanel);confirmPanel.hidden=false;SoDeckMotion.enterMotion(confirmPanel);$('confirm-cancel').focus();
 }
 async function submitOperation(request) {operationSubmitting=true;renderHeader();renderListIfBrowser();try{await call({action:'operate',operation:request.action,requestId:request.requestId,intentSequence:request.intentSequence,...request.target});}finally{operationSubmitting=false;await poll(true);}}
 async function openTerminal(row,shell) {

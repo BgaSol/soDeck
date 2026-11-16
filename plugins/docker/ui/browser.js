@@ -12,7 +12,7 @@ export function installBrowserPage(releaseIncumbent){
   const tree=new ResourceTree($('tree-viewport'),{select,toggle,open,menu:openMenu,window:windowPage,focusIndex,focusKey,rootPath:()=>snapshot?.engine?.dockerRootDir||'未读取'});
   const identity=()=>({engineId:snapshot.engine?.id,endpoint:snapshot.endpoint,expectedContext:structuredClone(snapshot.context),scopeEpoch:snapshot.scopeEpoch});
   const current=target=>enabled&&!frozen&&!submitting&&snapshot?.state==='ready'&&!snapshot.busy&&target?.engineId===snapshot.engine?.id&&target?.endpoint===snapshot.endpoint&&target?.scopeEpoch===snapshot.scopeEpoch&&JSON.stringify(target?.expectedContext)===JSON.stringify(snapshot.context);
-  function message(text){$('notice').textContent=text||'';$('notice').hidden=!text;}
+  function message(text){SoDeckMotion.setMotionText($('notice'),text||'');$('notice').hidden=!text;}
   function theme(values){for(const [key,value]of Object.entries(values||{}))key==='color-scheme'?document.documentElement.style.colorScheme=value:document.documentElement.style.setProperty('--'+key,value);}
   async function request(data){const local=epoch,promise=sodeck.request('event',data);pending.add(promise);try{const result=await promise;if(local!==epoch)return null;return result;}finally{pending.delete(promise);}}
   async function send(data){if(!enabled||frozen)return null;try{const result=await request(data);if(result?.kind&&result?.revision)apply(result);message('');return result;}catch(error){message(error.message||String(error));return null;}}
@@ -26,7 +26,7 @@ export function installBrowserPage(releaseIncumbent){
   }
   function nodeInCache(key){return tree.node(key)||selectedNode?.key===key&&selectedNode;}
   function render(paint=true){if(!active||!snapshot)return;
-    $('title').textContent='Docker';$('state').textContent=({ready:'已连接',loading:'连接中',stale:'数据待刷新',gone:'已删除'}[snapshot.state]||'等待连接');$('state').dataset.state=snapshot.state;
+    $('title').textContent='Docker';SoDeckMotion.setMotionText($('state'),({ready:'已连接',loading:'连接中',stale:'数据待刷新',gone:'已删除'}[snapshot.state]||'等待连接'));$('state').dataset.state=snapshot.state;
     $('engine-name').textContent=snapshot.engine?.version?'Engine '+snapshot.engine.version:'等待 Engine';$('engine-version').textContent=snapshot.engine?.arch||'';
     $('refresh').disabled=!enabled||frozen||snapshot.busy;$('cancel').hidden=!snapshot.busy;$('pause').hidden=true;
     $('browser-more').disabled=!enabled||frozen;
@@ -43,7 +43,7 @@ export function installBrowserPage(releaseIncumbent){
   function renderSelection(){const n=nodeInCache(nav.selected);const box=$('browser-selection');box.hidden=!n;if(!n)return;
     $('selected-name').textContent=n.label;$('selected-kind').textContent=n.type==='root'?'数据目录':({container:'容器',image:'镜像',network:'网络',volume:'卷'}[n.resource?.kind]||'');
     $('selected-value').textContent=n.type==='root'?(snapshot.engine?.dockerRootDir||'Docker 未返回数据根目录'):n.resource?.id||n.meta||'';
-    const tools=$('selected-actions');const rebuilding=box.dataset.key!==n.key;if(rebuilding)tools.replaceChildren();box.dataset.key=n.key;
+    const tools=$('selected-actions');const rebuilding=box.dataset.key!==n.key;if(rebuilding)tools.replaceChildren();box.dataset.key=n.key;if(rebuilding)SoDeckMotion.revealMotion(box);
     const button=(text,fn,disabled=false)=>{const b=document.createElement('button');b.type='button';b.textContent=text;b.disabled=disabled;b.onclick=fn;tools.append(b);};
     if(rebuilding) {if(n.type==='root'){button('完整路径',()=>showRoot(n));button('复制路径',()=>copy(snapshot.engine?.dockerRootDir),!snapshot.engine?.dockerRootDir);}
     else if(n.resource?.kind==='container'&&n.type==='resource'){button('日志',()=>openView('openLogs',n));if(rebuilding)tools.lastElementChild.dataset.focus='openLogs';button('终端',()=>terminal(n,nav.shell||'/bin/sh'),n.status!=='running'||!current(identity())||snapshot.terminal?.status==='pending');}

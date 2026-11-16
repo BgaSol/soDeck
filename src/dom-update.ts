@@ -1,4 +1,5 @@
 import morphdom from "morphdom";
+import { captureMotion, settleMotion, feedbackMotion, exitMotion, revealMotion, observeMotion } from './motion.js';
 
 // Keys belong to entities or to controls within an entity, never to a label.
 function nodeKey(node: Node): string | undefined {
@@ -18,12 +19,17 @@ function nodeKey(node: Node): string | undefined {
 
 /** Update only DOM owned by the caller. Child controllers are updated separately. */
 export function updateDOM(element: HTMLElement, html: string) {
+  observeMotion(element.ownerDocument);
+  const positions = captureMotion(element);
+  const revealed = captureMotion(element,'[data-motion="reveal"]');
+  const feedback = new Map([...element.querySelectorAll('[data-motion="feedback"]')].map(node => [node, node.textContent]));
   const next = element.cloneNode(false) as HTMLElement;
   next.innerHTML = html;
   let selection: { node: HTMLInputElement | HTMLTextAreaElement; start: number; end: number; direction: "forward" | "backward" | "none" } | undefined;
   morphdom(element, next, {
     childrenOnly: true,
     getNodeKey: nodeKey,
+    onBeforeNodeDiscarded(node) { if (node instanceof Element && node.getAttribute('data-motion') === 'item') exitMotion(node); return true; },
     onBeforeElUpdated(from, to) {
       if (from instanceof HTMLDetailsElement) to.toggleAttribute("open", from.open);
       if (from === document.activeElement && (from instanceof HTMLInputElement || from instanceof HTMLTextAreaElement) && from.selectionStart !== null && from.selectionEnd !== null && from.value !== (to as HTMLInputElement).value) {
@@ -33,6 +39,9 @@ export function updateDOM(element: HTMLElement, html: string) {
     },
   });
   if (selection && document.activeElement === selection.node && selection.node.selectionStart !== null) selection.node.setSelectionRange(selection.start, selection.end, selection.direction);
+  settleMotion(element, positions);
+  for(const node of captureMotion(element,'[data-motion="reveal"]').keys())if(!revealed.has(node))revealMotion(node);
+  for (const [node, text] of feedback) if (node.isConnected && node.textContent !== text) feedbackMotion(node);
 }
 
 /** A controller owns its press queue and disposes it with its DOM. */

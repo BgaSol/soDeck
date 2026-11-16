@@ -168,5 +168,5 @@ dialog .toolbar { justify-content:flex-end; margin-top:18px; }
 .browser-page footer {padding:5px 10px;font-size:10px;}
 @container(max-width:260px) {.tree-meta {max-width:40%;}.tree-row {padding-left:calc(2px + var(--depth)*10px);gap:3px;}}
 @container(max-width:230px) {.browser-page header {flex-wrap:wrap;gap:4px;}.browser-page header .toolbar {margin-left:auto;}}
-@media(prefers-reduced-motion:no-preference) {.tree-loading svg {animation:tree-loading 1s linear infinite;}}
+
 @keyframes tree-loading {to {transform:rotate(360deg);}}

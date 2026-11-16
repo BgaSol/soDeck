@@ -13,7 +13,7 @@
       this.contextEpoch = 0; this.visible = true; this.running = false; this.last = new Map();
       this.rates=new Map();
       this.conflictAll=new Map();
-      this.panel = document.createElement('details'); this.panel.className = 'transfer-panel';
+      this.panel = document.createElement('details'); this.panel.className = 'transfer-panel';this.panel.setAttribute('data-motion-details','');
       this.summary = document.createElement('summary'); this.summary.textContent = '文件任务';
       this.body = document.createElement('div'); this.body.className = 'transfer-list';
       this.groups = {};
@@ -22,7 +22,7 @@
         const heading=document.createElement(key==='completed'?'summary':'h4');heading.textContent=label;
         const list=document.createElement('div');group.append(heading,list);this.body.append(group);this.groups[key]={group,heading,list,label};
       }
-      this.panel.append(this.summary, this.body); host.append(this.panel); this.timer = setTimeout(() => this.poll(), 350);
+      SoDeckMotion.observeMotion(document);this.panel.append(this.summary, this.body); host.append(this.panel); this.timer = setTimeout(() => this.poll(), 350);
     }
     async input(action, args = {}) {
       const epoch = this.contextEpoch;
@@ -156,12 +156,12 @@
         const text = document.createElement('p'); text.textContent = detail;
         const field = document.createElement('input'); field.value = initial; field.setAttribute('aria-label', detail);
         const footer = document.createElement('div'); footer.className = 'file-dialog-actions';
-        const finish = value => { dialog.close(); dialog.remove(); resolve(value); };
+        const finish = value => { SoDeckMotion.exitMotion(dialog);dialog.close(); dialog.remove(); resolve(value); };
         for (const [label, fn] of [['取消', () => finish(null)], ['确定', () => finish(input ? field.value : true)]]) {
           const button = document.createElement('button'); button.className = 'sd-control'; button.textContent = label; button.onclick = fn; footer.append(button);
         }
         dialog.append(heading, text); if (input) dialog.append(field); dialog.append(footer); document.body.append(dialog);
-        dialog.oncancel = e => { e.preventDefault(); finish(null); }; dialog.showModal(); if (input) { field.focus(); field.select(); field.onkeydown = e => { if (e.key === 'Enter') finish(field.value); }; }
+        dialog.oncancel = e => { e.preventDefault(); finish(null); }; dialog.showModal();SoDeckMotion.enterMotion(dialog); if (input) { field.focus(); field.select(); field.onkeydown = e => { if (e.key === 'Enter') finish(field.value); }; }
       });
     }
     async poll() {
@@ -173,9 +173,10 @@
         while(result.next!=null){result=await this.event({action:'readTasks',offset:result.next});tasks.push(...result.tasks);}
         const active = tasks.filter(t => !terminal(t.state));
         this.summary.textContent = active.length ? `文件任务 · ${active.length} 项进行中` : `文件任务 · ${tasks.length} 项`;
+        const before=new Map([...this.body.querySelectorAll('[data-batch]')].map(row=>[row.dataset.batch,{phase:row.dataset.phase,current:row.dataset.current,progress:Number(row.dataset.progress)}]));
         const fragments = Object.fromEntries(Object.keys(this.groups).map(key=>[key,document.createDocumentFragment()]));
         for (const task of tasks) {
-          const row = document.createElement('section'); row.className = 'transfer-item';
+          const row = document.createElement('section'); row.className = 'transfer-item';row.dataset.batch=task.id;row.dataset.phase=task.state;row.dataset.current=task.current||'';
           const title = document.createElement('div'); title.textContent = `${labels[task.state] || task.state} · ${kinds[task.kind]||task.kind}${task.current?' · '+task.current:''}`;
           const detail = document.createElement('div'); detail.className = 'transfer-detail';
           detail.textContent = `成功 ${task.completed} · 失败 ${task.failed} · 跳过 ${task.skipped}` + (Number(task.currentBytes) ? ` · ${Math.round(Number(task.currentBytes) / 1024)} KiB` : '');
@@ -183,6 +184,12 @@
           if(old&&now-old.at>500){const rate=Math.max(0,(received-old.bytes)/(now-old.at)*1000),remaining=Math.max(0,Number(task.currentTotal||0)-Number(task.currentBytes||0));if(!terminal(task.state)&&rate>0)detail.textContent+=` · ${(rate/1024).toFixed(1)} KiB/s${remaining?` · 当前文件约 ${Math.ceil(remaining/rate)} 秒`:''}`;this.rates.set(task.id,{at:now,bytes:received});}
           else if(!old)this.rates.set(task.id,{at:now,bytes:received});
           row.append(title, detail);
+          const total=Number(task.currentTotal),current=Number(task.currentBytes);
+          if(!terminal(task.state)&&Number.isFinite(total)&&total>0&&Number.isFinite(current)&&current>=0){
+            const progress=Math.min(1,current/total);row.dataset.progress=String(progress);
+            const meter=document.createElement('div');meter.className='transfer-progress';meter.setAttribute('role','progressbar');meter.setAttribute('aria-label','当前文件传输');meter.setAttribute('aria-valuemin','0');meter.setAttribute('aria-valuemax',String(total));meter.setAttribute('aria-valuenow',String(Math.min(current,total)));
+            const fill=document.createElement('span');fill.style.transform=`scaleX(${progress})`;meter.append(fill);row.append(meter);
+          }
           if (task.error || task.lastError || task.warning) { const error = document.createElement('div'); error.className = 'transfer-error'; error.textContent = task.error || task.lastError || task.warning; row.append(error); }
           const command = async parameters => { const result=await this.event({ batchId: task.id, conflictId:task.conflict?.itemId, ...parameters });if(result.batchId)this.last.set(result.batchId,'queued'); await this.poll(); };
           const button = (label, fn) => { const b = document.createElement('button'); b.textContent = label; b.className = 'sd-control';b.dataset.control=task.id+'/'+label; b.onclick = () => Promise.resolve().then(fn).catch(e => this.message(e.message, true)); row.append(b); };
@@ -218,6 +225,11 @@
         }
         if(focused)([...this.body.querySelectorAll('[data-control]')].find(e=>e.dataset.control===focused)||this.summary)?.focus({preventScroll:true});
         this.body.scrollTop=scroll;
+        for(const row of [...this.body.querySelectorAll('[data-batch]')].slice(0,40)){
+          const old=before.get(row.dataset.batch);if(!old)SoDeckMotion.revealMotion(row);else if(old.phase!==row.dataset.phase)SoDeckMotion.feedbackMotion(row.firstElementChild);
+          const fill=row.querySelector('.transfer-progress span'),progress=Number(row.dataset.progress);
+          if(fill&&old?.current===row.dataset.current&&Number.isFinite(old.progress)&&progress!==old.progress)SoDeckMotion.animateMotion(fill,[{transform:`scaleX(${old.progress})`},{transform:`scaleX(${progress})`}],'layout');
+        }
       } catch (error) { if (!this.disposed) this.message(error.message, true); }
       finally { this.running = false; clearTimeout(this.timer); if (!this.disposed) this.timer = setTimeout(() => this.poll(), 350); }
     }
@@ -226,8 +238,8 @@
       const list=document.createElement('div'),more=document.createElement('button'),close=document.createElement('button');
       more.textContent='加载更多';close.textContent='关闭';let offset=0;
       const load=async()=>{const page=await this.event({action:'readItems',batchId,offset});for(const entry of page.entries){const row=document.createElement('p');row.textContent=`${entry.item.name} · ${entry.state==='completed'?'完成':entry.state==='skipped'?'跳过':'失败'}${entry.error?' · '+entry.error:''}`;list.append(row);}more.disabled=!page.entries.length;offset=page.offset;};
-      close.onclick=()=>{dialog.close();dialog.remove();};more.onclick=()=>load().catch(e=>this.message(e.message,true));dialog.oncancel=()=>dialog.remove();
-      dialog.append(list,more,close);document.body.append(dialog);dialog.showModal();await load();
+      close.onclick=()=>{SoDeckMotion.exitMotion(dialog);dialog.close();dialog.remove();};more.onclick=()=>load().catch(e=>this.message(e.message,true));dialog.oncancel=()=>dialog.remove();
+      dialog.append(list,more,close);document.body.append(dialog);dialog.showModal();SoDeckMotion.enterMotion(dialog);await load();
     }
     visibility(visible) { this.visible = visible; if(!visible)this.invalidate();else void this.poll(); }
     invalidate() { this.contextEpoch++; }

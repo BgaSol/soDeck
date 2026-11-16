@@ -29,4 +29,8 @@
 - 回归：[真实网络夹具](../../src-tauri/tests/fixtures/network_flow.rs)、[原生进程与延迟端口回收](../../scripts/test-network-process.mjs)、[网络 UI](../../scripts/test-network-ui.mjs)、[OpenSSH](../../scripts/test-openssh.mjs)、[netem 专项](../../scripts/test-network-netem.mjs)。实际字节、取消、端口回收和重连隔离需集成验证。
 - 普通协议分片测试不等于丢包/延迟测试；netem 手动执行，限制和命令见[开发指南](../development.md)。接口见[插件 API](../plugin-api.md)，独立发布证据见[CHANGELOG](../../plugins/network-proxy/CHANGELOG.md)。
 
+## 操作反馈
+
+规则列表与详情切换、启动和停止状态、连通性检查和复制结果有短暂反馈。状态待确认、正在停止和失败继续保留原文字，界面不会提前显示成功。 节奏和减少动态效果规则见[界面规范](../../DESIGN.md#动效)。
+
 返回[文档索引](../README.md)。

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 // Clicking alone can scroll an incorrectly positioned menu into view.
 export async function assertMenuLayout(page, trigger, {long=false,point=false}={}) {
   const popup=page.getByRole('menu');
+  await popup.evaluate(node=>Promise.all(node.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
   const geometry=await popup.evaluate(node=>{
     const rect=node.getBoundingClientRect(),list=node.querySelector('.sd-menu-list')??node,style=getComputedStyle(list);
     return {position:getComputedStyle(node).position,left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom,height:rect.height,horizontal:['auto','scroll'].includes(style.overflowX)&&list.scrollWidth>list.clientWidth,vertical:['auto','scroll'].includes(style.overflowY)&&list.scrollHeight>list.clientHeight};

@@ -1,3 +1,5 @@
+import { enterMotion, exitMotion } from './motion.js';
+import { updateDOM } from './dom-update';
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { escape as e } from "./ui";
 
@@ -42,7 +44,7 @@ export class CloseCoordinator {
           const current=await this.call<Operation>("close_status",{operationId:id});this.receive(current);continue;
         } catch(error) {if(!String(error).includes("失效"))continue;}
         this.operations.delete(id);
-        if(this.dialogOperation===id){this.dialog?.remove();this.dialog=undefined;this.dialogOperation=undefined;}
+        if(this.dialogOperation===id){if(this.dialog)exitMotion(this.dialog);this.dialog?.remove();this.dialog=undefined;this.dialogOperation=undefined;}
       }
       for(const op of operations)this.receive(op);
       this.updateBlock();
@@ -63,7 +65,7 @@ export class CloseCoordinator {
     const terminal=["completed","aborted"].includes(op.phase)||Boolean(op.adoptedBy);
     this.updateBlock();
     if(terminal) {
-      if(this.dialogOperation===op.id){this.dialog?.remove();this.dialog=undefined;this.dialogOperation=undefined;}
+      if(this.dialogOperation===op.id){if(this.dialog)exitMotion(this.dialog);this.dialog?.remove();this.dialog=undefined;this.dialogOperation=undefined;}
       for(const key of this.reporting.keys())if(key.startsWith(`${op.id}/`))this.reporting.delete(key);
       for(const key of this.reports.keys())if(key.startsWith(`${op.id}/`))this.reports.delete(key);
       if(this.operations.size>128)for(const [id,old] of this.operations)if(["completed","aborted"].includes(old.phase)&&id!==op.id){this.operations.delete(id);break;}
@@ -105,6 +107,7 @@ export class CloseCoordinator {
     return false;
   }
   private paint(op:Operation) {
+    const entering=!this.dialog;
     if(this.dialogOperation && this.dialogOperation!==op.id)return;
     if(!this.dialog) {
       this.dialog=document.createElement("dialog");this.dialog.className="component-close-dialog";this.dialogOperation=op.id;
@@ -124,7 +127,7 @@ export class CloseCoordinator {
     const focus=(document.activeElement as HTMLElement)?.dataset.decision;
     const labels:Record<string,string>={preparing:"正在同步各窗口的输入…",deciding:"请确认未保存内容和运行任务。",cleaning:"正在停止组件并等待资源释放…",finalizing:"正在完成窗口或应用操作…",failed:"关闭尚未完成，已停止的资源将保持停止。"};
     const title = op.target.kind === "application" ? "关闭应用" : op.target.kind === "window" ? "关闭窗口" : op.target.kind === "host" ? "关闭服务器标签" : op.target.kind === "workspace" ? "关闭工作区" : "关闭组件页面";
-    this.dialog.innerHTML=`<h2>${title}</h2><p role="status">${labels[op.phase]??"正在关闭…"}</p>${op.error?`<p class="error-box" role="alert">${e(op.error)}</p>`:""}<ul>${op.dirty.map(v=>`<li>${e(v.title)}${v.busy?" · 任务运行中":""}${v.error?` · ${e(v.error)}`:""}</li>`).join("")}</ul><footer>${op.phase==="preparing"||op.phase==="deciding"?`<button data-decision="cancel">取消</button>${op.phase==="deciding"&&!op.decision?`<button data-decision="discard">放弃并关闭</button><button class="primary" data-decision="save" ${op.error?"disabled":""}>保存并关闭</button>`:""}`:op.phase==="failed"?`<button data-decision="retry">继续完成关闭</button>${op.target.kind!=="application"||op.failedStage==="finalizing"?`<button data-decision="exit">退出应用</button>`:""}`:""}</footer>`;
+    updateDOM(this.dialog,`<h2>${title}</h2><p role="status" data-motion="feedback">${labels[op.phase]??"正在关闭…"}</p>${op.error?`<p class="error-box" role="alert">${e(op.error)}</p>`:""}<ul>${op.dirty.map(v=>`<li>${e(v.title)}${v.busy?" · 任务运行中":""}${v.error?` · ${e(v.error)}`:""}</li>`).join("")}</ul><footer>${op.phase==="preparing"||op.phase==="deciding"?`<button data-decision="cancel">取消</button>${op.phase==="deciding"&&!op.decision?`<button data-decision="discard">放弃并关闭</button><button class="primary" data-decision="save" ${op.error?"disabled":""}>保存并关闭</button>`:""}`:op.phase==="failed"?`<button data-decision="retry">继续完成关闭</button>${op.target.kind!=="application"||op.failedStage==="finalizing"?`<button data-decision="exit">退出应用</button>`:""}`:""}</footer>`);if(entering)enterMotion(this.dialog);
     if(op.phase==="deciding"&&!op.decision&&!op.error&&!op.dirty.length)void this.decide(op,"discard");
     if(focus)this.dialog.querySelector<HTMLButtonElement>(`[data-decision="${CSS.escape(focus)}"]`)?.focus();
   }

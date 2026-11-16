@@ -3,13 +3,24 @@ import {LogLayout} from './logs-layout.js';
 const $ = id => document.getElementById(id);
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 export function installLogPage(releaseIncumbent=()=>{}) {
+  let detailIntent=0;
+  function detailPanel(open) {
+    if(!open&&$('log-detail').hidden)return;
+    if(open&&!$('log-detail').hidden&&!$('log-detail').inert)return;
+    const node=$('log-detail'),intent=++detailIntent,from=node.hidden?0:node.getBoundingClientRect().width;
+    const opacity=node.hidden?0:getComputedStyle(node).opacity;
+    SoDeckMotion.cancelMotion(node);node.hidden=false;node.inert=!open;node.setAttribute('aria-hidden',String(!open));
+    const target=open?node.getBoundingClientRect().width:0;
+    const animation=SoDeckMotion.animateMotion(node,[{width:`${from}px`,opacity},{width:`${target}px`,opacity:open?1:0}],'layout');
+    if(!open){if(animation)animation.finished.catch(()=>{}).finally(()=>{if(intent===detailIntent)node.hidden=true;});else node.hidden=true;}
+  }
   let active=false, worker, serial=0, snapshot, capture, generation=-1, enabled=false, visible=true, frozen=false, following=true, selected, total=0, pollTimer, paintTimer, painting=false, paintAgain=false, epoch=0, composing=false, exporting=false, cancelExport=false, map, pins=[], anchors=[], holding, restored=false, starting=false, revision=-1;
   const pending=new Map(), attached=new Set(), replay=new Map(), queues=new Map(), layout=new LogLayout();
   let flushing=false, pollCount=0,conditionVersion=0,positionVersion=0,minimapSetting,readingAnchor,resizeAnchor; const pollWaiters=[];
   const event = params => sodeck.request('event', params);
   const data = params => sodeck.request('data', params);
   const localTime=value=>new Date(value).toLocaleString('zh-CN',{hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
-  const error = message => { $('log-notice').textContent=message||''; $('log-notice').hidden=!message; };
+  const error = message => { SoDeckMotion.setMotionText($('log-notice'),message||''); $('log-notice').hidden=!message; };
   function ask(type, params={}) { if(!worker) return Promise.reject(new Error('日志页面已卸载')); const requestId=++serial; return new Promise((resolve,reject)=>{pending.set(requestId,{resolve,reject}); worker.postMessage({type,requestId,...params});}); }
   const conditions = () => ({query:$('log-query').value,only:$('log-only').checked,levels:$('log-level').value?[$('log-level').value]:[],sources:$('log-source').value?[$('log-source').value]:[]});
   function controls() { for(const element of $('logs').querySelectorAll('button,input,select')) element.disabled=!enabled||frozen; $('log-source').disabled=!enabled||frozen||!!snapshot?.tty; $('log-export').disabled=!enabled||frozen||exporting; $('log-export-cancel').hidden=!exporting; }
@@ -31,6 +42,7 @@ export function installLogPage(releaseIncumbent=()=>{}) {
   }
   function resetControls() {
     readingAnchor=resizeAnchor=undefined;
+    $('log-detail').inert=true;$('log-detail').setAttribute('aria-hidden','true');
     $('log-range').value='latest'; $('log-query').value=''; $('log-only').checked=false;
     $('log-level').value=''; $('log-source').value=''; $('log-wrap').checked=true; $('log-show-source').checked=false;
     $('log-export-one').checked=false; $('log-export-context').checked=false; $('log-custom').hidden=true;
@@ -102,7 +114,7 @@ export function installLogPage(releaseIncumbent=()=>{}) {
     } finally { painting=false; if(paintAgain) {paintAgain=false;schedule();} }
   }
   async function jump(index,id) { const local=epoch;positionVersion++;await protect();const next=await ask('layout');if(local!==epoch)return;layout.reset(next.ids);revision=next.revision;if(id)index=next.ids.indexOf(id);if(index<0)return;const viewport=$('log-viewport'); viewport.scrollTop=layout.offset(index)+$('log-lines').offsetTop; await paint(); }
-  async function detail(id) { await protect(); selected=id; const row=await ask('detail',{id}); if(!row) return; $('log-detail').hidden=false; $('log-detail-time').textContent=(row.time?'日志时间 ':'接收时间 ')+localTime(row.time||row.receivedAt)+' · '+row.source;$('log-detail-time').title=row.time?'原始源时间：'+row.time:''; $('log-detail-raw').textContent=row.text; $('log-json').hidden=true; try {const json=JSON.parse(row.text);$('log-json').hidden=false;$('log-detail-json').textContent=JSON.stringify(json,null,2);}catch{} $('log-detail-close').focus(); layout.reset(layout.ids,true); schedule(); }
+  async function detail(id) { await protect(); selected=id; const row=await ask('detail',{id}); if(!row) return; detailPanel(true); $('log-detail-time').textContent=(row.time?'日志时间 ':'接收时间 ')+localTime(row.time||row.receivedAt)+' · '+row.source;$('log-detail-time').title=row.time?'原始源时间：'+row.time:''; $('log-detail-raw').textContent=row.text; $('log-json').hidden=true; try {const json=JSON.parse(row.text);$('log-json').hidden=false;$('log-detail-json').textContent=JSON.stringify(json,null,2);}catch{} $('log-detail-close').focus(); layout.reset(layout.ids,true); schedule(); }
   async function query() { if(composing||!enabled||frozen) return;const version=++conditionVersion,local=epoch;positionVersion++;await protect();if(version!==conditionVersion||local!==epoch)return;const position=positionVersion;await ask('query',{conditions:conditions()});if(version!==conditionVersion||local!==epoch)return;revision=-1;if(position===positionVersion)$('log-viewport').scrollTop=0; await paint(); void remember(); }
   async function navigate(direction) { await protect(); const target=await ask('navigate',{id:selected,direction}); if(target) {selected=target.id;await jump(target.index,target.id);$('log-lines').querySelector(`[data-id="${CSS.escape(target.id)}"]`)?.scrollIntoView({block:'center'});} }
   async function attachResources(current) {
@@ -156,7 +168,7 @@ export function installLogPage(releaseIncumbent=()=>{}) {
       const finished=await data({op:'contentExport',action:'finish',id});if(finished.state!=='completed')throw new Error(finished.error||'导出未完成');error('日志已导出');
     } catch(e) {if(id)await data({op:'contentExport',action:'cancel',id}).catch(()=>{});error(e.message);} finally {if(worker)await ask('exportEnd');exporting=false;$('log-export-progress').textContent='';controls();}
   }
-  function stop() { clearTimeout(pollTimer);clearTimeout(paintTimer);pollTimer=paintTimer=null;cancelExport=true;map?.dispose();map=null;worker?.terminate();worker=null;for(const p of pending.values())p.reject(new Error('日志页面已卸载'));pending.clear();for(const resolve of replay.values())resolve();replay.clear();attached.clear();queues.clear();epoch++; }
+  function stop() { detailIntent++;SoDeckMotion.cancelMotion($('log-detail'));clearTimeout(pollTimer);clearTimeout(paintTimer);pollTimer=paintTimer=null;cancelExport=true;map?.dispose();map=null;worker?.terminate();worker=null;for(const p of pending.values())p.reject(new Error('日志页面已卸载'));pending.clear();for(const resolve of replay.values())resolve();replay.clear();attached.clear();queues.clear();epoch++; }
   const lifecycle=(name,handler)=>addEventListener('sodeck:'+name,e=>{if(!active)return;e.stopImmediatePropagation();Promise.resolve(handler(e.detail)).catch(e=>error(e.message));});
   addEventListener('sodeck:mount',e=>{
     if(e.detail.data.kind!=='logs') {if(active)stop();active=false;document.body.classList.remove('logs-page');return;} e.stopImmediatePropagation();releaseIncumbent(); stop();active=true;document.body.classList.add('logs-page');for(const name of ['browser','container','resource'])$(name).hidden=true;$('logs').hidden=false;
@@ -184,7 +196,7 @@ export function installLogPage(releaseIncumbent=()=>{}) {
   $('log-reload').onclick=()=>void start();$('log-complete').onclick=()=>void start(true);$('log-stop').onclick=()=>void event({action:'logs.stop'}).then(poll);$('log-range').onchange=()=>{$('log-custom').hidden=$('log-range').value!=='custom';if($('log-range').value!=='custom')void start();};$('log-read-custom').onclick=()=>void start(true);
   $('log-earlier').onclick=async()=>{await protect();const end=Math.min(...(capture?.resources||[]).filter(r=>r.end!=null).map(r=>r.start));if(!Number.isFinite(end)||end<=0){error('已到当前历史范围起点，可选择时间范围重新读取');return;}await event({action:'logs.loadEarlier',end});await poll();};
   const reflow=()=>{positionVersion++;layout.reset(layout.ids,true);schedule();void remember();};$('log-wrap').onchange=()=>{$('log-viewport').classList.toggle('no-wrap',!$('log-wrap').checked);reflow();};$('log-map').onchange=()=>{map?.show($('log-map').checked);reflow();};$('log-show-source').onchange=reflow;
-  $('log-detail-close').onclick=()=>{$('log-detail').hidden=true;$('log-viewport').focus();reflow();};$('log-copy').onclick=async()=>{const row=await ask('detail',{id:selected});if(row)try{await sodeckClipboard.writeText(row.raw,()=>active&&enabled&&!frozen);}catch(e){error(e.message);}};$('log-export').onclick=()=>void exportLogs();$('log-export-cancel').onclick=()=>cancelExport=true;
+  $('log-detail-close').onclick=()=>{detailPanel(false);$('log-viewport').focus();reflow();};$('log-copy').onclick=async()=>{const row=await ask('detail',{id:selected});if(row)try{await sodeckClipboard.writeText(row.raw,()=>active&&enabled&&!frozen);SoDeckMotion.feedbackMotion($('log-copy'));}catch(e){error(e.message);}};$('log-export').onclick=()=>void exportLogs();$('log-export-cancel').onclick=()=>cancelExport=true;
   let viewportWidth=0,viewportScale=devicePixelRatio;
   const resize=new ResizeObserver(()=>{
     const viewport=$('log-viewport'),width=viewport.clientWidth;if(!active||!width)return;
@@ -192,5 +204,5 @@ export function installLogPage(releaseIncumbent=()=>{}) {
     if(viewportWidth&&(width!==viewportWidth||devicePixelRatio!==viewportScale)){if(!following)resizeAnchor=resizeAnchor||readingAnchor||visibleAnchor();layout.reset(layout.ids,true);const top=layout.restore(resizeAnchor);if(!following&&top!==null)viewport.scrollTop=top+$('log-lines').offsetTop;}
     viewportWidth=width;viewportScale=devicePixelRatio;positionVersion++;schedule();
   });resize.observe($('log-viewport'));
-  addEventListener('keydown',e=>{if(!active||!enabled||frozen)return;if((e.ctrlKey||e.metaKey)&&e.key==='f'){e.preventDefault();$('log-query').focus();}if(e.key==='F3'){e.preventDefault();void navigate(e.shiftKey?-1:1);}if(e.key==='Escape'&&!$('log-detail').hidden){$('log-detail').hidden=true;$('log-viewport').focus();reflow();}});
+  addEventListener('keydown',e=>{if(!active||!enabled||frozen)return;if((e.ctrlKey||e.metaKey)&&e.key==='f'){e.preventDefault();$('log-query').focus();}if(e.key==='F3'){e.preventDefault();void navigate(e.shiftKey?-1:1);}if(e.key==='Escape'&&!$('log-detail').hidden){detailPanel(false);$('log-viewport').focus();reflow();}});
 }

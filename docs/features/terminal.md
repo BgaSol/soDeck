@@ -56,4 +56,8 @@
 - 回归：[创建](../../plugins/terminal/tests/creation.rs)、[输入](../../scripts/test-terminal-input.mjs)、[历史](../../scripts/test-terminal-history.mjs)、[搜索 UI](../../scripts/test-terminal-search-ui.mjs)、[真实 shell](../../scripts/test-terminal-shell.py)、[真实 PTY](../../scripts/test-terminal-ui.mjs)。
 - 五平台基本实际包与深度搜索性能是不同验证范围。超宽行、多终端、完整进程内存、原生 Worker/IME/DPI 专项及未补齐交互由临时计划跟进，当前不承诺全部性能目标通过；发行证据见插件 CHANGELOG。
 
+## 操作反馈
+
+搜索条进入与退出、搜索结果和终端结束提示有短暂反馈，正文、光标和历史高亮保持原位置。隐藏或移交页面停止动效；重复请求待确认状态不重播。 节奏和减少动态效果规则见[界面规范](../../DESIGN.md#动效)。
+
 返回[文档索引](../README.md)。

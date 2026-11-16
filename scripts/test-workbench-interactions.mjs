@@ -27,6 +27,79 @@ const stripFixture=async()=>{
   });
   return page;
 };
+
+test('motion preserves entity and input identity, exits without live controls and stops on reduced motion',async()=>{
+  const page=await fixture();
+  try {
+    await page.evaluate(()=>{
+      const host=document.querySelector('#chrome');host.style.display='flex';
+      window.motionMarkup=(ids,text='等待')=>'<input id="motion-input" value="草稿">'+ids.map(id=>'<div data-dom-key="motion:'+id+'" data-motion="item" style="width:60px"><button data-action="select" data-id="'+id+'">'+id+'</button></div>').join('')+'<span id="motion-status" data-motion="feedback">'+text+'</span>';
+      render.replace(host,motionMarkup([1,2,3]));
+      window.motionInput=document.querySelector('#motion-input');motionInput.focus();motionInput.setSelectionRange(1,2);
+      window.retainedMotionNode=host.querySelector('[data-dom-key="motion:2"]');
+    });
+    await page.waitForTimeout(200);
+    const changedFeedback=await page.evaluate(()=>{render.replace(document.querySelector('#chrome'),motionMarkup([2,3],'完成'));return document.querySelector('#motion-status').getAnimations().some(a=>a.id==='sd-motion:feedback');});
+    assert.equal(await page.locator('[data-dom-key="motion:1"]').count(),0,'Exit effects must not retain a live entity or action target');
+    assert.equal(await page.locator('[data-id="1"]').count(),0);
+    assert.equal(await page.evaluate(()=>retainedMotionNode===document.querySelector('[data-dom-key="motion:2"]')),true);
+    assert.deepEqual(await page.evaluate(()=>({focused:document.activeElement===motionInput,start:motionInput.selectionStart,end:motionInput.selectionEnd})),{focused:true,start:1,end:2});
+    assert(changedFeedback);
+    await page.waitForTimeout(240);
+    await page.evaluate(()=>render.replace(document.querySelector('#chrome'),motionMarkup([2,3],'完成')));
+    assert.equal(await page.locator('#chrome').evaluate(el=>el.getAnimations({subtree:true}).length),0,'Identical background refresh must not restart motion');
+    const {before,after}=await page.evaluate(async()=>{
+      const {enterMotion}=await import('/motion.js'),node=document.querySelector('#motion-status');
+      const animation=enterMotion(node);animation.pause();animation.currentTime=35;
+      const before=Number(getComputedStyle(node).opacity);enterMotion(node);
+      return {before,after:Number(getComputedStyle(node).opacity)};
+    });
+    assert(Math.abs(before-after)<.15,'Interrupted entrance must start from its current presentation');
+    await page.emulateMedia({reducedMotion:'reduce'});
+    await page.waitForTimeout(30);
+    assert.equal(await page.locator('#chrome').evaluate(el=>el.getAnimations({subtree:true}).length),0);
+    await page.evaluate(()=>render.replace(document.querySelector('#chrome'),motionMarkup([2,3,4],'完成')));
+    assert.equal(await page.locator('[data-dom-key="motion:4"]').evaluate(el=>el.getAnimations().length),0);
+    assert.equal(await page.locator('#motion-status').innerText(),'完成');
+  } finally { await page.close(); }
+});
+test('file progress reflects observed bytes and only interpolates the same current file',async()=>{
+  const page=await fixture();
+  try {
+    await page.addScriptTag({content:fs.readFileSync('plugins/files/ui/transfer.js','utf8')});
+    await page.evaluate(()=>{
+      window.tasks=[{id:'batch',state:'running',kind:'upload',current:'/a',currentBytes:'25',currentTotal:'100',bytes:'0',completed:0,failed:0,skipped:0}];
+      window.transfers=new FileTransfers({host:document.querySelector('#chrome'),event:async()=>({tasks}),refresh:async()=>{},message:text=>{throw new Error(text);}});
+      transfers.panel.open=true;clearTimeout(transfers.timer);
+      window.paintTasks=async()=>{await transfers.poll();clearTimeout(transfers.timer);};
+    });
+    await page.evaluate(()=>paintTasks());
+    const meter=page.getByRole('progressbar');
+    assert.equal(await meter.getAttribute('aria-valuenow'),'25');
+    assert.equal(await meter.getAttribute('aria-valuemax'),'100');
+    await page.waitForTimeout(220);
+    const frames=await page.evaluate(async()=>{
+      tasks[0].currentBytes='75';await paintTasks();
+      return document.querySelector('.transfer-progress span').getAnimations()[0].effect.getKeyframes().map(frame=>frame.transform);
+    });
+    assert.deepEqual(frames,['scaleX(0.25)','scaleX(0.75)']);
+    assert.equal(await meter.getAttribute('aria-valuenow'),'75','Accessible value uses the observed bytes immediately');
+    await page.evaluate(async()=>{tasks[0].current='/b';tasks[0].currentBytes='10';await paintTasks();});
+    assert.equal(await meter.locator('span').evaluate(el=>el.getAnimations().length),0,'A new file must not inherit prior file progress');
+    await page.evaluate(()=>paintTasks());
+    assert.equal(await meter.locator('span').evaluate(el=>el.getAnimations().length),0,'Repeated observations do not restart progress');
+    await page.emulateMedia({reducedMotion:'reduce'});
+    await page.evaluate(async()=>{tasks[0].currentBytes='200';await paintTasks();});
+    assert.equal(await meter.getAttribute('aria-valuenow'),'100');
+    assert.equal(await meter.locator('span').evaluate(el=>el.getAnimations().length),0);
+    for(const change of [{currentTotal:'0'},{currentTotal:'100',state:'needsReview'},{state:'completed'}]){
+      await page.evaluate(async change=>{Object.assign(tasks[0],change);await paintTasks();},change);
+      assert.equal(await meter.count(),0,'Unknown totals and terminal results have no simulated progress');
+    }
+    await page.evaluate(()=>transfers.dispose());
+  } finally { await page.close(); }
+});
+
 test('overflow controls stay fixed, animation merges input and direct pixels interrupt it',async()=>{
   const page=await stripFixture();
   try{
@@ -375,10 +448,12 @@ test('file iframe submenus flip in four directions and allow real mouse crossing
       await page.mouse.move(850,650);
       await frame.evaluate(({x,y})=>tree.showMenu(tree.nodes.get('/home/dw'),x,y),{x,y});
       await frame.getByRole('menu',{name:'文件操作',exact:true}).waitFor();
+      await frame.getByRole('menu',{name:'文件操作',exact:true}).evaluate(node=>Promise.all(node.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
       const trigger=frame.getByRole('menuitem',{name:'新建',exact:true});
       if(desiredTop!==null)await trigger.evaluate((node,top)=>{const list=node.parentElement;list.scrollTop=node.offsetTop-top;},desiredTop);
       await trigger.hover();
       const sub=frame.getByRole('menu',{name:'新建',exact:true});await sub.waitFor();
+      await sub.evaluate(node=>Promise.all(node.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
       placements.add((await sub.getAttribute('data-placement')).split('-')[0]);
       const parent=await trigger.boundingBox(),popup=await sub.boundingBox(),item=await sub.getByRole('menuitem',{name:'文件…',exact:true}).boundingBox();
       assert.ok(popup.x>=47&&popup.y>=37&&popup.x+popup.width<=40+width-7&&popup.y+popup.height<=30+height-7,JSON.stringify({width,height,popup}));
@@ -405,6 +480,7 @@ test('element menus follow scrolling, pointer menus close on source scrolling, a
       window.openPosition=(point=false)=>{window.position?.dispose();document.querySelector('#position-menu')?.remove();const menu=document.createElement('div');menu.id='position-menu';menu.className='sd-menu';menu.innerHTML='<div class="sd-menu-list"><button>action</button></div>';menu.style.width='180px';document.body.append(menu);const anchor=document.querySelector('#anchor');window.position=attach(menu,point?{x:130,y:120,contextElement:anchor}:anchor,{onInvalid:()=>menu.remove()});};openPosition();
     });
     await page.locator('#position-menu').waitFor();
+    await page.locator('#position-menu').evaluate(async node => { await Promise.all(node.getAnimations().map(a => a.finished.catch(() => {}))); });
     const before=await page.locator('#position-menu').boundingBox();
     await page.locator('#scroller').evaluate(node=>node.scrollTop=20);
     await page.waitForFunction(top=>Math.abs(document.querySelector('#position-menu').getBoundingClientRect().top-top+20)<1,before.y);

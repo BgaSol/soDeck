@@ -1,3 +1,4 @@
+import { enterMotion, exitMotion, feedbackMotion } from './motion.js';
 import { listen, type UnlistenFn, type EventCallback } from "@tauri-apps/api/event";
 import type { Window } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -73,6 +74,7 @@ function renderTop() {
   const messagesBadge = root.querySelector<HTMLElement>('#console-message-count')!;
   messagesBadge.textContent = snapshot?.unreadCount ? snapshot.unreadCount > 99 ? '99+' : String(snapshot.unreadCount) : '';
   messagesBadge.hidden = !snapshot?.unreadCount;
+  if(messagesBadge.dataset.count!==messagesBadge.textContent){messagesBadge.dataset.count=messagesBadge.textContent??'';feedbackMotion(messagesBadge);}
   document.querySelector("#message-count")!.textContent = snapshot?.unreadCount
     ? `消息 ${snapshot.unreadCount > 99 ? "99+" : snapshot.unreadCount}`
     : "消息";
@@ -108,7 +110,7 @@ function renderPage() {
       if (main.dataset.page !== identity) {
         componentSettings.mount(null, false);
         main.innerHTML = next.querySelector(".settings-main")!.innerHTML;
-        main.dataset.page = identity;
+        main.dataset.page = identity;enterMotion(main,'x');
       } else if (state.section !== "components") updateDOM(main, next.querySelector(".settings-main")!.innerHTML);
     } else updateDOM(target, content());
     if (!hadPluginDetails && document.activeElement === document.body)
@@ -121,13 +123,13 @@ async function showPage(next: ConsolePage) {
 }
 async function enterPage(next: ConsolePage) {
   if(currentPage==='settings' && next!=='settings')settingsSection=state.section;
-  currentPage=next;
+  const changed=currentPage!==next;currentPage=next;
   if(next === 'connections') {componentSettings.mount(null,false);return;}
   if(['plugins','updates'].includes(next))state.section=next;
   else if(next==='settings')state.section=settingsSection;
   const target=pageHost.querySelector<HTMLElement>('#layer-content')!;
   target.className='layer-content '+next+'-content';
-  renderPage();
+  renderPage();if(changed)enterMotion(target,'x');
   if(next==='messages')await refreshMessages();
   if(next==='logs'&&!state.paused)await refreshLogs();
   if(next==='updates')void core.checkUpdates(true).catch(()=>{});
@@ -150,9 +152,10 @@ function toast(text: string, message?: Message, error = false) {
       });
       node.remove();
     });
-  holder.append(node);
+  const remove=()=>{exitMotion(node);node.remove();};
+  holder.append(node);enterMotion(node);
   while (holder.children.length > 3) holder.firstElementChild?.remove();
-  setTimeout(() => node.remove(), 5000);
+  setTimeout(remove, 5000);
 }
 async function refresh() {
   if (refreshing) {

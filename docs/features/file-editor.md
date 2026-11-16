@@ -46,4 +46,8 @@ SDK 源码随使用插件编译和发行，更新 SDK 不会自动修改已发�
 
 主要回归为 [正文读取](../../scripts/file-document-read.test.mjs)、[草稿同步](../../scripts/file-draft-sync.test.mjs)、[打开与设置](../../scripts/file-editor-sdk.test.mjs)、[独立进程消费方](../../scripts/file-editor-process.test.mjs)、[编辑器 UI](../../scripts/test-file-editor-ui.mjs)和[完整文件 UI](../../scripts/test-files-ui.mjs)。独立消费方属于测试夹具，不发行，不等于第二个业务功能已经交付。
 
+## 操作反馈
+
+搜索条和搜索结果、保存结果有短暂反馈；正文、编辑器模型、输入焦点、选区和撤销历史保持原机制。退出搜索立即恢复编辑器焦点。 节奏和减少动态效果规则见[界面规范](../../DESIGN.md#动效)。
+
 返回[文档索引](../README.md)。

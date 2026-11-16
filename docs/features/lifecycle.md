@@ -55,4 +55,8 @@
 - 回归：[close_lifecycle.rs](../../src-tauri/tests/close_lifecycle.rs)、[lifecycle.rs](../../src-tauri/tests/lifecycle.rs)、[component_ui.rs](../../src-tauri/tests/component_ui.rs)、[原生组合](../../scripts/test-close-native.mjs)。覆盖取消保留、空组关闭、迟到请求、主窗口失联、未知 dispose 与更新收尾。
 - 可信插件自行脱离受管进程组的程序和远端不可撤销副作用不承诺强制回滚。实际包验证方法见[开发指南](../development.md)。
 
+## 操作反馈
+
+关闭提示在实际准备、确认、清理、收尾和失败阶段更新。对话框退出时立即失去操作资格，资源释放和退出不等待视觉效果。 节奏和减少动态效果规则见[界面规范](../../DESIGN.md#动效)。
+
 返回[文档索引](../README.md)。

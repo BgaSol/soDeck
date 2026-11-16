@@ -28,4 +28,8 @@
 
 实现见 [status.ts](../../src/status.ts)、[status.css](../../src/status.css) 和 [console.ts](../../src/console.ts)。正式前端回归位于 [test-production-ui.mjs](../../scripts/test-production-ui.mjs)。
 
+## 操作反馈
+
+插件流量详情平滑展开，连接与健康变化有短暂反馈；后台速率、累计量、更新时间与数字继续直接呈现真实读数，不播放数值滚动效果。 节奏和减少动态效果规则见[界面规范](../../DESIGN.md#动效)。
+
 返回[文档索引](../README.md)。

@@ -201,6 +201,30 @@ try {
   assert.equal((await slots()).left,null,'Moving a hidden existing tool does not reveal it');
   await board.locator(`.left-rail [data-tool-key="${toolKey}"]`).click();
   await wait(async()=>(await slots()).left===tool&&await board.locator(`.left-rail [data-tool-key="${toolKey}"]`).getAttribute('aria-expanded')==='true');
+  await main.evaluate(wid=>{
+    const samples=window.motionSamples={errors:[],widths:[],done:false},until=performance.now()+600;
+    const board=document.querySelector(`.server-workbench[data-id="${CSS.escape(wid)}"]`);
+    const sample=()=>requestAnimationFrame(()=>setTimeout(()=>{
+      for(const surface of document.querySelectorAll('.component-surface:not([hidden])')){
+        const id=surface.dataset.viewId,tab=document.querySelector(`[data-view="${CSS.escape(id)}"] [role="tab"][aria-selected="true"]`),frame=surface.querySelector('iframe');
+        if(!frame)continue;const rect=frame.getBoundingClientRect();if(rect.width<=0||rect.height<=0)continue;
+        const slots=tab?[tab.closest('.view-group').querySelector('.central-slot')]:[...document.querySelectorAll('.workbench-panel .component-slot')];
+        const distance=Math.min(...slots.map(slot=>{const r=slot.getBoundingClientRect();return Math.max(Math.abs(r.left-rect.left),Math.abs(r.top-rect.top),Math.abs(r.width-rect.width),Math.abs(r.height-rect.height));}));
+        if(distance>1)samples.errors.push({id,distance});
+      }
+      samples.widths.push(Math.round(board.querySelector('.left-panel').getBoundingClientRect().width));
+      if(performance.now()<until)sample();else samples.done=true;
+    },0));sample();
+  },wid);
+  await board.locator(`.left-rail [data-tool-key="${toolKey}"]`).click();
+  await wait(async()=>(await slots()).left===null);
+  await board.locator(`.left-rail [data-tool-key="${toolKey}"]`).click();
+  await wait(async()=>(await slots()).left===tool);
+  await main.waitForFunction(()=>motionSamples.done);
+  const samples=await main.evaluate(()=>motionSamples);
+  assert.deepEqual(samples.errors,[],'Iframe rectangles follow their live slots on every rendered frame, including reversal');
+  assert(new Set(samples.widths).size>3,'Panels pass through intermediate widths instead of jumping: '+JSON.stringify(samples.widths));
+  assert(await toolFrame.evaluate(el=>el.isConnected),'Motion never replaces the tool iframe');
   await dragButton(toolKey,'right',180);
   await wait(async()=>(await slots()).right===tool&&(await slots()).left===null&&await board.locator(`.right-rail [data-tool-key="${toolKey}"]`).getAttribute('aria-expanded')==='true');
   assert(await toolFrame.evaluate(el=>el.isConnected),'Button movement retains the original iframe');

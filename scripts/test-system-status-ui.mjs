@@ -1,12 +1,17 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
+import {packageMenuAssets} from './plugin-menu-assets.mjs';
+import {packageStyles} from '../packages/ui/package.mjs';
 import { createServer } from 'node:http';
 import { chromium } from 'playwright';
 import { path as chartPath, timeline } from '../plugins/system-status/ui/charts.js';
 import { readTestThemeTokens } from './test-theme-tokens.mjs';
 
 const root = path.resolve(process.env.SODECK_TEST_SYSTEM_STATUS_PLUGIN || 'plugins/system-status');
+const assets=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-status-ui-'));
+await packageMenuAssets(assets);packageStyles(assets);
 const observed = Date.now();
 const normalInterfaces = [
   { id: 'eth0', name: 'eth0', addresses: ['192.168.10.12/24', 'fe80::d019:2cff:fec8:137/64'] },
@@ -47,8 +52,9 @@ const server = createServer((req, res) => {
     res.end('<!doctype html><html><body style="margin:0"><iframe title="状态测试" style="border:0;width:100vw;height:100vh" src="/ui/index.html"></iframe></body></html>');
     return;
   }
-  const file = path.join(root, req.url.split('?')[0]);
-  if (!file.startsWith(root + path.sep) || !fs.existsSync(file)) { res.statusCode = 404; res.end(); return; }
+  const base=['/ui/text-menu.js','/ui/shared.css'].includes(req.url.split('?')[0])?assets:root;
+  const file = path.join(base, req.url.split('?')[0]);
+  if (!file.startsWith(base + path.sep) || !fs.existsSync(file)) { res.statusCode = 404; res.end(); return; }
   res.setHeader('Content-Type', { '.js': 'text/javascript', '.html': 'text/html', '.css': 'text/css' }[path.extname(file)] || 'application/octet-stream');
   res.end(fs.readFileSync(file));
 });
@@ -485,4 +491,5 @@ try {
 } finally {
   await browser.close();
   await new Promise(resolve => server.close(resolve));
+  fs.rmSync(assets,{recursive:true,force:true});
 }

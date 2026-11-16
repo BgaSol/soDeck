@@ -82,7 +82,7 @@ export function createSearch(terminal,host,save,state){
     history.send({type:'visible',queryRevision,start:g.start,end:g.start+g.rows-1,requestId:visibleId});
   }
   function schedulePaint(){if(allowed()&&!paintFrame)paintFrame=requestAnimationFrame(()=>{paintFrame=undefined;refresh();});}
-  function text(node,value){if(node.textContent!==value)node.textContent=value;}
+  function text(node,value){SoDeckMotion.setMotionText(node,value);}
   function status(){
     if(!allowed())return;
     const pressed=String(caseSensitive);if(sensitive.getAttribute('aria-pressed')!==pressed)sensitive.setAttribute('aria-pressed',pressed);
@@ -153,11 +153,11 @@ export function createSearch(terminal,host,save,state){
   function show(){
     if(disposed||!allowed())return;
     if(open){input.focus();input.select();return;}
-    open=true;panel.hidden=false;const selection=terminal.getSelection(),saved=metadata().search.current;
+    const opening=!open;open=true;panel.hidden=false;if(opening)SoDeckMotion.enterMotion(panel);const selection=terminal.getSelection(),saved=metadata().search.current;
     input.value=selection&&!/[\r\n]/.test(selection)&&selection.length<=1024?selection:query;input.focus();input.select();execute(saved);
   }
   function hide(){
-    clearTimeout(timer);timer=undefined;query=input.value;open=false;panel.hidden=true;queryRevision++;pendingJump=result=undefined;invalidate();minimap.selection(false);sendQuery();terminal.focus();persist();
+    clearTimeout(timer);timer=undefined;query=input.value;open=false;SoDeckMotion.exitMotion(panel);panel.hidden=true;queryRevision++;pendingJump=result=undefined;invalidate();minimap.selection(false);sendQuery();terminal.focus();persist();
   }
   function pause(){
     clearTimeout(timer);timer=undefined;clearTimeout(saveTimer);saveTimer=undefined;clearTimeout(lagTimer);lagTimer=undefined;cancelAnimationFrame(paintFrame);paintFrame=undefined;

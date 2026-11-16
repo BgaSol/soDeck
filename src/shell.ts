@@ -3,6 +3,7 @@ import { button as b, escape as e, icon } from './ui';
 import { tabControls } from './tab-strip';
 import type { Workspaces, Projection, Context } from './workspaces';
 import type { ConnectionsUi } from './connections';
+import { enterMotion } from './motion.js';
 import { applyTheme } from './theme';
 
 export const consolePages = [
@@ -24,6 +25,7 @@ export class Shell {
   private disposed = false;
   private workspaces?: Workspaces;
   private connections?: ConnectionsUi;
+  private paintedRoute = '';
   private consolePage: ConsolePage = 'connections';
   onPage?: (page: ConsolePage) => void;
   readonly catalog: HTMLElement;
@@ -78,7 +80,9 @@ export class Shell {
     this.root.querySelector('#catalog-tab')!.setAttribute('aria-selected',String(managing));
     for(const node of this.root.querySelectorAll<HTMLElement>('[data-console-page]'))node.setAttribute('aria-current',node.dataset.consolePage===selected?'page':'false');
     this.root.querySelector<HTMLElement>('#return-workbench')!.hidden=!this.projection?.window.activeWorkspace;
-    this.renderStatus();
+    const route=JSON.stringify(this.route);
+    if(this.paintedRoute&&route!==this.paintedRoute)enterMotion(managing?selected==='connections'?this.catalog:this.page:this.content,'x');
+    this.paintedRoute=route;this.renderStatus();
   }
   renderStatus() {
     const w=this.projection?.workspaces.find(w=>w.context.workspaceId===this.projection?.window.activeWorkspace);

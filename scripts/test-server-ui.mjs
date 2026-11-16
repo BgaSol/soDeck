@@ -64,6 +64,7 @@ const checks = [];
 try {
   failCatalogRead=true;await load();await work().locator('.error-box').waitFor();
   failCatalogRead=false;await action('reload',work()).click();
+  await work().locator('.error-box').waitFor({state:'detached'});
   assert.equal(await work().locator('.catalog-page').count(),1,'An initial read failure can be retried without a catalog snapshot');
   await load();
   const search=work().locator('#catalog-query');await search.focus();
@@ -187,6 +188,7 @@ try {
   assert.equal(await ancestor.locator('.tree-toggle svg').evaluate(svg=>getComputedStyle(svg).transform),'matrix(0, 1, -1, 0, 0, 0)','Expanded branch points down');
   await ancestor.locator('[data-server-action="collapse"]').click();
   assert.equal(await ancestor.getAttribute('aria-expanded'),'false');
+  await ancestor.locator('.tree-toggle svg').evaluate(async svg=>{await Promise.all(svg.getAnimations().map(a=>a.finished.catch(()=>{})));});
   assert.equal(await ancestor.locator('.tree-toggle svg').evaluate(svg=>getComputedStyle(svg).transform),'matrix(1, 0, 0, 1, 0, 0)','Collapsed branch points right');
   await action('reload',work()).click();assert.equal(await ancestor.getAttribute('aria-expanded'),'false');
   assert.equal(await work().locator('.catalog-detail h2').innerText(),'生产数据库更新');

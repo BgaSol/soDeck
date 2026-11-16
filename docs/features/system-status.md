@@ -51,4 +51,8 @@ Windows 网络计数器实例尚未可靠映射为物理网卡；macOS/BSD 缺�
 - 核心能力：[session_exec.rs](../../src-tauri/src/session_exec.rs)、[后台 view](../../src-tauri/src/component_ui/background.rs)、[共享状态](../../src-tauri/src/shared_state.rs)。契约见[插件 API](../plugin-api.md)。
 - 回归：[系统状态夹具](../../src-tauri/tests/fixtures/system_status_flow.rs)、[UI](../../scripts/test-system-status-ui.mjs)、[实际包](../../scripts/test-plugin-package.mjs)、[跨插件联动](../../scripts/test-component-communication.mjs)。源码和设备验证分开记录，运行方法见[开发指南](../development.md)。
 
+## 操作反馈
+
+详情展开、容量条和新出现的存储项目有短暂过渡，采集、断线、过期和空间告警变化有反馈。数值、采样时间和图表缺口不插值或补造。 节奏和减少动态效果规则见[界面规范](../../DESIGN.md#动效)。
+
 返回[文档索引](../README.md)。

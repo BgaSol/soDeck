@@ -343,6 +343,7 @@ try {
   checks.push("键盘箭头和 Home 切换固定页及服务器页");
   await select(main,bid);
   const beforeDrag=(await projection("main")).window.workspaceIds;
+  await main.locator(`.server-tab[data-id="${bid}"]`).evaluate(node=>Promise.all(node.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
   let tabBox=await main.locator(`.server-tab-select[data-id="${bid}"]`).boundingBox();
   await main.mouse.move(tabBox.x+20,tabBox.y+15);await main.mouse.down();await main.mouse.move(tabBox.x+24,tabBox.y+15);await main.mouse.up();
   assert.equal(dragCalls.length,0,"Below threshold remains an ordinary tab click");
@@ -352,7 +353,7 @@ try {
   assert.deepEqual((await projection("main")).window.workspaceIds,beforeDrag);assert.equal(dragCalls.at(-1).args.cancel,true);
   await main.mouse.move(tabBox.x+20,tabBox.y+15);await main.mouse.down();await main.mouse.move(tabBox.x+65,tabBox.y+15);await main.locator(".workspace-drag-ghost").waitFor();await main.mouse.up();await main.waitForFunction(()=>!document.querySelector('.workspace-drag-ghost'));
   assert.deepEqual((await projection("main")).window.workspaceIds,[cid,bid]);
-  dropTargets.set("main",{kind:"invalid"});await main.evaluate(()=>window.manager.refresh());await main.locator(`.server-tab-select[data-id="${bid}"]`).waitFor();tabBox=await main.locator(`.server-tab-select[data-id="${bid}"]`).boundingBox();
+  dropTargets.set("main",{kind:"invalid"});await main.evaluate(()=>window.manager.refresh());await main.locator(`.server-tab-select[data-id="${bid}"]`).waitFor();await main.locator(`.server-tab[data-id="${bid}"]`).evaluate(node=>Promise.all(node.getAnimations().map(animation=>animation.finished.catch(()=>{}))));tabBox=await main.locator(`.server-tab-select[data-id="${bid}"]`).boundingBox();
   await main.mouse.move(tabBox.x+20,tabBox.y+15);await main.mouse.down();await main.mouse.move(tabBox.x+65,200);await main.locator(".workspace-drag-ghost").waitFor();await main.mouse.up();await main.waitForFunction(()=>!document.querySelector('.workspace-drag-ghost'));
   assert.deepEqual((await projection("main")).window.workspaceIds,[cid,bid]);
   checks.push("指针门槛、拖动排序、Esc 和无效落点；原生命中由独立测试验证");
@@ -364,6 +365,7 @@ try {
   const initialWidth=await main.locator('.server-workbench:visible').evaluate(el=>parseFloat(el.style.getPropertyValue('--left-width')));
   await separator.focus(); await main.keyboard.press("ArrowRight");
   await main.waitForFunction(width=>document.querySelector(".server-workbench:not([hidden])").style.getPropertyValue("--left-width")===`${width+16}px`,initialWidth);
+  await main.locator('.server-workbench:visible').evaluate(node=>Promise.all(node.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
   const box=await separator.boundingBox(); await main.mouse.move(box.x+3,box.y+30); await main.mouse.down(); await main.mouse.move(box.x+53,box.y+30);
   // Live drag updates the effective iframe width before pointerup persists the preference.
   await main.waitForFunction(width=>document.querySelector('.server-workbench:not([hidden])').style.getPropertyValue('--effective-left-width')===`${width+66}px`,initialWidth);
@@ -373,9 +375,9 @@ try {
   await main.mouse.up();
   await main.waitForFunction(width=>document.querySelector(".server-workbench:not([hidden])").style.getPropertyValue("--left-width")===`${width+66}px`,initialWidth);
   checks.push("面板宽度支持拖动和键盘，写回核心布局");
-  const settleLayout=()=>main.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  const settleLayout=()=>main.evaluate(async()=>{await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));const board=document.querySelector('.server-workbench:not([hidden])');await Promise.all((board?.getAnimations()??[]).map(animation=>animation.finished.catch(()=>{})));});
   const boardWidth=side=>main.locator('.server-workbench:visible').evaluate((el,side)=>parseFloat(el.style.getPropertyValue(`--effective-${side}-width`)),side);
-  const dragPanel=async(side,delta)=>{const handle=main.locator(`.server-workbench:visible [data-resize="${side}"]`);const box=await handle.boundingBox();await main.mouse.move(box.x+4,box.y+80);await main.mouse.down();await main.mouse.move(box.x+4+delta,box.y+80);await settleLayout();};
+  const dragPanel=async(side,delta)=>{await settleLayout();const handle=main.locator(`.server-workbench:visible [data-resize="${side}"]`);const box=await handle.boundingBox();await main.mouse.move(box.x+4,box.y+80);await main.mouse.down();await main.mouse.move(box.x+4+delta,box.y+80);await settleLayout();};
   await call('workspace_layout',{window:'main',id:bid,side:'left',width:280});
   await call('workspace_layout',{window:'main',id:bid,side:'right',width:280});await refresh();
   if(await panel(main,'right').getAttribute('aria-expanded')!=='true')await panel(main,'right').click();

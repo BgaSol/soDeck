@@ -32,4 +32,8 @@
 - 实现：[core.rs](../../src-tauri/src/core.rs)、[storage.rs](../../src-tauri/src/storage.rs)、[model.rs](../../src-tauri/src/model.rs)、[RPC 分派](../../src-tauri/src/plugins/dispatch.rs)、[界面](../../src/main.ts)。
 - 回归：[核心生命周期](../../src-tauri/tests/lifecycle.rs)、[存储内联测试](../../src-tauri/src/storage.rs)、[桌面 UI](../../scripts/test-desktop-ui.mjs)。覆盖来源、轮转、消息去重、持久化失败和未读状态。
 
+## 操作反馈
+
+新消息、已读筛选和未读角标有短暂反馈；普通日志正文不逐行运动。通知进入和退出不改变消息来源、级别或已读机制。 节奏和减少动态效果规则见[界面规范](../../DESIGN.md#动效)。
+
 返回[文档索引](../README.md)。

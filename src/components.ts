@@ -14,6 +14,7 @@ import { panelGeometry, type PanelWidths, type PanelSide } from "./panel-layout"
 import { TabStrip, tabControls } from './tab-strip';
 import { TabPicker, type TabRecord } from './tab-picker';
 import {centerMinimum,effectiveRatio,ratioBounds,splitNode,splitWidth,withSplit} from './center-layout';
+import { animateMotion, cancelMotion, captureMotion, enterMotion } from './motion.js';
 
 type Call = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 interface Definition { uiApiVersion?:string; key: string; id: string; pluginId: string; pluginName: string; pluginInstanceId: string; title: string; icon: string; container: string; instancePolicy: string; entry: string; available: boolean; createAction?: string; locateEntry: boolean }
@@ -31,7 +32,7 @@ interface ActionDefinition { command?:string; key: string; title: string; availa
 interface ActionResult { commandId?:string; command?:string; groupId?:string; hostId?:string; status: "pending" | "completed" | "failed" | "invalidated" | "unknown"; requestId: string; context: Context; viewId?: string; error?: string }
 export interface UiProjection { definitions: Record<string, Definition>; actions?: Record<string, ActionDefinition>; defaultCreateAction?: string; pendingAction?: ActionResult[]; workspaces: Record<string, UiWorkspace>; error?: string; layoutSaveError?:string; transfers?:Transfer[] }
 interface Surface { readOnly?:boolean; transferEpoch?:string; node: HTMLDivElement; frame: HTMLIFrameElement; view: View; token?: string; chain: Promise<unknown>; deferred: Map<string,MessageEvent>; visible: boolean; initialized: boolean; mounted?: boolean; acceptsLocalFiles?: boolean; focusPending?: number; flushable?: boolean; flushing?: {id: string; done: (error?: string) => void}; timeout: ReturnType<typeof setTimeout> }
-interface Shell { region: DomRegion; tabStrips?: Map<string, {strip?:TabStrip;scroll:number;active:string|null;seen?:boolean}>; node: HTMLElement; surfaces: Map<string, Surface>; observer: ResizeObserver; workspace: Workspace; ui: UiWorkspace; railCapacity?: number; layoutFrame?: number }
+interface Shell { region: DomRegion; tabStrips?: Map<string, {strip?:TabStrip;scroll:number;active:string|null;seen?:boolean}>; node: HTMLElement; surfaces: Map<string, Surface>; observer: ResizeObserver; workspace: Workspace; ui: UiWorkspace; railCapacity?: number; layoutFrame?: number; motionKey?: string; layoutBefore?: Map<Element, DOMRect>; renderedSides?: {left:string|null;right:string|null}; closingSides?: {left:string|null;right:string|null} }
 interface MenuEntry { label: string; action: () => Promise<unknown>; extra?: MenuEntry; checked?: boolean; disabled?: boolean; separatorBefore?: boolean }
 const empty = (): UiWorkspace => ({ views: [], preferences: {}, left: null, right: null, editor: null });
 
@@ -129,7 +130,7 @@ export class Components {
       let shell = this.shells.get(id);
       if (!shell) {
         const node = document.createElement("section"); node.className = "server-workbench"; node.dataset.id = id;
-        node.innerHTML = `<aside class="workbench-rail left-rail sd-edge-right" aria-label="左侧组件"></aside><aside class="workbench-panel left-panel sd-edge-right"><header class="sd-panel-header sd-edge-bottom"></header><div class="component-slot"></div><div role="separator" aria-label="左侧面板宽度" aria-orientation="vertical" tabindex="0" data-resize="left"></div></aside><section class="workbench-center workbench-layout"></section><aside class="workbench-panel right-panel sd-edge-left"><header class="sd-panel-header sd-edge-bottom"></header><div class="component-slot"></div><div role="separator" aria-label="右侧面板宽度" aria-orientation="vertical" tabindex="0" data-resize="right"></div></aside><aside class="workbench-rail right-rail sd-edge-left" aria-label="右侧组件"></aside>`;
+        node.innerHTML = `<aside class="workbench-rail left-rail sd-edge-right" aria-label="左侧组件"></aside><aside class="workbench-panel left-panel sd-edge-right"><div class="workbench-panel-content"><header class="sd-panel-header sd-edge-bottom"></header><div class="component-slot"></div></div><div role="separator" aria-label="左侧面板宽度" aria-orientation="vertical" tabindex="0" data-resize="left"></div></aside><section class="workbench-center workbench-layout"></section><aside class="workbench-panel right-panel sd-edge-left"><div class="workbench-panel-content"><header class="sd-panel-header sd-edge-bottom"></header><div class="component-slot"></div></div><div role="separator" aria-label="右侧面板宽度" aria-orientation="vertical" tabindex="0" data-resize="right"></div></aside><aside class="workbench-rail right-rail sd-edge-left" aria-label="右侧组件"></aside>`;
         const observer = new ResizeObserver(() => this.scheduleLayout(id)); observer.observe(node);
         node.querySelectorAll(".component-slot").forEach(slot => observer.observe(slot));
         shell = { region: new DomRegion(node, () => this.paint(shell!)), node, surfaces: new Map(), observer, workspace: w, ui: empty() }; this.shells.set(id, shell); this.content.append(node);
@@ -151,6 +152,7 @@ export class Components {
   }
   private paint(shell: Shell) {
     const { node, ui: w } = shell;
+    shell.layoutBefore ??= captureMotion(node, '.view-group');
     for (const side of ["left", "right"]) {
       const selected = side === "left" ? w.left : w.right;
       const entries = this.sideTools(shell,side).filter(t=>t.pinned||t.active),capacity=shell.railCapacity??20;
@@ -158,10 +160,10 @@ export class Components {
       if(active&&!visible.includes(active))visible=[...visible.slice(0,Math.max(0,capacity-1)),active].sort((a,b)=>(a.location?.order??0)-(b.location?.order??0));
       shell.region.update(node.querySelector(`.${side}-rail`)!, visible.map(t => {
         const d=this.definitions[t.key];
-        return `<button class="sd-icon tool-entry" data-tool-key="${e(t.key)}" data-component-action="toggle" data-key="${e(t.key)}" aria-label="${e(d.title)}" aria-expanded="${t.active}" title="${e(d.title)} · ${e(d.pluginName)}${t.pinned?'':' · 临时入口'}" ${!t.available ? "disabled" : ""}>${icon(d.icon)}</button>`;
+        return `<button class="sd-icon tool-entry" data-motion="item" data-tool-key="${e(t.key)}" data-component-action="toggle" data-key="${e(t.key)}" aria-label="${e(d.title)}" aria-expanded="${t.active}" title="${e(d.title)} · ${e(d.pluginName)}${t.pinned?'':' · 临时入口'}" ${!t.available ? "disabled" : ""}>${icon(d.icon)}</button>`;
       }).join("") + (w.unavailableTools??[]).filter(t=>t.side===side).map(t=>`<button class="sd-icon" disabled title="${e(t.key)} 未安装或未启用；已保留停靠位置" aria-label="${e(t.key)} 不可用">${icon('plug')}</button>`).join('')+ `<button class="component-more sd-icon" data-component-action="more" data-key="${side}" aria-label="${side === "left" ? "左" : "右"}侧更多组件">${icon("more")}</button>`);
       const view = w.views.find(v => v.id === selected);
-      shell.region.update(node.querySelector(`.${side}-panel header`)!, view ? `<span title="${e(this.definitions[view.definitionKey]?.pluginName)}">${e(view.title)}</span><button class="sd-icon" data-component-action="collapse" data-key="${side}" aria-label="收起${e(view.title)}">${icon("minus")}</button>` : "");
+      shell.region.update(node.querySelector(`.${side}-panel header`)!, view ? `<span title="${e(this.definitions[view.definitionKey]?.pluginName)}">${e(view.title)}</span><button class="sd-icon" data-component-action="collapse" data-key="${side}" aria-label="收起${e(view.title)}">${icon("minus")}</button>` : node.querySelector(`.${side}-panel header`)!.innerHTML);
     }
     this.paintCenter(shell);
     for (const [id, surface] of shell.surfaces) if (!w.views.some(v => v.id === id)) { this.removeSurface(surface); shell.surfaces.delete(id); }
@@ -218,7 +220,7 @@ export class Components {
       const workspaceId=shell.workspace.context.workspaceId,pending=[...this.pendingActions.values()].find(p=>p.context.workspaceId===workspaceId&&p.groupId===id);
       const canCreate=shell.workspace.connected&&this.defaultAction?.available&&!pending&&!this.creating.has(workspaceId);
       const createTitle=pending&&!this.creating.has(workspaceId)?'结果尚未确认':this.creating.has(workspaceId)?'正在创建…':this.defaultAction?.title||'未设置默认行为';
-      return `<section class="view-group ${host.focusedGroupId===id?'focused':''}" data-group="${e(id)}" aria-label="标签组"><header class="component-tabs sd-tab-strip sd-edge-bottom" tabindex="0" aria-label="分屏标签栏"><div class="tab-navigation"><div class="component-tab-list" role="tablist" aria-label="标签组页面">${missing.map(t=>`<button class="sd-quiet" data-tab-id="missing:${e(t.key)}" disabled title="${e(t.key)} 未安装或未启用">${icon('plug')}${e(t.key)}</button>`).join('')}${pages.map(v=>`<div class="component-tab sd-tab ${g.activeViewId===v.id?'selected':''}" data-view="${e(v.id)}" data-tab-id="${e(v.id)}"><button role="tab" aria-selected="${g.activeViewId===v.id}" tabindex="${g.activeViewId===v.id?0:-1}" data-component-action="select" data-key="${e(v.id)}" title="${e(v.title)}">${icon(this.definitions[v.definitionKey]?.icon)}<span>${e(v.title)}${v.dirty?' ●':''}</span></button><button class="sd-icon" data-component-action="close" data-key="${e(v.id)}" aria-label="${this.definitions[v.definitionKey]?.container==='sidebar'?'隐藏':'关闭'} ${e(v.title)}">${icon('close')}</button></div>`).join('')}</div>${tabControls('本组页面')}</div><button class="sd-icon" data-component-action="create" title="${e(createTitle)}" aria-label="${e(this.defaultAction?.title||'新建页面')}" ${canCreate?'':'disabled'}>${icon('plus')}</button></header><div class="component-slot central-slot">${missing.map(t=>`<div class="unavailable-tool" role="status">${icon('plug')}<span>${e(t.key)} 未安装或未启用；已保留此工具位置。</span></div>`).join('')}${pages.length?'':`<div class="workspace-empty"><p>${shell.workspace.connected?'点击＋新建，或拖入标签。':'连接已断开；仍可整理分屏。'}</p></div>`}</div></section>`;
+      return `<section class="view-group ${host.focusedGroupId===id?'focused':''}" data-group="${e(id)}" aria-label="标签组"><header class="component-tabs sd-tab-strip sd-edge-bottom" tabindex="0" aria-label="分屏标签栏"><div class="tab-navigation"><div class="component-tab-list" role="tablist" aria-label="标签组页面">${missing.map(t=>`<button class="sd-quiet" data-tab-id="missing:${e(t.key)}" disabled title="${e(t.key)} 未安装或未启用">${icon('plug')}${e(t.key)}</button>`).join('')}${pages.map(v=>`<div class="component-tab sd-tab ${g.activeViewId===v.id?'selected':''}" data-motion="item" data-view="${e(v.id)}" data-tab-id="${e(v.id)}"><button role="tab" aria-selected="${g.activeViewId===v.id}" tabindex="${g.activeViewId===v.id?0:-1}" data-component-action="select" data-key="${e(v.id)}" title="${e(v.title)}">${icon(this.definitions[v.definitionKey]?.icon)}<span>${e(v.title)}${v.dirty?' ●':''}</span></button><button class="sd-icon" data-component-action="close" data-key="${e(v.id)}" aria-label="${this.definitions[v.definitionKey]?.container==='sidebar'?'隐藏':'关闭'} ${e(v.title)}">${icon('close')}</button></div>`).join('')}</div>${tabControls('本组页面')}</div><button class="sd-icon" data-component-action="create" title="${e(createTitle)}" aria-label="${e(this.defaultAction?.title||'新建页面')}" ${canCreate?'':'disabled'}>${icon('plus')}</button></header><div class="component-slot central-slot">${missing.map(t=>`<div class="unavailable-tool" role="status">${icon('plug')}<span>${e(t.key)} 未安装或未启用；已保留此工具位置。</span></div>`).join('')}${pages.length?'':`<div class="workspace-empty"><p>${shell.workspace.connected?'点击＋新建，或拖入标签。':'连接已断开；仍可整理分屏。'}</p></div>`}</div></section>`;
     };
     const render=(n:CenterNode,width:number,height:number):string=>{
       if(n.type==='group')return group(n.groupId);
@@ -490,6 +492,9 @@ export class Components {
   }
   private position(shell: Shell) {
     if(!this.hostVisible) {
+      cancelMotion(shell.node);
+      for(const group of shell.node.querySelectorAll('.view-group'))cancelMotion(group);
+      shell.motionKey=undefined;shell.layoutBefore=undefined;shell.closingSides=undefined;
       for(const surface of shell.surfaces.values()) {
         const dialog=surface.node.querySelector<HTMLDialogElement>('dialog');
         if(dialog?.open)dialog.close();
@@ -504,6 +509,12 @@ export class Components {
     let widths = this.widths(shell.workspace), geometry = this.geometry(shell, widths);
     if (widths.drag && (!geometry[widths.drag.side] || shell.node.hidden || shell.node.inert)) { this.cancelResize(); widths = this.widths(shell.workspace); geometry = this.geometry(shell, widths); }
     const { left, right } = geometry;
+    const key=JSON.stringify([w.host?.center,w.host?.zoomGroupId,geometry.leftWidth,geometry.rightWidth,left,right,shell.node.clientWidth,shell.node.clientHeight]);
+    const changed=key!==shell.motionKey;
+    const before=shell.layoutBefore??captureMotion(shell.node,'.view-group');shell.layoutBefore=undefined;
+    const columns=getComputedStyle(shell.node).gridTemplateColumns;
+    const animate=changed&&Boolean(shell.motionKey)&&!widths.drag&&!this.splitGesture&&!shell.node.hidden;
+    if(changed){cancelMotion(shell.node);for(const group of shell.node.querySelectorAll('.view-group'))cancelMotion(group);}
     shell.node.classList.toggle("left-open", left); shell.node.classList.toggle("right-open", right);
     for (const side of ["left", "right"] as const) {
       for (const [name, value] of [[`--${side}-width`, widths[`${side}Width`]], [`--effective-${side}-width`, geometry[`${side}Width`]]] as const) {
@@ -511,9 +522,26 @@ export class Components {
       }
       const handle = shell.node.querySelector(`[data-resize="${side}"]`)!;
       handle.setAttribute("aria-valuemin", "160"); handle.setAttribute("aria-valuemax", "480"); handle.setAttribute("aria-valuenow", String(geometry[`${side}Width`]));
+      const panel=shell.node.querySelector<HTMLElement>(`.${side}-panel`)!;
+      panel.inert=!geometry[side];panel.setAttribute('aria-hidden',String(!geometry[side]));
+    }
+    if(changed){
+      shell.closingSides={left:!left?(shell.renderedSides?.left??shell.closingSides?.left??null):null,right:!right?(shell.renderedSides?.right??shell.closingSides?.right??null):null};
+      shell.renderedSides={left:w.left,right:w.right};shell.motionKey=key;
     }
     const centerSize=`${center.clientWidth}:${center.clientHeight}`;
-    if(shell.node.dataset.centerSize!==centerSize){shell.node.dataset.centerSize=centerSize;this.paintCenter(shell);}
+    if(shell.node.dataset.centerSize!==centerSize&&!shell.node.getAnimations().some(a=>a.id==='sd-motion:layout')){shell.node.dataset.centerSize=centerSize;this.paintCenter(shell);}
+    if(animate){
+      const target=getComputedStyle(shell.node).gridTemplateColumns;
+      if(columns!==target)animateMotion(shell.node,[{gridTemplateColumns:columns},{gridTemplateColumns:target}],'layout');
+      else for(const group of center.querySelectorAll<HTMLElement>('.view-group')){
+        const old=before.get(group),next=group.getBoundingClientRect();
+        if(!old){enterMotion(group);continue;}
+        const x=old.left-next.left,y=old.top-next.top;
+        if(Math.abs(x)+Math.abs(y)+Math.abs(old.width-next.width)+Math.abs(old.height-next.height)>2)
+          animateMotion(group,[{width:`${old.width}px`,height:`${old.height}px`,transform:`translate(${x}px,${y}px)`,flex:'0 0 auto'},{width:`${next.width}px`,height:`${next.height}px`,transform:'none',flex:'0 0 auto'}],'layout');
+      }
+    }
     const placements = new Map<Surface, DOMRect>();
     for (const surface of shell.surfaces.values()) {
       if(surface.mounted && !surface.readOnly && !surface.frame.dataset.stateReady && this.state?.workspaces.some(w=>w.context.workspaceId===surface.view.context.workspaceId)) {
@@ -521,7 +549,7 @@ export class Components {
       }
       const id = surface.view.id;
       const group=Object.values(w.host?.groups??{}).find(g=>g.activeViewId===id);
-      const slot = group ? shell.node.querySelector(`.view-group[data-group="${CSS.escape(group.id)}"] .central-slot`) : id === w.left && left ? shell.node.querySelector(".left-panel .component-slot") : id === w.right && right ? shell.node.querySelector(".right-panel .component-slot") : null;
+      const slot = group ? shell.node.querySelector(`.view-group[data-group="${CSS.escape(group.id)}"] .central-slot`) : (id === w.left && left || id===shell.closingSides?.left) ? shell.node.querySelector(".left-panel .component-slot") : (id === w.right && right || id===shell.closingSides?.right) ? shell.node.querySelector(".right-panel .component-slot") : null;
       if (slot) placements.set(surface, slot.getBoundingClientRect());
     }
     for (const surface of shell.surfaces.values()) {
@@ -529,19 +557,25 @@ export class Components {
         const modal=surface.node.querySelector<HTMLDialogElement>("dialog")!;
         const visible=this.hostVisible&&!shell.node.hidden&&!shell.node.classList.contains("incoming-component-workspace");
         surface.node.hidden=false;
-        if(visible&&!modal.open)modal.showModal();else if(!visible&&modal.open)modal.close();
+        if(visible&&!modal.open){modal.showModal();enterMotion(modal);}else if(!visible&&modal.open)modal.close();
         if(surface.visible!==visible){surface.visible=visible;this.post(surface,{type:"visibilityChanged",visible});}
         if (visible && surface.focusPending === this.focusEpoch) this.focusSurface(surface);
         continue;
       }
       const s = placements.get(surface);
-      const visible = Boolean(this.hostVisible && s && s.width > 0 && s.height > 0 && !shell.node.hidden && !shell.node.classList.contains("incoming-component-workspace"));
-      surface.node.hidden = !this.hostVisible||!s||shell.node.hidden;
+      const wasHidden=surface.node.hidden;
+      const closing=surface.view.id===shell.closingSides?.left||surface.view.id===shell.closingSides?.right;
+      const visible = Boolean(this.hostVisible && s && s.width > 0 && s.height > 0 && !closing && !shell.node.hidden && !shell.node.classList.contains("incoming-component-workspace"));
+      if(closing)surface.node.inert=true;else surface.node.inert=this.movingViews.has(surface.view.id)||Boolean(surface.readOnly)||this.closeBlocked.has(surface.view.id);
+      surface.node.hidden = !this.hostVisible||!s||s.width<=0||s.height<=0||shell.node.hidden;
       surface.node.style.visibility=shell.node.classList.contains("incoming-component-workspace")?"hidden":"";
       if (s) for (const [key, value] of Object.entries({ left: `${s.left-r.left}px`, top: `${s.top-r.top}px`, width: `${s.width}px`, height: `${s.height}px` })) { if (surface.node.style.getPropertyValue(key) !== value) surface.node.style.setProperty(key, value); }
-      if (surface.visible !== visible) { if(visible)void this.refreshSettings(surface); if(!visible&&surface.token)this.clipboard.discard(surface.token); surface.visible = visible; this.post(surface, { type: "visibilityChanged", visible }); }
+      if (surface.visible !== visible) { if(visible){void this.refreshSettings(surface);if(wasHidden)animateMotion(surface.node,[{opacity:0},{opacity:1}]);} if(!visible&&surface.token)this.clipboard.discard(surface.token); surface.visible = visible; this.post(surface, { type: "visibilityChanged", visible }); }
       if (visible && surface.focusPending === this.focusEpoch) this.focusSurface(surface);
     }
+    const moving=[shell.node,...center.querySelectorAll('.view-group')].some(node=>node.getAnimations().some(a=>a.id.startsWith('sd-motion:')&&a.playState==='running'));
+    if(moving)this.scheduleLayout(shell.workspace.context.workspaceId);
+    else if(shell.closingSides){shell.closingSides=undefined;for(const side of ['left','right'])if(!geometry[side as PanelSide])shell.node.querySelector(`.${side}-panel header`)!.replaceChildren();}
   }
   setHostVisible(visible:boolean) {
     if(this.hostVisible===visible)return;

@@ -73,3 +73,5 @@ footer button { font-size: 11px; padding: 1px 4px; }
 .follow-status p { margin: 6px 0; max-height: 7em; overflow: auto; }
 .follow-status button { margin: 2px 0; }
 .mount-provider { max-width: 110px; font: inherit; }
+.transfer-progress { height:3px; margin:6px 0; overflow:hidden; background:var(--border); border-radius:2px; }
+.transfer-progress > span { display:block; width:100%; height:100%; background:var(--accent); transform-origin:left; }

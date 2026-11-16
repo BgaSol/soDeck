@@ -131,6 +131,26 @@ try{
         const relativeTop=await frame.locator('body').evaluate((_,id)=>{const line=[...document.querySelectorAll('.log-line')].find(e=>e.dataset.id===id);return line?line.getBoundingClientRect().top-document.getElementById('log-viewport').getBoundingClientRect().top:null;},redrawReading.id);
         assert.notEqual(relativeTop,null,'background repaint keeps the actual reading record');assert(Math.abs(relativeTop-redrawReading.relativeTop)<=2,'background repaint keeps record offset: '+JSON.stringify({cycle,redrawReading,relativeTop}));
       }
+      await page.setViewportSize({width:900,height:780});await page.waitForTimeout(500);
+      await page.emulateMedia({reducedMotion:'no-preference'});
+      const detailReading=await frame.locator('#log-lines').evaluate(el=>{const top=el.parentElement.getBoundingClientRect().top,line=[...el.querySelectorAll('.log-line')].find(e=>e.getBoundingClientRect().top>=top);return {id:line.dataset.id,top:line.getBoundingClientRect().top-top};});
+      await frame.evaluate(({id})=>{
+        const detail=document.getElementById('log-detail'),widths=window.detailWidths=[],until=performance.now()+600;
+        const sample=()=>requestAnimationFrame(()=>{widths.push(detail.getBoundingClientRect().width);if(performance.now()<until)sample();});sample();
+        document.querySelector(`.log-line[data-id="${CSS.escape(id)}"] .log-time`).click();
+      },detailReading);
+      await page.waitForTimeout(60);
+      await frame.locator('#log-detail-close').dispatchEvent('click');
+      assert(await frame.locator('#log-detail').evaluate(el=>el.inert),'Closing detail stops input immediately');
+      await page.waitForTimeout(45);
+      await frame.evaluate(id=>document.querySelector(`.log-line[data-id="${CSS.escape(id)}"] .log-time`).click(),detailReading.id);
+      await page.waitForTimeout(650);
+      assert(await frame.locator('#log-detail').isVisible(),'A stale close cannot hide a reopened detail');
+      assert((await frame.evaluate(()=>new Set(detailWidths.map(Math.round)).size))>3,'Detail passes through real intermediate widths');
+      const detailTop=await frame.locator('body').evaluate((_,id)=>{const line=document.querySelector(`.log-line[data-id="${CSS.escape(id)}"]`);return line?.getBoundingClientRect().top-document.getElementById('log-viewport').getBoundingClientRect().top;},detailReading.id);
+      assert(Math.abs(detailTop-detailReading.top)<=2,'Animated detail retains the reading record offset: '+JSON.stringify({detailReading,detailTop}));
+      await frame.locator('#log-detail-close').click();await frame.locator('#log-detail').waitFor({state:'hidden'});
+      await page.emulateMedia({reducedMotion:'reduce'});
       await frame.locator('#log-query').fill('unique');await frame.locator('#log-matches').filter({hasText:'1处'}).waitFor();
       await frame.locator('#log-next-match').click();await frame.locator('#log-lines').filter({hasText:'off-page UNIQUE'}).waitFor();
       await frame.locator('#log-query').fill('no-match');await frame.locator('#log-matches').filter({hasText:'0处'}).waitFor();

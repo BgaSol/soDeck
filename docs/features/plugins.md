@@ -38,4 +38,8 @@
 - 界面：[settings.ts](../../src/settings.ts)、[updates.ts](../../src/updates.ts)。
 - 回归：[生命周期](../../src-tauri/tests/lifecycle.rs)、[更新](../../src-tauri/tests/updates.rs)、[设置](../../src-tauri/tests/settings.rs)、[独立打包](../../scripts/package-plugin.mjs)及[包内烟测](../../scripts/smoke.mjs)。
 
+## 操作反馈
+
+安装、运行状态及待重启变更有短暂反馈；列表按插件身份更新，同一状态刷新不会重播。反馈只表示已观测到的阶段，启用和关闭仍在重启后生效。 节奏和减少动态效果规则见[界面规范](../../DESIGN.md#动效)。
+
 返回[文档索引](../README.md)。

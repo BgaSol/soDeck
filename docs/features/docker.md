@@ -112,4 +112,8 @@ Docker Root 位于 Engine 下、四类资源之前，不被搜索和容器筛选
 - 回归：[命令与进程](../../scripts/test-docker-process.mjs)、[UI](../../scripts/test-docker-ui.mjs)、[实际包](../../scripts/test-plugin-package.mjs)、[真实 Docker](../../scripts/test-docker.mjs)。
 - 五平台客户端包验证与远端 Docker Engine 兼容是不同范围；rootless、代理路径、生产集群或全部 Engine 版本不因普通夹具通过而视为已验证。独立来源和结果见[CHANGELOG](../../plugins/docker/CHANGELOG.md)。
 
+## 操作反馈
+
+资源树分支与资源状态有短暂反馈，日志详情面板使用实际宽度展开和收起，保留既有阅读锚点处理。日志正文、操作票据、结果待确认与候选页面输入权不受动效改变。 节奏和减少动态效果规则见[界面规范](../../DESIGN.md#动效)。
+
 返回[文档索引](../README.md)。

@@ -19,7 +19,7 @@ import {openRemoteFile} from './file-editor/open.js';
   return result?.ok===true?result.value:result;
  };
  const event=args=>!activated||readOnly||transferFrozen?(args.action==='navigation'?Promise.resolve({}):Promise.reject(new Error('界面正在交接'))):request('event',args);
- function message(text,error=false){if(status){status.textContent=text;status.classList.toggle('error',error);}if(error)void event({action:'error',message:String(text).slice(0,2048)}).catch(()=>{});}
+ function message(text,error=false){if(status){SoDeckMotion.setMotionText(status,text);status.classList.toggle('error',error);}if(error)void event({action:'error',message:String(text).slice(0,2048)}).catch(()=>{});}
  function perform(fn){return Promise.resolve().then(fn).catch(e=>message(e.message,true));}
  const size=n=>n==null?'':Number(n)<1024?`${n} B`:`${(Number(n)/1024).toFixed(1)} KiB`;
  function button(text,fn,cls=''){const b=document.createElement('button');b.textContent=text;b.className='sd-control '+cls;b.addEventListener('click',()=>void perform(fn));return b;}

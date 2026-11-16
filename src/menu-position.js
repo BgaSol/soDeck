@@ -1,4 +1,5 @@
 import { autoUpdate, computePosition, flip, hide, offset, shift, size } from '@floating-ui/dom';
+import { enterMotion, exitMotion } from './motion.js';
 
 /** Positioning only: callers keep menu actions, targets and focus policy. */
 export function attachMenuPosition(menu, reference, { kind = 'menu', isValid = () => true, onInvalid = () => {} } = {}) {
@@ -9,13 +10,14 @@ export function attachMenuPosition(menu, reference, { kind = 'menu', isValid = (
     getBoundingClientRect: () => ({ x: reference.x, y: reference.y, left: reference.x, right: reference.x, top: reference.y, bottom: reference.y, width: 0, height: 0 }),
   } : reference;
   const cleanups = [];
-  let disposed = false, sequence = 0, queued = false, settle;
+  let disposed = false, sequence = 0, queued = false, settle, presented = false;
   const ready = new Promise(resolve => { settle = resolve; });
   const alive = () => !disposed && menu.isConnected && !menu.hidden && context?.isConnected &&
     !context.closest('[hidden],[inert]') && context.getClientRects().length > 0 &&
     getComputedStyle(context).visibility === 'visible' && isValid();
   const dispose = () => {
     if (disposed) return;
+    if (presented) exitMotion(menu);
     disposed = true; sequence++;
     for (const cleanup of cleanups.splice(0)) cleanup();
     settle(false);
@@ -34,7 +36,7 @@ export function attachMenuPosition(menu, reference, { kind = 'menu', isValid = (
         middleware: [
           offset(kind === 'submenu' ? 7 : point ? 0 : 4),
           flip({ padding: 8, rootBoundary: 'viewport', fallbackPlacements: kind === 'submenu' ? ['left-start', 'bottom-start', 'top-start'] : ['top-start'] }),
-          shift({ padding: 8, rootBoundary: 'viewport' }),
+          shift({ padding: 8, rootBoundary: 'viewport', crossAxis: point }),
           size({ padding: 8, rootBoundary: 'viewport', apply({ availableWidth, availableHeight }) {
             if (sequence !== current || !alive()) return;
             menu.style.maxWidth = `${Math.max(0, availableWidth)}px`;
@@ -47,6 +49,9 @@ export function attachMenuPosition(menu, reference, { kind = 'menu', isValid = (
       if (!alive() || result.middlewareData.hide?.referenceHidden) { invalidate(); return; }
       Object.assign(menu.style, { left: `${result.x}px`, top: `${result.y}px`, visibility: 'visible' });
       menu.dataset.placement = result.placement;
+      menu.style.transformOrigin = result.placement.startsWith('top') ? 'bottom left' : result.placement.startsWith('left') ? 'top right' : 'top left';
+      menu.style.setProperty('--sd-motion-from',result.placement.startsWith('left')?'translateX(4px)':result.placement.startsWith('right')?'translateX(-4px)':result.placement.startsWith('top')?'translateY(4px)':'translateY(-4px)');
+      if (!presented) { presented = true; enterMotion(menu); }
       settle(true);
     } catch (error) {
       if (!disposed && sequence === current) { console.error('Menu positioning failed', error); invalidate(); }
@@ -65,7 +70,7 @@ export function attachMenuPosition(menu, reference, { kind = 'menu', isValid = (
   });
   mutations.observe(menu.ownerDocument.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['hidden', 'inert', 'style', 'class'] });
   addCleanup(() => mutations.disconnect());
-  addCleanup(autoUpdate(anchor, menu, schedule));
+  addCleanup(autoUpdate(anchor, menu, schedule, { animationFrame: !point }));
   // A resize can deliver a scroll event queued before this menu opened. Only
   // a subsequent change in the source's scroll chain invalidates a point.
   const scrollPositions = new Map();

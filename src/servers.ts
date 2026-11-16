@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { commitTagInput, newDraft, referenced, serverApi, toInput, type Catalog, type Change, type Draft, type ServerApi } from "./server-api";
 import { action, editor, page, type PageState } from "./server-views";
 import { escape as e, icon } from "./ui";
+import { enterMotion, exitMotion, feedbackMotion } from './motion.js';
 import { updateDOM } from "./dom-update";
 import type { ConnectionView } from "./connections";
 import { attachMenuPosition, type MenuPosition } from "./menu-position.js";
@@ -104,7 +105,8 @@ export class ServerManager {
       const x=Math.round(anchor.left-bounds.left+anchor.width/2)+.5,py=Math.round(anchor.top-bounds.top+anchor.height/2)+.5,y=Math.round(box.top-bounds.top+box.height/2)+.5;
       return {d:`M ${x} ${py} V ${y-4} Q ${x} ${y} ${x+4} ${y} H ${box.left-bounds.left}`,selected:row.classList.contains('on-route')};
     });
-    svg.innerHTML=lines.map(line=>`<path d="${line.d}"/>`).join('')+lines.filter(line=>line.selected).map(line=>`<path class="on-route" d="${line.d}"/>`).join('');
+    const route=lines.filter(line=>line.selected).map(line=>line.d).join('|'),changed=svg.dataset.route!==route;svg.dataset.route=route;
+    svg.innerHTML=lines.map(line=>`<path d="${line.d}"/>`).join('')+lines.filter(line=>line.selected).map(line=>`<path class="on-route" d="${line.d}"/>`).join('');if(changed)feedbackMotion(svg);
   }
   private render() {
     if (this.disposed) return;
@@ -140,7 +142,7 @@ export class ServerManager {
   }
   private dismiss(f: Frame) {
     if (f !== this.top()) return;
-    f.dialog.close(); f.dialog.remove(); this.frames.pop();
+    exitMotion(f.dialog);f.dialog.close(); f.dialog.remove(); this.frames.pop();
     if (f.draft) f.draft.password = "";
   }
   private renderEditor(f: Frame) {
@@ -153,7 +155,7 @@ export class ServerManager {
     const f = this.frame("editor"); f.proxy = proxy; f.inline = inline; f.draft = newDraft(record);
     if (proxy && !record) { f.draft.port = "1080"; f.draft.authType = "none"; }
     if (!proxy && !record) f.draft.tagIds = [...this.state.tags];
-    f.initial = JSON.stringify(f.draft); this.renderEditor(f); f.dialog.showModal();
+    f.initial = JSON.stringify(f.draft); this.renderEditor(f); f.dialog.showModal();enterMotion(f.dialog);
     f.dialog.querySelector<HTMLInputElement>('[data-field="host"]')?.focus();
   }
   private editField(f: Frame, input: HTMLInputElement) {
@@ -189,7 +191,7 @@ export class ServerManager {
         if (name === "confirm-yes") finish(true); else if (name === "confirm-no") finish(false);
       });
       f.dialog.addEventListener("cancel", () => finish(false), { once: true });
-      f.dialog.showModal(); f.dialog.querySelector<HTMLElement>("button")?.focus();
+      f.dialog.showModal();enterMotion(f.dialog); f.dialog.querySelector<HTMLElement>("button")?.focus();
     });
   }
   private async cancel(f: Frame) {

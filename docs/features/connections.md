@@ -63,4 +63,8 @@ SSH 保活间隔 30 秒，连续 3 次未响应后断开。SOCKS5 上游支持�
 - 回归：[资料与原子标签保存](../../src-tauri/tests/servers.rs)、[连接服务](../../src-tauri/tests/connections.rs)、[树模型](../../scripts/connection-tree.test.mjs)、[标签草稿](../../scripts/server-tags.test.mjs)、[目录 UI](../../scripts/test-server-ui.mjs)、[连接 UI](../../scripts/test-connection-ui.mjs)、[正式前端](../../scripts/test-production-ui.mjs)、[真实 OpenSSH](../../scripts/test-openssh.mjs)。覆盖混合链、直接筛选、状态保留、原子保存、远端 DNS、凭据提交、指纹、取消、代次隔离及真实会话。
 - 运行方法和原生包验证边界见[开发指南](../development.md)。生产服务器、各类外部 SSH 实现和所有认证配置不因夹具通过而视为已验证。
 
+## 操作反馈
+
+分支展开有局部揭示与箭头转向，选中路线有短暂反馈；连接提示按实际节点、认证与连接阶段更新。凭据对话框立即可操作，取消、提交和凭据清理不等待动效。 节奏和减少动态效果规则见[界面规范](../../DESIGN.md#动效)。
+
 返回[文档索引](../README.md)。

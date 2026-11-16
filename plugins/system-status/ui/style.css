@@ -95,7 +95,7 @@ h1, h2 { margin: 0; font-size: 13px; line-height: 1.4; font-weight: 650; }
 .filesystem-path { font: 600 11px/1.5 Consolas, ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
 .filesystem-usage { flex-shrink: 0; text-align: right; }
 .filesystem-stats { color: var(--muted); overflow-wrap: anywhere; min-width: 0; }
-.meter { width: 56px; flex-shrink: 0; height: 3px; background: var(--grid); border-radius: 2px; overflow: hidden; }.meter > span { height: 100%; display: block; background: var(--series-green); border-radius: inherit; }
+.meter { width: 56px; flex-shrink: 0; height: 3px; background: var(--grid); border-radius: 2px; overflow: hidden; }.meter > span { transition:width var(--sd-motion-layout,200ms) var(--sd-motion-ease,ease-out),background-color var(--sd-motion-feedback,100ms); height: 100%; display: block; background: var(--series-green); border-radius: inherit; }
 .filesystem.warning .meter > span { background: var(--warning); }.filesystem.warning .filesystem-usage, .filesystem-warning-count { color: var(--warning); }
 .filesystem-warning { color: var(--warning); font-size: 11px; margin: 3px 0 0; }
 .filesystem dl { display: grid; grid-template-columns: minmax(45px, auto) minmax(0, 1fr); padding: 10px 0 0; gap: 4px 8px; }

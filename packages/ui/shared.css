@@ -5,8 +5,14 @@
     --sd-tab-height: 36px; --sd-status-height: 32px; --sd-hit-size: 28px;
     --sd-primary: var(--accent); --sd-primary-text: var(--panel); --sd-primary-hover: var(--accent);
     --sd-navigation: var(--subtle); --sd-tools: var(--subtle); --sd-rail: var(--panel);
-    --sd-tab-selected: var(--accent-bg); --sd-server-selected: var(--accent-bg); }
-  button { font-weight: var(--sd-control-weight); transition: background-color 100ms ease-out; }
+    --sd-tab-selected: var(--accent-bg); --sd-server-selected: var(--accent-bg);
+    --sd-motion-feedback: 100ms; --sd-motion-enter: 160ms; --sd-motion-exit: 100ms; --sd-motion-layout: 200ms;
+    --sd-motion-ease: cubic-bezier(.16,1,.3,1); }
+  button { font-weight: var(--sd-control-weight); transition: background-color var(--sd-motion-feedback) ease-out, color var(--sd-motion-feedback) ease-out; }
+  input, select, textarea { transition: border-color var(--sd-motion-feedback) ease-out, outline-color var(--sd-motion-feedback) ease-out; }
+  button > svg { transition: transform var(--sd-motion-feedback) ease-out; }
+  button:active:not(:disabled):not(.tree-toggle):not([data-tree-action="toggle"]) > svg { transform: scale(.92); }
+  body { transition:background-color var(--sd-motion-enter) ease-out,color var(--sd-motion-enter) ease-out; }
   svg { stroke-width: var(--sd-icon-stroke); }
   h1, h2, h3 { font-weight: var(--sd-title-weight); }
   ::selection { background: var(--sd-selection, var(--accent-bg)); }
@@ -30,6 +36,12 @@
     * { scrollbar-color: auto; }
     *::-webkit-scrollbar { width: revert; height: revert; }
     *::-webkit-scrollbar-thumb, *::-webkit-scrollbar-track, *::-webkit-scrollbar-corner, *::-webkit-scrollbar-button { all: revert; }
+  }
+}
+@supports (interpolate-size:allow-keywords) and selector(details::details-content) {
+  @layer base {
+    details[data-motion-details]::details-content { interpolate-size:allow-keywords; block-size:0; overflow:clip; transition:block-size var(--sd-motion-enter) var(--sd-motion-ease),content-visibility var(--sd-motion-enter) allow-discrete; }
+    details[data-motion-details][open]::details-content { block-size:auto; }
   }
 }
 @layer components {
@@ -95,5 +107,8 @@
   .sd-panel-header { height: var(--sd-tab-height); min-height: var(--sd-tab-height); font-size: 12px; font-weight: var(--sd-control-weight); background: var(--sd-navigation, var(--subtle)); }
   .sd-status-bar { height: var(--sd-status-height); display: flex; align-items: center; gap: 6px; padding: 2px 9px; background: var(--status-bg, var(--panel)); font-size: 12px; color: var(--text); }
   button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  @media (prefers-reduced-motion: reduce) { button, .sd-menu { transition: none; animation: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    :root { --sd-motion-feedback: 0ms; --sd-motion-enter: 0ms; --sd-motion-exit: 0ms; --sd-motion-layout: 0ms; }
+    *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+  }
 }
