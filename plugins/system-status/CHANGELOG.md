@@ -6,7 +6,13 @@
 
 不新增生产依赖，核心 API 与共享主题契约保持兼容。本机格式/类型、核心测试、183 项脚本、正式前端构建、30 项插件 Rust 回归、三主题 160–480px UI、真实 Windows OpenSSH 采集和三插件联动通过。另在隔离 Ubuntu 22.04 中挂载真实 core20 Snap 3015、ext4 数据盘/boot、tmpfs 和 ramfs，GNU 与 BusyBox 采集均验证了镜像中性展示、0/0 不适用和 boot 风险提升；共享夹具保留全部 14 项挂载与容量。
 
-五平台原生包与发行待本次独立工作流验收。未把 Linux 容器当作真实 OpenWrt/Dropbear、Windows Server/macOS/BSD 远端或人工 IME/DPI/Wayland 设备验证；未执行历史版本在线升级或 netem。
+包来源：[191179de6d2d02ffb4e8395b7af0269e656b3e4a](https://github.com/BgaSol/soDeck/commit/191179de6d2d02ffb4e8395b7af0269e656b3e4a)；原始独立打包与验收：[43804139007](https://github.com/BgaSol/soDeck/actions/runs/43804139007)。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生归档的架构、摘要、资源、初始化、视图创建/释放与退出全部通过。下载最终五份归档和验证报告，核对来源、run、SHA-256、Release 附件与更新清单；Windows x86_64 最终归档再次通过生命周期和三主题七宽度界面回归，包括后台风险提升时跨分组移动的详情节点与键盘焦点保留。
+
+[最终界面来源 Check](https://github.com/BgaSol/soDeck/actions/runs/43804136787) 的插件格式、真实 Linux 采集、系统状态界面及三插件共享联动通过。后端、核心与依赖在此前[源码 Check](https://github.com/BgaSol/soDeck/actions/runs/43802703300) 的五平台原生源码任务及普通业务任务通过；最终提交只补界面焦点及对应回归，后端和依赖文件没有变化。前轮终端搜索的中间批次断言失败，整轮不记为全绿，重试随后因界面提交取消。首个[未发行候选](https://github.com/BgaSol/soDeck/actions/runs/43802704923) 已撤销，正式附件均来自上述最终原始 run。
+
+发行：[system-status 0.4.5](https://github.com/BgaSol/soDeck/releases/tag/plugin-system-status-v0.4.5)，按用户要求标为 Latest。发布前仅同步说明和更新清单的验收记录，五份程序归档沿用原始 run；启用中的插件升级在重启后生效。
+
+未把 Linux 容器当作真实 OpenWrt/Dropbear、Windows Server/macOS/BSD 远端或人工 IME/DPI/Wayland 设备验证；未执行历史版本在线升级或 netem。
 
 # 0.4.4
 
