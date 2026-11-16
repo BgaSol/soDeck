@@ -3,7 +3,13 @@
 - 正常采集和状态文字不再反复淡化，保留真实读数、告警样式与详情揭示；隐藏或卸载后不启动迟到动效。
 - 复用现有 DOM、CSS 与 WAAPI，未新增生产依赖或核心 API。
 
-本版待发行：源码检查、五平台原生独立打包与实际包验收、原始包来源及公开下载核验尚待完成。
+包来源：[d88a62f05a841cde078dfa38e8f6ebb55303b7a5](https://github.com/BgaSol/soDeck/commit/d88a62f05a841cde078dfa38e8f6ebb55303b7a5)；[来源完整 Check](https://github.com/BgaSol/soDeck/actions/runs/43914640450)；[原始独立打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/43914671346)。同一最终提交完整 Check（all，不含 netem）通过，覆盖五平台核心/插件源码、工程脚本、Linux 浏览器、Windows 桌面及 SSH、真实 SFTP/PTY、网络、系统状态、Docker 和组件通信。
+
+Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生独立归档、架构/资源及包内程序握手、生命周期与退出通过。
+
+发行：[system-status 0.4.9](https://github.com/BgaSol/soDeck/releases/tag/plugin-system-status-v0.4.9)，非仓库 Latest。发布原始 run 的同一草稿归档，不重建或覆盖正式版本程序包；更新清单 notes 与 Release 说明一致。[永久发行证据](https://github.com/BgaSol/soDeck/blob/main/plugins/system-status/release-evidence/v0.4.9-assets.json)保留来源、原生报告、附件摘要和匿名公开下载核验。
+
+netem、正式旧版到本版的线上升级、原生文件剪贴板/默认应用/深度编辑器专项，以及新增真实 IME、DPI、读屏、触控板和多屏设备验证未执行。浏览器中间帧与原生业务通过不等于五平台人工逐帧体验验收。 系统状态未重做全部远端操作系统矩阵，不属于原生远程包组合入口。 GitHub hosted Runner 容量不足导致任务未启动时，只重试失败平台及后续汇总，保留其他成功产物；具体次数见发行证据。
 
 # 0.4.7
 
