@@ -23,7 +23,7 @@ try{
   run([...buildArgs,directory]);imageBuilt=true;
   run(['volume','create',socket]);volumeCreated=true;
   run(['run','-d','--name',engine,'--label','sodeck.test='+suffix,'--privileged','--init','--entrypoint','dockerd','--mount','type=volume,source='+socket+',target=/var/run',
-    'docker:24.0.9-dind','--host=unix:///var/run/docker.sock','--storage-driver=vfs','--iptables=false','--bridge=none']);created.push(engine);
+    'docker:24.0.9-dind','--host=unix:///var/run/docker.sock','--data-root=/var/lib/sodeck-test-docker','--storage-driver=vfs','--iptables=false','--bridge=none']);created.push(engine);
   const inside=args=>run(['exec',engine,'docker','--host','unix:///var/run/docker.sock',...args]);
   let ready=false;
   for(let i=0;i<60;i++){
@@ -36,6 +36,16 @@ try{
   saved.stdout.pipe(loaded.stdin);
   const exits=await Promise.all([new Promise(r=>saved.on('exit',r)),new Promise(r=>loaded.on('exit',r))]);assert.deepEqual(exits,[0,0]);
   const appVolume=name+'-data';inside(['volume','create',appVolume]);
+  const freeVolume=name+'-unused-data';inside(['volume','create',freeVolume]);
+  const freeNetwork=inside(['network','create',name+'-unused-network']);
+  const alias=name+':alias';inside(['tag',image,alias]);
+  let registryName,pullReference;
+  if(!native){registryName=name+'-registry';inside(['run','-d','--name',registryName,'--network','host','registry:2.8.3']);
+    pullReference='127.0.0.1:5000/sodeck-fixture:stable';inside(['tag',image,pullReference]);
+    const deadline=Date.now()+60000;let pushed=false;
+    while(Date.now()<deadline){const result=spawnSync('docker',['exec',engine,'docker','--host','unix:///var/run/docker.sock','push',pullReference],{encoding:'utf8',windowsHide:true,timeout:10000});if(result.status===0){pushed=true;break;}await new Promise(r=>setTimeout(r,200));}
+    assert(pushed,'isolated registry did not accept the fixed test image');inside(['image','rm',pullReference]);
+  }
   const app=inside(['run','-d','--name',name+'-app','--network','none','--label','sodeck.test='+suffix,'--label','com.docker.compose.project=sodeck-test',
     '--label','com.docker.compose.service=api','--env','SODECK_TOKEN=a=b','--mount','type=volume,source='+appVolume+',target=/data',
     ...(native?['--log-opt','max-size=10m','--log-opt','max-file=3']:[]),image,
@@ -70,11 +80,11 @@ try{
   } else {
   const code=await new Promise((resolve,reject)=>{
     const test=spawn('cargo',['test','--manifest-path','src-tauri/Cargo.toml','--features','test-fixtures','--locked','--test','connections','openssh_docker_plugin','--','--ignored','--exact','--nocapture'],
-      {stdio:'inherit',windowsHide:true,env:{...process.env,SODECK_TEST_SSH_PORT:port,SODECK_TEST_SSH_USER:'root',SODECK_TEST_SSH_KEY:path.join(directory,'user'),SODECK_TEST_DOCKER_PLUGIN:packageRoot(),SODECK_TEST_TERMINAL_PLUGIN:testPluginDirectory("terminal"),SODECK_TEST_DOCKER_CONTAINER:app}});
+      {stdio:'inherit',windowsHide:true,env:{...process.env,SODECK_TEST_SSH_PORT:port,SODECK_TEST_SSH_USER:'root',SODECK_TEST_SSH_KEY:path.join(directory,'user'),SODECK_TEST_DOCKER_PLUGIN:packageRoot(),SODECK_TEST_TERMINAL_PLUGIN:testPluginDirectory("terminal"),SODECK_TEST_DOCKER_CONTAINER:app,SODECK_TEST_DOCKER_FREE_VOLUME:freeVolume,SODECK_TEST_DOCKER_NETWORK:freeNetwork,SODECK_TEST_DOCKER_PULL:pullReference}});
     test.on('error',reject);test.on('exit',resolve);
   });
   assert.equal(code,0);
-  inside(['volume','inspect',appVolume]);assert.equal(inside(['container','ls','--all','--quiet']).length,0,'test container should have been explicitly removed');
+  inside(['volume','inspect',appVolume]);inside(['rm','-f','-v',registryName]);assert.equal(inside(['container','ls','--all','--quiet']).length,0,'test containers should have been explicitly removed');
   fs.mkdirSync('artifacts/docker-integration',{recursive:true});
   fs.writeFileSync('artifacts/docker-integration/result.json',JSON.stringify({engine:'24.0.9',clientTarget:JSON.parse(fs.readFileSync(path.join(packageRoot(),'plugin.json'),'utf8')).target,actualCore:true,actualPlugin:true,ssh:true,terminalCommand:true,sourceCloseKeepsTerminal:true,historyLines:1000001,historyGenerationMs:historyMs,initialTailLines:2001,initialCaptureLimitBytes:4*1024*1024,containerRemoved:true,volumePreserved:true},null,2)+'\n');
   console.log('Actual core/native Docker plugin/OpenSSH/isolated Engine: list, details, container terminal through commands, terminal survives source close, logs, stats, pause/unpause/stop/start/restart/remove, retained logs on disconnect and volume preservation passed.');

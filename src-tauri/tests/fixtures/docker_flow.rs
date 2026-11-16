@@ -38,7 +38,7 @@ async fn openssh_docker_plugin() {
                 .core
                 .ui_event("main", token, json!({"action":"snapshot"}))
                 .unwrap();
-            if snapshot["busy"] == false {
+            if snapshot["busy"] == false && (snapshot["kind"]!="browser" || snapshot["state"]!="ready" || !matches!(snapshot["indexes"]["container"]["phase"].as_str(),Some("loading"|"unloaded"))) {
                 return snapshot;
             }
             assert!(std::time::Instant::now() < end, "{snapshot}");
@@ -47,6 +47,7 @@ async fn openssh_docker_plugin() {
     }
     let browser = idle(&f, token).await;
     assert_eq!(browser["state"], "ready", "{browser}");
+    assert_eq!(browser["engine"]["dockerRootDir"],"/var/lib/sodeck-test-docker");
     event(token,json!({"action":"pauseRefresh","paused":true}));
     let list = event(token, json!({"action":"list","status":"all"}));
     let id = std::env::var("SODECK_TEST_DOCKER_CONTAINER").unwrap();
@@ -62,6 +63,14 @@ async fn openssh_docker_plugin() {
         list["rows"][0]["health"].is_null(),
         "containers without HEALTHCHECK must remain visible"
     );
+    async fn loaded(f:&Fixture,token:&str,kind:&str)->Value {
+        let end=std::time::Instant::now()+Duration::from_secs(60);
+        loop {let snapshot=f.core.ui_event("main",token,json!({"action":"snapshot"})).unwrap();if !matches!(snapshot["indexes"][kind]["phase"].as_str(),Some("loading"|"unloaded")){assert_eq!(snapshot["indexes"][kind]["phase"],"ready","{snapshot}");return snapshot;}assert!(std::time::Instant::now()<end,"{snapshot}");tokio::time::sleep(Duration::from_millis(50)).await;}
+    }
+    for kind in ["image","network","volume"] {event(token,json!({"action":"browser.load","branchKind":kind,"scopeEpoch":browser["scopeEpoch"]}));loaded(&f,token,kind).await;}
+    let image_id=list["rows"].as_array().unwrap().iter().find(|r|r["id"]==id).unwrap()["imageId"].as_str().unwrap().to_string();
+    assert!(image_id.starts_with("sha256:"));
+    let root_tree=event(token,json!({"action":"browser.page","query":"sodeck-test","status":"all"}));assert!(root_tree["nodes"].as_array().unwrap().iter().any(|n|n["type"]=="root"));
     let opened = event(
         token,
         json!({"action":"openContainer","id":id,"requestId":"docker-detail"}),
@@ -164,6 +173,22 @@ async fn openssh_docker_plugin() {
     assert_eq!(idle(&f, token).await["operation"]["state"], "succeeded");
     assert!(status().is_null(),"removed container must leave the browser list");
     assert_eq!(idle(&f,detail).await["state"],"gone","existing details reflect sidebar deletion");
+    async fn proof(f:&Fixture,token:&str,resource:&Value)->Value {
+        let snapshot=f.core.ui_event("main",token,json!({"action":"snapshot"})).unwrap();f.core.ui_event("main",token,json!({"action":"browser.load","resource":resource,"scopeEpoch":snapshot["scopeEpoch"]})).unwrap();
+        let end=std::time::Instant::now()+Duration::from_secs(60);loop {let result=f.core.ui_event("main",token,json!({"action":"browser.object","resource":resource})).unwrap();if result["relation"]["phase"]!="loading" {assert_eq!(result["relation"]["complete"],true,"{result}");return result;}assert!(std::time::Instant::now()<end,"{result}");tokio::time::sleep(Duration::from_millis(50)).await;}
+    }
+    for kind in ["image","network","volume"] {loaded(&f,token,kind).await;}
+    for (kind,target) in [("volume",std::env::var("SODECK_TEST_DOCKER_FREE_VOLUME").unwrap()),("network",std::env::var("SODECK_TEST_DOCKER_NETWORK").unwrap()),("image",image_id)] {
+        let resource=json!({"kind":kind,"id":target});let observation=proof(&f,token,&resource).await;assert_eq!(observation["relation"]["count"],0);
+        let snapshot=event(token,json!({"action":"snapshot"}));let input=json!({"action":"resource.operate","operation":"remove","resource":resource,"observationRevision":observation["revision"],"requestId":format!("delete-{kind}"),"intentSequence":snapshot["nextIntent"],"scopeEpoch":snapshot["scopeEpoch"],"engineId":snapshot["engine"]["id"],"endpoint":snapshot["endpoint"],"expectedContext":context});
+        event(token,input.clone());event(token,input);let result=idle(&f,token).await;
+        assert_eq!(result["operation"]["state"],if kind=="image"{"failed"}else{"succeeded"},"{result}");
+        if kind=="image" {assert!(result["operation"]["message"].as_str().unwrap().contains("conflict"),"{result}");event(token,json!({"action":"refresh"}));idle(&f,token).await;}
+        for kind in ["image","network","volume"] {loaded(&f,token,kind).await;}
+    }
+    let snapshot=event(token,json!({"action":"snapshot"}));let pull=json!({"action":"pull.start","reference":std::env::var("SODECK_TEST_DOCKER_PULL").unwrap(),"requestId":"real-registry-pull","intentSequence":snapshot["nextIntent"],"scopeEpoch":snapshot["scopeEpoch"],"engineId":snapshot["engine"]["id"],"endpoint":snapshot["endpoint"],"expectedContext":context});
+    event(token,pull.clone());event(token,pull);let end=std::time::Instant::now()+Duration::from_secs(90);
+    loop {let snapshot=event(token,json!({"action":"snapshot"}));if !matches!(snapshot["pull"]["state"].as_str(),Some("opening"|"running")){assert_eq!(snapshot["pull"]["state"],"succeeded","{snapshot}");break;}assert!(std::time::Instant::now()<end,"{snapshot}");tokio::time::sleep(Duration::from_millis(100)).await;}
     f.core.disconnect_connection("main", &context).unwrap();
     event(logs, json!({"action":"refresh"}));
     assert!(idle(&f, logs).await["error"].is_string());

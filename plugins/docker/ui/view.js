@@ -1,4 +1,6 @@
 import {installLogPage} from './logs-controller.js';
+import {installBrowserPage} from './browser.js';
+installBrowserPage(()=>{clearTimeout(timer);timer=null;ready=false;frozen=true;epoch++;});
 installLogPage(()=>{clearTimeout(timer);timer=null;ready=false;frozen=true;epoch++;});
 const $ = id => document.getElementById(id);
 const names = { running:'运行中',paused:'已暂停',exited:'已停止',created:'未启动',restarting:'重启中',dead:'异常',removing:'删除中' };
@@ -25,7 +27,8 @@ async function call(data) {
 function renderHeader() {
   if(!snapshot) return;
   const kind=snapshot.kind;
-  for(const id of ['browser','container','logs']) $(id).hidden=id!==kind;
+  for(const id of ['browser','container','logs','resource']) $(id).hidden=id!==kind;
+  $('tree-collapse').hidden=true;$('browser-more').hidden=true;
   $('title').textContent=kind==='browser'?'Docker':(snapshot.name||'容器')+(kind==='logs'?' · 日志':'');
   $('state').textContent=['stale','gone'].includes(snapshot.state)?({stale:'数据待刷新',gone:'已删除'}[snapshot.state]):snapshot.status?names[snapshot.status]||snapshot.status:({ready:'已连接',loading:'读取中'}[snapshot.state]||'等待连接');
   $('engine-name').textContent=snapshot.engine?.name||'Engine 尚不可访问';
@@ -70,9 +73,7 @@ function actionButton(text,handler,key) {const button=document.createElement('bu
 function closeConfirmation() {
   const request=operationRequest,restoreFocus=confirmPanel.contains(document.activeElement);operationRequest=undefined;confirmPanel.hidden=true;$('confirm-home').append(confirmPanel);
   if(!request||!restoreFocus)return;
-  const row=$('list').querySelector('[data-id="'+request.target.id+'"]');
-  const trigger=request.trigger?.isConnected?request.trigger:row?.querySelector('[data-focus="'+request.trigger?.dataset.focus+'"]');
-  (trigger||row?.querySelector('.container-select'))?.focus();
+  request.trigger?.focus();
 }
 function beginOperation(action,row,trigger) {
   if(!writable())return;
@@ -83,7 +84,7 @@ function beginOperation(action,row,trigger) {
   $('confirm-object').textContent=row.name+' · '+row.id+' · '+(snapshot.engine.name||'Engine');
   $('confirm-impact').textContent=action==='remove'?'删除容器可写层，保留挂载卷和 bind 数据。':action==='pause'?'容器进程将暂停，服务可能无法响应。':'服务可能中断；取消本地等待不会回滚 Engine 已接受的操作。';
   $('confirm-submit').textContent=operations[action];$('confirm-submit').disabled=false;
-  const target=snapshot.kind==='browser'?trigger.closest('.container-row'): $('actions');target.append(confirmPanel);confirmPanel.hidden=false;$('confirm-cancel').focus();
+  const target=$('actions');target.append(confirmPanel);confirmPanel.hidden=false;$('confirm-cancel').focus();
 }
 async function submitOperation(request) {operationSubmitting=true;renderHeader();renderListIfBrowser();try{await call({action:'operate',operation:request.action,requestId:request.requestId,intentSequence:request.intentSequence,...request.target});}finally{operationSubmitting=false;await poll(true);}}
 async function openTerminal(row,shell) {
@@ -92,75 +93,17 @@ async function openTerminal(row,shell) {
   try {await call({action:'openTerminal',requestId:crypto.randomUUID(),shell,...identity(row)});}
   finally {terminalOpening=false;renderHeader();await poll(true);}
 }
-function renderListIfBrowser(){if(snapshot?.kind==='browser')renderList();}
+function renderListIfBrowser(){}
 function appendField(target,key,value) {
   const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=key;dd.textContent=value;target.append(dt,dd);
 }
 function filters() { return {query:$('query').value,status:$('status-filter').value,health:$('health-filter').value,group:$('group').checked}; }
-function renderList() {
-  const active=document.activeElement,focus=active?.closest('.container-row')?.dataset.id,focusKey=active?.dataset.focus;
-  const selection=active?.id==='browser-shell'?[active.selectionStart,active.selectionEnd,active.selectionDirection]:undefined;
-  const openMenus=new Set([...$('list').querySelectorAll('.row-more[open]')].map(menu=>menu.closest('.container-row').dataset.id));
-  const focusable=rows.some(row=>row.id===selected)?selected:rows[0]?.id;
-  $('confirm-home').append(confirmPanel);
-  $('list').replaceChildren();
-  for(const row of rows) {
-    const wrapper=document.createElement('div');wrapper.className='container-row';wrapper.dataset.id=row.id;wrapper.setAttribute('role','listitem');wrapper.setAttribute('aria-selected',String(selected===row.id));
-    const button=document.createElement('button');button.type='button';button.className='container-select';button.dataset.focus='select';button.setAttribute('aria-pressed',String(selected===row.id));button.tabIndex=focusable===row.id?0:-1;
-    const health=row.health==='unhealthy'?' · 不健康':row.health==='healthy'?' · 健康':row.health==='starting'?' · 健康检查中':'';
-    for(const [className,text] of [['row-name',row.name],['row-status',(names[row.status]||row.status)+health],['row-image',row.image],['row-project',[row.project,row.service].filter(Boolean).join(' / ')]]) {
-      const span=document.createElement('span');span.className=className+(row.health==='unhealthy'&&className==='row-status'?' health-error':'');span.textContent=text;button.append(span);
-    }
-    button.onclick=()=>{if(operationRequest&&operationRequest.target.id!==row.id)closeConfirmation();selected=row.id;shellOptions=false;renderList();void remember();};
-    button.onkeydown=e=>{
-      if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();closeConfirmation();const index=rows.findIndex(r=>r.id===row.id);selected=rows[Math.max(0,Math.min(rows.length-1,index+(e.key==='ArrowDown'?1:-1)))].id;renderList();$('list').querySelector('[data-id="'+selected+'"] .container-select')?.focus();}
-    };
-    wrapper.append(button);
-    if(selected===row.id) {
-      const actions=document.createElement('div');actions.className='inline-actions';
-      const maintenance=document.createElement('div');maintenance.className='toolbar';
-      for(const action of ['start','stop','restart','unpause'])if(available(action,row.status)){
-        const control=actionButton(operations[action],()=>beginOperation(action,row,control),action);control.dataset.rowOperation=action;control.disabled=!writable();maintenance.append(control);
-      }
-      const more=document.createElement('details');more.className='row-more';more.open=openMenus.has(row.id);const summary=document.createElement('summary');summary.textContent='更多';summary.dataset.focus='more';more.append(summary);
-      const menu=document.createElement('div');menu.className='row-menu';
-      for(const action of ['pause','remove'])if(available(action,row.status)){const control=actionButton(operations[action],()=>{more.open=false;beginOperation(action,row,summary);},action);control.disabled=!writable();menu.append(control);}
-      menu.append(actionButton('终端选项',()=>{shellOptions=!shellOptions;renderList();$('browser-shell')?.focus();},'shell'));more.append(menu);maintenance.append(more);actions.append(maintenance);
-      const views=document.createElement('div');views.className='toolbar row-views';
-      for(const [label,kind] of [['日志','openLogs'],['终端','terminal'],['详情','openContainer']]){
-        const control=actionButton(label,()=>kind==='terminal'?void openTerminal(row,containerShell):void open(kind,row),kind);
-        control.disabled=!ready||frozen||!snapshot.engine||(kind==='terminal'&&(!writable()||row.status!=='running'||terminalOpening||snapshot.terminal?.status==='pending'));
-        if(kind==='terminal'&&row.status!=='running')control.setAttribute('aria-label','终端：容器未运行');views.append(control);
-      }
-      actions.append(views);
-      if(shellOptions){const form=document.createElement('form');form.className='browser-terminal-form';const label=document.createElement('label');label.htmlFor='browser-shell';label.textContent='容器 Shell';const input=document.createElement('input');input.id='browser-shell';input.dataset.focus='shell-input';input.value=containerShell;input.spellcheck=false;input.oninput=()=>{containerShell=input.value;};const submit=document.createElement('button');submit.type='submit';submit.textContent='进入终端';submit.dataset.focus='shell-submit';submit.disabled=!writable()||row.status!=='running'||terminalOpening||snapshot.terminal?.status==='pending';form.append(label,input,submit);form.onsubmit=e=>{e.preventDefault();void openTerminal(row,containerShell);};actions.append(form);}
-      wrapper.append(actions);
-    }
-    if(snapshot.operation?.containerId===row.id){const result=document.createElement('p');result.className='row-result';result.setAttribute('role','status');result.textContent=operationText(snapshot.operation);wrapper.append(result);}
-    if(snapshot.terminal?.containerId===row.id){const result=document.createElement('p');result.className='row-result';result.setAttribute('role','status');result.textContent=terminalText(snapshot.terminal);wrapper.append(result);}
-    if(operationRequest?.target.id===row.id)wrapper.append(confirmPanel);
-    $('list').append(wrapper);
-  }
-  if(confirmPanel.contains(active)&&confirmPanel.closest('.container-row'))active.focus({preventScroll:true});
-  else if(focus){
-    const control=$('list').querySelector('[data-id="'+focus+'"] [data-focus="'+focusKey+'"]');
-    control?.focus({preventScroll:true});if(selection&&control?.id==='browser-shell')control.setSelectionRange(...selection);
-  }
-  $('operation').hidden=!snapshot.operation||rows.some(row=>row.id===snapshot.operation.containerId);
-  for(const button of $('status-tabs').children)button.setAttribute('aria-pressed',String(button.dataset.status===$('status-filter').value));
-  $('empty').hidden=rows.length>0;
-}
 async function renderBody() {
   if(!snapshot||!ready||frozen) return;
   if(rendering){renderAgain=true;return;}
   rendering=true;const generation=epoch, current=String(snapshot.revision);
   try {
-    if(snapshot.kind==='browser') {
-      const data=await event({action:'list',offset,limit:50,...filters()});if(generation!==epoch||frozen)return;
-      rows=data.rows;nextOffset=data.nextOffset;renderList();$('count').textContent=data.total+' 个';
-      $('page-label').textContent=data.total?String(offset+1)+'–'+(offset+rows.length):'0';
-      $('previous').disabled=offset===0;$('next').disabled=nextOffset==null;
-    } else if(snapshot.kind==='container') {
+    if(snapshot.kind==='container') {
       if(!$('sections').children.length) for(const [key,label] of Object.entries(sections)){
         const button=document.createElement('button');button.textContent=label;button.dataset.section=key;button.onclick=()=>{section=key;fieldOffset=0;fieldHistory.length=0;void renderBody();};$('sections').append(button);
       }
@@ -168,6 +111,10 @@ async function renderBody() {
       fields=data.rows;fieldNext=data.nextOffset;renderFields();
       $('fields-page').textContent=data.total?String(fieldOffset+1)+'–'+(fieldOffset+fields.length)+' / '+data.total:'无记录';
       $('fields-prev').disabled=fieldOffset===0;$('fields-next').disabled=fieldNext==null;
+    } else if(snapshot.kind==='resource') {
+      const data=await event({action:'section',section:'basic',offset:fieldOffset,limit:50});if(generation!==epoch||frozen)return;
+      $('resource-id').textContent=snapshot.resource?.id||snapshot.containerId;$('resource-fields').replaceChildren();for(const f of data.rows)appendField($('resource-fields'),f.key,f.value);
+      fieldNext=data.nextOffset;$('resource-page').textContent=data.total?`${fieldOffset+1}–${fieldOffset+data.rows.length} / ${data.total}`:'无记录';$('resource-prev').disabled=!fieldOffset;$('resource-next').disabled=fieldNext==null;
     }
     if(restoreScroll!==undefined){$('scroll').scrollTop=restoreScroll;restoreScroll=undefined;}
     revision=current;
@@ -193,13 +140,11 @@ $('cancel').onclick=()=>void call({action:'cancel'}).then(()=>poll(true));
 $('pause').onclick=()=>void call({action:'pauseRefresh',paused:!snapshot.paused});
 $('read-stats').onclick=()=>void call({action:'stats'});
 $('endpoint-form').onsubmit=e=>{e.preventDefault();void call({action:'setEndpoint',endpoint:$('socket').value.trim()});};
-for(const id of ['query','status-filter','health-filter','group']) $(id).addEventListener(id==='query'?'input':'change',()=>{closeConfirmation();offset=0;listHistory.length=0;revision=undefined;void renderBody();void remember();});
-for(const button of $('status-tabs').children)button.onclick=()=>{$('status-filter').value=button.dataset.status;$('status-filter').dispatchEvent(new Event('change'));};
-$('clear-filters').onclick=()=>{$('query').value='';$('health-filter').value='all';$('status-filter').value='all';$('status-filter').dispatchEvent(new Event('change'));};
-$('previous').onclick=()=>{offset=listHistory.pop()??0;void renderBody();};
-$('next').onclick=()=>{listHistory.push(offset);offset=nextOffset;void renderBody();};
 $('fields-prev').onclick=()=>{fieldOffset=fieldHistory.pop()??0;void renderBody();};
 $('fields-next').onclick=()=>{fieldHistory.push(fieldOffset);fieldOffset=fieldNext;void renderBody();};
+$('resource-prev').onclick=()=>{fieldOffset=fieldHistory.pop()??0;void renderBody();};
+$('resource-next').onclick=()=>{fieldHistory.push(fieldOffset);fieldOffset=fieldNext;void renderBody();};
+$('copy-resource-id').onclick=()=>void copy(snapshot.resource?.id||snapshot.containerId);
 $('show-env').onchange=renderFields;
 async function copy(text){const generation=epoch;try{await sodeckClipboard.writeText(text,()=>generation===epoch&&ready&&!frozen);}catch(error){notice(error.message);}}
 $('terminal-form').onsubmit=event=>{

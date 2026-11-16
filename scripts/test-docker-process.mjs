@@ -7,11 +7,23 @@ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-docker-process-'));
 const tickets=new Map(),submissions=[],streams=new Map(),streamRequests=[],streamLookups=[];let loseCommandReceipt=true,loseStreamReceipts=6;
 const id='a'.repeat(64),tasks=new Map(),commands=[],diagnostics=[];let number=0,hold=false,holdMutation=false,loseReceipt=true,malformed=false,engineId='engine',peer;
 const inspect={Id:id,Name:'/service-中文',Image:'sha256:'+'b'.repeat(64),Config:{Image:'demo:1',Env:['TOKEN=a=b'],Labels:{}},State:{Status:'running',Running:true,Health:{Status:'unhealthy',Log:[]}},Mounts:[],NetworkSettings:{Ports:{},Networks:{}}};
+const unusedImage='sha256:'+'d'.repeat(64),networkId='c'.repeat(64),systemNetwork='e'.repeat(64);
+let volumeExists=true,volumeCreatedAt='2026-11-16T00:00:00Z',holdPull=false,streamConfirmed=false;
+const volume=name=>({Name:name,Driver:'local',Scope:'local',CreatedAt:volumeCreatedAt,Options:null,Labels:null});
 const output=command=>{
   if(command.includes("'version'"))return JSON.stringify({Server:{Os:'linux',Arch:'amd64',Version:'24.0.9'}});
-  if(command.includes("'info'"))return JSON.stringify({ID:engineId,Name:'fixture',Containers:1,Images:1,SystemTime:'2026-11-15T10:00:00.123456789Z'});
+  if(command.includes("'info'"))return JSON.stringify({ID:engineId,Name:'fixture',Containers:1,Images:1,DockerRootDir:'/srv/docker-data',SystemTime:'2026-11-15T10:00:00.123456789Z'});
+  if(command.includes("'image' 'ls'"))return [inspect.Image,unusedImage,inspect.Image].join('\n');
+  if(command.includes("'network' 'ls'"))return [networkId,systemNetwork].join('\n');
+  if(command.includes("'volume' 'ls'"))return volumeExists?'data\nused-data\n':'used-data\n';
+  if(command.includes("'image' 'inspect'")){const values=[inspect.Image,unusedImage].filter(id=>command.includes("'"+id+"'"));return values.map(id=>JSON.stringify(command.includes('"tags":')?{id,tags:['demo:'+ (id===unusedImage?'unused':'1')],digests:[],size:100,created:'2026-11-16'}:{Id:id,RepoTags:['demo:1'],RepoDigests:[]})).join('\n');}
+  if(command.includes("'network' 'inspect'"))return [networkId,systemNetwork].filter(id=>command.includes("'"+id+"'")).map(id=>JSON.stringify(command.includes('"id":')?{id,name:id===systemNetwork?'bridge':'custom',driver:'bridge',scope:'local'}:{Id:id,Name:id===systemNetwork?'bridge':'custom',Containers:{}})).join('\n');
+  if(command.includes("'volume' 'inspect'"))return ['data','used-data'].filter(name=>command.includes("'"+name+"'")).map(name=>JSON.stringify(command.includes('"observation":')?{id:name,name,driver:'local',scope:'local',created:volume(name).CreatedAt,observation:volume(name)}:volume(name))).join('\n');
+  if(command.includes("'volume' 'rm'")){volumeExists=false;return 'data\n';}
   if(command.includes("'ls'"))return id+'\n';
-  if(command.includes("'inspect'")&&command.includes('"id":'))return JSON.stringify({id,name:'service-中文',image:'demo:1',status:inspect.State.Status,health:'unhealthy',exitCode:0,labels:{'com.docker.compose.project':'web','com.docker.compose.service':'api'},ports:{}});
+  if(command.includes("'inspect'")&&command.includes('"mounts":'))return JSON.stringify({id,name:inspect.Name,imageId:inspect.Image,mounts:inspect.Mounts});
+  if(command.includes("'inspect'")&&command.includes('"Networks":'))return JSON.stringify({Id:id,Image:inspect.Image,Networks:inspect.NetworkSettings.Networks,Mounts:inspect.Mounts});
+  if(command.includes("'inspect'")&&command.includes('"id":'))return JSON.stringify({id,name:'service-中文',image:'demo:1',imageId:inspect.Image,status:inspect.State.Status,health:'unhealthy',exitCode:0,labels:{'com.docker.compose.project':'web','com.docker.compose.service':'api'}});
   if(command.includes("'inspect'"))return JSON.stringify(inspect);
   if(command.includes("'stats'"))return JSON.stringify({CPUPerc:'150.5%',MemUsage:'10MiB / 1GiB',MemPerc:'1%',NetIO:'1kB / 2kB',BlockIO:'0B / 0B',PIDs:'2'});
   if(command.includes("'logs'"))return '2026-11-10T00:00:00Z alpha 中文\n'+Array.from({length:149},(_,i)=>'line '+i).join('\n')+'\noff-page UNIQUE 中文\n';
@@ -35,7 +47,7 @@ peer=pluginPeer(path.join(root,manifest.entry),async(method,p)=>{
   if(method==='ui.openView')return {viewId:'opened'};
   if(method==='session.stream.open'){
     let old=streamRequests.find(r=>r.operationId===p.operationId);if(old){const {streamId,...original}=old;assert.deepEqual(p,original);}else{
-      const streamId='stream-'+(++number);old={...p,streamId};streamRequests.push(old);streams.set(streamId,{state:p.retention==='rolling'?'running':'completed',finished:p.retention!=='rolling',producedBytes:'100',earliestAvailableOffset:'0'});
+      const streamId='stream-'+(++number);old={...p,streamId};streamRequests.push(old);const pull=p.command.includes("'image' 'pull'");streams.set(streamId,{state:p.retention==='rolling'||pull&&holdPull?'running':'completed',finished:p.retention!=='rolling'&&!(pull&&holdPull),producedBytes:'100',earliestAvailableOffset:'0',...(pull&&streamConfirmed?{remoteExitConfirmed:true,exitCode:0}:{})});
     }
     if(loseStreamReceipts>0){loseStreamReceipts--;throw Object.assign(new Error('lost stream receipt'),{code:-32003});}return {streamId:old.streamId,state:'running'};
   }
@@ -55,14 +67,15 @@ peer=pluginPeer(path.join(root,manifest.entry),async(method,p)=>{
     const t=tasks.get(p.taskId);assert(t);
     if(hold||(holdMutation&&t.command.includes("'stop'")))return {state:'running',stdout:{dataBase64:'',nextOffset:'0'},stderr:{dataBase64:'',nextOffset:'0'},outputComplete:false};
     const start=Number(p.stdoutOffset),end=Math.min(start+8192,t.bytes.length);
-    return {state:'completed',stdout:{dataBase64:malformed ? 'Zg=a' : t.bytes.subarray(start,end).toString('base64'),nextOffset:String(end)},stderr:{dataBase64:'',nextOffset:'0'},outputComplete:end===t.bytes.length,remoteExitConfirmed:true,exitCode:0,error:null};
+    const imageConflict=t.command.includes("'image' 'rm'");const stderr=imageConflict&&p.stderrOffset==='0'?Buffer.from('conflict: image referenced in multiple repositories'):Buffer.alloc(0);
+    return {state:'completed',stdout:{dataBase64:malformed ? 'Zg=a' : t.bytes.subarray(start,end).toString('base64'),nextOffset:String(end)},stderr:{dataBase64:stderr.toString('base64'),nextOffset:String(imageConflict?54:0)},outputComplete:end===t.bytes.length,remoteExitConfirmed:true,exitCode:imageConflict?1:0,error:null};
   }
   if(method==='session.exec.release'){tasks.delete(p.taskId);return {};}
   throw new Error('Unexpected core call: '+method);
 });
 const request=(method,viewId,extra={})=>peer.request(method,{viewId,context,...extra});
 const state=id=>request('ui.getView',id).then(r=>r.data);
-const idle=id=>until(()=>state(id),s=>!s.busy);
+const idle=id=>until(()=>state(id),s=>!s.busy&&(s.kind!=='browser'||s.state!=='ready'||!['loading','unloaded'].includes(s.indexes?.container?.phase)));
 try{
   await assert.rejects(peer.request('initialize',{dataDirectory:directory,capabilities:[]}),/核心缺少/);
   await peer.request('initialize',{dataDirectory:directory,capabilities});
@@ -155,10 +168,38 @@ try{
   await request('ui.event','browser',{data:{action:'cancel'}});browser=await idle('browser');holdMutation=false;
   assert.equal(browser.operation.state,'unknown');assert.equal(browser.operation.containerId,id);
   const unknownCount=commands.length;await request('ui.event','browser',{data:unknown});assert.equal(commands.length,unknownCount,'unknown sidebar intent must never resend');
+  await request('ui.event','browser',{data:{action:'refresh'}});browser=await idle('browser');assert.equal(browser.engine.dockerRootDir,'/srv/docker-data');
+  const load=async(kind,resource)=>{const s=await state('browser');await request('ui.event','browser',{data:{action:'browser.load',scopeEpoch:s.scopeEpoch,branchKind:kind,resource}});if(!resource)await until(()=>state('browser'),v=>!['unloaded','loading'].includes(v.indexes[kind].phase));else await until(async()=>(await request('ui.event','browser',{data:{action:'browser.object',resource}})).data,v=>v.relation?.phase!=='loading'&&v.relation);};
+  const object=async resource=>(await request('ui.event','browser',{data:{action:'browser.object',resource}})).data;
+  for(const kind of ['image','network','volume'])await load(kind);
+  browser=await state('browser');assert.equal(browser.indexes.image.count,2,'image IDs are deduplicated');assert.equal(browser.indexes.volume.count,2);
+  const readBefore=commands.length;await request('ui.event','browser',{data:{action:'browser.page',query:'',expandedKeys:['engine','category:image'],scopeEpoch:browser.scopeEpoch}});assert.equal(commands.length,readBefore,'paging never starts remote reads');
+  inspect.State.Status='exited';inspect.State.Running=false;inspect.Mounts=[{Type:'volume',Name:'used-data',Source:'/srv/docker-data/volumes/used-data/_data',Destination:'/data'},{Type:'bind',Source:'/srv/config',Destination:'/config'}];
+  const usedImage={kind:'image',id:inspect.Image},usedVolume={kind:'volume',id:'used-data'},freeVolume={kind:'volume',id:'data'};
+  await load(null,usedImage);await load(null,usedVolume);assert.equal((await object(usedImage)).relation.count,1,'stopped containers still reference their image');assert.equal((await object(usedVolume)).relation.count,1,'stopped containers still reference volumes');
+  const resourceInput=async resource=>{const s=await state('browser'),o=await object(resource);return {action:'resource.operate',operation:'remove',resource,requestId:'resource-'+resource.kind+'-'+s.nextIntent,intentSequence:s.nextIntent,observationRevision:o.revision,engineId:s.engine.id,endpoint:s.endpoint,expectedContext:context,scopeEpoch:s.scopeEpoch};};
+  await assert.rejects(request('ui.event','browser',{data:await resourceInput(usedVolume)}),/仍有容器引用/);
+  await load(null,freeVolume);const oldVolume=await resourceInput(freeVolume);volumeCreatedAt='2026-11-16T01:00:00Z';await request('ui.event','browser',{data:oldVolume});browser=await idle('browser');assert.equal(browser.operation.state,'failed');assert(!commands.some(c=>c.includes("'volume' 'rm'")),'same-name volume rebuild invalidates confirmation');
+  await request('ui.event','browser',{data:{action:'refresh'}});await idle('browser');await load('volume');await load(null,freeVolume);
+  await request('ui.createView','volume-detail',{viewType:'resource',resourceKey:JSON.stringify({...freeVolume,engineId,endpoint:browser.endpoint})});await idle('volume-detail');
+  const deletion=await resourceInput(freeVolume);await request('ui.event','browser',{data:deletion});await request('ui.event','browser',{data:deletion});browser=await idle('browser');assert.equal(browser.operation.state,'succeeded');assert.equal(commands.filter(c=>c.includes("'volume' 'rm'")).length,1);assert.equal(browser.indexes.volume.count,1);assert.equal((await state('volume-detail')).state,'gone','matching resource details are marked deleted');await request('ui.disposeView','volume-detail');
+  await load('image');await load(null,{kind:'image',id:unusedImage});const imageDeletion=await resourceInput({kind:'image',id:unusedImage});await request('ui.event','browser',{data:imageDeletion});browser=await idle('browser');assert.equal(browser.operation.state,'failed');assert(browser.operation.message.includes('multiple repositories'));assert(commands.some(c=>c.includes("'image' 'rm' '--no-prune'")));assert(!commands.some(c=>c.includes("'--force'")||c.includes("'prune'")));
+  await request('ui.event','browser',{data:{action:'refresh'}});await idle('browser');await load('network');await load(null,{kind:'network',id:systemNetwork});await request('ui.event','browser',{data:await resourceInput({kind:'network',id:systemNetwork})});browser=await idle('browser');assert.equal(browser.operation.state,'failed');assert(!commands.some(c=>c.includes("'network' 'rm'")),'system networks cannot be deleted');
+  await request('ui.event','browser',{data:{action:'refresh'}});browser=await idle('browser');
+  const pullInput=async(view,reference)=>{const s=await state(view);return {action:'pull.start',reference,engineId:s.engine.id,endpoint:s.endpoint,expectedContext:context,scopeEpoch:s.scopeEpoch,requestId:'pull-'+view+'-'+s.nextIntent,intentSequence:s.nextIntent};};
+  loseStreamReceipts=1;const pull=await pullInput('browser','public/demo');await request('ui.event','browser',{data:pull});await request('ui.event','browser',{data:pull});browser=await until(()=>state('browser'),s=>s.pull?.state==='unknown');assert.equal(streamRequests.filter(r=>r.command.includes("'image' 'pull'")).length,1,'lost pull receipt resolves original ticket');assert(streamLookups.some(r=>r.operationId.startsWith('pull-')));await request('ui.event','browser',{data:pull});assert.equal(streamRequests.filter(r=>r.command.includes("'image' 'pull'")).length,1);
+  streamConfirmed=true;const successfulPull=await pullInput('browser','public/demo:stable');await request('ui.event','browser',{data:successfulPull});browser=await until(()=>state('browser'),s=>s.pull?.state==='succeeded');assert(browser.pull.streamId);await idle('browser');
+  await request('ui.createView','browser2',{viewType:'browser'});await idle('browser2');await request('ui.createView','browser3',{viewType:'browser'});await idle('browser3');holdPull=true;streamConfirmed=false;
+  await request('ui.event','browser',{data:await pullInput('browser','public/a')});await until(()=>state('browser'),s=>s.pull?.state==='running');await request('ui.event','browser2',{data:await pullInput('browser2','public/b')});await until(()=>state('browser2'),s=>s.pull?.state==='running');await assert.rejects(request('ui.event','browser3',{data:await pullInput('browser3','public/c')}),/两个镜像拉取/);
+  await assert.rejects(request('ui.event','browser',{data:{action:'setEndpoint',endpoint:'unix:///run/other.sock'}}),/镜像拉取/);
+  await request('ui.event','browser',{data:{action:'browser.visibility',visible:false}});assert.equal((await state('browser')).pull.state,'running','hiding the sidebar keeps its pull');await request('ui.event','browser',{data:{action:'pull.cancel'}});await until(()=>state('browser'),s=>s.pull?.state==='unknown');
+  await request('ui.disposeView','browser2');await request('ui.disposeView','browser3');
+  const taskPage=(await request('ui.event','browser',{data:{action:'browser.tasks',offset:0}})).data;assert(taskPage.rows.length>0);assert(Buffer.byteLength(JSON.stringify(await state('browser')))<24*1024);
   await request('ui.disposeView','browser');
+  await until(async()=>streams.size,n=>n===0);
   await assert.rejects(state('detail'),/关闭/);
   await peer.close();assert.equal(peer.child.exitCode,0);
-  console.log('Docker native process: UI v2, query reuse, filters, mutations once, stats, logs, freeze and actual task cleanup passed.');
+  console.log('Docker native process: four resource indexes, stopped references, volume identity, native image refusal, system network protection, pull tickets/concurrency/disposal, UI v2 and existing container/log/terminal contracts passed.');
 }finally{
   if(peer.child.exitCode===null){peer.child.kill();await new Promise(r=>peer.child.once('exit',r));}
   assert.equal(path.dirname(directory),os.tmpdir());assert(path.basename(directory).startsWith('sodeck-docker-process-'));fs.rmSync(directory,{recursive:true,force:true});

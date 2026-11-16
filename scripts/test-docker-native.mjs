@@ -52,7 +52,7 @@ try {
   await page.locator(`[data-id="${context.workspaceId}"] [data-workspace-action="select"]`).click();
   const opened=await invoke('component_ui',{operation:'action',args:{context,action:{op:'open',key:'sodeck.docker:browser',requestId:'native-docker'}}});browserView=opened.viewId;
   const browserFrame=page.frameLocator(`.component-surface[data-view-id="${browserView}"] iframe`);
-  await browserFrame.locator(`[data-id="${ssh.containerId}"] .container-select`).click();await browserFrame.getByRole('button',{name:'日志',exact:true}).click();
+  await browserFrame.locator('#query').fill(ssh.containerId);await browserFrame.locator(`[data-tree-key="container:${ssh.containerId}"]`).click();await browserFrame.getByRole('button',{name:'日志',exact:true}).click();
   await until(async()=>{logView=(await views()).find(v=>v.definitionKey==='sodeck.docker:logs')?.id;return !!logView;},'Logs view did not open');
   frame=page.frameLocator(`.component-surface[data-view-id="${logView}"] iframe`);
   await frame.locator('.log-text').first().waitFor({timeout:45000});await until(()=>frame.locator('#log-status').textContent().then(s=>s==='持续接收'),'Live capture did not start');
@@ -88,8 +88,8 @@ try {
   const probe=await metrics();const percentile=a=>{a=[...a].sort((x,y)=>x-y);return {samples:a.length,p50:a[Math.floor(a.length*.5)],p95:a[Math.floor(a.length*.95)],max:a.at(-1)};};
   report.performance={firstBodyToPaintMs:probe.firstPaintAt-probe.firstBodyAt,inputToResultMs:percentile(queryTimes),workerQueryMs:percentile(probe.times.query),sourceRows:probe.lastView?.windowTotal,longTasks:probe.longTasks,workerMemory:'not measured',processMemory:'per-process native WorkingSet64 and PrivateMemorySize64'};
   if(ssh.benchmarkId){
-    await browserFrame.locator('[data-status="all"]').click();
-    await browserFrame.locator(`[data-id="${ssh.benchmarkId}"] .container-select`).click();await browserFrame.getByRole('button',{name:'日志',exact:true}).click();
+    await browserFrame.locator('#query').fill(ssh.benchmarkId);
+    await browserFrame.locator(`[data-tree-key="container:${ssh.benchmarkId}"]`).click();await browserFrame.getByRole('button',{name:'日志',exact:true}).click();
     let benchmarkView;await until(async()=>{benchmarkView=(await views()).find(v=>v.definitionKey==='sodeck.docker:logs'&&v.id!==logView)?.id;return !!benchmarkView;},'Benchmark log view did not open');
     frame=page.frameLocator(`.component-surface[data-view-id="${benchmarkView}"] iframe`);await frame.locator('.log-text').first().waitFor();
     const before=await frame.locator('body').evaluate(()=>sodeck.request('event',{action:'logs.status'}));

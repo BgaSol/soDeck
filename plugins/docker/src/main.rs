@@ -1,11 +1,15 @@
+mod browser;
 mod commands;
 mod logs;
+mod pulls;
+mod resources;
 mod runtime;
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let holder = Arc::new(Mutex::new(None::<runtime::Shared>));
     let log_holder = Arc::new(Mutex::new(None::<Arc<logs::Logs>>));
+    let pull_holder = Arc::new(Mutex::new(None::<Arc<pulls::Pulls>>));
     sodeck_plugin_client::run(move |client, method, p| {
         if method == "initialize" {
             for cap in [
@@ -31,6 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             apply_settings(&mut state, &settings["values"])?;
             let app = Arc::new(Mutex::new(state));
             runtime::start(app.clone(), client.clone());
+            *pull_holder.lock().unwrap() = Some(pulls::Pulls::new(app.clone(), client.clone()));
             *log_holder.lock().unwrap() = Some(logs::Logs::new(client.clone(), app.clone()));
             *holder.lock().unwrap() = Some(app);
             return Ok(json!({"apiVersion":"1","uiApiVersion":"2","settingsApiVersion":"1"}));
@@ -60,9 +65,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let id = p["viewId"].as_str().ok_or("缺少 viewId")?;
         if method == "ui.disposeView" {
+            if let Some(pulls) = pull_holder.lock().unwrap().as_ref() {
+                pulls.dispose(id);
+            }
             if let Some(logs) = log_holder.lock().unwrap().as_ref() {
                 logs.dispose(id)
             }
+        }
+        if method == "ui.event"
+            && p["data"]["action"]
+                .as_str()
+                .is_some_and(|s| s.starts_with("pull."))
+        {
+            let service = pull_holder
+                .lock()
+                .unwrap()
+                .clone()
+                .ok_or("拉取服务未就绪")?;
+            let result = service.event(id, &p["data"])?;
+            return app.lock().unwrap().response(id, result);
         }
         if method == "ui.event"
             && p["data"]["action"]
@@ -91,7 +112,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if method == "ui.event"
             && matches!(
                 p["data"]["action"].as_str(),
-                Some("openContainer" | "openLogs")
+                Some("openContainer" | "openLogs" | "openResource")
             )
         {
             let d = &p["data"];
@@ -101,8 +122,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if v.frozen {
                     return Err("页面正在关闭".into());
                 }
-                let container = d["id"].as_str().ok_or("缺少容器 ID")?;
-                commands::id(container)?;
+                let container = d["id"].as_str().unwrap_or("");
+                let resource_ref = if d["action"] == "openResource" {
+                    a.check_scope(id, d)?;
+                    let resource = resources::ResourceRef::read(&d["resource"])?;
+                    if resource.kind == resources::Kind::Container {
+                        return Err("容器请使用容器详情入口".into());
+                    }
+                    Some(resource)
+                } else {
+                    commands::id(container)?;
+                    None
+                };
                 if v.expected_engine.is_empty() {
                     return Err("请先刷新 Docker 状态".into());
                 }
@@ -117,7 +148,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 (
                     v.context.clone(),
-                    json!({"id":container,"engineId":v.expected_engine}).to_string(),
+                    if let Some(r) = resource_ref {
+                        json!({"kind":r.kind,"id":r.id,"engineId":v.expected_engine,"endpoint":v.endpoint}).to_string()
+                    } else {
+                        json!({"id":container,"engineId":v.expected_engine}).to_string()
+                    },
                 )
             };
             let request = d["requestId"]
@@ -125,7 +160,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .filter(|s| !s.is_empty() && s.len() <= 128)
                 .ok_or("请求 ID 无效")?;
             let result=client.call("ui.openView",json!({"expectedContext":context,"requestId":request,
-                "viewType":if d["action"]=="openLogs"{"logs"}else{"container"},"resourceKey":resource,"sourceViewId":id}))?;
+                "viewType":if d["action"]=="openLogs"{"logs"}else if d["action"]=="openResource"{"resource"}else{"container"},"resourceKey":resource,"sourceViewId":id}))?;
             return app.lock().unwrap().response(id, result);
         }
         let mut a = app.lock().unwrap();
@@ -142,6 +177,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .filter(|v| !p["context"].is_null() && v.context != p["context"])
                 {
                     v.clear_terminal();
+                    v.epoch += 1;
+                    if let Some(b) = &mut v.browser {
+                        *b = browser::BrowserState::default();
+                    }
+                    if v.kind == "browser" {
+                        v.expected_engine.clear();
+                    }
+                    v.data["engine"] = Value::Null;
                     v.context = p["context"].clone();
                     v.cancelled = true;
                     v.busy = false;

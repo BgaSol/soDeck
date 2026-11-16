@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';import path from 'node:path';import {createServer} from 'node:http';
 import {chromium} from 'playwright';
 import {packageRoot,context} from './docker-process.mjs';
+import {verifyDockerTreeUI} from './test-docker-tree-ui.mjs';
+await verifyDockerTreeUI();
 import {readTestThemeTokens} from './test-theme-tokens.mjs';
 const root=packageRoot(),id='a'.repeat(64),second='b'.repeat(64),requests=[];
 const rows=[{id,name:'prod-api-中文',image:'api:2026.11',status:'running',health:'unhealthy',project:'shop',service:'api'},
   {id:second,name:'worker',image:'worker:1',status:'exited',health:null,project:'shop',service:'worker'}];
-let snapshot={kind:'browser',context,containerId:id,endpoint:'unix:///var/run/docker.sock',engine:{id:'engine',name:'prod-engine-01',version:'24.0.9',arch:'amd64'},revision:'1',nextIntent:'1',state:'ready',status:'running',observedAt:Date.now(),busy:false,paused:false,tail:200,navigation:{}};
+let snapshot={kind:'container',context,containerId:id,endpoint:'unix:///var/run/docker.sock',engine:{id:'engine',name:'prod-engine-01',version:'24.0.9',arch:'amd64'},revision:'1',nextIntent:'1',state:'ready',status:'running',observedAt:Date.now(),busy:false,paused:false,tail:200,navigation:{}};
 const env=[{key:'TOKEN',value:'a=b=c',secret:true},{key:'EMPTY',value:'',secret:true}];
 const logs=[{stream:'stdout',text:new Date(Date.now()-90000).toISOString()+' INFO 服务启动成功'},{stream:'stderr',text:new Date(Date.now()-89000).toISOString()+' ERROR connection refused <script>boom()</script>'},{stream:'stdout',text:'repeat'},{stream:'stdout',text:'repeat'}];
 let logCapture={generation:1,loading:false,navigation:{},resources:[{id:'history',start:0,end:2000000000,tail:true,status:{state:'completed',finished:true}},{id:'live',start:0,end:null,tail:false,status:{state:'running',finished:false}}]};
@@ -86,81 +88,12 @@ await page.addInitScript(({snapshot,tokens})=>{
 const url='http://127.0.0.1:'+server.address().port;
 try{
   await page.goto(url);let frame=page.frames()[1];
-  await frame.locator('.container-row').first().waitFor();
-  await frame.locator('#query').fill('中文');assert.equal(await frame.locator('.container-row').count(),1);
-  await frame.locator('.container-select').first().focus();await page.keyboard.press('Enter');
-  await frame.locator('.inline-actions').waitFor();assert(!requests.some(r=>r.action==='openContainer'),'Enter only selects');
-  await frame.locator('.inline-actions').getByRole('button',{name:'详情',exact:true}).click();
-  await page.waitForFunction(()=>window.responses.some(r=>r.action==='openContainer'));
-  assert(requests.some(r=>r.action==='openContainer'&&r.id===id&&r.engineId==='engine'));
-  await frame.locator('#query').fill('absent');await frame.locator('#empty').waitFor({state:'visible'});
-  await frame.locator('#query').fill('');await frame.locator('[data-status="all"]').click();await frame.locator('.container-row').nth(1).waitFor();
-  await frame.locator('.container-select').nth(1).click();await frame.locator('#query').fill('prod');
-  await frame.locator('[data-id="'+id+'"] .container-select[tabindex="0"]').waitFor();
-  rows.push(...Array.from({length:58},(_,i)=>({id:(i+1).toString(16).padStart(64,'0'),name:'extra-'+i,image:'extra:1',status:'running'})));
-  await frame.locator('#query').fill('');
-  await frame.locator('#next:not([disabled])').waitFor();await frame.locator('#next').click();await frame.locator('#page-label').filter({hasText:'51–60'}).waitFor();
-  assert.equal(await frame.locator('.container-select[tabindex="0"]').count(),1,'page without the selected row must keep a keyboard entry');
-  await frame.locator('#previous').click();await frame.locator('#page-label').filter({hasText:'1–50'}).waitFor();
-  await frame.locator('#scroll').evaluate(e=>{e.scrollTop=180;});
-  await page.evaluate(()=>window.post('flush',{id:'navigation',freeze:false}));await page.waitForFunction(()=>window.flushed.some(f=>f.id==='navigation'));
-  const nav=snapshot.navigation;assert.equal(nav.scrollTop,180);assert.deepEqual(nav.listHistory,[]);
-  await page.evaluate(s=>window.post('mount',{data:s,tokens:window.tokens,readOnly:false}),snapshot);
-  await page.waitForFunction(()=>true);await new Promise(r=>setTimeout(r,100));assert.equal(await frame.locator('#scroll').evaluate(e=>e.scrollTop),180,'remount restores scroll after data rendering');
-  rows.splice(2);await frame.locator('#query').fill('prod');await frame.locator('.container-row').first().waitFor();
   fs.mkdirSync('artifacts/docker-ui',{recursive:true});
-  for(const mode of ['browser','container','logs']){
+  for(const mode of ['container','logs']){
     snapshot={...snapshot,kind:mode,name:'prod-api-中文',status:'running',terminal:null,operation:null,revision:String(Number(snapshot.revision)+1)};
     await page.evaluate(s=>{window.mount=s;window.post('mount',{data:s,tokens:window.tokens,readOnly:false,capabilities:{clipboard:1}});},snapshot);
     await frame.locator('#'+mode).waitFor({state:'visible'});
     const opsBefore=requests.filter(r=>r.action==='operate').length,terminalsBefore=requests.filter(r=>r.action==='openTerminal').length;
-    if(mode==='browser'){
-      await frame.locator('#query').fill('');await frame.locator('[data-status="all"]').click();
-      await frame.locator('[data-id="'+id+'"] .container-select').click();
-      const more=frame.locator('.row-more'),summary=more.locator('summary');
-      await summary.click();await more.getByRole('button',{name:'暂停',exact:true}).focus();
-      const oldMenu=await more.elementHandle();snapshot={...snapshot,revision:String(Number(snapshot.revision)+1)};
-      await frame.waitForFunction(menu=>!menu.isConnected,oldMenu);await oldMenu.dispose();
-      assert(await more.evaluate(e=>e.open),'background revisions keep the row menu open');
-      assert(await more.getByRole('button',{name:'暂停',exact:true}).evaluate(e=>e===document.activeElement),'background revisions preserve menu focus');
-      await page.keyboard.press('Escape');assert(!(await more.evaluate(e=>e.open)));
-      assert(await summary.evaluate(e=>e===document.activeElement),'Escape returns menu focus to its summary');
-      await summary.click();await more.getByRole('button',{name:'终端选项',exact:true}).click();
-      const shell=frame.locator('#browser-shell');await shell.fill('/bin/bash');await shell.evaluate(e=>e.setSelectionRange(5,9,'backward'));
-      const oldShell=await shell.elementHandle();snapshot={...snapshot,revision:String(Number(snapshot.revision)+1)};
-      await frame.waitForFunction(input=>!input.isConnected,oldShell);await oldShell.dispose();
-      assert.deepEqual(await shell.evaluate(e=>({focused:e===document.activeElement,value:e.value,start:e.selectionStart,end:e.selectionEnd,direction:e.selectionDirection})),{focused:true,value:'/bin/bash',start:5,end:9,direction:'backward'},'background revisions preserve shell focus, value and selection');
-      await more.getByRole('button',{name:'暂停',exact:true}).click();await frame.locator('#confirm').waitFor({state:'visible'});await page.keyboard.press('Escape');
-      assert(await summary.evaluate(e=>e===document.activeElement),'cancelling a menu operation returns to the visible summary');
-      await frame.locator('[data-id="'+id+'"] .container-select').click();
-      const openedBefore=requests.filter(r=>['openContainer','openLogs','openTerminal'].includes(r.action)).length;
-      await frame.locator('.inline-actions').getByRole('button',{name:'停止',exact:true}).click();await frame.locator('#confirm').waitFor({state:'visible'});
-      const oldRow=await frame.locator('[data-id="'+id+'"]').elementHandle();snapshot={...snapshot,revision:String(Number(snapshot.revision)+1)};
-      await frame.waitForFunction(row=>!row.isConnected,oldRow);await oldRow.dispose();
-      assert(await frame.locator('#confirm-cancel').evaluate(e=>e===document.activeElement),'background revisions preserve focus in the inline confirmation');
-      await page.keyboard.press('Escape');assert(await frame.locator('.inline-actions').getByRole('button',{name:'停止',exact:true}).evaluate(e=>e===document.activeElement),'Escape after a refresh returns to the recreated operation trigger');
-      await frame.locator('.inline-actions').getByRole('button',{name:'停止',exact:true}).click();await frame.locator('#confirm').waitFor({state:'visible'});
-      assert.equal(await frame.locator('dialog').count(),0,'confirmation stays in the sidebar');
-      await frame.locator('[data-id="'+second+'"] .container-select').click();assert(await frame.locator('#confirm').isHidden());
-      assert.equal(requests.filter(r=>r.action==='operate').length,opsBefore,'changing selection cancels the old confirmation');
-      await frame.locator('[data-id="'+id+'"] .container-select').click();
-      await frame.locator('.inline-actions').getByRole('button',{name:'停止',exact:true}).click();await frame.locator('#confirm-submit').click();
-      await frame.locator('.row-result').filter({hasText:'命令成功'}).waitFor();
-      assert.equal(requests.filter(r=>r.action==='operate').length,opsBefore+1);
-      assert.equal(requests.filter(r=>['openContainer','openLogs','openTerminal'].includes(r.action)).length,openedBefore,'sidebar maintenance does not open central pages');
-      const op=requests.filter(r=>r.action==='operate').at(-1);assert.equal(op.id,id);assert.deepEqual(op.expectedContext,context);assert.equal(op.endpoint,snapshot.endpoint);
-      await frame.locator('.inline-actions').getByRole('button',{name:'启动',exact:true}).click();await frame.locator('.inline-actions').getByRole('button',{name:'停止',exact:true}).waitFor();
-      await frame.locator('.inline-actions').getByRole('button',{name:'终端',exact:true}).click();await frame.locator('.row-result').filter({hasText:'终端请求待确认'}).waitFor();
-      assert.equal(requests.filter(r=>r.action==='openTerminal').length,terminalsBefore+1);
-      assert(await frame.locator('.inline-actions').getByRole('button',{name:'终端',exact:true}).isDisabled());
-      snapshot={...snapshot,revision:String(Number(snapshot.revision)+1),terminal:{status:'completed',containerId:id,viewId:'sidebar-terminal'}};
-      await frame.locator('.row-result').filter({hasText:'终端页面已创建'}).waitFor();
-      const logsBefore=requests.filter(r=>r.action==='openLogs').length;
-      await frame.locator('.inline-actions').getByRole('button',{name:'日志',exact:true}).click();
-      await page.waitForFunction(count=>window.responses.filter(r=>r.action==='openLogs').length>count,logsBefore);
-      assert.equal(requests.filter(r=>r.action==='openLogs').length,logsBefore+1);
-      assert.equal(requests.filter(r=>r.action==='openLogs').at(-1).id,id,'logs open the selected container even when a list poll follows');
-    }
     if(mode==='container'){
       await frame.locator('#terminal-shell').fill('/bin/bash');
       await frame.locator('#open-terminal').click();
@@ -190,7 +123,7 @@ try{
       for(const height of [620,780]){await page.setViewportSize({...page.viewportSize(),height});await page.waitForTimeout(400);const line=frame.locator('.log-line[data-id="'+anchor.id+'"]');assert.equal(await line.count(),1,'height-only reflow retains the visible record');const next=await line.evaluate(e=>{const v=document.getElementById('log-viewport');return {top:e.getBoundingClientRect().top,viewportTop:v.getBoundingClientRect().top,width:v.clientWidth,height:v.clientHeight,scroll:v.scrollTop};});assert(Math.abs(next.top-anchor.top)<=2,'height-only reflow preserves wrapped record position: '+JSON.stringify({height,anchor,next}));}
       const reading=await frame.locator('#log-lines').evaluate(el=>{const top=el.parentElement.getBoundingClientRect().top,line=[...el.querySelectorAll('.log-line')].find(e=>e.getBoundingClientRect().bottom>top);return {id:line.dataset.id,relativeTop:line.getBoundingClientRect().top-top};});
       const originalWidth=page.viewportSize().width;
-      for(const width of [900,400,originalWidth]){await page.setViewportSize({width,height:780});await page.waitForTimeout(500);const line=frame.locator('.log-line[data-id="'+reading.id+'"]');assert.equal(await line.count(),1,'width reflow retains the actual visible record');const relativeTop=await line.evaluate(e=>e.getBoundingClientRect().top-document.getElementById('log-viewport').getBoundingClientRect().top);assert(Math.abs(relativeTop-reading.relativeTop)<=2,'width reflow preserves actual record offset: '+JSON.stringify({width,reading,relativeTop}));}
+      for(const width of [900,400,originalWidth,900,400,originalWidth]){await page.setViewportSize({width,height:780});await page.waitForTimeout(500);const line=frame.locator('.log-line[data-id="'+reading.id+'"]');assert.equal(await line.count(),1,'width reflow retains the actual visible record');const relativeTop=await line.evaluate(e=>e.getBoundingClientRect().top-document.getElementById('log-viewport').getBoundingClientRect().top);assert(Math.abs(relativeTop-reading.relativeTop)<=2,'width reflow preserves actual record offset: '+JSON.stringify({width,reading,relativeTop}));}
       // A previous measurement can disagree with the actual wrapped DOM before the next paint.
       const redrawReading=await frame.locator('#log-lines').evaluate(el=>{el.querySelector('.log-line').style.minHeight='140px';const v=el.parentElement.getBoundingClientRect(),line=[...el.querySelectorAll('.log-line')].find(e=>{const r=e.getBoundingClientRect();return r.bottom>v.top&&r.top<v.bottom;});return {id:line.dataset.id,relativeTop:line.getBoundingClientRect().top-v.top};});
       for(let cycle=0;cycle<40;cycle++){

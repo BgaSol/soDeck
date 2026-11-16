@@ -42,11 +42,13 @@ try {
     assert(fs.readdirSync(vendor, { recursive: true }).some(file => /worker.*\.js$/.test(file)), "Editor worker missing");
   }
   if (plugin === "docker") {
-    assert.equal(manifest.ui.views.length, 3);
+    assert.equal(manifest.ui.views.length, 4);
     const browser = manifest.ui.views.find(view => view.id === "browser");
     assert.equal(browser.defaultSide, "right"); assert.equal(browser.defaultPinned, true);
     assert.equal(browser.openOnWorkspace, "none"); assert.equal(browser.icon, "docker");
-    for (const file of ["style.css", "bridge.js", "view.js"]) assert(fs.statSync(path.join(checked.root, "ui", file)).size > 0);
+    const resource = manifest.ui.views.find(view => view.id === "resource");
+    assert(resource && resource.container === "editor");
+    for (const file of ["style.css", "bridge.js", "view.js", "browser.js", "tree.js", "tree-menu.js", "dom-update.js", "licenses/morphdom.LICENSE"]) assert(fs.statSync(path.join(checked.root, "ui", file)).size > 0);
   }
   if (plugin === "system-status") {
     assert.equal(manifest.ui.views[0].backgroundOnWorkspace, true);

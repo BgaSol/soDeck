@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-pub const SUMMARY: &str = r#"{"id":{{json .Id}},"name":{{json .Name}},"image":{{json .Config.Image}},"status":{{json .State.Status}},"exitCode":{{json .State.ExitCode}},"health":{{with index .State "Health"}}{{json .Status}}{{else}}null{{end}},"labels":{{json .Config.Labels}},"ports":{{json .NetworkSettings.Ports}},"startedAt":{{json .State.StartedAt}}}"#;
+pub const SUMMARY: &str = r#"{"id":{{json .Id}},"name":{{json .Name}},"image":{{json .Config.Image}},"imageId":{{json .Image}},"status":{{json .State.Status}},"exitCode":{{json .State.ExitCode}},"health":{{with index .State "Health"}}{{json .Status}}{{else}}null{{end}},"labels":{{json .Config.Labels}},"startedAt":{{json .State.StartedAt}}}"#;
 
 pub fn endpoint(value: &str) -> Result<(), String> {
     let path = value

@@ -95,6 +95,8 @@ export function installLogPage(releaseIncumbent=()=>{}) {
         const line=nodes.find(node=>node.dataset.id===oldAnchor.id);
         if(line) viewport.scrollTop+=line.getBoundingClientRect().top-viewport.getBoundingClientRect().top+oldAnchor.pixel;
         resizeAnchor=undefined;
+        // Scroll events can invalidate the summary await; remember the corrected DOM first.
+        if(viewport.clientWidth===viewportWidth&&devicePixelRatio===viewportScale)readingAnchor=visibleAnchor();
       }
       const summary=await ask('summary',{height:Math.ceil(viewport.clientHeight)}); if(stale()) return;
       map.update({...summary,ids:layout.ids},layout.index(Math.max(0,viewport.scrollTop-container.offsetTop)),layout.index(Math.max(0,viewport.scrollTop+viewport.clientHeight-container.offsetTop)));
@@ -159,7 +161,7 @@ export function installLogPage(releaseIncumbent=()=>{}) {
   function stop() { clearTimeout(pollTimer);clearTimeout(paintTimer);pollTimer=paintTimer=null;cancelExport=true;map?.dispose();map=null;worker?.terminate();worker=null;for(const p of pending.values())p.reject(new Error('日志页面已卸载'));pending.clear();for(const resolve of replay.values())resolve();replay.clear();attached.clear();queues.clear();epoch++; }
   const lifecycle=(name,handler)=>addEventListener('sodeck:'+name,e=>{if(!active)return;e.stopImmediatePropagation();Promise.resolve(handler(e.detail)).catch(e=>error(e.message));});
   addEventListener('sodeck:mount',e=>{
-    if(e.detail.data.kind!=='logs') {if(active)stop();active=false;document.body.classList.remove('logs-page');return;} e.stopImmediatePropagation();releaseIncumbent(); stop();active=true;document.body.classList.add('logs-page');for(const name of ['browser','container'])$(name).hidden=true;$('logs').hidden=false;
+    if(e.detail.data.kind!=='logs') {if(active)stop();active=false;document.body.classList.remove('logs-page');return;} e.stopImmediatePropagation();releaseIncumbent(); stop();active=true;document.body.classList.add('logs-page');for(const name of ['browser','container','resource'])$(name).hidden=true;$('logs').hidden=false;
     snapshot=e.detail.data;enabled=false;frozen=!!e.detail.readOnly;flushing=false;visible=e.detail.visible!==false;following=true;restored=false;generation=-1;pins=[];anchors=[];holding=null;starting=false;revision=-1;conditionVersion++;composing=false;selected=undefined;minimapSetting=snapshot.showLogMinimap!==false;resetControls();theme(e.detail.tokens);
     worker=new Worker(new URL('./logs-worker.js',import.meta.url),{type:'module'});worker.onmessage=e=>{const p=pending.get(e.data.requestId);if(!p)return;pending.delete(e.data.requestId);e.data.error?p.reject(new Error(e.data.error)):p.resolve(e.data.data);};worker.onerror=()=>error('日志索引任务已停止，请重新打开日志页');
     map=createLogMinimap($('log-main'),(index,id)=>void jump(index,id).catch(e=>error(e.message)),()=>void protect());map.show(snapshot.showLogMinimap!==false);$('log-map').checked=snapshot.showLogMinimap!==false;controls();$('title').textContent=(snapshot.name||'容器')+' · 日志';
