@@ -299,6 +299,7 @@
       this.expanded.clear(); this.selected = this.rootPath; this.input.value = this.rootPath; this.render(true); this.persist();
     }
     render(motion = false, previous) {
+      const scroll = this.tree.scrollTop;
       const positions=previous||(motion?SoDeckMotion.captureMotion(this.tree,'.tree-row'):new Map());
       const rows=new Map([...this.tree.querySelectorAll('.tree-row')].map(row=>[row.dataset.path,row]));
       const before=new Map([...this.tree.querySelectorAll('.tree-row')].map(row=>[row.dataset.path,row.getAttribute('aria-expanded')]));
@@ -335,7 +336,6 @@
         }
       };
       const root = this.nodes.get(this.rootPath); if (root) visit(root, 1, 1, 1);
-      const scroll = this.tree.scrollTop;
       this.tree.replaceChildren(fragment); this.tree.scrollTop = scroll;
       const visible=new Set(this.visible.map(n=>n.path));this.selection=new Set([...this.selection].filter(path=>visible.has(path)));if(!visible.has(this.anchor))this.anchor='';
       this.indent();

@@ -174,6 +174,7 @@
         const active = tasks.filter(t => !terminal(t.state));
         this.summary.textContent = active.length ? `文件任务 · ${active.length} 项进行中` : `文件任务 · ${tasks.length} 项`;
         const positions=SoDeckMotion.captureMotion(this.body,'[data-batch]');
+        const scroll=this.body.scrollTop;
         const focused=document.activeElement?.dataset.control;
         const before=new Map([...this.body.querySelectorAll('[data-batch]')].map(row=>{const fill=row.querySelector('.transfer-progress span');return [row.dataset.batch,{row,fill,current:row.dataset.current,target:Number(row.dataset.progress),progress:fill&&positions.has(row)?new DOMMatrix(getComputedStyle(fill).transform).a:NaN}];}));
         const ended=[];
@@ -220,7 +221,6 @@
           }
           this.last.set(task.id, task.state);
         }
-        const scroll=this.body.scrollTop;
         for(const [key,{group,heading,list,label}] of Object.entries(this.groups)){
           const count=fragments[key].childElementCount;group.hidden=!count;heading.textContent=`${label} · ${count} 项`;list.replaceChildren(fragments[key]);
         }

@@ -161,6 +161,25 @@ test('file task rows and meters survive polling and one completion batch has one
   } finally {await page.close();}
 });
 
+test('file tree refresh retains row identity, scroll and an open pointer menu',async()=>{
+  const page=await fixture();
+  try{
+    await page.addStyleTag({content:fs.readFileSync('plugins/files/ui/style.css','utf8')});
+    await page.addScriptTag({content:fs.readFileSync('plugins/files/ui/tree.js','utf8')});
+    await page.evaluate(async()=>{
+      await import('/menu-position.js');document.querySelector('#tree-host').style.height='350px';
+      window.tree=new FileTree(document.querySelector('#tree-host'),{data:async()=>({}),event:async()=>({}),request:async()=>({}),message:()=>{}});
+      tree.restoring=true;const root=tree.node('/');root.loaded=true;root.children=Array.from({length:100},(_,i)=>'/item-'+i);for(const path of root.children)tree.node(path,{kind:'file',size:1024});tree.expanded.add('/');tree.render();tree.tree.scrollTop=800;
+      window.retainedRow=tree.row('/item-35');const rect=retainedRow.getBoundingClientRect();tree.showMenu(tree.nodes.get('/item-35'),rect.left+20,rect.top+5);
+    });
+    await page.getByRole('menuitem',{name:'复制路径',exact:true}).waitFor({state:'visible'});
+    await page.evaluate(()=>{window.retainedMenu=tree.menu;window.scrollBefore=tree.tree.scrollTop;tree.render();});
+    assert.equal(await page.evaluate(()=>tree.tree.scrollTop),await page.evaluate(()=>scrollBefore),'Reusing rows must capture scroll before moving any existing node');
+    await page.waitForTimeout(200);
+    assert(await page.evaluate(()=>retainedRow===tree.row('/item-35')&&retainedMenu===tree.menu&&retainedMenu.isConnected));
+  }finally{await page.close();}
+});
+
 test('overflow controls stay fixed, animation merges input and direct pixels interrupt it',async()=>{
   const page=await stripFixture();
   try{
