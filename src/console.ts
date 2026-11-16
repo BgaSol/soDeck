@@ -10,6 +10,7 @@ import { networkAction, networkInput } from "./update-network";
 import { button as b, escape as e, icon } from "./ui";
 import { updateDOM } from "./dom-update";
 import { parseLocalTime } from "./datetime";
+import type { StatusViewState } from "./status";
 
 
 import { HostDrafts } from "./host-drafts";
@@ -36,6 +37,8 @@ let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 let refreshing = false;
 let refreshAgain = false;
 let logGeneration = 0;
+const statusView: StatusViewState = { paused: false, onlyErrors: false, updatedAt: 0, networkStale: false };
+let pausedStatus: Snapshot | undefined;
 const state: views.ViewState = {
   officialPlugins: [],
   officialFetchedAt: 0,
@@ -83,7 +86,7 @@ function renderTop() {
 function content() {
   if (!snapshot)
     return `<div class="error-box">无法读取应用状态：${e(lastError)}<br>${b("refresh", "重新读取")}</div>`;
-  if (currentPage === "status") return views.status(snapshot);
+  if (currentPage === "status") return views.status(pausedStatus ?? snapshot, statusView);
   if (["settings", "plugins", "updates"].includes(currentPage)) return views.settings(snapshot, state, componentSettings.navigation(state.section === "components"));
   if (currentPage === "logs") return views.logs(snapshot, state);
   return views.messages(state);
@@ -163,6 +166,7 @@ async function refresh() {
     if (!result || hostDisposed) return;
     const {updates, overview} = result;
     snapshot = result.snapshot;
+    if (!statusView.paused) { statusView.updatedAt = Date.now(); statusView.networkStale = shell.networkStale; }
     if (updates.status === "fulfilled") state.updates = updates.value;
     if (overview.status === "fulfilled") state.updateOverview = overview.value;
     lastError = shell.error;
@@ -287,6 +291,24 @@ root.addEventListener("click", (event) => {
         state.filter.pluginId = "";
         state.paused = false;
         await showPage("logs");
+        break;
+      case "pause-status":
+        statusView.paused = !statusView.paused;
+        pausedStatus = statusView.paused ? structuredClone(snapshot) : undefined;
+        if (!statusView.paused) await refresh();
+        renderPage();
+        break;
+      case "clear-status-filter":
+        statusView.onlyErrors = false;
+        renderPage();
+        document.getElementById("status-errors")?.focus();
+        break;
+      case "status-about":
+        settingsSection = "about";
+        await showPage("settings");
+        break;
+      case "connections":
+        await showPage("connections");
         break;
       case "refresh":
         await refresh();
@@ -461,7 +483,7 @@ root.addEventListener("click", (event) => {
         if (snapshot) await copy(snapshot.logDirectory);
         break;
       case "copy-status":
-        if (snapshot) await copy(JSON.stringify(snapshot, null, 2));
+        if (snapshot) await copy(JSON.stringify(currentPage === "status" ? pausedStatus ?? snapshot : snapshot, null, 2));
         break;
       case "minimize":
         await win.minimize();
@@ -491,6 +513,7 @@ root.addEventListener("input", (event) => {
 });
 root.addEventListener("change", (event) => {
   const input = event.target as HTMLInputElement;
+  if (input.id === "status-errors") { statusView.onlyErrors = input.checked; renderPage(); return; }
   if (snapshot && networkInput(input, snapshot, state)) { renderPage(); return; }
   if (input.dataset.updateSelect) { input.checked ? state.excludedUpdates.delete(input.dataset.updateSelect) : state.excludedUpdates.add(input.dataset.updateSelect); renderPage(); return; }
   if (input.id === "automatic-updates") { void action(() => core.automaticUpdates(input.checked)); return; }

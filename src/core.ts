@@ -49,7 +49,7 @@ export interface Snapshot {
   restartRequired: boolean;
 }
 export interface NetworkTotal { serverId: string; name?: string; pluginId?: string; sent: string; received: string; sentPerSecond: number; receivedPerSecond: number; quality: string }
-export interface NetworkSnapshot { servers: NetworkTotal[]; plugins: NetworkTotal[]; note: string }
+export interface NetworkSnapshot { servers: NetworkTotal[]; plugins: NetworkTotal[]; note: string; connections?: import("./connections").ConnectionView[] }
 export interface Update {
   id: string;
   phase: string;

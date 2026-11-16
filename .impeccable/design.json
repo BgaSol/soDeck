@@ -809,6 +809,18 @@
       "metric": {
         "displayName": "metric",
         "purpose": "应用状态读数。"
+      },
+      "status-title": {
+        "displayName": "状态页标题",
+        "purpose": "总览台首屏标题，24px/650。"
+      },
+      "status-section": {
+        "displayName": "状态页分组",
+        "purpose": "总览台分组标题，15px/600。"
+      },
+      "status-rate-narrow": {
+        "displayName": "窄窗传输速率",
+        "purpose": "窄窗口传输速率，19px/550。"
       }
     },
     "shadows": [
@@ -1561,7 +1573,9 @@
       "src/server-views.ts",
       "src/connection-tree.ts",
       "src/theme.ts",
-      "src/ui.ts"
+      "src/ui.ts",
+      "src/status.ts",
+      "src/status.css"
     ],
     "notes": [
       "frontmatter 保存基础 token；themeRoles 与 tokenSources 只将实际 CSS 角色映射到 frontmatter 引用。",
@@ -1852,6 +1866,11 @@
         "name": "浮层才抬升",
         "body": "工作面靠背景和结构线分区；菜单与对话框使用已有 shadow 角色，多巴胺保持无阴影。",
         "section": "elevation"
+      },
+      {
+        "name": "状态总览",
+        "body": "整体健康优先，服务器卡片使用12px圆角；统计沿基线排列，插件和应用信息为次级分组。",
+        "section": "layout"
       }
     ],
     "dos": [

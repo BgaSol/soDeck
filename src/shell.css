@@ -679,51 +679,10 @@
     padding: 20px;
     overflow: auto;
   }
-  .status-summary {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-  }
-  .status-summary .health-dot {
-    width: 9px;
-    height: 9px;
-  }
-  .status-summary p {
-    font-size: 11px;
-    color: var(--muted);
-    margin-top: 4px;
-  }
   .version {
     margin-left: auto;
     font-size: 11px;
     color: var(--muted);
-  }
-  .metrics {
-    display: flex;
-    border: var(--sd-stroke-control) solid var(--border);
-    background: var(--subtle);
-    border-radius: 8px;
-    margin: 22px 0;
-    padding: 15px 0;
-  }
-  .metrics > div {
-    flex: 1;
-    text-align: center;
-    border-right: var(--sd-stroke-structure) solid var(--border);
-  }
-  .metrics > div:last-child {
-    border: 0;
-  }
-  .metrics strong {
-    font-size: 22px;
-    font-weight: 550;
-    display: block;
-  }
-  .metrics span {
-    display: block;
-    font-size: 11px;
-    color: var(--muted);
-    margin-top: 5px;
   }
   .panel-footer {
     display: flex;
@@ -1063,13 +1022,13 @@
   .settings-nav, .catalog-dialog-heading { background: var(--sd-navigation); }
   .endpoint-symbol { background: var(--sd-symbol); color: var(--text); }
   .catalog-row.selected .endpoint-symbol { background: var(--sd-symbol-selected); }
-  .badge.running, .badge.success, .metrics { background: var(--sd-success-bg); }
+  .badge.running, .badge.success { background: var(--sd-success-bg); }
   .badge.failed, .badge.error, .error-box { background: var(--sd-error-bg); }
   .modal-backdrop, .catalog-dialog::backdrop, .component-close-dialog::backdrop, .plugin-view-dialog::backdrop { background: var(--sd-scrim); }
   .welcome-emblem { background: var(--sd-tools); box-shadow: none; }
   .workspace { background: var(--canvas); }
   /* Existing forms use the same appearance parameters, without theme selectors. */
-  input, select, .layer, .plugin-layout, .plugin-symbol, .metrics, .log-results, .toast,
+  input, select, .layer, .plugin-layout, .plugin-symbol, .log-results, .toast,
   .restart-banner, .update-card, .catalog-layout, .catalog-dialog, .route-editor-step,
   .route-number, .endpoint-symbol, .component-close-dialog, .plugin-view-dialog { border-width: var(--sd-stroke-control); }
 }

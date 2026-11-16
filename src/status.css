@@ -1,0 +1,110 @@
+@layer components {
+  .status-overview { width: 100%; max-width: 1200px; margin: 0 auto; }
+  .status-page-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 22px; }
+  .status-page-heading h1 { font-size: 24px; line-height: 1.3; font-weight: 650; letter-spacing: -.025em; }
+  .status-page-heading p { color: var(--muted); margin-top: 6px; font-size: 13px; }
+  .status-page-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .status-overview summary { display: flex; align-items: center; gap: 7px; list-style: none; border-radius: 6px; }
+  .status-overview summary::-webkit-details-marker { display: none; }
+  .status-overview summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .status-overview summary:hover { background: var(--hover); color: var(--text); }
+  .status-menu { position: relative; }
+  .status-menu > summary { padding: 6px 10px; min-height: 32px; border: 1px solid var(--border); background: var(--panel); }
+  .status-menu > div { position: absolute; z-index: 3; top: calc(100% + 5px); right: 0; min-width: 140px; padding: 5px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
+  .status-menu button { display: flex; width: 100%; justify-content: flex-start; }
+  .status-health { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; background: var(--sd-success-bg); padding: 18px; border-radius: 12px; margin-bottom: 22px; }
+  .status-health-icon { display: grid; place-items: center; flex-shrink: 0; width: 34px; height: 34px; background: var(--panel); color: var(--good); border-radius: 50%; }
+  .status-health h2 { font-weight: 600; }
+  .status-health p { color: var(--good); font-size: 12px; margin-top: 3px; overflow-wrap: anywhere; }
+  .status-health.has-warning { background: color-mix(in srgb,var(--warning) 12%,var(--panel)); }
+  .status-health.has-warning p { color: color-mix(in srgb,var(--warning) 80%,var(--text)); }
+  .status-health.has-warning .status-health-icon { color: var(--warning); }
+  .status-updated { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .status-facts { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; margin-bottom: 25px; }
+  .status-fact { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 7px; border-left: 1px solid var(--border); padding-left: 16px; }
+  .status-fact:first-child { border: 0; padding-left: 0; }
+  .status-fact strong { font-size: 24px; font-weight: 550; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
+  .status-fact em { font-size: 12px; font-style: normal; font-weight: 400; }
+  .status-fact > span { color: var(--muted); font-size: 12px; }
+  .status-fact > small { width: 100%; color: var(--muted); font-size: 11px; }
+  .status-work-grid { display: grid; grid-template-columns: minmax(0,1fr) 220px; gap: 24px; align-items: start; }
+  .status-work-grid > * { min-width: 0; }
+  .status-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 9px; flex-wrap: wrap; margin-bottom: 13px; }
+  .status-section-heading > div { display: flex; align-items: baseline; gap: 9px; }
+  .status-overview h2 { font-size: 15px; }
+  .status-section-heading span { color: var(--muted); font-size: 12px; }
+  .status-filter { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .status-filter input { margin: 0; accent-color: var(--accent); }
+  .status-server { border: 1px solid var(--border); background: var(--panel); border-radius: 12px; margin-bottom: 12px; }
+  .status-server-heading { display: flex; align-items: center; gap: 10px; padding: 15px 16px 0; }
+  .status-server-icon { display: grid; place-items: center; background: var(--subtle); color: var(--muted); border-radius: 6px; width: 32px; height: 32px; flex-shrink: 0; }
+  .status-server-identity { min-width: 0; flex: 1; }
+  .status-server-identity h3 { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+  .status-server-identity p { color: var(--muted); font: 11px/1.6 Consolas,"SFMono-Regular",monospace; overflow-wrap: anywhere; margin-top: 3px; }
+  .status-connection { display: flex; align-items: center; gap: 5px; flex-shrink: 0; color: var(--muted); font-size: 11px; }
+  .status-connection svg { width: 14px; height: 14px; }
+  .status-connection.good { color: var(--good); }
+  .status-connection.warning { color: var(--warning); }
+  .status-bandwidth { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 16px; }
+  .status-transfer { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .status-transfer > span { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; }
+  .status-transfer .status-down { transform: rotate(90deg); width: 14px; height: 14px; }
+  .status-transfer .status-up { transform: rotate(-90deg); width: 14px; height: 14px; }
+  .status-transfer strong { font-size: 22px; font-weight: 550; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .status-transfer small { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .status-server > details { border-top: 1px solid var(--border); }
+  .status-server summary { justify-content: space-between; padding: 11px 16px; color: var(--muted); font-size: 12px; }
+  .status-server summary small { margin-left: 6px; font-size: 11px; }
+  .status-server details[open] summary > svg { transform: rotate(180deg); }
+  .status-traffic-table { padding: 0 16px 12px; }
+  .status-traffic-table table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .status-traffic-table th, .status-traffic-table td { border-bottom: 1px solid var(--border); padding: 9px 0; text-align: left; }
+  .status-traffic-table th { font-weight: 400; }
+  .status-traffic-table thead th { color: var(--muted); font-size: 11px; }
+  .status-traffic-table td, .status-traffic-table thead th:nth-child(n+2) { text-align: right; font-variant-numeric: tabular-nums; }
+  .status-traffic-table td:nth-child(2), .status-traffic-table th:nth-child(2) { padding-right: 15px; }
+  .status-traffic-table small { display: block; color: var(--muted); font-size: 11px; margin-top: 3px; }
+  .status-traffic-table tr:last-child > * { border-bottom: 0; }
+  .status-overview .warning { color: var(--warning); }
+  .status-side { display: flex; flex-direction: column; gap: 26px; }
+  .status-plugin-row { display: flex; align-items: center; justify-content: flex-start; gap: 9px; width: 100%; min-height: 42px; padding: 9px 0; border: 0; border-radius: 0; border-bottom: 1px solid var(--border); background: transparent; text-align: left; }
+  .status-plugin-row > span { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+  .status-plugin-row svg { color: var(--muted); width: 16px; height: 16px; }
+  .status-plugin-row small { color: var(--muted); margin-left: auto; font-size: 11px; white-space: normal; }
+  .status-plugin-row:last-child { border: 0; }
+  .status-app-facts { margin-top: 12px; }
+  .status-app-facts > div { display: flex; gap: 14px; justify-content: space-between; padding: 6px 0; font-size: 12px; }
+  .status-app-facts dt { flex-shrink: 0; color: var(--muted); }
+  .status-app-facts dd { margin: 0; overflow-wrap: anywhere; text-align: right; font-variant-numeric: tabular-nums; }
+  .status-issue { display: flex; align-items: center; gap: 16px; justify-content: space-between; padding: 14px 16px; border-radius: 8px; background: color-mix(in srgb,var(--warning) 12%,var(--panel)); margin-bottom: 13px; }
+  .status-issue > div { min-width: 0; }
+  .status-issue h3 { font-size: 13px; }
+  .status-issue p { color: color-mix(in srgb,var(--warning) 80%,var(--text)); font-size: 12px; overflow-wrap: anywhere; margin-top: 4px; }
+  .status-empty { padding: 28px 22px; background: var(--panel); border-radius: 12px; }
+  .status-empty > svg { color: var(--muted); width: 26px; height: 26px; margin-bottom: 10px; }
+  .status-empty h3 { font-size: 15px; }
+  .status-empty p, .status-hint { color: var(--muted); font-size: 12px; margin: 8px 0; }
+  .status-footer { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 24px; padding-top: 15px; border-top: 1px solid var(--border); }
+  .status-footer > details { flex: 1; min-width: 200px; }
+  .status-footer summary { padding: 6px 0; color: var(--muted); font-size: 12px; width: fit-content; }
+  .status-footer p { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; margin-top: 6px; max-width: 75ch; }
+  .status-footer > div { display: flex; flex-wrap: wrap; gap: 7px; }
+  @media (max-width: 1000px) {
+    .status-work-grid { grid-template-columns: minmax(0,1fr); }
+    .status-side { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 7px; }
+  }
+  @media (max-width: 640px) {
+    .status-page-heading { flex-wrap: wrap; }
+    .status-page-heading h1 { font-size: 22px; }
+    .status-facts { grid-template-columns: 1fr 1fr; gap: 18px 12px; }
+    .status-fact:nth-child(3) { border: 0; padding-left: 0; }
+    .status-health { padding: 14px; gap: 10px; }
+    .status-health > div { flex: 1; min-width: 0; }
+    .status-updated { width: 100%; margin-left: 44px; }
+    .status-side { grid-template-columns: 1fr; }
+    .status-server-heading { flex-wrap: wrap; }
+    .status-connection { margin-left: 42px; }
+    .status-transfer strong { font-size: 19px; }
+    .status-issue { flex-wrap: wrap; }
+  }
+}

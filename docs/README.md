@@ -14,6 +14,7 @@
 | [服务器与连接](features/connections.md) | 资料、凭据、主机身份、混合跳板、取消与重连 |
 | [工作台](features/workbench.md) | 标签、分屏、多窗口、工具停靠和布局记忆 |
 | [插件管理](features/plugins.md) | 官方/本地安装、启停、进程和故障 |
+| [状态总览](features/status.md) | 整体健康、服务器网络、插件运行与暂停显示 |
 | [生命周期](features/lifecycle.md) | 保存、取消、关闭、退出和重启 |
 | [在线更新](features/updates.md) | 核心/插件更新、缓存、校验与下载网络 |
 | [设置](features/settings.md) | 外观、组件偏好、字体和桌面行为 |

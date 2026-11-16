@@ -11,3 +11,4 @@
 @import "../packages/ui/shared.css";
 @import "../packages/ui/themes.css";
 @import "./console.css";
+@import "./status.css";

@@ -101,6 +101,18 @@ typography:
     fontFamily: "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", sans-serif"
     fontSize: "22px"
     fontWeight: 550
+  status-title:
+    fontFamily: "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", sans-serif"
+    fontSize: "24px"
+    fontWeight: 650
+  status-section:
+    fontFamily: "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", sans-serif"
+    fontSize: "15px"
+    fontWeight: 600
+  status-rate-narrow:
+    fontFamily: "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", sans-serif"
+    fontSize: "19px"
+    fontWeight: 550
 rounded:
   badge: "4px"
   navigation: "5px"
@@ -108,6 +120,7 @@ rounded:
   core-control: "7px"
   shared-control: "8px"
   menu: "10px"
+  status-card: "12px"
 spacing:
   step-3: "3px"
   step-4: "4px"
@@ -349,6 +362,12 @@ good、warning、error 分别辅助成功、需关注和错误文字。success-b
 连接编辑器采用原生 dialog，默认宽为 min（720px，窗口减 32px）、圆角（14px）、panel 底与 shadow；小确认对话框为 min（520px，窗口减 32px）。表单正文独立滚动，页脚动作右对齐，取消和关闭恢复现有发起焦点。核心关闭确认与插件 dialog 宿主使用自身已有尺寸；本文件不重定义插件 iframe 内部界面。来源为 [servers.css](src/servers.css)、[servers.ts](src/servers.ts) 与 [components.css](src/components.css)。
 
 [design.json](.impeccable/design.json) 提供九种当前控件的自包含 HTML/CSS 片段：主按钮、次按钮、图标按钮、搜索字段、管理导航、状态标签、待重启容器、工作标签与连接节点。片段的 ds-* 名仅用于预览隔离，CSS 变量保持运行时绑定，并以当前浅色值提供离线回退；sources 标明真实选择器和模板来源。预览不执行连接、管理导航、插件状态机或模态焦点逻辑，生成的 tonalRamp 仅用于面板展示，不新增主题 token。
+
+## 状态总览
+
+状态页采用“总览台”：页面标题为 24px / 650（≤640px 为 22px），整体健康使用 `sd-success-bg` 与 `good`，异常使用 `warning` 与 `panel` 混合底并保留文字说明；告警段落前景混合 80% `warning` 与 20% `text`，保证三主题小字对比度。四项统计沿同一基线排列，不放入大面积指标卡；数值使用 tabular figures。
+
+服务器卡片采用 `panel` 底、1px `border`、12px 圆角、16px 内容内边距，接收与发送为两列。插件明细沿卡片底部展开，数字右对齐，累计值与速率分两行显示；卡片与控件按服务器 ID 保持 DOM 身份。右侧插件运行和应用信息用分组与分隔线组织，主列与 220px 次列相隔 24px；≤1000px 转为单主列及并排次级分组，≤640px 全部堆叠。暂停、筛选和导航行为由[状态总览](docs/features/status.md)定义；模板与样式见 [status.ts](src/status.ts)、[status.css](src/status.css)。
 
 ## Do's and Don'ts
 

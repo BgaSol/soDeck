@@ -127,6 +127,7 @@ const failedReads = new Map();
 let failCatalog = false, testWindow = "main", heldLogReply, releaseLogReply, chosenPluginDirectory = null;
 let holdLocalNetwork = false, localNetworkReached, releaseLocalNetwork;
 let holdPickerCatalog = false, releasePickerCatalog, pickerConnects = 0;
+let statusSnapshot, statusNetwork;
 page.on("pageerror", error => errors.push(String(error)));
 await page.exposeBinding("desktopInvoke", async (_, command, args) => {
   if (command === 'read_logs') logFilters.push(args.filter);
@@ -138,6 +139,8 @@ await page.exposeBinding("desktopInvoke", async (_, command, args) => {
     throw new Error("受控读取失败：" + command);
   }
   const result=await call(command, { ...args, window: testWindow });
+  if(command==='snapshot' && statusSnapshot) return {...result,...statusSnapshot};
+  if(command==='network_snapshot' && statusNetwork) return statusNetwork;
   if(command==='connection'&&args.command?.op==='start')pickerConnects++;
   if(command==='server_catalog'&&holdPickerCatalog){holdPickerCatalog=false;await new Promise(resolve=>releasePickerCatalog=resolve);}
   if(command==='network_snapshot'&&holdLocalNetwork){holdLocalNetwork=false;localNetworkReached();await new Promise(resolve=>releaseLocalNetwork=resolve);}
@@ -831,7 +834,76 @@ try {
     assert.equal(await page.locator('.settings-nav [aria-current="page"]').count(),1);
   }
   await page.locator('#return-workbench').click();await page.locator('#catalog-tab').click();checks.push('Bundled component settings: existing navigation, core save, global refresh preserves input DOM, returning from the workbench keeps drafts');
-  await page.locator('#shell-status [data-action="status"]').click();await page.getByRole('button',{name:'查看日志',exact:true}).click();
+  await page.locator('#shell-status [data-action="status"]').click();
+  const pluginState=(id,name,status='running')=>({directory:'fixture',manifest:{id,name,version:'1.0.0',apiVersion:'1',target,entry:'fixture'},status,instanceId:'fixture',pid:1,startedAt:Date.now(),error:status==='failed'?'进程异常退出':null,cleanupComplete:true,enabled:true,pendingRestart:false,pendingVersion:null,updateError:null});
+  statusSnapshot={connectedServers:1,connectingServers:0,plugins:[pluginState('test.status','系统状态'),pluginState('test.terminal','终端'),pluginState('test.docker','Docker')],storageErrors:[]};
+  statusNetwork={servers:[{serverId:'status-live',name:'生产服务器',received:'10485760',sent:'307200',receivedPerSecond:2048,sentPerSecond:0,quality:'socket'},{serverId:'status-old',name:'历史断线服务器',received:'1024',sent:'2048',receivedPerSecond:0,sentPerSecond:0,quality:'socket'}],plugins:[{serverId:'status-live',pluginId:'test.status',received:'9437184',sent:'204800',receivedPerSecond:1024,sentPerSecond:0,quality:'payload'},{serverId:'status-old',pluginId:'test.docker',received:'100',sent:'100',receivedPerSecond:0,sentPerSecond:0,quality:'payload'}],connections:[{serverId:'status-live',state:'connected',endpoint:'root@192.168.1.186:22',error:null},{serverId:'status-old',state:'disconnected',endpoint:'root@127.0.0.1:22',error:null}],note:'连接传输包含 SSH/SOCKS 封装。'};
+  const refreshStatus=async()=>{const previous=await page.evaluate(()=>snapshotReplies);await page.evaluate(()=>emitTestEvent('core-changed'));await page.waitForFunction(n=>snapshotReplies>n,previous);};
+  await refreshStatus();
+  await page.getByText('一切运行正常',{exact:true}).waitFor();
+  assert.equal(await page.locator('.status-server').count(),2);
+  assert.match(await page.locator('[data-dom-key="status-server:status-old"] .status-connection').textContent(),/已断开/);
+  const detail=page.locator('details[data-network-server="status-live"]');
+  await detail.locator('summary').click();await detail.locator('summary').focus();
+  await refreshStatus();
+  assert(await detail.evaluate(el=>el.open),'Refresh keeps traffic details expanded');
+  assert(await detail.locator('summary').evaluate(el=>el===document.activeElement),'Refresh keeps summary keyboard focus');
+  for(const width of [390,1180]){
+    statusSnapshot.preferences={...(await call('snapshot')).preferences,theme:'light'};
+    await page.setViewportSize({width,height:800});await refreshStatus();
+    await page.waitForFunction(()=>document.documentElement.dataset.theme==='light');
+    await page.screenshot({path:`artifacts/production-ui/status-healthy-${width}.png`,fullPage:true});
+  }
+  await page.locator('#pause-status').click();
+  const frozen=await page.locator('.status-network').textContent();
+  statusNetwork.servers[0].receivedPerSecond=4096;
+  await refreshStatus();
+  assert.equal(await page.locator('.status-network').textContent(),frozen,'Pause freezes the status view while core reads continue');
+  persistReadFailure=true;failReadCommand='snapshot';
+  await page.evaluate(()=>emitTestEvent('core-changed'));
+  await page.waitForFunction(()=>document.querySelector('#shell-status').textContent.includes('读取需关注'));
+  assert.equal(await page.locator('.status-network').textContent(),frozen,'Pause keeps an independent snapshot when application reads fail but network succeeds');
+  persistReadFailure=false;failReadCommand='';await refreshStatus();
+  await page.locator('[data-console-page="plugins"]').click();await page.locator('[data-console-page="status"]').click();
+  assert.equal(await page.locator('.status-network').textContent(),frozen,'Status pause survives management page navigation');
+  await page.locator('#pause-status').click();
+  await page.waitForFunction(()=>document.querySelector('.status-transfer strong').textContent==='4.0 KiB/s');
+  await page.locator('#status-errors').check();await page.getByText('没有匹配的异常服务器',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'查看全部服务器',exact:true}).click();
+  assert(await page.locator('#status-errors').evaluate(el=>el===document.activeElement));
+  statusSnapshot.plugins[2].status='failed';statusSnapshot.plugins[2].error='进程异常退出';
+  await refreshStatus();await page.getByText('有事项需要关注',{exact:true}).waitFor();
+  await page.locator('#status-errors').check();assert.equal(await page.locator('.status-server').count(),1);
+  assert.match(await page.locator('.status-server h3').textContent(),/历史断线服务器/);
+  await page.locator('#status-errors').uncheck();
+  for(const theme of ['light','dark','dopamine']) for(const width of [390,736,1180]){
+    statusSnapshot.preferences={...(await call('snapshot')).preferences,theme};
+    await page.setViewportSize({width,height:800});await refreshStatus();
+    await page.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme);
+    const fit=await page.locator('.status-overview').evaluate(el=>({width:el.clientWidth,scroll:el.scrollWidth}));assert(fit.scroll<=fit.width+1,`Status fits ${theme}/${width}`);
+    const warningContrasts=await page.locator('.status-health.has-warning p,.status-issue p').evaluateAll(nodes=>{
+      const canvas=document.createElement('canvas');canvas.width=canvas.height=1;const context=canvas.getContext('2d');
+      const luminance=color=>{context.fillStyle=color;context.fillRect(0,0,1,1);const c=Array.from(context.getImageData(0,0,1,1).data).slice(0,3).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722;};
+      return nodes.map(node=>{const a=luminance(getComputedStyle(node).color),b=luminance(getComputedStyle(node.closest('.status-health,.status-issue')).backgroundColor);return(Math.max(a,b)+.05)/(Math.min(a,b)+.05);});
+    });
+    assert(warningContrasts.length&&warningContrasts.every(r=>r>=4.5),`${theme}/${width} warning paragraph contrast: ${warningContrasts}`);
+    await page.screenshot({path:`artifacts/production-ui/status-${theme}-${width}.png`,fullPage:true});
+  }
+  await page.setViewportSize({width:1180,height:760});
+  await page.locator('.status-side [data-action="status-about"]').click();await page.getByText('应用与数据',{exact:true}).first().waitFor();
+  await page.locator('[data-console-page="status"]').click();
+  persistReadFailure=true;failReadCommand='network_snapshot';await refreshStatus();
+  await page.getByText('网络计量读取失败',{exact:false}).first().waitFor();
+  assert.equal(await page.locator('.status-transfer strong').first().textContent(),'待更新');
+  persistReadFailure=false;failReadCommand='';
+  statusNetwork={servers:[],plugins:[],connections:[],note:''};statusSnapshot={...statusSnapshot,connectedServers:0,plugins:[],storageErrors:[]};
+  await refreshStatus();await page.getByText('尚无服务器传输记录',{exact:true}).waitFor();await page.getByText('尚未安装插件。',{exact:true}).waitFor();
+  assert.deepEqual(await page.locator('.status-work-grid').evaluate(el=>Array.from(el.children,c=>c.className)),['status-network','status-side'],'Removing issues preserves the overview columns');
+  assert.equal(await page.getByRole('button',{name:'查看插件',exact:true}).count(),0,'Recovered plugin failures remove their actions');
+  await page.screenshot({path:'artifacts/production-ui/status-empty.png',fullPage:true});
+  statusSnapshot=undefined;statusNetwork=undefined;await refreshStatus();
+  checks.push('Status overview: real bundled actions, current/disconnected records, expanded and focused details across refresh, pause across page navigation, error filtering, missing readings, empty states, three themes and narrow layouts');
+  await page.getByRole('button',{name:'查看日志',exact:true}).click();
   await page.locator('.log-row').first().waitFor();const currentLogs=await page.locator('#log-results').textContent();assert(currentLogs.length>0);
   await page.locator('#log-query').fill('held-old-filter');await page.waitForFunction(()=>true);
   for(let i=0;!heldLogReply&&i<50;i++)await page.waitForTimeout(20);assert(heldLogReply);
