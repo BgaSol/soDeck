@@ -31,7 +31,7 @@ const call=(command,args={})=>new Promise((resolve,reject)=>{queue.push({resolve
 const server=await createServer({server:{host:'127.0.0.1',port:0}});await server.listen();const url=server.resolvedUrls.local[0];
 const browser=await chromium.launch({headless:true}),pages=new Map(),errors=[];
 const traces=[];
-let delayMount=false;
+let delayMount=false,holdMount=true;
 const refresh=async()=>{for(const page of pages.values())await page.evaluate(()=>manager.refresh());};
 const wait=async(fn)=>{const end=Date.now()+10000;while(!await fn()){assert(Date.now()<end,'Layout operation did not settle');await new Promise(r=>setTimeout(r,25));}};
 async function makePage(window) {
@@ -58,7 +58,7 @@ async function makePage(window) {
     if(['clipboard_text','close_register_host'].includes(command))return null;
     return call(command,{...args,window});
   });
-  await page.route(url+'__plugin__/**',route=>{const p=path.join(plugin,decodeURIComponent(new URL(route.request().url()).pathname).split('/').slice(3).join('/'));let body=fs.readFileSync(p);if(delayMount&&path.basename(p)==='view.js'){assert(body.toString().includes('sodeck.mounted();'));body=Buffer.from(body.toString().replace('sodeck.mounted();','setTimeout(()=>sodeck.mounted(),800);'));}return route.fulfill({contentType:({'.html':'text/html','.js':'text/javascript','.css':'text/css'})[path.extname(p)],body});});
+  await page.route(url+'__plugin__/**',route=>{const p=path.join(plugin,decodeURIComponent(new URL(route.request().url()).pathname).split('/').slice(3).join('/'));let body=fs.readFileSync(p);if((delayMount||holdMount)&&path.basename(p)==='view.js'){assert(body.toString().includes('sodeck.mounted();'));body=Buffer.from(body.toString().replace('sodeck.mounted();',holdMount?'window.finishMount=()=>sodeck.mounted();':'setTimeout(()=>sodeck.mounted(),800);'));}return route.fulfill({contentType:({'.html':'text/html','.js':'text/javascript','.css':'text/css'})[path.extname(p)],body});});
   await page.route(url,route=>route.fulfill({contentType:'text/html',body:`<html lang="zh-CN"><head><meta charset="utf-8"></head><body><header class="topbar"><button id="catalog-tab" role="tab">服务器管理</button><div class="tab-navigation"><div id="server-tabs" class="server-tabs" role="tablist"></div><div class="tab-controls"><span class="tab-arrows" hidden></span><button data-tab-action="pick" aria-haspopup="dialog" aria-expanded="false" hidden><span class="tab-count"></span></button></div></div><button id="new-workspace" class="sd-icon" aria-label="选择服务器"></button><div id="drag-region" class="drag-region"></div></header><main class="workspace"><div id="server-catalog"></div><div id="workspace-content"></div></main><div id="notice"></div><script type="module">import '/style.css';import {Workspaces} from '/workspaces.ts';import {tabControls} from '/tab-strip.ts';import {icon} from '/ui.ts';document.querySelector('.topbar .tab-controls').outerHTML=tabControls('服务器标签');document.querySelector('#new-workspace').innerHTML=icon('plus');window.__TAURI_INTERNALS__={convertFileSrc:p=>new URL('/__plugin__/'+p,location.href).href,transformCallback:()=>1,invoke:async(command,args)=>{if(command==='plugin:event|listen')return 1;if(command==='plugin:event|unlisten')return;return bridge(command,args);}};window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};window.manager=new Workspaces(document.querySelector('#server-tabs'),document.querySelector('#workspace-content'),text=>document.querySelector('#notice').textContent=text,bridge);await manager.start();window.ready=true;</script></body></html>`}));
   await page.goto(url);await page.waitForFunction(()=>window.ready);return page;
 }
@@ -70,6 +70,16 @@ try {
   workspace=await call('workspace_fixture_open',{serverId:saved.selectedId,connectionId:'layout-session',endpoint:'ops@fixture.invalid:22'});
   const main=await makePage('main'),wid=workspace.context.workspaceId;
   await wait(async()=>await main.locator('.component-surface iframe').count()===2);
+  await main.waitForFunction(()=>[...document.querySelectorAll('.component-surface iframe')].every(f=>f.contentWindow.finishMount));
+  for(const theme of ['light','dark','dopamine']) {
+    await main.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+    const loading=await main.locator('.component-surface').evaluateAll(nodes=>{const probe=document.createElement('div');probe.style.background='var(--canvas)';document.body.append(probe);const canvas=getComputedStyle(probe).backgroundColor;probe.remove();return nodes.map(node=>({frame:getComputedStyle(node.querySelector('iframe')).visibility,background:getComputedStyle(node).backgroundColor,canvas,width:node.querySelector('iframe').clientWidth,height:node.querySelector('iframe').clientHeight}));});
+    assert(loading.every(surface=>surface.frame==='hidden'), 'Plugin documents stay concealed until the themed mount is ready: '+theme);
+    assert(loading.every(surface=>surface.background===surface.canvas&&surface.width>0&&surface.height>0), 'Loading surfaces retain real dimensions and the current theme background: '+theme);
+  }
+  holdMount=false;
+  await main.evaluate(()=>document.querySelectorAll('.component-surface iframe').forEach(f=>f.contentWindow.finishMount()));
+  await wait(async()=>await main.locator('.component-surface iframe').evaluateAll(frames=>frames.every(f=>getComputedStyle(f).visibility==='visible')));
   const initial=(await ui()).workspaces[wid],terminal=initial.editor;
   const originalGroup=Object.values(initial.host.groups).find(g=>g.viewIds.includes(terminal)).id;
   const frame=main.frameLocator(`.component-surface[data-view-id="${terminal}"] iframe`);

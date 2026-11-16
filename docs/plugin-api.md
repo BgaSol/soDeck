@@ -126,7 +126,7 @@ UI v1 仍映射到同一 Host/分屏树，可以同窗排序、分屏和移组�
 清单可添加 `ui: { apiVersion: "1", entry: "ui/index.html", views: [...] }`，完整示例见 `plugins/files/release.json`。视图 ID 在插件内稳定，核心用 `pluginId:localId` 标识定义、另分配 viewId 标识实例。每个视图必须声明 `id/title/icon/container/instancePolicy`：
 
 - `container`：`sidebar` 或 `editor`。侧栏第一版只支持 `perWorkspace` 单例；中央还支持 `multiple` 和 `perResource`。资源标识按远程文件系统语义由插件提供，不按本机 Windows 路径转换。
-- `defaultSide`：left/right，默认 left；`defaultPinned`：初始固定入口，默认 false；`openOnWorkspace`：none/reveal/createOne，默认 none；`startupOrder`：初始动作顺序。首次出现的定义保存推荐值，已有偏好保持；新工作区按这些偏好选择未占用的栏位。
+- `defaultSide`：left/right，默认 left；`defaultPinned`：初始固定入口，默认 false；`openOnWorkspace`：none/reveal/createOne，默认 none；`startupOrder`：初始动作顺序。首次出现的定义保存推荐值。未显式覆盖的默认侧栏随插件推荐值更新；偏好操作显式设置 side 时在核心 `ui-layout.json` 中记录 `sideCustomized: true`，恢复推荐值清除此标记。旧文件缺少标记时按历史缓存默认值处理；按服务器保存在 `workbench-layout.json` 的实际停靠位置仍优先恢复，已有固定、启动和顺序偏好保持。此字段是核心本地布局记录的兼容扩展，不改变插件 UI API 主版本。
 - `backgroundOnWorkspace: true`：可选，仅适用于 sidebar + perWorkspace。需要 `ui.background.v1`。核心在工作区存在时确保逻辑 view 并幂等调用 ui.mount，无需 iframe；`uiRequested=false` 的 view 不创建页面，也不阻塞移窗。显示后沿用普通页面生命周期。隐藏只影响页面，采集和 disposeView 仍由插件进程处理。
 - `createAction`：旧核心使用的视图创建名称；当前工作台“＋”使用下述 `ui.actions` 默认行为。`locateEntry: true`：可固定的中央定位入口，优先定位最近使用的实例，没有时创建一个。文件编辑器需要 resourceKey，不声明空页面创建动作。
 

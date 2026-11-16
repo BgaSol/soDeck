@@ -172,6 +172,9 @@ pub struct Registered {
 #[serde(rename_all = "camelCase")]
 pub struct Preference {
     pub side: String,
+    // Legacy global sides were cached defaults; per-server dock positions are separate.
+    #[serde(default)]
+    pub side_customized: bool,
     pub pinned: bool,
     pub startup: String,
     pub order: u32,

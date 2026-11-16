@@ -576,6 +576,7 @@ mod tests {
                 "a".into(),
                 Preference {
                     side: "left".into(),
+                    side_customized: false,
                     pinned: true,
                     startup: "none".into(),
                     order: 20,
@@ -585,6 +586,7 @@ mod tests {
                 "b".into(),
                 Preference {
                     side: "left".into(),
+                    side_customized: false,
                     pinned: true,
                     startup: "none".into(),
                     order: 10,

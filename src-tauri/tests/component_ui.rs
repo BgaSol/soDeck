@@ -338,6 +338,97 @@ fn separately_registered_plugins_keep_their_own_recommended_defaults() {
     assert_eq!(p["pinned"], true);
     assert_eq!(p["startup"], "reveal");
 }
+#[test]
+fn legacy_tool_defaults_follow_the_plugin_but_explicit_sides_and_saved_docks_survive() {
+    let f = Fixture::new();
+    let path = f.plugin.join("plugin.json");
+    let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let docker: Value = serde_json::from_slice(
+        &fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../plugins/docker/release.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    manifest["ui"]["views"][0] = docker["ui"]["views"][0].clone();
+    fs::write(path, manifest.to_string()).unwrap();
+    fs::write(
+        f.root.join("data/ui-layout.json"),
+        json!({"schemaVersion":1,"definitions":{
+            "test.ui:browser":{"side":"left","pinned":true,"startup":"reveal","order":0}
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    *f.core.ui_state() = sodeck::component_ui::Runtime::open(&f.root.join("data")).unwrap();
+    f.load().unwrap();
+    let w = f.open("legacy-default");
+    let side = |workspace: &str| {
+        let state = f.core.ui_snapshot("main").unwrap();
+        state["workspaces"][workspace]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["key"] == "test.ui:browser")
+            .unwrap()["location"]["side"]
+            .clone()
+    };
+    assert_eq!(side(&w.context.workspace_id), "right");
+    let state = f.core.ui_snapshot("main").unwrap();
+    let view = state["workspaces"][&w.context.workspace_id]["right"]
+        .as_str()
+        .unwrap();
+    f.core
+        .ui_action(
+            "main",
+            &w.context,
+            json!({"op":"dock","viewId":view,"side":"left"}),
+        )
+        .unwrap();
+    assert_eq!(side(&w.context.workspace_id), "left");
+    let memory = sodeck::workbench_memory::Memory::open(&f.root.join("data"));
+    assert_eq!(
+        memory.primary(&w.context.server_id).unwrap().tools["test.ui:browser"]
+            .side
+            .as_deref(),
+        Some("left")
+    );
+
+    f.core
+        .ui_action(
+            "main",
+            &w.context,
+            json!({"op":"preference","key":"test.ui:browser","side":"left"}),
+        )
+        .unwrap();
+    let explicit = f.open("explicit-default");
+    assert_eq!(side(&explicit.context.workspace_id), "left");
+    let disk: Value =
+        serde_json::from_slice(&fs::read(f.root.join("data/ui-layout.json")).unwrap()).unwrap();
+    assert_eq!(
+        disk["definitions"]["test.ui:browser"]["sideCustomized"],
+        true
+    );
+
+    f.core
+        .ui_action(
+            "main",
+            &w.context,
+            json!({"op":"recommend","key":"test.ui:browser"}),
+        )
+        .unwrap();
+    let recommended = f.open("recommended-default");
+    assert_eq!(side(&recommended.context.workspace_id), "right");
+    assert_eq!(side(&w.context.workspace_id), "left");
+    assert_eq!(side(&explicit.context.workspace_id), "left");
+    let disk: Value =
+        serde_json::from_slice(&fs::read(f.root.join("data/ui-layout.json")).unwrap()).unwrap();
+    assert_eq!(
+        disk["definitions"]["test.ui:browser"]["sideCustomized"],
+        false
+    );
+}
+
 struct Fixture {
     root: PathBuf,
     plugin: PathBuf,

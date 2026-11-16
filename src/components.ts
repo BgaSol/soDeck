@@ -178,7 +178,7 @@ export class Components {
         this.removeSurface(surface);shell.surfaces.delete(v.id);surface=undefined;
       }
       if (!surface) {
-        const host = document.createElement("div"); host.className = "component-surface"; host.dataset.viewId = v.id;
+        const host = document.createElement("div"); host.className = "component-surface"; host.dataset.viewId = v.id; host.setAttribute("aria-busy", "true");
         const frame = document.createElement("iframe"); frame.title = `${v.title} · ${shell.workspace.name}`;
         frame.allow = "clipboard-write";
         frame.src = new URL(`${d.pluginId}/${d.entry}`, convertFileSrc("", "sodeck-plugin")).href;
@@ -617,7 +617,7 @@ export class Components {
     }
     if (!surface.token || message.surfaceId !== surface.token) return;
     if (message.type === "interaction") { if (surface.visible && !surface.readOnly && !this.movingViews.has(surface.view.id)) { void this.invoke("action",{context:surface.view.context,action:{op:"focus",viewId:surface.view.id}}).catch(()=>{}); this.interaction(); this.closeMenu(); this.content.dispatchEvent(new Event("surface-interaction")); } return; }
-    if ((message.type === "mounted"||message.type === "prepared")) { surface.flushable = message.flush === true; surface.acceptsLocalFiles = message.localFiles === true; clearTimeout(surface.timeout); void this.invoke("ready", { surfaceId: surface.token }).then(async () => { surface.mounted = true; this.scheduleLayout(surface.view.context.workspaceId); await this.refreshSettings(surface); await this.refresh(); if (surface.focusPending === this.focusEpoch && surface.visible) this.focusSurface(surface); }).catch(error => this.surfaceError(surface, String(error))); return; }
+    if ((message.type === "mounted"||message.type === "prepared")) { surface.flushable = message.flush === true; surface.acceptsLocalFiles = message.localFiles === true; clearTimeout(surface.timeout); void this.invoke("ready", { surfaceId: surface.token }).then(async () => { surface.mounted = true; surface.node.removeAttribute("aria-busy"); this.scheduleLayout(surface.view.context.workspaceId); await this.refreshSettings(surface); await this.refresh(); if (surface.focusPending === this.focusEpoch && surface.visible) this.focusSurface(surface); }).catch(error => this.surfaceError(surface, String(error))); return; }
     if (message.type === "flushed" && surface.flushing && surface.flushing.id === message.id) { surface.flushing.done(message.error); return; }
     if (message.type !== "request" || typeof message.id !== "string") return;
     const requestId = message.id;
@@ -690,6 +690,7 @@ export class Components {
   };
   private surfaceError(s: Surface, message: string) {
     clearTimeout(s.timeout);
+    s.node.removeAttribute("aria-busy");
     let error = s.node.querySelector<HTMLElement>(".component-error");
     if (!error) { error = document.createElement("div"); error.className = "component-error"; error.setAttribute("role", "alert"); s.node.append(error); }
     const definition = this.definitions[s.view.definitionKey];

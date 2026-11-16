@@ -435,15 +435,20 @@ impl AppCore {
                 }
                 for d in &declaration.views {
                     let key = format!("{}:{}", p.manifest.id, d.id);
-                    preferences
-                        .definitions
-                        .entry(key.clone())
-                        .or_insert(Preference {
-                            side: d.default_side.clone(),
-                            pinned: d.default_pinned,
-                            startup: d.open_on_workspace.clone(),
-                            order: d.startup_order,
-                        });
+                    let preference =
+                        preferences
+                            .definitions
+                            .entry(key.clone())
+                            .or_insert(Preference {
+                                side: d.default_side.clone(),
+                                side_customized: false,
+                                pinned: d.default_pinned,
+                                startup: d.open_on_workspace.clone(),
+                                order: d.startup_order,
+                            });
+                    if !preference.side_customized {
+                        preference.side = d.default_side.clone();
+                    }
                     ui.definitions.insert(
                         key.clone(),
                         Registered {
@@ -1104,6 +1109,7 @@ impl AppCore {
                 let p = prefs.definitions.get_mut(key).ok_or("布局尚未就绪")?;
                 if op == "recommend" {
                     p.side = d.definition.default_side;
+                    p.side_customized = false;
                     p.pinned = d.definition.default_pinned;
                     p.startup = d.definition.open_on_workspace;
                     p.order = d.definition.startup_order;
@@ -1113,6 +1119,7 @@ impl AppCore {
                         return Err("无效侧栏".into());
                     }
                     p.side = side.into();
+                    p.side_customized = true;
                 }
                 if let Some(pinned) = action["pinned"].as_bool() {
                     p.pinned = pinned;

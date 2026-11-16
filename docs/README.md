@@ -40,6 +40,6 @@
 - [开发指南](development.md)：环境、命令、检查范围与文档收束流程。
 - [分发文档](distribution.md)：五平台原生打包、签名、独立发布和失败恢复。
 - [临时计划](plans/)：尚未完成的改动或专项；不代表当前能力。
-- [核心版本记录](releases/)与 [GitHub Releases](https://github.com/BgaSol/soDeck/releases)：版本变化、原始包来源和验证范围；[核心 1.3.0](releases/v1.3.0.md)记录工作台动效，[核心 1.2.3](releases/v1.2.3.md)记录状态总览重构，[核心 1.2.2](releases/v1.2.2.md)记录连接树箭头与连线优化，[核心 1.2.1](releases/v1.2.1.md)记录管理台侧栏样式与分组调整，[核心 1.2.0](releases/v1.2.0.md)记录连接目录交互调整，[核心 1.1.1](releases/v1.1.1.md)记录管理台导航调整，[核心 1.1.0](releases/v1.1.0.md)记录日志工作台的核心交付与实际验收。
+- [核心版本记录](releases/)与 [GitHub Releases](https://github.com/BgaSol/soDeck/releases)：版本变化、原始包来源和验证范围；[核心 1.3.1](releases/v1.3.1.md)记录插件加载底色与默认停靠修复，[核心 1.3.0](releases/v1.3.0.md)记录工作台动效，[核心 1.2.3](releases/v1.2.3.md)记录状态总览重构，[核心 1.2.2](releases/v1.2.2.md)记录连接树箭头与连线优化，[核心 1.2.1](releases/v1.2.1.md)记录管理台侧栏样式与分组调整，[核心 1.2.0](releases/v1.2.0.md)记录连接目录交互调整，[核心 1.1.1](releases/v1.1.1.md)记录管理台导航调整，[核心 1.1.0](releases/v1.1.0.md)记录日志工作台的核心交付与实际验收。
 
 返回[项目首页](../README.md)。
