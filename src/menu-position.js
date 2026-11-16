@@ -50,7 +50,10 @@ export function attachMenuPosition(menu, reference, { kind = 'menu', isValid = (
       Object.assign(menu.style, { left: `${result.x}px`, top: `${result.y}px`, visibility: 'visible' });
       menu.dataset.placement = result.placement;
       menu.style.transformOrigin = result.placement.startsWith('top') ? 'bottom left' : result.placement.startsWith('left') ? 'top right' : 'top left';
-      menu.style.setProperty('--sd-motion-from',result.placement.startsWith('left')?'translateX(4px)':result.placement.startsWith('right')?'translateX(-4px)':result.placement.startsWith('top')?'translateY(4px)':'translateY(-4px)');
+      const view=menu.ownerDocument.defaultView,side=result.placement.split('-')[0];
+      const dx=side==='left'?Math.min(4,Math.max(0,view.innerWidth-8-result.x-menu.offsetWidth)):side==='right'?-Math.min(4,Math.max(0,result.x-8)):0;
+      const dy=side==='top'?Math.min(4,Math.max(0,view.innerHeight-8-result.y-menu.offsetHeight)):side==='bottom'?-Math.min(4,Math.max(0,result.y-8)):0;
+      menu.style.setProperty('--sd-motion-from',`translate(${dx}px,${dy}px)`);
       if (!presented) { presented = true; enterMotion(menu); }
       settle(true);
     } catch (error) {
