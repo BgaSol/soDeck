@@ -639,7 +639,7 @@
     width: 14px;
   }
   .theme-preview {width:100%;height:74px;border:var(--sd-stroke-control) solid var(--border);border-radius:5px;background:var(--canvas);display:flex;overflow:hidden;}
-  .theme-preview i {width:24%;height:100%;background:var(--sd-navigation);border-right:var(--sd-stroke-control) solid var(--border);}
+  .theme-preview i {width:24%;height:100%;background:var(--panel);border-right:1px solid color-mix(in srgb,var(--border) 30%,transparent);}
   .theme-preview div {padding:14px 10px;flex:1;}
   .theme-preview span {display:block;height:6px;border-radius:3px;background:var(--sd-server-selected);margin-bottom:8px;width:95%;}
   .theme-preview span+span {width:65%;background:var(--sd-tools);}

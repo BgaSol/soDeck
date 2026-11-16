@@ -215,7 +215,7 @@ components:
 
 SoDeck 的核心界面是一张紧凑、可持续工作的服务器会话工作台。桌面壳维持应用导航与连接身份，管理台集中维护资料和偏好，工作台承载会话中的插件页面与工具。信息层级依靠区域、结构线、选中底和可读状态，不以大标题或装饰性卡片组织每个操作。
 
-晨曦（浅色）和星夜（深色）沿用 IDEA 默认配色方向，多巴胺保留原有配色。三主题共享控件几何与操作路径；多巴胺通过暖底、粉色导航、黄色选中、绿色工具底和更粗的结构线表达个性，晨曦与星夜以中性面和蓝色焦点服务长时间阅读。
+晨曦（浅色）和星夜（深色）沿用 IDEA 默认配色方向，多巴胺保留原有配色。三主题共享控件几何与操作路径；多巴胺通过暖底、局部粉色导航与选中、黄色主操作、绿色工具底和更粗的结构线表达个性，晨曦与星夜以中性面和蓝色焦点服务长时间阅读。
 
 这份文档从当前正式核心源码提取，服务后续核心界面维护。色值与公共控件以 [themes.css](packages/ui/themes.css)、[shared.css](packages/ui/shared.css) 为准；核心覆盖以 [console.css](src/console.css) 为准。实际发行与验证范围见[1.0.0 版本记录](docs/releases/v1.0.0.md)。
 
@@ -237,7 +237,7 @@ frontmatter 只收录核心中复用的实际颜色；同一主题中的同值�
 
 ### Secondary
 
-多巴胺粉色 navigation 承载管理导航，绿色 tools 承载工具和工作标签区域，暖色 rail 承载窄侧栏。晨曦管理导航使用 accent-bg；星夜导航、工具区和侧栏使用 panel。顶栏实际使用 panel，不采用原型的浅色深顶栏值。
+多巴胺粉色 navigation 承载设置分区导航和表单页头，绿色 tools 承载工具和工作标签区域，暖色 rail 承载插件窄侧栏。管理台侧栏统一使用中性 panel，粉色集中用于多巴胺当前项；晨曦当前项使用 sd-server-selected，星夜当前项使用 accent-bg。顶栏实际使用 panel，不采用原型的浅色深顶栏值。
 
 ### Tertiary
 
@@ -273,7 +273,7 @@ good、warning、error 分别辅助成功、需关注和错误文字。success-b
 
 核心壳占满视口（100dvh），顶栏与底栏固定在中间工作区域之外。当前核心 #app 覆盖为顶栏（44px）、底栏（26px）、工作标签条（38px）、状态条（26px）、常用点击尺寸（28px）。公共 shared.css 的工作标签条为（36px）、状态条为（32px），插件仍使用公共值。公共 token 与核心尺寸的边界见 [公共界面源码说明](packages/ui/README.md)。
 
-管理台使用功能导航（156px）加弹性内容，内容上沿直接展示页面工具栏或内容；当前页由导航选中状态标识。有活动工作区时，“返回工作台”位于导航底部。普通页面内边距为（20px 24px）；设置还保留内部导航（160px）。工作台默认是左右入口栏（各 42px）加弹性中央区，侧面板宽度由宿主布局计算，CSS 的有效宽度回退为（220px）。布局依据 [console.css](src/console.css)、[workspaces.css](src/workspaces.css) 与 [components.css](src/components.css)。
+管理台使用功能导航（148px）加弹性内容，内容上沿直接展示页面工具栏或内容；当前页由导航选中状态标识。有活动工作区时，“返回工作台”位于导航底部。普通页面内边距为（20px 24px）；设置还保留内部导航（160px）。工作台默认是左右入口栏（各 42px）加弹性中央区，侧面板宽度由宿主布局计算，CSS 的有效宽度回退为（220px）。布局依据 [console.css](src/console.css)、[workspaces.css](src/workspaces.css) 与 [components.css](src/components.css)。
 
 连接目录上方是搜索、分体新增与可见刷新的紧凑工具栏，不设服务器/SOCKS5 分类页签。列表和详情各自滚动，默认详情宽度为 max（290px，36%）。节点仅保留（48px）最小高度的紧凑布局。节点间隔（4px），内边距（5px 9px），层级缩进（20px）；列表内边距（12px 14px 24px）。本机起点占（32px）并留（8px）下间距。连接树几何依据 [servers.css](src/servers.css)。
 
@@ -302,7 +302,7 @@ good、warning、error 分别辅助成功、需关注和错误文字。success-b
 
 ## Shapes
 
-拼接区域使用矩形和结构线，控件采用短半径圆角。状态标签为 badge（4px），管理导航为 navigation（5px），连接节点为 connection-node（6px），当前核心普通按钮和字段为 core-control（7px），公共 sd-* 控件为 shared-control（8px），菜单为 menu（10px），待重启容器沿用 shared-control（8px）。工作页面标签沿用上圆角（8px）并在底边接入内容面；不要将它简化为四角相同的卡片。
+拼接区域使用矩形和结构线，控件采用短半径圆角。状态标签为 badge（4px），管理台导航项为（6px）、设置分区导航为 navigation（5px），连接节点为 connection-node（6px），当前核心普通按钮和字段为 core-control（7px），公共 sd-* 控件为 shared-control（8px），菜单为 menu（10px），待重启容器沿用 shared-control（8px）。工作页面标签沿用上圆角（8px）并在底边接入内容面；不要将它简化为四角相同的卡片。
 
 晨曦与星夜的结构线与控件描边为（1px），图标线宽（2），控件/标题字重（500 / 600）；多巴胺对应为（2px）、（2.25）与（600 / 700）。公共控件使用透明边框预算（2px）及伪元素描边，主题切换保持内容几何。普通功能 SVG 默认（17px），公共图标按钮中的 SVG 为（16px），标签关闭图标为（12px）；路径与形状来自 [ui.ts](src/ui.ts)。
 
@@ -328,7 +328,7 @@ good、warning、error 分别辅助成功、需关注和错误文字。success-b
 
 ### Navigation
 
-顶栏 SoDeck 恢复最近的管理页；主窗口的加号以“连接服务器”标明用途。管理台以功能导航显示服务器连接、插件、设置、消息、日志、状态和更新，当前项使用 aria-current、sd-server-selected 底与内嵌描边；消息和更新的计数位于对应导航末尾，以（11px）等宽数字显示。顶栏继续保留服务器会话标签及消息、设置快捷入口。管理台隐藏整个工作台宿主及插件窄侧栏，返回工作台或选择会话后恢复；具体导航规则见[工作台](docs/features/workbench.md#管理台导航)。
+顶栏 SoDeck 恢复最近的管理页；主窗口的加号以“连接服务器”标明用途。管理台侧栏默认宽（148px），≤900px 时为（128px），panel 中性底与（1px、border 30% 混合）的分隔线。导航项最小高（36px），默认字重（500）、muted 文字，图标（16px / 1.75）；当前项使用 aria-current、主题选中底、text 文字与（600）字重，常驻状态不加描边，键盘焦点保留（2px）accent 轮廓。消息分组上方留（14px），设置、更新靠底部，底栏返回入口位于末尾。消息和更新角标为（18px）高、（10px）字号，选中和悬停分开表达。顶栏继续保留服务器会话标签及消息、设置快捷入口。管理台隐藏整个工作台宿主及插件窄侧栏，返回工作台或选择会话后恢复；操作规则见[工作台](docs/features/workbench.md#管理台导航)。
 
 宿主可见性切换保留会话、页面、Surface 与草稿，不等于关闭或销毁。左右窄侧栏只承载 sidebar 插件贡献；终端由中央新建动作和工作标签使用。宿主按贡献容器类型处理隐藏与关闭，规范依据 [shell.ts](src/shell.ts)、[workspaces.ts](src/workspaces.ts) 与 [components.ts](src/components.ts)，完整行为见 [工作台](docs/features/workbench.md)。
 

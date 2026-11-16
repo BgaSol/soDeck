@@ -22,10 +22,12 @@ try {
  await page.goto(url);await page.waitForFunction(()=>window.ready);
  assert.equal(await page.locator('#management-console').isVisible(),true);
  assert.equal(await page.locator('#return-workbench').isVisible(),false,'No return action without an active workspace');
+ assert.deepEqual(await page.locator('[data-console-page]').evaluateAll(nodes=>nodes.map(node=>node.dataset.consolePage)),['connections','plugins','messages','logs','status','settings','updates'],'Visual and keyboard order follow the navigation groups');
  for(const width of [1100,720,600]){
   await page.setViewportSize({width,height:720});
   for(const destination of ['connections','plugins','settings','messages','logs','status','updates']){
-   await page.locator(`[data-console-page=${destination}]`).click();
+   await page.locator(`[data-console-page=${destination}]`).focus();await page.keyboard.press('Enter');
+   assert.equal(await page.locator('.console-nav [aria-current="page"]').getAttribute('data-console-page'),destination);
    const gap=await page.evaluate(()=>{
     const content=document.querySelector(shell.route.page==='connections'?'#server-catalog':'#console-page');
     return content.getBoundingClientRect().top-document.querySelector('.console-main').getBoundingClientRect().top;

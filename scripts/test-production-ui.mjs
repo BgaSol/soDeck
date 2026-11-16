@@ -294,6 +294,23 @@ try {
     for (const [width, height] of [[1100, 720], [880, 720], [720, 480]]) {
       await page.setViewportSize({ width, height });
       if(await page.locator('[data-server-action="back"]').isVisible())await page.locator('[data-server-action="back"]').click();
+      const navigation=page.locator('.console-nav'),current=navigation.locator('[aria-current="page"]');
+      await navigation.evaluate(async nav=>{await Promise.allSettled(nav.getAnimations({subtree:true}).map(animation=>animation.finished));});
+      const navigationLayout=await navigation.evaluate(nav=>{
+        const style=getComputedStyle(nav),current=nav.querySelector('[aria-current="page"]'),normal=nav.querySelector('[data-console-page="plugins"]');
+        const status=nav.querySelector('[data-console-page="status"]').getBoundingClientRect(),settings=nav.querySelector('[data-console-page="settings"]').getBoundingClientRect();
+        const luminance=color=>{const c=color.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722;};
+        const contrast=(a,b)=>(Math.max(a,b)+.05)/(Math.min(a,b)+.05);
+        return {background:style.backgroundColor,panel:getComputedStyle(document.querySelector('.topbar')).backgroundColor,border:style.borderRightWidth,currentBackground:getComputedStyle(current).backgroundColor,currentShadow:getComputedStyle(current).boxShadow,currentWeight:getComputedStyle(current).fontWeight,normalWeight:getComputedStyle(normal).fontWeight,normalContrast:contrast(luminance(getComputedStyle(normal).color),luminance(style.backgroundColor)),currentContrast:contrast(luminance(getComputedStyle(current).color),luminance(getComputedStyle(current).backgroundColor)),maintenanceGap:settings.top-status.bottom,settingsBottom:settings.bottom,navBottom:nav.getBoundingClientRect().bottom};
+      });
+      assert.equal(navigationLayout.background,navigationLayout.panel,'Sidebar uses the neutral core panel surface');
+      assert.equal(navigationLayout.border,'1px');assert.equal(navigationLayout.currentShadow,'none');
+      assert.equal(navigationLayout.normalWeight,'500');assert.equal(navigationLayout.currentWeight,'600');
+      assert(navigationLayout.normalContrast>=4.5&&navigationLayout.currentContrast>=4.5,`${theme}/${width} navigation text contrast`);
+      assert(navigationLayout.maintenanceGap>=24&&navigationLayout.navBottom-navigationLayout.settingsBottom<=60,`${theme}/${width} maintenance entries stay at the bottom`);
+      await current.hover();await current.evaluate(async node=>{await Promise.allSettled(node.getAnimations({subtree:true}).map(animation=>animation.finished));});
+      assert.equal(await current.evaluate(el=>getComputedStyle(el).backgroundColor),navigationLayout.currentBackground,'Hover retains the current page selection');
+      await page.mouse.move(width-5,45);
       assert.equal(await page.locator('.catalog-tabs,.tag-filter,[data-server-action="density"],[data-server-action="tags"]').count(),0);
       assert(await page.locator('[data-server-action="reload"]').isVisible());
       assert(await page.locator('[data-filter-tag]').count()>=4);

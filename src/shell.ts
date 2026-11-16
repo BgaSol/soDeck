@@ -7,8 +7,8 @@ import { applyTheme } from './theme';
 
 export const consolePages = [
   ['connections', '服务器连接', 'server'], ['plugins', '插件', 'plug'],
-  ['settings', '设置', 'settings'], ['messages', '消息', 'bell'],
-  ['logs', '日志', 'log'], ['status', '状态', 'info'], ['updates', '更新', 'download'],
+  ['messages', '消息', 'bell'], ['logs', '日志', 'log'], ['status', '状态', 'info'],
+  ['settings', '设置', 'settings'], ['updates', '更新', 'download'],
 ] as const;
 export type ConsolePage = typeof consolePages[number][0];
 export type ShellRoute = {kind:'console';page:ConsolePage} | {kind:'workbench'};

@@ -4,14 +4,20 @@
   #app > .topbar { height: var(--sd-shell-top); min-height: var(--sd-shell-top); }
   #server-workspace { flex: 1; min-height: 0; height: auto; position: relative; }
   #workspace-content, .management-console { height: 100%; min-width: 0; }
-  .management-console { display: grid; grid-template-columns: 156px minmax(0,1fr); }
-  .console-nav { background: var(--sd-navigation); border-right: var(--sd-stroke-structure) solid var(--border); display: flex; flex-direction: column; gap: 3px; padding: 14px 9px; }
-  .console-nav button { justify-content: flex-start; min-height: 36px; border: 0; padding: 7px 11px; background: transparent; border-radius: 5px; }
-  .console-nav button[aria-current="page"] { background: var(--sd-server-selected); box-shadow: inset 0 0 0 var(--sd-stroke-control) var(--border); }
-  .console-nav button:hover { background: var(--hover); }
-  .console-nav-badge { margin-left: auto; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--muted); }
+  .management-console { display: grid; grid-template-columns: 148px minmax(0,1fr); }
+  .console-nav { --console-selected: var(--sd-server-selected); background: var(--panel); border-right: 1px solid color-mix(in srgb,var(--border) 30%,transparent); display: flex; flex-direction: column; gap: 3px; padding: 12px 8px; min-height: 0; overflow-y: auto; }
+  :root[data-theme="dark"] .console-nav { --console-selected: var(--accent-bg); }
+  .console-nav button { justify-content: flex-start; flex-shrink: 0; min-height: 36px; border: 0; padding: 7px 10px; background: transparent; border-radius: 6px; color: var(--muted); font-weight: 500; }
+  .console-nav button svg { width: 16px; height: 16px; stroke-width: 1.75; }
+  .console-nav button:hover { background: var(--hover); color: var(--text); }
+  .console-nav button[aria-current="page"] { background: var(--console-selected); color: var(--text); font-weight: 600; box-shadow: none; }
+  .console-nav button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .console-nav button[data-console-page="messages"] { margin-top: 14px; }
+  .console-nav button[data-console-page="settings"] { margin-top: auto; }
+  .console-nav-badge { display: inline-flex; align-items: center; justify-content: center; margin-left: auto; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 5px; background: var(--hover); color: var(--text); font-size: 10px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .console-nav [aria-current="page"] .console-nav-badge { background: var(--panel); }
   .console-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-  #return-workbench { margin-top: auto; font-size: 12px; }
+  #return-workbench { margin-top: 8px; font-size: 12px; }
   #server-catalog { flex: 1; min-height: 0; overflow: hidden; }
   .console-page { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
   .console-page > .layer-content { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px; }
@@ -27,10 +33,11 @@
   @media (max-width: 900px) { .management-console { grid-template-columns: 128px minmax(0,1fr); } }
   @media (max-width: 640px) {
     .management-console { grid-template-columns: minmax(0,1fr); grid-template-rows: 42px minmax(0,1fr); }
-    .console-nav { flex-direction: row; overflow-x: auto; padding: 4px 7px; border-right: 0; border-bottom: var(--sd-stroke-structure) solid var(--border); gap: 2px; }
+    .console-nav { flex-direction: row; overflow-x: auto; overflow-y: hidden; padding: 4px 7px; border-right: 0; border-bottom: 1px solid color-mix(in srgb,var(--border) 30%,transparent); gap: 2px; }
     .console-nav button { min-height: 30px; padding: 4px 8px; flex-shrink: 0; font-size: 12px; }
     .console-nav button svg { display: none; }
-    #return-workbench { margin-top: 0; margin-left: auto; }
+    .console-nav button[data-console-page="messages"],.console-nav button[data-console-page="settings"] { margin-top: 0; }
+    #return-workbench { margin-top: 0; margin-left: 8px; }
     .console-page > .layer-content { padding: 12px; }
     .console-page > .settings-content { display: flex; flex-direction: column; padding: 0; }
     .console-page .settings-nav { flex-direction: row; min-height: 40px; padding: 5px; overflow-x: auto; }
