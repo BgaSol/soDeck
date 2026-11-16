@@ -8,8 +8,12 @@ import { changedFiles, selectChecks, checkResults, targets, selectionSummary } f
 
 test('shared DOM runtime checks its independently packaged network consumer',()=>{
   for(const file of ['src/dom-update.ts','scripts/plugin-dom-assets.mjs']){
-    const result=selectChecks([file]);assert(result.browser&&result.scripts);assert(result.plugins.includes('network-proxy'));assert(result.integration.some(row=>row.network));
+    const result=selectChecks([file]);assert(result.browser&&result.scripts);assert(result.plugins.includes('network-proxy'));assert(result.plugins.includes('docker'));assert(result.integration.some(row=>row.network));assert(result.integration.some(row=>row.docker));
   }
+});
+
+test('motion runtime checks all independently packaged consumers',()=>{
+  for(const file of ['src/motion.js','src/motion.d.ts']){const result=selectChecks([file]);assert.equal(result.plugins.length,5);assert(result.browser&&result.terminalInput);assert(result.integration.some(row=>row.network));assert(result.integration.some(row=>row.files&&row.terminal&&row.status&&row.docker));}
 });
 test('file editor SDK selects its real consumers and file integration',()=>{
  const p=selectChecks(['packages/file-editor/src/page.js']);assert(p.plugins.includes('files'));assert(p.integration.some(v=>v.files));assert(p.scripts);

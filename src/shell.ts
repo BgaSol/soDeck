@@ -25,7 +25,6 @@ export class Shell {
   private disposed = false;
   private workspaces?: Workspaces;
   private connections?: ConnectionsUi;
-  private paintedRoute = '';
   private consolePage: ConsolePage = 'connections';
   onPage?: (page: ConsolePage) => void;
   readonly catalog: HTMLElement;
@@ -64,7 +63,9 @@ export class Shell {
   }
   navigate(page:ConsolePage) {
     if(!this.main)return;
+    const changed=this.route.kind!=='console'||this.route.page!==page;
     this.revision++;this.consolePage=page;this.route={kind:'console',page};this.workspaces?.setHostVisible(false);this.paint();this.onPage?.(page);
+    if(changed)enterMotion(page==='connections'?this.catalog:this.page,'x');
   }
   selectionChanged(){this.revision++;}
   showWorkbench() {
@@ -80,9 +81,7 @@ export class Shell {
     this.root.querySelector('#catalog-tab')!.setAttribute('aria-selected',String(managing));
     for(const node of this.root.querySelectorAll<HTMLElement>('[data-console-page]'))node.setAttribute('aria-current',node.dataset.consolePage===selected?'page':'false');
     this.root.querySelector<HTMLElement>('#return-workbench')!.hidden=!this.projection?.window.activeWorkspace;
-    const route=JSON.stringify(this.route);
-    if(this.paintedRoute&&route!==this.paintedRoute)enterMotion(managing?selected==='connections'?this.catalog:this.page:this.content,'x');
-    this.paintedRoute=route;this.renderStatus();
+    this.renderStatus();
   }
   renderStatus() {
     const w=this.projection?.workspaces.find(w=>w.context.workspaceId===this.projection?.window.activeWorkspace);

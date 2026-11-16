@@ -91,7 +91,7 @@ dependencies = [
 
 [[package]]
 name = "sodeck-system-status"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "serde",
  "serde_json",

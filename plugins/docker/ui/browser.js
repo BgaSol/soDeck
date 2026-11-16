@@ -15,17 +15,17 @@ export function installBrowserPage(releaseIncumbent){
   function message(text){SoDeckMotion.setMotionText($('notice'),text||'');$('notice').hidden=!text;}
   function theme(values){for(const [key,value]of Object.entries(values||{}))key==='color-scheme'?document.documentElement.style.colorScheme=value:document.documentElement.style.setProperty('--'+key,value);}
   async function request(data){const local=epoch,promise=sodeck.request('event',data);pending.add(promise);try{const result=await promise;if(local!==epoch)return null;return result;}finally{pending.delete(promise);}}
-  async function send(data){if(!enabled||frozen)return null;try{const result=await request(data);if(result?.kind&&result?.revision)apply(result);message('');return result;}catch(error){message(error.message||String(error));return null;}}
-  function apply(data,paint=true){if(!data)return;if(snapshot&&data.scopeEpoch===snapshot.scopeEpoch&&BigInt(data.revision||0)<BigInt(snapshot.revision||0))return;
+  async function send(data,motion=false){if(!enabled||frozen)return null;try{const result=await request(data);if(result?.kind&&result?.revision)apply(result,true,motion);message('');return result;}catch(error){message(error.message||String(error));return null;}}
+  function apply(data,paint=true,motion=false){if(!data)return;if(snapshot&&data.scopeEpoch===snapshot.scopeEpoch&&BigInt(data.revision||0)<BigInt(snapshot.revision||0))return;
     if(snapshot&&data.scopeEpoch!==snapshot.scopeEpoch){nav.selected='';nav.expandedKeys=['engine','category:container'];nav.offset=0;menu.close(false);formTarget=null;searchBefore=null;tree.positions.clear();}
-    snapshot=data;render(paint&&navPainted===navSequence);
+    snapshot=data;render(paint&&navPainted===navSequence,motion);
   }
   function state(){return {...nav,schemaVersion:2,query:$('query').value,status:$('status-filter').value,health:$('health-filter').value,group:$('group').checked,scrollTop:$('tree-viewport').scrollTop,anchor:tree.anchor(),engineId:snapshot.engine?.id,endpoint:snapshot.endpoint};}
-  function remember(){if(!enabled||frozen)return Promise.resolve();const data=state(),local=epoch,serial=++navSequence;
-    navTail=navTail.catch(()=>{}).then(async()=>{if(local!==epoch)return;const result=await request({action:'browser.navigation',scopeEpoch:snapshot.scopeEpoch,state:data});if(local!==epoch||!result)return;if(serial===navSequence){navPainted=serial;apply(result,true);}}).catch(error=>message(error.message));return navTail;
+  function remember(motion=false){if(!enabled||frozen)return Promise.resolve();const data=state(),local=epoch,serial=++navSequence;
+    navTail=navTail.catch(()=>{}).then(async()=>{if(local!==epoch)return;const result=await request({action:'browser.navigation',scopeEpoch:snapshot.scopeEpoch,state:data});if(local!==epoch||!result)return;if(serial===navSequence){navPainted=serial;apply(result,true,motion);}}).catch(error=>message(error.message));return navTail;
   }
   function nodeInCache(key){return tree.node(key)||selectedNode?.key===key&&selectedNode;}
-  function render(paint=true){if(!active||!snapshot)return;
+  function render(paint=true,motion=false){if(!active||!snapshot)return;
     $('title').textContent='Docker';SoDeckMotion.setMotionText($('state'),({ready:'已连接',loading:'连接中',stale:'数据待刷新',gone:'已删除'}[snapshot.state]||'等待连接'));$('state').dataset.state=snapshot.state;
     $('engine-name').textContent=snapshot.engine?.version?'Engine '+snapshot.engine.version:'等待 Engine';$('engine-version').textContent=snapshot.engine?.arch||'';
     $('refresh').disabled=!enabled||frozen||snapshot.busy;$('cancel').hidden=!snapshot.busy;$('pause').hidden=true;
@@ -34,7 +34,7 @@ export function installBrowserPage(releaseIncumbent){
     $('freshness').textContent=snapshot.state==='stale'?'离线快照 · 待刷新':snapshot.observedAt?'采集于 '+new Date(snapshot.observedAt).toLocaleTimeString():'等待首次采集';
     $('busy').textContent=snapshot.busy?'请求处理中':'';$('count').textContent='';$('operation').hidden=true;
     if(snapshot.error)message(snapshot.error);
-    if(paint&&snapshot.tree){tree.render(snapshot.tree,nav.selected);if(restoreScroll!==undefined){$('tree-viewport').scrollTop=restoreScroll;restoreScroll=undefined;}const operation=snapshot.operation;if(selectedNode?.resource&&!tree.node(nav.selected)&&operation?.state==='succeeded'&&['remove','resource.remove'].includes(operation.action)&&(operation.containerId===selectedNode.resource.id||operation.resource?.id===selectedNode.resource.id)){const index=tree.positions.get(nav.selected)||0;nav.selected=tree.page.nodes[Math.max(0,Math.min(tree.page.nodes.length-1,index-tree.page.offset))]?.key;void remember();}selectedNode=nodeInCache(nav.selected);}
+    if(paint&&snapshot.tree){tree.render(snapshot.tree,nav.selected,motion);if(restoreScroll!==undefined){$('tree-viewport').scrollTop=restoreScroll;restoreScroll=undefined;}const operation=snapshot.operation;if(selectedNode?.resource&&!tree.node(nav.selected)&&operation?.state==='succeeded'&&['remove','resource.remove'].includes(operation.action)&&(operation.containerId===selectedNode.resource.id||operation.resource?.id===selectedNode.resource.id)){const index=tree.positions.get(nav.selected)||0;nav.selected=tree.page.nodes[Math.max(0,Math.min(tree.page.nodes.length-1,index-tree.page.offset))]?.key;void remember();}selectedNode=nodeInCache(nav.selected);}
     renderSelection();
     if(formTarget)menu.valid(current(formTarget)&&(!formTarget.observationRevision||snapshot.indexes?.[formTarget.resource.kind]?.revision===formTarget.observationRevision));
     const pull=snapshot.pull;$('pull-status').hidden=!pull;$('pull-status').textContent=pull?`${pull.reference} · ${phases[pull.state]||pull.state}：${pull.message||''}`:'';
@@ -56,11 +56,11 @@ export function installBrowserPage(releaseIncumbent){
     $('selection-result').textContent=text;$('selection-result').hidden=!text;
   }
   function select(n,focus){if(!n)return;if(formTarget&&n.key!==nav.selected){menu.close(false);formTarget=null;}nav.selected=n.key;selectedNode=n;tree.render(tree.page,nav.selected);renderSelection();if(focus)tree.focus(n.key);void remember();}
-  async function toggle(n){if(!n?.expandable)return;const keys=new Set(nav.expandedKeys||[]);if(keys.has(n.key))keys.delete(n.key);else{if(keys.size>=64){message('最多保存 64 个展开节点，请先折叠部分分支');return;}keys.add(n.key);}nav.expandedKeys=[...keys];await remember();
-    if(keys.has(n.key)&&n.type==='category'&&['unloaded','failed','stale'].includes(snapshot.indexes?.[n.branchKind]?.phase))await load(n.branchKind);
-    if(keys.has(n.key)&&n.type==='resource')await load(null,n.resource);
+  async function toggle(n){if(!n?.expandable)return;const keys=new Set(nav.expandedKeys||[]);if(keys.has(n.key))keys.delete(n.key);else{if(keys.size>=64){message('最多保存 64 个展开节点，请先折叠部分分支');return;}keys.add(n.key);}nav.expandedKeys=[...keys];await remember(true);
+    if(keys.has(n.key)&&n.type==='category'&&['unloaded','failed','stale'].includes(snapshot.indexes?.[n.branchKind]?.phase))await load(n.branchKind,undefined,true);
+    if(keys.has(n.key)&&n.type==='resource')await load(null,n.resource,true);
   }
-  async function load(branchKind,resource){return send({action:'browser.load',branchKind,resource,scopeEpoch:snapshot.scopeEpoch});}
+  async function load(branchKind,resource,motion=false){return send({action:'browser.load',branchKind,resource,scopeEpoch:snapshot.scopeEpoch},motion);}
   function windowPage(offset){if(!active||!enabled||frozen)return;const page=tree.page;const count=Math.ceil($('tree-viewport').clientHeight/30)+5;if(offset>=page.offset&&offset+count<=page.offset+(page.nodes?.length||0)||page.offset+(page.nodes?.length||0)>=page.total&&offset>=page.offset)return;
     offset=Math.min(offset,Math.max(0,page.total-10));if(offset===nav.offset)return;nav.offset=offset;void remember();}
   async function focusIndex(index,parent){if(index<0||index>=tree.page.total)return;const previousOffset=nav.offset;let n=tree.page.nodes[index-tree.page.offset];if(!n){nav.offset=Math.max(0,index-5);await remember();n=tree.page.nodes[index-tree.page.offset];}if(parent&&n?.parent!==parent){if(nav.offset!==previousOffset){nav.offset=previousOffset;await remember();tree.focus(parent);}return;}if(n)select(n,true);}

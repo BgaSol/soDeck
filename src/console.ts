@@ -1,4 +1,4 @@
-import { enterMotion, exitMotion, feedbackMotion } from './motion.js';
+import { enterMotion, exitMotion, captureMotion, settleMotion } from './motion.js';
 import { listen, type UnlistenFn, type EventCallback } from "@tauri-apps/api/event";
 import type { Window } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -74,7 +74,6 @@ function renderTop() {
   const messagesBadge = root.querySelector<HTMLElement>('#console-message-count')!;
   messagesBadge.textContent = snapshot?.unreadCount ? snapshot.unreadCount > 99 ? '99+' : String(snapshot.unreadCount) : '';
   messagesBadge.hidden = !snapshot?.unreadCount;
-  if(messagesBadge.dataset.count!==messagesBadge.textContent){messagesBadge.dataset.count=messagesBadge.textContent??'';feedbackMotion(messagesBadge);}
   document.querySelector("#message-count")!.textContent = snapshot?.unreadCount
     ? `消息 ${snapshot.unreadCount > 99 ? "99+" : snapshot.unreadCount}`
     : "消息";
@@ -93,7 +92,7 @@ function content() {
   if (currentPage === "logs") return views.logs(snapshot, state);
   return views.messages(state);
 }
-function renderPage() {
+function renderPage(navigating = false) {
   const error = document.querySelector<HTMLElement>("#layer-error");
   if (error) { error.textContent = lastError ? `${lastError}；保留上次读取结果。` : ""; error.hidden = !lastError || !snapshot; }
   const target = document.querySelector<HTMLElement>("#layer-content");
@@ -110,9 +109,10 @@ function renderPage() {
       if (main.dataset.page !== identity) {
         componentSettings.mount(null, false);
         main.innerHTML = next.querySelector(".settings-main")!.innerHTML;
-        main.dataset.page = identity;enterMotion(main,'x');
+        const back=main.dataset.page?.startsWith('plugins:')&&identity==='plugins:';
+        main.dataset.page = identity;if(!navigating)enterMotion(main,back?'back':'x');
       } else if (state.section !== "components") updateDOM(main, next.querySelector(".settings-main")!.innerHTML);
-    } else updateDOM(target, content());
+    } else updateDOM(target, content(), !navigating);
     if (!hadPluginDetails && document.activeElement === document.body)
       target.querySelector<HTMLElement>("#back-plugins")?.focus({preventScroll: true});
     componentSettings.mount(target.querySelector("#component-settings-page"), ["settings","plugins","updates"].includes(currentPage) && state.section === "components");
@@ -129,7 +129,7 @@ async function enterPage(next: ConsolePage) {
   else if(next==='settings')state.section=settingsSection;
   const target=pageHost.querySelector<HTMLElement>('#layer-content')!;
   target.className='layer-content '+next+'-content';
-  renderPage();if(changed)enterMotion(target,'x');
+  renderPage(changed);
   if(next==='messages')await refreshMessages();
   if(next==='logs'&&!state.paused)await refreshLogs();
   if(next==='updates')void core.checkUpdates(true).catch(()=>{});
@@ -141,6 +141,7 @@ shell.onPage=page=>void action(()=>enterPage(page));
 function toast(text: string, message?: Message, error = false) {
   const holder = document.querySelector("#toasts")!;
   const node = document.createElement(message ? "button" : "div");
+  node.dataset.motion='item';
   node.className = `toast ${error ? "toast-error" : ""}`;
   node.textContent = text;
   if (message)
@@ -150,11 +151,12 @@ function toast(text: string, message?: Message, error = false) {
         await core.markRead(message.id);
         await showPage("messages");
       });
-      node.remove();
+      remove();
     });
-  const remove=()=>{exitMotion(node);node.remove();};
-  holder.append(node);enterMotion(node);
-  while (holder.children.length > 3) holder.firstElementChild?.remove();
+  const remove=()=>{if(!node.isConnected)return;const before=captureMotion(holder);exitMotion(node);node.remove();settleMotion(holder,before);};
+  const before=captureMotion(holder);holder.append(node);
+  while (holder.children.length > 3) {exitMotion(holder.firstElementChild!);holder.firstElementChild?.remove();}
+  settleMotion(holder,before);
   setTimeout(remove, 5000);
 }
 async function refresh() {

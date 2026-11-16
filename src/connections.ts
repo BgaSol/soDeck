@@ -1,5 +1,5 @@
 import { updateDOM } from './dom-update';
-import { enterMotion, exitMotion, feedbackMotion } from './motion.js';
+import { enterMotion, exitMotion } from './motion.js';
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { escape as e } from "./ui";
@@ -88,7 +88,7 @@ export class ConnectionsUi {
     this.dismissed = new Set([...this.dismissed].filter(id => views.some(v => v.question?.id === id)));
     this.views = views; this.update(views);
     const pending = views.filter(v => v.windowId === this.windowId && v.state === "connecting");
-    updateDOM(this.progress, pending.map(v => `<div data-dom-key="attempt:${e(v.attemptId)}" data-motion="item"><span data-motion="feedback">${e(v.endpoint)} · ${e(connectionSummary(v))}</span><button class="sd-quiet" data-connection-cancel="${e(v.attemptId)}">取消连接</button></div>`).join(""));
+    updateDOM(this.progress, pending.map(v => `<div data-dom-key="attempt:${e(v.attemptId)}" data-motion="item"><span>${e(v.endpoint)} · ${e(connectionSummary(v))}</span><button class="sd-quiet" data-connection-cancel="${e(v.attemptId)}">取消连接</button></div>`).join(""));
     this.progress.hidden = pending.length === 0;
     for (const v of views) {
       const old = previous.find(old => old.attemptId === v.attemptId);
@@ -151,7 +151,7 @@ export class ConnectionsUi {
     node.querySelector("form")?.addEventListener("submit", event => { event.preventDefault(); void submit(false); });
     node.querySelector("[data-key-picker]")?.addEventListener("click", () => { void open({ multiple: false }).then(path => { if (typeof path === "string" && this.dialog === current) node.querySelector<HTMLInputElement>('[name="path"]')!.value = path; }).catch(error => this.notify(String(error))); });
     node.querySelectorAll<HTMLButtonElement>("[data-copy-fingerprint]").forEach(button => button.addEventListener("click", () => {
-      void this.call("clipboard_text", { operation: "write", text: button.dataset.copyFingerprint }).then(() => { button.textContent = "已复制";feedbackMotion(button); }).catch(error => {
+      void this.call("clipboard_text", { operation: "write", text: button.dataset.copyFingerprint }).then(() => { button.textContent = "已复制"; }).catch(error => {
         const target = node.querySelector<HTMLElement>(".connection-prompt-error")!; target.hidden = false; target.textContent = `复制失败：${error}`;
       });
     }));

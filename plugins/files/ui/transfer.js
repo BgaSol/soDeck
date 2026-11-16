@@ -173,10 +173,13 @@
         while(result.next!=null){result=await this.event({action:'readTasks',offset:result.next});tasks.push(...result.tasks);}
         const active = tasks.filter(t => !terminal(t.state));
         this.summary.textContent = active.length ? `文件任务 · ${active.length} 项进行中` : `文件任务 · ${tasks.length} 项`;
-        const before=new Map([...this.body.querySelectorAll('[data-batch]')].map(row=>[row.dataset.batch,{phase:row.dataset.phase,current:row.dataset.current,progress:Number(row.dataset.progress)}]));
+        const positions=SoDeckMotion.captureMotion(this.body,'[data-batch]');
+        const focused=document.activeElement?.dataset.control;
+        const before=new Map([...this.body.querySelectorAll('[data-batch]')].map(row=>{const fill=row.querySelector('.transfer-progress span');return [row.dataset.batch,{row,fill,current:row.dataset.current,target:Number(row.dataset.progress),progress:fill&&positions.has(row)?new DOMMatrix(getComputedStyle(fill).transform).a:NaN}];}));
+        const ended=[];
         const fragments = Object.fromEntries(Object.keys(this.groups).map(key=>[key,document.createDocumentFragment()]));
         for (const task of tasks) {
-          const row = document.createElement('section'); row.className = 'transfer-item';row.dataset.batch=task.id;row.dataset.phase=task.state;row.dataset.current=task.current||'';
+          const oldRow=before.get(task.id),row = oldRow?.row||document.createElement('section'); row.replaceChildren();row.className = 'transfer-item';row.dataset.batch=task.id;row.dataset.phase=task.state;row.dataset.current=task.current||'';delete row.dataset.progress;
           const title = document.createElement('div'); title.textContent = `${labels[task.state] || task.state} · ${kinds[task.kind]||task.kind}${task.current?' · '+task.current:''}`;
           const detail = document.createElement('div'); detail.className = 'transfer-detail';
           detail.textContent = `成功 ${task.completed} · 失败 ${task.failed} · 跳过 ${task.skipped}` + (Number(task.currentBytes) ? ` · ${Math.round(Number(task.currentBytes) / 1024)} KiB` : '');
@@ -188,7 +191,7 @@
           if(!terminal(task.state)&&Number.isFinite(total)&&total>0&&Number.isFinite(current)&&current>=0){
             const progress=Math.min(1,current/total);row.dataset.progress=String(progress);
             const meter=document.createElement('div');meter.className='transfer-progress';meter.setAttribute('role','progressbar');meter.setAttribute('aria-label','当前文件传输');meter.setAttribute('aria-valuemin','0');meter.setAttribute('aria-valuemax',String(total));meter.setAttribute('aria-valuenow',String(Math.min(current,total)));
-            const fill=document.createElement('span');fill.style.transform=`scaleX(${progress})`;meter.append(fill);row.append(meter);
+            const fill=oldRow?.fill||document.createElement('span');fill.style.transform=`scaleX(${progress})`;meter.append(fill);row.append(meter);
           }
           if (task.error || task.lastError || task.warning) { const error = document.createElement('div'); error.className = 'transfer-error'; error.textContent = task.error || task.lastError || task.warning; row.append(error); }
           const command = async parameters => { const result=await this.event({ batchId: task.id, conflictId:task.conflict?.itemId, ...parameters });if(result.batchId)this.last.set(result.batchId,'queued'); await this.poll(); };
@@ -213,23 +216,25 @@
           fragments[group].append(row);
           if(group==='attention'&&this.last.get(task.id)!==task.state)this.panel.open=true;
           if (terminal(task.state) && this.last.get(task.id) && !terminal(this.last.get(task.id))) {
-            const epoch=this.contextEpoch;
-            void this.refresh().catch(() => {}).then(()=>{if(!this.disposed&&epoch===this.contextEpoch)this.message(task.state==='completed' ? (task.kind==='download'?'下载完成':task.kind==='upload'?'上传完成':'文件任务完成') : (task.error||task.lastError||labels[task.state]),task.state!=='completed');});
+            ended.push(task);
           }
           this.last.set(task.id, task.state);
         }
-        const focused=document.activeElement?.dataset.control;
         const scroll=this.body.scrollTop;
         for(const [key,{group,heading,list,label}] of Object.entries(this.groups)){
           const count=fragments[key].childElementCount;group.hidden=!count;heading.textContent=`${label} · ${count} 项`;list.replaceChildren(fragments[key]);
         }
         if(focused)([...this.body.querySelectorAll('[data-control]')].find(e=>e.dataset.control===focused)||this.summary)?.focus({preventScroll:true});
         this.body.scrollTop=scroll;
-        for(const row of [...this.body.querySelectorAll('[data-batch]')].slice(0,40)){
-          const old=before.get(row.dataset.batch);if(!old)SoDeckMotion.revealMotion(row);else if(old.phase!==row.dataset.phase)SoDeckMotion.feedbackMotion(row.firstElementChild);
+        SoDeckMotion.settleMotion(this.body,positions,'[data-batch]');
+        for(const row of SoDeckMotion.captureMotion(this.body,'[data-batch]').keys()){
+          const old=before.get(row.dataset.batch);
           const fill=row.querySelector('.transfer-progress span'),progress=Number(row.dataset.progress);
-          if(fill&&old?.current===row.dataset.current&&Number.isFinite(old.progress)&&progress!==old.progress)SoDeckMotion.animateMotion(fill,[{transform:`scaleX(${old.progress})`},{transform:`scaleX(${progress})`}],'layout');
+          if(fill&&old?.current===row.dataset.current&&Number.isFinite(old.progress)&&progress!==old.target)SoDeckMotion.animateMotion(fill,[{transform:`scaleX(${old.progress})`},{transform:`scaleX(${progress})`}],'layout');
+          else if(fill&&old?.current!==row.dataset.current)SoDeckMotion.cancelMotion(fill);
         }
+        if(ended.length){const epoch=this.contextEpoch,failures=ended.filter(task=>task.state!=='completed');
+          void this.refresh().catch(()=>{}).then(()=>{if(!this.disposed&&epoch===this.contextEpoch)this.message(ended.length>1?`${ended.length} 项文件任务已结束${failures.length?` · ${failures.length} 项需关注`:''}`:failures.length?(ended[0].error||ended[0].lastError||labels[ended[0].state]):ended[0].kind==='download'?'下载完成':ended[0].kind==='upload'?'上传完成':'文件任务完成',failures.length>0);});}
       } catch (error) { if (!this.disposed) this.message(error.message, true); }
       finally { this.running = false; clearTimeout(this.timer); if (!this.disposed) this.timer = setTimeout(() => this.poll(), 350); }
     }
@@ -238,7 +243,8 @@
       const list=document.createElement('div'),more=document.createElement('button'),close=document.createElement('button');
       more.textContent='加载更多';close.textContent='关闭';let offset=0;
       const load=async()=>{const page=await this.event({action:'readItems',batchId,offset});for(const entry of page.entries){const row=document.createElement('p');row.textContent=`${entry.item.name} · ${entry.state==='completed'?'完成':entry.state==='skipped'?'跳过':'失败'}${entry.error?' · '+entry.error:''}`;list.append(row);}more.disabled=!page.entries.length;offset=page.offset;};
-      close.onclick=()=>{SoDeckMotion.exitMotion(dialog);dialog.close();dialog.remove();};more.onclick=()=>load().catch(e=>this.message(e.message,true));dialog.oncancel=()=>dialog.remove();
+      const finish=()=>{SoDeckMotion.exitMotion(dialog);dialog.close();dialog.remove();};
+      close.onclick=finish;more.onclick=()=>load().catch(e=>this.message(e.message,true));dialog.oncancel=e=>{e.preventDefault();finish();};
       dialog.append(list,more,close);document.body.append(dialog);dialog.showModal();SoDeckMotion.enterMotion(dialog);await load();
     }
     visibility(visible) { this.visible = visible; if(!visible)this.invalidate();else void this.poll(); }

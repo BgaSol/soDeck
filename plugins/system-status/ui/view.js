@@ -13,7 +13,7 @@ let actionError = '', pollError = '', controlPending = false;
 let histories = { cpu: [], memory: [], receive: [], send: [] };
 let historyEnd = Date.now();
 
-const text = (id, value) => { const label = String(value); if ($(id).textContent !== label) {$(id).textContent = label;if(['freshness','connection','notice','filesystem-warnings'].includes(id))SoDeckMotion.feedbackMotion($(id));} };
+const text = (id, value) => { const label = String(value); if ($(id).textContent !== label) {$(id).textContent = label;} };
 const validBytes = value => typeof value === 'string' ? /^\d{1,20}$/.test(value) : typeof value === 'number' && Number.isFinite(value) && value >= 0;
 const bytes = value => {
   if (!validBytes(value)) return '暂不可用';
@@ -308,7 +308,7 @@ function reconcileFiles(root, items) {
     const put = (selector, value) => { const node = row.querySelector(selector); if (node.textContent !== value) node.textContent = value; };
     const known = f.capacityState === 'known' && Number.isFinite(f.percent);
     const label = f.path || f.name || f.id;
-    const wasWarning=row.classList.contains('warning');row.classList.toggle('warning', f.spaceWarning === true);if(wasWarning!==Boolean(f.spaceWarning))SoDeckMotion.feedbackMotion(row.querySelector('.filesystem-warning'));
+    row.classList.toggle('warning', f.spaceWarning === true);
     put('.filesystem-path', label); row.querySelector('.filesystem-path').title = label;
     put('.filesystem-usage', known ? f.percent.toFixed(1) + '%' : f.capacityState === 'fixedImage' ? '只读镜像' : f.capacityState === 'notApplicable' ? '容量不适用' : '容量不可读');
     put('.filesystem-stats', f.capacityState === 'fixedImage' ? '镜像 ' + bytes(f.total) : f.capacityState === 'notApplicable' ? '系统运行挂载' : f.capacityState === 'unknown' ? '等待有效容量' : bytes(f.used) + ' / ' + bytes(f.total));

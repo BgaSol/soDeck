@@ -28,8 +28,7 @@ import {snapshotChunks} from './snapshot.js';
     const requestId=crypto.randomUUID();
     void sodeck.request(canOpen?'event':'openView',canOpen?{action:'createTerminal',requestId,params:createParams}:{viewType:'terminal',params:createParams}).then(commandStatus).catch(error=>{fail(error);if(commandsApi)void commandStatus({status:'pending'});}).finally(()=>{opening=false;newTerminal.disabled=disconnected||commandPending;});
   };
-  SoDeckMotion.observeMotion(document);let statusText=status.textContent;
-  const statusMotion=new MutationObserver(()=>{if(statusText===status.textContent)return;statusText=status.textContent;if(!status.hidden)SoDeckMotion.feedbackMotion(status);});statusMotion.observe(status,{childList:true});
+  SoDeckMotion.observeMotion(document);
   const encoder=new TextEncoder();
   const fail=error=>{status.hidden=false;status.textContent=String(error);status.classList.add('error');};
   const controls=installTerminalInput(terminal,host,()=>({key:mountKey,canCopy:!disposed&&!restoring,canPaste:enabled&&!restoring&&!disposed&&visible}),fail,()=>search.show());
@@ -176,7 +175,7 @@ import {snapshotChunks} from './snapshot.js';
   addEventListener('sodeck:connectionChanged',event=>{disconnected=!event.detail.connected;if(disconnected){controls.invalidate();enabled=false;stopSize();newTerminal.hidden=true;status.hidden=false;status.textContent='连接已断开，请在工作台重新连接；此页保留原输出。';}else if(ended){newTerminal.hidden=false;newTerminal.disabled=opening||commandPending;}});
   addEventListener('sodeck:themeChanged',event=>theme(event.detail.tokens));
   addEventListener('sodeck:focus',()=>{if(!search.focus())terminal.focus();void enqueueSize(true).catch(()=>{});});
-  addEventListener('sodeck:unmount',()=>{disposed=true;statusMotion.disconnect();clearTimeout(commandTimer);stopSize();search.dispose();location.dispose();appearance.dispose();controls.dispose();observer.disconnect();terminal.dispose();});
+  addEventListener('sodeck:unmount',()=>{disposed=true;clearTimeout(commandTimer);stopSize();search.dispose();location.dispose();appearance.dispose();controls.dispose();observer.disconnect();terminal.dispose();});
   // The final output chunk may arrive without another chunk to trigger a checkpoint.
   const timer=setInterval(()=>{if(disposed){clearInterval(timer);return;}chain=chain.then(()=>{void checkpoint().catch(()=>{});}).catch(()=>{});},1000);
 })();

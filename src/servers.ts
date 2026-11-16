@@ -3,7 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { commitTagInput, newDraft, referenced, serverApi, toInput, type Catalog, type Change, type Draft, type ServerApi } from "./server-api";
 import { action, editor, page, type PageState } from "./server-views";
 import { escape as e, icon } from "./ui";
-import { enterMotion, exitMotion, feedbackMotion } from './motion.js';
+import { enterMotion, exitMotion } from './motion.js';
 import { updateDOM } from "./dom-update";
 import type { ConnectionView } from "./connections";
 import { attachMenuPosition, type MenuPosition } from "./menu-position.js";
@@ -105,12 +105,11 @@ export class ServerManager {
       const x=Math.round(anchor.left-bounds.left+anchor.width/2)+.5,py=Math.round(anchor.top-bounds.top+anchor.height/2)+.5,y=Math.round(box.top-bounds.top+box.height/2)+.5;
       return {d:`M ${x} ${py} V ${y-4} Q ${x} ${y} ${x+4} ${y} H ${box.left-bounds.left}`,selected:row.classList.contains('on-route')};
     });
-    const route=lines.filter(line=>line.selected).map(line=>line.d).join('|'),changed=svg.dataset.route!==route;svg.dataset.route=route;
-    svg.innerHTML=lines.map(line=>`<path d="${line.d}"/>`).join('')+lines.filter(line=>line.selected).map(line=>`<path class="on-route" d="${line.d}"/>`).join('');if(changed)feedbackMotion(svg);
+    svg.innerHTML=lines.map(line=>`<path d="${line.d}"/>`).join('')+lines.filter(line=>line.selected).map(line=>`<path class="on-route" d="${line.d}"/>`).join('');
   }
-  private render() {
+  private render(motion=false) {
     if (this.disposed) return;
-    updateDOM(this.host, this.catalog ? page({...this.catalog,error:this.readError||this.catalog.error}, this.state, this.connections) : this.readError ? `<div class="error-box" role="alert">${e(this.readError)} ${action("reload", "重试")}</div>` : "");
+    updateDOM(this.host, this.catalog ? page({...this.catalog,error:this.readError||this.catalog.error}, this.state, this.connections) : this.readError ? `<div class="error-box" role="alert">${e(this.readError)} ${action("reload", "重试")}</div>` : "", motion);
     const tree=this.host.querySelector<HTMLElement>('.connection-tree')??undefined;
     if(this.linesTree!==tree){if(this.linesTree)this.linesObserver.unobserve(this.linesTree);this.linesTree=tree;if(tree)this.linesObserver.observe(tree);}
     if(this.actionMenu){this.actionMenu.anchor.setAttribute("aria-expanded","true");void this.actionMenu.position?.update();}
@@ -263,11 +262,13 @@ export class ServerManager {
       case "select":
         this.onSelection?.();
         this.selectRecord(id,button.dataset.path); this.render();
+        if(matchMedia('(max-width: 760px)').matches)enterMotion(this.host.querySelector<HTMLElement>('.catalog-detail')!,'x');
         this.host.querySelector<HTMLElement>(matchMedia("(max-width: 760px)").matches ? '.catalog-detail [data-connect-server], .catalog-detail [data-server-action="edit"]' : `[data-path="${CSS.escape(this.state.selected)}"]`)?.focus();
         break;
-      case "collapse": {const path=button.dataset.path!;this.state.collapsed.has(path)?this.state.collapsed.delete(path):this.state.collapsed.add(path);this.render();this.host.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"]`)?.focus();break;}
+      case "collapse": {const path=button.dataset.path!;this.state.collapsed.has(path)?this.state.collapsed.delete(path):this.state.collapsed.add(path);this.render(true);this.host.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"]`)?.focus();break;}
       case "back": {
         const selected = this.state.selected; this.state.detailOpen = false; this.render();
+          if(matchMedia('(max-width: 760px)').matches)enterMotion(this.host.querySelector<HTMLElement>('.catalog-directory')!,'back');
         this.host.querySelector<HTMLElement>(`[data-path="${CSS.escape(selected)}"]`)?.focus();
         break;
       }

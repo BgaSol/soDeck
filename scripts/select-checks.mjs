@@ -79,7 +79,8 @@ export function selectChecks(files, { suite, fallback } = {}) {
   } else {
     for (const file of files) {
       if (file.endsWith('.md') || file.startsWith('docs/')) continue;
-      if (file === 'src/dom-update.ts' || file === 'scripts/plugin-dom-assets.mjs') { ui(); plugin('network-proxy'); integration.add('network-proxy'); continue; }
+      if (/^src\/motion\.(js|d\.ts)$/.test(file)) {sharedUi();pluginNames.forEach(plugin);continue;}
+      if (file === 'src/dom-update.ts' || file === 'scripts/plugin-dom-assets.mjs') { ui(); for(const name of ['network-proxy','docker']){plugin(name);integration.add(name);} continue; }
       if (file === 'scripts/test-cli-arguments.mjs') { full(); continue; }
       if (file === 'scripts/test-theme-tokens.mjs') { ui(); integration.add('system-status'); integration.add('docker'); continue; }
       if (file.startsWith('.github/workflows/') || file.startsWith('.github/actions/')) plan.workflow = true;

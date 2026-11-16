@@ -1,5 +1,5 @@
 import morphdom from "morphdom";
-import { captureMotion, settleMotion, feedbackMotion, exitMotion, revealMotion, observeMotion } from './motion.js';
+import { captureMotion, settleMotion, exitMotion, revealMotion, observeMotion } from './motion.js';
 
 // Keys belong to entities or to controls within an entity, never to a label.
 function nodeKey(node: Node): string | undefined {
@@ -18,18 +18,17 @@ function nodeKey(node: Node): string | undefined {
 }
 
 /** Update only DOM owned by the caller. Child controllers are updated separately. */
-export function updateDOM(element: HTMLElement, html: string) {
+export function updateDOM(element: HTMLElement, html: string, motion = true) {
   observeMotion(element.ownerDocument);
-  const positions = captureMotion(element);
-  const revealed = captureMotion(element,'[data-motion="reveal"]');
-  const feedback = new Map([...element.querySelectorAll('[data-motion="feedback"]')].map(node => [node, node.textContent]));
+  const positions = motion ? captureMotion(element) : new Map<Element,DOMRect>();
+  const revealed = motion ? captureMotion(element,'[data-motion="reveal"]') : new Map<Element,DOMRect>();
   const next = element.cloneNode(false) as HTMLElement;
   next.innerHTML = html;
   let selection: { node: HTMLInputElement | HTMLTextAreaElement; start: number; end: number; direction: "forward" | "backward" | "none" } | undefined;
   morphdom(element, next, {
     childrenOnly: true,
     getNodeKey: nodeKey,
-    onBeforeNodeDiscarded(node) { if (node instanceof Element && node.getAttribute('data-motion') === 'item') exitMotion(node); return true; },
+    onBeforeNodeDiscarded(node) { if (motion && node instanceof Element && node.getAttribute('data-motion') === 'item') exitMotion(node); return true; },
     onBeforeElUpdated(from, to) {
       if (from instanceof HTMLDetailsElement) to.toggleAttribute("open", from.open);
       if (from === document.activeElement && (from instanceof HTMLInputElement || from instanceof HTMLTextAreaElement) && from.selectionStart !== null && from.selectionEnd !== null && from.value !== (to as HTMLInputElement).value) {
@@ -39,16 +38,17 @@ export function updateDOM(element: HTMLElement, html: string) {
     },
   });
   if (selection && document.activeElement === selection.node && selection.node.selectionStart !== null) selection.node.setSelectionRange(selection.start, selection.end, selection.direction);
-  settleMotion(element, positions);
-  for(const node of captureMotion(element,'[data-motion="reveal"]').keys())if(!revealed.has(node))revealMotion(node);
-  for (const [node, text] of feedback) if (node.isConnected && node.textContent !== text) feedbackMotion(node);
+  if(motion){
+    settleMotion(element, positions);
+    for(const node of captureMotion(element,'[data-motion="reveal"]').keys())if(!revealed.has(node))revealMotion(node);
+  }
 }
 
 /** A controller owns its press queue and disposes it with its DOM. */
 export class DomRegion {
   private events = new AbortController();
   private pointer?: number;
-  private pending = new Map<HTMLElement, string>();
+  private pending = new Map<HTMLElement, {html:string;motion:boolean}>();
   private timer?: ReturnType<typeof setTimeout>;
   private disposed = false;
   constructor(private root: HTMLElement, private updated?: () => void) {
@@ -64,18 +64,18 @@ export class DomRegion {
         this.pointer = undefined;
         const pending = [...this.pending]; this.pending.clear();
         if (this.disposed || !root.isConnected) return;
-        for (const [element, html] of pending) if (root.contains(element)) updateDOM(element, html);
+        for (const [element, {html,motion}] of pending) if (root.contains(element)) updateDOM(element, html, motion);
         if (pending.length) this.updated?.();
       }, 0);
     };
     for (const name of ["pointerup", "pointercancel", "lostpointercapture"] as const) root.ownerDocument.addEventListener(name, release, { capture: true, signal });
     root.ownerDocument.defaultView?.addEventListener("blur", () => release(), { signal });
   }
-  update(element: HTMLElement, html: string) {
+  update(element: HTMLElement, html: string, motion = true) {
     if (this.disposed) return;
-    if (this.pointer !== undefined) { this.pending.set(element, html); return; }
+    if (this.pointer !== undefined) { this.pending.set(element, {html,motion}); return; }
     this.pending.delete(element);
-    updateDOM(element, html);
+    updateDOM(element, html, motion);
   }
   dispose() { this.disposed = true; this.events.abort(); clearTimeout(this.timer); this.pending.clear(); this.pointer = undefined; }
 }

@@ -387,7 +387,15 @@ try {
   }
 
   await page.setViewportSize({ width: 1100, height: 720 });
-  await page.locator("#settings-button").click();
+  await page.evaluate(()=>{
+    window.navigationAnimate=Element.prototype.animate;window.navigationMotion=[];
+    Element.prototype.animate=function(...args){if(this.matches('#console-page,#layer-content,.settings-main'))navigationMotion.push(this.id||this.className);return navigationAnimate.apply(this,args);};
+  });
+  try{
+    await page.locator('#settings-button').click();
+    await page.locator('#settings-nav-appearance').waitFor({state:'visible'});
+    assert.deepEqual(await page.evaluate(()=>navigationMotion),['console-page'],'One management navigation animates exactly one owned container');
+  }finally{await page.evaluate(()=>{Element.prototype.animate=navigationAnimate;delete window.navigationAnimate;delete window.navigationMotion;});}
   assert.equal(await page.locator('#settings-nav-appearance').getAttribute('aria-current'), 'page', 'Settings initially opens preferences');
   assert.equal(await page.locator('.console-nav [aria-current=page]').getAttribute('data-console-page'),'settings');
   const appearanceNav = page.locator('[data-action="section"][data-id="appearance"]');

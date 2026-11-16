@@ -12,7 +12,6 @@
   input, select, textarea { transition: border-color var(--sd-motion-feedback) ease-out, outline-color var(--sd-motion-feedback) ease-out; }
   button > svg { transition: transform var(--sd-motion-feedback) ease-out; }
   button:active:not(:disabled):not(.tree-toggle):not([data-tree-action="toggle"]) > svg { transform: scale(.92); }
-  body { transition:background-color var(--sd-motion-enter) ease-out,color var(--sd-motion-enter) ease-out; }
   svg { stroke-width: var(--sd-icon-stroke); }
   h1, h2, h3 { font-weight: var(--sd-title-weight); }
   ::selection { background: var(--sd-selection, var(--accent-bg)); }
@@ -44,7 +43,7 @@
     border: 2px solid transparent; position: relative;
     border-radius: var(--sd-radius-control); background: var(--panel);
   }
-  .sd-control::before, .sd-menu::before {
+  .sd-control::before {
     content: ""; position: absolute; inset: -2px; border: var(--sd-stroke-control) solid var(--border);
     border-radius: inherit; pointer-events: none;
   }
@@ -66,7 +65,7 @@
   .sd-status-action { font-size: 12px; white-space: nowrap; }
   .sd-primary { background: var(--sd-primary); color: var(--sd-primary-text); }
   .sd-primary:hover { background: var(--sd-primary-hover); filter: none; }
-  .sd-menu { background: var(--panel); box-shadow: var(--shadow); padding: 5px; border-radius: 10px; }
+  .sd-menu { border: var(--sd-stroke-control) solid var(--border); background: var(--panel); box-shadow: var(--shadow); padding: calc(7px - var(--sd-stroke-control)); border-radius: 10px; }
   .sd-menu { box-sizing: border-box; display: flex; flex-direction: column; overflow: visible; min-width: 0; }
   .sd-menu[hidden] { display: none; }
   .sd-menu[popover]:not(:popover-open) { display: none; }

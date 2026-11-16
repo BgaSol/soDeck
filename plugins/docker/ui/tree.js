@@ -24,17 +24,17 @@ export class ResourceTree {
   }
   node(key){return this.page.nodes.find(n=>n.key===key);}
   anchor(){const index=Math.floor(this.viewport.scrollTop/30),n=this.page.nodes[index-(this.page.offset||0)];return n?{key:n.key,index,offsetY:index*30-this.viewport.scrollTop}:null;}
-  render(page,selected){const anchor=this.anchor();this.page=page||{nodes:[],offset:0,total:0};const nodes=this.page.nodes||[];const offset=this.page.offset||0;
+  render(page,selected,motion=false){const anchor=this.anchor();this.page=page||{nodes:[],offset:0,total:0};const nodes=this.page.nodes||[];const offset=this.page.offset||0;
     nodes.forEach((n,i)=>this.positions.set(n.key,offset+i));
     const entry=nodes.some(n=>n.key===selected)?selected:nodes[0]?.key;
     const html=`<div role="none" class="tree-space" style="height:${offset*30}px"></div>`+nodes.map(n=>{
       const kind=['load','hint'].includes(n.type)?n.type:n.resource?.kind||n.branchKind||n.type;
       const root=n.type==='root',full=root?this.handlers.rootPath():n.meta;
       const label=[n.label,n.meta].filter(Boolean).join(' · ');
-      return `<div role="treeitem" data-motion="reveal" data-dom-key="${escape(n.key)}" data-tree-key="${escape(n.key)}" class="tree-row tree-${escape(n.type)} ${n.health==='unhealthy'?'tree-error':''}" tabindex="${entry===n.key?'0':'-1'}" aria-level="${n.depth+1}" aria-selected="${n.key===selected}" ${n.loading?'aria-busy="true"':''} ${n.expandable?`aria-expanded="${!!n.expanded}"`:''} style="--depth:${n.depth}" title="${escape(root?full:label)}">
-        <button type="button" tabindex="-1" class="tree-toggle ${n.expanded?'expanded':''}" data-tree-action="toggle" aria-label="${n.expanded?'折叠':'展开'}${escape(n.label)}" ${n.expandable?'':'hidden'}>${icon('arrow')}</button><span class="tree-icon">${icon(n.type==='reference'?'reference':kind)}</span><span class="tree-label">${escape(n.label)}</span>${n.loading?`<span class="tree-loading">${icon('loading')}</span>`:''}<span class="tree-meta" data-motion="feedback">${escape(n.meta)}</span>${n.key===selected?`<button type="button" tabindex="-1" class="tree-more" data-tree-action="menu" aria-label="${escape(n.label)}的更多操作">${icon('more')}</button>`:''}</div>`;
+      return `<div role="treeitem" data-motion="item" data-dom-key="${escape(n.key)}" data-tree-key="${escape(n.key)}" class="tree-row tree-${escape(n.type)} ${n.health==='unhealthy'?'tree-error':''}" tabindex="${entry===n.key?'0':'-1'}" aria-level="${n.depth+1}" aria-selected="${n.key===selected}" ${n.loading?'aria-busy="true"':''} ${n.expandable?`aria-expanded="${!!n.expanded}"`:''} style="--depth:${n.depth}" title="${escape(root?full:label)}">
+        <button type="button" tabindex="-1" class="tree-toggle ${n.expanded?'expanded':''}" data-tree-action="toggle" aria-label="${n.expanded?'折叠':'展开'}${escape(n.label)}" ${n.expandable?'':'hidden'}>${icon('arrow')}</button><span class="tree-icon">${icon(n.type==='reference'?'reference':kind)}</span><span class="tree-label">${escape(n.label)}</span>${n.loading?`<span class="tree-loading">${icon('loading')}</span>`:''}<span class="tree-meta">${escape(n.meta)}</span>${n.key===selected?`<button type="button" tabindex="-1" class="tree-more" data-tree-action="menu" aria-label="${escape(n.label)}的更多操作">${icon('more')}</button>`:''}</div>`;
     }).join('')+`<div role="none" class="tree-space" style="height:${Math.max(0,(this.page.total-offset-nodes.length)*30)}px"></div>`;
-    this.region.update(this.root,html);
+    this.region.update(this.root,html,motion);
     if(anchor){const at=nodes.findIndex(n=>n.key===anchor.key);if(at>=0)this.viewport.scrollTop=(offset+at)*30-anchor.offsetY;}
   }
   focus(key){const row=[...this.root.querySelectorAll('[data-tree-key]')].find(r=>r.dataset.treeKey===key);row?.focus({preventScroll:true});if(row){const index=this.positions.get(key);const top=index*30;if(top<this.viewport.scrollTop)this.viewport.scrollTop=top;else if(top+30>this.viewport.scrollTop+this.viewport.clientHeight)this.viewport.scrollTop=top+30-this.viewport.clientHeight;}return !!row;}

@@ -565,14 +565,13 @@ export class Components {
         continue;
       }
       const s = placements.get(surface);
-      const wasHidden=surface.node.hidden;
       const closing=surface.view.id===shell.closingSides?.left||surface.view.id===shell.closingSides?.right;
       const visible = Boolean(this.hostVisible && s && s.width > 0 && s.height > 0 && !closing && !shell.node.hidden && !shell.node.classList.contains("incoming-component-workspace"));
       if(closing)surface.node.inert=true;else surface.node.inert=this.movingViews.has(surface.view.id)||Boolean(surface.readOnly)||this.closeBlocked.has(surface.view.id);
       surface.node.hidden = !this.hostVisible||!s||s.width<=0||s.height<=0||shell.node.hidden;
       surface.node.style.visibility=shell.node.classList.contains("incoming-component-workspace")?"hidden":"";
       if (s) for (const [key, value] of Object.entries({ left: `${s.left-r.left}px`, top: `${s.top-r.top}px`, width: `${s.width}px`, height: `${s.height}px` })) { if (surface.node.style.getPropertyValue(key) !== value) surface.node.style.setProperty(key, value); }
-      if (surface.visible !== visible) { if(visible){void this.refreshSettings(surface);if(wasHidden)animateMotion(surface.node,[{opacity:0},{opacity:1}]);} if(!visible&&surface.token)this.clipboard.discard(surface.token); surface.visible = visible; this.post(surface, { type: "visibilityChanged", visible }); }
+      if (surface.visible !== visible) { if(visible)void this.refreshSettings(surface); if(!visible&&surface.token)this.clipboard.discard(surface.token); surface.visible = visible; this.post(surface, { type: "visibilityChanged", visible }); }
       if (visible && surface.focusPending === this.focusEpoch) this.focusSurface(surface);
     }
     const moving=[shell.node,...center.querySelectorAll('.view-group')].some(node=>node.getAnimations().some(a=>a.id.startsWith('sd-motion:')&&a.playState==='running'));

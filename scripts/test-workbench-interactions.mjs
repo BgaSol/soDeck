@@ -38,14 +38,14 @@ test('motion preserves entity and input identity, exits without live controls an
       window.motionInput=document.querySelector('#motion-input');motionInput.focus();motionInput.setSelectionRange(1,2);
       window.retainedMotionNode=host.querySelector('[data-dom-key="motion:2"]');
     });
-    await page.waitForTimeout(200);
+    await page.evaluate(()=>Promise.all(document.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
     const changedFeedback=await page.evaluate(()=>{render.replace(document.querySelector('#chrome'),motionMarkup([2,3],'完成'));return document.querySelector('#motion-status').getAnimations().some(a=>a.id==='sd-motion:feedback');});
     assert.equal(await page.locator('[data-dom-key="motion:1"]').count(),0,'Exit effects must not retain a live entity or action target');
     assert.equal(await page.locator('[data-id="1"]').count(),0);
     assert.equal(await page.evaluate(()=>retainedMotionNode===document.querySelector('[data-dom-key="motion:2"]')),true);
     assert.deepEqual(await page.evaluate(()=>({focused:document.activeElement===motionInput,start:motionInput.selectionStart,end:motionInput.selectionEnd})),{focused:true,start:1,end:2});
-    assert(changedFeedback);
-    await page.waitForTimeout(240);
+    assert.equal(changedFeedback,false,'Text updates must not flash during continuous search or polling');
+    await page.evaluate(()=>Promise.all(document.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
     await page.evaluate(()=>render.replace(document.querySelector('#chrome'),motionMarkup([2,3],'完成')));
     assert.equal(await page.locator('#chrome').evaluate(el=>el.getAnimations({subtree:true}).length),0,'Identical background refresh must not restart motion');
     const {before,after}=await page.evaluate(async()=>{
@@ -62,6 +62,47 @@ test('motion preserves entity and input identity, exits without live controls an
     assert.equal(await page.locator('[data-dom-key="motion:4"]').evaluate(el=>el.getAnimations().length),0);
     assert.equal(await page.locator('#motion-status').innerText(),'完成');
   } finally { await page.close(); }
+});
+
+test('interrupted exits preserve presentation and hidden mounts reject late motion',async()=>{
+  const page=await fixture();
+  try {
+    const result=await page.evaluate(async()=>{
+      const motion=await import('/motion.js'),host=document.querySelector('#chrome');
+      host.innerHTML='<div class="sd-menu" style="width:180px"><button>复制地址</button></div>';
+      const node=host.firstChild,animation=motion.enterMotion(node);animation.pause();animation.currentTime=12;
+      const before=Number(getComputedStyle(node).opacity),border=getComputedStyle(node).borderTopColor;
+      motion.exitMotion(node);node.hidden=true;
+      const ghost=document.querySelector('[inert][aria-hidden="true"]');
+      const exit={before,after:Number(getComputedStyle(ghost).opacity),border,exitBorder:getComputedStyle(ghost).borderTopColor};
+      dispatchEvent(new CustomEvent('sodeck:visibilityChanged',{detail:{visible:false}}));
+      node.hidden=false;motion.enterMotion(node);
+      const hidden=node.getAnimations().filter(a=>a.id.startsWith('sd-motion:')).length;
+      const projections=document.querySelectorAll('[inert][aria-hidden="true"]').length;
+      dispatchEvent(new CustomEvent('sodeck:mount',{detail:{visible:true}}));
+      motion.enterMotion(node);
+      const remounted=node.getAnimations().filter(a=>a.id.startsWith('sd-motion:')).length;
+      dispatchEvent(new Event('sodeck:unmount'));motion.enterMotion(node);
+      return {exit,hidden,projections,remounted,unmounted:node.getAnimations().length};
+    });
+    assert(Math.abs(result.exit.before-result.exit.after)<.05,'Closing starts at the presented opacity');
+    assert.equal(result.exit.border,result.exit.exitBorder);
+    assert.equal(result.hidden,0);assert.equal(result.projections,0);assert.equal(result.remounted,1);assert.equal(result.unmounted,0);
+  } finally {await page.close();}
+});
+
+test('motion measurement is bounded and reduced motion performs no geometry reads',async()=>{
+  const page=await fixture();
+  try {
+    await page.evaluate(()=>{
+      const host=document.querySelector('#chrome');host.innerHTML='<div data-motion="item">item</div>'.repeat(1000);window.geometryReads=0;
+      for(const node of host.children)node.getBoundingClientRect=()=>{geometryReads++;return new DOMRect(0,0,30,20);};
+    });
+    const measured=await page.evaluate(async()=>{const {captureMotion}=await import('/motion.js');return {count:captureMotion(document.querySelector('#chrome')).size,reads:geometryReads};});
+    assert.deepEqual(measured,{count:40,reads:40});
+    await page.emulateMedia({reducedMotion:'reduce'});
+    assert.deepEqual(await page.evaluate(async()=>{geometryReads=0;const {captureMotion}=await import('/motion.js');return {count:captureMotion(document.querySelector('#chrome')).size,reads:geometryReads};}),{count:0,reads:0});
+  } finally {await page.close();}
 });
 test('file progress reflects observed bytes and only interpolates the same current file',async()=>{
   const page=await fixture();
@@ -98,6 +139,26 @@ test('file progress reflects observed bytes and only interpolates the same curre
     }
     await page.evaluate(()=>transfers.dispose());
   } finally { await page.close(); }
+});
+
+test('file task rows and meters survive polling and one completion batch has one notice',async()=>{
+  const page=await fixture();
+  try {
+    await page.addScriptTag({content:fs.readFileSync('plugins/files/ui/transfer.js','utf8')});
+    await page.evaluate(async()=>{
+      window.tasks=[1,2].map(id=>({id:String(id),state:'running',kind:'upload',current:'/a',currentBytes:'25',currentTotal:'100',bytes:'0',completed:0,failed:0,skipped:0}));
+      window.messages=[];window.transfers=new FileTransfers({host:document.querySelector('#chrome'),event:async()=>({tasks}),refresh:async()=>{},message:text=>messages.push(text)});
+      transfers.panel.open=true;clearTimeout(transfers.timer);await transfers.poll();clearTimeout(transfers.timer);
+      window.row=document.querySelector('[data-batch="1"]');window.fill=row.querySelector('.transfer-progress span');
+      row.querySelector('button').focus();
+      tasks[0].currentBytes='75';await transfers.poll();clearTimeout(transfers.timer);
+    });
+    assert(await page.evaluate(()=>row===document.querySelector('[data-batch="1"]')&&fill===row.querySelector('.transfer-progress span')));
+    assert.equal(await page.evaluate(()=>document.activeElement.dataset.control),'1/取消任务','Polling keeps focus on the same logical task control');
+    await page.evaluate(async()=>{for(const task of tasks)task.state='completed';await transfers.poll();clearTimeout(transfers.timer);});
+    assert(await page.evaluate(()=>row===document.querySelector('[data-batch="1"]')&&transfers.groups.completed.list.contains(row)));
+    assert.deepEqual(await page.evaluate(()=>messages),['2 项文件任务已结束']);
+  } finally {await page.close();}
 });
 
 test('overflow controls stay fixed, animation merges input and direct pixels interrupt it',async()=>{

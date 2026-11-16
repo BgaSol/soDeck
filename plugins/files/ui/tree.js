@@ -124,7 +124,7 @@
         const root = this.nodes.get(this.rootPath); root.error = error.message; this.render();
       } finally { this.input.disabled = false; this.restoring = false; this.persist(); }
     }
-    load(n, next = false) {
+    load(n, next = false, motion = false) {
       if (n.loading) return n.loading;
       n.error = '';
       const context=this.contextEpoch;
@@ -140,11 +140,12 @@
           this.sort(n);
           n.loaded = true; n.pages = next ? n.pages + 1 : 1; n.more = result.more; n.cursor = result.cursor;
         } catch (error) { if(context===this.contextEpoch&&!this.disposed){n.error = error.message; n.cursor = null; this.message(error.message, true);} }
-        finally { n.loading = null; this.pending.delete(work); if(context===this.contextEpoch&&!this.disposed)this.render(); }
+        finally { n.loading = null; this.pending.delete(work); if(context===this.contextEpoch&&!this.disposed)this.render(motion); }
       })();
       n.loading = work; this.pending.add(work); this.render(); return work;
     }
     async toggle(n) {
+      const positions=SoDeckMotion.captureMotion(this.tree,'.tree-row');
       this.cancelFollow(true);
       if (this.expanded.has(n.path)) {
         this.expanded.delete(n.path);
@@ -152,10 +153,10 @@
       }
       else {
         this.expand(n.path);
-        this.render();
-        if (!n.loaded && !n.loading) await this.load(n);
       }
-      this.render(); this.persist();
+      this.render(true,positions);
+      if(this.expanded.has(n.path)&&!n.loaded&&!n.loading)await this.load(n,false,true);
+      this.persist();
     }
     async reveal(path, expandTarget = false, check=()=>{}) {
       check();
@@ -295,14 +296,16 @@
     }
     collapseAll() {
       this.cancelFollow(true);
-      this.expanded.clear(); this.selected = this.rootPath; this.input.value = this.rootPath; this.render(); this.persist();
+      this.expanded.clear(); this.selected = this.rootPath; this.input.value = this.rootPath; this.render(true); this.persist();
     }
-    render() {
+    render(motion = false, previous) {
+      const positions=previous||(motion?SoDeckMotion.captureMotion(this.tree,'.tree-row'):new Map());
+      const rows=new Map([...this.tree.querySelectorAll('.tree-row')].map(row=>[row.dataset.path,row]));
       const before=new Map([...this.tree.querySelectorAll('.tree-row')].map(row=>[row.dataset.path,row.getAttribute('aria-expanded')]));
       const fragment = document.createDocumentFragment(); this.visible = []; this.maxDepth = 1;
       const visit = (n, level, pos, count) => {
         this.maxDepth = Math.max(this.maxDepth, level);
-        const row = document.createElement('div'); row.className = 'tree-row'; row.id = n.key; row.dataset.path = n.path; row.dataset.kind = n.attrs.kind;
+        const row = rows.get(n.path)||document.createElement('div');row.replaceChildren();row.removeAttribute('aria-expanded');row.removeAttribute('aria-busy'); row.className = 'tree-row'; row.id = n.key; row.dataset.path = n.path; row.dataset.kind = n.attrs.kind;
         row.setAttribute('role', 'treeitem'); row.setAttribute('aria-level', level); row.setAttribute('aria-posinset', pos); row.setAttribute('aria-setsize', count); row.setAttribute('aria-label', n.name);
         row.setAttribute('aria-selected', String(this.selection.has(n.path))); row.style.setProperty('--depth', level - 1); row.title = n.path;
         const directory = n.attrs.kind === 'directory', expanded = this.expanded.has(n.path);
@@ -314,9 +317,9 @@
         const size = document.createElement('span'); size.className = 'tree-size'; size.textContent = directory ? '' : bytes(n.attrs.size);
         row.append(arrow, icon(directory ? 'folder' : n.attrs.kind === 'link' ? 'link' : 'file'), name, size);
         this.decorateMount(row);
-        row.addEventListener('click', e => { this.tree.focus(); this.select(n, false, e); });
-        row.addEventListener('dblclick', e => { if (!e.target.closest('.tree-arrow')) void this.run(() => this.open(n)); });
-        row.addEventListener('contextmenu', e => { e.preventDefault(); if (!this.selection.has(n.path)) this.select(n, false); this.showMenu(n, e.clientX, e.clientY); });
+        row.onclick=e=>{this.tree.focus();this.select(n,false,e);};
+        row.ondblclick=e=>{if(!e.target.closest('.tree-arrow'))void this.run(()=>this.open(n));};
+        row.oncontextmenu=e=>{e.preventDefault();if(!this.selection.has(n.path))this.select(n,false);this.showMenu(n,e.clientX,e.clientY);};
         this.visible.push(n); fragment.append(row);
         if (!directory || !expanded) return;
         const children=this.children(n);
@@ -336,7 +339,8 @@
       this.tree.replaceChildren(fragment); this.tree.scrollTop = scroll;
       const visible=new Set(this.visible.map(n=>n.path));this.selection=new Set([...this.selection].filter(path=>visible.has(path)));if(!visible.has(this.anchor))this.anchor='';
       this.indent();
-      for(const row of [...this.tree.querySelectorAll('.tree-row')].filter(row=>{const r=row.getBoundingClientRect(),v=this.tree.getBoundingClientRect();return r.bottom>v.top&&r.top<v.bottom;}).slice(0,40)){
+      if(motion)SoDeckMotion.settleMotion(this.tree,positions,'.tree-row',false);
+      for(const row of motion?SoDeckMotion.captureMotion(this.tree,'.tree-row').keys():[]){
         if(!before.has(row.dataset.path))SoDeckMotion.revealMotion(row);
         else if(before.get(row.dataset.path)!==row.getAttribute('aria-expanded')){const icon=row.querySelector('.tree-arrow .glyph');if(icon)SoDeckMotion.animateMotion(icon,[{transform:before.get(row.dataset.path)==='true'?'rotate(90deg)':'rotate(0deg)'},{transform:row.getAttribute('aria-expanded')==='true'?'rotate(90deg)':'rotate(0deg)'}]);}
       }
