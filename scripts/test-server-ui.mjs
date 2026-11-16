@@ -146,6 +146,12 @@ try {
   for(const theme of ['light','dark','dopamine']){
     await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
     await page.evaluate(async()=>{await new Promise(requestAnimationFrame);await Promise.allSettled(document.getAnimations().map(animation=>animation.finished));});
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    const guideOffset=await work().locator('.connection-tree').evaluate(tree=>{
+      const top=tree.getBoundingClientRect().top,rows=[...tree.querySelectorAll('.node-card')],paths=[...tree.querySelectorAll('.tree-lines path:not(.on-route)')];
+      return Math.max(...rows.map((row,i)=>{const box=row.getBoundingClientRect(),end=paths[i].getPointAtLength(paths[i].getTotalLength());return Math.abs(end.y-(box.top-top+box.height/2));}));
+    });
+    assert(guideOffset<=1,`${theme} live theme switch keeps guides aligned: ${guideOffset}px`);
     await page.screenshot({path:`artifacts/connection-tree/${theme}.png`});
   }
   await search.fill('公网');
@@ -177,11 +183,15 @@ try {
   assert.equal(await work().locator('.catalog-detail h2').innerText(),'生产数据库更新','A delayed refresh cannot overwrite a newer save');
   checks.push('中转搜索、全部保留搜索、刷新保留选择和筛选、失败保留树、隐藏资料恢复及过期读取隔离');
   const ancestor=work().locator(`.connection-node[data-id="${gateway}"]`).first();
+  assert.equal(await ancestor.locator('.tree-toggle svg path').getAttribute('d'),'m9 6 6 6-6 6');
+  assert.equal(await ancestor.locator('.tree-toggle svg').evaluate(svg=>getComputedStyle(svg).transform),'matrix(0, 1, -1, 0, 0, 0)','Expanded branch points down');
   await ancestor.locator('[data-server-action="collapse"]').click();
   assert.equal(await ancestor.getAttribute('aria-expanded'),'false');
+  assert.equal(await ancestor.locator('.tree-toggle svg').evaluate(svg=>getComputedStyle(svg).transform),'matrix(1, 0, 0, 1, 0, 0)','Collapsed branch points right');
   await action('reload',work()).click();assert.equal(await ancestor.getAttribute('aria-expanded'),'false');
   assert.equal(await work().locator('.catalog-detail h2').innerText(),'生产数据库更新');
   await search.fill('公网');assert.equal(await ancestor.getAttribute('aria-expanded'),'true');
+  assert.equal(await ancestor.locator('.tree-toggle').evaluate(button=>getComputedStyle(button).opacity),'1','Filtered branch keeps an opaque guide mask');
   await search.fill('');assert.equal(await ancestor.getAttribute('aria-expanded'),'false');
   await ancestor.locator('[data-server-action="collapse"]').click();
   checks.push('刷新保留折叠和详情，筛选临时展开后恢复原折叠');
@@ -242,7 +252,7 @@ try {
       const row=work().locator(`[data-server-action="select"][data-id="${target}"]`);
       await row.focus();await page.keyboard.press('Enter');
       assert.equal(await page.evaluate(()=>document.activeElement===document.body),false,`${theme}/${width} selecting a server keeps contextual focus`);
-      if(width===1100){await row.evaluate(async node=>{await Promise.allSettled(node.getAnimations({subtree:true}).map(animation=>animation.finished));});const ratios=await row.evaluate(row=>{const l=color=>{const c=color.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722;};const b=l(getComputedStyle(row).backgroundColor);return [...row.querySelectorAll('.node-endpoint,.node-tags,.node-state')].map(node=>{const a=l(getComputedStyle(node).color);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);});});assert(ratios.length&&ratios.every(r=>r>=4.5),`${theme} selected server contrast: ${ratios}`);}
+      if(width===1100){await row.evaluate(async node=>{await Promise.allSettled(node.getAnimations({subtree:true}).map(animation=>animation.finished));});const ratios=await row.evaluate(row=>{const l=color=>{const c=color.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722;};const b=l(getComputedStyle(row.querySelector('.node-card')).backgroundColor);return [...row.querySelectorAll('.node-endpoint,.node-tags,.node-state')].map(node=>{const a=l(getComputedStyle(node).color);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);});});assert(ratios.length&&ratios.every(r=>r>=4.5),`${theme} selected server contrast: ${ratios}`);}
       if(width===720){await action('back',work()).focus();await page.keyboard.press('Enter');assert.equal(await row.evaluate(el=>el===document.activeElement),true,'Returning to the list focuses the original server');}
       await action("new-server", work()).click();
       await field("routed").selectOption("true"); await action("add-socks").click();

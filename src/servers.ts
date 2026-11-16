@@ -25,6 +25,7 @@ export class ServerManager {
   private readError = "";
   private actionMenu?: { node:HTMLElement; anchor:HTMLButtonElement; events:AbortController; position?:MenuPosition; id:string };
   private linesFrame?:number;
+  private linesTree?:HTMLElement;
   private linesObserver = new ResizeObserver(()=>this.scheduleLines());
   private selectionTimer?: ReturnType<typeof setTimeout>;
   constructor(private host: HTMLElement, private notify: (message: string) => void, private api: ServerApi = serverApi) {
@@ -93,13 +94,23 @@ export class ServerManager {
   private drawLines() {
     const tree=this.host.querySelector<HTMLElement>('.connection-tree'),svg=tree?.querySelector<SVGElement>('.tree-lines'),origin=tree?.querySelector<HTMLElement>('.tree-origin');
     if(!tree||!svg||!origin)return;
-    const bounds=tree.getBoundingClientRect(),start=origin.getBoundingClientRect(),rows=[...tree.querySelectorAll<HTMLElement>('.connection-node')];
+    const bounds=tree.getBoundingClientRect(),rows=[...tree.querySelectorAll<HTMLElement>('.connection-node')];
+    if(!bounds.width||!bounds.height){svg.innerHTML='';return;}
+    const index=new Map(rows.map(row=>[row.dataset.path,row]));
     svg.setAttribute('viewBox',` 0 0 ${bounds.width} ${bounds.height}`.trim());
-    svg.innerHTML=rows.map(row=>{const box=row.getBoundingClientRect(),parent=rows.find(n=>n.dataset.path===row.dataset.parent)?.getBoundingClientRect()??start;const x=box.left-bounds.left-10,y=box.top-bounds.top+box.height/2,py=parent.top-bounds.top+parent.height/2;return `<path class="${row.classList.contains('on-route')?'on-route':''}" d="M ${x} ${py} V ${y} H ${box.left-bounds.left}"/>`;}).join('');
+    const lines=rows.map(row=>{
+      const parent=index.get(row.dataset.parent),anchor=(parent?.querySelector('.tree-toggle,.tree-toggle-placeholder')??origin.querySelector('.tree-origin-symbol'))!.getBoundingClientRect();
+      const box=row.querySelector('.node-card')!.getBoundingClientRect();
+      const x=Math.round(anchor.left-bounds.left+anchor.width/2)+.5,py=Math.round(anchor.top-bounds.top+anchor.height/2)+.5,y=Math.round(box.top-bounds.top+box.height/2)+.5;
+      return {d:`M ${x} ${py} V ${y-4} Q ${x} ${y} ${x+4} ${y} H ${box.left-bounds.left}`,selected:row.classList.contains('on-route')};
+    });
+    svg.innerHTML=lines.map(line=>`<path d="${line.d}"/>`).join('')+lines.filter(line=>line.selected).map(line=>`<path class="on-route" d="${line.d}"/>`).join('');
   }
   private render() {
     if (this.disposed) return;
     updateDOM(this.host, this.catalog ? page({...this.catalog,error:this.readError||this.catalog.error}, this.state, this.connections) : this.readError ? `<div class="error-box" role="alert">${e(this.readError)} ${action("reload", "重试")}</div>` : "");
+    const tree=this.host.querySelector<HTMLElement>('.connection-tree')??undefined;
+    if(this.linesTree!==tree){if(this.linesTree)this.linesObserver.unobserve(this.linesTree);this.linesTree=tree;if(tree)this.linesObserver.observe(tree);}
     if(this.actionMenu){this.actionMenu.anchor.setAttribute("aria-expanded","true");void this.actionMenu.position?.update();}
     this.scheduleLines();
   }

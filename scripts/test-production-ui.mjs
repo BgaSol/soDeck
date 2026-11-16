@@ -322,6 +322,18 @@ try {
       await page.keyboard.press('Escape');assert.equal(await newMenu.evaluate(el=>el===document.activeElement),true);
       assert.equal(await newMenu.getAttribute('aria-expanded'),'false');
       const catalogList=page.locator('.catalog-list');
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      const treeGeometry=await page.locator('.connection-tree').evaluate(tree=>{
+        const bounds=tree.getBoundingClientRect(),rows=[...tree.querySelectorAll('.connection-node')],paths=[...tree.querySelectorAll('.tree-lines path:not(.on-route)')],origin=tree.querySelector('.tree-origin-symbol').getBoundingClientRect(),style=getComputedStyle(tree),gutter=parseFloat(style.getPropertyValue('--sd-tree-gutter')),indent=parseFloat(style.getPropertyValue('--sd-connection-indent'));
+        return {count:paths.length,rows:rows.length,edges:rows.map((row,i)=>{
+          const parent=rows.find(parent=>parent.dataset.path===row.dataset.parent),anchor=(parent?.querySelector('.tree-toggle,.tree-toggle-placeholder')??tree.querySelector('.tree-origin-symbol')).getBoundingClientRect(),card=row.querySelector('.node-card').getBoundingClientRect();
+          const first=paths[i].getPointAtLength(0),last=paths[i].getPointAtLength(paths[i].getTotalLength()),slot=row.querySelector('.tree-toggle,.tree-toggle-placeholder').getBoundingClientRect();
+          return {anchorOffset:Math.abs(first.x-(anchor.left-bounds.left+anchor.width/2)),slotOffset:Math.abs(slot.left+slot.width/2-(origin.left+origin.width/2+Number(row.style.getPropertyValue('--node-depth'))*indent)),slotWidth:slot.width,gutter,cardOffset:Math.abs(last.x-(card.left-bounds.left)),centerOffset:Math.abs(last.y-(card.top-bounds.top+card.height/2)),outside:paths[i].getBBox().x<card.left-bounds.left,rounded:paths[i].getAttribute('d').includes(' Q ')};
+        }),highlightLast:[...tree.querySelectorAll('.tree-lines path')].slice(paths.length).every(path=>path.classList.contains('on-route'))};
+      });
+      assert.equal(treeGeometry.count,treeGeometry.rows);
+      assert(treeGeometry.edges.every(edge=>edge.anchorOffset<=1&&edge.slotOffset<1&&edge.slotWidth===edge.gutter&&edge.cardOffset<1&&edge.centerOffset<=1&&edge.outside&&edge.rounded),`${theme}/${width} guides align with parent controls and end outside child cards`);
+      assert(treeGeometry.highlightLast,'Selected route is drawn above sibling guides');
       await catalogList.evaluate(el=>el.scrollTo(0,80));const directoryScroll=await catalogList.evaluate(el=>el.scrollTop);
       await page.locator('[data-server-action="reload"]').click();
       assert.equal(await catalogList.evaluate(el=>el.scrollTop),directoryScroll,`${theme}/${width} refresh preserves directory scroll`);
