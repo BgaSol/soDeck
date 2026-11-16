@@ -319,8 +319,13 @@ try {
   await snap.locator('summary').click();
   await frame.locator('#scroll').evaluate(e => e.scrollTop = e.querySelector('.filesystem-section').offsetTop);
   await page.screenshot({ path: 'artifacts/system-status-ui/filesystem-expanded-light.png' });
+  const boot = frame.locator('[data-mount-key="boot-0"]');
+  await boot.locator('summary').click(); await boot.locator('summary').focus();
+  await boot.evaluate(e => { window.retainedBoot = e; });
   Object.assign(files.find(f => f.id === 'boot-0'), { percent: 90, displayGroup: 'primary', spaceWarning: true });
-  snapshot.revision++; await refresh();
+  snapshot.revision++;
+  await frame.locator('#filesystems .filesystem.warning').waitFor();
+  assert(await boot.evaluate(e => e === window.retainedBoot && e.open && document.activeElement === e.querySelector('summary')), 'Risk promotion preserves the focused details node');
   assert.equal(await frame.locator('#filesystems .filesystem.warning').count(), 1);
   assert.equal(await frame.locator('#other-mounts-label').innerText(), '其他挂载（11）');
   assert.equal(await frame.locator('#auxiliary-filesystems [data-mount-key="boot-0"]').count(), 0);

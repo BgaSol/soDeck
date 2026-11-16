@@ -257,6 +257,7 @@ async function lists(localEpoch) {
   const hidden = (summary.auxiliary || 0) + (summary.system || 0);
   $('other-mounts').hidden = !hidden;
   text('other-mounts-label', '其他挂载（' + hidden + '）');
+  const focused = document.activeElement, focusedRow = focused?.closest('.filesystem'), previousParent = focusedRow?.parentElement;
   await filesystemList(filesystemMode, 'filesystems', '', localEpoch);
   if (localEpoch !== epoch || !visible) return;
   $('all-filesystems').hidden = !summary.primary || (filesystemMode === 'overview' && summary.primary <= filePages.overview.total);
@@ -264,6 +265,7 @@ async function lists(localEpoch) {
   if ($('other-mounts').open && hidden) {
     await Promise.all(['auxiliary', 'system'].map(name => filesystemList(name, name + '-filesystems', name + '-', localEpoch)));
   }
+  if (localEpoch === epoch && visible && focusedRow?.isConnected && previousParent !== focusedRow.parentElement && document.activeElement === document.body && focused.getClientRects().length) focused.focus({ preventScroll: true });
 }
 function resetFiles() {
   filesystemMode = 'overview'; fileNodes.clear();
