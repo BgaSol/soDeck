@@ -70,6 +70,8 @@ export function captureMotion(root, selector = '[data-motion="item"]') {
   return positions;
 }
 export function settleMotion(root, before, selector = '[data-motion="item"]', enter = true) {
+  // Measure the destination without the previous effect, after capturing its presentation.
+  for(const node of before.keys())cancelMotion(node);
   for (const [node,next] of captureMotion(root,selector)) {
     const old = before.get(node);
     if (!old) { if(enter)enterMotion(node); continue; }

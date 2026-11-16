@@ -104,6 +104,23 @@ test('motion measurement is bounded and reduced motion performs no geometry read
     assert.deepEqual(await page.evaluate(async()=>{geometryReads=0;const {captureMotion}=await import('/motion.js');return {count:captureMotion(document.querySelector('#chrome')).size,reads:geometryReads};}),{count:0,reads:0});
   } finally {await page.close();}
 });
+
+test('reversing layout motion starts at the displayed row position',async()=>{
+  const page=await fixture();
+  try{
+    const result=await page.evaluate(async()=>{
+      const {captureMotion,settleMotion}=await import('/motion.js'),root=document.querySelector('#chrome');
+      root.innerHTML='<div id="spacer" style="height:200px"></div><div data-motion="item" style="height:20px">row</div>';
+      const spacer=root.firstElementChild,row=root.lastElementChild;
+      let before=captureMotion(root);spacer.style.height='300px';settleMotion(root,before);
+      const animation=row.getAnimations()[0];animation.pause();animation.currentTime=30;
+      const presented=row.getBoundingClientRect().top;before=captureMotion(root);spacer.style.height='200px';settleMotion(root,before);
+      const next=row.getBoundingClientRect().top;
+      return {presented,next};
+    });
+    assert(Math.abs(result.presented-result.next)<1,'Reversal must measure the untransformed destination and retain the current presentation');
+  }finally{await page.close();}
+});
 test('file progress reflects observed bytes and only interpolates the same current file',async()=>{
   const page=await fixture();
   try {
