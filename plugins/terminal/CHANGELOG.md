@@ -3,7 +3,15 @@
 - 搜索计数、结果更新和结束提示保持稳定；修复浮层中途退出及隐藏后迟到动效，保留搜索、输入和历史身份。
 - 复用现有 DOM、CSS 与 WAAPI，未新增生产依赖或核心 API。
 
-本版待发行：源码检查、五平台原生独立打包与实际包验收、原始包来源及公开下载核验尚待完成。
+包来源：[d88a62f05a841cde078dfa38e8f6ebb55303b7a5](https://github.com/BgaSol/soDeck/commit/d88a62f05a841cde078dfa38e8f6ebb55303b7a5)；[来源完整 Check](https://github.com/BgaSol/soDeck/actions/runs/43914640450)；[原始独立打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/43914657291)。同一最终提交完整 Check（all，不含 netem）通过，覆盖五平台核心/插件源码、工程脚本、Linux 浏览器、Windows 桌面及 SSH、真实 SFTP/PTY、网络、系统状态、Docker 和组件通信。
+
+Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生独立归档、架构/资源及包内程序握手、生命周期与退出通过。
+
+[五平台原生远程组合](https://github.com/BgaSol/soDeck/actions/runs/43921785675)通过。固定使用本次原始核心 1.3.3、终端 0.9.3、文件 0.11.4、网络 0.4.6 包，验证原生 WebView/Channel 下的 PTY、文件读写/下载、网络转发、移窗、重开与退出；入口不包含系统状态或 Docker。
+
+发行：[terminal 0.9.3](https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.9.3)，非仓库 Latest。发布原始 run 的同一草稿归档，不重建或覆盖正式版本程序包；更新清单 notes 与 Release 说明一致。[永久发行证据](https://github.com/BgaSol/soDeck/blob/main/plugins/terminal/release-evidence/v0.9.3-assets.json)保留来源、原生报告、附件摘要和匿名公开下载核验。
+
+netem、正式旧版到本版的线上升级、原生文件剪贴板/默认应用/深度编辑器专项，以及新增真实 IME、DPI、读屏、触控板和多屏设备验证未执行。浏览器中间帧与原生业务通过不等于五平台人工逐帧体验验收。 原生远程组合的 macOS ARM64 首次因 GitHub hosted Runner 容量不足未启动，仅重试该平台及后续汇总，四个成功平台与固定包输入保留；重试记录见发行证据。
 
 # 0.9.1
 

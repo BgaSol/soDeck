@@ -1,0 +1,402 @@
+{
+  "date": "2026-11-17",
+  "component": "terminal",
+  "version": "0.9.3",
+  "sourceCommit": "d88a62f05a841cde078dfa38e8f6ebb55303b7a5",
+  "originalRunId": "43914657291",
+  "originalRunUrl": "https://github.com/BgaSol/soDeck/actions/runs/43914657291",
+  "releaseId": 447356708,
+  "releaseUrl": "https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.9.3",
+  "tag": "plugin-terminal-v0.9.3",
+  "draft": false,
+  "reports": [
+    {
+      "id": "sodeck.terminal",
+      "version": "0.9.3",
+      "target": "aarch64-apple-darwin",
+      "commit": "d88a62f05a841cde078dfa38e8f6ebb55303b7a5",
+      "sha256": "ad9e2d4d1e068020fda71f4b6a347ead53470b8c41052abee50592b50621a46a",
+      "runId": "43914657291",
+      "toolCommit": "d88a62f05a841cde078dfa38e8f6ebb55303b7a5",
+      "passed": true,
+      "calls": [
+        "settings.get",
+        "terminal.open",
+        "terminal.close"
+      ]
+    },
+    {
+      "id": "sodeck.terminal",
+      "version": "0.9.3",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "d88a62f05a841cde078dfa38e8f6ebb55303b7a5",
+      "sha256": "9b000e7db27a9b6f7acdf35d2ac21b3acc8988b07b483d4cbd473245d74159b3",
+      "runId": "43914657291",
+      "toolCommit": "d88a62f05a841cde078dfa38e8f6ebb55303b7a5",
+      "passed": true,
+      "calls": [
+        "settings.get",
+        "terminal.open",
+        "terminal.close"
+      ]
+    },
+    {
+      "id": "sodeck.terminal",
+      "version": "0.9.3",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "d88a62f05a841cde078dfa38e8f6ebb55303b7a5",
+      "sha256": "c392030b15b2a3c0aac6379f5df66fb93a1f0cbef76df48b9cbce3491e8192fd",
+      "runId": "43914657291",
+      "toolCommit": "d88a62f05a841cde078dfa38e8f6ebb55303b7a5",
+      "passed": true,
+      "calls": [
+        "settings.get",
+        "terminal.open",
+        "terminal.close"
+      ]
+    },
+    {
+      "id": "sodeck.terminal",
+      "version": "0.9.3",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "d88a62f05a841cde078dfa38e8f6ebb55303b7a5",
+      "sha256": "e1418c6e43b6508a70db5ff452f4d63eaed43c87bc7baa115af9727c89c5ec93",
+      "runId": "43914657291",
+      "toolCommit": "d88a62f05a841cde078dfa38e8f6ebb55303b7a5",
+      "passed": true,
+      "calls": [
+        "settings.get",
+        "terminal.open",
+        "terminal.close"
+      ]
+    },
+    {
+      "id": "sodeck.terminal",
+      "version": "0.9.3",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "d88a62f05a841cde078dfa38e8f6ebb55303b7a5",
+      "sha256": "555c45707699e9705a5a813770ae2623203a49420cee087aced1a946e7679ac3",
+      "runId": "43914657291",
+      "toolCommit": "d88a62f05a841cde078dfa38e8f6ebb55303b7a5",
+      "passed": true,
+      "calls": [
+        "settings.get",
+        "terminal.open",
+        "terminal.close"
+      ]
+    }
+  ],
+  "assets": [
+    {
+      "id": 755900296,
+      "name": "plugin-update.json",
+      "size": 3627,
+      "sha256": "6670b4e567f2bc4115f2df8e9b56ab1beef0a827082319c4aa5a075614ef22e1",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/untagged-24c76f2988d3f1d08f9b/plugin-update.json"
+    },
+    {
+      "id": 755737434,
+      "name": "sodeck-terminal_0.9.3_aarch64-apple-darwin.tar.gz",
+      "size": 937378,
+      "sha256": "ad9e2d4d1e068020fda71f4b6a347ead53470b8c41052abee50592b50621a46a",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/untagged-24c76f2988d3f1d08f9b/sodeck-terminal_0.9.3_aarch64-apple-darwin.tar.gz"
+    },
+    {
+      "id": 755737139,
+      "name": "sodeck-terminal_0.9.3_aarch64-pc-windows-msvc.zip",
+      "size": 917750,
+      "sha256": "555c45707699e9705a5a813770ae2623203a49420cee087aced1a946e7679ac3",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/untagged-24c76f2988d3f1d08f9b/sodeck-terminal_0.9.3_aarch64-pc-windows-msvc.zip"
+    },
+    {
+      "id": 755737358,
+      "name": "sodeck-terminal_0.9.3_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 945367,
+      "sha256": "e1418c6e43b6508a70db5ff452f4d63eaed43c87bc7baa115af9727c89c5ec93",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/untagged-24c76f2988d3f1d08f9b/sodeck-terminal_0.9.3_aarch64-unknown-linux-gnu.tar.gz"
+    },
+    {
+      "id": 755737023,
+      "name": "sodeck-terminal_0.9.3_x86_64-pc-windows-msvc.zip",
+      "size": 937089,
+      "sha256": "c392030b15b2a3c0aac6379f5df66fb93a1f0cbef76df48b9cbce3491e8192fd",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/untagged-24c76f2988d3f1d08f9b/sodeck-terminal_0.9.3_x86_64-pc-windows-msvc.zip"
+    },
+    {
+      "id": 755737251,
+      "name": "sodeck-terminal_0.9.3_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 975848,
+      "sha256": "9b000e7db27a9b6f7acdf35d2ac21b3acc8988b07b483d4cbd473245d74159b3",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/untagged-24c76f2988d3f1d08f9b/sodeck-terminal_0.9.3_x86_64-unknown-linux-gnu.tar.gz"
+    }
+  ],
+  "manifest": {
+    "id": "sodeck.terminal",
+    "version": "0.9.3",
+    "apiVersion": "1",
+    "notes": "# 0.9.3\n\n- 搜索计数、结果更新和结束提示保持稳定；修复浮层中途退出及隐藏后迟到动效，保留搜索、输入和历史身份。\n- 复用现有 DOM、CSS 与 WAAPI，未新增生产依赖或核心 API。\n\n包来源：[d88a62f05a841cde078dfa38e8f6ebb55303b7a5](https://github.com/BgaSol/soDeck/commit/d88a62f05a841cde078dfa38e8f6ebb55303b7a5)；[来源完整 Check](https://github.com/BgaSol/soDeck/actions/runs/43914640450)；[原始独立打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/43914657291)。同一最终提交完整 Check（all，不含 netem）通过，覆盖五平台核心/插件源码、工程脚本、Linux 浏览器、Windows 桌面及 SSH、真实 SFTP/PTY、网络、系统状态、Docker 和组件通信。\n\nWindows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生独立归档、架构/资源及包内程序握手、生命周期与退出通过。\n\n[五平台原生远程组合](https://github.com/BgaSol/soDeck/actions/runs/43921785675)通过。固定使用本次原始核心 1.3.3、终端 0.9.3、文件 0.11.4、网络 0.4.6 包，验证原生 WebView/Channel 下的 PTY、文件读写/下载、网络转发、移窗、重开与退出；入口不包含系统状态或 Docker。\n\n发行：[terminal 0.9.3](https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.9.3)，非仓库 Latest。发布原始 run 的同一草稿归档，不重建或覆盖正式版本程序包；更新清单 notes 与 Release 说明一致。[永久发行证据](https://github.com/BgaSol/soDeck/blob/main/plugins/terminal/release-evidence/v0.9.3-assets.json)保留来源、原生报告、附件摘要和匿名公开下载核验。\n\nnetem、正式旧版到本版的线上升级、原生文件剪贴板/默认应用/深度编辑器专项，以及新增真实 IME、DPI、读屏、触控板和多屏设备验证未执行。浏览器中间帧与原生业务通过不等于五平台人工逐帧体验验收。 原生远程组合的 macOS ARM64 首次因 GitHub hosted Runner 容量不足未启动，仅重试该平台及后续汇总，四个成功平台与固定包输入保留；重试记录见发行证据。\n",
+    "platforms": {
+      "aarch64-apple-darwin": {
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.9.3/sodeck-terminal_0.9.3_aarch64-apple-darwin.tar.gz",
+        "sha256": "ad9e2d4d1e068020fda71f4b6a347ead53470b8c41052abee50592b50621a46a"
+      },
+      "aarch64-pc-windows-msvc": {
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.9.3/sodeck-terminal_0.9.3_aarch64-pc-windows-msvc.zip",
+        "sha256": "555c45707699e9705a5a813770ae2623203a49420cee087aced1a946e7679ac3"
+      },
+      "aarch64-unknown-linux-gnu": {
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.9.3/sodeck-terminal_0.9.3_aarch64-unknown-linux-gnu.tar.gz",
+        "sha256": "e1418c6e43b6508a70db5ff452f4d63eaed43c87bc7baa115af9727c89c5ec93"
+      },
+      "x86_64-pc-windows-msvc": {
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.9.3/sodeck-terminal_0.9.3_x86_64-pc-windows-msvc.zip",
+        "sha256": "c392030b15b2a3c0aac6379f5df66fb93a1f0cbef76df48b9cbce3491e8192fd"
+      },
+      "x86_64-unknown-linux-gnu": {
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.9.3/sodeck-terminal_0.9.3_x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "9b000e7db27a9b6f7acdf35d2ac21b3acc8988b07b483d4cbd473245d74159b3"
+      }
+    }
+  },
+  "verification": {
+    "fiveNativeReportsMatchSource": true,
+    "allAssetDigestsMatchReports": true,
+    "manifestTargetsAndUrlsMatch": true,
+    "releaseAndManifestNotesMatch": true,
+    "checkedAt": "2026-11-16T17:23:12.528Z"
+  },
+  "sourceCheck": {
+    "runId": 43914640450,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/43914640450",
+    "sourceCommit": "d88a62f05a841cde078dfa38e8f6ebb55303b7a5",
+    "result": "success",
+    "jobs": [
+      {
+        "name": "select",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43914640450/job/133465402506"
+      },
+      {
+        "name": "checks",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43914640450/job/133465573864"
+      },
+      {
+        "name": "integration-network-linux-x86_64",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43914640450/job/133465573985"
+      },
+      {
+        "name": "native-linux-x86_64",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43914640450/job/133465574006"
+      },
+      {
+        "name": "native-windows-x86_64",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43914640450/job/133465574012"
+      },
+      {
+        "name": "integration-network-linux-aarch64",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43914640450/job/133465574045"
+      },
+      {
+        "name": "native-macos-aarch64",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43914640450/job/133465574104"
+      },
+      {
+        "name": "native-windows-aarch64",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43914640450/job/133465574134"
+      },
+      {
+        "name": "integration-business-linux-x86_64",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43914640450/job/133465574171"
+      },
+      {
+        "name": "desktop",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43914640450/job/133465574180"
+      },
+      {
+        "name": "browser",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43914640450/job/133465574231"
+      },
+      {
+        "name": "native-linux-aarch64",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43914640450/job/133465575966"
+      },
+      {
+        "name": "netem",
+        "result": "skipped",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43914640450/job/133465577184"
+      },
+      {
+        "name": "format",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43914640450/job/133472657898"
+      }
+    ]
+  },
+  "verificationScope": {
+    "local": "Related source/business/UI checks in exact source Check.",
+    "nativePackages": "All five native targets; original archives, architecture/resources, packaged process startup/lifecycle/exit.",
+    "skipped": [
+      "netem",
+      "published release upgrade",
+      "native file clipboard/default application/deep editor optional checks",
+      "new real IME/DPI/screen reader/touchpad/multi-monitor checks",
+      "five-platform manual frame-by-frame motion observation"
+    ]
+  },
+  "nativeRemote": {
+    "runId": 43921785675,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/43921785675",
+    "success": true,
+    "scope": "all",
+    "platforms": [
+      {
+        "target": "x86_64-pc-windows-msvc",
+        "status": "success",
+        "runtime": {
+          "version": "1.3.3",
+          "target": "x86_64-pc-windows-msvc",
+          "completed": true,
+          "workspaceNative": true,
+          "sshNative": true,
+          "networkNative": true,
+          "desktopFilesNative": false
+        }
+      },
+      {
+        "target": "aarch64-pc-windows-msvc",
+        "status": "success",
+        "runtime": {
+          "version": "1.3.3",
+          "target": "aarch64-pc-windows-msvc",
+          "completed": true,
+          "workspaceNative": true,
+          "sshNative": true,
+          "networkNative": true,
+          "desktopFilesNative": false
+        }
+      },
+      {
+        "target": "x86_64-unknown-linux-gnu",
+        "status": "success",
+        "runtime": {
+          "version": "1.3.3",
+          "target": "x86_64-unknown-linux-gnu",
+          "completed": true,
+          "workspaceNative": true,
+          "sshNative": true,
+          "networkNative": true,
+          "desktopFilesNative": false
+        }
+      },
+      {
+        "target": "aarch64-unknown-linux-gnu",
+        "status": "success",
+        "runtime": {
+          "version": "1.3.3",
+          "target": "aarch64-unknown-linux-gnu",
+          "completed": true,
+          "workspaceNative": true,
+          "sshNative": true,
+          "networkNative": true,
+          "desktopFilesNative": false
+        }
+      },
+      {
+        "target": "aarch64-apple-darwin",
+        "status": "success",
+        "runtime": {
+          "version": "1.3.3",
+          "target": "aarch64-apple-darwin",
+          "completed": true,
+          "workspaceNative": true,
+          "sshNative": true,
+          "networkNative": true,
+          "desktopFilesNative": false
+        }
+      }
+    ],
+    "packageRuns": {
+      "core": 43914650247,
+      "terminal": 43914657291,
+      "files": 43914661817,
+      "network": 43914667034
+    },
+    "retries": [
+      {
+        "job": 133490924711,
+        "cause": "GitHub hosted Runner capacity: job never started.",
+        "annotations": [
+          {
+            "path": ".github",
+            "blob_href": "https://github.com/BgaSol/soDeck/blob/d88a62f05a841cde078dfa38e8f6ebb55303b7a5/.github",
+            "start_line": 1,
+            "start_column": null,
+            "end_line": 1,
+            "end_column": null,
+            "annotation_level": "failure",
+            "title": "",
+            "message": "The job was not acquired by Runner of type hosted even after multiple attempts",
+            "raw_details": ""
+          },
+          {
+            "path": ".github",
+            "blob_href": "https://github.com/BgaSol/soDeck/blob/d88a62f05a841cde078dfa38e8f6ebb55303b7a5/.github",
+            "start_line": 1,
+            "start_column": null,
+            "end_line": 1,
+            "end_column": null,
+            "annotation_level": "notice",
+            "title": "",
+            "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+            "raw_details": ""
+          },
+          {
+            "path": ".github",
+            "blob_href": "https://github.com/BgaSol/soDeck/blob/d88a62f05a841cde078dfa38e8f6ebb55303b7a5/.github",
+            "start_line": 1,
+            "start_column": null,
+            "end_line": 1,
+            "end_column": null,
+            "annotation_level": "notice",
+            "title": "",
+            "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+            "raw_details": ""
+          },
+          {
+            "path": ".github",
+            "blob_href": "https://github.com/BgaSol/soDeck/blob/d88a62f05a841cde078dfa38e8f6ebb55303b7a5/.github",
+            "start_line": 1,
+            "start_column": null,
+            "end_line": 1,
+            "end_column": null,
+            "annotation_level": "notice",
+            "title": "",
+            "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+            "raw_details": ""
+          }
+        ]
+      }
+    ]
+  },
+  "notesUpdatedAt": "2026-11-16T18:11:07.538Z",
+  "publishedAt": "2026-11-16T18:11:08Z",
+  "publicVerification": {
+    "checkedAt": "2026-11-16T18:12:09.840Z",
+    "publishedAt": "2026-11-16T18:11:08Z",
+    "anonymousDownloads": 6,
+    "allAssetBytesMatch": true,
+    "releaseAndManifestNotesMatch": true,
+    "versionTagMatchesSource": true
+  }
+}

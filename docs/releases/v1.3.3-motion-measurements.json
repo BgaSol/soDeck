@@ -1,0 +1,132 @@
+{
+  "beforeSource": "0cc46676e8f9241c3b5fb0985bbc7953a1c1c134",
+  "afterSource": "d88a62f05a841cde078dfa38e8f6ebb55303b7a5",
+  "inspection": {
+    "date": "2026-11-16T17:06:52.693Z",
+    "scope": "Chromium microbenchmark on the same Windows host; six iframe fixtures exercise shared capture cost, not native terminal/editor rendering or FPS",
+    "performance": [
+      {
+        "scenario": "1000 tree rows",
+        "before": {
+          "readsPerCapture": 1030,
+          "medianMs": 0.5,
+          "p95Ms": 1.2000000476837158,
+          "reduced": false
+        },
+        "after": {
+          "readsPerCapture": 1000,
+          "medianMs": 0.5,
+          "p95Ms": 0.8999999761581421,
+          "reduced": false
+        }
+      },
+      {
+        "scenario": "6 Surface frames with 1000 tree rows",
+        "before": {
+          "readsPerCapture": 1027,
+          "medianMs": 0.5,
+          "p95Ms": 0.800000011920929,
+          "reduced": false
+        },
+        "after": {
+          "readsPerCapture": 1000,
+          "medianMs": 0.5999999642372131,
+          "p95Ms": 1.0999999642372131,
+          "reduced": false
+        }
+      }
+    ],
+    "reducedMotionGeometryReads": 0,
+    "intermediateFrames": [
+      {
+        "theme": "light",
+        "width": 1100,
+        "opacity": 0.57718,
+        "exitOpacity": 0.57718,
+        "offset": [
+          0,
+          -0.011844635009765625
+        ],
+        "border": "1px"
+      },
+      {
+        "theme": "light",
+        "width": 720,
+        "opacity": 0.57718,
+        "exitOpacity": 0.57718,
+        "offset": [
+          0,
+          -0.011844635009765625
+        ],
+        "border": "1px"
+      },
+      {
+        "theme": "dark",
+        "width": 1100,
+        "opacity": 0.57718,
+        "exitOpacity": 0.57718,
+        "offset": [
+          0,
+          -0.011844635009765625
+        ],
+        "border": "1px"
+      },
+      {
+        "theme": "dark",
+        "width": 720,
+        "opacity": 0.57718,
+        "exitOpacity": 0.57718,
+        "offset": [
+          0,
+          -0.011844635009765625
+        ],
+        "border": "1px"
+      },
+      {
+        "theme": "dopamine",
+        "width": 1100,
+        "opacity": 0.57718,
+        "exitOpacity": 0.57718,
+        "offset": [
+          0,
+          -0.011844635009765625
+        ],
+        "border": "2px"
+      },
+      {
+        "theme": "dopamine",
+        "width": 720,
+        "opacity": 0.57718,
+        "exitOpacity": 0.57718,
+        "offset": [
+          0,
+          -0.011844635009765625
+        ],
+        "border": "2px"
+      }
+    ]
+  },
+  "trees": {
+    "date": "2026-11-16T17:06:54.921Z",
+    "scope": "Actual FileTree render with 1000 loaded rows in Chromium on one Windows host; includes forced layout, excludes SFTP and native WebView",
+    "result": [
+      {
+        "version": "before",
+        "medianMs": 26.30000001192093,
+        "p95Ms": 34.89999997615814,
+        "stableRow": false,
+        "backgroundAnimations": 0,
+        "explicitExpandAnimations": 0
+      },
+      {
+        "version": "after",
+        "medianMs": 24.600000023841858,
+        "p95Ms": 29.80000001192093,
+        "stableRow": true,
+        "backgroundAnimations": 0,
+        "explicitExpandAnimations": 26
+      }
+    ]
+  },
+  "conclusion": "Same-machine Chromium samples, not native FPS. FileTree retains row identity; capture still scans offscreen candidates when fewer than 40 are visible. Reduced motion does not read geometry. Shared capture timings are mixed at sub-millisecond precision; no new performance framework is justified."
+}
