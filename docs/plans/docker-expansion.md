@@ -1,12 +1,6 @@
 # Docker 资源树后续验收
 
-状态：2026-11-16 资源树已实现，Docker 0.5.0 正在验证和准备独立发行。行为、操作及限制已迁入 [Docker 功能](../features/docker.md)，实际来源及验证范围维护在插件 [CHANGELOG](../../plugins/docker/CHANGELOG.md)。本计划只保留未完成验收与待选扩展；完成设备复核后删除对应范围，不另建完成计划归档。
-
-## 本次发行待完成
-
-- 核对包来源提交的相关 Check，包括隔离 OpenSSH/真实 Docker Engine 集成。
-- 五平台原生独立构建、归档及实际包内程序启动/退出验收。
-- 发布同一份候选附件并按用户要求设为 GitHub Latest，补入插件 CHANGELOG 的来源与实际验证范围。
+状态：2026-11-16 资源树已实现并通过本次源码、真实隔离 Engine 和五平台原生归档验收，Docker 0.5.0 独立发行。行为、操作及限制已迁入 [Docker 功能](../features/docker.md)，实际来源及验证范围维护在插件 [CHANGELOG](../../plugins/docker/CHANGELOG.md)。本计划只保留未完成设备验收与待选扩展；完成设备复核后删除对应范围，不另建完成计划归档。
 
 ## 设备复核
 
