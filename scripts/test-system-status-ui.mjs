@@ -461,10 +461,14 @@ try {
   assert.match(await frame.locator('#history-values li').last().innerText(), /CPU 23\.4% \/ 内存 采样缺口/);
   await frame.locator('#collection > summary').click();
   staggered = false; snapshot.data.cpu.value = 100; snapshot.data.memory.value = 100; snapshot.data.memory.available = '0'; snapshot.revision++; await refresh();
-  for (const width of [160, 200, 240, 280, 320, 400, 480]) {
+  for (const font of ['', 'Verdana, sans-serif']) for (const width of [160, 200, 240, 280, 320, 400, 480]) {
+    await frame.locator('body').evaluate((e, font) => e.style.fontFamily = font, font);
     await page.setViewportSize({ width, height: 760 });
-    assert(await frame.locator('.resource-reading').evaluateAll(rows => rows.every(row => { const value = row.querySelector('.metric-value'); return value.getBoundingClientRect().right <= row.getBoundingClientRect().right + 1 && value.scrollWidth <= row.clientWidth + 1; })), '100% readouts fit the resource columns at ' + width);
+    const readings = await frame.locator('.resource-reading').evaluateAll(rows => rows.map(row => { const value = row.querySelector('.metric-value'), style = getComputedStyle(value); return { column: row.clientWidth, content: value.scrollWidth, right: value.getBoundingClientRect().right - row.getBoundingClientRect().right, family: style.fontFamily, size: style.fontSize }; }));
+    if (width === 160) await frame.locator('.resource-section').screenshot({ path: 'artifacts/system-status-ui/resources-100-' + (font ? 'fallback' : 'system') + '-160.png' });
+    assert(readings.every(r => r.right <= 1 && r.content <= r.column + 1), '100% readouts fit at ' + width + ': ' + JSON.stringify(readings));
   }
+  await frame.locator('body').evaluate(e => e.style.fontFamily = '');
   await page.setViewportSize({ width: 320, height: 760 });
   await page.emulateMedia({ forcedColors: 'active' });
   assert.notEqual(await frame.locator('#resource-chart .series.first').evaluate(e => getComputedStyle(e).strokeDasharray), await frame.locator('#resource-chart .series.second').evaluate(e => getComputedStyle(e).strokeDasharray), 'Both series remain distinct without color');
