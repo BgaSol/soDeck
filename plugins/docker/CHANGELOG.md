@@ -3,7 +3,13 @@
 - 侧栏只保留宿主 Docker 标题，连接状态与 Engine 信息分层显示；全部折叠收进“更多”，菜单关闭后返回触发入口。
 - 分类和资源关系的加载状态并入对应行，后台更新保留资源与数量；移除“正在读取”假资源行，区分空结果、无匹配与失败重试。
 
-本机 Windows x86_64 已通过格式/类型、12 项 Docker Rust 测试、183 项工程脚本、完整 Docker UI 回归和插件包初始化、视图释放与退出。覆盖三主题与 200/320/400/900px、分类/关系加载、已有资源保留、无假资源行、空结果、无匹配、失败重试、菜单和焦点恢复及减少动画。包来源提交、原始独立打包运行和五平台实际包验收在本次发行时记录；未完成项不计为通过。
+本机 Windows x86_64 已通过格式/类型、12 项 Docker Rust 测试、183 项工程脚本和完整 Docker UI 回归。覆盖三主题与 200/320/400/900px、分类/关系加载、已有资源保留、无假资源行、空结果、无匹配、失败重试、菜单和焦点恢复及减少动画。独立完成复审检查了最终源码和 15 张实际截图，没有需要追加修复的问题。
+
+包来源：[d94d425a546de5cb2acea23886d290253b2939b5](https://github.com/BgaSol/soDeck/commit/d94d425a546de5cb2acea23886d290253b2939b5)；原始独立打包/验包：[43819344737](https://github.com/BgaSol/soDeck/actions/runs/43819344737)。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台的原生构建、归档来源/大小/SHA-256、原生架构、UI 资源、初始化、视图创建/释放与包内程序退出全部通过。Windows x86_64 的同一 CI 原归档另在本机通过实际包验收。
+
+[包来源 Check 43818403311](https://github.com/BgaSol/soDeck/actions/runs/43818403311) 首次运行的全部选中任务通过，包含五平台核心/插件源码、格式/类型/脚本、完整浏览器与正式前端、Windows SSH、普通业务，以及隔离 Engine/OpenSSH 的真实 Docker 联调和 Docker UI/进程回归。netem skipped；未选中的 Windows 完整 UI 对照和旧版升级专项未执行，不计为通过。
+
+发行：[Docker 0.5.1](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.5.1)，非 Latest；同期核心 1.2.3 为仓库 Latest。五份程序归档沿用上述原始 run，草稿阶段只同步说明与更新清单 notes。六个公开附件的实际大小、SHA-256 和五平台更新地址均核对一致，来源及摘要留在[本轮附件记录](release-evidence/v0.5.1-assets.json)。
 
 未新增生产依赖或改变核心 API 主版本；启用中的升级在重启后生效。未新增目标应用 IME/DPI/读屏、rootless、生产服务器和全部 Engine 版本专项，仍以[后续验收](../../docs/plans/docker-expansion.md)为准。
 
