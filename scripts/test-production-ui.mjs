@@ -671,6 +671,7 @@ try {
   assert.equal(await page.locator('[aria-label="插件更新"] .update-row').first().getAttribute('data-update-id'),'test.update-one','Actionable plugins precede current versions');
   await firstUpdate.locator('.update-release-notes summary').click();
   const notes=firstUpdate.locator('.release-notes-markdown');
+  await notes.getByRole('heading',{name:'更新测试',level:1}).waitFor();
   assert.equal(await notes.getByRole('heading',{name:'更新测试',level:1}).count(),1);
   assert.equal(await notes.getByRole('heading',{name:'改进',level:2}).count(),1);
   assert.equal((await notes.locator('ul ul li').textContent()).trim(),'使用 npm run check 验证');
