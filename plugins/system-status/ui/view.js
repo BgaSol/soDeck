@@ -1,4 +1,4 @@
-import { draw } from './charts.js';
+import { draw, timeline } from './charts.js';
 
 const $ = id => document.getElementById(id);
 const event = data => sodeck.request('event', data);
@@ -325,17 +325,17 @@ function reconcileFiles(root, items) {
 }
 function renderHistory() {
   const end = historyEnd, gap = snapshot?.intervalSeconds * 3000 || 15000;
-  draw($('cpu-chart'), [{ points: histories.cpu, label: 'CPU', className: 'first' }], 100, gap, value => value.toFixed(1) + '%', end);
-  draw($('memory-chart'), [{ points: histories.memory, label: '内存', className: 'first' }], 100, gap, value => value.toFixed(1) + '%', end);
+  const resources = [{ points: histories.cpu, label: 'CPU', className: 'first' }, { points: histories.memory, label: '内存', className: 'second' }];
+  draw($('resource-chart'), resources, 100, gap, value => value.toFixed(1) + '%', end);
   const networkPoints = histories.receive.concat(histories.send).filter(p => p.at >= end - 300000 && p.at <= end && Number.isFinite(p.value));
   const peak = Math.max(0, ...networkPoints.map(p => p.value));
   draw($('network-chart'), [{ points: histories.receive, label: '接收', className: 'first' }, { points: histories.send, label: '发送', className: 'second' }], Math.max(1, peak), gap, rate, end);
   const cpuPoints = histories.cpu.filter(p => p.at >= end - 300000 && Number.isFinite(p.value));
   text('cpu-peak', cpuPoints.length ? '峰值 ' + Math.max(...cpuPoints.map(p => p.value)).toFixed(1) + '%' : '');
   text('network-peak', networkPoints.length ? '峰值 ' + rate(peak) : '等待有效采样');
-  for (const id of ['cpu-end', 'memory-end']) text(id, snapshot && (!snapshot.connected || snapshot.paused || stale('dynamic')) ? '当前时间 · 保留旧值' : '现在');
+  text('resource-end', snapshot && (!snapshot.connected || snapshot.paused || stale('dynamic')) ? '当前时间 · 保留旧值' : '现在');
   if ($('history-details').open) {
-    $('history-values').replaceChildren(...histories.cpu.map(p => Object.assign(document.createElement('li'), { textContent: new Date(p.at).toLocaleTimeString() + ' · ' + (p.value == null ? '采样缺口' : p.value.toFixed(1) + '%') })));
+    $('history-values').replaceChildren(...timeline(resources, end).map(p => Object.assign(document.createElement('li'), { textContent: new Date(p.at).toLocaleTimeString() + ' · ' + resources.map(s => { const value = s.points.find(sample => sample.at === p.at)?.value; return s.label + ' ' + (Number.isFinite(value) ? value.toFixed(1) + '%' : '采样缺口'); }).join(' / ') })));
   }
 }
 async function history(localEpoch) {

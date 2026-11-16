@@ -17,12 +17,16 @@ const node = (name, values) => {
   for (const [key, value] of Object.entries(values)) element.setAttribute(key, value);
   return element;
 };
+export function timeline(series, end = Date.now()) {
+  const times = series.flatMap(s => s.points.filter(p => Number.isFinite(p.at) && p.at >= end - 300000 && p.at <= end).map(p => p.at));
+  return [...new Set(times)].sort((a, b) => a - b).map(at => ({ at }));
+}
 export function draw(svg, series, maximum = 100, gapMs = 30000, format = value => value.toFixed(1) + '%', end = Date.now()) {
   const tooltip = svg.parentElement.querySelector('.chart-tooltip');
-  const primary = series[0]?.points || [];
-  const points = primary.filter(p => p.at >= end - 300000 && p.at <= end);
+  const points = timeline(series, end);
+  const available = series.some(s => s.points.some(p => p.at >= end - 300000 && p.at <= end && Number.isFinite(p.value)));
   const axis = svg.parentElement.querySelector('.chart-axis');
-  if (axis) axis.hidden = !points.some(p => Number.isFinite(p.value));
+  if (axis) axis.hidden = !available;
   svg.replaceChildren();
   for (const y of [2, 24, 46]) svg.append(node('path', { d: 'M0 ' + y + 'H240', class: 'baseline' }));
   for (const s of series) {
@@ -30,7 +34,7 @@ export function draw(svg, series, maximum = 100, gapMs = 30000, format = value =
     svg.append(node('path', { d, class: 'series ' + s.className }));
   }
   const title = node('title', {});
-  title.textContent = points.length ? '最近五分钟，' + points.length + ' 个采样点。方向键查看历史。' : '等待有效采样。未知值和采样缺口不补零。';
+  title.textContent = available ? '最近五分钟，' + points.length + ' 个观察时刻。方向键查看历史。' : '等待有效采样。未知值和采样缺口不补零。';
   svg.prepend(title);
   const cursor = node('line', { y1: 1, y2: 47, class: 'cursor-line', visibility: 'hidden' });
   svg.append(cursor);

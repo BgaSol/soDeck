@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createServer } from 'node:http';
 import { chromium } from 'playwright';
-import { path as chartPath } from '../plugins/system-status/ui/charts.js';
+import { path as chartPath, timeline } from '../plugins/system-status/ui/charts.js';
 import { readTestThemeTokens } from './test-theme-tokens.mjs';
 
 const root = path.resolve(process.env.SODECK_TEST_SYSTEM_STATUS_PLUGIN || 'plugins/system-status');
@@ -34,11 +34,12 @@ const screenshotFiles = [
   { id: 'credentials', path: '/run/credentials/systemd-sysusers.service', total: '0', used: '0', available: '0', displayGroup: 'system', capacityState: 'notApplicable', filesystemType: 'ramfs', readOnly: true, observedAt: observed },
   ...['/boot', '/boot/efi'].map((path, i) => ({ id: 'boot-' + i, path, total: '104857600', used: '1048576', available: '103809024', percent: 1, displayGroup: 'auxiliary', filesystemType: i ? 'vfat' : 'ext4', readOnly: false, observedAt: observed }))
 ];
-let snapshot = structuredClone(base), files = structuredClone(normalFiles), interfaces = structuredClone(normalInterfaces), requests = 0, actions = [], seriesKeys = [], historyStep = 5000, allGaps = false, failRefresh = false, failSnapshots = false;
+let snapshot = structuredClone(base), files = structuredClone(normalFiles), interfaces = structuredClone(normalInterfaces), requests = 0, actions = [], seriesKeys = [], historyStep = 5000, historyAt = observed, staggered = false, allGaps = false, failRefresh = false, failSnapshots = false;
 const windowEnd = 300000;
 assert.equal(chartPath([{ at: windowEnd, value: 20 }], 100, 15000, windowEnd + 120000), 'M144.0 37.2');
 assert.equal(chartPath([{ at: 1000, value: 20 }], 100, 15000, windowEnd + 120000), '');
 assert.equal((chartPath([{ at: 280000, value: 20 }, { at: 285000, value: null }, { at: 290000, value: 30 }, { at: 300000, value: 40 }], 100, 15000, windowEnd).match(/M/g) || []).length, 2);
+assert.deepEqual(timeline([{ points: [{ at: 290000, value: 20 }, { at: 300000, value: null }] }, { points: [{ at: 295000, value: 60 }, { at: 300000, value: 61 }, { at: -1, value: 60 }, { at: 300001, value: 60 }, { at: NaN, value: 60 }] }], windowEnd), [{ at: 290000 }, { at: 295000 }, { at: 300000 }]);
 
 const server = createServer((req, res) => {
   if (req.url === '/') {
@@ -82,10 +83,10 @@ await page.exposeFunction('statusRequest', params => {
   }
   if (params.action === 'history') {
     seriesKeys.push(params.seriesKey);
-    const at = snapshot.connected ? Date.now() : snapshot.groups.find(g => g.name === 'dynamic').observedAt;
+    const at = (snapshot.connected ? historyAt : snapshot.groups.find(g => g.name === 'dynamic').observedAt) - (staggered && params.seriesKey === 'memory' ? 1000 : 0);
     if (allGaps) return { points: [{ at: at - 5000, value: null }, { at, value: null }] };
     if (historyStep !== 5000) return { points: [{ at: at - historyStep * 3, value: 20 }, { at: at - historyStep * 2, value: null }, { at: at - historyStep, value: 30 }, { at, value: 23.4 }] };
-    if (snapshot.data.cpu.state === 'warmingUp') return { points: [] };
+    if (params.seriesKey === 'cpu' && snapshot.data.cpu.state === 'warmingUp') return { points: [] };
     if (params.seriesKey === 'memory' && snapshot.data.memory.state === 'unsupported') return { points: [] };
     const network = params.seriesKey.startsWith('net:'), send = params.seriesKey.endsWith(':second');
     const n = params.seriesKey === 'memory' ? 62.1 : network ? send ? 43827.2 : 131481.6 : 23.4;
@@ -98,6 +99,7 @@ await page.exposeFunction('statusRequest', params => {
   const projectedFiles = files.map(projected);
   snapshot.filesystemSummary = Object.fromEntries(['primary', 'auxiliary', 'system'].map(name => [name, projectedFiles.filter(f => f.displayGroup === name).length]));
   snapshot.filesystemSummary.warnings = projectedFiles.filter(f => f.spaceWarning).length;
+  historyAt = Date.now();
   return params.knownRevision === snapshot.revision ? { revision: snapshot.revision, unchanged: true } : structuredClone(snapshot);
 });
 await page.addInitScript(() => {
@@ -128,6 +130,8 @@ async function selectInterface(id) { await openInterfaces(); await frame.locator
 try {
   await page.goto('http://127.0.0.1:' + server.address().port);
   await frame.locator('#cpu').filter({ hasText: '23.4%' }).waitFor();
+  assert.equal(await frame.locator('.resource-section').count(), 1, 'CPU and memory share one resource region');
+  assert.equal(await frame.locator('#cpu-chart, #memory-chart').count(), 0, 'The resource chart has one time axis');
   assert.equal(await frame.locator('#host-architecture').innerText(), 'x86_64');
   assert.equal(await frame.locator('#architecture').textContent(), 'x86_64');
   assert.match(await frame.locator('#memory-caption').innerText(), /已用 9.9 GiB \/ 16 GiB/);
@@ -135,6 +139,9 @@ try {
   const receivePath = await frame.locator('#network-chart .series.first').getAttribute('d');
   const sendPath = await frame.locator('#network-chart .series.second').getAttribute('d');
   assert.notEqual(receivePath, sendPath);
+  assert.equal(await frame.locator('#resource-chart .series').count(), 2);
+  assert.notEqual(await frame.locator('#resource-chart .series.first').getAttribute('d'), await frame.locator('#resource-chart .series.second').getAttribute('d'));
+  assert.notEqual(await frame.locator('#resource-chart .series.first').evaluate(e => getComputedStyle(e).strokeDasharray), await frame.locator('#resource-chart .series.second').evaluate(e => getComputedStyle(e).strokeDasharray));
   assert(seriesKeys.includes('net:eth0:second'));
   assert.equal(await frame.locator('h1').innerText(), 'prod-web-01', 'Plugin header should identify the server without repeating the host title');
   assert.equal(await frame.locator('#network-note').count(), 0, 'Addresses belong in the picker');
@@ -190,14 +197,21 @@ try {
   await new Promise(resolve => setTimeout(resolve, 1100));
   assert(await frame.locator('#device summary').evaluate(e => e === document.activeElement));
   await frame.locator('#device summary').click();
-  await frame.locator('#cpu-chart').focus();
+  await frame.locator('#resource-chart').focus();
   await page.keyboard.press('Home');
-  const firstReadout = await frame.locator('#cpu-chart').evaluate(e => e.parentElement.querySelector('.chart-tooltip').textContent);
+  const firstReadout = await frame.locator('#resource-chart').evaluate(e => e.parentElement.querySelector('.chart-tooltip').textContent);
+  assert.match(firstReadout, /CPU .*% \/ 内存 .*%/);
   await page.keyboard.press('ArrowRight');
-  const secondReadout = await frame.locator('#cpu-chart').evaluate(e => e.parentElement.querySelector('.chart-tooltip').textContent);
+  const secondReadout = await frame.locator('#resource-chart').evaluate(e => e.parentElement.querySelector('.chart-tooltip').textContent);
   assert.notEqual(firstReadout, secondReadout);
+  await page.keyboard.press('End');
+  assert.match(await frame.locator('#resource-chart').evaluate(e => e.parentElement.querySelector('.chart-tooltip').textContent), /CPU 23\.4% \/ 内存 62\.1%/);
+  const cursorXs = await frame.locator('#resource-chart .sample-point').evaluateAll(nodes => nodes.map(e => Number(e.getAttribute('cx'))));
+  assert.equal(cursorXs.length, 2);
+  assert.equal(cursorXs[0], cursorXs[1], 'Both measurements use the same cursor time');
+  assert(cursorXs[0] >= 0 && cursorXs[0] <= 240);
   await page.keyboard.press('Escape');
-  assert.equal(await frame.locator('#cpu-chart').evaluate(e => e.parentElement.querySelector('.chart-tooltip').hidden), true);
+  assert.equal(await frame.locator('#resource-chart').evaluate(e => e.parentElement.querySelector('.chart-tooltip').hidden), true);
   await frame.getByRole('button', { name: '暂停', exact: true }).click();
   await frame.getByRole('button', { name: '恢复', exact: true }).waitFor();
   assert.match(await frame.locator('#notice').innerText(), /暂停前数据/);
@@ -214,6 +228,8 @@ try {
       await frame.locator('#scroll').evaluate(e => e.scrollTop = 0);
       assert(await frame.locator('body').evaluate(e => e.scrollWidth <= e.clientWidth), theme + ' horizontal overflow at ' + width);
       await page.screenshot({ path: 'artifacts/system-status-ui/' + theme + '-' + width + '.png' });
+      assert.equal(await frame.locator('.resource-section .chart-axis').isVisible(), true, 'The shared percent axis stays visible at ' + width);
+      if (width === 320) await frame.locator('.resource-section').screenshot({ path: 'artifacts/system-status-ui/resources-' + theme + '-320.png' });
       await openInterfaces();
       const menu = await frame.locator('#interface-options').boundingBox();
       assert(menu.x >= 0 && menu.x + menu.width <= width && menu.y >= 0 && menu.y + menu.height <= 760, 'Interface menu must stay inside the viewport: ' + JSON.stringify({ theme, width, menu }));
@@ -344,7 +360,7 @@ try {
 
   snapshot.intervalSeconds = 30; historyStep = 30050; snapshot.revision++; await refresh();
   await frame.locator('#collection-summary').filter({ hasText: '30 秒 / 次' }).waitFor();
-  await page.waitForFunction(() => { const d = document.querySelector('iframe').contentDocument.querySelector('#cpu-chart .series')?.getAttribute('d') || ''; return (d.match(/M/g) || []).length >= 2 && d.includes('L'); });
+  await page.waitForFunction(() => { const d = document.querySelector('iframe').contentDocument.querySelector('#resource-chart .series.first')?.getAttribute('d') || ''; return (d.match(/M/g) || []).length >= 2 && d.includes('L'); });
   const before = requests;
   await page.evaluate(() => document.querySelector('iframe').contentWindow.postMessage({ channel: 'sodeck-ui-v2', type: 'visibilityChanged', surfaceId: 'test', visible: false }, '*'));
   await new Promise(resolve => setTimeout(resolve, 1200));
@@ -374,6 +390,9 @@ try {
   await refresh();
   assert.equal(await frame.locator('#network-peak').innerText(), '等待有效采样');
   assert.equal(await frame.locator('#network-chart .series.first').getAttribute('d'), '');
+  assert.equal(await frame.locator('#resource-chart .series.first').getAttribute('d'), '');
+  assert.equal(await frame.locator('#resource-chart .series.second').getAttribute('d'), '');
+  assert.equal(await frame.locator('.resource-section .chart-axis').isVisible(), false);
   allGaps = false;
 
   const newContext = { ...base.context, connectionId: 'connection-2', generation: 2 };
@@ -414,12 +433,42 @@ try {
   await page.evaluate(() => document.querySelector('iframe').contentWindow.postMessage({ channel: 'sodeck-ui-v2', type: 'contextChanged', surfaceId: 'test' }, '*'));
   await frame.locator('#memory').filter({ hasText: '暂不可用' }).waitFor();
   await frame.locator('#receive').filter({ hasText: '暂不可用' }).waitFor();
+  await page.waitForFunction(() => document.querySelector('iframe').contentDocument.querySelector('#resource-chart .series.first')?.getAttribute('d'));
+  assert.equal(await frame.locator('#resource-chart .series.second').getAttribute('d'), '');
+  assert.equal(await frame.locator('.resource-section .chart-axis').isVisible(), true);
   await frame.locator('#scroll').evaluate(e => e.scrollTop = 0);
   await page.screenshot({ path: 'artifacts/system-status-ui/partial-light.png' });
   snapshot.data.cpu = { value: null, state: 'warmingUp' }; snapshot.revision++; await refresh();
   await frame.locator('#cpu').filter({ hasText: '采样中' }).waitFor();
+  assert.equal(await frame.locator('#resource-chart .series.first').getAttribute('d'), '');
+  assert.equal(await frame.locator('#resource-chart .series.second').getAttribute('d'), '');
+  assert.equal(await frame.locator('.resource-section .chart-axis').isVisible(), false);
   await frame.locator('#scroll').evaluate(e => e.scrollTop = 0);
   await page.screenshot({ path: 'artifacts/system-status-ui/warming-light.png' });
+  snapshot.data.memory = structuredClone(base.data.memory); snapshot.revision++; await refresh();
+  assert.equal(await frame.locator('#resource-chart .series.first').getAttribute('d'), '');
+  assert(await frame.locator('#resource-chart .series.second').getAttribute('d'));
+  assert.equal(await frame.locator('.resource-section .chart-axis').isVisible(), true, 'Memory alone still has an inspectable time axis');
+  await frame.locator('#resource-chart').focus(); await page.keyboard.press('End');
+  assert.match(await frame.locator('#resource-chart').evaluate(e => e.parentElement.querySelector('.chart-tooltip').textContent), /CPU 采样缺口 \/ 内存 62\.1%/);
+  await page.screenshot({ path: 'artifacts/system-status-ui/resources-memory-only-light.png' });
+  snapshot.data.cpu = structuredClone(base.data.cpu); snapshot.revision++; staggered = true; await refresh();
+  await frame.locator('#resource-chart').focus(); await page.keyboard.press('End');
+  assert.match(await frame.locator('#resource-chart').evaluate(e => e.parentElement.querySelector('.chart-tooltip').textContent), /CPU 23\.4% \/ 内存 采样缺口/);
+  await page.keyboard.press('ArrowLeft');
+  assert.match(await frame.locator('#resource-chart').evaluate(e => e.parentElement.querySelector('.chart-tooltip').textContent), /CPU 采样缺口 \/ 内存 62\.1%/);
+  await frame.locator('#collection > summary').click(); await frame.locator('#history-details > summary').click();
+  assert.match(await frame.locator('#history-values li').last().innerText(), /CPU 23\.4% \/ 内存 采样缺口/);
+  await frame.locator('#collection > summary').click();
+  staggered = false; snapshot.data.cpu.value = 100; snapshot.data.memory.value = 100; snapshot.data.memory.available = '0'; snapshot.revision++; await refresh();
+  for (const width of [160, 200, 240, 280, 320, 400, 480]) {
+    await page.setViewportSize({ width, height: 760 });
+    assert(await frame.locator('.resource-reading').evaluateAll(rows => rows.every(row => { const value = row.querySelector('.metric-value'); return value.getBoundingClientRect().right <= row.getBoundingClientRect().right + 1 && value.scrollWidth <= row.clientWidth + 1; })), '100% readouts fit the resource columns at ' + width);
+  }
+  await page.setViewportSize({ width: 320, height: 760 });
+  await page.emulateMedia({ forcedColors: 'active' });
+  assert.notEqual(await frame.locator('#resource-chart .series.first').evaluate(e => getComputedStyle(e).strokeDasharray), await frame.locator('#resource-chart .series.second').evaluate(e => getComputedStyle(e).strokeDasharray), 'Both series remain distinct without color');
+  await page.emulateMedia({ forcedColors: 'none' });
   snapshot = structuredClone(base); snapshot.groups.forEach(g => g.observedAt = Date.now()); snapshot.revision += 400; failSnapshots = true;
   await page.reload();
   await frame.locator('#notice').filter({ hasText: '首次读取失败' }).waitFor();
@@ -428,7 +477,7 @@ try {
   assert.equal(await frame.locator('#notice').isVisible(), false);
   assert(actions.includes('refresh') && actions.includes('pause') && actions.includes('resume'));
   assert.deepEqual(errors, []);
-  console.log('Status UI: filesystem overview/hidden groups, Snap and zero-capacity mounts, risk promotion/recovery, keyed details/focus/remount, pagination, three themes/seven widths, existing server/network/history/lifecycle regressions passed.');
+  console.log('Status UI: shared CPU/memory chart, matching/misaligned timestamps, one-series and gap states, keyboard cursor, forced colors and 100% readouts, three themes/seven widths, existing filesystem/network/lifecycle regressions passed.');
 } finally {
   await browser.close();
   await new Promise(resolve => server.close(resolve));
