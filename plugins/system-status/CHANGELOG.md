@@ -3,7 +3,13 @@
 - 详情展开、容量条和新出现的存储项目有短暂过渡，采集、断线、过期和空间告警变化有反馈。数值、采样时间和图表缺口不插值或补造。
 - 统一控件和浮层节奏，减少动态效果与隐藏页面停止效果，未新增生产依赖。
 
-本轮发行尚待五平台原生归档、实际包验证和正式发布；来源与验收链接在完成后补齐。
+包来源：[33f001452488c7d57f8014a98fee587599a46478](https://github.com/BgaSol/soDeck/commit/33f001452488c7d57f8014a98fee587599a46478)；[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/43847374906)；[原始独立打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/43847500729)。
+
+Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生归档、架构/资源、包内程序握手、生命周期与退出均通过；来源 Check 的五平台源码及相关业务和 UI 回归通过。
+
+发行：[system-status 0.4.7](https://github.com/BgaSol/soDeck/releases/tag/plugin-system-status-v0.4.7)。使用上述原始 run 的同一草稿归档，不重建或覆盖正式版本的程序包；更新清单的 notes 与 Release 说明保持一致。永久来源、原生报告、附件摘要和公开下载核验见[发行证据](release-evidence/v0.4.7-assets.json)。
+
+netem、旧版到本版的线上升级、原生文件剪贴板/默认应用/深度编辑器专项，以及新增真实 IME、DPI、读屏、触控板、多屏设备验证未执行，不计为通过。 系统状态未重做全部远端操作系统矩阵；不属于原生远程包组合入口。
 
 # 0.4.6
 

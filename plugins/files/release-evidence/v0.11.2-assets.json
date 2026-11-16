@@ -1,0 +1,340 @@
+{
+  "date": "2026-11-16",
+  "component": "files",
+  "version": "0.11.2",
+  "sourceCommit": "33f001452488c7d57f8014a98fee587599a46478",
+  "originalRunId": "43847493559",
+  "originalRunUrl": "https://github.com/BgaSol/soDeck/actions/runs/43847493559",
+  "releaseId": 446894950,
+  "releaseUrl": "https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.11.2",
+  "tag": "plugin-files-v0.11.2",
+  "draft": false,
+  "reports": [
+    {
+      "id": "sodeck.files",
+      "version": "0.11.2",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "33f001452488c7d57f8014a98fee587599a46478",
+      "sha256": "085cc24bfe8a848f6bb36802c9b6eb66aa31b5b8c8fdf13515ec1de235f44c35",
+      "runId": "43847493559",
+      "toolCommit": "33f001452488c7d57f8014a98fee587599a46478",
+      "passed": true,
+      "calls": [
+        "files.request",
+        "files.request"
+      ]
+    },
+    {
+      "id": "sodeck.files",
+      "version": "0.11.2",
+      "target": "aarch64-apple-darwin",
+      "commit": "33f001452488c7d57f8014a98fee587599a46478",
+      "sha256": "e8240a74b7a014a9a92692e51512fceeb0177542d84da8564374ab0a4e577577",
+      "runId": "43847493559",
+      "toolCommit": "33f001452488c7d57f8014a98fee587599a46478",
+      "passed": true,
+      "calls": [
+        "files.request",
+        "files.request"
+      ]
+    },
+    {
+      "id": "sodeck.files",
+      "version": "0.11.2",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "33f001452488c7d57f8014a98fee587599a46478",
+      "sha256": "dc456f1f09a8f053696a4595c918907ec97dc15820286d280b77a7af57659fe5",
+      "runId": "43847493559",
+      "toolCommit": "33f001452488c7d57f8014a98fee587599a46478",
+      "passed": true,
+      "calls": [
+        "files.request",
+        "files.request"
+      ]
+    },
+    {
+      "id": "sodeck.files",
+      "version": "0.11.2",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "33f001452488c7d57f8014a98fee587599a46478",
+      "sha256": "5a36f7073292fe0eef0e759505db08562552519113e04d46713993034cbe0d34",
+      "runId": "43847493559",
+      "toolCommit": "33f001452488c7d57f8014a98fee587599a46478",
+      "passed": true,
+      "calls": [
+        "files.request",
+        "files.request"
+      ]
+    },
+    {
+      "id": "sodeck.files",
+      "version": "0.11.2",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "33f001452488c7d57f8014a98fee587599a46478",
+      "sha256": "b9606cbe9393547ad33b2211cb96c1aa4cc4b2de745041cba355fc4f847f4f44",
+      "runId": "43847493559",
+      "toolCommit": "33f001452488c7d57f8014a98fee587599a46478",
+      "passed": true,
+      "calls": [
+        "files.request",
+        "files.request"
+      ]
+    }
+  ],
+  "assets": [
+    {
+      "id": 754485797,
+      "name": "plugin-update.json",
+      "size": 3371,
+      "sha256": "a4b286dae6fce119e5e7372b6890597603fefa75086c1b4b84f64a90c7dc1ead",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/untagged-2239a1b0d80fcff7d214/plugin-update.json"
+    },
+    {
+      "id": 754433808,
+      "name": "sodeck-files_0.11.2_aarch64-apple-darwin.tar.gz",
+      "size": 1856950,
+      "sha256": "e8240a74b7a014a9a92692e51512fceeb0177542d84da8564374ab0a4e577577",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/untagged-2239a1b0d80fcff7d214/sodeck-files_0.11.2_aarch64-apple-darwin.tar.gz"
+    },
+    {
+      "id": 754433598,
+      "name": "sodeck-files_0.11.2_aarch64-pc-windows-msvc.zip",
+      "size": 1853130,
+      "sha256": "dc456f1f09a8f053696a4595c918907ec97dc15820286d280b77a7af57659fe5",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/untagged-2239a1b0d80fcff7d214/sodeck-files_0.11.2_aarch64-pc-windows-msvc.zip"
+    },
+    {
+      "id": 754433752,
+      "name": "sodeck-files_0.11.2_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 1864912,
+      "sha256": "b9606cbe9393547ad33b2211cb96c1aa4cc4b2de745041cba355fc4f847f4f44",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/untagged-2239a1b0d80fcff7d214/sodeck-files_0.11.2_aarch64-unknown-linux-gnu.tar.gz"
+    },
+    {
+      "id": 754433538,
+      "name": "sodeck-files_0.11.2_x86_64-pc-windows-msvc.zip",
+      "size": 1886073,
+      "sha256": "085cc24bfe8a848f6bb36802c9b6eb66aa31b5b8c8fdf13515ec1de235f44c35",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/untagged-2239a1b0d80fcff7d214/sodeck-files_0.11.2_x86_64-pc-windows-msvc.zip"
+    },
+    {
+      "id": 754433682,
+      "name": "sodeck-files_0.11.2_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 1910558,
+      "sha256": "5a36f7073292fe0eef0e759505db08562552519113e04d46713993034cbe0d34",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/untagged-2239a1b0d80fcff7d214/sodeck-files_0.11.2_x86_64-unknown-linux-gnu.tar.gz"
+    }
+  ],
+  "manifest": {
+    "id": "sodeck.files",
+    "version": "0.11.2",
+    "apiVersion": "1",
+    "notes": "# 0.11.2\r\n\r\n- 新展开的可见文件行局部揭示，文件夹箭头转向；任务进入列表与真实阶段变化有短暂反馈。刷新不重播已有行或阶段，传输与文件操作不等待展示过渡。\r\n- 当前文件进度在已知总量时按实际字节衔接，切换文件重置；无总量及结果待核对时不模拟进度。编辑器搜索与保存结果使用统一反馈。\r\n- 统一控件和浮层节奏，减少动态效果与隐藏页面停止效果，未新增生产依赖。\n\n包来源：[33f001452488c7d57f8014a98fee587599a46478](https://github.com/BgaSol/soDeck/commit/33f001452488c7d57f8014a98fee587599a46478)；[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/43847374906)；[原始独立打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/43847493559)。\n\nWindows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生归档、架构/资源、包内程序握手、生命周期与退出均通过；来源 Check 的五平台源码及相关业务和 UI 回归通过。\n\n[五平台原生远程组合](https://github.com/BgaSol/soDeck/actions/runs/43851035246)通过。固定使用原始核心 1.3.0、终端 0.9.1、文件 0.11.2、网络 0.4.4 包，验证原生 WebView/Channel 下的 PTY、文件读写/下载、网络转发、移窗、重开与退出。该入口不包含系统状态或 Docker。\n\n发行：[files 0.11.2](https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.11.2)。使用上述原始 run 的同一草稿归档，不重建或覆盖正式版本的程序包；更新清单的 notes 与 Release 说明保持一致。永久来源、原生报告、附件摘要和公开下载核验见[发行证据](release-evidence/v0.11.2-assets.json)。\n\nnetem、旧版到本版的线上升级、原生文件剪贴板/默认应用/深度编辑器专项，以及新增真实 IME、DPI、读屏、触控板、多屏设备验证未执行，不计为通过。\n",
+    "platforms": {
+      "aarch64-apple-darwin": {
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-files-v0.11.2/sodeck-files_0.11.2_aarch64-apple-darwin.tar.gz",
+        "sha256": "e8240a74b7a014a9a92692e51512fceeb0177542d84da8564374ab0a4e577577"
+      },
+      "aarch64-pc-windows-msvc": {
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-files-v0.11.2/sodeck-files_0.11.2_aarch64-pc-windows-msvc.zip",
+        "sha256": "dc456f1f09a8f053696a4595c918907ec97dc15820286d280b77a7af57659fe5"
+      },
+      "aarch64-unknown-linux-gnu": {
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-files-v0.11.2/sodeck-files_0.11.2_aarch64-unknown-linux-gnu.tar.gz",
+        "sha256": "b9606cbe9393547ad33b2211cb96c1aa4cc4b2de745041cba355fc4f847f4f44"
+      },
+      "x86_64-pc-windows-msvc": {
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-files-v0.11.2/sodeck-files_0.11.2_x86_64-pc-windows-msvc.zip",
+        "sha256": "085cc24bfe8a848f6bb36802c9b6eb66aa31b5b8c8fdf13515ec1de235f44c35"
+      },
+      "x86_64-unknown-linux-gnu": {
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-files-v0.11.2/sodeck-files_0.11.2_x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "5a36f7073292fe0eef0e759505db08562552519113e04d46713993034cbe0d34"
+      }
+    }
+  },
+  "verification": {
+    "fiveNativeReportsMatchSource": true,
+    "allAssetDigestsMatchReports": true,
+    "manifestTargetsAndUrlsMatch": true,
+    "releaseAndManifestNotesMatch": true,
+    "checkedAt": "2026-11-16T10:40:26.698Z"
+  },
+  "sourceCheck": {
+    "runId": 43847374906,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/43847374906",
+    "sourceCommit": "33f001452488c7d57f8014a98fee587599a46478",
+    "result": "success",
+    "jobs": [
+      {
+        "name": "select",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43847374906/job/133230813681"
+      },
+      {
+        "name": "browser",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43847374906/job/133230942709"
+      },
+      {
+        "name": "checks",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43847374906/job/133230942715"
+      },
+      {
+        "name": "desktop",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43847374906/job/133230942838"
+      },
+      {
+        "name": "integration-business-linux-x86_64",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43847374906/job/133230942861"
+      },
+      {
+        "name": "integration-network-linux-aarch64",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43847374906/job/133230942906"
+      },
+      {
+        "name": "native-linux-x86_64",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43847374906/job/133230942964"
+      },
+      {
+        "name": "native-linux-aarch64",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43847374906/job/133230943025"
+      },
+      {
+        "name": "native-windows-x86_64",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43847374906/job/133230943040"
+      },
+      {
+        "name": "integration-network-linux-x86_64",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43847374906/job/133230943254"
+      },
+      {
+        "name": "native-windows-aarch64",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43847374906/job/133230943370"
+      },
+      {
+        "name": "native-macos-aarch64",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43847374906/job/133230943391"
+      },
+      {
+        "name": "netem",
+        "result": "skipped",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43847374906/job/133230945598"
+      },
+      {
+        "name": "format",
+        "result": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/43847374906/job/133236260603"
+      }
+    ]
+  },
+  "verificationScope": {
+    "local": "Related source, business and UI regressions passed in exact source Check.",
+    "nativePackages": "All five native targets; original archive architecture/resources and packaged process startup/lifecycle/exit.",
+    "skipped": [
+      "netem",
+      "published old-version upgrade",
+      "native file clipboard/default application/deep editor optional checks",
+      "new real IME/DPI/screen reader/touchpad/multi-monitor checks"
+    ]
+  },
+  "nativeRemote": {
+    "runId": 43851035246,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/43851035246",
+    "success": true,
+    "scope": "all",
+    "platforms": [
+      {
+        "target": "x86_64-pc-windows-msvc",
+        "status": "success",
+        "runtime": {
+          "version": "1.3.0",
+          "target": "x86_64-pc-windows-msvc",
+          "completed": true,
+          "workspaceNative": true,
+          "sshNative": true,
+          "networkNative": true,
+          "desktopFilesNative": false
+        }
+      },
+      {
+        "target": "aarch64-pc-windows-msvc",
+        "status": "success",
+        "runtime": {
+          "version": "1.3.0",
+          "target": "aarch64-pc-windows-msvc",
+          "completed": true,
+          "workspaceNative": true,
+          "sshNative": true,
+          "networkNative": true,
+          "desktopFilesNative": false
+        }
+      },
+      {
+        "target": "x86_64-unknown-linux-gnu",
+        "status": "success",
+        "runtime": {
+          "version": "1.3.0",
+          "target": "x86_64-unknown-linux-gnu",
+          "completed": true,
+          "workspaceNative": true,
+          "sshNative": true,
+          "networkNative": true,
+          "desktopFilesNative": false
+        }
+      },
+      {
+        "target": "aarch64-unknown-linux-gnu",
+        "status": "success",
+        "runtime": {
+          "version": "1.3.0",
+          "target": "aarch64-unknown-linux-gnu",
+          "completed": true,
+          "workspaceNative": true,
+          "sshNative": true,
+          "networkNative": true,
+          "desktopFilesNative": false
+        }
+      },
+      {
+        "target": "aarch64-apple-darwin",
+        "status": "success",
+        "runtime": {
+          "version": "1.3.0",
+          "target": "aarch64-apple-darwin",
+          "completed": true,
+          "workspaceNative": true,
+          "sshNative": true,
+          "networkNative": true,
+          "desktopFilesNative": false
+        }
+      }
+    ],
+    "packageRuns": {
+      "core": 43847481981,
+      "terminal": 43847489873,
+      "files": 43847493559,
+      "network": 43847496934
+    }
+  },
+  "notesUpdatedAt": "2026-11-16T10:52:03.569Z",
+  "publishedAt": "2026-11-16T10:52:05Z",
+  "publicVerification": {
+    "checkedAt": "2026-11-16T10:53:42.292Z",
+    "publishedAt": "2026-11-16T10:52:05Z",
+    "anonymousDownloads": 6,
+    "allAssetBytesMatch": true,
+    "releaseAndManifestNotesMatch": true,
+    "versionTagMatchesSource": true
+  }
+}

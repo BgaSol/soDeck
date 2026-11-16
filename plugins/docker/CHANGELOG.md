@@ -3,7 +3,15 @@
 - 资源树分支与资源状态有短暂反馈，日志详情面板使用实际宽度展开和收起，保留既有阅读锚点处理。日志正文、操作票据、结果待确认与候选页面输入权不受动效改变。
 - 统一控件和浮层节奏，减少动态效果与隐藏页面停止效果，未新增生产依赖。
 
-本轮发行尚待五平台原生归档、实际包验证和正式发布；来源与验收链接在完成后补齐。
+包来源：[33f001452488c7d57f8014a98fee587599a46478](https://github.com/BgaSol/soDeck/commit/33f001452488c7d57f8014a98fee587599a46478)；[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/43847374906)；[原始独立打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/43847504901)。
+
+Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生归档、架构/资源、包内程序握手、生命周期与退出均通过；来源 Check 的五平台源码及相关业务和 UI 回归通过。
+
+发行：[docker 0.5.2](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.5.2)。使用上述原始 run 的同一草稿归档，不重建或覆盖正式版本的程序包；更新清单的 notes 与 Release 说明保持一致。永久来源、原生报告、附件摘要和公开下载核验见[发行证据](release-evidence/v0.5.2-assets.json)。
+
+netem、旧版到本版的线上升级、原生文件剪贴板/默认应用/深度编辑器专项，以及新增真实 IME、DPI、读屏、触控板、多屏设备验证未执行，不计为通过。 Docker 未重做全部真实 Engine/远端系统矩阵；不属于原生远程包组合入口。
+
+macOS ARM64 的实际包验收首次因 GitHub hosted runner 容量不足未启动，只重试失败任务和后续汇总，原始 run 与成功平台保留；不是代码或业务测试失败。
 
 # 0.5.1
 

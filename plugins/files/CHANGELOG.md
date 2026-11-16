@@ -4,7 +4,15 @@
 - 当前文件进度在已知总量时按实际字节衔接，切换文件重置；无总量及结果待核对时不模拟进度。编辑器搜索与保存结果使用统一反馈。
 - 统一控件和浮层节奏，减少动态效果与隐藏页面停止效果，未新增生产依赖。
 
-本轮发行尚待五平台原生归档、实际包验证和正式发布；来源与验收链接在完成后补齐。
+包来源：[33f001452488c7d57f8014a98fee587599a46478](https://github.com/BgaSol/soDeck/commit/33f001452488c7d57f8014a98fee587599a46478)；[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/43847374906)；[原始独立打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/43847493559)。
+
+Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生归档、架构/资源、包内程序握手、生命周期与退出均通过；来源 Check 的五平台源码及相关业务和 UI 回归通过。
+
+[五平台原生远程组合](https://github.com/BgaSol/soDeck/actions/runs/43851035246)通过。固定使用原始核心 1.3.0、终端 0.9.1、文件 0.11.2、网络 0.4.4 包，验证原生 WebView/Channel 下的 PTY、文件读写/下载、网络转发、移窗、重开与退出。该入口不包含系统状态或 Docker。
+
+发行：[files 0.11.2](https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.11.2)。使用上述原始 run 的同一草稿归档，不重建或覆盖正式版本的程序包；更新清单的 notes 与 Release 说明保持一致。永久来源、原生报告、附件摘要和公开下载核验见[发行证据](release-evidence/v0.11.2-assets.json)。
+
+netem、旧版到本版的线上升级、原生文件剪贴板/默认应用/深度编辑器专项，以及新增真实 IME、DPI、读屏、触控板、多屏设备验证未执行，不计为通过。
 
 # 0.11.1
 
