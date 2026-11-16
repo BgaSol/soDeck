@@ -9,6 +9,9 @@ const paths={
   group:'m12 3 9 5-9 5-9-5zM3 12l9 5 9-5M3 16l9 5 9-5',
   reference:'M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2',
   arrow:'m9 5 7 7-7 7',more:'M4 12h.01M12 12h.01M20 12h.01',
+  load:'M12 8v5M12 16h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0',
+  hint:'M12 8v5M12 16h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0',
+  loading:'M21 12a9 9 0 1 1-9-9',
 };
 export function icon(kind){return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[kind]||paths.root}"/></svg>`;}
 export class ResourceTree {
@@ -25,11 +28,11 @@ export class ResourceTree {
     nodes.forEach((n,i)=>this.positions.set(n.key,offset+i));
     const entry=nodes.some(n=>n.key===selected)?selected:nodes[0]?.key;
     const html=`<div role="none" class="tree-space" style="height:${offset*30}px"></div>`+nodes.map(n=>{
-      const kind=n.resource?.kind||n.branchKind||n.type;
+      const kind=['load','hint'].includes(n.type)?n.type:n.resource?.kind||n.branchKind||n.type;
       const root=n.type==='root',full=root?this.handlers.rootPath():n.meta;
       const label=[n.label,n.meta].filter(Boolean).join(' · ');
-      return `<div role="treeitem" data-dom-key="${escape(n.key)}" data-tree-key="${escape(n.key)}" class="tree-row ${n.health==='unhealthy'?'tree-error':''}" tabindex="${entry===n.key?'0':'-1'}" aria-level="${n.depth+1}" aria-selected="${n.key===selected}" ${n.expandable?`aria-expanded="${!!n.expanded}"`:''} style="--depth:${n.depth}" title="${escape(root?full:label)}">
-        <button type="button" tabindex="-1" class="tree-toggle ${n.expanded?'expanded':''}" data-tree-action="toggle" aria-label="${n.expanded?'折叠':'展开'}${escape(n.label)}" ${n.expandable?'':'hidden'}>${icon('arrow')}</button><span class="tree-icon">${icon(n.type==='reference'?'reference':kind)}</span><span class="tree-label">${escape(n.label)}</span><span class="tree-meta">${escape(n.meta)}</span>${n.key===selected?`<button type="button" tabindex="-1" class="tree-more" data-tree-action="menu" aria-label="${escape(n.label)}的更多操作">${icon('more')}</button>`:''}</div>`;
+      return `<div role="treeitem" data-dom-key="${escape(n.key)}" data-tree-key="${escape(n.key)}" class="tree-row tree-${escape(n.type)} ${n.health==='unhealthy'?'tree-error':''}" tabindex="${entry===n.key?'0':'-1'}" aria-level="${n.depth+1}" aria-selected="${n.key===selected}" ${n.loading?'aria-busy="true"':''} ${n.expandable?`aria-expanded="${!!n.expanded}"`:''} style="--depth:${n.depth}" title="${escape(root?full:label)}">
+        <button type="button" tabindex="-1" class="tree-toggle ${n.expanded?'expanded':''}" data-tree-action="toggle" aria-label="${n.expanded?'折叠':'展开'}${escape(n.label)}" ${n.expandable?'':'hidden'}>${icon('arrow')}</button><span class="tree-icon">${icon(n.type==='reference'?'reference':kind)}</span><span class="tree-label">${escape(n.label)}</span>${n.loading?`<span class="tree-loading">${icon('loading')}</span>`:''}<span class="tree-meta">${escape(n.meta)}</span>${n.key===selected?`<button type="button" tabindex="-1" class="tree-more" data-tree-action="menu" aria-label="${escape(n.label)}的更多操作">${icon('more')}</button>`:''}</div>`;
     }).join('')+`<div role="none" class="tree-space" style="height:${Math.max(0,(this.page.total-offset-nodes.length)*30)}px"></div>`;
     this.region.update(this.root,html);
     if(anchor){const at=nodes.findIndex(n=>n.key===anchor.key);if(at>=0)this.viewport.scrollTop=(offset+at)*30-anchor.offsetY;}

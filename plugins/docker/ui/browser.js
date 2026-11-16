@@ -26,10 +26,10 @@ export function installBrowserPage(releaseIncumbent){
   }
   function nodeInCache(key){return tree.node(key)||selectedNode?.key===key&&selectedNode;}
   function render(paint=true){if(!active||!snapshot)return;
-    $('title').textContent='Docker';$('state').textContent=({ready:'已连接',loading:'读取中',stale:'数据待刷新',gone:'已删除'}[snapshot.state]||'等待连接');
-    $('engine-name').textContent=snapshot.engine?.version?'Docker '+snapshot.engine.version:'等待 Engine';$('engine-version').textContent=snapshot.engine?.arch||'';
+    $('title').textContent='Docker';$('state').textContent=({ready:'已连接',loading:'连接中',stale:'数据待刷新',gone:'已删除'}[snapshot.state]||'等待连接');$('state').dataset.state=snapshot.state;
+    $('engine-name').textContent=snapshot.engine?.version?'Engine '+snapshot.engine.version:'等待 Engine';$('engine-version').textContent=snapshot.engine?.arch||'';
     $('refresh').disabled=!enabled||frozen||snapshot.busy;$('cancel').hidden=!snapshot.busy;$('pause').hidden=true;
-    $('tree-collapse').disabled=!enabled||frozen;$('browser-more').disabled=!enabled||frozen;
+    $('browser-more').disabled=!enabled||frozen;
     $('connection').hidden=false;if(document.activeElement!==$('socket'))$('socket').value=snapshot.endpoint;
     $('freshness').textContent=snapshot.state==='stale'?'离线快照 · 待刷新':snapshot.observedAt?'采集于 '+new Date(snapshot.observedAt).toLocaleTimeString():'等待首次采集';
     $('busy').textContent=snapshot.busy?'请求处理中':'';$('count').textContent='';$('operation').hidden=true;
@@ -78,7 +78,7 @@ export function installBrowserPage(releaseIncumbent){
   function openMenu(n,trigger){if(!n||!enabled||frozen)return;select(n,false);formTarget=null;const target=identity();const writable=current(target);const items=[];const add=(label,run,disabled=false,reason='',danger=false)=>items.push({label,run,disabled,reason,danger});
     if(n.type==='root'){add('查看完整路径',()=>showRoot(n));add('复制路径',()=>copy(snapshot.engine?.dockerRootDir),!snapshot.engine?.dockerRootDir);}
     else if(n.type==='engine'){
-      add('刷新资源树',()=>send({action:'refresh'}),snapshot.busy);add('连接信息',()=>{menu.form({title:'Docker Engine',text:[snapshot.engine?.name,snapshot.engine?.id,snapshot.endpoint,JSON.stringify(snapshot.context)].filter(Boolean).join('\n'),submit:'关闭',onSubmit:()=>{}});});
+      add('全部折叠',()=>{nav.expandedKeys=['engine'];nav.offset=0;void remember();},!!nav.query,'清空搜索后可折叠');add('刷新资源树',()=>send({action:'refresh'}),snapshot.busy);add('连接信息',()=>{menu.form({title:'Docker Engine',text:[snapshot.engine?.name,snapshot.engine?.version,snapshot.engine?.arch,snapshot.engine?.id,snapshot.endpoint,JSON.stringify(snapshot.context)].filter(Boolean).join('\n'),submit:'关闭',onSubmit:()=>{}});});
       add('连接设置',()=>{$('connection').open=true;$('socket').focus();});add(snapshot.paused?'恢复自动刷新':'暂停自动刷新',()=>send({action:'pauseRefresh',paused:!snapshot.paused}));add('拉取公开镜像',()=>pull());add('查看任务',()=>{$('browser-tasks').open=true;void tasks();});
     }else if(n.type==='category'||n.type==='group'){
       add(n.expanded?'折叠':'展开',()=>toggle(n));if(n.branchKind)add('刷新此分类',()=>load(n.branchKind));if(n.branchKind==='image')add('拉取公开镜像',()=>pull(n.type==='group'?n.label:''));
@@ -92,7 +92,7 @@ export function installBrowserPage(releaseIncumbent){
       }else if(!n.system){items.push({separator:true});add('删除'+({image:'镜像',network:'网络',volume:'卷'}[n.resource.kind]||'资源'),()=>remove(n,target),!writable||!n.canDelete,!n.canDelete?'请展开并完整读取引用；有引用的资源不能删除':'连接待刷新',true);}
       items.push({separator:true});add('复制'+(n.resource.kind==='volume'?'名称':'完整 ID'),()=>copy(n.resource.id));
     }
-    if(!items.length)add('复制名称',()=>copy(n.label));menu.open(n,items,trigger,()=>tree.focus(n.key));
+    if(!items.length)add('复制名称',()=>copy(n.label));menu.open(n,items,trigger,()=>trigger?.id==='browser-more'?trigger.focus():tree.focus(n.key));
   }
   function operate(action,n,target){const request={action:'operate',operation:action,id:n.resource.id,...target,requestId:crypto.randomUUID(),intentSequence:snapshot.nextIntent};
     if(['start','unpause'].includes(action)){void submit(request);return;}formTarget=target;
@@ -116,7 +116,6 @@ export function installBrowserPage(releaseIncumbent){
   async function poll(){if(!active||!enabled||frozen||!visible)return;const local=epoch;try{apply(await request({action:'snapshot'}));if($('browser-tasks').open)await tasks();}catch(error){if(local===epoch)message(error.message);}finally{clearTimeout(timer);if(local===epoch&&active&&enabled&&!frozen)timer=setTimeout(()=>void poll(),1000);}}
   function control(id,type,handler){$(id).addEventListener(type,e=>{if(!active)return;e.stopImmediatePropagation();handler(e);},true);}
   control('refresh','click',()=>void send({action:'refresh'}));control('cancel','click',()=>void send({action:'cancel'}));
-  control('tree-collapse','click',()=>{nav.expandedKeys=['engine'];nav.offset=0;void remember();});
   control('browser-more','click',e=>openMenu({key:'engine',type:'engine',label:'Docker Engine'},e.target));
   control('endpoint-form','submit',e=>{e.preventDefault();void send({action:'setEndpoint',endpoint:$('socket').value.trim()});});
   function filter(){if(composing)return;const query=$('query').value;
@@ -133,8 +132,8 @@ export function installBrowserPage(releaseIncumbent){
   control('browser-tasks','toggle',()=>{if($('browser-tasks').open)void tasks();});control('task-prev','click',()=>{taskOffset=Math.max(0,taskOffset-10);void tasks();});
   control('pull-cancel','click',()=>void send({action:'pull.cancel'}));
   const lifecycle=(name,handler)=>addEventListener('sodeck:'+name,e=>{if(!active)return;e.stopImmediatePropagation();Promise.resolve(handler(e.detail)).catch(error=>message(error.message));});
-  addEventListener('sodeck:mount',e=>{if(e.detail.data.kind!=='browser'){if(active){clearTimeout(timer);menu.close(false);}active=false;$('tree-collapse').hidden=true;$('browser-more').hidden=true;document.body.classList.remove('browser-page');return;}e.stopImmediatePropagation();releaseIncumbent();epoch++;active=true;enabled=false;frozen=!!e.detail.readOnly;visible=e.detail.visible!==false;snapshot=e.detail.data;navTail=Promise.resolve();navSequence=navPainted=0;nav={schemaVersion:2,expandedKeys:['engine','category:container'],status:'all',health:'all',group:true,offset:0,...snapshot.navigation};if(/^[a-f0-9]{64}$/i.test(nav.selected||''))nav.selected='container:'+nav.selected;selectedNode=null;formTarget=null;searchBefore=null;delete $('browser-selection').dataset.key;menu.close(false);tree.positions.clear();document.body.classList.add('browser-page');
-    for(const id of ['container','logs','resource'])$(id).hidden=true;$('browser').hidden=false;$('tree-collapse').hidden=false;$('browser-more').hidden=false;
+  addEventListener('sodeck:mount',e=>{if(e.detail.data.kind!=='browser'){if(active){clearTimeout(timer);menu.close(false);}active=false;$('browser-more').hidden=true;document.body.classList.remove('browser-page');return;}e.stopImmediatePropagation();releaseIncumbent();epoch++;active=true;enabled=false;frozen=!!e.detail.readOnly;visible=e.detail.visible!==false;snapshot=e.detail.data;navTail=Promise.resolve();navSequence=navPainted=0;nav={schemaVersion:2,expandedKeys:['engine','category:container'],status:'all',health:'all',group:true,offset:0,...snapshot.navigation};if(/^[a-f0-9]{64}$/i.test(nav.selected||''))nav.selected='container:'+nav.selected;selectedNode=null;formTarget=null;searchBefore=null;delete $('browser-selection').dataset.key;menu.close(false);tree.positions.clear();document.body.classList.add('browser-page');
+    for(const id of ['container','logs','resource'])$(id).hidden=true;$('browser').hidden=false;$('browser-more').hidden=false;
     $('query').value=nav.query||'';$('status-filter').value=nav.status||'all';$('health-filter').value=nav.health||'all';$('group').checked=nav.group!==false;$('reveal-condition').hidden=!nav.revealTarget;theme(e.detail.tokens);render();$('tree-viewport').scrollTop=nav.scrollTop||0;sodeck.mounted();
   });
   lifecycle('surfaceReady',async()=>{enabled=true;frozen=false;await send({action:'resumeInput'});await send({action:'browser.visibility',visible});await remember();void poll();});

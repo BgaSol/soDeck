@@ -302,9 +302,12 @@ impl BrowserState {
             let index = &self.indexes[&kind];
             let category = format!("category:{}", kind.name());
             let meta = match index.phase.as_str() {
-                "unloaded" => "待读取".into(),
-                "loading" => format!("读取中 · 已读 {}", index.staged.len()),
+                "unloaded" => "展开加载".into(),
+                "loading" if !index.rows.is_empty() => format!("{} 个 · 更新中", index.rows.len()),
+                "loading" if index.staged.is_empty() => "加载中".into(),
+                "loading" => format!("加载中 · 已读 {}", index.staged.len()),
                 "failed" => "读取失败 · 可重试".into(),
+                "stale" => format!("{} 个 · 待刷新", index.rows.len()),
                 _ => {
                     if index.complete {
                         format!("{} 个", index.rows.len())
@@ -325,6 +328,7 @@ impl BrowserState {
             );
             n["branchKind"] = json!(kind.name());
             n["expanded"] = json!(expanding(&category));
+            n["loading"] = json!(index.phase == "loading");
             emit(n);
             if !expanding(&category) {
                 continue;
@@ -369,6 +373,7 @@ impl BrowserState {
                     .cmp(b["name"].as_str().unwrap_or(""))
                     .then(a["id"].as_str().cmp(&b["id"].as_str()))
             });
+            let no_matches = rows.is_empty() && !index.rows.is_empty();
             let mut groups: BTreeMap<String, Vec<(&Value, String)>> = BTreeMap::new();
             for row in rows {
                 if kind == Kind::Image {
@@ -453,6 +458,10 @@ impl BrowserState {
                             meta.push_str(&format!(" · {} 个容器引用", r.items.len()));
                         }
                     }
+                    let loading = relation.is_some_and(|r| r.phase == "loading");
+                    if loading {
+                        meta.push_str(" · 关系加载中");
+                    }
                     let mut n = node(
                         &key,
                         &parent,
@@ -466,6 +475,7 @@ impl BrowserState {
                     n["expanded"] = json!(expanding(&key));
                     n["status"] = row["status"].clone();
                     n["health"] = row["health"].clone();
+                    n["loading"] = json!(loading);
                     n["revision"] = json!(index.revision.to_string());
                     n["system"] = json!(
                         kind == Kind::Network
@@ -543,15 +553,14 @@ impl BrowserState {
                                 ));
                             }
                         }
+                        Some(r) if r.phase == "loading" => {}
                         r => {
-                            let mut n = node(
+                            let n = node(
                                 &format!("{key}/load"),
                                 &key,
                                 depth + 1,
                                 "load",
-                                if r.is_some_and(|r| r.phase == "loading") {
-                                    "正在读取关系"
-                                } else if r.is_some_and(|r| r.phase == "failed") {
+                                if r.is_some_and(|r| r.phase == "failed") {
                                     "读取失败 · 重试"
                                 } else {
                                     "读取资源关系"
@@ -560,31 +569,36 @@ impl BrowserState {
                                 false,
                                 Some(&resource),
                             );
-                            n["loading"] = json!(r.is_some_and(|r| r.phase == "loading"));
                             emit(n);
                         }
                     }
                 }
             }
-            if index.rows.is_empty() || !index.complete {
+            if index.phase != "loading" && (index.rows.is_empty() || no_matches || !index.complete)
+            {
                 let mut n = node(
                     &format!("{category}/hint"),
                     &category,
                     2,
-                    "load",
-                    if index.phase == "loading" {
-                        "正在读取"
-                    } else if index.complete {
-                        "暂无资源"
+                    if index.complete { "hint" } else { "load" },
+                    if index.complete {
+                        if no_matches {
+                            "没有匹配的资源"
+                        } else {
+                            "暂无资源"
+                        }
+                    } else if index.phase == "failed" {
+                        "读取失败，Enter 重试"
+                    } else if index.phase == "stale" {
+                        "数据待刷新，Enter 重新读取"
                     } else {
-                        "读取此分类 / 重试"
+                        "Enter 读取此分类"
                     },
                     index.error.as_deref().unwrap_or(""),
                     false,
                     None,
                 );
                 n["branchKind"] = json!(kind.name());
-                n["loading"] = json!(index.phase == "loading");
                 emit(n);
             }
         }
@@ -708,6 +722,85 @@ fn status(r: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn loading_is_parent_state_and_keeps_cached_resources() {
+        let mut b = BrowserState::default();
+        let resource = ResourceRef {
+            kind: Kind::Container,
+            id: "a".repeat(64),
+        };
+        let index = b.indexes.get_mut(&Kind::Container).unwrap();
+        index.rows = vec![json!({"id":resource.id,"name":"api","status":"running"})];
+        b.load(Kind::Container);
+        b.load(Kind::Volume);
+        b.load_relation(resource.clone()).unwrap();
+        let nav = json!({"expandAll":true,"group":false});
+        let page = b.page(&json!({"name":"prod"}), &nav, 16000);
+        let nodes = page["nodes"].as_array().unwrap();
+        assert!(!nodes
+            .iter()
+            .any(|n| n["type"] == "load" && n["loading"] == true));
+        let category = nodes
+            .iter()
+            .find(|n| n["key"] == "category:container")
+            .unwrap();
+        assert_eq!(category["meta"], "1 个 · 更新中");
+        assert_eq!(category["loading"], true);
+        let row = nodes.iter().find(|n| n["key"] == resource.key()).unwrap();
+        assert_eq!(row["loading"], true);
+        assert!(row["meta"].as_str().unwrap().contains("关系加载中"));
+        let volume = nodes
+            .iter()
+            .find(|n| n["key"] == "category:volume")
+            .unwrap();
+        assert_eq!(volume["meta"], "加载中");
+        b.indexes.get_mut(&Kind::Volume).unwrap().staged = vec![json!({"id":"data"})];
+        let page = b.page(&json!({"name":"prod"}), &nav, 16000);
+        assert_eq!(
+            page["nodes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|n| n["key"] == "category:volume")
+                .unwrap()["meta"],
+            "加载中 · 已读 1"
+        );
+    }
+    #[test]
+    fn empty_and_failed_indexes_remain_distinct() {
+        let mut b = BrowserState::default();
+        let work = b.load(Kind::Volume).unwrap();
+        b.fail(&work, "socket unavailable".into());
+        let nav = json!({"expandAll":true,"group":false,"query":"missing"});
+        let image = b.indexes.get_mut(&Kind::Image).unwrap();
+        image.phase = "ready".into();
+        image.complete = true;
+        let container = b.indexes.get_mut(&Kind::Container).unwrap();
+        container.phase = "ready".into();
+        container.complete = true;
+        container.rows = vec![json!({"id":"a".repeat(64),"name":"api"})];
+        let page = b.page(&json!({"name":"prod"}), &nav, 16000);
+        let nodes = page["nodes"].as_array().unwrap();
+        let failed = nodes
+            .iter()
+            .find(|n| n["key"] == "category:volume/hint")
+            .unwrap();
+        assert_eq!(failed["type"], "load");
+        assert_eq!(failed["meta"], "socket unavailable");
+        assert_eq!(failed["label"], "读取失败，Enter 重试");
+        let empty = nodes
+            .iter()
+            .find(|n| n["key"] == "category:image/hint")
+            .unwrap();
+        assert_eq!(empty["type"], "hint");
+        assert_eq!(empty["label"], "暂无资源");
+        let filtered = nodes
+            .iter()
+            .find(|n| n["key"] == "category:container/hint")
+            .unwrap();
+        assert_eq!(filtered["type"], "hint");
+        assert_eq!(filtered["label"], "没有匹配的资源");
+    }
     #[test]
     fn tree_groups_filters_and_identity() {
         let mut b = BrowserState::default();

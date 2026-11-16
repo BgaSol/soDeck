@@ -28,7 +28,7 @@ function renderHeader() {
   if(!snapshot) return;
   const kind=snapshot.kind;
   for(const id of ['browser','container','logs','resource']) $(id).hidden=id!==kind;
-  $('tree-collapse').hidden=true;$('browser-more').hidden=true;
+  $('browser-more').hidden=true;
   $('title').textContent=kind==='browser'?'Docker':(snapshot.name||'容器')+(kind==='logs'?' · 日志':'');
   $('state').textContent=['stale','gone'].includes(snapshot.state)?({stale:'数据待刷新',gone:'已删除'}[snapshot.state]):snapshot.status?names[snapshot.status]||snapshot.status:({ready:'已连接',loading:'读取中'}[snapshot.state]||'等待连接');
   $('engine-name').textContent=snapshot.engine?.name||'Engine 尚不可访问';
