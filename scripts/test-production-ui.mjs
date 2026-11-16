@@ -424,7 +424,7 @@ try {
   const install = () => terminal.locator('[data-action="install-official-plugin"]');
   await install().waitFor();
   assert.deepEqual(await page.locator('[data-official-plugin]').evaluateAll(nodes => nodes.map(node => node.dataset.officialPlugin).sort()), catalogIds);
-  assert.match(await page.locator('[data-official-plugin="sodeck.docker"]').textContent(), /查看远端容器/);
+  assert.match(await page.locator('[data-official-plugin="sodeck.docker"]').textContent(), /远端 Docker 资源树/);
   assert.match(await page.locator('[data-official-plugin="sodeck.terminal"]').textContent(), /真实终端/);
   assert.match(await page.locator('[data-official-plugin="sodeck.files"]').textContent(), /上传下载、管理文件/);
   assert(requests.every(url=>url.startsWith('/repos/BgaSol/soDeck/git/')), "Opening settings reads catalog metadata without checking releases or downloading packages");

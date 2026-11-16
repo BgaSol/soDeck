@@ -65,7 +65,7 @@ async fn openssh_docker_plugin() {
     );
     async fn loaded(f:&Fixture,token:&str,kind:&str)->Value {
         let end=std::time::Instant::now()+Duration::from_secs(60);
-        loop {let snapshot=f.core.ui_event("main",token,json!({"action":"snapshot"})).unwrap();if !matches!(snapshot["indexes"][kind]["phase"].as_str(),Some("loading"|"unloaded")){assert_eq!(snapshot["indexes"][kind]["phase"],"ready","{snapshot}");return snapshot;}assert!(std::time::Instant::now()<end,"{snapshot}");tokio::time::sleep(Duration::from_millis(50)).await;}
+        loop {let snapshot=f.core.ui_event("main",token,json!({"action":"snapshot"})).unwrap();if snapshot["indexes"][kind]["phase"]=="unloaded"{f.core.ui_event("main",token,json!({"action":"browser.load","branchKind":kind,"scopeEpoch":snapshot["scopeEpoch"]})).unwrap();}else if snapshot["indexes"][kind]["phase"]!="loading"{assert_eq!(snapshot["indexes"][kind]["phase"],"ready","{snapshot}");return snapshot;}assert!(std::time::Instant::now()<end,"{snapshot}");tokio::time::sleep(Duration::from_millis(50)).await;}
     }
     for kind in ["image","network","volume"] {event(token,json!({"action":"browser.load","branchKind":kind,"scopeEpoch":browser["scopeEpoch"]}));loaded(&f,token,kind).await;}
     let image_id=list["rows"].as_array().unwrap().iter().find(|r|r["id"]==id).unwrap()["imageId"].as_str().unwrap().to_string();

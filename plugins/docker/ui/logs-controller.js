@@ -95,8 +95,6 @@ export function installLogPage(releaseIncumbent=()=>{}) {
         const line=nodes.find(node=>node.dataset.id===oldAnchor.id);
         if(line) viewport.scrollTop+=line.getBoundingClientRect().top-viewport.getBoundingClientRect().top+oldAnchor.pixel;
         resizeAnchor=undefined;
-        // Scroll events can invalidate the summary await; remember the corrected DOM first.
-        if(viewport.clientWidth===viewportWidth&&devicePixelRatio===viewportScale)readingAnchor=visibleAnchor();
       }
       const summary=await ask('summary',{height:Math.ceil(viewport.clientHeight)}); if(stale()) return;
       map.update({...summary,ids:layout.ids},layout.index(Math.max(0,viewport.scrollTop-container.offsetTop)),layout.index(Math.max(0,viewport.scrollTop+viewport.clientHeight-container.offsetTop)));
