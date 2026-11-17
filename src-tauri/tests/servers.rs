@@ -226,7 +226,7 @@ fn catalog_dates_preserve_existing_creation_times_and_refresh_copies() {
     let mut proxy_draft = proxy();
     proxy_draft["draft"]["id"] = json!(proxy_id);
     change(&core, proxy_draft).unwrap();
-    change(&core, json!({"op":"copyServer","id":server_id})).unwrap();
+    change(&core, copy(&core, &server_id)).unwrap();
     change(&core, json!({"op":"copyProxy","id":proxy_id})).unwrap();
     let updated = core.server_catalog();
     for records in ["servers", "proxies"] {
@@ -279,7 +279,7 @@ fn mixed_routes_reopen_and_crud() {
         .unwrap_err()
         .contains("db.internal"));
     assert!(change(&core, json!({"op":"deleteProxy","id":p})).is_err());
-    let copy = id(change(&core, json!({"op":"copyServer","id":b})).unwrap());
+    let copy = id(change(&core, copy(&core, &b)).unwrap());
     let view = core.server_catalog();
     let original = view["servers"]
         .as_array()
@@ -332,8 +332,8 @@ fn secret_keep_replace_clear_session_and_copy() {
         .contains("test-secret-1"));
     change(&core, edit(&core, &a)).unwrap();
     assert!(f.disk().to_string().contains("test-secret-1"));
-    let copy = id(change(&core, json!({"op":"copyServer","id":a})).unwrap());
-    assert!(!f.disk()["servers"]
+    let copy = id(change(&core, copy(&core, &a)).unwrap());
+    assert!(f.disk()["servers"]
         .as_array()
         .unwrap()
         .iter()
@@ -344,7 +344,13 @@ fn secret_keep_replace_clear_session_and_copy() {
     let mut d = edit(&core, &a);
     d["draft"]["authentication"]["secret"] = json!({"action":"keep","remember":false});
     change(&core, d).unwrap();
-    assert!(!f.disk().to_string().contains("test-secret-1"));
+    assert!(f.disk()["servers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == a)
+        .unwrap()["authentication"]["savedPassword"]
+        .is_null());
     assert_eq!(
         core.server_catalog()["servers"][1]["authentication"]["hasSessionSecret"],
         true
@@ -501,4 +507,144 @@ fn failed_write_keeps_memory_disk_and_secret() {
     after["canRecover"] = before["canRecover"].clone();
     assert_eq!(before, after);
     assert_eq!(disk, f.disk());
+}
+
+fn copy(core: &AppCore, source: &str) -> Value {
+    let catalog = core.server_catalog();
+    let mut draft = catalog["servers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == source)
+        .unwrap()
+        .clone();
+    draft["id"] = Value::Null;
+    draft["name"] = json!(format!("{} 副本", draft["name"].as_str().unwrap()));
+    if draft["authentication"]["hasSavedSecret"] == true
+        || draft["authentication"]["hasSessionSecret"] == true
+    {
+        draft["copyFromId"] = json!(source);
+    }
+    draft["authentication"]["secret"] =
+        json!({"action":"keep","remember":draft["authentication"]["hasSavedSecret"] == true});
+    for step in draft["route"].as_array_mut().unwrap() {
+        step["id"] = json!("");
+    }
+    json!({"op":"saveServer","draft":draft})
+}
+
+#[test]
+fn copying_passwords_and_key_passphrases_preserves_source_and_storage_choice() {
+    for key in [false, true] {
+        for source_saved in [false, true] {
+            for target_saved in [false, true] {
+                let f = Fixture::new();
+                let core = f.open();
+                let mut input = server("source.invalid");
+                input["draft"]["authentication"] = if key {
+                    json!({"type":"privateKey","privateKeyPath":"/keys/id","secret":{"action":"replace","value":"copy-test-secret","remember":source_saved}})
+                } else {
+                    json!({"type":"password","secret":{"action":"replace","value":"copy-test-secret","remember":source_saved}})
+                };
+                let source = id(change(&core, input).unwrap());
+                let original = core.server_catalog()["servers"][0].clone();
+                let mut input = copy(&core, &source);
+                input["draft"]["host"] = json!("target.invalid");
+                input["draft"]["port"] = json!(2222);
+                input["draft"]["username"] = json!("other");
+                input["draft"]["authentication"]["secret"]["remember"] = json!(target_saved);
+                let target = id(change(&core, input).unwrap());
+                let catalog = core.server_catalog();
+                assert_eq!(catalog["servers"][0], original);
+                assert_eq!(
+                    catalog["servers"][1]["authentication"]["hasSavedSecret"],
+                    target_saved
+                );
+                assert_eq!(
+                    catalog["servers"][1]["authentication"]["hasSessionSecret"],
+                    !target_saved
+                );
+                if target_saved {
+                    assert_eq!(
+                        f.disk()["servers"][1]["authentication"][if key {
+                            "savedPassphrase"
+                        } else {
+                            "savedPassword"
+                        }],
+                        "copy-test-secret"
+                    );
+                }
+                assert!(!catalog.to_string().contains("copy-test-secret"));
+                change(&core, json!({"op":"deleteServer","id":source})).unwrap();
+                assert_eq!(core.server_catalog()["servers"][0]["id"], target);
+                assert_eq!(
+                    f.disk().to_string().contains("copy-test-secret"),
+                    target_saved
+                );
+                drop(core);
+                let reopened = f.open().server_catalog();
+                assert_eq!(
+                    reopened["servers"][0]["authentication"]["hasSavedSecret"],
+                    target_saved
+                );
+                assert_eq!(
+                    reopened["servers"][0]["authentication"]["hasSessionSecret"],
+                    false
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn invalid_copy_sources_conflicts_and_failed_writes_keep_catalog_and_secrets() {
+    let f = Fixture::new();
+    let core = f.open();
+    let mut input = server("source.invalid");
+    input["draft"]["authentication"]["secret"] =
+        json!({"action":"replace","value":"temporary-copy-secret","remember":false});
+    let source = id(change(&core, input).unwrap());
+    let before = core.server_catalog();
+    let disk = f.disk();
+    let valid = copy(&core, &source);
+    let mut cases = Vec::new();
+    for secret in [
+        json!({"action":"replace","value":"other","remember":true}),
+        json!({"action":"clear"}),
+    ] {
+        let mut input = valid.clone();
+        input["draft"]["authentication"]["secret"] = secret;
+        cases.push(input);
+    }
+    let mut input = valid.clone();
+    input["draft"]["id"] = json!(source);
+    cases.push(input);
+    let mut input = valid.clone();
+    input["draft"]["copyFromId"] = json!("missing");
+    cases.push(input);
+    let mut input = valid.clone();
+    input["draft"]["authentication"]["type"] = json!("privateKey");
+    cases.push(input);
+    let mut input = valid.clone();
+    input["draft"]["newTagNames"] = json!(["未保存"]);
+    input["draft"]["route"] = json!([{"id":"","kind":"ssh","serverId":"missing"}]);
+    cases.push(input);
+    for input in cases {
+        assert!(change(&core, input).is_err());
+        assert_eq!(core.server_catalog(), before);
+        assert_eq!(f.disk(), disk);
+    }
+    assert!(core
+        .change_catalog(0, serde_json::from_value(valid.clone()).unwrap())
+        .is_err());
+    fs::create_dir(f.0.join("servers.json.tmp")).unwrap();
+    assert!(change(&core, valid.clone()).is_err());
+    let mut after = core.server_catalog();
+    after["canRecover"] = before["canRecover"].clone();
+    assert_eq!(after, before);
+    assert_eq!(f.disk(), disk);
+    fs::remove_dir(f.0.join("servers.json.tmp")).unwrap();
+    change(&core, valid.clone()).unwrap();
+    change(&core, json!({"op":"deleteServer","id":source})).unwrap();
+    assert!(change(&core, valid).is_err());
 }

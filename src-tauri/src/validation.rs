@@ -374,7 +374,32 @@ pub fn server_roundtrip(core: &AppCore, persisted: bool) -> Result<(), String> {
     let target = apply(
         json!({"op":"saveServer","draft":{"id":null,"name":"Package target","host":"db.internal","port":22,"username":"ops","tagIds":[tag],"authentication":{"type":"privateKey","privateKeyPath":"fixture-key","secret":{"action":"replace","value":"fixture-saved","remember":true}},"route":[{"id":"","kind":"ssh","serverId":gateway},{"id":"","kind":"socks5","proxyId":proxy},{"id":"","kind":"socks5","proxyId":proxy}]}}),
     )?;
-    let copy = apply(json!({"op":"copyServer","id":target}))?;
+    let mut draft = core.server_catalog()["servers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == target)
+        .unwrap()
+        .clone();
+    draft["id"] = Value::Null;
+    draft["copyFromId"] = json!(target);
+    draft["name"] = json!("Package copy");
+    draft["host"] = json!("copy.internal");
+    draft["authentication"]["secret"] = json!({"action":"keep","remember":true});
+    for step in draft["route"].as_array_mut().unwrap() {
+        step["id"] = json!("");
+    }
+    let copy = apply(json!({"op":"saveServer","draft":draft}))?;
+    if core.server_catalog()["servers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == copy)
+        .unwrap()["authentication"]["hasSavedSecret"]
+        != true
+    {
+        return Err("复制资料未沿用凭据".into());
+    }
     apply(json!({"op":"deleteServer","id":copy}))?;
     if core.server_catalog().to_string().contains("fixture-saved") {
         return Err("目录泄漏测试秘密".into());

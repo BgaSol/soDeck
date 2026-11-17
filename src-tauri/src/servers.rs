@@ -162,6 +162,8 @@ pub struct AuthInput {
 #[serde(rename_all = "camelCase")]
 pub struct ServerInput {
     pub id: Option<String>,
+    #[serde(default)]
+    pub copy_from_id: Option<String>,
     pub name: String,
     #[serde(default)]
     pub tag_ids: Vec<String>,
@@ -189,7 +191,6 @@ pub enum CatalogChange {
     SaveProxy { draft: ProxyInput },
     DeleteServer { id: String },
     DeleteProxy { id: String },
-    CopyServer { id: String },
     CopyProxy { id: String },
     SaveTag { id: Option<String>, name: String },
     DeleteTag { id: String },
@@ -366,14 +367,17 @@ fn auth(input: &AuthInput, ssh: bool) -> Result<Authentication, String> {
 fn secret(
     id: &str,
     new: &mut Authentication,
-    old: Option<&Authentication>,
+    old: Option<(&str, &Authentication)>,
     change: &SecretChange,
     sessions: &mut HashMap<String, String>,
 ) {
-    let compatible = old.is_some_and(|old| old.identity() == new.identity());
+    let compatible = old.is_some_and(|(_, old)| old.identity() == new.identity());
     let previous = if compatible {
-        old.and_then(|a| a.secret().cloned())
-            .or_else(|| sessions.get(id).cloned())
+        old.and_then(|(source_id, a)| {
+            a.secret()
+                .cloned()
+                .or_else(|| sessions.get(source_id).cloned())
+        })
     } else {
         None
     };
@@ -500,6 +504,12 @@ impl AppCore {
         let deleting_proxy = matches!(&change, CatalogChange::DeleteProxy { .. });
         match change {
             CatalogChange::SaveServer { draft: d } => {
+                if d.copy_from_id.is_some()
+                    && (d.id.is_some()
+                        || !matches!(d.authentication.secret, SecretChange::Keep { .. }))
+                {
+                    return Err("凭据来源只适用于新增服务器并沿用凭据".into());
+                }
                 let old = if let Some(id) = &d.id {
                     Some(
                         c.servers
@@ -517,10 +527,27 @@ impl AppCore {
                 let same = old
                     .as_ref()
                     .filter(|s| s.host == h && s.port == d.port && s.username == d.username.trim());
+                let source = if let Some(source_id) = &d.copy_from_id {
+                    let source = c
+                        .servers
+                        .iter()
+                        .find(|s| &s.id == source_id)
+                        .ok_or("原服务器已不存在，请输入新凭据或选择不沿用原凭据")?;
+                    if source.authentication.identity() != a.identity() {
+                        return Err("原服务器认证配置已变化，请输入新凭据或选择不沿用原凭据".into());
+                    }
+                    if source.authentication.secret().is_none() && !sessions.contains_key(source_id)
+                    {
+                        return Err("原服务器凭据已不可用，请输入新凭据或选择不沿用原凭据".into());
+                    }
+                    Some(source)
+                } else {
+                    same
+                };
                 secret(
                     &id,
                     &mut a,
-                    same.map(|s| &s.authentication),
+                    source.map(|s| (s.id.as_str(), &s.authentication)),
                     &d.authentication.secret,
                     &mut sessions,
                 );
@@ -597,7 +624,7 @@ impl AppCore {
                 secret(
                     &id,
                     &mut a,
-                    same.map(|p| &p.authentication),
+                    same.map(|p| (p.id.as_str(), &p.authentication)),
                     &d.authentication.secret,
                     &mut sessions,
                 );
@@ -646,24 +673,6 @@ impl AppCore {
                 c.servers.retain(|s| s.id != id);
                 c.proxies.retain(|p| p.id != id);
                 sessions.remove(&id);
-            }
-            CatalogChange::CopyServer { id } => {
-                let mut s = c
-                    .servers
-                    .iter()
-                    .find(|s| s.id == id)
-                    .ok_or("服务器已不存在")?
-                    .clone();
-                s.id = self.next_id();
-                s.name.push_str(" 副本");
-                s.authentication.set_secret(None);
-                for step in &mut s.route {
-                    step.new_id(self.next_id());
-                }
-                s.created_at = time.clone();
-                s.updated_at = time;
-                selected = Some(s.id.clone());
-                c.servers.push(s);
             }
             CatalogChange::CopyProxy { id } => {
                 let mut p = c

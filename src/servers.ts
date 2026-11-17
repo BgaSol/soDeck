@@ -1,6 +1,6 @@
 import {connectionTree, ancestors, visibleNodes} from './connection-tree';
 import { open } from "@tauri-apps/plugin-dialog";
-import { commitTagInput, newDraft, referenced, serverApi, toInput, type Catalog, type Change, type Draft, type ServerApi } from "./server-api";
+import { commitTagInput, newDraft, newCopyDraft, referenced, serverApi, toInput, type Catalog, type Change, type Draft, type ServerApi } from "./server-api";
 import { action, editor, page, type PageState } from "./server-views";
 import { escape as e, icon } from "./ui";
 import { enterMotion, exitMotion } from './motion.js';
@@ -12,6 +12,7 @@ interface Frame {
   dialog: HTMLDialogElement; kind: "editor" | "confirm";
   draft?: Draft; initial?: string; proxy?: boolean; inline?: boolean;
   revision: number; busy: boolean; error: string;
+  returnFocus?: HTMLElement; notice?: string;
 }
 export class ServerManager {
   onSelection?:()=>void;
@@ -143,19 +144,23 @@ export class ServerManager {
     if (f !== this.top()) return;
     exitMotion(f.dialog);f.dialog.close(); f.dialog.remove(); this.frames.pop();
     if (f.draft) f.draft.password = "";
+    if (f.returnFocus?.isConnected) f.returnFocus.focus({preventScroll:true});
+    else if (f.draft?.copySource) this.host.querySelector<HTMLElement>('.catalog-detail [data-server-action="record-menu"]')?.focus();
   }
   private renderEditor(f: Frame) {
-    updateDOM(f.dialog, editor(this.catalog!, f.draft!, !!f.proxy, f.error, f.busy, f.dialog.id));
+    updateDOM(f.dialog, editor(this.catalog!, f.draft!, !!f.proxy, f.error, f.busy, f.dialog.id, f.notice));
   }
-  private openEditor(proxy: boolean, id?: string, inline = false) {
+  private openEditor(proxy: boolean, id?: string, inline = false, copy = false) {
+    const returnFocus = copy ? this.host.querySelector<HTMLElement>('.catalog-detail [data-server-action="record-menu"]') ?? undefined : undefined;
     this.closeMenu();this.onSelection?.();
     const record = id ? (proxy ? this.catalog!.proxies : this.catalog!.servers).find(r => r.id === id) : undefined;
     if (id && !record) throw new Error("资料已不存在，请刷新目录");
-    const f = this.frame("editor"); f.proxy = proxy; f.inline = inline; f.draft = newDraft(record);
+    const f = this.frame("editor"); f.proxy = proxy; f.inline = inline; f.draft = copy && record?.protocol === "ssh" ? newCopyDraft(record) : newDraft(record); f.returnFocus = returnFocus;
+    if (copy) f.dialog.setAttribute("aria-label", "复制服务器");
     if (proxy && !record) { f.draft.port = "1080"; f.draft.authType = "none"; }
     if (!proxy && !record) f.draft.tagIds = [...this.state.tags];
     f.initial = JSON.stringify(f.draft); this.renderEditor(f); f.dialog.showModal();enterMotion(f.dialog);
-    f.dialog.querySelector<HTMLInputElement>('[data-field="host"]')?.focus();
+    const host = f.dialog.querySelector<HTMLInputElement>('[data-field="host"]'); host?.focus(); if (copy) host?.select();
   }
   private editField(f: Frame, input: HTMLInputElement) {
     if (!f.draft || f.busy) return;
@@ -166,9 +171,11 @@ export class ServerManager {
       else if (key === "routed") d.routed = input.value === "true";
       else if (["name", "host", "port", "username", "privateKeyPath", "password", "authType", "tagInput"].includes(key)) {
         (d as unknown as Record<string, string>)[key] = input.value;
-        if (key === "password" && input.value) d.clearSecret = false;
+        if (key === "password" && input.value && !d.copySource) d.clearSecret = false;
       }
-      if (key === "authType") { d.password = ""; d.remember = true; d.clearSecret = false; this.renderEditor(f); }
+      if (key === "authType") { d.password = ""; d.remember = true; d.clearSecret = !!d.copySource; this.renderEditor(f); }
+      if (key === "privateKeyPath" && d.copySource) { d.clearSecret = true; this.renderEditor(f); }
+      if (key === "password" && d.copySource) this.renderEditor(f);
       if (key === "routed") this.renderEditor(f);
     }
     if (input.dataset.step !== undefined) {
@@ -226,9 +233,10 @@ export class ServerManager {
         this.dismiss(f); const parent = this.top();
         if (f.inline && parent?.draft) {
           parent.revision = this.catalog!.revision;
-          parent.draft.routed = true; parent.draft.route.push({ id: "", kind: "socks5", proxyId: id! }); this.renderEditor(parent);
+          parent.draft.routed = true; parent.draft.route.push({ id: crypto.randomUUID(), kind: "socks5", proxyId: id! }); this.renderEditor(parent);
         } else { this.selectRecord(id!); this.render(); }
-        this.notify(f.proxy ? "代理资料已保存" : "服务器资料已保存");
+        this.notify(f.proxy ? "代理资料已保存" : d.copySource ? "服务器资料已创建" : "服务器资料已保存");
+        if (d.copySource) this.host.querySelector<HTMLElement>('.catalog-detail [data-connect-server]')?.focus();
       }
     } catch (error) {
       f.error = String(error);
@@ -242,7 +250,7 @@ export class ServerManager {
     if(this.actionMenu?.anchor===anchor){this.closeMenu(true);return;}this.closeMenu();
     const node=document.createElement('div'),events=new AbortController(),menu={node,anchor,events,id,position:undefined as MenuPosition|undefined};
     node.className='catalog-action-menu sd-menu';node.setAttribute('role','menu');node.setAttribute('aria-label',id?'资料更多操作':'新增资料');
-    node.innerHTML=id?action('copy',icon('copy')+'复制资料',`data-id="${e(id)}" role="menuitem" tabindex="-1"`)+action('delete','删除资料',`data-id="${e(id)}" role="menuitem" tabindex="-1"`,'danger'):action('new-server',icon('server')+'新增 SSH 服务器','role="menuitem" tabindex="-1"')+action('new-proxy',icon('network')+'新增 SOCKS5 代理','role="menuitem" tabindex="-1"');
+    node.innerHTML=id?action('copy',icon('copy')+(this.catalog!.servers.some(s=>s.id===id)?'复制服务器…':'复制代理资料'),`data-id="${e(id)}" role="menuitem" tabindex="-1"`)+action('delete','删除资料',`data-id="${e(id)}" role="menuitem" tabindex="-1"`,'danger'):action('new-server',icon('server')+'新增 SSH 服务器','role="menuitem" tabindex="-1"')+action('new-proxy',icon('network')+'新增 SOCKS5 代理','role="menuitem" tabindex="-1"');
     document.body.append(node);this.actionMenu=menu;anchor.setAttribute('aria-expanded','true');
     const signal=events.signal;
     node.addEventListener('click',event=>{const button=(event.target as Element).closest<HTMLButtonElement>('[data-server-action]');if(button){this.closeMenu();void this.perform(button).catch(error=>this.notify(String(error)));}},{signal});
@@ -286,6 +294,12 @@ export class ServerManager {
       case "reload": await this.start(); break;
       case "clear-filters": this.state.query = ""; this.state.tags = []; this.render(); this.host.querySelector<HTMLElement>("#catalog-query")?.focus(); break;
       case "reload-editor": {
+        if (f && d?.copySource) {
+          if (!await this.start()) throw new Error(this.readError || "无法读取服务器目录");
+          f.revision = this.catalog!.revision; f.error = "";
+          f.notice = "输入已保留；沿用凭据时将使用原服务器当前的值，记住选项保持当前选择。";
+          this.renderEditor(f); break;
+        }
         if (!f || !await this.confirm("重新读取表单？", "当前输入将被目录中最新保存的资料替换。", "重新读取")) break;
         if (!await this.start()) throw new Error(this.readError || "无法读取服务器目录");
         const r = (f.proxy ? this.catalog!.proxies : this.catalog!.servers).find(r => r.id === d?.id);
@@ -298,7 +312,7 @@ export class ServerManager {
         this.onSelection?.();this.selectRecord(id,name==="locate"?button.dataset.path:undefined,name==="locate-target");
         const filtered=connectionTree(this.catalog!,{query:this.state.query,tags:this.state.tags});if(!filtered.index.has(this.state.selected)||name==="locate-target"&&!filtered.index.get(this.state.selected)?.target){this.state.tags=[];this.state.query="";}this.render();break;
       }
-      case "copy": if(!record)throw new Error("资料已不存在");await this.listMutation({ op: record.protocol === "socks5" ? "copyProxy" : "copyServer", id }); this.notify("已复制资料，未复制密码或口令"); break;
+      case "copy": if(!record)throw new Error("资料已不存在");if(record.protocol === "ssh") this.openEditor(false,id,false,true); else { await this.listMutation({ op: "copyProxy", id }); this.notify("已复制代理资料，未复制密码或口令"); } break;
       case "delete": {
         const deps = referenced(this.catalog!, id);
         if (deps.length) { await this.confirm("此资料正在被引用", `请先编辑以下服务器的路径：${deps.map(s => s.name).join("、")}`, "知道了"); break; }
@@ -310,7 +324,7 @@ export class ServerManager {
       case "inline-proxy": this.openEditor(true, undefined, true); if (f) this.top()!.revision = f.revision; break;
       case "add-ssh": case "add-socks":
         if (d) {
-          d.route.push(name === "add-ssh" ? { id: "", kind: "ssh", serverId: "" } : { id: "", kind: "socks5", proxyId: "" });
+          d.route.push(name === "add-ssh" ? { id: crypto.randomUUID(), kind: "ssh", serverId: "" } : { id: crypto.randomUUID(), kind: "socks5", proxyId: "" });
           this.renderEditor(f!); f!.dialog.querySelector<HTMLElement>(`[data-step="${d.route.length - 1}"]`)?.focus();
         }
         break;
@@ -325,7 +339,7 @@ export class ServerManager {
       case "choose-key": {
         if (!d) break;
         const path = await open({ multiple: false, directory: false, title: "选择私钥文件" });
-        if (typeof path === "string" && f === this.top()) { d.privateKeyPath = path; this.renderEditor(f!); } break;
+        if (typeof path === "string" && f === this.top()) { if (d.copySource && path !== d.privateKeyPath) d.clearSecret = true; d.privateKeyPath = path; this.renderEditor(f!); } break;
       }
       case "recover":
         if (await this.confirm("从备份恢复目录？", "会恢复上一份有效目录，当前文件另存保留。备份可能包含旧密码。", "恢复目录")) { this.acceptCatalog(await this.api.recover()); this.render(); this.notify("目录已恢复"); } break;

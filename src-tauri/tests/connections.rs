@@ -439,6 +439,30 @@ async fn connected_in(f: &Fixture, id: &str, window: &str) -> View {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn copied_server_authenticates_with_independent_saved_and_session_credentials() {
+    for remember in [true, false] {
+        let f = Fixture::new();
+        let target = SshServer::new().await;
+        let source = f.server("source.invalid", 22, json!([]));
+        let mut draft = f.core.server_catalog()["servers"][0].clone();
+        draft["authentication"]["secret"] = json!({"action":"keep","remember":remember});
+        f.change(json!({"op":"saveServer","draft":draft.clone()}));
+        draft["id"] = Value::Null;
+        draft["copyFromId"] = json!(source);
+        draft["host"] = json!("127.0.0.1");
+        draft["port"] = json!(target.addr.port());
+        let copy = f.change(json!({"op":"saveServer","draft":draft}))["selectedId"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        f.change(json!({"op":"deleteServer","id":source}));
+        let context = connected(&f, &copy).await.context.unwrap();
+        assert_eq!(target.state.auth.load(Ordering::Relaxed), 1);
+        f.core.disconnect_connection("main", &context).unwrap();
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn new_connection_belongs_to_initiating_window_and_reconnect_keeps_owner() {
     let f = Fixture::new();
     let target = SshServer::new().await;
@@ -1381,6 +1405,27 @@ async fn openssh_interop() {
     assert!(String::from_utf8(bytes)
         .unwrap()
         .contains("sodeck-openssh-ok"));
+    let mut copy = f.core.server_catalog()["servers"][0].clone();
+    copy["id"] = Value::Null;
+    copy["name"] = json!("OpenSSH copied server");
+    copy["authentication"]["secret"] = json!({"action":"clear"});
+    let copied = f.change(json!({"op":"saveServer","draft":copy}))["selectedId"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let copied_context = connected(&f, &copied).await.context.unwrap();
+    let (bytes, code) = f
+        .core
+        .connection_probe(&copied_context, command)
+        .await
+        .unwrap();
+    assert_eq!(code, 0);
+    assert!(String::from_utf8(bytes)
+        .unwrap()
+        .contains("sodeck-openssh-ok"));
+    f.core
+        .disconnect_connection("main", &copied_context)
+        .unwrap();
     f.core.disconnect_connection("main", &context).unwrap();
     until(|| f.core.connection_views()[0].state == "disconnected").await;
 }

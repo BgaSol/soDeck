@@ -24,10 +24,11 @@ export interface Draft {
   tagIds: string[]; newTagNames: string[]; tagInput: string; authType: Authentication["type"]; privateKeyPath: string;
   password: string; remember: boolean; clearSecret: boolean;
   route: RouteStep[]; routed: boolean;
+  copySource?: Pick<Server, "id" | "name" | "authentication">;
 }
 export type Change =
   | { op: "saveServer" | "saveProxy"; draft: Record<string, unknown> }
-  | { op: "deleteServer" | "deleteProxy" | "copyServer" | "copyProxy" | "deleteTag"; id: string }
+  | { op: "deleteServer" | "deleteProxy" | "copyProxy" | "deleteTag"; id: string }
   | { op: "saveTag"; id: string | null; name: string };
 export const serverApi = {
   read: () => invoke<Catalog>("server_catalog"),
@@ -45,10 +46,24 @@ export function newDraft(record?: Server | Proxy): Draft {
     route: record?.protocol === "ssh" ? structuredClone(record.route) : [], routed: record?.protocol === "ssh" && record.route.length > 0,
   };
 }
+export function newCopyDraft(source: Server): Draft {
+  const draft = newDraft(source);
+  draft.id = null;
+  draft.name += " 副本";
+  draft.copySource = structuredClone({ id: source.id, name: source.name, authentication: source.authentication });
+  draft.route.forEach(step => step.id = crypto.randomUUID());
+  draft.remember = source.authentication.hasSavedSecret || !source.authentication.hasSessionSecret;
+  return draft;
+}
+export function canCopySecret(d: Draft) {
+  const auth = d.copySource?.authentication;
+  return !!auth && (auth.hasSavedSecret || auth.hasSessionSecret) && auth.type === d.authType
+    && (d.authType !== "privateKey" || (auth.privateKeyPath ?? "").trim() === d.privateKeyPath.trim());
+}
 export function toInput(d: Draft, proxy: boolean) {
-  const secret: SecretChange = d.clearSecret ? { action: "clear" } : d.password ? { action: "replace", value: d.password, remember: d.remember } : { action: "keep", remember: d.remember };
+  const secret: SecretChange = d.password ? { action: "replace", value: d.password, remember: d.remember } : d.clearSecret ? { action: "clear" } : { action: "keep", remember: d.remember };
   const common = { id: d.id, name: d.name, host: d.host, port: Number(d.port), authentication: { type: d.authType, username: d.username, privateKeyPath: d.privateKeyPath || null, secret } };
-  return proxy ? common : { ...common, username: d.username, tagIds: [...d.tagIds], newTagNames: [...d.newTagNames], route: d.routed ? d.route : [] };
+  return proxy ? common : { ...common, ...(canCopySecret(d) && !d.id && !d.password && !d.clearSecret ? { copyFromId: d.copySource!.id } : {}), username: d.username, tagIds: [...d.tagIds], newTagNames: [...d.newTagNames], route: d.routed ? d.route.map(step => ({ ...step, id: d.id ? step.id : "" })) : [] };
 }
 export function commitTagInput(d:Draft,c:Catalog) {
   for(const name of d.tagInput.split(/[,，]/).map(name=>name.trim()).filter(Boolean)) {
