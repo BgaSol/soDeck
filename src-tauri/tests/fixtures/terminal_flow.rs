@@ -31,7 +31,7 @@ async fn openssh_terminal_plugin() {
     f.core.ui_surface_ready("main", token).unwrap();
     let mut output = subscribe(&f.core, "main", token, id).await;
     advance_terminal(&f.core, "main", token, mounted["data"]["startup"].clone()).await;
-    let run = current_terminal_run(&f.core, "main", token, id, &mut output).await;
+    let (run, _) = current_terminal_run(&f.core, "main", token, id, &mut output).await;
     let command = if cfg!(windows) {
         b"echo sodeck-real-pty-ok\r".as_slice()
     } else {
@@ -69,8 +69,8 @@ async fn openssh_terminal_plugin() {
     let token=mounted["surfaceId"].as_str().unwrap();let id=mounted["data"]["streamId"].as_str().unwrap();
     f.core.ui_surface_ready("main",token).unwrap();let mut output=subscribe(&f.core,"main",token,id).await;
     advance_terminal(&f.core,"main",token,mounted["data"]["startup"].clone()).await;
-    let run=current_terminal_run(&f.core,"main",token,id,&mut output).await;
-    data_until(&f.core,"main",token,id,&mut output,"sodeck-command-ready").await;
+    let (run, early)=current_terminal_run(&f.core,"main",token,id,&mut output).await;
+    data_until_prefix(&f.core,"main",token,id,&mut output,"sodeck-command-ready",early).await;
     td(&f.core,"main",token,json!({"op":"write","id":id,"runId":run,"sequence":0,"data":b"value\r"})).await.unwrap();
     data_until(&f.core,"main",token,id,&mut output,"sodeck-command-input:value").await;
     loop {let frame=receive(&f.core,"main",token,id,&mut output).await;if frame.kind=="source"&&frame.metadata["state"]["state"]=="ended"{let result=&frame.metadata["state"]["result"];if cfg!(windows) {
@@ -183,7 +183,14 @@ async fn data_until(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<Frame>,
     needle: &str,
 ) -> (Vec<u8>, u64) {
-    let mut bytes = vec![];
+    data_until_prefix(core, window, token, id, rx, needle, (vec![], 0)).await
+}
+async fn data_until_prefix(
+    core: &Arc<AppCore>, window: &str, token: &str, id: &str,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<Frame>, needle: &str, prefix: (Vec<u8>, u64),
+) -> (Vec<u8>, u64) {
+    let (mut bytes, offset) = prefix;
+    if String::from_utf8_lossy(&bytes).contains(needle) { return (bytes, offset); }
     loop {
         let frame = receive(core, window, token, id, rx).await;
         if frame.kind == "data" {
@@ -360,11 +367,13 @@ async fn advance_terminal(core: &AppCore, window: &str, token: &str, mut startup
     }
     assert_eq!(startup["status"], "completed", "{startup}");
 }
-async fn current_terminal_run(core: &Arc<AppCore>, window: &str, token: &str, id: &str, output: &mut tokio::sync::mpsc::UnboundedReceiver<Frame>) -> Value {
+async fn current_terminal_run(core: &Arc<AppCore>, window: &str, token: &str, id: &str, output: &mut tokio::sync::mpsc::UnboundedReceiver<Frame>) -> (Value, (Vec<u8>, u64)) {
+    let mut bytes = vec![];
     loop {
         let frame = receive(core, window, token, id, output).await;
+        if frame.kind == "data" { bytes.extend(frame.data); }
         if frame.kind == "source" && !frame.metadata["state"]["runId"].is_null() {
-            return frame.metadata["state"]["runId"].clone();
+            return (frame.metadata["state"]["runId"].clone(), (bytes, frame.offset));
         }
     }
 }
