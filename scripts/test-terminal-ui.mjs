@@ -46,7 +46,6 @@ try{
  const main=await pageFor('main');const board=main.locator('.server-workbench:visible');const frame=main.frameLocator('.component-surface:not([hidden]) iframe');
  await frame.locator('body[data-ready="true"]').waitFor();
  await frame.locator('html[data-test-input-ready="true"]').waitFor();
- await wait(()=>frame.locator('#status').evaluate(el=>el.hidden));
  await frame.locator('.xterm-helper-textarea').focus();await main.keyboard.press(process.platform==='darwin'?'Meta+v':process.platform==='linux'?'Control+Shift+v':'Control+v');
  await frame.locator('.xterm-rows').filter({hasText:'sodeck-ui-command-ok'}).waitFor();await main.keyboard.press('Enter');
  await frame.locator('.xterm-rows').filter({hasText:'sodeck-ui-command-ok'}).waitFor();
@@ -81,60 +80,28 @@ try{
  const oldFrame=main.frameLocator(`.component-surface[data-view-id="${first}"] iframe`);
  await oldFrame.locator('html[data-test-input-ready="true"]').waitFor();delayOwnership=false;
  await oldFrame.locator('.xterm-rows').filter({hasText:'sodeck-ui-transfer-ok'}).waitFor();
- await oldFrame.locator('.xterm-helper-textarea').focus();await main.keyboard.type(process.platform==='linux'?'export TMOUT=1':'exit');await main.keyboard.press('Enter');
- const newTerminal=oldFrame.getByRole('button',{name:'恢复终端',exact:true});await newTerminal.waitFor();
- await oldFrame.locator('.xterm-helper-textarea').focus();await main.keyboard.press('Enter');
- await wait(()=>oldFrame.locator('#status').evaluate(el=>el.hidden));
- assert.equal(Object.values((await call('component_ui',{window:'main',operation:'snapshot',args:{}})).workspaces)[0].views.length,2,'Enter recovery retains the same tab');
- await assertHistory(main,oldFrame,'sodeck-ui-command-ok');
+ await oldFrame.locator('.xterm-helper-textarea').focus();await main.keyboard.type('exit');await main.keyboard.press('Enter');
+ const newTerminal=oldFrame.getByRole('button',{name:'新建终端',exact:true});await newTerminal.waitFor();
+ await newTerminal.evaluate(el=>{el.click();el.click();});await board.locator('.component-tab').nth(2).waitFor();
+ assert.equal(Object.values((await call('component_ui',{window:'main',operation:'snapshot',args:{}})).workspaces)[0].views.length,3,'Repeated exit recovery creates one new PTY');
+ assert.match(await oldFrame.locator('.xterm-rows').textContent(),/sodeck-ui-command-ok/,'Exited terminal retains output');
  const context=(await call('connection',{command:{op:'snapshot'}}))[0].context;
  const command=process.platform==='win32'?`powershell.exe -NoLogo -NoProfile -Command "Write-Output 'sodeck-ui-launch-ready'; $line = [Console]::ReadLine(); Write-Output ('sodeck-ui-launch-input:' + $line); exit 7"`:`sh -c 'printf "sodeck-ui-launch-ready\\n"; read line; printf "sodeck-ui-launch-input:%s\\n" "$line"; exit 7'`;
  const config={version:1,title:'指定命令 UI',launch:{kind:'command',command},directoryIntegration:'off'};
  const action=await completedAction(call,{window:'main',context,requestId:'ui-command'},await call('component_ui',{window:'main',operation:'invokeAction',args:{context,requestId:'ui-command',actionKey:'sodeck.terminal:new-terminal',data:config}}));assert.equal(action.status,'completed');
  await main.evaluate(()=>window.manager.refresh());
- await board.locator(`[data-component-action="select"][data-key="${action.viewId}"]`).click();
  const commandFrame=main.frameLocator(`.component-surface[data-view-id="${action.viewId}"] iframe`);
  await commandFrame.locator('.xterm-rows').filter({hasText:'sodeck-ui-launch-ready'}).waitFor();
  await commandFrame.locator('html[data-test-input-ready="true"]').waitFor();
  await commandFrame.locator('.xterm-helper-textarea').focus();await main.keyboard.type('value');await main.keyboard.press('Enter');
  await commandFrame.locator('.xterm-rows').filter({hasText:'sodeck-ui-launch-input:value'}).waitFor();
- await commandFrame.getByRole('button',{name:'重新打开终端',exact:true}).click();await board.locator('.component-tab').nth(3).waitFor();
+ await commandFrame.getByRole('button',{name:'重新打开终端',exact:true}).click();await board.locator('.component-tab').nth(4).waitFor();
  const final=Object.values((await call('component_ui',{window:'main',operation:'snapshot',args:{}})).workspaces)[0];
  assert.deepEqual(final.views.find(v=>v.id===final.editor).params,config,'Command recovery preserves launch, title and directory strategy');
  await main.frameLocator(`.component-surface[data-view-id="${final.editor}"] iframe`).locator('.xterm-rows').filter({hasText:'sodeck-ui-launch-ready'}).waitFor();
  const connection=(await call('connection',{command:{op:'snapshot'}}))[0];await call('connection',{command:{op:'disconnect',context:connection.context}});await main.evaluate(()=>window.manager.refresh());
- await board.locator(`[data-component-action="select"][data-key="${first}"]`).click();
- await oldFrame.getByRole('button',{name:'重新连接',exact:true}).waitFor();
- await oldFrame.locator('.xterm-helper-textarea').focus();await main.keyboard.press('Enter');
- await wait(async()=>{await main.evaluate(()=>window.manager.refresh());return (await call('connection',{command:{op:'snapshot'}}))[0].state==='connected';});
- const recoveredFrame=main.frameLocator(`.component-surface[data-view-id="${first}"] iframe`);
- await recoveredFrame.locator('html[data-test-input-ready="true"]').waitFor();
- await wait(()=>recoveredFrame.locator('#status').evaluate(el=>el.hidden));
- await wait(()=>main.locator(`.component-surface[data-view-id="${first}"] iframe`).evaluate(el=>document.activeElement===el&&el.contentDocument.activeElement.classList.contains('xterm-helper-textarea')));
- await main.keyboard.type(process.platform==='win32'?'echo sodeck-reconnected-ok':'printf "sodeck-reconnected-ok\\n"');await main.keyboard.press('Enter');
- await recoveredFrame.locator('.xterm-rows').filter({hasText:'sodeck-reconnected-ok'}).waitFor();
- await assertHistory(main,recoveredFrame,'sodeck-ui-command-ok');
- assert.equal(Object.values((await call('component_ui',{window:'main',operation:'snapshot',args:{}})).workspaces)[0].views.length,4,'SSH recovery preserves tab count');
- await main.screenshot({path:'artifacts/terminal-ui/reconnected.png'});
- // A Context remount may finish after the user has moved focus to another tab.
- const nextConnection=(await call('connection',{command:{op:'snapshot'}}))[0];
- await call('connection',{command:{op:'disconnect',context:nextConnection.context}});await main.evaluate(()=>window.manager.refresh());
- await recoveredFrame.getByRole('button',{name:'重新连接',exact:true}).waitFor();
- delayOwnership=true;await recoveredFrame.locator('.xterm-helper-textarea').focus();await main.keyboard.press('Enter');
- await wait(async()=>{await main.evaluate(()=>window.manager.refresh());return (await call('connection',{command:{op:'snapshot'}}))[0].state==='connected';});
- await board.locator(`[data-component-action="select"][data-key="${final.editor}"]`).click();
- await main.locator('#catalog-tab').click();
- await main.frameLocator(`.component-surface[data-view-id="${first}"] iframe`).locator('html[data-test-input-ready="true"]').waitFor({state:'attached'});delayOwnership=false;
- assert(await main.locator('#catalog-tab').evaluate(el=>document.activeElement===el),'Hidden recovery does not steal focus');
- const returnedContext=(await call('connection',{command:{op:'snapshot'}}))[0].context;
- await call('component_ui',{window:'main',operation:'action',args:{context:returnedContext,action:{op:'select',viewId:first}}});await main.evaluate(()=>window.manager.refresh());
- await wait(()=>main.frameLocator(`.component-surface[data-view-id="${first}"] iframe`).locator('#status').evaluate(el=>el.hidden));
- assert(await main.locator('#catalog-tab').evaluate(el=>document.activeElement===el),'Resumed recovery does not steal focus');
+  await wait(()=>oldFrame.locator('#status + button').evaluate(el=>el.hidden));await oldFrame.locator('#status + button').evaluate(el=>el.click());
+ assert.equal(Object.values((await call('component_ui',{window:'main',operation:'snapshot',args:{}})).workspaces)[0].views.length,5,'Disconnected recovery sends no new create');
  assert.deepEqual(errors,[]);
  console.log('Actual terminal UI passed: OpenSSH PTY, xterm input/output, multiple tabs, WebView remount replay, no page errors');
-}catch(error){for(const page of pages){console.error(await page.locator('.component-surface').evaluateAll(nodes=>nodes.map(n=>({view:n.dataset.viewId,hidden:n.hidden,error:n.querySelector('.component-error')?.textContent,status:n.querySelector('iframe')?.contentDocument?.querySelector('#status')?.textContent}))));await page.screenshot({path:'artifacts/terminal-ui/failure.png'});}for(const finish of traces)await finish(true);throw error;}finally{for(const finish of traces)await finish(false);await browser.close();await vite.close();if(child.exitCode===null){child.stdin.end();await new Promise(resolve=>child.once('exit',resolve));}if(path.dirname(path.resolve(data))!==path.resolve(os.tmpdir())||!path.basename(data).startsWith('sodeck-terminal-ui-'))throw new Error('Unexpected cleanup');fs.rmSync(data,{recursive:true,force:true});}
-async function assertHistory(page,frame,text){
- await frame.locator('.xterm-helper-textarea').focus();await page.keyboard.press(process.platform==='darwin'?'Meta+f':'Control+f');await frame.locator('.terminal-search input').fill(text);
- await wait(()=>frame.locator('.terminal-search').textContent().then(value=>/[1-9]\d*\s*\/\s*[1-9]\d*/.test(value)));
- await page.keyboard.press('Escape');
-}
+}catch(error){for(const finish of traces)await finish(true);throw error;}finally{for(const finish of traces)await finish(false);await browser.close();await vite.close();if(child.exitCode===null){child.stdin.end();await new Promise(resolve=>child.once('exit',resolve));}if(path.dirname(path.resolve(data))!==path.resolve(os.tmpdir())||!path.basename(data).startsWith('sodeck-terminal-ui-'))throw new Error('Unexpected cleanup');fs.rmSync(data,{recursive:true,force:true});}

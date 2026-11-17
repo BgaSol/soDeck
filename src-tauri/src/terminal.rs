@@ -21,95 +21,17 @@ enum Input {
     Resize(u32, u32),
     Barrier(oneshot::Sender<()>),
 }
-#[derive(Clone, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct Start {
-    id: String,
-    expected_run_id: Option<String>,
-    expected_context: crate::workspaces::Context,
-    cols: u32,
-    rows: u32,
-    command: Option<String>,
-    #[serde(default)]
-    output_prefix: String,
-    #[serde(default)]
-    metadata: Value,
-}
-enum Phase {
-    Starting,
-    Running(u64),
-    Ended(Value),
-}
-struct Run {
-    id: String,
-    start_offset: u64,
-    owner: Owner,
-    request: Start,
-    phase: Mutex<Phase>,
-    input: mpsc::Sender<Input>,
-    cancel: CancellationToken,
-    next_input: Mutex<HashMap<String, u64>>,
-}
 pub(crate) struct Terminal {
-    // Context here identifies the retained history. Input always uses the current Run's owner.
     owner: Owner,
     pub output: Arc<Replay>,
-    persistent: bool,
-    current: Mutex<Option<Arc<Run>>>,
+    input: mpsc::Sender<Input>,
     cancel: CancellationToken,
     tasks: Arc<crate::resource_tasks::Tasks>,
+    next_input: Mutex<HashMap<String, u64>>,
     pub sent: AtomicU64,
     pub received: AtomicU64,
 }
 impl Terminal {
-    fn snapshot(&self) -> Value {
-        let current = self.current.lock().unwrap();
-        match current.as_ref() {
-            None => json!({"state":"idle","runId":null}),
-            Some(run) => {
-                let phase = run.phase.lock().unwrap();
-                let (state, result) = match &*phase {
-                    Phase::Starting => ("starting", Value::Null),
-                    Phase::Running(_) => ("running", Value::Null),
-                    Phase::Ended(result) => ("ended", result.clone()),
-                };
-                json!({"runId":run.id,"previousRunId":run.request.expected_run_id,
-                    "state":state,"context":run.owner.context,"result":result,"metadata":run.request.metadata,
-                    "startOffset":run.start_offset,"readyOffset":match &*phase {Phase::Running(offset)=>*offset,_=>run.start_offset}})
-            }
-        }
-    }
-    fn publish(&self) {
-        if self.persistent {
-            let state = self.snapshot();
-            self.output
-                .source(state["startOffset"].as_u64().unwrap_or(0), state);
-        }
-    }
-    fn close(&self) {
-        self.tasks.close();
-        self.cancel.cancel();
-        if let Some(run) = self.current.lock().unwrap().as_ref() {
-            run.cancel.cancel();
-        }
-    }
-    fn input_run(&self, id: Option<&str>) -> Result<Arc<Run>, String> {
-        if self.cancel.is_cancelled() {
-            return Err("终端已关闭".into());
-        }
-        let run = self.current.lock().unwrap().clone().ok_or("终端尚未启动")?;
-        if self.persistent && id != Some(run.id.as_str()) {
-            return Err("终端运行身份已改变，旧输入未发送".into());
-        }
-        if matches!(*run.phase.lock().unwrap(), Phase::Ended(_))
-            || (self.persistent && !matches!(*run.phase.lock().unwrap(), Phase::Running(_)))
-        {
-            return Err("终端当前不可输入".into());
-        }
-        Ok(run)
-    }
-}
-impl Run {
     fn enqueue_write(
         &self,
         data: Vec<u8>,
@@ -123,6 +45,7 @@ impl Run {
             .map_err(|_| "终端输入队列已满".to_string())?;
         Ok(rx)
     }
+
     fn enqueue_surface_write(
         &self,
         token: &str,
@@ -144,25 +67,6 @@ pub struct Terminals {
     entries: Mutex<HashMap<String, Arc<Terminal>>>,
 }
 impl Terminals {
-    pub(crate) fn reconcile(&self, live: &HashMap<String, crate::workspaces::Context>) {
-        let mut entries = self.entries.lock().unwrap();
-        entries.retain(|_, terminal| {
-            match live.get(&terminal.owner.view) {
-                None => terminal.close(),
-                Some(context) if *context != terminal.owner.context && !terminal.persistent => {
-                    terminal.close()
-                }
-                Some(context) => {
-                    if let Some(run) = terminal.current.lock().unwrap().as_ref() {
-                        if run.owner.context != *context {
-                            run.cancel.cancel();
-                        }
-                    }
-                }
-            }
-            !terminal.cancel.is_cancelled() || !terminal.tasks.finished()
-        });
-    }
     pub(crate) fn drain_view(&self, view: &str) -> Result<(), String> {
         let terminal = self
             .entries
@@ -172,14 +76,11 @@ impl Terminals {
             .find(|t| t.owner.view == view)
             .cloned();
         if let Some(t) = terminal {
-            let Some(run) = t.current.lock().unwrap().clone() else {
-                return Ok(());
-            };
-            if matches!(*run.phase.lock().unwrap(), Phase::Ended(_)) {
+            if t.tasks.finished() {
                 return Ok(());
             }
             let (tx, rx) = oneshot::channel();
-            run.input
+            t.input
                 .try_send(Input::Barrier(tx))
                 .map_err(|_| "终端输入队列仍忙碌".to_string())?;
             tauri::async_runtime::block_on(async {
@@ -203,7 +104,8 @@ impl Terminals {
         let mut entries = self.entries.lock().unwrap();
         entries.retain(|_, t| {
             if matches(&t.owner) {
-                t.close();
+                t.tasks.close();
+                t.cancel.cancel();
                 !t.tasks.finished()
             } else {
                 true
@@ -233,15 +135,11 @@ pub enum DataRequest {
         id: String,
         sequence: u64,
         data: Vec<u8>,
-        #[serde(default, rename = "runId")]
-        run_id: Option<String>,
     },
     Resize {
         id: String,
         cols: u32,
         rows: u32,
-        #[serde(default, rename = "runId")]
-        run_id: Option<String>,
     },
     Checkpoint {
         id: String,
@@ -299,24 +197,15 @@ impl AppCore {
         {
             return Err("终端不属于此页面".into());
         }
-        let run = terminal
-            .current
-            .lock()
-            .unwrap()
-            .clone()
-            .ok_or("终端尚未启动")?;
         self.workspace_state()
-            .validate_owned(window, &run.owner.context)?;
+            .validate_owned(window, &terminal.owner.context)?;
         self.workspace_state()
-            .validate_context(&run.owner.context)?;
-        if !matches!(*run.phase.lock().unwrap(), Phase::Running(_)) {
-            return Err("终端当前不可输入".into());
-        }
-        let rx = run.enqueue_write(data)?;
+            .validate_context(&terminal.owner.context)?;
+        let rx = terminal.enqueue_write(data)?;
         rx.await.map_err(|_| "终端已结束".to_string())?
     }
 
-    pub(crate) fn terminal_create(
+    pub(crate) fn terminal_open(
         self: &Arc<Self>,
         plugin: &str,
         instance: &str,
@@ -324,21 +213,23 @@ impl AppCore {
         cols: u32,
         rows: u32,
         command: Option<String>,
-        persistent: bool,
     ) -> Result<Value, String> {
         dimensions(cols, rows)?;
-        validate_command(command.as_deref())?;
+        if command
+            .as_ref()
+            .is_some_and(|s| s.is_empty() || s.len() > 32 * 1024 || s.contains('\0'))
+        {
+            return Err("终端启动命令无效或超过 32 KiB".into());
+        }
         let owner = self.resource_owner(plugin, instance, view)?;
+        self.workspace_state().validate_context(&owner.context)?;
         let admission = self.resource_admission(&owner)?;
         let mut entries = self.terminals.entries.lock().unwrap();
-        entries.retain(|_, t| !t.cancel.is_cancelled() || !t.tasks.finished());
-        if let Some((id, terminal)) = entries
+        entries.retain(|_, terminal| !terminal.cancel.is_cancelled() || !terminal.tasks.finished());
+        if let Some((id, _)) = entries
             .iter()
             .find(|(_, t)| t.owner.view == view && t.owner.instance == instance)
         {
-            if terminal.persistent != persistent {
-                return Err("终端输出寿命模式不同".into());
-            }
             return Ok(json!({"id":id}));
         }
         if entries.len() >= 128 {
@@ -357,157 +248,37 @@ impl AppCore {
                 crate::core::now(),
                 id
             ));
+        let output = Arc::new(Replay::journaled(recovery)?);
+        let (input, rx) = mpsc::channel(32);
         let terminal = Arc::new(Terminal {
-            owner: owner.clone(),
-            output: Arc::new(Replay::journaled(recovery)?),
-            persistent,
-            current: Mutex::new(None),
+            owner,
+            output,
+            input,
             cancel: CancellationToken::new(),
             tasks: Arc::new(crate::resource_tasks::Tasks::default()),
+            next_input: Mutex::new(HashMap::new()),
             sent: AtomicU64::new(0),
             received: AtomicU64::new(0),
         });
+        let task = terminal.tasks.enter()?;
         entries.insert(id.clone(), terminal.clone());
         drop(entries);
         drop(admission);
-        terminal.publish();
-        if !persistent {
-            self.start_terminal_run(
-                terminal,
-                Start {
-                    id: id.clone(),
-                    expected_run_id: None,
-                    expected_context: owner.context,
-                    cols,
-                    rows,
-                    command,
-                    output_prefix: String::new(),
-                    metadata: Value::Null,
-                },
-            )?;
+        if let Err(error) = self.resource_owner(plugin, instance, view) {
+            terminal.cancel.cancel();
+            self.terminals.entries.lock().unwrap().remove(&id);
+            return Err(error);
         }
-        Ok(json!({"id":id}))
-    }
-    pub(crate) fn terminal_run_request(
-        self: &Arc<Self>,
-        plugin: &str,
-        instance: &str,
-        method: &str,
-        p: &Value,
-    ) -> Result<Value, String> {
-        let id = p["id"].as_str().ok_or("缺少终端 ID")?;
-        let terminal = self
-            .terminals
-            .entries
-            .lock()
-            .unwrap()
-            .get(id)
-            .cloned()
-            .ok_or("终端已关闭")?;
-        if terminal.owner.plugin != plugin || terminal.owner.instance != instance {
-            return Err("终端不属于此插件实例".into());
-        }
-        let owner = self.resource_owner(plugin, instance, &terminal.owner.view)?;
-        if !terminal.persistent {
-            return Err("终端不支持多次运行".into());
-        }
-        match method {
-            "terminal.run.get" => Ok(terminal.snapshot()),
-            "terminal.run.start" => {
-                if !p
-                    .as_object()
-                    .is_some_and(|o| o.contains_key("expectedRunId"))
-                {
-                    return Err("缺少 expectedRunId".into());
-                }
-                let request: Start =
-                    serde_json::from_value(p.clone()).map_err(|e| e.to_string())?;
-                if request.expected_context != owner.context {
-                    return Err("连接代次已改变".into());
-                }
-                self.workspace_state().validate_context(&owner.context)?;
-                self.start_terminal_run(terminal, request)
-            }
-            _ => Err("未知终端运行方法".into()),
-        }
-    }
-    fn start_terminal_run(
-        self: &Arc<Self>,
-        terminal: Arc<Terminal>,
-        request: Start,
-    ) -> Result<Value, String> {
-        dimensions(request.cols, request.rows)?;
-        validate_command(request.command.as_deref())?;
-        if (!request.metadata.is_null() && !request.metadata.is_object())
-            || request.metadata.to_string().len() > 8192
-        {
-            return Err("终端运行元数据无效或超过 8 KiB".into());
-        }
-        if request.output_prefix.len() > BLOCK {
-            return Err("终端输出前缀超过 16 KiB".into());
-        }
-        let owner = self.resource_owner(
-            &terminal.owner.plugin,
-            &terminal.owner.instance,
-            &terminal.owner.view,
-        )?;
-        if owner.context != request.expected_context {
-            return Err("连接代次已改变".into());
-        }
-        let admission = self.resource_admission(&owner)?;
-        let mut current = terminal.current.lock().unwrap();
-        if terminal.cancel.is_cancelled() {
-            return Err("终端已关闭".into());
-        }
-        if let Some(previous) = current.as_ref() {
-            if previous.request.expected_run_id == request.expected_run_id {
-                if previous.request != request {
-                    return Err("相同运行前驱的启动参数不同".into());
-                }
-                drop(current);
-                drop(admission);
-                return Ok(terminal.snapshot());
-            }
-            if request.expected_run_id.as_deref() != Some(previous.id.as_str())
-                || !matches!(*previous.phase.lock().unwrap(), Phase::Ended(_))
-            {
-                return Err("终端运行尚未结束或运行身份已改变".into());
-            }
-        } else if request.expected_run_id.is_some() {
-            return Err("终端运行身份无效".into());
-        }
-        let task = terminal.tasks.enter()?;
-        let (input, rx) = mpsc::channel(32);
-        let run = Arc::new(Run {
-            id: self.next_id(),
-            start_offset: terminal.output.watermark(),
-            owner,
-            request,
-            phase: Mutex::new(Phase::Starting),
-            input,
-            cancel: terminal.cancel.child_token(),
-            next_input: Mutex::new(HashMap::new()),
-        });
-        *current = Some(run.clone());
-        drop(current);
-        drop(admission);
-        terminal.publish();
         let core = Arc::downgrade(self);
-        let target = terminal.clone();
         tauri::async_runtime::spawn(async move {
-            let result = run_pty(core, target.clone(), run.clone(), rx).await;
-            let result = match result {
+            let _task = task;
+            let result = run(core, terminal.clone(), rx, cols, rows, command).await;
+            terminal.output.finish(match result {
                 Ok(code) => json!({"exitCode":code}),
-                Err(error) => json!({"error":error.chars().take(4096).collect::<String>()}),
-            };
-            drop(task); // All channel work is complete before another Run may be accepted.
-            *run.phase.lock().unwrap() = Phase::Ended(result.clone());
-            target.publish();
-            if !target.persistent {
-                target.output.finish(result);
-            }
+                Err(error) => json!({"error":error}),
+            });
         });
-        Ok(terminal.snapshot())
+        Ok(json!({"id":id}))
     }
     pub(crate) fn terminal_close(
         &self,
@@ -520,7 +291,8 @@ impl AppCore {
             if t.owner.plugin != plugin || t.owner.instance != instance {
                 return Err("终端不属于此插件实例".into());
             }
-            t.close();
+            t.cancel.cancel();
+            t.tasks.close();
         }
         Ok(json!({}))
     }
@@ -549,12 +321,11 @@ impl AppCore {
         match request {
             DataRequest::Attach { .. } => {
                 let live = self.ui_data_surface_ids();
-                if let Some(run) = terminal.current.lock().unwrap().as_ref() {
-                    run.next_input
-                        .lock()
-                        .unwrap()
-                        .retain(|key, _| live.contains(key));
-                }
+                terminal
+                    .next_input
+                    .lock()
+                    .unwrap()
+                    .retain(|key, _| live.contains(key));
                 let sink = sink.ok_or("缺少数据通道")?;
                 let output = terminal.output.clone();
                 let core = Arc::downgrade(self);
@@ -593,31 +364,27 @@ impl AppCore {
                 terminal.output.detach(token);
                 Ok(())
             }
-            DataRequest::Resize {
-                cols, rows, run_id, ..
-            } => {
+            DataRequest::Resize { cols, rows, .. } => {
                 let admission = self.surface_write_admission(window, token)?;
                 dimensions(cols, rows)?;
-                let run = terminal.input_run(run_id.as_deref())?;
-                admission.workspaces.validate_context(&run.owner.context)?;
-                run.input
+                admission
+                    .workspaces
+                    .validate_context(&terminal.owner.context)?;
+                terminal
+                    .input
                     .try_send(Input::Resize(cols, rows))
                     .map_err(|_| "终端忙碌，请稍后重试".into())
             }
-            DataRequest::Write {
-                sequence,
-                data,
-                run_id,
-                ..
-            } => {
+            DataRequest::Write { sequence, data, .. } => {
                 let rx = {
                     let admission = self.surface_write_admission(window, token)?;
                     if data.len() > BLOCK {
                         return Err("终端输入块超过 16 KiB".into());
                     }
-                    let run = terminal.input_run(run_id.as_deref())?;
-                    admission.workspaces.validate_context(&run.owner.context)?;
-                    run.enqueue_surface_write(token, sequence, data)?
+                    admission
+                        .workspaces
+                        .validate_context(&terminal.owner.context)?;
+                    terminal.enqueue_surface_write(token, sequence, data)?
                 };
                 rx.await.map_err(|_| "终端已结束".to_string())?
             }
@@ -636,28 +403,10 @@ fn dimensions(cols: u32, rows: u32) -> Result<(), String> {
 mod tests {
     use super::*;
 
-    fn terminal() -> (Run, mpsc::Receiver<Input>) {
+    fn terminal() -> (Terminal, mpsc::Receiver<Input>) {
         let (input, rx) = mpsc::channel(32);
         (
-            Run {
-                id: "run".into(),
-                start_offset: 0,
-                request: Start {
-                    id: "terminal".into(),
-                    expected_run_id: None,
-                    expected_context: crate::workspaces::Context {
-                        workspace_id: "workspace".into(),
-                        server_id: "server".into(),
-                        connection_id: "connection".into(),
-                        generation: 1,
-                    },
-                    cols: 80,
-                    rows: 24,
-                    command: None,
-                    output_prefix: String::new(),
-                    metadata: Value::Null,
-                },
-                phase: Mutex::new(Phase::Running(0)),
+            Terminal {
                 owner: Owner {
                     plugin: "test.terminal".into(),
                     instance: "instance".into(),
@@ -669,9 +418,13 @@ mod tests {
                         generation: 1,
                     },
                 },
+                output: Arc::new(Replay::default()),
                 input,
                 cancel: CancellationToken::new(),
+                tasks: Arc::new(crate::resource_tasks::Tasks::default()),
                 next_input: Mutex::new(HashMap::new()),
+                sent: AtomicU64::new(0),
+                received: AtomicU64::new(0),
             },
             rx,
         )
@@ -740,134 +493,61 @@ mod tests {
             .is_err());
     }
 }
-fn validate_command(command: Option<&str>) -> Result<(), String> {
-    if command.is_some_and(|s| s.is_empty() || s.len() > 32 * 1024 || s.contains('\0')) {
-        return Err("终端启动命令无效或超过 32 KiB".into());
-    }
-    Ok(())
-}
-async fn run_pty(
+async fn run(
     core: std::sync::Weak<AppCore>,
     terminal: Arc<Terminal>,
-    run: Arc<Run>,
     mut input: mpsc::Receiver<Input>,
+    cols: u32,
+    rows: u32,
+    command: Option<String>,
 ) -> Result<Option<u32>, String> {
     let session = core
         .upgrade()
         .ok_or("应用已退出")?
-        .connection_session(&run.owner.context)?;
+        .connection_session(&terminal.owner.context)?;
     let token = session.cancellation();
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
-    let mut channel = tokio::select! {biased;
-        _=run.cancel.cancelled()=>return Err("终端已关闭".into()),
-        _=token.cancelled()=>return Err("服务器连接已断开".into()),
-        result=tokio::time::timeout_at(deadline,session.open_channel())=>
-            result.map_err(|_|"打开终端超时")??,
-    };
-    let work = async {
-        let opening = async {
-            terminal
-                .output
-                .push(run.request.output_prefix.as_bytes(), &run.cancel)
-                .await?;
+    let opening = async {
+        let channel = session.open_channel().await?;
+        channel
+            .request_pty(true, "xterm-256color", cols, rows, 0, 0, &[])
+            .await
+            .map_err(|e| e.to_string())?;
+        if let Some(command) = command {
             channel
-                .request_pty(
-                    true,
-                    "xterm-256color",
-                    run.request.cols,
-                    run.request.rows,
-                    0,
-                    0,
-                    &[],
-                )
+                .exec(true, command)
                 .await
                 .map_err(|e| e.to_string())?;
-            loop {
-                match channel.wait().await {
-                    Some(russh::ChannelMsg::Success) => break,
-                    Some(
-                        russh::ChannelMsg::Failure
-                        | russh::ChannelMsg::Close
-                        | russh::ChannelMsg::Eof,
-                    )
-                    | None => return Err("服务器拒绝 PTY".into()),
-                    _ => {}
-                }
-            }
-            if let Some(command) = &run.request.command {
-                channel
-                    .exec(true, command.as_str())
-                    .await
-                    .map_err(|e| e.to_string())?;
-            } else {
-                channel
-                    .request_shell(true)
-                    .await
-                    .map_err(|e| e.to_string())?;
-            }
-            loop {
-                match channel.wait().await {
-                    Some(russh::ChannelMsg::Success) => break,
-                    Some(russh::ChannelMsg::Data { data })
-                    | Some(russh::ChannelMsg::ExtendedData { data, .. }) => {
-                        terminal
-                            .received
-                            .fetch_add(data.len() as u64, Ordering::Relaxed);
-                        if let Some(c) = core.upgrade() {
-                            c.record_business(&run.owner, 0, data.len() as u64);
-                        }
-                        terminal.output.push(&data, &run.cancel).await?
-                    }
-                    Some(
-                        russh::ChannelMsg::Failure
-                        | russh::ChannelMsg::Close
-                        | russh::ChannelMsg::Eof,
-                    )
-                    | None => return Err("服务器拒绝终端启动请求".into()),
-                    _ => {}
-                }
-            }
-            Ok::<_, String>(())
-        };
-        tokio::time::timeout_at(deadline, opening)
-            .await
-            .map_err(|_| "打开终端超时".to_string())??;
-        *run.phase.lock().unwrap() = Phase::Running(terminal.output.watermark());
-        terminal.publish();
-        let mut code = None;
+        } else {
+            channel
+                .request_shell(true)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        Ok::<_, String>(channel)
+    };
+    let mut channel = tokio::select! {biased;_=terminal.cancel.cancelled()=>return Err("终端已关闭".into()),_=token.cancelled()=>return Err("服务器连接已断开".into()),v=tokio::time::timeout(std::time::Duration::from_secs(30),opening)=>v.map_err(|_|"打开终端超时".to_string())??};
+    let mut code = None;
+    let work = async {
         loop {
             tokio::select! {biased;
-                item=input.recv()=>match item {
-                    Some(Input::Write(data,reply))=>{
-                        let len=data.len();let result=channel.data(data.as_slice()).await.map_err(|e|e.to_string());
-                        if result.is_ok(){terminal.sent.fetch_add(len as u64,Ordering::Relaxed);
-                            if let Some(c)=core.upgrade(){c.record_business(&run.owner,len as u64,0);}}
-                        let _=reply.send(result);
-                    },
+                item=input.recv()=>match item{
+                    Some(Input::Write(data,reply))=>{let len=data.len();let result=channel.data(data.as_slice()).await.map_err(|e|e.to_string());if result.is_ok(){terminal.sent.fetch_add(len as u64,Ordering::Relaxed);if let Some(c)=core.upgrade(){c.record_business(&terminal.owner,len as u64,0);}}let _=reply.send(result);},
                     Some(Input::Resize(cols,rows))=>channel.window_change(cols,rows,0,0).await.map_err(|e|e.to_string())?,
                     Some(Input::Barrier(reply))=>{let _=reply.send(());},
                     None=>break,
                 },
                 message=channel.wait()=>match message {
-                    Some(russh::ChannelMsg::Data{data})|Some(russh::ChannelMsg::ExtendedData{data,..})=>{
-                        terminal.received.fetch_add(data.len() as u64,Ordering::Relaxed);
-                        if let Some(c)=core.upgrade(){c.record_business(&run.owner,0,data.len() as u64);}
-                        terminal.output.push(&data,&run.cancel).await?;
-                    },
+                    Some(russh::ChannelMsg::Data{data})|Some(russh::ChannelMsg::ExtendedData{data,..})=>{terminal.received.fetch_add(data.len() as u64,Ordering::Relaxed);if let Some(c)=core.upgrade(){c.record_business(&terminal.owner,0,data.len() as u64);}terminal.output.push(&data,&terminal.cancel).await?;},
                     Some(russh::ChannelMsg::ExitStatus{exit_status})=>code=Some(exit_status),
-                    Some(russh::ChannelMsg::Failure)=>return Err("服务器拒绝终端请求".into()),
+                    Some(russh::ChannelMsg::Failure)=>return Err("服务器拒绝 PTY 或登录 shell".into()),
                     Some(russh::ChannelMsg::Close)|None=>break,
-                    _=>{},
+                    _=>{}
                 }
             }
         }
         Ok(code)
     };
-    let result = tokio::select! {biased;
-        _=run.cancel.cancelled()=>Err("终端已关闭".into()),
-        _=token.cancelled()=>Err("服务器连接已断开".into()),
-        result=work=>result,
-    };
+    let result = tokio::select! {biased;_=terminal.cancel.cancelled()=>Err("终端已关闭".into()),_=token.cancelled()=>Err("服务器连接已断开".into()),v=work=>v};
     let _ = tokio::time::timeout(std::time::Duration::from_secs(1), channel.close()).await;
     result
 }

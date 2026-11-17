@@ -12,9 +12,7 @@
 - Windows/Linux 使用 Ctrl+A 全选当前终端保留的输出，macOS 使用 Cmd+A；不需要 Shift，也可从终端菜单全选。快捷键在本地处理，不向远端发送原先的 Ctrl+A 行首控制字符。
 - 剪贴板与输入通过既有桥接，保留括号粘贴和 IME 规则。失焦、移窗、冻结或连接代次改变后拒绝迟到粘贴，不把文本送到另一个终端。
 - 同窗切换、隐藏和移窗沿用原 PTY；目标页面恢复显示后才能输入。字体或面板尺寸改变会重新适配有效尺寸，不重新执行命令。
-- 登录 shell 退出后在原标签正文按普通回车或点击“恢复终端”，启动新 shell；SSH 断开时通过核心现有认证与目标确认流程重新连接。标签、标题、位置和历史保持，恢复用的回车不发送给远端。指定命令提供“重新打开终端”，保留配置并创建新页面；回车不重新执行命令。
-- 恢复仅接收正文焦点下的无修饰回车，排除长按重复和 IME 组合输入。搜索、菜单、对话框、隐藏或冻结页不触发；启动期间重复操作复用同一意图，失败后可明确重试。重挂载继续已有意图，切页后成功不抢焦点。
-- 恢复只创建新进程，不还原已退出 shell 的变量、目录或正在执行的程序，不调整远端 TMOUT。新 shell 使用登录配置；自动目录集成使用本次运行的新 token，旧报告不能更新新运行目录。
+- 登录 shell 退出后保留输出并提供“新建终端”；指定命令提供“重新打开终端”，保留原创建配置并新建 PTY。断线后先在工作台手动重连。
 - 请求先返回等待回执；页面登记完成与 PTY/远端程序就绪分开。通信超时继续查询原意图，未确认结果不自动新建或重跑。关闭、断线或来源失效会撤销未登记的创建，取消关闭不恢复旧意图；具体契约见[命令 API](../plugin-api.md#命令默认行为与进程主动创建页面)。
 - Docker 创建的终端独立持有资源；关闭 Docker 来源详情页不会关闭已经登记的终端。
 - 关闭终端释放对应资源；关闭应用后不保留可检索的终端档案。关闭共同规则见[生命周期](lifecycle.md)。
@@ -51,11 +49,9 @@
 
 完整历史恢复需要核心 0.22.1 的 `terminal.history.v1`；当前终端遇到缺少能力的核心会提示升级。核心 API 主版本保持 1，创建参数和恢复接口见[插件 API](../plugin-api.md)。字体配置见[设置](settings.md)。
 
-原页回车恢复由核心 1.5.2 的 `terminal.runs.v1`、`session.connection.v1` 与终端 0.9.4 配合提供，发行与验收见[核心版本记录](../releases/v1.5.2.md)及插件 CHANGELOG。缺少能力时保持旧版“新建终端”和工作台重连行为。逻辑终端与输出日志随页面存续，每次 PTY 使用独立运行身份、输入队列和序号。恢复前在同一日志中复位终端模式并将当前主屏送入滚动区，避免新 shell 清屏覆盖旧输出；已经被应用清除或超出历史上限的数据不能还原。
-
 ## 实现与回归入口
 
-- 插件：[创建参数](../../plugins/terminal/src/creation.rs)、[启动与恢复](../../plugins/terminal/src/start.rs)、[目录集成](../../plugins/terminal/src/integration.rs)、[输入](../../plugins/terminal/ui-src/input.js)、[历史](../../plugins/terminal/ui-src/history.js)、[Worker](../../plugins/terminal/ui-src/history-worker.js)、[搜索](../../plugins/terminal/ui-src/search.js)、[快照](../../plugins/terminal/ui-src/snapshot.js)。
+- 插件：[创建参数](../../plugins/terminal/src/creation.rs)、[目录集成](../../plugins/terminal/src/integration.rs)、[输入](../../plugins/terminal/ui-src/input.js)、[历史](../../plugins/terminal/ui-src/history.js)、[Worker](../../plugins/terminal/ui-src/history-worker.js)、[搜索](../../plugins/terminal/ui-src/search.js)、[快照](../../plugins/terminal/ui-src/snapshot.js)。
 - 核心：[terminal.rs](../../src-tauri/src/terminal.rs)、[streams.rs](../../src-tauri/src/streams.rs)、[journal.rs](../../src-tauri/src/streams/journal.rs)。
 - 回归：[创建](../../plugins/terminal/tests/creation.rs)、[输入](../../scripts/test-terminal-input.mjs)、[历史](../../scripts/test-terminal-history.mjs)、[搜索 UI](../../scripts/test-terminal-search-ui.mjs)、[真实 shell](../../scripts/test-terminal-shell.py)、[真实 PTY](../../scripts/test-terminal-ui.mjs)。
 - 五平台基本实际包与深度搜索性能是不同验证范围。超宽行、多终端、完整进程内存、原生 Worker/IME/DPI 专项及未补齐交互由临时计划跟进，当前不承诺全部性能目标通过；发行证据见插件 CHANGELOG。

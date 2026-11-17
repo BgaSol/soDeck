@@ -708,7 +708,8 @@ impl AppCore {
             .values()
             .flat_map(|w| w.views.iter().map(|v| (v.id.clone(), v.context.clone())))
             .collect();
-        self.terminals.reconcile(&live);
+        self.terminals
+            .cancel(|owner| live.get(&owner.view) != Some(&owner.context));
         self.executions
             .cancel(|owner| live.get(&owner.view) != Some(&owner.context));
         // Old command captures remain readable after reconnect; their SSH session cancels execution.

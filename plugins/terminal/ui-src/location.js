@@ -20,10 +20,10 @@ export function parseOsc7(text,host){
   }catch{return null;}
 }
 export function createLocation(terminal){
-  let client,mount,host='',kind='',frameOffset=0,report,latest,ready=false,busy=false,disposed=false,timer,epoch=0,integration={},observed=false,confirmed=false,handshake,accepting=true;
+  let client,mount,host='',kind='',frameOffset=0,report,latest,ready=false,busy=false,disposed=false,timer,epoch=0,integration={},observed=false,confirmed=false,handshake;
   const valid=()=>!disposed&&ready&&client?.available&&JSON.stringify(mount.context)===JSON.stringify(mount.data.openedContext);
-  const handler=terminal.parser.registerOscHandler(7,text=>{if(accepting&&kind==='data'&&integration.mode==='manual')report=parseOsc7(text,host)||{state:'unknown',path:null,reasonCode:'invalid-report'};return true;});
-  const automatic=terminal.parser.registerOscHandler(633,text=>{if(accepting&&kind==='data'&&integration.mode==='auto'){const parsed=parseIntegration(text,integration.token);if(parsed){observed=true;if(parsed.state==='known')confirmed=true;if(parsed.activity==='unavailable')confirmed=false;clearTimeout(handshake);report=parsed;}}return true;});
+  const handler=terminal.parser.registerOscHandler(7,text=>{if(kind==='data'&&integration.mode==='manual')report=parseOsc7(text,host)||{state:'unknown',path:null,reasonCode:'invalid-report'};return true;});
+  const automatic=terminal.parser.registerOscHandler(633,text=>{if(kind==='data'&&integration.mode==='auto'){const parsed=parseIntegration(text,integration.token);if(parsed){observed=true;if(parsed.state==='known')confirmed=true;if(parsed.activity==='unavailable')confirmed=false;clearTimeout(handshake);report=parsed;}}return true;});
   function observation(value){return {...value,terminalId:mount.data.streamId,title:mount.data.title,shell:integration.shell,outputOffset:String(frameOffset),observedAt:Date.now()};}
   async function publish(){
     if(!valid()||busy||!latest)return;busy=true;const ticket=epoch,target=latest;
@@ -37,17 +37,17 @@ export function createLocation(terminal){
     finally{busy=false;if(!timer&&latest&&valid())queueMicrotask(publish);}
   }
   return {
-    mount(value){clearTimeout(timer);clearTimeout(handshake);timer=undefined;confirmed=false;report=null;accepting=true;client?.dispose();mount=value;client=new SharedState(value);host=value.settings?.values?.directoryReportHost||'';integration=value.data.integration||{mode:'manual'};ready=false;latest=null;observed=false;++epoch;},
+    mount(value){client?.dispose();mount=value;client=new SharedState(value);host=value.settings?.values?.directoryReportHost||'';integration=value.data.integration||{mode:'manual'};ready=false;latest=null;observed=false;++epoch;},
     settings(value){const next=value?.values?.directoryReportHost||'';if(integration.mode==='manual'&&next!==host){host=next;report=null;latest={state:'unknown',path:null,reason:'目录报告配置已更换',terminalId:mount.data.streamId,outputOffset:String(frameOffset),observedAt:Date.now()};++epoch;void publish();}},
     frame(type,offset){kind=type;frameOffset=offset;report=null;},
-    completed(){if(accepting&&report&&Number.isSafeInteger(frameOffset)){latest=observation(report);void publish();}report=null;},
-    ready(){ready=true;accepting=true;void publish();const ticket=epoch;void client?.request('get',{topic:'terminal.location.v1',key:'current'}).then(({record})=>{
+    completed(){if(report&&Number.isSafeInteger(frameOffset)){latest=observation(report);void publish();}report=null;},
+    ready(){ready=true;void publish();const ticket=epoch;void client?.request('get',{topic:'terminal.location.v1',key:'current'}).then(({record})=>{
       if(ticket!==epoch||disposed||observed||(record?.present&&integration.mode!=='off'))return;
       latest=observation({state:'unknown',path:null,activity:'starting',reasonCode:integration.mode==='auto'?'starting':integration.mode==='off'?'disabled':integration.mode==='manual'?'manual-setup':integration.reasonCode||'old-core'});void publish();
       if(integration.mode==='auto')handshake=setTimeout(()=>{if(ticket===epoch&&!disposed&&!observed){latest=observation({state:'unknown',path:null,activity:'unavailable',reasonCode:'handshake-timeout'});void publish();}},8000);
     }).catch(()=>{});},
     input(text){if(integration.mode==='auto'&&confirmed&&/[\r\n\x03\x04]/.test(text)){latest=observation({state:'unknown',path:null,activity:'busy',reasonCode:'busy'});void publish();}},
-    unknown(offset,reason){accepting=false;if(Number.isSafeInteger(offset)){latest={state:'unknown',path:null,reason,terminalId:mount.data.streamId,outputOffset:String(offset),observedAt:Date.now()};void publish();}},
+    unknown(offset,reason){if(Number.isSafeInteger(offset)){latest={state:'unknown',path:null,reason,terminalId:mount.data.streamId,outputOffset:String(offset),observedAt:Date.now()};void publish();}},
     invalidate(){ready=false;latest=null;++epoch;clearTimeout(timer);clearTimeout(handshake);timer=undefined;},
     dispose(){disposed=true;++epoch;clearTimeout(timer);clearTimeout(handshake);handler.dispose();automatic.dispose();client?.dispose();},
   };

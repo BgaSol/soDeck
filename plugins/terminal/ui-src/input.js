@@ -1,6 +1,6 @@
 (() => {
-  window.installTerminalInput = (terminal, host, state, notify, search=()=>{}, recover=()=>{}) => {
-    let selectionVersion=0,composing=false,menu,menuPosition,disposed=false,recoveryEnterHeld=false;
+  window.installTerminalInput = (terminal, host, state, notify, search=()=>{}) => {
+    let selectionVersion=0,composing=false,menu,menuPosition,disposed=false;
     const platform=navigator.userAgentData?.platform||navigator.platform||'';
     const mac=/mac/i.test(platform),linux=/linux/i.test(platform);
     const active=()=>!disposed&&document.hasFocus()&&(host.contains(document.activeElement)||Boolean(menu?.contains(document.activeElement)));
@@ -20,11 +20,7 @@
       document.body.append(menu);const current=menu;menuPosition=window.SoDeckMenuPosition.attachMenuPosition(current,reference,{isValid:()=>menu===current&&!disposed,onInvalid:()=>{if(menu===current)closeMenu();}});void menuPosition.ready.then(ready=>{if(ready&&menu===current)current.querySelector('button:not(:disabled)')?.focus();});
     }
     terminal.attachCustomKeyEventHandler(event=>{
-      if(event.key==='Enter'&&recoveryEnterHeld){if(event.type==='keyup')recoveryEnterHeld=false;event.preventDefault();event.stopPropagation();return false;}
       if(event.type!=='keydown'||composing||event.isComposing||event.keyCode===229)return true;
-      if(event.key==='Enter'&&!event.ctrlKey&&!event.altKey&&!event.shiftKey&&!event.metaKey&&state().canRecover){
-        event.preventDefault();event.stopPropagation();if(!event.repeat&&active()){recoveryEnterHeld=true;recover();}return false;
-      }
       const key=event.key.toLowerCase(),plain=!event.altKey;
       if(searchKey(event))return false;
       const copy=plain&&(mac?event.metaKey&&!event.ctrlKey&&!event.shiftKey&&key==='c':event.ctrlKey&&!event.metaKey&&key==='c'&&(event.shiftKey||(!linux&&terminal.hasSelection())));
@@ -38,7 +34,7 @@
     const context=event=>{if(terminal.modes.mouseTrackingMode!=='none'&&!event.shiftKey)return;event.preventDefault();event.stopImmediatePropagation();showMenu({x:event.clientX,y:event.clientY,contextElement:host});};
     const begin=()=>{composing=true;},end=()=>{composing=false;};
     const outside=event=>{if(menu&&!menu.contains(event.target)){closeMenu();clipboard.invalidate();}};
-    const blur=()=>{recoveryEnterHeld=false;clipboard.invalidate();closeMenu();};
+    const blur=()=>{clipboard.invalidate();closeMenu();};
     const focusOut=event=>{if(!host.contains(event.relatedTarget)&&!menu?.contains(event.relatedTarget))clipboard.invalidate();};
     host.addEventListener('paste',pasteEvent,true);host.addEventListener('contextmenu',context,true);host.addEventListener('compositionstart',begin);host.addEventListener('compositionend',end);host.addEventListener('focusout',focusOut);
     document.addEventListener('pointerdown',outside,true);document.addEventListener('keydown',localSearch);window.addEventListener('blur',blur);

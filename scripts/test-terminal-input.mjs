@@ -13,13 +13,12 @@ const vite=await createServer({server:{host:'127.0.0.1',port:0}});await vite.lis
 const browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:1024,height:700}});
 if(desktopScript!==undefined)await page.addInitScript({content:fs.readFileSync(desktopScript,'utf8')});
 const errors=[];page.on('pageerror',error=>errors.push(String(error)));
-let requestedPlatform='Win32',holdMount=true,persistent=false,commandTerminal=false,manualLocation=false;
+let requestedPlatform='Win32',holdMount=true;
 const harness=()=>`<!doctype html><html data-theme="dopamine"><head><meta charset="utf-8"></head><body><button id="outside">外部焦点</button><iframe id="terminal" style="width:900px;height:480px;border:0"></iframe><script type="module">
 import '/style.css';import {ClipboardBridge} from '/clipboard.ts';import {themeTokens} from '/theme.ts';
 window.holdMount=${holdMount};
 window.writes=[];window.clipboard='中文🙂\\nsecond line';window.copies=[];window.reads=0;window.delayRead=false;window.flushed=[];
-window.resizes=[];window.holdResize=false;window.recoveries=[];window.continues=0;window.pendingStartup=false;window.sourceRevision=0;
-window.locationReports=[];
+window.resizes=[];window.holdResize=false;
 const host=new ClipboardBridge(async()=>{window.reads++;return window.delayRead?new Promise(resolve=>window.finishRead=resolve):window.clipboard;},async text=>window.copies.push(text));
 const frame=document.querySelector('iframe'),token='test-surface';let generation=1,visible=true,offset=0;
 const post=message=>frame.contentWindow.postMessage({channel:'sodeck-ui-v2',surfaceId:token,...message},location.origin);
@@ -27,33 +26,26 @@ window.testPost=post;window.setTheme=theme=>{document.documentElement.dataset.th
 window.addEventListener('message',async event=>{
  if(event.source!==frame.contentWindow||event.data?.channel!=='sodeck-ui-v2')return;
  const message=event.data;
- if(message.type==='ready'){window.mountTerminal=()=>post({type:'mount',viewId:'A',context:{generation},settings:{definitionToken:'appearance',revision:'1',values:{directoryReportHost:'old-host'}},data:{streamId:'pty',runsApi:${persistent},integration:{mode:'${manualLocation?'manual':'off'}'},createParams:{launch:{kind:'${commandTerminal?'command':'loginShell'}'}},startup:{key:'initial',status:'completed'}},tokens:themeTokens(),capabilities:{clipboard:1,sharedState:${manualLocation?1:0}},visible:true});window.mountWaiting=true;if(!window.holdMount)window.mountTerminal();return;}
- if(message.type==='prepared'){window.ready=true;if(${manualLocation})post({type:'surfaceReady'});return;}
+ if(message.type==='ready'){window.mountTerminal=()=>post({type:'mount',viewId:'A',context:{generation},data:{streamId:'pty'},tokens:themeTokens(),capabilities:{clipboard:1},visible:true});window.mountWaiting=true;if(!window.holdMount)window.mountTerminal();return;}
+ if(message.type==='prepared'){window.ready=true;return;}
  if(message.type==='flushed'){window.flushed.push(message.id);return;}
  if(message.type!=='request')return;
  try{
   let data={};
   if(message.method==='clipboard'){const revision=generation;data=await host.request(token,message.params,()=>visible&&generation===revision&&document.hasFocus()&&document.activeElement===frame);}
   if(message.method==="settings"){window.appearanceReports?.push(message.params);}
-  if(message.method==='state'){if(message.params.op==='put')window.locationReports.push(message.params.value);data={result:{record:{present:false,revision:'0'}}};}
-  if(message.method==='event'){
-   if(message.params.action==='beginRecovery'){window.recoveries.push(message.params);window.pendingStartup=true;data={startup:{key:message.params.requestId,status:'pending',phase:'opening'}};}
-   if(message.params.action==='continueStart'){window.continues++;data={startup:{key:message.params.key,status:window.pendingStartup?'pending':'completed',phase:'opening'}};}
-  }
   if(message.method==='data'){
    const p=message.params;
    if(p.op==='write')window.writes.push(p.data);
    if(p.op==='resize'){window.resizes.push({cols:p.cols,rows:p.rows});if(window.holdResize){window.resizeWaiting=true;await new Promise(resolve=>window.finishResize=()=>{window.holdResize=false;window.resizeWaiting=false;resolve();});}}
-   if(p.op==='attach'){if(${persistent})window.emitRun('running','run-1');post({type:'data',data:{kind:'caughtUp',packet:1,offset:0,data:[]}});}
+   if(p.op==='attach'){post({type:'data',data:{kind:'caughtUp',packet:1,offset:0,data:[]}});}
   }
   post({type:'response',id:message.id,data});
  }catch(error){post({type:'response',id:message.id,error:String(error)});}
 });
 frame.src='/__terminal__/index.html';
-window.hideTerminal=()=>{visible=false;if(!${persistent})generation++;host.discard(token);post({type:'visibilityChanged',visible:false});};
+window.hideTerminal=()=>{visible=false;generation++;host.discard(token);post({type:'visibilityChanged',visible:false});};
 window.showTerminal=()=>{visible=true;post({type:'visibilityChanged',visible:true});};
-window.emitRun=(state,runId='run-1')=>post({type:'data',data:{kind:'source',packet:++window.sourceRevision,offset,metadata:{revision:window.sourceRevision,watermark:offset,state:{state,runId,context:{generation},startOffset:offset,readyOffset:offset,result:{exitCode:0},metadata:{integration:{mode:'${manualLocation?'manual':'off'}'}}}}}});
-window.emitOutput=text=>{const data=Array.from(new TextEncoder().encode(text));offset+=data.length;post({type:'data',data:{kind:'data',packet:++window.sourceRevision,offset,data}});};
 </script></body></html>`;
 await page.route(url,route=>route.fulfill({contentType:'text/html',body:harness()}));
 let rejectSourceCodeFont=false;
@@ -185,47 +177,5 @@ try{
  requestedPlatform='Win32';await page.reload();await page.waitForFunction(()=>window.ready);await focus();await frame.locator('#terminal').click({button:'right'});
  assert.equal(await frame.getByRole('menuitem',{name:'全选Ctrl+A',exact:true}).count(),1);assert.equal(await frame.getByRole('menuitem',{name:'查找Ctrl+F',exact:true}).count(),1);
  fs.mkdirSync('artifacts/terminal-ui',{recursive:true});await page.screenshot({path:'artifacts/terminal-ui/clipboard-menu.png'});
- // Recovery consumes only focused plain Enter; startup is bounded and hidden pages pause it.
- persistent=true;await page.reload();await page.waitForFunction(()=>window.ready);await focus();await reset();
- await page.evaluate(()=>window.emitRun('ended'));await frame.getByRole('button',{name:'恢复终端',exact:true}).waitFor();
- for(const event of [{repeat:true},{ctrlKey:true},{altKey:true},{shiftKey:true},{metaKey:true},{isComposing:true},{keyCode:229}])await frame.locator('.xterm-helper-textarea').dispatchEvent('keydown',{key:'Enter',code:'Enter',...event});
- await frame.locator('.xterm-helper-textarea').dispatchEvent('compositionstart');await page.keyboard.press('Enter');await frame.locator('.xterm-helper-textarea').dispatchEvent('compositionend');
- await page.keyboard.press('Control+f');await frame.locator('.terminal-search input').focus();await page.keyboard.press('Enter');await page.keyboard.press('Escape');
- await frame.locator('#terminal').click({button:'right'});await page.keyboard.press('Enter');await page.keyboard.press('Escape');
- assert.equal(await page.evaluate(()=>window.recoveries.length),0);
- await focus();await page.keyboard.down('Enter');await page.keyboard.down('Enter');await page.keyboard.up('Enter');
- await page.waitForFunction(()=>window.recoveries.length===1);assert.equal(await bytes(),'');
- await page.evaluate(()=>window.hideTerminal());await page.waitForTimeout(350);const hiddenContinues=await page.evaluate(()=>window.continues);await page.waitForTimeout(350);assert.equal(await page.evaluate(()=>window.continues),hiddenContinues);
- await page.evaluate(()=>{window.pendingStartup=false;window.showTerminal();window.emitRun('running','run-2');});await waitForRecovery();
- await focus();await page.keyboard.type('new-input');await expectInput('new-input');await reset();
- await page.evaluate(()=>window.emitRun('ended','run-2'));await frame.getByRole('button',{name:'恢复终端',exact:true}).waitFor();await focus();await page.keyboard.down('Enter');await page.waitForFunction(()=>window.recoveries.length===2);
- await page.evaluate(()=>{window.pendingStartup=false;window.emitRun('running','run-3');});await waitForRecovery();await page.keyboard.down('Enter');await page.keyboard.up('Enter');assert.equal(await bytes(),'','Held recovery Enter never reaches a fast new Run');
- // The reset prefix is taken from the backend source and replayed through the locked xterm.
- const rustPrefix=fs.readFileSync('plugins/terminal/src/start.rs','utf8').match(/"(\\u\{18\}[^"\n]+)"/)[1];
- const prefix=JSON.parse('"'+rustPrefix.replace(/\\u\{([\da-f]+)\}/gi,(_,hex)=>'\\u'+hex.padStart(4,'0'))+'"')+'\r\n'.repeat(await term(()=>window.testTerminal.rows));
- for(const partial of ['\x1b[','\x1b]633;incomplete',new Uint8Array([0xf0,0x9f])]){
-  await term(()=>new Promise(resolve=>window.testTerminal.write('kept-history\r\n\x1b[?1049h\x1b[?1000h\x1b[?2004h',resolve)));
-  const child=page.frames().find(f=>f.url().includes('/__terminal__/index.html'));
-  await child.evaluate(async({partial,prefix})=>{await new Promise(resolve=>window.testTerminal.write(Array.isArray(partial)?Uint8Array.from(partial):partial,resolve));await new Promise(resolve=>window.testTerminal.write(new TextEncoder().encode(prefix+'new-prompt'),resolve));},{partial:typeof partial==='string'?partial:Array.from(partial),prefix});
-  const state=await term(()=>({type:window.testTerminal.buffer.active.type,mouse:window.testTerminal.modes.mouseTrackingMode,paste:window.testTerminal.modes.bracketedPasteMode,text:Array.from({length:window.testTerminal.buffer.active.length},(_,i)=>window.testTerminal.buffer.active.getLine(i).translateToString()).join('\n')}));
-  assert.equal(state.type,'normal');assert.equal(state.mouse,'none');assert.equal(state.paste,false);assert.match(state.text,/kept-history/);assert.match(state.text,/new-prompt/);
- }
- await term(()=>new Promise(resolve=>window.testTerminal.write('current-screen-marker\r\n',resolve)));
- const currentPrefix=JSON.parse('"'+rustPrefix.replace(/\\u\{([\da-f]+)\}/gi,(_,hex)=>'\\u'+hex.padStart(4,'0'))+'"')+'\r\n'.repeat(await term(()=>window.testTerminal.rows));
- await page.frames().find(f=>f.url().includes('/__terminal__/index.html')).evaluate(prefix=>new Promise(resolve=>window.testTerminal.write(new TextEncoder().encode(prefix+'\x1b[H\x1b[2Jnew-shell'),resolve)),currentPrefix);
- assert.match(await term(()=>Array.from({length:window.testTerminal.buffer.active.length},(_,i)=>window.testTerminal.buffer.active.getLine(i).translateToString()).join('\n')),/current-screen-marker/);
- manualLocation=true;await page.reload();await page.waitForFunction(()=>window.ready);await waitForRecovery();
- await page.evaluate(()=>{
-  window.testPost({type:'settingsChanged',settings:{definitionToken:'appearance',revision:'2',values:{directoryReportHost:'new-host'}}});
-  window.emitRun('running','run-2');
-  window.testPost({type:'settingsChanged',settings:{definitionToken:'appearance',revision:'1',values:{directoryReportHost:'old-host'}}});
-  window.emitOutput('\x1b]7;file://new-host/current\x07');
- });
- await page.waitForFunction(()=>window.locationReports.some(r=>r.state==='known'&&r.path==='/current'));
- await page.evaluate(()=>{window.emitRun('ended','run-2');window.emitOutput('\x1b]7;file://new-host/late\x07');});
- await frame.getByRole('button',{name:'恢复终端',exact:true}).waitFor();await page.waitForTimeout(100);
- assert(!await page.evaluate(()=>window.locationReports.some(r=>r.path==='/late')),'Exited Runs stop publishing directory reports');
- manualLocation=false;commandTerminal=true;await page.reload();await page.waitForFunction(()=>window.ready);await focus();await page.evaluate(()=>window.emitRun('ended'));await frame.getByRole('button',{name:'重新打开终端',exact:true}).waitFor();await page.keyboard.press('Enter');assert.equal(await page.evaluate(()=>window.recoveries.length),0);
  console.log('Terminal input passed: delayed mount and first paint in three themes, real xterm copy/Ctrl+C/paste/bracketed paste, local menu, no duplicate input, late paste cancellation, theme keeps geometry; no page errors');
 }catch(error){console.error({errors,frames:page.frames().map(f=>f.url())});throw error;}finally{await browser.close();await vite.close();}
-async function waitForRecovery(){await page.frames().find(f=>f.url().includes('/__terminal__/index.html')).waitForFunction(()=>document.querySelector('#status').hidden);}

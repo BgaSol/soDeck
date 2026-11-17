@@ -69,7 +69,6 @@ try {
     unexpected.push(method); throw new Error(`Unexpected package RPC: ${method}`);
   });
   const capabilities = ["commands.v1", "terminal.v1", "viewData.v1", "terminal.history.v1", "files.v1", "files.directoryCursors.v1", "files.operations.v1", "files.operations.v2", "files.editor.v1", "files.localInputs.v1", "net.tcp.v1", "net.listenerLifecycle.v1", "ui.dialog.v1", "session.exec.v1", "session.stream.v1", "session.target.v1","session.stream.process.v1","files.pluginData.v1","content.export.v1", "ui.background.v1", "settings.v1", "ui.workbench.v2", "ui.openView.v1"];
-  if(plugin==='terminal')capabilities.push('terminal.runs.v1','session.connection.v1');
   const initialized = await peer.request("initialize", { apiVersion: "1", capabilities, dataDirectory: path.join(directory, "data") });
   assert.equal(initialized.apiVersion, "1");
   if (manifest.commands) {
@@ -79,13 +78,7 @@ try {
   const viewType = { terminal: "terminal", files: "files", "network-proxy": "manager", "system-status": "overview", docker: "browser",mcp:"status" }[plugin];
   const view = { viewId: "package-view", viewType, context };
   await peer.request("ui.createView", view);
-  const mounted=await peer.request("ui.getView", view);
-  if(plugin==='terminal'){
-    assert.equal(mounted.data.runsApi,true);
-    const advanced=await peer.request('ui.event',{...view,data:{action:'continueStart',key:mounted.data.startup.key}});
-    assert.equal(advanced.data.startup.status,'failed');
-    assert.equal((await peer.request('ui.getView',view)).data.streamId,mounted.data.streamId);
-  }
+  await peer.request("ui.getView", view);
   if(plugin==='mcp'){
     const token=fs.readFileSync(path.join(directory,'data/access-token'),'utf8');
     let response;for(let i=0;i<50;i++){try{response=await fetch(mcpUrl,{method:'POST',headers:{Authorization:'Bearer '+token,Accept:'application/json, text/event-stream','Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'package-check',version:'1'}}})});break;}catch{await new Promise(r=>setTimeout(r,50));}}

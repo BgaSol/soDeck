@@ -63,15 +63,13 @@ class Shell:
 
     def close(self):
         os.write(self.fd, b"exit\n")
-        assert self.wait_exit() == 0, "shell exit failed"
-
-    def wait_exit(self, timeout=3):
-        until = time.monotonic() + timeout
+        until = time.monotonic() + 3
         while time.monotonic() < until:
             pid, status = os.waitpid(self.pid, os.WNOHANG)
             if pid:
                 os.close(self.fd)
-                return os.waitstatus_to_exitcode(status)
+                assert os.waitstatus_to_exitcode(status) == 0, status
+                return
             time.sleep(0.03)
         os.kill(self.pid, signal.SIGKILL)
         os.waitpid(self.pid, 0)
@@ -126,21 +124,3 @@ for shell, array in [("/bin/bash", False), ("/bin/bash", True), ("/bin/zsh", Fal
             session.close()
         assert not witness.exists(), "startup files were not cleaned up"
         print(f"Passed {shell} ({'array' if array else 'scalar'} hook): default startup, user profiles, status, paths, nested shell, Ctrl-C, cleanup", flush=True)
-
-for shell in ["/bin/bash", "/bin/zsh"]:
-    with tempfile.TemporaryDirectory(prefix="sodeck-tmout-test-") as folder:
-        home = Path(folder)
-        for stage in [".bash_profile", ".zshrc"]:
-            (home / stage).write_text("TMOUT=1\nPS1='idle> '\n")
-        session = Shell(shell, home)
-        _, witness = path_of(session.ready())
-        assert b"TMOUT:1" in session.command("export SODECK_OLD_RUN=old; printf 'TMOUT:%s\\n' \"$TMOUT\"")
-        session.wait_exit(timeout=5)
-        assert not witness.exists(), "idle exit left integration resources"
-        recovered = Shell(shell, home)
-        _, next_witness = path_of(recovered.ready())
-        output = recovered.command("printf 'RECOVERED:%s:%s\\n' \"${SODECK_OLD_RUN:-new}\" \"$TMOUT\"")
-        assert b"RECOVERED:new:1" in output, "new shell replayed state or changed TMOUT"
-        recovered.close()
-        assert not next_witness.exists()
-        print(f"Passed {shell}: TMOUT idle exit, fresh login shell, unchanged timeout, cleanup", flush=True)
