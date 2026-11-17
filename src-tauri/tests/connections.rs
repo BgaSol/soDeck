@@ -30,6 +30,7 @@ struct Ssh {
     shells: Arc<AtomicUsize>,
     pty_behavior: Arc<AtomicUsize>,
     shell_behavior: Arc<AtomicUsize>,
+    shell_confirmation: Arc<tokio::sync::Notify>,
     sizes: Arc<Mutex<Vec<(u32, u32)>>>,
     auth: Arc<AtomicUsize>,
     live: Arc<AtomicUsize>,
@@ -71,9 +72,10 @@ impl server::Handler for Ssh {
         }
         if self.shell_behavior.load(Ordering::Relaxed) == 2 {
             let handle = session.handle();
+            let confirmation = self.shell_confirmation.clone();
             session.data(id, b"before-start-confirmation".to_vec())?;
             tokio::spawn(async move {
-                tokio::time::sleep(Duration::from_millis(250)).await;
+                confirmation.notified().await;
                 let _ = handle.channel_success(id).await;
                 let _ = handle
                     .data(id, format!("shell-{shell}> ").into_bytes())

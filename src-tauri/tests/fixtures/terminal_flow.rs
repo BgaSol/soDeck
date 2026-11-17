@@ -450,6 +450,7 @@ async fn retained_run_requires_remote_start_confirmation_and_can_retry_refusal()
     data_until(&f.core,"main",&token,&id,&mut output,"before-start-confirmation").await;
     assert_eq!(rpc("terminal.run.get",json!({"id":id}))["state"],"starting");
     assert!(td(&f.core,"main",&token,json!({"op":"write","id":id,"runId":run,"sequence":0,"data":b"early"})).await.is_err());
+    target.state.shell_confirmation.notify_one();
     data_until(&f.core,"main",&token,&id,&mut output,"shell-2>").await;
     assert_eq!(rpc("terminal.run.get",json!({"id":id}))["state"],"running");
     td(&f.core,"main",&token,json!({"op":"write","id":id,"runId":run,"sequence":0,"data":b"confirmed"})).await.unwrap();
