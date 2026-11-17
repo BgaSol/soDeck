@@ -58,7 +58,7 @@ tauri-plugin-updater = { version = "=2.14.1", default-features = false, features
 reqwest = { version = "=0.13.5", default-features = false, features = ["blocking", "json", "rustls-no-provider", "system-proxy"] }
 rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 semver = "=1.0.28"
-sha2 = "=0.10.9"
+sha2 = "=0.11.1"
 zip = { version = "=9.4.1", default-features = false, features = ["deflate-flate2"] }
 tar = { version = "=0.4.46", default-features = false }
 flate2 = "=1.1.10"
