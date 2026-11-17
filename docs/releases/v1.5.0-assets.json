@@ -1,0 +1,418 @@
+{
+  "date": "2026-11-17",
+  "component": "core",
+  "version": "1.5.0",
+  "sourceCommit": "7cd06bf7da0b9637cf3383bd2effa78183e5cdbb",
+  "originalRunId": "44050484937",
+  "originalRunUrl": "https://github.com/BgaSol/soDeck/actions/runs/44050484937",
+  "releaseId": 448376081,
+  "releaseUrl": "https://github.com/BgaSol/soDeck/releases/tag/v1.5.0",
+  "tag": "v1.5.0",
+  "draft": false,
+  "reports": [
+    {
+      "id": "sodeck.core",
+      "version": "1.5.0",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "7cd06bf7da0b9637cf3383bd2effa78183e5cdbb",
+      "files": [
+        {
+          "name": "SoDeck_1.5.0_arm64.deb",
+          "size": 9984834,
+          "sha256": "b4d3f08334d0bf81ea131ff4000753c3db32996f45d1b8d2b65fef20ca55abc1"
+        },
+        {
+          "name": "SoDeck_1.5.0_arm64.deb.sig",
+          "size": 428,
+          "sha256": "128ac7f8913095f5ed01ff96cb700f2640e76943e57e994603ef646102b43268"
+        },
+        {
+          "name": "SoDeck_1.5.0_aarch64.AppImage",
+          "size": 85588488,
+          "sha256": "e6fca23848012954cf84eedc25b80cb9b1ecb637496a89f80b313d94e0a14206"
+        },
+        {
+          "name": "SoDeck_1.5.0_aarch64.AppImage.sig",
+          "size": 440,
+          "sha256": "88e84e2bd213c918f07cf5744df3c2c802844c02ac4361c40e7d088aac699f14"
+        }
+      ],
+      "toolCommit": "7cd06bf7da0b9637cf3383bd2effa78183e5cdbb",
+      "passed": true
+    },
+    {
+      "id": "sodeck.core",
+      "version": "1.5.0",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "7cd06bf7da0b9637cf3383bd2effa78183e5cdbb",
+      "files": [
+        {
+          "name": "SoDeck_1.5.0_amd64.deb",
+          "size": 10727484,
+          "sha256": "d23d8e191ca5c24d3c5ce3bbfa212e2d50546145c2e2329344e8c82ffc8f7d06"
+        },
+        {
+          "name": "SoDeck_1.5.0_amd64.deb.sig",
+          "size": 428,
+          "sha256": "223c6eeb5fe4dcd9e9b95c65b09bd12573e62b6639104a5714549a531638baea"
+        },
+        {
+          "name": "SoDeck_1.5.0_amd64.AppImage",
+          "size": 88246776,
+          "sha256": "f593276f2137fc900d693396c77182954ed1ff7bc57bcd0cd731b53f44bba487"
+        },
+        {
+          "name": "SoDeck_1.5.0_amd64.AppImage.sig",
+          "size": 436,
+          "sha256": "345a1db3db08c3e438a23fb32b1414c491c6158a609da146f363f562a2ab5fe3"
+        }
+      ],
+      "toolCommit": "7cd06bf7da0b9637cf3383bd2effa78183e5cdbb",
+      "passed": true
+    },
+    {
+      "id": "sodeck.core",
+      "version": "1.5.0",
+      "target": "aarch64-apple-darwin",
+      "commit": "7cd06bf7da0b9637cf3383bd2effa78183e5cdbb",
+      "files": [
+        {
+          "name": "SoDeck_1.5.0_aarch64.dmg",
+          "size": 9519476,
+          "sha256": "e653d1edae8ed9e759722ef55faa0bdbff86d7599f2b0d5b1c86a8f9a80bda55"
+        },
+        {
+          "name": "SoDeck_1.5.0_aarch64.app.tar.gz",
+          "size": 9752189,
+          "sha256": "2383be8b0dad7d0803dc297e19cfe94ea1abf4f935f6b4a6ac374692b93ec717"
+        },
+        {
+          "name": "SoDeck_1.5.0_aarch64.app.tar.gz.sig",
+          "size": 424,
+          "sha256": "5c10bd7ed63ea002ec86a4dd104be1335a9a5292b9904b06ff5db7242c482d90"
+        }
+      ],
+      "toolCommit": "7cd06bf7da0b9637cf3383bd2effa78183e5cdbb",
+      "passed": true
+    },
+    {
+      "id": "sodeck.core",
+      "version": "1.5.0",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "7cd06bf7da0b9637cf3383bd2effa78183e5cdbb",
+      "files": [
+        {
+          "name": "SoDeck_1.5.0_arm64-setup.exe",
+          "size": 6274576,
+          "sha256": "643cb8d9818831da14c631200a22ead5143093475ad0b5eed393aa005d03978f"
+        },
+        {
+          "name": "SoDeck_1.5.0_arm64-setup.exe.sig",
+          "size": 436,
+          "sha256": "e4a8c6dadb4f0bf9a58ecc00d701095fc50e14e88680ffc228a61568514edee0"
+        }
+      ],
+      "toolCommit": "7cd06bf7da0b9637cf3383bd2effa78183e5cdbb",
+      "passed": true
+    },
+    {
+      "id": "sodeck.core",
+      "version": "1.5.0",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "7cd06bf7da0b9637cf3383bd2effa78183e5cdbb",
+      "files": [
+        {
+          "name": "SoDeck_1.5.0_x64-setup.exe",
+          "size": 7252903,
+          "sha256": "f49d004466912cd3503b80a3a37b06a4332adaf895dbdd26bc4e42f9dd49047d"
+        },
+        {
+          "name": "SoDeck_1.5.0_x64-setup.exe.sig",
+          "size": 436,
+          "sha256": "a91deb3eed59cd03a5f17001dbfc2f9ea426162c510e983d74411b809e3430b5"
+        }
+      ],
+      "toolCommit": "7cd06bf7da0b9637cf3383bd2effa78183e5cdbb",
+      "passed": true
+    }
+  ],
+  "assets": [
+    {
+      "id": 758374307,
+      "name": "core-update.json",
+      "size": 6806,
+      "sha256": "cd4d78b1de75b608d56fc02eb1f8ea8b10a232dedafd75390e7aee8ba11a9b0c",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v1.5.0/core-update.json"
+    },
+    {
+      "id": 758357116,
+      "name": "SoDeck_1.5.0_aarch64.app.tar.gz",
+      "size": 9752189,
+      "sha256": "2383be8b0dad7d0803dc297e19cfe94ea1abf4f935f6b4a6ac374692b93ec717",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v1.5.0/SoDeck_1.5.0_aarch64.app.tar.gz"
+    },
+    {
+      "id": 758357176,
+      "name": "SoDeck_1.5.0_aarch64.app.tar.gz.sig",
+      "size": 424,
+      "sha256": "5c10bd7ed63ea002ec86a4dd104be1335a9a5292b9904b06ff5db7242c482d90",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v1.5.0/SoDeck_1.5.0_aarch64.app.tar.gz.sig"
+    },
+    {
+      "id": 758357433,
+      "name": "SoDeck_1.5.0_aarch64.AppImage",
+      "size": 85588488,
+      "sha256": "e6fca23848012954cf84eedc25b80cb9b1ecb637496a89f80b313d94e0a14206",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v1.5.0/SoDeck_1.5.0_aarch64.AppImage"
+    },
+    {
+      "id": 758357633,
+      "name": "SoDeck_1.5.0_aarch64.AppImage.sig",
+      "size": 440,
+      "sha256": "88e84e2bd213c918f07cf5744df3c2c802844c02ac4361c40e7d088aac699f14",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v1.5.0/SoDeck_1.5.0_aarch64.AppImage.sig"
+    },
+    {
+      "id": 758357053,
+      "name": "SoDeck_1.5.0_aarch64.dmg",
+      "size": 9519476,
+      "sha256": "e653d1edae8ed9e759722ef55faa0bdbff86d7599f2b0d5b1c86a8f9a80bda55",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v1.5.0/SoDeck_1.5.0_aarch64.dmg"
+    },
+    {
+      "id": 758357893,
+      "name": "SoDeck_1.5.0_amd64.AppImage",
+      "size": 88246776,
+      "sha256": "f593276f2137fc900d693396c77182954ed1ff7bc57bcd0cd731b53f44bba487",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v1.5.0/SoDeck_1.5.0_amd64.AppImage"
+    },
+    {
+      "id": 758358071,
+      "name": "SoDeck_1.5.0_amd64.AppImage.sig",
+      "size": 436,
+      "sha256": "345a1db3db08c3e438a23fb32b1414c491c6158a609da146f363f562a2ab5fe3",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v1.5.0/SoDeck_1.5.0_amd64.AppImage.sig"
+    },
+    {
+      "id": 758357789,
+      "name": "SoDeck_1.5.0_amd64.deb",
+      "size": 10727484,
+      "sha256": "d23d8e191ca5c24d3c5ce3bbfa212e2d50546145c2e2329344e8c82ffc8f7d06",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v1.5.0/SoDeck_1.5.0_amd64.deb"
+    },
+    {
+      "id": 758357833,
+      "name": "SoDeck_1.5.0_amd64.deb.sig",
+      "size": 428,
+      "sha256": "223c6eeb5fe4dcd9e9b95c65b09bd12573e62b6639104a5714549a531638baea",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v1.5.0/SoDeck_1.5.0_amd64.deb.sig"
+    },
+    {
+      "id": 758357210,
+      "name": "SoDeck_1.5.0_arm64-setup.exe",
+      "size": 6274576,
+      "sha256": "643cb8d9818831da14c631200a22ead5143093475ad0b5eed393aa005d03978f",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v1.5.0/SoDeck_1.5.0_arm64-setup.exe"
+    },
+    {
+      "id": 758357285,
+      "name": "SoDeck_1.5.0_arm64-setup.exe.sig",
+      "size": 436,
+      "sha256": "e4a8c6dadb4f0bf9a58ecc00d701095fc50e14e88680ffc228a61568514edee0",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v1.5.0/SoDeck_1.5.0_arm64-setup.exe.sig"
+    },
+    {
+      "id": 758357326,
+      "name": "SoDeck_1.5.0_arm64.deb",
+      "size": 9984834,
+      "sha256": "b4d3f08334d0bf81ea131ff4000753c3db32996f45d1b8d2b65fef20ca55abc1",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v1.5.0/SoDeck_1.5.0_arm64.deb"
+    },
+    {
+      "id": 758357375,
+      "name": "SoDeck_1.5.0_arm64.deb.sig",
+      "size": 428,
+      "sha256": "128ac7f8913095f5ed01ff96cb700f2640e76943e57e994603ef646102b43268",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v1.5.0/SoDeck_1.5.0_arm64.deb.sig"
+    },
+    {
+      "id": 758357666,
+      "name": "SoDeck_1.5.0_x64-setup.exe",
+      "size": 7252903,
+      "sha256": "f49d004466912cd3503b80a3a37b06a4332adaf895dbdd26bc4e42f9dd49047d",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v1.5.0/SoDeck_1.5.0_x64-setup.exe"
+    },
+    {
+      "id": 758357744,
+      "name": "SoDeck_1.5.0_x64-setup.exe.sig",
+      "size": 436,
+      "sha256": "a91deb3eed59cd03a5f17001dbfc2f9ea426162c510e983d74411b809e3430b5",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v1.5.0/SoDeck_1.5.0_x64-setup.exe.sig"
+    }
+  ],
+  "sourceCheck": {
+    "id": 44050460466,
+    "sourceCommit": "7cd06bf7da0b9637cf3383bd2effa78183e5cdbb",
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/44050460466",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "select",
+        "conclusion": "success"
+      },
+      {
+        "name": "desktop",
+        "conclusion": "success"
+      },
+      {
+        "name": "integration-network-linux-x86_64",
+        "conclusion": "success"
+      },
+      {
+        "name": "native-windows-x86_64",
+        "conclusion": "success"
+      },
+      {
+        "name": "browser",
+        "conclusion": "success"
+      },
+      {
+        "name": "checks",
+        "conclusion": "success"
+      },
+      {
+        "name": "native-linux-x86_64",
+        "conclusion": "success"
+      },
+      {
+        "name": "native-macos-aarch64",
+        "conclusion": "success"
+      },
+      {
+        "name": "native-linux-aarch64",
+        "conclusion": "success"
+      },
+      {
+        "name": "native-windows-aarch64",
+        "conclusion": "success"
+      },
+      {
+        "name": "integration-network-linux-aarch64",
+        "conclusion": "success"
+      },
+      {
+        "name": "integration-business-linux-x86_64",
+        "conclusion": "success"
+      },
+      {
+        "name": "netem",
+        "conclusion": "skipped"
+      },
+      {
+        "name": "format",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "baselineCheck": {
+    "id": "44048361204",
+    "sourceCommit": "65d9928e7da7aba5b28f032d32a359230cce326c",
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/44048361204",
+    "jobs": [
+      {
+        "name": "select",
+        "conclusion": "success"
+      },
+      {
+        "name": "desktop",
+        "conclusion": "success"
+      },
+      {
+        "name": "checks",
+        "conclusion": "success"
+      },
+      {
+        "name": "integration-network-linux-aarch64",
+        "conclusion": "success"
+      },
+      {
+        "name": "native-windows-x86_64",
+        "conclusion": "success"
+      },
+      {
+        "name": "native-windows-aarch64",
+        "conclusion": "success"
+      },
+      {
+        "name": "integration-network-linux-x86_64",
+        "conclusion": "success"
+      },
+      {
+        "name": "native-linux-x86_64",
+        "conclusion": "success"
+      },
+      {
+        "name": "browser",
+        "conclusion": "success"
+      },
+      {
+        "name": "native-macos-aarch64",
+        "conclusion": "success"
+      },
+      {
+        "name": "native-linux-aarch64",
+        "conclusion": "success"
+      },
+      {
+        "name": "integration-business-linux-x86_64",
+        "conclusion": "failure"
+      },
+      {
+        "name": "netem",
+        "conclusion": "skipped"
+      },
+      {
+        "name": "format",
+        "conclusion": "failure"
+      }
+    ]
+  },
+  "correction": "Linux real SFTP exposed acceptance of Windows path syntax by pluginData. Unified download/reveal component validation and added regression. Old core run 44048401350 cancelled before metadata; new core built from corrected source. Plugin source and archive bytes unchanged.",
+  "actualCodexAcceptance": {
+    "platform": "Windows x86_64",
+    "sourceCommit": "65d9928e7da7aba5b28f032d32a359230cce326c",
+    "isolatedOpenSshTargets": 3,
+    "tools": [
+      "sodeck_targets_list",
+      "sodeck_exec_start",
+      "sodeck_task_get"
+    ],
+    "result": "MCP_ACCEPTANCE_OK",
+    "confirmed": [
+      "exitCode 0",
+      "complete output evidence",
+      "resourceReleased"
+    ],
+    "configuration": "Existing Codex CLI model/provider, ephemeral MCP configuration; isolated danger-full-access acceptance, no persisted user configuration change."
+  },
+  "verificationScope": {
+    "local": "Windows x86_64 related format/type/core/script tests; MCP process fault injection, UI in three themes and narrow widths, three isolated OpenSSH targets, actual Codex target/exec/result tools; real SFTP/files UI passed.",
+    "nativePackages": "Five native targets: original installers/archives, architecture/resources/updater signatures, packaged startup, saved data/reopen/exit.",
+    "skipped": [
+      "netem",
+      "published old-to-new release upgrade",
+      "five-platform native remote package combination",
+      "additional native IME/DPI/screen reader/multi-monitor checks",
+      "complete remote OS/service matrix"
+    ]
+  },
+  "publicVerification": {
+    "checkedAt": "2026-11-17T09:17:57.004Z",
+    "publishedAt": "2026-11-17T09:14:33Z",
+    "anonymousDownloads": 16,
+    "allAssetBytesMatch": true,
+    "releaseAndManifestNotesMatch": true,
+    "versionTagMatchesSource": true,
+    "latest": "v1.5.0"
+  }
+}
