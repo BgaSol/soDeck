@@ -3,7 +3,13 @@
 - 插件列表、工作区侧栏、页面标题和设置入口统一显示为“机器人接口”，采用单色机器人图标。
 - 插件 ID、证据目录、端口、接入密钥和 Codex 配置继续沿用；已有安装无需重新配置。机器人图标需要核心 1.5.1。
 
-当前行为见[功能说明](https://github.com/BgaSol/soDeck/blob/main/docs/features/mcp.md)。本版待发布，包来源、原始打包运行、Release 与实际验证范围在验收后补充；五平台原生包验收完成前不视为正式交付。
+当前行为见[功能说明](https://github.com/BgaSol/soDeck/blob/main/docs/features/mcp.md)。
+
+发行：[机器人接口 0.1.2](https://github.com/BgaSol/soDeck/releases/tag/plugin-mcp-v0.1.2)，独立正式插件发行；核心 [1.5.1](https://github.com/BgaSol/soDeck/releases/tag/v1.5.1) 为 GitHub Latest。包来源：[6c7ebce87d297c1b3e1a1735d7ab12b3e8a36ef9](https://github.com/BgaSol/soDeck/commit/6c7ebce87d297c1b3e1a1735d7ab12b3e8a36ef9)；[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/44081547713)；[原始打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/44081596688)。五平台原生源码与 Linux 三服务器调查/进程/界面检查通过；来源 Check 首次 Windows x86_64 核心宿主测试初始化超时，仅重跑失败任务及汇总，同一提交第二次通过，插件发行包未重建。
+
+Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生归档、包内程序启动、带密钥的 MCP HTTP 发现、生命周期与退出均通过。五份原始归档的架构、哈希、显示名称、侧栏和设置机器人图标、页面标题已逐一核对；Windows 原始发行包运行时标题为“机器人接口”。六个正式附件摘要与原生报告及更新清单一致，Release 说明与清单 notes 对齐。[永久插件发行证据](https://github.com/BgaSol/soDeck/blob/main/plugins/mcp/release-evidence/v0.1.2-assets.json)保存来源、五份报告、包内显示检查、附件摘要与公开下载核验。
+
+Windows x86_64 本机格式、单元、进程故障注入、三主题窄屏界面、独立发行构建与实际归档启动/挂载/销毁/退出通过。本次未执行旧版升级、五平台实际包远程组合、netem、新的实际 Codex CLI 工具调用或额外原生 IME/DPI/读屏/多屏设备专项。
 
 # 0.1.1
 
