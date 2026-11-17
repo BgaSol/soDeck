@@ -339,7 +339,7 @@ API v1 通过 capabilities 扩展真实 PTY、SFTP 与正文桥。插件检查 t
 
 ### 终端运行与连接恢复
 
-可选能力 `terminal.runs.v1` 与 `session.connection.v1` 保持核心 API 主版本 1。本轮尚未发行；旧 `terminal.open` 默认为一次 Run，其输出以 end 结束，旧输入字段继续兼容。原页恢复插件必须同时检查两项能力，缺失时保留旧创建流程。
+核心 1.5.2 的可选能力 `terminal.runs.v1` 与 `session.connection.v1` 保持核心 API 主版本 1。旧 `terminal.open` 默认为一次 Run，其输出以 end 结束，旧输入字段继续兼容。原页恢复插件必须同时检查两项能力，缺失时保留旧创建流程。
 
 | 方法 | 参数与结果 |
 | --- | --- |
