@@ -162,7 +162,7 @@ async fn receive(
 ) -> Frame {
     let frame = tokio::time::timeout(Duration::from_secs(8), rx.recv())
         .await
-        .unwrap()
+        .unwrap_or_else(|_| panic!("terminal frame timed out: {}", std::backtrace::Backtrace::force_capture()))
         .unwrap();
     assert_ne!(frame.kind, "error", "{:?}", frame.metadata);
     td(
@@ -190,6 +190,7 @@ async fn data_until_prefix(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<Frame>, needle: &str, prefix: (Vec<u8>, u64),
 ) -> (Vec<u8>, u64) {
     let (mut bytes, offset) = prefix;
+    eprintln!("waiting for terminal output {needle}, retained prefix {} bytes", bytes.len());
     if String::from_utf8_lossy(&bytes).contains(needle) { return (bytes, offset); }
     loop {
         let frame = receive(core, window, token, id, rx).await;
@@ -368,6 +369,7 @@ async fn advance_terminal(core: &AppCore, window: &str, token: &str, mut startup
     assert_eq!(startup["status"], "completed", "{startup}");
 }
 async fn current_terminal_run(core: &Arc<AppCore>, window: &str, token: &str, id: &str, output: &mut tokio::sync::mpsc::UnboundedReceiver<Frame>) -> (Value, (Vec<u8>, u64)) {
+    eprintln!("waiting for terminal Run source");
     let mut bytes = vec![];
     loop {
         let frame = receive(core, window, token, id, output).await;
