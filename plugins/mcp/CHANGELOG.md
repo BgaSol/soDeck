@@ -2,7 +2,13 @@
 
 - 插件列表、工作区侧栏、页面标题和设置入口的显示名称统一为 `MCP`。
 
-当前名称见[功能说明](https://github.com/BgaSol/soDeck/blob/main/docs/features/mcp.md)。源码改名已完成，待本次相关源码检查、五平台原生包验收与独立正式发行。
+当前名称见[功能说明](https://github.com/BgaSol/soDeck/blob/main/docs/features/mcp.md)。插件 ID、证据目录与 Codex 接入配置继续沿用。
+
+发行：[MCP 0.1.1](https://github.com/BgaSol/soDeck/releases/tag/plugin-mcp-v0.1.1)，独立正式插件发行。包来源：[ea93b0a61f32102ade26095b8e7fffd44a430a1c](https://github.com/BgaSol/soDeck/commit/ea93b0a61f32102ade26095b8e7fffd44a430a1c)；[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/44058348231)；[原始打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/44058371144)。五平台原生源码与 Linux 三服务器调查/进程/界面检查通过；Windows x86_64 本机格式、单元、进程、三主题窄屏界面、独立发行构建和实际归档启动/挂载/销毁/退出通过，包内插件名称、侧栏、设置标题和版本均已核对。
+
+Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五个平台原生归档、包内程序启动、MCP HTTP 发现、生命周期与退出均通过。正式附件沿用原始 run 的已验证字节，六个公开附件摘要与原生报告及更新清单一致；Release 说明和清单 notes 对齐。[永久发行证据](https://github.com/BgaSol/soDeck/blob/main/plugins/mcp/release-evidence/v0.1.1-assets.json)保存固定来源、五份报告、附件摘要与公开下载核验。
+
+本次未执行旧版升级、五平台实际包远程组合、netem、额外原生 IME/DPI/读屏/多屏设备专项或新的实际 Codex CLI 验收；0.1.0 的实际 Codex 验收保留在其版本记录中。
 
 # 0.1.0
 
