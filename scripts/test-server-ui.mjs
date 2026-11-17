@@ -45,7 +45,7 @@ await page.exposeBinding("catalogInvoke", async (_, command, args) => {
     await new Promise(resolve => releaseCatalogRead = resolve);
   }
   // Disk completion may precede the UI callback. Keep this race reproducible.
-  if (args?.change?.op === "deleteTag") await new Promise(resolve => setTimeout(resolve, 150));
+  if (["deleteTag", "deleteServer", "deleteProxy"].includes(args?.change?.op)) await new Promise(resolve => setTimeout(resolve, 150));
   return result;
 });
 await page.addInitScript(() => { window.__TAURI_INTERNALS__ = { invoke: (command, args) => window.catalogInvoke(command, args) }; });
@@ -54,6 +54,12 @@ const dialogs = () => page.locator("dialog[open]").last();
 const action = (name, scope = dialogs()) => scope.locator(`[data-server-action="${name}"]`).first();
 const work = () => page.locator("#test-workspace");
 async function menuAction(name) { await action("record-menu",work()).click(); await page.locator(".catalog-action-menu:visible").waitFor(); await page.locator(`.catalog-action-menu [data-server-action="${name}"]`).click(); }
+async function deleteSelected() {
+  const id = await action('record-menu', work()).getAttribute('data-id');
+  await menuAction('delete'); await action('confirm-yes').click(); await expectDialogs(0);
+  await work().locator(`[data-server-action="select"][data-id="${id}"]`).waitFor({ state: 'detached' });
+  await work().locator('.catalog-detail [data-server-action="edit"]').waitFor({ state: 'detached' });
+}
 const field = key => dialogs().locator(`[data-field="${key}"]`);
 const read = () => bridge.call("server_catalog");
 async function expectDialogs(n) { try {await page.waitForFunction(n => document.querySelectorAll("dialog[open]").length === n, n);} catch(error){console.log(await page.locator("dialog[open]").allTextContents());throw error;} }
@@ -106,7 +112,7 @@ try {
   let copied=(await read()).servers.find(s=>s.host==='copy.invalid');
   assert(copied.authentication.hasSavedSecret);
   assert.equal(JSON.parse(fs.readFileSync(path.join(directory,'servers.json'),'utf8')).servers.find(s=>s.id===copied.id).authentication.savedPassword,'ui-saved-secret');
-  await menuAction('delete');await action('confirm-yes').click();await expectDialogs(0);
+  await deleteSelected();
   await work().locator(`[data-server-action="select"][data-id="${gateway}"]`).click();
   await menuAction('copy');await field('host').fill('retry-copy.invalid');await field('tagInput').fill('复制标签');
   await bridge.call('change_catalog',{revision:(await read()).revision,change:{op:'saveTag',id:null,name:'并发标签'}});
@@ -117,7 +123,7 @@ try {
   assert.equal((await read()).servers.length,1);assert(!(await read()).tags.some(t=>t.name==='复制标签'));
   fs.rmdirSync(path.join(directory,'servers.json.tmp'));await save();await expectDialogs(0);
   copied=(await read()).servers.find(s=>s.host==='retry-copy.invalid');assert(copied.authentication.hasSavedSecret);
-  await menuAction('delete');await action('confirm-yes').click();await expectDialogs(0);
+  await deleteSelected();
   for(const tag of (await read()).tags)await bridge.call('change_catalog',{revision:(await read()).revision,change:{op:'deleteTag',id:tag.id}});
   await action('reload',work()).click();await work().locator(`[data-server-action="select"][data-id="${gateway}"]`).click();
   await menuAction('copy');await field('password').fill('replacement');assert.match(await dialogs().locator('[id$="-secret-status"]').innerText(),/新输入/);
@@ -125,7 +131,7 @@ try {
   await field('password').fill('replacement-after-opt-out');await field('password').fill('');
   assert.match(await dialogs().locator('[id$="-secret-status"]').innerText(),/不沿用/);
   await save();await expectDialogs(0);assert.equal((await read()).servers.at(-1).authentication.hasSavedSecret,false);
-  await menuAction('delete');await action('confirm-yes').click();await expectDialogs(0);
+  await deleteSelected();
   await work().locator(`[data-server-action="select"][data-id="${gateway}"]`).click();
   checks.push('复制服务器预填与地址全选、取消不落盘、密码独立沿用、冲突刷新及写入失败保留草稿');
 
@@ -141,7 +147,7 @@ try {
   catalog = await read(); const proxy = catalog.proxies[0].id;
   await menuAction("copy"); await page.waitForFunction(() => document.querySelector(".catalog-detail h2")?.textContent?.includes("副本"));
   catalog = await read(); assert.equal(catalog.proxies[1].authentication.hasSavedSecret, false);
-  await menuAction("delete"); await action("confirm-yes").click(); await expectDialogs(0);
+  await deleteSelected();
   assert.equal((await read()).proxies.length, 1); checks.push("代理增删改查和复制不带秘密");
 
   await action("new-server", work()).click();
@@ -169,7 +175,7 @@ try {
   assert.deepEqual(sessionCopy.tagIds,targetBeforeCopy.tagIds);
   assert(sessionCopy.route.every((step,i)=>step.id!==targetBeforeCopy.route[i].id));
   assert.deepEqual((await read()).servers.find(s=>s.id===target),targetBeforeCopy);
-  await menuAction('delete');await action('confirm-yes').click();await expectDialogs(0);
+  await deleteSelected();
   await work().locator(`[data-server-action="select"][data-id="${target}"]:not(.path-node)`).click();
   checks.push('临时密码、多标签和多层中转复制，独立路径步骤与原资料保持');
   assert.equal(catalog.servers.find(s => s.id === target).authentication.hasSessionSecret, true);
