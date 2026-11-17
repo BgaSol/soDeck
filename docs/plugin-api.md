@@ -337,6 +337,28 @@ API v1 通过 capabilities 扩展真实 PTY、SFTP 与正文桥。插件检查 t
 
 所有权见[架构](architecture.md)，业务的缓冲、保存与下载规则见[终端](features/terminal.md)和[文件](features/files.md)。不引入跨插件直调或插件授权流程。
 
+### 终端运行与连接恢复
+
+可选能力 `terminal.runs.v1` 与 `session.connection.v1` 保持核心 API 主版本 1。本轮尚未发行；旧 `terminal.open` 默认为一次 Run，其输出以 end 结束，旧输入字段继续兼容。原页恢复插件必须同时检查两项能力，缺失时保留旧创建流程。
+
+| 方法 | 参数与结果 |
+| --- | --- |
+| `terminal.open` | `{viewId,cols?,rows?,lifetime:"view"}` 只创建逻辑终端并返回 id；同 view/实例重复调用返回原 id，寿命模式不同拒绝 |
+| `terminal.run.start` | `{id,expectedRunId,expectedContext,cols,rows,command?,outputPrefix?,metadata?}` 短调用接纳下一次运行并返回当前快照；首次 expectedRunId 为 null，其后必须等当前 Run 实际结束 |
+| `terminal.run.get` | `{id}` 只读返回 `state:idle/starting/running/ended`、runId、previousRunId、context、result、metadata、startOffset 与 readyOffset；idle 仅 state/runId |
+| `session.connection.start` | `{viewId,expectedContext,expectedAttemptId}` 接纳/复用核心已有连接尝试，立即返回投影；前驱必须明确为字符串或 null |
+| `session.connection.get` | `{viewId,attemptId?}` 读取当前尝试，指定尝试已替换时拒绝；返回 attemptId、previousAttemptId、sourceContext、state、context、error，不返回认证答案；无尝试时为 idle |
+
+cols 为 2–1000，rows 为 1–500；command 沿用 32 KiB 与 NUL 检查，outputPrefix 为不透明 UTF-8、最多 16 KiB，metadata 为 null 或对象、最多 8 KiB。相同前驱和完整参数返回同一 Run，包括快速退出；不同参数、过时前驱或未结束的 Run 拒绝。每终端只保存当前 Run 和原启动条件，不保留运行表。running 必须收到远端 PTY 与 shell/exec 成功确认；一个总 30 秒期限覆盖通道取得及启动，普通数据不构成启动成功。
+
+页面寿命模式的正文 write/resize 必须包含 runId，核心继续验证真实 Surface 与当前 Run Context。每 Run 使用独立输入队列、取消身份与 Surface 序号域，旧输入和 resize 不流入新运行。运行结束后保留同一 Replay/journal、订阅和检查点，不产生 end；页面关闭及插件退出取消运行与显示任务并等待真实清理。
+
+正文 `kind:"source"` 帧通过现有 ACK 传输最新不透明来源状态，metadata 为 `{revision,watermark,state}`。终端 state 使用 run.get 快照，watermark 为该 Run 的 startOffset；订阅先解析此水位以前的字节，再取得新状态，再解析新运行输出。消费者忽略过时 revision，必须追到 readyOffset 并取得 Surface 输入权才能启用输入；显示 caughtUp 不能代替启动确认。来源投影只保留最新一项，显示检查点不能作为运行状态事实。
+
+连接入口在现有建连接纳锁中复核已登记 view、插件实例、窗口、Context 与前驱；同一连接起点和前驱返回原尝试，结果丢失不新建连接。确定失败后用户明确重试才使用最新前驱。成功更换 Context，核心既有凭据、主机身份和目标变更对话框继续有效；接口不启动 PTY、不导航或发送插件回调。
+
+终端内部 `beginRecovery` 验证已结束的登录 Run，传 requestId、expectedRunId 和当前 cols/rows；`continueStart` 只推进原 key，`startupStatus` 及 getView 只读。插件每 view 一个意图，首次创建与明确恢复共用短 RPC、异步目录 probe 与启动步骤；SDK 超时保持原请求参数核对同一动作。活动 Surface 每次至多一个在途短事件，隐藏/冻结暂停推进，关闭由核心归属取消全部准备与运行任务。
+
 ### 终端大历史恢复
 
 initialize 新增 `terminal.history.v1`。新版终端插件初始化时要求该能力，缺失时明确提示升级核心；核心 API 主版本仍为 1，旧插件原 op 保持兼容。

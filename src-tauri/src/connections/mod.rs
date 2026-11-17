@@ -153,6 +153,7 @@ pub(crate) struct Attempt {
     source_window: String,
     expected_context: Option<Context>,
     previous_endpoint: Option<String>,
+    previous_attempt_id: Option<String>,
     cancel: CancellationToken,
     done: CancellationToken,
     counters: Arc<io::Counters>,
@@ -422,6 +423,14 @@ impl AppCore {
         self.connections.views()
     }
     pub fn start_connection(self: &Arc<Self>, window: &str, server: &str) -> Result<View, String> {
+        self.start_connection_checked(window, server, None)
+    }
+    fn start_connection_checked(
+        self: &Arc<Self>,
+        window: &str,
+        server: &str,
+        binding: Option<(&crate::resource_owner::Owner, &Context, Option<&str>)>,
+    ) -> Result<View, String> {
         if self.is_closing() {
             return Err("应用正在退出".into());
         }
@@ -429,6 +438,39 @@ impl AppCore {
         let servers = self.servers.lock().unwrap();
         let profile = servers.connection_snapshot(server)?;
         let mut entries = self.connections.entries.lock().unwrap();
+        let previous_attempt_id = entries.get(server).map(|a| a.view().attempt_id);
+        if let Some((owner, expected, previous)) = binding {
+            let workbench = self.workbench_state();
+            let view = workbench.ui.resource_view(&owner.view)?;
+            if view.plugin_id != owner.plugin
+                || view.plugin_instance_id != owner.instance
+                || workbench.ui.lifecycle.view_frozen(&owner.view)
+                || workbench
+                    .ui
+                    .workspaces
+                    .get(&view.context.workspace_id)
+                    .and_then(|w| w.view_window(&view.id))
+                    .as_deref()
+                    != Some(window)
+            {
+                return Err("连接来源页面已改变或正在关闭".into());
+            }
+            if expected.workspace_id != view.context.workspace_id
+                || expected.server_id != view.context.server_id
+            {
+                return Err("连接来源身份已改变".into());
+            }
+            if let Some(a) = entries.get(server) {
+                if a.expected_context.as_ref() == Some(expected)
+                    && a.previous_attempt_id.as_deref() == previous
+                {
+                    return Ok(a.view());
+                }
+            }
+            if view.context != *expected || previous_attempt_id.as_deref() != previous {
+                return Err("连接尝试已改变，旧请求未重放".into());
+            }
+        }
         if self.is_closing() {
             return Err("应用正在退出".into());
         }
@@ -501,6 +543,7 @@ impl AppCore {
             source_window: window.into(),
             expected_context,
             previous_endpoint,
+            previous_attempt_id,
             cancel: CancellationToken::new(),
             done: CancellationToken::new(),
             counters: Arc::new(io::Counters::default()),
@@ -518,6 +561,85 @@ impl AppCore {
         tauri::async_runtime::spawn(run(a, profile, keys));
         self.event("connections-changed", serde_json::Value::Null);
         Ok(view)
+    }
+    pub(crate) fn session_connection_request(
+        self: &Arc<Self>,
+        plugin: &str,
+        instance: &str,
+        method: &str,
+        p: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let view = p["viewId"].as_str().ok_or("缺少 viewId")?;
+        let owner = self.resource_owner(plugin, instance, view)?;
+        let value = |a: &Attempt| {
+            let v = a.view();
+            serde_json::json!({"attemptId":v.attempt_id,"previousAttemptId":a.previous_attempt_id,
+                "sourceContext":a.expected_context,"state":v.state,"context":v.context,"error":v.error})
+        };
+        match method {
+            "session.connection.get" => {
+                let requested = match p.get("attemptId") {
+                    None => None,
+                    Some(serde_json::Value::String(id)) if !id.is_empty() && id.len() <= 128 => {
+                        Some(id.as_str())
+                    }
+                    _ => return Err("attemptId 必须为非空字符串".into()),
+                };
+                let entries = self.connections.entries.lock().unwrap();
+                let Some(a) = entries.get(&owner.context.server_id) else {
+                    if requested.is_some() {
+                        return Err("连接尝试已被替换".into());
+                    }
+                    return Ok(
+                        serde_json::json!({"attemptId":null,"state":"idle","context":owner.context}),
+                    );
+                };
+                if let Some(id) = requested {
+                    if a.view().attempt_id != id {
+                        return Err("连接尝试已被替换".into());
+                    }
+                }
+                Ok(value(a))
+            }
+            "session.connection.start" => {
+                if !p
+                    .as_object()
+                    .is_some_and(|o| o.contains_key("expectedAttemptId"))
+                {
+                    return Err("缺少 expectedAttemptId".into());
+                }
+                let expected: Context = serde_json::from_value(p["expectedContext"].clone())
+                    .map_err(|e| e.to_string())?;
+                let previous = match &p["expectedAttemptId"] {
+                    serde_json::Value::Null => None,
+                    serde_json::Value::String(id) if !id.is_empty() && id.len() <= 128 => {
+                        Some(id.as_str())
+                    }
+                    _ => return Err("expectedAttemptId 必须为字符串或 null".into()),
+                };
+                let window = {
+                    let workbench = self.workbench_state();
+                    workbench
+                        .ui
+                        .workspaces
+                        .get(&owner.context.workspace_id)
+                        .and_then(|w| w.view_window(view))
+                        .ok_or("连接来源页面已移动")?
+                };
+                let result = self.start_connection_checked(
+                    &window,
+                    &owner.context.server_id,
+                    Some((&owner, &expected, previous)),
+                )?;
+                let entries = self.connections.entries.lock().unwrap();
+                let a = entries
+                    .get(&owner.context.server_id)
+                    .filter(|a| a.view().attempt_id == result.attempt_id)
+                    .ok_or("连接尝试已被替换")?;
+                Ok(value(a))
+            }
+            _ => Err("未知会话连接方法".into()),
+        }
     }
     pub fn answer_connection(
         &self,
@@ -730,6 +852,7 @@ mod cancellation_tests {
             source_window: "main".into(),
             expected_context: None,
             previous_endpoint: None,
+            previous_attempt_id: None,
             cancel: CancellationToken::new(),
             done: CancellationToken::new(),
             counters: Arc::new(io::Counters::default()),

@@ -171,8 +171,10 @@ export class Components {
       if (v.uiRequested === false) continue;
       const d = this.definitions[v.definitionKey]; if (!d) continue;
       let surface = shell.surfaces.get(v.id);
+      let remountFocus: number | undefined;
       if (surface && surface.view.pluginInstanceId !== v.pluginInstanceId) { this.removeSurface(surface); shell.surfaces.delete(v.id); surface = undefined; }
       if (surface && (surface.view.context.connectionId !== v.context.connectionId || surface.view.context.generation !== v.context.generation)) {
+        if(surface.visible && document.hasFocus() && document.activeElement === surface.frame) remountFocus = this.focusEpoch;
         if(surface.token)this.clipboard.discard(surface.token);
         this.post(surface, {type: "contextChanged", context: v.context});
         this.removeSurface(surface);shell.surfaces.delete(v.id);surface=undefined;
@@ -189,7 +191,7 @@ export class Components {
           close.addEventListener("click",requestClose);modal.addEventListener("cancel",event=>{event.preventDefault();requestClose();});header.append(title,close);modal.append(header,frame);host.append(modal);
         } else host.append(frame);
         this.surfaceLayer.append(host);
-        surface = { node: host, frame, view: v, chain: Promise.resolve(), deferred:new Map(), visible: false, initialized: false, timeout: setTimeout(() => this.surfaceError(surface!, "组件界面未在 8 秒内就绪"), 8000) };
+        surface = { node: host, frame, view: v, chain: Promise.resolve(), deferred:new Map(), visible: false, initialized: false, focusPending: remountFocus, timeout: setTimeout(() => this.surfaceError(surface!, "组件界面未在 8 秒内就绪"), 8000) };
         surface.transferEpoch=this.transfers.find(t=>t.target===this.state?.window.id&&t.viewIds.includes(v.id)&&t.phase==="restoring")?.id;
         shell.surfaces.set(v.id, surface);
       }

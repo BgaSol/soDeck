@@ -73,6 +73,9 @@ pub(super) fn plugin_request(
         "files.request" => core
             .files_control(id, instance, &frame["params"])
             .map_err(RpcError::execution),
+        method if method.starts_with("terminal.run.") => core
+            .terminal_run_request(id, instance, method, &frame["params"])
+            .map_err(RpcError::execution),
         "terminal.open" => {
             let p = &frame["params"];
             let view = p["viewId"]
@@ -91,8 +94,22 @@ pub(super) fn plugin_request(
                         .ok_or_else(|| RpcError::invalid("启动命令必须为字符串"))
                 })
                 .transpose()?;
-            core.terminal_open(id, instance, view, cols as u32, rows as u32, command)
-                .map_err(RpcError::execution)
+            let persistent = match p.get("lifetime") {
+                None => false,
+                Some(Value::String(value)) if value == "run" => false,
+                Some(Value::String(value)) if value == "view" => true,
+                _ => return Err(RpcError::invalid("终端输出寿命模式无效")),
+            };
+            core.terminal_create(
+                id,
+                instance,
+                view,
+                cols as u32,
+                rows as u32,
+                command,
+                persistent,
+            )
+            .map_err(RpcError::execution)
         }
         "terminal.close" => core
             .terminal_close(

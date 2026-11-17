@@ -48,6 +48,46 @@ pub(crate) fn cleanup(directory: &std::path::Path) {
 
 #[cfg(test)]
 mod cleanup_tests {
+    #[tokio::test]
+    async fn latest_source_precedes_its_bytes_inside_a_journal_block() {
+        use super::*;
+        let replay = Arc::new(
+            Replay::journaled(std::env::temp_dir().join(format!(
+                "sodeck-source-{}-{}",
+                std::process::id(),
+                crate::core::now()
+            )))
+            .unwrap(),
+        );
+        let cancel = CancellationToken::new();
+        replay.push(b"old-and-new", &cancel).await.unwrap();
+        replay.source(4, serde_json::json!({"identity":"new"}));
+        let (tx, mut output) = tokio::sync::mpsc::unbounded_channel();
+        let sink: Sink = Arc::new(move |frame| tx.send(frame).map_err(|_| "gone".into()));
+        tokio::spawn(replay.clone().subscribe("reader".into(), sink, || true));
+        let mut bytes = Vec::new();
+        let mut source = false;
+        while bytes.len() < 11 {
+            let frame = tokio::time::timeout(std::time::Duration::from_secs(2), output.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            replay.ack("reader", frame.packet).unwrap();
+            if frame.kind == "source" {
+                assert_eq!(bytes, b"old-");
+                source = true;
+                assert_eq!(frame.metadata["state"]["identity"], "new");
+            }
+            if frame.kind == "data" {
+                if bytes.len() >= 4 {
+                    assert!(source);
+                }
+                bytes.extend(frame.data);
+            }
+        }
+        assert_eq!(bytes, b"old-and-new");
+        replay.detach("reader");
+    }
     #[test]
     fn cleanup_only_removes_recognized_directories_whose_owner_has_exited() {
         let root = std::env::temp_dir().join(format!(
@@ -123,6 +163,7 @@ struct State {
     readers: HashMap<String, Reader>,
     upload: HashMap<String, Checkpoint>,
     ended: Option<Value>,
+    source: Option<(u64, u64, Value)>,
     journal: Option<journal::Journal>,
     recovery_error: Option<String>,
     unrecoverable_until: u64,
@@ -269,6 +310,14 @@ impl Replay {
         {
             s.chunks.pop_front();
         }
+    }
+    /// Latest opaque producer state; output and display checkpoints have independent lifetimes.
+    pub(crate) fn source(&self, watermark: u64, metadata: Value) {
+        let mut state = self.state.lock().unwrap();
+        let revision = state.source.as_ref().map_or(1, |s| s.0 + 1);
+        state.source = Some((revision, watermark, metadata));
+        drop(state);
+        self.changed.notify_waiters();
     }
     pub fn finish(&self, metadata: Value) {
         self.state.lock().unwrap().ended = Some(metadata);
@@ -465,10 +514,19 @@ impl Replay {
             drop(checkpoint);
             let mut caught_up = false;
             let mut recovery_error = None;
+            let mut source_revision = 0;
             loop {
                 let changed = self.changed.notified();
                 if !alive() {
                     return Err("界面已关闭".into());
+                }
+                let source = self.state.lock().unwrap().source.clone();
+                if let Some((revision, watermark, metadata)) = source {
+                    if revision > source_revision && cursor >= watermark {
+                        self.send(&token, &sink, frame("source", cursor, vec![],
+                            serde_json::json!({"revision":revision,"watermark":watermark,"state":metadata})), cursor, &alive).await?;
+                        source_revision = revision;
+                    }
                 }
                 let error = self.state.lock().unwrap().recovery_error.clone();
                 if error != recovery_error {
@@ -499,14 +557,14 @@ impl Replay {
                     caught_up = true;
                 }
                 let replay = self.clone();
-                let (chunk, ended) = tokio::task::spawn_blocking(move || {
+                let (chunk, ended, source_pending) = tokio::task::spawn_blocking(move || {
                     let s = replay.state.lock().unwrap();
                     let memory = s
                         .chunks
                         .iter()
                         .find(|(n, b)| *n + b.len() as u64 > cursor)
                         .cloned();
-                    let chunk = if cursor < s.produced
+                    let mut chunk = if cursor < s.produced
                         && memory.as_ref().is_none_or(|(start, _)| *start > cursor)
                     {
                         if let Some(journal) = &s.journal {
@@ -522,10 +580,25 @@ impl Replay {
                     } else {
                         memory
                     };
-                    Ok::<_, String>((chunk, s.ended.clone()))
+                    // A source change must precede bytes from its watermark, even within a journal block.
+                    if let (Some((revision, watermark, _)), Some((start, data))) =
+                        (&s.source, &mut chunk)
+                    {
+                        if *revision > source_revision && cursor < *watermark {
+                            data.truncate((*watermark - *start) as usize);
+                        }
+                    }
+                    let source_pending =
+                        s.source.as_ref().is_some_and(|(revision, watermark, _)| {
+                            *revision > source_revision && cursor >= *watermark
+                        });
+                    Ok::<_, String>((chunk, s.ended.clone(), source_pending))
                 })
                 .await
                 .map_err(|e| e.to_string())??;
+                if source_pending {
+                    continue;
+                }
                 if let Some((start, data)) = chunk {
                     if start > cursor {
                         return Err("终端输出序号出现缺口".into());

@@ -30,6 +30,8 @@ async fn openssh_terminal_plugin() {
     let id = mounted["data"]["streamId"].as_str().unwrap();
     f.core.ui_surface_ready("main", token).unwrap();
     let mut output = subscribe(&f.core, "main", token, id).await;
+    advance_terminal(&f.core, "main", token, mounted["data"]["startup"].clone()).await;
+    let run = current_terminal_run(&f.core, "main", token, id, &mut output).await;
     let command = if cfg!(windows) {
         b"echo sodeck-real-pty-ok\r".as_slice()
     } else {
@@ -39,7 +41,7 @@ async fn openssh_terminal_plugin() {
         &f.core,
         "main",
         token,
-        json!({"op":"write","id":id,"sequence":0,"data":command}),
+        json!({"op":"write","id":id,"runId":run,"sequence":0,"data":command}),
     )
     .await
     .unwrap();
@@ -66,14 +68,16 @@ async fn openssh_terminal_plugin() {
     assert_eq!(mounted["data"]["integration"]["mode"],"off");
     let token=mounted["surfaceId"].as_str().unwrap();let id=mounted["data"]["streamId"].as_str().unwrap();
     f.core.ui_surface_ready("main",token).unwrap();let mut output=subscribe(&f.core,"main",token,id).await;
+    advance_terminal(&f.core,"main",token,mounted["data"]["startup"].clone()).await;
+    let run=current_terminal_run(&f.core,"main",token,id,&mut output).await;
     data_until(&f.core,"main",token,id,&mut output,"sodeck-command-ready").await;
-    td(&f.core,"main",token,json!({"op":"write","id":id,"sequence":0,"data":b"value\r"})).await.unwrap();
+    td(&f.core,"main",token,json!({"op":"write","id":id,"runId":run,"sequence":0,"data":b"value\r"})).await.unwrap();
     data_until(&f.core,"main",token,id,&mut output,"sodeck-command-input:value").await;
-    loop {let frame=receive(&f.core,"main",token,id,&mut output).await;if frame.kind=="end"{if cfg!(windows) {
+    loop {let frame=receive(&f.core,"main",token,id,&mut output).await;if frame.kind=="source"&&frame.metadata["state"]["state"]=="ended"{let result=&frame.metadata["state"]["result"];if cfg!(windows) {
         let baseline=std::process::Command::new("ssh").args(["-tt","-o","StrictHostKeyChecking=no","-o","UserKnownHostsFile=NUL","-o","IdentitiesOnly=yes","-i", &std::env::var("SODECK_TEST_SSH_KEY").unwrap(),"-p", &port.to_string(), &format!("{}@127.0.0.1",std::env::var("SODECK_TEST_SSH_USER").unwrap()), "powershell.exe -NoLogo -NoProfile -Command \"exit 7\""]).stdin(std::process::Stdio::null()).output().unwrap();
-        assert_eq!(frame.metadata["exitCode"].as_i64(),baseline.status.code().map(i64::from),"must preserve the exit status reported to an independent OpenSSH PTY client");
+        assert_eq!(result["exitCode"].as_i64(),baseline.status.code().map(i64::from),"must preserve the exit status reported to an independent OpenSSH PTY client");
         eprintln!("Windows OpenSSH PTY reported exit {:?} for exit 7",baseline.status.code());
-    } else { assert_eq!(frame.metadata["exitCode"],7); }break;}}
+    } else { assert_eq!(result["exitCode"],7); }break;}}
     let mut reopened=f.core.ui_event("main",token,json!({"action":"createTerminal","requestId":"reopen-command","params":params})).unwrap();
     let end=std::time::Instant::now()+Duration::from_secs(10);
     while reopened["status"]=="pending" {assert!(std::time::Instant::now()<end);tokio::time::sleep(Duration::from_millis(25)).await;reopened=f.core.ui_event("main",token,json!({"action":"terminalCommandStatus"})).unwrap();}
@@ -90,6 +94,9 @@ use sodeck::{
 };
 
 fn terminal_fixture(f: &Fixture) -> (String, String, String) {
+    terminal_fixture_mode(f, "run")
+}
+fn terminal_fixture_mode(f: &Fixture, lifetime: &str) -> (String, String, String) {
     let plugin = f.path.join("terminal-fixture");
     std::fs::create_dir_all(plugin.join("ui")).unwrap();
     let binary = format!("plugin{}", std::env::consts::EXE_SUFFIX);
@@ -112,7 +119,7 @@ fn terminal_fixture(f: &Fixture) -> (String, String, String) {
     f.core.ui_surface_ready("main", &token).unwrap();
     let terminal = f
         .core
-        .ui_event("main", &token, json!({"rpc":"terminal.open"}))
+        .ui_event("main", &token, json!({"rpc":"terminal.open","lifetime":lifetime}))
         .unwrap()["id"]
         .as_str()
         .unwrap()
@@ -342,4 +349,110 @@ async fn wait_terminal_action(core:&AppCore,window:&str,context:&sodeck::workspa
     let deadline=std::time::Instant::now()+Duration::from_secs(10);
     while receipt["status"]=="pending" {assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(25)).await;receipt=core.ui_action_status(window,&json!({"context":context,"requestId":request})).unwrap();}
     receipt
+}
+
+async fn advance_terminal(core: &AppCore, window: &str, token: &str, mut startup: Value) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while startup["status"] == "pending" {
+        assert!(std::time::Instant::now() < deadline, "{startup}");
+        startup = core.ui_event(window, token, json!({"action":"continueStart","key":startup["key"]})).unwrap()["startup"].clone();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(startup["status"], "completed", "{startup}");
+}
+async fn current_terminal_run(core: &Arc<AppCore>, window: &str, token: &str, id: &str, output: &mut tokio::sync::mpsc::UnboundedReceiver<Frame>) -> Value {
+    loop {
+        let frame = receive(core, window, token, id, output).await;
+        if frame.kind == "source" && !frame.metadata["state"]["runId"].is_null() {
+            return frame.metadata["state"]["runId"].clone();
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn retained_terminal_recovers_runs_and_rejects_stale_requests_and_input() {
+    let f = Fixture::new();
+    let target = SshServer::new().await;
+    let server = f.server("127.0.0.1", target.addr.port(), json!([]));
+    let context = connected(&f, &server).await.context.unwrap();
+    let (view, token, id) = terminal_fixture_mode(&f, "view");
+    let rpc = |method: &str, params: Value| f.core.ui_event("main", &token, json!({"rpc":method,"params":params}));
+    assert_eq!(rpc("terminal.run.get", json!({"id":id})).unwrap()["state"], "idle");
+    let start = json!({"id":id,"expectedRunId":null,"expectedContext":context,"cols":80,"rows":24});
+    let first = rpc("terminal.run.start", start.clone()).unwrap()["runId"].clone();
+    assert_eq!(rpc("terminal.run.start", start.clone()).unwrap()["runId"], first);
+    let mut output = subscribe(&f.core, "main", &token, &id).await;
+    data_until(&f.core, "main", &token, &id, &mut output, "shell-1>").await;
+    td(&f.core,"main",&token,json!({"op":"write","id":id,"runId":first,"sequence":0,"data":b"history-marker\r"})).await.unwrap();
+    data_until(&f.core,"main",&token,&id,&mut output,"history-marker").await;
+    td(&f.core,"main",&token,json!({"op":"write","id":id,"runId":first,"sequence":1,"data":b"exit\r"})).await.unwrap();
+    loop { let frame=receive(&f.core,"main",&token,&id,&mut output).await;
+        if frame.kind=="source"&&frame.metadata["state"]["state"]=="ended" {break;}
+        assert_ne!(frame.kind,"end","Run exit must retain history subscription");
+    }
+    assert_eq!(rpc("terminal.run.start", start.clone()).unwrap()["runId"], first, "fast exit keeps original receipt");
+    let mut next=start.clone();next["expectedRunId"]=first.clone();next["outputPrefix"]=json!("\r\nnew-run\r\n");
+    let second=rpc("terminal.run.start",next.clone()).unwrap()["runId"].clone();
+    assert_ne!(first,second);
+    assert_eq!(rpc("terminal.run.start",next.clone()).unwrap()["runId"],second);
+    data_until(&f.core,"main",&token,&id,&mut output,"shell-2>").await;
+    let mut conflict=next.clone();conflict["cols"]=json!(81);assert!(!rpc("terminal.run.start",conflict).unwrap()["rpcError"].is_null());
+    assert!(!rpc("terminal.run.start",start).unwrap()["rpcError"].is_null());
+    for request in [json!({"op":"write","id":id,"runId":first,"sequence":2,"data":b"stale"}),json!({"op":"resize","id":id,"runId":first,"cols":80,"rows":24}),json!({"op":"write","id":id,"sequence":0,"data":b"missing-run"})] {
+        assert!(td(&f.core,"main",&token,request).await.is_err());
+    }
+    td(&f.core,"main",&token,json!({"op":"write","id":id,"runId":second,"sequence":0,"data":b"next-input"})).await.unwrap();
+    data_until(&f.core,"main",&token,&id,&mut output,"next-input").await;
+    td(&f.core,"main",&token,json!({"op":"detach","id":id})).await.unwrap();
+    let remount=f.core.ui_attach("main",&view).unwrap();let surface=remount["surfaceId"].as_str().unwrap();
+    f.core.ui_surface_ready("main",surface).unwrap();let mut replay=subscribe(&f.core,"main",surface,&id).await;
+    let (bytes,_)=data_until(&f.core,"main",surface,&id,&mut replay,"shell-2>").await;
+    assert!(String::from_utf8_lossy(&bytes).contains("history-marker"));
+    assert_eq!(target.state.shells.load(Ordering::Relaxed),2);
+    f.core.disconnect_connection("main",&context).unwrap();
+    until(||f.core.connection_views()[0].state=="disconnected").await;
+    let get=||f.core.ui_event("main",surface,json!({"rpc":"session.connection.get","params":{"viewId":view}})).unwrap();
+    let previous=get()["attemptId"].clone();
+    assert!(!f.core.ui_event("main",surface,json!({"rpc":"session.connection.get","params":{"viewId":view,"attemptId":7}})).unwrap()["rpcError"].is_null());
+    let connect=json!({"viewId":view,"expectedContext":context,"expectedAttemptId":previous});
+    let invoke=|p:Value|f.core.ui_event("main",surface,json!({"rpc":"session.connection.start","params":p})).unwrap();
+    let attempt=invoke(connect.clone())["attemptId"].clone();
+    until(||f.core.connection_views()[0].state=="connected").await;
+    let remount=f.core.ui_attach("main",&view).unwrap();let surface=remount["surfaceId"].as_str().unwrap();
+    f.core.ui_surface_ready("main",surface).unwrap();
+    assert_eq!(f.core.ui_event("main",surface,json!({"rpc":"session.connection.start","params":connect})).unwrap()["attemptId"],attempt,"success preserves original connection receipt across Surface change");
+    let mut replay=subscribe(&f.core,"main",surface,&id).await;
+    data_until(&f.core,"main",surface,&id,&mut replay,"history-marker").await;
+    let state=f.core.ui_event("main",surface,json!({"rpc":"terminal.run.get","params":{"id":id}})).unwrap();
+    assert_eq!(state["runId"],second);assert_eq!(state["state"],"ended");
+    assert_ne!(f.core.connection_views()[0].context.as_ref().unwrap(),&context);
+    assert_eq!(target.state.shells.load(Ordering::Relaxed),2,"reconnect alone must not start a shell");
+    close_terminal_views(&f);f.core.shutdown().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn retained_run_requires_remote_start_confirmation_and_can_retry_refusal() {
+    let f=Fixture::new();let target=SshServer::new().await;
+    let server=f.server("127.0.0.1",target.addr.port(),json!([]));let context=connected(&f,&server).await.context.unwrap();
+    let (_,token,id)=terminal_fixture_mode(&f,"view");
+    let rpc=|method:&str,p:Value|f.core.ui_event("main",&token,json!({"rpc":method,"params":p})).unwrap();
+    let mut request=json!({"id":id,"expectedRunId":null,"expectedContext":context,"cols":80,"rows":24});
+    for (pty,shell,reason) in [(1,0,"服务器拒绝 PTY"),(0,1,"服务器拒绝终端启动请求")] {
+        target.state.pty_behavior.store(pty,Ordering::Relaxed);target.state.shell_behavior.store(shell,Ordering::Relaxed);
+        let run=rpc("terminal.run.start",request.clone())["runId"].clone();
+        until(||rpc("terminal.run.get",json!({"id":id}))["state"]=="ended").await;
+        let state=rpc("terminal.run.get",json!({"id":id}));assert_eq!(state["result"]["error"],reason);
+        assert_eq!(rpc("terminal.run.start",request.clone())["runId"],run);
+        request["expectedRunId"]=run;
+    }
+    target.state.shell_behavior.store(2,Ordering::Relaxed);
+    let run=rpc("terminal.run.start",request)["runId"].clone();let mut output=subscribe(&f.core,"main",&token,&id).await;
+    data_until(&f.core,"main",&token,&id,&mut output,"before-start-confirmation").await;
+    assert_eq!(rpc("terminal.run.get",json!({"id":id}))["state"],"starting");
+    assert!(td(&f.core,"main",&token,json!({"op":"write","id":id,"runId":run,"sequence":0,"data":b"early"})).await.is_err());
+    data_until(&f.core,"main",&token,&id,&mut output,"shell-2>").await;
+    assert_eq!(rpc("terminal.run.get",json!({"id":id}))["state"],"running");
+    td(&f.core,"main",&token,json!({"op":"write","id":id,"runId":run,"sequence":0,"data":b"confirmed"})).await.unwrap();
+    data_until(&f.core,"main",&token,&id,&mut output,"confirmed").await;
+    close_terminal_views(&f);f.core.shutdown().unwrap();
 }

@@ -161,6 +161,27 @@ pub(super) async fn roundtrip(
         .terminals
         .validation_surface(&tv)
         .ok_or("终端原语未创建")?;
+    // A mounted page may still be preparing its first Run. The shipped UI advances it.
+    let runs_api = core
+        .ui_event(&window, &token, json!({"action":"startupStatus"}))
+        .ok()
+        .is_some_and(|v| v["startup"].is_object());
+    if runs_api {
+        wait("终端启动确认", || {
+            let result = core
+                .ui_event(&window, &token, json!({"action":"startupStatus"}))
+                .ok()?;
+            match result["startup"]["status"].as_str() {
+                Some("completed") => Some(Ok(())),
+                Some("failed") => Some(Err(result["startup"]["error"]
+                    .as_str()
+                    .unwrap_or("终端启动失败")
+                    .to_string())),
+                _ => None,
+            }
+        })
+        .await??;
+    }
     terminal_settings(core, &tv, &token).await?;
     let command = if cfg!(windows) {
         b"echo sodeck-native-pty-ok\r".to_vec()
@@ -180,6 +201,88 @@ pub(super) async fn roundtrip(
             .then_some(())
     })
     .await?;
+    if runs_api {
+        let instance = core
+            .snapshot()
+            .plugins
+            .into_iter()
+            .find(|p| p.manifest.id == "sodeck.terminal")
+            .and_then(|p| p.instance_id)
+            .ok_or("终端插件实例不存在")?;
+        let run = || {
+            core.terminal_run_request(
+                "sodeck.terminal",
+                &instance,
+                "terminal.run.get",
+                &json!({"id":id}),
+            )
+        };
+        let previous = run()?;
+        // TMOUT changes only this shell on the isolated test server, never its login files.
+        let exit = if cfg!(target_os = "linux") {
+            b"export TMOUT=1\r".to_vec()
+        } else {
+            b"exit\r".to_vec()
+        };
+        core.terminal_validation_write(&window, &token, &id, exit)
+            .await?;
+        wait("终端实际退出", || {
+            (run().ok()?["state"] == "ended").then_some(())
+        })
+        .await?;
+        core.connection_session(context)?;
+        let result = core.ui_event(&window, &token, json!({"action":"beginRecovery","requestId":"native-terminal-recovery","expectedRunId":previous["runId"],"cols":80,"rows":24}))?;
+        let key = result["startup"]["key"]
+            .as_str()
+            .ok_or("恢复意图缺少编号")?;
+        wait("原页终端恢复", || {
+            let result = core
+                .ui_event(&window, &token, json!({"action":"continueStart","key":key}))
+                .ok()?;
+            match result["startup"]["status"].as_str() {
+                Some("completed") => Some(Ok(())),
+                Some("failed") => Some(Err(result["startup"]["error"].to_string())),
+                _ => None,
+            }
+        })
+        .await??;
+        let next = run()?;
+        if next["runId"] == previous["runId"]
+            || next["context"] != previous["context"]
+            || view(core, context, "sodeck.terminal:terminal").as_deref() != Some(&tv)
+            || core
+                .terminals
+                .validation_surface(&tv)
+                .is_none_or(|(terminal, _)| terminal != id)
+        {
+            return Err("原页恢复改变了页面、历史或连接身份".into());
+        }
+        if cfg!(target_os = "linux")
+            && (next["metadata"]["integration"]["mode"] != "auto"
+                || next["metadata"]["integration"]["token"]
+                    == previous["metadata"]["integration"]["token"])
+        {
+            return Err("新 shell 未使用独立目录集成身份".into());
+        }
+        let command = if cfg!(windows) {
+            b"echo sodeck-native-recovered-ok\r".to_vec()
+        } else {
+            b"printf 'sodeck-native-recovered-ok\\n'\r".to_vec()
+        };
+        core.terminal_validation_write(&window, &token, &id, command)
+            .await?;
+        wait("恢复后原历史检查点", || {
+            let bytes = output.checkpoint_bytes();
+            [
+                b"sodeck-native-pty-ok".as_slice(),
+                b"sodeck-native-recovered-ok".as_slice(),
+            ]
+            .iter()
+            .all(|marker| bytes.windows(marker.len()).any(|s| s == *marker))
+            .then_some(())
+        })
+        .await?;
+    }
     let automatic_location = if cfg!(target_os = "linux")
         && core.settings_page("sodeck.terminal", "appearance")?["values"]
             .get("directoryMode")

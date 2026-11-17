@@ -106,6 +106,11 @@ impl AppCore {
                 .as_str()
                 .ok_or_else(|| error("invalidParams", format!("缺少 {key}")))
         };
+        if method.starts_with("session.connection.") {
+            return self
+                .session_connection_request(plugin, instance, method, p)
+                .map_err(|e| error("staleContext", e));
+        }
         if method == "session.state" {
             let ui = self.ui_state();
             let view = ui

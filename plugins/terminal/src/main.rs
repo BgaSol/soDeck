@@ -3,12 +3,13 @@ use serde_json::{json, Value};
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex, OnceLock,
     },
 };
 mod creation;
 mod integration;
+mod start;
 
 fn resolve(
     client: &sodeck_plugin_client::Client,
@@ -43,6 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let terminals = Mutex::new(HashMap::<String, Slot>::new());
     let settings = sodeck_plugin_client::settings::SettingsCache::default();
     let can_command = AtomicBool::new(false);
+    let can_runs = AtomicBool::new(false);
     let can_integrate = AtomicBool::new(false);
     let can_open = AtomicBool::new(false);
     let commands_api = AtomicBool::new(false);
@@ -55,6 +57,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .is_some_and(|c| c.iter().any(|v| v == wanted))
             };
             can_command.store(supports("terminal.launch.v1"), Ordering::Relaxed);
+            can_runs.store(
+                supports("terminal.runs.v1") && supports("session.connection.v1"),
+                Ordering::Relaxed,
+            );
             can_integrate.store(
                 supports("terminal.launch.v1") && supports("session.exec.v1"),
                 Ordering::Relaxed,
@@ -95,6 +101,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(Into::into);
         }
         let view = p["viewId"].as_str().ok_or("缺少 viewId")?;
+        if method == "ui.event" && p["data"]["action"] == "startupStatus" {
+            let slot = terminals
+                .lock()
+                .unwrap()
+                .get(view)
+                .cloned()
+                .ok_or("终端尚未创建")?;
+            let terminal = slot
+                .get()
+                .ok_or("终端仍在创建")?
+                .as_ref()
+                .map_err(Clone::clone)?;
+            return Ok(json!({"data":{"startup":terminal.startup.as_ref().map(|s|s.snapshot())}}));
+        }
+        if method == "ui.event"
+            && matches!(
+                p["data"]["action"].as_str(),
+                Some("beginRecovery" | "continueStart")
+            )
+        {
+            let slot = terminals
+                .lock()
+                .unwrap()
+                .get(view)
+                .cloned()
+                .ok_or("终端尚未创建")?;
+            let terminal = slot
+                .get()
+                .ok_or("终端仍在创建")?
+                .as_ref()
+                .map_err(Clone::clone)?;
+            let startup = terminal
+                .startup
+                .as_ref()
+                .ok_or("请升级核心以使用原页恢复")?;
+            return startup
+                .event(
+                    client,
+                    view,
+                    &terminal.id,
+                    &terminal.create_params,
+                    &p["context"],
+                    &p["data"],
+                    &terminal.next_probe,
+                )
+                .map(|data| json!({"data":data}))
+                .map_err(Into::into);
+        }
         if method == "ui.event"
             && matches!(
                 p["data"]["action"].as_str(),
@@ -181,6 +235,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             tickets.lock().unwrap().remove(view);
             let slot = terminals.lock().unwrap().remove(view);
             if let Some(Ok(terminal)) = slot.as_ref().and_then(|slot| slot.get()) {
+                if let Some(startup) = &terminal.startup {
+                    startup.close();
+                }
                 client.call("terminal.close", json!({"id":terminal.id}))?;
             }
             return Ok(json!({}));
@@ -198,7 +255,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .as_ref()
                 .map_err(Clone::clone)?;
             return Ok(
-                json!({"data":{"streamId":terminal.id,"title":terminal.title,"openedContext":terminal.context,"integration":terminal.integration,"createParams":terminal.create_params,"commandsApi":commands_api.load(Ordering::Relaxed),"commandPending":tickets.lock().unwrap().get(view).is_some_and(|t|t.result.as_ref().is_none_or(|r|r["status"]=="pending"))},"metadata":{"title":terminal.title,"dirty":false,"busy":false}}),
+                json!({"data":{"streamId":terminal.id,"title":terminal.title,"openedContext":terminal.context,"integration":terminal.integration,"createParams":terminal.create_params.value(),"runsApi":terminal.startup.is_some(),"startup":terminal.startup.as_ref().map(|s|s.snapshot()),"commandsApi":commands_api.load(Ordering::Relaxed),"commandPending":tickets.lock().unwrap().get(view).is_some_and(|t|t.result.as_ref().is_none_or(|r|r["status"]=="pending"))},"metadata":{"title":terminal.title,"dirty":false,"busy":false}}),
             );
         }
         if method == "ui.createView" {
@@ -216,25 +273,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .get_or_init(|| {
                     let resolved =
                         resolve(client, &p["params"], can_command.load(Ordering::Relaxed))?;
+                    let persistent = can_runs.load(Ordering::Relaxed);
                     let mut params = json!({"viewId":view,"cols":80,"rows":24});
-                    let integration = match &resolved.launch {
-                        Launch::Command(command) => {
-                            params["command"] = json!(command);
-                            json!({"mode":"off"})
-                        }
-                        Launch::LoginShell if resolved.directory != DirectoryIntegration::Auto => {
-                            json!({"mode":resolved.directory.name()})
-                        }
-                        Launch::LoginShell if !can_integrate.load(Ordering::Relaxed) => {
-                            json!({"mode":"unavailable","reasonCode":"old-core"})
-                        }
-                        Launch::LoginShell => {
-                            match integration::prepare(client, view, &p["context"]) {
-                                Ok((command, state)) => {
-                                    params["command"] = json!(command);
-                                    state
+                    if persistent {
+                        params["lifetime"] = json!("view");
+                    }
+                    let integration = if persistent {
+                        json!({"mode":resolved.directory.name()})
+                    } else {
+                        match &resolved.launch {
+                            Launch::Command(command) => {
+                                params["command"] = json!(command);
+                                json!({"mode":"off"})
+                            }
+                            Launch::LoginShell
+                                if resolved.directory != DirectoryIntegration::Auto =>
+                            {
+                                json!({"mode":resolved.directory.name()})
+                            }
+                            Launch::LoginShell if !can_integrate.load(Ordering::Relaxed) => {
+                                json!({"mode":"unavailable","reasonCode":"old-core"})
+                            }
+                            Launch::LoginShell => {
+                                match integration::prepare(client, view, &p["context"]) {
+                                    Ok((command, state)) => {
+                                        params["command"] = json!(command);
+                                        state
+                                    }
+                                    Err(reason) => {
+                                        json!({"mode":"unavailable","reasonCode":reason})
+                                    }
                                 }
-                                Err(reason) => json!({"mode":"unavailable","reasonCode":reason}),
                             }
                         }
                     };
@@ -247,7 +316,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .unwrap_or_else(|| format!("终端 {next}")),
                         context: p["context"].clone(),
                         integration,
-                        create_params: resolved.value(),
+                        create_params: resolved,
+                        startup: persistent.then(|| {
+                            Arc::new(start::Startup::initial(
+                                p["context"].clone(),
+                                can_integrate.load(Ordering::Relaxed),
+                            ))
+                        }),
+                        next_probe: AtomicU64::new(2),
                     })
                 })
                 .as_ref()
@@ -262,7 +338,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 return Err("终端页面已关闭".into());
             }
             return Ok(
-                json!({"data":{"streamId":terminal.id,"title":terminal.title,"openedContext":terminal.context,"integration":terminal.integration,"createParams":terminal.create_params,"commandsApi":commands_api.load(Ordering::Relaxed),"commandPending":tickets.lock().unwrap().get(view).is_some_and(|t|t.result.as_ref().is_none_or(|r|r["status"]=="pending"))},"metadata":{"title":terminal.title,"dirty":false,"busy":false}}),
+                json!({"data":{"streamId":terminal.id,"title":terminal.title,"openedContext":terminal.context,"integration":terminal.integration,"createParams":terminal.create_params.value(),"runsApi":terminal.startup.is_some(),"startup":terminal.startup.as_ref().map(|s|s.snapshot()),"commandsApi":commands_api.load(Ordering::Relaxed),"commandPending":tickets.lock().unwrap().get(view).is_some_and(|t|t.result.as_ref().is_none_or(|r|r["status"]=="pending"))},"metadata":{"title":terminal.title,"dirty":false,"busy":false}}),
             );
         }
         match method {
@@ -271,13 +347,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     })
 }
-#[derive(Clone)]
 struct TerminalView {
     id: String,
     title: String,
     context: Value,
     integration: Value,
-    create_params: Value,
+    create_params: CreateParams,
+    startup: Option<Arc<start::Startup>>,
+    next_probe: AtomicU64,
 }
 
 struct OpenIntent {

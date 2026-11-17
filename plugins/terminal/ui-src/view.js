@@ -11,6 +11,63 @@ import {snapshotChunks} from './snapshot.js';
   let transferFrozen=false,readOnly=false,inputError,restoredDisplay;
   let ended=false,disconnected=false,opening=false,surfaceReady=false,createParams={},canOpen=false,commandsApi=false;
   let snapshotJob,commandTimer,commandPending=false;
+  let runsApi=false,runState,sourceRevision=0,mountValue,startup,startTimer,startRequest=false,displayError;
+  const loginShell=()=>createParams.launch?.kind!=='command';
+  const inputReady=()=>caughtUp&&surfaceReady&&visible&&!readOnly&&!transferFrozen&&!disconnected&&!ended&&!inputError&&(!runsApi||(runState?.state==='running'&&offset>=Number(runState.readyOffset)&&JSON.stringify(runState.context)===JSON.stringify(mountValue.context)));
+  const recoverable=()=>runsApi&&loginShell()&&(ended||(runState?.state==='idle'&&startup?.status==='failed'))&&!opening&&startup?.status!=='pending'&&surfaceReady&&visible&&!readOnly&&!transferFrozen&&!disposed;
+  function recoveryControls(){
+    if(!runsApi)return;
+    newTerminal.hidden=loginShell()?!(ended||disconnected||startup?.status==='failed'):!ended;
+    newTerminal.disabled=loginShell()?!recoverable():disconnected||opening||commandPending||readOnly||transferFrozen||disposed;
+    if(loginShell())newTerminal.textContent=disconnected?'重新连接':'恢复终端';
+    let text='',error=false;
+    if(recoveryUnavailable){text=recoveryNotice;error=true;}
+    else if(displayError){text=displayError;error=true;}
+    else if(startup?.status==='pending')text=startup.phase==='connection'?'正在连接服务器…':startup.phase==='preparing'?'正在准备终端…':'正在打开终端…';
+    else if(startup?.status==='failed'){text=startup.error+(loginShell()?' · 按回车重试':'');error=true;}
+    else if(disconnected)text='连接已断开'+(loginShell()?' · 按回车重新连接':' · 连接后可重新打开终端');
+    else if(ended){text=(runState.result?.error||'终端已退出')+(loginShell()?' · 按回车恢复':'');error=Boolean(runState.result?.error);}
+    else if(!caughtUp||runState?.state!=='running')text='正在接续终端…';
+    status.hidden=!text;status.textContent=text;status.classList.toggle('error',error);
+  }
+  function scheduleStart(){
+    if(startTimer||startRequest||!runsApi||startup?.status!=='pending'||disposed||!surfaceReady||readOnly||transferFrozen||!visible||!caughtUp)return;
+    startTimer=setTimeout(()=>{
+      startTimer=undefined;
+      if(disposed||!surfaceReady||readOnly||transferFrozen||!visible||startup?.status!=='pending')return;
+      startRequest=true;
+      void sodeck.request('event',{action:'continueStart',key:startup.key}).then(startupResult).catch(error=>{if(!disposed)fail(error);}).finally(()=>{startRequest=false;scheduleStart();});
+    },250);
+  }
+  function startupResult(result){
+    if(disposed)return;
+    if(result?.startup){startup=result.startup;if(!inputError)displayError=undefined;}
+    recoveryControls();scheduleStart();
+  }
+  function recoverTerminal(){
+    if(!recoverable())return;
+    opening=true;displayError=undefined;controls.invalidate();enabled=false;recoveryControls();
+    void sodeck.request('event',{action:'beginRecovery',requestId:crypto.randomUUID(),expectedRunId:runState?.runId??null,cols:terminal.cols,rows:terminal.rows})
+      .then(startupResult).catch(error=>{fail(error);void sodeck.request('event',{action:'startupStatus'}).then(startupResult).catch(()=>{});})
+      .finally(()=>{opening=false;recoveryControls();scheduleStart();});
+  }
+  function sourceState(frame){
+    const revision=frame.metadata?.revision;if(!Number.isSafeInteger(revision)||revision<=sourceRevision)return;
+    sourceRevision=revision;
+    const next=frame.metadata.state;
+    if(next.runId&&next.runId!==runState?.runId){
+      enabled=false;controls.invalidate();stopSize();inputSequence=0;inputError=displayError=undefined;
+      mountKey=mountValue.surfaceId+':'+JSON.stringify(mountValue.context)+':'+next.runId;
+      location.mount({...mountValue,data:{...mountValue.data,openedContext:next.context,integration:next.metadata?.integration||{mode:'off'}}});
+    }
+    runState=next;ended=next.state==='ended';
+    if(ended){
+      controls.invalidate();stopSize();location.unknown(offset,'终端已退出');
+    }else if(next.state==='running'&&surfaceReady&&JSON.stringify(next.context)===JSON.stringify(mountValue.context)){
+      location.ready();
+    }
+    enabled=inputReady();recoveryControls();if(enabled){void enqueueSize(true).catch(fail);}scheduleStart();
+  }
   async function commandStatus(result) {
     if(disposed)return;
     clearTimeout(commandTimer);
@@ -23,6 +80,7 @@ import {snapshotChunks} from './snapshot.js';
   let recoveryUnavailable=false;const recoveryNotice='当前终端可继续使用，历史恢复暂不可用；请保留此页面';
   const newTerminal=document.createElement('button');newTerminal.textContent='新建终端';newTerminal.hidden=true;newTerminal.className='sd-control';status.after(newTerminal);
   newTerminal.onclick=()=>{
+    if(runsApi&&loginShell()){recoverTerminal();return;}
     if(opening||commandPending||readOnly||transferFrozen||disposed||disconnected||!ended)return;
     opening=true;newTerminal.disabled=true;
     const requestId=crypto.randomUUID();
@@ -30,22 +88,23 @@ import {snapshotChunks} from './snapshot.js';
   };
   SoDeckMotion.observeMotion(document);
   const encoder=new TextEncoder();
-  const fail=error=>{status.hidden=false;status.textContent=String(error);status.classList.add('error');};
-  const controls=installTerminalInput(terminal,host,()=>({key:mountKey,canCopy:!disposed&&!restoring,canPaste:enabled&&!restoring&&!disposed&&visible}),fail,()=>search.show());
+  const fail=error=>{displayError=String(error);if(runsApi)recoveryControls();else{status.hidden=false;status.textContent=displayError;status.classList.add('error');}};
+  const controls=installTerminalInput(terminal,host,()=>({key:mountKey,canCopy:!disposed&&!restoring,canPaste:enabled&&!restoring&&!disposed&&visible,canRecover:recoverable()}),fail,()=>search.show(),recoverTerminal);
   const appearance=createAppearance(terminal,host,()=>caughtUp&&!restoring&&visible&&!disposed,()=>enqueueSize(true),()=>controls.invalidate());
   const location=createLocation(terminal);
   let lastCols=0,lastRows=0;
   let sizeFrame,sizeJob,sizeDone,sizeReject,desiredSize,resizeQueued=false,sizeEpoch=0,resizeFailed=false,resizeRetries=0,retryTimer;
-  const request=p=>sodeck.request('data',{id,...p});
+  const request=p=>sodeck.request('data',{id,...p,...(runsApi&&['write','resize'].includes(p.op)?{runId:runState?.runId}: {})});
   const write=bytes=>new Promise(resolve=>terminal.write(bytes,resolve));
   const search=createSearch(terminal,host,metadata=>{
     if(disposed||!surfaceReady||readOnly||restoring||!caughtUp)return Promise.resolve();
     return request({op:'metadata',metadata}).catch(error=>{if(!String(error).includes('窗口'))fail(error);});
   },()=>({ready:caughtUp&&!restoring&&!disposed,visible,frozen:transferFrozen}));
-  async function resumeDisplay(){await appearance.apply();await enqueueSize(true);if(!disposed)search.resume();}
+  async function resumeDisplay(){enabled=inputReady();await appearance.apply();await enqueueSize(true);if(!disposed)search.resume();recoveryControls();}
   function scan(bytes){for(const b of bytes){
     if(utf8){if((b&0xc0)===0x80){utf8--;continue;}utf8=0;}
     if(b>=0xc2){utf8=b<0xe0?1:b<0xf0?2:3;continue;}
+    if(b===24||b===26){escape='normal';continue;}
     if(escape==='string'){if(b===7)escape='normal';else if(b===27)escape='stringEscape';}
     else if(escape==='stringEscape')escape=b===92?'normal':'string';
     else if(b===27)escape='escape';
@@ -125,15 +184,15 @@ import {snapshotChunks} from './snapshot.js';
     search?.theme();
   }
   addEventListener('sodeck:mount',event=>{
-    const mount=event.detail;readOnly=mount.readOnly===true;surfaceReady=mount.capabilities?.sharedState!==1;id=mount.data.streamId;mountKey=mount.surfaceId+':'+JSON.stringify(mount.context);disconnected=mount.connected===false;visible=mount.visible;theme(mount.tokens);
+    const mount=event.detail;mountValue=mount;runsApi=mount.data.runsApi===true;startup=mount.data.startup;readOnly=mount.readOnly===true;surfaceReady=mount.capabilities?.sharedState!==1;id=mount.data.streamId;mountKey=mount.surfaceId+':'+JSON.stringify(mount.context);disconnected=mount.connected===false;visible=mount.visible;theme(mount.tokens);
     terminal.open(host);
     commandsApi=mount.data.commandsApi===true;createParams=mount.data.createParams||{};canOpen=mount.capabilities?.uiOpenView===1;newTerminal.textContent=createParams.launch?.kind==='command'?'重新打开终端':'新建终端';if(mount.data.commandPending)void commandStatus({status:'pending'});
     appearance.receive(mount.settings);
     location.mount(mount);
     status.textContent=`${mount.serverName||'服务器'} · 正在接续终端…`;
-    void request({op:'attach'}).catch(fail);
+    void request({op:'attach'}).catch(fail);recoveryControls();
   });
-  addEventListener('sodeck:surfaceReady',()=>{readOnly=false;transferFrozen=false;surfaceReady=true;enabled=caughtUp&&!disconnected&&!ended;void resumeDisplay().catch(fail);if(enabled)location.ready();});
+  addEventListener('sodeck:surfaceReady',()=>{readOnly=false;transferFrozen=false;surfaceReady=true;enabled=caughtUp&&inputReady();void resumeDisplay().catch(fail);if(enabled)location.ready();scheduleStart();});
   addEventListener('sodeck:data',event=>{
     chain=chain.then(async()=>{
       if(disposed)return;
@@ -147,15 +206,17 @@ import {snapshotChunks} from './snapshot.js';
       if(frame.kind==='data'){const bytes=Uint8Array.from(frame.data);await write(bytes);scan(bytes);offset=frame.offset;location.completed();}
       await request({op:'ack',packet:frame.packet});
       if(frame.kind==='caughtUp'){
-        caughtUp=true;enabled=surfaceReady&&!disconnected&&!ended;status.textContent=recoveryUnavailable?recoveryNotice:'远程终端 · 已连接';status.hidden=!recoveryUnavailable;status.classList.toggle('error',recoveryUnavailable);document.body.dataset.ready='true';
+        caughtUp=true;enabled=inputReady();if(!runsApi){status.textContent=recoveryUnavailable?recoveryNotice:'远程终端 · 已连接';status.hidden=!recoveryUnavailable;status.classList.toggle('error',recoveryUnavailable);}document.body.dataset.ready='true';
         // Incoming windows may render before ownership commits. Only the owner saves a checkpoint.
         search.update(true);sodeck.mounted(true);if(restoredDisplay?.ui?.atBottom)terminal.scrollToBottom();else if(restoredDisplay?.ui?.viewportY!=null)terminal.scrollToLine(restoredDisplay.ui.viewportY);else if(restoredDisplay?.viewportY!=null)terminal.scrollToLine(restoredDisplay.viewportY);const selection=restoredDisplay?.ui?.selection!==undefined?restoredDisplay.ui.selection:restoredDisplay?.selection;if(selection){const p=selection;terminal.select(p.start.x,p.start.y,(p.end.y-p.start.y)*terminal.cols+p.end.x-p.start.x);}search.restore(restoredDisplay?.ui);restoredDisplay=undefined;if(surfaceReady){void appearance.apply();void enqueueSize().catch(()=>{});}
-        if(surfaceReady&&!disconnected&&!ended)location.ready();
+        if(surfaceReady&&!disconnected&&!ended&&(!runsApi||runState?.state==='running'))location.ready();startupResult({startup});
       }
+      if(frame.kind==='source'&&runsApi)sourceState(frame);
       if(frame.kind==='end'){location.unknown(offset,'终端已退出');controls.invalidate();enabled=false;ended=true;stopSize();void enqueueSize().catch(()=>{});status.hidden=false;status.textContent=disconnected?'连接已断开，请在工作台重新连接后新建终端。':frame.metadata?.error||`终端已退出${frame.metadata?.exitCode==null?'':` · ${frame.metadata.exitCode}`}`;newTerminal.hidden=disconnected;}
+      if(runsApi&&frame.kind==='data')enabled=inputReady();
     }).catch(fail);
   });
-  function input(text){if(transferFrozen||readOnly||!enabled||restoring||disposed)return;const key=mountKey,bytes=encoder.encode(text);if(inputPending+bytes.length>256*1024){fail('输入待发送内容超过 256 KiB，请稍后分段粘贴；本次输入未发送');return;}inputPending+=bytes.length;location.input(text);inputChain=inputChain.then(async()=>{for(let i=0;i<bytes.length;i+=16384){if(disposed||!enabled||restoring||mountKey!==key)return;await request({op:'write',sequence:inputSequence,data:Array.from(bytes.subarray(i,i+16384))});inputSequence++;}}).catch(error=>{if(!disposed&&mountKey===key){enabled=false;inputError=error;fail(error);}}).finally(()=>{inputPending-=bytes.length;});}
+  function input(text){if(transferFrozen||readOnly||!visible||!enabled||restoring||disposed)return;const key=mountKey,bytes=encoder.encode(text);if(inputPending+bytes.length>256*1024){fail('输入待发送内容超过 256 KiB，请稍后分段粘贴；本次输入未发送');return;}inputPending+=bytes.length;location.input(text);inputChain=inputChain.then(async()=>{for(let i=0;i<bytes.length;i+=16384){if(disposed||!visible||!enabled||restoring||mountKey!==key)return;await request({op:'write',sequence:inputSequence,data:Array.from(bytes.subarray(i,i+16384))});inputSequence++;}}).catch(error=>{if(!disposed&&mountKey===key){enabled=false;inputError=error;fail(error);}}).finally(()=>{inputPending-=bytes.length;});}
   terminal.onData(input);
   addEventListener('sodeck:flush',async event=>{
     try {
@@ -166,16 +227,20 @@ import {snapshotChunks} from './snapshot.js';
       parent.postMessage({channel:'sodeck-ui-v2',type:'flushed',surfaceId:event.detail.surfaceId,id:event.detail.id},'*');
     }catch(error){if(transferFrozen){transferFrozen=false;void resumeDisplay().catch(fail);}parent.postMessage({channel:'sodeck-ui-v2',type:'flushed',surfaceId:event.detail.surfaceId,id:event.detail.id,error:String(error)},'*');}
   });
-  addEventListener('sodeck:transferCancelled',()=>{transferFrozen=false;void resumeDisplay().catch(fail);});
-  addEventListener('sodeck:visibilityChanged',event=>{visible=event.detail.visible;if(!visible){controls.invalidate();stopSize();search.pause();}if(visible)void resumeDisplay().catch(fail);});
-  addEventListener('sodeck:settingsChanged',event=>{appearance.receive({...event.detail.settings,retry:true});location.settings(event.detail.settings);});
+  addEventListener('sodeck:transferCancelled',()=>{transferFrozen=false;void resumeDisplay().catch(fail);scheduleStart();});
+  addEventListener('sodeck:visibilityChanged',event=>{visible=event.detail.visible;if(!visible){controls.invalidate();stopSize();search.pause();}if(visible){void resumeDisplay().catch(fail);scheduleStart();}else{clearTimeout(startTimer);startTimer=undefined;}});
+  addEventListener('sodeck:settingsChanged',event=>{
+    const next=event.detail.settings,current=mountValue.settings;
+    if(current&&current.definitionToken===next.definitionToken&&BigInt(current.revision)>BigInt(next.revision))return;
+    mountValue.settings=next;appearance.receive(next);location.settings(next);
+  });
   addEventListener('sodeck:contextChanged',()=>location.invalidate());
   addEventListener('sodeck:connectionChanged',event=>{if(!event.detail.connected)location.invalidate();});
-  addEventListener('sodeck:contextChanged',()=>{controls.invalidate();enabled=false;stopSize();newTerminal.hidden=disconnected||!ended;status.hidden=false;status.textContent='连接已更换，请在工作台新建终端；此页保留原输出。';});
-  addEventListener('sodeck:connectionChanged',event=>{disconnected=!event.detail.connected;if(disconnected){controls.invalidate();enabled=false;stopSize();newTerminal.hidden=true;status.hidden=false;status.textContent='连接已断开，请在工作台重新连接；此页保留原输出。';}else if(ended){newTerminal.hidden=false;newTerminal.disabled=opening||commandPending;}});
+  addEventListener('sodeck:contextChanged',event=>{controls.invalidate();enabled=false;stopSize();if(runsApi){mountValue={...mountValue,context:event.detail.context};recoveryControls();scheduleStart();}else{newTerminal.hidden=disconnected||!ended;status.hidden=false;status.textContent='连接已更换，请在工作台新建终端；此页保留原输出。';}});
+  addEventListener('sodeck:connectionChanged',event=>{disconnected=!event.detail.connected;if(disconnected){controls.invalidate();enabled=false;stopSize();if(!runsApi){newTerminal.hidden=true;status.hidden=false;status.textContent='连接已断开，请在工作台重新连接；此页保留原输出。';}}else if(ended){newTerminal.hidden=false;newTerminal.disabled=opening||commandPending;}recoveryControls();scheduleStart();});
   addEventListener('sodeck:themeChanged',event=>theme(event.detail.tokens));
   addEventListener('sodeck:focus',()=>{if(!search.focus())terminal.focus();void enqueueSize(true).catch(()=>{});});
-  addEventListener('sodeck:unmount',()=>{disposed=true;clearTimeout(commandTimer);stopSize();search.dispose();location.dispose();appearance.dispose();controls.dispose();observer.disconnect();terminal.dispose();});
+  addEventListener('sodeck:unmount',()=>{disposed=true;clearTimeout(commandTimer);clearTimeout(startTimer);stopSize();search.dispose();location.dispose();appearance.dispose();controls.dispose();observer.disconnect();terminal.dispose();});
   // The final output chunk may arrive without another chunk to trigger a checkpoint.
   const timer=setInterval(()=>{if(disposed){clearInterval(timer);return;}chain=chain.then(()=>{void checkpoint().catch(()=>{});}).catch(()=>{});},1000);
 })();

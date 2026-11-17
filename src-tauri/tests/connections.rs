@@ -28,6 +28,8 @@ use tokio_util::sync::CancellationToken;
 struct Ssh {
     terminal_channels: HashSet<ChannelId>,
     shells: Arc<AtomicUsize>,
+    pty_behavior: Arc<AtomicUsize>,
+    shell_behavior: Arc<AtomicUsize>,
     sizes: Arc<Mutex<Vec<(u32, u32)>>>,
     auth: Arc<AtomicUsize>,
     live: Arc<AtomicUsize>,
@@ -50,6 +52,10 @@ impl server::Handler for Ssh {
         assert_eq!(term, "xterm-256color");
         self.terminal_channels.insert(id);
         self.sizes.lock().unwrap().push((cols, rows));
+        if self.pty_behavior.load(Ordering::Relaxed) == 1 {
+            session.channel_failure(id)?;
+            return Ok(());
+        }
         session.channel_success(id)?;
         Ok(())
     }
@@ -59,6 +65,22 @@ impl server::Handler for Ssh {
         session: &mut Session,
     ) -> Result<(), Self::Error> {
         let shell = self.shells.fetch_add(1, Ordering::Relaxed) + 1;
+        if self.shell_behavior.load(Ordering::Relaxed) == 1 {
+            session.channel_failure(id)?;
+            return Ok(());
+        }
+        if self.shell_behavior.load(Ordering::Relaxed) == 2 {
+            let handle = session.handle();
+            session.data(id, b"before-start-confirmation".to_vec())?;
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                let _ = handle.channel_success(id).await;
+                let _ = handle
+                    .data(id, format!("shell-{shell}> ").into_bytes())
+                    .await;
+            });
+            return Ok(());
+        }
         session.channel_success(id)?;
         session.data(id, format!("shell-{shell}> ").into_bytes())?;
         Ok(())

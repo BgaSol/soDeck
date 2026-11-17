@@ -147,6 +147,7 @@ fn main() {
                         s.starts_with("session.")
                             || s.starts_with("state.")
                             || s.starts_with("commands.")
+                            || s.starts_with("terminal.run.")
                     }) {
                         let request = format!("session-{}", pending_sessions.len());
                         pending_sessions.insert(request.clone(), frame["id"].clone());
@@ -171,8 +172,12 @@ fn main() {
                     }
                     if p["data"]["rpc"] == "terminal.open" {
                         pending_terminal = Some(frame["id"].clone());
+                        let mut params = json!({"viewId":id,"cols":80,"rows":24});
+                        if let Some(lifetime) = p["data"].get("lifetime") {
+                            params["lifetime"] = lifetime.clone();
+                        }
                         send(
-                            json!({"jsonrpc":"2.0","id":"fixture-terminal","method":"terminal.open","params":{"viewId":id,"cols":80,"rows":24}}),
+                            json!({"jsonrpc":"2.0","id":"fixture-terminal","method":"terminal.open","params":params}),
                         );
                         continue;
                     }
