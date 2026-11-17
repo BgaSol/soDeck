@@ -715,11 +715,7 @@ impl AppCore {
         let root = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
         let mut path = root.clone();
         for part in relative {
-            if part.is_empty()
-                || part == "."
-                || part == ".."
-                || part.contains(['/', '\\', '\0', ':'])
-            {
+            if !crate::platform::valid_data_component(part) {
                 return Err("插件数据路径分量无效".into());
             }
             path.push(part);

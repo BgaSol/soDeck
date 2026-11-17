@@ -425,7 +425,7 @@ UI v1 的 `mount.capabilities.clipboard === 1` 表示宿主提供原生文本剪
 
 ### files.pluginData.v1（核心 1.5.0）
 
-`copyFile.destination` 支持 `{side:"pluginData",relative:[独立分量]}`，只允许新文件的 destinationGuard `{kind:"absent"}`。不能用作 source、inspect/list、删除或覆盖端点。relative 为 1–32 个合法本地文件名，拒绝空值、点/父目录、分隔符、绝对路径与 Windows 非法名称；所有父目录必须已经存在且为普通目录。真实根目录由调用者 Owner 的 pluginId 解析至 initialize.dataDirectory，拒绝符号链接目录和 canonicalize 后的越界。复制沿用源检查、流式写入、同目录临时文件、独占提交与原生清理，不登记用户 inputId 或保存 SSH 凭据。
+`copyFile.destination` 支持 `{side:"pluginData",relative:[独立分量]}`，只允许新文件的 destinationGuard `{kind:"absent"}`。不能用作 source、inspect/list、删除或覆盖端点。relative 为 1–32 个合法本地文件名，各平台均拒绝空值、点/父目录、正反斜杠、冒号、NUL 与绝对路径，Windows 上另检查系统不支持的文件名；所有父目录必须已经存在且为普通目录。真实根目录由调用者 Owner 的 pluginId 解析至 initialize.dataDirectory，拒绝符号链接目录和 canonicalize 后的越界。复制沿用源检查、流式写入、同目录临时文件、独占提交与原生清理，不登记用户 inputId 或保存 SSH 凭据。
 
 UI 可调用 `sodeck.request('data',{op:"pluginData",action:"reveal",relative:[目录分量]})` 打开自己已存在的数据子目录；relative 最多 32 个，可为空以打开根目录，不能传任意本地路径。核心验证当前激活 Surface、普通目录与实际根范围，然后使用既有系统目录打开适配。initialize.dataDirectory 在 Unix 由核心创建为 0700，在 Windows 沿用用户应用数据目录的系统 ACL；不提供跨插件沙箱隔离。
 
