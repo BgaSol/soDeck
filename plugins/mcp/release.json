@@ -1,8 +1,8 @@
 {
   "id": "sodeck.mcp",
-  "name": "MCP",
+  "name": "机器人接口",
   "description": "让本机 AI 客户端复用已连接服务器，执行调查命令并下载证据。",
-  "icon": "terminal",
+  "icon": "bot",
   "order": 60,
   "apiVersion": "1",
   "binary": "sodeck-mcp",
@@ -11,7 +11,7 @@
     "apiVersion": "2",
     "entry": "ui/index.html",
     "views": [{
-      "id": "status", "title": "MCP", "icon": "terminal",
+      "id": "status", "title": "机器人接口", "icon": "bot",
       "container": "sidebar", "instancePolicy": "perWorkspace",
       "defaultSide": "right", "defaultPinned": true,
       "openOnWorkspace": "none", "backgroundOnWorkspace": true,
@@ -21,7 +21,7 @@
   "settings": {
     "apiVersion": "1", "schemaVersion": 1,
     "pages": [{
-      "id": "connection", "title": "MCP", "icon": "terminal", "order": 600,
+      "id": "connection", "title": "机器人接口", "icon": "bot", "order": 600,
       "viewTypes": ["status"],
       "groups": [{"id": "local", "title": "本机接入", "fields": [{
         "key": "port", "title": "本机端口", "type": "number", "default": 19846,

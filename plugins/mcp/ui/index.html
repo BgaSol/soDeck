@@ -1,9 +1,9 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MCP</title><link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="style.css"></head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>机器人接口</title><link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="style.css"></head>
 <body><main>
-<header><h1>MCP</h1><p id="service" role="status">正在连接插件</p></header>
-<section aria-labelledby="connection-title"><h2 id="connection-title">本机客户端</h2><p id="endpoint" class="path"></p><p class="caption">复制配置到客户端的私有 MCP 设置。配置包含接入密钥，请妥善保存。</p><button class="sd-control" id="copy" type="button">复制 Codex 配置</button><details id="config-details"><summary>查看配置</summary><pre id="config"></pre></details></section>
+<header><h1>机器人接口</h1><p id="service" role="status">正在连接插件</p></header>
+<section aria-labelledby="connection-title"><h2 id="connection-title">本机客户端</h2><p id="endpoint" class="path"></p><p class="caption">复制配置到客户端的私有接入设置。配置包含接入密钥，请妥善保存。</p><button class="sd-control" id="copy" type="button">复制 Codex 配置</button><details id="config-details"><summary>查看配置</summary><pre id="config"></pre></details></section>
 <section aria-labelledby="server-title"><h2 id="server-title">当前服务器</h2><p id="server">等待读取</p><p class="caption">调查步骤在 AI 客户端中发起；页面隐藏后任务继续。</p></section>
 <section aria-labelledby="tasks-title"><div class="heading"><h2 id="tasks-title">最近 50 个任务</h2><button class="sd-control" id="refresh" type="button">刷新</button></div><p id="empty" class="caption">尚未启动调查任务。</p><ol id="tasks"></ol></section>
 <section aria-labelledby="evidence-title"><h2 id="evidence-title">本地证据</h2><p id="directory" class="path"></p><button class="sd-control" id="reveal" type="button">打开证据目录</button><p class="caption">证据会保留，重启后的任务不会自动恢复。</p></section>
