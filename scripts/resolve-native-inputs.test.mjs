@@ -7,6 +7,9 @@ import { nativeGithub } from "./native-github.mjs";
 
 const commit = "a".repeat(40), pluginCommit = "b".repeat(40), scriptCommit = "c".repeat(40);
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
+test("MCP has independent native archive names on every supported target", () => {
+  for(const target of targets) assert.equal(packageName({id:"sodeck.mcp",binary:"sodeck-mcp",version:"0.1.0"},target),`sodeck-mcp_0.1.0_${target}${target.includes('windows')?'.zip':'.tar.gz'}`);
+});
 function fixture() {
   const runs = new Map(), artifacts = new Map(), releases = new Map(), bytes = new Map(), tags = new Map();
   const values = { core: "0.9.1", terminal: "0.2.0", files: "0.4.0", network: "0.2.0" };

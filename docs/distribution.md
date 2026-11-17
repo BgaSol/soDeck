@@ -32,7 +32,7 @@ Windows x86_64 与 ARM64 的 NSIS 新安装统一使用 `perMachine`，默认目
 
 ## 插件仓库与资源
 
-每个 Rust 插件在 plugins/<名称>/ 包含 Cargo.toml（唯一版本来源）、Cargo.lock、release.json、CHANGELOG.md 和 src/，UI 插件同时携带已构建的 UI 资源。当前目录为 terminal、files、network-proxy、system-status 和 docker。新增语言时再扩展构建适配。
+每个 Rust 插件在 plugins/<名称>/ 包含 Cargo.toml（唯一版本来源）、Cargo.lock、release.json、CHANGELOG.md 和 src/，UI 插件同时携带已构建的 UI 资源。当前目录为 terminal、files、network-proxy、system-status、docker 和 mcp。新增语言时再扩展构建适配。
 
 release.json 同时是官方发现元数据和独立发行配置，不另建集中名单。ID、名称、标签前缀必填，API 和二进制配置用于打包；description、icon、order 用于展示。默认图标为通用图标、顺序为 0 再按 ID 排序，ID 和标签前缀在官方配置中各自唯一。完整字段和校验见[发行脚本](../scripts/package-plugin.mjs)及[官方目录实现](../src-tauri/src/official_plugins.rs)。
 

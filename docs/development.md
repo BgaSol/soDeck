@@ -131,6 +131,8 @@ Linux 安装 Bash、Zsh 和 Python 3 后运行 `python3 scripts/test-terminal-sh
 
 ## 打包
 
+`npm run mcp:test` 在三个隔离 OpenSSH 服务上验证真实核心与 MCP 插件的首次采集、补采、去重和原字节下载；`mcp:process:test` 用实际插件进程注入接纳回包丢失与失败，`mcp:ui:test` 验证主题、窄屏、焦点、接入配置和隐藏/卸载。先执行 `npm run test:prepare -- mcp`。本机可选设 `SODECK_TEST_CODEX` 为已登录的 Codex CLI 路径，在同一真实三服务器夹具中增加实际 Codex 工具调用验收；此项依赖本机认证，不在无认证 CI 中自动运行。CI 业务矩阵包含前三项，独立插件包由原生 package/verify 验收。
+
 核心与插件各自打包。核心打包只依赖核心和自身运行资源，不需要构建业务插件。
 
 | 本机目标 | 核心打包命令 |
@@ -149,6 +151,7 @@ npm run plugin:build -- --plugin files
 npm run plugin:build -- --plugin network-proxy
 npm run plugin:build -- --plugin system-status
 npm run plugin:build -- --plugin docker
+npm run plugin:build -- --plugin mcp
 ```
 
 产物位于 `artifacts/plugins/sodeck-<插件名>_<版本>_<target>`。在应用设置中添加对应目录并重启；正在运行的插件不能原位覆盖，需要关闭并重启后构建，或指定其他输出目录。宿主测试夹具只用于回归，不发行。
@@ -159,7 +162,7 @@ npm run plugin:build -- --plugin docker
 
 插件版本读取由 `cargo metadata --format-version 1 --no-deps --locked` 解析，并按清单路径选取包，支持合法 TOML 写法与 workspace 版本继承。版本相关脚本测试同样需要上述固定 Rust 工具链；缺少 Cargo 或清单无效时明确失败，不从文本猜测版本。
 
-依赖更新由 [.github/dependabot.yml](../.github/dependabot.yml) 配置：每月检查根目录与终端插件的 npm、核心/共享 plugin-client/五插件的 Cargo，以及 GitHub Actions 引用。各配置块最多保持两个未关闭的常规更新 PR，小版本和补丁更新分组，主版本更新单独审查。
+依赖更新由 [.github/dependabot.yml](../.github/dependabot.yml) 配置：每月检查根目录与终端插件的 npm、核心/共享 plugin-client/六插件的 Cargo，以及 GitHub Actions 引用。各配置块最多保持两个未关闭的常规更新 PR，小版本和补丁更新分组，主版本更新单独审查。
 
 漏洞告警、安全更新与安全更新分组在 GitHub 仓库安全设置中开启，不受常规更新的每月周期和 PR 数量限制。所有依赖更新沿用 Check 与相关验收，由维护者合并；配置不启用自动合并或发布，Node/Rust 工具链仍人工维护。共享客户端与插件的依赖清单、锁文件须核对兼容，源码检查不能替代五平台实际包验收。
 
@@ -187,11 +190,11 @@ Check 始终响应 main push/PR，不使用 workflow 级 `paths` 跳过。`selec
 | 单插件 Rust/清单/锁文件/构建输入 | 该插件格式与五平台原生 Rust 测试、该插件普通业务验收；其他插件不跟随 |
 | desktop_files 的 windows/linux/macos.rs | 对应系统两架构/一个 macOS 架构的核心测试、文件业务；Windows 保留系统专项，普通 UI 不跟随 |
 | network_metrics.rs、settings/declaration.rs | 一次 Linux x86_64 完整核心套件；声明变化另走前端相关回归 |
-| session_stream、content_export | 五平台原生核心、Linux UI、Windows SSH、五插件普通业务验收，与连接/流生命周期相同 |
+| session_stream、content_export | 五平台原生核心、Linux UI、Windows SSH、六插件普通业务验收，与连接/流生命周期相同 |
 | 其他已映射核心系统/更新模块 | 五平台原生核心和相关 UI；网络、文件、终端服务分别追加自己的普通业务验收 |
-| 连接、流、生命周期/RPC、平台进程、服务器路由 | 五平台原生核心、Linux UI、Windows SSH、五插件普通业务验收 |
-| 共享 UI/字体/菜单 | 扩大至核心与五插件 UI/普通业务验收；不因此运行 netem 或旧版升级 |
-| 共享 plugin-client、根工具链/锁文件/构建脚本、未知输入 | 五平台核心与五插件源码、相关 UI、普通业务和宿主脚本；仍排除 netem |
+| 连接、流、生命周期/RPC、平台进程、服务器路由 | 五平台原生核心、Linux UI、Windows SSH、六插件普通业务验收 |
+| 共享 UI/字体/菜单 | 扩大至核心与六插件 UI/普通业务验收；不因此运行 netem 或旧版升级 |
+| 共享 plugin-client、根工具链/锁文件/构建脚本、未知输入 | 五平台核心与六插件源码、相关 UI、普通业务和宿主脚本；仍排除 netem |
 
 已知 UI 测试入口也按组件路由：`test-terminal-ui`/`test-files-ui` 仅运行对应普通业务，`test-terminal-input` 与终端 history/search-ui/benchmark 入口走终端输入、历史与脚本回归，核心 UI 测试脚本走前端和完整 desktop。共享 OpenSSH/打包脚本和未映射脚本继续扩大范围。
 
@@ -201,11 +204,11 @@ Check 的 **Run workflow** 先选择需要验证的分支或标签，再选择 `
 
 | suite | 执行范围 |
 | --- | --- |
-| `standard`（默认） | 公共 Linux 核心/五插件格式和源码、Linux 完整 UI/脚本/输入及所选普通业务；排除 netem、Windows desktop |
+| `standard`（默认） | 公共 Linux 核心/六插件格式和源码、Linux 完整 UI/脚本/输入及所选普通业务；排除 netem、Windows desktop |
 | `desktop` | 保留手动 Windows x86_64 `ssh:test` 和完整 `ui:test` 对照，包含 Chromium 与终端 UI 依赖 |
 | `native-core` | 五个原生目标各执行 `npm run test`；Windows x86_64、Linux x86_64、macOS ARM64 另执行原宿主脚本回归 |
 | `network-plugin` | 网络插件格式、五个原生目标的 `cargo test --manifest-path plugins/network-proxy/Cargo.toml --locked`，不构建核心测试夹具 |
-| `all` | 核心与五插件五平台源码、Linux 完整 UI、Windows SSH、普通网络/文件/终端与其他业务、脚本及 actionlint；组内顺序执行，矩阵并行；排除 netem |
+| `all` | 核心与六插件五平台源码、Linux 完整 UI、Windows SSH、普通网络/文件/终端与其他业务、脚本及 actionlint；组内顺序执行，矩阵并行；排除 netem |
 | `netem` | 单独运行 Linux x86_64/ARM64 私有 namespace 弱网矩阵；成功/失败报告 Artifact 保留 14 天，不安装 Chromium 或 OpenSSH |
 
 原宿主脚本回归为 `collect-core.test.mjs`、`core-release.test.mjs`、`plugin-settings-assets.test.mjs`、`release-metadata.test.mjs` 和 `smoke.test.mjs`；在 `native-core`/`all` 和共享未知输入下于 Windows x86_64、Linux x86_64、macOS ARM64 执行。自动选择仍以既有套件为单位，不能独立切分时运行较大范围；需要额外验证时可对同一 ref 补做手动套件。真实包组合与升级保持原入口，不把工作流选择当作已验收。
@@ -222,7 +225,7 @@ Check 独立执行源码、类型及业务测试；核心与插件现有工作�
 
 CI 的 npm 下载缓存按任务实际使用的锁文件配置；核心打包只使用根锁文件，终端 UI 测试同时使用终端锁文件，文件编辑 SDK 消费方同时使用 packages/file-editor 锁文件。Rust 缓存区分日常 `check-tests`、正式核心 `core-release-v2` 和各插件，只有成功的 main 运行保存，其他引用尝试恢复；插件及其原生测试显式覆盖共享 plugin-client 清单。Linux browser 与 Windows desktop 对齐各自原生核心 `check-tests` 的 workspace 顺序和共享清单输入，减少重复大缓存；不同 OS/架构仍隔离。升级验收夹具使用 `check-tests`，不恢复发行缓存。
 
-包含核心的原生测试统一声明现有核心/五插件 workspace 输入，复用同一稳定 `check-tests` 键，避免每个组件/平台范围生成大份重复核心依赖。声明缓存目录不启动对应插件测试；实际执行仍由所选范围控制。仅插件的原生 job 保留小范围 workspace，不恢复核心 target。发行缓存仍只有核心自身输入。
+包含核心的原生测试统一声明现有核心/六插件 workspace 输入，复用同一稳定 `check-tests` 键，避免每个组件/平台范围生成大份重复核心依赖。声明缓存目录不启动对应插件测试；实际执行仍由所选范围控制。仅插件的原生 job 保留小范围 workspace，不恢复核心 target。发行缓存仍只有核心自身输入。
 
 `core-release-v2` 是一次性的缓存迁移标识，不随提交、版本或 run ID 变化。它保留固定 action 的默认工具链/环境/Cargo 输入隔离，只缓存依赖编译结果；宿主构建依赖与目标架构 release 依赖一并保留，不开启 workspace crate 或 incremental 缓存。恢复后仍执行 `npm ci`、当前前端及当前核心的正式构建。main 手动打包会保存依赖，后续适用分支和标签可恢复默认分支缓存；详见[分发文档](distribution.md)。Linux 打包依赖安装复用官方软件源修正与有限重试，不缓存系统安装状态。
 

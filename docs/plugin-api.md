@@ -4,7 +4,7 @@
 
 插件是独立原生程序，核心不需要识别具体插件 ID。插件按可信扩展使用，没有权限清单、授权或签名流程。
 
-核心 RPC 保持 API v1，可选界面支持 UI v1 和 UI v2。核心 0.17.0 起提供 UI v2，当前五个官方插件均使用它进行分屏、页面/标签组移窗与输入交接。旧无 UI 插件无需修改；只接受 UI v1 的旧核心不能加载 UI v2 包。
+核心 RPC 保持 API v1，可选界面支持 UI v1 和 UI v2。核心 0.17.0 起提供 UI v2，当前官方插件均使用它进行分屏、页面/标签组移窗与输入交接。旧无 UI 插件无需修改；只接受 UI v1 的旧核心不能加载 UI v2 包。
 
 
 ## 非交互命令流与本地内容导出
@@ -13,7 +13,7 @@
 
 ### session.stream.v1
 
-插件通过版本化 RPC 复用已有远程会话执行非 PTY 命令。核心管理原始输出、取消和归属，不解析 Docker、日志时间或级别。正文不进入插件进程控制帧。
+插件通过版本化 RPC 复用已有远程会话执行非 PTY 命令。核心管理原始输出、取消和归属，不解析 Docker、日志时间或级别。此能力的正文通过 UI 数据流读取，插件进程分页读取见下述可选扩展。
 
 | 方法 | 参数与回执 |
 | --- | --- |
@@ -32,6 +32,19 @@ UI使用`sodeck.request('data', {op:'sessionStream', action, id, ...})`。attach
 read提供offset和固定watermark，返回至多16KiB的data与nextOffset；跨缺口只返回可用连续部分，缺失起点明确失败。pin提供start/end，返回pinId；unpin释放窗口。候选Surface只读attach/read，激活Surface才可pin/unpin。原捕获可在新Context中只读恢复，不能将其Owner改成新连接。
 
 全核心最多24条在运行命令，每插件12条、每View3条；每插件最多64条保留资源。每View滚动额度64MiB，固定捕获与滚动pin合计64MiB；pin最多8段/资源，重复范围保守计入额度。恢复journal与终端共用1GiB全局磁盘额度，每journal128MiB，分段边缘另受全局额度约束。关闭View/插件/核心取消执行和订阅，实际任务完成后回收；Surface消失由订阅检查或宿主detach结束。缓存只用于当前进程恢复，不是持久日志档案。
+
+### session.stream.process.v1（核心 1.5.0）
+
+在原 session.stream 上增加插件进程读取，不创建第二套执行任务：
+
+| 方法/字段 | 契约 |
+| --- | --- |
+| open.timeoutMs | 可选整数 1,000–3,600,000；省略保持原行为。期限覆盖本次执行 worker，不用插件定时器推断退出；重复/lookup 必须保持原完整参数 |
+| session.stream.poll | `{streamId,offset}`；offset 为原完整信封边界的十进制字符串。返回 `{chunks,nextOffset,watermark,earliestAvailableOffset,status}`，chunks 是完整原始信封，每页最多 48 KiB JSONL；相同游标可重读 |
+| status.workerFinished | 核心执行 worker 和在途任务守卫实际结束后为 true；取消 ACK、state/finished 或远端退出确认不替代该事实 |
+| status.outputComplete | 收到远端退出状态且通道读到 EOF，无截断或执行错误才为 true；非零退出码仍可完整 |
+
+poll 拒绝缺失范围和非信封边界，不拼接滚动捕获缺口；归属沿用原 stream 的插件实例，不能读取其他实例。最后一页需同时确认 nextOffset 等于 watermark、workerFinished 和 outputComplete，保存完成后再 release。捕获/worker 状态并发到达时可重复查询，不能用一次“暂时读完”认定任务完成。错误 code 保留 cancelled/sessionLost/deadlineExceeded/missingExitStatus/outputLimit/commandFailed；旧 UI 数据流、短命令和原默认执行行为保持兼容。
 
 ### content.export.v1
 
@@ -248,6 +261,10 @@ completed 表示收到远端退出状态，非零退出码仍可能 completed。
 
 方法错误沿用 JSON-RPC error，`error.data.code` 区分 invalidParams/staleContext/workspaceClosing/resourceBusy/operationConflict/operationExpired/taskExpired/invalidOffset/unsupported。任务错误位于 poll.error。SDK `call_detailed` 保留 code/message/data，原 `call` 的字符串错误接口不变。使用前检查能力，旧插件继续使用原有 API。
 
+### session.target.v1（核心 1.5.0）
+
+`session.state({viewId})` 可选扩展返回 `target:{protocol,endpoint,username?,name?}`，来自已建立会话的不可变目标快照；name 为所属工作区当前名称。断开时 target 为 null，state/closing/Context 仍可查询。当前在线 capabilities 含 exec/files，只表示核心接口可用，不证明远端命令、软件或 SFTP 可用。摘要不含认证材料，不读取另一个插件的状态，也不提供全局凭据目录。新接纳继续由完整 Context 校验，摘要不能代替归属检查。
+
 ## 目录与清单
 
 解压后选择含 `plugin.json` 的目录：
@@ -405,6 +422,12 @@ UI v1 的 `mount.capabilities.clipboard === 1` 表示宿主提供原生文本剪
 - iframe `request("closeViews",{viewIds})` 立即返回 ticket，宿主异步发送 viewsClosed（ticket/accepted/error）。只允许同插件同工作区页面，将整个集合交给一次核心关闭操作，统一同步输入并决定保存/放弃/取消，全部决定后才释放页面。
 
 旧 files.v1、旧目录游标和文本剪贴板协议保持兼容。文件插件 0.3.0 引入这些扩展并要求核心 0.8.4；当前插件的 UI v2 要求另见本文开头。平台验证范围由插件 CHANGELOG 记录，不属于接口支持推定。
+
+### files.pluginData.v1（核心 1.5.0）
+
+`copyFile.destination` 支持 `{side:"pluginData",relative:[独立分量]}`，只允许新文件的 destinationGuard `{kind:"absent"}`。不能用作 source、inspect/list、删除或覆盖端点。relative 为 1–32 个合法本地文件名，拒绝空值、点/父目录、分隔符、绝对路径与 Windows 非法名称；所有父目录必须已经存在且为普通目录。真实根目录由调用者 Owner 的 pluginId 解析至 initialize.dataDirectory，拒绝符号链接目录和 canonicalize 后的越界。复制沿用源检查、流式写入、同目录临时文件、独占提交与原生清理，不登记用户 inputId 或保存 SSH 凭据。
+
+UI 可调用 `sodeck.request('data',{op:"pluginData",action:"reveal",relative:[目录分量]})` 打开自己已存在的数据子目录；relative 最多 32 个，可为空以打开根目录，不能传任意本地路径。核心验证当前激活 Surface、普通目录与实际根范围，然后使用既有系统目录打开适配。initialize.dataDirectory 在 Unix 由核心创建为 0700，在 Windows 沿用用户应用数据目录的系统 ACL；不提供跨插件沙箱隔离。
 
 ## 文件和监听结果确认（核心 0.23.0 起）
 

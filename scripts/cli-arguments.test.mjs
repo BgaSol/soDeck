@@ -146,7 +146,7 @@ test('argument unit tests select script checks without native or plugin builds',
 });
 
 test('remaining OpenSSH arguments retain every flag and opaque packaged launcher tail', () => {
-  const names = ['terminal', 'files', 'network', 'system-status', 'communication', 'files-ui-only', 'network-ui-only', 'file-editor-native', 'close-native'];
+  const names = ['terminal', 'files', 'network', 'system-status', 'communication', 'files-ui-only', 'network-ui-only', 'file-editor-native', 'close-native', 'mcp'];
   const defaults = parseOpenSshTestArgs([]);
   assert.deepEqual({ ...defaults.flags }, {});
   assert.equal(defaults.launcher, null);

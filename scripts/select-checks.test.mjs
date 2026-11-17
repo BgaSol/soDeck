@@ -13,7 +13,7 @@ test('shared DOM runtime checks its independently packaged network consumer',()=
 });
 
 test('motion runtime checks all independently packaged consumers',()=>{
-  for(const file of ['src/motion.js','src/motion.d.ts']){const result=selectChecks([file]);assert.equal(result.plugins.length,5);assert(result.browser&&result.terminalInput);assert(result.integration.some(row=>row.network));assert(result.integration.some(row=>row.files&&row.terminal&&row.status&&row.docker));}
+  for(const file of ['src/motion.js','src/motion.d.ts']){const result=selectChecks([file]);assert.equal(result.plugins.length,6);assert(result.browser&&result.terminalInput);assert(result.integration.some(row=>row.network));assert(result.integration.some(row=>row.files&&row.terminal&&row.status&&row.docker&&row.mcp));}
 });
 test('file editor SDK selects its real consumers and file integration',()=>{
  const p=selectChecks(['packages/file-editor/src/page.js']);assert(p.plugins.includes('files'));assert(p.integration.some(v=>v.files));assert(p.scripts);
@@ -76,6 +76,7 @@ test('frontend layout keeps UI verification without SSH/network/native source su
 });
 
 test('a plugin only selects its own source and normal business tests', () => {
+  const mcp=selectChecks(['plugins/mcp/src/tasks.rs']);assert.deepEqual(mcp.plugins,['mcp']);assert.equal(mcp.native.length,5);assert(mcp.native.every(t=>t.mcp&&!t.core));assert(mcp.integration[0].mcp);assert(selectionSummary(mcp).includes('linux-x86_64: mcp'));
   const docker = selectChecks(['plugins/docker/src/runtime.rs']);
   assert.deepEqual(docker.plugins, ['docker']);
   assert.equal(docker.native.length, 5);

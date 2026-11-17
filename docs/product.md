@@ -15,6 +15,7 @@ SoDeck 是面向运维人员的远程服务器桌面工具，将服务器连接�
 | 浏览、传输、管理文件与编辑小文本 | [文件](features/files.md) |
 | 建立本机 TCP 转发和 SOCKS5 入口 | [网络隧道](features/network-proxy.md) |
 | 读取服务器运行指标与 Docker 容器状态 | [系统状态](features/system-status.md)、[Docker](features/docker.md) |
+| 让本机 AI 客户端调查多台服务器并保存证据 | [AI 排障接入](features/mcp.md) |
 | 保存偏好、处理关闭和排查问题 | [设置](features/settings.md)、[生命周期](features/lifecycle.md)、[日志与消息](features/logs-messages.md) |
 
 ## 产品边界

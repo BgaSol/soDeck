@@ -117,9 +117,16 @@ impl AppCore {
             let context = view.context.clone();
             let frozen = ui.lifecycle.view_frozen(&view.id);
             drop(ui);
-            let connected = self.connection_session(&context).is_ok();
+            let session = self.connection_session(&context).ok();
+            let connected = session.is_some();
+            let mut target = session
+                .map(|s| serde_json::to_value(&s.target).unwrap())
+                .unwrap_or(Value::Null);
+            if !target.is_null() {
+                target["name"] = json!(self.workspace_state().names().get(&context.workspace_id));
+            }
             return Ok(
-                json!({"context":context,"state":if connected {"connected"} else {"disconnected"},"closing":frozen,"capabilities":if connected {vec!["exec"]} else {vec![]}}),
+                json!({"context":context,"target":target,"state":if connected {"connected"} else {"disconnected"},"closing":frozen,"capabilities":if connected {vec!["exec","files"]} else {vec![]}}),
             );
         }
         if method == "session.exec.start" {

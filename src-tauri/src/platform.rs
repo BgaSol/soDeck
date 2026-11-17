@@ -152,6 +152,26 @@ mod native {
 }
 
 pub use native::spawn;
+pub(crate) fn private_directory(path: &Path) -> io::Result<()> {
+    let mut builder = std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.recursive(true);
+    builder.create(path)?;
+    let attrs = std::fs::symlink_metadata(path)?;
+    if attrs.file_type().is_symlink() || !attrs.is_dir() {
+        return Err(io::Error::other("插件数据路径不是普通目录"));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
 pub(crate) fn process_exists(pid: u32) -> bool {
     #[cfg(unix)]
     {

@@ -697,8 +697,42 @@ impl AppCore {
 
     pub(crate) fn plugin_data(&self, id: &str) -> Result<PathBuf, String> {
         let path = self.store.lock().unwrap().root.join("plugin-data").join(id);
-        std::fs::create_dir_all(&path).map_err(|error| format!("无法创建插件数据目录：{error}"))?;
+        crate::platform::private_directory(&path)
+            .map_err(|error| format!("无法创建插件数据目录：{error}"))?;
         Ok(path)
+    }
+    pub fn plugin_data_directory(
+        &self,
+        window: &str,
+        surface: &str,
+        relative: &[String],
+    ) -> Result<PathBuf, String> {
+        let view = self.ui_data_writable(window, surface)?;
+        if relative.len() > 32 {
+            return Err("插件数据路径过长".into());
+        }
+        let root = self.plugin_data(&view.plugin_id)?;
+        let root = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
+        let mut path = root.clone();
+        for part in relative {
+            if part.is_empty()
+                || part == "."
+                || part == ".."
+                || part.contains(['/', '\\', '\0', ':'])
+            {
+                return Err("插件数据路径分量无效".into());
+            }
+            path.push(part);
+            let attrs = std::fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
+            if attrs.file_type().is_symlink() || !attrs.is_dir() {
+                return Err("插件数据路径不是普通目录".into());
+            }
+        }
+        let actual = std::fs::canonicalize(path).map_err(|e| e.to_string())?;
+        if !actual.starts_with(root) {
+            return Err("插件数据路径超出目录".into());
+        }
+        Ok(actual)
     }
 
     pub(crate) fn log(

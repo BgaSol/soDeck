@@ -5,7 +5,7 @@ export function parseOpenSshTestArgs(args) {
   const launcher = boundary === -1 ? null : args.slice(boundary + 1);
   if (launcher && !launcher[0]) throw new Error('--packaged requires the installed executable or launcher command');
   const { values } = parseArgs({ args: boundary === -1 ? args : args.slice(0, boundary), options: Object.fromEntries([
-    'terminal', 'files', 'network', 'system-status', 'communication', 'files-ui-only', 'network-ui-only', 'file-editor-native', 'close-native',
+    'terminal', 'files', 'network', 'system-status', 'mcp', 'communication', 'files-ui-only', 'network-ui-only', 'file-editor-native', 'close-native',
   ].map(name => [name, { type: 'boolean' }])) });
   return { flags: values, launcher };
 }

@@ -22,6 +22,7 @@ updates:
       - "/plugins/network-proxy"
       - "/plugins/system-status"
       - "/plugins/docker"
+      - "/plugins/mcp"
     schedule:
       interval: "monthly"
     open-pull-requests-limit: 2

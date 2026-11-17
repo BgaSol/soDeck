@@ -12,6 +12,13 @@ pub(crate) struct Session {
     pub(super) chain: Vec<russh::client::Handle<ssh::Client>>,
     cancel: CancellationToken,
     pub(crate) path: serde_json::Value,
+    pub(crate) target: TargetSummary,
+}
+#[derive(Clone, serde::Serialize)]
+pub(crate) struct TargetSummary {
+    pub protocol: String,
+    pub endpoint: String,
+    pub username: Option<String>,
 }
 impl Session {
     pub(crate) fn cancellation(&self) -> CancellationToken {
@@ -96,10 +103,19 @@ pub(super) async fn connect(
         a.cancel.clone(),
         a.counters.clone(),
     )));
+    let target = profile
+        .nodes
+        .last()
+        .ok_or_else(|| Error::new("route", "连接链为空"))?;
     let mut session = Session {
         chain: vec![],
         path: serde_json::json!(profile.nodes.iter().map(|n|serde_json::json!({"kind":if n.is_ssh(){"ssh"}else{"socks5"},"host":n.host,"port":n.port})).collect::<Vec<_>>()),
         cancel: a.cancel.clone(),
+        target: TargetSummary {
+            protocol: "ssh".into(),
+            endpoint: target.endpoint(),
+            username: Some(target.username.clone()),
+        },
     };
     for index in 0..profile.nodes.len() {
         let next = profile

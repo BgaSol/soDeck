@@ -1,0 +1,18 @@
+[package]
+name = "sodeck-mcp"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+sodeck-plugin-client = { path = "../../crates/plugin-client" }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+tokio = { version = "=1.54.1", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
+tokio-util = { version = "=0.7.20", features = ["rt"] }
+rmcp = { version = "=3.10.0", default-features = false, features = ["server", "transport-streamable-http-server"] }
+axum = { version = "=0.8.9", default-features = false, features = ["http1", "tokio"] }
+rand = "=0.10.3"
+
+[profile.release]
+strip = true

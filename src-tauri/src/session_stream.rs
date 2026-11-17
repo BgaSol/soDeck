@@ -27,6 +27,8 @@ struct Open {
     command: String,
     max_output_bytes: usize,
     retention: String,
+    #[serde(default)]
+    timeout_ms: Option<u64>,
 }
 struct Stream {
     owner: Owner,
@@ -34,6 +36,7 @@ struct Stream {
     capture: Mutex<Capture>,
     status: Mutex<Value>,
     cancel: CancellationToken,
+    worker_done: CancellationToken,
     tasks: Arc<Tasks>,
     changed: Notify,
     readers: Mutex<HashMap<String, Arc<Reader>>>,
@@ -130,6 +133,9 @@ impl AppCore {
                 || request.command.contains('\0')
                 || !matches!(request.retention.as_str(), "fixed" | "rolling")
                 || !(1024..=64 * 1024 * 1024).contains(&request.max_output_bytes)
+                || request
+                    .timeout_ms
+                    .is_some_and(|n| !(1000..=3_600_000).contains(&n))
             {
                 return Err("流式命令参数无效".into());
             }
@@ -232,6 +238,7 @@ impl AppCore {
                     json!({"state":"opening","execSent":false,"remoteExitConfirmed":false,"finished":false}),
                 ),
                 cancel: CancellationToken::new(),
+                worker_done: CancellationToken::new(),
                 tasks: Arc::new(Tasks::default()),
                 changed: Notify::new(),
                 readers: Mutex::new(HashMap::new()),
@@ -246,8 +253,10 @@ impl AppCore {
             drop(admission);
             let core = Arc::downgrade(self);
             tauri::async_runtime::spawn(async move {
-                let _task = task;
-                run(core, s, session).await;
+                run(core, s.clone(), session).await;
+                drop(task);
+                s.worker_done.cancel();
+                s.changed.notify_waiters();
             });
             return Ok(json!({"streamId":id,"state":"opening"}));
         }
@@ -266,6 +275,17 @@ impl AppCore {
         }
         match method {
             "session.stream.status" => Ok(status(&s)),
+            "session.stream.poll" => {
+                let offset = integer(p, "offset")?;
+                let capture = s.capture.lock().unwrap();
+                let watermark = capture.produced;
+                let (chunks, next) = capture.read_blocks(offset, 48 * 1024, watermark)?;
+                let earliest = capture.earliest;
+                drop(capture);
+                Ok(
+                    json!({"chunks":chunks,"nextOffset":next.to_string(),"watermark":watermark.to_string(),"earliestAvailableOffset":earliest.to_string(),"status":status(&s)}),
+                )
+            }
             "session.stream.close" | "session.stream.release" => {
                 s.cancel.cancel();
                 s.changed.notify_waiters();
@@ -422,12 +442,19 @@ fn status(s: &Stream) -> Value {
     let c = s.capture.lock().unwrap();
     value["producedBytes"] = json!(c.produced.to_string());
     value["earliestAvailableOffset"] = json!(c.earliest.to_string());
+    value["workerFinished"] = json!(s.worker_done.is_cancelled());
     value
 }
 async fn run(core: Weak<AppCore>, s: Arc<Stream>, session: Arc<crate::connections::Session>) {
     let parent = session.cancellation();
     let mut channel = None;
-    let result: Result<(), String> = tokio::select! {biased;_=s.cancel.cancelled()=>Err("cancelled".into()),_=parent.cancelled()=>Err("sessionLost".into()),r=async{
+    let deadline = async {
+        match s.request.timeout_ms {
+            Some(ms) => tokio::time::sleep(Duration::from_millis(ms)).await,
+            None => std::future::pending::<()>().await,
+        }
+    };
+    let result: Result<(), String> = tokio::select! {biased;_=s.cancel.cancelled()=>Err("cancelled".into()),_=parent.cancelled()=>Err("sessionLost".into()),_=deadline=>Err("deadlineExceeded".into()),r=async{
         let opening=async{channel=Some(session.open_channel().await?);s.status.lock().unwrap()["execSent"]=json!(true);let c=channel.as_ref().unwrap();c.exec(true,s.request.command.as_str()).await.map_err(|e|e.to_string())?;c.eof().await.map_err(|e|e.to_string())?;Ok::<_,String>(())};
         tokio::time::timeout(Duration::from_secs(30),opening).await.map_err(|_|"打开流式命令超时")??;
         s.status.lock().unwrap()["state"]=json!("running");s.changed.notify_waiters();
@@ -464,8 +491,17 @@ async fn run(core: Weak<AppCore>, s: Arc<Stream>, session: Arc<crate::connection
         "failed"
     });
     state["finished"] = json!(true);
+    state["outputComplete"] = json!(result.is_ok());
     if let Err(e) = result {
-        state["error"] = json!({"message":e})
+        let code = match e.split(':').next().unwrap_or("") {
+            "cancelled" => "cancelled",
+            "sessionLost" => "sessionLost",
+            "deadlineExceeded" => "deadlineExceeded",
+            "missingExitStatus" => "missingExitStatus",
+            "outputLimit" => "outputLimit",
+            _ => "commandFailed",
+        };
+        state["error"] = json!({"code":code,"message":e})
     }
     drop(state);
     s.changed.notify_waiters();

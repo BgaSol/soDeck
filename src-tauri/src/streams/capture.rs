@@ -130,6 +130,43 @@ impl Capture {
     pub fn boundary(&self, start: u64) -> bool {
         start == self.produced || self.blocks.iter().any(|(a, _)| *a == start)
     }
+    /// Process RPC reads whole envelopes; the UI's byte-range protocol stays unchanged.
+    pub fn read_blocks(
+        &self,
+        start: u64,
+        budget: usize,
+        watermark: u64,
+    ) -> Result<(Vec<Value>, u64), String> {
+        if watermark > self.produced || start > watermark || !self.boundary(start) {
+            return Err("invalidOffset: 偏移不在完整输出块边界".into());
+        }
+        if start < watermark && !self.available(start, start + 1) {
+            return Err("bufferGap: 输出已退出保留窗口".into());
+        }
+        let mut cursor = start;
+        let mut used = 0;
+        let mut chunks = Vec::new();
+        for &(a, b) in &self.blocks {
+            if a < cursor {
+                continue;
+            }
+            if a != cursor || b > watermark {
+                break;
+            }
+            let size = (b - a) as usize;
+            if used + size > budget {
+                if chunks.is_empty() {
+                    return Err("outputLimit: 单个输出块超过读取额度".into());
+                }
+                break;
+            }
+            let bytes = self.journal.read(a, size)?;
+            chunks.push(serde_json::from_slice(&bytes).map_err(|e| e.to_string())?);
+            used += size;
+            cursor = b;
+        }
+        Ok((chunks, cursor))
+    }
     pub fn pinned_bytes(&self) -> u64 {
         self.pins.values().map(|(a, b)| b - a).sum()
     }

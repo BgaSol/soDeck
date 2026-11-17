@@ -1,0 +1,33 @@
+{
+  "id": "sodeck.mcp",
+  "name": "AI 排障接入",
+  "description": "让本机 AI 客户端复用已连接服务器，执行调查命令并下载证据。",
+  "icon": "terminal",
+  "order": 60,
+  "apiVersion": "1",
+  "binary": "sodeck-mcp",
+  "tagPrefix": "plugin-mcp-v",
+  "ui": {
+    "apiVersion": "2",
+    "entry": "ui/index.html",
+    "views": [{
+      "id": "status", "title": "AI 排障接入", "icon": "terminal",
+      "container": "sidebar", "instancePolicy": "perWorkspace",
+      "defaultSide": "right", "defaultPinned": true,
+      "openOnWorkspace": "none", "backgroundOnWorkspace": true,
+      "startupOrder": 60
+    }]
+  },
+  "settings": {
+    "apiVersion": "1", "schemaVersion": 1,
+    "pages": [{
+      "id": "connection", "title": "AI 排障接入", "icon": "terminal", "order": 600,
+      "viewTypes": ["status"],
+      "groups": [{"id": "local", "title": "本机接入", "fields": [{
+        "key": "port", "title": "本机端口", "type": "number", "default": 19846,
+        "min": 1024, "max": 65535, "step": 1, "unit": "", "apply": "newInstance",
+        "description": "重启后使用此端口；修改后重新复制客户端配置。"
+      }]}]
+    }]
+  }
+}

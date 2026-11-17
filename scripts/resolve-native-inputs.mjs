@@ -28,7 +28,7 @@ export function packageName(config, target) {
     const names = coreNames(config.version, target);
     return target.includes("windows") ? names.nsis[0] : target.includes("linux") ? names.deb[0] : names.dmg[0];
   }
-  if (!/^sodeck\.(terminal|files|network-proxy|system-status|docker)$/.test(config.id) || !/^[a-z][a-z0-9-]*$/.test(config.binary ?? "")) throw new Error("Invalid plugin package identity");
+  if (!/^sodeck\.(terminal|files|network-proxy|system-status|docker|mcp)$/.test(config.id) || !/^[a-z][a-z0-9-]*$/.test(config.binary ?? "")) throw new Error("Invalid plugin package identity");
   return `${config.binary}_${config.version}_${target}${target.includes("windows") ? ".zip" : ".tar.gz"}`;
 }
 

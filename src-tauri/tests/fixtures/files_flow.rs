@@ -253,6 +253,18 @@ async fn openssh_files_plugin() {
     );
     let traversal=file_operation(&f.core,token,id,json!({"kind":"inspect","endpoint":{"side":"local","inputId":reference["inputId"],"rootId":"0","relative":[".."]}})).await;
     assert_eq!(traversal["error"]["code"], "invalid", "{traversal}");
+    // Program-owned data is a direct destination, never a fabricated user file input.
+    let plugin_data=f.path.join("plugin-data/sodeck.files");std::fs::create_dir_all(plugin_data.join("evidence")).unwrap();
+    let destination=json!({"side":"pluginData","relative":["evidence","binary.bin"]});
+    let source=json!({"side":"remote","path":large.to_str().unwrap().replace('\\',"/")});
+    let copy=json!({"kind":"copyFile","source":source,"destination":destination,"destinationGuard":{"kind":"absent"}});
+    let result=file_operation(&f.core,token,id,copy.clone()).await;assert_eq!(result["state"],"completed","{result}");assert_eq!(std::fs::read(plugin_data.join("evidence/binary.bin")).unwrap(),std::fs::read(&large).unwrap());
+    let repeat=file_operation(&f.core,token,id,copy.clone()).await;assert_eq!(repeat["error"]["code"],"targetExists","{repeat}");
+    for relative in [json!(["..","escape"]),json!(["evidence","../escape"]),json!(["C:\\escape"]),json!(["evidence","a/b"]),json!([])]{let mut bad=copy.clone();bad["destination"]["relative"]=relative;let result=file_operation(&f.core,token,id,bad).await;assert!(["invalid","invalidName"].contains(&result["error"]["code"].as_str().unwrap()),"{result}");}
+    let inspect=file_operation(&f.core,token,id,json!({"kind":"inspect","endpoint":destination})).await;assert_eq!(inspect["error"]["code"],"invalid");
+    let mut bad=copy.clone();bad["destinationGuard"]=json!({"kind":"match","stamp":"any"});let result=file_operation(&f.core,token,id,bad).await;assert_eq!(result["error"]["code"],"invalid");
+    let mut changed=copy.clone();changed["destination"]["relative"]=json!(["evidence","changed.bin"]);changed["sourceStamp"]=json!("stale");let result=file_operation(&f.core,token,id,changed).await;assert_eq!(result["error"]["code"],"sourceChanged");assert!(!plugin_data.join("evidence/changed.bin").exists());
+    #[cfg(unix)]{use std::os::unix::fs::PermissionsExt;std::os::unix::fs::symlink(&f.path,plugin_data.join("link")).unwrap();let mut bad=copy.clone();bad["destination"]["relative"]=json!(["link","escape.bin"]);let result=file_operation(&f.core,token,id,bad).await;assert_eq!(result["error"]["code"],"sourceChanged","{result}");assert!(!f.path.join("escape.bin").exists());assert_eq!(std::fs::metadata(&plugin_data).unwrap().permissions().mode() & 0o777,0o700);}
     // Real external-process batches: directory upload/download, empty folders and binary bytes.
     let upload = f.path.join("本地 上传");
     std::fs::create_dir_all(upload.join("空目录")).unwrap();

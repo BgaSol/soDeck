@@ -201,6 +201,15 @@ async fn component_data(
     request: serde_json::Value,
     channel: tauri::ipc::Channel<sodeck::streams::Frame>,
 ) -> Result<serde_json::Value, String> {
+    if request["op"] == "pluginData" && request["action"] == "reveal" {
+        let relative: Vec<String> =
+            serde_json::from_value(request["relative"].clone()).map_err(|e| e.to_string())?;
+        let path = app
+            .core
+            .plugin_data_directory(window.label(), &surface_id, &relative)?;
+        sodeck::desktop_files::reveal_directory(window.app_handle().clone(), path).await?;
+        return Ok(serde_json::json!({}));
+    }
     if request["op"] == "sessionStream" {
         let sink = Arc::new(move |frame| channel.send(frame).map_err(|e| e.to_string()))
             as sodeck::streams::Sink;

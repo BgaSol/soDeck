@@ -133,6 +133,7 @@ jobs:
             plugins/network-proxy -> target
             plugins/system-status -> target
             plugins/docker -> target
+            plugins/mcp -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
       - name: Prepare browser test dependencies once
@@ -206,6 +207,7 @@ jobs:
             plugins/terminal -> target
             plugins/system-status -> target
             plugins/docker -> target
+            plugins/mcp -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
       - run: npx playwright install --with-deps chromium
@@ -238,6 +240,9 @@ jobs:
       - name: Docker UI and source process regression
         if: matrix.docker
         run: npm run ci:test -- docker:ui:test && npm run ci:test -- docker:process:test
+      - name: MCP remote investigation and process regression
+        if: matrix.mcp
+        run: npm run ci:test -- mcp:test && npm run ci:test -- mcp:process:test && npm run ci:test -- mcp:ui:test
       - name: Three real plugins and shared state communication
         if: matrix.communication
         run: npm run ci:test -- communication:test
@@ -281,6 +286,7 @@ jobs:
             plugins/network-proxy -> target
             plugins/system-status -> target
             plugins/docker -> target
+            plugins/mcp -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
       - name: Prepare browser test dependencies once
@@ -378,6 +384,9 @@ jobs:
       - name: Native Docker plugin source tests
         if: matrix.docker
         run: cargo test --manifest-path plugins/docker/Cargo.toml --locked
+      - name: Native MCP plugin source tests
+        if: matrix.mcp
+        run: cargo test --manifest-path plugins/mcp/Cargo.toml --locked
 
   netem:
     needs: select

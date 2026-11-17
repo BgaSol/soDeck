@@ -16,11 +16,13 @@
 | 组件命令 | 单处理者路由、稳定意图、回执与页面关联：[commands.rs](../src-tauri/src/commands.rs)；复用既有 RPC，不增加传输层 |
 | 共享状态与设置 | 核心管理作用域、修订、订阅、冲突和持久化，插件解释业务含义：[shared_state.rs](../src-tauri/src/shared_state.rs)、[settings.rs](../src-tauri/src/settings.rs) |
 | 更新和系统适配 | 下载、官方验签、缓存、默认应用与本地文件：[updates.rs](../src-tauri/src/updates.rs)、[platform.rs](../src-tauri/src/platform.rs)、[desktop_files.rs](../src-tauri/src/desktop_files.rs) |
-| 业务插件 | [terminal](../plugins/terminal/src/main.rs)、[files](../plugins/files/src/main.rs)、[network-proxy](../plugins/network-proxy/src/main.rs)、[system-status](../plugins/system-status/src/main.rs)、[docker](../plugins/docker/src/main.rs) |
+| 业务插件 | [terminal](../plugins/terminal/src/main.rs)、[files](../plugins/files/src/main.rs)、[network-proxy](../plugins/network-proxy/src/main.rs)、[system-status](../plugins/system-status/src/main.rs)、[docker](../plugins/docker/src/main.rs)、[mcp](../plugins/mcp/src/main.rs) |
 
 共享 [plugin-client](../crates/plugin-client/src/lib.rs) 提供 RPC、命令票据、设置、共享状态和文件编辑生命周期客户端，不保存连接凭据，也不封装插件之间的直接调用。文件编辑的标准 UI 在 [packages/file-editor](../packages/file-editor/)，随使用组件独立打包；[接入与职责](features/file-editor.md)由通用编辑功能说明维护。
 
 非交互命令流由[session_stream.rs](../src-tauri/src/session_stream.rs)复用核心会话，[capture.rs](../src-tauri/src/streams/capture.rs)管理有界原始字节与固定阅读范围；[content_export.rs](../src-tauri/src/content_export.rs)只负责用户选择的本地字节导出。这两项可选能力从核心 1.1.0 提供，契约统一见[插件API](plugin-api.md)。Docker命令、源时间、级别、历史覆盖和采集代次属于插件后台；解析、搜索、虚拟正文、缩略导航及阅读状态属于Docker UI/Worker。核心不保存容器日志索引，不导入Docker正文样式；颜色和基础控件继续复用packages/ui。
+
+[MCP 接入插件](features/mcp.md)只负责回环 HTTP、Token、工具参数、原请求关联与证据保存；核心管理既有会话、命令流及通用复制，三项增量见[API](plugin-api.md)。后台 View 绑定完整 Context，HTTP 会话断开不改变远程任务的工作区归属。插件保留原生结果与本地保存结果，数据使用同一 JSONL 和元数据，不建立恢复数据库、第二套远程执行或业务插件调用路由。MCP 协议使用官方 rmcp SDK，HTTP 使用 SDK 服务与 axum；客户端选择调查步骤和分析结果。
 
 ## 宿主状态与 DOM 边界
 

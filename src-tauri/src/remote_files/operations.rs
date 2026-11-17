@@ -739,6 +739,43 @@ impl Io {
         }
     }
     fn endpoint(&self, p: &Value) -> Result<Endpoint, OperationError> {
+        if p["side"] == "pluginData" {
+            let operation = &self.operation.request["operation"];
+            if operation["kind"] != "copyFile"
+                || &operation["destination"] != p
+                || operation["destinationGuard"]["kind"] != "absent"
+                || p.as_object().is_none_or(|o| {
+                    o.keys()
+                        .any(|k| !["side", "relative"].contains(&k.as_str()))
+                })
+            {
+                return Err(failure("invalid", "插件数据端点只支持复制到新文件"));
+            }
+            let relative = p["relative"]
+                .as_array()
+                .filter(|a| !a.is_empty() && a.len() <= 32)
+                .ok_or_else(|| failure("invalid", "插件数据相对路径无效"))?;
+            let mut path = self.core.plugin_data(&self.owner.plugin)?;
+            let root = std::fs::canonicalize(&path).map_err(err)?;
+            for part in relative {
+                let name = part
+                    .as_str()
+                    .ok_or_else(|| failure("invalid", "本地文件名无效"))?;
+                valid_name(name)?;
+                let attrs = std::fs::symlink_metadata(&path).map_err(err)?;
+                if attrs.file_type().is_symlink() || !attrs.is_dir() {
+                    return Err(failure("sourceChanged", "父目录不是普通目录"));
+                }
+                if !std::fs::canonicalize(&path)
+                    .map_err(err)?
+                    .starts_with(&root)
+                {
+                    return Err(failure("invalid", "插件数据路径超出目录"));
+                }
+                path.push(name);
+            }
+            return Ok(Endpoint::Local(path));
+        }
         if p["side"] == "remote" {
             let path = string(p, "path")?;
             if path.is_empty() || path.len() > 4096 || path.contains('\0') {

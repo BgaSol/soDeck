@@ -6,7 +6,7 @@ export function upgradeInputs(env) {
   const from = env.SODECK_UPGRADE_FROM, to = env.SODECK_UPGRADE_TO;
   const valid = v => /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(v ?? "");
   assert(targets.includes(target), "Provide a supported native target");
-  assert(["core", "terminal", "files", "network-proxy", "system-status", "docker"].includes(component), "Select one component");
+  assert(["core", "terminal", "files", "network-proxy", "system-status", "docker", "mcp"].includes(component), "Select one component");
   assert(valid(from) && valid(to), "Provide exact old/new versions");
   const oldParts = from.split(".").map(BigInt), newParts = to.split(".").map(BigInt);
   const changed = newParts.findIndex((value, index) => value !== oldParts[index]);

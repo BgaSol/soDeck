@@ -7,7 +7,7 @@
     "web:dev": "vite",
     "web:build": "vite build",
     "check": "tsc && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
-    "plugin:check": "cargo fmt --manifest-path plugins/terminal/Cargo.toml -- --check && cargo fmt --manifest-path plugins/files/Cargo.toml -- --check && cargo fmt --manifest-path plugins/network-proxy/Cargo.toml -- --check && cargo fmt --manifest-path plugins/system-status/Cargo.toml -- --check && cargo fmt --manifest-path plugins/docker/Cargo.toml -- --check",
+    "plugin:check": "cargo fmt --manifest-path plugins/terminal/Cargo.toml -- --check && cargo fmt --manifest-path plugins/files/Cargo.toml -- --check && cargo fmt --manifest-path plugins/network-proxy/Cargo.toml -- --check && cargo fmt --manifest-path plugins/system-status/Cargo.toml -- --check && cargo fmt --manifest-path plugins/docker/Cargo.toml -- --check && cargo fmt --manifest-path plugins/mcp/Cargo.toml -- --check",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml --features test-fixtures --locked",
     "scripts:test": "node --test scripts/*.test.mjs",
     "ci:test": "node scripts/run-ci-suite.mjs",
@@ -32,6 +32,9 @@
     "docker:test": "node scripts/test-docker.mjs",
     "docker:process:test": "node scripts/test-docker-process.mjs",
     "docker:ui:test": "node scripts/test-docker-ui.mjs",
+    "mcp:test": "node scripts/test-mcp.mjs",
+    "mcp:process:test": "node scripts/test-mcp-process.mjs",
+    "mcp:ui:test": "node scripts/test-mcp-ui.mjs",
     "test:prepare": "node scripts/prepare-test-plugins.mjs"
   },
   "devDependencies": {

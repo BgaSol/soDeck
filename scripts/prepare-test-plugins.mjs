@@ -5,7 +5,7 @@ import { buildPlugin, nativeTarget, run } from "./plugin-build.mjs";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 
-const names = ["terminal", "files", "network-proxy", "system-status", "docker"];
+const names = ["terminal", "files", "network-proxy", "system-status", "docker", "mcp"];
 const fields = { "network-proxy": "network", "system-status": "status" };
 
 export function parseTestPrepareArgs(args) {

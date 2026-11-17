@@ -29,6 +29,7 @@
 | [网络隧道](features/network-proxy.md) | [CHANGELOG](../plugins/network-proxy/CHANGELOG.md) |
 | [系统状态](features/system-status.md) | [CHANGELOG](../plugins/system-status/CHANGELOG.md) |
 | [Docker](features/docker.md) | [CHANGELOG](../plugins/docker/CHANGELOG.md) |
+| [AI 排障接入](features/mcp.md) | [CHANGELOG](../plugins/mcp/CHANGELOG.md) |
 
 ## 开发与交付
 
