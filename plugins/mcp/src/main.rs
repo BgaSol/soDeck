@@ -139,7 +139,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             _ => return Err("未知方法".into()),
         }
         Ok(
-            json!({"metadata":{"title":"机器人接口","dirty":false,"busy":false},"data":app.view(view)?}),
+            json!({"metadata":{"title":"Agent MCP","dirty":false,"busy":false},"data":app.view(view)?}),
         )
     });
     if let Some(app) = state.lock().unwrap().as_ref() {

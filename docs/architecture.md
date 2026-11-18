@@ -22,7 +22,7 @@
 
 非交互命令流由[session_stream.rs](../src-tauri/src/session_stream.rs)复用核心会话，[capture.rs](../src-tauri/src/streams/capture.rs)管理有界原始字节与固定阅读范围；[content_export.rs](../src-tauri/src/content_export.rs)只负责用户选择的本地字节导出。这两项可选能力从核心 1.1.0 提供，契约统一见[插件API](plugin-api.md)。Docker命令、源时间、级别、历史覆盖和采集代次属于插件后台；解析、搜索、虚拟正文、缩略导航及阅读状态属于Docker UI/Worker。核心不保存容器日志索引，不导入Docker正文样式；颜色和基础控件继续复用packages/ui。
 
-[机器人接口插件](features/mcp.md)只负责回环 HTTP、Token、工具参数、原请求关联与证据保存；核心管理既有会话、命令流及通用复制，三项增量见[API](plugin-api.md)。后台 View 绑定完整 Context，HTTP 会话断开不改变远程任务的工作区归属。插件保留原生结果与本地保存结果，数据使用同一 JSONL 和元数据，不建立恢复数据库、第二套远程执行或业务插件调用路由。MCP 协议使用官方 rmcp SDK，HTTP 使用 SDK 服务与 axum；客户端选择调查步骤和分析结果。
+[Agent MCP插件](features/mcp.md)只负责回环 HTTP、Token、工具参数、原请求关联与证据保存；核心管理既有会话、命令流及通用复制，三项增量见[API](plugin-api.md)。后台 View 绑定完整 Context，HTTP 会话断开不改变远程任务的工作区归属。插件保留原生结果与本地保存结果，数据使用同一 JSONL 和元数据，不建立恢复数据库、第二套远程执行或业务插件调用路由。MCP 协议使用官方 rmcp SDK，HTTP 使用 SDK 服务与 axum；客户端选择调查步骤和分析结果。
 
 插件内的运行注册表以任务 ID 与请求键索引同一 Task，Task 统一管理自有阶段、取消与有效 revision；原核心 native JSON 保留。命令与下载使用两条具体采集路径，接纳域占用不跨 RPC 持锁，也不排队启动新 worker。统一收尾先封闭取消修改，再保存与清理，最后发布稳定终态。MCP 与 UI 查询使用同一次状态/已保存水位快照和同一证据 reader，UI 读取及取消检查实际 Context 归属；列表与 async 等待消费既有事实。参数及资源额度只在 [MCP API](mcp-api.md)完整定义。
 

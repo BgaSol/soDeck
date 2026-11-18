@@ -29,7 +29,7 @@
 | [网络隧道](features/network-proxy.md) | [CHANGELOG](../plugins/network-proxy/CHANGELOG.md) |
 | [系统状态](features/system-status.md) | [CHANGELOG](../plugins/system-status/CHANGELOG.md) |
 | [Docker](features/docker.md) | [CHANGELOG](../plugins/docker/CHANGELOG.md) |
-| [机器人接口](features/mcp.md) | [CHANGELOG](../plugins/mcp/CHANGELOG.md) |
+| [Agent MCP](features/mcp.md) | [CHANGELOG](../plugins/mcp/CHANGELOG.md) |
 
 ## 开发与交付
 
@@ -38,7 +38,7 @@
 - [界面设计系统](../DESIGN.md)：三主题、公共控件、核心尺寸和插件视觉边界。
 - [通用文件编辑 SDK](features/file-editor.md)：组件自己的编辑页、草稿、保存、导出与关闭接入。
 - [插件 API](plugin-api.md)：清单、RPC、能力及兼容契约。
-- [MCP API](mcp-api.md)：机器人接口的任务身份、工具、查询分页、输出模式、等待与错误契约。
+- [MCP API](mcp-api.md)：Agent MCP的任务身份、工具、查询分页、输出模式、等待与错误契约。
 - [开发指南](development.md)：环境、命令、检查范围与文档收束流程。
 - [分发文档](distribution.md)：五平台原生打包、签名、独立发布和失败恢复。
 - [临时计划](plans/)：尚未完成的改动或专项；不代表当前能力。

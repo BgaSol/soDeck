@@ -11,7 +11,7 @@ const root=path.resolve('plugins/mcp'), assets=fs.mkdtempSync(path.join(os.tmpdi
 await packageMenuAssets(assets);packageStyles(assets);
 fs.copyFileSync('plugins/shared/clipboard.js',path.join(assets,'ui/clipboard-bridge.js'));
 const server=createServer((req,res)=>{
-  if(req.url==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><meta charset="UTF-8"><style>body{margin:0;display:flex;height:100vh;font:13px system-ui;background:#f5f5f5}#workspace{flex:1;min-width:0;padding:20px;box-sizing:border-box}#terminal{display:block;width:100%;height:65vh;box-sizing:border-box;background:#202124;color:#eee;padding:16px;font:13px monospace}aside{width:320px;flex:none;border-left:1px solid #ddd;box-sizing:border-box}iframe{border:0;width:100%;height:100%}</style><main id="workspace"><h2>prod-consul-01 · 终端</h2><p>主工作区保持原有页面和输入</p><textarea id="terminal" aria-label="终端输入"></textarea></main><aside><iframe title="MCP 状态" src="/ui/index.html"></iframe></aside>');return;}
+  if(req.url==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><meta charset="UTF-8"><style>body{margin:0;display:flex;height:100vh;font:13px system-ui;background:#f5f5f5}#workspace{flex:1;min-width:0;padding:20px;box-sizing:border-box}#terminal{display:block;width:100%;height:65vh;box-sizing:border-box;background:#202124;color:#eee;padding:16px;font:13px monospace}aside{width:320px;flex:none;display:flex;flex-direction:column;border-left:1px solid #ddd;box-sizing:border-box}#sidebar-title{padding:7px 12px;background:var(--panel,#fff);color:var(--text,#222);border-bottom:1px solid var(--border,#ddd);font-weight:600}iframe{border:0;width:100%;flex:1;min-height:0}</style><main id="workspace"><h2>prod-consul-01 · 终端</h2><p>主工作区保持原有页面和输入</p><textarea id="terminal" aria-label="终端输入"></textarea></main><aside><div id="sidebar-title">Agent MCP</div><iframe title="Agent MCP" src="/ui/index.html"></iframe></aside>');return;}
   const url=req.url.split('?')[0],base=['/ui/text-menu.js','/ui/shared.css','/ui/clipboard-bridge.js'].includes(url)?assets:root,file=path.join(base,url);
   if(!file.startsWith(base+path.sep)||!fs.existsSync(file)){res.statusCode=404;res.end();return;}
   res.setHeader('Content-Type',{'.js':'text/javascript','.html':'text/html','.css':'text/css'}[path.extname(file)]||'application/octet-stream');res.end(fs.readFileSync(file));
@@ -62,10 +62,12 @@ async function setSize(width,height){await page.setViewportSize({width:width+720
 async function overview(){if(await frame.locator('#detail').isVisible())await frame.getByRole('button',{name:'返回记录'}).click();}
 async function choose(name){await overview();await frame.getByRole('button',{name}).click();}
 async function openSettings(){await overview();if(!await frame.locator('#settings').evaluate(el=>el.open))await frame.locator('#settings>summary').click();}
-const message=(type,extra={})=>page.evaluate(m=>document.querySelector('iframe').contentWindow.postMessage({channel:'sodeck-ui-v2',surfaceId:'test',...m},'*'),{type,...extra});
+const message=(type,extra={})=>page.evaluate(m=>{if(m.type==='themeChanged')for(const [key,value]of Object.entries(m.tokens))document.documentElement.style.setProperty('--'+key,value);document.querySelector('iframe').contentWindow.postMessage({channel:'sodeck-ui-v2',surfaceId:'test',...m},'*');},{type,...extra});
 fs.mkdirSync('artifacts/mcp-ui',{recursive:true});
 try{
   await page.goto('http://127.0.0.1:'+server.address().port);await frame.locator('#server').filter({hasText:'prod-consul-01'}).waitFor();
+  assert.equal(await frame.locator('h1').count(),0,'the host sidebar owns the plugin title; content must not repeat it');
+  assert.equal(await frame.locator('title').textContent(),'Agent MCP');
   await message('themeChanged',{tokens:themes.light});
   assert((await frame.locator('main').textContent()).includes(data.tasks[0].input.command),'running operation must expose its actual command');
   assert.equal(configs,0,'snapshot never discloses configuration');
@@ -130,6 +132,7 @@ try{
     assert(await frame.locator('body').evaluate(el=>getComputedStyle(el).backgroundColor!== 'rgba(0, 0, 0, 0)'));
     assert(await frame.locator('main').evaluate(el=>el.ownerDocument.documentElement.scrollWidth<=innerWidth+1));
     await overview();await frame.locator('main').evaluate(el=>el.scrollTop=0);
+    assert(await frame.locator('#refresh').evaluate(el=>el.parentElement.contains(el.ownerDocument.querySelector('#server'))),'refresh belongs to the server row');
     if(width===320||width===1024)await page.screenshot({path:`artifacts/mcp-ui/${name}-${width}.png`,fullPage:true});
     await choose('查看命令详情 inspect-network');
     await frame.locator('#detail-command').filter({hasText:records.get('t3').input.command}).waitFor();

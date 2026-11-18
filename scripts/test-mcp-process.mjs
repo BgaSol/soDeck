@@ -9,6 +9,7 @@ import {testPluginDirectory} from './test-plugin-directory.mjs';
 import {setTimeout as delay} from 'node:timers/promises';
 const root=testPluginDirectory('mcp'),manifest=JSON.parse(fs.readFileSync(path.join(root,'plugin.json')));
 assert.deepEqual(manifest.ui.views.map(({id,container})=>({id,container})),[{id:'status',container:'sidebar'}],'MCP contributes only its existing sidebar');
+assert.equal(manifest.name,'Agent MCP');assert.equal(manifest.ui.views[0].title,'Agent MCP');assert.equal(manifest.settings.pages[0].title,'Agent MCP');
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-mcp-process-'));
 const socket=net.createServer();await new Promise(r=>socket.listen(0,'127.0.0.1',r));const port=socket.address().port;await new Promise(r=>socket.close(r));
 const contexts=Object.fromEntries(['a','b','c'].map(view=>[view,{workspaceId:view,serverId:'server-'+view,connectionId:'connection-'+view,generation:1}]));
@@ -54,7 +55,7 @@ async function until(read,predicate){const end=Date.now()+10000;while(Date.now()
 try{
   await assert.rejects(peer.request('initialize',{dataDirectory:directory,capabilities:[]}),/核心缺少/);
   await peer.request('initialize',{dataDirectory:directory,capabilities});token=fs.readFileSync(path.join(directory,'access-token'),'utf8');
-  for(const [viewId,context]of Object.entries(contexts))await peer.request('ui.createView',{viewId,viewType:'status',context});
+  for(const [viewId,context]of Object.entries(contexts))assert.equal((await peer.request('ui.createView',{viewId,viewType:'status',context})).metadata.title,'Agent MCP');
   await until(async()=>(await peer.request('ui.getView',{viewId:'a'})).data,s=>s.service==='ready');
   const initialized=await call('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'sodeck-test',version:'1'}});assert(initialized.capabilities.tools);
   const list=await call('tools/list',{});assert.equal(list.tools.length,6);assert.equal(list.tools.find(t=>t.name==='sodeck_exec_start').annotations.readOnlyHint,false);
