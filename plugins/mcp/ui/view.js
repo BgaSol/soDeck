@@ -2,7 +2,7 @@ const $ = id => document.getElementById(id);
 const event = data => sodeck.request('event', data);
 const unwrap = result => result.data ?? result;
 let visible = true, mounted = false, pending = false, epoch = 0, timer;
-let page = false, selectionClosed = false, settingsSnapshot, portDirty = false, portConflict = false, settingsSaving = false, settingsTicket;
+let page = false, selectionClosed = false, revealPending = false, settingsSnapshot, portDirty = false, portConflict = false, settingsSaving = false, settingsTicket;
 let snapshot, active, monitorDetail, selected = null, detail, cursor = '0', nextCursor = '0', pages = [], monitorSequence = 0, detailSequence = 0;
 const rows = new Map();
 const labels = {opening:'正在启动', running:'执行中', committing:'正在提交', finalizing:'正在收尾', completed:'已结束', cancelled:'已取消', failed:'失败', unavailable:'结果不可用', unknown:'结果未知', rejected:'未接纳', pending:'等待接纳'};
@@ -23,7 +23,7 @@ function duration(task) {
 function output(page) { return [page?.stdout, page?.stderr ? `标准错误：\n${page.stderr}` : ''].filter(Boolean).join('\n') || '暂时没有输出。'; }
 function selectedTask() { return snapshot?.tasks?.find(task => task.taskId === selected); }
 function closeDetail() {
-  detailSequence++; selected = null; detail = null; cursor = '0'; pages = []; nextCursor = '0'; selectionClosed = true; $('detail').hidden = true; $('choose-detail').hidden = !snapshot?.tasks?.length;
+  detailSequence++; selected = null; detail = null; revealPending = false; cursor = '0'; pages = []; nextCursor = '0'; selectionClosed = true; $('detail').hidden = true; $('choose-detail').hidden = !snapshot?.tasks?.length;
   for (const row of rows.values()) row.button.setAttribute('aria-current', 'false');
 }
 function paintDetail(task) {
@@ -112,7 +112,12 @@ async function loadMonitor() {
     $('monitor-output').scrollTop = $('monitor-output').scrollHeight;
   } catch (error) { if (current === epoch && sequence === monitorSequence) text('monitor-output', `输出读取失败：${error.message || error}`); }
 }
-async function loadDetail(reveal = false) {
+function revealSelection() {
+  if (!revealPending) return;
+  revealPending = false;
+  if (innerWidth <= 700) $('detail').scrollIntoView({block:'start'});
+}
+async function loadDetail() {
   const task = selectedTask();
   if (!task || !mounted || !visible) return;
   const id = selected, start = cursor, sequence = ++detailSequence, current = epoch;
@@ -123,17 +128,18 @@ async function loadDetail(reveal = false) {
     nextCursor = result.output?.nextCursor || start;
     $('previous').disabled = !pages.length; $('next').disabled = !result.output?.hasMore;
     text('page-number', `第 ${pages.length + 1} 页`);
-    if (reveal && innerWidth <= 700) $('detail').scrollIntoView({block:'start'});
+    revealSelection();
   } catch (error) {
-    if (current === epoch && sequence === detailSequence) { text('detail-output', `输出读取失败：${error.message || error}`); $('next').disabled = true; }
+    if (current === epoch && sequence === detailSequence) { text('detail-output', `输出读取失败：${error.message || error}`); $('next').disabled = true; revealSelection(); }
   }
 }
 function selectTask(id) {
-  if (selected === id) { if (innerWidth <= 700) $('detail').scrollIntoView({block:'start'}); return; }
+  revealPending = true;
+  if (selected === id) { if (detail?.taskId === id) revealSelection(); return; }
   selectionClosed = false;
   selected = id; detail = null; cursor = '0'; pages = []; nextCursor = '0'; detailSequence++;
   $('previous').disabled = true; $('next').disabled = true; text('page-number','第 1 页'); text('detail-output','等待读取输出');
-  render(snapshot); void loadDetail(true);
+  render(snapshot); void loadDetail();
 }
 async function refresh() {
   if (!mounted || !visible || pending) return;
