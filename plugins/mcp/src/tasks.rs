@@ -136,6 +136,15 @@ impl App {
     fn rpc(&self, method: &str, p: Value) -> Result<Value, Value> {
         self.client.call_detailed(method, p).map_err(rpc_error)
     }
+    pub fn context_view(&self, context: &Value) -> Result<String, String> {
+        self.views
+            .lock()
+            .unwrap()
+            .values()
+            .find(|target| target.context == *context && !target.closed.load(Ordering::Acquire))
+            .map(|target| target.view.clone())
+            .ok_or_else(|| "服务器后台目标不可用，请重新连接服务器".into())
+    }
     fn target_state(&self, target: &Target) -> Result<Value, Value> {
         if target.closed.load(Ordering::Acquire) {
             return Err(error("目标已关闭"));

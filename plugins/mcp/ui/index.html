@@ -3,13 +3,18 @@
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>机器人接口</title><link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="style.css"></head>
 <body><main>
 <header>
-  <div class="heading"><h1>智能体操作</h1><button class="sd-quiet" id="settings-toggle" type="button" aria-expanded="false" aria-controls="settings">接入设置</button></div>
-  <strong id="server">等待读取服务器</strong><p id="server-detail" class="path caption"></p>
-  <div class="heading caption"><span id="service" role="status">正在连接插件</span><span id="freshness"></span></div>
+  <div class="heading"><h1>机器人接口</h1><span id="service" class="caption" role="status">正在连接插件</span></div>
+  <div class="server-identity"><strong id="server">等待读取服务器</strong><span id="server-detail" class="path caption"></span></div>
 </header>
-<section id="settings" aria-label="接入设置" hidden>
-  <h2>本机客户端</h2><p id="endpoint" class="path"></p><p class="caption">复制配置到客户端的私有接入设置。配置包含接入密钥。</p><button class="sd-control" id="copy" type="button">复制 Codex 配置</button><details id="config-details"><summary>查看配置</summary><pre id="config"></pre></details>
-  <h2 class="settings-evidence">本地证据</h2><p id="directory" class="path"></p><button class="sd-control" id="reveal" type="button">打开证据目录</button><p class="caption">证据保留在本机；重启后列表不恢复。</p>
+<section id="settings" aria-labelledby="settings-title">
+  <div class="heading"><h2 id="settings-title">本机接入</h2><span class="caption">Codex 等本机客户端</span></div>
+  <div class="connection-fields">
+    <div><p class="caption field-label">服务地址</p><code id="endpoint" class="path"></code></div>
+    <div class="port-field"><label for="port" class="caption">端口</label><input id="port" class="sd-control" type="number" min="1024" max="65535" required disabled aria-describedby="port-notice"><button id="save-port" class="sd-control" type="button" disabled>保存</button><button id="reload-port" class="sd-quiet" type="button" hidden>载入最新值</button></div>
+  </div>
+  <div class="access-actions"><button class="sd-control primary" id="copy" type="button">复制 Codex 配置</button><details id="config-details"><summary>查看配置</summary></details><div class="access-key"><span class="caption">接入密钥</span><code id="access-token">••••••••••••••••</code><button class="sd-quiet" id="show-token" type="button" aria-expanded="false" aria-controls="access-token">显示</button></div></div>
+  <pre id="config" hidden></pre>
+  <p id="port-notice" class="caption" role="status" hidden></p>
 </section>
 <section id="monitor" aria-labelledby="monitor-title">
   <div class="heading"><h2 id="monitor-title">正在执行</h2><span id="active-count" class="caption"></span></div>
@@ -17,26 +22,30 @@
   <div id="monitor-body" hidden>
     <div class="heading"><span id="monitor-state" class="state"></span><span id="monitor-time" class="caption"></span></div>
     <pre id="monitor-command" aria-label="正在执行的命令或远程路径"></pre>
-    <div class="heading output-heading"><h3>最新输出</h3><button class="sd-quiet" id="monitor-detail" type="button">查看详情</button></div>
-    <pre id="monitor-output" aria-label="最新输出">等待读取输出</pre>
-    <div class="heading"><span id="monitor-progress" class="caption"></span><button class="sd-control cancel" id="monitor-cancel" type="button">请求取消</button></div>
+    <h3>最近输出</h3><pre id="monitor-output" aria-label="最新输出">等待读取输出</pre>
+    <div class="heading"><span id="monitor-progress" class="caption"></span><button class="sd-quiet cancel" id="monitor-cancel" type="button">请求取消</button></div>
   </div>
+  <button id="open-page" class="sd-control" type="button">打开操作页</button>
+</section>
+<section id="history" aria-labelledby="tasks-title">
+  <div class="heading history-heading"><h2 id="tasks-title">执行记录 <span id="task-count" class="caption"></span></h2><div class="heading"><span id="freshness" class="caption"></span><button class="sd-quiet" id="refresh" type="button">刷新</button></div></div>
+  <div id="records">
+    <ol id="tasks" aria-label="执行记录"></ol>
+    <section id="detail" aria-labelledby="detail-title" hidden>
+      <div class="heading"><h3 id="detail-title">执行详情</h3><button class="sd-quiet" id="detail-close" type="button">收起详情</button></div>
+      <p id="detail-state" class="state"></p>
+      <h3 id="detail-input-label" class="caption">实际命令</h3><pre id="detail-command"></pre>
+      <div class="detail-context"><span id="detail-server" class="path caption"></span><span id="detail-created" class="caption"></span><span id="detail-time" class="caption"></span></div>
+      <p id="detail-error" class="error" hidden></p>
+      <div id="detail-output-section"><h3 id="detail-output-title">输出</h3><pre id="detail-output" aria-label="操作输出">等待读取输出</pre></div><div class="heading pager"><span id="detail-evidence" class="caption"></span><div id="output-pager" class="heading"><button class="sd-quiet" id="previous" type="button" disabled>上一页</button><span id="page-number" class="caption">第 1 页</span><button class="sd-quiet" id="next" type="button" disabled>下一页</button></div></div>
+      <button class="sd-quiet cancel" id="detail-cancel" type="button">请求取消</button>
+      <details id="evidence-details"><summary>证据与任务信息</summary><dl><dt>请求编号</dt><dd id="detail-request" class="path"></dd><dt>任务编号</dt><dd id="detail-id" class="path"></dd><dt>本地路径</dt><dd id="detail-path" class="path"></dd></dl></details>
+    </section>
+    <p id="choose-detail" class="caption" hidden>选择一条记录，查看命令、输出和证据。</p>
+  </div>
+  <div id="empty"><p>还没有执行记录</p><p class="caption">客户端接入后，在这台服务器上执行的命令和下载会显示在这里。</p></div>
 </section>
 <p id="notice" class="notice" role="status" hidden></p>
-<section id="history" aria-labelledby="tasks-title">
-  <div class="heading history-heading"><h2 id="tasks-title">操作列表</h2><button class="sd-quiet" id="refresh" type="button">刷新</button></div>
-  <p id="empty" class="caption">尚无操作。智能体通过本机 MCP 接入后，在已连接服务器上执行的命令和下载会显示在这里。</p>
-  <ol id="tasks"></ol>
-  <div id="detail" aria-label="操作详情" hidden>
-    <div class="heading"><h3>操作详情</h3><button class="sd-quiet" id="detail-close" type="button">收起详情</button></div>
-    <p id="detail-state" class="state"></p>
-    <h3 id="detail-input-label">实际命令</h3><pre id="detail-command"></pre>
-    <dl><dt>服务器</dt><dd id="detail-server"></dd><dt>提交时间</dt><dd id="detail-created"></dd><dt>用时</dt><dd id="detail-time"></dd><dt>请求编号</dt><dd id="detail-request" class="path"></dd><dt>任务编号</dt><dd id="detail-id" class="path"></dd><dt>输出保存</dt><dd id="detail-evidence"></dd><dt>本地路径</dt><dd id="detail-path" class="path"></dd></dl>
-    <p id="detail-error" class="error" hidden></p>
-    <div id="detail-output-section"><h3>输出</h3><pre id="detail-output" aria-label="操作输出">等待读取输出</pre><div class="heading pager"><button class="sd-control" id="previous" type="button" disabled>上一页</button><span id="page-number" class="caption">第 1 页</span><button class="sd-control" id="next" type="button" disabled>下一页</button></div></div>
-    <button class="sd-control cancel" id="detail-cancel" type="button">请求取消</button>
-  </div>
-</section>
-<footer class="caption">当前服务器 · 最近 50 条，进行中的操作优先</footer>
+<footer class="heading caption"><span>当前服务器 · 最近 50 条，活动优先 · 重启后列表不恢复，证据保留</span><details id="directory-details"><summary>本地证据目录</summary><p id="directory" class="path"></p><button class="sd-quiet" id="reveal" type="button">打开证据目录</button></details></footer>
 </main><script src="bridge.js"></script><script src="text-menu.js"></script><script src="clipboard-bridge.js"></script><script type="module" src="view.js"></script></body>
 </html>

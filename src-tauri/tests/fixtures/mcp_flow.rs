@@ -19,6 +19,18 @@ async fn openssh_mcp_plugin(){
     let end=std::time::Instant::now()+Duration::from_secs(5);loop{if client.post(url).send().await.is_ok(){break;}assert!(std::time::Instant::now()<end);tokio::time::sleep(Duration::from_millis(25)).await;}
     call(&client,url,&token,"initialize",json!({"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"SoDeck integration","version":"1"}})).await;
     let end=std::time::Instant::now()+Duration::from_secs(8);let targets=loop{let targets=tool(&client,url,&token,"sodeck_targets_list",json!({})).await;if targets["targets"].as_array().unwrap().len()==3{break targets;}assert!(std::time::Instant::now()<end,"background registration failed: {targets}");tokio::time::sleep(Duration::from_millis(50)).await;};
+    let opened=f.core.ui_action("main",&contexts[0],json!({"op":"open","key":"sodeck.mcp:operations","requestId":"open-operations"})).unwrap();let page=opened["viewId"].as_str().unwrap();
+    assert_eq!(f.core.ui_action("main",&contexts[0],json!({"op":"open","key":"sodeck.mcp:operations","requestId":"open-operations-again"})).unwrap()["viewId"],page,"operation page is a workspace singleton");
+    let attached=f.core.ui_attach("main",page).unwrap();let surface=attached["surfaceId"].as_str().unwrap();f.core.ui_surface_ready("main",surface).unwrap();
+    let target=targets["targets"].as_array().unwrap().iter().find(|t|t["context"]["workspaceId"]==contexts[0].workspace_id).unwrap();
+    assert_eq!(attached["data"]["target"]["targetId"],target["targetId"]);assert!(attached["data"].get("token").is_none());
+    assert_eq!(tool(&client,url,&token,"sodeck_targets_list",json!({})).await["targets"].as_array().unwrap().len(),3,"opening a page does not duplicate background targets");
+    let job=tool(&client,url,&token,"sodeck_exec_start",json!({"targetId":target["targetId"],"requestId":"page-lifecycle","command":if cfg!(windows){"powershell.exe -NoProfile -Command \"Start-Sleep -Seconds 2; Write-Output sodeck-page-survived\""}else{"sleep 2; printf sodeck-page-survived"}})).await;
+    let detail=f.core.ui_event("main",surface,json!({"action":"task","taskId":job["taskId"],"cursor":"0"})).unwrap();assert_eq!(detail["taskId"],job["taskId"]);assert_eq!(detail["done"],false);
+    let plan=f.core.ui_close_prepare("main",vec![],Some(page.into())).unwrap();f.core.ui_close_finish(plan["token"].as_str().unwrap(),serde_json::from_value(plan["views"].clone()).unwrap(),"discard").unwrap();
+    let result=done(&client,url,&token,&job["taskId"]).await;assert_eq!(result["native"]["exitCode"],0);assert!(result["output"]["stdout"].as_str().unwrap().contains("sodeck-page-survived"));
+    let reopened=f.core.ui_action("main",&contexts[0],json!({"op":"open","key":"sodeck.mcp:operations","requestId":"reopen-operations"})).unwrap();let attached=f.core.ui_attach("main",reopened["viewId"].as_str().unwrap()).unwrap();
+    assert!(attached["data"]["tasks"].as_array().unwrap().iter().any(|t|t["taskId"]==job["taskId"]));assert_eq!(tool(&client,url,&token,"sodeck_targets_list",json!({})).await["targets"].as_array().unwrap().len(),3);
     let remote=f.path.join("mcp evidence 中文.bin");let bytes:Vec<u8>=(0..150000).map(|n|n as u8).collect();std::fs::write(&remote,&bytes).unwrap();
     let command=if cfg!(windows){"cmd /c echo sodeck-first-collection"}else{"printf 'sodeck-first-collection\\n'"};
     let mut jobs=Vec::new();for target in targets["targets"].as_array().unwrap(){let input=json!({"targetId":target["targetId"],"requestId":"first","command":command});let result=tool(&client,url,&token,"sodeck_exec_start",input.clone()).await;assert_eq!(tool(&client,url,&token,"sodeck_exec_start",input).await["taskId"],result["taskId"]);jobs.push((target.clone(),result));}
