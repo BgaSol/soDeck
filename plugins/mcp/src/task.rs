@@ -44,20 +44,34 @@ mod tests {
         assert!(task.snapshot().revision > before.revision);
         task.finalizing(true, Value::Null);
         let closing = task.request_cancel();
-        assert_eq!(closing.value["cancelRequested"], false);
-        assert!(!closing.done);
+        assert_eq!(closing.cancel_requested, false);
+        assert!(closing.phase != Phase::Done);
         task.publish(
             task.final_candidate(),
             Some(json!({"code":"disk","message":"disk full"})),
         );
         let done = task.snapshot();
-        assert!(done.done);
-        assert_eq!(done.value["evidence"]["state"], "failed");
+        assert!(done.phase == Phase::Done);
+        assert_eq!(
+            crate::response::metadata(&task, &done)["evidence"]["state"],
+            "failed"
+        );
         task.request_cancel();
         task.observe(json!({"state":"cancelled"}), Some(999));
         task.cleanup(true, Value::Null);
-        assert_eq!(task.snapshot().value, done.value);
+        assert_eq!(task.metadata(), crate::response::metadata(&task, &done));
         assert_eq!(task.snapshot().committed, 12);
+    }
+    #[test]
+    fn cancellation_receipt_is_the_same_record_as_its_revision_notification() {
+        let task = fixture(PathBuf::new());
+        let changes = task.subscribe();
+        let receipt = task.request_cancel();
+        assert!(receipt.cancel_requested);
+        assert!(task.cancel.is_cancelled());
+        assert_eq!(receipt.revision, *changes.borrow());
+        assert_eq!(receipt.revision, 2);
+        assert_eq!(task.request_cancel().revision, receipt.revision);
     }
     #[test]
     fn summary_is_a_bounded_preview_not_original_input() {
@@ -65,7 +79,7 @@ mod tests {
         assert_eq!(text, "中中");
         assert!(cut);
         let task = fixture(PathBuf::new());
-        let summary = task.summary();
+        let summary = crate::response::ui_row(&CapturedTask::new(task));
         assert!(summary.get("input").is_none());
         assert!(summary.get("directory").is_none());
         assert_eq!(summary["inputPreview"], "中文\ncommand");
@@ -80,13 +94,13 @@ impl Kind {
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Phase {
+pub(crate) enum Phase {
     Collecting,
     Finalizing,
     Done,
 }
 #[derive(Clone, Copy)]
-enum Saved {
+pub(crate) enum Saved {
     Collecting,
     Finalizing,
     Complete,
@@ -95,26 +109,30 @@ enum Saved {
 }
 #[derive(Clone)]
 pub struct Record {
-    native: Value,
-    target: Value,
-    phase: Phase,
-    saved: Saved,
-    error: Value,
-    path: Option<PathBuf>,
-    capture_complete: bool,
-    committed: u64,
-    cancel_requested: bool,
-    released: bool,
-    cleanup_error: Value,
-    observed: u64,
-    finished: Option<u64>,
-    revision: u64,
-}
-pub struct Snapshot {
-    pub value: Value,
+    pub native: Value,
+    pub target: Value,
+    pub phase: Phase,
+    pub saved: Saved,
+    pub error: Value,
+    pub path: Option<PathBuf>,
+    pub capture_complete: bool,
     pub committed: u64,
+    pub cancel_requested: bool,
+    pub released: bool,
+    pub cleanup_error: Value,
+    pub observed: u64,
+    pub finished: Option<u64>,
     pub revision: u64,
-    pub done: bool,
+}
+pub struct CapturedTask {
+    pub task: Arc<Task>,
+    pub record: Record,
+}
+impl CapturedTask {
+    pub fn new(task: Arc<Task>) -> Self {
+        let record = task.snapshot();
+        Self { task, record }
+    }
 }
 pub struct Task {
     pub id: String,
@@ -147,21 +165,7 @@ pub fn preview(value: &str, bytes: usize) -> (String, bool) {
     }
     (value[..end].into(), end < value.len())
 }
-fn brief_error(value: &Value) -> Value {
-    if value.is_null() {
-        return Value::Null;
-    }
-    let mut result = json!({"code":value["code"],"message":value["message"]});
-    if let Some(message) = value["message"].as_str() {
-        let (text, cut) = preview(message, 512);
-        result["message"] = json!(text);
-        if cut {
-            result["messageTruncated"] = json!(true);
-        }
-    }
-    result
-}
-fn facts(native: &Value) -> Value {
+fn revision_facts(native: &Value) -> Value {
     let mut value = json!({});
     for key in [
         "state",
@@ -235,8 +239,8 @@ impl Task {
     }
     pub fn observe(&self, native: Value, committed: Option<u64>) {
         self.update(|r| {
-            let changed =
-                facts(&r.native) != facts(&native) || committed.is_some_and(|n| n != r.committed);
+            let changed = revision_facts(&r.native) != revision_facts(&native)
+                || committed.is_some_and(|n| n != r.committed);
             r.native = native;
             if let Some(n) = committed {
                 r.committed = n;
@@ -252,16 +256,15 @@ impl Task {
             changed
         });
     }
-    pub fn request_cancel(&self) -> Snapshot {
-        self.update(|r| {
-            if r.phase != Phase::Collecting || r.cancel_requested {
-                return false;
-            }
+    pub fn request_cancel(&self) -> Record {
+        let mut r = self.state.lock().unwrap();
+        if r.phase == Phase::Collecting && !r.cancel_requested {
             r.cancel_requested = true;
             self.cancel.cancel();
-            true
-        });
-        self.snapshot()
+            r.revision += 1;
+            self.changes.send_replace(r.revision);
+        }
+        r.clone()
     }
     pub fn capture_error(&self, error: Value) {
         self.update(|r| {
@@ -323,73 +326,13 @@ impl Task {
         *r = candidate;
         self.changes.send_replace(r.revision);
     }
-    fn value(&self, r: &Record, summary: bool) -> Value {
-        let state = match r.saved {
-            Saved::Collecting => "collecting",
-            Saved::Finalizing => "finalizing",
-            Saved::Complete => "saved",
-            Saved::Incomplete => "incomplete",
-            Saved::Failed => "failed",
-        };
-        let mut native = if summary {
-            facts(&r.native)
-        } else {
-            r.native.clone()
-        };
-        if summary && native.get("error").is_some() {
-            native["error"] = brief_error(&native["error"]);
-        }
-        let mut evidence = json!({"state":state,"complete":matches!(r.saved,Saved::Complete),"error":if summary {brief_error(&r.error)} else {r.error.clone()}});
-        if !summary {
-            evidence["path"] = json!(r.path);
-        }
-        let mut value = json!({
-            "taskId":self.id,"runId":self.run,"kind":self.kind.name(),"targetId":self.target.id,
-            "requestId":self.input["requestId"],"target":r.target,"createdAt":self.created,"finishedAt":r.finished,
-            "native":native,"observedAt":r.observed,"resourceReleased":r.released,
-            "cleanupError":if summary {brief_error(&r.cleanup_error)} else {r.cleanup_error.clone()},
-            "done":r.phase==Phase::Done,"cancelRequested":r.cancel_requested,
-            "phase":match r.phase {Phase::Collecting=>"collecting",Phase::Finalizing=>"finalizing",Phase::Done=>"done"},
-            "revision":r.revision.to_string(),"evidence":evidence,
-        });
-        if summary {
-            let text = self.input[if self.kind == Kind::Exec {
-                "command"
-            } else {
-                "remotePath"
-            }]
-            .as_str()
-            .unwrap();
-            let (text, cut) = preview(text, 256);
-            value["context"] = self.target.context.clone();
-            value["inputPreview"] = json!(text);
-            value["inputTruncated"] = json!(cut);
-        } else {
-            value["input"] = self.input.clone();
-            value["directory"] = json!(self.directory);
-            value["outputInfo"] = json!({"savedBytes":if self.kind==Kind::Exec {json!(r.committed.to_string())} else {Value::Null}});
-        }
-        value
-    }
-    pub fn snapshot(&self) -> Snapshot {
-        let r = self.state.lock().unwrap();
-        Snapshot {
-            value: self.value(&r, false),
-            committed: r.committed,
-            revision: r.revision,
-            done: r.phase == Phase::Done,
-        }
-    }
-    pub fn summary(&self) -> Value {
-        self.value(&self.state.lock().unwrap(), true)
+    pub fn snapshot(&self) -> Record {
+        self.state.lock().unwrap().clone()
     }
     pub fn metadata(&self) -> Value {
         self.metadata_for(&self.state.lock().unwrap())
     }
     pub fn metadata_for(&self, r: &Record) -> Value {
-        let mut value = self.value(r, false);
-        value["schemaVersion"] = json!(1);
-        value["context"] = self.target.context.clone();
-        value
+        crate::response::metadata(self, r)
     }
 }

@@ -1,6 +1,6 @@
 use crate::{
-    collector, query,
-    task::{Kind, NewTask, Task},
+    collector, query, response,
+    task::{CapturedTask, Kind, NewTask, Task},
 };
 use serde_json::{json, Value};
 use sodeck_plugin_client::{Client, RpcError};
@@ -287,21 +287,17 @@ impl App {
             .cloned()
             .collect()
     }
-    pub fn cancel(&self, p: &Value, scope: Option<&str>) -> Result<Value, Value> {
+    pub fn cancel(&self, p: &Value, scope: Option<&str>) -> Result<CapturedTask, Value> {
         let task = self.resolve(p, scope)?;
-        let snapshot = task.request_cancel();
-        let result = if scope.is_some() {
-            task.summary()
-        } else {
-            snapshot.value
-        };
-        Ok(json!({"taskId":task.id,"cancelRequested":result["cancelRequested"],"result":result}))
+        let record = task.request_cancel();
+        Ok(CapturedTask { task, record })
     }
     pub fn view_task(&self, view: &str, p: &Value) -> Result<Value, Value> {
         let target = self.view_target(view)?;
         let task = self.resolve(p, Some(&target.id))?;
-        let options = query::Options::parse(p, true)?;
-        let value = query::prepare(self, task.snapshot(), task, options)?.read()?;
+        let options = query::parse_ui_read(p)?;
+        let read = query::ui_read(self, task, options).map_err(response::ui_read_error)?;
+        let value = response::ui_task(&read);
         if serde_json::to_vec(&value).unwrap().len() > 56 * 1024 {
             return Err(failure(
                 "resourceLimit",
@@ -316,7 +312,7 @@ impl App {
             .records()
             .into_iter()
             .filter(|t| t.target.id == target.id)
-            .map(|t| (t.order, t.summary()))
+            .map(|t| (t.order, response::ui_row(&CapturedTask::new(t))))
             .collect();
         tasks.sort_by_key(|(order, v)| (v["done"] == true, std::cmp::Reverse(*order)));
         let mut rows = Vec::new();

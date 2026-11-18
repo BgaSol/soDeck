@@ -46,7 +46,7 @@ pub fn run(app: &App, task: &Task) {
     });
     let outcome = result.unwrap_or_else(Outcome::failed);
     if collector.native.is_none() && !collector.admission_unknown {
-        if task.snapshot().value["native"]["admission"] == "pending" {
+        if task.snapshot().native["admission"] == "pending" {
             task.observe(
                 json!({"admission":"rejected","execSent":false,"error":outcome.error}),
                 None,
@@ -293,7 +293,7 @@ impl Collector<'_> {
         Err(error("核心通信结束，接纳结果未知"))
     }
     fn unavailable(&self, error: Value) {
-        let previous = self.task.snapshot().value["native"].clone();
+        let previous = self.task.snapshot().native.clone();
         self.task.observe(
             json!({"state":"unavailable","lastResult":previous,"error":error}),
             None,
@@ -305,9 +305,9 @@ impl Collector<'_> {
         if let Some(native) = &self.native {
             let snapshot = self.task.snapshot();
             let ended = match native {
-                Native::Command(_) => snapshot.value["native"]["workerFinished"] == true,
+                Native::Command(_) => snapshot.native["workerFinished"] == true,
                 Native::Download { .. } => ["completed", "failed", "cancelled", "unknown"]
-                    .contains(&snapshot.value["native"]["state"].as_str().unwrap_or("")),
+                    .contains(&snapshot.native["state"].as_str().unwrap_or("")),
             };
             let mut ready = ended;
             if !ended {

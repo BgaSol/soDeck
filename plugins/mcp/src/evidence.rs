@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::Value;
 use sodeck_plugin_client::encoding::unbase64;
 use std::{
     fs::{self, File, OpenOptions},
@@ -61,27 +61,84 @@ impl Output {
         self.file.sync_all().map_err(|e| e.to_string())
     }
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PageFormat {
+    Text,
+    Full,
+}
+#[derive(Debug, PartialEq)]
+pub enum PageBody {
+    Text { stdout: String, stderr: String },
+    Full { chunks: Vec<Value> },
+}
+#[derive(Debug, PartialEq)]
+pub struct Page {
+    pub body: PageBody,
+    pub next_cursor: u64,
+    pub saved_bytes: u64,
+    pub has_more: bool,
+}
+impl Page {
+    fn empty(format: PageFormat) -> Self {
+        Self {
+            body: match format {
+                PageFormat::Text => PageBody::Text {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                },
+                PageFormat::Full => PageBody::Full { chunks: Vec::new() },
+            },
+            next_cursor: 0,
+            saved_bytes: 0,
+            has_more: false,
+        }
+    }
+}
+#[derive(Debug)]
+pub enum ReadError {
+    InvalidCursor(String),
+    EvidenceReadFailed(String),
+}
+impl From<std::io::Error> for ReadError {
+    fn from(e: std::io::Error) -> Self {
+        Self::EvidenceReadFailed(e.to_string())
+    }
+}
+impl From<String> for ReadError {
+    fn from(e: String) -> Self {
+        Self::EvidenceReadFailed(e)
+    }
+}
+impl From<serde_json::Error> for ReadError {
+    fn from(e: serde_json::Error) -> Self {
+        Self::EvidenceReadFailed(e.to_string())
+    }
+}
 pub fn page(
     path: PathBuf,
     committed: u64,
     offset: u64,
-    include_chunks: bool,
-) -> Result<Value, String> {
+    format: PageFormat,
+) -> Result<Page, ReadError> {
     if offset > committed {
-        return Err("cursor 超出已保存范围".into());
+        return Err(ReadError::InvalidCursor("cursor 超出已保存范围".into()));
     }
-    let mut file = File::open(path).map_err(|e| e.to_string())?;
+    let mut file = match File::open(path) {
+        Ok(file) => file,
+        Err(e) if committed == 0 && e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Page::empty(format))
+        }
+        Err(e) => return Err(e.into()),
+    };
     if offset > 0 {
-        file.seek(SeekFrom::Start(offset - 1))
-            .map_err(|e| e.to_string())?;
+        file.seek(SeekFrom::Start(offset - 1))?;
         let mut previous = [0];
-        file.read_exact(&mut previous).map_err(|e| e.to_string())?;
+        file.read_exact(&mut previous)?;
         if previous[0] != b'\n' {
-            return Err("cursor 不在完整行边界".into());
+            return Err(ReadError::InvalidCursor("cursor 不在完整行边界".into()));
         }
     }
-    file.seek(SeekFrom::Start(offset))
-        .map_err(|e| e.to_string())?;
+    file.seek(SeekFrom::Start(offset))?;
     let mut reader = BufReader::new(file.take(committed - offset));
     let mut cursor = offset;
     let mut chunks = Vec::new();
@@ -91,106 +148,103 @@ pub fn page(
         let size = reader
             .by_ref()
             .take(16 * 1024 + 1)
-            .read_until(b'\n', &mut line)
-            .map_err(|e| e.to_string())?;
+            .read_until(b'\n', &mut line)?;
         if size == 0 {
             if cursor != committed {
-                return Err("证据文件短于已保存水位".into());
+                return Err(ReadError::EvidenceReadFailed(
+                    "证据文件短于已保存水位".into(),
+                ));
             }
             break;
         }
         if size > 16 * 1024 || !line.ends_with(b"\n") {
-            return Err("证据行不完整或超限".into());
+            return Err(ReadError::EvidenceReadFailed("证据行不完整或超限".into()));
         }
         if cursor - offset + size as u64 > 16 * 1024 && cursor > offset {
             break;
         }
-        let chunk: Value = serde_json::from_slice(&line).map_err(|e| e.to_string())?;
+        let chunk: Value = serde_json::from_slice(&line)?;
         let bytes = decode(&chunk)?;
-        if chunk["source"] == "stderr" {
-            stderr.extend(bytes);
-        } else {
-            stdout.extend(bytes);
-        }
-        if include_chunks {
-            chunks.push(chunk);
+        match format {
+            PageFormat::Text => {
+                if chunk["source"] == "stderr" {
+                    stderr.extend(bytes);
+                } else {
+                    stdout.extend(bytes);
+                }
+            }
+            PageFormat::Full => chunks.push(chunk),
         }
         cursor += size as u64;
     }
-    let mut value = json!({"stdout":String::from_utf8_lossy(&stdout),"stderr":String::from_utf8_lossy(&stderr),"nextCursor":cursor.to_string(),"savedBytes":committed.to_string(),"hasMore":cursor<committed,"previewEncoding":"utf-8-lossy-per-page"});
-    if include_chunks {
-        value["chunks"] = json!(chunks);
-    }
-    Ok(value)
+    Ok(Page {
+        body: match format {
+            PageFormat::Text => PageBody::Text {
+                stdout: String::from_utf8_lossy(&stdout).into(),
+                stderr: String::from_utf8_lossy(&stderr).into(),
+            },
+            PageFormat::Full => PageBody::Full { chunks },
+        },
+        next_cursor: cursor,
+        saved_bytes: committed,
+        has_more: cursor < committed,
+    })
 }
-pub fn tail(path: PathBuf, committed: u64, include_chunks: bool) -> Result<Value, String> {
+pub fn tail(path: PathBuf, committed: u64, format: PageFormat) -> Result<Page, ReadError> {
     let mut offset = committed.saturating_sub(16 * 1024);
     if offset > 0 {
-        let mut file = File::open(&path).map_err(|e| e.to_string())?;
-        file.seek(SeekFrom::Start(offset - 1))
-            .map_err(|e| e.to_string())?;
+        let mut file = File::open(&path)?;
+        file.seek(SeekFrom::Start(offset - 1))?;
         let mut reader = BufReader::new(file.take(committed - offset + 1));
         let mut skipped = Vec::new();
-        let count = reader
-            .read_until(b'\n', &mut skipped)
-            .map_err(|e| e.to_string())?;
+        let count = reader.read_until(b'\n', &mut skipped)?;
         offset = offset - 1 + count as u64;
     }
-    page(path, committed, offset, include_chunks)
+    page(path, committed, offset, format)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     #[test]
-    fn tail_reads_recent_complete_envelopes_without_uncommitted_bytes() {
-        let root = std::env::temp_dir().join(format!("mcp-tail-{}", rand::random::<u64>()));
-        fs::create_dir(&root).unwrap();
-        let mut output = Output::new(&root).unwrap();
-        assert_eq!(
-            tail(root.join("output.jsonl"), 0, true).unwrap()["stdout"],
-            ""
-        );
-        for sequence in 1..=20 {
-            let text = format!("line-{sequence} {}\n", "x".repeat(2000));
-            output.append(&[json!({"v":1,"sequence":sequence.to_string(),"source":"stdout","receivedAt":1,"dataBase64":sodeck_plugin_client::encoding::base64(text.as_bytes())})]).unwrap();
-        }
-        output.file.write_all(b"uncommitted").unwrap();
-        let result = tail(root.join("output.jsonl"), output.committed, true).unwrap();
-        let text = result["stdout"].as_str().unwrap();
-        assert!(text.contains("line-20 "));
-        assert!(!text.contains("line-1 "));
-        assert!(!text.contains("uncommitted"));
-        assert_eq!(result["nextCursor"], output.committed.to_string());
-        assert_eq!(result["hasMore"], false);
-        drop(output);
-        fs::remove_dir_all(root).unwrap();
-    }
-    #[test]
-    fn pages_repeat_preserve_bytes_and_exclude_uncommitted_tail() {
+    fn pages_preserve_bytes_watermark_and_format_and_classify_failures() {
         let root = std::env::temp_dir().join(format!("mcp-evidence-{}", rand::random::<u64>()));
         fs::create_dir(&root).unwrap();
+        let path = root.join("output.jsonl");
+        assert_eq!(
+            page(path.clone(), 0, 0, PageFormat::Full).unwrap(),
+            Page::empty(PageFormat::Full)
+        );
         let mut output = Output::new(&root).unwrap();
         let raw = [0, 255, 0xe4, 0xb8];
         output.append(&[json!({"v":1,"sequence":"1","source":"stdout","receivedAt":1,"dataBase64":sodeck_plugin_client::encoding::base64(&raw)})]).unwrap();
         let committed = output.committed;
         output.file.write_all(b"partial").unwrap();
-        let a = page(root.join("output.jsonl"), committed, 0, true).unwrap();
-        let mut text = a.clone();
-        text.as_object_mut().unwrap().remove("chunks");
-        assert_eq!(
-            text,
-            page(root.join("output.jsonl"), committed, 0, false).unwrap()
-        );
+        let a = page(path.clone(), committed, 0, PageFormat::Full).unwrap();
         assert_eq!(
             a,
-            page(root.join("output.jsonl"), committed, 0, true).unwrap()
+            page(path.clone(), committed, 0, PageFormat::Full).unwrap()
         );
+        let PageBody::Full { chunks } = &a.body else {
+            panic!()
+        };
         assert_eq!(
-            unbase64(a["chunks"][0]["dataBase64"].as_str().unwrap()).unwrap(),
+            unbase64(chunks[0]["dataBase64"].as_str().unwrap()).unwrap(),
             raw
         );
-        assert!(page(root.join("output.jsonl"), committed, 1, true).is_err());
+        let text = page(path.clone(), committed, 0, PageFormat::Text).unwrap();
+        let PageBody::Text { stdout, stderr } = text.body else {
+            panic!()
+        };
+        assert_eq!(stdout, String::from_utf8_lossy(&raw));
+        assert!(stderr.is_empty());
+        assert_eq!(a.next_cursor, text.next_cursor);
+        assert_eq!(a.saved_bytes, text.saved_bytes);
+        assert!(matches!(
+            page(path.clone(), committed, 1, PageFormat::Text),
+            Err(ReadError::InvalidCursor(_))
+        ));
         metadata(&root, &json!({"done":false})).unwrap();
         metadata(&root, &json!({"done":true})).unwrap();
         assert_eq!(
@@ -198,20 +252,42 @@ mod tests {
                 .unwrap()["done"],
             true
         );
-        output.file = File::open(root.join("output.jsonl")).unwrap();
+        output.file = File::open(&path).unwrap();
         assert!(output
             .append(&[
                 json!({"v":1,"sequence":"2","source":"stdout","receivedAt":2,"dataBase64":"YQ=="})
             ])
             .is_err());
-        assert_eq!(
-            output.committed, committed,
-            "failed OS writes do not advance the saved boundary"
-        );
+        assert_eq!(output.committed, committed);
         drop(output);
-        fs::write(root.join("output.jsonl"), b"").unwrap();
-        assert!(page(root.join("output.jsonl"), committed, 0, true).is_err());
-        assert!(page(root.join("output.jsonl"), committed, 0, false).is_err());
+        fs::write(&path, b"").unwrap();
+        assert!(matches!(
+            page(path.clone(), committed, 0, PageFormat::Full),
+            Err(ReadError::EvidenceReadFailed(_))
+        ));
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn tail_uses_recent_complete_envelopes_and_excludes_uncommitted_bytes() {
+        let root = std::env::temp_dir().join(format!("mcp-tail-{}", rand::random::<u64>()));
+        fs::create_dir(&root).unwrap();
+        let path = root.join("output.jsonl");
+        let mut output = Output::new(&root).unwrap();
+        for n in 1..=20 {
+            let text = format!("line-{n} {}\n", "x".repeat(2000));
+            output.append(&[json!({"v":1,"sequence":n.to_string(),"source":"stdout","receivedAt":n,"dataBase64":sodeck_plugin_client::encoding::base64(text.as_bytes())})]).unwrap();
+        }
+        output.file.write_all(b"uncommitted").unwrap();
+        let page = tail(path, output.committed, PageFormat::Text).unwrap();
+        let PageBody::Text { stdout, .. } = page.body else {
+            panic!()
+        };
+        assert!(stdout.contains("line-20 "));
+        assert!(!stdout.contains("line-1 "));
+        assert!(!stdout.contains("uncommitted"));
+        assert_eq!(page.next_cursor, output.committed);
+        assert!(!page.has_more);
+        drop(output);
         fs::remove_dir_all(root).unwrap();
     }
 }

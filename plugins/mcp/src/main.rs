@@ -2,6 +2,7 @@ mod collector;
 mod evidence;
 mod mcp;
 mod query;
+mod response;
 mod task;
 mod tasks;
 use serde_json::json;
@@ -132,7 +133,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let result = app
                         .cancel(&p["data"], Some(&target.id))
                         .map_err(|e| e.to_string())?;
-                    return Ok(json!({"data":result}));
+                    return Ok(json!({"data":response::ui_cancel(&result)}));
                 }
                 _ => return Err("未知操作".into()),
             },

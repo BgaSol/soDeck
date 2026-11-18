@@ -24,7 +24,7 @@
 
 [Agent MCP插件](features/mcp.md)只负责回环 HTTP、Token、工具参数、原请求关联与证据保存；核心管理既有会话、命令流及通用复制，三项增量见[API](plugin-api.md)。后台 View 绑定完整 Context，HTTP 会话断开不改变远程任务的工作区归属。插件保留原生结果与本地保存结果，数据使用同一 JSONL 和元数据，不建立恢复数据库、第二套远程执行或业务插件调用路由。MCP 协议使用官方 rmcp SDK，HTTP 使用 SDK 服务与 axum；客户端选择调查步骤和分析结果。
 
-插件内的运行注册表以任务 ID 与请求键索引同一 Task，Task 统一管理自有阶段、取消与有效 revision；原核心 native JSON 保留。命令与下载使用两条具体采集路径，接纳域占用不跨 RPC 持锁，也不排队启动新 worker。统一收尾先封闭取消修改，再保存与清理，最后发布稳定终态。MCP 与 UI 查询使用同一次状态/已保存水位快照和同一证据 reader，UI 读取及取消检查实际 Context 归属；列表与 async 等待消费既有事实。参数及资源额度只在 [MCP API](mcp-api.md)完整定义。
+插件内的运行注册表以任务 ID 与请求键索引同一 Task，Task 统一管理自有阶段、取消与有效 revision；原核心 native JSON 保留。命令与下载使用两条具体采集路径，接纳域占用不跨 RPC 持锁，也不排队启动新 worker。统一收尾先封闭取消修改，再保存与清理，最后发布稳定终态。Task 的私有 Record 是唯一运行状态；读取、取消与列表交接不可变身份和该次 Record，不将 JSON 投影作为内部状态。response 模块分别构造 MCP 普通/诊断、现有 UI 及 metadata，普通事实直接白名单投影；text/full 正文互斥，不建立 DTO 缓存或通用渲染框架。MCP 与 UI 查询使用同一次状态/已保存水位记录和同一证据 reader，UI 读取及取消检查实际 Context 归属；列表与 async 等待消费既有事实。参数及资源额度只在 [MCP API](mcp-api.md)完整定义。
 
 ## 宿主状态与 DOM 边界
 

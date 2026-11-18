@@ -15,7 +15,7 @@ const socket=net.createServer();await new Promise(r=>socket.listen(0,'127.0.0.1'
 const contexts=Object.fromEntries(['a','b','c'].map(view=>[view,{workspaceId:view,serverId:'server-'+view,connectionId:'connection-'+view,generation:1}]));
 const capabilities=['session.target.v1','session.stream.process.v1','files.pluginData.v1','files.operations.v2','ui.background.v1','settings.v1'];
 const streams=new Map(),requests=[],releases=[],files=new Map(),batches=new Set(),failedBatches=new Set();let number=0,lost=true,peer,confirmUnknown=false,releaseGate;
-const bytes=Buffer.from('中文 investigation\n'),chunk={v:1,sequence:'1',source:'stdout',receivedAt:Date.now(),dataBase64:bytes.toString('base64')};
+const bytes=Buffer.from('Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n'),chunk={v:1,sequence:'1',source:'stdout',receivedAt:Date.now(),dataBase64:bytes.toString('base64')};
 peer=pluginPeer(path.join(root,manifest.entry),(method,p)=>{
   if(method==='settings.get')return {values:{port:String(port)}};
   if(['logging.write','messages.publish'].includes(method))return {};
@@ -27,7 +27,7 @@ peer=pluginPeer(path.join(root,manifest.entry),(method,p)=>{
   }
   if(method==='session.stream.lookup'){const entry=[...streams].find(([,s])=>s.p.operationId===p.operationId);if(!entry||entry[1].p.command==='unknown'&&!confirmUnknown)return {known:false};assert.deepEqual(entry[1].p,p);return {known:true,streamId:entry[0]};}
   if(method==='session.stream.poll'){
-    const s=streams.get(p.streamId);assert(s);const done=!s.held||s.cancelled;
+    const s=streams.get(p.streamId);assert(s);if(s.p.command.startsWith('large-error'))throw Object.assign(new Error('diagnostic payload'),{code:-32000,data:{payload:'\\'.repeat(26000)}});const done=!s.held||s.cancelled;
     const quiet=s.p.command==='quiet';return {chunks:s.p.command==='malformed'?null:!quiet&&p.offset==='0'?[chunk]:[],nextOffset:quiet?'0':'100',watermark:quiet?'0':'100',status:{state:s.cancelled?'cancelled':done?'completed':'running',execSent:true,remoteExitConfirmed:done&&!s.cancelled,workerFinished:done,finished:done,elapsedMs:Date.now(),outputComplete:done&&!s.cancelled&&s.p.command!=='output limit',error:s.p.command==='output limit'?{code:'outputLimit',message:'output limit'}:null,exitCode:s.p.command==='exit 7'?7:0}};
   }
   if(method==='session.stream.close'){streams.get(p.streamId).cancelled=true;return {accepted:true};}
@@ -45,12 +45,12 @@ peer=pluginPeer(path.join(root,manifest.entry),(method,p)=>{
   }
   throw new Error('Unexpected RPC: '+method);
 });
-let token,sequence=0;
+const samples=[];let token,sequence=0;
 async function call(method,params,headers={},signal){
   const response=await fetch(`http://127.0.0.1:${port}/mcp`,{method:'POST',signal,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',Accept:'application/json, text/event-stream','MCP-Protocol-Version':'2025-11-25',...headers},body:JSON.stringify({jsonrpc:'2.0',id:++sequence,method,params})});
-  assert.equal(response.status,200,await response.clone().text());return (await response.json()).result;
+  assert.equal(response.status,200,await response.clone().text());const r=(await response.json()).result;if(method==='tools/call'&&samples.length<32)samples.push({tool:params.name,args:params.arguments,bytes:Buffer.byteLength(JSON.stringify(r)),result:r});return r;
 }
-async function tool(name,arguments_={},signal){const result=await call('tools/call',{name,arguments:arguments_},{},signal);return {value:result.structuredContent??JSON.parse(result.content[0].text),error:result.isError};}
+async function tool(name,arguments_={},signal){const result=await call('tools/call',{name,arguments:arguments_},{},signal);assert(!('structuredContent' in result));assert.equal(result.content.length,1);assert.equal(result.content[0].type,'text');assert(Buffer.byteLength(JSON.stringify(result))<=256*1024);return {value:JSON.parse(result.content[0].text),error:result.isError};}
 async function until(read,predicate){const end=Date.now()+10000;while(Date.now()<end){const value=await read();if(predicate(value))return value;await delay(30);}throw new Error('MCP task timeout');}
 try{
   await assert.rejects(peer.request('initialize',{dataDirectory:directory,capabilities:[]}),/核心缺少/);
@@ -71,8 +71,16 @@ try{
   assert.equal((await tool('sodeck_exec_start',{...input,command:'different'})).error,true);
   let done=await until(async()=>(await tool('sodeck_task_get',{taskId:start.taskId})).value,s=>s.done);
   assert.equal(done.evidence.complete,true);assert.equal(done.resourceReleased,true);assert.equal(done.output.stdout,bytes.toString());assert.equal(requests.length,1);
-  assert.equal(done.input.command,'collect');assert.equal(done.target.username,'ops');assert(done.createdAt>0&&done.finishedAt>=done.createdAt);
-  assert(start.taskId.includes(path.basename(path.dirname(done.directory))),'task identity includes its plugin run');
+  assert.equal(done.target.username,'ops');for(const key of ['input','context','directory','createdAt','finishedAt','observedAt','outputInfo'])assert(!(key in done));assert(!('workerFinished' in done.native));assert(!('chunks' in done.output));
+  const diagnostic=(await tool('sodeck_task_get',{taskId:start.taskId,detail:true,outputMode:'none'})).value;
+  assert.equal(diagnostic.input.command,'collect');assert.deepEqual(diagnostic.context,contexts.a);assert(diagnostic.createdAt>0&&diagnostic.finishedAt>=diagnostic.createdAt);assert(!('output' in diagnostic));
+  assert(start.taskId.includes(path.basename(path.dirname(diagnostic.directory))),'task identity includes its plugin run');
+  const original=(await tool('sodeck_task_get',{taskId:start.taskId,outputMode:'full'})).value;
+  assert(!('stdout' in original.output)&&!('stderr' in original.output)&&!('previewEncoding' in original.output));assert.deepEqual(Buffer.from(original.output.chunks[0].dataBase64,'base64'),bytes);assert.equal(original.output.nextCursor,done.output.nextCursor);
+  const outputPath=path.join(diagnostic.directory,'output.jsonl');fs.renameSync(outputPath,outputPath+'.held');
+  const noBody=(await tool('sodeck_task_get',{taskId:start.taskId,detail:true,outputMode:'none'})).value;assert.equal(noBody.done,true);
+  const readFailure=await tool('sodeck_task_get',{taskId:start.taskId});assert.equal(readFailure.error,true);assert.equal(readFailure.value.error.code,'evidenceReadFailed');assert.equal(readFailure.value.task.revision,done.revision);assert(!('task' in readFailure.value.error));assert(!('input' in readFailure.value.task));
+  const detailFailure=await tool('sodeck_task_get',{taskId:start.taskId,detail:true});assert.equal(detailFailure.value.task.input.command,'collect');fs.renameSync(outputPath+'.held',outputPath);
   const detail=(await peer.request('ui.event',{viewId:'a',data:{action:'task',taskId:start.taskId,cursor:'0'}})).data;
   assert.equal(detail.output.stdout,bytes.toString());assert.equal(detail.input.command,'collect');
   await assert.rejects(peer.request('ui.event',{viewId:'b',data:{action:'task',taskId:start.taskId}}),/任务不属于当前服务器连接/);
@@ -83,10 +91,11 @@ try{
   const none=(await tool('sodeck_task_get',{taskId:start.taskId,outputMode:'none'})).value;assert(!('output' in none));assert.equal(none.outputInfo.savedBytes,done.output.savedBytes);
   assert.equal((await tool('sodeck_task_get',{taskId:start.taskId,waitMs:20000})).value.wait.reason,'done');
   const cancelDone=(await tool('sodeck_task_cancel',{taskId:start.taskId})).value;assert.equal(cancelDone.cancelRequested,false);assert.deepEqual(cancelDone.result,none,'terminal cancellation does not change any facts');
+  if(process.env.SODECK_TEST_MCP_REPORT)fs.writeFileSync(process.env.SODECK_TEST_MCP_REPORT,JSON.stringify({version:manifest.version,fixture:'representative lscpu output, not a live server',stdout:bytes.toString(),samples},null,2)+'\n');
   const quiet=(await tool('sodeck_exec_start',{targetId:target,requestId:'quiet',command:'quiet'})).value;
   const quietResult=await until(async()=>(await tool('sodeck_task_get',{taskId:quiet.taskId,outputMode:'none'})).value,s=>s.native.state==='running');
   const timed=(await tool('sodeck_task_get',{taskId:quiet.taskId,outputMode:'none',waitMs:180})).value;assert.equal(timed.wait.reason,'timeout');assert(timed.wait.elapsedMs>=160);assert.equal(timed.revision,quietResult.revision,'clock-only polling does not change revision');
-  for(const p of [{waitMs:-1},{waitMs:0.5},{waitMs:20001},{outputMode:'bad'},{sinceRevision:'999999999'},{outputMode:'none',cursor:'1'}])assert.equal((await tool('sodeck_task_get',{taskId:quiet.taskId,...p})).error,true);
+  for(const p of [{waitMs:-1},{waitMs:0.5},{waitMs:20001},{outputMode:'bad'},{detail:'true'},{detail:1},{sinceRevision:'999999999'},{outputMode:'none',cursor:'1'}])assert.equal((await tool('sodeck_task_get',{taskId:quiet.taskId,...p})).error,true);
   const controllers=[new AbortController(),new AbortController()];
   const readers=controllers.map(c=>tool('sodeck_task_get',{taskId:quiet.taskId,outputMode:'none',waitMs:20000},c.signal).catch(e=>e));
   await delay(120);const overflow=await tool('sodeck_task_get',{taskId:quiet.taskId,outputMode:'none',waitMs:20000});assert.equal(overflow.value.error.code,'resourceBusy');
@@ -119,7 +128,7 @@ try{
   const history=(await peer.request('ui.getView',{viewId:'a'})).data.tasks;
   assert.equal(history.length,50);assert.equal(history[0].taskId,hang.taskId,'active operations remain visible beyond the recent record limit');
   assert(!('input' in history[0])&&!('directory' in history[0]));assert((await peer.request('ui.getView',{viewId:'a'})).data.recordCount>50);
-  const firstPage=(await tool('sodeck_tasks_list',{targetId:target,limit:20})).value;assert.equal(firstPage.tasks.length,20);assert(firstPage.hasMore);assert.equal(firstPage.counts.active,1);
+  const firstPage=(await tool('sodeck_tasks_list',{targetId:target,limit:20})).value;assert.equal(firstPage.tasks.length,20);assert(firstPage.hasMore);assert.equal(firstPage.counts.active,1);for(const row of firstPage.tasks){assert.equal(row.serverId,'server-a');for(const k of ['input','context','directory','output','outputInfo','file'])assert(!(k in row));assert(row.createdAt>0);}
   const inserted=(await tool('sodeck_exec_start',{...input,requestId:'inserted',command:'collect'})).value;await until(async()=>(await tool('sodeck_task_get',{taskId:inserted.taskId})).value,s=>s.done);
   let next=firstPage,all=[...next.tasks];while(next.hasMore){next=(await tool('sodeck_tasks_list',{targetId:target,limit:20,cursor:next.nextCursor})).value;all.push(...next.tasks);}
   assert.equal(new Set(all.map(t=>t.taskId)).size,all.length);assert.equal(all.length,firstPage.counts.active+firstPage.counts.done);assert(!all.some(t=>t.taskId===inserted.taskId),'new records do not enter an existing pagination ceiling');
@@ -131,16 +140,22 @@ try{
   const delayed=(await tool('sodeck_exec_start',{...input,requestId:'delayed',command:'delayed'})).value;
   await until(async()=>requests.some(p=>p.command==='delayed'),Boolean);
   const busy=await tool('sodeck_exec_start',{...input,requestId:'queued',command:'must-not-run'});assert.equal(busy.error,true);assert.equal(busy.value.error.code,'resourceBusy');assert(!busy.value.taskId);assert(!requests.some(p=>p.command==='must-not-run'));assert.equal((await tool('sodeck_exec_start',{...input,requestId:'delayed',command:'delayed'})).value.taskId,delayed.taskId);await until(async()=>(await tool('sodeck_task_get',{taskId:delayed.taskId})).value,s=>s.done);
-  const download=(await tool('sodeck_file_download',{targetId:target,requestId:'download',remotePath:'/tmp/consul.tar.gz'})).value;done=await until(async()=>(await tool('sodeck_task_get',{taskId:download.taskId})).value,s=>s.done);assert.equal(done.evidence.complete,true);assert.deepEqual(fs.readFileSync(done.evidence.path),bytes);assert.equal(files.size,0);assert.equal(batches.size,0);
-  assert.equal(JSON.parse(fs.readFileSync(path.join(done.directory,'metadata.json'),'utf8')).target.username,'ops');
+  const download=(await tool('sodeck_file_download',{targetId:target,requestId:'download',remotePath:'/tmp/consul.tar.gz'})).value;done=await until(async()=>(await tool('sodeck_task_get',{taskId:download.taskId})).value,s=>s.done);assert.equal(done.evidence.complete,true);assert.deepEqual(fs.readFileSync(done.file.localPath),bytes);assert.equal(files.size,0);assert.equal(batches.size,0);
+  assert.equal(done.file.remotePath,'/tmp/consul.tar.gz');assert(!('output' in done));
+  const downloadedDetail=(await tool('sodeck_task_get',{taskId:download.taskId,detail:true,outputMode:'none'})).value;
+  const savedMetadata=JSON.parse(fs.readFileSync(path.join(downloadedDetail.directory,'metadata.json'),'utf8'));assert.equal(savedMetadata.target.username,'ops');assert.equal(savedMetadata.schemaVersion,1);assert.deepEqual(savedMetadata.input,downloadedDetail.input);assert.deepEqual(savedMetadata.context,contexts.a);assert.equal(savedMetadata.evidence.path,done.file.localPath);
   for(const command of ['malformed','output limit']){const task=(await tool('sodeck_exec_start',{...input,requestId:command,command})).value;const result=await until(async()=>(await tool('sodeck_task_get',{taskId:task.taskId})).value,s=>s.done);assert.equal(result.evidence.complete,false);assert.equal(result.resourceReleased,true);}
-  const missing=(await tool('sodeck_file_download',{targetId:target,requestId:'missing',remotePath:'/missing'})).value;done=await until(async()=>(await tool('sodeck_task_get',{taskId:missing.taskId})).value,s=>s.done);assert.equal(done.native.admission,'rejected');assert.equal(batches.size,0,'known rejection ends the batch');
-  const cleanup=(await tool('sodeck_file_download',{targetId:target,requestId:'cleanup',remotePath:'/cleanup-failure'})).value;const cleaned=await until(async()=>(await tool('sodeck_task_get',{taskId:cleanup.taskId})).value,s=>s.done);assert.equal(cleaned.evidence.complete,true);assert.equal(cleaned.resourceReleased,false);assert.deepEqual(cleaned.cleanupError.details.map(e=>e.step),['release','batch.end']);
+  const missing=(await tool('sodeck_file_download',{targetId:target,requestId:'missing',remotePath:'/missing'})).value;done=await until(async()=>(await tool('sodeck_task_get',{taskId:missing.taskId})).value,s=>s.done);assert.equal(done.native.admission,'rejected');assert.equal(done.file.localPath,null);assert.equal(batches.size,0,'known rejection ends the batch');
+  const cleanup=(await tool('sodeck_file_download',{targetId:target,requestId:'cleanup',remotePath:'/cleanup-failure'})).value;const cleaned=await until(async()=>(await tool('sodeck_task_get',{taskId:cleanup.taskId})).value,s=>s.done);assert.equal(cleaned.evidence.complete,true);assert.equal(cleaned.resourceReleased,false);assert.equal(cleaned.cleanupError.detailsAvailable,true);assert(!('details' in cleaned.cleanupError));const cleanupDetail=(await tool('sodeck_task_get',{taskId:cleanup.taskId,detail:true,outputMode:'none'})).value;assert.deepEqual(cleanupDetail.cleanupError.details.map(e=>e.step),['release','batch.end']);
   const failing=(await tool('sodeck_exec_start',{...input,requestId:'final-save-fail',command:'final-save-fail'})).value;await until(async()=>typeof releaseGate==='function',Boolean);
-  const finalizing=(await tool('sodeck_task_get',{taskId:failing.taskId,outputMode:'none'})).value;assert.equal(finalizing.phase,'finalizing');assert.equal(finalizing.done,false);assert.equal(finalizing.evidence.complete,false);
+  const finalizing=(await tool('sodeck_task_get',{taskId:failing.taskId,detail:true,outputMode:'none'})).value;assert.equal(finalizing.phase,'finalizing');assert.equal(finalizing.done,false);assert.equal(finalizing.evidence.complete,false);
   assert.equal((await tool('sodeck_task_cancel',{taskId:failing.taskId})).value.cancelRequested,false);
   fs.mkdirSync(path.join(finalizing.directory,'metadata.tmp'));releaseGate({released:true});const failed=await until(async()=>(await tool('sodeck_task_get',{taskId:failing.taskId,outputMode:'none'})).value,s=>s.done);assert.equal(failed.evidence.state,'failed');assert.equal(failed.evidence.complete,false);assert.equal(failed.resourceReleased,true);
   fs.rmdirSync(path.join(finalizing.directory,'metadata.tmp'));assert.deepEqual((await tool('sodeck_task_get',{taskId:failing.taskId,outputMode:'none'})).value,failed);assert.equal(JSON.parse(fs.readFileSync(path.join(finalizing.directory,'metadata.json'))).phase,'finalizing','failed final save leaves last valid disk facts');
+  const huge=(await tool('sodeck_exec_start',{...input,requestId:'large-error',command:'large-error '+ '\\'.repeat(16000)})).value;
+  const hugeResult=await until(async()=>(await tool('sodeck_task_get',{taskId:huge.taskId})).value,s=>s.done);assert.equal(hugeResult.native.error.detailsAvailable,true);assert.equal(hugeResult.native.error.code,-32000);
+  const hugeDetail=await tool('sodeck_task_get',{taskId:huge.taskId,detail:true,outputMode:'none'});assert.equal(hugeDetail.error,true);assert.equal(hugeDetail.value.error.code,'resourceLimit');assert.equal(hugeDetail.value.error.taskId,huge.taskId);
+  const hugeAgain=(await tool('sodeck_task_get',{taskId:huge.taskId,outputMode:'none'})).value;assert.equal(hugeAgain.revision,hugeResult.revision);assert.equal(hugeAgain.done,true);assert.equal(hugeAgain.native.error.code,-32000);
   const unknown=(await tool('sodeck_exec_start',{...input,requestId:'unknown',command:'unknown'})).value;await until(async()=>(await tool('sodeck_task_get',{taskId:unknown.taskId,outputMode:'none'})).value,s=>s.native.admission==='unknown');
   await tool('sodeck_task_cancel',{taskId:unknown.taskId});assert.equal((await tool('sodeck_exec_start',{...input,requestId:'unknown',command:'unknown'})).value.taskId,unknown.taskId);assert.equal((await tool('sodeck_exec_start',{...input,requestId:'must-not-replay',command:'collect'})).value.error.code,'resourceBusy');assert.equal(requests.filter(p=>p.command==='unknown').length,1);confirmUnknown=true;await until(async()=>(await tool('sodeck_task_get',{taskId:unknown.taskId})).value,s=>s.done);
   for(const headers of [{Authorization:'Bearer wrong'},{Origin:'https://example.com'},{Host:'example.com'}]){

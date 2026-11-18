@@ -31,7 +31,7 @@ Token 首次启动时生成并保存在插件数据目录的 `access-token` 文�
 | `sodeck_targets_list` | 查询当前后台目标、完整 Context、真实端点/账号摘要、连接状态与 closing |
 | `sodeck_exec_start` | 用 targetId、requestId、command 启动非交互命令或多行脚本，立即返回 taskId；timeoutSeconds 默认 300，范围 1–3600 |
 | `sodeck_tasks_list` | 查找本次运行的任务，按目标/服务器、requestId、种类和 active/done 筛选，稳定分页 |
-| `sodeck_task_get` | 查询任务事实；outputMode 可选 full/text/none，默认立即 full，waitMs 可有限等待变化 |
+| `sodeck_task_get` | 查询任务事实；默认普通事实与一页 text；detail=true 查询诊断，full 获取原信封，none 只查状态；waitMs 可有限等待变化 |
 | `sodeck_task_cancel` | 请求取消；继续查询实际结果，已完成任务不回滚 |
 | `sodeck_file_download` | 用 targetId、requestId、remotePath 下载一个普通远程文件，返回 taskId；完成后提供本地文件路径 |
 
@@ -39,7 +39,7 @@ Token 首次启动时生成并保存在插件数据目录的 `access-token` 文�
 
 AI 会话丢失 taskId 时，可用 tasks_list 查原服务器或固定 requestId，再读取原任务，不必重新执行。列表只覆盖当前插件运行，按接纳顺序从新到旧；后续页保留原筛选和 limit，新任务需从第一页刷新。active/done 筛选使用查询时的实际状态，分页不冻结执行。
 
-用 task_get 查询完成与下一游标。新客户端可用 text 阅读日志，none 只查状态；需要精确原字节时使用 full 或本地证据。保存 revision，下一次携带 sinceRevision 和最多 20000 毫秒的 waitMs 等待变化；正文同时携带 nextCursor，避免反复读取第一页。等待到期是正常结果，断开读取不取消远端任务。字段、分页及错误的完整契约见 [MCP API](../mcp-api.md)。先采集故障窗口的日志和状态，根据结果分析后，再用新的 requestId 补采网络或性能信息。读取小配置使用远程命令；大日志或目录先在远端生成稳定的普通文件/压缩包，再下载。
+用 task_get 查询完成与下一游标。默认直接阅读 text 日志，none 只查状态；detail=true 查询原参数、本地目录及完整故障；需要精确原字节时使用 full 或本地证据。保存 revision，下一次携带 sinceRevision 和最多 20000 毫秒的 waitMs 等待变化；正文同时携带 nextCursor，避免反复读取第一页。等待到期是正常结果，断开读取不取消远端任务。字段、分页及错误的完整契约见 [MCP API](../mcp-api.md)。先采集故障窗口的日志和状态，根据结果分析后，再用新的 requestId 补采网络或性能信息。读取小配置使用远程命令；大日志或目录先在远端生成稳定的普通文件/压缩包，再下载。
 
 命令使用远端非交互 shell，不使用本机 PowerShell；没有 PTY、stdin 或交互认证。通用命令可以修改、删除远端数据，工具如实声明这一行为。工具缺失、权限不足和非零退出码保留远端实际结果。取消、期限或断线仅尽力终止自己的远端通道，不证明脱离的子进程已经结束，也不撤销副作用。
 
@@ -49,7 +49,9 @@ AI 会话丢失 taskId 时，可用 tasks_list 查原服务器或固定 requestI
 
 `phase` 区分 collecting、finalizing、done。最终元数据保存和清理完成后才发布稳定 `done=true`，之后事实与 revision 不再改变。最终元数据失败时发布保存失败的内存结果，磁盘保留最后有效元数据，可能仍为 finalizing。`done` 不能单独证明成功；检查 `native` 的退出/传输结果和 `evidence.complete`。非零退出码仍可有完整输出；取消、输出截断或保存失败不能标完整。`resourceReleased` 与 `cleanupError` 单独说明原生清理结果，各清理步骤失败分别保留，清理失败不抹去已经保存的证据。释放后 task_get 返回最后观察的快照和同一落地文件，不重新查询不存在的原生任务。
 
-任务快照保留原 input、接纳目标和提交/结束时间；runId、revision 和 outputInfo.savedBytes 说明运行、有效变化版本和已保存正文水位。taskId 含运行身份，客户端按不透明字符串处理；旧短编号不作别名。target 尚未确认时为 null，界面不以当前页面目标替代历史归属。createdAt 不证明远端命令已经启动，finishedAt 不证明全部远端子进程已经退出。
+普通结果保留接纳目标、退出/保存/清理事实；detail=true 保留原 input、完整 Context、时间、本地目录与完整错误。runId、revision 和正文的 savedBytes 说明运行、有效变化版本和已保存水位；命令 none 模式使用 outputInfo.savedBytes。有正文时不重复水位。taskId 含运行身份，客户端按不透明字符串处理；旧短编号不作别名。target 尚未确认时为 null，界面不以当前页面目标替代历史归属。createdAt 不证明远端命令已经启动，finishedAt 不证明全部远端子进程已经退出。
+
+普通下载用 file.remotePath 表示来源，file.localPath 仅稳定完成且证据完整时提供，其他为 null；诊断残留 evidence.path 不代表完整交付。
 
 下载复用核心流式复制、源版本检查、独占新文件提交和取消。已有目标不覆盖，变化中的源文件不能标完整。没有下载总时间/大小期限；单次 SFTP 请求有期限，持续有进度的慢传输可以继续。保存失败或磁盘不足保留失败，未提交的临时文件按原复制流程清理。
 
@@ -73,6 +75,7 @@ MCP 使用原有侧栏完成接入、监测、记录和详情，不提供中央�
 
 - 同一主机、同一用户可访问本地证据；不提供远程 AI 网关或公开 HTTP 服务。
 - 命令最长 16 KiB，每条捕获最多 16 MiB 编码后信封；超额停止采集。输出页最多约 16 KiB 原始 JSONL，使用 nextCursor 继续；更大的资料用下载。
+- 六工具只返回一份 JSON 文本；MCP result 含外层转义最多 256 KiB，超限明确拒绝，可改读普通 text/none 或本地证据。0.2.x 客户端读取方式需按 [MCP API](../mcp-api.md)迁移。
 - 单次插件运行最多 64 个目标、24 个活动任务、4096 条请求记录；核心自身的执行和文件额度继续生效。活动任务满时拒绝新任务，不另排执行队列。
 - 正等待全局最多 16、每任务最多 2；正文 IO 最多 4，忙时退避重读同一任务/游标，不排队扩展 worker。仅状态和列表不读取正文。
 - 证据不会自动删除，需自行管理磁盘空间。插件/SoDeck 重启后不扫描历史、恢复任务或接受旧 taskId；落地文件保留，缺少最终结果的元数据表示当时结果未知。
