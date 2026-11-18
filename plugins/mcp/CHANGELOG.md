@@ -4,6 +4,14 @@
 - 下方操作列表优先保留进行中的任务；点击查看原命令、服务器、退出结果、分页输出和本地证据，刷新不切换已选记录或输出页。
 - 任务快照兼容追加原参数、目标与提交/结束时间。当前功能见[功能说明](../../docs/features/mcp.md#侧栏实时监测)。
 
+发行：[机器人接口 0.1.3](https://github.com/BgaSol/soDeck/releases/tag/plugin-mcp-v0.1.3)，独立正式插件发行，按用户要求标为 GitHub Latest。包来源：[27f9491f303f8676debb59137d0a3263ce50cb39](https://github.com/BgaSol/soDeck/commit/27f9491f303f8676debb59137d0a3263ce50cb39)；[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/44240065627)；[原始打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/44240103234)。两次运行均首次通过；发布复用同一草稿的五份原始归档，未重新构建。
+
+Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生构建、包内程序启动/挂载/销毁/退出、带密钥的 MCP HTTP 发现和资源清理均通过。五份原包的架构、实时监测、操作列表、行内详情和输出分页资源已逐一核对；六个正式附件的公开下载大小与 SHA-256 均匹配，Release 说明与更新清单 notes 一致。[永久发行证据](release-evidence/v0.1.3-assets.json)保存包来源、原始 run、五份原生报告、附件摘要和 Latest 核验。
+
+来源 Check 的五平台源码及 Linux 三服务器调查/进程/界面回归通过。Windows x86_64 本机格式与类型检查、单元、187 项脚本测试、正式前端构建、实际进程故障注入、三服务器 SSH、三主题侧栏界面和实际插件包验收通过。接入配置沿用，最低核心版本仍为 1.5.0，机器人图标需要核心 1.5.1；已启用插件升级在重启后生效。
+
+本次未执行旧版升级、五平台实际包 SSH 组合、新的实际 Codex CLI 调用、netem 或额外原生 IME/DPI/读屏专项。来源 Check 未选中的 desktop/browser/netem 任务为 skipped，不作为专项通过证据。
+
 # 0.1.2
 
 - 插件列表、工作区侧栏、页面标题和设置入口统一显示为“机器人接口”，采用单色机器人图标。
