@@ -1,0 +1,397 @@
+{
+  "date": "2026-11-18",
+  "component": "mcp",
+  "version": "0.3.0",
+  "sourceCommit": "8354e43b6517ea211d9afb1ba6f8f5d435050847",
+  "originalRunId": "44310000363",
+  "originalRunUrl": "https://github.com/BgaSol/soDeck/actions/runs/44310000363",
+  "packageAttempt": 1,
+  "sourceCheck": {
+    "runId": "44309996583",
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/44309996583",
+    "attempt": 1,
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "select",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44309996583/job/134821351318"
+      },
+      {
+        "name": "native-macos-aarch64",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44309996583/job/134821497919"
+      },
+      {
+        "name": "native-windows-aarch64",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44309996583/job/134821498028"
+      },
+      {
+        "name": "native-windows-x86_64",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44309996583/job/134821498052"
+      },
+      {
+        "name": "native-linux-x86_64",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44309996583/job/134821498069"
+      },
+      {
+        "name": "integration-business-linux-x86_64",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44309996583/job/134821498092"
+      },
+      {
+        "name": "checks",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44309996583/job/134821498110"
+      },
+      {
+        "name": "native-linux-aarch64",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44309996583/job/134821498156"
+      },
+      {
+        "name": "browser",
+        "conclusion": "skipped",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44309996583/job/134821501027"
+      },
+      {
+        "name": "netem",
+        "conclusion": "skipped",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44309996583/job/134821501065"
+      },
+      {
+        "name": "desktop",
+        "conclusion": "skipped",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44309996583/job/134821501534"
+      },
+      {
+        "name": "format",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44309996583/job/134824747948"
+      }
+    ]
+  },
+  "releaseId": 450006355,
+  "releaseUrl": "https://github.com/BgaSol/soDeck/releases/tag/plugin-mcp-v0.3.0",
+  "tag": "plugin-mcp-v0.3.0",
+  "draft": false,
+  "repositoryLatest": true,
+  "reports": [
+    {
+      "id": "sodeck.mcp",
+      "version": "0.3.0",
+      "target": "aarch64-apple-darwin",
+      "commit": "8354e43b6517ea211d9afb1ba6f8f5d435050847",
+      "sha256": "7895df62e1d809862b494e10f0406eae3f067e3e439b107817242430d31fd8a8",
+      "runId": "44310000363",
+      "toolCommit": "8354e43b6517ea211d9afb1ba6f8f5d435050847",
+      "passed": true,
+      "pluginIcons": [
+        "bot"
+      ],
+      "mcpHttp": true,
+      "mcpQueries": true,
+      "calls": [
+        "settings.get",
+        "session.state",
+        "session.state"
+      ]
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.3.0",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "8354e43b6517ea211d9afb1ba6f8f5d435050847",
+      "sha256": "0aac2e407ba1ec90a1cdbe5a3c4b35f3b887d4034db1d70743b274c7cbe9ae60",
+      "runId": "44310000363",
+      "toolCommit": "8354e43b6517ea211d9afb1ba6f8f5d435050847",
+      "passed": true,
+      "pluginIcons": [
+        "bot"
+      ],
+      "mcpHttp": true,
+      "mcpQueries": true,
+      "calls": [
+        "settings.get",
+        "session.state",
+        "session.state"
+      ]
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.3.0",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "8354e43b6517ea211d9afb1ba6f8f5d435050847",
+      "sha256": "13a2f48869543c1161ce55af67d98cf3b6a50668ddbb0e009d0cedeea5e5dcea",
+      "runId": "44310000363",
+      "toolCommit": "8354e43b6517ea211d9afb1ba6f8f5d435050847",
+      "passed": true,
+      "pluginIcons": [
+        "bot"
+      ],
+      "mcpHttp": true,
+      "mcpQueries": true,
+      "calls": [
+        "settings.get",
+        "session.state",
+        "session.state"
+      ]
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.3.0",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "8354e43b6517ea211d9afb1ba6f8f5d435050847",
+      "sha256": "0b1a28e1fc0b888c81deed3bc8cb5bf2e53a23ddd4be973bbe1f04248d96f9fe",
+      "runId": "44310000363",
+      "toolCommit": "8354e43b6517ea211d9afb1ba6f8f5d435050847",
+      "passed": true,
+      "pluginIcons": [
+        "bot"
+      ],
+      "mcpHttp": true,
+      "mcpQueries": true,
+      "calls": [
+        "settings.get",
+        "session.state",
+        "session.state"
+      ]
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.3.0",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "8354e43b6517ea211d9afb1ba6f8f5d435050847",
+      "sha256": "06e14bcd520967b9b59ba089b35d2b04d8dc995e6a3160a1363aa3006c5b6c63",
+      "runId": "44310000363",
+      "toolCommit": "8354e43b6517ea211d9afb1ba6f8f5d435050847",
+      "passed": true,
+      "pluginIcons": [
+        "bot"
+      ],
+      "mcpHttp": true,
+      "mcpQueries": true,
+      "calls": [
+        "settings.get",
+        "session.state",
+        "session.state"
+      ]
+    }
+  ],
+  "packages": [
+    {
+      "id": "sodeck.mcp",
+      "version": "0.3.0",
+      "apiVersion": "1",
+      "target": "aarch64-apple-darwin",
+      "commit": "8354e43b6517ea211d9afb1ba6f8f5d435050847",
+      "runId": "44310000363",
+      "file": "sodeck-mcp_0.3.0_aarch64-apple-darwin.tar.gz",
+      "size": 1855700,
+      "sha256": "7895df62e1d809862b494e10f0406eae3f067e3e439b107817242430d31fd8a8"
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.3.0",
+      "apiVersion": "1",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "8354e43b6517ea211d9afb1ba6f8f5d435050847",
+      "runId": "44310000363",
+      "file": "sodeck-mcp_0.3.0_aarch64-pc-windows-msvc.zip",
+      "size": 1887728,
+      "sha256": "0aac2e407ba1ec90a1cdbe5a3c4b35f3b887d4034db1d70743b274c7cbe9ae60"
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.3.0",
+      "apiVersion": "1",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "8354e43b6517ea211d9afb1ba6f8f5d435050847",
+      "runId": "44310000363",
+      "file": "sodeck-mcp_0.3.0_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 1882914,
+      "sha256": "13a2f48869543c1161ce55af67d98cf3b6a50668ddbb0e009d0cedeea5e5dcea"
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.3.0",
+      "apiVersion": "1",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "8354e43b6517ea211d9afb1ba6f8f5d435050847",
+      "runId": "44310000363",
+      "file": "sodeck-mcp_0.3.0_x86_64-pc-windows-msvc.zip",
+      "size": 2051818,
+      "sha256": "0b1a28e1fc0b888c81deed3bc8cb5bf2e53a23ddd4be973bbe1f04248d96f9fe"
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.3.0",
+      "apiVersion": "1",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "8354e43b6517ea211d9afb1ba6f8f5d435050847",
+      "runId": "44310000363",
+      "file": "sodeck-mcp_0.3.0_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 2018798,
+      "sha256": "06e14bcd520967b9b59ba089b35d2b04d8dc995e6a3160a1363aa3006c5b6c63"
+    }
+  ],
+  "archiveInspection": [
+    {
+      "target": "aarch64-apple-darwin",
+      "package": "sodeck-mcp_0.3.0_aarch64-apple-darwin.tar.gz",
+      "sha256": "7895df62e1d809862b494e10f0406eae3f067e3e439b107817242430d31fd8a8",
+      "size": 1855700,
+      "version": "0.3.0",
+      "nativeArchitectureVerified": true,
+      "statusSidebarOnly": true,
+      "pluginOwnedIconVerified": true,
+      "uiSha256": {
+        "index.html": "40b4c22aca3a972d73c05c235d1fb09d3100a30601b0cb5c66a6d31873760e7b",
+        "style.css": "4fa0311fe42dbce46337fe8270d8b63e289919bba0a325c841efb6f1f5df7fe6",
+        "view.js": "1ac022afa8d35507f50dd8a09bc3adc39d2b8596ab5fa3cea3aceb5487a78204"
+      }
+    },
+    {
+      "target": "aarch64-pc-windows-msvc",
+      "package": "sodeck-mcp_0.3.0_aarch64-pc-windows-msvc.zip",
+      "sha256": "0aac2e407ba1ec90a1cdbe5a3c4b35f3b887d4034db1d70743b274c7cbe9ae60",
+      "size": 1887728,
+      "version": "0.3.0",
+      "nativeArchitectureVerified": true,
+      "statusSidebarOnly": true,
+      "pluginOwnedIconVerified": true,
+      "uiSha256": {
+        "index.html": "40b4c22aca3a972d73c05c235d1fb09d3100a30601b0cb5c66a6d31873760e7b",
+        "style.css": "3e2455a063ae5a151621cceeca84d61df83c15fda3257c773373d6635f8a9506",
+        "view.js": "93a3d1ff1aaccd8c9ab461cc28af3e926359d258c62e872925abd9cdbefc3445"
+      }
+    },
+    {
+      "target": "aarch64-unknown-linux-gnu",
+      "package": "sodeck-mcp_0.3.0_aarch64-unknown-linux-gnu.tar.gz",
+      "sha256": "13a2f48869543c1161ce55af67d98cf3b6a50668ddbb0e009d0cedeea5e5dcea",
+      "size": 1882914,
+      "version": "0.3.0",
+      "nativeArchitectureVerified": true,
+      "statusSidebarOnly": true,
+      "pluginOwnedIconVerified": true,
+      "uiSha256": {
+        "index.html": "40b4c22aca3a972d73c05c235d1fb09d3100a30601b0cb5c66a6d31873760e7b",
+        "style.css": "4fa0311fe42dbce46337fe8270d8b63e289919bba0a325c841efb6f1f5df7fe6",
+        "view.js": "1ac022afa8d35507f50dd8a09bc3adc39d2b8596ab5fa3cea3aceb5487a78204"
+      }
+    },
+    {
+      "target": "x86_64-pc-windows-msvc",
+      "package": "sodeck-mcp_0.3.0_x86_64-pc-windows-msvc.zip",
+      "sha256": "0b1a28e1fc0b888c81deed3bc8cb5bf2e53a23ddd4be973bbe1f04248d96f9fe",
+      "size": 2051818,
+      "version": "0.3.0",
+      "nativeArchitectureVerified": true,
+      "statusSidebarOnly": true,
+      "pluginOwnedIconVerified": true,
+      "uiSha256": {
+        "index.html": "40b4c22aca3a972d73c05c235d1fb09d3100a30601b0cb5c66a6d31873760e7b",
+        "style.css": "3e2455a063ae5a151621cceeca84d61df83c15fda3257c773373d6635f8a9506",
+        "view.js": "93a3d1ff1aaccd8c9ab461cc28af3e926359d258c62e872925abd9cdbefc3445"
+      }
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "package": "sodeck-mcp_0.3.0_x86_64-unknown-linux-gnu.tar.gz",
+      "sha256": "06e14bcd520967b9b59ba089b35d2b04d8dc995e6a3160a1363aa3006c5b6c63",
+      "size": 2018798,
+      "version": "0.3.0",
+      "nativeArchitectureVerified": true,
+      "statusSidebarOnly": true,
+      "pluginOwnedIconVerified": true,
+      "uiSha256": {
+        "index.html": "40b4c22aca3a972d73c05c235d1fb09d3100a30601b0cb5c66a6d31873760e7b",
+        "style.css": "4fa0311fe42dbce46337fe8270d8b63e289919bba0a325c841efb6f1f5df7fe6",
+        "view.js": "1ac022afa8d35507f50dd8a09bc3adc39d2b8596ab5fa3cea3aceb5487a78204"
+      }
+    }
+  ],
+  "publicAssets": [
+    {
+      "id": 763482441,
+      "name": "plugin-update.json",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.3.0/plugin-update.json",
+      "size": 26432,
+      "sha256": "522b131f2f04dbcaf148c8f9aa9ef6742af46c537f21f183c9c9f7812d2dff4a",
+      "publicDownloadVerified": true
+    },
+    {
+      "id": 763459648,
+      "name": "sodeck-mcp_0.3.0_aarch64-apple-darwin.tar.gz",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.3.0/sodeck-mcp_0.3.0_aarch64-apple-darwin.tar.gz",
+      "size": 1855700,
+      "sha256": "7895df62e1d809862b494e10f0406eae3f067e3e439b107817242430d31fd8a8",
+      "publicDownloadVerified": true
+    },
+    {
+      "id": 763459497,
+      "name": "sodeck-mcp_0.3.0_aarch64-pc-windows-msvc.zip",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.3.0/sodeck-mcp_0.3.0_aarch64-pc-windows-msvc.zip",
+      "size": 1887728,
+      "sha256": "0aac2e407ba1ec90a1cdbe5a3c4b35f3b887d4034db1d70743b274c7cbe9ae60",
+      "publicDownloadVerified": true
+    },
+    {
+      "id": 763459599,
+      "name": "sodeck-mcp_0.3.0_aarch64-unknown-linux-gnu.tar.gz",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.3.0/sodeck-mcp_0.3.0_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 1882914,
+      "sha256": "13a2f48869543c1161ce55af67d98cf3b6a50668ddbb0e009d0cedeea5e5dcea",
+      "publicDownloadVerified": true
+    },
+    {
+      "id": 763459418,
+      "name": "sodeck-mcp_0.3.0_x86_64-pc-windows-msvc.zip",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.3.0/sodeck-mcp_0.3.0_x86_64-pc-windows-msvc.zip",
+      "size": 2051818,
+      "sha256": "0b1a28e1fc0b888c81deed3bc8cb5bf2e53a23ddd4be973bbe1f04248d96f9fe",
+      "publicDownloadVerified": true
+    },
+    {
+      "id": 763459545,
+      "name": "sodeck-mcp_0.3.0_x86_64-unknown-linux-gnu.tar.gz",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.3.0/sodeck-mcp_0.3.0_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 2018798,
+      "sha256": "06e14bcd520967b9b59ba089b35d2b04d8dc995e6a3160a1363aa3006c5b6c63",
+      "publicDownloadVerified": true
+    }
+  ],
+  "releaseNotesMatchManifest": true,
+  "localValidation": {
+    "formatTypes": true,
+    "scriptTests": 189,
+    "coreTests": true,
+    "mcpUnitTests": 10,
+    "mcpProcess": true,
+    "mcpThreeServerSsh": true,
+    "mcpBrowserUi": true,
+    "sidebarMainContentInputAndFocus": true,
+    "actualCodexOnOriginalWindowsArchive": true,
+    "originalArchiveCodexSeconds": 80.16
+  },
+  "responseComparison": {
+    "evidence": "v0.3.0-response.json",
+    "baselineVersion": "0.2.2",
+    "baselineBytes": 3256,
+    "candidateBytes": 977,
+    "reductionPercent": 69.9938574938575,
+    "representativeFixture": true
+  },
+  "actualClientEvidence": "v0.3.0-client.json",
+  "skipped": [
+    "netem",
+    "installed old-version upgrade",
+    "five-platform actual archive with real SSH combination (Windows x86_64 original archive passed)",
+    "physical IME/DPI/screen-reader devices"
+  ],
+  "scope": "A response/read contract only; B short-command start/wait and C target resolution unchanged; no new production dependencies; existing plugin-owned icon retained"
+}

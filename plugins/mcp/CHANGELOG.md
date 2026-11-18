@@ -5,9 +5,13 @@
 - 普通结果保留真实目标、远端退出、证据与资源清理事实；错误摘要标识截断与省略详情，未知结果保留一层历史观察。下载通过 file.remotePath/localPath 交付，只有稳定完成且证据完整时提供本地文件。
 - Task 只保存原始 Record，读取/取消/列表从同次捕获生成结果；正文 reader 明确 text/full 页，响应预算计入外层转义，超过 256 KiB 明确返回 resourceLimit，不修改任务或游标。
 
-这是 0.2.x 客户端读取契约升级，迁移见 [MCP API](../../docs/mcp-api.md)。工具名称、启动与目标选择、去重、有限等待、核心 API 和 schemaVersion=1 证据文件保持；侧栏继续在原位置完成接入/监测/详情。最低核心版本仍为 1.5.0；没有新增生产依赖，已启用插件升级在重启后生效。
+这是 0.2.x 客户端读取契约升级，迁移见 [MCP API](../../docs/mcp-api.md)。工具名称、启动与目标选择、去重、有限等待、核心 API 和 schemaVersion=1 证据文件保持；侧栏继续在原位置完成接入/监测/详情，连同仓库 0.2.3 的插件自带图标一并交付。最低核心版本仍为 1.5.0；没有新增生产依赖，已启用插件升级在重启后生效。
 
-当前为待发行候选：本机类型/格式、10 项插件单元、187 项脚本、实际进程与侧栏三主题回归通过；[响应对比证据](release-evidence/v0.3.0-response.json)保留实际 0.2.2 原包与新生产程序对同一代表性 CPU 文本的完整 MCP result，3256 → 977 字节，减少 69.99%，输出及退出/保存/清理事实一致。该测量是固定夹具，不是本次实查 187。真实核心三目标 SSH、150000 字节下载、默认/full/none/诊断与侧栏生命周期通过；[实际 Codex 验收](release-evidence/v0.3.0-client.json)确认正等待、默认读取、三页文本、原信封和完整诊断可用。首次客户端 180 秒超时未计通过，缩减远端小块写入后 103.14 秒通过。核心全套本机测试通过，ignored 专项未计通过。五平台原包验收待完成，发布前补齐来源和永久证据。
+本机类型/格式、10 项插件单元、189 项脚本、实际进程与侧栏三主题回归通过；[响应对比证据](release-evidence/v0.3.0-response.json)保留实际 0.2.2 原包与新生产程序对同一代表性 CPU 文本的完整 MCP result，3256 → 977 字节，减少 69.99%，输出及退出/保存/清理事实一致。该测量是固定夹具，不是本次实查 187。真实核心三目标 SSH、150000 字节下载、默认/full/none/诊断与侧栏生命周期通过；[实际 Codex 验收](release-evidence/v0.3.0-client.json)确认正等待、默认读取、三页文本、原信封和完整诊断可用。首次客户端 180 秒超时未计通过，缩减远端小块写入后 103.14 秒通过。核心全套本机测试通过，ignored 专项未计通过。合并仓库既有图标更新后，最终来源三服务器 SSH 与 Codex 再验 109.73 秒通过；GitHub Actions 原始 Windows x86_64 归档再验同流程 80.16 秒通过。
+
+发行：[Agent MCP 0.3.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-mcp-v0.3.0)，按用户要求标为仓库 Latest。包来源：[8354e43b6517ea211d9afb1ba6f8f5d435050847](https://github.com/BgaSol/soDeck/commit/8354e43b6517ea211d9afb1ba6f8f5d435050847)；[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/44309996583) 与[原始独立打包及实际包验收](https://github.com/BgaSol/soDeck/actions/runs/44310000363) 均首次通过。五平台 Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 原生构建和独立原包启动/挂载/销毁/退出、带密钥六工具与进程回归通过；来源 Check 的五平台插件单元及 Linux 核心/MCP SSH、进程、三主题界面回归通过，browser/desktop/netem 为 skipped。正式附件复用同一草稿的五份原始归档，不再次构建；逐包检查原生架构、status 唯一侧栏、三个 UI 源资源和插件自带图标，公开附件与报告/清单摘要一致。[永久发行证据](release-evidence/v0.3.0-assets.json)保留来源、五份报告、原包检查与公开 Latest 核验。
+
+包来源之后仅同步实际发行证据和删除完成计划；程序、版本与原归档保持固定。
 
 本轮只实现 A 的响应/读取契约；短命令 start/wait 与目标解析保持既有行为。未执行旧版实际安装升级、五平台原包和真实 SSH 组合、netem 或物理 IME/DPI/读屏专项。
 

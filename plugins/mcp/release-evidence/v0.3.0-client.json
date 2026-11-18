@@ -1,6 +1,6 @@
 {
   "client": "Codex desktop bundled codex.exe 26.1111.2228.0 x64, ephemeral CLI task",
-  "scope": "actual 0.3.0 production plugin with core and three isolated loopback OpenSSH servers; test-only MCP port/config; running installed SoDeck unchanged",
+  "scope": "actual original GitHub Actions Windows x86_64 archive with final core fixture and three isolated loopback OpenSSH servers; test-only MCP port/config; installed SoDeck unchanged",
   "calls": [
     {
       "tool": "sodeck_targets_list",
@@ -17,28 +17,28 @@
       "args": {
         "command": "powershell.exe -NoProfile -Command \"Start-Sleep -Seconds 2; Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors | Format-List; Write-Output ('page-line-' * 2400); Write-Output sodeck-codex-acceptance\"",
         "requestId": "codex-acceptance",
-        "targetId": "1795006288928-b06b721c7bcd4168-target-1"
+        "targetId": "1795007731015-df0a5f57288ce9ca-target-2"
       },
       "status": "completed",
       "textBlocks": 1,
       "structuredContent": false,
       "parsed": {
-        "taskId": "task-1795006288928-b06b721c7bcd4168-14",
+        "taskId": "task-1795007731015-df0a5f57288ce9ca-14",
         "diagnosticInputPresent": false
       }
     },
     {
       "tool": "sodeck_task_get",
       "args": {
-        "taskId": "task-1795006288928-b06b721c7bcd4168-14",
+        "taskId": "task-1795007731015-df0a5f57288ce9ca-14",
         "outputMode": "none",
-        "waitMs": 5000
+        "waitMs": 1000
       },
       "status": "completed",
       "textBlocks": 1,
       "structuredContent": false,
       "parsed": {
-        "taskId": "task-1795006288928-b06b721c7bcd4168-14",
+        "taskId": "task-1795007731015-df0a5f57288ce9ca-14",
         "done": true,
         "phase": "done",
         "exitCode": 0,
@@ -47,7 +47,7 @@
         "wait": {
           "elapsedMs": 0,
           "reason": "done",
-          "requestedMs": 5000
+          "requestedMs": 1000
         },
         "diagnosticInputPresent": false
       }
@@ -55,13 +55,13 @@
     {
       "tool": "sodeck_task_get",
       "args": {
-        "taskId": "task-1795006288928-b06b721c7bcd4168-14"
+        "taskId": "task-1795007731015-df0a5f57288ce9ca-14"
       },
       "status": "completed",
       "textBlocks": 1,
       "structuredContent": false,
       "parsed": {
-        "taskId": "task-1795006288928-b06b721c7bcd4168-14",
+        "taskId": "task-1795007731015-df0a5f57288ce9ca-14",
         "done": true,
         "phase": "done",
         "exitCode": 0,
@@ -75,7 +75,7 @@
           "stderr",
           "stdout"
         ],
-        "nextCursor": "13244",
+        "nextCursor": "13329",
         "hasMore": true,
         "diagnosticInputPresent": false,
         "stdoutPrefix": "\r\n\r\nName                      : Intel(R) Core(TM) Ultra 5 250K Plus\r\nNumberOfCores             : 18\r\nNumberOfLogicalProcessors : 18\r\n\r\n\r\n\r\npage-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-p",
@@ -85,14 +85,14 @@
     {
       "tool": "sodeck_task_get",
       "args": {
-        "taskId": "task-1795006288928-b06b721c7bcd4168-14",
-        "cursor": "13244"
+        "taskId": "task-1795007731015-df0a5f57288ce9ca-14",
+        "cursor": "13329"
       },
       "status": "completed",
       "textBlocks": 1,
       "structuredContent": false,
       "parsed": {
-        "taskId": "task-1795006288928-b06b721c7bcd4168-14",
+        "taskId": "task-1795007731015-df0a5f57288ce9ca-14",
         "done": true,
         "phase": "done",
         "exitCode": 0,
@@ -106,7 +106,7 @@
           "stderr",
           "stdout"
         ],
-        "nextCursor": "25022",
+        "nextCursor": "25107",
         "hasMore": true,
         "diagnosticInputPresent": false,
         "stdoutPrefix": "page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-",
@@ -116,14 +116,14 @@
     {
       "tool": "sodeck_task_get",
       "args": {
-        "taskId": "task-1795006288928-b06b721c7bcd4168-14",
-        "cursor": "25022"
+        "taskId": "task-1795007731015-df0a5f57288ce9ca-14",
+        "cursor": "25107"
       },
       "status": "completed",
       "textBlocks": 1,
       "structuredContent": false,
       "parsed": {
-        "taskId": "task-1795006288928-b06b721c7bcd4168-14",
+        "taskId": "task-1795007731015-df0a5f57288ce9ca-14",
         "done": true,
         "phase": "done",
         "exitCode": 0,
@@ -137,7 +137,7 @@
           "stderr",
           "stdout"
         ],
-        "nextCursor": "33850",
+        "nextCursor": "33935",
         "hasMore": false,
         "diagnosticInputPresent": false,
         "stdoutPrefix": "-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page",
@@ -147,14 +147,14 @@
     {
       "tool": "sodeck_task_get",
       "args": {
-        "taskId": "task-1795006288928-b06b721c7bcd4168-14",
+        "taskId": "task-1795007731015-df0a5f57288ce9ca-14",
         "outputMode": "full"
       },
       "status": "completed",
       "textBlocks": 1,
       "structuredContent": false,
       "parsed": {
-        "taskId": "task-1795006288928-b06b721c7bcd4168-14",
+        "taskId": "task-1795007731015-df0a5f57288ce9ca-14",
         "done": true,
         "phase": "done",
         "exitCode": 0,
@@ -166,7 +166,7 @@
           "nextCursor",
           "savedBytes"
         ],
-        "nextCursor": "13244",
+        "nextCursor": "13329",
         "hasMore": true,
         "diagnosticInputPresent": false
       }
@@ -174,7 +174,7 @@
     {
       "tool": "sodeck_task_get",
       "args": {
-        "taskId": "task-1795006288928-b06b721c7bcd4168-14",
+        "taskId": "task-1795007731015-df0a5f57288ce9ca-14",
         "detail": true,
         "outputMode": "none"
       },
@@ -182,7 +182,7 @@
       "textBlocks": 1,
       "structuredContent": false,
       "parsed": {
-        "taskId": "task-1795006288928-b06b721c7bcd4168-14",
+        "taskId": "task-1795007731015-df0a5f57288ce9ca-14",
         "done": true,
         "phase": "done",
         "exitCode": 0,
@@ -192,7 +192,7 @@
       }
     }
   ],
-  "finalAnswer": "CPU: Intel(R) Core(TM) Ultra 5 250K Plus.\n\n- Paging worked across 3 pages; stdout contained `sodeck-codex-acceptance`.\n- Full mode returned original chunks without a stdout field.\n- Diagnostics preserved the exact command and returned no output.\n- Verified `exitCode: 0` and `evidence.complete: true`.\n\nMCP_ACCEPTANCE_OK",
+  "finalAnswer": "CPU: Intel(R) Core(TM) Ultra 5 250K Plus.\n\nPaging passed across 3 pages; the final marker was found in stdout. Full mode returned original chunks without stdout. Diagnostics included the original command with no output.\n\nVerified `exitCode: 0` and `evidence.complete: true`.\n\nMCP_ACCEPTANCE_OK",
   "firstAttempt": "180-second client deadline exceeded; no passing claim. Replaced 1800 small output writes by one 24 KiB output, preserved multi-page coverage; acceptance passed in 103.14 seconds.",
   "verified": [
     "explicit target",
@@ -202,5 +202,17 @@
     "full chunks without stdout",
     "detail=true none with original command",
     "exitCode=0 evidence.complete=true"
+  ],
+  "sourceCommit": "8354e43b6517ea211d9afb1ba6f8f5d435050847",
+  "originalRunId": "44310000363",
+  "archive": {
+    "target": "x86_64-pc-windows-msvc",
+    "sha256": "0b1a28e1fc0b888c81deed3bc8cb5bf2e53a23ddd4be973bbe1f04248d96f9fe",
+    "actualArchive": true
+  },
+  "passedElapsedSeconds": 80.16,
+  "previousSuccessfulRunsSeconds": [
+    103.14,
+    109.73
   ]
 }
