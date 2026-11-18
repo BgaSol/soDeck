@@ -5,7 +5,13 @@
 
 当前行为见[功能说明](../../docs/features/mcp.md)。插件 ID、数据目录、端口、密钥和 MCP 客户端配置沿用；已启用插件升级在重启后生效。最低核心版本仍为 1.5.0，没有新增生产依赖或核心 API。
 
-待发行：五平台原生包与实际包验收、相关源码/界面回归及公开附件核验完成后直接发布为 Latest。
+发行：[Agent MCP 0.2.2](https://github.com/BgaSol/soDeck/releases/tag/plugin-mcp-v0.2.2)，独立正式插件发行，按用户要求标为 GitHub Latest。包来源：[a54acb31dff9bd2bf3a5903f4fca876d6b4412f8](https://github.com/BgaSol/soDeck/commit/a54acb31dff9bd2bf3a5903f4fca876d6b4412f8)；[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/44266783239) 与[原始打包及实际包验收](https://github.com/BgaSol/soDeck/actions/runs/44266788778) 均首次通过。发布复用同一草稿的五份原始归档，不重新构建。
+
+Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生构建、实际原包启动/挂载/销毁/退出、带密钥的六工具发现和进程回归通过。逐包核对原生架构、Agent MCP 插件名称/侧栏标题/设置名称、唯一 status 侧栏声明、内容区重复标题缺席、刷新与服务器信息同排，以及三个 UI 源资源。附件摘要与原生报告、更新清单一致；[永久发行证据](release-evidence/v0.2.2-assets.json)保留五份原生报告、原包检查、公开下载与 Latest 核验。
+
+本机通过类型/格式、187 项脚本测试、5 项插件单元、实际进程和独立插件构建。先在含侧栏壳标题的夹具稳定复现内容区重复 h1，再删除标题节点及其样式。界面回归覆盖三主题、200–1024px 宽度、400px 矮面板、主区域输入/布局/焦点、详情返回位置、分页、迟到读取、设置冲突和隐藏/卸载；同时检查元数据与运行时标题为 Agent MCP。来源 Check 的五平台原生源码与 Linux MCP 三服务器 SSH、进程、界面回归通过。
+
+本轮未执行实际旧版安装升级、新的实际 Codex CLI 调用、五平台原包与真实 SSH 组合、netem 或物理 IME/DPI/读屏专项；通用 browser/desktop/netem 为 skipped，MCP 界面由业务任务验收。插件 ID、配置及任务/证据契约不变；任务仍不跨重启恢复，证据保留。
 
 # 0.2.1
 
