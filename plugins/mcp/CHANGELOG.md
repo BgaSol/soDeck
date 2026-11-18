@@ -6,7 +6,19 @@
 
 要求核心 1.6.0 的 session.target.v2；旧核心明确初始化失败。六工具、Token、端口、证据 schemaVersion=1、任务分页/等待和侧栏布局保持；无新增生产依赖。迁移见 [MCP API](../../docs/mcp-api.md)，行为见[功能说明](../../docs/features/mcp.md)。
 
-待发行：本次本机与来源 Check、五平台原生 package/verify、实际 Codex 和原包回归完成后记录来源提交、原始运行及 Release。
+发行：[Agent MCP 0.5.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-mcp-v0.5.0)，按用户要求标为仓库 Latest。先更新[核心 1.6.0](https://github.com/BgaSol/soDeck/releases/tag/v1.6.0)，再更新已启用插件并重启 SoDeck。端口、接入密钥、客户端配置和原侧栏位置保持。
+
+包来源：[50062c22566eaf8d9b4378e14a82115a4416064b](https://github.com/BgaSol/soDeck/commit/50062c22566eaf8d9b4378e14a82115a4416064b)；[来源完整 Check](https://github.com/BgaSol/soDeck/actions/runs/44349827850) 第 2 次尝试通过；[原始独立打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/44349929560) 在第 3 次尝试完成。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台均使用原生归档，实际包启动/挂载/销毁/六工具/目标查询/进程回归/退出通过。逐包核对来源、版本、原生架构、唯一 status 侧栏及 UI/图标；发布复用同一草稿五份原始归档，不推同版本标签再次构建。[永久发行证据](release-evidence/v0.5.0-assets.json)保存五份报告、原始运行、附件摘要及公开核验。
+
+macOS package 首次排队取消，没有执行步骤；只重试该目标后成功，其余四份归档保留。macOS verify 在第 2 次尝试排队约 16 分钟后取消，没有执行验收；只重试该项验收及后续汇总，第 3 次尝试通过。各平台只实际构建一次，没有重建成功归档。来源 Check 首轮两个界面断言失败及取消/重跑范围见[核心发行记录](../../docs/releases/v1.6.0.md)；后续只修改两个测试夹具的[对应 CI](https://github.com/BgaSol/soDeck/actions/runs/44356075286)首次通过，发行程序与归档字节保持固定。
+
+本机类型/格式、190 项脚本、19 项插件单元、完整核心套件、独立 release 构建、实际插件进程与侧栏三主题/窄屏/焦点/生命周期回归通过。覆盖匹配与歧义、断线摘要、无效 mount 保留旧目标、前后登记变化、四个实际作业与取消占位、首个通信故障停止后续 RPC、完整/普通投影及旧/未知任务换代后不重放。真实 SSH 核心回归验证资料编辑后旧摘要、断开保留、拒绝变更保持原事实、成功重新认证才换代和 v1 兼容。
+
+[目标发现对比证据](release-evidence/v0.5.0-discovery.json)使用实际 0.4.0 插件与受控 v1 协议复现断开摘要缺席及无效重新登记损坏旧目标；同一批三条真实回环 SSH 会话的旧全量回包为 1336 B，新 query 定位为 594 B，耗时分别为 125/139 ms。此比较只说明回包缩小，不宣称延迟改善、生产服务器 187 或 token 测量。
+
+三条真实 OpenSSH 会话及实际 Codex 的 B/C 流程，本机 release 版本 154.71 秒通过；本次 Actions Windows x86_64 原归档再次验收 166 秒通过。B 短命令一次启动，在默认窗口内 290 ms 稳定完成；长命令的状态等待、三页、full 和诊断均通过。C 的 query=187 匹配测试服务器名称，一次查询加一次启动，短命令在默认窗口内 336 ms 完成；query=1 匹配三条回环端点，客户端询问而未执行；重连恢复只查询原任务，没有重放。[永久客户端证据](release-evidence/v0.5.0-client.json)保留该原归档的四类调用轨迹。真实 IPv4 尾段 187 的匹配另由受控值与进程回归覆盖；实际 SSH 使用 127.0.0.1 的三个端口。
+
+未执行旧版实际安装升级、五平台已安装核心与 MCP 的真实 SSH 组合、netem 或物理 IME/DPI/读屏专项。mcp:test 使用真实核心测试程序和 MCP 原包，不冒充已安装核心；现有 remote-integration 入口只支持核心/终端/文件/网络。没有新增生产依赖或主窗口 UI。
 
 # 0.4.0
 
