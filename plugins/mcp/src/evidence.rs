@@ -107,10 +107,46 @@ pub fn page(path: PathBuf, committed: u64, offset: u64) -> Result<Value, String>
         json!({"chunks":chunks,"stdout":String::from_utf8_lossy(&stdout),"stderr":String::from_utf8_lossy(&stderr),"nextCursor":cursor.to_string(),"savedBytes":committed.to_string(),"hasMore":cursor<committed,"previewEncoding":"utf-8-lossy-per-page"}),
     )
 }
+pub fn tail(path: PathBuf, committed: u64) -> Result<Value, String> {
+    let mut offset = committed.saturating_sub(16 * 1024);
+    if offset > 0 {
+        let mut file = File::open(&path).map_err(|e| e.to_string())?;
+        file.seek(SeekFrom::Start(offset - 1))
+            .map_err(|e| e.to_string())?;
+        let mut reader = BufReader::new(file.take(committed - offset + 1));
+        let mut skipped = Vec::new();
+        let count = reader
+            .read_until(b'\n', &mut skipped)
+            .map_err(|e| e.to_string())?;
+        offset = offset - 1 + count as u64;
+    }
+    page(path, committed, offset)
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn tail_reads_recent_complete_envelopes_without_uncommitted_bytes() {
+        let root = std::env::temp_dir().join(format!("mcp-tail-{}", rand::random::<u64>()));
+        fs::create_dir(&root).unwrap();
+        let mut output = Output::new(&root).unwrap();
+        assert_eq!(tail(root.join("output.jsonl"), 0).unwrap()["stdout"], "");
+        for sequence in 1..=20 {
+            let text = format!("line-{sequence} {}\n", "x".repeat(2000));
+            output.append(&[json!({"v":1,"sequence":sequence.to_string(),"source":"stdout","receivedAt":1,"dataBase64":sodeck_plugin_client::encoding::base64(text.as_bytes())})]).unwrap();
+        }
+        output.file.write_all(b"uncommitted").unwrap();
+        let result = tail(root.join("output.jsonl"), output.committed).unwrap();
+        let text = result["stdout"].as_str().unwrap();
+        assert!(text.contains("line-20 "));
+        assert!(!text.contains("line-1 "));
+        assert!(!text.contains("uncommitted"));
+        assert_eq!(result["nextCursor"], output.committed.to_string());
+        assert_eq!(result["hasMore"], false);
+        drop(output);
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn pages_repeat_preserve_bytes_and_exclude_uncommitted_tail() {
         let root = std::env::temp_dir().join(format!("mcp-evidence-{}", rand::random::<u64>()));

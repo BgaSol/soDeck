@@ -64,10 +64,22 @@ try{
   assert.equal((await tool('sodeck_exec_start',{...input,command:'different'})).error,true);
   let done=await until(async()=>(await tool('sodeck_task_get',{taskId:start.taskId})).value,s=>s.done);
   assert.equal(done.evidence.complete,true);assert.equal(done.resourceReleased,true);assert.equal(done.output.stdout,bytes.toString());assert.equal(requests.length,1);
+  assert.equal(done.input.command,'collect');assert.equal(done.target.username,'ops');assert(done.createdAt>0&&done.finishedAt>=done.createdAt);
+  const detail=(await peer.request('ui.event',{viewId:'a',data:{action:'task',taskId:start.taskId,cursor:'0'}})).data;
+  assert.equal(detail.output.stdout,bytes.toString());assert.equal(detail.input.command,'collect');
+  await assert.rejects(peer.request('ui.event',{viewId:'b',data:{action:'task',taskId:start.taskId}}),/任务不属于当前服务器连接/);
   assert.deepEqual((await tool('sodeck_task_get',{taskId:start.taskId})).value,done,'released task evidence remains queryable');
   assert.equal((await tool('sodeck_task_get',{taskId:start.taskId,cursor:'1'})).error,true);
   const hang=(await tool('sodeck_exec_start',{...input,requestId:'hang',command:'hang'})).value;
   await until(async()=>(await tool('sodeck_task_get',{taskId:hang.taskId})).value,s=>s.native.state==='running');
+  const live=(await peer.request('ui.event',{viewId:'a',data:{action:'task',taskId:hang.taskId,tail:true}})).data;
+  assert.equal(live.output.stdout,bytes.toString());assert.equal(live.finishedAt,null);
+  for(let i=0;i<51;i++){
+    const recent=(await tool('sodeck_exec_start',{...input,requestId:'recent-'+i,command:'collect'})).value;
+    await until(async()=>(await tool('sodeck_task_get',{taskId:recent.taskId})).value,s=>s.done);
+  }
+  const history=(await peer.request('ui.getView',{viewId:'a'})).data.tasks;
+  assert.equal(history.length,50);assert.equal(history[0].taskId,hang.taskId,'active operations remain visible beyond the recent record limit');
   await tool('sodeck_task_cancel',{taskId:hang.taskId});done=await until(async()=>(await tool('sodeck_task_get',{taskId:hang.taskId})).value,s=>s.done);assert.equal(done.native.state,'cancelled');assert.equal(done.evidence.complete,false);
   const nonzero=(await tool('sodeck_exec_start',{...input,requestId:'exit',command:'exit 7'})).value;done=await until(async()=>(await tool('sodeck_task_get',{taskId:nonzero.taskId})).value,s=>s.done);assert.equal(done.native.exitCode,7);assert.equal(done.evidence.complete,true);
   const delayed=(await tool('sodeck_exec_start',{...input,requestId:'delayed',command:'delayed'})).value;

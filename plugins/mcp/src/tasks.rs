@@ -43,6 +43,7 @@ struct Task {
     target: Arc<Target>,
     input: Value,
     kind: &'static str,
+    created_at: u64,
     directory: PathBuf,
     cancel: AtomicBool,
     state: Mutex<Record>,
@@ -54,6 +55,7 @@ struct Record {
     done: bool,
     released: bool,
     observed: u64,
+    finished_at: Option<u64>,
     target: Value,
     cleanup_error: Value,
 }
@@ -208,6 +210,7 @@ impl App {
             target,
             input,
             kind,
+            created_at: now(),
             directory,
             cancel: AtomicBool::new(false),
             state: Mutex::new(Record {
@@ -217,6 +220,7 @@ impl App {
                 done: false,
                 released: false,
                 observed: now(),
+                finished_at: None,
                 target: Value::Null,
                 cleanup_error: Value::Null,
             }),
@@ -229,6 +233,24 @@ impl App {
     }
     pub fn get(&self, p: &Value) -> Result<Value, Value> {
         let task = self.task(p)?;
+        self.get_task(task, p, false)
+    }
+    pub fn view_task(&self, view: &str, p: &Value) -> Result<Value, Value> {
+        let task = self.task(p)?;
+        let views = self.views.lock().unwrap();
+        let target = views.get(view).ok_or_else(|| error("视图已关闭"))?;
+        if target.id != task.target.id {
+            return Err(error("任务不属于当前服务器连接"));
+        }
+        drop(views);
+        let tail = p
+            .get("tail")
+            .map(|v| v.as_bool().ok_or_else(|| error("tail 必须为布尔值")))
+            .transpose()?
+            .unwrap_or(false);
+        self.get_task(task, p, tail)
+    }
+    fn get_task(&self, task: Arc<Task>, p: &Value, tail: bool) -> Result<Value, Value> {
         let mut value = task.snapshot();
         if task.kind == "exec" {
             let offset = p
@@ -243,9 +265,13 @@ impl App {
                 .unwrap_or(0);
             let committed = task.state.lock().unwrap().committed;
             if task.directory.join("output.jsonl").exists() {
-                value["output"] =
-                    evidence::page(task.directory.join("output.jsonl"), committed, offset)
-                        .map_err(error)?;
+                let path = task.directory.join("output.jsonl");
+                value["output"] = if tail {
+                    evidence::tail(path, committed)
+                } else {
+                    evidence::page(path, committed, offset)
+                }
+                .map_err(error)?;
             }
         }
         Ok(value)
@@ -275,7 +301,7 @@ impl App {
             .get(view)
             .cloned()
             .ok_or("视图已关闭")?;
-        let mut tasks: Vec<_> = self
+        let tasks: Vec<_> = self
             .tasks
             .lock()
             .unwrap()
@@ -283,13 +309,20 @@ impl App {
             .filter(|t| t.target.id == target.id)
             .cloned()
             .collect();
-        tasks.sort_by_key(|t| {
-            t.id.strip_prefix("task-")
-                .and_then(|n| n.parse::<u64>().ok())
-                .unwrap_or(0)
-        });
+        let mut tasks: Vec<_> = tasks
+            .into_iter()
+            .map(|t| {
+                let number =
+                    t.id.strip_prefix("task-")
+                        .and_then(|n| n.parse::<u64>().ok())
+                        .unwrap_or(0);
+                let done = t.state.lock().unwrap().done;
+                (done, std::cmp::Reverse(number), t)
+            })
+            .collect();
+        tasks.sort_by_key(|(done, number, _)| (*done, *number));
         Ok(
-            json!({"endpoint":format!("http://127.0.0.1:{}/mcp",self.port),"service":*self.http_state.lock().unwrap(),"target":self.target_state(&target).unwrap_or_else(|e|json!({"state":"unavailable","error":e})),"tasks":tasks.iter().rev().take(50).map(|t|t.snapshot()).collect::<Vec<_>>(),"evidenceDirectory":self.root.join("evidence")}),
+            json!({"endpoint":format!("http://127.0.0.1:{}/mcp",self.port),"service":*self.http_state.lock().unwrap(),"target":self.target_state(&target).unwrap_or_else(|e|json!({"state":"unavailable","error":e})),"tasks":tasks.into_iter().take(50).map(|(_, _, t)|t.snapshot()).collect::<Vec<_>>(),"evidenceDirectory":self.root.join("evidence")}),
         )
     }
     pub fn config(&self) -> String {
@@ -313,6 +346,7 @@ impl App {
         {
             let mut r = task.state.lock().unwrap();
             r.done = true;
+            r.finished_at = Some(now());
         }
         if let Err(e) = evidence::metadata(&task.directory, &task.metadata()) {
             let mut r = task.state.lock().unwrap();
@@ -600,14 +634,12 @@ impl Task {
     }
     fn snapshot(&self) -> Value {
         let r = self.state.lock().unwrap();
-        json!({"taskId":self.id,"kind":self.kind,"targetId":self.target.id,"requestId":self.input["requestId"],"native":r.native,"observedAt":r.observed,"resourceReleased":r.released,"cleanupError":r.cleanup_error,"done":r.done,"evidence":r.evidence,"directory":self.directory})
+        json!({"taskId":self.id,"kind":self.kind,"targetId":self.target.id,"requestId":self.input["requestId"],"input":self.input,"target":r.target,"createdAt":self.created_at,"finishedAt":r.finished_at,"native":r.native,"observedAt":r.observed,"resourceReleased":r.released,"cleanupError":r.cleanup_error,"done":r.done,"evidence":r.evidence,"directory":self.directory})
     }
     fn metadata(&self) -> Value {
         let mut value = self.snapshot();
         value["schemaVersion"] = json!(1);
         value["context"] = self.target.context.clone();
-        value["target"] = self.state.lock().unwrap().target.clone();
-        value["input"] = self.input.clone();
         value
     }
 }

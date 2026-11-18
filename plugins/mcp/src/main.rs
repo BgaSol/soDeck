@@ -116,6 +116,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "ui.getView" => {}
             "ui.event" => match p["data"]["action"].as_str().unwrap_or("") {
                 "snapshot" => {}
+                "task" => {
+                    return Ok(
+                        json!({"data":app.view_task(view, &p["data"]).map_err(|e| e.to_string())?}),
+                    );
+                }
                 "config" => return Ok(json!({"data":{"config":app.config()}})),
                 "cancel" => {
                     app.cancel(&p["data"]).map_err(|e| e.to_string())?;
