@@ -1,0 +1,398 @@
+{
+  "fixture": "same controlled representative lscpu text, not live server 187",
+  "versions": {
+    "before": "0.3.0",
+    "after": "0.4.0"
+  },
+  "before": {
+    "calls": 3,
+    "bytes": 1777,
+    "samples": [
+      {
+        "tool": "sodeck_exec_start",
+        "args": {
+          "targetId": "1795011114168-f33403be2c069fff-target-1",
+          "requestId": "once",
+          "command": "collect"
+        },
+        "bytes": 172,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"kind\":\"exec\",\"runId\":\"1795011114168-f33403be2c069fff\",\"taskId\":\"task-1795011114168-f33403be2c069fff-4\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "tool": "sodeck_task_get",
+        "args": {
+          "taskId": "task-1795011114168-f33403be2c069fff-4"
+        },
+        "bytes": 628,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"cancelRequested\":false,\"done\":false,\"evidence\":{\"complete\":false,\"state\":\"collecting\"},\"kind\":\"exec\",\"native\":{\"admission\":\"pending\"},\"output\":{\"hasMore\":false,\"nextCursor\":\"0\",\"previewEncoding\":\"utf-8-lossy-per-page\",\"savedBytes\":\"0\",\"stderr\":\"\",\"stdout\":\"\"},\"phase\":\"collecting\",\"requestId\":\"once\",\"resourceReleased\":false,\"revision\":\"1\",\"runId\":\"1795011114168-f33403be2c069fff\",\"target\":null,\"targetId\":\"1795011114168-f33403be2c069fff-target-1\",\"taskId\":\"task-1795011114168-f33403be2c069fff-4\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "tool": "sodeck_task_get",
+        "args": {
+          "taskId": "task-1795011114168-f33403be2c069fff-4"
+        },
+        "bytes": 977,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"cancelRequested\":false,\"done\":true,\"evidence\":{\"complete\":true,\"state\":\"saved\"},\"kind\":\"exec\",\"native\":{\"execSent\":true,\"exitCode\":0,\"outputComplete\":true,\"remoteExitConfirmed\":true,\"state\":\"completed\"},\"output\":{\"hasMore\":false,\"nextCursor\":\"328\",\"previewEncoding\":\"utf-8-lossy-per-page\",\"savedBytes\":\"328\",\"stderr\":\"\",\"stdout\":\"Architecture: x86_64\\nCPU(s): 56\\nThread(s) per core: 2\\nCore(s) per socket: 14\\nSocket(s): 2\\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\\nL3 cache: 38.5 MiB\\nVirtualization: VT-x\\n\"},\"phase\":\"done\",\"requestId\":\"once\",\"resourceReleased\":true,\"revision\":\"8\",\"runId\":\"1795011114168-f33403be2c069fff\",\"target\":{\"endpoint\":\"a:22\",\"name\":\"a\",\"protocol\":\"ssh\",\"username\":\"ops\"},\"targetId\":\"1795011114168-f33403be2c069fff-target-1\",\"taskId\":\"task-1795011114168-f33403be2c069fff-4\"}"
+            }
+          ],
+          "isError": false
+        }
+      }
+    ]
+  },
+  "after": {
+    "calls": 1,
+    "bytes": 1046,
+    "samples": [
+      {
+        "tool": "sodeck_exec_start",
+        "args": {
+          "targetId": "1795011571879-0dc14d6f0b8d864c-target-1",
+          "requestId": "once",
+          "command": "collect"
+        },
+        "elapsedMs": 15.564499999999995,
+        "bytes": 1046,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"cancelRequested\":false,\"done\":true,\"evidence\":{\"complete\":true,\"state\":\"saved\"},\"kind\":\"exec\",\"native\":{\"execSent\":true,\"exitCode\":0,\"outputComplete\":true,\"remoteExitConfirmed\":true,\"state\":\"completed\"},\"output\":{\"hasMore\":false,\"nextCursor\":\"328\",\"previewEncoding\":\"utf-8-lossy-per-page\",\"savedBytes\":\"328\",\"stderr\":\"\",\"stdout\":\"Architecture: x86_64\\nCPU(s): 56\\nThread(s) per core: 2\\nCore(s) per socket: 14\\nSocket(s): 2\\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\\nL3 cache: 38.5 MiB\\nVirtualization: VT-x\\n\"},\"phase\":\"done\",\"requestId\":\"once\",\"resourceReleased\":true,\"revision\":\"8\",\"runId\":\"1795011571879-0dc14d6f0b8d864c\",\"target\":{\"endpoint\":\"a:22\",\"name\":\"a\",\"protocol\":\"ssh\",\"username\":\"ops\"},\"targetId\":\"1795011571879-0dc14d6f0b8d864c-target-1\",\"taskId\":\"task-1795011571879-0dc14d6f0b8d864c-4\",\"wait\":{\"elapsedMs\":13,\"reason\":\"done\",\"requestedMs\":1000}}"
+            }
+          ],
+          "isError": false
+        }
+      }
+    ]
+  },
+  "factsIdentical": true,
+  "shortRuns": {
+    "count": 30,
+    "calls": 30,
+    "minMs": 13.264600000000002,
+    "maxMs": 15.017600000000016,
+    "meanMs": 13.884406666666667,
+    "runs": [
+      {
+        "calls": 1,
+        "elapsedMs": 14.320499999999981,
+        "wait": {
+          "elapsedMs": 13,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 13.582899999999995,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 13.502999999999986,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 13.906900000000007,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 13.264600000000002,
+        "wait": {
+          "elapsedMs": 11,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 14.580299999999994,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 13.896500000000003,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 13.354600000000005,
+        "wait": {
+          "elapsedMs": 11,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 15.017600000000016,
+        "wait": {
+          "elapsedMs": 13,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 13.413700000000006,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 13.614599999999996,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 13.810800000000029,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 13.914299999999969,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 14.680299999999988,
+        "wait": {
+          "elapsedMs": 13,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 14.116299999999967,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 13.727899999999977,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 14.01709999999997,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 13.903999999999996,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 13.989700000000028,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 13.650199999999984,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 14.296699999999987,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 14.005300000000034,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 13.847100000000012,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 13.691499999999962,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 13.505499999999984,
+        "wait": {
+          "elapsedMs": 11,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 14.011799999999994,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 13.75610000000006,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 13.457400000000007,
+        "wait": {
+          "elapsedMs": 11,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 13.885800000000017,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      },
+      {
+        "calls": 1,
+        "elapsedMs": 13.809200000000033,
+        "wait": {
+          "elapsedMs": 12,
+          "reason": "done",
+          "requestedMs": 1000
+        },
+        "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+      }
+    ]
+  }
+}

@@ -1,13 +1,13 @@
 use crate::{
     evidence::{self, Page, PageFormat, ReadError},
     task::{CapturedTask, Kind, Phase, Task},
-    tasks::{failure, text, App},
+    tasks::{failure, text, App, StartedTask},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sodeck_plugin_client::encoding::{base64, unbase64};
 use std::{path::PathBuf, sync::Arc, time::Instant};
-use tokio::sync::OwnedSemaphorePermit;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio_util::sync::CancellationToken;
 
 pub struct Options {
@@ -110,11 +110,11 @@ pub struct TaskRead {
     pub page: Option<Page>,
     pub wait: Option<WaitResult>,
 }
-pub struct ReadFailure {
+pub struct TaskFailure {
     pub error: Value,
     pub captured: Option<CapturedTask>,
 }
-impl From<Value> for ReadFailure {
+impl From<Value> for TaskFailure {
     fn from(error: Value) -> Self {
         Self {
             error,
@@ -122,10 +122,38 @@ impl From<Value> for ReadFailure {
         }
     }
 }
+pub struct WaitSlots {
+    pub _global: OwnedSemaphorePermit,
+    pub _local: OwnedSemaphorePermit,
+}
+impl WaitSlots {
+    pub fn acquire(waiting: &Arc<Semaphore>, task: &Task) -> Result<Self, Value> {
+        let global = waiting
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| failure("resourceBusy", "读取等待已满"))?;
+        let local = task
+            .waiters
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| failure("resourceBusy", "该任务读取等待已满"))?;
+        Ok(Self {
+            _global: global,
+            _local: local,
+        })
+    }
+}
+#[derive(Clone, Copy)]
+enum WaitUntil {
+    Change,
+    Done,
+}
 pub struct ReadJob {
     path: PathBuf,
     committed: u64,
-    options: Options,
+    format: PageFormat,
+    cursor: u64,
+    tail: bool,
     _permit: OwnedSemaphorePermit,
 }
 fn validate(c: &CapturedTask, options: &Options) -> Result<(), Value> {
@@ -151,17 +179,18 @@ fn prepare(app: &App, c: &CapturedTask, options: Options) -> Result<Option<ReadJ
     Ok(Some(ReadJob {
         path: c.task.directory.join("output.jsonl"),
         committed: c.record.committed,
-        options,
+        format: options.format.expect("body job has a format"),
+        cursor: options.cursor,
+        tail: options.tail,
         _permit: permit,
     }))
 }
 impl ReadJob {
     fn read(self) -> Result<Page, Value> {
-        let format = self.options.format.expect("body job has a format");
-        let result = if self.options.tail {
-            evidence::tail(self.path, self.committed, format)
+        let result = if self.tail {
+            evidence::tail(self.path, self.committed, self.format)
         } else {
-            evidence::page(self.path, self.committed, self.options.cursor, format)
+            evidence::page(self.path, self.committed, self.cursor, self.format)
         };
         result.map_err(|e| match e {
             ReadError::InvalidCursor(message) => failure("invalidCursor", message),
@@ -169,7 +198,7 @@ impl ReadJob {
         })
     }
 }
-pub fn ui_read(app: &App, task: Arc<Task>, options: Options) -> Result<TaskRead, ReadFailure> {
+pub fn ui_read(app: &App, task: Arc<Task>, options: Options) -> Result<TaskRead, TaskFailure> {
     let captured = CapturedTask::new(task);
     let page = prepare(app, &captured, options).and_then(|job| job.map(ReadJob::read).transpose());
     match page {
@@ -178,7 +207,7 @@ pub fn ui_read(app: &App, task: Arc<Task>, options: Options) -> Result<TaskRead,
             page,
             wait: None,
         }),
-        Err(error) => Err(ReadFailure {
+        Err(error) => Err(TaskFailure {
             error,
             captured: Some(captured),
         }),
@@ -189,34 +218,76 @@ pub async fn get(
     p: &Value,
     options: Options,
     ct: CancellationToken,
-) -> Result<TaskRead, ReadFailure> {
+) -> Result<TaskRead, TaskFailure> {
     let task = app.resolve(p, None)?;
+    let started = StartedTask {
+        task,
+        wait_ms: options.wait_ms,
+        started: Instant::now(),
+        wait_slots: None,
+    };
+    read_task(app, started, options, WaitUntil::Change, ct).await
+}
+pub async fn after_start(
+    app: Arc<App>,
+    started: StartedTask,
+    ct: CancellationToken,
+) -> Result<TaskRead, TaskFailure> {
+    let options = Options {
+        format: Some(PageFormat::Text),
+        cursor: 0,
+        tail: false,
+        wait_ms: started.wait_ms,
+        since: None,
+    };
+    read_task(app, started, options, WaitUntil::Done, ct).await
+}
+async fn wait_task(
+    waiting: &Arc<Semaphore>,
+    shutdown: &CancellationToken,
+    start: StartedTask,
+    options: &Options,
+    until: WaitUntil,
+    ct: &CancellationToken,
+) -> Result<(CapturedTask, &'static str), TaskFailure> {
+    let StartedTask {
+        task,
+        started,
+        mut wait_slots,
+        ..
+    } = start;
     let mut changes = task.subscribe();
-    let started = Instant::now();
     let first = CapturedTask::new(task.clone());
     if let Err(error) = validate(&first, &options) {
-        return Err(ReadFailure {
+        return Err(TaskFailure {
             error,
             captured: Some(first),
         });
     }
     let baseline = options.since.unwrap_or(first.record.revision);
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(options.wait_ms);
-    let mut permit = None;
+    let deadline =
+        tokio::time::Instant::from_std(started + std::time::Duration::from_millis(options.wait_ms));
     let mut captured = first;
     let reason = loop {
+        if let Some(error) = call_cancelled(shutdown, ct) {
+            return Err(TaskFailure {
+                error,
+                captured: Some(CapturedTask::new(task.clone())),
+            });
+        }
         if options.wait_ms == 0 {
             break "";
         }
         let r = &captured.record;
         let reason = if r.phase == Phase::Done {
             "done"
-        } else if task.kind == Kind::Exec
+        } else if matches!(until, WaitUntil::Change)
+            && task.kind == Kind::Exec
             && options.format.is_some()
             && options.cursor < r.committed
         {
             "output"
-        } else if r.revision > baseline {
+        } else if matches!(until, WaitUntil::Change) && r.revision > baseline {
             "changed"
         } else {
             ""
@@ -225,47 +296,78 @@ pub async fn get(
             break reason;
         }
         if tokio::time::Instant::now() >= deadline {
+            captured = CapturedTask::new(task.clone());
+            if captured.record.phase == Phase::Done {
+                break "done";
+            }
             break "timeout";
         }
-        if permit.is_none() {
-            let acquire = || {
-                let global = app
-                    .waiting
-                    .clone()
-                    .try_acquire_owned()
-                    .map_err(|_| failure("resourceBusy", "读取等待已满"))?;
-                let local = task
-                    .waiters
-                    .clone()
-                    .try_acquire_owned()
-                    .map_err(|_| failure("resourceBusy", "该任务读取等待已满"))?;
-                Ok::<_, Value>((global, local))
-            };
-            match acquire() {
-                Ok(slots) => permit = Some(slots),
+        if wait_slots.is_none() {
+            match WaitSlots::acquire(waiting, &task) {
+                Ok(slots) => wait_slots = Some(slots),
                 Err(error) => {
-                    return Err(ReadFailure {
+                    captured = CapturedTask::new(task.clone());
+                    if captured.record.phase == Phase::Done {
+                        break "done";
+                    }
+                    return Err(TaskFailure {
                         error,
                         captured: Some(captured),
-                    })
+                    });
                 }
             }
         }
         let error = tokio::select! {
             _=ct.cancelled()=>Some(failure("requestCancelled","读取等待已取消，远端任务继续运行")),
-            _=app.shutdown.cancelled()=>Some(failure("unavailable","插件正在退出")),
+            _=shutdown.cancelled()=>Some(failure("unavailable","插件正在退出")),
             _=tokio::time::sleep_until(deadline)=>None,
             changed=changes.changed()=>if changed.is_err(){Some(failure("unavailable","任务通知已结束"))}else{None},
         };
         if let Some(error) = error {
-            return Err(ReadFailure {
+            return Err(TaskFailure {
                 error,
-                captured: Some(captured),
+                captured: Some(CapturedTask::new(task.clone())),
             });
         }
         captured = CapturedTask::new(task.clone());
     };
-    drop(permit);
+    drop(wait_slots);
+    Ok((captured, reason))
+}
+fn call_cancelled(shutdown: &CancellationToken, ct: &CancellationToken) -> Option<Value> {
+    if ct.is_cancelled() {
+        Some(failure("requestCancelled", "读取已取消，远端任务继续运行"))
+    } else if shutdown.is_cancelled() {
+        Some(failure("unavailable", "插件正在退出"))
+    } else {
+        None
+    }
+}
+async fn read_task(
+    app: Arc<App>,
+    start: StartedTask,
+    options: Options,
+    until: WaitUntil,
+    ct: CancellationToken,
+) -> Result<TaskRead, TaskFailure> {
+    let started = start.started;
+    let (captured, reason) =
+        wait_task(&app.waiting, &app.shutdown, start, &options, until, &ct).await?;
+    if let Some(error) = call_cancelled(&app.shutdown, &ct) {
+        return Err(TaskFailure {
+            error,
+            captured: Some(captured),
+        });
+    }
+    read_captured(&app, captured, options, started, reason).await
+}
+async fn read_captured(
+    app: &App,
+    captured: CapturedTask,
+    options: Options,
+    started: Instant,
+    reason: &'static str,
+) -> Result<TaskRead, TaskFailure> {
     let wait_ms = options.wait_ms;
     let page = match prepare(&app, &captured, options) {
         Ok(Some(job)) => tokio::task::spawn_blocking(move || job.read())
@@ -285,7 +387,7 @@ pub async fn get(
                 reason,
             }),
         }),
-        Err(error) => Err(ReadFailure {
+        Err(error) => Err(TaskFailure {
             error,
             captured: Some(captured),
         }),
@@ -455,6 +557,175 @@ pub fn list(app: &App, p: &Value) -> Result<TaskList, Value> {
 mod tests {
     use super::*;
     use serde_json::json;
+    fn start(task: Arc<Task>, wait_ms: u64, wait_slots: Option<WaitSlots>) -> StartedTask {
+        StartedTask {
+            task,
+            wait_ms,
+            started: Instant::now(),
+            wait_slots,
+        }
+    }
+    fn options(wait_ms: u64) -> Options {
+        Options {
+            format: Some(PageFormat::Text),
+            cursor: 0,
+            tail: false,
+            wait_ms,
+            since: None,
+        }
+    }
+    fn finish(task: &Task) {
+        task.finalizing(true, Value::Null);
+        task.cleanup(true, Value::Null);
+        task.publish(task.final_candidate(), None);
+    }
+    #[tokio::test]
+    async fn done_wait_observes_outputs_cancellation_and_finalizing_without_early_return() {
+        let task = crate::task::fixture(PathBuf::new());
+        let waiting = Arc::new(Semaphore::new(1));
+        let slots = WaitSlots::acquire(&waiting, &task).unwrap();
+        let shutdown = CancellationToken::new();
+        let ct = CancellationToken::new();
+        let read_options = options(1000);
+        let wait = wait_task(
+            &waiting,
+            &shutdown,
+            start(task.clone(), 1000, Some(slots)),
+            &read_options,
+            WaitUntil::Done,
+            &ct,
+        );
+        let publish = async {
+            for n in 1..=3 {
+                tokio::time::sleep(std::time::Duration::from_millis(15)).await;
+                task.observe(json!({"state":"running","received":n}), Some(n * 10));
+                assert_eq!(waiting.available_permits(), 0);
+            }
+            task.request_cancel();
+            task.observe(json!({"state":"completed","exitCode":0}), None);
+            task.finalizing(true, Value::Null);
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            assert_eq!(
+                waiting.available_permits(),
+                0,
+                "finalizing is not stable done"
+            );
+            task.cleanup(true, Value::Null);
+            task.publish(task.final_candidate(), None);
+        };
+        let (result, _) = tokio::join!(wait, publish);
+        let (captured, reason) = result.unwrap_or_else(|e| panic!("{}", e.error));
+        assert_eq!(reason, "done");
+        assert!(captured.record.phase == Phase::Done);
+        assert!(captured.record.cancel_requested);
+        assert_eq!(waiting.available_permits(), 1);
+        assert_eq!(task.waiters.available_permits(), 2);
+    }
+    #[tokio::test]
+    async fn done_deadline_is_fixed_despite_continuous_changes() {
+        let task = crate::task::fixture(PathBuf::new());
+        let waiting = Arc::new(Semaphore::new(1));
+        let shutdown = CancellationToken::new();
+        let ct = CancellationToken::new();
+        let read_options = options(80);
+        let begin = Instant::now();
+        let wait = wait_task(
+            &waiting,
+            &shutdown,
+            start(task.clone(), 80, None),
+            &read_options,
+            WaitUntil::Done,
+            &ct,
+        );
+        let changes = async {
+            for n in 1..=12 {
+                tokio::time::sleep(std::time::Duration::from_millis(15)).await;
+                task.observe(json!({"state":"running","received":n}), Some(n));
+            }
+        };
+        let observe = async {
+            let (captured, reason) = wait.await.unwrap_or_else(|e| panic!("{}", e.error));
+            assert_eq!(reason, "timeout");
+            assert!(captured.record.phase != Phase::Done);
+            assert!(begin.elapsed().as_millis() >= 70);
+            assert!(
+                captured.record.committed < 12,
+                "changes must not restart the deadline"
+            );
+            assert_eq!(waiting.available_permits(), 1);
+        };
+        tokio::join!(observe, changes);
+    }
+    #[tokio::test]
+    async fn expired_original_window_and_stable_done_need_no_wait_slots() {
+        let task = crate::task::fixture(PathBuf::new());
+        let waiting = Arc::new(Semaphore::new(0));
+        let shutdown = CancellationToken::new();
+        let ct = CancellationToken::new();
+        let read_options = options(20000);
+        let mut request = start(task.clone(), 20000, None);
+        request.started -= std::time::Duration::from_millis(20000);
+        let (_, reason) = wait_task(
+            &waiting,
+            &shutdown,
+            request,
+            &read_options,
+            WaitUntil::Done,
+            &ct,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{}", e.error));
+        assert_eq!(reason, "timeout");
+        finish(&task);
+        let mut request = start(task, 20000, None);
+        request.started -= std::time::Duration::from_millis(20000);
+        let (_, reason) = wait_task(
+            &waiting,
+            &shutdown,
+            request,
+            &read_options,
+            WaitUntil::Done,
+            &ct,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{}", e.error));
+        assert_eq!(reason, "done");
+    }
+    #[tokio::test]
+    async fn cancellation_releases_call_slots_and_keeps_task_running() {
+        let task = crate::task::fixture(PathBuf::new());
+        let waiting = Arc::new(Semaphore::new(1));
+        let shutdown = CancellationToken::new();
+        let ct = CancellationToken::new();
+        let read_options = options(20000);
+        let wait = wait_task(
+            &waiting,
+            &shutdown,
+            start(task.clone(), 20000, None),
+            &read_options,
+            WaitUntil::Done,
+            &ct,
+        );
+        let cancel = async {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            ct.cancel();
+        };
+        let (result, _) = tokio::join!(wait, cancel);
+        let error = result.err().expect("call cancellation");
+        assert_eq!(error.error["code"], "requestCancelled");
+        assert_eq!(error.captured.unwrap().task.id, task.id);
+        assert!(!task.cancel.is_cancelled());
+        assert_eq!(waiting.available_permits(), 1);
+        assert_eq!(task.waiters.available_permits(), 2);
+    }
+    #[test]
+    fn partial_wait_acquisition_rolls_back_global_slot() {
+        let task = crate::task::fixture(PathBuf::new());
+        let waiting = Arc::new(Semaphore::new(1));
+        let _held = task.waiters.clone().try_acquire_many_owned(2).unwrap();
+        assert!(WaitSlots::acquire(&waiting, &task).is_err());
+        assert_eq!(waiting.available_permits(), 1);
+    }
     #[test]
     fn read_defaults_are_explicit_and_detail_does_not_change_body_options() {
         let (plain, detail) = parse_mcp_read(&json!({})).unwrap();
@@ -482,7 +753,9 @@ mod tests {
         let job = ReadJob {
             path: task.directory.join("output.jsonl"),
             committed: saved,
-            options: parse_mcp_read(&json!({})).unwrap().0,
+            format: PageFormat::Text,
+            cursor: 0,
+            tail: false,
             _permit: pool.clone().try_acquire_owned().unwrap(),
         };
         assert!(pool.clone().try_acquire_owned().is_err());

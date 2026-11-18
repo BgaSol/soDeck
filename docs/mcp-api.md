@@ -1,6 +1,6 @@
 # MCP API
 
-本文定义Agent MCP插件 0.3.x 的客户端契约。接入、页面操作和限制见[功能说明](features/mcp.md)；核心通用 RPC 见[插件 API](plugin-api.md)，发行证据见插件 [CHANGELOG](../plugins/mcp/CHANGELOG.md)。客户端先进行 MCP initialize 和 tools/list；新增能力以工具发现结果为准。
+本文定义Agent MCP插件 0.4.x 的客户端契约。接入、页面操作和限制见[功能说明](features/mcp.md)；核心通用 RPC 见[插件 API](plugin-api.md)，发行证据见插件 [CHANGELOG](../plugins/mcp/CHANGELOG.md)。客户端先进行 MCP initialize 和 tools/list；新增能力以工具发现结果为准。
 
 ## 传输与调用
 
@@ -13,13 +13,19 @@
 | 工具 | 参数 | 返回 |
 | --- | --- | --- |
 | sodeck_targets_list | 无 | runId、targets；每项含 targetId、context、连接状态、closing 和真实 target 摘要。不可用目标带 error |
-| sodeck_exec_start | targetId、requestId、command；可选 timeoutSeconds，默认 300，1–3600 | runId、taskId、kind=exec |
+| sodeck_exec_start | targetId、requestId、command；可选 timeoutSeconds，默认 300，1–3600；waitMs，默认 1000，0–20000 | 普通任务事实与第一 text 页；正等待附 wait |
 | sodeck_file_download | targetId、requestId、remotePath | runId、taskId、kind=download |
 | sodeck_task_cancel | taskId | taskId、cancelRequested、result（当时任务事实，不含正文） |
 
-targetId/taskId 最长 256 字节，requestId 最长 128，command 最长 16384，remotePath 最长 4096。必需字符串非空；命令和路径拒绝 NUL。timeoutSeconds 为整数。命令使用远端非交互 shell；下载一个普通文件到新建本地证据，不覆盖已有目标。
+targetId/taskId 最长 256 字节，requestId 最长 128，command 最长 16384，remotePath 最长 4096。必需字符串非空；命令和路径拒绝 NUL。timeoutSeconds/waitMs 为整数。命令使用远端非交互 shell；下载一个普通文件到新建本地证据，不覆盖已有目标。
 
-客户端明确选目标。固定 `(targetId, requestId)` 和规范化参数标识同次运行内的一个启动；同参数重试返回原任务，不同参数或种类为 requestConflict。去重先于容量检查。对应命令/文件接纳域正在处理或结果未知时，新身份返回 resourceBusy，没有新 taskId、worker 或目录。未知接纳只查原生票据，不重发；取消未知任务不能立即解除该域占用。
+exec_start 在本次窗口内等待稳定 phase=done，出现输出、revision、取消请求或 finalizing 只重新观察，不提前结束。到期返回当前任务与已保存正文，wait.reason=timeout，远端继续；完成为 reason=done。默认普通事实与 text 页的字段同 task_get，固定 cursor="0"；不接受 detail/outputMode/分页参数。waitMs=0 不主动等待且省略 wait，同样返回任务与第一文本页。下载不接受 waitMs，继续立即返回凭据。
+
+waitMs 只控制本次主动等待，timeoutSeconds 仍控制实际执行。窗口从取得原任务身份或新任务登记时以单调时钟计算，不因通知延长；elapsedMs 包含后续结果准备，读盘/编码/传输不受 waitMs 限制。done 且 hasMore=false 时可直接使用输出回答，仍须核对退出、证据与清理事实；未 done 或有更多页时用 task_get 与 nextCursor 接续。
+
+客户端明确选目标。固定 `(targetId, requestId)` 和规范化执行参数标识同次运行内的一个启动；同参数重试返回原任务，不同执行参数或种类为 requestConflict。waitMs 不进入执行参数、去重比较或元数据，重试可以调整它，原执行期限不重置。去重先于新接纳容量检查。对应命令/文件接纳域正在处理或结果未知时，新身份返回 resourceBusy，没有新 taskId、worker 或目录。未知接纳只查原生票据，不重发；取消未知任务不能立即解除该域占用。
+
+新正等待请求在任务登记和后台派发前取得全局与每任务等待位置，额度满时拒绝且无新任务、原生操作或证据目录，不自动降为零等待。已完成原任务或显式零等待不申请等待额度；运行中的原任务等待额度不足时，错误附原任务，操作继续。任务登记是本地接纳，native.admission/execSent 才说明远端是否执行。登记后的 HTTP 取消、读盘或编码失败不能撤销任务；可恢复错误保留顶层 task 或容量错误的可信 taskId。响应丢失时以原请求查证，不生成新 requestId 重发。
 
 runId 是插件进程身份，taskId 包含运行身份并按不透明字符串使用。targetId 包含连接代次。重新连接要重新选择目标；旧任务在原插件进程中仍可查询。升级/重启后新进程不扫描恢复历史，也不接受旧短 task-N 别名。HTTP 断开和零匹配列表都不能证明远端未执行。
 
@@ -99,7 +105,7 @@ stdout/stderr 为每页有损 UTF-8，previewEncoding="utf-8-lossy-per-page"；�
 
 ## 等待与 revision
 
-waitMs=0 立即返回且不含 wait。正等待按以下优先级检查；唤醒后重新捕获原始 Record：
+两种工具的 waitMs=0 均不主动等待且不含 wait。以下变化等待优先级用于 task_get；exec_start 只以稳定 done 或固定期限到达结束。唤醒后重新捕获原始 Record：
 
 | 优先级 | 条件 | wait.reason |
 | --- | --- | --- |
@@ -112,7 +118,7 @@ waitMs=0 立即返回且不含 wait。正等待按以下优先级检查；唤醒
 
 revision 从 1 开始，以十进制字符串返回。接纳、原生运行/退出/错误、实际下载进度、成功提交的新信封、保存/清理状态、第一次取消请求和目标摘要变化会递增。observedAt、elapsedMs、读取次数、HTTP 重试和无新数据轮询不递增。多个事实可合并一次递增，客户端只比较大小。版本属于同一 runId/taskId，不是持久事件日志。
 
-等待为 async 监听已有事实，不创建远端 worker 或专用核心轮询。全插件最多 16 个等待、每任务 2 个，超额 resourceBusy，不排队或悄悄降为即时查询。即刻满足条件的读取不占等待额度。正文 IO 全插件最多 4 个，超额 resourceBusy；permit 随实际阻塞读取完成释放，HTTP 取消不虚假释放仍在执行的 IO。
+等待为 async 监听已有事实，不创建远端 worker 或专用核心轮询。全插件最多 16 个等待、每任务 2 个，超额 resourceBusy，不排队或悄悄降为即时查询。新正等待启动预先取得位置；已有任务即刻满足条件的读取不占等待额度。等待结束先归还等待位置，再读取正文。正文 IO 全插件最多 4 个，超额 resourceBusy；permit 随实际阻塞读取完成释放，HTTP 取消不虚假释放仍在执行的 IO。
 
 MCP 请求取消、HTTP 中断或插件 shutdown 释放等待及配额；不调用 task_cancel。正常断开取消可见后的一秒内结束等待；不能抢占已经开始的系统磁盘 IO。目标/工作区关闭按原生命周期处理，插件退出可能直接中断 HTTP，不保证最后回包。读取中断后继续查原任务。
 
@@ -139,6 +145,6 @@ phase=collecting 表示接纳/采集，finalizing 表示最终保存和原生清
 
 每份 MCP result 编码后最多 256 KiB，包含 text 的外层转义与实际 SDK 字段；超限明确返回 resourceLimit，不删字段、截正文或改变任务状态。错误只带操作名及可信任务/已验证游标提示，不回显原超大参数。普通与诊断使用同一预算。
 
-0.3.0 明确升级读取契约：默认由 full 改为 text，任务事实默认精简，full 不再附文本，structuredContent 删除。旧客户端需改为解析 content[0].text；原参数、路径、完整错误改用 detail=true。六工具名、启动/目标身份、分页、等待、去重及证据文件 schemaVersion=1 保持。无旧版开关或重复工具。
+0.3.0 升级读取契约：默认由 full 改为 text，任务事实默认精简，full 不再附文本，structuredContent 删除。旧客户端需改为解析 content[0].text；原参数、路径、完整错误改用 detail=true。0.4.0 将 exec_start 从立即凭据改为默认有限等待与普通任务/第一文本页；依赖旧形状或极短回包期限的客户端需迁移，waitMs=0 保留立即交接意图但不恢复旧形状。客户端重新发现 tools/list。六工具名、启动/目标身份、task_get 的变化等待、分页、去重及证据文件 schemaVersion=1 保持。无旧版开关或重复工具。
 
 返回[文档索引](README.md)。

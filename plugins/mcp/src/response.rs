@@ -1,6 +1,6 @@
 use crate::{
     evidence::{Page, PageBody},
-    query::{ReadFailure, TaskList, TaskRead},
+    query::{TaskFailure, TaskList, TaskRead},
     task::{preview, CapturedTask, Kind, Phase, Record, Saved, Task},
 };
 use rmcp::model::{CallToolResult, ContentBlock};
@@ -234,19 +234,22 @@ pub fn metadata(task: &Task, r: &Record) -> Value {
     value["outputInfo"] = json!({"savedBytes":if task.kind==Kind::Exec {json!(r.committed.to_string())} else {Value::Null}});
     value
 }
-pub fn mcp_read_error(failure: &ReadFailure, detail: bool) -> Value {
+pub fn mcp_task_error(failure: &TaskFailure, detail: bool) -> Value {
     let mut value = json!({"error":if detail || failure.captured.is_none() {failure.error.clone()} else {brief_error(&failure.error)}});
     if let Some(c) = &failure.captured {
         value["task"] = mcp_facts(c, detail, false);
     }
     value
 }
-pub fn ui_read_error(failure: ReadFailure) -> Value {
+pub fn ui_read_error(failure: TaskFailure) -> Value {
     let mut error = failure.error;
     if let Some(c) = failure.captured {
         error["task"] = diagnostic(&c.task, &c.record);
     }
     error
+}
+pub fn mcp_download_start(task: &Task) -> Value {
+    json!({"runId":task.run,"taskId":task.id,"kind":task.kind.name()})
 }
 
 const LIMIT: usize = 256 * 1024;
