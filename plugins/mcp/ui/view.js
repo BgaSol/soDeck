@@ -52,21 +52,23 @@ function paintDetail(task) {
   $('detail-cancel').setAttribute('aria-label', `请求取消 ${task.requestId}`);
 }
 function render(data) {
+  if (typeof data?.runId !== 'string' || !data.runId || typeof data.targetId !== 'string' || !data.targetId || !data.target) throw new Error('目标状态快照无效，请刷新。');
   const pane = document.querySelector('main'), pinned = selectedTask(), focus = document.activeElement, anchor = selected ? $('detail') : null;
   const scrollTop = pane.scrollTop, anchorTop = anchor?.getBoundingClientRect().top;
-  const changedTarget = snapshot?.target?.targetId && data.target?.targetId !== snapshot.target.targetId;
-  if (changedTarget) closeDetail();
+  const changedTarget = snapshot && (data.runId !== snapshot.runId || data.targetId !== snapshot.targetId);
+  if (changedTarget) { closeDetail(); monitorSequence++; monitorDetail = null; }
   const tasks = [...(data.tasks || [])];
   if (selected && !tasks.some(task => task.taskId === selected)) {
-    if (pinned && (!data.target?.targetId || data.target.targetId === pinned.targetId)) tasks.push(pinned);
+    if (pinned && !changedTarget && data.targetId === pinned.targetId) tasks.push(pinned);
     else closeDetail();
   }
   snapshot = {...data, tasks};
   text('service', data.service === 'ready' ? '本机接入已启动' : data.service); text('endpoint', data.endpoint);
   paintPort();
-  const target = data.target?.target;
-  text('server', target ? target.name || target.endpoint : '服务器不可用');
-  text('server-detail', target ? `${target.username || '账号未提供'}@${target.endpoint} · ${data.target.state === 'connected' ? '已连接' : '已断开'}` : '请在 SoDeck 中连接服务器。');
+  const target = data.target.descriptor, targetError = data.target.error;
+  const availability = {ready:'已连接',disconnected:'已断开',closing:'正在关闭',stale:'连接信息已失效',unavailable:'目标信息暂不可用'}[data.target.availability];
+  text('server', target ? target.name || target.endpoint : targetError ? '目标信息暂不可用' : '服务器未连接');
+  text('server-detail', targetError ? `目标信息读取失败（${targetError.code ?? '未知错误'}）：${targetError.message || '请稍后刷新。'}` : target ? `${target.username || '账号未提供'}@${target.endpoint} · ${availability}${data.target.targetSource === 'lastConnected' ? ' · 最后连接信息' : ''}` : data.target.availability === 'disconnected' ? '请在 SoDeck 中连接服务器。' : availability);
   text('directory', data.evidenceDirectory);
   const current = new Set(tasks.map(task => task.taskId));
   for (const [id, row] of rows) if (!current.has(id)) { row.li.remove(); rows.delete(id); }

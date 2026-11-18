@@ -265,14 +265,14 @@ impl Needle {
         reasons
     }
 }
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct Descriptor {
-    name: String,
-    protocol: String,
-    host: String,
-    port: u16,
-    endpoint: String,
-    username: Option<String>,
+    pub name: String,
+    pub protocol: String,
+    pub host: String,
+    pub port: u16,
+    pub endpoint: String,
+    pub username: Option<String>,
 }
 impl Descriptor {
     fn validate(&self) -> bool {
@@ -286,9 +286,6 @@ impl Descriptor {
             && host(&self.host).is_some()
             && self.port > 0
             && self.endpoint == format!("{h}:{}", self.port)
-    }
-    pub fn legacy(&self) -> Value {
-        json!({"name":self.name,"protocol":self.protocol,"endpoint":self.endpoint,"username":self.username})
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
@@ -332,10 +329,6 @@ impl Observation {
         } else {
             "disconnected"
         }
-    }
-    fn legacy(&self, id: &str) -> Value {
-        json!({"targetId":id,"context":self.context,"state":self.state,"closing":self.closing,"capabilities":self.capabilities,
-            "target":if self.state==State::Connected{self.target.as_ref().map(Descriptor::legacy)}else{None}})
     }
 }
 pub struct Candidate {
@@ -425,7 +418,7 @@ impl App {
         targets.sort_by_key(|t| t.order);
         targets
     }
-    fn observe_target(&self, target: &Target) -> Result<Observation, Value> {
+    pub fn observe_target(&self, target: &Target) -> Result<Observation, Value> {
         if target.closed.load(Ordering::Acquire) {
             return Err(failure("staleContext", "目标已关闭"));
         }
@@ -446,9 +439,6 @@ impl App {
             );
         }
         Ok(observation)
-    }
-    pub fn target_state(&self, target: &Target) -> Result<Value, Value> {
-        self.observe_target(target).map(|s| s.legacy(&target.id))
     }
     fn collect_targets(
         &self,

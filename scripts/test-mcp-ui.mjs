@@ -18,14 +18,14 @@ const server=createServer((req,res)=>{
 });
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const browser=await chromium.launch({headless:true}),themes=await readTestThemeTokens(browser),page=await browser.newPage({viewport:{width:1040,height:850}});
-let snapshots=0,configs=0,clipboard='',actions=[],fail=false,detailFail=false,hold,holdDetail,holdSettings,taskReads=[];
+let snapshots=0,configs=0,clipboard='',actions=[],fail=false,targetFail=false,invalidIdentity=false,detailFail=false,hold,holdDetail,holdSettings,taskReads=[];
 let settingsSnapshot={pageId:'connection',definitionToken:'test-settings',revision:'1',values:{port:19846}},settingsSaves=[],conflict=false;
-const data={service:'ready',endpoint:'http://127.0.0.1:19846/mcp',target:{state:'connected',target:{name:'prod-consul-01',endpoint:'192.0.2.11:22',username:'ops'}},evidenceDirectory:'/home/ops/.local/share/sodeck/plugin-data/sodeck.mcp/evidence',tasks:[{taskId:'t1',kind:'exec',requestId:'collect-consul-logs',native:{state:'running'},done:false,evidence:{complete:false}},{taskId:'t2',kind:'download',requestId:'consul-evidence',native:{state:'completed'},done:true,evidence:{complete:true}},{taskId:'t3',kind:'exec',requestId:'inspect-network',native:{state:'failed',exitCode:7},done:true,evidence:{complete:false,error:{message:'输出超出额度，请导出文件后下载。'}}}]};
+const data={runId:'run-a',targetId:'target-a',service:'ready',endpoint:'http://127.0.0.1:19846/mcp',target:{availability:'ready',targetSource:'current',capabilities:['exec','files'],error:null,descriptor:{name:'prod-consul-01',protocol:'ssh',host:'192.0.2.11',port:22,endpoint:'192.0.2.11:22',username:'ops'}},evidenceDirectory:'/home/ops/.local/share/sodeck/plugin-data/sodeck.mcp/evidence',tasks:[{taskId:'t1',kind:'exec',requestId:'collect-consul-logs',native:{state:'running'},done:false,evidence:{complete:false}},{taskId:'t2',kind:'download',requestId:'consul-evidence',native:{state:'completed'},done:true,evidence:{complete:true}},{taskId:'t3',kind:'exec',requestId:'inspect-network',native:{state:'failed',exitCode:7},done:true,evidence:{complete:false,error:{message:'输出超出额度，请导出文件后下载。'}}}]};
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 Object.assign(data.tasks[0],{input:{command:"journalctl -u consul --since '15 minutes ago' --no-pager"},createdAt:Date.now()-12000});
 Object.assign(data.tasks[1],{input:{remotePath:'/tmp/consul-evidence.log'},createdAt:Date.now()-20000,finishedAt:Date.now()-15000,evidence:{complete:true,path:'/evidence/t2/download.bin'}});
 Object.assign(data.tasks[2],{input:{command:'printf "<img src=x onerror=alert(1)>"\n'+'x'.repeat(16000)},createdAt:Date.now()-40000,finishedAt:Date.now()-35000});
-data.target.targetId='target-a';for(const task of data.tasks){task.targetId='target-a';task.target=structuredClone(data.target.target);}
+for(const task of data.tasks){task.targetId=data.targetId;task.target=structuredClone(data.target.descriptor);}
 function summary(task){const {input,directory,...row}=structuredClone(task);const value=input?.command??input?.remotePath??task.requestId;row.inputPreview=value.slice(0,256);row.inputTruncated=value.length>256;if(row.evidence)delete row.evidence.path;return row;}
 const records=new Map(data.tasks.map(task=>[task.taskId,task]));
 await page.exposeFunction('mcpRequest',async(method,p)=>{
@@ -48,7 +48,9 @@ await page.exposeFunction('mcpRequest',async(method,p)=>{
     return task;
   }
   if(p.action==='snapshot'){snapshots++;if(hold)await new Promise(r=>{hold=r;});if(fail)throw new Error('核心暂不可用，请稍后刷新。');}
-  return {...structuredClone(data),tasks:data.tasks.map(summary)};
+  const projected={...structuredClone(data),target:targetFail?{descriptor:null,targetSource:'unknown',availability:'unavailable',capabilities:null,error:{code:-32000,message:'目标摘要暂时读取失败'}}:structuredClone(data.target),tasks:data.tasks.map(summary)};
+  if(invalidIdentity)delete projected.targetId;
+  return projected;
 });
 await page.addInitScript(()=>{
   if(window!==top)return;
@@ -80,6 +82,19 @@ try{
   await frame.getByRole('button',{name:'下一页',exact:true}).click();await frame.locator('#detail-output').filter({hasText:'second page'}).waitFor();
   await frame.getByRole('button',{name:'上一页',exact:true}).focus();const before=snapshots;
   await new Promise(r=>setTimeout(r,1700));assert(snapshots>before);assert.equal(await frame.locator(':focus').textContent(),'上一页');assert((await frame.locator('#detail-output').textContent()).includes('second page'),'polling preserves the selected output page');
+  const readingScroll=await frame.locator('main').evaluate(el=>el.scrollTop);
+  targetFail=true;await frame.getByRole('button',{name:'刷新',exact:true}).click();await frame.locator('#server').filter({hasText:'目标信息暂不可用'}).waitFor();
+  assert(await frame.locator('#detail').isVisible(),'a target observation failure must preserve task details');
+  assert((await frame.locator('#detail-output').textContent()).includes('second page'),'a target observation failure must preserve the output cursor');
+  assert((await frame.locator('#server-detail').textContent()).includes('目标摘要暂时读取失败'),'target observation errors must be visible');
+  assert.equal(await frame.locator('main').evaluate(el=>el.scrollTop),readingScroll,'observation failure preserves the reading position');
+  targetFail=false;await frame.getByRole('button',{name:'刷新',exact:true}).click();await frame.locator('#server').filter({hasText:'prod-consul-01'}).waitFor();
+  assert((await frame.locator('#detail-output').textContent()).includes('second page'),'observation recovery preserves the output cursor');
+  data.target.availability='disconnected';data.target.targetSource='lastConnected';await frame.getByRole('button',{name:'刷新',exact:true}).click();await frame.locator('#server-detail').filter({hasText:'最后连接信息'}).waitFor();
+  assert((await frame.locator('#server-detail').textContent()).includes('已断开'));assert.equal(await frame.locator('#server').textContent(),'prod-consul-01');assert(await frame.locator('#detail').isVisible());
+  data.target.availability='ready';data.target.targetSource='current';await frame.getByRole('button',{name:'刷新',exact:true}).click();await frame.locator('#server-detail').filter({hasText:'已连接'}).waitFor();
+  invalidIdentity=true;await frame.getByRole('button',{name:'刷新',exact:true}).click();await frame.locator('#notice').filter({hasText:'快照无效'}).waitFor();assert(await frame.locator('#detail').isVisible());assert((await frame.locator('#detail-output').textContent()).includes('second page'));
+  invalidIdentity=false;await frame.getByRole('button',{name:'刷新',exact:true}).click();await frame.locator('#freshness').filter({hasText:'状态可能已过期'}).waitFor({state:'hidden'});
   await frame.getByRole('button',{name:'上一页',exact:true}).click();await frame.locator('#detail-output').filter({hasText:'first page'}).waitFor();
   await frame.locator('#detail-cancel').click();await frame.locator('#notice').filter({hasText:'等待远端实际结果'}).waitFor();assert(actions.includes('cancel'));assert(await frame.locator('#detail-cancel').isVisible(),'cancellation request does not claim completion');
   await choose('查看命令详情 inspect-network');await frame.locator('#detail-command').filter({hasText:'printf'}).waitFor();assert.equal(await frame.locator('#detail-command').textContent(),data.tasks[2].input.command);assert((await frame.locator('#detail-state').textContent()).includes('退出码 7'));assert(await frame.locator('#detail-error').isVisible());
@@ -157,8 +172,11 @@ try{
   fail=true;await frame.getByRole('button',{name:'刷新',exact:true}).click();await frame.locator('#notice').filter({hasText:'核心暂不可用'}).waitFor();fail=false;
   await choose('查看命令详情 inspect-network');await frame.locator('#detail').waitFor();
   await frame.locator('#next').click();await frame.locator('#detail-output').filter({hasText:'second page'}).waitFor();
-  data.target.targetId='target-b';data.tasks=[{...structuredClone(savedTasks[0]),taskId:'new-target',requestId:'new-target',targetId:'target-b'}];await frame.getByRole('button',{name:'刷新',exact:true}).click();await frame.locator('#detail').waitFor({state:'hidden'});assert(await frame.locator('#overview').isVisible(),'a new connection returns to its own overview');await choose('查看命令详情 new-target');await frame.locator('#detail-output').filter({hasText:'first page'}).waitFor();assert.equal(await frame.locator('#page-number').textContent(),'第 1 页','new connections clear the old output cursor');
-  data.target.targetId='target-c';data.tasks=[];await frame.getByRole('button',{name:'刷新',exact:true}).click();await frame.locator('#empty').waitFor();assert.equal(await frame.locator('#idle').getAttribute('hidden'),null);assert(await frame.locator('#detail').isHidden(),'new connections clear old selected records');
+  let priorConnectionReply;holdDetail=resolve=>{priorConnectionReply=resolve;};await frame.locator('#previous').click();while(!priorConnectionReply)await new Promise(r=>setTimeout(r,10));
+  data.targetId='target-b';data.tasks=[{...structuredClone(savedTasks[0]),taskId:'new-target',requestId:'new-target',targetId:'target-b'}];await frame.getByRole('button',{name:'刷新',exact:true}).click();await frame.locator('#detail').waitFor({state:'hidden'});assert(await frame.locator('#overview').isVisible(),'a new connection returns to its own overview');await choose('查看命令详情 new-target');await frame.locator('#detail-output').filter({hasText:'first page'}).waitFor();assert.equal(await frame.locator('#page-number').textContent(),'第 1 页','new connections clear the old output cursor');
+  priorConnectionReply();await new Promise(r=>setTimeout(r,100));assert.equal(await frame.locator('#detail-request').textContent(),'new-target','a late old-connection detail cannot overwrite the new connection');
+  data.runId='run-b';await frame.getByRole('button',{name:'刷新',exact:true}).click();await frame.locator('#detail').waitFor({state:'hidden'});assert(await frame.locator('#overview').isVisible(),'run identity participates in reading ownership');
+  data.targetId='target-c';data.tasks=[];await frame.getByRole('button',{name:'刷新',exact:true}).click();await frame.locator('#empty').waitFor();assert.equal(await frame.locator('#idle').getAttribute('hidden'),null);assert(await frame.locator('#detail').isHidden(),'new connections clear old selected records');
   await frame.locator('main').evaluate(el=>el.scrollTop=0);await page.screenshot({path:'artifacts/mcp-ui/empty.png',fullPage:true});
   hold=true;await frame.getByRole('button',{name:'刷新',exact:true}).click();while(typeof hold!=='function')await new Promise(r=>setTimeout(r,10));await message('visibilityChanged',{visible:false});await message('visibilityChanged',{visible:true});hold();hold=null;const resume=snapshots;await new Promise(r=>setTimeout(r,1700));assert(snapshots>resume,'in-flight visibility change resumes polling');
   await message('unmount');const unmounted=snapshots;await new Promise(r=>setTimeout(r,1700));assert.equal(snapshots,unmounted);assert.deepEqual(errors,[]);

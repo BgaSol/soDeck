@@ -6,6 +6,7 @@ mod response;
 mod targets;
 mod task;
 mod tasks;
+mod ui;
 use serde_json::json;
 use std::{
     fs::{self, OpenOptions},
@@ -125,7 +126,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "snapshot" => {}
                 "task" => {
                     return Ok(
-                        json!({"data":app.view_task(view, &p["data"]).map_err(|e| e.to_string())?}),
+                        json!({"data":ui::task(&app,view, &p["data"]).map_err(|e| e.to_string())?}),
                     );
                 }
                 "config" => return Ok(json!({"data":{"config":app.config(),"token":app.token}})),
@@ -141,7 +142,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             _ => return Err("未知方法".into()),
         }
         Ok(
-            json!({"metadata":{"title":"Agent MCP","dirty":false,"busy":false},"data":app.view(view)?}),
+            json!({"metadata":{"title":"Agent MCP","dirty":false,"busy":false},"data":ui::snapshot(&app,view).map_err(|e|e.to_string())?}),
         )
     });
     if let Some(app) = state.lock().unwrap().as_ref() {

@@ -1,8 +1,9 @@
-use crate::{targets::Target, tasks::now};
+use crate::targets::{Descriptor, Target};
 use serde_json::{json, Value};
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
+    time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::{watch, Semaphore};
 use tokio_util::sync::CancellationToken;
@@ -11,6 +12,12 @@ use tokio_util::sync::CancellationToken;
 pub enum Kind {
     Exec,
     Download,
+}
+pub fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
 
 #[cfg(test)]
@@ -58,14 +65,12 @@ mod tests {
         );
         let done = task.snapshot();
         assert!(done.phase == Phase::Done);
-        assert_eq!(
-            crate::response::metadata(&task, &done)["evidence"]["state"],
-            "failed"
-        );
+        assert!(matches!(done.saved, Saved::Failed));
         task.request_cancel();
         task.observe(json!({"state":"cancelled"}), Some(999));
         task.cleanup(true, Value::Null);
-        assert_eq!(task.metadata(), crate::response::metadata(&task, &done));
+        assert_eq!(task.snapshot().revision, done.revision);
+        assert_eq!(task.snapshot().native, done.native);
         assert_eq!(task.snapshot().committed, 12);
     }
     #[test]
@@ -78,6 +83,23 @@ mod tests {
         assert_eq!(receipt.revision, *changes.borrow());
         assert_eq!(receipt.revision, 2);
         assert_eq!(task.request_cancel().revision, receipt.revision);
+    }
+    #[test]
+    fn complete_target_is_owned_and_long_error_changes_wake() {
+        let task = fixture(PathBuf::new());
+        let mut descriptor:Descriptor=serde_json::from_value(json!({"name":"server","protocol":"ssh","host":"10.0.0.187","port":22,"endpoint":"10.0.0.187:22","username":"ops"})).unwrap();
+        task.set_target(descriptor.clone());
+        let captured = task.snapshot();
+        descriptor.host = "10.0.1.187".into();
+        assert_eq!(captured.target.as_ref().unwrap().host, "10.0.0.187");
+        assert_eq!(captured.target.as_ref().unwrap().port, 22);
+        let native = |suffix: &str| json!({"state":"unavailable","error":{"code":"remote","message":format!("{}{suffix}","x".repeat(600))}});
+        task.observe(native("first"), None);
+        let changes = task.subscribe();
+        let before = task.snapshot().revision;
+        task.observe(native("second"), None);
+        assert_eq!(*changes.borrow(), before + 1);
+        assert_eq!(task.snapshot().target, captured.target);
     }
     #[test]
     fn summary_is_a_bounded_preview_not_original_input() {
@@ -116,7 +138,7 @@ pub(crate) enum Saved {
 #[derive(Clone)]
 pub struct Record {
     pub native: Value,
-    pub target: Value,
+    pub target: Option<Descriptor>,
     pub phase: Phase,
     pub saved: Saved,
     pub error: Value,
@@ -133,6 +155,18 @@ pub struct Record {
 pub struct CapturedTask {
     pub task: Arc<Task>,
     pub record: Record,
+}
+pub struct TaskFailure {
+    pub error: Value,
+    pub captured: Option<CapturedTask>,
+}
+impl From<Value> for TaskFailure {
+    fn from(error: Value) -> Self {
+        Self {
+            error,
+            captured: None,
+        }
+    }
 }
 impl CapturedTask {
     pub fn new(task: Arc<Task>) -> Self {
@@ -171,7 +205,7 @@ pub fn preview(value: &str, bytes: usize) -> (String, bool) {
     }
     (value[..end].into(), end < value.len())
 }
-fn revision_facts(native: &Value) -> Value {
+pub fn meaningful_native(native: &Value) -> Value {
     let mut value = json!({});
     for key in [
         "state",
@@ -214,7 +248,7 @@ impl Task {
             changes,
             state: Mutex::new(Record {
                 native: json!({"admission":"pending"}),
-                target: Value::Null,
+                target: None,
                 phase: Phase::Collecting,
                 saved: Saved::Collecting,
                 error: Value::Null,
@@ -245,7 +279,7 @@ impl Task {
     }
     pub fn observe(&self, native: Value, committed: Option<u64>) {
         self.update(|r| {
-            let changed = revision_facts(&r.native) != revision_facts(&native)
+            let changed = meaningful_native(&r.native) != meaningful_native(&native)
                 || committed.is_some_and(|n| n != r.committed);
             r.native = native;
             if let Some(n) = committed {
@@ -255,10 +289,10 @@ impl Task {
             changed
         });
     }
-    pub fn set_target(&self, value: Value) {
+    pub fn set_target(&self, value: Descriptor) {
         self.update(|r| {
-            let changed = r.target != value;
-            r.target = value;
+            let changed = r.target.as_ref() != Some(&value);
+            r.target = Some(value);
             changed
         });
     }
@@ -334,11 +368,5 @@ impl Task {
     }
     pub fn snapshot(&self) -> Record {
         self.state.lock().unwrap().clone()
-    }
-    pub fn metadata(&self) -> Value {
-        self.metadata_for(&self.state.lock().unwrap())
-    }
-    pub fn metadata_for(&self, r: &Record) -> Value {
-        crate::response::metadata(self, r)
     }
 }

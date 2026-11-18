@@ -1,7 +1,7 @@
 use crate::{
     evidence::{self, Page, PageFormat, ReadError},
-    task::{CapturedTask, Kind, Phase, Task},
-    tasks::{failure, text, App, StartedTask},
+    task::{CapturedTask, Kind, Phase, Task, TaskFailure},
+    tasks::{failure, text, App, StartedTask, WaitSlots},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -84,11 +84,13 @@ pub fn parse_mcp_read(p: &Value) -> Result<(Options, bool), Value> {
     Ok((read_options(p)?, detail))
 }
 pub fn parse_ui_read(p: &Value) -> Result<Options, Value> {
-    let mut options = read_options(p)?;
-    if options.wait_ms != 0 {
-        return Err(failure("invalidParams", "waitMs 超出范围"));
+    if !p.as_object().is_some_and(|o| {
+        o.keys()
+            .all(|k| matches!(k.as_str(), "action" | "taskId" | "cursor" | "tail"))
+    }) {
+        return Err(failure("invalidParams", "侧栏读取参数无效"));
     }
-    options.tail = p
+    let tail = p
         .get("tail")
         .map(|v| {
             v.as_bool()
@@ -96,7 +98,21 @@ pub fn parse_ui_read(p: &Value) -> Result<Options, Value> {
         })
         .transpose()?
         .unwrap_or(false);
-    Ok(options)
+    if tail && p.get("cursor").is_some() {
+        return Err(failure("invalidParams", "最近页不能组合正文游标"));
+    }
+    let cursor = p
+        .get("cursor")
+        .map(|v| decimal(v, "cursor"))
+        .transpose()?
+        .unwrap_or(0);
+    Ok(Options {
+        format: Some(PageFormat::Text),
+        cursor,
+        tail,
+        wait_ms: 0,
+        since: None,
+    })
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -109,39 +125,6 @@ pub struct TaskRead {
     pub captured: CapturedTask,
     pub page: Option<Page>,
     pub wait: Option<WaitResult>,
-}
-pub struct TaskFailure {
-    pub error: Value,
-    pub captured: Option<CapturedTask>,
-}
-impl From<Value> for TaskFailure {
-    fn from(error: Value) -> Self {
-        Self {
-            error,
-            captured: None,
-        }
-    }
-}
-pub struct WaitSlots {
-    pub _global: OwnedSemaphorePermit,
-    pub _local: OwnedSemaphorePermit,
-}
-impl WaitSlots {
-    pub fn acquire(waiting: &Arc<Semaphore>, task: &Task) -> Result<Self, Value> {
-        let global = waiting
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| failure("resourceBusy", "读取等待已满"))?;
-        let local = task
-            .waiters
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| failure("resourceBusy", "该任务读取等待已满"))?;
-        Ok(Self {
-            _global: global,
-            _local: local,
-        })
-    }
 }
 #[derive(Clone, Copy)]
 enum WaitUntil {
@@ -735,6 +718,22 @@ mod tests {
         assert!(detail);
         assert!(none.format.is_none());
         assert!(parse_ui_read(&json!({"waitMs":1})).is_err());
+        for p in [
+            json!({"outputMode":"full"}),
+            json!({"outputMode":"none"}),
+            json!({"waitMs":0}),
+            json!({"sinceRevision":"1"}),
+            json!({"detail":false}),
+            json!({"tail":true,"cursor":"0"}),
+            json!({"unexpected":true}),
+        ] {
+            assert_eq!(parse_ui_read(&p).err().unwrap()["code"], "invalidParams");
+        }
+        let sidebar = parse_ui_read(&json!({"action":"task","taskId":"task","tail":true})).unwrap();
+        assert!(sidebar.tail);
+        assert!(sidebar.format == Some(PageFormat::Text));
+        assert_eq!(sidebar.wait_ms, 0);
+        assert!(sidebar.since.is_none());
         assert!(parse_mcp_read(&json!({"detail":"true"})).is_err());
         assert!(parse_mcp_read(&json!({"outputMode":"none","cursor":"1"})).is_err());
     }

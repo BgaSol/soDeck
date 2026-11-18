@@ -1,5 +1,6 @@
 use crate::{
     evidence,
+    targets::State,
     task::{Kind, Task},
     tasks::{error, failure, text, App},
 };
@@ -56,12 +57,15 @@ pub fn run(app: &App, task: &Task) {
     }
     task.finalizing(outcome.complete, outcome.error);
     // Keep the last native facts on disk before native result buffers are released.
-    if let Err(message) = evidence::metadata(&task.directory, &task.metadata()) {
+    if let Err(message) = evidence::metadata(
+        &task.directory,
+        &evidence::task_metadata(task, &task.snapshot()),
+    ) {
         let _ = app.rpc("logging.write", json!({"level":"warn","message":"释放前的任务元数据保存失败","fields":{"taskId":task.id,"error":message}}));
     }
     collector.cleanup();
     let candidate = task.final_candidate();
-    let saved = evidence::metadata(&task.directory, &task.metadata_for(&candidate))
+    let saved = evidence::metadata(&task.directory, &evidence::task_metadata(task, &candidate))
         .err()
         .map(error);
     task.publish(candidate, saved);
@@ -69,16 +73,36 @@ pub fn run(app: &App, task: &Task) {
 impl Collector<'_> {
     fn prepare(&self) -> Result<(), Value> {
         fs::create_dir_all(&self.task.directory).map_err(|e| error(e.to_string()))?;
-        evidence::metadata(&self.task.directory, &self.task.metadata()).map_err(error)?;
+        evidence::metadata(
+            &self.task.directory,
+            &evidence::task_metadata(self.task, &self.task.snapshot()),
+        )
+        .map_err(error)?;
         if self.app.stopped(self.task) {
             return Err(error("接纳前已取消"));
         }
-        let target = self.app.target_state(&self.task.target)?;
-        if target["state"] != "connected" || target["closing"] == true {
+        let target = self.app.observe_target(&self.task.target)?;
+        if target.state != State::Connected || target.closing {
             return Err(error("服务器未连接或正在关闭"));
         }
-        self.task.set_target(target["target"].clone());
-        evidence::metadata(&self.task.directory, &self.task.metadata()).map_err(error)
+        let capability = if self.task.kind == Kind::Exec {
+            "exec"
+        } else {
+            "files"
+        };
+        if !target.capabilities.iter().any(|c| c == capability) {
+            return Err(error(format!("目标不提供 {capability} 能力")));
+        }
+        self.task.set_target(
+            target
+                .target
+                .expect("validated connected observation has a descriptor"),
+        );
+        evidence::metadata(
+            &self.task.directory,
+            &evidence::task_metadata(self.task, &self.task.snapshot()),
+        )
+        .map_err(error)
     }
     fn command(&mut self) -> Result<Outcome, Value> {
         let mut output = evidence::Output::new(&self.task.directory).map_err(error)?;

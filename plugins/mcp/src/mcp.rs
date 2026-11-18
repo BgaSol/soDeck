@@ -79,7 +79,7 @@ impl ServerHandler for Server {
             "sodeck_tasks_list" => query::list(&app, &params).map(response::mcp_list),
             "sodeck_exec_start" => {
                 let started = tasks::parse_exec_start(&params)
-                    .map_err(query::TaskFailure::from)
+                    .map_err(crate::task::TaskFailure::from)
                     .and_then(|request| app.start(request, &context.ct));
                 let read = match started {
                     Ok(started) => {
@@ -101,7 +101,7 @@ impl ServerHandler for Server {
                 }
             }
             "sodeck_file_download" => tasks::parse_download_start(&params)
-                .map_err(query::TaskFailure::from)
+                .map_err(crate::task::TaskFailure::from)
                 .and_then(|request| app.start(request, &context.ct))
                 .map(|started| response::mcp_download_start(&started.task))
                 .map_err(|error| response::mcp_task_error(&error, false)),

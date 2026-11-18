@@ -1,13 +1,15 @@
 use crate::{
     evidence::{Page, PageBody},
-    query::{TaskFailure, TaskList, TaskRead},
-    task::{preview, CapturedTask, Kind, Phase, Record, Saved, Task},
+    query::{TaskList, TaskRead},
+    task::{
+        meaningful_native, preview, CapturedTask, Kind, Phase, Record, Saved, Task, TaskFailure,
+    },
 };
 use rmcp::model::{CallToolResult, ContentBlock};
 use serde_json::{json, Value};
 use std::io::{self, Write};
 
-fn brief_error(value: &Value) -> Value {
+pub(crate) fn brief_error(value: &Value) -> Value {
     if value.is_null() {
         return Value::Null;
     }
@@ -62,21 +64,9 @@ pub fn mcp_targets(discovery: &crate::targets::Discovery) -> Value {
         "unresolved":discovery.unresolved.iter().map(|t|target_row(t,discovery.detail,discovery.with_query)).collect::<Vec<_>>()})
 }
 fn native_facts(native: &Value, history: bool) -> Value {
-    let mut value = json!({});
-    for key in [
-        "state",
-        "admission",
-        "execSent",
-        "exitCode",
-        "exitSignal",
-        "remoteExitConfirmed",
-        "outputComplete",
-        "received",
-        "total",
-    ] {
-        if let Some(v) = native.get(key) {
-            value[key] = v.clone();
-        }
+    let mut value = meaningful_native(native);
+    for key in ["workerFinished", "streamId", "id", "error"] {
+        value.as_object_mut().unwrap().remove(key);
     }
     if native.get("error").is_some_and(|e| !e.is_null()) {
         value["error"] = brief_error(&native["error"]);
@@ -91,8 +81,9 @@ fn native_facts(native: &Value, history: bool) -> Value {
     value
 }
 fn identity(task: &Task, r: &Record) -> Value {
+    let target=r.target.as_ref().map(|t|json!({"name":t.name,"protocol":t.protocol,"endpoint":t.endpoint,"username":t.username}));
     json!({"taskId":task.id,"runId":task.run,"kind":task.kind.name(),"targetId":task.target.id,
-        "requestId":task.input["requestId"],"target":r.target,"done":r.phase==Phase::Done,
+        "requestId":task.input["requestId"],"target":target,"done":r.phase==Phase::Done,
         "phase":match r.phase {Phase::Collecting=>"collecting",Phase::Finalizing=>"finalizing",Phase::Done=>"done"},
         "revision":r.revision.to_string(),"cancelRequested":r.cancel_requested,"resourceReleased":r.released})
 }
@@ -202,49 +193,13 @@ pub fn ui_task(read: &TaskRead) -> Value {
     let mut value = diagnostic(&read.captured.task, &read.captured.record);
     value["outputInfo"] = json!({"savedBytes":if read.captured.task.kind==Kind::Exec {json!(read.captured.record.committed.to_string())} else {Value::Null}});
     if let Some(page) = &read.page {
-        let mut body = output(page);
-        if let PageBody::Full { chunks } = &page.body {
-            let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
-            for chunk in chunks {
-                let bytes =
-                    sodeck_plugin_client::encoding::unbase64(chunk["dataBase64"].as_str().unwrap())
-                        .expect("reader validated chunk");
-                if chunk["source"] == "stderr" {
-                    stderr.extend(bytes);
-                } else {
-                    stdout.extend(bytes);
-                }
-            }
-            body["stdout"] = json!(String::from_utf8_lossy(&stdout));
-            body["stderr"] = json!(String::from_utf8_lossy(&stderr));
-            body["previewEncoding"] = json!("utf-8-lossy-per-page");
-        }
-        value["output"] = body;
+        value["output"] = output(page);
     }
     value
 }
 pub fn ui_row(c: &CapturedTask) -> Value {
     let mut value = identity(&c.task, &c.record);
-    let mut native = json!({});
-    for key in [
-        "state",
-        "admission",
-        "execSent",
-        "exitCode",
-        "exitSignal",
-        "remoteExitConfirmed",
-        "workerFinished",
-        "outputComplete",
-        "received",
-        "total",
-        "streamId",
-        "id",
-        "error",
-    ] {
-        if let Some(field) = c.record.native.get(key) {
-            native[key] = field.clone();
-        }
-    }
+    let mut native = meaningful_native(&c.record.native);
     if native.get("error").is_some() {
         native["error"] = brief_error(&native["error"]);
     }
@@ -260,13 +215,6 @@ pub fn ui_row(c: &CapturedTask) -> Value {
 }
 pub fn ui_cancel(c: &CapturedTask) -> Value {
     json!({"taskId":c.task.id,"cancelRequested":c.record.cancel_requested,"result":ui_row(c)})
-}
-pub fn metadata(task: &Task, r: &Record) -> Value {
-    let mut value = diagnostic(task, r);
-    value["schemaVersion"] = json!(1);
-    value["context"] = json!(task.target.context);
-    value["outputInfo"] = json!({"savedBytes":if task.kind==Kind::Exec {json!(r.committed.to_string())} else {Value::Null}});
-    value
 }
 pub fn mcp_task_error(failure: &TaskFailure, detail: bool) -> Value {
     let mut value = json!({"error":if detail || failure.captured.is_none() {failure.error.clone()} else {brief_error(&failure.error)}});

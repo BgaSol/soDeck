@@ -1,9 +1,7 @@
 use crate::{
-    collector, query,
-    query::{TaskFailure, WaitSlots},
-    response,
+    collector,
     targets::Target,
-    task::{CapturedTask, Kind, NewTask, Phase, Task},
+    task::{now, CapturedTask, Kind, NewTask, Phase, Task, TaskFailure},
 };
 use serde_json::{json, Value};
 use sodeck_plugin_client::{Client, RpcError};
@@ -14,16 +12,31 @@ use std::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex,
     },
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::Instant,
 };
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio_util::sync::CancellationToken;
 
-pub fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
+pub struct WaitSlots {
+    pub _global: OwnedSemaphorePermit,
+    pub _local: OwnedSemaphorePermit,
+}
+impl WaitSlots {
+    pub fn acquire(waiting: &Arc<Semaphore>, task: &Task) -> Result<Self, Value> {
+        let global = waiting
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| failure("resourceBusy", "读取等待已满"))?;
+        let local = task
+            .waiters
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| failure("resourceBusy", "该任务读取等待已满"))?;
+        Ok(Self {
+            _global: global,
+            _local: local,
+        })
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -344,46 +357,6 @@ impl App {
         let task = self.resolve(p, scope)?;
         let record = task.request_cancel();
         Ok(CapturedTask { task, record })
-    }
-    pub fn view_task(&self, view: &str, p: &Value) -> Result<Value, Value> {
-        let target = self.view_target(view)?;
-        let task = self.resolve(p, Some(&target.id))?;
-        let options = query::parse_ui_read(p)?;
-        let read = query::ui_read(self, task, options).map_err(response::ui_read_error)?;
-        let value = response::ui_task(&read);
-        if serde_json::to_vec(&value).unwrap().len() > 56 * 1024 {
-            return Err(failure(
-                "resourceLimit",
-                "详情超过界面传输大小，请使用本地证据或 MCP 读取",
-            ));
-        }
-        Ok(value)
-    }
-    pub fn view(&self, view: &str) -> Result<Value, String> {
-        let target = self.view_target(view).map_err(|e| e.to_string())?;
-        let mut tasks: Vec<_> = self
-            .records()
-            .into_iter()
-            .filter(|t| t.target.id == target.id)
-            .map(|t| (t.order, response::ui_row(&CapturedTask::new(t))))
-            .collect();
-        tasks.sort_by_key(|(order, v)| (v["done"] == true, std::cmp::Reverse(*order)));
-        let mut rows = Vec::new();
-        let mut bytes = 0;
-        let count = tasks.len();
-        for (_, row) in tasks.into_iter().take(50) {
-            let size = serde_json::to_vec(&row).unwrap().len();
-            if bytes + size > 40 * 1024 {
-                break;
-            }
-            bytes += size;
-            rows.push(row);
-        }
-        Ok(
-            json!({"runId":self.run,"endpoint":format!("http://127.0.0.1:{}/mcp",self.port),"service":*self.http_state.lock().unwrap(),
-            "target":self.target_state(&target).unwrap_or_else(|e|json!({"state":"unavailable","error":e})),"tasks":rows,
-            "recordCount":count,"evidenceDirectory":self.root.join("evidence")}),
-        )
     }
     pub fn config(&self) -> String {
         format!("[mcp_servers.sodeck]\nurl = \"http://127.0.0.1:{}/mcp\"\nhttp_headers = {{ Authorization = \"Bearer {}\" }}\n",self.port,self.token)

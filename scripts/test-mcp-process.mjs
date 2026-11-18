@@ -71,7 +71,11 @@ async function discoveryChecks(){
   for(const item of all.targets){assert(!('context'in item)&&!('state'in item)&&!('closing'in item));assert.equal(item.availability,'ready');}
   const one=await read({query:'10.0.0.187'});assert.equal(one.resolution,'unique');assert.equal(one.targets[0].targetId,a.targetId);assert.deepEqual(one.targets[0].matchedBy,['hostExact']);
   const both=await read({query:'187'});assert.equal(both.resolution,'ambiguous');assert.equal(both.targets.length,2);assert(both.targets.every(t=>t.matchedBy.includes('ipv4LastOctet')));
-  targetStates.set('b','disconnected');const mixed=await read({query:'187'});assert.equal(mixed.resolution,'ambiguous');assert.equal(mixed.targets[1].availability,'disconnected');assert.equal(mixed.targets[1].targetSource,'lastConnected');assert.equal(mixed.targets[1].target.host,'10.0.1.187');targetStates.delete('b');
+  targetStates.set('b','disconnected');const mixed=await read({query:'187'});assert.equal(mixed.resolution,'ambiguous');assert.equal(mixed.targets[1].availability,'disconnected');assert.equal(mixed.targets[1].targetSource,'lastConnected');assert.equal(mixed.targets[1].target.host,'10.0.1.187');
+  const offlineSidebar=(await peer.request('ui.getView',{viewId:'b'})).data;
+  assert.equal(offlineSidebar.target.descriptor?.endpoint,mixed.targets[1].target.endpoint,'sidebar preserves the last real connection descriptor');
+  assert.equal(offlineSidebar.targetId,b.targetId);assert.equal(offlineSidebar.target.targetSource,'lastConnected');assert.equal(offlineSidebar.target.availability,'disconnected');
+  targetStates.delete('b');
   const oldB={...descriptions.b};descriptions.b={...oldB,name:'187',host:'10.0.1.19'};const named=await read({query:'187'});assert.equal(named.targets.length,2);assert.deepEqual(named.targets[1].matchedBy,['nameExact']);descriptions.b=oldB;
   assert.equal((await read({query:'187',match:'contains'})).targets.length,3);assert.equal((await read({query:'0187'})).resolution,'none');
   const detail=await read({targetId:a.targetId,detail:true});assert.deepEqual(detail.targets[0].context,contexts.a);assert.equal(detail.targets[0].state,'connected');assert(!('rpc'in detail.targets[0]));
@@ -81,10 +85,17 @@ async function discoveryChecks(){
   targetFaults.set('b',Object.assign(new Error('中'.repeat(200)),{code:-32000,data:{code:'unavailable',diagnostic:'retained'}}));
   const partial=await read({query:'187'});assert.equal(partial.resolution,'incomplete');assert.equal(partial.targets.length,1);assert.equal(partial.unresolved.length,1);assert.equal(partial.unresolved[0].error.code,-32000);assert(partial.unresolved[0].error.messageTruncated);assert(Buffer.byteLength(partial.unresolved[0].error.message)<=512);assert(partial.unresolved[0].error.detailsAvailable);
   const unavailable=await read({targetId:b.targetId});assert.equal(unavailable.resolution,'unique');assert.equal(unavailable.targets[0].availability,'unavailable');assert.equal(unavailable.targets[0].capabilities,null);
+  const failedSidebar=(await peer.request('ui.getView',{viewId:'b'})).data;
+  assert.equal(failedSidebar.targetId,b.targetId);assert.equal(failedSidebar.target.descriptor,null);assert.equal(failedSidebar.target.capabilities,null);assert.equal(failedSidebar.target.error.code,-32000);assert.equal(failedSidebar.target.error.messageTruncated,true);
   const fullError=await read({targetId:b.targetId,detail:true});assert.equal(fullError.targets[0].error.details.diagnostic,'retained');
   targetFaults.set('b',{...targetReply('b'),target:null});assert.equal((await read({query:'187'})).resolution,'incomplete');targetFaults.clear();
   const before=targetCalls.length;targetFaults.set('a',Object.assign(new Error('local transport failed'),{code:-32003}));const stopped=await read({query:'187'});assert.equal(stopped.resolution,'incomplete');assert.equal(stopped.unresolved.length,3);assert.equal(targetCalls.length,before+1);assert.equal(stopped.unresolved[1].error.code,'notObserved');assert.equal((await read({targetId:b.targetId})).targets[0].availability,'ready');targetFaults.clear();
   const savedContext={...contexts.b};contexts.b={...savedContext,serverId:contexts.a.serverId};await peer.request('ui.createView',{viewId:'b',viewType:'status',context:contexts.b});const sameServer=await read({serverId:contexts.a.serverId});assert.equal(sameServer.resolution,'ambiguous');assert.equal(sameServer.targets.length,2);assert.equal((await read({serverId:contexts.a.serverId,workspaceId:'a'})).resolution,'unique');contexts.b=savedContext;await peer.request('ui.createView',{viewId:'b',viewType:'status',context:contexts.b});
+  gateTargets=true;const oldSnapshot=peer.request('ui.getView',{viewId:'a'});const oldSnapshotFailure=assert.rejects(oldSnapshot,/连接代次已改变/);
+  await until(async()=>targetGates.length,n=>n===1);gateTargets=false;contexts.a={...contexts.a,connectionId:'rebound-a',generation:2};
+  const rebound=await peer.request('ui.createView',{viewId:'a',viewType:'status',context:contexts.a});targetGates.shift()();await oldSnapshotFailure;
+  assert.notEqual(rebound.data.targetId,a.targetId,'old observations cannot be paired with a new local target identity');
+  a.targetId=rebound.data.targetId;
   for(const relevant of [false,true]){
     gateTargets=true;const pending=read({serverId:contexts.a.serverId});await until(async()=>targetGates.length,n=>n===1);gateTargets=false;
     contexts.d={workspaceId:'d',serverId:relevant?contexts.a.serverId:'server-d',connectionId:'connection-d',generation:1};descriptions.d={name:'d',protocol:'ssh',host:'outside.example.com',port:22,username:'ops'};await peer.request('ui.createView',{viewId:'d',viewType:'status',context:contexts.d});targetGates.shift()();const result=await pending;assert.equal(result.registryChanged,relevant);assert.equal(result.resolution,relevant?'incomplete':'unique');await peer.request('ui.disposeView',{viewId:'d'});delete contexts.d;delete descriptions.d;
@@ -134,6 +145,7 @@ try{
   const detailFailure=await tool('sodeck_task_get',{taskId:start.taskId,detail:true});assert.equal(detailFailure.value.task.input.command,'collect');fs.renameSync(outputPath+'.held',outputPath);
   const detail=(await peer.request('ui.event',{viewId:'a',data:{action:'task',taskId:start.taskId,cursor:'0'}})).data;
   assert.equal(detail.output.stdout,bytes.toString());assert.equal(detail.input.command,'collect');
+  for(const options of [{outputMode:'full'},{outputMode:'none'},{waitMs:0},{sinceRevision:'1'},{detail:true},{tail:true,cursor:'0'}])await assert.rejects(peer.request('ui.event',{viewId:'a',data:{action:'task',taskId:start.taskId,...options}}),/参数无效|不能组合/);
   await assert.rejects(peer.request('ui.event',{viewId:'b',data:{action:'task',taskId:start.taskId}}),/任务不属于当前服务器连接/);
   assert.deepEqual((await tool('sodeck_task_get',{taskId:start.taskId})).value,done,'released task evidence remains queryable');
   assert.equal((await tool('sodeck_task_get',{taskId:start.taskId,cursor:'1'})).error,true);
@@ -167,6 +179,15 @@ try{
   const newBusy=await tool('sodeck_exec_start',{...input,requestId:'wait-full',command:'must-not-run'});assert.equal(newBusy.value.error.code,'resourceBusy');assert(!('task' in newBusy.value));assert.deepEqual((await tool('sodeck_tasks_list',{targetId:target})).value.counts,countBeforeBusy);assert.deepEqual(fs.readdirSync(path.dirname(diagnostic.directory)),filesBeforeBusy);assert.equal(requests.length,requestsBeforeBusy);
   assert.equal((await tool('sodeck_exec_start',{...input,waitMs:20000})).value.done,true,'finished duplicate bypasses full waiting pool');
   const zero=(await tool('sodeck_exec_start',{...input,requestId:'zero-wait',waitMs:0})).value;assert(zero.taskId);assert(!('wait' in zero));await until(async()=>(await tool('sodeck_task_get',{taskId:zero.taskId,outputMode:'none'})).value,s=>s.done);
+  const mixedBefore=requests.length,mixedTarget=targets.find(t=>t.workspaceId==='b').targetId;
+  gateTargets=true;const mixedControllers=Array.from({length:4},()=>new AbortController());
+  const mixedDiscovery=mixedControllers.map(c=>tool('sodeck_targets_list',{targetId:mixedTarget},c.signal).catch(e=>e));await until(async()=>targetGates.length,n=>n===4);
+  targetFaults.set('a',Object.assign(new Error('mixed-load observation failed'),{code:-32000}));
+  const mixedSidebar=(await peer.request('ui.getView',{viewId:'a'})).data;assert.equal(mixedSidebar.targetId,target);assert.equal(mixedSidebar.target.error.message,'mixed-load observation failed');assert(mixedSidebar.tasks.some(t=>t.taskId===quotaTasks[0].taskId));
+  assert.equal((await tool('sodeck_targets_list',{targetId:mixedTarget})).value.error.code,'resourceBusy');
+  assert.equal((await tool('sodeck_task_get',{taskId:quotaTasks[0].taskId,outputMode:'none'})).value.done,false);
+  targetFaults.delete('a');mixedControllers.forEach(c=>c.abort());await Promise.all(mixedDiscovery);gateTargets=false;targetGates.splice(0).forEach(release=>release());
+  await until(async()=>tool('sodeck_targets_list',{targetId:mixedTarget}),r=>r.value.resolution==='unique');assert.equal(requests.length,mixedBefore,'discovery and UI failures never redispatch active operations');
   globalControllers.forEach(c=>c.abort());await Promise.all(globalReaders);await delay(120);assert.equal((await tool('sodeck_task_get',{taskId:quotaTasks[8].taskId,outputMode:'none',waitMs:30})).value.wait.reason,'timeout');
   for(let i=16;i<24;i++){const job=(await tool('sodeck_exec_start',{...input,requestId:'quota-'+i,command:'quiet',waitMs:0})).value;await until(async()=>(await tool('sodeck_task_get',{taskId:job.taskId,outputMode:'none'})).value,s=>s.native.state==='running');quotaTasks.push(job);}
   assert.equal((await tool('sodeck_exec_start',{...input,requestId:'over-active',command:'must-not-run'})).value.error.code,'resourceBusy');
@@ -233,7 +254,7 @@ try{
     assert([401,403].includes(status),JSON.stringify({headers:Object.keys(headers),status}));
   }
   contexts.a={...contexts.a,generation:3};assert.equal((await tool('sodeck_exec_start',{...input,requestId:'stale'})).value.taskId.startsWith('task-'),true);
-  assert.equal((await peer.request('ui.getView',{viewId:'a'})).data.target.state,'unavailable','the sidebar does not present another connection generation as its recorded target');
+  const staleSidebar=(await peer.request('ui.getView',{viewId:'a'})).data;assert.equal(staleSidebar.target.availability,'stale','the sidebar does not present another connection generation as its recorded target');assert.equal(staleSidebar.targetId,target);assert.equal(staleSidebar.target.descriptor,null);
   const countBefore=requests.length;await until(async()=>(await peer.request('ui.getView',{viewId:'a'})).data,s=>s.tasks.some(t=>t.requestId==='stale'&&t.done));assert.equal(requests.length,countBefore,'stale target must not execute');
   for(const viewId of Object.keys(contexts))await peer.request('ui.disposeView',{viewId});
   await peer.close();peer=null;await assert.rejects(fetch(`http://127.0.0.1:${port}/mcp`));

@@ -1,4 +1,5 @@
-use serde_json::Value;
+use crate::task::{Kind, Phase, Record, Saved, Task};
+use serde_json::{json, Value};
 use sodeck_plugin_client::encoding::unbase64;
 use std::{
     fs::{self, File, OpenOptions},
@@ -20,6 +21,20 @@ fn decode(chunk: &Value) -> Result<Vec<u8>, String> {
     unbase64(chunk["dataBase64"].as_str().ok_or("输出编码缺失")?)
 }
 
+/// Disk schema v1 is independent of the MCP and sidebar presentation contracts.
+pub fn task_metadata(task: &Task, r: &Record) -> Value {
+    let target = r.target.as_ref().map(|t| json!({"name":t.name,"protocol":t.protocol,"endpoint":t.endpoint,"username":t.username}));
+    json!({
+        "schemaVersion":1,"taskId":task.id,"runId":task.run,"kind":task.kind.name(),
+        "targetId":task.target.id,"requestId":task.input["requestId"],"target":target,
+        "done":r.phase==Phase::Done,"phase":match r.phase {Phase::Collecting=>"collecting",Phase::Finalizing=>"finalizing",Phase::Done=>"done"},
+        "revision":r.revision.to_string(),"cancelRequested":r.cancel_requested,"resourceReleased":r.released,
+        "native":r.native,"evidence":{"state":match r.saved {Saved::Collecting=>"collecting",Saved::Finalizing=>"finalizing",Saved::Complete=>"saved",Saved::Incomplete=>"incomplete",Saved::Failed=>"failed"},"complete":matches!(r.saved,Saved::Complete),"error":r.error,"path":r.path},
+        "cleanupError":r.cleanup_error,"createdAt":task.created,"finishedAt":r.finished,"observedAt":r.observed,
+        "input":task.input,"directory":task.directory,"context":task.target.context,
+        "outputInfo":{"savedBytes":if task.kind==Kind::Exec {json!(r.committed.to_string())}else{Value::Null}}
+    })
+}
 pub fn metadata(directory: &Path, value: &Value) -> Result<(), String> {
     let temporary = directory.join("metadata.tmp");
     let mut file = File::create(&temporary).map_err(|e| e.to_string())?;
@@ -207,6 +222,53 @@ pub fn tail(path: PathBuf, committed: u64, format: PageFormat) -> Result<Page, R
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn metadata_v1_owns_its_schema_and_serializes_the_given_record() {
+        let task = crate::task::fixture(PathBuf::from("evidence-root"));
+        let initial = task_metadata(&task, &task.snapshot());
+        assert_eq!(initial["schemaVersion"], 1);
+        assert!(initial["target"].is_null());
+        assert!(initial["finishedAt"].is_null());
+        assert!(initial["evidence"]["path"].is_null());
+        assert_eq!(initial["outputInfo"]["savedBytes"], "0");
+        task.set_target(serde_json::from_value(json!({"name":"original","protocol":"ssh","host":"10.0.0.187","port":22,"endpoint":"10.0.0.187:22","username":"ops"})).unwrap());
+        let native = json!({"state":"completed","workerFinished":true,"exitCode":7,"providerExtra":{"bytes":"original"}});
+        task.observe(native.clone(), Some(17));
+        task.finalizing(true, Value::Null);
+        task.cleanup(
+            false,
+            json!({"code":"cleanup","message":"release failed","details":[{"step":"release"}]}),
+        );
+        let candidate = task.final_candidate();
+        let value = task_metadata(&task, &candidate);
+        assert_eq!(
+            value["target"],
+            json!({"name":"original","protocol":"ssh","endpoint":"10.0.0.187:22","username":"ops"})
+        );
+        assert_eq!(value["native"], native);
+        assert_eq!(value["phase"], "done");
+        assert_eq!(value["done"], true);
+        assert_eq!(value["evidence"]["state"], "saved");
+        assert_eq!(value["evidence"]["complete"], true);
+        assert_eq!(value["cleanupError"]["details"][0]["step"], "release");
+        assert_eq!(value["context"], json!(task.target.context));
+        assert_eq!(value["input"]["command"], "中文\ncommand");
+        assert_eq!(value["outputInfo"]["savedBytes"], "17");
+        assert_eq!(value["revision"], candidate.revision.to_string());
+        task.publish(
+            candidate.clone(),
+            Some(json!({"code":"disk","message":"final write failed"})),
+        );
+        assert_eq!(
+            task_metadata(&task, &candidate),
+            value,
+            "serialization cannot recapture a different current Record"
+        );
+        assert_eq!(
+            task_metadata(&task, &task.snapshot())["evidence"]["state"],
+            "failed"
+        );
+    }
     #[test]
     fn pages_preserve_bytes_watermark_and_format_and_classify_failures() {
         let root = std::env::temp_dir().join(format!("mcp-evidence-{}", rand::random::<u64>()));
