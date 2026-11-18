@@ -10,11 +10,15 @@
 
 当前行为见[功能说明](../../docs/features/mcp.md)，客户端字段和错误见 [MCP API](../../docs/mcp-api.md)。最低核心版本仍为 1.5.0；没有新增生产依赖或变更核心 API。默认立即 full 和原五工具保留；客户端应按不透明字符串使用 taskId，不能依赖旧数字后缀。启用插件的升级在重启后生效。
 
-本版本尚未发行，等待本次固定源码的五平台原生 package/verify。此前未发行的 0.1.4 界面改动合并在本版，重新构建，不复用其旧候选包。
+发行：[机器人接口 0.2.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-mcp-v0.2.0)，独立正式插件发行，按用户要求标为 GitHub Latest。包来源：[e37bd7beb338e5ba25d1b348e00c9390219e55ee](https://github.com/BgaSol/soDeck/commit/e37bd7beb338e5ba25d1b348e00c9390219e55ee)；[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/44256795333) 与[原始打包及实际包验收](https://github.com/BgaSol/soDeck/actions/runs/44256829168) 首次通过。此前未发行的 0.1.4 界面合并在本版，重新构建；发布复用上述原始 run 的同一草稿和归档，不再次构建。
 
-当前已通过 Windows x86_64 的格式/类型、187 项脚本测试、插件单元、实际进程查询故障注入及三服务器 SSH 集成。实际发布的源码/包验收、完整界面回归和未执行专项范围在本次验收收束时更新，不沿用旧版本通过结论。
+Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生构建、包内程序启动/挂载/销毁/退出、带密钥的六工具发现和任务查询回归通过。每份实际原包均验证分页、full/text/none、等待到期/唤醒、HTTP 中断后配额释放、24 活动额度、未知接纳不重发、最终保存失败和两项清理失败。原包架构与三个界面源资源逐一核对；六个公开附件大小和 SHA-256 与原包/清单一致，Release 说明与更新清单 notes 对齐。[永久发行证据](release-evidence/v0.2.0-assets.json)保留固定源码、五份原生报告、原始 run、附件摘要及 Latest 核验。
 
-本轮不包含跨重启任务恢复、证据自动删除或新远端协议；正文仍为每页有损 UTF-8，精确字节读取原信封。
+Windows x86_64 本机格式/类型、187 项脚本测试、核心测试与正式构建、5 项 MCP 单元、实际进程、三服务器 SSH 和独立原包验收通过；原包另验证超过界面预算的完整详情被明确拒绝，列表与取消回执仍有界。界面回归覆盖三主题、200–1024px 宽度、400px 矮页面、设置冲突、隐藏密钥、历史选择/分页/焦点、摘要与完整详情、迟到读取及刷新替代读取的受控交错。来源 Check 的 Linux 三服务器、进程、MCP 界面及相关核心源码回归通过。
+
+首轮未发行候选 [ca0b707](https://github.com/BgaSol/soDeck/commit/ca0b7074e7b4140ab64f96d5a77d302d71837802) 的 [Check](https://github.com/BgaSol/soDeck/actions/runs/44254243976) 在 MCP 窄窗口详情定位断言失败；定位意图与具体读取请求耦合，以及测试在记录重排后等待了错误对象，已修正并增加受控回归。首轮草稿和标签撤销，旧候选不用于本次发行；最终包来自上方新 run。
+
+本次未执行正式旧版安装升级、新的实际 Codex CLI 调用、五平台原包与真实 SSH 的组合、netem 或额外物理 IME/DPI/读屏设备专项。最终来源 Check 未选中的通用 browser/desktop/netem 任务为 skipped，MCP 自身界面在业务任务中通过。没有跨重启任务恢复、证据自动删除或新远端协议；正文仍为每页有损 UTF-8，精确字节读取原信封。
 
 # 0.1.3
 

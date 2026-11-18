@@ -1,0 +1,447 @@
+{
+  "date": "2026-11-18",
+  "component": "mcp",
+  "version": "0.2.0",
+  "sourceCommit": "e37bd7beb338e5ba25d1b348e00c9390219e55ee",
+  "originalRunId": "44256829168",
+  "originalRunUrl": "https://github.com/BgaSol/soDeck/actions/runs/44256829168",
+  "packageAttempt": 1,
+  "sourceCheck": {
+    "runId": "44256795333",
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/44256795333",
+    "attempt": 1,
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "select",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44256795333/job/134640302952"
+      },
+      {
+        "name": "checks",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44256795333/job/134640405497"
+      },
+      {
+        "name": "native-linux-x86_64",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44256795333/job/134640405587"
+      },
+      {
+        "name": "integration-business-linux-x86_64",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44256795333/job/134640405634"
+      },
+      {
+        "name": "browser",
+        "conclusion": "skipped",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44256795333/job/134640407363"
+      },
+      {
+        "name": "desktop",
+        "conclusion": "skipped",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44256795333/job/134640407417"
+      },
+      {
+        "name": "netem",
+        "conclusion": "skipped",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44256795333/job/134640407906"
+      },
+      {
+        "name": "format",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44256795333/job/134642280402"
+      }
+    ]
+  },
+  "releaseId": 449638204,
+  "releaseUrl": "https://github.com/BgaSol/soDeck/releases/tag/plugin-mcp-v0.2.0",
+  "tag": "plugin-mcp-v0.2.0",
+  "draft": false,
+  "repositoryLatest": true,
+  "reports": [
+    {
+      "id": "sodeck.mcp",
+      "version": "0.2.0",
+      "target": "aarch64-apple-darwin",
+      "commit": "e37bd7beb338e5ba25d1b348e00c9390219e55ee",
+      "sha256": "bdff0b295397d90330673004df81678b26ea20ef5986f50b4cbae311c212962d",
+      "runId": "44256829168",
+      "toolCommit": "e37bd7beb338e5ba25d1b348e00c9390219e55ee",
+      "passed": true,
+      "mcpHttp": true,
+      "mcpQueries": true,
+      "calls": [
+        "settings.get",
+        "session.state",
+        "session.state"
+      ]
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.2.0",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "e37bd7beb338e5ba25d1b348e00c9390219e55ee",
+      "sha256": "eed2fa8852cdb0a05537bb59a4dd3008cf3b32198447282a0ab1c28906ffe605",
+      "runId": "44256829168",
+      "toolCommit": "e37bd7beb338e5ba25d1b348e00c9390219e55ee",
+      "passed": true,
+      "mcpHttp": true,
+      "mcpQueries": true,
+      "calls": [
+        "settings.get",
+        "session.state",
+        "session.state"
+      ]
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.2.0",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "e37bd7beb338e5ba25d1b348e00c9390219e55ee",
+      "sha256": "f222aad7f7a4cd6863b2db53a47722b788870b8a7688f0c8190ffa315e4c649a",
+      "runId": "44256829168",
+      "toolCommit": "e37bd7beb338e5ba25d1b348e00c9390219e55ee",
+      "passed": true,
+      "mcpHttp": true,
+      "mcpQueries": true,
+      "calls": [
+        "settings.get",
+        "session.state",
+        "session.state"
+      ]
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.2.0",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "e37bd7beb338e5ba25d1b348e00c9390219e55ee",
+      "sha256": "83d277ed9d4d05684511fa00bf9cf5b143e901b195caaf7e53e032951e864275",
+      "runId": "44256829168",
+      "toolCommit": "e37bd7beb338e5ba25d1b348e00c9390219e55ee",
+      "passed": true,
+      "mcpHttp": true,
+      "mcpQueries": true,
+      "calls": [
+        "settings.get",
+        "session.state",
+        "session.state"
+      ]
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.2.0",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "e37bd7beb338e5ba25d1b348e00c9390219e55ee",
+      "sha256": "7a772e2da5cd02e052e61534f351addf3b5ddaf1ad8c364487d362a26b891de6",
+      "runId": "44256829168",
+      "toolCommit": "e37bd7beb338e5ba25d1b348e00c9390219e55ee",
+      "passed": true,
+      "mcpHttp": true,
+      "mcpQueries": true,
+      "calls": [
+        "settings.get",
+        "session.state",
+        "session.state"
+      ]
+    }
+  ],
+  "packages": [
+    {
+      "id": "sodeck.mcp",
+      "version": "0.2.0",
+      "apiVersion": "1",
+      "target": "aarch64-apple-darwin",
+      "commit": "e37bd7beb338e5ba25d1b348e00c9390219e55ee",
+      "runId": "44256829168",
+      "file": "sodeck-mcp_0.2.0_aarch64-apple-darwin.tar.gz",
+      "size": 1837383,
+      "sha256": "bdff0b295397d90330673004df81678b26ea20ef5986f50b4cbae311c212962d"
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.2.0",
+      "apiVersion": "1",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "e37bd7beb338e5ba25d1b348e00c9390219e55ee",
+      "runId": "44256829168",
+      "file": "sodeck-mcp_0.2.0_aarch64-pc-windows-msvc.zip",
+      "size": 1878520,
+      "sha256": "eed2fa8852cdb0a05537bb59a4dd3008cf3b32198447282a0ab1c28906ffe605"
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.2.0",
+      "apiVersion": "1",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "e37bd7beb338e5ba25d1b348e00c9390219e55ee",
+      "runId": "44256829168",
+      "file": "sodeck-mcp_0.2.0_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 1864915,
+      "sha256": "f222aad7f7a4cd6863b2db53a47722b788870b8a7688f0c8190ffa315e4c649a"
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.2.0",
+      "apiVersion": "1",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "e37bd7beb338e5ba25d1b348e00c9390219e55ee",
+      "runId": "44256829168",
+      "file": "sodeck-mcp_0.2.0_x86_64-pc-windows-msvc.zip",
+      "size": 2024404,
+      "sha256": "83d277ed9d4d05684511fa00bf9cf5b143e901b195caaf7e53e032951e864275"
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.2.0",
+      "apiVersion": "1",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "e37bd7beb338e5ba25d1b348e00c9390219e55ee",
+      "runId": "44256829168",
+      "file": "sodeck-mcp_0.2.0_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 2008854,
+      "sha256": "7a772e2da5cd02e052e61534f351addf3b5ddaf1ad8c364487d362a26b891de6"
+    }
+  ],
+  "archiveInspection": [
+    {
+      "target": "aarch64-apple-darwin",
+      "package": "sodeck-mcp_0.2.0_aarch64-apple-darwin.tar.gz",
+      "sha256": "bdff0b295397d90330673004df81678b26ea20ef5986f50b4cbae311c212962d",
+      "size": 1837383,
+      "version": "0.2.0",
+      "nativeArchitectureVerified": true,
+      "operationsPage": true,
+      "uiNormalizedSha256": {
+        "index.html": "e9bcd23ff12f382cd8a5744e941ff67ed642e059b9462423710c848de6cb732a",
+        "style.css": "8b3dbe81c9f1ac92b261e0bfce6c04fd06a062d9b132a8a4be6f940afca66be7",
+        "view.js": "802817b3123e21fe8e76c931eece6827fc980e6bdfca7ff3085bbe4a21a309a0"
+      }
+    },
+    {
+      "target": "aarch64-pc-windows-msvc",
+      "package": "sodeck-mcp_0.2.0_aarch64-pc-windows-msvc.zip",
+      "sha256": "eed2fa8852cdb0a05537bb59a4dd3008cf3b32198447282a0ab1c28906ffe605",
+      "size": 1878520,
+      "version": "0.2.0",
+      "nativeArchitectureVerified": true,
+      "operationsPage": true,
+      "uiNormalizedSha256": {
+        "index.html": "e9bcd23ff12f382cd8a5744e941ff67ed642e059b9462423710c848de6cb732a",
+        "style.css": "8b3dbe81c9f1ac92b261e0bfce6c04fd06a062d9b132a8a4be6f940afca66be7",
+        "view.js": "802817b3123e21fe8e76c931eece6827fc980e6bdfca7ff3085bbe4a21a309a0"
+      }
+    },
+    {
+      "target": "aarch64-unknown-linux-gnu",
+      "package": "sodeck-mcp_0.2.0_aarch64-unknown-linux-gnu.tar.gz",
+      "sha256": "f222aad7f7a4cd6863b2db53a47722b788870b8a7688f0c8190ffa315e4c649a",
+      "size": 1864915,
+      "version": "0.2.0",
+      "nativeArchitectureVerified": true,
+      "operationsPage": true,
+      "uiNormalizedSha256": {
+        "index.html": "e9bcd23ff12f382cd8a5744e941ff67ed642e059b9462423710c848de6cb732a",
+        "style.css": "8b3dbe81c9f1ac92b261e0bfce6c04fd06a062d9b132a8a4be6f940afca66be7",
+        "view.js": "802817b3123e21fe8e76c931eece6827fc980e6bdfca7ff3085bbe4a21a309a0"
+      }
+    },
+    {
+      "target": "x86_64-pc-windows-msvc",
+      "package": "sodeck-mcp_0.2.0_x86_64-pc-windows-msvc.zip",
+      "sha256": "83d277ed9d4d05684511fa00bf9cf5b143e901b195caaf7e53e032951e864275",
+      "size": 2024404,
+      "version": "0.2.0",
+      "nativeArchitectureVerified": true,
+      "operationsPage": true,
+      "uiNormalizedSha256": {
+        "index.html": "e9bcd23ff12f382cd8a5744e941ff67ed642e059b9462423710c848de6cb732a",
+        "style.css": "8b3dbe81c9f1ac92b261e0bfce6c04fd06a062d9b132a8a4be6f940afca66be7",
+        "view.js": "802817b3123e21fe8e76c931eece6827fc980e6bdfca7ff3085bbe4a21a309a0"
+      }
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "package": "sodeck-mcp_0.2.0_x86_64-unknown-linux-gnu.tar.gz",
+      "sha256": "7a772e2da5cd02e052e61534f351addf3b5ddaf1ad8c364487d362a26b891de6",
+      "size": 2008854,
+      "version": "0.2.0",
+      "nativeArchitectureVerified": true,
+      "operationsPage": true,
+      "uiNormalizedSha256": {
+        "index.html": "e9bcd23ff12f382cd8a5744e941ff67ed642e059b9462423710c848de6cb732a",
+        "style.css": "8b3dbe81c9f1ac92b261e0bfce6c04fd06a062d9b132a8a4be6f940afca66be7",
+        "view.js": "802817b3123e21fe8e76c931eece6827fc980e6bdfca7ff3085bbe4a21a309a0"
+      }
+    }
+  ],
+  "largeUiDetail": {
+    "passed": true,
+    "serializedDetailBytes": 62329,
+    "serializedViewBytes": 40812,
+    "explicitDetailLimit": true,
+    "boundedCancelReceipt": true,
+    "taskId": "task-1794986135015-d7b1394fecc8939a-92",
+    "evidenceComplete": true,
+    "target": "x86_64-pc-windows-msvc",
+    "packageSha256": "83d277ed9d4d05684511fa00bf9cf5b143e901b195caaf7e53e032951e864275"
+  },
+  "publicAssets": [
+    {
+      "id": 762357113,
+      "name": "plugin-update.json",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.2.0/plugin-update.json",
+      "size": 14778,
+      "sha256": "e854d6b85af553be3beafa30ee96c2a7f67fb5137aa81db7bbbc0a4c0737e2ff",
+      "publicDownloadVerified": true
+    },
+    {
+      "id": 762341951,
+      "name": "sodeck-mcp_0.2.0_aarch64-apple-darwin.tar.gz",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.2.0/sodeck-mcp_0.2.0_aarch64-apple-darwin.tar.gz",
+      "size": 1837383,
+      "sha256": "bdff0b295397d90330673004df81678b26ea20ef5986f50b4cbae311c212962d",
+      "publicDownloadVerified": true
+    },
+    {
+      "id": 762341887,
+      "name": "sodeck-mcp_0.2.0_aarch64-pc-windows-msvc.zip",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.2.0/sodeck-mcp_0.2.0_aarch64-pc-windows-msvc.zip",
+      "size": 1878520,
+      "sha256": "eed2fa8852cdb0a05537bb59a4dd3008cf3b32198447282a0ab1c28906ffe605",
+      "publicDownloadVerified": true
+    },
+    {
+      "id": 762341938,
+      "name": "sodeck-mcp_0.2.0_aarch64-unknown-linux-gnu.tar.gz",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.2.0/sodeck-mcp_0.2.0_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 1864915,
+      "sha256": "f222aad7f7a4cd6863b2db53a47722b788870b8a7688f0c8190ffa315e4c649a",
+      "publicDownloadVerified": true
+    },
+    {
+      "id": 762341861,
+      "name": "sodeck-mcp_0.2.0_x86_64-pc-windows-msvc.zip",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.2.0/sodeck-mcp_0.2.0_x86_64-pc-windows-msvc.zip",
+      "size": 2024404,
+      "sha256": "83d277ed9d4d05684511fa00bf9cf5b143e901b195caaf7e53e032951e864275",
+      "publicDownloadVerified": true
+    },
+    {
+      "id": 762341910,
+      "name": "sodeck-mcp_0.2.0_x86_64-unknown-linux-gnu.tar.gz",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.2.0/sodeck-mcp_0.2.0_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 2008854,
+      "sha256": "7a772e2da5cd02e052e61534f351addf3b5ddaf1ad8c364487d362a26b891de6",
+      "publicDownloadVerified": true
+    }
+  ],
+  "releaseNotesMatchManifest": true,
+  "localValidation": {
+    "formatTypes": true,
+    "scriptTests": 187,
+    "coreTests": true,
+    "coreBuild": true,
+    "mcpUnitTests": 5,
+    "mcpProcess": true,
+    "mcpThreeServerSsh": true,
+    "mcpBrowserUi": true,
+    "independentWindowsArchive": true
+  },
+  "skipped": [
+    "netem",
+    "installed old-version upgrade",
+    "new actual Codex CLI tool call",
+    "five-platform actual archive with real SSH combination",
+    "physical IME/DPI/screen-reader devices"
+  ],
+  "previousCandidate": {
+    "sourceCommit": "ca0b7074e7b4140ab64f96d5a77d302d71837802",
+    "checkRunId": "44254243976",
+    "checkUrl": "https://github.com/BgaSol/soDeck/actions/runs/44254243976",
+    "checkConclusion": "failure",
+    "jobs": [
+      {
+        "name": "select",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44254243976/job/134631989275"
+      },
+      {
+        "name": "checks",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44254243976/job/134632100316"
+      },
+      {
+        "name": "desktop",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44254243976/job/134632100428"
+      },
+      {
+        "name": "browser",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44254243976/job/134632100496"
+      },
+      {
+        "name": "native-windows-aarch64",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44254243976/job/134632100524"
+      },
+      {
+        "name": "native-linux-x86_64",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44254243976/job/134632100529"
+      },
+      {
+        "name": "native-linux-aarch64",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44254243976/job/134632100536"
+      },
+      {
+        "name": "integration-business-linux-x86_64",
+        "conclusion": "failure",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44254243976/job/134632100540"
+      },
+      {
+        "name": "native-windows-x86_64",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44254243976/job/134632100556"
+      },
+      {
+        "name": "integration-network-linux-x86_64",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44254243976/job/134632100567"
+      },
+      {
+        "name": "integration-network-linux-aarch64",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44254243976/job/134632100579"
+      },
+      {
+        "name": "native-macos-aarch64",
+        "conclusion": "success",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44254243976/job/134632100631"
+      },
+      {
+        "name": "netem",
+        "conclusion": "skipped",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44254243976/job/134632103065"
+      },
+      {
+        "name": "format",
+        "conclusion": "failure",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/44254243976/job/134636389642"
+      }
+    ],
+    "discardedDraftId": 449622984,
+    "usedForPublishedPackages": false,
+    "changedFilesToFinalSource": [
+      "docs/plans/mcp-task-query.md",
+      "plugins/mcp/CHANGELOG.md",
+      "plugins/mcp/ui/view.js",
+      "scripts/test-mcp-ui.mjs"
+    ],
+    "nativeRuntimeSourceUnchanged": true,
+    "failure": "MCP narrow-window detail reveal raced a refresh that superseded the read; the test also awaited a different task after list reordering.",
+    "resolution": "Reveal intent now belongs to the selected task. Controlled concurrent UI regression and the final-source Check passed; all five published packages were rebuilt and verified from the final source."
+  }
+}
