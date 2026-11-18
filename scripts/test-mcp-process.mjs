@@ -8,6 +8,7 @@ import {pluginPeer} from './plugin-peer.mjs';
 import {testPluginDirectory} from './test-plugin-directory.mjs';
 import {setTimeout as delay} from 'node:timers/promises';
 const root=testPluginDirectory('mcp'),manifest=JSON.parse(fs.readFileSync(path.join(root,'plugin.json')));
+assert.deepEqual(manifest.ui.views.map(({id,container})=>({id,container})),[{id:'status',container:'sidebar'}],'MCP contributes only its existing sidebar');
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-mcp-process-'));
 const socket=net.createServer();await new Promise(r=>socket.listen(0,'127.0.0.1',r));const port=socket.address().port;await new Promise(r=>socket.close(r));
 const contexts=Object.fromEntries(['a','b','c'].map(view=>[view,{workspaceId:view,serverId:'server-'+view,connectionId:'connection-'+view,generation:1}]));
@@ -58,8 +59,9 @@ try{
   const initialized=await call('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'sodeck-test',version:'1'}});assert(initialized.capabilities.tools);
   const list=await call('tools/list',{});assert.equal(list.tools.length,6);assert.equal(list.tools.find(t=>t.name==='sodeck_exec_start').annotations.readOnlyHint,false);
   const targets=(await tool('sodeck_targets_list')).value.targets;assert.equal(targets.length,3);
-  const page={viewId:'page-a',viewType:'operations',context:contexts.a};
-  await peer.request('ui.createView',page);assert.equal((await tool('sodeck_targets_list')).value.targets.length,3,'operation pages reuse background targets');
+  const sidebar={viewId:'a',viewType:'status',context:contexts.a};
+  await peer.request('ui.createView',sidebar);assert.equal((await tool('sodeck_targets_list')).value.targets.length,3,'the sidebar reuses its background target');
+  await assert.rejects(peer.request('ui.createView',{viewId:'old-page',viewType:'operations',context:contexts.a}),/未知视图/);
   const target=targets.find(t=>t.context.workspaceId==='a').targetId;
   assert.deepEqual((await tool('sodeck_tasks_list')).value.tasks,[]);
   const input={targetId:target,requestId:'once',command:'collect'};
@@ -72,7 +74,6 @@ try{
   assert(start.taskId.includes(path.basename(path.dirname(done.directory))),'task identity includes its plugin run');
   const detail=(await peer.request('ui.event',{viewId:'a',data:{action:'task',taskId:start.taskId,cursor:'0'}})).data;
   assert.equal(detail.output.stdout,bytes.toString());assert.equal(detail.input.command,'collect');
-  const pageDetail=(await peer.request('ui.event',{...page,data:{action:'task',taskId:start.taskId,cursor:'0'}})).data;assert.equal(pageDetail.output.stdout,bytes.toString());
   await assert.rejects(peer.request('ui.event',{viewId:'b',data:{action:'task',taskId:start.taskId}}),/任务不属于当前服务器连接/);
   assert.deepEqual((await tool('sodeck_task_get',{taskId:start.taskId})).value,done,'released task evidence remains queryable');
   assert.equal((await tool('sodeck_task_get',{taskId:start.taskId,cursor:'1'})).error,true);
@@ -108,8 +109,8 @@ try{
   const live=(await peer.request('ui.event',{viewId:'a',data:{action:'task',taskId:hang.taskId,tail:true}})).data;
   assert.equal(live.output.stdout,bytes.toString());assert.equal(live.finishedAt,null);
   assert.equal((await tool('sodeck_task_get',{taskId:hang.taskId,outputMode:'text',waitMs:20000})).value.wait.reason,'output');
-  await peer.request('ui.disposeView',page);assert.equal((await tool('sodeck_targets_list')).value.targets.length,3);assert.equal((await tool('sodeck_task_get',{taskId:hang.taskId})).value.done,false,'closing the page does not cancel background operations');
-  await peer.request('ui.createView',page);assert((await peer.request('ui.getView',page)).data.tasks.some(task=>task.taskId===hang.taskId),'reopened page sees the same operation');
+  await peer.request('ui.createView',sidebar);assert.equal((await tool('sodeck_targets_list')).value.targets.length,3);assert.equal((await tool('sodeck_task_get',{taskId:hang.taskId})).value.done,false,'remounting the existing sidebar keeps background operations');
+  assert((await peer.request('ui.getView',sidebar)).data.tasks.some(task=>task.taskId===hang.taskId),'the sidebar sees the same operation');
   for(let i=0;i<51;i++){
     const recent=(await tool('sodeck_exec_start',{...input,requestId:'recent-'+i,command:'collect'})).value;
     await until(async()=>(await tool('sodeck_task_get',{taskId:recent.taskId})).value,s=>s.done);
@@ -146,7 +147,7 @@ try{
     assert([401,403].includes(status),JSON.stringify({headers:Object.keys(headers),status}));
   }
   contexts.a={...contexts.a,generation:2};assert.equal((await tool('sodeck_exec_start',{...input,requestId:'stale'})).value.taskId.startsWith('task-'),true);
-  await assert.rejects(peer.request('ui.getView',{...page,context:contexts.a}),/后台目标不可用/,'page must not reuse a target from another connection generation');
+  assert.equal((await peer.request('ui.getView',{viewId:'a'})).data.target.state,'unavailable','the sidebar does not present another connection generation as its recorded target');
   const countBefore=requests.length;await until(async()=>(await peer.request('ui.getView',{viewId:'a'})).data,s=>s.tasks.some(t=>t.requestId==='stale'&&t.done));assert.equal(requests.length,countBefore,'stale target must not execute');
   for(const viewId of Object.keys(contexts))await peer.request('ui.disposeView',{viewId});
   await peer.close();peer=null;await assert.rejects(fetch(`http://127.0.0.1:${port}/mcp`));

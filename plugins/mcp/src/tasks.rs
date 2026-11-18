@@ -155,15 +155,6 @@ impl App {
             .call_detailed(method, p)
             .map_err(|e: RpcError| json!({"code":e.code,"message":e.message,"details":e.data}))
     }
-    pub fn context_view(&self, context: &Value) -> Result<String, String> {
-        self.views
-            .lock()
-            .unwrap()
-            .values()
-            .find(|t| t.context == *context && !t.closed.load(Ordering::Acquire))
-            .map(|t| t.view.clone())
-            .ok_or_else(|| "服务器后台目标不可用，请重新连接服务器".into())
-    }
     pub fn view_target(&self, view: &str) -> Result<Arc<Target>, Value> {
         self.views
             .lock()

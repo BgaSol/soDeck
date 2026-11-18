@@ -104,41 +104,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return settings_cache.changed(&p, &["connection"]);
         }
         let view = p["viewId"].as_str().ok_or("缺少 viewId")?;
-        let page = p["viewType"] == "operations";
         if matches!(method, "ui.beforeClose" | "ui.save") {
             return Ok(json!({"allow":true}));
         }
         if method == "ui.disposeView" {
-            if !page {
-                app.dispose(view);
-            }
+            app.dispose(view);
             return Ok(json!({}));
         }
-        let owner = if page {
-            app.context_view(&p["context"])?
-        } else {
-            view.into()
-        };
         match method {
             "ui.createView" => {
-                if !page && p["viewType"] != "status" {
+                if p["viewType"] != "status" {
                     return Err("未知视图".into());
                 }
-                if !page {
-                    app.mount(view, &p["context"])?;
-                }
+                app.mount(view, &p["context"])?;
             }
             "ui.getView" => {}
             "ui.event" => match p["data"]["action"].as_str().unwrap_or("") {
                 "snapshot" => {}
                 "task" => {
                     return Ok(
-                        json!({"data":app.view_task(&owner, &p["data"]).map_err(|e| e.to_string())?}),
+                        json!({"data":app.view_task(view, &p["data"]).map_err(|e| e.to_string())?}),
                     );
                 }
                 "config" => return Ok(json!({"data":{"config":app.config(),"token":app.token}})),
                 "cancel" => {
-                    let target = app.view_target(&owner).map_err(|e| e.to_string())?;
+                    let target = app.view_target(view).map_err(|e| e.to_string())?;
                     let result = app
                         .cancel(&p["data"], Some(&target.id))
                         .map_err(|e| e.to_string())?;
@@ -149,7 +139,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             _ => return Err("未知方法".into()),
         }
         Ok(
-            json!({"metadata":{"title":"机器人接口","dirty":false,"busy":false},"data":app.view(&owner)?}),
+            json!({"metadata":{"title":"机器人接口","dirty":false,"busy":false},"data":app.view(view)?}),
         )
     });
     if let Some(app) = state.lock().unwrap().as_ref() {

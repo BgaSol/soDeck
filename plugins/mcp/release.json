@@ -16,17 +16,13 @@
       "defaultSide": "right", "defaultPinned": true,
       "openOnWorkspace": "none", "backgroundOnWorkspace": true,
       "startupOrder": 60
-    }, {
-      "id": "operations", "title": "机器人接口", "icon": "bot",
-      "container": "editor", "instancePolicy": "perWorkspace",
-      "createAction": "打开机器人接口", "openOnWorkspace": "none"
     }]
   },
   "settings": {
     "apiVersion": "1", "schemaVersion": 1,
     "pages": [{
       "id": "connection", "title": "机器人接口", "icon": "bot", "order": 600,
-      "viewTypes": ["status", "operations"],
+      "viewTypes": ["status"],
       "groups": [{"id": "local", "title": "本机接入", "fields": [{
         "key": "port", "title": "本机端口", "type": "number", "default": 19846,
         "min": 1024, "max": 65535, "step": 1, "unit": "", "apply": "newInstance",

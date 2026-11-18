@@ -2,7 +2,7 @@ const $ = id => document.getElementById(id);
 const event = data => sodeck.request('event', data);
 const unwrap = result => result.data ?? result;
 let visible = true, mounted = false, pending = false, epoch = 0, timer;
-let page = false, selectionClosed = false, revealPending = false, settingsSnapshot, portDirty = false, portConflict = false, settingsSaving = false, settingsTicket;
+let returnPosition, settingsSnapshot, portDirty = false, portConflict = false, settingsSaving = false, settingsTicket;
 let snapshot, active, monitorDetail, selected = null, detail, cursor = '0', nextCursor = '0', pages = [], monitorSequence = 0, detailSequence = 0;
 const rows = new Map();
 const labels = {opening:'正在启动', running:'执行中', committing:'正在提交', finalizing:'正在收尾', completed:'已结束', cancelled:'已取消', failed:'失败', unavailable:'结果不可用', unknown:'结果未知', rejected:'未接纳', pending:'等待接纳'};
@@ -22,13 +22,22 @@ function duration(task) {
 }
 function output(page) { return [page?.stdout, page?.stderr ? `标准错误：\n${page.stderr}` : ''].filter(Boolean).join('\n') || '暂时没有输出。'; }
 function selectedTask() { return snapshot?.tasks?.find(task => task.taskId === selected); }
-function closeDetail() {
-  detailSequence++; selected = null; detail = null; revealPending = false; cursor = '0'; pages = []; nextCursor = '0'; selectionClosed = true; $('detail').hidden = true; $('choose-detail').hidden = !snapshot?.tasks?.length;
+function closeDetail(restore = false) {
+  detailSequence++; selected = null; detail = null; cursor = '0'; pages = []; nextCursor = '0'; $('detail').hidden = true; $('overview').hidden = false;
   for (const row of rows.values()) row.button.setAttribute('aria-current', 'false');
+  const pane = document.querySelector('main');
+  pane.scrollTop = restore ? returnPosition?.scrollTop || 0 : 0;
+  if (restore && returnPosition?.button.isConnected && returnPosition.button.getClientRects().length) {
+    pane.scrollTop += returnPosition.button.getBoundingClientRect().top - returnPosition.top;
+    returnPosition.button.focus({preventScroll:true});
+  } else if (restore) {
+    $('refresh').focus({preventScroll:true});
+  }
+  returnPosition = null;
 }
 function paintDetail(task) {
   $('detail').hidden = false;
-  $('choose-detail').hidden = true;
+  $('overview').hidden = true;
   text('detail-state', status(task)); $('detail-state').className = stateClass(task);
   text('detail-input-label', task.kind === 'exec' ? '实际命令' : '远程文件'); text('detail-command', task.input ? command(task) : '正在读取完整详情…');
   const target = task.target;
@@ -45,14 +54,14 @@ function paintDetail(task) {
 function render(data) {
   const pane = document.querySelector('main'), pinned = selectedTask(), focus = document.activeElement, anchor = selected ? $('detail') : null;
   const scrollTop = pane.scrollTop, anchorTop = anchor?.getBoundingClientRect().top;
-  if (snapshot?.target?.targetId && data.target?.targetId !== snapshot.target.targetId) { closeDetail(); selectionClosed = false; }
+  const changedTarget = snapshot?.target?.targetId && data.target?.targetId !== snapshot.target.targetId;
+  if (changedTarget) closeDetail();
   const tasks = [...(data.tasks || [])];
   if (selected && !tasks.some(task => task.taskId === selected)) {
     if (pinned && (!data.target?.targetId || data.target.targetId === pinned.targetId)) tasks.push(pinned);
     else closeDetail();
   }
   snapshot = {...data, tasks};
-  if (page && !selected && !selectionClosed && tasks.length) selected = tasks[0].taskId;
   text('service', data.service === 'ready' ? '本机接入已启动' : data.service); text('endpoint', data.endpoint);
   paintPort();
   const target = data.target?.target;
@@ -62,7 +71,6 @@ function render(data) {
   const current = new Set(tasks.map(task => task.taskId));
   for (const [id, row] of rows) if (!current.has(id)) { row.li.remove(); rows.delete(id); }
   $('empty').hidden = Boolean(tasks.length);
-  $('records').hidden = !tasks.length; $('choose-detail').hidden = !tasks.length || Boolean(selected);
   tasks.forEach((task, index) => {
     let row = rows.get(task.taskId);
     if (!row) {
@@ -70,7 +78,7 @@ function render(data) {
       const label = document.createElement('span'), date = document.createElement('time'), input = document.createElement('span'), meta = document.createElement('span');
       button.type = 'button'; button.className = 'task'; button.setAttribute('aria-controls','detail');
       heading.className = 'heading'; input.className = 'command'; meta.className = 'meta';
-      button.onclick = () => selectTask(task.taskId); heading.append(label, date); button.append(heading, input, meta); li.append(button);
+      button.onclick = () => selectTask(task.taskId, button); heading.append(label, date); button.append(heading, input, meta); li.append(button);
       row = {li, button, label, date, input, meta}; rows.set(task.taskId, row);
     }
     if ($('tasks').children[index] !== row.li) $('tasks').insertBefore(row.li, $('tasks').children[index] || null);
@@ -98,11 +106,11 @@ function render(data) {
     const row = selectedTask();
     paintDetail(detail?.taskId === row.taskId ? {...row, input:detail.input, directory:detail.directory, evidence:{...row.evidence,path:detail.evidence?.path}} : row);
   }
-  if (focus?.isConnected && pane.contains(focus) && document.activeElement !== focus) focus.focus({preventScroll:true});
-  pane.scrollTop = anchor?.isConnected ? pane.scrollTop + anchor.getBoundingClientRect().top - anchorTop : scrollTop;
+  if (focus?.isConnected && pane.contains(focus) && focus.getClientRects().length && document.activeElement !== focus) focus.focus({preventScroll:true});
+  pane.scrollTop = changedTarget ? 0 : anchor?.isConnected && !anchor.hidden ? pane.scrollTop + anchor.getBoundingClientRect().top - anchorTop : scrollTop;
 }
 async function loadMonitor() {
-  if (page || !active || !mounted || !visible) return;
+  if (selected || !active || !mounted || !visible) return;
   const id = active.taskId, sequence = ++monitorSequence, current = epoch;
   try {
     const task = unwrap(await event({action:'task', taskId:id, tail:true}));
@@ -111,11 +119,6 @@ async function loadMonitor() {
     text('monitor-output', task.kind === 'exec' ? output(task.output) : task.evidence?.complete ? '文件已保存。' : '正在下载，完成后可在详情中查看本地路径。');
     $('monitor-output').scrollTop = $('monitor-output').scrollHeight;
   } catch (error) { if (current === epoch && sequence === monitorSequence) text('monitor-output', `输出读取失败：${error.message || error}`); }
-}
-function revealSelection() {
-  if (!revealPending) return;
-  revealPending = false;
-  if (innerWidth <= 700) $('detail').scrollIntoView({block:'start'});
 }
 async function loadDetail() {
   const task = selectedTask();
@@ -128,18 +131,18 @@ async function loadDetail() {
     nextCursor = result.output?.nextCursor || start;
     $('previous').disabled = !pages.length; $('next').disabled = !result.output?.hasMore;
     text('page-number', `第 ${pages.length + 1} 页`);
-    revealSelection();
   } catch (error) {
-    if (current === epoch && sequence === detailSequence) { text('detail-output', `输出读取失败：${error.message || error}`); $('next').disabled = true; revealSelection(); }
+    if (current === epoch && sequence === detailSequence) { text('detail-output', `输出读取失败：${error.message || error}`); $('next').disabled = true; }
   }
 }
-function selectTask(id) {
-  revealPending = true;
-  if (selected === id) { if (detail?.taskId === id) revealSelection(); return; }
-  selectionClosed = false;
+function selectTask(id, button) {
+  if (selected === id) return;
+  const pane = document.querySelector('main');
+  if (!selected) returnPosition = {scrollTop:pane.scrollTop, button, top:button.getBoundingClientRect().top};
+  $('settings').open = false; clearConfig(); monitorSequence++;
   selected = id; detail = null; cursor = '0'; pages = []; nextCursor = '0'; detailSequence++;
   $('previous').disabled = true; $('next').disabled = true; text('page-number','第 1 页'); text('detail-output','等待读取输出');
-  render(snapshot); void loadDetail();
+  render(snapshot); pane.scrollTop = 0; $('detail-close').focus({preventScroll:true}); void loadDetail();
 }
 async function refresh() {
   if (!mounted || !visible || pending) return;
@@ -159,8 +162,8 @@ async function operate(button, action) {
 function cancel(button, task) { if (task) return operate(button, async current => { const result = unwrap(await event({action:'cancel', taskId:task.taskId})); if (current === epoch) notice(result.cancelRequested ? '已请求取消，等待远端实际结果。' : '操作已进入收尾或结束，请查看实际结果。'); }); }
 $('monitor-cancel').onclick = () => cancel($('monitor-cancel'), active);
 $('detail-cancel').onclick = () => cancel($('detail-cancel'), selectedTask());
-$('open-page').onclick = () => operate($('open-page'), () => sodeck.request('openView', {viewType:'operations'}));
-$('detail-close').onclick = () => { const button = rows.get(selected)?.button; closeDetail(); button?.focus(); };
+$('monitor-details').onclick = () => { if (active) selectTask(active.taskId, $('monitor-details')); };
+$('detail-close').onclick = () => { closeDetail(true); void loadMonitor(); };
 $('next').onclick = () => { if (nextCursor !== cursor) { pages.push(cursor); cursor = nextCursor; $('next').disabled = true; void loadDetail(); } };
 $('previous').onclick = () => { if (pages.length) { cursor = pages.pop(); $('previous').disabled = true; void loadDetail(); } };
 $('copy').onclick = () => operate($('copy'), async current => {
@@ -200,7 +203,7 @@ function paintPort() {
   $('port-notice').hidden = !message; text('port-notice', message);
 }
 async function readSettings() {
-  if (!page || !mounted || !visible) return;
+  if (!mounted || !visible) return;
   const current = epoch;
   try { const result = await sodeck.request('settings',{op:'get'}); if (current === epoch) settings(result); }
   catch (error) { if (current === epoch) { $('port-notice').hidden = false; text('port-notice', `端口设置读取失败：${error.message || error}`); } }
@@ -222,9 +225,10 @@ $('save-port').onclick = () => {
 };
 $('refresh').onclick = () => { void refresh(); void readSettings(); };
 $('reveal').onclick = () => operate($('reveal'), () => sodeck.request('data', {op:'pluginData', action:'reveal', relative:['evidence']}));
-addEventListener('sodeck:mount', ({detail}) => { epoch++; mounted = true; page = detail.viewType === 'operations'; document.querySelector('main').classList.toggle('monitor-only',!page); visible = detail.visible !== false; theme(detail.tokens); if (detail.data) render(detail.data); settings(detail.settings); sodeck.mounted(); void refresh(); void readSettings(); });
+addEventListener('sodeck:mount', ({detail}) => { epoch++; mounted = true; visible = detail.visible !== false; theme(detail.tokens); if (detail.data) render(detail.data); settings(detail.settings); sodeck.mounted(); void refresh(); void readSettings(); });
 addEventListener('sodeck:themeChanged', ({detail}) => theme(detail.tokens));
 addEventListener('sodeck:settingsChanged', ({detail}) => settings(detail.settings));
 function clearConfig() { text('config',''); $('config').hidden = true; $('config-details').open = false; text('access-token','••••••••••••••••'); text('show-token','显示'); $('show-token').setAttribute('aria-expanded','false'); }
-addEventListener('sodeck:visibilityChanged', ({detail}) => { epoch++; visible = detail.visible; clearTimeout(timer); if (!visible) clearConfig(); else { void refresh(); void readSettings(); } });
+$('settings').ontoggle = () => { if (!$('settings').open) clearConfig(); };
+addEventListener('sodeck:visibilityChanged', ({detail}) => { epoch++; visible = detail.visible; clearTimeout(timer); if (!visible) { $('settings').open = false; clearConfig(); } else { void refresh(); void readSettings(); } });
 addEventListener('sodeck:unmount', () => { epoch++; mounted = false; clearTimeout(timer); clearConfig(); closeDetail(); });
