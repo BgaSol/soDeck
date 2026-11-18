@@ -3,6 +3,7 @@
   "name": "Agent MCP",
   "description": "让本机 AI 客户端复用已连接服务器，执行调查命令并下载证据。",
   "icon": "bot",
+  "icons": {"bot": "assets/icons/robot.svg"},
   "order": 60,
   "apiVersion": "1",
   "binary": "sodeck-mcp",

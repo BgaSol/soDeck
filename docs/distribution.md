@@ -38,6 +38,8 @@ release.json 同时是官方发现元数据和独立发行配置，不另建集�
 
 新增官方插件先将目录和发行配置合入 main，再用 Package plugin 发布自己的正式 Release。目录刷新无需重新发行核心；有兼容 API 和本机原生包的正式 Release 才能安装。移除发行配置后，已有用户的插件记录和更新来源继续保留。
 
+插件可在发行配置声明 `icons`，打包入口按映射携带自身资产并保留默认 `icon`。图标声明、资源约束及旧版兼容统一见[插件 API](plugin-api.md#插件图标核心-152)；核心包只保存旧名称兼容图形。
+
 插件版本由 cargo metadata 按清单路径解析，支持合法 TOML 与 workspace 版本继承，不从文本猜测；选择、打包和汇总任务均安装固定 Rust 工具链。插件标签为 plugin-<名称>-v<版本>，必须匹配其唯一版本来源。
 
 插件打包使用根目录锁定的 Vite/Floating UI 生成自带文本菜单；终端 xterm 使用自身 npm 锁文件，声明 build.fileEditor 的组件使用 packages/file-editor 的独立锁文件构建 Monaco 和标准编辑页。编辑 SDK 的设置模板在打包时展开为普通插件设置；build/fileEditor 模板标记不进入运行时清单。无 CDN 或用户运行时 npm 依赖。字体消费组件各自携带字体、来源校验元数据与许可证；普通构建只校验和复制资产，维护时才显式运行 prepare-font-assets.mjs，核心包不携带这些插件字体。

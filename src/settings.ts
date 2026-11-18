@@ -2,8 +2,9 @@ import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { loadFont, type FontValue, type FontPreset } from "./font-loader.js";
 import { escape as e, button as b, icon } from "./ui";
 import { updateDOM } from "./dom-update";
+import {resourceIcon} from './plugin-icons';
 
-export interface SettingsEntry { pluginId: string; pluginName: string; pageId: string; title: string; icon?: string; order: number; enabled: boolean; available: boolean; error?: string }
+export interface SettingsEntry { pluginId: string; pluginName: string; pageId: string; title: string; icon?: string; iconUrl?: string|null; order: number; enabled: boolean; available: boolean; error?: string }
 interface Field { key: string; type: string; title: string; description: string; default: unknown; apply: string; min?: number; max?: number; step?: number; unit?: string; maxLength?: number; options: {value: unknown; title: string}[]; presets: FontPreset[]; visibleWhen?: {key: string; equals: unknown} }
 export interface SettingsSnapshot { pluginId: string; pageId: string; definitionToken: string; revision: string; version: string; values: Record<string, unknown>; savedValues: Record<string, unknown>; warnings: string[]; application: string; declaration: {title: string; groups: {id: string; title: string; fields: Field[]}[]} }
 interface Draft { snapshot: SettingsSnapshot; values: Record<string, unknown>; dirty: boolean; conflict: boolean; saving: boolean; message: string; error: string; fontErrors: Record<string, string>; fontPending: Set<string>; generation: number; request?: {input: unknown; values: string} }
@@ -53,7 +54,7 @@ export class ComponentSettings {
   navigation(active = true) {
     return this.entries.map(p => {
       const key = `${p.pluginId}/${p.pageId}`, draft = this.drafts.get(key);
-      return b("component-settings", `${e(p.title)}${draft?.dirty ? ' <span class="settings-draft-dot" title="未保存">●</span>' : ""}`, p.icon || "settings", `nav-item ${active && this.selected === key ? "active" : ""}`, `id="component-nav-${e(key)}" data-id="${e(key)}" title="${e(p.title)}" aria-current="${active && this.selected === key ? "page" : "false"}"`);
+      return b("component-settings", `${e(p.title)}${draft?.dirty ? ' <span class="settings-draft-dot" title="未保存">●</span>' : ""}`, resourceIcon(p.iconUrl,p.icon || "settings"), `nav-item ${active && this.selected === key ? "active" : ""}`, `id="component-nav-${e(key)}" data-id="${e(key)}" title="${e(p.title)}" aria-current="${active && this.selected === key ? "page" : "false"}"`);
     }).join("");
   }
   select(key: string) { this.selected = key; this.active = ""; this.render(); }

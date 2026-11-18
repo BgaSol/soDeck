@@ -13,6 +13,7 @@ pub mod network;
 pub mod network_metrics;
 pub mod official_plugins;
 mod platform;
+pub mod plugin_icons;
 mod plugins;
 pub mod remote_files;
 mod resource_owner;

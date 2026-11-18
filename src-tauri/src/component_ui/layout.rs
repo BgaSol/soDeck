@@ -460,6 +460,7 @@ impl AppCore {
                             entry: declaration.entry.clone(),
                             available: true,
                             ui_api_version: declaration.api_version.clone(),
+                            icon_url: crate::plugin_icons::url(&p.manifest, &d.icon),
                         },
                     );
                 }

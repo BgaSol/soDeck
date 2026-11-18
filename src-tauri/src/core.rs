@@ -193,6 +193,7 @@ impl AppCore {
         let instances = self.instances.lock().unwrap();
         for record in records {
             let update_source = record.manifest.update_source.clone();
+            let installed = (record.directory.clone(), record.manifest.clone());
             let mut view = instances
                 .get(&record.manifest.id)
                 .map(|i| i.view())
@@ -217,6 +218,16 @@ impl AppCore {
                         update_error: record.update_error.clone(),
                     }
                 });
+            if ![
+                PluginStatus::Running,
+                PluginStatus::Starting,
+                PluginStatus::Stopping,
+            ]
+            .contains(&view.status)
+            {
+                view.directory = installed.0;
+                view.manifest = installed.1;
+            }
             view.enabled = record.enabled;
             view.manifest.update_source = update_source;
             view.pending_restart = record.enabled

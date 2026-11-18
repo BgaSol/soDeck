@@ -13,7 +13,25 @@ export const statusText = {
   stopping: "正在卸载",
   failed: "失败",
 };
-export function icon(name: string) {
+export type Icon = string | {url:string};
+let iconSequence = 0;
+const loadedIcons = new Set<string>();
+const iconLoads = new Map<string,Promise<boolean>>();
+export function observePluginIcons() {
+  const load = (host: Element) => {
+    const url=host.querySelector('image')?.getAttribute('href'); if(!url)return;
+    let pending=iconLoads.get(url);
+    if(!pending){
+      pending=new Promise<boolean>(resolve=>{const image=new Image();image.onload=()=>{loadedIcons.add(url);resolve(true);};image.onerror=()=>{console.warn('插件图标无法解码',url);resolve(false);};image.src=url;});
+      iconLoads.set(url,pending);
+    }
+    void pending.then(ok=>{if(ok&&host.querySelector('image')?.getAttribute('href')===url)host.setAttribute('data-ready','true');});
+  };
+  const scan=(node:Element)=>{if(node.matches('.plugin-icon'))load(node);node.querySelectorAll('.plugin-icon').forEach(load);const host=node.closest('.plugin-icon');if(host)load(host);};
+  scan(document.documentElement);
+  new MutationObserver(records=>{for(const record of records){if(record.type==='attributes'&&record.target instanceof Element)scan(record.target);for(const node of record.addedNodes)if(node instanceof Element)scan(node);}}).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['href']});
+}
+export function icon(name: Icon) {
   const paths: Record<string, string> = {
     plus: '<path d="M12 5v14M5 12h14"/>',
     chevron: '<path d="m6 9 6 6 6-6"/>',
@@ -49,12 +67,16 @@ export function icon(name: string) {
     download: '<path d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5"/>',
     restart: '<path d="M20 7v5h-5M20 12a8 8 0 1 0-2 5M20 7v5"/>',
   };
-  return `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">${paths[name] ?? paths.info}</svg>`;
+  if (name && typeof name === 'object') {
+    const id = `plugin-icon-${++iconSequence}`;
+    return `<svg class="plugin-icon" ${loadedIcons.has(name.url)?'data-ready="true"':''} aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><g class="plugin-icon-fallback">${paths.plug}</g><defs><mask id="${id}" x="0" y="0" width="24" height="24" maskUnits="userSpaceOnUse" style="mask-type:alpha"><image href="${escape(name.url)}" width="24" height="24" preserveAspectRatio="xMidYMid meet"/></mask></defs><rect class="plugin-icon-image" width="24" height="24" fill="currentColor" stroke="none" mask="url(#${id})"/></svg>`;
+  }
+  return `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">${paths[name] ?? paths.plug}</svg>`;
 }
 export const button = (
   action: string,
   label: string,
-  name?: string,
+  name?: Icon,
   cls = "",
   attrs = "",
 ) =>

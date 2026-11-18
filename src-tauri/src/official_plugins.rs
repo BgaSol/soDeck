@@ -5,7 +5,10 @@ use crate::{
     AppCore,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, fs};
+use std::{
+    collections::{BTreeMap, HashSet},
+    fs,
+};
 
 const CACHE_TTL: u64 = 60 * 60 * 1000;
 const MAX_PLUGINS: usize = 128;
@@ -20,6 +23,10 @@ pub struct OfficialPlugin {
     pub tag_prefix: String,
     #[serde(default)]
     pub icon: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub icons: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_data: Option<String>,
     #[serde(default)]
     pub order: i32,
 }
@@ -54,6 +61,14 @@ impl OfficialPlugin {
                 .all(|b| b.is_ascii_alphanumeric() || b == b'-')
         {
             return Err(format!("官方插件 {} 的图标名称无效", self.id));
+        }
+        crate::plugin_icons::validate(&self.icons)?;
+        if self
+            .icon_data
+            .as_ref()
+            .is_some_and(|s| s.len() > 44 * 1024 || !s.starts_with("data:image/svg+xml;base64,"))
+        {
+            return Err("官方图标缓存无效".into());
         }
         validate_source(&self.source())
     }
@@ -104,7 +119,7 @@ impl ReleaseClient {
             return Err("仓库目录不完整，无法读取官方插件列表".into());
         }
         let mut plugins = Vec::new();
-        for entry in tree.tree {
+        for entry in &tree.tree {
             let parts: Vec<_> = entry.path.split('/').collect();
             if entry.kind != "blob"
                 || parts.len() != 3
@@ -120,9 +135,29 @@ impl ReleaseClient {
                 return Err("仓库插件目录无效或过大".into());
             }
             // Blob IDs keep all metadata pinned to the tree that was just discovered.
-            let plugin: OfficialPlugin = self
+            let mut plugin: OfficialPlugin = self
                 .official_repository_json(&format!("git/blobs/{}", entry.sha), true)
                 .map_err(|error| format!("无法读取 {}：{error}", entry.path))?;
+            plugin.validate()?;
+            // Ignore supplied preview URLs/data: only the matching blob in this tree is a source.
+            plugin.icon_data = None;
+            if let Some(asset) = plugin.icons.get(&plugin.icon) {
+                let path = format!("plugins/{}/{}", parts[1], asset);
+                if let Some(icon) = tree.tree.iter().find(|e| {
+                    e.kind == "blob"
+                        && e.path == path
+                        && e.sha.len() == 40
+                        && e.sha.bytes().all(|b| b.is_ascii_hexdigit())
+                }) {
+                    if let Ok(bytes) = self.official_icon_blob(&icon.sha) {
+                        use base64::Engine;
+                        plugin.icon_data = Some(format!(
+                            "data:image/svg+xml;base64,{}",
+                            base64::engine::general_purpose::STANDARD.encode(bytes)
+                        ));
+                    }
+                }
+            }
             plugins.push(plugin);
         }
         validate_plugins(&plugins)?;
@@ -147,7 +182,7 @@ impl AppCore {
         let mut cached = self.official_catalog.lock().unwrap();
         if cached.is_none() {
             if let Ok(bytes) = fs::read(&path) {
-                if bytes.len() <= 1024 * 1024 {
+                if bytes.len() <= 8 * 1024 * 1024 {
                     if let Ok(value) = serde_json::from_slice::<OfficialCatalog>(&bytes) {
                         if validate_plugins(&value.plugins).is_ok() {
                             *cached = Some(value);

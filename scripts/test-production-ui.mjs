@@ -31,7 +31,11 @@ fs.copyFileSync(`src-tauri/target/debug/workspace-ui-fixture${suffix}`,path.join
 if(process.platform!=='win32')fs.chmodSync(path.join(uiFixture,`workspace-ui-fixture${suffix}`),0o755);
 fs.cpSync('scripts/fixtures/workspace-ui/ui',path.join(uiFixture,'ui'),{recursive:true});
 const uiMetadata=JSON.parse(fs.readFileSync('scripts/fixtures/workspace-ui/manifest.json','utf8'));
+uiMetadata.icon='custom';uiMetadata.icons={custom:'assets/shape.svg'};
+fs.mkdirSync(path.join(uiFixture,'assets'));fs.writeFileSync(path.join(uiFixture,'assets/shape.svg'),'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>');
+for(const view of uiMetadata.ui.views)view.icon='custom';
 uiMetadata.settings={apiVersion:'1',schemaVersion:1,pages:[{id:'display',title:'显示偏好验收',viewTypes:['files'],groups:[{id:'text',title:'文字',fields:[{key:'caption',type:'string',title:'输入连续性',default:'',maxLength:128,apply:'live'},{key:'fontSize',type:'number',title:'名称字号',default:12,min:11,max:18,step:1,unit:'px',apply:'live'}]}]}]};
+uiMetadata.settings.pages[0].icon='custom';
 for(let index=0;index<20;index++)uiMetadata.ui.views.push({id:`extra${index}`,title:`扩展测试组件 ${index}`,icon:'plug',container:'sidebar',instancePolicy:'perWorkspace',defaultSide:'left'});
 fs.writeFileSync(path.join(uiFixture,'plugin.json'),JSON.stringify({...uiMetadata,target,entry:`workspace-ui-fixture${suffix}`}));
 fs.copyFileSync(`src-tauri/target/debug/plugin-fixture${suffix}`, path.join(fixture, `plugin-fixture${suffix}`));
@@ -116,7 +120,7 @@ const page = await browser.newPage({ viewport: { width: 1100, height: 720 } });
 const finishTrace = await recordTrace(page.context(), 'production');
 await page.route('**/__plugin__/**',route=>{
   const relative=decodeURIComponent(new URL(route.request().url()).pathname).split('/').slice(3).join('/');
-  const file=path.join(uiFixture,relative),types={'.html':'text/html','.js':'text/javascript','.css':'text/css'};
+  const file=path.join(uiFixture,relative.startsWith('icons/')?'assets/shape.svg':relative),types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml'};
   return route.fulfill({contentType:types[path.extname(file)]||'application/octet-stream',body:fs.readFileSync(file)});
 });
 const errors = [], checks = [];
@@ -769,6 +773,8 @@ try {
   const board=page.locator(`.server-workbench[data-id="${workspace.context.workspaceId}"]`);
   await page.locator(`.server-tab-select[data-id="${workspace.context.workspaceId}"]`).click();
   await board.waitFor();
+  await board.locator('.tool-entry .plugin-icon[data-ready="true"]').first().waitFor();
+  await board.locator('.component-tab .plugin-icon[data-ready="true"]').first().waitFor();
   await checkTitlebarPosition('single');
   await checkTitlebar();
   for(const theme of ['light','dark','dopamine'])for(const [width,height]of [[1100,720],[720,480]]){
@@ -796,6 +802,7 @@ try {
   checks.push('Bundled workspace menus: fixed placement, no short-menu scrollbars, vertical-only long lists, search and Escape across all three themes at 1100×720 and 720×480');
   await page.setViewportSize({width:1100,height:720});await page.locator('#settings-button').click();
   await page.locator('#settings-button').click();await page.locator('.settings-nav').getByRole('button',{name:'显示偏好验收',exact:true}).click();const preference=page.locator('#component-settings-page').getByLabel('名称字号');await preference.fill('17');
+  await page.locator('.settings-nav .plugin-icon[data-ready="true"]').first().waitFor();
   const caption=page.getByLabel('输入连续性',{exact:true});
   await caption.focus();
   await page.evaluate(()=>{

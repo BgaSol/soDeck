@@ -9,6 +9,7 @@ import { packageDomAssets } from "./plugin-dom-assets.mjs";
 import { targets } from "./core-artifacts.mjs";
 import {fileEditorSettings,buildFileEditor,packageFileEditor} from './plugin-file-editor-assets.mjs';
 import {packageStyles} from '../packages/ui/package.mjs';
+import {packageIconAssets} from './plugin-icon-assets.mjs';
 export function run(command, args, options = {}) {
   const result = spawnSync(command, args, { windowsHide: true, stdio: "inherit", ...options });
   if (result.error) throw result.error;
@@ -55,6 +56,7 @@ export async function buildPlugin({ plugin, target, output, release, installDepe
   if (metadata.ui) await packageMenuAssets(directory);
   if (['network-proxy','docker'].includes(plugin)) await packageDomAssets(directory);
   packageSettingsAssets(metadata, directory);
+  packageIconAssets(metadata, pluginRoot, directory);
   fs.copyFileSync(
     `${pluginRoot}/target/${target}/${release ? "release" : "debug"}/${executable}`,
     destination,
@@ -67,6 +69,8 @@ export async function buildPlugin({ plugin, target, output, release, installDepe
       {
         id: metadata.id,
         name: metadata.name,
+        ...(metadata.icon ? {icon:metadata.icon} : {}),
+        ...(metadata.icons ? {icons:metadata.icons} : {}),
         version,
         apiVersion: metadata.apiVersion,
         target,

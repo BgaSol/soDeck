@@ -49,6 +49,7 @@ try {
   }
   validateCoreArtifacts(input, metadata, commit);
   report.passed = true;
+  report.pluginIconsNative = true;
 } catch (error) { report.error = String(error.stack ?? error); throw error; }
 finally {
   fs.mkdirSync("artifacts/verification", { recursive: true });

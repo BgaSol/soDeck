@@ -38,6 +38,10 @@ pub fn read_manifest(directory: &Path) -> Result<PluginRecord, String> {
     }
     Version::parse(&manifest.version)
         .map_err(|_| "插件版本应为有效的 SemVer（major.minor.patch）".to_string())?;
+    if !manifest.icon.is_empty() && !crate::plugin_icons::valid_name(&manifest.icon) {
+        return Err("插件图标名称无效".into());
+    }
+    crate::plugin_icons::validate(&manifest.icons)?;
     if manifest.api_version.split('.').next() != Some(API_VERSION) {
         return Err(format!(
             "插件要求核心 API {}，当前为 {API_VERSION}",

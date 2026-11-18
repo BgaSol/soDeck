@@ -27,6 +27,14 @@ try {
   const checked = validatePluginArchive(directory, { ...metadata, binary: `sodeck-${plugin}` }, target);
   const manifest = JSON.parse(fs.readFileSync(path.join(checked.root, "plugin.json"), "utf8"));
   assert.equal(manifest.apiVersion, "1"); assert.equal(manifest.ui.apiVersion, "2");
+  for(const [name,asset] of Object.entries(manifest.icons ?? {})) {
+    assert(/^[a-zA-Z0-9-]{1,64}$/.test(name));
+    const root=fs.realpathSync(checked.root), file=fs.realpathSync(path.join(root,asset));
+    const relative=path.relative(root,file);assert(!relative.startsWith('..')&&!path.isAbsolute(relative));
+    assert(asset.endsWith('.svg')&&fs.statSync(file).size<=32*1024);
+    assert(fs.readFileSync(file,'utf8').includes('<svg'));
+  }
+  if(manifest.icons) report.pluginIcons=Object.keys(manifest.icons);
   for (const file of ["index.html", "shared.css", "text-menu.js", "clipboard-bridge.js"]) assert(fs.statSync(path.join(checked.root, "ui", file)).size > 0, file);
   for (const view of manifest.ui.views) assert(fs.statSync(path.join(checked.root, view.entry ?? manifest.ui.entry ?? "ui/index.html")).size > 0);
   if (["terminal", "files"].includes(plugin)) {
